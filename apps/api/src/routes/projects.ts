@@ -65,27 +65,19 @@ projectsRoutes.get('/', requireOperator, async (c) => {
     conditions.push(sql`s.recommended_market = ${qs.marketRecommendation}`);
   }
   if (qs.hasContact === 'true') {
-    conditions.push(sql`(SELECT COUNT(*) FROM people pl WHERE pl.project_id = p.id) > 0`);
+    conditions.push(sql`p.people_count > 0`);
   }
   if (qs.hasContact === 'false') {
-    conditions.push(sql`(SELECT COUNT(*) FROM people pl WHERE pl.project_id = p.id) = 0`);
+    conditions.push(sql`p.people_count = 0`);
   }
   if (qs.verifiedContact === 'true') {
-    conditions.push(sql`(SELECT COUNT(*) FROM people pl WHERE pl.project_id = p.id AND (pl.email IS NOT NULL AND pl.email_status != 'invalid' OR pl.linkedin IS NOT NULL)) > 0`);
+    conditions.push(sql`p.verified_contact_count > 0`);
   }
-  if (qs.market === 'eu') {
-    const euTerms = [
-      'DE', 'FR', 'IT', 'ES', 'NL', 'BE', 'AT', 'IE', 'PT', 'GR',
-      'FI', 'SE', 'DK', 'PL', 'CZ', 'HU', 'RO', 'SK', 'BG', 'HR',
-      'LT', 'LV', 'EE', 'SI', 'LU', 'CY', 'MT', 'GERMANY', 'FRANCE',
-      'ITALY', 'SPAIN', 'NETHERLANDS', 'BELGIUM', 'AUSTRIA', 'IRELAND',
-      'PORTUGAL', 'GREECE',
-    ];
-    const euClauses = euTerms.map(t => sql`p.jurisdiction ILIKE ${`%${t}%`}`);
-    conditions.push(sql`(${sql.join(euClauses, sql` OR `)})`);
+  if (qs.market === 'eu' || qs.market === 'us') {
+    conditions.push(sql`p.region = ${qs.market}`);
   }
-  if (qs.market === 'us') {
-    conditions.push(sql`p.jurisdiction ILIKE ${'%US%'}`);
+  if (qs.minPriority) {
+    conditions.push(sql`s.priority_score >= ${Number(qs.minPriority)}`);
   }
 
   const whereClause = conditions.length > 0
@@ -96,38 +88,36 @@ projectsRoutes.get('/', requireOperator, async (c) => {
     eu_score: 's.eu_score',
     us_pre: 's.us_pre_score',
     us_post: 's.us_post_score',
+    priority: 's.priority_score',
+    propensity: 's.propensity_score',
+    market_cap: 'p.market_cap_usd',
     name: 'p.name',
     created: 'p.created_at',
   } as Record<string, string>)[sortField] ?? 'p.created_at';
 
   const orderDir = sortOrder === 'asc' ? 'ASC' : 'DESC';
-  const orderClause = sql.raw(`ORDER BY ${orderColumn} ${orderDir}`);
+  const orderClause = sql.raw(`ORDER BY ${orderColumn} ${orderDir} NULLS LAST, p.id`);
 
   try {
-    const [listResult, countResult] = await Promise.all([
-      db.execute(sql`
-        SELECT
-          p.id, p.name, p.website, p.ticker, p.chain, p.source, p.esma_token_id,
-          p.jurisdiction, p.category, p.listed_on_lcx,
-          p.created_at, p.updated_at,
-          s.eu_score, s.us_pre_score, s.us_post_score, s.band, s.recommended_market,
-          (SELECT COUNT(*) FROM people pl WHERE pl.project_id = p.id) AS people_count,
-          (SELECT COUNT(*) FROM people pl WHERE pl.project_id = p.id AND (pl.email IS NOT NULL AND pl.email_status != 'invalid' OR pl.linkedin IS NOT NULL)) AS verified_contact_count
-        FROM projects p
-        LEFT JOIN scores s ON s.project_id = p.id
-        ${whereClause}
-        ${orderClause}
-        LIMIT ${limit} OFFSET ${offset}
-      `),
-      db.execute(sql`
-        SELECT COUNT(*) AS total
-        FROM projects p
-        LEFT JOIN scores s ON s.project_id = p.id
-        ${whereClause}
-      `),
-    ]);
+    const listResult = await db.execute(sql`
+      SELECT
+        p.id, p.name, p.website, p.ticker, p.chain, p.source, p.esma_token_id,
+        p.jurisdiction, p.region, p.category, p.listed_on_lcx,
+        p.market_cap_usd, p.market_cap_rank, p.volume_24h_usd, p.last_enriched_at,
+        p.created_at, p.updated_at,
+        p.people_count, p.verified_contact_count,
+        s.eu_score, s.us_pre_score, s.us_post_score, s.band, s.recommended_market,
+        s.propensity_score, s.priority_score,
+        COUNT(*) OVER () AS total
+      FROM projects p
+      LEFT JOIN scores s ON s.project_id = p.id
+      ${whereClause}
+      ${orderClause}
+      LIMIT ${limit} OFFSET ${offset}
+    `);
 
-    const total = Number((countResult.rows?.[0] as Record<string, unknown> | undefined)?.total ?? 0);
+    const firstRow = listResult.rows?.[0] as Record<string, unknown> | undefined;
+    const total = Number(firstRow?.total ?? 0);
     const results = (listResult.rows ?? []).map((r: Record<string, unknown>) => ({
       id: r.id,
       name: r.name,
@@ -137,8 +127,13 @@ projectsRoutes.get('/', requireOperator, async (c) => {
       source: r.source,
       esmaTokenId: r.esma_token_id,
       jurisdiction: r.jurisdiction,
+      region: r.region ?? null,
       category: r.category,
       listedOnLcx: r.listed_on_lcx,
+      marketCapUsd: r.market_cap_usd !== null && r.market_cap_usd !== undefined ? Number(r.market_cap_usd) : null,
+      marketCapRank: r.market_cap_rank ?? null,
+      volume24hUsd: r.volume_24h_usd !== null && r.volume_24h_usd !== undefined ? Number(r.volume_24h_usd) : null,
+      lastEnrichedAt: r.last_enriched_at ?? null,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
       euScore: r.eu_score ?? 0,
@@ -146,13 +141,26 @@ projectsRoutes.get('/', requireOperator, async (c) => {
       usPostScore: r.us_post_score ?? 0,
       band: r.band ?? 'unscored',
       recommendedMarket: r.recommended_market ?? 'none',
+      propensityScore: r.propensity_score ?? 0,
+      priorityScore: r.priority_score ?? 0,
       peopleCount: Number(r.people_count ?? 0),
       verifiedContactCount: Number(r.verified_contact_count ?? 0),
     }));
 
+    // COUNT(*) OVER () vanishes on an empty page — fall back for out-of-range offsets
+    let finalTotal = total;
+    if (results.length === 0 && offset > 0) {
+      const countResult = await db.execute(sql`
+        SELECT COUNT(*) AS total FROM projects p
+        LEFT JOIN scores s ON s.project_id = p.id
+        ${whereClause}
+      `);
+      finalTotal = Number((countResult.rows?.[0] as Record<string, unknown> | undefined)?.total ?? 0);
+    }
+
     return c.json({
       data: results,
-      meta: { total, limit, offset, timestamp: new Date().toISOString(), version: env.version },
+      meta: { total: finalTotal, limit, offset, timestamp: new Date().toISOString(), version: env.version },
     });
   } catch (err) {
     console.error('[projects] list error:', err);

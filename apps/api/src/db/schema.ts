@@ -4,6 +4,7 @@ import {
   text,
   boolean,
   integer,
+  numeric,
   jsonb,
   timestamp,
   uniqueIndex,
@@ -30,8 +31,24 @@ export const projects = pgTable(
     jurisdiction: text('jurisdiction'),
     whitepaperUrl: text('whitepaper_url'),
     category: text('category'),
-    marketCap: text('market_cap'), // stored as string until enrichment normalizes
+    marketCap: text('market_cap'), // legacy CSV string; typed columns below are authoritative
     listedOnLcx: boolean('listed_on_lcx').default(false).notNull(),
+    // Typed market data (bulk enrichment refresh)
+    marketCapUsd: numeric('market_cap_usd'),
+    marketCapRank: integer('market_cap_rank'),
+    volume24hUsd: numeric('volume_24h_usd'),
+    priceUsd: numeric('price_usd'),
+    priceChange30d: numeric('price_change_30d'),
+    tokenAgeDays: integer('token_age_days'),
+    lastEnrichedAt: timestamp('last_enriched_at', { withTimezone: true }),
+    // Derived filter/blocking keys
+    region: text('region'), // eu | us | other
+    nameKey: text('name_key'), // squashEntity(name)
+    domain: text('domain'), // extractDomain(website)
+    tickerNorm: text('ticker_norm'), // cleanTicker(ticker)
+    // Denormalized counts (trigger-maintained, see migration 0009)
+    peopleCount: integer('people_count').default(0).notNull(),
+    verifiedContactCount: integer('verified_contact_count').default(0).notNull(),
     raw: jsonb('raw').default({}).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
@@ -42,6 +59,13 @@ export const projects = pgTable(
     index('idx_projects_source').on(t.source),
     index('idx_projects_ticker').on(t.ticker),
     uniqueIndex('idx_projects_esma_token_id').on(t.esmaTokenId),
+    index('idx_projects_created_at').on(t.createdAt),
+    index('idx_projects_region').on(t.region),
+    index('idx_projects_name_key').on(t.nameKey),
+    index('idx_projects_domain').on(t.domain),
+    index('idx_projects_ticker_norm').on(t.tickerNorm),
+    index('idx_projects_people_count').on(t.peopleCount),
+    index('idx_projects_last_enriched').on(t.lastEnrichedAt),
   ],
 );
 
@@ -171,6 +195,42 @@ export const outreachSequences = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [index('idx_os_project').on(t.projectId)],
+);
+
+/* ──────────────────────────────────────────────
+ *  outreach_tasks — assisted-channel touches (LinkedIn/Telegram),
+ *  executed by a human via the Send Queue; never auto-sent
+ * ────────────────────────────────────────────── */
+export const outreachTasks = pgTable(
+  'outreach_tasks',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    sequenceId: uuid('sequence_id').references(() => outreachSequences.id, { onDelete: 'cascade' }),
+    projectId: uuid('project_id')
+      .references(() => projects.id, { onDelete: 'cascade' })
+      .notNull(),
+    personId: uuid('person_id').references(() => people.id, { onDelete: 'set null' }),
+    stepIndex: integer('step_index').notNull(),
+    touchIndex: integer('touch_index').notNull(),
+    channel: text('channel').notNull(), // linkedin | telegram
+    action: text('action').notNull(), // connection_request | message | telegram_dm
+    subject: text('subject'),
+    body: text('body').notNull(),
+    editedBody: text('edited_body'),
+    status: text('status').notNull().default('pending'), // pending | sent | skipped
+    dueAt: timestamp('due_at', { withTimezone: true }).notNull(),
+    snoozedUntil: timestamp('snoozed_until', { withTimezone: true }),
+    sentMessageId: uuid('sent_message_id'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('idx_tasks_seq_step').on(t.sequenceId, t.stepIndex),
+    index('idx_tasks_status_due').on(t.status, t.dueAt),
+    index('idx_tasks_project').on(t.projectId),
+  ],
 );
 
 /* ──────────────────────────────────────────────

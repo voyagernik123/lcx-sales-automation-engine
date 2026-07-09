@@ -5,17 +5,7 @@ export interface MatchResult {
   method: 'ticker_exact' | 'ticker_fuzzy' | 'name_substring' | 'none';
 }
 
-/** Collapse to lowercase alphanumerics: "Bera Chain" → "berachain". */
-function squash(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, '');
-}
-
-/** Squash after dropping corporate-entity words: "Ether.Fi Foundation" → "etherfi". */
-const CORP_WORDS =
-  /\b(foundation|stiftung|association|labs?|inc|llc|ltd|limited|gmbh|ag|sa|sezc|pty|uab|oy|dao)\b/gi;
-function squashEntity(s: string): string {
-  return squash(s.replace(CORP_WORDS, ' '));
-}
+import { squash, squashEntity } from '../normalize.js';
 
 /**
  * Match a project to a CoinGecko coin using ticker + name.

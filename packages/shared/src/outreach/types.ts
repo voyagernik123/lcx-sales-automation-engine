@@ -4,14 +4,30 @@ export type MessageStatus = 'pending' | 'sent' | 'delivered' | 'bounced' | 'comp
 
 export type EnrollmentStatus = 'active' | 'paused' | 'completed' | 'cancelled';
 
+export type StepChannel = 'email' | 'linkedin' | 'telegram';
+
 export interface SequenceStep {
   touchIndex: number;
   delayDays: number;
+  /** Per-touch channel. Legacy sequences may lack it — resolve via MIXED_CADENCE_CHANNELS. */
+  channel?: StepChannel;
+  /** ISO timestamp persisted at enroll time; legacy fallback: startedAt + delayDays. */
+  scheduledAt?: string;
+  status?: 'pending' | 'queued' | 'sent' | 'skipped';
   subject: string;
   body: string;
   claimsUsed: string[];
   requiresHumanReview: boolean;
 }
+
+/** Channel per touch of the default mixed cadence (index = touchIndex - 1). */
+export const MIXED_CADENCE_CHANNELS: readonly StepChannel[] = [
+  'email',
+  'email',
+  'linkedin',
+  'telegram',
+  'email',
+] as const;
 
 export interface CadenceDay {
   touchIndex: number;

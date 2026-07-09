@@ -171,17 +171,21 @@ async function scoreAll(db: ReturnType<typeof drizzle>) {
         .limit(1)
         .execute();
 
+      const scoreValues = {
+        euScore: result.euScore,
+        usPreScore: result.usPreScore,
+        usPostScore: result.usPostScore,
+        band: result.band,
+        reasons: result.reasons as unknown as Record<string, unknown>[],
+        recommendedMarket: result.recommendedMarket,
+        usIntelSignals: (result.usIntelSignals ?? {}) as Record<string, unknown>,
+        computedAt: new Date(result.computedAt),
+      };
+
       if (existing.length > 0) {
         await db
           .update(schema.scores)
-          .set({
-            euScore: result.euScore,
-            usPreScore: result.usPreScore,
-            usPostScore: result.usPostScore,
-            band: result.band,
-            reasons: result.reasons as unknown as Record<string, unknown>[],
-            computedAt: new Date(result.computedAt),
-          })
+          .set(scoreValues)
           .where(sql`${schema.scores.id} = ${existing[0].id}`)
           .execute();
       } else {
@@ -190,12 +194,7 @@ async function scoreAll(db: ReturnType<typeof drizzle>) {
           .values({
             id: randomUUID(),
             projectId: p.id as string,
-            euScore: result.euScore,
-            usPreScore: result.usPreScore,
-            usPostScore: result.usPostScore,
-            band: result.band,
-            reasons: result.reasons as unknown as Record<string, unknown>[],
-            computedAt: new Date(result.computedAt),
+            ...scoreValues,
           })
           .execute();
       }

@@ -52,9 +52,13 @@ export type {
   MessageStatus,
   EnrollmentStatus,
   SequenceStep,
+  StepChannel,
   CadenceDay,
 } from './outreach/index.js';
-export { CADENCE, computeScheduledDate } from './outreach/index.js';
+export { CADENCE, MIXED_CADENCE_CHANNELS, computeScheduledDate } from './outreach/index.js';
+
+// Normalization helpers (dedupe keys, matcher, label joins)
+export { squash, squashEntity } from './normalize.js';
 
 // Deal desk + proposals (Slice 12)
 export type {

@@ -5,7 +5,7 @@ import { requireOperator } from '../middleware/auth.js';
 import { getDb } from '../db/index.js';
 import * as schema from '../db/schema.js';
 import { env } from '../lib/env.js';
-import { generateDraft, CADENCE } from '@lcx/shared';
+import { generateDraft, CADENCE, MIXED_CADENCE_CHANNELS, computeScheduledDate } from '@lcx/shared';
 import { processOutboundTick, handleWebhookEvent } from '../outreach/scheduler.js';
 import { verifyWebhookSignature } from '../outreach/resend.js';
 import type { SequenceStep } from '@lcx/shared';
@@ -63,11 +63,12 @@ outreachRoutes.post('/enroll/:projectId', requireOperator, async (c) => {
 
     // Generate drafts for all 5 touches
     const steps: SequenceStep[] = [];
+    const enrolledAt = new Date();
     // All-channel cadence
     const channels: Array<'email' | 'linkedin' | 'telegram'> =
       channel === 'linkedin'
         ? ['linkedin', 'linkedin', 'linkedin', 'linkedin', 'linkedin']
-        : ['email', 'email', 'linkedin', 'telegram', 'email'];
+        : [...MIXED_CADENCE_CHANNELS];
 
     for (let i = 0; i < CADENCE.length; i++) {
       const cadence = CADENCE[i];
@@ -95,6 +96,9 @@ outreachRoutes.post('/enroll/:projectId', requireOperator, async (c) => {
       steps.push({
         touchIndex: cadence.touchIndex,
         delayDays: cadence.delayDays,
+        channel,
+        scheduledAt: computeScheduledDate(enrolledAt, cadence.delayDays).toISOString(),
+        status: 'pending',
         subject: draft.subject,
         body: draft.body,
         claimsUsed: draft.claimsUsed,

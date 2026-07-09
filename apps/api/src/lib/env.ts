@@ -37,6 +37,19 @@ export const env = {
   resendApiKey: process.env.RESEND_API_KEY ?? '',
   resendWebhookSecret: process.env.RESEND_WEBHOOK_SECRET ?? '',
   outreachFromEmail: process.env.OUTREACH_FROM_EMAIL ?? 'outreach@lcx.sales',
+  // Outreach send window (email auto-send only inside this window)
+  sendWindowDays: (process.env.SEND_WINDOW_DAYS ?? '2,3,4')
+    .split(',')
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 6),
+  sendWindowStartHour: Number(process.env.SEND_WINDOW_START_HOUR ?? 9),
+  sendWindowEndHour: Number(process.env.SEND_WINDOW_END_HOUR ?? 17),
+  sendWindowTz: process.env.SEND_WINDOW_TZ ?? 'Europe/Berlin',
+  lcxTelegramHandle: process.env.LCX_TELEGRAM_HANDLE ?? '',
+  unsubscribeSecret: process.env.UNSUBSCRIBE_SECRET ?? '',
+  inboundWebhookSecret: process.env.INBOUND_WEBHOOK_SECRET ?? '',
+  crawlerContactEmail: process.env.CRAWLER_CONTACT_EMAIL ?? 'bd@lcx.com',
+  apiPublicUrl: (process.env.API_PUBLIC_URL ?? '').replace(/\/$/, ''),
   phantombusterApiKey: process.env.PHANTOMBUSTER_API_KEY ?? '',
   phantombusterConnectionAgentId: process.env.PHANTOMBUSTER_CONNECTION_AGENT_ID ?? '',
   phantombusterMessageAgentId: process.env.PHANTOMBUSTER_MESSAGE_AGENT_ID ?? '',
