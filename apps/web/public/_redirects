@@ -1,1 +1,3 @@
+# API routes handled by Functions (functions/api/[[catchall]].ts)
+# SPA catch-all — all non-API, non-asset paths serve index.html
 /*    /index.html   200
