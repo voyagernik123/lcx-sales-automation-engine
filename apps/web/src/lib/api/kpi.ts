@@ -1,4 +1,4 @@
-import { request } from '../apiClient';
+import { getApiKey, request } from '../apiClient';
 import type { KpiDashboard, PostListingTrigger } from '@/types/kpi';
 
 export async function fetchKpis(signal?: AbortSignal): Promise<KpiDashboard> {
@@ -7,9 +7,7 @@ export async function fetchKpis(signal?: AbortSignal): Promise<KpiDashboard> {
 }
 
 export async function exportKpisCsv(): Promise<Blob> {
-  const apiKey = (() => {
-    try { return localStorage.getItem('lcx_api_key'); } catch { return null; }
-  })();
+  const apiKey = getApiKey();
 
   const base = import.meta.env.DEV ? '/api' : (import.meta.env.VITE_API_URL ?? '');
 

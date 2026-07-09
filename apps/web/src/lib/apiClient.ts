@@ -7,7 +7,18 @@
 import type { HealthResponse, OperatorPrincipal } from '@lcx/shared';
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
-const API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? '';
+const ENV_API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? '';
+
+// Operator key lives in localStorage in production so it never ships in the
+// bundle (set once via: localStorage.setItem('lcx_api_key', '<key>')).
+// VITE_API_KEY is the local-dev fallback only.
+export function getApiKey(): string {
+  try {
+    return localStorage.getItem('lcx_api_key') ?? ENV_API_KEY;
+  } catch {
+    return ENV_API_KEY;
+  }
+}
 
 function url(path: string): string {
   const p = path.startsWith('/') ? path : `/${path}`;
@@ -44,8 +55,9 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
     headers['Content-Type'] = 'application/json';
   }
 
-  if (opts.auth !== false && API_KEY) {
-    headers.Authorization = `Bearer ${API_KEY}`;
+  const apiKey = getApiKey();
+  if (opts.auth !== false && apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
   }
 
   const res = await fetch(url(path), {
@@ -86,5 +98,7 @@ export async function getMe(signal?: AbortSignal): Promise<OperatorPrincipal> {
 
 export const apiConfig = {
   base: API_BASE || '/api',
-  hasKey: Boolean(API_KEY),
+  get hasKey(): boolean {
+    return Boolean(getApiKey());
+  },
 } as const;
