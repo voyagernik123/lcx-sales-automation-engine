@@ -47,18 +47,34 @@ export type ProjectSource =
 export function normalizeUrl(raw?: string): string | undefined {
   if (!raw || raw.trim() === '') return undefined;
   let url = raw.trim().toLowerCase();
-  // Remove common prefixes noise
+  // Free-text junk ("TBD", postal addresses, company names) is not a URL
+  if (/\s/.test(url) || !url.includes('.')) return undefined;
   if (!url.startsWith('http://') && !url.startsWith('https://')) {
     url = `https://${url}`;
   }
   return url;
 }
 
+/**
+ * Hosts shared by many unrelated projects — never usable as an identity key
+ * (a "domain match" on twitter.com would merge strangers).
+ */
+const SHARED_HOSTS = new Set([
+  'twitter.com', 'x.com', 't.me', 'telegram.me', 'linkedin.com', 'linktr.ee',
+  'github.com', 'medium.com', 'coingecko.com', 'coinmarketcap.com',
+  'discord.gg', 'discord.com', 'youtube.com', 'facebook.com', 'instagram.com',
+  'notion.site', 'gitbook.io', 'docs.google.com',
+]);
+
 export function extractDomain(url?: string): string | undefined {
   if (!url) return undefined;
   try {
     const u = new URL(url);
-    return u.hostname.replace(/^www\./, '');
+    const host = u.hostname.replace(/^www\./, '').toLowerCase();
+    // Junk like "TBD"/"n/a" parses as a dotless hostname — not a real domain
+    if (!host.includes('.')) return undefined;
+    if (SHARED_HOSTS.has(host)) return undefined;
+    return host;
   } catch {
     return undefined;
   }

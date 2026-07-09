@@ -1,8 +1,13 @@
 import type { CsvRow } from '../csv.js';
 import type { ImportSourceResult, RawProject } from '../types.js';
-import { normalizeUrl, cleanTicker } from '../types.js';
+import { cleanTicker } from '../types.js';
 
-/** LCX Listings - Closed Token Listings.csv — 37 won deals */
+/**
+ * LCX Listings - Closed Token Listings.csv — won deals (ground-truth labels).
+ * Actual headers: Entry ID, Record ID, Record (=name), Token (=ticker), Stage,
+ * "Stage" Changed At, "Stage" Previous Values, Marketing Fee, Listing Fee,
+ * Liquidity Amount, Market Maker, Chain, Notes, Owner.
+ */
 export function normalizeClosed(rows: CsvRow[]): ImportSourceResult {
   const source = 'closed' as const;
   const projects: RawProject[] = [];
@@ -11,7 +16,7 @@ export function normalizeClosed(rows: CsvRow[]): ImportSourceResult {
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
     try {
-      const name = (r['Name'] || r['Project'] || r['Token'] || '').trim();
+      const name = (r['Record'] || r['Name'] || r['Project'] || '').trim();
       if (!name) {
         errors.push(`Row ${i + 2}: empty name`);
         continue;
@@ -19,9 +24,9 @@ export function normalizeClosed(rows: CsvRow[]): ImportSourceResult {
 
       projects.push({
         name,
-        website: normalizeUrl(r['Website']),
-        ticker: cleanTicker(r['Ticker']),
-        chain: undefined,
+        website: undefined,
+        ticker: cleanTicker(r['Token'] || r['Ticker']),
+        chain: r['Chain']?.trim() || undefined,
         source,
         jurisdiction: undefined,
         category: undefined,

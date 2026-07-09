@@ -36,22 +36,25 @@ export function normalizePipeline(rows: CsvRow[]): ImportSourceResult {
         jurisdiction: undefined,
         category: undefined,
         marketCap: undefined,
-        listedOnLcx: true, // Pipeline records are all LCX engagements
+        // Pipeline rows are prospects, not listings — Won rows arrive via the
+        // closed source. Marking them listed inflated willingness scoring.
+        listedOnLcx: false,
         rawPayload: { ...r },
       });
 
-      const owner = r['Owner']?.trim();
-      if (owner) {
+      // Contact Details holds the PROJECT's contact (telegram/email); Owner is
+      // internal LCX staff and must not become a project contact.
+      if (telegram || email) {
         people.push({
-  person: {
-    name: owner,
-    title: 'BD Owner',
-    linkedin: undefined,
-    email,
-    telegram,
-  },
-  projectRaw: { ...r },
-});
+          person: {
+            name: `${name} contact`,
+            title: 'Pipeline contact',
+            linkedin: undefined,
+            email,
+            telegram,
+          },
+          projectRaw: { ...r },
+        });
       }
     } catch (err) {
       errors.push(`Row ${i + 2}: ${err instanceof Error ? err.message : String(err)}`);

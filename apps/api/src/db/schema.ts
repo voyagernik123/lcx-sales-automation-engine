@@ -78,18 +78,43 @@ export const projectSources = pgTable(
     id: uuid('id')
       .default(sql`gen_random_uuid()`)
       .primaryKey(),
-    projectId: uuid('project_id')
-      .references(() => projects.id, { onDelete: 'cascade' })
-      .notNull(),
-    source: text('source').notNull(), // esma_main | esma_casp | esma_emt | potential | pre_tge | pipeline | closed | top100
-    externalId: text('external_id'), // row # or natural key
+    projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }), // null until mapped
+    source: text('source').notNull(), // esma_main | ... | top100 | coinpaprika | coingecko | defillama | geckoterminal_new | esma_registry
+    externalId: text('external_id'), // stable natural key per source
     payload: jsonb('payload').default({}).notNull(),
+    contentHash: text('content_hash'),
+    status: text('status').default('new').notNull(), // new | mapped | ignored
+    firstSeenAt: timestamp('first_seen_at', { withTimezone: true }).defaultNow(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).defaultNow(),
+    lastChangedAt: timestamp('last_changed_at', { withTimezone: true }).defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
     index('idx_src_project').on(t.projectId),
     index('idx_src_source').on(t.source),
+    uniqueIndex('idx_src_source_external').on(t.source, t.externalId),
+    index('idx_src_status').on(t.status),
   ],
+);
+
+/* ──────────────────────────────────────────────
+ *  job_runs — connector/batch job tracking + incremental cursors
+ * ────────────────────────────────────────────── */
+export const jobRuns = pgTable(
+  'job_runs',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    jobName: text('job_name').notNull(),
+    status: text('status').default('running').notNull(), // running | ok | failed
+    startedAt: timestamp('started_at', { withTimezone: true }).defaultNow().notNull(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    stats: jsonb('stats').default({}).notNull(),
+    error: text('error'),
+    cursor: jsonb('cursor'),
+  },
+  (t) => [index('idx_job_runs_name').on(t.jobName, t.startedAt)],
 );
 
 /* ──────────────────────────────────────────────

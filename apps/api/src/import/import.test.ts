@@ -71,11 +71,12 @@ describe('Pipeline normalizer', () => {
     expect(rows.length).toBe(2);
     const result = normalizePipeline(rows);
     expect(result.projects.length).toBe(2);
-    // First project listed_on_lcx
-    expect(result.projects[0].listedOnLcx).toBe(true);
-    // People from Owner field
+    // Pipeline rows are prospects, not listings (Won rows arrive via 'closed')
+    expect(result.projects[0].listedOnLcx).toBe(false);
+    // People come from the project's Contact Details, never the internal Owner
     expect(result.people.length).toBe(2);
     expect(result.people[0].person.telegram).toBe('@token_one_telegram');
+    expect(result.people[0].person.name).not.toBe('Jatin');
     expect(result.people[1].person.email).toBe('alice@token2.com');
   });
 });
