@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { HealthResponse } from '@lcx/shared';
-import { checkDb } from '../lib/db.js';
+import { checkDb } from '../db/index.js';
 import { env } from '../lib/env.js';
 
 export const healthRoutes = new Hono();
@@ -16,6 +16,5 @@ healthRoutes.get('/', async (c) => {
     timestamp: new Date().toISOString(),
   };
 
-  const status = body.ok ? 200 : 503;
-  return c.json(body, status);
+  return c.json(body, body.ok ? 200 : 503);
 });

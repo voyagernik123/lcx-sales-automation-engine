@@ -32,6 +32,14 @@ export const env = {
     .map((s) => s.trim())
     .filter(Boolean),
   version: process.env.npm_package_version ?? '0.1.0',
+  coingeckoApiKey: process.env.COINGECKO_API_KEY ?? '',
+  resendApiKey: process.env.RESEND_API_KEY ?? '',
+  resendWebhookSecret: process.env.RESEND_WEBHOOK_SECRET ?? '',
+  outreachFromEmail: process.env.OUTREACH_FROM_EMAIL ?? 'outreach@lcx.sales',
+  phantombusterApiKey: process.env.PHANTOMBUSTER_API_KEY ?? '',
+  phantombusterConnectionAgentId: process.env.PHANTOMBUSTER_CONNECTION_AGENT_ID ?? '',
+  phantombusterMessageAgentId: process.env.PHANTOMBUSTER_MESSAGE_AGENT_ID ?? '',
+  linkedinSessionCookie: process.env.LINKEDIN_SESSION_COOKIE ?? '',
 } as const;
 
 export type Env = typeof env;

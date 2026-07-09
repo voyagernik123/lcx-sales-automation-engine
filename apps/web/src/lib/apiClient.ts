@@ -35,7 +35,7 @@ type RequestOpts = {
   signal?: AbortSignal;
 };
 
-async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
+export async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
   const headers: Record<string, string> = {
     Accept: 'application/json',
   };

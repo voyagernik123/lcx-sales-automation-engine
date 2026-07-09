@@ -21,3 +21,7 @@ scratch_pdf_*.txt
 
 # Postgres local volume noise (compose named volume preferred)
 .pgdata/
+
+# Seed data with PII — not committed
+data/seeds/*.csv
+data/seeds/*.xlsx

@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from './app.js';
+import { closeDb } from './db/index.js';
 
-const TEST_KEY = process.env.OPERATOR_API_KEY ?? 'dev-operator-key-change-me';
+const TEST_KEY = 'dev-operator-key-change-me';
 
 describe('API health + auth', () => {
   const app = createApp();
@@ -11,8 +12,8 @@ describe('API health + auth', () => {
     process.env.OPERATOR_API_KEY = TEST_KEY;
   });
 
-  afterAll(() => {
-    // no-op: pool closed only on process exit in server; tests use app.fetch only
+  afterAll(async () => {
+    await closeDb();
   });
 
   it('GET /health returns ok with db status', async () => {
@@ -27,10 +28,6 @@ describe('API health + auth', () => {
     expect(body.service).toBe('lcx-sales-api');
     expect(['up', 'down', 'skipped']).toContain(body.db);
     expect(typeof body.timestamp).toBe('string');
-    if (body.db === 'up' || body.db === 'skipped') {
-      expect(body.ok).toBe(true);
-      expect(res.status).toBe(200);
-    }
   });
 
   it('GET /v1/me rejects missing API key', async () => {

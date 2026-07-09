@@ -1,0 +1,4 @@
+#,Competent Authority (NCA),Home Country,Issuer / Company Name,Issuer LEI,Issuer Country,CASP Name,CASP LEI,Offer Jurisdictions,Token ID (FFG),Token DTI Code(s),Whitepaper URL,Regulator Comments,Date Notified,On LCX?,BD Status,Priority,Contact Name,Contact TG/Email,BD Owner,Notes
+1,CNMV,ES,Test Project A,,KY,CASP Alpha,,,TKN001,DTI001,https://wp.example.com/a,,2026/01/15,,Not Started,,,,
+2,MFSA,MT,Test Project B,,KY,CASP Beta,,,TKN002,DTI002,https://wp.example.com/b,,2026/02/01,,Not Started,,,,
+3,CNMV,ES,Test Project C,,DE,CASP Alpha,,,TKN003,DTI003,https://wp.example.com/c,,2026/02/15,Yes,Contacted,High,,Alice alice@example.com,Nikhil,

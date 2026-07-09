@@ -1,6 +1,6 @@
 import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
-import { closeDb } from './lib/db.js';
+import { closeDb } from './db/index.js';
 import { env } from './lib/env.js';
 
 const app = createApp();
@@ -12,10 +12,9 @@ const server = serve(
     hostname: env.host,
   },
   (info) => {
-    console.log(
-      `[api] LCX Sales API listening on http://${info.address}:${info.port} (${env.nodeEnv})`,
-    );
+    console.log(`[api] LCX Sales API on http://${info.address}:${info.port} (${env.nodeEnv})`);
     console.log(`[api] health: http://127.0.0.1:${info.port}/health`);
+    console.log(`[api] projects: http://127.0.0.1:${info.port}/v1/projects`);
   },
 );
 
