@@ -17,5 +17,6 @@ export { BdPipeline } from './BdPipeline';
 export { LeadDetail } from './LeadDetail';
 export { ClaimLibrary } from './ClaimLibrary';
 export { Handoffs } from './Handoffs';
+export { SendQueue } from './SendQueue';
 export { KpiDashboard } from './KpiDashboard';
 export { AuditLog } from './AuditLog';

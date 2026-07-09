@@ -219,3 +219,94 @@ export async function addDealObjection(id: string, body: { category: string; des
 export async function resolveDealObjection(dealId: string, objId: string, body: { resolution?: string }): Promise<void> {
   await request(`/v1/deals/${dealId}/objections/${objId}`, { auth: true, method: 'PATCH', body });
 }
+
+/* ── Assisted send queue ── */
+
+export interface QueueItem {
+  id: string;
+  sequenceId: string | null;
+  projectId: string;
+  projectName: string;
+  projectTicker: string | null;
+  band: string;
+  priorityScore: number;
+  personId: string | null;
+  personName: string | null;
+  personTitle: string | null;
+  personLinkedin: string | null;
+  personTelegram: string | null;
+  stepIndex: number;
+  touchIndex: number;
+  channel: string;
+  action: string;
+  subject: string | null;
+  body: string;
+  dueAt: string;
+  status: string;
+}
+
+export interface QueueCaps {
+  connectionsToday: number;
+  connectionsWeek: number;
+  messagesToday: number;
+  limits: { dailyConnections: number; weeklyConnections: number; dailyMessages: number };
+}
+
+export async function fetchSendQueue(
+  filters?: { channel?: string; status?: string },
+  signal?: AbortSignal,
+): Promise<{ items: QueueItem[]; caps: QueueCaps }> {
+  const params = new URLSearchParams();
+  if (filters?.channel) params.set('channel', filters.channel);
+  if (filters?.status) params.set('status', filters.status);
+  const qs = params.toString();
+  const res = await request<{ data: { items: QueueItem[]; caps: QueueCaps } }>(
+    `/v1/outreach/queue${qs ? `?${qs}` : ''}`,
+    { auth: true, signal },
+  );
+  return res.data;
+}
+
+export async function markQueueItemSent(id: string, body?: string): Promise<void> {
+  await request(`/v1/outreach/queue/${id}/sent`, { auth: true, method: 'POST', body: { body } });
+}
+
+export async function skipQueueItem(id: string): Promise<void> {
+  await request(`/v1/outreach/queue/${id}/skip`, { auth: true, method: 'POST', body: {} });
+}
+
+export async function snoozeQueueItem(id: string, until?: string): Promise<void> {
+  await request(`/v1/outreach/queue/${id}/snooze`, { auth: true, method: 'POST', body: { until } });
+}
+
+export async function fetchOutreachConfig(): Promise<{ lcxTelegramHandle: string | null }> {
+  const res = await request<{ data: { lcxTelegramHandle: string | null } }>(
+    '/v1/outreach/queue/config',
+    { auth: true },
+  );
+  return res.data;
+}
+
+/* ── Reply drafts + telegram conversion ── */
+
+export interface ReplyDraft {
+  angle: 'meeting' | 'telegram' | 'info';
+  subject: string;
+  body: string;
+}
+
+export async function fetchReplyDrafts(handoffId: string): Promise<{ drafts: ReplyDraft[]; warnings: string[] }> {
+  const res = await request<{ data: { drafts: ReplyDraft[]; warnings: string[] } }>(
+    `/v1/handoffs/${handoffId}/reply-drafts`,
+    { auth: true },
+  );
+  return res.data;
+}
+
+export async function markHandoffMovedToTelegram(handoffId: string): Promise<void> {
+  await request(`/v1/handoffs/${handoffId}/moved-to-telegram`, { auth: true, method: 'POST', body: {} });
+}
+
+export async function logManualReply(projectId: string, channel: 'email' | 'linkedin'): Promise<void> {
+  await request('/v1/handoffs/reply', { auth: true, method: 'POST', body: { projectId, channel } });
+}

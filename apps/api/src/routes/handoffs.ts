@@ -13,11 +13,105 @@ import {
   addNote,
   reEnrollHandoff,
   createHandoff,
-  pollLinkedInReplies,
+  markMovedToTelegram,
 } from '../outreach/handoffs.js';
 import type { HandoffStatus } from '../outreach/handoffs.js';
+import { generateReplyDrafts, type Channel, type Jurisdiction } from '@lcx/shared';
+
+
+/** Raw SQL rows are snake_case; the SPA speaks camelCase. */
+function mapHandoffRow(r: Record<string, unknown>): Record<string, unknown> {
+  return {
+    id: r.id,
+    projectId: r.project_id,
+    personId: r.person_id,
+    channel: r.channel,
+    triggerMessageId: r.trigger_message_id,
+    triggerReason: r.trigger_reason,
+    status: r.status,
+    assignedTo: r.assigned_to,
+    summary: r.summary,
+    projectName: r.project_name,
+    projectTicker: r.project_ticker,
+    personName: r.person_name,
+    personEmail: r.person_email,
+    personLinkedin: r.person_linkedin,
+    personTelegram: r.person_telegram,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+    ...(r.events ? { events: r.events } : {}),
+  };
+}
 
 export const handoffRoutes = new Hono<{ Variables: AuthVariables }>();
+
+/**
+ * GET /v1/handoffs/:id/reply-drafts — 3 deterministic reply drafts
+ * (meeting / telegram / info angles), each ending with the Telegram pull.
+ */
+handoffRoutes.get('/:id/reply-drafts', requireOperator, async (c) => {
+  const { id } = c.req.param();
+  try {
+    const handoff = await getHandoff(id);
+    if (!handoff) return c.json({ error: 'Handoff not found', code: 'NOT_FOUND' }, 404);
+
+    const db = getDb();
+    let repliedToTouchIndex: number | null = null;
+    if (handoff.trigger_message_id) {
+      const [msg] = await db
+        .select({ touchIndex: schema.messages.touchIndex })
+        .from(schema.messages)
+        .where(sql`${schema.messages.id} = ${handoff.trigger_message_id}`)
+        .limit(1)
+        .execute();
+      repliedToTouchIndex = msg?.touchIndex ?? null;
+    }
+
+    const [project] = await db
+      .select({ jurisdiction: schema.projects.jurisdiction, region: schema.projects.region })
+      .from(schema.projects)
+      .where(sql`${schema.projects.id} = ${handoff.project_id}`)
+      .limit(1)
+      .execute();
+
+    const scoreRows = await db
+      .select({ band: schema.scores.band })
+      .from(schema.scores)
+      .where(sql`${schema.scores.projectId} = ${handoff.project_id}`)
+      .limit(1)
+      .execute();
+
+    const result = generateReplyDrafts({
+      projectName: String(handoff.project_name ?? 'your project'),
+      projectTicker: handoff.project_ticker ? String(handoff.project_ticker) : null,
+      projectBand: scoreRows[0]?.band ?? 'unscored',
+      contactName: String(handoff.person_name ?? 'there'),
+      channel: (handoff.channel as Channel) ?? 'email',
+      repliedToTouchIndex,
+      jurisdiction: (project?.region === 'us' ? 'us' : 'eu') as Jurisdiction,
+      lcxTelegramHandle: env.lcxTelegramHandle,
+    });
+
+    return c.json({ data: result, meta: { timestamp: new Date().toISOString(), version: env.version } });
+  } catch (err) {
+    console.error('[handoffs] reply-drafts error:', err);
+    return c.json({ error: 'Failed to generate reply drafts', code: 'DRAFT_ERROR' }, 500);
+  }
+});
+
+/** POST /v1/handoffs/:id/moved-to-telegram — the conversion event. */
+handoffRoutes.post('/:id/moved-to-telegram', requireOperator, async (c) => {
+  const { id } = c.req.param();
+  const operator = c.get('operator');
+  try {
+    await markMovedToTelegram(id, operator.id);
+    return c.json({ data: { id, event: 'moved_to_telegram' }, meta: { timestamp: new Date().toISOString(), version: env.version } });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Failed';
+    const code = msg.includes('not found') ? 404 : 500;
+    return c.json({ error: msg, code: 'TELEGRAM_MOVE_ERROR' }, code as 404 | 500);
+  }
+});
 
 handoffRoutes.get('/', requireOperator, async (c) => {
   const qs = c.req.query();
@@ -31,7 +125,7 @@ handoffRoutes.get('/', requireOperator, async (c) => {
       offset: Number(qs.offset) || 0,
     });
     return c.json({
-      data: result.rows,
+      data: result.rows.map((r) => mapHandoffRow(r as Record<string, unknown>)),
       meta: { total: result.total, timestamp: new Date().toISOString(), version: env.version },
     });
   } catch (err) {
@@ -45,7 +139,7 @@ handoffRoutes.get('/:id', requireOperator, async (c) => {
   try {
     const handoff = await getHandoff(id);
     if (!handoff) return c.json({ error: 'Handoff not found', code: 'NOT_FOUND' }, 404);
-    return c.json({ data: handoff, meta: { timestamp: new Date().toISOString(), version: env.version } });
+    return c.json({ data: mapHandoffRow(handoff), meta: { timestamp: new Date().toISOString(), version: env.version } });
   } catch (err) {
     console.error('[handoffs] get error:', err);
     return c.json({ error: 'Failed to get handoff', code: 'HANDOFF_GET_ERROR' }, 500);
@@ -147,11 +241,10 @@ handoffRoutes.post('/reply', requireOperator, async (c) => {
 });
 
 handoffRoutes.post('/linkedin/poll', requireOperator, async (c) => {
-  try {
-    const created = await pollLinkedInReplies();
-    return c.json({ data: { handoffsCreated: created }, meta: { timestamp: new Date().toISOString(), version: env.version } });
-  } catch (err) {
-    console.error('[handoffs] linkedin poll error:', err);
-    return c.json({ error: 'LinkedIn poll failed', code: 'LI_POLL_ERROR' }, 500);
-  }
+  // Deprecated: assisted mode means real replies land in the human's actual
+  // LinkedIn inbox — use the "Log reply" flow (POST /v1/handoffs/reply).
+  return c.json({
+    data: { deprecated: true, handoffsCreated: 0 },
+    meta: { timestamp: new Date().toISOString(), version: env.version },
+  });
 });

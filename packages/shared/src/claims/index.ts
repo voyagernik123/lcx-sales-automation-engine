@@ -31,8 +31,13 @@ export {
 export {
   validateDraftOutput,
   validateClaimsUsed,
+  validateConnectionNote,
+  LINKEDIN_CONNECT_NOTE_MAX,
 } from './messageRules.js';
 export type { RuleViolation, ValidationResult } from './messageRules.js';
 
 export { generateDraft } from './draftEngine.js';
 export type { GenerateDraftOptions } from './draftEngine.js';
+
+export { generateReplyDrafts } from './replyEngine.js';
+export type { ReplyAngle, ReplyDraftInput, ReplyDraftCandidate } from './replyEngine.js';

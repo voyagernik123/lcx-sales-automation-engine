@@ -481,6 +481,7 @@ export interface HandoffRecord {
   personName?: string;
   personEmail?: string;
   personLinkedin?: string;
+  personTelegram?: string;
   events?: HandoffEvent[];
   createdAt: string;
   updatedAt: string;

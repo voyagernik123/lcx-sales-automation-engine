@@ -40,9 +40,14 @@ export function generateReplyDrafts(input: ReplyDraftInput): {
   if (!handle) warnings.push('LCX_TELEGRAM_HANDLE not configured — drafts contain a placeholder');
   const tg = telegramPull(handle || 'YOUR_TELEGRAM_HANDLE');
 
-  const claims = getClaimsForJurisdictionAndCategory(input.jurisdiction, 'listing_package');
+  // Claims are tagged per-jurisdiction OR 'global' — accept both
+  const forCategory = (category: Parameters<typeof getClaimsForJurisdictionAndCategory>[1]) => {
+    const specific = getClaimsForJurisdictionAndCategory(input.jurisdiction, category);
+    return specific.length > 0 ? specific : getClaimsForJurisdictionAndCategory('global' as Jurisdiction, category);
+  };
+  const claims = forCategory('listing_package');
   const claim = claims[0]?.text ?? '';
-  const liquidityClaims = getClaimsForJurisdictionAndCategory(input.jurisdiction, 'liquidity');
+  const liquidityClaims = forCategory('liquidity');
   const liquidityClaim = liquidityClaims[0]?.text ?? claim;
 
   const sig = input.channel === 'email' ? `\n\nBest,\n${sender}` : `\n\n— ${sender}`;

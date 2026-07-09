@@ -4,7 +4,7 @@ import * as schema from '../db/schema.js';
 import { randomUUID } from 'node:crypto';
 
 export type HandoffStatus = 'open' | 'in_progress' | 'resolved_won_path' | 'resolved_lost' | 're_nurture';
-export type HandoffEventType = 'created' | 'assigned' | 'note' | 'status_change' | 're_enrolled';
+export type HandoffEventType = 'created' | 'assigned' | 'note' | 'status_change' | 're_enrolled' | 'moved_to_telegram';
 
 const VALID_TRANSITIONS: Record<HandoffStatus, HandoffStatus[]> = {
   open: ['in_progress', 'resolved_won_path', 'resolved_lost', 're_nurture'],
@@ -109,7 +109,7 @@ export async function listHandoffs(filters: {
   const [dataResult, countResult] = await Promise.all([
     db.execute(sql`
       SELECT h.*, p.name AS project_name, p.ticker AS project_ticker,
-             pe.name AS person_name, pe.email AS person_email, pe.linkedin AS person_linkedin
+             pe.name AS person_name, pe.email AS person_email, pe.linkedin AS person_linkedin, pe.telegram AS person_telegram
       FROM ${schema.handoffs} h
       LEFT JOIN ${schema.projects} p ON p.id = h.project_id
       LEFT JOIN ${schema.people} pe ON pe.id = h.person_id
@@ -132,7 +132,7 @@ export async function getHandoff(id: string): Promise<Record<string, unknown> | 
   const [dataResult, eventsResult] = await Promise.all([
     db.execute(sql`
       SELECT h.*, p.name AS project_name, p.ticker AS project_ticker,
-             pe.name AS person_name, pe.email AS person_email, pe.linkedin AS person_linkedin
+             pe.name AS person_name, pe.email AS person_email, pe.linkedin AS person_linkedin, pe.telegram AS person_telegram
       FROM ${schema.handoffs} h
       LEFT JOIN ${schema.projects} p ON p.id = h.project_id
       LEFT JOIN ${schema.people} pe ON pe.id = h.person_id
@@ -241,6 +241,39 @@ async function addHandoffEvent(
 
 export async function addNote(handoffId: string, actor: string, note: string): Promise<void> {
   await addHandoffEvent(handoffId, 'note', actor, note);
+}
+
+/**
+ * The conversion event that matters: the lead agreed to continue on Telegram,
+ * where deals close personally. Tracked for the reply-to-telegram KPI.
+ */
+export async function markMovedToTelegram(id: string, actor: string): Promise<void> {
+  const db = getDb();
+  const [handoff] = await db
+    .select({ id: schema.handoffs.id, status: schema.handoffs.status })
+    .from(schema.handoffs)
+    .where(sql`${schema.handoffs.id} = ${id}`)
+    .limit(1)
+    .execute();
+  if (!handoff) throw new Error('Handoff not found');
+
+  if (handoff.status === 'open') {
+    await db
+      .update(schema.handoffs)
+      .set({ status: 'in_progress', updatedAt: new Date() })
+      .where(sql`${schema.handoffs.id} = ${id}`)
+      .execute();
+  }
+
+  await addHandoffEvent(id, 'moved_to_telegram', actor, 'Conversation moved to Telegram');
+  await db.insert(schema.auditLog).values({
+    id: randomUUID(),
+    actor,
+    action: 'handoff_moved_to_telegram',
+    entity: 'handoffs',
+    entityId: id,
+    meta: {},
+  });
 }
 
 export async function reEnrollHandoff(id: string, actor: string): Promise<void> {

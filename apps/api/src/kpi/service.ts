@@ -29,6 +29,11 @@ export interface KpiDashboard {
     stalled: number;
     overdue: number;
   };
+  telegramConversion: {
+    handoffs: number;
+    moved: number;
+    rate: number;
+  };
 }
 
 export async function computeKpis(): Promise<KpiDashboard> {
@@ -48,6 +53,14 @@ export async function computeKpis(): Promise<KpiDashboard> {
   const totalWon = Number((await db.execute(sql`SELECT COUNT(*) AS count FROM deals WHERE stage = 'won'`)).rows?.[0]?.count ?? 0);
 
   const funnel = { enrolled, replied, proposal, won: totalWon };
+
+  const totalHandoffs = Number((await db.execute(sql`SELECT COUNT(*) AS count FROM handoffs`)).rows?.[0]?.count ?? 0);
+  const movedToTelegram = Number((await db.execute(sql`SELECT COUNT(DISTINCT handoff_id) AS count FROM handoff_events WHERE event_type = 'moved_to_telegram'`)).rows?.[0]?.count ?? 0);
+  const telegramConversion = {
+    handoffs: totalHandoffs,
+    moved: movedToTelegram,
+    rate: totalHandoffs > 0 ? Math.round((movedToTelegram / totalHandoffs) * 100) : 0,
+  };
 
   const replyRows = await db.execute(sql`
     SELECT
@@ -191,6 +204,7 @@ export async function computeKpis(): Promise<KpiDashboard> {
     stalledDeals,
     postListingExpansion: { totalWon, withExpansion, expansionRevenue },
     weeklyView: { hot, stalled: stalledCount, overdue },
+    telegramConversion,
   };
 }
 

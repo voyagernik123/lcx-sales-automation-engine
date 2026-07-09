@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useState } from 'react';
-import { MessageSquare, ExternalLink, User, RefreshCw, ChevronLeft, MessageCircle, ThumbsUp, ThumbsDown, RotateCcw } from 'lucide-react';
-import { fetchHandoffs, claimHandoff, updateHandoffStatus, addHandoffNote, reEnrollHandoff } from '@/lib/api/bd';
+import { MessageSquare, ExternalLink, User, RefreshCw, ChevronLeft, MessageCircle, ThumbsUp, ThumbsDown, RotateCcw, Send, Copy } from 'lucide-react';
+import { fetchHandoffs, claimHandoff, updateHandoffStatus, addHandoffNote, reEnrollHandoff, fetchReplyDrafts, markHandoffMovedToTelegram, type ReplyDraft } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
 import { HANDOFF_STATUS_COLORS, HANDOFF_STATUS_LABELS } from '@/types/bd';
 import type { HandoffRecord, HandoffEvent } from '@/types/bd';
@@ -35,6 +35,92 @@ function HandoffEvents({ events }: { events: HandoffEvent[] }) {
         </div>
       ))}
       {events.length === 0 && <p className="text-[10px] text-grey italic">No events yet</p>}
+    </div>
+  );
+}
+
+function ReplyDrafts({ handoffId, onMoved }: { handoffId: string; onMoved: () => void }) {
+  const [drafts, setDrafts] = useState<ReplyDraft[]>([]);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [active, setActive] = useState(0);
+  const [body, setBody] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const load = async () => {
+    try {
+      const res = await fetchReplyDrafts(handoffId);
+      setDrafts(res.drafts);
+      setWarnings(res.warnings);
+      setBody(res.drafts[0]?.body ?? '');
+      setLoaded(true);
+    } catch {
+      toast('error', 'Failed to load reply drafts');
+    }
+  };
+
+  const pick = (i: number) => {
+    setActive(i);
+    setBody(drafts[i]?.body ?? '');
+  };
+
+  const copy = async () => {
+    await navigator.clipboard.writeText(body);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+
+  const moved = async () => {
+    setBusy(true);
+    try {
+      await markHandoffMovedToTelegram(handoffId);
+      toast('success', 'Marked: moved to Telegram');
+      onMoved();
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!loaded) {
+    return (
+      <button onClick={() => void load()} className="rounded border border-line px-2 py-1 text-[10px] font-bold hover:bg-ice-soft dark:hover:bg-ice-soft/10 flex items-center gap-1">
+        <MessageCircle size={10} /> Generate reply drafts
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded border border-line p-2 space-y-2">
+      <div className="flex items-center gap-1">
+        {drafts.map((d, i) => (
+          <button
+            key={d.angle}
+            onClick={() => pick(i)}
+            className={`rounded px-2 py-0.5 text-[9px] font-bold uppercase ${i === active ? 'bg-cyan-600 text-white' : 'border border-line hover:bg-ice-soft dark:hover:bg-ice-soft/10'}`}
+          >
+            {d.angle}
+          </button>
+        ))}
+        <div className="flex-1" />
+        <button onClick={() => void copy()} className="rounded border border-line px-2 py-0.5 text-[9px] font-bold flex items-center gap-1 hover:bg-ice-soft dark:hover:bg-ice-soft/10">
+          <Copy size={9} /> {copied ? 'Copied' : 'Copy'}
+        </button>
+        <button onClick={() => void moved()} disabled={busy} className="rounded bg-sky-600 text-white px-2 py-0.5 text-[9px] font-bold flex items-center gap-1 hover:bg-sky-700 disabled:opacity-50">
+          <Send size={9} /> Moved to Telegram
+        </button>
+      </div>
+      {warnings.map((w) => (
+        <p key={w} className="text-[9px] text-amber-600">{w}</p>
+      ))}
+      <textarea
+        value={body}
+        onChange={(e) => setBody(e.target.value)}
+        rows={7}
+        className="w-full rounded border border-line p-1.5 text-[10px] leading-relaxed focus:outline-none"
+      />
     </div>
   );
 }
@@ -135,8 +221,20 @@ function HandoffDetail({ handoff, onBack, onRefresh }: { handoff: HandoffRecord;
               <ExternalLink size={9} /> LinkedIn Profile
             </a>
           )}
+          {handoff.personTelegram && (
+            <a
+              href={`https://t.me/${handoff.personTelegram.replace(/^@/, '').replace(/^https?:\/\/t\.me\//, '')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-sky-600 dark:text-sky-400 hover:underline"
+            >
+              <Send size={9} /> Telegram: {handoff.personTelegram}
+            </a>
+          )}
         </div>
       )}
+
+      <ReplyDrafts handoffId={handoff.id} onMoved={onRefresh} />
 
       {/* Actions */}
       <div className="flex flex-wrap items-center gap-1.5">

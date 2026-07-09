@@ -7,6 +7,7 @@ import { healthRoutes } from './routes/health.js';
 import { meRoutes } from './routes/me.js';
 import { projectsRoutes } from './routes/projects.js';
 import { outreachRoutes } from './routes/outreach.js';
+import { queueRoutes } from './routes/queue.js';
 import { handoffRoutes } from './routes/handoffs.js';
 import { dealRoutes } from './routes/deals.js';
 import { kpiRoutes } from './routes/kpis.js';
@@ -36,6 +37,7 @@ export function createApp() {
   app.route('/health', healthRoutes);
   app.route('/v1/me', meRoutes);
   app.route('/v1/projects', projectsRoutes);
+  app.route('/v1/outreach/queue', queueRoutes);
   app.route('/v1/outreach', outreachRoutes);
   app.route('/v1/handoffs', handoffRoutes);
   app.route('/v1/deals', dealRoutes);

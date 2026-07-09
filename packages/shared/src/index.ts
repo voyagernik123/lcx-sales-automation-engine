@@ -57,9 +57,10 @@ export {
   CLAIM_DISCLAIMER,
   getTemplates, getTemplateByTouch, getTemplateById,
   validateDraftOutput, validateClaimsUsed,
-  generateDraft,
+  validateConnectionNote, LINKEDIN_CONNECT_NOTE_MAX,
+  generateDraft, generateReplyDrafts,
 } from './claims/index.js';
-export type { GenerateDraftOptions } from './claims/index.js';
+export type { GenerateDraftOptions, ReplyAngle, ReplyDraftInput, ReplyDraftCandidate } from './claims/index.js';
 
 // Outreach sequences (Slice 9)
 export type {

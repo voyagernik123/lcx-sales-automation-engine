@@ -1,6 +1,6 @@
 import { createBrowserRouter } from 'react-router-dom';
 import { AppLayout } from '@/components/layout';
-import { Dashboard, OntologyExplorer, StateMap, ProductMatrix, Simulator, Settings, HoweyCalculator, ScenarioPlanner, ReadinessStack, BriefGenerator, CapitalEstimator, Roadmap, RedFlags, CompetitionAnalysis, ProductIntelligence, BdPipeline, LeadDetail, ClaimLibrary, Handoffs, KpiDashboard, AuditLog } from '@/pages';
+import { Dashboard, OntologyExplorer, StateMap, ProductMatrix, Simulator, Settings, HoweyCalculator, ScenarioPlanner, ReadinessStack, BriefGenerator, CapitalEstimator, Roadmap, RedFlags, CompetitionAnalysis, ProductIntelligence, BdPipeline, LeadDetail, ClaimLibrary, Handoffs, SendQueue, KpiDashboard, AuditLog } from '@/pages';
 
 export const router = createBrowserRouter([
   {
@@ -26,6 +26,7 @@ export const router = createBrowserRouter([
       { path: 'bd-pipeline/:id', element: <LeadDetail /> },
       { path: 'claim-library', element: <ClaimLibrary /> },
       { path: 'outreach', element: <Handoffs /> },
+      { path: 'send-queue', element: <SendQueue /> },
       { path: 'bd-kpis', element: <KpiDashboard /> },
       { path: 'audit-log', element: <AuditLog /> },
     ],
