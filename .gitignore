@@ -1,17 +1,23 @@
 node_modules/
 dist/
+build/
 .env
 .env.local
 .env.*.local
+!.env.example
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
 *.log
+coverage/
+.turbo/
+*.tsbuildinfo
 
-# Research PDF
+# Research / local scratch
 LCX USA.pdf
 scratch_search_pdf.py
 scratch_pdf_*.txt
 
-
+# Postgres local volume noise (compose named volume preferred)
+.pgdata/
