@@ -262,121 +262,13 @@ projectsRoutes.post('/', requireOperator, async (c) => {
  * POST /v1/projects/score — Recompute scores for all projects.
  */
 projectsRoutes.post('/score', requireOperator, async (c) => {
-  const db = getDb();
-
   try {
-    const projectRows = await db
-      .select({
-        id: schema.projects.id,
-        name: schema.projects.name,
-        website: schema.projects.website,
-        ticker: schema.projects.ticker,
-        chain: schema.projects.chain,
-        source: schema.projects.source,
-        esmaTokenId: schema.projects.esmaTokenId,
-        dti: schema.projects.dti,
-        jurisdiction: schema.projects.jurisdiction,
-        whitepaperUrl: schema.projects.whitepaperUrl,
-        category: schema.projects.category,
-        marketCap: schema.projects.marketCap,
-        listedOnLcx: schema.projects.listedOnLcx,
-      })
-      .from(schema.projects)
-      .execute();
-
-    let scored = 0;
-    let errors = 0;
-    const bandCounts: Record<string, number> = {};
-
-    for (const p of projectRows) {
-      try {
-        const peopleRows = await db
-          .select({
-            name: schema.people.name,
-            email: schema.people.email,
-            telegram: schema.people.telegram,
-            linkedin: schema.people.linkedin,
-          })
-          .from(schema.people)
-          .where(sql`${schema.people.projectId} = ${p.id}`)
-          .execute();
-
-        const signalRows = await db
-          .select({
-            kind: schema.signals.kind,
-            payload: schema.signals.payload,
-          })
-          .from(schema.signals)
-          .where(sql`${schema.signals.projectId} = ${p.id}`)
-          .execute();
-
-        const result = scoreProject(
-          {
-            name: p.name,
-            website: p.website ?? undefined,
-            ticker: p.ticker ?? undefined,
-            chain: p.chain ?? undefined,
-            jurisdiction: p.jurisdiction ?? undefined,
-            whitepaperUrl: p.whitepaperUrl ?? undefined,
-            category: p.category ?? undefined,
-            marketCap: p.marketCap ?? undefined,
-            source: p.source,
-            esmaTokenId: p.esmaTokenId ?? undefined,
-            dti: p.dti ?? undefined,
-            listedOnLcx: p.listedOnLcx,
-          },
-          peopleRows.map((r) => ({
-            name: r.name ?? undefined,
-            email: r.email ?? undefined,
-            telegram: r.telegram ?? undefined,
-            linkedin: r.linkedin ?? undefined,
-          })),
-          signalRows.map((r) => ({
-            kind: r.kind,
-            payload: (r.payload ?? {}) as Record<string, unknown>,
-          })),
-        );
-
-        const existing = await db
-          .select({ id: schema.scores.id })
-          .from(schema.scores)
-          .where(sql`${schema.scores.projectId} = ${p.id}`)
-          .limit(1)
-          .execute();
-
-        const scoreData = {
-          euScore: result.euScore,
-          usPreScore: result.usPreScore,
-          usPostScore: result.usPostScore,
-          band: result.band,
-          reasons: result.reasons as unknown as Record<string, unknown>[],
-          recommendedMarket: result.recommendedMarket ?? 'none',
-          usIntelSignals: (result.usIntelSignals ?? {}) as unknown as Record<string, unknown>,
-          computedAt: new Date(result.computedAt),
-        };
-
-        if (existing.length > 0) {
-          await db
-            .update(schema.scores)
-            .set(scoreData)
-            .where(sql`${schema.scores.id} = ${existing[0].id}`)
-            .execute();
-        } else {
-          await db
-            .insert(schema.scores)
-            .values({ id: randomUUID(), projectId: p.id, ...scoreData })
-            .execute();
-        }
-
-        scored++;
-        bandCounts[result.band] = (bandCounts[result.band] || 0) + 1;
-      } catch {
-        errors++;
-      }
-    }
+    const { scoreAllPaged } = await import('../score/batch.js');
+    const { getPool } = await import('../db/index.js');
+    const report = await scoreAllPaged(getPool());
 
     return c.json({
-      data: { scored, errors, bands: bandCounts },
+      data: { scored: report.scored, errors: report.errors, bands: report.bands, modelVersion: report.modelVersion },
       meta: { timestamp: new Date().toISOString(), version: env.version },
     });
   } catch (err) {
@@ -548,10 +440,29 @@ projectsRoutes.post('/:id/enrich', requireOperator, async (c) => {
       .update(schema.projects)
       .set({
         raw: { ...currentRaw, _enrichment: enrichMeta },
+        // Typed market columns are authoritative for scoring
+        ...(result.matched && result.marketData
+          ? {
+              marketCapUsd: result.marketData.marketCap != null ? String(result.marketData.marketCap) : undefined,
+              marketCapRank: result.marketData.marketCapRank ?? undefined,
+              volume24hUsd: result.marketData.totalVolume != null ? String(result.marketData.totalVolume) : undefined,
+              priceUsd: result.marketData.currentPrice != null ? String(result.marketData.currentPrice) : undefined,
+              lastEnrichedAt: new Date(),
+            }
+          : {}),
         updatedAt: new Date(),
       })
       .where(sql`${schema.projects.id} = ${id}`)
       .execute();
+
+    // Record the id mapping so bulk refresh covers this project from now on
+    if (result.matched && result.coinId) {
+      await db.execute(sql`
+        INSERT INTO project_external_ids (id, project_id, provider, external_id, matched_by, confidence)
+        VALUES (${randomUUID()}, ${id}, 'coingecko', ${result.coinId}, 'on_demand', 'high')
+        ON CONFLICT DO NOTHING
+      `);
+    }
 
     for (const signal of result.signals) {
       await db

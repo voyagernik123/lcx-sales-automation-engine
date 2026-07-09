@@ -42,7 +42,13 @@ export type ProjectSource =
   | 'pipeline'
   | 'closed'
   | 'top100'
-  | 'manual';
+  | 'manual'
+  // Continuous universe connectors
+  | 'coinpaprika'
+  | 'coingecko'
+  | 'defillama'
+  | 'geckoterminal_new'
+  | 'esma_registry';
 
 export function normalizeUrl(raw?: string): string | undefined {
   if (!raw || raw.trim() === '') return undefined;

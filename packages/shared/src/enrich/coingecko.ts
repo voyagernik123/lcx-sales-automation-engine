@@ -148,9 +148,56 @@ export class CoinGeckoClient {
     };
   }
 
+  /**
+   * One page of the bulk markets endpoint: 250 coins/call ordered by market
+   * cap, with 30d change included. ~60 calls cover the top 15k coins.
+   */
+  async fetchMarketsPage(page: number, perPage = 250): Promise<CoinGeckoMarketRow[]> {
+    const data = await this.request<
+      {
+        id: string;
+        symbol: string;
+        name: string;
+        market_cap_rank: number | null;
+        market_cap: number | null;
+        total_volume: number | null;
+        current_price: number | null;
+        price_change_percentage_30d_in_currency?: number | null;
+        atl_date?: string | null;
+      }[]
+    >(
+      `/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=${perPage}&page=${page}` +
+        `&price_change_percentage=30d&sparkline=false`,
+    );
+
+    return (data ?? []).map((r) => ({
+      id: r.id,
+      symbol: r.symbol,
+      name: r.name,
+      marketCapRank: r.market_cap_rank ?? null,
+      marketCap: r.market_cap ?? null,
+      totalVolume: r.total_volume ?? null,
+      currentPrice: r.current_price ?? null,
+      priceChange30d: r.price_change_percentage_30d_in_currency ?? null,
+      atlDate: r.atl_date ?? null,
+    }));
+  }
+
   clearCoinList(): void {
     this.coinList = null;
   }
+}
+
+export interface CoinGeckoMarketRow {
+  id: string;
+  symbol: string;
+  name: string;
+  marketCapRank: number | null;
+  marketCap: number | null;
+  totalVolume: number | null;
+  currentPrice: number | null;
+  priceChange30d: number | null;
+  atlDate: string | null;
 }
 
 function sleep(ms: number): Promise<void> {

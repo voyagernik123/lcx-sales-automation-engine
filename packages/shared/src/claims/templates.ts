@@ -58,6 +58,50 @@ I've been following {{projectName}}'s progress on {{chain}} and think there's a 
 Looking forward to hearing your thoughts.`,
   },
 
+  // ── LinkedIn cadence (assisted one-click sends) ──
+  {
+    id: 'touch-1-linkedin-connect',
+    touchIndex: 1,
+    channel: 'linkedin',
+    subjectTemplate: '',
+    // Connection note — LinkedIn caps these at 300 chars AFTER variable fill,
+    // enforced by validateConnectionNote()
+    bodyTemplate: `Hi {{contactName}} — following {{projectName}} with interest. I lead listings at LCX, the regulated Liechtenstein exchange. Would love to connect.`,
+  },
+  {
+    id: 'touch-2-linkedin',
+    touchIndex: 2,
+    channel: 'linkedin',
+    subjectTemplate: '',
+    bodyTemplate: `Hi {{contactName}}, thanks for connecting.
+
+{{projectName}} caught our eye at LCX. {{benefitClaim}}
+
+{{question}}`,
+  },
+  {
+    id: 'touch-4-linkedin',
+    touchIndex: 4,
+    channel: 'linkedin',
+    subjectTemplate: '',
+    bodyTemplate: `Hi {{contactName}} — circling back on {{projectName}}.
+
+{{benefitClaim}}
+
+Happy to share the listing terms and timeline whenever works. Would a short call next week suit you?`,
+  },
+  {
+    id: 'touch-5-linkedin',
+    touchIndex: 5,
+    channel: 'linkedin',
+    subjectTemplate: '',
+    bodyTemplate: `Hi {{contactName}}, last note from me on {{projectName}} — no pressure at all.
+
+{{benefitClaim}}
+
+If the timing improves, I'm easy to reach here. Wishing you a great launch trajectory either way.`,
+  },
+
   // ── Touch 4 — Direct CTA ──
   {
     id: 'touch-4-telegram',

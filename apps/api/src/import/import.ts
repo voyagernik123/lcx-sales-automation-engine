@@ -55,7 +55,7 @@ const DEFAULT_JOBS: ImportJob[] = [
   { label: 'Top 100 Outreach', source: 'top100', filePath: 'top100', normalizer: normalizeTop100 },
 ];
 
-const FILE_MAP: Record<ProjectSource, string> = {
+const FILE_MAP: Partial<Record<ProjectSource, string>> = {
   esma_main: 'ESMA_MiCA_Main_Leads.csv',
   esma_casp: 'ESMA_MiCA_CASPs.csv',
   esma_emt: 'ESMA_MiCA_EMT_Issuers.csv',

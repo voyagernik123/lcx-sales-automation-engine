@@ -74,10 +74,18 @@ describe('Claim Library', () => {
 });
 
 describe('Templates', () => {
-  it('returns all 5 templates', () => {
+  it('covers every touch on email/telegram and the full linkedin cadence', () => {
     const templates = getTemplates();
-    expect(templates.length).toBe(5);
-    expect(templates.map(t => t.touchIndex).sort()).toEqual([1, 2, 3, 4, 5]);
+    expect(templates.length).toBe(9);
+    // Mixed cadence coverage
+    const byTouch = new Set(templates.map(t => `${t.touchIndex}:${t.channel}`));
+    for (const key of ['1:email', '2:email', '3:linkedin', '4:telegram', '5:email']) {
+      expect(byTouch.has(key)).toBe(true);
+    }
+    // LinkedIn-only cadence must not hit fallback templates
+    for (const touch of [1, 2, 3, 4, 5]) {
+      expect(byTouch.has(`${touch}:linkedin`)).toBe(true);
+    }
   });
 
   it('returns correct template for touch 1 email', () => {

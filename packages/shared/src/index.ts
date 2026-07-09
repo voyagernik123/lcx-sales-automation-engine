@@ -18,14 +18,29 @@ export { scoreEu } from './scoring/eu.js';
 export { scoreUs } from './scoring/us.js';
 export { scoreProject } from './scoring/orchestrator.js';
 
+// Listing propensity (who is most likely to pay)
+export type {
+  PropensityInput, PropensityWeights, PropensityResult, McapBand, VolBand,
+} from './scoring/propensity/features.js';
+export {
+  scorePropensity, combinePriority, mcapBand, volMcapBand, categoryFits, chainFits,
+} from './scoring/propensity/features.js';
+export { PROPENSITY_WEIGHTS_V1, MODEL_VERSION } from './scoring/propensity/weights.js';
+
 // Enrichment engine (Slice 4)
 export type {
-  CoinGeckoCoin, CoinGeckoMarketData,
+  CoinGeckoCoin, CoinGeckoMarketData, CoinGeckoMarketRow,
   EnrichmentResult, EnrichmentReport,
   MatchResult, EnrichableProject,
   EnrichmentSignal, EnrichmentOutput,
+  PaprikaTicker, PaprikaCoin,
+  LlamaProtocol, LlamaRaise,
+  GtNewPool,
 } from './enrich/index.js';
-export { CoinGeckoClient, matchProject, buildMatchIndex } from './enrich/index.js';
+export {
+  CoinGeckoClient, CoinPaprikaClient, DefiLlamaClient, GeckoTerminalClient,
+  matchProject, buildMatchIndex,
+} from './enrich/index.js';
 export { enrichProject, enrichBatch, formatEnrichmentReport } from './enrich/index.js';
 
 // Claim library + Draft engine (Slice 8)

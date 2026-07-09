@@ -26,6 +26,15 @@ async function main() {
     console.log('  DB connection OK\n');
 
     if (command === 'all') {
+      const { scoreAllPaged } = await import('./batch.js');
+      const report = await scoreAllPaged(pool);
+      console.log(`  Scored ${report.scored} projects in ${report.pages} pages (${report.errors} errors)\n`);
+      console.log('  Band distribution:');
+      for (const [band, n] of Object.entries(report.bands).sort((a, b) => b[1] - a[1])) {
+        console.log(`    ${band}: ${n}`);
+      }
+      console.log('\nScore all complete.');
+    } else if (command === 'all-legacy') {
       await scoreAll(db);
     } else if (command === 'project' && args[1]) {
       await scoreOne(db, args[1]);

@@ -35,6 +35,21 @@ export interface ValidationResult {
   violations: RuleViolation[];
 }
 
+/** LinkedIn caps connection-request notes at 300 chars (after variable fill). */
+export const LINKEDIN_CONNECT_NOTE_MAX = 300;
+
+export function validateConnectionNote(body: string): ValidationResult {
+  const violations: RuleViolation[] = [];
+  if (body.length > LINKEDIN_CONNECT_NOTE_MAX) {
+    violations.push({
+      rule: 'connect_note_length',
+      severity: 'error',
+      message: `Connection note is ${body.length} chars — LinkedIn caps at ${LINKEDIN_CONNECT_NOTE_MAX}`,
+    });
+  }
+  return { valid: violations.length === 0, violations };
+}
+
 export function validateDraftOutput(
   draft: DraftOutput,
   input: DraftInput,
