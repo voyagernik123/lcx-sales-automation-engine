@@ -507,7 +507,7 @@ projectsRoutes.post('/:id/enrich', requireOperator, async (c) => {
 
     const p = projectRows[0];
     const cgApiKey = env.coingeckoApiKey || undefined;
-    const cg = new CoinGeckoClient({ apiKey: cgApiKey });
+    const cg = new CoinGeckoClient({ apiKey: cgApiKey, keyType: env.coingeckoKeyType });
 
     const result = await enrichProject(
       {

@@ -37,16 +37,30 @@ export interface EnrichmentReport {
 }
 
 const CG_BASE = 'https://api.coingecko.com/api/v3';
+const CG_PRO_BASE = 'https://pro-api.coingecko.com/api/v3';
+
+export type CoinGeckoKeyType = 'demo' | 'pro';
 
 export class CoinGeckoClient {
   private apiKey: string | undefined;
+  private keyType: CoinGeckoKeyType;
   private lastRequest = 0;
   private minIntervalMs: number;
   private coinList: CoinGeckoCoin[] | null = null;
 
-  constructor(opts?: { apiKey?: string }) {
+  constructor(opts?: { apiKey?: string; keyType?: CoinGeckoKeyType }) {
     this.apiKey = opts?.apiKey;
-    this.minIntervalMs = this.apiKey ? 200 : 1500;
+    this.keyType = opts?.keyType ?? 'demo';
+    // demo plan: 30 calls/min; pro: 500/min; keyless public API: ~5-15/min
+    this.minIntervalMs = this.apiKey ? (this.keyType === 'pro' ? 200 : 2100) : 6000;
+  }
+
+  private buildUrl(path: string): string {
+    if (!this.apiKey) return `${CG_BASE}${path}`;
+    const base = this.keyType === 'pro' ? CG_PRO_BASE : CG_BASE;
+    const param = this.keyType === 'pro' ? 'x_cg_pro_api_key' : 'x_cg_demo_api_key';
+    const sep = path.includes('?') ? '&' : '?';
+    return `${base}${path}${sep}${param}=${this.apiKey}`;
   }
 
   private async request<T>(path: string, retries = 3): Promise<T> {
@@ -56,9 +70,7 @@ export class CoinGeckoClient {
       await sleep(this.minIntervalMs - elapsed);
     }
 
-    const url = this.apiKey
-      ? `${CG_BASE}${path}&x_cg_pro_api_key=${this.apiKey}`
-      : `${CG_BASE}${path}`;
+    const url = this.buildUrl(path);
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {

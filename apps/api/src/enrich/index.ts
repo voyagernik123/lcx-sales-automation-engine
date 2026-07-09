@@ -16,14 +16,15 @@ async function main() {
   const command = args[0];
   const dbUrl = process.env.DATABASE_URL ?? 'postgresql://lcx:lcx_dev_password@localhost:5432/lcx_sales';
   const cgApiKey = process.env.COINGECKO_API_KEY;
+  const cgKeyType = process.env.COINGECKO_KEY_TYPE === 'pro' ? 'pro' as const : 'demo' as const;
 
   console.log(`\nLCX Sales Automation Engine — Enrichment CLI\n`);
   console.log(`  Database: ${dbUrl.replace(/\/\/.*@/, '//***@')}`);
-  console.log(`  CoinGecko: ${cgApiKey ? 'API key set' : 'free tier (no key)'}\n`);
+  console.log(`  CoinGecko: ${cgApiKey ? `API key set (${cgKeyType})` : 'keyless (public rate limits)'}\n`);
 
   const pool = new pg.Pool({ connectionString: dbUrl });
   const db = drizzle(pool, { schema });
-  const cg = new CoinGeckoClient({ apiKey: cgApiKey });
+  const cg = new CoinGeckoClient({ apiKey: cgApiKey, keyType: cgKeyType });
 
   try {
     await pool.query('SELECT 1');
