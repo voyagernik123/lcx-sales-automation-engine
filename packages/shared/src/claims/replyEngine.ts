@@ -74,7 +74,7 @@ export function generateReplyDrafts(input: ReplyDraftInput): {
     subject: input.channel === 'email' ? `Re: ${input.projectName} × LCX` : '',
     body:
       `Thanks for getting back to me, ${input.contactName}!\n\n` +
-      `Rather than trade emails, let's keep this simple. ${claim}\n\n` +
+      `Rather than trade emails, let's keep this simple — I'd love to get ${input.projectName} moving. ${claim}\n\n` +
       `What's the best way to reach you on Telegram? Or just message me directly — ${tg}${sig}`,
     channel: input.channel,
     touchIndex: input.repliedToTouchIndex ?? 0,
