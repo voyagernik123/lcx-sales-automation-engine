@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: lcx-sales-api
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: OPERATOR_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        value: https://lcx-sales-automation-engine.pages.dev

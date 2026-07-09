@@ -85,79 +85,113 @@ async function main() {
     await pool.query('SELECT 1');
     console.log('  DB connection OK');
 
-    const allCanonical = [
-      ...dedupeResult.groups.map((g) => g.canonical),
-      ...dedupeResult.singletons.map((g) => g.canonical),
-    ];
+    const allGroups = [...dedupeResult.groups, ...dedupeResult.singletons];
+
+    // Map every member row's raw payload back to the group's canonical DB id,
+    // so people (which carry their project's raw row) can be linked after upsert.
+    const projectIdByRawKey = new Map<string, string>();
 
     let inserted = 0;
     let updated = 0;
-    for (const p of allCanonical) {
-      const pid = randomUUID();
+    for (const g of allGroups) {
+      const p = g.canonical;
 
-      if (p.esmaTokenId) {
-        const existing = await db
-          .select({ id: schema.projects.id })
-          .from(schema.projects)
-          .where(sql`${schema.projects.esmaTokenId} = ${p.esmaTokenId}`)
-          .limit(1)
-          .execute();
-
-        if (existing.length > 0) {
-          await db
-            .update(schema.projects)
-            .set({
-              name: p.name,
-              website: p.website ?? null,
-              ticker: p.ticker ?? null,
-              chain: p.chain ?? null,
-              source: p.source,
-              dti: p.dti ?? null,
-              jurisdiction: p.jurisdiction ?? null,
-              whitepaperUrl: p.whitepaperUrl ?? null,
-              category: p.category ?? null,
-              marketCap: p.marketCap ?? null,
-              listedOnLcx: p.listedOnLcx,
-              raw: p.rawPayload,
-              updatedAt: new Date(),
-            })
-            .where(sql`${schema.projects.id} = ${existing[0].id}`)
+      // Upsert: match by esmaTokenId when present, else by (name, source)
+      const existing = p.esmaTokenId
+        ? await db
+            .select({ id: schema.projects.id })
+            .from(schema.projects)
+            .where(sql`${schema.projects.esmaTokenId} = ${p.esmaTokenId}`)
+            .limit(1)
+            .execute()
+        : await db
+            .select({ id: schema.projects.id })
+            .from(schema.projects)
+            .where(sql`${schema.projects.name} = ${p.name} AND ${schema.projects.source} = ${p.source}`)
+            .limit(1)
             .execute();
-          updated++;
-          continue;
-        }
+
+      let pid: string;
+      if (existing.length > 0) {
+        pid = existing[0].id;
+        await db
+          .update(schema.projects)
+          .set({
+            name: p.name,
+            website: p.website ?? null,
+            ticker: p.ticker ?? null,
+            chain: p.chain ?? null,
+            source: p.source,
+            dti: p.dti ?? null,
+            jurisdiction: p.jurisdiction ?? null,
+            whitepaperUrl: p.whitepaperUrl ?? null,
+            category: p.category ?? null,
+            marketCap: p.marketCap ?? null,
+            listedOnLcx: p.listedOnLcx,
+            raw: p.rawPayload,
+            updatedAt: new Date(),
+          })
+          .where(sql`${schema.projects.id} = ${pid}`)
+          .execute();
+        updated++;
+      } else {
+        pid = randomUUID();
+        await db
+          .insert(schema.projects)
+          .values({
+            id: pid,
+            name: p.name,
+            website: p.website ?? null,
+            ticker: p.ticker ?? null,
+            chain: p.chain ?? null,
+            source: p.source,
+            esmaTokenId: p.esmaTokenId ?? null,
+            dti: p.dti ?? null,
+            jurisdiction: p.jurisdiction ?? null,
+            whitepaperUrl: p.whitepaperUrl ?? null,
+            category: p.category ?? null,
+            marketCap: p.marketCap ?? null,
+            listedOnLcx: p.listedOnLcx,
+            raw: p.rawPayload,
+          })
+          .execute();
+        inserted++;
       }
 
-      await db
-        .insert(schema.projects)
-        .values({
-          id: pid,
-          name: p.name,
-          website: p.website ?? null,
-          ticker: p.ticker ?? null,
-          chain: p.chain ?? null,
-          source: p.source,
-          esmaTokenId: p.esmaTokenId ?? null,
-          dti: p.dti ?? null,
-          jurisdiction: p.jurisdiction ?? null,
-          whitepaperUrl: p.whitepaperUrl ?? null,
-          category: p.category ?? null,
-          marketCap: p.marketCap ?? null,
-          listedOnLcx: p.listedOnLcx,
-          raw: p.rawPayload,
-        })
-        .execute();
-      inserted++;
+      for (const member of g.projects) {
+        if (member.rawPayload) projectIdByRawKey.set(JSON.stringify(member.rawPayload), pid);
+      }
     }
     console.log(`  ${inserted} inserted, ${updated} updated`);
 
-    // Insert people
+    // Insert people, linked to their project via the raw row they came from
     let peopleInserted = 0;
-    for (const { person } of allPeople) {
+    let peopleSkipped = 0;
+    let peopleUnlinked = 0;
+    for (const { person, projectRaw } of allPeople) {
+      const projectId = projectIdByRawKey.get(JSON.stringify(projectRaw)) ?? null;
+      if (!projectId) peopleUnlinked++;
+
+      const existing = await db
+        .select({ id: schema.people.id })
+        .from(schema.people)
+        .where(
+          sql`${schema.people.name} = ${person.name}
+            AND ${schema.people.projectId} IS NOT DISTINCT FROM ${projectId}
+            AND ${schema.people.email} IS NOT DISTINCT FROM ${person.email ?? null}`,
+        )
+        .limit(1)
+        .execute();
+      if (existing.length > 0) {
+        peopleSkipped++;
+        continue;
+      }
+
       await db
         .insert(schema.people)
         .values({
           id: randomUUID(),
+          projectId,
           name: person.name,
           title: person.title ?? null,
           linkedin: person.linkedin ?? null,
@@ -168,7 +202,7 @@ async function main() {
         .execute();
       peopleInserted++;
     }
-    console.log(`  ${peopleInserted} people inserted`);
+    console.log(`  ${peopleInserted} people inserted, ${peopleSkipped} already present${peopleUnlinked > 0 ? `, ${peopleUnlinked} without project link` : ''}`);
 
     // Audit
     await db.insert(schema.auditLog).values({
