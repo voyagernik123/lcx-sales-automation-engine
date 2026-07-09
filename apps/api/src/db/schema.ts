@@ -168,6 +168,10 @@ export const scores = pgTable(
     reasons: jsonb('reasons').default([]).notNull(),
     recommendedMarket: text('recommended_market').default('none'),
     usIntelSignals: jsonb('us_intel_signals').default({}).notNull(),
+    propensityScore: integer('propensity_score').default(0).notNull(),
+    propensityReasons: jsonb('propensity_reasons').default([]).notNull(),
+    priorityScore: integer('priority_score').default(0).notNull(),
+    modelVersion: text('model_version'),
     computedAt: timestamp('computed_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [
@@ -572,4 +576,27 @@ export const postListingTriggers = pgTable(
     index('idx_triggers_due').on(t.dueAt),
     index('idx_triggers_status').on(t.status),
   ],
+);
+
+/* ──────────────────────────────────────────────
+ *  discovery_jobs — contact discovery crawl queue
+ * ────────────────────────────────────────────── */
+export const discoveryJobs = pgTable(
+  'discovery_jobs',
+  {
+    id: uuid('id')
+      .default(sql`gen_random_uuid()`)
+      .primaryKey(),
+    projectId: uuid('project_id')
+      .references(() => projects.id, { onDelete: 'cascade' })
+      .notNull(),
+    status: text('status').default('pending').notNull(), // pending | running | done | failed | blocked_robots
+    attempts: integer('attempts').default(0).notNull(),
+    error: text('error'),
+    result: jsonb('result').default({}).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+  },
+  (t) => [index('idx_djobs_status').on(t.status)],
 );

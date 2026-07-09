@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Globe, FileText, ExternalLink, ChevronDown, ChevronRight, CheckCircle, XCircle, RefreshCw, Search, Users, Activity, Database, Award, Plus, Pencil, X, Mail, Send, ThumbsUp, ThumbsDown, FileOutput } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useFilterStore } from '@/stores';
-import { fetchLead, approveLead, suppressLead, triggerRescore, triggerEnrich, addPerson, updatePerson, generateDraft as apiGenerateDraft, saveDraft, fetchDrafts, updateDraft, enrollProject, pauseSequence, resumeSequence, fetchProjectSequences, fetchProjectMessages, fetchProjectDeal, createDeal, transitionDealStage, generateProposal, fetchDealEvents, fetchDealObjections, addDealObjection } from '@/lib/api/bd';
+import { fetchLead, approveLead, suppressLead, triggerRescore, triggerEnrich, enqueueContactDiscovery, runDiscoveryTick, addPerson, updatePerson, generateDraft as apiGenerateDraft, saveDraft, fetchDrafts, updateDraft, enrollProject, pauseSequence, resumeSequence, fetchProjectSequences, fetchProjectMessages, fetchProjectDeal, createDeal, transitionDealStage, generateProposal, fetchDealEvents, fetchDealObjections, addDealObjection } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
 import { ScoreBadge, BandBadge, MarketTag } from '@/components/bd';
 import { deriveMarketTag, CHANNEL_LABELS, TOUCH_LABELS, STAGE_COLORS, STAGE_LABELS } from '@/types/bd';
@@ -390,6 +390,24 @@ export function LeadDetail() {
         >
           <Search size={12} className={clsx(actionLoading === 'enrich' && 'animate-spin')} />
           {actionLoading === 'enrich' ? 'Enriching...' : 'Force Enrich'}
+        </button>
+
+        <button
+          onClick={() =>
+            handleAction(
+              'discover',
+              async () => {
+                await enqueueContactDiscovery(lead.id);
+                await runDiscoveryTick();
+              },
+              'Contact discovery finished — check People',
+            )
+          }
+          disabled={actionLoading === 'discover'}
+          className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+        >
+          <Search size={12} className={clsx(actionLoading === 'discover' && 'animate-spin')} />
+          {actionLoading === 'discover' ? 'Crawling site...' : 'Find Contact Email'}
         </button>
       </div>
 

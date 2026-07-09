@@ -279,3 +279,121 @@ outreachRoutes.post('/webhooks/email', async (c) => {
     return c.json({ error: 'Webhook processing failed', code: 'WEBHOOK_ERROR' }, 500);
   }
 });
+
+/**
+ * Unsubscribe — token is the auth (HMAC of the email address). GET renders a
+ * tiny confirmation page; POST is the RFC 8058 one-click target.
+ */
+import { unsubscribeToken, isSuppressed } from '../outreach/scheduler.js';
+import { createHandoff } from '../outreach/handoffs.js';
+
+async function applyUnsubscribe(email: string): Promise<void> {
+  const db = getDb();
+  await db
+    .insert(schema.suppression)
+    .values({ id: randomUUID(), email, reason: 'unsubscribe' })
+    .execute();
+  // Pause active sequences targeting this address
+  await db.execute(sql`
+    UPDATE outreach_sequences os SET status = 'paused', updated_at = NOW()
+    FROM people pe
+    WHERE os.person_id = pe.id AND pe.email = ${email} AND os.status = 'active'
+  `);
+  await db
+    .insert(schema.auditLog)
+    .values({ id: randomUUID(), actor: 'public', action: 'unsubscribe', entity: 'suppression', entityId: email, meta: {} })
+    .execute();
+}
+
+function validUnsubRequest(c: { req: { query: (k: string) => string | undefined } }): string | null {
+  const email = c.req.query('email')?.toLowerCase();
+  const token = c.req.query('t');
+  if (!email || !token) return null;
+  if (unsubscribeToken(email) !== token) return null;
+  return email;
+}
+
+outreachRoutes.get('/unsubscribe', async (c) => {
+  const email = validUnsubRequest(c);
+  if (!email) return c.text('Invalid unsubscribe link.', 400);
+  await applyUnsubscribe(email);
+  return c.html(
+    `<!doctype html><meta charset="utf-8"><title>Unsubscribed</title>
+     <body style="font-family:system-ui;max-width:32rem;margin:4rem auto;text-align:center">
+       <h2>You're unsubscribed</h2>
+       <p>${email} will not receive further outreach from LCX.</p>
+     </body>`,
+  );
+});
+
+outreachRoutes.post('/unsubscribe', async (c) => {
+  const email = validUnsubRequest(c);
+  if (!email) return c.json({ error: 'Invalid unsubscribe token', code: 'INVALID_TOKEN' }, 400);
+  await applyUnsubscribe(email);
+  return c.json({ ok: true });
+});
+
+/**
+ * Inbound reply webhook — Cloudflare Email Worker forwards parsed replies
+ * here. Secret header is the auth; sender is matched to a person and a
+ * handoff is created (reply = full stop).
+ */
+outreachRoutes.post('/webhooks/inbound', async (c) => {
+  const secret = c.req.header('x-inbound-secret');
+  if (!env.inboundWebhookSecret || secret !== env.inboundWebhookSecret) {
+    return c.json({ error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
+  }
+
+  const body: { from?: string; subject?: string; text?: string } = await c.req
+    .json<{ from?: string; subject?: string; text?: string }>()
+    .catch(() => ({}));
+  const from = body.from?.toLowerCase().match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i)?.[0];
+  if (!from) return c.json({ error: 'No parseable sender', code: 'VALIDATION' }, 400);
+
+  const db = getDb();
+
+  // Honor suppression silently
+  const [person] = await db
+    .select({ id: schema.people.id, projectId: schema.people.projectId })
+    .from(schema.people)
+    .where(sql`LOWER(${schema.people.email}) = ${from}`)
+    .limit(1)
+    .execute();
+
+  if (!person?.projectId) {
+    await db
+      .insert(schema.auditLog)
+      .values({ id: randomUUID(), actor: 'inbound', action: 'inbound_unmatched', entity: 'messages', entityId: from, meta: { subject: body.subject ?? '' } })
+      .execute();
+    return c.json({ data: { matched: false } });
+  }
+
+  if (await isSuppressed({ projectId: person.projectId, email: from })) {
+    return c.json({ data: { matched: true, suppressed: true } });
+  }
+
+  // Latest outbound message to this person for thread context
+  const [lastMsg] = await db
+    .select({ id: schema.messages.id })
+    .from(schema.messages)
+    .where(sql`LOWER(${schema.messages.toEmail}) = ${from}`)
+    .orderBy(desc(schema.messages.createdAt))
+    .limit(1)
+    .execute();
+
+  const handoff = await createHandoff({
+    projectId: person.projectId,
+    personId: person.id,
+    channel: 'email',
+    triggerMessageId: lastMsg?.id,
+    triggerReason: 'email_reply',
+  });
+
+  // Store the reply text on the handoff summary (first 500 chars)
+  const replyText = (body.text ?? '').slice(0, 500);
+  if (replyText) {
+    await db.execute(sql`UPDATE handoffs SET summary = ${replyText} WHERE id = ${(handoff as { id: string }).id}`);
+  }
+
+  return c.json({ data: { matched: true, handoffId: (handoff as { id: string }).id } }, 201);
+});

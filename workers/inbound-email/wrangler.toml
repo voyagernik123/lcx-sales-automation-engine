@@ -1,0 +1,7 @@
+name = "lcx-inbound-email"
+main = "worker.js"
+compatibility_date = "2026-01-01"
+
+# Set via dashboard or `wrangler secret put`:
+#   API_URL         e.g. https://lcx-sales-api.onrender.com
+#   INBOUND_SECRET  same value as the API's INBOUND_WEBHOOK_SECRET

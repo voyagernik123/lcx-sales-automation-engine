@@ -310,3 +310,17 @@ export async function markHandoffMovedToTelegram(handoffId: string): Promise<voi
 export async function logManualReply(projectId: string, channel: 'email' | 'linkedin'): Promise<void> {
   await request('/v1/handoffs/reply', { auth: true, method: 'POST', body: { projectId, channel } });
 }
+
+/* ── Contact discovery ── */
+
+export async function enqueueContactDiscovery(projectId: string): Promise<void> {
+  await request(`/v1/discovery/projects/${projectId}`, { auth: true, method: 'POST', body: {} });
+}
+
+export async function runDiscoveryTick(): Promise<{ processed: number; emailsFound: number; failed: number }> {
+  const res = await request<{ data: { processed: number; emailsFound: number; failed: number } }>(
+    '/v1/discovery/tick',
+    { auth: true, method: 'POST', body: {} },
+  );
+  return res.data;
+}
