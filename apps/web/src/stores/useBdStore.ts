@@ -25,7 +25,7 @@ const initialFilters: BdFilters = {
   listedOnLcx: null,
   hasContact: null,
   marketRecommendation: '',
-  sort: 'eu_score',
+  sort: 'priority',
   order: 'desc',
   search: '',
 };

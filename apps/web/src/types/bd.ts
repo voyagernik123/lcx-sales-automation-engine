@@ -33,6 +33,10 @@ export interface BdLead {
   usPostScore: number;
   band: ScoreBand;
   recommendedMarket?: RecommendedMarket;
+  propensityScore?: number;
+  priorityScore?: number;
+  marketCapUsd?: number | null;
+  lastEnrichedAt?: string | null;
   peopleCount: number;
   verifiedContactCount: number;
   createdAt: string;
@@ -69,7 +73,7 @@ export interface BdFilters {
   listedOnLcx: boolean | null;
   hasContact: boolean | null;
   marketRecommendation: RecommendedMarket | '';
-  sort: 'eu_score' | 'us_pre' | 'us_post' | 'name' | 'created';
+  sort: 'priority' | 'propensity' | 'eu_score' | 'us_pre' | 'us_post' | 'market_cap' | 'name' | 'created';
   order: 'asc' | 'desc';
   search: string;
 }

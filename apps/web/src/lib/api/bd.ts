@@ -3,6 +3,7 @@ import type { BdPipelineResponse, BdFilters, LeadDetailResponse, DraftGenerateRe
 
 export async function fetchBdPipeline(
   filters: BdFilters,
+  page: { limit?: number; offset?: number } = {},
   signal?: AbortSignal,
 ): Promise<BdPipelineResponse> {
   const params = new URLSearchParams();
@@ -12,11 +13,13 @@ export async function fetchBdPipeline(
   if (filters.source) params.set('source', filters.source);
   if (filters.band) params.set('band', filters.band);
   if (filters.listedOnLcx !== null) params.set('listed', String(filters.listedOnLcx));
+  if (filters.hasContact !== null) params.set('hasContact', String(filters.hasContact));
   if (filters.marketRecommendation) params.set('marketRecommendation', filters.marketRecommendation);
   if (filters.search) params.set('search', filters.search);
   params.set('sort', filters.sort);
   params.set('order', filters.order);
-  params.set('limit', '200');
+  params.set('limit', String(page.limit ?? 50));
+  if (page.offset) params.set('offset', String(page.offset));
 
   const qs = params.toString();
   return request<BdPipelineResponse>(`/v1/projects${qs ? `?${qs}` : ''}`, { auth: true, signal });

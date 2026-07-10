@@ -1,0 +1,63 @@
+# Scheduled batch jobs — run the API's job CLIs directly against Supabase.
+# Free (GitHub Actions minutes), immune to Render's free-tier spin-down.
+#
+# Repo secrets required (Settings → Secrets and variables → Actions):
+#   DATABASE_URL        Supabase SESSION POOLER string (GH runners need IPv4)
+#   COINGECKO_API_KEY   demo key
+name: scheduled-jobs
+
+on:
+  schedule:
+    - cron: '0 5 * * *'   # market_refresh — daily 05:00 UTC
+    - cron: '0 6 * * *'   # discover_new_tokens — daily 06:00 UTC
+    - cron: '0 7 * * *'   # score_refresh — daily 07:00 UTC
+    - cron: '50 23 * * *' # kpi_snapshot — daily 23:50 UTC
+    - cron: '0 3 * * 1'   # universe_sync — Mondays 03:00 UTC
+    - cron: '0 4 * * 0'   # signals_prune — Sundays 04:00 UTC
+  workflow_dispatch:
+    inputs:
+      job:
+        description: 'Job to run'
+        required: true
+        type: choice
+        options:
+          - universe_sync
+          - discover_new_tokens
+          - market_refresh
+          - score_refresh
+          - kpi_snapshot
+          - signals_prune
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Resolve job from schedule
+        id: pick
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "job=${{ inputs.job }}" >> "$GITHUB_OUTPUT"
+          else
+            case "${{ github.event.schedule }}" in
+              "0 5 * * *")   echo "job=market_refresh" >> "$GITHUB_OUTPUT" ;;
+              "0 6 * * *")   echo "job=discover_new_tokens" >> "$GITHUB_OUTPUT" ;;
+              "0 7 * * *")   echo "job=score_refresh" >> "$GITHUB_OUTPUT" ;;
+              "50 23 * * *") echo "job=kpi_snapshot" >> "$GITHUB_OUTPUT" ;;
+              "0 3 * * 1")   echo "job=universe_sync" >> "$GITHUB_OUTPUT" ;;
+              "0 4 * * 0")   echo "job=signals_prune" >> "$GITHUB_OUTPUT" ;;
+              *) echo "Unknown schedule" && exit 1 ;;
+            esac
+          fi
+      - name: Run ${{ steps.pick.outputs.job }}
+        working-directory: apps/api
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+        run: npx tsx src/jobs/cli.ts "${{ steps.pick.outputs.job }}"

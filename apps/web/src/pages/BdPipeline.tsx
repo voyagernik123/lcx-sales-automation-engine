@@ -46,6 +46,8 @@ export function BdPipeline() {
 
   const [leads, setLeads] = useState<BdLead[]>([]);
   const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 50;
   const abortRef = useRef<AbortController | null>(null);
 
   const loadLeads = useCallback(async () => {
@@ -58,7 +60,7 @@ export function BdPipeline() {
 
     try {
       const filters = { market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search };
-      const res = await fetchBdPipeline(filters, controller.signal);
+      const res = await fetchBdPipeline(filters, { limit: PAGE_SIZE, offset: page * PAGE_SIZE }, controller.signal);
       if (!controller.signal.aborted) {
         const enriched = res.data.map((lead) => ({
           ...lead,
@@ -74,12 +76,17 @@ export function BdPipeline() {
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search, setLoading, setError]);
+  }, [market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search, page, setLoading, setError]);
 
   useEffect(() => {
     loadLeads();
     return () => abortRef.current?.abort();
   }, [loadLeads]);
+
+  useEffect(() => {
+    setPage(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search]);
 
   const handleSort = useCallback((field: typeof sort) => {
     if (field === sort) {
@@ -258,14 +265,38 @@ export function BdPipeline() {
         )}
 
         {!loading && !error && (
-          <LeadTable
-            leads={leads}
-            filters={{ market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search }}
-            clarityEnacted={clarityEnacted}
-            onSort={handleSort}
-            onSelect={handleSelect}
-            loading={false}
-          />
+          <>
+            <LeadTable
+              leads={leads}
+              filters={{ market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search }}
+              clarityEnacted={clarityEnacted}
+              onSort={handleSort}
+              onSelect={handleSelect}
+              loading={false}
+            />
+            <div className="flex items-center justify-between px-1 py-2 text-[10px] text-grey">
+              <span>
+                {total === 0 ? 'No leads' : `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} of ${total}`}
+              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  disabled={page === 0}
+                  onClick={() => setPage((p) => Math.max(0, p - 1))}
+                  className="rounded border border-line px-2 py-1 font-bold disabled:opacity-40 hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+                >
+                  ← Prev
+                </button>
+                <span className="font-mono">page {page + 1}/{Math.max(1, Math.ceil(total / PAGE_SIZE))}</span>
+                <button
+                  disabled={(page + 1) * PAGE_SIZE >= total}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="rounded border border-line px-2 py-1 font-bold disabled:opacity-40 hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+                >
+                  Next →
+                </button>
+              </div>
+            </div>
+          </>
         )}
       </div>
     </div>

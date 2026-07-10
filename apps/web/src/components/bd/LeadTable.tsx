@@ -25,6 +25,7 @@ const SOURCE_LABELS: Record<string, string> = {
 
 const SORT_COLUMNS: { key: BdFilters['sort']; label: string; eu?: boolean; us?: boolean }[] = [
   { key: 'name', label: 'Project' },
+  { key: 'priority', label: 'Priority' },
   { key: 'eu_score', label: 'EU Score', eu: true },
   { key: 'us_pre', label: 'US (Pre)', us: true },
   { key: 'us_post', label: 'US (Post)', us: true },
@@ -100,6 +101,22 @@ export function LeadTable({ leads, filters, clarityEnacted, onSort, onSelect, lo
                     {lead.ticker && <span className="ml-1.5 opacity-60">{lead.ticker}</span>}
                   </span>
                 </div>
+              </td>
+              <td className="py-2 px-3">
+                <span
+                  className="inline-flex items-center gap-1.5"
+                  title={`Propensity ${lead.propensityScore ?? 0}/100 × eligibility gate = priority ${lead.priorityScore ?? 0}. Market data ${lead.lastEnrichedAt ? `refreshed ${new Date(lead.lastEnrichedAt).toLocaleDateString()}` : 'not yet enriched'}.`}
+                >
+                  <span className="rounded bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:text-indigo-300 font-mono">
+                    {lead.priorityScore ?? 0}
+                  </span>
+                  <span
+                    className={clsx(
+                      'h-1.5 w-1.5 rounded-full',
+                      lead.lastEnrichedAt ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600',
+                    )}
+                  />
+                </span>
               </td>
               <td className="py-2 px-3">
                 <ScoreBadge score={lead.euScore} band={lead.band} size="sm" />
