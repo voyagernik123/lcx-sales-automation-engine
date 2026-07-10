@@ -29,11 +29,11 @@ export { PROPENSITY_WEIGHTS_V1, MODEL_VERSION } from './scoring/propensity/weigh
 
 // Enrichment engine (Slice 4)
 export type {
-  CoinGeckoCoin, CoinGeckoMarketData, CoinGeckoMarketRow,
+  CoinGeckoCoin, CoinGeckoMarketData, CoinGeckoMarketRow, CoinGeckoTicker,
   EnrichmentResult, EnrichmentReport,
   MatchResult, EnrichableProject,
   EnrichmentSignal, EnrichmentOutput,
-  PaprikaTicker, PaprikaCoin,
+  PaprikaTicker, PaprikaCoin, PaprikaMarket,
   LlamaProtocol, LlamaRaise,
   GtNewPool,
 } from './enrich/index.js';
@@ -85,3 +85,7 @@ export {
   PACKAGES, DEAL_PACKAGE, STAGES, STAGE_LABELS,
   canTransition, defaultPackageValue, generateProposal,
 } from './deals/index.js';
+
+// Deal forecasting (win probability + Monte Carlo)
+export type { ForecastDealInput, MonteCarloResult } from './forecast/index.js';
+export { dealWinProbability, monteCarloForecast } from './forecast/index.js';

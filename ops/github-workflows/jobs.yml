@@ -14,6 +14,8 @@ on:
     - cron: '50 23 * * *' # kpi_snapshot — daily 23:50 UTC
     - cron: '0 3 * * 1'   # universe_sync — Mondays 03:00 UTC
     - cron: '0 4 * * 0'   # signals_prune — Sundays 04:00 UTC
+    - cron: '30 5 * * *'  # exchange_sync — daily 05:30 UTC
+    - cron: '30 7 * * *'  # daily_rules — daily 07:30 UTC (after scoring)
   workflow_dispatch:
     inputs:
       job:
@@ -27,6 +29,8 @@ on:
           - score_refresh
           - kpi_snapshot
           - signals_prune
+          - exchange_sync
+          - daily_rules
 
 jobs:
   run:
@@ -52,6 +56,8 @@ jobs:
               "50 23 * * *") echo "job=kpi_snapshot" >> "$GITHUB_OUTPUT" ;;
               "0 3 * * 1")   echo "job=universe_sync" >> "$GITHUB_OUTPUT" ;;
               "0 4 * * 0")   echo "job=signals_prune" >> "$GITHUB_OUTPUT" ;;
+              "30 5 * * *")  echo "job=exchange_sync" >> "$GITHUB_OUTPUT" ;;
+              "30 7 * * *")  echo "job=daily_rules" >> "$GITHUB_OUTPUT" ;;
               *) echo "Unknown schedule" && exit 1 ;;
             esac
           fi

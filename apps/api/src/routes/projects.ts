@@ -168,6 +168,87 @@ projectsRoutes.get('/', requireOperator, async (c) => {
   }
 });
 
+
+/**
+ * GET /v1/projects/:id/timeline — one merged activity stream: outbound
+ * messages, handoff events, deal events, signals, discovery runs, audit trail.
+ */
+projectsRoutes.get('/:id/timeline', requireOperator, async (c) => {
+  const db = getDb();
+  const { id } = c.req.param();
+  const limit = Math.min(Number(c.req.query('limit')) || 60, 200);
+
+  try {
+    const result = await db.execute(sql`
+      SELECT * FROM (
+        SELECT 'message' AS kind, m.sent_at AS ts,
+               COALESCE(NULLIF(m.subject, ''), 'Touch ' || m.touch_index) AS title,
+               m.provider || ' → ' || COALESCE(NULLIF(m.to_name, ''), m.to_email) AS detail,
+               m.status AS badge
+        FROM messages m WHERE m.project_id = ${id} AND m.sent_at IS NOT NULL
+
+        UNION ALL
+        SELECT 'handoff' AS kind, he.created_at AS ts,
+               he.event_type AS title,
+               COALESCE(he.content, '') AS detail,
+               h.status AS badge
+        FROM handoff_events he JOIN handoffs h ON h.id = he.handoff_id
+        WHERE h.project_id = ${id}
+
+        UNION ALL
+        SELECT 'deal' AS kind, de.created_at AS ts,
+               de.event_type AS title,
+               COALESCE(de.content, COALESCE(de.old_stage, '?') || ' → ' || COALESCE(de.new_stage, '?')) AS detail,
+               de.new_stage AS badge
+        FROM deal_events de JOIN deals d ON d.id = de.deal_id
+        WHERE d.project_id = ${id}
+
+        UNION ALL
+        SELECT 'signal' AS kind, sg.observed_at AS ts,
+               sg.kind AS title,
+               CASE
+                 WHEN sg.kind = 'price_movement' THEN 'mcap move ' || COALESCE(sg.payload->>'mcapMovePct', '?') || '%'
+                 WHEN sg.kind = 'competitor_listing' THEN 'new exchange(s): ' || COALESCE(sg.payload->>'exchanges', '')
+                 ELSE ''
+               END AS detail,
+               NULL AS badge
+        FROM signals sg WHERE sg.project_id = ${id}
+
+        UNION ALL
+        SELECT 'discovery' AS kind, dj.finished_at AS ts,
+               'contact discovery' AS title,
+               COALESCE((dj.result->>'accepted'), '0') || ' emails accepted' AS detail,
+               dj.status AS badge
+        FROM discovery_jobs dj WHERE dj.project_id = ${id} AND dj.finished_at IS NOT NULL
+
+        UNION ALL
+        SELECT 'audit' AS kind, al.created_at AS ts,
+               al.action AS title,
+               al.actor AS detail,
+               NULL AS badge
+        FROM audit_log al WHERE al.entity_id = ${id}
+      ) t
+      WHERE t.ts IS NOT NULL
+      ORDER BY t.ts DESC
+      LIMIT ${limit}
+    `);
+
+    return c.json({
+      data: (result.rows ?? []).map((r: Record<string, unknown>) => ({
+        kind: r.kind,
+        ts: r.ts,
+        title: r.title,
+        detail: r.detail,
+        badge: r.badge,
+      })),
+      meta: { timestamp: new Date().toISOString(), version: env.version },
+    });
+  } catch (err) {
+    console.error('[projects] timeline error:', err);
+    return c.json({ error: 'Failed to load timeline', code: 'TIMELINE_ERROR' }, 500);
+  }
+});
+
 /**
  * GET /v1/projects/:id — Single project with related records.
  */

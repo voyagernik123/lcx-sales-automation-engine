@@ -36,3 +36,17 @@ export async function updateTriggerStatus(
     body: { status, draftContent },
   });
 }
+
+export interface ForecastData {
+  runs: number;
+  p10: number;
+  p50: number;
+  p90: number;
+  expected: number;
+  deals: { id: string; projectName: string; stage: string; value: number; winProbability: number; daysSinceUpdate: number }[];
+}
+
+export async function fetchForecast(signal?: AbortSignal): Promise<ForecastData> {
+  const res = await request<{ data: ForecastData }>('/v1/kpis/forecast', { auth: true, signal });
+  return res.data;
+}

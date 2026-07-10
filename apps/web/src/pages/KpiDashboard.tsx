@@ -2,7 +2,7 @@ import { useEffect, useCallback, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart3, Download, Clock, TrendingUp, Target, MessageSquare, DollarSign, AlertTriangle } from 'lucide-react';
 import { clsx } from 'clsx';
-import { fetchKpis, exportKpisCsv, fetchTriggers, updateTriggerStatus } from '@/lib/api/kpi';
+import { fetchKpis, exportKpisCsv, fetchTriggers, updateTriggerStatus, fetchForecast, type ForecastData } from '@/lib/api/kpi';
 import type { KpiDashboard, PostListingTrigger } from '@/types/kpi';
 import { TRIGGER_TYPE_LABELS, TRIGGER_DAY_LABELS, REVENUE_STREAM_LABELS, STAGE_LABELS } from '@/types/kpi';
 
@@ -36,6 +36,7 @@ function FunnelBar({ label, value, max, color }: { label: string; value: number;
 export function KpiDashboard() {
   const navigate = useNavigate();
   const [kpis, setKpis] = useState<KpiDashboard | null>(null);
+  const [forecast, setForecast] = useState<ForecastData | null>(null);
   const [triggers, setTriggers] = useState<PostListingTrigger[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +56,7 @@ export function KpiDashboard() {
         fetchKpis(controller.signal),
         fetchTriggers(undefined, controller.signal),
       ]);
+      fetchForecast(controller.signal).then(setForecast).catch(() => setForecast(null));
       if (!controller.signal.aborted) {
         setKpis(kpiData);
         setTriggers(triggerData);
@@ -248,6 +250,36 @@ export function KpiDashboard() {
                 </div>
               </div>
             </div>
+
+            {/* REVENUE FORECAST (Monte Carlo) */}
+            {forecast && forecast.deals.length > 0 && (
+              <div className="rounded-lg border border-line bg-card p-4">
+                <h2 className="text-xs font-bold uppercase tracking-wider text-grey mb-3 flex items-center gap-1.5">
+                  <TrendingUp size={13} /> Pipeline Forecast — {forecast.runs.toLocaleString()} simulations
+                </h2>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+                  {([['P10 (conservative)', forecast.p10], ['P50 (median)', forecast.p50], ['P90 (upside)', forecast.p90], ['Expected value', forecast.expected]] as const).map(([label, v]) => (
+                    <div key={label} className="rounded border border-line p-2.5 text-center">
+                      <div className="text-[9px] font-bold uppercase text-grey">{label}</div>
+                      <div className="text-lg font-bold font-mono">${Math.round(v).toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-1">
+                  {forecast.deals.slice(0, 8).map((d) => (
+                    <div key={d.id} className="flex items-center gap-2 text-[11px]">
+                      <span className="w-40 truncate font-semibold">{d.projectName}</span>
+                      <span className="w-20 text-grey uppercase text-[9px]">{d.stage}</span>
+                      <div className="flex-1 h-2 rounded bg-slate-100 dark:bg-slate-800 overflow-hidden">
+                        <div className="h-full bg-indigo-500" style={{ width: `${d.winProbability}%` }} />
+                      </div>
+                      <span className="w-10 text-right font-mono font-bold">{d.winProbability}%</span>
+                      <span className="w-20 text-right font-mono text-grey">${d.value.toLocaleString()}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* REVENUE + OBJECTIONS */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

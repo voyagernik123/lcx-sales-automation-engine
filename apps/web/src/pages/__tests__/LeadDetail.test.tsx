@@ -12,6 +12,9 @@ vi.mock('@/lib/api/bd', () => ({
   suppressLead: vi.fn(),
   triggerRescore: vi.fn(),
   triggerEnrich: vi.fn(),
+  enqueueContactDiscovery: vi.fn(),
+  runDiscoveryTick: vi.fn(),
+  fetchProjectTimeline: vi.fn().mockResolvedValue([]),
 }));
 
 const mockLead = {

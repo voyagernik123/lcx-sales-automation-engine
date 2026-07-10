@@ -39,7 +39,7 @@ export async function scoreAllPaged(pool: pg.Pool): Promise<BatchScoreReport> {
       `SELECT
          p.id, p.name, p.website, p.ticker, p.chain, p.jurisdiction, p.whitepaper_url,
          p.category, p.market_cap, p.source, p.esma_token_id, p.dti, p.listed_on_lcx,
-         p.market_cap_usd, p.market_cap_rank, p.volume_24h_usd, p.token_age_days,
+         p.market_cap_usd, p.market_cap_rank, p.volume_24h_usd, p.token_age_days, p.exchange_count,
          p.region, p.name_key, p.verified_contact_count,
          contacts.list AS contacts,
          sigs.list AS signals
@@ -112,7 +112,7 @@ export async function scoreAllPaged(pool: pg.Pool): Promise<BatchScoreReport> {
           tokenAgeDays: r.token_age_days != null ? Number(r.token_age_days) : null,
           fundingMonthsAgo: raise?.monthsAgo ?? null,
           fundingAmountM: raise?.amountM ?? null,
-          exchangeCount: null, // needs per-coin markets data; deliberately unknown in v1
+          exchangeCount: r.exchange_count != null ? Number(r.exchange_count) : null,
           category: (r.category as string) || null,
           chain: (r.chain as string) || null,
           region: (r.region as 'eu' | 'us' | 'other') || null,

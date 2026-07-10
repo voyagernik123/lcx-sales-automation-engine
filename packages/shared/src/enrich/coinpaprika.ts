@@ -78,10 +78,19 @@ export class CoinPaprikaClient {
     return this.request<PaprikaCoin[]>('/coins');
   }
 
-  /** Exchange listings for one coin (on-demand; cheap budget). */
-  fetchCoinExchanges(coinId: string): Promise<{ exchanges?: unknown[] }[]> {
-    return this.request(`/coins/${coinId}/markets?quotes=USD`);
+  /** Per-pair market rows for one coin — aggregate by exchange_id for listings. */
+  fetchCoinMarkets(coinId: string): Promise<PaprikaMarket[]> {
+    return this.request<PaprikaMarket[]>(`/coins/${coinId}/markets?quotes=USD`);
   }
+}
+
+export interface PaprikaMarket {
+  exchange_id: string;
+  exchange_name: string;
+  pair: string;
+  category: string | null;
+  outlier: boolean;
+  quotes?: { USD?: { volume_24h: number | null } };
 }
 
 function sleep(ms: number): Promise<void> {

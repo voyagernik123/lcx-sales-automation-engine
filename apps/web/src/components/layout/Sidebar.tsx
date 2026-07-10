@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, RotateCcw, Swords, Target, ScrollText, MessageSquare, BarChart3, Shield } from 'lucide-react';
+import { ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, RotateCcw, Swords, Target, ScrollText, MessageSquare, BarChart3, Shield } from 'lucide-react';
 import { useUIStore, useFilterStore, useAuditStore } from '@/stores';
 import { redFlags } from '@/data';
 import { domains } from '@/data/domains';
@@ -25,6 +25,9 @@ const navigation = [
   { to: '/product-intel', label: 'Product Intelligence', icon: Target },
   { to: '/bd-pipeline', label: 'BD Engine', icon: Target },
   { to: '/send-queue', label: 'Send Queue', icon: Send },
+  { to: '/exchange-gaps', label: 'Exchange Gaps', icon: Layers },
+  { to: '/deal-board', label: 'Deal Board', icon: KanbanSquare },
+  { to: '/tasks', label: 'My Tasks', icon: ListChecks },
   { to: '/outreach', label: 'Handoff Queue', icon: MessageSquare },
   { to: '/bd-kpis', label: 'KPI Dashboard', icon: BarChart3 },
   { to: '/audit-log', label: 'Audit Log', icon: Shield },

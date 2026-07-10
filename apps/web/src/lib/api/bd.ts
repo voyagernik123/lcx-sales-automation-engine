@@ -327,3 +327,123 @@ export async function runDiscoveryTick(): Promise<{ processed: number; emailsFou
   );
   return res.data;
 }
+
+/* ── Exchange gap analysis ── */
+
+export interface GapRow {
+  id: string;
+  name: string;
+  ticker: string | null;
+  marketCapUsd: number | null;
+  exchangeCount: number;
+  band: string;
+  priorityScore: number;
+  propensityScore: number;
+  verifiedContactCount: number;
+  topExchanges: { id: string; name: string; volume: number | null }[];
+}
+
+export async function fetchExchangeGaps(minExchanges = 2): Promise<{ rows: GapRow[]; total: number }> {
+  const res = await request<{ data: GapRow[]; meta: { total: number } }>(
+    `/v1/analytics/gaps?minExchanges=${minExchanges}`,
+    { auth: true },
+  );
+  return { rows: res.data, total: res.meta.total };
+}
+
+/* ── Deal board ── */
+
+export interface BoardDeal {
+  id: string;
+  projectId: string;
+  projectName: string;
+  projectTicker: string | null;
+  stage: string;
+  packageType: string | null;
+  packageValue: number | null;
+  owner: string | null;
+  band: string;
+  priorityScore: number;
+  daysSinceUpdate: number;
+  updatedAt: string;
+  wonAt: string | null;
+}
+
+export async function fetchDealBoard(): Promise<BoardDeal[]> {
+  const res = await request<{ data: BoardDeal[] }>('/v1/deals/board', { auth: true });
+  return res.data;
+}
+
+/* ── Unified timeline ── */
+
+export interface TimelineEntry {
+  kind: 'message' | 'handoff' | 'deal' | 'signal' | 'discovery' | 'audit';
+  ts: string;
+  title: string;
+  detail: string | null;
+  badge: string | null;
+}
+
+export async function fetchProjectTimeline(projectId: string): Promise<TimelineEntry[]> {
+  const res = await request<{ data: TimelineEntry[] }>(`/v1/projects/${projectId}/timeline`, { auth: true });
+  return res.data;
+}
+
+/* ── Operator tasks ── */
+
+export interface OperatorTask {
+  id: string;
+  projectId: string | null;
+  projectName: string | null;
+  dealId: string | null;
+  handoffId: string | null;
+  title: string;
+  detail: string | null;
+  kind: string;
+  status: string;
+  dueAt: string | null;
+  createdAt: string;
+}
+
+export async function fetchTasks(status = 'open'): Promise<OperatorTask[]> {
+  const res = await request<{ data: OperatorTask[] }>(`/v1/tasks?status=${status}`, { auth: true });
+  return res.data;
+}
+
+export async function createTask(title: string, opts?: { detail?: string; projectId?: string; dueAt?: string }): Promise<void> {
+  await request('/v1/tasks', { auth: true, method: 'POST', body: { title, ...opts } });
+}
+
+export async function completeTask(id: string): Promise<void> {
+  await request(`/v1/tasks/${id}/done`, { auth: true, method: 'POST', body: {} });
+}
+
+export async function dismissTask(id: string): Promise<void> {
+  await request(`/v1/tasks/${id}/dismiss`, { auth: true, method: 'POST', body: {} });
+}
+
+/* ── Notifications ── */
+
+export interface AppNotification {
+  id: string;
+  rule: string;
+  title: string;
+  detail: string | null;
+  projectId: string | null;
+  href: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export async function fetchNotifications(): Promise<{ items: AppNotification[]; unread: number }> {
+  const res = await request<{ data: { items: AppNotification[]; unread: number } }>('/v1/notifications', { auth: true });
+  return res.data;
+}
+
+export async function markNotificationRead(id: string): Promise<void> {
+  await request(`/v1/notifications/${id}/read`, { auth: true, method: 'POST', body: {} });
+}
+
+export async function markAllNotificationsRead(): Promise<void> {
+  await request('/v1/notifications/read-all', { auth: true, method: 'POST', body: {} });
+}

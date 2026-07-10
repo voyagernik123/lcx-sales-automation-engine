@@ -2,6 +2,8 @@ import { sql } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
 import * as schema from '../db/schema.js';
 import { randomUUID } from 'node:crypto';
+import { createHandoffTask } from '../tasks/service.js';
+import { notify } from '../notifications/service.js';
 
 export type HandoffStatus = 'open' | 'in_progress' | 'resolved_won_path' | 'resolved_lost' | 're_nurture';
 export type HandoffEventType = 'created' | 'assigned' | 'note' | 'status_change' | 're_enrolled' | 'moved_to_telegram';
@@ -77,6 +79,27 @@ export async function createHandoff(params: CreateHandoffParams): Promise<Record
   }).execute();
 
   await addHandoffEvent(handoff.id, 'created', 'system', `Handoff created — ${params.channel} reply detected`);
+
+  // A reply always needs a same-day response — surface it as a task
+  try {
+    let personName: string | null = null;
+    if (params.personId) {
+      const [pe] = await db.select({ name: schema.people.name }).from(schema.people)
+        .where(sql`${schema.people.id} = ${params.personId}`).limit(1).execute();
+      personName = pe?.name ?? null;
+    }
+    await createHandoffTask(handoff.id, params.projectId, personName);
+    await notify({
+      rule: 'reply_received',
+      title: 'Reply received' + (personName ? ` from ${personName}` : ''),
+      detail: `${params.channel} — sequences paused, handoff open`,
+      projectId: params.projectId,
+      href: '/outreach',
+      dedupKey: `reply:${handoff.id}`,
+    });
+  } catch (taskErr) {
+    console.error('[handoffs] task creation error:', taskErr);
+  }
 
   return handoff;
 }

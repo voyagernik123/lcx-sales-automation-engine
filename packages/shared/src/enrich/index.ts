@@ -1,9 +1,9 @@
 export type {
-  CoinGeckoCoin, CoinGeckoMarketData, CoinGeckoMarketRow,
+  CoinGeckoCoin, CoinGeckoMarketData, CoinGeckoMarketRow, CoinGeckoTicker,
   EnrichmentResult, EnrichmentReport,
 } from './coingecko.js';
 export { CoinGeckoClient } from './coingecko.js';
-export type { PaprikaTicker, PaprikaCoin } from './coinpaprika.js';
+export type { PaprikaTicker, PaprikaCoin, PaprikaMarket } from './coinpaprika.js';
 export { CoinPaprikaClient } from './coinpaprika.js';
 export type { LlamaProtocol, LlamaRaise } from './defillama.js';
 export { DefiLlamaClient } from './defillama.js';

@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Sun, Moon, ShieldCheck } from 'lucide-react';
 import { useUIStore } from '@/stores/useUIStore';
+import { NotificationBell } from './NotificationBell';
 import { useFilterStore } from '@/stores/useFilterStore';
 import { states, products, redFlags } from '@/data';
 
@@ -127,6 +128,7 @@ export function TopNav() {
             </div>
           )}
         </div>
+        <NotificationBell />
         <button
           onClick={toggleDarkMode}
           className="rounded-full p-1.5 text-ice/70 hover:bg-ice-soft/20 hover:text-ice transition-all duration-300 transform active:scale-95"

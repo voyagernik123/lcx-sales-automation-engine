@@ -3,13 +3,58 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Globe, FileText, ExternalLink, ChevronDown, ChevronRight, CheckCircle, XCircle, RefreshCw, Search, Users, Activity, Database, Award, Plus, Pencil, X, Mail, Send, ThumbsUp, ThumbsDown, FileOutput } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useFilterStore } from '@/stores';
-import { fetchLead, approveLead, suppressLead, triggerRescore, triggerEnrich, enqueueContactDiscovery, runDiscoveryTick, addPerson, updatePerson, generateDraft as apiGenerateDraft, saveDraft, fetchDrafts, updateDraft, enrollProject, pauseSequence, resumeSequence, fetchProjectSequences, fetchProjectMessages, fetchProjectDeal, createDeal, transitionDealStage, generateProposal, fetchDealEvents, fetchDealObjections, addDealObjection } from '@/lib/api/bd';
+import { fetchLead, approveLead, suppressLead, triggerRescore, triggerEnrich, enqueueContactDiscovery, runDiscoveryTick, fetchProjectTimeline, type TimelineEntry, addPerson, updatePerson, generateDraft as apiGenerateDraft, saveDraft, fetchDrafts, updateDraft, enrollProject, pauseSequence, resumeSequence, fetchProjectSequences, fetchProjectMessages, fetchProjectDeal, createDeal, transitionDealStage, generateProposal, fetchDealEvents, fetchDealObjections, addDealObjection } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
 import { ScoreBadge, BandBadge, MarketTag } from '@/components/bd';
 import { deriveMarketTag, CHANNEL_LABELS, TOUCH_LABELS, STAGE_COLORS, STAGE_LABELS } from '@/types/bd';
 import type { LeadDetail, LeadSignal, LeadPerson, DraftOutput, SavedDraft, Channel, SequenceRecord, MessageRecord } from '@/types/bd';
 import { SEQUENCE_STATUS_COLORS, MESSAGE_STATUS_COLORS, LINKEDIN_STATUS_COLORS } from '@/types/bd';
 import type { ReasonTrail, ScoreBand } from '@lcx/shared';
+
+
+const TIMELINE_KIND_STYLE: Record<string, string> = {
+  message: 'bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300',
+  handoff: 'bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300',
+  deal: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
+  signal: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+  discovery: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300',
+  audit: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
+};
+
+function UnifiedTimeline({ projectId }: { projectId: string }) {
+  const [entries, setEntries] = useState<TimelineEntry[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetchProjectTimeline(projectId)
+      .then((e) => alive && setEntries(e))
+      .catch(() => alive && setFailed(true));
+    return () => {
+      alive = false;
+    };
+  }, [projectId]);
+
+  if (failed) return <p className="text-[10px] text-grey italic">Timeline unavailable</p>;
+  if (entries === null) return <p className="text-[10px] text-grey italic">Loading timeline…</p>;
+  if (entries.length === 0) return <p className="text-[10px] text-grey italic">No activity yet</p>;
+
+  return (
+    <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+      {entries.map((e, i) => (
+        <div key={i} className="flex items-start gap-2 border-b border-line/50 pb-1.5 last:border-none text-[10px]">
+          <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold uppercase shrink-0 ${TIMELINE_KIND_STYLE[e.kind] ?? ''}`}>{e.kind}</span>
+          <div className="flex-1 min-w-0">
+            <span className="font-semibold">{e.title}</span>
+            {e.detail && <span className="text-grey"> — {e.detail}</span>}
+            {e.badge && <span className="ml-1 rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 text-[8px] font-bold uppercase">{e.badge}</span>}
+          </div>
+          <span className="text-grey shrink-0">{new Date(e.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function LeadDetail() {
   const { id } = useParams<{ id: string }>();
@@ -557,6 +602,11 @@ export function LeadDetail() {
                 <Plus size={11} /> Add Contact
               </button>
             )}
+          </Section>
+
+          {/* Unified activity timeline */}
+          <Section icon={<Activity size={14} />} title="Activity Timeline">
+            <UnifiedTimeline projectId={lead.id} />
           </Section>
 
           {/* Signals Timeline */}

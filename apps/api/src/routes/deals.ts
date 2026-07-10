@@ -9,8 +9,49 @@ import { randomUUID } from 'node:crypto';
 import { STAGES, canTransition, generateProposal, defaultPackageValue, getClaimLibrarySnapshot } from '@lcx/shared';
 import type { DealStage } from '@lcx/shared';
 import { createPostListingTriggers } from '../kpi/service.js';
+import { createStageTask } from '../tasks/service.js';
 
 export const dealRoutes = new Hono<{ Variables: AuthVariables }>();
+
+
+/** GET /v1/deals/board — every deal with project context, for the kanban board. */
+dealRoutes.get('/board', requireOperator, async (c) => {
+  const db = getDb();
+  try {
+    const result = await db.execute(sql`
+      SELECT d.id, d.project_id, d.stage, d.package_type, d.package_value,
+             d.owner, d.notes, d.updated_at, d.created_at, d.won_at,
+             p.name AS project_name, p.ticker AS project_ticker,
+             s.band, s.priority_score,
+             EXTRACT(EPOCH FROM (NOW() - d.updated_at)) / 86400 AS days_since_update
+      FROM deals d
+      JOIN projects p ON p.id = d.project_id
+      LEFT JOIN scores s ON s.project_id = d.project_id
+      ORDER BY d.updated_at DESC
+    `);
+    return c.json({
+      data: (result.rows ?? []).map((r: Record<string, unknown>) => ({
+        id: r.id,
+        projectId: r.project_id,
+        projectName: r.project_name,
+        projectTicker: r.project_ticker,
+        stage: r.stage,
+        packageType: r.package_type,
+        packageValue: r.package_value != null ? Number(r.package_value) : null,
+        owner: r.owner,
+        band: r.band ?? 'unscored',
+        priorityScore: Number(r.priority_score ?? 0),
+        daysSinceUpdate: Math.floor(Number(r.days_since_update ?? 0)),
+        updatedAt: r.updated_at,
+        wonAt: r.won_at,
+      })),
+      meta: { timestamp: new Date().toISOString(), version: env.version },
+    });
+  } catch (err) {
+    console.error('[deals] board error:', err);
+    return c.json({ error: 'Failed to load board', code: 'BOARD_ERROR' }, 500);
+  }
+});
 
 dealRoutes.get('/projects/:projectId', requireOperator, async (c) => {
   const db = getDb();
@@ -121,6 +162,13 @@ dealRoutes.post('/:id/stage', requireOperator, async (c) => {
       id: randomUUID(), dealId: id, eventType: 'stage_change', actor: operator.id,
       oldStage, newStage, content: `${oldStage} → ${newStage}`,
     }).execute();
+
+    // Auto next-action task for the new stage (idempotent)
+    try {
+      await createStageTask(id, deal.projectId, newStage);
+    } catch (taskErr) {
+      console.error('[deals] stage task error:', taskErr);
+    }
 
     await db.insert(schema.auditLog).values({
       id: randomUUID(), actor: operator.id, action: 'deal_stage_change', entity: 'deals', entityId: id,

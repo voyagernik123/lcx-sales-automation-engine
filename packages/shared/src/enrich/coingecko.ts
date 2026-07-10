@@ -183,9 +183,40 @@ export class CoinGeckoClient {
     }));
   }
 
+  /** Exchange tickers for one coin (budget: 1 call/coin — use sparingly). */
+  async fetchCoinTickers(coinId: string): Promise<CoinGeckoTicker[]> {
+    const data = await this.request<{
+      tickers?: {
+        base: string;
+        target: string;
+        market: { name: string; identifier: string };
+        converted_volume?: { usd?: number | null };
+        is_anomaly?: boolean;
+      }[];
+    }>(`/coins/${coinId}/tickers?include_exchange_logo=false&depth=false`);
+
+    return (data.tickers ?? []).map((t) => ({
+      base: t.base,
+      target: t.target,
+      marketName: t.market?.name ?? t.market?.identifier ?? 'unknown',
+      marketIdentifier: t.market?.identifier ?? 'unknown',
+      volumeUsd: t.converted_volume?.usd ?? null,
+      anomaly: t.is_anomaly === true,
+    }));
+  }
+
   clearCoinList(): void {
     this.coinList = null;
   }
+}
+
+export interface CoinGeckoTicker {
+  base: string;
+  target: string;
+  marketName: string;
+  marketIdentifier: string;
+  volumeUsd: number | null;
+  anomaly: boolean;
 }
 
 export interface CoinGeckoMarketRow {

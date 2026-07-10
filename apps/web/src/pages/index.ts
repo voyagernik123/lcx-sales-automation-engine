@@ -18,5 +18,8 @@ export { LeadDetail } from './LeadDetail';
 export { ClaimLibrary } from './ClaimLibrary';
 export { Handoffs } from './Handoffs';
 export { SendQueue } from './SendQueue';
+export { ExchangeGaps } from './ExchangeGaps';
+export { DealBoard } from './DealBoard';
+export { MyTasks } from './MyTasks';
 export { KpiDashboard } from './KpiDashboard';
 export { AuditLog } from './AuditLog';

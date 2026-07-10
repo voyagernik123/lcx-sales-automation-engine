@@ -10,6 +10,7 @@
  *   score_refresh        daily  — paged batch re-score of every project
  *   kpi_snapshot         daily  — persist today's KPI dashboard numbers
  *   signals_prune        weekly — bound the signals table
+ *   exchange_sync        daily  — competitive exchange listings for top-priority projects
  *
  * Env: DATABASE_URL (required for remote), COINGECKO_API_KEY, COINGECKO_KEY_TYPE
  */
@@ -18,6 +19,9 @@ import { withJobRun } from './withJobRun.js';
 import { syncUniverse, discoverNewTokens } from '../connectors/universe.js';
 import { refreshMarketData } from '../enrich/refresh.js';
 import { pruneSignals } from '../enrich/prune.js';
+import { syncExchangeListings } from '../enrich/exchanges.js';
+import { evaluateAlertRules } from '../notifications/service.js';
+import { generateStalledDealTasks } from '../tasks/service.js';
 
 async function main() {
   const job = process.argv[2];
@@ -84,6 +88,23 @@ async function main() {
         console.log(JSON.stringify(r.stats));
         break;
       }
+      case 'exchange_sync': {
+        const r = await withJobRun(pool, job, async () => {
+          const res = await syncExchangeListings(pool, cgOpts);
+          return { stats: res as unknown as Record<string, unknown> };
+        });
+        console.log(JSON.stringify(r.stats));
+        break;
+      }
+      case 'daily_rules': {
+        const r = await withJobRun(pool, job, async () => {
+          const alerts = await evaluateAlertRules(pool);
+          const stalledTasks = await generateStalledDealTasks(pool);
+          return { stats: { ...alerts, stalledTasks } };
+        });
+        console.log(JSON.stringify(r.stats));
+        break;
+      }
       case 'signals_prune': {
         const r = await withJobRun(pool, job, async () => {
           const res = await pruneSignals(pool);
@@ -94,7 +115,7 @@ async function main() {
       }
       default:
         console.error(`Unknown job: ${job}`);
-        console.error('Jobs: universe_sync | discover_new_tokens | market_refresh | score_refresh | kpi_snapshot | signals_prune');
+        console.error('Jobs: universe_sync | discover_new_tokens | market_refresh | score_refresh | kpi_snapshot | signals_prune | exchange_sync | daily_rules');
         process.exit(1);
     }
   } finally {
