@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Globe, FileText, ExternalLink, ChevronDown, ChevronRight, CheckCircle, XCircle, RefreshCw, Search, Users, Activity, Database, Award, Plus, Pencil, X, Mail, Send, ThumbsUp, ThumbsDown, FileOutput } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useFilterStore } from '@/stores';
-import { fetchLead, approveLead, suppressLead, triggerRescore, triggerEnrich, enqueueContactDiscovery, runDiscoveryTick, fetchProjectTimeline, type TimelineEntry, addPerson, updatePerson, generateDraft as apiGenerateDraft, saveDraft, fetchDrafts, updateDraft, enrollProject, pauseSequence, resumeSequence, fetchProjectSequences, fetchProjectMessages, fetchProjectDeal, createDeal, transitionDealStage, generateProposal, fetchDealEvents, fetchDealObjections, addDealObjection } from '@/lib/api/bd';
+import { fetchLead, approveLead, suppressLead, triggerRescore, triggerEnrich, enqueueContactDiscovery, runDiscoveryTick, fetchProjectTimeline, type TimelineEntry, addPerson, updatePerson, generateDraft as apiGenerateDraft, saveDraft, fetchDrafts, updateDraft, enrollProject, pauseSequence, resumeSequence, fetchProjectSequences, fetchProjectMessages, fetchProjectDeal, createDeal, transitionDealStage, generateProposal, fetchDealEvents, fetchDealObjections, addDealObjection, fetchSequenceTemplates, type SequenceTemplate } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
 import { ScoreBadge, BandBadge, MarketTag } from '@/components/bd';
 import { deriveMarketTag, CHANNEL_LABELS, TOUCH_LABELS, STAGE_COLORS, STAGE_LABELS } from '@/types/bd';
@@ -94,6 +94,8 @@ export function LeadDetail() {
   const [showMessageLog, setShowMessageLog] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
   const [enrollChannel, setEnrollChannel] = useState<'email' | 'linkedin'>('email');
+  const [templates, setTemplates] = useState<SequenceTemplate[]>([]);
+  const [templateId, setTemplateId] = useState('');
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -293,7 +295,7 @@ export function LeadDetail() {
     }
     setEnrolling(true);
     try {
-      const res = await enrollProject(id, { personId: contact.id, channel: enrollChannel });
+      const res = await enrollProject(id, { personId: contact.id, channel: enrollChannel, templateId: templateId || undefined });
       toast('success', `Enrolled ${res.data.contactName} via ${isLinkedIn ? 'LinkedIn' : 'email'} — ${res.data.steps} steps`);
       loadSequences();
     } catch (err) {
@@ -302,7 +304,11 @@ export function LeadDetail() {
     } finally {
       setEnrolling(false);
     }
-  }, [id, lead, enrollChannel, loadSequences]);
+  }, [id, lead, enrollChannel, templateId, loadSequences]);
+
+  useEffect(() => {
+    fetchSequenceTemplates().then(setTemplates).catch(() => setTemplates([]));
+  }, []);
 
   const handlePauseSequence = useCallback(async (seqId: string) => {
     try {
@@ -671,6 +677,19 @@ export function LeadDetail() {
                     LinkedIn
                   </button>
                 </div>
+                {templates.length > 0 && (
+                  <select
+                    value={templateId}
+                    onChange={(e) => setTemplateId(e.target.value)}
+                    className="rounded border border-line px-1.5 py-1.5 text-[10px] bg-transparent"
+                    title="Cadence template (blank = default 5-touch)"
+                  >
+                    <option value="">Default cadence</option>
+                    {templates.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name} ({t.steps.length})</option>
+                    ))}
+                  </select>
+                )}
                 <button
                   onClick={handleEnroll}
                   disabled={enrolling}
@@ -1237,12 +1256,32 @@ function DealSection({ projectId }: { projectId: string }) {
             <span className="text-[9px] text-grey">${(deal.proposalSnapshot.packageValue / 100).toLocaleString()}</span>
           </div>
           <p className="text-grey">Valid until {new Date(deal.proposalSnapshot.validUntil).toLocaleDateString()}</p>
-          <div>
-            <span className="text-[9px] font-bold text-grey">Includes:</span>
-            <ul className="list-disc list-inside text-[9px] text-grey">
-              {deal.proposalSnapshot.inclusions.map((inc, i) => <li key={i}>{inc}</li>)}
-            </ul>
-          </div>
+          {deal.proposalSnapshot.tiers && deal.proposalSnapshot.tiers.length > 0 ? (
+            <div className="grid grid-cols-3 gap-1.5 pt-1">
+              {deal.proposalSnapshot.tiers.map((tier) => (
+                <div
+                  key={tier.name}
+                  className={`rounded border p-1.5 ${tier.recommended ? 'border-cyan-500 bg-cyan-50/50 dark:bg-cyan-950/20' : 'border-line'}`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[9px] font-bold">{tier.name}</span>
+                    {tier.recommended && <span className="rounded bg-cyan-600 px-1 text-[7px] font-bold text-white">REC</span>}
+                  </div>
+                  <div className="text-[10px] font-mono font-bold">${(tier.priceCents / 100).toLocaleString()}</div>
+                  <ul className="mt-0.5 list-disc list-inside text-[8px] text-grey">
+                    {tier.inclusions.map((inc, i) => <li key={i} className="truncate">{inc}</li>)}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div>
+              <span className="text-[9px] font-bold text-grey">Includes:</span>
+              <ul className="list-disc list-inside text-[9px] text-grey">
+                {deal.proposalSnapshot.inclusions.map((inc, i) => <li key={i}>{inc}</li>)}
+              </ul>
+            </div>
+          )}
           {deal.proposalSnapshot.claimsUsed.length > 0 && (
             <div>
               <span className="text-[9px] font-bold text-grey">Claims referenced ({deal.proposalSnapshot.claimsUsed.length}):</span>

@@ -123,7 +123,7 @@ export async function fetchClaims(): Promise<{ data: ClaimLibrarySnapshot }> {
 
 export async function enrollProject(
   projectId: string,
-  data: { personId?: string; contactName?: string; channel?: string },
+  data: { personId?: string; contactName?: string; channel?: string; templateId?: string },
 ): Promise<{ data: { sequenceId: string; steps: number; contactName: string } }> {
   return request(`/v1/outreach/enroll/${projectId}`, { auth: true, method: 'POST', body: data });
 }
@@ -446,4 +446,42 @@ export async function markNotificationRead(id: string): Promise<void> {
 
 export async function markAllNotificationsRead(): Promise<void> {
   await request('/v1/notifications/read-all', { auth: true, method: 'POST', body: {} });
+}
+
+/* ── Sequence templates ── */
+
+export interface SequenceTemplate {
+  id: string;
+  name: string;
+  description: string | null;
+  steps: { touchIndex: number; delayDays: number; channel: string }[];
+  isDefault: boolean;
+}
+
+export async function fetchSequenceTemplates(): Promise<SequenceTemplate[]> {
+  const res = await request<{ data: SequenceTemplate[] }>('/v1/outreach/templates', { auth: true });
+  return res.data;
+}
+
+/* ── Market map ── */
+
+export interface MapPoint {
+  id: string;
+  name: string;
+  ticker: string | null;
+  marketCapUsd: number;
+  region: string | null;
+  listedOnLcx: boolean;
+  band: string;
+  priorityScore: number;
+  propensityScore: number;
+}
+
+export async function fetchMarketMap(filters?: { band?: string; region?: string }): Promise<MapPoint[]> {
+  const params = new URLSearchParams();
+  if (filters?.band) params.set('band', filters.band);
+  if (filters?.region) params.set('region', filters.region);
+  const qs = params.toString();
+  const res = await request<{ data: MapPoint[] }>(`/v1/analytics/map${qs ? `?${qs}` : ''}`, { auth: true });
+  return res.data;
 }

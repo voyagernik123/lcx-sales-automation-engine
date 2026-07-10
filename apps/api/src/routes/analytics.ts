@@ -96,3 +96,41 @@ analyticsRoutes.get('/exchanges', requireOperator, async (c) => {
     return c.json({ error: 'Failed to list exchanges', code: 'EXCHANGES_ERROR' }, 500);
   }
 });
+
+/** GET /v1/analytics/map — universe scatter points (mcap × priority). */
+analyticsRoutes.get('/map', requireOperator, async (c) => {
+  const db = getDb();
+  const qs = c.req.query();
+  const limit = Math.min(Number(qs.limit) || 500, 1500);
+  const conditions = [sql`p.market_cap_usd IS NOT NULL`, sql`s.priority_score > 0`];
+  if (qs.band) conditions.push(sql`s.band = ${qs.band}`);
+  if (qs.region === 'eu' || qs.region === 'us') conditions.push(sql`p.region = ${qs.region}`);
+
+  try {
+    const result = await db.execute(sql`
+      SELECT p.id, p.name, p.ticker, p.market_cap_usd, p.region, p.listed_on_lcx,
+             s.band, s.priority_score, s.propensity_score
+      FROM projects p JOIN scores s ON s.project_id = p.id
+      WHERE ${sql.join(conditions, sql` AND `)}
+      ORDER BY s.priority_score DESC
+      LIMIT ${limit}
+    `);
+    return c.json({
+      data: (result.rows ?? []).map((r: Record<string, unknown>) => ({
+        id: r.id,
+        name: r.name,
+        ticker: r.ticker,
+        marketCapUsd: Number(r.market_cap_usd),
+        region: r.region ?? null,
+        listedOnLcx: r.listed_on_lcx,
+        band: r.band,
+        priorityScore: Number(r.priority_score ?? 0),
+        propensityScore: Number(r.propensity_score ?? 0),
+      })),
+      meta: meta(),
+    });
+  } catch (err) {
+    console.error('[analytics] map error:', err);
+    return c.json({ error: 'Failed to load map', code: 'MAP_ERROR' }, 500);
+  }
+});

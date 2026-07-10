@@ -10,6 +10,7 @@ import { STAGES, canTransition, generateProposal, defaultPackageValue, getClaimL
 import type { DealStage } from '@lcx/shared';
 import { createPostListingTriggers } from '../kpi/service.js';
 import { createStageTask } from '../tasks/service.js';
+import { createLaunchpadTasks } from '../tasks/launchpad.js';
 
 export const dealRoutes = new Hono<{ Variables: AuthVariables }>();
 
@@ -149,6 +150,12 @@ dealRoutes.post('/:id/stage', requireOperator, async (c) => {
         await createPostListingTriggers(id, deal.projectId, new Date());
       } catch (triggerErr) {
         console.error('[deals] trigger creation error:', triggerErr);
+      }
+      // Generate the department onboarding checklist (listing launchpad)
+      try {
+        await createLaunchpadTasks(id, deal.projectId);
+      } catch (launchErr) {
+        console.error('[deals] launchpad creation error:', launchErr);
       }
     }
     if (newStage === 'lost') {

@@ -79,6 +79,20 @@ describe('Proposal snapshot', () => {
     expect(proposal.validUntil).toBeTruthy();
   });
 
+  it('produces three ascending-price tiers with a recommended middle', () => {
+    const proposal = generateProposal({
+      projectName: 'TestCoin', projectTicker: 'TST', packageType: 'listing',
+      packageValue: 2_000_000, jurisdiction: 'EU', claimsUsed: [],
+    });
+    expect(proposal.tiers).toHaveLength(3);
+    const [essential, growth, premium] = proposal.tiers;
+    expect(essential.priceCents).toBeLessThanOrEqual(growth.priceCents);
+    expect(growth.priceCents).toBeLessThanOrEqual(premium.priceCents);
+    expect(growth.recommended).toBe(true);
+    expect(growth.priceCents).toBe(2_000_000);
+    expect(premium.inclusions.length).toBeGreaterThanOrEqual(essential.inclusions.length);
+  });
+
   it('sets 30-day validity from generation date', () => {
     const proposal = generateProposal({
       projectName: 'Test', projectTicker: null, packageType: 'listing', packageValue: 2_000_000, jurisdiction: null, claimsUsed: [],

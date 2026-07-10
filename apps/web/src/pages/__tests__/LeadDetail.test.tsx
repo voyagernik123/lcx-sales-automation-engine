@@ -15,6 +15,7 @@ vi.mock('@/lib/api/bd', () => ({
   enqueueContactDiscovery: vi.fn(),
   runDiscoveryTick: vi.fn(),
   fetchProjectTimeline: vi.fn().mockResolvedValue([]),
+  fetchSequenceTemplates: vi.fn().mockResolvedValue([]),
 }));
 
 const mockLead = {

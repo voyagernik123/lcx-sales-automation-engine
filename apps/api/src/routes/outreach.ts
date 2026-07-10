@@ -23,6 +23,7 @@ outreachRoutes.post('/enroll/:projectId', requireOperator, async (c) => {
     personId?: string;
     contactName?: string;
     channel?: string;
+    templateId?: string;
   }>();
 
   try {
@@ -61,18 +62,35 @@ outreachRoutes.post('/enroll/:projectId', requireOperator, async (c) => {
     const contactName = targetPerson.name;
     const reasons = (score?.reasons ?? []) as Array<{ code: string; factor: string; points: number; note: string }>;
 
-    // Generate drafts for all 5 touches
+    // Cadence: a chosen template's steps, else the default 5-touch (all-LinkedIn
+    // if enrolled with channel=linkedin, else the mixed cadence).
+    type Cadence = { touchIndex: number; delayDays: number; channel: 'email' | 'linkedin' | 'telegram' };
+    let cadenceSteps: Cadence[];
+
+    if (body.templateId) {
+      const [tmpl] = (await db.execute(
+        sql`SELECT steps FROM sequence_templates WHERE id = ${body.templateId}`,
+      )).rows as { steps: Cadence[] }[];
+      if (!tmpl) return c.json({ error: 'Template not found', code: 'NOT_FOUND' }, 404);
+      cadenceSteps = tmpl.steps;
+    } else {
+      const channels: Array<'email' | 'linkedin' | 'telegram'> =
+        channel === 'linkedin'
+          ? ['linkedin', 'linkedin', 'linkedin', 'linkedin', 'linkedin']
+          : [...MIXED_CADENCE_CHANNELS];
+      cadenceSteps = CADENCE.map((cad, i) => ({
+        touchIndex: cad.touchIndex,
+        delayDays: cad.delayDays,
+        channel: channels[i],
+      }));
+    }
+
     const steps: SequenceStep[] = [];
     const enrolledAt = new Date();
-    // All-channel cadence
-    const channels: Array<'email' | 'linkedin' | 'telegram'> =
-      channel === 'linkedin'
-        ? ['linkedin', 'linkedin', 'linkedin', 'linkedin', 'linkedin']
-        : [...MIXED_CADENCE_CHANNELS];
 
-    for (let i = 0; i < CADENCE.length; i++) {
-      const cadence = CADENCE[i];
-      const channel = channels[i];
+    for (let i = 0; i < cadenceSteps.length; i++) {
+      const cadence = cadenceSteps[i];
+      const channel = cadence.channel;
       const { draft } = generateDraft({
         projectName: project.name,
         projectTicker: project.ticker,

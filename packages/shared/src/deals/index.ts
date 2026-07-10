@@ -59,6 +59,13 @@ export function defaultPackageValue(pkgType: string): number {
   return pkg?.basePrice ?? 0;
 }
 
+export interface ProposalTier {
+  name: string;
+  priceCents: number;
+  inclusions: string[];
+  recommended: boolean;
+}
+
 export interface ProposalSnapshot {
   projectName: string;
   projectTicker: string | null;
@@ -66,10 +73,52 @@ export interface ProposalSnapshot {
   packageValue: number;
   jurisdiction: string | null;
   inclusions: string[];
+  /** Good/Better/Best options; the base package is the "recommended" middle tier. */
+  tiers: ProposalTier[];
   claimsUsed: string[];
   disclaimer: string;
   generatedAt: string;
   validUntil: string;
+}
+
+const PROPOSAL_DISCLAIMER =
+  'This proposal is provided for informational purposes only and does not constitute a binding offer. All packages and pricing are subject to negotiation and final agreement. Regulatory compliance is subject to applicable laws.';
+
+/**
+ * Three deterministic tiers anchored on the chosen package:
+ *   Essential  — the base package alone (0.7×, trimmed inclusions)
+ *   Growth     — base package (recommended)
+ *   Premium    — base + marketing + liquidity bundle (1.6×)
+ */
+export function buildProposalTiers(packageType: string, packageValue: number): ProposalTier[] {
+  const pkg = PACKAGES.find((p) => p.type === packageType);
+  const base = pkg?.includes ?? ['Technical integration', 'Compliance review'];
+  const marketing = PACKAGES.find((p) => p.type === 'marketing')?.includes ?? [];
+  const liquidity = PACKAGES.find((p) => p.type === 'liquidity')?.includes ?? [];
+
+  const essentialPrice = Math.round((packageValue * 0.7) / 100_000) * 100_000;
+  const premiumPrice = Math.round((packageValue * 1.6) / 100_000) * 100_000;
+
+  return [
+    {
+      name: 'Essential',
+      priceCents: essentialPrice > 0 ? essentialPrice : packageValue,
+      inclusions: base.slice(0, Math.max(2, base.length - 1)),
+      recommended: false,
+    },
+    {
+      name: 'Growth',
+      priceCents: packageValue,
+      inclusions: base,
+      recommended: true,
+    },
+    {
+      name: 'Premium',
+      priceCents: premiumPrice > 0 ? premiumPrice : packageValue,
+      inclusions: [...base, ...marketing.slice(0, 2), ...liquidity.slice(0, 1)],
+      recommended: false,
+    },
+  ];
 }
 
 export function generateProposal(params: {
@@ -88,8 +137,9 @@ export function generateProposal(params: {
     packageValue: params.packageValue,
     jurisdiction: params.jurisdiction,
     inclusions: pkg?.includes ?? [],
+    tiers: buildProposalTiers(params.packageType, params.packageValue),
     claimsUsed: params.claimsUsed,
-    disclaimer: 'This proposal is provided for informational purposes only and does not constitute a binding offer. All packages and pricing are subject to negotiation and final agreement. Regulatory compliance is subject to applicable laws.',
+    disclaimer: PROPOSAL_DISCLAIMER,
     generatedAt: new Date().toISOString(),
     validUntil: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
   };

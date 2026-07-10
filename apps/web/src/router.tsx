@@ -1,6 +1,6 @@
 import { createBrowserRouter } from 'react-router-dom';
 import { AppLayout } from '@/components/layout';
-import { Dashboard, OntologyExplorer, StateMap, ProductMatrix, Simulator, Settings, HoweyCalculator, ScenarioPlanner, ReadinessStack, BriefGenerator, CapitalEstimator, Roadmap, RedFlags, CompetitionAnalysis, ProductIntelligence, BdPipeline, LeadDetail, ClaimLibrary, Handoffs, SendQueue, ExchangeGaps, DealBoard, MyTasks, KpiDashboard, AuditLog } from '@/pages';
+import { Dashboard, OntologyExplorer, StateMap, ProductMatrix, Simulator, Settings, HoweyCalculator, ScenarioPlanner, ReadinessStack, BriefGenerator, CapitalEstimator, Roadmap, RedFlags, CompetitionAnalysis, ProductIntelligence, BdPipeline, LeadDetail, ClaimLibrary, Handoffs, SendQueue, ExchangeGaps, DealBoard, MyTasks, MarketMap, KpiDashboard, AuditLog } from '@/pages';
 
 export const router = createBrowserRouter([
   {
@@ -30,6 +30,7 @@ export const router = createBrowserRouter([
       { path: 'exchange-gaps', element: <ExchangeGaps /> },
       { path: 'deal-board', element: <DealBoard /> },
       { path: 'tasks', element: <MyTasks /> },
+      { path: 'market-map', element: <MarketMap /> },
       { path: 'bd-kpis', element: <KpiDashboard /> },
       { path: 'audit-log', element: <AuditLog /> },
     ],

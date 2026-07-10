@@ -79,11 +79,11 @@ export { squash, squashEntity } from './normalize.js';
 // Deal desk + proposals (Slice 12)
 export type {
   PackageConfig, DealPackage,
-  DealStage, ProposalSnapshot,
+  DealStage, ProposalSnapshot, ProposalTier,
 } from './deals/index.js';
 export {
   PACKAGES, DEAL_PACKAGE, STAGES, STAGE_LABELS,
-  canTransition, defaultPackageValue, generateProposal,
+  canTransition, defaultPackageValue, generateProposal, buildProposalTiers,
 } from './deals/index.js';
 
 // Deal forecasting (win probability + Monte Carlo)

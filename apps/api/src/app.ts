@@ -12,6 +12,7 @@ import { discoveryRoutes } from './routes/discovery.js';
 import { analyticsRoutes } from './routes/analytics.js';
 import { taskRoutes } from './routes/tasks.js';
 import { notificationRoutes } from './routes/notifications.js';
+import { templateRoutes } from './routes/templates.js';
 import { handoffRoutes } from './routes/handoffs.js';
 import { dealRoutes } from './routes/deals.js';
 import { kpiRoutes } from './routes/kpis.js';
@@ -42,6 +43,7 @@ export function createApp() {
   app.route('/v1/me', meRoutes);
   app.route('/v1/projects', projectsRoutes);
   app.route('/v1/outreach/queue', queueRoutes);
+  app.route('/v1/outreach/templates', templateRoutes);
   app.route('/v1/outreach', outreachRoutes);
   app.route('/v1/handoffs', handoffRoutes);
   app.route('/v1/deals', dealRoutes);

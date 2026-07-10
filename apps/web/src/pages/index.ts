@@ -21,5 +21,6 @@ export { SendQueue } from './SendQueue';
 export { ExchangeGaps } from './ExchangeGaps';
 export { DealBoard } from './DealBoard';
 export { MyTasks } from './MyTasks';
+export { MarketMap } from './MarketMap';
 export { KpiDashboard } from './KpiDashboard';
 export { AuditLog } from './AuditLog';

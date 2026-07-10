@@ -424,6 +424,13 @@ export interface DealRecord {
   updatedAt: string;
 }
 
+export interface ProposalTier {
+  name: string;
+  priceCents: number;
+  inclusions: string[];
+  recommended: boolean;
+}
+
 export interface ProposalSnapshot {
   projectName: string;
   projectTicker: string | null;
@@ -431,6 +438,7 @@ export interface ProposalSnapshot {
   packageValue: number;
   jurisdiction: string | null;
   inclusions: string[];
+  tiers?: ProposalTier[];
   claimsUsed: string[];
   disclaimer: string;
   generatedAt: string;

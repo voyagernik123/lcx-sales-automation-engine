@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, RotateCcw, Swords, Target, ScrollText, MessageSquare, BarChart3, Shield } from 'lucide-react';
+import { ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, RotateCcw, Swords, Target, ScrollText, MessageSquare, BarChart3, Shield } from 'lucide-react';
 import { useUIStore, useFilterStore, useAuditStore } from '@/stores';
 import { redFlags } from '@/data';
 import { domains } from '@/data/domains';
@@ -28,6 +28,7 @@ const navigation = [
   { to: '/exchange-gaps', label: 'Exchange Gaps', icon: Layers },
   { to: '/deal-board', label: 'Deal Board', icon: KanbanSquare },
   { to: '/tasks', label: 'My Tasks', icon: ListChecks },
+  { to: '/market-map', label: 'Market Map', icon: ScatterChart },
   { to: '/outreach', label: 'Handoff Queue', icon: MessageSquare },
   { to: '/bd-kpis', label: 'KPI Dashboard', icon: BarChart3 },
   { to: '/audit-log', label: 'Audit Log', icon: Shield },
