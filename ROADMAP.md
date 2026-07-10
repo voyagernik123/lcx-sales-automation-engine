@@ -152,3 +152,29 @@ P7 (scheduling) lands piecemeal: cron-job.org tick immediately after P1; GH Acti
 - **Free-tier budgets**: CG ~4.8k/10k monthly; CoinPaprika/DefiLlama as backbone fallback; Supabase 500MB guarded by quality gate + hash-only ignored rows + signals prune.
 - **LinkedIn**: assisted-only by design; caps stay as UI guidance; never reintroduce auto-send casually.
 - **Deliverability**: send windows, warm-up ramp, unsubscribe compliance, suppression enforced at send time.
+
+---
+
+# 50-Feature Master Plan — Status (2026-07-10)
+
+Free-tier cut shipped (single-operator, no LLM — both deferred by explicit decision):
+
+| Plan item | Status | Where |
+|---|---|---|
+| Phase 1 Deploy + Foundation | ✅ done earlier | Render + Supabase + CF Pages, smoke 25/25 |
+| 6-1 Competitive exchange tracking | ✅ | `enrich/exchanges.ts`, Exchange Gaps page, exchange_sync job |
+| 2-5 Kanban pipeline | ✅ | `/deal-board`, drag-drop honoring canTransition |
+| 2-4 Unified activity timeline | ✅ | `/v1/projects/:id/timeline`, LeadDetail section |
+| 2-7 Task management | ✅ | tasks table + auto-rules (stage/handoff/stalled), `/tasks` |
+| 6-3 Monte Carlo forecasting | ✅ | `packages/shared/src/forecast/`, KPI dashboard section |
+| 3-7 Predictive win probability | ✅ | dealWinProbability (stage × priority × staleness) |
+| 6-6 + 2-3 Alerts/notifications | ✅ (in-app) | notifications table, daily_rules job, bell UI |
+| Phase-7 integration tests | ✅ | features.test.ts + forecast.test.ts (208 tests total) |
+| 3-x LLM features | ⏸ deferred | needs Anthropic key (~$50-100/wk); clean seam in replyEngine |
+| 2-1/2-2/2-3 Team model | ⏸ deferred | single operator today |
+| 4-x LinkedIn advanced automation | ❌ rejected | conflicts with locked assisted-only decision + rule #4 |
+| Remaining P1/P2 items | backlog | see master plan in FABLE_HANDOVER.md |
+
+Notes: CoinPaprika /coins/{id}/markets rations free calls (402 after ~80/run) — sync degrades
+to CoinGecko tickers automatically. Exchange data feeds the previously-empty exchangeCount
+propensity feature.
