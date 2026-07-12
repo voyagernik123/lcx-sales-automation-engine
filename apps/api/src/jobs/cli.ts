@@ -22,6 +22,8 @@ import { pruneSignals } from '../enrich/prune.js';
 import { syncExchangeListings } from '../enrich/exchanges.js';
 import { evaluateAlertRules } from '../notifications/service.js';
 import { generateStalledDealTasks } from '../tasks/service.js';
+import { refreshNews } from '../connectors/news.js';
+import { refreshAnomalies } from '../analytics/anomaly.js';
 
 async function main() {
   const job = process.argv[2];
@@ -113,9 +115,25 @@ async function main() {
         console.log(JSON.stringify(r.stats));
         break;
       }
+      case 'news_refresh': {
+        const r = await withJobRun(pool, job, async () => {
+          const res = await refreshNews(pool);
+          return { stats: res as unknown as Record<string, unknown> };
+        });
+        console.log(JSON.stringify(r.stats));
+        break;
+      }
+      case 'anomaly_scan': {
+        const r = await withJobRun(pool, job, async () => {
+          const res = await refreshAnomalies(pool);
+          return { stats: res as unknown as Record<string, unknown> };
+        });
+        console.log(JSON.stringify(r.stats));
+        break;
+      }
       default:
         console.error(`Unknown job: ${job}`);
-        console.error('Jobs: universe_sync | discover_new_tokens | market_refresh | score_refresh | kpi_snapshot | signals_prune | exchange_sync | daily_rules');
+        console.error('Jobs: universe_sync | discover_new_tokens | market_refresh | score_refresh | kpi_snapshot | signals_prune | exchange_sync | daily_rules | news_refresh | anomaly_scan');
         process.exit(1);
     }
   } finally {

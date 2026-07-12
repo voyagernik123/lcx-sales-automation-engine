@@ -1,6 +1,6 @@
 import { createBrowserRouter } from 'react-router-dom';
 import { AppLayout } from '@/components/layout';
-import { Dashboard, OntologyExplorer, StateMap, ProductMatrix, Simulator, Settings, HoweyCalculator, ScenarioPlanner, ReadinessStack, BriefGenerator, CapitalEstimator, Roadmap, RedFlags, CompetitionAnalysis, ProductIntelligence, BdPipeline, LeadDetail, ClaimLibrary, Handoffs, SendQueue, ExchangeGaps, DealBoard, MyTasks, MarketMap, KpiDashboard, AuditLog } from '@/pages';
+import { Dashboard, OntologyExplorer, StateMap, ProductMatrix, Simulator, Settings, HoweyCalculator, ScenarioPlanner, ReadinessStack, BriefGenerator, CapitalEstimator, Roadmap, RedFlags, CompetitionAnalysis, ProductIntelligence, BdPipeline, LeadDetail, ClaimLibrary, Handoffs, SendQueue, ExchangeGaps, DealBoard, MyTasks, MarketMap, Customer360, Notes, WinLoss, AiTools, OutreachOps, DealDesk, Integrations, BoardReport, MarketNews, ReportBuilder, KpiDashboard, AuditLog } from '@/pages';
 
 export const router = createBrowserRouter([
   {
@@ -31,6 +31,16 @@ export const router = createBrowserRouter([
       { path: 'deal-board', element: <DealBoard /> },
       { path: 'tasks', element: <MyTasks /> },
       { path: 'market-map', element: <MarketMap /> },
+      { path: 'customer/:id', element: <Customer360 /> },
+      { path: 'notes/:projectId', element: <Notes /> },
+      { path: 'win-loss', element: <WinLoss /> },
+      { path: 'ai-tools', element: <AiTools /> },
+      { path: 'outreach-ops', element: <OutreachOps /> },
+      { path: 'deal-desk', element: <DealDesk /> },
+      { path: 'integrations', element: <Integrations /> },
+      { path: 'board-report', element: <BoardReport /> },
+      { path: 'market-news', element: <MarketNews /> },
+      { path: 'report-builder', element: <ReportBuilder /> },
       { path: 'bd-kpis', element: <KpiDashboard /> },
       { path: 'audit-log', element: <AuditLog /> },
     ],

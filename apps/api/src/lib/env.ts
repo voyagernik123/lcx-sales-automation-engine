@@ -34,6 +34,9 @@ export const env = {
   version: process.env.npm_package_version ?? '0.1.0',
   coingeckoApiKey: process.env.COINGECKO_API_KEY ?? '',
   coingeckoKeyType: (process.env.COINGECKO_KEY_TYPE === 'pro' ? 'pro' : 'demo') as 'demo' | 'pro',
+  // AI (all LLM features fall back to deterministic when this is empty)
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
+  anthropicModel: process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5',
   resendApiKey: process.env.RESEND_API_KEY ?? '',
   resendWebhookSecret: process.env.RESEND_WEBHOOK_SECRET ?? '',
   outreachFromEmail: process.env.OUTREACH_FROM_EMAIL ?? 'outreach@lcx.sales',

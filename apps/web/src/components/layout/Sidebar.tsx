@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import { ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, RotateCcw, Swords, Target, ScrollText, MessageSquare, BarChart3, Shield } from 'lucide-react';
+import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, RotateCcw, Swords, Target, ScrollText, MessageSquare, BarChart3, Shield } from 'lucide-react';
 import { useUIStore, useFilterStore, useAuditStore } from '@/stores';
 import { redFlags } from '@/data';
 import { domains } from '@/data/domains';
@@ -29,6 +29,14 @@ const navigation = [
   { to: '/deal-board', label: 'Deal Board', icon: KanbanSquare },
   { to: '/tasks', label: 'My Tasks', icon: ListChecks },
   { to: '/market-map', label: 'Market Map', icon: ScatterChart },
+  { to: '/deal-desk', label: 'Deal Desk', icon: Briefcase },
+  { to: '/outreach-ops', label: 'Outreach Ops', icon: Gauge },
+  { to: '/win-loss', label: 'Win / Loss', icon: TrendingUp },
+  { to: '/board-report', label: 'Board Report', icon: FileBarChart },
+  { to: '/market-news', label: 'Market News', icon: Newspaper },
+  { to: '/report-builder', label: 'Report Builder', icon: Table2 },
+  { to: '/ai-tools', label: 'AI Console', icon: Bot },
+  { to: '/integrations', label: 'Integrations', icon: Radar },
   { to: '/outreach', label: 'Handoff Queue', icon: MessageSquare },
   { to: '/bd-kpis', label: 'KPI Dashboard', icon: BarChart3 },
   { to: '/audit-log', label: 'Audit Log', icon: Shield },
