@@ -21,6 +21,49 @@ describe('master-plan feature routes', () => {
     await closeDb();
   });
 
+  describe('error mapping (onError)', () => {
+    it('maps a malformed UUID to 400, not 500', async () => {
+      const res = await app.request('/v1/dealdesk/invoices/not-a-uuid/status', {
+        method: 'PATCH',
+        headers: { ...AUTH, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'paid' }),
+      });
+      expect(res.status).toBe(400);
+      expect((await res.json()).code).toBe('INVALID_INPUT');
+    });
+
+    it('maps a foreign-key violation to 409', async () => {
+      const res = await app.request('/v1/dealdesk/referrals', {
+        method: 'POST',
+        headers: { ...AUTH, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ partnerId: '00000000-0000-0000-0000-0000000000ff' }),
+      });
+      expect(res.status).toBe(409);
+      expect((await res.json()).code).toBe('FK_VIOLATION');
+    });
+  });
+
+  describe('report builder is injection-safe', () => {
+    it('rejects a non-allowlisted groupBy column', async () => {
+      const res = await app.request('/v1/analytics/reports/run', {
+        method: 'POST',
+        headers: { ...AUTH, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entity: 'projects', groupBy: 'name; DROP TABLE projects;--', metric: 'count' }),
+      });
+      expect(res.status).toBe(400);
+      expect((await res.json()).code).toBe('BAD_CONFIG');
+    });
+
+    it('rejects a non-allowlisted entity', async () => {
+      const res = await app.request('/v1/analytics/reports/run', {
+        method: 'POST',
+        headers: { ...AUTH, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entity: 'users; DROP TABLE users', metric: 'count' }),
+      });
+      expect(res.status).toBe(400);
+    });
+  });
+
   describe('tasks', () => {
     let taskId: string;
 

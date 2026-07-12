@@ -102,6 +102,23 @@ export function createApp() {
   app.notFound((c) => c.json({ error: 'Not found', code: 'NOT_FOUND' }, 404));
 
   app.onError((err, c) => {
+    // Dig out a Postgres error code (Drizzle wraps the pg error in .cause)
+    const pgCode =
+      (err as { code?: string }).code ??
+      ((err as { cause?: { code?: string } }).cause?.code);
+
+    // Map common data errors to 4xx instead of a blanket 500
+    const CLIENT_ERRORS: Record<string, { status: 400 | 404 | 409; code: string; msg: string }> = {
+      '22P02': { status: 400, code: 'INVALID_INPUT', msg: 'Invalid identifier or value' }, // bad UUID / cast
+      '23502': { status: 400, code: 'MISSING_FIELD', msg: 'Required field missing' }, // not-null
+      '23503': { status: 409, code: 'FK_VIOLATION', msg: 'Referenced record does not exist' }, // foreign key
+      '23505': { status: 409, code: 'DUPLICATE', msg: 'Record already exists' }, // unique
+    };
+    const mapped = pgCode ? CLIENT_ERRORS[pgCode] : undefined;
+    if (mapped) {
+      return c.json({ error: mapped.msg, code: mapped.code }, mapped.status);
+    }
+
     console.error('[api] unhandled', err);
     return c.json({ error: env.nodeEnv === 'production' ? 'Internal server error' : err.message, code: 'INTERNAL' }, 500);
   });
