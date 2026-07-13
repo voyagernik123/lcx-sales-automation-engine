@@ -80,10 +80,10 @@ export function ToastContainer() {
             role="alert"
           >
             <Icon size={16} className={clsx('shrink-0 mt-0.5', config.iconClass)} />
-            <p className="text-xs font-medium text-navy dark:text-ice leading-relaxed flex-1">{t.message}</p>
+            <p className="text-xs font-medium text-navy leading-relaxed flex-1">{t.message}</p>
             <button
               onClick={() => removeToast(t.id)}
-              className="absolute top-2 right-2 p-0.5 rounded text-grey hover:text-navy dark:hover:text-ice transition-colors"
+              className="absolute top-2 right-2 p-0.5 rounded text-grey hover:text-navy transition-colors"
               aria-label="Dismiss notification"
             >
               <X size={12} />

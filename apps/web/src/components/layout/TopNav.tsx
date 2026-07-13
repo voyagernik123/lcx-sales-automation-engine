@@ -116,7 +116,7 @@ export function TopNav() {
                   onClick={() => setShowDropdown(false)}
                   className="flex flex-col px-3 py-2 hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors border-b border-line last:border-b-0"
                 >
-                  <span className="text-xs font-semibold text-navy dark:text-ice truncate">{r.label}</span>
+                  <span className="text-xs font-semibold text-navy truncate">{r.label}</span>
                   <span className="text-[10px] text-grey">{r.sublabel}</span>
                 </Link>
               ))}

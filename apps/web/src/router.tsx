@@ -32,6 +32,7 @@ export const router = createBrowserRouter([
       { path: 'tasks', element: <MyTasks /> },
       { path: 'market-map', element: <MarketMap /> },
       { path: 'customer/:id', element: <Customer360 /> },
+      { path: 'notes', element: <Notes /> },
       { path: 'notes/:projectId', element: <Notes /> },
       { path: 'win-loss', element: <WinLoss /> },
       { path: 'ai-tools', element: <AiTools /> },

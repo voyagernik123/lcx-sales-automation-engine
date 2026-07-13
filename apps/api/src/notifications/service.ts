@@ -7,6 +7,7 @@ import type pg from 'pg';
 import { sql } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '../db/index.js';
+import { emitNotification } from './events.js';
 
 export interface AppNotification {
   id: string;
@@ -28,12 +29,26 @@ export async function notify(input: {
   dedupKey?: string;
 }): Promise<void> {
   const db = getDb();
-  await db.execute(sql`
+  const id = randomUUID();
+  const result = await db.execute(sql`
     INSERT INTO notifications (id, rule, title, detail, project_id, href, dedup_key)
-    VALUES (${randomUUID()}, ${input.rule}, ${input.title}, ${input.detail ?? null},
+    VALUES (${id}, ${input.rule}, ${input.title}, ${input.detail ?? null},
             ${input.projectId ?? null}, ${input.href ?? null}, ${input.dedupKey ?? null})
     ON CONFLICT DO NOTHING
   `);
+  // Push to live SSE listeners only when the row was actually inserted
+  // (dedup conflicts stay quiet, same as the daily sweep).
+  if ((result.rowCount ?? 0) > 0) {
+    emitNotification({
+      id,
+      rule: input.rule,
+      title: input.title,
+      detail: input.detail ?? null,
+      projectId: input.projectId ?? null,
+      href: input.href ?? null,
+      createdAt: new Date().toISOString(),
+    });
+  }
 }
 
 export async function listNotifications(limit = 30): Promise<{ items: AppNotification[]; unread: number }> {

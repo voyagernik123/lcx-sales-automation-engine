@@ -142,7 +142,7 @@ export function ReadinessStack() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-6.5rem)] flex-col gap-4 text-navy dark:text-ice overflow-hidden">
+    <div className="flex h-[calc(100vh-6.5rem)] flex-col gap-4 text-navy overflow-hidden">
       {/* Header and Progress summary */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0">
         <div>
@@ -172,7 +172,7 @@ export function ReadinessStack() {
       {/* Task Assignment slide-out Drawer */}
       <InspectorDrawer isOpen={!!selectedTask} onClose={() => setSelectedTask(null)} title={selectedTask?.name ?? ''}>
         {selectedTask && (
-          <div className="space-y-4 text-xs text-navy dark:text-ice leading-relaxed">
+          <div className="space-y-4 text-xs text-navy leading-relaxed">
             <div className="space-y-2 pb-3 border-b border-line">
               <span className="font-bold text-[9px] uppercase tracking-wider text-grey block">Control Target Description</span>
               <p>{selectedTask.description}</p>

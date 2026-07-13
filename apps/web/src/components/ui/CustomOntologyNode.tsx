@@ -183,7 +183,7 @@ export function CustomOntologyNode({ data }: { data: CustomNodeData }) {
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="text-[10px] font-bold text-navy dark:text-ice truncate leading-tight font-mono">
+          <div className="text-[10px] font-bold text-navy truncate leading-tight font-mono">
             {isPreempted ? `[Preemption] ${node.label}` : node.label}
           </div>
           <div className="text-[9px] font-semibold text-grey uppercase tracking-wider mt-0.5 font-sans flex items-center gap-1">

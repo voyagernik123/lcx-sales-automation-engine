@@ -11,7 +11,7 @@ export function StateInspectorPanel({ state, effectiveStatus }: StateInspectorPa
   const displayStatus = effectiveStatus || state.status;
 
   return (
-    <div className="space-y-4 text-xs leading-relaxed text-navy dark:text-ice">
+    <div className="space-y-4 text-xs leading-relaxed text-navy">
       <div className="flex flex-wrap gap-2">
         <Badge status={toBadgeStatus(displayStatus)}>{displayStatus}</Badge>
         <span className="rounded-full border border-line px-2.5 py-0.5 uppercase tracking-wider text-[10px] font-mono">

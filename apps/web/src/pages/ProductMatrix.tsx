@@ -56,12 +56,12 @@ export function ProductMatrix() {
   };
 
   return (
-    <div className="space-y-4 text-navy dark:text-ice h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
+    <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 shrink-0">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Coins size={24} className="text-navy dark:text-ice" /> Product &amp; Asset Registry Ledger
+            <Coins size={24} className="text-navy" /> Product &amp; Asset Registry Ledger
           </h1>
           <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
             Verify securities classification scores and active compliance requirement mappings for products.
@@ -71,7 +71,7 @@ export function ProductMatrix() {
         {/* Copy YAML trigger */}
         <button
           onClick={handleExportYAML}
-          className="flex items-center gap-1.5 h-9 rounded border border-line bg-card hover:bg-ice-soft dark:hover:bg-ice-soft/10 px-3.5 text-xs font-semibold shadow-sm text-navy dark:text-ice transition-colors shrink-0"
+          className="flex items-center gap-1.5 h-9 rounded border border-line bg-card hover:bg-ice-soft dark:hover:bg-ice-soft/10 px-3.5 text-xs font-semibold shadow-sm text-navy transition-colors shrink-0"
         >
           {copySuccess ? (
             <>
@@ -134,7 +134,7 @@ export function ProductMatrix() {
                     <td className="py-3 px-4 text-center text-grey">
                       {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </td>
-                    <td className="py-3 px-3 font-bold font-mono text-navy dark:text-ice">{p.name}</td>
+                    <td className="py-3 px-3 font-bold font-mono text-navy">{p.name}</td>
                     <td className="py-3 px-3">
                       <span className="px-2 py-0.5 rounded text-[10px] font-bold border border-line bg-ice-soft/30 dark:bg-ice-soft/10 text-grey-dark">
                         {p.category}
@@ -216,7 +216,7 @@ export function ProductMatrix() {
                             <div className="pt-4 border-t border-line/60 mt-auto flex flex-col sm:flex-row sm:items-center gap-4">
                               <button
                                 onClick={() => handleLinkToOntology(p.id)}
-                                className="flex items-center gap-1.5 text-xs font-bold text-navy hover:text-grey dark:text-ice dark:hover:text-grey underline transition-colors"
+                                className="flex items-center gap-1.5 text-xs font-bold text-navy hover:text-grey dark:hover:text-grey underline transition-colors"
                               >
                                 <ExternalLink size={13} />
                                 <span>Inspect Registry connections on Ontology Graph</span>

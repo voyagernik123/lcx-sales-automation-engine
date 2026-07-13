@@ -39,7 +39,7 @@ function VulnerabilityCard({ items, stateGaps }: { items: VulnerabilityItem[]; s
         <div className="rounded bg-red-100 dark:bg-red-950/30 p-1.5">
           <Crosshair size={14} className="text-red-600 dark:text-red-400" />
         </div>
-        <h3 className="font-bold text-sm text-navy dark:text-ice">Where They Are Vulnerable</h3>
+        <h3 className="font-bold text-sm text-navy">Where They Are Vulnerable</h3>
       </div>
 
       <div className="space-y-2">
@@ -116,7 +116,7 @@ function AsymmetryCard({ advantages }: { advantages: string[] }) {
         <div className="rounded bg-cyan-100 dark:bg-cyan-950/30 p-1.5">
           <Swords size={14} className="text-cyan-600 dark:text-cyan-400" />
         </div>
-        <h3 className="font-bold text-sm text-navy dark:text-ice">Where LCX Has Asymmetric Advantage</h3>
+        <h3 className="font-bold text-sm text-navy">Where LCX Has Asymmetric Advantage</h3>
       </div>
 
       <div className="space-y-2">
@@ -143,7 +143,7 @@ function WatchlistCard({ items }: { items: WatchItem[] }) {
         <div className="rounded bg-amber-100 dark:bg-amber-950/30 p-1.5">
           <Eye size={14} className="text-amber-600 dark:text-amber-400" />
         </div>
-        <h3 className="font-bold text-sm text-navy dark:text-ice">Watchlist — Competitors to Monitor</h3>
+        <h3 className="font-bold text-sm text-navy">Watchlist — Competitors to Monitor</h3>
       </div>
 
       <div className="space-y-2">
@@ -173,7 +173,7 @@ function WatchlistCard({ items }: { items: WatchItem[] }) {
               )}
             </div>
             <div className="flex-1">
-              <span className="font-bold text-navy dark:text-ice">{item.competitor}</span>
+              <span className="font-bold text-navy">{item.competitor}</span>
               <span className="text-grey-dark dark:text-grey-light"> — {item.move}</span>
               <p className="text-[9px] text-grey mt-1 leading-snug italic">{item.riskStatement}</p>
             </div>
@@ -331,7 +331,7 @@ export function SynthesisPanel() {
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-lg font-bold text-navy dark:text-ice">Threat &amp; Opportunity Synthesis</h2>
+        <h2 className="text-lg font-bold text-navy">Threat &amp; Opportunity Synthesis</h2>
         <p className="text-xs text-grey-dark dark:text-grey-light mt-0.5">
           Executive-grade strategic assessment. Computed dynamically from competitive intelligence data.
         </p>

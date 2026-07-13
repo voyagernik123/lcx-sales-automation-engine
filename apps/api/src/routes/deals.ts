@@ -11,6 +11,7 @@ import type { DealStage } from '@lcx/shared';
 import { createPostListingTriggers } from '../kpi/service.js';
 import { createStageTask } from '../tasks/service.js';
 import { createLaunchpadTasks } from '../tasks/launchpad.js';
+import { notify } from '../notifications/service.js';
 
 export const dealRoutes = new Hono<{ Variables: AuthVariables }>();
 
@@ -175,6 +176,20 @@ dealRoutes.post('/:id/stage', requireOperator, async (c) => {
       await createStageTask(id, deal.projectId, newStage);
     } catch (taskErr) {
       console.error('[deals] stage task error:', taskErr);
+    }
+
+    // Live bell update (deduped per deal+stage so replays stay quiet)
+    try {
+      await notify({
+        rule: 'deal_stage_change',
+        title: `Deal moved to ${newStage.replace(/_/g, ' ')}`,
+        detail: `${oldStage} → ${newStage}`,
+        projectId: deal.projectId,
+        href: '/deal-board',
+        dedupKey: `stage:${id}:${newStage}`,
+      });
+    } catch (notifyErr) {
+      console.error('[deals] stage notify error:', notifyErr);
     }
 
     await db.insert(schema.auditLog).values({

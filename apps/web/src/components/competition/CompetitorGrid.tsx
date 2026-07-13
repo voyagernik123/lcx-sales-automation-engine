@@ -215,7 +215,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
       case 'name':
         return (
           <div className="flex items-center gap-2">
-            <span className="font-bold text-xs text-navy dark:text-ice whitespace-nowrap">{c.name}</span>
+            <span className="font-bold text-xs text-navy whitespace-nowrap">{c.name}</span>
             {c.ticker && (
               <span className="text-[9px] font-mono text-grey dark:text-grey-light bg-ice-soft dark:bg-navy-deep px-1 rounded">
                 {c.ticker}
@@ -426,7 +426,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
       <CardBody className="p-3">
         <div className="flex items-center justify-between mb-2">
           <div className="flex items-center gap-2">
-            <span className="font-bold text-sm text-navy dark:text-ice">{c.name}</span>
+            <span className="font-bold text-sm text-navy">{c.name}</span>
             {c.ticker && (
               <span className="text-[9px] font-mono text-grey dark:text-grey-light bg-ice-soft dark:bg-navy-deep px-1.5 rounded">
                 {c.ticker}
@@ -497,7 +497,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-navy dark:text-ice">Exchange Comparison</h2>
+        <h2 className="text-lg font-bold text-navy">Exchange Comparison</h2>
         <div className="flex items-center gap-1 border border-line rounded-lg overflow-hidden">
           <button
             onClick={() => setViewMode('table')}
@@ -526,7 +526,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
         <select
           value={threatFilter}
           onChange={e => handleFilterChange(setThreatFilter, e.target.value, 'Threat Level')}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy dark:text-ice"
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy"
         >
           <option value="All">All Threat Levels</option>
           <option value="Critical">Critical</option>
@@ -539,7 +539,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
         <select
           value={clarityFilter}
           onChange={e => handleFilterChange(setClarityFilter, e.target.value, 'CLARITY')}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy dark:text-ice"
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy"
         >
           <option value="All">All CLARITY Positions</option>
           <option value="strong_beneficiary">Strong Beneficiary</option>
@@ -552,7 +552,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
         <select
           value={statusFilter}
           onChange={e => handleFilterChange(setStatusFilter, e.target.value, 'Status')}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy dark:text-ice"
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy"
         >
           <option value="All">All Statuses</option>
           <option value="public">Public</option>
@@ -575,7 +575,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
                   <th
                     key={col.key}
                     className={clsx(
-                      'p-2.5 text-[9px] font-bold uppercase tracking-wider text-grey cursor-pointer hover:text-navy dark:hover:text-ice select-none whitespace-nowrap',
+                      'p-2.5 text-[9px] font-bold uppercase tracking-wider text-grey cursor-pointer hover:text-navy select-none whitespace-nowrap',
                       col.width,
                     )}
                     onClick={() => col.sortable && handleSort(col.key)}

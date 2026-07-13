@@ -127,9 +127,9 @@ export function ScenarioPlanner() {
   }, [clarityEnacted, spdiEquivalence, micaPassport]);
 
   return (
-    <div className="space-y-4 text-navy dark:text-ice h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
+    <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
       <div className="shrink-0">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Sliders size={24} className="text-navy dark:text-ice" /> Legislative Policy Sandbox</h1>
+        <h1 className="text-2xl font-bold flex items-center gap-2"><Sliders size={24} className="text-navy" /> Legislative Policy Sandbox</h1>
         <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
           Activate pending U.S. cryptocurrency legislation to model changes on Money Transmitter licensing and corporate structures.
         </p>
@@ -157,7 +157,7 @@ export function ScenarioPlanner() {
                   )}
                 >
                   <div className="flex justify-between items-center w-full">
-                    <span className="text-xs font-bold text-navy dark:text-ice leading-tight">{sc.name}</span>
+                    <span className="text-xs font-bold text-navy leading-tight">{sc.name}</span>
                     <input
                       type="checkbox"
                       checked={active}

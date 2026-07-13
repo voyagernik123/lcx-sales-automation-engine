@@ -25,7 +25,7 @@ export function RoadmapTimeline() {
   const renderSwimLane = (label: string, products: typeof productCatalog, color: string) => (
     <div className="flex items-start gap-3 py-2 border-b border-line last:border-0">
       <div className="w-20 shrink-0 pt-1">
-        <span className="text-[9px] font-bold text-navy dark:text-ice">{label}</span>
+        <span className="text-[9px] font-bold text-navy">{label}</span>
         <div className="text-[8px] text-grey">{products.length} products</div>
       </div>
       <div className="flex-1 relative h-16">
@@ -57,7 +57,7 @@ export function RoadmapTimeline() {
 
   return (
     <div className="space-y-3">
-      <h2 className="text-lg font-bold text-navy dark:text-ice">Product Roadmap</h2>
+      <h2 className="text-lg font-bold text-navy">Product Roadmap</h2>
 
       <div className="rounded-lg border border-line bg-card p-4 shadow-sm">
         {/* Timeline axis */}

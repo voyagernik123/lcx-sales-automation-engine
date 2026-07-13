@@ -176,7 +176,7 @@ export function Simulator() {
   };
 
   return (
-    <div className="space-y-4 text-navy dark:text-ice h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
+    <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
       <div className="shrink-0">
         <h1 className="text-2xl font-bold flex items-center gap-2">U.S. Rollout Architecture Modeler</h1>
         <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
@@ -199,7 +199,7 @@ export function Simulator() {
             >
               <div className="p-4 border-b border-line">
                 <div className="flex justify-between items-start gap-2">
-                  <h3 className="font-bold text-sm tracking-tight text-navy dark:text-ice">{opt.title}</h3>
+                  <h3 className="font-bold text-sm tracking-tight text-navy">{opt.title}</h3>
                   {isCommitted && (
                     <Badge status="ready" className="flex items-center gap-1 shrink-0">
                       <CheckCircle2 size={10} /> Committed

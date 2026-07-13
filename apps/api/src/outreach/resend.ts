@@ -75,3 +75,30 @@ function hexToBytes(hex: string): Uint8Array {
   }
   return bytes;
 }
+
+export interface ResendDomainStatus {
+  name: string;
+  status: string; // 'verified' | 'pending' | 'failed' | ...
+  region: string | null;
+}
+
+/**
+ * Live sending-domain verification status straight from the Resend API.
+ * Returns null when no key is configured (demo mode).
+ */
+export async function getDomainStatus(): Promise<ResendDomainStatus[] | null> {
+  const apiKey = env.resendApiKey;
+  if (!apiKey) return null;
+  const res = await fetch('https://api.resend.com/domains', {
+    headers: { Authorization: `Bearer ${apiKey}` },
+  });
+  if (!res.ok) {
+    throw new Error(`Resend domains error ${res.status}`);
+  }
+  const body = (await res.json()) as { data?: Array<{ name?: string; status?: string; region?: string }> };
+  return (body.data ?? []).map((d) => ({
+    name: String(d.name ?? ''),
+    status: String(d.status ?? 'unknown'),
+    region: d.region ? String(d.region) : null,
+  }));
+}

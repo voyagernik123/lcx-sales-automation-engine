@@ -137,11 +137,11 @@ export function HoweyCalculator() {
   }, [scoreResult]);
 
   return (
-    <div className="space-y-4 text-navy dark:text-ice h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
+    <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
       {/* Header */}
       <div className="shrink-0 flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Scale size={24} className="text-navy dark:text-ice" /> Securities Forensic Analyzer</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Scale size={24} className="text-navy" /> Securities Forensic Analyzer</h1>
           <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
             Model token securities classifications under the U.S. Supreme Court Howey Test factors.
           </p>
@@ -174,7 +174,7 @@ export function HoweyCalculator() {
         <select
           value={selectedProductId}
           onChange={e => setSelectedProductId(e.target.value)}
-          className="flex-1 h-8 rounded border border-line bg-ice-soft dark:bg-navy-deep text-xs font-semibold font-mono focus:outline-none px-2 text-navy dark:text-ice"
+          className="flex-1 h-8 rounded border border-line bg-ice-soft dark:bg-navy-deep text-xs font-semibold font-mono focus:outline-none px-2 text-navy"
         >
           <option value="">— Select a product to view Howey analysis —</option>
           {products.map(p => (
@@ -208,7 +208,7 @@ export function HoweyCalculator() {
                         className={clsx(
                           'flex items-center gap-3 w-full text-left p-2.5 rounded border transition-colors text-xs font-semibold',
                           isChecked
-                            ? 'border-navy bg-ice-soft/30 dark:border-ice dark:bg-ice-soft/5 text-navy dark:text-ice'
+                            ? 'border-navy bg-ice-soft/30 dark:border-ice dark:bg-ice-soft/5 text-navy'
                             : 'border-line hover:bg-ice-soft/10 text-grey-dark'
                         )}
                       >
@@ -275,7 +275,7 @@ export function HoweyCalculator() {
                 </g>
               </svg>
               <div className="absolute bottom-2 left-0 right-0 flex flex-col items-center justify-center font-mono">
-                <span className="text-3xl font-extrabold text-navy dark:text-ice leading-none">{scoreResult}%</span>
+                <span className="text-3xl font-extrabold text-navy leading-none">{scoreResult}%</span>
                 <span className="text-[10px] text-grey uppercase tracking-wider font-bold mt-1">Howey Index</span>
               </div>
             </div>
@@ -294,7 +294,7 @@ export function HoweyCalculator() {
               <span className="text-[9px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 block">
                 {selectedProduct.name} Reference Score
               </span>
-              <span className="text-lg font-extrabold font-mono text-navy dark:text-ice">{selectedProduct.howeyScore}%</span>
+              <span className="text-lg font-extrabold font-mono text-navy">{selectedProduct.howeyScore}%</span>
             </div>
           )}
 

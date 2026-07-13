@@ -1,38 +1,53 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { KanbanSquare, RefreshCw } from 'lucide-react';
+import { CheckCircle2, KanbanSquare, Plus, RefreshCw, XCircle } from 'lucide-react';
 import { STAGES, STAGE_LABELS, canTransition, type DealStage } from '@lcx/shared';
 import { fetchDealBoard, transitionDealStage, type BoardDeal } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
+import { CardSkeleton } from '@/components/shared';
+import { DealCard } from '@/components/deals/DealCard';
+import { DealDetailPanel } from '@/components/deals/DealDetailPanel';
+import { fmtMoneyCents } from '@/components/deals/dealFormat';
 
-function fmtValue(cents: number | null): string {
-  if (cents == null || cents === 0) return '—';
-  return `$${(cents / 100).toLocaleString()}`;
-}
-
-const STAGE_COLORS: Record<DealStage, string> = {
-  not_started: 'border-slate-300',
-  contacted: 'border-sky-400',
-  discovery: 'border-cyan-500',
-  proposal: 'border-violet-500',
-  negotiating: 'border-amber-500',
-  won: 'border-emerald-500',
-  lost: 'border-red-400',
+/** Stage dot color for column headers (won/lost get icons instead). */
+const STAGE_DOT: Record<DealStage, string> = {
+  not_started: 'bg-slate-400',
+  contacted: 'bg-sky-400',
+  discovery: 'bg-cyan-500',
+  proposal: 'bg-violet-500',
+  negotiating: 'bg-amber-500',
+  won: 'bg-emerald-500',
+  lost: 'bg-red-400',
 };
 
+function columnClass(stage: DealStage, isDropTarget: boolean, dimmed: boolean): string {
+  const base = 'flex w-64 shrink-0 flex-col rounded-xl border p-2 transition-colors';
+  const tint =
+    stage === 'won'
+      ? 'border-emerald-500/40 bg-emerald-500/5'
+      : stage === 'lost'
+        ? 'border-red-500/40 bg-red-500/5'
+        : 'border-line bg-ice-soft/60 dark:bg-ice-soft/5';
+  const drop = isDropTarget ? 'ring-2 ring-sky-400 bg-sky-500/10 dark:bg-sky-500/10' : '';
+  const dim = dimmed ? 'opacity-50' : '';
+  return `${base} ${tint} ${drop} ${dim}`;
+}
+
 export function DealBoard() {
-  const navigate = useNavigate();
   const [deals, setDeals] = useState<BoardDeal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [dragging, setDragging] = useState<BoardDeal | null>(null);
   const [dropTarget, setDropTarget] = useState<DealStage | null>(null);
+  const [selected, setSelected] = useState<BoardDeal | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setDeals(await fetchDealBoard());
+      const next = await fetchDealBoard();
+      setDeals(next);
+      // Keep the open panel in sync with fresh data.
+      setSelected((prev) => (prev ? (next.find((d) => d.id === prev.id) ?? prev) : prev));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load board');
     } finally {
@@ -48,6 +63,12 @@ export function DealBoard() {
     const map = new Map<DealStage, BoardDeal[]>(STAGES.map((s) => [s, []]));
     for (const d of deals) map.get(d.stage as DealStage)?.push(d);
     return map;
+  }, [deals]);
+
+  const summary = useMemo(() => {
+    const open = deals.filter((d) => d.stage !== 'won' && d.stage !== 'lost');
+    const pipeline = open.reduce((s, d) => s + (d.packageValue ?? 0), 0);
+    return { open: open.length, pipeline };
   }, [deals]);
 
   const handleDrop = async (target: DealStage) => {
@@ -76,7 +97,7 @@ export function DealBoard() {
     setDeals((prev) => prev.map((d) => (d.id === deal.id ? { ...d, stage: target } : d)));
     try {
       await transitionDealStage(deal.id, body);
-      toast('success', `${deal.projectName} → ${STAGE_LABELS[target]}`);
+      toast('success', `Deal advanced to ${STAGE_LABELS[target]} — ${deal.projectName}`);
     } catch (err) {
       toast('error', err instanceof Error ? err.message : 'Transition failed');
     } finally {
@@ -86,85 +107,104 @@ export function DealBoard() {
 
   return (
     <div className="space-y-4 p-4">
-      <div className="flex items-center justify-between">
-        <h1 className="flex items-center gap-2 text-lg font-bold">
-          <KanbanSquare size={18} /> Deal Board
-        </h1>
-        <button onClick={() => void load()} className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10">
-          <RefreshCw size={11} /> Refresh
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="flex items-center gap-2 text-lg font-bold text-navy">
+            <KanbanSquare size={18} /> Deal Board
+          </h1>
+          {!loading && deals.length > 0 && (
+            <p className="mt-0.5 text-[11px] text-grey">
+              {summary.open} open {summary.open === 1 ? 'deal' : 'deals'} · {fmtMoneyCents(summary.pipeline)} in pipeline
+            </p>
+          )}
+        </div>
+        <button
+          onClick={() => void load()}
+          className="inline-flex items-center gap-1 rounded-lg border border-line bg-card px-2.5 py-1.5 text-[11px] font-semibold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+        >
+          <RefreshCw size={11} className={loading ? 'animate-spin' : undefined} /> Refresh
         </button>
       </div>
 
-      {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{error}</div>}
-      {loading && deals.length === 0 && <p className="py-8 text-center text-[12px] text-grey">Loading board…</p>}
+      {error && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-[12px] text-red-600 dark:text-red-400">
+          {error}
+        </div>
+      )}
 
-      <div className="flex gap-3 overflow-x-auto pb-2">
-        {STAGES.map((stage) => {
-          const cards = byStage.get(stage) ?? [];
-          const totalValue = cards.reduce((s, d) => s + (d.packageValue ?? 0), 0);
-          const validTarget = dragging && dragging.stage !== stage && canTransition(dragging.stage as DealStage, stage);
-          return (
-            <div
-              key={stage}
-              onDragOver={(e) => {
-                if (validTarget) {
+      {loading && deals.length === 0 ? (
+        <CardSkeleton count={8} />
+      ) : (
+        <div className="flex gap-3 overflow-x-auto pb-2">
+          {STAGES.map((stage) => {
+            const cards = byStage.get(stage) ?? [];
+            const totalValue = cards.reduce((s, d) => s + (d.packageValue ?? 0), 0);
+            const validTarget = dragging && dragging.stage !== stage && canTransition(dragging.stage as DealStage, stage);
+            return (
+              <div
+                key={stage}
+                onDragOver={(e) => {
+                  if (validTarget) {
+                    e.preventDefault();
+                    setDropTarget(stage);
+                  }
+                }}
+                onDragLeave={() => setDropTarget((t) => (t === stage ? null : t))}
+                onDrop={(e) => {
                   e.preventDefault();
-                  setDropTarget(stage);
-                }
-              }}
-              onDragLeave={() => setDropTarget((t) => (t === stage ? null : t))}
-              onDrop={(e) => {
-                e.preventDefault();
-                void handleDrop(stage);
-              }}
-              className={`w-60 shrink-0 rounded-lg border-t-4 ${STAGE_COLORS[stage]} bg-slate-50 dark:bg-slate-900/40 p-2 transition-colors ${
-                dropTarget === stage ? 'ring-2 ring-indigo-400 bg-indigo-50 dark:bg-indigo-950/30' : ''
-              } ${dragging && !validTarget && dragging.stage !== stage ? 'opacity-50' : ''}`}
-            >
-              <div className="mb-2 flex items-baseline justify-between px-1">
-                <span className="text-[11px] font-bold uppercase tracking-wide">{STAGE_LABELS[stage]}</span>
-                <span className="text-[10px] text-grey font-mono">
-                  {cards.length}{totalValue > 0 && ` · ${fmtValue(totalValue)}`}
-                </span>
-              </div>
-              <div className="space-y-2 min-h-[60px]">
-                {cards.map((d) => (
-                  <div
-                    key={d.id}
-                    draggable
-                    onDragStart={() => setDragging(d)}
-                    onDragEnd={() => {
-                      setDragging(null);
-                      setDropTarget(null);
-                    }}
-                    onClick={() => navigate(`/bd-pipeline/${d.projectId}`)}
-                    className="cursor-grab rounded border border-line bg-white dark:bg-slate-800 p-2 shadow-sm hover:shadow active:cursor-grabbing"
-                  >
-                    <div className="flex items-start justify-between gap-1">
-                      <span className="text-[12px] font-semibold leading-tight">{d.projectName}</span>
-                      <span className="rounded bg-indigo-50 dark:bg-indigo-950/40 px-1 py-0.5 text-[9px] font-bold text-indigo-700 dark:text-indigo-300 font-mono shrink-0">P{d.priorityScore}</span>
+                  void handleDrop(stage);
+                }}
+                className={columnClass(stage, dropTarget === stage, Boolean(dragging && !validTarget && dragging.stage !== stage))}
+              >
+                <div className="mb-2 flex items-center justify-between gap-2 px-1">
+                  <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-navy">
+                    {stage === 'won' ? (
+                      <CheckCircle2 size={13} className="shrink-0 text-emerald-500" aria-label="Won" />
+                    ) : stage === 'lost' ? (
+                      <XCircle size={13} className="shrink-0 text-red-500" aria-label="Lost" />
+                    ) : (
+                      <span className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} aria-hidden="true" />
+                    )}
+                    <span className="truncate">{STAGE_LABELS[stage]}</span>
+                    <span className="shrink-0 rounded-full border border-line bg-card px-1.5 text-[10px] font-semibold text-grey">
+                      {cards.length}
+                    </span>
+                  </span>
+                  {totalValue > 0 && <span className="shrink-0 font-mono text-[10px] text-grey">{fmtMoneyCents(totalValue)}</span>}
+                </div>
+
+                <div className="min-h-[80px] space-y-2">
+                  {cards.map((d) => (
+                    <DealCard
+                      key={d.id}
+                      deal={d}
+                      onDragStart={() => setDragging(d)}
+                      onDragEnd={() => {
+                        setDragging(null);
+                        setDropTarget(null);
+                      }}
+                      onClick={() => setSelected(d)}
+                    />
+                  ))}
+                  {cards.length === 0 && (
+                    <div className="flex flex-col items-center gap-1 rounded-lg border border-dashed border-line p-4 text-center text-[10px] text-grey">
+                      <Plus size={14} aria-hidden="true" />
+                      Drop deals here
                     </div>
-                    <div className="mt-1 flex items-center justify-between text-[10px] text-grey">
-                      <span>{d.packageType ?? '—'} · {fmtValue(d.packageValue)}</span>
-                      {d.stage !== 'won' && d.stage !== 'lost' && d.daysSinceUpdate >= 7 && (
-                        <span className={`font-bold ${d.daysSinceUpdate >= 21 ? 'text-red-600' : 'text-amber-600'}`}>
-                          {d.daysSinceUpdate}d stale
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-                {cards.length === 0 && <div className="rounded border border-dashed border-line/70 p-3 text-center text-[10px] text-grey">empty</div>}
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       <p className="text-[10px] text-grey">
         Drag a card to advance it. Skipping ahead is allowed; moving backwards isn't. Won/Lost ask for a reason —
         wins auto-create the 30/60/90 post-listing triggers.
       </p>
+
+      {selected && <DealDetailPanel deal={selected} onClose={() => setSelected(null)} />}
     </div>
   );
 }

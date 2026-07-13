@@ -160,14 +160,14 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
           <div className="flex items-center gap-2">
             {(() => { const Icon = categoryIcons[p.category]; return <Icon size={14} className="text-grey shrink-0" />; })()}
             <div>
-              <div className="font-bold text-[11px] text-navy dark:text-ice leading-tight">{p.name}</div>
+              <div className="font-bold text-[11px] text-navy leading-tight">{p.name}</div>
               <div className="text-[9px] text-grey">{p.subcategory}</div>
             </div>
           </div>
         );
       case 'category':
         return (
-          <span className="text-[10px] font-semibold text-navy dark:text-ice">{CATEGORY_META[p.category].label}</span>
+          <span className="text-[10px] font-semibold text-navy">{CATEGORY_META[p.category].label}</span>
         );
       case 'priorityTier':
         return (
@@ -218,7 +218,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
               <div className={clsx('h-full rounded-full', p.strategicImportance >= 8 ? 'bg-purple-500' : p.strategicImportance >= 6 ? 'bg-cyan-500' : 'bg-slate-400')}
                 style={{ width: `${p.strategicImportance * 10}%` }} />
             </div>
-            <span className="font-mono text-[9px] font-bold text-navy dark:text-ice">{p.strategicImportance}</span>
+            <span className="font-mono text-[9px] font-bold text-navy">{p.strategicImportance}</span>
           </div>
         );
       case 'implementationComplexity':
@@ -228,7 +228,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
               <div className={clsx('h-full rounded-full', p.implementationComplexity >= 8 ? 'bg-red-500' : p.implementationComplexity >= 5 ? 'bg-amber-500' : 'bg-emerald-500')}
                 style={{ width: `${p.implementationComplexity * 10}%` }} />
             </div>
-            <span className="font-mono text-[9px] font-bold text-navy dark:text-ice">{p.implementationComplexity}</span>
+            <span className="font-mono text-[9px] font-bold text-navy">{p.implementationComplexity}</span>
           </div>
         );
       default: return null;
@@ -257,7 +257,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
                 <Icon size={13} />
               </div>
               <div>
-                <div className="font-bold text-[11px] text-navy dark:text-ice leading-tight">{p.name}</div>
+                <div className="font-bold text-[11px] text-navy leading-tight">{p.name}</div>
                 <div className="text-[9px] text-grey">{CATEGORY_META[p.category].label} · {p.audience}</div>
               </div>
             </div>
@@ -285,7 +285,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-navy dark:text-ice">Product Catalog</h2>
+        <h2 className="text-lg font-bold text-navy">Product Catalog</h2>
         <div className="flex items-center gap-1 border border-line rounded-lg overflow-hidden">
           <button onClick={() => setViewMode('table')} className={clsx('px-2 py-1 transition-colors', viewMode === 'table' ? 'bg-navy dark:bg-ice text-card dark:text-navy' : 'hover:bg-ice-soft text-grey')}>
             <Table2 size={14} />
@@ -298,21 +298,21 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
 
       <div className="flex flex-wrap items-center gap-1.5">
         <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as any)}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy dark:text-ice">
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy">
           <option value="All">All Categories</option>
           {categories.map(c => (
             <option key={c} value={c}>{CATEGORY_META[c].label}</option>
           ))}
         </select>
         <select value={audienceFilter} onChange={e => setAudienceFilter(e.target.value as any)}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy dark:text-ice">
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy">
           <option value="All">All Audiences</option>
           <option value="retail">Retail</option>
           <option value="institutional">Institutional</option>
           <option value="both">Both</option>
         </select>
         <select value={tierFilter} onChange={e => setTierFilter(e.target.value === 'All' ? 'All' : parseInt(e.target.value))}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy dark:text-ice">
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy">
           <option value="All">All Priorities</option>
           <option value="1">Tier 1 — Critical</option>
           <option value="2">Tier 2 — High</option>
@@ -320,7 +320,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
           <option value="4">Tier 4 — Monitor</option>
         </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy dark:text-ice">
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy">
           <option value="All">All Statuses</option>
           <option value="live">Live</option>
           <option value="building">Building</option>
@@ -337,7 +337,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
               <tr className="bg-ice-soft/40 dark:bg-navy-deep/20 border-b border-line">
                 {COLUMNS.map(col => (
                   <th key={col.key} className={clsx('p-2 text-[9px] font-bold uppercase tracking-wider text-grey select-none whitespace-nowrap', col.width,
-                    col.sortable && 'cursor-pointer hover:text-navy dark:hover:text-ice')}
+                    col.sortable && 'cursor-pointer hover:text-navy')}
                     onClick={() => col.sortable && handleSort(col.key as ProductSortField)}>
                     <span className="flex items-center gap-1">
                       {col.short}

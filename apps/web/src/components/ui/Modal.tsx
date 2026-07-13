@@ -49,7 +49,7 @@ export function Modal({ isOpen, onClose, title, children, footer, className }: M
         ref={dialogRef}
         tabIndex={-1}
         className={clsx(
-          'relative w-full max-w-lg rounded-lg border border-line bg-card shadow-xl p-0 outline-none overflow-hidden transition-all text-navy dark:text-ice',
+          'relative w-full max-w-lg rounded-lg border border-line bg-card shadow-xl p-0 outline-none overflow-hidden transition-all text-navy',
           className
         )}
       >

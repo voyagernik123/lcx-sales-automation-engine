@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Layers, RefreshCw } from 'lucide-react';
 import { fetchExchangeGaps, type GapRow } from '@/lib/api/bd';
+import { TableSkeleton } from '@/components/shared';
 
 function fmtUsd(n: number | null): string {
   if (n == null) return '—';
@@ -65,7 +66,7 @@ export function ExchangeGaps() {
         listing budgets, ranked by likelihood to pay. {total > 0 && <span className="font-semibold">{total} gaps found.</span>}
       </p>
 
-      {loading && <p className="py-8 text-center text-[12px] text-grey">Loading…</p>}
+      {loading && <TableSkeleton rows={6} cols={4} />}
       {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{error}</div>}
       {!loading && !error && rows.length === 0 && (
         <div className="rounded-lg border border-dashed border-line p-8 text-center text-[12px] text-grey">

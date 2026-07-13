@@ -56,7 +56,7 @@ export function ClaimLibrary() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy dark:text-ice overflow-hidden">
+    <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy overflow-hidden">
       {/* Header */}
       <div className="shrink-0 flex items-center justify-between px-4 py-2 border-b border-line bg-card">
         <div className="flex items-center gap-2">

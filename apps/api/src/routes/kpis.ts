@@ -38,6 +38,68 @@ kpiRoutes.get('/export', requireOperator, async (c) => {
   }
 });
 
+/** GET /v1/kpis/history?days=30 — daily KPI snapshots (kpi_daily_snapshots) for trends. */
+kpiRoutes.get('/history', requireOperator, async (c) => {
+  try {
+    const raw = Number.parseInt(c.req.query('days') ?? '30', 10);
+    const days = Number.isFinite(raw) ? Math.min(Math.max(raw, 1), 365) : 30;
+    const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+
+    const db = getDb();
+    const result = await db.execute(sql`
+      SELECT to_char(snapshot_date, 'YYYY-MM-DD') AS snapshot_date, new_high_score_leads_week,
+             reply_rate_email_sent, reply_rate_email_replied,
+             reply_rate_linkedin_sent, reply_rate_linkedin_replied,
+             funnel_enrolled, funnel_replied, funnel_proposal, funnel_won,
+             revenue_listing, revenue_marketing, revenue_liquidity,
+             revenue_dual, revenue_emt, revenue_custom,
+             stalled_deal_count, total_won, with_expansion, expansion_revenue,
+             hot_deals, stalled_deals, overdue_actions
+      FROM kpi_daily_snapshots
+      WHERE snapshot_date >= ${cutoff}
+      ORDER BY snapshot_date ASC
+    `);
+
+    const n = (v: unknown) => Number(v ?? 0);
+    const data = (result.rows ?? []).map((r: Record<string, unknown>) => {
+      const totalRevenue =
+        n(r.revenue_listing) + n(r.revenue_marketing) + n(r.revenue_liquidity) +
+        n(r.revenue_dual) + n(r.revenue_emt) + n(r.revenue_custom);
+      return {
+        date: String(r.snapshot_date),
+        newHighScoreLeadsWeek: n(r.new_high_score_leads_week),
+        emailSent: n(r.reply_rate_email_sent),
+        emailReplied: n(r.reply_rate_email_replied),
+        linkedinSent: n(r.reply_rate_linkedin_sent),
+        linkedinReplied: n(r.reply_rate_linkedin_replied),
+        funnelEnrolled: n(r.funnel_enrolled),
+        funnelReplied: n(r.funnel_replied),
+        funnelProposal: n(r.funnel_proposal),
+        funnelWon: n(r.funnel_won),
+        revenueListing: n(r.revenue_listing),
+        revenueMarketing: n(r.revenue_marketing),
+        revenueLiquidity: n(r.revenue_liquidity),
+        revenueDual: n(r.revenue_dual),
+        revenueEmt: n(r.revenue_emt),
+        revenueCustom: n(r.revenue_custom),
+        totalRevenue,
+        stalledDealCount: n(r.stalled_deal_count),
+        totalWon: n(r.total_won),
+        withExpansion: n(r.with_expansion),
+        expansionRevenue: n(r.expansion_revenue),
+        hotDeals: n(r.hot_deals),
+        stalledDeals: n(r.stalled_deals),
+        overdueActions: n(r.overdue_actions),
+      };
+    });
+
+    return c.json({ data, meta: { days, timestamp: new Date().toISOString(), version: env.version } });
+  } catch (err) {
+    console.error('[kpis] history error:', err);
+    return c.json({ error: 'Failed to load KPI history', code: 'QUERY_ERROR' }, 500);
+  }
+});
+
 /* ─── Post-listing triggers ─── */
 
 

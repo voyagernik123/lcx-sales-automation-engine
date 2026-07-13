@@ -10,6 +10,7 @@ import {
   Plus,
 } from 'lucide-react';
 import { request } from '@/lib/apiClient';
+import { TableSkeleton } from '@/components/shared';
 
 type Tab = 'domains' | 'health' | 'abtests' | 'accounts';
 
@@ -131,8 +132,8 @@ export function OutreachOps() {
             onClick={() => setTab(key)}
             className={`inline-flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold border-b-2 -mb-px ${
               tab === key
-                ? 'border-navy text-navy dark:text-ice dark:border-ice'
-                : 'border-transparent text-grey hover:text-navy dark:hover:text-ice'
+                ? 'border-navy text-navy dark:border-ice'
+                : 'border-transparent text-grey hover:text-navy'
             }`}
           >
             <Icon size={13} /> {label}
@@ -227,7 +228,7 @@ function DomainsTab() {
         </button>
       </div>
 
-      {loading && <p className="py-8 text-center text-[12px] text-grey">Loading…</p>}
+      {loading && <TableSkeleton rows={6} cols={4} />}
       {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{error}</div>}
       {!loading && !error && (
         <div className="overflow-x-auto rounded-lg border border-line">
@@ -329,7 +330,7 @@ function HealthTab() {
         </button>
       </div>
 
-      {loading && <p className="py-8 text-center text-[12px] text-grey">Loading…</p>}
+      {loading && <TableSkeleton rows={6} cols={4} />}
       {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{error}</div>}
       {!loading && !error && report && (
         <>
@@ -457,7 +458,7 @@ function AbTestsTab() {
         </button>
       </div>
 
-      {loading && <p className="py-8 text-center text-[12px] text-grey">Loading…</p>}
+      {loading && <TableSkeleton rows={6} cols={4} />}
       {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{error}</div>}
       {!loading && !error && (
         <div className="overflow-x-auto rounded-lg border border-line">
@@ -596,7 +597,7 @@ function AccountsTab() {
         </button>
       </div>
 
-      {loading && <p className="py-8 text-center text-[12px] text-grey">Loading…</p>}
+      {loading && <TableSkeleton rows={6} cols={4} />}
       {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{error}</div>}
       {!loading && !error && (
         <div className="overflow-x-auto rounded-lg border border-line">

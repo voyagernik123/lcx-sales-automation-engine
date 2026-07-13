@@ -55,10 +55,10 @@ export function RedFlags() {
   }, [selectedCell]);
 
   return (
-    <div className="space-y-4 text-navy dark:text-ice h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
+    <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
       <div className="shrink-0 flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Scale size={24} className="text-navy dark:text-ice" /> Audit Risk Mitigation Center</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Scale size={24} className="text-navy" /> Audit Risk Mitigation Center</h1>
           <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
             Model, analyze, and resolve legal friction coordinates using the 2D Probability vs. Impact matrix.
           </p>
@@ -223,9 +223,9 @@ export function RedFlags() {
                               onClick={() => handleResolveRemediation(r.id)}
                               className="flex items-start gap-2.5 w-full text-left text-xs p-1 rounded hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors font-semibold"
                             >
-                              <span className="mt-0.5 shrink-0 text-grey hover:text-navy dark:hover:text-ice">
+                              <span className="mt-0.5 shrink-0 text-grey hover:text-navy">
                                 {active ? (
-                                  <CheckSquare size={14} className="text-navy dark:text-ice" />
+                                  <CheckSquare size={14} className="text-navy" />
                                 ) : (
                                   <Square size={14} />
                                 )}

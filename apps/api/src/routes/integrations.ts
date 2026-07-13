@@ -20,6 +20,9 @@ import {
   setPreference,
   webPushConfigured,
 } from '../integrations/webpush.js';
+import { getDomainStatus } from '../outreach/resend.js';
+import { getDb } from '../db/index.js';
+import { sql } from 'drizzle-orm';
 
 export const integrationRoutes = new Hono<{ Variables: AuthVariables }>();
 
@@ -28,6 +31,108 @@ const fail = (label: string, code: string) => (err: unknown) => {
   console.error(`[integrations] ${label} error:`, err);
   return { code, message: `${label} failed` };
 };
+
+// ── Connection status (drives the Integrations page cards) ──
+
+const maskKey = (key: string) => (key ? `${key.slice(0, 4)}…${key.slice(-4)}` : null);
+
+integrationRoutes.get('/status', requireOperator, async (c) => {
+  const db = getDb();
+
+  // Real sending stats from our own message log (works keyless).
+  const statsResult = await db.execute(sql`
+    SELECT
+      COUNT(*) FILTER (WHERE status = 'sent') AS sent,
+      COUNT(*) FILTER (WHERE status = 'delivered') AS delivered,
+      COUNT(*) FILTER (WHERE status = 'bounced') AS bounced,
+      COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '7 days') AS last7d
+    FROM messages WHERE provider = 'resend'
+  `);
+  const s = (statsResult.rows?.[0] ?? {}) as Record<string, unknown>;
+
+  // Live domain verification from Resend when a key is present.
+  let domains: Awaited<ReturnType<typeof getDomainStatus>> = null;
+  let resendError: string | null = null;
+  if (env.resendApiKey) {
+    try {
+      domains = await getDomainStatus();
+    } catch (err) {
+      resendError = err instanceof Error ? err.message : 'domain lookup failed';
+    }
+  }
+
+  const services = [
+    {
+      id: 'resend',
+      name: 'Resend (Email)',
+      mode: env.resendApiKey ? 'live' : 'demo',
+      configured: Boolean(env.resendApiKey),
+      maskedKey: maskKey(env.resendApiKey),
+      webhookVerification: Boolean(env.resendWebhookSecret),
+      domains,
+      error: resendError,
+      stats: {
+        sent: Number(s.sent ?? 0),
+        delivered: Number(s.delivered ?? 0),
+        bounced: Number(s.bounced ?? 0),
+        last7d: Number(s.last7d ?? 0),
+      },
+      setup: 'Set RESEND_API_KEY and RESEND_WEBHOOK_SECRET, verify your sending domain at resend.com/domains.',
+    },
+    {
+      id: 'email-sync',
+      name: 'Email Sync (Gmail/IMAP)',
+      mode: process.env.EMAIL_SYNC_PROVIDER ? 'live' : 'demo',
+      configured: Boolean(process.env.EMAIL_SYNC_PROVIDER),
+      setup: 'Set EMAIL_SYNC_PROVIDER plus provider credentials to sync real threads.',
+    },
+    {
+      id: 'twitter',
+      name: 'Twitter / X Monitoring',
+      mode: process.env.TWITTER_BEARER_TOKEN ? 'live' : 'demo',
+      configured: Boolean(process.env.TWITTER_BEARER_TOKEN),
+      setup: 'Set TWITTER_BEARER_TOKEN (X API v2 app-only bearer).',
+    },
+    {
+      id: 'chat-monitor',
+      name: 'Telegram / Discord Monitoring',
+      mode: process.env.CHAT_MONITOR_TOKEN ? 'live' : 'demo',
+      configured: Boolean(process.env.CHAT_MONITOR_TOKEN),
+      setup: 'Set CHAT_MONITOR_TOKEN (bot token with read access).',
+    },
+    {
+      id: 'calendar',
+      name: 'Calendar (Google)',
+      mode: process.env.CALENDAR_PROVIDER ? 'live' : 'demo',
+      configured: Boolean(process.env.CALENDAR_PROVIDER),
+      setup: 'Set CALENDAR_PROVIDER=google plus OAuth client credentials.',
+    },
+    {
+      id: 'esign',
+      name: 'E-Signature (DocuSign)',
+      mode: process.env.ESIGN_PROVIDER ? 'live' : 'demo',
+      configured: Boolean(process.env.ESIGN_PROVIDER),
+      setup: 'Set ESIGN_PROVIDER=docusign plus integration key.',
+    },
+    {
+      id: 'webpush',
+      name: 'Web Push',
+      mode: webPushConfigured ? 'live' : 'demo',
+      configured: webPushConfigured,
+      setup: 'Set VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY.',
+    },
+    {
+      id: 'anthropic',
+      name: 'Anthropic (AI features)',
+      mode: env.anthropicApiKey ? 'live' : 'demo',
+      configured: Boolean(env.anthropicApiKey),
+      maskedKey: maskKey(env.anthropicApiKey),
+      setup: 'Set ANTHROPIC_API_KEY — all 10 AI features upgrade from deterministic to LLM-powered.',
+    },
+  ];
+
+  return c.json({ data: { services }, meta: meta() });
+});
 
 // ── Meeting scheduling (2-9) ──
 

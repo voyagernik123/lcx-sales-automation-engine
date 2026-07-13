@@ -2,6 +2,54 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell } from 'lucide-react';
 import { fetchNotifications, markNotificationRead, markAllNotificationsRead, type AppNotification } from '@/lib/api/bd';
+import { request } from '@/lib/apiClient';
+
+const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '/api';
+
+/**
+ * Live notifications over SSE. Exchanges the operator key for a short-lived
+ * stream token (EventSource can't send headers), reconnects on token expiry,
+ * and reports whether the live channel is up so the caller can relax polling.
+ */
+function useNotificationStream(onEvent: () => void): boolean {
+  const [live, setLive] = useState(false);
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
+
+  useEffect(() => {
+    let source: EventSource | null = null;
+    let retryTimer: ReturnType<typeof setTimeout>;
+    let stopped = false;
+
+    const connect = async () => {
+      try {
+        const res = await request<{ data: { token: string } }>('/v1/notifications/stream-token', { method: 'POST' });
+        if (stopped) return;
+        source = new EventSource(`${API_BASE}/v1/notifications/stream?token=${encodeURIComponent(res.data.token)}`);
+        source.addEventListener('connected', () => setLive(true));
+        source.addEventListener('notification', () => onEventRef.current());
+        source.onerror = () => {
+          setLive(false);
+          source?.close();
+          source = null;
+          if (!stopped) retryTimer = setTimeout(connect, 15_000);
+        };
+      } catch {
+        setLive(false);
+        if (!stopped) retryTimer = setTimeout(connect, 30_000);
+      }
+    };
+
+    void connect();
+    return () => {
+      stopped = true;
+      clearTimeout(retryTimer);
+      source?.close();
+    };
+  }, []);
+
+  return live;
+}
 
 const RULE_ICON: Record<string, string> = {
   reply_received: '💬',
@@ -27,11 +75,14 @@ export function NotificationBell() {
     }
   }, []);
 
+  const live = useNotificationStream(load);
+
   useEffect(() => {
     void load();
-    const interval = setInterval(() => void load(), 120_000);
+    // SSE connected → polling is just a slow safety net; otherwise poll normally.
+    const interval = setInterval(() => void load(), live ? 300_000 : 60_000);
     return () => clearInterval(interval);
-  }, [load]);
+  }, [load, live]);
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -55,8 +106,10 @@ export function NotificationBell() {
         onClick={() => setOpen((o) => !o)}
         className="relative rounded-full p-1.5 text-ice/70 hover:bg-ice-soft/20 hover:text-ice transition-all"
         aria-label="Notifications"
+        title={live ? 'Notifications: live' : 'Notifications: polling'}
       >
         <Bell size={18} />
+        {live && <span className="absolute bottom-0 right-0 h-1.5 w-1.5 rounded-full bg-emerald-400" />}
         {unread > 0 && (
           <span className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-bold text-white">
             {unread > 9 ? '9+' : unread}

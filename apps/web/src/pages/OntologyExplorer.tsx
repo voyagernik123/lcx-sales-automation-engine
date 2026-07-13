@@ -176,7 +176,7 @@ export function OntologyExplorer() {
 
   return (
     <ReactFlowProvider>
-      <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy dark:text-ice overflow-hidden">
+      <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy overflow-hidden">
 
         {/* TOP TOOLBAR */}
         <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-line bg-card overflow-x-auto">
@@ -185,7 +185,7 @@ export function OntologyExplorer() {
           <div className="flex-1 max-w-md relative">
             <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-grey" />
             <input type="text" placeholder="Search..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-              className="w-full h-7 pl-7 pr-2 rounded border border-line bg-ice-soft dark:bg-navy-deep text-[10px] text-navy dark:text-ice focus:outline-none placeholder-grey/50 font-mono" />
+              className="w-full h-7 pl-7 pr-2 rounded border border-line bg-ice-soft dark:bg-navy-deep text-[10px] text-navy focus:outline-none placeholder-grey/50 font-mono" />
             {searchMatches.length > 0 && (
               <div className="absolute top-8 left-0 right-0 z-20 bg-card border border-line rounded shadow-lg overflow-hidden text-[10px] divide-y divide-line">
                 {searchMatches.map(m => (
@@ -213,7 +213,7 @@ export function OntologyExplorer() {
           </div>
 
           <select value={colorBy} onChange={e => setColorBy(e.target.value as any)}
-            className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-1.5 text-[9px] font-semibold focus:outline-none text-navy dark:text-ice shrink-0">
+            className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-1.5 text-[9px] font-semibold focus:outline-none text-navy shrink-0">
             <option value="status">Status</option>
             <option value="phase">Phase</option>
             <option value="domain">Domain</option>
@@ -277,7 +277,7 @@ export function OntologyExplorer() {
 
       <InspectorDrawer isOpen={!!selectedNode} onClose={() => { setSelectedNode(null); setSelectedNodeId(null); }} title={selectedNode?.label ?? ''}>
         {selectedNode && (
-          <div className="space-y-4 text-sm text-navy dark:text-ice">
+          <div className="space-y-4 text-sm text-navy">
             <div className="flex flex-wrap gap-2">
               <Badge status={toBadgeStatus(selectedNode.status)}>{selectedNode.status}</Badge>
               <span className="text-xs rounded-full border border-line px-2.5 py-0.5 uppercase font-mono">{selectedNode.type}</span>
@@ -287,7 +287,7 @@ export function OntologyExplorer() {
             {selectedProductObj && (<div className="space-y-3 pt-2"><p className="text-xs">{selectedProductObj.description}</p>{selectedProductObj.howeyScore !== undefined && (<div className="bg-ice-soft dark:bg-ice-soft/10 rounded p-3 border border-line text-xs space-y-2"><p className="font-bold flex items-center justify-between"><span>Howey Score:</span><span className="font-mono text-sm">{selectedProductObj.howeyScore}%</span></p>{selectedProductObj.howeyAnalysis && (<div className="space-y-1.5 pt-1 text-[11px] border-t border-line/55 leading-relaxed"><p><strong>Investment:</strong> {selectedProductObj.howeyAnalysis.investmentOfMoney}</p><p><strong>Enterprise:</strong> {selectedProductObj.howeyAnalysis.commonEnterprise}</p><p><strong>Profits:</strong> {selectedProductObj.howeyAnalysis.profitExpectation}</p><p><strong>Efforts:</strong> {selectedProductObj.howeyAnalysis.effortsOfOthers}</p></div>)}</div>)}{selectedProductObj.risks.length > 0 && (<div className="space-y-1.5 border-t border-line pt-3"><span className="font-semibold text-xs text-grey uppercase tracking-wider block">Risks</span><ul className="list-disc list-inside text-xs space-y-1">{selectedProductObj.risks.map((r,i) => <li key={i}>{r}</li>)}</ul></div>)}</div>)}
             {selectedReqObj && (<div className="space-y-3 pt-2"><div className="space-y-2"><span className="font-semibold text-xs text-grey uppercase tracking-wider block">Domain</span><p className="text-sm font-medium">{selectedReqObj.domain}</p></div><div className="space-y-2 border-t border-line pt-3"><span className="font-semibold text-xs text-grey uppercase tracking-wider block">Description</span><p className="text-xs leading-relaxed">{selectedReqObj.description}</p></div></div>)}
             {selectedLicObj && (<div className="space-y-3 pt-2"><div className="space-y-2"><span className="font-semibold text-xs text-grey uppercase tracking-wider block">Authority</span><p className="text-sm font-medium">{selectedLicObj.issuingAuthority}</p></div><div className="space-y-2 border-t border-line pt-3"><span className="font-semibold text-xs text-grey uppercase tracking-wider block">Exemptions</span><ul className="list-disc list-inside text-xs space-y-1">{selectedLicObj.exemptions.map((x,i) => <li key={i}>{x}</li>)}</ul></div></div>)}
-            <div className="pt-2 border-t border-line"><details className="group cursor-pointer"><summary className="text-[10px] font-bold uppercase tracking-wider text-grey select-none list-none flex items-center gap-1.5"><span className="transition-transform group-open:rotate-90">&rarr;</span><span>Registry Payload</span></summary><pre className="mt-2 p-2.5 rounded bg-ice-soft dark:bg-navy-deep text-[10px] font-mono overflow-x-auto text-navy dark:text-ice border border-line leading-normal">{JSON.stringify(selectedNode.data || selectedNode, null, 2)}</pre></details></div>
+            <div className="pt-2 border-t border-line"><details className="group cursor-pointer"><summary className="text-[10px] font-bold uppercase tracking-wider text-grey select-none list-none flex items-center gap-1.5"><span className="transition-transform group-open:rotate-90">&rarr;</span><span>Registry Payload</span></summary><pre className="mt-2 p-2.5 rounded bg-ice-soft dark:bg-navy-deep text-[10px] font-mono overflow-x-auto text-navy border border-line leading-normal">{JSON.stringify(selectedNode.data || selectedNode, null, 2)}</pre></details></div>
           </div>
         )}
       </InspectorDrawer>

@@ -1,21 +1,40 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import {
-  User,
-  ChevronDown,
-  ChevronRight,
+  ArrowLeft,
   RefreshCw,
   Building2,
   Gauge,
-  Users,
   Briefcase,
+  Send,
   Inbox,
   ListChecks,
+  FileText,
+  Paperclip,
+  Activity,
   ExternalLink,
+  Pin,
+  AlertTriangle,
 } from 'lucide-react';
 import { request } from '@/lib/apiClient';
+import { PageSkeleton, EmptyState } from '@/components/shared';
+import { BandBadge } from '@/components/bd';
+import {
+  fetchProjectSequences,
+  fetchProjectMessages,
+  fetchHandoffs,
+  fetchTasks,
+  fetchProjectTimeline,
+  type TimelineEntry,
+  type OperatorTask,
+} from '@/lib/api/bd';
+import type { HandoffRecord, MessageRecord, SequenceRecord } from '@/types/bd';
+import { SEQUENCE_STATUS_COLORS, MESSAGE_STATUS_COLORS } from '@/types/bd';
+import type { ScoreBand } from '@lcx/shared';
 
-type Customer360 = {
+/* ── Types (mirror GET /v1/projects/:id/360) ── */
+
+type Customer360Data = {
   project: {
     id: string;
     name: string;
@@ -74,12 +93,51 @@ type Customer360 = {
   lastActivity: string | null;
 };
 
-function fmtNum(n: number | null): string {
+type NoteItem = {
+  id: string;
+  title: string | null;
+  body: string;
+  pinned: boolean;
+  updatedAt: string;
+};
+
+type DocItem = {
+  id: string;
+  name: string;
+  mime: string;
+  sizeBytes: number;
+  url: string | null;
+  createdAt: string;
+};
+
+type Extras = {
+  sequences: SequenceRecord[];
+  messages: MessageRecord[];
+  handoffs: HandoffRecord[];
+  tasks: OperatorTask[];
+  notes: NoteItem[];
+  docs: DocItem[];
+  timeline: TimelineEntry[];
+};
+
+const EMPTY_EXTRAS: Extras = {
+  sequences: [],
+  messages: [],
+  handoffs: [],
+  tasks: [],
+  notes: [],
+  docs: [],
+  timeline: [],
+};
+
+/* ── Formatting helpers ── */
+
+function fmtMoney(n: number | null): string {
   if (n == null) return '—';
   if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`;
   if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
   if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}K`;
-  return `$${n.toFixed(0)}`;
+  return `$${n.toFixed(2)}`;
 }
 
 function fmtDate(d: string | null): string {
@@ -87,40 +145,168 @@ function fmtDate(d: string | null): string {
   return new Date(d).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-function Section({
+function fmtDateTime(d: string | null): string {
+  if (!d) return '—';
+  return new Date(d).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+/* ── Section scaffolding ── */
+
+const NAV: { id: string; label: string }[] = [
+  { id: 'profile', label: 'Profile' },
+  { id: 'score', label: 'Score' },
+  { id: 'deals', label: 'Deals' },
+  { id: 'outreach', label: 'Outreach' },
+  { id: 'handoffs', label: 'Handoffs' },
+  { id: 'tasks', label: 'Tasks' },
+  { id: 'notes', label: 'Notes' },
+  { id: 'documents', label: 'Documents' },
+  { id: 'timeline', label: 'Timeline' },
+];
+
+function anchorId(section: string): string {
+  return `c360-${section}`;
+}
+
+function SectionCard({
+  id,
   icon,
   title,
   badge,
+  headerLink,
   children,
-  defaultOpen = true,
 }: {
+  id: string;
   icon: React.ReactNode;
   title: string;
   badge?: React.ReactNode;
+  headerLink?: { to: string; label: string };
   children: React.ReactNode;
-  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div className="rounded border border-line bg-card">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-      >
-        {open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-        {icon}
-        <span className="text-[12px] font-bold">{title}</span>
-        {badge != null && <span className="ml-auto text-[10px] text-grey">{badge}</span>}
-      </button>
-      {open && <div className="border-t border-line p-3">{children}</div>}
+    <section id={anchorId(id)} className="scroll-mt-14 rounded-xl border border-line bg-card p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <span className="text-cyan-500">{icon}</span>
+        <h2 className="text-[12px] font-bold uppercase tracking-wider text-navy">{title}</h2>
+        {badge != null && <span className="text-[10px] text-grey">{badge}</span>}
+        {headerLink && (
+          <Link
+            to={headerLink.to}
+            className="ml-auto text-[10px] font-bold text-cyan-600 hover:underline dark:text-cyan-400"
+          >
+            {headerLink.label} →
+          </Link>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function NoneYet({ label, to, cta }: { label: string; to: string; cta: string }) {
+  return (
+    <p className="text-[11px] text-grey">
+      {label}{' '}
+      <Link to={to} className="font-semibold text-cyan-600 hover:underline dark:text-cyan-400">
+        {cta}
+      </Link>
+    </p>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <dt className="text-[9px] font-bold uppercase tracking-wider text-grey">{label}</dt>
+      <dd className="text-[11px] font-semibold text-navy">{children}</dd>
     </div>
   );
 }
 
+function ScoreStat({ label, value }: { label: string; value: number }) {
+  const pct = Math.max(0, Math.min(100, value));
+  return (
+    <div>
+      <div className="flex items-baseline justify-between">
+        <span className="text-[10px] text-grey">{label}</span>
+        <span className="text-[12px] font-bold text-navy">{value}</span>
+      </div>
+      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ice-soft dark:bg-ice-soft/10">
+        <div className="h-full rounded-full bg-cyan-500" style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/* ── Timeline (vertical line + dots) ── */
+
+const TIMELINE_DOT: Record<string, string> = {
+  message: 'bg-sky-500',
+  handoff: 'bg-violet-500',
+  deal: 'bg-emerald-500',
+  signal: 'bg-amber-500',
+  discovery: 'bg-cyan-500',
+  audit: 'bg-slate-400',
+};
+
+function TimelineList({ entries }: { entries: TimelineEntry[] }) {
+  return (
+    <div className="relative max-h-96 overflow-y-auto pr-1">
+      <div className="absolute bottom-1 left-[5px] top-1 w-px bg-line" aria-hidden="true" />
+      {entries.map((e, i) => (
+        <div key={i} className="relative pb-3 pl-5 last:pb-0">
+          <span
+            className={`absolute left-0 top-[3px] h-[11px] w-[11px] rounded-full ring-2 ring-card ${TIMELINE_DOT[e.kind] ?? 'bg-slate-400'}`}
+            aria-hidden="true"
+          />
+          <div className="flex items-start gap-2 text-[11px]">
+            <div className="min-w-0 flex-1">
+              <span className="font-semibold text-navy">{e.title}</span>
+              {e.detail && <span className="text-grey"> — {e.detail}</span>}
+              {e.badge && (
+                <span className="ml-1 rounded bg-slate-100 px-1 py-0.5 text-[8px] font-bold uppercase text-grey dark:bg-slate-800">
+                  {e.badge}
+                </span>
+              )}
+              <div className="text-[9px] uppercase tracking-wide text-grey">{e.kind}</div>
+            </div>
+            <span className="shrink-0 text-[10px] text-grey">{fmtDateTime(e.ts)}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Data loading ── */
+
+async function loadExtras(id: string): Promise<Extras> {
+  const [seq, msg, hand, tasks, notes, docs, timeline] = await Promise.allSettled([
+    fetchProjectSequences(id),
+    fetchProjectMessages(id),
+    fetchHandoffs({ projectId: id, limit: 20 }),
+    fetchTasks('open'),
+    request<{ data: NoteItem[] }>(`/v1/projects/${id}/notes`),
+    request<{ data: DocItem[] }>(`/v1/projects/${id}/documents`),
+    fetchProjectTimeline(id),
+  ]);
+  return {
+    sequences: seq.status === 'fulfilled' ? seq.value.data : [],
+    messages: msg.status === 'fulfilled' ? msg.value.data : [],
+    handoffs: hand.status === 'fulfilled' ? hand.value.data : [],
+    tasks: tasks.status === 'fulfilled' ? tasks.value.filter((t) => t.projectId === id) : [],
+    notes: notes.status === 'fulfilled' ? notes.value.data : [],
+    docs: docs.status === 'fulfilled' ? docs.value.data : [],
+    timeline: timeline.status === 'fulfilled' ? timeline.value : [],
+  };
+}
+
+/* ── Page ── */
+
 export function Customer360() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [data, setData] = useState<Customer360 | null>(null);
+  const [data, setData] = useState<Customer360Data | null>(null);
+  const [extras, setExtras] = useState<Extras>(EMPTY_EXTRAS);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -129,8 +315,12 @@ export function Customer360() {
     setLoading(true);
     setError('');
     try {
-      const res = await request<{ data: Customer360 }>(`/v1/projects/${id}/360`);
-      setData(res.data);
+      const [main, extra] = await Promise.all([
+        request<{ data: Customer360Data }>(`/v1/projects/${id}/360`),
+        loadExtras(id),
+      ]);
+      setData(main.data);
+      setExtras(extra);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load customer');
     } finally {
@@ -142,122 +332,382 @@ export function Customer360() {
     void load();
   }, [load]);
 
-  if (loading) return <p className="py-8 text-center text-[12px] text-grey">Loading…</p>;
-  if (error) return <div className="m-4 rounded border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{error}</div>;
-  if (!data) return null;
+  const scrollTo = (section: string) => {
+    document.getElementById(anchorId(section))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-4xl p-4">
+        <PageSkeleton />
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <EmptyState
+        icon={<AlertTriangle size={28} className="text-grey" />}
+        title="Failed to load customer 360"
+        description={error || 'Something went wrong while loading this customer.'}
+        action={
+          <button
+            onClick={() => void load()}
+            className="inline-flex items-center gap-1 rounded border border-line px-3 py-1.5 text-[11px] font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+          >
+            <RefreshCw size={12} /> Retry
+          </button>
+        }
+      />
+    );
+  }
 
   const { project, score, people, deals, counts, lastActivity } = data;
+  const band = (score?.band ?? 'unscored') as ScoreBand;
+  const notesPath = `/notes/${project.id}`;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-3 p-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <User size={18} />
-          <h1 className="text-lg font-bold">{project.name}</h1>
-          {project.ticker && <span className="text-[11px] font-bold text-grey">{project.ticker}</span>}
-          {project.listedOnLcx && (
-            <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700">on LCX</span>
-          )}
-        </div>
-        <button
-          onClick={() => void load()}
-          className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+    <div className="mx-auto max-w-4xl space-y-3 p-4 text-navy">
+      {/* Header */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Link
+          to={`/bd-pipeline/${project.id}`}
+          className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[10px] font-bold text-grey hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/10"
         >
-          <RefreshCw size={11} /> Refresh
-        </button>
+          <ArrowLeft size={11} /> Back to Lead
+        </Link>
+        <h1 className="text-lg font-bold">{project.name}</h1>
+        {project.ticker && (
+          <span className="rounded bg-ice-soft px-1.5 py-0.5 font-mono text-[10px] font-bold text-grey dark:bg-navy-deep">
+            {project.ticker}
+          </span>
+        )}
+        <BandBadge band={band} />
+        {project.listedOnLcx && (
+          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+            on LCX
+          </span>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          <span className="text-[10px] text-grey">Last activity: {fmtDate(lastActivity)}</span>
+          <button
+            onClick={() => void load()}
+            className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+          >
+            <RefreshCw size={11} /> Refresh
+          </button>
+        </div>
       </div>
 
-      <div className="text-[10px] text-grey">Last activity: {fmtDate(lastActivity)}</div>
+      {/* Sticky mini-nav */}
+      <nav className="sticky top-0 z-20 flex gap-1 overflow-x-auto rounded-lg border border-line bg-card/95 px-2 py-1.5 backdrop-blur">
+        {NAV.map((n) => (
+          <button
+            key={n.id}
+            onClick={() => scrollTo(n.id)}
+            className="whitespace-nowrap rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-grey hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/10"
+          >
+            {n.label}
+          </button>
+        ))}
+      </nav>
 
-      <Section icon={<Building2 size={13} />} title="Overview">
-        <dl className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-3">
-          <div><dt className="text-grey">Region</dt><dd className="font-semibold">{project.region ?? '—'}</dd></div>
-          <div><dt className="text-grey">Category</dt><dd className="font-semibold">{project.category ?? '—'}</dd></div>
-          <div><dt className="text-grey">Chain</dt><dd className="font-semibold">{project.chain ?? '—'}</dd></div>
-          <div><dt className="text-grey">Market cap</dt><dd className="font-semibold">{fmtNum(project.marketCapUsd)}</dd></div>
-          <div><dt className="text-grey">24h volume</dt><dd className="font-semibold">{fmtNum(project.volume24hUsd)}</dd></div>
-          <div><dt className="text-grey">Rank</dt><dd className="font-semibold">{project.marketCapRank ?? '—'}</dd></div>
-          <div><dt className="text-grey">Jurisdiction</dt><dd className="font-semibold">{project.jurisdiction ?? '—'}</dd></div>
-          <div><dt className="text-grey">Source</dt><dd className="font-semibold">{project.source}</dd></div>
-          <div>
-            <dt className="text-grey">Website</dt>
-            <dd className="font-semibold">
-              {project.website ? (
-                <a href={project.website} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-600 hover:underline">
-                  link <ExternalLink size={10} />
-                </a>
-              ) : '—'}
-            </dd>
-          </div>
+      {/* Profile */}
+      <SectionCard id="profile" icon={<Building2 size={14} />} title="Profile">
+        <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Field label="Region">{project.region ?? '—'}</Field>
+          <Field label="Category">{project.category ?? '—'}</Field>
+          <Field label="Chain">{project.chain ?? '—'}</Field>
+          <Field label="Jurisdiction">{project.jurisdiction ?? '—'}</Field>
+          <Field label="Market cap">{fmtMoney(project.marketCapUsd)}</Field>
+          <Field label="24h volume">{fmtMoney(project.volume24hUsd)}</Field>
+          <Field label="Price">{fmtMoney(project.priceUsd)}</Field>
+          <Field label="Rank">{project.marketCapRank ?? '—'}</Field>
+          <Field label="Source">{project.source}</Field>
+          <Field label="Added">{fmtDate(project.createdAt)}</Field>
+          <Field label="Last enriched">{fmtDate(project.lastEnrichedAt)}</Field>
+          <Field label="Website">
+            {project.website ? (
+              <a
+                href={project.website}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-cyan-600 hover:underline dark:text-cyan-400"
+              >
+                link <ExternalLink size={10} />
+              </a>
+            ) : (
+              '—'
+            )}
+          </Field>
         </dl>
-      </Section>
 
-      <Section icon={<Gauge size={13} />} title="Score" badge={score ? `band ${score.band}` : 'unscored'}>
+        <div className="mt-4 border-t border-line pt-3">
+          <h3 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-grey">
+            Contacts ({people.length} · {project.verifiedContactCount} verified)
+          </h3>
+          {people.length === 0 ? (
+            <NoneYet label="None yet." to={`/bd-pipeline/${project.id}`} cta="Add contacts on the lead" />
+          ) : (
+            <div className="space-y-1.5">
+              {people.map((p) => (
+                <div key={p.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <span className="font-semibold">{p.name}</span>
+                  {p.title && <span className="text-grey">· {p.title}</span>}
+                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-grey dark:bg-slate-800">
+                    {p.role}
+                  </span>
+                  {p.verified && (
+                    <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">verified</span>
+                  )}
+                  {p.email && <span className="ml-auto text-grey">{p.email}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </SectionCard>
+
+      {/* Score */}
+      <SectionCard
+        id="score"
+        icon={<Gauge size={14} />}
+        title="Score"
+        badge={score ? `computed ${fmtDate(score.computedAt)}` : undefined}
+      >
         {score ? (
-          <div className="grid grid-cols-3 gap-2 text-[11px] sm:grid-cols-5">
-            <div><dt className="text-grey">Priority</dt><dd className="font-bold">{score.priorityScore}</dd></div>
-            <div><dt className="text-grey">Propensity</dt><dd className="font-bold">{score.propensityScore}</dd></div>
-            <div><dt className="text-grey">EU</dt><dd className="font-bold">{score.euScore}</dd></div>
-            <div><dt className="text-grey">US pre</dt><dd className="font-bold">{score.usPreScore}</dd></div>
-            <div><dt className="text-grey">US post</dt><dd className="font-bold">{score.usPostScore}</dd></div>
-          </div>
+          <>
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px]">
+              <BandBadge band={band} />
+              {score.recommendedMarket && (
+                <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+                  {score.recommendedMarket.replace('_', ' ')}
+                </span>
+              )}
+              {score.reasons.length > 0 && (
+                <span className="text-[10px] text-grey">{score.reasons.length} scoring reason(s)</span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
+              <ScoreStat label="Priority" value={score.priorityScore} />
+              <ScoreStat label="Propensity" value={score.propensityScore} />
+              <ScoreStat label="EU / MiCA" value={score.euScore} />
+              <ScoreStat label="US pre-CLARITY" value={score.usPreScore} />
+              <ScoreStat label="US post-CLARITY" value={score.usPostScore} />
+            </div>
+          </>
         ) : (
-          <p className="text-[11px] text-grey">No score yet.</p>
+          <NoneYet label="None yet." to={`/bd-pipeline/${project.id}`} cta="Trigger a re-score on the lead" />
         )}
-      </Section>
+      </SectionCard>
 
-      <Section icon={<Users size={13} />} title="People" badge={`${people.length}`}>
-        {people.length === 0 ? (
-          <p className="text-[11px] text-grey">No contacts.</p>
-        ) : (
-          <div className="space-y-1.5">
-            {people.map((p) => (
-              <div key={p.id} className="flex items-center gap-2 text-[11px]">
-                <span className="font-semibold">{p.name}</span>
-                {p.title && <span className="text-grey">· {p.title}</span>}
-                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-grey dark:bg-slate-800">{p.role}</span>
-                {p.verified && <span className="text-[9px] font-bold text-emerald-600">verified</span>}
-                {p.email && <span className="ml-auto text-grey">{p.email}</span>}
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      <Section icon={<Briefcase size={13} />} title="Deals" badge={`${deals.length}`}>
+      {/* Deals */}
+      <SectionCard
+        id="deals"
+        icon={<Briefcase size={14} />}
+        title="Deals"
+        badge={`${deals.length}`}
+        headerLink={{ to: `/deal-desk?projectId=${project.id}`, label: 'Deal Desk' }}
+      >
         {deals.length === 0 ? (
-          <p className="text-[11px] text-grey">No deals.</p>
+          <NoneYet label="None yet." to={`/deal-desk?projectId=${project.id}`} cta="Open Deal Desk" />
         ) : (
           <div className="space-y-1.5">
             {deals.map((d) => (
-              <div key={d.id} className="flex items-center gap-2 text-[11px]">
-                <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300">{d.stage}</span>
+              <div key={d.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+                  {d.stage}
+                </span>
                 <span className="text-grey">{d.packageType ?? '—'}</span>
-                {d.packageValue != null && <span className="font-semibold">{fmtNum(d.packageValue)}</span>}
+                {d.packageValue != null && (
+                  <span className="font-semibold">{fmtMoney(d.packageValue / 100)}</span>
+                )}
+                {d.owner && <span className="text-grey">owner {d.owner}</span>}
+                {d.wonAt && (
+                  <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
+                    won {fmtDate(d.wonAt)}
+                  </span>
+                )}
                 <span className="ml-auto text-grey">updated {fmtDate(d.updatedAt)}</span>
               </div>
             ))}
           </div>
         )}
-      </Section>
+      </SectionCard>
 
-      <Section icon={<Inbox size={13} />} title="Engagement" defaultOpen={false}>
-        <div className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
-          <div><dt className="text-grey">Handoffs</dt><dd className="font-bold">{counts.handoffs} <span className="text-grey">({counts.handoffsOpen} open)</span></dd></div>
-          <div><dt className="text-grey">Tasks</dt><dd className="font-bold">{counts.tasks} <span className="text-grey">({counts.tasksOpen} open)</span></dd></div>
-          <div><dt className="text-grey">People</dt><dd className="font-bold">{project.peopleCount}</dd></div>
-          <div><dt className="text-grey">Verified</dt><dd className="font-bold">{project.verifiedContactCount}</dd></div>
-        </div>
-      </Section>
+      {/* Outreach */}
+      <SectionCard
+        id="outreach"
+        icon={<Send size={14} />}
+        title="Outreach"
+        badge={`${extras.sequences.length} sequence(s) · ${extras.messages.length} message(s)`}
+        headerLink={{ to: '/outreach-ops', label: 'Outreach Ops' }}
+      >
+        {extras.sequences.length === 0 && extras.messages.length === 0 ? (
+          <NoneYet label="None yet." to="/outreach-ops" cta="Enroll in Outreach Ops" />
+        ) : (
+          <div className="space-y-3">
+            {extras.sequences.length > 0 && (
+              <div className="space-y-1.5">
+                {extras.sequences.map((seq) => (
+                  <div key={seq.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${SEQUENCE_STATUS_COLORS[seq.status] ?? ''}`}>
+                      {seq.status}
+                    </span>
+                    <span className="text-grey">step {seq.currentStep}</span>
+                    <span className="text-grey">{seq.channel}</span>
+                    {seq.startedAt && <span className="ml-auto text-grey">started {fmtDate(seq.startedAt)}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {extras.messages.length > 0 && (
+              <div className="space-y-1.5 border-t border-line pt-2">
+                {extras.messages.slice(0, 5).map((m) => (
+                  <div key={m.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                    <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${MESSAGE_STATUS_COLORS[m.status] ?? ''}`}>
+                      {m.status}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-semibold">{m.subject}</span>
+                    <span className="text-grey">touch {m.touchIndex}</span>
+                    {m.sentAt && <span className="text-grey">{fmtDateTime(m.sentAt)}</span>}
+                  </div>
+                ))}
+                {extras.messages.length > 5 && (
+                  <p className="text-[10px] text-grey">+ {extras.messages.length - 5} more message(s)</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </SectionCard>
 
-      <div className="flex gap-2 pt-1">
-        <button
-          onClick={() => navigate(`/notes/${project.id}`)}
-          className="inline-flex items-center gap-1 rounded border border-line px-2.5 py-1.5 text-[11px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-        >
-          <ListChecks size={12} /> Notes & documents
-        </button>
-      </div>
+      {/* Handoffs */}
+      <SectionCard
+        id="handoffs"
+        icon={<Inbox size={14} />}
+        title="Handoffs"
+        badge={`${counts.handoffsOpen} open / ${counts.handoffs}`}
+        headerLink={{ to: '/outreach', label: 'Handoffs' }}
+      >
+        {extras.handoffs.length === 0 ? (
+          <NoneYet label="None yet." to="/outreach" cta="Go to Handoffs" />
+        ) : (
+          <div className="space-y-1.5">
+            {extras.handoffs.slice(0, 5).map((h) => (
+              <div key={h.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
+                  {h.status}
+                </span>
+                <span className="font-semibold">{h.triggerReason}</span>
+                {h.assignedTo && <span className="text-grey">→ {h.assignedTo}</span>}
+                <span className="ml-auto text-grey">{fmtDate(h.updatedAt)}</span>
+              </div>
+            ))}
+            {extras.handoffs.length > 5 && (
+              <p className="text-[10px] text-grey">+ {extras.handoffs.length - 5} more handoff(s)</p>
+            )}
+          </div>
+        )}
+      </SectionCard>
+
+      {/* Tasks */}
+      <SectionCard
+        id="tasks"
+        icon={<ListChecks size={14} />}
+        title="Tasks"
+        badge={`${counts.tasksOpen} open / ${counts.tasks}`}
+        headerLink={{ to: '/tasks', label: 'My Tasks' }}
+      >
+        {extras.tasks.length === 0 ? (
+          <NoneYet label="None yet." to="/tasks" cta="Create one in My Tasks" />
+        ) : (
+          <div className="space-y-1.5">
+            {extras.tasks.slice(0, 5).map((t) => (
+              <div key={t.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-grey dark:bg-slate-800">
+                  {t.kind}
+                </span>
+                <span className="font-semibold">{t.title}</span>
+                {t.dueAt && <span className="ml-auto text-grey">due {fmtDate(t.dueAt)}</span>}
+              </div>
+            ))}
+            {extras.tasks.length > 5 && (
+              <p className="text-[10px] text-grey">+ {extras.tasks.length - 5} more open task(s)</p>
+            )}
+          </div>
+        )}
+      </SectionCard>
+
+      {/* Notes */}
+      <SectionCard
+        id="notes"
+        icon={<FileText size={14} />}
+        title="Notes"
+        badge={`${extras.notes.length}`}
+        headerLink={{ to: notesPath, label: 'Open Notes' }}
+      >
+        {extras.notes.length === 0 ? (
+          <NoneYet label="None yet." to={notesPath} cta="Write the first note" />
+        ) : (
+          <div className="space-y-1.5">
+            {extras.notes.slice(0, 5).map((n) => (
+              <div key={n.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                {n.pinned && <Pin size={10} className="text-amber-500" />}
+                <span className="font-semibold">{n.title || 'Untitled'}</span>
+                <span className="min-w-0 flex-1 truncate text-grey">{n.body}</span>
+                <span className="ml-auto shrink-0 text-grey">{fmtDate(n.updatedAt)}</span>
+              </div>
+            ))}
+            {extras.notes.length > 5 && (
+              <p className="text-[10px] text-grey">+ {extras.notes.length - 5} more note(s)</p>
+            )}
+          </div>
+        )}
+      </SectionCard>
+
+      {/* Documents */}
+      <SectionCard
+        id="documents"
+        icon={<Paperclip size={14} />}
+        title="Documents"
+        badge={`${extras.docs.length}`}
+        headerLink={{ to: notesPath, label: 'Manage' }}
+      >
+        {extras.docs.length === 0 ? (
+          <NoneYet label="None yet." to={notesPath} cta="Attach a document" />
+        ) : (
+          <div className="space-y-1.5">
+            {extras.docs.map((d) => (
+              <div key={d.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                <Paperclip size={11} className="text-grey" />
+                <span className="font-semibold">{d.name}</span>
+                <span className="text-grey">{d.mime}</span>
+                {d.url && (
+                  <a
+                    href={d.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-cyan-600 hover:underline dark:text-cyan-400"
+                  >
+                    open <ExternalLink size={10} />
+                  </a>
+                )}
+                <span className="ml-auto text-grey">{fmtDate(d.createdAt)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
+
+      {/* Timeline */}
+      <SectionCard id="timeline" icon={<Activity size={14} />} title="Timeline" badge={`${extras.timeline.length}`}>
+        {extras.timeline.length === 0 ? (
+          <NoneYet label="None yet." to={`/bd-pipeline/${project.id}`} cta="Activity will appear as you work the lead" />
+        ) : (
+          <TimelineList entries={extras.timeline} />
+        )}
+      </SectionCard>
     </div>
   );
 }

@@ -31,7 +31,7 @@ function StatCard({ icon: Icon, label, value, hint }: { icon: React.ElementType;
     <Card>
       <CardBody>
         <div className="flex items-center gap-3">
-          <div className="rounded-md bg-ice-soft p-2 text-navy dark:bg-ice-soft/10 dark:text-ice"><Icon size={20} /></div>
+          <div className="rounded-md bg-ice-soft p-2 text-navy dark:bg-ice-soft/10"><Icon size={20} /></div>
           <div>
             <div className="text-2xl font-bold leading-none font-mono">{value}</div>
             <div className="text-xs text-grey-dark dark:text-grey-light mt-1">{label}</div>
@@ -135,7 +135,7 @@ export function Dashboard() {
   const readinessPercent = Math.round((completedReadiness / totalReadiness) * 100);
 
   return (
-    <div className="space-y-4 text-navy dark:text-ice h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
+    <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
 
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 shrink-0">
         <div>
@@ -269,7 +269,7 @@ export function Dashboard() {
                   />
                 </svg>
                 <div className="absolute flex flex-col items-center justify-center font-mono">
-                  <span className="text-3xl font-extrabold text-navy dark:text-ice">{readinessPercent}%</span>
+                  <span className="text-3xl font-extrabold text-navy">{readinessPercent}%</span>
                   <span className="text-[9px] text-grey uppercase tracking-wider font-bold">Readiness</span>
                 </div>
               </div>

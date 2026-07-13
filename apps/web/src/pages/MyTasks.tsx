@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ListChecks, Check, X, Plus, RefreshCw } from 'lucide-react';
 import { fetchTasks, createTask, completeTask, dismissTask, type OperatorTask } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
+import { TableSkeleton } from '@/components/shared';
 
 const KIND_LABEL: Record<string, string> = {
   manual: 'manual',
@@ -131,7 +132,7 @@ export function MyTasks() {
         </button>
       </div>
 
-      {loading && <p className="py-8 text-center text-[12px] text-grey">Loading…</p>}
+      {loading && <TableSkeleton rows={6} cols={4} />}
       {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{error}</div>}
       {!loading && !error && tasks.length === 0 && (
         <div className="rounded-lg border border-dashed border-line p-8 text-center text-[12px] text-grey">

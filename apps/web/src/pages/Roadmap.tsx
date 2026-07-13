@@ -149,10 +149,10 @@ export function Roadmap() {
   };
 
   return (
-    <div className="space-y-4 text-navy dark:text-ice h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
+    <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
       {/* Header */}
       <div className="shrink-0">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><CalendarRange size={24} className="text-navy dark:text-ice" /> Chronos Gantt Timeline</h1>
+        <h1 className="text-2xl font-bold flex items-center gap-2"><CalendarRange size={24} className="text-navy" /> Chronos Gantt Timeline</h1>
         <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
           Chronological launch sequence mapping corporate formations, MTL submissions, and custodial launches over a 24-month horizon.
         </p>

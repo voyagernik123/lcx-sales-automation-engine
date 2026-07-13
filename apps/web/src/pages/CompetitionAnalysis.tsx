@@ -49,7 +49,7 @@ export function CompetitionAnalysis() {
 
   return (
     <>
-      <div className="space-y-5 text-navy dark:text-ice h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
+      <div className="space-y-5 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
         <div className="shrink-0 space-y-3">
           <h1 className="text-2xl font-bold">Competition Analysis</h1>
           <p className="text-sm text-grey-dark dark:text-grey-light">

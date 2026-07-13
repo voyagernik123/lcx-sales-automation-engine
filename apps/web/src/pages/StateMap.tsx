@@ -81,9 +81,9 @@ export function StateMap() {
   }, [filteredStates, clarityEnacted, spdiEquivalence]);
 
   return (
-    <div className="flex h-[calc(100vh-6.5rem)] flex-col gap-4 text-navy dark:text-ice overflow-hidden">
+    <div className="flex h-[calc(100vh-6.5rem)] flex-col gap-4 text-navy overflow-hidden">
       <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Map size={24} className="text-navy dark:text-ice" /> Jurisdictional Operations Room</h1>
+        <h1 className="text-2xl font-bold flex items-center gap-2"><Map size={24} className="text-navy" /> Jurisdictional Operations Room</h1>
         <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
           Map-based digital twin illustrating Money Transmitter Licensing (MTL) and sandbox exemptions across the USA.
         </p>
@@ -98,7 +98,7 @@ export function StateMap() {
             </h3>
             <button
               onClick={handleResetFilters}
-              className="text-[10px] text-grey hover:text-navy dark:hover:text-ice flex items-center gap-1 font-bold font-mono"
+              className="text-[10px] text-grey hover:text-navy flex items-center gap-1 font-bold font-mono"
             >
               <RefreshCw size={10} /> Reset
             </button>

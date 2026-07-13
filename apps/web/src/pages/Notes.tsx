@@ -1,7 +1,21 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FileText, Plus, Trash2, Save, Pin, Paperclip, RefreshCw, ArrowLeft, ExternalLink } from 'lucide-react';
+import { FileText, Plus, Trash2, Save, Pin, Paperclip, RefreshCw, ArrowLeft, ExternalLink, Search } from 'lucide-react';
 import { request } from '@/lib/apiClient';
+import { fetchBdPipeline } from '@/lib/api/bd';
+import type { BdFilters, BdLead } from '@/types/bd';
+
+const PICKER_FILTERS: Omit<BdFilters, 'search'> = {
+  market: null,
+  minScore: 0,
+  source: '',
+  band: '',
+  listedOnLcx: null,
+  hasContact: null,
+  marketRecommendation: '',
+  sort: 'priority',
+  order: 'desc',
+};
 
 type Note = {
   id: string;
@@ -55,6 +69,38 @@ export function Notes() {
   const [docName, setDocName] = useState('');
   const [docUrl, setDocUrl] = useState('');
   const [docContent, setDocContent] = useState('');
+
+  // project picker / switcher state
+  const [pickerQuery, setPickerQuery] = useState('');
+  const [pickerResults, setPickerResults] = useState<BdLead[]>([]);
+  const [pickerLoading, setPickerLoading] = useState(false);
+
+  // No :projectId → debounced search for the picker. With :projectId → top
+  // projects for the switcher select.
+  useEffect(() => {
+    const controller = new AbortController();
+    setPickerLoading(true);
+    const timer = setTimeout(() => {
+      fetchBdPipeline(
+        { ...PICKER_FILTERS, search: projectId ? '' : pickerQuery.trim() },
+        { limit: projectId ? 50 : 20 },
+        controller.signal,
+      )
+        .then((res) => {
+          if (!controller.signal.aborted) setPickerResults(res.data);
+        })
+        .catch(() => {
+          if (!controller.signal.aborted) setPickerResults([]);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setPickerLoading(false);
+        });
+    }, projectId ? 0 : 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [projectId, pickerQuery]);
 
   const load = useCallback(async () => {
     if (!projectId) return;
@@ -164,6 +210,49 @@ export function Notes() {
     }
   };
 
+  // Route without :projectId → project picker.
+  if (!projectId) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4 p-4">
+        <h1 className="flex items-center gap-2 text-lg font-bold">
+          <FileText size={18} /> Notes & Documents
+        </h1>
+        <p className="text-[11px] text-grey">Pick a project to view its notes and documents.</p>
+        <div className="relative">
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-grey" />
+          <input
+            autoFocus
+            value={pickerQuery}
+            onChange={(e) => setPickerQuery(e.target.value)}
+            placeholder="Search projects by name or ticker…"
+            className="w-full rounded border border-line bg-card py-2 pl-8 pr-2.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          />
+        </div>
+        {pickerLoading ? (
+          <p className="py-6 text-center text-[12px] text-grey">Searching…</p>
+        ) : pickerResults.length === 0 ? (
+          <div className="rounded-lg border border-dashed border-line p-6 text-center text-[12px] text-grey">
+            No projects found.
+          </div>
+        ) : (
+          <div className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
+            {pickerResults.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => navigate(`/notes/${p.id}`)}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+              >
+                <span className="text-[12px] font-semibold">{p.name}</span>
+                {p.ticker && <span className="font-mono text-[10px] text-grey">{p.ticker}</span>}
+                <span className="ml-auto text-[9px] font-bold uppercase text-grey">{p.band}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
       <div className="flex items-center justify-between">
@@ -173,12 +262,27 @@ export function Notes() {
           </button>
           <FileText size={18} /> Notes & Documents
         </h1>
-        <button
-          onClick={() => void load()}
-          className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-        >
-          <RefreshCw size={11} /> Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <select
+            value={projectId}
+            onChange={(e) => navigate(`/notes/${e.target.value}`)}
+            title="Switch project"
+            className="max-w-[180px] rounded border border-line bg-card px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          >
+            {!pickerResults.some((p) => p.id === projectId) && <option value={projectId}>Current project</option>}
+            {pickerResults.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => void load()}
+            className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+          >
+            <RefreshCw size={11} /> Refresh
+          </button>
+        </div>
       </div>
 
       {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{error}</div>}

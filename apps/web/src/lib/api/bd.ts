@@ -485,3 +485,218 @@ export async function fetchMarketMap(filters?: { band?: string; region?: string 
   const res = await request<{ data: MapPoint[] }>(`/v1/analytics/map${qs ? `?${qs}` : ''}`, { auth: true });
   return res.data;
 }
+
+/* ── Board report (exec report generator) ── */
+
+export type BoardReportPeriod = 'week' | 'month' | 'quarter';
+
+export interface BoardReportDelta {
+  current: number;
+  previous: number;
+  change: number;
+  pct: number | null;
+}
+
+export interface BoardReportData {
+  period: BoardReportPeriod;
+  periodDays: number;
+  generatedAt: string;
+  funnel: { enrolled: number; replied: number; proposal: number; won: number };
+  revenue: { wonTotal: number; wonCount: number; avgDealSize: number; byStream: Record<string, number> };
+  topDeals: { id: string; projectName: string; stage: string; packageType: string; value: number }[];
+  deltas: {
+    enrolled: BoardReportDelta;
+    replied: BoardReportDelta;
+    proposal: BoardReportDelta;
+    won: BoardReportDelta;
+    revenue: BoardReportDelta;
+  };
+  execSummary: string;
+}
+
+export interface BoardAnomaly {
+  kind: string;
+  severity: 'low' | 'medium' | 'high';
+  metric: string;
+  current: number;
+  expected: number;
+  zScore: number | null;
+  deviationPct: number | null;
+  message: string;
+}
+
+export interface BdPerformanceRow {
+  owner: string;
+  dealsTotal: number;
+  won: number;
+  lost: number;
+  open: number;
+  wonValue: number;
+  winRate: number;
+  handoffsTotal: number;
+  handoffsClosed: number;
+}
+
+export async function fetchBoardReport(period: BoardReportPeriod, signal?: AbortSignal): Promise<BoardReportData> {
+  const res = await request<{ data: BoardReportData }>(`/v1/analytics/board-report?period=${period}`, { auth: true, signal });
+  return res.data;
+}
+
+export async function fetchBoardAnomalies(signal?: AbortSignal): Promise<BoardAnomaly[]> {
+  const res = await request<{ data: BoardAnomaly[] }>('/v1/analytics/anomalies', { auth: true, signal });
+  return res.data;
+}
+
+export async function fetchBdPerformance(signal?: AbortSignal): Promise<BdPerformanceRow[]> {
+  const res = await request<{ data: BdPerformanceRow[] }>('/v1/analytics/bd-performance', { auth: true, signal });
+  return res.data;
+}
+
+export async function fetchBoardEmailStatus(): Promise<{ configured: boolean }> {
+  const res = await request<{ data: { configured: boolean } }>('/v1/analytics/board-report/email-status', { auth: true });
+  return res.data;
+}
+
+export async function sendBoardReportEmail(
+  recipients: string[],
+  period: BoardReportPeriod,
+): Promise<{ id: string; recipients: number; period: BoardReportPeriod }> {
+  const res = await request<{ data: { id: string; recipients: number; period: BoardReportPeriod } }>(
+    '/v1/analytics/board-report/send',
+    { auth: true, method: 'POST', body: { recipients, period } },
+  );
+  return res.data;
+}
+
+/* ── AI console ── */
+
+export interface SentimentResult {
+  sentiment: 'positive' | 'neutral' | 'negative' | 'objection';
+  confidence: number;
+  matched: string[];
+  usedLlm: boolean;
+}
+
+export async function analyzeSentiment(text: string): Promise<SentimentResult> {
+  const res = await request<{ data: SentimentResult }>('/v1/ai/sentiment', {
+    auth: true,
+    method: 'POST',
+    body: { text },
+  });
+  return res.data;
+}
+
+export interface ObjectionResult {
+  category: string;
+  response: string;
+  matched: string[];
+  usedLlm: boolean;
+}
+
+export async function fetchObjectionResponse(text: string): Promise<ObjectionResult> {
+  const res = await request<{ data: ObjectionResult }>('/v1/ai/objection-response', {
+    auth: true,
+    method: 'POST',
+    body: { text },
+  });
+  return res.data;
+}
+
+export interface PersonalizeFacts {
+  projectName?: string;
+  ticker?: string | null;
+  category?: string | null;
+  exchangeCount?: number | null;
+  marketCapUsd?: number | null;
+  recentNews?: string | null;
+  contactName?: string | null;
+}
+
+export interface PersonalizeResult {
+  draft: string;
+  insertedFacts: string[];
+  usedLlm: boolean;
+}
+
+export async function personalizeDraftAi(
+  baseDraft: string,
+  projectFacts: PersonalizeFacts,
+): Promise<PersonalizeResult> {
+  const res = await request<{ data: PersonalizeResult }>('/v1/ai/personalize', {
+    auth: true,
+    method: 'POST',
+    body: { baseDraft, projectFacts },
+  });
+  return res.data;
+}
+
+/* ── Integration connection status ── */
+
+export interface IntegrationDomain {
+  name: string;
+  status: string;
+  region: string | null;
+}
+
+export interface IntegrationStats {
+  sent: number;
+  delivered: number;
+  bounced: number;
+  last7d: number;
+}
+
+export interface IntegrationService {
+  id: string;
+  name: string;
+  mode: 'live' | 'demo';
+  configured: boolean;
+  maskedKey?: string | null;
+  webhookVerification?: boolean;
+  domains?: IntegrationDomain[] | null;
+  stats?: IntegrationStats;
+  error?: string | null;
+  setup: string;
+}
+
+export async function fetchIntegrationStatus(): Promise<IntegrationService[]> {
+  const res = await request<{ data: { services: IntegrationService[] } }>(
+    '/v1/integrations/status',
+    { auth: true },
+  );
+  return res.data.services;
+}
+
+/* ── KPI history (daily snapshots) ── */
+
+export interface KpiSnapshot {
+  date: string;
+  newHighScoreLeadsWeek: number;
+  emailSent: number;
+  emailReplied: number;
+  linkedinSent: number;
+  linkedinReplied: number;
+  funnelEnrolled: number;
+  funnelReplied: number;
+  funnelProposal: number;
+  funnelWon: number;
+  revenueListing: number;
+  revenueMarketing: number;
+  revenueLiquidity: number;
+  revenueDual: number;
+  revenueEmt: number;
+  revenueCustom: number;
+  /** Sum of all revenue streams, in cents. */
+  totalRevenue: number;
+  stalledDealCount: number;
+  totalWon: number;
+  withExpansion: number;
+  expansionRevenue: number;
+  hotDeals: number;
+  stalledDeals: number;
+  overdueActions: number;
+}
+
+export async function fetchKpiHistory(days = 30, signal?: AbortSignal): Promise<KpiSnapshot[]> {
+  const res = await request<{ data: KpiSnapshot[] }>(`/v1/kpis/history?days=${days}`, { auth: true, signal });
+  return res.data;
+}

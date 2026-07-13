@@ -73,7 +73,7 @@ export function AuditLog() {
   }, [load]);
 
   return (
-    <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy dark:text-ice overflow-hidden">
+    <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy overflow-hidden">
       <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-line bg-card">
         <h1 className="text-lg font-bold flex items-center gap-1.5">
           <Shield size={17} className="text-cyan-500" />

@@ -188,7 +188,7 @@ function HandoffDetail({ handoff, onBack, onRefresh }: { handoff: HandoffRecord;
 
   return (
     <div className="space-y-4">
-      <button onClick={onBack} className="flex items-center gap-1 text-[10px] font-bold text-grey hover:text-navy dark:hover:text-ice transition-colors">
+      <button onClick={onBack} className="flex items-center gap-1 text-[10px] font-bold text-grey hover:text-navy transition-colors">
         <ChevronLeft size={12} /> Back to Inbox
       </button>
 

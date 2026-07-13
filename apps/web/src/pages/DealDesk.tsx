@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Gavel, FileText, BookOpen, Briefcase, Check, X, RefreshCw, AlertTriangle } from 'lucide-react';
 import { request } from '@/lib/apiClient';
+import { fetchProjectDeal } from '@/lib/api/bd';
 
 /* ── Types (mirror the API camelCase envelope) ── */
 interface PlaybookStep { order?: number; title?: string; detail?: string }
@@ -56,6 +58,8 @@ function Section({ title, icon, children, onRefresh }: { title: string; icon: Re
 }
 
 export function DealDesk() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const projectIdParam = searchParams.get('projectId');
   const [playbooks, setPlaybooks] = useState<Playbook[]>([]);
   const [approvals, setApprovals] = useState<Approval[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
@@ -63,6 +67,23 @@ export function DealDesk() {
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [error, setError] = useState('');
   const [newPartner, setNewPartner] = useState({ name: '', commissionPct: '' });
+  const [focusDealId, setFocusDealId] = useState<string | null>(null);
+  const [focusChecked, setFocusChecked] = useState(false);
+
+  // ?projectId= → resolve the project's deal and filter approvals/invoices to it.
+  useEffect(() => {
+    if (!projectIdParam) {
+      setFocusDealId(null);
+      setFocusChecked(false);
+      return;
+    }
+    let alive = true;
+    fetchProjectDeal(projectIdParam)
+      .then((res) => { if (alive) setFocusDealId(res.data?.id ?? null); })
+      .catch(() => { if (alive) setFocusDealId(null); })
+      .finally(() => { if (alive) setFocusChecked(true); });
+    return () => { alive = false; };
+  }, [projectIdParam]);
 
   const loadApprovals = useCallback(async () => {
     const res = await request<{ data: Approval[] }>('/v1/dealdesk/approvals?status=pending');
@@ -119,6 +140,10 @@ export function DealDesk() {
     } catch (err) { setError(err instanceof Error ? err.message : 'Failed'); }
   };
 
+  const filtering = Boolean(projectIdParam);
+  const visibleApprovals = filtering ? approvals.filter((a) => a.dealId === focusDealId) : approvals;
+  const visibleInvoices = filtering ? invoices.filter((i) => i.dealId === focusDealId) : invoices;
+
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4">
       <div className="flex items-center justify-between">
@@ -131,13 +156,29 @@ export function DealDesk() {
 
       {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{error}</div>}
 
+      {filtering && (
+        <div className="flex items-center justify-between gap-2 rounded border border-cyan-200 bg-cyan-50 px-3 py-2 text-[11px] text-cyan-800 dark:border-cyan-800 dark:bg-cyan-950/20 dark:text-cyan-300">
+          <span>
+            {focusChecked && !focusDealId
+              ? 'No deal exists for this project yet.'
+              : `Filtered to the selected project's deal — ${visibleApprovals.length} approval(s), ${visibleInvoices.length} invoice(s).`}
+          </span>
+          <button
+            onClick={() => setSearchParams({}, { replace: true })}
+            className="shrink-0 font-bold hover:underline"
+          >
+            Show all
+          </button>
+        </div>
+      )}
+
       {/* Approvals queue */}
       <Section title="Approvals queue" icon={<AlertTriangle size={15} className="text-amber-600" />} onRefresh={() => void loadApprovals()}>
-        {approvals.length === 0 ? (
+        {visibleApprovals.length === 0 ? (
           <p className="text-[12px] text-grey">No pending approvals.</p>
         ) : (
           <div className="space-y-2">
-            {approvals.map((a) => (
+            {visibleApprovals.map((a) => (
               <div key={a.id} className="flex items-start justify-between gap-2 rounded border border-line p-2.5">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
@@ -163,7 +204,7 @@ export function DealDesk() {
 
       {/* Invoices */}
       <Section title="Invoices" icon={<FileText size={15} className="text-sky-600" />} onRefresh={() => void loadInvoices()}>
-        {invoices.length === 0 ? (
+        {visibleInvoices.length === 0 ? (
           <p className="text-[12px] text-grey">No invoices tracked yet.</p>
         ) : (
           <table className="w-full text-[11px]">
@@ -173,7 +214,7 @@ export function DealDesk() {
               </tr>
             </thead>
             <tbody>
-              {invoices.map((i) => (
+              {visibleInvoices.map((i) => (
                 <tr key={i.id} className="border-t border-line">
                   <td className="py-1.5 font-semibold">{i.projectName ?? i.dealId}</td>
                   <td className="py-1.5">{money(i.amountCents, i.currency)}</td>

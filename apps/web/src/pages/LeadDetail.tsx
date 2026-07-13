@@ -368,8 +368,21 @@ export function LeadDetail() {
   const usScore = clarityEnacted && lead.score ? lead.score.usPostScore : lead.score?.usPreScore ?? 0;
   const usLabel = clarityEnacted ? 'US (Post-CLARITY)' : 'US (Pre-CLARITY)';
 
+  // Guided workflow: the single next action that moves this lead forward.
+  const hasContact = lead.people.some(p => p.email);
+  const hasActiveSequence = sequences.some(s => s.status === 'active');
+  const nextStep = isSuppressed
+    ? null
+    : !hasContact
+      ? { label: 'Next: find a contact email', anchor: 'Find Contact Email' }
+      : !isApproved
+        ? { label: 'Next: approve for outreach', anchor: 'Approve for Outreach' }
+        : !hasActiveSequence
+          ? { label: 'Next: enroll in a sequence', anchor: 'Sequences' }
+          : { label: 'Sequence running — watch for replies', anchor: null };
+
   return (
-    <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy dark:text-ice overflow-hidden">
+    <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy overflow-hidden">
       {/* Back + Header */}
       <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-line bg-card">
         <button
@@ -388,6 +401,20 @@ export function LeadDetail() {
         <div className="flex items-center gap-1.5">
           {isApproved && <span className="text-[10px] flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold"><CheckCircle size={12} /> Approved</span>}
           {isSuppressed && <span className="text-[10px] flex items-center gap-1 text-red-500 font-bold"><XCircle size={12} /> Suppressed</span>}
+          <button
+            onClick={() => navigate(`/customer/${lead.id}`)}
+            className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+          >
+            <Users size={12} />
+            360 View
+          </button>
+          <button
+            onClick={() => navigate(`/notes/${lead.id}`)}
+            className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+          >
+            <Database size={12} />
+            Notes &amp; Docs
+          </button>
         </div>
       </div>
 
@@ -460,6 +487,13 @@ export function LeadDetail() {
           <Search size={12} className={clsx(actionLoading === 'discover' && 'animate-spin')} />
           {actionLoading === 'discover' ? 'Crawling site...' : 'Find Contact Email'}
         </button>
+
+        {nextStep && (
+          <span className="ml-auto flex items-center gap-1.5 rounded-full bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800 px-3 py-1 text-[10px] font-bold text-cyan-700 dark:text-cyan-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan-500 animate-pulse" />
+            {nextStep.label}
+          </span>
+        )}
       </div>
 
       {/* Content */}
@@ -662,6 +696,12 @@ export function LeadDetail() {
           {/* Sequences */}
           <Section icon={<Send size={14} />} title="Sequences">
             <div className="space-y-3">
+              <button
+                onClick={() => navigate('/outreach-ops')}
+                className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+              >
+                Manage in Outreach Ops →
+              </button>
               <div className="flex items-center gap-2">
                 <div className="flex rounded border border-line overflow-hidden">
                   <button
@@ -754,7 +794,11 @@ export function LeadDetail() {
                 <div className="space-y-2">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-grey block">Message Log</span>
                   {sequencesLoading ? (
-                    <p className="text-[11px] text-grey italic">Loading...</p>
+                    <div className="space-y-1.5">
+                      {[0, 1, 2].map(i => (
+                        <div key={i} className="h-8 animate-pulse rounded bg-ice-soft dark:bg-ice-soft/10" />
+                      ))}
+                    </div>
                   ) : messages.length === 0 ? (
                     <p className="text-[11px] text-grey italic">No messages sent yet.</p>
                   ) : (
@@ -784,6 +828,20 @@ export function LeadDetail() {
 
           {/* Deal Desk */}
           <Section icon={<Award size={14} />} title="Deal">
+            <div className="flex items-center gap-2 mb-3">
+              <button
+                onClick={() => navigate(`/deal-desk?projectId=${id}`)}
+                className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+              >
+                Open in Deal Desk →
+              </button>
+              <button
+                onClick={() => navigate('/deal-board')}
+                className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+              >
+                View on Board →
+              </button>
+            </div>
             <DealSection projectId={id!} />
           </Section>
 
@@ -963,7 +1021,7 @@ export function LeadDetail() {
 function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
     <div className="rounded-lg border border-line bg-card overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-line bg-ice-soft dark:bg-ice-soft/5 text-navy dark:text-ice">
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-line bg-ice-soft dark:bg-ice-soft/5 text-navy">
         <span className="text-cyan-500">{icon}</span>
         <span className="text-[11px] font-bold uppercase tracking-wider">{title}</span>
       </div>
@@ -976,7 +1034,7 @@ function Field({ label, value, children }: { label: string; value: React.ReactNo
   return (
     <div>
       <span className="text-[9px] font-bold uppercase tracking-wider text-grey block mb-0.5">{label}</span>
-      <span className="text-navy dark:text-ice">{children ?? (value ?? '—')}</span>
+      <span className="text-navy">{children ?? (value ?? '—')}</span>
     </div>
   );
 }

@@ -20,6 +20,8 @@ import { requireOperator } from '../middleware/auth.js';
 import { getDb, getPool } from '../db/index.js';
 import { env } from '../lib/env.js';
 import { buildBoardReport, type BoardPeriod } from '../analytics/boardReport.js';
+import type { BoardReport as BoardReportSnapshot } from '../analytics/boardReport.js';
+import { sendEmail } from '../outreach/resend.js';
 import { runReport, describeReportSchema, ReportConfigError, type ReportConfig } from '../analytics/reportBuilder.js';
 import { detectAnomalies } from '../analytics/anomaly.js';
 import { refreshNews } from '../connectors/news.js';
@@ -357,5 +359,117 @@ analytics2Routes.get('/anomalies', requireOperator, async (c) => {
   } catch (err) {
     console.error('[analytics2] anomalies error:', err);
     return c.json({ error: 'Anomaly scan failed', code: 'ANOMALY_ERROR' }, 500);
+  }
+});
+
+/* ────────────────────────────────────────────── board report email */
+
+const RECIPIENT_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MAX_REPORT_RECIPIENTS = 5;
+
+const PERIOD_TITLES: Record<BoardPeriod, string> = {
+  week: 'Weekly',
+  month: 'Monthly',
+  quarter: 'Quarterly',
+};
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function usdFromCents(cents: number): string {
+  return `$${Math.round(cents / 100).toLocaleString('en-US')}`;
+}
+
+/** Simple, self-contained HTML summary of a board report for email. */
+function renderBoardReportEmail(report: BoardReportSnapshot): string {
+  const title = `${PERIOD_TITLES[report.period]} Board Report`;
+  const dealRows = report.topDeals
+    .slice(0, 10)
+    .map(
+      (d) =>
+        `<tr><td style="padding:4px 8px;border-bottom:1px solid #e2e8f0;">${escapeHtml(d.projectName)}</td>` +
+        `<td style="padding:4px 8px;border-bottom:1px solid #e2e8f0;">${escapeHtml(d.stage)}</td>` +
+        `<td style="padding:4px 8px;border-bottom:1px solid #e2e8f0;">${escapeHtml(d.packageType)}</td>` +
+        `<td style="padding:4px 8px;border-bottom:1px solid #e2e8f0;text-align:right;">${usdFromCents(d.value)}</td></tr>`,
+    )
+    .join('');
+  return `
+  <div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;color:#0f172a;">
+    <h1 style="font-size:18px;margin-bottom:2px;">LCX &middot; ${title}</h1>
+    <p style="font-size:12px;color:#64748b;margin-top:0;">Last ${report.periodDays} days &middot; generated ${escapeHtml(new Date(report.generatedAt).toUTCString())}</p>
+    <h2 style="font-size:14px;">Executive summary</h2>
+    <p style="font-size:13px;line-height:1.5;">${escapeHtml(report.execSummary)}</p>
+    <h2 style="font-size:14px;">Funnel</h2>
+    <p style="font-size:13px;">Enrolled ${report.funnel.enrolled} &rarr; Replied ${report.funnel.replied} &rarr; Proposal+ ${report.funnel.proposal} &rarr; Won ${report.funnel.won}</p>
+    <h2 style="font-size:14px;">Revenue (closed-won)</h2>
+    <p style="font-size:13px;">${usdFromCents(report.revenue.wonTotal)} across ${report.revenue.wonCount} deal(s), avg ${usdFromCents(report.revenue.avgDealSize)}.</p>
+    ${dealRows
+      ? `<h2 style="font-size:14px;">Top open opportunities</h2>
+    <table style="border-collapse:collapse;font-size:12px;width:100%;">
+      <thead><tr>
+        <th style="text-align:left;padding:4px 8px;border-bottom:2px solid #cbd5e1;">Project</th>
+        <th style="text-align:left;padding:4px 8px;border-bottom:2px solid #cbd5e1;">Stage</th>
+        <th style="text-align:left;padding:4px 8px;border-bottom:2px solid #cbd5e1;">Package</th>
+        <th style="text-align:right;padding:4px 8px;border-bottom:2px solid #cbd5e1;">Value</th>
+      </tr></thead>
+      <tbody>${dealRows}</tbody>
+    </table>`
+      : ''}
+    <p style="font-size:11px;color:#94a3b8;margin-top:16px;">Sent by the LCX Sales Engine board-report generator.</p>
+  </div>`;
+}
+
+// GET /board-report/email-status — lets the UI show a demo-mode banner up front.
+analytics2Routes.get('/board-report/email-status', requireOperator, (c) => {
+  return c.json({ data: { configured: env.resendApiKey !== '' }, meta: meta() });
+});
+
+// POST /board-report/send { recipients: string[], period? } — email the report.
+analytics2Routes.post('/board-report/send', requireOperator, async (c) => {
+  if (!env.resendApiKey) {
+    return c.json(
+      { error: 'Set RESEND_API_KEY to enable emailing board reports.', code: 'EMAIL_NOT_CONFIGURED' },
+      400,
+    );
+  }
+
+  let body: { recipients?: unknown; period?: unknown };
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: 'Invalid JSON body', code: 'BAD_BODY' }, 400);
+  }
+
+  const recipients = body.recipients;
+  if (
+    !Array.isArray(recipients) ||
+    recipients.length === 0 ||
+    recipients.length > MAX_REPORT_RECIPIENTS ||
+    !recipients.every((r) => typeof r === 'string' && RECIPIENT_EMAIL_RE.test(r))
+  ) {
+    return c.json(
+      { error: `recipients must be an array of 1-${MAX_REPORT_RECIPIENTS} valid email addresses`, code: 'BAD_RECIPIENTS' },
+      400,
+    );
+  }
+
+  const period: BoardPeriod = body.period === 'month' || body.period === 'quarter' ? body.period : 'week';
+  try {
+    const report = await buildBoardReport(getPool(), period);
+    const id = await sendEmail({
+      from: env.outreachFromEmail,
+      to: recipients as string[],
+      subject: `LCX ${PERIOD_TITLES[period]} Board Report — ${new Date(report.generatedAt).toISOString().slice(0, 10)}`,
+      html: renderBoardReportEmail(report),
+    });
+    return c.json({ data: { id, recipients: recipients.length, period }, meta: meta() });
+  } catch (err) {
+    console.error('[analytics2] board-report send error:', err);
+    return c.json({ error: 'Failed to send board report email', code: 'EMAIL_SEND_FAILED' }, 502);
   }
 });

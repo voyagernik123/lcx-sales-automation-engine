@@ -25,7 +25,7 @@ export function GapAnalysis() {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-navy dark:text-ice">Gap Analysis</h2>
+        <h2 className="text-lg font-bold text-navy">Gap Analysis</h2>
         <div className="flex items-center gap-3 text-[9px] text-grey">
           <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-emerald-500 shrink-0" /> Offered</span>
           <span className="flex items-center gap-1"><span className="h-2.5 w-2.5 rounded-sm bg-red-400/40 shrink-0" /> Missing</span>

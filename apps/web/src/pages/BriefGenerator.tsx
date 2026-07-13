@@ -230,13 +230,13 @@ export function BriefGenerator() {
   }, [selectedTemplate, signatoryName, selectedStates, selectedProducts]);
 
   return (
-    <div className="space-y-4 text-navy dark:text-ice h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0 print:p-0 print:bg-white print:text-black">
+    <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0 print:p-0 print:bg-white print:text-black">
       
       {/* Top Header Controls (hidden on print) */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 shrink-0 print:hidden">
         <div>
           <h1 className="text-2xl font-bold flex items-center gap-2">
-            <FileText size={24} className="text-navy dark:text-ice" /> Executive Memo &amp; Brief Publisher
+            <FileText size={24} className="text-navy" /> Executive Memo &amp; Brief Publisher
           </h1>
           <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
             Compile watermarked, legal compliance briefings directly for counsel, banks, or the board.
@@ -279,7 +279,7 @@ export function BriefGenerator() {
                   className={clsx(
                     'w-full text-left px-3 py-2 rounded text-xs font-semibold border transition-all duration-300',
                     selectedTemplate === t.id
-                      ? 'border-navy bg-navy/5 text-navy dark:border-ice dark:bg-ice-soft/5 dark:text-ice shadow-sm'
+                      ? 'border-navy bg-navy/5 text-navy dark:border-ice dark:bg-ice-soft/5 shadow-sm'
                       : 'border-line hover:bg-ice-soft/10 text-grey-dark'
                   )}
                 >
@@ -372,7 +372,7 @@ export function BriefGenerator() {
                     className={clsx(
                       'flex items-center gap-2 w-full text-left p-1.5 rounded border text-[10px] font-semibold transition-colors duration-200',
                       active
-                        ? 'border-navy bg-navy/5 text-navy dark:border-ice dark:bg-ice-soft/5 dark:text-ice'
+                        ? 'border-navy bg-navy/5 text-navy dark:border-ice dark:bg-ice-soft/5'
                         : 'border-line hover:bg-ice-soft/10 text-grey-dark'
                     )}
                   >

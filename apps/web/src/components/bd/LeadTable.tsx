@@ -63,8 +63,8 @@ export function LeadTable({ leads, filters, clarityEnacted, onSort, onSelect, lo
                 key={col.key}
                 onClick={() => onSort(col.key)}
                 className={clsx(
-                  'text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-grey cursor-pointer hover:text-navy dark:hover:text-ice transition-colors select-none',
-                  filters.sort === col.key && 'text-navy dark:text-ice',
+                  'text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-grey cursor-pointer hover:text-navy transition-colors select-none',
+                  filters.sort === col.key && 'text-navy',
                 )}
               >
                 <span className="inline-flex items-center gap-1">
@@ -93,7 +93,7 @@ export function LeadTable({ leads, filters, clarityEnacted, onSort, onSelect, lo
             >
               <td className="py-2 px-3">
                 <div className="flex flex-col">
-                  <span className="font-semibold text-navy dark:text-ice truncate max-w-[220px]">
+                  <span className="font-semibold text-navy truncate max-w-[220px]">
                     {lead.name}
                   </span>
                   <span className="text-[10px] text-grey font-mono">
@@ -141,7 +141,7 @@ export function LeadTable({ leads, filters, clarityEnacted, onSort, onSelect, lo
                 <span className="text-grey-dark dark:text-grey-light">{deriveStage(lead.band)}</span>
               </td>
               <td className="py-2 px-3">
-                <span className="font-medium text-navy dark:text-ice">{deriveNextAction(lead.band)}</span>
+                <span className="font-medium text-navy">{deriveNextAction(lead.band)}</span>
               </td>
               <td className="py-2 px-3">
                 <ContactStatus peopleCount={lead.peopleCount} verifiedCount={lead.verifiedContactCount} />

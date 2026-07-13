@@ -29,6 +29,7 @@
     "db:backups": "./scripts/backup.sh list",
     "deploy:api:build": "docker build -t lcx-sales-api:latest -f apps/api/Dockerfile .",
     "deploy:seed": "npx tsx data/seeds/seed.ts",
+    "seed:demo": "tsx apps/api/src/seed/demo.ts",
     "deploy:migrate": "psql $DATABASE_URL -f apps/api/src/db/migrations/",
     "smoke": "./scripts/smoke-e2e.sh",
     "ci-check": "npm run type-check && npm run test && npm run build"

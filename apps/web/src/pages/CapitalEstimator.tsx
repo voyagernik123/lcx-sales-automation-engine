@@ -65,9 +65,9 @@ export function CapitalEstimator() {
   }, [calculations, monthlyBurn]);
 
   return (
-    <div className="space-y-4 text-navy dark:text-ice h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
+    <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
       <div className="shrink-0">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Landmark size={24} className="text-navy dark:text-ice" /> Launch Budget &amp; Capital Calculator</h1>
+        <h1 className="text-2xl font-bold flex items-center gap-2"><Landmark size={24} className="text-navy" /> Launch Budget &amp; Capital Calculator</h1>
         <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
           Model fintech balance sheet reserves, surety bond banking collateral leverage, and 12-month runways.
         </p>
@@ -127,20 +127,20 @@ export function CapitalEstimator() {
             <Card>
               <CardBody className="p-3">
                 <span className="text-[9px] uppercase tracking-wider text-grey block">Licensing Fees</span>
-                <span className="text-lg font-bold font-mono text-navy dark:text-ice block mt-1">${calculations.fees.toLocaleString()}</span>
+                <span className="text-lg font-bold font-mono text-navy block mt-1">${calculations.fees.toLocaleString()}</span>
               </CardBody>
             </Card>
             <Card>
               <CardBody className="p-3">
                 <span className="text-[9px] uppercase tracking-wider text-grey block">Active Surety Bonds</span>
-                <span className="text-lg font-bold font-mono text-navy dark:text-ice block mt-1">${calculations.totalBonds.toLocaleString()}</span>
+                <span className="text-lg font-bold font-mono text-navy block mt-1">${calculations.totalBonds.toLocaleString()}</span>
                 <span className="text-[9px] text-grey block mt-0.5">Post-leveraged cash: ${(calculations.cashCollateral / 1000).toFixed(0)}K</span>
               </CardBody>
             </Card>
             <Card>
               <CardBody className="p-3">
                 <span className="text-[9px] uppercase tracking-wider text-grey block">Statutory Net Worth</span>
-                <span className="text-lg font-bold font-mono text-navy dark:text-ice block mt-1">${calculations.minNetWorth.toLocaleString()}</span>
+                <span className="text-lg font-bold font-mono text-navy block mt-1">${calculations.minNetWorth.toLocaleString()}</span>
               </CardBody>
             </Card>
             <Card className="bg-cyan-500/5 dark:bg-cyan-500/2 border-cyan-500/30">

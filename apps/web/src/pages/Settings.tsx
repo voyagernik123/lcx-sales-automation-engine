@@ -23,10 +23,10 @@ export function Settings() {
   };
 
   return (
-    <div className="space-y-4 text-navy dark:text-ice h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
+    <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
       <div className="shrink-0 flex justify-between items-center">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Sliders size={24} className="text-navy dark:text-ice" /> Apollo Systems Console</h1>
+          <h1 className="text-2xl font-bold flex items-center gap-2"><Sliders size={24} className="text-navy" /> Apollo Systems Console</h1>
           <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
             Configure compliance session settings, toggle legislative safe harbor models, and inspect logs history.
           </p>
@@ -63,7 +63,7 @@ export function Settings() {
             ].map(({ key, title, desc, value }) => (
               <div key={key} className="flex items-start justify-between gap-4 border border-line rounded p-3 bg-ice-soft/20 dark:bg-navy-deep/10">
                 <div className="space-y-1">
-                  <span className="text-xs font-bold text-navy dark:text-ice block">{title}</span>
+                  <span className="text-xs font-bold text-navy block">{title}</span>
                   <p className="text-[10px] text-grey-dark dark:text-grey-light leading-relaxed">{desc}</p>
                 </div>
                 <button

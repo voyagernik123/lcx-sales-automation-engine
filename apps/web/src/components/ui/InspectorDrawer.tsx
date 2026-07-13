@@ -49,7 +49,7 @@ export function InspectorDrawer({ isOpen, onClose, title, children }: InspectorD
         ref={panelRef}
         tabIndex={-1}
         className={clsx(
-          'w-full sm:w-[460px] h-full bg-card border-l border-line shadow-2xl flex flex-col outline-none overflow-hidden animate-slide-in text-navy dark:text-ice'
+          'w-full sm:w-[460px] h-full bg-card border-l border-line shadow-2xl flex flex-col outline-none overflow-hidden animate-slide-in text-navy'
         )}
       >
 

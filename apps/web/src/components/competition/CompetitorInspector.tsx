@@ -93,11 +93,11 @@ function LicenseBadge({ active, label, icon: Icon }: { active: boolean; label: s
 function MetricsCard({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) {
   return (
     <div className="rounded-md border border-line bg-ice-soft/20 dark:bg-ice-soft/5 p-2.5 flex items-center gap-2.5 min-w-0">
-      <div className="rounded p-1.5 text-navy dark:text-ice shrink-0">
+      <div className="rounded p-1.5 text-navy shrink-0">
         <Icon size={15} />
       </div>
       <div className="min-w-0">
-        <div className="text-xs font-bold font-mono text-navy dark:text-ice truncate">{value}</div>
+        <div className="text-xs font-bold font-mono text-navy truncate">{value}</div>
         <div className="text-[9px] text-grey uppercase font-bold">{label}</div>
       </div>
     </div>
@@ -158,13 +158,13 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
 
   return (
     <InspectorDrawer isOpen={isOpen} onClose={onClose} title={title}>
-      <div className="space-y-5 text-xs leading-relaxed text-navy dark:text-ice">
+      <div className="space-y-5 text-xs leading-relaxed text-navy">
 
         {/* SECTION 0: Company Header */}
         <div className="space-y-2 pb-3 border-b border-line">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <h3 className="font-bold text-base text-navy dark:text-ice">{competitor.name}</h3>
+              <h3 className="font-bold text-base text-navy">{competitor.name}</h3>
               {competitor.ticker && (
                 <span className="text-[11px] font-mono font-bold text-grey bg-ice-soft dark:bg-navy-deep px-1.5 py-0.5 rounded">
                   {competitor.ticker}
@@ -226,7 +226,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
               <div className="text-[8px] text-grey uppercase font-bold">Avg Howey Score</div>
             </div>
             <div className="text-center bg-ice-soft/20 dark:bg-navy-deep/10 rounded p-2">
-              <div className="text-sm font-bold font-mono text-navy dark:text-ice">
+              <div className="text-sm font-bold font-mono text-navy">
                 {score ? score.regulatoryCoverage : '—'}
               </div>
               <div className="text-[8px] text-grey uppercase font-bold">Reg. Coverage</div>
@@ -425,7 +425,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
             </div>
             <div>
               <span className="text-grey block text-[8px] uppercase font-bold">Listing Strategy</span>
-              <span className="font-mono font-bold text-navy dark:text-ice">{competitor.howeyProfile.listingStrategy}</span>
+              <span className="font-mono font-bold text-navy">{competitor.howeyProfile.listingStrategy}</span>
             </div>
             <div className="col-span-2">
               <span className="text-grey block text-[8px] uppercase font-bold">Lowest / Highest Risk</span>

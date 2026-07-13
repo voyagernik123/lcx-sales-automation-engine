@@ -25,7 +25,7 @@ export function ProductIntelligence() {
 
   return (
     <>
-      <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy dark:text-ice overflow-hidden">
+      <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy overflow-hidden">
 
         {/* TOOLBAR */}
         <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-line bg-card overflow-x-auto">
@@ -75,7 +75,7 @@ export function ProductIntelligence() {
         title={selectedProduct?.name ?? ''}
       >
         {selectedProduct && (
-          <div className="space-y-4 text-xs leading-relaxed text-navy dark:text-ice">
+          <div className="space-y-4 text-xs leading-relaxed text-navy">
             <div className="flex flex-wrap gap-2">
               <span className={`text-[9px] px-2 py-0.5 rounded-full border font-bold ${
                 selectedProduct.priorityTier === 1 ? 'border-amber-400/40 bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400' :
@@ -144,19 +144,19 @@ export function ProductIntelligence() {
             <div className="grid grid-cols-2 gap-3 border-t border-line pt-3 text-[10px]">
               <div>
                 <span className="text-[8px] font-bold uppercase tracking-wider text-grey block">Complexity</span>
-                <span className="font-mono font-bold text-navy dark:text-ice">{selectedProduct.implementationComplexity}/10</span>
+                <span className="font-mono font-bold text-navy">{selectedProduct.implementationComplexity}/10</span>
               </div>
               <div>
                 <span className="text-[8px] font-bold uppercase tracking-wider text-grey block">Strategic Importance</span>
-                <span className="font-mono font-bold text-navy dark:text-ice">{selectedProduct.strategicImportance}/10</span>
+                <span className="font-mono font-bold text-navy">{selectedProduct.strategicImportance}/10</span>
               </div>
               <div>
                 <span className="text-[8px] font-bold uppercase tracking-wider text-grey block">Revenue Potential</span>
-                <span className="font-mono font-bold text-navy dark:text-ice capitalize">{selectedProduct.estRevenuePotential}</span>
+                <span className="font-mono font-bold text-navy capitalize">{selectedProduct.estRevenuePotential}</span>
               </div>
               <div>
                 <span className="text-[8px] font-bold uppercase tracking-wider text-grey block">Current Status</span>
-                <span className="font-mono font-bold text-navy dark:text-ice capitalize">{selectedProduct.currentStatus.replace('_', ' ')}</span>
+                <span className="font-mono font-bold text-navy capitalize">{selectedProduct.currentStatus.replace('_', ' ')}</span>
               </div>
             </div>
 

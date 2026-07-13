@@ -117,7 +117,7 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-bold text-navy dark:text-ice">
+          <h2 className="text-lg font-bold text-navy">
             Strategic Positioning Matrix
           </h2>
           <p className="text-xs text-grey-dark dark:text-grey-light mt-0.5">
@@ -300,7 +300,7 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
             <div key={q} className="flex items-center gap-2 bg-card border border-line rounded px-2.5 py-1.5">
               <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: colors.stroke }} />
               <span className="text-grey-dark dark:text-grey-light font-semibold">{QUADRANT_LABELS[q]}</span>
-              <span className="ml-auto font-mono font-bold text-navy dark:text-ice">{count}</span>
+              <span className="ml-auto font-mono font-bold text-navy">{count}</span>
             </div>
           );
         })}
