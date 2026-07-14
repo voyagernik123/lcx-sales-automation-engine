@@ -5,6 +5,7 @@ import { useUIStore, useOperatorStore } from '@/stores';
 import { NotificationBell } from './NotificationBell';
 import { useFilterStore } from '@/stores/useFilterStore';
 import { states, products, redFlags } from '@/data';
+import { signOutOfGoogle } from '@/lib/auth';
 
 const routeLabels: Record<string, string> = {
   'capital-estimator': 'Capital Estimator',
@@ -168,7 +169,10 @@ export function TopNav() {
           {showOperatorMenu && (
             <div className="absolute right-0 top-full mt-1 w-44 bg-card border border-line rounded-lg shadow-xl z-50 overflow-hidden">
               <button
-                onClick={() => { setShowOperatorMenu(false); navigate('/select'); }}
+                onClick={() => {
+                  setShowOperatorMenu(false);
+                  void signOutOfGoogle().then(() => navigate('/select'));
+                }}
                 className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-navy dark:text-ice hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
               >
                 <LogOut size={12} />

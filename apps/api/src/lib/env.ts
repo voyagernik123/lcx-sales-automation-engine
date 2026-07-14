@@ -57,6 +57,9 @@ export const env = {
   phantombusterConnectionAgentId: process.env.PHANTOMBUSTER_CONNECTION_AGENT_ID ?? '',
   phantombusterMessageAgentId: process.env.PHANTOMBUSTER_MESSAGE_AGENT_ID ?? '',
   linkedinSessionCookie: process.env.LINKEDIN_SESSION_COOKIE ?? '',
+  // Google-login auth (v2) — empty means only the static OPERATOR_API_KEY works
+  supabaseJwksUrl: process.env.SUPABASE_JWKS_URL ?? '',
+  supabaseIssuer: process.env.SUPABASE_URL ? `${process.env.SUPABASE_URL.replace(/\/$/, '')}/auth/v1` : '',
 } as const;
 
 export type Env = typeof env;

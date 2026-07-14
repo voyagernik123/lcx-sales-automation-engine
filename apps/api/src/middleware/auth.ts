@@ -1,6 +1,8 @@
 import { createMiddleware } from 'hono/factory';
 import type { OperatorPrincipal } from '@lcx/shared';
+import { findOperatorByEmail, isAllowedEmailDomain, nameFromEmail } from '@lcx/shared';
 import { env } from '../lib/env.js';
+import { verifySupabaseAccessToken } from '../lib/supabaseJwt.js';
 
 export type AuthVariables = {
   operator: OperatorPrincipal;
@@ -30,29 +32,37 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 /**
- * Require operator API key via:
- * - Authorization: Bearer <OPERATOR_API_KEY>
- * - Authorization: ApiKey <OPERATOR_API_KEY>
- * - X-API-Key: <OPERATOR_API_KEY>
+ * Require an operator credential — either still works, checked in order:
+ * - The shared static OPERATOR_API_KEY (local dev / tests / service calls).
+ * - A Supabase-issued JWT from a real Google login, gated to @lcx.com.
+ *
+ * Sent as:
+ * - Authorization: Bearer <token>
+ * - Authorization: ApiKey <token>
+ * - X-API-Key: <token>
  */
 export const requireOperator = createMiddleware<{ Variables: AuthVariables }>(async (c, next) => {
-  const key = extractApiKey(c.req.header('authorization'), c.req.header('x-api-key'));
+  const token = extractApiKey(c.req.header('authorization'), c.req.header('x-api-key'));
 
-  if (!key || !safeEqual(key, env.operatorApiKey)) {
-    return c.json(
-      {
-        error: 'Unauthorized',
-        code: 'UNAUTHORIZED',
-      },
-      401,
-    );
+  if (token && safeEqual(token, env.operatorApiKey)) {
+    c.set('operator', { id: 'operator', role: 'operator', authMethod: 'api_key' });
+    return next();
   }
 
-  c.set('operator', {
-    id: 'operator',
-    role: 'operator',
-    authMethod: 'api_key',
-  });
+  if (token) {
+    const verified = await verifySupabaseAccessToken(token);
+    if (verified && isAllowedEmailDomain(verified.email)) {
+      const roster = findOperatorByEmail(verified.email);
+      c.set('operator', {
+        id: roster?.id ?? verified.email,
+        role: 'operator',
+        authMethod: 'google',
+        email: verified.email,
+        name: roster?.name ?? nameFromEmail(verified.email),
+      });
+      return next();
+    }
+  }
 
-  await next();
+  return c.json({ error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
 });

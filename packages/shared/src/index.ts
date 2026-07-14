@@ -6,6 +6,9 @@ export type {
   OperatorPrincipal,
 } from './types/bd';
 
+export type { RosterOperator } from './operators.js';
+export { OPERATOR_ROSTER, ALLOWED_EMAIL_DOMAIN, findOperatorByEmail, isAllowedEmailDomain, nameFromEmail } from './operators.js';
+
 // Scoring engine (Slice 3 / Slice 13)
 export type {
   ScoreBand, ReasonTrail, RedFlagResult,

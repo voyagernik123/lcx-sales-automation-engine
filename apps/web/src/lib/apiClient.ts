@@ -5,6 +5,7 @@
  */
 
 import type { HealthResponse, OperatorPrincipal } from '@lcx/shared';
+import { getGoogleAccessToken } from './auth';
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
 const ENV_API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? '';
@@ -12,7 +13,13 @@ const ENV_API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? '';
 // Operator key lives in localStorage in production so it never ships in the
 // bundle (set once via: localStorage.setItem('lcx_api_key', '<key>')).
 // VITE_API_KEY is the local-dev fallback only.
+//
+// A real Google-login session token (once signed in) takes priority over
+// both — that's the real per-person credential; the static key remains a
+// fallback for local dev before Supabase auth is wired up.
 export function getApiKey(): string {
+  const googleToken = getGoogleAccessToken();
+  if (googleToken) return googleToken;
   try {
     return localStorage.getItem('lcx_api_key') ?? ENV_API_KEY;
   } catch {
