@@ -4,6 +4,7 @@ import { STAGES, STAGE_LABELS, canTransition, type DealStage } from '@lcx/shared
 import { fetchDealBoard, transitionDealStage, type BoardDeal } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
 import { CardSkeleton } from '@/components/shared';
+import { PageTitle, Button } from '@/components/ui';
 import { DealCard } from '@/components/deals/DealCard';
 import { DealDetailPanel } from '@/components/deals/DealDetailPanel';
 import { fmtMoneyCents } from '@/components/deals/dealFormat';
@@ -107,27 +108,24 @@ export function DealBoard() {
 
   return (
     <div className="space-y-4 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h1 className="flex items-center gap-2 text-lg font-bold text-navy">
-            <KanbanSquare size={18} /> Deal Board
-          </h1>
-          {!loading && deals.length > 0 && (
-            <p className="mt-0.5 text-[11px] text-grey">
-              {summary.open} open {summary.open === 1 ? 'deal' : 'deals'} · {fmtMoneyCents(summary.pipeline)} in pipeline
-            </p>
-          )}
-        </div>
-        <button
-          onClick={() => void load()}
-          className="inline-flex items-center gap-1 rounded-lg border border-line bg-card px-2.5 py-1.5 text-[11px] font-semibold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-        >
-          <RefreshCw size={11} className={loading ? 'animate-spin' : undefined} /> Refresh
-        </button>
-      </div>
+      <PageTitle
+        icon={<KanbanSquare size={20} />}
+        subtitle={
+          !loading && deals.length > 0
+            ? `${summary.open} open ${summary.open === 1 ? 'deal' : 'deals'} · ${fmtMoneyCents(summary.pipeline)} in pipeline`
+            : undefined
+        }
+        actions={
+          <Button variant="secondary" size="xs" onClick={() => void load()}>
+            <RefreshCw size={11} className={loading ? 'animate-spin' : undefined} /> Refresh
+          </Button>
+        }
+      >
+        Deal Board
+      </PageTitle>
 
       {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-[12px] text-red-600 dark:text-red-400">
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-label text-red-600 dark:text-red-400">
           {error}
         </div>
       )}
@@ -157,7 +155,7 @@ export function DealBoard() {
                 className={columnClass(stage, dropTarget === stage, Boolean(dragging && !validTarget && dragging.stage !== stage))}
               >
                 <div className="mb-2 flex items-center justify-between gap-2 px-1">
-                  <span className="flex min-w-0 items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-navy">
+                  <span className="flex min-w-0 items-center gap-1.5 text-micro font-bold uppercase tracking-wide text-navy">
                     {stage === 'won' ? (
                       <CheckCircle2 size={13} className="shrink-0 text-emerald-500" aria-label="Won" />
                     ) : stage === 'lost' ? (
@@ -166,11 +164,11 @@ export function DealBoard() {
                       <span className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} aria-hidden="true" />
                     )}
                     <span className="truncate">{STAGE_LABELS[stage]}</span>
-                    <span className="shrink-0 rounded-full border border-line bg-card px-1.5 text-[10px] font-semibold text-grey">
+                    <span className="shrink-0 rounded-full border border-line bg-card px-1.5 text-micro font-semibold text-grey">
                       {cards.length}
                     </span>
                   </span>
-                  {totalValue > 0 && <span className="shrink-0 font-mono text-[10px] text-grey">{fmtMoneyCents(totalValue)}</span>}
+                  {totalValue > 0 && <span className="shrink-0 font-mono text-micro text-grey">{fmtMoneyCents(totalValue)}</span>}
                 </div>
 
                 <div className="min-h-[80px] space-y-2">
@@ -187,7 +185,7 @@ export function DealBoard() {
                     />
                   ))}
                   {cards.length === 0 && (
-                    <div className="flex flex-col items-center gap-1 rounded-lg border border-dashed border-line p-4 text-center text-[10px] text-grey">
+                    <div className="flex flex-col items-center gap-1 rounded-lg border border-dashed border-line p-4 text-center text-micro text-grey">
                       <Plus size={14} aria-hidden="true" />
                       Drop deals here
                     </div>
@@ -199,7 +197,7 @@ export function DealBoard() {
         </div>
       )}
 
-      <p className="text-[10px] text-grey">
+      <p className="text-micro text-grey">
         Drag a card to advance it. Skipping ahead is allowed; moving backwards isn't. Won/Lost ask for a reason —
         wins auto-create the 30/60/90 post-listing triggers.
       </p>

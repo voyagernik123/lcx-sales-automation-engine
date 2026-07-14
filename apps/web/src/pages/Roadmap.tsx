@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useFilterStore } from '@/stores/useFilterStore';
 import { CalendarRange, Network } from 'lucide-react';
+import { PageTitle } from '@/components/ui';
 import { clsx } from 'clsx';
 
 interface Milestone {
@@ -151,12 +152,13 @@ export function Roadmap() {
   return (
     <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
       {/* Header */}
-      <div className="shrink-0">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><CalendarRange size={24} className="text-navy" /> Chronos Gantt Timeline</h1>
-        <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
-          Chronological launch sequence mapping corporate formations, MTL submissions, and custodial launches over a 24-month horizon.
-        </p>
-      </div>
+      <PageTitle
+        className="shrink-0"
+        icon={<CalendarRange size={20} />}
+        subtitle="Chronological launch sequence mapping corporate formations, MTL submissions, and custodial launches over a 24-month horizon."
+      >
+        Chronos Gantt Timeline
+      </PageTitle>
 
       {/* Main Gantt workspace */}
       <div className="flex-1 bg-card border border-line rounded-lg p-5 flex flex-col min-h-0 overflow-y-auto shadow-sm">
@@ -265,7 +267,7 @@ export function Roadmap() {
         </div>
 
         {/* Floating operational information box */}
-        <div className="mt-8 border-t border-line/45 pt-4 text-[10px] text-grey leading-normal space-y-1 select-none shrink-0">
+        <div className="mt-8 border-t border-line/45 pt-4 text-xs text-grey leading-normal space-y-1 select-none shrink-0">
           <p className="font-bold flex items-center gap-1"><Network size={11} className="text-cyan-500" /> Operational Chronos Protocol:</p>
           <p>Hovering over any Gantt block draws live dependency vectors illustrating upstream compliance filings and downstream gating locks.</p>
         </div>

@@ -5,6 +5,8 @@ import {
   type QueueItem, type QueueCaps,
 } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
+import { CardSkeleton, EmptyState } from '@/components/shared';
+import { PageTitle, Button } from '@/components/ui';
 
 const CONNECT_NOTE_MAX = 300;
 
@@ -18,7 +20,7 @@ function CapBar({ label, used, max }: { label: string; used: number; max: number
   const atCap = used >= max;
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[10px] font-semibold ${
+      className={`inline-flex items-center gap-1 rounded px-2 py-1 text-micro font-semibold ${
         atCap ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
       }`}
       title={atCap ? 'Cap reached — sends beyond this risk LinkedIn restrictions' : undefined}
@@ -59,23 +61,23 @@ function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
   };
 
   return (
-    <div className="rounded-lg border border-line bg-white p-4 space-y-3">
+    <div className="rounded-lg border border-line bg-card p-4 space-y-3">
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
             {isTelegram ? <MessageCircle size={13} className="text-sky-600" /> : <Linkedin size={13} className="text-blue-700" />}
             <span className="text-sm font-bold">{item.personName ?? 'Unknown contact'}</span>
-            {item.personTitle && <span className="text-[10px] text-grey">{item.personTitle}</span>}
+            {item.personTitle && <span className="text-micro text-grey">{item.personTitle}</span>}
           </div>
-          <div className="text-[11px] text-grey mt-0.5">
+          <div className="text-label text-grey mt-0.5">
             {item.projectName}
             {item.projectTicker ? ` (${item.projectTicker})` : ''} · touch {item.touchIndex} ·{' '}
             <span className="uppercase font-semibold">{isConnect ? 'Connect request' : isTelegram ? 'Telegram DM' : 'Message'}</span>
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[9px] font-bold text-indigo-700">P{item.priorityScore}</span>
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-slate-600">{item.band}</span>
+          <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-micro font-bold text-indigo-700">P{item.priorityScore}</span>
+          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-micro font-bold uppercase text-slate-600">{item.band}</span>
         </div>
       </div>
 
@@ -84,10 +86,10 @@ function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
           value={body}
           onChange={(e) => setBody(e.target.value)}
           rows={Math.min(10, Math.max(3, body.split('\n').length + 1))}
-          className="w-full rounded border border-line p-2 text-[12px] leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          className="w-full rounded border border-line p-2 text-label leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-400"
         />
         {isConnect && (
-          <div className={`text-right text-[10px] ${overLimit ? 'font-bold text-red-600' : 'text-grey'}`}>
+          <div className={`text-right text-micro ${overLimit ? 'font-bold text-red-600' : 'text-grey'}`}>
             {body.length}/{CONNECT_NOTE_MAX} chars {overLimit && '— too long for a connection note'}
           </div>
         )}
@@ -99,41 +101,30 @@ function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
             href={openLink}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 rounded bg-blue-700 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-blue-800"
+            className="inline-flex items-center gap-1 rounded bg-blue-700 px-2.5 py-1.5 text-label font-semibold text-white hover:bg-blue-800"
           >
             <ExternalLink size={11} /> Open {isTelegram ? 'Telegram' : 'LinkedIn'}
           </a>
         ) : (
-          <span className="text-[10px] italic text-grey">no {isTelegram ? 'telegram handle' : 'LinkedIn URL'} on file</span>
+          <span className="text-micro italic text-grey">no {isTelegram ? 'telegram handle' : 'LinkedIn URL'} on file</span>
         )}
-        <button
-          onClick={copy}
-          className="inline-flex items-center gap-1 rounded border border-line px-2.5 py-1.5 text-[11px] font-semibold hover:bg-slate-50"
-        >
+        <Button variant="secondary" size="xs" onClick={copy}>
           {copied ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />} {copied ? 'Copied' : 'Copy'}
-        </button>
+        </Button>
         <div className="flex-1" />
         <button
           disabled={busy !== ''}
           onClick={() => act(() => markQueueItemSent(item.id, body !== item.body ? body : undefined), 'sent', 'Marked sent')}
-          className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1.5 text-label font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
         >
           <Check size={11} /> {busy === 'sent' ? 'Saving…' : 'Mark sent'}
         </button>
-        <button
-          disabled={busy !== ''}
-          onClick={() => act(() => skipQueueItem(item.id), 'skip', 'Skipped')}
-          className="inline-flex items-center gap-1 rounded border border-line px-2.5 py-1.5 text-[11px] font-semibold hover:bg-slate-50 disabled:opacity-50"
-        >
+        <Button variant="secondary" size="xs" disabled={busy !== ''} onClick={() => act(() => skipQueueItem(item.id), 'skip', 'Skipped')}>
           <SkipForward size={11} /> Skip
-        </button>
-        <button
-          disabled={busy !== ''}
-          onClick={() => act(() => snoozeQueueItem(item.id), 'snooze', 'Snoozed to next send window')}
-          className="inline-flex items-center gap-1 rounded border border-line px-2.5 py-1.5 text-[11px] font-semibold hover:bg-slate-50 disabled:opacity-50"
-        >
+        </Button>
+        <Button variant="secondary" size="xs" disabled={busy !== ''} onClick={() => act(() => snoozeQueueItem(item.id), 'snooze', 'Snoozed to next send window')}>
           <Clock size={11} /> Snooze
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -166,19 +157,18 @@ export function SendQueue() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div className="flex items-center justify-between">
-        <h1 className="flex items-center gap-2 text-lg font-bold">
-          <Send size={18} /> Send Queue
-        </h1>
-        <button
-          onClick={() => void load()}
-          className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] font-semibold hover:bg-slate-50"
-        >
-          <RefreshCw size={11} /> Refresh
-        </button>
-      </div>
+      <PageTitle
+        icon={<Send size={20} />}
+        actions={
+          <Button variant="secondary" size="xs" onClick={() => void load()}>
+            <RefreshCw size={11} /> Refresh
+          </Button>
+        }
+      >
+        Send Queue
+      </PageTitle>
 
-      <p className="text-[11px] text-grey">
+      <p className="text-label text-grey">
         LinkedIn and Telegram touches are sent by you, never by automation — open the profile, paste, send, mark done.
         Caps are guidance to keep the account safe.
       </p>
@@ -192,7 +182,7 @@ export function SendQueue() {
           <select
             value={channel}
             onChange={(e) => setChannel(e.target.value)}
-            className="rounded border border-line px-2 py-1 text-[11px]"
+            className="rounded border border-line px-2 py-1 text-label"
           >
             <option value="">All channels</option>
             <option value="linkedin">LinkedIn</option>
@@ -201,9 +191,9 @@ export function SendQueue() {
         </div>
       )}
 
-      {loading && <p className="py-8 text-center text-[12px] text-grey">Loading queue…</p>}
+      {loading && <CardSkeleton count={3} />}
       {error && (
-        <div className="rounded border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">
+        <div className="rounded border border-red-200 bg-red-50 p-3 text-label text-red-700">
           {error}{' '}
           <button onClick={() => void load()} className="font-semibold underline">
             Retry
@@ -211,9 +201,11 @@ export function SendQueue() {
         </div>
       )}
       {!loading && !error && items.length === 0 && (
-        <div className="rounded-lg border border-dashed border-line p-8 text-center text-[12px] text-grey">
-          Queue is clear — nothing due right now. New touches appear when the scheduler ticks and their delay elapses.
-        </div>
+        <EmptyState
+          variant="done"
+          title="Queue is clear"
+          description="Nothing due right now. New touches appear when the scheduler ticks and their delay elapses."
+        />
       )}
 
       <div className="space-y-3">

@@ -4,6 +4,8 @@ import { FileText, Plus, Trash2, Save, Pin, Paperclip, RefreshCw, ArrowLeft, Ext
 import { request } from '@/lib/apiClient';
 import { fetchBdPipeline } from '@/lib/api/bd';
 import type { BdFilters, BdLead } from '@/types/bd';
+import { PageTitle, SectionLabel, Button } from '@/components/ui';
+import { CardSkeleton, EmptyState } from '@/components/shared';
 
 const PICKER_FILTERS: Omit<BdFilters, 'search'> = {
   market: null,
@@ -214,10 +216,9 @@ export function Notes() {
   if (!projectId) {
     return (
       <div className="mx-auto max-w-3xl space-y-4 p-4">
-        <h1 className="flex items-center gap-2 text-lg font-bold">
-          <FileText size={18} /> Notes & Documents
-        </h1>
-        <p className="text-[11px] text-grey">Pick a project to view its notes and documents.</p>
+        <PageTitle icon={<FileText size={20} />} subtitle="Pick a project to view its notes and documents.">
+          Notes & Documents
+        </PageTitle>
         <div className="relative">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-grey" />
           <input
@@ -225,14 +226,14 @@ export function Notes() {
             value={pickerQuery}
             onChange={(e) => setPickerQuery(e.target.value)}
             placeholder="Search projects by name or ticker…"
-            className="w-full rounded border border-line bg-card py-2 pl-8 pr-2.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            className="w-full rounded border border-line bg-card py-2 pl-8 pr-2.5 text-label focus:outline-none focus:ring-1 focus:ring-indigo-400"
           />
         </div>
         {pickerLoading ? (
-          <p className="py-6 text-center text-[12px] text-grey">Searching…</p>
+          <CardSkeleton count={4} />
         ) : pickerResults.length === 0 ? (
-          <div className="rounded-lg border border-dashed border-line p-6 text-center text-[12px] text-grey">
-            No projects found.
+          <div className="rounded-lg border border-dashed border-line">
+            <EmptyState variant="search" title="No projects found" description="Try a different name or ticker." />
           </div>
         ) : (
           <div className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
@@ -242,8 +243,8 @@ export function Notes() {
                 onClick={() => navigate(`/notes/${p.id}`)}
                 className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-ice-soft dark:hover:bg-ice-soft/10"
               >
-                <span className="text-[12px] font-semibold">{p.name}</span>
-                {p.ticker && <span className="font-mono text-[10px] text-grey">{p.ticker}</span>}
+                <span className="text-label font-semibold">{p.name}</span>
+                {p.ticker && <span className="font-mono text-xs text-grey">{p.ticker}</span>}
                 <span className="ml-auto text-[9px] font-bold uppercase text-grey">{p.band}</span>
               </button>
             ))}
@@ -255,106 +256,108 @@ export function Notes() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div className="flex items-center justify-between">
-        <h1 className="flex items-center gap-2 text-lg font-bold">
-          <button onClick={() => navigate(`/customer/${projectId}`)} className="text-grey hover:text-inherit">
-            <ArrowLeft size={16} />
-          </button>
-          <FileText size={18} /> Notes & Documents
-        </h1>
-        <div className="flex items-center gap-2">
-          <select
-            value={projectId}
-            onChange={(e) => navigate(`/notes/${e.target.value}`)}
-            title="Switch project"
-            className="max-w-[180px] rounded border border-line bg-card px-2 py-1 text-[11px] focus:outline-none focus:ring-1 focus:ring-indigo-400"
-          >
-            {!pickerResults.some((p) => p.id === projectId) && <option value={projectId}>Current project</option>}
-            {pickerResults.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={() => void load()}
-            className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-          >
-            <RefreshCw size={11} /> Refresh
-          </button>
-        </div>
+      <div className="flex items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Back to customer"
+          onClick={() => navigate(`/customer/${projectId}`)}
+        >
+          <ArrowLeft size={16} />
+        </Button>
+        <PageTitle
+          className="mb-0 flex-1"
+          icon={<FileText size={20} />}
+          actions={
+            <>
+              <select
+                value={projectId}
+                onChange={(e) => navigate(`/notes/${e.target.value}`)}
+                title="Switch project"
+                className="max-w-[180px] rounded border border-line bg-card px-2 py-1 text-label focus:outline-none focus:ring-1 focus:ring-indigo-400"
+              >
+                {!pickerResults.some((p) => p.id === projectId) && <option value={projectId}>Current project</option>}
+                {pickerResults.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+              <Button variant="secondary" size="sm" onClick={() => void load()}>
+                <RefreshCw size={12} /> Refresh
+              </Button>
+            </>
+          }
+        >
+          Notes & Documents
+        </PageTitle>
       </div>
 
-      {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{error}</div>}
-      {loading && <p className="py-8 text-center text-[12px] text-grey">Loading…</p>}
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-label text-red-700">{error}</div>}
+      {loading && <CardSkeleton count={4} />}
 
       {!loading && (
         <>
           {/* Notes */}
           <section className="space-y-2">
             <div className="flex items-center justify-between">
-              <h2 className="text-[11px] font-bold uppercase tracking-wider text-grey">Notes ({notes.length})</h2>
-              <button
-                onClick={startNew}
-                className="inline-flex items-center gap-1 rounded bg-indigo-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-indigo-700"
-              >
+              <SectionLabel as="h2">Notes ({notes.length})</SectionLabel>
+              <Button variant="primary" size="sm" onClick={startNew}>
                 <Plus size={12} /> New note
-              </button>
+              </Button>
             </div>
 
             {editingId && (
-              <div className="space-y-2 rounded border border-line bg-card p-3">
+              <div className="space-y-2 rounded-lg border border-line bg-card p-3">
                 <input
                   value={draftTitle}
                   onChange={(e) => setDraftTitle(e.target.value)}
                   placeholder="Title (optional)"
-                  className="w-full rounded border border-line px-2.5 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                  className="w-full rounded border border-line px-2.5 py-1.5 text-label focus:outline-none focus:ring-1 focus:ring-indigo-400"
                 />
                 <textarea
                   value={draftBody}
                   onChange={(e) => setDraftBody(e.target.value)}
                   placeholder="Write in markdown…"
                   rows={6}
-                  className="w-full rounded border border-line px-2.5 py-1.5 font-mono text-[12px] focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                  className="w-full rounded border border-line px-2.5 py-1.5 font-mono text-label focus:outline-none focus:ring-1 focus:ring-indigo-400"
                 />
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => void saveNote()}
-                    className="inline-flex items-center gap-1 rounded bg-emerald-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-emerald-700"
-                  >
+                  <Button variant="primary" size="sm" onClick={() => void saveNote()}>
                     <Save size={12} /> Save
-                  </button>
-                  <button
-                    onClick={() => setEditingId(null)}
-                    className="rounded border border-line px-3 py-1.5 text-[11px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-                  >
+                  </Button>
+                  <Button variant="secondary" size="sm" onClick={() => setEditingId(null)}>
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               </div>
             )}
 
             {notes.length === 0 && !editingId && (
-              <div className="rounded-lg border border-dashed border-line p-6 text-center text-[12px] text-grey">
-                No notes yet.
+              <div className="rounded-lg border border-dashed border-line">
+                <EmptyState
+                  icon={<FileText size={28} className="text-grey" />}
+                  title="No notes yet"
+                  description="Create the first note for this project."
+                />
               </div>
             )}
 
             {notes.map((n) => (
-              <div key={n.id} className="rounded border border-line bg-card p-3">
+              <div key={n.id} className="rounded-lg border border-line bg-card p-3">
                 <div className="flex items-center gap-2">
                   {n.pinned && <Pin size={11} className="text-amber-500" />}
-                  <span className="text-[12px] font-bold">{n.title || 'Untitled'}</span>
-                  <span className="text-[10px] text-grey">v{n.currentVersion}</span>
-                  <span className="ml-auto text-[10px] text-grey">{fmtDate(n.updatedAt)}</span>
+                  <span className="text-label font-bold">{n.title || 'Untitled'}</span>
+                  <span className="text-xs text-grey">v{n.currentVersion}</span>
+                  <span className="ml-auto text-xs text-grey">{fmtDate(n.updatedAt)}</span>
                 </div>
-                <pre className="mt-1.5 whitespace-pre-wrap font-sans text-[11px] text-grey">{n.body}</pre>
+                <pre className="mt-1.5 whitespace-pre-wrap font-sans text-label text-grey">{n.body}</pre>
                 <div className="mt-2 flex gap-2">
-                  <button onClick={() => startEdit(n)} className="text-[10px] font-semibold text-cyan-600 hover:underline">Edit</button>
-                  <button onClick={() => void togglePin(n)} className="text-[10px] font-semibold text-amber-600 hover:underline">
+                  <button onClick={() => startEdit(n)} className="text-xs font-semibold text-cyan-600 hover:underline">Edit</button>
+                  <button onClick={() => void togglePin(n)} className="text-xs font-semibold text-amber-600 hover:underline">
                     {n.pinned ? 'Unpin' : 'Pin'}
                   </button>
-                  <button onClick={() => void deleteNote(n)} className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-600 hover:underline">
+                  <button onClick={() => void deleteNote(n)} className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:underline">
                     <Trash2 size={10} /> Delete
                   </button>
                 </div>
@@ -364,38 +367,35 @@ export function Notes() {
 
           {/* Documents */}
           <section className="space-y-2">
-            <h2 className="text-[11px] font-bold uppercase tracking-wider text-grey">Documents ({docs.length})</h2>
+            <SectionLabel as="h2">Documents ({docs.length})</SectionLabel>
 
-            <div className="space-y-2 rounded border border-line bg-card p-3">
+            <div className="space-y-2 rounded-lg border border-line bg-card p-3">
               <input
                 value={docName}
                 onChange={(e) => setDocName(e.target.value)}
                 placeholder="Document name"
-                className="w-full rounded border border-line px-2.5 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                className="w-full rounded border border-line px-2.5 py-1.5 text-label focus:outline-none focus:ring-1 focus:ring-indigo-400"
               />
               <input
                 value={docUrl}
                 onChange={(e) => setDocUrl(e.target.value)}
                 placeholder="External URL (optional)"
-                className="w-full rounded border border-line px-2.5 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                className="w-full rounded border border-line px-2.5 py-1.5 text-label focus:outline-none focus:ring-1 focus:ring-indigo-400"
               />
               <textarea
                 value={docContent}
                 onChange={(e) => setDocContent(e.target.value)}
                 placeholder="Or paste inline text (max 200 KB)"
                 rows={3}
-                className="w-full rounded border border-line px-2.5 py-1.5 font-mono text-[12px] focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                className="w-full rounded border border-line px-2.5 py-1.5 font-mono text-label focus:outline-none focus:ring-1 focus:ring-indigo-400"
               />
-              <button
-                onClick={() => void addDoc()}
-                className="inline-flex items-center gap-1 rounded bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-700"
-              >
+              <Button variant="primary" size="sm" onClick={() => void addDoc()}>
                 <Paperclip size={12} /> Add document
-              </button>
+              </Button>
             </div>
 
             {docs.map((d) => (
-              <div key={d.id} className="flex items-center gap-2 rounded border border-line bg-card p-2.5 text-[11px]">
+              <div key={d.id} className="flex items-center gap-2 rounded-lg border border-line bg-card p-2.5 text-label">
                 <Paperclip size={12} className="text-grey" />
                 <span className="font-semibold">{d.name}</span>
                 <span className="text-grey">{d.mime}</span>

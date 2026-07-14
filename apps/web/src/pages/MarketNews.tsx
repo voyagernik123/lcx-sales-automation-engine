@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Newspaper, RefreshCw, ExternalLink, ChevronDown, ChevronRight, Sparkles, AlertTriangle } from 'lucide-react';
 import { request } from '@/lib/apiClient';
+import { PageTitle, Button } from '@/components/ui';
 import { CardSkeleton, EmptyState } from '@/components/shared';
 import { FilterChip } from '@/components/market/FilterChip';
 import {
@@ -98,22 +99,17 @@ export function MarketNews() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div className="flex items-center justify-between">
-        <h1 className="flex items-center gap-2 text-lg font-bold text-navy">
-          <Newspaper size={18} /> Market Intelligence
-        </h1>
-        <button
-          onClick={() => void refresh()}
-          disabled={refreshing}
-          className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] font-semibold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 disabled:opacity-50"
-        >
-          <RefreshCw size={11} className={refreshing ? 'animate-spin' : ''} /> {refreshing ? 'Fetching…' : 'Fetch latest'}
-        </button>
-      </div>
-      <p className="text-[11px] text-grey">
-        Headlines from free crypto/regulatory feeds, relevance-scored against your pipeline tickers. Configure a free
-        CryptoPanic token to widen the source set.
-      </p>
+      <PageTitle
+        icon={<Newspaper size={20} />}
+        actions={
+          <Button variant="secondary" size="sm" onClick={() => void refresh()} disabled={refreshing}>
+            <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} /> {refreshing ? 'Fetching…' : 'Fetch latest'}
+          </Button>
+        }
+        subtitle="Headlines from free crypto/regulatory feeds, relevance-scored against your pipeline tickers. Configure a free CryptoPanic token to widen the source set."
+      >
+        Market Intelligence
+      </PageTitle>
 
       {/* Daily Briefing */}
       {!loading && !error && briefing.length > 0 && (
@@ -126,13 +122,13 @@ export function MarketNews() {
           >
             {briefingOpen ? <ChevronDown size={14} className="text-grey" /> : <ChevronRight size={14} className="text-grey" />}
             <Sparkles size={14} className="text-cyan-600 dark:text-cyan-400" />
-            <span className="text-[13px] font-bold text-navy">Daily Briefing</span>
-            <span className="text-[10px] text-grey">Compiled from today's top headlines</span>
+            <span className="text-body font-bold text-navy">Daily Briefing</span>
+            <span className="text-xs text-grey">Compiled from today's top headlines</span>
           </button>
           {briefingOpen && (
             <ul className="space-y-2 border-t border-line p-3 pl-5">
               {briefing.map((b) => (
-                <li key={b.id} className="list-disc text-[12px] marker:text-grey">
+                <li key={b.id} className="list-disc text-label marker:text-grey">
                   {b.url ? (
                     <a
                       href={b.url}
@@ -146,7 +142,7 @@ export function MarketNews() {
                   ) : (
                     <span className="font-semibold text-navy">{b.title}</span>
                   )}
-                  <span className="block text-[11px] text-grey">{b.why}</span>
+                  <span className="block text-label text-grey">{b.why}</span>
                 </li>
               ))}
             </ul>
@@ -178,7 +174,7 @@ export function MarketNews() {
             value={source}
             onChange={(e) => setSource(e.target.value)}
             aria-label="Filter by source"
-            className="ml-auto rounded border border-line bg-card px-2 py-1 text-[11px] text-navy"
+            className="ml-auto rounded border border-line bg-card px-2 py-1 text-label text-navy"
           >
             <option value="">All sources</option>
             {sources.map((s) => (
@@ -199,12 +195,9 @@ export function MarketNews() {
             title="Couldn't load news"
             description={error}
             action={
-              <button
-                onClick={() => void load()}
-                className="rounded border border-line px-3 py-1.5 text-[11px] font-semibold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-              >
+              <Button variant="secondary" size="sm" onClick={() => void load()}>
                 Retry
-              </button>
+              </Button>
             }
           />
         </div>
@@ -217,13 +210,9 @@ export function MarketNews() {
             title="No news yet"
             description="Run a news refresh to pull the latest headlines from the free feeds and score them against your pipeline."
             action={
-              <button
-                onClick={() => void refresh()}
-                disabled={refreshing}
-                className="inline-flex items-center gap-1 rounded border border-line px-3 py-1.5 text-[11px] font-semibold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 disabled:opacity-50"
-              >
-                <RefreshCw size={11} className={refreshing ? 'animate-spin' : ''} /> Run news refresh
-              </button>
+              <Button variant="secondary" size="sm" onClick={() => void refresh()} disabled={refreshing}>
+                <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} /> Run news refresh
+              </Button>
             }
           />
         </div>
@@ -242,14 +231,14 @@ export function MarketNews() {
         {shown.map((n) => {
           const seen = visited.has(n.id);
           return (
-            <div key={n.id} className="rounded border border-line bg-card p-3">
+            <div key={n.id} className="rounded-lg border border-line bg-card p-3">
               <div className="flex items-start justify-between gap-2">
                 <a
                   href={n.url ?? '#'}
                   target="_blank"
                   rel="noreferrer"
                   onClick={() => markVisited(n.id)}
-                  className={`flex items-start gap-1 text-[13px] font-semibold hover:text-cyan-600 dark:hover:text-cyan-400 hover:underline ${
+                  className={`flex items-start gap-1 text-body font-semibold hover:text-cyan-600 dark:hover:text-cyan-400 hover:underline ${
                     seen ? 'text-grey' : 'text-navy'
                   }`}
                 >
@@ -261,7 +250,7 @@ export function MarketNews() {
                   </span>
                 )}
               </div>
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-[10px] text-grey">
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-grey">
                 <span className="rounded bg-ice-soft px-1.5 py-0.5 font-semibold uppercase dark:bg-ice-soft/10">
                   {n.source}
                 </span>

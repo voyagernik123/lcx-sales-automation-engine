@@ -2,6 +2,7 @@ import { useCallback, useState, useMemo } from 'react';
 import { StrategicMatrix, CompetitorGrid, CompetitorInspector, SynthesisPanel } from '@/components/competition';
 import { useAuditStore, useFilterStore } from '@/stores';
 import { competitors, states } from '@/data';
+import { PageTitle } from '@/components/ui';
 import { clsx } from 'clsx';
 import { ToggleLeft, ToggleRight, Sparkles } from 'lucide-react';
 
@@ -51,10 +52,12 @@ export function CompetitionAnalysis() {
     <>
       <div className="space-y-5 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
         <div className="shrink-0 space-y-3">
-          <h1 className="text-2xl font-bold">Competition Analysis</h1>
-          <p className="text-sm text-grey-dark dark:text-grey-light">
-            Competitive intelligence on U.S. crypto exchange positioning, regulatory coverage, and strategic threat assessment.
-          </p>
+          <PageTitle
+            className="mb-0"
+            subtitle="Competitive intelligence on U.S. crypto exchange positioning, regulatory coverage, and strategic threat assessment."
+          >
+            Competition Analysis
+          </PageTitle>
 
           <button
             onClick={handleToggleClarity}
@@ -77,11 +80,11 @@ export function CompetitionAnalysis() {
             <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 dark:bg-cyan-500/3 px-4 py-3 shadow-sm shadow-cyan-500/5">
               <div className="flex items-center gap-2 mb-2">
                 <Sparkles size={14} className="text-cyan-500" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+                <span className="text-micro font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
                   CLARITY Act Delta Summary
                 </span>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-[10px] leading-snug">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-micro leading-snug">
                 <div>
                   <span className="text-grey block text-[9px] uppercase font-bold">Exchanges Benefiting</span>
                   <span className="font-mono font-bold text-cyan-600 dark:text-cyan-400 text-sm">

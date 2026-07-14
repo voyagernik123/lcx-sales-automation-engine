@@ -37,7 +37,7 @@ export function DealCard({ deal, onDragStart, onDragEnd, onClick }: DealCardProp
       className={`cursor-grab rounded-lg border border-line border-l-[3px] ${packageAccentClass(deal.packageType)} bg-card p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 active:cursor-grabbing`}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="min-w-0 truncate text-[12px] font-semibold leading-tight text-navy">
+        <span className="min-w-0 truncate text-label font-semibold leading-tight text-navy">
           {deal.projectName}
         </span>
         {deal.projectTicker && (
@@ -48,8 +48,8 @@ export function DealCard({ deal, onDragStart, onDragEnd, onClick }: DealCardProp
       </div>
 
       <div className="mt-1.5 flex items-baseline justify-between gap-2">
-        <span className="text-[12px] font-semibold text-navy">{fmtMoneyCents(deal.packageValue)}</span>
-        <span className="truncate text-[10px] text-grey">{packageLabel(deal.packageType)}</span>
+        <span className="text-label font-semibold text-navy">{fmtMoneyCents(deal.packageValue)}</span>
+        <span className="truncate text-micro text-grey">{packageLabel(deal.packageType)}</span>
       </div>
 
       <div className="mt-2 flex items-center justify-between gap-2 border-t border-line/60 pt-1.5">

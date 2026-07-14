@@ -10,6 +10,7 @@ import {
   ProductSortField,
 } from '@/types/productIntel';
 import { clsx } from 'clsx';
+import { EmptyState } from '@/components/shared';
 import {
   ArrowUpDown, ChevronUp, ChevronDown, LayoutGrid, Table2,
   TrendingUp, BarChart3, Shield, Coins, Network, Scale, Server, Database, Building2,
@@ -160,14 +161,14 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
           <div className="flex items-center gap-2">
             {(() => { const Icon = categoryIcons[p.category]; return <Icon size={14} className="text-grey shrink-0" />; })()}
             <div>
-              <div className="font-bold text-[11px] text-navy leading-tight">{p.name}</div>
+              <div className="font-bold text-micro text-navy leading-tight">{p.name}</div>
               <div className="text-[9px] text-grey">{p.subcategory}</div>
             </div>
           </div>
         );
       case 'category':
         return (
-          <span className="text-[10px] font-semibold text-navy">{CATEGORY_META[p.category].label}</span>
+          <span className="text-micro font-semibold text-navy">{CATEGORY_META[p.category].label}</span>
         );
       case 'priorityTier':
         return (
@@ -200,7 +201,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
       case 'competitors': {
         const compCount = p.topCompetitors.filter(cid => allCompetitorIds.includes(cid)).length;
         return (
-          <span className={clsx('font-mono text-[10px] font-bold', compCount > 5 ? 'text-status-blocked' : compCount > 2 ? 'text-status-conditional' : 'text-status-ready')}>
+          <span className={clsx('font-mono text-micro font-bold', compCount > 5 ? 'text-status-blocked' : compCount > 2 ? 'text-status-conditional' : 'text-status-ready')}>
             {compCount}
           </span>
         );
@@ -257,7 +258,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
                 <Icon size={13} />
               </div>
               <div>
-                <div className="font-bold text-[11px] text-navy leading-tight">{p.name}</div>
+                <div className="font-bold text-micro text-navy leading-tight">{p.name}</div>
                 <div className="text-[9px] text-grey">{CATEGORY_META[p.category].label} · {p.audience}</div>
               </div>
             </div>
@@ -298,21 +299,21 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
 
       <div className="flex flex-wrap items-center gap-1.5">
         <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as any)}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy">
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus:outline-none text-navy">
           <option value="All">All Categories</option>
           {categories.map(c => (
             <option key={c} value={c}>{CATEGORY_META[c].label}</option>
           ))}
         </select>
         <select value={audienceFilter} onChange={e => setAudienceFilter(e.target.value as any)}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy">
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus:outline-none text-navy">
           <option value="All">All Audiences</option>
           <option value="retail">Retail</option>
           <option value="institutional">Institutional</option>
           <option value="both">Both</option>
         </select>
         <select value={tierFilter} onChange={e => setTierFilter(e.target.value === 'All' ? 'All' : parseInt(e.target.value))}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy">
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus:outline-none text-navy">
           <option value="All">All Priorities</option>
           <option value="1">Tier 1 — Critical</option>
           <option value="2">Tier 2 — High</option>
@@ -320,7 +321,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
           <option value="4">Tier 4 — Monitor</option>
         </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy">
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus:outline-none text-navy">
           <option value="All">All Statuses</option>
           <option value="live">Live</option>
           <option value="building">Building</option>
@@ -332,7 +333,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
 
       {viewMode === 'table' ? (
         <div className="overflow-x-auto border border-line rounded-lg bg-card shadow-sm">
-          <table className="w-full border-collapse text-left text-[10px]">
+          <table className="w-full border-collapse text-left text-micro">
             <thead>
               <tr className="bg-ice-soft/40 dark:bg-navy-deep/20 border-b border-line">
                 {COLUMNS.map(col => (
@@ -354,7 +355,9 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
           {cardRows}
           {sorted.length === 0 && (
-            <p className="col-span-full text-center text-xs text-grey py-8">No products match the active filters.</p>
+            <div className="col-span-full">
+              <EmptyState variant="search" title="No matching products" description="No products match the active filters." />
+            </div>
           )}
         </div>
       )}

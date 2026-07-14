@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { ListChecks, Check, X, Plus, RefreshCw } from 'lucide-react';
 import { fetchTasks, createTask, completeTask, dismissTask, type OperatorTask } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
-import { TableSkeleton } from '@/components/shared';
+import { TableSkeleton, EmptyState } from '@/components/shared';
+import { PageTitle, Button } from '@/components/ui';
 
 const KIND_LABEL: Record<string, string> = {
   manual: 'manual',
@@ -67,14 +68,14 @@ export function MyTasks() {
   };
 
   const Row = ({ t }: { t: OperatorTask }) => (
-    <div className="flex items-start gap-2 rounded border border-line bg-white dark:bg-slate-900/40 p-2.5">
+    <div className="flex items-start gap-2 rounded-lg border border-line bg-white dark:bg-slate-900/40 p-3">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-[12px] font-semibold">{t.title}</span>
-          <span className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[8px] font-bold uppercase text-grey">{KIND_LABEL[t.kind] ?? t.kind}</span>
+          <span className="text-sm font-semibold">{t.title}</span>
+          <span className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-micro font-bold uppercase text-grey">{KIND_LABEL[t.kind] ?? t.kind}</span>
         </div>
-        {t.detail && <p className="text-[10px] text-grey mt-0.5">{t.detail}</p>}
-        <div className="mt-0.5 flex items-center gap-2 text-[10px] text-grey">
+        {t.detail && <p className="text-xs text-grey mt-0.5">{t.detail}</p>}
+        <div className="mt-1 flex items-center gap-2 text-xs text-grey">
           {t.projectName && (
             <button onClick={() => t.projectId && navigate(`/bd-pipeline/${t.projectId}`)} className="font-semibold text-cyan-600 hover:underline">
               {t.projectName}
@@ -85,23 +86,20 @@ export function MyTasks() {
       </div>
       <button
         onClick={() => void act(() => completeTask(t.id), 'Done')}
-        className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-emerald-700"
+        className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-xs font-bold text-white hover:bg-emerald-700"
       >
-        <Check size={10} /> Done
+        <Check size={12} /> Done
       </button>
-      <button
-        onClick={() => void act(() => dismissTask(t.id), 'Dismissed')}
-        className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[10px] font-bold hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-      >
-        <X size={10} />
-      </button>
+      <Button variant="secondary" size="xs" aria-label="Dismiss task" onClick={() => void act(() => dismissTask(t.id), 'Dismissed')}>
+        <X size={12} />
+      </Button>
     </div>
   );
 
   const Bucket = ({ name, label, tone }: { name: keyof typeof buckets; label: string; tone: string }) =>
     buckets[name].length === 0 ? null : (
-      <div className="space-y-1.5">
-        <h2 className={`text-[10px] font-bold uppercase tracking-wider ${tone}`}>
+      <div className="space-y-2">
+        <h2 className={`text-xs font-bold uppercase tracking-wider ${tone}`}>
           {label} ({buckets[name].length})
         </h2>
         {buckets[name].map((t) => <Row key={t.id} t={t} />)}
@@ -110,14 +108,16 @@ export function MyTasks() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <div className="flex items-center justify-between">
-        <h1 className="flex items-center gap-2 text-lg font-bold">
-          <ListChecks size={18} /> My Tasks
-        </h1>
-        <button onClick={() => void load()} className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10">
-          <RefreshCw size={11} /> Refresh
-        </button>
-      </div>
+      <PageTitle
+        icon={<ListChecks size={20} />}
+        actions={
+          <Button variant="secondary" size="sm" onClick={() => void load()}>
+            <RefreshCw size={12} /> Refresh
+          </Button>
+        }
+      >
+        My Tasks
+      </PageTitle>
 
       <div className="flex gap-2">
         <input
@@ -125,19 +125,21 @@ export function MyTasks() {
           onChange={(e) => setNewTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && void addTask()}
           placeholder="Add a task…"
-          className="flex-1 rounded border border-line px-2.5 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          className="flex-1 rounded-lg border border-line px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
         />
-        <button onClick={() => void addTask()} className="inline-flex items-center gap-1 rounded bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-700">
+        <button onClick={() => void addTask()} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-label font-bold text-white hover:bg-indigo-700">
           <Plus size={12} /> Add
         </button>
       </div>
 
       {loading && <TableSkeleton rows={6} cols={4} />}
-      {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{error}</div>}
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">{error}</div>}
       {!loading && !error && tasks.length === 0 && (
-        <div className="rounded-lg border border-dashed border-line p-8 text-center text-[12px] text-grey">
-          Nothing to do — tasks appear automatically when deals advance, replies arrive, or deals stall.
-        </div>
+        <EmptyState
+          variant="done"
+          title="Nothing to do"
+          description="Tasks appear automatically when deals advance, replies arrive, or deals stall."
+        />
       )}
 
       <Bucket name="overdue" label="Overdue" tone="text-red-600" />

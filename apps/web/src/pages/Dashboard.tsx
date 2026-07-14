@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertTriangle, MapPin, ShieldCheck, Coins, Terminal, ShieldAlert } from 'lucide-react';
-import { Card, CardHeader, CardBody, Badge, ReadinessMeter, InspectorDrawer } from '@/components/ui';
+import { AlertTriangle, MapPin, ShieldCheck, Coins, Terminal, ShieldAlert, LayoutDashboard } from 'lucide-react';
+import { Card, CardHeader, CardBody, Badge, ReadinessMeter, InspectorDrawer, PageTitle } from '@/components/ui';
 import { StateInspectorPanel } from '@/components/shared';
 import { states, products, requirements, readinessItems, redFlags } from '@/data';
 import { useAuditStore, useFilterStore } from '@/stores';
@@ -37,7 +37,7 @@ function StatCard({ icon: Icon, label, value, hint }: { icon: React.ElementType;
             <div className="text-xs text-grey-dark dark:text-grey-light mt-1">{label}</div>
           </div>
         </div>
-        {hint && <p className="mt-2 text-[10px] text-grey dark:text-grey-light/60 leading-tight">{hint}</p>}
+        {hint && <p className="mt-2 text-xs text-grey dark:text-grey-light/60 leading-tight">{hint}</p>}
       </CardBody>
     </Card>
   );
@@ -137,24 +137,24 @@ export function Dashboard() {
   return (
     <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
 
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold">Launch Control Dashboard</h1>
-          <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
-            Operational cockpit synthesized from the 784-page U.S. regulatory strategy research.
-          </p>
-        </div>
+      <div className="shrink-0">
+        <PageTitle
+          icon={<LayoutDashboard size={20} />}
+          subtitle="Operational cockpit synthesized from the 784-page U.S. regulatory strategy research."
+        >
+          Launch Control Dashboard
+        </PageTitle>
       </div>
 
       {unresolvedCriticalCount > 0 && (
-        <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-xs text-red-700 dark:text-red-300 font-medium flex items-center justify-between gap-3 shrink-0">
+        <div className="rounded-md border border-status-blocked/30 bg-status-blocked/10 px-3 py-2.5 text-xs text-status-blocked font-medium flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2">
-            <AlertTriangle size={15} className="shrink-0 text-red-500 animate-pulse-beacon" />
+            <AlertTriangle size={15} className="shrink-0 text-status-blocked animate-pulse-beacon" />
             <span>
               <strong>Audit Alert</strong>: There are {unresolvedCriticalCount} unresolved Critical/High risk audit flags active. Resolve these before launching.
             </span>
           </div>
-          <Link to="/red-flags" className="underline font-bold shrink-0 hover:text-red-500">
+          <Link to="/red-flags" className="underline font-bold shrink-0 hover:opacity-80">
             Resolve Gates &rarr;
           </Link>
         </div>
@@ -185,7 +185,7 @@ export function Dashboard() {
                     <button
                       key={s.id}
                       onClick={() => setSelectedState(s)}
-                      className={`relative flex flex-col items-center justify-center p-1 h-10 border rounded text-[10px] font-bold transition-all transform active:scale-95 ${tileClass} hover:opacity-80`}
+                      className={`relative flex flex-col items-center justify-center p-1 h-10 border rounded text-micro font-bold transition-all transform active:scale-95 ${tileClass} hover:opacity-80`}
                       title={`${s.name} — ${effectiveStatus}`}
                     >
                       <span className={`absolute top-0.5 right-0.5 h-[5px] w-[5px] rounded-full ${dotClass}`} />
@@ -229,7 +229,7 @@ export function Dashboard() {
                     return (
                       <li key={s.id} className="flex items-center justify-between text-xs">
                         <button onClick={() => setSelectedState(s)} className="hover:underline font-bold text-left">
-                          {s.name} <span className="text-grey font-mono text-[9px]">({s.tier.replace(/^Tier \d - /, '')})</span>
+                          {s.name} <span className="text-grey font-mono text-micro">({s.tier.replace(/^Tier \d - /, '')})</span>
                         </button>
                         <Badge status={toBadgeStatus(effectiveStatus)}>{effectiveStatus}</Badge>
                       </li>
@@ -270,11 +270,11 @@ export function Dashboard() {
                 </svg>
                 <div className="absolute flex flex-col items-center justify-center font-mono">
                   <span className="text-3xl font-extrabold text-navy">{readinessPercent}%</span>
-                  <span className="text-[9px] text-grey uppercase tracking-wider font-bold">Readiness</span>
+                  <span className="text-micro text-grey uppercase tracking-wider font-bold">Readiness</span>
                 </div>
               </div>
               <ReadinessMeter percent={readinessPercent} className="px-4" />
-              <Link to="/readiness" className="text-[10px] text-grey hover:underline uppercase font-bold tracking-wider font-mono">
+              <Link to="/readiness" className="text-micro text-grey hover:underline uppercase font-bold tracking-wider font-mono">
                 Open Readiness Controls &rarr;
               </Link>
             </CardBody>
@@ -284,7 +284,7 @@ export function Dashboard() {
             <CardHeader className="text-xs uppercase tracking-wider font-extrabold text-status-blocked flex items-center gap-1.5 border-b border-line px-4 py-2 bg-red-50/50 dark:bg-red-950/10">
               <ShieldAlert size={14} /> CFIUS FOREIGN PARENT GATING
             </CardHeader>
-            <CardBody className="text-[10px] leading-relaxed space-y-1">
+            <CardBody className="text-xs leading-relaxed space-y-1">
               <p>
                 Liechtenstein parent (LCX AG) exceeds <strong>25% voting control</strong>, triggering mandatory filing.
               </p>
@@ -294,7 +294,7 @@ export function Dashboard() {
             </CardBody>
           </Card>
 
-          <div className="flex-1 flex flex-col bg-slate-950 text-slate-100 rounded-lg border border-slate-800 shadow-md font-mono text-[10px] overflow-hidden min-h-[220px]">
+          <div className="flex-1 flex flex-col bg-slate-950 text-slate-100 rounded-lg border border-slate-800 shadow-md font-mono text-micro overflow-hidden min-h-[220px]">
             <div className="bg-slate-900 px-3 py-2 border-b border-slate-800 flex items-center justify-between shrink-0 select-none">
               <div className="flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-cyan-500 shrink-0" />

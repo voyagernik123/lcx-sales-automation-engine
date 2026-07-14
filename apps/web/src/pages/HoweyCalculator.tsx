@@ -4,6 +4,7 @@ import { useAuditStore } from '@/stores/useAuditStore';
 import { Scale, RotateCcw } from 'lucide-react';
 import { clsx } from 'clsx';
 import { products } from '@/data';
+import { PageTitle, SectionLabel, Button } from '@/components/ui';
 
 
 interface HoweyFactor {
@@ -139,38 +140,39 @@ export function HoweyCalculator() {
   return (
     <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
       {/* Header */}
-      <div className="shrink-0 flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Scale size={24} className="text-navy" /> Securities Forensic Analyzer</h1>
-          <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
-            Model token securities classifications under the U.S. Supreme Court Howey Test factors.
-          </p>
-        </div>
-        
-        {/* Token Symbol Input + Reset */}
-        <div className="flex items-center gap-3 shrink-0">
-          <button
-            onClick={handleResetAll}
-            className="flex items-center gap-1.5 border border-line bg-card rounded px-3 py-1.5 text-[10px] font-bold text-grey uppercase tracking-wider hover:bg-ice-soft/20 dark:hover:bg-navy-deep/50 transition-colors"
-          >
-            <RotateCcw size={11} />
-            Reset All Factors
-          </button>
-          <div className="flex items-center gap-2 border border-line bg-card rounded px-3 py-1 shrink-0">
-            <span className="text-[10px] font-bold text-grey uppercase tracking-wider">Asset:</span>
-            <input
-              type="text"
-              value={tokenSymbol}
-              onChange={e => setTokenSymbol(e.target.value.toUpperCase())}
-              className="w-16 h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep text-center text-xs font-bold font-mono focus:outline-none"
-            />
-          </div>
-        </div>
-      </div>
+      <PageTitle
+        icon={<Scale size={20} />}
+        subtitle="Model token securities classifications under the U.S. Supreme Court Howey Test factors."
+        className="shrink-0 !mb-0"
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              size="xs"
+              onClick={handleResetAll}
+              className="uppercase tracking-wider"
+            >
+              <RotateCcw size={11} />
+              Reset All Factors
+            </Button>
+            <div className="flex items-center gap-2 border border-line bg-card rounded px-3 py-1 shrink-0">
+              <SectionLabel>Asset:</SectionLabel>
+              <input
+                type="text"
+                value={tokenSymbol}
+                onChange={e => setTokenSymbol(e.target.value.toUpperCase())}
+                className="w-16 h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep text-center text-xs font-bold font-mono focus:outline-none"
+              />
+            </div>
+          </>
+        }
+      >
+        Securities Forensic Analyzer
+      </PageTitle>
 
       {/* Product Selector */}
       <div className="shrink-0 flex items-center gap-3 bg-card border border-line rounded-lg px-4 py-2.5">
-        <span className="text-[10px] font-bold text-grey uppercase tracking-wider whitespace-nowrap">Reference Product:</span>
+        <SectionLabel className="whitespace-nowrap">Reference Product:</SectionLabel>
         <select
           value={selectedProductId}
           onChange={e => setSelectedProductId(e.target.value)}
@@ -225,7 +227,7 @@ export function HoweyCalculator() {
                 </div>
                 {/* Show product's real Howey analysis for this prong */}
                 {productAnalysis && (
-                  <div className="ml-1 mt-1 px-3 py-2 rounded border border-cyan-500/20 bg-cyan-500/5 text-[11px] leading-relaxed text-grey-dark dark:text-grey-light">
+                  <div className="ml-1 mt-1 px-3 py-2 rounded-lg border border-cyan-500/20 bg-cyan-500/5 text-label leading-relaxed text-grey-dark dark:text-grey-light">
                     <span className="font-bold text-[9px] uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
                       {selectedProduct?.name} — Analysis:
                     </span>
@@ -240,9 +242,9 @@ export function HoweyCalculator() {
         {/* Right Side: Radial Risk speed gauge */}
         <div className="w-full md:w-80 bg-card border border-line rounded-lg p-5 flex flex-col items-center justify-center space-y-6 shrink-0 shadow-sm">
           
-          <span className="font-bold text-[10px] uppercase tracking-wider text-grey text-center block">
+          <SectionLabel className="text-center block">
             SEC Enforcement Probability Dial
-          </span>
+          </SectionLabel>
 
           {/* Radial SVG Needle Gauge */}
           <div className="relative flex flex-col items-center justify-center w-full mt-2 select-none">
@@ -276,21 +278,21 @@ export function HoweyCalculator() {
               </svg>
               <div className="absolute bottom-2 left-0 right-0 flex flex-col items-center justify-center font-mono">
                 <span className="text-3xl font-extrabold text-navy leading-none">{scoreResult}%</span>
-                <span className="text-[10px] text-grey uppercase tracking-wider font-bold mt-1">Howey Index</span>
+                <span className="text-micro text-grey uppercase tracking-wider font-bold mt-1">Howey Index</span>
               </div>
             </div>
           </div>
 
 
           {/* Enforcement risk statement */}
-          <div className={clsx('rounded p-4 border text-center text-xs space-y-2 w-full', secRisk.color)}>
+          <div className={clsx('rounded-lg p-4 border text-center text-xs space-y-2 w-full', secRisk.color)}>
             <h4 className="font-bold uppercase tracking-wide">{secRisk.level}</h4>
-            <p className="leading-relaxed text-[11px]">{secRisk.desc}</p>
+            <p className="leading-relaxed text-label">{secRisk.desc}</p>
           </div>
 
           {/* Product reference score */}
           {selectedProduct && selectedProduct.howeyScore !== undefined && (
-            <div className="w-full rounded border border-cyan-500/20 bg-cyan-500/5 p-3 text-center space-y-1">
+            <div className="w-full rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3 text-center space-y-1">
               <span className="text-[9px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400 block">
                 {selectedProduct.name} Reference Score
               </span>

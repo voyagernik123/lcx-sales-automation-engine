@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import USAMap from 'react-usa-map';
-import { InspectorDrawer } from '@/components/ui';
+import { InspectorDrawer, PageTitle, SectionLabel, Button } from '@/components/ui';
 import { StateInspectorPanel } from '@/components/shared';
 import { states } from '@/data';
 import { useAuditStore, useFilterStore } from '@/stores';
@@ -82,26 +82,29 @@ export function StateMap() {
 
   return (
     <div className="flex h-[calc(100vh-6.5rem)] flex-col gap-4 text-navy overflow-hidden">
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Map size={24} className="text-navy" /> Jurisdictional Operations Room</h1>
-        <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
-          Map-based digital twin illustrating Money Transmitter Licensing (MTL) and sandbox exemptions across the USA.
-        </p>
-      </div>
+      <PageTitle
+        icon={<Map size={20} />}
+        subtitle="Map-based digital twin illustrating Money Transmitter Licensing (MTL) and sandbox exemptions across the USA."
+        className="shrink-0 !mb-0"
+      >
+        Jurisdictional Operations Room
+      </PageTitle>
 
       <div className="flex-1 flex gap-4 min-h-0 overflow-hidden relative">
 
         <div className="w-64 bg-card border border-line rounded-lg p-4 flex flex-col space-y-4 shrink-0 overflow-y-auto shadow-sm">
           <div className="flex items-center justify-between">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-grey flex items-center gap-1.5">
+            <SectionLabel as="h3" className="flex items-center gap-1.5">
               <SlidersHorizontal size={13} /> Filter Registry
-            </h3>
-            <button
+            </SectionLabel>
+            <Button
+              variant="ghost"
+              size="xs"
               onClick={handleResetFilters}
-              className="text-[10px] text-grey hover:text-navy flex items-center gap-1 font-bold font-mono"
+              className="font-mono text-grey"
             >
               <RefreshCw size={10} /> Reset
-            </button>
+            </Button>
           </div>
 
           {['NMLS Registration', 'MTL Sandbox Exemption', 'Regime Classification', 'Launch Priority', 'Launch Phase'].map((label, i) => {
@@ -119,7 +122,7 @@ export function StateMap() {
 
             return (
               <div key={label} className="space-y-1.5">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-grey-dark">{label}</label>
+                <label className="text-micro font-bold uppercase tracking-wider text-grey-dark">{label}</label>
                 <select
                   value={filters[i]}
                   onChange={e => setter(e.target.value)}
@@ -133,7 +136,7 @@ export function StateMap() {
             );
           })}
 
-          <div className="pt-2 border-t border-line text-[10px] text-grey space-y-1 mt-auto leading-relaxed">
+          <div className="pt-2 border-t border-line text-micro text-grey space-y-1 mt-auto leading-relaxed">
             <p className="font-bold flex items-center gap-1"><Info size={10} /> Legend Guides:</p>
             <p>Green (Ready), Amber (Conditional), Red (Blocked), Slate (Needs Verification/Deferred).</p>
           </div>

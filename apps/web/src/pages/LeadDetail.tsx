@@ -5,6 +5,8 @@ import { clsx } from 'clsx';
 import { useFilterStore } from '@/stores';
 import { fetchLead, approveLead, suppressLead, triggerRescore, triggerEnrich, enqueueContactDiscovery, runDiscoveryTick, fetchProjectTimeline, type TimelineEntry, addPerson, updatePerson, generateDraft as apiGenerateDraft, saveDraft, fetchDrafts, updateDraft, enrollProject, pauseSequence, resumeSequence, fetchProjectSequences, fetchProjectMessages, fetchProjectDeal, createDeal, transitionDealStage, generateProposal, fetchDealEvents, fetchDealObjections, addDealObjection, fetchSequenceTemplates, type SequenceTemplate } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
+import { EmptyState, CardSkeleton } from '@/components/shared';
+import { SectionLabel, Button } from '@/components/ui';
 import { ScoreBadge, BandBadge, MarketTag } from '@/components/bd';
 import { deriveMarketTag, CHANNEL_LABELS, TOUCH_LABELS, STAGE_COLORS, STAGE_LABELS } from '@/types/bd';
 import type { LeadDetail, LeadSignal, LeadPerson, DraftOutput, SavedDraft, Channel, SequenceRecord, MessageRecord } from '@/types/bd';
@@ -35,14 +37,14 @@ function UnifiedTimeline({ projectId }: { projectId: string }) {
     };
   }, [projectId]);
 
-  if (failed) return <p className="text-[10px] text-grey italic">Timeline unavailable</p>;
-  if (entries === null) return <p className="text-[10px] text-grey italic">Loading timeline…</p>;
-  if (entries.length === 0) return <p className="text-[10px] text-grey italic">No activity yet</p>;
+  if (failed) return <p className="text-micro text-grey italic">Timeline unavailable</p>;
+  if (entries === null) return <p className="text-micro text-grey italic">Loading timeline…</p>;
+  if (entries.length === 0) return <p className="text-micro text-grey italic">No activity yet</p>;
 
   return (
     <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
       {entries.map((e, i) => (
-        <div key={i} className="flex items-start gap-2 border-b border-line/50 pb-1.5 last:border-none text-[10px]">
+        <div key={i} className="flex items-start gap-2 border-b border-line/50 pb-1.5 last:border-none text-micro">
           <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold uppercase shrink-0 ${TIMELINE_KIND_STYLE[e.kind] ?? ''}`}>{e.kind}</span>
           <div className="flex-1 min-w-0">
             <span className="font-semibold">{e.title}</span>
@@ -332,10 +334,9 @@ export function LeadDetail() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-[calc(100vh-6.5rem)]">
-        <div className="flex items-center gap-2 text-grey">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-500 border-t-transparent" />
-          <span className="text-sm">Loading lead...</span>
+      <div className="h-[calc(100vh-6.5rem)] overflow-hidden p-4">
+        <div className="max-w-[1200px] mx-auto">
+          <CardSkeleton count={4} />
         </div>
       </div>
     );
@@ -343,10 +344,13 @@ export function LeadDetail() {
 
   if (error || !lead) {
     return (
-      <div className="flex flex-col items-center justify-center h-[calc(100vh-6.5rem)] text-red-500">
-        <p className="text-sm font-semibold">Failed to load lead</p>
-        <p className="text-xs mt-1 text-grey">{error || 'Not found'}</p>
-        <button onClick={load} className="mt-3 rounded border border-red-200 px-3 py-1 text-xs font-bold hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors">Retry</button>
+      <div className="flex h-[calc(100vh-6.5rem)] items-center justify-center">
+        <EmptyState
+          variant="error"
+          title="Failed to load lead"
+          description={error || 'Not found'}
+          action={<Button variant="secondary" size="sm" onClick={load}>Retry</Button>}
+        />
       </div>
     );
   }
@@ -393,24 +397,24 @@ export function LeadDetail() {
           <ArrowLeft size={16} />
         </button>
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <h1 className="text-lg font-bold truncate">{lead.name}</h1>
-          {lead.ticker && <span className="text-[10px] font-mono text-grey bg-ice-soft dark:bg-navy-deep px-1.5 py-0.5 rounded">{lead.ticker}</span>}
+          <h1 className="text-lg font-bold truncate text-navy">{lead.name}</h1>
+          {lead.ticker && <span className="text-micro font-mono text-grey bg-ice-soft dark:bg-navy-deep px-1.5 py-0.5 rounded">{lead.ticker}</span>}
           <BandBadge band={band} />
           <MarketTag market={marketTag} />
         </div>
         <div className="flex items-center gap-1.5">
-          {isApproved && <span className="text-[10px] flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold"><CheckCircle size={12} /> Approved</span>}
-          {isSuppressed && <span className="text-[10px] flex items-center gap-1 text-red-500 font-bold"><XCircle size={12} /> Suppressed</span>}
+          {isApproved && <span className="text-micro flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold"><CheckCircle size={12} /> Approved</span>}
+          {isSuppressed && <span className="text-micro flex items-center gap-1 text-red-500 font-bold"><XCircle size={12} /> Suppressed</span>}
           <button
             onClick={() => navigate(`/customer/${lead.id}`)}
-            className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+            className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-micro font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
           >
             <Users size={12} />
             360 View
           </button>
           <button
             onClick={() => navigate(`/notes/${lead.id}`)}
-            className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+            className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-micro font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
           >
             <Database size={12} />
             Notes &amp; Docs
@@ -424,7 +428,7 @@ export function LeadDetail() {
           onClick={() => handleAction('approve', () => approveLead(lead.id), 'Lead approved for outreach')}
           disabled={actionLoading === 'approve' || isApproved}
           className={clsx(
-            'flex items-center gap-1.5 rounded border px-3 py-1 text-[10px] font-bold transition-colors',
+            'flex items-center gap-1.5 rounded border px-3 py-1 text-micro font-bold transition-colors',
             isApproved
               ? 'border-emerald-300 bg-emerald-50 text-emerald-600 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
               : 'border-line text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10',
@@ -439,7 +443,7 @@ export function LeadDetail() {
           onClick={() => handleAction('suppress', () => suppressLead(lead.id), 'Lead suppressed')}
           disabled={actionLoading === 'suppress' || isSuppressed}
           className={clsx(
-            'flex items-center gap-1.5 rounded border px-3 py-1 text-[10px] font-bold transition-colors',
+            'flex items-center gap-1.5 rounded border px-3 py-1 text-micro font-bold transition-colors',
             isSuppressed
               ? 'border-red-300 bg-red-50 text-red-600 dark:border-red-700 dark:bg-red-950/30 dark:text-red-400'
               : 'border-line text-grey hover:bg-red-50 dark:hover:bg-red-950/20',
@@ -455,7 +459,7 @@ export function LeadDetail() {
         <button
           onClick={() => handleAction('rescore', () => triggerRescore(lead.id), 'Re-scoring complete')}
           disabled={actionLoading === 'rescore'}
-          className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+          className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-micro font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
         >
           <RefreshCw size={12} className={clsx(actionLoading === 'rescore' && 'animate-spin')} />
           {actionLoading === 'rescore' ? 'Re-scoring...' : 'Force Re-score'}
@@ -464,7 +468,7 @@ export function LeadDetail() {
         <button
           onClick={() => handleAction('enrich', () => triggerEnrich(lead.id), 'Enrichment complete')}
           disabled={actionLoading === 'enrich'}
-          className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+          className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-micro font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
         >
           <Search size={12} className={clsx(actionLoading === 'enrich' && 'animate-spin')} />
           {actionLoading === 'enrich' ? 'Enriching...' : 'Force Enrich'}
@@ -482,14 +486,14 @@ export function LeadDetail() {
             )
           }
           disabled={actionLoading === 'discover'}
-          className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+          className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-micro font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
         >
           <Search size={12} className={clsx(actionLoading === 'discover' && 'animate-spin')} />
           {actionLoading === 'discover' ? 'Crawling site...' : 'Find Contact Email'}
         </button>
 
         {nextStep && (
-          <span className="ml-auto flex items-center gap-1.5 rounded-full bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800 px-3 py-1 text-[10px] font-bold text-cyan-700 dark:text-cyan-300">
+          <span className="ml-auto flex items-center gap-1.5 rounded-full bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800 px-3 py-1 text-micro font-bold text-cyan-700 dark:text-cyan-300">
             <span className="h-1.5 w-1.5 rounded-full bg-cyan-500 animate-pulse" />
             {nextStep.label}
           </span>
@@ -501,7 +505,7 @@ export function LeadDetail() {
         <div className="max-w-[1200px] mx-auto p-4 space-y-4">
           {/* Identity */}
           <Section icon={<Globe size={14} />} title="Identity">
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[11px]">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-label">
               <Field label="Website" value={lead.website}>
                 {lead.website && <a href={lead.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-600 dark:text-cyan-400 hover:underline"><ExternalLink size={10} /> {new URL(lead.website).hostname}</a>}
               </Field>
@@ -547,7 +551,7 @@ export function LeadDetail() {
             {showAddPerson && (
               <div className="mb-3 rounded border border-cyan-200 dark:border-cyan-800 bg-cyan-50/50 dark:bg-cyan-950/10 p-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+                  <span className="text-micro font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
                     {editPerson ? 'Edit Contact' : 'Add Contact'}
                   </span>
                   <button onClick={() => { setShowAddPerson(false); setEditPerson(null); }} className="rounded p-0.5 hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors">
@@ -555,23 +559,23 @@ export function LeadDetail() {
                   </button>
                 </div>
                 <div className="grid grid-cols-2 gap-2">
-                  <input value={personForm.name} onChange={(e) => setPersonForm(p => ({ ...p, name: e.target.value }))} placeholder="Name *" className="rounded border border-line bg-card px-2 py-1 text-[11px] outline-none focus:border-cyan-500 col-span-2" />
-                  <input value={personForm.title} onChange={(e) => setPersonForm(p => ({ ...p, title: e.target.value }))} placeholder="Title" className="rounded border border-line bg-card px-2 py-1 text-[11px] outline-none focus:border-cyan-500" />
-                  <select value={personForm.role} onChange={(e) => setPersonForm(p => ({ ...p, role: e.target.value }))} className="rounded border border-line bg-card px-2 py-1 text-[11px] outline-none focus:border-cyan-500">
+                  <input value={personForm.name} onChange={(e) => setPersonForm(p => ({ ...p, name: e.target.value }))} placeholder="Name *" className="rounded border border-line bg-card px-2 py-1 text-label outline-none focus:border-cyan-500 col-span-2" />
+                  <input value={personForm.title} onChange={(e) => setPersonForm(p => ({ ...p, title: e.target.value }))} placeholder="Title" className="rounded border border-line bg-card px-2 py-1 text-label outline-none focus:border-cyan-500" />
+                  <select value={personForm.role} onChange={(e) => setPersonForm(p => ({ ...p, role: e.target.value }))} className="rounded border border-line bg-card px-2 py-1 text-label outline-none focus:border-cyan-500">
                     <option value="other">Other</option>
                     <option value="founder">Founder</option>
                     <option value="ceo">CEO</option>
                     <option value="bd">BD</option>
                     <option value="listings">Listings</option>
                   </select>
-                  <input value={personForm.email} onChange={(e) => setPersonForm(p => ({ ...p, email: e.target.value }))} placeholder="Email" className="rounded border border-line bg-card px-2 py-1 text-[11px] outline-none focus:border-cyan-500" />
-                  <input value={personForm.linkedin} onChange={(e) => setPersonForm(p => ({ ...p, linkedin: e.target.value }))} placeholder="LinkedIn URL" className="rounded border border-line bg-card px-2 py-1 text-[11px] outline-none focus:border-cyan-500" />
-                  <input value={personForm.telegram} onChange={(e) => setPersonForm(p => ({ ...p, telegram: e.target.value }))} placeholder="Telegram" className="rounded border border-line bg-card px-2 py-1 text-[11px] outline-none focus:border-cyan-500" />
+                  <input value={personForm.email} onChange={(e) => setPersonForm(p => ({ ...p, email: e.target.value }))} placeholder="Email" className="rounded border border-line bg-card px-2 py-1 text-label outline-none focus:border-cyan-500" />
+                  <input value={personForm.linkedin} onChange={(e) => setPersonForm(p => ({ ...p, linkedin: e.target.value }))} placeholder="LinkedIn URL" className="rounded border border-line bg-card px-2 py-1 text-label outline-none focus:border-cyan-500" />
+                  <input value={personForm.telegram} onChange={(e) => setPersonForm(p => ({ ...p, telegram: e.target.value }))} placeholder="Telegram" className="rounded border border-line bg-card px-2 py-1 text-label outline-none focus:border-cyan-500" />
                 </div>
                 <button
                   onClick={handleSavePerson}
                   disabled={personSaving}
-                  className="rounded bg-cyan-600 text-white px-3 py-1 text-[10px] font-bold hover:bg-cyan-700 transition-colors disabled:opacity-50"
+                  className="rounded bg-cyan-600 text-white px-3 py-1 text-micro font-bold hover:bg-cyan-700 transition-colors disabled:opacity-50"
                 >
                   {personSaving ? 'Saving...' : editPerson ? 'Update Contact' : 'Add Contact'}
                 </button>
@@ -579,10 +583,10 @@ export function LeadDetail() {
             )}
 
             {lead.people.length === 0 && !showAddPerson ? (
-              <p className="text-[11px] text-grey italic">No contacts recorded.</p>
+              <p className="text-label text-grey italic">No contacts recorded.</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="w-full text-[11px]">
+                <table className="w-full text-label">
                   <thead>
                     <tr className="border-b border-line">
                       <th className="text-left py-1.5 px-2 text-[9px] font-bold uppercase tracking-wider text-grey">Name</th>
@@ -638,7 +642,7 @@ export function LeadDetail() {
             )}
 
             {!showAddPerson && (
-              <button onClick={handleAddClick} className="mt-2 flex items-center gap-1 text-[10px] font-bold text-cyan-600 dark:text-cyan-400 hover:underline">
+              <button onClick={handleAddClick} className="mt-2 flex items-center gap-1 text-micro font-bold text-cyan-600 dark:text-cyan-400 hover:underline">
                 <Plus size={11} /> Add Contact
               </button>
             )}
@@ -652,7 +656,7 @@ export function LeadDetail() {
           {/* Signals Timeline */}
           <Section icon={<Activity size={14} />} title={`Signals (${lead.signals.length})`}>
             {lead.signals.length === 0 ? (
-              <p className="text-[11px] text-grey italic">No signals recorded.</p>
+              <p className="text-label text-grey italic">No signals recorded.</p>
             ) : (
               <div className="space-y-2">
                 {lead.signals.map((signal) => (
@@ -665,7 +669,7 @@ export function LeadDetail() {
           {/* Source Payloads (collapsible) */}
           <Section icon={<Database size={14} />} title={`Source Payloads (${lead.sources.length})`}>
             {lead.sources.length === 0 ? (
-              <p className="text-[11px] text-grey italic">No source payloads.</p>
+              <p className="text-label text-grey italic">No source payloads.</p>
             ) : (
               <div className="space-y-2">
                 {lead.sources.map((src) => {
@@ -674,7 +678,7 @@ export function LeadDetail() {
                     <div key={src.id} className="rounded border border-line overflow-hidden">
                       <button
                         onClick={() => toggleSource(src.id)}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-[11px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/5 transition-colors text-left"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-label font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/5 transition-colors text-left"
                       >
                         {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                         <span className="font-mono">{src.source}</span>
@@ -682,7 +686,7 @@ export function LeadDetail() {
                         <span className="ml-auto text-[9px] text-grey">{new Date(src.createdAt).toLocaleDateString()}</span>
                       </button>
                       {isOpen && (
-                        <pre className="px-3 py-2 text-[10px] font-mono leading-relaxed bg-ice-soft dark:bg-navy-deep overflow-x-auto max-h-60">
+                        <pre className="px-3 py-2 text-micro font-mono leading-relaxed bg-ice-soft dark:bg-navy-deep overflow-x-auto max-h-60">
                           {JSON.stringify(src.payload, null, 2)}
                         </pre>
                       )}
@@ -698,7 +702,7 @@ export function LeadDetail() {
             <div className="space-y-3">
               <button
                 onClick={() => navigate('/outreach-ops')}
-                className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+                className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-micro font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
               >
                 Manage in Outreach Ops →
               </button>
@@ -706,13 +710,13 @@ export function LeadDetail() {
                 <div className="flex rounded border border-line overflow-hidden">
                   <button
                     onClick={() => setEnrollChannel('email')}
-                    className={`px-2 py-1.5 text-[10px] font-bold transition-colors ${enrollChannel === 'email' ? 'bg-cyan-600 text-white' : 'bg-ice-soft dark:bg-ice-soft/5 text-grey hover:bg-ice-soft/50'}`}
+                    className={`px-2 py-1.5 text-micro font-bold transition-colors ${enrollChannel === 'email' ? 'bg-cyan-600 text-white' : 'bg-ice-soft dark:bg-ice-soft/5 text-grey hover:bg-ice-soft/50'}`}
                   >
                     Email
                   </button>
                   <button
                     onClick={() => setEnrollChannel('linkedin')}
-                    className={`px-2 py-1.5 text-[10px] font-bold transition-colors ${enrollChannel === 'linkedin' ? 'bg-cyan-600 text-white' : 'bg-ice-soft dark:bg-ice-soft/5 text-grey hover:bg-ice-soft/50'}`}
+                    className={`px-2 py-1.5 text-micro font-bold transition-colors ${enrollChannel === 'linkedin' ? 'bg-cyan-600 text-white' : 'bg-ice-soft dark:bg-ice-soft/5 text-grey hover:bg-ice-soft/50'}`}
                   >
                     LinkedIn
                   </button>
@@ -721,7 +725,7 @@ export function LeadDetail() {
                   <select
                     value={templateId}
                     onChange={(e) => setTemplateId(e.target.value)}
-                    className="rounded border border-line px-1.5 py-1.5 text-[10px] bg-transparent"
+                    className="rounded border border-line px-1.5 py-1.5 text-micro bg-transparent"
                     title="Cadence template (blank = default 5-touch)"
                   >
                     <option value="">Default cadence</option>
@@ -733,14 +737,14 @@ export function LeadDetail() {
                 <button
                   onClick={handleEnroll}
                   disabled={enrolling}
-                  className="rounded bg-cyan-600 text-white px-3 py-1.5 text-[10px] font-bold hover:bg-cyan-700 transition-colors disabled:opacity-50 flex items-center gap-1"
+                  className="rounded bg-cyan-600 text-white px-3 py-1.5 text-micro font-bold hover:bg-cyan-700 transition-colors disabled:opacity-50 flex items-center gap-1"
                 >
                   <Send size={11} />
                   {enrolling ? 'Enrolling...' : `Enroll (${enrollChannel})`}
                 </button>
                 <button
                   onClick={() => { loadSequences(); setShowMessageLog(!showMessageLog); }}
-                  className="rounded border border-line px-3 py-1.5 text-[10px] font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+                  className="rounded border border-line px-3 py-1.5 text-micro font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
                 >
                   {showMessageLog ? 'Hide Messages' : `Messages (${messages.length})`}
                 </button>
@@ -755,7 +759,7 @@ export function LeadDetail() {
                           <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${SEQUENCE_STATUS_COLORS[seq.status] ?? ''}`}>
                             {seq.status}
                           </span>
-                          <span className="text-[10px] text-grey">Step {seq.currentStep}/5</span>
+                          <span className="text-micro text-grey">Step {seq.currentStep}/5</span>
                           <span className="text-[9px] text-grey">{seq.channel}</span>
                         </div>
                         <div className="flex items-center gap-1">
@@ -787,12 +791,12 @@ export function LeadDetail() {
               )}
 
               {sequences.length === 0 && (
-                <p className="text-[11px] text-grey italic">Not enrolled in any sequence.</p>
+                <p className="text-label text-grey italic">Not enrolled in any sequence.</p>
               )}
 
               {showMessageLog && (
                 <div className="space-y-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-grey block">Message Log</span>
+                  <span className="text-micro font-bold uppercase tracking-wider text-grey block">Message Log</span>
                   {sequencesLoading ? (
                     <div className="space-y-1.5">
                       {[0, 1, 2].map(i => (
@@ -800,7 +804,7 @@ export function LeadDetail() {
                       ))}
                     </div>
                   ) : messages.length === 0 ? (
-                    <p className="text-[11px] text-grey italic">No messages sent yet.</p>
+                    <p className="text-label text-grey italic">No messages sent yet.</p>
                   ) : (
                     <div className="space-y-1.5 max-h-60 overflow-y-auto">
                       {messages.map(msg => (
@@ -809,7 +813,7 @@ export function LeadDetail() {
                             <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${MESSAGE_STATUS_COLORS[msg.status] ?? ''}`}>
                               {msg.status}
                             </span>
-                            <span className="text-[10px] font-medium truncate flex-1">{msg.subject}</span>
+                            <span className="text-micro font-medium truncate flex-1">{msg.subject}</span>
                             <span className="text-[9px] text-grey">{msg.toEmail}</span>
                           </div>
                           <div className="flex items-center gap-2 mt-1">
@@ -831,13 +835,13 @@ export function LeadDetail() {
             <div className="flex items-center gap-2 mb-3">
               <button
                 onClick={() => navigate(`/deal-desk?projectId=${id}`)}
-                className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+                className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-micro font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
               >
                 Open in Deal Desk →
               </button>
               <button
                 onClick={() => navigate('/deal-board')}
-                className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+                className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-micro font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
               >
                 View on Board →
               </button>
@@ -858,7 +862,7 @@ export function LeadDetail() {
                         key={t}
                         onClick={() => { setDraftTouch(t); setGeneratedDraft(null); }}
                         className={clsx(
-                          'rounded px-2 py-1 text-[10px] font-bold transition-colors',
+                          'rounded px-2 py-1 text-micro font-bold transition-colors',
                           draftTouch === t
                             ? 'bg-cyan-600 text-white'
                             : 'border border-line text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10',
@@ -877,7 +881,7 @@ export function LeadDetail() {
                         key={ch}
                         onClick={() => { setDraftChannel(ch); setGeneratedDraft(null); }}
                         className={clsx(
-                          'rounded px-2 py-1 text-[10px] font-bold transition-colors',
+                          'rounded px-2 py-1 text-micro font-bold transition-colors',
                           draftChannel === ch
                             ? 'bg-cyan-600 text-white'
                             : 'border border-line text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10',
@@ -893,7 +897,7 @@ export function LeadDetail() {
                   <select
                     value={draftContact}
                     onChange={(e) => { setDraftContact(e.target.value); setGeneratedDraft(null); }}
-                    className="rounded border border-line bg-card px-2 py-1 text-[11px] outline-none focus:border-cyan-500 min-w-[120px]"
+                    className="rounded border border-line bg-card px-2 py-1 text-label outline-none focus:border-cyan-500 min-w-[120px]"
                   >
                     <option value="">Select...</option>
                     {lead.people.map(p => (
@@ -904,14 +908,14 @@ export function LeadDetail() {
                 <button
                   onClick={handleGenerateDraft}
                   disabled={draftGenerating || !draftContact}
-                  className="rounded bg-cyan-600 text-white px-3 py-1.5 text-[10px] font-bold hover:bg-cyan-700 transition-colors disabled:opacity-50 flex items-center gap-1"
+                  className="rounded bg-cyan-600 text-white px-3 py-1.5 text-micro font-bold hover:bg-cyan-700 transition-colors disabled:opacity-50 flex items-center gap-1"
                 >
                   <Mail size={11} />
                   {draftGenerating ? 'Generating...' : `Generate Touch ${draftTouch}`}
                 </button>
                 <button
                   onClick={() => { loadDrafts(); setShowSavedDrafts(!showSavedDrafts); }}
-                  className="rounded border border-line px-3 py-1.5 text-[10px] font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+                  className="rounded border border-line px-3 py-1.5 text-micro font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
                 >
                   {showSavedDrafts ? 'Hide Saved' : `Saved (${savedDrafts.length})`}
                 </button>
@@ -921,7 +925,7 @@ export function LeadDetail() {
               {draftWarnings.length > 0 && (
                 <div className="rounded border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/20 px-3 py-2">
                   {draftWarnings.map((w, i) => (
-                    <p key={i} className="text-[10px] text-amber-700 dark:text-amber-400">{w}</p>
+                    <p key={i} className="text-micro text-amber-700 dark:text-amber-400">{w}</p>
                   ))}
                 </div>
               )}
@@ -930,7 +934,7 @@ export function LeadDetail() {
               {generatedDraft && (
                 <div className="rounded border border-line overflow-hidden">
                   <div className="flex items-center justify-between px-3 py-2 border-b border-line bg-ice-soft dark:bg-ice-soft/5">
-                    <span className="text-[10px] font-bold">{TOUCH_LABELS[draftTouch]} — {CHANNEL_LABELS[draftChannel]}</span>
+                    <span className="text-micro font-bold">{TOUCH_LABELS[draftTouch]} — {CHANNEL_LABELS[draftChannel]}</span>
                     <div className="flex items-center gap-2">
                       {generatedDraft.requiresHumanReview && (
                         <span className="text-[9px] text-amber-600 dark:text-amber-400 font-bold">Requires Review</span>
@@ -944,7 +948,7 @@ export function LeadDetail() {
                       <input
                         value={editSubject}
                         onChange={(e) => setEditSubject(e.target.value)}
-                        className="w-full rounded border border-line bg-card px-2 py-1.5 text-[11px] outline-none focus:border-cyan-500"
+                        className="w-full rounded border border-line bg-card px-2 py-1.5 text-label outline-none focus:border-cyan-500"
                       />
                     </div>
                     <div>
@@ -953,14 +957,14 @@ export function LeadDetail() {
                         value={editBody}
                         onChange={(e) => setEditBody(e.target.value)}
                         rows={8}
-                        className="w-full rounded border border-line bg-card px-2 py-1.5 text-[11px] font-mono leading-relaxed outline-none focus:border-cyan-500 resize-y"
+                        className="w-full rounded border border-line bg-card px-2 py-1.5 text-label font-mono leading-relaxed outline-none focus:border-cyan-500 resize-y"
                       />
                     </div>
                     <div className="flex items-center gap-2">
                       <button
                         onClick={handleSaveDraft}
                         disabled={draftSaving}
-                        className="rounded bg-emerald-600 text-white px-3 py-1 text-[10px] font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1"
+                        className="rounded bg-emerald-600 text-white px-3 py-1 text-micro font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1"
                       >
                         <CheckCircle size={11} />
                         {draftSaving ? 'Saving...' : 'Save Draft'}
@@ -974,15 +978,15 @@ export function LeadDetail() {
               {showSavedDrafts && (
                 <div className="space-y-2">
                   {draftsLoading ? (
-                    <p className="text-[11px] text-grey italic">Loading saved drafts...</p>
+                    <p className="text-label text-grey italic">Loading saved drafts...</p>
                   ) : savedDrafts.length === 0 ? (
-                    <p className="text-[11px] text-grey italic">No saved drafts.</p>
+                    <p className="text-label text-grey italic">No saved drafts.</p>
                   ) : (
                     savedDrafts.map(d => (
                       <div key={d.id} className="rounded border border-line overflow-hidden">
                         <div className="flex items-center justify-between px-3 py-2 border-b border-line bg-ice-soft dark:bg-ice-soft/5">
                           <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-bold">Touch {d.touchIndex} — {d.channel}</span>
+                            <span className="text-micro font-bold">Touch {d.touchIndex} — {d.channel}</span>
                             <span className="text-[9px] text-grey">to {d.contactName}</span>
                             {d.approved && <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold">Approved</span>}
                             {d.requiresHumanReview && <span className="text-[9px] text-amber-600 dark:text-amber-400 font-bold">Review</span>}
@@ -999,8 +1003,8 @@ export function LeadDetail() {
                           </div>
                         </div>
                         <div className="p-3">
-                          <p className="text-[11px] font-bold mb-1">{d.subject}</p>
-                          <p className="text-[10px] text-grey whitespace-pre-wrap line-clamp-3">{d.body}</p>
+                          <p className="text-label font-bold mb-1">{d.subject}</p>
+                          <p className="text-micro text-grey whitespace-pre-wrap line-clamp-3">{d.body}</p>
                           <p className="text-[9px] text-grey mt-1">{new Date(d.createdAt).toLocaleString()}</p>
                         </div>
                       </div>
@@ -1023,7 +1027,7 @@ function Section({ icon, title, children }: { icon: React.ReactNode; title: stri
     <div className="rounded-lg border border-line bg-card overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-line bg-ice-soft dark:bg-ice-soft/5 text-navy">
         <span className="text-cyan-500">{icon}</span>
-        <span className="text-[11px] font-bold uppercase tracking-wider">{title}</span>
+        <SectionLabel>{title}</SectionLabel>
       </div>
       <div className="px-4 py-3">{children}</div>
     </div>
@@ -1050,12 +1054,12 @@ function ScoreCard({ title, score, band, reasons, isUs }: {
     <div className="rounded-lg border border-line overflow-hidden">
       <div className="flex items-center gap-3 px-3 py-2 border-b border-line bg-ice-soft dark:bg-ice-soft/5">
         <ScoreBadge score={score} band={band} />
-        <span className="text-[11px] font-bold">{title}</span>
+        <span className="text-label font-bold">{title}</span>
         <BandBadge band={band} />
       </div>
       <div className="p-3 space-y-2">
         {filtered.length === 0 ? (
-          <p className="text-[10px] text-grey italic">No reason trail recorded.</p>
+          <p className="text-micro text-grey italic">No reason trail recorded.</p>
         ) : (
           filtered.map((r, i) => (
             <EvidenceChip key={i} reason={r} />
@@ -1074,8 +1078,8 @@ function EvidenceChip({ reason }: { reason: ReasonTrail }) {
   return (
     <div className={`rounded border px-2.5 py-1.5 ${color}`}>
       <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-wider">{reason.factor}</span>
-        <span className="text-[10px] font-mono font-bold">{reason.points}/{reason.max}</span>
+        <span className="text-micro font-bold uppercase tracking-wider">{reason.factor}</span>
+        <span className="text-micro font-mono font-bold">{reason.points}/{reason.max}</span>
       </div>
       <p className="text-[9px] mt-0.5 opacity-80">{reason.note}</p>
     </div>
@@ -1099,7 +1103,7 @@ function SignalItem({ signal }: { signal: LeadSignal }) {
   return (
     <div className={`rounded border px-3 py-2 ${color}`}>
       <div className="flex items-center gap-2">
-        <span className="text-[10px] font-bold uppercase tracking-wider">{signal.kind.replace(/_/g, ' ')}</span>
+        <span className="text-micro font-bold uppercase tracking-wider">{signal.kind.replace(/_/g, ' ')}</span>
         <span className="text-[9px] opacity-60 ml-auto">{new Date(signal.observedAt).toLocaleString()}</span>
       </div>
       {payloadPreview && <p className="text-[9px] mt-1 opacity-70 font-mono truncate">{payloadPreview}</p>}
@@ -1223,14 +1227,14 @@ function DealSection({ projectId }: { projectId: string }) {
     }
   };
 
-  if (loading) return <p className="text-[10px] text-grey italic py-2">Loading deal...</p>;
+  if (loading) return <p className="text-micro text-grey italic py-2">Loading deal...</p>;
 
   if (!deal) {
     return (
       <div className="space-y-2 py-2">
-        <p className="text-[10px] text-grey italic">No deal for this project yet.</p>
+        <p className="text-micro text-grey italic">No deal for this project yet.</p>
         <div className="flex items-center gap-2">
-          <select value={pkgType} onChange={e => setPkgType(e.target.value)} className="rounded border border-line px-2 py-1 text-[10px] bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500">
+          <select value={pkgType} onChange={e => setPkgType(e.target.value)} className="rounded border border-line px-2 py-1 text-micro bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500">
             <option value="listing">Listing ($20K)</option>
             <option value="marketing">Marketing ($20K)</option>
             <option value="liquidity">Liquidity ($10K)</option>
@@ -1238,7 +1242,7 @@ function DealSection({ projectId }: { projectId: string }) {
             <option value="emt">EMT ($30K)</option>
             <option value="custom">Custom</option>
           </select>
-          <button onClick={handleCreate} disabled={actionLoading === 'create'} className="rounded bg-cyan-600 text-white px-3 py-1 text-[10px] font-bold hover:bg-cyan-700 transition-colors disabled:opacity-50">
+          <button onClick={handleCreate} disabled={actionLoading === 'create'} className="rounded bg-cyan-600 text-white px-3 py-1 text-micro font-bold hover:bg-cyan-700 transition-colors disabled:opacity-50">
             {actionLoading === 'create' ? '...' : 'Create Deal'}
           </button>
         </div>
@@ -1263,10 +1267,10 @@ function DealSection({ projectId }: { projectId: string }) {
       {/* Stage badge + value */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <span className={`inline-flex rounded px-2 py-0.5 text-[10px] font-bold ${STAGE_COLORS[deal.stage] ?? ''}`}>
+          <span className={`inline-flex rounded px-2 py-0.5 text-micro font-bold ${STAGE_COLORS[deal.stage] ?? ''}`}>
             {STAGE_LABELS[deal.stage] ?? deal.stage}
           </span>
-          <span className="text-[10px] text-grey">{deal.packageType} · {valueStr}</span>
+          <span className="text-micro text-grey">{deal.packageType} · {valueStr}</span>
           {deal.owner && <span className="text-[9px] text-grey">{deal.owner}</span>}
         </div>
         <div className="flex items-center gap-1">
@@ -1308,7 +1312,7 @@ function DealSection({ projectId }: { projectId: string }) {
 
       {/* Proposal snapshot */}
       {deal.proposalSnapshot && (
-        <div className="rounded border border-line p-2 text-[10px] space-y-1">
+        <div className="rounded border border-line p-2 text-micro space-y-1">
           <div className="flex items-center justify-between">
             <span className="font-bold">Proposal — {deal.proposalSnapshot.packageType}</span>
             <span className="text-[9px] text-grey">${(deal.proposalSnapshot.packageValue / 100).toLocaleString()}</span>
@@ -1325,7 +1329,7 @@ function DealSection({ projectId }: { projectId: string }) {
                     <span className="text-[9px] font-bold">{tier.name}</span>
                     {tier.recommended && <span className="rounded bg-cyan-600 px-1 text-[7px] font-bold text-white">REC</span>}
                   </div>
-                  <div className="text-[10px] font-mono font-bold">${(tier.priceCents / 100).toLocaleString()}</div>
+                  <div className="text-micro font-mono font-bold">${(tier.priceCents / 100).toLocaleString()}</div>
                   <ul className="mt-0.5 list-disc list-inside text-[8px] text-grey">
                     {tier.inclusions.map((inc, i) => <li key={i} className="truncate">{inc}</li>)}
                   </ul>
@@ -1351,8 +1355,8 @@ function DealSection({ projectId }: { projectId: string }) {
       )}
 
       {/* Win/loss info */}
-      {deal.winReason && <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">Won: {deal.winReason}</p>}
-      {deal.lossReason && <p className="text-[10px] text-red-500">Lost: {deal.lossReason} {deal.lossCategory ? `(${deal.lossCategory})` : ''}</p>}
+      {deal.winReason && <p className="text-micro text-emerald-600 dark:text-emerald-400 font-bold">Won: {deal.winReason}</p>}
+      {deal.lossReason && <p className="text-micro text-red-500">Lost: {deal.lossReason} {deal.lossCategory ? `(${deal.lossCategory})` : ''}</p>}
 
       {/* Objections */}
       <div>

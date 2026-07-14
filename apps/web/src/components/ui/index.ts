@@ -1,5 +1,7 @@
 export { Button } from './Button';
 export { Card, CardHeader, CardBody, CardFooter } from './Card';
+export { PageTitle } from './PageTitle';
+export { SectionLabel } from './SectionLabel';
 export { Badge } from './Badge';
 export { Input } from './Input';
 export { Select } from './Select';

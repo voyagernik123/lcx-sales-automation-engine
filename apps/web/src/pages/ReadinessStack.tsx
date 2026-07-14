@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { InspectorDrawer } from '@/components/ui';
+import { InspectorDrawer, PageTitle, SectionLabel, Button } from '@/components/ui';
 import { readinessItems } from '@/data/readiness';
 import { ReadinessItem, ReadinessStatus } from '@/types/ontology';
 import { useAuditStore } from '@/stores/useAuditStore';
@@ -92,9 +92,9 @@ export function ReadinessStack() {
         <div className="flex justify-between items-center pb-2 border-b border-line mb-3 shrink-0 select-none">
           <div className="flex items-center gap-2">
             <Icon size={14} className="text-grey" />
-            <h3 className="font-bold text-xs uppercase tracking-wider text-grey">{category}</h3>
+            <SectionLabel as="h3">{category}</SectionLabel>
           </div>
-          <span className="font-mono text-[10px] bg-card border border-line rounded-full px-2 py-0.5 font-bold">
+          <span className="font-mono text-micro bg-card border border-line rounded-full px-2 py-0.5 font-bold">
             {colItems.length}
           </span>
         </div>
@@ -121,7 +121,7 @@ export function ReadinessStack() {
                     {item.status}
                   </span>
                 </div>
-                <p className="text-[10px] text-grey-dark dark:text-grey-light mt-1.5 leading-relaxed line-clamp-2">
+                <p className="text-micro text-grey-dark dark:text-grey-light mt-1.5 leading-relaxed line-clamp-2">
                   {item.description}
                 </p>
 
@@ -144,23 +144,21 @@ export function ReadinessStack() {
   return (
     <div className="flex h-[calc(100vh-6.5rem)] flex-col gap-4 text-navy overflow-hidden">
       {/* Header and Progress summary */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">Compliance Operations Kanban</h1>
-          <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
-            Organize task structures, file validations, and surveillance auditing controls for the U.S. launch cohort.
-          </p>
-        </div>
-
-        {/* Global Progress Gauge */}
-        <div className="flex items-center gap-3 bg-card border border-line rounded px-4 py-1.5 shrink-0 font-mono shadow-sm">
-          <div className="text-right">
-            <div className="text-[9px] text-grey uppercase font-bold tracking-wider">Overall Controls Completed</div>
-            <div className="text-[10px] text-grey-dark">{completeCount} of {total} verified</div>
+      <PageTitle
+        className="shrink-0"
+        subtitle="Organize task structures, file validations, and surveillance auditing controls for the U.S. launch cohort."
+        actions={
+          <div className="flex items-center gap-3 bg-card border border-line rounded px-4 py-1.5 font-mono shadow-sm">
+            <div className="text-right">
+              <div className="text-[9px] text-grey uppercase font-bold tracking-wider">Overall Controls Completed</div>
+              <div className="text-micro text-grey-dark">{completeCount} of {total} verified</div>
+            </div>
+            <span className="text-2xl font-extrabold text-cyan-500">{progressPercent}%</span>
           </div>
-          <span className="text-2xl font-extrabold text-cyan-500">{progressPercent}%</span>
-        </div>
-      </div>
+        }
+      >
+        Compliance Operations Kanban
+      </PageTitle>
 
       {/* Kanban Columns Layout Grid */}
       <div className="flex-1 flex flex-col md:flex-row gap-4 min-h-0 overflow-hidden">
@@ -227,7 +225,7 @@ export function ReadinessStack() {
                       key={sub.key}
                       onClick={() => handleSubtaskToggle(sub.key)}
                       className={clsx(
-                        'flex items-center gap-2.5 w-full text-left p-1.5 rounded hover:bg-ice-soft dark:hover:bg-ice-soft/10 text-[11px] font-semibold transition-colors'
+                        'flex items-center gap-2.5 w-full text-left p-1.5 rounded hover:bg-ice-soft dark:hover:bg-ice-soft/10 text-micro font-semibold transition-colors'
                       )}
                     >
                       <input
@@ -251,18 +249,20 @@ export function ReadinessStack() {
                 onChange={e => setNotes(e.target.value)}
                 rows={3}
                 placeholder="Input notes, counsel references, or audit checklist comments..."
-                className="w-full rounded border border-line bg-ice-soft dark:bg-navy-deep p-2 text-[11px] focus:outline-none placeholder-grey/50"
+                className="w-full rounded border border-line bg-ice-soft dark:bg-navy-deep p-2 text-micro focus:outline-none placeholder-grey/50"
               />
             </div>
 
             {/* Save Covenants Button */}
-            <button
+            <Button
+              variant="primary"
+              size="md"
               onClick={handleSaveAssignment}
-              className="w-full h-9 rounded bg-navy dark:bg-ice text-white dark:text-navy hover:opacity-95 text-xs font-bold flex items-center justify-center gap-1.5 shadow-sm mt-3"
+              className="w-full shadow-sm mt-3"
             >
               <Save size={13} />
               <span>Save Control Assignment</span>
-            </button>
+            </Button>
           </div>
         )}
       </InspectorDrawer>

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Badge } from '@/components/ui';
+import { Badge, PageTitle, SectionLabel, Button } from '@/components/ui';
 import { products } from '@/data';
 import { useAuditStore } from '@/stores/useAuditStore';
 import { toBadgeStatus } from '@/lib/status';
@@ -58,34 +58,28 @@ export function ProductMatrix() {
   return (
     <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 shrink-0">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Coins size={24} className="text-navy" /> Product &amp; Asset Registry Ledger
-          </h1>
-          <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
-            Verify securities classification scores and active compliance requirement mappings for products.
-          </p>
-        </div>
-
-        {/* Copy YAML trigger */}
-        <button
-          onClick={handleExportYAML}
-          className="flex items-center gap-1.5 h-9 rounded border border-line bg-card hover:bg-ice-soft dark:hover:bg-ice-soft/10 px-3.5 text-xs font-semibold shadow-sm text-navy transition-colors shrink-0"
-        >
-          {copySuccess ? (
-            <>
-              <Check size={14} className="text-status-ready" />
-              <span>Copied YAML!</span>
-            </>
-          ) : (
-            <>
-              <Copy size={14} />
-              <span>Export Ledger (YAML)</span>
-            </>
-          )}
-        </button>
-      </div>
+      <PageTitle
+        icon={<Coins size={20} />}
+        subtitle="Verify securities classification scores and active compliance requirement mappings for products."
+        className="shrink-0 !mb-0"
+        actions={
+          <Button variant="secondary" size="sm" onClick={handleExportYAML}>
+            {copySuccess ? (
+              <>
+                <Check size={14} className="text-status-ready" />
+                <span>Copied YAML!</span>
+              </>
+            ) : (
+              <>
+                <Copy size={14} />
+                <span>Export Ledger (YAML)</span>
+              </>
+            )}
+          </Button>
+        }
+      >
+        Product &amp; Asset Registry Ledger
+      </PageTitle>
 
       {/* Category Toolbar Filter */}
       <div className="flex gap-2 border-b border-line pb-2.5 shrink-0 overflow-x-auto">
@@ -109,7 +103,7 @@ export function ProductMatrix() {
       <div className="flex-1 bg-card border border-line rounded-lg overflow-y-auto shadow-sm min-h-0">
         <table className="w-full text-left border-collapse text-xs">
           <thead>
-            <tr className="bg-ice-soft/40 dark:bg-navy-deep/20 border-b border-line text-[10px] uppercase font-bold text-grey select-none" role="row">
+            <tr className="bg-ice-soft/40 dark:bg-navy-deep/20 border-b border-line text-micro uppercase font-bold text-grey select-none" role="row">
               <th className="py-2.5 px-4 w-8"></th>
               <th className="py-2.5 px-3">Product / Asset</th>
               <th className="py-2.5 px-3">Category</th>
@@ -136,7 +130,7 @@ export function ProductMatrix() {
                     </td>
                     <td className="py-3 px-3 font-bold font-mono text-navy">{p.name}</td>
                     <td className="py-3 px-3">
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold border border-line bg-ice-soft/30 dark:bg-ice-soft/10 text-grey-dark">
+                      <span className="px-2 py-0.5 rounded text-micro font-bold border border-line bg-ice-soft/30 dark:bg-ice-soft/10 text-grey-dark">
                         {p.category}
                       </span>
                     </td>
@@ -159,7 +153,7 @@ export function ProductMatrix() {
                                 style={{ width: `${effectiveHowey}%` }}
                               />
                             </div>
-                            <span className="font-mono font-bold text-[10px] w-12 shrink-0 flex items-center gap-0.5">
+                            <span className="font-mono font-bold text-micro w-12 shrink-0 flex items-center gap-0.5">
                               {effectiveHowey}%
                               {commodityExempt && <span className="text-[7px] text-cyan-500 font-extrabold" title="Safe Harbor Applied">*</span>}
                             </span>
@@ -183,13 +177,13 @@ export function ProductMatrix() {
                           {/* Column 1: Details */}
                           <div className="space-y-3">
                             <div>
-                              <span className="font-bold text-[10px] uppercase text-grey block">Description</span>
+                              <SectionLabel className="block">Description</SectionLabel>
                               <p className="mt-0.5 text-grey-dark dark:text-grey-light">{p.description}</p>
                             </div>
 
                             {p.howeyAnalysis && (
-                              <div className="bg-card border border-line rounded p-3 space-y-1.5 font-mono text-[10px]">
-                                <span className="font-bold text-[10px] uppercase text-grey font-sans block mb-1">Pronged Howey Sec Analysis</span>
+                              <div className="bg-card border border-line rounded-lg p-3 space-y-1.5 font-mono text-micro">
+                                <SectionLabel className="font-sans block mb-1">Pronged Howey Sec Analysis</SectionLabel>
                                 <p><strong>1. Capital Investment:</strong> {p.howeyAnalysis.investmentOfMoney}</p>
                                 <p><strong>2. Common Venture:</strong> {p.howeyAnalysis.commonEnterprise}</p>
                                 <p><strong>3. Profit Projection:</strong> {p.howeyAnalysis.profitExpectation}</p>
@@ -201,7 +195,7 @@ export function ProductMatrix() {
                           {/* Column 2: Risks & Actions */}
                           <div className="space-y-3 flex flex-col justify-between">
                             <div>
-                              <span className="font-bold text-[10px] uppercase text-grey block">Gated Compliance Friction Points</span>
+                              <SectionLabel className="block">Gated Compliance Friction Points</SectionLabel>
                               {p.risks.length > 0 ? (
                                 <ul className="list-disc list-inside mt-1 space-y-1 text-grey-dark dark:text-grey-light pl-1.5">
                                   {p.risks.map((risk, idx) => (

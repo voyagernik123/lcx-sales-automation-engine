@@ -50,7 +50,7 @@ function VulnerabilityCard({ items, stateGaps }: { items: VulnerabilityItem[]; s
           <div
             key={item.competitor + item.issue.slice(0, 20)}
             className={clsx(
-              'flex items-start gap-2 p-2 rounded border text-[10px] leading-snug',
+              'flex items-start gap-2 p-2 rounded border text-micro leading-snug',
               item.severity === 'critical'
                 ? 'border-red-500/30 bg-red-500/[0.04]'
                 : item.severity === 'high'
@@ -72,7 +72,7 @@ function VulnerabilityCard({ items, stateGaps }: { items: VulnerabilityItem[]; s
           </div>
         ))}
         {items.length === 0 && (
-          <p className="text-[10px] text-grey italic px-2">No active legal vulnerabilities detected among monitored competitors.</p>
+          <p className="text-micro text-grey italic px-2">No active legal vulnerabilities detected among monitored competitors.</p>
         )}
       </div>
 
@@ -84,7 +84,7 @@ function VulnerabilityCard({ items, stateGaps }: { items: VulnerabilityItem[]; s
           {stateGaps.map(gap => (
             <div
               key={gap.stateAbbr}
-              className="flex items-center justify-between p-2 rounded border border-emerald-500/15 bg-emerald-500/[0.03] text-[10px]"
+              className="flex items-center justify-between p-2 rounded border border-emerald-500/15 bg-emerald-500/[0.03] text-micro"
             >
               <div className="flex items-center gap-2">
                 <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
@@ -123,7 +123,7 @@ function AsymmetryCard({ advantages }: { advantages: string[] }) {
         {advantages.map((adv, i) => (
           <div
             key={i}
-            className="flex items-start gap-2.5 p-2 rounded border border-cyan-500/15 bg-cyan-500/[0.02] text-[10px] leading-snug"
+            className="flex items-start gap-2.5 p-2 rounded border border-cyan-500/15 bg-cyan-500/[0.02] text-micro leading-snug"
           >
             <div className="rounded-full bg-cyan-100 dark:bg-cyan-950/40 p-0.5 mt-0.5 shrink-0">
               <ChevronRight size={10} className="text-cyan-600 dark:text-cyan-400" />
@@ -151,7 +151,7 @@ function WatchlistCard({ items }: { items: WatchItem[] }) {
           <div
             key={item.competitor + item.move.slice(0, 20)}
             className={clsx(
-              'flex items-start gap-2.5 p-2.5 rounded border text-[10px] leading-snug',
+              'flex items-start gap-2.5 p-2.5 rounded border text-micro leading-snug',
               item.urgency === 'high'
                 ? 'border-amber-500/25 bg-amber-500/[0.04]'
                 : item.urgency === 'medium'

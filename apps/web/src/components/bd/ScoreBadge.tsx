@@ -10,7 +10,7 @@ interface ScoreBadgeProps {
 
 export function ScoreBadge({ score, band, size = 'md' }: ScoreBadgeProps) {
   const px = size === 'sm' ? 'px-1.5 py-0.5' : 'px-2 py-1';
-  const textSize = size === 'sm' ? 'text-[10px]' : 'text-xs';
+  const textSize = size === 'sm' ? 'text-micro' : 'text-xs';
   return (
     <span
       className={clsx(
@@ -33,7 +33,7 @@ interface BandBadgeProps {
 
 export function BandBadge({ band, size = 'sm' }: BandBadgeProps) {
   const px = size === 'sm' ? 'px-1.5 py-0.5' : 'px-2 py-1';
-  const textSize = size === 'sm' ? 'text-[10px]' : 'text-xs';
+  const textSize = size === 'sm' ? 'text-micro' : 'text-xs';
   return (
     <span
       className={clsx(

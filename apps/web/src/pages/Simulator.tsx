@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { ArrowRight, CheckCircle2 } from 'lucide-react';
-import { Card, Badge } from '@/components/ui';
+import { Card, Badge, PageTitle, SectionLabel, Button } from '@/components/ui';
 import { useAuditStore } from '@/stores/useAuditStore';
 import { useFilterStore } from '@/stores/useFilterStore';
 import { toast } from '@/components/shared';
@@ -177,12 +177,12 @@ export function Simulator() {
 
   return (
     <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
-      <div className="shrink-0">
-        <h1 className="text-2xl font-bold flex items-center gap-2">U.S. Rollout Architecture Modeler</h1>
-        <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
-          Simulate and commit the core custody architecture. Committing locks the regulatory mapping framework and syncs the Audit Trail.
-        </p>
-      </div>
+      <PageTitle
+        className="shrink-0 !mb-0"
+        subtitle="Simulate and commit the core custody architecture. Committing locks the regulatory mapping framework and syncs the Audit Trail."
+      >
+        U.S. Rollout Architecture Modeler
+      </PageTitle>
 
       <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 min-h-0 overflow-y-auto pr-1 py-1">
         {simulatorOptions.map(opt => {
@@ -206,13 +206,13 @@ export function Simulator() {
                     </Badge>
                   )}
                 </div>
-                <p className="text-[11px] text-grey-dark dark:text-grey-light mt-1.5 leading-relaxed">{opt.desc}</p>
+                <p className="text-label text-grey-dark dark:text-grey-light mt-1.5 leading-relaxed">{opt.desc}</p>
               </div>
 
               <div className="p-4 flex-1 space-y-3.5">
-                <span className="font-bold text-[9px] uppercase tracking-wider text-grey block">Operational &amp; Capital Projections</span>
+                <SectionLabel className="block">Operational &amp; Capital Projections</SectionLabel>
 
-                <div className="space-y-2 font-mono text-[10px]">
+                <div className="space-y-2 font-mono text-micro">
                   <div className="flex justify-between pb-1.5 border-b border-line/40">
                     <span className="text-grey uppercase">Licensing Fees:</span>
                     <span className="font-bold text-navy-deep dark:text-ice-soft">{opt.fees}</span>
@@ -242,7 +242,7 @@ export function Simulator() {
                 </div>
 
                 <div className="space-y-1">
-                  <span className="font-bold text-[9px] uppercase tracking-wider text-grey block">Exemption-Friendly States Unlocked</span>
+                  <SectionLabel className="block">Exemption-Friendly States Unlocked</SectionLabel>
                   <div className="flex flex-wrap gap-1">
                     {opt.unlockedStates.map((st, i) => (
                       <span key={`${st}-${i}`} className="px-1.5 py-0.5 rounded bg-ice-soft dark:bg-navy-deep border border-line text-[9px] font-semibold text-grey-dark">
@@ -254,14 +254,11 @@ export function Simulator() {
               </div>
 
               <div className="p-4 border-t border-line shrink-0">
-                <button
+                <Button
+                  variant={isCommitted ? 'danger' : 'primary'}
+                  size="md"
                   onClick={() => handleSelectArchitecture(opt.id)}
-                  className={clsx(
-                    'w-full h-9 rounded text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5',
-                    isCommitted
-                      ? 'bg-status-blocked hover:bg-status-blocked/90 text-white'
-                      : 'bg-navy dark:bg-ice text-white dark:text-navy hover:opacity-95'
-                  )}
+                  className="w-full"
                 >
                   {isCommitted ? (
                     <span>Revoke Commitment Covenants</span>
@@ -271,7 +268,7 @@ export function Simulator() {
                       <ArrowRight size={13} />
                     </>
                   )}
-                </button>
+                </Button>
               </div>
             </Card>
           );

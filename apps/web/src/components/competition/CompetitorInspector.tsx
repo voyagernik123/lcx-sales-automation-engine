@@ -78,7 +78,7 @@ function LicenseBadge({ active, label, icon: Icon }: { active: boolean; label: s
   return (
     <div
       className={clsx(
-        'flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-semibold transition-colors',
+        'flex items-center gap-1.5 rounded-md border px-2 py-1 text-micro font-semibold transition-colors',
         active
           ? 'bg-emerald-50 border-emerald-300 text-emerald-700 dark:bg-emerald-950/30 dark:border-emerald-700 dark:text-emerald-400'
           : 'bg-slate-50 border-slate-200 text-slate-400 dark:bg-slate-900/20 dark:border-slate-700 dark:text-slate-600'
@@ -166,17 +166,17 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
             <div className="flex items-center gap-2.5">
               <h3 className="font-bold text-base text-navy">{competitor.name}</h3>
               {competitor.ticker && (
-                <span className="text-[11px] font-mono font-bold text-grey bg-ice-soft dark:bg-navy-deep px-1.5 py-0.5 rounded">
+                <span className="text-micro font-mono font-bold text-grey bg-ice-soft dark:bg-navy-deep px-1.5 py-0.5 rounded">
                   {competitor.ticker}
                 </span>
               )}
             </div>
-            <span className={clsx('text-[10px] font-bold px-2 py-0.5 rounded-full border uppercase', statusColorMap[competitor.status])}>
+            <span className={clsx('text-micro font-bold px-2 py-0.5 rounded-full border uppercase', statusColorMap[competitor.status])}>
               {competitor.status}
             </span>
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[10px] text-grey">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-micro text-grey">
             <span className="flex items-center gap-1"><MapPin size={10} />{competitor.hq}</span>
             <span className="flex items-center gap-1"><Clock size={10} />Founded {competitor.founded}</span>
             {competitor.financials.employees && (
@@ -188,7 +188,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
           </div>
 
           {competitor.notes && (
-            <p className="text-[10px] text-grey-dark dark:text-grey-light leading-snug italic border-l-2 border-line pl-2.5">
+            <p className="text-micro text-grey-dark dark:text-grey-light leading-snug italic border-l-2 border-line pl-2.5">
               {competitor.notes}
             </p>
           )}
@@ -285,7 +285,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
             <div className="space-y-1 mt-1">
               <span className="text-[9px] font-bold uppercase text-grey block">Additional Licenses</span>
               {competitor.licenses.otherLicenses.map((l, i) => (
-                <div key={i} className="flex items-start gap-1.5 text-[10px] text-grey-dark dark:text-grey-light">
+                <div key={i} className="flex items-start gap-1.5 text-micro text-grey-dark dark:text-grey-light">
                   <span className="text-cyan-500 shrink-0 mt-0.5">+</span>
                   <span>{l}</span>
                 </div>
@@ -308,7 +308,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
           </div>
 
           {sortedLegalHistory.length === 0 ? (
-            <p className="text-[10px] text-grey italic">No known regulatory actions.</p>
+            <p className="text-micro text-grey italic">No known regulatory actions.</p>
           ) : (
             <div className="relative pl-5 space-y-0">
               <div className="absolute left-2 top-0 bottom-0 w-px bg-line" />
@@ -356,7 +356,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
                         </div>
                       </div>
 
-                      <p className="text-[10px] font-semibold leading-snug mb-1">{event.event}</p>
+                      <p className="text-micro font-semibold leading-snug mb-1">{event.event}</p>
 
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[9px] text-grey">
                         <span className="font-mono font-bold">{event.regulator}</span>
@@ -382,12 +382,12 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
 
           <div className={clsx('rounded-lg border p-3', clarityColorMap[competitor.clarityAct.position])}>
             <div className="flex items-center gap-2 mb-2">
-              <span className="text-[10px] font-bold uppercase">
+              <span className="text-micro font-bold uppercase">
                 {clarityLabelMap[competitor.clarityAct.position]}
               </span>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 mb-2 text-[10px]">
+            <div className="grid grid-cols-2 gap-2 mb-2 text-micro">
               <div>
                 <span className="text-grey block text-[8px] uppercase font-bold">Pre-CLARITY MTLs</span>
                 <span className="font-mono font-bold">{competitor.clarityAct.preClarityMTLCount}/50</span>
@@ -398,7 +398,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
               </div>
             </div>
 
-            <div className="text-[10px] space-y-1">
+            <div className="text-micro space-y-1">
               <div className="flex items-start gap-1.5">
                 <DollarSign size={11} className="text-grey shrink-0 mt-0.5" />
                 <span><strong className="text-grey">Cost savings:</strong> {competitor.clarityAct.costSavingsEstimate}</span>
@@ -414,7 +414,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
         {/* SECTION 6: Howey & Listing Profile */}
         <div className="space-y-2 pt-1 border-t border-line">
           <h4 className="text-[9px] font-bold uppercase tracking-wider text-grey">Token Risk Profile</h4>
-          <div className="grid grid-cols-2 gap-2 text-[10px]">
+          <div className="grid grid-cols-2 gap-2 text-micro">
             <div>
               <span className="text-grey block text-[8px] uppercase font-bold">Avg Howey Score</span>
               <span className={clsx('font-mono font-bold',
@@ -429,10 +429,10 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
             </div>
             <div className="col-span-2">
               <span className="text-grey block text-[8px] uppercase font-bold">Lowest / Highest Risk</span>
-              <span className="text-[10px]">{competitor.howeyProfile.lowestScoreAsset} → {competitor.howeyProfile.highestScoreAsset}</span>
+              <span className="text-micro">{competitor.howeyProfile.lowestScoreAsset} → {competitor.howeyProfile.highestScoreAsset}</span>
             </div>
           </div>
-          <p className="text-[10px] text-grey-dark dark:text-grey-light leading-snug italic">
+          <p className="text-micro text-grey-dark dark:text-grey-light leading-snug italic">
             {competitor.howeyProfile.notes}
           </p>
         </div>
@@ -449,21 +449,21 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
               <h5 className="text-[9px] font-bold uppercase text-red-600 dark:text-red-400 mb-1 flex items-center gap-1">
                 <AlertTriangle size={10} /> Vulnerability
               </h5>
-              <p className="text-[10px] leading-snug text-grey-dark dark:text-grey-light">{competitor.insights.vulnerability}</p>
+              <p className="text-micro leading-snug text-grey-dark dark:text-grey-light">{competitor.insights.vulnerability}</p>
             </div>
 
             <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/[0.03] dark:bg-cyan-500/[0.02] p-2.5">
               <h5 className="text-[9px] font-bold uppercase text-cyan-600 dark:text-cyan-400 mb-1 flex items-center gap-1">
                 <Swords size={10} /> Asymmetric Advantage
               </h5>
-              <p className="text-[10px] leading-snug text-grey-dark dark:text-grey-light">{competitor.insights.asymmetry}</p>
+              <p className="text-micro leading-snug text-grey-dark dark:text-grey-light">{competitor.insights.asymmetry}</p>
             </div>
 
             <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.03] dark:bg-amber-500/[0.02] p-2.5">
               <h5 className="text-[9px] font-bold uppercase text-amber-600 dark:text-amber-400 mb-1 flex items-center gap-1">
                 <Globe size={10} /> Watchlist Item
               </h5>
-              <p className="text-[10px] leading-snug text-grey-dark dark:text-grey-light">{competitor.insights.watchItem}</p>
+              <p className="text-micro leading-snug text-grey-dark dark:text-grey-light">{competitor.insights.watchItem}</p>
             </div>
           </div>
         </div>

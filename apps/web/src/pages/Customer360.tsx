@@ -17,6 +17,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { request } from '@/lib/apiClient';
+import { PageTitle, SectionLabel, Button } from '@/components/ui';
 import { PageSkeleton, EmptyState } from '@/components/shared';
 import { BandBadge } from '@/components/bd';
 import {
@@ -187,12 +188,12 @@ function SectionCard({
     <section id={anchorId(id)} className="scroll-mt-14 rounded-xl border border-line bg-card p-4">
       <div className="mb-3 flex items-center gap-2">
         <span className="text-cyan-500">{icon}</span>
-        <h2 className="text-[12px] font-bold uppercase tracking-wider text-navy">{title}</h2>
-        {badge != null && <span className="text-[10px] text-grey">{badge}</span>}
+        <h2 className="text-label font-bold uppercase tracking-wider text-navy">{title}</h2>
+        {badge != null && <span className="text-xs text-grey">{badge}</span>}
         {headerLink && (
           <Link
             to={headerLink.to}
-            className="ml-auto text-[10px] font-bold text-cyan-600 hover:underline dark:text-cyan-400"
+            className="ml-auto text-xs font-bold text-cyan-600 hover:underline dark:text-cyan-400"
           >
             {headerLink.label} →
           </Link>
@@ -205,7 +206,7 @@ function SectionCard({
 
 function NoneYet({ label, to, cta }: { label: string; to: string; cta: string }) {
   return (
-    <p className="text-[11px] text-grey">
+    <p className="text-label text-grey">
       {label}{' '}
       <Link to={to} className="font-semibold text-cyan-600 hover:underline dark:text-cyan-400">
         {cta}
@@ -218,7 +219,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   return (
     <div>
       <dt className="text-[9px] font-bold uppercase tracking-wider text-grey">{label}</dt>
-      <dd className="text-[11px] font-semibold text-navy">{children}</dd>
+      <dd className="text-label font-semibold text-navy">{children}</dd>
     </div>
   );
 }
@@ -228,8 +229,8 @@ function ScoreStat({ label, value }: { label: string; value: number }) {
   return (
     <div>
       <div className="flex items-baseline justify-between">
-        <span className="text-[10px] text-grey">{label}</span>
-        <span className="text-[12px] font-bold text-navy">{value}</span>
+        <span className="text-xs text-grey">{label}</span>
+        <span className="text-label font-bold text-navy">{value}</span>
       </div>
       <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-ice-soft dark:bg-ice-soft/10">
         <div className="h-full rounded-full bg-cyan-500" style={{ width: `${pct}%` }} />
@@ -259,7 +260,7 @@ function TimelineList({ entries }: { entries: TimelineEntry[] }) {
             className={`absolute left-0 top-[3px] h-[11px] w-[11px] rounded-full ring-2 ring-card ${TIMELINE_DOT[e.kind] ?? 'bg-slate-400'}`}
             aria-hidden="true"
           />
-          <div className="flex items-start gap-2 text-[11px]">
+          <div className="flex items-start gap-2 text-label">
             <div className="min-w-0 flex-1">
               <span className="font-semibold text-navy">{e.title}</span>
               {e.detail && <span className="text-grey"> — {e.detail}</span>}
@@ -270,7 +271,7 @@ function TimelineList({ entries }: { entries: TimelineEntry[] }) {
               )}
               <div className="text-[9px] uppercase tracking-wide text-grey">{e.kind}</div>
             </div>
-            <span className="shrink-0 text-[10px] text-grey">{fmtDateTime(e.ts)}</span>
+            <span className="shrink-0 text-xs text-grey">{fmtDateTime(e.ts)}</span>
           </div>
         </div>
       ))}
@@ -351,12 +352,9 @@ export function Customer360() {
         title="Failed to load customer 360"
         description={error || 'Something went wrong while loading this customer.'}
         action={
-          <button
-            onClick={() => void load()}
-            className="inline-flex items-center gap-1 rounded border border-line px-3 py-1.5 text-[11px] font-bold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-          >
+          <Button variant="secondary" size="sm" onClick={() => void load()}>
             <RefreshCw size={12} /> Retry
-          </button>
+          </Button>
         }
       />
     );
@@ -372,31 +370,34 @@ export function Customer360() {
       <div className="flex flex-wrap items-center gap-2">
         <Link
           to={`/bd-pipeline/${project.id}`}
-          className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[10px] font-bold text-grey hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/10"
+          className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-xs font-bold text-grey hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/10"
         >
           <ArrowLeft size={11} /> Back to Lead
         </Link>
-        <h1 className="text-lg font-bold">{project.name}</h1>
-        {project.ticker && (
-          <span className="rounded bg-ice-soft px-1.5 py-0.5 font-mono text-[10px] font-bold text-grey dark:bg-navy-deep">
-            {project.ticker}
-          </span>
-        )}
-        <BandBadge band={band} />
-        {project.listedOnLcx && (
-          <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
-            on LCX
-          </span>
-        )}
-        <div className="ml-auto flex items-center gap-2">
-          <span className="text-[10px] text-grey">Last activity: {fmtDate(lastActivity)}</span>
-          <button
-            onClick={() => void load()}
-            className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-          >
-            <RefreshCw size={11} /> Refresh
-          </button>
-        </div>
+        <PageTitle
+          className="mb-0 flex-1"
+          actions={
+            <>
+              <span className="text-xs text-grey">Last activity: {fmtDate(lastActivity)}</span>
+              <Button variant="secondary" size="sm" onClick={() => void load()}>
+                <RefreshCw size={12} /> Refresh
+              </Button>
+            </>
+          }
+        >
+          {project.name}
+          {project.ticker && (
+            <span className="rounded bg-ice-soft px-1.5 py-0.5 font-mono text-xs font-bold text-grey dark:bg-navy-deep">
+              {project.ticker}
+            </span>
+          )}
+          <BandBadge band={band} />
+          {project.listedOnLcx && (
+            <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400">
+              on LCX
+            </span>
+          )}
+        </PageTitle>
       </div>
 
       {/* Sticky mini-nav */}
@@ -405,7 +406,7 @@ export function Customer360() {
           <button
             key={n.id}
             onClick={() => scrollTo(n.id)}
-            className="whitespace-nowrap rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-grey hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/10"
+            className="whitespace-nowrap rounded px-2 py-1 text-xs font-bold uppercase tracking-wide text-grey hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/10"
           >
             {n.label}
           </button>
@@ -443,15 +444,15 @@ export function Customer360() {
         </dl>
 
         <div className="mt-4 border-t border-line pt-3">
-          <h3 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-grey">
+          <SectionLabel as="h3" className="mb-2 block">
             Contacts ({people.length} · {project.verifiedContactCount} verified)
-          </h3>
+          </SectionLabel>
           {people.length === 0 ? (
             <NoneYet label="None yet." to={`/bd-pipeline/${project.id}`} cta="Add contacts on the lead" />
           ) : (
             <div className="space-y-1.5">
               {people.map((p) => (
-                <div key={p.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                <div key={p.id} className="flex flex-wrap items-center gap-2 text-label">
                   <span className="font-semibold">{p.name}</span>
                   {p.title && <span className="text-grey">· {p.title}</span>}
                   <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-grey dark:bg-slate-800">
@@ -477,7 +478,7 @@ export function Customer360() {
       >
         {score ? (
           <>
-            <div className="mb-3 flex flex-wrap items-center gap-2 text-[11px]">
+            <div className="mb-3 flex flex-wrap items-center gap-2 text-label">
               <BandBadge band={band} />
               {score.recommendedMarket && (
                 <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
@@ -485,7 +486,7 @@ export function Customer360() {
                 </span>
               )}
               {score.reasons.length > 0 && (
-                <span className="text-[10px] text-grey">{score.reasons.length} scoring reason(s)</span>
+                <span className="text-xs text-grey">{score.reasons.length} scoring reason(s)</span>
               )}
             </div>
             <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -514,7 +515,7 @@ export function Customer360() {
         ) : (
           <div className="space-y-1.5">
             {deals.map((d) => (
-              <div key={d.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+              <div key={d.id} className="flex flex-wrap items-center gap-2 text-label">
                 <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
                   {d.stage}
                 </span>
@@ -550,7 +551,7 @@ export function Customer360() {
             {extras.sequences.length > 0 && (
               <div className="space-y-1.5">
                 {extras.sequences.map((seq) => (
-                  <div key={seq.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <div key={seq.id} className="flex flex-wrap items-center gap-2 text-label">
                     <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${SEQUENCE_STATUS_COLORS[seq.status] ?? ''}`}>
                       {seq.status}
                     </span>
@@ -564,7 +565,7 @@ export function Customer360() {
             {extras.messages.length > 0 && (
               <div className="space-y-1.5 border-t border-line pt-2">
                 {extras.messages.slice(0, 5).map((m) => (
-                  <div key={m.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <div key={m.id} className="flex flex-wrap items-center gap-2 text-label">
                     <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${MESSAGE_STATUS_COLORS[m.status] ?? ''}`}>
                       {m.status}
                     </span>
@@ -574,7 +575,7 @@ export function Customer360() {
                   </div>
                 ))}
                 {extras.messages.length > 5 && (
-                  <p className="text-[10px] text-grey">+ {extras.messages.length - 5} more message(s)</p>
+                  <p className="text-xs text-grey">+ {extras.messages.length - 5} more message(s)</p>
                 )}
               </div>
             )}
@@ -595,7 +596,7 @@ export function Customer360() {
         ) : (
           <div className="space-y-1.5">
             {extras.handoffs.slice(0, 5).map((h) => (
-              <div key={h.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+              <div key={h.id} className="flex flex-wrap items-center gap-2 text-label">
                 <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
                   {h.status}
                 </span>
@@ -605,7 +606,7 @@ export function Customer360() {
               </div>
             ))}
             {extras.handoffs.length > 5 && (
-              <p className="text-[10px] text-grey">+ {extras.handoffs.length - 5} more handoff(s)</p>
+              <p className="text-xs text-grey">+ {extras.handoffs.length - 5} more handoff(s)</p>
             )}
           </div>
         )}
@@ -624,7 +625,7 @@ export function Customer360() {
         ) : (
           <div className="space-y-1.5">
             {extras.tasks.slice(0, 5).map((t) => (
-              <div key={t.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+              <div key={t.id} className="flex flex-wrap items-center gap-2 text-label">
                 <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-grey dark:bg-slate-800">
                   {t.kind}
                 </span>
@@ -633,7 +634,7 @@ export function Customer360() {
               </div>
             ))}
             {extras.tasks.length > 5 && (
-              <p className="text-[10px] text-grey">+ {extras.tasks.length - 5} more open task(s)</p>
+              <p className="text-xs text-grey">+ {extras.tasks.length - 5} more open task(s)</p>
             )}
           </div>
         )}
@@ -652,7 +653,7 @@ export function Customer360() {
         ) : (
           <div className="space-y-1.5">
             {extras.notes.slice(0, 5).map((n) => (
-              <div key={n.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+              <div key={n.id} className="flex flex-wrap items-center gap-2 text-label">
                 {n.pinned && <Pin size={10} className="text-amber-500" />}
                 <span className="font-semibold">{n.title || 'Untitled'}</span>
                 <span className="min-w-0 flex-1 truncate text-grey">{n.body}</span>
@@ -660,7 +661,7 @@ export function Customer360() {
               </div>
             ))}
             {extras.notes.length > 5 && (
-              <p className="text-[10px] text-grey">+ {extras.notes.length - 5} more note(s)</p>
+              <p className="text-xs text-grey">+ {extras.notes.length - 5} more note(s)</p>
             )}
           </div>
         )}
@@ -679,7 +680,7 @@ export function Customer360() {
         ) : (
           <div className="space-y-1.5">
             {extras.docs.map((d) => (
-              <div key={d.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+              <div key={d.id} className="flex flex-wrap items-center gap-2 text-label">
                 <Paperclip size={11} className="text-grey" />
                 <span className="font-semibold">{d.name}</span>
                 <span className="text-grey">{d.mime}</span>

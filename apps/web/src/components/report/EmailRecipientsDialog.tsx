@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Mail, X } from 'lucide-react';
+import { Button } from '@/components/ui';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_RECIPIENTS = 5;
@@ -70,7 +71,7 @@ export function EmailRecipientsDialog({ open, onClose, onSend }: EmailRecipients
             <X size={14} />
           </button>
         </div>
-        <label className="mb-1 block text-[11px] font-semibold text-grey" htmlFor="br-recipients">
+        <label className="mb-1 block text-label font-semibold text-grey" htmlFor="br-recipients">
           Recipients (comma-separated, max {MAX_RECIPIENTS})
         </label>
         <textarea
@@ -79,20 +80,17 @@ export function EmailRecipientsDialog({ open, onClose, onSend }: EmailRecipients
           onChange={(e) => { setRaw(e.target.value); setError(null); }}
           rows={3}
           placeholder="ceo@lcx.com, cfo@lcx.com"
-          className="w-full rounded border border-line bg-page px-2 py-1.5 text-xs text-navy outline-none focus:border-cyan-500"
+          className="w-full rounded-lg border border-line bg-page px-2 py-1.5 text-xs text-navy outline-none focus:border-cyan-500"
         />
-        {error && <p className="mt-1 text-[11px] font-semibold text-red-500">{error}</p>}
+        {error && <p className="mt-1 text-label font-semibold text-red-500">{error}</p>}
         <div className="mt-3 flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="rounded border border-line px-3 py-1.5 text-xs font-bold text-grey hover:text-navy"
-          >
+          <Button variant="secondary" size="sm" onClick={onClose} className="text-grey">
             Cancel
-          </button>
+          </Button>
           <button
             onClick={handleSend}
             disabled={sending}
-            className="rounded bg-cyan-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-cyan-600 disabled:opacity-50"
+            className="rounded-lg bg-cyan-500 px-3 py-1.5 text-xs font-bold text-white hover:bg-cyan-600 disabled:opacity-50"
           >
             {sending ? 'Sending…' : 'Send report'}
           </button>

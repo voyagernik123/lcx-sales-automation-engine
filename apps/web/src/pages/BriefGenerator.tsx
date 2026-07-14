@@ -3,6 +3,7 @@ import { states, products, requirements, redFlags } from '@/data';
 import { useAuditStore } from '@/stores/useAuditStore';
 import { useFilterStore } from '@/stores/useFilterStore';
 import { FileText, Printer, Sliders, CheckSquare, ShieldAlert, Award, FileCode, Check } from 'lucide-react';
+import { PageTitle, SectionLabel, Button } from '@/components/ui';
 import { clsx } from 'clsx';
 
 // Simple hash generator for PKCS#7 visual digital seal signature
@@ -233,24 +234,19 @@ export function BriefGenerator() {
     <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0 print:p-0 print:bg-white print:text-black">
       
       {/* Top Header Controls (hidden on print) */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 shrink-0 print:hidden">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <FileText size={24} className="text-navy" /> Executive Memo &amp; Brief Publisher
-          </h1>
-          <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
-            Compile watermarked, legal compliance briefings directly for counsel, banks, or the board.
-          </p>
-        </div>
-
-        <button
-          onClick={handlePrint}
-          className="flex items-center gap-1.5 h-9 rounded bg-navy dark:bg-ice text-white dark:text-navy hover:opacity-95 px-4 text-xs font-bold shadow-sm transition-all duration-300 transform active:scale-95 shrink-0"
-        >
-          <Printer size={14} />
-          <span>Print Brief / Save PDF</span>
-        </button>
-      </div>
+      <PageTitle
+        className="shrink-0 print:hidden"
+        icon={<FileText size={20} />}
+        subtitle="Compile watermarked, legal compliance briefings directly for counsel, banks, or the board."
+        actions={
+          <Button variant="primary" size="sm" onClick={handlePrint}>
+            <Printer size={14} />
+            <span>Print Brief / Save PDF</span>
+          </Button>
+        }
+      >
+        Executive Memo &amp; Brief Publisher
+      </PageTitle>
 
       {/* Main split work view container */}
       <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0 overflow-hidden print:overflow-visible print:block print:h-auto">
@@ -260,9 +256,9 @@ export function BriefGenerator() {
           
           {/* Choose Template */}
           <div className="space-y-2">
-            <span className="font-bold text-[10px] uppercase tracking-wider text-grey block flex items-center gap-1">
+            <SectionLabel className="flex items-center gap-1">
               <Sliders size={12} /> 1. Choose Template
-            </span>
+            </SectionLabel>
             <div className="space-y-1">
               {[
                 { id: 'exec', label: 'Executive Board Briefing' },
@@ -291,9 +287,9 @@ export function BriefGenerator() {
 
           {/* Document Header Text Customization */}
           <div className="space-y-2 pt-3 border-t border-line">
-            <span className="font-bold text-[10px] uppercase tracking-wider text-grey block flex items-center gap-1">
+            <SectionLabel className="flex items-center gap-1">
               <FileCode size={12} /> 2. Custom Header Overrides
-            </span>
+            </SectionLabel>
             <div className="space-y-2">
               <input
                 type="text"
@@ -329,7 +325,7 @@ export function BriefGenerator() {
           {/* Select Target Launch States */}
           <div className="space-y-2 pt-3 border-t border-line">
             <div className="flex justify-between items-center">
-              <span className="font-bold text-[10px] uppercase tracking-wider text-grey block">3. Target Jurisdictions</span>
+              <SectionLabel>3. Target Jurisdictions</SectionLabel>
               <div className="flex gap-1.5">
                 <button onClick={handleSelectPhase1} className="text-[9px] font-bold text-cyan-500 hover:underline">Phase 1</button>
                 <span className="text-grey text-[9px]">•</span>
@@ -346,7 +342,7 @@ export function BriefGenerator() {
                     key={s.id}
                     onClick={() => handleToggleState(s.abbreviation)}
                     className={clsx(
-                      'py-1 rounded text-[10px] font-mono border text-center font-bold transition-all duration-200',
+                      'py-1 rounded text-micro font-mono border text-center font-bold transition-all duration-200',
                       active
                         ? 'bg-navy border-navy text-card dark:bg-ice dark:border-ice dark:text-navy'
                         : 'border-line bg-card text-grey-dark hover:bg-ice-soft dark:hover:bg-ice-soft/10'
@@ -361,7 +357,7 @@ export function BriefGenerator() {
 
           {/* Select listed assets */}
           <div className="space-y-2 pt-3 border-t border-line">
-            <span className="font-bold text-[10px] uppercase tracking-wider text-grey block">4. Listed Asset Scope</span>
+            <SectionLabel>4. Listed Asset Scope</SectionLabel>
             <div className="space-y-1.5">
               {products.map(p => {
                 const active = selectedProducts.includes(p.id);
@@ -370,7 +366,7 @@ export function BriefGenerator() {
                     key={p.id}
                     onClick={() => handleToggleProduct(p.id)}
                     className={clsx(
-                      'flex items-center gap-2 w-full text-left p-1.5 rounded border text-[10px] font-semibold transition-colors duration-200',
+                      'flex items-center gap-2 w-full text-left p-1.5 rounded border text-micro font-semibold transition-colors duration-200',
                       active
                         ? 'border-navy bg-navy/5 text-navy dark:border-ice dark:bg-ice-soft/5'
                         : 'border-line hover:bg-ice-soft/10 text-grey-dark'
@@ -386,9 +382,9 @@ export function BriefGenerator() {
 
           {/* Signatory Configurations */}
           <div className="space-y-2 pt-3 border-t border-line">
-            <span className="font-bold text-[10px] uppercase tracking-wider text-grey block flex items-center gap-1">
+            <SectionLabel className="flex items-center gap-1">
               <CheckSquare size={12} /> 5. Signatories
-            </span>
+            </SectionLabel>
             <div className="space-y-2">
               <input
                 type="text"
@@ -423,8 +419,8 @@ export function BriefGenerator() {
 
           {/* Visibility Controls */}
           <div className="space-y-2 pt-3 border-t border-line">
-            <span className="font-bold text-[10px] uppercase tracking-wider text-grey block">6. Template Visibility Flags</span>
-            <div className="grid grid-cols-2 gap-2 text-[10px]">
+            <SectionLabel>6. Template Visibility Flags</SectionLabel>
+            <div className="grid grid-cols-2 gap-2 text-xs">
               <label className="flex items-center gap-1.5 cursor-pointer">
                 <input type="checkbox" checked={showWatermark} onChange={e => setShowWatermark(e.target.checked)} />
                 <span>Watermark</span>
@@ -511,7 +507,7 @@ export function BriefGenerator() {
                       2. State Budget &amp; Capital Projections Ledger
                     </h3>
                     <div className="overflow-x-auto border border-slate-200 rounded">
-                      <table className="w-full text-left border-collapse text-[10px]">
+                      <table className="w-full text-left border-collapse text-micro">
                         <thead>
                           <tr className="bg-slate-50 border-b border-slate-200 font-bold text-slate-700">
                             <th className="p-2">State</th>
@@ -563,7 +559,7 @@ export function BriefGenerator() {
                         <Award size={13} className="text-slate-950" /> 3. Triggered Regulatory Gating Controls
                       </h3>
                       <div className="overflow-x-auto border border-slate-200 rounded">
-                        <table className="w-full text-left border-collapse text-[10px]">
+                        <table className="w-full text-left border-collapse text-micro">
                           <thead>
                             <tr className="bg-slate-50 border-b border-slate-200 font-bold text-slate-700">
                               <th className="p-2">Requirement</th>
@@ -602,7 +598,7 @@ export function BriefGenerator() {
                         <ShieldAlert size={13} className="text-slate-950" /> 4. Risk Assessment &amp; Remediation Plan
                       </h3>
                       <div className="overflow-x-auto border border-slate-200 rounded">
-                        <table className="w-full text-left border-collapse text-[10px]">
+                        <table className="w-full text-left border-collapse text-micro">
                           <thead>
                             <tr className="bg-slate-50 border-b border-slate-200 font-bold text-slate-700">
                               <th className="p-2">Risk Coordinate</th>
@@ -678,7 +674,7 @@ export function BriefGenerator() {
                       2. State Regulatory Sandbox &amp; Exemptions Overview
                     </h3>
                     <div className="overflow-x-auto border border-slate-200 rounded">
-                      <table className="w-full text-left border-collapse text-[10px]">
+                      <table className="w-full text-left border-collapse text-micro">
                         <thead>
                           <tr className="bg-slate-50 border-b border-slate-200 font-bold text-slate-700">
                             <th className="p-2">Jurisdiction</th>
@@ -795,7 +791,7 @@ export function BriefGenerator() {
               )}
 
               {/* CCO Digital Stamp Signatures */}
-              <div className="pt-6 border-t border-slate-300 flex justify-between items-center text-[10px] font-mono mt-8 select-none">
+              <div className="pt-6 border-t border-slate-300 flex justify-between items-center text-micro font-mono mt-8 select-none">
                 <div>
                   <span className="font-bold text-slate-500 uppercase block">Published &amp; Approved by:</span>
                   <span className="font-bold text-slate-950 block">{signatoryName}</span>

@@ -7,6 +7,7 @@ import type { KpiDashboard as KpiData, PostListingTrigger } from '@/types/kpi';
 import { REVENUE_STREAM_LABELS } from '@/types/kpi';
 import { ChartCard, ColumnChart, DonutChart, GaugeChart } from '@/components/charts';
 import { ChartSkeleton, EmptyState, PageSkeleton, toast } from '@/components/shared';
+import { Button } from '@/components/ui';
 import { MetricStatCards } from '@/components/kpi/MetricStatCards';
 import { FunnelSection } from '@/components/kpi/FunnelSection';
 import { ForecastCard } from '@/components/kpi/ForecastCard';
@@ -119,12 +120,9 @@ export function KpiDashboard() {
           title="Couldn't load KPIs"
           description={error ?? 'No KPI data returned'}
           action={
-            <button
-              onClick={() => void load()}
-              className="rounded border border-line px-3 py-1.5 text-xs font-bold text-navy hover:bg-ice-soft dark:hover:bg-navy-deep transition-colors"
-            >
+            <Button variant="secondary" size="sm" onClick={() => void load()}>
               Retry
-            </button>
+            </Button>
           }
         />
       </div>
@@ -166,7 +164,7 @@ export function KpiDashboard() {
               onClick={() => setRange(opt.key)}
               aria-pressed={range === opt.key}
               className={clsx(
-                'rounded-full px-2.5 py-1 text-[10px] font-bold transition-colors',
+                'rounded-full px-2.5 py-1 text-micro font-bold transition-colors',
                 range === opt.key
                   ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/40'
                   : 'border border-line text-grey hover:text-navy hover:bg-ice-soft dark:hover:bg-navy-deep',
@@ -182,7 +180,7 @@ export function KpiDashboard() {
             onClick={() => setAutoRefresh((v) => !v)}
             aria-pressed={autoRefresh}
             className={clsx(
-              'flex items-center gap-1.5 rounded border px-3 py-1 text-[10px] font-bold transition-colors',
+              'flex items-center gap-1.5 rounded border px-3 py-1 text-micro font-bold transition-colors',
               autoRefresh
                 ? 'border-emerald-400/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10'
                 : 'border-line text-grey hover:text-navy hover:bg-ice-soft dark:hover:bg-navy-deep',
@@ -191,20 +189,13 @@ export function KpiDashboard() {
             <span className={clsx('h-1.5 w-1.5 rounded-full', autoRefresh ? 'bg-emerald-500 animate-pulse' : 'bg-grey')} />
             Auto 30s
           </button>
-          <button
-            onClick={handleExport}
-            disabled={exporting}
-            className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-grey hover:text-navy hover:bg-ice-soft dark:hover:bg-navy-deep transition-colors disabled:opacity-50"
-          >
+          <Button variant="secondary" size="xs" onClick={handleExport} disabled={exporting} className="text-grey">
             <Download size={12} />
             {exporting ? 'Exporting…' : 'Export CSV'}
-          </button>
-          <button
-            onClick={() => void load()}
-            className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-grey hover:text-navy hover:bg-ice-soft dark:hover:bg-navy-deep transition-colors"
-          >
+          </Button>
+          <Button variant="secondary" size="xs" onClick={() => void load()} className="text-grey">
             Refresh
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -257,30 +248,30 @@ export function KpiDashboard() {
 
           <ChartCard title="Deal health" subtitle="Open deals by staleness">
             <div className="space-y-2">
-              <div className="flex items-center justify-between rounded p-2 bg-emerald-500/10">
+              <div className="flex items-center justify-between rounded-lg p-2 bg-emerald-500/10">
                 <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">Hot (active)</span>
                 <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{kpis.weeklyView.hot}</span>
               </div>
-              <div className="flex items-center justify-between rounded p-2 bg-amber-500/10">
+              <div className="flex items-center justify-between rounded-lg p-2 bg-amber-500/10">
                 <span className="text-xs font-bold text-amber-600 dark:text-amber-400">Stalled (7–21d)</span>
                 <span className="text-lg font-bold text-amber-600 dark:text-amber-400">{kpis.weeklyView.stalled}</span>
               </div>
-              <div className="flex items-center justify-between rounded p-2 bg-red-500/10">
+              <div className="flex items-center justify-between rounded-lg p-2 bg-red-500/10">
                 <span className="text-xs font-bold text-red-600 dark:text-red-400">Overdue (21d+)</span>
                 <span className="text-lg font-bold text-red-600 dark:text-red-400">{kpis.weeklyView.overdue}</span>
               </div>
               <div className="grid grid-cols-3 gap-2 border-t border-line pt-2 text-center">
                 <div>
                   <p className="text-base font-semibold">{kpis.postListingExpansion.totalWon}</p>
-                  <p className="text-[10px] text-grey">Won</p>
+                  <p className="text-xs text-grey">Won</p>
                 </div>
                 <div>
                   <p className="text-base font-semibold">{kpis.postListingExpansion.withExpansion}</p>
-                  <p className="text-[10px] text-grey">With expansion</p>
+                  <p className="text-xs text-grey">With expansion</p>
                 </div>
                 <div>
                   <p className="text-base font-semibold">{fmtUsd(kpis.postListingExpansion.expansionRevenue / 100)}</p>
-                  <p className="text-[10px] text-grey">Expansion rev</p>
+                  <p className="text-xs text-grey">Expansion rev</p>
                 </div>
               </div>
             </div>

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useAuditStore, useFilterStore } from '@/stores';
 import { Sliders, Terminal } from 'lucide-react';
 import { clsx } from 'clsx';
+import { PageTitle, SectionLabel } from '@/components/ui';
 import { parseMonetaryValue, formatUSD } from '@/lib/formatting';
 import { getResearchedStates } from '@/lib/compliance';
 
@@ -128,19 +129,20 @@ export function ScenarioPlanner() {
 
   return (
     <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
-      <div className="shrink-0">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Sliders size={24} className="text-navy" /> Legislative Policy Sandbox</h1>
-        <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
-          Activate pending U.S. cryptocurrency legislation to model changes on Money Transmitter licensing and corporate structures.
-        </p>
-      </div>
+      <PageTitle
+        icon={<Sliders size={20} />}
+        subtitle="Activate pending U.S. cryptocurrency legislation to model changes on Money Transmitter licensing and corporate structures."
+        className="shrink-0 !mb-0"
+      >
+        Legislative Policy Sandbox
+      </PageTitle>
 
       <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0 overflow-hidden">
 
         <div className="w-full lg:w-96 bg-card border border-line rounded-lg p-4 overflow-y-auto space-y-4 shrink-0 shadow-sm">
-          <span className="font-bold text-[10px] uppercase tracking-wider text-grey block">
+          <SectionLabel className="block">
             Select Legislative Scenarios
-          </span>
+          </SectionLabel>
 
           <div className="space-y-3.5">
             {POLICY_SCENARIOS.map(sc => {
@@ -165,7 +167,7 @@ export function ScenarioPlanner() {
                       className="rounded border-grey/40 text-cyan-500 focus:ring-0 cursor-pointer h-4 w-4"
                     />
                   </div>
-                  <p className="text-[10px] text-grey-dark dark:text-grey-light mt-1.5 leading-normal">{sc.desc}</p>
+                  <p className="text-micro text-grey-dark dark:text-grey-light mt-1.5 leading-normal">{sc.desc}</p>
                   <div className="mt-2 text-[9px] font-mono text-cyan-600 dark:text-cyan-400 leading-tight">
                     <strong>Effect</strong>: {sc.effect}
                   </div>
@@ -177,7 +179,7 @@ export function ScenarioPlanner() {
 
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 min-h-0">
 
-          <div className="flex flex-col bg-slate-950 text-slate-100 rounded-lg border border-slate-900 shadow-md font-mono text-[10px] overflow-hidden h-full">
+          <div className="flex flex-col bg-slate-950 text-slate-100 rounded-lg border border-slate-900 shadow-md font-mono text-micro overflow-hidden h-full">
             <div className="bg-slate-900 px-3 py-2 border-b border-slate-800 flex items-center justify-between shrink-0 select-none">
               <span className="uppercase text-[9px] font-bold text-slate-400">Baseline Compliance Rules</span>
               <Terminal size={11} className="text-slate-500" />
@@ -193,7 +195,7 @@ export function ScenarioPlanner() {
             </div>
           </div>
 
-          <div className="flex flex-col bg-slate-950 text-slate-100 rounded-lg border border-slate-900 shadow-md font-mono text-[10px] overflow-hidden h-full">
+          <div className="flex flex-col bg-slate-950 text-slate-100 rounded-lg border border-slate-900 shadow-md font-mono text-micro overflow-hidden h-full">
             <div className="bg-slate-900 px-3 py-2 border-b border-slate-800 flex items-center justify-between shrink-0 select-none">
               <span className="uppercase text-[9px] font-bold text-cyan-400">Simulated Compliance Rules</span>
               <Terminal size={11} className="text-cyan-500" />

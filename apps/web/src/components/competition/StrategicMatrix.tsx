@@ -125,7 +125,7 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 text-[10px] font-mono text-grey">
+        <div className="flex items-center gap-2 text-micro font-mono text-grey">
           <span className={clsx('h-2 w-2 rounded-full', clarityEnacted ? 'bg-cyan-500' : 'bg-slate-400')} />
           <span>{clarityEnacted ? 'CLARITY Enacted' : 'CLARITY Inactive'}</span>
         </div>
@@ -266,7 +266,7 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
 
         {hoveredDot && (
           <div
-            className="absolute z-50 pointer-events-none bg-slate-950 text-slate-100 rounded-lg border border-slate-700 px-3 py-2.5 text-[10px] shadow-xl font-mono leading-relaxed"
+            className="absolute z-50 pointer-events-none bg-slate-950 text-slate-100 rounded-lg border border-slate-700 px-3 py-2.5 text-micro shadow-xl font-mono leading-relaxed"
             style={{ left: tooltipPos.x, top: tooltipPos.y }}
           >
             <div className="font-bold text-xs text-cyan-400 mb-1">{hoveredDot.name}</div>
@@ -292,7 +292,7 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-micro">
         {(['leaders', 'regulatoryHedge', 'volumeRiders', 'outsiders'] as const).map(q => {
           const colors = QUADRANT_COLORS[q];
           const count = dots.filter(d => (clarityEnacted ? d.postClarityQuadrant : d.quadrant) === q).length;
