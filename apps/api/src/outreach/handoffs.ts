@@ -116,7 +116,13 @@ export async function listHandoffs(filters: {
 
   if (filters.status) {
     const statuses = Array.isArray(filters.status) ? filters.status : [filters.status];
-    conditions.push(sql`h.status = ANY(${statuses}::text[])`);
+    // Build `h.status IN ($1, $2, …)` — interpolating a JS array directly
+    // produces `($1,$2)::text[]` (a record cast) which Postgres rejects.
+    const list = sql.join(
+      statuses.map((s) => sql`${s}`),
+      sql`, `,
+    );
+    conditions.push(sql`h.status IN (${list})`);
   }
   if (filters.projectId) {
     conditions.push(sql`h.project_id = ${filters.projectId}`);
