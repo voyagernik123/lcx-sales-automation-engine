@@ -1,11 +1,9 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, RotateCcw, Swords, Target, ScrollText, MessageSquare, BarChart3, Shield } from 'lucide-react';
-import { useUIStore, useFilterStore, useAuditStore } from '@/stores';
+import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, ScrollText, MessageSquare, BarChart3, Shield } from 'lucide-react';
+import { useUIStore, useAuditStore } from '@/stores';
 import { redFlags } from '@/data';
-import { domains } from '@/data/domains';
-import { StatusLegend } from '@/components/shared';
-import { Status, Phase } from '@/types/ontology';
+import { SidebarFieldNotes } from './SidebarFieldNotes';
 import { clsx } from 'clsx';
 
 interface NavItem {
@@ -84,21 +82,8 @@ const sections: NavSection[] = [
   },
 ];
 
-const statuses: Status[] = ['Ready', 'Conditional', 'Blocked', 'Deferred', 'Needs verification'];
-const phases: Phase[] = ['Pre-launch', 'Phase 1', 'Phase 2', 'Phase 3', 'Post-CLARITY'];
-
-const domainShortLabels: Record<string, string> = {
-  'Surveillance, travel-rule, sanctions, and reporting': 'Surveillance & Sanctions',
-  'Anti-fraud and unfair-practices enforcement': 'Anti-Fraud Enforcement',
-  'Custody, reserves, and insurance requirements': 'Custody & Reserves',
-  'Digital commodity classification and listing': 'Commodity Classification',
-  'Consumer-protection disclosures and advertising': 'Consumer Protection',
-  'Corporate governance and CCO obligations': 'Governance & CCO',
-};
-
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUIStore();
-  const { selectedStatuses, selectedPhases, selectedDomains, toggleArrayFilter, resetFilters } = useFilterStore();
   const { resolvedRemediations } = useAuditStore();
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(sections.map(s => [s.title, s.defaultOpen ?? true])),
@@ -108,8 +93,6 @@ export function Sidebar() {
     if (rf.risk !== 'Critical' && rf.risk !== 'High') return false;
     return rf.remediations.some(r => !resolvedRemediations.includes(r.id));
   }).length;
-
-  const hasActiveFilters = selectedStatuses.length > 0 || selectedPhases.length > 0 || selectedDomains.length > 0;
 
   const renderItem = ({ to, label, icon: Icon }: NavItem) => {
     const isRedFlags = to === '/red-flags';
@@ -169,54 +152,8 @@ export function Sidebar() {
         })}
       </nav>
       {!sidebarCollapsed && (
-        <div className="p-3 space-y-2 border-t border-line">
-          {hasActiveFilters && (
-            <button
-              onClick={resetFilters}
-              className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-red-500 hover:text-red-600 transition-colors mb-1"
-            >
-              <RotateCcw size={10} />
-              Clear All Filters
-            </button>
-          )}
-          <h3 className="text-[10px] font-bold uppercase tracking-wider text-grey mt-3 mb-1">Status</h3>
-          <div className="flex flex-wrap gap-1">
-            {statuses.map(s => (
-              <button
-                key={s}
-                onClick={() => toggleArrayFilter('selectedStatuses', s)}
-                className={clsx('text-xs border rounded-full px-2 transition-all', selectedStatuses.includes(s) ? 'bg-navy text-card' : '')}
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-          <h3 className="text-[10px] font-bold uppercase tracking-wider text-grey mt-3 mb-1">Phase</h3>
-          <div className="flex flex-wrap gap-1">
-            {phases.map(p => (
-              <button
-                key={p}
-                onClick={() => toggleArrayFilter('selectedPhases', p)}
-                className={clsx('text-xs border rounded-full px-2 transition-all', selectedPhases.includes(p) ? 'bg-navy text-card' : '')}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
-          <h3 className="text-[10px] font-bold uppercase tracking-wider text-grey mt-3 mb-1">Domain</h3>
-          <div className="flex flex-wrap gap-1">
-            {domains.map(d => (
-              <button
-                key={d.id}
-                onClick={() => toggleArrayFilter('selectedDomains', d.id)}
-                className={clsx('text-xs border rounded-full px-2 truncate max-w-[200px] transition-all', selectedDomains.includes(d.id) ? 'bg-navy text-card' : '')}
-              >
-                {domainShortLabels[d.name] || d.name}
-              </button>
-            ))}
-          </div>
-          <h3 className="text-[10px] font-bold uppercase tracking-wider text-grey mt-3 mb-1">Legend</h3>
-          <StatusLegend />
+        <div className="p-3 border-t border-line">
+          <SidebarFieldNotes />
         </div>
       )}
     </aside>
