@@ -15,6 +15,7 @@ import {
 } from '@/lib/api/bd';
 import { FunnelChart, TrendDelta, StatCard } from '@/components/charts';
 import { EmptyState, PageSkeleton, toast } from '@/components/shared';
+import { PageTitle, Button } from '@/components/ui';
 import { ReportSection, NoDataRow } from '@/components/report/ReportSection';
 import { SeverityBadge } from '@/components/report/SeverityBadge';
 import { PrintStyles } from '@/components/report/PrintStyles';
@@ -131,9 +132,9 @@ export function BoardReport() {
         title="Board report unavailable"
         description={error}
         action={
-          <button onClick={load} className="rounded border border-line px-3 py-1.5 text-xs font-bold text-navy">
+          <Button variant="secondary" size="sm" onClick={load}>
             Retry
-          </button>
+          </Button>
         }
       />
     );
@@ -186,54 +187,49 @@ export function BoardReport() {
       <PrintStyles />
 
       {/* CONTROLS — hidden on print */}
-      <div className="br-no-print mb-4 flex flex-wrap items-center gap-2">
-        <h1 className="flex items-center gap-2 text-lg font-bold">
-          <FileText size={18} className="text-cyan-500" />
-          Board Report
-        </h1>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <div className="flex overflow-hidden rounded border border-line" role="tablist" aria-label="Report period">
-            {PERIOD_TABS.map((t) => (
+      <PageTitle
+        className="br-no-print"
+        icon={<FileText size={20} className="text-cyan-500" />}
+        actions={
+          <>
+            <div className="flex overflow-hidden rounded-lg border border-line" role="tablist" aria-label="Report period">
+              {PERIOD_TABS.map((t) => (
+                <button
+                  key={t.value}
+                  role="tab"
+                  aria-selected={period === t.value}
+                  onClick={() => setPeriod(t.value)}
+                  className={clsx(
+                    'px-3 py-1 text-micro font-bold uppercase transition-colors',
+                    period === t.value ? 'bg-cyan-500 text-white' : 'text-grey hover:bg-ice-soft dark:hover:bg-navy-deep',
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <Button variant="secondary" size="xs" onClick={load} disabled={loading} className="text-grey">
+              <RefreshCw size={12} className={clsx(loading && 'animate-spin')} /> Refresh
+            </Button>
+            <Button variant="secondary" size="xs" onClick={handleDownloadPdf} className="text-grey">
+              <Download size={12} /> Download PDF (print)
+            </Button>
+            {emailConfigured !== false && (
               <button
-                key={t.value}
-                role="tab"
-                aria-selected={period === t.value}
-                onClick={() => setPeriod(t.value)}
-                className={clsx(
-                  'px-3 py-1 text-[10px] font-bold uppercase transition-colors',
-                  period === t.value ? 'bg-cyan-500 text-white' : 'text-grey hover:bg-ice-soft dark:hover:bg-navy-deep',
-                )}
+                onClick={() => setEmailDialogOpen(true)}
+                className="flex items-center gap-1.5 rounded-lg bg-cyan-500 px-3 py-1 text-micro font-bold text-white hover:bg-cyan-600"
               >
-                {t.label}
+                <Mail size={12} /> Email to Execs
               </button>
-            ))}
-          </div>
-          <button
-            onClick={load}
-            disabled={loading}
-            className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-grey disabled:opacity-50"
-          >
-            <RefreshCw size={12} className={clsx(loading && 'animate-spin')} /> Refresh
-          </button>
-          <button
-            onClick={handleDownloadPdf}
-            className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-[10px] font-bold text-grey"
-          >
-            <Download size={12} /> Download PDF (print)
-          </button>
-          {emailConfigured !== false && (
-            <button
-              onClick={() => setEmailDialogOpen(true)}
-              className="flex items-center gap-1.5 rounded bg-cyan-500 px-3 py-1 text-[10px] font-bold text-white hover:bg-cyan-600"
-            >
-              <Mail size={12} /> Email to Execs
-            </button>
-          )}
-        </div>
-      </div>
+            )}
+          </>
+        }
+      >
+        Board Report
+      </PageTitle>
 
       {emailConfigured === false && (
-        <div className="br-no-print mb-4 flex items-center gap-2 rounded border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700 dark:text-amber-400">
+        <div className="br-no-print mb-4 flex items-center gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700 dark:text-amber-400">
           <AlertTriangle size={13} className="shrink-0" />
           Demo mode — connect Resend to email reports
         </div>
@@ -279,7 +275,7 @@ export function BoardReport() {
         <ReportSection title="Revenue" empty={revenueEmpty}>
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-left text-[10px] uppercase tracking-wider text-grey">
+              <tr className="text-left text-micro uppercase tracking-wider text-grey">
                 <th className="pb-1.5">Metric</th>
                 <th className="pb-1.5 text-right">This period</th>
                 <th className="pb-1.5 text-right">Prior period</th>
@@ -299,9 +295,9 @@ export function BoardReport() {
           </table>
           {byStream.length > 0 && (
             <div className="mt-3">
-              <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-grey">By package</div>
+              <div className="mb-1 text-micro font-bold uppercase tracking-wider text-grey">By package</div>
               {byStream.map(([stream, v]) => (
-                <div key={stream} className="flex justify-between border-t border-line/50 py-1 text-[11px] first:border-t-0">
+                <div key={stream} className="flex justify-between border-t border-line/50 py-1 text-label first:border-t-0">
                   <span className="capitalize text-grey">{stream}</span>
                   <span className="font-mono">{usd(v)}</span>
                 </div>
@@ -314,7 +310,7 @@ export function BoardReport() {
         <ReportSection title="Top 10 open opportunities" empty={report.topDeals.length === 0}>
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-left text-[10px] uppercase tracking-wider text-grey">
+              <tr className="text-left text-micro uppercase tracking-wider text-grey">
                 <th className="pb-1.5 pr-2">#</th>
                 <th className="pb-1.5">Project</th>
                 <th className="pb-1.5">Stage</th>
@@ -347,7 +343,7 @@ export function BoardReport() {
               <div key={`${a.kind}-${a.metric}-${i}`} className="flex items-start gap-2 text-xs">
                 <SeverityBadge severity={a.severity} />
                 <span className="leading-relaxed">{a.message}</span>
-                {a.zScore != null && <span className="ml-auto shrink-0 font-mono text-[10px] text-grey">z={a.zScore}</span>}
+                {a.zScore != null && <span className="ml-auto shrink-0 font-mono text-micro text-grey">z={a.zScore}</span>}
               </div>
             ))}
           </div>
@@ -357,7 +353,7 @@ export function BoardReport() {
         <ReportSection title="BD performance leaderboard" empty={bd.length === 0}>
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-left text-[10px] uppercase tracking-wider text-grey">
+              <tr className="text-left text-micro uppercase tracking-wider text-grey">
                 <th className="pb-1.5">
                   <span className="flex items-center gap-1"><Users size={11} /> Owner</span>
                 </th>
@@ -386,7 +382,7 @@ export function BoardReport() {
         </ReportSection>
 
         {/* Deck footer */}
-        <div className="border-t border-line px-6 py-3 text-[10px] text-grey">
+        <div className="border-t border-line px-6 py-3 text-micro text-grey">
           LCX Sales Engine · {PERIOD_TITLES[report.period]} board report · {generatedAt.toISOString().slice(0, 10)}
         </div>
       </div>

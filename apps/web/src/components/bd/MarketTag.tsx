@@ -13,14 +13,14 @@ const marketStyles: Record<string, string> = {
 
 export function MarketTag({ market }: MarketTagProps) {
   if (!market) {
-    return <span className="text-[10px] text-grey">—</span>;
+    return <span className="text-micro text-grey">—</span>;
   }
 
   const label = market === 'both' ? 'EU / US' : market.toUpperCase();
   return (
     <span
       className={clsx(
-        'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold leading-none',
+        'inline-flex items-center rounded-full border px-2 py-0.5 text-micro font-bold leading-none',
         marketStyles[market],
       )}
     >

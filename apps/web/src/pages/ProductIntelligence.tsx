@@ -43,7 +43,7 @@ export function ProductIntelligence() {
 
             <button
               onClick={() => toggleFilterStoreField('clarityEnacted')}
-              className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-bold transition-all duration-300 ${
+              className={`flex items-center gap-1.5 rounded-full border px-3 py-1 text-micro font-bold transition-all duration-300 ${
                 clarityEnacted
                   ? 'border-cyan-500 bg-cyan-500/10 text-cyan-600 dark:border-cyan-400 dark:bg-cyan-400/10 dark:text-cyan-400 shadow-sm shadow-cyan-500/10'
                   : 'border-line text-grey hover:bg-ice-soft'
@@ -141,7 +141,7 @@ export function ProductIntelligence() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-3 border-t border-line pt-3 text-[10px]">
+            <div className="grid grid-cols-2 gap-3 border-t border-line pt-3 text-micro">
               <div>
                 <span className="text-[8px] font-bold uppercase tracking-wider text-grey block">Complexity</span>
                 <span className="font-mono font-bold text-navy">{selectedProduct.implementationComplexity}/10</span>
@@ -179,7 +179,7 @@ export function ProductIntelligence() {
             {selectedProduct.notes && (
               <div className="border-t border-line pt-3">
                 <span className="text-[8px] font-bold uppercase tracking-wider text-grey block mb-1">Notes</span>
-                <p className="text-[10px] text-grey-dark dark:text-grey-light leading-snug italic">{selectedProduct.notes}</p>
+                <p className="text-micro text-grey-dark dark:text-grey-light leading-snug italic">{selectedProduct.notes}</p>
               </div>
             )}
           </div>
@@ -193,7 +193,7 @@ function Section({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <span className="text-[8px] font-bold uppercase tracking-wider text-grey block">{label}</span>
-      <p className="text-[10px] mt-0.5 leading-snug">{value}</p>
+      <p className="text-micro mt-0.5 leading-snug">{value}</p>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { fetchDealBoard, type BoardDeal } from '@/lib/api/bd';
 import { BarChartH, ChartCard, StatCard } from '@/components/charts';
 import { CardSkeleton, ChartSkeleton, EmptyState, TableSkeleton } from '@/components/shared';
 import { GroupedColumnChart } from '@/components/deals/GroupedColumnChart';
+import { PageTitle, Button } from '@/components/ui';
 
 interface Bucket {
   key: string;
@@ -147,30 +148,29 @@ export function WinLoss() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="flex items-center gap-2 text-lg font-bold text-navy">
-          <BarChart3 size={18} /> Win / Loss Analysis
-        </h1>
-        <div className="flex items-center gap-2 text-[11px]">
-          <select
-            value={pool}
-            onChange={(e) => setPool(e.target.value as Pool)}
-            disabled={timeFiltered}
-            title={timeFiltered ? 'Region filter applies to all-time data only' : undefined}
-            className="rounded-lg border border-line bg-card px-2 py-1.5 text-navy disabled:opacity-50"
-          >
-            <option value="all">All regions</option>
-            <option value="eu">EU</option>
-            <option value="us">US</option>
-          </select>
-          <button
-            onClick={() => void load()}
-            className="inline-flex items-center gap-1 rounded-lg border border-line bg-card px-2.5 py-1.5 font-semibold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-          >
-            <RefreshCw size={11} className={loading ? 'animate-spin' : undefined} /> Refresh
-          </button>
-        </div>
-      </div>
+      <PageTitle
+        icon={<BarChart3 size={20} />}
+        actions={
+          <>
+            <select
+              value={pool}
+              onChange={(e) => setPool(e.target.value as Pool)}
+              disabled={timeFiltered}
+              title={timeFiltered ? 'Region filter applies to all-time data only' : undefined}
+              className="rounded-lg border border-line bg-card px-2 py-1.5 text-label text-navy disabled:opacity-50"
+            >
+              <option value="all">All regions</option>
+              <option value="eu">EU</option>
+              <option value="us">US</option>
+            </select>
+            <Button variant="secondary" size="xs" onClick={() => void load()}>
+              <RefreshCw size={11} className={loading ? 'animate-spin' : undefined} /> Refresh
+            </Button>
+          </>
+        }
+      >
+        Win / Loss Analysis
+      </PageTitle>
 
       <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Time period">
         {PERIODS.map((p) => (
@@ -182,7 +182,7 @@ export function WinLoss() {
             }}
             title={p.days ? `Deals closed in the last ${p.days} days` : undefined}
             aria-pressed={period === p.id}
-            className={`rounded-full px-3 py-1 text-[11px] font-semibold transition-colors ${
+            className={`rounded-full px-3 py-1 text-label font-semibold transition-colors ${
               period === p.id
                 ? 'bg-navy text-white dark:bg-ice dark:text-navy'
                 : 'border border-line bg-card text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10'
@@ -194,7 +194,7 @@ export function WinLoss() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-[12px] text-red-600 dark:text-red-400">
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-label text-red-600 dark:text-red-400">
           {error}
         </div>
       )}
@@ -244,21 +244,23 @@ export function WinLoss() {
                     <Sparkles size={9} /> LLM
                   </span>
                 )}
-                <button
+                <Button
+                  variant="secondary"
+                  size="xs"
                   onClick={() => setInsightsOpen((o) => !o)}
                   aria-expanded={insightsOpen}
-                  className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-[11px] font-semibold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+                  className="text-grey"
                 >
                   {insightsOpen ? 'Hide' : 'Show'}
                   <ChevronDown size={12} className={`transition-transform ${insightsOpen ? 'rotate-180' : ''}`} />
-                </button>
+                </Button>
               </div>
             }
           >
             {insightsOpen && (
               <div className="space-y-3">
                 <p className="text-[13px] leading-relaxed text-navy">{data.narrative}</p>
-                <div className="flex flex-wrap gap-3 text-[11px]">
+                <div className="flex flex-wrap gap-3 text-label">
                   <span className="rounded bg-ice-soft px-2 py-1 font-mono text-navy dark:bg-ice-soft/10">
                     Overall {pct(data.overall.winRate)} · {data.overall.won}W / {data.overall.lost}L
                   </span>
@@ -327,7 +329,7 @@ export function WinLoss() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="border-b border-line text-left text-[10px] uppercase tracking-wider text-grey">
+                      <tr className="border-b border-line text-left text-micro uppercase tracking-wider text-grey">
                         <th className="pb-2 pl-2">Source</th>
                         <th className="pb-2 text-right">Won</th>
                         <th className="pb-2 text-right">Lost</th>

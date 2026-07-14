@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Gavel, FileText, BookOpen, Briefcase, Check, X, RefreshCw, AlertTriangle } from 'lucide-react';
 import { request } from '@/lib/apiClient';
 import { fetchProjectDeal } from '@/lib/api/bd';
+import { PageTitle, Button } from '@/components/ui';
 
 /* ── Types (mirror the API camelCase envelope) ── */
 interface PlaybookStep { order?: number; title?: string; detail?: string }
@@ -47,9 +48,9 @@ function Section({ title, icon, children, onRefresh }: { title: string; icon: Re
       <div className="mb-3 flex items-center justify-between">
         <h2 className="flex items-center gap-2 text-sm font-bold">{icon}{title}</h2>
         {onRefresh && (
-          <button onClick={onRefresh} className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[10px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10">
+          <Button variant="secondary" size="xs" onClick={onRefresh}>
             <RefreshCw size={10} /> Refresh
-          </button>
+          </Button>
         )}
       </div>
       {children}
@@ -146,18 +147,22 @@ export function DealDesk() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4">
-      <div className="flex items-center justify-between">
-        <h1 className="flex items-center gap-2 text-lg font-bold"><Gavel size={18} /> Deal Desk</h1>
-        <button onClick={() => void loadAll()} className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10">
-          <RefreshCw size={11} /> Refresh all
-        </button>
-      </div>
-      <p className="text-[11px] text-grey">Billing is status tracking only — nothing here moves money or executes payments.</p>
+      <PageTitle
+        icon={<Gavel size={20} />}
+        subtitle="Billing is status tracking only — nothing here moves money or executes payments."
+        actions={
+          <Button variant="secondary" size="xs" onClick={() => void loadAll()}>
+            <RefreshCw size={11} /> Refresh all
+          </Button>
+        }
+      >
+        Deal Desk
+      </PageTitle>
 
-      {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{error}</div>}
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-label text-red-700">{error}</div>}
 
       {filtering && (
-        <div className="flex items-center justify-between gap-2 rounded border border-cyan-200 bg-cyan-50 px-3 py-2 text-[11px] text-cyan-800 dark:border-cyan-800 dark:bg-cyan-950/20 dark:text-cyan-300">
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-2 text-label text-cyan-800 dark:border-cyan-800 dark:bg-cyan-950/20 dark:text-cyan-300">
           <span>
             {focusChecked && !focusDealId
               ? 'No deal exists for this project yet.'
@@ -175,26 +180,26 @@ export function DealDesk() {
       {/* Approvals queue */}
       <Section title="Approvals queue" icon={<AlertTriangle size={15} className="text-amber-600" />} onRefresh={() => void loadApprovals()}>
         {visibleApprovals.length === 0 ? (
-          <p className="text-[12px] text-grey">No pending approvals.</p>
+          <p className="text-label text-grey">No pending approvals.</p>
         ) : (
           <div className="space-y-2">
             {visibleApprovals.map((a) => (
-              <div key={a.id} className="flex items-start justify-between gap-2 rounded border border-line p-2.5">
+              <div key={a.id} className="flex items-start justify-between gap-2 rounded-lg border border-line p-2.5">
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-[12px] font-semibold">{a.projectName ?? a.dealId}</span>
+                    <span className="text-label font-semibold">{a.projectName ?? a.dealId}</span>
                     <Pill status={a.status} />
                   </div>
-                  <p className="mt-0.5 text-[10px] text-grey">
+                  <p className="mt-0.5 text-xs text-grey">
                     {a.dealValueCents != null && <>value {money(a.dealValueCents)} · </>}
                     {a.discountPct != null && <>discount {a.discountPct}% · </>}
                     chain {(a.steps ?? []).map((s) => s.role).join(' → ') || 'n/a'}
                   </p>
-                  {a.reason && <p className="mt-0.5 text-[10px] text-grey italic">“{a.reason}”</p>}
+                  {a.reason && <p className="mt-0.5 text-xs text-grey italic">“{a.reason}”</p>}
                 </div>
                 <div className="flex shrink-0 gap-1">
-                  <button onClick={() => void decide(a.id, 'approved')} className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white hover:bg-emerald-700"><Check size={10} /> Approve</button>
-                  <button onClick={() => void decide(a.id, 'rejected')} className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[10px] font-bold hover:bg-red-50"><X size={10} /> Reject</button>
+                  <button onClick={() => void decide(a.id, 'approved')} className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-micro font-bold text-white hover:bg-emerald-700"><Check size={10} /> Approve</button>
+                  <button onClick={() => void decide(a.id, 'rejected')} className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-micro font-bold hover:bg-red-50"><X size={10} /> Reject</button>
                 </div>
               </div>
             ))}
@@ -205,9 +210,9 @@ export function DealDesk() {
       {/* Invoices */}
       <Section title="Invoices" icon={<FileText size={15} className="text-sky-600" />} onRefresh={() => void loadInvoices()}>
         {visibleInvoices.length === 0 ? (
-          <p className="text-[12px] text-grey">No invoices tracked yet.</p>
+          <p className="text-label text-grey">No invoices tracked yet.</p>
         ) : (
-          <table className="w-full text-[11px]">
+          <table className="w-full text-label">
             <thead>
               <tr className="text-left text-[9px] uppercase text-grey">
                 <th className="pb-1">Project</th><th className="pb-1">Amount</th><th className="pb-1">Due</th><th className="pb-1">Status</th><th className="pb-1">Mark</th>
@@ -224,7 +229,7 @@ export function DealDesk() {
                     <select
                       value={i.status}
                       onChange={(e) => void setInvoiceStatus(i.id, e.target.value)}
-                      className="rounded border border-line bg-card px-1 py-0.5 text-[10px]"
+                      className="rounded border border-line bg-card px-1 py-0.5 text-micro"
                     >
                       {['draft', 'sent', 'paid', 'overdue'].map((s) => <option key={s} value={s}>{s}</option>)}
                     </select>
@@ -239,15 +244,15 @@ export function DealDesk() {
       {/* Playbooks + BATNA note */}
       <Section title="Negotiation playbooks" icon={<BookOpen size={15} className="text-indigo-600" />}>
         {playbooks.length === 0 ? (
-          <p className="text-[12px] text-grey">No playbooks seeded.</p>
+          <p className="text-label text-grey">No playbooks seeded.</p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
             {playbooks.map((pb) => (
-              <div key={pb.id} className="rounded border border-line p-2.5">
-                <h3 className="text-[12px] font-bold">{pb.name}</h3>
+              <div key={pb.id} className="rounded-lg border border-line p-2.5">
+                <h3 className="text-label font-bold">{pb.name}</h3>
                 <ol className="mt-1 space-y-1">
                   {pb.steps.map((s, idx) => (
-                    <li key={idx} className="text-[10px] text-grey">
+                    <li key={idx} className="text-xs text-grey">
                       <span className="font-semibold text-grey">{s.order ?? idx + 1}. {s.title}</span>
                       {s.detail && <span className="block pl-3">{s.detail}</span>}
                     </li>
@@ -257,7 +262,7 @@ export function DealDesk() {
             ))}
           </div>
         )}
-        <p className="mt-2 text-[10px] text-grey">BATNA figures are tracked per deal via <code>/v1/dealdesk/deals/:dealId/batna</code>.</p>
+        <p className="mt-2 text-xs text-grey">BATNA figures are tracked per deal via <code>/v1/dealdesk/deals/:dealId/batna</code>.</p>
       </Section>
 
       {/* Partners */}
@@ -267,29 +272,29 @@ export function DealDesk() {
             value={newPartner.name}
             onChange={(e) => setNewPartner((p) => ({ ...p, name: e.target.value }))}
             placeholder="Partner name…"
-            className="flex-1 rounded border border-line bg-card px-2.5 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            className="flex-1 rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
           />
           <input
             value={newPartner.commissionPct}
             onChange={(e) => setNewPartner((p) => ({ ...p, commissionPct: e.target.value }))}
             placeholder="%"
-            className="w-16 rounded border border-line bg-card px-2 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            className="w-16 rounded-lg border border-line bg-card px-2 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
           />
-          <button onClick={() => void addPartner()} className="rounded bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-700">Add</button>
+          <Button variant="primary" size="sm" onClick={() => void addPartner()}>Add</Button>
         </div>
         {partners.length === 0 ? (
-          <p className="text-[12px] text-grey">No partners yet.</p>
+          <p className="text-label text-grey">No partners yet.</p>
         ) : (
           <div className="space-y-1.5">
             {partners.map((p) => {
               const count = referrals.filter((r) => r.partnerId === p.id).length;
               return (
-                <div key={p.id} className="flex items-center justify-between rounded border border-line p-2 text-[11px]">
+                <div key={p.id} className="flex items-center justify-between rounded-lg border border-line p-2 text-label">
                   <div>
                     <span className="font-semibold">{p.name}</span>
                     <span className="ml-2 text-[9px] uppercase text-grey">{p.type}</span>
                   </div>
-                  <div className="text-[10px] text-grey">{p.commissionPct}% · {count} referral{count === 1 ? '' : 's'}</div>
+                  <div className="text-xs text-grey">{p.commissionPct}% · {count} referral{count === 1 ? '' : 's'}</div>
                 </div>
               );
             })}

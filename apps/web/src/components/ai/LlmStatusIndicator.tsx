@@ -19,24 +19,24 @@ export function LlmStatusIndicator({ service }: { service: IntegrationService | 
           className={`h-2 w-2 rounded-full ${live ? 'bg-emerald-500' : 'bg-slate-400 dark:bg-slate-500'}`}
           aria-hidden="true"
         />
-        <span className="text-[11px] font-semibold">
+        <span className="text-label font-semibold">
           {live ? 'LLM active' : 'Deterministic fallback mode'}
         </span>
         {live && service.maskedKey && (
-          <span className="font-mono text-[10px] text-grey">{service.maskedKey}</span>
+          <span className="font-mono text-xs text-grey">{service.maskedKey}</span>
         )}
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-grey hover:text-navy"
+          className="inline-flex items-center gap-0.5 text-xs font-semibold text-grey hover:text-navy"
         >
           <Settings2 size={11} /> Configure LLM
           {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
         </button>
       </div>
       {open && (
-        <div className="max-w-md rounded border border-line bg-card p-2.5 text-left text-[11px] text-grey">
+        <div className="max-w-md rounded border border-line bg-card p-2.5 text-left text-label text-grey">
           <p className="mb-1 font-bold text-navy">{service.name}</p>
           <p>{service.setup}</p>
         </div>

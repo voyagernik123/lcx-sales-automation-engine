@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom';
 import { ScatterChart as ScatterIcon, RefreshCw, Plus, Minus, AlertTriangle } from 'lucide-react';
 import { fetchMarketMap, type MapPoint } from '@/lib/api/bd';
+import { PageTitle, Button } from '@/components/ui';
 import { ChartSkeleton, EmptyState } from '@/components/shared';
 import { FilterChip } from '@/components/market/FilterChip';
 
@@ -183,30 +184,29 @@ export function MarketMap() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="flex items-center gap-2 text-lg font-bold text-navy">
-          <ScatterIcon size={18} /> Market Map
-        </h1>
-        <div className="flex items-center gap-2 text-[11px]">
-          <select
-            value={region}
-            onChange={(e) => setRegion(e.target.value)}
-            className="rounded border border-line bg-card px-2 py-1 text-navy"
-          >
-            <option value="">All regions</option>
-            <option value="eu">EU</option>
-            <option value="us">US</option>
-          </select>
-          <button
-            onClick={() => void load()}
-            className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 font-semibold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-          >
-            <RefreshCw size={11} /> Refresh
-          </button>
-        </div>
-      </div>
+      <PageTitle
+        icon={<ScatterIcon size={20} />}
+        actions={
+          <>
+            <select
+              value={region}
+              onChange={(e) => setRegion(e.target.value)}
+              className="rounded border border-line bg-card px-2 py-1 text-label text-navy"
+            >
+              <option value="">All regions</option>
+              <option value="eu">EU</option>
+              <option value="us">US</option>
+            </select>
+            <Button variant="secondary" size="sm" onClick={() => void load()}>
+              <RefreshCw size={12} /> Refresh
+            </Button>
+          </>
+        }
+      >
+        Market Map
+      </PageTitle>
 
-      <p className="text-[11px] text-grey">
+      <p className="text-micro text-grey">
         Each dot is a project: <b>x</b> = market cap (log), <b>y</b> = priority score, <b>size</b> = propensity,{' '}
         <b>color</b> = band. Top-left = high-priority small caps (the sweet spot). Drag to pan, use +/− to zoom,
         double-click to reset. {visible.length} of {points.length} plotted.
@@ -251,12 +251,9 @@ export function MarketMap() {
             title="Couldn't load the market map"
             description={error}
             action={
-              <button
-                onClick={() => void load()}
-                className="rounded border border-line px-3 py-1.5 text-[11px] font-semibold text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-              >
+              <Button variant="secondary" size="sm" onClick={() => void load()}>
                 Retry
-              </button>
+              </Button>
             }
           />
         </div>
@@ -345,12 +342,12 @@ export function MarketMap() {
               {/* hover tooltip */}
               {hover && (
                 <div
-                  className="pointer-events-none absolute z-10 w-[220px] rounded-md border border-line bg-card p-2 text-[11px] shadow-lg"
+                  className="pointer-events-none absolute z-10 w-[220px] rounded-md border border-line bg-card p-2 text-label shadow-lg"
                   style={{ left: tooltipLeft, top: tooltipTop }}
                 >
                   <div className="flex items-baseline gap-1.5">
                     <span className="font-bold text-navy">{hover.p.name}</span>
-                    {hover.p.ticker && <span className="font-mono text-[10px] text-grey">{hover.p.ticker}</span>}
+                    {hover.p.ticker && <span className="font-mono text-micro text-grey">{hover.p.ticker}</span>}
                   </div>
                   <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 text-grey">
                     <span>Market cap</span>
@@ -404,7 +401,7 @@ export function MarketMap() {
       )}
 
       {/* always-visible legend */}
-      <div className="flex flex-wrap items-center gap-3 text-[10px] text-grey">
+      <div className="flex flex-wrap items-center gap-3 text-micro text-grey">
         {BAND_ORDER.filter((b) => b !== 'unscored').map((b) => (
           <span key={b} className="inline-flex items-center gap-1">
             <span className="h-2.5 w-2.5 rounded-full" style={{ background: BAND_COLOR[b] }} /> {b}

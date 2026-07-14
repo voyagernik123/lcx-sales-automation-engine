@@ -24,7 +24,7 @@ export function CopyButton({ text, label = 'Copy' }: { text: string; label?: str
     <button
       type="button"
       onClick={() => void copy()}
-      className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-[10px] font-semibold text-grey hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/10"
+      className="inline-flex items-center gap-1 rounded border border-line px-2 py-0.5 text-xs font-semibold text-grey hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/10"
     >
       <Copy size={10} /> {label}
     </button>
@@ -50,7 +50,7 @@ export function RunButton({
       type="button"
       onClick={onClick}
       disabled={running || disabled}
-      className="mt-2 inline-flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-[11px] font-semibold hover:bg-ice-soft disabled:opacity-50 dark:hover:bg-ice-soft/10"
+      className="mt-2 inline-flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-label font-semibold hover:bg-ice-soft disabled:opacity-50 dark:hover:bg-ice-soft/10"
     >
       {running ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />}
       {running ? runningLabel : children}
@@ -61,6 +61,6 @@ export function RunButton({
 export const panelClass = 'rounded-lg border border-line bg-card p-4';
 export const inputClass =
   'w-full rounded border border-line bg-transparent p-2 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-500';
-export const labelClass = 'text-[10px] font-bold uppercase tracking-wider text-grey';
+export const labelClass = 'text-micro font-bold uppercase tracking-wider text-grey';
 export const resultBoxClass =
-  'whitespace-pre-wrap rounded border border-line bg-ice-soft/40 dark:bg-ice-soft/5 p-2.5 text-[12px] leading-relaxed';
+  'whitespace-pre-wrap rounded border border-line bg-ice-soft/40 dark:bg-ice-soft/5 p-2.5 text-label leading-relaxed';

@@ -3,6 +3,8 @@ import { Shield, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { clsx } from 'clsx';
 import { fetchAuditLog } from '@/lib/api/audit';
 import type { AuditEntry } from '@/lib/api/audit';
+import { Button } from '@/components/ui';
+import { EmptyState, TableSkeleton } from '@/components/shared';
 
 const ENTITY_OPTIONS = [
   { value: '', label: 'All Entities' },
@@ -27,7 +29,7 @@ const ACTION_COLORS: Record<string, string> = {
 function ActionBadge({ action }: { action: string }) {
   const color = ACTION_COLORS[action] ?? 'text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/20';
   return (
-    <span className={clsx('inline-block rounded-full px-2 py-0.5 text-[10px] font-bold', color)}>
+    <span className={clsx('inline-block rounded-full px-2 py-0.5 text-micro font-bold', color)}>
       {action.replace(/_/g, ' ')}
     </span>
   );
@@ -75,11 +77,11 @@ export function AuditLog() {
   return (
     <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy overflow-hidden">
       <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-line bg-card">
-        <h1 className="text-lg font-bold flex items-center gap-1.5">
+        <h1 className="text-lg font-bold flex items-center gap-1.5 text-navy">
           <Shield size={17} className="text-cyan-500" />
           Audit Log
         </h1>
-        <span className="text-[10px] text-grey font-mono">{total} events</span>
+        <span className="text-micro text-grey font-mono">{total} events</span>
       </div>
 
       <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-line bg-card flex-wrap">
@@ -107,37 +109,33 @@ export function AuditLog() {
 
       <div className="flex-1 overflow-auto">
         {loading && (
-          <div className="flex items-center justify-center py-20 text-grey">
-            <div className="flex items-center gap-2">
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-500 border-t-transparent" />
-              <span className="text-sm">Loading audit log...</span>
-            </div>
+          <div className="p-4">
+            <TableSkeleton rows={10} cols={5} />
           </div>
         )}
 
         {error && !loading && (
-          <div className="flex flex-col items-center justify-center py-20 text-red-500">
-            <p className="text-sm font-semibold">Failed to load audit log</p>
-            <p className="text-xs mt-1 text-grey">{error}</p>
-            <button onClick={load} className="mt-3 rounded border border-red-200 px-3 py-1 text-xs font-bold hover:bg-red-50 transition-colors">Retry</button>
-          </div>
+          <EmptyState
+            variant="error"
+            title="Failed to load audit log"
+            description={error}
+            action={<Button variant="secondary" size="sm" onClick={load}>Retry</Button>}
+          />
         )}
 
         {!loading && !error && entries.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-20 text-grey">
-            <p className="text-sm font-semibold">No audit events found</p>
-          </div>
+          <EmptyState variant="search" title="No audit events found" description="No events match the current filters." />
         )}
 
         {!loading && !error && entries.length > 0 && (
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-line sticky top-0 bg-card">
-                <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-grey">Time</th>
-                <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-grey">Actor</th>
-                <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-grey">Action</th>
-                <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-grey">Entity</th>
-                <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-grey">Details</th>
+                <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Time</th>
+                <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Actor</th>
+                <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Action</th>
+                <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Entity</th>
+                <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Details</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line/30">
@@ -166,22 +164,26 @@ export function AuditLog() {
 
       {totalPages > 1 && (
         <div className="shrink-0 flex items-center justify-between px-4 py-2 border-t border-line bg-card">
-          <span className="text-[10px] text-grey">Page {page} of {totalPages}</span>
+          <span className="text-micro text-grey">Page {page} of {totalPages}</span>
           <div className="flex items-center gap-2">
-            <button
+            <Button
+              variant="secondary"
+              size="xs"
               onClick={() => setPage(p => Math.max(1, p - 1))}
               disabled={page <= 1}
-              className="rounded border border-line px-2 py-1 text-[10px] font-bold text-grey hover:text-navy disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              aria-label="Previous page"
             >
               <ChevronLeft size={12} />
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="secondary"
+              size="xs"
               onClick={() => setPage(p => Math.min(totalPages, p + 1))}
               disabled={page >= totalPages}
-              className="rounded border border-line px-2 py-1 text-[10px] font-bold text-grey hover:text-navy disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              aria-label="Next page"
             >
               <ChevronRight size={12} />
-            </button>
+            </Button>
           </div>
         </div>
       )}

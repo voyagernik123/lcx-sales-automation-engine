@@ -72,7 +72,7 @@ export function ReplyDrafterPanel() {
 
   return (
     <div className={panelClass}>
-      <p className="mb-3 text-[11px] text-grey">
+      <p className="mb-3 text-label text-grey">
         Generate an outreach draft for a pipeline project — pick a project, name the contact, choose the
         touch in the sequence.
       </p>
@@ -121,15 +121,15 @@ export function ReplyDrafterPanel() {
       <RunButton running={running} disabled={!projectId} onClick={() => void run()} runningLabel="Drafting…">
         Generate draft
       </RunButton>
-      {error && <p className="mt-2 text-[11px] text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-label text-red-600">{error}</p>}
       {result && (
         <div className="mt-4 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase dark:bg-slate-800">
+            <span className="rounded bg-slate-100 px-2 py-0.5 text-xs font-bold uppercase dark:bg-slate-800">
               {result.channel} · touch {result.touchIndex}
             </span>
             {result.requiresHumanReview && (
-              <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+              <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
                 <AlertTriangle size={10} /> Requires human review
               </span>
             )}
@@ -149,10 +149,10 @@ export function ReplyDrafterPanel() {
             <p className={resultBoxClass}>{result.body}</p>
           </div>
           {result.claimsUsed.length > 0 && (
-            <p className="text-[10px] text-grey">Claims used: {result.claimsUsed.join(', ')}</p>
+            <p className="text-xs text-grey">Claims used: {result.claimsUsed.join(', ')}</p>
           )}
           {warnings.length > 0 && (
-            <ul className="space-y-0.5 text-[10px] text-amber-600 dark:text-amber-400">
+            <ul className="space-y-0.5 text-xs text-amber-600 dark:text-amber-400">
               {warnings.map((w) => (
                 <li key={w}>{w}</li>
               ))}

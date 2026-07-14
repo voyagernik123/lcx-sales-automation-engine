@@ -82,7 +82,8 @@ describe('LeadDetail', () => {
   it('renders loading state initially', () => {
     vi.mocked(bdApi.fetchLead).mockReturnValue(new Promise(() => {}));
     renderDetail();
-    expect(screen.getByText('Loading lead...')).toBeDefined();
+    // Loading state is now a skeleton (role="status"), not literal text.
+    expect(screen.getAllByRole('status').length).toBeGreaterThan(0);
   });
 
   it('renders lead header and identity after load', async () => {

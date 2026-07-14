@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { Card, CardHeader, CardBody } from '@/components/ui';
+import { Card, CardHeader, CardBody, PageTitle, SectionLabel } from '@/components/ui';
 import { useAuditStore, useFilterStore } from '@/stores';
 import { StateCohortGrid } from '@/components/shared';
 import { parseMonetaryValue } from '@/lib/formatting';
@@ -66,22 +66,21 @@ export function CapitalEstimator() {
 
   return (
     <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
-      <div className="shrink-0">
-        <h1 className="text-2xl font-bold flex items-center gap-2"><Landmark size={24} className="text-navy" /> Launch Budget &amp; Capital Calculator</h1>
-        <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
-          Model fintech balance sheet reserves, surety bond banking collateral leverage, and 12-month runways.
-        </p>
-      </div>
+      <PageTitle
+        className="shrink-0"
+        icon={<Landmark size={20} />}
+        subtitle="Model fintech balance sheet reserves, surety bond banking collateral leverage, and 12-month runways."
+      >
+        Launch Budget &amp; Capital Calculator
+      </PageTitle>
 
       <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0 overflow-hidden">
 
         <div className="w-full lg:w-80 bg-card border border-line rounded-lg p-4 overflow-y-auto space-y-4 shrink-0 shadow-sm">
-          <span className="font-bold text-[10px] uppercase tracking-wider text-grey block">
-            Budget Control Panel
-          </span>
+          <SectionLabel>Budget Control Panel</SectionLabel>
 
           <div className="space-y-1.5">
-            <div className="flex justify-between text-[10px] font-bold uppercase text-grey-dark">
+            <div className="flex justify-between text-xs font-bold uppercase text-grey-dark">
               <span>Bond Bank Collateral</span>
               <span className="font-mono text-cyan-500">{leverageRatio}%</span>
             </div>
@@ -100,7 +99,7 @@ export function CapitalEstimator() {
           </div>
 
           <div className="space-y-1.5 pt-2 border-t border-line">
-            <div className="flex justify-between text-[10px] font-bold uppercase text-grey-dark">
+            <div className="flex justify-between text-xs font-bold uppercase text-grey-dark">
               <span>Monthly Launch Runrate</span>
               <span className="font-mono text-cyan-500">${(monthlyBurn / 1000).toFixed(0)}K</span>
             </div>
@@ -116,7 +115,7 @@ export function CapitalEstimator() {
           </div>
 
           <div className="space-y-2 pt-2 border-t border-line">
-            <span className="font-bold text-[10px] uppercase tracking-wider text-grey block">Launch State Cohort</span>
+            <SectionLabel>Launch State Cohort</SectionLabel>
             <StateCohortGrid selected={selectedStates} onToggle={handleToggle} auditLabel="Capital Estimator" />
           </div>
         </div>
@@ -163,7 +162,7 @@ export function CapitalEstimator() {
                 const nwPct = Math.round((calculations.minNetWorth / total) * 100);
 
                 return (
-                  <div className="space-y-3 text-[10px]">
+                  <div className="space-y-3 text-xs">
                     <div className="h-6 bg-line rounded-lg overflow-hidden flex shadow-sm">
                       <div className="bg-blue-500 h-full transition-all duration-300" style={{ width: `${feesPct}%` }} title={`Fees: ${feesPct}%`} />
                       <div className="bg-amber-500 h-full transition-all duration-300" style={{ width: `${cashPct}%` }} title={`Bonds cash: ${cashPct}%`} />

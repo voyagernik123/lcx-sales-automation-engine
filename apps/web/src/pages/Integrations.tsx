@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { request } from '@/lib/apiClient';
 import { fetchIntegrationStatus, type IntegrationService } from '@/lib/api/bd';
+import { PageTitle, Button } from '@/components/ui';
 import { CardSkeleton, EmptyState, toast } from '@/components/shared';
 
 type Meta = { timestamp: string; version: string };
@@ -68,12 +69,10 @@ interface Preference {
   enabled: boolean;
 }
 
-const card = 'rounded border border-line bg-card p-4 space-y-3';
+const card = 'rounded-lg border border-line bg-card p-4 space-y-3';
 const heading = 'flex items-center gap-2 text-sm font-bold';
-const label = 'text-[10px] font-bold uppercase tracking-wider text-grey';
-const input = 'rounded border border-line px-2.5 py-1.5 text-[12px] focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-transparent';
-const btn = 'inline-flex items-center gap-1 rounded bg-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white hover:bg-indigo-700 disabled:opacity-50';
-const ghostBtn = 'inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[11px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10';
+const label = 'text-micro font-bold uppercase tracking-wider text-grey';
+const input = 'rounded border border-line px-2.5 py-1.5 text-label focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-transparent';
 
 function sentimentTone(s: string): string {
   if (s === 'positive') return 'text-emerald-600';
@@ -86,13 +85,13 @@ function sentimentTone(s: string): string {
 function StatusPill({ mode }: { mode: 'live' | 'demo' }) {
   if (mode === 'live') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
         <CheckCircle2 size={10} /> Connected
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
       <AlertTriangle size={10} /> Demo Mode
     </span>
   );
@@ -119,12 +118,12 @@ function ConnectDisclosure({ setup }: { setup: string }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+        className="inline-flex items-center gap-1 text-label font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
       >
         <Plug size={11} /> Connect {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
       </button>
       {open && (
-        <p className="mt-1.5 rounded border border-line bg-ice-soft/40 p-2 text-[11px] text-grey dark:bg-ice-soft/5">
+        <p className="mt-1.5 rounded border border-line bg-ice-soft/40 p-2 text-label text-grey dark:bg-ice-soft/5">
           {setup}
         </p>
       )}
@@ -138,11 +137,11 @@ function ResendDetails({ svc }: { svc: IntegrationService }) {
     <div className="space-y-2">
       <div>
         {svc.webhookVerification ? (
-          <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+          <span className="inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
             <ShieldCheck size={10} /> Webhook verification on
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+          <span className="inline-flex items-center gap-1 rounded bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
             <ShieldOff size={10} /> Webhook unverified
           </span>
         )}
@@ -164,12 +163,12 @@ function ResendDetails({ svc }: { svc: IntegrationService }) {
           ))}
         </div>
       )}
-      {svc.error && <p className="text-[11px] text-red-600">Domain lookup failed: {svc.error}</p>}
+      {svc.error && <p className="text-label text-red-600">Domain lookup failed: {svc.error}</p>}
       {svc.domains && svc.domains.length > 0 && (
         <div className="space-y-1">
           <span className={label}>Sending domains</span>
           {svc.domains.map((d) => (
-            <div key={d.name} className="flex items-center justify-between rounded border border-line px-2 py-1 text-[11px]">
+            <div key={d.name} className="flex items-center justify-between rounded border border-line px-2 py-1 text-label">
               <span className="inline-flex items-center gap-1.5 font-semibold">
                 <Globe size={11} className="text-grey" /> {d.name}
                 {d.region && <span className="font-normal text-grey">({d.region})</span>}
@@ -189,11 +188,11 @@ function ServiceCard({ svc }: { svc: IntegrationService }) {
   return (
     <div className="space-y-2 rounded border border-line bg-card p-3">
       <div className="flex items-center justify-between gap-2">
-        <h3 className="text-[12px] font-bold">{svc.name}</h3>
+        <h3 className="text-label font-bold">{svc.name}</h3>
         <StatusPill mode={svc.mode} />
       </div>
       {svc.maskedKey && (
-        <p className="text-[11px] text-grey">
+        <p className="text-label text-grey">
           Key: <span className="font-mono">{svc.maskedKey}</span>
         </p>
       )}
@@ -207,7 +206,7 @@ function ServiceCard({ svc }: { svc: IntegrationService }) {
 function DemoBanner({ svc }: { svc: IntegrationService | undefined }) {
   if (!svc || svc.mode !== 'demo') return null;
   return (
-    <div className="flex items-start gap-2 rounded border border-amber-300/60 bg-amber-50 p-2 text-[11px] text-amber-800 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-300">
+    <div className="flex items-start gap-2 rounded border border-amber-300/60 bg-amber-50 p-2 text-label text-amber-800 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-300">
       <AlertTriangle size={13} className="mt-0.5 shrink-0" />
       <div>
         <span className="font-bold">Demo Mode — sample data.</span> {svc.setup}
@@ -218,7 +217,6 @@ function DemoBanner({ svc }: { svc: IntegrationService | undefined }) {
 
 export function Integrations() {
   const [projectId, setProjectId] = useState('');
-  const [banner, setBanner] = useState('');
 
   // Connection status
   const [services, setServices] = useState<IntegrationService[] | null>(null);
@@ -242,11 +240,8 @@ export function Integrations() {
   const [pushConfigured, setPushConfigured] = useState(false);
   const [subscribed, setSubscribed] = useState(false);
 
-  const note = (m: string) => {
-    setBanner(m);
-    window.setTimeout(() => setBanner(''), 3000);
-  };
-  const onError = (err: unknown) => note(err instanceof Error ? err.message : 'Request failed');
+  const note = (m: string) => toast('info', m);
+  const onError = (err: unknown) => toast('error', err instanceof Error ? err.message : 'Request failed');
 
   const svc = (id: string) => services?.find((s) => s.id === id);
 
@@ -416,19 +411,16 @@ export function Integrations() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4">
-      <div className="flex items-center justify-between">
-        <h1 className="flex items-center gap-2 text-lg font-bold">
-          <Radar size={18} /> Integrations
-        </h1>
-        <button className={ghostBtn} onClick={() => void loadStatus()}>
-          <RefreshCw size={11} /> Refresh status
-        </button>
-      </div>
-      {banner && (
-        <div className="rounded border border-indigo-200 bg-indigo-50 dark:bg-indigo-950/30 p-2 text-[11px] text-indigo-700 dark:text-indigo-300">
-          {banner}
-        </div>
-      )}
+      <PageTitle
+        icon={<Radar size={20} />}
+        actions={
+          <Button variant="secondary" size="sm" onClick={() => void loadStatus()}>
+            <RefreshCw size={12} /> Refresh status
+          </Button>
+        }
+      >
+        Integrations
+      </PageTitle>
 
       {/* Connection status */}
       <section className="space-y-2">
@@ -442,9 +434,9 @@ export function Integrations() {
               title="Couldn't load integration status"
               description={statusError}
               action={
-                <button className={btn} onClick={() => void loadStatus()}>
+                <Button variant="primary" size="sm" onClick={() => void loadStatus()}>
                   <RefreshCw size={12} /> Retry
-                </button>
+                </Button>
               }
             />
           </div>
@@ -467,9 +459,9 @@ export function Integrations() {
             className={`${input} w-80`}
           />
         </div>
-        <button className={ghostBtn} onClick={() => void loadMeetings()}>
-          <RefreshCw size={11} /> Load meetings
-        </button>
+        <Button variant="secondary" size="sm" onClick={() => void loadMeetings()}>
+          <RefreshCw size={12} /> Load meetings
+        </Button>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
@@ -493,24 +485,25 @@ export function Integrations() {
               className={`${input} w-20`}
               aria-label="Duration (minutes)"
             />
-            <button className={btn} onClick={() => void createLink()}>
+            <Button variant="primary" size="sm" onClick={() => void createLink()}>
               <Plus size={12} /> Create
-            </button>
+            </Button>
           </div>
           <div className="space-y-1.5">
-            {links.length === 0 && <p className="text-[11px] text-grey">No meeting links yet.</p>}
+            {links.length === 0 && <p className="text-label text-grey">No meeting links yet.</p>}
             {links.map((l) => (
-              <div key={l.id} className="flex items-center justify-between gap-2 rounded border border-line px-2 py-1.5 text-[11px]">
+              <div key={l.id} className="flex items-center justify-between gap-2 rounded border border-line px-2 py-1.5 text-label">
                 <span className="font-semibold">/{l.slug}</span>
                 <span className="flex items-center gap-2">
                   <span className="text-grey">{l.durationMin} min</span>
-                  <button
-                    className={ghostBtn}
+                  <Button
+                    variant="secondary"
+                    size="xs"
                     onClick={() => void copyLink(l.slug)}
                     aria-label={`Copy booking link for ${l.slug}`}
                   >
                     <Copy size={10} /> Copy link
-                  </button>
+                  </Button>
                 </span>
               </div>
             ))}
@@ -519,7 +512,7 @@ export function Integrations() {
             <div className="space-y-1 pt-2">
               <span className={label}>Booked meetings</span>
               {meetings.map((m) => (
-                <div key={m.id} className="flex items-center justify-between text-[11px]">
+                <div key={m.id} className="flex items-center justify-between text-label">
                   <span>{new Date(m.scheduledAt).toLocaleString()}</span>
                   <span className="text-grey">{m.attendeeEmail ?? m.status}</span>
                 </div>
@@ -534,15 +527,15 @@ export function Integrations() {
             <Mail size={15} /> Email Sync
           </h2>
           <DemoBanner svc={svc('email-sync')} />
-          <p className="text-[11px] text-grey">
+          <p className="text-label text-grey">
             Pulls recent threads for the project (Gmail/Outlook when configured, else mock).
           </p>
-          <button className={btn} onClick={() => void runEmailSync()}>
+          <Button variant="primary" size="sm" onClick={() => void runEmailSync()}>
             <RefreshCw size={12} /> Run sync
-          </button>
+          </Button>
           <div className="space-y-1.5">
             {threads.map((t) => (
-              <div key={t.id} className="rounded border border-line px-2 py-1.5 text-[11px]">
+              <div key={t.id} className="rounded border border-line px-2 py-1.5 text-label">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold truncate">{t.subject}</span>
                   <span className={`ml-2 shrink-0 ${label}`}>{t.direction}</span>
@@ -550,7 +543,7 @@ export function Integrations() {
                 <p className="text-grey truncate">{t.snippet}</p>
               </div>
             ))}
-            {threads.length === 0 && <p className="text-[11px] text-grey">No threads loaded.</p>}
+            {threads.length === 0 && <p className="text-label text-grey">No threads loaded.</p>}
           </div>
         </section>
 
@@ -561,21 +554,21 @@ export function Integrations() {
           </h2>
           <DemoBanner svc={svc('twitter')} />
           <DemoBanner svc={svc('chat-monitor')} />
-          <p className="text-[11px] text-grey">Monitoring only — no auto-DM / auto-message.</p>
+          <p className="text-label text-grey">Monitoring only — no auto-DM / auto-message.</p>
           <div className="flex flex-wrap gap-2">
-            <button className={ghostBtn} onClick={() => void scanTwitter()}>
+            <Button variant="secondary" size="sm" onClick={() => void scanTwitter()}>
               Scan Twitter/X
-            </button>
-            <button className={ghostBtn} onClick={() => void scanChat('telegram')}>
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => void scanChat('telegram')}>
               Scan Telegram
-            </button>
-            <button className={ghostBtn} onClick={() => void scanChat('discord')}>
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => void scanChat('discord')}>
               Scan Discord
-            </button>
+            </Button>
           </div>
           <div className="space-y-1.5 max-h-64 overflow-y-auto">
             {mentions.map((m) => (
-              <div key={m.id} className="rounded border border-line px-2 py-1.5 text-[11px]">
+              <div key={m.id} className="rounded border border-line px-2 py-1.5 text-label">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold">{m.author}</span>
                   <span className={`${label} ${sentimentTone(m.sentiment)}`}>
@@ -585,7 +578,7 @@ export function Integrations() {
                 <p className="text-grey">{m.text}</p>
               </div>
             ))}
-            {mentions.length === 0 && <p className="text-[11px] text-grey">No mentions loaded.</p>}
+            {mentions.length === 0 && <p className="text-label text-grey">No mentions loaded.</p>}
           </div>
         </section>
 
@@ -595,17 +588,17 @@ export function Integrations() {
             <CalendarDays size={15} /> Calendar
           </h2>
           <DemoBanner svc={svc('calendar')} />
-          <button className={ghostBtn} onClick={() => void loadEvents()}>
-            <RefreshCw size={11} /> Refresh events
-          </button>
+          <Button variant="secondary" size="sm" onClick={() => void loadEvents()}>
+            <RefreshCw size={12} /> Refresh events
+          </Button>
           <div className="space-y-1.5">
             {events.map((e) => (
-              <div key={e.id} className="flex items-center justify-between rounded border border-line px-2 py-1.5 text-[11px]">
+              <div key={e.id} className="flex items-center justify-between rounded border border-line px-2 py-1.5 text-label">
                 <span>{new Date(e.startAt).toLocaleString()}</span>
                 <span className="text-grey">{e.status}</span>
               </div>
             ))}
-            {events.length === 0 && <p className="text-[11px] text-grey">No calendar events recorded.</p>}
+            {events.length === 0 && <p className="text-label text-grey">No calendar events recorded.</p>}
           </div>
         </section>
 
@@ -615,16 +608,16 @@ export function Integrations() {
             <Bell size={15} /> Web Push & Notification Preferences
           </h2>
           <div className="flex items-center gap-3">
-            <button className={btn} onClick={() => void subscribePush()} disabled={subscribed}>
+            <Button variant="primary" size="sm" onClick={() => void subscribePush()} disabled={subscribed}>
               {subscribed ? 'Subscribed' : 'Enable web push'}
-            </button>
-            <span className="text-[11px] text-grey">
+            </Button>
+            <span className="text-label text-grey">
               {pushConfigured ? 'VAPID configured' : 'VAPID not set — sends are mocked (no-op)'}
             </span>
           </div>
           <div className="grid gap-2 sm:grid-cols-2">
             {prefs.map((p) => (
-              <label key={p.rule} className="flex items-center justify-between rounded border border-line px-2 py-1.5 text-[11px]">
+              <label key={p.rule} className="flex items-center justify-between rounded border border-line px-2 py-1.5 text-label">
                 <span className="font-semibold">{p.rule}</span>
                 <input
                   type="checkbox"

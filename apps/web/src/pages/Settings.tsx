@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useAuditStore, AuditLog } from '@/stores/useAuditStore';
 import { Sliders, Terminal, Trash2, Info } from 'lucide-react';
+import { PageTitle, SectionLabel } from '@/components/ui';
 import { ConfirmDialog } from '@/components/shared';
 import { clsx } from 'clsx';
 
@@ -24,21 +25,19 @@ export function Settings() {
 
   return (
     <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
-      <div className="shrink-0 flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Sliders size={24} className="text-navy" /> Apollo Systems Console</h1>
-          <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
-            Configure compliance session settings, toggle legislative safe harbor models, and inspect logs history.
-          </p>
-        </div>
+      <div className="shrink-0">
+        <PageTitle
+          icon={<Sliders size={20} />}
+          subtitle="Configure compliance session settings, toggle legislative safe harbor models, and inspect logs history."
+        >
+          Apollo Systems Console
+        </PageTitle>
       </div>
 
       <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0 overflow-hidden">
 
         <div className="w-full lg:w-96 bg-card border border-line rounded-lg p-4 overflow-y-auto space-y-4 shrink-0 shadow-sm">
-          <span className="font-bold text-[10px] uppercase tracking-wider text-grey block">
-            System Feature Toggles
-          </span>
+          <SectionLabel className="block">System Feature Toggles</SectionLabel>
 
           <div className="space-y-4 pt-1">
             {[
@@ -61,10 +60,10 @@ export function Settings() {
                 value: micaExempt,
               },
             ].map(({ key, title, desc, value }) => (
-              <div key={key} className="flex items-start justify-between gap-4 border border-line rounded p-3 bg-ice-soft/20 dark:bg-navy-deep/10">
+              <div key={key} className="flex items-start justify-between gap-4 border border-line rounded-lg p-3 bg-ice-soft/20 dark:bg-navy-deep/10">
                 <div className="space-y-1">
                   <span className="text-xs font-bold text-navy block">{title}</span>
-                  <p className="text-[10px] text-grey-dark dark:text-grey-light leading-relaxed">{desc}</p>
+                  <p className="text-xs text-grey-dark dark:text-grey-light leading-relaxed">{desc}</p>
                 </div>
                 <button
                   onClick={() => toggleSafeHarbor(key)}
@@ -83,7 +82,7 @@ export function Settings() {
           </div>
         </div>
 
-        <div className="flex-1 bg-slate-950 text-slate-100 rounded-lg border border-slate-900 shadow-md font-mono text-[10px] overflow-hidden h-full flex flex-col">
+        <div className="flex-1 bg-slate-950 text-slate-100 rounded-lg border border-slate-900 shadow-md font-mono text-micro overflow-hidden h-full flex flex-col">
           <div className="bg-slate-900 px-3 py-2 border-b border-slate-800 flex items-center justify-between shrink-0 select-none">
             <div className="flex items-center gap-2">
               <Terminal size={12} className="text-cyan-500 animate-pulse-beacon" />

@@ -5,6 +5,7 @@ import { STAGE_LABELS, type DealStage } from '@lcx/shared';
 import { fetchDealEvents, type BoardDeal } from '@/lib/api/bd';
 import type { DealEvent } from '@/types/bd';
 import { fmtMoneyCents, ownerInitials, packageLabel, relativeTime } from './dealFormat';
+import { SectionLabel } from '@/components/ui';
 
 const STAGE_BADGE: Record<DealStage, string> = {
   not_started: 'bg-ice-soft text-grey dark:bg-ice-soft/10',
@@ -19,8 +20,8 @@ const STAGE_BADGE: Record<DealStage, string> = {
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-start justify-between gap-3 py-1.5">
-      <span className="shrink-0 text-[11px] text-grey">{label}</span>
-      <span className="min-w-0 text-right text-[12px] font-medium text-navy">{children}</span>
+      <span className="shrink-0 text-micro text-grey">{label}</span>
+      <span className="min-w-0 text-right text-label font-medium text-navy">{children}</span>
     </div>
   );
 }
@@ -90,7 +91,7 @@ export function DealDetailPanel({ deal, onClose }: DealDetailPanelProps) {
                 </span>
               )}
             </div>
-            <span className={`mt-1.5 inline-block rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide ${STAGE_BADGE[stage] ?? STAGE_BADGE.not_started}`}>
+            <span className={`mt-1.5 inline-block rounded px-1.5 py-0.5 text-micro font-bold uppercase tracking-wide ${STAGE_BADGE[stage] ?? STAGE_BADGE.not_started}`}>
               {STAGE_LABELS[stage] ?? deal.stage}
             </span>
           </div>
@@ -135,7 +136,7 @@ export function DealDetailPanel({ deal, onClose }: DealDetailPanelProps) {
           </div>
 
           <div className="mt-5">
-            <h3 className="mb-2 text-[10px] font-bold uppercase tracking-wider text-grey">Recent activity</h3>
+            <SectionLabel as="h3" className="mb-2 block">Recent activity</SectionLabel>
             {events === null && (
               <div className="space-y-2" role="status" aria-label="Loading activity">
                 {[0, 1, 2].map((i) => (
@@ -143,18 +144,18 @@ export function DealDetailPanel({ deal, onClose }: DealDetailPanelProps) {
                 ))}
               </div>
             )}
-            {events !== null && events.length === 0 && <p className="text-[11px] text-grey">No activity recorded yet.</p>}
+            {events !== null && events.length === 0 && <p className="text-micro text-grey">No activity recorded yet.</p>}
             {events !== null && events.length > 0 && (
               <ul className="space-y-2">
                 {events.map((ev) => (
                   <li key={ev.id} className="rounded-lg border border-line bg-ice-soft/40 p-2 dark:bg-ice-soft/5">
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-semibold uppercase tracking-wide text-grey">
+                      <span className="text-micro font-semibold uppercase tracking-wide text-grey">
                         {ev.eventType.replace(/_/g, ' ')}
                       </span>
                       <span className="shrink-0 text-[9px] text-grey">{relativeTime(ev.createdAt)}</span>
                     </div>
-                    {ev.content && <p className="mt-0.5 text-[11px] leading-snug text-navy">{ev.content}</p>}
+                    {ev.content && <p className="mt-0.5 text-micro leading-snug text-navy">{ev.content}</p>}
                   </li>
                 ))}
               </ul>
@@ -165,7 +166,7 @@ export function DealDetailPanel({ deal, onClose }: DealDetailPanelProps) {
         <div className="border-t border-line p-4">
           <Link
             to={`/bd-pipeline/${deal.projectId}`}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-navy px-3 py-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90 dark:bg-ice dark:text-navy"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-navy px-3 py-2 text-label font-semibold text-white transition-opacity hover:opacity-90 dark:bg-ice dark:text-navy"
           >
             Open Lead <ArrowRight size={13} />
           </Link>

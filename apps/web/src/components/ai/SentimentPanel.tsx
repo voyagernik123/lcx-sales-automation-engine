@@ -30,7 +30,7 @@ export function SentimentPanel() {
 
   return (
     <div className={panelClass}>
-      <p className="mb-2 text-[11px] text-grey">
+      <p className="mb-2 text-label text-grey">
         Classify an inbound reply as positive / neutral / negative / objection.
       </p>
       <textarea
@@ -43,18 +43,18 @@ export function SentimentPanel() {
       <RunButton running={running} disabled={!text.trim()} onClick={() => void run()} runningLabel="Analyzing…">
         Classify
       </RunButton>
-      {error && <p className="mt-2 text-[11px] text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-label text-red-600">{error}</p>}
       {result && (
         <div className="mt-3 space-y-2">
           <div className="flex items-center gap-2">
-            <span className={`rounded px-2 py-0.5 text-[11px] font-bold ${SENTIMENT_STYLE[result.sentiment]}`}>
+            <span className={`rounded px-2 py-0.5 text-label font-bold ${SENTIMENT_STYLE[result.sentiment]}`}>
               {result.sentiment}
             </span>
-            <span className="font-mono text-[11px] text-grey">conf {Math.round(result.confidence * 100)}%</span>
+            <span className="font-mono text-label text-grey">conf {Math.round(result.confidence * 100)}%</span>
             {result.usedLlm && <LlmBadge />}
           </div>
           {result.matched.length > 0 && (
-            <p className="text-[10px] text-grey">Signals: {result.matched.join(', ')}</p>
+            <p className="text-xs text-grey">Signals: {result.matched.join(', ')}</p>
           )}
         </div>
       )}

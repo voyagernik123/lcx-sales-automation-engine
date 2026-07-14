@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { competitors as allCompetitors, states, products } from '@/data';
 import { useAuditStore, useFilterStore } from '@/stores';
 import { Badge, Card, CardBody } from '@/components/ui';
+import { EmptyState } from '@/components/shared';
 import {
   Competitor,
   ThreatLevel,
@@ -235,17 +236,17 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
       case 'threatLevel': {
         const badgeStatus = threatBadgeMap[c.threatLevel] || 'deferred';
         return (
-          <Badge status={badgeStatus} className="text-[10px] gap-1 px-1.5 py-0">
+          <Badge status={badgeStatus} className="text-micro gap-1 px-1.5 py-0">
             {c.threatLevel}
           </Badge>
         );
       }
 
       case 'users':
-        return <span className="font-mono text-[11px] font-semibold">{c.users}</span>;
+        return <span className="font-mono text-micro font-semibold">{c.users}</span>;
 
       case 'quarterlyVolume':
-        return <span className="font-mono text-[11px]">{c.financials.quarterlyVolume.replace('+', '').replace('(global)', '').replace('(crypto only, est.)', '').replace('(global, pre-hack)', '').trim()}</span>;
+        return <span className="font-mono text-micro">{c.financials.quarterlyVolume.replace('+', '').replace('(global)', '').replace('(crypto only, est.)', '').replace('(global, pre-hack)', '').trim()}</span>;
 
       case 'mtlCount': {
         const count = clarityEnacted && c.clarityAct.position === 'strong_beneficiary' ? 0 : getMTLCount(c);
@@ -254,7 +255,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
           : count >= 35 ? 'text-status-ready' : count >= 15 ? 'text-status-conditional' : count > 0 ? 'text-status-blocked' : 'text-grey';
         return (
           <span className="flex items-center gap-1">
-            <span className={clsx('font-mono text-[11px] font-bold', color)}>
+            <span className={clsx('font-mono text-micro font-bold', color)}>
               {clarityEnacted && c.clarityAct.position === 'strong_beneficiary' ? '0' : count}{c.statePresence.length > 0 ? '/50' : ''}
             </span>
             {clarityEnacted && c.clarityAct.position === 'strong_beneficiary' && (
@@ -265,12 +266,12 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
       }
 
       case 'assetsOnPlatform':
-        return <span className="font-mono text-[11px]">{c.financials.assetsOnPlatform}</span>;
+        return <span className="font-mono text-micro">{c.financials.assetsOnPlatform}</span>;
 
       case 'marketShare':
         return (
           <span className={clsx(
-            'font-mono text-[11px] font-bold',
+            'font-mono text-micro font-bold',
             c.marketShare >= 10 ? 'text-cyan-600 dark:text-cyan-400' :
             c.marketShare > 0 ? 'text-grey-dark dark:text-grey-light' :
             'text-grey'
@@ -282,7 +283,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
       case 'howeyScore':
         return (
           <span className={clsx(
-            'font-mono text-[11px] font-bold',
+            'font-mono text-micro font-bold',
             c.howeyProfile.avgScore >= 35 ? 'text-status-blocked' :
             c.howeyProfile.avgScore >= 25 ? 'text-status-conditional' :
             'text-status-ready'
@@ -308,7 +309,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
 
   const renderExtraInfo = (c: Competitor) => {
     return (
-      <div className="flex items-center gap-3 text-[10px]">
+      <div className="flex items-center gap-3 text-micro">
         <span className="flex items-center gap-1">
           {c.licenses.bitLicense ? <Check size={12} className="text-status-ready" /> : <X size={12} className="text-grey" />}
           <span className={c.licenses.bitLicense ? '' : 'text-grey'}>BitLicense</span>
@@ -344,25 +345,25 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
         </div>
       </td>
       <td className="p-2.5">
-        <span className="text-[10px] text-cyan-600 dark:text-cyan-400 font-bold">New Entrant</span>
+        <span className="text-micro text-cyan-600 dark:text-cyan-400 font-bold">New Entrant</span>
       </td>
       <td className="p-2.5">
-        <span className="font-mono text-[11px] text-cyan-600 dark:text-cyan-400">—</span>
+        <span className="font-mono text-micro text-cyan-600 dark:text-cyan-400">—</span>
       </td>
       <td className="p-2.5">
-        <span className="font-mono text-[11px] text-grey">—</span>
+        <span className="font-mono text-micro text-grey">—</span>
       </td>
       <td className="p-2.5">
-        <span className="font-mono text-[11px] font-bold text-status-conditional">{lcxMTLCount}/50</span>
+        <span className="font-mono text-micro font-bold text-status-conditional">{lcxMTLCount}/50</span>
       </td>
       <td className="p-2.5">
-        <span className="font-mono text-[11px] text-grey">—</span>
+        <span className="font-mono text-micro text-grey">—</span>
       </td>
       <td className="p-2.5">
-        <span className="font-mono text-[11px] font-bold text-grey">0%</span>
+        <span className="font-mono text-micro font-bold text-grey">0%</span>
       </td>
       <td className="p-2.5">
-        <span className="font-mono text-[11px] font-bold text-status-conditional">{lcxAvgHowey}%</span>
+        <span className="font-mono text-micro font-bold text-status-conditional">{lcxAvgHowey}%</span>
       </td>
       <td className="p-2.5">
         <span className="text-[9px] px-1.5 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400">
@@ -370,7 +371,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
         </span>
       </td>
       <td className="p-2.5">
-        <div className="flex items-center gap-3 text-[10px]">
+        <div className="flex items-center gap-3 text-micro">
           <span className="flex items-center gap-1">
             <X size={12} className="text-grey" />
             <span className="text-grey">BitLicense</span>
@@ -403,7 +404,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
           {renderCell(c, col)}
         </td>
       ))}
-      <td className="p-2.5 text-[10px]">
+      <td className="p-2.5 text-micro">
         {renderExtraInfo(c)}
       </td>
     </tr>
@@ -441,11 +442,11 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
               {statusLabelMap[c.status] || c.status}
             </span>
           </div>
-          <Badge status={threatBadgeMap[c.threatLevel] || 'deferred'} className="text-[10px] px-1.5">
+          <Badge status={threatBadgeMap[c.threatLevel] || 'deferred'} className="text-micro px-1.5">
             {c.threatLevel}
           </Badge>
         </div>
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px] mb-2">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-micro mb-2">
           <div className="flex justify-between">
             <span className="text-grey">Users:</span>
             <span className="font-mono font-semibold">{c.users}</span>
@@ -526,7 +527,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
         <select
           value={threatFilter}
           onChange={e => handleFilterChange(setThreatFilter, e.target.value, 'Threat Level')}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy"
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus:outline-none text-navy"
         >
           <option value="All">All Threat Levels</option>
           <option value="Critical">Critical</option>
@@ -539,7 +540,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
         <select
           value={clarityFilter}
           onChange={e => handleFilterChange(setClarityFilter, e.target.value, 'CLARITY')}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy"
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus:outline-none text-navy"
         >
           <option value="All">All CLARITY Positions</option>
           <option value="strong_beneficiary">Strong Beneficiary</option>
@@ -552,7 +553,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
         <select
           value={statusFilter}
           onChange={e => handleFilterChange(setStatusFilter, e.target.value, 'Status')}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-[10px] font-semibold focus:outline-none text-navy"
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus:outline-none text-navy"
         >
           <option value="All">All Statuses</option>
           <option value="public">Public</option>
@@ -568,7 +569,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
 
       {viewMode === 'table' ? (
         <div className="overflow-x-auto border border-line rounded-lg bg-card shadow-sm">
-          <table className="w-full border-collapse text-left text-[11px]">
+          <table className="w-full border-collapse text-left text-micro">
             <thead>
               <tr className="bg-ice-soft/40 dark:bg-navy-deep/20 border-b border-line">
                 {COLUMNS.filter(c => c.sortable).map(col => (
@@ -603,7 +604,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
             {cardRows}
           </div>
           {sorted.length === 0 && (
-            <p className="text-center text-xs text-grey py-8">No competitors match the active filters.</p>
+            <EmptyState variant="search" title="No matching competitors" description="No competitors match the active filters." />
           )}
           <Card className="border-cyan-500/40 bg-cyan-500/[0.03] dark:bg-cyan-500/[0.02]">
             <CardBody className="p-3">
@@ -614,9 +615,9 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
                     PROJECTED (Phase 1–3)
                   </span>
                 </div>
-                <span className="text-[10px] text-cyan-600 dark:text-cyan-400 font-bold">New Entrant</span>
+                <span className="text-micro text-cyan-600 dark:text-cyan-400 font-bold">New Entrant</span>
               </div>
-              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[10px] mb-2">
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-micro mb-2">
                 <div className="flex justify-between">
                   <span className="text-grey">MTL States (Ph 1-3):</span>
                   <span className="font-mono font-bold text-status-conditional">{lcxMTLCount}/50</span>

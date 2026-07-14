@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { request } from '@/lib/apiClient';
 import { TableSkeleton } from '@/components/shared';
+import { PageTitle, SectionLabel, Button } from '@/components/ui';
 
 type Tab = 'domains' | 'health' | 'abtests' | 'accounts';
 
@@ -115,22 +116,19 @@ export function OutreachOps() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 p-4">
-      <div>
-        <h1 className="flex items-center gap-2 text-lg font-bold">
-          <Gauge size={18} /> Outreach Operations
-        </h1>
-        <p className="text-[11px] text-grey">
-          Throttling, deliverability, experiments, and LinkedIn warmup. LinkedIn is account
-          bookkeeping only — messages are always sent by a human via the Send Queue.
-        </p>
-      </div>
+      <PageTitle
+        icon={<Gauge size={20} />}
+        subtitle="Throttling, deliverability, experiments, and LinkedIn warmup. LinkedIn is account bookkeeping only — messages are always sent by a human via the Send Queue."
+      >
+        Outreach Operations
+      </PageTitle>
 
       <div className="flex gap-1 border-b border-line">
         {tabs.map(({ key, label, icon: Icon }) => (
           <button
             key={key}
             onClick={() => setTab(key)}
-            className={`inline-flex items-center gap-1.5 px-3 py-2 text-[12px] font-semibold border-b-2 -mb-px ${
+            className={`inline-flex items-center gap-1.5 px-3 py-2 text-label font-semibold border-b-2 -mb-px ${
               tab === key
                 ? 'border-navy text-navy dark:border-ice'
                 : 'border-transparent text-grey hover:text-navy'
@@ -197,7 +195,7 @@ function DomainsTab() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-card p-3">
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-grey">Domain</label>
+          <label className="block text-micro font-bold uppercase tracking-wider text-grey">Domain</label>
           <input
             value={newDomain}
             onChange={(e) => setNewDomain(e.target.value)}
@@ -206,7 +204,7 @@ function DomainsTab() {
           />
         </div>
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-grey">Daily cap</label>
+          <label className="block text-micro font-bold uppercase tracking-wider text-grey">Daily cap</label>
           <input
             type="number"
             value={newCap}
@@ -214,18 +212,12 @@ function DomainsTab() {
             className="w-24 rounded border border-line px-2 py-1 text-[12px]"
           />
         </div>
-        <button
-          onClick={() => void addDomain()}
-          className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[12px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-        >
+        <Button variant="secondary" size="xs" onClick={() => void addDomain()}>
           <Plus size={12} /> Add / update
-        </button>
-        <button
-          onClick={() => void load()}
-          className="ml-auto inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[12px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-        >
+        </Button>
+        <Button variant="secondary" size="xs" className="ml-auto" onClick={() => void load()}>
           <RefreshCw size={12} /> Refresh
-        </button>
+        </Button>
       </div>
 
       {loading && <TableSkeleton rows={6} cols={4} />}
@@ -234,7 +226,7 @@ function DomainsTab() {
         <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-line text-left text-[10px] font-bold uppercase tracking-wider text-grey">
+              <tr className="border-b border-line text-left text-micro font-bold uppercase tracking-wider text-grey">
                 <th className="px-3 py-2">Domain</th>
                 <th className="px-3 py-2">Today / cap</th>
                 <th className="px-3 py-2">Reputation</th>
@@ -257,20 +249,20 @@ function DomainsTab() {
                   </td>
                   <td className="px-3 py-2 font-mono">{d.reputationScore}</td>
                   <td className="px-3 py-2">
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${statusBadge(d.status)}`}>{d.status}</span>
+                    <span className={`rounded px-1.5 py-0.5 text-micro font-bold ${statusBadge(d.status)}`}>{d.status}</span>
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex gap-1">
                       <button
                         onClick={() => void togglePause(d)}
-                        className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+                        className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro hover:bg-ice-soft dark:hover:bg-ice-soft/10"
                       >
                         {d.status === 'active' ? <Pause size={10} /> : <Play size={10} />}
                         {d.status === 'active' ? 'Pause' : 'Resume'}
                       </button>
                       <button
                         onClick={() => void recompute(d)}
-                        className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+                        className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro hover:bg-ice-soft dark:hover:bg-ice-soft/10"
                       >
                         <RefreshCw size={10} /> Adaptive cap
                       </button>
@@ -319,15 +311,12 @@ function HealthTab() {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
-        <p className="text-[11px] text-grey">
+        <p className="text-label text-grey">
           Per-recipient-domain deliverability over the last {report?.windowDays ?? 30} days.
         </p>
-        <button
-          onClick={() => void load()}
-          className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[12px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-        >
+        <Button variant="secondary" size="xs" onClick={() => void load()}>
           <RefreshCw size={12} /> Refresh
-        </button>
+        </Button>
       </div>
 
       {loading && <TableSkeleton rows={6} cols={4} />}
@@ -342,7 +331,7 @@ function HealthTab() {
               { label: 'Complaint rate', v: pct(report.overall.complaintRate) },
             ].map((s) => (
               <div key={s.label} className="rounded-lg border border-line bg-card p-3">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-grey">{s.label}</div>
+                <SectionLabel as="div">{s.label}</SectionLabel>
                 <div className="mt-1 font-mono text-lg font-bold">{s.v}</div>
               </div>
             ))}
@@ -351,7 +340,7 @@ function HealthTab() {
           <div className="overflow-x-auto rounded-lg border border-line">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-line text-left text-[10px] font-bold uppercase tracking-wider text-grey">
+                <tr className="border-b border-line text-left text-micro font-bold uppercase tracking-wider text-grey">
                   <th className="px-3 py-2">Domain</th>
                   <th className="px-3 py-2">Sent</th>
                   <th className="px-3 py-2">Delivery</th>
@@ -369,9 +358,9 @@ function HealthTab() {
                     <td className="px-3 py-2 font-mono">{pct(d.bounceRate)}</td>
                     <td className="px-3 py-2 font-mono">{pct(d.complaintRate)}</td>
                     <td className="px-3 py-2">
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${statusBadge(d.status)}`}>{d.status}</span>
+                      <span className={`rounded px-1.5 py-0.5 text-micro font-bold ${statusBadge(d.status)}`}>{d.status}</span>
                       {d.suggestPause && (
-                        <span className="ml-1 text-[9px] font-bold text-red-600">pause suggested</span>
+                        <span className="ml-1 text-micro font-bold text-red-600">pause suggested</span>
                       )}
                     </td>
                   </tr>
@@ -438,24 +427,24 @@ function AbTestsTab() {
     <div className="space-y-3">
       <div className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-card p-3">
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-grey">Name</label>
+          <label className="block text-micro font-bold uppercase tracking-wider text-grey">Name</label>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Subject line test" className="rounded border border-line px-2 py-1 text-[12px]" />
         </div>
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-grey">Variants (comma)</label>
+          <label className="block text-micro font-bold uppercase tracking-wider text-grey">Variants (comma)</label>
           <input value={variants} onChange={(e) => setVariants(e.target.value)} className="rounded border border-line px-2 py-1 text-[12px]" />
         </div>
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-grey">Metric</label>
+          <label className="block text-micro font-bold uppercase tracking-wider text-grey">Metric</label>
           <select value={metric} onChange={(e) => setMetric(e.target.value)} className="rounded border border-line px-2 py-1 text-[12px]">
             <option value="reply_rate">reply_rate</option>
             <option value="open_rate">open_rate</option>
             <option value="meeting_rate">meeting_rate</option>
           </select>
         </div>
-        <button onClick={() => void create()} className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[12px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10">
+        <Button variant="secondary" size="xs" onClick={() => void create()}>
           <Plus size={12} /> Create
-        </button>
+        </Button>
       </div>
 
       {loading && <TableSkeleton rows={6} cols={4} />}
@@ -464,7 +453,7 @@ function AbTestsTab() {
         <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-line text-left text-[10px] font-bold uppercase tracking-wider text-grey">
+              <tr className="border-b border-line text-left text-micro font-bold uppercase tracking-wider text-grey">
                 <th className="px-3 py-2">Test</th>
                 <th className="px-3 py-2">Variants</th>
                 <th className="px-3 py-2">Metric</th>
@@ -479,10 +468,10 @@ function AbTestsTab() {
                   <td className="px-3 py-2 font-mono">{t.variants.join(' · ')}</td>
                   <td className="px-3 py-2 font-mono">{t.metric}</td>
                   <td className="px-3 py-2">
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${statusBadge(t.status)}`}>{t.status}</span>
+                    <span className={`rounded px-1.5 py-0.5 text-micro font-bold ${statusBadge(t.status)}`}>{t.status}</span>
                   </td>
                   <td className="px-3 py-2">
-                    <button onClick={() => void viewResults(t.id)} className="rounded border border-line px-1.5 py-0.5 text-[10px] hover:bg-ice-soft dark:hover:bg-ice-soft/10">
+                    <button onClick={() => void viewResults(t.id)} className="rounded border border-line px-1.5 py-0.5 text-micro hover:bg-ice-soft dark:hover:bg-ice-soft/10">
                       Results
                     </button>
                   </td>
@@ -500,12 +489,12 @@ function AbTestsTab() {
 
       {selected && results && (
         <div className="rounded-lg border border-line bg-card p-3 space-y-2">
-          <div className="text-[11px] font-bold uppercase tracking-wider text-grey">Results · {results.metric}</div>
+          <SectionLabel as="div">Results · {results.metric}</SectionLabel>
           <div className="grid gap-2 sm:grid-cols-2">
             {results.variants.map((v) => (
               <div key={v.variant} className="rounded border border-line p-2">
-                <div className="font-mono text-[12px] font-bold">{v.variant}</div>
-                <div className="text-[11px] text-grey">
+                <div className="font-mono text-label font-bold">{v.variant}</div>
+                <div className="text-label text-grey">
                   {v.converted}/{v.assigned} converted · <span className="font-mono">{pct(v.rate)}</span>
                 </div>
               </div>
@@ -532,7 +521,7 @@ function AbTestsTab() {
               </div>
             </div>
           ) : (
-            <p className="text-[11px] text-grey">Not enough assignments to compare yet.</p>
+            <p className="text-label text-grey">Not enough assignments to compare yet.</p>
           )}
         </div>
       )}
@@ -580,21 +569,21 @@ function AccountsTab() {
 
   return (
     <div className="space-y-3">
-      <div className="rounded border border-amber-200 bg-amber-50 p-2 text-[11px] text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
+      <div className="rounded border border-amber-200 bg-amber-50 p-2 text-label text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
         Bookkeeping only. Nothing here sends a LinkedIn message — a human sends every touch via the Send Queue.
       </div>
       <div className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-card p-3">
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-grey">Account name</label>
+          <label className="block text-micro font-bold uppercase tracking-wider text-grey">Account name</label>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="BD rep — Jane" className="rounded border border-line px-2 py-1 text-[12px]" />
         </div>
         <div>
-          <label className="block text-[10px] font-bold uppercase tracking-wider text-grey">Daily warmup target</label>
+          <label className="block text-micro font-bold uppercase tracking-wider text-grey">Daily warmup target</label>
           <input type="number" value={target} onChange={(e) => setTarget(Number(e.target.value))} className="w-24 rounded border border-line px-2 py-1 text-[12px]" />
         </div>
-        <button onClick={() => void create()} className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-[12px] font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10">
+        <Button variant="secondary" size="xs" onClick={() => void create()}>
           <Plus size={12} /> Add account
-        </button>
+        </Button>
       </div>
 
       {loading && <TableSkeleton rows={6} cols={4} />}
@@ -603,7 +592,7 @@ function AccountsTab() {
         <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-line text-left text-[10px] font-bold uppercase tracking-wider text-grey">
+              <tr className="border-b border-line text-left text-micro font-bold uppercase tracking-wider text-grey">
                 <th className="px-3 py-2">Account</th>
                 <th className="px-3 py-2">Session</th>
                 <th className="px-3 py-2">Warmup day</th>
@@ -620,10 +609,10 @@ function AccountsTab() {
                   <td className="px-3 py-2 font-mono">{a.warmupDay}</td>
                   <td className="px-3 py-2 font-mono">{a.dailyWarmupTarget}</td>
                   <td className="px-3 py-2">
-                    <span className={`rounded px-1.5 py-0.5 text-[10px] font-bold ${statusBadge(a.status)}`}>{a.status}</span>
+                    <span className={`rounded px-1.5 py-0.5 text-micro font-bold ${statusBadge(a.status)}`}>{a.status}</span>
                   </td>
                   <td className="px-3 py-2">
-                    <button onClick={() => void viewPlan(a.id)} className="rounded border border-line px-1.5 py-0.5 text-[10px] hover:bg-ice-soft dark:hover:bg-ice-soft/10">
+                    <button onClick={() => void viewPlan(a.id)} className="rounded border border-line px-1.5 py-0.5 text-micro hover:bg-ice-soft dark:hover:bg-ice-soft/10">
                       Warmup plan
                     </button>
                   </td>
@@ -641,15 +630,15 @@ function AccountsTab() {
 
       {plan && (
         <div className="rounded-lg border border-line bg-card p-3">
-          <div className="mb-2 text-[11px] font-bold uppercase tracking-wider text-grey">
+          <SectionLabel as="div" className="mb-2">
             Warmup ramp · day {plan.plan.currentDay}/{plan.plan.totalDays} · today's target {plan.plan.todayTarget}
-          </div>
+          </SectionLabel>
           <div className="flex flex-wrap gap-1">
             {plan.plan.schedule.map((d) => (
               <div
                 key={d.day}
                 title={`Day ${d.day} (week ${d.week}): ${d.target}/day`}
-                className={`flex h-10 w-10 flex-col items-center justify-center rounded text-[9px] font-mono ${
+                className={`flex h-10 w-10 flex-col items-center justify-center rounded text-micro font-mono ${
                   d.isCurrent
                     ? 'bg-navy text-card dark:bg-ice dark:text-navy'
                     : d.isComplete

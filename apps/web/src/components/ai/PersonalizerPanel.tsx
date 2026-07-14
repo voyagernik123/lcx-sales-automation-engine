@@ -40,7 +40,7 @@ export function PersonalizerPanel() {
 
   return (
     <div className={panelClass}>
-      <p className="mb-3 text-[11px] text-grey">
+      <p className="mb-3 text-label text-grey">
         Weave known project facts into a base draft. Facts are only ever added — claims in the base draft
         stay intact. Supports {'{{projectName}}'}, {'{{ticker}}'} and {'{{contactName}}'} tokens.
       </p>
@@ -109,13 +109,13 @@ export function PersonalizerPanel() {
       <RunButton running={running} disabled={!baseDraft.trim()} onClick={() => void run()} runningLabel="Personalizing…">
         Personalize
       </RunButton>
-      {error && <p className="mt-2 text-[11px] text-red-600">{error}</p>}
+      {error && <p className="mt-2 text-label text-red-600">{error}</p>}
       {result && (
         <div className="mt-4 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             {result.usedLlm && <LlmBadge />}
             {result.insertedFacts.length > 0 && (
-              <span className="text-[10px] text-grey">Facts woven in: {result.insertedFacts.join(', ')}</span>
+              <span className="text-xs text-grey">Facts woven in: {result.insertedFacts.join(', ')}</span>
             )}
             <CopyButton text={result.draft} label="Copy draft" />
           </div>

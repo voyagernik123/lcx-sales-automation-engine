@@ -27,6 +27,13 @@ export default {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
+      fontSize: {
+        // Named density scale — replaces arbitrary text-[10px]/text-[11px].
+        // `micro` is the new minimum (11px), reserved for dense data-table cells.
+        micro: ['11px', '1.3'],
+        label: ['12px', '1.35'],
+        body: ['13px', '1.5'],
+      },
       gridTemplateColumns: {
         '24': 'repeat(24, minmax(0, 1fr))',
       },

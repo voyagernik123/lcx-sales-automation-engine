@@ -1,15 +1,15 @@
 import { useState, useMemo } from 'react';
 import { redFlags } from '@/data';
 import { useAuditStore } from '@/stores/useAuditStore';
-import { Card, CardBody, Badge, ReadinessMeter } from '@/components/ui';
+import { Card, CardBody, Badge, ReadinessMeter, PageTitle, SectionLabel, Button } from '@/components/ui';
 import { AlertTriangle, ShieldCheck, CheckSquare, Square, RefreshCw, Scale } from 'lucide-react';
 import { clsx } from 'clsx';
 
 function getMatrixCellColor(prob: number, sev: number) {
   const sum = prob + sev;
-  if (sum >= 8) return 'bg-red-500/20 hover:bg-red-500/30 text-red-500 border-red-500/30';
-  if (sum >= 6) return 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-500 border-amber-500/30';
-  return 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-500 border-emerald-500/30';
+  if (sum >= 8) return 'bg-status-blocked/20 hover:bg-status-blocked/30 text-status-blocked border-status-blocked/30';
+  if (sum >= 6) return 'bg-status-conditional/20 hover:bg-status-conditional/30 text-status-conditional border-status-conditional/30';
+  return 'bg-status-ready/20 hover:bg-status-ready/30 text-status-ready border-status-ready/30';
 }
 
 export function RedFlags() {
@@ -56,35 +56,31 @@ export function RedFlags() {
 
   return (
     <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">
-      <div className="shrink-0 flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2"><Scale size={24} className="text-navy" /> Audit Risk Mitigation Center</h1>
-          <p className="text-sm text-grey-dark dark:text-grey-light mt-0.5">
-            Model, analyze, and resolve legal friction coordinates using the 2D Probability vs. Impact matrix.
-          </p>
-        </div>
-
-        {selectedCell && (
-          <button
-            onClick={() => setSelectedCell(null)}
-            className="flex items-center gap-1 h-8 rounded border border-line bg-card hover:bg-ice-soft dark:hover:bg-ice-soft/10 px-3 text-xs font-semibold text-grey-dark transition-colors shrink-0"
-          >
-            <RefreshCw size={11} />
-            <span>Reset Matrix Filter</span>
-          </button>
-        )}
+      <div className="shrink-0">
+        <PageTitle
+          icon={<Scale size={20} />}
+          subtitle="Model, analyze, and resolve legal friction coordinates using the 2D Probability vs. Impact matrix."
+          actions={selectedCell && (
+            <Button variant="secondary" size="sm" onClick={() => setSelectedCell(null)}>
+              <RefreshCw size={11} />
+              Reset Matrix Filter
+            </Button>
+          )}
+        >
+          Audit Risk Mitigation Center
+        </PageTitle>
       </div>
 
       <div className="flex-1 flex flex-col lg:flex-row gap-4 min-h-0 overflow-hidden">
 
         <div className="w-full lg:w-80 bg-card border border-line rounded-lg p-4 flex flex-col space-y-4 shrink-0 shadow-sm">
-          <span className="font-bold text-[10px] uppercase tracking-wider text-grey block text-center">
+          <SectionLabel className="block text-center">
             2D Risk Coordinate Matrix (Probability vs Severity)
-          </span>
+          </SectionLabel>
 
           <div className="flex-1 flex flex-col justify-between h-[250px] relative select-none">
             <div className="flex-1 flex justify-between border-l border-b border-line pl-1 pb-1 relative">
-              <div className="absolute -left-5 top-1/2 -translate-y-1/2 -rotate-90 text-[9px] font-bold text-grey uppercase font-mono whitespace-nowrap">
+              <div className="absolute -left-5 top-1/2 -translate-y-1/2 -rotate-90 text-micro font-bold text-grey uppercase font-mono whitespace-nowrap">
                 Probability
               </div>
               <div className="flex-1 flex flex-col justify-between">
@@ -104,7 +100,7 @@ export function RedFlags() {
                           key={sev}
                           onClick={() => handleGridCellClick(prob, sev)}
                           className={clsx(
-                            'flex-1 h-full border m-0.5 rounded transition-all flex items-center justify-center font-mono text-[10px] font-bold',
+                            'flex-1 h-full border m-0.5 rounded transition-all flex items-center justify-center font-mono text-micro font-bold',
                             cellColor,
                             isSelected ? 'ring-2 ring-cyan-500/60 scale-105 border-cyan-500 shadow-sm' : ''
                           )}
@@ -120,13 +116,13 @@ export function RedFlags() {
               })}
               </div>
             </div>
-            <div className="flex justify-between text-[9px] font-bold text-grey uppercase font-mono mt-1 px-1">
+            <div className="flex justify-between text-micro font-bold text-grey uppercase font-mono mt-1 px-1">
               <span>Impact 1 (Low)</span>
               <span>Impact 5 (Critical)</span>
             </div>
           </div>
 
-          <div className="text-[10px] text-grey leading-relaxed space-y-1 pt-2 border-t border-line">
+          <div className="text-micro text-grey leading-relaxed space-y-1 pt-2 border-t border-line">
             <p className="font-bold">Matrix filtering guidelines:</p>
             <p>Click any cell to isolate red flags matching that coordinate. Click again to clear.</p>
           </div>
@@ -137,31 +133,31 @@ export function RedFlags() {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 shrink-0">
             <Card>
               <CardBody className="p-3 flex items-center gap-3">
-                <div className="rounded bg-red-100 dark:bg-red-950/20 p-2 text-red-600 dark:text-red-400">
+                <div className="rounded bg-status-blocked-bg p-2 text-status-blocked">
                   <AlertTriangle size={18} />
                 </div>
                 <div>
                   <div className="text-xl font-bold font-mono leading-tight">{unresolvedCriticalCount}</div>
-                  <div className="text-[10px] text-grey uppercase font-bold mt-0.5">Active Critical Risks</div>
+                  <SectionLabel className="block mt-0.5">Active Critical Risks</SectionLabel>
                 </div>
               </CardBody>
             </Card>
             <Card>
               <CardBody className="p-3 flex items-center gap-3">
-                <div className="rounded bg-emerald-100 dark:bg-emerald-950/20 p-2 text-emerald-600 dark:text-emerald-400">
+                <div className="rounded bg-status-ready-bg p-2 text-status-ready">
                   <ShieldCheck size={18} />
                 </div>
                 <div>
                   <div className="text-xl font-bold font-mono leading-tight">{completedRemediationsCount} / {totalRemediations}</div>
-                  <div className="text-[10px] text-grey uppercase font-bold mt-0.5">Controls Cleared</div>
+                  <SectionLabel className="block mt-0.5">Controls Cleared</SectionLabel>
                 </div>
               </CardBody>
             </Card>
             <Card>
               <CardBody className="p-3 space-y-1">
-                <div className="flex justify-between items-center text-[10px] uppercase font-bold text-grey">
-                  <span>Overall Mitigation</span>
-                  <span className="font-mono">{mitigationPercent}%</span>
+                <div className="flex justify-between items-center text-grey">
+                  <SectionLabel>Overall Mitigation</SectionLabel>
+                  <span className="text-micro font-bold font-mono uppercase">{mitigationPercent}%</span>
                 </div>
                 <ReadinessMeter percent={mitigationPercent} />
               </CardBody>
@@ -182,15 +178,15 @@ export function RedFlags() {
                     isResolved
                       ? 'border-status-ready/20 bg-status-ready-bg/5'
                       : rf.risk === 'Critical'
-                      ? 'border-red-500/20 hover:border-red-500/40'
-                      : 'border-amber-500/20 hover:border-amber-500/40'
+                      ? 'border-status-blocked/20 hover:border-status-blocked/40'
+                      : 'border-status-conditional/20 hover:border-status-conditional/40'
                   )}
                 >
                   <CardBody className="space-y-3.5">
                     <div className="flex justify-between items-start gap-2">
                       <div>
                         <h3 className="font-bold text-sm leading-snug">{rf.title}</h3>
-                        <div className="text-[9px] font-mono text-grey uppercase tracking-wider mt-0.5">
+                        <div className="text-micro font-mono text-grey uppercase tracking-wider mt-0.5">
                           Coordinate: Prob {rf.prob} / Sev {rf.sev} &middot; Risk: {rf.risk}
                         </div>
                       </div>
@@ -202,16 +198,16 @@ export function RedFlags() {
                     <p className="text-xs text-grey-dark dark:text-grey-light leading-relaxed">{rf.description}</p>
 
                     {!isResolved && (
-                      <div className="rounded bg-red-50 dark:bg-red-950/15 border border-red-100/50 dark:border-red-950/30 p-2.5 text-xs font-mono text-red-700 dark:text-red-300 leading-normal">
-                        <span className="font-extrabold uppercase text-[9px] block mb-0.5">[Consequences of Inaction]</span>
+                      <div className="rounded bg-status-blocked-bg border border-status-blocked/20 p-2.5 text-xs font-mono text-status-blocked leading-normal">
+                        <span className="font-extrabold uppercase text-micro block mb-0.5">[Consequences of Inaction]</span>
                         {rf.consequences}
                       </div>
                     )}
 
                     <div className="space-y-2 pt-2.5 border-t border-line">
-                      <div className="flex justify-between items-center text-[10px] uppercase font-bold text-grey">
-                        <span>Mitigation Controls Checklist</span>
-                        <span className="font-mono">{completedCount} of {totalCount} done</span>
+                      <div className="flex justify-between items-center text-grey">
+                        <SectionLabel>Mitigation Controls Checklist</SectionLabel>
+                        <span className="text-micro font-bold uppercase font-mono">{completedCount} of {totalCount} done</span>
                       </div>
 
                       <div className="space-y-1.5 pt-1 pl-1">
@@ -238,7 +234,7 @@ export function RedFlags() {
                     </div>
 
                     <div className="space-y-1.5 pt-2.5 border-t border-line/60">
-                      <label className="font-bold text-[9px] uppercase tracking-wider text-grey block">Remediation Reference Evidence</label>
+                      <SectionLabel as="div">Remediation Reference Evidence</SectionLabel>
                       <div className="flex gap-2">
                         <textarea
                           rows={1}
@@ -247,13 +243,15 @@ export function RedFlags() {
                           placeholder="Input counsel legal citations, bylaws sections, or verification hashes..."
                           className="flex-1 rounded border border-line bg-ice-soft dark:bg-navy-deep p-2 text-xs focus:outline-none placeholder-grey/50 font-mono"
                         />
-                        <button
+                        <Button
+                          variant="primary"
+                          size="sm"
                           onClick={() => handleSaveEvidence(rf.id)}
                           disabled={!evidenceNotes[rf.id]}
-                          className="h-8 rounded bg-navy dark:bg-ice text-white dark:text-navy px-3 text-xs font-bold transition-opacity hover:opacity-95 disabled:opacity-30 shrink-0"
+                          className="shrink-0"
                         >
                           Submit Evidence
-                        </button>
+                        </Button>
                       </div>
                     </div>
 

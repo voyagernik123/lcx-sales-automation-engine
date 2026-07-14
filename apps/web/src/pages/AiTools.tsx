@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Bot } from 'lucide-react';
 import { fetchIntegrationStatus, type IntegrationService } from '@/lib/api/bd';
+import { PageTitle } from '@/components/ui';
 import { LlmBadge } from '@/components/ai/common';
 import { LlmStatusIndicator } from '@/components/ai/LlmStatusIndicator';
 import { SentimentPanel } from '@/components/ai/SentimentPanel';
@@ -37,18 +38,18 @@ export function AiTools() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-lg font-bold">
-            <Bot size={18} /> AI Console
-          </h1>
-          <p className="mt-1 text-[11px] text-grey">
+      <PageTitle
+        icon={<Bot size={20} />}
+        actions={<LlmStatusIndicator service={llmService} />}
+        subtitle={
+          <>
             Deterministic by default — every tool works with no API key. When an ANTHROPIC_API_KEY is
             configured, results are refined by the LLM and tagged <LlmBadge />.
-          </p>
-        </div>
-        <LlmStatusIndicator service={llmService} />
-      </div>
+          </>
+        }
+      >
+        AI Console
+      </PageTitle>
 
       <div className="flex gap-1 border-b border-line" role="tablist" aria-label="AI tools">
         {TABS.map((t) => (

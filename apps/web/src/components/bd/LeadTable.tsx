@@ -63,7 +63,7 @@ export function LeadTable({ leads, filters, clarityEnacted, onSort, onSelect, lo
                 key={col.key}
                 onClick={() => onSort(col.key)}
                 className={clsx(
-                  'text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-grey cursor-pointer hover:text-navy transition-colors select-none',
+                  'text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey cursor-pointer hover:text-navy transition-colors select-none',
                   filters.sort === col.key && 'text-navy',
                 )}
               >
@@ -76,12 +76,12 @@ export function LeadTable({ leads, filters, clarityEnacted, onSort, onSelect, lo
                 </span>
               </th>
             ))}
-            <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-grey">Market</th>
-            <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-grey">Band</th>
-            <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-grey">Rec. Market</th>
-            <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-grey">Stage</th>
-            <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-grey">Next Action</th>
-            <th className="text-left py-2 px-3 text-[10px] font-bold uppercase tracking-wider text-grey">Contact</th>
+            <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Market</th>
+            <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Band</th>
+            <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Rec. Market</th>
+            <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Stage</th>
+            <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Next Action</th>
+            <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Contact</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-line/50">
@@ -96,7 +96,7 @@ export function LeadTable({ leads, filters, clarityEnacted, onSort, onSelect, lo
                   <span className="font-semibold text-navy truncate max-w-[220px]">
                     {lead.name}
                   </span>
-                  <span className="text-[10px] text-grey font-mono">
+                  <span className="text-micro text-grey font-mono">
                     {SOURCE_LABELS[lead.source] ?? lead.source}
                     {lead.ticker && <span className="ml-1.5 opacity-60">{lead.ticker}</span>}
                   </span>
@@ -107,7 +107,7 @@ export function LeadTable({ leads, filters, clarityEnacted, onSort, onSelect, lo
                   className="inline-flex items-center gap-1.5"
                   title={`Propensity ${lead.propensityScore ?? 0}/100 × eligibility gate = priority ${lead.priorityScore ?? 0}. Market data ${lead.lastEnrichedAt ? `refreshed ${new Date(lead.lastEnrichedAt).toLocaleDateString()}` : 'not yet enriched'}.`}
                 >
-                  <span className="rounded bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 text-[10px] font-bold text-indigo-700 dark:text-indigo-300 font-mono">
+                  <span className="rounded bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 text-micro font-bold text-indigo-700 dark:text-indigo-300 font-mono">
                     {lead.priorityScore ?? 0}
                   </span>
                   <span
@@ -156,10 +156,10 @@ export function LeadTable({ leads, filters, clarityEnacted, onSort, onSelect, lo
 
 function MarketRecommendationBadge({ value }: { value: RecommendedMarket | null }) {
   if (!value || value === 'none') {
-    return <span className="text-grey text-[10px]">—</span>;
+    return <span className="text-grey text-micro">—</span>;
   }
   return (
-    <span className={clsx('inline-block rounded-full px-2 py-0.5 text-[10px] font-bold', MARKET_RECOMMENDATION_COLORS[value])}>
+    <span className={clsx('inline-block rounded-full px-2 py-0.5 text-micro font-bold', MARKET_RECOMMENDATION_COLORS[value])}>
       {MARKET_RECOMMENDATION_LABELS[value]}
     </span>
   );
@@ -167,11 +167,11 @@ function MarketRecommendationBadge({ value }: { value: RecommendedMarket | null 
 
 function ContactStatus({ peopleCount, verifiedCount }: { peopleCount: number; verifiedCount: number }) {
   if (peopleCount === 0) {
-    return <span className="text-grey text-[10px]">None</span>;
+    return <span className="text-grey text-micro">None</span>;
   }
   const pct = Math.round((verifiedCount / peopleCount) * 100);
   return (
-    <span className="inline-flex items-center gap-1.5 text-[10px]">
+    <span className="inline-flex items-center gap-1.5 text-micro">
       <span className={clsx(
         'h-1.5 w-1.5 rounded-full shrink-0',
         pct >= 100 ? 'bg-emerald-500' : pct >= 50 ? 'bg-amber-500' : 'bg-red-500',

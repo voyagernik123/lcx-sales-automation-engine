@@ -6,6 +6,8 @@ import { fetchBdPipeline } from '@/lib/api/bd';
 import { LeadTable } from '@/components/bd';
 import { Target, Search, RotateCcw } from 'lucide-react';
 import { clsx } from 'clsx';
+import { Button } from '@/components/ui';
+import { TableSkeleton } from '@/components/shared';
 import type { ScoreBand } from '@lcx/shared';
 import type { Market, BdLead } from '@/types/bd';
 
@@ -118,12 +120,12 @@ export function BdPipeline() {
         </h1>
 
         <div className="flex items-center gap-2 ml-auto">
-          <span className="text-[10px] text-grey font-mono">{total} leads</span>
+          <span className="text-micro text-grey font-mono">{total} leads</span>
 
           <button
             onClick={() => toggleFilterStoreField('clarityEnacted')}
             className={clsx(
-              'flex items-center gap-1.5 rounded-full border px-3 py-1 text-[10px] font-bold transition-all duration-300',
+              'flex items-center gap-1.5 rounded-full border px-3 py-1 text-micro font-bold transition-all duration-300',
               clarityEnacted
                 ? 'border-cyan-500 bg-cyan-500/10 text-cyan-600 dark:border-cyan-400 dark:bg-cyan-400/10 dark:text-cyan-400 shadow-sm shadow-cyan-500/10'
                 : 'border-line text-grey hover:bg-ice-soft',
@@ -178,7 +180,7 @@ export function BdPipeline() {
           ))}
         </select>
 
-        <label className="flex items-center gap-1.5 text-[10px] text-grey cursor-pointer select-none">
+        <label className="flex items-center gap-1.5 text-micro text-grey cursor-pointer select-none">
           <input
             type="checkbox"
             checked={listedOnLcx === true}
@@ -188,7 +190,7 @@ export function BdPipeline() {
           Listed on LCX
         </label>
 
-        <label className="flex items-center gap-1.5 text-[10px] text-grey cursor-pointer select-none">
+        <label className="flex items-center gap-1.5 text-micro text-grey cursor-pointer select-none">
           <input
             type="checkbox"
             checked={hasContact === true}
@@ -210,7 +212,7 @@ export function BdPipeline() {
           <option value="none">Unclear</option>
         </select>
 
-        <div className="flex items-center gap-1.5 text-[10px] text-grey">
+        <div className="flex items-center gap-1.5 text-micro text-grey">
           <span>Min score:</span>
           <input
             type="number"
@@ -225,7 +227,7 @@ export function BdPipeline() {
         {hasActiveFilters && (
           <button
             onClick={resetFilters}
-            className="flex items-center gap-1 text-[10px] font-bold text-red-500 hover:text-red-600 transition-colors"
+            className="flex items-center gap-1 text-micro font-bold text-red-500 hover:text-red-600 transition-colors"
           >
             <RotateCcw size={11} />
             Clear
@@ -235,7 +237,7 @@ export function BdPipeline() {
 
       {/* DISCLAIMER */}
       <div className="shrink-0 flex items-center gap-2 px-4 py-1.5 border-b border-line bg-amber-50/50 dark:bg-amber-950/10">
-        <span className="text-[10px] text-amber-700 dark:text-amber-400 leading-tight">
+        <span className="text-micro text-amber-700 dark:text-amber-400 leading-tight">
           ⚠ Scores and market recommendations are planning heuristics only — not legal advice. US scoring weighs pre/post CLARITY scenarios. Consult qualified counsel for regulatory decisions.
         </span>
       </div>
@@ -243,11 +245,8 @@ export function BdPipeline() {
       {/* TABLE AREA */}
       <div className="flex-1 overflow-auto">
         {loading && (
-          <div className="flex items-center justify-center py-20">
-            <div className="flex items-center gap-2 text-grey">
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-cyan-500 border-t-transparent" />
-              <span className="text-sm">Loading leads...</span>
-            </div>
+          <div className="p-4">
+            <TableSkeleton rows={12} cols={6} />
           </div>
         )}
 
@@ -255,12 +254,9 @@ export function BdPipeline() {
           <div className="flex flex-col items-center justify-center py-20 text-red-500">
             <p className="text-sm font-semibold">Failed to load leads</p>
             <p className="text-xs mt-1 text-grey">{error}</p>
-            <button
-              onClick={loadLeads}
-              className="mt-3 rounded border border-red-200 px-3 py-1 text-xs font-bold hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors"
-            >
+            <Button variant="secondary" size="sm" className="mt-3" onClick={loadLeads}>
               Retry
-            </button>
+            </Button>
           </div>
         )}
 
@@ -274,26 +270,18 @@ export function BdPipeline() {
               onSelect={handleSelect}
               loading={false}
             />
-            <div className="flex items-center justify-between px-1 py-2 text-[10px] text-grey">
+            <div className="flex items-center justify-between px-1 py-2 text-micro text-grey">
               <span>
                 {total === 0 ? 'No leads' : `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} of ${total}`}
               </span>
               <div className="flex items-center gap-1.5">
-                <button
-                  disabled={page === 0}
-                  onClick={() => setPage((p) => Math.max(0, p - 1))}
-                  className="rounded border border-line px-2 py-1 font-bold disabled:opacity-40 hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-                >
+                <Button variant="secondary" size="xs" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
                   ← Prev
-                </button>
+                </Button>
                 <span className="font-mono">page {page + 1}/{Math.max(1, Math.ceil(total / PAGE_SIZE))}</span>
-                <button
-                  disabled={(page + 1) * PAGE_SIZE >= total}
-                  onClick={() => setPage((p) => p + 1)}
-                  className="rounded border border-line px-2 py-1 font-bold disabled:opacity-40 hover:bg-ice-soft dark:hover:bg-ice-soft/10"
-                >
+                <Button variant="secondary" size="xs" disabled={(page + 1) * PAGE_SIZE >= total} onClick={() => setPage((p) => p + 1)}>
                   Next →
-                </button>
+                </Button>
               </div>
             </div>
           </>
