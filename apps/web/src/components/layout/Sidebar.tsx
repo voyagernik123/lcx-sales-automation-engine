@@ -17,7 +17,8 @@ interface NavItem {
 interface NavSection {
   title: string;
   items: NavItem[];
-  collapsible?: boolean;
+  /** Defaults to true if omitted — nearly every section is user-collapsible. */
+  defaultOpen?: boolean;
 }
 
 const sections: NavSection[] = [
@@ -62,7 +63,7 @@ const sections: NavSection[] = [
   },
   {
     title: 'Regulatory Toolkit',
-    collapsible: true,
+    defaultOpen: false,
     items: [
       { to: '/', label: 'Dashboard', icon: LayoutDashboard },
       { to: '/ontology', label: 'Ontology Explorer', icon: GitBranch },
@@ -99,7 +100,9 @@ export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUIStore();
   const { selectedStatuses, selectedPhases, selectedDomains, toggleArrayFilter, resetFilters } = useFilterStore();
   const { resolvedRemediations } = useAuditStore();
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(sections.map(s => [s.title, s.defaultOpen ?? true])),
+  );
 
   const unresolvedCount = redFlags.filter(rf => {
     if (rf.risk !== 'Critical' && rf.risk !== 'High') return false;
@@ -146,21 +149,19 @@ export function Sidebar() {
       </div>
       <nav className="flex-1 p-2 space-y-1">
         {sections.map(section => {
-          const isOpen = section.collapsible ? (openSections[section.title] ?? false) : true;
+          const isOpen = openSections[section.title] ?? true;
           return (
             <div key={section.title} className="pb-1">
-              {!sidebarCollapsed &&
-                (section.collapsible ? (
-                  <button
-                    onClick={() => setOpenSections(s => ({ ...s, [section.title]: !isOpen }))}
-                    className="flex w-full items-center justify-between px-2 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-grey hover:text-navy"
-                  >
-                    {section.title}
-                    <ChevronDown size={12} className={clsx('transition-transform', !isOpen && '-rotate-90')} />
-                  </button>
-                ) : (
-                  <h3 className="px-2 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-grey">{section.title}</h3>
-                ))}
+              {!sidebarCollapsed && (
+                <button
+                  onClick={() => setOpenSections(s => ({ ...s, [section.title]: !isOpen }))}
+                  className="flex w-full items-center justify-between px-2 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-grey hover:text-navy"
+                  aria-expanded={isOpen}
+                >
+                  {section.title}
+                  <ChevronDown size={12} className={clsx('transition-transform', !isOpen && '-rotate-90')} />
+                </button>
+              )}
               {sidebarCollapsed && <div className="mx-2 my-2 border-t border-line" />}
               {(sidebarCollapsed || isOpen) && <div className="space-y-0.5">{section.items.map(renderItem)}</div>}
             </div>
