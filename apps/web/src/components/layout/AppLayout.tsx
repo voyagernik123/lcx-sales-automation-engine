@@ -1,20 +1,23 @@
 import { useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, Navigate } from 'react-router-dom';
 import { TopNav } from './TopNav';
 import { Sidebar } from './Sidebar';
 import { MainContent } from './MainContent';
 import { Footer } from './Footer';
 import { ErrorBoundary, ToastContainer, CommandPalette, useCommandPalette } from '@/components/shared';
-import { useUIStore } from '@/stores/useUIStore';
+import { useUIStore, useOperatorStore } from '@/stores';
 
 export function AppLayout() {
   const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed);
   const darkMode = useUIStore(s => s.darkMode);
+  const operator = useOperatorStore(s => s.operator);
   const { open, setOpen } = useCommandPalette();
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
+
+  if (!operator) return <Navigate to="/select" replace />;
 
   return (
     <div className="flex h-screen flex-col bg-page text-navy">

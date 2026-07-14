@@ -63,7 +63,7 @@ const sections: NavSection[] = [
     title: 'Regulatory Toolkit',
     defaultOpen: false,
     items: [
-      { to: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { to: '/regulatory-dashboard', label: 'Regulatory Dashboard', icon: LayoutDashboard },
       { to: '/ontology', label: 'Ontology Explorer', icon: GitBranch },
       { to: '/states', label: 'State Map', icon: Map },
       { to: '/products', label: 'Product Matrix', icon: Grid3X3 },

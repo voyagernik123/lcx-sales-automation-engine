@@ -1,13 +1,15 @@
 import { createBrowserRouter } from 'react-router-dom';
 import { AppLayout } from '@/components/layout';
-import { Dashboard, OntologyExplorer, StateMap, ProductMatrix, Simulator, Settings, HoweyCalculator, ScenarioPlanner, ReadinessStack, BriefGenerator, CapitalEstimator, Roadmap, RedFlags, CompetitionAnalysis, ProductIntelligence, BdPipeline, LeadDetail, ClaimLibrary, Handoffs, SendQueue, ExchangeGaps, DealBoard, MyTasks, MarketMap, Customer360, Notes, WinLoss, AiTools, OutreachOps, DealDesk, Integrations, BoardReport, MarketNews, ReportBuilder, KpiDashboard, AuditLog } from '@/pages';
+import { Dashboard, Home, SelectOperator, OntologyExplorer, StateMap, ProductMatrix, Simulator, Settings, HoweyCalculator, ScenarioPlanner, ReadinessStack, BriefGenerator, CapitalEstimator, Roadmap, RedFlags, CompetitionAnalysis, ProductIntelligence, BdPipeline, LeadDetail, ClaimLibrary, Handoffs, SendQueue, ExchangeGaps, DealBoard, MyTasks, MarketMap, Customer360, Notes, WinLoss, AiTools, OutreachOps, DealDesk, Integrations, BoardReport, MarketNews, ReportBuilder, KpiDashboard, AuditLog } from '@/pages';
 
 export const router = createBrowserRouter([
+  { path: '/select', element: <SelectOperator /> },
   {
     path: '/',
     element: <AppLayout />,
     children: [
-      { index: true, element: <Dashboard /> },
+      { index: true, element: <Home /> },
+      { path: 'regulatory-dashboard', element: <Dashboard /> },
       { path: 'ontology', element: <OntologyExplorer /> },
       { path: 'states', element: <StateMap /> },
       { path: 'products', element: <ProductMatrix /> },

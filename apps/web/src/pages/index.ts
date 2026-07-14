@@ -1,4 +1,6 @@
 export { Dashboard } from './Dashboard';
+export { Home } from './Home';
+export { SelectOperator } from './SelectOperator';
 export { OntologyExplorer } from './OntologyExplorer';
 export { StateMap } from './StateMap';
 export { ProductMatrix } from './ProductMatrix';

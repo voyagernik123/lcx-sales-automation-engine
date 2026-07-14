@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Sun, Moon, ShieldCheck } from 'lucide-react';
-import { useUIStore } from '@/stores/useUIStore';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Sun, Moon, LogOut, ChevronDown } from 'lucide-react';
+import { useUIStore, useOperatorStore } from '@/stores';
 import { NotificationBell } from './NotificationBell';
 import { useFilterStore } from '@/stores/useFilterStore';
 import { states, products, redFlags } from '@/data';
@@ -30,17 +30,24 @@ interface SearchResult {
 export function TopNav() {
   const { darkMode, toggleDarkMode } = useUIStore();
   const { setFilter } = useFilterStore();
+  const operator = useOperatorStore(s => s.operator);
+  const navigate = useNavigate();
   const { pathname } = useLocation();
   const breadcrumbs = pathname.split('/').filter(Boolean).map(p => routeLabels[p] || (p.charAt(0).toUpperCase() + p.slice(1)));
 
   const [localSearch, setLocalSearch] = useState('');
   const [showDropdown, setShowDropdown] = useState(false);
+  const [showOperatorMenu, setShowOperatorMenu] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const operatorMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
         setShowDropdown(false);
+      }
+      if (operatorMenuRef.current && !operatorMenuRef.current.contains(e.target as Node)) {
+        setShowOperatorMenu(false);
       }
     }
     document.addEventListener('mousedown', handleClick);
@@ -90,7 +97,7 @@ export function TopNav() {
       </Link>
       <nav className="flex items-center text-sm text-ice/70">
         <span>/</span>
-        {breadcrumbs.length === 0 ? <span className="ml-1">Dashboard</span> : breadcrumbs.map((c,i) => <span key={c} className="ml-1">{c}{i<breadcrumbs.length-1?'/':''}</span>)}
+        {breadcrumbs.length === 0 ? <span className="ml-1">Home</span> : breadcrumbs.map((c,i) => <span key={c} className="ml-1">{c}{i<breadcrumbs.length-1?'/':''}</span>)}
       </nav>
       <div className="flex-1 flex justify-center">
         <span className="text-[10px] font-medium text-ice/50 tracking-wide uppercase">
@@ -140,9 +147,35 @@ export function TopNav() {
             <Moon size={18} className="transition-transform duration-500 hover:-rotate-12" />
           )}
         </button>
-        <div className="flex items-center gap-1.5 rounded-full bg-ice/15 px-2.5 py-1 text-xs font-bold text-ice select-none">
-          <ShieldCheck size={14} className="text-status-ready" />
-          <span>CCO</span>
+        <div className="relative" ref={operatorMenuRef}>
+          <button
+            onClick={() => setShowOperatorMenu(o => !o)}
+            className="flex items-center gap-1.5 rounded-full bg-ice/15 pl-1 pr-2 py-1 text-xs font-bold text-ice select-none hover:bg-ice/25 transition-colors"
+          >
+            {operator ? (
+              <span
+                className="flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white"
+                style={{ backgroundColor: operator.colorVar }}
+              >
+                {operator.initials}
+              </span>
+            ) : (
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-grey/40 text-[10px] font-bold text-white">?</span>
+            )}
+            <span>{operator?.name ?? 'Sign in'}</span>
+            <ChevronDown size={12} className="text-ice/50" />
+          </button>
+          {showOperatorMenu && (
+            <div className="absolute right-0 top-full mt-1 w-44 bg-card border border-line rounded-lg shadow-xl z-50 overflow-hidden">
+              <button
+                onClick={() => { setShowOperatorMenu(false); navigate('/select'); }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-navy dark:text-ice hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+              >
+                <LogOut size={12} />
+                Switch identity
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </header>
