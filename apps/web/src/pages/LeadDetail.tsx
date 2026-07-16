@@ -8,6 +8,11 @@ import { toast } from '@/components/shared/Toast';
 import { EmptyState, CardSkeleton } from '@/components/shared';
 import { SectionLabel, Button } from '@/components/ui';
 import { ScoreBadge, BandBadge, MarketTag } from '@/components/bd';
+import { PropensityTrail } from '@/components/bd/PropensityTrail';
+import { UsIntelGauges } from '@/components/bd/UsIntelGauges';
+import { GateBanner, useGateCheck } from '@/components/bd/GateBanner';
+import { PriorityEquation } from '@/components/bd/PriorityEquation';
+import { StructuredPayload } from '@/components/bd/StructuredPayload';
 import { deriveMarketTag, CHANNEL_LABELS, TOUCH_LABELS, STAGE_COLORS, STAGE_LABELS } from '@/types/bd';
 import type { LeadDetail, LeadSignal, LeadPerson, DraftOutput, SavedDraft, Channel, SequenceRecord, MessageRecord } from '@/types/bd';
 import { SEQUENCE_STATUS_COLORS, MESSAGE_STATUS_COLORS, LINKEDIN_STATUS_COLORS } from '@/types/bd';
@@ -62,6 +67,7 @@ export function LeadDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { clarityEnacted } = useFilterStore();
+  const gateState = useGateCheck(id);
 
   const [lead, setLead] = useState<LeadDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -373,17 +379,28 @@ export function LeadDetail() {
   const usLabel = clarityEnacted ? 'US (Post-CLARITY)' : 'US (Pre-CLARITY)';
 
   // Guided workflow: the single next action that moves this lead forward.
+  // The outreach gate (checkGate) feeds in: a blocked gate outranks
+  // approve/enroll because the API would reject the enrollment anyway.
   const hasContact = lead.people.some(p => p.email);
   const hasActiveSequence = sequences.some(s => s.status === 'active');
+  const gateBlocked = gateState.gate != null && !gateState.gate.pass;
   const nextStep = isSuppressed
     ? null
     : !hasContact
       ? { label: 'Next: find a contact email', anchor: 'Find Contact Email' }
-      : !isApproved
-        ? { label: 'Next: approve for outreach', anchor: 'Approve for Outreach' }
-        : !hasActiveSequence
-          ? { label: 'Next: enroll in a sequence', anchor: 'Sequences' }
-          : { label: 'Sequence running — watch for replies', anchor: null };
+      : gateBlocked
+        ? {
+            label: `Next: clear outreach gate (${gateState.gate!.reasons.length} blocker${gateState.gate!.reasons.length === 1 ? '' : 's'})`,
+            anchor: 'gate',
+          }
+        : !isApproved
+          ? { label: 'Next: approve for outreach', anchor: 'Approve for Outreach' }
+          : !hasActiveSequence
+            ? { label: 'Next: enroll in a sequence', anchor: 'Sequences' }
+            : { label: 'Sequence running — watch for replies', anchor: null };
+
+  const scrollToEl = (elId: string) =>
+    document.getElementById(elId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 
   return (
     <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy overflow-hidden">
@@ -492,17 +509,30 @@ export function LeadDetail() {
           {actionLoading === 'discover' ? 'Crawling site...' : 'Find Contact Email'}
         </button>
 
-        {nextStep && (
+        {nextStep && (nextStep.anchor === 'gate' ? (
+          <button
+            type="button"
+            onClick={() => scrollToEl('lead-gate-banner')}
+            className="ml-auto flex items-center gap-1.5 rounded-full bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-1 text-micro font-bold text-amber-700 dark:text-amber-300 hover:border-amber-400 transition-colors"
+            title="Jump to the gate banner for the exact blockers"
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+            {nextStep.label}
+          </button>
+        ) : (
           <span className="ml-auto flex items-center gap-1.5 rounded-full bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800 px-3 py-1 text-micro font-bold text-cyan-700 dark:text-cyan-300">
             <span className="h-1.5 w-1.5 rounded-full bg-cyan-500 animate-pulse" />
             {nextStep.label}
           </span>
-        )}
+        ))}
       </div>
 
       {/* Content */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-[1200px] mx-auto p-4 space-y-4">
+          {/* Outreach gate — why outreach is (or isn't) allowed right now */}
+          <GateBanner check={gateState} id="lead-gate-banner" />
+
           {/* Identity */}
           <Section icon={<Globe size={14} />} title="Identity">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-label">
@@ -527,22 +557,43 @@ export function LeadDetail() {
 
           {/* Dual Score Breakdown */}
           <Section icon={<Award size={14} />} title="Scoring">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <ScoreCard
-                title="EU / MiCA"
-                score={lead.score?.euScore ?? 0}
-                band={band}
-                reasons={lead.score?.reasons ?? []}
-                clarityEnacted={clarityEnacted}
+            <div className="space-y-4">
+              {/* Priority = propensity × gate, with click-to-why on each term */}
+              <PriorityEquation
+                propensity={lead.score?.propensityScore}
+                priority={lead.score?.priorityScore}
+                euScore={lead.score?.euScore}
+                usPostScore={lead.score?.usPostScore}
+                onExplainPropensity={() => scrollToEl('lead-propensity')}
+                onExplainGate={() => scrollToEl('lead-gate-banner')}
               />
-              <ScoreCard
-                title={usLabel}
-                score={usScore}
-                band={band}
-                reasons={lead.score?.reasons ?? []}
-                clarityEnacted={clarityEnacted}
-                isUs
-              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <PropensityTrail
+                  id="lead-propensity"
+                  score={lead.score?.propensityScore}
+                  reasons={lead.score?.propensityReasons}
+                />
+                <UsIntelGauges signals={lead.score?.usIntelSignals} />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <ScoreCard
+                  title="EU / MiCA"
+                  score={lead.score?.euScore ?? 0}
+                  band={band}
+                  reasons={lead.score?.reasons ?? []}
+                  clarityEnacted={clarityEnacted}
+                />
+                <ScoreCard
+                  title={usLabel}
+                  score={usScore}
+                  band={band}
+                  reasons={lead.score?.reasons ?? []}
+                  clarityEnacted={clarityEnacted}
+                  isUs
+                />
+              </div>
             </div>
           </Section>
 
@@ -686,9 +737,9 @@ export function LeadDetail() {
                         <span className="ml-auto text-[9px] text-grey">{new Date(src.createdAt).toLocaleDateString()}</span>
                       </button>
                       {isOpen && (
-                        <pre className="px-3 py-2 text-micro font-mono leading-relaxed bg-ice-soft dark:bg-navy-deep overflow-x-auto max-h-60">
-                          {JSON.stringify(src.payload, null, 2)}
-                        </pre>
+                        <div className="border-t border-line/50 px-3 py-2 max-h-72 overflow-y-auto">
+                          <StructuredPayload payload={src.payload} />
+                        </div>
                       )}
                     </div>
                   );
@@ -1096,9 +1147,7 @@ function SignalItem({ signal }: { signal: LeadSignal }) {
   const defaultColor = 'border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-900/20 dark:text-slate-400';
   const color = kindColors[signal.kind] || defaultColor;
 
-  const payloadPreview = typeof signal.payload === 'object' && signal.payload !== null
-    ? Object.entries(signal.payload).slice(0, 2).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v).slice(0, 40)}`).join(', ')
-    : '';
+  const hasPayload = typeof signal.payload === 'object' && signal.payload !== null && Object.keys(signal.payload).length > 0;
 
   return (
     <div className={`rounded border px-3 py-2 ${color}`}>
@@ -1106,7 +1155,7 @@ function SignalItem({ signal }: { signal: LeadSignal }) {
         <span className="text-micro font-bold uppercase tracking-wider">{signal.kind.replace(/_/g, ' ')}</span>
         <span className="text-[9px] opacity-60 ml-auto">{new Date(signal.observedAt).toLocaleString()}</span>
       </div>
-      {payloadPreview && <p className="text-[9px] mt-1 opacity-70 font-mono truncate">{payloadPreview}</p>}
+      {hasPayload && <StructuredPayload payload={signal.payload} maxRows={3} className="mt-1.5" />}
     </div>
   );
 }

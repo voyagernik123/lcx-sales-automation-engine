@@ -1,0 +1,81 @@
+import { useNavigate } from 'react-router-dom';
+import { MessageSquare } from 'lucide-react';
+import { computeReplySla, SLA_CLS, type ReplySla } from '@/lib/salesIntel';
+import { useInspect } from '@/stores';
+import { EmptyState } from '@/components/shared';
+import type { HandoffRecord } from '@/types/bd';
+
+export interface OvernightHandoffsProps {
+  handoffs: HandoffRecord[];
+  max?: number;
+}
+
+const SLA_RANK: Record<ReplySla['state'], number> = { breached: 3, urgent: 2, aging: 1, fresh: 0 };
+
+export function SlaChip({ sla }: { sla: ReplySla }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 font-mono text-micro font-bold ${SLA_CLS[sla.state]}`}
+      title={`Reply SLA: ${Math.round(sla.ageHours * 10) / 10}h of a ${sla.budgetHours}h budget`}
+    >
+      <span className="uppercase">{sla.state}</span>
+      {Math.floor(sla.ageHours)}h
+    </span>
+  );
+}
+
+/**
+ * "Overnight & waiting" — open handoffs ranked worst-SLA-first. Every row
+ * opens the handoff inspector in place; the header link goes to the inbox.
+ */
+export function OvernightHandoffs({ handoffs, max = 6 }: OvernightHandoffsProps) {
+  const inspect = useInspect();
+  const navigate = useNavigate();
+
+  const rows = handoffs
+    .map(h => ({ h, sla: computeReplySla(h.createdAt) }))
+    .sort((a, b) => SLA_RANK[b.sla.state] - SLA_RANK[a.sla.state] || b.sla.ageHours - a.sla.ageHours)
+    .slice(0, max);
+
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        variant="done"
+        title="Nothing waiting on you"
+        description="No open replies overnight. Any inbound reply pauses automation and lands here."
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-1">
+      {rows.map(({ h, sla }) => (
+        <button
+          key={h.id}
+          type="button"
+          onClick={() => inspect('handoff', h.id)}
+          className="flex w-full items-center justify-between gap-2 rounded border border-line p-2 text-left transition-colors hover:bg-ice-soft dark:hover:bg-ice-soft/5"
+        >
+          <div className="flex min-w-0 items-center gap-2">
+            <MessageSquare size={12} className="shrink-0 text-grey" />
+            <span className="truncate text-label font-bold text-navy">{h.projectName ?? 'Unknown project'}</span>
+            <span className="shrink-0 rounded bg-ice-soft px-1 py-0.5 text-micro font-bold uppercase text-grey dark:bg-ice-soft/10">
+              {h.channel}
+            </span>
+            {h.personName && <span className="hidden truncate text-micro text-grey sm:inline">{h.personName}</span>}
+          </div>
+          <SlaChip sla={sla} />
+        </button>
+      ))}
+      {handoffs.length > max && (
+        <button
+          type="button"
+          onClick={() => navigate('/outreach')}
+          className="w-full rounded border border-dashed border-line p-1.5 text-center text-micro font-bold text-grey transition-colors hover:text-navy"
+        >
+          +{handoffs.length - max} more in the inbox →
+        </button>
+      )}
+    </div>
+  );
+}

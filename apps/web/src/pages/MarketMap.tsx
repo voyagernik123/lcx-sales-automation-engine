@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ScatterChart as ScatterIcon, RefreshCw, Plus, Minus, AlertTriangle } from 'lucide-react';
+import { ScatterChart as ScatterIcon, RefreshCw, Plus, Minus, AlertTriangle, Star } from 'lucide-react';
 import { fetchMarketMap, type MapPoint } from '@/lib/api/bd';
 import { PageTitle, Button } from '@/components/ui';
 import { ChartSkeleton, EmptyState } from '@/components/shared';
 import { FilterChip } from '@/components/market/FilterChip';
+import { findNewIds, formatSince } from '@/components/market/gapMatrix';
+import { useLastVisit, useWatchlist } from '@/components/market/marketMemory';
+import { useInspect, useInspectorStore } from '@/stores';
 
 const BAND_COLOR: Record<string, string> = {
   immediate: '#dc2626',
@@ -53,12 +56,18 @@ const IDENTITY: Transform = { k: 1, x: 0, y: 0 };
 export function MarketMap() {
   const navigate = useNavigate();
   const clipId = useId();
+  const inspect = useInspect();
+  const closeInspector = useInspectorStore((s) => s.close);
+  const { watched, toggleWatch } = useWatchlist();
+  const { prev, commit } = useLastVisit('map');
   const [points, setPoints] = useState<MapPoint[]>([]);
   const [region, setRegion] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [hiddenBands, setHiddenBands] = useState<Set<string>>(new Set());
   const [hideLcx, setHideLcx] = useState(false);
+  const [watchOnly, setWatchOnly] = useState(false);
+  const [newOnly, setNewOnly] = useState(false);
   const [transform, setTransform] = useState<Transform>(IDENTITY);
   const [panning, setPanning] = useState(false);
   const [hover, setHover] = useState<{ p: MapPoint; x: number; y: number } | null>(null);
@@ -67,18 +76,21 @@ export function MarketMap() {
   const plotRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ px: number; py: number; moved: boolean } | null>(null);
   const suppressClickRef = useRef(false);
+  const hideTimerRef = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      setPoints(await fetchMarketMap({ region: region || undefined }));
+      const data = await fetchMarketMap({ region: region || undefined });
+      setPoints(data);
+      commit(data.map((p) => p.id));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load market map');
     } finally {
       setLoading(false);
     }
-  }, [region]);
+  }, [region, commit]);
 
   useEffect(() => {
     void load();
@@ -89,9 +101,21 @@ export function MarketMap() {
     return BAND_ORDER.filter((b) => present.has(b));
   }, [points]);
 
+  /* screener Δ — map points carry no timestamps, so "new" = entrants
+     (ids never seen on this page before the previous visit's stamp). */
+  const newIds = useMemo(() => findNewIds(points.map((p) => p.id), prev), [points, prev]);
+  const watchingCount = useMemo(() => points.filter((p) => watched.has(p.id)).length, [points, watched]);
+
   const visible = useMemo(
-    () => points.filter((p) => !hiddenBands.has(p.band) && !(hideLcx && p.listedOnLcx)),
-    [points, hiddenBands, hideLcx],
+    () =>
+      points.filter(
+        (p) =>
+          !hiddenBands.has(p.band) &&
+          !(hideLcx && p.listedOnLcx) &&
+          (!watchOnly || watched.has(p.id)) &&
+          (!newOnly || newIds.has(p.id)),
+      ),
+    [points, hiddenBands, hideLcx, watchOnly, watched, newOnly, newIds],
   );
 
   const plotted = useMemo(
@@ -149,11 +173,31 @@ export function MarketMap() {
     setPanning(false);
   }, []);
 
-  const setHoverAt = useCallback((p: MapPoint, e: React.MouseEvent) => {
-    const rect = plotRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setHover({ p, x: e.clientX - rect.left, y: e.clientY - rect.top });
+  /* the tooltip is interactive (watchlist star), so hide on a short delay
+     and cancel while the pointer is over either the dot or the tooltip */
+  const cancelHide = useCallback(() => {
+    if (hideTimerRef.current != null) {
+      window.clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
   }, []);
+
+  const scheduleHide = useCallback(() => {
+    cancelHide();
+    hideTimerRef.current = window.setTimeout(() => setHover(null), 160);
+  }, [cancelHide]);
+
+  useEffect(() => cancelHide, [cancelHide]);
+
+  const setHoverAt = useCallback(
+    (p: MapPoint, e: React.MouseEvent) => {
+      cancelHide();
+      const rect = plotRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      setHover({ p, x: e.clientX - rect.left, y: e.clientY - rect.top });
+    },
+    [cancelHide],
+  );
 
   /* ── axis ticks under the current transform ── */
 
@@ -208,8 +252,9 @@ export function MarketMap() {
 
       <p className="text-micro text-grey">
         Each dot is a project: <b>x</b> = market cap (log), <b>y</b> = priority score, <b>size</b> = propensity,{' '}
-        <b>color</b> = band. Top-left = high-priority small caps (the sweet spot). Drag to pan, use +/− to zoom,
-        double-click to reset. {visible.length} of {points.length} plotted.
+        <b>color</b> = band. Top-left = high-priority small caps (the sweet spot). Click a dot to inspect in
+        place; double-click it for the full dossier. Drag to pan, use +/− to zoom, double-click the background
+        to reset. {visible.length} of {points.length} plotted.
       </p>
 
       {/* band visibility chips + LCX toggle */}
@@ -237,6 +282,24 @@ export function MarketMap() {
           <FilterChip active={hideLcx} title="Hide projects already listed on LCX" onClick={() => setHideLcx((v) => !v)}>
             Hide LCX-listed
           </FilterChip>
+          <FilterChip
+            active={watchOnly}
+            dotColor="#f59e0b"
+            title="Show only watched projects"
+            onClick={() => setWatchOnly((v) => !v)}
+          >
+            Watching ({watchingCount})
+          </FilterChip>
+          {prev && newIds.size > 0 && (
+            <FilterChip
+              active={newOnly}
+              dotColor="#10b981"
+              title="Show only projects that entered the map since your last visit"
+              onClick={() => setNewOnly((v) => !v)}
+            >
+              +{newIds.size} new since {formatSince(prev.ts)}
+            </FilterChip>
+          )}
         </div>
       )}
 
@@ -321,16 +384,39 @@ export function MarketMap() {
                       className="cursor-pointer"
                       onMouseEnter={(e) => setHoverAt(p, e)}
                       onMouseMove={(e) => setHoverAt(p, e)}
-                      onMouseLeave={() => setHover(null)}
+                      onMouseLeave={scheduleHide}
                       onClick={() => {
                         if (suppressClickRef.current) {
                           suppressClickRef.current = false;
                           return;
                         }
+                        inspect('project', p.id);
+                      }}
+                      onDoubleClick={(e) => {
+                        // keep the svg's double-click zoom-reset from firing,
+                        // close the drawer (single clicks opened it), go deep
+                        e.stopPropagation();
+                        closeInspector();
                         navigate(`/bd-pipeline/${p.id}`);
                       }}
                     />
                   ))}
+                  {/* subtle star markers on watched projects */}
+                  {plotted
+                    .filter(({ p }) => watched.has(p.id))
+                    .map(({ p, cx, cy, r }) => (
+                      <text
+                        key={`star-${p.id}`}
+                        x={tx(cx) + r * 0.85 + 2}
+                        y={ty(cy) - r * 0.85}
+                        fontSize="8"
+                        fill="#f59e0b"
+                        textAnchor="middle"
+                        pointerEvents="none"
+                      >
+                        ★
+                      </text>
+                    ))}
                   {visible.length === 0 && (
                     <text x={W / 2} y={H / 2} textAnchor="middle" fontSize="12" fill="currentColor" fillOpacity={0.5}>
                       All points hidden — re-enable a band chip above.
@@ -342,12 +428,28 @@ export function MarketMap() {
               {/* hover tooltip */}
               {hover && (
                 <div
-                  className="pointer-events-none absolute z-10 w-[220px] rounded-md border border-line bg-card p-2 text-label shadow-lg"
+                  className="absolute z-10 w-[220px] rounded-md border border-line bg-card p-2 text-label shadow-lg"
                   style={{ left: tooltipLeft, top: tooltipTop }}
+                  onMouseEnter={cancelHide}
+                  onMouseLeave={() => {
+                    cancelHide();
+                    setHover(null);
+                  }}
                 >
                   <div className="flex items-baseline gap-1.5">
                     <span className="font-bold text-navy">{hover.p.name}</span>
                     {hover.p.ticker && <span className="font-mono text-micro text-grey">{hover.p.ticker}</span>}
+                    <button
+                      type="button"
+                      onClick={() => toggleWatch(hover.p.id)}
+                      title={watched.has(hover.p.id) ? 'Remove from watchlist' : 'Add to watchlist'}
+                      aria-pressed={watched.has(hover.p.id)}
+                      className={`ml-auto shrink-0 rounded p-0.5 transition-colors ${
+                        watched.has(hover.p.id) ? 'text-amber-500' : 'text-grey/40 hover:text-amber-500'
+                      }`}
+                    >
+                      <Star size={12} fill={watched.has(hover.p.id) ? 'currentColor' : 'none'} />
+                    </button>
                   </div>
                   <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 text-grey">
                     <span>Market cap</span>
@@ -410,6 +512,12 @@ export function MarketMap() {
         <span className="inline-flex items-center gap-1">
           <span className="h-2.5 w-2.5 rounded-full border-2 border-emerald-600 dark:border-emerald-400" /> ringed green
           = listed on LCX
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <Star size={10} className="text-amber-500" fill="currentColor" /> = watching (star in the tooltip to toggle)
+        </span>
+        <span className="inline-flex items-center gap-1">
+          click = inspect · double-click = full dossier
         </span>
       </div>
     </div>

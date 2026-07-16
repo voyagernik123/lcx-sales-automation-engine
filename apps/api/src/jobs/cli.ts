@@ -8,9 +8,10 @@
  *   discover_new_tokens  daily  — GeckoTerminal new pools
  *   market_refresh       daily  — CG bulk markets + paprika staged → typed columns
  *   score_refresh        daily  — paged batch re-score of every project
- *   kpi_snapshot         daily  — persist today's KPI dashboard numbers
+ *   kpi_snapshot         daily  — persist today's KPI dashboard numbers (+ forecast)
  *   signals_prune        weekly — bound the signals table
  *   exchange_sync        daily  — competitive exchange listings for top-priority projects
+ *   weekly_digest        weekly — one in-app digest notification (risk/handoffs/stalled)
  *
  * Env: DATABASE_URL (required for remote), COINGECKO_API_KEY, COINGECKO_KEY_TYPE
  */
@@ -131,13 +132,26 @@ async function main() {
         console.log(JSON.stringify(r.stats));
         break;
       }
+      case 'weekly_digest': {
+        const { runWeeklyDigest } = await import('../notifications/digest.js');
+        const r = await withJobRun(pool, job, async () => {
+          const res = await runWeeklyDigest(pool);
+          return { stats: res as unknown as Record<string, unknown> };
+        });
+        console.log(JSON.stringify(r.stats));
+        break;
+      }
       default:
         console.error(`Unknown job: ${job}`);
-        console.error('Jobs: universe_sync | discover_new_tokens | market_refresh | score_refresh | kpi_snapshot | signals_prune | exchange_sync | daily_rules | news_refresh | anomaly_scan');
+        console.error('Jobs: universe_sync | discover_new_tokens | market_refresh | score_refresh | kpi_snapshot | signals_prune | exchange_sync | daily_rules | news_refresh | anomaly_scan | weekly_digest');
         process.exit(1);
     }
   } finally {
     await pool.end();
+    // Some services (kpi snapshot, notifications) use the app-level pool via
+    // getDb() — close it too so the process exits promptly.
+    const { closeDb } = await import('../db/index.js');
+    await closeDb();
   }
 }
 

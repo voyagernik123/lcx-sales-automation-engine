@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Sun, Moon, LogOut, ChevronDown } from 'lucide-react';
 import { useUIStore, useOperatorStore } from '@/stores';
 import { NotificationBell } from './NotificationBell';
+import { KpiTicker } from './KpiTicker';
 import { useFilterStore } from '@/stores/useFilterStore';
 import { states, products, redFlags } from '@/data';
 
@@ -100,9 +101,7 @@ export function TopNav() {
         {breadcrumbs.length === 0 ? <span className="ml-1">Home</span> : breadcrumbs.map((c,i) => <span key={c} className="ml-1">{c}{i<breadcrumbs.length-1?'/':''}</span>)}
       </nav>
       <div className="flex-1 flex justify-center">
-        <span className="text-[10px] font-medium text-ice/50 tracking-wide uppercase">
-          Strictly Confidential · Prepared for CEO Review
-        </span>
+        <KpiTicker />
       </div>
       <div className="ml-auto flex items-center gap-3">
         <div className="relative" ref={dropdownRef}>

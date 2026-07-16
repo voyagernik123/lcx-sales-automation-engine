@@ -4,7 +4,6 @@ import { requireOperator } from '../middleware/auth.js';
 import { env } from '../lib/env.js';
 import { sql } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
-import { monteCarloForecast, dealWinProbability } from '@lcx/shared';
 import {
   computeKpis,
   createPostListingTriggers,
@@ -12,6 +11,8 @@ import {
   updateTriggerStatus,
   kpisToCsv,
 } from '../kpi/service.js';
+import { computeForecast } from '../kpi/forecast.js';
+import { isUndefinedColumn } from '../lib/pg.js';
 
 export const kpiRoutes = new Hono<{ Variables: AuthVariables }>();
 
@@ -106,48 +107,55 @@ kpiRoutes.get('/history', requireOperator, async (c) => {
 /** GET /v1/kpis/forecast — win probability per open deal + Monte Carlo quarter. */
 kpiRoutes.get('/forecast', requireOperator, async (c) => {
   try {
-    const db = getDb();
-    const result = await db.execute(sql`
-      SELECT d.id, d.stage, d.package_value, p.name AS project_name,
-             COALESCE(s.priority_score, 0) AS priority_score,
-             FLOOR(EXTRACT(EPOCH FROM (NOW() - d.updated_at)) / 86400) AS days_since_update
-      FROM deals d
-      JOIN projects p ON p.id = d.project_id
-      LEFT JOIN scores s ON s.project_id = d.project_id
-      WHERE d.stage NOT IN ('won', 'lost')
-    `);
-
-    const inputs = (result.rows ?? []).map((r: Record<string, unknown>) => ({
-      id: String(r.id),
-      stage: String(r.stage),
-      packageValueCents: r.package_value != null ? Number(r.package_value) : null,
-      priorityScore: Number(r.priority_score ?? 0),
-      daysSinceUpdate: Number(r.days_since_update ?? 0),
-      projectName: String(r.project_name),
-    }));
-
-    const mc = monteCarloForecast(inputs, { runs: 10_000 });
+    const forecast = await computeForecast();
     return c.json({
-      data: {
-        runs: mc.runs,
-        p10: mc.p10Cents / 100,
-        p50: mc.p50Cents / 100,
-        p90: mc.p90Cents / 100,
-        expected: mc.expectedCents / 100,
-        deals: inputs.map((d) => ({
-          id: d.id,
-          projectName: d.projectName,
-          stage: d.stage,
-          value: (d.packageValueCents ?? 0) / 100,
-          winProbability: Math.round(dealWinProbability(d) * 100),
-          daysSinceUpdate: d.daysSinceUpdate,
-        })).sort((a, b) => b.winProbability * b.value - a.winProbability * a.value),
-      },
+      data: forecast,
       meta: { timestamp: new Date().toISOString(), version: env.version },
     });
   } catch (err) {
     console.error('[kpis] forecast error:', err);
     return c.json({ error: 'Failed to compute forecast', code: 'FORECAST_ERROR' }, 500);
+  }
+});
+
+/**
+ * GET /v1/kpis/forecast-history?days=90 — stored daily forecast snapshots
+ * ({p10,p50,p90,expected} written by the kpi_snapshot job, migration 0028).
+ * Degrades to an empty list when the forecast column is missing.
+ */
+kpiRoutes.get('/forecast-history', requireOperator, async (c) => {
+  const raw = Number.parseInt(c.req.query('days') ?? '90', 10);
+  const days = Number.isFinite(raw) ? Math.min(Math.max(raw, 1), 365) : 90;
+  const cutoff = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+
+  try {
+    const db = getDb();
+    const result = await db.execute(sql`
+      SELECT to_char(snapshot_date, 'YYYY-MM-DD') AS snapshot_date, forecast
+      FROM kpi_daily_snapshots
+      WHERE forecast IS NOT NULL AND snapshot_date >= ${cutoff}
+      ORDER BY snapshot_date ASC
+    `);
+
+    const n = (v: unknown) => Number(v ?? 0);
+    const data = (result.rows ?? []).map((r: Record<string, unknown>) => {
+      const f = (r.forecast ?? {}) as Record<string, unknown>;
+      return {
+        date: String(r.snapshot_date),
+        p10: n(f.p10),
+        p50: n(f.p50),
+        p90: n(f.p90),
+        expected: n(f.expected),
+      };
+    });
+
+    return c.json({ data, meta: { days, timestamp: new Date().toISOString(), version: env.version } });
+  } catch (err) {
+    if (isUndefinedColumn(err)) {
+      return c.json({ data: [], meta: { days, timestamp: new Date().toISOString(), version: env.version } });
+    }
+    console.error('[kpis] forecast-history error:', err);
+    return c.json({ error: 'Failed to load forecast history', code: 'QUERY_ERROR' }, 500);
   }
 });
 

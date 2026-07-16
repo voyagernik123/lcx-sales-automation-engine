@@ -20,6 +20,10 @@ import { request } from '@/lib/apiClient';
 import { PageTitle, SectionLabel, Button } from '@/components/ui';
 import { PageSkeleton, EmptyState } from '@/components/shared';
 import { BandBadge } from '@/components/bd';
+import { PropensityTrail } from '@/components/bd/PropensityTrail';
+import { GateBanner, useGateCheck } from '@/components/bd/GateBanner';
+import { PriorityEquation } from '@/components/bd/PriorityEquation';
+import { useInspect } from '@/stores';
 import {
   fetchProjectSequences,
   fetchProjectMessages,
@@ -29,9 +33,9 @@ import {
   type TimelineEntry,
   type OperatorTask,
 } from '@/lib/api/bd';
-import type { HandoffRecord, MessageRecord, SequenceRecord } from '@/types/bd';
+import type { HandoffRecord, MessageRecord, SequenceRecord, UsIntelSignals } from '@/types/bd';
 import { SEQUENCE_STATUS_COLORS, MESSAGE_STATUS_COLORS } from '@/types/bd';
-import type { ScoreBand } from '@lcx/shared';
+import type { ScoreBand, ReasonTrail } from '@lcx/shared';
 
 /* ── Types (mirror GET /v1/projects/:id/360) ── */
 
@@ -66,6 +70,9 @@ type Customer360Data = {
     recommendedMarket: string | null;
     reasons: unknown[];
     computedAt: string;
+    /* Optional until the re-score lands — render only when present. */
+    propensityReasons?: ReasonTrail[];
+    usIntelSignals?: UsIntelSignals;
   } | null;
   people: {
     id: string;
@@ -306,6 +313,8 @@ async function loadExtras(id: string): Promise<Extras> {
 
 export function Customer360() {
   const { id } = useParams<{ id: string }>();
+  const inspect = useInspect();
+  const gateState = useGateCheck(id);
   const [data, setData] = useState<Customer360Data | null>(null);
   const [extras, setExtras] = useState<Extras>(EMPTY_EXTRAS);
   const [loading, setLoading] = useState(true);
@@ -450,10 +459,16 @@ export function Customer360() {
           {people.length === 0 ? (
             <NoneYet label="None yet." to={`/bd-pipeline/${project.id}`} cta="Add contacts on the lead" />
           ) : (
-            <div className="space-y-1.5">
+            <div className="space-y-1">
               {people.map((p) => (
-                <div key={p.id} className="flex flex-wrap items-center gap-2 text-label">
-                  <span className="font-semibold">{p.name}</span>
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => inspect('contact', `${project.id}:${p.id}`)}
+                  title="Inspect contact"
+                  className="flex w-full flex-wrap items-center gap-2 rounded border border-transparent px-1.5 py-1 text-left text-label hover:border-line hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+                >
+                  <span className="font-semibold text-navy">{p.name}</span>
                   {p.title && <span className="text-grey">· {p.title}</span>}
                   <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-grey dark:bg-slate-800">
                     {p.role}
@@ -462,7 +477,7 @@ export function Customer360() {
                     <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">verified</span>
                   )}
                   {p.email && <span className="ml-auto text-grey">{p.email}</span>}
-                </div>
+                </button>
               ))}
             </div>
           )}
@@ -489,6 +504,20 @@ export function Customer360() {
                 <span className="text-xs text-grey">{score.reasons.length} scoring reason(s)</span>
               )}
             </div>
+            <div className="mb-3">
+              <PriorityEquation
+                propensity={score.propensityScore}
+                priority={score.priorityScore}
+                euScore={score.euScore}
+                usPostScore={score.usPostScore}
+                onExplainPropensity={() =>
+                  document.getElementById('c360-propensity')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                }
+                onExplainGate={() =>
+                  document.getElementById('c360-gate-banner')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                }
+              />
+            </div>
             <div className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
               <ScoreStat label="Priority" value={score.priorityScore} />
               <ScoreStat label="Propensity" value={score.propensityScore} />
@@ -496,9 +525,22 @@ export function Customer360() {
               <ScoreStat label="US pre-CLARITY" value={score.usPreScore} />
               <ScoreStat label="US post-CLARITY" value={score.usPostScore} />
             </div>
+            <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
+              <PropensityTrail
+                id="c360-propensity"
+                score={score.propensityScore}
+                reasons={score.propensityReasons}
+              />
+              <div className="space-y-2">
+                <GateBanner check={gateState} id="c360-gate-banner" />
+              </div>
+            </div>
           </>
         ) : (
-          <NoneYet label="None yet." to={`/bd-pipeline/${project.id}`} cta="Trigger a re-score on the lead" />
+          <div className="space-y-3">
+            <NoneYet label="None yet." to={`/bd-pipeline/${project.id}`} cta="Trigger a re-score on the lead" />
+            <GateBanner check={gateState} id="c360-gate-banner" />
+          </div>
         )}
       </SectionCard>
 

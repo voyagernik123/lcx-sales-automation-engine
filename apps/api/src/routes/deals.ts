@@ -12,8 +12,87 @@ import { createPostListingTriggers } from '../kpi/service.js';
 import { createStageTask } from '../tasks/service.js';
 import { createLaunchpadTasks } from '../tasks/launchpad.js';
 import { notify } from '../notifications/service.js';
+import { isUndefinedColumn } from '../lib/pg.js';
 
 export const dealRoutes = new Hono<{ Variables: AuthVariables }>();
+
+/** Valid deal-playbook step codes (Terms, KYB, Legal, Contract, Onboarding). */
+const PLAYBOOK_STEPS = ['T', 'K', 'L', 'C', 'O'] as const;
+
+/**
+ * GET /v1/deals/:id/playbook — completed playbook steps for a deal.
+ * Reads deals.playbook->'done' (migration 0028). When the column is missing
+ * (production lagging the migration) degrades to 200 { done: [], persisted: false }.
+ */
+dealRoutes.get('/:id/playbook', requireOperator, async (c) => {
+  const db = getDb();
+  const { id } = c.req.param();
+
+  try {
+    const result = await db.execute(sql`SELECT playbook FROM deals WHERE id = ${id}`);
+    if (!result.rows || result.rows.length === 0) {
+      return c.json({ error: 'Deal not found', code: 'NOT_FOUND' }, 404);
+    }
+    const playbook = ((result.rows[0] as Record<string, unknown>).playbook ?? {}) as { done?: unknown };
+    const done = Array.isArray(playbook.done)
+      ? playbook.done.filter((s): s is string => typeof s === 'string')
+      : [];
+    return c.json({ data: { done }, meta: { timestamp: new Date().toISOString(), version: env.version } });
+  } catch (err) {
+    if (isUndefinedColumn(err)) {
+      return c.json({ data: { done: [], persisted: false }, meta: { timestamp: new Date().toISOString(), version: env.version } });
+    }
+    throw err; // onError maps pg codes (bad UUID → 400 etc.)
+  }
+});
+
+/**
+ * PATCH /v1/deals/:id/playbook — set completed playbook steps.
+ * Body: { done: string[] } — subset of T/K/L/C/O. When the playbook column is
+ * missing → 409 PLAYBOOK_UNAVAILABLE (nothing to persist to).
+ */
+dealRoutes.patch('/:id/playbook', requireOperator, async (c) => {
+  const db = getDb();
+  const { id } = c.req.param();
+  const operator = c.get('operator');
+  const body = await c.req.json<{ done?: unknown }>().catch(() => ({} as { done?: unknown }));
+
+  if (!Array.isArray(body.done) || body.done.some((s) => typeof s !== 'string')) {
+    return c.json({ error: 'done must be an array of step codes', code: 'VALIDATION' }, 400);
+  }
+  const done = Array.from(new Set(body.done as string[]));
+  const invalid = done.filter((s) => !(PLAYBOOK_STEPS as readonly string[]).includes(s));
+  if (invalid.length > 0) {
+    return c.json({
+      error: `Invalid step code(s): ${invalid.join(', ')} — allowed: ${PLAYBOOK_STEPS.join(', ')}`,
+      code: 'VALIDATION',
+    }, 400);
+  }
+
+  try {
+    const result = await db.execute(sql`
+      UPDATE deals
+      SET playbook = COALESCE(playbook, '{}'::jsonb) || jsonb_build_object('done', ${JSON.stringify(done)}::jsonb)
+      WHERE id = ${id}
+      RETURNING id
+    `);
+    if (!result.rows || result.rows.length === 0) {
+      return c.json({ error: 'Deal not found', code: 'NOT_FOUND' }, 404);
+    }
+
+    await db.insert(schema.auditLog).values({
+      id: randomUUID(), actor: operator.id, action: 'deal_playbook_updated', entity: 'deals', entityId: id,
+      meta: { done },
+    }).execute();
+
+    return c.json({ data: { done }, meta: { timestamp: new Date().toISOString(), version: env.version } });
+  } catch (err) {
+    if (isUndefinedColumn(err)) {
+      return c.json({ error: 'Playbook column not available yet', code: 'PLAYBOOK_UNAVAILABLE' }, 409);
+    }
+    throw err; // onError maps pg codes (bad UUID → 400 etc.)
+  }
+});
 
 
 /** GET /v1/deals/board — every deal with project context, for the kanban board. */

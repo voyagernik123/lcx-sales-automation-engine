@@ -5,7 +5,11 @@ import { requireOperator } from '../middleware/auth.js';
 import { getDb } from '../db/index.js';
 import * as schema from '../db/schema.js';
 import { env } from '../lib/env.js';
-import { scoreProject, CoinGeckoClient, enrichProject, generateDraft, getClaimLibrarySnapshot } from '@lcx/shared';
+import {
+  scoreProject, CoinGeckoClient, enrichProject, generateDraft, getClaimLibrarySnapshot,
+  scorePropensity, combinePriority, PROPENSITY_WEIGHTS_V1,
+} from '@lcx/shared';
+import type { PropensityInput, ReasonTrail } from '@lcx/shared';
 import { randomUUID } from 'node:crypto';
 
 export const projectsRoutes = new Hono<{ Variables: AuthVariables }>();
@@ -106,6 +110,7 @@ projectsRoutes.get('/', requireOperator, async (c) => {
         p.market_cap_usd, p.market_cap_rank, p.volume_24h_usd, p.last_enriched_at,
         p.created_at, p.updated_at,
         p.people_count, p.verified_contact_count,
+        p.raw->'_outreach'->>'snoozeUntil' AS snoozed_until,
         s.eu_score, s.us_pre_score, s.us_post_score, s.band, s.recommended_market,
         s.propensity_score, s.priority_score,
         COUNT(*) OVER () AS total
@@ -145,6 +150,7 @@ projectsRoutes.get('/', requireOperator, async (c) => {
       priorityScore: r.priority_score ?? 0,
       peopleCount: Number(r.people_count ?? 0),
       verifiedContactCount: Number(r.verified_contact_count ?? 0),
+      snoozedUntil: (r.snoozed_until as string | null) ?? null,
     }));
 
     // COUNT(*) OVER () vanishes on an empty page — fall back for out-of-range offsets
@@ -278,10 +284,58 @@ projectsRoutes.get('/:id', requireOperator, async (c) => {
       db.select().from(schema.deals).where(sql`${schema.deals.projectId} = ${id}`).execute(),
     ]);
 
+    // Intelligence enrichment: guarantee propensityScore / priorityScore /
+    // propensityReasons / usIntelSignals on the score object. Batch scoring
+    // persists all four; a row written only by the single-project scorer has
+    // empty propensity fields, so recompute those on the fly from whatever
+    // the project row offers (no funding/exchange data available here).
+    const scoreRow = scoreRows[0] ?? null;
+    let score: Record<string, unknown> | null = scoreRow;
+    if (scoreRow) {
+      let propensityScore = scoreRow.propensityScore ?? 0;
+      let priorityScore = scoreRow.priorityScore ?? 0;
+      let propensityReasons = (Array.isArray(scoreRow.propensityReasons)
+        ? scoreRow.propensityReasons
+        : []) as ReasonTrail[];
+
+      if (propensityReasons.length === 0) {
+        const propensityInput: PropensityInput = {
+          marketCapUsd: project.marketCapUsd != null ? Number(project.marketCapUsd) : null,
+          volume24hUsd: project.volume24hUsd != null ? Number(project.volume24hUsd) : null,
+          tokenAgeDays: project.tokenAgeDays ?? null,
+          fundingMonthsAgo: null,
+          fundingAmountM: null,
+          exchangeCount: null,
+          category: project.category ?? null,
+          chain: project.chain ?? null,
+          region: (project.region as 'eu' | 'us' | 'other' | null) ?? null,
+          isMicaRegistry: project.esmaTokenId != null || project.source.startsWith('esma'),
+          hasVerifiedContact: (project.verifiedContactCount ?? 0) > 0,
+          isPreTge: project.source === 'pre_tge',
+          listedOnLcx: project.listedOnLcx === true,
+        };
+        const propensity = scorePropensity(propensityInput, PROPENSITY_WEIGHTS_V1);
+        propensityScore = propensity.score;
+        propensityReasons = propensity.reasons;
+        priorityScore = combinePriority(
+          propensity.score,
+          Math.max(scoreRow.euScore ?? 0, scoreRow.usPostScore ?? 0),
+        );
+      }
+
+      score = {
+        ...scoreRow,
+        propensityScore,
+        priorityScore,
+        propensityReasons,
+        usIntelSignals: scoreRow.usIntelSignals ?? {},
+      };
+    }
+
     return c.json({
       data: {
         ...project,
-        score: scoreRows[0] ?? null,
+        score,
         people: peopleRows,
         sources: sourceRows,
         signals: signalRows,
@@ -652,6 +706,115 @@ projectsRoutes.post('/:id/suppress', requireOperator, async (c) => {
   } catch (err) {
     console.error('[projects] suppress error:', err);
     return c.json({ error: 'Failed to suppress project', code: 'SUPPRESS_ERROR' }, 500);
+  }
+});
+
+/**
+ * POST /v1/projects/:id/snooze — Snooze a project's outreach until a date.
+ * Body: { days?: number, until?: string (ISO), reason?: string } — one of
+ * days/until is required. Stores raw._outreach.snoozeUntil (+ snoozeReason);
+ * the list endpoint surfaces it as snoozedUntil, filtering is client-side.
+ */
+projectsRoutes.post('/:id/snooze', requireOperator, async (c) => {
+  const db = getDb();
+  const { id } = c.req.param();
+  const operator = c.get('operator');
+  const body = await c.req
+    .json<{ days?: number; until?: string; reason?: string }>()
+    .catch(() => ({} as { days?: number; until?: string; reason?: string }));
+
+  let snoozeUntil: string;
+  if (body.until !== undefined) {
+    const parsed = new Date(body.until);
+    if (Number.isNaN(parsed.getTime())) {
+      return c.json({ error: 'until must be a valid ISO date', code: 'VALIDATION' }, 400);
+    }
+    snoozeUntil = parsed.toISOString();
+  } else if (body.days !== undefined) {
+    const days = Number(body.days);
+    if (!Number.isFinite(days) || days <= 0) {
+      return c.json({ error: 'days must be a positive number', code: 'VALIDATION' }, 400);
+    }
+    snoozeUntil = new Date(Date.now() + days * 86_400_000).toISOString();
+  } else {
+    return c.json({ error: 'days or until is required', code: 'VALIDATION' }, 400);
+  }
+
+  try {
+    const rows = await db
+      .select()
+      .from(schema.projects)
+      .where(sql`${schema.projects.id} = ${id}`)
+      .limit(1)
+      .execute();
+
+    if (rows.length === 0) {
+      return c.json({ error: 'Not found', code: 'NOT_FOUND' }, 404);
+    }
+
+    const currentRaw = (rows[0].raw ?? {}) as Record<string, unknown>;
+    const outreach = { ...((currentRaw._outreach ?? {}) as Record<string, unknown>) };
+    outreach.snoozeUntil = snoozeUntil;
+    outreach.snoozeReason = body.reason ?? null;
+
+    await db
+      .update(schema.projects)
+      .set({ raw: { ...currentRaw, _outreach: outreach }, updatedAt: new Date() })
+      .where(sql`${schema.projects.id} = ${id}`)
+      .execute();
+
+    await db.insert(schema.auditLog).values({
+      id: randomUUID(), actor: operator.id, action: 'project_snoozed', entity: 'projects', entityId: id,
+      meta: { snoozeUntil, reason: body.reason ?? null },
+    }).execute();
+
+    return c.json({ data: { snoozeUntil }, meta: { timestamp: new Date().toISOString(), version: env.version } });
+  } catch (err) {
+    console.error('[projects] snooze error:', err);
+    return c.json({ error: 'Failed to snooze project', code: 'SNOOZE_ERROR' }, 500);
+  }
+});
+
+/**
+ * DELETE /v1/projects/:id/snooze — Clear a project's snooze.
+ */
+projectsRoutes.delete('/:id/snooze', requireOperator, async (c) => {
+  const db = getDb();
+  const { id } = c.req.param();
+  const operator = c.get('operator');
+
+  try {
+    const rows = await db
+      .select()
+      .from(schema.projects)
+      .where(sql`${schema.projects.id} = ${id}`)
+      .limit(1)
+      .execute();
+
+    if (rows.length === 0) {
+      return c.json({ error: 'Not found', code: 'NOT_FOUND' }, 404);
+    }
+
+    const currentRaw = (rows[0].raw ?? {}) as Record<string, unknown>;
+    const outreach = { ...((currentRaw._outreach ?? {}) as Record<string, unknown>) };
+    delete outreach.snoozeUntil;
+    delete outreach.snoozeReason;
+
+    await db
+      .update(schema.projects)
+      .set({ raw: { ...currentRaw, _outreach: outreach }, updatedAt: new Date() })
+      .where(sql`${schema.projects.id} = ${id}`)
+      .execute();
+
+    await db.insert(schema.auditLog).values({
+      id: randomUUID(), actor: operator.id, action: 'project_unsnoozed', entity: 'projects', entityId: id,
+      meta: {},
+    }).execute();
+
+    return c.json({ data: { snoozeUntil: null }, meta: { timestamp: new Date().toISOString(), version: env.version } });
+  } catch (err) {
+    console.error('[projects] unsnooze error:', err);
+    return c.json({ error: 'Failed to clear snooze', code: 'SNOOZE_ERROR' }, 500);
   }
 });
 

@@ -43,6 +43,23 @@ export interface BdLead {
   updatedAt: string;
   hasContact: boolean;
   marketTag: Market | 'both' | null;
+  /** When set, the lead is snoozed out of triage until this ISO timestamp. */
+  snoozedUntil?: string | null;
+}
+
+/**
+ * US intelligence signal cluster computed server-side by the scoring
+ * orchestrator (`us-intel.ts`). Every field is optional — older score rows
+ * predate the signals and the UI must degrade gracefully.
+ * All 0–100 scores read "higher = better/easier"; redFlagCount is a raw count
+ * where fewer is better.
+ */
+export interface UsIntelSignals {
+  stateMtlDifficulty?: { score: number; tier?: string | null };
+  productFeasibility?: { score: number; product?: string | null };
+  competitivePosition?: { score: number };
+  howeyHeuristic?: { score: number };
+  redFlagCount?: number;
 }
 
 export interface GateCheck {
@@ -181,6 +198,12 @@ export interface LeadScore {
   band: ScoreBand;
   reasons: ReasonTrail[];
   computedAt: string;
+  /** "Why they'll pay" — explainable propensity model output (optional until re-score lands). */
+  propensityScore?: number;
+  /** priority = propensity × eligibility gate (see combinePriority in @lcx/shared). */
+  priorityScore?: number;
+  propensityReasons?: ReasonTrail[];
+  usIntelSignals?: UsIntelSignals;
 }
 
 export interface LeadSource {

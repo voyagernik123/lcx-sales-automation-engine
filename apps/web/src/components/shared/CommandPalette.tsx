@@ -48,6 +48,27 @@ const PAGE_COMMANDS: CommandItem[] = [
   { id: 'settings', label: 'Settings', sublabel: 'Apollo Systems Console', to: '/settings', type: 'page' },
 ];
 
+/**
+ * Bloomberg-style command codes: type the code, hit enter, you're there.
+ * Codes surface as the top result when the query exactly matches or
+ * prefixes one.
+ */
+const COMMAND_CODES: { code: string; to: string; label: string }[] = [
+  { code: 'q', to: '/bd-pipeline', label: 'BD Engine (queue)' },
+  { code: 'db', to: '/deal-board', label: 'Deal Board' },
+  { code: 'dd', to: '/deal-desk', label: 'Deal Desk' },
+  { code: 'fx', to: '/bd-kpis', label: 'KPI / Forecast' },
+  { code: 'gap', to: '/exchange-gaps', label: 'Exchange Gaps' },
+  { code: 'hq', to: '/outreach', label: 'Handoff Queue' },
+  { code: 'sq', to: '/send-queue', label: 'Send Queue' },
+  { code: 'wl', to: '/win-loss', label: 'Win / Loss' },
+  { code: 'map', to: '/market-map', label: 'Market Map' },
+  { code: 'news', to: '/market-news', label: 'Market News' },
+  { code: 'br', to: '/board-report', label: 'Board Report' },
+  { code: 'ai', to: '/ai-tools', label: 'AI Console' },
+  { code: 'home', to: '/', label: 'Morning Brief' },
+];
+
 interface LeadSearchRow {
   id: string;
   name: string;
@@ -166,10 +187,22 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const filtered = useMemo(() => {
     if (!query.trim()) return PAGE_COMMANDS.slice(0, 8);
     const q = query.toLowerCase();
+    // Command codes rank first: exact match beats prefix match.
+    const codeMatches: CommandItem[] = COMMAND_CODES.filter(
+      c => c.code === q || c.code.startsWith(q),
+    )
+      .sort((a, b) => Number(b.code === q) - Number(a.code === q))
+      .map(c => ({
+        id: `code-${c.code}`,
+        label: c.label,
+        sublabel: `code: ${c.code}`,
+        to: c.to,
+        type: 'page' as const,
+      }));
     const staticMatches = allCommands.filter(c =>
       c.label.toLowerCase().includes(q) || c.sublabel.toLowerCase().includes(q)
     );
-    return [...leadResults, ...staticMatches].slice(0, 12);
+    return [...codeMatches, ...leadResults, ...staticMatches].slice(0, 12);
   }, [query, allCommands, leadResults]);
 
   useEffect(() => {

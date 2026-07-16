@@ -1,20 +1,34 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Target, Send, KanbanSquare, MessageSquare, BarChart3, Layers, LogOut } from 'lucide-react';
+import { LogOut } from 'lucide-react';
 import { useOperatorStore } from '@/stores';
-import { useBdStore } from '@/stores/useBdStore';
-import { fetchBdPipeline, fetchHandoffs, fetchDealBoard } from '@/lib/api/bd';
+import { fetchHandoffs, fetchDealBoard, type BoardDeal } from '@/lib/api/bd';
+import {
+  fetchOpsFeed,
+  fetchQueuePulse,
+  fetchForecastDelta,
+  readTodaySessionStats,
+  syncDayHistory,
+  computeStreak,
+  type OpsFeedLine,
+  type QueuePulse,
+  type ForecastDelta,
+} from '@/lib/api/loop';
+import { computeDealHealthSet, type DealHealth } from '@/lib/salesIntel';
 import { StatCard, ChartCard } from '@/components/charts';
 import { CardSkeleton } from '@/components/shared';
 import { PageTitle } from '@/components/ui';
+import {
+  QuotaRing,
+  LiveOpsFeed,
+  OvernightHandoffs,
+  AtRiskDeals,
+  FocusSuggestion,
+  ForecastDeltaCard,
+} from '@/components/home';
+import type { HandoffRecord } from '@/types/bd';
 
-interface HomeStats {
-  immediateLeads: number;
-  highLeads: number;
-  openHandoffs: number;
-  dealsInMotion: number;
-  pipelineValue: number;
-}
+const DAILY_QUOTA = 20;
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -23,70 +37,67 @@ function greeting(): string {
   return 'Good evening';
 }
 
-function fmtUsd(cents: number): string {
-  const n = cents / 100;
-  if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`;
-  if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}K`;
-  return `$${n.toFixed(0)}`;
-}
-
-const QUICK_JUMPS = [
-  { to: '/bd-pipeline', label: 'BD Engine', icon: Target, desc: 'The ranked queue' },
-  { to: '/send-queue', label: 'Send Queue', icon: Send, desc: 'Assisted touches' },
-  { to: '/deal-board', label: 'Deal Board', icon: KanbanSquare, desc: 'Kanban pipeline' },
-  { to: '/outreach', label: 'Handoff Queue', icon: MessageSquare, desc: 'Replies to work' },
-  { to: '/bd-kpis', label: 'KPI Dashboard', icon: BarChart3, desc: 'Funnel & forecast' },
-  { to: '/exchange-gaps', label: 'Exchange Gaps', icon: Layers, desc: 'Proven budgets' },
-];
-
 /**
- * The app's front door once an operator has picked their name. Same
- * aggregate data for everyone today (no per-person attribution yet — deals
- * default owner:'operator' until real accounts land) but greets by name and
- * gives a fast on-ramp into the tool instead of dropping straight into a
- * dense table.
+ * Home → the Morning Brief (plan 1.6/1.7 + 5.4). Still greets whoever is
+ * driving, but instead of four static tiles it answers the actual morning
+ * questions: what came in overnight, what's at risk, how deep is the queue,
+ * did the forecast move, what should I focus on — plus the personal quota
+ * ring/streak and a live ops terminal streaming the real audit record.
+ * Every entity shown opens the inspector in place; nothing dead-ends.
  */
 export function Home() {
   const operator = useOperatorStore(s => s.operator);
   const navigate = useNavigate();
-  const [stats, setStats] = useState<HomeStats | null>(null);
-  const defaultBdFilters = useBdStore(s => ({
-    market: s.market, minScore: s.minScore, source: s.source, band: s.band,
-    listedOnLcx: s.listedOnLcx, hasContact: s.hasContact,
-    marketRecommendation: s.marketRecommendation, sort: s.sort, order: s.order, search: s.search,
-  }));
+
+  const [handoffs, setHandoffs] = useState<HandoffRecord[] | null>(null);
+  const [board, setBoard] = useState<BoardDeal[] | null>(null);
+  const [pulse, setPulse] = useState<QueuePulse | null>(null);
+  const [forecast, setForecast] = useState<ForecastDelta | null | 'unavailable'>(null);
+  const [ops, setOps] = useState<OpsFeedLine[]>([]);
+  const [opsLoading, setOpsLoading] = useState(true);
+
+  // Local contracts (session stats may be absent — everything degrades).
+  const stats = useMemo(() => readTodaySessionStats(), []);
+  const streak = useMemo(() => computeStreak(syncDayHistory()), []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [immediate, high, handoffs, board] = await Promise.allSettled([
-        fetchBdPipeline({ ...defaultBdFilters, band: 'immediate' }, { limit: 1 }),
-        fetchBdPipeline({ ...defaultBdFilters, band: 'high' }, { limit: 1 }),
-        fetchHandoffs({ status: 'open,in_progress', limit: 1 }),
+      const [ho, bd, qp, fc, feed] = await Promise.allSettled([
+        fetchHandoffs({ status: 'open,in_progress', limit: 100 }),
         fetchDealBoard(),
+        fetchQueuePulse(),
+        fetchForecastDelta(),
+        fetchOpsFeed(30),
       ]);
       if (cancelled) return;
-      const open = board.status === 'fulfilled' ? board.value.filter(d => d.stage !== 'won' && d.stage !== 'lost') : [];
-      setStats({
-        immediateLeads: immediate.status === 'fulfilled' ? immediate.value.meta.total : 0,
-        highLeads: high.status === 'fulfilled' ? high.value.meta.total : 0,
-        openHandoffs: handoffs.status === 'fulfilled' ? handoffs.value.meta.total : 0,
-        dealsInMotion: open.length,
-        pipelineValue: open.reduce((sum, d) => sum + (d.packageValue ?? 0), 0),
-      });
+      setHandoffs(ho.status === 'fulfilled' ? ho.value.data : []);
+      setBoard(bd.status === 'fulfilled' ? bd.value : []);
+      setPulse(qp.status === 'fulfilled' ? qp.value : { immediate: null, high: null, followUpsDue: null });
+      setForecast(fc.status === 'fulfilled' && fc.value ? fc.value : 'unavailable');
+      setOps(feed.status === 'fulfilled' ? feed.value : []);
+      setOpsLoading(false);
     })();
-    return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  const health: Map<string, DealHealth> = useMemo(
+    () => (board ? computeDealHealthSet(board) : new Map()),
+    [board],
+  );
 
   const name = operator?.name ?? 'there';
   const accent = operator?.colorVar ?? 'var(--chart-1)';
+  const today = new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  const openHandoffCount = handoffs?.filter(h => h.status === 'open').length ?? 0;
 
   return (
-    <div className="p-4 max-w-[1100px] mx-auto">
+    <div className="mx-auto max-w-[1200px] p-4">
       <PageTitle
         icon={<span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: accent }} />}
-        subtitle="Here's where things stand right now."
+        subtitle={`Morning brief — ${today}. Everything below opens in place.`}
         actions={
           <button
             onClick={() => navigate('/select')}
@@ -100,32 +111,88 @@ export function Home() {
         {greeting()}, {name}
       </PageTitle>
 
-      {stats ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-          <StatCard label="Immediate leads" value={String(stats.immediateLeads)} onClick={() => navigate('/bd-pipeline')} />
-          <StatCard label="High-priority leads" value={String(stats.highLeads)} onClick={() => navigate('/bd-pipeline')} />
-          <StatCard label="Open handoffs" value={String(stats.openHandoffs)} onClick={() => navigate('/outreach')} />
-          <StatCard label="Deals in motion" value={`${stats.dealsInMotion} · ${fmtUsd(stats.pipelineValue)}`} onClick={() => navigate('/deal-board')} />
+      {/* Queue pulse — counted streams that navigate. */}
+      {pulse ? (
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatCard
+            label="Immediate leads"
+            value={pulse.immediate === null ? '—' : String(pulse.immediate)}
+            onClick={() => navigate('/bd-pipeline')}
+          />
+          <StatCard
+            label="High-priority leads"
+            value={pulse.high === null ? '—' : String(pulse.high)}
+            onClick={() => navigate('/bd-pipeline')}
+          />
+          <StatCard
+            label="Follow-ups due"
+            value={pulse.followUpsDue === null ? '—' : String(pulse.followUpsDue)}
+            deltaLabel="overdue + today"
+            onClick={() => navigate('/tasks')}
+          />
+          <StatCard
+            label="Replies waiting"
+            value={handoffs === null ? '—' : String(openHandoffCount)}
+            deltaLabel="pause automation"
+            onClick={() => navigate('/outreach')}
+          />
         </div>
       ) : (
-        <div className="mb-6"><CardSkeleton count={4} /></div>
+        <div className="mb-4">
+          <CardSkeleton count={4} />
+        </div>
       )}
 
-      <ChartCard title="Jump back in">
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {QUICK_JUMPS.map(({ to, label, icon: Icon, desc }) => (
-            <button
-              key={to}
-              onClick={() => navigate(to)}
-              className="flex flex-col items-start gap-2 rounded-lg border border-line p-3 text-left hover:border-cyan-300 hover:bg-cyan-50/50 dark:hover:bg-cyan-950/10 transition-colors"
-            >
-              <Icon size={18} className="text-cyan-600 dark:text-cyan-400" />
-              <span className="text-sm font-semibold text-navy dark:text-ice">{label}</span>
-              <span className="text-micro text-grey">{desc}</span>
-            </button>
-          ))}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="space-y-4 lg:col-span-2">
+          <ChartCard
+            title="Overnight & waiting"
+            subtitle="Open replies ranked worst SLA first — a breach means automation has been paused for hours"
+          >
+            {handoffs === null ? <CardSkeleton count={3} /> : <OvernightHandoffs handoffs={handoffs.filter(h => h.status === 'open' || h.status === 'in_progress')} />}
+          </ChartCard>
+
+          <ChartCard title="At risk" subtitle="Open deals carrying the most health warnings — click through for the full why-trail">
+            {board === null ? <CardSkeleton count={2} /> : <AtRiskDeals deals={board} health={health} />}
+          </ChartCard>
+
+          <ChartCard title="Focus suggestion" subtitle="One deal — the most value going quiet">
+            {board === null ? <CardSkeleton count={1} /> : <FocusSuggestion deals={board} health={health} />}
+          </ChartCard>
+
+          <ChartCard title="Forecast delta" subtitle="Latest daily snapshot vs the previous one">
+            {forecast === null ? (
+              <CardSkeleton count={1} />
+            ) : forecast === 'unavailable' ? (
+              <p className="text-label text-grey">
+                No KPI snapshots yet — the nightly snapshot job populates this after its first run.
+              </p>
+            ) : (
+              <ForecastDeltaCard forecast={forecast} />
+            )}
+          </ChartCard>
         </div>
-      </ChartCard>
+
+        <div className="space-y-4">
+          <ChartCard
+            title="Your day"
+            subtitle={`Quota: ${DAILY_QUOTA} prospects worked`}
+            action={
+              <button
+                type="button"
+                onClick={() => navigate('/bd-pipeline')}
+                className="text-micro font-bold text-cyan-600 hover:underline dark:text-cyan-400"
+              >
+                Work the queue →
+              </button>
+            }
+          >
+            <QuotaRing stats={stats} target={DAILY_QUOTA} streak={streak} />
+          </ChartCard>
+
+          <LiveOpsFeed lines={ops} loading={opsLoading} />
+        </div>
+      </div>
     </div>
   );
 }

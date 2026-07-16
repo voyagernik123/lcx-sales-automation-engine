@@ -6,10 +6,14 @@
 import { sql } from 'drizzle-orm';
 import { getDb } from '../db/index.js';
 import { computeKpis } from './service.js';
+import { computeForecast } from './forecast.js';
+import { isUndefinedColumn } from '../lib/pg.js';
 
 export interface SnapshotResult {
   snapshotDate: string;
   funnel: { enrolled: number; replied: number; proposal: number; won: number };
+  /** false when the forecast column is missing (migration 0028 not applied) or storage failed. */
+  forecastStored: boolean;
 }
 
 export async function writeKpiSnapshot(): Promise<SnapshotResult> {
@@ -75,6 +79,24 @@ export async function writeKpiSnapshot(): Promise<SnapshotResult> {
       overdue_actions = EXCLUDED.overdue_actions
   `);
 
+  // Persist today's Monte Carlo forecast alongside the KPI numbers (migration
+  // 0028). Guarded: a db lagging the migration (42703) just skips this —
+  // the core snapshot above must never fail because of the forecast column.
+  let forecastStored = false;
+  try {
+    const f = await computeForecast();
+    await db.execute(sql`
+      UPDATE kpi_daily_snapshots
+      SET forecast = ${JSON.stringify({ p10: f.p10, p50: f.p50, p90: f.p90, expected: f.expected })}::jsonb
+      WHERE snapshot_date = ${today}
+    `);
+    forecastStored = true;
+  } catch (err) {
+    if (!isUndefinedColumn(err)) {
+      console.error('[kpi] forecast snapshot error:', err instanceof Error ? err.message : err);
+    }
+  }
+
   void movedToTelegram; // surfaced via GET /v1/kpis; snapshot schema addition tracked separately
-  return { snapshotDate: today, funnel: k.funnel };
+  return { snapshotDate: today, funnel: k.funnel, forecastStored };
 }
