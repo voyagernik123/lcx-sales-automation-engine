@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Bot } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Bot, MessageSquare } from 'lucide-react';
 import { fetchIntegrationStatus, type IntegrationService } from '@/lib/api/bd';
 import { PageTitle } from '@/components/ui';
 import { LlmBadge } from '@/components/ai/common';
@@ -50,6 +51,14 @@ export function AiTools() {
       >
         AI Console
       </PageTitle>
+
+      <p className="text-label text-grey">
+        Working a live reply? These same engines run inline in the{' '}
+        <Link to="/outreach" className="inline-flex items-center gap-1 font-semibold text-cyan-600 dark:text-cyan-400 hover:underline">
+          <MessageSquare size={11} /> Handoffs inbox
+        </Link>
+        {' '}— sentiment on every reply, drafts one click away.
+      </p>
 
       <div className="flex gap-1 border-b border-line" role="tablist" aria-label="AI tools">
         {TABS.map((t) => (

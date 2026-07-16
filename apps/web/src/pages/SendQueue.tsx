@@ -7,6 +7,7 @@ import {
 import { toast } from '@/components/shared/Toast';
 import { CardSkeleton, EmptyState } from '@/components/shared';
 import { PageTitle, Button } from '@/components/ui';
+import { useInspect } from '@/stores';
 
 const CONNECT_NOTE_MAX = 300;
 
@@ -31,6 +32,7 @@ function CapBar({ label, used, max }: { label: string; used: number; max: number
 }
 
 function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
+  const inspect = useInspect();
   const [body, setBody] = useState(item.body);
   const [busy, setBusy] = useState('');
   const [copied, setCopied] = useState(false);
@@ -66,13 +68,34 @@ function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
         <div>
           <div className="flex items-center gap-2">
             {isTelegram ? <MessageCircle size={13} className="text-sky-600" /> : <Linkedin size={13} className="text-blue-700" />}
-            <span className="text-sm font-bold">{item.personName ?? 'Unknown contact'}</span>
+            {item.personId ? (
+              <button
+                onClick={() => inspect('contact', `${item.projectId}:${item.personId}`)}
+                className="text-sm font-bold text-navy hover:text-cyan-600 dark:hover:text-cyan-400 hover:underline"
+                title="Inspect contact"
+              >
+                {item.personName ?? 'Unknown contact'}
+              </button>
+            ) : (
+              <span className="text-sm font-bold">{item.personName ?? 'Unknown contact'}</span>
+            )}
             {item.personTitle && <span className="text-micro text-grey">{item.personTitle}</span>}
           </div>
           <div className="text-label text-grey mt-0.5">
-            {item.projectName}
-            {item.projectTicker ? ` (${item.projectTicker})` : ''} · touch {item.touchIndex} ·{' '}
+            <button
+              onClick={() => inspect('project', item.projectId)}
+              className="font-semibold text-navy hover:text-cyan-600 dark:hover:text-cyan-400 hover:underline"
+              title="Inspect project"
+            >
+              {item.projectName}
+              {item.projectTicker ? ` (${item.projectTicker})` : ''}
+            </button>
+            {' '}· touch {item.touchIndex} ·{' '}
             <span className="uppercase font-semibold">{isConnect ? 'Connect request' : isTelegram ? 'Telegram DM' : 'Message'}</span>
+          </div>
+          <div className="text-micro text-grey mt-0.5">
+            Why this touch: step {item.stepIndex + 1} of the {isTelegram ? 'Telegram' : 'LinkedIn'} sequence
+            {isConnect ? ' — opening connection request' : ` — touch ${item.touchIndex} follow-up`}
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
@@ -201,11 +224,13 @@ export function SendQueue() {
         </div>
       )}
       {!loading && !error && items.length === 0 && (
-        <EmptyState
-          variant="done"
-          title="Queue is clear"
-          description="Nothing due right now. New touches appear when the scheduler ticks and their delay elapses."
-        />
+        <div className="rounded-lg border border-line bg-card">
+          <EmptyState
+            variant="done"
+            title="Queue clear — go close something."
+            description="Nothing due right now. New touches appear when the scheduler ticks and their delay elapses."
+          />
+        </div>
       )}
 
       <div className="space-y-3">

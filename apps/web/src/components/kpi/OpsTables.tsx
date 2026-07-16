@@ -1,17 +1,19 @@
-import { useNavigate } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { ChartCard } from '@/components/charts';
+import { useInspect } from '@/stores';
 import type { PostListingTrigger, StalledDeal } from '@/types/kpi';
 import { STAGE_LABELS, TRIGGER_DAY_LABELS, TRIGGER_TYPE_LABELS } from '@/types/kpi';
 
 const TH = 'text-left py-2 px-2 text-[10px] font-bold uppercase tracking-wider text-grey';
 
 export function StalledDealsTable({ deals }: { deals: StalledDeal[] }) {
-  const navigate = useNavigate();
+  // deal.id is a DEAL id — the old row click routed it to the lead-detail
+  // page (which expects a project id): a dead end. Inspect in place instead.
+  const inspect = useInspect();
   if (deals.length === 0) return null;
 
   return (
-    <ChartCard title="Stalled deals" subtitle="Open deals with no update in 3+ days">
+    <ChartCard title="Stalled deals" subtitle="Open deals with no update in 3+ days — click a row to inspect the deal">
       <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
@@ -26,7 +28,7 @@ export function StalledDealsTable({ deals }: { deals: StalledDeal[] }) {
             {deals.map((deal) => (
               <tr
                 key={deal.id}
-                onClick={() => navigate(`/bd-pipeline/${deal.id}`)}
+                onClick={() => inspect('deal', deal.id)}
                 className="hover:bg-ice-soft dark:hover:bg-ice-soft/5 cursor-pointer transition-colors"
               >
                 <td className="py-2 px-2 font-medium text-navy">{deal.projectName}</td>

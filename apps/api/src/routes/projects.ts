@@ -256,6 +256,23 @@ projectsRoutes.get('/:id/timeline', requireOperator, async (c) => {
 });
 
 /**
+ * GET /v1/projects/claims — Return the full claim library snapshot.
+ * Registered before '/:id' so the static segment is not swallowed as an id.
+ */
+projectsRoutes.get('/claims', requireOperator, async (c) => {
+  try {
+    const snapshot = getClaimLibrarySnapshot();
+    return c.json({
+      data: snapshot,
+      meta: { timestamp: new Date().toISOString(), version: env.version },
+    });
+  } catch (err) {
+    console.error('[claims] list error:', err);
+    return c.json({ error: 'Failed to load claims', code: 'CLAIMS_ERROR' }, 500);
+  }
+});
+
+/**
  * GET /v1/projects/:id — Single project with related records.
  */
 projectsRoutes.get('/:id', requireOperator, async (c) => {
@@ -1181,18 +1198,6 @@ projectsRoutes.patch('/:id/drafts/:draftId', requireOperator, async (c) => {
   }
 });
 
-/**
- * GET /v1/claims — Return the full claim library snapshot.
- */
-projectsRoutes.get('/claims', requireOperator, async (c) => {
-  try {
-    const snapshot = getClaimLibrarySnapshot();
-    return c.json({
-      data: snapshot,
-      meta: { timestamp: new Date().toISOString(), version: env.version },
-    });
-  } catch (err) {
-    console.error('[claims] list error:', err);
-    return c.json({ error: 'Failed to load claims', code: 'CLAIMS_ERROR' }, 500);
-  }
-});
+// NB: GET /claims moved above the GET /:id registration — Hono matches in
+// registration order, so a static route registered after '/:id' is shadowed
+// (requests for /v1/projects/claims were hitting the single-project handler).

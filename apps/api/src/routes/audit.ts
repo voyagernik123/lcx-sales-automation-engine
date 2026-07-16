@@ -19,10 +19,13 @@ auditRoutes.get('/', requireOperator, async (c) => {
     const action = c.req.query('action');
     const actor = c.req.query('actor');
 
+    // NB: the queries below alias audit_log as `al`, so conditions must use
+    // the alias — qualified column refs like "audit_log"."entity" are invalid
+    // once the table is aliased and made every filtered query fail.
     const conditions: ReturnType<typeof sql>[] = [];
-    if (entity) conditions.push(sql`${schema.auditLog.entity} = ${entity}`);
-    if (action) conditions.push(sql`${schema.auditLog.action} = ${action}`);
-    if (actor) conditions.push(sql`${schema.auditLog.actor} = ${actor}`);
+    if (entity) conditions.push(sql`al.entity = ${entity}`);
+    if (action) conditions.push(sql`al.action = ${action}`);
+    if (actor) conditions.push(sql`al.actor = ${actor}`);
 
     const whereClause = conditions.length > 0
       ? sql`WHERE ${sql.join(conditions, sql` AND `)}`

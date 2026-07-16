@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Newspaper, RefreshCw, ExternalLink, ChevronDown, ChevronRight, Sparkles, AlertTriangle } from 'lucide-react';
+import { Newspaper, RefreshCw, ExternalLink, ChevronDown, ChevronRight, Sparkles, AlertTriangle, ListPlus, Check } from 'lucide-react';
 import { request } from '@/lib/apiClient';
+import { createTask } from '@/lib/api/bd';
+import { toast } from '@/components/shared/Toast';
 import { PageTitle, Button } from '@/components/ui';
 import { CardSkeleton, EmptyState } from '@/components/shared';
 import { FilterChip } from '@/components/market/FilterChip';
+import { useInspect } from '@/stores';
 import {
   applyNewsFilters,
   buildBriefing,
@@ -37,6 +40,7 @@ function persistVisited(ids: Set<string>): void {
 }
 
 export function MarketNews() {
+  const inspect = useInspect();
   const [items, setItems] = useState<NewsItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -45,6 +49,8 @@ export function MarketNews() {
   const [source, setSource] = useState('');
   const [briefingOpen, setBriefingOpen] = useState(true);
   const [visited, setVisited] = useState<Set<string>>(loadVisited);
+  const [queued, setQueued] = useState<Set<string>>(new Set());
+  const [queueBusy, setQueueBusy] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,6 +88,25 @@ export function MarketNews() {
       persistVisited(next);
       return next;
     });
+  };
+
+  /** "Queue it" — spin the matched article into a follow-up task on the project. */
+  const queueIt = async (n: NewsItem) => {
+    const projectId = n.matchedProjectIds[0];
+    if (!projectId) return;
+    setQueueBusy(n.id);
+    try {
+      await createTask(`Follow up on news: ${n.title}`, {
+        projectId,
+        detail: n.url ?? `via ${n.source}`,
+      });
+      setQueued((prev) => new Set(prev).add(n.id));
+      toast('success', 'Follow-up task queued');
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Failed to queue task');
+    } finally {
+      setQueueBusy('');
+    }
   };
 
   const sources = useMemo(() => distinctSources(items), [items]);
@@ -256,11 +281,33 @@ export function MarketNews() {
                 </span>
                 {n.publishedAt && <span title={new Date(n.publishedAt).toLocaleString()}>{relativeTime(n.publishedAt)}</span>}
                 {seen && <span className="italic">visited</span>}
-                {n.tickers.slice(0, 8).map((t) => (
-                  <span key={t} className="rounded bg-ice-soft px-1.5 py-0.5 font-mono dark:bg-ice-soft/10">
-                    {t}
-                  </span>
-                ))}
+                {n.tickers.slice(0, 8).map((t) =>
+                  n.matchedProjectIds.length > 0 ? (
+                    <button
+                      key={t}
+                      onClick={() => inspect('project', n.matchedProjectIds[0])}
+                      className="rounded bg-cyan-50 px-1.5 py-0.5 font-mono font-semibold text-cyan-700 hover:bg-cyan-100 dark:bg-cyan-950/40 dark:text-cyan-300 dark:hover:bg-cyan-950/60 transition-colors"
+                      title="Inspect matched pipeline project"
+                    >
+                      {t}
+                    </button>
+                  ) : (
+                    <span key={t} className="rounded bg-ice-soft px-1.5 py-0.5 font-mono dark:bg-ice-soft/10">
+                      {t}
+                    </span>
+                  ),
+                )}
+                {n.matchedProjectIds.length > 0 && (
+                  <button
+                    onClick={() => void queueIt(n)}
+                    disabled={queued.has(n.id) || queueBusy === n.id}
+                    className="ml-auto inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro font-bold text-navy hover:border-cyan-400 hover:bg-ice-soft disabled:opacity-60 dark:hover:bg-ice-soft/10 transition-colors"
+                    title="Create a follow-up task on the matched project"
+                  >
+                    {queued.has(n.id) ? <Check size={10} className="text-emerald-600" /> : <ListPlus size={10} />}
+                    {queued.has(n.id) ? 'Queued' : queueBusy === n.id ? 'Queuing…' : 'Queue it'}
+                  </button>
+                )}
               </div>
             </div>
           );

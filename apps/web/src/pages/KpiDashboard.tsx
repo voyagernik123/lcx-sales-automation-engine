@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { BarChart3, Download } from 'lucide-react';
 import { clsx } from 'clsx';
-import { fetchKpis, exportKpisCsv, fetchTriggers, updateTriggerStatus, fetchForecast, type ForecastData } from '@/lib/api/kpi';
+import { fetchKpis, exportKpisCsv, fetchTriggers, updateTriggerStatus, fetchForecast, fetchUniverseCount, type ForecastData } from '@/lib/api/kpi';
 import { fetchKpiHistory, type KpiSnapshot } from '@/lib/api/bd';
 import type { KpiDashboard as KpiData, PostListingTrigger } from '@/types/kpi';
 import { REVENUE_STREAM_LABELS } from '@/types/kpi';
@@ -10,7 +11,9 @@ import { ChartSkeleton, EmptyState, PageSkeleton, toast } from '@/components/sha
 import { Button } from '@/components/ui';
 import { MetricStatCards } from '@/components/kpi/MetricStatCards';
 import { FunnelSection } from '@/components/kpi/FunnelSection';
-import { ForecastCard } from '@/components/kpi/ForecastCard';
+import { ForecastDistribution } from '@/components/kpi/ForecastDistribution';
+import { CalledVsLanded } from '@/components/kpi/CalledVsLanded';
+import { PipelineSankey, type SankeyStage } from '@/components/kpi/PipelineSankey';
 import { StalledDealsTable, TriggersTable } from '@/components/kpi/OpsTables';
 import { RANGE_DELTA_LABELS, RANGE_OPTIONS, rangeCutoff, type RangeKey } from '@/components/kpi/range';
 
@@ -24,10 +27,13 @@ const fmtUsd = (v: number) => `$${Math.round(v).toLocaleString()}`;
 const CHANNEL_LABELS: Record<string, string> = { email: 'Email', linkedin: 'LinkedIn' };
 
 export function KpiDashboard() {
+  const navigate = useNavigate();
   const [kpis, setKpis] = useState<KpiPayload | null>(null);
   const [history, setHistory] = useState<KpiSnapshot[]>([]);
   // undefined = still loading, null = unavailable
   const [forecast, setForecast] = useState<ForecastData | null | undefined>(undefined);
+  /** Total tracked projects — the Sankey's first band. null = unavailable. */
+  const [universe, setUniverse] = useState<number | null>(null);
   const [triggers, setTriggers] = useState<PostListingTrigger[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +60,9 @@ export function KpiDashboard() {
       fetchForecast(controller.signal)
         .then((f) => { if (!controller.signal.aborted) setForecast(f); })
         .catch(() => { if (!controller.signal.aborted) setForecast(null); });
+      fetchUniverseCount(controller.signal)
+        .then((u) => { if (!controller.signal.aborted) setUniverse(u); })
+        .catch(() => { if (!controller.signal.aborted) setUniverse(null); });
       if (!controller.signal.aborted) {
         setKpis(kpiData);
         setTriggers(triggerData);
@@ -147,6 +156,21 @@ export function KpiDashboard() {
 
   const tg = kpis.telegramConversion;
 
+  // Pipeline flow bands (plan 3.6). Handoff count comes from the telegram
+  // conversion block; when the API omits it, the honest fallback is the
+  // funnel's Proposal+ stage. Universe is best-effort (null → band omitted).
+  const sankeyStages: SankeyStage[] = [
+    ...(universe != null && universe > 0
+      ? [{ key: 'universe', label: 'Universe', value: universe, onClick: () => navigate('/bd-pipeline') }]
+      : []),
+    { key: 'contacted', label: 'Contacted', value: kpis.funnel.enrolled, onClick: () => navigate('/send-queue') },
+    { key: 'replied', label: 'Replied', value: kpis.funnel.replied, onClick: () => navigate('/outreach') },
+    tg
+      ? { key: 'handoff', label: 'Handoff', value: tg.handoffs, onClick: () => navigate('/outreach') }
+      : { key: 'proposal', label: 'Proposal+', value: kpis.funnel.proposal, onClick: () => navigate('/deal-board') },
+    { key: 'won', label: 'Won', value: kpis.funnel.won, onClick: () => navigate('/deal-board') },
+  ];
+
   return (
     <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy overflow-hidden">
       {/* HEADER */}
@@ -233,7 +257,15 @@ export function KpiDashboard() {
           )}
         </div>
 
-        {/* REPLY RATES / DEAL HEALTH / FORECAST */}
+        {/* PIPELINE FLOW — proportional bands under the funnel (plan 3.6) */}
+        <ChartCard
+          title="Pipeline flow"
+          subtitle="Proportional bands with carried-% per link — click a stage to open its workspace"
+        >
+          <PipelineSankey stages={sankeyStages} />
+        </ChartCard>
+
+        {/* REPLY RATES / DEAL HEALTH */}
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           <ChartCard
             title="Reply rate by channel"
@@ -277,13 +309,22 @@ export function KpiDashboard() {
             </div>
           </ChartCard>
 
+        </div>
+
+        {/* FORECAST INSTRUMENT — distribution + called-vs-landed (plan 0.6/4.1/4.2) */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           {forecast === undefined ? (
-            <ChartCard title="Pipeline forecast">
-              <ChartSkeleton height={170} />
+            <ChartCard title="Pipeline forecast — distribution">
+              <ChartSkeleton height={220} />
             </ChartCard>
           ) : forecast ? (
-            <ForecastCard forecast={forecast} />
-          ) : null}
+            <ForecastDistribution forecast={forecast} />
+          ) : (
+            <ChartCard title="Pipeline forecast — distribution">
+              <p className="py-8 text-center text-xs text-grey">Forecast unavailable</p>
+            </ChartCard>
+          )}
+          <CalledVsLanded snapshots={history} />
         </div>
 
         {/* OPERATIONAL TABLES */}

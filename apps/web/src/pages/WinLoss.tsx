@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BarChart3, ChevronDown, RefreshCw, Sparkles } from 'lucide-react';
+import { BarChart3, ChevronDown, RefreshCw, Sparkles, X } from 'lucide-react';
+import { clsx } from 'clsx';
 import { request } from '@/lib/apiClient';
 import { fetchDealBoard, type BoardDeal } from '@/lib/api/bd';
 import { BarChartH, ChartCard, StatCard } from '@/components/charts';
 import { CardSkeleton, ChartSkeleton, EmptyState, TableSkeleton } from '@/components/shared';
 import { GroupedColumnChart } from '@/components/deals/GroupedColumnChart';
 import { PageTitle, Button } from '@/components/ui';
+import { useInspect } from '@/stores';
 
 interface Bucket {
   key: string;
@@ -72,6 +74,33 @@ function bucketsByPackage(deals: BoardDeal[]): Bucket[] {
     .sort((a, b) => b.won - a.won || b.lost - a.lost);
 }
 
+/**
+ * Map a click inside a GroupedColumnChart wrapper back to its column index.
+ * The chart draws in a fixed 480-wide viewBox with 40/8 left/right margins,
+ * so the ratio math holds at any rendered width.
+ */
+function columnIndexFromClick(e: React.MouseEvent<HTMLElement>, count: number): number | null {
+  const svg = e.currentTarget.querySelector('svg');
+  if (!svg || count === 0) return null;
+  const rect = svg.getBoundingClientRect();
+  if (e.clientY < rect.top || e.clientY > rect.bottom) return null; // legend clicks don't drill
+  const relX = ((e.clientX - rect.left) / rect.width) * 480;
+  const ML = 40;
+  const MR = 8;
+  if (relX < ML || relX > 480 - MR) return null;
+  const idx = Math.floor((relX - ML) / ((480 - ML - MR) / count));
+  return idx >= 0 && idx < count ? idx : null;
+}
+
+/** Drill selection: which cohort of closed board deals to list inline. */
+interface Drill {
+  /** Human title for the panel. */
+  label: string;
+  /** packageType to match (null = any; 'unknown' matches deals without one). */
+  packageKey: string | null;
+  stage: 'all' | 'won' | 'lost';
+}
+
 /** Small "All time" tag for cards the API only exposes as lifetime aggregates. */
 function AllTimeTag({ show }: { show: boolean }) {
   if (!show) return null;
@@ -86,6 +115,7 @@ function AllTimeTag({ show }: { show: boolean }) {
 }
 
 export function WinLoss() {
+  const inspect = useInspect();
   const [data, setData] = useState<WinLossData | null>(null);
   const [boardDeals, setBoardDeals] = useState<BoardDeal[]>([]);
   const [pool, setPool] = useState<Pool>('all');
@@ -93,6 +123,7 @@ export function WinLoss() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [insightsOpen, setInsightsOpen] = useState(true);
+  const [drill, setDrill] = useState<Drill | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -143,6 +174,20 @@ export function WinLoss() {
   const packageBuckets = periodStats ? periodStats.byPackage : (data?.byPackage ?? []);
   const timeFiltered = period !== 'all';
   const periodLabel = PERIODS.find((p) => p.id === period)?.label ?? '';
+
+  // Inline cohort behind the clicked segment (client-side from the deal
+  // board; respects the active period window).
+  const drillDeals = useMemo(() => {
+    if (!drill) return [];
+    const days = PERIODS.find((p) => p.id === period)?.days;
+    const cutoff = days != null ? Date.now() - days * 86_400_000 : null;
+    return boardDeals
+      .filter((d) => d.stage === 'won' || d.stage === 'lost')
+      .filter((d) => (cutoff == null ? true : Number.isFinite(closedAt(d)) && closedAt(d) >= cutoff))
+      .filter((d) => (drill.packageKey == null ? true : (d.packageType ?? 'unknown') === drill.packageKey))
+      .filter((d) => (drill.stage === 'all' ? true : d.stage === drill.stage))
+      .sort((a, b) => closedAt(b) - closedAt(a));
+  }, [boardDeals, drill, period]);
 
   const isEmpty = !loading && !error && data !== null && data.overall.total === 0 && boardDeals.every((d) => d.stage !== 'won' && d.stage !== 'lost');
 
@@ -228,11 +273,114 @@ export function WinLoss() {
       {!error && data && !isEmpty && (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Overall win rate" value={overall ? pct(overall.winRate) : '—'} deltaLabel={timeFiltered ? periodLabel : 'All time'} />
-            <StatCard label="Deals won" value={String(overall?.won ?? 0)} deltaLabel={timeFiltered ? periodLabel : 'All time'} />
-            <StatCard label="Deals lost" value={String(overall?.lost ?? 0)} deltaLabel={timeFiltered ? periodLabel : 'All time'} />
-            <StatCard label="Revenue won" value={overall ? fmtUsd(overall.wonValueUsd) : '—'} deltaLabel={timeFiltered ? periodLabel : 'All time'} />
+            <StatCard
+              label="Overall win rate"
+              value={overall ? pct(overall.winRate) : '—'}
+              deltaLabel={timeFiltered ? periodLabel : 'All time'}
+              onClick={() => setDrill({ label: 'All closed deals', packageKey: null, stage: 'all' })}
+            />
+            <StatCard
+              label="Deals won"
+              value={String(overall?.won ?? 0)}
+              deltaLabel={timeFiltered ? periodLabel : 'All time'}
+              onClick={() => setDrill({ label: 'Deals won', packageKey: null, stage: 'won' })}
+            />
+            <StatCard
+              label="Deals lost"
+              value={String(overall?.lost ?? 0)}
+              deltaLabel={timeFiltered ? periodLabel : 'All time'}
+              onClick={() => setDrill({ label: 'Deals lost', packageKey: null, stage: 'lost' })}
+            />
+            <StatCard
+              label="Revenue won"
+              value={overall ? fmtUsd(overall.wonValueUsd) : '—'}
+              deltaLabel={timeFiltered ? periodLabel : 'All time'}
+              onClick={() => setDrill({ label: 'Deals won', packageKey: null, stage: 'won' })}
+            />
           </div>
+
+          {drill && (
+            <ChartCard
+              title={`Deals — ${drill.label}`}
+              subtitle={`Client-side from the deal board (all regions)${timeFiltered ? ` · ${periodLabel.toLowerCase()}` : ''} · click a name to inspect`}
+              action={
+                <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1" role="group" aria-label="Stage filter">
+                    {(['all', 'won', 'lost'] as const).map((s) => (
+                      <button
+                        key={s}
+                        onClick={() => setDrill({ ...drill, stage: s })}
+                        aria-pressed={drill.stage === s}
+                        className={clsx(
+                          'rounded-full px-2 py-0.5 text-micro font-bold capitalize transition-colors',
+                          drill.stage === s
+                            ? 'bg-navy text-white dark:bg-ice dark:text-navy'
+                            : 'border border-line text-grey hover:text-navy',
+                        )}
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                  <Button variant="secondary" size="xs" onClick={() => setDrill(null)} className="text-grey" aria-label="Close deal list">
+                    <X size={11} /> Close
+                  </Button>
+                </div>
+              }
+            >
+              {drillDeals.length === 0 ? (
+                <p className="py-6 text-center text-xs text-grey">No matching closed deals on the board.</p>
+              ) : (
+                <div className="max-h-72 overflow-y-auto">
+                  <table className="w-full text-xs">
+                    <thead className="sticky top-0 bg-card">
+                      <tr className="border-b border-line text-left text-micro uppercase tracking-wider text-grey">
+                        <th className="pb-2 pl-2">Project</th>
+                        <th className="pb-2">Outcome</th>
+                        <th className="pb-2">Package</th>
+                        <th className="pb-2 text-right">Value</th>
+                        <th className="pb-2 pr-2 text-right">Closed</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line/50">
+                      {drillDeals.map((d) => (
+                        <tr key={d.id} className="hover:bg-ice-soft dark:hover:bg-ice-soft/5">
+                          <td className="py-1.5 pl-2">
+                            <button
+                              type="button"
+                              onClick={() => inspect('deal', d.id)}
+                              className="font-semibold text-navy underline-offset-2 hover:underline"
+                              title="Open deal inspector"
+                            >
+                              {d.projectName}
+                            </button>
+                            {d.projectTicker && <span className="ml-1.5 font-mono text-micro text-grey">{d.projectTicker}</span>}
+                          </td>
+                          <td className="py-1.5">
+                            <span
+                              className={clsx(
+                                'rounded px-1.5 py-0.5 text-micro font-bold uppercase',
+                                d.stage === 'won'
+                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                  : 'bg-red-500/10 text-red-600 dark:text-red-400',
+                              )}
+                            >
+                              {d.stage}
+                            </span>
+                          </td>
+                          <td className="py-1.5 capitalize text-grey">{(d.packageType ?? 'unknown').replace(/_/g, ' ')}</td>
+                          <td className="py-1.5 text-right font-mono text-navy">{fmtUsd((d.packageValue ?? 0) / 100)}</td>
+                          <td className="py-1.5 pr-2 text-right text-grey">
+                            {new Date(d.stage === 'won' ? (d.wonAt ?? d.updatedAt) : d.updatedAt).toLocaleDateString()}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </ChartCard>
+          )}
 
           <ChartCard
             title="Insights"
@@ -295,15 +443,25 @@ export function WinLoss() {
 
             <ChartCard
               title="Win vs loss by package type"
-              subtitle={timeFiltered ? `Deals closed — ${periodLabel.toLowerCase()}` : 'Closed deals split by package'}
+              subtitle={`${timeFiltered ? `Deals closed — ${periodLabel.toLowerCase()}` : 'Closed deals split by package'} · click a column to list its deals`}
             >
               {packageBuckets.length === 0 ? (
                 <EmptyState title="No closed deals" description={timeFiltered ? 'No deals closed in this period.' : 'Package breakdown appears once deals close.'} />
               ) : (
-                <GroupedColumnChart
-                  data={packageBuckets.map((b) => ({ label: b.key, values: [b.won, b.lost] }))}
-                  series={['Won', 'Lost']}
-                />
+                <div
+                  className="cursor-pointer"
+                  onClick={(e) => {
+                    const idx = columnIndexFromClick(e, packageBuckets.length);
+                    if (idx == null) return;
+                    const b = packageBuckets[idx];
+                    setDrill({ label: `Package — ${b.key}`, packageKey: b.key, stage: 'all' });
+                  }}
+                >
+                  <GroupedColumnChart
+                    data={packageBuckets.map((b) => ({ label: b.key, values: [b.won, b.lost] }))}
+                    series={['Won', 'Lost']}
+                  />
+                </div>
               )}
             </ChartCard>
 

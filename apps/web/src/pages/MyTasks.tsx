@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ListChecks, Check, X, Plus, RefreshCw } from 'lucide-react';
+import { ListChecks, Check, X, Plus, RefreshCw, Briefcase, MessageSquare } from 'lucide-react';
 import { fetchTasks, createTask, completeTask, dismissTask, type OperatorTask } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
 import { TableSkeleton, EmptyState } from '@/components/shared';
 import { PageTitle, Button } from '@/components/ui';
+import { useInspect } from '@/stores';
 
 const KIND_LABEL: Record<string, string> = {
   manual: 'manual',
@@ -23,7 +23,7 @@ function bucketOf(t: OperatorTask): 'overdue' | 'today' | 'later' | 'someday' {
 }
 
 export function MyTasks() {
-  const navigate = useNavigate();
+  const inspect = useInspect();
   const [tasks, setTasks] = useState<OperatorTask[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -67,21 +67,53 @@ export function MyTasks() {
     setNewTitle('');
   };
 
-  const Row = ({ t }: { t: OperatorTask }) => (
-    <div className="flex items-start gap-2 rounded-lg border border-line bg-white dark:bg-slate-900/40 p-3">
+  const Row = ({ t, overdue = false }: { t: OperatorTask; overdue?: boolean }) => (
+    <div
+      className={`flex items-start gap-2 rounded-lg border p-3 ${
+        overdue
+          ? 'border-status-blocked/50 bg-status-blocked-bg/50 dark:bg-status-blocked-bg/15'
+          : 'border-line bg-white dark:bg-slate-900/40'
+      }`}
+    >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">{t.title}</span>
           <span className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-micro font-bold uppercase text-grey">{KIND_LABEL[t.kind] ?? t.kind}</span>
         </div>
         {t.detail && <p className="text-xs text-grey mt-0.5">{t.detail}</p>}
-        <div className="mt-1 flex items-center gap-2 text-xs text-grey">
-          {t.projectName && (
-            <button onClick={() => t.projectId && navigate(`/bd-pipeline/${t.projectId}`)} className="font-semibold text-cyan-600 hover:underline">
+        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-grey">
+          {t.projectName && t.projectId && (
+            <button
+              onClick={() => inspect('project', t.projectId!)}
+              className="font-semibold text-cyan-600 hover:underline"
+              title="Inspect project"
+            >
               {t.projectName}
             </button>
           )}
-          {t.dueAt && <span>due {new Date(t.dueAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>}
+          {t.dealId && (
+            <button
+              onClick={() => inspect('deal', t.dealId!)}
+              className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro font-bold text-emerald-700 dark:text-emerald-400 hover:border-emerald-400 hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+              title="Inspect the deal that spawned this task"
+            >
+              <Briefcase size={9} /> deal
+            </button>
+          )}
+          {t.handoffId && (
+            <button
+              onClick={() => inspect('handoff', t.handoffId!)}
+              className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro font-bold text-violet-700 dark:text-violet-400 hover:border-violet-400 hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+              title="Inspect the reply that spawned this task"
+            >
+              <MessageSquare size={9} /> reply
+            </button>
+          )}
+          {t.dueAt && (
+            <span className={overdue ? 'font-bold text-status-blocked' : ''}>
+              due {new Date(t.dueAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+            </span>
+          )}
         </div>
       </div>
       <button
@@ -102,7 +134,7 @@ export function MyTasks() {
         <h2 className={`text-xs font-bold uppercase tracking-wider ${tone}`}>
           {label} ({buckets[name].length})
         </h2>
-        {buckets[name].map((t) => <Row key={t.id} t={t} />)}
+        {buckets[name].map((t) => <Row key={t.id} t={t} overdue={name === 'overdue'} />)}
       </div>
     );
 
@@ -142,7 +174,7 @@ export function MyTasks() {
         />
       )}
 
-      <Bucket name="overdue" label="Overdue" tone="text-red-600" />
+      <Bucket name="overdue" label="Overdue" tone="text-status-blocked" />
       <Bucket name="today" label="Today" tone="text-amber-600" />
       <Bucket name="later" label="Coming up" tone="text-slate-500" />
       <Bucket name="someday" label="No due date" tone="text-slate-400" />

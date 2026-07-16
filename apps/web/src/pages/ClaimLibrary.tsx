@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import { clsx } from 'clsx';
+import { Copy } from 'lucide-react';
 import { fetchClaims } from '@/lib/api/bd';
 import { CLAIM_CATEGORY_LABELS, CLAIM_RISK_COLORS } from '@/types/bd';
 import type { Claim, ClaimLibrarySnapshot } from '@/types/bd';
 import { SectionLabel } from '@/components/ui';
 import { EmptyState, CardSkeleton } from '@/components/shared';
+import { toast } from '@/components/shared/Toast';
+import { useInspect } from '@/stores';
 
 export function ClaimLibrary() {
   const [snapshot, setSnapshot] = useState<ClaimLibrarySnapshot | null>(null);
@@ -123,8 +126,32 @@ export function ClaimLibrary() {
 }
 
 function ClaimCard({ claim }: { claim: Claim }) {
+  const inspect = useInspect();
+
+  const copy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(claim.text);
+      toast('success', `Claim ${claim.id} copied to clipboard`);
+    } catch {
+      toast('error', 'Copy failed');
+    }
+  };
+
   return (
-    <div className="rounded-lg border border-line bg-card overflow-hidden">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => inspect('claim', claim.id)}
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          inspect('claim', claim.id);
+        }
+      }}
+      title="Inspect claim"
+      className="rounded-lg border border-line bg-card overflow-hidden cursor-pointer text-left transition-colors hover:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+    >
       <div className="flex items-center gap-2 px-4 py-2 border-b border-line bg-ice-soft dark:bg-ice-soft/5">
         <span className="text-micro font-mono font-bold text-grey">{claim.id}</span>
         <span className="text-micro text-grey">v{claim.version}</span>
@@ -134,10 +161,17 @@ function ClaimCard({ claim }: { claim: Claim }) {
         {claim.requiresHumanReview && (
           <span className="rounded bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 px-1.5 py-0.5 text-micro font-bold">Review Required</span>
         )}
-        <span className="ml-auto flex gap-1">
+        <span className="ml-auto flex items-center gap-1">
           {claim.jurisdiction.map(j => (
             <span key={j} className="rounded bg-cyan-100 text-cyan-700 dark:bg-cyan-950/30 dark:text-cyan-400 px-1.5 py-0.5 text-micro font-bold uppercase">{j}</span>
           ))}
+          <button
+            onClick={e => void copy(e)}
+            className="ml-1 inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro font-bold text-grey hover:bg-card hover:text-navy transition-colors"
+            title="Copy claim text"
+          >
+            <Copy size={9} /> Copy
+          </button>
         </span>
       </div>
       <div className="px-4 py-3">

@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
 import { clsx } from 'clsx';
-import { ArrowUpDown } from 'lucide-react';
+import { ArrowUpDown, Eye, Moon, X } from 'lucide-react';
 import type { BdLead, BdFilters, RecommendedMarket } from '@/types/bd';
 import { deriveMarketTag, deriveNextAction, deriveStage, MARKET_RECOMMENDATION_LABELS, MARKET_RECOMMENDATION_COLORS } from '@/types/bd';
+import { computeReplySla, SLA_CLS } from '@/lib/salesIntel';
+import { formatAgeHours, formatWakeDate } from '@/components/queue/logic';
 import { ScoreBadge, BandBadge } from './ScoreBadge';
 import { MarketTag } from './MarketTag';
 
@@ -13,6 +15,17 @@ interface LeadTableProps {
   onSort: (field: BdFilters['sort']) => void;
   onSelect: (id: string) => void;
   loading: boolean;
+  /** Keyboard-selected row (J/K) — visibly highlighted. */
+  selectedId?: string | null;
+  /** id → inbound reply ISO; renders a Reply-SLA chip (Hot replies split). */
+  slaBy?: Record<string, string>;
+  /** id → wake ISO; renders a snooze chip + unsnooze on revealed rows. */
+  snoozeBy?: Record<string, string>;
+  /** id → one-line context ("Task due: …", "Snooze woke …"). */
+  noteBy?: Record<string, string>;
+  onUnsnooze?: (id: string) => void;
+  /** Inspect-in-place affordance (eye icon / Space). */
+  onPeek?: (id: string) => void;
 }
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -32,7 +45,20 @@ const SORT_COLUMNS: { key: BdFilters['sort']; label: string; eu?: boolean; us?: 
   { key: 'created', label: 'Added' },
 ];
 
-export function LeadTable({ leads, filters, clarityEnacted, onSort, onSelect, loading }: LeadTableProps) {
+export function LeadTable({
+  leads,
+  filters,
+  clarityEnacted,
+  onSort,
+  onSelect,
+  loading,
+  selectedId = null,
+  slaBy,
+  snoozeBy,
+  noteBy,
+  onUnsnooze,
+  onPeek,
+}: LeadTableProps) {
   const usColumn: 'us_pre' | 'us_post' = clarityEnacted ? 'us_post' : 'us_pre';
   const usLabel = clarityEnacted ? 'US (Post)' : 'US (Pre)';
 
@@ -69,7 +95,7 @@ export function LeadTable({ leads, filters, clarityEnacted, onSort, onSelect, lo
               >
                 <span className="inline-flex items-center gap-1">
                   {col.key === 'name' ? col.label : (
-                    col.key === 'eu_score' ? 'EU Score' : 
+                    col.key === 'eu_score' ? 'EU Score' :
                     col.key === usColumn ? usLabel : col.label
                   )}
                   <ArrowUpDown size={10} className={clsx(filters.sort === col.key ? 'opacity-100' : 'opacity-30')} />
@@ -85,69 +111,128 @@ export function LeadTable({ leads, filters, clarityEnacted, onSort, onSelect, lo
           </tr>
         </thead>
         <tbody className="divide-y divide-line/50">
-          {leads.map((lead) => (
-            <tr
-              key={lead.id}
-              onClick={() => onSelect(lead.id)}
-              className="hover:bg-ice-soft dark:hover:bg-ice-soft/5 cursor-pointer transition-colors group"
-            >
-              <td className="py-2 px-3">
-                <div className="flex flex-col">
-                  <span className="font-semibold text-navy truncate max-w-[220px]">
-                    {lead.name}
-                  </span>
-                  <span className="text-micro text-grey font-mono">
-                    {SOURCE_LABELS[lead.source] ?? lead.source}
-                    {lead.ticker && <span className="ml-1.5 opacity-60">{lead.ticker}</span>}
-                  </span>
-                </div>
-              </td>
-              <td className="py-2 px-3">
-                <span
-                  className="inline-flex items-center gap-1.5"
-                  title={`Propensity ${lead.propensityScore ?? 0}/100 × eligibility gate = priority ${lead.priorityScore ?? 0}. Market data ${lead.lastEnrichedAt ? `refreshed ${new Date(lead.lastEnrichedAt).toLocaleDateString()}` : 'not yet enriched'}.`}
-                >
-                  <span className="rounded bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 text-micro font-bold text-indigo-700 dark:text-indigo-300 font-mono">
-                    {lead.priorityScore ?? 0}
-                  </span>
-                  <span
-                    className={clsx(
-                      'h-1.5 w-1.5 rounded-full',
-                      lead.lastEnrichedAt ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600',
+          {leads.map((lead) => {
+            const isSelected = selectedId === lead.id;
+            const replyAt = slaBy?.[lead.id];
+            const sla = replyAt ? computeReplySla(replyAt) : null;
+            const wakeAt = snoozeBy?.[lead.id];
+            const note = noteBy?.[lead.id];
+            return (
+              <tr
+                key={lead.id}
+                data-lead-id={lead.id}
+                aria-selected={isSelected}
+                onClick={() => onSelect(lead.id)}
+                className={clsx(
+                  'cursor-pointer transition-colors group',
+                  isSelected
+                    ? 'bg-cyan-500/[0.07] dark:bg-cyan-400/[0.08]'
+                    : 'hover:bg-ice-soft dark:hover:bg-ice-soft/5',
+                )}
+              >
+                <td className={clsx('py-2 px-3 border-l-2', isSelected ? 'border-l-cyan-500' : 'border-l-transparent')}>
+                  <div className="flex items-center gap-2">
+                    <div className="flex flex-col min-w-0">
+                      <span className="font-semibold text-navy truncate max-w-[220px]">
+                        {lead.name}
+                      </span>
+                      <span className="text-micro text-grey font-mono truncate">
+                        {SOURCE_LABELS[lead.source] ?? lead.source}
+                        {lead.ticker && <span className="ml-1.5 opacity-60">{lead.ticker}</span>}
+                        {note && <span className="ml-1.5 text-amber-600 dark:text-amber-400 normal-case">· {note}</span>}
+                      </span>
+                    </div>
+                    {sla && (
+                      <span
+                        className={clsx('shrink-0 text-micro font-bold font-mono whitespace-nowrap', SLA_CLS[sla.state])}
+                        title={`Reply waiting ${formatAgeHours(sla.ageHours)} of a ${sla.budgetHours}h budget — ${sla.state}`}
+                      >
+                        ● {sla.state} {formatAgeHours(sla.ageHours)}
+                      </span>
                     )}
+                    {wakeAt && (
+                      <span
+                        className="shrink-0 inline-flex items-center gap-1 rounded-full border border-line bg-ice-soft dark:bg-navy-deep px-1.5 py-0.5 text-micro font-bold text-grey whitespace-nowrap"
+                        title={`Snoozed — wakes ${new Date(wakeAt).toLocaleString()}`}
+                      >
+                        <Moon size={9} /> {formatWakeDate(wakeAt)}
+                        {onUnsnooze && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onUnsnooze(lead.id);
+                            }}
+                            className="hover:text-navy transition-colors"
+                            aria-label={`Unsnooze ${lead.name}`}
+                            title="Unsnooze"
+                          >
+                            <X size={9} />
+                          </button>
+                        )}
+                      </span>
+                    )}
+                    {onPeek && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onPeek(lead.id);
+                        }}
+                        className="ml-auto shrink-0 rounded p-0.5 text-grey opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-navy transition-all"
+                        aria-label={`Peek ${lead.name}`}
+                        title="Peek (Space)"
+                      >
+                        <Eye size={12} />
+                      </button>
+                    )}
+                  </div>
+                </td>
+                <td className="py-2 px-3">
+                  <span
+                    className="inline-flex items-center gap-1.5"
+                    title={`Propensity ${lead.propensityScore ?? '—'}/100 × eligibility gate = priority ${lead.priorityScore ?? '—'}. Market data ${lead.lastEnrichedAt ? `refreshed ${new Date(lead.lastEnrichedAt).toLocaleDateString()}` : 'not yet enriched'}.`}
+                  >
+                    <span className="rounded bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 text-micro font-bold text-indigo-700 dark:text-indigo-300 font-mono">
+                      {lead.priorityScore ?? '—'}
+                    </span>
+                    <span
+                      className={clsx(
+                        'h-1.5 w-1.5 rounded-full',
+                        lead.lastEnrichedAt ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600',
+                      )}
+                    />
+                  </span>
+                </td>
+                <td className="py-2 px-3">
+                  <ScoreBadge score={lead.euScore} band={lead.band} size="sm" />
+                </td>
+                <td className="py-2 px-3">
+                  <ScoreBadge
+                    score={clarityEnacted ? lead.usPostScore : lead.usPreScore}
+                    band={lead.band}
+                    size="sm"
                   />
-                </span>
-              </td>
-              <td className="py-2 px-3">
-                <ScoreBadge score={lead.euScore} band={lead.band} size="sm" />
-              </td>
-              <td className="py-2 px-3">
-                <ScoreBadge
-                  score={clarityEnacted ? lead.usPostScore : lead.usPreScore}
-                  band={lead.band}
-                  size="sm"
-                />
-              </td>
-              <td className="py-2 px-3">
-                <MarketTag market={deriveMarketTag(lead)} />
-              </td>
-              <td className="py-2 px-3">
-                <BandBadge band={lead.band} />
-              </td>
-              <td className="py-2 px-3">
-                <MarketRecommendationBadge value={lead.recommendedMarket ?? null} />
-              </td>
-              <td className="py-2 px-3">
-                <span className="text-grey-dark dark:text-grey-light">{deriveStage(lead.band)}</span>
-              </td>
-              <td className="py-2 px-3">
-                <span className="font-medium text-navy">{deriveNextAction(lead.band)}</span>
-              </td>
-              <td className="py-2 px-3">
-                <ContactStatus peopleCount={lead.peopleCount} verifiedCount={lead.verifiedContactCount} />
-              </td>
-            </tr>
-          ))}
+                </td>
+                <td className="py-2 px-3">
+                  <MarketTag market={deriveMarketTag(lead)} />
+                </td>
+                <td className="py-2 px-3">
+                  <BandBadge band={lead.band} />
+                </td>
+                <td className="py-2 px-3">
+                  <MarketRecommendationBadge value={lead.recommendedMarket ?? null} />
+                </td>
+                <td className="py-2 px-3">
+                  <span className="text-grey-dark dark:text-grey-light">{deriveStage(lead.band)}</span>
+                </td>
+                <td className="py-2 px-3">
+                  <span className="font-medium text-navy">{deriveNextAction(lead.band)}</span>
+                </td>
+                <td className="py-2 px-3">
+                  <ContactStatus peopleCount={lead.peopleCount} verifiedCount={lead.verifiedContactCount} />
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

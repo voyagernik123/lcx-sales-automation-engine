@@ -10,6 +10,9 @@ import {
   Plus,
 } from 'lucide-react';
 import { request } from '@/lib/apiClient';
+import { fetchKpis } from '@/lib/api/kpi';
+import { fetchKpiHistory, type KpiSnapshot } from '@/lib/api/bd';
+import { CompareBars, Sparkline, StackedBarH, CHART_GOOD, CHART_BAD } from '@/components/charts';
 import { TableSkeleton } from '@/components/shared';
 import { PageTitle, SectionLabel, Button } from '@/components/ui';
 
@@ -286,8 +289,15 @@ function DomainsTab() {
 }
 
 /* ── Mailbox health ──────────────────────────────────────────────── */
+
+/** Lifetime sequence outcomes derivable from the KPI payload (honest set:
+ * per-step/open tracking doesn't exist in the API). */
+type SequenceOutcomes = { sent: number; replied: number; handoffs: number | null };
+
 function HealthTab() {
   const [report, setReport] = useState<MailboxReport | null>(null);
+  const [outcomes, setOutcomes] = useState<SequenceOutcomes | null>(null);
+  const [trend, setTrend] = useState<KpiSnapshot[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -302,6 +312,22 @@ function HealthTab() {
     } finally {
       setLoading(false);
     }
+    // Best-effort extras: outcome composition (KPI payload) + volume trend
+    // (daily KPI snapshots). Both degrade silently.
+    fetchKpis()
+      .then((k) => {
+        const kk = k as typeof k & { telegramConversion?: { handoffs: number } };
+        const channels = Object.values(k.replyRateByChannel);
+        setOutcomes({
+          sent: channels.reduce((a, s) => a + s.sent, 0),
+          replied: channels.reduce((a, s) => a + s.replied, 0),
+          handoffs: kk.telegramConversion?.handoffs ?? null,
+        });
+      })
+      .catch(() => setOutcomes(null));
+    fetchKpiHistory(30)
+      .then(setTrend)
+      .catch(() => setTrend([]));
   }, []);
 
   useEffect(() => {
@@ -336,6 +362,70 @@ function HealthTab() {
               </div>
             ))}
           </div>
+
+          {/* delivery outcome composition — bounce/complaint made visible, not just rates */}
+          {report.overall.total > 0 && (
+            <div className="rounded-lg border border-line bg-card p-3">
+              <SectionLabel as="div" className="mb-2">
+                Delivery outcomes · last {report.windowDays} days
+              </SectionLabel>
+              <StackedBarH
+                segments={[
+                  { label: 'Delivered', value: report.overall.delivered, color: CHART_GOOD },
+                  { label: 'Bounced', value: report.overall.bounced, color: CHART_BAD },
+                  { label: 'Complained', value: report.overall.complained, color: 'var(--chart-3)' },
+                ]}
+              />
+            </div>
+          )}
+
+          {/* sequence outcomes — the honest step funnel the payload supports
+              (sent → replied → handoff; no open tracking exists in the API) */}
+          {outcomes && outcomes.sent > 0 && (
+            <div className="rounded-lg border border-line bg-card p-3">
+              <SectionLabel as="div" className="mb-2">
+                Sequence outcomes · lifetime, all channels
+              </SectionLabel>
+              <StackedBarH
+                segments={
+                  outcomes.handoffs != null
+                    ? [
+                        { label: 'Handoff', value: Math.min(outcomes.handoffs, outcomes.replied) },
+                        { label: 'Replied — no handoff', value: Math.max(0, outcomes.replied - outcomes.handoffs) },
+                        { label: 'No reply', value: Math.max(0, outcomes.sent - outcomes.replied) },
+                      ]
+                    : [
+                        { label: 'Replied', value: outcomes.replied },
+                        { label: 'No reply', value: Math.max(0, outcomes.sent - outcomes.replied) },
+                      ]
+                }
+              />
+              <p className="mt-1.5 text-[10px] text-grey">
+                From the KPI payload: {outcomes.sent} sent → {outcomes.replied} replied
+                {outcomes.handoffs != null ? ` → ${outcomes.handoffs} handoffs (handoffs are counted independently of channel)` : ''}.
+                Opens aren't tracked, so there is no open step.
+              </p>
+            </div>
+          )}
+
+          {/* volume trend from daily KPI snapshots (cumulative counters) */}
+          {trend.length > 1 && (
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: 'Email sent — 30d trend', data: trend.map((s) => s.emailSent) },
+                { label: 'Email replies — 30d trend', data: trend.map((s) => s.emailReplied) },
+              ].map((t) => (
+                <div key={t.label} className="flex items-center justify-between gap-3 rounded-lg border border-line bg-card p-3">
+                  <div>
+                    <SectionLabel as="div">{t.label}</SectionLabel>
+                    <div className="mt-1 font-mono text-lg font-bold">{t.data[t.data.length - 1]}</div>
+                    <p className="text-[10px] text-grey">Cumulative counter from daily KPI snapshots</p>
+                  </div>
+                  <Sparkline data={t.data} width={110} height={30} area />
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className="overflow-x-auto rounded-lg border border-line">
             <table className="w-full text-xs">
@@ -489,36 +579,42 @@ function AbTestsTab() {
 
       {selected && results && (
         <div className="rounded-lg border border-line bg-card p-3 space-y-2">
-          <SectionLabel as="div">Results · {results.metric}</SectionLabel>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {results.variants.map((v) => (
-              <div key={v.variant} className="rounded border border-line p-2">
-                <div className="font-mono text-label font-bold">{v.variant}</div>
-                <div className="text-label text-grey">
-                  {v.converted}/{v.assigned} converted · <span className="font-mono">{pct(v.rate)}</span>
-                </div>
-              </div>
-            ))}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SectionLabel as="div">Results · {results.metric}</SectionLabel>
+            {results.comparison &&
+              (results.comparison.significant ? (
+                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-micro font-bold text-emerald-600 dark:text-emerald-400">
+                  Significant · winner {results.comparison.winner} · p={results.comparison.pValue.toFixed(4)}
+                </span>
+              ) : (
+                <span className="rounded-full border border-line px-2 py-0.5 text-micro font-bold text-grey">
+                  Not yet significant (p ≥ 0.05)
+                </span>
+              ))}
           </div>
+
+          {/* comparison bars with 95% CI whiskers — stats as marks, not prose.
+              Width-capped so the fixed viewBox doesn't oversize the type. */}
+          <div className="max-w-xl">
+            <CompareBars
+              data={results.variants.map((v) => ({
+                label: `${v.variant} (n=${v.assigned})`,
+                rate: v.rate,
+                n: v.assigned,
+                converted: v.converted,
+                winner: Boolean(results.comparison?.significant && results.comparison.winner === v.variant),
+              }))}
+            />
+          </div>
+
           {results.comparison ? (
             <div className="rounded border border-line p-2 text-[12px]">
-              <div>
-                {results.comparison.a} vs {results.comparison.b}: lift{' '}
-                <span className="font-mono font-bold">{(results.comparison.lift * 100).toFixed(1)}%</span>
-              </div>
-              <div className="text-grey">
-                z = <span className="font-mono">{results.comparison.z.toFixed(2)}</span>, p ={' '}
+              {results.comparison.a} vs {results.comparison.b}: lift{' '}
+              <span className="font-mono font-bold">{(results.comparison.lift * 100).toFixed(1)}%</span>
+              <span className="text-grey">
+                {' '}· z = <span className="font-mono">{results.comparison.z.toFixed(2)}</span> · p ={' '}
                 <span className="font-mono">{results.comparison.pValue.toFixed(4)}</span>
-              </div>
-              <div className="mt-1">
-                {results.comparison.significant ? (
-                  <span className="font-bold text-emerald-600">
-                    Significant — winner: {results.comparison.winner}
-                  </span>
-                ) : (
-                  <span className="text-grey">Not yet significant (p ≥ 0.05)</span>
-                )}
-              </div>
+              </span>
             </div>
           ) : (
             <p className="text-label text-grey">Not enough assignments to compare yet.</p>

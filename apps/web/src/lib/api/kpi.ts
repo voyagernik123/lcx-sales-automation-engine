@@ -50,3 +50,39 @@ export async function fetchForecast(signal?: AbortSignal): Promise<ForecastData>
   const res = await request<{ data: ForecastData }>('/v1/kpis/forecast', { auth: true, signal });
   return res.data;
 }
+
+/* ── Forecast history (daily snapshots of the Monte Carlo bands) ── */
+
+export interface ForecastHistoryPoint {
+  /** YYYY-MM-DD */
+  date: string;
+  p10: number;
+  p50: number;
+  p90: number;
+  expected: number;
+}
+
+/**
+ * GET /v1/kpis/forecast-history — daily {p10,p50,p90,expected} written by the
+ * kpi_snapshot job. Returns [] until snapshots accumulate (the UI shows a
+ * "collecting history" state).
+ */
+export async function fetchForecastHistory(days = 90, signal?: AbortSignal): Promise<ForecastHistoryPoint[]> {
+  const res = await request<{ data: ForecastHistoryPoint[] }>(
+    `/v1/kpis/forecast-history?days=${days}`,
+    { auth: true, signal },
+  );
+  return res.data;
+}
+
+/**
+ * Total size of the project universe (all tracked projects) — powers the
+ * first band of the pipeline Sankey. Reads meta.total off a limit-1 page.
+ */
+export async function fetchUniverseCount(signal?: AbortSignal): Promise<number> {
+  const res = await request<{ data: unknown[]; meta: { total: number } }>(
+    '/v1/projects?limit=1',
+    { auth: true, signal },
+  );
+  return res.meta.total;
+}

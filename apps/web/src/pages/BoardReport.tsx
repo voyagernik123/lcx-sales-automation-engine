@@ -16,8 +16,10 @@ import {
 import { FunnelChart, TrendDelta, StatCard } from '@/components/charts';
 import { EmptyState, PageSkeleton, toast } from '@/components/shared';
 import { PageTitle, Button } from '@/components/ui';
+import { useInspect } from '@/stores';
 import { ReportSection, NoDataRow } from '@/components/report/ReportSection';
 import { SeverityBadge } from '@/components/report/SeverityBadge';
+import { AnomalyDeviation } from '@/components/report/AnomalyDeviation';
 import { PrintStyles } from '@/components/report/PrintStyles';
 import { EmailRecipientsDialog } from '@/components/report/EmailRecipientsDialog';
 
@@ -53,6 +55,7 @@ function fallbackSummary(r: BoardReportData): string {
 }
 
 export function BoardReport() {
+  const inspect = useInspect();
   const [period, setPeriod] = useState<BoardReportPeriod>('week');
   const [report, setReport] = useState<BoardReportData | null>(null);
   const [anomalies, setAnomalies] = useState<BoardAnomaly[]>([]);
@@ -322,7 +325,16 @@ export function BoardReport() {
               {report.topDeals.slice(0, 10).map((d, i) => (
                 <tr key={d.id}>
                   <td className="py-1.5 pr-2 text-grey">{i + 1}</td>
-                  <td className="py-1.5 font-semibold">{d.projectName}</td>
+                  <td className="py-1.5">
+                    <button
+                      type="button"
+                      onClick={() => inspect('deal', d.id)}
+                      className="font-semibold text-navy underline-offset-2 hover:underline"
+                      title="Open deal inspector"
+                    >
+                      {d.projectName}
+                    </button>
+                  </td>
                   <td className="py-1.5 capitalize text-grey">{d.stage.replace(/_/g, ' ')}</td>
                   <td className="py-1.5 capitalize text-grey">{d.packageType.replace(/_/g, ' ')}</td>
                   <td className="py-1.5 text-right font-mono">{usd(d.value)}</td>
@@ -343,7 +355,14 @@ export function BoardReport() {
               <div key={`${a.kind}-${a.metric}-${i}`} className="flex items-start gap-2 text-xs">
                 <SeverityBadge severity={a.severity} />
                 <span className="leading-relaxed">{a.message}</span>
-                {a.zScore != null && <span className="ml-auto shrink-0 font-mono text-micro text-grey">z={a.zScore}</span>}
+                {/* deviation bullet: current bar vs expected tick — the z-score, drawn */}
+                <span className="ml-auto flex shrink-0 items-center gap-2">
+                  <AnomalyDeviation current={a.current} expected={a.expected} severity={a.severity} />
+                  <span className="whitespace-nowrap font-mono text-micro text-grey">
+                    {a.current} vs ~{Math.round(a.expected * 10) / 10}
+                    {a.zScore != null && ` · z=${a.zScore}`}
+                  </span>
+                </span>
               </div>
             ))}
           </div>

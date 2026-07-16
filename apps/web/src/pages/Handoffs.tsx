@@ -1,9 +1,12 @@
 import { useEffect, useCallback, useState } from 'react';
-import { MessageSquare, ExternalLink, User, RefreshCw, ChevronLeft, MessageCircle, ThumbsUp, ThumbsDown, RotateCcw, Send, Copy } from 'lucide-react';
-import { fetchHandoffs, claimHandoff, updateHandoffStatus, addHandoffNote, reEnrollHandoff, fetchReplyDrafts, markHandoffMovedToTelegram, type ReplyDraft } from '@/lib/api/bd';
+import { useSearchParams } from 'react-router-dom';
+import { MessageSquare, ExternalLink, User, RefreshCw, ChevronLeft, MessageCircle, ThumbsUp, ThumbsDown, RotateCcw, Send, Copy, Mail, Linkedin, Clock } from 'lucide-react';
+import { fetchHandoffs, claimHandoff, updateHandoffStatus, addHandoffNote, reEnrollHandoff, fetchReplyDrafts, markHandoffMovedToTelegram, analyzeSentiment, type ReplyDraft, type SentimentResult } from '@/lib/api/bd';
+import { computeReplySla, SLA_CLS } from '@/lib/salesIntel';
+import { useInspect } from '@/stores';
 import { toast } from '@/components/shared/Toast';
 import { CardSkeleton, EmptyState } from '@/components/shared';
-import { PageTitle, SectionLabel, Button } from '@/components/ui';
+import { SectionLabel, Button } from '@/components/ui';
 import { HANDOFF_STATUS_COLORS, HANDOFF_STATUS_LABELS } from '@/types/bd';
 import type { HandoffRecord, HandoffEvent } from '@/types/bd';
 
@@ -15,6 +18,79 @@ function StatusBadge({ status }: { status: string }) {
       {HANDOFF_STATUS_LABELS[status] ?? status}
     </span>
   );
+}
+
+/* ── Reply SLA chip (Linear-style aging on every unanswered reply) ── */
+
+function formatAge(hours: number): string {
+  if (hours < 1) return `${Math.max(1, Math.round(hours * 60))}m`;
+  if (hours < 48) return `${Math.round(hours)}h`;
+  return `${Math.round(hours / 24)}d`;
+}
+
+function SlaChip({ createdAt }: { createdAt: string }) {
+  const sla = computeReplySla(createdAt);
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center gap-0.5 rounded border border-line px-1 py-0.5 text-[9px] font-bold uppercase leading-none ${SLA_CLS[sla.state]}`}
+      title={`Reply SLA: ${Math.round(sla.ageHours * 10) / 10}h of ${sla.budgetHours}h budget`}
+    >
+      <Clock size={8} /> {sla.state} {formatAge(sla.ageHours)}
+    </span>
+  );
+}
+
+/* ── Inline sentiment chip on the reply text (same engine as AI Console) ── */
+
+const SENTIMENT_STYLE: Record<string, string> = {
+  positive: 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300',
+  neutral: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
+  negative: 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300',
+  objection: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+};
+
+/** Once-per-handoff cache so switching selection never re-runs the classifier. */
+const sentimentCache = new Map<string, SentimentResult>();
+
+function SentimentChip({ handoffId, text }: { handoffId: string; text: string }) {
+  const [result, setResult] = useState<SentimentResult | null>(() => sentimentCache.get(handoffId) ?? null);
+
+  useEffect(() => {
+    const cached = sentimentCache.get(handoffId);
+    if (cached) {
+      setResult(cached);
+      return;
+    }
+    setResult(null);
+    let cancelled = false;
+    analyzeSentiment(text)
+      .then(r => {
+        sentimentCache.set(handoffId, r);
+        if (!cancelled) setResult(r);
+      })
+      .catch(() => {
+        /* sentiment is a bonus signal — fail silently */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [handoffId, text]);
+
+  if (!result) return null;
+  return (
+    <span
+      className={`inline-flex items-center rounded px-1.5 py-0.5 text-micro font-bold leading-none ${SENTIMENT_STYLE[result.sentiment] ?? ''}`}
+      title={`Sentiment (${Math.round(result.confidence * 100)}% confidence)${result.matched.length ? ` — signals: ${result.matched.join(', ')}` : ''}`}
+    >
+      {result.sentiment}
+    </span>
+  );
+}
+
+function ChannelIcon({ channel, size = 11 }: { channel: string; size?: number }) {
+  if (channel === 'linkedin') return <Linkedin size={size} className="text-blue-700 dark:text-blue-400 shrink-0" />;
+  if (channel === 'telegram') return <Send size={size} className="text-sky-600 dark:text-sky-400 shrink-0" />;
+  return <Mail size={size} className="text-emerald-600 dark:text-emerald-400 shrink-0" />;
 }
 
 function HandoffEvents({ events }: { events: HandoffEvent[] }) {
@@ -128,6 +204,7 @@ function ReplyDrafts({ handoffId, onMoved }: { handoffId: string; onMoved: () =>
 }
 
 function HandoffDetail({ handoff, onBack, onRefresh }: { handoff: HandoffRecord; onBack: () => void; onRefresh: () => void }) {
+  const inspect = useInspect();
   const [noteText, setNoteText] = useState('');
   const [saving, setSaving] = useState('');
 
@@ -187,22 +264,34 @@ function HandoffDetail({ handoff, onBack, onRefresh }: { handoff: HandoffRecord;
 
   const availableStatuses = STATUS_OPTIONS.filter(s => s !== handoff.status);
   const showReEnroll = handoff.status === 'resolved_lost' || handoff.status === 'resolved_won_path' || handoff.status === 're_nurture';
+  const sla = handoff.status === 'open' ? computeReplySla(handoff.createdAt) : null;
 
   return (
     <div className="space-y-4">
-      <button onClick={onBack} className="flex items-center gap-1 text-micro font-bold text-grey hover:text-navy transition-colors">
+      <button onClick={onBack} className="md:hidden flex items-center gap-1 text-micro font-bold text-grey hover:text-navy transition-colors">
         <ChevronLeft size={12} /> Back to Inbox
       </button>
 
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="font-bold text-sm">{handoff.projectName ?? 'Unknown Project'}</h2>
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <button
+            onClick={() => inspect('project', handoff.projectId)}
+            className="font-bold text-sm text-navy hover:text-cyan-600 dark:hover:text-cyan-400 hover:underline text-left truncate block"
+            title="Inspect project"
+          >
+            {handoff.projectName ?? 'Unknown Project'}
+          </button>
           <p className="text-micro text-grey">
             {handoff.projectTicker && <>{handoff.projectTicker} · </>}
             {handoff.channel} · Trigger: {handoff.triggerReason}
           </p>
+          {sla && (
+            <p className={`text-micro font-bold ${SLA_CLS[sla.state]}`}>
+              Reply SLA: {sla.state} — {Math.round(sla.ageHours * 10) / 10}h of {sla.budgetHours}h budget
+            </p>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink-0">
           <StatusBadge status={handoff.status} />
           {handoff.assignedTo && (
             <span className="inline-flex items-center gap-1 text-micro text-grey">
@@ -215,7 +304,17 @@ function HandoffDetail({ handoff, onBack, onRefresh }: { handoff: HandoffRecord;
       {handoff.personName && (
         <div className="rounded border border-line p-2 text-micro space-y-1">
           <div className="flex items-center gap-2">
-            <span className="font-bold">{handoff.personName}</span>
+            {handoff.personId ? (
+              <button
+                onClick={() => inspect('contact', `${handoff.projectId}:${handoff.personId}`)}
+                className="font-bold text-navy hover:text-cyan-600 dark:hover:text-cyan-400 hover:underline"
+                title="Inspect contact"
+              >
+                {handoff.personName}
+              </button>
+            ) : (
+              <span className="font-bold">{handoff.personName}</span>
+            )}
             {handoff.personEmail && <span className="text-grey">{handoff.personEmail}</span>}
           </div>
           {handoff.personLinkedin && (
@@ -233,6 +332,17 @@ function HandoffDetail({ handoff, onBack, onRefresh }: { handoff: HandoffRecord;
               <Send size={9} /> Telegram: {handoff.personTelegram}
             </a>
           )}
+        </div>
+      )}
+
+      {/* Their reply + inline sentiment (same engine the AI Console runs) */}
+      {handoff.summary && (
+        <div className="rounded border border-line p-2 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <SectionLabel>Their reply</SectionLabel>
+            <SentimentChip handoffId={handoff.id} text={handoff.summary} />
+          </div>
+          <p className="text-micro leading-relaxed whitespace-pre-wrap text-navy">{handoff.summary}</p>
         </div>
       )}
 
@@ -283,13 +393,49 @@ function HandoffDetail({ handoff, onBack, onRefresh }: { handoff: HandoffRecord;
   );
 }
 
+/* ── Compact inbox row (left pane) ── */
+
+function InboxRow({ h, active, onSelect }: { h: HandoffRecord; active: boolean; onSelect: () => void }) {
+  const snippet = h.summary ?? h.triggerReason.replace(/_/g, ' ');
+  return (
+    <button
+      onClick={onSelect}
+      aria-current={active ? 'true' : undefined}
+      className={`w-full text-left border-b border-line px-2.5 py-2 transition-colors ${
+        active
+          ? 'bg-cyan-50 dark:bg-cyan-950/30 border-l-2 border-l-cyan-500'
+          : 'border-l-2 border-l-transparent hover:bg-ice-soft dark:hover:bg-ice-soft/5'
+      }`}
+    >
+      <div className="flex items-center gap-1.5 min-w-0">
+        <ChannelIcon channel={h.channel} size={10} />
+        <span className="font-bold text-micro truncate text-navy">{h.projectName ?? 'Unknown'}</span>
+        {h.projectTicker && <span className="text-[9px] text-grey shrink-0 font-mono">{h.projectTicker}</span>}
+        <span className="flex-1" />
+        {h.status === 'open' ? <SlaChip createdAt={h.createdAt} /> : <StatusBadge status={h.status} />}
+      </div>
+      <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
+        <p className="text-micro text-grey truncate flex-1">
+          {h.personName && <span className="font-semibold">{h.personName} — </span>}
+          {snippet}
+        </p>
+        <span className="text-[9px] text-grey shrink-0">
+          {new Date(h.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+        </span>
+      </div>
+    </button>
+  );
+}
+
 export function Handoffs() {
   const [handoffs, setHandoffs] = useState<HandoffRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState('open,in_progress');
-  const [selectedHandoff, setSelectedHandoff] = useState<HandoffRecord | null>(null);
+  const [selected, setSelected] = useState<HandoffRecord | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const deepLinkId = searchParams.get('handoff');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -298,102 +444,107 @@ export function Handoffs() {
       const res = await fetchHandoffs({ status: statusFilter, limit: 100 });
       setHandoffs(res.data);
       setTotal(res.meta.total);
+      return res.data;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load handoffs');
+      return null;
     } finally {
       setLoading(false);
     }
   }, [statusFilter]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    void (async () => {
+      const data = await load();
+      if (!data) return;
+      setSelected(prev => {
+        // deep link (?handoff=<id>) wins, then keep the current selection,
+        // then auto-select the top row on desktop widths.
+        if (deepLinkId) {
+          const hit = data.find(h => h.id === deepLinkId);
+          if (hit) return hit;
+        }
+        if (prev) return data.find(h => h.id === prev.id) ?? prev;
+        if (data.length > 0 && typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {
+          return data[0];
+        }
+        return null;
+      });
+      if (deepLinkId) setSearchParams({}, { replace: true });
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load]);
 
-  if (selectedHandoff) {
-    return (
-      <div className="max-w-2xl mx-auto p-4 space-y-4">
-        <HandoffDetail
-          handoff={selectedHandoff}
-          onBack={() => setSelectedHandoff(null)}
-          onRefresh={async () => {
-            const res = await fetchHandoffs({ status: statusFilter, limit: 100 });
-            setHandoffs(res.data);
-            setTotal(res.meta.total);
-            const updated = res.data.find(h => h.id === selectedHandoff.id);
-            if (updated) setSelectedHandoff(updated);
-          }}
-        />
-      </div>
-    );
-  }
+  const refresh = async () => {
+    const data = await load();
+    if (!data) return;
+    setSelected(prev => (prev ? data.find(h => h.id === prev.id) ?? prev : null));
+  };
 
   return (
-    <div className="p-4">
-      <PageTitle
-        icon={<MessageSquare size={20} />}
-        subtitle={`${total} open handoffs — any reply pauses automation`}
-        actions={
-          <>
-            <div className="flex rounded border border-line overflow-hidden">
-              {STATUS_OPTIONS.map(s => {
-                const isActive = statusFilter.includes(s);
-                return (
-                  <button
-                    key={s}
-                    onClick={() => {
-                      const others = STATUS_OPTIONS.filter(x => x !== s).filter(x => statusFilter.includes(x));
-                      setSelectedHandoff(null);
-                      setStatusFilter(isActive ? others.join(',') : [...statusFilter.split(',').filter(Boolean), s].join(','));
-                    }}
-                    className={`px-2 py-1 text-micro font-bold transition-colors ${isActive ? 'bg-cyan-600 text-white' : 'bg-ice-soft dark:bg-ice-soft/5 text-grey hover:bg-ice-soft/50'}`}
-                  >
-                    {HANDOFF_STATUS_LABELS[s] ?? s}
-                  </button>
-                );
-              })}
-            </div>
-            <Button variant="secondary" size="xs" onClick={load}>
-              <RefreshCw size={10} /> Refresh
-            </Button>
-          </>
-        }
-      >
-        Human Handoff Queue
-      </PageTitle>
+    <div className="flex h-[calc(100vh-6.5rem)] overflow-hidden text-navy">
+      {/* Left: inbox list */}
+      <div className={`${selected ? 'hidden md:flex' : 'flex'} w-full md:w-[340px] shrink-0 flex-col border-r border-line bg-card`}>
+        <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-line">
+          <MessageSquare size={15} className="text-cyan-500 shrink-0" />
+          <h1 className="text-sm font-bold">Handoff Inbox</h1>
+          <span className="text-micro text-grey font-mono">{total}</span>
+          <div className="flex-1" />
+          <Button variant="secondary" size="xs" onClick={() => void refresh()}>
+            <RefreshCw size={10} />
+          </Button>
+        </div>
 
-      {loading && handoffs.length === 0 && <CardSkeleton count={6} />}
+        <div className="shrink-0 flex flex-wrap gap-1 px-3 py-1.5 border-b border-line">
+          {STATUS_OPTIONS.map(s => {
+            const isActive = statusFilter.split(',').includes(s);
+            return (
+              <button
+                key={s}
+                onClick={() => {
+                  const parts = statusFilter.split(',').filter(Boolean);
+                  const next = isActive ? parts.filter(x => x !== s) : [...parts, s];
+                  setStatusFilter(next.join(','));
+                }}
+                className={`rounded px-1.5 py-0.5 text-micro font-bold transition-colors ${isActive ? 'bg-cyan-600 text-white' : 'bg-ice-soft dark:bg-ice-soft/5 text-grey hover:bg-ice-soft/50'}`}
+              >
+                {HANDOFF_STATUS_LABELS[s] ?? s}
+              </button>
+            );
+          })}
+        </div>
 
-      {error && <p className="text-micro text-red-500">{error}</p>}
-
-      {!loading && handoffs.length === 0 && !error && (
-        <EmptyState variant="search" title="No handoffs match the current filter" />
-      )}
-
-      {handoffs.length > 0 && (
-        <div className="space-y-1">
+        <div className="flex-1 overflow-y-auto">
+          {loading && handoffs.length === 0 && <div className="p-3"><CardSkeleton count={6} /></div>}
+          {error && <p className="p-3 text-micro text-red-500">{error}</p>}
+          {!loading && handoffs.length === 0 && !error && (
+            <EmptyState variant="search" title="No handoffs match the current filter" />
+          )}
           {handoffs.map(h => (
-            <button
-              key={h.id}
-              onClick={() => setSelectedHandoff(h)}
-              className="w-full text-left rounded border border-line p-2 hover:bg-ice-soft dark:hover:bg-ice-soft/5 transition-colors"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="font-bold text-micro truncate">{h.projectName ?? 'Unknown'}</span>
-                  {h.projectTicker && <span className="text-micro text-grey shrink-0">{h.projectTicker}</span>}
-                  <span className={`inline-flex rounded px-1 py-0.5 text-micro font-bold leading-none ${h.channel === 'linkedin' ? 'text-cyan-600 bg-cyan-50 dark:bg-cyan-950/30' : 'text-emerald-600 bg-emerald-50 dark:bg-emerald-950/30'}`}>
-                    {h.channel}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <StatusBadge status={h.status} />
-                  {h.assignedTo && <span className="text-micro text-grey flex items-center gap-1"><User size={8} />{h.assignedTo}</span>}
-                  <span className="text-micro text-grey">{new Date(h.createdAt).toLocaleDateString()}</span>
-                </div>
-              </div>
-              {h.personName && <p className="text-micro text-grey mt-0.5">{h.personName}{h.personEmail ? ` · ${h.personEmail}` : ''}</p>}
-            </button>
+            <InboxRow key={h.id} h={h} active={selected?.id === h.id} onSelect={() => setSelected(h)} />
           ))}
         </div>
-      )}
+      </div>
+
+      {/* Right: detail pane — same screen, no page swap */}
+      <div className={`${selected ? 'flex' : 'hidden md:flex'} min-w-0 flex-1 flex-col overflow-y-auto bg-page`}>
+        {selected ? (
+          <div className="max-w-2xl w-full mx-auto p-4">
+            <HandoffDetail
+              handoff={selected}
+              onBack={() => setSelected(null)}
+              onRefresh={() => void refresh()}
+            />
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center justify-center">
+            <EmptyState
+              title="Select a handoff"
+              description="Pick a reply from the inbox on the left — the full thread, drafts and actions open here without leaving the queue."
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
