@@ -5,3 +5,7 @@ export { useAuditStore } from './useAuditStore';
 export type { AuditLog, ReadinessAssignment } from './useAuditStore';
 export { useOperatorStore, OPERATORS } from './useOperatorStore';
 export type { Operator } from './useOperatorStore';
+export { useInspectorStore, useInspect } from './useInspectorStore';
+export type { InspectorEntityType, InspectorTarget } from './useInspectorStore';
+export { useSalesScenarioStore, useScenarioActive, applyScenarioToWinProb, applyScenarioToValue, BASELINE_SCENARIO } from './useSalesScenarioStore';
+export type { SalesScenario } from './useSalesScenarioStore';

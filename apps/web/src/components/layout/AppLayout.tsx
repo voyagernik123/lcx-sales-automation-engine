@@ -5,6 +5,7 @@ import { Sidebar } from './Sidebar';
 import { MainContent } from './MainContent';
 import { Footer } from './Footer';
 import { ErrorBoundary, ToastContainer, CommandPalette, useCommandPalette } from '@/components/shared';
+import { InspectorHost } from '@/components/inspect/InspectorHost';
 import { useUIStore, useOperatorStore } from '@/stores';
 
 export function AppLayout() {
@@ -32,6 +33,7 @@ export function AppLayout() {
       </div>
       <Footer />
       <ToastContainer />
+      <InspectorHost />
       <CommandPalette open={open} onClose={() => setOpen(false)} />
     </div>
   );
