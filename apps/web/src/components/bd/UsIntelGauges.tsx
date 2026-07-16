@@ -62,11 +62,11 @@ export function UsIntelGauges({
   const empty = rows.length === 0 && redFlagCount == null;
 
   return (
-    <div id={id} className="rounded-lg border border-line overflow-hidden">
+    <div id={id} className="rounded-lg border border-line/70 bg-card shadow-card overflow-hidden">
       <div className={`flex items-center gap-2 border-b border-line bg-ice-soft dark:bg-ice-soft/5 ${compact ? 'px-2.5 py-1.5' : 'px-3 py-2'}`}>
         <Radar size={12} className="text-cyan-500 shrink-0" />
         <span className="text-micro font-bold uppercase tracking-wider text-navy">US Intel Signals</span>
-        <span className="text-[9px] text-grey">market-entry readout</span>
+        <span className="text-micro text-grey">market-entry readout</span>
       </div>
       <div className={compact ? 'p-2 space-y-1.5' : 'p-3 space-y-2'}>
         {empty ? (
@@ -81,9 +81,9 @@ export function UsIntelGauges({
                 className="flex items-center gap-2"
                 title="Risk-pattern scanner hits (missing entity docs, security-token indicators, …). Fewer is better; any flag locks the outreach gate."
               >
-                <span className="w-20 shrink-0 text-[9px] font-bold uppercase tracking-wider text-grey">Red flags</span>
+                <span className="w-20 shrink-0 text-micro font-medium uppercase tracking-wider text-grey">Red flags</span>
                 <span
-                  className={`rounded px-1.5 py-0.5 text-[9px] font-bold leading-none ${
+                  className={`rounded px-1.5 py-0.5 text-micro font-bold leading-none ${
                     redFlagCount === 0
                       ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
                       : 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-400'
@@ -118,7 +118,7 @@ function GaugeRow({
 
   return (
     <div className="flex items-center gap-2" title={title}>
-      <span className="w-20 shrink-0 text-[9px] font-bold uppercase tracking-wider text-grey">{label}</span>
+      <span className="w-20 shrink-0 text-micro font-medium uppercase tracking-wider text-grey">{label}</span>
       <div
         className="flex-1 h-1.5 rounded-full bg-ice-soft dark:bg-ice-soft/10 overflow-hidden"
         role="meter"
@@ -129,9 +129,9 @@ function GaugeRow({
       >
         <div className={`h-full rounded-full ${fill}`} style={{ width: `${pct}%` }} />
       </div>
-      <span className="w-7 shrink-0 text-right font-mono text-micro font-bold text-navy">{score}</span>
+      <span className="w-7 shrink-0 text-right font-mono num-tabular text-micro font-bold text-navy">{score}</span>
       {!compact && detail && (
-        <span className="max-w-[9rem] truncate text-[9px] text-grey" title={detail}>{detail}</span>
+        <span className="max-w-[9rem] truncate text-micro text-grey" title={detail}>{detail}</span>
       )}
     </div>
   );

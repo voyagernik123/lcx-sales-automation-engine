@@ -38,15 +38,15 @@ export function PipelinePulseHeader({ pulse, activeWarning, onToggleWarning, cla
   return (
     <div
       className={clsx(
-        'flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-line bg-card px-3 py-2',
+        'flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-line/70 bg-card px-4 py-2.5 shadow-card',
         className,
       )}
       aria-label="Pipeline pulse"
     >
       <div className="flex items-baseline gap-1.5">
-        <span className="font-mono text-sm font-bold text-navy">{pulse.openCount}</span>
+        <span className="num-tabular font-mono text-sm font-bold text-navy">{pulse.openCount}</span>
         <span className="text-micro uppercase tracking-wide text-grey">open</span>
-        <ScenarioValue cents={pulse.openValue} className="ml-1 font-mono text-sm font-bold text-navy" />
+        <ScenarioValue cents={pulse.openValue} className="num-tabular ml-1 font-mono text-sm font-bold text-navy" />
         <span className="text-micro uppercase tracking-wide text-grey">pipeline</span>
       </div>
 
@@ -67,7 +67,7 @@ export function PipelinePulseHeader({ pulse, activeWarning, onToggleWarning, cla
                   : `Filter the board to deals warned: ${WARNING_SHORT_LABEL[code]}`
               }
               className={clsx(
-                'rounded-full border px-2 py-0.5 text-micro font-bold transition-colors',
+                'num-tabular rounded-full border px-2 py-0.5 text-micro font-bold transition-colors',
                 active
                   ? 'border-status-conditional bg-status-conditional-bg text-status-conditional'
                   : 'border-line bg-transparent text-grey hover:border-status-conditional/60 hover:text-navy',
@@ -84,7 +84,7 @@ export function PipelinePulseHeader({ pulse, activeWarning, onToggleWarning, cla
 
       <span className="hidden h-4 w-px bg-line sm:block" aria-hidden="true" />
 
-      <div className="flex items-center gap-2 font-mono text-label" aria-label="Momentum buckets">
+      <div className="num-tabular flex items-center gap-2 font-mono text-label" aria-label="Momentum buckets">
         {momentum.map(m => (
           <span key={m.key} title={m.title} className={clsx('inline-flex items-center gap-0.5', MOMENTUM_GLYPH[m.key].cls)}>
             {MOMENTUM_GLYPH[m.key].glyph}

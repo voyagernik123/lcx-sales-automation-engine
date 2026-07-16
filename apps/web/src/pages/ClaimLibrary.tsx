@@ -70,7 +70,7 @@ export function ClaimLibrary() {
           <h1 className="text-lg font-bold text-navy">Claim Library</h1>
           <span className="text-micro text-grey">v{snapshot.version}</span>
         </div>
-        <span className="text-micro text-grey">{snapshot.claims.length} claims · updated {new Date(snapshot.updatedAt).toLocaleDateString()}</span>
+        <span className="text-micro text-grey num-tabular">{snapshot.claims.length} claims · updated {new Date(snapshot.updatedAt).toLocaleDateString()}</span>
       </div>
 
       {/* Admin Disclaimer */}
@@ -84,11 +84,12 @@ export function ClaimLibrary() {
       <div className="shrink-0 flex items-center gap-1 px-4 py-2 border-b border-line bg-card overflow-x-auto">
         <button
           onClick={() => setActiveCategory(null)}
+          aria-pressed={!activeCategory}
           className={clsx(
-            'whitespace-nowrap rounded px-2.5 py-1 text-micro font-bold transition-colors',
+            'whitespace-nowrap rounded-full border px-2.5 py-1 text-micro font-semibold transition-colors',
             !activeCategory
-              ? 'bg-cyan-600 text-white'
-              : 'border border-line text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10',
+              ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+              : 'border-line text-grey hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10',
           )}
         >
           All ({snapshot.claims.length})
@@ -97,11 +98,12 @@ export function ClaimLibrary() {
           <button
             key={cat}
             onClick={() => setActiveCategory(cat)}
+            aria-pressed={activeCategory === cat}
             className={clsx(
-              'whitespace-nowrap rounded px-2.5 py-1 text-micro font-bold transition-colors',
+              'whitespace-nowrap rounded-full border px-2.5 py-1 text-micro font-semibold transition-colors',
               activeCategory === cat
-                ? 'bg-cyan-600 text-white'
-                : 'border border-line text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10',
+                ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+                : 'border-line text-grey hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10',
             )}
           >
             {CLAIM_CATEGORY_LABELS[cat] ?? cat} ({snapshot.claims.filter(c => c.category === cat).length})
@@ -150,20 +152,20 @@ function ClaimCard({ claim }: { claim: Claim }) {
         }
       }}
       title="Inspect claim"
-      className="rounded-lg border border-line bg-card overflow-hidden cursor-pointer text-left transition-colors hover:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+      className="rounded-lg border border-line/70 bg-card shadow-card overflow-hidden cursor-pointer text-left lift hover:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-500"
     >
       <div className="flex items-center gap-2 px-4 py-2 border-b border-line bg-ice-soft dark:bg-ice-soft/5">
         <span className="text-micro font-mono font-bold text-grey">{claim.id}</span>
-        <span className="text-micro text-grey">v{claim.version}</span>
-        <span className={`rounded px-1.5 py-0.5 text-micro font-bold ${CLAIM_RISK_COLORS[claim.riskLevel]}`}>
+        <span className="text-micro text-grey num-tabular">v{claim.version}</span>
+        <span className={`inline-flex h-[18px] items-center rounded px-1.5 text-micro font-semibold capitalize ${CLAIM_RISK_COLORS[claim.riskLevel]}`}>
           {claim.riskLevel}
         </span>
         {claim.requiresHumanReview && (
-          <span className="rounded bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 px-1.5 py-0.5 text-micro font-bold">Review Required</span>
+          <span className="inline-flex h-[18px] items-center rounded bg-amber-100 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 px-1.5 text-micro font-semibold">Review Required</span>
         )}
         <span className="ml-auto flex items-center gap-1">
           {claim.jurisdiction.map(j => (
-            <span key={j} className="rounded bg-cyan-100 text-cyan-700 dark:bg-cyan-950/30 dark:text-cyan-400 px-1.5 py-0.5 text-micro font-bold uppercase">{j}</span>
+            <span key={j} className="inline-flex h-[18px] items-center rounded border border-line/70 bg-ice-soft/50 dark:bg-navy-deep/50 px-1.5 text-micro font-semibold text-grey-dark uppercase">{j}</span>
           ))}
           <button
             onClick={e => void copy(e)}

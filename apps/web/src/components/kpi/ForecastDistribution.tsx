@@ -97,19 +97,19 @@ export function ForecastDistribution({ forecast }: { forecast: ForecastData }) {
           {/* percentile tiles — scenario-adjusted in cyan, baseline kept visible */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
             {bands.map((b) => (
-              <div key={b.label} className="rounded-lg border border-line p-2 text-center">
-                <div className="text-[10px] font-medium uppercase tracking-wide text-grey">{b.label}</div>
+              <div key={b.label} className="rounded-lg border border-line/70 p-2 text-center">
+                <div className="text-micro font-medium uppercase tracking-wide text-grey">{b.label}</div>
                 {b.scn != null ? (
                   <div className="mt-0.5">
-                    <span className={clsx('block text-sm font-semibold', SIM_TEXT)} title="Scenario-adjusted">
+                    <span className={clsx('num-tabular block text-sm font-semibold', SIM_TEXT)} title="Scenario-adjusted">
                       {fmtUsd(b.scn)}
                     </span>
-                    <span className="block text-[9px] text-grey line-through" title="Baseline">
+                    <span className="num-tabular block text-micro text-grey line-through" title="Baseline">
                       {fmtUsd(b.base)}
                     </span>
                   </div>
                 ) : (
-                  <div className="mt-0.5 text-sm font-semibold text-navy">{fmtUsd(b.base)}</div>
+                  <div className="num-tabular mt-0.5 text-sm font-semibold text-navy">{fmtUsd(b.base)}</div>
                 )}
               </div>
             ))}
@@ -124,7 +124,7 @@ export function ForecastDistribution({ forecast }: { forecast: ForecastData }) {
               formatX={fmtUsdCompact}
               formatCount={(v) => `${Math.round(v)}`}
             />
-            <p className="mt-1 text-[10px] text-grey">
+            <p className="mt-1.5 text-micro text-grey">
               X: simulated quarter revenue · Y: runs per bucket · markers show {scnSim ? 'scenario' : 'baseline'} percentiles
             </p>
           </div>
@@ -144,7 +144,7 @@ export function ForecastDistribution({ forecast }: { forecast: ForecastData }) {
 
             {mathOpen && (
               <div className="mt-2 space-y-2">
-                <p className="text-[11px] leading-relaxed text-grey">
+                <p className="text-micro leading-relaxed text-grey">
                   Expected = Σ winProbability × value over open deals. The distribution draws each deal as an
                   independent Bernoulli(winProbability) event {RUNS.toLocaleString()} times (mulberry32 PRNG, seed 42 — same
                   engine as the API) and sums the values that close.
@@ -155,15 +155,15 @@ export function ForecastDistribution({ forecast }: { forecast: ForecastData }) {
                     </span>
                   )}
                 </p>
-                <div className="max-h-56 overflow-y-auto rounded-lg border border-line">
+                <div className="max-h-56 overflow-y-auto rounded-lg border border-line/70">
                   <table className="w-full text-xs">
                     <thead className="sticky top-0 bg-card">
-                      <tr className="border-b border-line text-left text-[10px] font-bold uppercase tracking-wider text-grey">
-                        <th className="px-2 py-1.5">Deal</th>
-                        <th className="px-2 py-1.5">Stage</th>
-                        <th className="px-2 py-1.5 text-right">Win prob</th>
-                        <th className="px-2 py-1.5 text-right">Value</th>
-                        <th className="px-2 py-1.5 text-right">Expected</th>
+                      <tr className="border-b border-line text-left text-micro font-medium uppercase tracking-wide text-grey">
+                        <th className="px-2 py-2.5">Deal</th>
+                        <th className="px-2 py-2.5">Stage</th>
+                        <th className="px-2 py-2.5 text-right">Win prob</th>
+                        <th className="px-2 py-2.5 text-right">Value</th>
+                        <th className="px-2 py-2.5 text-right">Expected</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line/50">
@@ -171,8 +171,8 @@ export function ForecastDistribution({ forecast }: { forecast: ForecastData }) {
                         const adjP = scnSim ? applyScenarioToWinProb(d.winProbability, scenario) : d.winProbability;
                         const adjV = scnSim ? applyScenarioToValue(d.value, scenario) : d.value;
                         return (
-                          <tr key={d.id} className="hover:bg-ice-soft dark:hover:bg-ice-soft/5">
-                            <td className="px-2 py-1.5">
+                          <tr key={d.id} className="hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10">
+                            <td className="px-2 py-2.5">
                               <button
                                 type="button"
                                 onClick={() => inspect('deal', d.id)}
@@ -182,14 +182,14 @@ export function ForecastDistribution({ forecast }: { forecast: ForecastData }) {
                                 {d.projectName}
                               </button>
                             </td>
-                            <td className="px-2 py-1.5 text-grey">{STAGE_LABELS[d.stage] ?? d.stage}</td>
-                            <td className={clsx('px-2 py-1.5 text-right font-mono', scnSim ? SIM_TEXT : 'text-navy')}>
+                            <td className="px-2 py-2.5 text-grey">{STAGE_LABELS[d.stage] ?? d.stage}</td>
+                            <td className={clsx('num-tabular px-2 py-2.5 text-right font-mono', scnSim ? SIM_TEXT : 'text-navy')}>
                               {Math.round(adjP)}%
                             </td>
-                            <td className={clsx('px-2 py-1.5 text-right font-mono', scnSim ? SIM_TEXT : 'text-navy')}>
+                            <td className={clsx('num-tabular px-2 py-2.5 text-right font-mono', scnSim ? SIM_TEXT : 'text-navy')}>
                               {fmtUsd(adjV)}
                             </td>
-                            <td className={clsx('px-2 py-1.5 text-right font-mono font-bold', scnSim ? SIM_TEXT : 'text-navy')}>
+                            <td className={clsx('num-tabular px-2 py-2.5 text-right font-mono font-bold', scnSim ? SIM_TEXT : 'text-navy')}>
                               {fmtUsd((adjP / 100) * adjV)}
                             </td>
                           </tr>
@@ -198,10 +198,10 @@ export function ForecastDistribution({ forecast }: { forecast: ForecastData }) {
                     </tbody>
                     <tfoot>
                       <tr className="border-t border-line">
-                        <td colSpan={4} className="px-2 py-1.5 text-right text-[10px] font-bold uppercase tracking-wider text-grey">
+                        <td colSpan={4} className="px-2 py-2.5 text-right text-micro font-medium uppercase tracking-wide text-grey">
                           Σ expected
                         </td>
-                        <td className={clsx('px-2 py-1.5 text-right font-mono font-bold', scnSim ? SIM_TEXT : 'text-navy')}>
+                        <td className={clsx('num-tabular px-2 py-2.5 text-right font-mono font-bold', scnSim ? SIM_TEXT : 'text-navy')}>
                           {fmtUsd(view.expected)}
                         </td>
                       </tr>

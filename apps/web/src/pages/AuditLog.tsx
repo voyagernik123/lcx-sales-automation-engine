@@ -25,21 +25,22 @@ const INSPECTABLE_ENTITY: Record<string, InspectorEntityType> = {
   handoffs: 'handoff',
 };
 
-const ACTION_COLORS: Record<string, string> = {
-  project_created: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/20',
-  project_merged: 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/20',
-  score_computed: 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/20',
-  deal_stage_change: 'text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/20',
-  handoff_created: 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/20',
-  outreach_paused: 'text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-950/20',
-  outreach_enrolled: 'text-sky-600 dark:text-sky-400 bg-sky-50 dark:bg-sky-950/20',
-  suppression_created: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20',
+/** Neutral chip + colored dot per action family (chip restraint). */
+const ACTION_DOTS: Record<string, string> = {
+  project_created: 'bg-emerald-500',
+  project_merged: 'bg-blue-500',
+  score_computed: 'bg-purple-500',
+  deal_stage_change: 'bg-cyan-500',
+  handoff_created: 'bg-amber-500',
+  outreach_paused: 'bg-orange-500',
+  outreach_enrolled: 'bg-sky-500',
+  suppression_created: 'bg-red-500',
 };
 
 function ActionBadge({ action }: { action: string }) {
-  const color = ACTION_COLORS[action] ?? 'text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-950/20';
   return (
-    <span className={clsx('inline-block rounded-full px-2 py-0.5 text-micro font-bold', color)}>
+    <span className="inline-flex h-[18px] items-center gap-1.5 rounded-full border border-line/70 bg-ice-soft/50 dark:bg-navy-deep/50 px-2 text-micro font-semibold text-grey-dark whitespace-nowrap">
+      <span className={clsx('h-1.5 w-1.5 rounded-full shrink-0', ACTION_DOTS[action] ?? 'bg-slate-400')} />
       {action.replace(/_/g, ' ')}
     </span>
   );
@@ -66,7 +67,7 @@ function MetaChips({ meta }: { meta: Record<string, unknown> }) {
           className="inline-flex max-w-[240px] items-center gap-1 rounded bg-ice-soft dark:bg-ice-soft/10 px-1.5 py-0.5 text-micro leading-none"
           title={`${k}: ${fmtMetaValue(v)}`}
         >
-          <span className="font-bold uppercase tracking-wide text-grey">{k}</span>
+          <span className="font-medium text-grey">{k}</span>
           <span className="truncate font-mono text-navy">{fmtMetaValue(v)}</span>
         </span>
       ))}
@@ -132,7 +133,7 @@ export function AuditLog() {
           <Shield size={17} className="text-cyan-500" />
           Audit Log
         </h1>
-        <span className="text-micro text-grey font-mono">{total} events</span>
+        <span className="text-micro text-grey font-mono num-tabular">{total} events</span>
       </div>
 
       <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-line bg-card flex-wrap">
@@ -163,9 +164,12 @@ export function AuditLog() {
         <div className="shrink-0 flex items-center gap-1 px-4 py-1.5 border-b border-line bg-card overflow-x-auto">
           <button
             onClick={() => { setAction(''); setPage(1); }}
+            aria-pressed={!action}
             className={clsx(
-              'whitespace-nowrap rounded px-2 py-0.5 text-micro font-bold transition-colors',
-              !action ? 'bg-cyan-600 text-white' : 'border border-line text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10',
+              'whitespace-nowrap rounded-full border px-2 py-0.5 text-micro font-semibold transition-colors',
+              !action
+                ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+                : 'border-line text-grey hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10',
             )}
           >
             All actions
@@ -174,9 +178,12 @@ export function AuditLog() {
             <button
               key={a}
               onClick={() => { setAction(action === a ? '' : a); setPage(1); }}
+              aria-pressed={action === a}
               className={clsx(
-                'whitespace-nowrap rounded px-2 py-0.5 text-micro font-bold transition-colors',
-                action === a ? 'bg-cyan-600 text-white' : 'border border-line text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10',
+                'whitespace-nowrap rounded-full border px-2 py-0.5 text-micro font-semibold transition-colors',
+                action === a
+                  ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+                  : 'border-line text-grey hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10',
               )}
             >
               {a.replace(/_/g, ' ')}
@@ -209,19 +216,19 @@ export function AuditLog() {
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-line sticky top-0 bg-card">
-                <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Time</th>
-                <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Actor</th>
-                <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Action</th>
-                <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Entity</th>
-                <th className="text-left py-2 px-3 text-micro font-bold uppercase tracking-wider text-grey">Details</th>
+                <th className="text-left py-2.5 px-3 text-micro font-medium uppercase tracking-wider text-grey">Time</th>
+                <th className="text-left py-2.5 px-3 text-micro font-medium uppercase tracking-wider text-grey">Actor</th>
+                <th className="text-left py-2.5 px-3 text-micro font-medium uppercase tracking-wider text-grey">Action</th>
+                <th className="text-left py-2.5 px-3 text-micro font-medium uppercase tracking-wider text-grey">Entity</th>
+                <th className="text-left py-2.5 px-3 text-micro font-medium uppercase tracking-wider text-grey">Details</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line/30">
               {entries.map((entry) => {
                 const inspectType = entry.entity ? INSPECTABLE_ENTITY[entry.entity] : undefined;
                 return (
-                  <tr key={entry.id} className="hover:bg-ice-soft dark:hover:bg-ice-soft/5 transition-colors">
-                    <td className="py-2 px-3 text-grey whitespace-nowrap">
+                  <tr key={entry.id} className="hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 transition-colors">
+                    <td className="py-2 px-3 text-grey whitespace-nowrap font-mono num-tabular text-micro">
                       {new Date(entry.createdAt).toLocaleString()}
                     </td>
                     <td className="py-2 px-3 font-medium">{entry.actor}</td>
@@ -257,7 +264,7 @@ export function AuditLog() {
 
       {totalPages > 1 && (
         <div className="shrink-0 flex items-center justify-between px-4 py-2 border-t border-line bg-card">
-          <span className="text-micro text-grey">Page {page} of {totalPages}</span>
+          <span className="text-micro text-grey num-tabular">Page {page} of {totalPages}</span>
           <div className="flex items-center gap-2">
             <Button
               variant="secondary"

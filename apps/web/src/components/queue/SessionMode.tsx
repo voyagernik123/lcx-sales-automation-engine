@@ -192,11 +192,11 @@ export function SessionMode({
           <span className="h-2 w-2 rounded-full bg-cyan-500 animate-pulse" />
           Session — {splitLabel}
         </span>
-        <span className="ml-auto text-xs font-mono text-grey">
+        <span className="ml-auto text-xs font-mono num-tabular text-grey">
           {phase === 'done' ? `${worked} of ${leads.length} worked` : `${idx + 1} of ${leads.length}`}
         </span>
         <span className="text-micro text-grey hidden sm:inline">
-          <kbd className="rounded border border-line bg-ice-soft dark:bg-navy-deep px-1 font-mono font-bold text-navy">Esc</kbd> end
+          <kbd className="rounded border border-line bg-ice-soft dark:bg-navy-deep px-1.5 font-mono font-medium text-navy leading-4">Esc</kbd> end
         </span>
         <button
           onClick={() => (phase === 'done' ? onClose() : setPhase('done'))}
@@ -228,13 +228,13 @@ export function SessionMode({
             {/* Numbers row — each carries its why in the title */}
             <div className="flex flex-wrap items-center gap-2 mb-4">
               <span
-                className="rounded bg-indigo-50 dark:bg-indigo-950/40 px-2 py-1 text-xs font-bold text-indigo-700 dark:text-indigo-300 font-mono"
+                className="inline-flex h-6 items-center rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-xs font-semibold text-navy font-mono num-tabular"
                 title="Priority = propensity × eligibility gate"
               >
                 Priority {lead.priorityScore ?? '—'}
               </span>
               <span
-                className="rounded bg-ice-soft dark:bg-navy-deep px-2 py-1 text-xs font-mono text-grey"
+                className="inline-flex h-6 items-center rounded border border-line/70 px-2 text-xs font-mono num-tabular text-grey"
                 title="Propensity to pay for a listing, 0–100"
               >
                 Propensity {lead.propensityScore ?? '—'}
@@ -337,9 +337,9 @@ export function SessionMode({
                   ['Disqualified', counts.disqualified],
                 ] as const
               ).map(([label, n]) => (
-                <div key={label} className="rounded border border-line px-2 py-3">
-                  <p className="text-xl font-bold font-mono">{n}</p>
-                  <p className="text-micro text-grey uppercase tracking-wider">{label}</p>
+                <div key={label} className="rounded-lg border border-line bg-card shadow-card px-2 py-3">
+                  <p className="text-xl num-hero num-tabular font-mono">{n}</p>
+                  <p className="mt-0.5 text-micro font-medium text-grey uppercase tracking-wider">{label}</p>
                 </div>
               ))}
             </div>

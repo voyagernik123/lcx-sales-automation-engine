@@ -69,16 +69,16 @@ export function MyTasks() {
 
   const Row = ({ t, overdue = false }: { t: OperatorTask; overdue?: boolean }) => (
     <div
-      className={`flex items-start gap-2 rounded-lg border p-3 ${
+      className={`flex items-start gap-2 rounded-lg border p-3 shadow-card ${
         overdue
           ? 'border-status-blocked/50 bg-status-blocked-bg/50 dark:bg-status-blocked-bg/15'
-          : 'border-line bg-white dark:bg-slate-900/40'
+          : 'border-line/70 bg-card'
       }`}
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-sm font-semibold">{t.title}</span>
-          <span className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-micro font-bold uppercase text-grey">{KIND_LABEL[t.kind] ?? t.kind}</span>
+          <span className="inline-flex h-[18px] items-center rounded-full border border-line/70 bg-ice-soft/50 dark:bg-navy-deep/50 px-2 text-micro font-medium text-grey">{KIND_LABEL[t.kind] ?? t.kind}</span>
         </div>
         {t.detail && <p className="text-xs text-grey mt-0.5">{t.detail}</p>}
         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-grey">
@@ -94,7 +94,7 @@ export function MyTasks() {
           {t.dealId && (
             <button
               onClick={() => inspect('deal', t.dealId!)}
-              className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro font-bold text-emerald-700 dark:text-emerald-400 hover:border-emerald-400 hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+              className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro font-bold text-emerald-700 dark:text-emerald-400 hover:border-emerald-400 hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 transition-colors"
               title="Inspect the deal that spawned this task"
             >
               <Briefcase size={9} /> deal
@@ -103,14 +103,14 @@ export function MyTasks() {
           {t.handoffId && (
             <button
               onClick={() => inspect('handoff', t.handoffId!)}
-              className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro font-bold text-violet-700 dark:text-violet-400 hover:border-violet-400 hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+              className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro font-bold text-violet-700 dark:text-violet-400 hover:border-violet-400 hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 transition-colors"
               title="Inspect the reply that spawned this task"
             >
               <MessageSquare size={9} /> reply
             </button>
           )}
           {t.dueAt && (
-            <span className={overdue ? 'font-bold text-status-blocked' : ''}>
+            <span className={`num-tabular ${overdue ? 'font-bold text-status-blocked' : ''}`}>
               due {new Date(t.dueAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
             </span>
           )}
@@ -118,7 +118,7 @@ export function MyTasks() {
       </div>
       <button
         onClick={() => void act(() => completeTask(t.id), 'Done')}
-        className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-xs font-bold text-white hover:bg-emerald-700"
+        className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-xs font-bold text-white hover:bg-emerald-700 transition-colors"
       >
         <Check size={12} /> Done
       </button>
@@ -157,15 +157,15 @@ export function MyTasks() {
           onChange={(e) => setNewTitle(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && void addTask()}
           placeholder="Add a task…"
-          className="flex-1 rounded-lg border border-line px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          className="flex-1 rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs outline-none focus:border-cyan-500 transition-colors"
         />
-        <button onClick={() => void addTask()} className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 px-3 py-1.5 text-label font-bold text-white hover:bg-indigo-700">
+        <button onClick={() => void addTask()} className="inline-flex items-center gap-1 rounded-lg bg-cyan-600 px-3 py-1.5 text-label font-bold text-white hover:bg-cyan-700 transition-colors">
           <Plus size={12} /> Add
         </button>
       </div>
 
       {loading && <TableSkeleton rows={6} cols={4} />}
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">{error}</div>}
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30 p-3 text-xs text-red-700 dark:text-red-300">{error}</div>}
       {!loading && !error && tasks.length === 0 && (
         <EmptyState
           variant="done"
@@ -175,9 +175,9 @@ export function MyTasks() {
       )}
 
       <Bucket name="overdue" label="Overdue" tone="text-status-blocked" />
-      <Bucket name="today" label="Today" tone="text-amber-600" />
-      <Bucket name="later" label="Coming up" tone="text-slate-500" />
-      <Bucket name="someday" label="No due date" tone="text-slate-400" />
+      <Bucket name="today" label="Today" tone="text-amber-600 dark:text-amber-400" />
+      <Bucket name="later" label="Coming up" tone="text-grey" />
+      <Bucket name="someday" label="No due date" tone="text-grey/70" />
     </div>
   );
 }

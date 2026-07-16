@@ -49,7 +49,7 @@ export function DisqualifyDialog({ open, leadName, onClose, onConfirm }: Disqual
         </>
       }
     >
-      <p className="text-xs text-grey-dark dark:text-grey-light mb-2">
+      <p className="text-xs text-grey-dark mb-2">
         <span className="font-bold text-navy">{leadName}</span> will be suppressed from the queue.
         Capture the why — it feeds win/loss analysis.
       </p>

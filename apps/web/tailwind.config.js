@@ -27,6 +27,12 @@ export default {
         sans: ['Inter', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
+      boxShadow: {
+        // Elevation system — values swap per theme via CSS vars in tokens.css.
+        card: 'var(--shadow-card)',
+        'card-md': 'var(--shadow-card-md)',
+        overlay: 'var(--shadow-overlay)',
+      },
       fontSize: {
         // Named density scale — replaces arbitrary text-[10px]/text-[11px].
         // `micro` is the new minimum (11px), reserved for dense data-table cells.

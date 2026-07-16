@@ -115,7 +115,7 @@ export function KpiDashboard() {
 
   if (loading && !kpis) {
     return (
-      <div className="h-[calc(100vh-6.5rem)] overflow-hidden px-4 py-4">
+      <div className="h-[calc(100vh-6.5rem)] overflow-hidden p-5">
         <PageSkeleton />
       </div>
     );
@@ -174,11 +174,14 @@ export function KpiDashboard() {
   return (
     <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy overflow-hidden">
       {/* HEADER */}
-      <div className="shrink-0 flex flex-wrap items-center gap-3 px-4 py-2 border-b border-line bg-card">
-        <h1 className="text-lg font-bold flex items-center gap-1.5">
-          <BarChart3 size={17} className="text-cyan-500" />
-          KPI Dashboard
-        </h1>
+      <div className="shrink-0 flex flex-wrap items-center gap-3 px-5 py-2.5 border-b border-line bg-card">
+        <div className="min-w-0">
+          <h1 className="text-lg font-bold flex items-center gap-1.5">
+            <BarChart3 size={17} className="text-cyan-500" />
+            KPI Dashboard
+          </h1>
+          <p className="mt-0.5 text-micro text-grey">Pipeline, revenue &amp; forecast instruments</p>
+        </div>
 
         {/* DATE RANGE CHIPS */}
         <div className="flex items-center gap-1" role="group" aria-label="Date range">
@@ -188,10 +191,10 @@ export function KpiDashboard() {
               onClick={() => setRange(opt.key)}
               aria-pressed={range === opt.key}
               className={clsx(
-                'rounded-full px-2.5 py-1 text-micro font-bold transition-colors',
+                'rounded-full px-2.5 py-1 text-micro font-semibold transition-colors',
                 range === opt.key
                   ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/40'
-                  : 'border border-line text-grey hover:text-navy hover:bg-ice-soft dark:hover:bg-navy-deep',
+                  : 'border border-line text-grey hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-navy-deep',
               )}
             >
               {opt.label}
@@ -204,10 +207,10 @@ export function KpiDashboard() {
             onClick={() => setAutoRefresh((v) => !v)}
             aria-pressed={autoRefresh}
             className={clsx(
-              'flex items-center gap-1.5 rounded border px-3 py-1 text-micro font-bold transition-colors',
+              'flex items-center gap-1.5 rounded-md border px-3 py-1 text-micro font-semibold transition-colors',
               autoRefresh
                 ? 'border-emerald-400/50 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10'
-                : 'border-line text-grey hover:text-navy hover:bg-ice-soft dark:hover:bg-navy-deep',
+                : 'border-line text-grey hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-navy-deep',
             )}
           >
             <span className={clsx('h-1.5 w-1.5 rounded-full', autoRefresh ? 'bg-emerald-500 animate-pulse' : 'bg-grey')} />
@@ -223,12 +226,12 @@ export function KpiDashboard() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-5 space-y-4">
         {/* METRIC CARDS */}
         <MetricStatCards kpis={kpis} snapshots={windowSnapshots} deltaLabel={deltaLabel} />
 
         {/* FUNNEL / REVENUE / TELEGRAM */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 !mt-6">
           <FunnelSection funnel={kpis.funnel} />
 
           <ChartCard title="Revenue by stream" subtitle={revenueSlices.length > 0 ? `${fmtUsd(totalRevenue)} closed` : undefined}>
@@ -266,7 +269,7 @@ export function KpiDashboard() {
         </ChartCard>
 
         {/* REPLY RATES / DEAL HEALTH */}
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <ChartCard
             title="Reply rate by channel"
             subtitle={totalSent > 0 ? `${totalReplied} replies on ${totalSent} sent` : undefined}
@@ -280,29 +283,38 @@ export function KpiDashboard() {
 
           <ChartCard title="Deal health" subtitle="Open deals by staleness">
             <div className="space-y-2">
-              <div className="flex items-center justify-between rounded-lg p-2 bg-emerald-500/10">
-                <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">Hot (active)</span>
-                <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">{kpis.weeklyView.hot}</span>
+              <div className="flex items-center justify-between rounded-lg border border-line/70 px-2.5 py-2">
+                <span className="flex items-center gap-2 text-xs font-medium text-navy">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" aria-hidden="true" />
+                  Hot (active)
+                </span>
+                <span className="num-tabular text-base font-semibold text-emerald-600 dark:text-emerald-400">{kpis.weeklyView.hot}</span>
               </div>
-              <div className="flex items-center justify-between rounded-lg p-2 bg-amber-500/10">
-                <span className="text-xs font-bold text-amber-600 dark:text-amber-400">Stalled (7–21d)</span>
-                <span className="text-lg font-bold text-amber-600 dark:text-amber-400">{kpis.weeklyView.stalled}</span>
+              <div className="flex items-center justify-between rounded-lg border border-line/70 px-2.5 py-2">
+                <span className="flex items-center gap-2 text-xs font-medium text-navy">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                  Stalled (7–21d)
+                </span>
+                <span className="num-tabular text-base font-semibold text-amber-600 dark:text-amber-400">{kpis.weeklyView.stalled}</span>
               </div>
-              <div className="flex items-center justify-between rounded-lg p-2 bg-red-500/10">
-                <span className="text-xs font-bold text-red-600 dark:text-red-400">Overdue (21d+)</span>
-                <span className="text-lg font-bold text-red-600 dark:text-red-400">{kpis.weeklyView.overdue}</span>
+              <div className="flex items-center justify-between rounded-lg border border-line/70 px-2.5 py-2">
+                <span className="flex items-center gap-2 text-xs font-medium text-navy">
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-500" aria-hidden="true" />
+                  Overdue (21d+)
+                </span>
+                <span className="num-tabular text-base font-semibold text-red-600 dark:text-red-400">{kpis.weeklyView.overdue}</span>
               </div>
-              <div className="grid grid-cols-3 gap-2 border-t border-line pt-2 text-center">
+              <div className="grid grid-cols-3 gap-2 border-t border-line pt-2.5 text-center">
                 <div>
-                  <p className="text-base font-semibold">{kpis.postListingExpansion.totalWon}</p>
+                  <p className="num-tabular text-base font-semibold">{kpis.postListingExpansion.totalWon}</p>
                   <p className="text-xs text-grey">Won</p>
                 </div>
                 <div>
-                  <p className="text-base font-semibold">{kpis.postListingExpansion.withExpansion}</p>
+                  <p className="num-tabular text-base font-semibold">{kpis.postListingExpansion.withExpansion}</p>
                   <p className="text-xs text-grey">With expansion</p>
                 </div>
                 <div>
-                  <p className="text-base font-semibold">{fmtUsd(kpis.postListingExpansion.expansionRevenue / 100)}</p>
+                  <p className="num-tabular text-base font-semibold">{fmtUsd(kpis.postListingExpansion.expansionRevenue / 100)}</p>
                   <p className="text-xs text-grey">Expansion rev</p>
                 </div>
               </div>

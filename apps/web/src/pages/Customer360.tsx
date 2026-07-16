@@ -225,7 +225,7 @@ function NoneYet({ label, to, cta }: { label: string; to: string; cta: string })
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <dt className="text-[9px] font-bold uppercase tracking-wider text-grey">{label}</dt>
+      <dt className="text-micro font-bold uppercase tracking-wider text-grey">{label}</dt>
       <dd className="text-label font-semibold text-navy">{children}</dd>
     </div>
   );
@@ -272,11 +272,11 @@ function TimelineList({ entries }: { entries: TimelineEntry[] }) {
               <span className="font-semibold text-navy">{e.title}</span>
               {e.detail && <span className="text-grey"> — {e.detail}</span>}
               {e.badge && (
-                <span className="ml-1 rounded bg-slate-100 px-1 py-0.5 text-[8px] font-bold uppercase text-grey dark:bg-slate-800">
+                <span className="ml-1 rounded bg-slate-100 px-1 py-0.5 text-micro font-semibold text-grey dark:bg-slate-800">
                   {e.badge}
                 </span>
               )}
-              <div className="text-[9px] uppercase tracking-wide text-grey">{e.kind}</div>
+              <div className="text-micro uppercase tracking-wide text-grey">{e.kind}</div>
             </div>
             <span className="shrink-0 text-xs text-grey">{fmtDateTime(e.ts)}</span>
           </div>
@@ -379,7 +379,7 @@ export function Customer360() {
       <div className="flex flex-wrap items-center gap-2">
         <Link
           to={`/bd-pipeline/${project.id}`}
-          className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-xs font-bold text-grey hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/10"
+          className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-xs font-bold text-grey hover:bg-ice-soft/50 hover:text-navy dark:hover:bg-ice-soft/10 transition-colors"
         >
           <ArrowLeft size={11} /> Back to Lead
         </Link>
@@ -415,7 +415,7 @@ export function Customer360() {
           <button
             key={n.id}
             onClick={() => scrollTo(n.id)}
-            className="whitespace-nowrap rounded px-2 py-1 text-xs font-bold uppercase tracking-wide text-grey hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/10"
+            className="whitespace-nowrap rounded px-2 py-1 text-xs font-bold uppercase tracking-wide text-grey hover:bg-ice-soft/50 hover:text-navy dark:hover:bg-ice-soft/10 transition-colors"
           >
             {n.label}
           </button>
@@ -470,11 +470,11 @@ export function Customer360() {
                 >
                   <span className="font-semibold text-navy">{p.name}</span>
                   {p.title && <span className="text-grey">· {p.title}</span>}
-                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-grey dark:bg-slate-800">
+                  <span className="rounded bg-slate-100 px-1.5 py-0.5 text-micro font-semibold text-grey dark:bg-slate-800">
                     {p.role}
                   </span>
                   {p.verified && (
-                    <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">verified</span>
+                    <span className="text-micro font-bold text-emerald-600 dark:text-emerald-400">verified</span>
                   )}
                   {p.email && <span className="ml-auto text-grey">{p.email}</span>}
                 </button>
@@ -496,7 +496,7 @@ export function Customer360() {
             <div className="mb-3 flex flex-wrap items-center gap-2 text-label">
               <BandBadge band={band} />
               {score.recommendedMarket && (
-                <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+                <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-micro font-semibold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
                   {score.recommendedMarket.replace('_', ' ')}
                 </span>
               )}
@@ -558,7 +558,7 @@ export function Customer360() {
           <div className="space-y-1.5">
             {deals.map((d) => (
               <div key={d.id} className="flex flex-wrap items-center gap-2 text-label">
-                <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+                <span className="rounded bg-indigo-100 px-1.5 py-0.5 text-micro font-semibold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
                   {d.stage}
                 </span>
                 <span className="text-grey">{d.packageType ?? '—'}</span>
@@ -567,7 +567,7 @@ export function Customer360() {
                 )}
                 {d.owner && <span className="text-grey">owner {d.owner}</span>}
                 {d.wonAt && (
-                  <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400">
+                  <span className="text-micro font-bold text-emerald-600 dark:text-emerald-400">
                     won {fmtDate(d.wonAt)}
                   </span>
                 )}
@@ -594,7 +594,7 @@ export function Customer360() {
               <div className="space-y-1.5">
                 {extras.sequences.map((seq) => (
                   <div key={seq.id} className="flex flex-wrap items-center gap-2 text-label">
-                    <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${SEQUENCE_STATUS_COLORS[seq.status] ?? ''}`}>
+                    <span className={`rounded px-1.5 py-0.5 text-micro font-bold ${SEQUENCE_STATUS_COLORS[seq.status] ?? ''}`}>
                       {seq.status}
                     </span>
                     <span className="text-grey">step {seq.currentStep}</span>
@@ -608,7 +608,7 @@ export function Customer360() {
               <div className="space-y-1.5 border-t border-line pt-2">
                 {extras.messages.slice(0, 5).map((m) => (
                   <div key={m.id} className="flex flex-wrap items-center gap-2 text-label">
-                    <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${MESSAGE_STATUS_COLORS[m.status] ?? ''}`}>
+                    <span className={`rounded px-1.5 py-0.5 text-micro font-bold ${MESSAGE_STATUS_COLORS[m.status] ?? ''}`}>
                       {m.status}
                     </span>
                     <span className="min-w-0 flex-1 truncate font-semibold">{m.subject}</span>
@@ -639,7 +639,7 @@ export function Customer360() {
           <div className="space-y-1.5">
             {extras.handoffs.slice(0, 5).map((h) => (
               <div key={h.id} className="flex flex-wrap items-center gap-2 text-label">
-                <span className="rounded bg-violet-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
+                <span className="rounded bg-violet-100 px-1.5 py-0.5 text-micro font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
                   {h.status}
                 </span>
                 <span className="font-semibold">{h.triggerReason}</span>
@@ -668,7 +668,7 @@ export function Customer360() {
           <div className="space-y-1.5">
             {extras.tasks.slice(0, 5).map((t) => (
               <div key={t.id} className="flex flex-wrap items-center gap-2 text-label">
-                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-grey dark:bg-slate-800">
+                <span className="rounded bg-slate-100 px-1.5 py-0.5 text-micro font-semibold text-grey dark:bg-slate-800">
                   {t.kind}
                 </span>
                 <span className="font-semibold">{t.title}</span>

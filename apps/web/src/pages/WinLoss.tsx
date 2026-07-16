@@ -107,7 +107,7 @@ function AllTimeTag({ show }: { show: boolean }) {
   return (
     <span
       title="The API aggregates this breakdown over all time; the period filter doesn't apply here."
-      className="rounded bg-ice-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-grey dark:bg-ice-soft/10"
+      className="rounded-md border border-line/70 bg-ice-soft/50 px-1.5 py-0.5 text-micro font-semibold text-grey dark:bg-ice-soft/10"
     >
       All time
     </span>
@@ -192,9 +192,10 @@ export function WinLoss() {
   const isEmpty = !loading && !error && data !== null && data.overall.total === 0 && boardDeals.every((d) => d.stage !== 'won' && d.stage !== 'lost');
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-4">
+    <div className="mx-auto max-w-5xl space-y-4 p-5">
       <PageTitle
         icon={<BarChart3 size={20} />}
+        subtitle="Closed-deal outcomes across regions, packages, and sources — click any figure to see the deals behind it"
         actions={
           <>
             <select
@@ -230,7 +231,7 @@ export function WinLoss() {
             className={`rounded-full px-3 py-1 text-label font-semibold transition-colors ${
               period === p.id
                 ? 'bg-navy text-white dark:bg-ice dark:text-navy'
-                : 'border border-line bg-card text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10'
+                : 'border border-line bg-card text-grey hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10'
             }`}
           >
             {p.label}
@@ -249,19 +250,19 @@ export function WinLoss() {
           <CardSkeleton count={4} />
           <div className="grid gap-4 md:grid-cols-2">
             {[0, 1].map((i) => (
-              <div key={i} className="rounded-xl border border-line bg-card p-4">
+              <div key={i} className="rounded-xl border border-line/70 bg-card p-5 shadow-card">
                 <ChartSkeleton height={180} />
               </div>
             ))}
           </div>
-          <div className="rounded-xl border border-line bg-card p-4">
+          <div className="rounded-xl border border-line/70 bg-card p-5 shadow-card">
             <TableSkeleton rows={4} cols={5} />
           </div>
         </div>
       )}
 
       {isEmpty && (
-        <div className="rounded-xl border border-line bg-card">
+        <div className="rounded-xl border border-line/70 bg-card shadow-card">
           <EmptyState
             icon={<BarChart3 size={28} className="text-grey" />}
             title="No closed deals yet"
@@ -272,7 +273,7 @@ export function WinLoss() {
 
       {!error && data && !isEmpty && (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard
               label="Overall win rate"
               value={overall ? pct(overall.winRate) : '—'}
@@ -312,10 +313,10 @@ export function WinLoss() {
                         onClick={() => setDrill({ ...drill, stage: s })}
                         aria-pressed={drill.stage === s}
                         className={clsx(
-                          'rounded-full px-2 py-0.5 text-micro font-bold capitalize transition-colors',
+                          'rounded-full px-2 py-0.5 text-micro font-semibold capitalize transition-colors',
                           drill.stage === s
                             ? 'bg-navy text-white dark:bg-ice dark:text-navy'
-                            : 'border border-line text-grey hover:text-navy',
+                            : 'border border-line text-grey hover:bg-ice-soft/50 hover:text-navy dark:hover:bg-ice-soft/10',
                         )}
                       >
                         {s}
@@ -334,18 +335,18 @@ export function WinLoss() {
                 <div className="max-h-72 overflow-y-auto">
                   <table className="w-full text-xs">
                     <thead className="sticky top-0 bg-card">
-                      <tr className="border-b border-line text-left text-micro uppercase tracking-wider text-grey">
-                        <th className="pb-2 pl-2">Project</th>
-                        <th className="pb-2">Outcome</th>
-                        <th className="pb-2">Package</th>
-                        <th className="pb-2 text-right">Value</th>
-                        <th className="pb-2 pr-2 text-right">Closed</th>
+                      <tr className="border-b border-line text-left text-micro font-medium uppercase tracking-wide text-grey">
+                        <th className="py-2.5 pl-2">Project</th>
+                        <th className="py-2.5">Outcome</th>
+                        <th className="py-2.5">Package</th>
+                        <th className="py-2.5 text-right">Value</th>
+                        <th className="py-2.5 pr-2 text-right">Closed</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-line/50">
                       {drillDeals.map((d) => (
-                        <tr key={d.id} className="hover:bg-ice-soft dark:hover:bg-ice-soft/5">
-                          <td className="py-1.5 pl-2">
+                        <tr key={d.id} className="hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10">
+                          <td className="py-2.5 pl-2">
                             <button
                               type="button"
                               onClick={() => inspect('deal', d.id)}
@@ -356,21 +357,25 @@ export function WinLoss() {
                             </button>
                             {d.projectTicker && <span className="ml-1.5 font-mono text-micro text-grey">{d.projectTicker}</span>}
                           </td>
-                          <td className="py-1.5">
+                          <td className="py-2.5">
                             <span
                               className={clsx(
-                                'rounded px-1.5 py-0.5 text-micro font-bold uppercase',
+                                'inline-flex items-center gap-1.5 rounded-md border border-line/70 px-1.5 py-0.5 text-micro font-semibold capitalize',
                                 d.stage === 'won'
-                                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                                  : 'bg-red-500/10 text-red-600 dark:text-red-400',
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : 'text-red-600 dark:text-red-400',
                               )}
                             >
+                              <span
+                                className={clsx('h-1.5 w-1.5 rounded-full', d.stage === 'won' ? 'bg-emerald-500' : 'bg-red-500')}
+                                aria-hidden="true"
+                              />
                               {d.stage}
                             </span>
                           </td>
-                          <td className="py-1.5 capitalize text-grey">{(d.packageType ?? 'unknown').replace(/_/g, ' ')}</td>
-                          <td className="py-1.5 text-right font-mono text-navy">{fmtUsd((d.packageValue ?? 0) / 100)}</td>
-                          <td className="py-1.5 pr-2 text-right text-grey">
+                          <td className="py-2.5 capitalize text-grey">{(d.packageType ?? 'unknown').replace(/_/g, ' ')}</td>
+                          <td className="num-tabular py-2.5 text-right font-mono text-navy">{fmtUsd((d.packageValue ?? 0) / 100)}</td>
+                          <td className="num-tabular py-2.5 pr-2 text-right text-grey">
                             {new Date(d.stage === 'won' ? (d.wonAt ?? d.updatedAt) : d.updatedAt).toLocaleDateString()}
                           </td>
                         </tr>
@@ -388,7 +393,7 @@ export function WinLoss() {
             action={
               <div className="flex items-center gap-2">
                 {data.usedLlm && (
-                  <span className="inline-flex items-center gap-1 rounded bg-ice-soft px-1.5 py-0.5 text-[9px] font-bold text-navy dark:bg-ice-soft/10">
+                  <span className="inline-flex items-center gap-1 rounded-md border border-line/70 bg-ice-soft/50 px-1.5 py-0.5 text-micro font-semibold text-navy dark:bg-ice-soft/10">
                     <Sparkles size={9} /> LLM
                   </span>
                 )}
@@ -407,16 +412,16 @@ export function WinLoss() {
           >
             {insightsOpen && (
               <div className="space-y-3">
-                <p className="text-[13px] leading-relaxed text-navy">{data.narrative}</p>
-                <div className="flex flex-wrap gap-3 text-label">
-                  <span className="rounded bg-ice-soft px-2 py-1 font-mono text-navy dark:bg-ice-soft/10">
+                <p className="text-body leading-relaxed text-navy">{data.narrative}</p>
+                <div className="flex flex-wrap gap-2 text-label">
+                  <span className="num-tabular rounded-md border border-line/70 bg-ice-soft/50 px-2 py-1 font-mono text-navy dark:bg-ice-soft/10">
                     Overall {pct(data.overall.winRate)} · {data.overall.won}W / {data.overall.lost}L
                   </span>
-                  <span className="rounded bg-ice-soft px-2 py-1 font-mono text-navy dark:bg-ice-soft/10">
+                  <span className="num-tabular rounded-md border border-line/70 bg-ice-soft/50 px-2 py-1 font-mono text-navy dark:bg-ice-soft/10">
                     Won value {fmtUsd(data.overall.wonValueUsd)}
                   </span>
                   {data.topLossReasons[0] && (
-                    <span className="rounded bg-ice-soft px-2 py-1 font-mono text-navy dark:bg-ice-soft/10">
+                    <span className="rounded-md border border-line/70 bg-ice-soft/50 px-2 py-1 font-mono text-navy dark:bg-ice-soft/10">
                       Top loss reason: {data.topLossReasons[0].reason}
                     </span>
                   )}
@@ -473,11 +478,11 @@ export function WinLoss() {
               )}
             </ChartCard>
 
-            <section className="rounded-xl border border-line bg-card p-4">
-              <div className="mb-3 flex items-start justify-between gap-3">
+            <section className="rounded-xl border border-line/70 bg-card p-5 shadow-card">
+              <div className="mb-4 flex items-start justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-navy">By source</h3>
-                  <p className="mt-0.5 text-xs text-grey">Lead source performance</p>
+                  <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-navy">By source</h3>
+                  <p className="mt-0.5 text-xs leading-relaxed text-grey">Lead source performance</p>
                 </div>
                 <AllTimeTag show={timeFiltered} />
               </div>
@@ -487,22 +492,22 @@ export function WinLoss() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="border-b border-line text-left text-micro uppercase tracking-wider text-grey">
-                        <th className="pb-2 pl-2">Source</th>
-                        <th className="pb-2 text-right">Won</th>
-                        <th className="pb-2 text-right">Lost</th>
-                        <th className="pb-2 text-right">Win rate</th>
-                        <th className="pb-2 pr-2 text-right">Won value</th>
+                      <tr className="border-b border-line text-left text-micro font-medium uppercase tracking-wide text-grey">
+                        <th className="py-2.5 pl-2">Source</th>
+                        <th className="py-2.5 text-right">Won</th>
+                        <th className="py-2.5 text-right">Lost</th>
+                        <th className="py-2.5 text-right">Win rate</th>
+                        <th className="py-2.5 pr-2 text-right">Won value</th>
                       </tr>
                     </thead>
-                    <tbody>
+                    <tbody className="divide-y divide-line/50">
                       {data.bySource.map((r) => (
-                        <tr key={r.key} className="even:bg-ice-soft/50 dark:even:bg-ice-soft/5">
-                          <td className="py-2 pl-2 font-semibold text-navy">{r.key}</td>
-                          <td className="py-2 text-right font-mono text-navy">{r.won}</td>
-                          <td className="py-2 text-right font-mono text-grey">{r.lost}</td>
-                          <td className="py-2 text-right font-mono font-bold text-navy">{pct(r.winRate)}</td>
-                          <td className="py-2 pr-2 text-right font-mono text-navy">{fmtUsd(r.wonValueUsd)}</td>
+                        <tr key={r.key} className="hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10">
+                          <td className="py-2.5 pl-2 font-semibold text-navy">{r.key}</td>
+                          <td className="num-tabular py-2.5 text-right font-mono text-navy">{r.won}</td>
+                          <td className="num-tabular py-2.5 text-right font-mono text-grey">{r.lost}</td>
+                          <td className="num-tabular py-2.5 text-right font-mono font-semibold text-navy">{pct(r.winRate)}</td>
+                          <td className="num-tabular py-2.5 pr-2 text-right font-mono text-navy">{fmtUsd(r.wonValueUsd)}</td>
                         </tr>
                       ))}
                     </tbody>

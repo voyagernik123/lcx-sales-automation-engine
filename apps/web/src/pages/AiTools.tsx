@@ -70,8 +70,8 @@ export function AiTools() {
             onClick={() => setTab(t.id)}
             className={`-mb-px border-b-2 px-3 py-2 text-xs font-semibold transition-colors ${
               tab === t.id
-                ? 'border-cyan-600 text-navy'
-                : 'border-transparent text-grey hover:text-navy'
+                ? 'border-cyan-500 text-navy'
+                : 'border-transparent text-grey hover:text-navy hover:border-line'
             }`}
           >
             {t.label}

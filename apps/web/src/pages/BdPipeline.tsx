@@ -487,7 +487,7 @@ export function BdPipeline() {
         </h1>
 
         <div className="flex items-center gap-2 ml-auto">
-          <span className="text-micro text-grey font-mono">{total} leads</span>
+          <span className="text-micro text-grey font-mono num-tabular">{total} leads</span>
 
           <Button
             size="xs"
@@ -691,8 +691,8 @@ export function BdPipeline() {
                   onUnsnooze={doUnsnooze}
                   onPeek={handlePeek}
                 />
-                <div className="flex items-center justify-between px-1 py-2 text-micro text-grey">
-                  <span>
+                <div className="flex items-center justify-between px-3 py-2.5 text-micro text-grey border-t border-line/50">
+                  <span className="num-tabular">
                     {total === 0 ? 'No leads' : `${page * PAGE_SIZE + 1}–${Math.min((page + 1) * PAGE_SIZE, total)} of ${total}`}
                     {!showSnoozed && workingSnoozed.length > 0 && ` · ${workingSnoozed.length} snoozed hidden`}
                   </span>
@@ -700,7 +700,7 @@ export function BdPipeline() {
                     <Button variant="secondary" size="xs" disabled={page === 0} onClick={() => setPage((p) => Math.max(0, p - 1))}>
                       ← Prev
                     </Button>
-                    <span className="font-mono">page {page + 1}/{Math.max(1, Math.ceil(total / PAGE_SIZE))}</span>
+                    <span className="font-mono num-tabular">page {page + 1}/{Math.max(1, Math.ceil(total / PAGE_SIZE))}</span>
                     <Button variant="secondary" size="xs" disabled={(page + 1) * PAGE_SIZE >= total} onClick={() => setPage((p) => p + 1)}>
                       Next →
                     </Button>

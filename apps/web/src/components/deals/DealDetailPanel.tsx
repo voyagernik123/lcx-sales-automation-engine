@@ -79,7 +79,7 @@ export function DealDetailPanel({ deal, onClose }: DealDetailPanelProps) {
       <aside
         role="dialog"
         aria-label={`Deal details: ${deal.projectName}`}
-        className={`fixed inset-y-0 right-0 z-50 flex w-96 max-w-full flex-col border-l border-line bg-card shadow-2xl transition-transform duration-200 ${visible ? 'translate-x-0' : 'translate-x-full'}`}
+        className={`fixed inset-y-0 right-0 z-50 flex w-96 max-w-full flex-col border-l border-line bg-card shadow-overlay transition-transform duration-200 ${visible ? 'translate-x-0' : 'translate-x-full'}`}
       >
         <div className="flex items-start justify-between gap-3 border-b border-line p-4">
           <div className="min-w-0">
@@ -107,7 +107,9 @@ export function DealDetailPanel({ deal, onClose }: DealDetailPanelProps) {
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           <div className="divide-y divide-line/60">
             <Row label="Package">{packageLabel(deal.packageType)}</Row>
-            <Row label="Value">{fmtMoneyCents(deal.packageValue)}</Row>
+            <Row label="Value">
+              <span className="num-tabular">{fmtMoneyCents(deal.packageValue)}</span>
+            </Row>
             <Row label="Owner">
               {deal.owner ? (
                 <span className="inline-flex items-center gap-1.5">
@@ -126,9 +128,11 @@ export function DealDetailPanel({ deal, onClose }: DealDetailPanelProps) {
               <span className="uppercase">{deal.band}</span>
             </Row>
             <Row label="Priority score">
-              <span className="font-mono">P{deal.priorityScore}</span>
+              <span className="num-tabular font-mono">P{deal.priorityScore}</span>
             </Row>
-            <Row label="Days in stage">{deal.daysSinceUpdate}d</Row>
+            <Row label="Days in stage">
+              <span className="num-tabular">{deal.daysSinceUpdate}d</span>
+            </Row>
             <Row label="Last activity">
               <span title={new Date(deal.updatedAt).toLocaleString()}>{relativeTime(deal.updatedAt)}</span>
             </Row>

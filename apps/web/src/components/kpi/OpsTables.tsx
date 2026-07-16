@@ -4,7 +4,7 @@ import { useInspect } from '@/stores';
 import type { PostListingTrigger, StalledDeal } from '@/types/kpi';
 import { STAGE_LABELS, TRIGGER_DAY_LABELS, TRIGGER_TYPE_LABELS } from '@/types/kpi';
 
-const TH = 'text-left py-2 px-2 text-[10px] font-bold uppercase tracking-wider text-grey';
+const TH = 'text-left py-2.5 px-2 text-micro font-medium uppercase tracking-wide text-grey';
 
 export function StalledDealsTable({ deals }: { deals: StalledDeal[] }) {
   // deal.id is a DEAL id — the old row click routed it to the lead-detail
@@ -20,28 +20,28 @@ export function StalledDealsTable({ deals }: { deals: StalledDeal[] }) {
             <tr className="border-b border-line">
               <th className={TH}>Project</th>
               <th className={TH}>Stage</th>
-              <th className={TH}>Stalled (days)</th>
+              <th className={clsx(TH, 'text-right')}>Stalled (days)</th>
               <th className={TH}>Blocker</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-line/30">
+          <tbody className="divide-y divide-line/50">
             {deals.map((deal) => (
               <tr
                 key={deal.id}
                 onClick={() => inspect('deal', deal.id)}
-                className="hover:bg-ice-soft dark:hover:bg-ice-soft/5 cursor-pointer transition-colors"
+                className="hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 cursor-pointer transition-colors"
               >
-                <td className="py-2 px-2 font-medium text-navy">{deal.projectName}</td>
-                <td className="py-2 px-2 text-grey">{STAGE_LABELS[deal.stage] ?? deal.stage}</td>
-                <td className="py-2 px-2">
+                <td className="py-2.5 px-2 font-medium text-navy">{deal.projectName}</td>
+                <td className="py-2.5 px-2 text-grey">{STAGE_LABELS[deal.stage] ?? deal.stage}</td>
+                <td className="py-2.5 px-2 text-right">
                   <span className={clsx(
-                    'font-bold',
+                    'num-tabular font-semibold',
                     deal.daysSinceUpdate >= 21 ? 'text-red-500' : deal.daysSinceUpdate >= 7 ? 'text-amber-500' : 'text-grey',
                   )}>
                     {deal.daysSinceUpdate}d
                   </span>
                 </td>
-                <td className="py-2 px-2 text-grey max-w-[200px] truncate">{deal.blocker}</td>
+                <td className="py-2.5 px-2 text-grey max-w-[200px] truncate">{deal.blocker}</td>
               </tr>
             ))}
           </tbody>
@@ -73,39 +73,43 @@ export function TriggersTable({
               <th className={TH}>Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-line/30">
+          <tbody className="divide-y divide-line/50">
             {triggers.slice(0, 20).map((t) => {
               const isOverdue = new Date(t.dueAt) < new Date() && t.status === 'pending';
               return (
-                <tr key={t.id} className={clsx(isOverdue && 'bg-red-50/30 dark:bg-red-950/10')}>
-                  <td className="py-2 px-2 font-medium text-navy">{t.projectName}</td>
-                  <td className="py-2 px-2">
+                <tr key={t.id} className={clsx('transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10', isOverdue && 'bg-red-50/30 dark:bg-red-950/10')}>
+                  <td className="py-2.5 px-2 font-medium text-navy">{t.projectName}</td>
+                  <td className="py-2.5 px-2">
                     <span className="font-medium text-navy">{TRIGGER_DAY_LABELS[t.triggerDay]}</span>
                     <span className="text-grey ml-1">{TRIGGER_TYPE_LABELS[t.triggerType] ?? t.triggerType}</span>
                   </td>
-                  <td className="py-2 px-2">
-                    <span className={clsx(isOverdue ? 'text-red-500 font-bold' : 'text-grey')}>
+                  <td className="py-2.5 px-2">
+                    <span className={clsx('num-tabular', isOverdue ? 'text-red-500 font-semibold' : 'text-grey')}>
                       {new Date(t.dueAt).toLocaleDateString()}
                     </span>
                   </td>
-                  <td className="py-2 px-2">
-                    <span className={clsx(
-                      'inline-block rounded-full px-2 py-0.5 text-[10px] font-bold',
-                      t.status === 'completed' && 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-                      t.status === 'drafted' && 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
-                      t.status === 'skipped' && 'bg-slate-500/10 text-slate-500',
-                      t.status === 'pending' && 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-                    )}>
+                  <td className="py-2.5 px-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-md border border-line/70 px-1.5 py-0.5 text-micro font-semibold text-navy">
+                      <span
+                        className={clsx(
+                          'h-1.5 w-1.5 rounded-full',
+                          t.status === 'completed' && 'bg-emerald-500',
+                          t.status === 'drafted' && 'bg-cyan-500',
+                          t.status === 'skipped' && 'bg-slate-400',
+                          t.status === 'pending' && 'bg-amber-500',
+                        )}
+                        aria-hidden="true"
+                      />
                       {t.status}
                     </span>
                   </td>
-                  <td className="py-2 px-2">
+                  <td className="py-2.5 px-2">
                     <div className="flex items-center gap-1">
                       {t.status === 'pending' && (
                         <>
-                          <button onClick={() => onAction(t, 'drafted')} className="rounded border border-line px-2 py-0.5 text-[10px] font-bold text-navy hover:bg-ice-soft dark:hover:bg-navy-deep transition-colors">Draft</button>
-                          <button onClick={() => onAction(t, 'completed')} className="rounded border border-emerald-300 px-2 py-0.5 text-[10px] font-bold text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-colors">Done</button>
-                          <button onClick={() => onAction(t, 'skipped')} className="rounded border border-line px-2 py-0.5 text-[10px] font-bold text-grey hover:bg-ice-soft dark:hover:bg-navy-deep transition-colors">Skip</button>
+                          <button onClick={() => onAction(t, 'drafted')} className="rounded-md border border-line px-2 py-0.5 text-micro font-semibold text-navy hover:bg-ice-soft/50 dark:hover:bg-navy-deep transition-colors">Draft</button>
+                          <button onClick={() => onAction(t, 'completed')} className="rounded-md border border-emerald-300 px-2 py-0.5 text-micro font-semibold text-emerald-600 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-950/20 transition-colors">Done</button>
+                          <button onClick={() => onAction(t, 'skipped')} className="rounded-md border border-line px-2 py-0.5 text-micro font-semibold text-grey hover:bg-ice-soft/50 dark:hover:bg-navy-deep transition-colors">Skip</button>
                         </>
                       )}
                     </div>

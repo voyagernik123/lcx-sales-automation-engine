@@ -35,7 +35,7 @@ function columnClass(stage: DealStage, isDropTarget: boolean, dimmed: boolean): 
       ? 'border-emerald-500/40 bg-emerald-500/5'
       : stage === 'lost'
         ? 'border-red-500/40 bg-red-500/5'
-        : 'border-line bg-ice-soft/60 dark:bg-ice-soft/5';
+        : 'border-line/70 bg-ice-soft/60 dark:bg-ice-soft/5';
   const drop = isDropTarget ? 'ring-2 ring-sky-400 bg-sky-500/10 dark:bg-sky-500/10' : '';
   const dim = dimmed ? 'opacity-50' : '';
   return `${base} ${tint} ${drop} ${dim}`;
@@ -254,7 +254,7 @@ export function DealBoard() {
                 }}
                 className={columnClass(stage, dropTarget === stage, Boolean(dragging && !validTarget && dragging.stage !== stage))}
               >
-                <div className="mb-2 flex items-center justify-between gap-2 px-1">
+                <div className="mb-2 flex items-center justify-between gap-2 px-1 pt-0.5">
                   <span className="flex min-w-0 items-center gap-1.5 text-micro font-bold uppercase tracking-wide text-navy">
                     {stage === 'won' ? (
                       <CheckCircle2 size={13} className="shrink-0 text-emerald-500" aria-label="Won" />
@@ -264,11 +264,16 @@ export function DealBoard() {
                       <span className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} aria-hidden="true" />
                     )}
                     <span className="truncate">{STAGE_LABELS[stage]}</span>
-                    <span className="shrink-0 rounded-full border border-line bg-card px-1.5 text-micro font-semibold text-grey">
-                      {cards.length}
-                    </span>
                   </span>
-                  {totalValue > 0 && <ScenarioValue cents={totalValue} className="shrink-0 font-mono text-micro text-grey" />}
+                  <span className="num-tabular flex shrink-0 items-baseline gap-1.5 text-micro text-grey">
+                    <span className="font-semibold">{cards.length}</span>
+                    {totalValue > 0 && (
+                      <>
+                        <span className="text-grey/60" aria-hidden="true">·</span>
+                        <ScenarioValue cents={totalValue} className="font-mono" />
+                      </>
+                    )}
+                  </span>
                 </div>
 
                 <div className="min-h-[80px] space-y-2">

@@ -50,13 +50,13 @@ function UnifiedTimeline({ projectId }: { projectId: string }) {
     <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
       {entries.map((e, i) => (
         <div key={i} className="flex items-start gap-2 border-b border-line/50 pb-1.5 last:border-none text-micro">
-          <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold uppercase shrink-0 ${TIMELINE_KIND_STYLE[e.kind] ?? ''}`}>{e.kind}</span>
+          <span className={`rounded px-1.5 py-0.5 text-micro font-semibold shrink-0 ${TIMELINE_KIND_STYLE[e.kind] ?? ''}`}>{e.kind}</span>
           <div className="flex-1 min-w-0">
             <span className="font-semibold">{e.title}</span>
             {e.detail && <span className="text-grey"> — {e.detail}</span>}
-            {e.badge && <span className="ml-1 rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 text-[8px] font-bold uppercase">{e.badge}</span>}
+            {e.badge && <span className="ml-1 rounded bg-slate-100 dark:bg-slate-800 px-1 py-0.5 text-micro font-semibold">{e.badge}</span>}
           </div>
-          <span className="text-grey shrink-0">{new Date(e.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+          <span className="text-grey shrink-0 num-tabular">{new Date(e.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
         </div>
       ))}
     </div>
@@ -640,20 +640,20 @@ export function LeadDetail() {
                 <table className="w-full text-label">
                   <thead>
                     <tr className="border-b border-line">
-                      <th className="text-left py-1.5 px-2 text-[9px] font-bold uppercase tracking-wider text-grey">Name</th>
-                      <th className="text-left py-1.5 px-2 text-[9px] font-bold uppercase tracking-wider text-grey">Role</th>
-                      <th className="text-left py-1.5 px-2 text-[9px] font-bold uppercase tracking-wider text-grey">Title</th>
-                      <th className="text-left py-1.5 px-2 text-[9px] font-bold uppercase tracking-wider text-grey">Email</th>
-                      <th className="text-left py-1.5 px-2 text-[9px] font-bold uppercase tracking-wider text-grey">Email Status</th>
-                      <th className="text-left py-1.5 px-2 text-[9px] font-bold uppercase tracking-wider text-grey">LinkedIn</th>
-                      <th className="text-left py-1.5 px-2 text-[9px] font-bold uppercase tracking-wider text-grey">LI Status</th>
-                      <th className="text-left py-1.5 px-2 text-[9px] font-bold uppercase tracking-wider text-grey">Telegram</th>
-                      <th className="text-left py-1.5 px-2 text-[9px] font-bold uppercase tracking-wider text-grey">Actions</th>
+                      <th className="text-left py-2 px-2 text-micro font-medium uppercase tracking-wider text-grey">Name</th>
+                      <th className="text-left py-2 px-2 text-micro font-medium uppercase tracking-wider text-grey">Role</th>
+                      <th className="text-left py-2 px-2 text-micro font-medium uppercase tracking-wider text-grey">Title</th>
+                      <th className="text-left py-2 px-2 text-micro font-medium uppercase tracking-wider text-grey">Email</th>
+                      <th className="text-left py-2 px-2 text-micro font-medium uppercase tracking-wider text-grey">Email Status</th>
+                      <th className="text-left py-2 px-2 text-micro font-medium uppercase tracking-wider text-grey">LinkedIn</th>
+                      <th className="text-left py-2 px-2 text-micro font-medium uppercase tracking-wider text-grey">LI Status</th>
+                      <th className="text-left py-2 px-2 text-micro font-medium uppercase tracking-wider text-grey">Telegram</th>
+                      <th className="text-left py-2 px-2 text-micro font-medium uppercase tracking-wider text-grey">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line/50">
                     {lead.people.map((person) => (
-                      <tr key={person.id} className="hover:bg-ice-soft dark:hover:bg-ice-soft/5">
+                      <tr key={person.id} className="hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10">
                         <td className="py-1.5 px-2 font-medium">{person.name}</td>
                         <td className="py-1.5 px-2"><RoleBadge role={person.role} /></td>
                         <td className="py-1.5 px-2 text-grey">{person.title ?? '—'}</td>
@@ -671,7 +671,7 @@ export function LeadDetail() {
                           ) : '—'}
                         </td>
                         <td className="py-1.5 px-2">
-                          <span className={`inline-flex rounded px-1.5 py-0.5 text-[9px] font-bold leading-none ${LINKEDIN_STATUS_COLORS[person.linkedinStatus ?? 'none']}`}>
+                          <span className={`inline-flex rounded px-1.5 py-0.5 text-micro font-bold leading-none ${LINKEDIN_STATUS_COLORS[person.linkedinStatus ?? 'none']}`}>
                             {person.linkedinStatus ?? 'none'}
                           </span>
                         </td>
@@ -729,12 +729,12 @@ export function LeadDetail() {
                     <div key={src.id} className="rounded border border-line overflow-hidden">
                       <button
                         onClick={() => toggleSource(src.id)}
-                        className="w-full flex items-center gap-2 px-3 py-2 text-label font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/5 transition-colors text-left"
+                        className="w-full flex items-center gap-2 px-3 py-2 text-label font-semibold hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 transition-colors text-left"
                       >
                         {isOpen ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                         <span className="font-mono">{src.source}</span>
-                        {src.externalId && <span className="text-[9px] text-grey font-mono">#{src.externalId}</span>}
-                        <span className="ml-auto text-[9px] text-grey">{new Date(src.createdAt).toLocaleDateString()}</span>
+                        {src.externalId && <span className="text-micro text-grey font-mono">#{src.externalId}</span>}
+                        <span className="ml-auto text-micro text-grey">{new Date(src.createdAt).toLocaleDateString()}</span>
                       </button>
                       {isOpen && (
                         <div className="border-t border-line/50 px-3 py-2 max-h-72 overflow-y-auto">
@@ -807,32 +807,32 @@ export function LeadDetail() {
                     <div key={seq.id} className="rounded border border-line overflow-hidden">
                       <div className="flex items-center justify-between px-3 py-2 border-b border-line bg-ice-soft dark:bg-ice-soft/5">
                         <div className="flex items-center gap-2">
-                          <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold ${SEQUENCE_STATUS_COLORS[seq.status] ?? ''}`}>
+                          <span className={`rounded px-1.5 py-0.5 text-micro font-bold ${SEQUENCE_STATUS_COLORS[seq.status] ?? ''}`}>
                             {seq.status}
                           </span>
                           <span className="text-micro text-grey">Step {seq.currentStep}/5</span>
-                          <span className="text-[9px] text-grey">{seq.channel}</span>
+                          <span className="text-micro text-grey">{seq.channel}</span>
                         </div>
                         <div className="flex items-center gap-1">
                           {seq.status === 'active' && (
-                            <button onClick={() => handlePauseSequence(seq.id)} className="rounded border border-amber-200 text-amber-600 dark:border-amber-800 dark:text-amber-400 px-2 py-0.5 text-[9px] font-bold hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors">
+                            <button onClick={() => handlePauseSequence(seq.id)} className="rounded border border-amber-200 text-amber-600 dark:border-amber-800 dark:text-amber-400 px-2 py-0.5 text-micro font-bold hover:bg-amber-50 dark:hover:bg-amber-950/20 transition-colors">
                               Pause
                             </button>
                           )}
                           {seq.status === 'paused' && (
-                            <button onClick={() => handleResumeSequence(seq.id)} className="rounded border border-cyan-200 text-cyan-600 dark:border-cyan-800 dark:text-cyan-400 px-2 py-0.5 text-[9px] font-bold hover:bg-cyan-50 dark:hover:bg-cyan-950/20 transition-colors">
+                            <button onClick={() => handleResumeSequence(seq.id)} className="rounded border border-cyan-200 text-cyan-600 dark:border-cyan-800 dark:text-cyan-400 px-2 py-0.5 text-micro font-bold hover:bg-cyan-50 dark:hover:bg-cyan-950/20 transition-colors">
                               Resume
                             </button>
                           )}
                           {seq.status === 'handoff' && seq.handoffId && (
-                            <button onClick={() => navigate('/outreach')} className="rounded border border-purple-200 text-purple-600 dark:border-purple-800 dark:text-purple-400 px-2 py-0.5 text-[9px] font-bold hover:bg-purple-50 dark:hover:bg-purple-950/20 transition-colors">
+                            <button onClick={() => navigate('/outreach')} className="rounded border border-purple-200 text-purple-600 dark:border-purple-800 dark:text-purple-400 px-2 py-0.5 text-micro font-bold hover:bg-purple-50 dark:hover:bg-purple-950/20 transition-colors">
                               Handoff
                             </button>
                           )}
                         </div>
                       </div>
                       {seq.startedAt && (
-                        <div className="px-3 py-1.5 text-[9px] text-grey">
+                        <div className="px-3 py-1.5 text-micro text-grey">
                           Started {new Date(seq.startedAt).toLocaleDateString()}
                         </div>
                       )}
@@ -861,16 +861,16 @@ export function LeadDetail() {
                       {messages.map(msg => (
                         <div key={msg.id} className="rounded border border-line px-3 py-2">
                           <div className="flex items-center gap-2">
-                            <span className={`rounded px-1.5 py-0.5 text-[8px] font-bold ${MESSAGE_STATUS_COLORS[msg.status] ?? ''}`}>
+                            <span className={`rounded px-1.5 py-0.5 text-micro font-bold ${MESSAGE_STATUS_COLORS[msg.status] ?? ''}`}>
                               {msg.status}
                             </span>
                             <span className="text-micro font-medium truncate flex-1">{msg.subject}</span>
-                            <span className="text-[9px] text-grey">{msg.toEmail}</span>
+                            <span className="text-micro text-grey">{msg.toEmail}</span>
                           </div>
                           <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[9px] text-grey">Touch {msg.touchIndex}</span>
-                            {msg.sentAt && <span className="text-[9px] text-grey">{new Date(msg.sentAt).toLocaleString()}</span>}
-                            {msg.error && <span className="text-[9px] text-red-500">{msg.error}</span>}
+                            <span className="text-micro text-grey">Touch {msg.touchIndex}</span>
+                            {msg.sentAt && <span className="text-micro text-grey">{new Date(msg.sentAt).toLocaleString()}</span>}
+                            {msg.error && <span className="text-micro text-red-500">{msg.error}</span>}
                           </div>
                         </div>
                       ))}
@@ -906,7 +906,7 @@ export function LeadDetail() {
               {/* Controls row */}
               <div className="flex flex-wrap items-end gap-3">
                 <div>
-                  <label className="text-[9px] font-bold uppercase tracking-wider text-grey block mb-1">Touch</label>
+                  <label className="text-micro font-bold uppercase tracking-wider text-grey block mb-1">Touch</label>
                   <div className="flex gap-1">
                     {[1, 2, 3, 4, 5].map(t => (
                       <button
@@ -925,7 +925,7 @@ export function LeadDetail() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-[9px] font-bold uppercase tracking-wider text-grey block mb-1">Channel</label>
+                  <label className="text-micro font-bold uppercase tracking-wider text-grey block mb-1">Channel</label>
                   <div className="flex gap-1">
                     {(['email', 'linkedin', 'telegram'] as Channel[]).map(ch => (
                       <button
@@ -944,7 +944,7 @@ export function LeadDetail() {
                   </div>
                 </div>
                 <div>
-                  <label className="text-[9px] font-bold uppercase tracking-wider text-grey block mb-1">Contact</label>
+                  <label className="text-micro font-bold uppercase tracking-wider text-grey block mb-1">Contact</label>
                   <select
                     value={draftContact}
                     onChange={(e) => { setDraftContact(e.target.value); setGeneratedDraft(null); }}
@@ -988,14 +988,14 @@ export function LeadDetail() {
                     <span className="text-micro font-bold">{TOUCH_LABELS[draftTouch]} — {CHANNEL_LABELS[draftChannel]}</span>
                     <div className="flex items-center gap-2">
                       {generatedDraft.requiresHumanReview && (
-                        <span className="text-[9px] text-amber-600 dark:text-amber-400 font-bold">Requires Review</span>
+                        <span className="text-micro text-amber-600 dark:text-amber-400 font-bold">Requires Review</span>
                       )}
-                      <span className="text-[9px] text-grey">{generatedDraft.claimsUsed.length} claim(s)</span>
+                      <span className="text-micro text-grey">{generatedDraft.claimsUsed.length} claim(s)</span>
                     </div>
                   </div>
                   <div className="p-3 space-y-2">
                     <div>
-                      <label className="text-[9px] font-bold uppercase tracking-wider text-grey block mb-1">Subject</label>
+                      <label className="text-micro font-bold uppercase tracking-wider text-grey block mb-1">Subject</label>
                       <input
                         value={editSubject}
                         onChange={(e) => setEditSubject(e.target.value)}
@@ -1003,7 +1003,7 @@ export function LeadDetail() {
                       />
                     </div>
                     <div>
-                      <label className="text-[9px] font-bold uppercase tracking-wider text-grey block mb-1">Body</label>
+                      <label className="text-micro font-bold uppercase tracking-wider text-grey block mb-1">Body</label>
                       <textarea
                         value={editBody}
                         onChange={(e) => setEditBody(e.target.value)}
@@ -1038,15 +1038,15 @@ export function LeadDetail() {
                         <div className="flex items-center justify-between px-3 py-2 border-b border-line bg-ice-soft dark:bg-ice-soft/5">
                           <div className="flex items-center gap-2">
                             <span className="text-micro font-bold">Touch {d.touchIndex} — {d.channel}</span>
-                            <span className="text-[9px] text-grey">to {d.contactName}</span>
-                            {d.approved && <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold">Approved</span>}
-                            {d.requiresHumanReview && <span className="text-[9px] text-amber-600 dark:text-amber-400 font-bold">Review</span>}
+                            <span className="text-micro text-grey">to {d.contactName}</span>
+                            {d.approved && <span className="text-micro text-emerald-600 dark:text-emerald-400 font-bold">Approved</span>}
+                            {d.requiresHumanReview && <span className="text-micro text-amber-600 dark:text-amber-400 font-bold">Review</span>}
                           </div>
                           <div className="flex items-center gap-1">
                             {!d.approved && (
                               <button
                                 onClick={() => handleApproveDraft(d.id)}
-                                className="rounded border border-emerald-200 text-emerald-600 dark:border-emerald-800 dark:text-emerald-400 px-2 py-0.5 text-[9px] font-bold hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-colors"
+                                className="rounded border border-emerald-200 text-emerald-600 dark:border-emerald-800 dark:text-emerald-400 px-2 py-0.5 text-micro font-bold hover:bg-emerald-50 dark:hover:bg-emerald-950/20 transition-colors"
                               >
                                 Approve
                               </button>
@@ -1056,7 +1056,7 @@ export function LeadDetail() {
                         <div className="p-3">
                           <p className="text-label font-bold mb-1">{d.subject}</p>
                           <p className="text-micro text-grey whitespace-pre-wrap line-clamp-3">{d.body}</p>
-                          <p className="text-[9px] text-grey mt-1">{new Date(d.createdAt).toLocaleString()}</p>
+                          <p className="text-micro text-grey mt-1">{new Date(d.createdAt).toLocaleString()}</p>
                         </div>
                       </div>
                     ))
@@ -1088,7 +1088,7 @@ function Section({ icon, title, children }: { icon: React.ReactNode; title: stri
 function Field({ label, value, children }: { label: string; value: React.ReactNode; children?: React.ReactNode }) {
   return (
     <div>
-      <span className="text-[9px] font-bold uppercase tracking-wider text-grey block mb-0.5">{label}</span>
+      <span className="text-micro font-bold uppercase tracking-wider text-grey block mb-0.5">{label}</span>
       <span className="text-navy">{children ?? (value ?? '—')}</span>
     </div>
   );
@@ -1132,7 +1132,7 @@ function EvidenceChip({ reason }: { reason: ReasonTrail }) {
         <span className="text-micro font-bold uppercase tracking-wider">{reason.factor}</span>
         <span className="text-micro font-mono font-bold">{reason.points}/{reason.max}</span>
       </div>
-      <p className="text-[9px] mt-0.5 opacity-80">{reason.note}</p>
+      <p className="text-micro mt-0.5 opacity-80">{reason.note}</p>
     </div>
   );
 }
@@ -1153,7 +1153,7 @@ function SignalItem({ signal }: { signal: LeadSignal }) {
     <div className={`rounded border px-3 py-2 ${color}`}>
       <div className="flex items-center gap-2">
         <span className="text-micro font-bold uppercase tracking-wider">{signal.kind.replace(/_/g, ' ')}</span>
-        <span className="text-[9px] opacity-60 ml-auto">{new Date(signal.observedAt).toLocaleString()}</span>
+        <span className="text-micro opacity-60 ml-auto">{new Date(signal.observedAt).toLocaleString()}</span>
       </div>
       {hasPayload && <StructuredPayload payload={signal.payload} maxRows={3} className="mt-1.5" />}
     </div>
@@ -1169,7 +1169,7 @@ function RoleBadge({ role }: { role: string }) {
     other: 'bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700',
   };
   return (
-    <span className={`inline-flex rounded border px-1.5 py-0.5 text-[9px] font-bold leading-none ${colors[role] || colors.other}`}>
+    <span className={`inline-flex rounded border px-1.5 py-0.5 text-micro font-bold leading-none ${colors[role] || colors.other}`}>
       {role}
     </span>
   );
@@ -1320,14 +1320,14 @@ function DealSection({ projectId }: { projectId: string }) {
             {STAGE_LABELS[deal.stage] ?? deal.stage}
           </span>
           <span className="text-micro text-grey">{deal.packageType} · {valueStr}</span>
-          {deal.owner && <span className="text-[9px] text-grey">{deal.owner}</span>}
+          {deal.owner && <span className="text-micro text-grey">{deal.owner}</span>}
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={() => setShowEvents(!showEvents)} className="rounded border border-line px-2 py-0.5 text-[9px] font-bold hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors">
+          <button onClick={() => setShowEvents(!showEvents)} className="rounded border border-line px-2 py-0.5 text-micro font-bold hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors">
             {showEvents ? 'Hide' : `${events.length} Events`}
           </button>
           {deal.stage === 'proposal' || deal.stage === 'negotiating' ? (
-            <button onClick={handleGenerateProposal} disabled={actionLoading === 'proposal'} className="rounded border border-line px-2 py-0.5 text-[9px] font-bold hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors disabled:opacity-50 flex items-center gap-1">
+            <button onClick={handleGenerateProposal} disabled={actionLoading === 'proposal'} className="rounded border border-line px-2 py-0.5 text-micro font-bold hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors disabled:opacity-50 flex items-center gap-1">
               <FileOutput size={9} /> {actionLoading === 'proposal' ? '...' : 'Generate Proposal'}
             </button>
           ) : null}
@@ -1337,22 +1337,22 @@ function DealSection({ projectId }: { projectId: string }) {
       {/* Stage transitions */}
       {!isTerminal && availableNext.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[9px] font-bold text-grey">Advance:</span>
+          <span className="text-micro font-bold text-grey">Advance:</span>
           {availableNext.map(stage => (
             <button key={stage} onClick={() => {
               if (stage === 'won' || stage === 'lost') return; // needs reason
               handleStageTransition(stage);
-            }} disabled={actionLoading === `stage-${stage}`} className="rounded border border-line px-2 py-0.5 text-[9px] font-bold hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors disabled:opacity-50">
+            }} disabled={actionLoading === `stage-${stage}`} className="rounded border border-line px-2 py-0.5 text-micro font-bold hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors disabled:opacity-50">
               {actionLoading === `stage-${stage}` ? '...' : STAGE_LABELS[stage] ?? stage}
             </button>
           ))}
           {/* Win/Loss with reason */}
           <div className="flex items-center gap-1 ml-2">
-            <input value={stageReason} onChange={e => setStageReason(e.target.value)} placeholder="Reason for close..." className="w-36 rounded border border-line px-1.5 py-0.5 text-[9px] bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500" />
-            <button onClick={() => handleStageTransition('won')} disabled={actionLoading === 'stage-won' || !stageReason.trim()} className="rounded bg-emerald-600 text-white px-2 py-0.5 text-[9px] font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1">
+            <input value={stageReason} onChange={e => setStageReason(e.target.value)} placeholder="Reason for close..." className="w-36 rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500" />
+            <button onClick={() => handleStageTransition('won')} disabled={actionLoading === 'stage-won' || !stageReason.trim()} className="rounded bg-emerald-600 text-white px-2 py-0.5 text-micro font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1">
               <ThumbsUp size={9} /> {actionLoading === 'stage-won' ? '...' : 'Won'}
             </button>
-            <button onClick={() => handleStageTransition('lost')} disabled={actionLoading === 'stage-lost' || !stageReason.trim()} className="rounded bg-red-600 text-white px-2 py-0.5 text-[9px] font-bold hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-1">
+            <button onClick={() => handleStageTransition('lost')} disabled={actionLoading === 'stage-lost' || !stageReason.trim()} className="rounded bg-red-600 text-white px-2 py-0.5 text-micro font-bold hover:bg-red-700 transition-colors disabled:opacity-50 flex items-center gap-1">
               <ThumbsDown size={9} /> {actionLoading === 'stage-lost' ? '...' : 'Lost'}
             </button>
           </div>
@@ -1364,7 +1364,7 @@ function DealSection({ projectId }: { projectId: string }) {
         <div className="rounded border border-line p-2 text-micro space-y-1">
           <div className="flex items-center justify-between">
             <span className="font-bold">Proposal — {deal.proposalSnapshot.packageType}</span>
-            <span className="text-[9px] text-grey">${(deal.proposalSnapshot.packageValue / 100).toLocaleString()}</span>
+            <span className="text-micro text-grey">${(deal.proposalSnapshot.packageValue / 100).toLocaleString()}</span>
           </div>
           <p className="text-grey">Valid until {new Date(deal.proposalSnapshot.validUntil).toLocaleDateString()}</p>
           {deal.proposalSnapshot.tiers && deal.proposalSnapshot.tiers.length > 0 ? (
@@ -1375,11 +1375,11 @@ function DealSection({ projectId }: { projectId: string }) {
                   className={`rounded border p-1.5 ${tier.recommended ? 'border-cyan-500 bg-cyan-50/50 dark:bg-cyan-950/20' : 'border-line'}`}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-bold">{tier.name}</span>
+                    <span className="text-micro font-bold">{tier.name}</span>
                     {tier.recommended && <span className="rounded bg-cyan-600 px-1 text-[7px] font-bold text-white">REC</span>}
                   </div>
                   <div className="text-micro font-mono font-bold">${(tier.priceCents / 100).toLocaleString()}</div>
-                  <ul className="mt-0.5 list-disc list-inside text-[8px] text-grey">
+                  <ul className="mt-0.5 list-disc list-inside text-micro text-grey">
                     {tier.inclusions.map((inc, i) => <li key={i} className="truncate">{inc}</li>)}
                   </ul>
                 </div>
@@ -1387,19 +1387,19 @@ function DealSection({ projectId }: { projectId: string }) {
             </div>
           ) : (
             <div>
-              <span className="text-[9px] font-bold text-grey">Includes:</span>
-              <ul className="list-disc list-inside text-[9px] text-grey">
+              <span className="text-micro font-bold text-grey">Includes:</span>
+              <ul className="list-disc list-inside text-micro text-grey">
                 {deal.proposalSnapshot.inclusions.map((inc, i) => <li key={i}>{inc}</li>)}
               </ul>
             </div>
           )}
           {deal.proposalSnapshot.claimsUsed.length > 0 && (
             <div>
-              <span className="text-[9px] font-bold text-grey">Claims referenced ({deal.proposalSnapshot.claimsUsed.length}):</span>
-              <p className="text-[9px] text-grey line-clamp-2">{deal.proposalSnapshot.claimsUsed.slice(0, 3).join('; ')}{deal.proposalSnapshot.claimsUsed.length > 3 ? '...' : ''}</p>
+              <span className="text-micro font-bold text-grey">Claims referenced ({deal.proposalSnapshot.claimsUsed.length}):</span>
+              <p className="text-micro text-grey line-clamp-2">{deal.proposalSnapshot.claimsUsed.slice(0, 3).join('; ')}{deal.proposalSnapshot.claimsUsed.length > 3 ? '...' : ''}</p>
             </div>
           )}
-          <p className="text-[8px] text-grey italic">{deal.proposalSnapshot.disclaimer}</p>
+          <p className="text-micro text-grey italic">{deal.proposalSnapshot.disclaimer}</p>
         </div>
       )}
 
@@ -1410,15 +1410,15 @@ function DealSection({ projectId }: { projectId: string }) {
       {/* Objections */}
       <div>
         <div className="flex items-center justify-between mb-1">
-          <span className="text-[9px] font-bold text-grey">Objections ({objections.length})</span>
-          <button onClick={() => setShowObjections(!showObjections)} className="text-[9px] text-cyan-600 dark:text-cyan-400 hover:underline">
+          <span className="text-micro font-bold text-grey">Objections ({objections.length})</span>
+          <button onClick={() => setShowObjections(!showObjections)} className="text-micro text-cyan-600 dark:text-cyan-400 hover:underline">
             {showObjections ? 'Hide' : 'Log'}
           </button>
         </div>
         {showObjections && (
           <div className="space-y-1 mb-2">
             <div className="flex gap-1">
-              <select value={objCategory} onChange={e => setObjCategory(e.target.value)} className="rounded border border-line px-1.5 py-0.5 text-[9px] bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500">
+              <select value={objCategory} onChange={e => setObjCategory(e.target.value)} className="rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500">
                 <option value="">Category...</option>
                 <option value="price">Price</option>
                 <option value="volume">Volume</option>
@@ -1429,22 +1429,22 @@ function DealSection({ projectId }: { projectId: string }) {
                 <option value="competitor">Competitor</option>
                 <option value="other">Other</option>
               </select>
-              <select value={objSeverity} onChange={e => setObjSeverity(e.target.value)} className="rounded border border-line px-1.5 py-0.5 text-[9px] bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500">
+              <select value={objSeverity} onChange={e => setObjSeverity(e.target.value)} className="rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500">
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
                 <option value="blocker">Blocker</option>
               </select>
-              <input value={objDesc} onChange={e => setObjDesc(e.target.value)} placeholder="Describe objection..." className="flex-1 rounded border border-line px-1.5 py-0.5 text-[9px] bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500" />
-              <button onClick={handleAddObjection} disabled={actionLoading === 'objection' || !objCategory || !objDesc.trim()} className="rounded bg-cyan-600 text-white px-2 py-0.5 text-[9px] font-bold disabled:opacity-50">
+              <input value={objDesc} onChange={e => setObjDesc(e.target.value)} placeholder="Describe objection..." className="flex-1 rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500" />
+              <button onClick={handleAddObjection} disabled={actionLoading === 'objection' || !objCategory || !objDesc.trim()} className="rounded bg-cyan-600 text-white px-2 py-0.5 text-micro font-bold disabled:opacity-50">
                 Add
               </button>
             </div>
           </div>
         )}
         {objections.map(obj => (
-          <div key={obj.id} className="flex items-center gap-2 text-[9px] border-b border-line last:border-none py-1">
-            <span className={`inline-flex rounded px-1 py-0.5 text-[8px] font-bold ${obj.severity === 'blocker' ? 'bg-red-100 text-red-700 dark:bg-red-950/30' : obj.severity === 'high' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/30' : 'bg-slate-100 text-slate-600 dark:bg-slate-800'}`}>{obj.severity}</span>
+          <div key={obj.id} className="flex items-center gap-2 text-micro border-b border-line last:border-none py-1">
+            <span className={`inline-flex rounded px-1 py-0.5 text-micro font-bold ${obj.severity === 'blocker' ? 'bg-red-100 text-red-700 dark:bg-red-950/30' : obj.severity === 'high' ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/30' : 'bg-slate-100 text-slate-600 dark:bg-slate-800'}`}>{obj.severity}</span>
             <span className="font-bold">{obj.category}</span>
             <span className="text-grey flex-1 truncate">{obj.description}</span>
             {obj.resolved ? <span className="text-emerald-600 dark:text-emerald-400">Resolved</span> : <span className="text-amber-600 dark:text-amber-400">Open</span>}
@@ -1455,11 +1455,11 @@ function DealSection({ projectId }: { projectId: string }) {
       {/* Deal events */}
       {showEvents && events.length > 0 && (
         <div className="space-y-1">
-          <span className="text-[9px] font-bold text-grey block">Timeline</span>
+          <span className="text-micro font-bold text-grey block">Timeline</span>
           {events.map(e => (
-            <div key={e.id} className="flex items-center gap-2 text-[9px] border-b border-line last:border-none py-0.5">
+            <div key={e.id} className="flex items-center gap-2 text-micro border-b border-line last:border-none py-0.5">
               <span className="text-grey">{new Date(e.createdAt).toLocaleDateString()}</span>
-              <span className={`inline-flex rounded px-1 py-0.5 text-[8px] font-bold ${e.eventType === 'stage_change' ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-950/30 dark:text-cyan-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-800'}`}>
+              <span className={`inline-flex rounded px-1 py-0.5 text-micro font-bold ${e.eventType === 'stage_change' ? 'bg-cyan-100 text-cyan-700 dark:bg-cyan-950/30 dark:text-cyan-400' : 'bg-slate-100 text-slate-600 dark:bg-slate-800'}`}>
                 {e.eventType}
               </span>
               {e.oldStage && e.newStage && <span>{e.oldStage} → {e.newStage}</span>}
@@ -1482,7 +1482,7 @@ function EmailStatusBadge({ status }: { status: string }) {
     unverified: 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400',
   };
   return (
-    <span className={`inline-flex rounded px-1.5 py-0.5 text-[9px] font-bold leading-none ${colors[status] || colors.unverified}`}>
+    <span className={`inline-flex rounded px-1.5 py-0.5 text-micro font-bold leading-none ${colors[status] || colors.unverified}`}>
       {status}
     </span>
   );

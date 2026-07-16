@@ -186,13 +186,14 @@ export function BoardReport() {
   ];
 
   return (
-    <div className="br-page mx-auto max-w-5xl px-4 py-4 text-navy">
+    <div className="br-page mx-auto max-w-5xl p-5 text-navy">
       <PrintStyles />
 
       {/* CONTROLS — hidden on print */}
       <PageTitle
-        className="br-no-print"
+        className="br-no-print mb-5"
         icon={<FileText size={20} className="text-cyan-500" />}
+        subtitle="Boardroom-ready pipeline, revenue, and anomaly summary — print or email it as-is"
         actions={
           <>
             <div className="flex overflow-hidden rounded-lg border border-line" role="tablist" aria-label="Report period">
@@ -203,8 +204,8 @@ export function BoardReport() {
                   aria-selected={period === t.value}
                   onClick={() => setPeriod(t.value)}
                   className={clsx(
-                    'px-3 py-1 text-micro font-bold uppercase transition-colors',
-                    period === t.value ? 'bg-cyan-500 text-white' : 'text-grey hover:bg-ice-soft dark:hover:bg-navy-deep',
+                    'px-3 py-1 text-micro font-semibold transition-colors',
+                    period === t.value ? 'bg-cyan-500 text-white' : 'text-grey hover:bg-ice-soft/50 dark:hover:bg-navy-deep',
                   )}
                 >
                   {t.label}
@@ -239,16 +240,16 @@ export function BoardReport() {
       )}
 
       {/* DECK PAGE */}
-      <div className="br-deck overflow-hidden rounded-xl border border-line bg-card shadow-sm">
+      <div className="br-deck overflow-hidden rounded-xl border border-line/70 bg-card shadow-card-md">
         {/* Title block */}
         <div className="px-6 pb-5 pt-6">
           <div className="flex items-baseline justify-between gap-3">
             <span className="text-xl font-black tracking-tight text-navy">
               LCX<span className="text-cyan-500">.</span>
             </span>
-            <span className="text-[9px] font-bold uppercase tracking-wider text-grey">Confidential — board use only</span>
+            <span className="text-micro font-semibold uppercase tracking-wider text-grey">Confidential — board use only</span>
           </div>
-          <h1 className="mt-4 text-2xl font-bold">{PERIOD_TITLES[report.period]} Board Report</h1>
+          <h1 className="mt-4 text-2xl font-bold tracking-tight">{PERIOD_TITLES[report.period]} Board Report</h1>
           <p className="mt-1 text-xs text-grey">
             Reporting window: last {report.periodDays} days · Generated {generatedAt.toLocaleDateString()}{' '}
             {generatedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -262,7 +263,7 @@ export function BoardReport() {
 
         {/* KPI row */}
         <ReportSection title="Key metrics" subtitle="Deltas compare against the immediately preceding period of equal length.">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid items-stretch gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {kpis.map((k) => (
               <StatCard key={k.label} label={k.label} value={k.value} delta={k.pct ?? undefined} deltaLabel="vs prior period" />
             ))}
@@ -278,31 +279,31 @@ export function BoardReport() {
         <ReportSection title="Revenue" empty={revenueEmpty}>
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-left text-micro uppercase tracking-wider text-grey">
-                <th className="pb-1.5">Metric</th>
-                <th className="pb-1.5 text-right">This period</th>
-                <th className="pb-1.5 text-right">Prior period</th>
-                <th className="pb-1.5 text-right">Change</th>
+              <tr className="text-left text-micro font-medium uppercase tracking-wide text-grey">
+                <th className="pb-2.5">Metric</th>
+                <th className="pb-2.5 text-right">This period</th>
+                <th className="pb-2.5 text-right">Prior period</th>
+                <th className="pb-2.5 text-right">Change</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line/50">
               {revenueRows.map((r) => (
                 <tr key={r.label}>
-                  <td className="py-1.5 font-semibold">{r.label}</td>
-                  <td className="py-1.5 text-right font-mono">{r.current}</td>
-                  <td className="py-1.5 text-right font-mono text-grey">{r.previous}</td>
-                  <td className="py-1.5 text-right"><TrendDelta value={r.pct} /></td>
+                  <td className="py-2.5 font-semibold">{r.label}</td>
+                  <td className="num-tabular py-2.5 text-right font-mono">{r.current}</td>
+                  <td className="num-tabular py-2.5 text-right font-mono text-grey">{r.previous}</td>
+                  <td className="py-2.5 text-right"><TrendDelta value={r.pct} /></td>
                 </tr>
               ))}
             </tbody>
           </table>
           {byStream.length > 0 && (
             <div className="mt-3">
-              <div className="mb-1 text-micro font-bold uppercase tracking-wider text-grey">By package</div>
+              <div className="mb-1 text-micro font-medium uppercase tracking-wide text-grey">By package</div>
               {byStream.map(([stream, v]) => (
-                <div key={stream} className="flex justify-between border-t border-line/50 py-1 text-label first:border-t-0">
+                <div key={stream} className="flex justify-between border-t border-line/50 py-1.5 text-label first:border-t-0">
                   <span className="capitalize text-grey">{stream}</span>
-                  <span className="font-mono">{usd(v)}</span>
+                  <span className="num-tabular font-mono">{usd(v)}</span>
                 </div>
               ))}
             </div>
@@ -313,19 +314,19 @@ export function BoardReport() {
         <ReportSection title="Top 10 open opportunities" empty={report.topDeals.length === 0}>
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-left text-micro uppercase tracking-wider text-grey">
-                <th className="pb-1.5 pr-2">#</th>
-                <th className="pb-1.5">Project</th>
-                <th className="pb-1.5">Stage</th>
-                <th className="pb-1.5">Package</th>
-                <th className="pb-1.5 text-right">Value</th>
+              <tr className="text-left text-micro font-medium uppercase tracking-wide text-grey">
+                <th className="pb-2.5 pr-2">#</th>
+                <th className="pb-2.5">Project</th>
+                <th className="pb-2.5">Stage</th>
+                <th className="pb-2.5">Package</th>
+                <th className="pb-2.5 text-right">Value</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line/50">
               {report.topDeals.slice(0, 10).map((d, i) => (
-                <tr key={d.id}>
-                  <td className="py-1.5 pr-2 text-grey">{i + 1}</td>
-                  <td className="py-1.5">
+                <tr key={d.id} className="transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10">
+                  <td className="num-tabular py-2.5 pr-2 text-grey">{i + 1}</td>
+                  <td className="py-2.5">
                     <button
                       type="button"
                       onClick={() => inspect('deal', d.id)}
@@ -335,9 +336,9 @@ export function BoardReport() {
                       {d.projectName}
                     </button>
                   </td>
-                  <td className="py-1.5 capitalize text-grey">{d.stage.replace(/_/g, ' ')}</td>
-                  <td className="py-1.5 capitalize text-grey">{d.packageType.replace(/_/g, ' ')}</td>
-                  <td className="py-1.5 text-right font-mono">{usd(d.value)}</td>
+                  <td className="py-2.5 capitalize text-grey">{d.stage.replace(/_/g, ' ')}</td>
+                  <td className="py-2.5 capitalize text-grey">{d.packageType.replace(/_/g, ' ')}</td>
+                  <td className="num-tabular py-2.5 text-right font-mono">{usd(d.value)}</td>
                 </tr>
               ))}
             </tbody>
@@ -358,7 +359,7 @@ export function BoardReport() {
                 {/* deviation bullet: current bar vs expected tick — the z-score, drawn */}
                 <span className="ml-auto flex shrink-0 items-center gap-2">
                   <AnomalyDeviation current={a.current} expected={a.expected} severity={a.severity} />
-                  <span className="whitespace-nowrap font-mono text-micro text-grey">
+                  <span className="num-tabular whitespace-nowrap font-mono text-micro text-grey">
                     {a.current} vs ~{Math.round(a.expected * 10) / 10}
                     {a.zScore != null && ` · z=${a.zScore}`}
                   </span>
@@ -372,28 +373,28 @@ export function BoardReport() {
         <ReportSection title="BD performance leaderboard" empty={bd.length === 0}>
           <table className="w-full text-xs">
             <thead>
-              <tr className="text-left text-micro uppercase tracking-wider text-grey">
-                <th className="pb-1.5">
+              <tr className="text-left text-micro font-medium uppercase tracking-wide text-grey">
+                <th className="pb-2.5">
                   <span className="flex items-center gap-1"><Users size={11} /> Owner</span>
                 </th>
-                <th className="pb-1.5 text-right">Deals</th>
-                <th className="pb-1.5 text-right">Won</th>
-                <th className="pb-1.5 text-right">Open</th>
-                <th className="pb-1.5 text-right">Win rate</th>
-                <th className="pb-1.5 text-right">Won value</th>
-                <th className="pb-1.5 text-right">Handoffs closed</th>
+                <th className="pb-2.5 text-right">Deals</th>
+                <th className="pb-2.5 text-right">Won</th>
+                <th className="pb-2.5 text-right">Open</th>
+                <th className="pb-2.5 text-right">Win rate</th>
+                <th className="pb-2.5 text-right">Won value</th>
+                <th className="pb-2.5 text-right">Handoffs closed</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line/50">
               {bd.map((r) => (
                 <tr key={r.owner}>
-                  <td className="py-1.5 font-semibold capitalize">{r.owner}</td>
-                  <td className="py-1.5 text-right">{r.dealsTotal}</td>
-                  <td className="py-1.5 text-right font-bold text-emerald-600 dark:text-emerald-400">{r.won}</td>
-                  <td className="py-1.5 text-right">{r.open}</td>
-                  <td className="py-1.5 text-right">{r.winRate}%</td>
-                  <td className="py-1.5 text-right font-mono">{usd(r.wonValue)}</td>
-                  <td className="py-1.5 text-right text-grey">{r.handoffsClosed}/{r.handoffsTotal}</td>
+                  <td className="py-2.5 font-semibold capitalize">{r.owner}</td>
+                  <td className="num-tabular py-2.5 text-right">{r.dealsTotal}</td>
+                  <td className="num-tabular py-2.5 text-right font-semibold text-emerald-600 dark:text-emerald-400">{r.won}</td>
+                  <td className="num-tabular py-2.5 text-right">{r.open}</td>
+                  <td className="num-tabular py-2.5 text-right">{r.winRate}%</td>
+                  <td className="num-tabular py-2.5 text-right font-mono">{usd(r.wonValue)}</td>
+                  <td className="num-tabular py-2.5 text-right text-grey">{r.handoffsClosed}/{r.handoffsTotal}</td>
                 </tr>
               ))}
             </tbody>

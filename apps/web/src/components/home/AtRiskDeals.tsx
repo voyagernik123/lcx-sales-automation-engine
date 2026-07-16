@@ -54,11 +54,11 @@ export function AtRiskDeals({ deals, health, max = 3 }: AtRiskDealsProps) {
             key={d.id}
             type="button"
             onClick={() => inspect('deal', d.id)}
-            className="w-full rounded border border-line p-2 text-left transition-colors hover:bg-ice-soft dark:hover:bg-ice-soft/5"
+            className="w-full cursor-pointer rounded-lg border border-line px-2.5 py-2 text-left transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10"
           >
             <div className="flex items-center justify-between gap-2">
               <span className="truncate text-label font-bold text-navy">{d.projectName}</span>
-              <span className="flex shrink-0 items-center gap-2 font-mono text-micro text-grey">
+              <span className="num-tabular flex shrink-0 items-center gap-2 font-mono text-micro text-grey">
                 <span className={glyph.cls} title={h.momentumDetail}>{glyph.glyph}</span>
                 {fmtValue(d.packageValue)}
               </span>
@@ -68,7 +68,7 @@ export function AtRiskDeals({ deals, health, max = 3 }: AtRiskDealsProps) {
                 <span
                   key={w.code}
                   title={`${w.detail} — ${w.mitigation}`}
-                  className={`rounded px-1.5 py-0.5 text-micro font-bold ${
+                  className={`rounded-md px-1.5 py-0.5 text-micro font-semibold ${
                     w.severity >= 3
                       ? 'bg-status-blocked-bg text-status-blocked'
                       : 'bg-status-conditional-bg text-status-conditional'

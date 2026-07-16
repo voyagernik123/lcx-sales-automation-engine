@@ -304,11 +304,11 @@ export function MarketMap() {
       )}
 
       {loading ? (
-        <div className="rounded-lg border border-line bg-card p-2">
+        <div className="rounded-lg border border-line/70 bg-card shadow-card p-2">
           <ChartSkeleton height={380} />
         </div>
       ) : error ? (
-        <div className="rounded-lg border border-line bg-card">
+        <div className="rounded-lg border border-line/70 bg-card shadow-card">
           <EmptyState
             icon={<AlertTriangle size={28} className="text-grey" />}
             title="Couldn't load the market map"
@@ -321,7 +321,7 @@ export function MarketMap() {
           />
         </div>
       ) : points.length === 0 ? (
-        <div className="rounded-lg border border-line bg-card">
+        <div className="rounded-lg border border-line/70 bg-card shadow-card">
           <EmptyState
             icon={<ScatterIcon size={28} className="text-grey" />}
             title="No scored projects to plot"
@@ -330,7 +330,7 @@ export function MarketMap() {
         </div>
       ) : (
         <div className="relative">
-          <div className="overflow-x-auto rounded-lg border border-line bg-card p-2">
+          <div className="overflow-x-auto rounded-lg border border-line/70 bg-card shadow-card p-2">
             <div ref={plotRef} className="relative" style={{ minWidth: 600 }}>
               <svg
                 ref={svgRef}
@@ -428,7 +428,7 @@ export function MarketMap() {
               {/* hover tooltip */}
               {hover && (
                 <div
-                  className="absolute z-10 w-[220px] rounded-md border border-line bg-card p-2 text-label shadow-lg"
+                  className="absolute z-10 w-[220px] rounded-md border border-line bg-card p-2 text-label shadow-overlay"
                   style={{ left: tooltipLeft, top: tooltipTop }}
                   onMouseEnter={cancelHide}
                   onMouseLeave={() => {
@@ -485,7 +485,7 @@ export function MarketMap() {
               onClick={() => zoomBy(1.5)}
               title="Zoom in"
               aria-label="Zoom in"
-              className="p-1.5 text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+              className="p-1.5 text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 transition-colors"
             >
               <Plus size={13} />
             </button>
@@ -494,7 +494,7 @@ export function MarketMap() {
               onClick={() => zoomBy(1 / 1.5)}
               title="Zoom out"
               aria-label="Zoom out"
-              className="p-1.5 text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+              className="p-1.5 text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 transition-colors"
             >
               <Minus size={13} />
             </button>

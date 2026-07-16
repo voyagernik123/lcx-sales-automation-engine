@@ -86,7 +86,7 @@ function BatnaBar({ floor, theirs, competitor, packageValue }: { floor: number |
         {markers.map(m => (
           <span key={m.key} className="inline-flex items-center gap-1 text-micro text-grey">
             <span className={clsx('h-2 w-2 rounded-sm', m.cls)} aria-hidden="true" />
-            {m.label} <span className="font-mono font-bold text-navy">{fmtMoneyCents(m.cents)}</span>
+            {m.label} <span className="num-tabular font-mono font-bold text-navy">{fmtMoneyCents(m.cents)}</span>
           </span>
         ))}
       </div>
@@ -170,8 +170,8 @@ export function BatnaPanel({ dealId, dealName, packageValue, className }: BatnaP
   ];
 
   return (
-    <section className={clsx('rounded-lg border border-line bg-card p-4', className)} aria-label="BATNA tracker">
-      <h2 className="mb-1 flex items-center gap-1.5 text-sm font-bold text-navy">
+    <section className={clsx('rounded-xl border border-line/70 bg-card p-5 shadow-card', className)} aria-label="BATNA tracker">
+      <h2 className="mb-1 flex items-center gap-1.5 text-sm font-bold tracking-tight text-navy">
         <Scale size={14} className="text-indigo-500" aria-hidden="true" /> BATNA — {dealName}
       </h2>
       <p className="mb-2 text-micro text-grey">Negotiation figures, tracking only. One record per deal.</p>
@@ -192,7 +192,7 @@ export function BatnaPanel({ dealId, dealName, packageValue, className }: BatnaP
                   value={draft[f.key]}
                   onChange={e => setDraft(d => ({ ...d, [f.key]: e.target.value }))}
                   placeholder="—"
-                  className="mt-0.5 w-full rounded border border-line bg-card px-1.5 py-1 font-mono text-label text-navy focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                  className="num-tabular mt-1 w-full rounded border border-line bg-card px-1.5 py-1 text-right font-mono text-label text-navy focus:outline-none focus:ring-1 focus:ring-indigo-400"
                 />
               </label>
             ))}

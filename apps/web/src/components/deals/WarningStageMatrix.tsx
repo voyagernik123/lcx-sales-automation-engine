@@ -120,7 +120,7 @@ export function WarningStageMatrix({ deals, health, className }: WarningStageMat
                       <Link
                         to={`/deal-board?warning=${code}&stage=${stage}`}
                         title={`${count} ${STAGE_LABELS[stage]} deal${count === 1 ? '' : 's'} warned "${WARNING_SHORT_LABEL[code]}" — open on the board`}
-                        className={clsx('block rounded px-2 py-1.5 font-mono font-bold transition-opacity hover:opacity-75', heat)}
+                        className={clsx('num-tabular block cursor-pointer rounded px-2 py-1.5 font-mono font-bold transition-opacity hover:opacity-75', heat)}
                       >
                         {count}
                       </Link>

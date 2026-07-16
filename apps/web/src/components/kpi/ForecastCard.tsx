@@ -19,9 +19,9 @@ export function ForecastCard({ forecast }: { forecast: ForecastData }) {
     >
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {bands.map((b) => (
-          <div key={b.label} className="rounded-lg border border-line p-2.5 text-center">
-            <div className="text-[10px] font-medium uppercase tracking-wide text-grey">{b.label}</div>
-            <div className="mt-0.5 text-base font-semibold text-navy">{fmtUsd(b.value)}</div>
+          <div key={b.label} className="rounded-lg border border-line/70 p-2.5 text-center">
+            <div className="text-micro font-medium uppercase tracking-wide text-grey">{b.label}</div>
+            <div className="num-tabular mt-0.5 text-base font-semibold text-navy">{fmtUsd(b.value)}</div>
           </div>
         ))}
       </div>

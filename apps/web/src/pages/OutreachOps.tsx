@@ -93,19 +93,24 @@ type WarmupPlan = {
 
 const pct = (n: number) => `${(n * 100).toFixed(2)}%`;
 
-const statusBadge = (s: string) => {
-  const map: Record<string, string> = {
-    healthy: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
-    active: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
-    ready: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
-    at_risk: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
-    warming: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
-    running: 'bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300',
-    critical: 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300',
-    paused: 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300',
-  };
-  return map[s] ?? 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300';
+/** Neutral chip + colored dot per status family (chip restraint). */
+const STATUS_DOTS: Record<string, string> = {
+  healthy: 'bg-emerald-500',
+  active: 'bg-emerald-500',
+  ready: 'bg-emerald-500',
+  at_risk: 'bg-amber-500',
+  warming: 'bg-amber-500',
+  running: 'bg-indigo-500',
+  critical: 'bg-red-500',
+  paused: 'bg-red-500',
 };
+
+const StatusChip = ({ s }: { s: string }) => (
+  <span className="inline-flex h-[18px] items-center gap-1.5 rounded-full border border-line/70 bg-ice-soft/50 dark:bg-navy-deep/50 px-2 text-micro font-semibold text-grey-dark whitespace-nowrap">
+    <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${STATUS_DOTS[s] ?? 'bg-slate-400'}`} />
+    {s.replace(/_/g, ' ')}
+  </span>
+);
 
 export function OutreachOps() {
   const [tab, setTab] = useState<Tab>('domains');
@@ -196,7 +201,7 @@ function DomainsTab() {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-card p-3">
+      <div className="flex flex-wrap items-end gap-2 rounded-lg border border-line/70 bg-card shadow-card p-3">
         <div>
           <label className="block text-micro font-bold uppercase tracking-wider text-grey">Domain</label>
           <input
@@ -229,17 +234,17 @@ function DomainsTab() {
         <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-line text-left text-micro font-bold uppercase tracking-wider text-grey">
-                <th className="px-3 py-2">Domain</th>
-                <th className="px-3 py-2">Today / cap</th>
-                <th className="px-3 py-2">Reputation</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2"></th>
+              <tr className="border-b border-line text-left text-micro font-medium uppercase tracking-wider text-grey">
+                <th className="px-3 py-2.5">Domain</th>
+                <th className="px-3 py-2.5">Today / cap</th>
+                <th className="px-3 py-2.5">Reputation</th>
+                <th className="px-3 py-2.5">Status</th>
+                <th className="px-3 py-2.5"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line/50">
               {rows.map((d) => (
-                <tr key={d.id}>
+                <tr key={d.id} className="transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10">
                   <td className="px-3 py-2 font-semibold font-mono">{d.domain}</td>
                   <td className="px-3 py-2 font-mono">
                     {d.sentToday} / {d.dailyCap}
@@ -252,20 +257,20 @@ function DomainsTab() {
                   </td>
                   <td className="px-3 py-2 font-mono">{d.reputationScore}</td>
                   <td className="px-3 py-2">
-                    <span className={`rounded px-1.5 py-0.5 text-micro font-bold ${statusBadge(d.status)}`}>{d.status}</span>
+                    <StatusChip s={d.status} />
                   </td>
                   <td className="px-3 py-2">
                     <div className="flex gap-1">
                       <button
                         onClick={() => void togglePause(d)}
-                        className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+                        className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 transition-colors"
                       >
                         {d.status === 'active' ? <Pause size={10} /> : <Play size={10} />}
                         {d.status === 'active' ? 'Pause' : 'Resume'}
                       </button>
                       <button
                         onClick={() => void recompute(d)}
-                        className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+                        className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 transition-colors"
                       >
                         <RefreshCw size={10} /> Adaptive cap
                       </button>
@@ -356,7 +361,7 @@ function HealthTab() {
               { label: 'Bounce rate', v: pct(report.overall.bounceRate) },
               { label: 'Complaint rate', v: pct(report.overall.complaintRate) },
             ].map((s) => (
-              <div key={s.label} className="rounded-lg border border-line bg-card p-3">
+              <div key={s.label} className="rounded-lg border border-line/70 bg-card shadow-card p-3">
                 <SectionLabel as="div">{s.label}</SectionLabel>
                 <div className="mt-1 font-mono text-lg font-bold">{s.v}</div>
               </div>
@@ -365,7 +370,7 @@ function HealthTab() {
 
           {/* delivery outcome composition — bounce/complaint made visible, not just rates */}
           {report.overall.total > 0 && (
-            <div className="rounded-lg border border-line bg-card p-3">
+            <div className="rounded-lg border border-line/70 bg-card shadow-card p-3">
               <SectionLabel as="div" className="mb-2">
                 Delivery outcomes · last {report.windowDays} days
               </SectionLabel>
@@ -382,7 +387,7 @@ function HealthTab() {
           {/* sequence outcomes — the honest step funnel the payload supports
               (sent → replied → handoff; no open tracking exists in the API) */}
           {outcomes && outcomes.sent > 0 && (
-            <div className="rounded-lg border border-line bg-card p-3">
+            <div className="rounded-lg border border-line/70 bg-card shadow-card p-3">
               <SectionLabel as="div" className="mb-2">
                 Sequence outcomes · lifetime, all channels
               </SectionLabel>
@@ -415,7 +420,7 @@ function HealthTab() {
                 { label: 'Email sent — 30d trend', data: trend.map((s) => s.emailSent) },
                 { label: 'Email replies — 30d trend', data: trend.map((s) => s.emailReplied) },
               ].map((t) => (
-                <div key={t.label} className="flex items-center justify-between gap-3 rounded-lg border border-line bg-card p-3">
+                <div key={t.label} className="flex items-center justify-between gap-3 rounded-lg border border-line/70 bg-card shadow-card p-3">
                   <div>
                     <SectionLabel as="div">{t.label}</SectionLabel>
                     <div className="mt-1 font-mono text-lg font-bold">{t.data[t.data.length - 1]}</div>
@@ -430,25 +435,25 @@ function HealthTab() {
           <div className="overflow-x-auto rounded-lg border border-line">
             <table className="w-full text-xs">
               <thead>
-                <tr className="border-b border-line text-left text-micro font-bold uppercase tracking-wider text-grey">
-                  <th className="px-3 py-2">Domain</th>
-                  <th className="px-3 py-2">Sent</th>
-                  <th className="px-3 py-2">Delivery</th>
-                  <th className="px-3 py-2">Bounce</th>
-                  <th className="px-3 py-2">Complaint</th>
-                  <th className="px-3 py-2">Status</th>
+                <tr className="border-b border-line text-left text-micro font-medium uppercase tracking-wider text-grey">
+                  <th className="px-3 py-2.5">Domain</th>
+                  <th className="px-3 py-2.5">Sent</th>
+                  <th className="px-3 py-2.5">Delivery</th>
+                  <th className="px-3 py-2.5">Bounce</th>
+                  <th className="px-3 py-2.5">Complaint</th>
+                  <th className="px-3 py-2.5">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line/50">
                 {report.domains.map((d) => (
-                  <tr key={d.domain}>
+                  <tr key={d.domain} className="transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10">
                     <td className="px-3 py-2 font-mono font-semibold">{d.domain}</td>
                     <td className="px-3 py-2 font-mono">{d.total}</td>
                     <td className="px-3 py-2 font-mono">{pct(d.deliveryRate)}</td>
                     <td className="px-3 py-2 font-mono">{pct(d.bounceRate)}</td>
                     <td className="px-3 py-2 font-mono">{pct(d.complaintRate)}</td>
                     <td className="px-3 py-2">
-                      <span className={`rounded px-1.5 py-0.5 text-micro font-bold ${statusBadge(d.status)}`}>{d.status}</span>
+                      <StatusChip s={d.status} />
                       {d.suggestPause && (
                         <span className="ml-1 text-micro font-bold text-red-600">pause suggested</span>
                       )}
@@ -515,7 +520,7 @@ function AbTestsTab() {
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-card p-3">
+      <div className="flex flex-wrap items-end gap-2 rounded-lg border border-line/70 bg-card shadow-card p-3">
         <div>
           <label className="block text-micro font-bold uppercase tracking-wider text-grey">Name</label>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Subject line test" className="rounded border border-line px-2 py-1 text-[12px]" />
@@ -543,25 +548,25 @@ function AbTestsTab() {
         <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-line text-left text-micro font-bold uppercase tracking-wider text-grey">
-                <th className="px-3 py-2">Test</th>
-                <th className="px-3 py-2">Variants</th>
-                <th className="px-3 py-2">Metric</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2"></th>
+              <tr className="border-b border-line text-left text-micro font-medium uppercase tracking-wider text-grey">
+                <th className="px-3 py-2.5">Test</th>
+                <th className="px-3 py-2.5">Variants</th>
+                <th className="px-3 py-2.5">Metric</th>
+                <th className="px-3 py-2.5">Status</th>
+                <th className="px-3 py-2.5"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line/50">
               {tests.map((t) => (
-                <tr key={t.id}>
+                <tr key={t.id} className="transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10">
                   <td className="px-3 py-2 font-semibold">{t.name}</td>
                   <td className="px-3 py-2 font-mono">{t.variants.join(' · ')}</td>
                   <td className="px-3 py-2 font-mono">{t.metric}</td>
                   <td className="px-3 py-2">
-                    <span className={`rounded px-1.5 py-0.5 text-micro font-bold ${statusBadge(t.status)}`}>{t.status}</span>
+                    <StatusChip s={t.status} />
                   </td>
                   <td className="px-3 py-2">
-                    <button onClick={() => void viewResults(t.id)} className="rounded border border-line px-1.5 py-0.5 text-micro hover:bg-ice-soft dark:hover:bg-ice-soft/10">
+                    <button onClick={() => void viewResults(t.id)} className="rounded border border-line px-1.5 py-0.5 text-micro hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 transition-colors">
                       Results
                     </button>
                   </td>
@@ -578,7 +583,7 @@ function AbTestsTab() {
       )}
 
       {selected && results && (
-        <div className="rounded-lg border border-line bg-card p-3 space-y-2">
+        <div className="rounded-lg border border-line/70 bg-card shadow-card p-3 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <SectionLabel as="div">Results · {results.metric}</SectionLabel>
             {results.comparison &&
@@ -668,7 +673,7 @@ function AccountsTab() {
       <div className="rounded border border-amber-200 bg-amber-50 p-2 text-label text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300">
         Bookkeeping only. Nothing here sends a LinkedIn message — a human sends every touch via the Send Queue.
       </div>
-      <div className="flex flex-wrap items-end gap-2 rounded-lg border border-line bg-card p-3">
+      <div className="flex flex-wrap items-end gap-2 rounded-lg border border-line/70 bg-card shadow-card p-3">
         <div>
           <label className="block text-micro font-bold uppercase tracking-wider text-grey">Account name</label>
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="BD rep — Jane" className="rounded border border-line px-2 py-1 text-[12px]" />
@@ -688,27 +693,27 @@ function AccountsTab() {
         <div className="overflow-x-auto rounded-lg border border-line">
           <table className="w-full text-xs">
             <thead>
-              <tr className="border-b border-line text-left text-micro font-bold uppercase tracking-wider text-grey">
-                <th className="px-3 py-2">Account</th>
-                <th className="px-3 py-2">Session</th>
-                <th className="px-3 py-2">Warmup day</th>
-                <th className="px-3 py-2">Target</th>
-                <th className="px-3 py-2">Status</th>
-                <th className="px-3 py-2"></th>
+              <tr className="border-b border-line text-left text-micro font-medium uppercase tracking-wider text-grey">
+                <th className="px-3 py-2.5">Account</th>
+                <th className="px-3 py-2.5">Session</th>
+                <th className="px-3 py-2.5">Warmup day</th>
+                <th className="px-3 py-2.5">Target</th>
+                <th className="px-3 py-2.5">Status</th>
+                <th className="px-3 py-2.5"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-line/50">
               {rows.map((a) => (
-                <tr key={a.id}>
+                <tr key={a.id} className="transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10">
                   <td className="px-3 py-2 font-semibold">{a.name}</td>
                   <td className="px-3 py-2 font-mono">{a.sessionStatus}</td>
                   <td className="px-3 py-2 font-mono">{a.warmupDay}</td>
                   <td className="px-3 py-2 font-mono">{a.dailyWarmupTarget}</td>
                   <td className="px-3 py-2">
-                    <span className={`rounded px-1.5 py-0.5 text-micro font-bold ${statusBadge(a.status)}`}>{a.status}</span>
+                    <StatusChip s={a.status} />
                   </td>
                   <td className="px-3 py-2">
-                    <button onClick={() => void viewPlan(a.id)} className="rounded border border-line px-1.5 py-0.5 text-micro hover:bg-ice-soft dark:hover:bg-ice-soft/10">
+                    <button onClick={() => void viewPlan(a.id)} className="rounded border border-line px-1.5 py-0.5 text-micro hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 transition-colors">
                       Warmup plan
                     </button>
                   </td>
@@ -725,7 +730,7 @@ function AccountsTab() {
       )}
 
       {plan && (
-        <div className="rounded-lg border border-line bg-card p-3">
+        <div className="rounded-lg border border-line/70 bg-card shadow-card p-3">
           <SectionLabel as="div" className="mb-2">
             Warmup ramp · day {plan.plan.currentDay}/{plan.plan.totalDays} · today's target {plan.plan.todayTarget}
           </SectionLabel>

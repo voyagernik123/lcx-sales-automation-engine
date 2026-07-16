@@ -31,10 +31,10 @@ export function StatCard({
   const body = (
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0">
-        <div className="text-xs text-grey">{label}</div>
-        <div className="mt-1 text-2xl font-semibold text-navy">{value}</div>
+        <div className="text-[11px] font-medium uppercase tracking-wide text-grey">{label}</div>
+        <div className="num-hero mt-1.5 text-[26px] leading-8 text-navy">{value}</div>
         {(delta !== undefined || deltaLabel) && (
-          <div className="mt-1 flex items-center gap-1.5">
+          <div className="mt-1.5 flex items-center gap-1.5">
             {delta !== undefined && <TrendDelta value={delta} goodIsUp={goodIsUp} />}
             {deltaLabel && <span className="text-xs text-grey">{deltaLabel}</span>}
           </div>
@@ -51,11 +51,11 @@ export function StatCard({
       <button
         type="button"
         onClick={onClick}
-        className="w-full rounded-xl border border-line bg-card p-4 text-left transition-colors hover:border-grey-light dark:hover:border-grey"
+        className="lift w-full rounded-xl border border-line/70 bg-card p-4 text-left shadow-card hover:border-grey-light dark:hover:border-grey"
       >
         {body}
       </button>
     );
   }
-  return <div className="rounded-xl border border-line bg-card p-4">{body}</div>;
+  return <div className="rounded-xl border border-line/70 bg-card p-4 shadow-card">{body}</div>;
 }

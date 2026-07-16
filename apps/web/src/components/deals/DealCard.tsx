@@ -1,11 +1,12 @@
+import { AlertTriangle } from 'lucide-react';
 import type { BoardDeal } from '@/lib/api/bd';
 import type { DealEvent } from '@/types/bd';
-import { LIKELIHOOD_BAND_CLS, MOMENTUM_GLYPH, type DealHealth, type PlaybookChip } from '@/lib/salesIntel';
+import { MOMENTUM_GLYPH, type DealHealth, type PlaybookChip } from '@/lib/salesIntel';
 import { ownerInitials, packageAccentClass, packageLabel, relativeTime } from './dealFormat';
 import { ActivityStrip } from './ActivityStrip';
 import { PlaybookChips } from './PlaybookChips';
 import { ScenarioValue } from './ScenarioControls';
-import { WARNING_SHORT_LABEL, severityChipCls } from './warningDisplay';
+import { severityChipCls } from './warningDisplay';
 
 export interface DealCardProps {
   deal: BoardDeal;
@@ -24,12 +25,19 @@ export interface DealCardProps {
   playbookLocal?: boolean;
 }
 
-/** Chip color for days-in-stage: neutral ≤7d, amber >7d, red >21d. Closed deals stay neutral. */
-function daysChipClass(days: number, closed: boolean): string {
-  if (!closed && days > 21) return 'bg-red-500/10 text-red-600 dark:text-red-400';
-  if (!closed && days > 7) return 'bg-amber-500/10 text-amber-600 dark:text-amber-400';
-  return 'bg-ice-soft dark:bg-ice-soft/10 text-grey';
+/** Text tone for days-in-stage: neutral ≤7d, amber >7d, red >21d. Closed deals stay neutral. */
+function daysToneClass(days: number, closed: boolean): string {
+  if (!closed && days > 21) return 'text-status-blocked';
+  if (!closed && days > 7) return 'text-status-conditional';
+  return 'text-grey';
 }
+
+/** Likelihood-band dot color — the chip itself stays neutral. */
+const BAND_DOT: Record<DealHealth['likelihood']['band'], string> = {
+  high: 'bg-status-ready',
+  fair: 'bg-status-conditional',
+  low: 'bg-status-blocked',
+};
 
 /** Suffix for percentile display: 62 → "62nd". */
 function ordinal(n: number): string {
@@ -65,8 +73,8 @@ export function DealCard({
 }: DealCardProps) {
   const closed = deal.stage === 'won' || deal.stage === 'lost';
   const initials = ownerInitials(deal.owner);
-  const topWarnings = health?.warnings.slice(0, 2) ?? [];
-  const moreWarnings = (health?.warnings.length ?? 0) - topWarnings.length;
+  const warnings = health?.warnings ?? [];
+  const maxSeverity = warnings.reduce<1 | 2 | 3>((m, w) => (w.severity > m ? w.severity : m), 1);
 
   const why = (e: React.MouseEvent | React.KeyboardEvent) => {
     e.stopPropagation();
@@ -87,33 +95,39 @@ export function DealCard({
           onClick();
         }
       }}
-      className={`cursor-grab rounded-lg border border-line border-l-[3px] ${packageAccentClass(deal.packageType)} bg-card p-2.5 shadow-sm transition-shadow hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 active:cursor-grabbing`}
+      className={`lift cursor-grab rounded-lg border border-line/70 border-l-[3px] ${packageAccentClass(deal.packageType)} bg-card p-3 shadow-card hover:border-grey-light focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 active:cursor-grabbing dark:hover:border-grey`}
     >
+      {/* Identity: name leads, ticker recedes to a quiet outline tag. */}
       <div className="flex items-start justify-between gap-2">
         <span className="min-w-0 truncate text-label font-semibold leading-tight text-navy">
           {deal.projectName}
         </span>
         {deal.projectTicker && (
-          <span className="shrink-0 rounded bg-ice-soft px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase tracking-wide text-navy dark:bg-ice-soft/10">
+          <span className="shrink-0 rounded border border-line/70 px-1.5 py-px font-mono text-[9px] font-semibold uppercase tracking-wide text-grey">
             {deal.projectTicker}
           </span>
         )}
       </div>
 
-      <div className="mt-1.5 flex items-baseline justify-between gap-2">
-        <ScenarioValue cents={deal.packageValue} className="text-label font-semibold text-navy" />
+      {/* Value is the hero figure of the card. */}
+      <div className="mt-1 flex items-baseline justify-between gap-2">
+        <ScenarioValue cents={deal.packageValue} className="num-tabular text-sm font-semibold tracking-tight text-navy" />
         <span className="truncate text-micro text-grey">{packageLabel(deal.packageType)}</span>
       </div>
 
-      {/* Health row: likelihood percentile + momentum, each a click-to-why. */}
+      {/* Health row: one restrained line — neutral likelihood chip with a band
+          dot, momentum glyph, warnings collapsed to a single severity-toned
+          count chip. Every judgment is a click-to-why; detail lives in the
+          inspector. */}
       {health && !closed && (
-        <div className="mt-1.5 flex flex-wrap items-center gap-1">
+        <div className="mt-2 flex items-center gap-1.5">
           <button
             type="button"
             onClick={why}
             title={`Likelihood: ${ordinal(health.likelihood.percentile)} percentile of the open pipeline (${health.likelihood.band}). Click for the signal trail.`}
-            className={`rounded px-1 py-0.5 font-mono text-[9px] font-bold ${LIKELIHOOD_BAND_CLS[health.likelihood.band]} hover:opacity-80`}
+            className="num-tabular inline-flex items-center gap-1 rounded-full border border-line/70 px-1.5 py-0.5 text-[9px] font-semibold text-navy transition-colors hover:border-grey-light hover:bg-ice-soft/50 dark:hover:border-grey dark:hover:bg-ice-soft/10"
           >
+            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${BAND_DOT[health.likelihood.band]}`} aria-hidden="true" />
             {ordinal(health.likelihood.percentile)}
           </button>
           <button
@@ -125,35 +139,26 @@ export function DealCard({
           >
             {MOMENTUM_GLYPH[health.momentum].glyph}
           </button>
-          {topWarnings.map(w => (
-            <button
-              key={w.code}
-              type="button"
-              onClick={why}
-              title={`${w.label}: ${w.detail} · ${w.mitigation}`}
-              className={`rounded px-1 py-0.5 text-[9px] font-bold ${severityChipCls(w.severity)} hover:opacity-80`}
-            >
-              {WARNING_SHORT_LABEL[w.code]}
-            </button>
-          ))}
-          {moreWarnings > 0 && (
+          {warnings.length > 0 && (
             <button
               type="button"
               onClick={why}
-              title={`${moreWarnings} more warning${moreWarnings === 1 ? '' : 's'} — click for all`}
-              className="rounded px-1 py-0.5 text-[9px] font-bold text-grey hover:text-navy"
+              title={`${warnings.map(w => `${w.label} — ${w.detail}`).join('\n')}\nClick for mitigations.`}
+              aria-label={`${warnings.length} warning${warnings.length === 1 ? '' : 's'} — click for details`}
+              className={`num-tabular ml-auto inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${severityChipCls(maxSeverity)} hover:opacity-80`}
             >
-              +{moreWarnings}
+              {warnings.length}
+              <AlertTriangle size={9} aria-hidden="true" />
             </button>
           )}
         </div>
       )}
 
       {/* Two-tone 21-day activity strip (navy = our touches, green = stage moves). */}
-      {events && events.length > 0 && <ActivityStrip events={events} className="mt-1.5 block" />}
+      {events && events.length > 0 && <ActivityStrip events={events} className="mt-2 block" />}
 
-      <div className="mt-2 flex items-center justify-between gap-2 border-t border-line/60 pt-1.5">
-        <div className="flex items-center gap-1.5">
+      <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-line/50 pt-2">
+        <div className="flex items-center gap-2">
           {initials && (
             <span
               title={deal.owner ?? undefined}
@@ -168,13 +173,13 @@ export function DealCard({
                 ? `${Math.floor(health.daysInStage)}d in stage${health.stageMedianDays != null ? ` (median ${Math.round(health.stageMedianDays)}d)` : ''}`
                 : 'Days in current stage'
             }
-            className={`rounded px-1 py-0.5 text-[9px] font-semibold ${daysChipClass(deal.daysSinceUpdate, closed)}`}
+            className={`num-tabular text-[9px] font-semibold ${daysToneClass(deal.daysSinceUpdate, closed)}`}
           >
             {deal.daysSinceUpdate}d
           </span>
           <span
             title={`Priority score ${deal.priorityScore}`}
-            className="rounded bg-ice-soft px-1 py-0.5 font-mono text-[9px] font-bold text-navy dark:bg-ice-soft/10"
+            className="num-tabular font-mono text-[9px] font-semibold text-grey"
           >
             P{deal.priorityScore}
           </span>

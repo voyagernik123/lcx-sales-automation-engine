@@ -53,14 +53,14 @@ export function ForecastDeltaCard({ forecast }: ForecastDeltaCardProps) {
     <button
       type="button"
       onClick={() => navigate('/bd-kpis')}
-      className="w-full rounded-lg border border-line p-3 text-left transition-colors hover:bg-ice-soft dark:hover:bg-ice-soft/5"
+      className="w-full cursor-pointer rounded-lg border border-line p-3 text-left transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10"
       title="Open the KPI dashboard"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-micro font-bold uppercase tracking-wider text-grey">Revenue (snapshot {latest.date})</div>
           <div className="mt-0.5 flex items-baseline gap-2">
-            <span className="font-mono text-xl font-bold text-navy">{fmtUsd(latest.totalRevenue)}</span>
+            <span className="num-tabular font-mono text-xl font-bold text-navy">{fmtUsd(latest.totalRevenue)}</span>
             <TrendDelta value={pctChange(latest.totalRevenue, previous?.totalRevenue)} />
             <span className="text-micro text-grey">{previous ? `vs ${previous.date}` : 'first snapshot'}</span>
           </div>
@@ -73,7 +73,7 @@ export function ForecastDeltaCard({ forecast }: ForecastDeltaCardProps) {
           <div key={r.label} className="flex items-center justify-between gap-1.5 sm:flex-col sm:items-start sm:gap-0">
             <span className="text-micro text-grey">{r.label}</span>
             <span className="flex items-center gap-1.5">
-              <span className="font-mono text-label font-bold text-navy">{r.value}</span>
+              <span className="num-tabular font-mono text-label font-bold text-navy">{r.value}</span>
               <TrendDelta value={r.delta} goodIsUp={r.goodIsUp} />
             </span>
           </div>

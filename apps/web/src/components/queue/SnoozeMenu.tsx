@@ -55,7 +55,7 @@ export function SnoozeMenu({ open, leadName, onClose, onSnooze }: SnoozeMenuProp
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-72 rounded-lg border border-line bg-card shadow-xl p-3 text-navy">
+      <div className="w-72 rounded-lg border border-line bg-card shadow-overlay p-3 text-navy">
         <p className="flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
           <Moon size={11} /> Snooze
         </p>
@@ -68,7 +68,7 @@ export function SnoozeMenu({ open, leadName, onClose, onSnooze }: SnoozeMenuProp
               className="flex items-center justify-center gap-1.5 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 py-1.5 text-xs font-bold hover:border-cyan-500 transition-colors"
             >
               {d}d
-              <kbd className="rounded border border-line px-1 font-mono text-micro text-grey leading-4">{d}</kbd>
+              <kbd className="rounded border border-line px-1.5 font-mono text-micro text-grey leading-4">{d}</kbd>
             </button>
           ))}
         </div>

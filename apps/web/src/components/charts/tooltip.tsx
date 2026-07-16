@@ -31,7 +31,7 @@ export function ChartTooltip({ tip }: { tip: TipState | null }) {
   if (!tip) return null;
   return (
     <div
-      className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded bg-navy px-2 py-1 text-xs text-white shadow-lg dark:bg-navy-deep"
+      className="pointer-events-none absolute z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-md bg-navy px-2.5 py-1.5 text-xs text-white shadow-overlay ring-1 ring-white/10 dark:bg-navy-deep"
       style={{ left: `${tip.xPct}%`, top: `calc(${tip.yPct}% - 6px)` }}
       role="status"
     >

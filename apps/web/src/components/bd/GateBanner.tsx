@@ -107,7 +107,7 @@ export function GateBanner({ check, compact = false, id }: { check: GateCheckSta
         <span className="text-micro font-bold uppercase tracking-wider text-amber-700 dark:text-amber-300">
           Outreach blocked
         </span>
-        <span className="text-[9px] text-amber-700/80 dark:text-amber-400/80">
+        <span className="text-micro num-tabular text-amber-700/80 dark:text-amber-400/80">
           {gate.reasons.length} blocker{gate.reasons.length === 1 ? '' : 's'} · gate ×0
         </span>
       </div>
@@ -115,7 +115,7 @@ export function GateBanner({ check, compact = false, id }: { check: GateCheckSta
         {gate.reasons.map((reason, i) => (
           <li key={i} className="text-micro text-amber-800 dark:text-amber-300">
             <span className="font-semibold">{reason}</span>
-            <span className="block text-[9px] text-amber-700/90 dark:text-amber-400/90">
+            <span className="block text-micro text-amber-700/90 dark:text-amber-400/90">
               Unblock: {unblockHint(reason)}
             </span>
           </li>

@@ -7,14 +7,24 @@ import { useInspect } from '@/stores';
 import { toast } from '@/components/shared/Toast';
 import { CardSkeleton, EmptyState } from '@/components/shared';
 import { SectionLabel, Button } from '@/components/ui';
-import { HANDOFF_STATUS_COLORS, HANDOFF_STATUS_LABELS } from '@/types/bd';
+import { HANDOFF_STATUS_LABELS } from '@/types/bd';
 import type { HandoffRecord, HandoffEvent } from '@/types/bd';
 
 const STATUS_OPTIONS = ['open', 'in_progress', 'resolved_won_path', 'resolved_lost', 're_nurture'] as const;
 
+/** Neutral chip + colored dot (chip restraint) — status hue lives in the dot. */
+const HANDOFF_STATUS_DOTS: Record<string, string> = {
+  open: 'bg-amber-500',
+  in_progress: 'bg-cyan-500',
+  resolved_won_path: 'bg-emerald-500',
+  resolved_lost: 'bg-red-500',
+  re_nurture: 'bg-purple-500',
+};
+
 function StatusBadge({ status }: { status: string }) {
   return (
-    <span className={`inline-flex rounded px-1.5 py-0.5 text-micro font-bold leading-none ${HANDOFF_STATUS_COLORS[status] ?? ''}`}>
+    <span className="inline-flex h-[18px] items-center gap-1.5 rounded-full border border-line/70 bg-ice-soft/50 dark:bg-navy-deep/50 px-2 text-micro font-semibold leading-none text-grey-dark whitespace-nowrap">
+      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${HANDOFF_STATUS_DOTS[status] ?? 'bg-slate-400'}`} />
       {HANDOFF_STATUS_LABELS[status] ?? status}
     </span>
   );
@@ -30,23 +40,28 @@ function formatAge(hours: number): string {
 
 function SlaChip({ createdAt }: { createdAt: string }) {
   const sla = computeReplySla(createdAt);
+  const breached = sla.state === 'breached';
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-0.5 rounded border border-line px-1 py-0.5 text-[9px] font-bold uppercase leading-none ${SLA_CLS[sla.state]}`}
+      className={`inline-flex h-[18px] shrink-0 items-center gap-1 rounded border px-1.5 text-micro font-semibold leading-none num-tabular whitespace-nowrap ${
+        breached
+          ? 'border-transparent bg-status-blocked text-white'
+          : `border-line/70 ${SLA_CLS[sla.state]}`
+      }`}
       title={`Reply SLA: ${Math.round(sla.ageHours * 10) / 10}h of ${sla.budgetHours}h budget`}
     >
-      <Clock size={8} /> {sla.state} {formatAge(sla.ageHours)}
+      <Clock size={9} /> {sla.state} {formatAge(sla.ageHours)}
     </span>
   );
 }
 
 /* ── Inline sentiment chip on the reply text (same engine as AI Console) ── */
 
-const SENTIMENT_STYLE: Record<string, string> = {
-  positive: 'bg-green-50 text-green-700 dark:bg-green-950/40 dark:text-green-300',
-  neutral: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
-  negative: 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-300',
-  objection: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+const SENTIMENT_DOTS: Record<string, string> = {
+  positive: 'bg-emerald-500',
+  neutral: 'bg-slate-400',
+  negative: 'bg-red-500',
+  objection: 'bg-amber-500',
 };
 
 /** Once-per-handoff cache so switching selection never re-runs the classifier. */
@@ -79,9 +94,10 @@ function SentimentChip({ handoffId, text }: { handoffId: string; text: string })
   if (!result) return null;
   return (
     <span
-      className={`inline-flex items-center rounded px-1.5 py-0.5 text-micro font-bold leading-none ${SENTIMENT_STYLE[result.sentiment] ?? ''}`}
+      className="inline-flex h-[18px] items-center gap-1.5 rounded-full border border-line/70 bg-ice-soft/50 dark:bg-navy-deep/50 px-2 text-micro font-semibold leading-none text-grey-dark"
       title={`Sentiment (${Math.round(result.confidence * 100)}% confidence)${result.matched.length ? ` — signals: ${result.matched.join(', ')}` : ''}`}
     >
+      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${SENTIMENT_DOTS[result.sentiment] ?? 'bg-slate-400'}`} />
       {result.sentiment}
     </span>
   );
@@ -97,8 +113,8 @@ function HandoffEvents({ events }: { events: HandoffEvent[] }) {
   return (
     <div className="space-y-2">
       {events.map(e => (
-        <div key={e.id} className="flex gap-2 text-micro border-b border-line last:border-none pb-1.5">
-          <span className="text-micro font-bold uppercase text-grey shrink-0 w-16">{e.eventType}</span>
+        <div key={e.id} className="flex gap-2 text-micro border-b border-line/50 last:border-none pb-1.5">
+          <span className="text-micro font-mono font-medium text-grey shrink-0 w-16">{e.eventType}</span>
           <div className="flex-1">
             <span className="font-semibold">{e.actor}</span>
             {e.content && <span className="text-grey"> — {e.content}</span>}
@@ -171,22 +187,22 @@ function ReplyDrafts({ handoffId, onMoved }: { handoffId: string; onMoved: () =>
   }
 
   return (
-    <div className="rounded border border-line p-2 space-y-2">
+    <div className="rounded-lg border border-line/70 bg-card shadow-card p-2.5 space-y-2">
       <div className="flex items-center gap-1">
         {drafts.map((d, i) => (
           <button
             key={d.angle}
             onClick={() => pick(i)}
-            className={`rounded px-2 py-0.5 text-micro font-bold uppercase ${i === active ? 'bg-cyan-600 text-white' : 'border border-line hover:bg-ice-soft dark:hover:bg-ice-soft/10'}`}
+            className={`rounded-full px-2 py-0.5 text-micro font-semibold transition-colors ${i === active ? 'bg-cyan-600 text-white' : 'border border-line text-grey hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10'}`}
           >
             {d.angle}
           </button>
         ))}
         <div className="flex-1" />
-        <button onClick={() => void copy()} className="rounded border border-line px-2 py-0.5 text-micro font-bold flex items-center gap-1 hover:bg-ice-soft dark:hover:bg-ice-soft/10">
+        <button onClick={() => void copy()} className="rounded-full border border-line px-2 py-0.5 text-micro font-semibold text-grey flex items-center gap-1 hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 transition-colors">
           <Copy size={9} /> {copied ? 'Copied' : 'Copy'}
         </button>
-        <button onClick={() => void moved()} disabled={busy} className="rounded bg-sky-600 text-white px-2 py-0.5 text-micro font-bold flex items-center gap-1 hover:bg-sky-700 disabled:opacity-50">
+        <button onClick={() => void moved()} disabled={busy} className="rounded-full bg-sky-600 text-white px-2 py-0.5 text-micro font-semibold flex items-center gap-1 hover:bg-sky-700 disabled:opacity-50 transition-colors">
           <Send size={9} /> Moved to Telegram
         </button>
       </div>
@@ -197,7 +213,7 @@ function ReplyDrafts({ handoffId, onMoved }: { handoffId: string; onMoved: () =>
         value={body}
         onChange={(e) => setBody(e.target.value)}
         rows={7}
-        className="w-full rounded border border-line p-1.5 text-micro leading-relaxed focus:outline-none"
+        className="w-full rounded border border-line bg-card p-2 text-micro leading-relaxed outline-none focus:border-cyan-500 transition-colors"
       />
     </div>
   );
@@ -302,7 +318,7 @@ function HandoffDetail({ handoff, onBack, onRefresh }: { handoff: HandoffRecord;
       </div>
 
       {handoff.personName && (
-        <div className="rounded border border-line p-2 text-micro space-y-1">
+        <div className="rounded-lg border border-line/70 bg-card shadow-card p-2.5 text-micro space-y-1">
           <div className="flex items-center gap-2">
             {handoff.personId ? (
               <button
@@ -337,7 +353,7 @@ function HandoffDetail({ handoff, onBack, onRefresh }: { handoff: HandoffRecord;
 
       {/* Their reply + inline sentiment (same engine the AI Console runs) */}
       {handoff.summary && (
-        <div className="rounded border border-line p-2 space-y-1.5">
+        <div className="rounded-lg border border-line/70 bg-card shadow-card p-2.5 space-y-1.5">
           <div className="flex items-center gap-2">
             <SectionLabel>Their reply</SectionLabel>
             <SentimentChip handoffId={handoff.id} text={handoff.summary} />
@@ -376,7 +392,7 @@ function HandoffDetail({ handoff, onBack, onRefresh }: { handoff: HandoffRecord;
           value={noteText}
           onChange={e => setNoteText(e.target.value)}
           placeholder="Add a note..."
-          className="flex-1 rounded border border-line px-2 py-1 text-micro bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500"
+          className="flex-1 rounded border border-line px-2 py-1 text-micro bg-ice-soft dark:bg-navy-deep outline-none focus:border-cyan-500 transition-colors"
           onKeyDown={e => { if (e.key === 'Enter') handleAddNote(); }}
         />
         <button onClick={handleAddNote} disabled={saving === 'note' || !noteText.trim()} className="rounded bg-cyan-600 text-white px-2 py-1 text-micro font-bold hover:bg-cyan-700 transition-colors disabled:opacity-50">
@@ -401,25 +417,25 @@ function InboxRow({ h, active, onSelect }: { h: HandoffRecord; active: boolean; 
     <button
       onClick={onSelect}
       aria-current={active ? 'true' : undefined}
-      className={`w-full text-left border-b border-line px-2.5 py-2 transition-colors ${
+      className={`w-full cursor-pointer text-left border-b border-line/50 px-2.5 py-2 transition-colors ${
         active
-          ? 'bg-cyan-50 dark:bg-cyan-950/30 border-l-2 border-l-cyan-500'
-          : 'border-l-2 border-l-transparent hover:bg-ice-soft dark:hover:bg-ice-soft/5'
+          ? 'bg-cyan-500/[0.07] dark:bg-cyan-400/[0.08] border-l-2 border-l-cyan-500'
+          : 'border-l-2 border-l-transparent hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10'
       }`}
     >
       <div className="flex items-center gap-1.5 min-w-0">
         <ChannelIcon channel={h.channel} size={10} />
-        <span className="font-bold text-micro truncate text-navy">{h.projectName ?? 'Unknown'}</span>
-        {h.projectTicker && <span className="text-[9px] text-grey shrink-0 font-mono">{h.projectTicker}</span>}
+        <span className="font-semibold text-micro truncate text-navy">{h.projectName ?? 'Unknown'}</span>
+        {h.projectTicker && <span className="text-micro text-grey shrink-0 font-mono">{h.projectTicker}</span>}
         <span className="flex-1" />
         {h.status === 'open' ? <SlaChip createdAt={h.createdAt} /> : <StatusBadge status={h.status} />}
       </div>
-      <div className="mt-0.5 flex items-center gap-1.5 min-w-0">
+      <div className="mt-1 flex items-center gap-1.5 min-w-0">
         <p className="text-micro text-grey truncate flex-1">
           {h.personName && <span className="font-semibold">{h.personName} — </span>}
           {snippet}
         </p>
-        <span className="text-[9px] text-grey shrink-0">
+        <span className="text-micro text-grey shrink-0 num-tabular">
           {new Date(h.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
         </span>
       </div>
@@ -488,7 +504,7 @@ export function Handoffs() {
         <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-line">
           <MessageSquare size={15} className="text-cyan-500 shrink-0" />
           <h1 className="text-sm font-bold">Handoff Inbox</h1>
-          <span className="text-micro text-grey font-mono">{total}</span>
+          <span className="text-micro text-grey font-mono num-tabular">{total}</span>
           <div className="flex-1" />
           <Button variant="secondary" size="xs" onClick={() => void refresh()}>
             <RefreshCw size={10} />
@@ -506,7 +522,12 @@ export function Handoffs() {
                   const next = isActive ? parts.filter(x => x !== s) : [...parts, s];
                   setStatusFilter(next.join(','));
                 }}
-                className={`rounded px-1.5 py-0.5 text-micro font-bold transition-colors ${isActive ? 'bg-cyan-600 text-white' : 'bg-ice-soft dark:bg-ice-soft/5 text-grey hover:bg-ice-soft/50'}`}
+                aria-pressed={isActive}
+                className={`rounded-full border px-2 py-0.5 text-micro font-semibold transition-colors ${
+                  isActive
+                    ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+                    : 'border-line bg-card text-grey hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10'
+                }`}
               >
                 {HANDOFF_STATUS_LABELS[s] ?? s}
               </button>

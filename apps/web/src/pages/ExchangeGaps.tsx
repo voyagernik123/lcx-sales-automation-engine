@@ -110,7 +110,7 @@ export function ExchangeGaps() {
             <select
               value={minExchanges}
               onChange={(e) => setMinExchanges(Number(e.target.value))}
-              className="rounded border border-line px-2 py-1"
+              className="rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 py-1 outline-none focus:border-cyan-500 transition-colors"
             >
               {[1, 2, 3, 5, 10].map((n) => (
                 <option key={n} value={n}>{n}+</option>
@@ -161,7 +161,7 @@ export function ExchangeGaps() {
       )}
 
       {loading && <TableSkeleton rows={6} cols={4} />}
-      {error && <div className="rounded border border-red-200 bg-red-50 p-3 text-[12px] text-red-700">{error}</div>}
+      {error && <div className="rounded border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30 p-3 text-label text-red-700 dark:text-red-300">{error}</div>}
       {!loading && !error && rows.length === 0 && (
         <EmptyState
           variant="search"
@@ -206,7 +206,7 @@ export function ExchangeGaps() {
                     <Star size={10} className="text-amber-500" fill="currentColor" /> watching
                   </span>
                   <span className="inline-flex items-center gap-1">
-                    <span className="rounded bg-emerald-100 px-1 text-[9px] font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">
+                    <span className="rounded bg-emerald-100 px-1 text-micro font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">
                       NEW
                     </span>
                     entered since last visit
@@ -214,17 +214,17 @@ export function ExchangeGaps() {
                 </div>
               </>
             ) : (
-              <div className="overflow-x-auto rounded-lg border border-line">
+              <div className="overflow-x-auto rounded-lg border border-line/70 bg-card shadow-card">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-line text-left text-micro font-bold uppercase tracking-wider text-grey">
-                      <th className="py-2 px-2 w-8" aria-label="Watch" />
-                      <th className="py-2 px-3">Project</th>
-                      <th className="py-2 px-3">Priority</th>
-                      <th className="py-2 px-3">Mcap</th>
-                      <th className="py-2 px-3"># Exch.</th>
-                      <th className="py-2 px-3">Listed on</th>
-                      <th className="py-2 px-3">Contact</th>
+                    <tr className="border-b border-line text-left text-micro font-medium uppercase tracking-wider text-grey">
+                      <th className="py-2.5 px-2 w-8" aria-label="Watch" />
+                      <th className="py-2.5 px-3">Project</th>
+                      <th className="py-2.5 px-3 text-right">Priority</th>
+                      <th className="py-2.5 px-3 text-right">Mcap</th>
+                      <th className="py-2.5 px-3 text-right"># Exch.</th>
+                      <th className="py-2.5 px-3">Listed on</th>
+                      <th className="py-2.5 px-3">Contact</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-line/50">
@@ -232,7 +232,7 @@ export function ExchangeGaps() {
                       <tr
                         key={r.id}
                         onClick={() => inspect('project', r.id)}
-                        className="cursor-pointer hover:bg-ice-soft dark:hover:bg-ice-soft/5"
+                        className="cursor-pointer transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10"
                       >
                         <td className="py-2 px-2">
                           <button
@@ -254,22 +254,22 @@ export function ExchangeGaps() {
                           <span className="font-semibold">{r.name}</span>
                           {r.ticker && <span className="ml-1.5 text-micro text-grey font-mono">{r.ticker}</span>}
                           {newIds.has(r.id) && (
-                            <span className="ml-1.5 rounded bg-emerald-100 px-1 text-[9px] font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">
+                            <span className="ml-1.5 rounded bg-emerald-100 px-1 text-micro font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">
                               NEW
                             </span>
                           )}
                         </td>
-                        <td className="py-2 px-3">
-                          <span className="rounded bg-indigo-50 dark:bg-indigo-950/40 px-1.5 py-0.5 text-micro font-bold text-indigo-700 dark:text-indigo-300 font-mono">{r.priorityScore}</span>
+                        <td className="py-2 px-3 text-right">
+                          <span className="num-tabular font-mono text-xs font-semibold text-navy">{r.priorityScore}</span>
                         </td>
-                        <td className="py-2 px-3 font-mono">{fmtUsd(r.marketCapUsd)}</td>
-                        <td className="py-2 px-3 font-mono font-bold">{r.exchangeCount}</td>
+                        <td className="py-2 px-3 text-right font-mono num-tabular">{fmtUsd(r.marketCapUsd)}</td>
+                        <td className="py-2 px-3 text-right font-mono num-tabular font-semibold">{r.exchangeCount}</td>
                         <td className="py-2 px-3">
                           <div className="flex flex-wrap gap-1">
                             {r.topExchanges.slice(0, 5).map((e) => (
-                              <span key={e.id} className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-micro font-semibold">{e.name}</span>
+                              <span key={e.id} className="inline-flex h-[18px] items-center rounded border border-line/70 bg-ice-soft/50 dark:bg-navy-deep/50 px-1.5 text-micro font-medium text-grey-dark">{e.name}</span>
                             ))}
-                            {r.exchangeCount > 5 && <span className="text-micro text-grey">+{r.exchangeCount - 5}</span>}
+                            {r.exchangeCount > 5 && <span className="text-micro text-grey num-tabular">+{r.exchangeCount - 5}</span>}
                           </div>
                         </td>
                         <td className="py-2 px-3 text-micro">{r.verifiedContactCount > 0 ? '✓' : '—'}</td>

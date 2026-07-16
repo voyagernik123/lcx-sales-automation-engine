@@ -165,7 +165,7 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
         <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-label text-grey">
           <span className="capitalize">{deal.stage.replace(/_/g, ' ')}</span>
           <span>· {packageLabel(deal.packageType)}</span>
-          <ScenarioValue cents={deal.packageValue} className="font-semibold text-navy" />
+          <ScenarioValue cents={deal.packageValue} className="num-tabular font-semibold text-navy" />
           <span>· updated {relativeTime(deal.updatedAt)}</span>
         </div>
       </div>
@@ -175,7 +175,7 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
         <div>
           <SectionHead icon={<TrendingUp size={11} className="text-cyan-500" />}>Likelihood — the why</SectionHead>
           <div className="flex items-center gap-2">
-            <span className={clsx('rounded px-1.5 py-0.5 font-mono text-label font-bold', LIKELIHOOD_BAND_CLS[health.likelihood.band])}>
+            <span className={clsx('num-tabular rounded px-1.5 py-0.5 font-mono text-label font-bold', LIKELIHOOD_BAND_CLS[health.likelihood.band])}>
               {health.likelihood.percentile}th percentile
             </span>
             <span className="text-micro text-grey">
@@ -222,7 +222,7 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
           ) : (
             <div className="space-y-1.5">
               {health.warnings.map(w => (
-                <div key={w.code} className="rounded-lg border border-line p-2">
+                <div key={w.code} className="rounded-lg border border-line/70 p-2.5">
                   <div className="flex items-center gap-1.5">
                     <span className={clsx('rounded px-1 py-0.5 text-[9px] font-bold', severityChipCls(w.severity))}>
                       {SEVERITY_WORD[w.severity]}
@@ -251,12 +251,12 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
             <span className="text-micro text-grey">{health.momentumDetail}</span>
           </div>
           <p className="mt-1 text-micro text-grey">
-            <span className="font-mono font-bold text-navy">{Math.floor(health.daysInStage)}d</span> in{' '}
+            <span className="num-tabular font-mono font-bold text-navy">{Math.floor(health.daysInStage)}d</span> in{' '}
             {deal.stage.replace(/_/g, ' ')}
             {health.stageMedianDays != null && (
               <>
                 {' '}
-                vs <span className="font-mono font-bold text-navy">{Math.round(health.stageMedianDays)}d</span> median for
+                vs <span className="num-tabular font-mono font-bold text-navy">{Math.round(health.stageMedianDays)}d</span> median for
                 the stage
               </>
             )}

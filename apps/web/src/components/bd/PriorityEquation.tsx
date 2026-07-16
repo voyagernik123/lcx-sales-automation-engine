@@ -34,11 +34,11 @@ export function PriorityEquation({
   const shown = priority ?? derived;
 
   const termCls =
-    'rounded border border-line bg-ice-soft dark:bg-ice-soft/10 px-1.5 py-0.5 font-mono font-bold text-navy hover:border-cyan-400 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors cursor-pointer';
+    'rounded border border-line bg-ice-soft dark:bg-ice-soft/10 px-1.5 py-0.5 font-mono num-tabular font-bold text-navy hover:border-cyan-400 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors cursor-pointer';
 
   return (
     <div className={`flex flex-wrap items-center ${compact ? 'gap-1 text-micro' : 'gap-1.5 text-label'}`}>
-      <span className="text-[9px] font-bold uppercase tracking-wider text-grey mr-0.5">Priority</span>
+      <span className="text-micro font-medium uppercase tracking-wider text-grey mr-0.5">Priority</span>
       <span className="text-grey font-mono">=</span>
       <button
         type="button"
@@ -65,7 +65,7 @@ export function PriorityEquation({
         {shown != null ? `P${shown}` : 'P—'}
       </span>
       {propensity == null && (
-        <span className="text-[9px] text-grey italic">propensity pending re-score</span>
+        <span className="text-micro text-grey italic">propensity pending re-score</span>
       )}
     </div>
   );

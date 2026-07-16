@@ -4,7 +4,6 @@ import {
   Bell,
   CalendarClock,
   CalendarDays,
-  CheckCircle2,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -69,14 +68,14 @@ interface Preference {
   enabled: boolean;
 }
 
-const card = 'rounded-lg border border-line bg-card p-4 space-y-3';
+const card = 'rounded-lg border border-line/70 bg-card shadow-card p-5 space-y-3';
 const heading = 'flex items-center gap-2 text-sm font-bold';
 const label = 'text-micro font-bold uppercase tracking-wider text-grey';
-const input = 'rounded border border-line px-2.5 py-1.5 text-label focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-transparent';
+const input = 'rounded border border-line px-2.5 py-1.5 text-label outline-none focus:border-cyan-500 transition-colors bg-transparent';
 
 function sentimentTone(s: string): string {
-  if (s === 'positive') return 'text-emerald-600';
-  if (s === 'negative') return 'text-red-600';
+  if (s === 'positive') return 'text-emerald-600 dark:text-emerald-400';
+  if (s === 'negative') return 'text-red-600 dark:text-red-400';
   return 'text-grey';
 }
 
@@ -85,14 +84,14 @@ function sentimentTone(s: string): string {
 function StatusPill({ mode }: { mode: 'live' | 'demo' }) {
   if (mode === 'live') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-        <CheckCircle2 size={10} /> Connected
+      <span className="inline-flex h-[18px] items-center gap-1.5 rounded-full border border-line/70 bg-ice-soft/50 dark:bg-navy-deep/50 px-2 text-micro font-semibold text-grey-dark">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" /> Connected
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-bold text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-      <AlertTriangle size={10} /> Demo Mode
+    <span className="inline-flex h-[18px] items-center gap-1.5 rounded-full border border-line/70 bg-ice-soft/50 dark:bg-navy-deep/50 px-2 text-micro font-semibold text-grey-dark">
+      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" /> Demo Mode
     </span>
   );
 }
@@ -118,7 +117,7 @@ function ConnectDisclosure({ setup }: { setup: string }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="inline-flex items-center gap-1 text-label font-semibold text-indigo-600 hover:text-indigo-700 dark:text-indigo-400 dark:hover:text-indigo-300"
+        className="inline-flex items-center gap-1 text-label font-semibold text-cyan-600 hover:text-cyan-700 dark:text-cyan-400 dark:hover:text-cyan-300 transition-colors"
       >
         <Plug size={11} /> Connect {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
       </button>
@@ -156,14 +155,14 @@ function ResendDetails({ svc }: { svc: IntegrationService }) {
               ['Last 7d', stats.last7d],
             ] as const
           ).map(([name, value]) => (
-            <div key={name} className="rounded border border-line p-1.5 text-center">
-              <div className="text-sm font-bold text-navy">{value}</div>
-              <div className="text-[9px] font-bold uppercase tracking-wider text-grey">{name}</div>
+            <div key={name} className="rounded border border-line/70 bg-ice-soft/30 dark:bg-navy-deep/30 p-1.5 text-center">
+              <div className="text-sm font-bold num-tabular text-navy">{value}</div>
+              <div className="text-micro font-medium uppercase tracking-wider text-grey">{name}</div>
             </div>
           ))}
         </div>
       )}
-      {svc.error && <p className="text-label text-red-600">Domain lookup failed: {svc.error}</p>}
+      {svc.error && <p className="text-label text-red-600 dark:text-red-400">Domain lookup failed: {svc.error}</p>}
       {svc.domains && svc.domains.length > 0 && (
         <div className="space-y-1">
           <span className={label}>Sending domains</span>
@@ -173,7 +172,7 @@ function ResendDetails({ svc }: { svc: IntegrationService }) {
                 <Globe size={11} className="text-grey" /> {d.name}
                 {d.region && <span className="font-normal text-grey">({d.region})</span>}
               </span>
-              <span className={`rounded px-1.5 py-0.5 text-[9px] font-bold uppercase ${domainChip(d.status)}`}>
+              <span className={`rounded px-1.5 py-0.5 text-micro font-semibold capitalize ${domainChip(d.status)}`}>
                 {d.status}
               </span>
             </div>
@@ -186,7 +185,7 @@ function ResendDetails({ svc }: { svc: IntegrationService }) {
 
 function ServiceCard({ svc }: { svc: IntegrationService }) {
   return (
-    <div className="space-y-2 rounded border border-line bg-card p-3">
+    <div className="space-y-2 rounded-lg border border-line/70 bg-card shadow-card p-3">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-label font-bold">{svc.name}</h3>
         <StatusPill mode={svc.mode} />
@@ -495,7 +494,7 @@ export function Integrations() {
               <div key={l.id} className="flex items-center justify-between gap-2 rounded border border-line px-2 py-1.5 text-label">
                 <span className="font-semibold">/{l.slug}</span>
                 <span className="flex items-center gap-2">
-                  <span className="text-grey">{l.durationMin} min</span>
+                  <span className="text-grey num-tabular">{l.durationMin} min</span>
                   <Button
                     variant="secondary"
                     size="xs"
@@ -538,7 +537,7 @@ export function Integrations() {
               <div key={t.id} className="rounded border border-line px-2 py-1.5 text-label">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold truncate">{t.subject}</span>
-                  <span className={`ml-2 shrink-0 ${label}`}>{t.direction}</span>
+                  <span className="ml-2 shrink-0 text-micro font-medium text-grey">{t.direction}</span>
                 </div>
                 <p className="text-grey truncate">{t.snippet}</p>
               </div>
@@ -571,7 +570,7 @@ export function Integrations() {
               <div key={m.id} className="rounded border border-line px-2 py-1.5 text-label">
                 <div className="flex items-center justify-between">
                   <span className="font-semibold">{m.author}</span>
-                  <span className={`${label} ${sentimentTone(m.sentiment)}`}>
+                  <span className={`text-micro font-medium ${sentimentTone(m.sentiment)}`}>
                     {m.platform} · {m.sentiment}
                   </span>
                 </div>

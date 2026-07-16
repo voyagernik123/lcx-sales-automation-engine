@@ -91,7 +91,7 @@ export function GapHeatMatrix({ model, watched, newIds, onToggleWatch, onInspect
   const popLeft = popover ? Math.max(4, Math.min(popover.x - 40, wrapWidth - 250)) : 0;
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-line bg-card">
+    <div className="overflow-x-auto rounded-lg border border-line/70 bg-card shadow-card">
       <div ref={wrapRef} className="relative w-max min-w-full p-2">
         {/* column headers */}
         <div className="flex items-end">
@@ -156,11 +156,14 @@ export function GapHeatMatrix({ model, watched, newIds, onToggleWatch, onInspect
                   <span className="shrink-0 font-mono text-micro text-grey">{project.ticker}</span>
                 )}
                 {isNew && (
-                  <span className="shrink-0 rounded bg-emerald-100 px-1 text-[9px] font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">
+                  <span className="shrink-0 rounded bg-emerald-100 px-1 text-micro font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">
                     NEW
                   </span>
                 )}
-                <span className="ml-auto shrink-0 rounded bg-indigo-50 px-1.5 py-0.5 font-mono text-micro font-bold text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300">
+                <span
+                  className="ml-auto shrink-0 font-mono text-micro font-semibold num-tabular text-navy"
+                  title="Priority score"
+                >
                   {project.priorityScore}
                 </span>
               </div>
@@ -168,7 +171,7 @@ export function GapHeatMatrix({ model, watched, newIds, onToggleWatch, onInspect
               {/* LCX gap cell — the action cell */}
               <button
                 type="button"
-                className={`${CELL} flex items-center justify-center border-amber-300 bg-amber-50 transition-colors hover:border-amber-500 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/30 dark:hover:bg-amber-900/40`}
+                className={`${CELL} group flex cursor-pointer items-center justify-center border-amber-300 bg-amber-50 transition-all hover:border-amber-500 hover:bg-amber-100 hover:shadow-card dark:border-amber-800 dark:bg-amber-950/30 dark:hover:border-amber-500 dark:hover:bg-amber-900/40`}
                 aria-label={`${project.name}: gap on LCX — open actions`}
                 onClick={(e) => {
                   const { x, y } = localPoint(e);
@@ -189,7 +192,7 @@ export function GapHeatMatrix({ model, watched, newIds, onToggleWatch, onInspect
                 }
                 onMouseLeave={() => setTip(null)}
               >
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 transition-transform group-hover:scale-125" aria-hidden="true" />
               </button>
               <div className="mx-1 self-stretch w-px bg-line" aria-hidden="true" />
 
@@ -227,7 +230,7 @@ export function GapHeatMatrix({ model, watched, newIds, onToggleWatch, onInspect
         {/* hover tooltip */}
         {tip && !popover && (
           <div
-            className="pointer-events-none absolute z-20 w-[220px] rounded-md border border-line bg-card p-2 shadow-lg"
+            className="pointer-events-none absolute z-20 w-[220px] rounded-md border border-line bg-card p-2 shadow-overlay"
             style={{ left: tipLeft, top: tip.y + 12 }}
           >
             <div className={`text-label font-bold ${tip.accent ? 'text-amber-700 dark:text-amber-400' : 'text-navy'}`}>
@@ -245,7 +248,7 @@ export function GapHeatMatrix({ model, watched, newIds, onToggleWatch, onInspect
         {popover && (
           <div
             ref={popRef}
-            className="absolute z-30 w-[248px] rounded-md border border-line bg-card p-2.5 shadow-lg"
+            className="absolute z-30 w-[248px] rounded-md border border-line bg-card p-2.5 shadow-overlay"
             style={{ left: popLeft, top: popover.y + 10 }}
             role="dialog"
             aria-label={`Actions for ${popover.project.name}`}

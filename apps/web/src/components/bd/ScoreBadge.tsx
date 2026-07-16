@@ -9,18 +9,18 @@ interface ScoreBadgeProps {
 }
 
 export function ScoreBadge({ score, band, size = 'md' }: ScoreBadgeProps) {
-  const px = size === 'sm' ? 'px-1.5 py-0.5' : 'px-2 py-1';
+  const px = size === 'sm' ? 'h-[18px] px-1.5' : 'h-6 px-2';
   const textSize = size === 'sm' ? 'text-micro' : 'text-xs';
   return (
     <span
       className={clsx(
-        'inline-flex items-center gap-1 rounded border font-mono font-bold leading-none',
+        'inline-flex items-center gap-1 rounded border font-mono font-semibold leading-none whitespace-nowrap',
         px, textSize,
         BAND_COLORS[band],
       )}
       aria-label={`Score: ${score}, band: ${band}`}
     >
-      <span className="tabular-nums">{score}</span>
+      <span className="num-tabular">{score}</span>
       <span className="opacity-60 font-normal">/ 100</span>
     </span>
   );
@@ -32,12 +32,12 @@ interface BandBadgeProps {
 }
 
 export function BandBadge({ band, size = 'sm' }: BandBadgeProps) {
-  const px = size === 'sm' ? 'px-1.5 py-0.5' : 'px-2 py-1';
+  const px = size === 'sm' ? 'h-[18px] px-1.5' : 'h-6 px-2';
   const textSize = size === 'sm' ? 'text-micro' : 'text-xs';
   return (
     <span
       className={clsx(
-        'inline-flex items-center rounded border font-bold leading-none',
+        'inline-flex items-center rounded border font-semibold leading-none whitespace-nowrap',
         px, textSize,
         BAND_COLORS[band],
       )}

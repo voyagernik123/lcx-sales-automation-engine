@@ -49,9 +49,9 @@ function Pill({ status }: { status: string }) {
 
 function Section({ title, icon, children, onRefresh }: { title: string; icon: React.ReactNode; children: React.ReactNode; onRefresh?: () => void }) {
   return (
-    <section className="rounded-lg border border-line bg-card p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-sm font-bold text-navy">{icon}{title}</h2>
+    <section className="rounded-xl border border-line/70 bg-card p-5 shadow-card">
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="flex items-center gap-2 text-sm font-bold tracking-tight text-navy">{icon}{title}</h2>
         {onRefresh && (
           <Button variant="secondary" size="xs" onClick={onRefresh}>
             <RefreshCw size={10} /> Refresh
@@ -262,15 +262,15 @@ export function DealDesk() {
             ) : (
               <div className="space-y-2">
                 {visibleApprovals.map((a) => (
-                  <div key={a.id} className="flex items-start justify-between gap-2 rounded-lg border border-line p-2.5">
+                  <div key={a.id} className="flex items-start justify-between gap-3 rounded-lg border border-line/70 p-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="text-label font-semibold text-navy">{a.projectName ?? a.dealId}</span>
                         <Pill status={a.status} />
                         {a.dealValueCents != null && (
-                          <ScenarioValue cents={a.dealValueCents} className="font-mono text-micro text-grey" />
+                          <ScenarioValue cents={a.dealValueCents} className="num-tabular font-mono text-micro text-grey" />
                         )}
-                        {a.discountPct != null && <span className="text-micro text-grey">−{a.discountPct}%</span>}
+                        {a.discountPct != null && <span className="num-tabular text-micro text-grey">−{a.discountPct}%</span>}
                       </div>
                       <ApprovalChain steps={a.steps} requestStatus={a.status} className="mt-1.5" />
                       {a.reason && <p className="mt-1 text-xs italic text-grey">“{a.reason}”</p>}
@@ -283,7 +283,7 @@ export function DealDesk() {
                       {dealById.has(a.dealId) && (
                         <button
                           onClick={() => setMemoDealId(a.dealId)}
-                          className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-micro font-bold text-grey hover:text-navy"
+                          className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-micro font-bold text-grey transition-colors hover:border-grey-light hover:text-navy"
                           title="Open the print-ready deal review memo"
                         >
                           <FileText size={10} /> Review memo
@@ -312,38 +312,43 @@ export function DealDesk() {
             ) : (
               <table className="w-full text-label">
                 <thead>
-                  <tr className="text-left text-[9px] uppercase text-grey">
-                    <th className="pb-1">Project</th><th className="pb-1">Amount</th><th className="pb-1">Due</th><th className="pb-1">Status</th><th className="pb-1">Mark</th><th className="pb-1" aria-label="Actions" />
+                  <tr className="text-left text-[10px] font-bold uppercase tracking-wider text-grey">
+                    <th className="pb-2 font-bold">Project</th>
+                    <th className="pb-2 text-right font-bold">Amount</th>
+                    <th className="pb-2 pl-4 font-bold">Due</th>
+                    <th className="pb-2 font-bold">Status</th>
+                    <th className="pb-2 font-bold">Mark</th>
+                    <th className="pb-2" aria-label="Actions" />
                   </tr>
                 </thead>
-                <tbody>
+                <tbody className="divide-y divide-line/50">
                   {visibleInvoices.map((i) => (
-                    <tr key={i.id} className="border-t border-line">
-                      <td className="py-1.5 font-semibold text-navy">{i.projectName ?? i.dealId}</td>
-                      <td className="py-1.5">
+                    <tr key={i.id} className="transition-colors hover:bg-grey/[0.04]">
+                      <td className="py-2.5 font-semibold text-navy">{i.projectName ?? i.dealId}</td>
+                      <td className="num-tabular py-2.5 text-right">
                         {i.currency === 'USD' ? (
                           <ScenarioValue cents={i.amountCents} className="font-mono text-navy" />
                         ) : (
                           <span className="font-mono text-navy">{i.currency} {(i.amountCents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}</span>
                         )}
                       </td>
-                      <td className="py-1.5 text-grey">{i.dueDate ? new Date(i.dueDate).toLocaleDateString() : '—'}</td>
-                      <td className="py-1.5"><Pill status={i.status} /></td>
-                      <td className="py-1.5">
+                      <td className="num-tabular py-2.5 pl-4 text-grey">{i.dueDate ? new Date(i.dueDate).toLocaleDateString() : '—'}</td>
+                      <td className="py-2.5"><Pill status={i.status} /></td>
+                      <td className="py-2.5">
                         <select
                           value={i.status}
                           onChange={(e) => void setInvoiceStatus(i.id, e.target.value)}
-                          className="rounded border border-line bg-card px-1 py-0.5 text-micro text-navy"
+                          className="cursor-pointer rounded border border-line bg-card px-1 py-0.5 text-micro text-navy"
                           aria-label={`Invoice status for ${i.projectName ?? i.dealId}`}
                         >
                           {['draft', 'sent', 'paid', 'overdue'].map((s) => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </td>
-                      <td className="py-1.5 text-right">
+                      <td className="py-2.5 text-right">
                         {dealById.has(i.dealId) && (
                           <button
                             onClick={() => setMemoDealId(i.dealId)}
-                            className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro font-bold text-grey hover:text-navy"
+                            className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro font-bold text-grey transition-colors hover:border-grey-light hover:text-navy"
                             title="Open the print-ready deal review memo"
                           >
                             <FileText size={9} /> Memo
@@ -362,11 +367,11 @@ export function DealDesk() {
             {playbooks.length === 0 ? (
               <p className="text-label text-grey">No playbooks seeded.</p>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-4 sm:grid-cols-2">
                 {playbooks.map((pb) => (
-                  <div key={pb.id} className="rounded-lg border border-line p-2.5">
+                  <div key={pb.id} className="rounded-lg border border-line/70 p-3">
                     <h3 className="text-label font-bold text-navy">{pb.name}</h3>
-                    <ol className="mt-1 space-y-1">
+                    <ol className="mt-1.5 space-y-1">
                       {pb.steps.map((s, idx) => (
                         <li key={idx} className="text-xs text-grey">
                           <span className="font-semibold text-grey">{s.order ?? idx + 1}. {s.title}</span>
@@ -405,12 +410,12 @@ export function DealDesk() {
                   const mine = referrals.filter((r) => r.partnerId === p.id);
                   const commission = mine.reduce((s, r) => s + (r.commissionCents ?? 0), 0);
                   return (
-                    <div key={p.id} className="flex items-center justify-between rounded-lg border border-line p-2 text-label">
+                    <div key={p.id} className="flex items-center justify-between rounded-lg border border-line/70 px-3 py-2.5 text-label">
                       <div>
                         <span className="font-semibold text-navy">{p.name}</span>
-                        <span className="ml-2 text-[9px] uppercase text-grey">{p.type}</span>
+                        <span className="ml-2 text-[9px] uppercase tracking-wide text-grey">{p.type}</span>
                       </div>
-                      <div className="flex items-baseline gap-2 text-xs text-grey">
+                      <div className="num-tabular flex items-baseline gap-2 text-xs text-grey">
                         <span>{p.commissionPct}% · {mine.length} referral{mine.length === 1 ? '' : 's'}</span>
                         {commission > 0 && <ScenarioValue cents={commission} className="font-mono text-navy" />}
                       </div>
@@ -427,8 +432,8 @@ export function DealDesk() {
           <ScenarioCard />
 
           {openDeals.length === 0 ? (
-            <section className="rounded-lg border border-line bg-card p-4">
-              <h2 className="text-sm font-bold text-navy">BATNA</h2>
+            <section className="rounded-xl border border-line/70 bg-card p-5 shadow-card">
+              <h2 className="text-sm font-bold tracking-tight text-navy">BATNA</h2>
               <p className="mt-1 text-micro text-grey">No open deals on the board — negotiation figures attach to a live deal.</p>
             </section>
           ) : (

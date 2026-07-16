@@ -76,10 +76,10 @@ export function ScenarioValue({ cents, className, baseline = 'inline' }: Scenari
   const adjusted = applyScenarioToValue(cents, scenario);
   return (
     <span className={clsx(baseline === 'stacked' ? 'inline-flex flex-col items-end' : 'inline-flex items-baseline gap-1', className)}>
-      <span className="font-mono text-cyan-600 dark:text-cyan-400" title="Scenario-adjusted value">
+      <span className="num-tabular font-mono text-cyan-600 dark:text-cyan-400" title="Scenario-adjusted value">
         {fmtMoneyCents(adjusted)}
       </span>
-      <span className="text-[9px] text-grey line-through" title="Baseline value">
+      <span className="num-tabular text-[9px] text-grey line-through" title="Baseline value">
         {fmtMoneyCents(cents)}
       </span>
     </span>
@@ -96,10 +96,10 @@ export function ScenarioWinProb({ pct, className }: { pct: number; className?: s
   const adjusted = applyScenarioToWinProb(pct, scenario);
   return (
     <span className={clsx('inline-flex items-baseline gap-1', className)}>
-      <span className="font-mono text-cyan-600 dark:text-cyan-400" title="Scenario-adjusted win probability">
+      <span className="num-tabular font-mono text-cyan-600 dark:text-cyan-400" title="Scenario-adjusted win probability">
         {Math.round(adjusted)}%
       </span>
-      <span className="text-[9px] text-grey line-through" title="Baseline win probability">
+      <span className="num-tabular text-[9px] text-grey line-through" title="Baseline win probability">
         {Math.round(pct)}%
       </span>
     </span>
@@ -125,7 +125,7 @@ function Dial({ label, value, min, max, step, format, onChange, hint }: DialProp
     <label className="block">
       <span className="flex items-baseline justify-between gap-2">
         <span className="text-micro font-bold uppercase tracking-wider text-grey">{label}</span>
-        <span className={clsx('font-mono text-label font-bold', off ? 'text-cyan-600 dark:text-cyan-400' : 'text-navy')}>
+        <span className={clsx('num-tabular text-right font-mono text-label font-bold', off ? 'text-cyan-600 dark:text-cyan-400' : 'text-navy')}>
           {format(value)}
         </span>
       </span>
@@ -136,10 +136,10 @@ function Dial({ label, value, min, max, step, format, onChange, hint }: DialProp
         step={step}
         value={value}
         onChange={e => onChange(Number(e.target.value))}
-        className="mt-1 w-full accent-cyan-500"
+        className="mt-1.5 block h-1.5 w-full cursor-pointer accent-cyan-500"
         aria-label={label}
       />
-      <span className="block text-micro text-grey">{hint}</span>
+      <span className="mt-1 block text-micro leading-snug text-grey">{hint}</span>
     </label>
   );
 }
@@ -157,14 +157,14 @@ export function ScenarioCard({ className }: { className?: string }) {
   return (
     <section
       className={clsx(
-        'rounded-lg border p-4 transition-colors',
-        active ? 'border-cyan-500/40 bg-cyan-500/5' : 'border-line bg-card',
+        'rounded-xl border p-5 shadow-card transition-colors',
+        active ? 'border-cyan-500/40 bg-cyan-500/5' : 'border-line/70 bg-card',
         className,
       )}
       aria-label="Scenario dials"
     >
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="flex items-center gap-1.5 text-sm font-bold text-navy">
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h2 className="flex items-center gap-1.5 text-sm font-bold tracking-tight text-navy">
           <FlaskConical size={14} className="text-cyan-500" aria-hidden="true" />
           Scenario
         </h2>
@@ -179,7 +179,7 @@ export function ScenarioCard({ className }: { className?: string }) {
         )}
       </div>
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         <Dial
           label="Close rate"
           value={scenario.closeRateDelta}
@@ -212,7 +212,7 @@ export function ScenarioCard({ className }: { className?: string }) {
         />
       </div>
 
-      <p className="mt-3 border-t border-line/60 pt-2 text-micro text-grey">
+      <p className="mt-4 border-t border-line/50 pt-3 text-micro leading-snug text-grey">
         Dials reflow every deal value on the Desk and the Board — cyan marks simulated numbers; baseline stays visible.
       </p>
     </section>

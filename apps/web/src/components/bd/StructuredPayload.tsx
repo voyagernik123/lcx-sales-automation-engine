@@ -16,7 +16,7 @@ function FormattedValue({ value }: { value: unknown }) {
   if (typeof value === 'boolean') {
     return (
       <span
-        className={`inline-flex rounded px-1 py-0.5 text-[8px] font-bold leading-none ${
+        className={`inline-flex rounded px-1 py-0.5 text-micro font-semibold leading-none ${
           value
             ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
             : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
@@ -28,7 +28,7 @@ function FormattedValue({ value }: { value: unknown }) {
   }
 
   if (typeof value === 'number') {
-    return <span className="font-mono text-navy">{value.toLocaleString()}</span>;
+    return <span className="font-mono num-tabular text-navy">{value.toLocaleString()}</span>;
   }
 
   if (typeof value === 'string') {
@@ -63,13 +63,13 @@ function NestedValue({ value }: { value: unknown }) {
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className="inline-flex items-center gap-0.5 rounded border border-line px-1 py-0.5 font-mono text-[9px] text-grey hover:text-navy hover:border-cyan-400 transition-colors"
+        className="inline-flex items-center gap-0.5 rounded border border-line px-1 py-0.5 font-mono text-micro text-grey hover:text-navy hover:border-cyan-400 transition-colors"
       >
         {open ? <ChevronDown size={9} /> : <ChevronRight size={9} />}
         {summary}
       </button>
       {open && (
-        <pre className="mt-1 max-h-40 overflow-auto rounded bg-ice-soft dark:bg-navy-deep px-2 py-1.5 font-mono text-[9px] leading-relaxed text-navy">
+        <pre className="mt-1 max-h-40 overflow-auto rounded bg-ice-soft dark:bg-navy-deep px-2 py-1.5 font-mono text-micro leading-relaxed text-navy">
           {JSON.stringify(value, null, 2)}
         </pre>
       )}
@@ -113,7 +113,7 @@ export function StructuredPayload({
           <button
             type="button"
             onClick={() => setExpanded(true)}
-            className="text-[9px] font-bold text-cyan-600 dark:text-cyan-400 hover:underline"
+            className="text-micro font-bold text-cyan-600 dark:text-cyan-400 hover:underline"
           >
             + {hidden} more field{hidden === 1 ? '' : 's'}
           </button>
@@ -121,14 +121,14 @@ export function StructuredPayload({
         <button
           type="button"
           onClick={() => setShowRaw(r => !r)}
-          className="inline-flex items-center gap-1 text-[9px] font-bold text-grey hover:text-navy transition-colors"
+          className="inline-flex items-center gap-1 text-micro font-bold text-grey hover:text-navy transition-colors"
         >
           <Braces size={9} />
           {showRaw ? 'Hide raw JSON' : 'Raw JSON'}
         </button>
       </div>
       {showRaw && (
-        <pre className="mt-1 max-h-60 overflow-auto rounded bg-ice-soft dark:bg-navy-deep px-2 py-1.5 font-mono text-[9px] leading-relaxed text-navy">
+        <pre className="mt-1 max-h-60 overflow-auto rounded bg-ice-soft dark:bg-navy-deep px-2 py-1.5 font-mono text-micro leading-relaxed text-navy">
           {JSON.stringify(payload, null, 2)}
         </pre>
       )}

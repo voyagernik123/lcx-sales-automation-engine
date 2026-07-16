@@ -96,3 +96,33 @@ path.state:hover {
   height: auto;
   max-height: 480px;
 }
+
+/* === 10x polish layer === */
+@layer utilities {
+  /* Hero figures: tight tracking, proportional digits (tabular only in columns). */
+  .num-hero {
+    @apply font-semibold tracking-tight;
+    font-feature-settings: 'ss01';
+  }
+  .num-tabular {
+    font-variant-numeric: tabular-nums;
+  }
+  /* Interactive-card lift: subtle rise + deeper shadow, 150ms. */
+  .lift {
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  }
+  .lift:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-card-md);
+  }
+  .lift:active {
+    transform: translateY(0);
+  }
+}
+
+/* Professional focus treatment — visible only for keyboard users. */
+:focus-visible {
+  outline: 2px solid rgb(8 145 178 / 0.6);
+  outline-offset: 2px;
+  border-radius: 4px;
+}

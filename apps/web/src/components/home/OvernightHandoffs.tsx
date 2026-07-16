@@ -15,7 +15,7 @@ const SLA_RANK: Record<ReplySla['state'], number> = { breached: 3, urgent: 2, ag
 export function SlaChip({ sla }: { sla: ReplySla }) {
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 font-mono text-micro font-bold ${SLA_CLS[sla.state]}`}
+      className={`inline-flex items-center gap-1 rounded-md border border-line px-1.5 py-0.5 font-mono text-micro font-bold ${SLA_CLS[sla.state]}`}
       title={`Reply SLA: ${Math.round(sla.ageHours * 10) / 10}h of a ${sla.budgetHours}h budget`}
     >
       <span className="uppercase">{sla.state}</span>
@@ -48,18 +48,18 @@ export function OvernightHandoffs({ handoffs, max = 6 }: OvernightHandoffsProps)
   }
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1.5">
       {rows.map(({ h, sla }) => (
         <button
           key={h.id}
           type="button"
           onClick={() => inspect('handoff', h.id)}
-          className="flex w-full items-center justify-between gap-2 rounded border border-line p-2 text-left transition-colors hover:bg-ice-soft dark:hover:bg-ice-soft/5"
+          className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-line px-2.5 py-2 text-left transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10"
         >
           <div className="flex min-w-0 items-center gap-2">
             <MessageSquare size={12} className="shrink-0 text-grey" />
             <span className="truncate text-label font-bold text-navy">{h.projectName ?? 'Unknown project'}</span>
-            <span className="shrink-0 rounded bg-ice-soft px-1 py-0.5 text-micro font-bold uppercase text-grey dark:bg-ice-soft/10">
+            <span className="shrink-0 rounded-md border border-line/70 px-1.5 py-0.5 text-micro font-semibold capitalize text-grey">
               {h.channel}
             </span>
             {h.personName && <span className="hidden truncate text-micro text-grey sm:inline">{h.personName}</span>}
@@ -71,7 +71,7 @@ export function OvernightHandoffs({ handoffs, max = 6 }: OvernightHandoffsProps)
         <button
           type="button"
           onClick={() => navigate('/outreach')}
-          className="w-full rounded border border-dashed border-line p-1.5 text-center text-micro font-bold text-grey transition-colors hover:text-navy"
+          className="w-full cursor-pointer rounded-lg border border-dashed border-line p-1.5 text-center text-micro font-semibold text-grey transition-colors hover:bg-ice-soft/50 hover:text-navy dark:hover:bg-ice-soft/10"
         >
           +{handoffs.length - max} more in the inbox →
         </button>

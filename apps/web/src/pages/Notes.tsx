@@ -226,7 +226,7 @@ export function Notes() {
             value={pickerQuery}
             onChange={(e) => setPickerQuery(e.target.value)}
             placeholder="Search projects by name or ticker…"
-            className="w-full rounded border border-line bg-card py-2 pl-8 pr-2.5 text-label focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            className="w-full rounded border border-line bg-card py-2 pl-8 pr-2.5 text-label outline-none focus:border-cyan-500 transition-colors"
           />
         </div>
         {pickerLoading ? (
@@ -236,16 +236,16 @@ export function Notes() {
             <EmptyState variant="search" title="No projects found" description="Try a different name or ticker." />
           </div>
         ) : (
-          <div className="divide-y divide-line overflow-hidden rounded-lg border border-line bg-card">
+          <div className="divide-y divide-line/50 overflow-hidden rounded-lg border border-line/70 bg-card shadow-card">
             {pickerResults.map((p) => (
               <button
                 key={p.id}
                 onClick={() => navigate(`/notes/${p.id}`)}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+                className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10"
               >
                 <span className="text-label font-semibold">{p.name}</span>
                 {p.ticker && <span className="font-mono text-xs text-grey">{p.ticker}</span>}
-                <span className="ml-auto text-[9px] font-bold uppercase text-grey">{p.band}</span>
+                <span className="ml-auto text-micro font-semibold capitalize text-grey">{p.band}</span>
               </button>
             ))}
           </div>
@@ -274,7 +274,7 @@ export function Notes() {
                 value={projectId}
                 onChange={(e) => navigate(`/notes/${e.target.value}`)}
                 title="Switch project"
-                className="max-w-[180px] rounded border border-line bg-card px-2 py-1 text-label focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                className="max-w-[180px] rounded border border-line bg-card px-2 py-1 text-label outline-none focus:border-cyan-500 transition-colors"
               >
                 {!pickerResults.some((p) => p.id === projectId) && <option value={projectId}>Current project</option>}
                 {pickerResults.map((p) => (
@@ -293,7 +293,7 @@ export function Notes() {
         </PageTitle>
       </div>
 
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-label text-red-700">{error}</div>}
+      {error && <div className="rounded-lg border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30 p-3 text-label text-red-700 dark:text-red-300">{error}</div>}
       {loading && <CardSkeleton count={4} />}
 
       {!loading && (
@@ -308,19 +308,19 @@ export function Notes() {
             </div>
 
             {editingId && (
-              <div className="space-y-2 rounded-lg border border-line bg-card p-3">
+              <div className="space-y-2 rounded-lg border border-line/70 bg-card shadow-card p-3">
                 <input
                   value={draftTitle}
                   onChange={(e) => setDraftTitle(e.target.value)}
                   placeholder="Title (optional)"
-                  className="w-full rounded border border-line px-2.5 py-1.5 text-label focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                  className="w-full rounded border border-line px-2.5 py-1.5 text-label outline-none focus:border-cyan-500 transition-colors"
                 />
                 <textarea
                   value={draftBody}
                   onChange={(e) => setDraftBody(e.target.value)}
                   placeholder="Write in markdown…"
                   rows={6}
-                  className="w-full rounded border border-line px-2.5 py-1.5 font-mono text-label focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                  className="w-full rounded border border-line px-2.5 py-1.5 font-mono text-label outline-none focus:border-cyan-500 transition-colors"
                 />
                 <div className="flex gap-2">
                   <Button variant="primary" size="sm" onClick={() => void saveNote()}>
@@ -344,20 +344,20 @@ export function Notes() {
             )}
 
             {notes.map((n) => (
-              <div key={n.id} className="rounded-lg border border-line bg-card p-3">
+              <div key={n.id} className="rounded-lg border border-line/70 bg-card shadow-card p-3">
                 <div className="flex items-center gap-2">
                   {n.pinned && <Pin size={11} className="text-amber-500" />}
                   <span className="text-label font-bold">{n.title || 'Untitled'}</span>
-                  <span className="text-xs text-grey">v{n.currentVersion}</span>
-                  <span className="ml-auto text-xs text-grey">{fmtDate(n.updatedAt)}</span>
+                  <span className="text-xs text-grey num-tabular">v{n.currentVersion}</span>
+                  <span className="ml-auto text-xs text-grey num-tabular">{fmtDate(n.updatedAt)}</span>
                 </div>
                 <pre className="mt-1.5 whitespace-pre-wrap font-sans text-label text-grey">{n.body}</pre>
                 <div className="mt-2 flex gap-2">
-                  <button onClick={() => startEdit(n)} className="text-xs font-semibold text-cyan-600 hover:underline">Edit</button>
-                  <button onClick={() => void togglePin(n)} className="text-xs font-semibold text-amber-600 hover:underline">
+                  <button onClick={() => startEdit(n)} className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline">Edit</button>
+                  <button onClick={() => void togglePin(n)} className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline">
                     {n.pinned ? 'Unpin' : 'Pin'}
                   </button>
-                  <button onClick={() => void deleteNote(n)} className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 hover:underline">
+                  <button onClick={() => void deleteNote(n)} className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400 hover:underline">
                     <Trash2 size={10} /> Delete
                   </button>
                 </div>
@@ -369,25 +369,25 @@ export function Notes() {
           <section className="space-y-2">
             <SectionLabel as="h2">Documents ({docs.length})</SectionLabel>
 
-            <div className="space-y-2 rounded-lg border border-line bg-card p-3">
+            <div className="space-y-2 rounded-lg border border-line/70 bg-card shadow-card p-3">
               <input
                 value={docName}
                 onChange={(e) => setDocName(e.target.value)}
                 placeholder="Document name"
-                className="w-full rounded border border-line px-2.5 py-1.5 text-label focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                className="w-full rounded border border-line px-2.5 py-1.5 text-label outline-none focus:border-cyan-500 transition-colors"
               />
               <input
                 value={docUrl}
                 onChange={(e) => setDocUrl(e.target.value)}
                 placeholder="External URL (optional)"
-                className="w-full rounded border border-line px-2.5 py-1.5 text-label focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                className="w-full rounded border border-line px-2.5 py-1.5 text-label outline-none focus:border-cyan-500 transition-colors"
               />
               <textarea
                 value={docContent}
                 onChange={(e) => setDocContent(e.target.value)}
                 placeholder="Or paste inline text (max 200 KB)"
                 rows={3}
-                className="w-full rounded border border-line px-2.5 py-1.5 font-mono text-label focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                className="w-full rounded border border-line px-2.5 py-1.5 font-mono text-label outline-none focus:border-cyan-500 transition-colors"
               />
               <Button variant="primary" size="sm" onClick={() => void addDoc()}>
                 <Paperclip size={12} /> Add document
@@ -395,17 +395,17 @@ export function Notes() {
             </div>
 
             {docs.map((d) => (
-              <div key={d.id} className="flex items-center gap-2 rounded-lg border border-line bg-card p-2.5 text-label">
+              <div key={d.id} className="flex items-center gap-2 rounded-lg border border-line/70 bg-card shadow-card p-2.5 text-label">
                 <Paperclip size={12} className="text-grey" />
                 <span className="font-semibold">{d.name}</span>
                 <span className="text-grey">{d.mime}</span>
-                {d.sizeBytes > 0 && <span className="text-grey">{fmtBytes(d.sizeBytes)}</span>}
+                {d.sizeBytes > 0 && <span className="text-grey num-tabular">{fmtBytes(d.sizeBytes)}</span>}
                 {d.url && (
-                  <a href={d.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-600 hover:underline">
+                  <a href={d.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-600 dark:text-cyan-400 hover:underline">
                     open <ExternalLink size={10} />
                   </a>
                 )}
-                <button onClick={() => void deleteDoc(d)} className="ml-auto text-red-600 hover:text-red-700">
+                <button onClick={() => void deleteDoc(d)} className="ml-auto text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 transition-colors">
                   <Trash2 size={12} />
                 </button>
               </div>

@@ -21,11 +21,14 @@ function CapBar({ label, used, max }: { label: string; used: number; max: number
   const atCap = used >= max;
   return (
     <span
-      className={`inline-flex items-center gap-1 rounded px-2 py-1 text-micro font-semibold ${
-        atCap ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-600'
+      className={`inline-flex h-6 items-center gap-1.5 rounded-full border px-2.5 text-micro font-semibold num-tabular ${
+        atCap
+          ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300'
+          : 'border-line/70 bg-ice-soft/50 dark:bg-navy-deep/50 text-grey-dark'
       }`}
       title={atCap ? 'Cap reached — sends beyond this risk LinkedIn restrictions' : undefined}
     >
+      <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${atCap ? 'bg-amber-500' : 'bg-emerald-500'}`} />
       {label}: {used}/{max}
     </span>
   );
@@ -63,7 +66,7 @@ function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
   };
 
   return (
-    <div className="rounded-lg border border-line bg-card p-4 space-y-3">
+    <div className="rounded-xl border border-line/70 bg-card shadow-card p-5 space-y-3">
       <div className="flex items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2">
@@ -91,7 +94,7 @@ function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
               {item.projectTicker ? ` (${item.projectTicker})` : ''}
             </button>
             {' '}· touch {item.touchIndex} ·{' '}
-            <span className="uppercase font-semibold">{isConnect ? 'Connect request' : isTelegram ? 'Telegram DM' : 'Message'}</span>
+            <span className="font-semibold">{isConnect ? 'Connect request' : isTelegram ? 'Telegram DM' : 'Message'}</span>
           </div>
           <div className="text-micro text-grey mt-0.5">
             Why this touch: step {item.stepIndex + 1} of the {isTelegram ? 'Telegram' : 'LinkedIn'} sequence
@@ -99,8 +102,15 @@ function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
           </div>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
-          <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-micro font-bold text-indigo-700">P{item.priorityScore}</span>
-          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-micro font-bold uppercase text-slate-600">{item.band}</span>
+          <span
+            className="inline-flex h-[18px] items-center rounded border border-line/70 bg-ice-soft/50 dark:bg-navy-deep/50 px-1.5 text-micro font-semibold font-mono num-tabular text-navy"
+            title="Priority score"
+          >
+            P{item.priorityScore}
+          </span>
+          <span className="inline-flex h-[18px] items-center rounded-full border border-line/70 bg-ice-soft/50 dark:bg-navy-deep/50 px-2 text-micro font-semibold capitalize text-grey-dark">
+            {item.band}
+          </span>
         </div>
       </div>
 
@@ -109,10 +119,10 @@ function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
           value={body}
           onChange={(e) => setBody(e.target.value)}
           rows={Math.min(10, Math.max(3, body.split('\n').length + 1))}
-          className="w-full rounded border border-line p-2 text-label leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-400"
+          className="w-full rounded border border-line bg-card p-2 text-label leading-relaxed outline-none focus:border-cyan-500 transition-colors"
         />
         {isConnect && (
-          <div className={`text-right text-micro ${overLimit ? 'font-bold text-red-600' : 'text-grey'}`}>
+          <div className={`text-right text-micro num-tabular ${overLimit ? 'font-bold text-red-600 dark:text-red-400' : 'text-grey'}`}>
             {body.length}/{CONNECT_NOTE_MAX} chars {overLimit && '— too long for a connection note'}
           </div>
         )}
@@ -124,7 +134,7 @@ function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
             href={openLink}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 rounded bg-blue-700 px-2.5 py-1.5 text-label font-semibold text-white hover:bg-blue-800"
+            className="inline-flex items-center gap-1 rounded bg-blue-700 px-2.5 py-1.5 text-label font-semibold text-white hover:bg-blue-800 transition-colors"
           >
             <ExternalLink size={11} /> Open {isTelegram ? 'Telegram' : 'LinkedIn'}
           </a>
@@ -138,7 +148,7 @@ function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
         <button
           disabled={busy !== ''}
           onClick={() => act(() => markQueueItemSent(item.id, body !== item.body ? body : undefined), 'sent', 'Marked sent')}
-          className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1.5 text-label font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+          className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1.5 text-label font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
         >
           <Check size={11} /> {busy === 'sent' ? 'Saving…' : 'Mark sent'}
         </button>
@@ -182,6 +192,8 @@ export function SendQueue() {
     <div className="mx-auto max-w-3xl space-y-4 p-4">
       <PageTitle
         icon={<Send size={20} />}
+        className="mb-5"
+        subtitle="LinkedIn and Telegram touches are sent by you, never by automation — open the profile, paste, send, mark done. Caps are guidance to keep the account safe."
         actions={
           <Button variant="secondary" size="xs" onClick={() => void load()}>
             <RefreshCw size={11} /> Refresh
@@ -190,11 +202,6 @@ export function SendQueue() {
       >
         Send Queue
       </PageTitle>
-
-      <p className="text-label text-grey">
-        LinkedIn and Telegram touches are sent by you, never by automation — open the profile, paste, send, mark done.
-        Caps are guidance to keep the account safe.
-      </p>
 
       {caps && (
         <div className="flex flex-wrap gap-2">
@@ -205,7 +212,7 @@ export function SendQueue() {
           <select
             value={channel}
             onChange={(e) => setChannel(e.target.value)}
-            className="rounded border border-line px-2 py-1 text-label"
+            className="rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 py-1 text-label outline-none focus:border-cyan-500 transition-colors"
           >
             <option value="">All channels</option>
             <option value="linkedin">LinkedIn</option>
@@ -216,7 +223,7 @@ export function SendQueue() {
 
       {loading && <CardSkeleton count={3} />}
       {error && (
-        <div className="rounded border border-red-200 bg-red-50 p-3 text-label text-red-700">
+        <div className="rounded border border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/30 p-3 text-label text-red-700 dark:text-red-300">
           {error}{' '}
           <button onClick={() => void load()} className="font-semibold underline">
             Retry
@@ -224,7 +231,7 @@ export function SendQueue() {
         </div>
       )}
       {!loading && !error && items.length === 0 && (
-        <div className="rounded-lg border border-line bg-card">
+        <div className="rounded-xl border border-line/70 bg-card shadow-card">
           <EmptyState
             variant="done"
             title="Queue clear — go close something."
@@ -233,7 +240,7 @@ export function SendQueue() {
         </div>
       )}
 
-      <div className="space-y-3">
+      <div className="space-y-4">
         {items.map((item) => (
           <QueueCard key={item.id} item={item} onDone={() => void load()} />
         ))}

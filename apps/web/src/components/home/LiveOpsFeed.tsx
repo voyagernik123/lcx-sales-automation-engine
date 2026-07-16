@@ -24,7 +24,7 @@ export function LiveOpsFeed({ lines, loading = false }: LiveOpsFeedProps) {
   const inspect = useInspect();
 
   return (
-    <div className="flex h-[340px] flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-950 font-mono text-micro text-slate-100 shadow-md">
+    <div className="flex h-[340px] flex-col overflow-hidden rounded-xl border border-slate-800 bg-slate-950 font-mono text-micro text-slate-100 shadow-card">
       <div className="flex shrink-0 select-none items-center justify-between border-b border-slate-800 bg-slate-900 px-3 py-2">
         <div className="flex items-center gap-2">
           <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-cyan-500" />

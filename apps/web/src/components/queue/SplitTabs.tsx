@@ -30,16 +30,18 @@ export function SplitTabs({ active, counts, onSelect }: SplitTabsProps) {
             title={`${SPLIT_HINTS[split]} — press ${i + 1}`}
             onClick={() => onSelect(split)}
             className={clsx(
-              'flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold border-b-2 -mb-px whitespace-nowrap transition-colors',
+              'flex items-center gap-1.5 px-3 py-2 text-xs border-b-2 -mb-px whitespace-nowrap transition-colors',
               isActive
-                ? 'border-cyan-500 text-navy'
-                : 'border-transparent text-grey hover:text-navy hover:border-line',
+                ? 'border-cyan-500 text-navy font-semibold'
+                : 'border-transparent text-grey font-medium hover:text-navy hover:border-line',
             )}
           >
             <kbd
               className={clsx(
-                'rounded border px-1 font-mono text-micro leading-4',
-                isActive ? 'border-cyan-500/40 text-cyan-600 dark:text-cyan-400' : 'border-line text-grey',
+                'rounded border px-1.5 font-mono text-micro leading-4',
+                isActive
+                  ? 'border-cyan-500/40 bg-cyan-500/5 text-cyan-600 dark:text-cyan-400'
+                  : 'border-line bg-ice-soft dark:bg-navy-deep text-grey',
               )}
             >
               {i + 1}
@@ -47,7 +49,7 @@ export function SplitTabs({ active, counts, onSelect }: SplitTabsProps) {
             {SPLIT_LABELS[split]}
             <span
               className={clsx(
-                'rounded-full px-1.5 text-micro font-mono font-bold',
+                'rounded-full px-1.5 text-micro font-mono font-semibold num-tabular',
                 isActive
                   ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
                   : 'bg-ice-soft dark:bg-navy-deep text-grey',

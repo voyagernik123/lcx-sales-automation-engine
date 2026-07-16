@@ -138,12 +138,12 @@ export function MarketNews() {
 
       {/* Daily Briefing */}
       {!loading && !error && briefing.length > 0 && (
-        <div className="rounded-lg border border-line bg-card">
+        <div className="rounded-lg border border-line/70 bg-card shadow-card">
           <button
             type="button"
             onClick={() => setBriefingOpen((v) => !v)}
             aria-expanded={briefingOpen}
-            className="flex w-full items-center gap-2 p-3 text-left"
+            className="flex w-full items-center gap-2 rounded-lg p-3 text-left transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10"
           >
             {briefingOpen ? <ChevronDown size={14} className="text-grey" /> : <ChevronRight size={14} className="text-grey" />}
             <Sparkles size={14} className="text-cyan-600 dark:text-cyan-400" />
@@ -199,7 +199,7 @@ export function MarketNews() {
             value={source}
             onChange={(e) => setSource(e.target.value)}
             aria-label="Filter by source"
-            className="ml-auto rounded border border-line bg-card px-2 py-1 text-label text-navy"
+            className="ml-auto rounded border border-line bg-card px-2 py-1 text-label text-navy outline-none focus:border-cyan-500 transition-colors"
           >
             <option value="">All sources</option>
             {sources.map((s) => (
@@ -252,11 +252,11 @@ export function MarketNews() {
         </div>
       )}
 
-      <div className="space-y-2">
+      <div className="space-y-3">
         {shown.map((n) => {
           const seen = visited.has(n.id);
           return (
-            <div key={n.id} className="rounded-lg border border-line bg-card p-3">
+            <div key={n.id} className="rounded-lg border border-line/70 bg-card shadow-card p-3">
               <div className="flex items-start justify-between gap-2">
                 <a
                   href={n.url ?? '#'}
@@ -270,13 +270,13 @@ export function MarketNews() {
                   {n.title} {n.url && <ExternalLink size={11} className="mt-0.5 shrink-0" />}
                 </a>
                 {n.relevanceScore > 0 && (
-                  <span className="shrink-0 rounded bg-cyan-50 px-1.5 py-0.5 text-[9px] font-bold text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">
+                  <span className="shrink-0 rounded bg-cyan-50 px-1.5 py-0.5 text-micro font-bold num-tabular text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">
                     rel {n.relevanceScore}
                   </span>
                 )}
               </div>
-              <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-grey">
-                <span className="rounded bg-ice-soft px-1.5 py-0.5 font-semibold uppercase dark:bg-ice-soft/10">
+              <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-grey">
+                <span className="rounded bg-ice-soft px-1.5 py-0.5 font-medium dark:bg-ice-soft/10">
                   {n.source}
                 </span>
                 {n.publishedAt && <span title={new Date(n.publishedAt).toLocaleString()}>{relativeTime(n.publishedAt)}</span>}
@@ -301,7 +301,7 @@ export function MarketNews() {
                   <button
                     onClick={() => void queueIt(n)}
                     disabled={queued.has(n.id) || queueBusy === n.id}
-                    className="ml-auto inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro font-bold text-navy hover:border-cyan-400 hover:bg-ice-soft disabled:opacity-60 dark:hover:bg-ice-soft/10 transition-colors"
+                    className="ml-auto inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro font-bold text-navy hover:border-cyan-400 hover:bg-ice-soft/50 disabled:opacity-60 dark:hover:bg-ice-soft/10 transition-colors"
                     title="Create a follow-up task on the matched project"
                   >
                     {queued.has(n.id) ? <Check size={10} className="text-emerald-600" /> : <ListPlus size={10} />}

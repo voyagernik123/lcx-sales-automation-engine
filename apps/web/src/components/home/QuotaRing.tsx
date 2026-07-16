@@ -51,7 +51,7 @@ export function QuotaRing({ stats, target, streak }: QuotaRingProps) {
 
       <div className="flex items-center gap-3">
         <span
-          className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-micro font-bold ${
+          className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-micro font-semibold ${
             streak > 0 ? 'bg-status-ready-bg text-status-ready' : 'bg-ice-soft dark:bg-ice-soft/10 text-grey'
           }`}
         >
@@ -78,8 +78,8 @@ export function QuotaRing({ stats, target, streak }: QuotaRingProps) {
 
 function MiniStat({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded border border-line px-1 py-1.5">
-      <div className="font-mono text-sm font-bold text-navy">{value}</div>
+    <div className="rounded-lg border border-line/70 px-1 py-1.5">
+      <div className="num-tabular font-mono text-sm font-bold text-navy">{value}</div>
       <div className="text-micro text-grey">{label}</div>
     </div>
   );

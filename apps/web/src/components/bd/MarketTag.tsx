@@ -5,10 +5,11 @@ interface MarketTagProps {
   market: Market | 'both' | null;
 }
 
-const marketStyles: Record<string, string> = {
-  eu: 'border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400',
-  us: 'border-purple-200 dark:border-purple-800 bg-purple-50 dark:bg-purple-950/30 text-purple-600 dark:text-purple-400',
-  both: 'border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 text-amber-600 dark:text-amber-400',
+/** Neutral chip + colored dot (chip restraint) — the dot carries the market hue. */
+const marketDots: Record<string, string> = {
+  eu: 'bg-blue-500',
+  us: 'bg-purple-500',
+  both: 'bg-amber-500',
 };
 
 export function MarketTag({ market }: MarketTagProps) {
@@ -20,10 +21,10 @@ export function MarketTag({ market }: MarketTagProps) {
   return (
     <span
       className={clsx(
-        'inline-flex items-center rounded-full border px-2 py-0.5 text-micro font-bold leading-none',
-        marketStyles[market],
+        'inline-flex h-[18px] items-center gap-1.5 rounded-full border border-line/70 bg-ice-soft/50 dark:bg-navy-deep/50 px-2 text-micro font-semibold leading-none text-grey-dark whitespace-nowrap',
       )}
     >
+      <span className={clsx('h-1.5 w-1.5 rounded-full shrink-0', marketDots[market])} />
       {label}
     </span>
   );

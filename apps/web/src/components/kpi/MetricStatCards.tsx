@@ -37,7 +37,7 @@ export function MetricStatCards({ kpis, snapshots, deltaLabel }: MetricStatCards
   const reply = seriesOf(snapshots, snapshotReplyRate);
 
   return (
-    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+    <div className="grid grid-cols-2 items-stretch gap-4 xl:grid-cols-4">
       <StatCard
         label="New high-score leads (7d)"
         value={String(kpis.newHighScoreLeadsThisWeek)}

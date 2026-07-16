@@ -94,14 +94,15 @@ export function Home() {
   const openHandoffCount = handoffs?.filter(h => h.status === 'open').length ?? 0;
 
   return (
-    <div className="mx-auto max-w-[1200px] p-4">
+    <div className="mx-auto max-w-[1200px] p-5">
       <PageTitle
+        className="mb-5"
         icon={<span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: accent }} />}
         subtitle={`Morning brief — ${today}. Everything below opens in place.`}
         actions={
           <button
             onClick={() => navigate('/select')}
-            className="flex items-center gap-1.5 rounded border border-line px-2.5 py-1 text-micro font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+            className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 text-micro font-semibold text-grey hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 transition-colors"
           >
             <LogOut size={11} />
             Switch identity
@@ -113,7 +114,7 @@ export function Home() {
 
       {/* Queue pulse — counted streams that navigate. */}
       {pulse ? (
-        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="mb-6 grid grid-cols-2 items-stretch gap-4 sm:grid-cols-4">
           <StatCard
             label="Immediate leads"
             value={pulse.immediate === null ? '—' : String(pulse.immediate)}
@@ -138,7 +139,7 @@ export function Home() {
           />
         </div>
       ) : (
-        <div className="mb-4">
+        <div className="mb-6">
           <CardSkeleton count={4} />
         </div>
       )}
@@ -181,7 +182,7 @@ export function Home() {
               <button
                 type="button"
                 onClick={() => navigate('/bd-pipeline')}
-                className="text-micro font-bold text-cyan-600 hover:underline dark:text-cyan-400"
+                className="text-micro font-semibold text-cyan-600 hover:underline dark:text-cyan-400"
               >
                 Work the queue →
               </button>

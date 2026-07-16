@@ -82,7 +82,7 @@ export function CalledVsLanded({ snapshots }: { snapshots: KpiSnapshot[] }) {
             midLabel="Expected (called)"
             actualLabel="Closed-won to date (landed)"
           />
-          <p className="mt-1.5 text-[10px] text-grey">
+          <p className="mt-1.5 text-micro text-grey">
             {hasActual
               ? 'Honest caveat: "landed" is cumulative lifetime closed-won revenue from the same daily snapshots — the forecast band covers open pipeline, so compare shapes, not levels.'
               : 'KPI snapshots carry no matching revenue readings yet — the landed overlay appears as both series accumulate.'}

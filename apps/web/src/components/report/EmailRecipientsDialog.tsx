@@ -59,7 +59,7 @@ export function EmailRecipientsDialog({ open, onClose, onSend }: EmailRecipients
 
   return (
     <div className="br-no-print fixed inset-0 z-[90] flex items-center justify-center bg-navy/40 p-4" role="dialog" aria-modal="true" aria-label="Email report to execs">
-      <div className="w-full max-w-md rounded-xl border border-line bg-card p-4 shadow-xl">
+      <div className="w-full max-w-md rounded-xl border border-line/70 bg-card p-4 shadow-overlay">
         <div className="mb-3 flex items-center gap-2">
           <Mail size={15} className="text-cyan-500" />
           <h3 className="text-sm font-bold text-navy">Email report to execs</h3>

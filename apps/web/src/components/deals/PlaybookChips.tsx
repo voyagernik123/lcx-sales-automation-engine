@@ -6,7 +6,7 @@ import type { PlaybookChip } from '@/lib/salesIntel';
 /**
  * T·K·L·C·O listing-playbook letter chips (Gong playbook-chip pattern).
  *
- * Empty steps render as outlined grey letters, done steps as filled navy.
+ * Empty steps render as subtle outlined letter circles, done steps fill navy.
  * Clicking the chip row opens a small checklist popover to toggle steps —
  * the parent owns persistence (PATCH with localStorage fallback) and health
  * recompute. `PlaybookChecklist` is exported for inline use (inspector, memo).
@@ -54,7 +54,7 @@ export function PlaybookChecklist({
               >
                 <span
                   className={clsx(
-                    'flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[8px] font-bold',
+                    'flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[8px] font-bold',
                     chipCls(step.status),
                   )}
                   aria-hidden="true"
@@ -111,7 +111,7 @@ export function PlaybookChips({ playbook, onToggle, local, className }: Playbook
           e.preventDefault();
           e.stopPropagation();
         }}
-        className={clsx('flex items-center gap-0.5 rounded', onToggle && 'cursor-pointer')}
+        className={clsx('flex items-center gap-1 rounded', onToggle && 'cursor-pointer')}
         aria-haspopup={onToggle ? 'dialog' : undefined}
         aria-expanded={onToggle ? open : undefined}
         aria-label={`Listing playbook ${doneCount}/${playbook.length} complete`}
@@ -121,7 +121,7 @@ export function PlaybookChips({ playbook, onToggle, local, className }: Playbook
           <span
             key={step.key}
             className={clsx(
-              'flex h-4 w-4 items-center justify-center rounded border text-[8px] font-bold leading-none',
+              'flex h-4 w-4 items-center justify-center rounded-full border text-[8px] font-bold leading-none transition-colors',
               chipCls(step.status),
             )}
           >
@@ -135,7 +135,7 @@ export function PlaybookChips({ playbook, onToggle, local, className }: Playbook
           role="dialog"
           aria-label="Listing playbook checklist"
           onClick={e => e.stopPropagation()}
-          className="absolute left-0 top-5 z-30 w-56 rounded-lg border border-line bg-card p-2 shadow-xl"
+          className="absolute left-0 top-5 z-30 w-56 rounded-lg border border-line/70 bg-card p-2 shadow-overlay"
         >
           <div className="mb-1 px-1.5 text-micro font-bold uppercase tracking-wider text-grey">
             Listing playbook · {doneCount}/{playbook.length}
