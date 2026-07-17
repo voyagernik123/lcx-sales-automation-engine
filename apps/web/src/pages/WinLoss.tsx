@@ -7,7 +7,7 @@ import { BarChartH, ChartCard, StatCard } from '@/components/charts';
 import { CardSkeleton, ChartSkeleton, EmptyState, TableSkeleton } from '@/components/shared';
 import { GroupedColumnChart } from '@/components/deals/GroupedColumnChart';
 import { PageTitle, Button } from '@/components/ui';
-import { useInspect } from '@/stores';
+import { EntityChip } from '@/components/entity';
 
 interface Bucket {
   key: string;
@@ -115,7 +115,6 @@ function AllTimeTag({ show }: { show: boolean }) {
 }
 
 export function WinLoss() {
-  const inspect = useInspect();
   const [data, setData] = useState<WinLossData | null>(null);
   const [boardDeals, setBoardDeals] = useState<BoardDeal[]>([]);
   const [pool, setPool] = useState<Pool>('all');
@@ -347,14 +346,15 @@ export function WinLoss() {
                       {drillDeals.map((d) => (
                         <tr key={d.id} className="hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10">
                           <td className="py-2.5 pl-2">
-                            <button
-                              type="button"
-                              onClick={() => inspect('deal', d.id)}
-                              className="font-semibold text-navy underline-offset-2 hover:underline"
-                              title="Open deal inspector"
-                            >
-                              {d.projectName}
-                            </button>
+                            <EntityChip
+                              type="decision"
+                              id={d.id}
+                              name={d.projectName}
+                              seed={{ outcome: d.stage }}
+                              stateLine={`${d.stage} · ${(d.packageType ?? 'unknown').replace(/_/g, ' ')}`}
+                              vitals={[{ label: 'Value', value: fmtUsd((d.packageValue ?? 0) / 100) }]}
+                              className="font-semibold"
+                            />
                             {d.projectTicker && <span className="ml-1.5 font-mono text-micro text-grey">{d.projectTicker}</span>}
                           </td>
                           <td className="py-2.5">

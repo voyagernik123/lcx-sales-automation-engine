@@ -5,6 +5,8 @@ import { fetchAuditLog } from '@/lib/api/audit';
 import type { AuditEntry } from '@/lib/api/audit';
 import { Button } from '@/components/ui';
 import { EmptyState, TableSkeleton } from '@/components/shared';
+import { EntityChip } from '@/components/entity';
+import type { ObjectType } from '@/lib/objectRegistry';
 import { useInspect } from '@/stores';
 import type { InspectorEntityType } from '@/stores';
 
@@ -23,6 +25,13 @@ const INSPECTABLE_ENTITY: Record<string, InspectorEntityType> = {
   projects: 'project',
   deals: 'deal',
   handoffs: 'handoff',
+};
+
+/** Audit entity values → ontology object types (EntityChip mentions). */
+const CHIP_ENTITY: Record<string, ObjectType> = {
+  projects: 'project',
+  deals: 'deal',
+  handoffs: 'interaction',
 };
 
 /** Neutral chip + colored dot per action family (chip restraint). */
@@ -235,13 +244,23 @@ export function AuditLog() {
                     <td className="py-2 px-3"><ActionBadge action={entry.action} /></td>
                     <td className="py-2 px-3 text-grey">
                       {inspectType && entry.entityId ? (
-                        <button
-                          onClick={() => inspect(inspectType, entry.entityId!)}
-                          className="font-semibold text-cyan-600 dark:text-cyan-400 hover:underline"
-                          title={`Inspect ${inspectType}`}
-                        >
-                          {entry.projectName ?? `${entry.entity} · ${entry.entityId.slice(0, 8)}`}
-                        </button>
+                        entry.projectName ? (
+                          <EntityChip
+                            type={CHIP_ENTITY[entry.entity!] ?? 'project'}
+                            id={entry.entityId}
+                            name={entry.projectName}
+                            stateLine={entry.action.replace(/_/g, ' ')}
+                            className="font-semibold"
+                          />
+                        ) : (
+                          <button
+                            onClick={() => inspect(inspectType, entry.entityId!)}
+                            className="font-semibold text-cyan-600 dark:text-cyan-400 hover:underline"
+                            title={`Inspect ${inspectType}`}
+                          >
+                            {`${entry.entity} · ${entry.entityId.slice(0, 8)}`}
+                          </button>
+                        )
                       ) : (
                         <>
                           {entry.entity}

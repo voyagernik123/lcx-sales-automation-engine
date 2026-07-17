@@ -5,6 +5,7 @@ import { createTask } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
 import { PageTitle, Button } from '@/components/ui';
 import { CardSkeleton, EmptyState } from '@/components/shared';
+import { EntityChip } from '@/components/entity';
 import { FilterChip } from '@/components/market/FilterChip';
 import { useInspect } from '@/stores';
 import {
@@ -154,18 +155,25 @@ export function MarketNews() {
             <ul className="space-y-2 border-t border-line p-3 pl-5">
               {briefing.map((b) => (
                 <li key={b.id} className="list-disc text-label marker:text-grey">
-                  {b.url ? (
+                  <EntityChip
+                    type="signal"
+                    id={b.id}
+                    name={b.title}
+                    seed={{ title: b.title, kind: 'news', detail: b.why, url: b.url ?? undefined }}
+                    className="font-semibold"
+                  />
+                  {b.url && (
                     <a
                       href={b.url}
                       target="_blank"
                       rel="noreferrer"
                       onClick={() => markVisited(b.id)}
-                      className="font-semibold text-navy hover:text-cyan-600 dark:hover:text-cyan-400 hover:underline"
+                      className="ml-1 inline-flex align-middle text-grey hover:text-cyan-600 dark:hover:text-cyan-400"
+                      title="Open article"
+                      aria-label="Open article"
                     >
-                      {b.title}
+                      <ExternalLink size={11} />
                     </a>
-                  ) : (
-                    <span className="font-semibold text-navy">{b.title}</span>
                   )}
                   <span className="block text-label text-grey">{b.why}</span>
                 </li>
@@ -258,17 +266,35 @@ export function MarketNews() {
           return (
             <div key={n.id} className="rounded-lg border border-line/70 bg-card shadow-card p-3">
               <div className="flex items-start justify-between gap-2">
-                <a
-                  href={n.url ?? '#'}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => markVisited(n.id)}
-                  className={`flex items-start gap-1 text-body font-semibold hover:text-cyan-600 dark:hover:text-cyan-400 hover:underline ${
-                    seen ? 'text-grey' : 'text-navy'
-                  }`}
-                >
-                  {n.title} {n.url && <ExternalLink size={11} className="mt-0.5 shrink-0" />}
-                </a>
+                <div className="flex min-w-0 items-start gap-1">
+                  <EntityChip
+                    type="signal"
+                    id={n.id}
+                    name={n.title}
+                    seed={{
+                      title: n.title,
+                      kind: 'news',
+                      detail: `via ${n.source}`,
+                      projectId: n.matchedProjectIds[0],
+                      ts: n.publishedAt ?? n.createdAt,
+                      url: n.url ?? undefined,
+                    }}
+                    className={`text-body font-semibold ${seen ? '!text-grey' : ''}`}
+                  />
+                  {n.url && (
+                    <a
+                      href={n.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={() => markVisited(n.id)}
+                      className="mt-0.5 shrink-0 text-grey hover:text-cyan-600 dark:hover:text-cyan-400"
+                      title="Open article"
+                      aria-label="Open article"
+                    >
+                      <ExternalLink size={11} />
+                    </a>
+                  )}
+                </div>
                 {n.relevanceScore > 0 && (
                   <span className="shrink-0 rounded bg-cyan-50 px-1.5 py-0.5 text-micro font-bold num-tabular text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300">
                     rel {n.relevanceScore}

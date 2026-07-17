@@ -5,6 +5,7 @@ import type { BdLead, BdFilters, RecommendedMarket } from '@/types/bd';
 import { deriveMarketTag, deriveNextAction, deriveStage, MARKET_RECOMMENDATION_LABELS } from '@/types/bd';
 import { computeReplySla, SLA_CLS } from '@/lib/salesIntel';
 import { formatAgeHours, formatWakeDate } from '@/components/queue/logic';
+import { EntityChip } from '@/components/entity';
 import { ScoreBadge, BandBadge } from './ScoreBadge';
 import { MarketTag } from './MarketTag';
 
@@ -134,9 +135,14 @@ export function LeadTable({
                 <td className={clsx('py-2 px-3 border-l-2', isSelected ? 'border-l-cyan-500' : 'border-l-transparent')}>
                   <div className="flex items-center gap-2">
                     <div className="flex flex-col min-w-0">
-                      <span className="font-semibold text-navy truncate max-w-[220px]">
-                        {lead.name}
-                      </span>
+                      <EntityChip
+                        type="project"
+                        id={lead.id}
+                        name={lead.name}
+                        stateLine={`${deriveStage(lead.band)} · ${deriveNextAction(lead.band)}`}
+                        vitals={[{ label: 'Priority', value: String(lead.priorityScore ?? '—') }]}
+                        className="max-w-[220px] font-semibold"
+                      />
                       <span className="text-micro text-grey font-mono truncate">
                         {SOURCE_LABELS[lead.source] ?? lead.source}
                         {lead.ticker && <span className="ml-1.5 opacity-60">{lead.ticker}</span>}

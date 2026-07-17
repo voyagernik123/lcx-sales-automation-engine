@@ -4,6 +4,7 @@ import { fetchTasks, createTask, completeTask, dismissTask, type OperatorTask } 
 import { toast } from '@/components/shared/Toast';
 import { TableSkeleton, EmptyState } from '@/components/shared';
 import { PageTitle, Button } from '@/components/ui';
+import { EntityChip } from '@/components/entity';
 import { useInspect } from '@/stores';
 
 const KIND_LABEL: Record<string, string> = {
@@ -77,19 +78,25 @@ export function MyTasks() {
     >
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold">{t.title}</span>
+          <EntityChip
+            type="task"
+            id={t.id}
+            name={t.title}
+            seed={{ ...t }}
+            stateLine={`${KIND_LABEL[t.kind] ?? t.kind}${t.projectName ? ` · ${t.projectName}` : ''}`}
+            className="text-sm font-semibold"
+          />
           <span className="inline-flex h-[18px] items-center rounded-full border border-line/70 bg-ice-soft/50 dark:bg-navy-deep/50 px-2 text-micro font-medium text-grey">{KIND_LABEL[t.kind] ?? t.kind}</span>
         </div>
         {t.detail && <p className="text-xs text-grey mt-0.5">{t.detail}</p>}
         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-grey">
           {t.projectName && t.projectId && (
-            <button
-              onClick={() => inspect('project', t.projectId!)}
-              className="font-semibold text-cyan-600 hover:underline"
-              title="Inspect project"
-            >
-              {t.projectName}
-            </button>
+            <EntityChip
+              type="project"
+              id={t.projectId}
+              name={t.projectName}
+              className="font-semibold"
+            />
           )}
           {t.dealId && (
             <button

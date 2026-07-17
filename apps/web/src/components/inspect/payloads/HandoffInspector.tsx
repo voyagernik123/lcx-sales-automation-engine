@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Inbox, User, Zap } from 'lucide-react';
+import { Activity, Boxes, Inbox, User, Zap } from 'lucide-react';
+import { RelationRail } from '../RelationRail';
 import { fetchHandoff } from '@/lib/api/bd';
 import type { HandoffRecord } from '@/types/bd';
 import { HANDOFF_STATUS_COLORS, HANDOFF_STATUS_LABELS } from '@/types/bd';
@@ -50,6 +51,25 @@ export function HandoffInspector({ id }: InspectorPayloadProps) {
 
   const sla = handoff.status === 'open' ? computeReplySla(handoff.createdAt) : null;
   const events = handoff.events ?? [];
+  const rail = (
+    <RelationRail
+      items={[
+        { label: 'project', count: 1, icon: Boxes, onClick: () => push('project', handoff.projectId) },
+        {
+          label: 'contact',
+          count: handoff.personId ? 1 : 0,
+          icon: User,
+          onClick: () => handoff.personId && push('contact', `${handoff.projectId}:${handoff.personId}`),
+        },
+        {
+          label: events.length === 1 ? 'event' : 'events',
+          count: events.length,
+          icon: Activity,
+          onClick: () => document.getElementById('insp-handoff-timeline')?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+        },
+      ]}
+    />
+  );
 
   return (
     <div className="space-y-4">
@@ -84,6 +104,9 @@ export function HandoffInspector({ id }: InspectorPayloadProps) {
           )}
         </div>
       </div>
+
+      {/* Relation pivots — the graph is the navigation */}
+      {rail}
 
       {/* SLA state */}
       {sla && (
@@ -134,7 +157,7 @@ export function HandoffInspector({ id }: InspectorPayloadProps) {
       )}
 
       {/* Event timeline */}
-      <div>
+      <div id="insp-handoff-timeline">
         <div className="mb-1.5 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
           <Inbox size={11} className="text-cyan-500" />
           Timeline ({events.length})

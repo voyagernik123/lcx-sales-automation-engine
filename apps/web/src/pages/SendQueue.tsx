@@ -7,7 +7,7 @@ import {
 import { toast } from '@/components/shared/Toast';
 import { CardSkeleton, EmptyState } from '@/components/shared';
 import { PageTitle, Button } from '@/components/ui';
-import { useInspect } from '@/stores';
+import { EntityChip } from '@/components/entity';
 
 const CONNECT_NOTE_MAX = 300;
 
@@ -35,7 +35,6 @@ function CapBar({ label, used, max }: { label: string; used: number; max: number
 }
 
 function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
-  const inspect = useInspect();
   const [body, setBody] = useState(item.body);
   const [busy, setBusy] = useState('');
   const [copied, setCopied] = useState(false);
@@ -72,27 +71,27 @@ function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
           <div className="flex items-center gap-2">
             {isTelegram ? <MessageCircle size={13} className="text-sky-600" /> : <Linkedin size={13} className="text-blue-700" />}
             {item.personId ? (
-              <button
-                onClick={() => inspect('contact', `${item.projectId}:${item.personId}`)}
-                className="text-sm font-bold text-navy hover:text-cyan-600 dark:hover:text-cyan-400 hover:underline"
-                title="Inspect contact"
-              >
-                {item.personName ?? 'Unknown contact'}
-              </button>
+              <EntityChip
+                type="contact"
+                id={`${item.projectId}:${item.personId}`}
+                name={item.personName ?? 'Unknown contact'}
+                stateLine={`at ${item.projectName}`}
+                className="text-sm font-bold"
+              />
             ) : (
               <span className="text-sm font-bold">{item.personName ?? 'Unknown contact'}</span>
             )}
             {item.personTitle && <span className="text-micro text-grey">{item.personTitle}</span>}
           </div>
           <div className="text-label text-grey mt-0.5">
-            <button
-              onClick={() => inspect('project', item.projectId)}
-              className="font-semibold text-navy hover:text-cyan-600 dark:hover:text-cyan-400 hover:underline"
-              title="Inspect project"
-            >
-              {item.projectName}
-              {item.projectTicker ? ` (${item.projectTicker})` : ''}
-            </button>
+            <EntityChip
+              type="project"
+              id={item.projectId}
+              name={item.projectName}
+              meta={item.projectTicker}
+              stateLine={`touch ${item.touchIndex} · ${item.band} band`}
+              className="font-semibold"
+            />
             {' '}· touch {item.touchIndex} ·{' '}
             <span className="font-semibold">{isConnect ? 'Connect request' : isTelegram ? 'Telegram DM' : 'Message'}</span>
           </div>

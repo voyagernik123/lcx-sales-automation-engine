@@ -9,7 +9,18 @@ import { create } from 'zustand';
  * AppLayout renders the right payload in a right-side drawer. A small stack
  * supports drill-through (project → its deal → back).
  */
-export type InspectorEntityType = 'project' | 'deal' | 'handoff' | 'contact' | 'claim';
+export type InspectorEntityType =
+  | 'project'
+  | 'deal'
+  | 'handoff'
+  | 'contact'
+  | 'claim'
+  | 'task'
+  | 'signal'
+  | 'listing'
+  | 'decision'
+  | 'jurisdiction'
+  | 'document';
 
 export interface InspectorTarget {
   type: InspectorEntityType;

@@ -102,8 +102,39 @@ export function EntityChip({
               ))}
             </span>
           )}
-          <span className="mt-2 block border-t border-line/70 pt-1.5 text-[10px] text-grey">
-            Click to {def.inspector ? 'inspect' : 'open'} →
+          <span className="mt-2 flex items-center gap-3 border-t border-line/70 pt-1.5">
+            {def.inspector && (
+              <span
+                role="button"
+                tabIndex={0}
+                onClick={activate}
+                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && activate(e)}
+                className="cursor-pointer text-[10px] font-semibold text-cyan-600 hover:underline dark:text-cyan-400"
+              >
+                Inspect
+              </span>
+            )}
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={e => {
+                e.stopPropagation();
+                e.preventDefault();
+                setPeek(false);
+                navigate(def.route(id));
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  setPeek(false);
+                  navigate(def.route(id));
+                }
+              }}
+              className="cursor-pointer text-[10px] font-semibold text-grey hover:text-navy hover:underline"
+            >
+              Workspace →
+            </span>
           </span>
         </span>
       )}

@@ -6,6 +6,14 @@ import { DealInspector } from './payloads/DealInspector';
 import { HandoffInspector } from './payloads/HandoffInspector';
 import { ContactInspector } from './payloads/ContactInspector';
 import { ClaimInspector } from './payloads/ClaimInspector';
+import {
+  DecisionInspector,
+  DocumentInspector,
+  JurisdictionInspector,
+  ListingInspector,
+  SignalInspector,
+  TaskInspector,
+} from './payloads/ExtendedInspectors';
 import { ArrowLeft } from 'lucide-react';
 
 /**
@@ -34,6 +42,18 @@ export function InspectorHost() {
         return <ContactInspector id={top.id} seed={top.seed} />;
       case 'claim':
         return <ClaimInspector id={top.id} seed={top.seed} />;
+      case 'task':
+        return <TaskInspector id={top.id} seed={top.seed} />;
+      case 'signal':
+        return <SignalInspector id={top.id} seed={top.seed} />;
+      case 'listing':
+        return <ListingInspector id={top.id} seed={top.seed} />;
+      case 'decision':
+        return <DecisionInspector id={top.id} seed={top.seed} />;
+      case 'jurisdiction':
+        return <JurisdictionInspector id={top.id} seed={top.seed} />;
+      case 'document':
+        return <DocumentInspector id={top.id} seed={top.seed} />;
     }
   })();
 

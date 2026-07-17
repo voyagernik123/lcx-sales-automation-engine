@@ -3,6 +3,7 @@ import { Layers, LayoutGrid, RefreshCw, Star, Table2 } from 'lucide-react';
 import { createTask, fetchExchangeGaps, type GapRow } from '@/lib/api/bd';
 import { EmptyState, TableSkeleton, toast } from '@/components/shared';
 import { Button, PageTitle } from '@/components/ui';
+import { EntityChip } from '@/components/entity';
 import { FilterChip } from '@/components/market/FilterChip';
 import { GapHeatMatrix } from '@/components/market/GapHeatMatrix';
 import { GapMiniAnalytics } from '@/components/market/GapMiniAnalytics';
@@ -251,7 +252,17 @@ export function ExchangeGaps() {
                           </button>
                         </td>
                         <td className="py-2 px-3">
-                          <span className="font-semibold">{r.name}</span>
+                          <EntityChip
+                            type="project"
+                            id={r.id}
+                            name={r.name}
+                            stateLine={`live on ${r.exchangeCount} exchanges · not on LCX`}
+                            vitals={[
+                              { label: 'Priority', value: String(r.priorityScore) },
+                              { label: 'Mcap', value: fmtUsd(r.marketCapUsd) },
+                            ]}
+                            className="font-semibold"
+                          />
                           {r.ticker && <span className="ml-1.5 text-micro text-grey font-mono">{r.ticker}</span>}
                           {newIds.has(r.id) && (
                             <span className="ml-1.5 rounded bg-emerald-100 px-1 text-micro font-bold text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400">
@@ -283,7 +294,7 @@ export function ExchangeGaps() {
 
           {/* sidebar mini-analytics */}
           <aside className="w-full shrink-0 lg:w-72">
-            <GapMiniAnalytics rows={displayRows} onInspect={(id) => inspect('project', id)} />
+            <GapMiniAnalytics rows={displayRows} />
           </aside>
         </div>
       )}

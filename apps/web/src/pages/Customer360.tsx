@@ -19,6 +19,7 @@ import {
 import { request } from '@/lib/apiClient';
 import { PageTitle, SectionLabel, Button } from '@/components/ui';
 import { PageSkeleton, EmptyState } from '@/components/shared';
+import { EntityChip } from '@/components/entity';
 import { BandBadge } from '@/components/bd';
 import { PropensityTrail } from '@/components/bd/PropensityTrail';
 import { GateBanner, useGateCheck } from '@/components/bd/GateBanner';
@@ -468,7 +469,14 @@ export function Customer360() {
                   title="Inspect contact"
                   className="flex w-full flex-wrap items-center gap-2 rounded border border-transparent px-1.5 py-1 text-left text-label hover:border-line hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
                 >
-                  <span className="font-semibold text-navy">{p.name}</span>
+                  <EntityChip
+                    type="contact"
+                    id={`${project.id}:${p.id}`}
+                    name={p.name}
+                    stateLine={`at ${project.name}`}
+                    vitals={[{ label: 'Contactability', value: String(p.contactabilityScore) }]}
+                    className="font-semibold"
+                  />
                   {p.title && <span className="text-grey">· {p.title}</span>}
                   <span className="rounded bg-slate-100 px-1.5 py-0.5 text-micro font-semibold text-grey dark:bg-slate-800">
                     {p.role}
@@ -642,7 +650,13 @@ export function Customer360() {
                 <span className="rounded bg-violet-100 px-1.5 py-0.5 text-micro font-semibold text-violet-700 dark:bg-violet-950/40 dark:text-violet-300">
                   {h.status}
                 </span>
-                <span className="font-semibold">{h.triggerReason}</span>
+                <EntityChip
+                  type="interaction"
+                  id={h.id}
+                  name={h.triggerReason}
+                  stateLine={`${h.status}${h.channel ? ` · via ${h.channel}` : ''}`}
+                  className="font-semibold"
+                />
                 {h.assignedTo && <span className="text-grey">→ {h.assignedTo}</span>}
                 <span className="ml-auto text-grey">{fmtDate(h.updatedAt)}</span>
               </div>
@@ -671,7 +685,14 @@ export function Customer360() {
                 <span className="rounded bg-slate-100 px-1.5 py-0.5 text-micro font-semibold text-grey dark:bg-slate-800">
                   {t.kind}
                 </span>
-                <span className="font-semibold">{t.title}</span>
+                <EntityChip
+                  type="task"
+                  id={t.id}
+                  name={t.title}
+                  seed={{ ...t }}
+                  stateLine={t.dueAt ? `due ${fmtDate(t.dueAt)}` : undefined}
+                  className="font-semibold"
+                />
                 {t.dueAt && <span className="ml-auto text-grey">due {fmtDate(t.dueAt)}</span>}
               </div>
             ))}
@@ -697,7 +718,20 @@ export function Customer360() {
             {extras.notes.slice(0, 5).map((n) => (
               <div key={n.id} className="flex flex-wrap items-center gap-2 text-label">
                 {n.pinned && <Pin size={10} className="text-amber-500" />}
-                <span className="font-semibold">{n.title || 'Untitled'}</span>
+                <EntityChip
+                  type="document"
+                  id={n.id}
+                  name={n.title || 'Untitled'}
+                  seed={{
+                    title: n.title || 'Untitled',
+                    content: n.body,
+                    kind: 'note',
+                    projectId: project.id,
+                    projectName: project.name,
+                    updatedAt: n.updatedAt,
+                  }}
+                  className="font-semibold"
+                />
                 <span className="min-w-0 flex-1 truncate text-grey">{n.body}</span>
                 <span className="ml-auto shrink-0 text-grey">{fmtDate(n.updatedAt)}</span>
               </div>
@@ -724,7 +758,19 @@ export function Customer360() {
             {extras.docs.map((d) => (
               <div key={d.id} className="flex flex-wrap items-center gap-2 text-label">
                 <Paperclip size={11} className="text-grey" />
-                <span className="font-semibold">{d.name}</span>
+                <EntityChip
+                  type="document"
+                  id={d.id}
+                  name={d.name}
+                  seed={{
+                    title: d.name,
+                    kind: 'document',
+                    projectId: project.id,
+                    projectName: project.name,
+                    updatedAt: d.createdAt,
+                  }}
+                  className="font-semibold"
+                />
                 <span className="text-grey">{d.mime}</span>
                 {d.url && (
                   <a

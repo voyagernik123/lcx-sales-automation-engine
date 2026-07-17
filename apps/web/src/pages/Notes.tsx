@@ -6,6 +6,7 @@ import { fetchBdPipeline } from '@/lib/api/bd';
 import type { BdFilters, BdLead } from '@/types/bd';
 import { PageTitle, SectionLabel, Button } from '@/components/ui';
 import { CardSkeleton, EmptyState } from '@/components/shared';
+import { EntityChip } from '@/components/entity';
 
 const PICKER_FILTERS: Omit<BdFilters, 'search'> = {
   market: null,
@@ -254,6 +255,8 @@ export function Notes() {
     );
   }
 
+  const currentProjectName = pickerResults.find((p) => p.id === projectId)?.name;
+
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
       <div className="flex items-center gap-2">
@@ -347,7 +350,20 @@ export function Notes() {
               <div key={n.id} className="rounded-lg border border-line/70 bg-card shadow-card p-3">
                 <div className="flex items-center gap-2">
                   {n.pinned && <Pin size={11} className="text-amber-500" />}
-                  <span className="text-label font-bold">{n.title || 'Untitled'}</span>
+                  <EntityChip
+                    type="document"
+                    id={n.id}
+                    name={n.title || 'Untitled'}
+                    seed={{
+                      title: n.title || 'Untitled',
+                      content: n.body,
+                      kind: 'note',
+                      projectId,
+                      projectName: currentProjectName,
+                      updatedAt: n.updatedAt,
+                    }}
+                    className="text-label font-bold"
+                  />
                   <span className="text-xs text-grey num-tabular">v{n.currentVersion}</span>
                   <span className="ml-auto text-xs text-grey num-tabular">{fmtDate(n.updatedAt)}</span>
                 </div>
@@ -397,7 +413,19 @@ export function Notes() {
             {docs.map((d) => (
               <div key={d.id} className="flex items-center gap-2 rounded-lg border border-line/70 bg-card shadow-card p-2.5 text-label">
                 <Paperclip size={12} className="text-grey" />
-                <span className="font-semibold">{d.name}</span>
+                <EntityChip
+                  type="document"
+                  id={d.id}
+                  name={d.name}
+                  seed={{
+                    title: d.name,
+                    kind: 'document',
+                    projectId,
+                    projectName: currentProjectName,
+                    updatedAt: d.createdAt,
+                  }}
+                  className="font-semibold"
+                />
                 <span className="text-grey">{d.mime}</span>
                 {d.sizeBytes > 0 && <span className="text-grey num-tabular">{fmtBytes(d.sizeBytes)}</span>}
                 {d.url && (

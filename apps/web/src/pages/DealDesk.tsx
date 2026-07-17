@@ -8,6 +8,7 @@ import { fetchForecast } from '@/lib/api/kpi';
 import { computeDealHealthSet } from '@/lib/salesIntel';
 import { toast } from '@/components/shared/Toast';
 import { PageTitle, Button, Select } from '@/components/ui';
+import { EntityChip } from '@/components/entity';
 import { ApprovalChain, type ApprovalChainStep } from '@/components/deals/ApprovalChain';
 import { BatnaPanel } from '@/components/deals/BatnaPanel';
 import { DealReviewMemo } from '@/components/deals/DealReviewMemo';
@@ -265,7 +266,13 @@ export function DealDesk() {
                   <div key={a.id} className="flex items-start justify-between gap-3 rounded-lg border border-line/70 p-3">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
-                        <span className="text-label font-semibold text-navy">{a.projectName ?? a.dealId}</span>
+                        <EntityChip
+                          type="deal"
+                          id={a.dealId}
+                          name={a.projectName ?? a.dealId}
+                          stateLine={a.discountPct != null ? `discount request · −${a.discountPct}%` : 'approval pending'}
+                          className="text-label font-semibold"
+                        />
                         <Pill status={a.status} />
                         {a.dealValueCents != null && (
                           <ScenarioValue cents={a.dealValueCents} className="num-tabular font-mono text-micro text-grey" />
@@ -324,7 +331,15 @@ export function DealDesk() {
                 <tbody className="divide-y divide-line/50">
                   {visibleInvoices.map((i) => (
                     <tr key={i.id} className="transition-colors hover:bg-grey/[0.04]">
-                      <td className="py-2.5 font-semibold text-navy">{i.projectName ?? i.dealId}</td>
+                      <td className="py-2.5">
+                        <EntityChip
+                          type={dealById.get(i.dealId)?.stage === 'won' ? 'listing' : 'deal'}
+                          id={i.dealId}
+                          name={i.projectName ?? i.dealId}
+                          stateLine={`invoice ${i.status}${i.dueDate ? ` · due ${new Date(i.dueDate).toLocaleDateString()}` : ''}`}
+                          className="font-semibold"
+                        />
+                      </td>
                       <td className="num-tabular py-2.5 text-right">
                         {i.currency === 'USD' ? (
                           <ScenarioValue cents={i.amountCents} className="font-mono text-navy" />

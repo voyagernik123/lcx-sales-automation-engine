@@ -65,6 +65,7 @@ export const OBJECT_TYPES: Record<ObjectType, ObjectTypeDef> = {
     label: 'Listing',
     icon: Zap,
     dotCls: 'bg-amber-500',
+    inspector: 'listing', // id is the won deal's id
     route: () => '/deal-desk',
   },
   interaction: {
@@ -85,30 +86,35 @@ export const OBJECT_TYPES: Record<ObjectType, ObjectTypeDef> = {
     label: 'Jurisdiction',
     icon: Gavel,
     dotCls: 'bg-rose-500',
+    inspector: 'jurisdiction', // id is a US state abbreviation or country code
     route: () => '/states',
   },
   signal: {
     label: 'Signal',
     icon: Newspaper,
     dotCls: 'bg-orange-500',
+    inspector: 'signal', // payload renders from seed (the row already has it)
     route: () => '/market-news',
   },
   task: {
     label: 'Task',
     icon: ListChecks,
     dotCls: 'bg-teal-500',
+    inspector: 'task',
     route: () => '/tasks',
   },
   document: {
     label: 'Document',
     icon: FileText,
     dotCls: 'bg-slate-500',
+    inspector: 'document', // payload renders from seed (note/draft content)
     route: () => '/notes',
   },
   decision: {
     label: 'Decision',
     icon: FileBarChart,
     dotCls: 'bg-fuchsia-500',
+    inspector: 'decision', // id is the decided deal's id
     route: () => '/win-loss',
   },
 };
@@ -120,4 +126,10 @@ export const INSPECTOR_TO_OBJECT: Record<InspectorEntityType, ObjectType> = {
   handoff: 'interaction',
   contact: 'contact',
   claim: 'claim',
+  task: 'task',
+  signal: 'signal',
+  listing: 'listing',
+  decision: 'decision',
+  jurisdiction: 'jurisdiction',
+  document: 'document',
 };

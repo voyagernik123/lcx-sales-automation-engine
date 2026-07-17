@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Star, ClipboardList, SearchCode } from 'lucide-react';
 import type { GapRow } from '@/lib/api/bd';
+import { EntityChip } from '@/components/entity';
 import { fmtUsd, type GapMatrixModel } from './gapMatrix';
 
 /**
@@ -144,14 +145,17 @@ export function GapHeatMatrix({ model, watched, newIds, onToggleWatch, onInspect
                 >
                   <Star size={12} fill={isWatched ? 'currentColor' : 'none'} />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => onInspect(project.id)}
-                  className="min-w-0 truncate text-left text-label font-semibold text-navy hover:underline"
-                  title={`Inspect ${project.name}`}
-                >
-                  {project.name}
-                </button>
+                <EntityChip
+                  type="project"
+                  id={project.id}
+                  name={project.name}
+                  stateLine={`live on ${project.exchangeCount} exchanges · not on LCX`}
+                  vitals={[
+                    { label: 'Mcap', value: fmtUsd(project.marketCapUsd) },
+                    { label: 'Propensity', value: String(project.propensityScore) },
+                  ]}
+                  className="text-label font-semibold"
+                />
                 {project.ticker && (
                   <span className="shrink-0 font-mono text-micro text-grey">{project.ticker}</span>
                 )}

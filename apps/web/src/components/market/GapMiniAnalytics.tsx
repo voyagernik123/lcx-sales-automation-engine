@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Crosshair, BarChart3 } from 'lucide-react';
 import type { GapRow } from '@/lib/api/bd';
 import { BarChartH } from '@/components/charts';
+import { EntityChip } from '@/components/entity';
 import { Card, CardBody, CardHeader } from '@/components/ui';
 import { biggestOpportunity, fmtUsd, topExchangesByCoverage } from './gapMatrix';
 
@@ -11,10 +12,9 @@ import { biggestOpportunity, fmtUsd, topExchangesByCoverage } from './gapMatrix'
  */
 export interface GapMiniAnalyticsProps {
   rows: GapRow[];
-  onInspect: (id: string) => void;
 }
 
-export function GapMiniAnalytics({ rows, onInspect }: GapMiniAnalyticsProps) {
+export function GapMiniAnalytics({ rows }: GapMiniAnalyticsProps) {
   const coverage = useMemo(() => topExchangesByCoverage(rows, 8), [rows]);
   const opportunity = useMemo(() => biggestOpportunity(rows), [rows]);
 
@@ -41,19 +41,18 @@ export function GapMiniAnalytics({ rows, onInspect }: GapMiniAnalyticsProps) {
             <Crosshair size={12} /> Biggest single opportunity
           </CardHeader>
           <CardBody>
-            <button
-              type="button"
-              onClick={() => onInspect(opportunity.project.id)}
-              className="text-left text-body font-bold text-navy hover:underline"
-              title={`Inspect ${opportunity.project.name}`}
-            >
-              {opportunity.project.name}
-              {opportunity.project.ticker && (
-                <span className="ml-1.5 font-mono text-micro font-semibold text-grey">
-                  {opportunity.project.ticker}
-                </span>
-              )}
-            </button>
+            <EntityChip
+              type="project"
+              id={opportunity.project.id}
+              name={opportunity.project.name}
+              meta={opportunity.project.ticker}
+              stateLine={`live on ${opportunity.project.exchangeCount} exchanges · not on LCX`}
+              vitals={[
+                { label: 'Mcap', value: fmtUsd(opportunity.project.marketCapUsd) },
+                { label: 'Propensity', value: String(opportunity.project.propensityScore) },
+              ]}
+              className="text-body font-bold"
+            />
             <div className="mt-1 font-mono text-micro text-grey">
               priority {opportunity.project.priorityScore} × {opportunity.project.exchangeCount} venues ={' '}
               <span className="font-bold text-amber-700 dark:text-amber-400">{opportunity.score}</span>

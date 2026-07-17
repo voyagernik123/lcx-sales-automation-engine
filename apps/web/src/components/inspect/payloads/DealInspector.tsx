@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, FileText, FolderOpen, KanbanSquare, ListChecks, ShieldAlert, TrendingUp } from 'lucide-react';
+import { Activity, Boxes, FileText, FolderOpen, KanbanSquare, ListChecks, ShieldAlert, TrendingUp } from 'lucide-react';
 import { clsx } from 'clsx';
 import { fetchDealBoard, fetchDealEvents, type BoardDeal } from '@/lib/api/bd';
 import { fetchDealPlaybook, saveDealPlaybook, type DealPlaybookState, type PlaybookKey } from '@/lib/api/deals100x';
 import { fetchForecast } from '@/lib/api/kpi';
 import type { DealEvent } from '@/types/bd';
+import { RelationRail } from '../RelationRail';
 import {
   computeDealHealthSet,
   LIKELIHOOD_BAND_CLS,
@@ -170,6 +171,19 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
         </div>
       </div>
 
+      {/* Relation pivots — the graph is the navigation */}
+      <RelationRail
+        items={[
+          { label: 'project', count: 1, icon: Boxes, onClick: () => push('project', deal.projectId) },
+          {
+            label: events.length === 1 ? 'event' : 'events',
+            count: events.length,
+            icon: Activity,
+            onClick: () => document.getElementById('insp-deal-events')?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+          },
+        ]}
+      />
+
       {/* Likelihood why-panel */}
       {health && (
         <div>
@@ -280,7 +294,7 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
       )}
 
       {/* Recent events */}
-      <div>
+      <div id="insp-deal-events">
         <SectionHead icon={<Activity size={11} className="text-cyan-500" />}>Recent events</SectionHead>
         {recentEvents.length === 0 ? (
           <p className="text-micro italic text-grey">No events recorded yet.</p>

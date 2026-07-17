@@ -16,6 +16,12 @@ describe('object registry', () => {
     }
   });
 
+  it('every type is L3-capable — the inspector is generalized to all 11', () => {
+    for (const t of types) {
+      expect(OBJECT_TYPES[t].inspector, `${t} must have an inspector payload`).toBeDefined();
+    }
+  });
+
   it('every inspector payload type maps back to an object type', () => {
     for (const [inspector, objectType] of Object.entries(INSPECTOR_TO_OBJECT)) {
       expect(OBJECT_TYPES[objectType as ObjectType].inspector).toBe(inspector);

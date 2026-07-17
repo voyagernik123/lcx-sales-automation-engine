@@ -16,7 +16,7 @@ import {
 import { FunnelChart, TrendDelta, StatCard } from '@/components/charts';
 import { EmptyState, PageSkeleton, toast } from '@/components/shared';
 import { PageTitle, Button } from '@/components/ui';
-import { useInspect } from '@/stores';
+import { EntityChip } from '@/components/entity';
 import { ReportSection, NoDataRow } from '@/components/report/ReportSection';
 import { SeverityBadge } from '@/components/report/SeverityBadge';
 import { AnomalyDeviation } from '@/components/report/AnomalyDeviation';
@@ -55,7 +55,6 @@ function fallbackSummary(r: BoardReportData): string {
 }
 
 export function BoardReport() {
-  const inspect = useInspect();
   const [period, setPeriod] = useState<BoardReportPeriod>('week');
   const [report, setReport] = useState<BoardReportData | null>(null);
   const [anomalies, setAnomalies] = useState<BoardAnomaly[]>([]);
@@ -327,14 +326,14 @@ export function BoardReport() {
                 <tr key={d.id} className="transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10">
                   <td className="num-tabular py-2.5 pr-2 text-grey">{i + 1}</td>
                   <td className="py-2.5">
-                    <button
-                      type="button"
-                      onClick={() => inspect('deal', d.id)}
-                      className="font-semibold text-navy underline-offset-2 hover:underline"
-                      title="Open deal inspector"
-                    >
-                      {d.projectName}
-                    </button>
+                    <EntityChip
+                      type="deal"
+                      id={d.id}
+                      name={d.projectName}
+                      stateLine={`${d.stage.replace(/_/g, ' ')} · ${d.packageType.replace(/_/g, ' ')}`}
+                      vitals={[{ label: 'Value', value: usd(d.value) }]}
+                      className="font-semibold"
+                    />
                   </td>
                   <td className="py-2.5 capitalize text-grey">{d.stage.replace(/_/g, ' ')}</td>
                   <td className="py-2.5 capitalize text-grey">{d.packageType.replace(/_/g, ' ')}</td>

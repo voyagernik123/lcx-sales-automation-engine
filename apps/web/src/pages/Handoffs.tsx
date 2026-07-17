@@ -3,8 +3,8 @@ import { useSearchParams } from 'react-router-dom';
 import { MessageSquare, ExternalLink, User, RefreshCw, ChevronLeft, MessageCircle, ThumbsUp, ThumbsDown, RotateCcw, Send, Copy, Mail, Linkedin, Clock } from 'lucide-react';
 import { fetchHandoffs, claimHandoff, updateHandoffStatus, addHandoffNote, reEnrollHandoff, fetchReplyDrafts, markHandoffMovedToTelegram, analyzeSentiment, type ReplyDraft, type SentimentResult } from '@/lib/api/bd';
 import { computeReplySla, SLA_CLS } from '@/lib/salesIntel';
-import { useInspect } from '@/stores';
 import { toast } from '@/components/shared/Toast';
+import { EntityChip } from '@/components/entity';
 import { CardSkeleton, EmptyState } from '@/components/shared';
 import { SectionLabel, Button } from '@/components/ui';
 import { HANDOFF_STATUS_LABELS } from '@/types/bd';
@@ -220,7 +220,6 @@ function ReplyDrafts({ handoffId, onMoved }: { handoffId: string; onMoved: () =>
 }
 
 function HandoffDetail({ handoff, onBack, onRefresh }: { handoff: HandoffRecord; onBack: () => void; onRefresh: () => void }) {
-  const inspect = useInspect();
   const [noteText, setNoteText] = useState('');
   const [saving, setSaving] = useState('');
 
@@ -290,13 +289,13 @@ function HandoffDetail({ handoff, onBack, onRefresh }: { handoff: HandoffRecord;
 
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <button
-            onClick={() => inspect('project', handoff.projectId)}
-            className="font-bold text-sm text-navy hover:text-cyan-600 dark:hover:text-cyan-400 hover:underline text-left truncate block"
-            title="Inspect project"
-          >
-            {handoff.projectName ?? 'Unknown Project'}
-          </button>
+          <EntityChip
+            type="project"
+            id={handoff.projectId}
+            name={handoff.projectName ?? 'Unknown Project'}
+            stateLine={`reply via ${handoff.channel}`}
+            className="text-sm font-bold"
+          />
           <p className="text-micro text-grey">
             {handoff.projectTicker && <>{handoff.projectTicker} · </>}
             {handoff.channel} · Trigger: {handoff.triggerReason}
@@ -321,13 +320,13 @@ function HandoffDetail({ handoff, onBack, onRefresh }: { handoff: HandoffRecord;
         <div className="rounded-lg border border-line/70 bg-card shadow-card p-2.5 text-micro space-y-1">
           <div className="flex items-center gap-2">
             {handoff.personId ? (
-              <button
-                onClick={() => inspect('contact', `${handoff.projectId}:${handoff.personId}`)}
-                className="font-bold text-navy hover:text-cyan-600 dark:hover:text-cyan-400 hover:underline"
-                title="Inspect contact"
-              >
-                {handoff.personName}
-              </button>
+              <EntityChip
+                type="contact"
+                id={`${handoff.projectId}:${handoff.personId}`}
+                name={handoff.personName}
+                stateLine={handoff.projectName ? `at ${handoff.projectName}` : undefined}
+                className="font-bold"
+              />
             ) : (
               <span className="font-bold">{handoff.personName}</span>
             )}
@@ -425,7 +424,13 @@ function InboxRow({ h, active, onSelect }: { h: HandoffRecord; active: boolean; 
     >
       <div className="flex items-center gap-1.5 min-w-0">
         <ChannelIcon channel={h.channel} size={10} />
-        <span className="font-semibold text-micro truncate text-navy">{h.projectName ?? 'Unknown'}</span>
+        <EntityChip
+          type="project"
+          id={h.projectId}
+          name={h.projectName ?? 'Unknown'}
+          stateLine={`reply waiting · via ${h.channel}`}
+          className="text-micro font-semibold"
+        />
         {h.projectTicker && <span className="text-micro text-grey shrink-0 font-mono">{h.projectTicker}</span>}
         <span className="flex-1" />
         {h.status === 'open' ? <SlaChip createdAt={h.createdAt} /> : <StatusBadge status={h.status} />}

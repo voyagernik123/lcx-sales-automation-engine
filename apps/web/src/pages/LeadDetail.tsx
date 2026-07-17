@@ -6,6 +6,7 @@ import { useFilterStore } from '@/stores';
 import { fetchLead, approveLead, suppressLead, triggerRescore, triggerEnrich, enqueueContactDiscovery, runDiscoveryTick, fetchProjectTimeline, type TimelineEntry, addPerson, updatePerson, generateDraft as apiGenerateDraft, saveDraft, fetchDrafts, updateDraft, enrollProject, pauseSequence, resumeSequence, fetchProjectSequences, fetchProjectMessages, fetchProjectDeal, createDeal, transitionDealStage, generateProposal, fetchDealEvents, fetchDealObjections, addDealObjection, fetchSequenceTemplates, type SequenceTemplate } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
 import { EmptyState, CardSkeleton } from '@/components/shared';
+import { EntityChip } from '@/components/entity';
 import { SectionLabel, Button } from '@/components/ui';
 import { ScoreBadge, BandBadge, MarketTag } from '@/components/bd';
 import { PropensityTrail } from '@/components/bd/PropensityTrail';
@@ -654,7 +655,15 @@ export function LeadDetail() {
                   <tbody className="divide-y divide-line/50">
                     {lead.people.map((person) => (
                       <tr key={person.id} className="hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10">
-                        <td className="py-1.5 px-2 font-medium">{person.name}</td>
+                        <td className="py-1.5 px-2">
+                          <EntityChip
+                            type="contact"
+                            id={`${lead.id}:${person.id}`}
+                            name={person.name}
+                            stateLine={person.title ? `${person.title} at ${lead.name}` : `at ${lead.name}`}
+                            className="font-medium"
+                          />
+                        </td>
                         <td className="py-1.5 px-2"><RoleBadge role={person.role} /></td>
                         <td className="py-1.5 px-2 text-grey">{person.title ?? '—'}</td>
                         <td className="py-1.5 px-2">
