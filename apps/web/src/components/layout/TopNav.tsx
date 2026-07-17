@@ -1,11 +1,8 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Sun, Moon, LogOut, ChevronDown } from 'lucide-react';
+import { Search, Sun, Moon, LogOut, ChevronDown } from 'lucide-react';
 import { useUIStore, useOperatorStore } from '@/stores';
 import { NotificationBell } from './NotificationBell';
-import { KpiTicker } from './KpiTicker';
-import { useFilterStore } from '@/stores/useFilterStore';
-import { states, products, redFlags } from '@/data';
 
 const routeLabels: Record<string, string> = {
   'capital-estimator': 'Capital Estimator',
@@ -20,33 +17,45 @@ const routeLabels: Record<string, string> = {
   'roadmap': 'Launch Roadmap',
   'settings': 'Settings',
   'ontology': 'Ontology Explorer',
+  'bd-pipeline': 'BD Engine',
+  'bd-kpis': 'KPI Dashboard',
+  'deal-board': 'Deal Board',
+  'deal-desk': 'Deal Desk',
+  'exchange-gaps': 'Exchange Gaps',
+  'outreach-ops': 'Outreach Ops',
+  'send-queue': 'Send Queue',
+  'outreach': 'Handoff Queue',
+  'ai-tools': 'AI Console',
+  'win-loss': 'Win / Loss',
+  'market-news': 'Market News',
+  'market-map': 'Market Map',
+  'board-report': 'Board Report',
+  'report-builder': 'Report Builder',
+  'claim-library': 'Claim Library',
+  'audit-log': 'Audit Log',
 };
 
-interface SearchResult {
-  label: string;
-  sublabel: string;
-  to: string;
-}
-
-export function TopNav() {
+/**
+ * Command bar — single-tone chrome. Breadcrumb on the left, omnisearch in the
+ * center (opens the Cmd+K palette), environment/notifications/theme/identity
+ * on the right. The chrome shares the card surface with the sidebar; hairlines
+ * do the separating, typography does the hierarchy.
+ */
+export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
   const { darkMode, toggleDarkMode } = useUIStore();
-  const { setFilter } = useFilterStore();
   const operator = useOperatorStore(s => s.operator);
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const breadcrumbs = pathname.split('/').filter(Boolean).map(p => routeLabels[p] || (p.charAt(0).toUpperCase() + p.slice(1)));
+  const crumbs = pathname
+    .split('/')
+    .filter(Boolean)
+    .map(p => routeLabels[p] || p.charAt(0).toUpperCase() + p.slice(1));
 
-  const [localSearch, setLocalSearch] = useState('');
-  const [showDropdown, setShowDropdown] = useState(false);
   const [showOperatorMenu, setShowOperatorMenu] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
   const operatorMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClick(e: MouseEvent) {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setShowDropdown(false);
-      }
       if (operatorMenuRef.current && !operatorMenuRef.current.contains(e.target as Node)) {
         setShowOperatorMenu(false);
       }
@@ -55,101 +64,66 @@ export function TopNav() {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
-  const searchResults = useMemo<SearchResult[]>(() => {
-    const q = localSearch.trim().toLowerCase();
-    if (q.length < 2) return [];
-    const results: SearchResult[] = [];
-
-    for (const s of states) {
-      if (results.length >= 6) break;
-      if (s.name.toLowerCase().includes(q) || s.abbreviation.toLowerCase().includes(q)) {
-        results.push({ label: s.name, sublabel: `${s.abbreviation} · ${s.status}`, to: '/states' });
-      }
-    }
-
-    for (const p of products) {
-      if (results.length >= 6) break;
-      if (p.name.toLowerCase().includes(q)) {
-        results.push({ label: p.name, sublabel: `${p.category} · ${p.status}`, to: '/products' });
-      }
-    }
-
-    for (const rf of redFlags) {
-      if (results.length >= 6) break;
-      if (rf.title.toLowerCase().includes(q)) {
-        results.push({ label: rf.title, sublabel: `Risk: ${rf.risk}`, to: '/red-flags' });
-      }
-    }
-
-    return results.slice(0, 6);
-  }, [localSearch]);
-
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setLocalSearch(val);
-    setFilter('searchQuery', val);
-    setShowDropdown(val.trim().length >= 2);
-  };
-
   return (
-    <header className="flex h-14 items-center gap-4 border-b border-line bg-navy px-4 shadow-sm">
-      <Link to="/" className="flex items-center gap-2 font-bold text-lg text-white">
-        <span className="font-bold tracking-tight">LCX USA</span>
+    <header className="flex h-12 shrink-0 items-center gap-4 border-b border-line bg-card px-4">
+      <Link to="/" className="shrink-0 text-[13px] font-bold tracking-tight text-navy">
+        LCX USA
       </Link>
-      <nav className="flex items-center text-sm text-ice/70">
-        <span>/</span>
-        {breadcrumbs.length === 0 ? <span className="ml-1">Home</span> : breadcrumbs.map((c,i) => <span key={c} className="ml-1">{c}{i<breadcrumbs.length-1?'/':''}</span>)}
+
+      <nav className="flex min-w-0 items-center gap-1.5 text-body text-grey" aria-label="Breadcrumb">
+        {crumbs.length === 0 ? (
+          <span className="font-medium text-navy">Home</span>
+        ) : (
+          crumbs.map((c, i) => (
+            <span key={c} className="flex min-w-0 items-center gap-1.5">
+              <span className="text-grey/50">/</span>
+              <span className={i === crumbs.length - 1 ? 'truncate font-medium text-navy' : 'truncate'}>
+                {c}
+              </span>
+            </span>
+          ))
+        )}
       </nav>
-      <div className="flex-1 flex justify-center">
-        <KpiTicker />
+
+      <div className="flex min-w-0 flex-1 justify-center px-2">
+        <button
+          type="button"
+          onClick={onOpenSearch}
+          className="flex h-8 w-full max-w-md items-center gap-2 rounded-md border border-line bg-page px-3 text-label text-grey transition-colors hover:border-grey-light dark:hover:border-grey"
+        >
+          <Search size={13} className="shrink-0" />
+          <span className="flex-1 truncate text-left">Search or type a command…</span>
+          <kbd className="rounded border border-line bg-card px-1.5 py-px font-mono text-[10px] text-grey">
+            ⌘K
+          </kbd>
+        </button>
       </div>
-      <div className="ml-auto flex items-center gap-3">
-        <div className="relative" ref={dropdownRef}>
-          <input
-            type="text"
-            placeholder="Search states, products, flags…"
-            value={localSearch}
-            onChange={handleSearchChange}
-            onFocus={() => { if (localSearch.trim().length >= 2) setShowDropdown(true); }}
-            className="h-8 w-56 rounded-md border border-ice/20 bg-navy-deep/60 pl-3 text-sm focus:outline-none focus:ring-1 focus:ring-ice text-ice placeholder-ice/30"
+
+      <div className="flex shrink-0 items-center gap-2">
+        <span
+          className="flex items-center gap-1.5 rounded border border-line px-1.5 py-0.5 font-mono text-[10px] font-medium tracking-wider text-grey"
+          title={import.meta.env.PROD ? 'Production environment' : 'Local development environment'}
+        >
+          <span
+            className={`h-1.5 w-1.5 rounded-full ${import.meta.env.PROD ? 'bg-emerald-500' : 'bg-amber-500'}`}
           />
-          {showDropdown && searchResults.length > 0 && (
-            <div className="absolute top-full left-0 mt-1 w-72 bg-card border border-line rounded-lg shadow-xl z-50 overflow-hidden">
-              {searchResults.map((r, idx) => (
-                <Link
-                  key={idx}
-                  to={r.to}
-                  onClick={() => setShowDropdown(false)}
-                  className="flex flex-col px-3 py-2 hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors border-b border-line last:border-b-0"
-                >
-                  <span className="text-xs font-semibold text-navy truncate">{r.label}</span>
-                  <span className="text-[10px] text-grey">{r.sublabel}</span>
-                </Link>
-              ))}
-            </div>
-          )}
-          {showDropdown && localSearch.trim().length >= 2 && searchResults.length === 0 && (
-            <div className="absolute top-full left-0 mt-1 w-72 bg-card border border-line rounded-lg shadow-xl z-50 p-3">
-              <span className="text-xs text-grey">No results found</span>
-            </div>
-          )}
-        </div>
+          {import.meta.env.PROD ? 'LIVE' : 'LOCAL'}
+        </span>
+
         <NotificationBell />
+
         <button
           onClick={toggleDarkMode}
-          className="rounded-full p-1.5 text-ice/70 hover:bg-ice-soft/20 hover:text-ice transition-all duration-300 transform active:scale-95"
+          className="rounded-md p-1.5 text-grey transition-colors hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/10"
           aria-label={darkMode ? 'Switch to light mode' : 'Switch to dark mode'}
         >
-          {darkMode ? (
-            <Sun size={18} className="transition-transform duration-500 hover:rotate-45" />
-          ) : (
-            <Moon size={18} className="transition-transform duration-500 hover:-rotate-12" />
-          )}
+          {darkMode ? <Sun size={16} /> : <Moon size={16} />}
         </button>
+
         <div className="relative" ref={operatorMenuRef}>
           <button
             onClick={() => setShowOperatorMenu(o => !o)}
-            className="flex items-center gap-1.5 rounded-full bg-ice/15 pl-1 pr-2 py-1 text-xs font-bold text-ice select-none hover:bg-ice/25 transition-colors"
+            className="flex items-center gap-2 rounded-md border border-line py-1 pl-1 pr-2 transition-colors hover:bg-ice-soft dark:hover:bg-ice-soft/10"
           >
             {operator ? (
               <span
@@ -159,16 +133,21 @@ export function TopNav() {
                 {operator.initials}
               </span>
             ) : (
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-grey/40 text-[10px] font-bold text-white">?</span>
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-grey/40 text-[10px] font-bold text-white">
+                ?
+              </span>
             )}
-            <span>{operator?.name ?? 'Sign in'}</span>
-            <ChevronDown size={12} className="text-ice/50" />
+            <span className="text-label font-semibold text-navy">{operator?.name ?? 'Sign in'}</span>
+            <ChevronDown size={12} className="text-grey" />
           </button>
           {showOperatorMenu && (
-            <div className="absolute right-0 top-full mt-1 w-44 bg-card border border-line rounded-lg shadow-xl z-50 overflow-hidden">
+            <div className="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-lg border border-line bg-card shadow-overlay">
               <button
-                onClick={() => { setShowOperatorMenu(false); navigate('/select'); }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-navy dark:text-ice hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+                onClick={() => {
+                  setShowOperatorMenu(false);
+                  navigate('/select');
+                }}
+                className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-navy transition-colors hover:bg-ice-soft dark:hover:bg-ice-soft/10"
               >
                 <LogOut size={12} />
                 Switch identity

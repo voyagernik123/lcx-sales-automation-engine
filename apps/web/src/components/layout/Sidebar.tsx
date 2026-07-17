@@ -103,34 +103,40 @@ export function Sidebar() {
         end={to === '/'}
         className={({ isActive }) =>
           clsx(
-            'flex items-center gap-3 rounded-md px-2 py-1.5 text-sm relative',
-            isActive ? 'bg-navy text-card' : 'text-navy hover:bg-ice-soft dark:hover:bg-ice-soft/10'
+            'relative flex items-center gap-2.5 rounded-md px-2 py-[5px] text-body',
+            isActive
+              ? 'bg-ice-soft/70 font-medium text-navy dark:bg-ice-soft/10'
+              : 'text-grey-dark hover:bg-ice-soft/50 hover:text-navy dark:hover:bg-ice-soft/10'
           )
         }
       >
-        <Icon size={17} className="shrink-0" />
-        {!sidebarCollapsed && <span className="flex-1 truncate">{label}</span>}
-        {!sidebarCollapsed && isRedFlags && unresolvedCount > 0 && (
-          <span className="bg-red-500 text-white font-mono text-[9px] font-bold px-1.5 py-0.5 rounded-full shrink-0" aria-label={`${unresolvedCount} unresolved critical risks`}>
-            {unresolvedCount}
-          </span>
-        )}
-        {sidebarCollapsed && isRedFlags && unresolvedCount > 0 && (
-          <span className="absolute top-1 right-1 h-2 w-2 bg-red-500 rounded-full animate-pulse-beacon" />
+        {({ isActive }) => (
+          <>
+            {isActive && (
+              <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-cyan-600 dark:bg-cyan-400" />
+            )}
+            <Icon size={15} className="shrink-0" />
+            {!sidebarCollapsed && <span className="flex-1 truncate">{label}</span>}
+            {!sidebarCollapsed && isRedFlags && unresolvedCount > 0 && (
+              <span
+                className="shrink-0 rounded border border-red-500/30 bg-red-500/10 px-1 font-mono text-[10px] font-bold text-red-600 dark:text-red-400"
+                aria-label={`${unresolvedCount} unresolved critical risks`}
+              >
+                {unresolvedCount}
+              </span>
+            )}
+            {sidebarCollapsed && isRedFlags && unresolvedCount > 0 && (
+              <span className="absolute right-1 top-1 h-2 w-2 animate-pulse-beacon rounded-full bg-red-500" />
+            )}
+          </>
         )}
       </NavLink>
     );
   };
 
   return (
-    <aside className={clsx('flex flex-col border-r border-line bg-card transition-all duration-300 overflow-y-auto', sidebarCollapsed ? 'w-14' : 'w-64')}>
-      <div className="flex items-center justify-between p-3 border-b border-line">
-        {!sidebarCollapsed && <span className="font-semibold text-sm">Navigation</span>}
-        <button onClick={toggleSidebar} className="ml-auto rounded p-1 hover:bg-ice-soft" aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
-          {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
-        </button>
-      </div>
-      <nav className="flex-1 p-2 space-y-1">
+    <aside className={clsx('flex flex-col overflow-y-auto border-r border-line bg-card transition-all duration-300', sidebarCollapsed ? 'w-14' : 'w-56')}>
+      <nav className="flex-1 p-2">
         {sections.map(section => {
           const isOpen = openSections[section.title] ?? true;
           return (
@@ -138,7 +144,7 @@ export function Sidebar() {
               {!sidebarCollapsed && (
                 <button
                   onClick={() => setOpenSections(s => ({ ...s, [section.title]: !isOpen }))}
-                  className="flex w-full items-center justify-between px-2 pt-3 pb-1 text-[10px] font-bold uppercase tracking-wider text-grey hover:text-navy"
+                  className="flex w-full items-center justify-between px-2 pb-1 pt-3 font-mono text-[10px] font-semibold uppercase tracking-wider text-grey hover:text-navy"
                   aria-expanded={isOpen}
                 >
                   {section.title}
@@ -146,16 +152,28 @@ export function Sidebar() {
                 </button>
               )}
               {sidebarCollapsed && <div className="mx-2 my-2 border-t border-line" />}
-              {(sidebarCollapsed || isOpen) && <div className="space-y-0.5">{section.items.map(renderItem)}</div>}
+              {(sidebarCollapsed || isOpen) && <div className="space-y-px">{section.items.map(renderItem)}</div>}
             </div>
           );
         })}
       </nav>
       {!sidebarCollapsed && (
-        <div className="p-3 border-t border-line">
+        <div className="border-t border-line p-3">
           <SidebarFieldNotes />
         </div>
       )}
+      <div className="flex border-t border-line p-1.5">
+        <button
+          onClick={toggleSidebar}
+          className={clsx(
+            'rounded-md p-1 text-grey transition-colors hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/10',
+            sidebarCollapsed ? 'mx-auto' : 'ml-auto'
+          )}
+          aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {sidebarCollapsed ? <ChevronRight size={15} /> : <ChevronLeft size={15} />}
+        </button>
+      </div>
     </aside>
   );
 }

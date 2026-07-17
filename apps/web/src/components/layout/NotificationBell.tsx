@@ -104,7 +104,7 @@ export function NotificationBell() {
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="relative rounded-full p-1.5 text-ice/70 hover:bg-ice-soft/20 hover:text-ice transition-all"
+        className="relative rounded-md p-1.5 text-grey transition-colors hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/10"
         aria-label="Notifications"
         title={live ? 'Notifications: live' : 'Notifications: polling'}
       >

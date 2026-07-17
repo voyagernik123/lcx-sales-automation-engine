@@ -22,7 +22,7 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen flex-col bg-page text-navy">
-      <TopNav />
+      <TopNav onOpenSearch={() => setOpen(true)} />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <ErrorBoundary>
