@@ -7,6 +7,7 @@ import type { ScoreBand } from '@lcx/shared';
 import { CardSkeleton, EmptyState } from '@/components/shared';
 import { Button } from '@/components/ui';
 import { BandBadge } from '@/components/bd';
+import { RelationRail } from '../RelationRail';
 import { PropensityTrail } from '@/components/bd/PropensityTrail';
 import { UsIntelGauges } from '@/components/bd/UsIntelGauges';
 import { GateBanner, useGateCheck } from '@/components/bd/GateBanner';
@@ -111,6 +112,30 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
         )}
       </div>
 
+      {/* Relation pivots — the graph is the navigation */}
+      <RelationRail
+        items={[
+          {
+            label: lead.people.length === 1 ? 'contact' : 'contacts',
+            count: lead.people.length,
+            icon: Users,
+            onClick: () => scrollToInDrawer('insp-contacts'),
+          },
+          {
+            label: 'deal',
+            count: deal ? 1 : 0,
+            icon: Briefcase,
+            onClick: () => deal && push('deal', deal.id),
+          },
+          {
+            label: (timeline ?? []).length === 1 ? 'event' : 'events',
+            count: (timeline ?? []).length,
+            icon: Activity,
+            onClick: () => scrollToInDrawer('insp-activity'),
+          },
+        ]}
+      />
+
       {/* Priority equation — every term hops to its explanation below */}
       <PriorityEquation
         compact
@@ -146,7 +171,7 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
       <UsIntelGauges compact signals={lead.score?.usIntelSignals} />
 
       {/* Contacts → contact inspector */}
-      <div>
+      <div id="insp-contacts">
         <div className="mb-1.5 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
           <Users size={11} className="text-cyan-500" />
           Contacts ({verifiedCount} verified / {lead.people.length})
@@ -177,7 +202,7 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
       </div>
 
       {/* Latest activity */}
-      <div>
+      <div id="insp-activity">
         <div className="mb-1.5 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
           <Activity size={11} className="text-cyan-500" />
           Latest activity

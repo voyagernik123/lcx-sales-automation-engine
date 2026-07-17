@@ -3,6 +3,7 @@ import { MessageSquare } from 'lucide-react';
 import { computeReplySla, SLA_CLS, type ReplySla } from '@/lib/salesIntel';
 import { useInspect } from '@/stores';
 import { EmptyState } from '@/components/shared';
+import { EntityChip } from '@/components/entity';
 import type { HandoffRecord } from '@/types/bd';
 
 export interface OvernightHandoffsProps {
@@ -58,11 +59,27 @@ export function OvernightHandoffs({ handoffs, max = 6 }: OvernightHandoffsProps)
         >
           <div className="flex min-w-0 items-center gap-2">
             <MessageSquare size={12} className="shrink-0 text-grey" />
-            <span className="truncate text-label font-bold text-navy">{h.projectName ?? 'Unknown project'}</span>
+            <EntityChip
+              type="project"
+              id={h.projectId}
+              name={h.projectName ?? 'Unknown project'}
+              stateLine={`reply waiting · via ${h.channel}`}
+              className="text-label font-bold"
+            />
             <span className="shrink-0 rounded-md border border-line/70 px-1.5 py-0.5 text-micro font-semibold capitalize text-grey">
               {h.channel}
             </span>
-            {h.personName && <span className="hidden truncate text-micro text-grey sm:inline">{h.personName}</span>}
+            {h.personName && h.personId && (
+              <span className="hidden min-w-0 sm:inline-flex">
+                <EntityChip
+                  type="contact"
+                  id={`${h.projectId}:${h.personId}`}
+                  name={h.personName}
+                  stateLine={h.projectName ? `at ${h.projectName}` : undefined}
+                  className="text-micro !text-grey"
+                />
+              </span>
+            )}
           </div>
           <SlaChip sla={sla} />
         </button>

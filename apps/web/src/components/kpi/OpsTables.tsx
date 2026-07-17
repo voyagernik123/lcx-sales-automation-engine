@@ -1,5 +1,6 @@
 import { clsx } from 'clsx';
 import { ChartCard } from '@/components/charts';
+import { EntityChip } from '@/components/entity';
 import { useInspect } from '@/stores';
 import type { PostListingTrigger, StalledDeal } from '@/types/kpi';
 import { STAGE_LABELS, TRIGGER_DAY_LABELS, TRIGGER_TYPE_LABELS } from '@/types/kpi';
@@ -31,7 +32,15 @@ export function StalledDealsTable({ deals }: { deals: StalledDeal[] }) {
                 onClick={() => inspect('deal', deal.id)}
                 className="hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 cursor-pointer transition-colors"
               >
-                <td className="py-2.5 px-2 font-medium text-navy">{deal.projectName}</td>
+                <td className="py-2.5 px-2 font-medium text-navy">
+                  <EntityChip
+                    type="deal"
+                    id={deal.id}
+                    name={deal.projectName}
+                    stateLine={`${STAGE_LABELS[deal.stage] ?? deal.stage} · stalled ${deal.daysSinceUpdate}d`}
+                    vitals={deal.blocker ? [{ label: 'Blocker', value: deal.blocker }] : undefined}
+                  />
+                </td>
                 <td className="py-2.5 px-2 text-grey">{STAGE_LABELS[deal.stage] ?? deal.stage}</td>
                 <td className="py-2.5 px-2 text-right">
                   <span className={clsx(

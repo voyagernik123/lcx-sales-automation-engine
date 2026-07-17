@@ -24,6 +24,8 @@ interface InspectorStore {
   /** Drill deeper without losing the trail. */
   push: (type: InspectorEntityType, id: string, seed?: Record<string, unknown>) => void;
   back: () => void;
+  /** Jump to a point in the traversal breadcrumb (0-based stack index). */
+  jumpTo: (index: number) => void;
   close: () => void;
 }
 
@@ -32,6 +34,7 @@ export const useInspectorStore = create<InspectorStore>(set => ({
   open: (type, id, seed) => set({ stack: [{ type, id, seed }] }),
   push: (type, id, seed) => set(s => ({ stack: [...s.stack, { type, id, seed }] })),
   back: () => set(s => ({ stack: s.stack.slice(0, -1) })),
+  jumpTo: index => set(s => ({ stack: s.stack.slice(0, index + 1) })),
   close: () => set({ stack: [] }),
 }));
 

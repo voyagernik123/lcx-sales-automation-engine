@@ -1,5 +1,6 @@
 import { useInspect } from '@/stores';
 import { EmptyState } from '@/components/shared';
+import { EntityChip } from '@/components/entity';
 import { MOMENTUM_GLYPH, type DealHealth } from '@/lib/salesIntel';
 import type { BoardDeal } from '@/lib/api/bd';
 
@@ -57,7 +58,15 @@ export function AtRiskDeals({ deals, health, max = 3 }: AtRiskDealsProps) {
             className="w-full cursor-pointer rounded-lg border border-line px-2.5 py-2 text-left transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10"
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="truncate text-label font-bold text-navy">{d.projectName}</span>
+              <EntityChip
+                type="project"
+                id={d.projectId}
+                name={d.projectName}
+                meta={d.projectTicker}
+                stateLine={`${d.stage} · ${d.daysSinceUpdate}d since last touch`}
+                vitals={[{ label: 'Package', value: fmtValue(d.packageValue) }]}
+                className="text-label font-bold"
+              />
               <span className="num-tabular flex shrink-0 items-center gap-2 font-mono text-micro text-grey">
                 <span className={glyph.cls} title={h.momentumDetail}>{glyph.glyph}</span>
                 {fmtValue(d.packageValue)}
