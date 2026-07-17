@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { ChevronRight } from 'lucide-react';
 import { OPERATORS, useOperatorStore, type Operator } from '@/stores';
 import { fetchDealBoard, fetchHandoffs } from '@/lib/api/bd';
 import { getHealth } from '@/lib/apiClient';
@@ -7,14 +8,16 @@ import { computeReplySla } from '@/lib/salesIntel';
 import { formatMoney } from '@/lib/format';
 
 /**
- * The front door — the boot screen of a running desk (FINAL_MASTER_PLAN
- * Part 3 identity: "the tool a listing desk would build for itself").
+ * The front door — a workstation boot manifest, not a login template.
  *
- * Deliberately terminal-dark regardless of theme, the way a lock screen is
- * distinct from the desktop. Everything on it is real: the pipeline strip,
- * the SLA line, the API latency, the UTC clock. The desk is already live —
- * signing in is just taking a seat. Keyboard-first: 1-5 picks a seat,
- * arrows move, Enter confirms.
+ * Composition (FINAL_MASTER_PLAN Part 3): asymmetric split. The left rail is
+ * the SYSTEM — a live pre-flight ledger (session, desk state, clock) in the
+ * same telemetry grammar as the workspace status bar. The right plane is the
+ * PEOPLE — an operator roster with editorial type. Everything shown is real;
+ * both themes are first-class because the page is built on the same tokens
+ * as the workspace it opens.
+ *
+ * Keyboard-first: 1-5 signs in directly, ↑↓ roam the roster, Enter confirms.
  */
 
 interface DeskPulse {
@@ -53,25 +56,34 @@ function useDeskPulse(): DeskPulse | null {
   return pulse;
 }
 
-/** Fine blueprint grid + one restrained glow. Pure CSS, no assets. */
-function Backdrop() {
+/** One line of the pre-flight ledger: mono label left, tabular value right. */
+function LedgerRow({ label, value, tone }: { label: string; value: string; tone?: 'ok' | 'warn' | 'bad' }) {
   return (
-    <>
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0"
-        style={{
-          backgroundImage:
-            'linear-gradient(rgba(148,163,184,0.05) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.05) 1px, transparent 1px)',
-          backgroundSize: '48px 48px',
-        }}
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 h-[420px]"
-        style={{ background: 'radial-gradient(ellipse 60% 100% at 50% 0%, rgba(34,211,238,0.07), transparent 70%)' }}
-      />
-    </>
+    <div className="flex items-baseline justify-between gap-3 py-[5px]">
+      <span className="font-mono text-[10px] uppercase tracking-wider text-grey">{label}</span>
+      <span
+        className={`num-tabular font-mono text-[11px] font-semibold ${
+          tone === 'ok'
+            ? 'text-emerald-600 dark:text-emerald-400'
+            : tone === 'warn'
+              ? 'text-amber-600 dark:text-amber-400'
+              : tone === 'bad'
+                ? 'text-red-600 dark:text-red-400'
+                : 'text-navy'
+        }`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function LedgerGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="border-t border-line/70 pt-3">
+      <div className="mb-1 font-mono text-[9px] font-bold uppercase tracking-[0.2em] text-grey/70">{title}</div>
+      {children}
+    </div>
   );
 }
 
@@ -83,8 +95,8 @@ export function SelectOperator() {
   const [clock, setClock] = useState(() => new Date());
   const [latency, setLatency] = useState<number | null>(null);
   const [apiUp, setApiUp] = useState<boolean | null>(null);
-  const [focusIdx, setFocusIdx] = useState(2); // default seat: center
-  const cardRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [focusIdx, setFocusIdx] = useState(0);
+  const rowRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
     const iv = setInterval(() => setClock(new Date()), 1000);
@@ -109,7 +121,6 @@ export function SelectOperator() {
     [navigate, setOperator],
   );
 
-  // Keyboard grammar: 1-5 direct, arrows roam, Enter confirms.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const num = Number(e.key);
@@ -118,134 +129,169 @@ export function SelectOperator() {
         pick(OPERATORS[num - 1]);
         return;
       }
-      if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         setFocusIdx(i => {
-          const next = (i + (e.key === 'ArrowRight' ? 1 : -1) + OPERATORS.length) % OPERATORS.length;
-          cardRefs.current[next]?.focus();
+          const next = (i + (e.key === 'ArrowDown' ? 1 : -1) + OPERATORS.length) % OPERATORS.length;
+          rowRefs.current[next]?.focus();
           return next;
         });
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        pick(OPERATORS[focusIdx]);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [pick]);
+  }, [pick, focusIdx]);
 
   const utc = clock.toISOString().slice(11, 19);
-  const dateLine = useMemo(
-    () =>
-      clock.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }),
-    [clock],
-  );
-
-  const vitals: Array<{ label: string; value: string }> = [
-    { label: 'open pipeline', value: pulse ? formatMoney(Math.round(pulse.pipelineCents / 100)) : '—' },
-    { label: 'open deals', value: pulse ? String(pulse.openDeals) : '—' },
-    { label: 'replies waiting', value: pulse ? String(pulse.repliesWaiting) : '—' },
-    {
-      label: 'worst reply age',
-      value: pulse?.worstSlaHours != null ? `${Math.round(pulse.worstSlaHours)}h` : '—',
-    },
-  ];
+  const dateTag = clock
+    .toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+    .toUpperCase();
 
   return (
-    <div className="dark relative flex min-h-screen flex-col overflow-hidden bg-[#0b1220] font-sans text-slate-200 antialiased">
-      <Backdrop />
+    <div className="flex min-h-screen flex-col bg-page text-navy antialiased lg:flex-row">
+      {/* ─── System rail — the pre-flight ledger ─── */}
+      <aside className="relative flex w-full shrink-0 flex-col border-b border-line bg-card px-7 py-6 lg:min-h-screen lg:w-[340px] lg:border-b-0 lg:border-r lg:px-8 lg:py-8">
+        {/* Wordmark */}
+        <div className="flex items-center gap-2.5">
+          <span className="flex h-8 w-8 items-center justify-center rounded-md bg-navy font-mono text-[11px] font-bold tracking-tight text-card">
+            LCX
+          </span>
+          <div className="leading-tight">
+            <div className="text-[13px] font-bold tracking-tight text-navy">LCX USA</div>
+            <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-grey">Launch Control</div>
+          </div>
+        </div>
 
-      {/* Top strip — the same telemetry grammar as the workspace status bar */}
-      <header className="relative z-10 flex h-11 items-center gap-4 border-b border-white/[0.06] px-5 font-mono text-[10px] tracking-wider text-slate-500">
-        <span className="text-[13px] font-bold tracking-tight text-white">LCX USA</span>
-        <span className="hidden uppercase sm:inline">Launch Control</span>
-        <span className="ml-auto flex items-center gap-1.5" title={apiUp === false ? 'API unreachable' : 'API connected'}>
-          <span
-            className={`h-1.5 w-1.5 rounded-full ${
-              apiUp === null ? 'bg-slate-600' : apiUp ? 'bg-emerald-400' : 'animate-pulse-beacon bg-red-500'
-            }`}
-          />
-          {apiUp === false ? 'API DOWN' : latency !== null ? `API ${latency}MS` : 'API'}
-        </span>
-        <span className="num-tabular">{utc} UTC</span>
-        <span className="flex items-center gap-1.5 rounded border border-white/10 px-1.5 py-0.5">
-          <span className={`h-1.5 w-1.5 rounded-full ${import.meta.env.PROD ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-          {import.meta.env.PROD ? 'LIVE' : 'LOCAL'}
-        </span>
-      </header>
+        {/* The ledger */}
+        <div className="mt-8 space-y-4">
+          <LedgerGroup title="Session">
+            <LedgerRow
+              label="Environment"
+              value={import.meta.env.PROD ? 'LIVE' : 'LOCAL'}
+              tone={import.meta.env.PROD ? 'ok' : 'warn'}
+            />
+            <LedgerRow label="Build" value={`v${__APP_VERSION__}`} />
+            <LedgerRow
+              label="API"
+              value={apiUp === null ? 'CHECKING…' : apiUp ? `UP · ${latency}MS` : 'UNREACHABLE'}
+              tone={apiUp === null ? undefined : apiUp ? 'ok' : 'bad'}
+            />
+            <LedgerRow label="Access" value="SHARED DESK · SSO PLANNED" />
+          </LedgerGroup>
 
-      {/* Center — the seats */}
-      <main className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-12">
-        <div className="w-full max-w-3xl">
-          <div className="animate-fadeIn text-center" style={{ animationDelay: '0ms' }}>
-            <div className="font-mono text-[10px] font-semibold uppercase tracking-[0.25em] text-cyan-400/90">
-              {dateLine} · desk brief ready
+          <LedgerGroup title="Desk state">
+            <LedgerRow
+              label="Open pipeline"
+              value={pulse ? formatMoney(Math.round(pulse.pipelineCents / 100)) : '—'}
+            />
+            <LedgerRow label="Open deals" value={pulse ? String(pulse.openDeals) : '—'} />
+            <LedgerRow
+              label="Replies waiting"
+              value={pulse ? String(pulse.repliesWaiting) : '—'}
+              tone={pulse && pulse.repliesWaiting > 0 ? 'warn' : undefined}
+            />
+            <LedgerRow
+              label="Worst reply age"
+              value={pulse?.worstSlaHours != null ? `${Math.round(pulse.worstSlaHours)}H` : '—'}
+              tone={pulse?.worstSlaHours != null && pulse.worstSlaHours > 4 ? 'bad' : undefined}
+            />
+          </LedgerGroup>
+        </div>
+
+        {/* Clock block — pinned to the rail's foot */}
+        <div className="mt-auto hidden border-t border-line/70 pt-4 lg:block">
+          <div className="num-tabular font-mono text-[22px] font-semibold tracking-tight text-navy">{utc}</div>
+          <div className="mt-0.5 font-mono text-[9px] uppercase tracking-[0.2em] text-grey">
+            Coordinated Universal Time
+          </div>
+        </div>
+      </aside>
+
+      {/* ─── People plane — the roster ─── */}
+      <main className="flex flex-1 items-center justify-center px-6 py-12 lg:px-16">
+        <div className="w-full max-w-xl">
+          <div className="animate-fadeIn">
+            <div className="flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-700 dark:text-cyan-400">
+              <span className="h-1.5 w-1.5 animate-pulse-beacon rounded-full bg-cyan-600 dark:bg-cyan-400" />
+              {dateTag} · The desk is live
             </div>
-            <h1 className="mt-3 text-[34px] font-bold leading-tight tracking-[-0.02em] text-white">
-              The desk is live.
+            <h1 className="mt-4 text-[40px] font-bold leading-[1.05] tracking-[-0.03em] text-navy sm:text-[48px]">
+              Take your seat.
             </h1>
-            <p className="mt-1.5 text-[13px] text-slate-400">Take your seat.</p>
+            <p className="mt-3 max-w-md text-[13px] leading-relaxed text-grey">
+              Signing in attributes everything you do — handoffs you claim, stages you move, decisions you
+              call. The desk remembers who did what.
+            </p>
           </div>
 
-          {/* Live vitals — real numbers, or quiet dashes when the API is out */}
-          <div
-            className="animate-fadeIn mx-auto mt-8 flex max-w-xl items-stretch justify-center divide-x divide-white/[0.07] rounded-lg border border-white/[0.07] bg-white/[0.02]"
-            style={{ animationDelay: '60ms' }}
-          >
-            {vitals.map(v => (
-              <div key={v.label} className="flex-1 px-4 py-3 text-center">
-                <div className="num-tabular font-mono text-[17px] font-semibold text-white">{v.value}</div>
-                <div className="mt-0.5 whitespace-nowrap font-mono text-[9px] uppercase tracking-wider text-slate-500">
-                  {v.label}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Seats */}
-          <div className="mt-10 grid grid-cols-2 gap-3 sm:grid-cols-5">
+          {/* Roster */}
+          <div className="mt-9 overflow-hidden rounded-lg border border-line/80 bg-card shadow-card">
             {OPERATORS.map((op, i) => (
               <button
                 key={op.id}
                 ref={el => {
-                  cardRefs.current[i] = el;
+                  rowRefs.current[i] = el;
                 }}
                 onClick={() => pick(op)}
                 onFocus={() => setFocusIdx(i)}
+                onMouseEnter={() => setFocusIdx(i)}
                 aria-label={`Sign in as ${op.name} — press ${i + 1}`}
-                style={{ animationDelay: `${100 + i * 45}ms`, ['--seat' as string]: op.colorVar }}
-                className={`group animate-fadeIn relative flex flex-col items-center gap-3 rounded-lg border bg-white/[0.02] px-4 pb-3.5 pt-5 transition-all duration-150 hover:-translate-y-0.5 hover:bg-white/[0.05] focus:outline-none ${
-                  focusIdx === i ? 'border-[color:var(--seat)]' : 'border-white/[0.08] hover:border-white/20'
+                style={{ animationDelay: `${80 + i * 40}ms` }}
+                className={`group animate-fadeIn relative flex w-full items-center gap-4 border-b border-line/60 px-5 py-3.5 text-left transition-colors duration-150 last:border-b-0 focus:outline-none ${
+                  focusIdx === i ? 'bg-ice-soft/60 dark:bg-ice-soft/[0.07]' : 'hover:bg-ice-soft/40 dark:hover:bg-ice-soft/[0.05]'
                 }`}
               >
+                {/* Seat accent rail */}
                 <span
-                  className="flex h-12 w-12 items-center justify-center rounded-lg text-[17px] font-bold text-white transition-transform duration-150 group-hover:scale-105"
+                  className={`absolute left-0 top-0 h-full w-0.5 transition-opacity duration-150 ${
+                    focusIdx === i ? 'opacity-100' : 'opacity-0'
+                  }`}
+                  style={{ backgroundColor: op.colorVar }}
+                />
+                <span
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-[15px] font-bold text-white"
                   style={{ backgroundColor: op.colorVar }}
                 >
                   {op.initials}
                 </span>
-                <span className="text-[13px] font-semibold text-slate-100">{op.name}</span>
-                <kbd className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-px font-mono text-[10px] text-slate-500 transition-colors group-hover:text-slate-300">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[15px] font-semibold tracking-[-0.01em] text-navy">{op.name}</span>
+                  <span className="mt-px block font-mono text-[9px] uppercase tracking-[0.18em] text-grey">
+                    Operator {String(i + 1).padStart(2, '0')}
+                  </span>
+                </span>
+                <kbd
+                  className={`rounded border px-1.5 py-px font-mono text-[10px] transition-colors ${
+                    focusIdx === i
+                      ? 'border-grey-light text-navy dark:border-grey'
+                      : 'border-line text-grey'
+                  }`}
+                >
                   {i + 1}
                 </kbd>
+                <ChevronRight
+                  size={14}
+                  className={`shrink-0 transition-all duration-150 ${
+                    focusIdx === i ? 'translate-x-0 text-navy opacity-100' : '-translate-x-0.5 text-grey opacity-40'
+                  }`}
+                />
               </button>
             ))}
           </div>
 
-          <p
-            className="animate-fadeIn mt-6 text-center font-mono text-[10px] uppercase tracking-wider text-slate-600"
-            style={{ animationDelay: '340ms' }}
+          <div
+            className="animate-fadeIn mt-5 flex items-center justify-between font-mono text-[10px] uppercase tracking-wider text-grey/80"
+            style={{ animationDelay: '300ms' }}
           >
-            1–5 select · ←→ move · enter sign in
-          </p>
+            <span>1–5 sign in · ↑↓ move · enter confirm</span>
+            <span className="hidden sm:inline">Internal · not legal advice</span>
+          </div>
         </div>
       </main>
-
-      {/* Bottom strip — same compliance frame as the workspace */}
-      <footer className="relative z-10 flex h-9 items-center gap-4 border-t border-white/[0.06] px-5 font-mono text-[10px] tracking-wide text-slate-600">
-        <span>SHARED DESK LOGIN · SSO PLANNED</span>
-        <span className="ml-auto hidden truncate sm:inline">
-          INTERNAL · NOT LEGAL ADVICE · US COUNSEL SIGN-OFF REQUIRED
-        </span>
-        <span>v{__APP_VERSION__}</span>
-      </footer>
     </div>
   );
 }
