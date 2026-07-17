@@ -11,9 +11,13 @@ interface RateLimitConfig {
   maxRequests: number;
 }
 
+const isProd = process.env.NODE_ENV === 'production';
+
+/** A dashboard page fires several requests; 60/min starved one busy tab.
+    Prod stays conservative per client+IP; dev is effectively unthrottled. */
 const DEFAULT_CONFIG: RateLimitConfig = {
   windowMs: 60_000,
-  maxRequests: 60,
+  maxRequests: isProd ? 240 : 1200,
 };
 
 const AUTH_LIMIT: RateLimitConfig = {
@@ -22,6 +26,20 @@ const AUTH_LIMIT: RateLimitConfig = {
 };
 
 const buckets = new Map<string, BucketEntry>();
+
+/** Non-cryptographic hash so bucket keys never hold API-key material. */
+function djb2(s: string): string {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  return (h >>> 0).toString(36);
+}
+
+/** First hop of a forwarded chain — "client, proxy1, proxy2" → "client". */
+function firstForwardedIp(c: { req: { header: (n: string) => string | undefined } }): string | null {
+  const xff = c.req.header('x-forwarded-for');
+  if (!xff) return null;
+  return xff.split(',')[0].trim() || null;
+}
 
 const CLEANUP_INTERVAL = 60_000;
 let lastCleanup = Date.now();
@@ -41,8 +59,18 @@ export function rateLimit(config?: Partial<RateLimitConfig>) {
   return createMiddleware<{ Variables: AuthVariables }>(async (c, next) => {
     cleanup();
 
+    // Keying, most-specific first. NOTE: this middleware is mounted globally
+    // (app.use('*')) and therefore runs BEFORE route-level auth populates
+    // `operator` — so the api-key + ip composite is the working identity for
+    // app traffic; the operator branch serves route-scoped limiters.
     const operator = c.get('operator');
-    const key = operator ? `auth:${operator.id}` : `ip:${c.req.header('x-forwarded-for') ?? 'unknown'}`;
+    const ip = firstForwardedIp(c);
+    const rawKey = c.req.header('x-api-key') ?? c.req.header('authorization');
+    const key = operator
+      ? `auth:${operator.id}`
+      : rawKey
+        ? `key:${djb2(rawKey)}:${ip ?? 'local'}`
+        : `ip:${ip ?? 'unknown'}`;
 
     const now = Date.now();
     let entry = buckets.get(key);
