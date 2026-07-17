@@ -82,8 +82,8 @@
    deeper ambient shadow plus a faint top edge highlight so cards still
    separate from the page without glowing. */
 :root {
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.06);
-  --shadow-card-md: 0 2px 4px rgba(16, 24, 40, 0.06), 0 4px 12px rgba(16, 24, 40, 0.08);
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-card-md: 0 2px 4px rgba(16, 24, 40, 0.05), 0 4px 10px rgba(16, 24, 40, 0.06);
   --shadow-overlay: 0 8px 16px rgba(16, 24, 40, 0.10), 0 20px 40px rgba(16, 24, 40, 0.14);
 }
 .dark {

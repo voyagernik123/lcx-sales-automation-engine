@@ -33,6 +33,15 @@ export default {
         'card-md': 'var(--shadow-card-md)',
         overlay: 'var(--shadow-overlay)',
       },
+      // Institutional geometry: crisper than Tailwind defaults. Remapping the
+      // scale here rebalances every rounded-* usage app-wide — controls stay
+      // 4px, cards land at 6-8px, nothing consumer-soft.
+      borderRadius: {
+        lg: '0.375rem', // 6px (default 8px)
+        xl: '0.5rem', // 8px (default 12px)
+        '2xl': '0.625rem', // 10px (default 16px)
+        '3xl': '0.75rem', // 12px (default 24px)
+      },
       fontSize: {
         // Named density scale — replaces arbitrary text-[10px]/text-[11px].
         // `micro` is the new minimum (11px), reserved for dense data-table cells.

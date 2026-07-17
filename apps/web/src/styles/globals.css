@@ -1,13 +1,24 @@
+@import './fonts.css';
 @import './tokens.css';
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
-  body { 
-    @apply text-navy font-sans antialiased; 
+  html {
+    /* Inter alternates: cv05 (l with tail — kills the l/I ambiguity in
+       tickers), cv11 (single-storey a). */
+    font-feature-settings: 'cv05' on, 'cv11' on;
+    text-rendering: optimizeLegibility;
+  }
+  body {
+    @apply text-navy font-sans antialiased;
     background-color: rgb(var(--page-bg));
     transition: background-color 0.3s ease, color 0.3s ease;
+  }
+  /* Columns of digits must always align — structural, not opt-in. */
+  table {
+    font-variant-numeric: tabular-nums;
   }
   .dark body { 
     @apply text-ice; 
