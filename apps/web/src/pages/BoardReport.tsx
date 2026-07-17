@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Download, FileText, Mail, RefreshCw, Users } from 'lucide-react';
+import { AlertTriangle, Download, FileText, Mail, RefreshCw, Users, X } from 'lucide-react';
+import { useOperatorStore } from '@/stores';
 import { clsx } from 'clsx';
 import { ApiError } from '@/lib/apiClient';
 import {
@@ -192,7 +193,7 @@ export function BoardReport() {
       <PageTitle
         className="br-no-print mb-5"
         icon={<FileText size={20} className="text-cyan-500" />}
-        subtitle="Boardroom-ready pipeline, revenue, and anomaly summary — print or email it as-is"
+        subtitle="Live document — every figure is re-queried on open; print or email it as-is"
         actions={
           <>
             <div className="flex overflow-hidden rounded-lg border border-line" role="tablist" aria-label="Report period">
@@ -406,6 +407,10 @@ export function BoardReport() {
         </div>
       </div>
 
+      {/* Annotations — decisions & context pinned to this report (plan B4).
+          Internal working layer: excluded from print and email on purpose. */}
+      <ReportAnnotations period={period} />
+
       {/* Inline refresh error (report still shown) */}
       {error && report && (
         <div className="br-no-print mt-3">
@@ -415,6 +420,113 @@ export function BoardReport() {
 
       <EmailRecipientsDialog open={emailDialogOpen} onClose={() => setEmailDialogOpen(false)} onSend={handleSendEmail} />
     </div>
+  );
+}
+
+/* ── Annotations — the report's decision layer (plan B4) ──────────────
+   Each note is a Decision-flavored object: author, timestamp, rationale,
+   pinned to a period. Stored locally per browser until the API grows a
+   report_annotations table; excluded from print/email by design. */
+
+interface ReportNote {
+  id: string;
+  period: BoardReportPeriod;
+  text: string;
+  author: string;
+  ts: string;
+}
+
+const NOTES_KEY = 'lcx-os:report-notes:v1';
+
+function readNotes(): ReportNote[] {
+  try {
+    return JSON.parse(localStorage.getItem(NOTES_KEY) ?? '[]') as ReportNote[];
+  } catch {
+    return [];
+  }
+}
+
+function ReportAnnotations({ period }: { period: BoardReportPeriod }) {
+  const operator = useOperatorStore(s => s.operator);
+  const [notes, setNotes] = useState<ReportNote[]>(() => readNotes());
+  const [draft, setDraft] = useState('');
+
+  const forPeriod = notes.filter(n => n.period === period);
+
+  const save = (next: ReportNote[]) => {
+    setNotes(next);
+    try {
+      localStorage.setItem(NOTES_KEY, JSON.stringify(next));
+    } catch {
+      // storage unavailable — the session still shows the note
+    }
+  };
+
+  const add = () => {
+    const text = draft.trim();
+    if (!text) return;
+    save([
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        period,
+        text,
+        author: operator?.name ?? 'Operator',
+        ts: new Date().toISOString(),
+      },
+      ...notes,
+    ]);
+    setDraft('');
+  };
+
+  return (
+    <section className="br-no-print mt-4 rounded-lg border border-line/80 bg-card p-5 shadow-card">
+      <h3 className="text-[13px] font-semibold tracking-[-0.01em] text-navy">Annotations</h3>
+      <p className="mt-0.5 text-micro text-grey">
+        Decisions and context pinned to the {PERIOD_TITLES[period].toLowerCase()} report — internal only, never
+        printed or emailed.
+      </p>
+
+      <div className="mt-3 flex gap-2">
+        <input
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => {
+            if (e.key === 'Enter') add();
+          }}
+          placeholder="Add context the numbers can't say — 'Q3 dip is the Solaris slip, recovery signed Friday'…"
+          className="h-8 min-w-0 flex-1 rounded-md border border-line bg-page px-2.5 text-label text-navy placeholder:text-grey/60 focus:border-cyan-500 focus:outline-none"
+        />
+        <Button size="xs" variant="secondary" onClick={add} disabled={!draft.trim()}>
+          Pin note
+        </Button>
+      </div>
+
+      {forPeriod.length > 0 && (
+        <div className="mt-3 space-y-2">
+          {forPeriod.map(n => (
+            <div key={n.id} className="group flex items-start gap-2.5 rounded-md border border-line/60 px-3 py-2">
+              <span className="mt-0.5 shrink-0 rounded bg-fuchsia-500/10 px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase text-fuchsia-600 dark:text-fuchsia-400">
+                Note
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-label leading-relaxed text-navy">{n.text}</p>
+                <p className="mt-0.5 font-mono text-[9px] uppercase tracking-wider text-grey">
+                  {n.author} · {new Date(n.ts).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => save(notes.filter(x => x.id !== n.id))}
+                className="shrink-0 rounded p-0.5 text-grey opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+                aria-label="Remove note"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 

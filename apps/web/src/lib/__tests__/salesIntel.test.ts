@@ -156,3 +156,55 @@ describe('computePipelinePulse', () => {
     expect(pulse.cold).toBeGreaterThanOrEqual(1);
   });
 });
+
+describe('the learning loop — decisions feed likelihood (B4)', () => {
+  it('adds a track-record signal when the segment has ≥2 closed decisions', () => {
+    const deals = [
+      deal({ id: 'open', stage: 'proposal', packageType: 'dual' }),
+      deal({ id: 'w1', stage: 'won', packageType: 'dual' }),
+      deal({ id: 'w2', stage: 'won', packageType: 'dual' }),
+      deal({ id: 'l1', stage: 'lost', packageType: 'dual' }),
+    ];
+    const health = computeDealHealthSet(deals, {}, NOW);
+    const signal = health.get('open')!.likelihood.signals.find(s => s.label.startsWith('Track record'));
+    expect(signal).toBeDefined();
+    expect(signal!.direction).toBe(1); // 2W/1L → positive
+    expect(signal!.detail).toContain('2 won / 1 lost');
+    expect(signal!.detail).toContain('decisions feed the model');
+  });
+
+  it('losses drag the segment down symmetrically', () => {
+    const deals = [
+      deal({ id: 'open', stage: 'proposal', packageType: 'emt' }),
+      deal({ id: 'l1', stage: 'lost', packageType: 'emt' }),
+      deal({ id: 'l2', stage: 'lost', packageType: 'emt' }),
+    ];
+    const signal = computeDealHealthSet(deals, {}, NOW)
+      .get('open')!
+      .likelihood.signals.find(s => s.label.startsWith('Track record'));
+    expect(signal!.direction).toBe(-1);
+  });
+
+  it('small-n discipline: a single decision is an anecdote, not a track record', () => {
+    const deals = [
+      deal({ id: 'open', stage: 'proposal', packageType: 'custom' }),
+      deal({ id: 'w1', stage: 'won', packageType: 'custom' }),
+    ];
+    const signal = computeDealHealthSet(deals, {}, NOW)
+      .get('open')!
+      .likelihood.signals.find(s => s.label.startsWith('Track record'));
+    expect(signal).toBeUndefined();
+  });
+
+  it('other segments are unaffected', () => {
+    const deals = [
+      deal({ id: 'open', stage: 'proposal', packageType: 'listing' }),
+      deal({ id: 'w1', stage: 'won', packageType: 'dual' }),
+      deal({ id: 'w2', stage: 'won', packageType: 'dual' }),
+    ];
+    const signal = computeDealHealthSet(deals, {}, NOW)
+      .get('open')!
+      .likelihood.signals.find(s => s.label.startsWith('Track record'));
+    expect(signal).toBeUndefined();
+  });
+});

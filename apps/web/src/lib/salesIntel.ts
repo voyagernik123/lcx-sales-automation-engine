@@ -233,10 +233,27 @@ const STAGE_BASE: Record<string, number> = {
   negotiating: 65,
 };
 
+/** Closed-decision history per package type — the input of the learning loop. */
+export interface DecisionTrackRecord {
+  byPackage: Record<string, { won: number; lost: number }>;
+}
+
+export function computeTrackRecord(deals: BoardDeal[]): DecisionTrackRecord {
+  const byPackage: DecisionTrackRecord['byPackage'] = {};
+  for (const d of deals) {
+    if ((d.stage !== 'won' && d.stage !== 'lost') || !d.packageType) continue;
+    const rec = (byPackage[d.packageType] ??= { won: 0, lost: 0 });
+    if (d.stage === 'won') rec.won += 1;
+    else rec.lost += 1;
+  }
+  return { byPackage };
+}
+
 function computeLikelihoodScore(
   deal: BoardDeal,
   ctx: DealContext,
   warnings: DealWarning[],
+  trackRecord: DecisionTrackRecord = { byPackage: {} },
 ): { score: number; signals: LikelihoodSignal[] } {
   const signals: LikelihoodSignal[] = [];
   let score = STAGE_BASE[deal.stage] ?? 5;
@@ -290,6 +307,23 @@ function computeLikelihoodScore(
     signals.push({ label: `Playbook ${done}/5`, direction: 1, weight: pts, detail: 'listing checklist progress' });
   }
 
+  // The learning loop (plan B4): won/lost decisions re-weight open deals in
+  // the same segment. Small-n discipline applies — fewer than 2 decisions on
+  // a package type is an anecdote, not a track record.
+  const rec = deal.packageType ? trackRecord.byPackage[deal.packageType] : undefined;
+  if (rec && deal.packageType && rec.won + rec.lost >= 2) {
+    const pts = Math.max(-6, Math.min(6, (rec.won - rec.lost) * 2));
+    if (pts !== 0) {
+      score += pts;
+      signals.push({
+        label: `Track record: ${deal.packageType}`,
+        direction: pts > 0 ? 1 : -1,
+        weight: Math.abs(pts),
+        detail: `${rec.won} won / ${rec.lost} lost on ${deal.packageType} packages — closed decisions feed the model`,
+      });
+    }
+  }
+
   return { score: Math.max(0, Math.min(100, score)), signals };
 }
 
@@ -337,13 +371,16 @@ export function computeDealHealthSet(
     (byStage[d.stage] ??= []).push(days);
   }
 
+  // Closed decisions in this set are the learning-loop input (plan B4).
+  const trackRecord = computeTrackRecord(deals);
+
   // First pass: scores.
   const interim = deals.map(d => {
     const ctx = contexts[d.id] ?? {};
     const daysInStage = daysInStageByDeal.get(d.id) ?? 0;
     const stageMedian = median(byStage[d.stage] ?? []);
     const warnings = computeWarnings(d, ctx, daysInStage, stageMedian, now);
-    const { score, signals } = computeLikelihoodScore(d, ctx, warnings);
+    const { score, signals } = computeLikelihoodScore(d, ctx, warnings, trackRecord);
     const { momentum, detail } = computeMomentum(ctx.events, d, now);
     return { d, ctx, daysInStage, stageMedian, warnings, score, signals, momentum, momentumDetail: detail };
   });
