@@ -5,7 +5,7 @@ import { STAGES, STAGE_LABELS, canTransition, type DealStage } from '@lcx/shared
 import { fetchDealBoard, transitionDealStage, type BoardDeal } from '@/lib/api/bd';
 import { loadDealContexts, saveDealPlaybook, type LoadedDealContext, type PlaybookKey } from '@/lib/api/deals100x';
 import { computeDealHealthSet, computePipelinePulse, type WarningCode } from '@/lib/salesIntel';
-import { useInspect } from '@/stores';
+import { useInspect, useOperatorStore, hasRole } from '@/stores';
 import { toast } from '@/components/shared/Toast';
 import { CardSkeleton, ErrorNotice } from '@/components/shared';
 import { classifyError } from '@/lib/errors';
@@ -51,6 +51,7 @@ export function DealBoard() {
   const [dropTarget, setDropTarget] = useState<DealStage | null>(null);
   const [pendingClose, setPendingClose] = useState<{ deal: BoardDeal; target: 'won' | 'lost' } | null>(null);
   const inspect = useInspect();
+  const operator = useOperatorStore(s => s.operator);
 
   /** Open the deal inspector seeded with what the board already fetched, so
    *  the why-panel renders instantly and survives API rate-limit hiccups. */
@@ -184,6 +185,12 @@ export function DealBoard() {
     }
 
     if (target === 'won' || target === 'lost') {
+      // Closing a deal is an approver-gated decision (plan 5.2). Non-approvers
+      // see why, not a silent no-op.
+      if (!hasRole(operator, 'approver')) {
+        toast('error', `Closing a deal is an approver action — ${operator?.name ?? 'you'} is an operator. Ask Nik or Monty to sign off.`);
+        return;
+      }
       // Proper capture dialog instead of window.prompt.
       setPendingClose({ deal, target });
       return;

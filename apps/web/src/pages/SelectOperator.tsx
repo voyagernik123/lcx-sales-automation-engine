@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
-import { OPERATORS, useOperatorStore, type Operator } from '@/stores';
+import { OPERATORS, ROLE_LABEL, useOperatorStore, type Operator } from '@/stores';
 import { fetchDealBoard, fetchHandoffs } from '@/lib/api/bd';
 import { getHealth } from '@/lib/apiClient';
 import { computeReplySla } from '@/lib/salesIntel';
@@ -261,7 +261,7 @@ export function SelectOperator() {
                 <span className="min-w-0 flex-1">
                   <span className="block text-[15px] font-semibold tracking-[-0.01em] text-navy">{op.name}</span>
                   <span className="mt-px block font-mono text-[9px] uppercase tracking-[0.18em] text-grey">
-                    Operator {String(i + 1).padStart(2, '0')}
+                    {ROLE_LABEL[op.role]}{op.role === 'approver' ? ' · signs off deals' : ''}
                   </span>
                 </span>
                 <kbd

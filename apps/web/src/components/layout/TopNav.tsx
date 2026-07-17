@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Sun, Moon, LogOut, ChevronDown } from 'lucide-react';
-import { useUIStore, useOperatorStore } from '@/stores';
+import { useUIStore, useOperatorStore, ROLE_LABEL } from '@/stores';
 import { NotificationBell } from './NotificationBell';
 
 const routeLabels: Record<string, string> = {
@@ -144,7 +144,16 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
             <ChevronDown size={12} className="text-grey" />
           </button>
           {showOperatorMenu && (
-            <div className="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-lg border border-line bg-card shadow-overlay">
+            <div className="absolute right-0 top-full z-50 mt-1 w-48 overflow-hidden rounded-lg border border-line bg-card shadow-overlay">
+              {operator && (
+                <div className="border-b border-line px-3 py-2">
+                  <div className="text-label font-semibold text-navy">{operator.name}</div>
+                  <div className="font-mono text-[10px] uppercase tracking-wider text-grey">
+                    {ROLE_LABEL[operator.role]}
+                    {operator.role === 'approver' && ' · can sign off deals'}
+                  </div>
+                </div>
+              )}
               <button
                 onClick={() => {
                   setShowOperatorMenu(false);
