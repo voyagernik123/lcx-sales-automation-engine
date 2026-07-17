@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Layers, LayoutGrid, RefreshCw, Star, Table2 } from 'lucide-react';
 import { createTask, fetchExchangeGaps, type GapRow } from '@/lib/api/bd';
 import { EmptyState, TableSkeleton, toast } from '@/components/shared';
@@ -27,18 +27,24 @@ export function ExchangeGaps() {
   const [watchOnly, setWatchOnly] = useState(false);
   const [newOnly, setNewOnly] = useState(false);
 
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
+    // Out-of-order guard: the minExchanges control fires rapid values —
+    // drop every response but the newest so the grid can't show stale rows.
+    const seq = ++loadSeq.current;
     setLoading(true);
     setError('');
     try {
       const res = await fetchExchangeGaps(minExchanges);
+      if (seq !== loadSeq.current) return;
       setRows(res.rows);
       setTotal(res.total);
       commit(res.rows.map((r) => r.id));
     } catch (err) {
+      if (seq !== loadSeq.current) return;
       setError(err instanceof Error ? err.message : 'Failed to load gaps');
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [minExchanges, commit]);
 

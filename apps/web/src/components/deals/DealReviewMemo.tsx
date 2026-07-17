@@ -78,11 +78,17 @@ export function DealReviewMemo({ deal, health, events, winProbability, onClose }
   }, [deal.id]);
 
   useEffect(() => {
+    // This memo opens from within the deal inspector, so both listen for
+    // Escape. Capture-phase + stopPropagation means Esc closes only the memo
+    // (topmost overlay) without also walking the inspector's trail back.
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onClose();
+      }
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
   }, [onClose]);
 
   const stage = deal.stage as DealStage;

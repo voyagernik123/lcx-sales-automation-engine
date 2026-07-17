@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Download, FileText, Mail, RefreshCw, Users, X } from 'lucide-react';
 import { useOperatorStore } from '@/stores';
 import { clsx } from 'clsx';
@@ -65,7 +65,11 @@ export function BoardReport() {
   const [emailConfigured, setEmailConfigured] = useState<boolean | null>(null);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
 
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
+    // Out-of-order guard: rapid period-tab clicks race — only the latest
+    // load may apply, or a slow earlier response overwrites the newer one.
+    const seq = ++loadSeq.current;
     setLoading(true);
     setError(null);
     try {
@@ -74,13 +78,15 @@ export function BoardReport() {
         fetchBoardAnomalies().catch(() => [] as BoardAnomaly[]),
         fetchBdPerformance().catch(() => [] as BdPerformanceRow[]),
       ]);
+      if (seq !== loadSeq.current) return;
       setReport(rep);
       setAnomalies(anom);
       setBd(bdRows);
     } catch (err) {
+      if (seq !== loadSeq.current) return;
       setError(err instanceof Error ? err.message : 'Failed to load board report');
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [period]);
 

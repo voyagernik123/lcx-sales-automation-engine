@@ -7,7 +7,10 @@
 import type { HealthResponse, OperatorPrincipal } from '@lcx/shared';
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
-const ENV_API_KEY = (import.meta.env.VITE_API_KEY as string | undefined) ?? '';
+// DEV-only: gating on import.meta.env.DEV lets Vite dead-code-strip the key
+// from production bundles, so a stray VITE_API_KEY in a prod build env can
+// never be inlined and shipped to browsers. Prod keys live in localStorage.
+const ENV_API_KEY = import.meta.env.DEV ? ((import.meta.env.VITE_API_KEY as string | undefined) ?? '') : '';
 
 // Operator key lives in localStorage in production so it never ships in the
 // bundle (set once via: localStorage.setItem('lcx_api_key', '<key>')).

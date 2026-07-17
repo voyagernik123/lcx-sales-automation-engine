@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BarChart3, ChevronDown, RefreshCw, Sparkles, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { request } from '@/lib/apiClient';
@@ -124,7 +124,10 @@ export function WinLoss() {
   const [insightsOpen, setInsightsOpen] = useState(true);
   const [drill, setDrill] = useState<Drill | null>(null);
 
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
+    // Out-of-order guard: switching pool refetches — drop a stale response.
+    const seq = ++loadSeq.current;
     setLoading(true);
     setError('');
     try {
@@ -134,12 +137,14 @@ export function WinLoss() {
         request<{ data: WinLossData }>(`/v1/ai/win-loss?pool=${pool}`),
         fetchDealBoard().catch(() => [] as BoardDeal[]),
       ]);
+      if (seq !== loadSeq.current) return;
       setData(res.data);
       setBoardDeals(board);
     } catch (err) {
+      if (seq !== loadSeq.current) return;
       setError(err instanceof Error ? err.message : 'Failed to load win/loss');
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [pool]);
 
