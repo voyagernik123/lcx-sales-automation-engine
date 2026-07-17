@@ -185,7 +185,7 @@ export function Dashboard() {
                     <button
                       key={s.id}
                       onClick={() => setSelectedState(s)}
-                      className={`relative flex flex-col items-center justify-center p-1 h-10 border rounded text-micro font-bold transition-all transform active:scale-95 ${tileClass} hover:opacity-80`}
+                      className={`relative flex flex-col items-center justify-center p-1 h-10 border rounded text-micro font-bold transition-all ${tileClass} hover:opacity-80`}
                       title={`${s.name} — ${effectiveStatus}`}
                     >
                       <span className={`absolute top-0.5 right-0.5 h-[5px] w-[5px] rounded-full ${dotClass}`} />

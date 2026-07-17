@@ -196,7 +196,7 @@ export function GapHeatMatrix({ model, watched, newIds, onToggleWatch, onInspect
                 }
                 onMouseLeave={() => setTip(null)}
               >
-                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 transition-transform group-hover:scale-125" aria-hidden="true" />
+                <span className="h-1.5 w-1.5 rounded-full bg-amber-500 transition-colors group-hover:bg-amber-400" aria-hidden="true" />
               </button>
               <div className="mx-1 self-stretch w-px bg-line" aria-hidden="true" />
 

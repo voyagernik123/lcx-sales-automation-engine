@@ -5,19 +5,25 @@ import { clsx } from 'clsx';
 interface InspectorDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Esc handler — hosts pass "walk the trail back" instead of hard close. */
+  onEscape?: () => void;
   title: string;
   children: ReactNode;
 }
 
-export function InspectorDrawer({ isOpen, onClose, title, children }: InspectorDrawerProps) {
+export function InspectorDrawer({ isOpen, onClose, onEscape, title, children }: InspectorDrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // Spatial continuity (plan 4.4): remember where focus came from and put it
+  // back when the panel leaves — the page never loses its place.
+  const returnFocusRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') (onEscape ?? onClose)();
     };
 
     if (isOpen) {
+      returnFocusRef.current = document.activeElement as HTMLElement | null;
       document.body.style.overflow = 'hidden';
       setTimeout(() => {
         panelRef.current?.focus();
@@ -30,10 +36,11 @@ export function InspectorDrawer({ isOpen, onClose, title, children }: InspectorD
     return () => {
       if (isOpen) {
         document.body.style.overflow = '';
+        returnFocusRef.current?.focus?.();
       }
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, onEscape]);
 
   if (!isOpen) return null;
 

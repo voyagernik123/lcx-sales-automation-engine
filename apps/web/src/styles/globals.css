@@ -72,7 +72,7 @@
   to { transform: translateX(0); }
 }
 .animate-slide-in {
-  animation: slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: slide-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .premium-table th {
@@ -109,6 +109,9 @@ path.state:hover {
 }
 
 /* === 10x polish layer === */
+/* Motion system (plan 4.4): 120ms hover · 160ms state · 200ms panels, all
+   ease-out, transform+opacity only. Data-viz transitions (gauge needles,
+   bars) may run longer; UI chrome never bounces or scales. */
 @layer utilities {
   /* Hero figures: tight tracking, proportional digits (tabular only in columns). */
   .num-hero {
@@ -133,7 +136,7 @@ path.state:hover {
   }
   /* Interactive-card lift: subtle rise + deeper shadow, 150ms. */
   .lift {
-    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    transition: transform 0.12s ease-out, box-shadow 0.12s ease-out, border-color 0.12s ease-out;
   }
   .lift:hover {
     transform: translateY(-1px);

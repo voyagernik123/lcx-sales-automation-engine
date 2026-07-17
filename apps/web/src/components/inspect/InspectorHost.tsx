@@ -60,7 +60,13 @@ export function InspectorHost() {
   const title = OBJECT_TYPES[INSPECTOR_TO_OBJECT[top.type]].label.toUpperCase();
 
   return (
-    <InspectorDrawer isOpen onClose={close} title={title}>
+    <InspectorDrawer
+      isOpen
+      onClose={close}
+      // Esc walks the pivot trail back one step; only the last step closes.
+      onEscape={stack.length > 1 ? back : close}
+      title={title}
+    >
       {stack.length > 1 && (
         <nav
           aria-label="Inspector trail"
