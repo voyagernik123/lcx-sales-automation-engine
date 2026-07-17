@@ -29,7 +29,7 @@ export function EmptyState({ icon, variant = 'default', title, description, acti
       </div>
       <h3 className="text-sm font-bold text-navy mb-1">{title}</h3>
       {description && (
-        <p className="text-xs text-grey-dark dark:text-grey-light max-w-xs leading-relaxed mb-4">
+        <p className="text-xs text-grey-dark max-w-xs leading-relaxed mb-4">
           {description}
         </p>
       )}

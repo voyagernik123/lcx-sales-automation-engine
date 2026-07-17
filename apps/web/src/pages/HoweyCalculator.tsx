@@ -227,7 +227,7 @@ export function HoweyCalculator() {
                 </div>
                 {/* Show product's real Howey analysis for this prong */}
                 {productAnalysis && (
-                  <div className="ml-1 mt-1 px-3 py-2 rounded-lg border border-cyan-500/20 bg-cyan-500/5 text-label leading-relaxed text-grey-dark dark:text-grey-light">
+                  <div className="ml-1 mt-1 px-3 py-2 rounded-lg border border-cyan-500/20 bg-cyan-500/5 text-label leading-relaxed text-grey-dark">
                     <span className="font-bold text-[9px] uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
                       {selectedProduct?.name} — Analysis:
                     </span>

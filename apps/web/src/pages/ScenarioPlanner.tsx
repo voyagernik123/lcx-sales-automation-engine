@@ -167,7 +167,7 @@ export function ScenarioPlanner() {
                       className="rounded border-grey/40 text-cyan-500 focus:ring-0 cursor-pointer h-4 w-4"
                     />
                   </div>
-                  <p className="text-micro text-grey-dark dark:text-grey-light mt-1.5 leading-normal">{sc.desc}</p>
+                  <p className="text-micro text-grey-dark mt-1.5 leading-normal">{sc.desc}</p>
                   <div className="mt-2 text-[9px] font-mono text-cyan-600 dark:text-cyan-400 leading-tight">
                     <strong>Effect</strong>: {sc.effect}
                   </div>

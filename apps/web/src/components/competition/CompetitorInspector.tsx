@@ -188,7 +188,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
           </div>
 
           {competitor.notes && (
-            <p className="text-micro text-grey-dark dark:text-grey-light leading-snug italic border-l-2 border-line pl-2.5">
+            <p className="text-micro text-grey-dark leading-snug italic border-l-2 border-line pl-2.5">
               {competitor.notes}
             </p>
           )}
@@ -285,7 +285,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
             <div className="space-y-1 mt-1">
               <span className="text-[9px] font-bold uppercase text-grey block">Additional Licenses</span>
               {competitor.licenses.otherLicenses.map((l, i) => (
-                <div key={i} className="flex items-start gap-1.5 text-micro text-grey-dark dark:text-grey-light">
+                <div key={i} className="flex items-start gap-1.5 text-micro text-grey-dark">
                   <span className="text-cyan-500 shrink-0 mt-0.5">+</span>
                   <span>{l}</span>
                 </div>
@@ -365,7 +365,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
                         )}
                       </div>
 
-                      <p className="text-[9px] text-grey-dark dark:text-grey-light mt-1 leading-snug">
+                      <p className="text-[9px] text-grey-dark mt-1 leading-snug">
                         <strong>Outcome:</strong> {event.outcome}
                       </p>
                     </div>
@@ -432,7 +432,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
               <span className="text-micro">{competitor.howeyProfile.lowestScoreAsset} → {competitor.howeyProfile.highestScoreAsset}</span>
             </div>
           </div>
-          <p className="text-micro text-grey-dark dark:text-grey-light leading-snug italic">
+          <p className="text-micro text-grey-dark leading-snug italic">
             {competitor.howeyProfile.notes}
           </p>
         </div>
@@ -449,21 +449,21 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
               <h5 className="text-[9px] font-bold uppercase text-red-600 dark:text-red-400 mb-1 flex items-center gap-1">
                 <AlertTriangle size={10} /> Vulnerability
               </h5>
-              <p className="text-micro leading-snug text-grey-dark dark:text-grey-light">{competitor.insights.vulnerability}</p>
+              <p className="text-micro leading-snug text-grey-dark">{competitor.insights.vulnerability}</p>
             </div>
 
             <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/[0.03] dark:bg-cyan-500/[0.02] p-2.5">
               <h5 className="text-[9px] font-bold uppercase text-cyan-600 dark:text-cyan-400 mb-1 flex items-center gap-1">
                 <Swords size={10} /> Asymmetric Advantage
               </h5>
-              <p className="text-micro leading-snug text-grey-dark dark:text-grey-light">{competitor.insights.asymmetry}</p>
+              <p className="text-micro leading-snug text-grey-dark">{competitor.insights.asymmetry}</p>
             </div>
 
             <div className="rounded-lg border border-amber-500/20 bg-amber-500/[0.03] dark:bg-amber-500/[0.02] p-2.5">
               <h5 className="text-[9px] font-bold uppercase text-amber-600 dark:text-amber-400 mb-1 flex items-center gap-1">
                 <Globe size={10} /> Watchlist Item
               </h5>
-              <p className="text-micro leading-snug text-grey-dark dark:text-grey-light">{competitor.insights.watchItem}</p>
+              <p className="text-micro leading-snug text-grey-dark">{competitor.insights.watchItem}</p>
             </div>
           </div>
         </div>

@@ -121,7 +121,7 @@ export function ReadinessStack() {
                     {item.status}
                   </span>
                 </div>
-                <p className="text-micro text-grey-dark dark:text-grey-light mt-1.5 leading-relaxed line-clamp-2">
+                <p className="text-micro text-grey-dark mt-1.5 leading-relaxed line-clamp-2">
                   {item.description}
                 </p>
 

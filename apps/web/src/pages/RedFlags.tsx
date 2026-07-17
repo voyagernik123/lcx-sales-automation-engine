@@ -195,7 +195,7 @@ export function RedFlags() {
                       </Badge>
                     </div>
 
-                    <p className="text-xs text-grey-dark dark:text-grey-light leading-relaxed">{rf.description}</p>
+                    <p className="text-xs text-grey-dark leading-relaxed">{rf.description}</p>
 
                     {!isResolved && (
                       <div className="rounded bg-status-blocked-bg border border-status-blocked/20 p-2.5 text-xs font-mono text-status-blocked leading-normal">

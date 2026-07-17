@@ -179,7 +179,7 @@ export function ProductIntelligence() {
             {selectedProduct.notes && (
               <div className="border-t border-line pt-3">
                 <span className="text-[8px] font-bold uppercase tracking-wider text-grey block mb-1">Notes</span>
-                <p className="text-micro text-grey-dark dark:text-grey-light leading-snug italic">{selectedProduct.notes}</p>
+                <p className="text-micro text-grey-dark leading-snug italic">{selectedProduct.notes}</p>
               </div>
             )}
           </div>

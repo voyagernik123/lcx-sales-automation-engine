@@ -178,7 +178,7 @@ export function ProductMatrix() {
                           <div className="space-y-3">
                             <div>
                               <SectionLabel className="block">Description</SectionLabel>
-                              <p className="mt-0.5 text-grey-dark dark:text-grey-light">{p.description}</p>
+                              <p className="mt-0.5 text-grey-dark">{p.description}</p>
                             </div>
 
                             {p.howeyAnalysis && (
@@ -197,7 +197,7 @@ export function ProductMatrix() {
                             <div>
                               <SectionLabel className="block">Gated Compliance Friction Points</SectionLabel>
                               {p.risks.length > 0 ? (
-                                <ul className="list-disc list-inside mt-1 space-y-1 text-grey-dark dark:text-grey-light pl-1.5">
+                                <ul className="list-disc list-inside mt-1 space-y-1 text-grey-dark pl-1.5">
                                   {p.risks.map((risk, idx) => (
                                     <li key={idx}>{risk}</li>
                                   ))}

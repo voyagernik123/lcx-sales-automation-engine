@@ -40,7 +40,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               <AlertTriangle size={28} className="text-red-500" />
             </div>
             <h2 className="text-lg font-bold text-navy">Module Error</h2>
-            <p className="text-sm text-grey-dark dark:text-grey-light leading-relaxed">
+            <p className="text-sm text-grey-dark leading-relaxed">
               An unexpected error occurred in this section. The rest of the application remains operational.
             </p>
             {this.state.error && (

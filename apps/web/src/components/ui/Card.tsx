@@ -35,7 +35,7 @@ export function Card({ children, className, status, hoverable }: CardProps) {
 
 export function CardHeader({ children, className }: { children: React.ReactNode; className?: string }) {
   return (
-    <div className={clsx('px-4 py-3 border-b border-line font-mono text-micro font-bold uppercase tracking-wider text-grey-dark dark:text-grey-light', className)}>
+    <div className={clsx('px-4 py-3 border-b border-line font-mono text-micro font-bold uppercase tracking-wider text-grey-dark', className)}>
       {children}
     </div>
   );

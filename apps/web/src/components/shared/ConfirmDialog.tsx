@@ -63,7 +63,7 @@ export function ConfirmDialog({
         )}
         <div>
           <h3 className="text-sm font-bold text-navy mb-1">{title}</h3>
-          <p className="text-xs text-grey-dark dark:text-grey-light leading-relaxed">{message}</p>
+          <p className="text-xs text-grey-dark leading-relaxed">{message}</p>
         </div>
       </div>
     </Modal>

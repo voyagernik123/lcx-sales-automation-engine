@@ -218,7 +218,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
           <div className="flex items-center gap-2">
             <span className="font-bold text-xs text-navy whitespace-nowrap">{c.name}</span>
             {c.ticker && (
-              <span className="text-[9px] font-mono text-grey dark:text-grey-light bg-ice-soft dark:bg-navy-deep px-1 rounded">
+              <span className="text-[9px] font-mono text-grey bg-ice-soft dark:bg-navy-deep px-1 rounded">
                 {c.ticker}
               </span>
             )}
@@ -273,7 +273,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
           <span className={clsx(
             'font-mono text-micro font-bold',
             c.marketShare >= 10 ? 'text-cyan-600 dark:text-cyan-400' :
-            c.marketShare > 0 ? 'text-grey-dark dark:text-grey-light' :
+            c.marketShare > 0 ? 'text-grey-dark' :
             'text-grey'
           )}>
             {c.marketShare > 0 ? `${c.marketShare}%` : '—'}
@@ -429,7 +429,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
           <div className="flex items-center gap-2">
             <span className="font-bold text-sm text-navy">{c.name}</span>
             {c.ticker && (
-              <span className="text-[9px] font-mono text-grey dark:text-grey-light bg-ice-soft dark:bg-navy-deep px-1.5 rounded">
+              <span className="text-[9px] font-mono text-grey bg-ice-soft dark:bg-navy-deep px-1.5 rounded">
                 {c.ticker}
               </span>
             )}

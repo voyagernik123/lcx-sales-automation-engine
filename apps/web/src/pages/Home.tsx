@@ -98,7 +98,7 @@ export function Home() {
       <PageTitle
         className="mb-5"
         icon={<span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: accent }} />}
-        subtitle={`Morning brief — ${today}. Everything below opens in place.`}
+        subtitle={`Desk brief — ${today}`}
         actions={
           <button
             onClick={() => navigate('/select')}

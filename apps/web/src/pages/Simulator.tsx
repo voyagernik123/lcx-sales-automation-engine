@@ -206,7 +206,7 @@ export function Simulator() {
                     </Badge>
                   )}
                 </div>
-                <p className="text-label text-grey-dark dark:text-grey-light mt-1.5 leading-relaxed">{opt.desc}</p>
+                <p className="text-label text-grey-dark mt-1.5 leading-relaxed">{opt.desc}</p>
               </div>
 
               <div className="p-4 flex-1 space-y-3.5">

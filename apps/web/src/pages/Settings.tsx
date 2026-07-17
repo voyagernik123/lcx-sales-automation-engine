@@ -63,7 +63,7 @@ export function Settings() {
               <div key={key} className="flex items-start justify-between gap-4 border border-line rounded-lg p-3 bg-ice-soft/20 dark:bg-navy-deep/10">
                 <div className="space-y-1">
                   <span className="text-xs font-bold text-navy block">{title}</span>
-                  <p className="text-xs text-grey-dark dark:text-grey-light leading-relaxed">{desc}</p>
+                  <p className="text-xs text-grey-dark leading-relaxed">{desc}</p>
                 </div>
                 <button
                   onClick={() => toggleSafeHarbor(key)}

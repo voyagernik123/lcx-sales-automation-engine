@@ -255,7 +255,7 @@ export function Roadmap() {
                       <span className="text-[9px] font-bold truncate max-w-[80%]">{m.name}</span>
                       <span className="text-[9px] font-mono text-grey uppercase tracking-wider">{m.phase.replace('Phase ', 'P')}</span>
                     </div>
-                    <div className="text-[9px] text-grey-dark dark:text-grey-light font-mono truncate leading-none mt-0.5">
+                    <div className="text-[9px] text-grey-dark font-mono truncate leading-none mt-0.5">
                       {m.duration === 0 ? 'Exempt / Immediate' : `M${m.startMonth} - M${m.startMonth + m.duration} (${m.duration}m)`}
                     </div>
                   </button>

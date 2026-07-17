@@ -266,7 +266,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
               T{p.priorityTier}
             </span>
           </div>
-          <p className="text-[9px] text-grey-dark dark:text-grey-light leading-snug mb-2 line-clamp-2">{p.description}</p>
+          <p className="text-[9px] text-grey-dark leading-snug mb-2 line-clamp-2">{p.description}</p>
           <div className="flex items-center gap-2 text-[9px]">
             <span className={clsx('px-1.5 py-0.5 rounded font-mono font-bold', feasibilityColorMap[clarityEnacted ? p.usPostClarity : p.usPreClarity])}>
               {clarityEnacted ? feasibilityLabel[p.usPostClarity] : feasibilityLabel[p.usPreClarity]} (US)

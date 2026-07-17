@@ -34,10 +34,10 @@ function StatCard({ icon: Icon, label, value, hint }: { icon: React.ElementType;
           <div className="rounded-md bg-ice-soft p-2 text-navy dark:bg-ice-soft/10"><Icon size={20} /></div>
           <div>
             <div className="text-2xl font-bold leading-none font-mono">{value}</div>
-            <div className="text-xs text-grey-dark dark:text-grey-light mt-1">{label}</div>
+            <div className="text-xs text-grey-dark mt-1">{label}</div>
           </div>
         </div>
-        {hint && <p className="mt-2 text-xs text-grey dark:text-grey-light/60 leading-tight">{hint}</p>}
+        {hint && <p className="mt-2 text-xs text-grey leading-tight">{hint}</p>}
       </CardBody>
     </Card>
   );

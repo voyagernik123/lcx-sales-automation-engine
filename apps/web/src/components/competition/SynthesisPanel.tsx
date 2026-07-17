@@ -67,7 +67,7 @@ function VulnerabilityCard({ items, stateGaps }: { items: VulnerabilityItem[]; s
             />
             <div>
               <span className="font-bold">{item.competitor}</span>
-              <span className="text-grey-dark dark:text-grey-light"> — {item.issue}</span>
+              <span className="text-grey-dark"> — {item.issue}</span>
             </div>
           </div>
         ))}
@@ -90,7 +90,7 @@ function VulnerabilityCard({ items, stateGaps }: { items: VulnerabilityItem[]; s
                 <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
                   {gap.stateAbbr}
                 </span>
-                <span className="text-grey-dark dark:text-grey-light">{gap.stateName}</span>
+                <span className="text-grey-dark">{gap.stateName}</span>
               </div>
               <div className="flex items-center gap-2 text-right">
                 <span className="text-[9px] text-grey">
@@ -128,7 +128,7 @@ function AsymmetryCard({ advantages }: { advantages: string[] }) {
             <div className="rounded-full bg-cyan-100 dark:bg-cyan-950/40 p-0.5 mt-0.5 shrink-0">
               <ChevronRight size={10} className="text-cyan-600 dark:text-cyan-400" />
             </div>
-            <span className="text-grey-dark dark:text-grey-light">{adv}</span>
+            <span className="text-grey-dark">{adv}</span>
           </div>
         ))}
       </div>
@@ -174,7 +174,7 @@ function WatchlistCard({ items }: { items: WatchItem[] }) {
             </div>
             <div className="flex-1">
               <span className="font-bold text-navy">{item.competitor}</span>
-              <span className="text-grey-dark dark:text-grey-light"> — {item.move}</span>
+              <span className="text-grey-dark"> — {item.move}</span>
               <p className="text-[9px] text-grey mt-1 leading-snug italic">{item.riskStatement}</p>
             </div>
           </div>
@@ -332,7 +332,7 @@ export function SynthesisPanel() {
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-bold text-navy">Threat &amp; Opportunity Synthesis</h2>
-        <p className="text-xs text-grey-dark dark:text-grey-light mt-0.5">
+        <p className="text-xs text-grey-dark mt-0.5">
           Executive-grade strategic assessment. Computed dynamically from competitive intelligence data.
         </p>
       </div>

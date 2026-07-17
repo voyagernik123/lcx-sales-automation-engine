@@ -120,7 +120,7 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
           <h2 className="text-lg font-bold text-navy">
             Strategic Positioning Matrix
           </h2>
-          <p className="text-xs text-grey-dark dark:text-grey-light mt-0.5">
+          <p className="text-xs text-grey-dark mt-0.5">
             Regulatory Coverage Index × Market Volume &amp; Foothold. Click a dot to inspect.
           </p>
         </div>
@@ -299,7 +299,7 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
           return (
             <div key={q} className="flex items-center gap-2 bg-card border border-line rounded px-2.5 py-1.5">
               <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: colors.stroke }} />
-              <span className="text-grey-dark dark:text-grey-light font-semibold">{QUADRANT_LABELS[q]}</span>
+              <span className="text-grey-dark font-semibold">{QUADRANT_LABELS[q]}</span>
               <span className="ml-auto font-mono font-bold text-navy">{count}</span>
             </div>
           );
