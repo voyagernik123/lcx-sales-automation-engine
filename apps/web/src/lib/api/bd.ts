@@ -470,17 +470,25 @@ export interface MapPoint {
   name: string;
   ticker: string | null;
   marketCapUsd: number;
+  volume24hUsd: number | null;
+  priceChange30d: number | null;
+  category: string | null;
   region: string | null;
   listedOnLcx: boolean;
   band: string;
   priorityScore: number;
   propensityScore: number;
+  euScore: number | null;
+  usPreScore: number | null;
+  usPostScore: number | null;
+  recommendedMarket: string | null;
 }
 
-export async function fetchMarketMap(filters?: { band?: string; region?: string }): Promise<MapPoint[]> {
+export async function fetchMarketMap(filters?: { band?: string; region?: string; limit?: number }): Promise<MapPoint[]> {
   const params = new URLSearchParams();
   if (filters?.band) params.set('band', filters.band);
   if (filters?.region) params.set('region', filters.region);
+  params.set('limit', String(filters?.limit ?? 1500));
   const qs = params.toString();
   const res = await request<{ data: MapPoint[] }>(`/v1/analytics/map${qs ? `?${qs}` : ''}`, { auth: true });
   return res.data;

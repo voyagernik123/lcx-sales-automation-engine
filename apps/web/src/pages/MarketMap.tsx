@@ -1,525 +1,268 @@
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ScatterChart as ScatterIcon, RefreshCw, Plus, Minus, AlertTriangle, Star } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { RefreshCw, Crosshair, X } from 'lucide-react';
 import { fetchMarketMap, type MapPoint } from '@/lib/api/bd';
 import { PageTitle, Button } from '@/components/ui';
-import { ChartSkeleton, EmptyState } from '@/components/shared';
-import { FilterChip } from '@/components/market/FilterChip';
-import { findNewIds, formatSince } from '@/components/market/gapMatrix';
-import { useLastVisit, useWatchlist } from '@/components/market/marketMemory';
-import { useInspect, useInspectorStore } from '@/stores';
+import { ChartSkeleton, ErrorNotice } from '@/components/shared';
+import { EntityChip } from '@/components/entity';
+import { useInspect } from '@/stores';
+import { formatMoney } from '@/lib/format';
+import { MarketScatter } from '@/components/market/MarketScatter';
+import { LENSES, getLens, classifyZone, summarize, type ZoneKey } from '@/components/market/marketLenses';
 
+/** Band → fill (var() so SVG re-themes; muted for archive/unscored). */
 const BAND_COLOR: Record<string, string> = {
-  immediate: '#dc2626',
-  high: '#ea580c',
-  nurture: '#0891b2',
-  watch: '#64748b',
-  archive: '#cbd5e1',
-  unscored: '#e2e8f0',
+  immediate: 'var(--chart-1)',
+  high: 'var(--chart-2)',
+  nurture: 'var(--chart-3)',
+  watch: 'var(--chart-5)',
+  archive: 'rgb(var(--grey))',
+  unscored: 'rgb(var(--grey))',
 };
-const BAND_ORDER = ['immediate', 'high', 'nurture', 'watch', 'archive', 'unscored'];
-
-const W = 900;
-const H = 460;
-const PAD = { l: 60, r: 20, t: 20, b: 40 };
-const PLOT = { x: PAD.l, y: PAD.t, w: W - PAD.l - PAD.r, h: H - PAD.t - PAD.b };
-
-// x = log10(mcap) mapped across [4, 11] ($10k … $100B); y = priority 0..60
-const X_MIN = 4;
-const X_MAX = 11;
-const Y_MAX = 60;
-const MIN_K = 0.5;
-const MAX_K = 32;
-
-function xScale(mcap: number): number {
-  const lx = Math.log10(Math.max(1, mcap));
-  return PLOT.x + ((Math.min(X_MAX, Math.max(X_MIN, lx)) - X_MIN) / (X_MAX - X_MIN)) * PLOT.w;
-}
-function yScale(pri: number): number {
-  return H - PAD.b - (Math.min(Y_MAX, pri) / Y_MAX) * PLOT.h;
-}
-
-function fmtMcap(v: number): string {
-  if (v >= 1e9) return `$${(v / 1e9).toFixed(v >= 1e10 ? 0 : 1)}B`;
-  if (v >= 1e6) return `$${(v / 1e6).toFixed(v >= 1e7 ? 0 : 1)}M`;
-  if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}k`;
-  return `$${Math.round(v)}`;
-}
-
-interface Transform {
-  k: number;
-  x: number;
-  y: number;
-}
-const IDENTITY: Transform = { k: 1, x: 0, y: 0 };
+const BAND_ORDER = ['immediate', 'high', 'nurture', 'watch', 'archive'];
+const ZONE_SEQ: ZoneKey[] = ['tr', 'tl', 'br', 'bl'];
 
 export function MarketMap() {
-  const navigate = useNavigate();
-  const clipId = useId();
   const inspect = useInspect();
-  const closeInspector = useInspectorStore((s) => s.close);
-  const { watched, toggleWatch } = useWatchlist();
-  const { prev, commit } = useLastVisit('map');
-  const [points, setPoints] = useState<MapPoint[]>([]);
+  const [points, setPoints] = useState<MapPoint[] | null>(null);
+  const [error, setError] = useState<unknown>(null);
+  const [lensId, setLensId] = useState('opportunity');
   const [region, setRegion] = useState('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [hiddenBands, setHiddenBands] = useState<Set<string>>(new Set());
-  const [hideLcx, setHideLcx] = useState(false);
-  const [watchOnly, setWatchOnly] = useState(false);
-  const [newOnly, setNewOnly] = useState(false);
-  const [transform, setTransform] = useState<Transform>(IDENTITY);
-  const [panning, setPanning] = useState(false);
-  const [hover, setHover] = useState<{ p: MapPoint; x: number; y: number } | null>(null);
+  const [band, setBand] = useState('');
+  const [listedOnly, setListedOnly] = useState<'all' | 'yes' | 'no'>('all');
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const svgRef = useRef<SVGSVGElement>(null);
-  const plotRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{ px: number; py: number; moved: boolean } | null>(null);
-  const suppressClickRef = useRef(false);
-  const hideTimerRef = useRef<number | null>(null);
-
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
-    setLoading(true);
-    setError('');
+    const seq = ++loadSeq.current;
+    setError(null);
     try {
-      const data = await fetchMarketMap({ region: region || undefined });
+      const data = await fetchMarketMap({ region: region || undefined, band: band || undefined });
+      if (seq !== loadSeq.current) return;
       setPoints(data);
-      commit(data.map((p) => p.id));
+      setSelected(new Set());
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load market map');
-    } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setError(err);
     }
-  }, [region, commit]);
+  }, [region, band]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const bandsInData = useMemo(() => {
-    const present = new Set(points.map((p) => p.band));
-    return BAND_ORDER.filter((b) => present.has(b));
-  }, [points]);
+  const lens = getLens(lensId);
 
-  /* screener Δ — map points carry no timestamps, so "new" = entrants
-     (ids never seen on this page before the previous visit's stamp). */
-  const newIds = useMemo(() => findNewIds(points.map((p) => p.id), prev), [points, prev]);
-  const watchingCount = useMemo(() => points.filter((p) => watched.has(p.id)).length, [points, watched]);
+  // Client-side listed filter (server handles band/region).
+  const visible = useMemo(() => {
+    const all = points ?? [];
+    if (listedOnly === 'yes') return all.filter((p) => p.listedOnLcx);
+    if (listedOnly === 'no') return all.filter((p) => !p.listedOnLcx);
+    return all;
+  }, [points, listedOnly]);
 
-  const visible = useMemo(
-    () =>
-      points.filter(
-        (p) =>
-          !hiddenBands.has(p.band) &&
-          !(hideLcx && p.listedOnLcx) &&
-          (!watchOnly || watched.has(p.id)) &&
-          (!newOnly || newIds.has(p.id)),
-      ),
-    [points, hiddenBands, hideLcx, watchOnly, watched, newOnly, newIds],
+  // Stats reflect the selection if one exists, else the whole visible set.
+  const focusSet = useMemo(
+    () => (selected.size > 0 ? visible.filter((p) => selected.has(p.id)) : visible),
+    [visible, selected],
   );
+  const stats = useMemo(() => summarize(lens, focusSet), [lens, focusSet]);
 
-  const plotted = useMemo(
-    () =>
-      visible.map((p) => ({
-        p,
-        cx: xScale(p.marketCapUsd),
-        cy: yScale(p.priorityScore),
-        r: 3 + (p.propensityScore / 100) * 9,
-      })),
-    [visible],
-  );
+  // Ranked list: selection if any, else the target-zone points, best first.
+  const ranked = useMemo(() => {
+    const pool = selected.size > 0 ? focusSet : visible.filter((p) => classifyZone(lens, p) === lens.target);
+    return [...pool]
+      .sort((a, b) => (lens.y.value(b) ?? 0) - (lens.y.value(a) ?? 0) || (lens.x.value(b) ?? 0) - (lens.x.value(a) ?? 0))
+      .slice(0, 12);
+  }, [selected, focusSet, visible, lens]);
 
-  /* ── zoom / pan ── */
-
-  const tx = useCallback((v: number) => transform.x + transform.k * v, [transform]);
-  const ty = useCallback((v: number) => transform.y + transform.k * v, [transform]);
-
-  const zoomBy = useCallback((factor: number) => {
-    setTransform((t) => {
-      const k = Math.min(MAX_K, Math.max(MIN_K, t.k * factor));
-      const f = k / t.k;
-      if (f === 1) return t;
-      const cx = PLOT.x + PLOT.w / 2;
-      const cy = PLOT.y + PLOT.h / 2;
-      return { k, x: cx - (cx - t.x) * f, y: cy - (cy - t.y) * f };
+  const colorFor = useCallback((p: MapPoint) => BAND_COLOR[p.band] ?? BAND_COLOR.unscored, []);
+  const onSelect = useCallback((ids: string[], additive: boolean) => {
+    setSelected((prev) => {
+      const next = additive ? new Set(prev) : new Set<string>();
+      ids.forEach((id) => next.add(id));
+      return next;
     });
   }, []);
 
-  const onPointerDown = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
-    dragRef.current = { px: e.clientX, py: e.clientY, moved: false };
-    setPanning(true);
-  }, []);
-
-  const onPointerMove = useCallback((e: React.PointerEvent<SVGSVGElement>) => {
-    const drag = dragRef.current;
-    const svg = svgRef.current;
-    if (!drag || !svg) return;
-    const dx = e.clientX - drag.px;
-    const dy = e.clientY - drag.py;
-    if (!drag.moved && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
-    drag.moved = true;
-    drag.px = e.clientX;
-    drag.py = e.clientY;
-    const rect = svg.getBoundingClientRect();
-    const sx = W / rect.width;
-    const sy = H / rect.height;
-    setTransform((t) => ({ ...t, x: t.x + dx * sx, y: t.y + dy * sy }));
-  }, []);
-
-  const onPointerUp = useCallback(() => {
-    suppressClickRef.current = dragRef.current?.moved ?? false;
-    dragRef.current = null;
-    setPanning(false);
-  }, []);
-
-  /* the tooltip is interactive (watchlist star), so hide on a short delay
-     and cancel while the pointer is over either the dot or the tooltip */
-  const cancelHide = useCallback(() => {
-    if (hideTimerRef.current != null) {
-      window.clearTimeout(hideTimerRef.current);
-      hideTimerRef.current = null;
-    }
-  }, []);
-
-  const scheduleHide = useCallback(() => {
-    cancelHide();
-    hideTimerRef.current = window.setTimeout(() => setHover(null), 160);
-  }, [cancelHide]);
-
-  useEffect(() => cancelHide, [cancelHide]);
-
-  const setHoverAt = useCallback(
-    (p: MapPoint, e: React.MouseEvent) => {
-      cancelHide();
-      const rect = plotRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      setHover({ p, x: e.clientX - rect.left, y: e.clientY - rect.top });
-    },
-    [cancelHide],
-  );
-
-  /* ── axis ticks under the current transform ── */
-
-  const xTicks = useMemo(() => {
-    const ticks: { x: number; label: string }[] = [];
-    for (let lx = X_MIN; lx <= X_MAX; lx++) {
-      const x = tx(PLOT.x + ((lx - X_MIN) / (X_MAX - X_MIN)) * PLOT.w);
-      if (x < PLOT.x - 1 || x > PLOT.x + PLOT.w + 1) continue;
-      ticks.push({ x, label: lx >= 9 ? `$${10 ** (lx - 9)}B` : lx >= 6 ? `$${10 ** (lx - 6)}M` : `$${10 ** (lx - 3)}k` });
-    }
-    return ticks;
-  }, [tx]);
-
-  const yTicks = useMemo(() => {
-    const step = transform.k >= 4 ? 5 : transform.k >= 2 ? 10 : 20;
-    const ticks: { y: number; label: number }[] = [];
-    for (let v = 0; v <= Y_MAX; v += step) {
-      const y = ty(yScale(v));
-      if (y < PLOT.y - 1 || y > PLOT.y + PLOT.h + 1) continue;
-      ticks.push({ y, label: v });
-    }
-    return ticks;
-  }, [transform.k, ty]);
-
-  const plotWidth = plotRef.current?.clientWidth ?? 640;
-  const tooltipLeft = hover ? Math.max(4, Math.min(hover.x + 14, plotWidth - 235)) : 0;
-  const tooltipTop = hover ? Math.max(4, hover.y + 14) : 0;
-
   return (
-    <div className="mx-auto max-w-5xl space-y-4 p-4">
+    <div className="flex h-[calc(100vh-4.5rem)] flex-col p-5">
       <PageTitle
-        icon={<ScatterIcon size={20} />}
+        className="mb-4"
+        subtitle="The token universe positioned by opportunity, regulatory posture, momentum and scale — brush to select, click to inspect."
         actions={
-          <>
-            <select
-              value={region}
-              onChange={(e) => setRegion(e.target.value)}
-              className="rounded border border-line bg-card px-2 py-1 text-label text-navy"
-            >
-              <option value="">All regions</option>
-              <option value="eu">EU</option>
-              <option value="us">US</option>
-            </select>
-            <Button variant="secondary" size="sm" onClick={() => void load()}>
-              <RefreshCw size={12} /> Refresh
-            </Button>
-          </>
+          <Button variant="secondary" size="xs" onClick={() => void load()}>
+            <RefreshCw size={11} /> Refresh
+          </Button>
         }
       >
         Market Map
       </PageTitle>
 
-      <p className="text-micro text-grey">
-        Each dot is a project: <b>x</b> = market cap (log), <b>y</b> = priority score, <b>size</b> = propensity,{' '}
-        <b>color</b> = band. Top-left = high-priority small caps (the sweet spot). Click a dot to inspect in
-        place; double-click it for the full dossier. Drag to pan, use +/− to zoom, double-click the background
-        to reset. {visible.length} of {points.length} plotted.
-      </p>
+      {error ? (
+        <ErrorNotice error={error} onRetry={() => void load()} />
+      ) : points === null ? (
+        <ChartSkeleton />
+      ) : (
+        <div className="flex min-h-0 flex-1 gap-4">
+          {/* ── Left rail: lens · filters · stats · zones ── */}
+          <aside className="flex w-56 shrink-0 flex-col gap-3 overflow-y-auto lg:w-60">
+            <Panel title="Lens">
+              <div className="grid grid-cols-2 gap-1.5">
+                {LENSES.map((l) => (
+                  <button
+                    key={l.id}
+                    onClick={() => setLensId(l.id)}
+                    className={`rounded-md border px-2 py-1.5 text-left text-micro font-semibold transition-colors ${
+                      l.id === lensId
+                        ? 'border-cyan-500/60 bg-cyan-500/[0.07] text-navy'
+                        : 'border-line text-grey hover:border-grey-light hover:text-navy dark:hover:border-grey'
+                    }`}
+                  >
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-micro leading-relaxed text-grey">{lens.desc}</p>
+            </Panel>
 
-      {/* band visibility chips + LCX toggle */}
-      {points.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {bandsInData.map((b) => (
-            <FilterChip
-              key={b}
-              active={!hiddenBands.has(b)}
-              dotColor={BAND_COLOR[b] ?? '#e2e8f0'}
-              title={`Toggle ${b} band visibility`}
-              onClick={() =>
-                setHiddenBands((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(b)) next.delete(b);
-                  else next.add(b);
-                  return next;
-                })
+            <Panel title="Filters">
+              <div className="space-y-2">
+                <Select
+                  label="Band"
+                  value={band}
+                  onChange={setBand}
+                  options={[['', 'All bands'], ...BAND_ORDER.map((b) => [b, b[0].toUpperCase() + b.slice(1)] as [string, string])]}
+                />
+                <Select label="Region" value={region} onChange={setRegion} options={[['', 'All regions'], ['eu', 'EU'], ['us', 'US']]} />
+                <Select
+                  label="On LCX"
+                  value={listedOnly}
+                  onChange={(v) => setListedOnly(v as typeof listedOnly)}
+                  options={[['all', 'All'], ['yes', 'Listed'], ['no', 'Not listed']]}
+                />
+              </div>
+            </Panel>
+
+            <Panel
+              title={selected.size > 0 ? `Selection · ${selected.size}` : 'Universe'}
+              action={
+                selected.size > 0 ? (
+                  <button onClick={() => setSelected(new Set())} className="flex items-center gap-0.5 text-micro font-semibold text-grey hover:text-navy">
+                    <X size={11} /> clear
+                  </button>
+                ) : undefined
               }
             >
-              {b}
-            </FilterChip>
-          ))}
-          <span className="mx-1 h-4 w-px bg-line" aria-hidden="true" />
-          <FilterChip active={hideLcx} title="Hide projects already listed on LCX" onClick={() => setHideLcx((v) => !v)}>
-            Hide LCX-listed
-          </FilterChip>
-          <FilterChip
-            active={watchOnly}
-            dotColor="#f59e0b"
-            title="Show only watched projects"
-            onClick={() => setWatchOnly((v) => !v)}
-          >
-            Watching ({watchingCount})
-          </FilterChip>
-          {prev && newIds.size > 0 && (
-            <FilterChip
-              active={newOnly}
-              dotColor="#10b981"
-              title="Show only projects that entered the map since your last visit"
-              onClick={() => setNewOnly((v) => !v)}
-            >
-              +{newIds.size} new since {formatSince(prev.ts)}
-            </FilterChip>
-          )}
-        </div>
-      )}
+              <div className="grid grid-cols-2 gap-2">
+                <Stat label="Projects" value={String(stats.count)} />
+                <Stat label="Total mcap" value={formatMoney(stats.totalMcap)} />
+                <Stat label="On LCX" value={String(stats.listed)} />
+                <Stat label="Avg propensity" value={String(stats.avgPropensity)} />
+              </div>
+            </Panel>
 
-      {loading ? (
-        <div className="rounded-lg border border-line/70 bg-card shadow-card p-2">
-          <ChartSkeleton height={380} />
-        </div>
-      ) : error ? (
-        <div className="rounded-lg border border-line/70 bg-card shadow-card">
-          <EmptyState
-            icon={<AlertTriangle size={28} className="text-grey" />}
-            title="Couldn't load the market map"
-            description={error}
-            action={
-              <Button variant="secondary" size="sm" onClick={() => void load()}>
-                Retry
-              </Button>
-            }
-          />
-        </div>
-      ) : points.length === 0 ? (
-        <div className="rounded-lg border border-line/70 bg-card shadow-card">
-          <EmptyState
-            icon={<ScatterIcon size={28} className="text-grey" />}
-            title="No scored projects to plot"
-            description="The map shows projects with a market cap and a priority score. Run scoring or widen the region filter."
-          />
-        </div>
-      ) : (
-        <div className="relative">
-          <div className="overflow-x-auto rounded-lg border border-line/70 bg-card shadow-card p-2">
-            <div ref={plotRef} className="relative" style={{ minWidth: 600 }}>
-              <svg
-                ref={svgRef}
-                viewBox={`0 0 ${W} ${H}`}
-                className={`w-full select-none ${panning ? 'cursor-grabbing' : 'cursor-grab'}`}
-                style={{ touchAction: 'none' }}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerCancel={onPointerUp}
-                onDoubleClick={() => setTransform(IDENTITY)}
-              >
-                <defs>
-                  <clipPath id={clipId}>
-                    <rect x={PLOT.x} y={PLOT.y} width={PLOT.w} height={PLOT.h} />
-                  </clipPath>
-                </defs>
-
-                {/* axes */}
-                <line x1={PLOT.x} y1={H - PAD.b} x2={W - PAD.r} y2={H - PAD.b} stroke="currentColor" strokeOpacity={0.2} />
-                <line x1={PLOT.x} y1={PLOT.y} x2={PLOT.x} y2={H - PAD.b} stroke="currentColor" strokeOpacity={0.2} />
-                {xTicks.map((t) => (
-                  <g key={t.label}>
-                    <line x1={t.x} y1={H - PAD.b} x2={t.x} y2={H - PAD.b + 4} stroke="currentColor" strokeOpacity={0.3} />
-                    <text x={t.x} y={H - PAD.b + 16} textAnchor="middle" fontSize="9" fill="currentColor" fillOpacity={0.5}>
-                      {t.label}
-                    </text>
-                  </g>
-                ))}
-                {yTicks.map((t) => (
-                  <g key={t.label}>
-                    <line x1={PLOT.x - 4} y1={t.y} x2={PLOT.x} y2={t.y} stroke="currentColor" strokeOpacity={0.3} />
-                    <text x={PLOT.x - 8} y={t.y + 3} textAnchor="end" fontSize="9" fill="currentColor" fillOpacity={0.5}>
-                      {t.label}
-                    </text>
-                  </g>
-                ))}
-
-                {/* points (screen-constant radius; positions follow zoom/pan) */}
-                <g clipPath={`url(#${clipId})`}>
-                  {plotted.map(({ p, cx, cy, r }) => (
-                    <circle
-                      key={p.id}
-                      cx={tx(cx)}
-                      cy={ty(cy)}
-                      r={r}
-                      fill={BAND_COLOR[p.band] ?? '#e2e8f0'}
-                      fillOpacity={hover?.p.id === p.id ? 1 : 0.6}
-                      stroke={p.listedOnLcx ? '#059669' : 'none'}
-                      strokeWidth={p.listedOnLcx ? 2 : 0}
-                      className="cursor-pointer"
-                      onMouseEnter={(e) => setHoverAt(p, e)}
-                      onMouseMove={(e) => setHoverAt(p, e)}
-                      onMouseLeave={scheduleHide}
-                      onClick={() => {
-                        if (suppressClickRef.current) {
-                          suppressClickRef.current = false;
-                          return;
-                        }
-                        inspect('project', p.id);
-                      }}
-                      onDoubleClick={(e) => {
-                        // keep the svg's double-click zoom-reset from firing,
-                        // close the drawer (single clicks opened it), go deep
-                        e.stopPropagation();
-                        closeInspector();
-                        navigate(`/bd-pipeline/${p.id}`);
-                      }}
-                    />
-                  ))}
-                  {/* subtle star markers on watched projects */}
-                  {plotted
-                    .filter(({ p }) => watched.has(p.id))
-                    .map(({ p, cx, cy, r }) => (
-                      <text
-                        key={`star-${p.id}`}
-                        x={tx(cx) + r * 0.85 + 2}
-                        y={ty(cy) - r * 0.85}
-                        fontSize="8"
-                        fill="#f59e0b"
-                        textAnchor="middle"
-                        pointerEvents="none"
-                      >
-                        ★
-                      </text>
-                    ))}
-                  {visible.length === 0 && (
-                    <text x={W / 2} y={H / 2} textAnchor="middle" fontSize="12" fill="currentColor" fillOpacity={0.5}>
-                      All points hidden — re-enable a band chip above.
-                    </text>
-                  )}
-                </g>
-              </svg>
-
-              {/* hover tooltip */}
-              {hover && (
-                <div
-                  className="absolute z-10 w-[220px] rounded-md border border-line bg-card p-2 text-label shadow-overlay"
-                  style={{ left: tooltipLeft, top: tooltipTop }}
-                  onMouseEnter={cancelHide}
-                  onMouseLeave={() => {
-                    cancelHide();
-                    setHover(null);
-                  }}
-                >
-                  <div className="flex items-baseline gap-1.5">
-                    <span className="font-bold text-navy">{hover.p.name}</span>
-                    {hover.p.ticker && <span className="font-mono text-micro text-grey">{hover.p.ticker}</span>}
-                    <button
-                      type="button"
-                      onClick={() => toggleWatch(hover.p.id)}
-                      title={watched.has(hover.p.id) ? 'Remove from watchlist' : 'Add to watchlist'}
-                      aria-pressed={watched.has(hover.p.id)}
-                      className={`ml-auto shrink-0 rounded p-0.5 transition-colors ${
-                        watched.has(hover.p.id) ? 'text-amber-500' : 'text-grey/40 hover:text-amber-500'
-                      }`}
-                    >
-                      <Star size={12} fill={watched.has(hover.p.id) ? 'currentColor' : 'none'} />
-                    </button>
+            <Panel title="Quadrants">
+              <div className="space-y-1">
+                {ZONE_SEQ.map((z) => (
+                  <div key={z} className="flex items-center justify-between gap-2 text-micro">
+                    <span className={z === lens.target ? 'font-semibold text-cyan-700 dark:text-cyan-400' : 'text-grey'}>{lens.zones[z]}</span>
+                    <span className="num-tabular font-mono font-semibold text-navy">{stats.zoneCounts[z]}</span>
                   </div>
-                  <div className="mt-1 grid grid-cols-2 gap-x-2 gap-y-0.5 text-grey">
-                    <span>Market cap</span>
-                    <span className="text-right font-semibold text-navy">{fmtMcap(hover.p.marketCapUsd)}</span>
-                    <span>Priority</span>
-                    <span className="text-right font-semibold text-navy">{hover.p.priorityScore}</span>
-                    <span>Propensity</span>
-                    <span className="text-right font-semibold text-navy">{hover.p.propensityScore}</span>
-                    <span>Band</span>
-                    <span className="text-right">
-                      <span
-                        className="inline-flex items-center gap-1 font-semibold text-navy"
-                      >
-                        <span className="h-2 w-2 rounded-full" style={{ background: BAND_COLOR[hover.p.band] ?? '#e2e8f0' }} />
-                        {hover.p.band}
-                      </span>
-                    </span>
-                    {hover.p.listedOnLcx && (
-                      <>
-                        <span>LCX</span>
-                        <span className="text-right font-semibold text-emerald-600 dark:text-emerald-400">listed</span>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
+                ))}
+              </div>
+            </Panel>
+
+            <div className="flex flex-wrap gap-x-3 gap-y-1 px-1 pt-1">
+              {BAND_ORDER.map((b) => (
+                <span key={b} className="flex items-center gap-1 text-[10px] text-grey">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: BAND_COLOR[b] }} />
+                  {b}
+                </span>
+              ))}
+              <span className="flex items-center gap-1 text-[10px] text-grey">
+                <span className="h-2 w-2 rounded-full border-2 border-navy" /> on LCX
+              </span>
             </div>
+          </aside>
+
+          {/* ── Center: the field (the hero — always gets the space) ── */}
+          <div className="min-w-[340px] flex-1 rounded-lg border border-line/80 bg-card p-2 shadow-card">
+            <MarketScatter points={visible} lens={lens} colorFor={colorFor} selectedIds={selected} onSelect={onSelect} onOpen={(p) => inspect('project', p.id)} />
           </div>
 
-          {/* zoom controls */}
-          <div className="absolute right-3 top-3 flex flex-col overflow-hidden rounded-md border border-line bg-card shadow-sm">
-            <button
-              onClick={() => zoomBy(1.5)}
-              title="Zoom in"
-              aria-label="Zoom in"
-              className="p-1.5 text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 transition-colors"
-            >
-              <Plus size={13} />
-            </button>
-            <div className="h-px bg-line" />
-            <button
-              onClick={() => zoomBy(1 / 1.5)}
-              title="Zoom out"
-              aria-label="Zoom out"
-              className="p-1.5 text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 transition-colors"
-            >
-              <Minus size={13} />
-            </button>
-          </div>
+          {/* ── Right rail: ranked list (only when there's room; brushing +
+                quadrant counts cover it on narrow screens) ── */}
+          <aside className="hidden w-64 shrink-0 flex-col rounded-lg border border-line/80 bg-card p-3 shadow-card xl:flex">
+            <div className="mb-2 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
+              <Crosshair size={11} className="text-cyan-500" />
+              {selected.size > 0 ? 'Selected' : lens.zones[lens.target]}
+            </div>
+            {ranked.length === 0 ? (
+              <p className="text-micro italic text-grey">Nothing here — brush a region on the map or adjust filters.</p>
+            ) : (
+              <div className="min-h-0 flex-1 divide-y divide-line/50 overflow-y-auto">
+                {ranked.map((p) => (
+                  <div key={p.id} className="flex items-center gap-2 py-1.5">
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: BAND_COLOR[p.band] }} />
+                    <EntityChip
+                      type="project"
+                      id={p.id}
+                      name={p.name}
+                      meta={p.ticker}
+                      stateLine={`${lens.zones[classifyZone(lens, p) ?? lens.target]} · ${formatMoney(p.marketCapUsd)}`}
+                      className="min-w-0 flex-1 text-label font-semibold"
+                    />
+                    <span className="num-tabular shrink-0 font-mono text-micro text-grey">
+                      {lens.y.value(p) != null ? lens.y.format(lens.y.value(p)!) : '—'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </aside>
         </div>
       )}
-
-      {/* always-visible legend */}
-      <div className="flex flex-wrap items-center gap-3 text-micro text-grey">
-        {BAND_ORDER.filter((b) => b !== 'unscored').map((b) => (
-          <span key={b} className="inline-flex items-center gap-1">
-            <span className="h-2.5 w-2.5 rounded-full" style={{ background: BAND_COLOR[b] }} /> {b}
-          </span>
-        ))}
-        <span className="inline-flex items-center gap-1">
-          <span className="h-2.5 w-2.5 rounded-full border-2 border-emerald-600 dark:border-emerald-400" /> ringed green
-          = listed on LCX
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <Star size={10} className="text-amber-500" fill="currentColor" /> = watching (star in the tooltip to toggle)
-        </span>
-        <span className="inline-flex items-center gap-1">
-          click = inspect · double-click = full dossier
-        </span>
-      </div>
     </div>
   );
 }
+
+function Panel({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="rounded-lg border border-line/80 bg-card p-3 shadow-card">
+      <div className="mb-2 flex items-center justify-between">
+        <h3 className="text-micro font-bold uppercase tracking-wider text-grey">{title}</h3>
+        {action}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-line/60 px-2 py-1.5">
+      <div className="num-tabular font-mono text-sm font-semibold text-navy">{value}</div>
+      <div className="text-[10px] text-grey">{label}</div>
+    </div>
+  );
+}
+
+function Select({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: [string, string][] }) {
+  return (
+    <label className="flex items-center justify-between gap-2 text-micro text-grey">
+      {label}
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="rounded border border-line bg-page px-1.5 py-1 text-micro text-navy outline-none focus:border-cyan-500"
+      >
+        {options.map(([v, l]) => (
+          <option key={v} value={v}>
+            {l}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+export default MarketMap;

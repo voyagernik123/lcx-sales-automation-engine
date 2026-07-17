@@ -108,24 +108,34 @@ analyticsRoutes.get('/map', requireOperator, async (c) => {
 
   try {
     const result = await db.execute(sql`
-      SELECT p.id, p.name, p.ticker, p.market_cap_usd, p.region, p.listed_on_lcx,
-             s.band, s.priority_score, s.propensity_score
+      SELECT p.id, p.name, p.ticker, p.market_cap_usd, p.volume_24h_usd,
+             p.price_change_30d, p.category, p.region, p.listed_on_lcx,
+             s.band, s.priority_score, s.propensity_score,
+             s.eu_score, s.us_pre_score, s.us_post_score, s.recommended_market
       FROM projects p JOIN scores s ON s.project_id = p.id
       WHERE ${sql.join(conditions, sql` AND `)}
       ORDER BY s.priority_score DESC
       LIMIT ${limit}
     `);
+    const num = (v: unknown): number | null => (v == null ? null : Number(v));
     return c.json({
       data: (result.rows ?? []).map((r: Record<string, unknown>) => ({
         id: r.id,
         name: r.name,
         ticker: r.ticker,
         marketCapUsd: Number(r.market_cap_usd),
+        volume24hUsd: num(r.volume_24h_usd),
+        priceChange30d: num(r.price_change_30d),
+        category: r.category ?? null,
         region: r.region ?? null,
         listedOnLcx: r.listed_on_lcx,
         band: r.band,
         priorityScore: Number(r.priority_score ?? 0),
         propensityScore: Number(r.propensity_score ?? 0),
+        euScore: num(r.eu_score),
+        usPreScore: num(r.us_pre_score),
+        usPostScore: num(r.us_post_score),
+        recommendedMarket: r.recommended_market ?? null,
       })),
       meta: meta(),
     });
