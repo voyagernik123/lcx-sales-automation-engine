@@ -1,9 +1,11 @@
 import { useNavigate } from 'react-router-dom';
 import { MessageSquare } from 'lucide-react';
 import { computeReplySla, SLA_CLS, type ReplySla } from '@/lib/salesIntel';
+import { slaLineage } from '@/lib/lineage';
 import { useInspect } from '@/stores';
 import { EmptyState } from '@/components/shared';
 import { EntityChip } from '@/components/entity';
+import { Derived } from '@/components/lineage';
 import type { HandoffRecord } from '@/types/bd';
 
 export interface OvernightHandoffsProps {
@@ -13,15 +15,21 @@ export interface OvernightHandoffsProps {
 
 const SLA_RANK: Record<ReplySla['state'], number> = { breached: 3, urgent: 2, aging: 1, fresh: 0 };
 
-export function SlaChip({ sla }: { sla: ReplySla }) {
-  return (
+export function SlaChip({ sla, createdAt }: { sla: ReplySla; createdAt?: string }) {
+  const chip = (
     <span
       className={`inline-flex items-center gap-1 rounded-md border border-line px-1.5 py-0.5 font-mono text-micro font-bold ${SLA_CLS[sla.state]}`}
-      title={`Reply SLA: ${Math.round(sla.ageHours * 10) / 10}h of a ${sla.budgetHours}h budget`}
+      title={createdAt ? undefined : `Reply SLA: ${Math.round(sla.ageHours * 10) / 10}h of a ${sla.budgetHours}h budget`}
     >
       <span className="uppercase">{sla.state}</span>
       {Math.floor(sla.ageHours)}h
     </span>
+  );
+  if (!createdAt) return chip;
+  return (
+    <Derived align="right" lineage={slaLineage(sla, createdAt)}>
+      {chip}
+    </Derived>
   );
 }
 
@@ -81,7 +89,7 @@ export function OvernightHandoffs({ handoffs, max = 6 }: OvernightHandoffsProps)
               </span>
             )}
           </div>
-          <SlaChip sla={sla} />
+          <SlaChip sla={sla} createdAt={h.createdAt} />
         </button>
       ))}
       {handoffs.length > max && (

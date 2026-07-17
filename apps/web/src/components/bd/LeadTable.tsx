@@ -4,8 +4,10 @@ import { ArrowUpDown, Eye, Moon, X } from 'lucide-react';
 import type { BdLead, BdFilters, RecommendedMarket } from '@/types/bd';
 import { deriveMarketTag, deriveNextAction, deriveStage, MARKET_RECOMMENDATION_LABELS } from '@/types/bd';
 import { computeReplySla, SLA_CLS } from '@/lib/salesIntel';
+import { marketRecLineage, priorityLineage } from '@/lib/lineage';
 import { formatAgeHours, formatWakeDate } from '@/components/queue/logic';
 import { EntityChip } from '@/components/entity';
+import { Derived } from '@/components/lineage';
 import { ScoreBadge, BandBadge } from './ScoreBadge';
 import { MarketTag } from './MarketTag';
 
@@ -194,13 +196,21 @@ export function LeadTable({
                   </div>
                 </td>
                 <td className="py-2 px-3 text-right">
-                  <span
-                    className="inline-flex items-center justify-end gap-1.5"
-                    title={`Propensity ${lead.propensityScore ?? '—'}/100 × eligibility gate = priority ${lead.priorityScore ?? '—'}. Market data ${lead.lastEnrichedAt ? `refreshed ${new Date(lead.lastEnrichedAt).toLocaleDateString()}` : 'not yet enriched'}.`}
-                  >
-                    <span className="num-tabular font-mono text-xs font-semibold text-navy">
-                      {lead.priorityScore ?? '—'}
-                    </span>
+                  <span className="inline-flex items-center justify-end gap-1.5">
+                    <Derived
+                      align="right"
+                      lineage={priorityLineage({
+                        propensityScore: lead.propensityScore,
+                        priorityScore: lead.priorityScore,
+                        euScore: lead.euScore ?? undefined,
+                        usScore: (clarityEnacted ? lead.usPostScore : lead.usPreScore) ?? undefined,
+                        lastEnrichedAt: lead.lastEnrichedAt,
+                      })}
+                    >
+                      <span className="num-tabular font-mono text-xs font-semibold text-navy">
+                        {lead.priorityScore ?? '—'}
+                      </span>
+                    </Derived>
                     <span
                       className={clsx(
                         'h-1.5 w-1.5 rounded-full shrink-0',
@@ -225,7 +235,17 @@ export function LeadTable({
                   </span>
                 </td>
                 <td className="py-2 px-3">
-                  <MarketTag market={deriveMarketTag(lead)} />
+                  <Derived
+                    align="right"
+                    lineage={marketRecLineage({
+                      euScore: lead.euScore ?? undefined,
+                      usPreScore: lead.usPreScore ?? undefined,
+                      usPostScore: lead.usPostScore ?? undefined,
+                      clarityEnacted,
+                    })}
+                  >
+                    <MarketTag market={deriveMarketTag(lead)} />
+                  </Derived>
                 </td>
                 <td className="py-2 px-3">
                   <BandBadge band={lead.band} />

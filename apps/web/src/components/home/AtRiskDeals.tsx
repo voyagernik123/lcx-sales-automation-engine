@@ -1,6 +1,8 @@
 import { useInspect } from '@/stores';
 import { EmptyState } from '@/components/shared';
 import { EntityChip } from '@/components/entity';
+import { Derived } from '@/components/lineage';
+import { momentumLineage } from '@/lib/lineage';
 import { MOMENTUM_GLYPH, type DealHealth } from '@/lib/salesIntel';
 import type { BoardDeal } from '@/lib/api/bd';
 
@@ -68,7 +70,9 @@ export function AtRiskDeals({ deals, health, max = 3 }: AtRiskDealsProps) {
                 className="text-label font-bold"
               />
               <span className="num-tabular flex shrink-0 items-center gap-2 font-mono text-micro text-grey">
-                <span className={glyph.cls} title={h.momentumDetail}>{glyph.glyph}</span>
+                <Derived align="right" lineage={momentumLineage(h.momentum, h.momentumDetail)}>
+                  <span className={glyph.cls}>{glyph.glyph}</span>
+                </Derived>
                 {fmtValue(d.packageValue)}
               </span>
             </div>

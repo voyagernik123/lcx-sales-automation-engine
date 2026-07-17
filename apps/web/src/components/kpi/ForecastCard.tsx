@@ -1,4 +1,6 @@
 import { BarChartH, ChartCard } from '@/components/charts';
+import { Derived } from '@/components/lineage';
+import { forecastLineage } from '@/lib/lineage';
 import type { ForecastData } from '@/lib/api/kpi';
 
 const fmtUsd = (v: number) => `$${Math.round(v).toLocaleString()}`;
@@ -21,7 +23,15 @@ export function ForecastCard({ forecast }: { forecast: ForecastData }) {
         {bands.map((b) => (
           <div key={b.label} className="rounded-lg border border-line/70 p-2.5 text-center">
             <div className="text-micro font-medium uppercase tracking-wide text-grey">{b.label}</div>
-            <div className="num-tabular mt-0.5 text-base font-semibold text-navy">{fmtUsd(b.value)}</div>
+            <div className="num-tabular mt-0.5 text-base font-semibold text-navy">
+              {b.label === 'Expected' ? (
+                <Derived align="right" lineage={forecastLineage(forecast)}>
+                  {fmtUsd(b.value)}
+                </Derived>
+              ) : (
+                fmtUsd(b.value)
+              )}
+            </div>
           </div>
         ))}
       </div>

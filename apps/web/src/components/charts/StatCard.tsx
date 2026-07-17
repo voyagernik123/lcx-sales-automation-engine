@@ -5,8 +5,8 @@ import { TrendDelta } from './TrendDelta';
 export interface StatCardProps {
   /** Sentence case, no trailing colon. */
   label: string;
-  /** Already formatted for display. */
-  value: string;
+  /** Already formatted for display; pass a <Derived> wrapper for lineage. */
+  value: React.ReactNode;
   /** Percent change; renders a TrendDelta chip. */
   delta?: number;
   /** e.g. "vs last week" */

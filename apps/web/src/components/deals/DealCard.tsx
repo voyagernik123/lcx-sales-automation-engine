@@ -125,7 +125,7 @@ export function DealCard({
             type="button"
             onClick={why}
             title={`Likelihood: ${ordinal(health.likelihood.percentile)} percentile of the open pipeline (${health.likelihood.band}). Click for the signal trail.`}
-            className="num-tabular inline-flex items-center gap-1 rounded-full border border-line/70 px-1.5 py-0.5 text-[9px] font-semibold text-navy transition-colors hover:border-grey-light hover:bg-ice-soft/50 dark:hover:border-grey dark:hover:bg-ice-soft/10"
+            className="num-tabular derived inline-flex items-center gap-1 rounded-full border border-line/70 px-1.5 py-0.5 text-[9px] font-semibold text-navy transition-colors hover:border-grey-light hover:bg-ice-soft/50 dark:hover:border-grey dark:hover:bg-ice-soft/10"
           >
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${BAND_DOT[health.likelihood.band]}`} aria-hidden="true" />
             {ordinal(health.likelihood.percentile)}

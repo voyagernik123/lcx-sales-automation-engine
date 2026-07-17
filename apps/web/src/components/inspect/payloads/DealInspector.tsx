@@ -6,6 +6,8 @@ import { fetchDealBoard, fetchDealEvents, type BoardDeal } from '@/lib/api/bd';
 import { fetchDealPlaybook, saveDealPlaybook, type DealPlaybookState, type PlaybookKey } from '@/lib/api/deals100x';
 import { fetchForecast } from '@/lib/api/kpi';
 import type { DealEvent } from '@/types/bd';
+import { Derived } from '@/components/lineage';
+import { playbookLineage } from '@/lib/lineage';
 import { RelationRail } from '../RelationRail';
 import {
   computeDealHealthSet,
@@ -189,7 +191,10 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
         <div>
           <SectionHead icon={<TrendingUp size={11} className="text-cyan-500" />}>Likelihood — the why</SectionHead>
           <div className="flex items-center gap-2">
-            <span className={clsx('num-tabular rounded px-1.5 py-0.5 font-mono text-label font-bold', LIKELIHOOD_BAND_CLS[health.likelihood.band])}>
+            <span
+              className={clsx('num-tabular derived rounded px-1.5 py-0.5 font-mono text-label font-bold', LIKELIHOOD_BAND_CLS[health.likelihood.band])}
+              title="Derived value — the signed signals below are its evidence trail"
+            >
               {health.likelihood.percentile}th percentile
             </span>
             <span className="text-micro text-grey">
@@ -283,7 +288,10 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
       {health && !closed && (
         <div>
           <SectionHead icon={<ListChecks size={11} className="text-cyan-500" />}>
-            Listing playbook · {health.playbook.filter(s => s.status === 'done').length}/{health.playbook.length}
+            Listing playbook ·{' '}
+            <Derived lineage={playbookLineage(health.playbook)}>
+              {health.playbook.filter(s => s.status === 'done').length}/{health.playbook.length}
+            </Derived>
           </SectionHead>
           <PlaybookChecklist
             playbook={health.playbook}

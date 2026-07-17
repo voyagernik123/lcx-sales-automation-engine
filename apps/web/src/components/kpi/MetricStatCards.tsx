@@ -1,7 +1,10 @@
 import { StatCard } from '@/components/charts';
+import { Derived } from '@/components/lineage';
 import type { KpiDashboard } from '@/types/kpi';
+import { REVENUE_STREAM_LABELS } from '@/types/kpi';
 import type { KpiSnapshot } from '@/lib/api/bd';
 import { formatMoney } from '@/lib/format';
+import { rateAggregateLineage, sumAggregateLineage } from '@/lib/lineage';
 import { deltaPct, formatRate } from '@/lib/metricPolicy';
 
 interface MetricStatCardsProps {
@@ -57,14 +60,22 @@ export function MetricStatCards({ kpis, snapshots, deltaLabel }: MetricStatCards
       />
       <StatCard
         label="Revenue closed"
-        value={formatMoney(Math.round(totalRevenueCents / 100))}
+        value={
+          <Derived lineage={sumAggregateLineage('Revenue closed', kpis.revenueByStream, REVENUE_STREAM_LABELS)}>
+            {formatMoney(Math.round(totalRevenueCents / 100))}
+          </Derived>
+        }
         delta={revenue.delta}
         deltaLabel={revenue.delta !== undefined ? deltaLabel : undefined}
         trend={revenue.trend}
       />
       <StatCard
         label="Reply rate"
-        value={replyRate.display}
+        value={
+          <Derived align="right" lineage={rateAggregateLineage('Reply rate', kpis.replyRateByChannel)}>
+            {replyRate.display}
+          </Derived>
+        }
         delta={replyRate.suppressed ? undefined : reply.delta}
         deltaLabel={!replyRate.suppressed && reply.delta !== undefined ? deltaLabel : undefined}
         trend={replyRate.suppressed ? undefined : reply.trend}

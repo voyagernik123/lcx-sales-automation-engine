@@ -118,6 +118,19 @@ path.state:hover {
   .num-tabular {
     font-variant-numeric: tabular-nums;
   }
+  /* The lineage affordance (plan 3.3): every derived value wears a dotted
+     underline — clicking it answers "why?". One grammar, everywhere. */
+  .derived {
+    text-decoration-line: underline;
+    text-decoration-style: dotted;
+    text-decoration-thickness: 1px;
+    text-decoration-color: rgb(var(--grey) / 0.55);
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .derived:hover {
+    text-decoration-color: rgb(8 145 178 / 0.9);
+  }
   /* Interactive-card lift: subtle rise + deeper shadow, 150ms. */
   .lift {
     transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
