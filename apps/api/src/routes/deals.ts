@@ -231,32 +231,46 @@ dealRoutes.post('/:id/stage', requireOperator, async (c) => {
     if (newStage === 'won') {
       update.wonAt = new Date();
       update.winReason = body.winReason;
-      // Update project listed_on_lcx for won deals
-      await db.update(schema.projects).set({ listedOnLcx: true, updatedAt: new Date() }).where(sql`${schema.projects.id} = ${deal.projectId}`).execute();
-      // Create 30/60/90 post-listing triggers
-      try {
-        await createPostListingTriggers(id, deal.projectId, new Date());
-      } catch (triggerErr) {
-        console.error('[deals] trigger creation error:', triggerErr);
-      }
-      // Generate the department onboarding checklist (listing launchpad)
-      try {
-        await createLaunchpadTasks(id, deal.projectId);
-      } catch (launchErr) {
-        console.error('[deals] launchpad creation error:', launchErr);
-      }
     }
     if (newStage === 'lost') {
       update.lossReason = body.lossReason;
       update.lossCategory = body.lossCategory ?? null;
     }
 
-    const [updated] = await db.update(schema.deals).set(update).where(sql`${schema.deals.id} = ${id}`).returning().execute();
+    // Core state change is ATOMIC: project flag (won), the deal row, the
+    // stage-change event, and the audit entry commit together or not at all —
+    // no half-closed deal with a missing history/audit record.
+    const [updated] = await db.transaction(async (tx) => {
+      if (newStage === 'won') {
+        await tx.update(schema.projects).set({ listedOnLcx: true, updatedAt: new Date() }).where(sql`${schema.projects.id} = ${deal.projectId}`).execute();
+      }
+      const rows = await tx.update(schema.deals).set(update).where(sql`${schema.deals.id} = ${id}`).returning().execute();
+      await tx.insert(schema.dealEvents).values({
+        id: randomUUID(), dealId: id, eventType: 'stage_change', actor: operator.id,
+        oldStage, newStage, content: `${oldStage} → ${newStage}`,
+      }).execute();
+      await tx.insert(schema.auditLog).values({
+        id: randomUUID(), actor: operator.id, action: 'deal_stage_change', entity: 'deals', entityId: id,
+        meta: { from: oldStage, to: newStage },
+      }).execute();
+      return rows;
+    });
 
-    await db.insert(schema.dealEvents).values({
-      id: randomUUID(), dealId: id, eventType: 'stage_change', actor: operator.id,
-      oldStage, newStage, content: `${oldStage} → ${newStage}`,
-    }).execute();
+    // Best-effort side effects run AFTER the commit — a flaky trigger/notify
+    // must never roll back a legitimate close, and must only fire once the
+    // close is durably persisted.
+    if (newStage === 'won') {
+      try {
+        await createPostListingTriggers(id, deal.projectId, new Date());
+      } catch (triggerErr) {
+        console.error('[deals] trigger creation error:', triggerErr);
+      }
+      try {
+        await createLaunchpadTasks(id, deal.projectId);
+      } catch (launchErr) {
+        console.error('[deals] launchpad creation error:', launchErr);
+      }
+    }
 
     // Auto next-action task for the new stage (idempotent)
     try {
@@ -279,10 +293,7 @@ dealRoutes.post('/:id/stage', requireOperator, async (c) => {
       console.error('[deals] stage notify error:', notifyErr);
     }
 
-    await db.insert(schema.auditLog).values({
-      id: randomUUID(), actor: operator.id, action: 'deal_stage_change', entity: 'deals', entityId: id,
-      meta: { from: oldStage, to: newStage },
-    }).execute();
+    // (audit entry is written inside the transaction above)
 
     return c.json({ data: updated, meta: { timestamp: new Date().toISOString(), version: env.version } });
   } catch (err) {
