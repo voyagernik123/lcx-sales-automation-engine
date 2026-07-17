@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Boxes } from 'lucide-react';
 import { fetchLead } from '@/lib/api/bd';
 import type { LeadPerson } from '@/types/bd';
 import { CardSkeleton, EmptyState } from '@/components/shared';
+import { Button } from '@/components/ui';
 import { useInspectorStore } from '@/stores';
 import { RelationRail } from '../RelationRail';
 import type { InspectorPayloadProps } from './ProjectInspector';
@@ -13,6 +15,8 @@ import type { InspectorPayloadProps } from './ProjectInspector';
  */
 export function ContactInspector({ id }: InspectorPayloadProps) {
   const push = useInspectorStore(s => s.push);
+  const close = useInspectorStore(s => s.close);
+  const navigate = useNavigate();
   const [person, setPerson] = useState<LeadPerson | null>(null);
   const [projectName, setProjectName] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +88,17 @@ export function ContactInspector({ id }: InspectorPayloadProps) {
           </div>
         )}
       </div>
+
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() => {
+          close();
+          navigate(`/contacts/${id}`);
+        }}
+      >
+        Open workspace →
+      </Button>
     </div>
   );
 }

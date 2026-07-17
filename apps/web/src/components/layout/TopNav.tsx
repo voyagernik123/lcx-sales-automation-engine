@@ -49,6 +49,9 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
   const crumbs = pathname
     .split('/')
     .filter(Boolean)
+    // Raw ids (uuids / composite keys) don't belong in a breadcrumb — the
+    // page header names the entity.
+    .filter(p => !/[0-9a-f]{8}-[0-9a-f]{4}/i.test(p))
     .map(p => routeLabels[p] || p.charAt(0).toUpperCase() + p.slice(1));
 
   const [showOperatorMenu, setShowOperatorMenu] = useState(false);

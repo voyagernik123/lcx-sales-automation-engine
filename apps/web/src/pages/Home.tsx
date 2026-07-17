@@ -15,6 +15,7 @@ import {
   type ForecastDelta,
 } from '@/lib/api/loop';
 import { computeDealHealthSet, type DealHealth } from '@/lib/salesIntel';
+import { useLastSeen } from '@/lib/useLastSeen';
 import { StatCard, ChartCard } from '@/components/charts';
 import { CardSkeleton } from '@/components/shared';
 import { PageTitle } from '@/components/ui';
@@ -48,6 +49,7 @@ function greeting(): string {
 export function Home() {
   const operator = useOperatorStore(s => s.operator);
   const navigate = useNavigate();
+  const lastSeen = useLastSeen('home');
 
   const [handoffs, setHandoffs] = useState<HandoffRecord[] | null>(null);
   const [board, setBoard] = useState<BoardDeal[] | null>(null);
@@ -150,11 +152,11 @@ export function Home() {
             title="Overnight & waiting"
             subtitle="Open replies ranked worst SLA first — a breach means automation has been paused for hours"
           >
-            {handoffs === null ? <CardSkeleton count={3} /> : <OvernightHandoffs handoffs={handoffs.filter(h => h.status === 'open' || h.status === 'in_progress')} />}
+            {handoffs === null ? <CardSkeleton count={3} /> : <OvernightHandoffs handoffs={handoffs.filter(h => h.status === 'open' || h.status === 'in_progress')} isNew={lastSeen.isNew} />}
           </ChartCard>
 
           <ChartCard title="At risk" subtitle="Open deals carrying the most health warnings — click through for the full why-trail">
-            {board === null ? <CardSkeleton count={2} /> : <AtRiskDeals deals={board} health={health} />}
+            {board === null ? <CardSkeleton count={2} /> : <AtRiskDeals deals={board} health={health} isNew={lastSeen.isNew} />}
           </ChartCard>
 
           <ChartCard title="Focus suggestion" subtitle="One deal — the most value going quiet">

@@ -36,3 +36,4 @@ export { Integrations } from './Integrations';
 export { BoardReport } from './BoardReport';
 export { MarketNews } from './MarketNews';
 export { ReportBuilder } from './ReportBuilder';
+export { ContactWorkspace } from './ContactWorkspace';

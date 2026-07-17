@@ -28,7 +28,7 @@ describe('object registry', () => {
     }
   });
 
-  it('contact routes derive the project workspace from the composite id', () => {
-    expect(OBJECT_TYPES.contact.route('proj-1:person-2')).toBe('/bd-pipeline/proj-1');
+  it('contact routes to its own workspace with the composite id', () => {
+    expect(OBJECT_TYPES.contact.route('proj-1:person-2')).toBe('/contacts/proj-1:person-2');
   });
 });

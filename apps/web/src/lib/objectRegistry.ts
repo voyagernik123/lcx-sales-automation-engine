@@ -52,7 +52,7 @@ export const OBJECT_TYPES: Record<ObjectType, ObjectTypeDef> = {
     icon: User,
     dotCls: 'bg-violet-500',
     inspector: 'contact', // id is `${projectId}:${personId}`
-    route: id => `/bd-pipeline/${id.split(':')[0]}`,
+    route: id => `/contacts/${id}`,
   },
   deal: {
     label: 'Deal',

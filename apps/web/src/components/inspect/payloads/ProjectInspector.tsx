@@ -8,6 +8,7 @@ import { CardSkeleton, EmptyState } from '@/components/shared';
 import { Button } from '@/components/ui';
 import { BandBadge } from '@/components/bd';
 import { RelationRail } from '../RelationRail';
+import { HistoryStrip } from '../HistoryStrip';
 import { PropensityTrail } from '@/components/bd/PropensityTrail';
 import { UsIntelGauges } from '@/components/bd/UsIntelGauges';
 import { GateBanner, useGateCheck } from '@/components/bd/GateBanner';
@@ -18,15 +19,6 @@ export interface InspectorPayloadProps {
   id: string;
   seed?: Record<string, unknown>;
 }
-
-const TIMELINE_KIND_STYLE: Record<string, string> = {
-  message: 'bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300',
-  handoff: 'bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-300',
-  deal: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
-  signal: 'bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
-  discovery: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-950/40 dark:text-cyan-300',
-  audit: 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300',
-};
 
 function scrollToInDrawer(elementId: string) {
   document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -90,7 +82,6 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
 
   const band: ScoreBand = (lead.score?.band as ScoreBand) ?? 'unscored';
   const verifiedCount = lead.people.filter(p => p.verified).length;
-  const latest = (timeline ?? []).slice(0, 3);
 
   return (
     <div className="space-y-4">
@@ -201,34 +192,13 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
         )}
       </div>
 
-      {/* Latest activity */}
+      {/* Object history — the uniform strip (plan 3.4) */}
       <div id="insp-activity">
-        <div className="mb-1.5 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
-          <Activity size={11} className="text-cyan-500" />
-          Latest activity
-        </div>
-        {timeline === null ? (
-          <p className="text-micro text-grey italic">Loading timeline…</p>
-        ) : latest.length === 0 ? (
-          <p className="text-micro text-grey italic">No activity yet.</p>
-        ) : (
-          <div className="space-y-1.5">
-            {latest.map((e, i) => (
-              <div key={i} className="flex items-start gap-2 text-micro">
-                <span className={`shrink-0 rounded px-1.5 py-0.5 text-[8px] font-bold uppercase ${TIMELINE_KIND_STYLE[e.kind] ?? ''}`}>
-                  {e.kind}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <span className="font-semibold text-navy">{e.title}</span>
-                  {e.detail && <span className="text-grey"> — {e.detail}</span>}
-                </div>
-                <span className="shrink-0 text-[9px] text-grey">
-                  {new Date(e.ts).toLocaleString(undefined, { month: 'short', day: 'numeric' })}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+        <HistoryStrip
+          entries={(timeline ?? []).map(e => ({ ts: e.ts, kind: e.kind, title: e.title, detail: e.detail ?? undefined }))}
+          loading={timeline === null}
+          max={3}
+        />
       </div>
 
       {/* Actions */}

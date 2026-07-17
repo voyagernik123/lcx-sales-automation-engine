@@ -10,6 +10,8 @@ export interface AtRiskDealsProps {
   deals: BoardDeal[];
   health: Map<string, DealHealth>;
   max?: number;
+  /** "Since you were here" watermark test — marks deals touched while away. */
+  isNew?: (ts: string | null | undefined) => boolean;
 }
 
 function fmtValue(cents: number | null): string {
@@ -25,7 +27,7 @@ function fmtValue(cents: number | null): string {
  * stale / ghosted), top N, each opening the deal inspector with the full
  * why-trail. Warning evidence is spelled out inline, never just a count.
  */
-export function AtRiskDeals({ deals, health, max = 3 }: AtRiskDealsProps) {
+export function AtRiskDeals({ deals, health, max = 3, isNew }: AtRiskDealsProps) {
   const inspect = useInspect();
 
   const atRisk = deals
@@ -60,6 +62,12 @@ export function AtRiskDeals({ deals, health, max = 3 }: AtRiskDealsProps) {
             className="w-full cursor-pointer rounded-lg border border-line px-2.5 py-2 text-left transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10"
           >
             <div className="flex items-center justify-between gap-2">
+              {isNew?.(d.updatedAt) && (
+                <span
+                  className="h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-500"
+                  title="Changed since you were last here"
+                />
+              )}
               <EntityChip
                 type="project"
                 id={d.projectId}

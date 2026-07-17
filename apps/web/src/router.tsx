@@ -1,6 +1,6 @@
 import { createBrowserRouter } from 'react-router-dom';
 import { AppLayout } from '@/components/layout';
-import { Dashboard, Home, SelectOperator, OntologyExplorer, StateMap, ProductMatrix, Simulator, Settings, HoweyCalculator, ScenarioPlanner, ReadinessStack, BriefGenerator, CapitalEstimator, Roadmap, RedFlags, CompetitionAnalysis, ProductIntelligence, BdPipeline, LeadDetail, ClaimLibrary, Handoffs, SendQueue, ExchangeGaps, DealBoard, MyTasks, MarketMap, Customer360, Notes, WinLoss, AiTools, OutreachOps, DealDesk, Integrations, BoardReport, MarketNews, ReportBuilder, KpiDashboard, AuditLog } from '@/pages';
+import { Dashboard, Home, SelectOperator, OntologyExplorer, StateMap, ProductMatrix, Simulator, Settings, HoweyCalculator, ScenarioPlanner, ReadinessStack, BriefGenerator, CapitalEstimator, Roadmap, RedFlags, CompetitionAnalysis, ProductIntelligence, BdPipeline, LeadDetail, ContactWorkspace, ClaimLibrary, Handoffs, SendQueue, ExchangeGaps, DealBoard, MyTasks, MarketMap, Customer360, Notes, WinLoss, AiTools, OutreachOps, DealDesk, Integrations, BoardReport, MarketNews, ReportBuilder, KpiDashboard, AuditLog } from '@/pages';
 
 export const router = createBrowserRouter([
   { path: '/select', element: <SelectOperator /> },
@@ -26,6 +26,7 @@ export const router = createBrowserRouter([
       { path: 'product-intel', element: <ProductIntelligence /> },
       { path: 'bd-pipeline', element: <BdPipeline /> },
       { path: 'bd-pipeline/:id', element: <LeadDetail /> },
+      { path: 'contacts/:id', element: <ContactWorkspace /> },
       { path: 'claim-library', element: <ClaimLibrary /> },
       { path: 'outreach', element: <Handoffs /> },
       { path: 'send-queue', element: <SendQueue /> },

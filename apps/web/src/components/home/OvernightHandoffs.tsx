@@ -11,6 +11,8 @@ import type { HandoffRecord } from '@/types/bd';
 export interface OvernightHandoffsProps {
   handoffs: HandoffRecord[];
   max?: number;
+  /** "Since you were here" watermark test — marks rows that arrived while away. */
+  isNew?: (ts: string | null | undefined) => boolean;
 }
 
 const SLA_RANK: Record<ReplySla['state'], number> = { breached: 3, urgent: 2, aging: 1, fresh: 0 };
@@ -37,7 +39,7 @@ export function SlaChip({ sla, createdAt }: { sla: ReplySla; createdAt?: string 
  * "Overnight & waiting" — open handoffs ranked worst-SLA-first. Every row
  * opens the handoff inspector in place; the header link goes to the inbox.
  */
-export function OvernightHandoffs({ handoffs, max = 6 }: OvernightHandoffsProps) {
+export function OvernightHandoffs({ handoffs, max = 6, isNew }: OvernightHandoffsProps) {
   const inspect = useInspect();
   const navigate = useNavigate();
 
@@ -66,6 +68,12 @@ export function OvernightHandoffs({ handoffs, max = 6 }: OvernightHandoffsProps)
           className="flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-line px-2.5 py-2 text-left transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10"
         >
           <div className="flex min-w-0 items-center gap-2">
+            {isNew?.(h.createdAt) && (
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full bg-cyan-500"
+                title="Arrived since you were last here"
+              />
+            )}
             <MessageSquare size={12} className="shrink-0 text-grey" />
             <EntityChip
               type="project"
