@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Activity, Boxes, FileText, FolderOpen, KanbanSquare, ListChecks, ShieldAlert, TrendingUp } from 'lucide-react';
 import { clsx } from 'clsx';
-import { fetchDealBoard, fetchDealEvents, type BoardDeal } from '@/lib/api/bd';
+import { fetchDealBoard, fetchDealEvents, updateDeal, type BoardDeal } from '@/lib/api/bd';
 import { fetchDealPlaybook, saveDealPlaybook, type DealPlaybookState, type PlaybookKey } from '@/lib/api/deals100x';
 import { fetchForecast } from '@/lib/api/kpi';
 import type { DealEvent } from '@/types/bd';
@@ -16,8 +16,8 @@ import {
   type DealHealth,
 } from '@/lib/salesIntel';
 import { useInspectorStore } from '@/stores';
-import { CardSkeleton, EmptyState } from '@/components/shared';
-import { Button } from '@/components/ui';
+import { CardSkeleton, EmptyState, toast } from '@/components/shared';
+import { Button, InlineEdit } from '@/components/ui';
 import { PlaybookChecklist } from '@/components/deals/PlaybookChips';
 import { DealReviewMemo } from '@/components/deals/DealReviewMemo';
 import { ScenarioValue, ScenarioWinProb } from '@/components/deals/ScenarioControls';
@@ -168,7 +168,24 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
         <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-label text-grey">
           <span className="capitalize">{deal.stage.replace(/_/g, ' ')}</span>
           <span>· {packageLabel(deal.packageType)}</span>
-          <ScenarioValue cents={deal.packageValue} className="num-tabular font-semibold text-navy" />
+          <InlineEdit
+            ariaLabel="Package value"
+            type="number"
+            initial={deal.packageValue != null ? String(Math.round(deal.packageValue / 100)) : ''}
+            display={<ScenarioValue cents={deal.packageValue} className="num-tabular font-semibold text-navy" />}
+            onSave={raw => {
+              const usd = Math.max(0, Math.round(Number(raw)));
+              if (!Number.isFinite(usd)) return;
+              const cents = usd * 100;
+              const prev = deal.packageValue;
+              // Optimistic: apply now, roll back with a toast if the write fails.
+              setBoard(b => b.map(x => (x.id === deal.id ? { ...x, packageValue: cents } : x)));
+              updateDeal(deal.id, { packageValue: cents }).catch(err => {
+                setBoard(b => b.map(x => (x.id === deal.id ? { ...x, packageValue: prev } : x)));
+                toast('error', err instanceof Error ? err.message : 'Value update failed — reverted');
+              });
+            }}
+          />
           <span>· updated {relativeTime(deal.updatedAt)}</span>
         </div>
       </div>

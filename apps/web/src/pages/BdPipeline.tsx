@@ -28,37 +28,12 @@ import {
   sortBySlaUrgency,
   type SplitId,
 } from '@/components/queue/logic';
-import { Target, Search, RotateCcw, Moon, Play } from 'lucide-react';
+import { Target, Moon, Play } from 'lucide-react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui';
-import { ConfirmDialog, EmptyState, TableSkeleton, toast } from '@/components/shared';
-import type { ScoreBand } from '@lcx/shared';
+import { ConfirmDialog, EmptyState, TableSkeleton, toast, toastUndo } from '@/components/shared';
+import { FilterTokenBar } from '@/components/bd/FilterTokenBar';
 import type { Market, BdFilters, BdLead } from '@/types/bd';
-
-const MARKET_OPTIONS: { value: Market | 'both' | ''; label: string }[] = [
-  { value: '', label: 'All Markets' },
-  { value: 'eu', label: 'EU' },
-  { value: 'us', label: 'US' },
-  { value: 'both', label: 'EU / US' },
-];
-
-const BAND_OPTIONS: { value: ScoreBand | ''; label: string }[] = [
-  { value: '', label: 'All Bands' },
-  { value: 'immediate', label: 'Immediate' },
-  { value: 'high', label: 'High' },
-  { value: 'nurture', label: 'Nurture' },
-  { value: 'watch', label: 'Watch' },
-  { value: 'archive', label: 'Archive' },
-];
-
-const SOURCE_OPTIONS: { value: string; label: string }[] = [
-  { value: '', label: 'All Sources' },
-  { value: 'esma_main', label: 'ESMA' },
-  { value: 'pipeline', label: 'Pipeline' },
-  { value: 'top100', label: 'Top 100' },
-  { value: 'pre_tge', label: 'Pre-TGE' },
-  { value: 'manual', label: 'Manual' },
-];
 
 /** Neutral filter set for the counted split probes (never the user's filters). */
 const PROBE_FILTERS: BdFilters = {
@@ -306,21 +281,6 @@ export function BdPipeline() {
   );
 
   /* ── Triage actions (shared by table shortcuts and session mode) ── */
-  const doSnooze = useCallback(async (lead: QueueLead, opts: SnoozeOpts): Promise<boolean> => {
-    try {
-      const { snoozeUntil, viaFallback } = await snoozeProject(lead.id, opts);
-      setSnoozeMap(loadSnoozeMap());
-      setLeads(ls => ls.map(l => (l.id === lead.id ? { ...l, snoozedUntil: snoozeUntil } : l)));
-      setFresh(f => (f ? f.filter(l => l.id !== lead.id) : f));
-      setFollowups(f => (f ? { ...f, rows: f.rows.filter(l => l.id !== lead.id) } : f));
-      toast('success', `${lead.name} snoozed — wakes ${formatWakeDate(snoozeUntil)}${viaFallback ? ' (saved locally)' : ''}`);
-      return true;
-    } catch (err) {
-      toast('error', err instanceof Error ? err.message : 'Snooze failed');
-      return false;
-    }
-  }, []);
-
   const doUnsnooze = useCallback(async (id: string) => {
     try {
       await unsnoozeProject(id);
@@ -336,6 +296,26 @@ export function BdPipeline() {
       toast('error', err instanceof Error ? err.message : 'Unsnooze failed');
     }
   }, []);
+
+  const doSnooze = useCallback(async (lead: QueueLead, opts: SnoozeOpts): Promise<boolean> => {
+    try {
+      const { snoozeUntil, viaFallback } = await snoozeProject(lead.id, opts);
+      setSnoozeMap(loadSnoozeMap());
+      setLeads(ls => ls.map(l => (l.id === lead.id ? { ...l, snoozedUntil: snoozeUntil } : l)));
+      setFresh(f => (f ? f.filter(l => l.id !== lead.id) : f));
+      setFollowups(f => (f ? { ...f, rows: f.rows.filter(l => l.id !== lead.id) } : f));
+      // Undo, don't confirm (plan 4.1): the snooze already happened — six
+      // seconds to take it back.
+      toastUndo(`${lead.name} snoozed — wakes ${formatWakeDate(snoozeUntil)}${viaFallback ? ' (saved locally)' : ''}`, () => {
+        void doUnsnooze(lead.id);
+      });
+      return true;
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Snooze failed');
+      return false;
+    }
+  }, [doUnsnooze]);
+
 
   const doDisqualify = useCallback(async (lead: QueueLead, reason: string): Promise<boolean> => {
     try {
@@ -517,106 +497,17 @@ export function BdPipeline() {
       {/* SPLIT TABS */}
       <SplitTabs active={activeSplit} counts={counts} onSelect={setSplit} />
 
-      {/* FILTERS — the working set keeps the full filter grammar */}
+      {/* FILTERS — one token bar; every condition is a removable chip (plan 4.2) */}
       {activeSplit === 'working' ? (
-        <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-line bg-card flex-wrap">
-          <div className="relative">
-            <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-grey pointer-events-none" />
-            <input
-              type="text"
-              value={search}
-              onChange={handleSearchChange}
-              placeholder="Search name / ticker..."
-              className="w-44 rounded border border-line bg-ice-soft dark:bg-navy-deep px-7 py-1 text-xs outline-none focus:border-cyan-500 transition-colors"
-            />
-          </div>
-
-          <select
-            value={market ?? ''}
-            onChange={(e) => setFilter('market', (e.target.value || null) as Market | 'both' | null)}
-            className="rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 py-1 text-xs outline-none focus:border-cyan-500 transition-colors"
-          >
-            {MARKET_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-
-          <select
-            value={band}
-            onChange={(e) => setFilter('band', e.target.value as ScoreBand | '')}
-            className="rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 py-1 text-xs outline-none focus:border-cyan-500 transition-colors"
-          >
-            {BAND_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-
-          <select
-            value={source}
-            onChange={(e) => setFilter('source', e.target.value)}
-            className="rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 py-1 text-xs outline-none focus:border-cyan-500 transition-colors"
-          >
-            {SOURCE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-
-          <label className="flex items-center gap-1.5 text-micro text-grey cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={listedOnLcx === true}
-              onChange={(e) => setFilter('listedOnLcx', e.target.checked ? true : null)}
-              className="rounded border-line"
-            />
-            Listed on LCX
-          </label>
-
-          <label className="flex items-center gap-1.5 text-micro text-grey cursor-pointer select-none">
-            <input
-              type="checkbox"
-              checked={hasContact === true}
-              onChange={(e) => setFilter('hasContact', e.target.checked ? true : null)}
-              className="rounded border-line"
-            />
-            Has Verified Contact
-          </label>
-
-          <select
-            value={marketRecommendation}
-            onChange={(e) => setFilter('marketRecommendation', e.target.value as BdFilters['marketRecommendation'])}
-            className="rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 py-1 text-xs outline-none focus:border-cyan-500 transition-colors"
-          >
-            <option value="">All Recommendations</option>
-            <option value="eu_first">EU First</option>
-            <option value="us_first">US First</option>
-            <option value="dual">Dual</option>
-            <option value="none">Unclear</option>
-          </select>
-
-          <div className="flex items-center gap-1.5 text-micro text-grey">
-            <span>Min score:</span>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={minScore}
-              onChange={(e) => setFilter('minScore', Math.max(0, Math.min(100, Number(e.target.value) || 0)))}
-              className="w-14 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 py-1 text-xs outline-none focus:border-cyan-500 transition-colors"
-            />
-          </div>
-
-          {hasActiveFilters && (
-            <button
-              onClick={resetFilters}
-              className="flex items-center gap-1 text-micro font-bold text-red-500 hover:text-red-600 transition-colors"
-            >
-              <RotateCcw size={11} />
-              Clear
-            </button>
-          )}
-
-          <div className="ml-auto flex items-center gap-3">
-            {(workingSnoozed.length > 0 || showSnoozed) && (
+        <FilterTokenBar
+          filters={{ market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search }}
+          search={search}
+          onSearchChange={handleSearchChange}
+          onPatch={setFilters}
+          onReset={resetFilters}
+          hasActiveFilters={Boolean(hasActiveFilters)}
+          trailing={
+            (workingSnoozed.length > 0 || showSnoozed) ? (
               <button
                 onClick={() => setShowSnoozed(!showSnoozed)}
                 className={clsx(
@@ -627,9 +518,9 @@ export function BdPipeline() {
               >
                 <Moon size={11} /> {workingSnoozed.length} snoozed
               </button>
-            )}
-          </div>
-        </div>
+            ) : undefined
+          }
+        />
       ) : (
         <div className="shrink-0 flex items-center gap-2 px-4 py-1.5 border-b border-line bg-card">
           <span className="text-micro text-grey">{SPLIT_HINTS[activeSplit]}</span>

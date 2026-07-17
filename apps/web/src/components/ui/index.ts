@@ -14,3 +14,4 @@ export { CustomOntologyNode } from './CustomOntologyNode';
 
 
 
+export { InlineEdit } from './InlineEdit';

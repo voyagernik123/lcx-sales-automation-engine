@@ -4,16 +4,23 @@ import { clsx } from 'clsx';
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info';
 
+export interface ToastAction {
+  label: string;
+  onAction: () => void;
+}
+
 export interface Toast {
   id: string;
   type: ToastType;
   message: string;
   duration?: number;
+  /** Undo-style affordance (plan 4.1 rule 4: undo, don't confirm). */
+  action?: ToastAction;
 }
 
 interface ToastStore {
   toasts: Toast[];
-  addToast: (type: ToastType, message: string, duration?: number) => void;
+  addToast: (type: ToastType, message: string, duration?: number, action?: ToastAction) => void;
   removeToast: (id: string) => void;
 }
 
@@ -44,9 +51,9 @@ const toastConfig: Record<ToastType, { icon: typeof CheckCircle; containerClass:
 
 export const useToastStore = create<ToastStore>(set => ({
   toasts: [],
-  addToast: (type, message, duration = 4000) => {
+  addToast: (type, message, duration = 4000, action) => {
     const id = `toast-${++toastCounter}-${Date.now()}`;
-    set(s => ({ toasts: [...s.toasts, { id, type, message, duration }] }));
+    set(s => ({ toasts: [...s.toasts, { id, type, message, duration, action }] }));
     if (duration > 0) {
       setTimeout(() => {
         set(s => ({ toasts: s.toasts.filter(t => t.id !== id) }));
@@ -58,6 +65,14 @@ export const useToastStore = create<ToastStore>(set => ({
 
 export function toast(type: ToastType, message: string, duration?: number) {
   useToastStore.getState().addToast(type, message, duration);
+}
+
+/**
+ * The undo pattern: the action already happened; this is the 6-second
+ * window to take it back. Never a confirmation dialog for reversible work.
+ */
+export function toastUndo(message: string, onUndo: () => void, duration = 6000) {
+  useToastStore.getState().addToast('success', message, duration, { label: 'Undo', onAction: onUndo });
 }
 
 export function ToastContainer() {
@@ -81,6 +96,17 @@ export function ToastContainer() {
           >
             <Icon size={16} className={clsx('shrink-0 mt-0.5', config.iconClass)} />
             <p className="text-xs font-medium text-navy leading-relaxed flex-1">{t.message}</p>
+            {t.action && (
+              <button
+                onClick={() => {
+                  t.action?.onAction();
+                  removeToast(t.id);
+                }}
+                className="shrink-0 self-center rounded-md border border-line bg-card px-2 py-1 text-micro font-bold text-navy transition-colors hover:border-cyan-500/60 hover:text-cyan-700 dark:hover:text-cyan-400"
+              >
+                {t.action.label}
+              </button>
+            )}
             <button
               onClick={() => removeToast(t.id)}
               className="absolute top-2 right-2 p-0.5 rounded text-grey hover:text-navy transition-colors"
