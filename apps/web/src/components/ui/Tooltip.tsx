@@ -9,7 +9,7 @@ export function Tooltip({ content, position = 'top', children, className }: Tool
   return (
     <div className="relative inline-block">
       <div tabIndex={0} role="button" aria-describedby="tooltip" onMouseEnter={() => setVisible(true)} onMouseLeave={() => setVisible(false)} onFocus={() => setVisible(true)} onBlur={() => setVisible(false)} onKeyDown={(e) => { if (e.key === 'Escape') setVisible(false); }}>{children}</div>
-      {visible && <div id="tooltip" role="tooltip" className={clsx('absolute z-50 rounded-md bg-navy-deep px-2 py-1 text-xs text-ice shadow-lg pointer-events-none', posClasses[position], className)}>{content}</div>}
+      {visible && <div id="tooltip" role="tooltip" className={clsx('absolute z-50 rounded-md bg-navy-deep px-2 py-1 text-xs text-slate-100 shadow-lg pointer-events-none', posClasses[position], className)}>{content}</div>}
     </div>
   );
 }

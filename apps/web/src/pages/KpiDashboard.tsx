@@ -8,7 +8,7 @@ import type { KpiDashboard as KpiData, PostListingTrigger } from '@/types/kpi';
 import { REVENUE_STREAM_LABELS } from '@/types/kpi';
 import { ChartCard, ColumnChart, DonutChart } from '@/components/charts';
 import { formatRate } from '@/lib/metricPolicy';
-import { ChartSkeleton, EmptyState, PageSkeleton, toast } from '@/components/shared';
+import { ChartSkeleton, ErrorNotice, PageSkeleton, toast } from '@/components/shared';
 import { Button } from '@/components/ui';
 import { MetricStatCards } from '@/components/kpi/MetricStatCards';
 import { FunnelSection } from '@/components/kpi/FunnelSection';
@@ -125,16 +125,7 @@ export function KpiDashboard() {
   if ((error && !kpis) || !kpis) {
     return (
       <div className="flex h-[calc(100vh-6.5rem)] items-center justify-center">
-        <EmptyState
-          icon={<BarChart3 size={28} className="text-grey" />}
-          title="Couldn't load KPIs"
-          description={error ?? 'No KPI data returned'}
-          action={
-            <Button variant="secondary" size="sm" onClick={() => void load()}>
-              Retry
-            </Button>
-          }
-        />
+        <ErrorNotice error={error ?? new Error('No KPI data returned')} onRetry={() => void load()} />
       </div>
     );
   }

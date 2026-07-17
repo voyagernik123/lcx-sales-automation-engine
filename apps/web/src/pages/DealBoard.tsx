@@ -7,7 +7,8 @@ import { loadDealContexts, saveDealPlaybook, type LoadedDealContext, type Playbo
 import { computeDealHealthSet, computePipelinePulse, type WarningCode } from '@/lib/salesIntel';
 import { useInspect } from '@/stores';
 import { toast } from '@/components/shared/Toast';
-import { CardSkeleton } from '@/components/shared';
+import { CardSkeleton, ErrorNotice } from '@/components/shared';
+import { classifyError } from '@/lib/errors';
 import { PageTitle, Button } from '@/components/ui';
 import { DealCard } from '@/components/deals/DealCard';
 import { PipelinePulseHeader } from '@/components/deals/PipelinePulseHeader';
@@ -165,7 +166,8 @@ export function DealBoard() {
       await transitionDealStage(deal.id, body);
       toast('success', `Deal advanced to ${STAGE_LABELS[target]} — ${deal.projectName}`);
     } catch (err) {
-      toast('error', err instanceof Error ? err.message : 'Transition failed');
+      const c = classifyError(err);
+      toast('error', `${c.title} — ${c.message}`);
     } finally {
       void load();
     }
@@ -207,11 +209,7 @@ export function DealBoard() {
         Deal Board
       </PageTitle>
 
-      {error && (
-        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-label text-red-600 dark:text-red-400">
-          {error}
-        </div>
-      )}
+      {error && <ErrorNotice compact error={error} onRetry={() => void load()} />}
 
       {!loading && deals.length > 0 && (
         <PipelinePulseHeader pulse={pulse} activeWarning={warningFilter} onToggleWarning={toggleWarningFilter} />

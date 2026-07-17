@@ -9,3 +9,4 @@ export { CommandPalette, useCommandPalette } from './CommandPalette';
 export { EmptyState } from './EmptyState';
 export { TableSkeleton, CardSkeleton, ChartSkeleton, PageSkeleton } from './LoadingSkeleton';
 export type { TableSkeletonProps, CardSkeletonProps, ChartSkeletonProps } from './LoadingSkeleton';
+export { ErrorNotice } from './ErrorNotice';

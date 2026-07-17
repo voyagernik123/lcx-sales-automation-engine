@@ -19,17 +19,24 @@
   --indigo: 79 70 229;        /* #4f46e5 — kept for pre-launch phase coloring */
 }
 
+/* Dark is a DESIGNED PARALLEL PALETTE (plan 4.2), not an inversion of light.
+   Surface steps, deepest → highest:
+     canvas (--page-bg) → surface (--card) → raised (--ice-soft) →
+     inverse-surface (--ice, primary-button fill) — each step visibly distinct.
+   Text roles: --navy primary · --grey-dark emphasized · --grey secondary.
+   The old value-swap trick (--navy↔--ice, --grey-light↔--grey-dark) is gone;
+   a guard test (darkPalette.test.ts) keeps the old dark:* overrides extinct. */
 .dark {
-  --navy: 202 220 252;        /* #CADCFC */
-  --navy-deep: 9 14 36;       /* #090e24 */
-  --ice: 20 26 69;            /* #141a45 */
-  --ice-soft: 30 39 97;       /* #1E2761 — softened */
-  --grey: 155 165 185;        /* #9ba5b9 */
-  --grey-light: 51 57 72;     /* #333948 */
-  --grey-dark: 202 220 252;   /* #CADCFC */
-  --line: 30 39 97;           /* #1E2761 */
-  --card: 20 26 69;           /* #141a45 */
-  --page-bg: 9 14 36;         /* #090e24 */
+  --navy: 226 233 246;        /* text primary #E2E9F6 */
+  --navy-deep: 7 11 22;       /* deepest fill (terminal, tooltips) #070B16 */
+  --ice: 32 43 72;            /* inverse-surface (button fill) #202B48 */
+  --ice-soft: 25 34 58;       /* raised / hover wash #19223A */
+  --grey: 148 160 182;        /* text secondary #94A0B6 */
+  --grey-light: 60 74 106;    /* border emphasis role #3C4A6A */
+  --grey-dark: 198 208 226;   /* text emphasized #C6D0E2 */
+  --line: 33 45 76;           /* hairline #212D4C */
+  --card: 16 24 43;           /* surface #10182B */
+  --page-bg: 9 14 27;         /* canvas #090E1B */
 
   --green: 45 180 130;        /* #2db482 */
   --green-bg: 20 40 30;       /* softened green bg for dark */
@@ -69,12 +76,12 @@
   --chart-6: #e66767;
   --chart-7: #d55181;
   --chart-8: #d95926;
-  --chart-grid: #2c3242;
+  --chart-grid: #26314e;
   --chart-muted: #898781;
   --chart-good: #0ca30c;
   --chart-bad: #e66767;
-  --chart-track: #2a3040;
-  --card-fill: #141a45;       /* matches .dark --card (20 26 69) */
+  --chart-track: #223048;
+  --card-fill: #10182b;       /* matches .dark --card (16 24 43) */
 }
 
 /* === elevation system (10x polish) === */

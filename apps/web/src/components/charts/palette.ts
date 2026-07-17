@@ -11,7 +11,7 @@
  * - Past 8 series, fold the tail into "Other" — seriesVar wraps only as a
  *   last-resort fallback, it is not a license for 9+ distinct series.
  * - Text (labels, values, legends) never wears a series color; use the app
- *   text tokens (text-navy dark:text-ice / text-grey).
+ *   text tokens (text-navy / text-grey — both self-theme).
  */
 
 export const SERIES_COUNT = 8;

@@ -79,7 +79,7 @@
   @apply text-[10px] font-bold uppercase tracking-wider text-grey px-3 py-2 border-b border-line select-none;
 }
 .premium-table td {
-  @apply px-3 py-2 border-b border-line text-xs font-medium text-navy dark:text-ice;
+  @apply px-3 py-2 border-b border-line text-xs font-medium text-navy;
 }
 .premium-table tr:hover td {
   background-color: rgba(var(--grey) / 0.04);
@@ -89,7 +89,7 @@
   @apply text-[10px] font-mono font-bold uppercase tracking-wider text-grey;
 }
 .details-list dd {
-  @apply text-xs font-semibold text-navy dark:text-ice mt-0.5 mb-2.5 last:mb-0;
+  @apply text-xs font-semibold text-navy mt-0.5 mb-2.5 last:mb-0;
 }
 
 path.state {
