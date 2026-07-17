@@ -16,7 +16,7 @@ import {
 } from '@/lib/api/loop';
 import { computeDealHealthSet, type DealHealth } from '@/lib/salesIntel';
 import { useLastSeen } from '@/lib/useLastSeen';
-import { StatCard, ChartCard } from '@/components/charts';
+import { ChartCard } from '@/components/charts';
 import { CardSkeleton } from '@/components/shared';
 import { PageTitle } from '@/components/ui';
 import {
@@ -27,6 +27,7 @@ import {
   FocusSuggestion,
   ForecastDeltaCard,
 } from '@/components/home';
+import { PipelineInstrument, QueueInstrument } from '@/components/home/DeskInstruments';
 import type { HandoffRecord } from '@/types/bd';
 
 const DAILY_QUOTA = 20;
@@ -114,35 +115,15 @@ export function Home() {
         {greeting()}, {name}
       </PageTitle>
 
-      {/* Queue pulse — counted streams that navigate. */}
+      {/* The desk's two lead instruments — every region carries data (plan Part 6). */}
       {pulse ? (
-        <div className="mb-6 grid grid-cols-2 items-stretch gap-4 sm:grid-cols-4">
-          <StatCard
-            label="Immediate leads"
-            value={pulse.immediate === null ? '—' : String(pulse.immediate)}
-            onClick={() => navigate('/bd-pipeline')}
-          />
-          <StatCard
-            label="High-priority leads"
-            value={pulse.high === null ? '—' : String(pulse.high)}
-            onClick={() => navigate('/bd-pipeline')}
-          />
-          <StatCard
-            label="Follow-ups due"
-            value={pulse.followUpsDue === null ? '—' : String(pulse.followUpsDue)}
-            deltaLabel="overdue + today"
-            onClick={() => navigate('/tasks')}
-          />
-          <StatCard
-            label="Replies waiting"
-            value={handoffs === null ? '—' : String(openHandoffCount)}
-            deltaLabel="pause automation"
-            onClick={() => navigate('/outreach')}
-          />
+        <div className="mb-6 grid items-stretch gap-4 lg:grid-cols-2">
+          <QueueInstrument pulse={pulse} repliesWaiting={handoffs === null ? null : openHandoffCount} />
+          <PipelineInstrument board={board} />
         </div>
       ) : (
         <div className="mb-6">
-          <CardSkeleton count={4} />
+          <CardSkeleton count={2} />
         </div>
       )}
 

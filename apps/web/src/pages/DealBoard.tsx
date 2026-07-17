@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { CheckCircle2, KanbanSquare, Plus, RefreshCw, XCircle } from 'lucide-react';
+import { CheckCircle2, HelpCircle, KanbanSquare, Plus, RefreshCw, XCircle } from 'lucide-react';
 import { STAGES, STAGE_LABELS, canTransition, type DealStage } from '@lcx/shared';
 import { fetchDealBoard, transitionDealStage, type BoardDeal } from '@/lib/api/bd';
 import { loadDealContexts, saveDealPlaybook, type LoadedDealContext, type PlaybookKey } from '@/lib/api/deals100x';
@@ -197,6 +197,7 @@ export function DealBoard() {
         actions={
           <div className="flex items-center gap-2">
             <SimPill />
+            <BoardLegend />
             <Button variant="secondary" size="xs" onClick={() => void load()}>
               <RefreshCw size={11} className={loading ? 'animate-spin' : undefined} /> Refresh
             </Button>
@@ -238,6 +239,30 @@ export function DealBoard() {
             const cards = (byStage.get(stage) ?? []).filter(matchesFilter);
             const totalValue = cards.reduce((s, d) => s + (d.packageValue ?? 0), 0);
             const validTarget = dragging && dragging.stage !== stage && canTransition(dragging.stage as DealStage, stage);
+            // Empty stages collapse to rails at rest (plan Part 6); any active
+            // drag expands everything so every legal drop target is available.
+            const collapsed = cards.length === 0 && !dragging && !warningFilter && !stageFilter;
+            if (collapsed) {
+              return (
+                <div
+                  key={stage}
+                  className="flex w-10 shrink-0 flex-col items-center gap-2 rounded-xl border border-line/50 bg-ice-soft/40 px-1 py-2.5 dark:bg-ice-soft/[0.03]"
+                  title={`${STAGE_LABELS[stage]} — empty`}
+                >
+                  {stage === 'won' ? (
+                    <CheckCircle2 size={13} className="shrink-0 text-emerald-500" aria-label="Won" />
+                  ) : stage === 'lost' ? (
+                    <XCircle size={13} className="shrink-0 text-red-500" aria-label="Lost" />
+                  ) : (
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${STAGE_DOT[stage]}`} aria-hidden="true" />
+                  )}
+                  <span className="rotate-180 text-micro font-bold uppercase tracking-wide text-grey [writing-mode:vertical-rl]">
+                    {STAGE_LABELS[stage]}
+                  </span>
+                  <span className="num-tabular mt-auto font-mono text-micro text-grey">0</span>
+                </div>
+              );
+            }
             return (
               <div
                 key={stage}
@@ -297,7 +322,7 @@ export function DealBoard() {
                   {cards.length === 0 && (
                     <div className="flex flex-col items-center gap-1 rounded-lg border border-dashed border-line p-4 text-center text-micro text-grey">
                       <Plus size={14} aria-hidden="true" />
-                      {warningFilter || stageFilter ? 'No matches here' : 'Drop deals here'}
+                      {warningFilter || stageFilter ? 'No matches here' : 'Drop here'}
                     </div>
                   )}
                 </div>
@@ -306,11 +331,6 @@ export function DealBoard() {
           })}
         </div>
       )}
-
-      <p className="text-micro text-grey">
-        Drag a card to advance it. Skipping ahead is allowed; moving backwards isn't. Won/Lost ask for a reason —
-        wins auto-create the 30/60/90 post-listing triggers.
-      </p>
 
       {pendingClose && (
         <WinLossModal
@@ -326,6 +346,81 @@ export function DealBoard() {
             });
           }}
         />
+      )}
+    </div>
+  );
+}
+
+/* ── Board legend — every code earns a disclosure (plan 4.3) ────────── */
+
+const LEGEND_CARD: Array<[string, string]> = [
+  ['● 62nd', 'Likelihood percentile among open deals — dot color is the band; click any pill for its signal trail'],
+  ['▲ = ▼ ×', 'Momentum: accelerating · steady · cooling · cold (events last 7d vs prior 7d)'],
+  ['2 ⚠', 'Active health warnings — hover for the list, click for evidence and mitigations'],
+  ['T K L C O', 'Listing playbook: Tokenomics review · KYB / entity check · Legal opinion · Compliance greenlight · Offer sent'],
+  ['O · 3d · P86', 'Owner initial · days in current stage · priority score of the underlying project'],
+];
+
+const LEGEND_RULES: string[] = [
+  'Drag a card forward to advance it — skipping stages is allowed, moving backwards is not.',
+  'Won and Lost both ask for a reason; closed decisions re-weight open-deal likelihood.',
+  'A win auto-creates the 30/60/90 post-listing triggers.',
+];
+
+function BoardLegend() {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        aria-label="Board legend"
+        title="What the codes mean"
+        className="rounded-md p-1.5 text-grey transition-colors hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/10"
+      >
+        <HelpCircle size={14} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-50 mt-1.5 w-80 rounded-lg border border-line bg-card p-3.5 shadow-overlay">
+          <div className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-grey">Reading a card</div>
+          <div className="mt-2 space-y-2">
+            {LEGEND_CARD.map(([code, meaning]) => (
+              <div key={code} className="flex items-start gap-2.5">
+                <span className="num-tabular w-16 shrink-0 font-mono text-micro font-bold text-navy">{code}</span>
+                <span className="text-micro leading-relaxed text-grey">{meaning}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 border-t border-line/70 pt-2.5 font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-grey">
+            Board rules
+          </div>
+          <ul className="mt-1.5 space-y-1">
+            {LEGEND_RULES.map(r => (
+              <li key={r} className="text-micro leading-relaxed text-grey">
+                {r}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
     </div>
   );

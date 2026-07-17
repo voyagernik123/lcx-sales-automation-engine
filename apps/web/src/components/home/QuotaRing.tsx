@@ -1,5 +1,4 @@
-import { Flame } from 'lucide-react';
-import { CHART_GOOD, CHART_TRACK } from '@/components/charts';
+import { CHART_GOOD } from '@/components/charts';
 import type { SessionStats } from '@/lib/api/loop';
 
 export interface QuotaRingProps {
@@ -12,75 +11,43 @@ export interface QuotaRingProps {
 }
 
 /**
- * The personal quota ring (Superhuman-style): an SVG donut of prospects
- * worked today vs the daily target, plus the current streak. Reads only the
- * localStorage session contract — absent stats render as an honest zero.
+ * The personal quota, spoken quietly (plan 4.10): one line, a thin bar, and
+ * the session's facts. No rings to fill, no streak chips — the number is the
+ * motivation. Reads only the localStorage session contract; absent stats
+ * render as an honest zero.
  */
 export function QuotaRing({ stats, target, streak }: QuotaRingProps) {
   const worked = stats?.worked ?? 0;
   const pct = target > 0 ? Math.min(1, worked / target) : 0;
-  const hit = worked >= target;
-
-  const r = 52;
-  const c = 2 * Math.PI * r;
-  const stroke = hit ? CHART_GOOD : 'var(--chart-1)';
+  const met = worked >= target;
 
   return (
-    <div className="flex flex-col items-center gap-3">
-      <div className="relative h-[136px] w-[136px]">
-        <svg viewBox="0 0 136 136" className="h-full w-full -rotate-90">
-          <circle cx="68" cy="68" r={r} fill="none" stroke={CHART_TRACK} strokeWidth="10" />
-          <circle
-            cx="68"
-            cy="68"
-            r={r}
-            fill="none"
-            stroke={stroke}
-            strokeWidth="10"
-            strokeLinecap="round"
-            strokeDasharray={c}
-            strokeDashoffset={c * (1 - pct)}
-            className="transition-[stroke-dashoffset] duration-700"
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center font-mono">
-          <span className="text-2xl font-extrabold text-navy">{worked}</span>
-          <span className="text-micro font-bold uppercase tracking-wider text-grey">of {target} worked</span>
-        </div>
+    <div className="space-y-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-micro font-medium uppercase tracking-wide text-grey">Prospects worked</span>
+        <span className="num-tabular font-mono text-lg font-semibold text-navy">
+          {worked}
+          <span className="text-label font-medium text-grey">/{target}</span>
+        </span>
       </div>
 
-      <div className="flex items-center gap-3">
-        <span
-          className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-micro font-semibold ${
-            streak > 0 ? 'bg-status-ready-bg text-status-ready' : 'bg-ice-soft dark:bg-ice-soft/10 text-grey'
-          }`}
-        >
-          <Flame size={10} />
-          {streak > 0 ? `${streak}-day streak` : 'No streak yet'}
-        </span>
-        {hit && <span className="text-micro font-bold text-status-ready">Quota hit — nice.</span>}
+      <div className="h-1.5 overflow-hidden rounded-full bg-ice-soft dark:bg-ice-soft/10">
+        <div
+          className="h-full rounded-full transition-[width] duration-700"
+          style={{ width: `${pct * 100}%`, backgroundColor: met ? CHART_GOOD : 'var(--chart-1)' }}
+        />
       </div>
 
       {stats ? (
-        <div className="grid w-full grid-cols-3 gap-1.5 text-center">
-          <MiniStat label="Enrolled" value={stats.enrolled} />
-          <MiniStat label="Snoozed" value={stats.snoozed} />
-          <MiniStat label="Disqualified" value={stats.disqualified} />
-        </div>
-      ) : (
-        <p className="text-center text-micro text-grey">
-          No session yet today — work the queue and this ring fills up.
+        <p className="num-tabular text-micro text-grey">
+          {stats.enrolled} enrolled · {stats.snoozed} snoozed · {stats.disqualified} disqualified
+          {met && <span className="font-semibold text-status-ready"> · quota met</span>}
         </p>
+      ) : (
+        <p className="text-micro text-grey">No session today.</p>
       )}
-    </div>
-  );
-}
 
-function MiniStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg border border-line/70 px-1 py-1.5">
-      <div className="num-tabular font-mono text-sm font-bold text-navy">{value}</div>
-      <div className="text-micro text-grey">{label}</div>
+      {streak > 1 && <p className="text-micro text-grey/80">{streak} consecutive working days.</p>}
     </div>
   );
 }
