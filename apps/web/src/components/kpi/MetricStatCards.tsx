@@ -1,7 +1,8 @@
 import { StatCard } from '@/components/charts';
 import type { KpiDashboard } from '@/types/kpi';
 import type { KpiSnapshot } from '@/lib/api/bd';
-import { pctChange } from './range';
+import { formatMoney } from '@/lib/format';
+import { deltaPct, formatRate } from '@/lib/metricPolicy';
 
 interface MetricStatCardsProps {
   kpis: KpiDashboard;
@@ -16,7 +17,9 @@ function seriesOf(
 ): { trend?: number[]; delta?: number } {
   if (snapshots.length < 2) return {};
   const series = snapshots.map(pick);
-  return { trend: series, delta: pctChange(series[0], series[series.length - 1]) };
+  // Policy: a delta against a near-zero baseline is an artifact, not a trend.
+  const delta = deltaPct(series[series.length - 1], series[0]);
+  return { trend: series, delta: delta ?? undefined };
 }
 
 function snapshotReplyRate(s: KpiSnapshot): number {
@@ -29,7 +32,7 @@ export function MetricStatCards({ kpis, snapshots, deltaLabel }: MetricStatCards
   const totalRevenueCents = Object.values(kpis.revenueByStream).reduce((a, b) => a + b, 0);
   const sent = Object.values(kpis.replyRateByChannel).reduce((a, s) => a + s.sent, 0);
   const repliedCount = Object.values(kpis.replyRateByChannel).reduce((a, s) => a + s.replied, 0);
-  const replyRate = sent > 0 ? (repliedCount / sent) * 100 : 0;
+  const replyRate = formatRate(repliedCount, sent);
 
   const leads = seriesOf(snapshots, (s) => s.newHighScoreLeadsWeek);
   const won = seriesOf(snapshots, (s) => s.funnelWon);
@@ -42,29 +45,29 @@ export function MetricStatCards({ kpis, snapshots, deltaLabel }: MetricStatCards
         label="New high-score leads (7d)"
         value={String(kpis.newHighScoreLeadsThisWeek)}
         delta={leads.delta}
-        deltaLabel={deltaLabel}
+        deltaLabel={leads.delta !== undefined ? deltaLabel : undefined}
         trend={leads.trend}
       />
       <StatCard
         label="Deals won"
         value={String(kpis.funnel.won)}
         delta={won.delta}
-        deltaLabel={deltaLabel}
+        deltaLabel={won.delta !== undefined ? deltaLabel : undefined}
         trend={won.trend}
       />
       <StatCard
         label="Revenue closed"
-        value={`$${Math.round(totalRevenueCents / 100).toLocaleString()}`}
+        value={formatMoney(Math.round(totalRevenueCents / 100))}
         delta={revenue.delta}
-        deltaLabel={deltaLabel}
+        deltaLabel={revenue.delta !== undefined ? deltaLabel : undefined}
         trend={revenue.trend}
       />
       <StatCard
         label="Reply rate"
-        value={`${Math.round(replyRate)}%`}
-        delta={reply.delta}
-        deltaLabel={deltaLabel}
-        trend={reply.trend}
+        value={replyRate.display}
+        delta={replyRate.suppressed ? undefined : reply.delta}
+        deltaLabel={!replyRate.suppressed && reply.delta !== undefined ? deltaLabel : undefined}
+        trend={replyRate.suppressed ? undefined : reply.trend}
       />
     </div>
   );

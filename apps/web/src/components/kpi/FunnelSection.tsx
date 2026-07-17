@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChartCard, FunnelChart } from '@/components/charts';
+import { ChartCard, ColumnChart, FunnelChart } from '@/components/charts';
+import { isMonotoneFunnel } from '@/lib/metricPolicy';
 import type { FunnelCounts } from '@/types/kpi';
 
 const STAGES: { label: string; route: string; pick: (f: FunnelCounts) => number }[] = [
@@ -26,10 +27,23 @@ export function FunnelSection({ funnel }: { funnel: FunnelCounts }) {
     if (idx >= 0 && STAGES[idx]) navigate(STAGES[idx].route);
   };
 
+  const values = STAGES.map((s) => s.pick(funnel));
+  // Policy: a funnel form asserts monotone flow. When the window's data
+  // violates that (stages counted on different populations), showing carried-%
+  // arrows would assert conversions >100% — fall back to plain stage counts.
+  const funnelValid = isMonotoneFunnel(values);
+
   return (
-    <ChartCard title="Pipeline funnel" subtitle="Click a stage to open its workspace">
+    <ChartCard
+      title="Pipeline funnel"
+      subtitle={funnelValid ? 'Click a stage to open its workspace' : 'Stage counts — populations differ in this window, so carried-% is not shown'}
+    >
       <div ref={wrapRef} onClick={handleClick} className="cursor-pointer">
-        <FunnelChart stages={STAGES.map((s) => ({ label: s.label, value: s.pick(funnel) }))} />
+        {funnelValid ? (
+          <FunnelChart stages={STAGES.map((s, i) => ({ label: s.label, value: values[i] }))} />
+        ) : (
+          <ColumnChart data={STAGES.map((s, i) => ({ label: s.label, value: values[i] }))} />
+        )}
       </div>
     </ChartCard>
   );

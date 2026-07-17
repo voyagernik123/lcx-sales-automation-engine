@@ -6,7 +6,8 @@ import { fetchKpis, exportKpisCsv, fetchTriggers, updateTriggerStatus, fetchFore
 import { fetchKpiHistory, type KpiSnapshot } from '@/lib/api/bd';
 import type { KpiDashboard as KpiData, PostListingTrigger } from '@/types/kpi';
 import { REVENUE_STREAM_LABELS } from '@/types/kpi';
-import { ChartCard, ColumnChart, DonutChart, GaugeChart } from '@/components/charts';
+import { ChartCard, ColumnChart, DonutChart } from '@/components/charts';
+import { formatRate } from '@/lib/metricPolicy';
 import { ChartSkeleton, EmptyState, PageSkeleton, toast } from '@/components/shared';
 import { Button } from '@/components/ui';
 import { MetricStatCards } from '@/components/kpi/MetricStatCards';
@@ -235,7 +236,7 @@ export function KpiDashboard() {
           <FunnelSection funnel={kpis.funnel} />
 
           <ChartCard title="Revenue by stream" subtitle={revenueSlices.length > 0 ? `${fmtUsd(totalRevenue)} closed` : undefined}>
-            {revenueSlices.length > 0 ? (
+            {revenueSlices.length >= 2 ? (
               <DonutChart
                 data={revenueSlices}
                 legend="bottom"
@@ -243,6 +244,14 @@ export function KpiDashboard() {
                 centerValue={fmtUsd(totalRevenue)}
                 formatValue={fmtUsd}
               />
+            ) : revenueSlices.length === 1 ? (
+              /* Policy: a one-segment donut conveys nothing — state the fact. */
+              <div className="flex flex-col items-center justify-center py-10">
+                <span className="num-hero text-2xl text-navy">{fmtUsd(totalRevenue)}</span>
+                <span className="mt-1.5 text-center text-xs text-grey">
+                  all from {revenueSlices[0].label} — composition appears once a second stream closes
+                </span>
+              </div>
             ) : (
               <p className="py-8 text-center text-xs text-grey">No deals closed yet</p>
             )}
@@ -250,12 +259,28 @@ export function KpiDashboard() {
 
           {tg && (
             <ChartCard title="Telegram conversion" subtitle="Handoffs moved into a Telegram group">
-              <div className="mx-auto max-w-[220px]">
-                <GaugeChart value={tg.rate} label="% moved" thresholds={{ good: 40, warn: 20 }} />
-              </div>
-              <p className="mt-2 text-center text-xs text-grey">
-                {tg.moved} of {tg.handoffs} handoffs moved to Telegram
-              </p>
+              {(() => {
+                const rate = formatRate(tg.moved, tg.handoffs);
+                return (
+                  <div className="flex flex-col justify-center py-6">
+                    <div className="flex items-baseline justify-between">
+                      <span className="num-hero text-2xl text-navy" title={rate.title}>
+                        {rate.display}
+                      </span>
+                      <span className="text-xs text-grey">moved to Telegram</span>
+                    </div>
+                    <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-ice-soft dark:bg-ice-soft/10">
+                      <div
+                        className="h-full rounded-full bg-cyan-600 transition-all dark:bg-cyan-400"
+                        style={{ width: `${tg.handoffs > 0 ? Math.min(100, (tg.moved / tg.handoffs) * 100) : 0}%` }}
+                      />
+                    </div>
+                    <p className="mt-2 text-xs text-grey">
+                      {tg.moved} of {tg.handoffs} handoffs · goal is a group before proposal
+                    </p>
+                  </div>
+                );
+              })()}
             </ChartCard>
           )}
         </div>
