@@ -475,6 +475,8 @@ export interface MapPoint {
   category: string | null;
   region: string | null;
   listedOnLcx: boolean;
+  /** Competitor exchanges carrying this token — the gap signal vs LCX. */
+  exchangeCount: number;
   band: string;
   priorityScore: number;
   propensityScore: number;

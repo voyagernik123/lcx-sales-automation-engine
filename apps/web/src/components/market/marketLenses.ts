@@ -29,6 +29,9 @@ export interface Lens {
   x: Axis;
   y: Axis;
   zones: Record<ZoneKey, string>;
+  /** Short corner labels drawn on the plot when the full `zones` names would
+   *  collide in a narrow pane. Falls back to `zones`. */
+  plotZones?: Record<ZoneKey, string>;
   /** The quadrant the desk wants targets to land in. */
   target: ZoneKey;
 }
@@ -105,7 +108,120 @@ export const LENSES: Lens[] = [
     zones: { tr: 'Big & priority', tl: 'Priority, small', br: 'Big, deprioritized', bl: 'Small & low' },
     target: 'tr',
   },
+  {
+    id: 'competitive',
+    label: 'Competitive',
+    desc: 'Competitor exchange reach × eligibility — tokens the field already lists that LCX could win.',
+    x: {
+      label: 'Competitor exchanges',
+      value: (p) => p.exchangeCount,
+      split: 3,
+      domain: [0, 12],
+      scale: 'linear',
+      format: (v) => String(Math.round(v)),
+    },
+    y: { label: 'Eligibility (best EU/US)', value: eligibility, split: 60, ...pct100 },
+    zones: { tr: 'Field lists, we can win', tl: 'Field lists, not eligible', br: 'Eligible, no pressure', bl: 'Quiet' },
+    plotZones: { tr: 'We can win', tl: 'Not eligible', br: 'No pressure', bl: 'Quiet' },
+    target: 'tr',
+  },
 ];
+
+/* ── Encodings — the map is an instrument: pick what size & color mean ── */
+
+export interface SizeMode {
+  id: string;
+  label: string;
+  value: (p: MapPoint) => number;
+}
+
+export const SIZE_MODES: SizeMode[] = [
+  { id: 'mcap', label: 'Market cap', value: (p) => p.marketCapUsd || 0 },
+  { id: 'volume', label: '24h volume', value: (p) => p.volume24hUsd || 0 },
+  { id: 'exchanges', label: 'Exchange reach', value: (p) => p.exchangeCount || 0 },
+  { id: 'priority', label: 'Priority', value: (p) => p.priorityScore || 0 },
+];
+
+export interface ColorMode {
+  id: string;
+  label: string;
+  /** Semantic bucket key for a point (page maps key → CSS color). */
+  key: (p: MapPoint) => string;
+  /** Ordered legend buckets. */
+  legend: { key: string; label: string }[];
+}
+
+export const COLOR_MODES: ColorMode[] = [
+  {
+    id: 'band',
+    label: 'Band',
+    key: (p) => p.band || 'unscored',
+    legend: ['immediate', 'high', 'nurture', 'watch', 'archive'].map((k) => ({ key: k, label: k })),
+  },
+  {
+    id: 'gap',
+    label: 'Competitive gap',
+    key: (p) => {
+      if (p.listedOnLcx) return 'listed';
+      if (p.exchangeCount >= 4) return 'gap-strong';
+      if (p.exchangeCount >= 1) return 'gap';
+      return 'none';
+    },
+    legend: [
+      { key: 'gap-strong', label: '4+ competitors, not on LCX' },
+      { key: 'gap', label: '1–3 competitors, not on LCX' },
+      { key: 'listed', label: 'On LCX' },
+      { key: 'none', label: 'Nowhere yet' },
+    ],
+  },
+  {
+    id: 'momentum',
+    label: 'Momentum (30d)',
+    key: (p) => {
+      const c = p.priceChange30d;
+      if (c == null) return 'flat';
+      if (c >= 15) return 'up-strong';
+      if (c > 0) return 'up';
+      if (c <= -15) return 'down-strong';
+      return 'down';
+    },
+    legend: [
+      { key: 'up-strong', label: '+15% or more' },
+      { key: 'up', label: 'Up' },
+      { key: 'down', label: 'Down' },
+      { key: 'down-strong', label: '−15% or worse' },
+    ],
+  },
+  {
+    id: 'recommendation',
+    label: 'Recommended market',
+    key: (p) => p.recommendedMarket || 'none',
+    legend: [
+      { key: 'eu', label: 'EU first' },
+      { key: 'us', label: 'US first' },
+      { key: 'dual', label: 'Dual' },
+      { key: 'none', label: 'Unclear' },
+    ],
+  },
+];
+
+export function getSizeMode(id: string): SizeMode {
+  return SIZE_MODES.find((m) => m.id === id) ?? SIZE_MODES[0];
+}
+export function getColorMode(id: string): ColorMode {
+  return COLOR_MODES.find((m) => m.id === id) ?? COLOR_MODES[0];
+}
+
+/** Bucketed counts of values across a domain — for axis marginals. Log-aware. */
+export function histogram(axis: Axis, values: number[], bins = 28): number[] {
+  const out = new Array(bins).fill(0);
+  for (const v of values) {
+    const n = normalize(axis, v);
+    const b = Math.min(bins - 1, Math.max(0, Math.floor(n * bins)));
+    out[b] += 1;
+  }
+  return out;
+}
 
 export function getLens(id: string): Lens {
   return LENSES.find((l) => l.id === id) ?? LENSES[0];

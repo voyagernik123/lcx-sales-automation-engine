@@ -7,25 +7,59 @@ import { EntityChip } from '@/components/entity';
 import { useInspect } from '@/stores';
 import { formatMoney } from '@/lib/format';
 import { MarketScatter } from '@/components/market/MarketScatter';
-import { LENSES, getLens, classifyZone, summarize, type ZoneKey } from '@/components/market/marketLenses';
+import {
+  LENSES,
+  SIZE_MODES,
+  COLOR_MODES,
+  getLens,
+  getSizeMode,
+  getColorMode,
+  classifyZone,
+  summarize,
+  type ZoneKey,
+} from '@/components/market/marketLenses';
 
-/** Band → fill (var() so SVG re-themes; muted for archive/unscored). */
-const BAND_COLOR: Record<string, string> = {
-  immediate: 'var(--chart-1)',
-  high: 'var(--chart-2)',
-  nurture: 'var(--chart-3)',
-  watch: 'var(--chart-5)',
-  archive: 'rgb(var(--grey))',
-  unscored: 'rgb(var(--grey))',
-};
 const BAND_ORDER = ['immediate', 'high', 'nurture', 'watch', 'archive'];
 const ZONE_SEQ: ZoneKey[] = ['tr', 'tl', 'br', 'bl'];
+
+/** Semantic color-bucket → CSS color, per color mode (var() re-themes). */
+const COLOR_SCALE: Record<string, Record<string, string>> = {
+  band: {
+    immediate: 'var(--chart-1)',
+    high: 'var(--chart-2)',
+    nurture: 'var(--chart-3)',
+    watch: 'var(--chart-5)',
+    archive: 'rgb(var(--grey))',
+    unscored: 'rgb(var(--grey))',
+  },
+  gap: {
+    'gap-strong': 'rgb(var(--red))',
+    gap: 'rgb(var(--amber))',
+    listed: 'var(--chart-2)',
+    none: 'rgb(var(--grey))',
+  },
+  momentum: {
+    'up-strong': 'var(--chart-2)',
+    up: 'var(--chart-4)',
+    down: 'rgb(var(--amber))',
+    'down-strong': 'rgb(var(--red))',
+    flat: 'rgb(var(--grey))',
+  },
+  recommendation: {
+    eu: 'var(--chart-1)',
+    us: 'var(--chart-3)',
+    dual: 'var(--chart-2)',
+    none: 'rgb(var(--grey))',
+  },
+};
 
 export function MarketMap() {
   const inspect = useInspect();
   const [points, setPoints] = useState<MapPoint[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [lensId, setLensId] = useState('opportunity');
+  const [sizeModeId, setSizeModeId] = useState('mcap');
+  const [colorModeId, setColorModeId] = useState('band');
   const [region, setRegion] = useState('');
   const [band, setBand] = useState('');
   const [listedOnly, setListedOnly] = useState<'all' | 'yes' | 'no'>('all');
@@ -74,7 +108,13 @@ export function MarketMap() {
       .slice(0, 12);
   }, [selected, focusSet, visible, lens]);
 
-  const colorFor = useCallback((p: MapPoint) => BAND_COLOR[p.band] ?? BAND_COLOR.unscored, []);
+  const colorMode = getColorMode(colorModeId);
+  const sizeMode = getSizeMode(sizeModeId);
+  const colorFor = useCallback(
+    (p: MapPoint) => COLOR_SCALE[colorMode.id]?.[colorMode.key(p)] ?? 'rgb(var(--grey))',
+    [colorMode],
+  );
+  const sizeValue = useCallback((p: MapPoint) => sizeMode.value(p), [sizeMode]);
   const onSelect = useCallback((ids: string[], additive: boolean) => {
     setSelected((prev) => {
       const next = additive ? new Set(prev) : new Set<string>();
@@ -122,6 +162,13 @@ export function MarketMap() {
                 ))}
               </div>
               <p className="mt-2 text-micro leading-relaxed text-grey">{lens.desc}</p>
+            </Panel>
+
+            <Panel title="Encoding">
+              <div className="space-y-2">
+                <Select label="Size" value={sizeModeId} onChange={setSizeModeId} options={SIZE_MODES.map((m) => [m.id, m.label])} />
+                <Select label="Color" value={colorModeId} onChange={setColorModeId} options={COLOR_MODES.map((m) => [m.id, m.label])} />
+              </div>
             </Panel>
 
             <Panel title="Filters">
@@ -172,21 +219,22 @@ export function MarketMap() {
             </Panel>
 
             <div className="flex flex-wrap gap-x-3 gap-y-1 px-1 pt-1">
-              {BAND_ORDER.map((b) => (
-                <span key={b} className="flex items-center gap-1 text-[10px] text-grey">
-                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: BAND_COLOR[b] }} />
-                  {b}
+              {colorMode.legend.map((item) => (
+                <span key={item.key} className="flex items-center gap-1 text-[10px] text-grey">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: COLOR_SCALE[colorMode.id]?.[item.key] ?? 'rgb(var(--grey))' }} />
+                  {item.label}
                 </span>
               ))}
               <span className="flex items-center gap-1 text-[10px] text-grey">
                 <span className="h-2 w-2 rounded-full border-2 border-navy" /> on LCX
               </span>
+              <span className="w-full text-[9px] text-grey/70">Dot size · {sizeMode.label.toLowerCase()}</span>
             </div>
           </aside>
 
           {/* ── Center: the field (the hero — always gets the space) ── */}
           <div className="min-w-[340px] flex-1 rounded-lg border border-line/80 bg-card p-2 shadow-card">
-            <MarketScatter points={visible} lens={lens} colorFor={colorFor} selectedIds={selected} onSelect={onSelect} onOpen={(p) => inspect('project', p.id)} />
+            <MarketScatter points={visible} lens={lens} colorFor={colorFor} sizeValue={sizeValue} selectedIds={selected} onSelect={onSelect} onOpen={(p) => inspect('project', p.id)} />
           </div>
 
           {/* ── Right rail: ranked list (only when there's room; brushing +
@@ -202,7 +250,7 @@ export function MarketMap() {
               <div className="min-h-0 flex-1 divide-y divide-line/50 overflow-y-auto">
                 {ranked.map((p) => (
                   <div key={p.id} className="flex items-center gap-2 py-1.5">
-                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: BAND_COLOR[p.band] }} />
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: colorFor(p) }} />
                     <EntityChip
                       type="project"
                       id={p.id}

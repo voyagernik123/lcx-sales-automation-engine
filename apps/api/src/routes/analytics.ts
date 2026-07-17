@@ -110,6 +110,7 @@ analyticsRoutes.get('/map', requireOperator, async (c) => {
     const result = await db.execute(sql`
       SELECT p.id, p.name, p.ticker, p.market_cap_usd, p.volume_24h_usd,
              p.price_change_30d, p.category, p.region, p.listed_on_lcx,
+             p.exchange_count,
              s.band, s.priority_score, s.propensity_score,
              s.eu_score, s.us_pre_score, s.us_post_score, s.recommended_market
       FROM projects p JOIN scores s ON s.project_id = p.id
@@ -129,6 +130,7 @@ analyticsRoutes.get('/map', requireOperator, async (c) => {
         category: r.category ?? null,
         region: r.region ?? null,
         listedOnLcx: r.listed_on_lcx,
+        exchangeCount: r.exchange_count != null ? Number(r.exchange_count) : 0,
         band: r.band,
         priorityScore: Number(r.priority_score ?? 0),
         propensityScore: Number(r.propensity_score ?? 0),
