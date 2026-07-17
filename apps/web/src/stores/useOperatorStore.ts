@@ -73,28 +73,17 @@ export const useOperatorStore = create<OperatorStore>()(
     }),
     {
       name: STORAGE_KEYS.OPERATOR,
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => ({
         getItem: n => JSON.stringify(storage.get(n, null)),
         setItem: (n, v) => storage.set(n, JSON.parse(v)),
         removeItem: n => storage.remove(n),
       })),
-      // Migrate persisted operators in place (backfill missing fields from the
-      // roster by id) so signed-in users are never discarded to the front door
-      // on a version bump. `role` was added at v1; `email` at v2.
-      migrate: (persisted, version) => {
-        const p = (persisted ?? {}) as Partial<OperatorStore>;
-        let operator = p.operator ?? null;
-        if (version < 2 && operator && (!operator.role || !operator.email)) {
-          const known = OPERATORS.find(o => o.id === operator!.id);
-          operator = {
-            ...operator,
-            role: operator.role ?? known?.role ?? 'operator',
-            email: operator.email ?? known?.email ?? '',
-          };
-        }
-        return { operator };
-      },
+      // v3: sign-in now requires an explicit, authorized email at the gate.
+      // Discard any pre-v3 session (name-picker era, or a key-only browser that
+      // never entered an email) so the email gate is the first thing everyone
+      // sees exactly once — after that, v3 sessions persist normally.
+      migrate: () => ({ operator: null }),
     },
   ),
 );
