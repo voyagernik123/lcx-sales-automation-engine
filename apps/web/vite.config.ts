@@ -35,6 +35,20 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       emptyOutDir: true,
+      // Split vendor into cacheable groups so no single chunk dominates the
+      // download and the framework layer caches across app deploys (plan D2).
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+            // Framework core only — react-router/history stay in vendor so the
+            // dependency edge is one-directional (vendor → react-vendor), no cycle.
+            if (/[\\/](?:react|react-dom|scheduler)[\\/]/.test(id)) return 'react-vendor';
+            if (/[\\/]lucide-react[\\/]/.test(id)) return 'icons';
+            return 'vendor';
+          },
+        },
+      },
     },
   };
 });

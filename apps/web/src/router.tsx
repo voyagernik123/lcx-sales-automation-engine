@@ -1,6 +1,51 @@
 import { createBrowserRouter } from 'react-router-dom';
+import { lazy } from 'react';
 import { AppLayout } from '@/components/layout';
-import { Dashboard, Home, SelectOperator, OntologyExplorer, StateMap, ProductMatrix, Simulator, Settings, HoweyCalculator, ScenarioPlanner, ReadinessStack, BriefGenerator, CapitalEstimator, Roadmap, RedFlags, CompetitionAnalysis, ProductIntelligence, BdPipeline, LeadDetail, ContactWorkspace, ClaimLibrary, Handoffs, SendQueue, ExchangeGaps, DealBoard, MyTasks, MarketMap, Customer360, Notes, WinLoss, AiTools, OutreachOps, DealDesk, Integrations, BoardReport, MarketNews, ReportBuilder, KpiDashboard, AuditLog } from '@/pages';
+import { SelectOperator } from '@/pages/SelectOperator';
+
+/**
+ * Every workspace page is code-split (plan D2): only the shell + the front
+ * door land in the entry chunk; each route's JS is fetched on first visit.
+ * The Suspense boundary lives in AppLayout around the Outlet.
+ */
+const Dashboard = lazy(() => import('@/pages/Dashboard').then((m) => ({ default: m.Dashboard })));
+const Home = lazy(() => import('@/pages/Home').then((m) => ({ default: m.Home })));
+const OntologyExplorer = lazy(() => import('@/pages/OntologyExplorer').then((m) => ({ default: m.OntologyExplorer })));
+const StateMap = lazy(() => import('@/pages/StateMap').then((m) => ({ default: m.StateMap })));
+const ProductMatrix = lazy(() => import('@/pages/ProductMatrix').then((m) => ({ default: m.ProductMatrix })));
+const Simulator = lazy(() => import('@/pages/Simulator').then((m) => ({ default: m.Simulator })));
+const Settings = lazy(() => import('@/pages/Settings').then((m) => ({ default: m.Settings })));
+const HoweyCalculator = lazy(() => import('@/pages/HoweyCalculator').then((m) => ({ default: m.HoweyCalculator })));
+const ScenarioPlanner = lazy(() => import('@/pages/ScenarioPlanner').then((m) => ({ default: m.ScenarioPlanner })));
+const ReadinessStack = lazy(() => import('@/pages/ReadinessStack').then((m) => ({ default: m.ReadinessStack })));
+const BriefGenerator = lazy(() => import('@/pages/BriefGenerator').then((m) => ({ default: m.BriefGenerator })));
+const CapitalEstimator = lazy(() => import('@/pages/CapitalEstimator').then((m) => ({ default: m.CapitalEstimator })));
+const Roadmap = lazy(() => import('@/pages/Roadmap').then((m) => ({ default: m.Roadmap })));
+const RedFlags = lazy(() => import('@/pages/RedFlags').then((m) => ({ default: m.RedFlags })));
+const CompetitionAnalysis = lazy(() => import('@/pages/CompetitionAnalysis').then((m) => ({ default: m.CompetitionAnalysis })));
+const ProductIntelligence = lazy(() => import('@/pages/ProductIntelligence').then((m) => ({ default: m.ProductIntelligence })));
+const BdPipeline = lazy(() => import('@/pages/BdPipeline').then((m) => ({ default: m.BdPipeline })));
+const LeadDetail = lazy(() => import('@/pages/LeadDetail').then((m) => ({ default: m.LeadDetail })));
+const ContactWorkspace = lazy(() => import('@/pages/ContactWorkspace').then((m) => ({ default: m.ContactWorkspace })));
+const ClaimLibrary = lazy(() => import('@/pages/ClaimLibrary').then((m) => ({ default: m.ClaimLibrary })));
+const Handoffs = lazy(() => import('@/pages/Handoffs').then((m) => ({ default: m.Handoffs })));
+const SendQueue = lazy(() => import('@/pages/SendQueue').then((m) => ({ default: m.SendQueue })));
+const ExchangeGaps = lazy(() => import('@/pages/ExchangeGaps').then((m) => ({ default: m.ExchangeGaps })));
+const DealBoard = lazy(() => import('@/pages/DealBoard').then((m) => ({ default: m.DealBoard })));
+const MyTasks = lazy(() => import('@/pages/MyTasks').then((m) => ({ default: m.MyTasks })));
+const MarketMap = lazy(() => import('@/pages/MarketMap').then((m) => ({ default: m.MarketMap })));
+const Customer360 = lazy(() => import('@/pages/Customer360').then((m) => ({ default: m.Customer360 })));
+const Notes = lazy(() => import('@/pages/Notes').then((m) => ({ default: m.Notes })));
+const WinLoss = lazy(() => import('@/pages/WinLoss').then((m) => ({ default: m.WinLoss })));
+const AiTools = lazy(() => import('@/pages/AiTools').then((m) => ({ default: m.AiTools })));
+const OutreachOps = lazy(() => import('@/pages/OutreachOps').then((m) => ({ default: m.OutreachOps })));
+const DealDesk = lazy(() => import('@/pages/DealDesk').then((m) => ({ default: m.DealDesk })));
+const Integrations = lazy(() => import('@/pages/Integrations').then((m) => ({ default: m.Integrations })));
+const BoardReport = lazy(() => import('@/pages/BoardReport').then((m) => ({ default: m.BoardReport })));
+const MarketNews = lazy(() => import('@/pages/MarketNews').then((m) => ({ default: m.MarketNews })));
+const ReportBuilder = lazy(() => import('@/pages/ReportBuilder').then((m) => ({ default: m.ReportBuilder })));
+const KpiDashboard = lazy(() => import('@/pages/KpiDashboard').then((m) => ({ default: m.KpiDashboard })));
+const AuditLog = lazy(() => import('@/pages/AuditLog').then((m) => ({ default: m.AuditLog })));
 
 export const router = createBrowserRouter([
   { path: '/select', element: <SelectOperator /> },

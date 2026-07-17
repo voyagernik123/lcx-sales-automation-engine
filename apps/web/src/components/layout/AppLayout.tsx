@@ -1,10 +1,10 @@
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { Outlet, Navigate } from 'react-router-dom';
 import { TopNav } from './TopNav';
 import { Sidebar } from './Sidebar';
 import { MainContent } from './MainContent';
 import { Footer } from './Footer';
-import { ErrorBoundary, ToastContainer, CommandPalette, useCommandPalette } from '@/components/shared';
+import { ErrorBoundary, ToastContainer, CommandPalette, PageSkeleton, useCommandPalette } from '@/components/shared';
 import { InspectorHost } from '@/components/inspect/InspectorHost';
 import { useUIStore, useOperatorStore } from '@/stores';
 
@@ -27,7 +27,10 @@ export function AppLayout() {
         <Sidebar />
         <ErrorBoundary>
           <MainContent collapsed={sidebarCollapsed}>
-            <Outlet />
+            {/* Each route is code-split; the skeleton covers its first fetch. */}
+            <Suspense fallback={<div className="p-5"><PageSkeleton /></div>}>
+              <Outlet />
+            </Suspense>
           </MainContent>
         </ErrorBoundary>
       </div>
