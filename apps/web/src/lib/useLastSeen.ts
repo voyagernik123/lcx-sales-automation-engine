@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useOperatorStore } from '@/stores';
 
 /**
@@ -29,23 +29,34 @@ export interface LastSeen {
 
 export function useLastSeen(surface: string): LastSeen {
   const operatorId = useOperatorStore(s => s.operator?.id ?? 'anon');
+  const key = `${operatorId}::${surface}`;
 
-  // Read-then-stamp exactly once per operator+surface mount.
-  return useMemo(() => {
+  // Capture the PREVIOUS watermark once per operator+surface, before this
+  // visit overwrites it. A ref (not memo) so a re-render never re-reads a
+  // watermark this session already advanced. Reading is pure; the write is
+  // deferred to the effect below.
+  const prevRef = useRef<{ key: string; value: string | null }>({ key: '', value: null });
+  if (prevRef.current.key !== key) {
+    prevRef.current = { key, value: read()[operatorId]?.[surface] ?? null };
+  }
+  const prev = prevRef.current.value;
+
+  // Stamp "now" after commit — never a side effect during render.
+  useEffect(() => {
     const marks = read();
-    const prev = marks[operatorId]?.[surface] ?? null;
     try {
       marks[operatorId] = { ...(marks[operatorId] ?? {}), [surface]: new Date().toISOString() };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(marks));
     } catch {
       // Storage full/blocked — hints simply stay off.
     }
-    return {
-      lastSeen: prev,
-      isNew: (ts: string | null | undefined) => {
-        if (!prev || !ts) return false;
-        return Date.parse(ts) > Date.parse(prev);
-      },
-    };
   }, [operatorId, surface]);
+
+  return useMemo<LastSeen>(
+    () => ({
+      lastSeen: prev,
+      isNew: (ts) => (!prev || !ts ? false : Date.parse(ts) > Date.parse(prev)),
+    }),
+    [prev],
+  );
 }

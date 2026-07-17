@@ -60,11 +60,25 @@ export const useOperatorStore = create<OperatorStore>()(
     }),
     {
       name: STORAGE_KEYS.OPERATOR,
+      version: 1,
       storage: createJSONStorage(() => ({
         getItem: n => JSON.stringify(storage.get(n, null)),
         setItem: (n, v) => storage.set(n, JSON.parse(v)),
         removeItem: n => storage.remove(n),
       })),
+      // `role` was added after launch (v1). Pre-v1 operators persisted without
+      // it — migrate in place (backfill from the roster by id) so users stay
+      // signed in and approvers keep their rights, instead of being discarded
+      // to the front door on a version bump. Runs only on version < 1.
+      migrate: (persisted, version) => {
+        const p = (persisted ?? {}) as Partial<OperatorStore>;
+        let operator = p.operator ?? null;
+        if (version < 1 && operator && !operator.role) {
+          const known = OPERATORS.find(o => o.id === operator!.id);
+          operator = { ...operator, role: known?.role ?? 'operator' };
+        }
+        return { operator };
+      },
     },
   ),
 );

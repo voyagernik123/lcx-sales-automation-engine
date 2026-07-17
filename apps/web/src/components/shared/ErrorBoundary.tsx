@@ -11,6 +11,18 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
+const CHUNK_RELOAD_KEY = 'lcx-os:chunk-reload';
+
+/**
+ * A failed dynamic import — the app was redeployed (chunk hashes changed)
+ * while this tab held a stale index. Recoverable by reloading.
+ */
+function isChunkLoadError(error: Error): boolean {
+  return /ChunkLoadError|Loading chunk|dynamically imported module|Importing a module script failed/i.test(
+    `${error.name} ${error.message}`,
+  );
+}
+
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
@@ -22,6 +34,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
+    // Stale chunk after a redeploy: reload once to fetch fresh assets. The
+    // session flag prevents a reload loop if the chunk is genuinely broken.
+    if (isChunkLoadError(error) && typeof window !== 'undefined') {
+      try {
+        if (!sessionStorage.getItem(CHUNK_RELOAD_KEY)) {
+          sessionStorage.setItem(CHUNK_RELOAD_KEY, '1');
+          window.location.reload();
+          return;
+        }
+      } catch {
+        /* sessionStorage blocked — fall through to the error UI */
+      }
+    }
     console.error('[ErrorBoundary]', error, errorInfo);
   }
 

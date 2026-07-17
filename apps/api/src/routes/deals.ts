@@ -184,7 +184,15 @@ dealRoutes.patch('/:id', requireOperator, async (c) => {
 
     const update: Record<string, unknown> = { updatedAt: new Date() };
     if (body.packageType) update.packageType = body.packageType;
-    if (body.packageValue !== undefined) update.packageValue = body.packageValue;
+    if (body.packageValue !== undefined) {
+      // Money is integer cents — never trust the client's clamp. Reject
+      // NaN / negative / non-integer / absurd values rather than corrupt it.
+      const v = body.packageValue;
+      if (!Number.isFinite(v) || v < 0 || !Number.isInteger(v) || v > 1_000_000_000_00) {
+        return c.json({ error: 'packageValue must be a non-negative integer (cents)', code: 'INVALID_VALUE' }, 400);
+      }
+      update.packageValue = v;
+    }
     if (body.notes !== undefined) update.notes = body.notes;
     if (body.owner) update.owner = body.owner;
 

@@ -18,6 +18,16 @@ export function AppLayout() {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
 
+  useEffect(() => {
+    // App mounted cleanly — clear the chunk-reload guard so a later stale
+    // deploy can also self-recover (see ErrorBoundary).
+    try {
+      sessionStorage.removeItem('lcx-os:chunk-reload');
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   if (!operator) return <Navigate to="/select" replace />;
 
   return (
