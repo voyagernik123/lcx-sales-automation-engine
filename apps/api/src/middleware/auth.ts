@@ -1,5 +1,5 @@
 import { createMiddleware } from 'hono/factory';
-import type { OperatorPrincipal } from '@lcx/shared';
+import { type OperatorPrincipal, findMemberByEmail } from '@lcx/shared';
 import { env } from '../lib/env.js';
 
 export type AuthVariables = {
@@ -30,29 +30,44 @@ function safeEqual(a: string, b: string): boolean {
 }
 
 /**
- * Require operator API key via:
- * - Authorization: Bearer <OPERATOR_API_KEY>
- * - Authorization: ApiKey <OPERATOR_API_KEY>
- * - X-API-Key: <OPERATOR_API_KEY>
+ * Authenticate the request against one of two credentials, passed via
+ * `Authorization: Bearer <cred>`, `Authorization: ApiKey <cred>`, or
+ * `X-API-Key: <cred>`:
+ *
+ *  1. The shared `OPERATOR_API_KEY` — for cron jobs, integrations, and any
+ *     browser that has the key set. Attributes work to a generic "operator".
+ *  2. A desk member's email address (see @lcx/shared TEAM) — the per-person
+ *     sign-in. Because the allowlist is validated server-side, entering your
+ *     email on ANY browser authorizes you there; work attributes to you.
+ *
+ * `role` is 'operator' for both (single-tier API RBAC today); the email path
+ * additionally sets the real member `id` for attribution.
  */
 export const requireOperator = createMiddleware<{ Variables: AuthVariables }>(async (c, next) => {
   const key = extractApiKey(c.req.header('authorization'), c.req.header('x-api-key'));
 
-  if (!key || !safeEqual(key, env.operatorApiKey)) {
-    return c.json(
-      {
-        error: 'Unauthorized',
-        code: 'UNAUTHORIZED',
-      },
-      401,
-    );
+  if (key) {
+    // 1) Shared operator API key (timing-safe).
+    if (safeEqual(key, env.operatorApiKey)) {
+      c.set('operator', { id: 'operator', role: 'operator', authMethod: 'api_key' });
+      await next();
+      return;
+    }
+
+    // 2) Desk email allowlist — the credential IS the member's email.
+    const member = findMemberByEmail(key);
+    if (member) {
+      c.set('operator', { id: member.id, role: 'operator', authMethod: 'email' });
+      await next();
+      return;
+    }
   }
 
-  c.set('operator', {
-    id: 'operator',
-    role: 'operator',
-    authMethod: 'api_key',
-  });
-
-  await next();
+  return c.json(
+    {
+      error: 'Unauthorized',
+      code: 'UNAUTHORIZED',
+    },
+    401,
+  );
 });

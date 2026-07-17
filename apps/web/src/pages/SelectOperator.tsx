@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
+import { normalizeEmail } from '@lcx/shared';
 import { OPERATORS, ROLE_LABEL, useOperatorStore, type Operator } from '@/stores';
 import { fetchDealBoard, fetchHandoffs } from '@/lib/api/bd';
-import { getHealth } from '@/lib/apiClient';
+import { getHealth, setOperatorEmail } from '@/lib/apiClient';
 import { computeReplySla } from '@/lib/salesIntel';
 import { formatMoney } from '@/lib/format';
 
@@ -98,6 +99,13 @@ export function SelectOperator() {
   const [focusIdx, setFocusIdx] = useState(0);
   const rowRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
+  // Email-confirm step: clicking a seat opens this; entering the matching LCX
+  // address signs in and provisions the API credential for this browser.
+  const [pending, setPending] = useState<Operator | null>(null);
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     const iv = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(iv);
@@ -113,20 +121,51 @@ export function SelectOperator() {
       .catch(() => setApiUp(false));
   }, []);
 
-  const pick = useCallback(
-    (op: Operator) => {
-      setOperator(op);
-      navigate('/', { replace: true });
-    },
-    [navigate, setOperator],
-  );
+  /** Open the email-confirm step for a seat. */
+  const openSeat = useCallback((op: Operator) => {
+    setPending(op);
+    setEmail('');
+    setError(null);
+  }, []);
+
+  const closeSeat = useCallback(() => {
+    setPending(null);
+    setEmail('');
+    setError(null);
+  }, []);
+
+  /** Validate the typed email against the seat and sign in on success. */
+  const confirm = useCallback(() => {
+    if (!pending) return;
+    if (normalizeEmail(email) !== pending.email) {
+      setError(`That's not ${pending.name}'s LCX email. Use your own @lcx.com address.`);
+      emailRef.current?.select();
+      return;
+    }
+    setOperatorEmail(pending.email); // API credential for this browser
+    setOperator(pending);
+    navigate('/', { replace: true });
+  }, [pending, email, navigate, setOperator]);
+
+  // Focus the field when the confirm step opens.
+  useEffect(() => {
+    if (pending) emailRef.current?.focus();
+  }, [pending]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // While confirming a seat, Escape backs out; Enter is handled by the form.
+      if (pending) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          closeSeat();
+        }
+        return;
+      }
       const num = Number(e.key);
       if (num >= 1 && num <= OPERATORS.length) {
         e.preventDefault();
-        pick(OPERATORS[num - 1]);
+        openSeat(OPERATORS[num - 1]);
         return;
       }
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -139,12 +178,12 @@ export function SelectOperator() {
       }
       if (e.key === 'Enter') {
         e.preventDefault();
-        pick(OPERATORS[focusIdx]);
+        openSeat(OPERATORS[focusIdx]);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [pick, focusIdx]);
+  }, [pending, openSeat, closeSeat, focusIdx]);
 
   const utc = clock.toISOString().slice(11, 19);
   const dateTag = clock
@@ -236,7 +275,7 @@ export function SelectOperator() {
                 ref={el => {
                   rowRefs.current[i] = el;
                 }}
-                onClick={() => pick(op)}
+                onClick={() => openSeat(op)}
                 onFocus={() => setFocusIdx(i)}
                 onMouseEnter={() => setFocusIdx(i)}
                 aria-label={`Sign in as ${op.name} — press ${i + 1}`}
@@ -287,11 +326,102 @@ export function SelectOperator() {
             className="animate-fadeIn mt-5 flex items-center justify-between font-mono text-[10px] uppercase tracking-wider text-grey/80"
             style={{ animationDelay: '300ms' }}
           >
-            <span>1–5 sign in · ↑↓ move · enter confirm</span>
+            <span>1–5 pick seat · ↑↓ move · enter to confirm</span>
             <span className="hidden sm:inline">Internal · not legal advice</span>
           </div>
         </div>
       </main>
+
+      {/* ─── Email confirm — the sign-in gate ─── */}
+      {pending && (
+        <div
+          className="animate-fadeIn fixed inset-0 z-50 flex items-center justify-center bg-navy/40 p-6 backdrop-blur-sm dark:bg-black/60"
+          onMouseDown={closeSeat}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`Confirm sign-in as ${pending.name}`}
+            className="w-full max-w-sm rounded-xl border border-line bg-card p-6 shadow-overlay"
+            onMouseDown={e => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3">
+              <span
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-[16px] font-bold text-white"
+                style={{ backgroundColor: pending.colorVar }}
+              >
+                {pending.initials}
+              </span>
+              <div className="min-w-0">
+                <div className="text-[16px] font-semibold tracking-[-0.01em] text-navy">{pending.name}</div>
+                <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-grey">
+                  {ROLE_LABEL[pending.role]}
+                </div>
+              </div>
+            </div>
+
+            <p className="mt-4 text-[12.5px] leading-relaxed text-grey">
+              Enter your LCX email to sign in. This authorizes you on this device — it works on any
+              browser, anywhere.
+            </p>
+
+            <form
+              className="mt-4"
+              onSubmit={e => {
+                e.preventDefault();
+                confirm();
+              }}
+            >
+              <input
+                ref={emailRef}
+                type="email"
+                autoComplete="email"
+                inputMode="email"
+                spellCheck={false}
+                value={email}
+                onChange={e => {
+                  setEmail(e.target.value);
+                  if (error) setError(null);
+                }}
+                onKeyDown={e => {
+                  // Explicit Enter → submit, so it never depends on the
+                  // browser's implicit-submission quirks.
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    confirm();
+                  }
+                }}
+                placeholder="you@lcx.com"
+                aria-invalid={!!error}
+                className={`w-full rounded-lg border bg-page px-3.5 py-2.5 text-[14px] text-navy outline-none transition-colors placeholder:text-grey/60 focus:ring-2 ${
+                  error
+                    ? 'border-red-400 focus:ring-red-500/30 dark:border-red-500/60'
+                    : 'border-line focus:border-cyan-500 focus:ring-cyan-500/25'
+                }`}
+              />
+              {error && (
+                <p className="mt-2 text-[11.5px] leading-snug text-red-600 dark:text-red-400">{error}</p>
+              )}
+
+              <div className="mt-5 flex items-center gap-2.5">
+                <button
+                  type="submit"
+                  className="flex-1 rounded-lg bg-navy py-2.5 text-[13px] font-semibold text-card transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+                >
+                  Sign in
+                </button>
+                <button
+                  type="button"
+                  onClick={closeSeat}
+                  className="rounded-lg border border-line px-4 py-2.5 text-[13px] font-medium text-grey transition-colors hover:text-navy focus:outline-none focus:ring-2 focus:ring-cyan-500/30"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

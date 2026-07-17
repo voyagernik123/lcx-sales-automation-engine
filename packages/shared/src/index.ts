@@ -76,6 +76,10 @@ export { CADENCE, MIXED_CADENCE_CHANNELS, computeScheduledDate } from './outreac
 // Normalization helpers (dedupe keys, matcher, label joins)
 export { squash, squashEntity } from './normalize.js';
 
+// Desk roster + email allowlist (shared by the web front door and API auth)
+export type { TeamMember, TeamRole } from './operators.js';
+export { TEAM, normalizeEmail, findMemberByEmail, isAllowedEmail } from './operators.js';
+
 // Deal desk + proposals (Slice 12)
 export type {
   PackageConfig, DealPackage,

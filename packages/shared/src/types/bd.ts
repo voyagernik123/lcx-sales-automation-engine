@@ -28,9 +28,16 @@ export interface ApiSuccessBody<T> {
   };
 }
 
-/** Operator identity resolved from API key (v1 = single shared key). */
+/**
+ * Operator identity resolved from the request credential — either the shared
+ * `OPERATOR_API_KEY` (cron, integrations) or a desk member's email address
+ * (per-person sign-in). `role` stays 'operator' for both: API RBAC is
+ * single-tier today (see middleware/permissions.ts), and the approver/operator
+ * distinction is applied on the client. `id` is the real member id when known,
+ * so writes attribute to the person, not a generic "operator".
+ */
 export interface OperatorPrincipal {
   id: string;
   role: 'operator';
-  authMethod: 'api_key';
+  authMethod: 'api_key' | 'email';
 }

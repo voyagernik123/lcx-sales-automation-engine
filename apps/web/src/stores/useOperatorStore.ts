@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { TEAM, type TeamRole } from '@lcx/shared';
 import { storage } from '@/lib/persistence';
 import { STORAGE_KEYS } from '@/lib/storage';
 
@@ -8,11 +9,13 @@ import { STORAGE_KEYS } from '@/lib/storage';
  * disabled-with-reason for operators, never hidden — governance is visible.
  * viewer < operator < approver (approver ⊇ operator rights).
  */
-export type OperatorRole = 'viewer' | 'operator' | 'approver';
+export type OperatorRole = TeamRole;
 
 export interface Operator {
   id: string;
   name: string;
+  /** LCX email — the sign-in credential and the token sent to the API. */
+  email: string;
   initials: string;
   /** One of the validated chart CSS vars — keeps identity colors on-brand. */
   colorVar: string;
@@ -32,18 +35,28 @@ export const ROLE_LABEL: Record<OperatorRole, string> = {
 };
 
 /**
- * The five people this internal tool is shared with today. No real auth yet
- * (emails/SSO land later) — this is a lightweight "who's driving" switch so
- * the dashboard can greet the right person and attribute their work. Desk
+ * The five people this internal tool is shared with. Identity + email + role
+ * come from the shared desk roster (@lcx/shared TEAM) so the front door and the
+ * API allowlist can't drift; the UI-only fields (initials, brand color) are
+ * decorated here by id. Sign-in is email-based (a lightweight team gate) — desk
  * leads carry approver rights (deal close, invoice sign-off).
  */
-export const OPERATORS: Operator[] = [
-  { id: 'monty', name: 'Monty', initials: 'M', colorVar: 'var(--chart-2)', role: 'approver' },
-  { id: 'sam', name: 'Sam', initials: 'S', colorVar: 'var(--chart-3)', role: 'operator' },
-  { id: 'nik', name: 'Nik', initials: 'N', colorVar: 'var(--chart-1)', role: 'approver' },
-  { id: 'rida', name: 'Rida', initials: 'R', colorVar: 'var(--chart-5)', role: 'operator' },
-  { id: 'jatin', name: 'Jatin', initials: 'J', colorVar: 'var(--chart-8)', role: 'operator' },
-];
+const UI_BY_ID: Record<string, { initials: string; colorVar: string }> = {
+  monty: { initials: 'M', colorVar: 'var(--chart-2)' },
+  sam: { initials: 'S', colorVar: 'var(--chart-3)' },
+  nik: { initials: 'N', colorVar: 'var(--chart-1)' },
+  rida: { initials: 'R', colorVar: 'var(--chart-5)' },
+  jatin: { initials: 'J', colorVar: 'var(--chart-8)' },
+};
+
+export const OPERATORS: Operator[] = TEAM.map((m) => ({
+  id: m.id,
+  name: m.name,
+  email: m.email,
+  role: m.role,
+  initials: UI_BY_ID[m.id]?.initials ?? m.name[0]!.toUpperCase(),
+  colorVar: UI_BY_ID[m.id]?.colorVar ?? 'var(--chart-1)',
+}));
 
 interface OperatorStore {
   operator: Operator | null;
@@ -60,22 +73,25 @@ export const useOperatorStore = create<OperatorStore>()(
     }),
     {
       name: STORAGE_KEYS.OPERATOR,
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() => ({
         getItem: n => JSON.stringify(storage.get(n, null)),
         setItem: (n, v) => storage.set(n, JSON.parse(v)),
         removeItem: n => storage.remove(n),
       })),
-      // `role` was added after launch (v1). Pre-v1 operators persisted without
-      // it — migrate in place (backfill from the roster by id) so users stay
-      // signed in and approvers keep their rights, instead of being discarded
-      // to the front door on a version bump. Runs only on version < 1.
+      // Migrate persisted operators in place (backfill missing fields from the
+      // roster by id) so signed-in users are never discarded to the front door
+      // on a version bump. `role` was added at v1; `email` at v2.
       migrate: (persisted, version) => {
         const p = (persisted ?? {}) as Partial<OperatorStore>;
         let operator = p.operator ?? null;
-        if (version < 1 && operator && !operator.role) {
+        if (version < 2 && operator && (!operator.role || !operator.email)) {
           const known = OPERATORS.find(o => o.id === operator!.id);
-          operator = { ...operator, role: known?.role ?? 'operator' };
+          operator = {
+            ...operator,
+            role: operator.role ?? known?.role ?? 'operator',
+            email: operator.email ?? known?.email ?? '',
+          };
         }
         return { operator };
       },

@@ -12,14 +12,46 @@ const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/
 // never be inlined and shipped to browsers. Prod keys live in localStorage.
 const ENV_API_KEY = import.meta.env.DEV ? ((import.meta.env.VITE_API_KEY as string | undefined) ?? '') : '';
 
-// Operator key lives in localStorage in production so it never ships in the
-// bundle (set once via: localStorage.setItem('lcx_api_key', '<key>')).
-// VITE_API_KEY is the local-dev fallback only.
+const EMAIL_KEY = 'lcx_operator_email';
+const LEGACY_KEY = 'lcx_api_key';
+
+/**
+ * The bearer credential sent to the API, in priority order:
+ *  1. the signed-in operator's email (set on the front door — the API's TEAM
+ *     allowlist accepts it, so sign-in works on any browser/device);
+ *  2. a legacy shared API key in localStorage (cron, integrations, and any
+ *     browser provisioned before email sign-in existed);
+ *  3. the dev-only env key.
+ * Nothing secret ships in the bundle — the email is entered by the user, and
+ * the shared key lives only in localStorage.
+ */
 export function getApiKey(): string {
   try {
-    return localStorage.getItem('lcx_api_key') ?? ENV_API_KEY;
+    return (
+      localStorage.getItem(EMAIL_KEY)?.trim() ||
+      localStorage.getItem(LEGACY_KEY) ||
+      ENV_API_KEY
+    );
   } catch {
     return ENV_API_KEY;
+  }
+}
+
+/** Record the signed-in operator's email as the API credential (front door). */
+export function setOperatorEmail(email: string): void {
+  try {
+    localStorage.setItem(EMAIL_KEY, email.trim().toLowerCase());
+  } catch {
+    /* storage unavailable — in-memory session only */
+  }
+}
+
+/** Clear the email credential on sign-out (leaves any legacy key untouched). */
+export function clearOperatorEmail(): void {
+  try {
+    localStorage.removeItem(EMAIL_KEY);
+  } catch {
+    /* no-op */
   }
 }
 

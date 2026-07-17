@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Sun, Moon, LogOut, ChevronDown } from 'lucide-react';
 import { useUIStore, useOperatorStore, ROLE_LABEL } from '@/stores';
+import { clearOperatorEmail } from '@/lib/apiClient';
 import { NotificationBell } from './NotificationBell';
 
 const routeLabels: Record<string, string> = {
@@ -44,6 +45,7 @@ const routeLabels: Record<string, string> = {
 export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
   const { darkMode, toggleDarkMode } = useUIStore();
   const operator = useOperatorStore(s => s.operator);
+  const clearOperator = useOperatorStore(s => s.clearOperator);
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const crumbs = pathname
@@ -157,12 +159,14 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
               <button
                 onClick={() => {
                   setShowOperatorMenu(false);
+                  clearOperatorEmail(); // drop the API credential
+                  clearOperator(); // drop the identity → guard sends us to /select
                   navigate('/select');
                 }}
                 className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-navy transition-colors hover:bg-ice-soft dark:hover:bg-ice-soft/10"
               >
                 <LogOut size={12} />
-                Switch identity
+                Sign out
               </button>
             </div>
           )}
