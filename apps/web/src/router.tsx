@@ -38,6 +38,7 @@ const Targets = lazy(() => import('@/pages/Targets').then((m) => ({ default: m.T
 const DailyBrief = lazy(() => import('@/pages/DailyBrief').then((m) => ({ default: m.DailyBrief })));
 const Forecast = lazy(() => import('@/pages/Forecast').then((m) => ({ default: m.Forecast })));
 const CommandCenter = lazy(() => import('@/pages/CommandCenter').then((m) => ({ default: m.CommandCenter })));
+const Scorecard = lazy(() => import('@/pages/Scorecard').then((m) => ({ default: m.Scorecard })));
 const CoverageReport = lazy(() => import('@/pages/CoverageReport').then((m) => ({ default: m.CoverageReport })));
 const Customer360 = lazy(() => import('@/pages/Customer360').then((m) => ({ default: m.Customer360 })));
 const Notes = lazy(() => import('@/pages/Notes').then((m) => ({ default: m.Notes })));
@@ -88,6 +89,7 @@ export const router = createBrowserRouter([
       { path: 'brief', element: <DailyBrief /> },
       { path: 'forecast', element: <Forecast /> },
       { path: 'command', element: <CommandCenter /> },
+      { path: 'scorecard', element: <Scorecard /> },
       { path: 'coverage/:id', element: <CoverageReport /> },
       { path: 'customer/:id', element: <Customer360 /> },
       { path: 'notes', element: <Notes /> },

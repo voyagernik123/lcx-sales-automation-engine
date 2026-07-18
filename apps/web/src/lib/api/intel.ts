@@ -227,6 +227,41 @@ export function fetchPortfolio(): Promise<Portfolio> {
   return request<{ data: Portfolio }>(`/v1/intel/portfolio`).then((r) => r.data);
 }
 
+/* ── Learning loop (Wave 6) — calibration + scorecard ──────────────── */
+
+export interface MetricCalibration {
+  metricKey: string;
+  kind: 'score' | 'signal';
+  lift: number | null;
+  quintileCapture: number | null;
+  wonMedian: number | null;
+  universeMedian: number | null;
+  sampleWon: number;
+  sampleUniverse: number;
+  verdict: 'predictive' | 'weak' | 'insufficient';
+}
+
+export function fetchCalibration(): Promise<{ latest: MetricCalibration[]; history: { snapshotDate: string; metricKey: string; lift: number | null }[] }> {
+  return request<{ data: { latest: MetricCalibration[]; history: { snapshotDate: string; metricKey: string; lift: number | null }[] } }>(`/v1/intel/calibration`).then((r) => r.data);
+}
+
+export interface Scorecard {
+  northStar: { totalWon: number; wonLast90d: number };
+  funnel: { openDeals: number; openValueUsd: number; winRatePct: number | null; avgCycleDays: number | null };
+  intelligence: {
+    observations: number;
+    scoredProjects: number;
+    coverage: { source: string; label: string; okCount: number; pct: number }[];
+    convictionLift: number | null;
+    convictionCapture: number | null;
+    convictionVerdict: string | null;
+  };
+}
+
+export function fetchScorecard(): Promise<Scorecard> {
+  return request<{ data: Scorecard }>(`/v1/intel/scorecard`).then((r) => r.data);
+}
+
 const q = (subjectType: string, subjectId: string) =>
   `subjectType=${encodeURIComponent(subjectType)}&subjectId=${encodeURIComponent(subjectId)}`;
 

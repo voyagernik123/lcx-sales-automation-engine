@@ -690,6 +690,26 @@ export const projectIdentifiers = pgTable('project_identifiers', {
   index('idx_pid_kind_value').on(t.kind, t.value),
 ]);
 
+/** model_calibrations — Wave 6 learning-loop snapshots (how well each score predicted wins). */
+export const modelCalibrations = pgTable('model_calibrations', {
+  id: uuid('id').default(sql`gen_random_uuid()`).primaryKey(),
+  orgId: uuid('org_id').notNull().default('11111111-1111-1111-1111-111111111111'),
+  snapshotDate: text('snapshot_date').notNull().default(sql`(CURRENT_DATE::text)`),
+  metricKey: text('metric_key').notNull(),
+  kind: text('kind').default('score').notNull(),
+  lift: numeric('lift'),
+  quintileCapture: numeric('quintile_capture'),
+  wonMedian: numeric('won_median'),
+  universeMedian: numeric('universe_median'),
+  sampleWon: integer('sample_won').default(0).notNull(),
+  sampleUniverse: integer('sample_universe').default(0).notNull(),
+  meta: jsonb('meta').default({}).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_calib_metric_date').on(t.metricKey, t.snapshotDate),
+  index('idx_calib_date').on(t.snapshotDate),
+]);
+
 /** collection_state — per (object, source) freshness + intelligence-gap ledger. */
 export const collectionState = pgTable('collection_state', {
   id: uuid('id').default(sql`gen_random_uuid()`).primaryKey(),

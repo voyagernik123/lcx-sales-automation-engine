@@ -34,6 +34,7 @@ const routeLabels: Record<string, string> = {
   'brief': 'Daily Brief',
   'command': 'Command Center',
   'forecast': 'Forecast',
+  'scorecard': 'Scorecard',
   'coverage': 'Coverage Report',
   'board-report': 'Board Report',
   'report-builder': 'Report Builder',

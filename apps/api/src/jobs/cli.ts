@@ -224,20 +224,31 @@ async function main() {
         break;
       }
       case 'alpha': {
-        // Full alpha pass: recompute scores → refresh indications.
+        // Full alpha pass: recompute scores → refresh indications → recalibrate.
         const { computeAlpha } = await import('../intel/alpha.js');
         const { scanIndications } = await import('../intel/iw.js');
+        const { computeCalibration } = await import('../intel/calibration.js');
         const r = await withJobRun(pool, job, async () => {
           const scores = await computeAlpha(pool);
           const indications = await scanIndications(pool);
-          return { stats: { scores, indications } };
+          const calibration = await computeCalibration(pool);
+          return { stats: { scores, indications, calibration: { snapshotted: calibration.snapshotted } } };
+        });
+        console.log(JSON.stringify(r.stats));
+        break;
+      }
+      case 'calibrate': {
+        const { computeCalibration } = await import('../intel/calibration.js');
+        const r = await withJobRun(pool, job, async () => {
+          const res = await computeCalibration(pool);
+          return { stats: { snapshotted: res.snapshotted, metrics: res.metrics.map((m) => ({ k: m.metricKey, lift: m.lift, verdict: m.verdict })) } };
         });
         console.log(JSON.stringify(r.stats));
         break;
       }
       default:
         console.error(`Unknown job: ${job}`);
-        console.error('Jobs: universe_sync | discover_new_tokens | market_refresh | score_refresh | kpi_snapshot | signals_prune | exchange_sync | daily_rules | news_refresh | anomaly_scan | weekly_digest | backfill_observations | resolve_identifiers | collect_defillama | collect_coinpaprika | collect_github | collect | compute_alpha | scan_iw | alpha');
+        console.error('Jobs: universe_sync | discover_new_tokens | market_refresh | score_refresh | kpi_snapshot | signals_prune | exchange_sync | daily_rules | news_refresh | anomaly_scan | weekly_digest | backfill_observations | resolve_identifiers | collect_defillama | collect_coinpaprika | collect_github | collect | compute_alpha | scan_iw | alpha | calibrate');
         process.exit(1);
     }
   } finally {

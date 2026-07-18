@@ -14,6 +14,8 @@ import { buildDailyBrief } from '../intel/brief.js';
 import { getPlayDraft, savePlayDraft } from '../intel/plays.js';
 import { analyzeProjectConversation } from '../intel/conversation.js';
 import { buildPortfolio } from '../intel/portfolio.js';
+import { getCalibration } from '../intel/calibration.js';
+import { buildScorecard } from '../intel/scorecard.js';
 
 export const intelRoutes = new Hono<{ Variables: AuthVariables }>();
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
@@ -222,6 +224,28 @@ intelRoutes.post('/play', requireOperator, async (c) => {
   } catch (err) {
     console.error('[intel] save play error:', err);
     return c.json({ error: 'Failed to save draft', code: 'INTEL_ERROR' }, 500);
+  }
+});
+
+/** GET /v1/intel/calibration — how well each score/signal predicts wins (learning loop). */
+intelRoutes.get('/calibration', requireOperator, async (c) => {
+  try {
+    const data = await getCalibration();
+    return c.json({ data, meta: meta() });
+  } catch (err) {
+    console.error('[intel] calibration error:', err);
+    return c.json({ error: 'Failed to load calibration', code: 'INTEL_ERROR' }, 500);
+  }
+});
+
+/** GET /v1/intel/scorecard — the self-measurement scorecard (North Star + funnel + intel quality). */
+intelRoutes.get('/scorecard', requireOperator, async (c) => {
+  try {
+    const data = await buildScorecard();
+    return c.json({ data, meta: meta() });
+  } catch (err) {
+    console.error('[intel] scorecard error:', err);
+    return c.json({ error: 'Failed to build scorecard', code: 'INTEL_ERROR' }, 500);
   }
 });
 
