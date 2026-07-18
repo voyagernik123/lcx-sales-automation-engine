@@ -64,11 +64,23 @@ export async function runIntelJob(pool: pg.Pool, job: IntelJob, opts: IntelJobOp
       const { collectCoinpaprikaDetail } = await import('../connectors/coinpaprikaDetail.js');
       const { collectGithub } = await import('../connectors/github.js');
       return withJobRun(pool, job, async () => {
-        const resolved = await resolveCoinpaprikaIds(pool);
-        const defillama = await collectDefillama(pool);
-        const coinpaprika = await collectCoinpaprikaDetail(pool, cp);
-        const github = await collectGithub(pool, gh);
-        return { stats: { resolved, defillama, coinpaprika, github } };
+        // Each source is isolated: a transient failure in one (e.g. a dropped
+        // DefiLlama bulk download) must not abort the others. The per-source
+        // outcome — result or error — lands in stats, and Ops freshness shows
+        // the real coverage either way.
+        const stats: Record<string, unknown> = {};
+        const step = async (name: string, fn: () => Promise<unknown>) => {
+          try {
+            stats[name] = await fn();
+          } catch (err) {
+            stats[name] = { error: err instanceof Error ? err.message : String(err) };
+          }
+        };
+        await step('resolved', () => resolveCoinpaprikaIds(pool));
+        await step('defillama', () => collectDefillama(pool));
+        await step('coinpaprika', () => collectCoinpaprikaDetail(pool, cp));
+        await step('github', () => collectGithub(pool, gh));
+        return { stats };
       });
     }
     case 'compute_alpha': {

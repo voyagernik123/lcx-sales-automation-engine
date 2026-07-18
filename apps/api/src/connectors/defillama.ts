@@ -26,10 +26,38 @@ interface Protocol {
 
 const squash = (s: string): string => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
+/**
+ * Fetch the (large) /protocols payload robustly. On constrained hosts (Render
+ * free tier) undici intermittently drops the body mid-stream with
+ * `TypeError: terminated`; a bounded retry + a fresh connection each attempt
+ * clears it, and gzip shrinks the download to lower the odds. 30s abort guard
+ * so a hung socket can't wedge the whole collect job.
+ */
+async function fetchProtocols(): Promise<Protocol[]> {
+  const MAX = 3;
+  let lastErr: unknown;
+  for (let attempt = 1; attempt <= MAX; attempt++) {
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 30_000);
+    try {
+      const res = await fetch('https://api.llama.fi/protocols', {
+        signal: ac.signal,
+        headers: { 'accept-encoding': 'gzip' },
+      });
+      if (!res.ok) throw new Error(`defillama /protocols ${res.status}`);
+      return (await res.json()) as Protocol[];
+    } catch (err) {
+      lastErr = err;
+      if (attempt < MAX) await new Promise((r) => setTimeout(r, 750 * attempt));
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw new Error(`defillama /protocols fetch failed after ${MAX} attempts: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`);
+}
+
 export async function collectDefillama(pool: pg.Pool): Promise<{ matched: number; observations: number }> {
-  const res = await fetch('https://api.llama.fi/protocols');
-  if (!res.ok) throw new Error(`defillama /protocols ${res.status}`);
-  const protocols = (await res.json()) as Protocol[];
+  const protocols = await fetchProtocols();
 
   // Index by symbol, keeping the highest-TVL protocol per symbol.
   const bySymbol = new Map<string, Protocol>();
