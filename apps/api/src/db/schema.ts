@@ -669,3 +669,43 @@ export const watchlist = pgTable('watchlist', {
   uniqueIndex('idx_watchlist_uniq').on(t.orgId, t.subjectType, t.subjectId),
   index('idx_watchlist_subject').on(t.subjectType, t.subjectId),
 ]);
+
+/* ──────────────────────────────────────────────
+ *  Wave 1 — the collection apparatus (migration 0030)
+ * ────────────────────────────────────────────── */
+
+/** project_identifiers — resolved external handles that target the free connectors. */
+export const projectIdentifiers = pgTable('project_identifiers', {
+  id: uuid('id').default(sql`gen_random_uuid()`).primaryKey(),
+  projectId: uuid('project_id').references(() => projects.id, { onDelete: 'cascade' }).notNull(),
+  kind: text('kind').notNull(),
+  value: text('value').notNull(),
+  source: text('source').default('internal').notNull(),
+  confidence: integer('confidence').default(60).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('idx_pid_project_kind').on(t.projectId, t.kind),
+  index('idx_pid_project').on(t.projectId),
+  index('idx_pid_kind_value').on(t.kind, t.value),
+]);
+
+/** collection_state — per (object, source) freshness + intelligence-gap ledger. */
+export const collectionState = pgTable('collection_state', {
+  id: uuid('id').default(sql`gen_random_uuid()`).primaryKey(),
+  subjectType: text('subject_type').notNull(),
+  subjectId: text('subject_id').notNull(),
+  source: text('source').notNull(),
+  status: text('status').default('pending').notNull(),
+  lastOkAt: timestamp('last_ok_at', { withTimezone: true }),
+  lastAttemptAt: timestamp('last_attempt_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  runs: integer('runs').default(0).notNull(),
+  nextDueAt: timestamp('next_due_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('idx_cstate_uniq').on(t.subjectType, t.subjectId, t.source),
+  index('idx_cstate_source_due').on(t.source, t.nextDueAt),
+  index('idx_cstate_subject').on(t.subjectType, t.subjectId),
+  index('idx_cstate_status').on(t.status),
+]);

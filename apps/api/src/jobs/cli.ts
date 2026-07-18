@@ -150,9 +150,64 @@ async function main() {
         console.log(JSON.stringify(r.stats));
         break;
       }
+      case 'resolve_identifiers': {
+        const { resolveCoinpaprikaIds } = await import('../intel/identifiers.js');
+        const r = await withJobRun(pool, job, async () => {
+          const res = await resolveCoinpaprikaIds(pool);
+          return { stats: res as unknown as Record<string, unknown> };
+        });
+        console.log(JSON.stringify(r.stats));
+        break;
+      }
+      case 'collect_defillama': {
+        const { collectDefillama } = await import('../connectors/defillama.js');
+        const r = await withJobRun(pool, job, async () => {
+          const res = await collectDefillama(pool);
+          return { stats: res as unknown as Record<string, unknown> };
+        });
+        console.log(JSON.stringify(r.stats));
+        break;
+      }
+      case 'collect_coinpaprika': {
+        const { collectCoinpaprikaDetail } = await import('../connectors/coinpaprikaDetail.js');
+        const n = Number(process.argv[3] ?? 60) || 60;
+        const r = await withJobRun(pool, job, async () => {
+          const res = await collectCoinpaprikaDetail(pool, n);
+          return { stats: res as unknown as Record<string, unknown> };
+        });
+        console.log(JSON.stringify(r.stats));
+        break;
+      }
+      case 'collect_github': {
+        const { collectGithub } = await import('../connectors/github.js');
+        const n = Number(process.argv[3] ?? 40) || 40;
+        const r = await withJobRun(pool, job, async () => {
+          const res = await collectGithub(pool, n);
+          return { stats: res as unknown as Record<string, unknown> };
+        });
+        console.log(JSON.stringify(r.stats));
+        break;
+      }
+      case 'collect': {
+        // Run the free sensors in one pass: resolve ids → DefiLlama (bulk) →
+        // bounded CoinPaprika detail → bounded GitHub.
+        const { resolveCoinpaprikaIds } = await import('../intel/identifiers.js');
+        const { collectDefillama } = await import('../connectors/defillama.js');
+        const { collectCoinpaprikaDetail } = await import('../connectors/coinpaprikaDetail.js');
+        const { collectGithub } = await import('../connectors/github.js');
+        const r = await withJobRun(pool, job, async () => {
+          const resolved = await resolveCoinpaprikaIds(pool);
+          const defillama = await collectDefillama(pool);
+          const coinpaprika = await collectCoinpaprikaDetail(pool, Number(process.argv[3] ?? 60) || 60);
+          const github = await collectGithub(pool, Number(process.argv[4] ?? 40) || 40);
+          return { stats: { resolved, defillama, coinpaprika, github } };
+        });
+        console.log(JSON.stringify(r.stats));
+        break;
+      }
       default:
         console.error(`Unknown job: ${job}`);
-        console.error('Jobs: universe_sync | discover_new_tokens | market_refresh | score_refresh | kpi_snapshot | signals_prune | exchange_sync | daily_rules | news_refresh | anomaly_scan | weekly_digest | backfill_observations');
+        console.error('Jobs: universe_sync | discover_new_tokens | market_refresh | score_refresh | kpi_snapshot | signals_prune | exchange_sync | daily_rules | news_refresh | anomaly_scan | weekly_digest | backfill_observations | resolve_identifiers | collect_defillama | collect_coinpaprika | collect_github | collect');
         process.exit(1);
     }
   } finally {

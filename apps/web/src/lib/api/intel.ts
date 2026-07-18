@@ -20,6 +20,20 @@ export interface WatchlistEntry {
   createdAt: string;
 }
 
+export interface CoverageEntry {
+  id: string;
+  label: string;
+  source: string;
+  yields: string;
+  status: 'ok' | 'error' | 'pending' | 'missing';
+  lastOkAt: string | null;
+  fresh: boolean;
+}
+
+export function fetchCoverage(subjectType: string, subjectId: string): Promise<CoverageEntry[]> {
+  return request<{ data: CoverageEntry[] }>(`/v1/intel/coverage?${q(subjectType, subjectId)}`).then((r) => r.data);
+}
+
 const q = (subjectType: string, subjectId: string) =>
   `subjectType=${encodeURIComponent(subjectType)}&subjectId=${encodeURIComponent(subjectId)}`;
 

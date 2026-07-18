@@ -1,4 +1,5 @@
 import { sql } from 'drizzle-orm';
+import type pg from 'pg';
 import {
   confidenceFrom,
   getSource,
@@ -81,6 +82,66 @@ export async function recordObservation(input: RecordObservationInput): Promise<
     RETURNING id
   `);
   return res.rows![0].id as string;
+}
+
+export interface ObservationRow {
+  subjectType: string;
+  subjectId: string;
+  predicate: string;
+  value: unknown;
+  valueNum?: number | null;
+  unit?: string | null;
+  source: string;
+  sourceUrl?: string | null;
+  reliability: Reliability;
+  credibility: Credibility;
+  observedAt: Date;
+  jobRunId?: string | null;
+  actor?: string | null;
+}
+
+/**
+ * Batched pool-based observation writer for connectors/jobs — chunked to stay
+ * under Postgres' 65535-param cap. Confidence is derived per row (same rule as
+ * recordObservation) so connectors never hand-tune it.
+ */
+export async function insertObservations(pool: pg.Pool, rows: ObservationRow[]): Promise<number> {
+  if (rows.length === 0) return 0;
+  const COLS = 14;
+  const CHUNK = 700;
+  const now = Date.now();
+  let total = 0;
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    const slice = rows.slice(i, i + CHUNK);
+    const values: unknown[] = [];
+    const tuples = slice.map((r, j) => {
+      const b = j * COLS;
+      const freshnessDays = Math.max(0, (now - r.observedAt.getTime()) / 86_400_000);
+      const confidence = confidenceFrom(r.reliability, r.credibility, freshnessDays);
+      const valueNum =
+        r.valueNum !== undefined
+          ? r.valueNum
+          : typeof r.value === 'number' && Number.isFinite(r.value)
+            ? r.value
+            : null;
+      values.push(
+        DEFAULT_ORG_ID, r.subjectType, r.subjectId, r.predicate,
+        JSON.stringify(r.value ?? null), valueNum, r.unit ?? null,
+        r.source, r.sourceUrl ?? null, r.reliability, r.credibility, confidence,
+        r.observedAt.toISOString(), r.jobRunId ?? null,
+      );
+      return `($${b + 1},$${b + 2},$${b + 3},$${b + 4},$${b + 5}::jsonb,$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14})`;
+    });
+    await pool.query(
+      `INSERT INTO observations
+         (org_id, subject_type, subject_id, predicate, value_json, value_num, unit,
+          source, source_url, reliability, credibility, confidence, observed_at, job_run_id)
+       VALUES ${tuples.join(',')}`,
+      values,
+    );
+    total += slice.length;
+  }
+  return total;
 }
 
 /** Latest observation per predicate for an object — the current sourced picture. */

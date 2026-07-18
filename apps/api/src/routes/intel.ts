@@ -5,6 +5,7 @@ import { requireOperator } from '../middleware/auth.js';
 import { env } from '../lib/env.js';
 import { listObservations, recordObservation } from '../intel/observations.js';
 import { executeAction, getObjectState, listWatchlist } from '../intel/actions.js';
+import { getCoverage } from '../intel/collect.js';
 
 export const intelRoutes = new Hono<{ Variables: AuthVariables }>();
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
@@ -99,6 +100,19 @@ intelRoutes.post('/actions', requireOperator, async (c) => {
   } catch (err) {
     console.error('[intel] execute action error:', err);
     return c.json({ error: 'Failed to execute action', code: 'INTEL_ERROR' }, 500);
+  }
+});
+
+/** GET /v1/intel/coverage?subjectType=&subjectId= — which free sensors have fresh data. */
+intelRoutes.get('/coverage', requireOperator, async (c) => {
+  const subj = requireSubject(c);
+  if (!subj) return c.json({ error: 'subjectType and subjectId required', code: 'VALIDATION' }, 400);
+  try {
+    const data = await getCoverage(subj.subjectType, subj.subjectId);
+    return c.json({ data, meta: meta() });
+  } catch (err) {
+    console.error('[intel] coverage error:', err);
+    return c.json({ error: 'Failed to load coverage', code: 'INTEL_ERROR' }, 500);
   }
 });
 

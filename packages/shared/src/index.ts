@@ -85,6 +85,8 @@ export type { Reliability, Credibility, SourceKind, SourceDef, Observation } fro
 export { RELIABILITY_LABEL, CREDIBILITY_LABEL, SOURCES, getSource, confidenceFrom } from './provenance.js';
 export type { ActionId, ActionDef } from './actions.js';
 export { ACTION_DEFS, actionsFor, getAction, SERVER_ACTIONS, isServerAction } from './actions.js';
+export type { ConnectorDef } from './collection.js';
+export { CONNECTORS, getConnector, isStale } from './collection.js';
 
 // Deal desk + proposals (Slice 12)
 export type {

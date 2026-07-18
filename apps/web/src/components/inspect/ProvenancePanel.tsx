@@ -2,7 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, Flag, Briefcase, ExternalLink, ShieldCheck } from 'lucide-react';
 import { getSource, RELIABILITY_LABEL, type Observation } from '@lcx/shared';
-import { fetchActions, fetchObservations, executeAction, type ObjectState } from '@/lib/api/intel';
+import {
+  fetchActions,
+  fetchObservations,
+  fetchCoverage,
+  executeAction,
+  type ObjectState,
+  type CoverageEntry,
+} from '@/lib/api/intel';
 import { OBJECT_TYPES, type ObjectType } from '@/lib/objectRegistry';
 import { formatMoney, formatPct } from '@/lib/format';
 
@@ -26,6 +33,24 @@ const PREDICATE_LABEL: Record<string, string> = {
   us_post_score: 'US readiness',
   priority_score: 'Priority',
   band: 'Band',
+  // Wave 1 — free-data sensors
+  tvl_usd: 'TVL',
+  fdv_usd: 'FDV',
+  defillama_category: 'Category',
+  chain_count: 'Chains',
+  chains: 'Chain list',
+  tvl_change_7d: 'TVL 7d',
+  team_size: 'Team size',
+  dev_status: 'Dev status',
+  tag_count: 'Tags',
+  tags: 'Tag list',
+  open_source: 'Open source',
+  has_whitepaper: 'Whitepaper',
+  github_stars: 'GitHub stars',
+  github_forks: 'GitHub forks',
+  github_open_issues: 'Open issues',
+  github_last_push: 'Last commit',
+  github_commits_30d: 'Commits 30d',
 };
 
 function labelFor(predicate: string): string {
@@ -36,6 +61,12 @@ function formatValue(o: Observation): string {
   if (o.unit === 'USD' && o.valueNum != null) return formatMoney(o.valueNum);
   if (o.unit === '%' && o.valueNum != null) return formatPct(o.valueNum);
   if (o.unit === 'days' && o.valueNum != null) return `${Math.round(o.valueNum)}d`;
+  if (o.predicate === 'github_last_push' && typeof o.value === 'string') return ago(o.value);
+  if (Array.isArray(o.value)) {
+    const arr = o.value as unknown[];
+    const head = arr.slice(0, 2).join(', ');
+    return arr.length > 2 ? `${head} +${arr.length - 2}` : head || '—';
+  }
   if (typeof o.value === 'boolean') return o.value ? 'Yes' : 'No';
   if (o.valueNum != null) return String(Math.round(o.valueNum * 100) / 100);
   if (o.value == null) return '—';
@@ -60,6 +91,7 @@ function confidenceColor(c: number): string {
 export function ProvenancePanel({ subjectType, subjectId }: { subjectType: string; subjectId: string }) {
   const navigate = useNavigate();
   const [obs, setObs] = useState<Observation[] | null>(null);
+  const [coverage, setCoverage] = useState<CoverageEntry[] | null>(null);
   const [canDo, setCanDo] = useState<Set<string>>(new Set());
   const [state, setState] = useState<ObjectState | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -68,9 +100,13 @@ export function ProvenancePanel({ subjectType, subjectId }: { subjectType: strin
     let cancelled = false;
     setObs(null);
     setState(null);
+    setCoverage(null);
     fetchObservations(subjectType, subjectId)
       .then((d) => !cancelled && setObs(d))
       .catch(() => !cancelled && setObs([]));
+    fetchCoverage(subjectType, subjectId)
+      .then((d) => !cancelled && setCoverage(d))
+      .catch(() => !cancelled && setCoverage([]));
     fetchActions(subjectType, subjectId)
       .then((d) => {
         if (cancelled) return;
@@ -144,6 +180,30 @@ export function ProvenancePanel({ subjectType, subjectId }: { subjectType: strin
               onClick={() => navigate(workspaceRoute(subjectId))}
             />
           )}
+        </div>
+      )}
+
+      {/* Sensor coverage — which free connectors have fresh data on this object */}
+      {coverage && coverage.length > 0 && (
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {coverage.map((c) => {
+            const tone =
+              c.fresh ? 'border-emerald-500/50 text-emerald-700 dark:text-emerald-300'
+              : c.status === 'error' ? 'border-red-500/50 text-red-700 dark:text-red-300'
+              : c.status === 'ok' ? 'border-amber-500/50 text-amber-700 dark:text-amber-300'
+              : 'border-line text-grey';
+            const dot = c.fresh ? 'bg-emerald-500' : c.status === 'error' ? 'bg-red-500' : c.status === 'ok' ? 'bg-amber-500' : 'bg-grey/40';
+            return (
+              <span
+                key={c.id}
+                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider ${tone}`}
+                title={`${c.yields}${c.lastOkAt ? ` · updated ${ago(c.lastOkAt)}` : c.status === 'missing' ? ' · not collected yet' : ''}`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${dot}`} />
+                {c.label}
+              </span>
+            );
+          })}
         </div>
       )}
 
