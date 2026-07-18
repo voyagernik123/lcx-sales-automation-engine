@@ -12,6 +12,7 @@ import { backtestAlpha } from '../intel/backtest.js';
 import { buildCoverageReport } from '../intel/report.js';
 import { buildDailyBrief } from '../intel/brief.js';
 import { getPlayDraft, savePlayDraft } from '../intel/plays.js';
+import { analyzeProjectConversation } from '../intel/conversation.js';
 
 export const intelRoutes = new Hono<{ Variables: AuthVariables }>();
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
@@ -220,6 +221,19 @@ intelRoutes.post('/play', requireOperator, async (c) => {
   } catch (err) {
     console.error('[intel] save play error:', err);
     return c.json({ error: 'Failed to save draft', code: 'INTEL_ERROR' }, 500);
+  }
+});
+
+/** GET /v1/intel/conversation?subjectId= — extracted commitments/risks/next-steps/sentiment. */
+intelRoutes.get('/conversation', requireOperator, async (c) => {
+  const subjectId = c.req.query('subjectId');
+  if (!subjectId) return c.json({ error: 'subjectId required', code: 'VALIDATION' }, 400);
+  try {
+    const data = await analyzeProjectConversation(subjectId);
+    return c.json({ data, meta: meta() });
+  } catch (err) {
+    console.error('[intel] conversation error:', err);
+    return c.json({ error: 'Failed to analyze conversation', code: 'INTEL_ERROR' }, 500);
   }
 });
 

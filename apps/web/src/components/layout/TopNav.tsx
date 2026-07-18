@@ -32,6 +32,7 @@ const routeLabels: Record<string, string> = {
   'market-map': 'Market Map',
   'targets': 'Targets',
   'brief': 'Daily Brief',
+  'forecast': 'Forecast',
   'coverage': 'Coverage Report',
   'board-report': 'Board Report',
   'report-builder': 'Report Builder',

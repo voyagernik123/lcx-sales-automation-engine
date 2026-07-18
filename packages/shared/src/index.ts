@@ -95,6 +95,8 @@ export {
 } from './alpha.js';
 export type { PlayFacts, Draft, PlayResult } from './plays.js';
 export { selectPlay, renderPlay, PLAY_IDS } from './plays.js';
+export type { Sentiment, ConversationInsights } from './conversation.js';
+export { analyzeConversation } from './conversation.js';
 
 // Deal desk + proposals (Slice 12)
 export type {

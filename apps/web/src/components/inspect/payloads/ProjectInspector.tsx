@@ -11,6 +11,7 @@ import { RelationRail } from '../RelationRail';
 import { HistoryStrip } from '../HistoryStrip';
 import { ProvenancePanel } from '../ProvenancePanel';
 import { AssessmentBlock } from '../AssessmentBlock';
+import { ConversationPanel } from '../ConversationPanel';
 import { DraftPanel } from '@/components/intel/DraftPanel';
 import { PropensityTrail } from '@/components/bd/PropensityTrail';
 import { UsIntelGauges } from '@/components/bd/UsIntelGauges';
@@ -207,6 +208,9 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
 
       {/* Alpha assessment — conviction, levers, timing, ACH (Wave 2) */}
       <AssessmentBlock subjectId={lead.id} />
+
+      {/* Conversation intelligence — commitments/risks/next-steps (Wave 4b) */}
+      <ConversationPanel subjectId={lead.id} />
 
       {/* Intelligence spine — sourced observations + governed actions (Wave 0) */}
       <ProvenancePanel subjectType="project" subjectId={lead.id} />

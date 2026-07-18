@@ -175,6 +175,34 @@ export function savePlay(subjectId: string): Promise<{ draftId: string; play: Pl
   }).then((r) => r.data);
 }
 
+export interface ConversationInsights {
+  sentiment: 'positive' | 'neutral' | 'negative';
+  sentimentScore: number;
+  commitments: string[];
+  nextSteps: string[];
+  risks: string[];
+  objections: string[];
+  messageCount: number;
+  sources: { handoffs: number; messages: number; notes: number };
+}
+
+export function fetchConversation(subjectId: string): Promise<ConversationInsights> {
+  return request<{ data: ConversationInsights }>(`/v1/intel/conversation?subjectId=${encodeURIComponent(subjectId)}`).then((r) => r.data);
+}
+
+export interface Forecast {
+  runs: number;
+  p10: number;
+  p50: number;
+  p90: number;
+  expected: number;
+  deals: { id: string; projectName: string; stage: string; value: number; winProbability: number; daysSinceUpdate: number }[];
+}
+
+export function fetchForecast(): Promise<Forecast> {
+  return request<{ data: Forecast }>(`/v1/kpis/forecast`).then((r) => r.data);
+}
+
 const q = (subjectType: string, subjectId: string) =>
   `subjectType=${encodeURIComponent(subjectType)}&subjectId=${encodeURIComponent(subjectId)}`;
 

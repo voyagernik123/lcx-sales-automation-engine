@@ -36,6 +36,7 @@ const MyTasks = lazy(() => import('@/pages/MyTasks').then((m) => ({ default: m.M
 const MarketMap = lazy(() => import('@/pages/MarketMap').then((m) => ({ default: m.MarketMap })));
 const Targets = lazy(() => import('@/pages/Targets').then((m) => ({ default: m.Targets })));
 const DailyBrief = lazy(() => import('@/pages/DailyBrief').then((m) => ({ default: m.DailyBrief })));
+const Forecast = lazy(() => import('@/pages/Forecast').then((m) => ({ default: m.Forecast })));
 const CoverageReport = lazy(() => import('@/pages/CoverageReport').then((m) => ({ default: m.CoverageReport })));
 const Customer360 = lazy(() => import('@/pages/Customer360').then((m) => ({ default: m.Customer360 })));
 const Notes = lazy(() => import('@/pages/Notes').then((m) => ({ default: m.Notes })));
@@ -84,6 +85,7 @@ export const router = createBrowserRouter([
       { path: 'market-map', element: <MarketMap /> },
       { path: 'targets', element: <Targets /> },
       { path: 'brief', element: <DailyBrief /> },
+      { path: 'forecast', element: <Forecast /> },
       { path: 'coverage/:id', element: <CoverageReport /> },
       { path: 'customer/:id', element: <Customer360 /> },
       { path: 'notes', element: <Notes /> },

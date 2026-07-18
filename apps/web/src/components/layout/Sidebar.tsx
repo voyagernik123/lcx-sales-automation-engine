@@ -39,6 +39,7 @@ const sections: NavSection[] = [
       { to: '/targets', label: 'Targets', icon: Crosshair },
       { to: '/ai-tools', label: 'AI Console', icon: Bot },
       { to: '/win-loss', label: 'Win / Loss', icon: TrendingUp },
+      { to: '/forecast', label: 'Forecast', icon: Gauge },
       { to: '/market-news', label: 'Market News', icon: Newspaper },
       { to: '/market-map', label: 'Market Map', icon: ScatterChart },
       { to: '/bd-kpis', label: 'KPI Dashboard', icon: BarChart3 },
