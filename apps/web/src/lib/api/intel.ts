@@ -153,6 +153,28 @@ export function fetchBrief(): Promise<DailyBrief> {
   return request<{ data: DailyBrief }>(`/v1/intel/brief`).then((r) => r.data);
 }
 
+/* ── Act (Wave 4) — signal→play evidence-backed drafts ─────────────── */
+
+export interface PlayDraft {
+  playId: string;
+  playLabel: string;
+  rationale: string;
+  draft: { subject: string; body: string };
+  evidence: string[];
+  facts: Record<string, unknown>;
+}
+
+export function fetchPlay(subjectId: string): Promise<PlayDraft | null> {
+  return request<{ data: PlayDraft | null }>(`/v1/intel/play?subjectId=${encodeURIComponent(subjectId)}`).then((r) => r.data);
+}
+
+export function savePlay(subjectId: string): Promise<{ draftId: string; play: PlayDraft }> {
+  return request<{ data: { draftId: string; play: PlayDraft } }>(`/v1/intel/play`, {
+    method: 'POST',
+    body: { subjectId },
+  }).then((r) => r.data);
+}
+
 const q = (subjectType: string, subjectId: string) =>
   `subjectType=${encodeURIComponent(subjectType)}&subjectId=${encodeURIComponent(subjectId)}`;
 

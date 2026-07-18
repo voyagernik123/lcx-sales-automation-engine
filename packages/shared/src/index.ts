@@ -93,6 +93,8 @@ export type {
 export {
   listingPropensity, timingWindow, dealValue, winnability, assess, ach, HYPOTHESIS_LABEL,
 } from './alpha.js';
+export type { PlayFacts, Draft, PlayResult } from './plays.js';
+export { selectPlay, renderPlay, PLAY_IDS } from './plays.js';
 
 // Deal desk + proposals (Slice 12)
 export type {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Crosshair, RefreshCw, Star, Briefcase, AlertTriangle, Activity } from 'lucide-react';
+import { Crosshair, RefreshCw, Star, Briefcase, AlertTriangle, Activity, Sparkles } from 'lucide-react';
 import {
   fetchTargets, fetchIndications, fetchBacktest, executeAction,
   type TargetRow, type Indication, type Backtest,
@@ -8,6 +8,7 @@ import {
 import { EmptyState, TableSkeleton, toast } from '@/components/shared';
 import { Button, PageTitle } from '@/components/ui';
 import { EntityChip } from '@/components/entity';
+import { DraftPanel } from '@/components/intel/DraftPanel';
 import { formatMoney } from '@/lib/format';
 
 /**
@@ -38,6 +39,7 @@ export function Targets() {
   const [backtest, setBacktest] = useState<Backtest | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [draftFor, setDraftFor] = useState<string | null>(null);
   const seq = useRef(0);
 
   const load = useCallback(() => {
@@ -177,6 +179,14 @@ export function Targets() {
                     <div className="flex items-center justify-end gap-1">
                       <button
                         type="button"
+                        onClick={() => setDraftFor(t.id)}
+                        title="Draft outreach"
+                        className="rounded p-1 text-grey transition-colors hover:bg-ice-soft hover:text-cyan-500 dark:hover:bg-ice-soft/10"
+                      >
+                        <Sparkles size={13} />
+                      </button>
+                      <button
+                        type="button"
                         disabled={busy === t.id}
                         onClick={() => watch(t)}
                         title="Add to watchlist"
@@ -200,6 +210,8 @@ export function Targets() {
           </table>
         </div>
       )}
+
+      {draftFor && <DraftPanel subjectId={draftFor} onClose={() => setDraftFor(null)} />}
     </div>
   );
 }

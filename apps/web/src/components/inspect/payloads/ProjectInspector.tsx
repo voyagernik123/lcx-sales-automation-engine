@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Users, Activity, Briefcase } from 'lucide-react';
+import { Users, Activity, Briefcase, Sparkles } from 'lucide-react';
 import { fetchLead, fetchProjectDeal, fetchProjectTimeline, type TimelineEntry } from '@/lib/api/bd';
 import type { DealRecord, LeadDetail } from '@/types/bd';
 import type { ScoreBand } from '@lcx/shared';
@@ -11,6 +11,7 @@ import { RelationRail } from '../RelationRail';
 import { HistoryStrip } from '../HistoryStrip';
 import { ProvenancePanel } from '../ProvenancePanel';
 import { AssessmentBlock } from '../AssessmentBlock';
+import { DraftPanel } from '@/components/intel/DraftPanel';
 import { PropensityTrail } from '@/components/bd/PropensityTrail';
 import { UsIntelGauges } from '@/components/bd/UsIntelGauges';
 import { GateBanner, useGateCheck } from '@/components/bd/GateBanner';
@@ -42,6 +43,7 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
   const [error, setError] = useState<string | null>(null);
   const [deal, setDeal] = useState<DealRecord | null>(null);
   const [timeline, setTimeline] = useState<TimelineEntry[] | null>(null);
+  const [draftOpen, setDraftOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -221,6 +223,9 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
         >
           Open full dossier →
         </Button>
+        <Button size="sm" onClick={() => setDraftOpen(true)}>
+          <Sparkles size={12} /> Draft outreach
+        </Button>
         <Button
           size="sm"
           variant="secondary"
@@ -237,6 +242,8 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
           </Button>
         )}
       </div>
+
+      {draftOpen && <DraftPanel subjectId={lead.id} onClose={() => setDraftOpen(false)} />}
     </div>
   );
 }

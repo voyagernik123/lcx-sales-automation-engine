@@ -11,6 +11,7 @@ import { listIndications } from '../intel/iw.js';
 import { backtestAlpha } from '../intel/backtest.js';
 import { buildCoverageReport } from '../intel/report.js';
 import { buildDailyBrief } from '../intel/brief.js';
+import { getPlayDraft, savePlayDraft } from '../intel/plays.js';
 
 export const intelRoutes = new Hono<{ Variables: AuthVariables }>();
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
@@ -191,6 +192,34 @@ intelRoutes.get('/brief', requireOperator, async (c) => {
   } catch (err) {
     console.error('[intel] brief error:', err);
     return c.json({ error: 'Failed to build brief', code: 'INTEL_ERROR' }, 500);
+  }
+});
+
+/** GET /v1/intel/play?subjectId= — the selected play + evidence-backed draft. */
+intelRoutes.get('/play', requireOperator, async (c) => {
+  const subjectId = c.req.query('subjectId');
+  if (!subjectId) return c.json({ error: 'subjectId required', code: 'VALIDATION' }, 400);
+  try {
+    const data = await getPlayDraft(subjectId);
+    if (!data) return c.json({ error: 'Project not found', code: 'NOT_FOUND' }, 404);
+    return c.json({ data, meta: meta() });
+  } catch (err) {
+    console.error('[intel] play error:', err);
+    return c.json({ error: 'Failed to build play', code: 'INTEL_ERROR' }, 500);
+  }
+});
+
+/** POST /v1/intel/play — save the play's draft to the assisted-send drafts (human review). */
+intelRoutes.post('/play', requireOperator, async (c) => {
+  const body = await c.req.json<{ subjectId?: string }>();
+  if (!body.subjectId) return c.json({ error: 'subjectId required', code: 'VALIDATION' }, 400);
+  try {
+    const data = await savePlayDraft(body.subjectId, c.get('operator').id);
+    if (!data) return c.json({ error: 'Project not found', code: 'NOT_FOUND' }, 404);
+    return c.json({ data, meta: meta() }, 201);
+  } catch (err) {
+    console.error('[intel] save play error:', err);
+    return c.json({ error: 'Failed to save draft', code: 'INTEL_ERROR' }, 500);
   }
 });
 
