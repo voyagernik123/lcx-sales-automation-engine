@@ -34,6 +34,79 @@ export function fetchCoverage(subjectType: string, subjectId: string): Promise<C
   return request<{ data: CoverageEntry[] }>(`/v1/intel/coverage?${q(subjectType, subjectId)}`).then((r) => r.data);
 }
 
+/* ── Alpha (Wave 2) — predictive scores, targets, I&W, backtest ─────── */
+
+export interface TargetRow {
+  id: string;
+  name: string;
+  ticker: string | null;
+  conviction: number;
+  timingScore: number | null;
+  timingWindow: 'hot' | 'warming' | 'quiet' | null;
+  dealValueUsd: number | null;
+  winnability: number | null;
+  achVerdict: string | null;
+  competitorCount: number;
+  contactCount: number;
+  drivers: { label: string; points: number }[];
+}
+
+export function fetchTargets(limit = 25, minConviction = 0): Promise<TargetRow[]> {
+  return request<{ data: TargetRow[] }>(`/v1/intel/targets?limit=${limit}&minConviction=${minConviction}`).then((r) => r.data);
+}
+
+export interface AlphaScore {
+  score: number;
+  confidence: number;
+  drivers: { label: string; points: number }[];
+}
+export interface Assessment {
+  propensity: AlphaScore | null;
+  timing: (AlphaScore & { window: 'hot' | 'warming' | 'quiet' }) | null;
+  value: (AlphaScore & { usd: number }) | null;
+  winnability: AlphaScore | null;
+  conviction: AlphaScore | null;
+  ach: {
+    verdict: string;
+    confidence: number;
+    probabilities: Record<string, number>;
+    evidence: { label: string; leans: string; weight: number }[];
+  } | null;
+}
+
+export function fetchAssessment(subjectId: string): Promise<Assessment | null> {
+  return request<{ data: Assessment | null }>(`/v1/intel/assessment?subjectId=${encodeURIComponent(subjectId)}`).then((r) => r.data);
+}
+
+export interface Indication {
+  projectId: string;
+  name: string;
+  ticker: string | null;
+  type: string;
+  severity: string;
+  message: string;
+  conviction: number | null;
+}
+
+export function fetchIndications(limit = 50): Promise<Indication[]> {
+  return request<{ data: Indication[] }>(`/v1/intel/indications?limit=${limit}`).then((r) => r.data);
+}
+
+export interface Backtest {
+  wonCount: number;
+  scoredWon: number;
+  universeCount: number;
+  wonMedianConviction: number | null;
+  universeMedianConviction: number | null;
+  lift: number | null;
+  topQuintileCapture: number | null;
+  note: string;
+}
+
+export function fetchBacktest(): Promise<Backtest> {
+  return request<{ data: Backtest }>(`/v1/intel/backtest`).then((r) => r.data);
+}
+
 const q = (subjectType: string, subjectId: string) =>
   `subjectType=${encodeURIComponent(subjectType)}&subjectId=${encodeURIComponent(subjectId)}`;
 

@@ -10,6 +10,7 @@ import { BandBadge } from '@/components/bd';
 import { RelationRail } from '../RelationRail';
 import { HistoryStrip } from '../HistoryStrip';
 import { ProvenancePanel } from '../ProvenancePanel';
+import { AssessmentBlock } from '../AssessmentBlock';
 import { PropensityTrail } from '@/components/bd/PropensityTrail';
 import { UsIntelGauges } from '@/components/bd/UsIntelGauges';
 import { GateBanner, useGateCheck } from '@/components/bd/GateBanner';
@@ -201,6 +202,9 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
           max={3}
         />
       </div>
+
+      {/* Alpha assessment — conviction, levers, timing, ACH (Wave 2) */}
+      <AssessmentBlock subjectId={lead.id} />
 
       {/* Intelligence spine — sourced observations + governed actions (Wave 0) */}
       <ProvenancePanel subjectType="project" subjectId={lead.id} />

@@ -6,6 +6,9 @@ import { env } from '../lib/env.js';
 import { listObservations, recordObservation } from '../intel/observations.js';
 import { executeAction, getObjectState, listWatchlist } from '../intel/actions.js';
 import { getCoverage } from '../intel/collect.js';
+import { getAssessment, listTargets } from '../intel/alpha.js';
+import { listIndications } from '../intel/iw.js';
+import { backtestAlpha } from '../intel/backtest.js';
 
 export const intelRoutes = new Hono<{ Variables: AuthVariables }>();
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
@@ -113,6 +116,54 @@ intelRoutes.get('/coverage', requireOperator, async (c) => {
   } catch (err) {
     console.error('[intel] coverage error:', err);
     return c.json({ error: 'Failed to load coverage', code: 'INTEL_ERROR' }, 500);
+  }
+});
+
+/** GET /v1/intel/assessment?subjectId= — the full alpha assessment for a project. */
+intelRoutes.get('/assessment', requireOperator, async (c) => {
+  const subjectId = c.req.query('subjectId');
+  if (!subjectId) return c.json({ error: 'subjectId required', code: 'VALIDATION' }, 400);
+  try {
+    const data = await getAssessment(subjectId);
+    return c.json({ data, meta: meta() });
+  } catch (err) {
+    console.error('[intel] assessment error:', err);
+    return c.json({ error: 'Failed to load assessment', code: 'INTEL_ERROR' }, 500);
+  }
+});
+
+/** GET /v1/intel/targets — the ripe-now target list, ranked by conviction. */
+intelRoutes.get('/targets', requireOperator, async (c) => {
+  try {
+    const limit = Math.min(100, Math.max(1, Number(c.req.query('limit') ?? 25) || 25));
+    const minConviction = Math.max(0, Number(c.req.query('minConviction') ?? 0) || 0);
+    const data = await listTargets(limit, minConviction);
+    return c.json({ data, meta: meta() });
+  } catch (err) {
+    console.error('[intel] targets error:', err);
+    return c.json({ error: 'Failed to load targets', code: 'INTEL_ERROR' }, 500);
+  }
+});
+
+/** GET /v1/intel/indications — current Indications & Warning list. */
+intelRoutes.get('/indications', requireOperator, async (c) => {
+  try {
+    const data = await listIndications(Math.min(100, Number(c.req.query('limit') ?? 50) || 50));
+    return c.json({ data, meta: meta() });
+  } catch (err) {
+    console.error('[intel] indications error:', err);
+    return c.json({ error: 'Failed to load indications', code: 'INTEL_ERROR' }, 500);
+  }
+});
+
+/** GET /v1/intel/backtest — signal-validity discrimination test. */
+intelRoutes.get('/backtest', requireOperator, async (c) => {
+  try {
+    const data = await backtestAlpha();
+    return c.json({ data, meta: meta() });
+  } catch (err) {
+    console.error('[intel] backtest error:', err);
+    return c.json({ error: 'Failed to run backtest', code: 'INTEL_ERROR' }, 500);
   }
 });
 

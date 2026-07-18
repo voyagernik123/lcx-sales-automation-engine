@@ -34,6 +34,7 @@ const ExchangeGaps = lazy(() => import('@/pages/ExchangeGaps').then((m) => ({ de
 const DealBoard = lazy(() => import('@/pages/DealBoard').then((m) => ({ default: m.DealBoard })));
 const MyTasks = lazy(() => import('@/pages/MyTasks').then((m) => ({ default: m.MyTasks })));
 const MarketMap = lazy(() => import('@/pages/MarketMap').then((m) => ({ default: m.MarketMap })));
+const Targets = lazy(() => import('@/pages/Targets').then((m) => ({ default: m.Targets })));
 const Customer360 = lazy(() => import('@/pages/Customer360').then((m) => ({ default: m.Customer360 })));
 const Notes = lazy(() => import('@/pages/Notes').then((m) => ({ default: m.Notes })));
 const WinLoss = lazy(() => import('@/pages/WinLoss').then((m) => ({ default: m.WinLoss })));
@@ -79,6 +80,7 @@ export const router = createBrowserRouter([
       { path: 'deal-board', element: <DealBoard /> },
       { path: 'tasks', element: <MyTasks /> },
       { path: 'market-map', element: <MarketMap /> },
+      { path: 'targets', element: <Targets /> },
       { path: 'customer/:id', element: <Customer360 /> },
       { path: 'notes', element: <Notes /> },
       { path: 'notes/:projectId', element: <Notes /> },

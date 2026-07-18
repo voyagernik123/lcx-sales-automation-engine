@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, ScrollText, MessageSquare, BarChart3, Shield } from 'lucide-react';
+import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield } from 'lucide-react';
 import { useUIStore, useAuditStore } from '@/stores';
 import { redFlags } from '@/data';
 import { SidebarFieldNotes } from './SidebarFieldNotes';
@@ -35,6 +35,7 @@ const sections: NavSection[] = [
   {
     title: 'Intelligence',
     items: [
+      { to: '/targets', label: 'Targets', icon: Crosshair },
       { to: '/ai-tools', label: 'AI Console', icon: Bot },
       { to: '/win-loss', label: 'Win / Loss', icon: TrendingUp },
       { to: '/market-news', label: 'Market News', icon: Newspaper },

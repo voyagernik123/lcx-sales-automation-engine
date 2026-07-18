@@ -87,6 +87,12 @@ export type { ActionId, ActionDef } from './actions.js';
 export { ACTION_DEFS, actionsFor, getAction, SERVER_ACTIONS, isServerAction } from './actions.js';
 export type { ConnectorDef } from './collection.js';
 export { CONNECTORS, getConnector, isStale } from './collection.js';
+export type {
+  SignalBundle, Driver, ScoreResult, TimingWindow, AlphaAssessment, Hypothesis, AchResult,
+} from './alpha.js';
+export {
+  listingPropensity, timingWindow, dealValue, winnability, assess, ach, HYPOTHESIS_LABEL,
+} from './alpha.js';
 
 // Deal desk + proposals (Slice 12)
 export type {

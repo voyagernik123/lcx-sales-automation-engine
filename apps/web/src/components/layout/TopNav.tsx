@@ -30,6 +30,7 @@ const routeLabels: Record<string, string> = {
   'win-loss': 'Win / Loss',
   'market-news': 'Market News',
   'market-map': 'Market Map',
+  'targets': 'Targets',
   'board-report': 'Board Report',
   'report-builder': 'Report Builder',
   'claim-library': 'Claim Library',
