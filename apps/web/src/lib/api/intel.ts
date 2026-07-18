@@ -107,6 +107,52 @@ export function fetchBacktest(): Promise<Backtest> {
   return request<{ data: Backtest }>(`/v1/intel/backtest`).then((r) => r.data);
 }
 
+/* ── Research (Wave 3) — coverage report + daily brief ─────────────── */
+
+export interface CoverageReport {
+  id: string;
+  name: string;
+  ticker: string | null;
+  website: string | null;
+  band: string | null;
+  listedOnLcx: boolean;
+  generatedAt: string;
+  thesis: string;
+  approach: string;
+  risks: string[];
+  headline: {
+    conviction: number | null;
+    timingWindow: string | null;
+    dealValueUsd: number | null;
+    achVerdict: string | null;
+    recommendedMarket: string | null;
+  };
+  snapshot: Record<string, number | string | null>;
+  traction: Record<string, number | string | null>;
+  regulatory: { euScore: number | null; usPostScore: number | null; recommendedMarket: string | null };
+  competitive: { competitorCount: number; topVenues: string[]; gap: string };
+  assessment: Assessment | null;
+  contacts: { name: string; title: string | null; verified: boolean }[];
+  sources: { source: string; count: number; freshest: string | null }[];
+}
+
+export function fetchReport(subjectId: string): Promise<CoverageReport | null> {
+  return request<{ data: CoverageReport | null }>(`/v1/intel/report?subjectId=${encodeURIComponent(subjectId)}`).then((r) => r.data);
+}
+
+export interface DailyBrief {
+  generatedAt: string;
+  pulse: { openPipelineUsd: number; openDeals: number; targetsRipe: number; indications: number };
+  indications: Indication[];
+  targets: TargetRow[];
+  movers: { id: string; name: string; ticker: string | null; priceChange30d: number; competitorCount: number }[];
+  dealsAtRisk: { id: string; projectId: string; name: string; stage: string; daysStale: number }[];
+}
+
+export function fetchBrief(): Promise<DailyBrief> {
+  return request<{ data: DailyBrief }>(`/v1/intel/brief`).then((r) => r.data);
+}
+
 const q = (subjectType: string, subjectId: string) =>
   `subjectType=${encodeURIComponent(subjectType)}&subjectId=${encodeURIComponent(subjectId)}`;
 

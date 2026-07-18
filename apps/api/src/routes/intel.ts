@@ -9,6 +9,8 @@ import { getCoverage } from '../intel/collect.js';
 import { getAssessment, listTargets } from '../intel/alpha.js';
 import { listIndications } from '../intel/iw.js';
 import { backtestAlpha } from '../intel/backtest.js';
+import { buildCoverageReport } from '../intel/report.js';
+import { buildDailyBrief } from '../intel/brief.js';
 
 export const intelRoutes = new Hono<{ Variables: AuthVariables }>();
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
@@ -164,6 +166,31 @@ intelRoutes.get('/backtest', requireOperator, async (c) => {
   } catch (err) {
     console.error('[intel] backtest error:', err);
     return c.json({ error: 'Failed to run backtest', code: 'INTEL_ERROR' }, 500);
+  }
+});
+
+/** GET /v1/intel/report?subjectId= — the analyst coverage report for a project. */
+intelRoutes.get('/report', requireOperator, async (c) => {
+  const subjectId = c.req.query('subjectId');
+  if (!subjectId) return c.json({ error: 'subjectId required', code: 'VALIDATION' }, 400);
+  try {
+    const data = await buildCoverageReport(subjectId);
+    if (!data) return c.json({ error: 'Project not found', code: 'NOT_FOUND' }, 404);
+    return c.json({ data, meta: meta() });
+  } catch (err) {
+    console.error('[intel] report error:', err);
+    return c.json({ error: 'Failed to build report', code: 'INTEL_ERROR' }, 500);
+  }
+});
+
+/** GET /v1/intel/brief — the Daily Intelligence Brief (PDB). */
+intelRoutes.get('/brief', requireOperator, async (c) => {
+  try {
+    const data = await buildDailyBrief();
+    return c.json({ data, meta: meta() });
+  } catch (err) {
+    console.error('[intel] brief error:', err);
+    return c.json({ error: 'Failed to build brief', code: 'INTEL_ERROR' }, 500);
   }
 });
 

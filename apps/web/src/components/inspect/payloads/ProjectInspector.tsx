@@ -221,6 +221,16 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
         >
           Open full dossier →
         </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            close();
+            navigate(`/coverage/${lead.id}`);
+          }}
+        >
+          Coverage report →
+        </Button>
         {deal && (
           <Button size="sm" variant="secondary" onClick={() => push('deal', deal.id)}>
             <Briefcase size={12} /> Inspect deal

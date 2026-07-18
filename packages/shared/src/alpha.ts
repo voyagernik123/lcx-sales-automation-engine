@@ -174,7 +174,7 @@ export function winnability(s: SignalBundle): ScoreResult {
     drivers.push({ label: 'EU/MiCA fit (LCX edge)', points: p });
     score += p;
   }
-  if (s.recommendedMarket === 'eu' || s.recommendedMarket === 'dual') {
+  if (s.recommendedMarket === 'eu' || s.recommendedMarket === 'eu_first' || s.recommendedMarket === 'dual') {
     drivers.push({ label: 'EU-first recommendation', points: 12 });
     score += 12;
   }

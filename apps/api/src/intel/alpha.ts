@@ -130,15 +130,20 @@ export async function computeAlpha(pool: pg.Pool): Promise<{ projects: number; o
 
 async function latestAlpha(subjectId: string): Promise<Record<string, { value: unknown; num: number | null }>> {
   const db = getDb();
+  // Fetch the latest observation per predicate for this one subject and pick the
+  // alpha predicates in JS. (Avoids `= ANY(<array>)`, which drizzle's sql
+  // template expands to a tuple `($2,$3,…)` that Postgres rejects for ANY.)
   const res = await db.execute(sql`
     SELECT DISTINCT ON (predicate) predicate, value_json, value_num
     FROM observations
-    WHERE subject_type='project' AND subject_id=${subjectId} AND predicate = ANY(${ALPHA_PREDICATES as unknown as string[]})
+    WHERE subject_type='project' AND subject_id=${subjectId}
     ORDER BY predicate, observed_at DESC
   `);
+  const alpha = new Set<string>(ALPHA_PREDICATES);
   const out: Record<string, { value: unknown; num: number | null }> = {};
   for (const r of (res.rows ?? []) as Record<string, unknown>[]) {
-    out[r.predicate as string] = { value: r.value_json, num: r.value_num != null ? Number(r.value_num) : null };
+    const pred = r.predicate as string;
+    if (alpha.has(pred)) out[pred] = { value: r.value_json, num: r.value_num != null ? Number(r.value_num) : null };
   }
   return out;
 }

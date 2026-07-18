@@ -35,6 +35,8 @@ const DealBoard = lazy(() => import('@/pages/DealBoard').then((m) => ({ default:
 const MyTasks = lazy(() => import('@/pages/MyTasks').then((m) => ({ default: m.MyTasks })));
 const MarketMap = lazy(() => import('@/pages/MarketMap').then((m) => ({ default: m.MarketMap })));
 const Targets = lazy(() => import('@/pages/Targets').then((m) => ({ default: m.Targets })));
+const DailyBrief = lazy(() => import('@/pages/DailyBrief').then((m) => ({ default: m.DailyBrief })));
+const CoverageReport = lazy(() => import('@/pages/CoverageReport').then((m) => ({ default: m.CoverageReport })));
 const Customer360 = lazy(() => import('@/pages/Customer360').then((m) => ({ default: m.Customer360 })));
 const Notes = lazy(() => import('@/pages/Notes').then((m) => ({ default: m.Notes })));
 const WinLoss = lazy(() => import('@/pages/WinLoss').then((m) => ({ default: m.WinLoss })));
@@ -81,6 +83,8 @@ export const router = createBrowserRouter([
       { path: 'tasks', element: <MyTasks /> },
       { path: 'market-map', element: <MarketMap /> },
       { path: 'targets', element: <Targets /> },
+      { path: 'brief', element: <DailyBrief /> },
+      { path: 'coverage/:id', element: <CoverageReport /> },
       { path: 'customer/:id', element: <Customer360 /> },
       { path: 'notes', element: <Notes /> },
       { path: 'notes/:projectId', element: <Notes /> },

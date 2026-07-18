@@ -37,10 +37,16 @@ describe('alpha — composite scores', () => {
 
   it('winnability: EU fit is the LCX edge; already-listed kills it', () => {
     const euFit = winnability(base).score;
-    const noEu = winnability({ ...base, euScore: 10, recommendedMarket: 'us' }).score;
+    const noEu = winnability({ ...base, euScore: 10, recommendedMarket: 'us_first' }).score;
     const listed = winnability({ ...base, listedOnLcx: true }).score;
     expect(euFit).toBeGreaterThan(noEu);
     expect(listed).toBeLessThan(euFit);
+  });
+
+  it('winnability: the EU-first bonus fires on eu_first (not just eu)', () => {
+    const euFirst = winnability({ ...base, recommendedMarket: 'eu_first' }).score;
+    const noneMkt = winnability({ ...base, recommendedMarket: 'none' }).score;
+    expect(euFirst).toBeGreaterThan(noneMkt);
   });
 
   it('conviction: strong target scores high; thin data discounts it', () => {

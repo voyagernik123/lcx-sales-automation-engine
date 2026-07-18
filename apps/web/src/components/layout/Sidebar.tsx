@@ -35,6 +35,7 @@ const sections: NavSection[] = [
   {
     title: 'Intelligence',
     items: [
+      { to: '/brief', label: 'Daily Brief', icon: ScrollText },
       { to: '/targets', label: 'Targets', icon: Crosshair },
       { to: '/ai-tools', label: 'AI Console', icon: Bot },
       { to: '/win-loss', label: 'Win / Loss', icon: TrendingUp },
