@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   Activity, RefreshCw, ShieldCheck, Database, AlertTriangle,
-  CheckCircle2, XCircle, Clock, ExternalLink, ScrollText,
+  CheckCircle2, XCircle, Clock, ExternalLink, ScrollText, Play,
 } from 'lucide-react';
-import { fetchOps, type OpsHealth } from '@/lib/api/intel';
-import { EmptyState, CardSkeleton } from '@/components/shared';
+import { fetchOps, triggerIntelJob, type OpsHealth } from '@/lib/api/intel';
+import { EmptyState, CardSkeleton, toast } from '@/components/shared';
 import { Button, PageTitle } from '@/components/ui';
 import { formatDate, formatDateTime } from '@/lib/format';
 
@@ -46,6 +46,7 @@ function fmtDuration(ms: number | null): string {
 export function Ops() {
   const [ops, setOps] = useState<OpsHealth | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setError(null);
@@ -54,12 +55,36 @@ export function Ops() {
   }, []);
   useEffect(load, [load]);
 
+  // Kick off a pipeline job server-side (fire-and-forget). The outcome lands in
+  // job_runs, so we just tell the operator to refresh in a moment.
+  const run = useCallback(async (job: 'collect' | 'alpha', label: string) => {
+    setBusy(job);
+    try {
+      await triggerIntelJob(job);
+      toast('success', `${label} started — running server-side. Refresh in ~1 min for results.`);
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : `Failed to start ${label}`);
+    } finally {
+      setBusy(null);
+    }
+  }, []);
+
   return (
     <div className="p-5">
       <PageTitle
         icon={<ShieldCheck size={20} />}
         subtitle="The collection apparatus, watching itself — job health, data-freshness SLAs, the intelligence-gap ledger, and source compliance."
-        actions={<Button size="sm" variant="secondary" onClick={load}><RefreshCw size={13} /> Refresh</Button>}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={() => void run('collect', 'Collection')} disabled={busy !== null} title="Pull fresh data from the free sources (DefiLlama · CoinPaprika · GitHub)">
+              <Play size={12} /> {busy === 'collect' ? 'Starting…' : 'Collect'}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => void run('alpha', 'Alpha recompute')} disabled={busy !== null} title="Recompute scores, I&W and calibration from current observations">
+              <Play size={12} /> {busy === 'alpha' ? 'Starting…' : 'Recompute'}
+            </Button>
+            <Button size="sm" variant="secondary" onClick={load}><RefreshCw size={13} /> Refresh</Button>
+          </div>
+        }
       >
         Ops Health
       </PageTitle>

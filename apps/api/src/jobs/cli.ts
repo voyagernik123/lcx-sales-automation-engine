@@ -141,22 +141,11 @@ async function main() {
         console.log(JSON.stringify(r.stats));
         break;
       }
-      case 'backfill_observations': {
-        const { backfillObservations } = await import('../intel/backfill.js');
-        const r = await withJobRun(pool, job, async () => {
-          const res = await backfillObservations(pool);
-          return { stats: res as unknown as Record<string, unknown> };
-        });
-        console.log(JSON.stringify(r.stats));
-        break;
-      }
+      case 'backfill_observations':
       case 'resolve_identifiers': {
-        const { resolveCoinpaprikaIds } = await import('../intel/identifiers.js');
-        const r = await withJobRun(pool, job, async () => {
-          const res = await resolveCoinpaprikaIds(pool);
-          return { stats: res as unknown as Record<string, unknown> };
-        });
-        console.log(JSON.stringify(r.stats));
+        const { runIntelJob } = await import('../intel/jobs.js');
+        const r = await runIntelJob(pool, job, {});
+        console.log(JSON.stringify(r.stats, null, 2));
         break;
       }
       case 'collect_defillama': {
@@ -188,62 +177,20 @@ async function main() {
         console.log(JSON.stringify(r.stats));
         break;
       }
-      case 'collect': {
-        // Run the free sensors in one pass: resolve ids → DefiLlama (bulk) →
-        // bounded CoinPaprika detail → bounded GitHub.
-        const { resolveCoinpaprikaIds } = await import('../intel/identifiers.js');
-        const { collectDefillama } = await import('../connectors/defillama.js');
-        const { collectCoinpaprikaDetail } = await import('../connectors/coinpaprikaDetail.js');
-        const { collectGithub } = await import('../connectors/github.js');
-        const r = await withJobRun(pool, job, async () => {
-          const resolved = await resolveCoinpaprikaIds(pool);
-          const defillama = await collectDefillama(pool);
-          const coinpaprika = await collectCoinpaprikaDetail(pool, Number(process.argv[3] ?? 60) || 60);
-          const github = await collectGithub(pool, Number(process.argv[4] ?? 40) || 40);
-          return { stats: { resolved, defillama, coinpaprika, github } };
-        });
-        console.log(JSON.stringify(r.stats));
-        break;
-      }
-      case 'compute_alpha': {
-        const { computeAlpha } = await import('../intel/alpha.js');
-        const r = await withJobRun(pool, job, async () => {
-          const res = await computeAlpha(pool);
-          return { stats: res as unknown as Record<string, unknown> };
-        });
-        console.log(JSON.stringify(r.stats));
-        break;
-      }
-      case 'scan_iw': {
-        const { scanIndications } = await import('../intel/iw.js');
-        const r = await withJobRun(pool, job, async () => {
-          const res = await scanIndications(pool);
-          return { stats: res as unknown as Record<string, unknown> };
-        });
-        console.log(JSON.stringify(r.stats));
-        break;
-      }
-      case 'alpha': {
-        // Full alpha pass: recompute scores → refresh indications → recalibrate.
-        const { computeAlpha } = await import('../intel/alpha.js');
-        const { scanIndications } = await import('../intel/iw.js');
-        const { computeCalibration } = await import('../intel/calibration.js');
-        const r = await withJobRun(pool, job, async () => {
-          const scores = await computeAlpha(pool);
-          const indications = await scanIndications(pool);
-          const calibration = await computeCalibration(pool);
-          return { stats: { scores, indications, calibration: { snapshotted: calibration.snapshotted } } };
-        });
-        console.log(JSON.stringify(r.stats));
-        break;
-      }
+      // The intel collect/derive jobs share one implementation with the HTTP
+      // trigger (intel/jobs.ts) so the pipeline can't drift between CLI and cron.
+      // `collect` reads optional CoinPaprika/GitHub batch caps from argv[3]/[4].
+      case 'collect':
+      case 'compute_alpha':
+      case 'scan_iw':
+      case 'alpha':
       case 'calibrate': {
-        const { computeCalibration } = await import('../intel/calibration.js');
-        const r = await withJobRun(pool, job, async () => {
-          const res = await computeCalibration(pool);
-          return { stats: { snapshotted: res.snapshotted, metrics: res.metrics.map((m) => ({ k: m.metricKey, lift: m.lift, verdict: m.verdict })) } };
+        const { runIntelJob } = await import('../intel/jobs.js');
+        const r = await runIntelJob(pool, job, {
+          coinpaprika: Number(process.argv[3] ?? 60) || 60,
+          github: Number(process.argv[4] ?? 40) || 40,
         });
-        console.log(JSON.stringify(r.stats));
+        console.log(JSON.stringify(r.stats, null, 2));
         break;
       }
       default:

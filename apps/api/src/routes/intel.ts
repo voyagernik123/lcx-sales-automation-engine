@@ -17,6 +17,8 @@ import { buildPortfolio } from '../intel/portfolio.js';
 import { getCalibration } from '../intel/calibration.js';
 import { buildScorecard } from '../intel/scorecard.js';
 import { buildOpsHealth } from '../intel/ops.js';
+import { runIntelJob, isIntelJob, INTEL_JOBS } from '../intel/jobs.js';
+import { getPool } from '../db/index.js';
 
 export const intelRoutes = new Hono<{ Variables: AuthVariables }>();
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
@@ -244,6 +246,45 @@ intelRoutes.get('/scorecard', requireOperator, async (c) => {
     console.error('[intel] scorecard error:', err);
     return c.json({ error: 'Failed to build scorecard', code: 'INTEL_ERROR' }, 500);
   }
+});
+
+/**
+ * POST /v1/intel/jobs/:job — trigger a collection/derive job. This is the prod
+ * cron entrypoint (cron-job.org POSTs here with the operator key); it's also how
+ * the desk kicks off an on-demand refresh. Default is fire-and-forget: the job
+ * runs in-process and its outcome lands in job_runs (visible on Ops Health), so
+ * the HTTP call returns immediately and never trips a cron timeout. Pass
+ * `?wait=1` to block and get the stats back (for scripted/first-run use).
+ * withJobRun's advisory lock guarantees one run per job at a time.
+ */
+intelRoutes.post('/jobs/:job', requireOperator, async (c) => {
+  const job = c.req.param('job');
+  if (!isIntelJob(job)) {
+    return c.json({ error: `Unknown intel job: ${job}`, code: 'VALIDATION', jobs: INTEL_JOBS }, 400);
+  }
+  const opts = {
+    coinpaprika: Number(c.req.query('coinpaprika')) || undefined,
+    github: Number(c.req.query('github')) || undefined,
+  };
+
+  if (c.req.query('wait') === '1') {
+    try {
+      const out = await runIntelJob(getPool(), job, opts);
+      return c.json({ data: { job, status: 'ok', stats: out.stats }, meta: meta() });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const running = /already running/i.test(msg);
+      return c.json({ error: msg, code: running ? 'JOB_RUNNING' : 'JOB_FAILED' }, running ? 409 : 500);
+    }
+  }
+
+  // Fire-and-forget (cron default). The floating promise keeps running on the
+  // event loop after the response; catch so a job error/lock contention can
+  // never become an unhandledRejection that takes the process down.
+  runIntelJob(getPool(), job, opts).catch((err) => {
+    console.error(`[intel] job '${job}' failed:`, err instanceof Error ? err.message : err);
+  });
+  return c.json({ data: { job, status: 'started' }, meta: meta() }, 202);
 });
 
 /** GET /v1/intel/ops — observability: job health, data-freshness SLAs, gap ledger, source compliance. */

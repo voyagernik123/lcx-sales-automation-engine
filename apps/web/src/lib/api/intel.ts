@@ -328,6 +328,17 @@ export function fetchOps(): Promise<OpsHealth> {
   return request<{ data: OpsHealth }>(`/v1/intel/ops`).then((r) => r.data);
 }
 
+/** Trigger a collection/derive job. Fire-and-forget by default (job runs server-side; watch Ops for the result). */
+export function triggerIntelJob(
+  job: 'collect' | 'alpha' | 'compute_alpha' | 'scan_iw' | 'calibrate' | 'backfill_observations' | 'resolve_identifiers',
+  opts: { wait?: boolean } = {},
+): Promise<{ job: string; status: string; stats?: Record<string, unknown> }> {
+  return request<{ data: { job: string; status: string; stats?: Record<string, unknown> } }>(
+    `/v1/intel/jobs/${job}${opts.wait ? '?wait=1' : ''}`,
+    { method: 'POST' },
+  ).then((r) => r.data);
+}
+
 const q = (subjectType: string, subjectId: string) =>
   `subjectType=${encodeURIComponent(subjectType)}&subjectId=${encodeURIComponent(subjectId)}`;
 
