@@ -9,6 +9,7 @@ import { Button } from '@/components/ui';
 import { BandBadge } from '@/components/bd';
 import { RelationRail } from '../RelationRail';
 import { HistoryStrip } from '../HistoryStrip';
+import { ProvenancePanel } from '../ProvenancePanel';
 import { PropensityTrail } from '@/components/bd/PropensityTrail';
 import { UsIntelGauges } from '@/components/bd/UsIntelGauges';
 import { GateBanner, useGateCheck } from '@/components/bd/GateBanner';
@@ -200,6 +201,9 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
           max={3}
         />
       </div>
+
+      {/* Intelligence spine — sourced observations + governed actions (Wave 0) */}
+      <ProvenancePanel subjectType="project" subjectId={lead.id} />
 
       {/* Actions */}
       <div className="flex flex-wrap items-center gap-2">

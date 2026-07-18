@@ -141,9 +141,18 @@ async function main() {
         console.log(JSON.stringify(r.stats));
         break;
       }
+      case 'backfill_observations': {
+        const { backfillObservations } = await import('../intel/backfill.js');
+        const r = await withJobRun(pool, job, async () => {
+          const res = await backfillObservations(pool);
+          return { stats: res as unknown as Record<string, unknown> };
+        });
+        console.log(JSON.stringify(r.stats));
+        break;
+      }
       default:
         console.error(`Unknown job: ${job}`);
-        console.error('Jobs: universe_sync | discover_new_tokens | market_refresh | score_refresh | kpi_snapshot | signals_prune | exchange_sync | daily_rules | news_refresh | anomaly_scan | weekly_digest');
+        console.error('Jobs: universe_sync | discover_new_tokens | market_refresh | score_refresh | kpi_snapshot | signals_prune | exchange_sync | daily_rules | news_refresh | anomaly_scan | weekly_digest | backfill_observations');
         process.exit(1);
     }
   } finally {

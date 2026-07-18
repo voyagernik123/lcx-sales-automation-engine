@@ -600,3 +600,72 @@ export const discoveryJobs = pgTable(
   },
   (t) => [index('idx_djobs_status').on(t.status)],
 );
+
+/* ──────────────────────────────────────────────
+ *  Wave 0 — the intelligence spine (migration 0029)
+ * ────────────────────────────────────────────── */
+
+/** orgs — tenancy seam. Default LCX org id is fixed (see DEFAULT_ORG_ID). */
+export const orgs = pgTable('orgs', {
+  id: uuid('id').default(sql`gen_random_uuid()`).primaryKey(),
+  slug: text('slug').notNull(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [uniqueIndex('idx_orgs_slug').on(t.slug)]);
+
+/** observations — provenance spine: every fact carries source/reliability/confidence. */
+export const observations = pgTable('observations', {
+  id: uuid('id').default(sql`gen_random_uuid()`).primaryKey(),
+  orgId: uuid('org_id').notNull().default('11111111-1111-1111-1111-111111111111'),
+  subjectType: text('subject_type').notNull(),
+  subjectId: text('subject_id').notNull(),
+  predicate: text('predicate').notNull(),
+  valueJson: jsonb('value_json').default({}).notNull(),
+  valueNum: numeric('value_num'),
+  unit: text('unit'),
+  source: text('source').notNull(),
+  sourceUrl: text('source_url'),
+  reliability: text('reliability').default('C').notNull(),
+  credibility: integer('credibility').default(3).notNull(),
+  confidence: integer('confidence').default(50).notNull(),
+  observedAt: timestamp('observed_at', { withTimezone: true }).defaultNow().notNull(),
+  collectedAt: timestamp('collected_at', { withTimezone: true }).defaultNow().notNull(),
+  jobRunId: uuid('job_run_id'),
+  actor: text('actor'),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_obs_subject').on(t.subjectType, t.subjectId),
+  index('idx_obs_pred').on(t.subjectType, t.subjectId, t.predicate, t.observedAt),
+  index('idx_obs_source').on(t.source),
+  index('idx_obs_predicate').on(t.predicate),
+]);
+
+/** object_actions — governed action ledger (complements the hash-chained audit_log). */
+export const objectActions = pgTable('object_actions', {
+  id: uuid('id').default(sql`gen_random_uuid()`).primaryKey(),
+  orgId: uuid('org_id').notNull().default('11111111-1111-1111-1111-111111111111'),
+  subjectType: text('subject_type').notNull(),
+  subjectId: text('subject_id').notNull(),
+  action: text('action').notNull(),
+  params: jsonb('params').default({}).notNull(),
+  result: jsonb('result').default({}).notNull(),
+  actor: text('actor').default('operator').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_oact_subject').on(t.subjectType, t.subjectId, t.createdAt),
+  index('idx_oact_action').on(t.action),
+]);
+
+/** watchlist — a per-org pin on any ontology object (first Action target). */
+export const watchlist = pgTable('watchlist', {
+  id: uuid('id').default(sql`gen_random_uuid()`).primaryKey(),
+  orgId: uuid('org_id').notNull().default('11111111-1111-1111-1111-111111111111'),
+  subjectType: text('subject_type').notNull(),
+  subjectId: text('subject_id').notNull(),
+  note: text('note'),
+  addedBy: text('added_by').default('operator').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('idx_watchlist_uniq').on(t.orgId, t.subjectType, t.subjectId),
+  index('idx_watchlist_subject').on(t.subjectType, t.subjectId),
+]);
