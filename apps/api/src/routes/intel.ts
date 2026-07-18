@@ -13,6 +13,7 @@ import { buildCoverageReport } from '../intel/report.js';
 import { buildDailyBrief } from '../intel/brief.js';
 import { getPlayDraft, savePlayDraft } from '../intel/plays.js';
 import { analyzeProjectConversation } from '../intel/conversation.js';
+import { buildPortfolio } from '../intel/portfolio.js';
 
 export const intelRoutes = new Hono<{ Variables: AuthVariables }>();
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
@@ -221,6 +222,17 @@ intelRoutes.post('/play', requireOperator, async (c) => {
   } catch (err) {
     console.error('[intel] save play error:', err);
     return c.json({ error: 'Failed to save draft', code: 'INTEL_ERROR' }, 500);
+  }
+});
+
+/** GET /v1/intel/portfolio — the targetable universe as a portfolio (EV, diversification, concentration). */
+intelRoutes.get('/portfolio', requireOperator, async (c) => {
+  try {
+    const data = await buildPortfolio();
+    return c.json({ data, meta: meta() });
+  } catch (err) {
+    console.error('[intel] portfolio error:', err);
+    return c.json({ error: 'Failed to build portfolio', code: 'INTEL_ERROR' }, 500);
   }
 });
 

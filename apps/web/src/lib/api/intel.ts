@@ -203,6 +203,30 @@ export function fetchForecast(): Promise<Forecast> {
   return request<{ data: Forecast }>(`/v1/kpis/forecast`).then((r) => r.data);
 }
 
+/* ── Command surface (Wave 5) — portfolio view ─────────────────────── */
+
+export interface DimensionSlice {
+  key: string;
+  count: number;
+  evUsd: number;
+  avgConviction: number;
+}
+export interface Portfolio {
+  totalTargets: number;
+  totalEvUsd: number;
+  avgConviction: number;
+  byBand: DimensionSlice[];
+  byRegion: DimensionSlice[];
+  byCategory: DimensionSlice[];
+  byTiming: DimensionSlice[];
+  concentration: { top20Share: number; top20EvUsd: number };
+  pipeline: { openDeals: number; openValueUsd: number };
+}
+
+export function fetchPortfolio(): Promise<Portfolio> {
+  return request<{ data: Portfolio }>(`/v1/intel/portfolio`).then((r) => r.data);
+}
+
 const q = (subjectType: string, subjectId: string) =>
   `subjectType=${encodeURIComponent(subjectType)}&subjectId=${encodeURIComponent(subjectId)}`;
 
