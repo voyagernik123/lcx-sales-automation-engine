@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Gavel, FileText, BookOpen, Briefcase, Check, X, RefreshCw, AlertTriangle, ShieldAlert } from 'lucide-react';
 import { request } from '@/lib/apiClient';
+import { useOperatorStore } from '@/stores';
 import { fetchDealBoard, fetchProjectDeal, type BoardDeal } from '@/lib/api/bd';
 import { loadDealContexts, type LoadedDealContext } from '@/lib/api/deals100x';
 import { fetchForecast } from '@/lib/api/kpi';
@@ -85,6 +86,10 @@ export function DealDesk() {
   const [contexts, setContexts] = useState<Record<string, LoadedDealContext>>({});
   const [winProbs, setWinProbs] = useState<Record<string, number>>({});
   const [memoDealId, setMemoDealId] = useState<string | null>(null);
+
+  // Signing off an approval is an approver-only action — enforced server-side
+  // (requireApprover), mirrored here so operators see why, not a bare 403.
+  const canApprove = useOperatorStore((s) => s.operator?.role === 'approver');
 
   // BATNA focus: ?projectId deal when present, else operator-picked open deal.
   const [batnaDealId, setBatnaDealId] = useState<string>('');
@@ -283,10 +288,16 @@ export function DealDesk() {
                       {a.reason && <p className="mt-1 text-xs italic text-grey">“{a.reason}”</p>}
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1">
-                      <div className="flex gap-1">
-                        <button onClick={() => void decide(a.id, 'approved')} className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-micro font-bold text-white hover:bg-emerald-700"><Check size={10} /> Approve</button>
-                        <button onClick={() => void decide(a.id, 'rejected')} className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-micro font-bold text-navy hover:bg-status-blocked-bg"><X size={10} /> Reject</button>
-                      </div>
+                      {canApprove ? (
+                        <div className="flex gap-1">
+                          <button onClick={() => void decide(a.id, 'approved')} className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2 py-1 text-micro font-bold text-white hover:bg-emerald-700"><Check size={10} /> Approve</button>
+                          <button onClick={() => void decide(a.id, 'rejected')} className="inline-flex items-center gap-1 rounded border border-line px-2 py-1 text-micro font-bold text-navy hover:bg-status-blocked-bg"><X size={10} /> Reject</button>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 rounded border border-line bg-page px-2 py-1 text-micro font-medium text-grey" title="Only approvers (Nik, Monty) can sign off deals">
+                          <ShieldAlert size={10} /> Approver sign-off
+                        </span>
+                      )}
                       {dealById.has(a.dealId) && (
                         <button
                           onClick={() => setMemoDealId(a.dealId)}

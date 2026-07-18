@@ -40,6 +40,7 @@ const routeLabels: Record<string, string> = {
   'report-builder': 'Report Builder',
   'claim-library': 'Claim Library',
   'audit-log': 'Audit Log',
+  'ops': 'Ops Health',
 };
 
 /**

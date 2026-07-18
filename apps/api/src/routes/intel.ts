@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { actionsFor, isServerAction, TEAM, type TeamRole } from '@lcx/shared';
+import { actionsFor, isServerAction } from '@lcx/shared';
 import type { AuthVariables } from '../middleware/auth.js';
 import { requireOperator } from '../middleware/auth.js';
 import { env } from '../lib/env.js';
@@ -16,14 +16,10 @@ import { analyzeProjectConversation } from '../intel/conversation.js';
 import { buildPortfolio } from '../intel/portfolio.js';
 import { getCalibration } from '../intel/calibration.js';
 import { buildScorecard } from '../intel/scorecard.js';
+import { buildOpsHealth } from '../intel/ops.js';
 
 export const intelRoutes = new Hono<{ Variables: AuthVariables }>();
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
-
-/** The desk role of the authenticated operator (email principals carry a real id). */
-function roleOf(operatorId: string): TeamRole {
-  return TEAM.find((m) => m.id === operatorId)?.role ?? 'operator';
-}
 
 function requireSubject(c: { req: { query: (k: string) => string | undefined } }) {
   const subjectType = c.req.query('subjectType');
@@ -77,8 +73,9 @@ intelRoutes.get('/actions', requireOperator, async (c) => {
   const subj = requireSubject(c);
   if (!subj) return c.json({ error: 'subjectType and subjectId required', code: 'VALIDATION' }, 400);
   try {
-    const role = roleOf(c.get('operator').id);
-    const available = actionsFor(subj.subjectType, role);
+    // Role is server-authoritative on the principal (set from the desk roster
+    // in requireOperator), so the action list matches what the API will allow.
+    const available = actionsFor(subj.subjectType, c.get('operator').role);
     const state = await getObjectState(subj.subjectType, subj.subjectId);
     return c.json({ data: { available, state }, meta: meta() });
   } catch (err) {
@@ -246,6 +243,17 @@ intelRoutes.get('/scorecard', requireOperator, async (c) => {
   } catch (err) {
     console.error('[intel] scorecard error:', err);
     return c.json({ error: 'Failed to build scorecard', code: 'INTEL_ERROR' }, 500);
+  }
+});
+
+/** GET /v1/intel/ops — observability: job health, data-freshness SLAs, gap ledger, source compliance. */
+intelRoutes.get('/ops', requireOperator, async (c) => {
+  try {
+    const data = await buildOpsHealth();
+    return c.json({ data, meta: meta() });
+  } catch (err) {
+    console.error('[intel] ops error:', err);
+    return c.json({ error: 'Failed to build ops health', code: 'INTEL_ERROR' }, 500);
   }
 });
 

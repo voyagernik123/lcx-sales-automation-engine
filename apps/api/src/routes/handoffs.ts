@@ -191,8 +191,10 @@ handoffRoutes.post('/:id/notes', requireOperator, async (c) => {
 handoffRoutes.post('/:id/re-enroll', requireOperator, async (c) => {
   const { id } = c.req.param();
   const operator = c.get('operator');
-  if (operator.role !== 'operator') {
-    return c.json({ error: 'Only operator can override handoff', code: 'PERMISSION_DENIED' }, 403);
+  // Overriding a handoff is a base-tier action — operator and approver both
+  // qualify. (requireOperator already rejected anything unauthenticated.)
+  if (operator.role !== 'operator' && operator.role !== 'approver') {
+    return c.json({ error: 'Only desk operators can override handoff', code: 'PERMISSION_DENIED' }, 403);
   }
   try {
     await reEnrollHandoff(id, operator.id);

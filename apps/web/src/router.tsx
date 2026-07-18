@@ -52,6 +52,7 @@ const MarketNews = lazy(() => import('@/pages/MarketNews').then((m) => ({ defaul
 const ReportBuilder = lazy(() => import('@/pages/ReportBuilder').then((m) => ({ default: m.ReportBuilder })));
 const KpiDashboard = lazy(() => import('@/pages/KpiDashboard').then((m) => ({ default: m.KpiDashboard })));
 const AuditLog = lazy(() => import('@/pages/AuditLog').then((m) => ({ default: m.AuditLog })));
+const Ops = lazy(() => import('@/pages/Ops').then((m) => ({ default: m.Ops })));
 
 export const router = createBrowserRouter([
   { path: '/select', element: <SelectOperator /> },
@@ -104,6 +105,7 @@ export const router = createBrowserRouter([
       { path: 'report-builder', element: <ReportBuilder /> },
       { path: 'bd-kpis', element: <KpiDashboard /> },
       { path: 'audit-log', element: <AuditLog /> },
+      { path: 'ops', element: <Ops /> },
     ],
   },
 ]);

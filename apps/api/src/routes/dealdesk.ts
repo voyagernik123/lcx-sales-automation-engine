@@ -8,6 +8,7 @@
 import { Hono } from 'hono';
 import type { AuthVariables } from '../middleware/auth.js';
 import { requireOperator } from '../middleware/auth.js';
+import { requireApprover } from '../middleware/permissions.js';
 import { env } from '../lib/env.js';
 import { listPlaybooks, getBatna, createBatna, updateBatna } from '../deals/playbook.js';
 import { needsApproval, requestApproval, decideApproval, listApprovals } from '../deals/approvals.js';
@@ -62,7 +63,10 @@ dealDeskRoutes.post('/approvals', requireOperator, async (c) => {
   return c.json({ data: { ...req, needsApproval: needsApproval(body.dealValueCents ?? 0, body.discountPct ?? 0) }, meta: meta() }, 201);
 });
 
-dealDeskRoutes.post('/approvals/:id/decide', requireOperator, async (c) => {
+// Signing off a deal is an approver-only action — enforced server-side, not
+// just hidden on the client. Operators can request approvals (above), only
+// approvers can decide them.
+dealDeskRoutes.post('/approvals/:id/decide', requireOperator, requireApprover, async (c) => {
   const body = (await c.req.json<{ decision?: 'approved' | 'rejected'; note?: string }>().catch(() => ({}))) as { decision?: 'approved' | 'rejected'; note?: string };
   if (body.decision !== 'approved' && body.decision !== 'rejected') {
     return c.json({ error: 'decision must be approved|rejected', code: 'VALIDATION' }, 400);

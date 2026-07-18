@@ -40,8 +40,11 @@ function safeEqual(a: string, b: string): boolean {
  *     sign-in. Because the allowlist is validated server-side, entering your
  *     email on ANY browser authorizes you there; work attributes to you.
  *
- * `role` is 'operator' for both (single-tier API RBAC today); the email path
- * additionally sets the real member `id` for attribution.
+ * The shared key authenticates as a plain 'operator'. The email path sets the
+ * real member `id` (for attribution) AND the member's real `role` — so approver
+ * privileges (deal sign-off) are now enforced server-side, not just on the
+ * client. Roster 'viewer' members (none today) fall back to 'operator', the
+ * base API tier; a dedicated read-only tier is out of scope for this pass.
  */
 export const requireOperator = createMiddleware<{ Variables: AuthVariables }>(async (c, next) => {
   const key = extractApiKey(c.req.header('authorization'), c.req.header('x-api-key'));
@@ -54,10 +57,15 @@ export const requireOperator = createMiddleware<{ Variables: AuthVariables }>(as
       return;
     }
 
-    // 2) Desk email allowlist — the credential IS the member's email.
+    // 2) Desk email allowlist — the credential IS the member's email. The
+    //    principal now carries the member's real role so RBAC is authoritative.
     const member = findMemberByEmail(key);
     if (member) {
-      c.set('operator', { id: member.id, role: 'operator', authMethod: 'email' });
+      c.set('operator', {
+        id: member.id,
+        role: member.role === 'approver' ? 'approver' : 'operator',
+        authMethod: 'email',
+      });
       await next();
       return;
     }

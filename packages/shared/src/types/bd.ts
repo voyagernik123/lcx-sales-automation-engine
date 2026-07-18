@@ -31,13 +31,14 @@ export interface ApiSuccessBody<T> {
 /**
  * Operator identity resolved from the request credential — either the shared
  * `OPERATOR_API_KEY` (cron, integrations) or a desk member's email address
- * (per-person sign-in). `role` stays 'operator' for both: API RBAC is
- * single-tier today (see middleware/permissions.ts), and the approver/operator
- * distinction is applied on the client. `id` is the real member id when known,
- * so writes attribute to the person, not a generic "operator".
+ * (per-person sign-in). `role` is now authoritative server-side (Wave 7): email
+ * principals carry the desk member's real role (approver ⊇ operator), so
+ * approver-gated actions (e.g. deal-approval sign-off) are enforced by the API,
+ * not just the client. The shared key authenticates as a plain 'operator'.
+ * `id` is the real member id when known, so writes attribute to the person.
  */
 export interface OperatorPrincipal {
   id: string;
-  role: 'operator';
+  role: 'operator' | 'approver';
   authMethod: 'api_key' | 'email';
 }

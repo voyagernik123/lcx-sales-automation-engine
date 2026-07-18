@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield } from 'lucide-react';
+import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield, Activity } from 'lucide-react';
 import { useUIStore, useAuditStore } from '@/stores';
 import { redFlags } from '@/data';
 import { SidebarFieldNotes } from './SidebarFieldNotes';
@@ -62,6 +62,7 @@ const sections: NavSection[] = [
     items: [
       { to: '/claim-library', label: 'Claim Library', icon: ScrollText },
       { to: '/audit-log', label: 'Audit Log', icon: Shield },
+      { to: '/ops', label: 'Ops Health', icon: Activity },
     ],
   },
   {

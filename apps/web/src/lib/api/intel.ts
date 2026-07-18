@@ -262,6 +262,72 @@ export function fetchScorecard(): Promise<Scorecard> {
   return request<{ data: Scorecard }>(`/v1/intel/scorecard`).then((r) => r.data);
 }
 
+/* ── Ops health (Wave 7 · governance & observability) ── */
+export interface OpsJobHealth {
+  jobName: string;
+  status: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  durationMs: number | null;
+  error: string | null;
+  stats: Record<string, unknown>;
+  successRate: number | null;
+  runsWindow: number;
+}
+export interface OpsSourceFreshness {
+  source: string;
+  label: string;
+  slaDays: number;
+  yields: string;
+  tracked: number;
+  fresh: number;
+  stale: number;
+  errored: number;
+  neverCollected: number;
+  oldestOkAt: string | null;
+  lastActivityAt: string | null;
+  health: 'ok' | 'degraded' | 'stale' | 'down' | 'idle';
+}
+export interface OpsGapEntry {
+  source: string;
+  subjectType: string;
+  subjectId: string;
+  subjectLabel: string | null;
+  status: string;
+  lastError: string | null;
+  lastAttemptAt: string | null;
+}
+export interface OpsSourceCompliance {
+  source: string;
+  label: string;
+  homepage: string | null;
+  tier: 'free' | 'free-rate-limited' | 'paid';
+  auth: string;
+  rateLimit: string;
+  attribution: string;
+  termsUrl: string | null;
+  note: string | null;
+}
+export interface OpsHealth {
+  generatedAt: string;
+  summary: {
+    jobsTracked: number;
+    jobsFailing: number;
+    lastCollectionAt: string | null;
+    sourcesWithinSla: number;
+    sourcesTotal: number;
+    openGaps: number;
+  };
+  jobs: OpsJobHealth[];
+  freshness: OpsSourceFreshness[];
+  gaps: OpsGapEntry[];
+  compliance: OpsSourceCompliance[];
+}
+
+export function fetchOps(): Promise<OpsHealth> {
+  return request<{ data: OpsHealth }>(`/v1/intel/ops`).then((r) => r.data);
+}
+
 const q = (subjectType: string, subjectId: string) =>
   `subjectType=${encodeURIComponent(subjectType)}&subjectId=${encodeURIComponent(subjectId)}`;
 
