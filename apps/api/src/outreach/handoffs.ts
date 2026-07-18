@@ -317,28 +317,41 @@ export async function reEnrollHandoff(id: string, actor: string): Promise<void> 
 
   if (!handoff) throw new Error('Handoff not found');
 
-  await db
-    .update(schema.outreachSequences)
-    .set({ status: 'active', handoffId: null, updatedAt: new Date() })
-    .where(sql`${schema.outreachSequences.handoffId} = ${id}`)
-    .execute();
+  // Re-activating sequences, flipping the handoff, and writing the event + audit
+  // trail is one logical override — commit them together so we never end up with
+  // live sequences under a handoff that still reads as closed, or a state change
+  // with no history/audit record. The event insert is inlined here (rather than
+  // calling addHandoffEvent, which opens its own connection) so it joins the tx.
+  await db.transaction(async (tx) => {
+    await tx
+      .update(schema.outreachSequences)
+      .set({ status: 'active', handoffId: null, updatedAt: new Date() })
+      .where(sql`${schema.outreachSequences.handoffId} = ${id}`)
+      .execute();
 
-  await db
-    .update(schema.handoffs)
-    .set({ status: 're_nurture', updatedAt: new Date() })
-    .where(sql`${schema.handoffs.id} = ${id}`)
-    .execute();
+    await tx
+      .update(schema.handoffs)
+      .set({ status: 're_nurture', updatedAt: new Date() })
+      .where(sql`${schema.handoffs.id} = ${id}`)
+      .execute();
 
-  await addHandoffEvent(id, 're_enrolled', actor, 'Operator overrode handoff — sequences re-activated');
+    await tx.insert(schema.handoffEvents).values({
+      id: randomUUID(),
+      handoffId: id,
+      eventType: 're_enrolled',
+      actor,
+      content: 'Operator overrode handoff — sequences re-activated',
+    }).execute();
 
-  await db.insert(schema.auditLog).values({
-    id: randomUUID(),
-    actor,
-    action: 'handoff_re_enrolled',
-    entity: 'handoffs',
-    entityId: id,
-    meta: { override: true },
-  }).execute();
+    await tx.insert(schema.auditLog).values({
+      id: randomUUID(),
+      actor,
+      action: 'handoff_re_enrolled',
+      entity: 'handoffs',
+      entityId: id,
+      meta: { override: true },
+    }).execute();
+  });
 }
 
 export async function pollLinkedInReplies(): Promise<number> {

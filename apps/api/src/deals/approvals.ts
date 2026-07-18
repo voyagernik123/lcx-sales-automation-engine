@@ -90,41 +90,46 @@ export async function requestApproval(input: RequestApprovalInput): Promise<Appr
   const db = getDb();
   const requestId = randomUUID();
 
-  await db.execute(sql`
-    INSERT INTO approval_requests (id, deal_id, requested_by, status, reason, discount_pct, deal_value_cents)
-    VALUES (${requestId}, ${input.dealId}, ${input.requestedBy}, 'pending', ${input.reason ?? null},
-            ${input.discountPct}, ${input.dealValueCents})
-  `);
-
-  // Tiers that CANNOT self-approve this deal are skipped; the first tier that can
-  // approve (and everyone below it who is still exceeded) forms the chain.
-  const authRows = await db.execute(sql`
-    SELECT role, max_discount_pct, max_value_cents
-    FROM approval_authority
-    WHERE role <> 'rep'
-    ORDER BY max_value_cents ASC, max_discount_pct ASC
-  `);
-
-  const chain: string[] = [];
-  for (const raw of (authRows.rows ?? [])) {
-    const a = raw as Record<string, unknown>;
-    const role = String(a.role);
-    chain.push(role);
-    const canFullyApprove =
-      input.discountPct <= Number(a.max_discount_pct) && input.dealValueCents <= Number(a.max_value_cents);
-    if (canFullyApprove) break; // this tier's authority covers the deal — chain complete
-  }
-  // Fallback: if no authority rows exist, at least route to a manager.
-  if (chain.length === 0) chain.push('manager');
-
-  let order = 0;
-  for (const role of chain) {
-    await db.execute(sql`
-      INSERT INTO approval_steps (id, request_id, step_order, role, status)
-      VALUES (${randomUUID()}, ${requestId}, ${order}, ${role}, 'pending')
+  // The request row and its ordered step chain must land together — a crash
+  // between the two would leave a `pending` request with no steps (undecidable,
+  // stuck forever). Build the whole thing in one transaction.
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`
+      INSERT INTO approval_requests (id, deal_id, requested_by, status, reason, discount_pct, deal_value_cents)
+      VALUES (${requestId}, ${input.dealId}, ${input.requestedBy}, 'pending', ${input.reason ?? null},
+              ${input.discountPct}, ${input.dealValueCents})
     `);
-    order++;
-  }
+
+    // Tiers that CANNOT self-approve this deal are skipped; the first tier that can
+    // approve (and everyone below it who is still exceeded) forms the chain.
+    const authRows = await tx.execute(sql`
+      SELECT role, max_discount_pct, max_value_cents
+      FROM approval_authority
+      WHERE role <> 'rep'
+      ORDER BY max_value_cents ASC, max_discount_pct ASC
+    `);
+
+    const chain: string[] = [];
+    for (const raw of (authRows.rows ?? [])) {
+      const a = raw as Record<string, unknown>;
+      const role = String(a.role);
+      chain.push(role);
+      const canFullyApprove =
+        input.discountPct <= Number(a.max_discount_pct) && input.dealValueCents <= Number(a.max_value_cents);
+      if (canFullyApprove) break; // this tier's authority covers the deal — chain complete
+    }
+    // Fallback: if no authority rows exist, at least route to a manager.
+    if (chain.length === 0) chain.push('manager');
+
+    let order = 0;
+    for (const role of chain) {
+      await tx.execute(sql`
+        INSERT INTO approval_steps (id, request_id, step_order, role, status)
+        VALUES (${randomUUID()}, ${requestId}, ${order}, ${role}, 'pending')
+      `);
+      order++;
+    }
+  });
 
   const created = await getApproval(requestId);
   return created!;
@@ -176,30 +181,37 @@ export async function decideApproval(
   if (existing.status !== 'pending') return existing; // already decided — idempotent no-op
 
   const nextStep = (existing.steps ?? []).find((s) => s.status === 'pending');
-  if (nextStep) {
-    await db.execute(sql`
-      UPDATE approval_steps SET status = ${decision}, decided_by = ${decidedBy},
-        decided_at = NOW(), note = ${note ?? null}
-      WHERE id = ${nextStep.id}
-    `);
-  }
 
-  const remaining = await db.execute(sql`
-    SELECT COUNT(*) AS n FROM approval_steps WHERE request_id = ${requestId} AND status = 'pending'
-  `);
-  const pendingLeft = Number((remaining.rows?.[0] as Record<string, unknown> | undefined)?.n ?? 0);
+  // The step decision and the resulting request-status roll-up must be atomic —
+  // otherwise a crash between them leaves a decided step under a still-`pending`
+  // request (or vice-versa). The `AND status = 'pending'` guards also make the
+  // decision race-safe: two concurrent approvers can't both apply it.
+  await db.transaction(async (tx) => {
+    if (nextStep) {
+      await tx.execute(sql`
+        UPDATE approval_steps SET status = ${decision}, decided_by = ${decidedBy},
+          decided_at = NOW(), note = ${note ?? null}
+        WHERE id = ${nextStep.id} AND status = 'pending'
+      `);
+    }
 
-  if (decision === 'rejected') {
-    await db.execute(sql`
-      UPDATE approval_requests SET status = 'rejected', decided_by = ${decidedBy}, decided_at = NOW()
-      WHERE id = ${requestId}
+    const remaining = await tx.execute(sql`
+      SELECT COUNT(*) AS n FROM approval_steps WHERE request_id = ${requestId} AND status = 'pending'
     `);
-  } else if (pendingLeft === 0) {
-    await db.execute(sql`
-      UPDATE approval_requests SET status = 'approved', decided_by = ${decidedBy}, decided_at = NOW()
-      WHERE id = ${requestId}
-    `);
-  }
+    const pendingLeft = Number((remaining.rows?.[0] as Record<string, unknown> | undefined)?.n ?? 0);
+
+    if (decision === 'rejected') {
+      await tx.execute(sql`
+        UPDATE approval_requests SET status = 'rejected', decided_by = ${decidedBy}, decided_at = NOW()
+        WHERE id = ${requestId} AND status = 'pending'
+      `);
+    } else if (pendingLeft === 0) {
+      await tx.execute(sql`
+        UPDATE approval_requests SET status = 'approved', decided_by = ${decidedBy}, decided_at = NOW()
+        WHERE id = ${requestId} AND status = 'pending'
+      `);
+    }
+  });
 
   return getApproval(requestId);
 }

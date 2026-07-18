@@ -177,7 +177,7 @@ export async function buildOpsHealth(): Promise<OpsHealth> {
           COUNT(*) FILTER (WHERE last_ok_at IS NOT NULL AND last_ok_at >= now() - make_interval(days => ${c.freshnessDays})) AS fresh,
           COUNT(*) FILTER (WHERE last_ok_at IS NOT NULL AND last_ok_at <  now() - make_interval(days => ${c.freshnessDays})) AS stale,
           COUNT(*) FILTER (WHERE status = 'error') AS errored,
-          COUNT(*) FILTER (WHERE last_ok_at IS NULL) AS never_collected,
+          COUNT(*) FILTER (WHERE last_ok_at IS NULL AND status <> 'error') AS never_collected,
           MIN(last_ok_at) AS oldest_ok,
           MAX(updated_at) AS last_activity
         FROM collection_state
