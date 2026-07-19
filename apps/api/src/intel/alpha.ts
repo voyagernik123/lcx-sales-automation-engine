@@ -185,10 +185,15 @@ export async function listTargets(limit = 25, minConviction = 0): Promise<Target
   // (and the competitor count) run for at most `limit` rows — not the whole
   // ~8k-project universe. Backed by the observations (subject_id, predicate,
   // observed_at DESC) index, this took the endpoint from ~25s to sub-second.
+  // Every predicate here is project-scoped, so pinning subject_type='project'
+  // lets even the existing idx_obs_pred (subject_type, subject_id, predicate,
+  // observed_at) serve these lookups — the speedup lands on a plain code deploy,
+  // no migration required (0032's indexes make it optimal but aren't a hard dep).
   const res = await db.execute(sql`
     WITH conv AS (
       SELECT DISTINCT ON (subject_id) subject_id, value_num, value_json
-      FROM observations WHERE predicate='conviction' ORDER BY subject_id, observed_at DESC
+      FROM observations WHERE subject_type='project' AND predicate='conviction'
+      ORDER BY subject_id, observed_at DESC
     ),
     ranked AS (
       SELECT conv.subject_id,
@@ -211,10 +216,10 @@ export async function listTargets(limit = 25, minConviction = 0): Promise<Target
            dv.value_num AS deal_value, win.value_num AS winnability, ach.value_json AS ach_json,
            (SELECT count(*) FROM exchange_listings el WHERE el.project_id = r.pid) AS competitor_count
     FROM ranked r
-    LEFT JOIN LATERAL (SELECT value_num, value_json FROM observations WHERE subject_id=r.subject_id AND predicate='timing_window' ORDER BY observed_at DESC LIMIT 1) tw ON true
-    LEFT JOIN LATERAL (SELECT value_num FROM observations WHERE subject_id=r.subject_id AND predicate='deal_value_usd' ORDER BY observed_at DESC LIMIT 1) dv ON true
-    LEFT JOIN LATERAL (SELECT value_num FROM observations WHERE subject_id=r.subject_id AND predicate='winnability' ORDER BY observed_at DESC LIMIT 1) win ON true
-    LEFT JOIN LATERAL (SELECT value_json FROM observations WHERE subject_id=r.subject_id AND predicate='ach_verdict' ORDER BY observed_at DESC LIMIT 1) ach ON true
+    LEFT JOIN LATERAL (SELECT value_num, value_json FROM observations WHERE subject_type='project' AND subject_id=r.subject_id AND predicate='timing_window' ORDER BY observed_at DESC LIMIT 1) tw ON true
+    LEFT JOIN LATERAL (SELECT value_num FROM observations WHERE subject_type='project' AND subject_id=r.subject_id AND predicate='deal_value_usd' ORDER BY observed_at DESC LIMIT 1) dv ON true
+    LEFT JOIN LATERAL (SELECT value_num FROM observations WHERE subject_type='project' AND subject_id=r.subject_id AND predicate='winnability' ORDER BY observed_at DESC LIMIT 1) win ON true
+    LEFT JOIN LATERAL (SELECT value_json FROM observations WHERE subject_type='project' AND subject_id=r.subject_id AND predicate='ach_verdict' ORDER BY observed_at DESC LIMIT 1) ach ON true
     ORDER BY r.conviction DESC NULLS LAST
   `);
   return (res.rows ?? []).map((r: Record<string, unknown>) => {
