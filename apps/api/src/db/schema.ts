@@ -638,6 +638,10 @@ export const observations = pgTable('observations', {
   index('idx_obs_pred').on(t.subjectType, t.subjectId, t.predicate, t.observedAt),
   index('idx_obs_source').on(t.source),
   index('idx_obs_predicate').on(t.predicate),
+  // Read-path indexes (migration 0032): serve the intel layer's "latest
+  // observation of predicate P for subject S" lookups without a full scan.
+  index('idx_obs_subject_pred_time').on(t.subjectId, t.predicate, t.observedAt),
+  index('idx_obs_pred_subject_time').on(t.predicate, t.subjectId, t.observedAt),
 ]);
 
 /** object_actions — governed action ledger (complements the hash-chained audit_log). */

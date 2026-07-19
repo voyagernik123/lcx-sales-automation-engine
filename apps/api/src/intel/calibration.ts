@@ -27,6 +27,16 @@ export interface MetricCalibration {
 const SCORE_METRICS = ['conviction', 'listing_propensity', 'winnability', 'timing_window'];
 const SIGNAL_METRICS = ['tvl_usd', 'github_commits_30d', 'market_cap_usd', 'priority_score'];
 
+/**
+ * Below this many won deals (with an observation for the metric), a median-ratio
+ * "lift" is noise, not signal — one or two atypical wins swing it wildly. We saw
+ * this live: at 3 wins prod showed conviction 0.41× "weak" and market-cap 170×
+ * side by side. Hold the verdict at 'insufficient' until the sample is big enough
+ * to be even directional. The loop promotes metrics to weak/predictive as deals
+ * close and the count crosses this floor.
+ */
+const MIN_WON_SAMPLE = 8;
+
 async function calibrateMetric(pool: pg.Pool, predicate: string, kind: 'score' | 'signal'): Promise<MetricCalibration> {
   const { rows } = await pool.query(
     `WITH m AS (
@@ -53,7 +63,7 @@ async function calibrateMetric(pool: pg.Pool, predicate: string, kind: 'score' |
   const lift = wonMedian != null && universeMedian ? Math.round((wonMedian / universeMedian) * 100) / 100 : null;
   const quintileCapture = wonN > 0 ? Math.round((wonTop / wonN) * 100) / 100 : null;
   const verdict: MetricCalibration['verdict'] =
-    wonN < 3 ? 'insufficient' : lift != null && lift >= 1.3 ? 'predictive' : 'weak';
+    wonN < MIN_WON_SAMPLE ? 'insufficient' : lift != null && lift >= 1.3 ? 'predictive' : 'weak';
 
   return { metricKey: predicate, kind, lift, quintileCapture, wonMedian, universeMedian, sampleWon: wonN, sampleUniverse: universeN, verdict };
 }

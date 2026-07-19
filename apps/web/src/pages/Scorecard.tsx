@@ -125,19 +125,28 @@ export function Scorecard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {calib.map((m) => (
-                      <tr key={m.metricKey} className="border-t border-line/50">
-                        <td className="py-1 text-navy">{METRIC_LABEL[m.metricKey] ?? m.metricKey}</td>
-                        <td className="num-tabular py-1 text-right font-semibold text-navy">{m.lift != null ? `${m.lift}×` : '—'}</td>
-                        <td className="num-tabular py-1 text-right text-grey">{m.quintileCapture != null ? `${Math.round(m.quintileCapture * 100)}%` : '—'}</td>
-                        <td className={`py-1 text-right font-mono text-[10px] uppercase ${VERDICT_STYLE[m.verdict]}`}>{m.verdict}</td>
-                      </tr>
-                    ))}
+                    {calib.map((m) => {
+                      // Below the sample floor, lift/capture are noise — don't
+                      // show numbers that read as signal. The verdict already
+                      // says 'insufficient'; the cells stay blank until it isn't.
+                      const insufficient = m.verdict === 'insufficient';
+                      return (
+                        <tr key={m.metricKey} className="border-t border-line/50">
+                          <td className="py-1 text-navy">{METRIC_LABEL[m.metricKey] ?? m.metricKey}</td>
+                          <td className="num-tabular py-1 text-right font-semibold text-navy">{!insufficient && m.lift != null ? `${m.lift}×` : '—'}</td>
+                          <td className="num-tabular py-1 text-right text-grey">{!insufficient && m.quintileCapture != null ? `${Math.round(m.quintileCapture * 100)}%` : '—'}</td>
+                          <td className={`py-1 text-right font-mono text-[10px] uppercase ${VERDICT_STYLE[m.verdict]}`}>{m.verdict}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}
               <p className="mt-2 text-[10px] leading-snug text-grey/80">
-                Lift = won-deal median ÷ universe median. Directional at this sample size; the loop sharpens weights as more deals close.
+                Lift = won-deal median ÷ universe median.{' '}
+                {sc.northStar.totalWon < 8
+                  ? `Held until the sample matures — only ${sc.northStar.totalWon} won ${sc.northStar.totalWon === 1 ? 'deal' : 'deals'} so far (need 8+ for a directional read).`
+                  : 'Directional at this sample size; the loop sharpens weights as more deals close.'}
               </p>
             </div>
           </div>

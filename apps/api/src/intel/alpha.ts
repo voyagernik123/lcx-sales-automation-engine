@@ -180,30 +180,42 @@ export interface TargetRow {
 /** The ripe-now target list — ranked by conviction, excluding listed + active deals. */
 export async function listTargets(limit = 25, minConviction = 0): Promise<TargetRow[]> {
   const db = getDb();
+  // Rank first, enrich second. `ranked` applies every filter and the LIMIT using
+  // only the conviction CTE + projects, so the four per-predicate LATERAL lookups
+  // (and the competitor count) run for at most `limit` rows — not the whole
+  // ~8k-project universe. Backed by the observations (subject_id, predicate,
+  // observed_at DESC) index, this took the endpoint from ~25s to sub-second.
   const res = await db.execute(sql`
     WITH conv AS (
       SELECT DISTINCT ON (subject_id) subject_id, value_num, value_json
       FROM observations WHERE predicate='conviction' ORDER BY subject_id, observed_at DESC
+    ),
+    ranked AS (
+      SELECT conv.subject_id,
+             conv.value_num AS conviction, conv.value_json AS conviction_json,
+             p.id AS pid, p.name, p.ticker, p.people_count
+      FROM conv
+      JOIN projects p ON p.id::text = conv.subject_id
+      WHERE p.listed_on_lcx = false
+        AND conv.value_num >= ${minConviction}
+        AND NOT EXISTS (
+          SELECT 1 FROM deals d WHERE d.project_id = p.id
+          AND d.stage IN ('contacted','discovery','proposal','negotiating','won')
+        )
+      ORDER BY conv.value_num DESC NULLS LAST
+      LIMIT ${limit}
     )
-    SELECT p.id, p.name, p.ticker, p.people_count,
-           conv.value_num AS conviction, conv.value_json AS conviction_json,
+    SELECT r.pid AS id, r.name, r.ticker, r.people_count,
+           r.conviction, r.conviction_json,
            tw.value_num AS timing_score, tw.value_json AS timing_json,
            dv.value_num AS deal_value, win.value_num AS winnability, ach.value_json AS ach_json,
-           (SELECT count(*) FROM exchange_listings el WHERE el.project_id = p.id) AS competitor_count
-    FROM conv
-    JOIN projects p ON p.id::text = conv.subject_id
-    LEFT JOIN LATERAL (SELECT value_num, value_json FROM observations WHERE subject_id=conv.subject_id AND predicate='timing_window' ORDER BY observed_at DESC LIMIT 1) tw ON true
-    LEFT JOIN LATERAL (SELECT value_num FROM observations WHERE subject_id=conv.subject_id AND predicate='deal_value_usd' ORDER BY observed_at DESC LIMIT 1) dv ON true
-    LEFT JOIN LATERAL (SELECT value_num FROM observations WHERE subject_id=conv.subject_id AND predicate='winnability' ORDER BY observed_at DESC LIMIT 1) win ON true
-    LEFT JOIN LATERAL (SELECT value_json FROM observations WHERE subject_id=conv.subject_id AND predicate='ach_verdict' ORDER BY observed_at DESC LIMIT 1) ach ON true
-    WHERE p.listed_on_lcx = false
-      AND conv.value_num >= ${minConviction}
-      AND NOT EXISTS (
-        SELECT 1 FROM deals d WHERE d.project_id = p.id
-        AND d.stage IN ('contacted','discovery','proposal','negotiating','won')
-      )
-    ORDER BY conv.value_num DESC NULLS LAST
-    LIMIT ${limit}
+           (SELECT count(*) FROM exchange_listings el WHERE el.project_id = r.pid) AS competitor_count
+    FROM ranked r
+    LEFT JOIN LATERAL (SELECT value_num, value_json FROM observations WHERE subject_id=r.subject_id AND predicate='timing_window' ORDER BY observed_at DESC LIMIT 1) tw ON true
+    LEFT JOIN LATERAL (SELECT value_num FROM observations WHERE subject_id=r.subject_id AND predicate='deal_value_usd' ORDER BY observed_at DESC LIMIT 1) dv ON true
+    LEFT JOIN LATERAL (SELECT value_num FROM observations WHERE subject_id=r.subject_id AND predicate='winnability' ORDER BY observed_at DESC LIMIT 1) win ON true
+    LEFT JOIN LATERAL (SELECT value_json FROM observations WHERE subject_id=r.subject_id AND predicate='ach_verdict' ORDER BY observed_at DESC LIMIT 1) ach ON true
+    ORDER BY r.conviction DESC NULLS LAST
   `);
   return (res.rows ?? []).map((r: Record<string, unknown>) => {
     const timingJson = r.timing_json as { window?: string } | null;
