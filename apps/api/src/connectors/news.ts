@@ -44,6 +44,25 @@ async function safeJson(url: string, headers?: Record<string, string>): Promise<
   }
 }
 
+/** fetch raw text (RSS/Atom XML) with a hard timeout; null on any failure. */
+async function safeText(url: string): Promise<string | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: 'application/rss+xml, application/xml, text/xml, */*', 'User-Agent': 'LCXSalesBot/1.0 (+https://www.lcx.com; market-intel)' },
+      signal: controller.signal,
+      redirect: 'follow',
+    });
+    if (!res.ok) return null;
+    return await res.text();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function cleanTicker(s: unknown): string | null {
   if (typeof s !== 'string') return null;
   const t = s.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -76,56 +95,119 @@ async function fetchCryptoPanic(token: string): Promise<NewsItem[]> {
   return items;
 }
 
-/* ── CoinGecko status updates (public, no key) — primary free path ── */
-async function fetchCoinGeckoStatus(): Promise<NewsItem[]> {
-  const url = 'https://api.coingecko.com/api/v3/status_updates?per_page=50&page=1';
-  const json = (await safeJson(url)) as { status_updates?: unknown[] } | null;
-  if (!json || !Array.isArray(json.status_updates)) return [];
+/* ── CryptoCompare news — optional widener (their news API now requires a key;
+   free RSS below is the no-key backbone). Only called when a key is set. ── */
+async function fetchCryptoCompare(apiKey: string): Promise<NewsItem[]> {
+  const json = (await safeJson(`https://min-api.cryptocompare.com/data/v2/news/?lang=EN&api_key=${encodeURIComponent(apiKey)}`)) as { Data?: unknown[] } | null;
+  if (!json || !Array.isArray(json.Data)) return [];
   const items: NewsItem[] = [];
-  for (const r of json.status_updates) {
+  for (const r of json.Data) {
     const row = r as Record<string, unknown>;
-    const desc = typeof row.description === 'string' ? row.description : null;
-    const project = row.project as Record<string, unknown> | undefined;
-    const projName = project && typeof project.name === 'string' ? project.name : '';
-    const title = (desc ?? '').split('\n')[0].slice(0, 240) || projName;
+    const title = typeof row.title === 'string' ? row.title.trim() : null;
     if (!title) continue;
-    const symbol = project ? cleanTicker(project.symbol) : null;
+    // `categories` is a pipe-delimited string e.g. "BTC|Regulation|Trading".
+    const cats = typeof row.categories === 'string' ? row.categories.split('|') : [];
+    const tickers = cats.map(cleanTicker).filter((t): t is string => t != null);
     items.push({
-      source: 'coingecko',
-      title: projName ? `${projName}: ${title}` : title,
-      url: null,
-      publishedAt: typeof row.created_at === 'string' ? row.created_at : null,
-      tickers: symbol ? [symbol] : [],
-      externalId: null,
+      source: 'cryptocompare',
+      title,
+      url: typeof row.url === 'string' ? row.url : null,
+      publishedAt: row.published_on != null && Number.isFinite(Number(row.published_on))
+        ? new Date(Number(row.published_on) * 1000).toISOString() : null,
+      tickers: Array.from(new Set(tickers)),
+      externalId: row.id != null ? `cc:${String(row.id)}` : null,
     });
   }
   return items;
 }
 
+/* ── Free RSS/Atom feeds (no key) — crypto + the regulatory angle LCX cares
+   about. Hard-coded hosts (not user input), fetched best-effort; a feed that
+   fails or moves simply contributes nothing. ── */
+const RSS_FEEDS: { url: string; source: string }[] = [
+  { url: 'https://www.coindesk.com/arc/outboundfeeds/rss', source: 'coindesk' },
+  { url: 'https://cointelegraph.com/rss', source: 'cointelegraph' },
+  { url: 'https://decrypt.co/feed', source: 'decrypt' },
+  { url: 'https://www.theblock.co/rss.xml', source: 'theblock' },
+  // Regulatory — LCX's MiCA/compliance edge:
+  { url: 'https://www.sec.gov/news/pressreleases.rss', source: 'sec' },
+  { url: 'https://www.esma.europa.eu/rss.xml', source: 'esma' },
+];
+
+const stripTags = (s: string): string =>
+  s.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+const decodeEntities = (s: string): string =>
+  s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&#0?39;|&apos;/g, "'").replace(/&#(\d+);/g, (_, d) => String.fromCharCode(Number(d)));
+
+/** Cashtags ($BTC) and parenthesized tickers ((BTC)) only — conservative, so we
+    don't match random ALL-CAPS words in a headline as tickers. */
+function tickersFromTitle(title: string): string[] {
+  const found = new Set<string>();
+  // Reject pure prices like "$64", "$64k", "$1.5M" (→ "64", "64K", "15M") while
+  // keeping real tickers such as 1INCH — drop anything that's just digits + an
+  // optional magnitude suffix.
+  const add = (raw: string) => { const t = cleanTicker(raw); if (t && !/^\d+[KMBT]?$/.test(t)) found.add(t); };
+  for (const m of title.matchAll(/\$([A-Za-z0-9]{2,10})\b/g)) add(m[1]);
+  for (const m of title.matchAll(/\(([A-Z0-9]{2,6})\)/g)) add(m[1]);
+  return [...found];
+}
+
+export function parseRssItems(xml: string, source: string): NewsItem[] {
+  const items: NewsItem[] = [];
+  const blocks = xml.match(/<(item|entry)\b[\s\S]*?<\/\1>/gi) ?? [];
+  for (const block of blocks.slice(0, 20)) {
+    const titleRaw = block.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? '';
+    const title = decodeEntities(stripTags(titleRaw)).slice(0, 400);
+    if (!title) continue;
+    let url = block.match(/<link[^>]*>([\s\S]*?)<\/link>/i)?.[1]?.trim() ?? null; // RSS
+    if (!url) url = block.match(/<link[^>]*href=["']([^"']+)["']/i)?.[1] ?? null; // Atom
+    const dateRaw =
+      block.match(/<pubDate[^>]*>([\s\S]*?)<\/pubDate>/i)?.[1] ??
+      block.match(/<(?:published|updated|dc:date)[^>]*>([\s\S]*?)<\/(?:published|updated|dc:date)>/i)?.[1] ??
+      null;
+    let publishedAt: string | null = null;
+    if (dateRaw) { const d = new Date(dateRaw.trim()); if (!Number.isNaN(d.getTime())) publishedAt = d.toISOString(); }
+    items.push({ source, title, url: url ? decodeEntities(url) : null, publishedAt, tickers: tickersFromTitle(title), externalId: url ?? null });
+  }
+  return items;
+}
+
+async function fetchRss(): Promise<NewsItem[]> {
+  const results = await Promise.all(
+    RSS_FEEDS.map(async (f) => {
+      const xml = await safeText(f.url);
+      if (!xml) return [];
+      try { return parseRssItems(xml, f.source); } catch { return []; }
+    }),
+  );
+  return results.flat();
+}
+
 /**
- * Pull headlines from all available free sources. NEVER throws — returns [] if
- * everything fails. Token for CryptoPanic is read straight from the env so this
- * works without touching lib/env.ts.
+ * Pull headlines from all available free sources — resilient by contract (never
+ * throws; a failing source just contributes nothing). CryptoCompare + RSS need
+ * no key; CryptoPanic is an optional widener when CRYPTOPANIC_TOKEN is set.
+ * Results are de-duplicated by URL (falling back to title).
  */
 export async function fetchNews(): Promise<NewsItem[]> {
-  const out: NewsItem[] = [];
   const token = process.env.CRYPTOPANIC_TOKEN ?? '';
+  const ccKey = process.env.CRYPTOCOMPARE_API_KEY ?? '';
+  // RSS is the free, no-key backbone; the two API sources are optional wideners.
+  const sources: Promise<NewsItem[]>[] = [fetchRss().catch(() => [])];
+  if (ccKey) sources.push(fetchCryptoCompare(ccKey).catch(() => []));
+  if (token) sources.push(fetchCryptoPanic(token).catch(() => []));
 
-  if (token) {
-    try {
-      out.push(...(await fetchCryptoPanic(token)));
-    } catch {
-      /* ignore — resilient by contract */
-    }
+  const all = (await Promise.all(sources)).flat();
+  const seen = new Set<string>();
+  const deduped: NewsItem[] = [];
+  for (const item of all) {
+    const key = (item.url ?? item.title).toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(item);
   }
-
-  try {
-    out.push(...(await fetchCoinGeckoStatus()));
-  } catch {
-    /* ignore */
-  }
-
-  return out;
+  return deduped;
 }
 
 export interface RefreshNewsStats {
