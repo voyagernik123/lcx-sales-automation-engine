@@ -82,4 +82,13 @@ describe('alpha — ACH', () => {
     expect(sum).toBeCloseTo(1, 5);
     expect(r.confidence).toBeGreaterThanOrEqual(0);
   });
+
+  it('no evidence ⇒ honest "list later" at confidence 0, not a false "list soon"', () => {
+    const r = ach({});
+    expect(r.verdict).toBe('list_later');
+    expect(r.confidence).toBe(0);
+    expect(r.evidence).toEqual([]);
+    const sum = r.probabilities.list_soon + r.probabilities.list_later + r.probabilities.no_list;
+    expect(sum).toBeCloseTo(1, 5);
+  });
 });

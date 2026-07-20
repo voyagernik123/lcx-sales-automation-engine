@@ -306,6 +306,17 @@ export function ach(s: SignalBundle): AchResult {
 
   const totals: Record<Hypothesis, number> = { list_soon: 0, list_later: 0, no_list: 0 };
   const active = items.filter((i) => i.present);
+  // No evidence either way → an argmax over the uniform prior would pick the
+  // first key ('list_soon') by accident, falsely flagging a dataless project as
+  // imminent. Be honest instead: "a candidate, but unknown", confidence 0.
+  if (active.length === 0) {
+    return {
+      verdict: 'list_later',
+      confidence: 0,
+      probabilities: { list_soon: 1 / 3, list_later: 1 / 3, no_list: 1 / 3 },
+      evidence: [],
+    };
+  }
   for (const i of active) {
     (Object.keys(totals) as Hypothesis[]).forEach((h) => (totals[h] += i.support[h]));
   }

@@ -50,15 +50,19 @@ noteRoutes.post('/:id/notes', requireOperator, async (c) => {
   const id = randomUUID();
   const db = getDb();
   try {
-    const result = await db.execute(sql`
-      INSERT INTO project_notes (id, project_id, title, body, current_version, pinned, created_by)
-      VALUES (${id}, ${projectId}, ${body.title ?? null}, ${noteBody}, 1, ${body.pinned ?? false}, ${c.get('operator').id})
-      RETURNING id, project_id, title, body, current_version, pinned, created_by, created_at, updated_at
-    `);
-    await db.execute(sql`
-      INSERT INTO note_versions (id, note_id, version, title, body, created_by)
-      VALUES (${randomUUID()}, ${id}, 1, ${body.title ?? null}, ${noteBody}, ${c.get('operator').id})
-    `);
+    // Note row + its v1 version commit together — no note without its history.
+    const result = await db.transaction(async (tx) => {
+      const rows = await tx.execute(sql`
+        INSERT INTO project_notes (id, project_id, title, body, current_version, pinned, created_by)
+        VALUES (${id}, ${projectId}, ${body.title ?? null}, ${noteBody}, 1, ${body.pinned ?? false}, ${c.get('operator').id})
+        RETURNING id, project_id, title, body, current_version, pinned, created_by, created_at, updated_at
+      `);
+      await tx.execute(sql`
+        INSERT INTO note_versions (id, note_id, version, title, body, created_by)
+        VALUES (${randomUUID()}, ${id}, 1, ${body.title ?? null}, ${noteBody}, ${c.get('operator').id})
+      `);
+      return rows;
+    });
     return c.json({ data: mapNote(result.rows![0] as Record<string, unknown>), meta: meta() }, 201);
   } catch (err) {
     console.error('[notes] create error:', err);
@@ -83,17 +87,21 @@ noteRoutes.put('/:id/notes/:noteId', requireOperator, async (c) => {
     const newBody = body.body !== undefined ? body.body.toString() : (prev.body as string);
     const newPinned = body.pinned !== undefined ? body.pinned : (prev.pinned as boolean);
 
-    const result = await db.execute(sql`
-      UPDATE project_notes
-      SET title = ${newTitle}, body = ${newBody}, pinned = ${newPinned},
-          current_version = ${nextVersion}, updated_at = NOW()
-      WHERE id = ${noteId}
-      RETURNING id, project_id, title, body, current_version, pinned, created_by, created_at, updated_at
-    `);
-    await db.execute(sql`
-      INSERT INTO note_versions (id, note_id, version, title, body, created_by)
-      VALUES (${randomUUID()}, ${noteId}, ${nextVersion}, ${newTitle}, ${newBody}, ${c.get('operator').id})
-    `);
+    // Bumped note row + its version-history row commit together.
+    const result = await db.transaction(async (tx) => {
+      const rows = await tx.execute(sql`
+        UPDATE project_notes
+        SET title = ${newTitle}, body = ${newBody}, pinned = ${newPinned},
+            current_version = ${nextVersion}, updated_at = NOW()
+        WHERE id = ${noteId}
+        RETURNING id, project_id, title, body, current_version, pinned, created_by, created_at, updated_at
+      `);
+      await tx.execute(sql`
+        INSERT INTO note_versions (id, note_id, version, title, body, created_by)
+        VALUES (${randomUUID()}, ${noteId}, ${nextVersion}, ${newTitle}, ${newBody}, ${c.get('operator').id})
+      `);
+      return rows;
+    });
     return c.json({ data: mapNote(result.rows![0] as Record<string, unknown>), meta: meta() });
   } catch (err) {
     console.error('[notes] update error:', err);
