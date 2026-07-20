@@ -4,6 +4,7 @@
  * identifies itself, hard budgets on pages/bytes/time.
  */
 import { env } from '../lib/env.js';
+import { assertSafePublicUrl } from '../lib/ssrfGuard.js';
 
 export interface FoundEmail {
   email: string;
@@ -36,16 +37,33 @@ async function fetchWithBudget(url: string): Promise<string | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PAGE_TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
-      headers: { 'User-Agent': userAgent(), Accept: 'text/html' },
-      signal: controller.signal,
-      redirect: 'follow',
-    });
-    if (!res.ok) return null;
-    const type = res.headers.get('content-type') ?? '';
-    if (!type.includes('text/html') && !type.includes('text/plain')) return null;
-    const text = await res.text();
-    return text.slice(0, MAX_BYTES);
+    // Follow redirects manually so the SSRF guard runs on EVERY hop — otherwise
+    // a public site could 302 us to http://169.254.169.254 or an internal host.
+    let current = url;
+    for (let hop = 0; hop < 4; hop++) {
+      try {
+        await assertSafePublicUrl(current);
+      } catch {
+        return null; // blocked (private/reserved host, bad scheme, or unresolvable)
+      }
+      const res = await fetch(current, {
+        headers: { 'User-Agent': userAgent(), Accept: 'text/html' },
+        signal: controller.signal,
+        redirect: 'manual',
+      });
+      if (res.status >= 300 && res.status < 400) {
+        const loc = res.headers.get('location');
+        if (!loc) return null;
+        current = new URL(loc, current).toString();
+        continue;
+      }
+      if (!res.ok) return null;
+      const type = res.headers.get('content-type') ?? '';
+      if (!type.includes('text/html') && !type.includes('text/plain')) return null;
+      const text = await res.text();
+      return text.slice(0, MAX_BYTES);
+    }
+    return null; // too many redirects
   } catch {
     return null;
   } finally {

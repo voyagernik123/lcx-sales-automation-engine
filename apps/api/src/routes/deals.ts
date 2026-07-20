@@ -154,17 +154,26 @@ dealRoutes.post('/projects/:projectId', requireOperator, async (c) => {
   const pkgType = body.packageType ?? 'listing';
   const pkgValue = body.packageValue ?? defaultPackageValue(pkgType);
 
+  if (body.packageValue !== undefined &&
+      (typeof body.packageValue !== 'number' || !Number.isFinite(body.packageValue) || body.packageValue < 0)) {
+    return c.json({ error: 'packageValue must be a non-negative number', code: 'VALIDATION' }, 400);
+  }
+
   try {
     const [existing] = await db.select().from(schema.deals).where(sql`${schema.deals.projectId} = ${projectId}`).limit(1).execute();
     if (existing) return c.json({ error: 'Deal already exists', code: 'DEAL_EXISTS' }, 409);
 
-    const [deal] = await db.insert(schema.deals).values({
-      id: randomUUID(), projectId, stage: 'not_started', packageType: pkgType, packageValue: pkgValue,
-    }).returning().execute();
-
-    await db.insert(schema.dealEvents).values({
-      id: randomUUID(), dealId: deal.id, eventType: 'stage_change', actor: 'system', newStage: 'not_started', content: 'Deal created',
-    }).execute();
+    // Deal row + its creation event commit together (or not at all) — no deal
+    // without its opening history entry.
+    const [deal] = await db.transaction(async (tx) => {
+      const rows = await tx.insert(schema.deals).values({
+        id: randomUUID(), projectId, stage: 'not_started', packageType: pkgType, packageValue: pkgValue,
+      }).returning().execute();
+      await tx.insert(schema.dealEvents).values({
+        id: randomUUID(), dealId: rows[0].id, eventType: 'stage_change', actor: 'system', newStage: 'not_started', content: 'Deal created',
+      }).execute();
+      return rows;
+    });
 
     return c.json({ data: deal, meta: { timestamp: new Date().toISOString(), version: env.version } }, 201);
   } catch (err) {

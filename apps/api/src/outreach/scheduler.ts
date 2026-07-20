@@ -298,10 +298,13 @@ export async function processOutboundTick(): Promise<TickResult> {
 import { createHmac } from 'node:crypto';
 
 export function unsubscribeToken(email: string): string {
-  return createHmac('sha256', env.unsubscribeSecret || 'dev-unsub-secret')
-    .update(email.toLowerCase())
-    .digest('hex')
-    .slice(0, 32);
+  // Never fall back to a hard-coded secret in production — that would make
+  // every unsubscribe token forgeable. Dev gets a convenience default; prod
+  // uses the configured secret (empty until UNSUBSCRIBE_SECRET is set, which
+  // is required before outbound email — no email is sent without it).
+  const secret =
+    env.unsubscribeSecret || (env.nodeEnv === 'production' ? '' : 'dev-unsub-secret');
+  return createHmac('sha256', secret).update(email.toLowerCase()).digest('hex').slice(0, 32);
 }
 
 export function unsubscribeUrl(email: string): string {

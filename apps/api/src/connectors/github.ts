@@ -37,6 +37,12 @@ export async function collectGithub(
 
   for (const t of targets) {
     if (!t.identifier) continue;
+    // Only ever fetch a well-formed "owner/repo" — never interpolate arbitrary
+    // strings into the API path (defends against path traversal / query smuggling).
+    if (!/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(t.identifier)) {
+      await markError(pool, 'project', t.id, 'github', 'invalid repo identifier');
+      continue;
+    }
     attempted++;
     try {
       const repoRes = await fetch(`https://api.github.com/repos/${t.identifier}`, { headers });

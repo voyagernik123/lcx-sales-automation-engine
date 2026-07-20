@@ -5,12 +5,17 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../../.env') });
 
-function required(name: string, fallback?: string): string {
-  const v = process.env[name] ?? fallback;
-  if (v === undefined || v === '') {
-    throw new Error(`Missing required env: ${name}`);
+function required(name: string, devFallback?: string): string {
+  const v = process.env[name];
+  if (v !== undefined && v !== '') return v;
+  // Fail CLOSED in production: a dev convenience fallback (e.g. the public
+  // 'dev-operator-key-change-me') must NEVER stand in for a real secret in
+  // prod — that would make the shared operator key publicly known. Only fall
+  // back outside production; otherwise crash the boot loudly.
+  if (process.env.NODE_ENV !== 'production' && devFallback !== undefined && devFallback !== '') {
+    return devFallback;
   }
-  return v;
+  throw new Error(`Missing required env: ${name}`);
 }
 
 function bool(name: string, fallback: boolean): boolean {

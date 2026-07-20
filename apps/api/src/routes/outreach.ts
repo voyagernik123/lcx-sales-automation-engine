@@ -8,6 +8,7 @@ import { env } from '../lib/env.js';
 import { generateDraft, CADENCE, MIXED_CADENCE_CHANNELS, computeScheduledDate } from '@lcx/shared';
 import { processOutboundTick, handleWebhookEvent } from '../outreach/scheduler.js';
 import { verifyWebhookSignature } from '../outreach/resend.js';
+import { safeEqual } from '../lib/safeEqual.js';
 import type { SequenceStep } from '@lcx/shared';
 import { randomUUID } from 'node:crypto';
 
@@ -327,7 +328,7 @@ function validUnsubRequest(c: { req: { query: (k: string) => string | undefined 
   const email = c.req.query('email')?.toLowerCase();
   const token = c.req.query('t');
   if (!email || !token) return null;
-  if (unsubscribeToken(email) !== token) return null;
+  if (!safeEqual(unsubscribeToken(email), token)) return null;
   return email;
 }
 
@@ -358,7 +359,7 @@ outreachRoutes.post('/unsubscribe', async (c) => {
  */
 outreachRoutes.post('/webhooks/inbound', async (c) => {
   const secret = c.req.header('x-inbound-secret');
-  if (!env.inboundWebhookSecret || secret !== env.inboundWebhookSecret) {
+  if (!env.inboundWebhookSecret || !secret || !safeEqual(secret, env.inboundWebhookSecret)) {
     return c.json({ error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
   }
 
