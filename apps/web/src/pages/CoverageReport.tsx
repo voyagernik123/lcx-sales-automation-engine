@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Printer, ShieldCheck, AlertTriangle, Users, Crosshair } from 'lucide-react';
 import { fetchReport, type CoverageReport as Report } from '@/lib/api/intel';
+import { safeHref } from '@/lib/safeHref';
 import { EmptyState, CardSkeleton } from '@/components/shared';
 import { Button } from '@/components/ui';
 import { formatMoney, formatPct } from '@/lib/format';
@@ -72,7 +73,7 @@ export function CoverageReport() {
           {r.listedOnLcx && <span className="text-micro font-bold text-emerald-600 dark:text-emerald-400">ON LCX</span>}
         </div>
         {r.website && (
-          <a href={r.website} target="_blank" rel="noreferrer" className="text-label text-cyan-600 hover:underline">
+          <a href={safeHref(r.website)} target="_blank" rel="noreferrer" className="text-label text-cyan-600 hover:underline">
             {r.website.replace(/^https?:\/\//, '')}
           </a>
         )}

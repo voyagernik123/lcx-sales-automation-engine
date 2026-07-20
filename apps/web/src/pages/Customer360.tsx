@@ -17,6 +17,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import { request } from '@/lib/apiClient';
+import { safeHref } from '@/lib/safeHref';
 import { PageTitle, SectionLabel, Button } from '@/components/ui';
 import { PageSkeleton, EmptyState } from '@/components/shared';
 import { EntityChip } from '@/components/entity';
@@ -440,7 +441,7 @@ export function Customer360() {
           <Field label="Website">
             {project.website ? (
               <a
-                href={project.website}
+                href={safeHref(project.website)}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1 text-cyan-600 hover:underline dark:text-cyan-400"
@@ -774,7 +775,7 @@ export function Customer360() {
                 <span className="text-grey">{d.mime}</span>
                 {d.url && (
                   <a
-                    href={d.url}
+                    href={safeHref(d.url)}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 text-cyan-600 hover:underline dark:text-cyan-400"

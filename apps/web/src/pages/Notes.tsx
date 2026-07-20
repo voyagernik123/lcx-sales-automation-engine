@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FileText, Plus, Trash2, Save, Pin, Paperclip, RefreshCw, ArrowLeft, ExternalLink, Search } from 'lucide-react';
 import { request } from '@/lib/apiClient';
+import { safeHref } from '@/lib/safeHref';
 import { fetchBdPipeline } from '@/lib/api/bd';
 import type { BdFilters, BdLead } from '@/types/bd';
 import { PageTitle, SectionLabel, Button } from '@/components/ui';
@@ -429,7 +430,7 @@ export function Notes() {
                 <span className="text-grey">{d.mime}</span>
                 {d.sizeBytes > 0 && <span className="text-grey num-tabular">{fmtBytes(d.sizeBytes)}</span>}
                 {d.url && (
-                  <a href={d.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-600 dark:text-cyan-400 hover:underline">
+                  <a href={safeHref(d.url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-600 dark:text-cyan-400 hover:underline">
                     open <ExternalLink size={10} />
                   </a>
                 )}

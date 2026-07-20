@@ -53,14 +53,18 @@ dealDeskRoutes.get('/approvals', requireOperator, async (c) => {
 dealDeskRoutes.post('/approvals', requireOperator, async (c) => {
   const body = (await c.req.json<{ dealId?: string; dealValueCents?: number; discountPct?: number; reason?: string }>().catch(() => ({}))) as { dealId?: string; dealValueCents?: number; discountPct?: number; reason?: string };
   if (!body.dealId) return c.json({ error: 'dealId required', code: 'VALIDATION' }, 400);
+  const cents = body.dealValueCents ?? 0;
+  const pct = body.discountPct ?? 0;
+  if (!Number.isFinite(cents) || cents < 0) return c.json({ error: 'dealValueCents must be a non-negative number', code: 'VALIDATION' }, 400);
+  if (!Number.isFinite(pct) || pct < 0 || pct > 100) return c.json({ error: 'discountPct must be 0–100', code: 'VALIDATION' }, 400);
   const req = await requestApproval({
     dealId: body.dealId,
     requestedBy: c.get('operator').id,
-    dealValueCents: body.dealValueCents ?? 0,
-    discountPct: body.discountPct ?? 0,
+    dealValueCents: cents,
+    discountPct: pct,
     reason: body.reason,
   });
-  return c.json({ data: { ...req, needsApproval: needsApproval(body.dealValueCents ?? 0, body.discountPct ?? 0) }, meta: meta() }, 201);
+  return c.json({ data: { ...req, needsApproval: needsApproval(cents, pct) }, meta: meta() }, 201);
 });
 
 // Signing off a deal is an approver-only action — enforced server-side, not
@@ -98,9 +102,13 @@ dealDeskRoutes.get('/invoices', requireOperator, async (c) => {
   return c.json({ data, meta: meta() });
 });
 
+const INVOICE_STATUSES: readonly InvoiceStatus[] = ['draft', 'sent', 'paid', 'overdue'];
+
 dealDeskRoutes.post('/invoices', requireOperator, async (c) => {
   const body = (await c.req.json<{ dealId?: string; amountCents?: number; currency?: string; dueDate?: string | null; cryptoAddress?: string | null; lineItems?: { description: string; amountCents: number }[]; status?: InvoiceStatus }>().catch(() => ({}))) as { dealId?: string; amountCents?: number; currency?: string; dueDate?: string | null; cryptoAddress?: string | null; lineItems?: { description: string; amountCents: number }[]; status?: InvoiceStatus };
   if (!body.dealId || !body.amountCents) return c.json({ error: 'dealId and amountCents required', code: 'VALIDATION' }, 400);
+  if (!Number.isFinite(body.amountCents) || body.amountCents < 0) return c.json({ error: 'amountCents must be a non-negative number', code: 'VALIDATION' }, 400);
+  if (body.status && !INVOICE_STATUSES.includes(body.status)) return c.json({ error: `status must be one of: ${INVOICE_STATUSES.join(', ')}`, code: 'VALIDATION' }, 400);
   const inv = await createInvoice({
     dealId: body.dealId,
     amountCents: body.amountCents,
@@ -115,7 +123,7 @@ dealDeskRoutes.post('/invoices', requireOperator, async (c) => {
 
 dealDeskRoutes.patch('/invoices/:id/status', requireOperator, async (c) => {
   const body = (await c.req.json<{ status?: InvoiceStatus }>().catch(() => ({}))) as { status?: InvoiceStatus };
-  if (!body.status) return c.json({ error: 'status required', code: 'VALIDATION' }, 400);
+  if (!body.status || !INVOICE_STATUSES.includes(body.status)) return c.json({ error: `status must be one of: ${INVOICE_STATUSES.join(', ')}`, code: 'VALIDATION' }, 400);
   const inv = await markInvoiceStatus(c.req.param('id'), body.status);
   if (!inv) return c.json({ error: 'Invoice not found', code: 'NOT_FOUND' }, 404);
   return c.json({ data: inv, meta: meta() });

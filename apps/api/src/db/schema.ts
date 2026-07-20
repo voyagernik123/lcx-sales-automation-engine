@@ -365,7 +365,9 @@ export const deals = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [index('idx_deals_project').on(t.projectId), index('idx_deals_stage').on(t.stage)],
+  // One deal per project (migration 0033) — the unique index also serves
+  // project-id lookups, so no separate plain index is needed.
+  (t) => [uniqueIndex('idx_deals_project_unique').on(t.projectId), index('idx_deals_stage').on(t.stage)],
 );
 
 export const dealEvents = pgTable(

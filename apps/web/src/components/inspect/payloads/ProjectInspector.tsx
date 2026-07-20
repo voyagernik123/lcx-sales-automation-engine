@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Activity, Briefcase, Sparkles } from 'lucide-react';
 import { fetchLead, fetchProjectDeal, fetchProjectTimeline, type TimelineEntry } from '@/lib/api/bd';
+import { safeHref } from '@/lib/safeHref';
 import type { DealRecord, LeadDetail } from '@/types/bd';
 import type { ScoreBand } from '@lcx/shared';
 import { CardSkeleton, EmptyState } from '@/components/shared';
@@ -102,7 +103,7 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
           <BandBadge band={band} />
         </div>
         {lead.website && (
-          <a href={lead.website} target="_blank" rel="noreferrer" className="text-label text-cyan-600 hover:underline">
+          <a href={safeHref(lead.website)} target="_blank" rel="noreferrer" className="text-label text-cyan-600 hover:underline">
             {lead.website.replace(/^https?:\/\//, '')}
           </a>
         )}

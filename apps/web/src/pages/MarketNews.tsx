@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Newspaper, RefreshCw, ExternalLink, ChevronDown, ChevronRight, Sparkles, AlertTriangle, ListPlus, Check } from 'lucide-react';
 import { request } from '@/lib/apiClient';
+import { safeHref } from '@/lib/safeHref';
 import { createTask } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
 import { PageTitle, Button } from '@/components/ui';
@@ -164,7 +165,7 @@ export function MarketNews() {
                   />
                   {b.url && (
                     <a
-                      href={b.url}
+                      href={safeHref(b.url)}
                       target="_blank"
                       rel="noreferrer"
                       onClick={() => markVisited(b.id)}
@@ -283,7 +284,7 @@ export function MarketNews() {
                   />
                   {n.url && (
                     <a
-                      href={n.url}
+                      href={safeHref(n.url)}
                       target="_blank"
                       rel="noreferrer"
                       onClick={() => markVisited(n.id)}

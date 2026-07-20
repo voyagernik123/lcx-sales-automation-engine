@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronRight, Braces } from 'lucide-react';
+import { safeHref } from '@/lib/safeHref';
 
 /**
  * Structured key-value renderer for signal/source payloads — replaces raw
@@ -34,7 +35,7 @@ function FormattedValue({ value }: { value: unknown }) {
   if (typeof value === 'string') {
     if (/^https?:\/\//.test(value)) {
       return (
-        <a href={value} target="_blank" rel="noopener noreferrer" className="text-cyan-600 dark:text-cyan-400 hover:underline break-all">
+        <a href={safeHref(value)} target="_blank" rel="noopener noreferrer" className="text-cyan-600 dark:text-cyan-400 hover:underline break-all">
           {value}
         </a>
       );

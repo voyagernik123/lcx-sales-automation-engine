@@ -1,0 +1,12 @@
+-- ──────────────────────────────────────────────
+--  0033 — enforce one deal per project at the DB level
+--  The API treats a project as having at most one deal (POST /deals/:projectId
+--  returns 409 "Deal already exists"), but that check was app-only and racy —
+--  two concurrent creates could both pass it. This unique index makes the
+--  invariant real; the create path now relies on it as the backstop.
+--
+--  If this fails with a uniqueness violation, prod already has duplicate deals
+--  for some project — resolve those first (keep the newest, delete the rest):
+--    SELECT project_id, count(*) FROM deals GROUP BY project_id HAVING count(*)>1;
+-- ──────────────────────────────────────────────
+CREATE UNIQUE INDEX IF NOT EXISTS idx_deals_project_unique ON deals (project_id);

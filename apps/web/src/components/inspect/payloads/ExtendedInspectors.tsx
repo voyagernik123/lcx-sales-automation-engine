@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Activity, Boxes, Briefcase, CalendarClock, ExternalLink } from 'lucide-react';
 import { fetchDealBoard, fetchDealEvents, fetchTasks, type BoardDeal, type OperatorTask } from '@/lib/api/bd';
+import { safeHref } from '@/lib/safeHref';
 import { fetchTriggers } from '@/lib/api/kpi';
 import type { PostListingTrigger } from '@/types/kpi';
 import type { DealEvent } from '@/types/bd';
@@ -127,7 +128,7 @@ export function SignalInspector({ seed }: InspectorPayloadProps) {
         {s.ts && <Fact label="Observed" value={formatDate(s.ts)} />}
       </div>
       {s.url && (
-        <a href={s.url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-label font-semibold text-cyan-600 hover:underline">
+        <a href={safeHref(s.url)} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-label font-semibold text-cyan-600 hover:underline">
           <ExternalLink size={12} /> Source
         </a>
       )}

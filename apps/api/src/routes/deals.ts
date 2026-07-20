@@ -336,17 +336,19 @@ dealRoutes.post('/:id/proposal', requireOperator, async (c) => {
       claimsUsed: approvedClaimTexts,
     });
 
-    const [updated] = await db.update(schema.deals).set({
-      proposalSnapshot: proposal as unknown as Record<string, unknown>,
-      proposalGeneratedAt: new Date(),
-      updatedAt: new Date(),
-    }).where(sql`${schema.deals.id} = ${id}`).returning().execute();
-
-    await db.insert(schema.dealEvents).values({
-      id: randomUUID(), dealId: id, eventType: 'proposal_generated', actor: operator.id,
-      content: `Proposal generated — ${deal.packageType ?? 'listing'} / $${((deal.packageValue ?? 0) / 100).toLocaleString()}`,
-      meta: { packageType: deal.packageType, packageValue: deal.packageValue },
-    }).execute();
+    const [updated] = await db.transaction(async (tx) => {
+      const rows = await tx.update(schema.deals).set({
+        proposalSnapshot: proposal as unknown as Record<string, unknown>,
+        proposalGeneratedAt: new Date(),
+        updatedAt: new Date(),
+      }).where(sql`${schema.deals.id} = ${id}`).returning().execute();
+      await tx.insert(schema.dealEvents).values({
+        id: randomUUID(), dealId: id, eventType: 'proposal_generated', actor: operator.id,
+        content: `Proposal generated — ${deal.packageType ?? 'listing'} / $${((deal.packageValue ?? 0) / 100).toLocaleString()}`,
+        meta: { packageType: deal.packageType, packageValue: deal.packageValue },
+      }).execute();
+      return rows;
+    });
 
     return c.json({ data: updated, meta: { timestamp: new Date().toISOString(), version: env.version } });
   } catch (err) {
@@ -393,16 +395,18 @@ dealRoutes.post('/:id/objections', requireOperator, async (c) => {
     const [existing] = await db.select().from(schema.deals).where(sql`${schema.deals.id} = ${id}`).limit(1).execute();
     if (!existing) return c.json({ error: 'Deal not found', code: 'NOT_FOUND' }, 404);
 
-    const [obj] = await db.insert(schema.dealObjections).values({
-      id: randomUUID(), dealId: id, category: body.category, description: body.description,
-      severity: body.severity ?? 'medium', raisedBy: operator.id,
-    }).returning().execute();
-
-    await db.insert(schema.dealEvents).values({
-      id: randomUUID(), dealId: id, eventType: 'objection', actor: operator.id,
-      content: `Objection: ${body.category} — ${body.description}`,
-      meta: { objectionId: obj.id, category: body.category, severity: body.severity },
-    }).execute();
+    const [obj] = await db.transaction(async (tx) => {
+      const rows = await tx.insert(schema.dealObjections).values({
+        id: randomUUID(), dealId: id, category: body.category, description: body.description,
+        severity: body.severity ?? 'medium', raisedBy: operator.id,
+      }).returning().execute();
+      await tx.insert(schema.dealEvents).values({
+        id: randomUUID(), dealId: id, eventType: 'objection', actor: operator.id,
+        content: `Objection: ${body.category} — ${body.description}`,
+        meta: { objectionId: rows[0].id, category: body.category, severity: body.severity },
+      }).execute();
+      return rows;
+    });
 
     return c.json({ data: obj, meta: { timestamp: new Date().toISOString(), version: env.version } }, 201);
   } catch (err) {
@@ -418,17 +422,20 @@ dealRoutes.patch('/:id/objections/:objId', requireOperator, async (c) => {
   const body = await c.req.json<{ resolution?: string }>();
 
   try {
-    const [updated] = await db.update(schema.dealObjections).set({
-      resolved: true, resolution: body.resolution ?? null, resolvedAt: new Date(),
-    }).where(sql`${schema.dealObjections.id} = ${objId} AND ${schema.dealObjections.dealId} = ${id}`).returning().execute();
+    const updated = await db.transaction(async (tx) => {
+      const rows = await tx.update(schema.dealObjections).set({
+        resolved: true, resolution: body.resolution ?? null, resolvedAt: new Date(),
+      }).where(sql`${schema.dealObjections.id} = ${objId} AND ${schema.dealObjections.dealId} = ${id}`).returning().execute();
+      if (!rows[0]) return null;
+      await tx.insert(schema.dealEvents).values({
+        id: randomUUID(), dealId: id, eventType: 'note', actor: operator.id,
+        content: `Objection resolved: ${rows[0].description}`,
+        meta: { objectionId: objId, resolution: body.resolution },
+      }).execute();
+      return rows[0];
+    });
 
     if (!updated) return c.json({ error: 'Objection not found', code: 'NOT_FOUND' }, 404);
-
-    await db.insert(schema.dealEvents).values({
-      id: randomUUID(), dealId: id, eventType: 'note', actor: operator.id,
-      content: `Objection resolved: ${updated.description}`,
-      meta: { objectionId: objId, resolution: body.resolution },
-    }).execute();
 
     return c.json({ data: updated, meta: { timestamp: new Date().toISOString(), version: env.version } });
   } catch (err) {
