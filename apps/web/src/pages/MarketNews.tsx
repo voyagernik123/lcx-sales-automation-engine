@@ -60,8 +60,21 @@ export function MarketNews() {
     if (!silent) setLoading(true);
     setError('');
     try {
-      const res = await request<{ data: NewsItem[] }>('/v1/analytics/news', { auth: true });
-      setItems(res.data);
+      // Two slices, merged: the freshest headlines for the "All" stream, PLUS
+      // every pipeline-relevant headline regardless of age. The high-frequency
+      // general feeds otherwise crowd the pipeline-tagged matches out of the
+      // freshest window, starving the relevance/ticker filters of the very
+      // signals this page exists to surface.
+      const [fresh, relevant] = await Promise.all([
+        request<{ data: NewsItem[] }>('/v1/analytics/news?limit=150', { auth: true }),
+        request<{ data: NewsItem[] }>('/v1/analytics/news?limit=500&minRelevance=1', { auth: true }).catch(
+          () => ({ data: [] as NewsItem[] }),
+        ),
+      ]);
+      const byId = new Map<string, NewsItem>();
+      for (const n of fresh.data) byId.set(n.id, n);
+      for (const n of relevant.data) if (!byId.has(n.id)) byId.set(n.id, n);
+      setItems([...byId.values()]);
     } catch (err) {
       if (!silent) setError(err instanceof Error ? err.message : 'Failed to load news');
     } finally {
