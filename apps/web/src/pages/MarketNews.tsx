@@ -53,23 +53,46 @@ export function MarketNews() {
   const [visited, setVisited] = useState<Set<string>>(loadVisited);
   const [queued, setQueued] = useState<Set<string>>(new Set());
   const [queueBusy, setQueueBusy] = useState('');
+  const [live, setLive] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // `silent` re-reads the store without flashing the skeleton (used by the live poll).
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError('');
     try {
       const res = await request<{ data: NewsItem[] }>('/v1/analytics/news', { auth: true });
       setItems(res.data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load news');
+      if (!silent) setError(err instanceof Error ? err.message : 'Failed to load news');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Live updates while the page is open and `live` is on: re-read the store
+  // every 15s (cheap, our own API) and trigger a server-side feed pull roughly
+  // every 90s (throttled server-side so it never hammers the sources). Paused
+  // when the tab is hidden to stay polite.
+  useEffect(() => {
+    if (!live) return;
+    let ticks = 0;
+    const id = setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      ticks += 1;
+      if (ticks % 6 === 0) {
+        void request('/v1/analytics/news/refresh', { auth: true, method: 'POST', body: {} })
+          .then(() => load(true))
+          .catch(() => { /* resilient — ignore transient poll errors */ });
+      } else {
+        void load(true);
+      }
+    }, 15_000);
+    return () => clearInterval(id);
+  }, [live, load]);
 
   const refresh = async () => {
     setRefreshing(true);
@@ -129,11 +152,22 @@ export function MarketNews() {
       <PageTitle
         icon={<Newspaper size={20} />}
         actions={
-          <Button variant="secondary" size="sm" onClick={() => void refresh()} disabled={refreshing}>
-            <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} /> {refreshing ? 'Fetching…' : 'Fetch latest'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setLive((l) => !l)}
+              title={live ? 'Live auto-refresh on — click to pause' : 'Auto-refresh paused — click to resume'}
+              className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-micro font-semibold transition-colors ${live ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-line text-grey hover:text-navy'}`}
+            >
+              <span className={`h-1.5 w-1.5 rounded-full ${live ? 'animate-pulse bg-emerald-500' : 'bg-grey/50'}`} />
+              {live ? 'Live' : 'Paused'}
+            </button>
+            <Button variant="secondary" size="sm" onClick={() => void refresh()} disabled={refreshing}>
+              <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} /> {refreshing ? 'Fetching…' : 'Fetch latest'}
+            </Button>
+          </div>
         }
-        subtitle="Headlines from free crypto/regulatory feeds, relevance-scored against your pipeline tickers. Configure a free CryptoPanic token to widen the source set."
+        subtitle="Live headlines from 20+ free crypto & regulatory feeds — SEC, ESMA, Google News and the major crypto media — relevance-scored against your pipeline. Auto-refreshes while open."
       >
         Market Intelligence
       </PageTitle>

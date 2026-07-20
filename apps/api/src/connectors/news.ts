@@ -44,23 +44,42 @@ async function safeJson(url: string, headers?: Record<string, string>): Promise<
   }
 }
 
-/** fetch raw text (RSS/Atom XML) with a hard timeout; null on any failure. */
+/** Per-feed conditional-GET validators, so frequent polling costs a 304 (and
+    near-zero bandwidth) whenever a feed hasn't changed — polite + cheap. */
+const feedValidators = new Map<string, { etag?: string; lastModified?: string }>();
+
+/**
+ * Fetch raw RSS/Atom text: hard timeout, ONE retry on transient failure, and
+ * conditional GET (If-None-Match / If-Modified-Since). Returns null when the
+ * feed is unchanged (304), errors, or times out — never throws.
+ */
 async function safeText(url: string): Promise<string | null> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-  try {
-    const res = await fetch(url, {
-      headers: { Accept: 'application/rss+xml, application/xml, text/xml, */*', 'User-Agent': 'LCXSalesBot/1.0 (+https://www.lcx.com; market-intel)' },
-      signal: controller.signal,
-      redirect: 'follow',
-    });
-    if (!res.ok) return null;
-    return await res.text();
-  } catch {
-    return null;
-  } finally {
-    clearTimeout(timer);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+    try {
+      const v = feedValidators.get(url);
+      const headers: Record<string, string> = {
+        Accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml, */*',
+        'User-Agent': 'LCXSalesBot/1.0 (+https://www.lcx.com; market-intel)',
+      };
+      if (v?.etag) headers['If-None-Match'] = v.etag;
+      if (v?.lastModified) headers['If-Modified-Since'] = v.lastModified;
+      const res = await fetch(url, { headers, signal: controller.signal, redirect: 'follow' });
+      if (res.status === 304) return null; // unchanged since last poll — nothing new
+      if (!res.ok) return null;
+      feedValidators.set(url, {
+        etag: res.headers.get('etag') ?? undefined,
+        lastModified: res.headers.get('last-modified') ?? undefined,
+      });
+      return await res.text();
+    } catch {
+      if (attempt === 1) return null; // give up after one retry
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  return null;
 }
 
 function cleanTicker(s: unknown): string | null {
@@ -124,14 +143,34 @@ async function fetchCryptoCompare(apiKey: string): Promise<NewsItem[]> {
 /* ── Free RSS/Atom feeds (no key) — crypto + the regulatory angle LCX cares
    about. Hard-coded hosts (not user input), fetched best-effort; a feed that
    fails or moves simply contributes nothing. ── */
+const gnews = (q: string): string =>
+  `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-US&gl=US&ceid=US:en`;
+
 const RSS_FEEDS: { url: string; source: string }[] = [
+  // ── Crypto news (free, no key) ──
   { url: 'https://www.coindesk.com/arc/outboundfeeds/rss', source: 'coindesk' },
   { url: 'https://cointelegraph.com/rss', source: 'cointelegraph' },
   { url: 'https://decrypt.co/feed', source: 'decrypt' },
   { url: 'https://www.theblock.co/rss.xml', source: 'theblock' },
-  // Regulatory — LCX's MiCA/compliance edge:
+  { url: 'https://bitcoinmagazine.com/.rss/full/', source: 'bitcoinmagazine' },
+  { url: 'https://cryptoslate.com/feed/', source: 'cryptoslate' },
+  { url: 'https://cryptopotato.com/feed/', source: 'cryptopotato' },
+  { url: 'https://bitcoinist.com/feed/', source: 'bitcoinist' },
+  { url: 'https://www.newsbtc.com/feed/', source: 'newsbtc' },
+  { url: 'https://u.today/rss', source: 'utoday' },
+  { url: 'https://ambcrypto.com/feed/', source: 'ambcrypto' },
+  { url: 'https://coingape.com/feed/', source: 'coingape' },
+  { url: 'https://cryptobriefing.com/feed/', source: 'cryptobriefing' },
+  { url: 'https://thedefiant.io/feed', source: 'thedefiant' },
+  // ── Regulatory — LCX's MiCA/compliance edge ──
   { url: 'https://www.sec.gov/news/pressreleases.rss', source: 'sec' },
+  { url: 'https://www.sec.gov/rss/litigation/litreleases.xml', source: 'sec-litigation' },
   { url: 'https://www.esma.europa.eu/rss.xml', source: 'esma' },
+  // ── Google News topical queries (free, no key) — always-fresh, on-theme ──
+  { url: gnews('crypto exchange token listing'), source: 'gnews-listings' },
+  { url: gnews('MiCA crypto regulation Europe'), source: 'gnews-mica' },
+  { url: gnews('SEC crypto enforcement'), source: 'gnews-sec' },
+  { url: gnews('crypto token launch fundraise'), source: 'gnews-launch' },
 ];
 
 const stripTags = (s: string): string =>
@@ -173,27 +212,63 @@ export function parseRssItems(xml: string, source: string): NewsItem[] {
   return items;
 }
 
-async function fetchRss(): Promise<NewsItem[]> {
-  const results = await Promise.all(
-    RSS_FEEDS.map(async (f) => {
-      const xml = await safeText(f.url);
-      if (!xml) return [];
-      try { return parseRssItems(xml, f.source); } catch { return []; }
-    }),
-  );
-  return results.flat();
+/** Run async `fn` over `items` with bounded concurrency (kind to the sources
+    and to the event loop when the feed list is large). Never rejects. */
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out = new Array<R>(items.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < items.length) {
+      const idx = cursor++;
+      try {
+        out[idx] = await fn(items[idx]);
+      } catch {
+        out[idx] = [] as unknown as R;
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
 }
+
+async function fetchRss(): Promise<NewsItem[]> {
+  const perFeed = await mapLimit(RSS_FEEDS, 8, async (f) => {
+    const xml = await safeText(f.url);
+    if (!xml) return [];
+    try {
+      return parseRssItems(xml, f.source);
+    } catch {
+      return [];
+    }
+  });
+  return perFeed.flat();
+}
+
+/** Normalize a headline for cross-source de-duplication (a syndicated story
+    surfaced by several feeds collapses to one). */
+function titleKey(title: string): string {
+  return title.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().slice(0, 120);
+}
+
+// Short-TTL cache: rapid/overlapping refreshes (frequent polling, several open
+// tabs) reuse the last pull instead of re-hitting every feed. Live-enough at 45s.
+const NEWS_TTL_MS = 45_000;
+let newsCache: NewsItem[] = [];
+let newsCacheAt = 0;
 
 /**
  * Pull headlines from all available free sources — resilient by contract (never
- * throws; a failing source just contributes nothing). CryptoCompare + RSS need
- * no key; CryptoPanic is an optional widener when CRYPTOPANIC_TOKEN is set.
- * Results are de-duplicated by URL (falling back to title).
+ * throws; a failing source just contributes nothing). RSS (crypto + regulatory
+ * + Google-News topical) is the free, no-key backbone; CryptoCompare and
+ * CryptoPanic are optional wideners gated behind their keys. De-duplicated by
+ * normalized title (falling back to URL). Cached for NEWS_TTL_MS unless forced.
  */
-export async function fetchNews(): Promise<NewsItem[]> {
+export async function fetchNews(force = false): Promise<NewsItem[]> {
+  if (!force && newsCache.length > 0 && Date.now() - newsCacheAt < NEWS_TTL_MS) {
+    return newsCache;
+  }
   const token = process.env.CRYPTOPANIC_TOKEN ?? '';
   const ccKey = process.env.CRYPTOCOMPARE_API_KEY ?? '';
-  // RSS is the free, no-key backbone; the two API sources are optional wideners.
   const sources: Promise<NewsItem[]>[] = [fetchRss().catch(() => [])];
   if (ccKey) sources.push(fetchCryptoCompare(ccKey).catch(() => []));
   if (token) sources.push(fetchCryptoPanic(token).catch(() => []));
@@ -202,11 +277,13 @@ export async function fetchNews(): Promise<NewsItem[]> {
   const seen = new Set<string>();
   const deduped: NewsItem[] = [];
   for (const item of all) {
-    const key = (item.url ?? item.title).toLowerCase();
-    if (seen.has(key)) continue;
+    const key = item.title ? titleKey(item.title) : (item.url ?? '').toLowerCase();
+    if (!key || seen.has(key)) continue;
     seen.add(key);
     deduped.push(item);
   }
+  newsCache = deduped;
+  newsCacheAt = Date.now();
   return deduped;
 }
 
