@@ -49,6 +49,8 @@ export const projects = pgTable(
     // Denormalized counts (trigger-maintained, see migration 0009)
     peopleCount: integer('people_count').default(0).notNull(),
     verifiedContactCount: integer('verified_contact_count').default(0).notNull(),
+    // Universe tier: 'tracked' (deep-intel core) | 'catalog' (identity-only). See 0034.
+    tier: text('tier').default('catalog').notNull(),
     raw: jsonb('raw').default({}).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

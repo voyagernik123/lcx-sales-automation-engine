@@ -148,6 +148,9 @@ export function LeadTable({
                       <span className="text-micro text-grey font-mono truncate">
                         {SOURCE_LABELS[lead.source] ?? lead.source}
                         {lead.ticker && <span className="ml-1.5 opacity-60">{lead.ticker}</span>}
+                        {lead.tier === 'catalog' && (
+                          <span className="ml-1.5 rounded bg-ice-soft px-1 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-grey dark:bg-navy-deep">catalog</span>
+                        )}
                         {note && <span className="ml-1.5 text-amber-600 dark:text-amber-400 normal-case">· {note}</span>}
                       </span>
                     </div>

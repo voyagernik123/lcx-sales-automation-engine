@@ -47,7 +47,8 @@ export async function scanIndications(pool: pg.Pool): Promise<{ ripe: number; pr
             (SELECT count(*) FROM exchange_listings el WHERE el.project_id = p.id) AS rivals
      FROM projects p
      LEFT JOIN conv ON conv.subject_id = p.id::text
-     WHERE p.listed_on_lcx = false
+     WHERE p.tier = 'tracked'
+       AND p.listed_on_lcx = false
        AND (SELECT count(*) FROM exchange_listings el WHERE el.project_id = p.id) >= 5
        AND NOT EXISTS (SELECT 1 FROM deals d WHERE d.project_id = p.id
          AND d.stage IN ('contacted','discovery','proposal','negotiating','won'))

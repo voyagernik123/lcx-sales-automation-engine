@@ -16,6 +16,10 @@ export async function fetchBdPipeline(
   if (filters.hasContact !== null) params.set('hasContact', String(filters.hasContact));
   if (filters.marketRecommendation) params.set('marketRecommendation', filters.marketRecommendation);
   if (filters.search) params.set('search', filters.search);
+  // Default to the tracked (deep-intel) tier so the workable lead queue stays
+  // clean; 'all' opens the full 50k+ catalog. (undefined from older persisted
+  // state → tracked, the safe default.)
+  if (filters.tier !== 'all') params.set('tier', 'tracked');
   params.set('sort', filters.sort);
   params.set('order', filters.order);
   params.set('limit', String(page.limit ?? 50));
@@ -55,6 +59,19 @@ export async function triggerEnrich(id: string): Promise<void> {
     `/v1/projects/${id}/enrich`,
     { auth: true, method: 'POST' },
   );
+}
+
+/**
+ * Promote a catalog token into the tracked tier and pull its live market data.
+ * The on-demand, real-time path — after this the token is scored + observed +
+ * surfaced in Targets on the next derive pass.
+ */
+export async function trackProject(id: string): Promise<{ matched: boolean; marketData: { currentPrice: number | null; marketCap: number | null } | null }> {
+  const res = await request<{ data: { matched: boolean; marketData: { currentPrice: number | null; marketCap: number | null } | null } }>(
+    `/v1/projects/${id}/track`,
+    { auth: true, method: 'POST' },
+  );
+  return res.data;
 }
 
 export async function addPerson(

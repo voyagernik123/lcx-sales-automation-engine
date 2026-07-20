@@ -1,9 +1,9 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Globe, FileText, ExternalLink, ChevronDown, ChevronRight, CheckCircle, XCircle, RefreshCw, Search, Users, Activity, Database, Award, Plus, Pencil, X, Mail, Send, ThumbsUp, ThumbsDown, FileOutput } from 'lucide-react';
+import { ArrowLeft, Globe, FileText, ExternalLink, ChevronDown, ChevronRight, CheckCircle, XCircle, RefreshCw, Search, Users, Activity, Database, Award, Plus, Pencil, X, Mail, Send, ThumbsUp, ThumbsDown, FileOutput, Zap } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useFilterStore } from '@/stores';
-import { fetchLead, approveLead, suppressLead, triggerRescore, triggerEnrich, enqueueContactDiscovery, runDiscoveryTick, fetchProjectTimeline, type TimelineEntry, addPerson, updatePerson, generateDraft as apiGenerateDraft, saveDraft, fetchDrafts, updateDraft, enrollProject, pauseSequence, resumeSequence, fetchProjectSequences, fetchProjectMessages, fetchProjectDeal, createDeal, transitionDealStage, generateProposal, fetchDealEvents, fetchDealObjections, addDealObjection, fetchSequenceTemplates, type SequenceTemplate } from '@/lib/api/bd';
+import { fetchLead, approveLead, suppressLead, triggerRescore, triggerEnrich, trackProject, enqueueContactDiscovery, runDiscoveryTick, fetchProjectTimeline, type TimelineEntry, addPerson, updatePerson, generateDraft as apiGenerateDraft, saveDraft, fetchDrafts, updateDraft, enrollProject, pauseSequence, resumeSequence, fetchProjectSequences, fetchProjectMessages, fetchProjectDeal, createDeal, transitionDealStage, generateProposal, fetchDealEvents, fetchDealObjections, addDealObjection, fetchSequenceTemplates, type SequenceTemplate } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
 import { EmptyState, CardSkeleton } from '@/components/shared';
 import { EntityChip } from '@/components/entity';
@@ -490,6 +490,16 @@ export function LeadDetail() {
         >
           <Search size={12} className={clsx(actionLoading === 'enrich' && 'animate-spin')} />
           {actionLoading === 'enrich' ? 'Enriching...' : 'Force Enrich'}
+        </button>
+
+        <button
+          onClick={() => handleAction('track', async () => { await trackProject(lead.id); }, 'Tracking on — live market data pulled')}
+          disabled={actionLoading === 'track'}
+          title="Promote into the tracked tier and pull live market data now"
+          className="flex items-center gap-1.5 rounded border border-cyan-400/60 bg-cyan-50 px-3 py-1 text-micro font-bold text-cyan-700 hover:bg-cyan-100 dark:bg-cyan-950/40 dark:text-cyan-300 dark:hover:bg-cyan-950/60 transition-colors"
+        >
+          <Zap size={12} className={clsx(actionLoading === 'track' && 'animate-spin')} />
+          {actionLoading === 'track' ? 'Tracking...' : 'Track / Refresh Live'}
         </button>
 
         <button

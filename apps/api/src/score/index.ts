@@ -81,6 +81,7 @@ async function fetchProjectData(db: ReturnType<typeof drizzle>, projectIds?: str
         p.source, p.esma_token_id, p.dti, p.jurisdiction,
         p.whitepaper_url, p.category, p.market_cap, p.listed_on_lcx
       FROM projects p
+      WHERE p.tier = 'tracked'
       ORDER BY p.name
     `);
   }

@@ -25,6 +25,9 @@ export const INTEL_JOBS = [
   'scan_iw',
   'calibrate',
   'alpha',
+  // Universe breadth: pull the free-source token catalog to 50k+ lean identity
+  // rows. Runs through the same trigger/lock/job_runs machinery as the sensors.
+  'catalog_sync',
 ] as const;
 export type IntelJob = (typeof INTEL_JOBS)[number];
 
@@ -108,6 +111,17 @@ export async function runIntelJob(pool: pg.Pool, job: IntelJob, opts: IntelJobOp
         const calibration = await computeCalibration(pool);
         return { stats: { scores, indications, calibration: { snapshotted: calibration.snapshotted } } };
       });
+    }
+    case 'catalog_sync': {
+      const { syncCatalog } = await import('../connectors/catalog.js');
+      return withJobRun(pool, job, async () => ({
+        stats: asStats(
+          await syncCatalog(pool, {
+            coingeckoApiKey: process.env.COINGECKO_API_KEY,
+            coingeckoKeyType: process.env.COINGECKO_KEY_TYPE === 'pro' ? 'pro' : 'demo',
+          }),
+        ),
+      }));
     }
   }
 }

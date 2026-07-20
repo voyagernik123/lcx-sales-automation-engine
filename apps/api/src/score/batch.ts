@@ -58,6 +58,7 @@ export async function scoreAllPaged(pool: pg.Pool): Promise<BatchScoreReport> {
            ORDER BY observed_at DESC LIMIT 20
          ) s
        ) sigs ON TRUE
+       WHERE p.tier = 'tracked'
        ORDER BY p.id
        LIMIT $1 OFFSET $2`,
       [PAGE, offset],

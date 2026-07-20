@@ -88,6 +88,7 @@ const PULSE_FILTERS: BdFilters = {
   sort: 'priority',
   order: 'desc',
   search: '',
+  tier: 'tracked',
 };
 
 export interface QueuePulse {

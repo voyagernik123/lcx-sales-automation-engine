@@ -47,7 +47,7 @@ export async function buildScorecard(): Promise<Scorecard> {
   const observations = Number((obsRes.rows?.[0] as Record<string, unknown>)?.c ?? 0);
   const scoredRes = await db.execute(sql`SELECT count(DISTINCT subject_id) AS c FROM observations WHERE predicate='conviction'`);
   const scoredProjects = Number((scoredRes.rows?.[0] as Record<string, unknown>)?.c ?? 0);
-  const projRes = await db.execute(sql`SELECT count(*) AS c FROM projects`);
+  const projRes = await db.execute(sql`SELECT count(*) AS c FROM projects WHERE tier = 'tracked'`);
   const totalProjects = Number((projRes.rows?.[0] as Record<string, unknown>)?.c ?? 0) || 1;
 
   const covRes = await db.execute(sql`

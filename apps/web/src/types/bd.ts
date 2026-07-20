@@ -36,6 +36,8 @@ export interface BdLead {
   propensityScore?: number;
   priorityScore?: number;
   marketCapUsd?: number | null;
+  /** Universe tier: 'tracked' (deep-intel core) | 'catalog' (identity-only). */
+  tier?: 'tracked' | 'catalog';
   lastEnrichedAt?: string | null;
   peopleCount: number;
   verifiedContactCount: number;
@@ -93,6 +95,11 @@ export interface BdFilters {
   sort: 'priority' | 'propensity' | 'eu_score' | 'us_pre' | 'us_post' | 'market_cap' | 'name' | 'created';
   order: 'asc' | 'desc';
   search: string;
+  /**
+   * Universe tier scope. 'tracked' (default) keeps the workable lead queue to
+   * the deep-intel core; 'all' opens the full 50k+ catalog for browsing/promotion.
+   */
+  tier: 'tracked' | 'all';
 }
 
 export const BD_BAND_ORDER: ScoreBand[] = [

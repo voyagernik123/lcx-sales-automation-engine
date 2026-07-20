@@ -50,6 +50,7 @@ export async function backfillObservations(pool: pg.Pool): Promise<{ projects: n
          SELECT propensity_score, eu_score, us_post_score, priority_score, band, computed_at
          FROM scores WHERE project_id = p.id ORDER BY computed_at DESC LIMIT 1
        ) s ON true
+       WHERE p.tier = 'tracked'
        ORDER BY p.id LIMIT $1 OFFSET $2`,
       [pageSize, offset],
     );

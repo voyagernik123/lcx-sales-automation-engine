@@ -83,6 +83,12 @@ projectsRoutes.get('/', requireOperator, async (c) => {
   if (qs.minPriority) {
     conditions.push(sql`s.priority_score >= ${Number(qs.minPriority)}`);
   }
+  // Universe tier: 'tracked' (deep-intel core) | 'catalog' (identity-only long
+  // tail). Omitted → all tiers, so the headline count reflects the full 50k+
+  // universe; the workable lead queues pass tier=tracked to stay clean.
+  if (qs.tier === 'tracked' || qs.tier === 'catalog') {
+    conditions.push(sql`p.tier = ${qs.tier}`);
+  }
 
   const whereClause = conditions.length > 0
     ? sql`WHERE ${sql.join(conditions, sql` AND `)}`
@@ -105,7 +111,7 @@ projectsRoutes.get('/', requireOperator, async (c) => {
   try {
     const listResult = await db.execute(sql`
       SELECT
-        p.id, p.name, p.website, p.ticker, p.chain, p.source, p.esma_token_id,
+        p.id, p.name, p.website, p.ticker, p.chain, p.source, p.esma_token_id, p.tier,
         p.jurisdiction, p.region, p.category, p.listed_on_lcx,
         p.market_cap_usd, p.market_cap_rank, p.volume_24h_usd, p.last_enriched_at,
         p.created_at, p.updated_at,
@@ -131,6 +137,7 @@ projectsRoutes.get('/', requireOperator, async (c) => {
       chain: r.chain,
       source: r.source,
       esmaTokenId: r.esma_token_id,
+      tier: r.tier ?? 'tracked',
       jurisdiction: r.jurisdiction,
       region: r.region ?? null,
       category: r.category,
@@ -651,6 +658,106 @@ projectsRoutes.post('/:id/enrich', requireOperator, async (c) => {
   } catch (err) {
     console.error('[projects] enrich error:', err);
     return c.json({ error: 'Failed to enrich project', code: 'ENRICH_ERROR' }, 500);
+  }
+});
+
+/**
+ * POST /v1/projects/:id/track — promote a catalog token into the tracked tier
+ * AND pull its live market data in one call. This is the on-demand real-time
+ * path: the instant the desk cares about a catalog token, it gets live price /
+ * mcap / volume and joins the deep-intel pipeline (scored + observed + surfaced
+ * in Targets on the next derive pass). Idempotent — re-running refreshes live
+ * data and re-affirms tracked.
+ */
+projectsRoutes.post('/:id/track', requireOperator, async (c) => {
+  const db = getDb();
+  const { id } = c.req.param();
+
+  try {
+    const rows = await db
+      .select()
+      .from(schema.projects)
+      .where(sql`${schema.projects.id} = ${id}`)
+      .limit(1)
+      .execute();
+    if (rows.length === 0) return c.json({ error: 'Not found', code: 'NOT_FOUND' }, 404);
+    const p = rows[0];
+
+    const cg = new CoinGeckoClient({ apiKey: env.coingeckoApiKey || undefined, keyType: env.coingeckoKeyType });
+    const result = await enrichProject(
+      {
+        id: p.id,
+        name: p.name,
+        ticker: p.ticker ?? undefined,
+        marketCap: p.marketCap ?? undefined,
+        raw: (p.raw ?? {}) as Record<string, unknown>,
+      },
+      cg,
+    );
+
+    const currentRaw = (p.raw || {}) as Record<string, unknown>;
+    const enrichMeta: Record<string, unknown> = {
+      ...((currentRaw._enrichment || {}) as Record<string, unknown>),
+      lastRunAt: new Date().toISOString(),
+      coinId: result.coinId,
+      lastError: result.error ?? null,
+    };
+
+    await db
+      .update(schema.projects)
+      .set({
+        tier: 'tracked',
+        raw: { ...currentRaw, _enrichment: enrichMeta },
+        ...(result.matched && result.marketData
+          ? {
+              marketCapUsd: result.marketData.marketCap != null ? String(result.marketData.marketCap) : undefined,
+              marketCapRank: result.marketData.marketCapRank ?? undefined,
+              volume24hUsd: result.marketData.totalVolume != null ? String(result.marketData.totalVolume) : undefined,
+              priceUsd: result.marketData.currentPrice != null ? String(result.marketData.currentPrice) : undefined,
+              lastEnrichedAt: new Date(),
+            }
+          : {}),
+        updatedAt: new Date(),
+      })
+      .where(sql`${schema.projects.id} = ${id}`)
+      .execute();
+
+    if (result.matched && result.coinId) {
+      await db.execute(sql`
+        INSERT INTO project_external_ids (id, project_id, provider, external_id, matched_by, confidence)
+        VALUES (${randomUUID()}, ${id}, 'coingecko', ${result.coinId}, 'on_demand', 'high')
+        ON CONFLICT DO NOTHING
+      `);
+    }
+    for (const signal of result.signals) {
+      await db
+        .insert(schema.signals)
+        .values({ id: randomUUID(), projectId: id, kind: signal.kind, payload: signal.payload as Record<string, unknown> })
+        .execute();
+    }
+
+    return c.json({
+      data: {
+        projectId: id,
+        tier: 'tracked',
+        matched: result.matched,
+        coinId: result.coinId,
+        marketData: result.marketData
+          ? {
+              marketCap: result.marketData.marketCap,
+              marketCapRank: result.marketData.marketCapRank,
+              totalVolume: result.marketData.totalVolume,
+              currentPrice: result.marketData.currentPrice,
+              priceChangePercent24h: result.marketData.priceChangePercent24h,
+            }
+          : null,
+        error: result.error ?? null,
+      },
+      meta: { timestamp: new Date().toISOString(), version: env.version },
+    });
+  } catch (err) {
+    console.error('[projects] track error:', err);
+    return c.json({ error: 'Failed to track project', code: 'TRACK_ERROR' }, 500);
   }
 });
 

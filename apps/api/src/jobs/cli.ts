@@ -184,6 +184,7 @@ async function main() {
       case 'compute_alpha':
       case 'scan_iw':
       case 'alpha':
+      case 'catalog_sync':
       case 'calibrate': {
         const { runIntelJob } = await import('../intel/jobs.js');
         const r = await runIntelJob(pool, job, {
@@ -195,7 +196,7 @@ async function main() {
       }
       default:
         console.error(`Unknown job: ${job}`);
-        console.error('Jobs: universe_sync | discover_new_tokens | market_refresh | score_refresh | kpi_snapshot | signals_prune | exchange_sync | daily_rules | news_refresh | anomaly_scan | weekly_digest | backfill_observations | resolve_identifiers | collect_defillama | collect_coinpaprika | collect_github | collect | compute_alpha | scan_iw | alpha | calibrate');
+        console.error('Jobs: universe_sync | discover_new_tokens | market_refresh | score_refresh | kpi_snapshot | signals_prune | exchange_sync | daily_rules | news_refresh | anomaly_scan | weekly_digest | backfill_observations | resolve_identifiers | collect_defillama | collect_coinpaprika | collect_github | collect | compute_alpha | scan_iw | alpha | calibrate | catalog_sync');
         process.exit(1);
     }
   } finally {

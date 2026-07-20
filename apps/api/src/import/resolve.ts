@@ -51,6 +51,8 @@ function mergeInto(a: KeyedProject, b: KeyedProject): void {
   a.listedOnLcx = a.listedOnLcx || b.listedOnLcx;
   a.domain = a.domain ?? b.domain;
   a.tickerNorm = a.tickerNorm ?? b.tickerNorm;
+  // Tracked wins — a curated/market match must never be demoted to catalog.
+  a.tier = a.tier === 'tracked' || b.tier === 'tracked' ? 'tracked' : (a.tier ?? b.tier);
 }
 
 function namePrefixAgrees(a: string, b: string): boolean {

@@ -67,7 +67,7 @@ export async function dueTargets(
        LEFT JOIN LATERAL (
          SELECT priority_score FROM scores WHERE project_id = p.id ORDER BY computed_at DESC LIMIT 1
        ) s ON true
-       WHERE cs.next_due_at IS NULL OR cs.next_due_at <= NOW()
+       WHERE (cs.next_due_at IS NULL OR cs.next_due_at <= NOW()) AND p.tier = 'tracked'
        ORDER BY COALESCE(s.priority_score,0) DESC, p.market_cap_usd DESC NULLS LAST
        LIMIT $2`,
       [source, limit, requireKind],
@@ -82,7 +82,7 @@ export async function dueTargets(
      LEFT JOIN LATERAL (
        SELECT priority_score FROM scores WHERE project_id = p.id ORDER BY computed_at DESC LIMIT 1
      ) s ON true
-     WHERE cs.next_due_at IS NULL OR cs.next_due_at <= NOW()
+     WHERE (cs.next_due_at IS NULL OR cs.next_due_at <= NOW()) AND p.tier = 'tracked'
      ORDER BY COALESCE(s.priority_score,0) DESC, p.market_cap_usd DESC NULLS LAST
      LIMIT $2`,
     [source, limit],

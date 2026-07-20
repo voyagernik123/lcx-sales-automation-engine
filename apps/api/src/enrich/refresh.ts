@@ -96,7 +96,8 @@ async function matchUnmappedProjects(pool: pg.Pool): Promise<number> {
        SELECT 1 FROM project_external_ids e
        WHERE e.project_id = p.id AND e.provider = 'coingecko'
      )
-     AND (p.ticker IS NOT NULL OR p.name IS NOT NULL)`,
+     AND (p.ticker IS NOT NULL OR p.name IS NOT NULL)
+     AND p.tier = 'tracked'`,
   );
 
   let matched = 0;

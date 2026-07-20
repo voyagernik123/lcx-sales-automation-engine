@@ -196,25 +196,26 @@ async function insertProjects(pool: pg.Pool, chunk: KeyedProject[]): Promise<(st
     .map((p, i) => {
       const id = randomUUID();
       ids.push(id);
-      const base = i * 18;
+      const base = i * 19;
       values.push(
         id, p.name, p.website ?? null, p.ticker ?? null, p.chain ?? null, p.source,
         p.esmaTokenId ?? null, p.dti ?? null, p.jurisdiction ?? null, p.whitepaperUrl ?? null,
         p.category ?? null, p.marketCap ?? null, p.listedOnLcx,
         p.nameKey, p.domain, p.tickerNorm, deriveRegion(p.jurisdiction),
         JSON.stringify(p.rawPayload ?? {}),
+        p.tier ?? 'tracked', // every runner source is a curated/market feed
       );
-      return `($${base + 1}::uuid, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13}::boolean, $${base + 14}, $${base + 15}, $${base + 16}, $${base + 17}, $${base + 18}::jsonb)`;
+      return `($${base + 1}::uuid, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13}::boolean, $${base + 14}, $${base + 15}, $${base + 16}, $${base + 17}, $${base + 18}::jsonb, $${base + 19})`;
     })
     .join(', ');
 
   const { rows } = await pool.query(
     `INSERT INTO projects (id, name, website, ticker, chain, source, esma_token_id, dti,
-       jurisdiction, whitepaper_url, category, market_cap, listed_on_lcx, name_key, domain, ticker_norm, region, raw)
+       jurisdiction, whitepaper_url, category, market_cap, listed_on_lcx, name_key, domain, ticker_norm, region, raw, tier)
      SELECT v.id, v.name, v.website, v.ticker, v.chain, v.source, v.esma_token_id, v.dti,
-       v.jurisdiction, v.whitepaper_url, v.category, v.market_cap, v.listed_on_lcx, v.name_key, v.domain, v.ticker_norm, v.region, v.raw
+       v.jurisdiction, v.whitepaper_url, v.category, v.market_cap, v.listed_on_lcx, v.name_key, v.domain, v.ticker_norm, v.region, v.raw, v.tier
      FROM (VALUES ${tuples}) AS v(id, name, website, ticker, chain, source, esma_token_id, dti,
-       jurisdiction, whitepaper_url, category, market_cap, listed_on_lcx, name_key, domain, ticker_norm, region, raw)
+       jurisdiction, whitepaper_url, category, market_cap, listed_on_lcx, name_key, domain, ticker_norm, region, raw, tier)
      ON CONFLICT (esma_token_id) DO NOTHING
      RETURNING id`,
     values,
@@ -233,14 +234,14 @@ async function attachProjects(
   const tuples = chunk
     .map((a, i) => {
       const p = a.incoming;
-      const base = i * 12;
+      const base = i * 13;
       values.push(
         a.projectId, p.website ?? null, p.ticker ?? null, p.chain ?? null,
         p.esmaTokenId ?? null, p.dti ?? null, p.jurisdiction ?? null,
         p.whitepaperUrl ?? null, p.category ?? null, p.marketCap ?? null,
-        p.listedOnLcx, p.tickerNorm,
+        p.listedOnLcx, p.tickerNorm, p.tier ?? 'tracked',
       );
-      return `($${base + 1}::uuid, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}::boolean, $${base + 12})`;
+      return `($${base + 1}::uuid, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}::boolean, $${base + 12}, $${base + 13})`;
     })
     .join(', ');
 
@@ -258,9 +259,11 @@ async function attachProjects(
        category = COALESCE(p.category, v.category),
        market_cap = COALESCE(p.market_cap, v.market_cap),
        listed_on_lcx = p.listed_on_lcx OR v.listed_on_lcx,
+       -- A curated/market source matched this row → promote to tracked (never demote).
+       tier = CASE WHEN v.tier = 'tracked' OR p.tier = 'tracked' THEN 'tracked' ELSE p.tier END,
        updated_at = NOW()
      FROM (VALUES ${tuples}) AS v(id, website, ticker, chain, esma_token_id, dti,
-       jurisdiction, whitepaper_url, category, market_cap, listed_on_lcx, ticker_norm)
+       jurisdiction, whitepaper_url, category, market_cap, listed_on_lcx, ticker_norm, tier)
      WHERE p.id = v.id`,
     values,
   );

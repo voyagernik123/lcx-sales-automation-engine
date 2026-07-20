@@ -10,7 +10,8 @@ import { Sparkles } from 'lucide-react';
  */
 const NOTES = [
   'Every closed deal makes tomorrow’s queue smarter.',
-  '7,850 tokens tracked, refreshed nightly — for free.',
+  '50,000+ tokens in the universe — the core refreshed nightly, free.',
+  'Any token, one click to track — live market data on demand.',
   'A reply is a full stop. Automation pauses. You take over.',
   'LinkedIn & Telegram: the system drafts, you send.',
   'Chain fit predicts who pays 5.6× better than average.',

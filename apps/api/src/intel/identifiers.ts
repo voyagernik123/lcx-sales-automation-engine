@@ -36,7 +36,7 @@ export async function resolveCoinpaprikaIds(pool: pg.Pool): Promise<{ resolved: 
     `INSERT INTO project_identifiers (project_id, kind, value, source, confidence)
      SELECT id, 'coinpaprika_id', raw->>'id', 'coinpaprika', 90
      FROM projects
-     WHERE raw ? 'id' AND coalesce(raw->>'id','') <> ''
+     WHERE raw ? 'id' AND coalesce(raw->>'id','') <> '' AND tier = 'tracked'
      ON CONFLICT (project_id, kind) DO UPDATE SET value=EXCLUDED.value, updated_at=NOW()`,
   );
   return { resolved: res.rowCount ?? 0 };

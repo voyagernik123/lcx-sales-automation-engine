@@ -47,6 +47,7 @@ const PROBE_FILTERS: BdFilters = {
   sort: 'created',
   order: 'desc',
   search: '',
+  tier: 'tracked',
 };
 
 const EMPTY_SPLIT_COPY: Record<Exclude<SplitId, 'working'>, { title: string; description: string }> = {
@@ -87,7 +88,7 @@ export function BdPipeline() {
   const { clarityEnacted, toggleFilterStoreField } = useFilterStore();
   const {
     market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation,
-    sort, order, search,
+    sort, order, search, tier,
     loading, error,
     activeSplit, showSnoozed,
     setFilter, setFilters, resetFilters, setLoading, setError, selectLead, setSplit, setShowSnoozed,
@@ -123,7 +124,7 @@ export function BdPipeline() {
     setError(null);
 
     try {
-      const filters = { market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search };
+      const filters = { market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search, tier };
       const res = await fetchBdPipeline(filters, { limit: PAGE_SIZE, offset: page * PAGE_SIZE }, controller.signal);
       if (!controller.signal.aborted) {
         setLeads(res.data.map(enrichRow));
@@ -135,7 +136,7 @@ export function BdPipeline() {
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search, page, setLoading, setError]);
+  }, [market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search, tier, page, setLoading, setError]);
 
   useEffect(() => {
     loadLeads();
@@ -145,7 +146,7 @@ export function BdPipeline() {
   useEffect(() => {
     setPage(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search]);
+  }, [market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search, tier]);
 
   /**
    * Load the three counted splits. Each stream degrades gracefully on failure
@@ -441,8 +442,8 @@ export function BdPipeline() {
   const hasActiveFilters = market || minScore > 0 || source || band || listedOnLcx !== null || hasContact !== null || marketRecommendation || search;
 
   const currentFilters: BdFilters = useMemo(
-    () => ({ market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search }),
-    [market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search],
+    () => ({ market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search, tier }),
+    [market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search, tier],
   );
 
   const selIdx = selectedId ? visibleRows.findIndex(r => r.id === selectedId) : -1;
@@ -467,7 +468,24 @@ export function BdPipeline() {
         </h1>
 
         <div className="flex items-center gap-2 ml-auto">
-          <span className="text-micro text-grey font-mono num-tabular">{total} leads</span>
+          <span className="text-micro text-grey font-mono num-tabular">{total.toLocaleString()} {tier === 'all' ? 'in universe' : 'leads'}</span>
+
+          {/* Tier scope: the workable tracked core vs. the full 50k+ catalog. */}
+          <div className="flex items-center rounded-full border border-line overflow-hidden shrink-0">
+            {(['tracked', 'all'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setFilter('tier', t)}
+                className={clsx(
+                  'px-2.5 py-1 text-micro font-bold transition-colors',
+                  tier === t ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400' : 'text-grey hover:bg-ice-soft',
+                )}
+                title={t === 'tracked' ? 'Deep-intel core — scored, contactable leads' : 'Full universe — all 50k+ tokens, promote any to track'}
+              >
+                {t === 'tracked' ? 'Tracked' : 'All universe'}
+              </button>
+            ))}
+          </div>
 
           <Button
             size="xs"
@@ -500,7 +518,7 @@ export function BdPipeline() {
       {/* FILTERS — one token bar; every condition is a removable chip (plan 4.2) */}
       {activeSplit === 'working' ? (
         <FilterTokenBar
-          filters={{ market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search }}
+          filters={{ market, minScore, source, band, listedOnLcx, hasContact, marketRecommendation, sort, order, search, tier }}
           search={search}
           onSearchChange={handleSearchChange}
           onPatch={setFilters}

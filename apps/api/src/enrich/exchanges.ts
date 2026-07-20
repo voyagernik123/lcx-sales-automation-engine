@@ -80,6 +80,7 @@ export async function syncExchangeListings(
      LEFT JOIN project_external_ids pap ON pap.project_id = p.id AND pap.provider = 'coinpaprika'
      LEFT JOIN project_external_ids cg ON cg.project_id = p.id AND cg.provider = 'coingecko'
      WHERE (pap.external_id IS NOT NULL OR cg.external_id IS NOT NULL)
+       AND p.tier = 'tracked'
        AND (p.exchanges_synced_at IS NULL OR p.exchanges_synced_at < NOW() - INTERVAL '${RESYNC_AFTER_DAYS} days')
      ORDER BY s.priority_score DESC NULLS LAST
      LIMIT ${PAPRIKA_PER_RUN + COINGECKO_PER_RUN}`,

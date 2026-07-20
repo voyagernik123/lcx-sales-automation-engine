@@ -37,6 +37,7 @@ const initialFilters: BdFilters = {
   sort: 'priority',
   order: 'desc',
   search: '',
+  tier: 'tracked',
 };
 
 export const useBdStore = create<BdStore>()(

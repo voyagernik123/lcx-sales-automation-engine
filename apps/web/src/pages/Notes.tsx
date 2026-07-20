@@ -19,6 +19,7 @@ const PICKER_FILTERS: Omit<BdFilters, 'search'> = {
   marketRecommendation: '',
   sort: 'priority',
   order: 'desc',
+  tier: 'tracked',
 };
 
 type Note = {

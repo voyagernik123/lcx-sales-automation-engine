@@ -75,7 +75,7 @@ export async function collectDefillama(pool: pg.Pool): Promise<{ matched: number
 
   for (;;) {
     const { rows } = await pool.query(
-      `SELECT id, ticker_norm, ticker, name_key, name FROM projects ORDER BY id LIMIT $1 OFFSET $2`,
+      `SELECT id, ticker_norm, ticker, name_key, name FROM projects WHERE tier = 'tracked' ORDER BY id LIMIT $1 OFFSET $2`,
       [pageSize, offset],
     );
     if (rows.length === 0) break;

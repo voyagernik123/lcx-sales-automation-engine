@@ -15,6 +15,7 @@ const PROJECT_FILTERS: BdFilters = {
   sort: 'priority',
   order: 'desc',
   search: '',
+  tier: 'tracked',
 };
 
 const TOUCH_LABELS: Record<number, string> = {

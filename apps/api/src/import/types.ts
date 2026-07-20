@@ -14,6 +14,12 @@ export interface RawProject {
   category?: string;
   marketCap?: string;
   listedOnLcx: boolean;
+  /**
+   * Universe tier. Omitted → the canonical insert treats it as 'tracked'
+   * (every runner source is a curated/market-gated feed worth deep intel).
+   * The lean catalog sync sets 'catalog' directly on its own insert path.
+   */
+  tier?: 'tracked' | 'catalog';
   rawPayload: Record<string, unknown>;
 }
 
