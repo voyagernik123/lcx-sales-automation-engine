@@ -5,13 +5,16 @@
  * The ONLY hard requirement is resilience: any network/parse failure degrades
  * to [] so the job and route never error out.
  *
- * Sources (all free, best-effort, tried in order — each wrapped in try/catch):
- *   1. CryptoPanic free API   — only if CRYPTOPANIC_TOKEN is set in the env.
- *   2. CoinGecko status updates — public, no key, the primary free path.
+ * Sources (all free, best-effort — each wrapped in try/catch):
+ *   1. ~20 crypto + regulatory RSS/Atom feeds (no key) — the backbone.
+ *   2. Google-News topical queries (no key) — always-fresh, on-theme.
+ *   3. CryptoCompare / CryptoPanic — optional wideners, gated behind their keys.
  *
  * refreshNews(pool) persists items into market_news and computes relevance by
- * matching each item's tickers against projects.ticker_norm. For matched
- * high-priority projects it also drops a 'news_mention' signal.
+ * matching each item's tickers against projects.ticker_norm. It ALSO runs a
+ * targeted Google-News query per top tracked token (force-tagged to that
+ * ticker) so coverage is deliberately pipeline-aware. For matched high-priority
+ * projects it drops a 'news_mention' signal.
  */
 import type pg from 'pg';
 
@@ -244,6 +247,42 @@ async function fetchRss(): Promise<NewsItem[]> {
   return perFeed.flat();
 }
 
+/** How many top-priority tracked tokens get their own targeted news query. */
+const PIPELINE_NEWS_MAX = 12;
+
+/**
+ * Deliberate, pipeline-aware coverage: one targeted Google-News query per top
+ * tracked token. Each returned headline is force-tagged with that token's
+ * ticker — but ONLY when the headline actually names the token — so the feed
+ * surfaces news about the tokens the desk is chasing (not just incidental
+ * matches), while a generically-named project can't vacuum unrelated crypto
+ * news into its signals. Best-effort and never throws (a failed query → []).
+ */
+async function fetchPipelineTickerNews(
+  entries: { ticker: string; name: string }[],
+): Promise<NewsItem[]> {
+  const perToken = await mapLimit(entries, 6, async (e) => {
+    const name = (e.name ?? '').trim();
+    const q = name.length >= 3 ? name : e.ticker; // name is the strongest signal
+    const xml = await safeText(gnews(`${q} crypto`));
+    if (!xml) return [];
+    let parsed: NewsItem[];
+    try {
+      parsed = parseRssItems(xml, 'gnews-pipeline');
+    } catch {
+      return [];
+    }
+    const needle = q.toLowerCase();
+    for (const it of parsed) {
+      if (it.title.toLowerCase().includes(needle)) {
+        it.tickers = Array.from(new Set([...it.tickers, e.ticker]));
+      }
+    }
+    return parsed;
+  });
+  return perToken.flat();
+}
+
 /** Normalize a headline for cross-source de-duplication (a syndicated story
     surfaced by several feeds collapses to one). */
 function titleKey(title: string): string {
@@ -309,14 +348,13 @@ export async function refreshNews(pool: pg.Pool): Promise<RefreshNewsStats> {
   } catch {
     return stats;
   }
-  stats.fetched = items.length;
   if (items.length === 0) return stats;
 
-  // Build a ticker_norm → {projectId, priority band} lookup once.
-  const tickerMap = new Map<string, { id: string; band: string; priority: number }>();
+  // Build a ticker_norm → {projectId, priority band, name} lookup once.
+  const tickerMap = new Map<string, { id: string; band: string; priority: number; name: string }>();
   try {
     const { rows } = await pool.query(
-      `SELECT p.id, p.ticker_norm, s.band, s.priority_score
+      `SELECT p.id, p.name, p.ticker_norm, s.band, s.priority_score
        FROM projects p
        LEFT JOIN scores s ON s.project_id = p.id
        WHERE p.ticker_norm IS NOT NULL AND p.ticker_norm <> ''`,
@@ -327,12 +365,42 @@ export async function refreshNews(pool: pg.Pool): Promise<RefreshNewsStats> {
       const existing = tickerMap.get(tn);
       const priority = Number(r.priority_score ?? 0);
       if (!existing || priority > existing.priority) {
-        tickerMap.set(tn, { id: String(r.id), band: String(r.band ?? 'unscored'), priority });
+        tickerMap.set(tn, { id: String(r.id), band: String(r.band ?? 'unscored'), priority, name: String(r.name ?? '') });
       }
     }
   } catch {
     /* no DB → treat everything as unmatched but still store the news */
   }
+
+  // Pipeline-aware widening: pull targeted news for the top tracked tokens and
+  // merge it in — enriching tickers on stories the general feeds already carry,
+  // and adding coverage they missed. Best-effort; failure leaves `items` as-is.
+  try {
+    const top = [...tickerMap.entries()]
+      .map(([ticker, v]) => ({ ticker, name: v.name, priority: v.priority }))
+      .sort((a, b) => b.priority - a.priority)
+      .slice(0, PIPELINE_NEWS_MAX);
+    if (top.length > 0) {
+      const tagged = await fetchPipelineTickerNews(top);
+      const byKey = new Map<string, NewsItem>();
+      for (const it of items) byKey.set(titleKey(it.title), it);
+      for (const it of tagged) {
+        const k = titleKey(it.title);
+        const existing = byKey.get(k);
+        if (existing) {
+          // Same story — graft the pipeline ticker onto the existing row.
+          if (it.tickers.length) existing.tickers = Array.from(new Set([...existing.tickers, ...it.tickers]));
+        } else {
+          byKey.set(k, it);
+          items.push(it);
+        }
+      }
+    }
+  } catch {
+    /* pipeline widening is best-effort */
+  }
+
+  stats.fetched = items.length;
 
   for (const item of items) {
     const matched: string[] = [];
