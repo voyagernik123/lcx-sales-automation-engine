@@ -57,12 +57,24 @@ export function rateLimit(config?: Partial<RateLimitConfig>) {
   const cfg = { ...DEFAULT_CONFIG, ...config };
 
   return createMiddleware<{ Variables: AuthVariables }>(async (c, next) => {
+    // Never rate-limit liveness probes — a 429 here would make the platform
+    // health check flap and mark the service down.
+    const path = c.req.path;
+    if (path === '/health' || path === '/') return next();
+
     cleanup();
 
     // Keying, most-specific first. NOTE: this middleware is mounted globally
     // (app.use('*')) and therefore runs BEFORE route-level auth populates
     // `operator` — so the api-key + ip composite is the working identity for
     // app traffic; the operator branch serves route-scoped limiters.
+    //
+    // Unauthenticated requests (webhooks, unsubscribe, SSE) share ONE bucket
+    // rather than one-per-IP: `x-forwarded-for` is client-supplied and thus
+    // spoofable, so a per-IP key lets an attacker rotate fake IPs to evade the
+    // limit. A single shared cap can't be evaded that way; those endpoints are
+    // also individually crypto-gated (HMAC/signature), so the bucket is purely
+    // a defense-in-depth backstop and low legitimate volume keeps it clear.
     const operator = c.get('operator');
     const ip = firstForwardedIp(c);
     const rawKey = c.req.header('x-api-key') ?? c.req.header('authorization');
@@ -70,7 +82,7 @@ export function rateLimit(config?: Partial<RateLimitConfig>) {
       ? `auth:${operator.id}`
       : rawKey
         ? `key:${djb2(rawKey)}:${ip ?? 'local'}`
-        : `ip:${ip ?? 'unknown'}`;
+        : 'unauth:shared';
 
     const now = Date.now();
     let entry = buckets.get(key);

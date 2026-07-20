@@ -76,19 +76,21 @@ noteRoutes.put('/:id/notes/:noteId', requireOperator, async (c) => {
   const body = await c.req.json<{ title?: string; body?: string; pinned?: boolean }>();
   const db = getDb();
   try {
-    const existing = await db.execute(sql`
-      SELECT current_version, title, body, pinned FROM project_notes WHERE id = ${noteId}
-    `);
-    const prev = (existing.rows ?? [])[0] as Record<string, unknown> | undefined;
-    if (!prev) return c.json({ error: 'Note not found', code: 'NOT_FOUND' }, 404);
-
-    const nextVersion = Number(prev.current_version ?? 1) + 1;
-    const newTitle = body.title !== undefined ? body.title : (prev.title as string | null);
-    const newBody = body.body !== undefined ? body.body.toString() : (prev.body as string);
-    const newPinned = body.pinned !== undefined ? body.pinned : (prev.pinned as boolean);
-
-    // Bumped note row + its version-history row commit together.
+    // Read the current row + compute the next version INSIDE the transaction,
+    // locking it FOR UPDATE — so two concurrent edits serialize instead of both
+    // reading version N and racing to write N+1 (duplicate version rows).
     const result = await db.transaction(async (tx) => {
+      const existing = await tx.execute(sql`
+        SELECT current_version, title, body, pinned FROM project_notes WHERE id = ${noteId} FOR UPDATE
+      `);
+      const prev = (existing.rows ?? [])[0] as Record<string, unknown> | undefined;
+      if (!prev) return null;
+
+      const nextVersion = Number(prev.current_version ?? 1) + 1;
+      const newTitle = body.title !== undefined ? body.title : (prev.title as string | null);
+      const newBody = body.body !== undefined ? body.body.toString() : (prev.body as string);
+      const newPinned = body.pinned !== undefined ? body.pinned : (prev.pinned as boolean);
+
       const rows = await tx.execute(sql`
         UPDATE project_notes
         SET title = ${newTitle}, body = ${newBody}, pinned = ${newPinned},
@@ -102,6 +104,7 @@ noteRoutes.put('/:id/notes/:noteId', requireOperator, async (c) => {
       `);
       return rows;
     });
+    if (!result) return c.json({ error: 'Note not found', code: 'NOT_FOUND' }, 404);
     return c.json({ data: mapNote(result.rows![0] as Record<string, unknown>), meta: meta() });
   } catch (err) {
     console.error('[notes] update error:', err);
