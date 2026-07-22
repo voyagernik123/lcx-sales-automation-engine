@@ -35,6 +35,7 @@ import { monitorRoutes } from './routes/monitors.js';
 import { scenarioRoutes, pirRoutes } from './routes/planning.js';
 import { wbrRoutes } from './routes/wbr.js';
 import { decisionRoutes } from './routes/decisions.js';
+import { aiOperatorRoutes } from './routes/aiOperator.js';
 
 export function createApp() {
   const app = new Hono();
@@ -86,6 +87,7 @@ export function createApp() {
   app.route('/v1/analytics', analyticsRoutes);
   app.route('/v1/analytics', analytics2Routes);
   app.route('/v1/ai', aiRoutes);
+  app.route('/v1/ai', aiOperatorRoutes);
   app.route('/v1/integrations', integrationRoutes);
   app.route('/v1/tasks', taskRoutes);
   app.route('/v1/notifications', notificationRoutes);

@@ -168,7 +168,7 @@ export function listActions(): Array<Pick<RegistryAction, 'id' | 'label' | 'desc
 export async function invokeAction(
   pool: pg.Pool,
   id: string,
-  input: { subjectType: string; subjectId: string; params?: Record<string, unknown>; actor: string; role: ActorRole },
+  input: { subjectType: string; subjectId: string; params?: Record<string, unknown>; actor: string; role: ActorRole; confirmedBy?: string },
 ): Promise<Record<string, unknown>> {
   const action = ACTION_REGISTRY[id];
   if (!action) throw new ActionError('UNKNOWN_ACTION', `No such action: ${id}`, 404);
@@ -191,10 +191,14 @@ export async function invokeAction(
      VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7)`,
     [DEFAULT_ORG_ID, input.subjectType, input.subjectId, id, JSON.stringify(params), JSON.stringify(result), input.actor],
   );
+  // When an AI proposal was confirmed by a human, actor stays 'ai' (the origin)
+  // while the audit records who signed off — accountability without pretending
+  // the machine acted alone.
+  const auditMeta = input.confirmedBy ? { ...params, _confirmedBy: input.confirmedBy } : params;
   await pool.query(
     `INSERT INTO audit_log (actor, action, entity, entity_id, meta)
      VALUES ($1,$2,$3,$4,$5::jsonb)`,
-    [input.actor, `action:${id}`, input.subjectType, input.subjectId, JSON.stringify(params)],
+    [input.actor, `action:${id}`, input.subjectType, input.subjectId, JSON.stringify(auditMeta)],
   );
   return result;
 }

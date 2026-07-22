@@ -4,6 +4,7 @@ import {
   listMonitors, createMonitor, updateMonitor, deleteMonitor, monitorActivity, tickMonitors, listActions,
   MONITOR_METRICS, MONITOR_OPS, type Monitor, type RegistryActionInfo,
 } from '@/lib/api/monitors';
+import { triageSignal, type TriageResult } from '@/lib/api/aiOperator';
 import { toast } from '@/components/shared/Toast';
 import { PageTitle, Button } from '@/components/ui';
 import { CardSkeleton, EmptyState } from '@/components/shared';
@@ -95,7 +96,7 @@ export function Monitors() {
                 </button>
                 <button onClick={() => void remove(m.id)} className="text-grey hover:text-red-500"><Trash2 size={13} /></button>
               </div>
-              {expanded === m.id && <MonitorActivity id={m.id} lastRunAt={m.lastRunAt} />}
+              {expanded === m.id && <MonitorActivity id={m.id} name={m.name} lastRunAt={m.lastRunAt} />}
             </div>
           ))}
         </div>
@@ -165,25 +166,61 @@ function MonitorBuilder({ actions, onCancel, onCreated }: { actions: RegistryAct
   );
 }
 
-function MonitorActivity({ id, lastRunAt }: { id: string; lastRunAt: string | null }) {
+const TRIAGE_TONE: Record<string, string> = {
+  true_signal: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  data_artifact: 'border-grey/40 bg-grey/10 text-grey-dark',
+  deception_suspect: 'border-red-500/40 bg-red-500/10 text-red-600 dark:text-red-400',
+  unclear: 'border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+};
+
+function MonitorActivity({ id, name, lastRunAt }: { id: string; name: string; lastRunAt: string | null }) {
   const [fires, setFires] = useState<Array<{ subjectId: string; name: string | null; ticker: string | null; firedAt: string }> | null>(null);
+  const [triage, setTriage] = useState<Record<string, TriageResult | 'loading'>>({});
   useEffect(() => { monitorActivity(id).then(setFires).catch(() => setFires([])); }, [id]);
+
+  const runTriage = async (subjectId: string) => {
+    setTriage((t) => ({ ...t, [subjectId]: 'loading' }));
+    try {
+      const r = await triageSignal(subjectId, `Monitor "${name}" fired on this token.`);
+      setTriage((t) => ({ ...t, [subjectId]: r }));
+    } catch { setTriage((t) => { const n = { ...t }; delete n[subjectId]; return n; }); toast('error', 'Triage failed'); }
+  };
+
   return (
     <div className="mt-2 border-t border-line pt-2">
       <div className="mb-1 text-micro text-grey">
-        {lastRunAt ? `Last run ${new Date(lastRunAt).toLocaleString()}` : 'Not yet run'} · fired on:
+        {lastRunAt ? `Last run ${new Date(lastRunAt).toLocaleString()}` : 'Not yet run'} · fired on (click to AI-triage):
       </div>
       {fires == null ? (
         <Loader2 size={12} className="animate-spin text-grey" />
       ) : fires.length === 0 ? (
         <p className="text-micro text-grey">No fires yet.</p>
       ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {fires.slice(0, 30).map((f) => (
-            <span key={f.subjectId} className="rounded border border-line px-1.5 py-0.5 text-micro text-grey-dark" title={new Date(f.firedAt).toLocaleString()}>
-              {f.name ?? f.subjectId.slice(0, 8)}{f.ticker ? ` · ${f.ticker}` : ''}
-            </span>
-          ))}
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap gap-1.5">
+            {fires.slice(0, 30).map((f) => {
+              const t = triage[f.subjectId];
+              return (
+                <button key={f.subjectId} onClick={() => void runTriage(f.subjectId)} disabled={t === 'loading'}
+                  className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro text-grey-dark hover:border-cyan-500/50 hover:text-navy disabled:opacity-50"
+                  title={new Date(f.firedAt).toLocaleString()}>
+                  {t === 'loading' && <Loader2 size={9} className="animate-spin" />}
+                  {f.name ?? f.subjectId.slice(0, 8)}{f.ticker ? ` · ${f.ticker}` : ''}
+                </button>
+              );
+            })}
+          </div>
+          {Object.entries(triage).filter(([, v]) => v !== 'loading').map(([sid, v]) => {
+            const r = v as TriageResult;
+            const f = fires.find((x) => x.subjectId === sid);
+            return (
+              <div key={sid} className={`rounded border px-2 py-1 text-micro ${TRIAGE_TONE[r.classification] ?? TRIAGE_TONE.unclear}`}>
+                <span className="font-bold">{f?.name ?? sid.slice(0, 8)} — {r.classification.replace(/_/g, ' ')}</span>
+                {' '}· {r.rationale} <span className="opacity-70">→ {r.suggestedAction}</span>
+                {!r.usedLlm && <span className="opacity-70"> (no AI key — routed to human)</span>}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

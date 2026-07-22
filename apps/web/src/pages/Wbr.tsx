@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarClock, Download, RefreshCw, TrendingUp, TrendingDown, Minus, AlertTriangle, ListChecks, Activity } from 'lucide-react';
+import { CalendarClock, Download, RefreshCw, TrendingUp, TrendingDown, Minus, AlertTriangle, ListChecks, Activity, Bot } from 'lucide-react';
 import { fetchWbr, regenerateWbr, type WbrReport, type WbrMetric, type WbrSparkline } from '@/lib/api/wbr';
+import { wbrNarrative } from '@/lib/api/aiOperator';
 import { EmptyState, PageSkeleton, toast } from '@/components/shared';
 import { PageTitle, Button } from '@/components/ui';
 import { PrintStyles } from '@/components/report/PrintStyles';
@@ -31,6 +32,15 @@ export function Wbr() {
   const [week, setWeek] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [aiNarr, setAiNarr] = useState<{ text: string; usedLlm: boolean } | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
+
+  const genNarrative = async () => {
+    setAiBusy(true);
+    try { const r = await wbrNarrative(); setAiNarr({ text: r.narrative, usedLlm: r.usedLlm }); }
+    catch { toast('error', 'Narrative failed'); }
+    finally { setAiBusy(false); }
+  };
 
   const load = useCallback((w?: string) => {
     setError(null); setReport(null);
@@ -93,6 +103,24 @@ export function Wbr() {
               {report.live && <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-micro font-bold text-amber-600 dark:text-amber-400">LIVE · not yet snapshotted</span>}
             </div>
             <p className="mt-1.5 text-body text-navy">{report.narrative}</p>
+          </div>
+
+          {/* AI executive summary (Phase 5.4) — grounded in the report above; falls back to the deterministic line. */}
+          <div className="rounded-lg border border-cyan-500/30 bg-card p-4 shadow-card">
+            <div className="mb-1.5 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
+              <Bot size={12} className="text-cyan-600 dark:text-cyan-400" /> Executive summary
+              <Button size="xs" variant="secondary" className="br-no-print ml-auto" onClick={() => void genNarrative()} disabled={aiBusy}>
+                <RefreshCw size={11} className={aiBusy ? 'animate-spin' : ''} /> {aiNarr ? 'Regenerate' : 'Generate'}
+              </Button>
+            </div>
+            {aiNarr ? (
+              <p className="text-body text-navy">
+                {aiNarr.text}
+                {!aiNarr.usedLlm && <span className="ml-1 text-micro text-grey">(deterministic — no AI key set)</span>}
+              </p>
+            ) : (
+              <p className="text-label text-grey">Generate an AI executive paragraph grounded strictly in this week's figures.</p>
+            )}
           </div>
 
           {/* Inputs / Outputs */}

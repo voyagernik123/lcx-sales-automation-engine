@@ -27,9 +27,9 @@ export async function listReviews(subjectType: 'deal' | 'project', subjectId: st
   return res.data;
 }
 
-export async function suggestReview(kind: ReviewKind, subjectType: 'deal' | 'project', subjectId: string): Promise<{ title: string; content: Record<string, unknown> }> {
+export async function suggestReview(kind: ReviewKind, subjectType: 'deal' | 'project', subjectId: string, llm = false): Promise<{ title: string; content: Record<string, unknown> }> {
   const res = await request<{ data: { title: string; content: Record<string, unknown> } }>(
-    `/v1/reviews/suggest`,
+    `/v1/reviews/suggest${llm ? '?llm=true' : ''}`,
     { auth: true, method: 'POST', body: { kind, subjectType, subjectId } },
   );
   return res.data;

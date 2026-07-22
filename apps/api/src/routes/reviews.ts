@@ -117,50 +117,69 @@ reviewRoutes.post('/suggest', requireOperator, async (c) => {
   const body = await c.req.json<{ kind?: string; subjectType?: string; subjectId?: string }>().catch(() => ({} as { kind?: string; subjectType?: string; subjectId?: string }));
   const kind = body.kind as Kind;
   if (!KINDS.includes(kind)) return c.json({ error: 'Invalid kind', code: 'VALIDATION' }, 400);
+  const wantLlm = c.req.query('llm') === 'true';
 
+  // Resolve the project id (SATs on a deal ground against the deal's project).
+  let projectId = body.subjectId ?? '';
+  if (body.subjectType === 'deal' && projectId) {
+    try {
+      const { rows } = await getPool().query(`SELECT project_id FROM deals WHERE id = $1 LIMIT 1`, [projectId]);
+      projectId = (rows[0]?.project_id as string) ?? projectId;
+    } catch { /* keep the given id */ }
+  }
+
+  // Build the deterministic scaffold (always works, no key needed).
+  let scaffold: { title: string; content: Record<string, unknown> };
   if (kind === 'key_assumptions') {
-    return c.json({ data: { title: 'Key Assumptions Check', content: { assumptions: [
+    scaffold = { title: 'Key Assumptions Check', content: { assumptions: [
       { text: 'The token will pursue a listing in the next two quarters.', loadBearing: true, supported: 'unknown', ifWrong: '' },
       { text: 'A verified decision-maker contact is reachable.', loadBearing: true, supported: 'unknown', ifWrong: '' },
       { text: 'LCX is competitive on fees/terms vs. the venues they already use.', loadBearing: false, supported: 'unknown', ifWrong: '' },
-    ] } }, meta: meta() });
-  }
-  if (kind === 'premortem') {
-    return c.json({ data: { title: 'Premortem', content: { summary: '', failureModes: [
+    ] } };
+  } else if (kind === 'premortem') {
+    scaffold = { title: 'Premortem', content: { summary: '', failureModes: [
       { cause: 'The listing stalled in compliance/legal review.', likelihood: 'roughly even chance', mitigation: '' },
       { cause: 'The counterparty went quiet after the proposal.', likelihood: 'unlikely', mitigation: '' },
       { cause: 'A competing exchange closed a better deal first.', likelihood: 'unlikely', mitigation: '' },
-    ] } }, meta: meta() });
+    ] } };
+  } else {
+    // devils_advocate — pull the project's ACH verdict + counter-evidence.
+    let content: Record<string, unknown> = { thesis: '', counter: [], recommendation: '' };
+    try {
+      const { rows } = await getPool().query(
+        `SELECT value_json FROM observations WHERE subject_type='project' AND subject_id=$1 AND predicate='ach_verdict'
+         ORDER BY observed_at DESC LIMIT 1`,
+        [projectId],
+      );
+      const ach = (rows[0]?.value_json ?? {}) as { verdict?: string; confidence?: number; evidence?: Array<{ text?: string; supports?: string; weight?: number }> };
+      const verdict = ach.verdict ?? 'unknown';
+      const counter = (ach.evidence ?? [])
+        .filter((e) => e.supports && e.supports !== verdict)
+        .slice(0, 6)
+        .map((e) => ({ point: e.text ?? '', evidence: `argues for ${e.supports}`, weight: e.weight ?? null }));
+      content = {
+        thesis: `Prevailing read: ${verdict} (confidence ${ach.confidence ?? 0}%).`,
+        counter: counter.length ? counter : [{ point: 'No stored counter-evidence — argue the strongest case against pursuing this now.', evidence: '', weight: null }],
+        recommendation: '',
+      };
+    } catch (err) {
+      console.error('[reviews] suggest error:', err);
+    }
+    scaffold = { title: 'Devil’s Advocate', content };
   }
 
-  // devils_advocate — pull the project's ACH verdict + counter-evidence.
-  let projectId = body.subjectId ?? '';
-  try {
-    if (body.subjectType === 'deal' && projectId) {
-      const { rows } = await getPool().query(`SELECT project_id FROM deals WHERE id = $1 LIMIT 1`, [projectId]);
-      projectId = (rows[0]?.project_id as string) ?? projectId;
+  // SAT copilot (Phase 5.3): when asked and a key is set, refine the scaffold
+  // into a grounded draft. AI never files — this is only a richer prefill.
+  if (wantLlm && projectId) {
+    try {
+      const { satCopilot } = await import('../ai/operator.js');
+      const refined = await satCopilot(getPool(), kind, projectId, scaffold);
+      return c.json({ data: { title: refined.title, content: refined.content }, meta: { ...meta(), usedLlm: refined.usedLlm } });
+    } catch (err) {
+      console.error('[reviews] sat copilot error:', err);
     }
-    const { rows } = await getPool().query(
-      `SELECT value_json FROM observations WHERE subject_type='project' AND subject_id=$1 AND predicate='ach_verdict'
-       ORDER BY observed_at DESC LIMIT 1`,
-      [projectId],
-    );
-    const ach = (rows[0]?.value_json ?? {}) as { verdict?: string; confidence?: number; evidence?: Array<{ text?: string; supports?: string; weight?: number }> };
-    const verdict = ach.verdict ?? 'unknown';
-    // Evidence that does NOT support the leading verdict = the contrarian case.
-    const counter = (ach.evidence ?? [])
-      .filter((e) => e.supports && e.supports !== verdict)
-      .slice(0, 6)
-      .map((e) => ({ point: e.text ?? '', evidence: `argues for ${e.supports}`, weight: e.weight ?? null }));
-    return c.json({ data: { title: 'Devil’s Advocate', content: {
-      thesis: `Prevailing read: ${verdict} (confidence ${ach.confidence ?? 0}%).`,
-      counter: counter.length ? counter : [{ point: 'No stored counter-evidence — argue the strongest case against pursuing this now.', evidence: '', weight: null }],
-      recommendation: '',
-    } }, meta: meta() });
-  } catch (err) {
-    console.error('[reviews] suggest error:', err);
-    return c.json({ data: { title: 'Devil’s Advocate', content: { thesis: '', counter: [], recommendation: '' } }, meta: meta() });
   }
+  return c.json({ data: scaffold, meta: { ...meta(), usedLlm: false } });
 });
 
 function mapRow(r: Record<string, unknown>) {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ClipboardCheck, Skull, Swords, Plus, Trash2, Check, X, Loader2 } from 'lucide-react';
+import { ClipboardCheck, Skull, Swords, Plus, Trash2, Check, X, Loader2, Bot } from 'lucide-react';
 import {
   listReviews, suggestReview, createReview, updateReview, deleteReview,
   type AnalyticReview, type ReviewKind,
@@ -45,6 +45,19 @@ export function AnalyticReviews({ subjectType, subjectId }: { subjectType: 'deal
 
   const edit = (r: AnalyticReview) => setDraft({ kind: r.kind, title: r.title, content: (r.content ?? {}) as Content, id: r.id });
 
+  // SAT copilot (Phase 5.3) — re-draft the open review with the LLM, grounded in
+  // the project's evidence. The analyst still edits and files; AI never saves.
+  const aiDraft = async () => {
+    if (!draft) return;
+    setBusy(true);
+    try {
+      const s = await suggestReview(draft.kind, subjectType, subjectId, true);
+      setDraft({ ...draft, title: s.title, content: s.content as Content });
+      toast('success', 'AI draft ready — review and edit before saving');
+    } catch { toast('error', 'AI draft failed'); }
+    finally { setBusy(false); }
+  };
+
   const save = async () => {
     if (!draft) return;
     setBusy(true);
@@ -85,13 +98,21 @@ export function AnalyticReviews({ subjectType, subjectId }: { subjectType: 'deal
       </div>
 
       {draft ? (
-        <ReviewEditor
-          draft={draft}
-          onChange={(content, title) => setDraft({ ...draft, content, title: title ?? draft.title })}
-          onSave={() => void save()}
-          onCancel={() => setDraft(null)}
-          busy={busy}
-        />
+        <>
+          <div className="mb-2 flex justify-end">
+            <button onClick={() => void aiDraft()} disabled={busy}
+              className="inline-flex items-center gap-1 rounded border border-cyan-500/40 bg-cyan-500/5 px-1.5 py-1 text-micro font-semibold text-cyan-700 hover:bg-cyan-500/10 disabled:opacity-50 dark:text-cyan-300">
+              <Bot size={11} /> Draft with AI
+            </button>
+          </div>
+          <ReviewEditor
+            draft={draft}
+            onChange={(content, title) => setDraft({ ...draft, content, title: title ?? draft.title })}
+            onSave={() => void save()}
+            onCancel={() => setDraft(null)}
+            busy={busy}
+          />
+        </>
       ) : reviews == null ? (
         <div className="py-3 text-center text-micro text-grey"><Loader2 size={13} className="inline animate-spin" /></div>
       ) : reviews.length === 0 ? (

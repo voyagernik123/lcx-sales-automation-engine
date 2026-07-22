@@ -20,6 +20,7 @@ import { UsIntelGauges } from '@/components/bd/UsIntelGauges';
 import { GateBanner, useGateCheck } from '@/components/bd/GateBanner';
 import { PriorityEquation } from '@/components/bd/PriorityEquation';
 import { RegulatoryPosture } from '@/components/bd/RegulatoryPosture';
+import { AiOperatorPanel } from '@/components/ai/AiOperatorPanel';
 import { useInspectorStore } from '@/stores';
 
 export interface InspectorPayloadProps {
@@ -255,6 +256,8 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
           </Button>
         )}
       </div>
+
+      <AiOperatorPanel projectId={id} />
 
       {draftOpen && <DraftPanel subjectId={lead.id} onClose={() => setDraftOpen(false)} />}
     </div>
