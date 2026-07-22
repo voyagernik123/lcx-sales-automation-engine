@@ -15,6 +15,7 @@ import {
   TaskInspector,
 } from './payloads/ExtendedInspectors';
 import { ArrowLeft } from 'lucide-react';
+import { RelatedPanel } from './RelatedPanel';
 
 /**
  * Mounted once in AppLayout. Renders whatever entity the inspector stack
@@ -98,6 +99,12 @@ export function InspectorHost() {
         </nav>
       )}
       {body}
+      {/* Universal search-around — the complete linked neighborhood, on every object. */}
+      <RelatedPanel
+        type={top.type}
+        id={top.id}
+        label={(top.seed?.name as string) || (top.seed?.title as string) || undefined}
+      />
     </InspectorDrawer>
   );
 }

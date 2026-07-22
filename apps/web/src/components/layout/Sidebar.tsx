@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield, Activity } from 'lucide-react';
+import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield, Activity, Share2 } from 'lucide-react';
 import { useUIStore, useAuditStore } from '@/stores';
 import { redFlags } from '@/data';
 import { SidebarFieldNotes } from './SidebarFieldNotes';
@@ -44,6 +44,7 @@ const sections: NavSection[] = [
       { to: '/scorecard', label: 'Scorecard', icon: Gauge },
       { to: '/market-news', label: 'Market News', icon: Newspaper },
       { to: '/market-map', label: 'Market Map', icon: ScatterChart },
+      { to: '/graph', label: 'Sales Graph', icon: Share2 },
       { to: '/bd-kpis', label: 'KPI Dashboard', icon: BarChart3 },
       { to: '/board-report', label: 'Board Report', icon: FileBarChart },
       { to: '/report-builder', label: 'Report Builder', icon: Table2 },

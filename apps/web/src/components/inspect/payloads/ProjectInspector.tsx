@@ -18,6 +18,7 @@ import { PropensityTrail } from '@/components/bd/PropensityTrail';
 import { UsIntelGauges } from '@/components/bd/UsIntelGauges';
 import { GateBanner, useGateCheck } from '@/components/bd/GateBanner';
 import { PriorityEquation } from '@/components/bd/PriorityEquation';
+import { RegulatoryPosture } from '@/components/bd/RegulatoryPosture';
 import { useInspectorStore } from '@/stores';
 
 export interface InspectorPayloadProps {
@@ -132,6 +133,9 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
           },
         ]}
       />
+
+      {/* Regulatory posture — LCX's moat, on every dossier */}
+      {lead.regulatoryPosture && <RegulatoryPosture posture={lead.regulatoryPosture} />}
 
       {/* Priority equation — every term hops to its explanation below */}
       <PriorityEquation

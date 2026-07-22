@@ -13,6 +13,7 @@ import { PropensityTrail } from '@/components/bd/PropensityTrail';
 import { UsIntelGauges } from '@/components/bd/UsIntelGauges';
 import { GateBanner, useGateCheck } from '@/components/bd/GateBanner';
 import { PriorityEquation } from '@/components/bd/PriorityEquation';
+import { RegulatoryPosture } from '@/components/bd/RegulatoryPosture';
 import { StructuredPayload } from '@/components/bd/StructuredPayload';
 import { deriveMarketTag, CHANNEL_LABELS, TOUCH_LABELS, STAGE_COLORS, STAGE_LABELS } from '@/types/bd';
 import type { LeadDetail, LeadSignal, LeadPerson, DraftOutput, SavedDraft, Channel, SequenceRecord, MessageRecord } from '@/types/bd';
@@ -543,6 +544,9 @@ export function LeadDetail() {
         <div className="max-w-[1200px] mx-auto p-4 space-y-4">
           {/* Outreach gate — why outreach is (or isn't) allowed right now */}
           <GateBanner check={gateState} id="lead-gate-banner" />
+
+          {/* Regulatory posture — LCX's moat, front and center */}
+          {lead.regulatoryPosture && <RegulatoryPosture posture={lead.regulatoryPosture} />}
 
           {/* Identity */}
           <Section icon={<Globe size={14} />} title="Identity">

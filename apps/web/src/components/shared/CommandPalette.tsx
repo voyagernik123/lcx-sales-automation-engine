@@ -3,14 +3,20 @@ import { useNavigate } from 'react-router-dom';
 import { Search } from 'lucide-react';
 import { clsx } from 'clsx';
 import { states, products, redFlags } from '@/data';
-import { request } from '@/lib/apiClient';
+import { fetchObjectSearch } from '@/lib/api/graph';
+import { useInspectorStore, type InspectorEntityType } from '@/stores/useInspectorStore';
+import { OBJECT_TYPES, INSPECTOR_TO_OBJECT } from '@/lib/objectRegistry';
 
 interface CommandItem {
   id: string;
   label: string;
   sublabel: string;
   to: string;
-  type: 'state' | 'product' | 'flag' | 'page' | 'lead';
+  type: 'state' | 'product' | 'flag' | 'page' | 'object';
+  /** For type 'object': open this inspector instead of navigating. */
+  inspector?: InspectorEntityType;
+  entityId?: string;
+  seed?: Record<string, unknown>;
 }
 
 const PAGE_COMMANDS: CommandItem[] = [
@@ -25,6 +31,7 @@ const PAGE_COMMANDS: CommandItem[] = [
   { id: 'win-loss', label: 'Win / Loss', sublabel: 'What closes and why', to: '/win-loss', type: 'page' },
   { id: 'market-news', label: 'Market News', sublabel: 'Relevance-scored headlines', to: '/market-news', type: 'page' },
   { id: 'market-map', label: 'Market Map', sublabel: 'Universe scatter', to: '/market-map', type: 'page' },
+  { id: 'graph', label: 'Sales Graph', sublabel: 'Object relationship graph', to: '/graph', type: 'page' },
   { id: 'bd-kpis', label: 'KPI Dashboard', sublabel: 'Funnel, forecast, reply rates', to: '/bd-kpis', type: 'page' },
   { id: 'board-report', label: 'Board Report', sublabel: 'Exec summary', to: '/board-report', type: 'page' },
   { id: 'report-builder', label: 'Report Builder', sublabel: 'Ad-hoc reports', to: '/report-builder', type: 'page' },
@@ -69,52 +76,53 @@ const COMMAND_CODES: { code: string; to: string; label: string }[] = [
   { code: 'home', to: '/', label: 'Morning Brief' },
 ];
 
-interface LeadSearchRow {
-  id: string;
-  name: string;
-  ticker: string | null;
-  priorityScore: number | null;
-  band: string | null;
-}
-
-/** Debounced live search of the projects API for the palette. */
-function useLeadSearch(query: string, enabled: boolean): CommandItem[] {
-  const [leads, setLeads] = useState<CommandItem[]>([]);
+/**
+ * Debounced unified object search — every object type (projects, contacts,
+ * deals, notes, news) over the 54k universe via /v1/search (Phase 1.4).
+ * Results open the object's inspector in place rather than navigating away.
+ */
+function useObjectSearch(query: string, enabled: boolean): CommandItem[] {
+  const [items, setItems] = useState<CommandItem[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout>>();
 
   useEffect(() => {
     if (!enabled || query.trim().length < 2) {
-      setLeads([]);
+      setItems([]);
       return;
     }
     clearTimeout(timer.current);
-    let cancelled = false;
+    const ctrl = new AbortController();
     timer.current = setTimeout(async () => {
       try {
-        const res = await request<{ data: LeadSearchRow[] }>(
-          `/v1/projects?search=${encodeURIComponent(query.trim())}&limit=6`,
-        );
-        if (cancelled) return;
-        setLeads(
-          (res.data ?? []).map(p => ({
-            id: `lead-${p.id}`,
-            label: p.ticker ? `${p.name} (${p.ticker.toUpperCase()})` : p.name,
-            sublabel: `Lead · ${p.band ?? 'unscored'}${p.priorityScore != null ? ` · priority ${p.priorityScore}` : ''}`,
-            to: `/bd-pipeline/${p.id}`,
-            type: 'lead' as const,
-          })),
-        );
+        const groups = await fetchObjectSearch(query, ctrl.signal);
+        if (ctrl.signal.aborted) return;
+        const rows: CommandItem[] = [];
+        for (const g of groups) {
+          for (const it of g.items.slice(0, 5)) {
+            rows.push({
+              id: `obj-${g.inspector}-${it.id}`,
+              label: it.label,
+              sublabel: [OBJECT_TYPES[INSPECTOR_TO_OBJECT[g.inspector]].label, it.sublabel].filter(Boolean).join(' · '),
+              to: '',
+              type: 'object',
+              inspector: g.inspector,
+              entityId: it.id,
+              seed: it.seed,
+            });
+          }
+        }
+        setItems(rows.slice(0, 10));
       } catch {
-        if (!cancelled) setLeads([]);
+        if (!ctrl.signal.aborted) setItems([]);
       }
-    }, 220);
+    }, 200);
     return () => {
-      cancelled = true;
+      ctrl.abort();
       clearTimeout(timer.current);
     };
   }, [query, enabled]);
 
-  return leads;
+  return items;
 }
 
 function buildDataCommands(): CommandItem[] {
@@ -178,7 +186,8 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const navigate = useNavigate();
-  const leadResults = useLeadSearch(query, open);
+  const openInspector = useInspectorStore(s => s.open);
+  const objectResults = useObjectSearch(query, open);
 
   const allCommands = useMemo(() => {
     return [...PAGE_COMMANDS, ...buildDataCommands()];
@@ -202,18 +211,22 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
     const staticMatches = allCommands.filter(c =>
       c.label.toLowerCase().includes(q) || c.sublabel.toLowerCase().includes(q)
     );
-    return [...codeMatches, ...leadResults, ...staticMatches].slice(0, 12);
-  }, [query, allCommands, leadResults]);
+    return [...codeMatches, ...objectResults, ...staticMatches].slice(0, 14);
+  }, [query, allCommands, objectResults]);
 
   useEffect(() => {
     setSelectedIndex(0);
   }, [query]);
 
   const handleSelect = useCallback((item: CommandItem) => {
-    navigate(item.to);
+    if (item.type === 'object' && item.inspector && item.entityId) {
+      openInspector(item.inspector, item.entityId, item.seed);
+    } else {
+      navigate(item.to);
+    }
     onClose();
     setQuery('');
-  }, [navigate, onClose]);
+  }, [navigate, onClose, openInspector]);
 
   useEffect(() => {
     if (!open) return;
@@ -264,13 +277,15 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
           )}
 
           {filtered.map((item, idx) => {
-            const typeLabel = { state: 'State', product: 'Asset', flag: 'Risk', page: 'Page', lead: 'Lead' }[item.type];
+            const typeLabel = item.type === 'object' && item.inspector
+              ? OBJECT_TYPES[INSPECTOR_TO_OBJECT[item.inspector]].label
+              : { state: 'State', product: 'Asset', flag: 'Risk', page: 'Page', object: 'Object' }[item.type];
             const typeColor = {
               state: 'text-indigo-500',
               product: 'text-cyan-500',
               flag: 'text-red-500',
               page: 'text-grey',
-              lead: 'text-emerald-600',
+              object: 'text-emerald-600',
             }[item.type];
 
             return (

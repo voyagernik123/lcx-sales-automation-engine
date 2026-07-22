@@ -10,6 +10,7 @@ import {
   scorePropensity, combinePriority, PROPENSITY_WEIGHTS_V1,
 } from '@lcx/shared';
 import type { PropensityInput, ReasonTrail } from '@lcx/shared';
+import { deriveRegulatoryPosture } from '../lib/regulatory.js';
 import { randomUUID } from 'node:crypto';
 
 export const projectsRoutes = new Hono<{ Variables: AuthVariables }>();
@@ -364,6 +365,13 @@ projectsRoutes.get('/:id', requireOperator, async (c) => {
         sources: sourceRows,
         signals: signalRows,
         deals: dealRows,
+        regulatoryPosture: deriveRegulatoryPosture({
+          jurisdiction: project.jurisdiction,
+          region: project.region,
+          esmaTokenId: project.esmaTokenId,
+          dti: project.dti,
+          source: project.source,
+        }),
       },
       meta: { timestamp: new Date().toISOString(), version: env.version },
     });

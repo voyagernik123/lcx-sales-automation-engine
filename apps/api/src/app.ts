@@ -26,6 +26,8 @@ import { dealRoutes } from './routes/deals.js';
 import { kpiRoutes } from './routes/kpis.js';
 import { auditRoutes } from './routes/audit.js';
 import { intelRoutes } from './routes/intel.js';
+import { graphRoutes } from './routes/graph.js';
+import { searchRoutes } from './routes/search.js';
 
 export function createApp() {
   const app = new Hono();
@@ -73,6 +75,8 @@ export function createApp() {
   app.route('/v1/tasks', taskRoutes);
   app.route('/v1/notifications', notificationRoutes);
   app.route('/v1/intel', intelRoutes);
+  app.route('/v1/graph', graphRoutes);
+  app.route('/v1/search', searchRoutes);
 
   app.get('/', (c) =>
     c.json({

@@ -244,6 +244,16 @@ export interface LeadDetail {
   sources: LeadSource[];
   signals: LeadSignal[];
   deals: unknown[];
+  regulatoryPosture?: RegulatoryPosture;
+}
+
+export type PostureTone = 'strong' | 'neutral' | 'watch';
+export interface PostureFacet { label: string; value: string; tone?: PostureTone }
+export interface RegulatoryPosture {
+  label: string;
+  tone: PostureTone;
+  isMicaRegistry: boolean;
+  facets: PostureFacet[];
 }
 
 export interface LeadDetailResponse {
