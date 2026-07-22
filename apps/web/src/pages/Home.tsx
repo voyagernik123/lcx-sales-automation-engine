@@ -28,6 +28,7 @@ import {
   ForecastDeltaCard,
 } from '@/components/home';
 import { PipelineInstrument, QueueInstrument } from '@/components/home/DeskInstruments';
+import { MyDesk } from '@/components/home/MyDesk';
 import type { HandoffRecord } from '@/types/bd';
 
 const DAILY_QUOTA = 20;
@@ -126,6 +127,9 @@ export function Home() {
           <CardSkeleton count={2} />
         </div>
       )}
+
+      {/* MY DESK — the operator's own lanes (Phase 4.4). */}
+      {operator && <MyDesk ownerName={operator.name} />}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">

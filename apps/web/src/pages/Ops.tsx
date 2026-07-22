@@ -8,6 +8,7 @@ import { EmptyState, CardSkeleton, toast } from '@/components/shared';
 import { Button, PageTitle } from '@/components/ui';
 import { formatDate, formatDateTime } from '@/lib/format';
 import { PirPanel } from '@/components/intel/PirPanel';
+import { SloPanel } from '@/components/ops/SloPanel';
 
 /**
  * Ops Health (Wave 7 · governance) — the intelligence apparatus watching
@@ -104,6 +105,9 @@ export function Ops() {
             <Tile label="Open gaps" value={String(ops.summary.openGaps)} tone={ops.summary.openGaps > 0 ? 'warn' : 'good'} />
             <Tile label="Last collection" value={ops.summary.lastCollectionAt ? formatDate(ops.summary.lastCollectionAt) : '—'} />
           </div>
+
+          {/* SLOs & error budgets (Phase 4.3) */}
+          <SloPanel />
 
           {/* Data freshness vs SLA */}
           <div className="rounded-lg border border-line bg-card p-4 shadow-card">

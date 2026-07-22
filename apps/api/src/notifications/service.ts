@@ -134,5 +134,25 @@ export async function evaluateAlertRules(pool: pg.Pool): Promise<Record<string, 
   `);
   counts.discovery_found = discovery.rowCount ?? 0;
 
+  // 4. Decision reviews due (Phase 4.2) — a logged decision whose review-by date
+  //    has arrived and whose outcome is still open. Dedup per decision per week.
+  //    Degrades quietly when the decisions table is absent (migration pending).
+  try {
+    const reviews = await pool.query(`
+      INSERT INTO notifications (id, rule, title, detail, project_id, href, dedup_key)
+      SELECT gen_random_uuid(), 'decision_review_due',
+             'Decision review due: ' || d.title,
+             'Owned by ' || d.owner || ' — record the outcome.',
+             NULL, '/decisions',
+             'decrev:' || d.id || ':' || TO_CHAR(NOW(), 'IYYY-IW')
+      FROM decisions d
+      WHERE d.review_by IS NOT NULL AND d.review_by <= CURRENT_DATE AND d.outcome IS NULL
+      ON CONFLICT DO NOTHING
+    `);
+    counts.decision_review_due = reviews.rowCount ?? 0;
+  } catch {
+    counts.decision_review_due = 0;
+  }
+
   return counts;
 }

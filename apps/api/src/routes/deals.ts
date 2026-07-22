@@ -268,9 +268,15 @@ dealRoutes.post('/:id/stage', requireOperator, async (c) => {
       update.lossCategory = body.lossCategory ?? null;
     }
 
+    // A close (out of negotiating) is a consequential call: capture a decision
+    // memo in the same transaction so the institutional log is guaranteed to
+    // have it (Phase 4.2 acceptance: every stage-advance past negotiating has
+    // a memo). Prefilled from context; the desk can enrich it later on /decisions.
+    const closingPastNegotiating = oldStage === 'negotiating' && (newStage === 'won' || newStage === 'lost');
+
     // Core state change is ATOMIC: project flag (won), the deal row, the
-    // stage-change event, and the audit entry commit together or not at all —
-    // no half-closed deal with a missing history/audit record.
+    // stage-change event, the audit entry, and the decision memo commit together
+    // or not at all — no half-closed deal with a missing history/audit/decision.
     const [updated] = await db.transaction(async (tx) => {
       if (newStage === 'won') {
         await tx.update(schema.projects).set({ listedOnLcx: true, updatedAt: new Date() }).where(sql`${schema.projects.id} = ${deal.projectId}`).execute();
@@ -289,6 +295,29 @@ dealRoutes.post('/:id/stage', requireOperator, async (c) => {
           id: randomUUID(), actor: operator.id, action: 'premortem_gate_override', entity: 'deals', entityId: id,
           meta: { reason: body.overrideReason, packageValue: deal.packageValue },
         }).execute();
+      }
+      if (closingPastNegotiating) {
+        const projName = await tx.execute(sql`SELECT name, ticker FROM projects WHERE id = ${deal.projectId} LIMIT 1`)
+          .then((r) => {
+            const row = (r.rows?.[0] ?? {}) as { name?: string; ticker?: string };
+            return row.ticker ? `${row.name} (${row.ticker})` : (row.name ?? 'the deal');
+          })
+          .catch(() => 'the deal');
+        const reason = (newStage === 'won' ? body.winReason : body.lossReason)?.trim() ?? '';
+        const valueUsd = Math.round((deal.packageValue ?? 0) / 100).toLocaleString('en-US');
+        // Won deals get a +90d review (did the listing perform?); losses need none.
+        const reviewBy = newStage === 'won' ? new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10) : null;
+        await tx.execute(sql`
+          INSERT INTO decisions (title, context, decision, rationale, owner, subject_type, subject_id, review_by, source)
+          VALUES (
+            ${`Deal ${newStage}: ${projName}`},
+            ${`Advanced ${oldStage} → ${newStage}. ${deal.packageType ?? 'listing'} package, $${valueUsd}.${premortemOverridden ? ' Premortem gate overridden.' : ''}`},
+            ${newStage === 'won' ? 'Closed the deal.' : 'Walked away.'},
+            ${reason},
+            ${deal.owner ?? operator.id},
+            ${'project'}, ${deal.projectId}, ${reviewBy}, ${'deal_close'}
+          )
+        `);
       }
       return rows;
     });

@@ -44,3 +44,20 @@ export function findMemberByEmail(email: string): TeamMember | null {
 export function isAllowedEmail(email: string): boolean {
   return findMemberByEmail(email) !== null;
 }
+
+/**
+ * The team member with this id, or null. Used wherever ownership is stored by
+ * id (deals.owner, monitors.owner, pirs.owner, decisions.owner) so the desk can
+ * resolve a lane back to a person — and validate an assignment target. The
+ * shared 'operator' catch-all (not a real person) resolves to null.
+ */
+export function findMemberById(id: string): TeamMember | null {
+  return TEAM.find((m) => m.id === id) ?? null;
+}
+
+/** Display name for an owner id — the person's name, or the id itself. */
+export function ownerLabel(id: string | null | undefined): string {
+  if (!id) return 'Unassigned';
+  if (id === 'operator') return 'Desk (shared)';
+  return findMemberById(id)?.name ?? id;
+}

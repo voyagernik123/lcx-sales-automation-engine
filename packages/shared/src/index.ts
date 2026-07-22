@@ -78,7 +78,7 @@ export { squash, squashEntity } from './normalize.js';
 
 // Desk roster + email allowlist (shared by the web front door and API auth)
 export type { TeamMember, TeamRole } from './operators.js';
-export { TEAM, normalizeEmail, findMemberByEmail, isAllowedEmail } from './operators.js';
+export { TEAM, normalizeEmail, findMemberByEmail, isAllowedEmail, findMemberById, ownerLabel } from './operators.js';
 
 // Intelligence spine (Wave 0) — provenance + actions
 export type { Reliability, Credibility, SourceKind, SourceDef, Observation } from './provenance.js';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TEAM, findMemberByEmail, isAllowedEmail, normalizeEmail } from './operators.js';
+import { TEAM, findMemberByEmail, findMemberById, ownerLabel, isAllowedEmail, normalizeEmail } from './operators.js';
 
 describe('desk roster / email allowlist', () => {
   it('holds the five desk members with unique ids and emails', () => {
@@ -38,5 +38,18 @@ describe('desk roster / email allowlist', () => {
     expect(findMemberByEmail('sam@lcx.com')?.role).toBe('operator');
     expect(findMemberByEmail('rida@lcx.com')?.role).toBe('operator');
     expect(findMemberByEmail('jatin@lcx.com')?.role).toBe('operator');
+  });
+
+  it('resolves an owner id to a member, and null for the shared/unknown ids (Phase 4.4)', () => {
+    expect(findMemberById('nik')?.name).toBe('Nik');
+    expect(findMemberById('operator')).toBeNull();
+    expect(findMemberById('ghost')).toBeNull();
+  });
+
+  it('labels an owner id for display', () => {
+    expect(ownerLabel('nik')).toBe('Nik');
+    expect(ownerLabel('operator')).toBe('Desk (shared)');
+    expect(ownerLabel(null)).toBe('Unassigned');
+    expect(ownerLabel('ghost')).toBe('ghost'); // unknown id falls back to itself
   });
 });

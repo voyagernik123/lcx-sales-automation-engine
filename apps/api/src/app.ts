@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { env } from './lib/env.js';
+import { recordLatency } from './lib/latency.js';
 import { rateLimit } from './middleware/rateLimit.js';
 import { healthRoutes } from './routes/health.js';
 import { meRoutes } from './routes/me.js';
@@ -32,11 +33,21 @@ import { reviewRoutes } from './routes/reviews.js';
 import { actionRoutes } from './routes/actions.js';
 import { monitorRoutes } from './routes/monitors.js';
 import { scenarioRoutes, pirRoutes } from './routes/planning.js';
+import { wbrRoutes } from './routes/wbr.js';
+import { decisionRoutes } from './routes/decisions.js';
 
 export function createApp() {
   const app = new Hono();
 
   app.use('*', logger());
+  // Record request latency into the in-memory ring buffer that backs the API
+  // p95 SLO (Phase 4.3). Wraps the whole chain; excludes the health check so
+  // uptime pings don't skew the desk-facing latency picture.
+  app.use('*', async (c, next) => {
+    const start = performance.now();
+    await next();
+    if (c.req.path !== '/health') recordLatency(performance.now() - start);
+  });
   app.use('*', rateLimit());
   app.use(
     '*',
@@ -86,6 +97,8 @@ export function createApp() {
   app.route('/v1/monitors', monitorRoutes);
   app.route('/v1/scenarios', scenarioRoutes);
   app.route('/v1/pirs', pirRoutes);
+  app.route('/v1/wbr', wbrRoutes);
+  app.route('/v1/decisions', decisionRoutes);
 
   app.get('/', (c) =>
     c.json({

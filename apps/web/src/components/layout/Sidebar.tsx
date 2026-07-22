@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield, Activity, Share2, Siren } from 'lucide-react';
+import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield, Activity, Share2, Siren, CalendarClock, GitPullRequestArrow } from 'lucide-react';
 import { useUIStore, useAuditStore } from '@/stores';
 import { redFlags } from '@/data';
 import { SidebarFieldNotes } from './SidebarFieldNotes';
@@ -49,6 +49,13 @@ const sections: NavSection[] = [
       { to: '/bd-kpis', label: 'KPI Dashboard', icon: BarChart3 },
       { to: '/board-report', label: 'Board Report', icon: FileBarChart },
       { to: '/report-builder', label: 'Report Builder', icon: Table2 },
+    ],
+  },
+  {
+    title: 'Operating System',
+    items: [
+      { to: '/wbr', label: 'Weekly Review', icon: CalendarClock },
+      { to: '/decisions', label: 'Decision Log', icon: GitPullRequestArrow },
     ],
   },
   {

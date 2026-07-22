@@ -298,6 +298,18 @@ intelRoutes.get('/ops', requireOperator, async (c) => {
   }
 });
 
+/** GET /v1/intel/slo — service-level objectives + 30-day error budgets (Phase 4.3). */
+intelRoutes.get('/slo', requireOperator, async (c) => {
+  try {
+    const { computeSlos } = await import('../intel/slo.js');
+    const data = await computeSlos();
+    return c.json({ data, meta: meta() });
+  } catch (err) {
+    console.error('[intel] slo error:', err);
+    return c.json({ error: 'Failed to compute SLOs', code: 'INTEL_ERROR' }, 500);
+  }
+});
+
 /** GET /v1/intel/portfolio — the targetable universe as a portfolio (EV, diversification, concentration). */
 intelRoutes.get('/portfolio', requireOperator, async (c) => {
   try {

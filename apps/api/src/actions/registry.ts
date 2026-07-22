@@ -11,6 +11,7 @@
  */
 import { z } from 'zod';
 import type pg from 'pg';
+import { findMemberById } from '@lcx/shared';
 import { notify } from '../notifications/service.js';
 import { createManualTask } from '../tasks/service.js';
 import { DEFAULT_ORG_ID } from '../intel/observations.js';
@@ -130,6 +131,26 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     minRole: 'operator',
     paramsSchema: z.object({ reason: z.string().max(300).optional() }),
     execute: async () => ({ flagged: true }),
+  },
+  assign: {
+    id: 'assign',
+    label: 'Assign owner',
+    description: 'Give a deal, monitor, or PIR a real desk owner (a lane, not the shared catch-all).',
+    subjectTypes: ['deal', 'monitor', 'pir'],
+    minRole: 'operator',
+    paramsSchema: z.object({ owner: z.string().min(1).max(64) }),
+    execute: async ({ pool, subjectType, subjectId, params }) => {
+      const owner = String(params.owner);
+      // The target must be a real desk member (or the shared 'operator' lane) —
+      // never let ownership point at a principal that can't hold it.
+      if (owner !== 'operator' && !findMemberById(owner)) {
+        throw new ActionError('VALIDATION', `Unknown owner: ${owner}`);
+      }
+      const table = subjectType === 'deal' ? 'deals' : subjectType === 'monitor' ? 'monitors' : 'pirs';
+      const { rowCount } = await pool.query(`UPDATE ${table} SET owner = $1 WHERE id = $2`, [owner, subjectId]);
+      if ((rowCount ?? 0) === 0) throw new ActionError('NOT_FOUND', `${subjectType} not found`, 404);
+      return { owner, subjectType };
+    },
   },
 };
 

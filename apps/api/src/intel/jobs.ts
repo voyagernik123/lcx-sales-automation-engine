@@ -32,6 +32,9 @@ export const INTEL_JOBS = [
   'deception_scan',
   // Object monitors (Phase 3.1) — evaluate standing watches, fire governed actions.
   'monitors_tick',
+  // Auto-WBR (Phase 4.1) — compose + persist the Weekly Business Review
+  // (cron: Monday 06:00 UTC). Idempotent per week (upsert on week_start).
+  'wbr',
 ] as const;
 export type IntelJob = (typeof INTEL_JOBS)[number];
 
@@ -112,6 +115,10 @@ export async function runIntelJob(pool: pg.Pool, job: IntelJob, opts: IntelJobOp
     case 'monitors_tick': {
       const { evaluateMonitors } = await import('./monitors.js');
       return withJobRun(pool, job, async () => ({ stats: asStats(await evaluateMonitors(pool)) }));
+    }
+    case 'wbr': {
+      const { writeWbr } = await import('../kpi/wbr.js');
+      return withJobRun(pool, job, async () => ({ stats: asStats(await writeWbr(pool)) }));
     }
     case 'alpha': {
       const { computeAlpha } = await import('./alpha.js');

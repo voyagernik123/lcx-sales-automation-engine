@@ -2,9 +2,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Radar, RefreshCw, Layers, Globe, Boxes, Clock } from 'lucide-react';
 import { fetchPortfolio, fetchForecast, type Portfolio, type Forecast, type DimensionSlice } from '@/lib/api/intel';
+import { fetchSlos, fmtSlo, type SloReport } from '@/lib/api/slo';
 import { EmptyState, CardSkeleton } from '@/components/shared';
 import { Button, PageTitle } from '@/components/ui';
 import { formatMoney } from '@/lib/format';
+import { AlertTriangle } from 'lucide-react';
+import { clsx } from 'clsx';
 
 /**
  * Command Center (Wave 5) — the operational picture + the portfolio lens. Fuses
@@ -23,14 +26,17 @@ export function CommandCenter() {
   const navigate = useNavigate();
   const [pf, setPf] = useState<Portfolio | null>(null);
   const [fc, setFc] = useState<Forecast | null>(null);
+  const [slo, setSlo] = useState<SloReport | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
     setError(null);
     setPf(null);
     setFc(null);
+    setSlo(null);
     fetchPortfolio().then(setPf).catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
     fetchForecast().then(setFc).catch(() => setFc(null));
+    fetchSlos().then(setSlo).catch(() => setSlo(null));
   }, []);
   useEffect(load, [load]);
 
@@ -52,6 +58,29 @@ export function CommandCenter() {
         <CardSkeleton count={4} />
       ) : (
         <div className="space-y-4">
+          {/* SLO error-budget banner (Phase 4.3) — management by exception. */}
+          {slo && (slo.anyBreach || slo.anyWarn) && (
+            <button
+              onClick={() => navigate('/ops')}
+              className={clsx(
+                'flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left',
+                slo.anyBreach ? 'border-red-500/40 bg-red-500/10' : 'border-amber-500/40 bg-amber-500/10',
+              )}
+            >
+              <AlertTriangle size={15} className={clsx('mt-0.5 shrink-0', slo.anyBreach ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400')} />
+              <span className="text-label">
+                <span className="font-semibold text-navy">
+                  {slo.anyBreach ? 'Error budget breached' : 'Error budget at risk'} —{' '}
+                </span>
+                <span className="text-grey-dark">
+                  {slo.slos.filter((s) => s.status === 'breach' || s.status === 'warn')
+                    .map((s) => `${s.label} ${fmtSlo(s.current, s.unit)}/${fmtSlo(s.target, s.unit)}`)
+                    .join(' · ')}. Open Ops Health →
+                </span>
+              </span>
+            </button>
+          )}
+
           {/* Operational picture strip */}
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
             <Tile label="Targetable universe" value={pf.totalTargets.toLocaleString()} onClick={() => navigate('/targets')} />

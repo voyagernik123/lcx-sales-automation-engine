@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Activity, Boxes, FileText, FolderOpen, KanbanSquare, ListChecks, ShieldAlert, TrendingUp } from 'lucide-react';
 import { clsx } from 'clsx';
+import { TEAM, ownerLabel } from '@lcx/shared';
 import { fetchDealBoard, fetchDealEvents, updateDeal, type BoardDeal } from '@/lib/api/bd';
+import { assignOwner } from '@/lib/api/desk';
 import { fetchDealPlaybook, saveDealPlaybook, type DealPlaybookState, type PlaybookKey } from '@/lib/api/deals100x';
 import { fetchForecast } from '@/lib/api/kpi';
 import type { DealEvent } from '@/types/bd';
@@ -36,6 +38,37 @@ function SectionHead({ icon, children }: { icon: React.ReactNode; children: Reac
 }
 
 const SEVERITY_WORD: Record<number, string> = { 1: 'advisory', 2: 'attention', 3: 'critical' };
+
+/**
+ * Governed owner assignment (Phase 4.4) — give the deal a real lane through the
+ * action registry (not a bare PATCH), so the change is validated, role-gated,
+ * and lands in the audit spine like every other mutation.
+ */
+function OwnerAssign({ deal, onAssigned }: { deal: BoardDeal; onAssigned: (owner: string) => void }) {
+  const [saving, setSaving] = useState(false);
+  const current = deal.owner ?? 'operator';
+  const assign = async (owner: string) => {
+    if (owner === current) return;
+    setSaving(true);
+    try { await assignOwner('deal', deal.id, owner); onAssigned(owner); toast('success', `Assigned to ${ownerLabel(owner)}`); }
+    catch (err) { toast('error', err instanceof Error ? err.message : 'Assign failed'); }
+    finally { setSaving(false); }
+  };
+  return (
+    <label className="inline-flex items-center gap-1.5 text-micro text-grey">
+      <span className="font-semibold uppercase tracking-wider">Owner</span>
+      <select
+        value={current}
+        disabled={saving}
+        onChange={(e) => void assign(e.target.value)}
+        className="rounded border border-line bg-card px-1.5 py-0.5 text-label font-medium text-navy outline-none focus:border-cyan-500 disabled:opacity-50"
+      >
+        <option value="operator">Desk (shared)</option>
+        {TEAM.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+      </select>
+    </label>
+  );
+}
 
 /** Preloaded context the Deal Board hands over so the panel renders instantly. */
 interface DealSeed {
@@ -187,6 +220,12 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
             }}
           />
           <span>· updated {relativeTime(deal.updatedAt)}</span>
+        </div>
+        <div className="mt-1.5">
+          <OwnerAssign
+            deal={deal}
+            onAssigned={(owner) => setBoard((b) => b.map((x) => (x.id === deal.id ? { ...x, owner } : x)))}
+          />
         </div>
       </div>
 
