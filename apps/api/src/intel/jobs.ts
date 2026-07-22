@@ -28,6 +28,8 @@ export const INTEL_JOBS = [
   // Universe breadth: pull the free-source token catalog to 50k+ lean identity
   // rows. Runs through the same trigger/lock/job_runs machinery as the sensors.
   'catalog_sync',
+  // Deception detection (Phase 2.4) — wash-trading flags that poison conviction.
+  'deception_scan',
 ] as const;
 export type IntelJob = (typeof INTEL_JOBS)[number];
 
@@ -101,15 +103,22 @@ export async function runIntelJob(pool: pg.Pool, job: IntelJob, opts: IntelJobOp
         return { stats: { snapshotted: res.snapshotted, metrics: res.metrics.map((m) => ({ k: m.metricKey, lift: m.lift, verdict: m.verdict })) } };
       });
     }
+    case 'deception_scan': {
+      const { detectWashTrading } = await import('./deception.js');
+      return withJobRun(pool, job, async () => ({ stats: asStats(await detectWashTrading(pool)) }));
+    }
     case 'alpha': {
       const { computeAlpha } = await import('./alpha.js');
       const { scanIndications } = await import('./iw.js');
       const { computeCalibration } = await import('./calibration.js');
+      const { detectWashTrading } = await import('./deception.js');
       return withJobRun(pool, job, async () => {
+        // Deception first so wash-trading flags are in place before conviction.
+        const deception = await detectWashTrading(pool);
         const scores = await computeAlpha(pool);
         const indications = await scanIndications(pool);
         const calibration = await computeCalibration(pool);
-        return { stats: { scores, indications, calibration: { snapshotted: calibration.snapshotted } } };
+        return { stats: { deception, scores, indications, calibration: { snapshotted: calibration.snapshotted } } };
       });
     }
     case 'catalog_sync': {

@@ -33,6 +33,9 @@ export interface SignalBundle {
   contactCount?: number | null;
   /** Mean confidence (0–100) of the observations that fed this bundle. */
   dataConfidence?: number;
+  /** Deception flag (Phase 2.4) — wash-trading suspected. Heavily discounts
+      conviction: fake liquidity is worse than no data. */
+  washTradingFlag?: boolean;
 }
 
 export interface Driver {
@@ -224,12 +227,16 @@ export function assess(s: SignalBundle): AlphaAssessment {
     0.34 * win.score + 0.30 * propensity.score + 0.18 * valueScore + 0.18 * timing.score;
   const conf = Math.round((win.confidence + propensity.confidence + value.confidence + timing.confidence) / 4);
   // Low data confidence discounts conviction so we don't chase ghosts.
-  const convScore = Math.round(clamp(blend * (0.55 + 0.45 * (conf / 100))));
+  const baseConv = clamp(blend * (0.55 + 0.45 * (conf / 100)));
+  // Suspected wash-trading discounts conviction far harder — fake liquidity is
+  // a negative signal, not a neutral one (Phase 2.4 deception detection).
+  const convScore = Math.round(s.washTradingFlag ? baseConv * 0.4 : baseConv);
   const drivers: Driver[] = [
     { label: 'Winnability', points: Math.round(0.34 * win.score) },
     { label: 'Propensity', points: Math.round(0.30 * propensity.score) },
     { label: 'Timing', points: Math.round(0.18 * timing.score) },
     { label: 'Prize size', points: Math.round(0.18 * valueScore) },
+    ...(s.washTradingFlag ? [{ label: 'Wash-trading suspected', points: -Math.round(baseConv * 0.6) }] : []),
   ];
   const conviction: ScoreResult = { score: convScore, drivers, confidence: conf };
 

@@ -19,6 +19,7 @@ export const ALPHA_PREDICATES = [
 const OBS_PREDICATES = [
   'tvl_usd', 'chain_count', 'tvl_change_7d', 'defillama_category',
   'github_commits_30d', 'github_stars', 'team_size', 'dev_status',
+  'wash_trading_flag', // Phase 2.4 — deception signal that discounts conviction
 ];
 
 function relFromConfidence(c: number): Reliability {
@@ -103,6 +104,7 @@ export async function computeAlpha(pool: pg.Pool): Promise<{ projects: number; o
         recommendedMarket: (r.recommended_market as string) ?? null,
         contactCount: r.people_count != null ? Number(r.people_count) : 0,
         dataConfidence,
+        washTradingFlag: 'wash_trading_flag' in o,
       };
 
       const a = assess(bundle);
