@@ -30,6 +30,8 @@ export const INTEL_JOBS = [
   'catalog_sync',
   // Deception detection (Phase 2.4) — wash-trading flags that poison conviction.
   'deception_scan',
+  // Object monitors (Phase 3.1) — evaluate standing watches, fire governed actions.
+  'monitors_tick',
 ] as const;
 export type IntelJob = (typeof INTEL_JOBS)[number];
 
@@ -106,6 +108,10 @@ export async function runIntelJob(pool: pg.Pool, job: IntelJob, opts: IntelJobOp
     case 'deception_scan': {
       const { detectWashTrading } = await import('./deception.js');
       return withJobRun(pool, job, async () => ({ stats: asStats(await detectWashTrading(pool)) }));
+    }
+    case 'monitors_tick': {
+      const { evaluateMonitors } = await import('./monitors.js');
+      return withJobRun(pool, job, async () => ({ stats: asStats(await evaluateMonitors(pool)) }));
     }
     case 'alpha': {
       const { computeAlpha } = await import('./alpha.js');

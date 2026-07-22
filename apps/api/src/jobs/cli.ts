@@ -186,6 +186,7 @@ async function main() {
       case 'alpha':
       case 'catalog_sync':
       case 'deception_scan':
+      case 'monitors_tick':
       case 'calibrate': {
         const { runIntelJob } = await import('../intel/jobs.js');
         const r = await runIntelJob(pool, job, {

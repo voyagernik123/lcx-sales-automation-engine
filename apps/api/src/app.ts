@@ -29,6 +29,8 @@ import { intelRoutes } from './routes/intel.js';
 import { graphRoutes } from './routes/graph.js';
 import { searchRoutes } from './routes/search.js';
 import { reviewRoutes } from './routes/reviews.js';
+import { actionRoutes } from './routes/actions.js';
+import { monitorRoutes } from './routes/monitors.js';
 
 export function createApp() {
   const app = new Hono();
@@ -79,6 +81,8 @@ export function createApp() {
   app.route('/v1/graph', graphRoutes);
   app.route('/v1/search', searchRoutes);
   app.route('/v1/reviews', reviewRoutes);
+  app.route('/v1/actions', actionRoutes);
+  app.route('/v1/monitors', monitorRoutes);
 
   app.get('/', (c) =>
     c.json({

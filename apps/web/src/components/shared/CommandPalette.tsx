@@ -32,6 +32,7 @@ const PAGE_COMMANDS: CommandItem[] = [
   { id: 'market-news', label: 'Market News', sublabel: 'Relevance-scored headlines', to: '/market-news', type: 'page' },
   { id: 'market-map', label: 'Market Map', sublabel: 'Universe scatter', to: '/market-map', type: 'page' },
   { id: 'graph', label: 'Sales Graph', sublabel: 'Object relationship graph', to: '/graph', type: 'page' },
+  { id: 'monitors', label: 'Object Monitors', sublabel: 'Standing watches that act', to: '/monitors', type: 'page' },
   { id: 'bd-kpis', label: 'KPI Dashboard', sublabel: 'Funnel, forecast, reply rates', to: '/bd-kpis', type: 'page' },
   { id: 'board-report', label: 'Board Report', sublabel: 'Exec summary', to: '/board-report', type: 'page' },
   { id: 'report-builder', label: 'Report Builder', sublabel: 'Ad-hoc reports', to: '/report-builder', type: 'page' },
