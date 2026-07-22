@@ -218,7 +218,7 @@ dealRoutes.post('/:id/stage', requireOperator, async (c) => {
   const db = getDb();
   const { id } = c.req.param();
   const operator = c.get('operator');
-  const body = await c.req.json<{ stage: DealStage; winReason?: string; lossReason?: string; lossCategory?: string }>();
+  const body = await c.req.json<{ stage: DealStage; winReason?: string; lossReason?: string; lossCategory?: string; overridePremortem?: boolean; overrideReason?: string }>();
   const newStage = body.stage;
 
   if (!STAGES.includes(newStage)) return c.json({ error: `Invalid stage: ${newStage}`, code: 'INVALID_STAGE' }, 400);
@@ -230,6 +230,28 @@ dealRoutes.post('/:id/stage', requireOperator, async (c) => {
     const oldStage = deal.stage as DealStage;
     if (!canTransition(oldStage, newStage)) {
       return c.json({ error: `Cannot transition from ${oldStage} to ${newStage}`, code: 'INVALID_TRANSITION' }, 400);
+    }
+
+    // Premortem gate (Phase 2.3): a high-value deal can't close out of
+    // negotiating without a structured premortem — governance meets tradecraft.
+    // Soft-block: the desk can override with a reason, which is audited.
+    const PREMORTEM_THRESHOLD_CENTS = 2_500_000; // $25k
+    let premortemOverridden = false;
+    if (oldStage === 'negotiating' && newStage === 'won' && (deal.packageValue ?? 0) > PREMORTEM_THRESHOLD_CENTS) {
+      const { hasActivePremortem } = await import('./reviews.js');
+      const covered = await hasActivePremortem(id, deal.projectId);
+      if (!covered) {
+        if (!body.overridePremortem) {
+          return c.json({
+            error: 'A premortem is required before closing a deal over $25k. Add one on the deal, or override with a reason.',
+            code: 'PREMORTEM_REQUIRED',
+          }, 409);
+        }
+        if (!body.overrideReason?.trim()) {
+          return c.json({ error: 'Override requires a reason.', code: 'OVERRIDE_REASON_REQUIRED' }, 400);
+        }
+        premortemOverridden = true;
+      }
     }
 
     // Win/loss reason required on close
@@ -262,6 +284,12 @@ dealRoutes.post('/:id/stage', requireOperator, async (c) => {
         id: randomUUID(), actor: operator.id, action: 'deal_stage_change', entity: 'deals', entityId: id,
         meta: { from: oldStage, to: newStage },
       }).execute();
+      if (premortemOverridden) {
+        await tx.insert(schema.auditLog).values({
+          id: randomUUID(), actor: operator.id, action: 'premortem_gate_override', entity: 'deals', entityId: id,
+          meta: { reason: body.overrideReason, packageValue: deal.packageValue },
+        }).execute();
+      }
       return rows;
     });
 

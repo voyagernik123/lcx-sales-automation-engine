@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Crosshair } from 'lucide-react';
 import { fetchAssessment, type Assessment } from '@/lib/api/intel';
 import { formatMoney } from '@/lib/format';
+import { Estimate } from '@/components/intel/Estimate';
 
 /**
  * The alpha read on a single target (Wave 2). Leads with Conviction (the
@@ -102,8 +103,18 @@ export function AssessmentBlock({ subjectId }: { subjectId: string }) {
         <div className="mt-2 rounded-lg border border-line p-3">
           <div className="flex items-baseline justify-between gap-2">
             <span className="text-label font-semibold text-navy">{VERDICT_LABEL[a.ach.verdict] ?? a.ach.verdict}</span>
-            <span className="num-tabular font-mono text-[10px] text-grey">{a.ach.confidence}% conf</span>
+            <span className="num-tabular font-mono text-[10px] text-grey">{a.ach.confidence}% margin</span>
           </div>
+          {a.propensity && (
+            <div className="mt-1 text-micro text-grey">
+              Listing likelihood:{' '}
+              <Estimate
+                p={a.propensity.score}
+                confidence={a.propensity.confidence >= 65 ? 'high' : a.propensity.confidence >= 40 ? 'moderate' : 'low'}
+                className="text-micro"
+              />
+            </div>
+          )}
           {a.ach.evidence?.length > 0 && (
             <ul className="mt-1.5 space-y-0.5">
               {a.ach.evidence.slice(0, 4).map((e) => (

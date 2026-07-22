@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { CheckCircle2, HelpCircle, KanbanSquare, Plus, RefreshCw, XCircle } from 'lucide-react';
 import { STAGES, STAGE_LABELS, canTransition, type DealStage } from '@lcx/shared';
-import { fetchDealBoard, transitionDealStage, type BoardDeal } from '@/lib/api/bd';
+import { fetchDealBoard, type BoardDeal } from '@/lib/api/bd';
+import { transitionDealWithGate } from '@/lib/dealGate';
 import { loadDealContexts, saveDealPlaybook, type LoadedDealContext, type PlaybookKey } from '@/lib/api/deals100x';
 import { computeDealHealthSet, computePipelinePulse, type WarningCode } from '@/lib/salesIntel';
 import { useInspect, useOperatorStore, hasRole } from '@/stores';
@@ -164,8 +165,8 @@ export function DealBoard() {
     // Optimistic move, reload on settle
     setDeals((prev) => prev.map((d) => (d.id === deal.id ? { ...d, stage: target } : d)));
     try {
-      await transitionDealStage(deal.id, body);
-      toast('success', `Deal advanced to ${STAGE_LABELS[target]} — ${deal.projectName}`);
+      const ok = await transitionDealWithGate(deal.id, body);
+      if (ok) toast('success', `Deal advanced to ${STAGE_LABELS[target]} — ${deal.projectName}`);
     } catch (err) {
       const c = classifyError(err);
       toast('error', `${c.title} — ${c.message}`);

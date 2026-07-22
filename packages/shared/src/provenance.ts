@@ -66,6 +66,31 @@ export function getSource(id: string): SourceDef {
   return SOURCES[id] ?? { id, label: id, kind: 'manual', defaultReliability: 'F' };
 }
 
+/** The full Admiralty grade, e.g. "B2" — reliability letter + credibility digit. */
+export function admiraltyCode(reliability: Reliability, credibility: Credibility): string {
+  return `${reliability}${credibility}`;
+}
+
+/**
+ * Per-outlet reliability for the free news backbone (Phase 2.1). Regulators are
+ * primary (A); established crypto desks usually-reliable (B); aggregators and
+ * Google-News queries carry unknown per-item provenance (C/D). A headline the
+ * pipeline surfaces is only as trustworthy as where it came from.
+ */
+const NEWS_OUTLET_RELIABILITY: Record<string, Reliability> = {
+  sec: 'A', 'sec-litigation': 'A', esma: 'A',
+  coindesk: 'B', theblock: 'B', cointelegraph: 'B', decrypt: 'B', bitcoinmagazine: 'B', thedefiant: 'B',
+  cryptocompare: 'B',
+  cryptoslate: 'C', cryptopotato: 'C', bitcoinist: 'C', newsbtc: 'C', utoday: 'C',
+  ambcrypto: 'C', coingape: 'C', cryptobriefing: 'C', cryptopanic: 'C',
+  'gnews-listings': 'D', 'gnews-mica': 'D', 'gnews-sec': 'D', 'gnews-launch': 'D', 'gnews-pipeline': 'D',
+};
+
+/** Reliability grade for a news outlet key; unknown outlets → 'D'. */
+export function newsReliability(source: string): Reliability {
+  return NEWS_OUTLET_RELIABILITY[source] ?? 'D';
+}
+
 /**
  * Derive a 0–100 confidence from Admiralty reliability × credibility, decayed by
  * staleness. Reliability A..F maps 1.0..0.0; credibility 1..6 maps 1.0..0.0; the

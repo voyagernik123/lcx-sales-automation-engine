@@ -8,6 +8,8 @@ import { PageTitle, Button } from '@/components/ui';
 import { CardSkeleton, EmptyState } from '@/components/shared';
 import { EntityChip } from '@/components/entity';
 import { FilterChip } from '@/components/market/FilterChip';
+import { GradeBadge } from '@/components/intel/GradeBadge';
+import { newsReliability } from '@lcx/shared';
 import { useInspect } from '@/stores';
 import {
   applyNewsFilters,
@@ -353,6 +355,7 @@ export function MarketNews() {
                 <span className="rounded bg-ice-soft px-1.5 py-0.5 font-medium dark:bg-ice-soft/10">
                   {n.source}
                 </span>
+                <GradeBadge reliability={newsReliability(n.source)} />
                 {n.publishedAt && <span title={new Date(n.publishedAt).toLocaleString()}>{relativeTime(n.publishedAt)}</span>}
                 {seen && <span className="italic">visited</span>}
                 {n.tickers.slice(0, 8).map((t) =>

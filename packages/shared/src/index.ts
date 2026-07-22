@@ -82,7 +82,11 @@ export { TEAM, normalizeEmail, findMemberByEmail, isAllowedEmail } from './opera
 
 // Intelligence spine (Wave 0) — provenance + actions
 export type { Reliability, Credibility, SourceKind, SourceDef, Observation } from './provenance.js';
-export { RELIABILITY_LABEL, CREDIBILITY_LABEL, SOURCES, getSource, confidenceFrom } from './provenance.js';
+export { RELIABILITY_LABEL, CREDIBILITY_LABEL, SOURCES, getSource, confidenceFrom, admiraltyCode, newsReliability } from './provenance.js';
+
+// Estimative language (Phase 2.2) — ICD-203 tradecraft vocabulary.
+export type { LikelihoodTerm, LikelihoodBand, Likelihood, ConfidenceLevel, ConfidenceInput } from './estimative.js';
+export { LIKELIHOOD_BANDS, likelihood, estimativeConfidence, CONFIDENCE_LABEL, estimativePhrase } from './estimative.js';
 export type { ActionId, ActionDef } from './actions.js';
 export { ACTION_DEFS, actionsFor, getAction, SERVER_ACTIONS, isServerAction } from './actions.js';
 export type { ConnectorDef } from './collection.js';

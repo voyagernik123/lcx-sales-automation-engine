@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Globe, FileText, ExternalLink, ChevronDown, ChevronRight, CheckCircle, XCircle, RefreshCw, Search, Users, Activity, Database, Award, Plus, Pencil, X, Mail, Send, ThumbsUp, ThumbsDown, FileOutput, Zap } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useFilterStore } from '@/stores';
-import { fetchLead, approveLead, suppressLead, triggerRescore, triggerEnrich, trackProject, enqueueContactDiscovery, runDiscoveryTick, fetchProjectTimeline, type TimelineEntry, addPerson, updatePerson, generateDraft as apiGenerateDraft, saveDraft, fetchDrafts, updateDraft, enrollProject, pauseSequence, resumeSequence, fetchProjectSequences, fetchProjectMessages, fetchProjectDeal, createDeal, transitionDealStage, generateProposal, fetchDealEvents, fetchDealObjections, addDealObjection, fetchSequenceTemplates, type SequenceTemplate } from '@/lib/api/bd';
+import { fetchLead, approveLead, suppressLead, triggerRescore, triggerEnrich, trackProject, enqueueContactDiscovery, runDiscoveryTick, fetchProjectTimeline, type TimelineEntry, addPerson, updatePerson, generateDraft as apiGenerateDraft, saveDraft, fetchDrafts, updateDraft, enrollProject, pauseSequence, resumeSequence, fetchProjectSequences, fetchProjectMessages, fetchProjectDeal, createDeal, generateProposal, fetchDealEvents, fetchDealObjections, addDealObjection, fetchSequenceTemplates, type SequenceTemplate } from '@/lib/api/bd';
+import { transitionDealWithGate } from '@/lib/dealGate';
 import { toast } from '@/components/shared/Toast';
 import { EmptyState, CardSkeleton } from '@/components/shared';
 import { EntityChip } from '@/components/entity';
@@ -1253,15 +1254,17 @@ function DealSection({ projectId }: { projectId: string }) {
     if (!deal) return;
     setActionLoading(`stage-${stage}`);
     try {
-      await transitionDealStage(deal.id, {
+      const ok = await transitionDealWithGate(deal.id, {
         stage,
         winReason: stage === 'won' ? stageReason : undefined,
         lossReason: stage === 'lost' ? stageReason : undefined,
         lossCategory: stage === 'lost' ? 'other' : undefined,
       });
-      toast('success', `Stage updated to ${stage}`);
-      setStageReason('');
-      loadDeal();
+      if (ok) {
+        toast('success', `Stage updated to ${stage}`);
+        setStageReason('');
+        loadDeal();
+      }
     } catch (err) {
       toast('error', err instanceof Error ? err.message : 'Failed');
     } finally {

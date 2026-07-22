@@ -216,7 +216,7 @@ export async function updateDeal(id: string, body: { packageType?: string; packa
   return request(`/v1/deals/${id}`, { auth: true, method: 'PATCH', body });
 }
 
-export async function transitionDealStage(id: string, body: { stage: string; winReason?: string; lossReason?: string; lossCategory?: string }): Promise<{ data: import('@/types/bd').DealRecord }> {
+export async function transitionDealStage(id: string, body: { stage: string; winReason?: string; lossReason?: string; lossCategory?: string; overridePremortem?: boolean; overrideReason?: string }): Promise<{ data: import('@/types/bd').DealRecord }> {
   return request(`/v1/deals/${id}/stage`, { auth: true, method: 'POST', body });
 }
 

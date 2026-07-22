@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Star, Flag, Briefcase, ExternalLink, ShieldCheck } from 'lucide-react';
-import { getSource, RELIABILITY_LABEL, type Observation } from '@lcx/shared';
+import { getSource, type Observation } from '@lcx/shared';
+import { GradeBadge } from '@/components/intel/GradeBadge';
 import {
   fetchActions,
   fetchObservations,
@@ -224,13 +225,15 @@ export function ProvenancePanel({ subjectType, subjectId }: { subjectType: strin
               <li key={o.id} className="flex items-center gap-2 py-1 text-label">
                 <span className="w-28 shrink-0 truncate text-grey">{labelFor(o.predicate)}</span>
                 <span className="num-tabular w-24 shrink-0 truncate font-semibold text-navy">{formatValue(o)}</span>
-                {/* source chip */}
-                <span
-                  className="inline-flex shrink-0 items-center gap-1 rounded border border-line px-1.5 py-px font-mono text-[9px] uppercase tracking-wider text-grey"
-                  title={`${src.label} · ${RELIABILITY_LABEL[o.reliability]} (${o.reliability})`}
-                >
-                  {src.label}
-                  <span className="text-navy">{o.reliability}</span>
+                {/* source chip + full Admiralty grade (reliability + credibility) */}
+                <span className="inline-flex shrink-0 items-center gap-1">
+                  <span
+                    className="rounded border border-line px-1.5 py-px font-mono text-[9px] uppercase tracking-wider text-grey"
+                    title={src.label}
+                  >
+                    {src.label}
+                  </span>
+                  <GradeBadge reliability={o.reliability} credibility={o.credibility} />
                 </span>
                 {/* confidence bar */}
                 <span className="flex flex-1 items-center gap-1.5" title={`Confidence ${o.confidence}%`}>

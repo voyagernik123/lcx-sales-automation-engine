@@ -13,6 +13,7 @@ import { HistoryStrip } from '../HistoryStrip';
 import { ProvenancePanel } from '../ProvenancePanel';
 import { AssessmentBlock } from '../AssessmentBlock';
 import { ConversationPanel } from '../ConversationPanel';
+import { AnalyticReviews } from '@/components/intel/AnalyticReviews';
 import { DraftPanel } from '@/components/intel/DraftPanel';
 import { PropensityTrail } from '@/components/bd/PropensityTrail';
 import { UsIntelGauges } from '@/components/bd/UsIntelGauges';
@@ -219,6 +220,9 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
 
       {/* Intelligence spine — sourced observations + governed actions (Wave 0) */}
       <ProvenancePanel subjectType="project" subjectId={lead.id} />
+
+      {/* Human structured analytic techniques — KAC / premortem / devil's advocate (Phase 2.3) */}
+      <AnalyticReviews subjectType="project" subjectId={lead.id} />
 
       {/* Actions */}
       <div className="flex flex-wrap items-center gap-2">
