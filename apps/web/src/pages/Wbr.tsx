@@ -43,7 +43,7 @@ export function Wbr() {
   };
 
   const load = useCallback((w?: string) => {
-    setError(null); setReport(null);
+    setError(null); setReport(null); setAiNarr(null); // clear stale AI narrative when the week changes
     fetchWbr(w).then((d) => { setReport(d.report); setWeeks(d.weeks); })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
   }, []);

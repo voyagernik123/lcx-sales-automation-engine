@@ -325,13 +325,17 @@ export async function writeWbr(pool: pg.Pool, now = new Date()): Promise<{ weekS
   return { weekStart: report.weekStart, exceptions: report.exceptions.length, commitments: report.commitments.length };
 }
 
-/** Latest stored WBR, or a freshly composed one when none exists yet. */
-export async function getLatestWbr(pool: pg.Pool): Promise<WbrReport> {
-  const { rows } = await pool.query(
-    `SELECT payload FROM wbr_reports ORDER BY week_start DESC LIMIT 1`,
-  ).catch(() => ({ rows: [] as Record<string, unknown>[] }));
-  if (rows[0]?.payload) return rows[0].payload as WbrReport;
-  const live = await composeWbr(pool);
+/**
+ * The CURRENT week's WBR — the stored report when the Monday job has run, else
+ * composed live. We resolve the current week explicitly (not just "latest
+ * stored"): otherwise, once any week is persisted, a mid-week view before the
+ * job fires would serve the PRIOR week's numbers as if they were current.
+ */
+export async function getLatestWbr(pool: pg.Pool, now = new Date()): Promise<WbrReport> {
+  const currentWeek = weekStartOf(now);
+  const stored = await getWbrForWeek(pool, currentWeek);
+  if (stored) return stored;
+  const live = await composeWbr(pool, now);
   live.live = true;
   return live;
 }

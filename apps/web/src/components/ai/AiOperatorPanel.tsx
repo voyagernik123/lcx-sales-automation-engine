@@ -30,6 +30,7 @@ export function AiOperatorPanel({ projectId }: { projectId: string }) {
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
   const [proposals, setProposals] = useState<ActionProposal[] | null>(null);
   const [confirmed, setConfirmed] = useState<Set<number>>(new Set());
+  const [confirming, setConfirming] = useState<Set<number>>(new Set());
   const [draft, setDraft] = useState<string | null>(null);
 
   const ask = async (question: string) => {
@@ -52,8 +53,13 @@ export function AiOperatorPanel({ projectId }: { projectId: string }) {
     catch { toast('error', 'Propose failed'); } finally { setBusy(null); }
   };
   const confirm = async (p: ActionProposal, i: number) => {
+    // Guard against a double-click racing the state update — without this, two
+    // rapid clicks fire two invokeActions (a duplicate governed write).
+    if (confirming.has(i) || confirmed.has(i)) return;
+    setConfirming((s) => new Set(s).add(i));
     try { await confirmProposal(p); setConfirmed((s) => new Set(s).add(i)); toast('success', `Applied: ${p.actionId}`); }
     catch (e) { toast('error', e instanceof Error ? e.message : 'Confirm failed'); }
+    finally { setConfirming((s) => { const n = new Set(s); n.delete(i); return n; }); }
   };
   const outreach = async () => {
     setBusy('draft'); setDraft(null);
@@ -78,12 +84,14 @@ export function AiOperatorPanel({ projectId }: { projectId: string }) {
               placeholder="Ask the dossier — e.g. why is conviction low?"
               className="min-w-0 flex-1 rounded border border-line bg-card px-2 py-1 text-label text-navy outline-none focus:border-cyan-500"
             />
-            <Button size="xs" onClick={() => void ask(q)} disabled={!q.trim() || busy === 'ask'}><Send size={11} /></Button>
+            <Button size="xs" onClick={() => void ask(q)} disabled={!q.trim() || !!busy}><Send size={11} /></Button>
           </div>
+          {/* One request at a time — disabling on any `busy` prevents a slower
+              earlier response from overwriting a newer one. */}
           <div className="flex flex-wrap gap-1.5">
-            <Button size="xs" variant="secondary" onClick={() => void outlook()} disabled={busy === 'outlook'}><Sparkles size={11} /> Estimative outlook</Button>
-            <Button size="xs" variant="secondary" onClick={() => void propose()} disabled={busy === 'propose'}><ShieldCheck size={11} /> Propose actions</Button>
-            <Button size="xs" variant="secondary" onClick={() => void outreach()} disabled={busy === 'draft'}><Send size={11} /> Draft outreach</Button>
+            <Button size="xs" variant="secondary" onClick={() => void outlook()} disabled={!!busy}><Sparkles size={11} /> Estimative outlook</Button>
+            <Button size="xs" variant="secondary" onClick={() => void propose()} disabled={!!busy}><ShieldCheck size={11} /> Propose actions</Button>
+            <Button size="xs" variant="secondary" onClick={() => void outreach()} disabled={!!busy}><Send size={11} /> Draft outreach</Button>
           </div>
 
           {busy && <p className="text-micro text-grey">Working…</p>}
@@ -121,7 +129,9 @@ export function AiOperatorPanel({ projectId }: { projectId: string }) {
                     {confirmed.has(i) ? (
                       <span className="ml-auto inline-flex items-center gap-1 text-micro font-semibold text-emerald-600 dark:text-emerald-400"><Check size={12} /> applied</span>
                     ) : (
-                      <Button size="xs" className="ml-auto" onClick={() => void confirm(p, i)}>Confirm</Button>
+                      <Button size="xs" className="ml-auto" onClick={() => void confirm(p, i)} disabled={confirming.has(i)}>
+                        {confirming.has(i) ? 'Applying…' : 'Confirm'}
+                      </Button>
                     )}
                   </div>
                   <p className="mt-0.5 text-micro text-grey">{p.rationale} <span className="opacity-60">· {p.source}</span></p>
