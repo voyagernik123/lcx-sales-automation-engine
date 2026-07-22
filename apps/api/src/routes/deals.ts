@@ -307,17 +307,26 @@ dealRoutes.post('/:id/stage', requireOperator, async (c) => {
         const valueUsd = Math.round((deal.packageValue ?? 0) / 100).toLocaleString('en-US');
         // Won deals get a +90d review (did the listing perform?); losses need none.
         const reviewBy = newStage === 'won' ? new Date(Date.now() + 90 * 86_400_000).toISOString().slice(0, 10) : null;
-        await tx.execute(sql`
-          INSERT INTO decisions (title, context, decision, rationale, owner, subject_type, subject_id, review_by, source)
-          VALUES (
-            ${`Deal ${newStage}: ${projName}`},
-            ${`Advanced ${oldStage} → ${newStage}. ${deal.packageType ?? 'listing'} package, $${valueUsd}.${premortemOverridden ? ' Premortem gate overridden.' : ''}`},
-            ${newStage === 'won' ? 'Closed the deal.' : 'Walked away.'},
-            ${reason},
-            ${deal.owner ?? operator.id},
-            ${'project'}, ${deal.projectId}, ${reviewBy}, ${'deal_close'}
-          )
-        `);
+        // Wrapped in a SAVEPOINT: if the decisions table isn't present yet
+        // (prod lagging migration 0039), only this savepoint rolls back — the
+        // deal close still commits. Migrations degrade gracefully by design.
+        try {
+          await tx.transaction(async (tx2) => {
+            await tx2.execute(sql`
+              INSERT INTO decisions (title, context, decision, rationale, owner, subject_type, subject_id, review_by, source)
+              VALUES (
+                ${`Deal ${newStage}: ${projName}`},
+                ${`Advanced ${oldStage} → ${newStage}. ${deal.packageType ?? 'listing'} package, $${valueUsd}.${premortemOverridden ? ' Premortem gate overridden.' : ''}`},
+                ${newStage === 'won' ? 'Closed the deal.' : 'Walked away.'},
+                ${reason},
+                ${deal.owner ?? operator.id},
+                ${'project'}, ${deal.projectId}, ${reviewBy}, ${'deal_close'}
+              )
+            `);
+          });
+        } catch (capErr) {
+          console.error('[deals] decision capture skipped (decisions table missing?):', capErr instanceof Error ? capErr.message : capErr);
+        }
       }
       return rows;
     });
