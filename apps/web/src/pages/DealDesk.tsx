@@ -14,6 +14,7 @@ import { ApprovalChain, type ApprovalChainStep } from '@/components/deals/Approv
 import { BatnaPanel } from '@/components/deals/BatnaPanel';
 import { DealReviewMemo } from '@/components/deals/DealReviewMemo';
 import { ScenarioCard, ScenarioValue, SimPill } from '@/components/deals/ScenarioControls';
+import { ScenarioManager } from '@/components/deals/ScenarioManager';
 import { WarningStageMatrix } from '@/components/deals/WarningStageMatrix';
 
 /* ── Types (mirror the API camelCase envelope) ── */
@@ -453,9 +454,10 @@ export function DealDesk() {
           </Section>
         </div>
 
-        {/* ── Right rail: scenario dials + BATNA ── */}
+        {/* ── Right rail: scenario dials + saved scenarios + BATNA ── */}
         <div className="space-y-4">
           <ScenarioCard />
+          <ScenarioManager />
 
           {openDeals.length === 0 ? (
             <section className="rounded-xl border border-line/70 bg-card p-5 shadow-card">

@@ -31,6 +31,7 @@ import { searchRoutes } from './routes/search.js';
 import { reviewRoutes } from './routes/reviews.js';
 import { actionRoutes } from './routes/actions.js';
 import { monitorRoutes } from './routes/monitors.js';
+import { scenarioRoutes, pirRoutes } from './routes/planning.js';
 
 export function createApp() {
   const app = new Hono();
@@ -83,6 +84,8 @@ export function createApp() {
   app.route('/v1/reviews', reviewRoutes);
   app.route('/v1/actions', actionRoutes);
   app.route('/v1/monitors', monitorRoutes);
+  app.route('/v1/scenarios', scenarioRoutes);
+  app.route('/v1/pirs', pirRoutes);
 
   app.get('/', (c) =>
     c.json({

@@ -7,6 +7,7 @@ import { fetchOps, triggerIntelJob, type OpsHealth } from '@/lib/api/intel';
 import { EmptyState, CardSkeleton, toast } from '@/components/shared';
 import { Button, PageTitle } from '@/components/ui';
 import { formatDate, formatDateTime } from '@/lib/format';
+import { PirPanel } from '@/components/intel/PirPanel';
 
 /**
  * Ops Health (Wave 7 · governance) — the intelligence apparatus watching
@@ -259,6 +260,9 @@ export function Ops() {
               </div>
             </div>
           </div>
+
+          {/* Collection vs. requirements — PIRs (Phase 3.4) */}
+          <PirPanel sources={ops.freshness.map((f) => ({ source: f.source, health: f.health }))} />
 
           <p className="text-[10px] text-grey/70">Generated {formatDateTime(ops.generatedAt)} · derived from job_runs + collection_state, no external calls.</p>
         </div>
