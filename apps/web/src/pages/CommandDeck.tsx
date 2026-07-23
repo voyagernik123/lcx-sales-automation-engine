@@ -2,12 +2,14 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   Command, RefreshCw, AlertTriangle, Rocket, Layers, Users, ShieldAlert,
   GitBranch, Scale, DollarSign, HelpCircle, CheckCircle2, Circle, Ban,
+  Dices, Bot, Send, Check,
 } from 'lucide-react';
 import {
   fetchCommandOverview, fetchCommandPartners, fetchCommandTasks, fetchCommandDecisions,
   fetchCommandRisks, fetchCommandFinancials, seedCommand,
+  fetchLaunchSim, invokeCommandAction, askProgram,
   type CommandOverview, type CommandPartner, type CommandTask, type CommandDecision,
-  type CommandRisk, type CommandFinancial,
+  type CommandRisk, type CommandFinancial, type LaunchSim, type ProgramAnswer,
 } from '@/lib/api/command';
 import { EmptyState, PageSkeleton, toast } from '@/components/shared';
 import { PageTitle, Button } from '@/components/ui';
@@ -78,13 +80,13 @@ export function CommandDeck() {
       ) : deck.overview.counts.partners === 0 ? (
         <EmptyState variant="default" title="No launch data yet" description="Run Re-seed to load the US-launch strategy extract into the command deck." />
       ) : (
-        <Loaded deck={deck} />
+        <Loaded deck={deck} onChange={load} />
       )}
     </div>
   );
 }
 
-function Loaded({ deck }: { deck: Deck }) {
+function Loaded({ deck, onChange }: { deck: Deck; onChange: () => void }) {
   const { overview: o } = deck;
   return (
     <div className="space-y-4">
@@ -190,24 +192,22 @@ function Loaded({ deck }: { deck: Deck }) {
         </Panel>
       </div>
 
+      <div className="grid gap-4 lg:grid-cols-2">
+        {/* Launch Monte Carlo (Wave 2) */}
+        <LaunchSimPanel />
+        {/* Ask the program (Wave 3) */}
+        <AskProgramPanel />
+      </div>
+
       {/* Critical path — the gating tasks + anything blocked */}
       <Panel icon={<GitBranch size={13} />} title="Critical path to launch">
-        <CriticalPath tasks={deck.tasks} />
+        <CriticalPath tasks={deck.tasks} onChange={onChange} />
       </Panel>
 
-      {/* Decisions register */}
+      {/* Decisions register — governed decide flow (Wave 2) */}
       <Panel icon={<Scale size={13} />} title={`Decisions register (${o.decisions.open} open)`}>
         <div className="grid gap-2 md:grid-cols-2">
-          {deck.decisions.map((d) => (
-            <div key={d.id} className="rounded border border-line/70 p-2">
-              <div className="flex items-center gap-1.5">
-                <span className="shrink-0 rounded bg-ice-soft px-1.5 py-0.5 text-micro font-bold text-grey-dark dark:bg-ice-soft/10">{d.phase}</span>
-                <span className="min-w-0 flex-1 truncate text-label font-semibold text-navy">{d.decision}</span>
-                <span className={clsx('shrink-0 text-micro font-semibold', d.status === 'open' ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400')}>{d.status}</span>
-              </div>
-              {d.recommendation && <p className="mt-0.5 text-micro text-grey">→ {d.recommendation}</p>}
-            </div>
-          ))}
+          {deck.decisions.map((d) => <DecisionRow key={d.id} d={d} onChange={onChange} />)}
         </div>
       </Panel>
 
@@ -303,8 +303,11 @@ function RiskHeat({ risks }: { risks: CommandRisk[] }) {
   );
 }
 
-/** Critical path: the gating/unblocker tasks + anything blocked, with their dependencies. */
-function CriticalPath({ tasks }: { tasks: CommandTask[] }) {
+const TASK_STATUSES = ['not_started', 'pending', 'open', 'in_progress', 'blocked', 'tentative', 'future', 'done'] as const;
+
+/** Critical path: the gating/unblocker tasks + anything blocked, with governed status control. */
+function CriticalPath({ tasks, onChange }: { tasks: CommandTask[]; onChange: () => void }) {
+  const [savingId, setSavingId] = useState<string | null>(null);
   const byId = new Map(tasks.map((t) => [t.id, t]));
   // Unblockers = tasks that many others depend on (high in-degree) + blocked tasks.
   const indeg = new Map<string, number>();
@@ -312,6 +315,17 @@ function CriticalPath({ tasks }: { tasks: CommandTask[] }) {
   const unblockers = [...indeg.entries()].sort((a, b) => b[1] - a[1]).filter(([, n]) => n >= 2).map(([id]) => byId.get(id)).filter(Boolean) as CommandTask[];
   const blocked = tasks.filter((t) => t.status === 'blocked');
   const rows = [...new Map([...unblockers, ...blocked].map((t) => [t.id, t])).values()];
+
+  const setStatus = async (t: CommandTask, status: string) => {
+    if (status === t.status || savingId) return;
+    setSavingId(t.id);
+    try {
+      await invokeCommandAction('command_set_task_status', 'command_task', t.id, { status });
+      toast('success', `${t.title} → ${status.replace(/_/g, ' ')}`);
+      onChange();
+    } catch (e) { toast('error', e instanceof Error ? e.message : 'Update failed'); }
+    finally { setSavingId(null); }
+  };
 
   if (rows.length === 0) return <p className="text-label text-grey">No blocking dependencies surfaced.</p>;
   return (
@@ -328,9 +342,158 @@ function CriticalPath({ tasks }: { tasks: CommandTask[] }) {
               <div className="mt-0.5 text-micro text-grey">needs: {t.depends_on.map((d) => byId.get(d)?.title ?? d).join(' · ')}</div>
             )}
           </div>
-          <span className={clsx('shrink-0 font-mono text-micro', STATUS_TONE[t.status] ?? 'text-grey')}>{t.status.replace(/_/g, ' ')}</span>
+          <select
+            value={t.status}
+            disabled={savingId === t.id}
+            onChange={(e) => void setStatus(t, e.target.value)}
+            className={clsx('shrink-0 rounded border border-line bg-card px-1 py-0.5 font-mono text-micro outline-none focus:border-cyan-500 disabled:opacity-50', STATUS_TONE[t.status] ?? 'text-grey')}
+            aria-label={`Status of ${t.title}`}
+          >
+            {TASK_STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
+          </select>
         </div>
       ))}
+      <p className="text-[10px] text-grey">Status changes run through the governed action registry — audited, attributed.</p>
     </div>
+  );
+}
+
+/** One decision row with the governed decide flow (Wave 2). */
+function DecisionRow({ d, onChange }: { d: CommandDecision; onChange: () => void }) {
+  const [deciding, setDeciding] = useState(false);
+  const [chosen, setChosen] = useState(d.recommendation ?? '');
+  const [busy, setBusy] = useState(false);
+
+  const decide = async () => {
+    if (!chosen.trim() || busy) return;
+    setBusy(true);
+    try {
+      await invokeCommandAction('command_decide', 'command_decision', d.id, { chosen: chosen.trim() });
+      toast('success', 'Decision recorded — mirrored to the decision log');
+      setDeciding(false);
+      onChange();
+    } catch (e) { toast('error', e instanceof Error ? e.message : 'Decide failed'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className={clsx('rounded border p-2', d.status === 'decided' ? 'border-emerald-500/40' : 'border-line/70')}>
+      <div className="flex items-center gap-1.5">
+        <span className="shrink-0 rounded bg-ice-soft px-1.5 py-0.5 text-micro font-bold text-grey-dark dark:bg-ice-soft/10">{d.phase}</span>
+        <span className="min-w-0 flex-1 truncate text-label font-semibold text-navy">{d.decision}</span>
+        {d.status === 'decided' ? (
+          <span className="inline-flex shrink-0 items-center gap-1 text-micro font-semibold text-emerald-600 dark:text-emerald-400"><Check size={11} /> decided</span>
+        ) : deciding ? null : (
+          <button onClick={() => setDeciding(true)} className="shrink-0 text-micro font-semibold text-cyan-600 hover:underline dark:text-cyan-400">Decide</button>
+        )}
+      </div>
+      {d.status === 'decided' && d.chosen ? (
+        <p className="mt-0.5 text-micro text-emerald-700 dark:text-emerald-300">✓ {d.chosen}</p>
+      ) : d.recommendation ? (
+        <p className="mt-0.5 text-micro text-grey">→ {d.recommendation}</p>
+      ) : null}
+      {deciding && d.status !== 'decided' && (
+        <div className="mt-1.5 flex gap-1.5">
+          <input
+            autoFocus value={chosen} onChange={(e) => setChosen(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void decide(); if (e.key === 'Escape') setDeciding(false); }}
+            placeholder="The chosen option…"
+            className="min-w-0 flex-1 rounded border border-line bg-card px-2 py-1 text-micro text-navy outline-none focus:border-cyan-500"
+          />
+          <Button size="xs" onClick={() => void decide()} disabled={!chosen.trim() || busy}>{busy ? '…' : 'Record'}</Button>
+          <Button size="xs" variant="secondary" onClick={() => setDeciding(false)}>Cancel</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Launch-schedule Monte Carlo panel (Wave 2) — planning simulation, clearly labeled. */
+function LaunchSimPanel() {
+  const [sim, setSim] = useState<LaunchSim | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  useEffect(() => { fetchLaunchSim().then(setSim).catch((e) => setErr(e instanceof Error ? e.message : 'unavailable')); }, []);
+
+  return (
+    <Panel icon={<Dices size={13} />} title="Launch simulation (planning)">
+      {err ? (
+        <p className="text-label text-grey">{err}</p>
+      ) : !sim ? (
+        <p className="text-label text-grey">Simulating…</p>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-2">
+            {([['P10', sim.p10Date, sim.p10Days], ['P50', sim.p50Date, sim.p50Days], ['P90', sim.p90Date, sim.p90Days]] as const).map(([label, date, days]) => (
+              <div key={label} className="rounded border border-line/70 p-2 text-center">
+                <div className="text-micro font-bold uppercase tracking-wider text-grey">{label}</div>
+                <div className="font-mono text-label font-bold text-navy">{date}</div>
+                <div className="text-micro text-grey">~{days}d</div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3">
+            <div className="mb-1 text-micro font-bold uppercase tracking-wider text-grey">Highest criticality (drives the date)</div>
+            <div className="space-y-1">
+              {sim.criticality.filter((c) => c.status !== 'done').slice(0, 5).map((c) => (
+                <div key={c.id} className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-micro text-grey-dark">{c.title}</span>
+                  <div className="h-2 w-24 shrink-0 overflow-hidden rounded-full bg-ice-soft dark:bg-ice-soft/10">
+                    <div className="h-full rounded-full bg-orange-500/80" style={{ width: `${Math.round(c.criticality * 100)}%` }} />
+                  </div>
+                  <span className="w-9 shrink-0 text-right font-mono text-micro text-navy">{Math.round(c.criticality * 100)}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+          {sim.warnings.length > 0 && <p className="mt-2 text-micro text-amber-600 dark:text-amber-400">⚠ {sim.warnings.join(' · ')}</p>}
+          <p className="mt-2 text-[10px] text-grey">{sim.disclaimer} {sim.runs.toLocaleString()} runs, seeded.</p>
+        </>
+      )}
+    </Panel>
+  );
+}
+
+/** Ask-the-program panel (Wave 3) — grounded AI over the command ontology. */
+function AskProgramPanel() {
+  const [q, setQ] = useState('');
+  const [res, setRes] = useState<ProgramAnswer | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const ask = async (question: string) => {
+    if (!question.trim() || busy) return;
+    setBusy(true); setRes(null);
+    try { setRes(await askProgram(question.trim())); }
+    catch (e) { toast('error', e instanceof Error ? e.message : 'Query failed'); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <Panel icon={<Bot size={13} />} title="Ask the program">
+      <div className="flex gap-1.5">
+        <input
+          value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void ask(q); }}
+          placeholder="e.g. what unblocks if we hire the BSA officer this week?"
+          className="min-w-0 flex-1 rounded border border-line bg-card px-2 py-1 text-label text-navy outline-none focus:border-cyan-500"
+        />
+        <Button size="xs" onClick={() => void ask(q)} disabled={!q.trim() || busy}><Send size={11} /></Button>
+      </div>
+      <div className="mt-1.5 flex flex-wrap gap-1">
+        {['What is the critical path to launch?', 'What can start today?', 'Biggest risk right now?'].map((p) => (
+          <button key={p} onClick={() => { setQ(p); void ask(p); }} disabled={busy}
+            className="rounded border border-line px-1.5 py-0.5 text-micro text-grey hover:border-cyan-500/50 hover:text-navy disabled:opacity-50">
+            {p}
+          </button>
+        ))}
+      </div>
+      {busy && <p className="mt-2 text-micro text-grey">Reading the program graph…</p>}
+      {res && (
+        <div className="mt-2 rounded border border-line/70 p-2.5">
+          <p className="whitespace-pre-wrap text-label text-navy">{res.answer}</p>
+          <p className="mt-1.5 text-[10px] text-grey">
+            Grounded in the command graph + planning simulation{res.usedLlm ? ' · AI-composed' : ' · deterministic readout (no AI key set)'}
+          </p>
+        </div>
+      )}
+    </Panel>
   );
 }

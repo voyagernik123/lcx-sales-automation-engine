@@ -115,3 +115,7 @@ export {
 // Deal forecasting (win probability + Monte Carlo)
 export type { ForecastDealInput, MonteCarloResult } from './forecast/index.js';
 export { dealWinProbability, monteCarloForecast } from './forecast/index.js';
+
+// LCX COMMAND — launch-schedule Monte Carlo (Wave 2)
+export type { SimTaskInput, DurationTriple, LaunchSimOptions, LaunchSimResult, TaskCriticality } from './launchSim.js';
+export { runLaunchSim, prepareGraph, sampleTriangular, resolveDuration, DEFAULT_DURATIONS } from './launchSim.js';

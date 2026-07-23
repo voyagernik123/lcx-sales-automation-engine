@@ -132,6 +132,110 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     paramsSchema: z.object({ reason: z.string().max(300).optional() }),
     execute: async () => ({ flagged: true }),
   },
+  /* ── LCX COMMAND (Wave 2) — the CEO acts through the deck, governed. ──
+   * Human-confirmed only: none of these are in AI_PROPOSABLE. Every enum is
+   * whitelisted here so a crafted payload can't write arbitrary state. */
+  command_set_task_status: {
+    id: 'command_set_task_status',
+    label: 'Set program task status',
+    description: 'Advance a US-launch program task (LCX COMMAND).',
+    subjectTypes: ['command_task'],
+    minRole: 'operator',
+    paramsSchema: z.object({
+      status: z.enum(['not_started', 'pending', 'open', 'in_progress', 'blocked', 'tentative', 'future', 'done']),
+    }),
+    execute: async ({ pool, subjectId, params }) => {
+      const { rowCount } = await pool.query(
+        `UPDATE command_tasks SET status=$1, updated_at=now() WHERE id=$2`,
+        [String(params.status), subjectId],
+      );
+      if ((rowCount ?? 0) === 0) throw new ActionError('NOT_FOUND', 'Program task not found', 404);
+      return { status: params.status };
+    },
+  },
+  command_decide: {
+    id: 'command_decide',
+    label: 'Record program decision',
+    description: 'Close an open US-launch decision with the chosen option (LCX COMMAND).',
+    subjectTypes: ['command_decision'],
+    minRole: 'operator',
+    paramsSchema: z.object({
+      chosen: z.string().min(1).max(500),
+      rationale: z.string().max(2000).optional(),
+    }),
+    execute: async ({ pool, subjectId, params, actor }) => {
+      const { rows } = await pool.query(
+        `UPDATE command_decisions
+            SET status='decided', chosen=$1, decided_by=$2, decided_at=now(), updated_at=now()
+          WHERE id=$3 AND status='open'
+          RETURNING decision, phase`,
+        [String(params.chosen), actor, subjectId],
+      );
+      if (rows.length === 0) throw new ActionError('NOT_FOUND', 'Decision not found or already decided', 404);
+      // Institutional memory: mirror into the Phase-4 decision log. Best-effort —
+      // a lagging decisions table must never block the program decision itself.
+      try {
+        await pool.query(
+          `INSERT INTO decisions (title, context, decision, rationale, owner, subject_type, subject_id, source)
+           VALUES ($1,$2,$3,$4,$5,'command_decision',$6,'command')`,
+          [
+            `US launch: ${String(rows[0].decision).slice(0, 150)}`,
+            `LCX COMMAND ${rows[0].phase ?? ''} decision register.`,
+            String(params.chosen).slice(0, 2000),
+            String(params.rationale ?? '').slice(0, 4000),
+            actor,
+            subjectId,
+          ],
+        );
+      } catch (err) {
+        console.warn('[command] decision-log mirror skipped:', err instanceof Error ? err.message : err);
+      }
+      return { decided: true, chosen: params.chosen };
+    },
+  },
+  command_set_partner_stage: {
+    id: 'command_set_partner_stage',
+    label: 'Set partner pipeline stage',
+    description: 'Move a US-launch partner through the pipeline (LCX COMMAND).',
+    subjectTypes: ['command_partner'],
+    minRole: 'operator',
+    paramsSchema: z.object({
+      stage: z.enum([
+        'evaluate', 'recommended_rfi', 'recommended', 'incumbent_onboarding', 'in_progress',
+        'select', 'support', 'alternate', 'specialist', 'hold_geoblock', 'exclude_pending_counsel',
+        'signed', 'passed',
+      ]),
+    }),
+    execute: async ({ pool, subjectId, params }) => {
+      const { rowCount } = await pool.query(
+        `UPDATE command_partners SET pipeline_stage=$1, updated_at=now() WHERE id=$2`,
+        [String(params.stage), subjectId],
+      );
+      if ((rowCount ?? 0) === 0) throw new ActionError('NOT_FOUND', 'Partner not found', 404);
+      return { stage: params.stage };
+    },
+  },
+  command_set_partner_details: {
+    id: 'command_set_partner_details',
+    label: 'Set partner contact/terms',
+    description: 'Fill a partner\'s primary contact or commercial terms as the RFIs land (LCX COMMAND).',
+    subjectTypes: ['command_partner'],
+    minRole: 'operator',
+    paramsSchema: z.object({
+      primaryContact: z.string().max(300).optional(),
+      terms: z.string().max(1000).optional(),
+    }).refine((v) => v.primaryContact !== undefined || v.terms !== undefined, { message: 'Nothing to update' }),
+    execute: async ({ pool, subjectId, params }) => {
+      const sets: string[] = []; const vals: unknown[] = []; let i = 1;
+      if (params.primaryContact !== undefined) { sets.push(`primary_contact=$${i++}`); vals.push(String(params.primaryContact).slice(0, 300) || null); }
+      if (params.terms !== undefined) { sets.push(`terms=$${i++}`); vals.push(String(params.terms).slice(0, 1000) || null); }
+      sets.push('updated_at=now()');
+      vals.push(subjectId);
+      const { rowCount } = await pool.query(`UPDATE command_partners SET ${sets.join(', ')} WHERE id=$${i}`, vals);
+      if ((rowCount ?? 0) === 0) throw new ActionError('NOT_FOUND', 'Partner not found', 404);
+      return { updated: true };
+    },
+  },
   assign: {
     id: 'assign',
     label: 'Assign owner',

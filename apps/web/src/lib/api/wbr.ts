@@ -16,7 +16,7 @@ export interface WbrMetric {
 }
 export interface WbrSparkline { key: string; label: string; points: number[]; unit: MetricUnit }
 export interface WbrException {
-  kind: 'sla_breach' | 'stalled_deal' | 'monitor_fire' | 'budget_burn';
+  kind: 'sla_breach' | 'stalled_deal' | 'monitor_fire' | 'budget_burn' | 'program_risk';
   label: string; detail: string; severity: 'warn' | 'critical'; href: string | null;
 }
 export interface WbrCommitment {

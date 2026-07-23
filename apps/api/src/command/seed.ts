@@ -39,11 +39,14 @@ export async function seedCommand(pool: pg.Pool): Promise<CommandSeedResult> {
   }
 
   for (const p of d.partners) {
+    // ON CONFLICT deliberately does NOT touch pipeline_stage / primary_contact /
+    // terms: those become governed, desk-edited fields (Wave 2) — a re-seed must
+    // refresh the descriptive extract without clobbering operational state.
     await pool.query(
       `INSERT INTO command_partners (id, name, type, subtype, pipeline_stage, capability_score, tier, primary_contact, terms, notes, source)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
        ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, type=EXCLUDED.type, subtype=EXCLUDED.subtype,
-         pipeline_stage=EXCLUDED.pipeline_stage, capability_score=EXCLUDED.capability_score, tier=EXCLUDED.tier,
+         capability_score=EXCLUDED.capability_score, tier=EXCLUDED.tier,
          notes=EXCLUDED.notes, source=EXCLUDED.source, updated_at=now()`,
       [s(p.id), s(p.name), s(p.type), s(p.subtype), s(p.pipeline_stage), n(p.capability_score), s(p.tier), s(p.primary_contact), s(p.terms), s(p.notes), s(p.source)],
     );
@@ -63,11 +66,14 @@ export async function seedCommand(pool: pg.Pool): Promise<CommandSeedResult> {
   for (const t of d.tasks) {
     const dependsOn = Array.isArray(t.depends_on) ? (t.depends_on as unknown[]).map((x) => String(x)) : [];
     const targetDate = t.target_date && /^\d{4}-\d{2}-\d{2}$/.test(String(t.target_date)) ? String(t.target_date) : null;
+    // ON CONFLICT deliberately does NOT touch status: task status becomes a
+    // governed, desk-edited field (Wave 2) — a re-seed refreshes the graph and
+    // descriptions without resetting progress the desk has recorded.
     await pool.query(
       `INSERT INTO command_tasks (id, workstream, title, owner, target_date, status, depends_on, notes, source)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        ON CONFLICT (id) DO UPDATE SET workstream=EXCLUDED.workstream, title=EXCLUDED.title, owner=EXCLUDED.owner,
-         target_date=EXCLUDED.target_date, status=EXCLUDED.status, depends_on=EXCLUDED.depends_on,
+         target_date=EXCLUDED.target_date, depends_on=EXCLUDED.depends_on,
          notes=EXCLUDED.notes, source=EXCLUDED.source, updated_at=now()`,
       [s(t.id), s(t.workstream), s(t.title), s(t.owner), targetDate, s(t.status), dependsOn, s(t.notes), s(t.source)],
     );

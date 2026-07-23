@@ -46,7 +46,7 @@ export interface WbrSparkline {
 }
 
 export interface WbrException {
-  kind: 'sla_breach' | 'stalled_deal' | 'monitor_fire' | 'budget_burn';
+  kind: 'sla_breach' | 'stalled_deal' | 'monitor_fire' | 'budget_burn' | 'program_risk';
   label: string;
   detail: string;
   severity: 'warn' | 'critical';
@@ -243,6 +243,36 @@ async function collectExceptions(pool: pg.Pool): Promise<WbrException[]> {
       href: '/monitors',
     });
   }
+
+  // 3b) LCX COMMAND program risks (Wave 2) — blocked launch tasks and the
+  //     unconfirmed anchor surface in the same weekly rhythm as everything
+  //     else. Degrades quietly when the command tables aren't present yet.
+  try {
+    const blocked = await pool.query(
+      `SELECT id, title, workstream FROM command_tasks WHERE status = 'blocked' ORDER BY id LIMIT 6`,
+    );
+    for (const r of blocked.rows as Record<string, unknown>[]) {
+      out.push({
+        kind: 'program_risk',
+        label: `Launch task blocked: ${String(r.title)}`,
+        detail: `US-launch program (${String(r.workstream ?? 'cross')}) — unblock or re-plan.`,
+        severity: 'warn',
+        href: '/command-deck',
+      });
+    }
+    const anchor = await pool.query(
+      `SELECT COUNT(*) AS n FROM command_launch_targets WHERE confirmed = false`,
+    );
+    if (Number((anchor.rows[0] as Record<string, unknown>)?.n ?? 0) > 0) {
+      out.push({
+        kind: 'program_risk',
+        label: 'US launch anchor unconfirmed',
+        detail: 'Every launch milestone is still tentative — confirm the anchor date.',
+        severity: 'warn',
+        href: '/command-deck',
+      });
+    }
+  } catch { /* command tables absent (migration 0040 pending) — no program exceptions */ }
 
   // 4) Job budget burn — any tracked job below 90% success over the week.
   const jobRates = await pool.query(

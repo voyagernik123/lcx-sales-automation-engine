@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield, Activity, Share2, Siren, CalendarClock, GitPullRequestArrow, Command } from 'lucide-react';
+import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield, Activity, Share2, Siren, CalendarClock, GitPullRequestArrow, Command, Landmark } from 'lucide-react';
 import { useUIStore, useAuditStore } from '@/stores';
 import { redFlags } from '@/data';
 import { SidebarFieldNotes } from './SidebarFieldNotes';
@@ -24,6 +24,8 @@ const sections: NavSection[] = [
     title: 'LCX Command',
     items: [
       { to: '/command-deck', label: 'US Launch Deck', icon: Command },
+      { to: '/command-partners', label: 'Partner Pipeline', icon: Briefcase },
+      { to: '/command-ops', label: 'Command Ops', icon: Landmark },
     ],
   },
   {
