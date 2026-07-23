@@ -1,0 +1,170 @@
+[
+  {
+    "id": "dec_01",
+    "phase": "P1",
+    "decision": "Exchange model",
+    "recommendation": "RFQ/riskless-principal to launch; reconcile 'segregated order books'",
+    "status": "open"
+  },
+  {
+    "id": "dec_02",
+    "phase": "P1",
+    "decision": "Launch asset scope",
+    "recommendation": "BTC/ETH/USDC + top majors first",
+    "status": "open"
+  },
+  {
+    "id": "dec_03",
+    "phase": "P1",
+    "decision": "Sourcing architecture",
+    "recommendation": "Hybrid: direct B2C2+FalconX+Cumberland, Talos overlay later",
+    "status": "open"
+  },
+  {
+    "id": "dec_04",
+    "phase": "P1",
+    "decision": "Settlement/custody",
+    "recommendation": "Fireblocks off-exchange settlement",
+    "status": "open"
+  },
+  {
+    "id": "dec_05",
+    "phase": "P1",
+    "decision": "Keep B2C2 as anchor",
+    "recommendation": "Yes",
+    "status": "open"
+  },
+  {
+    "id": "dec_06",
+    "phase": "P1",
+    "decision": "Number of LPs at launch",
+    "recommendation": "3 (B2C2+FalconX+Cumberland)",
+    "status": "open"
+  },
+  {
+    "id": "dec_07",
+    "phase": "P2",
+    "decision": "Build vs rent licensing",
+    "recommendation": "Rent-first hybrid; build MTLs in parallel",
+    "status": "open"
+  },
+  {
+    "id": "dec_08",
+    "phase": "P2",
+    "decision": "Fiat: bank vs embedded",
+    "recommendation": "Sponsor bank + Circle Mint",
+    "status": "open"
+  },
+  {
+    "id": "dec_09",
+    "phase": "P2",
+    "decision": "State scope at launch",
+    "recommendation": "Beachhead, exclude NY",
+    "status": "open"
+  },
+  {
+    "id": "dec_10",
+    "phase": "P2",
+    "decision": "Stablecoin list",
+    "recommendation": "USDC anchor + PYUSD/USDG/USAT; hold USDT; exclude USD1",
+    "status": "open"
+  },
+  {
+    "id": "dec_11",
+    "phase": "P2",
+    "decision": "USDC rail",
+    "recommendation": "Circle Mint direct",
+    "status": "open"
+  },
+  {
+    "id": "dec_12",
+    "phase": "P2",
+    "decision": "Instant rails at launch",
+    "recommendation": "ACH+wire baseline; add FedNow/RTP; card via aggregators",
+    "status": "open"
+  },
+  {
+    "id": "dec_13",
+    "phase": "P3",
+    "decision": "Paid budget",
+    "recommendation": "Base ~$100k, scale on proof",
+    "status": "open"
+  },
+  {
+    "id": "dec_14",
+    "phase": "P3",
+    "decision": "Reward model",
+    "recommendation": "Position/non-cash only",
+    "status": "open"
+  },
+  {
+    "id": "dec_15",
+    "phase": "P3",
+    "decision": "Waitlist target & deadline",
+    "recommendation": "25k by launch (base)",
+    "status": "open"
+  },
+  {
+    "id": "dec_16",
+    "phase": "P3",
+    "decision": "State scope for invites",
+    "recommendation": "Licensed-states beachhead (mirror P2)",
+    "status": "open"
+  },
+  {
+    "id": "dec_17",
+    "phase": "P3",
+    "decision": "Waitlist/referral tool",
+    "recommendation": "Viral Loops",
+    "status": "open"
+  },
+  {
+    "id": "dec_18",
+    "phase": "P3",
+    "decision": "Mainstream-paid timing",
+    "recommendation": "Gate on certification + licence",
+    "status": "open"
+  },
+  {
+    "id": "dec_19",
+    "phase": "P4",
+    "decision": "Listing path",
+    "recommendation": "Hybrid \u2014 non-security now, build toward BD/ATS",
+    "status": "open"
+  },
+  {
+    "id": "dec_20",
+    "phase": "P4",
+    "decision": "Launch listing set",
+    "recommendation": "BTC/ETH/USDC + vetted handful; $LCX only with counsel",
+    "status": "open"
+  },
+  {
+    "id": "dec_21",
+    "phase": "P4",
+    "decision": "Securities counsel",
+    "recommendation": "External securities firm now",
+    "status": "open"
+  },
+  {
+    "id": "dec_22",
+    "phase": "P4",
+    "decision": "Surveillance vendor",
+    "recommendation": "Solidus Labs",
+    "status": "open"
+  },
+  {
+    "id": "dec_23",
+    "phase": "P4",
+    "decision": "Adopt Token Transparency Framework",
+    "recommendation": "Yes",
+    "status": "open"
+  },
+  {
+    "id": "dec_24",
+    "phase": "P4",
+    "decision": "Sequencing vs CLARITY",
+    "recommendation": "Proceed under current law; treat CLARITY as upside",
+    "status": "open"
+  }
+]

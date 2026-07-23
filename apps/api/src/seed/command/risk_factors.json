@@ -1,0 +1,110 @@
+[
+  {
+    "id": "rf_classify",
+    "category": "Regulatory",
+    "title": "Token misclassification (listing a security)",
+    "likelihood": "Medium",
+    "impact": "Critical",
+    "mitigation": "Counsel-opinion gate; non-security-first; adopt TTF",
+    "phase": "P4"
+  },
+  {
+    "id": "rf_licensing",
+    "category": "Regulatory",
+    "title": "US entity & licensing not in place (MSB/MTL; BD/ATS)",
+    "likelihood": "High",
+    "impact": "Critical",
+    "mitigation": "Rent-first + beachhead states; build footprint; counsel",
+    "phase": "P1/P2/P4"
+  },
+  {
+    "id": "rf_bsa",
+    "category": "Operational",
+    "title": "BSA/Compliance Officer not yet hired",
+    "likelihood": "High",
+    "impact": "High",
+    "mitigation": "Prioritise the hire \u2014 gates two phases",
+    "phase": "P2/P4"
+  },
+  {
+    "id": "rf_genius",
+    "category": "Regulatory",
+    "title": "GENIUS stablecoin permissibility",
+    "likelihood": "Medium",
+    "impact": "High",
+    "mitigation": "Support only permitted coins; hold USDT; exclude USD1; counsel",
+    "phase": "P2"
+  },
+  {
+    "id": "rf_counterparty",
+    "category": "Market",
+    "title": "LP counterparty/credit risk",
+    "likelihood": "Medium",
+    "impact": "High",
+    "mitigation": "Off-exchange settlement; spread flow across 3 LPs",
+    "phase": "P1"
+  },
+  {
+    "id": "rf_bank",
+    "category": "Operational",
+    "title": "Banking concentration (post-2023 failures)",
+    "likelihood": "Medium",
+    "impact": "High",
+    "mitigation": "Primary + backup sponsor bank",
+    "phase": "P2"
+  },
+  {
+    "id": "rf_reward",
+    "category": "Regulatory",
+    "title": "Reward design crosses securities line",
+    "likelihood": "Medium",
+    "impact": "High",
+    "mitigation": "Non-token/position rewards; counsel on any token",
+    "phase": "P3"
+  },
+  {
+    "id": "rf_adgate",
+    "category": "Operational",
+    "title": "Mainstream paid gated by certification+licence",
+    "likelihood": "High",
+    "impact": "Medium",
+    "mitigation": "Front-load crypto-native/organic; big paid later",
+    "phase": "P3"
+  },
+  {
+    "id": "rf_model",
+    "category": "Technical",
+    "title": "Exchange-model ambiguity (CLOB vs RFQ)",
+    "likelihood": "Medium",
+    "impact": "Medium",
+    "mitigation": "Decide before integration",
+    "phase": "P1"
+  },
+  {
+    "id": "rf_fraud",
+    "category": "Operational",
+    "title": "ACH returns / card chargebacks",
+    "likelihood": "Medium",
+    "impact": "Medium",
+    "mitigation": "Plaid Signal + 7-day holds; underwriter",
+    "phase": "P2/P3"
+  },
+  {
+    "id": "rf_lcxconflict",
+    "category": "Regulatory",
+    "title": "$LCX self-listing conflict/optics",
+    "likelihood": "Medium",
+    "impact": "High",
+    "mitigation": "Independent legal opinion + governance controls",
+    "phase": "P4"
+  },
+  {
+    "id": "rf_launchdate",
+    "category": "Program",
+    "title": "Launch date unconfirmed / tentative",
+    "likelihood": "High",
+    "impact": "High",
+    "mitigation": "Confirm the anchor; simulate schedule risk",
+    "phase": "All"
+  }
+]

@@ -1,0 +1,44 @@
+[
+  {
+    "id": "ws_p1",
+    "name": "Phase 1 \u2014 Liquidity Partners",
+    "owner": "BD / Anurag",
+    "status": "active",
+    "source": "Master Strategy"
+  },
+  {
+    "id": "ws_p2",
+    "name": "Phase 2 \u2014 Payment Rails",
+    "owner": "Compliance / BD",
+    "status": "active",
+    "source": "Master Strategy"
+  },
+  {
+    "id": "ws_p3",
+    "name": "Phase 3 \u2014 Waitlist Growth",
+    "owner": "Marketing",
+    "status": "active",
+    "source": "Master Strategy"
+  },
+  {
+    "id": "ws_p4",
+    "name": "Phase 4 \u2014 Listing Business",
+    "owner": "Legal / Product",
+    "status": "planning",
+    "source": "Master Strategy"
+  },
+  {
+    "id": "ws_exusa",
+    "name": "Exchange USA (owned)",
+    "owner": "Samaksh Wangnoo",
+    "status": "active",
+    "source": "Action Plan Track 01"
+  },
+  {
+    "id": "ws_ldex",
+    "name": "Liberty DEX (owned)",
+    "owner": "Anurag Verma",
+    "status": "active",
+    "source": "Action Plan Track 02"
+  }
+]

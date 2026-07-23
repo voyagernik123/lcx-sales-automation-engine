@@ -1,0 +1,119 @@
+[
+  {
+    "id": "fa_wl_lean",
+    "area": "Phase 3 waitlist",
+    "item": "Lean paid budget",
+    "value": 25000,
+    "unit": "USD",
+    "assumption": true,
+    "source": "Phase 3 model"
+  },
+  {
+    "id": "fa_wl_base",
+    "area": "Phase 3 waitlist",
+    "item": "Base paid budget",
+    "value": 100000,
+    "unit": "USD",
+    "assumption": true,
+    "source": "Phase 3 model"
+  },
+  {
+    "id": "fa_wl_aggr",
+    "area": "Phase 3 waitlist",
+    "item": "Aggressive paid budget",
+    "value": 300000,
+    "unit": "USD",
+    "assumption": true,
+    "source": "Phase 3 model"
+  },
+  {
+    "id": "fa_cac_exch",
+    "area": "Phase 3 waitlist",
+    "item": "Crypto-exchange signup CAC (general)",
+    "value": "100-200",
+    "unit": "USD",
+    "assumption": true,
+    "source": "HypeLab benchmarks"
+  },
+  {
+    "id": "fa_cac_native",
+    "area": "Phase 3 waitlist",
+    "item": "Crypto-native ad CAC",
+    "value": "30-60",
+    "unit": "USD",
+    "assumption": true,
+    "source": "HypeLab (50-70% lower)"
+  },
+  {
+    "id": "fa_wl_lpconv",
+    "area": "Phase 3 waitlist",
+    "item": "Waitlist LP conversion",
+    "value": "15-30",
+    "unit": "%",
+    "assumption": true,
+    "source": "GetWaitlist benchmarks"
+  },
+  {
+    "id": "fa_verify",
+    "area": "Phase 3 funnel",
+    "item": "Waitlist\u2192verified (KYC)",
+    "value": 55,
+    "unit": "%",
+    "assumption": true,
+    "source": "Phase 3 model (planning)"
+  },
+  {
+    "id": "fa_funded",
+    "area": "Phase 3 funnel",
+    "item": "Verified\u2192funded",
+    "value": 45,
+    "unit": "%",
+    "assumption": true,
+    "source": "Phase 3 model (planning)"
+  },
+  {
+    "id": "fa_mtl_state",
+    "area": "Phase 2 licensing",
+    "item": "State MTL cost each",
+    "value": "50000-500000+",
+    "unit": "USD",
+    "assumption": false,
+    "source": "Finextra MTL guide 2026"
+  },
+  {
+    "id": "fa_mtl_natl",
+    "area": "Phase 2 licensing",
+    "item": "National MTL footprint",
+    "value": "7-figure; 12-18 months",
+    "unit": "USD/time",
+    "assumption": false,
+    "source": "Finextra MTL guide 2026"
+  },
+  {
+    "id": "fa_b2c2_fee",
+    "area": "Phase 1 liquidity",
+    "item": "B2C2 pricing model",
+    "value": "spread-only, no per-tx fee",
+    "unit": "model",
+    "assumption": false,
+    "source": "B2C2"
+  },
+  {
+    "id": "fa_circle_fee",
+    "area": "Phase 2 stablecoin",
+    "item": "Circle Mint USDC mint/redeem",
+    "value": "1:1, no spread, no issuance fee",
+    "unit": "model",
+    "assumption": false,
+    "source": "Circle Mint"
+  },
+  {
+    "id": "fa_card_fee",
+    "area": "Phase 2 on-ramp",
+    "item": "Card on-ramp fee",
+    "value": "3.5-5.5",
+    "unit": "%",
+    "assumption": false,
+    "source": "Transak/MoonPay"
+  }
+]

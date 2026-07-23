@@ -1,0 +1,307 @@
+[
+  {
+    "id": "t_bsa",
+    "workstream": "cross",
+    "title": "Hire BSA/Compliance Officer",
+    "owner": "Exec/HR",
+    "target_date": null,
+    "status": "pending",
+    "depends_on": [],
+    "notes": "Critical-path dependency for Phases 2 & 4.",
+    "source": "Action Plan; Master Strategy"
+  },
+  {
+    "id": "t_counsel",
+    "workstream": "ws_p4",
+    "title": "Engage US securities counsel",
+    "owner": "Legal/Monty",
+    "target_date": null,
+    "status": "not_started",
+    "depends_on": [],
+    "notes": "Gate for every listing decision + stablecoin/reward guardrails.",
+    "source": "Phase 4"
+  },
+  {
+    "id": "t_model",
+    "workstream": "ws_p1",
+    "title": "Confirm exchange model (CLOB+MM vs RFQ)",
+    "owner": "Product/Anurag",
+    "target_date": null,
+    "status": "open",
+    "depends_on": [],
+    "notes": "Drives LP integration + settlement design.",
+    "source": "Phase 1"
+  },
+  {
+    "id": "t_b2c2_onb",
+    "workstream": "ws_p1",
+    "title": "Complete B2C2 onboarding (anchor LP)",
+    "owner": "BD",
+    "target_date": null,
+    "status": "in_progress",
+    "depends_on": [
+      "t_model"
+    ],
+    "notes": "Anchor LP; already started.",
+    "source": "Roadmap; Phase 1"
+  },
+  {
+    "id": "t_lp_rfi",
+    "workstream": "ws_p1",
+    "title": "Issue LP RFI to FalconX + Cumberland",
+    "owner": "BD",
+    "target_date": null,
+    "status": "not_started",
+    "depends_on": [
+      "t_model"
+    ],
+    "notes": "Price spreads/credit/settlement.",
+    "source": "Phase 1"
+  },
+  {
+    "id": "t_oes",
+    "workstream": "ws_p1",
+    "title": "Stand up off-exchange settlement (Fireblocks)",
+    "owner": "Eng/Security",
+    "target_date": null,
+    "status": "not_started",
+    "depends_on": [
+      "t_b2c2_onb"
+    ],
+    "notes": "Keeps custody at LCX.",
+    "source": "Phase 1"
+  },
+  {
+    "id": "t_3lp",
+    "workstream": "ws_p1",
+    "title": "Integrate 3-LP liquidity live",
+    "owner": "Eng/Trading",
+    "target_date": null,
+    "status": "not_started",
+    "depends_on": [
+      "t_lp_rfi",
+      "t_oes"
+    ],
+    "notes": "B2C2 + FalconX + Cumberland.",
+    "source": "Phase 1"
+  },
+  {
+    "id": "t_bankselect",
+    "workstream": "ws_p2",
+    "title": "Select sponsor bank + Circle Mint",
+    "owner": "BD/Eng",
+    "target_date": null,
+    "status": "not_started",
+    "depends_on": [
+      "t_bsa"
+    ],
+    "notes": "Cross River lead; USDC via Circle Mint.",
+    "source": "Phase 2"
+  },
+  {
+    "id": "t_msb",
+    "workstream": "ws_p2",
+    "title": "FinCEN MSB registration",
+    "owner": "Compliance",
+    "target_date": null,
+    "status": "not_started",
+    "depends_on": [
+      "t_bsa"
+    ],
+    "notes": "Federal baseline.",
+    "source": "Phase 2"
+  },
+  {
+    "id": "t_mtl",
+    "workstream": "ws_p2",
+    "title": "Beachhead state MTL plan (excl NY)",
+    "owner": "Compliance/Legal",
+    "target_date": null,
+    "status": "not_started",
+    "depends_on": [
+      "t_msb"
+    ],
+    "notes": "Rent cover first; build footprint.",
+    "source": "Phase 2"
+  },
+  {
+    "id": "t_fiat_live",
+    "workstream": "ws_p2",
+    "title": "Fiat (ACH/wire) + USDC live in beachhead",
+    "owner": "Eng",
+    "target_date": null,
+    "status": "not_started",
+    "depends_on": [
+      "t_bankselect",
+      "t_mtl"
+    ],
+    "notes": "Deposit/withdrawal rails.",
+    "source": "Phase 2"
+  },
+  {
+    "id": "t_stablepolicy",
+    "workstream": "ws_p2",
+    "title": "Adopt GENIUS stablecoin policy",
+    "owner": "Compliance/Product",
+    "target_date": null,
+    "status": "open",
+    "depends_on": [
+      "t_counsel"
+    ],
+    "notes": "USDC anchor + PYUSD/USDG/USAT; hold USDT; exclude USD1.",
+    "source": "Phase 2"
+  },
+  {
+    "id": "t_waitlist_tool",
+    "workstream": "ws_p3",
+    "title": "Stand up waitlist page + referral loop",
+    "owner": "Marketing/Eng",
+    "target_date": null,
+    "status": "not_started",
+    "depends_on": [],
+    "notes": "Viral Loops; position-based rewards.",
+    "source": "Phase 3"
+  },
+  {
+    "id": "t_warm_base",
+    "workstream": "ws_p3",
+    "title": "Convert warm US base (email/in-app)",
+    "owner": "Marketing",
+    "target_date": null,
+    "status": "not_started",
+    "depends_on": [
+      "t_waitlist_tool"
+    ],
+    "notes": "50%+ of LCX.com is US.",
+    "source": "Phase 3"
+  },
+  {
+    "id": "t_cryptoads",
+    "workstream": "ws_p3",
+    "title": "Crypto-native ad tests",
+    "owner": "Growth",
+    "target_date": null,
+    "status": "not_started",
+    "depends_on": [
+      "t_waitlist_tool"
+    ],
+    "notes": "HypeLab/Bitmedia/Coinzilla; sub-$60 CAC.",
+    "source": "Phase 3"
+  },
+  {
+    "id": "t_mainstream_ads",
+    "workstream": "ws_p3",
+    "title": "Mainstream paid (Google/Meta/X)",
+    "owner": "Growth",
+    "target_date": null,
+    "status": "blocked",
+    "depends_on": [
+      "t_msb",
+      "t_mtl"
+    ],
+    "notes": "Gated by certification + licensing.",
+    "source": "Phase 3"
+  },
+  {
+    "id": "t_listpolicy",
+    "workstream": "ws_p4",
+    "title": "Listing & delisting policy + committee",
+    "owner": "Legal/Product",
+    "target_date": null,
+    "status": "not_started",
+    "depends_on": [
+      "t_counsel"
+    ],
+    "notes": "With DD framework.",
+    "source": "Phase 4"
+  },
+  {
+    "id": "t_surveil",
+    "workstream": "ws_p4",
+    "title": "Select market-surveillance vendor",
+    "owner": "Compliance/Eng",
+    "target_date": null,
+    "status": "not_started",
+    "depends_on": [],
+    "notes": "Solidus Labs lead.",
+    "source": "Phase 4"
+  },
+  {
+    "id": "t_ttf",
+    "workstream": "ws_p4",
+    "title": "Adopt Token Transparency Framework",
+    "owner": "Product/Legal",
+    "target_date": null,
+    "status": "not_started",
+    "depends_on": [],
+    "notes": "Industry disclosure standard.",
+    "source": "Phase 4"
+  },
+  {
+    "id": "t_first_listings",
+    "workstream": "ws_p4",
+    "title": "List first non-security majors",
+    "owner": "Legal/Product",
+    "target_date": null,
+    "status": "not_started",
+    "depends_on": [
+      "t_listpolicy",
+      "t_surveil",
+      "t_3lp",
+      "t_fiat_live",
+      "t_oes"
+    ],
+    "notes": "BTC/ETH/USDC + vetted handful; each with counsel opinion.",
+    "source": "Phase 4"
+  },
+  {
+    "id": "t_bdats",
+    "workstream": "ws_p4",
+    "title": "Pursue broker-dealer + ATS (securities/RWA)",
+    "owner": "Legal",
+    "target_date": null,
+    "status": "future",
+    "depends_on": [
+      "t_first_listings"
+    ],
+    "notes": "12-24 mo; or CFTC reg if CLARITY passes.",
+    "source": "Phase 4"
+  },
+  {
+    "id": "m_ex_m1",
+    "workstream": "ws_exusa",
+    "title": "Exchange M1 \u2014 onboarding live (web)",
+    "owner": "Samaksh",
+    "target_date": "2026-07-21",
+    "status": "tentative",
+    "depends_on": [],
+    "notes": "Landing + user onboarding.",
+    "source": "Action Plan Track 01"
+  },
+  {
+    "id": "m_ex_m2",
+    "workstream": "ws_exusa",
+    "title": "Exchange M2 \u2014 deposits/withdrawals + mobile",
+    "owner": "Samaksh",
+    "target_date": "2026-07-27",
+    "status": "tentative",
+    "depends_on": [
+      "m_ex_m1"
+    ],
+    "notes": "Money in/out; app to stores.",
+    "source": "Action Plan Track 01"
+  },
+  {
+    "id": "m_ex_m3",
+    "workstream": "ws_exusa",
+    "title": "Exchange M3 \u2014 full platform launch",
+    "owner": "Samaksh",
+    "target_date": "2026-07-29",
+    "status": "tentative",
+    "depends_on": [
+      "m_ex_m2"
+    ],
+    "notes": "Buy/Sell, Referral, Dep/Wd live.",
+    "source": "Action Plan Track 01"
+  }
+]

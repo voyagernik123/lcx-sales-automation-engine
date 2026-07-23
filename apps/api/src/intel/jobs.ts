@@ -35,6 +35,9 @@ export const INTEL_JOBS = [
   // Auto-WBR (Phase 4.1) — compose + persist the Weekly Business Review
   // (cron: Monday 06:00 UTC). Idempotent per week (upsert on week_start).
   'wbr',
+  // LCX COMMAND (Wave 1) — (re)load the US-launch strategy extract into the
+  // command_* tables. Idempotent upsert; safe to re-run.
+  'command_seed',
 ] as const;
 export type IntelJob = (typeof INTEL_JOBS)[number];
 
@@ -119,6 +122,10 @@ export async function runIntelJob(pool: pg.Pool, job: IntelJob, opts: IntelJobOp
     case 'wbr': {
       const { writeWbr } = await import('../kpi/wbr.js');
       return withJobRun(pool, job, async () => ({ stats: asStats(await writeWbr(pool)) }));
+    }
+    case 'command_seed': {
+      const { seedCommand } = await import('../command/seed.js');
+      return withJobRun(pool, job, async () => ({ stats: asStats(await seedCommand(pool)) }));
     }
     case 'alpha': {
       const { computeAlpha } = await import('./alpha.js');

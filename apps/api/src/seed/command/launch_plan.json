@@ -1,0 +1,39 @@
+{
+  "anchor_variable": "US launch date \u2014 TREAT AS UNCONFIRMED. Action Plan lists Exchange milestones M1 21 Jul, M2 27 Jul, M3 29 Jul 2026 as 'tentative'. Confirm before using as a hard anchor.",
+  "targets": [
+    {
+      "name": "Exchange USA M1 (onboarding)",
+      "date": "2026-07-21",
+      "confirmed": false
+    },
+    {
+      "name": "Exchange USA M2 (deposits + mobile)",
+      "date": "2026-07-27",
+      "confirmed": false
+    },
+    {
+      "name": "Exchange USA M3 (full platform)",
+      "date": "2026-07-29",
+      "confirmed": false
+    },
+    {
+      "name": "DeFi line (Liberty) L0\u2013L12",
+      "date": "2026-07-13 to Q3-Q4 2026",
+      "confirmed": false,
+      "note": "Roadmap L0 Foundation \u2192 L12 first tokenization."
+    }
+  ],
+  "gating_dependencies": [
+    "t_bsa",
+    "t_counsel",
+    "t_bankselect",
+    "t_msb",
+    "t_mtl",
+    "t_3lp",
+    "t_oes",
+    "t_fiat_live",
+    "t_surveil",
+    "t_listpolicy"
+  ],
+  "source": "Action Plan Track 01/04; DeFi Launch Roadmap; Master Strategy"
+}

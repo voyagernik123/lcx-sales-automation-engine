@@ -1,0 +1,47 @@
+[
+  {
+    "id": "prod_exchange_usa",
+    "name": "LCX Exchange USA",
+    "type": "CEX",
+    "status": "in_planning",
+    "owner": "Samaksh Wangnoo",
+    "notes": "US spot exchange; LCX-in-the-middle (principal); custody at LCX; segregated order books (model to confirm).",
+    "source": "Action Plan Track 01; Master Strategy"
+  },
+  {
+    "id": "prod_liberty_chain",
+    "name": "Liberty Chain (LCX Liberty Chain)",
+    "type": "Chain",
+    "status": "testnet",
+    "owner": "Anurag Verma",
+    "notes": "OP Stack L2, EVM; Meridian testnet + explorer live; mainnet + framework GA targeted; RWA/tokenization.",
+    "source": "DeFi Launch Roadmap; Narrative"
+  },
+  {
+    "id": "prod_liberty_dex",
+    "name": "Liberty DEX",
+    "type": "DEX",
+    "status": "in_progress",
+    "owner": "Ishan/Nikhil",
+    "notes": "dex.lcx.com; built via MasterDEX acquisition; non-custodial swap + portfolio.",
+    "source": "Roadmap L7; MasterDEX audit"
+  },
+  {
+    "id": "prod_liberty_wallet",
+    "name": "Liberty Wallet",
+    "type": "Wallet",
+    "status": "beta_planned",
+    "owner": "Anurag Verma",
+    "notes": "Self-custody EVM browser extension + mobile; beta (testnet), GA planned.",
+    "source": "Roadmap L5/L6; Wallet Privacy Policy"
+  },
+  {
+    "id": "prod_liberty_explorer",
+    "name": "LCX Liberty Explorer (Meridian)",
+    "type": "Explorer",
+    "status": "live_testnet",
+    "owner": "Anurag Verma",
+    "notes": "Block explorer for Liberty Chain testnet.",
+    "source": "Roadmap L1"
+  }
+]
