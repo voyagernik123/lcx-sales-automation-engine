@@ -25,8 +25,6 @@ export const TEAM: readonly TeamMember[] = [
   { id: 'monty', name: 'Monty', email: 'monty@lcx.com', role: 'approver' },
   { id: 'sam', name: 'Sam', email: 'sam@lcx.com', role: 'operator' },
   { id: 'nik', name: 'Nik', email: 'nik@lcx.com', role: 'approver' },
-  { id: 'rida', name: 'Rida', email: 'rida@lcx.com', role: 'operator' },
-  { id: 'jatin', name: 'Jatin', email: 'jatin@lcx.com', role: 'operator' },
 ];
 
 /** Lowercase + trim, so "  Nik@LCX.com " matches "nik@lcx.com". */

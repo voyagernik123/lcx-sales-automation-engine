@@ -1,18 +1,20 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../app.js';
-import { closeDb } from '../../db/index.js';
+import { closeDb, getPool } from '../../db/index.js';
 import { invalidateEntitlements } from '../../access/entitlements.js';
 
 const TEST_KEY = 'dev-operator-key-change-me';
+const PASS = 'test#1234';
+const nik = { Authorization: `Bearer nik@lcx.com:${PASS}` };
+const sam = { Authorization: `Bearer sam@lcx.com:${PASS}` };
 
 /**
- * LCX OS fabric (Phase 1) — the compartment gates, end to end through the app:
- * need-to-know 403s, the no-lockout covenant, machine passage, and the
- * governed access actions' role gate. DB-agnostic by design: with 0042 applied
- * these run against real entitlements; without it the fail-open loader serves
- * the identical legacy picture — the covenant IS the test.
+ * LCX OS fabric (Phase 1 + front-door hardening 2026-07-24): the passcode
+ * gate, the compartment gates end to end, the full-desk covenant, machine
+ * passage, and the governed access actions. DB-agnostic where possible: the
+ * fail-open loader serves the identical full-desk picture pre-0042.
  */
-describe('LCX OS workspace gates', () => {
+describe('LCX OS front door + workspace gates', () => {
   const app = createApp();
 
   beforeAll(() => {
@@ -30,28 +32,68 @@ describe('LCX OS workspace gates', () => {
     expect(res.status).toBe(401);
   });
 
-  it('default-denies the new distribution compartment to operators (403 + structured shape)', async () => {
-    const res = await app.request('/v1/distribution/anything', {
-      headers: { Authorization: 'Bearer jatin@lcx.com' },
-    });
-    expect(res.status).toBe(403);
-    const body = (await res.json()) as { code: string; workspace: string; needed: string };
-    expect(body.code).toBe('WORKSPACE_FORBIDDEN');
-    expect(body.workspace).toBe('distribution');
-    expect(body.needed).toBe('view');
-  });
-
-  it('admits approvers to the new compartment (gate passes → 404, no route yet)', async () => {
-    const res = await app.request('/v1/distribution/anything', {
+  it('rejects a bare email — the desk is passcode-gated now', async () => {
+    const res = await app.request('/v1/me', {
       headers: { Authorization: 'Bearer nik@lcx.com' },
     });
-    expect(res.status).toBe(404); // the gate said yes; Phase 3 brings the routes
+    expect(res.status).toBe(401);
   });
 
-  it('honors the no-lockout covenant: operators keep every legacy workspace', async () => {
-    for (const path of ['/v1/command/overview', '/v1/wbr', '/v1/kpis']) {
-      const res = await app.request(path, { headers: { Authorization: 'Bearer jatin@lcx.com' } });
-      expect(res.status, path).not.toBe(403);
+  it('rejects a wrong passcode and a departed member alike', async () => {
+    const wrong = await app.request('/v1/me', {
+      headers: { Authorization: 'Bearer nik@lcx.com:hunter2' },
+    });
+    expect(wrong.status).toBe(401);
+    const departed = await app.request('/v1/me', {
+      headers: { Authorization: `Bearer jatin@lcx.com:${PASS}` },
+    });
+    expect(departed.status).toBe(401);
+  });
+
+  it('admits email:passcode with the real role attached', async () => {
+    const res = await app.request('/v1/me', { headers: nik });
+    expect(res.status).toBe(200);
+    const { data } = (await res.json()) as { data: { id: string; role: string; entitlements: Record<string, string> } };
+    expect(data.id).toBe('nik');
+    expect(data.role).toBe('approver');
+    expect(data.entitlements.distribution).toBeDefined();
+  });
+
+  it('honors the full-desk covenant: sam holds every compartment', async () => {
+    const res = await app.request('/v1/access/me', { headers: sam });
+    expect(res.status).toBe(200);
+    const { data } = (await res.json()) as { data: { memberId: string; entitlements: Record<string, string>; workspaces: Array<{ id: string }> } };
+    expect(data.memberId).toBe('sam');
+    expect(data.workspaces).toHaveLength(6);
+    for (const ws of ['command', 'sales', 'intel', 'regulatory', 'distribution', 'governance']) {
+      expect(data.entitlements[ws], ws).toBe('operate');
+    }
+  });
+
+  it('enforces revocation end to end (revoke → 403 shape → restore)', async () => {
+    // Only meaningful with 0042 applied — skip cleanly pre-migration.
+    const pool = getPool();
+    try {
+      await pool.query(`SELECT 1 FROM entitlements LIMIT 1`);
+    } catch {
+      return; // table absent: fail-open world, revocation not yet storable
+    }
+    try {
+      await pool.query(`DELETE FROM entitlements WHERE member_id='sam' AND workspace='distribution'`);
+      invalidateEntitlements('sam');
+      const res = await app.request('/v1/distribution/anything', { headers: sam });
+      expect(res.status).toBe(403);
+      const body = (await res.json()) as { code: string; workspace: string; needed: string };
+      expect(body.code).toBe('WORKSPACE_FORBIDDEN');
+      expect(body.workspace).toBe('distribution');
+      expect(body.needed).toBe('view');
+    } finally {
+      await pool.query(
+        `INSERT INTO entitlements (member_id, workspace, capability, granted_by, justification)
+         VALUES ('sam','distribution','operate','test-restore','access.test restore')
+         ON CONFLICT (member_id, workspace) DO UPDATE SET capability='operate'`,
+      );
+      invalidateEntitlements('sam');
     }
   });
 
@@ -59,27 +101,13 @@ describe('LCX OS workspace gates', () => {
     const res = await app.request('/v1/distribution/anything', {
       headers: { Authorization: `Bearer ${TEST_KEY}` },
     });
-    expect(res.status).toBe(404); // through the gate, no route to serve
-  });
-
-  it('exposes the constitution + my entitlements on /v1/access/me', async () => {
-    const res = await app.request('/v1/access/me', {
-      headers: { Authorization: 'Bearer jatin@lcx.com' },
-    });
-    expect(res.status).toBe(200);
-    const { data } = (await res.json()) as {
-      data: { memberId: string; entitlements: Record<string, string>; workspaces: Array<{ id: string }> };
-    };
-    expect(data.memberId).toBe('jatin');
-    expect(data.workspaces).toHaveLength(6);
-    expect(data.entitlements.distribution).toBeUndefined();
-    expect(data.entitlements.sales).toBeDefined();
+    expect(res.status).toBe(404); // through the gate; Phase 3 brings the routes
   });
 
   it('demands a real justification for access requests', async () => {
     const res = await app.request('/v1/access/requests', {
       method: 'POST',
-      headers: { Authorization: 'Bearer jatin@lcx.com', 'Content-Type': 'application/json' },
+      headers: { ...sam, 'Content-Type': 'application/json' },
       body: JSON.stringify({ workspace: 'distribution', justification: 'pls' }),
     });
     expect(res.status).toBe(400);
@@ -90,9 +118,9 @@ describe('LCX OS workspace gates', () => {
   it('keeps the governed access actions approver-only (grant as operator → 403)', async () => {
     const res = await app.request('/v1/actions/grant_entitlement/invoke', {
       method: 'POST',
-      headers: { Authorization: 'Bearer jatin@lcx.com', 'Content-Type': 'application/json' },
+      headers: { ...sam, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        subjectType: 'member', subjectId: 'sam',
+        subjectType: 'member', subjectId: 'monty',
         params: { workspace: 'distribution', capability: 'view', justification: 'test escalation attempt' },
       }),
     });
@@ -102,7 +130,7 @@ describe('LCX OS workspace gates', () => {
   it('refuses self-lockout: an approver cannot revoke their own governance access', async () => {
     const res = await app.request('/v1/actions/revoke_entitlement/invoke', {
       method: 'POST',
-      headers: { Authorization: 'Bearer nik@lcx.com', 'Content-Type': 'application/json' },
+      headers: { ...nik, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         subjectType: 'member', subjectId: 'nik',
         params: { workspace: 'governance', justification: 'sawing off the branch' },

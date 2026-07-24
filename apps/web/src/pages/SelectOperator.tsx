@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { normalizeEmail } from '@lcx/shared';
 import { OPERATORS, useOperatorStore } from '@/stores';
-import { getHealth, setOperatorEmail } from '@/lib/apiClient';
+import { getHealth, getMe, setOperatorCredentials } from '@/lib/apiClient';
 
 /**
  * The front door — a hard email gate, and the first thing the app renders when
@@ -19,6 +19,8 @@ export function SelectOperator() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [email, setEmail] = useState('');
+  const [passcode, setPasscode] = useState('');
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [clock, setClock] = useState(() => new Date());
   const [apiUp, setApiUp] = useState<boolean | null>(null);
@@ -38,17 +40,28 @@ export function SelectOperator() {
       .catch(() => setApiUp(false));
   }, []);
 
-  const submit = () => {
-    // The allowlist IS the roster — only the five authorized addresses resolve.
+  const submit = async () => {
+    // The allowlist IS the roster — only authorized addresses resolve.
     const member = OPERATORS.find(o => o.email === normalizeEmail(email));
-    if (!member) {
-      setError("That email isn't authorized for the LCX desk.");
+    if (!member || !passcode) {
+      setError('That email and passcode combination is not authorized.');
       inputRef.current?.select();
       return;
     }
-    setOperatorEmail(member.email); // API credential for this browser
-    setOperator(member);
-    navigate('/', { replace: true });
+    // LCX OS gate: the server verifies email + passcode together — signing in
+    // is an authenticated round-trip, not a client-side guess.
+    setBusy(true);
+    setOperatorCredentials(member.email, passcode);
+    try {
+      await getMe();
+      setOperator(member);
+      navigate('/', { replace: true });
+    } catch {
+      setOperatorCredentials('', '');
+      setError('That email and passcode combination is not authorized.');
+    } finally {
+      setBusy(false);
+    }
   };
 
   const utc = clock.toISOString().slice(11, 19);
@@ -74,7 +87,7 @@ export function SelectOperator() {
           </div>
           <h1 className="mt-3 text-[28px] font-bold leading-tight tracking-[-0.02em] text-navy">Sign in to the desk</h1>
           <p className="mt-2 text-[13px] leading-relaxed text-grey">
-            Enter your LCX email to continue. Access is limited to authorized addresses.
+            Enter your LCX email and the desk passcode. Both are verified server-side.
           </p>
         </div>
 
@@ -82,7 +95,7 @@ export function SelectOperator() {
           className="mt-6"
           onSubmit={e => {
             e.preventDefault();
-            submit();
+            void submit();
           }}
         >
           <input
@@ -96,12 +109,6 @@ export function SelectOperator() {
               setEmail(e.target.value);
               if (error) setError(null);
             }}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                submit();
-              }
-            }}
             placeholder="you@lcx.com"
             aria-invalid={!!error}
             aria-label="LCX email address"
@@ -111,13 +118,31 @@ export function SelectOperator() {
                 : 'border-line focus:border-cyan-500 focus:ring-cyan-500/25'
             }`}
           />
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={passcode}
+            onChange={e => {
+              setPasscode(e.target.value);
+              if (error) setError(null);
+            }}
+            placeholder="Desk passcode"
+            aria-invalid={!!error}
+            aria-label="Desk passcode"
+            className={`mt-2.5 w-full rounded-lg border bg-card px-3.5 py-3 text-[14px] text-navy outline-none transition-colors placeholder:text-grey/55 focus:ring-2 ${
+              error
+                ? 'border-red-400 focus:ring-red-500/30 dark:border-red-500/60'
+                : 'border-line focus:border-cyan-500 focus:ring-cyan-500/25'
+            }`}
+          />
           {error && <p className="mt-2 text-[11.5px] leading-snug text-red-600 dark:text-red-400">{error}</p>}
 
           <button
             type="submit"
-            className="group mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-navy py-3 text-[13.5px] font-semibold text-card transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-cyan-500/40"
+            disabled={busy}
+            className="group mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-navy py-3 text-[13.5px] font-semibold text-card transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 disabled:opacity-60"
           >
-            Sign in
+            {busy ? 'Verifying…' : 'Sign in'}
             <ArrowRight size={15} className="transition-transform group-hover:translate-x-0.5" />
           </button>
         </form>

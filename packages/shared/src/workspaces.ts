@@ -177,17 +177,16 @@ export function workspaceForApiPath(path: string): WorkspaceId | null {
 }
 
 /**
- * The no-lockout covenant (Phase 1 backfill): existing roster members keep
- * exactly the reach they have today. Legacy workspaces map role→capability;
- * new compartments (distribution) are default-deny except approvers, who run
- * the Directorate and own new platforms until they delegate.
+ * The no-lockout covenant (Phase 1 backfill, desk decision 2026-07-24): the
+ * three-person desk — Nik, Monty (approvers), Sam (operator) — holds EVERY
+ * compartment at their role-mapped capability. Compartmentalization stays
+ * live in the machinery (grants are still governed, revocable, audited);
+ * today's roster simply starts fully entitled. This map is also the fail-open
+ * picture served until migration 0042 lands.
  */
 export function legacyEntitlements(role: TeamRole): EntitlementMap {
   const cap: Capability = role === 'approver' ? 'approve' : role === 'operator' ? 'operate' : 'view';
   const map: EntitlementMap = {};
-  for (const w of WORKSPACES) {
-    if (w.legacy) map[w.id] = cap;
-    else if (role === 'approver') map[w.id] = 'approve';
-  }
+  for (const w of WORKSPACES) map[w.id] = cap;
   return map;
 }

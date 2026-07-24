@@ -2,16 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { TEAM, findMemberByEmail, findMemberById, ownerLabel, isAllowedEmail, normalizeEmail } from './operators.js';
 
 describe('desk roster / email allowlist', () => {
-  it('holds the five desk members with unique ids and emails', () => {
-    expect(TEAM).toHaveLength(5);
-    expect(new Set(TEAM.map((m) => m.id)).size).toBe(5);
-    expect(new Set(TEAM.map((m) => m.email)).size).toBe(5);
+  it('holds the three desk members with unique ids and emails', () => {
+    expect(TEAM).toHaveLength(3);
+    expect(new Set(TEAM.map((m) => m.id)).size).toBe(3);
+    expect(new Set(TEAM.map((m) => m.email)).size).toBe(3);
     expect(TEAM.map((m) => m.email)).toEqual([
       'monty@lcx.com',
       'sam@lcx.com',
       'nik@lcx.com',
-      'rida@lcx.com',
-      'jatin@lcx.com',
     ]);
   });
 
@@ -36,8 +34,7 @@ describe('desk roster / email allowlist', () => {
     expect(findMemberByEmail('nik@lcx.com')?.role).toBe('approver');
     expect(findMemberByEmail('monty@lcx.com')?.role).toBe('approver');
     expect(findMemberByEmail('sam@lcx.com')?.role).toBe('operator');
-    expect(findMemberByEmail('rida@lcx.com')?.role).toBe('operator');
-    expect(findMemberByEmail('jatin@lcx.com')?.role).toBe('operator');
+    expect(findMemberByEmail('sam@lcx.com')?.role).toBe('operator');
   });
 
   it('resolves an owner id to a member, and null for the shared/unknown ids (Phase 4.4)', () => {

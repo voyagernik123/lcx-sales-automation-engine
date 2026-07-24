@@ -31,6 +31,8 @@ export const env = {
   databaseUrl: process.env.DATABASE_URL ?? '',
   allowDbSkip: bool('ALLOW_DB_SKIP', false),
   operatorApiKey: required('OPERATOR_API_KEY', 'dev-operator-key-change-me'),
+  /** LCX OS front-door passcode: email sign-in requires `email:passcode`. */
+  deskPasscode: process.env.DESK_PASSCODE ?? 'test#1234',
   corsOrigins: (process.env.CORS_ORIGINS ??
     'http://localhost:5173,http://127.0.0.1:5173,https://lcx-sales-automation-engine.pages.dev')
     .split(',')

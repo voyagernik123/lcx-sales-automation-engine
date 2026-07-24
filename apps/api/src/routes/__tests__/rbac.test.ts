@@ -39,7 +39,7 @@ describe('Wave 7 RBAC', () => {
     });
 
     it('an operator email resolves to operator, canApprove false', async () => {
-      const res = await app.request('/v1/me', { headers: { Authorization: 'Bearer sam@lcx.com' } });
+      const res = await app.request('/v1/me', { headers: { Authorization: 'Bearer sam@lcx.com:test#1234' } });
       const { data } = await res.json();
       expect(data.role).toBe('operator');
       expect(data.canApprove).toBe(false);
@@ -47,7 +47,7 @@ describe('Wave 7 RBAC', () => {
     });
 
     it('an approver email resolves to approver, canApprove true', async () => {
-      const res = await app.request('/v1/me', { headers: { Authorization: 'Bearer nik@lcx.com' } });
+      const res = await app.request('/v1/me', { headers: { Authorization: 'Bearer nik@lcx.com:test#1234' } });
       const { data } = await res.json();
       expect(data.role).toBe('approver');
       expect(data.canApprove).toBe(true);
@@ -63,13 +63,13 @@ describe('Wave 7 RBAC', () => {
     });
 
     it('rejects an operator email with 403', async () => {
-      const res = await decide(app, 'sam@lcx.com');
+      const res = await decide(app, 'sam@lcx.com:test#1234');
       expect(res.status).toBe(403);
       expect((await res.json()).code).toBe('FORBIDDEN_REQUIRES_APPROVER');
     });
 
     it('lets an approver through the gate (404 for a missing approval, not 403)', async () => {
-      const res = await decide(app, 'nik@lcx.com');
+      const res = await decide(app, 'nik@lcx.com:test#1234');
       expect(res.status).not.toBe(403);
       expect(res.status).toBe(404);
       expect((await res.json()).code).toBe('NOT_FOUND');

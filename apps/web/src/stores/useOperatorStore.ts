@@ -35,7 +35,7 @@ export const ROLE_LABEL: Record<OperatorRole, string> = {
 };
 
 /**
- * The five people this internal tool is shared with. Identity + email + role
+ * The three people this internal tool is shared with. Identity + email + role
  * come from the shared desk roster (@lcx/shared TEAM) so the front door and the
  * API allowlist can't drift; the UI-only fields (initials, brand color) are
  * decorated here by id. Sign-in is email-based (a lightweight team gate) — desk
@@ -45,8 +45,6 @@ const UI_BY_ID: Record<string, { initials: string; colorVar: string }> = {
   monty: { initials: 'M', colorVar: 'var(--chart-2)' },
   sam: { initials: 'S', colorVar: 'var(--chart-3)' },
   nik: { initials: 'N', colorVar: 'var(--chart-1)' },
-  rida: { initials: 'R', colorVar: 'var(--chart-5)' },
-  jatin: { initials: 'J', colorVar: 'var(--chart-8)' },
 };
 
 export const OPERATORS: Operator[] = TEAM.map((m) => ({

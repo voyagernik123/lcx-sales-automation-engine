@@ -36,9 +36,9 @@ function safeEqual(a: string, b: string): boolean {
  *
  *  1. The shared `OPERATOR_API_KEY` — for cron jobs, integrations, and any
  *     browser that has the key set. Attributes work to a generic "operator".
- *  2. A desk member's email address (see @lcx/shared TEAM) — the per-person
- *     sign-in. Because the allowlist is validated server-side, entering your
- *     email on ANY browser authorizes you there; work attributes to you.
+ *  2. A desk sign-in `email:passcode` (roster email from @lcx/shared TEAM +
+ *     the shared DESK_PASSCODE) — both validated server-side; work attributes
+ *     to the person. A bare email is rejected: the desk is passcode-gated.
  *
  * The shared key authenticates as a plain 'operator'. The email path sets the
  * real member `id` (for attribution) AND the member's real `role` — so approver
@@ -53,20 +53,27 @@ export function resolvePrincipal(
   const key = extractApiKey(authHeader, apiKeyHeader);
   if (!key) return null;
 
-  // 1) Shared operator API key (timing-safe).
+  // 1) Shared operator API key (timing-safe) — cron, integrations, machines.
   if (safeEqual(key, env.operatorApiKey)) {
     return { id: 'operator', role: 'operator', authMethod: 'api_key' };
   }
 
-  // 2) Desk email allowlist — the credential IS the member's email. The
-  //    principal carries the member's real role so RBAC is authoritative.
-  const member = findMemberByEmail(key);
-  if (member) {
-    return {
-      id: member.id,
-      role: member.role === 'approver' ? 'approver' : 'operator',
-      authMethod: 'email',
-    };
+  // 2) Desk sign-in — the credential is `email:passcode` (LCX OS gate,
+  //    2026-07-24). The email must be on the roster AND the passcode must
+  //    match DESK_PASSCODE (timing-safe). A bare email is no longer a key:
+  //    both halves are required, so a leaked address alone opens nothing.
+  const sep = key.indexOf(':');
+  if (sep > 0) {
+    const email = key.slice(0, sep);
+    const passcode = key.slice(sep + 1);
+    const member = findMemberByEmail(email);
+    if (member && safeEqual(passcode, env.deskPasscode)) {
+      return {
+        id: member.id,
+        role: member.role === 'approver' ? 'approver' : 'operator',
+        authMethod: 'email',
+      };
+    }
   }
   return null;
 }

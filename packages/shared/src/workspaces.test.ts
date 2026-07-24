@@ -52,11 +52,11 @@ describe('LCX OS workspace constitution (Phase 1)', () => {
     expect(capAtLeast(undefined, 'view')).toBe(false);
   });
 
-  describe('the no-lockout covenant (legacy backfill mirror)', () => {
-    it('gives every roster member their pre-LCX-OS reach on all legacy workspaces', () => {
+  describe('the no-lockout covenant (full-desk backfill mirror, 2026-07-24)', () => {
+    it('gives every roster member every workspace at role-mapped capability', () => {
       for (const m of TEAM) {
         const map = legacyEntitlements(m.role);
-        for (const w of WORKSPACES.filter((w) => w.legacy)) {
+        for (const w of WORKSPACES) {
           expect(capAtLeast(map[w.id], 'view'), `${m.id} lost ${w.id}`).toBe(true);
           if (m.role === 'operator') expect(map[w.id]).toBe('operate');
           if (m.role === 'approver') expect(map[w.id]).toBe('approve');
@@ -64,10 +64,8 @@ describe('LCX OS workspace constitution (Phase 1)', () => {
       }
     });
 
-    it('default-denies the new compartment except for approvers', () => {
-      expect(legacyEntitlements('operator').distribution).toBeUndefined();
-      expect(legacyEntitlements('viewer').distribution).toBeUndefined();
-      expect(legacyEntitlements('approver').distribution).toBe('approve');
+    it('keeps the roster at exactly nik, sam, monty', () => {
+      expect(TEAM.map((m) => m.id).sort()).toEqual(['monty', 'nik', 'sam']);
     });
   });
 

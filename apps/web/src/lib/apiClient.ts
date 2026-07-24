@@ -13,6 +13,7 @@ const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/
 const ENV_API_KEY = import.meta.env.DEV ? ((import.meta.env.VITE_API_KEY as string | undefined) ?? '') : '';
 
 const EMAIL_KEY = 'lcx_operator_email';
+const PASS_KEY = 'lcx_desk_passcode';
 const LEGACY_KEY = 'lcx_api_key';
 
 /**
@@ -27,20 +28,22 @@ const LEGACY_KEY = 'lcx_api_key';
  */
 export function getApiKey(): string {
   try {
-    return (
-      localStorage.getItem(EMAIL_KEY)?.trim() ||
-      localStorage.getItem(LEGACY_KEY) ||
-      ENV_API_KEY
-    );
+    const email = localStorage.getItem(EMAIL_KEY)?.trim();
+    const passcode = localStorage.getItem(PASS_KEY) ?? '';
+    // LCX OS gate: the desk credential is `email:passcode` — both halves or
+    // nothing (a bare email is rejected server-side by design).
+    if (email && passcode) return `${email}:${passcode}`;
+    return localStorage.getItem(LEGACY_KEY) || ENV_API_KEY;
   } catch {
     return ENV_API_KEY;
   }
 }
 
-/** Record the signed-in operator's email as the API credential (front door). */
-export function setOperatorEmail(email: string): void {
+/** Record the signed-in operator's credentials (front door): email + desk passcode. */
+export function setOperatorCredentials(email: string, passcode: string): void {
   try {
     localStorage.setItem(EMAIL_KEY, email.trim().toLowerCase());
+    localStorage.setItem(PASS_KEY, passcode);
   } catch {
     /* storage unavailable — in-memory session only */
   }
@@ -48,6 +51,11 @@ export function setOperatorEmail(email: string): void {
 
 /** Clear the email credential on sign-out (leaves any legacy key untouched). */
 export function clearOperatorEmail(): void {
+  try {
+    localStorage.removeItem(PASS_KEY);
+  } catch {
+    /* ignore */
+  }
   try {
     localStorage.removeItem(EMAIL_KEY);
   } catch {
