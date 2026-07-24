@@ -42,6 +42,11 @@ export const env = {
   // AI (all LLM features fall back to deterministic when this is empty)
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
   anthropicModel: process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5',
+  // Fallback LLM provider: OpenRouter (OpenAI-compatible). Used only when no
+  // Anthropic key is set — lets the platform run its AI layer on a free
+  // open-source model (default: NVIDIA Nemotron 3 Ultra 550B, $0/token).
+  openrouterApiKey: process.env.OPENROUTER_API_KEY ?? '',
+  openrouterModel: process.env.OPENROUTER_MODEL ?? 'nvidia/nemotron-3-ultra-550b-a55b:free',
   resendApiKey: process.env.RESEND_API_KEY ?? '',
   resendWebhookSecret: process.env.RESEND_WEBHOOK_SECRET ?? '',
   outreachFromEmail: process.env.OUTREACH_FROM_EMAIL ?? 'outreach@lcx.sales',

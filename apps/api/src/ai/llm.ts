@@ -29,6 +29,7 @@ export interface CompleteResult {
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
+const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 /**
  * Best-effort insert into ai_usage_log. Never throws: telemetry must not break
@@ -54,17 +55,20 @@ export async function logAiUsage(
 }
 
 export class LLMClient {
-  private readonly apiKey: string;
-  private readonly model: string;
-
-  constructor() {
-    this.apiKey = env.anthropicApiKey ?? '';
-    this.model = env.anthropicModel || 'claude-sonnet-5';
+  /**
+   * Provider precedence: Anthropic when its key is set (first-party quality),
+   * else OpenRouter (free open-source fallback — default model NVIDIA
+   * Nemotron 3 Ultra 550B at $0/token), else unavailable → deterministic paths.
+   */
+  private get provider(): 'anthropic' | 'openrouter' | null {
+    if (env.anthropicApiKey) return 'anthropic';
+    if (env.openrouterApiKey) return 'openrouter';
+    return null;
   }
 
-  /** True when a real key is configured. Callers can branch on this too. */
+  /** True when any provider is configured. Callers can branch on this too. */
   get available(): boolean {
-    return Boolean(this.apiKey);
+    return this.provider !== null;
   }
 
   /**
@@ -73,49 +77,76 @@ export class LLMClient {
    */
   async complete(prompt: string, opts: CompleteOpts): Promise<CompleteResult> {
     const inChars = prompt.length + (opts.system?.length ?? 0);
+    const provider = this.provider;
 
-    if (!this.available) {
+    if (!provider) {
       await logAiUsage(opts.feature, inChars, 0, false);
       return { text: '', usedLlm: false };
     }
 
     try {
-      const res = await fetch(ANTHROPIC_URL, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': this.apiKey,
-          'anthropic-version': ANTHROPIC_VERSION,
-        },
-        body: JSON.stringify({
-          model: this.model,
-          max_tokens: opts.maxTokens ?? 1024,
-          temperature: opts.temperature ?? 0.4,
-          ...(opts.system ? { system: opts.system } : {}),
-          messages: [{ role: 'user', content: prompt }],
-        }),
-      });
+      let res: Response;
+      if (provider === 'anthropic') {
+        res = await fetch(ANTHROPIC_URL, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-api-key': env.anthropicApiKey,
+            'anthropic-version': ANTHROPIC_VERSION,
+          },
+          body: JSON.stringify({
+            model: env.anthropicModel || 'claude-sonnet-5',
+            max_tokens: opts.maxTokens ?? 1024,
+            temperature: opts.temperature ?? 0.4,
+            ...(opts.system ? { system: opts.system } : {}),
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        });
+      } else {
+        // OpenRouter — OpenAI-compatible chat completions.
+        res = await fetch(OPENROUTER_URL, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${env.openrouterApiKey}`,
+            'x-title': 'LCX Sales Engine',
+          },
+          body: JSON.stringify({
+            model: env.openrouterModel,
+            max_tokens: opts.maxTokens ?? 1024,
+            temperature: opts.temperature ?? 0.4,
+            messages: [
+              ...(opts.system ? [{ role: 'system', content: opts.system }] : []),
+              { role: 'user', content: prompt },
+            ],
+          }),
+        });
+      }
 
       if (!res.ok) {
         const detail = await res.text().catch(() => '');
-        console.warn(`[ai] anthropic ${res.status}: ${detail.slice(0, 200)}`);
+        console.warn(`[ai] ${provider} ${res.status}: ${detail.slice(0, 200)}`);
         await logAiUsage(opts.feature, inChars, 0, false);
         return { text: '', usedLlm: false };
       }
 
-      const json = (await res.json()) as {
-        content?: Array<{ type: string; text?: string }>;
-      };
-      const text = (json.content ?? [])
-        .filter((b) => b.type === 'text' && typeof b.text === 'string')
-        .map((b) => b.text as string)
-        .join('')
-        .trim();
+      let text = '';
+      if (provider === 'anthropic') {
+        const json = (await res.json()) as { content?: Array<{ type: string; text?: string }> };
+        text = (json.content ?? [])
+          .filter((b) => b.type === 'text' && typeof b.text === 'string')
+          .map((b) => b.text as string)
+          .join('')
+          .trim();
+      } else {
+        const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+        text = (json.choices?.[0]?.message?.content ?? '').trim();
+      }
 
       await logAiUsage(opts.feature, inChars, text.length, true);
       return { text, usedLlm: true };
     } catch (err) {
-      console.warn('[ai] anthropic call failed:', err instanceof Error ? err.message : err);
+      console.warn(`[ai] ${provider} call failed:`, err instanceof Error ? err.message : err);
       await logAiUsage(opts.feature, inChars, 0, false);
       return { text: '', usedLlm: false };
     }
