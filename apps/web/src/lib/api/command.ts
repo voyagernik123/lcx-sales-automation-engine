@@ -151,3 +151,41 @@ export interface CommandDeep {
 }
 
 export const fetchCommandDeep = () => get<CommandDeep>('/deep');
+
+/* ── 100X Phase 2/3: the decision engines ── */
+
+export interface Readiness { score: number; dials: Array<{ key: string; label: string; score: number; weight: number }> }
+export const fetchReadiness = () => get<Readiness>('/readiness');
+
+export interface LpRescoreResult {
+  dimensions: ScorecardDim[];
+  rows: Array<ScorecardRow & { weighted: number; rank: number }>;
+  sensitivity: Array<{ dimKey: string; dimLabel: string; currentWeight: number; flipWeight: number | null; gapPerHundredth: number }>;
+  setAnalysis: { strengths: Array<{ dimKey: string; dimLabel: string; best: number; coveredBy: string }>; gaps: Array<{ dimKey: string; dimLabel: string; best: number }>; concentration: number };
+}
+export async function lpRescore(weights?: Record<string, number>, selectedIds?: string[]): Promise<LpRescoreResult> {
+  return (await request<{ data: LpRescoreResult }>(`/v1/command/engines/lp-rescore`, { auth: true, method: 'POST', body: { weights, selectedIds } })).data;
+}
+
+export interface WaitlistSimOut {
+  runs: number;
+  waitlist: { p10: number; p50: number; p90: number };
+  verified: { p10: number; p50: number; p90: number };
+  funded: { p10: number; p50: number; p90: number };
+  totalPaidBudget: number;
+  blendedCacPerFundedP50: number | null;
+  marginal: Array<{ channelId: string; label: string; fundedPerExtra1k: number }>;
+  lockedChannels: string[];
+  adsUnlocked: boolean;
+}
+export async function runWaitlistSim(budgets?: Record<string, number>): Promise<WaitlistSimOut> {
+  return (await request<{ data: WaitlistSimOut }>(`/v1/command/engines/waitlist-sim`, { auth: true, method: 'POST', body: { budgets } })).data;
+}
+
+/** Record RFI terms through the governed registry (B2 on return, A1 on signing). */
+export async function recordRfi(partnerId: string, status: 'issued' | 'returned' | 'signed', values: Record<string, string>): Promise<void> {
+  await request(`/v1/actions/command_rfi_record/invoke`, {
+    auth: true, method: 'POST',
+    body: { subjectType: 'command_partner', subjectId: partnerId, params: { status, values } },
+  });
+}

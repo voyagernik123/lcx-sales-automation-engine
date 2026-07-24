@@ -13,6 +13,8 @@ import {
 } from '@/lib/api/command';
 import { EmptyState, PageSkeleton, toast } from '@/components/shared';
 import { DeepOntologyPanel } from '@/components/command/DeepOntologyPanel';
+import { ReadinessDial, LpOptimizerPanel, FunnelSimPanel } from '@/components/command/CockpitPanels';
+import { PrintStyles } from '@/components/report/PrintStyles';
 import { PageTitle, Button } from '@/components/ui';
 import { clsx } from 'clsx';
 
@@ -64,12 +66,25 @@ export function CommandDeck() {
     finally { setBusy(false); }
   };
 
+  const printBoardPack = () => {
+    const root = document.documentElement;
+    const wasDark = root.classList.contains('dark');
+    if (wasDark) root.classList.remove('dark');
+    setTimeout(() => { window.print(); if (wasDark) root.classList.add('dark'); }, 60);
+  };
+
   return (
-    <div className="mx-auto max-w-[1400px] p-5">
+    <div className="br-page mx-auto max-w-[1400px] p-5">
+      <PrintStyles />
       <PageTitle
         icon={<Command size={20} />}
         subtitle="The US-launch operating picture — products, partners, workstreams, the critical path, risks, and decisions as one deck for the CEO."
-        actions={<Button size="sm" variant="secondary" onClick={reseed} disabled={busy}><RefreshCw size={13} className={busy ? 'animate-spin' : ''} /> Re-seed</Button>}
+        actions={
+          <div className="br-no-print flex items-center gap-2">
+            <Button size="sm" variant="secondary" onClick={printBoardPack}>Board Pack (print)</Button>
+            <Button size="sm" variant="secondary" onClick={reseed} disabled={busy}><RefreshCw size={13} className={busy ? 'animate-spin' : ''} /> Re-seed</Button>
+          </div>
+        }
       >
         LCX Command · US Launch
       </PageTitle>
@@ -99,6 +114,9 @@ function Loaded({ deck, onChange }: { deck: Deck; onChange: () => void }) {
           <span className="text-label text-grey-dark">{o.launch.anchor}</span>
         </div>
       </div>
+
+      {/* The headline instrument — composite launch readiness (100X Phase 3) */}
+      <ReadinessDial />
 
       {/* Counts strip */}
       <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
@@ -199,6 +217,10 @@ function Loaded({ deck, onChange }: { deck: Deck; onChange: () => void }) {
         {/* Ask the program (Wave 3) */}
         <AskProgramPanel />
       </div>
+
+      {/* The engines as instruments (100X Phase 3) */}
+      <LpOptimizerPanel />
+      <FunnelSimPanel />
 
       {/* Deep ontology — the strategy's own models, fully traceable (100X Phase 1) */}
       <DeepOntologyPanel />

@@ -236,6 +236,42 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       return { updated: true };
     },
   },
+  command_rfi_record: {
+    id: 'command_rfi_record',
+    label: 'Record RFI terms',
+    description: 'Record a partner\'s returned RFI commercial terms (LCX COMMAND). Provenance auto-upgrades: returned=B2, signed=A1.',
+    subjectTypes: ['command_partner'],
+    minRole: 'operator',
+    paramsSchema: z.object({
+      status: z.enum(['issued', 'returned', 'signed']),
+      values: z.record(z.string().max(60), z.string().max(300)).optional(),
+    }),
+    execute: async ({ pool, subjectId, params, actor }) => {
+      // Whitelist value keys against the compiled RFI schema — a crafted payload
+      // can't smuggle arbitrary keys into the jsonb.
+      const { COMMAND_DEEP_SEED } = await import('../seed/command/data2.js');
+      const valid = new Set(((COMMAND_DEEP_SEED as unknown as { rfi: { fields: Array<{ key: string }> } }).rfi.fields).map((f) => f.key));
+      const values: Record<string, string> = {};
+      for (const [k, v] of Object.entries((params.values as Record<string, string>) ?? {})) {
+        if (valid.has(k) && String(v).trim()) values[k] = String(v).trim();
+      }
+      const status = String(params.status);
+      const grade = status === 'signed' ? 'A1' : status === 'returned' ? 'B2' : null;
+      const { rowCount } = await pool.query(
+        `INSERT INTO command_rfi (partner_id, status, owner, grade, values, issued_at, returned_at)
+         VALUES ($1,$2,$3,$4,$5::jsonb, CASE WHEN $2='issued' THEN now() END, CASE WHEN $2 IN ('returned','signed') THEN now() END)
+         ON CONFLICT (partner_id) DO UPDATE SET
+           status=EXCLUDED.status, owner=EXCLUDED.owner,
+           grade=COALESCE(EXCLUDED.grade, command_rfi.grade),
+           values=command_rfi.values || EXCLUDED.values,
+           returned_at=COALESCE(EXCLUDED.returned_at, command_rfi.returned_at),
+           updated_at=now()`,
+        [subjectId, status, actor, grade, JSON.stringify(values)],
+      );
+      if ((rowCount ?? 0) === 0) throw new ActionError('CONFLICT', 'RFI write failed');
+      return { status, grade, fields: Object.keys(values).length };
+    },
+  },
   assign: {
     id: 'assign',
     label: 'Assign owner',

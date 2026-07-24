@@ -7,6 +7,7 @@ import {
 } from '@/lib/api/command';
 import { EmptyState, PageSkeleton, toast } from '@/components/shared';
 import { PageTitle, Button } from '@/components/ui';
+import { PartnerDossier } from '@/components/command/PartnerDossier';
 import { clsx } from 'clsx';
 
 /**
@@ -37,6 +38,7 @@ export function CommandPartners() {
   const [partners, setPartners] = useState<CommandPartner[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [dossier, setDossier] = useState<CommandPartner | null>(null);
 
   const load = useCallback(() => {
     setError(null);
@@ -82,15 +84,16 @@ export function CommandPartners() {
             ))}
           </div>
           <div className="space-y-2">
-            {shown.map((p) => <PartnerRow key={p.id} p={p} onChange={load} />)}
+            {shown.map((p) => <PartnerRow key={p.id} p={p} onChange={load} onOpen={() => setDossier(p)} />)}
           </div>
         </>
       )}
+      {dossier && <PartnerDossier partner={dossier} onClose={() => setDossier(null)} />}
     </div>
   );
 }
 
-function PartnerRow({ p, onChange }: { p: CommandPartner; onChange: () => void }) {
+function PartnerRow({ p, onChange, onOpen }: { p: CommandPartner; onChange: () => void; onOpen: () => void }) {
   const navigate = useNavigate();
   const [busy, setBusy] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -131,7 +134,7 @@ function PartnerRow({ p, onChange }: { p: CommandPartner; onChange: () => void }
   return (
     <div className="rounded-lg border border-line bg-card p-3 shadow-card">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-label font-bold text-navy">{p.name}</span>
+        <button onClick={onOpen} className="text-label font-bold text-navy hover:text-cyan-600 hover:underline dark:hover:text-cyan-400">{p.name}</button>
         {p.tier && <span className="rounded bg-ice-soft px-1.5 py-0.5 text-micro font-bold text-grey-dark dark:bg-ice-soft/10">{p.tier}</span>}
         {p.capability_score != null && <span className="font-mono text-micro text-grey">{Number(p.capability_score).toFixed(2)}</span>}
         <span className="text-micro text-grey">{p.type}{p.subtype ? ` · ${p.subtype}` : ''}</span>
