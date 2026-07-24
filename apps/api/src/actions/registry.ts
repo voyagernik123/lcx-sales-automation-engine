@@ -222,6 +222,21 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       return { decided: true, chosen: params.chosen };
     },
   },
+  command_reopen_decision: {
+    id: 'command_reopen_decision',
+    label: 'Reopen program decision',
+    description: 'Reopen a wrongly-recorded US-launch decision (approver only; fully audited).',
+    subjectTypes: ['command_decision'],
+    minRole: 'approver',
+    paramsSchema: z.object({ reason: z.string().min(1).max(500) }),
+    execute: async ({ pool, subjectId }) => {
+      const { rowCount } = await pool.query(
+        `UPDATE command_decisions SET status='open', chosen=NULL, decided_by=NULL, decided_at=NULL, updated_at=now()
+          WHERE id=$1 AND status='decided'`, [subjectId]);
+      if ((rowCount ?? 0) === 0) throw new ActionError('NOT_FOUND', 'Decision not found or not decided', 404);
+      return { reopened: true };
+    },
+  },
   command_set_partner_stage: {
     id: 'command_set_partner_stage',
     label: 'Set partner pipeline stage',
