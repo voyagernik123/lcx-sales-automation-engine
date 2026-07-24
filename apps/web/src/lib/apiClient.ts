@@ -87,6 +87,8 @@ type RequestOpts = {
   body?: unknown;
   auth?: boolean;
   signal?: AbortSignal;
+  /** Extra request headers (e.g. X-Purpose for LCX OS purpose-based reads). */
+  headers?: Record<string, string>;
 };
 
 export async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
@@ -102,6 +104,8 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
   if (opts.auth !== false && apiKey) {
     headers.Authorization = `Bearer ${apiKey}`;
   }
+
+  if (opts.headers) Object.assign(headers, opts.headers);
 
   const res = await fetch(url(path), {
     method: opts.method ?? (opts.body !== undefined ? 'POST' : 'GET'),

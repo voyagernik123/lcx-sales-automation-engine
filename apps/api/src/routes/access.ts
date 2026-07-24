@@ -3,6 +3,7 @@ import { TEAM, WORKSPACES, findMemberById } from '@lcx/shared';
 import type { AuthVariables } from '../middleware/auth.js';
 import { requireOperator } from '../middleware/auth.js';
 import { requireApprover } from '../middleware/permissions.js';
+import { requirePurpose } from '../middleware/purpose.js';
 import { loadEntitlements } from '../access/entitlements.js';
 import { getPool } from '../db/index.js';
 import { notify } from '../notifications/service.js';
@@ -121,6 +122,67 @@ accessRoutes.get('/requests', requireOperator, async (c) => {
        FROM access_requests ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
        ORDER BY created_at DESC LIMIT 100`,
       params,
+    );
+    return c.json({ data: rows, meta: { dbLive: true } });
+  } catch (err) {
+    if (isMissingTable(err)) return c.json({ data: [], meta: { dbLive: false } });
+    throw err;
+  }
+});
+
+/**
+ * GET /v1/access/members/:id — the counter-intel dossier (approver-only,
+ * purpose-gated): everything this member may see (entitlements + profile) and
+ * everything they have recently done (their governed actions, from the audit
+ * spine). Viewing it is itself an audited event (purpose:access).
+ */
+accessRoutes.get('/members/:id', requireOperator, requireApprover, requirePurpose('member dossier'), async (c) => {
+  const id = c.req.param('id');
+  const member = findMemberById(id);
+  if (!member) return c.json({ error: 'No such roster member', code: 'NOT_FOUND' }, 404);
+  const pool = getPool();
+  let entitlements: Array<{ workspace: string; capability: string; granted_by: string; justification: string | null; granted_at: string }> = [];
+  let profile: { unit: string | null; title: string | null; updated_by: string | null; updated_at: string } | null = null;
+  let activity: Array<{ action: string; subject_type: string; subject_id: string; created_at: string }> = [];
+  let dbLive = true;
+  try {
+    entitlements = (await pool.query(
+      `SELECT workspace, capability, granted_by, justification, granted_at FROM entitlements WHERE member_id=$1 ORDER BY workspace`,
+      [id],
+    )).rows;
+    profile = (await pool.query(
+      `SELECT unit, title, updated_by, updated_at FROM member_profiles WHERE member_id=$1`, [id],
+    )).rows[0] ?? null;
+    // Their footprint: recent governed actions attributed to this member.
+    activity = (await pool.query(
+      `SELECT action, subject_type, subject_id, created_at FROM object_actions WHERE actor=$1 ORDER BY created_at DESC LIMIT 25`,
+      [id],
+    )).rows;
+  } catch (err) {
+    if (!isMissingTable(err)) throw err;
+    dbLive = false;
+  }
+  return c.json({
+    data: {
+      member: { id: member.id, name: member.name, email: member.email, role: member.role },
+      profile, entitlements, activity, dbLive,
+    },
+  });
+});
+
+/**
+ * GET /v1/access/activity — the fabric's access telemetry (approver-only):
+ * recent grants, revocations, decisions, and purpose-based reads, drawn from
+ * the audit spine (no new table — the spine IS the ledger).
+ */
+accessRoutes.get('/activity', requireOperator, requireApprover, async (c) => {
+  const pool = getPool();
+  try {
+    const { rows } = await pool.query(
+      `SELECT actor, action, entity, entity_id, meta, created_at
+         FROM audit_log
+        WHERE action IN ('action:grant_entitlement','action:revoke_entitlement','action:decide_access_request','action:set_member_profile','purpose:access')
+        ORDER BY created_at DESC LIMIT 50`,
     );
     return c.json({ data: rows, meta: { dbLive: true } });
   } catch (err) {

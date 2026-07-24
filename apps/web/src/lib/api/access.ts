@@ -66,8 +66,33 @@ async function invokeAccessAction(actionId: string, subjectType: string, subject
 export const grantEntitlement = (memberId: string, workspace: WorkspaceId, capability: Capability, justification: string) =>
   invokeAccessAction('grant_entitlement', 'member', memberId, { workspace, capability, justification });
 
-export const revokeEntitlement = (memberId: string, workspace: WorkspaceId, justification: string) =>
-  invokeAccessAction('revoke_entitlement', 'member', memberId, { workspace, justification });
+/** Destructive → step-up: the caller re-supplies the desk passcode. */
+export const revokeEntitlement = (memberId: string, workspace: WorkspaceId, justification: string, stepUpPasscode: string) =>
+  invokeAccessAction('revoke_entitlement', 'member', memberId, { workspace, justification, stepUpPasscode });
 
 export const decideAccessRequest = (requestId: string, decision: 'approved' | 'denied', note?: string) =>
   invokeAccessAction('decide_access_request', 'access_request', requestId, note ? { decision, note } : { decision });
+
+export const setMemberProfile = (memberId: string, unit: string, title: string) =>
+  invokeAccessAction('set_member_profile', 'member', memberId, { unit, title });
+
+/* ── Directorate depth (Phase 2) — dossier + activity telemetry ── */
+
+export interface MemberDossier {
+  member: { id: string; name: string; email: string; role: string };
+  profile: { unit: string | null; title: string | null; updated_by: string | null; updated_at: string } | null;
+  entitlements: Array<{ workspace: WorkspaceId; capability: Capability; granted_by: string; justification: string | null; granted_at: string }>;
+  activity: Array<{ action: string; subject_type: string; subject_id: string; created_at: string }>;
+  dbLive: boolean;
+}
+
+/** Purpose-gated read — the reason rides in X-Purpose and is itself audited. */
+export const fetchMemberDossier = async (memberId: string, purpose: string): Promise<MemberDossier> =>
+  (await request<{ data: MemberDossier }>(`/v1/access/members/${memberId}`, { auth: true, headers: { 'X-Purpose': purpose } })).data;
+
+export interface AccessActivityRow {
+  actor: string; action: string; entity: string | null; entity_id: string | null;
+  meta: Record<string, unknown>; created_at: string;
+}
+export const fetchAccessActivity = async (): Promise<AccessActivityRow[]> =>
+  (await request<{ data: AccessActivityRow[] }>(`/v1/access/activity`, { auth: true })).data;

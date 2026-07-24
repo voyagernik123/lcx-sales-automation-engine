@@ -133,7 +133,7 @@ describe('LCX OS front door + workspace gates', () => {
       headers: { ...nik, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         subjectType: 'member', subjectId: 'nik',
-        params: { workspace: 'governance', justification: 'sawing off the branch' },
+        params: { workspace: 'governance', justification: 'sawing off the branch', stepUpPasscode: PASS },
       }),
     });
     expect(res.status).toBe(400);

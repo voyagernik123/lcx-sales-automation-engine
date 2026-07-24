@@ -3,8 +3,9 @@ import { KeyRound, Check, X, ShieldCheck } from 'lucide-react';
 import { WORKSPACES, capAtLeast, type Capability, type WorkspaceId } from '@lcx/shared';
 import {
   fetchAccessMatrix, fetchAccessRequests, decideAccessRequest,
-  grantEntitlement, revokeEntitlement,
-  type AccessMatrixMember, type AccessRequestRow,
+  grantEntitlement, revokeEntitlement, setMemberProfile,
+  fetchMemberDossier, fetchAccessActivity,
+  type AccessMatrixMember, type AccessRequestRow, type MemberDossier, type AccessActivityRow,
 } from '@/lib/api/access';
 import { useAccessStore } from '@/stores/useAccessStore';
 import { useOperatorStore } from '@/stores';
@@ -27,12 +28,44 @@ export function AccessControl() {
 
   const [requests, setRequests] = useState<AccessRequestRow[] | null>(null);
   const [matrix, setMatrix] = useState<{ members: AccessMatrixMember[]; dbLive: boolean } | null>(null);
+  const [activity, setActivity] = useState<AccessActivityRow[] | null>(null);
+  const [dossier, setDossier] = useState<MemberDossier | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     fetchAccessRequests().then(setRequests).catch(() => setRequests([]));
-    if (isApprover) fetchAccessMatrix().then(setMatrix).catch(() => setMatrix(null));
+    if (isApprover) {
+      fetchAccessMatrix().then(setMatrix).catch(() => setMatrix(null));
+      fetchAccessActivity().then(setActivity).catch(() => setActivity([]));
+    }
   }, [isApprover]);
+
+  const openDossier = async (memberId: string) => {
+    const purpose = window.prompt('State your purpose for viewing this member’s access dossier (audited, ≥8 chars):');
+    if (!purpose || purpose.trim().length < 8) return;
+    try {
+      setDossier(await fetchMemberDossier(memberId, purpose.trim()));
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Dossier unavailable');
+    }
+  };
+
+  const editProfile = async (member: AccessMatrixMember) => {
+    const unit = window.prompt(`Unit for ${member.name} (Exec / BD / AI Labs / Legal / Ops):`, member.profile?.unit ?? '');
+    if (unit === null) return;
+    const title = window.prompt(`Title for ${member.name}:`, member.profile?.title ?? '');
+    if (title === null) return;
+    setBusyId(`profile:${member.id}`);
+    try {
+      await setMemberProfile(member.id, unit.trim(), title.trim());
+      toast('success', 'Profile updated');
+      refresh();
+    } catch (e) {
+      toast('error', e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -57,9 +90,16 @@ export function AccessControl() {
         : `Grant ${member.name} '${capability}' on ${ws} — why? (audited)`,
     );
     if (!justification || justification.trim().length === 0) return;
+    // Step-up re-auth for the destructive path (revoke): re-enter the passcode.
+    let stepUp = '';
+    if (capability === 'none') {
+      const p = window.prompt('Step-up: re-enter the desk passcode to revoke this access:');
+      if (!p) return;
+      stepUp = p;
+    }
     setBusyId(`${member.id}:${ws}`);
     try {
-      if (capability === 'none') await revokeEntitlement(member.id, ws, justification.trim());
+      if (capability === 'none') await revokeEntitlement(member.id, ws, justification.trim(), stepUp);
       else await grantEntitlement(member.id, ws, capability, justification.trim());
       toast('success', 'Entitlement updated');
       refresh();
@@ -179,8 +219,10 @@ export function AccessControl() {
                     {matrix.members.map((m) => (
                       <tr key={m.id} className="border-b border-line/60">
                         <td className="py-1.5 pr-2">
-                          <span className="font-semibold text-navy">{m.name}</span>{' '}
+                          <button onClick={() => void openDossier(m.id)} className="font-semibold text-navy underline-offset-2 hover:text-cyan-600 hover:underline dark:hover:text-cyan-400" title="View access dossier (purpose-gated)">{m.name}</button>{' '}
                           <span className="font-mono text-[10px] text-grey">{m.role}</span>
+                          {m.profile?.unit && <span className="ml-1 font-mono text-[10px] text-grey">· {m.profile.unit}</span>}
+                          <button onClick={() => void editProfile(m)} disabled={busyId === `profile:${m.id}`} className="ml-1.5 text-[10px] text-grey hover:text-navy" title="Edit unit/title">edit</button>
                         </td>
                         {WORKSPACES.map((w) => {
                           const ent = m.entitlements.find((e) => e.workspace === w.id);
@@ -212,11 +254,70 @@ export function AccessControl() {
                 </table>
               </div>
               <p className="mt-2 text-[10px] text-grey">
-                Every change is a governed action — justification required, audited, attributed. You cannot revoke your own governance access.
+                Every change is a governed action — justification required, audited, attributed. Revocation demands a passcode step-up; you cannot revoke your own governance access.
               </p>
             </>
           )}
         </section>
+      )}
+
+      {/* Access activity telemetry — approvers */}
+      {isApprover && activity && activity.length > 0 && (
+        <section className="rounded-lg border border-line bg-card p-4 shadow-card">
+          <h2 className="mb-2 font-mono text-[11px] font-bold uppercase tracking-wider text-grey">Access activity</h2>
+          <ul className="space-y-1">
+            {activity.slice(0, 15).map((a, i) => (
+              <li key={i} className="flex items-baseline gap-2 text-micro">
+                <span className="font-mono text-[10px] text-grey">{new Date(a.created_at).toLocaleString()}</span>
+                <span className="font-semibold text-navy">{a.actor}</span>
+                <span className="text-grey-dark">{a.action.replace('action:', '').replace('purpose:access', 'viewed')}</span>
+                {a.entity && <span className="font-mono text-[10px] text-grey">{a.entity}{a.entity_id && a.entity_id !== a.entity ? `/${a.entity_id}` : ''}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {/* Member dossier drawer — purpose-gated read */}
+      {dossier && (
+        <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={() => setDossier(null)}>
+          <div className="h-full w-full max-w-lg overflow-y-auto border-l border-line bg-card p-4 shadow-card" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center gap-2">
+              <h2 className="min-w-0 flex-1 truncate text-h3 font-bold text-navy">{dossier.member.name}</h2>
+              <span className="rounded border border-line px-1.5 py-0.5 font-mono text-micro text-grey">{dossier.member.role}</span>
+              <button onClick={() => setDossier(null)} className="text-grey hover:text-navy" aria-label="Close"><X size={16} /></button>
+            </div>
+            <p className="mb-3 text-micro text-grey">{dossier.member.email}{dossier.profile?.unit ? ` · ${dossier.profile.unit}` : ''}{dossier.profile?.title ? ` · ${dossier.profile.title}` : ''}</p>
+
+            <div className="mb-4">
+              <div className="mb-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-grey">Holds access to</div>
+              <div className="flex flex-wrap gap-1.5">
+                {dossier.entitlements.length === 0 ? <span className="text-micro text-grey">No entitlements.</span> : dossier.entitlements.map((e) => (
+                  <span key={e.workspace} className="rounded border border-cyan-500/40 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-micro text-cyan-700 dark:text-cyan-300" title={e.justification ?? undefined}>
+                    {e.workspace} · {e.capability}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-grey">Recent footprint</div>
+              {dossier.activity.length === 0 ? (
+                <p className="text-micro text-grey">No recorded actions.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {dossier.activity.map((a, i) => (
+                    <li key={i} className="flex items-baseline gap-2 text-micro">
+                      <span className="font-mono text-[10px] text-grey">{new Date(a.created_at).toLocaleDateString()}</span>
+                      <span className="text-navy">{a.action}</span>
+                      <span className="font-mono text-[10px] text-grey">{a.subject_type}/{a.subject_id}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

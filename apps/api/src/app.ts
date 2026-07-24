@@ -63,7 +63,7 @@ export function createApp() {
         return env.corsOrigins.includes(origin) ? origin : env.corsOrigins[0] ?? '';
       },
       allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key'],
+      allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Purpose'],
       exposeHeaders: ['Content-Type'],
       maxAge: 86400,
       credentials: false,

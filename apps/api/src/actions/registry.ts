@@ -16,6 +16,15 @@ import { notify } from '../notifications/service.js';
 import { createManualTask } from '../tasks/service.js';
 import { DEFAULT_ORG_ID } from '../intel/observations.js';
 import { loadEntitlements, invalidateEntitlements } from '../access/entitlements.js';
+import { env } from '../lib/env.js';
+
+/** Timing-safe string compare (constant-time when lengths match). */
+function safeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let out = 0;
+  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return out === 0;
+}
 
 export type ActorRole = 'operator' | 'approver';
 
@@ -430,8 +439,16 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     paramsSchema: z.object({
       workspace: z.enum(WORKSPACE_IDS as unknown as [string, ...string[]]),
       justification: z.string().min(1).max(500),
+      /** Step-up: the desk passcode, re-entered at action time (Phase 2). */
+      stepUpPasscode: z.string().min(1).max(200),
     }),
     execute: async ({ pool, subjectId, params, actor }) => {
+      // Step-up re-auth (LCX ONE Phase 2): revocation is destructive, so it
+      // demands a fresh passcode at action time — a live human deliberately
+      // re-authorizing, not a cached session firing. Timing-safe.
+      if (!safeEqual(String(params.stepUpPasscode), env.deskPasscode)) {
+        throw new ActionError('STEP_UP_REQUIRED', 'Revocation requires re-entering the desk passcode.', 401);
+      }
       // Lockout protection: an approver cannot saw off the branch they sit on.
       // Revoking your own governance access would strand the access system
       // itself; another approver must do it.
@@ -445,6 +462,29 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       if ((rowCount ?? 0) === 0) throw new ActionError('NOT_FOUND', 'No such entitlement', 404);
       invalidateEntitlements(subjectId);
       return { memberId: subjectId, workspace: params.workspace, revoked: true };
+    },
+  },
+  set_member_profile: {
+    id: 'set_member_profile',
+    label: 'Set member profile',
+    description: 'Record a roster member’s unit and title (LCX OS Directorate).',
+    subjectTypes: ['member'],
+    minRole: 'approver',
+    workspace: 'governance',
+    paramsSchema: z.object({
+      unit: z.string().max(80).optional(),
+      title: z.string().max(120).optional(),
+    }),
+    execute: async ({ pool, subjectId, params, actor }) => {
+      if (!findMemberById(subjectId)) throw new ActionError('NOT_FOUND', `No roster member '${subjectId}'`, 404);
+      await pool.query(
+        `INSERT INTO member_profiles (member_id, unit, title, updated_by, updated_at)
+         VALUES ($1,$2,$3,$4, now())
+         ON CONFLICT (member_id)
+         DO UPDATE SET unit=EXCLUDED.unit, title=EXCLUDED.title, updated_by=EXCLUDED.updated_by, updated_at=now()`,
+        [subjectId, (params.unit as string) ?? null, (params.title as string) ?? null, actor],
+      );
+      return { memberId: subjectId, unit: params.unit ?? null, title: params.title ?? null };
     },
   },
   decide_access_request: {
