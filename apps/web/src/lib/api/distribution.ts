@@ -58,8 +58,19 @@ export const setListingStatus = (surfaceId: string, params: Record<string, unkno
   invokeDist('dist_listing_set_status', 'dist_listing', surfaceId, params);
 export const createCampaign = (params: Record<string, unknown>) =>
   invokeDist('dist_campaign_create', 'distribution', 'new', params);
-export const setCampaignStatus = (campaignId: string, status: string) =>
-  invokeDist('dist_campaign_set_status', 'dist_campaign', campaignId, { status });
+export const setCampaignStatus = (campaignId: string, status: string, override?: { overrideGate: boolean; overrideReason: string }) =>
+  invokeDist('dist_campaign_set_status', 'dist_campaign', campaignId, override ? { status, ...override } : { status });
+
+export const exportCampaign = (campaignId: string, target: string) =>
+  request<{ data: { spec: Record<string, unknown>; mode: string } }>(`/v1/distribution/campaigns/${campaignId}/export?target=${target}`, { auth: true }).then((r) => r.data);
+
+/* Compliance reviews on a campaign (mirrors the analytic_reviews SAT pattern). */
+export interface CampaignReview { id: string; kind: string; title: string; status: string; author: string; created_at: string }
+export const fetchCampaignReviews = (campaignId: string) =>
+  request<{ data: CampaignReview[] }>(`/v1/reviews?subjectType=dist_campaign&subjectId=${campaignId}`, { auth: true }).then((r) => r.data);
+export async function fileCampaignReview(campaignId: string, kind: 'premortem' | 'legal_check', title: string, content: string): Promise<void> {
+  await request(`/v1/reviews`, { auth: true, method: 'POST', body: { subjectType: 'dist_campaign', subjectId: campaignId, kind, title, content } });
+}
 
 export const fetchDistributionDeep = () =>
   request<{ data: DistributionDeep }>(`/v1/distribution/deep`, { auth: true }).then((r) => r.data);

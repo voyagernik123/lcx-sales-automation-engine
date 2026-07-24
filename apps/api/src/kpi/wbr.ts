@@ -74,6 +74,8 @@ export interface WbrReport {
   narrative: string;
   /** US-launch program block (100X Phase 4.3) — readiness + WoW delta. */
   program?: { readiness: number; readinessDelta: number | null; simP50Days: number | null };
+  /** PayAgent distribution block (LCX ONE Phase 6) — presence + campaign posture. */
+  distribution?: { presence: number; presenceDelta: number | null; liveListings: number; liveCampaigns: number; rewardSpendLcx: number };
   /** true when composed on the fly (no stored report for the week yet). */
   live?: boolean;
 }
@@ -212,14 +214,45 @@ export async function composeWbr(pool: pg.Pool, now = new Date()): Promise<WbrRe
     program = { readiness: r.score, readinessDelta, simP50Days };
   } catch { /* command module absent — omit */ }
 
+  // PayAgent distribution block (LCX ONE Phase 6): machine-economy presence +
+  // live campaign posture + this week's projected reward spend. Best-effort —
+  // distribution tables absent → the block is simply omitted.
+  let distribution: WbrReport['distribution'];
+  try {
+    const { presenceScore } = await import('@lcx/shared');
+    const { DISTRIBUTION_DEEP_SEED } = await import('../seed/distribution/data.js');
+    const listings = (await pool.query<{ surface_id: string; status: string }>(`SELECT surface_id, status FROM dist_listings`)).rows;
+    const byId = new Map(listings.map((l) => [l.surface_id, l.status]));
+    const pr = presenceScore(DISTRIBUTION_DEEP_SEED.surfaces.map((s) => ({
+      surfaceId: s.id, label: s.name,
+      status: (byId.get(s.id) as 'not_started' | 'submitted' | 'live' | 'ranked') ?? 'not_started',
+    })));
+    const liveListings = listings.filter((l) => l.status === 'live' || l.status === 'ranked').length;
+    const camps = (await pool.query<{ status: string; budget_lcx: string | null }>(`SELECT status, budget_lcx FROM dist_campaigns`)).rows;
+    const liveCampaigns = camps.filter((c) => c.status === 'live').length;
+    const rewardSpendLcx = camps.filter((c) => c.status === 'live').reduce((s, c) => s + (c.budget_lcx != null ? Number(c.budget_lcx) : 0), 0);
+    let presenceDelta: number | null = null;
+    try {
+      const prev = await pool.query(
+        `SELECT payload->'distribution'->>'presence' AS p FROM wbr_reports WHERE week_start < $1 ORDER BY week_start DESC LIMIT 1`,
+        [weekStart],
+      );
+      const pp = Number(prev.rows[0]?.p);
+      if (Number.isFinite(pp)) presenceDelta = pr.presenceScore - pp;
+    } catch { /* history optional */ }
+    distribution = { presence: pr.presenceScore, presenceDelta, liveListings, liveCampaigns, rewardSpendLcx };
+  } catch { /* distribution module/tables absent — omit */ }
+
   const narrative = buildNarrative(weekStart, inputs, outputs, exceptions, commitments)
-    + (program ? ` Launch readiness ${program.readiness}/100${program.readinessDelta != null ? ` (${program.readinessDelta >= 0 ? '+' : ''}${program.readinessDelta} WoW)` : ''}${program.simP50Days != null ? `, sim P50 ~${program.simP50Days}d` : ''}.` : '');
+    + (program ? ` Launch readiness ${program.readiness}/100${program.readinessDelta != null ? ` (${program.readinessDelta >= 0 ? '+' : ''}${program.readinessDelta} WoW)` : ''}${program.simP50Days != null ? `, sim P50 ~${program.simP50Days}d` : ''}.` : '')
+    + (distribution ? ` PayAgent presence ${distribution.presence}/100${distribution.presenceDelta != null ? ` (${distribution.presenceDelta >= 0 ? '+' : ''}${distribution.presenceDelta} WoW)` : ''}, ${distribution.liveListings} listings live, ${distribution.liveCampaigns} campaigns running.` : '');
 
   return {
     weekStart,
     generatedAt: new Date().toISOString(),
     inputs, outputs, sparklines, exceptions, commitments, narrative,
     ...(program ? { program } : {}),
+    ...(distribution ? { distribution } : {}),
   };
 }
 

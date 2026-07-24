@@ -11,7 +11,7 @@
  */
 import { z } from 'zod';
 import type pg from 'pg';
-import { findMemberById, WORKSPACE_IDS, capAtLeast, type WorkspaceId } from '@lcx/shared';
+import { findMemberById, WORKSPACE_IDS, capAtLeast, emissionBudget, type WorkspaceId } from '@lcx/shared';
 import { notify } from '../notifications/service.js';
 import { createManualTask } from '../tasks/service.js';
 import { DEFAULT_ORG_ID } from '../intel/observations.js';
@@ -34,6 +34,8 @@ export interface ActionContext {
   subjectId: string;
   params: Record<string, unknown>;
   actor: string;
+  /** The principal's role — some gates (e.g. campaign launch) require approver. */
+  role: ActorRole;
 }
 
 export interface RegistryAction {
@@ -588,14 +590,69 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
   dist_campaign_set_status: {
     id: 'dist_campaign_set_status',
     label: 'Set campaign status',
-    description: 'Advance a campaign through its lifecycle (Phase 6 gates launch).',
+    description: 'Advance a campaign through its lifecycle (launch is compliance-gated).',
     subjectTypes: ['dist_campaign'],
     minRole: 'operator',
     workspace: 'distribution',
     paramsSchema: z.object({
       status: z.enum(['draft', 'compliance_review', 'approved', 'live', 'measured']),
+      overrideGate: z.boolean().optional(),
+      overrideReason: z.string().max(500).optional(),
     }),
-    execute: async ({ pool, subjectId, params }) => {
+    execute: async ({ pool, subjectId, params, role }) => {
+      const LAUNCH = new Set(['approved', 'live']);
+      const target = String(params.status);
+
+      // The COMPLIANCE GATE (LCX ONE Phase 6): launching a token-incentivized
+      // campaign requires (a) approver authority, (b) an active premortem AND
+      // legal_check review on file, and (c) projected LCX reward spend within
+      // the emission budget envelope. Soft-blockable only with an audited
+      // override + reason. Fail-open on a missing reviews table so governance
+      // never dead-locks ops. Non-token campaigns advance freely.
+      if (LAUNCH.has(target)) {
+        const { rows: crows } = await pool.query<{ token_incentivized: boolean; budget_lcx: string | null }>(
+          `SELECT token_incentivized, budget_lcx FROM dist_campaigns WHERE id=$1`, [subjectId],
+        );
+        const camp = crows[0];
+        if (!camp) throw new ActionError('NOT_FOUND', 'Campaign not found', 404);
+
+        if (camp.token_incentivized) {
+          // (a) approver-only launch.
+          if (role !== 'approver' && !params.overrideGate) {
+            throw new ActionError('APPROVER_REQUIRED', 'Launching a token-incentivized campaign requires approver authority.', 403);
+          }
+          // (b) active premortem + legal_check on this campaign.
+          let kinds: string[] = [];
+          try {
+            const r = await pool.query(
+              `SELECT DISTINCT kind FROM analytic_reviews
+                WHERE subject_type='dist_campaign' AND subject_id=$1 AND status='active'
+                  AND kind IN ('premortem','legal_check')`, [subjectId]);
+            kinds = r.rows.map((x: { kind: string }) => x.kind);
+          } catch { kinds = ['premortem', 'legal_check']; } // fail-open
+          const missing = ['premortem', 'legal_check'].filter((k) => !kinds.includes(k));
+          // (c) budget envelope via the emission engine.
+          const budget = camp.budget_lcx != null ? Number(camp.budget_lcx) : 0;
+          const projectedPaidLinks = budget; // 1 paid link ≈ 1 LCX creator reward (Standard)
+          const em = emissionBudget({ projectedPaidLinks, creatorRewardLcx: 1, serviceFeeLcx: 1, treasuryBudgetLcx: Math.max(budget, 1) });
+          const overBudget = !em.withinBudget;
+
+          const blockers: string[] = [];
+          if (missing.length > 0) blockers.push(`compliance review missing (${missing.join(' + ')})`);
+          if (overBudget) blockers.push('projected reward spend exceeds the budget envelope');
+
+          if (blockers.length > 0) {
+            if (!params.overrideGate) {
+              throw new ActionError('COMPLIANCE_GATE',
+                `Cannot launch: ${blockers.join('; ')}. File the reviews (subject_type=dist_campaign) or override with a reason.`, 409);
+            }
+            if (!String(params.overrideReason ?? '').trim()) {
+              throw new ActionError('OVERRIDE_REASON_REQUIRED', 'Compliance-gate override requires a reason.', 400);
+            }
+          }
+        }
+      }
+
       const { rowCount } = await pool.query(
         `UPDATE dist_campaigns SET status=$1, updated_at=now() WHERE id=$2`,
         [params.status, subjectId],
@@ -650,7 +707,7 @@ export async function invokeAction(
     throw new ActionError('VALIDATION', parsed.error.issues.map((i) => i.message).join('; '));
   }
   const params = parsed.data as Record<string, unknown>;
-  const result = await action.execute({ pool, subjectType: input.subjectType, subjectId: input.subjectId, params, actor: input.actor });
+  const result = await action.execute({ pool, subjectType: input.subjectType, subjectId: input.subjectId, params, actor: input.actor, role: input.role });
 
   // The spine — ledger + hash-chained audit, both, always.
   await pool.query(

@@ -21,10 +21,10 @@ import { getPool } from '../db/index.js';
 import { env } from '../lib/env.js';
 
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
-const KINDS = ['key_assumptions', 'premortem', 'devils_advocate'] as const;
+const KINDS = ['key_assumptions', 'premortem', 'devils_advocate', 'legal_check'] as const;
 type Kind = (typeof KINDS)[number];
 // 'command_decision' (100X Phase 4): SATs on program-critical decisions.
-const SUBJECTS = ['deal', 'project', 'command_decision'] as const;
+const SUBJECTS = ['deal', 'project', 'command_decision', 'dist_campaign'] as const;
 
 export const reviewRoutes = new Hono<{ Variables: AuthVariables }>();
 

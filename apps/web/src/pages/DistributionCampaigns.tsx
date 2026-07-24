@@ -6,8 +6,10 @@ import { CardSkeleton } from '@/components/shared';
 import { toast } from '@/components/shared/Toast';
 import {
   fetchDistCampaigns, createCampaign, setCampaignStatus, runEmission, runQuestCac,
-  type DistCampaign, type Emission, type QuestCac,
+  fetchDistributionDeep, fetchCampaignReviews, fileCampaignReview, exportCampaign,
+  type DistCampaign, type Emission, type QuestCac, type DistributionDeep, type CampaignReview,
 } from '@/lib/api/distribution';
+import { X, ShieldCheck, Download } from 'lucide-react';
 
 const LIFECYCLE = ['draft', 'compliance_review', 'approved', 'live', 'measured'] as const;
 const STATUS_TONE: Record<string, string> = {
@@ -33,9 +35,35 @@ export function DistributionCampaigns() {
   const [budgetLcx, setBudgetLcx] = useState(5000);
   const [emit, setEmit] = useState<Emission | null>(null);
   const [cac, setCac] = useState<QuestCac | null>(null);
+  const [deep, setDeep] = useState<DistributionDeep | null>(null);
+  const [drawer, setDrawer] = useState<DistCampaign | null>(null);
+  const [reviews, setReviews] = useState<CampaignReview[]>([]);
 
   const refresh = useCallback(() => { fetchDistCampaigns().then(setCampaigns).catch(() => setCampaigns([])); }, []);
-  useEffect(() => { refresh(); }, [refresh]);
+  useEffect(() => { refresh(); fetchDistributionDeep().then(setDeep).catch(() => setDeep(null)); }, [refresh]);
+
+  const openDrawer = async (c: DistCampaign) => {
+    setDrawer(c);
+    setReviews(await fetchCampaignReviews(c.id).catch(() => []));
+  };
+  const fileReview = async (kind: 'premortem' | 'legal_check') => {
+    if (!drawer) return;
+    const note = window.prompt(kind === 'premortem' ? 'Premortem — what could make this campaign fail?' : 'Legal check — confirm MiCA/TVTG marketing compliance:');
+    if (!note || note.trim().length < 4) return;
+    try {
+      await fileCampaignReview(drawer.id, kind, kind === 'premortem' ? 'Campaign premortem' : 'Compliance / legal check', note.trim());
+      toast('success', `${kind.replace('_', ' ')} filed`);
+      setReviews(await fetchCampaignReviews(drawer.id).catch(() => []));
+    } catch (e) { toast('error', e instanceof Error ? e.message : 'Failed'); }
+  };
+  const exportSpec = async (target: string) => {
+    if (!drawer) return;
+    try {
+      const r = await exportCampaign(drawer.id, target);
+      await navigator.clipboard.writeText(JSON.stringify(r.spec, null, 2)).catch(() => {});
+      toast('success', `${target} spec copied to clipboard (keyless export)`);
+    } catch (e) { toast('error', e instanceof Error ? e.message : 'Export failed'); }
+  };
 
   // Live pricing: re-run the engines whenever the budget moves.
   useEffect(() => {
@@ -65,7 +93,21 @@ export function DistributionCampaigns() {
       toast('success', `${c.name} → ${status.replace('_', ' ')}`);
       refresh();
     } catch (e) {
-      toast('error', e instanceof Error ? e.message : 'Update failed');
+      const msg = e instanceof Error ? e.message : 'Update failed';
+      // The compliance gate soft-blocks token-campaign launch — offer the
+      // audited override (approver-only on the server) rather than dead-end.
+      if (/compliance|approver|reward spend/i.test(msg)) {
+        const reason = window.prompt(`Blocked by the compliance gate:\n\n${msg}\n\nFile the reviews (open Compliance), or enter an override reason to launch anyway (audited):`);
+        if (reason && reason.trim().length > 3) {
+          try {
+            await setCampaignStatus(c.id, status, { overrideGate: true, overrideReason: reason.trim() });
+            toast('success', `${c.name} → ${status.replace('_', ' ')} (overridden, audited)`);
+            refresh();
+          } catch (e2) { toast('error', e2 instanceof Error ? e2.message : 'Override failed'); }
+        }
+      } else {
+        toast('error', msg);
+      }
     }
   };
 
@@ -92,7 +134,7 @@ export function DistributionCampaigns() {
           <label className="block text-micro text-grey">Budget: <span className="font-mono font-bold text-navy">{budgetLcx.toLocaleString()} LCX</span></label>
           <input type="range" min={0} max={50000} step={1000} value={budgetLcx} onChange={(e) => setBudgetLcx(Number(e.target.value))} className="w-full accent-cyan-500" />
           <Button className="mt-2" size="xs" disabled={busy} onClick={() => void create()}><Plus size={12} /> {busy ? 'Drafting…' : 'Draft campaign'}</Button>
-          {tokenIncentivized && <p className="mt-1.5 text-[10px] text-amber-600 dark:text-amber-400">Token-incentivized — Phase 6 will require a compliance review before launch.</p>}
+          {tokenIncentivized && <p className="mt-1.5 text-[10px] text-amber-600 dark:text-amber-400">Token-incentivized — launch requires a compliance review (premortem + legal check) and an approver.</p>}
         </div>
 
         <div className="rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-4">
@@ -120,6 +162,9 @@ export function DistributionCampaigns() {
                   <span className="text-label font-semibold text-navy">{c.name}</span>
                   <span className="ml-2 font-mono text-[10px] text-grey">{c.kind}{c.token_incentivized ? ' · token' : ''}{c.budget_lcx ? ` · ${Number(c.budget_lcx).toLocaleString()} LCX` : ''}</span>
                 </span>
+                {c.token_incentivized && (
+                  <button onClick={() => void openDrawer(c)} className="flex items-center gap-1 text-micro text-cyan-600 hover:underline dark:text-cyan-400"><ShieldCheck size={12} /> Compliance</button>
+                )}
                 <select value={c.status} onChange={(e) => void advance(c, e.target.value)} className={clsx('rounded border border-line bg-card px-1.5 py-0.5 font-mono text-micro font-semibold', STATUS_TONE[c.status])}>
                   {LIFECYCLE.map((v) => <option key={v} value={v}>{v.replace('_', ' ')}</option>)}
                 </select>
@@ -128,6 +173,52 @@ export function DistributionCampaigns() {
           </div>
         )}
       </section>
+
+      {/* Compliance drawer — SAT reviews + the MiCA checklist the gate cites */}
+      {drawer && (
+        <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={() => setDrawer(null)}>
+          <div className="h-full w-full max-w-lg overflow-y-auto border-l border-line bg-card p-4 shadow-card" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center gap-2">
+              <h2 className="min-w-0 flex-1 truncate text-h3 font-bold text-navy">{drawer.name}</h2>
+              <button onClick={() => setDrawer(null)} className="text-grey hover:text-navy" aria-label="Close"><X size={16} /></button>
+            </div>
+            <p className="mb-3 text-micro text-grey">Token-incentivized — launch is gated on a premortem + legal check and the emission budget.</p>
+
+            <div className="mb-4">
+              <div className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-grey"><ShieldCheck size={12} /> Compliance reviews</div>
+              {(['premortem', 'legal_check'] as const).map((k) => {
+                const has = reviews.some((r) => r.kind === k && r.status === 'active');
+                return (
+                  <div key={k} className="mb-1 flex items-center gap-2">
+                    <span className={clsx('h-2 w-2 rounded-full', has ? 'bg-emerald-500' : 'bg-line')} />
+                    <span className="flex-1 text-label text-navy">{k === 'premortem' ? 'Premortem' : 'Legal / compliance check'}</span>
+                    {has ? <span className="text-micro text-emerald-600 dark:text-emerald-400">on file</span>
+                         : <Button size="xs" variant="secondary" onClick={() => void fileReview(k)}>File</Button>}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mb-4">
+              <div className="mb-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-grey">MiCA / policy checklist</div>
+              <ul className="space-y-1">
+                {(deep?.reference as unknown as { complianceChecklist?: Array<{ id: string; rule: string; check: string }> })?.complianceChecklist?.map((c) => (
+                  <li key={c.id} className="text-micro"><span className="font-semibold text-navy">{c.rule}</span> — <span className="text-grey-dark">{c.check}</span></li>
+                ))}
+              </ul>
+            </div>
+
+            <div>
+              <div className="mb-1.5 flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-grey"><Download size={12} /> Keyless platform export</div>
+              <div className="flex gap-2">
+                <Button size="xs" variant="secondary" onClick={() => void exportSpec('galxe')}>Export → Galxe</Button>
+                <Button size="xs" variant="secondary" onClick={() => void exportSpec('layer3')}>Export → Layer3</Button>
+              </div>
+              <p className="mt-1 text-[10px] text-grey">Copies a platform-ready spec to your clipboard — auto-posted once platform keys are configured.</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

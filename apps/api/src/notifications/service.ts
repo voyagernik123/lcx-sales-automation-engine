@@ -186,5 +186,43 @@ export async function evaluateAlertRules(pool: pg.Pool): Promise<Record<string, 
     counts.command_rfi_stale = 0;
   }
 
+  // 6. DISTRIBUTION monitors (LCX ONE Phase 6) — stale listings (submitted
+  //    >14d, no result), and token-incentivized campaigns that reached
+  //    live/approved WITHOUT a compliance review on file (a governance
+  //    guardrail that fires even if a launch was overridden). Weekly dedup;
+  //    degrades when distribution tables are absent.
+  try {
+    const staleListing = await pool.query(`
+      INSERT INTO notifications (id, rule, title, detail, project_id, href, dedup_key)
+      SELECT gen_random_uuid(), 'dist_listing_stale',
+             'Listing stalled: ' || surface_id,
+             'Submitted ' || FLOOR(EXTRACT(EPOCH FROM (NOW() - updated_at)) / 86400) || 'd ago, still not live — chase or re-plan.',
+             NULL, '/distribution/listings',
+             'diststale:' || surface_id || ':' || TO_CHAR(NOW(), 'IYYY-IW')
+      FROM dist_listings
+      WHERE status = 'submitted' AND updated_at < NOW() - INTERVAL '14 days'
+      ON CONFLICT DO NOTHING
+    `);
+    counts.dist_listing_stale = staleListing.rowCount ?? 0;
+
+    const uncleared = await pool.query(`
+      INSERT INTO notifications (id, rule, title, detail, project_id, href, dedup_key)
+      SELECT gen_random_uuid(), 'dist_campaign_uncleared',
+             'Token campaign live without compliance: ' || c.name,
+             'A token-incentivized campaign is ' || c.status || ' but has no active premortem + legal_check on file — review or pause.',
+             NULL, '/distribution/campaigns',
+             'distuncleared:' || c.id || ':' || TO_CHAR(NOW(), 'IYYY-IW')
+      FROM dist_campaigns c
+      WHERE c.token_incentivized = true AND c.status IN ('approved','live')
+        AND (SELECT COUNT(DISTINCT kind) FROM analytic_reviews
+              WHERE subject_type='dist_campaign' AND subject_id=c.id AND status='active'
+                AND kind IN ('premortem','legal_check')) < 2
+      ON CONFLICT DO NOTHING
+    `);
+    counts.dist_campaign_uncleared = uncleared.rowCount ?? 0;
+  } catch {
+    counts.dist_listing_stale = 0;
+  }
+
   return counts;
 }

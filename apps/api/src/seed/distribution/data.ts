@@ -109,6 +109,16 @@ export const DISTRIBUTION_DEEP_SEED = {
     { id: 'G8', title: 'Nobody demos with an autonomous business', gap: 'no one runs a real OPC on their own rail in public', lcxAngle: 'Launch "the first OPC run by an agent on PayAgent": sells a real service, pays its own x402 bills, invoices via PayAgent links, publishes a live P&L' },
   ],
 
+  /* ── Compliance — the marketing-rule checklist the launch gate cites ── */
+  complianceChecklist: [
+    { id: 'c1', rule: 'MiCA Art. 68 — fair, clear, not-misleading marketing communications', check: 'No guaranteed-return or misleading language in campaign copy; risk warnings present.' },
+    { id: 'c2', rule: 'MiCA — marketing must be identifiable as such', check: 'Token-incentivized posts/quests are clearly labeled as promotional.' },
+    { id: 'c3', rule: 'Liechtenstein TVTG / FMA — token-service promotion', check: 'LCX-token rewards framed as utility, not investment inducement.' },
+    { id: 'c4', rule: 'X platform policy (Jan-2026) — no incentivized posting', check: 'No pay-per-post/engagement-farming on X; incentives live on-chain / owned channels only.' },
+    { id: 'c5', rule: 'Treasury/emission envelope', check: 'Projected LCX reward spend is within the approved budget cap (enforced by the emission engine).' },
+    { id: 'c6', rule: 'Geo-eligibility', check: 'Campaign excludes restricted jurisdictions per LCX policy.' },
+  ],
+
   /* ── GEO/AEO — the queries to win (the answer-engine question inventory) ── */
   geoQuestions: [
     { id: 'q1', query: 'what payment API should my AI agent use', intent: 'category', priority: 'high' },

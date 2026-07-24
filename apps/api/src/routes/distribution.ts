@@ -121,6 +121,43 @@ distributionRoutes.post('/engines/channel-mix', requireOperator, async (c) => {
   return c.json({ data: channelMix(dims, rows, b.weights) });
 });
 
+/**
+ * GET /v1/distribution/campaigns/:id/export?target=galxe|layer3 — the keyless
+ * platform adapter (LCX ONE Phase 6). Emits a campaign spec a human pastes
+ * into the platform today; the API posts it directly the day keys arrive.
+ * Never blocked on procurement.
+ */
+distributionRoutes.get('/campaigns/:id/export', requireOperator, async (c) => {
+  const id = c.req.param('id');
+  const target = (c.req.query('target') ?? 'galxe').toLowerCase();
+  try {
+    const { rows } = await getPool().query<{ name: string; kind: string; budget_lcx: string | null; detail: string | null; token_incentivized: boolean; status: string }>(
+      `SELECT name, kind, budget_lcx, detail, token_incentivized, status FROM dist_campaigns WHERE id=$1`, [id],
+    );
+    const camp = rows[0];
+    if (!camp) return c.json({ error: 'Campaign not found', code: 'NOT_FOUND' }, 404);
+    // Neutral spec shape (Galxe/Layer3-compatible fields); the human maps the
+    // final rewards in-platform. Deliberately does NOT include secrets.
+    const spec = {
+      target,
+      title: camp.name,
+      type: camp.kind,
+      description: camp.detail ?? `PayAgent distribution campaign — ${camp.name}`,
+      rewards: camp.token_incentivized ? { asset: 'LCX', budget: camp.budget_lcx != null ? Number(camp.budget_lcx) : null } : null,
+      tasks: [
+        { kind: 'create_payagent_link', label: 'Create a PayAgent payment link' },
+        { kind: 'onchain_action', label: 'Get one link paid (verifiable on-chain)' },
+        { kind: 'hold', label: 'Hold ≥ required LCX' },
+      ],
+      note: `Exported keyless from LCX ONE — paste into ${target}. Auto-posted once platform keys are configured.`,
+    };
+    return c.json({ data: { spec, mode: 'keyless-export' } });
+  } catch (err) {
+    if (isMissingTable(err)) return c.json({ error: 'Distribution tables pending migration 0043', code: 'DB_NOT_READY' }, 503);
+    throw err;
+  }
+});
+
 distributionRoutes.get('/engines/presence', requireOperator, async (c) => {
   const pool = getPool();
   let listings: Array<{ surface_id: string; status: string }> = [];
