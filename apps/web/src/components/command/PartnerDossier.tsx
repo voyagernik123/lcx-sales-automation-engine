@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { X, FileText, Radar as RadarIcon, Coins } from 'lucide-react';
 import { rfiEconomics } from '@lcx/shared';
-import { fetchCommandDeep, recordRfi, type CommandDeep, type CommandPartner } from '@/lib/api/command';
+import { fetchCommandDeep, recordRfi, extractRfiText, type CommandDeep, type CommandPartner } from '@/lib/api/command';
 import { SourceChip } from './SourceChip';
 import { toast } from '@/components/shared/Toast';
 import { Button } from '@/components/ui';
@@ -18,6 +18,8 @@ export function PartnerDossier({ partner, onClose }: { partner: CommandPartner; 
   const [status, setStatus] = useState<'issued' | 'returned' | 'signed'>('returned');
   const [busy, setBusy] = useState(false);
   const [refresh, setRefresh] = useState(0);
+  const [paste, setPaste] = useState('');
+  const [extracting, setExtracting] = useState(false);
 
   useEffect(() => { fetchCommandDeep().then(setDeep).catch(() => setDeep(null)); }, [refresh]);
 
@@ -113,6 +115,24 @@ export function PartnerDossier({ partner, onClose }: { partner: CommandPartner; 
           <section>
             <div className="mb-1.5 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
               <FileText size={11} /> RFI — commercial terms ({rfiRow ? rfiRow.status : 'not issued'})
+            </div>
+            {/* RFI extractor (100X Phase 5.3): paste the LP's reply → AI prefills
+                the form as a DIFF; nothing is written until Record RFI. */}
+            <div className="mb-2">
+              <textarea
+                value={paste} onChange={(e) => setPaste(e.target.value)} rows={2}
+                placeholder="Paste the LP's RFI reply email here → Extract prefills the fields for your review…"
+                className="w-full rounded border border-line bg-card px-2 py-1 text-micro text-navy outline-none focus:border-cyan-500"
+              />
+              <Button size="xs" variant="secondary" disabled={!paste.trim() || extracting} onClick={() => {
+                setExtracting(true);
+                extractRfiText(paste).then((r) => {
+                  if (!r.usedLlm) { toast('error', 'No AI key — fill manually'); return; }
+                  const n = Object.keys(r.fields).length;
+                  setForm((f) => ({ ...f, ...r.fields }));
+                  toast(n ? 'success' : 'info', n ? `Extracted ${n} fields — review, then Record RFI` : 'Nothing extractable found');
+                }).catch(() => toast('error', 'Extraction failed')).finally(() => setExtracting(false));
+              }}>{extracting ? 'Extracting…' : '🤖 Extract fields'}</Button>
             </div>
             <div className="grid grid-cols-2 gap-1.5">
               {deep.reference.rfi.fields.map((f) => (

@@ -259,6 +259,35 @@ commandRoutes.get('/partners/:id/bd-matches', requireOperator, async (c) => {
   }
 });
 
+/** POST /v1/command/decision-memo {decisionId} — AI memo draft (5.2); human decides via the gated action. */
+commandRoutes.post('/decision-memo', requireOperator, async (c) => {
+  const body = await c.req.json<{ decisionId?: string }>().catch(() => ({} as { decisionId?: string }));
+  if (!body.decisionId) return c.json({ error: 'decisionId required', code: 'VALIDATION' }, 400);
+  try {
+    const { draftDecisionMemo } = await import('../ai/commandOperator.js');
+    const res = await draftDecisionMemo(getPool(), String(body.decisionId));
+    if (!res) return c.json({ error: 'Decision not found', code: 'NOT_FOUND' }, 404);
+    return c.json({ data: res, meta: meta() });
+  } catch (err) {
+    console.error('[command] memo error:', err);
+    return c.json({ error: 'Memo draft failed', code: 'COMMAND_AI_ERROR' }, 500);
+  }
+});
+
+/** POST /v1/command/rfi-extract {text} — extract RFI fields from a pasted reply (5.3). READ-ONLY. */
+commandRoutes.post('/rfi-extract', requireOperator, async (c) => {
+  const body = await c.req.json<{ text?: string }>().catch(() => ({} as { text?: string }));
+  if (!body.text?.trim()) return c.json({ error: 'text required', code: 'VALIDATION' }, 400);
+  try {
+    const { extractRfi } = await import('../ai/commandOperator.js');
+    const res = await extractRfi(body.text);
+    return c.json({ data: res, meta: meta() });
+  } catch (err) {
+    console.error('[command] rfi-extract error:', err);
+    return c.json({ error: 'Extraction failed', code: 'COMMAND_AI_ERROR' }, 500);
+  }
+});
+
 /**
  * POST /v1/command/seed — (re)load the strategy extract into the command_*
  * tables. Idempotent. Governed by requireOperator; also runnable as the

@@ -7,7 +7,7 @@ import {
 import {
   fetchCommandOverview, fetchCommandPartners, fetchCommandTasks, fetchCommandDecisions,
   fetchCommandRisks, fetchCommandFinancials, seedCommand,
-  fetchLaunchSim, invokeCommandAction, askProgram,
+  fetchLaunchSim, invokeCommandAction, askProgram, draftDecisionMemo,
   type CommandOverview, type CommandPartner, type CommandTask, type CommandDecision,
   type CommandRisk, type CommandFinancial, type LaunchSim, type ProgramAnswer,
 } from '@/lib/api/command';
@@ -394,6 +394,7 @@ function DecisionRow({ d, onChange }: { d: CommandDecision; onChange: () => void
   const [chosen, setChosen] = useState(d.recommendation ?? '');
   const [busy, setBusy] = useState(false);
   const [tradecraft, setTradecraft] = useState(false);
+  const [memo, setMemo] = useState<string | null>(null);
   const critical = CRITICAL_DECISIONS.has(d.id);
 
   const decide = async () => {
@@ -440,14 +441,27 @@ function DecisionRow({ d, onChange }: { d: CommandDecision; onChange: () => void
           <Button size="xs" variant="secondary" onClick={() => setDeciding(false)}>Cancel</Button>
         </div>
       )}
-      {critical && d.status !== 'decided' && (
-        <div className="mt-1.5">
-          <button onClick={() => setTradecraft((v) => !v)}
-            className="text-micro font-semibold text-amber-600 hover:underline dark:text-amber-400">
-            ⚠ Program-critical — premortem + devil's advocate required {tradecraft ? '▾' : '▸'}
+      {d.status !== 'decided' && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          {critical && (
+            <button onClick={() => setTradecraft((v) => !v)}
+              className="text-micro font-semibold text-amber-600 hover:underline dark:text-amber-400">
+              ⚠ Program-critical — premortem + devil's advocate required {tradecraft ? '▾' : '▸'}
+            </button>
+          )}
+          <button
+            onClick={() => { setBusy(true); draftDecisionMemo(d.id).then((m) => { setMemo(m.memo); }).catch(() => toast('error', 'Memo failed')).finally(() => setBusy(false)); }}
+            disabled={busy}
+            className="text-micro font-semibold text-cyan-600 hover:underline disabled:opacity-50 dark:text-cyan-400">
+            🤖 Draft memo (AI)
           </button>
-          {tradecraft && <div className="mt-1.5"><AnalyticReviews subjectType="command_decision" subjectId={d.id} /></div>}
         </div>
+      )}
+      {memo && d.status !== 'decided' && (
+        <p className="mt-1.5 whitespace-pre-wrap rounded border border-cyan-500/30 p-2 text-micro text-grey-dark">{memo}</p>
+      )}
+      {critical && tradecraft && d.status !== 'decided' && (
+        <div className="mt-1.5"><AnalyticReviews subjectType="command_decision" subjectId={d.id} /></div>
       )}
     </div>
   );
@@ -534,8 +548,19 @@ function AskProgramPanel() {
       {res && (
         <div className="mt-2 rounded border border-line/70 p-2.5">
           <p className="whitespace-pre-wrap text-label text-navy">{res.answer}</p>
+          {res.citations && res.citations.length > 0 && (
+            <div className="mt-1.5 flex flex-wrap gap-1">
+              {res.citations.map((s) => (
+                <a key={s.id} href={s.url ?? '#'} target="_blank" rel="noreferrer"
+                  className="rounded border border-cyan-500/40 bg-cyan-500/5 px-1.5 py-0.5 font-mono text-[10px] font-bold text-cyan-700 hover:bg-cyan-500/10 dark:text-cyan-300"
+                  title={s.label}>
+                  {s.id}
+                </a>
+              ))}
+            </div>
+          )}
           <p className="mt-1.5 text-[10px] text-grey">
-            Grounded in the command graph + planning simulation{res.usedLlm ? ' · AI-composed' : ' · deterministic readout (no AI key set)'}
+            Grounded in the command graph + deep ontology + planning simulation{res.usedLlm ? ' · AI-composed, source-cited' : ' · deterministic readout (no AI key set)'}
           </p>
         </div>
       )}

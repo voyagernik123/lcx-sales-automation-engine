@@ -85,6 +85,7 @@ export async function invokeCommandAction(
 export interface ProgramAnswer {
   answer: string;
   usedLlm: boolean;
+  citations?: Array<{ id: string; label: string; url: string | null }>;
   context: {
     gating: Array<{ id: string; title: string; status: string; done: boolean }>;
     blocked: Array<{ id: string; title: string; workstream: string | null }>;
@@ -98,8 +99,18 @@ export interface ProgramAnswer {
   };
 }
 
-export async function askProgram(question: string): Promise<ProgramAnswer> {
-  return (await request<{ data: ProgramAnswer }>(`/v1/command/ask`, { auth: true, method: 'POST', body: { question } })).data;
+export async function askProgram(question: string): Promise<ProgramAnswer & { citations?: Array<{ id: string; label: string; url: string | null }> }> {
+  return (await request<{ data: ProgramAnswer & { citations?: Array<{ id: string; label: string; url: string | null }> } }>(`/v1/command/ask`, { auth: true, method: 'POST', body: { question } })).data;
+}
+
+/** AI decision-memo draft (5.2) — display only; the human decides via the gated action. */
+export async function draftDecisionMemo(decisionId: string): Promise<{ memo: string; usedLlm: boolean }> {
+  return (await request<{ data: { memo: string; usedLlm: boolean } }>(`/v1/command/decision-memo`, { auth: true, method: 'POST', body: { decisionId } })).data;
+}
+
+/** RFI reply → extracted fields (5.3) — read-only prefill; the governed record action confirms. */
+export async function extractRfiText(text: string): Promise<{ fields: Record<string, string>; usedLlm: boolean }> {
+  return (await request<{ data: { fields: Record<string, string>; usedLlm: boolean } }>(`/v1/command/rfi-extract`, { auth: true, method: 'POST', body: { text } })).data;
 }
 
 export interface BdMatch { id: string; name: string; ticker: string | null; tier: string | null }
