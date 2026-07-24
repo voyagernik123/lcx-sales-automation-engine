@@ -171,7 +171,9 @@ reviewRoutes.post('/suggest', requireOperator, async (c) => {
 
   // SAT copilot (Phase 5.3): when asked and a key is set, refine the scaffold
   // into a grounded draft. AI never files — this is only a richer prefill.
-  if (wantLlm && projectId) {
+  // Only the three project-SAT kinds have a copilot; 'legal_check' (a
+  // distribution compliance review) is scaffold-only.
+  if (wantLlm && projectId && kind !== 'legal_check') {
     try {
       const { satCopilot } = await import('../ai/operator.js');
       const refined = await satCopilot(getPool(), kind, projectId, scaffold);
