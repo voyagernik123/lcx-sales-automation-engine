@@ -232,4 +232,72 @@ now 0 errors / 0 warnings so it stays trustworthy.
 **Carried into Phase 2:** `/v1/projects` took **2.5 s** from the terminal.
 That is the number the speed floor exists to kill.
 
-### Phases 2–7 — awaiting approval, one at a time.
+### Phase 2 — the Speed Floor · **SHIPPED** (`a3fbbb2`, `241ef55`, `f6c87c7`, `1866658`, +harness)
+
+**The measurement that reframed the phase.** Production costs **165–195 ms of
+fixed infrastructure latency before our code runs**. An `OPTIONS` preflight that
+touches nothing costs 193 ms; a 404 costs 162 ms; `/health` 167 ms. DNS 4 ms, TCP
+13 ms, TLS done at 26 ms — and with keep-alive it is *still* 165 ms. The origin is
+`gcp-us-west1-1.origin.onrender.com` behind Cloudflare: it is geography. So a p95
+under 100 ms is unreachable over the network, and local-first is not an
+optimisation but the only available mechanism.
+
+**Built**
+- **The instrument, first** — two metrics, always published together.
+  `ui_interaction_p95` (paint, target 100 ms) beside `ui_settle_p95` (target
+  600 ms). Measuring only paint would be actively dishonest: every read moved to
+  network-only *for governance reasons* deletes a slow sample from the paint
+  distribution, so the headline p95 would improve as the desk got slower. A test
+  pins that invariant. Both surface in the existing Ops Health panel and Command
+  Center breach banner with no new UI; rollups persist to `observations`, so **no
+  migration and nothing blocked on a prod SQL run**.
+- **The read cache** — opaque bodies, **deny by default**. The never-list is
+  exported separately and a test asserts it cannot be shadowed at any depth.
+  Gated on the *method*, not a path list, because `request()` also serves ~40
+  non-GET call sites including `/v1/actions/:id/invoke`. Mark-stale-never-delete.
+  Invalidation hooked at the single chokepoint so an action added later cannot
+  silently get none, and an unknown action invalidates everything cacheable.
+- **`X-LCX-No-Store`** — server-side, deny-only veto, so a mis-classified endpoint
+  is one API deploy from contained rather than a signed app rebuild.
+- **Offline is read-only and says so**, classified from real request outcomes
+  rather than `navigator.onLine` (which is true on a captive portal).
+
+**Measured result — `/v1/projects`, before → after**
+
+| | before | after |
+|---|---|---|
+| p50 | 334 ms | **292 ms** |
+| max | 1923 ms | **447 ms** |
+| stdev | 464 | **79** |
+
+Root cause, found with real `EXPLAIN ANALYZE` at prod scale (54,373 rows):
+`COUNT(*) OVER ()` forced all 7,903 matching rows through a tuplestore that
+exceeded `work_mem` and **spilled ~8 MB of temp file I/O per request** — which is
+exactly what varies with disk contention, hence the tail. A prior assumption of
+mine (jsonb detoast) was checked and corrected: rows average 310 bytes and are not
+TOASTed, so it was parse cost, secondary.
+
+**Also fixed:** a 240 ms blank screen I introduced in P1 (the browser awaited a
+2 KB Tauri chunk before mounting React), and a real shared-Mac leak — local state
+was keyed with no operator, and sign-out never cleared it, so with one shared desk
+passcode operator B inherited A's workspace, filters, notes and local audit log.
+
+**Not met, stated plainly:** the p95 gate is **not** independently verified. The
+Playwright harness produced good-looking numbers (warm paints 13–31 ms, 0 API
+calls) but the app crashes partway through under generic stubs, and a crashed tree
+also issues zero requests — so the result is unusable as proof. It ships as
+`test.fixme` with what it needs (real per-endpoint fixtures). What *is* proven:
+the cache end-to-end through the real `request()` (12 integration cases with fetch
+stubbed), and the endpoint improvement above, measured against production.
+
+**Cut from the approved scope, with reason:** SQLite. The judged design panel
+scored the opaque response cache highest on governance (8.5) and
+performance-realism (8); with the bottleneck being round-trips rather than local
+query capability, a schema-less cache captures nearly all the win without a second
+read model and its migration path.
+
+**Carried forward:** the initial bundle is at **838/850 KB**. Five phases remain,
+so headroom is the binding constraint from here — 8.4 KB of shipped justification
+prose was already moved into comments to buy some back.
+
+### Phases 3–7 — in progress, continuous run.
