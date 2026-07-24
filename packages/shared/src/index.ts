@@ -135,3 +135,14 @@ export {
   rescore, sensitivity, analyzeSet, parseSpreadBps, rfiEconomics,
   waitlistSim, listingReadiness, tokenDdScore, programReadiness,
 } from './commandEngines.js';
+
+// DISTRIBUTION — growth engines (LCX ONE Phase 4)
+export type {
+  ReferralParams, ReferralSimResult, EmissionInput, EmissionResult,
+  QuestChannelInput, QuestCacResult, ChannelMixResult,
+  AttributionEvent, AttributionResult, PresenceInput, PresenceResult,
+} from './distributionEngines.js';
+export {
+  referralViralitySim, emissionBudget, questCacSim,
+  channelMix, attributeChannels, presenceScore,
+} from './distributionEngines.js';

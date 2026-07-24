@@ -49,3 +49,31 @@ export const fetchDistListings = () =>
 export async function seedDistribution(): Promise<{ listings: number }> {
   return (await request<{ data: { listings: number } }>(`/v1/distribution/seed`, { auth: true, method: 'POST' })).data;
 }
+
+/* ── Phase 4 — growth engines + x402 seller layer ── */
+
+export interface ReferralSim {
+  kFactor: number; viral: boolean;
+  cumulativeCreators: { p10: number; p50: number; p90: number };
+  cumulativePaidLinks: { p10: number; p50: number; p90: number };
+  rewardCostLcx: { p10: number; p50: number; p90: number };
+}
+export interface Emission { emittedLcx: number; feeRevenueLcx: number; netTreasuryLcx: number; budgetUtilizationPct: number; withinBudget: boolean; status: string }
+export interface QuestCac { fundedAgents: { p10: number; p50: number; p90: number }; totalBudgetUsd: number; blendedCacP50: number | null; marginal: Array<{ channelId: string; label: string; fundedPerExtra1kUsd: number }> }
+export interface ChannelMix { rows: Array<{ subjectId: string; subjectLabel: string; weighted: number; rank: number }> }
+export interface Presence { presenceScore: number; surfaces: Array<{ surfaceId: string; label: string; score: number }> }
+
+const post = <T>(path: string, body: Record<string, unknown> = {}) =>
+  request<{ data: T }>(path, { auth: true, method: 'POST', body }).then((r) => r.data);
+
+export const runReferralSim = (body?: Record<string, unknown>) => post<ReferralSim>(`/v1/distribution/engines/referral-sim`, body);
+export const runEmission = (body?: Record<string, unknown>) => post<Emission>(`/v1/distribution/engines/emission`, body);
+export const runQuestCac = (body?: Record<string, unknown>) => post<QuestCac>(`/v1/distribution/engines/quest-cac`, body);
+export const runChannelMix = (body?: Record<string, unknown>) => post<ChannelMix>(`/v1/distribution/engines/channel-mix`, body);
+export const fetchPresence = () => request<{ data: Presence }>(`/v1/distribution/engines/presence`, { auth: true }).then((r) => r.data);
+
+export interface X402Catalog {
+  mode: string; seller: string;
+  endpoints: Array<{ id: string; path: string; description: string; priceUsd: number; network: string; asset: string }>;
+}
+export const fetchX402Catalog = () => request<{ data: X402Catalog }>(`/v1/x402/catalog`, { auth: false }).then((r) => r.data);

@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Rocket, Route, Compass, Swords, Target } from 'lucide-react';
+import { Rocket, Route, Compass, Swords, Target, Gauge } from 'lucide-react';
 import { PageTitle } from '@/components/ui';
 import { CardSkeleton } from '@/components/shared';
 import { fetchDistributionDeep, type DistributionDeep } from '@/lib/api/distribution';
 import { RailsMap, ChannelAtlas, CompetitorRoom, GapRegister } from '@/components/distribution/DistributionPanels';
+import { GrowthEngines } from '@/components/distribution/GrowthEngines';
 
-type Tab = 'atlas' | 'rails' | 'competitors' | 'gaps';
+type Tab = 'atlas' | 'rails' | 'competitors' | 'gaps' | 'engines';
 const TABS: Array<{ id: Tab; label: string; icon: typeof Rocket }> = [
   { id: 'atlas', label: 'Channel Atlas', icon: Compass },
   { id: 'rails', label: 'Rails Map', icon: Route },
   { id: 'competitors', label: 'Competitor Room', icon: Swords },
   { id: 'gaps', label: 'Gap Register', icon: Target },
+  { id: 'engines', label: 'Growth Engines', icon: Gauge },
 ];
 
 /**
@@ -75,6 +77,7 @@ export function DistributionHome() {
             {tab === 'rails' && <RailsMap rails={deep.reference.rails} sources={deep.reference.sources} />}
             {tab === 'competitors' && <CompetitorRoom competitors={deep.reference.competitors} sources={deep.reference.sources} />}
             {tab === 'gaps' && <GapRegister gaps={deep.reference.gaps} />}
+            {tab === 'engines' && <GrowthEngines />}
           </div>
         </>
       )}

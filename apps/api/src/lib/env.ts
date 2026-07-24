@@ -33,6 +33,9 @@ export const env = {
   operatorApiKey: required('OPERATOR_API_KEY', 'dev-operator-key-change-me'),
   /** LCX OS front-door passcode: email sign-in requires `email:passcode`. */
   deskPasscode: process.env.DESK_PASSCODE ?? 'test#1234',
+  /** x402 seller layer (Phase 4): unset → sandbox mode (keyless-first). */
+  x402FacilitatorUrl: process.env.X402_FACILITATOR_URL ?? '',
+  x402PayTo: process.env.X402_PAY_TO ?? '',
   corsOrigins: (process.env.CORS_ORIGINS ??
     'http://localhost:5173,http://127.0.0.1:5173,https://lcx-sales-automation-engine.pages.dev')
     .split(',')
