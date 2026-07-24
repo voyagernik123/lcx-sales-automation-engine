@@ -6,6 +6,7 @@ import { recordLatency } from './lib/latency.js';
 import { rateLimit } from './middleware/rateLimit.js';
 import { healthRoutes } from './routes/health.js';
 import { meRoutes } from './routes/me.js';
+import perfRoutes from './routes/perf.js';
 import { projectsRoutes } from './routes/projects.js';
 import { outreachRoutes } from './routes/outreach.js';
 import { queueRoutes } from './routes/queue.js';
@@ -53,7 +54,12 @@ export function createApp() {
   app.use('*', async (c, next) => {
     const start = performance.now();
     await next();
-    if (c.req.path !== '/health') recordLatency(performance.now() - start);
+    // /health is excluded so uptime pings don't skew the desk-facing number;
+    // /v1/perf is excluded because it CARRIES the UI latency measurement —
+    // timing it into the API ring would let measuring pollute the measured.
+    if (c.req.path !== '/health' && c.req.path !== '/v1/perf') {
+      recordLatency(performance.now() - start);
+    }
   });
   app.use('*', rateLimit());
   app.use(
@@ -87,6 +93,7 @@ export function createApp() {
 
   app.route('/health', healthRoutes);
   app.route('/v1/me', meRoutes);
+  app.route('/v1/perf', perfRoutes);
   app.route('/v1/access', accessRoutes);
   app.route('/v1/projects', projectsRoutes);
   // additional /v1/projects sub-routers (disjoint paths: /:id/360, /:id/assign, /:id/notes, /:id/documents)

@@ -10,6 +10,7 @@ import { ErrorBoundary, ToastContainer, CommandPalette, PageSkeleton, useCommand
 import { InspectorHost } from '@/components/inspect/InspectorHost';
 import { useUIStore, useOperatorStore } from '@/stores';
 import { isTerminal } from '@/lib/container';
+import { beginInteraction, afterPaint } from '@/lib/perf';
 import { useAccessStore } from '@/stores/useAccessStore';
 
 export function AppLayout() {
@@ -34,6 +35,23 @@ export function AppLayout() {
   useEffect(() => {
     syncFromPath(location.pathname);
   }, [location.pathname, syncFromPath]);
+
+  // ── Speed floor: measure every route change (TERMINAL Phase 2) ────────────
+  // Scope, stated honestly: this clock starts when the route COMMITS, so it
+  // covers the lazy chunk fetch, the page's own mount work, and the paint — but
+  // not the few ms between the operator's click and the router committing. It is
+  // the dominant part of a navigation, not all of it. Per-surface p95 lands in
+  // the status-bar HUD and, after a flush, in the Ops Health SLO panel.
+  useEffect(() => {
+    const i = beginInteraction('nav', location.pathname);
+    // Stop on the paint AFTER this route's first render, not on the effect —
+    // effects run before the browser paints, so ending here would report a time
+    // the operator never experienced.
+    afterPaint(() => i.paint());
+    // Route data still arriving is measured by the cache layer's settle marks;
+    // a route with no async reads settles when it paints.
+    afterPaint(() => i.settle());
+  }, [location.pathname]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);

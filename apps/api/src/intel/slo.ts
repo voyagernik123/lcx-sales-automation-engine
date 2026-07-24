@@ -16,7 +16,7 @@
 import { getDb } from '../db/index.js';
 import { sql } from 'drizzle-orm';
 import { buildOpsHealth } from './ops.js';
-import { latencySnapshot } from '../lib/latency.js';
+import { latencySnapshot, uiInteractionRing, uiSettleRing, uiFrameRing } from '../lib/latency.js';
 
 export type SloUnit = 'pct' | 'ms' | 'hours';
 export type SloStatus = 'ok' | 'warn' | 'breach' | 'no_data';
@@ -117,6 +117,132 @@ export async function computeSlos(): Promise<SloReport> {
         key: 'api_latency', label: 'API latency (p95)', description: 'Recent request p95 under target',
         unit: 'ms', target: 800, current: snap.p95, higherIsBetter: false, status, budgetBurnPct: burn,
         window: 'recent', detail: `${snap.samples} samples · p50 ${snap.p50}ms · p99 ${snap.p99}ms`,
+      });
+    }
+  }
+
+  // 5) UI interaction latency — the speed floor (TERMINAL Phase 2).
+  //
+  // A DIFFERENT quantity from api_latency above: this is intent → pixels as
+  // measured in the client and flushed to POST /v1/perf, not server request
+  // time. It has to be client-measured, because production costs ~165–195ms of
+  // fixed infrastructure latency before our code runs (a 204 preflight that
+  // touches nothing costs the same as a real query — the origin is GCP us-west1
+  // behind Cloudflare). A sub-100ms interaction is therefore only achievable by
+  // NOT going to the network, which is what the local-first read layer is for.
+  {
+    const snap = uiInteractionRing.snapshot();
+    if (snap.p95 == null || snap.samples < 20) {
+      slos.push(
+        noData(
+          'ui_interaction_p95',
+          'UI interaction (p95)',
+          'Intent → pixels, as felt by the operator',
+          'ms',
+          100,
+          false,
+          'recent',
+          `Only ${snap.samples} client samples so far — need ≥20.`,
+        ),
+      );
+    } else {
+      const { status, burn } = latencyVerdict(snap.p95, 100);
+      slos.push({
+        key: 'ui_interaction_p95',
+        label: 'UI interaction (p95)',
+        description: 'Intent → pixels, as felt by the operator',
+        unit: 'ms',
+        target: 100,
+        current: snap.p95,
+        higherIsBetter: false,
+        status,
+        budgetBurnPct: burn,
+        window: 'recent',
+        // Same honesty as api_latency: say how thin the evidence is. This is one
+        // API process's view of whichever clients happened to flush to it, and it
+        // resets on deploy.
+        detail: `${snap.samples} client samples · p50 ${snap.p50}ms · p99 ${snap.p99}ms`,
+      });
+    }
+  }
+
+  // 5b) UI settle latency — the number that cannot be gamed.
+  //
+  // Published BESIDE ui_interaction_p95, never instead of it. Paint measures
+  // intent → local state on screen; settle measures intent → every authoritative
+  // region resolved. If only paint were tracked, moving a read to network-only
+  // (which governance REQUIRES for gate inputs, entitlements and audit surfaces)
+  // would remove a slow sample from the paint distribution and the headline p95
+  // would improve while the desk got slower. Removing this row is a breaking
+  // change to the Phase 2 gate.
+  //
+  // Its target is deliberately looser than 100ms: settle includes at least one
+  // real round trip, and production costs ~165-195ms of fixed infrastructure
+  // latency before our code runs. Holding settle to 100ms would be demanding
+  // something physically impossible and would make the SLO permanently red.
+  {
+    const snap = uiSettleRing.snapshot();
+    if (snap.p95 == null || snap.samples < 20) {
+      slos.push(
+        noData(
+          'ui_settle_p95',
+          'UI settle (p95)',
+          'Intent → every authoritative region resolved',
+          'ms',
+          600,
+          false,
+          'recent',
+          `Only ${snap.samples} client samples so far — need \u226520.`,
+        ),
+      );
+    } else {
+      const { status, burn } = latencyVerdict(snap.p95, 600);
+      slos.push({
+        key: 'ui_settle_p95',
+        label: 'UI settle (p95)',
+        description: 'Intent \u2192 every authoritative region resolved',
+        unit: 'ms',
+        target: 600,
+        current: snap.p95,
+        higherIsBetter: false,
+        status,
+        budgetBurnPct: burn,
+        window: 'recent',
+        detail: `${snap.samples} client samples \u00b7 p50 ${snap.p50}ms \u00b7 p99 ${snap.p99}ms`,
+      });
+    }
+  }
+
+  // 6) UI frame time — is the app dropping frames (60Hz budget)?
+  {
+    const snap = uiFrameRing.snapshot();
+    if (snap.p95 == null || snap.samples < 20) {
+      slos.push(
+        noData(
+          'ui_frame_time',
+          'UI frame time (p95)',
+          'Frame-to-frame time within the 60Hz budget',
+          'ms',
+          16,
+          false,
+          'recent',
+          `Only ${snap.samples} client samples so far — need ≥20.`,
+        ),
+      );
+    } else {
+      const { status, burn } = latencyVerdict(snap.p95, 16);
+      slos.push({
+        key: 'ui_frame_time',
+        label: 'UI frame time (p95)',
+        description: 'Frame-to-frame time within the 60Hz budget',
+        unit: 'ms',
+        target: 16,
+        current: snap.p95,
+        higherIsBetter: false,
+        status,
+        budgetBurnPct: burn,
+        window: 'recent',
+        detail: `${snap.samples} client samples · p50 ${snap.p50}ms · p99 ${snap.p99}ms`,
       });
     }
   }
