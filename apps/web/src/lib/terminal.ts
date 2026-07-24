@@ -12,14 +12,11 @@
  * unchanged either way — the credential is still `email:passcode`.
  */
 
-/** True when running inside LCX TERMINAL (the Tauri webview injects __TAURI__). */
-export function isTerminal(): boolean {
-  try {
-    return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-  } catch {
-    return false;
-  }
-}
+// The container check lives in its own zero-import module so callers can ask
+// "am I in the terminal?" WITHOUT paying to load this chunk. Re-exported here so
+// existing importers keep working and there is still one definition.
+export { isTerminal } from './container';
+import { isTerminal } from './container';
 
 type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 

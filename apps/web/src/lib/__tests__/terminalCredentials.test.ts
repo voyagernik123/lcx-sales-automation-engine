@@ -16,6 +16,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 /** The Keychain, faked. Mirrors the Rust contract: absent reads are null. */
 const keychain = new Map<string, string>();
 
+// Two mocks, because the container check deliberately lives apart from the Tauri
+// bridge: apiClient asks `container` "are we in the terminal?" synchronously and
+// only then lazily imports `terminal`. Keeping them separate is what keeps the
+// 2KB Tauri chunk off the browser's path to first paint.
+vi.mock('@/lib/container', () => ({ isTerminal: () => true }));
+
 vi.mock('@/lib/terminal', () => ({
   isTerminal: () => true,
   secretGet: async (key: string) => keychain.get(key) ?? null,

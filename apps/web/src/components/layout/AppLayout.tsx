@@ -9,6 +9,7 @@ import { RequestAccess } from './RequestAccess';
 import { ErrorBoundary, ToastContainer, CommandPalette, PageSkeleton, useCommandPalette } from '@/components/shared';
 import { InspectorHost } from '@/components/inspect/InspectorHost';
 import { useUIStore, useOperatorStore } from '@/stores';
+import { isTerminal } from '@/lib/container';
 import { useAccessStore } from '@/stores/useAccessStore';
 
 export function AppLayout() {
@@ -43,6 +44,7 @@ export function AppLayout() {
   // shortcut we add in later phases appears there with its key. No-op in a
   // browser, so the web build is unaffected.
   useEffect(() => {
+    if (!isTerminal()) return; // browser: never fetch the Tauri chunk at all
     let detach: (() => void) | undefined;
     void (async () => {
       const { attachTerminalBridge } = await import('@/lib/terminal');

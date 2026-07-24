@@ -5,6 +5,7 @@
  */
 
 import type { HealthResponse, OperatorPrincipal } from '@lcx/shared';
+import { isTerminal } from './container';
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
 // DEV-only: gating on import.meta.env.DEV lets Vite dead-code-strip the key
@@ -54,8 +55,12 @@ export function getApiKey(): string {
  * before the app renders, when running inside LCX TERMINAL. No-op in a browser.
  */
 export async function hydrateCredentials(): Promise<void> {
-  const { isTerminal, secretGet } = await import('./terminal');
+  // Container check BEFORE the dynamic import. main.tsx awaits this call before
+  // mounting React, so importing ./terminal first put a round-trip for a 2KB
+  // chunk directly on the browser's path to first paint (measured ~240ms of
+  // blank screen on Cloudflare Pages) to load a module that instantly returns.
   if (!isTerminal()) return;
+  const { secretGet } = await import('./terminal');
   const [email, pass] = await Promise.all([secretGet(EMAIL_KEY), secretGet(PASS_KEY)]);
   memEmail = email;
   memPass = pass;
@@ -74,9 +79,9 @@ export function setOperatorCredentials(email: string, passcode: string): void {
   }
   // In the terminal, persist to the Keychain too (fire-and-forget; the
   // in-memory cache above already makes this session work).
+  if (!isTerminal()) return;
   void (async () => {
-    const { isTerminal, secretSet } = await import('./terminal');
-    if (!isTerminal()) return;
+    const { secretSet } = await import('./terminal');
     await Promise.all([secretSet(EMAIL_KEY, e), secretSet(PASS_KEY, passcode)]);
   })();
 }
@@ -96,9 +101,9 @@ export function clearOperatorEmail(): void {
     /* no-op */
   }
   // Forget the Keychain entries too, so sign-out on the terminal is real.
+  if (!isTerminal()) return;
   void (async () => {
-    const { isTerminal, secretDelete } = await import('./terminal');
-    if (!isTerminal()) return;
+    const { secretDelete } = await import('./terminal');
     await Promise.all([secretDelete(EMAIL_KEY), secretDelete(PASS_KEY)]);
   })();
 }
