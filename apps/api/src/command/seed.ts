@@ -16,6 +16,8 @@ const n = (v: unknown): number | null => (v == null || v === '' || Number.isNaN(
 export interface CommandSeedResult {
   products: number; partners: number; workstreams: number; tasks: number;
   decisions: number; risks: number; financialAssumptions: number; launchTargets: number;
+  /** Present when migration 0041 is applied (deep mutable state). */
+  requirements?: number; blockers?: number;
 }
 
 export async function seedCommand(pool: pg.Pool): Promise<CommandSeedResult> {
@@ -127,5 +129,14 @@ export async function seedCommand(pool: pg.Pool): Promise<CommandSeedResult> {
     launchTargets++;
   }
 
-  return { products, partners, workstreams, tasks, decisions, risks, financialAssumptions, launchTargets };
+  // Deep-state seed (100X Phase 1): requirements + blockers. Best-effort — a
+  // prod lagging migration 0041 must not fail the base seed.
+  try {
+    const { seedCommandDeep } = await import('./seed2.js');
+    const deep = await seedCommandDeep(pool);
+    return { products, partners, workstreams, tasks, decisions, risks, financialAssumptions, launchTargets, ...deep };
+  } catch (err) {
+    console.warn('[command] deep seed skipped (0041 pending?):', err instanceof Error ? err.message : err);
+    return { products, partners, workstreams, tasks, decisions, risks, financialAssumptions, launchTargets };
+  }
 }

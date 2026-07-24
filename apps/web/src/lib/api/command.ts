@@ -104,3 +104,50 @@ export async function askProgram(question: string): Promise<ProgramAnswer> {
 
 export interface BdMatch { id: string; name: string; ticker: string | null; tier: string | null }
 export const fetchBdMatches = (partnerId: string) => get<BdMatch[]>(`/partners/${partnerId}/bd-matches`);
+
+/* ── 100X Phase 1: the full-fidelity deep ontology ── */
+
+export interface ScorecardDim { key: string; label: string; weight: number }
+export interface ScorecardRow {
+  subjectId: string; subjectLabel: string; meta?: Record<string, string | null>;
+  scores: Record<string, number>; weighted: number | null; rank: number | null; tier: string | null; note?: string;
+}
+export interface Scorecard { dimensions: ScorecardDim[]; rows: ScorecardRow[] }
+export interface CommandSource { id: string; phase: string; label: string; url: string | null }
+
+export interface CommandDeep {
+  reference: {
+    defaultGrade: string;
+    scorecards: { lp: Scorecard; channel: Scorecard; arch: Scorecard; twoPath: Scorecard };
+    capabilityDetail: Array<Record<string, unknown>>;
+    connectivity: Array<Record<string, unknown>>;
+    rfi: { fields: Array<{ key: string; label: string }>; example: { provider: string; values: Record<string, unknown> } };
+    railProviders: Array<Record<string, unknown>>;
+    stablecoinPolicy: Array<{ coin: string; issuer: string; status: string; action: string; sourceRefs: string[] }>;
+    licensingChecklist: Array<Record<string, unknown>>;
+    funnel: {
+      channels: Array<{ channelId: string; label: string; type: string; budget: number; cac: number | null; signupsEst: number | null }>;
+      conversions: { waitlistToVerified: number; verifiedToFunded: number };
+      scenarios: Array<{ name: string; budget: number | null; waitlist: number | null; funded: number | null }>;
+    };
+    referralMechanics: Array<{ component: string; design: string }>;
+    guardrails: Array<Record<string, unknown>>;
+    ninetyDayPlan: Array<Record<string, unknown>>;
+    tooling: Array<Record<string, unknown>>;
+    ddDimensions: Array<{ dimension: string; assess: string | null; criteria: string | null; weightPct: number; gate: boolean; sourceRefs: string[] }>;
+    listingPolicyOutline: Array<{ section: string; contents: string }>;
+    budgetLines: Array<Record<string, unknown>>;
+    dependencyEdges: Array<{ fromWs: string; onWs: string; strength: 'hard' | 'soft'; note: string }>;
+    execDashboard: Array<Record<string, unknown>>;
+    masterRoadmap: Array<Record<string, unknown>>;
+    consolidatedRisks: Array<Record<string, unknown>>;
+    decisionEnrichment: Array<{ decisionId: string; options: string | null; owner: string | null }>;
+    sources: CommandSource[];
+  };
+  rfi: Array<{ partner_id: string; status: string; owner: string | null; grade: string | null; values: Record<string, unknown> }>;
+  requirements: Array<Record<string, unknown>>;
+  blockers: Array<Record<string, unknown>>;
+  live: { requirements: boolean; blockers: boolean };
+}
+
+export const fetchCommandDeep = () => get<CommandDeep>('/deep');

@@ -22,6 +22,41 @@ async function list(sql: string): Promise<Record<string, unknown>[]> {
   catch { return []; }
 }
 
+/**
+ * GET /v1/command/deep — the FULL-FIDELITY program ontology (100X Phase 1).
+ * `reference` is the compiled, git-versioned strategy extract (weighted
+ * scorecards with dimensions, capability detail, connectivity, rail providers,
+ * GENIUS policy, licensing checklist, funnel model + scenarios, referral +
+ * guardrails, 90-day plan, tooling, DD framework, policy outline, budget,
+ * dependency edges, exec dashboard, roadmap, consolidated risks, decision
+ * enrichment, 100 graded sources). `rfi`/`requirements`/`blockers` are the
+ * desk-mutable rows — they degrade to the compiled defaults before 0041.
+ */
+commandRoutes.get('/deep', requireOperator, async (c) => {
+  try {
+    const { COMMAND_DEEP_SEED } = await import('../seed/command/data2.js');
+    const ref = COMMAND_DEEP_SEED as unknown as Record<string, unknown>;
+    const [rfi, requirements, blockers] = await Promise.all([
+      list(`SELECT partner_id, status, owner, grade, values, issued_at, returned_at, updated_at FROM command_rfi ORDER BY partner_id`),
+      list(`SELECT num, requirement, detail, path, owner, status, updated_at FROM command_requirements ORDER BY num`),
+      list(`SELECT num, blocker, category, severity, detail, owner, resolves_via, status, updated_at FROM command_blockers ORDER BY num`),
+    ]);
+    return c.json({
+      data: {
+        reference: ref,
+        rfi,
+        requirements: requirements.length ? requirements : (ref.requirements as unknown[]),
+        blockers: blockers.length ? blockers : (ref.blockers as unknown[]),
+        live: { requirements: requirements.length > 0, blockers: blockers.length > 0 },
+      },
+      meta: meta(),
+    });
+  } catch (err) {
+    console.error('[command] deep error:', err);
+    return c.json({ error: 'Failed to load deep ontology', code: 'COMMAND_DEEP_ERROR' }, 500);
+  }
+});
+
 commandRoutes.get('/overview', requireOperator, async (c) => {
   try {
     const data = await buildCommandOverview(getPool());

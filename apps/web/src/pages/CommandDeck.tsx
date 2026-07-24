@@ -12,6 +12,7 @@ import {
   type CommandRisk, type CommandFinancial, type LaunchSim, type ProgramAnswer,
 } from '@/lib/api/command';
 import { EmptyState, PageSkeleton, toast } from '@/components/shared';
+import { DeepOntologyPanel } from '@/components/command/DeepOntologyPanel';
 import { PageTitle, Button } from '@/components/ui';
 import { clsx } from 'clsx';
 
@@ -198,6 +199,9 @@ function Loaded({ deck, onChange }: { deck: Deck; onChange: () => void }) {
         {/* Ask the program (Wave 3) */}
         <AskProgramPanel />
       </div>
+
+      {/* Deep ontology — the strategy's own models, fully traceable (100X Phase 1) */}
+      <DeepOntologyPanel />
 
       {/* Critical path — the gating tasks + anything blocked */}
       <Panel icon={<GitBranch size={13} />} title="Critical path to launch">
