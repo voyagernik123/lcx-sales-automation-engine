@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Search, Sun, Moon, LogOut, ChevronDown } from 'lucide-react';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { useUIStore, useOperatorStore, ROLE_LABEL } from '@/stores';
 import { clearOperatorEmail } from '@/lib/apiClient';
+import { storage } from '@/lib/persistence';
+import { useAccessStore } from '@/stores/useAccessStore';
 import { NotificationBell } from './NotificationBell';
 
 const routeLabels: Record<string, string> = {
@@ -54,7 +56,6 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
   const { darkMode, toggleDarkMode } = useUIStore();
   const operator = useOperatorStore(s => s.operator);
   const clearOperator = useOperatorStore(s => s.clearOperator);
-  const navigate = useNavigate();
   const { pathname } = useLocation();
   const crumbs = pathname
     .split('/')
@@ -169,9 +170,17 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
               <button
                 onClick={() => {
                   setShowOperatorMenu(false);
-                  clearOperatorEmail(); // drop the API credential
-                  clearOperator(); // drop the identity → guard sends us to /select
-                  navigate('/select');
+                  clearOperatorEmail(); // credential: memory, localStorage AND Keychain
+                  clearOperator(); // identity → the guard sends us to /select
+                  useAccessStore.getState().reset(); // entitlements + active workspace
+                  storage.clearAll(); // every locally persisted key, for every operator
+
+                  // Hard navigation, not a client-side route change. Sign-out has to
+                  // leave no residue: a SPA navigation keeps every zustand store alive
+                  // in memory, so the next person to sign in on this Mac would still
+                  // be looking at the previous operator's filters, notes and desk
+                  // state. A fresh document guarantees a clean process.
+                  window.location.assign('/select');
                 }}
                 className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-navy transition-colors hover:bg-ice-soft dark:hover:bg-ice-soft/10"
               >

@@ -7,6 +7,7 @@
  */
 import { computeReplySla, type SlaState } from '@/lib/salesIntel';
 import type { BdFilters } from '@/types/bd';
+import { scopedKey } from '@/lib/persistence';
 
 export const DAY_MS = 86_400_000;
 
@@ -108,7 +109,7 @@ export function isDueToday(dueAtIso: string | null, now = new Date()): boolean {
 
 /* ─────────── Session stats (Home reads this EXACT contract) ─────────── */
 
-export const SESSION_STATS_KEY = 'lcx-os:session-stats:v1';
+export const SESSION_STATS_KEY = scopedKey('session-stats');
 
 export interface SessionStats {
   date: string; // YYYY-MM-DD
@@ -145,7 +146,7 @@ export function mergeSessionStats(
 
 /* ───────────────────── Saved screens (radar-lite) ───────────────────── */
 
-export const SCREENS_KEY = 'lcx-os:screens:v1';
+export const SCREENS_KEY = scopedKey('screens');
 
 export interface SavedScreen {
   id: string;

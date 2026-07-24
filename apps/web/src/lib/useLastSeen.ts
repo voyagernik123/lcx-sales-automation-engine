@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useOperatorStore } from '@/stores';
+import { scopedKey } from '@/lib/persistence';
 
 /**
  * "Since you were here" (FINAL_MASTER_PLAN 3.4) — a per-operator, per-surface
@@ -8,7 +9,7 @@ import { useOperatorStore } from '@/stores';
  * Stored locally per browser — a hint layer, not an audit record.
  */
 
-const STORAGE_KEY = 'lcx-os:last-seen:v1';
+const STORAGE_KEY = scopedKey('last-seen');
 
 type Watermarks = Record<string, Record<string, string>>;
 

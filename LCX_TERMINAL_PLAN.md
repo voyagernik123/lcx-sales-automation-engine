@@ -100,7 +100,16 @@ A signed **LCX TERMINAL.app** that Nik, Monty and Sam download once. It:
 - **Local SQLite mirror** (`tauri-plugin-sql`) of the read model: ontology/reference data (which is already immutable + compiled), plus a stale-while-revalidate cache of live reads, keyed and versioned.
 - **Instant navigation:** every route paints from local state immediately, then reconciles. Prefetch on focus/hover/intent. No spinner on any surface you've visited.
 - **Optimistic governed writes:** the UI reflects the action instantly, the server remains the authority; on rejection (a gate fires, e.g. `COMPLIANCE_GATE`) the UI rolls back and *explains*, in place.
-- **Principled boundary — governed writes stay online.** Offline is read-only. Queuing audited actions offline would fracture the audit chain and let gates be evaluated against stale truth; we will not trade governance for convenience. Offline shows a clear read-only banner.
+- **Principled boundary — governed writes stay online.** Offline is read-only, with a clear banner.
+  *Corrected justification (P2 recon, 2026-07-25):* the original wording said queuing
+  would "fracture the hash-chained audit chain". **`audit_log` is not hash-chained** — it
+  is `id, actor, action, entity, entity_id, meta, created_at`, with no hash column and no
+  trigger (`apps/api/src/db/schema.ts:429-441`); the phrase existed only in a comment at
+  `schema.ts:651`. The real reason is concrete and stronger: **every gate reads its inputs
+  at write time, and three of them fail open on error** (`registry.ts:205`,
+  `registry.ts:632`, `reviews.ts:212-213`). A queued write would be evaluated against
+  truth that has since changed, and a fail-open gate under a degraded/offline condition
+  degrades into an unconditional pass. That is the line we will not cross.
 - **The SLO:** an in-app performance HUD measuring **p95 interaction latency < 100ms** and frame time ≤ 16ms (≤ 8ms on ProMotion), wired into the existing SLO machinery so regressions are visible, not vibes.
 - **Gate:** measured p95 < 100ms across the ten most-used surfaces; cold launch → first paint < 1s.
 

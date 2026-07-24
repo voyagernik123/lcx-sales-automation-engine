@@ -60,7 +60,7 @@ export const useAccessStore = create<AccessStore>()(
       reset: () => set({ loaded: false, me: null, activeWorkspace: null }),
     }),
     {
-      name: 'lcx-os:access',
+      name: 'access',
       version: 1,
       storage: createJSONStorage(() => ({
         getItem: (n) => JSON.stringify(storage.get(n, null)),
