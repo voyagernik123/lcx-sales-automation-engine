@@ -14,6 +14,7 @@ import {
 import { EmptyState, PageSkeleton, toast } from '@/components/shared';
 import { DeepOntologyPanel } from '@/components/command/DeepOntologyPanel';
 import { ReadinessDial, LpOptimizerPanel, FunnelSimPanel } from '@/components/command/CockpitPanels';
+import { AnalyticReviews } from '@/components/intel/AnalyticReviews';
 import { PrintStyles } from '@/components/report/PrintStyles';
 import { PageTitle, Button } from '@/components/ui';
 import { clsx } from 'clsx';
@@ -384,11 +385,16 @@ function CriticalPath({ tasks, onChange }: { tasks: CommandTask[]; onChange: () 
   );
 }
 
-/** One decision row with the governed decide flow (Wave 2). */
+/** Program-critical decisions gated on tradecraft (100X Phase 4.2). */
+const CRITICAL_DECISIONS = new Set(['dec_01', 'dec_19']);
+
+/** One decision row with the governed decide flow (Wave 2) + SAT gate (Phase 4). */
 function DecisionRow({ d, onChange }: { d: CommandDecision; onChange: () => void }) {
   const [deciding, setDeciding] = useState(false);
   const [chosen, setChosen] = useState(d.recommendation ?? '');
   const [busy, setBusy] = useState(false);
+  const [tradecraft, setTradecraft] = useState(false);
+  const critical = CRITICAL_DECISIONS.has(d.id);
 
   const decide = async () => {
     if (!chosen.trim() || busy) return;
@@ -398,7 +404,11 @@ function DecisionRow({ d, onChange }: { d: CommandDecision; onChange: () => void
       toast('success', 'Decision recorded — mirrored to the decision log');
       setDeciding(false);
       onChange();
-    } catch (e) { toast('error', e instanceof Error ? e.message : 'Decide failed'); }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : 'Decide failed';
+      toast('error', msg);
+      if (msg.includes('tradecraft')) setTradecraft(true); // open the SAT panel right here
+    }
     finally { setBusy(false); }
   };
 
@@ -428,6 +438,15 @@ function DecisionRow({ d, onChange }: { d: CommandDecision; onChange: () => void
           />
           <Button size="xs" onClick={() => void decide()} disabled={!chosen.trim() || busy}>{busy ? '…' : 'Record'}</Button>
           <Button size="xs" variant="secondary" onClick={() => setDeciding(false)}>Cancel</Button>
+        </div>
+      )}
+      {critical && d.status !== 'decided' && (
+        <div className="mt-1.5">
+          <button onClick={() => setTradecraft((v) => !v)}
+            className="text-micro font-semibold text-amber-600 hover:underline dark:text-amber-400">
+            ⚠ Program-critical — premortem + devil's advocate required {tradecraft ? '▾' : '▸'}
+          </button>
+          {tradecraft && <div className="mt-1.5"><AnalyticReviews subjectType="command_decision" subjectId={d.id} /></div>}
         </div>
       )}
     </div>

@@ -162,8 +162,37 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     paramsSchema: z.object({
       chosen: z.string().min(1).max(500),
       rationale: z.string().max(2000).optional(),
+      overrideSat: z.boolean().optional(),
+      overrideReason: z.string().max(500).optional(),
     }),
     execute: async ({ pool, subjectId, params, actor }) => {
+      // SAT gate (100X Phase 4.2): the two program-critical decisions — exchange
+      // model (dec_01) and listing path (dec_19) — cannot be decided without an
+      // active premortem AND devil's advocate on file. Soft-block with an
+      // audited override (the $25k-deal gate pattern, program-grade). Fail-open
+      // if the reviews table is unavailable — governance must not dead-lock ops.
+      const CRITICAL = new Set(['dec_01', 'dec_19']);
+      if (CRITICAL.has(subjectId)) {
+        let kinds: string[] = [];
+        try {
+          const r = await pool.query(
+            `SELECT DISTINCT kind FROM analytic_reviews
+              WHERE subject_type='command_decision' AND subject_id=$1 AND status='active'
+                AND kind IN ('premortem','devils_advocate')`, [subjectId]);
+          kinds = r.rows.map((x: { kind: string }) => x.kind);
+        } catch { kinds = ['premortem', 'devils_advocate']; }
+        const missing = ['premortem', 'devils_advocate'].filter((k) => !kinds.includes(k));
+        if (missing.length > 0) {
+          if (!params.overrideSat) {
+            throw new ActionError('SAT_REQUIRED',
+              `Program-critical decision: run the missing tradecraft first (${missing.join(' + ')}) — or override with a reason.`, 409);
+          }
+          if (!String(params.overrideReason ?? '').trim()) {
+            throw new ActionError('OVERRIDE_REASON_REQUIRED', 'SAT override requires a reason.', 400);
+          }
+          // The override + reason land in the audit meta via invokeAction's params log.
+        }
+      }
       const { rows } = await pool.query(
         `UPDATE command_decisions
             SET status='decided', chosen=$1, decided_by=$2, decided_at=now(), updated_at=now()
@@ -234,6 +263,38 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       const { rowCount } = await pool.query(`UPDATE command_partners SET ${sets.join(', ')} WHERE id=$${i}`, vals);
       if ((rowCount ?? 0) === 0) throw new ActionError('NOT_FOUND', 'Partner not found', 404);
       return { updated: true };
+    },
+  },
+  command_set_requirement_status: {
+    id: 'command_set_requirement_status',
+    label: 'Set listing-requirement status',
+    description: 'Update one of the 14 listing requirements (LCX COMMAND) — moves the readiness dial.',
+    subjectTypes: ['command_requirement'],
+    minRole: 'operator',
+    paramsSchema: z.object({ status: z.enum(['Not started', 'In progress', 'Done']) }),
+    execute: async ({ pool, subjectId, params }) => {
+      const num = Number(subjectId);
+      if (!Number.isInteger(num) || num < 1 || num > 99) throw new ActionError('VALIDATION', 'Bad requirement id');
+      const { rowCount } = await pool.query(
+        `UPDATE command_requirements SET status=$1, updated_at=now() WHERE num=$2`, [String(params.status), num]);
+      if ((rowCount ?? 0) === 0) throw new ActionError('NOT_FOUND', 'Requirement not found', 404);
+      return { status: params.status };
+    },
+  },
+  command_set_blocker_status: {
+    id: 'command_set_blocker_status',
+    label: 'Set launch-blocker status',
+    description: 'Track resolution of one of the 12 launch blockers (LCX COMMAND).',
+    subjectTypes: ['command_blocker'],
+    minRole: 'operator',
+    paramsSchema: z.object({ status: z.enum(['open', 'mitigating', 'resolved']) }),
+    execute: async ({ pool, subjectId, params }) => {
+      const num = Number(subjectId);
+      if (!Number.isInteger(num) || num < 1 || num > 99) throw new ActionError('VALIDATION', 'Bad blocker id');
+      const { rowCount } = await pool.query(
+        `UPDATE command_blockers SET status=$1, updated_at=now() WHERE num=$2`, [String(params.status), num]);
+      if ((rowCount ?? 0) === 0) throw new ActionError('NOT_FOUND', 'Blocker not found', 404);
+      return { status: params.status };
     },
   },
   command_rfi_record: {

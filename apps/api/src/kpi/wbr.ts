@@ -72,6 +72,8 @@ export interface WbrReport {
   exceptions: WbrException[];
   commitments: WbrCommitment[];
   narrative: string;
+  /** US-launch program block (100X Phase 4.3) — readiness + WoW delta. */
+  program?: { readiness: number; readinessDelta: number | null; simP50Days: number | null };
   /** true when composed on the fly (no stored report for the week yet). */
   live?: boolean;
 }
@@ -180,12 +182,44 @@ export async function composeWbr(pool: pg.Pool, now = new Date()): Promise<WbrRe
   const exceptions = await collectExceptions(pool);
   const commitments = await collectCommitments(pool);
 
-  const narrative = buildNarrative(weekStart, inputs, outputs, exceptions, commitments);
+  // US-launch program block (100X Phase 4.3): the readiness composite + the
+  // launch-sim P50, with the WoW delta vs last week's stored report. All
+  // best-effort — command tables absent → the block is simply omitted.
+  let program: WbrReport['program'];
+  try {
+    const { computeProgramReadiness } = await import('../command/readiness.js');
+    const { runLaunchSim } = await import('@lcx/shared');
+    const r = await computeProgramReadiness(pool);
+    let simP50Days: number | null = null;
+    try {
+      const { rows } = await pool.query(`SELECT id, title, status, depends_on FROM command_tasks`);
+      if (rows.length > 0) {
+        simP50Days = runLaunchSim(rows.map((t: Record<string, unknown>) => ({
+          id: String(t.id), title: String(t.title), status: String(t.status ?? 'not_started'),
+          dependsOn: Array.isArray(t.depends_on) ? (t.depends_on as unknown[]).map(String) : [],
+        })), { runs: 500, seed: 42 }).p50Days;
+      }
+    } catch { /* sim optional */ }
+    let readinessDelta: number | null = null;
+    try {
+      const prev = await pool.query(
+        `SELECT payload->'program'->>'readiness' AS r FROM wbr_reports WHERE week_start < $1 ORDER BY week_start DESC LIMIT 1`,
+        [weekStart],
+      );
+      const pr = Number(prev.rows[0]?.r);
+      if (Number.isFinite(pr)) readinessDelta = r.score - pr;
+    } catch { /* history optional */ }
+    program = { readiness: r.score, readinessDelta, simP50Days };
+  } catch { /* command module absent — omit */ }
+
+  const narrative = buildNarrative(weekStart, inputs, outputs, exceptions, commitments)
+    + (program ? ` Launch readiness ${program.readiness}/100${program.readinessDelta != null ? ` (${program.readinessDelta >= 0 ? '+' : ''}${program.readinessDelta} WoW)` : ''}${program.simP50Days != null ? `, sim P50 ~${program.simP50Days}d` : ''}.` : '');
 
   return {
     weekStart,
     generatedAt: new Date().toISOString(),
     inputs, outputs, sparklines, exceptions, commitments, narrative,
+    ...(program ? { program } : {}),
   };
 }
 

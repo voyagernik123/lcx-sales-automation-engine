@@ -154,5 +154,37 @@ export async function evaluateAlertRules(pool: pg.Pool): Promise<Record<string, 
     counts.decision_review_due = 0;
   }
 
+  // 5. LCX COMMAND program monitors (100X Phase 4.3) — stale RFIs (issued >14d,
+  //    nothing back) and the two program-critical decisions still undecided.
+  //    Dedup per subject per week; degrades when command tables are absent.
+  try {
+    const staleRfi = await pool.query(`
+      INSERT INTO notifications (id, rule, title, detail, project_id, href, dedup_key)
+      SELECT gen_random_uuid(), 'command_rfi_stale',
+             'RFI stale: ' || p.name,
+             'Issued ' || FLOOR(EXTRACT(EPOCH FROM (NOW() - r.issued_at)) / 86400) || 'd ago, nothing returned — chase or re-plan.',
+             NULL, '/command-partners',
+             'rfistale:' || r.partner_id || ':' || TO_CHAR(NOW(), 'IYYY-IW')
+      FROM command_rfi r JOIN command_partners p ON p.id = r.partner_id
+      WHERE r.status = 'issued' AND r.issued_at < NOW() - INTERVAL '14 days'
+      ON CONFLICT DO NOTHING
+    `);
+    counts.command_rfi_stale = staleRfi.rowCount ?? 0;
+    const critOpen = await pool.query(`
+      INSERT INTO notifications (id, rule, title, detail, project_id, href, dedup_key)
+      SELECT gen_random_uuid(), 'command_critical_open',
+             'Program-critical decision open: ' || d.decision,
+             'Gates integration work — run the tradecraft and decide.',
+             NULL, '/command-deck',
+             'critopen:' || d.id || ':' || TO_CHAR(NOW(), 'IYYY-IW')
+      FROM command_decisions d
+      WHERE d.id IN ('dec_01','dec_19') AND d.status = 'open'
+      ON CONFLICT DO NOTHING
+    `);
+    counts.command_critical_open = critOpen.rowCount ?? 0;
+  } catch {
+    counts.command_rfi_stale = 0;
+  }
+
   return counts;
 }

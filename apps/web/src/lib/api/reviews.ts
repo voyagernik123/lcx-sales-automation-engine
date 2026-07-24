@@ -9,7 +9,7 @@ export type ReviewStatus = 'draft' | 'active' | 'resolved';
 export interface AnalyticReview {
   id: string;
   kind: ReviewKind;
-  subjectType: 'deal' | 'project';
+  subjectType: 'deal' | 'project' | 'command_decision';
   subjectId: string;
   title: string;
   content: Record<string, unknown>;
@@ -19,7 +19,7 @@ export interface AnalyticReview {
   updatedAt: string;
 }
 
-export async function listReviews(subjectType: 'deal' | 'project', subjectId: string, signal?: AbortSignal): Promise<AnalyticReview[]> {
+export async function listReviews(subjectType: 'deal' | 'project' | 'command_decision', subjectId: string, signal?: AbortSignal): Promise<AnalyticReview[]> {
   const res = await request<{ data: AnalyticReview[] }>(
     `/v1/reviews?subjectType=${subjectType}&subjectId=${encodeURIComponent(subjectId)}`,
     { auth: true, signal },
@@ -27,7 +27,7 @@ export async function listReviews(subjectType: 'deal' | 'project', subjectId: st
   return res.data;
 }
 
-export async function suggestReview(kind: ReviewKind, subjectType: 'deal' | 'project', subjectId: string, llm = false): Promise<{ title: string; content: Record<string, unknown> }> {
+export async function suggestReview(kind: ReviewKind, subjectType: 'deal' | 'project' | 'command_decision', subjectId: string, llm = false): Promise<{ title: string; content: Record<string, unknown> }> {
   const res = await request<{ data: { title: string; content: Record<string, unknown> } }>(
     `/v1/reviews/suggest${llm ? '?llm=true' : ''}`,
     { auth: true, method: 'POST', body: { kind, subjectType, subjectId } },
@@ -36,7 +36,7 @@ export async function suggestReview(kind: ReviewKind, subjectType: 'deal' | 'pro
 }
 
 export async function createReview(input: {
-  kind: ReviewKind; subjectType: 'deal' | 'project'; subjectId: string; title: string; content: unknown; status?: ReviewStatus;
+  kind: ReviewKind; subjectType: 'deal' | 'project' | 'command_decision'; subjectId: string; title: string; content: unknown; status?: ReviewStatus;
 }): Promise<{ id: string }> {
   const res = await request<{ data: { id: string } }>(`/v1/reviews`, { auth: true, method: 'POST', body: input });
   return res.data;

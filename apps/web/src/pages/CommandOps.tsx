@@ -5,6 +5,7 @@ import {
   type CommandFinancial, type CommandTask,
 } from '@/lib/api/command';
 import { EmptyState, PageSkeleton } from '@/components/shared';
+import { ListingReadinessPanel } from '@/components/command/ListingReadinessPanel';
 import { PageTitle, Button } from '@/components/ui';
 import { clsx } from 'clsx';
 
@@ -65,6 +66,7 @@ export function CommandOps() {
         <PageSkeleton />
       ) : (
         <div className="space-y-4">
+          <ListingReadinessPanel />
           <TreasuryPanel financials={financials} />
           <div className="grid gap-4 lg:grid-cols-2">
             <OrgPanel tasks={tasks} workstreams={workstreams ?? []} />

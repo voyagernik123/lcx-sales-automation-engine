@@ -23,7 +23,7 @@ const KIND_META: Record<ReviewKind, { label: string; Icon: typeof ClipboardCheck
 
 type Content = Record<string, unknown>;
 
-export function AnalyticReviews({ subjectType, subjectId }: { subjectType: 'deal' | 'project'; subjectId: string }) {
+export function AnalyticReviews({ subjectType, subjectId }: { subjectType: 'deal' | 'project' | 'command_decision'; subjectId: string }) {
   const [reviews, setReviews] = useState<AnalyticReview[] | null>(null);
   const [draft, setDraft] = useState<{ kind: ReviewKind; title: string; content: Content; id?: string } | null>(null);
   const [busy, setBusy] = useState(false);

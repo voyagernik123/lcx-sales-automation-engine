@@ -67,33 +67,8 @@ commandRoutes.get('/deep', requireOperator, async (c) => {
  */
 commandRoutes.get('/readiness', requireOperator, async (c) => {
   try {
-    const { programReadiness } = await import('@lcx/shared');
-    const { COMMAND_DEEP_SEED } = await import('../seed/command/data2.js');
-    const ref = COMMAND_DEEP_SEED as unknown as { requirements: Array<{ num: number; path: string | null; status: string | null }>; blockers: Array<{ num: number; severity: string | null; category: string | null }> };
-    const gatingIds = ['t_bsa', 't_counsel', 't_bankselect', 't_msb', 't_mtl', 't_3lp', 't_oes', 't_fiat_live', 't_surveil', 't_listpolicy'];
-    const DONE = new Set(['done', 'complete', 'completed', 'live']);
-    const [gt, blockRows, reqRows, lpRows, growth] = await Promise.all([
-      list(`SELECT id, status FROM command_tasks WHERE id = ANY('{${gatingIds.join(',')}}')`),
-      list(`SELECT num, severity, category, status FROM command_blockers`),
-      list(`SELECT num, path, status FROM command_requirements`),
-      list(`SELECT pipeline_stage FROM command_partners WHERE id IN ('pt_b2c2','pt_falconx','pt_cumberland')`),
-      list(`SELECT status FROM command_tasks WHERE id = 't_waitlist_tool'`),
-    ]);
-    const blockers = blockRows.length
-      ? blockRows.map((r) => ({ num: Number(r.num), severity: (r.severity as string) ?? null, category: (r.category as string) ?? null, status: String(r.status ?? 'open') }))
-      : ref.blockers.map((b) => ({ num: b.num, severity: b.severity, category: b.category, status: 'open' }));
-    const requirements = reqRows.length
-      ? reqRows.map((r) => ({ num: Number(r.num), path: (r.path as string) ?? null, status: (r.status as string) ?? null }))
-      : ref.requirements.map((q) => ({ num: q.num, path: q.path, status: q.status }));
-    const lpsCommitted = lpRows.filter((r) => ['signed', 'incumbent_onboarding', 'in_progress'].includes(String(r.pipeline_stage))).length;
-    const growthDone = growth.length > 0 && DONE.has(String(growth[0].status)) ? 1 : String(growth[0]?.status ?? '') === 'in_progress' ? 0.5 : 0;
-    const data = programReadiness({
-      gatingDone: gt.filter((r) => DONE.has(String(r.status))).length,
-      gatingTotal: gatingIds.length,
-      blockers, requirements,
-      lpsCommitted, lpTarget: 3,
-      growthFoundation: growthDone,
-    });
+    const { computeProgramReadiness } = await import('../command/readiness.js');
+    const data = await computeProgramReadiness(getPool());
     return c.json({ data, meta: meta() });
   } catch (err) {
     console.error('[command] readiness error:', err);

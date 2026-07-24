@@ -69,8 +69,8 @@ export const fetchLaunchSim = () => get<LaunchSim>('/launch-sim');
  * audited write path (actor = the signed-in operator).
  */
 export async function invokeCommandAction(
-  actionId: 'command_set_task_status' | 'command_decide' | 'command_set_partner_stage' | 'command_set_partner_details',
-  subjectType: 'command_task' | 'command_decision' | 'command_partner',
+  actionId: 'command_set_task_status' | 'command_decide' | 'command_set_partner_stage' | 'command_set_partner_details' | 'command_set_requirement_status' | 'command_set_blocker_status',
+  subjectType: 'command_task' | 'command_decision' | 'command_partner' | 'command_requirement' | 'command_blocker',
   subjectId: string,
   params: Record<string, unknown>,
 ): Promise<void> {
