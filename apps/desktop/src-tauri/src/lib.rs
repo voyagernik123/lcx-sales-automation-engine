@@ -59,18 +59,38 @@ fn is_terminal() -> bool {
     true
 }
 
+/// Bring the desk forward, unconditionally. Used for every "the operator asked
+/// for the app" signal: relaunching it, clicking the Dock icon, choosing it from
+/// Spotlight. These must NEVER hide the window — an operator who double-clicks
+/// the app expects to see it, and hiding it there reads as a crash.
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let r = win.show();
+        let _ = win.unminimize();
+        let f = win.set_focus();
+        eprintln!(
+            "[lcx-terminal] show_main_window: show={:?} focus={:?} visible_now={:?}",
+            r.is_ok(),
+            f.is_ok(),
+            win.is_visible()
+        );
+    } else {
+        eprintln!("[lcx-terminal] show_main_window: NO 'main' window found");
+    }
+}
+
 /// Toggle the desk: bring it forward focused, or hide it if it already is.
-/// This is what ⌥Space feels like — the desk appears, and gets out of the way.
+/// This is what ⌥Space feels like — one key summons the desk, the same key puts
+/// it away. Toggle semantics belong to the hotkey ONLY (see show_main_window).
 fn toggle_main_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let visible = win.is_visible().unwrap_or(false);
         let focused = win.is_focused().unwrap_or(false);
+        eprintln!("[lcx-terminal] ⌥Space: visible={visible} focused={focused}");
         if visible && focused {
             let _ = win.hide();
         } else {
-            let _ = win.show();
-            let _ = win.unminimize();
-            let _ = win.set_focus();
+            show_main_window(app);
         }
     }
 }
@@ -170,6 +190,48 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     )
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Round-trips a credential through the REAL macOS Keychain. This is the
+    /// riskiest part of the shell — if it silently fails, every launch bounces
+    /// the operator back to the sign-in gate — and it cannot be verified by
+    /// driving the UI headlessly, so it is verified here.
+    ///
+    /// Uses a test-only key so it can never collide with a live credential.
+    #[test]
+    fn keychain_round_trips_a_credential() {
+        let key = "lcx_test_credential_do_not_use";
+
+        // Absent to begin with (and absence is None, not an error — the
+        // first-run path depends on that distinction).
+        secret_delete(key.to_string()).expect("delete of absent entry must succeed");
+        assert_eq!(secret_get(key.to_string()).expect("get must not error"), None);
+
+        secret_set(key.to_string(), "nik@lcx.com:sentinel".into()).expect("set must succeed");
+        assert_eq!(
+            secret_get(key.to_string()).expect("get must not error"),
+            Some("nik@lcx.com:sentinel".to_string()),
+        );
+
+        // Overwrite, not duplicate — signing in twice must not leave a stale
+        // credential behind that a later read could pick up.
+        secret_set(key.to_string(), "sam@lcx.com:sentinel2".into()).expect("overwrite must succeed");
+        assert_eq!(
+            secret_get(key.to_string()).expect("get must not error"),
+            Some("sam@lcx.com:sentinel2".to_string()),
+        );
+
+        // Sign-out really forgets.
+        secret_delete(key.to_string()).expect("delete must succeed");
+        assert_eq!(secret_get(key.to_string()).expect("get must not error"), None);
+
+        // Deleting twice is not an error, so a double sign-out can't throw.
+        secret_delete(key.to_string()).expect("idempotent delete");
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default();
@@ -179,12 +241,27 @@ pub fn run() {
     #[cfg(desktop)]
     {
         builder = builder.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            toggle_main_window(app);
+            // Show, never toggle. Relaunching the app while it is already
+            // running and focused must not make the desk disappear.
+            show_main_window(app);
         }));
     }
 
     builder
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // Remember WHERE the desk was, never WHETHER it was showing. The
+        // plugin's default StateFlags::all() includes VISIBLE, which means
+        // putting the desk away with ⌥Space and then quitting makes the next
+        // launch start with no window at all — the app looks broken and there
+        // is no obvious way back. Size/position/fullscreen are worth restoring;
+        // visibility is not.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all()
+                        - tauri_plugin_window_state::StateFlags::VISIBLE,
+                )
+                .build(),
+        )
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -231,6 +308,16 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running LCX TERMINAL");
+        .build(tauri::generate_context!())
+        .expect("error while building LCX TERMINAL")
+        .run(|app, event| {
+            // Clicking the Dock icon after ⌥Space hid the desk must bring it
+            // back. Without this the window is unrecoverable by mouse: macOS
+            // considers the app already active, so it sends Reopen and nothing
+            // else happens. The desk would look permanently gone.
+            if let tauri::RunEvent::Reopen { has_visible_windows, .. } = event {
+                eprintln!("[lcx-terminal] Reopen (has_visible_windows={has_visible_windows})");
+                show_main_window(app);
+            }
+        });
 }
