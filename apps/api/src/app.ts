@@ -37,6 +37,9 @@ import { wbrRoutes } from './routes/wbr.js';
 import { decisionRoutes } from './routes/decisions.js';
 import { aiOperatorRoutes } from './routes/aiOperator.js';
 import { commandRoutes } from './routes/command.js';
+import { accessRoutes } from './routes/access.js';
+import { requireWorkspace } from './middleware/workspace.js';
+import { WORKSPACES } from '@lcx/shared';
 
 export function createApp() {
   const app = new Hono();
@@ -67,8 +70,22 @@ export function createApp() {
     }),
   );
 
+  // ── LCX OS compartment gates (Phase 1) ─────────────────────────────────
+  // The workspace constitution (@lcx/shared) declares which /v1 namespaces
+  // each workspace owns; every one is guarded at 'view' capability BEFORE the
+  // route mounts below. Desk-level namespaces (me, tasks, notifications,
+  // integrations, search, reviews, actions) stay ungated here — actions are
+  // gated per-action inside the registry instead.
+  for (const ws of WORKSPACES) {
+    for (const prefix of ws.apiPrefixes) {
+      app.use(`${prefix}/*`, requireWorkspace(ws.id, 'view'));
+      app.use(prefix, requireWorkspace(ws.id, 'view'));
+    }
+  }
+
   app.route('/health', healthRoutes);
   app.route('/v1/me', meRoutes);
+  app.route('/v1/access', accessRoutes);
   app.route('/v1/projects', projectsRoutes);
   // additional /v1/projects sub-routers (disjoint paths: /:id/360, /:id/assign, /:id/notes, /:id/documents)
   app.route('/v1/projects', projectAssignmentRoutes);

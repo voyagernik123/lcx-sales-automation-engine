@@ -1,18 +1,37 @@
 import { Suspense, useEffect } from 'react';
-import { Outlet, Navigate } from 'react-router-dom';
+import { Outlet, Navigate, useLocation } from 'react-router-dom';
+import { workspaceForPath, capAtLeast } from '@lcx/shared';
 import { TopNav } from './TopNav';
 import { Sidebar } from './Sidebar';
 import { MainContent } from './MainContent';
 import { Footer } from './Footer';
+import { RequestAccess } from './RequestAccess';
 import { ErrorBoundary, ToastContainer, CommandPalette, PageSkeleton, useCommandPalette } from '@/components/shared';
 import { InspectorHost } from '@/components/inspect/InspectorHost';
 import { useUIStore, useOperatorStore } from '@/stores';
+import { useAccessStore } from '@/stores/useAccessStore';
 
 export function AppLayout() {
   const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed);
   const darkMode = useUIStore(s => s.darkMode);
   const operator = useOperatorStore(s => s.operator);
   const { open, setOpen } = useCommandPalette();
+  const location = useLocation();
+  const accessMe = useAccessStore(s => s.me);
+  const accessLoaded = useAccessStore(s => s.loaded);
+  const loadAccess = useAccessStore(s => s.load);
+  const syncFromPath = useAccessStore(s => s.syncFromPath);
+
+  // LCX OS (Phase 1): boot the entitlement picture once per sign-in; the
+  // server stays the enforcer — this only shapes the shell.
+  useEffect(() => {
+    if (operator) void loadAccess();
+  }, [operator, loadAccess]);
+
+  // Deep links front the workspace they belong to.
+  useEffect(() => {
+    syncFromPath(location.pathname);
+  }, [location.pathname, syncFromPath]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -30,6 +49,16 @@ export function AppLayout() {
 
   if (!operator) return <Navigate to="/select" replace />;
 
+  // LCX OS compartment guard: a route inside a workspace you don't hold
+  // renders the request-access surface in place of the page. Optimistic until
+  // the first entitlement load resolves — the API 403s anything real.
+  const routeWorkspace = workspaceForPath(location.pathname);
+  const guarded =
+    routeWorkspace !== null &&
+    accessLoaded &&
+    accessMe !== null &&
+    !capAtLeast(accessMe.entitlements[routeWorkspace], 'view');
+
   return (
     <div className="flex h-screen flex-col bg-page text-navy">
       <TopNav onOpenSearch={() => setOpen(true)} />
@@ -39,7 +68,7 @@ export function AppLayout() {
           <MainContent collapsed={sidebarCollapsed}>
             {/* Each route is code-split; the skeleton covers its first fetch. */}
             <Suspense fallback={<div className="p-5"><PageSkeleton /></div>}>
-              <Outlet />
+              {guarded && routeWorkspace ? <RequestAccess workspace={routeWorkspace} /> : <Outlet />}
             </Suspense>
           </MainContent>
         </ErrorBoundary>

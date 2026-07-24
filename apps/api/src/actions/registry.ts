@@ -11,10 +11,11 @@
  */
 import { z } from 'zod';
 import type pg from 'pg';
-import { findMemberById } from '@lcx/shared';
+import { findMemberById, WORKSPACE_IDS, capAtLeast, type WorkspaceId } from '@lcx/shared';
 import { notify } from '../notifications/service.js';
 import { createManualTask } from '../tasks/service.js';
 import { DEFAULT_ORG_ID } from '../intel/observations.js';
+import { loadEntitlements, invalidateEntitlements } from '../access/entitlements.js';
 
 export type ActorRole = 'operator' | 'approver';
 
@@ -32,6 +33,13 @@ export interface RegistryAction {
   description: string;
   subjectTypes: string[]; // ['project'] or ['*']
   minRole: ActorRole;
+  /**
+   * LCX OS compartment (Phase 1): when set, invokeAction additionally requires
+   * the actor to hold this workspace at 'operate' (or 'approve' when minRole
+   * is approver). Untagged actions rely on minRole alone — cross-cutting desk
+   * actions stay workspace-free by design.
+   */
+  workspace?: WorkspaceId;
   paramsSchema: z.ZodType<Record<string, unknown>>;
   execute: (ctx: ActionContext) => Promise<Record<string, unknown>>;
 }
@@ -141,6 +149,7 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     description: 'Advance a US-launch program task (LCX COMMAND).',
     subjectTypes: ['command_task'],
     minRole: 'operator',
+    workspace: 'command',
     paramsSchema: z.object({
       status: z.enum(['not_started', 'pending', 'open', 'in_progress', 'blocked', 'tentative', 'future', 'done']),
     }),
@@ -159,6 +168,7 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     description: 'Close an open US-launch decision with the chosen option (LCX COMMAND).',
     subjectTypes: ['command_decision'],
     minRole: 'operator',
+    workspace: 'command',
     paramsSchema: z.object({
       chosen: z.string().min(1).max(500),
       rationale: z.string().max(2000).optional(),
@@ -228,6 +238,7 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     description: 'Reopen a wrongly-recorded US-launch decision (approver only; fully audited).',
     subjectTypes: ['command_decision'],
     minRole: 'approver',
+    workspace: 'command',
     paramsSchema: z.object({ reason: z.string().min(1).max(500) }),
     execute: async ({ pool, subjectId }) => {
       const { rowCount } = await pool.query(
@@ -243,6 +254,7 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     description: 'Move a US-launch partner through the pipeline (LCX COMMAND).',
     subjectTypes: ['command_partner'],
     minRole: 'operator',
+    workspace: 'command',
     paramsSchema: z.object({
       stage: z.enum([
         'evaluate', 'recommended_rfi', 'recommended', 'incumbent_onboarding', 'in_progress',
@@ -265,6 +277,7 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     description: 'Fill a partner\'s primary contact or commercial terms as the RFIs land (LCX COMMAND).',
     subjectTypes: ['command_partner'],
     minRole: 'operator',
+    workspace: 'command',
     paramsSchema: z.object({
       primaryContact: z.string().max(300).optional(),
       terms: z.string().max(1000).optional(),
@@ -286,6 +299,7 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     description: 'Update one of the 14 listing requirements (LCX COMMAND) — moves the readiness dial.',
     subjectTypes: ['command_requirement'],
     minRole: 'operator',
+    workspace: 'command',
     paramsSchema: z.object({ status: z.enum(['Not started', 'In progress', 'Done']) }),
     execute: async ({ pool, subjectId, params }) => {
       const num = Number(subjectId);
@@ -302,6 +316,7 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     description: 'Track resolution of one of the 12 launch blockers (LCX COMMAND).',
     subjectTypes: ['command_blocker'],
     minRole: 'operator',
+    workspace: 'command',
     paramsSchema: z.object({ status: z.enum(['open', 'mitigating', 'resolved']) }),
     execute: async ({ pool, subjectId, params }) => {
       const num = Number(subjectId);
@@ -318,6 +333,7 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     description: 'Record a partner\'s returned RFI commercial terms (LCX COMMAND). Provenance auto-upgrades: returned=B2, signed=A1.',
     subjectTypes: ['command_partner'],
     minRole: 'operator',
+    workspace: 'command',
     paramsSchema: z.object({
       status: z.enum(['issued', 'returned', 'signed']),
       values: z.record(z.string().max(60), z.string().max(300)).optional(),
@@ -368,6 +384,112 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       return { owner, subjectType };
     },
   },
+  /* ── LCX OS (LCX ONE Phase 1) — the governed access lifecycle. ──
+   * Access is given, never assumed: every grant/revoke/decision is an audited
+   * object action carrying who, what, and why. Approver-only, human-only
+   * (none of these are AI_PROPOSABLE). */
+  grant_entitlement: {
+    id: 'grant_entitlement',
+    label: 'Grant workspace access',
+    description: 'Entitle a roster member to a workspace at a capability tier (LCX OS).',
+    subjectTypes: ['member'],
+    minRole: 'approver',
+    workspace: 'governance',
+    paramsSchema: z.object({
+      workspace: z.enum(WORKSPACE_IDS as unknown as [string, ...string[]]),
+      capability: z.enum(['view', 'operate', 'approve']),
+      justification: z.string().min(1).max(500),
+    }),
+    execute: async ({ pool, subjectId, params, actor }) => {
+      if (!findMemberById(subjectId)) throw new ActionError('NOT_FOUND', `No roster member '${subjectId}'`, 404);
+      await pool.query(
+        `INSERT INTO entitlements (member_id, workspace, capability, granted_by, justification)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (member_id, workspace)
+         DO UPDATE SET capability=EXCLUDED.capability, granted_by=EXCLUDED.granted_by,
+                       justification=EXCLUDED.justification, granted_at=now()`,
+        [subjectId, params.workspace, params.capability, actor, params.justification],
+      );
+      invalidateEntitlements(subjectId);
+      await notify({
+        rule: 'access',
+        title: `Access granted: ${String(params.workspace)} (${String(params.capability)})`,
+        detail: `${actor} entitled ${subjectId} — ${String(params.justification)}`,
+        dedupKey: `access-grant:${subjectId}:${String(params.workspace)}:${Date.now()}`,
+      });
+      return { memberId: subjectId, workspace: params.workspace, capability: params.capability };
+    },
+  },
+  revoke_entitlement: {
+    id: 'revoke_entitlement',
+    label: 'Revoke workspace access',
+    description: 'Remove a roster member’s entitlement to a workspace (LCX OS).',
+    subjectTypes: ['member'],
+    minRole: 'approver',
+    workspace: 'governance',
+    paramsSchema: z.object({
+      workspace: z.enum(WORKSPACE_IDS as unknown as [string, ...string[]]),
+      justification: z.string().min(1).max(500),
+    }),
+    execute: async ({ pool, subjectId, params, actor }) => {
+      // Lockout protection: an approver cannot saw off the branch they sit on.
+      // Revoking your own governance access would strand the access system
+      // itself; another approver must do it.
+      if (subjectId === actor && params.workspace === 'governance') {
+        throw new ActionError('SELF_LOCKOUT', 'You cannot revoke your own governance access — another approver must.', 400);
+      }
+      const { rowCount } = await pool.query(
+        `DELETE FROM entitlements WHERE member_id=$1 AND workspace=$2`,
+        [subjectId, params.workspace],
+      );
+      if ((rowCount ?? 0) === 0) throw new ActionError('NOT_FOUND', 'No such entitlement', 404);
+      invalidateEntitlements(subjectId);
+      return { memberId: subjectId, workspace: params.workspace, revoked: true };
+    },
+  },
+  decide_access_request: {
+    id: 'decide_access_request',
+    label: 'Decide access request',
+    description: 'Approve or deny a pending workspace access request (LCX OS).',
+    subjectTypes: ['access_request'],
+    minRole: 'approver',
+    workspace: 'governance',
+    paramsSchema: z.object({
+      decision: z.enum(['approved', 'denied']),
+      note: z.string().max(500).optional(),
+    }),
+    execute: async ({ pool, subjectId, params, actor }) => {
+      const { rows } = await pool.query<{ member_id: string; workspace: string; capability: string; status: string }>(
+        `SELECT member_id, workspace, capability, status FROM access_requests WHERE id=$1`,
+        [subjectId],
+      );
+      const req = rows[0];
+      if (!req) throw new ActionError('NOT_FOUND', 'Access request not found', 404);
+      if (req.status !== 'pending') throw new ActionError('ALREADY_DECIDED', `Request is already ${req.status}`, 409);
+      await pool.query(
+        `UPDATE access_requests SET status=$1, decided_by=$2, decided_at=now(), decision_note=$3 WHERE id=$4`,
+        [params.decision, actor, (params.note as string) ?? null, subjectId],
+      );
+      if (params.decision === 'approved') {
+        await pool.query(
+          `INSERT INTO entitlements (member_id, workspace, capability, granted_by, justification)
+           VALUES ($1,$2,$3,$4,$5)
+           ON CONFLICT (member_id, workspace)
+           DO UPDATE SET capability=EXCLUDED.capability, granted_by=EXCLUDED.granted_by,
+                         justification=EXCLUDED.justification, granted_at=now()`,
+          [req.member_id, req.workspace, req.capability, actor, `access_request:${subjectId}`],
+        );
+        invalidateEntitlements(req.member_id);
+      }
+      await notify({
+        rule: 'access',
+        title: `Access request ${String(params.decision)}: ${req.workspace}`,
+        detail: `${actor} ${String(params.decision)} ${req.member_id}'s request for ${req.capability} on ${req.workspace}`,
+        dedupKey: `access-decide:${subjectId}`,
+      });
+      return { requestId: subjectId, decision: params.decision, workspace: req.workspace, memberId: req.member_id };
+    },
+  },
 };
 
 export function listActions(): Array<Pick<RegistryAction, 'id' | 'label' | 'description' | 'subjectTypes' | 'minRole'>> {
@@ -393,6 +515,21 @@ export async function invokeAction(
   }
   if (action.minRole === 'approver' && input.role !== 'approver') {
     throw new ActionError('FORBIDDEN', `${id} requires approver`, 403);
+  }
+  // LCX OS compartment gate (Phase 1): workspace-tagged actions require the
+  // actor to hold the workspace at operate-tier (approve-tier when the action
+  // itself is approver-only). Machines (shared key, monitor:<id>, ai) hold
+  // blanket operate; the fail-open loader keeps pre-0042 deploys safe.
+  if (action.workspace) {
+    const entitlements = await loadEntitlements(pool, input.actor);
+    const needed = action.minRole === 'approver' ? 'approve' : 'operate';
+    if (!capAtLeast(entitlements[action.workspace], needed)) {
+      throw new ActionError(
+        'WORKSPACE_FORBIDDEN',
+        `${id} requires '${needed}' on workspace '${action.workspace}'`,
+        403,
+      );
+    }
   }
   const parsed = action.paramsSchema.safeParse(input.params ?? {});
   if (!parsed.success) {

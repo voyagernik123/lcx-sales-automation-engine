@@ -8,6 +8,8 @@ import { SelectOperator } from '@/pages/SelectOperator';
  * door land in the entry chunk; each route's JS is fetched on first visit.
  * The Suspense boundary lives in AppLayout around the Outlet.
  */
+const DistributionHome = lazy(() => import('@/pages/DistributionHome').then((m) => ({ default: m.DistributionHome })));
+const AccessControl = lazy(() => import('@/pages/AccessControl').then((m) => ({ default: m.AccessControl })));
 const Dashboard = lazy(() => import('@/pages/Dashboard').then((m) => ({ default: m.Dashboard })));
 const Home = lazy(() => import('@/pages/Home').then((m) => ({ default: m.Home })));
 const OntologyExplorer = lazy(() => import('@/pages/OntologyExplorer').then((m) => ({ default: m.OntologyExplorer })));
@@ -116,6 +118,8 @@ export const router = createBrowserRouter([
       { path: 'audit-log', element: <AuditLog /> },
       { path: 'ops', element: <Ops /> },
       { path: 'wbr', element: <Wbr /> },
+      { path: 'access', element: <AccessControl /> },
+      { path: 'distribution', element: <DistributionHome /> },
       { path: 'decisions', element: <Decisions /> },
       { path: 'command-deck', element: <CommandDeck /> },
       { path: 'command-partners', element: <CommandPartners /> },

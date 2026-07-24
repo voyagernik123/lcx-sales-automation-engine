@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Search, Sun, Moon, LogOut, ChevronDown } from 'lucide-react';
+import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { useUIStore, useOperatorStore, ROLE_LABEL } from '@/stores';
 import { clearOperatorEmail } from '@/lib/apiClient';
 import { NotificationBell } from './NotificationBell';
@@ -81,6 +82,8 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
       <Link to="/" className="shrink-0 text-[13px] font-bold tracking-tight text-navy">
         LCX USA
       </Link>
+
+      <WorkspaceSwitcher />
 
       <nav className="flex min-w-0 items-center gap-1.5 text-body text-grey" aria-label="Breadcrumb">
         {crumbs.length === 0 ? (

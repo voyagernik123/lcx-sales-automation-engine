@@ -1,0 +1,193 @@
+import type { TeamRole } from './operators.js';
+
+/**
+ * LCX OS — the workspace constitution (LCX ONE Phase 1).
+ *
+ * The grand platform is a multi-platform: each workspace is a
+ * platform-within-the-platform with its own mission, surfaces, and need-to-know
+ * boundary. This registry is COMPILED and git-versioned (zero-drift): the web
+ * shell renders nav from it, the API guards namespaces from it, and the two can
+ * never disagree. Postgres holds only the mutable side (who is entitled to
+ * what — see migration 0042); this file holds what exists.
+ *
+ * Doctrine: need-to-know (CIA) — access is given, never assumed; one coherent
+ * deck per person (Apple) — you see your workspaces, not everyone's.
+ */
+
+export type WorkspaceId =
+  | 'command'
+  | 'sales'
+  | 'intel'
+  | 'regulatory'
+  | 'distribution'
+  | 'governance';
+
+/** Capability ladder within a workspace. approve ⊃ operate ⊃ view. */
+export type Capability = 'view' | 'operate' | 'approve';
+
+const CAP_ORDER: Record<Capability, number> = { view: 0, operate: 1, approve: 2 };
+
+/** True when `have` meets or exceeds `need` on the capability ladder. */
+export function capAtLeast(have: Capability | undefined, need: Capability): boolean {
+  if (!have) return false;
+  return CAP_ORDER[have] >= CAP_ORDER[need];
+}
+
+/** member → workspace → capability. Absence of a key = no access. */
+export type EntitlementMap = Partial<Record<WorkspaceId, Capability>>;
+
+export interface WorkspaceDef {
+  id: WorkspaceId;
+  name: string;
+  /** One-line mission shown on the switcher and the request-access surface. */
+  mission: string;
+  /** lucide icon name rendered by the shell (kept as a string — shared stays UI-free). */
+  icon: string;
+  /**
+   * Web route path segments owned by this workspace (first path segment,
+   * without leading slash; ':id'-style children inherit their parent segment).
+   */
+  webPaths: readonly string[];
+  /** /v1 API namespaces guarded at 'view' capability for this workspace. */
+  apiPrefixes: readonly string[];
+  /** Where the shell lands when you switch here. */
+  defaultLanding: string;
+  /** Elevated workspaces get purpose-prompts on sensitive reads (Phase 2). */
+  sensitivity: 'standard' | 'elevated';
+  /** New compartments are default-deny (only approvers seeded); legacy ones are backfilled. */
+  legacy: boolean;
+}
+
+export const WORKSPACES: readonly WorkspaceDef[] = [
+  {
+    id: 'command',
+    name: 'US COMMAND',
+    mission: 'The CEO’s US-launch command deck — partners, readiness, governed decisions.',
+    icon: 'Command',
+    webPaths: ['command-deck', 'command-partners', 'command-ops'],
+    apiPrefixes: ['/v1/command'],
+    defaultLanding: '/command-deck',
+    sensitivity: 'elevated',
+    legacy: true,
+  },
+  {
+    id: 'sales',
+    name: 'SALES ENGINE',
+    mission: 'The BD desk — pipeline, deals, outreach, and the revenue loop.',
+    icon: 'Target',
+    webPaths: [
+      'bd-pipeline', 'contacts', 'deal-board', 'deal-desk', 'outreach',
+      'send-queue', 'outreach-ops', 'exchange-gaps', 'customer', 'targets',
+      'coverage', 'claim-library',
+    ],
+    apiPrefixes: [
+      '/v1/projects', '/v1/outreach', '/v1/outreach-ops', '/v1/handoffs',
+      '/v1/deals', '/v1/dealdesk', '/v1/discovery',
+    ],
+    defaultLanding: '/bd-pipeline',
+    sensitivity: 'standard',
+    legacy: true,
+  },
+  {
+    id: 'intel',
+    name: 'INTELLIGENCE',
+    mission: 'The analyst layer — ontology, monitors, forecasts, AI console, market picture.',
+    icon: 'Radar',
+    webPaths: [
+      'command', 'brief', 'ai-tools', 'win-loss', 'forecast', 'scorecard',
+      'market-news', 'market-map', 'graph', 'monitors', 'bd-kpis',
+      'board-report', 'report-builder',
+    ],
+    apiPrefixes: [
+      '/v1/intel', '/v1/graph', '/v1/ai', '/v1/kpis', '/v1/analytics',
+      '/v1/monitors', '/v1/scenarios', '/v1/pirs',
+    ],
+    defaultLanding: '/command',
+    sensitivity: 'standard',
+    legacy: true,
+  },
+  {
+    id: 'regulatory',
+    name: 'REGULATORY TOOLKIT',
+    mission: 'The compliance instrument set — state map, simulators, readiness, red flags.',
+    icon: 'Scale',
+    webPaths: [
+      'regulatory-dashboard', 'ontology', 'states', 'products', 'simulator',
+      'howey', 'scenario', 'readiness', 'brief-generator', 'capital-estimator',
+      'roadmap', 'red-flags', 'competition', 'product-intel',
+    ],
+    apiPrefixes: [],
+    defaultLanding: '/regulatory-dashboard',
+    sensitivity: 'standard',
+    legacy: true,
+  },
+  {
+    id: 'distribution',
+    name: 'DISTRIBUTION',
+    mission: 'PayAgent DISTRIBUTION COMMAND — rails, listings, campaigns, growth engines.',
+    icon: 'Rocket',
+    webPaths: ['distribution'],
+    apiPrefixes: ['/v1/distribution'],
+    defaultLanding: '/distribution',
+    sensitivity: 'elevated',
+    legacy: false,
+  },
+  {
+    id: 'governance',
+    name: 'GOVERNANCE',
+    mission: 'The Directorate — audit, decisions, weekly review, ops health, access control.',
+    icon: 'Shield',
+    webPaths: ['audit-log', 'ops', 'wbr', 'decisions', 'access'],
+    apiPrefixes: ['/v1/audit', '/v1/wbr', '/v1/decisions'],
+    defaultLanding: '/wbr',
+    sensitivity: 'elevated',
+    legacy: true,
+  },
+] as const;
+
+export const WORKSPACE_IDS = WORKSPACES.map((w) => w.id) as readonly WorkspaceId[];
+
+export function getWorkspace(id: WorkspaceId): WorkspaceDef {
+  const ws = WORKSPACES.find((w) => w.id === id);
+  if (!ws) throw new Error(`unknown workspace: ${id}`);
+  return ws;
+}
+
+const PATH_TO_WORKSPACE: ReadonlyMap<string, WorkspaceId> = new Map(
+  WORKSPACES.flatMap((w) => w.webPaths.map((p) => [p, w.id] as const)),
+);
+
+/**
+ * Which workspace owns a web path — null for desk-level surfaces (home, tasks,
+ * notes, integrations, settings, select) which every member always has.
+ */
+export function workspaceForPath(pathname: string): WorkspaceId | null {
+  const seg = pathname.replace(/^\/+/, '').split('/')[0] ?? '';
+  return PATH_TO_WORKSPACE.get(seg) ?? null;
+}
+
+/** Which workspace guards an API path — null means the namespace is ungated (desk/cross-cutting). */
+export function workspaceForApiPath(path: string): WorkspaceId | null {
+  for (const w of WORKSPACES) {
+    for (const prefix of w.apiPrefixes) {
+      if (path === prefix || path.startsWith(prefix + '/')) return w.id;
+    }
+  }
+  return null;
+}
+
+/**
+ * The no-lockout covenant (Phase 1 backfill): existing roster members keep
+ * exactly the reach they have today. Legacy workspaces map role→capability;
+ * new compartments (distribution) are default-deny except approvers, who run
+ * the Directorate and own new platforms until they delegate.
+ */
+export function legacyEntitlements(role: TeamRole): EntitlementMap {
+  const cap: Capability = role === 'approver' ? 'approve' : role === 'operator' ? 'operate' : 'view';
+  const map: EntitlementMap = {};
+  for (const w of WORKSPACES) {
+    if (w.legacy) map[w.id] = cap;
+    else if (role === 'approver') map[w.id] = 'approve';
+  }
+  return map;
+}

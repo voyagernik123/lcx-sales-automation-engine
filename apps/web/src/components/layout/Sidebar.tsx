@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield, Activity, Share2, Siren, CalendarClock, GitPullRequestArrow, Command, Landmark } from 'lucide-react';
+import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield, Activity, Share2, Siren, CalendarClock, GitPullRequestArrow, Command, Landmark, KeyRound } from 'lucide-react';
 import { useUIStore, useAuditStore } from '@/stores';
+import { useAccessStore, useMyWorkspaces } from '@/stores/useAccessStore';
+import type { WorkspaceId } from '@lcx/shared';
 import { redFlags } from '@/data';
 import { SidebarFieldNotes } from './SidebarFieldNotes';
 import { clsx } from 'clsx';
@@ -19,98 +21,136 @@ interface NavSection {
   defaultOpen?: boolean;
 }
 
-const sections: NavSection[] = [
-  {
-    title: 'LCX Command',
-    items: [
-      { to: '/command-deck', label: 'US Launch Deck', icon: Command },
-      { to: '/command-partners', label: 'Partner Pipeline', icon: Briefcase },
-      { to: '/command-ops', label: 'Command Ops', icon: Landmark },
-    ],
-  },
-  {
-    title: 'BD Operations',
-    items: [
-      { to: '/bd-pipeline', label: 'BD Engine', icon: Target },
-      { to: '/exchange-gaps', label: 'Exchange Gaps', icon: Layers },
-      { to: '/deal-board', label: 'Deal Board', icon: KanbanSquare },
-      { to: '/deal-desk', label: 'Deal Desk', icon: Briefcase },
-      { to: '/outreach-ops', label: 'Outreach Ops', icon: Gauge },
-      { to: '/send-queue', label: 'Send Queue', icon: Send },
-      { to: '/outreach', label: 'Handoff Queue', icon: MessageSquare },
-    ],
-  },
-  {
-    title: 'Intelligence',
-    items: [
-      { to: '/command', label: 'Command Center', icon: Radar },
-      { to: '/brief', label: 'Daily Brief', icon: ScrollText },
-      { to: '/targets', label: 'Targets', icon: Crosshair },
-      { to: '/ai-tools', label: 'AI Console', icon: Bot },
-      { to: '/win-loss', label: 'Win / Loss', icon: TrendingUp },
-      { to: '/forecast', label: 'Forecast', icon: Gauge },
-      { to: '/scorecard', label: 'Scorecard', icon: Gauge },
-      { to: '/market-news', label: 'Market News', icon: Newspaper },
-      { to: '/market-map', label: 'Market Map', icon: ScatterChart },
-      { to: '/graph', label: 'Sales Graph', icon: Share2 },
-      { to: '/monitors', label: 'Monitors', icon: Siren },
-      { to: '/bd-kpis', label: 'KPI Dashboard', icon: BarChart3 },
-      { to: '/board-report', label: 'Board Report', icon: FileBarChart },
-      { to: '/report-builder', label: 'Report Builder', icon: Table2 },
-    ],
-  },
-  {
-    title: 'Operating System',
-    items: [
-      { to: '/wbr', label: 'Weekly Review', icon: CalendarClock },
-      { to: '/decisions', label: 'Decision Log', icon: GitPullRequestArrow },
-    ],
-  },
-  {
-    title: 'CRM',
-    items: [
-      { to: '/tasks', label: 'My Tasks', icon: ListChecks },
-      { to: '/notes', label: 'Notes & Docs', icon: FileText },
-      { to: '/integrations', label: 'Integrations', icon: Radar },
-    ],
-  },
-  {
-    title: 'Compliance',
-    items: [
-      { to: '/claim-library', label: 'Claim Library', icon: ScrollText },
-      { to: '/audit-log', label: 'Audit Log', icon: Shield },
-      { to: '/ops', label: 'Ops Health', icon: Activity },
-    ],
-  },
-  {
-    title: 'Regulatory Toolkit',
-    defaultOpen: false,
-    items: [
-      { to: '/regulatory-dashboard', label: 'Regulatory Dashboard', icon: LayoutDashboard },
-      { to: '/ontology', label: 'Ontology Explorer', icon: GitBranch },
-      { to: '/states', label: 'State Map', icon: Map },
-      { to: '/products', label: 'Product Matrix', icon: Grid3X3 },
-      { to: '/simulator', label: 'Simulator', icon: Sliders },
-      { to: '/howey', label: 'Howey Calculator', icon: Scale },
-      { to: '/scenario', label: 'Scenario Planner', icon: ToggleLeft },
-      { to: '/readiness', label: 'Readiness Stack', icon: ListTodo },
-      { to: '/brief-generator', label: 'Brief Generator', icon: FileText },
-      { to: '/capital-estimator', label: 'Capital Estimator', icon: DollarSign },
-      { to: '/roadmap', label: 'Launch Roadmap', icon: Calendar },
-      { to: '/red-flags', label: 'Red Flags & Audit', icon: AlertTriangle },
-      { to: '/competition', label: 'Competition Analysis', icon: Swords },
-      { to: '/product-intel', label: 'Product Intelligence', icon: Target },
-      { to: '/settings', label: 'Settings', icon: Settings },
-    ],
-  },
-];
+/**
+ * LCX OS (Phase 1): one nav tree per workspace — the sidebar renders ONLY the
+ * active workspace's deck plus the always-yours desk group. Groupings mirror
+ * the compiled workspace constitution (@lcx/shared/workspaces.ts); a page
+ * listed here but not entitled server-side would still 403 — the shell just
+ * never shows it.
+ */
+const WS_SECTIONS: Record<WorkspaceId, NavSection[]> = {
+  command: [
+    {
+      title: 'US Launch Command',
+      items: [
+        { to: '/command-deck', label: 'US Launch Deck', icon: Command },
+        { to: '/command-partners', label: 'Partner Pipeline', icon: Briefcase },
+        { to: '/command-ops', label: 'Command Ops', icon: Landmark },
+      ],
+    },
+  ],
+  sales: [
+    {
+      title: 'Pipeline',
+      items: [
+        { to: '/bd-pipeline', label: 'BD Engine', icon: Target },
+        { to: '/exchange-gaps', label: 'Exchange Gaps', icon: Layers },
+        { to: '/deal-board', label: 'Deal Board', icon: KanbanSquare },
+        { to: '/deal-desk', label: 'Deal Desk', icon: Briefcase },
+        { to: '/targets', label: 'Targets', icon: Crosshair },
+      ],
+    },
+    {
+      title: 'Outreach',
+      items: [
+        { to: '/outreach-ops', label: 'Outreach Ops', icon: Gauge },
+        { to: '/send-queue', label: 'Send Queue', icon: Send },
+        { to: '/outreach', label: 'Handoff Queue', icon: MessageSquare },
+        { to: '/claim-library', label: 'Claim Library', icon: ScrollText },
+      ],
+    },
+  ],
+  intel: [
+    {
+      title: 'Intelligence',
+      items: [
+        { to: '/command', label: 'Command Center', icon: Radar },
+        { to: '/brief', label: 'Daily Brief', icon: ScrollText },
+        { to: '/ai-tools', label: 'AI Console', icon: Bot },
+        { to: '/win-loss', label: 'Win / Loss', icon: TrendingUp },
+        { to: '/forecast', label: 'Forecast', icon: Gauge },
+        { to: '/scorecard', label: 'Scorecard', icon: Gauge },
+        { to: '/market-news', label: 'Market News', icon: Newspaper },
+        { to: '/market-map', label: 'Market Map', icon: ScatterChart },
+        { to: '/graph', label: 'Sales Graph', icon: Share2 },
+        { to: '/monitors', label: 'Monitors', icon: Siren },
+      ],
+    },
+    {
+      title: 'Reporting',
+      items: [
+        { to: '/bd-kpis', label: 'KPI Dashboard', icon: BarChart3 },
+        { to: '/board-report', label: 'Board Report', icon: FileBarChart },
+        { to: '/report-builder', label: 'Report Builder', icon: Table2 },
+      ],
+    },
+  ],
+  regulatory: [
+    {
+      title: 'Regulatory Toolkit',
+      items: [
+        { to: '/regulatory-dashboard', label: 'Regulatory Dashboard', icon: LayoutDashboard },
+        { to: '/ontology', label: 'Ontology Explorer', icon: GitBranch },
+        { to: '/states', label: 'State Map', icon: Map },
+        { to: '/products', label: 'Product Matrix', icon: Grid3X3 },
+        { to: '/simulator', label: 'Simulator', icon: Sliders },
+        { to: '/howey', label: 'Howey Calculator', icon: Scale },
+        { to: '/scenario', label: 'Scenario Planner', icon: ToggleLeft },
+        { to: '/readiness', label: 'Readiness Stack', icon: ListTodo },
+        { to: '/brief-generator', label: 'Brief Generator', icon: FileText },
+        { to: '/capital-estimator', label: 'Capital Estimator', icon: DollarSign },
+        { to: '/roadmap', label: 'Launch Roadmap', icon: Calendar },
+        { to: '/red-flags', label: 'Red Flags & Audit', icon: AlertTriangle },
+        { to: '/competition', label: 'Competition Analysis', icon: Swords },
+        { to: '/product-intel', label: 'Product Intelligence', icon: Target },
+      ],
+    },
+  ],
+  distribution: [
+    {
+      title: 'Distribution Command',
+      items: [
+        // Surfaces land in LCX ONE Phase 3 — the compartment exists first.
+      ],
+    },
+  ],
+  governance: [
+    {
+      title: 'Governance',
+      items: [
+        { to: '/wbr', label: 'Weekly Review', icon: CalendarClock },
+        { to: '/decisions', label: 'Decision Log', icon: GitPullRequestArrow },
+        { to: '/audit-log', label: 'Audit Log', icon: Shield },
+        { to: '/ops', label: 'Ops Health', icon: Activity },
+        { to: '/access', label: 'Access Control', icon: KeyRound },
+      ],
+    },
+  ],
+};
+
+/** Always-yours desk group — personal surfaces outside every compartment. */
+const DESK_SECTION: NavSection = {
+  title: 'My Desk',
+  items: [
+    { to: '/tasks', label: 'My Tasks', icon: ListChecks },
+    { to: '/notes', label: 'Notes & Docs', icon: FileText },
+    { to: '/integrations', label: 'Integrations', icon: Radar },
+    { to: '/settings', label: 'Settings', icon: Settings },
+  ],
+};
+
 
 export function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUIStore();
   const { resolvedRemediations } = useAuditStore();
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(sections.map(s => [s.title, s.defaultOpen ?? true])),
-  );
+  const activeWorkspace = useAccessStore(s => s.activeWorkspace);
+  const myWorkspaces = useMyWorkspaces();
+  // The deck you're flying: the active workspace's tree + the desk group.
+  // Falls back to the first entitled workspace pre-selection so the sidebar
+  // is never blank.
+  const wsId = activeWorkspace ?? myWorkspaces[0]?.id ?? 'sales';
+  const sections = [...(WS_SECTIONS[wsId] ?? []), DESK_SECTION];
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
 
   const unresolvedCount = redFlags.filter(rf => {
     if (rf.risk !== 'Critical' && rf.risk !== 'High') return false;
@@ -175,7 +215,17 @@ export function Sidebar() {
                 </button>
               )}
               {sidebarCollapsed && <div className="mx-2 my-2 border-t border-line" />}
-              {(sidebarCollapsed || isOpen) && <div className="space-y-px">{section.items.map(renderItem)}</div>}
+              {(sidebarCollapsed || isOpen) && (
+                section.items.length > 0 ? (
+                  <div className="space-y-px">{section.items.map(renderItem)}</div>
+                ) : (
+                  !sidebarCollapsed && (
+                    <p className="px-2 py-1 text-[10px] italic text-grey">
+                      Surfaces arrive in LCX ONE Phase 3.
+                    </p>
+                  )
+                )
+              )}
             </div>
           );
         })}

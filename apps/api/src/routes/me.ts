@@ -3,6 +3,7 @@ import { TEAM } from '@lcx/shared';
 import type { AuthVariables } from '../middleware/auth.js';
 import { requireOperator } from '../middleware/auth.js';
 import { getPool } from '../db/index.js';
+import { loadEntitlements } from '../access/entitlements.js';
 
 /**
  * Protected probe — the client's source of truth for identity and role.
@@ -12,9 +13,12 @@ import { getPool } from '../db/index.js';
  */
 export const meRoutes = new Hono<{ Variables: AuthVariables }>();
 
-meRoutes.get('/', requireOperator, (c) => {
+meRoutes.get('/', requireOperator, async (c) => {
   const operator = c.get('operator');
   const member = TEAM.find((m) => m.id === operator.id) ?? null;
+  // LCX OS (Phase 1): the client boots its workspace shell from this map —
+  // the server owns who may enter which compartment, never the client.
+  const entitlements = await loadEntitlements(getPool(), operator.id);
   return c.json({
     data: {
       ...operator,
@@ -22,6 +26,7 @@ meRoutes.get('/', requireOperator, (c) => {
       // the role → capability itself; the server owns that decision.
       canApprove: operator.role === 'approver',
       member: member ? { id: member.id, name: member.name, email: member.email, role: member.role } : null,
+      entitlements,
     },
     meta: {
       timestamp: new Date().toISOString(),

@@ -37,3 +37,5 @@ export { BoardReport } from './BoardReport';
 export { MarketNews } from './MarketNews';
 export { ReportBuilder } from './ReportBuilder';
 export { ContactWorkspace } from './ContactWorkspace';
+export { AccessControl } from './AccessControl';
+export { DistributionHome } from './DistributionHome';

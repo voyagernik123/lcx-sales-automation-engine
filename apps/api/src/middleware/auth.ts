@@ -46,29 +46,44 @@ function safeEqual(a: string, b: string): boolean {
  * client. Roster 'viewer' members (none today) fall back to 'operator', the
  * base API tier; a dedicated read-only tier is out of scope for this pass.
  */
+export function resolvePrincipal(
+  authHeader: string | undefined,
+  apiKeyHeader: string | undefined,
+): OperatorPrincipal | null {
+  const key = extractApiKey(authHeader, apiKeyHeader);
+  if (!key) return null;
+
+  // 1) Shared operator API key (timing-safe).
+  if (safeEqual(key, env.operatorApiKey)) {
+    return { id: 'operator', role: 'operator', authMethod: 'api_key' };
+  }
+
+  // 2) Desk email allowlist — the credential IS the member's email. The
+  //    principal carries the member's real role so RBAC is authoritative.
+  const member = findMemberByEmail(key);
+  if (member) {
+    return {
+      id: member.id,
+      role: member.role === 'approver' ? 'approver' : 'operator',
+      authMethod: 'email',
+    };
+  }
+  return null;
+}
+
 export const requireOperator = createMiddleware<{ Variables: AuthVariables }>(async (c, next) => {
-  const key = extractApiKey(c.req.header('authorization'), c.req.header('x-api-key'));
+  // The LCX OS workspace gate (middleware/workspace.ts) may have authenticated
+  // this request already — one resolution per request, never two.
+  if (c.get('operator')) {
+    await next();
+    return;
+  }
 
-  if (key) {
-    // 1) Shared operator API key (timing-safe).
-    if (safeEqual(key, env.operatorApiKey)) {
-      c.set('operator', { id: 'operator', role: 'operator', authMethod: 'api_key' });
-      await next();
-      return;
-    }
-
-    // 2) Desk email allowlist — the credential IS the member's email. The
-    //    principal now carries the member's real role so RBAC is authoritative.
-    const member = findMemberByEmail(key);
-    if (member) {
-      c.set('operator', {
-        id: member.id,
-        role: member.role === 'approver' ? 'approver' : 'operator',
-        authMethod: 'email',
-      });
-      await next();
-      return;
-    }
+  const principal = resolvePrincipal(c.req.header('authorization'), c.req.header('x-api-key'));
+  if (principal) {
+    c.set('operator', principal);
+    await next();
+    return;
   }
 
   return c.json(

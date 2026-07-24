@@ -19,6 +19,7 @@ import { useLastSeen } from '@/lib/useLastSeen';
 import { ChartCard } from '@/components/charts';
 import { CardSkeleton } from '@/components/shared';
 import { PageTitle } from '@/components/ui';
+import { WorkspaceLauncher } from '@/components/home/WorkspaceLauncher';
 import {
   QuotaRing,
   LiveOpsFeed,
@@ -115,6 +116,8 @@ export function Home() {
       >
         {greeting()}, {name}
       </PageTitle>
+
+      <WorkspaceLauncher />
 
       {/* The desk's two lead instruments — every region carries data (plan Part 6). */}
       {pulse ? (
