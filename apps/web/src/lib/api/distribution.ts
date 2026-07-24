@@ -34,11 +34,32 @@ export interface DistributionDeep {
     competitors: DistCompetitor[];
     funnel: { stages: string[]; params: Record<string, number>; note: string };
     gaps: DistGap[];
+    geoQuestions: Array<{ id: string; query: string; intent: string; priority: string }>;
+    personas: Array<{ id: string; name: string; channel: string; cadence: string; beat: string }>;
     sources: DistSource[];
   };
   listings: DistListing[];
   live: { listings: boolean };
 }
+
+export interface DistCampaign {
+  id: string; name: string; surface_id: string | null; kind: string;
+  token_incentivized: boolean; budget_lcx: string | null; status: string;
+  detail: string | null; owner: string | null; created_at: string;
+}
+export const fetchDistCampaigns = () =>
+  request<{ data: DistCampaign[] }>(`/v1/distribution/campaigns`, { auth: true }).then((r) => r.data);
+
+/* Governed distribution actions (audited via the registry). */
+async function invokeDist(actionId: string, subjectType: string, subjectId: string, params: Record<string, unknown>): Promise<void> {
+  await request(`/v1/actions/${actionId}/invoke`, { auth: true, method: 'POST', body: { subjectType, subjectId, params } });
+}
+export const setListingStatus = (surfaceId: string, params: Record<string, unknown>) =>
+  invokeDist('dist_listing_set_status', 'dist_listing', surfaceId, params);
+export const createCampaign = (params: Record<string, unknown>) =>
+  invokeDist('dist_campaign_create', 'distribution', 'new', params);
+export const setCampaignStatus = (campaignId: string, status: string) =>
+  invokeDist('dist_campaign_set_status', 'dist_campaign', campaignId, { status });
 
 export const fetchDistributionDeep = () =>
   request<{ data: DistributionDeep }>(`/v1/distribution/deep`, { auth: true }).then((r) => r.data);

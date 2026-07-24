@@ -8,6 +8,10 @@ import { SelectOperator } from '@/pages/SelectOperator';
  * door land in the entry chunk; each route's JS is fetched on first visit.
  * The Suspense boundary lives in AppLayout around the Outlet.
  */
+const DistributionCockpit = lazy(() => import('@/pages/DistributionCockpit').then((m) => ({ default: m.DistributionCockpit })));
+const DistributionListings = lazy(() => import('@/pages/DistributionListings').then((m) => ({ default: m.DistributionListings })));
+const DistributionCampaigns = lazy(() => import('@/pages/DistributionCampaigns').then((m) => ({ default: m.DistributionCampaigns })));
+const DistributionGeo = lazy(() => import('@/pages/DistributionGeo').then((m) => ({ default: m.DistributionGeo })));
 const DistributionHome = lazy(() => import('@/pages/DistributionHome').then((m) => ({ default: m.DistributionHome })));
 const AccessControl = lazy(() => import('@/pages/AccessControl').then((m) => ({ default: m.AccessControl })));
 const Dashboard = lazy(() => import('@/pages/Dashboard').then((m) => ({ default: m.Dashboard })));
@@ -119,7 +123,11 @@ export const router = createBrowserRouter([
       { path: 'ops', element: <Ops /> },
       { path: 'wbr', element: <Wbr /> },
       { path: 'access', element: <AccessControl /> },
-      { path: 'distribution', element: <DistributionHome /> },
+      { path: 'distribution', element: <DistributionCockpit /> },
+      { path: 'distribution/atlas', element: <DistributionHome /> },
+      { path: 'distribution/listings', element: <DistributionListings /> },
+      { path: 'distribution/campaigns', element: <DistributionCampaigns /> },
+      { path: 'distribution/geo', element: <DistributionGeo /> },
       { path: 'decisions', element: <Decisions /> },
       { path: 'command-deck', element: <CommandDeck /> },
       { path: 'command-partners', element: <CommandPartners /> },

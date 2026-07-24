@@ -32,9 +32,9 @@ export function DistributionHome() {
     <div className="p-5">
       <PageTitle
         icon={<Rocket size={20} />}
-        subtitle="PayAgent by LCX AI Labs — the machine-economy distribution ontology, source-graded"
+        subtitle="The distribution ontology — rails, surfaces, competitors, gaps, engines (source-graded)"
       >
-        Distribution Command
+        Channel Atlas
       </PageTitle>
 
       {err ? (

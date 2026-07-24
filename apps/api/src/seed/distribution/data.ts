@@ -109,6 +109,25 @@ export const DISTRIBUTION_DEEP_SEED = {
     { id: 'G8', title: 'Nobody demos with an autonomous business', gap: 'no one runs a real OPC on their own rail in public', lcxAngle: 'Launch "the first OPC run by an agent on PayAgent": sells a real service, pays its own x402 bills, invoices via PayAgent links, publishes a live P&L' },
   ],
 
+  /* ── GEO/AEO — the queries to win (the answer-engine question inventory) ── */
+  geoQuestions: [
+    { id: 'q1', query: 'what payment API should my AI agent use', intent: 'category', priority: 'high' },
+    { id: 'q2', query: 'how can an AI agent pay for things autonomously', intent: 'category', priority: 'high' },
+    { id: 'q3', query: 'crypto payment API for AI agents', intent: 'category', priority: 'high' },
+    { id: 'q4', query: 'x402 alternatives / how to accept x402 payments', intent: 'rail', priority: 'medium' },
+    { id: 'q5', query: 'agent wallet with spending limits', intent: 'feature', priority: 'medium' },
+    { id: 'q6', query: 'Stripe for AI agents', intent: 'brand', priority: 'high' },
+    { id: 'q7', query: 'MCP server for crypto payments', intent: 'feature', priority: 'medium' },
+    { id: 'q8', query: 'agent-to-agent payment settlement', intent: 'category', priority: 'medium' },
+  ],
+
+  /* ── The KOL persona fleet (surfaces only; AI drafting arrives in Phase 7) ── */
+  personas: [
+    { id: 'economist', name: 'The Agent Economist', channel: 'Farcaster + owned blog', cadence: 'daily', beat: 'agent-economy analysis; runs a public OPC on PayAgent (G8 demo)' },
+    { id: 'builder', name: 'The PayAgent Builder', channel: 'X (labeled) + Telegram', cadence: 'weekly', beat: 'dev tutorials, MCP/x402 integration threads' },
+    { id: 'scout', name: 'The Rails Scout', channel: 'Moltbook + Farcaster', cadence: 'as-it-happens', beat: 'rail/standard news, protocol-war commentary' },
+  ],
+
   /* ── Source registry (graded; SourceChip resolves srcRefs against this) ── */
   sources: [
     { id: 's_payagent', grade: 'A', label: 'PayAgent — payagent.co', url: 'https://www.payagent.co/' },

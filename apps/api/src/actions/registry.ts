@@ -530,6 +530,80 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       return { requestId: subjectId, decision: params.decision, workspace: req.workspace, memberId: req.member_id };
     },
   },
+  /* ── DISTRIBUTION COMMAND (LCX ONE Phase 5) — the governed surface loop. ──
+   * Listing status + campaign lifecycle. The Phase-6 compliance gate + budget
+   * cap will layer on top of dist_campaign_set_status (launch transitions). */
+  dist_listing_set_status: {
+    id: 'dist_listing_set_status',
+    label: 'Set listing status',
+    description: 'Advance a distribution surface through the listing pipeline.',
+    subjectTypes: ['dist_listing'],
+    minRole: 'operator',
+    workspace: 'distribution',
+    paramsSchema: z.object({
+      status: z.enum(['not_started', 'submitted', 'live', 'ranked']),
+      rankNote: z.string().max(200).optional(),
+      usageNote: z.string().max(200).optional(),
+      url: z.string().max(300).optional(),
+    }),
+    execute: async ({ pool, subjectId, params, actor }) => {
+      const { rowCount } = await pool.query(
+        `UPDATE dist_listings
+           SET status=$1,
+               rank_note=COALESCE($2, rank_note),
+               usage_note=COALESCE($3, usage_note),
+               url=COALESCE($4, url),
+               updated_by=$5, updated_at=now()
+         WHERE surface_id=$6`,
+        [params.status, (params.rankNote as string) ?? null, (params.usageNote as string) ?? null, (params.url as string) ?? null, actor, subjectId],
+      );
+      if ((rowCount ?? 0) === 0) throw new ActionError('NOT_FOUND', 'Listing not found', 404);
+      return { surfaceId: subjectId, status: params.status };
+    },
+  },
+  dist_campaign_create: {
+    id: 'dist_campaign_create',
+    label: 'Create distribution campaign',
+    description: 'Draft a quest/incentive/content/outreach campaign (starts in draft).',
+    subjectTypes: ['distribution'],
+    minRole: 'operator',
+    workspace: 'distribution',
+    paramsSchema: z.object({
+      name: z.string().min(1).max(160),
+      surfaceId: z.string().max(60).optional(),
+      kind: z.enum(['quest', 'incentive', 'content', 'outreach']),
+      tokenIncentivized: z.boolean().optional(),
+      budgetLcx: z.number().nonnegative().optional(),
+      detail: z.string().max(1000).optional(),
+    }),
+    execute: async ({ pool, params, actor }) => {
+      const { rows } = await pool.query<{ id: string }>(
+        `INSERT INTO dist_campaigns (name, surface_id, kind, token_incentivized, budget_lcx, detail, owner, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING id`,
+        [params.name, (params.surfaceId as string) ?? null, params.kind, params.tokenIncentivized ?? false, (params.budgetLcx as number) ?? null, (params.detail as string) ?? null, actor],
+      );
+      return { campaignId: rows[0]!.id, status: 'draft' };
+    },
+  },
+  dist_campaign_set_status: {
+    id: 'dist_campaign_set_status',
+    label: 'Set campaign status',
+    description: 'Advance a campaign through its lifecycle (Phase 6 gates launch).',
+    subjectTypes: ['dist_campaign'],
+    minRole: 'operator',
+    workspace: 'distribution',
+    paramsSchema: z.object({
+      status: z.enum(['draft', 'compliance_review', 'approved', 'live', 'measured']),
+    }),
+    execute: async ({ pool, subjectId, params }) => {
+      const { rowCount } = await pool.query(
+        `UPDATE dist_campaigns SET status=$1, updated_at=now() WHERE id=$2`,
+        [params.status, subjectId],
+      );
+      if ((rowCount ?? 0) === 0) throw new ActionError('NOT_FOUND', 'Campaign not found', 404);
+      return { campaignId: subjectId, status: params.status };
+    },
+  },
 };
 
 export function listActions(): Array<Pick<RegistryAction, 'id' | 'label' | 'description' | 'subjectTypes' | 'minRole'>> {

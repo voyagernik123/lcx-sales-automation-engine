@@ -39,3 +39,7 @@ export { ReportBuilder } from './ReportBuilder';
 export { ContactWorkspace } from './ContactWorkspace';
 export { AccessControl } from './AccessControl';
 export { DistributionHome } from './DistributionHome';
+export { DistributionCockpit } from './DistributionCockpit';
+export { DistributionListings } from './DistributionListings';
+export { DistributionCampaigns } from './DistributionCampaigns';
+export { DistributionGeo } from './DistributionGeo';
