@@ -115,6 +115,11 @@ export class LLMClient {
             model: env.openrouterModel,
             max_tokens: opts.maxTokens ?? 1024,
             temperature: opts.temperature ?? 0.4,
+            // Reasoning models (e.g. Nemotron Ultra) otherwise spend the token
+            // budget thinking out loud before the answer — verified live: with
+            // this off, strict-JSON and [[id]]-citation outputs come back clean.
+            // OpenRouter ignores the field for non-reasoning models.
+            reasoning: { enabled: false },
             messages: [
               ...(opts.system ? [{ role: 'system', content: opts.system }] : []),
               { role: 'user', content: prompt },
