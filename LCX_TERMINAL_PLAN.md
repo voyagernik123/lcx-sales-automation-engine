@@ -178,4 +178,49 @@ Later, when convenient:
 
 You hit ⌥Space anywhere on your Mac. LCX TERMINAL is in front of you in under a second, already showing the three things that need you today. You type `dec_19 decide` — the gate stops you, explains it needs a premortem, and offers to open one. You file it, decide, and the row flips with a satisfying, unmistakable snap. Total elapsed: eleven seconds, no mouse, and the audit trail is perfect. Sam opens the same app and is taught only his compartments, becoming fast in a week without asking you a single question.
 
-That's the instrument. **Phase 1 awaits your approval.**
+That's the instrument.
+
+---
+
+## 8. PHASE LEDGER
+
+### Phase 1 — the Shell · **SHIPPED** (`df42f5b`, `d4e6863`)
+
+`apps/desktop` — Tauri v2 + Rust, wrapping the existing web app unchanged.
+Artifacts: `LCX TERMINAL.app` + DMG (6.4 MB, arm64, ad-hoc signed) + a
+minisign-signed `.app.tar.gz` for the updater.
+
+**Verified with evidence**
+
+| Claim | How it was proven |
+|---|---|
+| Renders the real desk, not a blank shell | Read the live accessibility tree — the LCX sign-in gate, both fields, `LIVE · V0.1.0 · SECURE` |
+| Native menu bar with discoverable shortcuts | Enumerated: Apple / LCX TERMINAL / Edit / Go / View / Window / Help, and every Go item reports its ⌘ key (K, 0–6, `[`, `]`) |
+| ⌥Space toggles the desk | Instrumented shell log, both directions: `visible+focused → hide`, then `not visible → show` |
+| Dock icon recovers a hidden desk | `RunEvent::Reopen` fires and shows |
+| Keychain credentials really work | Rust test round-trips set / overwrite / get / delete / double-delete against the real macOS Keychain |
+| Credential handoff to the API client | 6 vitest cases: hydration → `email:passcode`, sync read, half-credential refused, sign-out clears all three stores, first run cannot throw |
+| The terminal can reach prod | From `tauri://localhost`: preflight OK, `/v1/me` = Nik/approver with all 6 workspaces, 5 endpoints 200, and 3 bad-credential shapes all 401 |
+
+**Three defects found by running it** (invisible in code review): relaunch
+hid the desk (single-instance called *toggle*); a hidden desk was
+unrecoverable by mouse (nothing handled `Reopen`); and quitting while
+hidden started the next launch invisible (window-state persists `VISIBLE`
+by default). All three fixed in `d4e6863`.
+
+**A hole in the gate, closed:** `eslint-plugin-react-hooks` was never
+installed, so `rules-of-hooks` had never run on ~94k LOC and every
+`eslint-disable react-hooks/*` comment was itself an error. Zero
+violations existed — but it did find a real bug: the Dashboard's blocker
+count did not recompute when a safe-harbor exemption was toggled. Lint is
+now 0 errors / 0 warnings so it stays trustworthy.
+
+**Honestly not verified:** a human typing into the sign-in form
+(accessibility access became unavailable mid-session), and Gatekeeper on a
+*downloaded* DMG — that needs Apple Developer signing. See
+`apps/desktop/README.md`.
+
+**Carried into Phase 2:** `/v1/projects` took **2.5 s** from the terminal.
+That is the number the speed floor exists to kill.
+
+### Phases 2–7 — awaiting approval, one at a time.
