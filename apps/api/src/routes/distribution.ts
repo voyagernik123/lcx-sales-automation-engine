@@ -158,6 +158,38 @@ distributionRoutes.get('/campaigns/:id/export', requireOperator, async (c) => {
   }
 });
 
+/* ── Phase 7 — the distribution AI operator (cited, deterministic-fallback) ── */
+
+distributionRoutes.post('/ask', requireOperator, async (c) => {
+  const body = await c.req.json<{ question?: string }>().catch(() => ({} as { question?: string }));
+  const q = (body.question ?? '').trim();
+  if (q.length < 3) return c.json({ error: 'question required', code: 'VALIDATION' }, 400);
+  const { askDistribution } = await import('../ai/distributionOperator.js');
+  return c.json({ data: await askDistribution(q) });
+});
+
+distributionRoutes.post('/geo-draft', requireOperator, async (c) => {
+  const body = await c.req.json<{ query?: string }>().catch(() => ({} as { query?: string }));
+  const query = (body.query ?? '').trim();
+  if (query.length < 3) return c.json({ error: 'query required', code: 'VALIDATION' }, 400);
+  const { draftGeoContent } = await import('../ai/distributionOperator.js');
+  return c.json({ data: await draftGeoContent(query) });
+});
+
+distributionRoutes.post('/listing-packet', requireOperator, async (c) => {
+  const body = await c.req.json<{ surfaceId?: string }>().catch(() => ({} as { surfaceId?: string }));
+  const { draftListingPacket } = await import('../ai/distributionOperator.js');
+  const r = await draftListingPacket((body.surfaceId ?? '').trim());
+  if (!r.packet && !r.usedLlm) return c.json({ error: 'unknown surface', code: 'NOT_FOUND' }, 404);
+  return c.json({ data: r });
+});
+
+distributionRoutes.post('/campaign-suggest', requireOperator, async (c) => {
+  const body = await c.req.json<{ surfaceId?: string }>().catch(() => ({} as { surfaceId?: string }));
+  const { suggestCampaign } = await import('../ai/distributionOperator.js');
+  return c.json({ data: await suggestCampaign((body.surfaceId ?? '').trim()) });
+});
+
 distributionRoutes.get('/engines/presence', requireOperator, async (c) => {
   const pool = getPool();
   let listings: Array<{ surface_id: string; status: string }> = [];

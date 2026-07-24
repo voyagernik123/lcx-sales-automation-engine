@@ -65,6 +65,17 @@ export const exportCampaign = (campaignId: string, target: string) =>
   request<{ data: { spec: Record<string, unknown>; mode: string } }>(`/v1/distribution/campaigns/${campaignId}/export?target=${target}`, { auth: true }).then((r) => r.data);
 
 /* Compliance reviews on a campaign (mirrors the analytic_reviews SAT pattern). */
+/* Phase 7 — the distribution AI operator (cited, deterministic-fallback). */
+export interface DistAskAnswer { answer: string; usedLlm: boolean; citations?: Array<{ id: string; label: string; url: string | null }> }
+export const askDistribution = (question: string) =>
+  post<DistAskAnswer>(`/v1/distribution/ask`, { question });
+export const draftGeoContent = (query: string) =>
+  post<{ draft: string; usedLlm: boolean; citations?: Array<{ id: string; label: string; url: string | null }> }>(`/v1/distribution/geo-draft`, { query });
+export const draftListingPacket = (surfaceId: string) =>
+  post<{ packet: string; usedLlm: boolean }>(`/v1/distribution/listing-packet`, { surfaceId });
+export const suggestCampaign = (surfaceId: string) =>
+  post<{ suggestion: string; usedLlm: boolean }>(`/v1/distribution/campaign-suggest`, { surfaceId });
+
 export interface CampaignReview { id: string; kind: string; title: string; status: string; author: string; created_at: string }
 export const fetchCampaignReviews = (campaignId: string) =>
   request<{ data: CampaignReview[] }>(`/v1/reviews?subjectType=dist_campaign&subjectId=${campaignId}`, { auth: true }).then((r) => r.data);

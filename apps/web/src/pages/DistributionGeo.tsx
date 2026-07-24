@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Search, Users } from 'lucide-react';
+import { Search, Users, Sparkles } from 'lucide-react';
 import { clsx } from 'clsx';
-import { PageTitle } from '@/components/ui';
+import { PageTitle, Button } from '@/components/ui';
 import { CardSkeleton } from '@/components/shared';
-import { fetchDistributionDeep, type DistributionDeep } from '@/lib/api/distribution';
+import { toast } from '@/components/shared/Toast';
+import { fetchDistributionDeep, draftGeoContent, type DistributionDeep } from '@/lib/api/distribution';
 
 const PRIORITY_TONE: Record<string, string> = {
   high: 'border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-400',
@@ -18,7 +19,18 @@ const PRIORITY_TONE: Record<string, string> = {
  */
 export function DistributionGeo() {
   const [deep, setDeep] = useState<DistributionDeep | null>(null);
+  const [draft, setDraft] = useState<{ query: string; text: string; usedLlm: boolean } | null>(null);
+  const [drafting, setDrafting] = useState<string | null>(null);
   useEffect(() => { fetchDistributionDeep().then(setDeep).catch(() => setDeep(null)); }, []);
+
+  const genDraft = async (id: string, query: string) => {
+    setDrafting(id);
+    try {
+      const r = await draftGeoContent(query);
+      setDraft({ query, text: r.draft, usedLlm: r.usedLlm });
+    } catch { toast('error', 'Draft failed'); }
+    finally { setDrafting(null); }
+  };
 
   return (
     <div className="p-5">
@@ -40,10 +52,20 @@ export function DistributionGeo() {
                     <span className="font-mono text-[10px] text-grey">{q.intent}</span>
                   </span>
                   <span className={clsx('rounded border px-1.5 py-px font-mono text-[10px] font-semibold uppercase', PRIORITY_TONE[q.priority])}>{q.priority}</span>
+                  <Button size="xs" variant="secondary" disabled={drafting === q.id} onClick={() => void genDraft(q.id, q.query)}>
+                    <Sparkles size={11} /> {drafting === q.id ? '…' : 'Draft'}
+                  </Button>
                 </div>
               ))}
             </div>
-            <p className="mt-2 text-micro text-grey">Phase 7 adds the AI content drafter + per-engine (ChatGPT/Claude/Perplexity/Gemini) answer-share tracking.</p>
+            {draft && (
+              <div className="mt-2 rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3">
+                <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-wider text-grey">Draft for “{draft.query}”</div>
+                <p className="whitespace-pre-wrap text-label text-navy">{draft.text}</p>
+                <p className="mt-1 text-[10px] text-grey">{draft.usedLlm ? 'AI-drafted — review, then publish through your content workflow. AI never publishes.' : 'Deterministic draft — set an AI key for a citable, GEO-optimized version.'}</p>
+              </div>
+            )}
+            <p className="mt-2 text-micro text-grey">Per-engine (ChatGPT/Claude/Perplexity/Gemini) answer-share tracking lands as keys are provisioned.</p>
           </section>
 
           <section className="mt-5">

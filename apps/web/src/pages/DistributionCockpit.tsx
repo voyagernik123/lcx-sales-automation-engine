@@ -4,6 +4,7 @@ import { Rocket, Gauge, Compass, ListChecks, Megaphone, Search, ArrowRight } fro
 import { clsx } from 'clsx';
 import { PageTitle } from '@/components/ui';
 import { CardSkeleton } from '@/components/shared';
+import { AskDistribution } from '@/components/distribution/AskDistribution';
 import {
   fetchDistributionDeep, fetchPresence, fetchDistCampaigns, runEmission,
   type DistributionDeep, type Presence, type DistCampaign, type Emission,
@@ -91,6 +92,9 @@ export function DistributionCockpit() {
             </div>
             <p className="mt-2 text-micro text-grey">The engines + surfaces below turn these from analysis into pipeline.</p>
           </section>
+
+          {/* Ask the strategist */}
+          <section className="mt-4"><AskDistribution /></section>
 
           {/* Working-surface launcher */}
           <section className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">

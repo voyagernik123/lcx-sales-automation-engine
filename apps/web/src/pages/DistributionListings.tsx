@@ -5,7 +5,7 @@ import { PageTitle } from '@/components/ui';
 import { CardSkeleton } from '@/components/shared';
 import { toast } from '@/components/shared/Toast';
 import {
-  fetchDistributionDeep, setListingStatus,
+  fetchDistributionDeep, setListingStatus, draftListingPacket,
   type DistributionDeep, type DistSurface,
 } from '@/lib/api/distribution';
 
@@ -26,6 +26,15 @@ export function DistributionListings() {
   const [deep, setDeep] = useState<DistributionDeep | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [openMechanic, setOpenMechanic] = useState<string | null>(null);
+  const [packet, setPacket] = useState<{ id: string; text: string; usedLlm: boolean } | null>(null);
+  const [packing, setPacking] = useState<string | null>(null);
+
+  const genPacket = async (id: string) => {
+    setPacking(id);
+    try { const r = await draftListingPacket(id); setPacket({ id, text: r.packet, usedLlm: r.usedLlm }); }
+    catch (e) { toast('error', e instanceof Error ? e.message : 'Draft failed'); }
+    finally { setPacking(null); }
+  };
 
   const refresh = useCallback(() => { fetchDistributionDeep().then(setDeep).catch(() => setDeep(null)); }, []);
   useEffect(() => { refresh(); }, [refresh]);
@@ -91,6 +100,9 @@ export function DistributionListings() {
                         <button onClick={() => setOpenMechanic(openMechanic === s.id ? null : s.id)} className="text-micro text-cyan-600 hover:underline dark:text-cyan-400">
                           {openMechanic === s.id ? 'hide' : 'how to list'}
                         </button>
+                        <button onClick={() => void genPacket(s.id)} disabled={packing === s.id} className="ml-2 text-micro text-cyan-600 hover:underline disabled:opacity-50 dark:text-cyan-400">
+                          {packing === s.id ? '…' : '🤖 packet'}
+                        </button>
                       </td>
                     </tr>
                     {openMechanic === s.id && (
@@ -107,6 +119,13 @@ export function DistributionListings() {
             </tbody>
           </table>
           <p className="mt-2 text-[10px] text-grey">Every status change is a governed action — audited and attributed.</p>
+          {packet && (
+            <div className="mt-3 rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3">
+              <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-wider text-grey">Submission packet — {surfaces.find((s) => s.id === packet.id)?.name}</div>
+              <pre className="whitespace-pre-wrap font-sans text-label text-navy">{packet.text}</pre>
+              <p className="mt-1 text-[10px] text-grey">{packet.usedLlm ? 'AI-drafted — review, then submit. AI never submits.' : 'Deterministic packet — set an AI key for a tailored draft.'}</p>
+            </div>
+          )}
         </div>
       )}
     </div>
