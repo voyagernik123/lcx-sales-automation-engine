@@ -5,6 +5,7 @@ import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { useUIStore, useOperatorStore, ROLE_LABEL } from '@/stores';
 import { clearOperatorEmail } from '@/lib/apiClient';
 import { storage } from '@/lib/persistence';
+import { clearReadCache } from '@/lib/readCache';
 import { useAccessStore } from '@/stores/useAccessStore';
 import { NotificationBell } from './NotificationBell';
 
@@ -174,6 +175,7 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
                   clearOperator(); // identity → the guard sends us to /select
                   useAccessStore.getState().reset(); // entitlements + active workspace
                   storage.clearAll(); // every locally persisted key, for every operator
+                  clearReadCache(); // cached response bodies, memory and IndexedDB
 
                   // Hard navigation, not a client-side route change. Sign-out has to
                   // leave no residue: a SPA navigation keeps every zustand store alive

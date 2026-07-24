@@ -10,7 +10,9 @@ import { ErrorBoundary, ToastContainer, CommandPalette, PageSkeleton, useCommand
 import { InspectorHost } from '@/components/inspect/InspectorHost';
 import { useUIStore, useOperatorStore } from '@/stores';
 import { isTerminal } from '@/lib/container';
-import { beginInteraction, afterPaint } from '@/lib/perf';
+import { beginInteraction, afterPaint, readTally } from '@/lib/perf';
+import { OfflineBanner } from './OfflineBanner';
+import { startConnectivityWatch } from '@/lib/online';
 import { useAccessStore } from '@/stores/useAccessStore';
 
 export function AppLayout() {
@@ -44,18 +46,30 @@ export function AppLayout() {
   // the status-bar HUD and, after a flush, in the Ops Health SLO panel.
   useEffect(() => {
     const i = beginInteraction('nav', location.pathname);
+    // Snapshot the read tally so the sample can say whether this navigation was
+    // actually served locally. Without it, `cached` would be a guess — and the
+    // cache-hit rate next to the p95 is what makes the p95 believable.
+    const before = readTally();
     // Stop on the paint AFTER this route's first render, not on the effect —
     // effects run before the browser paints, so ending here would report a time
     // the operator never experienced.
-    afterPaint(() => i.paint());
-    // Route data still arriving is measured by the cache layer's settle marks;
-    // a route with no async reads settles when it paints.
-    afterPaint(() => i.settle());
+    afterPaint(() => {
+      const after = readTally();
+      i.paint({ cached: after.misses === before.misses });
+    });
+    // A route with no async reads settles when it paints; surfaces with their own
+    // async regions will mark settle explicitly as they adopt the instrument.
+    afterPaint(() => i.settle({ cached: readTally().misses === before.misses }));
   }, [location.pathname]);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
+
+  // Offline is read-only, and the operator has to be told so — governed writes
+  // stay online because gates read their inputs at write time and three of them
+  // fail open on error, so a queued write would be judged against stale truth.
+  useEffect(() => startConnectivityWatch(), []);
 
   // LCX TERMINAL (Phase 1): wire the native macOS menu + self-updater to the
   // app. The menu exists as much for DISCOVERABILITY as for use — every
@@ -101,6 +115,7 @@ export function AppLayout() {
   return (
     <div className="flex h-screen flex-col bg-page text-navy">
       <TopNav onOpenSearch={() => setOpen(true)} />
+      <OfflineBanner />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         <ErrorBoundary>

@@ -189,11 +189,33 @@ export function frameSamplesForFlush(): number[] {
   return [...frames];
 }
 
+/* ── read attribution ─────────────────────────────────────────────────────── */
+
+/**
+ * Every GET reports whether it was served locally. This is what lets a paint
+ * sample be labelled `cached` honestly, and it is why the HUD can show a
+ * cache-hit rate next to the p95 — a good latency number should always be
+ * traceable to a cause rather than believed on its own.
+ */
+let readHits = 0;
+let readMisses = 0;
+
+export function noteRead(cached: boolean): void {
+  if (cached) readHits += 1;
+  else readMisses += 1;
+}
+
+export function readTally(): { hits: number; misses: number } {
+  return { hits: readHits, misses: readMisses };
+}
+
 /** Test-only. */
 export function _resetPerf(): void {
   samples = [];
   frames = [];
   pending = [];
+  readHits = 0;
+  readMisses = 0;
 }
 
 /* ── measuring an interaction ──────────────────────────────────────────────── */

@@ -6,6 +6,10 @@
 
 import type { HealthResponse, OperatorPrincipal } from '@lcx/shared';
 import { isTerminal } from './container';
+import { canonicalPath, lookup, store, coalesce } from './readCache';
+import { noteRead } from './perf';
+import { invalidateAfterAction } from './readInvalidate';
+import { recordNetworkResult } from './online';
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
 // DEV-only: gating on import.meta.env.DEV lets Vite dead-code-strip the key
@@ -134,9 +138,17 @@ type RequestOpts = {
   signal?: AbortSignal;
   /** Extra request headers (e.g. X-Purpose for LCX OS purpose-based reads). */
   headers?: Record<string, string>;
+  /**
+   * Opt OUT of the read cache for this call. Reads are only ever cached when the
+   * policy in lib/readPolicy allows it, so this is for the rarer case where a
+   * caller needs a guaranteed-live value from an otherwise cacheable endpoint
+   * (e.g. re-reading a deal's stage at the moment a close flow opens).
+   */
+  cache?: false;
 };
 
-export async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
+/** The one network call, with no cache involvement. */
+async function networkRequest<T>(path: string, opts: RequestOpts, method: string): Promise<T> {
   const headers: Record<string, string> = {
     Accept: 'application/json',
   };
@@ -153,7 +165,7 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
   if (opts.headers) Object.assign(headers, opts.headers);
 
   const res = await fetch(url(path), {
-    method: opts.method ?? (opts.body !== undefined ? 'POST' : 'GET'),
+    method,
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
     signal: opts.signal,
@@ -174,7 +186,107 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
     throw new ApiError(err?.error ?? res.statusText, res.status, err?.code);
   }
 
+  // The server may veto storage of any response, per-request. Deny-only: it can
+  // make the client more conservative, never less (lib/readCache honours it, and
+  // there is no header that could widen the policy).
+  noStoreFlag = res.headers.get('X-LCX-No-Store') === '1';
+  noteTransport(true);
   return json as T;
+}
+
+/** Set by the most recent network response; read immediately after, same tick. */
+let noStoreFlag = false;
+
+export async function request<T>(path: string, opts: RequestOpts = {}): Promise<T> {
+  const method = opts.method ?? (opts.body !== undefined ? 'POST' : 'GET');
+
+  // The read cache is gated on the METHOD, not on a list of paths. This function
+  // serves ~40 non-GET call sites including the governed write path
+  // (/v1/actions/:id/invoke), and a cache leaking into those would be
+  // catastrophic — so anything that is not a plain bodyless GET goes straight to
+  // the network. A purpose-carrying read also bypasses it unconditionally: the
+  // X-Purpose middleware writes the "who looked, and why" audit row BEFORE the
+  // handler runs, so a cache hit would silently delete the record the checkpoint
+  // exists to create.
+  const eligible =
+    method === 'GET' &&
+    opts.body === undefined &&
+    opts.cache !== false &&
+    !(opts.headers && ('X-Purpose' in opts.headers || 'x-purpose' in opts.headers));
+
+  if (!eligible) {
+    try {
+      const out = await networkRequest<T>(path, opts, method);
+      // Invalidate here rather than at each call site. Governed actions are
+      // invoked from at least five different modules, and a new one added later
+      // would otherwise silently get no invalidation — leaving the operator
+      // looking at a value the server has already changed. Hooking the single
+      // chokepoint makes it correct by construction.
+      const action = governedActionId(path, method);
+      if (action) invalidateAfterAction(action);
+      return out;
+    } catch (err) {
+      if (isNetworkError(err)) noteTransport(false);
+      throw err;
+    }
+  }
+
+  const canonical = canonicalPath(path);
+  const hit = await lookup<T>(canonical);
+
+  if (hit.usable && hit.entry) {
+    noteRead(true);
+    if (hit.stale) {
+      // Stale-while-revalidate: the operator already has pixels; refresh behind
+      // them. Coalesced, so five components revisiting the same surface at once
+      // produce one request. Failures are swallowed — the cached body stands.
+      void coalesce(canonical, () => networkRequest<T>(path, opts, method))
+        .then((fresh) => store(canonical, fresh, { noStore: noStoreFlag }))
+        .catch((err) => {
+          if (isNetworkError(err)) noteTransport(false);
+        });
+    }
+    return hit.entry.body;
+  }
+
+  noteRead(false);
+  try {
+    const fresh = await coalesce(canonical, () => networkRequest<T>(path, opts, method));
+    store(canonical, fresh, { noStore: noStoreFlag });
+    return fresh;
+  } catch (err) {
+    if (isNetworkError(err)) noteTransport(false);
+    throw err;
+  }
+}
+
+/**
+ * The action id when this request is a governed write, else null. Only a
+ * SUCCESSFUL invoke reaches the caller, so matching the path here is enough —
+ * a gate rejection throws and never invalidates.
+ */
+function governedActionId(path: string, method: string): string | null {
+  if (method === 'GET') return null;
+  const m = /^\/v1\/actions\/([^/?]+)\/invoke\b/.exec(path);
+  return m ? m[1] : null;
+}
+
+/**
+ * A transport failure, as distinct from the server answering with an error. Only
+ * the former is evidence about connectivity — a 403 means we are very much online.
+ */
+function isNetworkError(err: unknown): boolean {
+  return !(err instanceof ApiError);
+}
+
+/**
+ * Feed real evidence to the connectivity state machine. navigator.onLine reports
+ * LINK state — true on a captive portal, true when the API alone is unreachable —
+ * so the only honest signal is whether our own requests actually complete.
+ * lib/online is dependency-free, so this import cannot cycle.
+ */
+function noteTransport(ok: boolean): void {
+  recordNetworkResult(ok ? 'ok' : 'network-error');
 }
 
 /** Public health check — no auth. */

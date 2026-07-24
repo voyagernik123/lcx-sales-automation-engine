@@ -42,6 +42,7 @@ import { distributionRoutes } from './routes/distribution.js';
 import { x402Routes } from './routes/x402.js';
 import { accessRoutes } from './routes/access.js';
 import { requireWorkspace } from './middleware/workspace.js';
+import { NO_STORE_HEADER, noStore } from './middleware/noStore.js';
 import { WORKSPACES } from '@lcx/shared';
 
 export function createApp() {
@@ -72,11 +73,19 @@ export function createApp() {
       },
       allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Purpose'],
-      exposeHeaders: ['Content-Type'],
+      // The web shell is ALWAYS cross-origin (Cloudflare Pages and
+      // tauri://localhost → onrender.com), and fetch() hides any response header
+      // not listed here. X-LCX-No-Store must be exposed or the cache kill switch
+      // is set by the server, dropped by the browser, and silently does nothing.
+      exposeHeaders: ['Content-Type', NO_STORE_HEADER],
       maxAge: 86400,
       credentials: false,
     }),
   );
+
+  // Server-authoritative, deny-only cache veto. Ahead of the compartment gates
+  // so it also stamps their 401/403 envelopes.
+  app.use('*', noStore());
 
   // ── LCX OS compartment gates (Phase 1) ─────────────────────────────────
   // The workspace constitution (@lcx/shared) declares which /v1 namespaces
