@@ -119,3 +119,14 @@ export { dealWinProbability, monteCarloForecast } from './forecast/index.js';
 // LCX COMMAND — launch-schedule Monte Carlo (Wave 2)
 export type { SimTaskInput, DurationTriple, LaunchSimOptions, LaunchSimResult, TaskCriticality } from './launchSim.js';
 export { runLaunchSim, prepareGraph, sampleTriangular, resolveDuration, DEFAULT_DURATIONS } from './launchSim.js';
+
+// LCX COMMAND — decision engines (100X Phase 2)
+export type {
+  EngineDim, EngineRow, RescoredRow, SensitivityEntry, SetAnalysis,
+  RfiTerms, VolumeMix, RfiEconomics, FunnelChannelInput, FunnelParams, WaitlistSimResult,
+  BlockerState, RequirementState, DdDim, ProgramReadinessInput,
+} from './commandEngines.js';
+export {
+  rescore, sensitivity, analyzeSet, parseSpreadBps, rfiEconomics,
+  waitlistSim, listingReadiness, tokenDdScore, programReadiness,
+} from './commandEngines.js';

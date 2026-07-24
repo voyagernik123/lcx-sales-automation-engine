@@ -57,6 +57,113 @@ commandRoutes.get('/deep', requireOperator, async (c) => {
   }
 });
 
+/* ── 100X Phase 2 — the decision engines over the deep ontology ── */
+
+/**
+ * GET /v1/command/readiness — the composite program-readiness dial (0–100 +
+ * five sub-dials), computed from LIVE state: gating tasks, blocker/requirement
+ * status (0041 tables, compiled fallback), LP pipeline commitment, and the
+ * growth-foundation task. Degrades to zeros before seeding, never errors.
+ */
+commandRoutes.get('/readiness', requireOperator, async (c) => {
+  try {
+    const { programReadiness } = await import('@lcx/shared');
+    const { COMMAND_DEEP_SEED } = await import('../seed/command/data2.js');
+    const ref = COMMAND_DEEP_SEED as unknown as { requirements: Array<{ num: number; path: string | null; status: string | null }>; blockers: Array<{ num: number; severity: string | null; category: string | null }> };
+    const gatingIds = ['t_bsa', 't_counsel', 't_bankselect', 't_msb', 't_mtl', 't_3lp', 't_oes', 't_fiat_live', 't_surveil', 't_listpolicy'];
+    const DONE = new Set(['done', 'complete', 'completed', 'live']);
+    const [gt, blockRows, reqRows, lpRows, growth] = await Promise.all([
+      list(`SELECT id, status FROM command_tasks WHERE id = ANY('{${gatingIds.join(',')}}')`),
+      list(`SELECT num, severity, category, status FROM command_blockers`),
+      list(`SELECT num, path, status FROM command_requirements`),
+      list(`SELECT pipeline_stage FROM command_partners WHERE id IN ('pt_b2c2','pt_falconx','pt_cumberland')`),
+      list(`SELECT status FROM command_tasks WHERE id = 't_waitlist_tool'`),
+    ]);
+    const blockers = blockRows.length
+      ? blockRows.map((r) => ({ num: Number(r.num), severity: (r.severity as string) ?? null, category: (r.category as string) ?? null, status: String(r.status ?? 'open') }))
+      : ref.blockers.map((b) => ({ num: b.num, severity: b.severity, category: b.category, status: 'open' }));
+    const requirements = reqRows.length
+      ? reqRows.map((r) => ({ num: Number(r.num), path: (r.path as string) ?? null, status: (r.status as string) ?? null }))
+      : ref.requirements.map((q) => ({ num: q.num, path: q.path, status: q.status }));
+    const lpsCommitted = lpRows.filter((r) => ['signed', 'incumbent_onboarding', 'in_progress'].includes(String(r.pipeline_stage))).length;
+    const growthDone = growth.length > 0 && DONE.has(String(growth[0].status)) ? 1 : String(growth[0]?.status ?? '') === 'in_progress' ? 0.5 : 0;
+    const data = programReadiness({
+      gatingDone: gt.filter((r) => DONE.has(String(r.status))).length,
+      gatingTotal: gatingIds.length,
+      blockers, requirements,
+      lpsCommitted, lpTarget: 3,
+      growthFoundation: growthDone,
+    });
+    return c.json({ data, meta: meta() });
+  } catch (err) {
+    console.error('[command] readiness error:', err);
+    return c.json({ error: 'Readiness computation failed', code: 'COMMAND_ENGINE_ERROR' }, 500);
+  }
+});
+
+/**
+ * POST /v1/command/engines/lp-rescore {weights?, selectedIds?} — live weight
+ * editing over the LP scorecard: re-rank + rank-flip sensitivity + set
+ * analysis. A pure what-if: stored truth is never mutated.
+ */
+commandRoutes.post('/engines/lp-rescore', requireOperator, async (c) => {
+  const body = await c.req.json<{ weights?: Record<string, number>; selectedIds?: string[] }>()
+    .catch(() => ({} as { weights?: Record<string, number>; selectedIds?: string[] }));
+  try {
+    const { rescore, sensitivity, analyzeSet } = await import('@lcx/shared');
+    const { COMMAND_DEEP_SEED } = await import('../seed/command/data2.js');
+    const lp = (COMMAND_DEEP_SEED as unknown as { scorecards: { lp: { dimensions: Array<{ key: string; label: string; weight: number }>; rows: Array<{ subjectId: string; subjectLabel: string; scores: Record<string, number>; tier: string | null }> } } }).scorecards.lp;
+    const weights: Record<string, number> = {};
+    if (body.weights) {
+      for (const d of lp.dimensions) {
+        const v = Number(body.weights[d.key]);
+        weights[d.key] = Number.isFinite(v) && v >= 0 && v <= 1 ? v : d.weight;
+      }
+    }
+    const rows = rescore(lp.dimensions, lp.rows, body.weights ? weights : undefined);
+    const sens = sensitivity(lp.dimensions, lp.rows);
+    const set = analyzeSet(lp.dimensions, lp.rows,
+      Array.isArray(body.selectedIds) && body.selectedIds.length ? body.selectedIds.map(String).slice(0, 10) : ['pt_b2c2', 'pt_falconx', 'pt_cumberland']);
+    return c.json({ data: { dimensions: lp.dimensions, rows, sensitivity: sens, setAnalysis: set }, meta: meta() });
+  } catch (err) {
+    console.error('[command] lp-rescore error:', err);
+    return c.json({ error: 'LP rescore failed', code: 'COMMAND_ENGINE_ERROR' }, 500);
+  }
+});
+
+/**
+ * POST /v1/command/engines/waitlist-sim {budgets?} — the funnel Monte Carlo on
+ * the strategy's channel model; budgets override per channelId (what-if only).
+ * Mainstream paid stays LOCKED until the MSB + MTL tasks are done (live check).
+ */
+commandRoutes.post('/engines/waitlist-sim', requireOperator, async (c) => {
+  const body = await c.req.json<{ budgets?: Record<string, number>; runs?: number }>()
+    .catch(() => ({} as { budgets?: Record<string, number>; runs?: number }));
+  try {
+    const { waitlistSim } = await import('@lcx/shared');
+    const { COMMAND_DEEP_SEED } = await import('../seed/command/data2.js');
+    const funnel = (COMMAND_DEEP_SEED as unknown as { funnel: { channels: Array<{ channelId: string; label: string; type: string; budget: number; cac: number | null; signupsEst: number | null }>; conversions: { waitlistToVerified: number; verifiedToFunded: number } } }).funnel;
+    const DONE = new Set(['done', 'complete', 'completed', 'live']);
+    const gateRows = await list(`SELECT id, status FROM command_tasks WHERE id IN ('t_msb','t_mtl')`);
+    const adsUnlocked = gateRows.length === 2 && gateRows.every((r) => DONE.has(String(r.status)));
+    const channels = funnel.channels.map((ch) => {
+      const override = Number(body.budgets?.[ch.channelId]);
+      const budget = Number.isFinite(override) && override >= 0 && override <= 10_000_000 ? override : ch.budget;
+      const isMainstream = ch.channelId.includes('google_meta_x') || ch.label.toLowerCase().includes('google');
+      return {
+        channelId: ch.channelId, label: ch.label, type: ch.type, budget,
+        cac: ch.cac, organicSignups: ch.type === 'Organic' ? ch.signupsEst : null,
+        locked: isMainstream && !adsUnlocked,
+      };
+    });
+    const data = waitlistSim(channels, funnel.conversions, { runs: Number(body.runs) || 2000, seed: 42 });
+    return c.json({ data: { ...data, adsUnlocked }, meta: meta() });
+  } catch (err) {
+    console.error('[command] waitlist-sim error:', err);
+    return c.json({ error: 'Waitlist simulation failed', code: 'COMMAND_ENGINE_ERROR' }, 500);
+  }
+});
+
 commandRoutes.get('/overview', requireOperator, async (c) => {
   try {
     const data = await buildCommandOverview(getPool());
