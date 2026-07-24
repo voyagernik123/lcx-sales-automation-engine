@@ -25,3 +25,13 @@ scratch_pdf_*.txt
 # Seed data with PII — not committed
 data/seeds/*.csv
 data/seeds/*.xlsx
+
+# LCX TERMINAL
+# The updater signing PRIVATE key lives outside the repo (~/.lcx-terminal/) and
+# must never be committed — it is the only thing standing between an operator's
+# machine and a forged auto-update. Only the public key is in tauri.conf.json.
+*.key
+updater.key*
+# Belt-and-braces: Rust build output (also ignored in apps/desktop/src-tauri).
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/schemas/

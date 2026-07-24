@@ -80,13 +80,16 @@ export function ScenarioPlanner() {
     }
   };
 
-  const beforeRules = [
-    `State Money Transmitter License (MTL) required across ${nmlsDisplay} states.`,
-    'New York BitLicense application required (Estimated $250K cost).',
-    'CFIUS mandatory foreign parent filing (Liechtenstein LLC covenants).',
-    `Minimum net worth ceiling of ${netWorthDisplay} required globally.`,
-    'OFAC / TRUST automated Travel-Rule integration required.',
-  ];
+  const beforeRules = useMemo(
+    () => [
+      `State Money Transmitter License (MTL) required across ${nmlsDisplay} states.`,
+      'New York BitLicense application required (Estimated $250K cost).',
+      'CFIUS mandatory foreign parent filing (Liechtenstein LLC covenants).',
+      `Minimum net worth ceiling of ${netWorthDisplay} required globally.`,
+      'OFAC / TRUST automated Travel-Rule integration required.',
+    ],
+    [nmlsDisplay, netWorthDisplay],
+  );
 
   const afterRules: RuleEntry[] = useMemo(() => {
     const rules: RuleEntry[] = beforeRules.map(r => ({ originalText: r, isChanged: false }));
@@ -125,7 +128,7 @@ export function ScenarioPlanner() {
     }
 
     return rules;
-  }, [clarityEnacted, spdiEquivalence, micaPassport]);
+  }, [activeScenarios, beforeRules]);
 
   return (
     <div className="space-y-4 text-navy h-[calc(100vh-6.5rem)] flex flex-col overflow-hidden min-h-0">

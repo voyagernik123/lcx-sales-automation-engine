@@ -26,31 +26,65 @@ const LEGACY_KEY = 'lcx_api_key';
  * Nothing secret ships in the bundle — the email is entered by the user, and
  * the shared key lives only in localStorage.
  */
+/**
+ * In LCX TERMINAL the credential lives in the macOS Keychain, which is an
+ * ASYNC read — but getApiKey() is synchronous and called from every request.
+ * So the terminal hydrates this in-memory cache once at boot
+ * (hydrateCredentials()), and every later read is instant. In a browser the
+ * cache stays empty and localStorage remains the source, exactly as before.
+ */
+let memEmail: string | null = null;
+let memPass: string | null = null;
+
 export function getApiKey(): string {
   try {
-    const email = localStorage.getItem(EMAIL_KEY)?.trim();
-    const passcode = localStorage.getItem(PASS_KEY) ?? '';
+    const email = (memEmail ?? localStorage.getItem(EMAIL_KEY))?.trim();
+    const passcode = memPass ?? localStorage.getItem(PASS_KEY) ?? '';
     // LCX OS gate: the desk credential is `email:passcode` — both halves or
     // nothing (a bare email is rejected server-side by design).
     if (email && passcode) return `${email}:${passcode}`;
     return localStorage.getItem(LEGACY_KEY) || ENV_API_KEY;
   } catch {
-    return ENV_API_KEY;
+    return memEmail && memPass ? `${memEmail}:${memPass}` : ENV_API_KEY;
   }
+}
+
+/**
+ * Load the desk credential out of the macOS Keychain into memory. Called once,
+ * before the app renders, when running inside LCX TERMINAL. No-op in a browser.
+ */
+export async function hydrateCredentials(): Promise<void> {
+  const { isTerminal, secretGet } = await import('./terminal');
+  if (!isTerminal()) return;
+  const [email, pass] = await Promise.all([secretGet(EMAIL_KEY), secretGet(PASS_KEY)]);
+  memEmail = email;
+  memPass = pass;
 }
 
 /** Record the signed-in operator's credentials (front door): email + desk passcode. */
 export function setOperatorCredentials(email: string, passcode: string): void {
+  const e = email.trim().toLowerCase();
+  memEmail = e || null;
+  memPass = passcode || null;
   try {
-    localStorage.setItem(EMAIL_KEY, email.trim().toLowerCase());
+    localStorage.setItem(EMAIL_KEY, e);
     localStorage.setItem(PASS_KEY, passcode);
   } catch {
     /* storage unavailable — in-memory session only */
   }
+  // In the terminal, persist to the Keychain too (fire-and-forget; the
+  // in-memory cache above already makes this session work).
+  void (async () => {
+    const { isTerminal, secretSet } = await import('./terminal');
+    if (!isTerminal()) return;
+    await Promise.all([secretSet(EMAIL_KEY, e), secretSet(PASS_KEY, passcode)]);
+  })();
 }
 
 /** Clear the email credential on sign-out (leaves any legacy key untouched). */
 export function clearOperatorEmail(): void {
+  memEmail = null;
+  memPass = null;
   try {
     localStorage.removeItem(PASS_KEY);
   } catch {
@@ -61,6 +95,12 @@ export function clearOperatorEmail(): void {
   } catch {
     /* no-op */
   }
+  // Forget the Keychain entries too, so sign-out on the terminal is real.
+  void (async () => {
+    const { isTerminal, secretDelete } = await import('./terminal');
+    if (!isTerminal()) return;
+    await Promise.all([secretDelete(EMAIL_KEY), secretDelete(PASS_KEY)]);
+  })();
 }
 
 function url(path: string): string {

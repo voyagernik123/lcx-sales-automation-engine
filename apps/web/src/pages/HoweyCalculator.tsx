@@ -111,7 +111,7 @@ export function HoweyCalculator() {
 
     // clamp between 0 and 100
     return Math.max(0, Math.min(100, totalScore));
-  }, [checkedFactors, tokenSymbol, commodityExempt]);
+  }, [checkedFactors, commodityExempt]);
 
 
   // SEC Enforcement Probability Mapping

@@ -1,0 +1,11 @@
+# Rust build output — multi-GB, machine-specific.
+/target
+
+# Tauri-generated ACL schemas — regenerated on every build from
+# tauri.conf.json + capabilities/, so they are derived, not source.
+/gen/schemas
+
+# Signed bundles are release artifacts, never source.
+*.dmg
+*.app.tar.gz
+*.sig

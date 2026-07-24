@@ -1,5 +1,5 @@
 import { Suspense, useEffect } from 'react';
-import { Outlet, Navigate, useLocation } from 'react-router-dom';
+import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { workspaceForPath, capAtLeast } from '@lcx/shared';
 import { TopNav } from './TopNav';
 import { Sidebar } from './Sidebar';
@@ -17,6 +17,7 @@ export function AppLayout() {
   const operator = useOperatorStore(s => s.operator);
   const { open, setOpen } = useCommandPalette();
   const location = useLocation();
+  const navigate = useNavigate();
   const accessMe = useAccessStore(s => s.me);
   const accessLoaded = useAccessStore(s => s.loaded);
   const loadAccess = useAccessStore(s => s.load);
@@ -36,6 +37,24 @@ export function AppLayout() {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
+
+  // LCX TERMINAL (Phase 1): wire the native macOS menu + self-updater to the
+  // app. The menu exists as much for DISCOVERABILITY as for use — every
+  // shortcut we add in later phases appears there with its key. No-op in a
+  // browser, so the web build is unaffected.
+  useEffect(() => {
+    let detach: (() => void) | undefined;
+    void (async () => {
+      const { attachTerminalBridge } = await import('@/lib/terminal');
+      detach = await attachTerminalBridge({
+        onNavigate: (to) => navigate(to),
+        onCommandPalette: () => setOpen(true),
+        onBack: () => navigate(-1),
+        onForward: () => navigate(1),
+      });
+    })();
+    return () => detach?.();
+  }, [navigate, setOpen]);
 
   useEffect(() => {
     // App mounted cleanly — clear the chunk-reload guard so a later stale

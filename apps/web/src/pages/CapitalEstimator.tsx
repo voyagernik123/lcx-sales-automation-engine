@@ -15,7 +15,7 @@ export function CapitalEstimator() {
   const [leverageRatio, setLeverageRatio] = useState<number>(CAPITAL.DEFAULT_LEVERAGE_RATIO);
   const [monthlyBurn, setMonthlyBurn] = useState<number>(CAPITAL.DEFAULT_MONTHLY_BURN);
 
-  const flags = { clarityEnacted, spdiEquivalence };
+  const flags = useMemo(() => ({ clarityEnacted, spdiEquivalence }), [clarityEnacted, spdiEquivalence]);
 
   const handleToggle = (abbr: string) => {
     setSelectedStates(prev => {
@@ -52,7 +52,7 @@ export function CapitalEstimator() {
     const totalReserve = fees + cashCollateral + minNetWorth;
 
     return { fees, totalBonds, cashCollateral, minNetWorth, totalReserve };
-  }, [activeStates, leverageRatio, clarityEnacted, spdiEquivalence]);
+  }, [activeStates, leverageRatio, flags]);
 
   const monthlyProjection = useMemo(() => {
     const monthlyData = [];

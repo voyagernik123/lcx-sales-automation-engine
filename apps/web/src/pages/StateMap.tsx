@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import USAMap from 'react-usa-map';
 import { InspectorDrawer, PageTitle, SectionLabel, Button } from '@/components/ui';
 import { StateInspectorPanel } from '@/components/shared';
@@ -45,10 +45,15 @@ export function StateMap() {
     addAuditLog('CCO reset state map filter criteria.', 'System');
   };
 
-  const handleStateClick = (state: State) => {
-    setSelectedState(state);
-    addAuditLog(`CCO inspected state card: [${state.abbreviation}]`, 'Audit');
-  };
+  // Stable identity so mapConfig below can depend on it honestly (it closes
+  // over nothing but a setter and the store action, both stable).
+  const handleStateClick = useCallback(
+    (state: State) => {
+      setSelectedState(state);
+      addAuditLog(`CCO inspected state card: [${state.abbreviation}]`, 'Audit');
+    },
+    [addAuditLog],
+  );
 
   const mapConfig = useMemo(() => {
     const config: Record<string, { fill?: string; clickHandler?: () => void }> = {};
@@ -78,7 +83,7 @@ export function StateMap() {
       };
     });
     return config;
-  }, [filteredStates, clarityEnacted, spdiEquivalence]);
+  }, [filteredStates, clarityEnacted, spdiEquivalence, handleStateClick]);
 
   return (
     <div className="flex h-[calc(100vh-6.5rem)] flex-col gap-4 text-navy overflow-hidden">

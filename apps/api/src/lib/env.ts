@@ -36,11 +36,20 @@ export const env = {
   /** x402 seller layer (Phase 4): unset → sandbox mode (keyless-first). */
   x402FacilitatorUrl: process.env.X402_FACILITATOR_URL ?? '',
   x402PayTo: process.env.X402_PAY_TO ?? '',
-  corsOrigins: (process.env.CORS_ORIGINS ??
-    'http://localhost:5173,http://127.0.0.1:5173,https://lcx-sales-automation-engine.pages.dev')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean),
+  corsOrigins: [
+    ...(process.env.CORS_ORIGINS ??
+      'http://localhost:5173,http://127.0.0.1:5173,https://lcx-sales-automation-engine.pages.dev')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+    // LCX TERMINAL (Phase 1): the desktop app's webview origins. Appended
+    // UNCONDITIONALLY — these are fixed constants of our own signed app, not
+    // user-configurable hosts, so the terminal works without anyone editing
+    // CORS_ORIGINS in the Render dashboard. macOS/iOS use the tauri:// custom
+    // protocol; Windows/Android use http://tauri.localhost.
+    'tauri://localhost',
+    'http://tauri.localhost',
+  ],
   version: process.env.npm_package_version ?? '0.1.0',
   coingeckoApiKey: process.env.COINGECKO_API_KEY ?? '',
   coingeckoKeyType: (process.env.COINGECKO_KEY_TYPE === 'pro' ? 'pro' : 'demo') as 'demo' | 'pro',

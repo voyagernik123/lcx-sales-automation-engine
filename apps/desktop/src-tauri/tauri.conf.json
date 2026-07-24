@@ -1,0 +1,79 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LCX TERMINAL",
+  "version": "0.1.0",
+  "identifier": "com.lcx.terminal",
+  "build": {
+    "beforeDevCommand": "npm run dev -w @lcx/web",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build -w @lcx/web",
+    "frontendDist": "../../web/dist"
+  },
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "LCX TERMINAL",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1080,
+        "minHeight": 680,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false,
+        "titleBarStyle": "Transparent",
+        "hiddenTitle": true,
+        "transparent": false,
+        "visible": true,
+        "acceptFirstMouse": true,
+        "theme": null
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "dmg",
+      "app"
+    ],
+    "icon": [
+      "icons/icon.icns"
+    ],
+    "copyright": "\u00a9 2026 LCX (Liberty Crypto Exchange)",
+    "category": "Business",
+    "shortDescription": "The LCX ONE operator instrument",
+    "longDescription": "LCX TERMINAL \u2014 the native operator instrument for LCX ONE: US launch command, sales, intelligence, regulatory, PayAgent distribution and governance, in one keyboard-first desk.",
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "dmg": {
+        "appPosition": {
+          "x": 180,
+          "y": 200
+        },
+        "applicationFolderPosition": {
+          "x": 480,
+          "y": 200
+        },
+        "windowSize": {
+          "width": 660,
+          "height": 420
+        }
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "active": true,
+      "dialog": true,
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIxRjJGODY5NUZCRDU2NTgKUldSWVZyMWZhZmp5SVNTUVI2ZkwyMmU0NmtwYmszWFZYcFErUWhOR0RHa0ZWeXBEdEhpTmhHQUQK",
+      "endpoints": [
+        "https://github.com/voyagernik123/lcx-sales-automation-engine/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

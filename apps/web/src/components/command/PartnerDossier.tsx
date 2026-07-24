@@ -36,7 +36,12 @@ export function PartnerDossier({ partner, onClose }: { partner: CommandPartner; 
 
   const capability = deep?.reference.capabilityDetail.find((c) => c.partnerId === partner.id) as Record<string, unknown> | undefined;
   const rfiRow = deep?.rfi.find((r) => r.partner_id === partner.id);
-  const savedValues = (rfiRow?.values ?? {}) as Record<string, string>;
+  // Memoised so `econ` below doesn't recompute on every keystroke in the form:
+  // the `?? {}` fallback minted a fresh object each render.
+  const savedValues = useMemo(
+    () => (rfiRow?.values ?? {}) as Record<string, string>,
+    [rfiRow],
+  );
 
   const econ = useMemo(() => {
     const vals = { ...savedValues, ...form };

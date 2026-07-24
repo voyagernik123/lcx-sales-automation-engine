@@ -49,7 +49,20 @@ export function Dashboard() {
   const [selectedState, setSelectedState] = useState<State | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
 
-  const flags = { clarityEnacted, spdiEquivalence, defiExempt: safeHarborToggles?.defiExempt ?? false, micaExempt: safeHarborToggles?.micaExempt ?? false, commodityExempt: safeHarborToggles?.commodityExempt ?? false };
+  // Memoised so downstream memos can depend on it by identity. Before this was
+  // a per-render object, `blockers` below depended only on clarityEnacted +
+  // spdiEquivalence and therefore went STALE whenever a safe-harbor exemption
+  // was toggled — the blocker count silently disagreed with the toggles.
+  const flags = useMemo(
+    () => ({
+      clarityEnacted,
+      spdiEquivalence,
+      defiExempt: safeHarborToggles?.defiExempt ?? false,
+      micaExempt: safeHarborToggles?.micaExempt ?? false,
+      commodityExempt: safeHarborToggles?.commodityExempt ?? false,
+    }),
+    [clarityEnacted, spdiEquivalence, safeHarborToggles],
+  );
 
   const filteredStates = useMemo(() => {
     return states.filter(s => {
@@ -73,7 +86,7 @@ export function Dashboard() {
       const effectiveStatus = getEffectiveRequirementStatus(r.status, r.id, flags);
       return effectiveStatus === 'Blocked';
     });
-  }, [clarityEnacted, spdiEquivalence]);
+  }, [flags]);
 
   const phase1States = useMemo(() => filteredStates.filter(s => s.phase === 'Phase 1' && s.tier !== 'Unresearched'), [filteredStates]);
   const criticalStates = useMemo(() => filteredStates.filter(s => s.priority === 'Critical' || s.priority === 'High').slice(0, 5), [filteredStates]);

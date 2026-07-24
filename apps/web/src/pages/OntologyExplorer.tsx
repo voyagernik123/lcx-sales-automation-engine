@@ -66,6 +66,13 @@ export function OntologyExplorer() {
         setSelectedNode(rawNode);
       }
     }
+    // Deliberately keyed on the URL alone. `activeLayers` and `timelineStep` are
+    // read as "wherever the operator is right now" so a deep link can reveal its
+    // target — including them would re-run this on every layer toggle and
+    // timeline scrub, re-adding layers and re-advancing the timeline the
+    // operator just changed by hand. That fights the user; the omission is the
+    // correct behaviour.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.search]);
 
   const { nodes: rawNodes, edges, nodeCount, edgeCount } = useGraph({ colorBy, activeLayers, timelineStep });
