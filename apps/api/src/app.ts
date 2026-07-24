@@ -37,6 +37,7 @@ import { wbrRoutes } from './routes/wbr.js';
 import { decisionRoutes } from './routes/decisions.js';
 import { aiOperatorRoutes } from './routes/aiOperator.js';
 import { commandRoutes } from './routes/command.js';
+import { distributionRoutes } from './routes/distribution.js';
 import { accessRoutes } from './routes/access.js';
 import { requireWorkspace } from './middleware/workspace.js';
 import { WORKSPACES } from '@lcx/shared';
@@ -107,6 +108,7 @@ export function createApp() {
   app.route('/v1/ai', aiRoutes);
   app.route('/v1/ai', aiOperatorRoutes);
   app.route('/v1/command', commandRoutes);
+  app.route('/v1/distribution', distributionRoutes);
   app.route('/v1/integrations', integrationRoutes);
   app.route('/v1/tasks', taskRoutes);
   app.route('/v1/notifications', notificationRoutes);
