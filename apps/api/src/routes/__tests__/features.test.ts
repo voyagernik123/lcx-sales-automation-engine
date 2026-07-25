@@ -4,12 +4,14 @@
  * Runs against the local dev database (same convention as enrich.test.ts).
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { sql } from 'drizzle-orm';
 import { createApp } from '../../app.js';
-import { closeDb } from '../../db/index.js';
+import { closeDb, getDb } from '../../db/index.js';
 import { describeDb, itDb } from '../../test/db.js';
 
 const TEST_KEY = 'dev-operator-key-change-me';
 const AUTH = { Authorization: `Bearer ${TEST_KEY}` };
+const JSON_HEADERS = { ...AUTH, 'Content-Type': 'application/json' };
 
 describe('master-plan feature routes', () => {
   const app = createApp();
@@ -200,17 +202,70 @@ describe('master-plan feature routes', () => {
   });
 
   describeDb('unified timeline', () => {
+    /**
+     * This test used to borrow `GET /v1/projects?limit=1`'s first row and assert the
+     * ordering of whatever activity that project happened to have. It passed on this
+     * laptop for one reason: a dev database with 54k projects in it. The first time it
+     * ran anywhere else — a GitHub runner with a migrated but EMPTY database — there was
+     * no row 0, `pid` was `undefined`, and it failed on `expect(pid).toBeTruthy()`.
+     *
+     * The deeper problem is that it never tested its own name. Most projects have no
+     * activity at all, so `data` came back empty, the ordering loop ran ZERO times, and
+     * the assertion about merging kinds in descending order was never evaluated. It
+     * would have passed against an endpoint that returned `[]` unconditionally, and it
+     * would have passed against one that returned a single kind.
+     *
+     * So it now arranges its own fixture: three rows across TWO kinds, inserted in
+     * ASCENDING time order so a missing or reversed `ORDER BY` cannot survive, with the
+     * message deliberately in the middle so a merge that simply concatenates the two
+     * source queries fails too. Self-contained, and it finally checks what it claims.
+     */
     it('merges activity kinds in descending time order', async () => {
-      const projects = await app.request('/v1/projects?limit=1&sort=priority', { headers: AUTH });
-      const pid = (await projects.json()).data[0]?.id;
-      expect(pid).toBeTruthy();
+      const created = await app.request('/v1/projects', {
+        method: 'POST',
+        headers: JSON_HEADERS,
+        body: JSON.stringify({ name: `timeline-test-${Date.now()}` }),
+      });
+      expect(created.status).toBe(201);
+      const pid = (await created.json()).data.id;
 
-      const res = await app.request(`/v1/projects/${pid}/timeline`, { headers: AUTH });
-      expect(res.status).toBe(200);
-      const { data } = await res.json();
-      expect(Array.isArray(data)).toBe(true);
-      for (let i = 1; i < data.length; i++) {
-        expect(new Date(data[i - 1].ts).getTime()).toBeGreaterThanOrEqual(new Date(data[i].ts).getTime());
+      const db = getDb();
+      // Fixed, distinct timestamps rather than `now()` offsets: two rows written in the
+      // same millisecond would make the ordering assertion pass by luck.
+      const t1 = '2020-01-01T00:00:00Z'; // oldest  → must come LAST
+      const t2 = '2020-06-01T00:00:00Z'; // middle  → the other kind, so concatenation fails
+      const t3 = '2020-12-01T00:00:00Z'; // newest  → must come FIRST
+      await db.execute(sql`
+        INSERT INTO signals (project_id, kind, payload, observed_at)
+        VALUES (${pid}::uuid, 'price_movement', '{"mcapMovePct":"12"}'::jsonb, ${t1}::timestamptz),
+               (${pid}::uuid, 'price_movement', '{"mcapMovePct":"34"}'::jsonb, ${t3}::timestamptz)
+      `);
+      await db.execute(sql`
+        INSERT INTO messages (project_id, to_email, subject, body, provider, status, sent_at)
+        VALUES (${pid}::uuid, 'probe@example.com', 'timeline probe', '', 'test', 'sent', ${t2}::timestamptz)
+      `);
+
+      try {
+        const res = await app.request(`/v1/projects/${pid}/timeline`, { headers: AUTH });
+        expect(res.status).toBe(200);
+        const { data } = await res.json();
+
+        // Non-vacuous: the loop below is worthless without this.
+        expect(data.length, 'the timeline returned nothing for a project with 3 activity rows').toBe(3);
+        // Both kinds present — this is the "merges" half of the claim.
+        expect(new Set(data.map((r: { kind: string }) => r.kind))).toEqual(new Set(['signal', 'message']));
+        // And the interleave: newest signal, then the message, then the oldest signal.
+        expect(data.map((r: { kind: string }) => r.kind)).toEqual(['signal', 'message', 'signal']);
+
+        for (let i = 1; i < data.length; i++) {
+          expect(new Date(data[i - 1].ts).getTime()).toBeGreaterThanOrEqual(new Date(data[i].ts).getTime());
+        }
+      } finally {
+        // Always clean up, even on failure — a leaked fixture makes the next run's
+        // failure harder to read than this one's.
+        await db.execute(sql`DELETE FROM signals WHERE project_id = ${pid}::uuid`);
+        await db.execute(sql`DELETE FROM messages WHERE project_id = ${pid}::uuid`);
+        await db.execute(sql`DELETE FROM projects WHERE id = ${pid}::uuid`);
       }
     });
   });
