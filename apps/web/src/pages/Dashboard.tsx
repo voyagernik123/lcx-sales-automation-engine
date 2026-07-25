@@ -198,7 +198,7 @@ export function Dashboard() {
                     <button
                       key={s.id}
                       onClick={() => setSelectedState(s)}
-                      className={`relative flex flex-col items-center justify-center p-1 h-10 border rounded text-micro font-bold transition-all ${tileClass} hover:opacity-80`}
+                      className={`relative flex flex-col items-center justify-center p-1 h-10 border rounded text-micro font-bold t-hover ${tileClass} hover:opacity-80`}
                       title={`${s.name} — ${effectiveStatus}`}
                     >
                       <span className={`absolute top-0.5 right-0.5 h-[5px] w-[5px] rounded-full ${dotClass}`} />
@@ -275,7 +275,7 @@ export function Dashboard() {
                     strokeDasharray={`${2 * Math.PI * 40}`}
                     strokeDashoffset={`${2 * Math.PI * 40 * (1 - readinessPercent / 100)}`}
                     strokeLinecap="round"
-                    className="transition-all duration-700 ease-out"
+                    className="t-sweep"
                     style={{
                       filter: 'drop-shadow(0 0 4px rgba(6, 182, 212, 0.4))'
                     }}

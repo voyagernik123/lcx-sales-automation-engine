@@ -50,7 +50,7 @@ export function ReadinessDial() {
           <svg viewBox="0 0 100 100" className="h-full w-full">
             <path d="M 15 78 A 40 40 0 1 1 85 78" fill="none" strokeWidth="8" className="stroke-line" strokeLinecap="round" />
             <path d="M 15 78 A 40 40 0 1 1 85 78" fill="none" strokeWidth="8" strokeLinecap="round"
-              className={clsx('transition-all', tone.replace('text-', 'stroke-'))}
+              className={clsx('t-metric', tone.replace('text-', 'stroke-'))}
               strokeDasharray={`${(r.score / 100) * 188.5} 300`} />
             <line x1="50" y1="50" x2="50" y2="18" strokeWidth="2.5" strokeLinecap="round"
               className={tone.replace('text-', 'stroke-')} transform={`rotate(${angle} 50 50)`} />

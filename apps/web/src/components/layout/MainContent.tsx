@@ -10,7 +10,7 @@ export function MainContent({ collapsed, children }: { collapsed?: boolean; chil
        * the link, so the next Tab returns to the top bar — the skip link appears
        * to do nothing, which is the classic way this feature ships broken. */
       tabIndex={-1}
-      className={clsx('flex-1 overflow-auto p-4 transition-all duration-300', collapsed && 'ml-0')}
+      className={clsx('flex-1 overflow-auto p-4 t-panel', collapsed && 'ml-0')}
     >
       {children}
     </main>

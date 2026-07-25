@@ -28,7 +28,7 @@ export function StateCohortGrid({ selected, onToggle, auditLabel }: StateCohortG
             key={s.id}
             onClick={() => handleToggle(s.abbreviation)}
             className={clsx(
-              'px-1.5 py-1 rounded text-[10px] font-mono border text-center font-bold transition-all',
+              'px-1.5 py-1 rounded text-[10px] font-mono border text-center font-bold t-hover',
               active
                 ? 'bg-navy border-navy text-white dark:bg-ice dark:border-ice dark:text-navy'
                 : 'border-line bg-card text-grey-dark hover:bg-ice-soft dark:hover:bg-ice-soft/10'

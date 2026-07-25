@@ -271,7 +271,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
     const compCount = p.topCompetitors.filter(cid => allCompetitorIds.includes(cid)).length;
     return (
       <button key={p.id} type="button" onClick={() => onProductClick?.(p.id)} className="cursor-pointer block w-full text-left focus-ring">
-        <div className={clsx('rounded-lg border bg-card p-3 transition-all hover:shadow-md hover:-translate-y-[0.5px]',
+        <div className={clsx('rounded-lg border bg-card p-3 t-surface hover:shadow-md hover:-translate-y-[0.5px]',
           p.priorityTier === 1 ? 'border-amber-400/40' : p.priorityTier === 2 ? 'border-cyan-400/30' : 'border-line')}>
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-2">

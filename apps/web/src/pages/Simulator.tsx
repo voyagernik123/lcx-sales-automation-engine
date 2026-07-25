@@ -191,7 +191,7 @@ export function Simulator() {
             <Card
               key={opt.id}
               className={clsx(
-                'flex flex-col border-2 transition-all duration-300 relative group h-full justify-between',
+                'flex flex-col border-2 relative group h-full justify-between',
                 isCommitted
                   ? 'border-cyan-500 bg-cyan-500/5 dark:bg-cyan-500/2 scale-[1.01] shadow-md shadow-cyan-500/10'
                   : 'border-line hover:border-grey'

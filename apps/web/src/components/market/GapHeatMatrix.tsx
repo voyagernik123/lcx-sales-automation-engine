@@ -171,7 +171,7 @@ export function GapHeatMatrix({ model, watched, newIds, onToggleWatch, onInspect
               {/* LCX gap cell — the action cell */}
               <button
                 type="button"
-                className={`${CELL} group flex cursor-pointer items-center justify-center border-amber-300 bg-amber-50 transition-all hover:border-amber-500 hover:bg-amber-100 hover:shadow-card dark:border-amber-800 dark:bg-amber-950/30 dark:hover:border-amber-500 dark:hover:bg-amber-900/40`}
+                className={`${CELL} group flex cursor-pointer items-center justify-center border-amber-300 bg-amber-50 t-surface hover:border-amber-500 hover:bg-amber-100 hover:shadow-card dark:border-amber-800 dark:bg-amber-950/30 dark:hover:border-amber-500 dark:hover:bg-amber-900/40`}
                 aria-label={`${project.name}: gap on LCX — open actions`}
                 onClick={(e) => {
                   const { x, y } = localPoint(e);

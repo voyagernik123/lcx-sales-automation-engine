@@ -51,8 +51,8 @@ export function SidebarFieldNotes() {
             key={i}
             className={
               i === index
-                ? 'h-1 w-3 rounded-full bg-cyan-500 transition-all'
-                : 'h-1 w-1 rounded-full bg-cyan-500/25 transition-all'
+                ? 'h-1 w-3 rounded-full bg-cyan-500 t-metric'
+                : 'h-1 w-1 rounded-full bg-cyan-500/25 t-metric'
             }
           />
         ))}

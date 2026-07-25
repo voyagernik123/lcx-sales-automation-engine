@@ -155,7 +155,7 @@ export function ScenarioPlanner() {
                   key={sc.id}
                   onClick={() => handleToggleScenario(sc.id)}
                   className={clsx(
-                    'flex flex-col text-left p-3 rounded-lg border transition-all duration-300 w-full select-none',
+                    'flex flex-col text-left p-3 rounded-lg border t-surface w-full select-none',
                     active
                       ? 'border-cyan-500 bg-cyan-500/5 dark:bg-cyan-500/2 shadow-sm'
                       : 'border-line hover:border-grey bg-card'

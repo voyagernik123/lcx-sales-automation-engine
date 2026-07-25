@@ -128,7 +128,7 @@ export function ProductMatrix() {
             key={cat}
             onClick={() => setCategoryFilter(cat)}
             className={clsx(
-              'px-3 py-1 rounded text-xs font-semibold border transition-all',
+              'px-3 py-1 rounded text-xs font-semibold border t-hover',
               categoryFilter === cat
                 ? 'bg-navy border-navy text-white dark:bg-ice dark:border-ice dark:text-navy'
                 : 'border-line bg-card text-grey-dark hover:bg-ice-soft dark:hover:bg-ice-soft/10'
@@ -191,7 +191,7 @@ export function ProductMatrix() {
                             <div className="flex-1 h-1.5 bg-line rounded overflow-hidden">
                               <div
                                 className={clsx(
-                                  'h-full rounded transition-all',
+                                  'h-full rounded t-metric',
                                   effectiveHowey >= 70
                                     ? 'bg-status-blocked'
                                     : effectiveHowey >= 40

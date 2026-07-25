@@ -21,7 +21,7 @@ export function Card({ children, className, status, hoverable }: CardProps) {
   return (
     <div
       className={clsx(
-        'rounded-xl border border-line/70 bg-card shadow-card transition-all duration-200',
+        'rounded-xl border border-line/70 bg-card shadow-card t-surface',
         status && 'border-l-4',
         status && statusBorderMap[status],
         hoverable && 'hover:shadow-card-md hover:border-grey-light hover:-translate-y-[1px]',

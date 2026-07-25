@@ -66,7 +66,7 @@ export function Modal({ isOpen, onClose, title, children, footer, className }: M
         aria-modal="true"
         aria-labelledby={titleId}
         className={clsx(
-          'relative w-full max-w-lg rounded-lg border border-line bg-card shadow-xl p-0 outline-none overflow-hidden transition-all text-navy',
+          'relative w-full max-w-lg rounded-lg border border-line bg-card shadow-xl p-0 outline-none overflow-hidden t-panel text-navy',
           className
         )}
       >

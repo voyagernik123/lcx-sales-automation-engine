@@ -127,22 +127,49 @@ describe('beginInteraction', () => {
 
     expect(interactionStats().samples).toBe(1);
     expect(settleStats().samples).toBe(1);
-    // settle can never be earlier than paint on the same interaction
+    // settle can never be earlier than paint on the same interaction. This was
+    // incidental — settle read the clock, and the clock only moves forward. It is
+    // now STRUCTURAL: settle is reported from a timestamp a watcher observed in the
+    // past, so `beginInteraction` floors it at the paint (T1 #23). The case that
+    // proves the floor is load-bearing lives in settle.test.ts.
     expect(settleStats().p95!).toBeGreaterThanOrEqual(interactionStats().p95!);
   });
 });
 
-describe('the anti-gaming invariant (why settle exists)', () => {
+/**
+ * NARROWED (T1 #23). This block used to be called "the anti-gaming invariant (why
+ * settle exists)" and it did not test that invariant. Every case in it hand-writes
+ * both samples with `recordInteraction({ phase: 'settle', … })`, so it never touches
+ * the code that decides WHEN settle stops — and it passed, all four cases green, on
+ * a tree where the shell registered settle as a second `afterPaint` callback in the
+ * same frame as paint. Settle was a byte-for-byte copy of paint (measured in a real
+ * browser: the HUD read `UI 13/13MS` while every read took 200ms) and this block
+ * reported no problem. Proven by mutation, not by reading.
+ *
+ * What it actually covers, which is worth keeping: that the REPORT partitions and
+ * ranks correctly once the samples exist — paint and settle are separated by phase,
+ * both are attributed per surface, and surfaces are ordered by settle. That is the
+ * arithmetic of the two-metric SLO, not its wiring.
+ *
+ * The invariant itself — settle must get worse when a read moves off the cache — is
+ * guarded in __tests__/settle.test.ts, against the real `settleWhenQuiet` and the
+ * real readCache in-flight map, and is mutation-proven there.
+ */
+describe('the two-metric REPORT separates the phases correctly', () => {
   beforeEach(() => _resetPerf());
 
   /**
-   * The failure mode this guards is subtle and would have made the whole Phase 2
+   * The failure mode this describes is subtle and would have made the whole Phase 2
    * number meaningless: if only intent→paint were published, then moving a slow
    * read to network-only — which governance safety REQUIRES for gate inputs,
-   * entitlements and audit surfaces — deletes a slow sample from the paint
-   * distribution. The headline p95 would improve while the app got slower.
+   * entitlements and audit surfaces — takes that read off the paint path. The
+   * headline p95 would improve while the app got slower.
+   *
+   * Note what this case does and does not establish. The samples are constructed by
+   * hand, so it shows that the REPORT tells the two apart. It does not show that the
+   * app produces a settle sample distinguishable from paint; settle.test.ts does.
    */
-  it('paint p95 alone would improve when a slow read is moved off the cache', () => {
+  it('separates a network-only read into settle, so paint alone would look better', () => {
     // Before: the slow authoritative read is on the paint path.
     recordInteraction({ kind: 'nav', phase: 'paint', surface: '/x', ms: 20, cached: true });
     recordInteraction({ kind: 'nav', phase: 'paint', surface: '/x', ms: 900, cached: false });

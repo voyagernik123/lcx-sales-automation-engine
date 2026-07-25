@@ -136,7 +136,7 @@ function PresenceDial({ score }: { score: number }) {
       <svg viewBox="0 0 100 100" className="h-full w-full">
         <path d="M 15 78 A 40 40 0 1 1 85 78" fill="none" strokeWidth="8" className="stroke-line" strokeLinecap="round" />
         <path d="M 15 78 A 40 40 0 1 1 85 78" fill="none" strokeWidth="8" strokeLinecap="round"
-          className={clsx('transition-all', tone.replace('text-', 'stroke-'))}
+          className={clsx('t-metric', tone.replace('text-', 'stroke-'))}
           strokeDasharray={`${(score / 100) * 188.5} 300`} />
       </svg>
       <div className="absolute inset-x-0 bottom-2 text-center">

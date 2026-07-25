@@ -112,7 +112,7 @@ export function ReadinessStack() {
                 type="button"
                 onClick={() => handleOpenTask(item)}
                 className={clsx(
-                  'block w-full bg-card border border-line border-l-4 rounded p-3 text-left transition-all hover:border-grey cursor-pointer shadow-sm relative select-none focus-ring',
+                  'block w-full bg-card border border-line border-l-4 rounded p-3 text-left t-hover hover:border-grey cursor-pointer shadow-sm relative select-none focus-ring',
                   borderAccent
                 )}
               >

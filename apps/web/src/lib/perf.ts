@@ -25,14 +25,52 @@ export type InteractionKind = 'nav' | 'palette' | 'inspector' | 'filter' | 'keyn
  * TWO numbers, always published together. This is not optional.
  *
  * `paint`  — intent → the screen showing local state. What "instant" means.
- * `settle` — intent → the last authoritative region resolved. What "correct" means.
+ * `settle` — intent → the read layer going quiet. What "correct" costs.
  *
  * Measuring only `paint` would make the instrument actively dishonest: every read
  * moved to network-only (which is exactly what governance safety requires for
- * gate inputs, entitlements and audit surfaces) REMOVES a slow sample from the
- * paint distribution, so p95 would improve as the app got slower. `settle` is the
- * number that cannot be gamed that way. Deleting it is a breaking change to the
- * Phase 2 gate.
+ * gate inputs, entitlements and audit surfaces) stops being on the paint path.
+ * The surface then paints a skeleton fast and the operator's real wait becomes
+ * invisible, so the headline p95 IMPROVES as the desk gets slower. `settle` is
+ * the number that cannot be gamed that way. Deleting it is a breaking change to
+ * the Phase 2 gate.
+ *
+ * ── what `settle` actually measures, stated exactly (T1 #23) ────────────────
+ *
+ * For eleven weeks this comment claimed "the last authoritative region resolved"
+ * while the only wiring in the app registered `settle` as a SECOND `afterPaint`
+ * callback back-to-back with `paint` — two callbacks, same frame, same number.
+ * Settle was a copy of paint, which is precisely the single-metric instrument the
+ * paragraph above calls dishonest, wearing two names. Exposure was zero only
+ * because paint happened to be equally read-independent; the claim was false the
+ * whole time.
+ *
+ * The definition now implemented, and the reason it is the right one: settle is
+ * **intent → the moment the read layer last went quiet**, where quiet means zero
+ * requests in flight (`readCache.inFlightCount()`), held quiet for
+ * `SETTLE_QUIET_MS` so one read chaining into another is not mistaken for
+ * quiescence. Held-quiet detection is a confirmation, not the measurement: the
+ * sample records the instant quiet BEGAN, so the guard window is not added to the
+ * number.
+ *
+ * This has the property the two-metric design exists for, and it is the only
+ * candidate examined that does: move a read from cache to network-only and paint
+ * gets FASTER (the surface renders its skeleton) while settle gets SLOWER by the
+ * whole round trip. `settleWhenQuiet` below is mutation-proven against exactly
+ * that scenario in __tests__/settle.test.ts. Rejected alternatives: "the loading
+ * state clearing" (per-surface opt-in — a surface that never adopts it reports
+ * nothing, and the metric silently covers less of the desk over time), and "the
+ * last read for the surface resolving" (needs a surface→read attribution the read
+ * layer does not have; it coalesces by canonical path across call sites).
+ *
+ * Known limits, so nobody has to rediscover them:
+ * - Resolution is ±`SETTLE_TICK_MS`, because the probe is a count and not a
+ *   timestamp — the moment quiet began is only observable on the next poll.
+ * - A polling surface never goes quiet. Those are ABANDONED at
+ *   `SETTLE_CEILING_MS` and record nothing, rather than recording the ceiling as
+ *   though it were a measurement.
+ * - Navigating away before quiet cancels the watcher, so settle has FEWER
+ *   samples than paint. Read `settleStats().samples` before trusting the p95.
  */
 export type Phase = 'paint' | 'settle';
 
@@ -120,9 +158,14 @@ export function interactionStats(): Percentiles {
 }
 
 /**
- * Intent → last authoritative region resolved. The "correct" number, and the one
- * that cannot be improved by moving reads off the cache. Always read alongside
+ * Intent → the read layer going quiet. The "correct" number, and the one that
+ * cannot be improved by moving reads off the cache — a read moved to network-only
+ * leaves the paint distribution and lands in this one. Always read alongside
  * interactionStats().
+ *
+ * `samples` here is legitimately LOWER than interactionStats().samples: a
+ * navigation abandoned before the surface settled records a paint and no settle,
+ * on purpose (see the `Phase` docs). Do not read the two counts as a discrepancy.
  */
 export function settleStats(): Percentiles {
   return percentiles(samples.filter((s) => s.phase === 'settle').map((s) => s.ms));
@@ -254,6 +297,15 @@ export function beginInteraction(kind: InteractionKind, surface: string) {
   const startedHidden = hidden();
   let paintDone = false;
   let settleDone = false;
+  /**
+   * When the paint landed. Kept so `settle` can be FLOORED at it: settle is
+   * reported from a timestamp that a watcher observed in the past, and a surface
+   * whose reads all resolved before the paint would otherwise report a settle
+   * EARLIER than its own paint — a negative wait, which is not a thing an
+   * operator can experience. perf.test.ts pins settle ≥ paint; this is what makes
+   * that structural instead of incidental.
+   */
+  let paintAt: number | null = null;
 
   /** True when this sample cannot be an honest measure of felt latency. */
   const implausible = (ms: number): boolean =>
@@ -270,25 +322,161 @@ export function beginInteraction(kind: InteractionKind, surface: string) {
     paint(opts: { cached?: boolean } = {}): number {
       if (paintDone) return 0; // idempotent — a double-stop must not double-count
       paintDone = true;
-      const ms = now() - t0;
+      const t = now();
+      paintAt = t;
+      const ms = t - t0;
       if (implausible(ms)) return ms; // measured, but not recorded — see above
       recordInteraction({ kind, surface, phase: 'paint', ms, cached: opts.cached ?? false });
       return ms;
     },
     /**
-     * Every authoritative region has resolved — revalidation done, network-only
-     * reads returned. This is the number that stays honest when a read is moved
-     * off the cache for governance reasons.
+     * The read layer went quiet — every request this interaction started has
+     * returned. This is the number that stays honest when a read is moved off the
+     * cache for governance reasons: that read leaves the paint path and lands
+     * here.
+     *
+     * `at` is the instant quiet BEGAN, supplied by `settleWhenQuiet` because it is
+     * necessarily in the past by the time the quiet window confirms it. Passing it
+     * rather than reading the clock here is the difference between reporting the
+     * operator's wait and reporting the operator's wait plus our own guard window.
+     * Callers that genuinely know they are settling right now may omit it.
+     *
+     * Do NOT wire this to a bare `afterPaint`. That is what made settle a second
+     * copy of paint for eleven weeks (see the `Phase` docs), and
+     * __tests__/settle.test.ts fails if the shell goes back to it.
      */
-    settle(opts: { cached?: boolean } = {}): number {
+    settle(opts: { cached?: boolean; at?: number } = {}): number {
       if (settleDone) return 0;
       settleDone = true;
-      const ms = now() - t0;
+      // Floored at the paint: a settle before the thing settled is not a measurement.
+      const at = Math.max(opts.at ?? now(), paintAt ?? t0);
+      const ms = at - t0;
       if (implausible(ms)) return ms;
       recordInteraction({ kind, surface, phase: 'settle', ms, cached: opts.cached ?? false });
       return ms;
     },
   };
+}
+
+/** The handle `beginInteraction` hands back. */
+export type Interaction = ReturnType<typeof beginInteraction>;
+
+/**
+ * How long the read layer must stay at zero in flight before the surface counts
+ * as settled. Guards the common shape where one read's response triggers the
+ * next — a dependent read starting 30ms after the first resolves would otherwise
+ * be measured as two separate settles, the first of them a lie.
+ *
+ * 120ms is the value the Phase 2 e2e harness (e2e/speedfloor.spec.ts:200) already
+ * used for the same judgement, kept identical so the two cannot disagree about the
+ * THRESHOLD for "settled". It does NOT inflate the sample here: the recorded
+ * instant is when quiet began, not when it was confirmed.
+ *
+ * Narrowed by the adversarial pass, because the stronger claim was wrong and would
+ * have cost somebody an afternoon: the harness and this instrument still report
+ * DIFFERENT NUMBERS for the same navigation. speedfloor stops its clock at
+ * `performance.now()` after confirming quiet and waiting two more frames, so its
+ * settle runs ~120ms + a frame pair HIGHER than the HUD's for the same event.
+ * Whoever un-fixmes that spec has to reconcile the two before comparing them, and
+ * the shared constant does not do it for them.
+ */
+export const SETTLE_QUIET_MS = 120;
+
+/**
+ * Poll interval, and therefore the resolution of a settle sample. The probe is a
+ * COUNT, not a timestamp, so "the moment the last read resolved" is only
+ * observable on the next tick — every settle is up to this much late. Stated
+ * rather than hidden: against a 600ms budget a ±16ms quantisation is acceptable,
+ * against the 100ms paint budget it would not have been, which is one more reason
+ * paint is not measured this way.
+ */
+export const SETTLE_TICK_MS = 16;
+
+/**
+ * Give up after this long and record NOTHING. A surface that polls never goes
+ * quiet, and recording the ceiling would put a fabricated 10s sample into the p95
+ * of a surface that may be perfectly fast. An absent sample is honest; an invented
+ * one is not. Same threshold as `implausible()`, which would discard it anyway.
+ */
+export const SETTLE_CEILING_MS = MAX_PLAUSIBLE_MS;
+
+/**
+ * Record `settle` when the read layer goes quiet, rather than when the screen
+ * paints (T1 #23).
+ *
+ * `readsInFlight` is injected rather than imported so this module stays
+ * dependency-free (see the file header) and so the tests can drive the state
+ * machine deterministically. In the app it is `readCache.inFlightCount`.
+ *
+ * Call this FROM the paint callback, not from the route effect. Called earlier,
+ * the route's lazy chunk may not have loaded yet, so no child has issued a read,
+ * so the probe reads zero and the watcher would settle on an empty screen — the
+ * "stop the clock at a skeleton" self-deception this instrument exists to
+ * prevent. (`settle`'s floor at the paint timestamp is a second line of defence
+ * against the same mistake, not a substitute for calling this in the right place.)
+ *
+ * Returns a cancel function. Cancelling records nothing: if the operator navigated
+ * away before the surface settled, we did not observe it settling and must not
+ * claim a number for it.
+ */
+export function settleWhenQuiet(
+  i: Interaction,
+  readsInFlight: () => number,
+  opts: {
+    cached?: () => boolean;
+    quietMs?: number;
+    tickMs?: number;
+    ceilingMs?: number;
+  } = {},
+): () => void {
+  const quietMs = opts.quietMs ?? SETTLE_QUIET_MS;
+  const tickMs = opts.tickMs ?? SETTLE_TICK_MS;
+  const ceilingMs = opts.ceilingMs ?? SETTLE_CEILING_MS;
+
+  const startedAt = now();
+  let quietSince: number | null = null;
+  /**
+   * The pending poll, and the ONLY thing keeping this watcher alive — clearing it
+   * is what cancellation means. An earlier draft also carried a `stopped` boolean
+   * checked at the top of `tick`. It was removed on evidence: mutating away either
+   * mechanism on its own left the behaviour correct, because `setTimeout` here is
+   * the sole scheduler and `tick` is never reached by any other path, so neither
+   * half could be made to fail. Two redundant guards where one is provable is one
+   * guard and one comment.
+   */
+  let timer: ReturnType<typeof setTimeout> | null = null;
+
+  const stop = (): void => {
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+  };
+
+  const tick = (): void => {
+    const t = now();
+
+    if (readsInFlight() > 0) {
+      // Busy again — any earlier quiet was a gap between chained reads, not the end.
+      quietSince = null;
+    } else if (quietSince === null) {
+      quietSince = t;
+    }
+
+    if (quietSince !== null && t - quietSince >= quietMs) {
+      i.settle({ cached: opts.cached?.() ?? false, at: quietSince });
+      stop();
+      return;
+    }
+
+    if (t - startedAt > ceilingMs) {
+      stop(); // never quiet — record nothing, see SETTLE_CEILING_MS
+      return;
+    }
+
+    timer = setTimeout(tick, tickMs);
+  };
+
+  tick();
+  return stop;
 }
 
 /**

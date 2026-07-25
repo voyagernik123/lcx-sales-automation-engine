@@ -100,7 +100,7 @@ export function RedFlags() {
                           key={sev}
                           onClick={() => handleGridCellClick(prob, sev)}
                           className={clsx(
-                            'flex-1 h-full border m-0.5 rounded transition-all flex items-center justify-center font-mono text-micro font-bold',
+                            'flex-1 h-full border m-0.5 rounded t-surface flex items-center justify-center font-mono text-micro font-bold',
                             cellColor,
                             isSelected ? 'ring-2 ring-cyan-500/60 scale-105 border-cyan-500 shadow-sm' : ''
                           )}
@@ -174,7 +174,7 @@ export function RedFlags() {
                 <Card
                   key={rf.id}
                   className={clsx(
-                    'border transition-all duration-300',
+                    'border',
                     isResolved
                       ? 'border-status-ready/20 bg-status-ready-bg/5'
                       : rf.risk === 'Critical'

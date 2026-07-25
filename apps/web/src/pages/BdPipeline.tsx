@@ -51,6 +51,15 @@ const PROBE_FILTERS: BdFilters = {
   tier: 'tracked',
 };
 
+/**
+ * The standing regulatory statement. Inlined into the toolbar rather than given its
+ * own band — see the chrome comment on the toolbar below. Hoisted to a constant so
+ * the visible copy and the `title` are the same string by construction.
+ */
+const DISCLAIMER =
+  'Scores and market recommendations are planning heuristics only — not legal advice. ' +
+  'US scoring weighs pre/post CLARITY scenarios. Consult qualified counsel for regulatory decisions.';
+
 const EMPTY_SPLIT_COPY: Record<Exclude<SplitId, 'working'>, { title: string; description: string }> = {
   hot: { title: 'No replies waiting', description: 'Inbox zero on handoffs — nothing owes a reply right now.' },
   followups: { title: 'Nothing due', description: 'No woken snoozes and no tasks due today.' },
@@ -559,14 +568,43 @@ export function BdPipeline() {
 
   return (
     <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy overflow-hidden">
-      {/* TOOLBAR */}
+      {/*
+       * TOOLBAR.
+       *
+       * THE CHROME BUDGET ON THIS SURFACE, measured rather than estimated (Playwright,
+       * 12 stubbed rows, desktop viewport). Before: FIVE stacked bands totalling 183.0px
+       * above the first row of data — toolbar 45.0, split tabs 40.0, filter tokens 44.0,
+       * a "Screens" band 27.3, a disclaimer band 26.8 — and 17 Tab presses from <main>
+       * to that row. The queue is the highest-traffic surface on the desk and Phase 5's
+       * doctrine is one primary object with one primary next action; two of those five
+       * bands held neither.
+       *
+       * The two that went: the Screens band (a label plus one button, folded into the
+       * filter bar's own trailing slot, which was already `ml-auto` and empty) and the
+       * disclaimer band (inlined here). Nothing was deleted — every control and the
+       * whole regulatory sentence are still in the DOM, at the same tab-stop cost. What
+       * changed is that they no longer each buy a 27px horizontal rule.
+       *
+       * The disclaimer is truncated visually, NOT shortened: `truncate` is
+       * overflow+ellipsis, so the full sentence stays in the accessibility tree and is
+       * read in full by a screen reader, and `title` gives it back to a sighted operator
+       * on hover. Losing the amber band costs the peripheral colour signal, which is why
+       * the text keeps its amber token and its ⚠.
+       */}
       <div className="shrink-0 flex items-center gap-3 px-4 py-2 border-b border-line bg-card overflow-x-auto">
         <h1 className="text-lg font-bold shrink-0 flex items-center gap-1.5">
           <Target size={17} className="text-cyan-500" />
           BD Engine
         </h1>
 
-        <div className="flex items-center gap-2 ml-auto">
+        <p
+          className="min-w-0 flex-1 truncate text-micro leading-tight text-amber-700 dark:text-amber-400"
+          title={DISCLAIMER}
+        >
+          ⚠ {DISCLAIMER}
+        </p>
+
+        <div className="flex items-center gap-2 shrink-0">
           <span className="text-micro text-grey font-mono num-tabular">{total.toLocaleString()} {tier === 'all' ? 'in universe' : 'leads'}</span>
 
           {/* Tier scope: the workable tracked core vs. the full 50k+ catalog. */}
@@ -629,18 +667,39 @@ export function BdPipeline() {
           onReset={resetFilters}
           hasActiveFilters={Boolean(hasActiveFilters)}
           trailing={
-            (workingSnoozed.length > 0 || showSnoozed) ? (
-              <button
-                onClick={() => setShowSnoozed(!showSnoozed)}
-                className={clsx(
-                  'flex items-center gap-1 text-micro font-bold transition-colors',
-                  showSnoozed ? 'text-cyan-700 dark:text-cyan-400' : 'text-grey hover:text-navy',
-                )}
-                title={showSnoozed ? 'Hide snoozed rows' : 'Reveal snoozed rows (greyed, with wake dates)'}
-              >
-                <Moon size={11} /> {workingSnoozed.length} snoozed
-              </button>
-            ) : undefined
+            <>
+              {(workingSnoozed.length > 0 || showSnoozed) && (
+                <button
+                  onClick={() => setShowSnoozed(!showSnoozed)}
+                  className={clsx(
+                    'flex items-center gap-1 text-micro font-bold transition-colors',
+                    showSnoozed ? 'text-cyan-700 dark:text-cyan-400' : 'text-grey hover:text-navy',
+                  )}
+                  title={showSnoozed ? 'Hide snoozed rows' : 'Reveal snoozed rows (greyed, with wake dates)'}
+                >
+                  <Moon size={11} /> {workingSnoozed.length} snoozed
+                </button>
+              )}
+              {/*
+               * Saved screens live here now instead of in a band of their own. They ARE
+               * filter state — a named filter set is the same object the tokens to the
+               * left describe — so a second horizontal rule to say so was 27.3px spent on
+               * a taxonomy the operator does not have. The "Screens" caption went with the
+               * band: the button already reads "Save screen", and the chips are named.
+               *
+               * Honest about the one case where this is not free: once several screens are
+               * saved, this flex-wrap row can wrap to a second line, where the old band
+               * was a fixed 27.3px whether or not any screen existed. Nothing is worse
+               * than before at one screen, and the default state — none — is 27.3px better.
+               */}
+              <SavedScreens
+                filters={currentFilters}
+                onApply={(f) => {
+                  setFilters(f);
+                  setSplit('working');
+                }}
+              />
+            </>
           }
         />
       ) : (
@@ -648,27 +707,6 @@ export function BdPipeline() {
           <span className="text-micro text-grey">{SPLIT_HINTS[activeSplit]}</span>
         </div>
       )}
-
-      {/* SAVED SCREENS — named filter sets over the working set */}
-      {activeSplit === 'working' && (
-        <div className="shrink-0 flex items-center gap-2 px-4 py-1.5 border-b border-line bg-card overflow-x-auto">
-          <span className="text-micro font-bold uppercase tracking-wider text-grey shrink-0">Screens</span>
-          <SavedScreens
-            filters={currentFilters}
-            onApply={(f) => {
-              setFilters(f);
-              setSplit('working');
-            }}
-          />
-        </div>
-      )}
-
-      {/* DISCLAIMER */}
-      <div className="shrink-0 flex items-center gap-2 px-4 py-1.5 border-b border-line bg-amber-50/50 dark:bg-amber-950/10">
-        <span className="text-micro text-amber-700 dark:text-amber-400 leading-tight">
-          ⚠ Scores and market recommendations are planning heuristics only — not legal advice. US scoring weighs pre/post CLARITY scenarios. Consult qualified counsel for regulatory decisions.
-        </span>
-      </div>
 
       {/* TABLE AREA — owns Space/Enter on a row before the row does (see claimRowKeys) */}
       <div className="flex-1 overflow-auto" onKeyDownCapture={claimRowKeys} onFocus={syncSelectionToFocus}>

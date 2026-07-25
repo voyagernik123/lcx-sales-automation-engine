@@ -152,7 +152,7 @@ export function CustomOntologyNode({ data }: { data: CustomNodeData }) {
   return (
     <div
       className={clsx(
-        'flex flex-col rounded border bg-card p-2.5 text-left shadow-sm select-none font-sans transition-all duration-300 w-full',
+        'flex flex-col rounded border bg-card p-2.5 text-left shadow-sm select-none font-sans t-surface w-full',
         isPreempted
           ? 'border-dashed border-grey/40 opacity-55'
           : 'border-line border-l-4',

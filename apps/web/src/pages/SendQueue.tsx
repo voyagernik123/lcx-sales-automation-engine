@@ -127,13 +127,45 @@ function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
         )}
       </div>
 
+      {/*
+       * ONE PRIMARY ACTION PER CARD, IN THREE TIERS.
+       *
+       * The defect this fixes is the one the Jobs pass keeps finding, and it was here in
+       * its textbook form: FIVE controls, TWO of them saturated filled buttons of
+       * identical weight — `Open LinkedIn` in bg-blue-700 and `Mark sent` in
+       * bg-emerald-600 — both hand-rolled outside the `Button` component so neither
+       * inherited a tier from the design system at all. With two equally loud controls
+       * there is no primary action; the eye picks whichever colour it notices first, and
+       * on this card that is as likely to be the one that opens a browser tab as the one
+       * that writes to the outreach log.
+       *
+       * The tiering, and why this way round. `Mark sent` is the ONLY control here that
+       * changes state and advances the queue — every other one either leaves the app
+       * (`Open`), copies to the clipboard (`Copy`) or defers (`Skip`, `Snooze`). So it is
+       * the single Tier 1: the design system's `primary`, one size up from everything
+       * else. `Open` and `Copy` are the enabling steps and drop to Tier 2 (outlined);
+       * `Skip` and `Snooze` are deferrals and drop to Tier 3 (ghost), which is what stops
+       * "not now" reading as loudly as "done".
+       *
+       * ORDER IS UNCHANGED on purpose. Moving the primary to the far right would be the
+       * conventional dialog idiom, but it would also make it the LAST thing Tab reaches
+       * on a keyboard-first desk, and this pass is about weight, not about churning a
+       * screen that works. `Mark sent` stays first in the right-hand group.
+       *
+       * The green went with the flattening, and that is a real loss — emerald carried
+       * "this is the completing action" for free. The size and fill step now carry it,
+       * and `Check` stays as the icon.
+       */}
       <div className="flex flex-wrap items-center gap-2">
         {openLink ? (
           <a
             href={openLink}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex items-center gap-1 rounded bg-blue-700 px-2.5 py-1.5 text-label font-semibold text-white hover:bg-blue-800 transition-colors"
+            /* An anchor cannot be a <Button>, so it carries the secondary recipe by hand —
+               deliberately the same tokens `Button variant="secondary" size="xs"` emits, so
+               it sits in Tier 2 with Copy rather than inventing a sixth weight. */
+            className="inline-flex items-center justify-center gap-1 rounded border border-line bg-ice-soft px-2 py-1 text-micro font-bold text-navy transition-colors hover:bg-ice focus-ring"
           >
             <ExternalLink size={11} /> Open {isTelegram ? 'Telegram' : 'LinkedIn'}
           </a>
@@ -144,17 +176,18 @@ function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
           {copied ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />} {copied ? 'Copied' : 'Copy'}
         </Button>
         <div className="flex-1" />
-        <button
+        <Button
+          variant="primary"
+          size="sm"
           disabled={busy !== ''}
           onClick={() => act(() => markQueueItemSent(item.id, body !== item.body ? body : undefined), 'sent', 'Marked sent')}
-          className="inline-flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1.5 text-label font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
         >
-          <Check size={11} /> {busy === 'sent' ? 'Saving…' : 'Mark sent'}
-        </button>
-        <Button variant="secondary" size="xs" disabled={busy !== ''} onClick={() => act(() => skipQueueItem(item.id), 'skip', 'Skipped')}>
+          <Check size={12} /> {busy === 'sent' ? 'Saving…' : 'Mark sent'}
+        </Button>
+        <Button variant="ghost" size="xs" disabled={busy !== ''} onClick={() => act(() => skipQueueItem(item.id), 'skip', 'Skipped')}>
           <SkipForward size={11} /> Skip
         </Button>
-        <Button variant="secondary" size="xs" disabled={busy !== ''} onClick={() => act(() => snoozeQueueItem(item.id), 'snooze', 'Snoozed to next send window')}>
+        <Button variant="ghost" size="xs" disabled={busy !== ''} onClick={() => act(() => snoozeQueueItem(item.id), 'snooze', 'Snoozed to next send window')}>
           <Clock size={11} /> Snooze
         </Button>
       </div>

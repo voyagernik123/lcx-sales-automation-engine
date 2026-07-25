@@ -164,9 +164,9 @@ export function CapitalEstimator() {
                 return (
                   <div className="space-y-3 text-xs">
                     <div className="h-6 bg-line rounded-lg overflow-hidden flex shadow-sm">
-                      <div className="bg-blue-500 h-full transition-all duration-300" style={{ width: `${feesPct}%` }} title={`Fees: ${feesPct}%`} />
-                      <div className="bg-amber-500 h-full transition-all duration-300" style={{ width: `${cashPct}%` }} title={`Bonds cash: ${cashPct}%`} />
-                      <div className="bg-purple-500 h-full transition-all duration-300" style={{ width: `${nwPct}%` }} title={`Net worth: ${nwPct}%`} />
+                      <div className="bg-blue-500 h-full t-metric" style={{ width: `${feesPct}%` }} title={`Fees: ${feesPct}%`} />
+                      <div className="bg-amber-500 h-full t-metric" style={{ width: `${cashPct}%` }} title={`Bonds cash: ${cashPct}%`} />
+                      <div className="bg-purple-500 h-full t-metric" style={{ width: `${nwPct}%` }} title={`Net worth: ${nwPct}%`} />
                     </div>
 
                     <div className="grid grid-cols-3 gap-2 text-center font-semibold pt-1">
@@ -205,7 +205,7 @@ export function CapitalEstimator() {
                     </span>
                     <div className="w-full bg-slate-100 dark:bg-slate-900 rounded-t h-28 flex items-end overflow-hidden">
                       <div
-                        className="bg-cyan-500/80 group-hover:bg-cyan-500 rounded-t w-full transition-all duration-500"
+                        className="bg-cyan-500/80 group-hover:bg-cyan-500 rounded-t w-full t-metric"
                         style={{ height: `${barHeight}%` }}
                       />
                     </div>

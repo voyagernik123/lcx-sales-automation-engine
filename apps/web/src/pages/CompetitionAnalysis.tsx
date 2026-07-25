@@ -62,7 +62,7 @@ export function CompetitionAnalysis() {
           <button
             onClick={handleToggleClarity}
             className={clsx(
-              'flex items-center gap-2.5 w-full sm:w-auto h-10 rounded-lg border px-4 text-xs font-bold transition-all duration-300',
+              'flex items-center gap-2.5 w-full sm:w-auto h-10 rounded-lg border px-4 text-xs font-bold t-surface',
               clarityEnacted
                 ? 'border-cyan-500 bg-cyan-500/10 text-cyan-700 dark:border-cyan-400 dark:bg-cyan-400/10 dark:text-cyan-400 shadow-sm shadow-cyan-500/10'
                 : 'border-line bg-card text-grey-dark hover:bg-ice-soft dark:hover:bg-ice-soft/10'

@@ -228,7 +228,7 @@ export function LeadTable({
                           e.stopPropagation();
                           onPeek(lead.id);
                         }}
-                        className="ml-auto shrink-0 rounded p-0.5 text-grey opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-navy transition-all"
+                        className="ml-auto shrink-0 rounded p-0.5 text-grey opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-navy t-hover"
                         aria-label={`Peek ${lead.name}`}
                         title="Peek (Space)"
                       >

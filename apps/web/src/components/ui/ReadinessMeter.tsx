@@ -16,7 +16,7 @@ export function ReadinessMeter({ percent, className }: ReadinessMeterProps) {
           <div
             key={idx}
             className={clsx(
-              'h-2.5 flex-1 rounded-sm transition-all duration-300',
+              'h-2.5 flex-1 rounded-sm t-surface',
               isActive
                 ? 'bg-navy dark:bg-ice shadow-sm shadow-navy/20 dark:shadow-ice/20'
                 : 'bg-line/40 dark:bg-ice-soft/20 border border-line/20'

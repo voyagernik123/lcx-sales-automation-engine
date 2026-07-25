@@ -66,14 +66,14 @@ export function DealDetailPanel({ deal, onClose }: DealDetailPanelProps) {
   return (
     <>
       <div
-        className={`fixed inset-0 z-40 bg-navy/30 transition-opacity duration-200 dark:bg-black/50 ${visible ? 'opacity-100' : 'opacity-0'}`}
+        className={`fixed inset-0 z-40 bg-navy/30 t-panel dark:bg-black/50 ${visible ? 'opacity-100' : 'opacity-0'}`}
         onClick={onClose}
         aria-hidden="true"
       />
       <aside
         role="dialog"
         aria-label={`Deal details: ${deal.projectName}`}
-        className={`fixed inset-y-0 right-0 z-50 flex w-96 max-w-full flex-col border-l border-line bg-card shadow-overlay transition-transform duration-200 ${visible ? 'translate-x-0' : 'translate-x-full'}`}
+        className={`fixed inset-y-0 right-0 z-50 flex w-96 max-w-full flex-col border-l border-line bg-card shadow-overlay t-panel ${visible ? 'translate-x-0' : 'translate-x-full'}`}
       >
         <div className="flex items-start justify-between gap-3 border-b border-line p-4">
           <div className="min-w-0">

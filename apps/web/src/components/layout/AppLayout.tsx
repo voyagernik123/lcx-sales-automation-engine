@@ -10,7 +10,8 @@ import { ErrorBoundary, ToastContainer, CommandPalette, PageSkeleton, useCommand
 import { InspectorHost } from '@/components/inspect/InspectorHost';
 import { useUIStore, useOperatorStore } from '@/stores';
 import { isTerminal } from '@/lib/container';
-import { beginInteraction, afterPaint, readTally } from '@/lib/perf';
+import { beginInteraction, afterPaint, readTally, settleWhenQuiet } from '@/lib/perf';
+import { inFlightCount } from '@/lib/readCache';
 import { OfflineBanner } from './OfflineBanner';
 import { startConnectivityWatch } from '@/lib/online';
 import { useAccessStore } from '@/stores/useAccessStore';
@@ -55,16 +56,57 @@ export function AppLayout() {
     // actually served locally. Without it, `cached` would be a guess — and the
     // cache-hit rate next to the p95 is what makes the p95 believable.
     const before = readTally();
+    // Why `cancelled` as well as the cleanup: `afterPaint` is two frames out, so a
+    // navigation inside ~32ms runs this effect's cleanup BEFORE the callback fires.
+    // At that moment `stopSettleWatch` is still undefined, so the cleanup has
+    // nothing to stop, and the callback would then start a watcher for the route the
+    // operator already left — polling until it settles and filing the sample under
+    // the wrong surface.
+    //
+    // Honestly scoped: the PREMISE is pinned by a test ("afterPaint lands after a
+    // synchronous cleanup" in lib/__tests__/settle.test.ts). This specific effect's
+    // use of it is NOT — that needs AppLayout rendered under a router with a
+    // sub-32ms double navigation, which nothing here does. Reasoned, not measured.
+    let cancelled = false;
+    let stopSettleWatch: (() => void) | undefined;
+
     // Stop on the paint AFTER this route's first render, not on the effect —
     // effects run before the browser paints, so ending here would report a time
     // the operator never experienced.
     afterPaint(() => {
       const after = readTally();
       i.paint({ cached: after.misses === before.misses });
+      if (cancelled) return;
+
+      // SETTLE — and this is deliberately NOT a second `afterPaint` (T1 #23).
+      //
+      // It used to be exactly that: two `afterPaint` callbacks registered
+      // back-to-back, firing in the same frame, producing two samples of the same
+      // instant. So `ui_settle_p95` was a second copy of `ui_interaction_p95`, and
+      // the two-metric SLO — whose entire justification is that a single paint
+      // metric IMPROVES when a read is moved to network-only for governance
+      // reasons — was published on a pair of numbers that could not possibly
+      // disagree. Zero exposure, because paint happens to be equally
+      // read-independent, and a false claim regardless.
+      //
+      // Settle is now the read layer going quiet: zero requests in flight, held
+      // quiet briefly so a chained read is not mistaken for the end. A read moved
+      // off the cache leaves the paint path and lands here, which is the whole
+      // point. Started from INSIDE the paint callback on purpose — before the
+      // paint the route's lazy chunk may not have loaded, so no child has issued a
+      // read yet and the probe would read a misleading zero.
+      stopSettleWatch = settleWhenQuiet(i, inFlightCount, {
+        // For settle, `cached` means the stronger thing it should always have
+        // meant: this navigation completed without touching the network at all.
+        // Evaluated at settle time, by which point every read has been counted.
+        cached: () => readTally().misses === before.misses,
+      });
     });
-    // A route with no async reads settles when it paints; surfaces with their own
-    // async regions will mark settle explicitly as they adopt the instrument.
-    afterPaint(() => i.settle({ cached: readTally().misses === before.misses }));
+
+    return () => {
+      cancelled = true;
+      stopSettleWatch?.();
+    };
   }, [location.pathname]);
 
   useEffect(() => {

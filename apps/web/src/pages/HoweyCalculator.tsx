@@ -268,10 +268,10 @@ export function HoweyCalculator() {
                   strokeLinecap="round"
                   strokeDasharray="125.6"
                   strokeDashoffset={125.6 * (1 - scoreResult / 100)}
-                  className="transition-all duration-700 ease-out"
+                  className="t-sweep"
                 />
                 {/* Needle */}
-                <g transform={`rotate(${(scoreResult / 100) * 180 - 180}, 50, 50)`} className="transition-transform duration-700 ease-out origin-[50px_50px]">
+                <g transform={`rotate(${(scoreResult / 100) * 180 - 180}, 50, 50)`} className="t-sweep origin-[50px_50px]">
                   <line x1="50" y1="50" x2="15" y2="50" stroke="var(--navy)" strokeWidth="2" strokeLinecap="round" className="dark:stroke-ice" />
                   <circle cx="50" cy="50" r="3" fill="var(--navy)" className="dark:fill-ice" />
                 </g>

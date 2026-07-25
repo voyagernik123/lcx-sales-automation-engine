@@ -33,7 +33,7 @@ export function QuotaRing({ stats, target, streak }: QuotaRingProps) {
 
       <div className="h-1.5 overflow-hidden rounded-full bg-ice-soft dark:bg-ice-soft/10">
         <div
-          className="h-full rounded-full transition-[width] duration-300"
+          className="h-full rounded-full t-metric"
           style={{ width: `${pct * 100}%`, backgroundColor: met ? CHART_GOOD : 'var(--chart-1)' }}
         />
       </div>

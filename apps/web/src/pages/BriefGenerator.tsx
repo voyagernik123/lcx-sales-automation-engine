@@ -273,7 +273,7 @@ export function BriefGenerator() {
                     setToOverride('');
                   }}
                   className={clsx(
-                    'w-full text-left px-3 py-2 rounded text-xs font-semibold border transition-all duration-300',
+                    'w-full text-left px-3 py-2 rounded text-xs font-semibold border t-surface',
                     selectedTemplate === t.id
                       ? 'border-navy bg-navy/5 text-navy dark:border-ice dark:bg-ice-soft/5 shadow-sm'
                       : 'border-line hover:bg-ice-soft/10 text-grey-dark'
@@ -342,7 +342,7 @@ export function BriefGenerator() {
                     key={s.id}
                     onClick={() => handleToggleState(s.abbreviation)}
                     className={clsx(
-                      'py-1 rounded text-micro font-mono border text-center font-bold transition-all duration-200',
+                      'py-1 rounded text-micro font-mono border text-center font-bold t-hover',
                       active
                         ? 'bg-navy border-navy text-card dark:bg-ice dark:border-ice dark:text-navy'
                         : 'border-line bg-card text-grey-dark hover:bg-ice-soft dark:hover:bg-ice-soft/10'
@@ -366,7 +366,7 @@ export function BriefGenerator() {
                     key={p.id}
                     onClick={() => handleToggleProduct(p.id)}
                     className={clsx(
-                      'flex items-center gap-2 w-full text-left p-1.5 rounded border text-micro font-semibold transition-colors duration-200',
+                      'flex items-center gap-2 w-full text-left p-1.5 rounded border text-micro font-semibold t-hover',
                       active
                         ? 'border-navy bg-navy/5 text-navy dark:border-ice dark:bg-ice-soft/5'
                         : 'border-line hover:bg-ice-soft/10 text-grey-dark'

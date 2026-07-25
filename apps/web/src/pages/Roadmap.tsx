@@ -244,7 +244,7 @@ export function Roadmap() {
                       top: `${(m.row - 1) * 60}px`,
                     }}
                     className={clsx(
-                      'absolute h-10 rounded border text-left p-1.5 flex flex-col justify-between shadow-sm cursor-pointer select-none transition-all duration-300 font-sans',
+                      'absolute h-10 rounded border text-left p-1.5 flex flex-col justify-between shadow-sm cursor-pointer select-none t-surface font-sans',
                       isHovered && 'ring-2 ring-cyan-500/50 scale-[1.02] border-cyan-500 z-30',
                       isHighlighted && !isHovered && 'border-cyan-500 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400',
                       !isHighlighted && hasActiveTracing && 'opacity-15 grayscale scale-95 pointer-events-none',

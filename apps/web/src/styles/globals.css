@@ -25,8 +25,27 @@
     background-color: rgb(var(--page-bg));
   }
   
+  /* `box-shadow` USED TO BE IN THIS LIST and had to come out. `.focus-ring-inset`
+   * paints its ring with `box-shadow: inset 0 0 0 2px`, so a 150ms box-shadow
+   * transition on a bare `button` made that ring FADE IN — measured against the
+   * built stylesheet in Chromium on a `<button class="focus-ring-inset">` with no
+   * transition utility of its own:
+   *
+   *     t=8ms    inset 0px    rgba(8,145,178, 0)
+   *     t=40ms   inset 0.72px rgba(8,145,178, 0.357)
+   *     t=100ms  inset 1.86px rgba(8,145,178, 0.93)
+   *     t=200ms  inset 2px    rgb(8,145,178)          <- arrives
+   *
+   * i.e. for the first ~60ms the ring is a sub-pixel hairline at a third alpha,
+   * which is under the SC 1.4.11 3:1 floor while it is on its way in. The five
+   * `.focus-ring-inset` sites all happen to carry `transition-colors`, which
+   * overrides this rule and hid the defect from every existing check; a sixth site
+   * added without a transition utility would have inherited it. Nothing in this app
+   * animates a box-shadow on these eight element types deliberately, so the fix is
+   * to stop naming the property here. Elements that DO want a shadow transition ask
+   * for one by name (`.lift`, `.t-surface`). */
   header, aside, main, button, select, table, th, td {
-    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+    transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
   }
 }
 
@@ -140,9 +159,13 @@ path.state:hover {
   .derived:hover {
     text-decoration-color: rgb(8 145 178 / 0.9);
   }
-  /* Interactive-card lift: subtle rise + deeper shadow, 150ms. */
+  /* Interactive-card lift: subtle rise + deeper shadow. Durations are the tokens
+   * now, not a hand-typed 0.12s that happened to equal --t-hover; see the
+   * transition vocabulary below. */
   .lift {
-    transition: transform 0.12s ease-out, box-shadow 0.12s ease-out, border-color 0.12s ease-out;
+    transition-property: transform, box-shadow, border-color;
+    transition-duration: var(--t-hover);
+    transition-timing-function: var(--e-out);
   }
   .lift:hover {
     transform: translateY(-1px);
@@ -161,12 +184,17 @@ path.state:hover {
  * BECOMING live is distinguishable from a state merely BEING live, and a refusal
  * is felt rather than read.
  *
- * ONE VOCABULARY. Before this, motion was four ad-hoc durations —
- * `duration-300` at 17 sites, `duration-200` at 5, `duration-700` at 3,
- * `duration-500` at 1 — chosen per component. 300ms is roughly twice too slow
- * for UI chrome and reads as lag on a 120Hz display, which is the machine this
- * app is built for. The three tokens below are the durations the design notes
- * already specified (120 hover / 160 state / 200 panels) but nothing enforced.
+ * ONE VOCABULARY — a claim this comment used to make about TRANSITIONS and had not
+ * earned. It said motion "was four ad-hoc durations, `duration-300` at 17 sites,
+ * `duration-200` at 5, `duration-700` at 3, `duration-500` at 1", past tense. For
+ * the one-shot ANIMATIONS below that was true. For transitions it was not: at the
+ * time of writing the tokens were defined and the ad-hoc utilities were all still
+ * there — 26 `duration-*` utilities and 38 `transition-all` — and `--t-hover` had
+ * ZERO consumers anywhere in the app. A token nothing names does not exist.
+ *
+ * That is now delivered, by the `.t-*` utilities below rather than by asking every
+ * component to spell out a duration. 300ms is roughly twice too slow for UI chrome
+ * and reads as lag on a 120Hz display, which is the machine this app is built for.
  *
  * OVERSHOOT IS RATIONED. `--e-snap` overshoots by ~12%, and it is for COMMIT
  * moments only — a governed write landing, a row flipping state. The existing
@@ -184,6 +212,14 @@ path.state:hover {
   --t-hover: 120ms;
   --t-state: 160ms;
   --t-panel: 200ms;
+  /* The fourth duration, named rather than smuggled. The house rule above already
+   * says "data-viz transitions (gauge needles, bars) may run longer", and three
+   * sites — the Dashboard readiness ring, the Howey gauge arc and its needle —
+   * were spelling that out as `duration-700`. A slow sweep on a gauge is a real
+   * design decision (it reads as the instrument settling), so the honest fix is a
+   * token for it, not deleting it or pretending 160ms is the same thing. This is
+   * the ONLY duration above --t-panel, and `.t-sweep` is the only way to spend it. */
+  --t-sweep: 700ms;
   --e-out: cubic-bezier(0.16, 1, 0.3, 1);
   /* Back-out. The overshoot is what makes a commit feel like a physical detent
    * rather than a fade — and 12% is deliberately modest: past ~20% it reads as
@@ -233,6 +269,73 @@ path.state:hover {
   }
   .juice-tick {
     animation: juice-tick var(--t-state) var(--e-snap) 1;
+  }
+  /* ── The transition vocabulary ─────────────────────────────────────────────
+   * Five names over four durations. Each one is an EXPLICIT PROPERTY LIST, and
+   * that is the whole point rather than tidiness.
+   *
+   * `transition-all` animates every animatable property, and two of those
+   * properties are `outline-color` and `outline-offset` — which is how the focus
+   * ring acquired a fade. Measured in Chromium against the built stylesheet, on
+   * `<button class="... transition-all duration-300">` (the shape at
+   * CompetitionAnalysis, ProductIntelligence, BriefGenerator and ScenarioPlanner),
+   * taking keyboard focus:
+   *
+   *     t=8ms    outline-offset 1px  outline-color rgb(30,40,98)   <- still the TEXT colour
+   *     t=40ms   outline-offset 1px  outline-color rgb(28,48,104)
+   *     t=100ms  outline-offset 1px  outline-color rgb(20,87,134)
+   *     t=200ms  outline-offset 1px  outline-color rgb(10,137,172) <- still not there
+   *     t=350ms  outline-offset 2px  outline-color rgb(8,145,178)  <- arrives
+   *
+   * So the ring did not appear; it crept outward and bled from navy to cyan over
+   * 300ms. A bare `<button>` puts the same ring at its final 2px / rgb(8,145,178)
+   * by t=8ms. Phase 4 spent itself on making focus visible and then let a hover
+   * convenience animate it.
+   *
+   * NO UTILITY IN THIS BLOCK MAY NAME `outline`, `outline-color`, `outline-offset`
+   * or `outline-width`. A test parses this file and enforces that, because the next
+   * person to add a sixth `.t-*` will be thinking about hovers, not about focus.
+   *
+   * `box-shadow` appears in exactly one of them (`.t-surface`) and is the other
+   * trap: `.focus-ring-inset` draws its ring with an inset box-shadow, so pairing
+   * `.t-surface` with `.focus-ring-inset` on the same element re-creates the fade
+   * on the ring. Don't — use `.t-hover`, which does not name box-shadow. As of this
+   * change no element carries both; the five `.focus-ring-inset` sites carry
+   * Tailwind's `transition-colors`, which also excludes box-shadow, and were
+   * measured settling their ring instantly (t=8ms) both before and after.
+   */
+  /* Colour/opacity feedback: hover, selected, active-pill. The common case. */
+  .t-hover {
+    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke, opacity;
+    transition-duration: var(--t-hover);
+    transition-timing-function: var(--e-out);
+  }
+  /* A surface changing character: shadow, ring, scale, grayscale. `filter` is in
+   * the list because the dim-others-out treatment (Roadmap, ontology nodes) is a
+   * grayscale, and `ring-*` is in it via box-shadow — Tailwind's ring IS a shadow. */
+  .t-surface {
+    transition-property: background-color, border-color, box-shadow, transform, opacity, filter;
+    transition-duration: var(--t-hover);
+    transition-timing-function: var(--e-out);
+  }
+  /* A quantity moving: bar widths, meter fills, dial arcs. Geometry, not chrome,
+   * which is why it gets --t-state rather than --t-hover. */
+  .t-metric {
+    transition-property: width, height, transform, background-color, fill, stroke, stroke-dasharray, stroke-dashoffset;
+    transition-duration: var(--t-state);
+    transition-timing-function: var(--e-out);
+  }
+  /* Something arriving or leaving: drawers, the sidebar rail, modal panels. */
+  .t-panel {
+    transition-property: transform, opacity, width, max-height;
+    transition-duration: var(--t-panel);
+    transition-timing-function: var(--e-out);
+  }
+  /* Data-viz sweep only — see --t-sweep. Never put this on chrome. */
+  .t-sweep {
+    transition-property: stroke-dasharray, stroke-dashoffset, transform;
+    transition-duration: var(--t-sweep);
+    transition-timing-function: var(--e-out);
   }
   /* Semantic tints for .juice-flash, so a call site names a meaning rather than
    * a colour and dark mode is handled by the tokens it already defines. */

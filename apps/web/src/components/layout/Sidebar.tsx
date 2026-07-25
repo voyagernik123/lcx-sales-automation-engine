@@ -238,7 +238,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className={clsx('flex flex-col overflow-y-auto border-r border-line bg-card transition-all duration-300', sidebarCollapsed ? 'w-14' : 'w-56')}>
+    <aside className={clsx('flex flex-col overflow-y-auto border-r border-line bg-card t-panel', sidebarCollapsed ? 'w-14' : 'w-56')}>
       <nav className="flex-1 p-2">
         {sections.map(section => {
           const isOpen = openSections[section.title] ?? true;

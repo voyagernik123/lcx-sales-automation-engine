@@ -269,7 +269,7 @@ export function KpiDashboard() {
                     </div>
                     <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-ice-soft dark:bg-ice-soft/10">
                       <div
-                        className="h-full rounded-full bg-cyan-600 transition-all dark:bg-cyan-400"
+                        className="h-full rounded-full bg-cyan-600 t-metric dark:bg-cyan-400"
                         style={{ width: `${tg.handoffs > 0 ? Math.min(100, (tg.moved / tg.handoffs) * 100) : 0}%` }}
                       />
                     </div>

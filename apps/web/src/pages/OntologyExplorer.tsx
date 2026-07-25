@@ -210,7 +210,7 @@ export function OntologyExplorer() {
               const active = activeLayers.has(p.id);
               return (
                 <button key={p.id} onClick={() => toggleLayer(p.id)}
-                  className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-semibold transition-all ${
+                  className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[9px] font-semibold t-hover ${
                     active ? 'bg-navy dark:bg-ice text-card dark:text-navy border-transparent' : 'border-line text-grey hover:bg-ice-soft'}`}>
                   <span className="whitespace-nowrap">{p.label}</span>
                   <span className={`font-mono text-[8px] ${active ? 'opacity-60' : 'text-grey'}`}>{p.count}</span>

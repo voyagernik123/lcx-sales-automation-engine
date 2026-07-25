@@ -439,7 +439,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
     >
       <Card
         className={clsx(
-          'transition-all hover:shadow-md hover:-translate-y-[0.5px]',
+          'hover:shadow-md hover:-translate-y-[0.5px]',
           c.status === 'blocked' && 'opacity-60',
           c.threatLevel === 'Critical' ? 'border-red-500/30' :
           c.threatLevel === 'High' ? 'border-orange-500/20' : ''
