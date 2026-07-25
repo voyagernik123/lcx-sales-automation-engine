@@ -24,8 +24,17 @@ export function classifyError(err: unknown): ClassifiedError {
   if (err instanceof ApiError) {
     const detail = err.message;
     switch (true) {
+      // The old copy — "sign in again from the front door" — described an action
+      // NOBODY TOOK (TERMINAL Phase 7.1). It was true as advice and false as a
+      // description: the app left the operator where they were, with TopNav still
+      // showing their name and every panel showing an auth error, and no route
+      // change. As of this pass a 401 on an authenticated request clears the
+      // credential and the operator store, which sends AppLayout's guard to
+      // `/select` (lib/apiClient.ts, forceFrontDoor). So the copy now says what the
+      // app does — and if that handler is ever removed, this sentence becomes a lie
+      // again and should be changed back with it.
       case err.status === 401:
-        return { kind: 'auth', title: 'Signed out', message: 'Your session is no longer valid — sign in again from the front door.', retryable: false, detail };
+        return { kind: 'auth', title: 'Signed out', message: 'The API rejected this desk credential — returning you to the front door to sign in again.', retryable: false, detail };
       case err.status === 403:
         return { kind: 'permission', title: 'Not permitted', message: 'Your seat can’t perform this action. If it should, ask the desk admin.', retryable: false, detail };
       case err.status === 409:

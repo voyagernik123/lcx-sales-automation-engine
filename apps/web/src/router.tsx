@@ -1,7 +1,11 @@
-import { createBrowserRouter } from 'react-router-dom';
-import { lazy } from 'react';
+import { createBrowserRouter, Outlet, useLocation } from 'react-router-dom';
+import { lazy, useEffect } from 'react';
 import { AppLayout } from '@/components/layout';
 import { SelectOperator } from '@/pages/SelectOperator';
+import { ToastContainer, useToastStore } from '@/components/shared/Toast';
+import { useOperatorStore } from '@/stores';
+import { isTerminal } from '@/lib/container';
+import { verifyPersistedIdentity } from '@/lib/apiClient';
 
 /**
  * Every workspace page is code-split (plan D2): only the shell + the front
@@ -68,72 +72,145 @@ const CommandPartners = lazy(() => import('@/pages/CommandPartners').then((m) =>
 const CommandOps = lazy(() => import('@/pages/CommandOps').then((m) => ({ default: m.CommandOps })));
 const CheatCard = lazy(() => import('@/pages/CheatCard').then((m) => ({ default: m.CheatCard })));
 
+/**
+ * The layer above the sign-in gate.
+ *
+ * It exists because of one structural fact: `/select` is a SIBLING of `AppLayout`,
+ * not a child, so nothing inside `AppLayout` runs while the desk is signed out. The
+ * self-updater lived in there. That meant the update check did not run at the front
+ * door, and the native "Check for Updates…" menu item emitted an event no listener
+ * had subscribed to — so a build that was broken AT the gate had no way to repair
+ * itself at all, and the only road back was reinstalling the DMG by hand. Anything
+ * that must work on a desk nobody can sign in to belongs here.
+ *
+ * What deliberately does NOT move up here: the navigation half of the terminal
+ * bridge (⌘1-6, ⌘K, ⌘[ / ⌘]). Those are routes inside the signed-in shell and there
+ * is nowhere to send them from the front door.
+ */
+function AboveTheGate() {
+  const operator = useOperatorStore((s) => s.operator);
+  const { pathname } = useLocation();
+
+  // Identity, re-checked once per launch. See verifyPersistedIdentity for what this
+  // can and cannot prove — in particular, it does not detect a different PERSON at a
+  // shared desk, and pretending otherwise would be the more dangerous outcome.
+  useEffect(() => {
+    void verifyPersistedIdentity();
+  }, []);
+
+  useEffect(() => {
+    if (!isTerminal()) return; // browser: never fetch the Tauri chunk at all
+    let detach: (() => void) | undefined;
+    void (async () => {
+      const { attachUpdateBridge } = await import('@/lib/terminal');
+      detach = await attachUpdateBridge((kind, message, action) =>
+        // `addToast` directly rather than the `toast()` helper, which cannot carry an
+        // action. Duration 0 for anything actionable: the store only sets a
+        // dismissal timer when duration > 0, and an install decision that erases
+        // itself after six seconds is a decision the operator will miss. The X
+        // dismisses it.
+        useToastStore
+          .getState()
+          .addToast(kind, message, action ? 0 : kind === 'warning' ? 9000 : 6000, action),
+      );
+    })();
+    return () => detach?.();
+  }, []);
+
+  return (
+    <>
+      <Outlet />
+      {/* The toast surface, but ONLY while the signed-in shell is not mounted.
+        * `AppLayout` renders its own `ToastContainer`, and both subscribe to the same
+        * store, so two mounted at once would draw every toast twice.
+        *
+        * The condition is "not signed in OR standing at the front door", and it needs
+        * both halves. `!operator` alone was the first version and it left a third
+        * state uncovered: `/select` WITH a persisted operator — which `SelectOperator`
+        * does not redirect away from, and which is what the app shows for the render
+        * between `setOperator` and the router committing `navigate('/')`, as well as
+        * to anyone who simply opens `/select` while signed in. In that state
+        * `AppLayout` is not mounted either, so there was NO container anywhere and an
+        * updater notice raised at the gate — the whole reason the updater moved above
+        * the gate — had nowhere to appear. `/select` is the only route outside
+        * `AppLayout`, so the pathname test is exactly "the shell is not mounted". */}
+      {(!operator || pathname === '/select') && <ToastContainer />}
+    </>
+  );
+}
+
 export const router = createBrowserRouter([
-  { path: '/select', element: <SelectOperator /> },
   {
-    path: '/',
-    element: <AppLayout />,
+    // A pathless layout route: it wraps both branches without owning a URL.
+    element: <AboveTheGate />,
     children: [
-      { index: true, element: <Home /> },
-      { path: 'regulatory-dashboard', element: <Dashboard /> },
-      { path: 'ontology', element: <OntologyExplorer /> },
-      { path: 'states', element: <StateMap /> },
-      { path: 'products', element: <ProductMatrix /> },
-      { path: 'simulator', element: <Simulator /> },
-      { path: 'howey', element: <HoweyCalculator /> },
-      { path: 'scenario', element: <ScenarioPlanner /> },
-      { path: 'readiness', element: <ReadinessStack /> },
-      { path: 'brief-generator', element: <BriefGenerator /> },
-      { path: 'capital-estimator', element: <CapitalEstimator /> },
-      { path: 'roadmap', element: <Roadmap /> },
-      { path: 'red-flags', element: <RedFlags /> },
-      { path: 'settings', element: <Settings /> },
-      { path: 'competition', element: <CompetitionAnalysis /> },
-      { path: 'product-intel', element: <ProductIntelligence /> },
-      { path: 'bd-pipeline', element: <BdPipeline /> },
-      { path: 'bd-pipeline/:id', element: <LeadDetail /> },
-      { path: 'contacts/:id', element: <ContactWorkspace /> },
-      { path: 'claim-library', element: <ClaimLibrary /> },
-      { path: 'outreach', element: <Handoffs /> },
-      { path: 'send-queue', element: <SendQueue /> },
-      { path: 'exchange-gaps', element: <ExchangeGaps /> },
-      { path: 'deal-board', element: <DealBoard /> },
-      { path: 'tasks', element: <MyTasks /> },
-      { path: 'market-map', element: <MarketMap /> },
-      { path: 'graph', element: <SalesGraph /> },
-      { path: 'monitors', element: <Monitors /> },
-      { path: 'targets', element: <Targets /> },
-      { path: 'brief', element: <DailyBrief /> },
-      { path: 'forecast', element: <Forecast /> },
-      { path: 'command', element: <CommandCenter /> },
-      { path: 'scorecard', element: <Scorecard /> },
-      { path: 'coverage/:id', element: <CoverageReport /> },
-      { path: 'customer/:id', element: <Customer360 /> },
-      { path: 'notes', element: <Notes /> },
-      { path: 'notes/:projectId', element: <Notes /> },
-      { path: 'win-loss', element: <WinLoss /> },
-      { path: 'ai-tools', element: <AiTools /> },
-      { path: 'outreach-ops', element: <OutreachOps /> },
-      { path: 'deal-desk', element: <DealDesk /> },
-      { path: 'integrations', element: <Integrations /> },
-      { path: 'board-report', element: <BoardReport /> },
-      { path: 'market-news', element: <MarketNews /> },
-      { path: 'report-builder', element: <ReportBuilder /> },
-      { path: 'bd-kpis', element: <KpiDashboard /> },
-      { path: 'audit-log', element: <AuditLog /> },
-      { path: 'ops', element: <Ops /> },
-      { path: 'wbr', element: <Wbr /> },
-      { path: 'access', element: <AccessControl /> },
-      { path: 'distribution', element: <DistributionCockpit /> },
-      { path: 'distribution/atlas', element: <DistributionHome /> },
-      { path: 'distribution/listings', element: <DistributionListings /> },
-      { path: 'distribution/campaigns', element: <DistributionCampaigns /> },
-      { path: 'distribution/geo', element: <DistributionGeo /> },
-      { path: 'decisions', element: <Decisions /> },
-      { path: 'command-deck', element: <CommandDeck /> },
-      { path: 'command-partners', element: <CommandPartners /> },
-      { path: 'command-ops', element: <CommandOps /> },
-      { path: 'cheat-card', element: <CheatCard /> },
+      { path: '/select', element: <SelectOperator /> },
+      {
+        path: '/',
+        element: <AppLayout />,
+        children: [
+          { index: true, element: <Home /> },
+          { path: 'regulatory-dashboard', element: <Dashboard /> },
+          { path: 'ontology', element: <OntologyExplorer /> },
+          { path: 'states', element: <StateMap /> },
+          { path: 'products', element: <ProductMatrix /> },
+          { path: 'simulator', element: <Simulator /> },
+          { path: 'howey', element: <HoweyCalculator /> },
+          { path: 'scenario', element: <ScenarioPlanner /> },
+          { path: 'readiness', element: <ReadinessStack /> },
+          { path: 'brief-generator', element: <BriefGenerator /> },
+          { path: 'capital-estimator', element: <CapitalEstimator /> },
+          { path: 'roadmap', element: <Roadmap /> },
+          { path: 'red-flags', element: <RedFlags /> },
+          { path: 'settings', element: <Settings /> },
+          { path: 'competition', element: <CompetitionAnalysis /> },
+          { path: 'product-intel', element: <ProductIntelligence /> },
+          { path: 'bd-pipeline', element: <BdPipeline /> },
+          { path: 'bd-pipeline/:id', element: <LeadDetail /> },
+          { path: 'contacts/:id', element: <ContactWorkspace /> },
+          { path: 'claim-library', element: <ClaimLibrary /> },
+          { path: 'outreach', element: <Handoffs /> },
+          { path: 'send-queue', element: <SendQueue /> },
+          { path: 'exchange-gaps', element: <ExchangeGaps /> },
+          { path: 'deal-board', element: <DealBoard /> },
+          { path: 'tasks', element: <MyTasks /> },
+          { path: 'market-map', element: <MarketMap /> },
+          { path: 'graph', element: <SalesGraph /> },
+          { path: 'monitors', element: <Monitors /> },
+          { path: 'targets', element: <Targets /> },
+          { path: 'brief', element: <DailyBrief /> },
+          { path: 'forecast', element: <Forecast /> },
+          { path: 'command', element: <CommandCenter /> },
+          { path: 'scorecard', element: <Scorecard /> },
+          { path: 'coverage/:id', element: <CoverageReport /> },
+          { path: 'customer/:id', element: <Customer360 /> },
+          { path: 'notes', element: <Notes /> },
+          { path: 'notes/:projectId', element: <Notes /> },
+          { path: 'win-loss', element: <WinLoss /> },
+          { path: 'ai-tools', element: <AiTools /> },
+          { path: 'outreach-ops', element: <OutreachOps /> },
+          { path: 'deal-desk', element: <DealDesk /> },
+          { path: 'integrations', element: <Integrations /> },
+          { path: 'board-report', element: <BoardReport /> },
+          { path: 'market-news', element: <MarketNews /> },
+          { path: 'report-builder', element: <ReportBuilder /> },
+          { path: 'bd-kpis', element: <KpiDashboard /> },
+          { path: 'audit-log', element: <AuditLog /> },
+          { path: 'ops', element: <Ops /> },
+          { path: 'wbr', element: <Wbr /> },
+          { path: 'access', element: <AccessControl /> },
+          { path: 'distribution', element: <DistributionCockpit /> },
+          { path: 'distribution/atlas', element: <DistributionHome /> },
+          { path: 'distribution/listings', element: <DistributionListings /> },
+          { path: 'distribution/campaigns', element: <DistributionCampaigns /> },
+          { path: 'distribution/geo', element: <DistributionGeo /> },
+          { path: 'decisions', element: <Decisions /> },
+          { path: 'command-deck', element: <CommandDeck /> },
+          { path: 'command-partners', element: <CommandPartners /> },
+          { path: 'command-ops', element: <CommandOps /> },
+          { path: 'cheat-card', element: <CheatCard /> },
+        ],
+      },
     ],
   },
 ]);

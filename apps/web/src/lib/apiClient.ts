@@ -6,7 +6,7 @@
 
 import type { HealthResponse, OperatorPrincipal } from '@lcx/shared';
 import { isTerminal } from './container';
-import { canonicalPath, lookup, store, coalesce } from './readCache';
+import { canonicalPath, lookup, store, coalesce, clearReadCache } from './readCache';
 import { noteRead } from './perf';
 import { invalidateAfterAction } from './readInvalidate';
 import { recordNetworkResult } from './online';
@@ -98,6 +98,19 @@ export function setOperatorCredentials(email: string, passcode: string): void {
   }
   memEmail = e;
   memPass = passcode;
+  // A NEW credential re-arms the forced-sign-out latch. See `frontDoorForced`: it
+  // exists to make a burst of 401s act once, and it used to be justified by "a
+  // successful sign-in is a fresh document" — which the front door does not do. It
+  // ends with `navigate('/', { replace: true })` (pages/SelectOperator.tsx), a
+  // react-router transition inside the same document and the same module instance.
+  // Left latched, a second invalidation in one session — an admin rotating the desk
+  // passcode twice, or once after the operator had already signed back in — restored
+  // the exact defect this pass closed: the operator's name in the top bar and every
+  // panel showing an auth error, with no route change. Reset here rather than at the
+  // gate because this is the one function that means "there is a credential again",
+  // and it cannot reopen the burst race: during a burst there is no credential to
+  // store.
+  frontDoorForced = false;
   try {
     localStorage.setItem(EMAIL_KEY, e);
     localStorage.setItem(PASS_KEY, passcode);
@@ -145,6 +158,143 @@ export function clearOperatorEmail(): Promise<void> {
     const { secretDelete } = await import('./terminal');
     await Promise.all([secretDelete(EMAIL_KEY), secretDelete(PASS_KEY)]);
   })();
+}
+
+/* ── Being signed out, and acting like it ─────────────────────────────────────
+ *
+ * The taxonomy has classified a 401 as "sign in again from the front door" since
+ * the error layer was written (lib/errors.ts), and until this pass nothing did it.
+ * The observable state was: TopNav still showing the operator's name and role, the
+ * sidebar still listing their workspaces, and every surface underneath rendering an
+ * auth error. It is not hypothetical — it is what the desk looks like the moment
+ * the shared passcode is rotated, which is the one routine admin action that
+ * invalidates a live credential.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Once per REJECTED CREDENTIAL, not once per process. A 401 does not arrive alone: a
+ * route mounts five or six reads at a time, plus any SWR revalidation already in
+ * flight, so the first rejected request must be the only one that acts.
+ *
+ * An earlier draft never reset this and justified it with "the recovery ends at the
+ * front door, and a successful sign-in from there is a fresh document". That was
+ * false: `SelectOperator` ends with `navigate('/', { replace: true })`, an in-document
+ * router transition, so the module instance — and this latch — survive the sign-in.
+ * `setOperatorCredentials` clears it, so the second rotation in a session is acted on
+ * like the first.
+ */
+let frontDoorForced = false;
+
+/**
+ * The current route, without assuming there is a `window`. The read layer is
+ * exercised under vitest in a node-ish environment in places, and a bare
+ * `location.pathname` there is a throw inside an error path.
+ */
+function currentPath(): string {
+  try {
+    return typeof window === 'undefined' ? '' : window.location.pathname;
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Drop the credential and the identity, and let the shell's own guard do the
+ * routing.
+ *
+ * There is no `navigate()` here on purpose. `AppLayout` already renders
+ * `<Navigate to="/select" replace />` whenever the operator store is empty
+ * (components/layout/AppLayout.tsx:145), and every authenticated surface in the app
+ * is a child of it — so clearing the store IS the redirect, from anywhere, without
+ * lib/ reaching for a router it does not own and without a full document load.
+ *
+ * The read cache goes too. It is keyed by PATH, not by credential, so bodies
+ * fetched under the credential that has just been rejected must not be served to
+ * whoever signs in next.
+ *
+ * What this deliberately does NOT do, unlike the sign-out button in TopNav: wipe
+ * every locally persisted UI key (`storage.clearAll()`) or force a fresh document.
+ * This path fires unasked, and its most common cause by far is a rotated passcode —
+ * the SAME operator, who would then find their filters, notes and workspace
+ * selection gone because the admin changed a password. In-memory store residue
+ * therefore survives a forced return to the front door; a deliberate sign-out
+ * remains the thing that leaves nothing behind.
+ */
+function forceFrontDoor(reason: string): void {
+  if (frontDoorForced) return;
+  frontDoorForced = true;
+  console.warn('[lcx] returning to the front door:', reason);
+
+  // Order matters, and it is the same order TopNav's sign-out settled on: forget
+  // the credential FIRST, drop the identity second. In LCX TERMINAL the forget is
+  // an IPC round-trip into the Rust shell, and it is the half that actually
+  // removes the passcode from the login keychain.
+  //
+  // Bounded, for the same reason TopNav bounds it: a Keychain that refuses — or
+  // that is sitting behind an access prompt nobody has answered — must not trap
+  // the operator on a session the API has already rejected. Two seconds, then the
+  // redirect happens regardless. Nothing is lost by the timeout: memory and
+  // localStorage are cleared synchronously inside `clearOperatorEmail` before it
+  // returns a promise at all, so the credential has already stopped being usable.
+  const bounded = new Promise<void>((resolve) => setTimeout(resolve, 2000));
+  void Promise.race([clearOperatorEmail().catch(() => {}), bounded]).then(async () => {
+    // Keyed by PATH, not by credential: bodies fetched under the credential that
+    // was just rejected must not be served to whoever signs in next.
+    clearReadCache();
+    // Dynamic, not static: apiClient is on the pre-render boot path (main.tsx
+    // awaits hydrateCredentials before mounting React) and this is an exceptional
+    // path. Rollup resolves it into the entry chunk the stores already sit in, so
+    // it costs no extra request.
+    const { useOperatorStore } = await import('@/stores/useOperatorStore');
+    useOperatorStore.getState().clearOperator();
+    // Last, so the record describes what HAPPENED rather than what was about to.
+    // In the terminal this lands in ~/Library/Logs/LCX TERMINAL/shell.log; in a
+    // browser it is a no-op and the console.warn above is the only trace.
+    const { logDiagnostic } = await import('./terminal');
+    void logDiagnostic(`forced sign-in: ${reason}`);
+  });
+}
+
+/**
+ * Re-check at launch that the desk credential and the persisted identity are the
+ * same person, and go back to the front door if they are not.
+ *
+ * WHAT THIS CATCHES: the credential and the operator store disagreeing. The store
+ * is persisted, the credential is hydrated from the Keychain (or localStorage), and
+ * nothing has ever compared them — so a desk could show "Sam" in the top bar while
+ * every audit row it wrote said `nik`, or show a named operator while the request
+ * was actually authenticated by the shared legacy API key (which resolves to the
+ * anonymous principal `operator`, apps/api/src/middleware/auth.ts:57-59).
+ *
+ * WHAT IT DOES NOT CATCH, said plainly because the opposite is easy to assume: a
+ * DIFFERENT HUMAN at the same desk. The desk passcode is shared by design and the
+ * email is stored, so operator B launching the app that A signed into presents A's
+ * credential, and `/v1/me` answers "A" — which is exactly what the store says. That
+ * mismatch is invisible to any server check, and closing it needs a per-person
+ * secret, not more client code. This function narrows the gap; it does not close
+ * it. An explicit "you are signed in as A — not you?" prompt at launch would, and
+ * it belongs to the front door (handoff).
+ *
+ * Failures other than a rejected credential are ignored on purpose: an API that is
+ * down or unreachable tells us nothing about who is signed in, and bouncing the
+ * operator to a sign-in gate they cannot get through would turn an outage into a
+ * lockout. A 401 here is already handled by the 401 path above.
+ */
+export async function verifyPersistedIdentity(): Promise<void> {
+  if (!getApiKey()) return;
+  const { useOperatorStore } = await import('@/stores/useOperatorStore');
+  const persisted = useOperatorStore.getState().operator;
+  if (!persisted) return; // signed out: the front door is already the destination
+  let principal: OperatorPrincipal;
+  try {
+    principal = await getMe();
+  } catch {
+    return;
+  }
+  if (principal.id === persisted.id) return;
+  forceFrontDoor(
+    `/v1/me resolved '${principal.id}' (${principal.authMethod}) but this desk is showing '${persisted.id}'`,
+  );
 }
 
 function url(path: string): string {
@@ -206,7 +356,8 @@ async function networkRequest<T>(path: string, opts: RequestOpts, method: string
   }
 
   const apiKey = getApiKey();
-  if (opts.auth !== false && apiKey) {
+  const authenticated = opts.auth !== false && Boolean(apiKey);
+  if (authenticated) {
     headers.Authorization = `Bearer ${apiKey}`;
   }
 
@@ -231,6 +382,18 @@ async function networkRequest<T>(path: string, opts: RequestOpts, method: string
 
   if (!res.ok) {
     const err = json as { error?: string; code?: string } | null;
+    // A rejected credential is acted on, not just classified. Conditions, each for
+    // a reason:
+    //   • `authenticated` — a 401 on a request that carried no credential is the
+    //     normal signed-out state, and there is nothing to clear.
+    //   • not already at `/select` — the sign-in gate itself calls `/v1/me` to
+    //     verify the pair the operator just typed
+    //     (pages/SelectOperator.tsx:56), and a wrong passcode is SUPPOSED to 401
+    //     there. Reacting to it would clear the credential under the gate's own
+    //     error handling and race its retry.
+    if (res.status === 401 && authenticated && currentPath() !== '/select') {
+      forceFrontDoor(`the API rejected the desk credential on ${method} ${path}`);
+    }
     // Everything except the two known keys is structured detail — kept so the
     // caller can act on the refusal instead of parsing its prose.
     let detail: Record<string, unknown> | undefined;

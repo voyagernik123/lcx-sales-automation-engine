@@ -14,6 +14,7 @@
 //! webview on request; every write still goes through the governed registry.
 
 use keyring::Entry;
+use std::path::{Path, PathBuf};
 use tauri::{
     menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu},
     Emitter, Manager,
@@ -22,6 +23,243 @@ use tauri::{
 /// Keychain coordinates. One service, one account per credential kind, so
 /// macOS shows a single sensible entry the operator can inspect or revoke.
 const KEYRING_SERVICE: &str = "com.lcx.terminal";
+
+/* ── Diagnostics: the desk has to be able to say what happened ────────────────
+ *
+ * Two failures this shell could not explain at all before this pass.
+ *
+ * 1. Nothing it printed was ever read. An app launched the way operators launch
+ *    this one — Dock, Spotlight, Finder — is started by launchd and inherits its
+ *    standard descriptors from it. MEASURED, not assumed: a minimal `.app` opened
+ *    through LaunchServices reports, from `lsof` on its own pid (ppid=1),
+ *        0r CHR 3,2 /dev/null   1u CHR 3,2 /dev/null   2u CHR 3,2 /dev/null
+ *    writes to fd 2 return success, and the unique tokens it printed to stdout and
+ *    stderr appear NOWHERE in the unified log (`log show --last 3m --predicate
+ *    'eventMessage CONTAINS "…"'` over the same window returned only the `log`
+ *    invocation itself). So all eight `eprintln!` lifecycle diagnostics this file
+ *    used to carry were written to /dev/null in every shipped build.
+ *
+ * 2. A panic left nothing behind. `panic = "abort"` in [profile.release] turns any
+ *    Rust panic into SIGABRT: the desk vanishes with no dialog and no message,
+ *    indistinguishable from a force-quit, and `strip = true` removes the symbol
+ *    table so the .ips report macOS writes has no frames of ours in it.
+ *
+ * The answer is a rolling file the operator can be asked for, plus a panic hook
+ * that writes the message and location before the abort. It is deliberately NOT
+ * Sentry or any crash SaaS: three operators sit within arm's reach of each other
+ * and of this repo, and a crash reporter would be the first external telemetry in
+ * the app — a privacy question, a dependency, and a network egress, to learn what
+ * one `open -R` now shows.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+/// `~/Library/Logs/LCX TERMINAL/shell.log` — the folder Console.app already lists
+/// under "Log Reports", so the log is reachable without our help too.
+const LOG_DIR_NAME: &str = "LCX TERMINAL";
+const LOG_FILE_NAME: &str = "shell.log";
+
+/// Roll at ~1MB. The shell writes on the order of ten lines per launch, so this is
+/// hundreds of sessions of history — far more than any question about "what did the
+/// desk do just now" needs, and small enough that the operator can open it.
+const LOG_MAX_BYTES: u64 = 1_000_000;
+
+fn diagnostics_dir() -> Option<PathBuf> {
+    // `HOME` rather than a crate: `dirs`/`directories` would be a new dependency
+    // for one path, and Tauri's own `app.path()` needs an AppHandle — which the
+    // panic hook cannot have, because a panic during setup is exactly the case
+    // this exists for.
+    let home = PathBuf::from(std::env::var_os("HOME")?);
+    #[cfg(target_os = "macos")]
+    let dir = home.join("Library").join("Logs").join(LOG_DIR_NAME);
+    #[cfg(not(target_os = "macos"))]
+    let dir = home.join(".local").join("state").join(LOG_DIR_NAME);
+    Some(dir)
+}
+
+fn log_file_path() -> Option<PathBuf> {
+    Some(diagnostics_dir()?.join(LOG_FILE_NAME))
+}
+
+/// Format a Unix timestamp as `YYYY-MM-DDTHH:MM:SSZ` with no dependency.
+///
+/// `chrono` or `time` would each be a new dependency for twenty characters of
+/// output, and adding none is the constraint this pass was given. The date
+/// arithmetic is Howard Hinnant's `civil_from_days` — shift the epoch to
+/// 0000-03-01 so leap days fall at the end of a 400-year era and month lengths
+/// become a fixed pattern. Hand-rolled calendar maths is exactly the code that is
+/// wrong in February, so the test pins six values against `date -u -r`, including
+/// a leap day and the day after one.
+///
+/// Defined only for timestamps at or after the epoch: Rust's integer division
+/// truncates toward zero and the algorithm needs floor division, so a pre-1970
+/// input would be silently wrong rather than out of range. `now_iso8601` clamps.
+fn iso8601_utc(epoch_secs: u64) -> String {
+    let days = (epoch_secs / 86_400) as i64;
+    let secs_of_day = epoch_secs % 86_400;
+    let (hour, minute, second) = (secs_of_day / 3600, (secs_of_day % 3600) / 60, secs_of_day % 60);
+
+    let z = days + 719_468;
+    let era = z / 146_097;
+    let doe = z - era * 146_097; // day of era, [0, 146096]
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365; // year of era, [0, 399]
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // day of March-based year, [0, 365]
+    let mp = (5 * doy + 2) / 153; // March-based month, [0, 11]
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = yoe + era * 400 + i64::from(month <= 2);
+
+    format!("{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z")
+}
+
+fn now_iso8601() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    iso8601_utc(secs)
+}
+
+/// Append one record, rolling first if the file has reached the cap.
+///
+/// Takes the path so the rotation is testable without writing to the real desk log.
+fn append_line_to(path: &Path, line: &str) -> std::io::Result<()> {
+    use std::io::Write as _;
+
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    // Roll rather than truncate, and keep exactly one generation. Truncating in
+    // place would delete the ~1MB leading up to whatever filled the log — which is
+    // the part that explains it — one line before writing the newest record. Total
+    // on disk is bounded at ~2MB.
+    if std::fs::metadata(path).map(|m| m.len()).unwrap_or(0) >= LOG_MAX_BYTES {
+        let mut rolled = path.as_os_str().to_os_string();
+        rolled.push(".1");
+        let _ = std::fs::rename(path, PathBuf::from(rolled));
+    }
+    let mut file = std::fs::OpenOptions::new().create(true).append(true).open(path)?;
+    // ONE write, newline included. O_APPEND makes each write land at EOF
+    // atomically, so a single call per record is what keeps the panic hook and the
+    // webview's `diagnostics_append` from interleaving halves of each other's lines.
+    file.write_all(format!("{line}\n").as_bytes())
+}
+
+/// What replaced `eprintln!`. Fire-and-forget by design.
+fn log_line(msg: &str) {
+    let line = format!("{} [lcx-terminal] {msg}", now_iso8601());
+    // Still stderr as well. Worthless in the shipped app (/dev/null, measured
+    // above) but it is how `npm run tauri dev` shows this trace in the terminal,
+    // which is where it actually gets read during development.
+    eprintln!("{line}");
+    if let Some(path) = log_file_path() {
+        // Errors swallowed: a diagnostics writer that can fail loudly would be a
+        // new crash source inside the code whose only job is to explain crashes.
+        let _ = append_line_to(&path, &line);
+    }
+}
+
+/// Record a panic where it can be read, then let the process die as it would have.
+///
+/// The hook DOES run under `panic = "abort"` — measured, not assumed: a probe built
+/// with `rustc -C panic=abort` whose hook appended to a file produced the file and
+/// then exited 134 (SIGABRT).
+///
+/// A captured backtrace was tried and REJECTED. `Backtrace::force_capture()` in a
+/// binary built the way we ship (`-C strip=symbols`, what `strip = true` compiles
+/// to) produced seven frames, every one of them the string `__mh_execute_header` —
+/// not even addresses. The same probe unstripped produced 18 frames with file and
+/// line. So a backtrace here would spend a rotation on noise; the panic MESSAGE and
+/// `file:line:column` survive stripping, because the compiler bakes them in as
+/// string literals rather than as symbols, and they are what names the fault.
+///
+/// The previous hook is chained rather than replaced, so a dev run still prints the
+/// standard panic output (with a real backtrace under RUST_BACKTRACE=1) to a
+/// terminal that can actually show it.
+fn install_panic_hook() {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        // `PanicHookInfo::payload_as_str()` would be tidier but is 1.81+, and this
+        // crate declares rust-version 1.77.2.
+        let payload = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|s| (*s).to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "<non-string panic payload>".to_string());
+        let location = info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown location".to_string());
+        log_line(&format!(
+            "PANIC — the desk is about to abort. at {location}: {payload}"
+        ));
+        previous(info);
+    }));
+}
+
+/// Help ▸ Reveal Diagnostics… — put the folder in front of the operator.
+///
+/// The point is that an operator on a call with whoever is debugging can produce
+/// the log without being told a path to type, and without us shipping a viewer.
+#[cfg(target_os = "macos")]
+fn reveal_diagnostics() {
+    let Some(dir) = diagnostics_dir() else {
+        log_line("reveal diagnostics: no HOME in the environment, nowhere to reveal");
+        return;
+    };
+    // Create it first: on a desk that has not logged anything yet, `open` on a
+    // missing directory fails and the menu item would look broken.
+    let _ = std::fs::create_dir_all(&dir);
+    let file = dir.join(LOG_FILE_NAME);
+    // Absolute path: this process inherited whatever PATH launchd handed it.
+    let mut cmd = std::process::Command::new("/usr/bin/open");
+    if file.exists() {
+        // -R reveals AND selects the file, which is what "Reveal" means on macOS.
+        cmd.arg("-R").arg(&file);
+    } else {
+        cmd.arg(&dir);
+    }
+    if let Err(e) = cmd.spawn() {
+        log_line(&format!("reveal diagnostics: `open` failed to spawn ({e})"));
+    }
+}
+
+/// Present so the menu item is not a compile-time platform branch. The shipped
+/// product is macOS-only (bundle targets are dmg and app); this arm exists so the
+/// crate still builds elsewhere, not as a feature.
+#[cfg(not(target_os = "macos"))]
+fn reveal_diagnostics() {
+    log_line("reveal diagnostics: not implemented on this platform");
+}
+
+/// The web layer's door into the same log.
+///
+/// One command, not a logging framework. Two callers need somewhere durable:
+/// `ErrorBoundary`, which today catches a React error into a devtools console
+/// nobody has open, and the updater, whose launch-time failures are now silent on
+/// purpose (apps/web/src/lib/terminal.ts).
+///
+/// Clipped at 2000 characters because a render loop can call this as fast as React
+/// can re-render, and an un-clipped React component stack is a meaningful fraction
+/// of a rotation. Embedded newlines are kept: a stack trace is worth more readable
+/// than greppable, and every record still starts with a timestamp.
+#[tauri::command]
+fn diagnostics_append(line: String) {
+    log_line(&format!("[web] {}", clip_web_line(&line)));
+}
+
+/// Separate from the command so the clipping is testable without writing to the
+/// real desk log. Marked when it clips, so nobody reads a cut-off stack as a
+/// complete one. Counts CHARACTERS, not bytes — slicing a String by byte offset
+/// panics mid-codepoint, and the webview can hand us any UTF-8 it likes.
+const MAX_WEB_LINE_CHARS: usize = 2000;
+
+fn clip_web_line(line: &str) -> String {
+    let mut clipped: String = line.chars().take(MAX_WEB_LINE_CHARS).collect();
+    if clipped.len() < line.len() {
+        clipped.push_str(" …[truncated]");
+    }
+    clipped
+}
 
 fn entry(key: &str) -> Result<Entry, String> {
     Entry::new(KEYRING_SERVICE, key).map_err(|e| e.to_string())
@@ -139,14 +377,14 @@ fn show_main_window(app: &tauri::AppHandle) {
         let r = win.show();
         let _ = win.unminimize();
         let f = win.set_focus();
-        eprintln!(
-            "[lcx-terminal] show_main_window: show={:?} focus={:?} visible_now={:?}",
+        log_line(&format!(
+            "show_main_window: show={:?} focus={:?} visible_now={:?}",
             r.is_ok(),
             f.is_ok(),
             win.is_visible()
-        );
+        ));
     } else {
-        eprintln!("[lcx-terminal] show_main_window: NO 'main' window found");
+        log_line("show_main_window: NO 'main' window found");
     }
 }
 
@@ -157,7 +395,7 @@ fn toggle_main_window(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let visible = win.is_visible().unwrap_or(false);
         let focused = win.is_focused().unwrap_or(false);
-        eprintln!("[lcx-terminal] ⌥Space: visible={visible} focused={focused}");
+        log_line(&format!("⌥Space: visible={visible} focused={focused}"));
         if visible && focused {
             let _ = win.hide();
         } else {
@@ -264,7 +502,13 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         app,
         "Help",
         true,
-        &[&MenuItem::with_id(app, "help-manual", "LCX TERMINAL Manual", true, Some("CmdOrCtrl+/"))?],
+        &[
+            &MenuItem::with_id(app, "help-manual", "LCX TERMINAL Manual", true, Some("CmdOrCtrl+/"))?,
+            &PredefinedMenuItem::separator(app)?,
+            // No accelerator: nothing about this is worth a key, and every key we
+            // spend is one the operator has to hold in their head.
+            &MenuItem::with_id(app, "help-diagnostics", "Reveal Diagnostics…", true, None::<&str>)?,
+        ],
     )?;
 
     Menu::with_items(
@@ -342,10 +586,119 @@ mod tests {
         secret_delete(key.to_string()).expect("delete must succeed");
         assert_eq!(secret_get(key.to_string()).expect("get must not error"), None);
     }
+
+    /* ── Diagnostics ───────────────────────────────────────────────────────────
+     * What these can and cannot prove, stated up front: they cover the date
+     * arithmetic and the rotation, which are the two places this code can be
+     * silently WRONG. They do not prove the panic hook fires under
+     * `panic = "abort"` — cargo forces the test profile to unwind (it ignores a
+     * `panic` setting for test targets), so the shipped configuration is not the one
+     * under test here. That was measured separately instead: a probe built with
+     * `rustc -C panic=abort` whose hook appended to a file produced the file and
+     * exited 134. Nor do they prove anything about /dev/null; see the module
+     * comment for that measurement.
+     * ──────────────────────────────────────────────────────────────────────── */
+
+    /// Six timestamps, each taken from `date -u -r <secs>` rather than from my
+    /// arithmetic — including a leap day and the day after one, because that is
+    /// where a hand-rolled calendar breaks.
+    #[test]
+    fn iso8601_matches_the_system_date_command() {
+        for (secs, expected) in [
+            (0_u64, "1970-01-01T00:00:00Z"),
+            (1_000_000_000, "2001-09-09T01:46:40Z"),
+            (1_753_420_000, "2025-07-25T05:06:40Z"),
+            (1_767_225_599, "2025-12-31T23:59:59Z"),
+            (951_782_400, "2000-02-29T00:00:00Z"),
+            (1_583_020_800, "2020-03-01T00:00:00Z"),
+        ] {
+            assert_eq!(iso8601_utc(secs), expected, "epoch {secs}");
+        }
+    }
+
+    /// The cap has to roll, not truncate — and the record written immediately after
+    /// a roll has to survive, because the most likely reason the log just hit 1MB is
+    /// that something is going wrong right now.
+    #[test]
+    fn the_log_rolls_at_the_cap_and_keeps_the_previous_generation() {
+        let dir = std::env::temp_dir().join(format!("lcx-diag-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("shell.log");
+        let rolled = dir.join("shell.log.1");
+
+        // Under the cap: plain append, no rotation, nothing created beside it.
+        append_line_to(&path, "first").expect("append must create the file and its folder");
+        append_line_to(&path, "second").expect("append must append");
+        let body = std::fs::read_to_string(&path).expect("readable");
+        assert_eq!(body, "first\nsecond\n", "each record is one line");
+        assert!(!rolled.exists(), "nothing to roll yet");
+
+        // At the cap: the old file moves aside, the new record lands in a fresh one.
+        std::fs::write(&path, "x".repeat(LOG_MAX_BYTES as usize)).expect("fill to the cap");
+        append_line_to(&path, "after the roll").expect("append must still succeed");
+        assert_eq!(
+            std::fs::read_to_string(&path).expect("readable"),
+            "after the roll\n",
+            "the new file holds the record written after the roll, not an empty file",
+        );
+        assert_eq!(
+            std::fs::metadata(&rolled).expect("the previous generation is kept").len(),
+            LOG_MAX_BYTES,
+            "rolling preserves the 1MB that led up to the cap; truncating would have lost it",
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Pins the location, because it is the one thing an operator gets told over the
+    /// phone and it appears in the Help menu's promise.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn the_log_lives_under_library_logs() {
+        let path = log_file_path().expect("HOME is set in any environment that runs tests");
+        assert!(
+            path.ends_with("Library/Logs/LCX TERMINAL/shell.log"),
+            "unexpected diagnostics path: {}",
+            path.display(),
+        );
+    }
+
+    /// A runaway caller in the webview must not be able to write a rotation's worth
+    /// of log per call, and a multi-byte boundary must not be a panic — this code
+    /// runs on the crash path, so it is the last place that may crash.
+    #[test]
+    fn a_long_web_line_is_clipped_and_says_so() {
+        let short = "ReferenceError: x is not defined";
+        assert_eq!(clip_web_line(short), short, "a normal line passes through whole");
+
+        let long = "y".repeat(MAX_WEB_LINE_CHARS + 3000);
+        let clipped = clip_web_line(&long);
+        assert!(clipped.ends_with("…[truncated]"), "clipping must announce itself");
+        assert_eq!(
+            clipped.chars().take_while(|c| *c == 'y').count(),
+            MAX_WEB_LINE_CHARS,
+        );
+
+        // 4-byte codepoints: 2000 CHARS is 8000 bytes, and a byte-offset slice here
+        // would panic inside the panic-adjacent path.
+        let emoji = "🧊".repeat(MAX_WEB_LINE_CHARS + 10);
+        let clipped = clip_web_line(&emoji);
+        assert_eq!(clipped.chars().filter(|c| *c == '🧊').count(), MAX_WEB_LINE_CHARS);
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // FIRST, before anything that can fail. A panic inside `setup` (a menu that
+    // will not build, a plugin that will not init) is the crash with no window and
+    // therefore no other way to leave a trace.
+    install_panic_hook();
+    log_line(&format!(
+        "launch — LCX TERMINAL {} on {}",
+        env!("CARGO_PKG_VERSION"),
+        std::env::consts::OS,
+    ));
+
     let mut builder = tauri::Builder::default();
 
     // Single instance: a second launch focuses the existing desk instead of
@@ -377,12 +730,12 @@ pub fn run() {
         builder = builder.on_web_content_process_terminate(|webview| {
             let n = WEBVIEW_RELOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
             if n > MAX_WEBVIEW_RELOADS {
-                eprintln!(
-                    "[lcx-terminal] web content process died ({n}x) — not reloading again; ⌘R or ⌘Q",
-                );
+                log_line(&format!(
+                    "web content process died ({n}x) — not reloading again; ⌘R or ⌘Q",
+                ));
                 return;
             }
-            eprintln!("[lcx-terminal] web content process died ({n}x) — reloading");
+            log_line(&format!("web content process died ({n}x) — reloading"));
             let _ = webview.reload();
         });
     }
@@ -440,7 +793,8 @@ pub fn run() {
             secret_get,
             secret_delete,
             is_terminal,
-            haptic_tap
+            haptic_tap,
+            diagnostics_append
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -452,6 +806,11 @@ pub fn run() {
                 let id = event.id().0.as_str().to_string();
                 if id == "check-update" {
                     let _ = app.emit("lcx://check-update", ());
+                } else if id == "help-diagnostics" {
+                    // Handled natively, not forwarded: the webview has no way to
+                    // open Finder, and this item has to work in exactly the
+                    // situation where the web layer is the thing that is broken.
+                    reveal_diagnostics();
                 } else if id == "view-reload" {
                     // Reload NATIVELY, not by asking the page to reload itself
                     // (Phase 7). ⌘R used to be forwarded as `lcx://menu` and handled
@@ -464,7 +823,7 @@ pub fn run() {
                     if let Some(win) = app.get_webview_window("main") {
                         WEBVIEW_RELOADS.store(0, std::sync::atomic::Ordering::Relaxed);
                         let r = win.reload();
-                        eprintln!("[lcx-terminal] ⌘R native reload: ok={:?}", r.is_ok());
+                        log_line(&format!("⌘R native reload: ok={:?}", r.is_ok()));
                     }
                 } else {
                     let _ = app.emit("lcx://menu", id);
@@ -486,7 +845,7 @@ pub fn run() {
                         toggle_main_window(app);
                     }
                 }) {
-                    eprintln!("[lcx-terminal] ⌥Space unavailable ({e}); continuing without it");
+                    log_line(&format!("⌥Space unavailable ({e}); continuing without it"));
                 }
             }
 
@@ -500,7 +859,7 @@ pub fn run() {
             // considers the app already active, so it sends Reopen and nothing
             // else happens. The desk would look permanently gone.
             if let tauri::RunEvent::Reopen { has_visible_windows, .. } = event {
-                eprintln!("[lcx-terminal] Reopen (has_visible_windows={has_visible_windows})");
+                log_line(&format!("Reopen (has_visible_windows={has_visible_windows})"));
                 show_main_window(app);
             }
         });

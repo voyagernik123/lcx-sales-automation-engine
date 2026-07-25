@@ -18,7 +18,6 @@
 export { isTerminal } from './container';
 import { isTerminal } from './container';
 import { MENU_ROUTES } from './destinations';
-import { connectivity } from './online';
 
 type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -84,6 +83,32 @@ export async function secretDelete(key: string): Promise<void> {
   }
 }
 
+/* ── The rolling shell log ─────────────────────────────────────────────────── */
+
+/**
+ * Write a line into `~/Library/Logs/LCX TERMINAL/shell.log`.
+ *
+ * Why this exists on the web side at all: `console.error` is the only trace the
+ * webview leaves, and it is readable ONLY with the inspector attached — which
+ * nobody has attached at the moment something breaks on an operator's desk. The
+ * shell log is the same file the Rust side writes, so a launch reads as one
+ * timeline: window lifecycle, update outcome, and any React error the boundary
+ * caught, in order.
+ *
+ * No-op in a browser, deliberately: a browser has devtools and a console that
+ * persists, and there is nowhere to write a file anyway. Never throws — a
+ * diagnostics call that can fail is a diagnostics call at the wrong layer.
+ */
+export async function logDiagnostic(line: string): Promise<void> {
+  const invoke = await getInvoke();
+  if (!invoke) return;
+  try {
+    await invoke('diagnostics_append', { line });
+  } catch {
+    /* the shell refused or the command is missing (older shell, newer web) */
+  }
+}
+
 /* ── Shell events: the native menu is a discoverability surface for shortcuts ── */
 
 /**
@@ -94,27 +119,40 @@ export async function secretDelete(key: string): Promise<void> {
  */
 const MENU_EXTRAS: Record<string, string> = {};
 
-/** How the bridge speaks to the operator. Supplied by the shell component. */
-export type Notice = (kind: 'info' | 'warning', message: string) => void;
-
 /**
- * Only one update check/install may be in flight (Phase 7).
- *
- * `attachTerminalBridge` runs from a React effect, and an effect's dependency
- * list is one careless edit away from being unstable — which is exactly what had
- * happened: `AppLayout` depended on the whole object returned by `useManual()`,
- * a fresh literal every render, so the bridge re-attached and re-checked for
- * updates on every re-render of the shell. With an update actually available that
- * means CONCURRENT `downloadAndInstall()` calls, and the macOS installer removes
- * the running `.app` before renaming the new one into place
- * (tauri-plugin-updater-2.10.1/src/updater.rs:1296-1303) — two of those racing can
- * leave no bundle on disk at all. The dependency is fixed; this guard means a
- * future regression there costs a wasted call instead of the operator's app.
+ * A button on a notice. The shell owns the surface; this is the shape it needs to
+ * render one, defined here so lib/ does not import a component to be heard.
  */
-let updateInFlight = false;
+export type NoticeAction = { label: string; onAction: () => void };
+
+/** How the bridge speaks to the operator. Supplied by the shell component. */
+export type Notice = (kind: 'info' | 'warning', message: string, action?: NoticeAction) => void;
 
 /**
- * Check for an update, and SAY WHAT HAPPENED.
+ * One update operation at a time, and INSTALL is a distinct phase from CHECK.
+ *
+ * Phase 7 made this a single boolean around a function that both checked and
+ * installed. Splitting the install out (see below) reopened the race it was
+ * closing, because the check now returns to idle while a consent notice is still
+ * on screen — so two notices can exist, and the operator can click both. That
+ * matters more than any other guard in this file: the macOS installer removes the
+ * running `.app` before renaming the new one into place
+ * (tauri-plugin-updater-2.10.1/src/updater.rs:1296-1303), so two of those racing
+ * can leave NO bundle on disk. Hence a phase, not a boolean: `installing` is
+ * entered once and only left by a failure.
+ */
+type UpdatePhase = 'idle' | 'checking' | 'installing';
+let updatePhase: UpdatePhase = 'idle';
+
+/**
+ * The launch check runs once per process, not once per bridge attach. React 19
+ * StrictMode mounts effects twice in development, and the attach point is a route
+ * element that could be remounted; neither is a reason to ask GitHub twice.
+ */
+let launchCheckDone = false;
+
+/**
+ * Check for an update, and SAY WHAT HAPPENED — but only install when asked.
  *
  * What this replaced, and why it had to be replaced: both arms used `alert()`.
  * wry's `WKUIDelegate` implements exactly four methods — file-open panel, media
@@ -125,16 +163,34 @@ let updateInFlight = false;
  * `alert()` in the packaged terminal is silent. "Check for Updates…" was a menu
  * item that did nothing observable in all three outcomes.
  *
- * The launch check also swallowed every failure identically: network down,
- * malformed `latest.json`, the 404 the README warns about from GitHub rewriting
- * spaces in asset names, a signature that does not verify, an interrupted
- * download, a failed install. A desk that has quietly stopped receiving fixes
- * looks exactly like a desk that is up to date, which is the worst of the
- * available outcomes.
+ * Two things changed here after that.
+ *
+ * CONSENT. The launch check used to call `downloadAndInstall()` itself. Three
+ * consequences, none of them things an operator agreed to: the installer
+ * `remove_dir_all`s the running bundle before renaming the new one in, so a failed
+ * rename can leave nothing on disk; an operator in `/Applications` without admin
+ * rights gets an unexplained password prompt seconds after launch; and a desk in
+ * the middle of a governed write is relaunched under it. Installing is a decision,
+ * so it is now a button. The CHECK stays silent and automatic — that part costs
+ * nothing and keeps the desk honest about being behind.
+ *
+ * SILENCE ON A FAILED LAUNCH CHECK. The previous rule ("speak unless the network
+ * is down") made the desk fire a 9-second warning toast on EVERY launch, because
+ * the update repo is private with zero releases, so `latest.json` 404s and
+ * `check()` throws every time. Verified at the time of writing rather than
+ * assumed: `gh release list --repo voyagernik123/lcx-sales-automation-engine`
+ * returns nothing, the repo's own metadata says `"private": true`, and
+ * `curl -sSL .../releases/latest/download/latest.json` returns HTTP 404. A warning
+ * that appears every single launch and that no operator can act on is not
+ * information; it trains them to ignore the toast layer, which is the same layer
+ * the governance surfaces use. So a launch-time failure now goes to the shell log
+ * only, and the menu-driven check — where somebody is waiting for an answer —
+ * still speaks. The cost is stated plainly: a desk that has quietly stopped
+ * receiving updates is invisible until someone opens the menu or the log.
  */
 async function checkForUpdate(interactive: boolean, notify: Notice): Promise<void> {
-  if (updateInFlight) return;
-  updateInFlight = true;
+  if (updatePhase !== 'idle') return;
+  updatePhase = 'checking';
   try {
     const { check: doCheck } = await import('@tauri-apps/plugin-updater');
     const update = await doCheck();
@@ -142,40 +198,122 @@ async function checkForUpdate(interactive: boolean, notify: Notice): Promise<voi
       if (interactive) notify('info', 'LCX TERMINAL is up to date.');
       return;
     }
-    // Announce BEFORE installing. `downloadAndInstall()` shows no UI of its own —
-    // `plugins.updater.dialog` is a Tauri v1 key and the v2 plugin's Config has no
-    // such field (tauri-plugin-updater-2.10.1/src/config.rs:90-104), so it was
-    // silently ignored and the desk simply vanished and came back mid-work.
-    notify('info', `Update ${update.version} found — installing, then the desk will relaunch.`);
+    void logDiagnostic(`update ${update.version} available (interactive=${interactive})`);
+    notify(
+      'info',
+      `LCX TERMINAL ${update.version} is available. Installing replaces the running app and reopens it — finish anything in flight first.`,
+      { label: 'Install and relaunch', onAction: () => void installUpdate(update, notify) },
+    );
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    // The only durable trace either way. `console.error` alone is readable only
+    // with the inspector attached, which nobody has attached when it matters.
+    void logDiagnostic(`update check failed (interactive=${interactive}): ${reason}`);
+    console.error('[lcx-terminal] update check failed:', reason);
+    if (interactive) {
+      notify('warning', `Update check failed (${reason}). You are still on the build you launched.`);
+    }
+  } finally {
+    // Only release the phase we took. An install started from the notice this call
+    // raised owns the phase from here.
+    if (updatePhase === 'checking') updatePhase = 'idle';
+  }
+}
+
+/**
+ * The half the operator opted into: download, install, relaunch.
+ *
+ * `downloadAndInstall()` shows no UI of its own — `plugins.updater.dialog` is a
+ * Tauri v1 key and the v2 plugin's Config has no such field
+ * (tauri-plugin-updater-2.10.1/src/config.rs:90-104), so it was silently ignored
+ * and the desk simply vanished and came back mid-work. Hence the notice before it.
+ *
+ * The failure copy does NOT say the desk is intact, because it may not be: the
+ * macOS installer removes the running bundle before renaming the replacement in.
+ * "Reinstall from the DMG" is the honest instruction when a rename has failed.
+ */
+async function installUpdate(
+  update: { version: string; downloadAndInstall: () => Promise<void> },
+  notify: Notice,
+): Promise<void> {
+  if (updatePhase !== 'idle') return;
+  updatePhase = 'installing';
+  void logDiagnostic(`installing update ${update.version}`);
+  notify('info', `Installing ${update.version}. The desk will close and reopen itself.`);
+  try {
     await update.downloadAndInstall();
     const { relaunch } = await import('@tauri-apps/plugin-process');
     await relaunch();
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    // Always recorded, even when not shown: this is the only trace a failed
-    // update leaves anywhere. (Note it is only readable with the webview
-    // inspector attached — a Rust-side `eprintln!` would go nowhere at all for an
-    // app launched from the Dock.)
-    console.error('[lcx-terminal] update failed:', reason);
-    // On a dead network the OfflineBanner is already saying so and the failure is
-    // transient by nature, so a second voice adds noise, not information. A check
-    // that fails while the network is FINE is the interesting one — a bad
-    // latest.json, a 404, a signature mismatch — and it is permanent until
-    // someone is told.
-    if (interactive || connectivity() === 'online') {
-      notify('warning', `Update failed (${reason}). You are still on the build you launched.`);
-    }
-  } finally {
-    updateInFlight = false;
+    void logDiagnostic(`update install FAILED at ${update.version}: ${reason}`);
+    console.error('[lcx-terminal] update install failed:', reason);
+    notify(
+      'warning',
+      `Installing ${update.version} failed (${reason}). If the desk does not reopen after you quit, reinstall from the DMG.`,
+    );
+    // Released so a retry from the menu is possible at all. A retry does work
+    // mechanically: `download_and_install` only GETS the Update resource and clones
+    // it rather than consuming it (tauri-plugin-updater-2.10.1/src/commands.rs:163-165),
+    // so a fresh `check()` re-downloads from scratch. What is NOT claimed here,
+    // because it was not tested: that a retry recovers a bundle whose rename
+    // already failed halfway. That is what the DMG sentence above is for.
+    updatePhase = 'idle';
   }
 }
 
 /**
- * Wire the native menu + updater to the app. Returns an unlisten function.
+ * Wire the updater, and NOTHING that needs a signed-in shell.
+ *
+ * This is attached ABOVE the auth boundary (see apps/web/src/router.tsx), and that
+ * is the whole point of it being a separate function. `/select` is a sibling route
+ * of `AppLayout`, so while the desk is signed out `attachTerminalBridge` never runs
+ * — which meant the update check did not run, and "Check for Updates…" emitted into
+ * a webview with no listener. The failure mode that made it worth fixing: a build
+ * that is broken AT the sign-in gate can never fix itself, because the only
+ * self-heal the app has is behind the gate. A manual DMG reinstall was the only
+ * road back.
+ *
+ * The navigation half deliberately stays inside the signed-in shell: routing
+ * belongs to the router, and there is nowhere to navigate to from the front door.
+ */
+export async function attachUpdateBridge(notify: Notice): Promise<() => void> {
+  if (!isTerminal()) return () => {};
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+
+    const unlistenUpdate = await listen('lcx://check-update', () => {
+      void checkForUpdate(true, notify);
+    });
+
+    // Quiet check on launch: an operator instrument keeps itself current without
+    // nagging. "Quiet" now means silent on failure and consent-gated on success —
+    // the only thing it does unasked is look.
+    if (!launchCheckDone) {
+      launchCheckDone = true;
+      void checkForUpdate(false, notify);
+    }
+
+    return () => {
+      unlistenUpdate();
+    };
+  } catch {
+    return () => {};
+  }
+}
+
+/**
+ * Wire the native menu's NAVIGATION items to the app. Returns an unlisten function.
  * `onNavigate` and `onCommandPalette` are supplied by the shell component so
- * routing stays owned by React Router, not by the Rust side. `onNotice` is how
- * the bridge reaches the operator — the shell owns the toast surface, so lib/
- * does not have to import a component to be heard.
+ * routing stays owned by React Router, not by the Rust side.
+ *
+ * The updater used to be attached here too and no longer is — it moved above the
+ * auth boundary (`attachUpdateBridge`). `onNotice` is still ACCEPTED and is no
+ * longer read by anything in this function: the call site
+ * (components/layout/AppLayout.tsx:129) passes it as part of an object literal, and
+ * TypeScript rejects excess properties on those, so removing it from this type is a
+ * two-file change that belongs to whoever owns AppLayout. Handoff, not an
+ * omission — see the report.
  */
 export async function attachTerminalBridge(handlers: {
   onNavigate: (to: string) => void;
@@ -202,18 +340,8 @@ export async function attachTerminalBridge(handlers: {
       if (to) handlers.onNavigate(to);
     });
 
-    const unlistenUpdate = await listen('lcx://check-update', () => {
-      void checkForUpdate(true, handlers.onNotice);
-    });
-
-    // Quiet check on launch: an operator instrument keeps itself current without
-    // nagging. "Quiet" is not "silent" — a found update and a failed check both
-    // speak now (see checkForUpdate).
-    void checkForUpdate(false, handlers.onNotice);
-
     return () => {
       unlistenMenu();
-      unlistenUpdate();
     };
   } catch {
     return () => {};
