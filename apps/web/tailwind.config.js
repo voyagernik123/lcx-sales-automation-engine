@@ -16,6 +16,21 @@ export default {
     extend: {
       colors: {
         navy: { DEFAULT: 'rgb(var(--navy) / <alpha-value>)', deep: 'rgb(var(--navy-deep) / <alpha-value>)' },
+        /* THE LCX BRAND PALETTE, verbatim from "Visual Guidelines - LCX Final 1.0.pdf"
+         * page 15 (Primary Palette). Separate from the UI tokens above on purpose:
+         * `navy` and friends are this product's interface scale and may be retuned,
+         * whereas these five are the company's colours and may not. Use them for the
+         * mark, the signature and anything that represents LCX itself rather than a
+         * piece of interface — a brand colour used as a UI colour is how a palette
+         * drifts. Raw hex here rather than a CSS variable because these do NOT change
+         * between light and dark: the book gives one value each. */
+        lcx: {
+          blue: '#2C6BFF',   // hero
+          black: '#262626',
+          gray: '#696969',
+          sand: '#D5D5D5',
+          white: '#FAFAFA',
+        },
         ice: { DEFAULT: 'rgb(var(--ice) / <alpha-value>)', soft: 'rgb(var(--ice-soft) / <alpha-value>)' },
         grey: { DEFAULT: 'rgb(var(--grey) / <alpha-value>)', light: 'rgb(var(--grey-light) / <alpha-value>)', dark: 'rgb(var(--grey-dark) / <alpha-value>)' },
         line: 'rgb(var(--line) / <alpha-value>)',

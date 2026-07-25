@@ -101,7 +101,7 @@ export function SelectOperator() {
           * knocked out of an LCX Black tile with the book's clear space reserved
           * (page 12), which is the same lockup the app icon uses. */}
         <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-navy text-card">
+          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-lcx-black text-lcx-white">
             <LcxMark size={36} withClearSpace />
           </span>
           <div className="leading-tight">

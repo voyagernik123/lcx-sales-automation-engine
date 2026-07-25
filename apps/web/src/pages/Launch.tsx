@@ -94,7 +94,7 @@ export function Launch() {
       <div className="mx-auto max-w-3xl px-6 py-14 sm:py-20">
         {/* ── signature ─────────────────────────────────────────────────────── */}
         <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-navy text-card">
+          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-lcx-black text-lcx-white">
             <LcxMark size={36} withClearSpace />
           </span>
           <span className="text-[15px] font-bold tracking-tight">LCXOS</span>

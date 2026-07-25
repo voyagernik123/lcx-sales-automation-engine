@@ -112,7 +112,7 @@ export function LcxosLockup({ size = 28, className }: { size?: number; className
   return (
     <span className={`inline-flex items-center gap-2 ${className ?? ''}`}>
       <span
-        className="flex items-center justify-center rounded-md bg-navy text-card"
+        className="flex items-center justify-center rounded-md bg-lcx-black text-lcx-white"
         style={{ width: size, height: size }}
       >
         <LcxMark size={size} withClearSpace />
