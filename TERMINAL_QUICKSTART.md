@@ -19,12 +19,23 @@ Developer-ID signed, so macOS has no certificate to check it against. It is **on
 Mac**, not once per launch. (If you would rather not see it at all, that needs an Apple
 Developer certificate — see the note at the end.)
 
-**Updates do not work yet, and today they complain about it.** The app checks on launch
-against a GitHub release channel that does not exist — the repo is private and has no
-releases — so the check fails and you get a warning toast every launch. Two things have
-to happen before self-update is real: a release has to be cut, and the channel has to
-move somewhere unauthenticated, because the updater sends no credentials and a private
-repo's download URL requires them. Until then, new builds arrive as a DMG from Nik.
+**Updates do not work yet, and they fail quietly rather than complaining.** The app checks
+on launch against a GitHub release channel that does not exist — the repo is private and
+has no releases — so the check throws. It does **not** show you anything: a launch-time
+failure goes to the shell log only, because a warning on every single launch that no
+operator can act on trains you to ignore the toast layer, and that is the same layer the
+governance refusals use. The cost of that choice, stated plainly: a desk that has quietly
+stopped receiving updates looks identical to one that is current. Use **Check for
+Updates…** in the menu to find out — that path *does* speak, because someone is waiting
+for the answer.
+
+*An earlier version of this page said you get "a warning toast every launch". That was
+true when written and was fixed a phase later; the sentence outlived the behaviour.*
+
+Two things have to happen before self-update is real: a release has to be cut, and the
+channel has to move somewhere unauthenticated, because the updater sends no credentials
+and a private repo's download URL requires them. Until then, new builds arrive as a DMG
+from Nik.
 
 ## 2. Sign in
 

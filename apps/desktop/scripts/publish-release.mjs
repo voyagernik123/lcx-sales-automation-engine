@@ -1,0 +1,237 @@
+#!/usr/bin/env node
+/**
+ * Cut a signed LCX TERMINAL release and publish it to the update channel.
+ *
+ * WHY THIS IS A SCRIPT AND NOT A SEQUENCE OF COMMANDS IN A COMMIT MESSAGE. This repo
+ * already has the cautionary version: `apps/api/src/db/migrate.ts` was exported and
+ * called by NOTHING for 46 migrations, which is why every production migration in this
+ * project's history was pasted into a SQL editor by hand and why "is 0044 applied?" was
+ * unanswerable without opening a browser. A release process that lives in someone's
+ * shell history is the same defect with a worse failure mode: get one field of
+ * `latest.json` wrong and every installed desk silently stops updating, which — by the
+ * deliberate design of the launch check — shows the operator nothing at all.
+ *
+ * WHAT IT DOES
+ *   1. Reads the version from `tauri.conf.json`. Single source of truth: the tag, the
+ *      `latest.json` version and the app's own `CFBundleShortVersionString` all come
+ *      from that one field, so they cannot disagree.
+ *   2. Finds the updater artifacts `tauri build` produced (`.app.tar.gz` + `.sig`).
+ *   3. Writes `latest.json` in the shape tauri-plugin-updater v2 expects.
+ *   4. Publishes tag + assets to the RELEASES repo — a separate PUBLIC repo, not the
+ *      code repo.
+ *
+ * WHY A SEPARATE PUBLIC REPO. The updater sends no credentials, and GitHub rejects
+ * unauthenticated downloads of a private repo's release assets — so pointing the
+ * endpoint at the private code repo produced an unavoidable 404 on every launch. Making
+ * the code repo public to fix that would expose ~94k LOC to host two files. Verified
+ * before choosing this: the shipped bundle contains no secrets, only `VITE_APP_TITLE`
+ * and the API URL, and every surface behind it is gated on an @lcx.com email plus a
+ * server-verified desk passcode.
+ *
+ * THE PRIVATE KEY IS NEVER READ BY THIS SCRIPT. Signing already happened during
+ * `tauri build`, which takes `TAURI_SIGNING_PRIVATE_KEY` as a PATH. All this reads is
+ * the `.sig` file, which is a signature and public by construction.
+ *
+ * USAGE
+ *   npm run build:dmg -w @lcx/desktop          # signs, produces the artifacts
+ *   node scripts/publish-release.mjs           # publishes them
+ *   node scripts/publish-release.mjs --dry-run  # everything except the push
+ */
+
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { resolve, dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const DESKTOP = resolve(HERE, '..');
+const RELEASES_REPO = 'voyagernik123/lcx-terminal-releases';
+const DRY = process.argv.includes('--dry-run');
+
+const die = (msg) => {
+  console.error(`\n✗ ${msg}\n`);
+  process.exit(1);
+};
+
+// ── 1 · version, from the one place that also stamps the app bundle ────────────────
+const conf = JSON.parse(readFileSync(join(DESKTOP, 'src-tauri/tauri.conf.json'), 'utf8'));
+const version = conf.version;
+if (!version) die('no `version` in tauri.conf.json');
+const tag = `v${version}`;
+
+// THE TWO VERSIONS MUST AGREE, and nothing else enforces it.
+//
+// `tauri.conf.json.version` is what the updater compares and what stamps
+// `CFBundleShortVersionString`. The version the operator can actually SEE — on the
+// sign-in screen and in the footer — is `__APP_VERSION__`, which `apps/web/vite.config.ts`
+// defines from `apps/web/package.json`. Two independent fields, no link between them.
+//
+// Drift is silently awful in the direction that matters: bump only tauri.conf.json and the
+// updater offers 0.1.1, the operator installs it, the app still renders v0.1.0, and they
+// reasonably conclude the update failed. They would then either retry it or report a bug
+// against a mechanism that worked perfectly. Bump only package.json and the reverse — the
+// desk claims a version the channel has never heard of.
+const webPkg = JSON.parse(readFileSync(resolve(DESKTOP, '../web/package.json'), 'utf8'));
+if (webPkg.version !== version) {
+  die(`version drift — the updater and the visible version disagree:\n    apps/desktop/src-tauri/tauri.conf.json  ${version}\n    apps/web/package.json                   ${webPkg.version}\n  The operator sees apps/web/package.json (via __APP_VERSION__ in vite.config.ts) and the\n  updater compares tauri.conf.json. Publishing this would ship an update that appears not\n  to have installed. Set both to the same value.`);
+}
+
+// The endpoint must point at the releases repo, or the artifacts land somewhere the app
+// will never look. Checked rather than assumed, because the failure is invisible: the
+// launch check swallows its error by design, so a desk pointed at the wrong channel looks
+// exactly like a desk that is up to date.
+const endpoint = conf.plugins?.updater?.endpoints?.[0] ?? '';
+if (!endpoint.includes(RELEASES_REPO)) {
+  die(`updater endpoint does not point at ${RELEASES_REPO}:\n    ${endpoint}\n  Publishing here would put artifacts where the app will never look for them.`);
+}
+
+// ── 2 · the artifacts `tauri build` signed ────────────────────────────────────────
+const bundleDir = join(DESKTOP, 'src-tauri/target/release/bundle');
+if (!existsSync(bundleDir)) die(`no bundle at ${bundleDir} — run \`npm run build:dmg\` first`);
+
+const macosDir = join(bundleDir, 'macos');
+const tarballs = existsSync(macosDir)
+  ? readdirSync(macosDir).filter((f) => f.endsWith('.app.tar.gz'))
+  : [];
+if (tarballs.length !== 1) {
+  die(`expected exactly 1 .app.tar.gz in ${macosDir}, found ${tarballs.length}: ${tarballs.join(', ') || '(none)'}\n  More than one means a stale artifact from an earlier version is still there — publishing the wrong one is silent.`);
+}
+const tarball = join(macosDir, tarballs[0]);
+const sigPath = `${tarball}.sig`;
+if (!existsSync(sigPath)) {
+  die(`no signature at ${sigPath}.\n  \`bundle.createUpdaterArtifacts\` is true, so this means TAURI_SIGNING_PRIVATE_KEY was not set during the build. An UNSIGNED update is not merely unverified — the app will refuse it, so it would look like the updater is broken.`);
+}
+const signature = readFileSync(sigPath, 'utf8').trim();
+
+// THE ARTIFACT MUST BE THE VERSION WE ARE PUBLISHING. This nearly shipped: `tauri build`
+// emits `LCX TERMINAL.app.tar.gz` with no version in the filename, so bumping the config
+// and NOT rebuilding leaves last version's binary sitting in the bundle directory, and
+// everything downstream — the tag, the staged asset name, the URL, `latest.json` — is
+// derived from the config and therefore all agrees with itself while pointing at the wrong
+// bytes. The result is an update that downloads, verifies, installs, relaunches, and leaves
+// the operator on the same version. That is indistinguishable from a broken updater, and
+// it is the exact failure the "publishing the wrong one is silent" note above worried about
+// without actually guarding.
+//
+// The app bundle's own Info.plist is the ground truth: `tauri build` stamps
+// CFBundleShortVersionString from the same config field, so if it disagrees with the config
+// NOW, the bundle is stale.
+const appDirs = readdirSync(macosDir).filter((f) => f.endsWith('.app'));
+if (appDirs.length !== 1) die(`expected exactly 1 .app in ${macosDir}, found ${appDirs.length}`);
+const plist = join(macosDir, appDirs[0], 'Contents/Info.plist');
+const builtVersion = execFileSync(
+  'plutil', ['-extract', 'CFBundleShortVersionString', 'raw', plist], { encoding: 'utf8' },
+).trim();
+if (builtVersion !== version) {
+  die(`STALE BUILD — the artifacts are not the version you are publishing:\n    tauri.conf.json says      ${version}\n    the built .app reports    ${builtVersion}\n  Publishing this would ship ${builtVersion}'s binary under a ${version} tag and a ${version}\n  latest.json. The update would download, verify, install, relaunch — and leave the operator\n  on ${builtVersion}, which looks exactly like a broken updater.\n  Run \`npm run build:dmg\` and try again.`);
+}
+
+const dmgDir = join(bundleDir, 'dmg');
+const dmgs = existsSync(dmgDir) ? readdirSync(dmgDir).filter((f) => f.endsWith('.dmg')) : [];
+const dmg = dmgs.length === 1 ? join(dmgDir, dmgs[0]) : null;
+
+// ── 3 · latest.json, in the shape tauri-plugin-updater v2 reads ───────────────────
+//
+// STAGE THE ASSETS UNDER SPACE-FREE NAMES, and do not skip this as cosmetic.
+//
+// `tauri build` emits `LCX TERMINAL.app.tar.gz` — with a space, and with no version in
+// it. GitHub NORMALISES spaces to dots in release asset names, so uploading that file
+// produces an asset called `LCX.TERMINAL.app.tar.gz`. A `latest.json` whose URL was built
+// from the local filename therefore points at a path that does not exist, and the failure
+// mode is the worst available one: the launch check swallows its error by design, so every
+// desk would silently stop updating and look exactly like a desk that is current. Caught
+// by reading the emitted filenames rather than by a failed update weeks later.
+//
+// Copying to an explicit name makes the URL deterministic instead of dependent on
+// GitHub's normalisation rules, and §4 asserts the asset really exists at it afterwards.
+const stage = join(bundleDir, 'publish');
+mkdirSync(stage, { recursive: true });
+const tarballName = `LCX_TERMINAL_${version}_aarch64.app.tar.gz`;
+const stagedTarball = join(stage, tarballName);
+const stagedSig = join(stage, `${tarballName}.sig`);
+copyFileSync(tarball, stagedTarball);
+copyFileSync(sigPath, stagedSig);
+const stagedDmg = dmg ? join(stage, `LCX_TERMINAL_${version}_aarch64.dmg`) : null;
+if (dmg && stagedDmg) copyFileSync(dmg, stagedDmg);
+
+const assetUrl = `https://github.com/${RELEASES_REPO}/releases/download/${tag}/${tarballName}`;
+// `darwin-aarch64` only, deliberately and stated rather than left as an accident: the
+// only installed target is Apple Silicon. An Intel Mac would find no matching platform
+// key and report "no update available" — which is the correct, quiet answer for a
+// machine we have never built for, rather than offering it an arm64 binary that cannot
+// run. Add `darwin-x86_64` here the day there is a build for it.
+const latest = {
+  version,
+  notes: `LCX TERMINAL ${version}`,
+  pub_date: new Date().toISOString(),
+  platforms: {
+    'darwin-aarch64': { signature, url: assetUrl },
+  },
+};
+const latestPath = join(bundleDir, 'latest.json');
+writeFileSync(latestPath, `${JSON.stringify(latest, null, 2)}\n`);
+
+console.log(`\n  version    ${version}  (tag ${tag})`);
+console.log(`  channel    ${RELEASES_REPO}`);
+console.log(`  built as   ${tarballs[0]}`);
+console.log(`  publish as ${tarballName}   ← the name the URL depends on`);
+console.log(`  signature  ${signature.length} chars`);
+console.log(`  dmg        ${dmg ? dmgs[0] : '(none — updater-only release)'}`);
+console.log(`  asset url  ${assetUrl}`);
+console.log(`  latest.json → ${latestPath}`);
+
+if (DRY) {
+  console.log('\n  --dry-run: nothing published.\n');
+  process.exit(0);
+}
+
+// ── 4 · publish ───────────────────────────────────────────────────────────────────
+const gh = (args) => execFileSync('gh', args, { stdio: 'inherit' });
+
+// `gh release create` fails on an existing tag rather than overwriting, which is the
+// behaviour we want: silently replacing a release that desks may already have downloaded
+// would mean two different binaries shipped under one version number.
+let exists = false;
+try {
+  execFileSync('gh', ['release', 'view', tag, '--repo', RELEASES_REPO], { stdio: 'ignore' });
+  exists = true;
+} catch {
+  /* not found — the normal path */
+}
+if (exists) {
+  die(`${tag} already exists in ${RELEASES_REPO}.\n  Bump \`version\` in tauri.conf.json and rebuild. Overwriting a published version would ship two different binaries under one version number.`);
+}
+
+const assets = [latestPath, stagedTarball, stagedSig, ...(stagedDmg ? [stagedDmg] : [])];
+gh([
+  'release', 'create', tag,
+  '--repo', RELEASES_REPO,
+  '--title', `LCX TERMINAL ${version}`,
+  '--notes', `Ad-hoc signed, Apple Silicon. Updater artifacts signed with minisign key 21F2F8695FBD5658.`,
+  ...assets,
+]);
+
+// VERIFY, rather than trust, that the asset exists at the exact name latest.json claims.
+// This is the one assertion that would have caught the space-normalisation bug at publish
+// time instead of at update time, and it costs one API call.
+const published = JSON.parse(
+  execFileSync('gh', ['api', `repos/${RELEASES_REPO}/releases/tags/${tag}`], { encoding: 'utf8' }),
+);
+const names = (published.assets ?? []).map((a) => a.name);
+if (!names.includes(tarballName)) {
+  die(`published, but latest.json points at an asset that does not exist.\n  expected: ${tarballName}\n  actual  : ${names.join(', ')}\n  Every desk would silently stop updating. Fix the name and re-cut the release.`);
+}
+if (!names.includes('latest.json')) {
+  die(`published, but there is no latest.json asset — the endpoint would 404.\n  actual: ${names.join(', ')}`);
+}
+
+// And that the endpoint the SHIPPED APP asks for is really reachable with no credentials,
+// which is the entire reason this repo is separate and public.
+const probe = execFileSync('curl', ['-sS', '-o', '/dev/null', '-w', '%{http_code}', '-L', endpoint], { encoding: 'utf8' }).trim();
+console.log(`  unauthenticated GET ${endpoint} → HTTP ${probe}`);
+if (probe !== '200') {
+  die(`the updater endpoint returned HTTP ${probe} to an anonymous request. The app sends no credentials, so this is what it will get.`);
+}
+
+console.log(`\n  ✓ published ${tag} → https://github.com/${RELEASES_REPO}/releases/tag/${tag}`);
+console.log(`  ✓ asset + latest.json verified present, endpoint reachable anonymously\n`);

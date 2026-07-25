@@ -37,6 +37,64 @@ Every open item, mapped to the phase that promised it. This is the table to argu
 
 ---
 
+## 1b. AMENDMENT, 2026-07-25 — ONE TESTER, NO CERT, SHARE AT THE END
+
+Recorded rather than quietly folded in, because it reverses one of this document's own
+recommendations.
+
+Nik's decision, mid-Phase-B: **he is the only tester.** Monty and Sam get nothing until the
+whole programme is built end to end, and then they get a link (or a one-line command). And
+**the Apple Developer cert is not being bought now.**
+
+**What moves.** T2 #6 (install on two Macs) and T2 #8 (the cold-start test) leave Phases B
+and C and become the **final gate before sharing**. T2 #2 (the cert) is deferred
+indefinitely — ad-hoc signing stays.
+
+**What deferring the cert costs, stated because it lands on the one person testing:**
+right-click→Open once per Mac, and a **Keychain prompt after every self-update**, because
+macOS keys Keychain ACLs to the code signature and an ad-hoc signature changes on every
+build. During a phase of repeated update testing that prompt appears every time. Annoying,
+not blocking.
+
+**THE REVERSAL.** §4 Phase F and §2 both argue for considering Phase E (tour, practice
+range, coach) **cut**, on the grounds that five days of teaching machinery rested on an
+untested assumption. **That argument depended on Nik onboarding them in person, and he is
+not going to.** Sam and Monty will arrive completely cold, with no walkthrough, on a
+finished build. That is exactly the situation the teaching layer exists for, and the
+practice range gains value it did not have before: it is how they learn without touching
+production, which matters far more when nobody is sitting next to them.
+
+**So Phase E is now BUILD, not decide.** The recommendation is withdrawn.
+
+**And Phase C loses its decision gate**, which has to be said plainly rather than left as a
+dangling promise: the cold start was going to decide Phase E, and it now happens after
+everything is built. Two things partly replace it. #30 and #31 still run in Phase C — one is
+a script, the other is Nik's judgment, and neither needs a stranger. And **the nudge engine
+is already instrumenting the one tester**: Settings → "these you still reach for with the
+mouse" records which capabilities never get adopted, which is the direct input the
+spaced-repetition coach needs and partial evidence for what the tour should teach. That is
+not a cold start and is not claimed to be one.
+
+**Never tested and now on the critical path:** Gatekeeper treats a *downloaded* DMG
+differently from a locally built one — the quarantine attribute. Right-click→Open is
+expected to handle it. To be confirmed on a real download from the real URL, not assumed.
+
+**A SECOND MAC CHANGES WHAT PHASE B CAN PROVE.** Nik has a personal MacBook that has never
+seen the app, which makes Phase B's gate fully runnable today rather than partially:
+a **downloaded** DMG (quarantine attribute and all) onto a genuinely clean machine → launch
+→ sign in → one governed action in the audit log with the right actor → self-update to a
+newer build with the new version visible afterwards. Every step of that was previously
+either unrunnable or reduced to a locally-built approximation.
+
+**What it does NOT establish, and the distinction is the whole point.** It is a fresh
+MACHINE, not a fresh OPERATOR. T2 #8 asks whether someone who has never seen the platform
+can complete a governed task unaided in ten minutes; Nik has seen every surface. So this
+proves INSTALLATION thoroughly and proves nothing about LEARNING. Letting it count for #8
+would be laundering a machine test as a human test — which is the same move as a passing
+Chromium test being offered as evidence about a WebKit-only defect, and that one cost this
+programme a full verification cycle. #8 still needs a different person, at the end, before
+the link goes out.
+
 ## 2. THE ONE QUESTION THAT ORDERS EVERYTHING
 
 Not *“what is left in the plan?”* — that question produced a 31-row list with a 10-day tail and no ordering principle. The question is:
@@ -100,7 +158,9 @@ Each phase states: **intent**, the **items** it closes with their ledger numbers
 ### PHASE B — HAND IT OVER
 *The app installs, updates, and stops lying at launch.*
 
-**Intent.** Today the app checks for updates on every launch against a channel that does not exist and shows a warning toast. That is the first thing a new operator sees, and it teaches them the instrument is broken before they have used it. This phase makes distribution real.
+**Intent.** Self-update cannot work at all today: the updater points at `releases/latest/download/latest.json` on a **private** repo, GitHub rejects unauthenticated downloads of private release assets, and the updater sends no credentials. So `check()` throws on every launch. This phase makes distribution real.
+
+> **A correction to this document, made while starting the phase it describes.** The paragraph above originally said the failure "shows a warning toast … the first thing a new operator sees." **That is false, and was false when I wrote it.** The launch check is `checkForUpdate(false, …)` and the catch block notifies only `if (interactive)` (`apps/web/src/lib/terminal.ts:207-215`), so a launch failure goes to the shell log and shows nothing. It *did* toast once; a later phase silenced it deliberately, for the reason that a warning nobody can act on trains operators to ignore the layer the governance refusals use. I carried the stale sentence out of `TERMINAL_QUICKSTART.md:22` without reading the code — in the document that sets the rule against doing that (§6 rule 8). Both are now corrected. The real cost of the current design is the opposite of what I claimed: a desk that has silently stopped updating looks **identical** to one that is current, which is why the phase gate below insists on a genuine version-to-version update rather than an absent toast.
 
 | # | Item | Owner | Size |
 |---|---|---|---|
@@ -111,7 +171,9 @@ Each phase states: **intent**, the **items** it closes with their ledger numbers
 | **T2 #6** | Install on Monty’s and Sam’s Macs | **you** | 30m |
 | **T2 #7** | Hand-drive the packaged DMG — ⌘W, ⌘R, a killed webview, both update toasts. Four P7 fixes are compile-verified and reasoned from source, never pressed. Screen capture and accessibility scripting were unavailable to me all session | **you** | 30m |
 
-**Gate — the one that actually means “shipped”.** A DMG **downloaded** (not built locally — Gatekeeper treats those differently, and that distinction has never been tested) installs on a Mac that has never seen the app, launches, signs in, performs one real governed action that appears in the audit log with the right actor, and then **self-updates to a newer build** with no warning toast and no manual step.
+**Gate — the one that actually means “shipped”.** A DMG **downloaded** (not built locally — Gatekeeper treats those differently, and that distinction has never been tested) installs on a Mac that has never seen the app, launches, signs in, performs one real governed action that appears in the audit log with the right actor, and then **self-updates to a genuinely newer build, with the new version number visible in the running app afterwards.**
+
+> **Second correction to this gate.** It originally demanded the update land "with no warning toast and no manual step". That contradicts T1 #8, shipped in this programme: installs are gated behind an explicit notice action **on purpose**, because the macOS installer `remove_dir_all`s the running `.app` before renaming, so an unattended install that fails the rename can leave NO bundle on disk. **Exactly one deliberate click is the correct behaviour, not a defect.** What must be absent is a *failure* toast; what must be present is the consent step. A gate that demanded zero clicks would have failed the app for having the safety property.
 
 **You:** #5 first — it blocks the rest of the phase. Then #4, #6, #7; #2 whenever. **Effort:** ~1 day mine, gated on your decision.
 
