@@ -35,8 +35,9 @@ import { ACTION_REGISTRY } from '../../actions/registry.js';
 import { ACTION_GRAMMAR } from '../../actions/grammar.js';
 import { SEARCH_GROUPS, SEARCHABLE_SUBJECT_TYPES } from '../search.js';
 import { createApp } from '../../app.js';
-import { closeDb } from '../../db/index.js';
-import { itDb } from '../../test/db.js';
+import { closeDb, getDb } from '../../db/index.js';
+import { sql } from 'drizzle-orm';
+import { HAS_DB, itDb } from '../../test/db.js';
 
 /** The shape the checker needs. Deliberately minimal so a control can build one. */
 interface Addressable {
@@ -187,8 +188,62 @@ describe('GET /v1/search × ACTION_REGISTRY — the two vocabularies are one', (
   describe('the wire', () => {
     const TEST_KEY = 'dev-operator-key-change-me';
     const app = createApp();
-    beforeAll(() => { process.env.OPERATOR_API_KEY = TEST_KEY; });
-    afterAll(async () => { await closeDb(); });
+
+    /* ── ARRANGE THE ROWS, DO NOT BORROW SOMEBODY'S SEED ──────────────────────
+     *
+     * These three tests used to query 'counsel' and 'bitcoin' and assert on
+     * whatever came back. That made them a test of the developer's database, and
+     * CI proved it: run 30172427631 on `406a8ed` went RED with
+     *
+     *   AssertionError: no group at all came back from three queries — is the DB
+     *   seeded?: expected 0 to be greater than 1
+     *
+     * because CI's Postgres is migrated and EMPTY. Worse than the failure: the
+     * other two tests said `if (!g) return`, so on that same empty database they
+     * passed while asserting nothing at all — the exact "reads as coverage and
+     * provides none" shape this programme keeps finding. (And I had reported that
+     * run as green without opening it. It was not.)
+     *
+     * So: two rows, inserted here, matched by a token no real row can contain.
+     * The floor below is then a property of THIS test rather than of the machine,
+     * and the two tests after it assert on a row whose column values are known —
+     * which is strictly more than "the seed happened to have one".
+     *
+     * Explicit ids rather than RETURNING: deterministic cleanup, and no dependence
+     * on the driver's result shape. */
+    const TOKEN = 'zzsearchboundaryfixture';
+    const FIXTURE_PROJECT_ID = '00000000-0000-0000-0000-00000000f00d';
+    const FIXTURE_DECISION_ID = 'dec_zzsearchboundaryfixture';
+
+    beforeAll(async () => {
+      process.env.OPERATOR_API_KEY = TEST_KEY;
+      if (!HAS_DB) return;
+      const db = getDb();
+      // `source` and `name` are NOT NULL; `tier` defaults to 'catalog', and this
+      // row is deliberately 'tracked' so the third test's assertion has a value it
+      // could not have got by accident.
+      await db.execute(sql`
+        INSERT INTO projects (id, name, source, tier)
+        VALUES (${FIXTURE_PROJECT_ID}::uuid, ${`${TOKEN} token`}, 'manual', 'tracked')
+        ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, tier = EXCLUDED.tier
+      `);
+      await db.execute(sql`
+        INSERT INTO command_decisions (id, phase, decision, status)
+        VALUES (${FIXTURE_DECISION_ID}, 'P1', ${`${TOKEN} decision`}, 'open')
+        ON CONFLICT (id) DO UPDATE SET decision = EXCLUDED.decision, status = EXCLUDED.status
+      `);
+    });
+
+    afterAll(async () => {
+      if (HAS_DB) {
+        const db = getDb();
+        // Always, even after a failure: a leaked fixture makes the NEXT run's
+        // failure harder to read than this one's.
+        await db.execute(sql`DELETE FROM command_decisions WHERE id = ${FIXTURE_DECISION_ID}`);
+        await db.execute(sql`DELETE FROM projects WHERE id = ${FIXTURE_PROJECT_ID}::uuid`);
+      }
+      await closeDb();
+    });
 
     /**
      * Why these three carry an explicit timeout when nothing else in this suite does.
@@ -230,31 +285,51 @@ describe('GET /v1/search × ACTION_REGISTRY — the two vocabularies are one', (
           }
         }
       }
-      // If the seeded program tables are present, the query 'counsel' matches a
-      // task, a decision and a requirement — the three that used to be
-      // unreachable. Asserted as a floor, not an exact set, so a differently
-      // seeded database does not make this red for the wrong reason.
-      expect(seen.size, 'no group at all came back from three queries — is the DB seeded?').toBeGreaterThan(1);
+      // THE NON-VACUITY FLOOR, moved off the seed and onto the arranged rows.
+      // Two different tables match one token, so two distinct subject types must
+      // come back on ANY database — empty CI included. The loop above is worthless
+      // without this, which is precisely what CI demonstrated when it was a
+      // question about the seed instead of an assertion about these rows.
+      const arranged = (await search(TOKEN)).groups;
+      const keys = new Set(arranged.map((g) => g.key));
+      expect(keys.has('projects'), `the arranged project did not come back for '${TOKEN}'`).toBe(true);
+      expect(keys.has('command_decisions'), `the arranged decision did not come back for '${TOKEN}'`).toBe(true);
+      for (const g of arranged) {
+        seen.add(g.subjectType);
+        if (!ONLY_STAR_VERBS.has(g.subjectType)) {
+          expect(legal.has(g.subjectType), `${g.key} emits '${g.subjectType}', which no action accepts`).toBe(true);
+        }
+      }
+      expect(seen.size, 'two tables matched one token and produced fewer than two subject types').toBeGreaterThan(1);
     }, DB_TIMEOUT);
 
     itDb('a program decision arrives as a command_decision with its status', async () => {
-      const { groups } = await search('counsel');
+      const { groups } = await search(TOKEN);
       const g = groups.find((x) => x.key === 'command_decisions');
-      if (!g) return; // unseeded database: nothing to assert about
+      expect(g, 'the arranged decision is absent — the group is broken, not the seed').toBeDefined();
+      if (!g) return; // narrowing only; the expect above is the assertion
       expect(g.subjectType).toBe('command_decision');
       // No inspector: a decision is actionable and has no drawer. The client must
       // be told that rather than left to guess.
       expect(g.inspector).toBeUndefined();
       const item = g.items[0] as unknown as { seed?: Record<string, unknown> };
       expect(item.seed?.status, 'without status, command_decide and command_reopen_decision are both offered and one must 404').toBeDefined();
+      // The arranged row is 'open', so this checks the value travels — not merely
+      // that the key exists, which a hardcoded null would also satisfy.
+      expect(item.seed?.status, 'the status on the wire is not the status in the row').toBe('open');
     }, DB_TIMEOUT);
 
     itDb('a project arrives with its tier, so `track` can be precondition-filtered', async () => {
-      const { groups } = await search('bitcoin');
+      const { groups } = await search(TOKEN);
       const g = groups.find((x) => x.key === 'projects');
-      if (!g) return;
-      const item = g.items[0] as unknown as { seed?: Record<string, unknown> };
-      expect(item.seed?.tier, 'track declares precondition tier in [catalog]; without tier the client treats it as satisfied and offers a no-op').toBeDefined();
+      expect(g, 'the arranged project is absent — the group is broken, not the seed').toBeDefined();
+      if (!g) return; // narrowing only; the expect above is the assertion
+      const item = g.items.find((x) => x.id === FIXTURE_PROJECT_ID) as unknown as { seed?: Record<string, unknown> } | undefined;
+      expect(item, 'the arranged project id is not among the returned items').toBeDefined();
+      expect(item?.seed?.tier, 'track declares precondition tier in [catalog]; without tier the client treats it as satisfied and offers a no-op').toBeDefined();
+      // 'tracked', not the column default 'catalog' — so a hardcoded default in the
+      // mapper would fail here rather than look correct.
+      expect(item?.seed?.tier, 'the tier on the wire is not the tier in the row').toBe('tracked');
     }, DB_TIMEOUT);
   });
 });
