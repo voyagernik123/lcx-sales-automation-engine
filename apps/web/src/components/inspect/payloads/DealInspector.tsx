@@ -24,6 +24,7 @@ import { PlaybookChecklist } from '@/components/deals/PlaybookChips';
 import { DealReviewMemo } from '@/components/deals/DealReviewMemo';
 import { ScenarioValue, ScenarioWinProb } from '@/components/deals/ScenarioControls';
 import { severityChipCls } from '@/components/deals/warningDisplay';
+import { scrollToId } from '@/lib/motion';
 import { packageLabel, relativeTime } from '@/components/deals/dealFormat';
 import type { InspectorPayloadProps } from './ProjectInspector';
 
@@ -237,7 +238,7 @@ export function DealInspector({ id, seed }: InspectorPayloadProps) {
             label: events.length === 1 ? 'event' : 'events',
             count: events.length,
             icon: Activity,
-            onClick: () => document.getElementById('insp-deal-events')?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+            onClick: () => scrollToId('insp-deal-events'),
           },
         ]}
       />

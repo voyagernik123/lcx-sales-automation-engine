@@ -8,39 +8,32 @@
  * The shell has to be eager because the thing it loads cannot load itself.
  */
 
-import { Suspense, lazy, useEffect, useState, useCallback } from 'react';
-import { acceptCommandChord, isCommandChord, setCommandOpen } from '@/lib/keyboard';
+import { Suspense, lazy, useEffect, useState } from 'react';
+import { acceptCommandChord, isCommandChord } from '@/lib/keyboard';
+import { useDismissible } from '@/hooks/useDismissible';
 
 const CommandBody = lazy(() => import('@/components/command/CommandBody'));
 
 export function useCommandPalette() {
-  const [open, setOpenState] = useState(false);
+  const [open, setOpen] = useState(false);
 
-  // Mirror into the module-level flag so capture-phase Escape handlers elsewhere
-  // (DealReviewMemo, Derived, SnoozeMenu) can defer to us. They run outside the
-  // React tree, so a context would be invisible to them.
-  const setOpen = useCallback((next: boolean | ((prev: boolean) => boolean)) => {
-    setOpenState((prev) => {
-      const value = typeof next === 'function' ? next(prev) : next;
-      setCommandOpen(value);
-      return value;
-    });
-  }, []);
+  // The palette is just another entry on the dismiss stack, and being the most
+  // recently opened thing it wins Escape for free. That replaces the mirrored
+  // `setCommandOpen` flag three other components had to consult by hand — and any
+  // fourth overlay would have had to remember to consult too.
+  useDismissible(open, () => setOpen(false), 'command line');
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isCommandChord(e)) {
-        e.preventDefault();
-        // Deduped: in the terminal the same chord can arrive from the native menu
-        // AND the webview, and toggling twice reads as a broken shortcut.
-        if (acceptCommandChord()) setOpen((prev) => !prev);
-        return;
-      }
-      if (e.key === 'Escape') setOpen(false);
+      if (!isCommandChord(e)) return;
+      e.preventDefault();
+      // Deduped: in the terminal the same chord can arrive from the native menu
+      // AND the webview, and toggling twice reads as a broken shortcut.
+      if (acceptCommandChord()) setOpen((prev) => !prev);
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [setOpen]);
+  }, []);
 
   return { open, setOpen };
 }

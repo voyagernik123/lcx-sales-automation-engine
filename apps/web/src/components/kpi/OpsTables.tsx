@@ -30,7 +30,18 @@ export function StalledDealsTable({ deals }: { deals: StalledDeal[] }) {
               <tr
                 key={deal.id}
                 onClick={() => inspect('deal', deal.id)}
-                className="hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 cursor-pointer transition-colors"
+                tabIndex={0}
+                // Stays a table row (role="button" would strip the row semantics).
+                // The target guard keeps Enter on the EntityChip inside the row from
+                // also opening the row's own inspector.
+                onKeyDown={(e) => {
+                  if (e.target !== e.currentTarget) return;
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    inspect('deal', deal.id);
+                  }
+                }}
+                className="hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 cursor-pointer transition-colors focus-ring"
               >
                 <td className="py-2.5 px-2 font-medium text-navy">
                   <EntityChip

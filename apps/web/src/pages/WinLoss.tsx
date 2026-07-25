@@ -214,7 +214,7 @@ export function WinLoss() {
               <option value="us">US</option>
             </select>
             <Button variant="secondary" size="xs" onClick={() => void load()}>
-              <RefreshCw size={11} className={loading ? 'animate-spin' : undefined} /> Refresh
+              <RefreshCw size={11} className={loading ? 'animate-spin motion-essential' : undefined} /> Refresh
             </Button>
           </>
         }

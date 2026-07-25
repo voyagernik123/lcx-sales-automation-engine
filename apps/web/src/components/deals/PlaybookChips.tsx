@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { PlaybookChip } from '@/lib/salesIntel';
+import { useDismissible } from '@/hooks/useDismissible';
 
 /**
  * T·K·L·C·O listing-playbook letter chips (Gong playbook-chip pattern).
@@ -82,16 +83,11 @@ export function PlaybookChips({ playbook, onToggle, local, className }: Playbook
     const onDown = (e: MouseEvent) => {
       if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
     document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
+    return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
+
+  useDismissible(!!open, () => setOpen(false), 'playbook menu');
 
   const doneCount = playbook.filter(s => s.status === 'done').length;
 

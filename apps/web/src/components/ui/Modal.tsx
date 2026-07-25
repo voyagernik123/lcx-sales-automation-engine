@@ -1,4 +1,5 @@
 import { useEffect, useRef, ReactNode } from 'react';
+import { useDismissible } from '@/hooks/useDismissible';
 import { X } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -14,27 +15,22 @@ interface ModalProps {
 export function Modal({ isOpen, onClose, title, children, footer, className }: ModalProps) {
   const dialogRef = useRef<HTMLDivElement>(null);
 
+  // Escape belongs to the dismiss stack, which closes the TOP overlay only. A
+  // listener here would fire even when this modal sits under a newer one.
+  useDismissible(isOpen, onClose, `${title} dialog`);
+
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-      // Shift focus to the modal container for accessibility
-      setTimeout(() => {
-        dialogRef.current?.focus();
-      }, 50);
-      document.addEventListener('keydown', handleKeyDown);
-    } else {
-      document.body.style.overflow = '';
-    }
-
+    if (!isOpen) return;
+    document.body.style.overflow = 'hidden';
+    // A frame, not a 50ms timeout: the delay only ever needed to outlast the
+    // mount, and a magic number that happens to work is a race waiting for a
+    // slower machine.
+    const raf = requestAnimationFrame(() => dialogRef.current?.focus());
     return () => {
       document.body.style.overflow = '';
-      document.removeEventListener('keydown', handleKeyDown);
+      cancelAnimationFrame(raf);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

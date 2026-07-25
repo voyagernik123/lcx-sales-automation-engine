@@ -95,7 +95,7 @@ export function DealCard({
           onClick();
         }
       }}
-      className={`lift cursor-grab rounded-lg border border-line/70 border-l-[3px] ${packageAccentClass(deal.packageType)} bg-card p-3 shadow-card hover:border-grey-light focus-ring focus-visible:ring-2 focus-visible:ring-sky-400 active:cursor-grabbing dark:hover:border-grey`}
+      className={`lift cursor-grab rounded-lg border border-line/70 border-l-[3px] ${packageAccentClass(deal.packageType)} bg-card p-3 shadow-card hover:border-grey-light focus-ring active:cursor-grabbing dark:hover:border-grey`}
     >
       {/* Identity: name leads, ticker recedes to a quiet outline tag. */}
       <div className="flex items-start justify-between gap-2">

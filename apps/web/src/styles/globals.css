@@ -167,36 +167,146 @@ path.state:hover {
  * 3. SPECIFICITY. `.focus\:outline-none:focus` compiles to (0,2,0) and is
  *    emitted AFTER this rule, so it won unconditionally on 49 elements — 17 of
  *    them with no replacement style at all, i.e. focus simply vanished. Those
- *    sites now use `focus-visible:outline-none`, which only suppresses the
- *    outline for POINTER focus, and pair it with .focus-ring below.
+ *    sites now carry `.focus-ring` and nothing suppresses the outline at all.
+ *    Switching them to the `focus-visible:` variant instead would have been a
+ *    trap: it compiles to `:focus-visible` — KEYBOARD focus — at (0,2,0), the
+ *    same specificity as `.focus-ring:focus-visible` but emitted later among
+ *    Tailwind's generated variants, so a transparent outline would have won and
+ *    blanked the very ring being added. No suppression is needed: mouse clicks
+ *    do not match `:focus-visible` in the first place, which is the only thing
+ *    `focus:outline-none` was ever for.
  *
- * Outline rather than box-shadow, deliberately: `outline` is painted outside the
- * border box and is not clipped by the 98 `overflow-hidden` containers in this
- * app, where a ring would be cropped on a first or last child.
+ * Bare `outline-none` (no variant) is deliberately NOT forbidden. It is also
+ * (0,1,0), so order would decide it against this rule — and the order favours
+ * this rule. Verified in the browser rather than reasoned about: an `<input
+ * class="outline-none">` under keyboard focus computes `solid 2px rgb(34 211
+ * 238)`, identical to a bare input. Banning it would be ~70 edits for no
+ * behavioural change, and a rule that forbids harmless things gets switched off.
+ *
+ * Outline rather than box-shadow for the DEFAULT, because an outline does not
+ * participate in layout or get composited against the element's own background.
+ * Note what an outline does NOT do, since an earlier version of this comment
+ * claimed the opposite: it is clipped by an `overflow: hidden` ancestor exactly
+ * as a box-shadow is. Measured directly — a button flush inside a 200x60
+ * `overflow:hidden` parent with `outline-offset: 2px` paints no visible ring at
+ * all, while `box-shadow: inset` in the same position paints fully. That is what
+ * `.focus-ring-inset` below is for, and it is why the offset default cannot be
+ * used on a control sitting flush against a clipping edge.
  */
 :focus-visible {
   outline: 2px solid rgb(var(--focus));
   outline-offset: 2px;
 }
 
-/**
- * The shared focus treatment for controls that suppress the default outline
- * because they draw their own affordance (dense filter selects, inline inputs).
- * One class so the whole app's focus language can be tuned in one place instead
- * of across 62 hand-written `focus:border-cyan-500` sites.
- *
- * `inset` so it is never clipped inside a scrolling or overflow-hidden parent,
- * and paired with a border colour change so the signal survives even where a
- * ring is visually crowded.
- */
 @layer utilities {
+  /**
+   * The shared focus treatment, so the app's focus language can be tuned in one
+   * place instead of across 62 hand-written `focus:border-cyan-500` sites. It is
+   * identical to the global rule above by design: the class exists to be an
+   * explicit, greppable declaration that a control's focus state is accounted
+   * for, and to give the treatment a name the next engineer can search for.
+   */
   .focus-ring:focus-visible {
     outline: 2px solid rgb(var(--focus));
     outline-offset: 2px;
   }
-  /* For controls sitting flush inside a clipping container. */
+  /**
+   * For a control sitting FLUSH inside an `overflow: hidden` ancestor — the
+   * segmented view toggles and the items in the operator dropdown. There the
+   * offset outline is painted entirely outside the clip box and is invisible, so
+   * the ring has to be drawn inside the control's own border box instead. Only
+   * use this where there is no padding between the control's edge and the
+   * clipping edge; elsewhere the offset ring is easier to see.
+   */
   .focus-ring-inset:focus-visible {
     outline: none;
     box-shadow: inset 0 0 0 2px rgb(var(--focus));
   }
 }
+
+/* ── Reduced motion (TERMINAL Phase 4) ──────────────────────────────────────
+ * The app shipped 279 `transition-*` utilities, 54 `animate-*` utilities and
+ * five CSS `transition:` declarations, and honoured `prefers-reduced-motion`
+ * nowhere. That is two defects, not one:
+ *
+ *   - Accessibility. For a minority of operators, large-area transform motion
+ *     is actively nauseating (vestibular disorders). The OS setting is their
+ *     request; ignoring it is not a style choice.
+ *   - Perceived speed. An operator with the setting ON has already told the
+ *     machine "stop decorating". A 300ms slide on every panel then reads as the
+ *     app being sluggish, not as the app being polished.
+ *
+ * WHY 0.01ms AND NOT 0s — the load-bearing detail of this snippet.
+ * A duration of exactly zero lets some browsers skip firing `transitionend` /
+ * `animationend` altogether: no transition is deemed to have run, so no end
+ * event is dispatched. Any code waiting on that event to unmount a node, run a
+ * cleanup, or advance a state machine then hangs forever — and it hangs ONLY
+ * for the reduced-motion user, which is the hardest class of bug to notice.
+ * 0.01ms is indistinguishable from instant to a human and still fires the
+ * event, so the same code path runs for everybody.
+ *
+ * Honesty about this app specifically: nothing here listens for those events.
+ * Grepped across `src/` — zero hits for `transitionend`, `animationend`,
+ * `onTransitionEnd`, `onAnimationEnd`. So the precaution is NOT load-bearing
+ * today. It is insurance against the first person to write such a listener, who
+ * would otherwise have no way to connect their hang to a stylesheet. It costs
+ * nothing, so it stays.
+ *
+ * Not covered by this rule, and worth knowing: the eight
+ * `scrollIntoView({ behavior: 'smooth' })` call sites. The JS option overrides
+ * the CSS `scroll-behavior` property, so `scroll-behavior: auto` below cannot
+ * reach them — they are handled in `src/lib/motion.ts` instead.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *:not(.motion-essential),
+  *:not(.motion-essential)::before,
+  *:not(.motion-essential)::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /* The one declaration in this file that survives the sweep unless named
+   * explicitly. `path.state` above sets its transition with `!important` at
+   * specificity (0,1,1); `*:not(.motion-essential)` is only (0,1,0). Between
+   * two `!important` declarations the cascade falls back to specificity, so the
+   * blanket rule LOSES and the US map keeps its 250ms fill fade. Matching the
+   * specificity and coming later in source order fixes it. Found by working the
+   * cascade, not by looking at the page — the blanket rule appears to work
+   * everywhere else, which is exactly why this would have been missed.
+   */
+  path.state {
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/**
+ * `.motion-essential` — the narrow escape hatch from the rule above.
+ *
+ * A blanket kill is right for decorative motion and wrong where the motion IS
+ * the information. `animation-iteration-count: 1` stops an infinite animation
+ * dead after one cycle, and for the `animate-spin` busy indicators that is a
+ * plain bug: a spinner frozen mid-rotation does not read as "reduced motion",
+ * it reads as "the app has hung" — the exact opposite of the state it exists to
+ * communicate. Those elements carry this class.
+ *
+ * It is a MARKER with no declarations of its own; its whole job is to be
+ * excluded by the `:not()` above so the author-declared animation survives.
+ * Do not give it styles. Do not reach for it to preserve motion that is merely
+ * nice — the bar is "an operator who cannot see this animation is misinformed".
+ * A spinner clears that bar. Nothing else in this app currently does.
+ *
+ * Deliberately NOT marked essential (counted, not estimated):
+ *   - `animate-pulse` skeleton placeholders, 9 sites. A static grey block of the
+ *     right shape still says "content is loading"; the shimmer only makes it
+ *     prettier. Going still is the correct reading of the setting.
+ *   - `animate-pulse` / `animate-pulse-beacon` status dots, 17 sites. A "live"
+ *     or "blocked" dot going static loses nothing — the colour and the adjacent
+ *     label already carry the state — and a throbbing dot is the single most
+ *     common complaint about ambient UI motion.
+ *   - The two blinking terminal carets (LiveOpsFeed, Dashboard). Atmosphere.
+ *   - The `animate-slide-in` drawer/toast entrances and the `.lift` card hover.
+ *     Pure decoration; instant is strictly better here.
+ */
+

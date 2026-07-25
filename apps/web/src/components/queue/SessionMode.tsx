@@ -18,6 +18,7 @@ import {
   writeJson,
   type SessionStats,
 } from './logic';
+import { useDismissible } from '@/hooks/useDismissible';
 
 interface SessionModeProps {
   /** Snapshot of the split taken when the session started. */
@@ -129,6 +130,19 @@ export function SessionMode({
     onOpen(lead.id);
   }, [lead, finalize, onOpen]);
 
+  // Escape steps out of the session one rung at a time: mid-session it ends the
+  // run and shows the summary, and from the summary it closes. The sub-dialog
+  // guard below is still needed for the LETTER keys, but no longer for Escape —
+  // an open snooze menu is above this on the stack, so it takes the press first.
+  useDismissible(
+    true,
+    () => {
+      if (phase === 'done') onClose();
+      else if (!busy && lead) setPhase('done');
+    },
+    'lead session',
+  );
+
   /* Session-scope keyboard grammar. Sub-dialogs own their keys while open. */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -136,7 +150,7 @@ export function SessionMode({
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (snoozeOpen || dqOpen || enrollOpen) return;
       if (phase === 'done') {
-        if (e.key === 'Escape' || e.key === 'Enter') {
+        if (e.key === 'Enter') {
           e.preventDefault();
           onClose();
         }
@@ -144,10 +158,6 @@ export function SessionMode({
       }
       if (busy || !lead) return;
       switch (e.key) {
-        case 'Escape':
-          e.preventDefault();
-          setPhase('done');
-          break;
         case 's':
         case 'S':
           e.preventDefault();

@@ -234,7 +234,7 @@ export function OntologyExplorer() {
           {isLoading && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-card/60 backdrop-blur-sm">
               <div className="flex items-center gap-2 text-grey text-xs font-mono">
-                <Loader2 size={16} className="animate-spin" />
+                <Loader2 size={16} className="animate-spin motion-essential" />
                 <span>Computing layout...</span>
               </div>
             </div>

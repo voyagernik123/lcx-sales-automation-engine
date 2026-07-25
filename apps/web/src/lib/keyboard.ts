@@ -6,29 +6,13 @@
  * so something already-resident has to own the key that opens it and has to be
  * able to answer "is the command line open?" without importing it.
  *
- * It also settles a conflict the recon found. Three components install
- * capture-phase Escape handlers that call stopPropagation
- * (deals/DealReviewMemo, lineage/Derived, queue/SnoozeMenu), so a single Escape
- * could close two overlays at once — the local one swallowing the key before the
- * command line ever saw it. They now defer while the command line is open, which
- * needs a shared flag rather than a React context, since capture-phase listeners
- * run outside the tree.
+ * It used to also carry an `isCommandOpen` flag, so that three components with
+ * capture-phase Escape handlers could defer to the command line. Phase 4 deleted
+ * it: `lib/dismiss` now owns Escape for every overlay including this one, and
+ * last-opened-wins makes the deferral structural instead of something each new
+ * overlay has to remember to ask about. A flag that nothing sets any more is worse
+ * than no flag — the next reader would call it and always get `false`.
  */
-
-/**
- * True while the command line is showing. Module-level rather than in a store: it
- * is read from raw DOM event handlers that have no access to React context, and
- * it must be readable synchronously in the middle of an event.
- */
-let commandOpen = false;
-
-export function isCommandOpen(): boolean {
-  return commandOpen;
-}
-
-export function setCommandOpen(open: boolean): void {
-  commandOpen = open;
-}
 
 /**
  * Is the event target something the operator is typing into?
@@ -76,6 +60,5 @@ export function acceptCommandChord(now: number = Date.now()): boolean {
 
 /** Test-only. */
 export function _resetKeyboard(): void {
-  commandOpen = false;
   lastChordAt = Number.NEGATIVE_INFINITY;
 }

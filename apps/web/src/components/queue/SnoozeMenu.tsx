@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Moon } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { isTypingTarget } from './logic';
-import { isCommandOpen } from '@/lib/keyboard';
+import { useDismissible } from '@/hooks/useDismissible';
 
 interface SnoozeMenuProps {
   open: boolean;
@@ -26,19 +26,17 @@ export function SnoozeMenu({ open, leadName, onClose, onSnooze }: SnoozeMenuProp
     if (!open) setCustomDate('');
   }, [open]);
 
+  useDismissible(open, onClose, 'snooze menu');
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // The command line is a higher-priority overlay: while it is open it owns
-        // Escape. Without this, our capture-phase stopPropagation swallows the key
-        // and one Escape closes two things at once.
-        if (isCommandOpen()) return;
-        e.stopPropagation();
-        onClose();
-        return;
-      }
       if (isTypingTarget(e.target)) return;
+      // Modifier guard. Without it `Number(e.key)` reads '1' out of ⌘1 and snoozes
+      // the lead for a day as a side effect of switching workspace — an unrelated
+      // chord silently mutating a record. Phase 4 adds ⌘1-6 to the web layer, so
+      // this went from theoretical to reachable.
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
       const days = Number(e.key);
       if (QUICK_DAYS.includes(days)) {
         e.preventDefault();
@@ -47,7 +45,7 @@ export function SnoozeMenu({ open, leadName, onClose, onSnooze }: SnoozeMenuProp
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [open, onClose, onSnooze]);
+  }, [open, onSnooze]);
 
   if (!open) return null;
 

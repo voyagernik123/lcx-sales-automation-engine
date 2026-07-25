@@ -296,28 +296,28 @@ export function BriefGenerator() {
                 placeholder="To (Default: Board / SEC)"
                 value={toOverride}
                 onChange={e => setToOverride(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring"
               />
               <input
                 type="text"
                 placeholder="From (Default: CCO)"
                 value={fromOverride}
                 onChange={e => setFromOverride(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring"
               />
               <input
                 type="text"
                 placeholder="Subject Line"
                 value={subjectOverride}
                 onChange={e => setSubjectOverride(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring"
               />
               <input
                 type="text"
                 placeholder="Date Override (e.g. July 4, 2026)"
                 value={dateOverride}
                 onChange={e => setDateOverride(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring"
               />
             </div>
           </div>
@@ -391,28 +391,28 @@ export function BriefGenerator() {
                 placeholder="Signatory Name"
                 value={signatoryName}
                 onChange={e => setSignatoryName(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring"
               />
               <input
                 type="text"
                 placeholder="Signatory Title"
                 value={signatoryTitle}
                 onChange={e => setSignatoryTitle(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring"
               />
               <input
                 type="text"
                 placeholder="Co-Signer Name (Optional)"
                 value={coSignerName}
                 onChange={e => setCoSignerName(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring"
               />
               <input
                 type="text"
                 placeholder="Co-Signer Title"
                 value={coSignerTitle}
                 onChange={e => setCoSignerTitle(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring"
               />
             </div>
           </div>

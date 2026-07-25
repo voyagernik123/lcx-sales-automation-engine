@@ -239,7 +239,20 @@ export function ExchangeGaps() {
                       <tr
                         key={r.id}
                         onClick={() => inspect('project', r.id)}
-                        className="cursor-pointer transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10"
+                        tabIndex={0}
+                        // Stays a table row (role="button" would strip the row
+                        // semantics) and it holds its own controls, so: Enter/Space
+                        // activate, Space prevented so the page does not scroll, and
+                        // the target guard keeps Enter on the watch star or the
+                        // EntityChip from also inspecting the row.
+                        onKeyDown={(e) => {
+                          if (e.target !== e.currentTarget) return;
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            inspect('project', r.id);
+                          }
+                        }}
+                        className="cursor-pointer transition-colors hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10 focus-ring"
                       >
                         <td className="py-2 px-2">
                           <button

@@ -22,14 +22,11 @@ import { PriorityEquation } from '@/components/bd/PriorityEquation';
 import { RegulatoryPosture } from '@/components/bd/RegulatoryPosture';
 import { AiOperatorPanel } from '@/components/ai/AiOperatorPanel';
 import { useInspectorStore } from '@/stores';
+import { scrollToId } from '@/lib/motion';
 
 export interface InspectorPayloadProps {
   id: string;
   seed?: Record<string, unknown>;
-}
-
-function scrollToInDrawer(elementId: string) {
-  document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 /**
@@ -119,7 +116,7 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
             label: lead.people.length === 1 ? 'contact' : 'contacts',
             count: lead.people.length,
             icon: Users,
-            onClick: () => scrollToInDrawer('insp-contacts'),
+            onClick: () => scrollToId('insp-contacts'),
           },
           {
             label: 'deal',
@@ -131,7 +128,7 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
             label: (timeline ?? []).length === 1 ? 'event' : 'events',
             count: (timeline ?? []).length,
             icon: Activity,
-            onClick: () => scrollToInDrawer('insp-activity'),
+            onClick: () => scrollToId('insp-activity'),
           },
         ]}
       />
@@ -146,8 +143,8 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
         priority={lead.score?.priorityScore}
         euScore={lead.score?.euScore}
         usPostScore={lead.score?.usPostScore}
-        onExplainPropensity={() => scrollToInDrawer('insp-propensity')}
-        onExplainGate={() => scrollToInDrawer('insp-gate')}
+        onExplainPropensity={() => scrollToId('insp-propensity')}
+        onExplainGate={() => scrollToId('insp-gate')}
       />
 
       <div className="grid grid-cols-3 gap-2 text-center">

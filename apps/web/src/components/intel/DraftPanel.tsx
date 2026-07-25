@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Sparkles, Copy, Check, Save, X } from 'lucide-react';
 import { fetchPlay, savePlay, type PlayDraft } from '@/lib/api/intel';
 import { toast } from '@/components/shared';
+import { useDismissible } from '@/hooks/useDismissible';
 
 /**
  * Draft outreach (Wave 4) — the signal→play payoff. Opens on a target, shows
@@ -27,11 +28,7 @@ export function DraftPanel({ subjectId, onClose }: { subjectId: string; onClose:
     };
   }, [subjectId]);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useDismissible(true, onClose, 'draft panel');
 
   const doCopy = async () => {
     if (typeof play !== 'object' || !play) return;

@@ -120,8 +120,19 @@ export function ProductMatrix() {
                 <React.Fragment key={p.id}>
                   <tr
                     onClick={() => toggleRow(p.id)}
+                    tabIndex={0}
+                    aria-expanded={isExpanded}
+                    // Stays a table row (role="button" would strip the row semantics
+                    // and aria-expanded with it): Enter/Space toggle the drawer,
+                    // Space prevented so the table does not scroll under it.
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleRow(p.id);
+                      }
+                    }}
                     className={clsx(
-                      'hover:bg-ice-soft/30 dark:hover:bg-ice-soft/5 cursor-pointer transition-colors',
+                      'hover:bg-ice-soft/30 dark:hover:bg-ice-soft/5 cursor-pointer transition-colors focus-ring',
                       isExpanded && 'bg-ice-soft/20 dark:bg-ice-soft/2'
                     )}
                   >

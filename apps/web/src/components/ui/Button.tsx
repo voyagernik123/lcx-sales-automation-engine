@@ -11,10 +11,10 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantStyles: Record<ButtonVariant, string> = {
-  primary: 'bg-navy text-card hover:bg-navy-deep focus:ring-navy',
-  secondary: 'bg-ice-soft text-navy border border-line hover:bg-ice focus:ring-navy',
-  ghost: 'bg-transparent text-navy hover:bg-ice-soft focus:ring-navy',
-  danger: 'bg-status-blocked text-white hover:bg-red-dark focus:ring-status-blocked',
+  primary: 'bg-navy text-card hover:bg-navy-deep',
+  secondary: 'bg-ice-soft text-navy border border-line hover:bg-ice',
+  ghost: 'bg-transparent text-navy hover:bg-ice-soft',
+  danger: 'bg-status-blocked text-white hover:bg-red-dark',
 };
 
 // xs matches the dense in-page action buttons the app is full of; md is the
@@ -30,7 +30,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
     <button
       ref={ref}
       className={clsx(
-        'inline-flex items-center justify-center transition-colors focus-ring focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed',
+        'inline-flex items-center justify-center transition-colors focus-ring disabled:opacity-50 disabled:cursor-not-allowed',
         sizeStyles[size],
         variantStyles[variant],
         className,

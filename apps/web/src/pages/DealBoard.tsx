@@ -16,6 +16,7 @@ import { PipelinePulseHeader } from '@/components/deals/PipelinePulseHeader';
 import { WinLossModal } from '@/components/deals/WinLossModal';
 import { ScenarioValue, SimPill } from '@/components/deals/ScenarioControls';
 import { WARNING_SHORT_LABEL } from '@/components/deals/warningDisplay';
+import { useDismissible } from '@/hooks/useDismissible';
 
 /** Stage dot color for column headers (won/lost get icons instead). */
 const STAGE_DOT: Record<DealStage, string> = {
@@ -209,7 +210,7 @@ export function DealBoard() {
             <SimPill />
             <BoardLegend />
             <Button variant="secondary" size="xs" onClick={() => void load()}>
-              <RefreshCw size={11} className={loading ? 'animate-spin' : undefined} /> Refresh
+              <RefreshCw size={11} className={loading ? 'animate-spin motion-essential' : undefined} /> Refresh
             </Button>
           </div>
         }
@@ -382,16 +383,11 @@ function BoardLegend() {
     const onDown = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
     document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
+    return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
+
+  useDismissible(!!open, () => setOpen(false), 'stage menu');
 
   return (
     <div className="relative" ref={ref}>

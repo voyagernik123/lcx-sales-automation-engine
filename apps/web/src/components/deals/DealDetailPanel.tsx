@@ -6,6 +6,7 @@ import { fetchDealEvents, type BoardDeal } from '@/lib/api/bd';
 import type { DealEvent } from '@/types/bd';
 import { fmtMoneyCents, ownerInitials, packageLabel, relativeTime } from './dealFormat';
 import { SectionLabel } from '@/components/ui';
+import { useDismissible } from '@/hooks/useDismissible';
 
 const STAGE_BADGE: Record<DealStage, string> = {
   not_started: 'bg-ice-soft text-grey dark:bg-ice-soft/10',
@@ -42,14 +43,7 @@ export function DealDetailPanel({ deal, onClose }: DealDetailPanelProps) {
     return () => cancelAnimationFrame(raf);
   }, []);
 
-  // Close on Esc.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  useDismissible(true, onClose, 'deal panel');
 
   // Recent activity for this deal (best-effort; panel works without it).
   useEffect(() => {

@@ -6,7 +6,7 @@ import type { DealEvent } from '@/types/bd';
 import type { DealHealth } from '@/lib/salesIntel';
 import { fetchBatna, type Batna } from '@/lib/api/deals100x';
 import { fmtMoneyCents, packageLabel } from './dealFormat';
-import { isCommandOpen } from '@/lib/keyboard';
+import { useDismissible } from '@/hooks/useDismissible';
 
 /**
  * Deal Review memo — the print-ready "commit" artifact for a deal (the sales
@@ -78,23 +78,11 @@ export function DealReviewMemo({ deal, health, events, winProbability, onClose }
     };
   }, [deal.id]);
 
-  useEffect(() => {
-    // This memo opens from within the deal inspector, so both listen for
-    // Escape. Capture-phase + stopPropagation means Esc closes only the memo
-    // (topmost overlay) without also walking the inspector's trail back.
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // The command line is a higher-priority overlay: while it is open it owns
-        // Escape. Without this, our capture-phase stopPropagation swallows the key
-        // and one Escape closes two things at once.
-        if (isCommandOpen()) return;
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
+  // This memo opens from inside the deal inspector, which is also dismissible, so
+  // "close only the topmost" used to be hand-built here out of capture-phase
+  // listening plus a check on whether the command line was open. The stack gets it
+  // structurally: the memo registered later, so it is the top, so it goes first.
+  useDismissible(true, onClose, 'deal review memo');
 
   const stage = deal.stage as DealStage;
   const sortedEvents = [...events].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));

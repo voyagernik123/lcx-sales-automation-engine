@@ -219,7 +219,7 @@ export function BoardReport() {
               ))}
             </div>
             <Button variant="secondary" size="xs" onClick={load} disabled={loading} className="text-grey">
-              <RefreshCw size={12} className={clsx(loading && 'animate-spin')} /> Refresh
+              <RefreshCw size={12} className={clsx(loading && 'animate-spin motion-essential')} /> Refresh
             </Button>
             <Button variant="secondary" size="xs" onClick={handleDownloadPdf} className="text-grey">
               <Download size={12} /> Download PDF (print)

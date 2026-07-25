@@ -49,7 +49,7 @@ export function Monitors() {
         actions={
           <div className="flex items-center gap-2">
             <Button size="sm" variant="secondary" onClick={() => void runTick()} disabled={ticking}>
-              {ticking ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />} Run now
+              {ticking ? <Loader2 size={12} className="animate-spin motion-essential" /> : <Play size={12} />} Run now
             </Button>
             <Button size="sm" onClick={() => setCreating((v) => !v)}><Plus size={12} /> New monitor</Button>
           </div>
@@ -159,7 +159,7 @@ function MonitorBuilder({ actions, onCancel, onCreated }: { actions: RegistryAct
         <span className="text-micro text-grey">{projectActions.find((a) => a.id === actionId)?.description}</span>
       </div>
       <div className="flex gap-2">
-        <Button size="sm" onClick={() => void save()} disabled={busy}>{busy ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />} Create</Button>
+        <Button size="sm" onClick={() => void save()} disabled={busy}>{busy ? <Loader2 size={12} className="animate-spin motion-essential" /> : <Plus size={12} />} Create</Button>
         <Button size="sm" variant="secondary" onClick={onCancel}>Cancel</Button>
       </div>
     </div>
@@ -192,7 +192,7 @@ function MonitorActivity({ id, name, lastRunAt }: { id: string; name: string; la
         {lastRunAt ? `Last run ${new Date(lastRunAt).toLocaleString()}` : 'Not yet run'} · fired on (click to AI-triage):
       </div>
       {fires == null ? (
-        <Loader2 size={12} className="animate-spin text-grey" />
+        <Loader2 size={12} className="animate-spin motion-essential text-grey" />
       ) : fires.length === 0 ? (
         <p className="text-micro text-grey">No fires yet.</p>
       ) : (
@@ -204,7 +204,7 @@ function MonitorActivity({ id, name, lastRunAt }: { id: string; name: string; la
                 <button key={f.subjectId} onClick={() => void runTriage(f.subjectId)} disabled={t === 'loading'}
                   className="inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-micro text-grey-dark hover:border-cyan-500/50 hover:text-navy disabled:opacity-50"
                   title={new Date(f.firedAt).toLocaleString()}>
-                  {t === 'loading' && <Loader2 size={9} className="animate-spin" />}
+                  {t === 'loading' && <Loader2 size={9} className="animate-spin motion-essential" />}
                   {f.name ?? f.subjectId.slice(0, 8)}{f.ticker ? ` · ${f.ticker}` : ''}
                 </button>
               );

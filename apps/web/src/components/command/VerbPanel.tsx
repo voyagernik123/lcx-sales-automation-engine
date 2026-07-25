@@ -27,6 +27,7 @@ import {
   type Verb,
 } from './grammar';
 import { invoke, wasNoOp, type Refusal } from './invoke';
+import { useDismissible } from '@/hooks/useDismissible';
 
 type Stage = 'verbs' | 'params' | 'done';
 
@@ -98,19 +99,25 @@ export function VerbPanel({
   }
 
   /* ── keyboard ──────────────────────────────────────────────────────────── */
+  // Escape retreats ONE stage rather than closing outright — losing a half-typed
+  // command to a stray keypress is its own kind of hostile. The stack does not
+  // require an entry to close itself; retreating and staying registered is a
+  // legitimate response, and it keeps the ladder honest: params → verbs → back out
+  // to the command line, one press per rung.
+  useDismissible(
+    true,
+    () => {
+      if (stage === 'params') {
+        setStage('verbs');
+        setVerb(null);
+        setValues({});
+      } else onBack();
+    },
+    'command verb panel',
+  );
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        // Escape retreats one stage rather than closing outright — losing a
-        // half-typed command to a stray keypress is its own kind of hostile.
-        e.stopPropagation();
-        if (stage === 'params') {
-          setStage('verbs');
-          setVerb(null);
-          setValues({});
-        } else onBack();
-        return;
-      }
       if (stage !== 'verbs') return;
       const runnable = verbs;
       if (e.key === 'ArrowDown') {

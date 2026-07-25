@@ -81,7 +81,7 @@ export function Wbr() {
               </select>
             )}
             <Button size="sm" variant="secondary" onClick={regenerate} disabled={busy}>
-              <RefreshCw size={13} className={busy ? 'animate-spin' : ''} /> Regenerate
+              <RefreshCw size={13} className={busy ? 'animate-spin motion-essential' : ''} /> Regenerate
             </Button>
             <Button size="sm" variant="secondary" onClick={doPrint}><Download size={13} /> Print</Button>
           </div>
@@ -110,7 +110,7 @@ export function Wbr() {
             <div className="mb-1.5 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
               <Bot size={12} className="text-cyan-600 dark:text-cyan-400" /> Executive summary
               <Button size="xs" variant="secondary" className="br-no-print ml-auto" onClick={() => void genNarrative()} disabled={aiBusy}>
-                <RefreshCw size={11} className={aiBusy ? 'animate-spin' : ''} /> {aiNarr ? 'Regenerate' : 'Generate'}
+                <RefreshCw size={11} className={aiBusy ? 'animate-spin motion-essential' : ''} /> {aiNarr ? 'Regenerate' : 'Generate'}
               </Button>
             </div>
             {aiNarr ? (

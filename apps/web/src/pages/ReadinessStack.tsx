@@ -107,11 +107,12 @@ export function ReadinessStack() {
             const borderAccent = statusBorder[item.status] || 'border-l-slate-400';
 
             return (
-              <div
+              <button
                 key={item.id}
+                type="button"
                 onClick={() => handleOpenTask(item)}
                 className={clsx(
-                  'bg-card border border-line border-l-4 rounded p-3 text-left transition-all hover:border-grey cursor-pointer shadow-sm relative select-none',
+                  'block w-full bg-card border border-line border-l-4 rounded p-3 text-left transition-all hover:border-grey cursor-pointer shadow-sm relative select-none focus-ring',
                   borderAccent
                 )}
               >
@@ -133,7 +134,7 @@ export function ReadinessStack() {
                   </div>
                   <span>{subtaskCount} / {Object.keys(assign.subtasks || {}).length} SUBTASKS</span>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>

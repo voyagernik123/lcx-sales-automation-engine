@@ -80,7 +80,23 @@ export function OntologyMiniMap({ rawNodes, rfInstance }: OntologyMiniMapProps) 
           const ry = offY + c.cy * sc;
           const r = Math.max(6, Math.min(12, Math.sqrt(c.count) * 3.5));
           return (
-            <g key={c.type} className="cursor-pointer" onClick={() => handleClusterClick(c.type)}>
+            // An SVG group cannot be a <button>, so it takes the explicit button
+            // role plus Enter/Space — Space is prevented so the graph pane behind
+            // it does not scroll.
+            <g
+              key={c.type}
+              className="cursor-pointer focus-ring"
+              role="button"
+              tabIndex={0}
+              aria-label={`Centre the graph on ${c.type} (${c.count} nodes)`}
+              onClick={() => handleClusterClick(c.type)}
+              onKeyDown={e => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  handleClusterClick(c.type);
+                }
+              }}
+            >
               <rect x={rx - r} y={ry - r} width={r * 2} height={r * 2} rx="3" fill={c.color} opacity="0.55" />
               <text x={rx} y={ry - r - 1.5} textAnchor="middle" fill={c.color} fontSize="7" fontWeight="800" fontFamily="Inter, sans-serif">{c.label}</text>
               <text x={rx} y={ry + r * 0.35} textAnchor="middle" fill="#fff" fontSize="7" fontWeight="700" fontFamily="JetBrains Mono, monospace">{c.count}</text>

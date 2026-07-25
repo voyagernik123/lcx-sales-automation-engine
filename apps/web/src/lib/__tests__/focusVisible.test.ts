@@ -43,6 +43,30 @@ const FORBIDDEN: Array<{ pattern: RegExp; why: string }> = [
   },
 ];
 
+/**
+ * Strip comments before matching, so the ratchet judges what the app DOES rather
+ * than what its documentation talks about.
+ *
+ * Not hypothetical: the block comment in globals.css explaining why
+ * `focus:outline-none` is banned tripped the ban on itself. This is the second
+ * time this phase that prose was mistaken for code — the first was Tailwind's
+ * content scan compiling class names out of a test file's own comments and
+ * shipping two outline-blanking rules to production. A rule that cannot tell code
+ * from writing about code will eventually be silenced instead of obeyed.
+ */
+function codeOnly(text: string): string {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    // Only whole-line comments: a trailing `//` is too risky to strip blind (it
+    // appears inside string literals such as `https://`).
+    .filter((line) => {
+      const t = line.trim();
+      return !t.startsWith('//') && !t.startsWith('*');
+    })
+    .join('\n');
+}
+
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     if (entry === 'node_modules' || entry === 'dist' || entry === '__tests__') continue;
@@ -59,7 +83,7 @@ describe('focus stays visible', () => {
   it('no source file re-introduces focus:outline-none', () => {
     const offenders: string[] = [];
     for (const file of files) {
-      const text = readFileSync(file, 'utf8');
+      const text = codeOnly(readFileSync(file, 'utf8'));
       text.split('\n').forEach((line, i) => {
         for (const { pattern, why } of FORBIDDEN) {
           if (pattern.test(line)) {
@@ -69,6 +93,63 @@ describe('focus stays visible', () => {
       });
     }
     expect(offenders, offenders.join('\n')).toEqual([]);
+  });
+
+  it('no control carries both focus-ring and a legacy ring utility', () => {
+    // Two focus indicators on one control is not redundancy, it is two things that
+    // drift apart. It also reintroduces POINTER focus rings: every one of these
+    // used the `focus:` variant, which fires on a mouse click, so the app kept
+    // drawing the click ring this phase claims to have removed. 59 of these
+    // survived the first conversion pass because grep-and-replace only touched the
+    // `focus:outline-none` token and left its companions in place.
+    const offenders: string[] = [];
+    for (const file of files) {
+      codeOnly(readFileSync(file, 'utf8'))
+        .split('\n')
+        .forEach((line, i) => {
+          if (!line.includes('focus-ring')) return;
+          // `focus:ring-0` is exempt: it zeroes the forms-plugin ring on checkboxes
+          // and never touches `outline`. `focus:border-*` is exempt too — a border
+          // colour change is the field's own active state, a different affordance.
+          const legacy = line.match(/\s(?:dark:)?focus(?:-visible)?:ring-(?!0\b)[a-z0-9/.[\]-]+/g);
+          if (legacy) offenders.push(`${file.replace(SRC, 'src')}:${i + 1} — also has ${legacy.join(' ')}`);
+        });
+    }
+    expect(offenders, offenders.join('\n')).toEqual([]);
+  });
+
+  it('no ring-offset is used without a ring-offset colour', () => {
+    // Measured on the live app before this was removed: a focused <Button> in DARK
+    // mode painted `box-shadow: rgb(255,255,255) 0 0 0 2px` — a pure white halo on
+    // a dark card. Tailwind's `ring-offset-2` sets the offset WIDTH; the colour
+    // comes from `--tw-ring-offset-color`, which no file in this app ever set, so
+    // it fell through to preflight's `#fff`. The defect is invisible in light mode,
+    // which is why it survived so long.
+    const offenders: string[] = [];
+    const setsColour = files.some((f) => /--tw-ring-offset-color|ring-offset-(?:navy|card|transparent)/.test(codeOnly(readFileSync(f, 'utf8'))));
+    for (const file of files) {
+      codeOnly(readFileSync(file, 'utf8'))
+        .split('\n')
+        .forEach((line, i) => {
+          if (/ring-offset-\d/.test(line) && !setsColour) {
+            offenders.push(`${file.replace(SRC, 'src')}:${i + 1} — ring-offset width with no ring-offset-color anywhere in the app`);
+          }
+        });
+    }
+    expect(offenders, offenders.join('\n')).toEqual([]);
+  });
+
+  it('focus-ring-inset is actually applied somewhere', () => {
+    // A utility no source file names is purged by Tailwind's content scan, so it
+    // silently does not exist in the shipped stylesheet. This one shipped dead in
+    // the first pass while five controls that needed it — both segmented view
+    // toggles and the Sign out button — sat flush inside `overflow: hidden`
+    // ancestors that clip the offset outline entirely. If this ever drops back to
+    // zero, either the clipped controls regressed or the utility should be deleted.
+    const users = files.filter(
+      (f) => !f.endsWith('globals.css') && codeOnly(readFileSync(f, 'utf8')).includes('focus-ring-inset'),
+    );
+    expect(users.length, 'focus-ring-inset is declared but unused, so Tailwind purges it').toBeGreaterThan(0);
   });
 
   it('the focus colour is a token, not a hard-coded value', () => {

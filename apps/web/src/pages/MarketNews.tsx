@@ -178,7 +178,7 @@ export function MarketNews() {
               {live ? 'Live' : 'Paused'}
             </button>
             <Button variant="secondary" size="sm" onClick={() => void refresh()} disabled={refreshing}>
-              <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} /> {refreshing ? 'Fetching…' : 'Fetch latest'}
+              <RefreshCw size={12} className={refreshing ? 'animate-spin motion-essential' : ''} /> {refreshing ? 'Fetching…' : 'Fetch latest'}
             </Button>
           </div>
         }
@@ -294,7 +294,7 @@ export function MarketNews() {
             description="Run a news refresh to pull the latest headlines from the free feeds and score them against your pipeline."
             action={
               <Button variant="secondary" size="sm" onClick={() => void refresh()} disabled={refreshing}>
-                <RefreshCw size={12} className={refreshing ? 'animate-spin' : ''} /> Run news refresh
+                <RefreshCw size={12} className={refreshing ? 'animate-spin motion-essential' : ''} /> Run news refresh
               </Button>
             }
           />

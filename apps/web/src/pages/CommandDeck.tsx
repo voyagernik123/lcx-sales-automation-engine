@@ -83,7 +83,7 @@ export function CommandDeck() {
         actions={
           <div className="br-no-print flex items-center gap-2">
             <Button size="sm" variant="secondary" onClick={printBoardPack}>Board Pack (print)</Button>
-            <Button size="sm" variant="secondary" onClick={reseed} disabled={busy}><RefreshCw size={13} className={busy ? 'animate-spin' : ''} /> Re-seed</Button>
+            <Button size="sm" variant="secondary" onClick={reseed} disabled={busy}><RefreshCw size={13} className={busy ? 'animate-spin motion-essential' : ''} /> Re-seed</Button>
           </div>
         }
       >

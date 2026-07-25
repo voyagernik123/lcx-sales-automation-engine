@@ -3,6 +3,7 @@ import { Star, ClipboardList, SearchCode } from 'lucide-react';
 import type { GapRow } from '@/lib/api/bd';
 import { EntityChip } from '@/components/entity';
 import { fmtUsd, type GapMatrixModel } from './gapMatrix';
+import { useDismissible } from '@/hooks/useDismissible';
 
 /**
  * The Exchange-Gap Heat Matrix: projects (rows, priority-sorted) ×
@@ -65,16 +66,11 @@ export function GapHeatMatrix({ model, watched, newIds, onToggleWatch, onInspect
     const onDown = (e: MouseEvent) => {
       if (popRef.current && !popRef.current.contains(e.target as Node)) setPopover(null);
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setPopover(null);
-    };
     document.addEventListener('mousedown', onDown);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
+    return () => document.removeEventListener('mousedown', onDown);
   }, [popover]);
+
+  useDismissible(!!popover, () => setPopover(null), 'gap action popover');
 
   const createTask = useCallback(async () => {
     if (!popover || taskPending) return;

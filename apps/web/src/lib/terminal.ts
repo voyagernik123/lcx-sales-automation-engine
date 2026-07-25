@@ -17,6 +17,7 @@
 // existing importers keep working and there is still one definition.
 export { isTerminal } from './container';
 import { isTerminal } from './container';
+import { MENU_ROUTES } from './destinations';
 
 type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -84,15 +85,13 @@ export async function secretDelete(key: string): Promise<void> {
 
 /* ── Shell events: the native menu is a discoverability surface for shortcuts ── */
 
-/** Map a native menu id to the app route/action it means. */
-const MENU_ROUTES: Record<string, string> = {
-  'go-desk': '/',
-  'go-ws-command': '/command-deck',
-  'go-ws-sales': '/bd-pipeline',
-  'go-ws-intel': '/command',
-  'go-ws-regulatory': '/regulatory-dashboard',
-  'go-ws-distribution': '/distribution',
-  'go-ws-governance': '/wbr',
+/**
+ * The workspace routes come from lib/destinations, which the webview's `g` grammar
+ * also reads, so the native menu and the keyboard cannot come to disagree about
+ * where ⌘3 goes. `help-manual` stays local: it is a menu affordance with no
+ * keyboard equivalent.
+ */
+const MENU_EXTRAS: Record<string, string> = {
   'help-manual': '/settings',
 };
 
@@ -117,7 +116,7 @@ export async function attachTerminalBridge(handlers: {
       if (id === 'go-back') return handlers.onBack();
       if (id === 'go-forward') return handlers.onForward();
       if (id === 'view-reload') return window.location.reload();
-      const to = MENU_ROUTES[id];
+      const to = MENU_ROUTES[id] ?? MENU_EXTRAS[id];
       if (to) handlers.onNavigate(to);
     });
 

@@ -184,7 +184,7 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
                   // state. A fresh document guarantees a clean process.
                   window.location.assign('/select');
                 }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-navy transition-colors hover:bg-ice-soft dark:hover:bg-ice-soft/10"
+                className="focus-ring-inset flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-navy transition-colors hover:bg-ice-soft dark:hover:bg-ice-soft/10"
               >
                 <LogOut size={12} />
                 Sign out

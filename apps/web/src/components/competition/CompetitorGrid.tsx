@@ -393,11 +393,21 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
       <tr
         key={c.id}
         className={clsx(
-          'border-b border-line hover:bg-ice-soft/30 dark:hover:bg-ice-soft/5 transition-colors cursor-pointer',
+          'border-b border-line hover:bg-ice-soft/30 dark:hover:bg-ice-soft/5 transition-colors cursor-pointer focus-ring',
           c.status === 'blocked' && 'opacity-60',
           clarityEnacted && c.clarityAct.position === 'strong_beneficiary' && 'border-l-2 border-l-cyan-500 bg-cyan-500/[0.02] dark:bg-cyan-500/[0.01]'
         )}
         onClick={() => onCompetitorClick?.(c.id)}
+        tabIndex={0}
+        // Stays a table row (role="button" would strip the row semantics), so it
+        // gets the focusable-row treatment: Enter/Space activate, Space prevented
+        // so the page does not scroll.
+        onKeyDown={e => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onCompetitorClick?.(c.id);
+          }
+        }}
       >
       {COLUMNS.filter(col => col.sortable).map(col => (
         <td key={col.key} className="p-2.5 whitespace-nowrap">
@@ -411,10 +421,11 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
   ));
 
   const cardRows = sorted.map(c => (
-    <div
+    <button
       key={c.id}
+      type="button"
       onClick={() => onCompetitorClick?.(c.id)}
-      className="cursor-pointer"
+      className="cursor-pointer block w-full text-left focus-ring"
     >
       <Card
         className={clsx(
@@ -492,7 +503,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
         {renderExtraInfo(c)}
       </CardBody>
     </Card>
-    </div>
+    </button>
   ));
 
   return (
@@ -502,8 +513,9 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
         <div className="flex items-center gap-1 border border-line rounded-lg overflow-hidden">
           <button
             onClick={() => setViewMode('table')}
+            aria-pressed={viewMode === 'table'}
             className={clsx(
-              'px-2.5 py-1.5 transition-colors',
+              'focus-ring-inset px-2.5 py-1.5 transition-colors',
               viewMode === 'table' ? 'bg-navy dark:bg-ice text-card dark:text-navy' : 'hover:bg-ice-soft text-grey'
             )}
             title="Table view"
@@ -512,8 +524,9 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
           </button>
           <button
             onClick={() => setViewMode('card')}
+            aria-pressed={viewMode === 'card'}
             className={clsx(
-              'px-2.5 py-1.5 transition-colors',
+              'focus-ring-inset px-2.5 py-1.5 transition-colors',
               viewMode === 'card' ? 'bg-navy dark:bg-ice text-card dark:text-navy' : 'hover:bg-ice-soft text-grey'
             )}
             title="Card view"
@@ -575,16 +588,28 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
                 {COLUMNS.filter(c => c.sortable).map(col => (
                   <th
                     key={col.key}
+                    aria-sort={sortField === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
                     className={clsx(
-                      'p-2.5 text-[9px] font-bold uppercase tracking-wider text-grey cursor-pointer hover:text-navy select-none whitespace-nowrap',
+                      // p-0 kills the 1px UA cell padding the moved p-2.5 used to
+                      // override — without it the header row grows by 2px.
+                      'p-0 text-[9px] font-bold uppercase tracking-wider text-grey select-none whitespace-nowrap',
                       col.width,
                     )}
-                    onClick={() => col.sortable && handleSort(col.key)}
                   >
-                    <span className="flex items-center gap-1">
-                      {col.shortLabel}
-                      {col.sortable && <SortIcon field={col.key} />}
-                    </span>
+                    {/* Real button inside the cell — a <th> cannot become one, and
+                        role="button" on a header strips its columnheader semantics.
+                        The cell padding moved onto the button so the hit area is
+                        still the whole cell. */}
+                    <button
+                      type="button"
+                      onClick={() => col.sortable && handleSort(col.key)}
+                      className="block w-full p-2.5 text-left cursor-pointer hover:text-navy focus-ring"
+                    >
+                      <span className="flex items-center gap-1">
+                        {col.shortLabel}
+                        {col.sortable && <SortIcon field={col.key} />}
+                      </span>
+                    </button>
                   </th>
                 ))}
                 <th className="p-2.5 text-[9px] font-bold uppercase tracking-wider text-grey min-w-[200px]">

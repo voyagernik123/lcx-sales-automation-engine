@@ -202,7 +202,7 @@ function GraphInner() {
         subtitle="Every object one pivot away. Click a node to expand its linked neighborhood; open the inspector for full detail."
         actions={
           <div className="flex items-center gap-2 text-micro text-grey">
-            {busy && <Loader2 size={13} className="animate-spin" />}
+            {busy && <Loader2 size={13} className="animate-spin motion-essential" />}
             <span className="num-tabular">{gnodes.length}/{NODE_CAP} nodes</span>
             <Button size="xs" variant="secondary" onClick={() => setViewsOpen((v) => !v)}>
               <Bookmark size={11} /> Views

@@ -6,8 +6,6 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import {
-  isCommandOpen,
-  setCommandOpen,
   isTypingTarget,
   isCommandChord,
   acceptCommandChord,
@@ -16,24 +14,11 @@ import {
 
 beforeEach(() => _resetKeyboard());
 
-describe('the command-open flag', () => {
-  it('starts closed and round-trips', () => {
-    expect(isCommandOpen()).toBe(false);
-    setCommandOpen(true);
-    expect(isCommandOpen()).toBe(true);
-    setCommandOpen(false);
-    expect(isCommandOpen()).toBe(false);
-  });
-
-  it('is readable synchronously, which is why it is not in a store', () => {
-    // Capture-phase DOM handlers have no access to React context and must decide
-    // mid-event whether to swallow Escape. A store subscription cannot answer
-    // that question inside the same tick.
-    setCommandOpen(true);
-    const handler = () => (isCommandOpen() ? 'defer' : 'handle');
-    expect(handler()).toBe('defer');
-  });
-});
+// The `isCommandOpen` flag this file used to cover is gone. Its job — letting other
+// overlays know the command line was on top so they could decline Escape — is now
+// the dismiss stack's, and is covered by lib/__tests__/dismiss.test.ts. Deleting
+// these two tests along with the flag is the point: the behaviour is still tested,
+// but once, in the module that actually decides it.
 
 describe('the open chord', () => {
   const key = (init: Partial<KeyboardEvent>) => new KeyboardEvent('keydown', init as KeyboardEventInit);

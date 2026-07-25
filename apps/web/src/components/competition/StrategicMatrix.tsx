@@ -215,7 +215,23 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
             const ly = Math.max(PLOT_TOP + 8, Math.min(PLOT_BOTTOM - 4, dot.y + offset.dy));
 
             return (
-              <g key={`dot-${dot.id}`} style={{ cursor: 'pointer' }}>
+              // The dot group carries the activation: an SVG shape cannot be a
+              // <button>, and the two circles (visible + larger transparent hit
+              // area) are one target — hanging the handler on the group they share
+              // gives one tab stop and one click path instead of two of each.
+              <g key={`dot-${dot.id}`} style={{ cursor: 'pointer' }}
+                role="button"
+                tabIndex={0}
+                aria-label={`${dot.name} — open competitor detail`}
+                onClick={() => onCompetitorClick?.(dot.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onCompetitorClick?.(dot.id);
+                  }
+                }}
+                className="focus-ring"
+              >
                 <circle cx={dot.x} cy={dot.y} r={radius}
                   fill={isHovered ? colors.fill : dotFill}
                   stroke={isHovered ? dotColor : colors.stroke}
@@ -223,7 +239,6 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
                   style={{ transition: 'all 0.3s', opacity: isHovered ? 1 : 0.85 }}
                   onMouseMove={(e) => handleMouseMove(e, dot)}
                   onMouseLeave={handleMouseLeave}
-                  onClick={() => onCompetitorClick?.(dot.id)}
                 />
                 <text x={lx} y={ly}
                   fill={textColor}
@@ -238,7 +253,6 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
                   fill="transparent" stroke="transparent"
                   onMouseMove={(e) => handleMouseMove(e, dot)}
                   onMouseLeave={handleMouseLeave}
-                  onClick={() => onCompetitorClick?.(dot.id)}
                 />
               </g>
             );

@@ -14,6 +14,7 @@ import { beginInteraction, afterPaint, readTally } from '@/lib/perf';
 import { OfflineBanner } from './OfflineBanner';
 import { startConnectivityWatch } from '@/lib/online';
 import { useAccessStore } from '@/stores/useAccessStore';
+import { useGoGrammar } from '@/hooks/useGoGrammar';
 
 export function AppLayout() {
   const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed);
@@ -70,6 +71,13 @@ export function AppLayout() {
   // stay online because gates read their inputs at write time and three of them
   // fail open on error, so a queued write would be judged against stale truth.
   useEffect(() => startConnectivityWatch(), []);
+
+  // LCX TERMINAL (Phase 4): `g` then a digit reaches any workspace from the
+  // keyboard. This is NOT a port of the native ⌘1-6 accelerators — those cannot be
+  // ported, because Chrome reserves ⌘1-⌘9 for tab switching and never delivers
+  // them to the page (measured: zero keydowns from a capture-phase listener). Both
+  // triggers resolve through lib/destinations, so they cannot drift apart.
+  useGoGrammar((to) => navigate(to));
 
   // LCX TERMINAL (Phase 1): wire the native macOS menu + self-updater to the
   // app. The menu exists as much for DISCOVERABILITY as for use — every

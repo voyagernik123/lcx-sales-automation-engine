@@ -5,6 +5,7 @@ import { clsx } from 'clsx';
 import { useFilterStore } from '@/stores';
 import { fetchLead, approveLead, suppressLead, triggerRescore, triggerEnrich, trackProject, enqueueContactDiscovery, runDiscoveryTick, fetchProjectTimeline, type TimelineEntry, addPerson, updatePerson, generateDraft as apiGenerateDraft, saveDraft, fetchDrafts, updateDraft, enrollProject, pauseSequence, resumeSequence, fetchProjectSequences, fetchProjectMessages, fetchProjectDeal, createDeal, generateProposal, fetchDealEvents, fetchDealObjections, addDealObjection, fetchSequenceTemplates, type SequenceTemplate } from '@/lib/api/bd';
 import { transitionDealWithGate } from '@/lib/dealGate';
+import { scrollToId } from '@/lib/motion';
 import { toast } from '@/components/shared/Toast';
 import { EmptyState, CardSkeleton } from '@/components/shared';
 import { EntityChip } from '@/components/entity';
@@ -402,8 +403,7 @@ export function LeadDetail() {
             ? { label: 'Next: enroll in a sequence', anchor: 'Sequences' }
             : { label: 'Sequence running — watch for replies', anchor: null };
 
-  const scrollToEl = (elId: string) =>
-    document.getElementById(elId)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  const scrollToEl = (elId: string) => scrollToId(elId);
 
   return (
     <div className="flex h-[calc(100vh-6.5rem)] flex-col text-navy overflow-hidden">
@@ -481,7 +481,7 @@ export function LeadDetail() {
           disabled={actionLoading === 'rescore'}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-micro font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
         >
-          <RefreshCw size={12} className={clsx(actionLoading === 'rescore' && 'animate-spin')} />
+          <RefreshCw size={12} className={clsx(actionLoading === 'rescore' && 'animate-spin motion-essential')} />
           {actionLoading === 'rescore' ? 'Re-scoring...' : 'Force Re-score'}
         </button>
 
@@ -490,7 +490,7 @@ export function LeadDetail() {
           disabled={actionLoading === 'enrich'}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-micro font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
         >
-          <Search size={12} className={clsx(actionLoading === 'enrich' && 'animate-spin')} />
+          <Search size={12} className={clsx(actionLoading === 'enrich' && 'animate-spin motion-essential')} />
           {actionLoading === 'enrich' ? 'Enriching...' : 'Force Enrich'}
         </button>
 
@@ -500,7 +500,7 @@ export function LeadDetail() {
           title="Promote into the tracked tier and pull live market data now"
           className="flex items-center gap-1.5 rounded border border-cyan-400/60 bg-cyan-50 px-3 py-1 text-micro font-bold text-cyan-700 hover:bg-cyan-100 dark:bg-cyan-950/40 dark:text-cyan-300 dark:hover:bg-cyan-950/60 transition-colors"
         >
-          <Zap size={12} className={clsx(actionLoading === 'track' && 'animate-spin')} />
+          <Zap size={12} className={clsx(actionLoading === 'track' && 'animate-spin motion-essential')} />
           {actionLoading === 'track' ? 'Tracking...' : 'Track / Refresh Live'}
         </button>
 
@@ -518,7 +518,7 @@ export function LeadDetail() {
           disabled={actionLoading === 'discover'}
           className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-micro font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
         >
-          <Search size={12} className={clsx(actionLoading === 'discover' && 'animate-spin')} />
+          <Search size={12} className={clsx(actionLoading === 'discover' && 'animate-spin motion-essential')} />
           {actionLoading === 'discover' ? 'Crawling site...' : 'Find Contact Email'}
         </button>
 
@@ -1309,7 +1309,7 @@ function DealSection({ projectId }: { projectId: string }) {
       <div className="space-y-2 py-2">
         <p className="text-micro text-grey italic">No deal for this project yet.</p>
         <div className="flex items-center gap-2">
-          <select value={pkgType} onChange={e => setPkgType(e.target.value)} className="rounded border border-line px-2 py-1 text-micro bg-surface dark:bg-navy-deep focus-ring focus:ring-1 focus:ring-cyan-500">
+          <select value={pkgType} onChange={e => setPkgType(e.target.value)} className="rounded border border-line px-2 py-1 text-micro bg-surface dark:bg-navy-deep focus-ring">
             <option value="listing">Listing ($20K)</option>
             <option value="marketing">Marketing ($20K)</option>
             <option value="liquidity">Liquidity ($10K)</option>
@@ -1374,7 +1374,7 @@ function DealSection({ projectId }: { projectId: string }) {
           ))}
           {/* Win/Loss with reason */}
           <div className="flex items-center gap-1 ml-2">
-            <input value={stageReason} onChange={e => setStageReason(e.target.value)} placeholder="Reason for close..." className="w-36 rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus-ring focus:ring-1 focus:ring-cyan-500" />
+            <input value={stageReason} onChange={e => setStageReason(e.target.value)} placeholder="Reason for close..." className="w-36 rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus-ring" />
             <button onClick={() => handleStageTransition('won')} disabled={actionLoading === 'stage-won' || !stageReason.trim()} className="rounded bg-emerald-600 text-white px-2 py-0.5 text-micro font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1">
               <ThumbsUp size={9} /> {actionLoading === 'stage-won' ? '...' : 'Won'}
             </button>
@@ -1444,7 +1444,7 @@ function DealSection({ projectId }: { projectId: string }) {
         {showObjections && (
           <div className="space-y-1 mb-2">
             <div className="flex gap-1">
-              <select value={objCategory} onChange={e => setObjCategory(e.target.value)} className="rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus-ring focus:ring-1 focus:ring-cyan-500">
+              <select value={objCategory} onChange={e => setObjCategory(e.target.value)} className="rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus-ring">
                 <option value="">Category...</option>
                 <option value="price">Price</option>
                 <option value="volume">Volume</option>
@@ -1455,13 +1455,13 @@ function DealSection({ projectId }: { projectId: string }) {
                 <option value="competitor">Competitor</option>
                 <option value="other">Other</option>
               </select>
-              <select value={objSeverity} onChange={e => setObjSeverity(e.target.value)} className="rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus-ring focus:ring-1 focus:ring-cyan-500">
+              <select value={objSeverity} onChange={e => setObjSeverity(e.target.value)} className="rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus-ring">
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
                 <option value="blocker">Blocker</option>
               </select>
-              <input value={objDesc} onChange={e => setObjDesc(e.target.value)} placeholder="Describe objection..." className="flex-1 rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus-ring focus:ring-1 focus:ring-cyan-500" />
+              <input value={objDesc} onChange={e => setObjDesc(e.target.value)} placeholder="Describe objection..." className="flex-1 rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus-ring" />
               <button onClick={handleAddObjection} disabled={actionLoading === 'objection' || !objCategory || !objDesc.trim()} className="rounded bg-cyan-600 text-white px-2 py-0.5 text-micro font-bold disabled:opacity-50">
                 Add
               </button>

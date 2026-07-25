@@ -1,4 +1,5 @@
 import { useEffect, useRef, ReactNode } from 'react';
+import { useDismissible } from '@/hooks/useDismissible';
 import { X } from 'lucide-react';
 import { clsx } from 'clsx';
 
@@ -13,34 +14,23 @@ interface InspectorDrawerProps {
 
 export function InspectorDrawer({ isOpen, onClose, onEscape, title, children }: InspectorDrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  // Spatial continuity (plan 4.4): remember where focus came from and put it
-  // back when the panel leaves — the page never loses its place.
-  const returnFocusRef = useRef<HTMLElement | null>(null);
+
+  // Escape and focus return are both the dismiss stack's job now. This component
+  // was the ONLY one of sixteen overlays that restored focus on close; every other
+  // one dropped it to <body>, which restarts Tab from the top of the document.
+  // Moving it into the stack is what makes that fix universal instead of a habit
+  // each new overlay has to remember.
+  useDismissible(isOpen, onEscape ?? onClose, `${title} inspector`);
 
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') (onEscape ?? onClose)();
-    };
-
-    if (isOpen) {
-      returnFocusRef.current = document.activeElement as HTMLElement | null;
-      document.body.style.overflow = 'hidden';
-      setTimeout(() => {
-        panelRef.current?.focus();
-      }, 50);
-      document.addEventListener('keydown', handleKeyDown);
-    } else {
-      document.body.style.overflow = '';
-    }
-
+    if (!isOpen) return;
+    document.body.style.overflow = 'hidden';
+    const raf = requestAnimationFrame(() => panelRef.current?.focus());
     return () => {
-      if (isOpen) {
-        document.body.style.overflow = '';
-        returnFocusRef.current?.focus?.();
-      }
-      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = '';
+      cancelAnimationFrame(raf);
     };
-  }, [isOpen, onClose, onEscape]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

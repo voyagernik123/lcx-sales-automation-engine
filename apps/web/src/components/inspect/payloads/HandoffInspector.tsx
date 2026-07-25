@@ -9,6 +9,7 @@ import { computeReplySla, SLA_CLS } from '@/lib/salesIntel';
 import { CardSkeleton, EmptyState } from '@/components/shared';
 import { Button } from '@/components/ui';
 import { useInspectorStore } from '@/stores';
+import { scrollToId } from '@/lib/motion';
 import type { InspectorPayloadProps } from './ProjectInspector';
 
 const EVENT_STYLE: Record<string, string> = {
@@ -65,7 +66,7 @@ export function HandoffInspector({ id }: InspectorPayloadProps) {
           label: events.length === 1 ? 'event' : 'events',
           count: events.length,
           icon: Activity,
-          onClick: () => document.getElementById('insp-handoff-timeline')?.scrollIntoView({ behavior: 'smooth', block: 'center' }),
+          onClick: () => scrollToId('insp-handoff-timeline'),
         },
       ]}
     />

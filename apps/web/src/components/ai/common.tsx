@@ -52,7 +52,7 @@ export function RunButton({
       disabled={running || disabled}
       className="mt-2 inline-flex items-center gap-1.5 rounded border border-line px-3 py-1.5 text-label font-semibold hover:bg-ice-soft disabled:opacity-50 dark:hover:bg-ice-soft/10"
     >
-      {running ? <Loader2 size={12} className="animate-spin" /> : <Bot size={12} />}
+      {running ? <Loader2 size={12} className="animate-spin motion-essential" /> : <Bot size={12} />}
       {running ? runningLabel : children}
     </button>
   );
@@ -60,7 +60,7 @@ export function RunButton({
 
 export const panelClass = 'rounded-lg border border-line bg-card p-4';
 export const inputClass =
-  'w-full rounded border border-line bg-transparent p-2 text-xs focus-ring focus:ring-1 focus:ring-cyan-500';
+  'w-full rounded border border-line bg-transparent p-2 text-xs focus-ring';
 export const labelClass = 'text-micro font-bold uppercase tracking-wider text-grey';
 export const resultBoxClass =
   'whitespace-pre-wrap rounded border border-line bg-ice-soft/40 dark:bg-ice-soft/5 p-2.5 text-label leading-relaxed';

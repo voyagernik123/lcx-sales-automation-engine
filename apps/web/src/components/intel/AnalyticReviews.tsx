@@ -114,7 +114,7 @@ export function AnalyticReviews({ subjectType, subjectId }: { subjectType: 'deal
           />
         </>
       ) : reviews == null ? (
-        <div className="py-3 text-center text-micro text-grey"><Loader2 size={13} className="inline animate-spin" /></div>
+        <div className="py-3 text-center text-micro text-grey"><Loader2 size={13} className="inline animate-spin motion-essential" /></div>
       ) : reviews.length === 0 ? (
         <p className="py-2 text-micro text-grey">No reviews yet. Run a structured technique before you commit.</p>
       ) : (

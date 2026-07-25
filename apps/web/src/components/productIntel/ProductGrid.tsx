@@ -237,8 +237,17 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
   };
 
   const tableRows = sorted.map(p => (
-    <tr key={p.id} className="border-b border-line hover:bg-ice-soft/30 dark:hover:bg-ice-soft/5 transition-colors cursor-pointer"
-      onClick={() => onProductClick?.(p.id)}>
+    <tr key={p.id} className="border-b border-line hover:bg-ice-soft/30 dark:hover:bg-ice-soft/5 transition-colors cursor-pointer focus-ring"
+      onClick={() => onProductClick?.(p.id)}
+      tabIndex={0}
+      // Stays a table row (role="button" would strip the row semantics): Enter and
+      // Space activate, Space prevented so the page does not scroll.
+      onKeyDown={e => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onProductClick?.(p.id);
+        }
+      }}>
       {COLUMNS.map(col => (
         <td key={col.key} className="p-2 whitespace-nowrap">{renderCell(p, col)}</td>
       ))}
@@ -249,7 +258,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
     const Icon = categoryIcons[p.category];
     const compCount = p.topCompetitors.filter(cid => allCompetitorIds.includes(cid)).length;
     return (
-      <div key={p.id} onClick={() => onProductClick?.(p.id)} className="cursor-pointer">
+      <button key={p.id} type="button" onClick={() => onProductClick?.(p.id)} className="cursor-pointer block w-full text-left focus-ring">
         <div className={clsx('rounded-lg border bg-card p-3 transition-all hover:shadow-md hover:-translate-y-[0.5px]',
           p.priorityTier === 1 ? 'border-amber-400/40' : p.priorityTier === 2 ? 'border-cyan-400/30' : 'border-line')}>
           <div className="flex items-center justify-between mb-2">
@@ -279,7 +288,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
             )}
           </div>
         </div>
-      </div>
+      </button>
     );
   });
 
@@ -288,10 +297,10 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-bold text-navy">Product Catalog</h2>
         <div className="flex items-center gap-1 border border-line rounded-lg overflow-hidden">
-          <button onClick={() => setViewMode('table')} className={clsx('px-2 py-1 transition-colors', viewMode === 'table' ? 'bg-navy dark:bg-ice text-card dark:text-navy' : 'hover:bg-ice-soft text-grey')}>
+          <button onClick={() => setViewMode('table')} aria-label="Table view" aria-pressed={viewMode === 'table'} className={clsx('focus-ring-inset px-2 py-1 transition-colors', viewMode === 'table' ? 'bg-navy dark:bg-ice text-card dark:text-navy' : 'hover:bg-ice-soft text-grey')}>
             <Table2 size={14} />
           </button>
-          <button onClick={() => setViewMode('card')} className={clsx('px-2 py-1 transition-colors', viewMode === 'card' ? 'bg-navy dark:bg-ice text-card dark:text-navy' : 'hover:bg-ice-soft text-grey')}>
+          <button onClick={() => setViewMode('card')} aria-label="Card view" aria-pressed={viewMode === 'card'} className={clsx('focus-ring-inset px-2 py-1 transition-colors', viewMode === 'card' ? 'bg-navy dark:bg-ice text-card dark:text-navy' : 'hover:bg-ice-soft text-grey')}>
             <LayoutGrid size={14} />
           </button>
         </div>
@@ -337,13 +346,31 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
             <thead>
               <tr className="bg-ice-soft/40 dark:bg-navy-deep/20 border-b border-line">
                 {COLUMNS.map(col => (
-                  <th key={col.key} className={clsx('p-2 text-[9px] font-bold uppercase tracking-wider text-grey select-none whitespace-nowrap', col.width,
-                    col.sortable && 'cursor-pointer hover:text-navy')}
-                    onClick={() => col.sortable && handleSort(col.key as ProductSortField)}>
-                    <span className="flex items-center gap-1">
-                      {col.short}
-                      {col.sortable && <SortIcon field={col.key as ProductSortField} />}
-                    </span>
+                  <th key={col.key}
+                    aria-sort={!col.sortable ? undefined : sortField === col.key ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    className={clsx('text-[9px] font-bold uppercase tracking-wider text-grey select-none whitespace-nowrap', col.width,
+                      // p-0 on the sortable ones kills the 1px UA cell padding the
+                      // moved p-2 used to override — 2px of header height otherwise.
+                      col.sortable ? 'p-0' : 'p-2')}>
+                    {/* Sortable headers wrap their label in a real button (a <th>
+                        cannot become one); the cell padding moves onto the button so
+                        the hit area is unchanged. Non-sortable headers stay inert. */}
+                    {col.sortable ? (
+                      <button
+                        type="button"
+                        onClick={() => handleSort(col.key as ProductSortField)}
+                        className="block w-full p-2 text-left cursor-pointer hover:text-navy focus-ring"
+                      >
+                        <span className="flex items-center gap-1">
+                          {col.short}
+                          <SortIcon field={col.key as ProductSortField} />
+                        </span>
+                      </button>
+                    ) : (
+                      <span className="flex items-center gap-1">
+                        {col.short}
+                      </span>
+                    )}
                   </th>
                 ))}
               </tr>

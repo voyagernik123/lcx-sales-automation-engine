@@ -26,6 +26,7 @@ import { PropensityTrail } from '@/components/bd/PropensityTrail';
 import { GateBanner, useGateCheck } from '@/components/bd/GateBanner';
 import { PriorityEquation } from '@/components/bd/PriorityEquation';
 import { useInspect } from '@/stores';
+import { scrollToId } from '@/lib/motion';
 import {
   fetchProjectSequences,
   fetchProjectMessages,
@@ -345,7 +346,7 @@ export function Customer360() {
   }, [load]);
 
   const scrollTo = (section: string) => {
-    document.getElementById(anchorId(section))?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    scrollToId(anchorId(section), 'start');
   };
 
   if (loading) {
@@ -520,10 +521,10 @@ export function Customer360() {
                 euScore={score.euScore}
                 usPostScore={score.usPostScore}
                 onExplainPropensity={() =>
-                  document.getElementById('c360-propensity')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  scrollToId('c360-propensity')
                 }
                 onExplainGate={() =>
-                  document.getElementById('c360-gate-banner')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                  scrollToId('c360-gate-banner')
                 }
               />
             </div>

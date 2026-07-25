@@ -10,6 +10,7 @@ import { EntityChip } from '@/components/entity';
 import { Derived } from '@/components/lineage';
 import { ScoreBadge, BandBadge } from './ScoreBadge';
 import { MarketTag } from './MarketTag';
+import { useListNavigation } from '@/hooks/useListNavigation';
 
 interface LeadTableProps {
   leads: BdLead[];
@@ -62,6 +63,15 @@ export function LeadTable({
   onUnsnooze,
   onPeek,
 }: LeadTableProps) {
+  // One tab stop for the table, arrows within it (TERMINAL Phase 4).
+  const nav = useListNavigation({
+    count: leads.length,
+    onActivate: (i) => {
+      const lead = leads[i];
+      if (lead) onSelect(lead.id);
+    },
+  });
+
   const usColumn: 'us_pre' | 'us_post' = clarityEnacted ? 'us_post' : 'us_pre';
   const usLabel = clarityEnacted ? 'US (Post)' : 'US (Pre)';
 
@@ -90,20 +100,35 @@ export function LeadTable({
             {visibleColumns.map((col) => (
               <th
                 key={col.key}
-                onClick={() => onSort(col.key)}
+                aria-sort={filters.sort === col.key ? (filters.order === 'asc' ? 'ascending' : 'descending') : 'none'}
                 className={clsx(
-                  'py-2.5 px-3 text-micro font-medium uppercase tracking-wider text-grey cursor-pointer hover:text-navy transition-colors select-none',
+                  // p-0 kills the 1px UA cell padding that the moved py-2.5/px-3
+                  // used to override — without it the header row grows by 2px.
+                  'p-0 text-micro font-medium uppercase tracking-wider text-grey',
                   col.key === 'name' ? 'text-left' : 'text-right',
                   filters.sort === col.key && 'text-navy',
                 )}
               >
-                <span className="inline-flex items-center gap-1">
-                  {col.key === 'name' ? col.label : (
-                    col.key === 'eu_score' ? 'EU Score' :
-                    col.key === usColumn ? usLabel : col.label
+                {/* The sort control is a real button inside the cell: a <th> cannot
+                    be replaced by one, and role="button" on a header would strip the
+                    columnheader semantics the table needs. Padding lives on the
+                    button so its hit area is the whole cell, as before. */}
+                <button
+                  type="button"
+                  onClick={() => onSort(col.key)}
+                  className={clsx(
+                    'block w-full py-2.5 px-3 cursor-pointer hover:text-navy transition-colors select-none focus-ring',
+                    col.key === 'name' ? 'text-left' : 'text-right',
                   )}
-                  <ArrowUpDown size={10} className={clsx(filters.sort === col.key ? 'opacity-100' : 'opacity-30')} />
-                </span>
+                >
+                  <span className="inline-flex items-center gap-1">
+                    {col.key === 'name' ? col.label : (
+                      col.key === 'eu_score' ? 'EU Score' :
+                      col.key === usColumn ? usLabel : col.label
+                    )}
+                    <ArrowUpDown size={10} className={clsx(filters.sort === col.key ? 'opacity-100' : 'opacity-30')} />
+                  </span>
+                </button>
               </th>
             ))}
             <th className="text-left py-2.5 px-3 text-micro font-medium uppercase tracking-wider text-grey">Market</th>
@@ -114,8 +139,8 @@ export function LeadTable({
             <th className="text-right py-2.5 px-3 text-micro font-medium uppercase tracking-wider text-grey">Contact</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-line/50">
-          {leads.map((lead) => {
+        <tbody className="divide-y divide-line/50" {...nav.containerProps}>
+          {leads.map((lead, i) => {
             const isSelected = selectedId === lead.id;
             const replyAt = slaBy?.[lead.id];
             const sla = replyAt ? computeReplySla(replyAt) : null;
@@ -127,8 +152,17 @@ export function LeadTable({
                 data-lead-id={lead.id}
                 aria-selected={isSelected}
                 onClick={() => onSelect(lead.id)}
+                // A row cannot become a <button> — it must stay a table row, and it
+                // holds its own buttons — so movement comes from the shared
+                // roving-tabindex hook rather than from `tabIndex={0}` on every row.
+                // That distinction is the whole point: 200 focusable rows means
+                // reaching row 40 of the queue costs 40+ Tab presses and Tab can
+                // never leave the table. Roving makes the table ONE tab stop, with
+                // the arrows moving inside it. Enter/Space still activate, via the
+                // hook, so the nested peek/unsnooze buttons keep their own keys.
+                {...nav.rowProps(i)}
                 className={clsx(
-                  'cursor-pointer transition-colors group',
+                  'cursor-pointer transition-colors group focus-ring',
                   isSelected
                     ? 'bg-cyan-500/[0.07] dark:bg-cyan-400/[0.08]'
                     : 'hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10',
