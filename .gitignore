@@ -21,8 +21,8 @@ coverage/
 # trains you to stop reading it — the same reflex that let a 90-path working tree hide four
 # streams of real work. CI already publishes the report through actions/upload-artifact, so
 # nothing is lost by not tracking it.
-apps/web/playwright-report/
-apps/web/test-results/
+playwright-report/
+test-results/
 
 # Research / local scratch
 LCX USA.pdf
