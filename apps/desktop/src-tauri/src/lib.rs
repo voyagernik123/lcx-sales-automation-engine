@@ -247,6 +247,63 @@ fn diagnostics_append(line: String) {
     log_line(&format!("[web] {}", clip_web_line(&line)));
 }
 
+/// Can an update actually be installed where this app is running from?
+///
+/// FOUND ON THE FIRST REAL CLEAN-MACHINE INSTALL, which is the whole argument for doing
+/// one. The operator downloaded the DMG, launched the app straight out of the mounted
+/// image without dragging it to Applications — an entirely reasonable thing to do, since
+/// it runs perfectly — pressed Check for Updates, and got:
+///
+///     Installing 0.1.1 failed (Cross-device link (os error 18))
+///
+/// EXDEV. The macOS updater extracts the new bundle to a temp directory and renames it
+/// over the running one, and `rename(2)` cannot cross filesystems. A mounted DMG is a
+/// separate, READ-ONLY device, so the rename could never have worked. The error is
+/// accurate and completely useless: it names a POSIX errno and says nothing about the
+/// only thing the operator needs to do, which is drag the app to Applications.
+///
+/// Worse, it fails at the LAST step, after downloading 5MB and verifying a signature —
+/// so the desk spends thirty seconds looking like it is updating and then does not.
+///
+/// This is checked BEFORE `downloadAndInstall()` so the refusal is instant and explains
+/// itself. Deliberately a writability probe on the PARENT directory rather than a
+/// `starts_with("/Volumes")` string test: a DMG is the case that bit us, but a read-only
+/// mount, a locked Applications folder, or a bundle sitting somewhere an operator lacks
+/// write permission all fail identically, and all deserve the same message. Testing the
+/// property beats enumerating the causes.
+#[tauri::command]
+fn update_install_precheck() -> Result<(), String> {
+    let exe = std::env::current_exe().map_err(|e| format!("cannot locate the running app: {e}"))?;
+
+    // …/LCX TERMINAL.app/Contents/MacOS/lcx-terminal → …/LCX TERMINAL.app
+    let bundle = exe
+        .ancestors()
+        .find(|p| p.extension().is_some_and(|x| x == "app"))
+        .ok_or_else(|| "the running binary is not inside an .app bundle".to_string())?;
+    let parent = bundle
+        .parent()
+        .ok_or_else(|| "the app bundle has no parent directory".to_string())?;
+
+    // Probe by creating and removing a file. `metadata().permissions().readonly()` reports
+    // the mode bits, which say nothing about whether the VOLUME is mounted read-only —
+    // and the volume is exactly what is wrong in the DMG case.
+    let probe = parent.join(".lcx-terminal-update-probe");
+    match std::fs::write(&probe, b"") {
+        Ok(()) => {
+            let _ = std::fs::remove_file(&probe);
+            Ok(())
+        }
+        Err(e) => Err(format!(
+            "LCX TERMINAL is running from a location it cannot update itself in ({}). \
+             Quit, drag the app into your Applications folder, and open it from there. \
+             (Running from the disk image works, but an update has to replace the app, \
+             and a mounted image is read-only.) [{}]",
+            parent.display(),
+            e.kind()
+        )),
+    }
+}
+
 /// Separate from the command so the clipping is testable without writing to the
 /// real desk log. Marked when it clips, so nobody reads a cut-off stack as a
 /// complete one. Counts CHARACTERS, not bytes — slicing a String by byte offset
@@ -794,7 +851,8 @@ pub fn run() {
             secret_delete,
             is_terminal,
             haptic_tap,
-            diagnostics_append
+            diagnostics_append,
+            update_install_precheck
         ])
         .setup(|app| {
             let handle = app.handle().clone();

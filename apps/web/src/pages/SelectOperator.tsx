@@ -56,9 +56,35 @@ export function SelectOperator() {
       await getMe();
       setOperator(member);
       navigate('/', { replace: true });
-    } catch {
-      setOperatorCredentials('', '');
-      setError('That email and passcode combination is not authorized.');
+    } catch (err) {
+      // WHY THIS IS NOT A BARE `catch`, discovered on a real clean-machine install.
+      //
+      // It used to be `catch { … 'That email and passcode combination is not authorized.' }`,
+      // which blamed the operator's credential for EVERY failure of `getMe()` — including
+      // the API being unreachable. It happened for real within minutes of the first
+      // download: a deploy restarted the API, sign-in failed, and the desk told the
+      // operator their passcode was wrong. It was correct. They then went looking for a
+      // bad password, on a working credential, while the status bar two lines below said
+      // API DOWN.
+      //
+      // And it CLEARED the credential on the way out, so a server restart cost them a
+      // retype. Wiping a secret is right when the server has rejected it and wrong when
+      // the server never saw it.
+      //
+      // `classifyError` already drew this distinction (`lib/errors.ts:36` for 401,
+      // `:58` for unreachable) and this path simply never asked it. Blaming the user for
+      // an outage is the front door's version of the same defect the 401 handler fixed
+      // deeper in the app.
+      const { classifyError } = await import('@/lib/errors');
+      const classified = classifyError(err);
+      if (classified.kind === 'auth' || classified.kind === 'permission') {
+        setOperatorCredentials('', '');
+        setError('That email and passcode combination is not authorized.');
+      } else {
+        // Credential deliberately KEPT: it was never judged. One press of Sign in
+        // retries once the API is back, with nothing retyped.
+        setError(`${classified.title}. The desk could not reach the API to verify you — your credential has not been rejected. ${classified.retryable ? 'Try again in a moment.' : ''}`.trim());
+      }
     } finally {
       setBusy(false);
     }

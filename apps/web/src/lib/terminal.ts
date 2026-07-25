@@ -238,6 +238,35 @@ async function installUpdate(
 ): Promise<void> {
   if (updatePhase !== 'idle') return;
   updatePhase = 'installing';
+
+  // REFUSE BEFORE DOWNLOADING, not after. Found on the first real clean-machine install:
+  // the app was launched straight out of the mounted DMG — which works perfectly, so there
+  // is no reason for an operator not to — and the install failed at the very last step with
+  //
+  //     Installing 0.1.1 failed (Cross-device link (os error 18))
+  //
+  // EXDEV. The macOS updater extracts to a temp directory and renames over the running
+  // bundle, and `rename(2)` cannot cross filesystems; a mounted image is a separate,
+  // read-only device. So it downloaded 5MB, verified a signature, and then hit a condition
+  // that was knowable before any of it — and reported a POSIX errno instead of the one
+  // action that fixes it.
+  //
+  // The Rust side probes writability of the bundle's parent rather than string-matching
+  // `/Volumes`, so a locked Applications folder or any read-only mount produces the same
+  // honest message. Failing here also leaves the installed app untouched, which matters:
+  // the installer removes the running bundle before renaming, so the interesting failures
+  // are the ones that happen mid-swap.
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('update_install_precheck');
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    void logDiagnostic(`update ${update.version} refused before download: ${reason}`);
+    notify('warning', reason);
+    updatePhase = 'idle';
+    return;
+  }
+
   void logDiagnostic(`installing update ${update.version}`);
   notify('info', `Installing ${update.version}. The desk will close and reopen itself.`);
   try {
