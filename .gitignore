@@ -14,6 +14,16 @@ coverage/
 .turbo/
 *.tsbuildinfo
 
+# Playwright output. These were TRACKED, which made every local `npm run e2e` produce a
+# spurious diff: index.html is a 560KB self-contained report that is rewritten in full on
+# every run, and test-results/ carries per-failure context that becomes a phantom deletion
+# the moment a test starts passing. Both are pure churn in `git status`, and churn is what
+# trains you to stop reading it — the same reflex that let a 90-path working tree hide four
+# streams of real work. CI already publishes the report through actions/upload-artifact, so
+# nothing is lost by not tracking it.
+apps/web/playwright-report/
+apps/web/test-results/
+
 # Research / local scratch
 LCX USA.pdf
 scratch_search_pdf.py
