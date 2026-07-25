@@ -19,6 +19,10 @@ import { states, products, redFlags } from '@/data';
 import { fetchObjectSearch } from '@/lib/api/graph';
 import { useInspectorStore, type InspectorEntityType } from '@/stores/useInspectorStore';
 import { OBJECT_TYPES, INSPECTOR_TO_OBJECT } from '@/lib/objectRegistry';
+import { useAccessStore } from '@/stores/useAccessStore';
+import { useOperatorStore } from '@/stores';
+import { VerbPanel } from './VerbPanel';
+import type { Noun, Principal } from './grammar';
 
 interface CommandItem {
   id: string;
@@ -179,9 +183,25 @@ function buildDataCommands(): CommandItem[] {
 export default function CommandBody({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
+  // The noun stage: once an object is chosen, the command line stops being a
+  // navigator and becomes a language — noun → verb → params → Enter.
+  const [noun, setNoun] = useState<Noun | null>(null);
   const navigate = useNavigate();
   const openInspector = useInspectorStore(s => s.open);
   const objectResults = useObjectSearch(query, open);
+
+  // Legality is filtered against the operator's REAL role and entitlements, so
+  // the menu never offers something that cannot work. The server re-checks all of
+  // it — this is honesty, not security.
+  const operator = useOperatorStore(s => s.operator);
+  const accessMe = useAccessStore(s => s.me);
+  const principal: Principal = useMemo(
+    () => ({
+      role: operator?.role === 'approver' ? 'approver' : 'operator',
+      entitlements: (accessMe?.entitlements ?? {}) as Principal['entitlements'],
+    }),
+    [operator, accessMe],
+  );
 
   const allCommands = useMemo(() => {
     return [...PAGE_COMMANDS, ...buildDataCommands()];
@@ -212,12 +232,31 @@ export default function CommandBody({ open, onClose }: { open: boolean; onClose:
     setSelectedIndex(0);
   }, [query]);
 
-  const handleSelect = useCallback((item: CommandItem) => {
-    if (item.type === 'object' && item.inspector && item.entityId) {
-      openInspector(item.inspector, item.entityId, item.seed);
-    } else {
-      navigate(item.to);
+  const handleSelect = useCallback((item: CommandItem, opts: { read?: boolean } = {}) => {
+    // An OBJECT is a noun: advance to the verb stage rather than just looking at
+    // it. Shift keeps the previous behaviour — open the inspector — because
+    // READING an object is a frequent, legitimate need and quietly removing it
+    // would be a regression dressed up as a feature.
+    if (item.type === 'object' && item.entityId) {
+      if (opts.read && item.inspector) {
+        openInspector(item.inspector, item.entityId, item.seed);
+        onClose();
+        setQuery('');
+        return;
+      }
+      const objectType = item.inspector ? INSPECTOR_TO_OBJECT[item.inspector] : undefined;
+      setNoun({
+        // The registry addresses subjects by its own type names; the inspector
+        // registry uses its own. Mapping through objectRegistry keeps the command
+        // line addressing the same identifiers invokeAction validates against.
+        type: objectType ?? String(item.inspector ?? 'project'),
+        id: item.entityId,
+        label: item.label,
+        state: item.seed,
+      });
+      return;
     }
+    navigate(item.to);
     onClose();
     setQuery('');
   }, [navigate, onClose, openInspector]);
@@ -234,7 +273,7 @@ export default function CommandBody({ open, onClose }: { open: boolean; onClose:
         setSelectedIndex(i => Math.max(i - 1, 0));
       } else if (e.key === 'Enter' && filtered[selectedIndex]) {
         e.preventDefault();
-        handleSelect(filtered[selectedIndex]);
+        handleSelect(filtered[selectedIndex], { read: e.shiftKey });
       }
     };
 
@@ -250,13 +289,29 @@ export default function CommandBody({ open, onClose }: { open: boolean; onClose:
         className="w-full max-w-lg bg-card border border-line rounded-xl shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
+        {/* Once a noun is chosen the command line has moved from finding to
+            acting, so the search field gives way to the verb stage entirely —
+            showing both would blur which stage the operator is in. */}
+        {noun ? (
+          <VerbPanel
+            noun={noun}
+            principal={principal}
+            onBack={() => setNoun(null)}
+            onFinished={() => {
+              setNoun(null);
+              setQuery('');
+              onClose();
+            }}
+          />
+        ) : (
+        <>
         <div className="flex items-center gap-3 px-4 py-3 border-b border-line">
           <Search size={16} className="text-grey shrink-0" />
           <input
             type="text"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search leads, pages, states, products..."
+            placeholder="Search an object to act on, or a page to open…"
             className="flex-1 bg-transparent text-sm text-navy placeholder-grey focus:outline-none font-mono"
             autoFocus
           />
@@ -285,7 +340,7 @@ export default function CommandBody({ open, onClose }: { open: boolean; onClose:
             return (
               <button
                 key={item.id}
-                onClick={() => handleSelect(item)}
+                onClick={(e) => handleSelect(item, { read: e.shiftKey })}
                 className={clsx(
                   'flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-lg transition-colors',
                   idx === selectedIndex
@@ -315,6 +370,8 @@ export default function CommandBody({ open, onClose }: { open: boolean; onClose:
           <span><kbd className="font-mono bg-ice-soft dark:bg-navy-deep px-1 rounded">↵</kbd> Select</span>
           <span><kbd className="font-mono bg-ice-soft dark:bg-navy-deep px-1 rounded">esc</kbd> Close</span>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

@@ -122,12 +122,25 @@ function url(path: string): string {
 export class ApiError extends Error {
   status: number;
   code?: string;
+  /**
+   * The rest of the error body, verbatim.
+   *
+   * The API spreads `ActionError.data` alongside `error`/`code`, so a refusal is
+   * machine-readable: SAT_REQUIRED says WHICH reviews are missing,
+   * COMPLIANCE_GATE lists the blockers, WORKSPACE_FORBIDDEN names the workspace,
+   * VALIDATION carries per-field issues. Without capturing it here the client is
+   * back to regex-matching server prose to decide what to offer next — which is
+   * exactly what three surfaces in this app do today, and what the command line's
+   * remedy logic replaces.
+   */
+  data?: Record<string, unknown>;
 
-  constructor(message: string, status: number, code?: string) {
+  constructor(message: string, status: number, code?: string, data?: Record<string, unknown>) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.data = data;
   }
 }
 
@@ -183,7 +196,16 @@ async function networkRequest<T>(path: string, opts: RequestOpts, method: string
 
   if (!res.ok) {
     const err = json as { error?: string; code?: string } | null;
-    throw new ApiError(err?.error ?? res.statusText, res.status, err?.code);
+    // Everything except the two known keys is structured detail — kept so the
+    // caller can act on the refusal instead of parsing its prose.
+    let detail: Record<string, unknown> | undefined;
+    if (err && typeof err === 'object') {
+      const rest = Object.fromEntries(
+        Object.entries(err).filter(([k]) => k !== 'error' && k !== 'code'),
+      );
+      if (Object.keys(rest).length > 0) detail = rest;
+    }
+    throw new ApiError(err?.error ?? res.statusText, res.status, err?.code, detail);
   }
 
   // The server may veto storage of any response, per-request. Deny-only: it can
