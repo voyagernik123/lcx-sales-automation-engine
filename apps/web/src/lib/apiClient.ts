@@ -73,7 +73,15 @@ export async function hydrateCredentials(): Promise<void> {
   // blank screen on Cloudflare Pages) to load a module that instantly returns.
   if (!isTerminal()) return;
   const { secretGet } = await import('./terminal');
-  const [email, pass] = await Promise.all([secretGet(EMAIL_KEY), secretGet(PASS_KEY)]);
+  // SEQUENTIAL, not `Promise.all`. Two Keychain reads in parallel produce two macOS
+  // password prompts STACKED on top of each other, which is what made a two-dialog
+  // problem look like an infinite loop on a real install. It also defeats the
+  // circuit breaker in `secretGet`: both calls are in flight before either can
+  // record that the Keychain refused, so the breaker could never help on the first
+  // launch — the one launch where it matters. Two round-trips to a local keychain
+  // cost nothing measurable; two password prompts cost the operator's trust.
+  const email = await secretGet(EMAIL_KEY);
+  const pass = await secretGet(PASS_KEY);
   // Coerce an EMPTY Keychain value to null (TERMINAL Phase 7). Builds already in
   // the field wrote `''` on a rejected sign-in, and the shell's Keychain reads that
   // back as `Some("")` rather than absence. `''` is not nullish, so it would pin

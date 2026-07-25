@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "LCX TERMINAL",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "identifier": "com.lcx.terminal",
   "build": {
     "beforeDevCommand": "npm run dev -w @lcx/web",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm run build -w @lcx/web",
+    "beforeBuildCommand": "VITE_API_URL=https://lcx-sales-api.onrender.com npm run build -w @lcx/web",
     "frontendDist": "../../web/dist"
   },
   "app": {

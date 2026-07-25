@@ -6,10 +6,15 @@
  * knows the difference. Everything is lazily imported so the browser bundle
  * never pays for, or breaks on, the Tauri APIs.
  *
- * Credential rule: in the terminal the desk credential lives in the macOS
- * Keychain (via the shell's `secret_*` commands), not in localStorage. In a
- * browser it stays in localStorage exactly as before. The API contract is
- * unchanged either way — the credential is still `email:passcode`.
+ * Credential rule, corrected against what the code actually does. The claim here
+ * used to be that in the terminal the credential lives in the Keychain "not in
+ * localStorage". That was never true: `apiClient.ts` writes BOTH and reads the
+ * credential from localStorage (`apiClient.ts:54`), using the Keychain only to
+ * hydrate memory at startup. So the Keychain copy is redundant, not exclusive —
+ * which `TERMINAL_QUICKSTART.md` states plainly, and which is why denying the
+ * Keychain prompt costs an operator nothing. Under ad-hoc signing it is worse than
+ * redundant; see the breaker below. The API contract is unchanged either way — the
+ * credential is still `email:passcode`.
  */
 
 // The container check lives in its own zero-import module so callers can ask
@@ -34,15 +39,54 @@ async function getInvoke(): Promise<InvokeFn | null> {
 
 /* ── Keychain-backed secrets (terminal) with localStorage fallback (browser) ── */
 
+/**
+ * Has the Keychain refused us this process? `null` = not tried yet.
+ *
+ * MEASURED ON A REAL INSTALL, and it is a worse experience than "an occasional prompt".
+ *
+ * The app is ad-hoc signed (no Apple Developer cert — deliberately deferred). macOS keys
+ * Keychain ACLs to the code signature, and an ad-hoc signature is not a stable identity, so
+ * there is nothing durable for "Always Allow" to attach to. The operator types their Mac
+ * password, clicks Allow, and **the prompt comes straight back** — because the grant applied
+ * to one process and cannot be persisted for the app.
+ *
+ * It looked like an infinite loop. It is two dialogs: `apiClient.ts` hydrated with
+ * `Promise.all([secretGet(EMAIL_KEY), secretGet(PASS_KEY)])`, so two Keychain items were
+ * requested CONCURRENTLY and two prompts stacked. Multiply by however many copies of the app
+ * are running.
+ *
+ * Two reasons this is not merely annoying. A repeated, undismissable macOS password prompt
+ * trains an operator to type their login password into any dialog that asks — on a desk whose
+ * whole premise is governed access. And the prompt is pure cost: `apiClient.ts:54` reads the
+ * credential from `localStorage`, so **denying loses nothing**. The Keychain copy is
+ * redundant today, which is exactly what `TERMINAL_QUICKSTART.md` says.
+ *
+ * So: try once, and on refusal stop asking for the rest of the process and use the fallback.
+ * Not a retry-with-backoff — there is nothing transient here. The answer will be the same
+ * until there is a Developer ID certificate, at which point the ACL persists and this breaker
+ * never trips.
+ */
+let keychainRefused = false;
+
 export async function secretGet(key: string): Promise<string | null> {
   const invoke = await getInvoke();
-  if (invoke) {
+  if (invoke && !keychainRefused) {
     try {
-      return (await invoke<string | null>('secret_get', { key })) ?? null;
+      const v = (await invoke<string | null>('secret_get', { key })) ?? null;
+      // A hit is only authoritative if it exists. A miss falls through, because the value
+      // may have been written by the localStorage branch below on an earlier run.
+      if (v !== null) return v;
     } catch {
-      return null;
+      // Denial, a locked keychain, or an ACL that cannot be satisfied. All the same
+      // answer, and all permanent for this process.
+      keychainRefused = true;
     }
   }
+  // THE ASYMMETRY THIS FIXES, which made the fallback unreachable on read: `secretSet`
+  // already fell through to localStorage when the Keychain write failed, while `secretGet`
+  // returned `null` and never looked. So a credential that the Keychain had refused to
+  // store could never be read back, and the operator was silently signed out every launch
+  // with a working credential sitting in localStorage.
   try {
     return localStorage.getItem(key);
   } catch {
@@ -52,11 +96,14 @@ export async function secretGet(key: string): Promise<string | null> {
 
 export async function secretSet(key: string, value: string): Promise<void> {
   const invoke = await getInvoke();
-  if (invoke) {
+  // Same breaker as the read path: once the Keychain has refused, writing to it only buys
+  // another password prompt for a value that will be read from localStorage anyway.
+  if (invoke && !keychainRefused) {
     try {
       await invoke('secret_set', { key, value });
       return;
     } catch {
+      keychainRefused = true;
       /* fall through to localStorage so sign-in never hard-fails */
     }
   }
@@ -69,6 +116,10 @@ export async function secretSet(key: string, value: string): Promise<void> {
 
 export async function secretDelete(key: string): Promise<void> {
   const invoke = await getInvoke();
+  // Deletion is attempted even after a refusal, deliberately: sign-out must try to remove a
+  // credential the Keychain may still hold from a run where it DID cooperate. A prompt here
+  // is on an explicit sign-out — the one moment the operator is not surprised by one — and
+  // `clearOperatorEmail` already bounds the wait at 2s so a refusal cannot trap them.
   if (invoke) {
     try {
       await invoke('secret_delete', { key });

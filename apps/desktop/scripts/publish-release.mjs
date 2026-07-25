@@ -47,6 +47,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const DESKTOP = resolve(HERE, '..');
 const RELEASES_REPO = 'voyagernik123/lcx-terminal-releases';
 const DRY = process.argv.includes('--dry-run');
+const PROD_API_ORIGIN = 'https://lcx-sales-api.onrender.com';
 
 const die = (msg) => {
   console.error(`\n✗ ${msg}\n`);
@@ -129,6 +130,32 @@ if (builtVersion !== version) {
 const dmgDir = join(bundleDir, 'dmg');
 const dmgs = existsSync(dmgDir) ? readdirSync(dmgDir).filter((f) => f.endsWith('.dmg')) : [];
 const dmg = dmgs.length === 1 ? join(dmgDir, dmgs[0]) : null;
+
+// ── 2b · THE API URL THE APP WILL ACTUALLY CALL ───────────────────────────────────
+//
+// THIS SHIPPED, and it wasted an hour of the tester's evening. `apps/web/.env.local` had
+// `VITE_API_URL=http://localhost:8791` for local development. Vite gives `.env.local`
+// precedence over `.env`, so three signed releases were built pointing at a port on the
+// BUILDER's machine. On the tester's Mac that is nothing at all: the desk showed API DOWN
+// forever, sign-in could never succeed, and production was healthy the entire time.
+//
+// It survived because every check was run from the wrong side — curl against the real URL
+// from the machine that had the dev server, which passes while telling you nothing about
+// what got compiled into the binary. `beforeBuildCommand` now pins the origin explicitly
+// (a shell env var outranks any .env file), and this asserts the RESULT rather than
+// trusting the input.
+const distDir = resolve(DESKTOP, '../web/dist/assets');
+if (!existsSync(distDir)) die(`no web build at ${distDir} — the desktop bundle would be stale`);
+const js = readdirSync(distDir).filter((f) => f.endsWith('.js'))
+  .map((f) => readFileSync(join(distDir, f), 'utf8')).join('\n');
+const localhostHit = js.match(/localhost:\d+|127\.0\.0\.1:\d+/);
+if (localhostHit) {
+  die(`the built app points at ${localhostHit[0]} — it would show API DOWN on every machine but this one.\n  A developer .env.local almost certainly leaked into the release build.`);
+}
+if (!js.includes(PROD_API_ORIGIN)) {
+  die(`the built app does not contain the production API origin (${PROD_API_ORIGIN}).\n  With no origin it calls same-origin paths, which in a Tauri webview is tauri://localhost — nothing.`);
+}
+console.log(`  api origin ${PROD_API_ORIGIN}  ← verified present in the built bundle`);
 
 // ── 3 · latest.json, in the shape tauri-plugin-updater v2 reads ───────────────────
 //
