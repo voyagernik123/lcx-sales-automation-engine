@@ -60,9 +60,58 @@ export interface ListNavigationOptions {
   onActivate?: (index: number) => void;
   /** False while another surface owns the arrows (a chart, a text area). */
   enabled?: boolean;
+  /**
+   * The element containing the rows. Supply it to make "one tab stop" TRUE rather
+   * than nearly true — see the note on `parkRowControls`.
+   */
+  container?: React.RefObject<HTMLElement | null>;
 }
 
-export function useListNavigation({ count, onActivate, enabled = true }: ListNavigationOptions): ListNavigation {
+/** Focusable things that would otherwise be Tab stops. */
+const FOCUSABLE = 'a[href], button, input, select, textarea, [tabindex], [contenteditable]';
+
+/**
+ * Take every control INSIDE a row out of the tab ring.
+ *
+ * The Phase 4 claim was "a table is ONE tab stop", and it was FALSE on a populated
+ * table — which nothing noticed for three phases because the API is down in every
+ * automated environment, so no test had ever seen a row. Measured once the rows were
+ * stubbed: a lead row contains four focusable descendants (an EntityChip and two
+ * `.derived` values, each `role="button" tabIndex={0}`, plus a real peek button), so
+ * Tab from the cursor row landed on a span inside the same row. At 200 rows the queue
+ * was ~800 stops, not one.
+ *
+ * This is the W3C grid pattern's actual answer: the row is the tab stop, and everything
+ * within it is reached by ArrowRight/ArrowLeft. Done by touching the DOM rather than by
+ * passing `tabIndex={-1}` down through props because the offenders are SHARED
+ * components — EntityChip and the `.derived` affordance are used all over the app,
+ * where being a tab stop is correct. Their behaviour should differ inside a grid, and
+ * the grid is the thing that knows that.
+ *
+ * Re-run on `count` rather than on a MutationObserver: rows are re-rendered wholesale
+ * when the list changes, and an observer on a 200-row table firing per cell edit costs
+ * more than the problem is worth. The honest limitation is that a control appearing
+ * inside an already-rendered row without the count changing stays a tab stop until the
+ * next change.
+ */
+function parkRowControls(container: HTMLElement | null): void {
+  if (!container) return;
+  for (const el of Array.from(container.querySelectorAll<HTMLElement>('[data-list-row]'))) {
+    for (const control of Array.from(el.querySelectorAll<HTMLElement>(FOCUSABLE))) {
+      // Not `-1` blindly: an author who deliberately parked something must not be
+      // silently overwritten, and re-setting an attribute that is already correct
+      // churns the accessibility tree.
+      if ((control.getAttribute('tabindex') ?? '0') !== '-1') control.setAttribute('tabindex', '-1');
+    }
+  }
+}
+
+export function useListNavigation({
+  count,
+  onActivate,
+  enabled = true,
+  container,
+}: ListNavigationOptions): ListNavigation {
   const [index, setIndexState] = useState(count > 0 ? 0 : -1);
   const activate = useRef(onActivate);
   activate.current = onActivate;
@@ -110,6 +159,33 @@ export function useListNavigation({ count, onActivate, enabled = true }: ListNav
     [count],
   );
 
+  // After every render that changes the row set. `useEffect` rather than layout effect:
+  // this only affects Tab, which cannot happen before paint.
+  useEffect(() => {
+    parkRowControls(container?.current ?? null);
+  }, [count, index, container]);
+
+  /**
+   * Move among the controls INSIDE the cursor row.
+   *
+   * Without this, parking them would make the peek button and the lineage chips
+   * unreachable by keyboard — trading a traversal cost for a dead control, which is a
+   * worse bug than the one being fixed.
+   */
+  const moveWithinRow = useCallback((container_: HTMLElement, delta: number) => {
+    const active = document.activeElement as HTMLElement | null;
+    const row = active?.closest<HTMLElement>('[data-list-row]') ?? container_.querySelector<HTMLElement>('[data-list-row][tabindex="0"]');
+    if (!row) return;
+    const controls = Array.from(row.querySelectorAll<HTMLElement>(FOCUSABLE));
+    if (controls.length === 0) return;
+    const at = active && active !== row ? controls.indexOf(active) : -1;
+    // From the row itself, ArrowRight enters at the first control and ArrowLeft at the
+    // last; from a control, step and clamp. Clamping rather than wrapping for the same
+    // reason as the rows: silent wrap-around is a position the operator cannot see.
+    const next = at === -1 ? (delta > 0 ? 0 : controls.length - 1) : Math.min(controls.length - 1, Math.max(0, at + delta));
+    controls[next]?.focus();
+  }, []);
+
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (!enabled || count === 0) return;
@@ -120,23 +196,31 @@ export function useListNavigation({ count, onActivate, enabled = true }: ListNav
       // still mounted behind it.
       if (isOverlayOpen()) return;
 
-      const container = e.currentTarget as HTMLElement;
+      const scope = e.currentTarget as HTMLElement;
       switch (e.key) {
         case 'ArrowDown':
           e.preventDefault();
-          move(1, container);
+          move(1, scope);
           break;
         case 'ArrowUp':
           e.preventDefault();
-          move(-1, container);
+          move(-1, scope);
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          moveWithinRow(scope, 1);
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          moveWithinRow(scope, -1);
           break;
         case 'Home':
           e.preventDefault();
-          jump(0, container);
+          jump(0, scope);
           break;
         case 'End':
           e.preventDefault();
-          jump(-1, container);
+          jump(-1, scope);
           break;
         case 'Enter':
         case ' ':
@@ -149,7 +233,7 @@ export function useListNavigation({ count, onActivate, enabled = true }: ListNav
         default:
       }
     },
-    [count, enabled, index, jump, move],
+    [count, enabled, index, jump, move, moveWithinRow],
   );
 
   const rowProps = useCallback(

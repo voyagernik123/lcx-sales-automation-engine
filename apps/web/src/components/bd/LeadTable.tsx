@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { clsx } from 'clsx';
 import { ArrowUpDown, Eye, Moon, X } from 'lucide-react';
 import type { BdLead, BdFilters, RecommendedMarket } from '@/types/bd';
@@ -64,7 +64,12 @@ export function LeadTable({
   onPeek,
 }: LeadTableProps) {
   // One tab stop for the table, arrows within it (TERMINAL Phase 4).
+  const bodyRef = useRef<HTMLTableSectionElement>(null);
   const nav = useListNavigation({
+    // The container makes "one tab stop" TRUE rather than nearly true: a lead row
+    // contains four focusable descendants, so without it Tab walked into the row it
+    // was already on. See parkRowControls.
+    container: bodyRef,
     count: leads.length,
     onActivate: (i) => {
       const lead = leads[i];
@@ -139,7 +144,7 @@ export function LeadTable({
             <th className="text-right py-2.5 px-3 text-micro font-medium uppercase tracking-wider text-grey">Contact</th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-line/50" {...nav.containerProps}>
+        <tbody ref={bodyRef} className="divide-y divide-line/50" {...nav.containerProps}>
           {leads.map((lead, i) => {
             const isSelected = selectedId === lead.id;
             const replyAt = slaBy?.[lead.id];
