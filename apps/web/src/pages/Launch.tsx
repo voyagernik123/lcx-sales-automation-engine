@@ -53,7 +53,17 @@ import { LcxMark } from '@/components/brand/LcxMark';
  * turns the suite red instead of leaving a stale number on the front page.
  */
 export const LCXOS_VERSION = '0.2.0';
-export const LCXOS_DMG_BYTES = 6.4;
+/**
+ * The download's size in MB, one decimal place.
+ *
+ * It said 6.4 for a while, which was the size of the predecessor build this
+ * replaced — the real 0.2.0 DMG is 3.8MB. Caught by curl'ing the live download and
+ * reading `content-length: 3790578`, i.e. by looking at the artefact rather than at
+ * the page. `publish-release.mjs` now REFUSES TO PUBLISH if this number disagrees
+ * with the DMG it is about to upload, so the next release cannot ship a stale figure
+ * the way this one nearly did.
+ */
+export const LCXOS_DMG_MB = 3.8;
 
 /**
  * The permanent download URL. `/releases/latest/download/<name>` is a GitHub
@@ -136,7 +146,7 @@ export function Launch() {
         </div>
 
         <p className="mt-3.5 font-mono text-[11px] uppercase tracking-[0.14em] text-grey">
-          {LCXOS_VERSION} · {LCXOS_DMG_BYTES} MB · Apple Silicon
+          {LCXOS_VERSION} · {LCXOS_DMG_MB} MB · Apple Silicon
         </p>
 
         {/* The Gatekeeper step. Attached to the download, phrased as a step rather

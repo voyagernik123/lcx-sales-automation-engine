@@ -38,7 +38,7 @@
  *   node scripts/publish-release.mjs --dry-run  # everything except the push
  */
 
-import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, copyFileSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -195,6 +195,26 @@ const stagedDmg = dmg ? join(stage, `LCXOS_${version}_aarch64.dmg`) : null;
 const stagedDmgLatest = dmg ? join(stage, LATEST_DMG_NAME) : null;
 if (dmg && stagedDmgLatest) copyFileSync(dmg, stagedDmgLatest);
 if (dmg && stagedDmg) copyFileSync(dmg, stagedDmg);
+
+// THE PUBLIC PAGE'S CLAIMED DOWNLOAD SIZE MUST MATCH THE FILE BEING UPLOADED.
+//
+// It did not, once: the page said 6.4 MB — the size of the build this replaced — while
+// the DMG was 3.8 MB. Nobody is harmed by a wrong file size, which is exactly why it
+// would have sat there for months; and a page that is casually wrong about something
+// checkable is not trusted about anything else. Rounded to one decimal, the same way
+// the page prints it, so this compares what a reader sees rather than raw bytes.
+if (dmg) {
+  const launch = readFileSync(resolve(DESKTOP, '../web/src/pages/Launch.tsx'), 'utf8');
+  const claimed = launch.match(/LCXOS_DMG_MB\s*=\s*([\d.]+)/)?.[1];
+  const actual = (statSync(dmg).size / 1_000_000).toFixed(1);
+  if (!claimed) {
+    die('could not find LCXOS_DMG_MB in apps/web/src/pages/Launch.tsx — the size guard cannot run, and an unrunnable guard is worse than none.');
+  }
+  if (Number(claimed).toFixed(1) !== actual) {
+    die(`the public page claims the download is ${claimed} MB; this DMG is ${actual} MB.\n  Update LCXOS_DMG_MB in apps/web/src/pages/Launch.tsx (and its test) before publishing.`);
+  }
+  console.log(`  page claims ${claimed} MB  ← matches the DMG (${actual} MB)`);
+}
 
 const assetUrl = `https://github.com/${RELEASES_REPO}/releases/download/${tag}/${tarballName}`;
 // `darwin-aarch64` only, deliberately and stated rather than left as an accident: the

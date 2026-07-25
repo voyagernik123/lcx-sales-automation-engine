@@ -4,7 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Launch, LCXOS_VERSION, LCXOS_DOWNLOAD_URL } from '../Launch';
+import { Launch, LCXOS_VERSION, LCXOS_DOWNLOAD_URL, LCXOS_DMG_MB } from '../Launch';
 
 /**
  * The public LCXOS page — the one surface a colleague sees before they trust us.
@@ -59,6 +59,19 @@ describe('the public LCXOS page', () => {
         publisher.includes(`'${ASSET}'`),
         `publish-release.mjs does not upload an asset named ${ASSET}, so the page's Download button would 404`,
       ).toBe(true);
+    });
+
+
+    it('states a download size the publisher will accept', () => {
+      // The page said 6.4 MB while the DMG was 3.8 MB. publish-release.mjs now refuses
+      // to publish on a mismatch; this asserts the two sides still agree about WHICH
+      // constant carries the number, because renaming it would make that guard
+      // unrunnable — and it dies loudly rather than skipping if it cannot find it.
+      const publisher = read('apps/desktop/scripts/publish-release.mjs');
+      expect(publisher).toContain('LCXOS_DMG_MB');
+      expect(LCXOS_DMG_MB, 'a download size of 0 or undefined would render as blank').toBeGreaterThan(0);
+      renderPage();
+      expect(screen.getByText(new RegExp(String(LCXOS_DMG_MB).replace('.', '\\.') + ' MB'))).toBeInTheDocument();
     });
 
     it('does not use a versioned download URL, which would break on the next release', () => {
