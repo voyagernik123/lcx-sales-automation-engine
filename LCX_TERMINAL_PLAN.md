@@ -300,4 +300,59 @@ read model and its migration path.
 so headroom is the binding constraint from here — 8.4 KB of shipped justification
 prose was already moved into comments to buy some back.
 
-### Phases 3–7 — in progress, continuous run.
+### Phase 3 — the Grammar · **SHIPPED** (`82eaa83`, `a5d0a60`, `e0d2595`, `b1882cf`, `78edd6d`, +gate)
+
+⌘K now **runs** the platform instead of only navigating it: noun → verb → params →
+audited write, with the verbs **generated from the action registry** so the grammar
+cannot drift from what the server allows.
+
+**Verified live on production.** Opened the command line on the deployed app,
+searched a real project, got six generated verbs — with `Track token` present
+precisely because that project is `catalog` — ran `Add to watchlist` through the
+governed path, and confirmed the audit row (`actor=nik`, `action:watchlist_add`,
+note in `meta`). A real governed write, from the keyboard.
+
+**Two live security defects found by reconnoitring before building**
+1. **Privilege escalation.** The token-incentivized campaign launch checked
+   `role !== 'approver' && !params.overrideGate` — so any operator could grant
+   themselves approver authority by sending `overrideGate: true`, and on a clean
+   campaign could do it with no approver and no reason recorded. Authority now
+   stands alone; the flag keeps its real job on the review/budget blockers.
+2. **The desk passcode was persisted.** `revoke_entitlement` takes a
+   `stepUpPasscode` and the whole params object was written verbatim into *both*
+   `object_actions.params` and `audit_log.meta` — plaintext, two queryable tables,
+   every revoke. Now redacted before both inserts, matched on the param NAME so a
+   future `newStepUpPasscode` is caught without anyone updating a list.
+
+**Complete by construction, not by diligence**
+- 22 actions extracted into a committed manifest; the **drift test is proven to
+  bite** — one added enum value flips the hash and fails CI with `run npm run
+  gen:actions`.
+- A coverage test asserts every action is reachable AND fully specifiable, so a new
+  action cannot ship without a command.
+- `z.toJSONSchema()` loses `.refine()` silently and its `additionalProperties:
+  false` is *stricter* than zod (which strips) — so client validation is advisory
+  **in both directions**, with the lost refinements carried explicitly as
+  annotations. The server stays the only authority.
+
+**The judgement calls**
+- *Absent vs shown-blocked.* Wrong subject type → absent. Unmet precondition →
+  absent, because `track` on an already-tracked project returns **HTTP 200** with
+  `promoted: false` — a silent no-op an operator would read as success. Insufficient
+  authority → **shown, blocked, with the way forward**: hiding it teaches the
+  capability doesn't exist, showing it teaches what to request.
+- *Unknown state counts as satisfied*, or the command line's completeness would
+  depend on which page you happened to be standing on.
+- *Refusals classified by `code`, never message.* Three surfaces regex server prose
+  today; a test proves a 500 whose prose says "compliance" is not treated as a gate.
+  `APPROVER_REQUIRED` is deliberately **not** overridable and says so.
+- *Success never overclaims* — a no-op renders as "Nothing changed", not a tick.
+
+**Bundle:** 838 → **830 KB**, headroom 12 → 20 KB, by moving the palette body into
+its own lazy chunk (verified absent from `index-*.js` and loaded only after the
+chord). Honest caveat: that's 8 KB of palette code, not the 60 KB the file size
+suggests — `Sidebar.tsx` imports the same `@/data` modules eagerly.
+
+**770 tests.**
+
+### Phases 4–7 — in progress, continuous run.
