@@ -3,6 +3,7 @@ import { actionsFor, isServerAction } from '@lcx/shared';
 import type { AuthVariables } from '../middleware/auth.js';
 import { requireOperator } from '../middleware/auth.js';
 import { env } from '../lib/env.js';
+import { ActionError } from '../actions/registry.js';
 import { listObservations, recordObservation } from '../intel/observations.js';
 import { executeAction, getObjectState, listWatchlist } from '../intel/actions.js';
 import { getCoverage } from '../intel/collect.js';
@@ -103,10 +104,19 @@ intelRoutes.post('/actions', requireOperator, async (c) => {
       subjectId: body.subjectId,
       action: body.action,
       actor: c.get('operator').id,
+      // Server-authoritative, from the desk roster in requireOperator — the same
+      // value the GET above uses to build the available list.
+      role: c.get('operator').role,
       params: body.params,
     });
     return c.json({ data: out, meta: meta() });
   } catch (err) {
+    // A refusal is the caller's problem to fix, not a server fault. Everything
+    // this route could reject used to surface as 500 INTEL_ERROR, which told a
+    // client "retry later" for a payload that will never be accepted.
+    if (err instanceof ActionError) {
+      return c.json({ error: err.message, code: err.code, ...(err.data ?? {}) }, err.status as 400);
+    }
     console.error('[intel] execute action error:', err);
     return c.json({ error: 'Failed to execute action', code: 'INTEL_ERROR' }, 500);
   }

@@ -1,10 +1,26 @@
 /**
- * Governed action registry (Palantir-grade Phase 3.2) — the ONE path every
- * server-side mutation an operator, a monitor (3.1), or the AI operator (Phase
- * 5) takes. Each action declares its subject types, permission, and a typed
- * parameter schema; invokeAction validates, enforces the role, executes, and
- * writes BOTH the object_actions ledger and the hash-chained audit_log. One
- * audit spine, one permission gate, one place new capabilities are added.
+ * Governed action registry (Palantir-grade Phase 3.2). Each action declares its
+ * subject types, permission, and a typed parameter schema; invokeAction
+ * validates, enforces the role and the workspace entitlement, executes, and
+ * writes BOTH the object_actions ledger and the hash-chained audit_log.
+ *
+ * THIS IS NOT THE ONLY WRITE PATH, and this comment used to say it was — "the ONE
+ * path every server-side mutation takes". That was false for the whole of Phases
+ * 3-7. `POST /v1/intel/actions` → intel/actions.ts `executeAction` is a second
+ * path, reached by the object inspector, with its own object_actions and
+ * audit_log inserts. Of the five ids it serves, `unflag` and `note_add` have no
+ * entry here at all, so they are unreachable through invokeAction and absent from
+ * the generated command grammar.
+ *
+ * That path has been brought up to this one's floor in place — it now validates
+ * params with zod, enforces subject type and role via the same `actionsFor` the
+ * read side uses, and redacts with the same `redactSecrets` — but it is still a
+ * second door. Converging them means adding `unflag` and `note_add` here,
+ * delegating executeAction to invokeAction, and regenerating the manifest
+ * (`npm run gen:actions`, which rewrites actions/generated/manifest.canonical.json
+ * and apps/web/src/lib/command/generated/actionManifest.ts). Until that lands,
+ * "one audit spine" is true — both paths write the same two tables — and "one
+ * permission gate" is not.
  *
  * Executors reuse existing domain services (notify, createManualTask, …) rather
  * than re-implement them — the registry is the governed front door, not a fork.
@@ -26,6 +42,29 @@ function safeEqual(a: string, b: string): boolean {
   return out === 0;
 }
 
+/**
+ * A missing table is a DEPLOY-ORDER FACT. Every other database error is a FAULT.
+ *
+ * Migrations here land by hand in the Supabase SQL editor after the API deploys,
+ * so a gate whose table does not exist yet must not dead-lock the desk — that is
+ * the whole reason these gates have a fallback. But the fallback used to be
+ * reached by a bare `catch`, which meant it also fired for faults. Measured
+ * against a stub pool (see __tests__/gateFailOpen.test.ts): `57014` statement
+ * timeout, `42501` permission denied, `40001` serialization failure and a bare
+ * `ECONNRESET` ALL let a gated action through, on both gates. A statement timeout
+ * on a busy Postgres therefore silently converted a gated write into an ungated
+ * one — the most likely of the four to happen in production, and the least
+ * visible, because nothing in the ledger said the gate had been skipped.
+ *
+ * This is the same rule access/entitlements.ts:69-76 already applies to the
+ * entitlement loader, for the same reason it documents at :17-18. Deliberately
+ * NOT a list of "safe" codes: the set of faults is open-ended, so the allowlist
+ * has exactly one member.
+ */
+function isMissingTable(err: unknown): boolean {
+  return typeof err === 'object' && err !== null && (err as { code?: string }).code === '42P01';
+}
+
 export type ActorRole = 'operator' | 'approver';
 
 export interface ActionContext {
@@ -36,6 +75,14 @@ export interface ActionContext {
   actor: string;
   /** The principal's role — some gates (e.g. campaign launch) require approver. */
   role: ActorRole;
+  /**
+   * Declare that a gate could not be evaluated and was skipped. invokeAction
+   * stamps `gateDegraded: true` plus this reason into BOTH the object_actions
+   * ledger and the audit_log row, so a skipped gate is distinguishable after the
+   * fact from a satisfied one. Without it the fail-open path is invisible: the
+   * audit row for an ungated write looks exactly like the row for a cleared one.
+   */
+  markGateDegraded: (reason: string) => void;
 }
 
 export interface RegistryAction {
@@ -194,12 +241,14 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       overrideSat: z.boolean().optional(),
       overrideReason: z.string().max(500).optional(),
     }),
-    execute: async ({ pool, subjectId, params, actor }) => {
+    execute: async ({ pool, subjectId, params, actor, markGateDegraded }) => {
       // SAT gate (100X Phase 4.2): the two program-critical decisions — exchange
       // model (dec_01) and listing path (dec_19) — cannot be decided without an
       // active premortem AND devil's advocate on file. Soft-block with an
       // audited override (the $25k-deal gate pattern, program-grade). Fail-open
-      // if the reviews table is unavailable — governance must not dead-lock ops.
+      // ONLY when the reviews table does not exist yet (42P01) — governance must
+      // not dead-lock ops on a migration that lands by hand. Any other database
+      // error propagates: see isMissingTable for what a bare catch here cost.
       const CRITICAL = new Set(['dec_01', 'dec_19']);
       if (CRITICAL.has(subjectId)) {
         let kinds: string[] = [];
@@ -209,7 +258,11 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
               WHERE subject_type='command_decision' AND subject_id=$1 AND status='active'
                 AND kind IN ('premortem','devils_advocate')`, [subjectId]);
           kinds = r.rows.map((x: { kind: string }) => x.kind);
-        } catch { kinds = ['premortem', 'devils_advocate']; }
+        } catch (err) {
+          if (!isMissingTable(err)) throw err;
+          kinds = ['premortem', 'devils_advocate'];
+          markGateDegraded('analytic_reviews does not exist (42P01) — the SAT gate on this program-critical decision was NOT evaluated');
+        }
         const missing = ['premortem', 'devils_advocate'].filter((k) => !kinds.includes(k));
         if (missing.length > 0) {
           if (!params.overrideSat) {
@@ -608,7 +661,7 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       overrideGate: z.boolean().optional(),
       overrideReason: z.string().max(500).optional(),
     }),
-    execute: async ({ pool, subjectId, params, role }) => {
+    execute: async ({ pool, subjectId, params, role, markGateDegraded }) => {
       const LAUNCH = new Set(['approved', 'live']);
       const target = String(params.status);
 
@@ -616,8 +669,9 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       // campaign requires (a) approver authority, (b) an active premortem AND
       // legal_check review on file, and (c) projected LCX reward spend within
       // the emission budget envelope. Soft-blockable only with an audited
-      // override + reason. Fail-open on a missing reviews table so governance
-      // never dead-locks ops. Non-token campaigns advance freely.
+      // override + reason. Fail-open ONLY on 42P01 (the reviews table has not
+      // been created yet) so governance never dead-locks ops; every other
+      // database error propagates. Non-token campaigns advance freely.
       if (LAUNCH.has(target)) {
         const { rows: crows } = await pool.query<{ token_incentivized: boolean; budget_lcx: string | null }>(
           `SELECT token_incentivized, budget_lcx FROM dist_campaigns WHERE id=$1`, [subjectId],
@@ -649,7 +703,11 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
                 WHERE subject_type='dist_campaign' AND subject_id=$1 AND status='active'
                   AND kind IN ('premortem','legal_check')`, [subjectId]);
             kinds = r.rows.map((x: { kind: string }) => x.kind);
-          } catch { kinds = ['premortem', 'legal_check']; } // fail-open
+          } catch (err) {
+            if (!isMissingTable(err)) throw err;
+            kinds = ['premortem', 'legal_check'];
+            markGateDegraded('analytic_reviews does not exist (42P01) — the compliance review half of the launch gate was NOT evaluated');
+          }
           const missing = ['premortem', 'legal_check'].filter((k) => !kinds.includes(k));
           // (c) budget envelope via the emission engine.
           const budget = camp.budget_lcx != null ? Number(camp.budget_lcx) : 0;
@@ -734,10 +792,168 @@ export function redactSecrets(params: Record<string, unknown>): Record<string, u
   return touched ? out : params;
 }
 
+/* ══════════════════════ IDEMPOTENCY (Phase 3.3) ══════════════════════
+ *
+ * THE DEFECT: a transport failure means the RESPONSE was lost, not that the
+ * request was. `watchlist_add` is safe to retry (ON CONFLICT DO NOTHING) but
+ * `dist_campaign_create` is not — it INSERTs — and every action writes an
+ * object_actions row and an audit_log row unconditionally, so a blind retry of
+ * ANY action forges a second entry in the ledger the whole programme is audited
+ * against. Until this existed the client's only remedy for a dropped connection
+ * was "re-open the subject and check by eye" (see the NETWORK branch of
+ * apps/web/src/components/command/invoke.ts).
+ *
+ * THE CONTRACT: the caller supplies a key it generates ONCE per user intent and
+ * reuses across transport retries of that same intent. Dedupe is keyed on
+ * (action, subjectType, subjectId, key) — not on the params — because two
+ * different param sets under one key is a client bug, and silently executing the
+ * second one would be the worse failure.
+ *
+ * WHY A RESERVATION ROW AND NOT "SELECT THEN INSERT": the race that matters is
+ * two concurrent retries, not a sequential replay. The reservation is claimed
+ * with a single INSERT .. ON CONFLICT DO NOTHING, so exactly one caller can win;
+ * the loser either returns the stored result or is told the original is still
+ * running. A read-then-write check would let both through.
+ *
+ * WHAT IS NOT PROVEN: the three writes (ledger, audit, completion) are not in one
+ * transaction — neither were the two ledger writes before this. So a process
+ * death between `execute` and the completion UPDATE leaves a reservation that
+ * looks abandoned, and a retry inside the takeover window below can re-execute.
+ * That window is narrower than the pre-existing one (which was unbounded) but it
+ * is not zero, and calling it "exactly once" would be false.
+ */
+
+const IDEMPOTENCY_KEY_MAX = 200;
+
+/**
+ * How long a reservation may sit un-finalised before a retry may take it over.
+ * Without a takeover window an API process that died mid-execute would make that
+ * key answer 409 forever. Chosen above the 5s connection timeout in db/index.ts
+ * and the platform's own request ceiling — NOT measured against real action
+ * latencies, because no action here does bounded external work. If a legitimate
+ * action ever exceeds this, a concurrent retry can double-execute it.
+ */
+const IDEMPOTENCY_STALE_MS = 60_000;
+
+type Reservation =
+  /** No key supplied — behaves exactly as it did before Phase 3.3. */
+  | { mode: 'off' }
+  /** The dedupe table does not exist yet (42P01); proceeding unprotected. */
+  | { mode: 'degraded'; reason: string }
+  /** We own the reservation and must finalise or release it. */
+  | { mode: 'held' }
+  /** A completed original exists; return its result without re-executing. */
+  | { mode: 'replay'; result: Record<string, unknown> };
+
+interface IdemKey { action: string; subjectType: string; subjectId: string; key: string; actor: string }
+
+/** An absent or blank header means "no key", which is not an error. */
+function normalizeIdempotencyKey(raw: string | undefined | null): string | null {
+  if (raw == null) return null;
+  const key = raw.trim();
+  if (!key) return null;
+  if (key.length > IDEMPOTENCY_KEY_MAX) {
+    throw new ActionError('VALIDATION', `Idempotency-Key must be at most ${IDEMPOTENCY_KEY_MAX} characters`);
+  }
+  return key;
+}
+
+const IDEM_BINDS = (k: IdemKey) => [k.action, k.subjectType, k.subjectId, k.key];
+
+async function reserveIdempotency(pool: pg.Pool, k: IdemKey): Promise<Reservation> {
+  try {
+    // Two attempts, because a losing INSERT followed by a SELECT that finds
+    // nothing means the original released its reservation (it failed) in between.
+    // That is a real, if narrow, interleaving and the second attempt claims it.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const claimed = await pool.query(
+        `INSERT INTO action_idempotency (action, subject_type, subject_id, idem_key, actor)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (action, subject_type, subject_id, idem_key) DO NOTHING`,
+        [...IDEM_BINDS(k), k.actor],
+      );
+      if ((claimed.rowCount ?? 0) === 1) return { mode: 'held' };
+
+      const { rows } = await pool.query<{ result: Record<string, unknown> | null; age_ms: string }>(
+        `SELECT result, (EXTRACT(EPOCH FROM (now() - created_at)) * 1000)::bigint AS age_ms
+           FROM action_idempotency
+          WHERE action=$1 AND subject_type=$2 AND subject_id=$3 AND idem_key=$4`,
+        IDEM_BINDS(k),
+      );
+      const row = rows[0];
+      if (!row) continue;
+      if (row.result !== null) return { mode: 'replay', result: row.result };
+
+      if (Number(row.age_ms) < IDEMPOTENCY_STALE_MS) {
+        // The original is still running. Answering 409 rather than executing is
+        // the entire point: a second execution is exactly what the caller was
+        // trying to avoid by sending a key.
+        throw new ActionError('IDEMPOTENT_IN_FLIGHT',
+          'An identical request is still being processed. Wait for it rather than retrying.', 409,
+          { idempotencyKey: k.key });
+      }
+      const taken = await pool.query(
+        `UPDATE action_idempotency SET actor=$5, created_at=now()
+          WHERE action=$1 AND subject_type=$2 AND subject_id=$3 AND idem_key=$4 AND result IS NULL`,
+        [...IDEM_BINDS(k), k.actor],
+      );
+      if ((taken.rowCount ?? 0) === 1) return { mode: 'held' };
+    }
+    // Lost both races without ever seeing a row. Fall through unprotected rather
+    // than refuse a legitimate write — and say so in the ledger.
+    return { mode: 'degraded', reason: 'idempotency reservation could not be resolved (contended); replay protection was NOT in force' };
+  } catch (err) {
+    if (err instanceof ActionError) throw err;
+    // Same 42P01 discipline as the gates: migration 0045 lands by hand, so a
+    // missing table must not take the write path down. Every other error is a
+    // fault and propagates — a broken dedupe table must not quietly become no
+    // dedupe at all, which is how the gates above got into trouble.
+    if (!isMissingTable(err)) throw err;
+    return { mode: 'degraded', reason: 'action_idempotency does not exist (42P01) — replay protection was NOT in force' };
+  }
+}
+
+/** Publish the result so a later retry replays instead of re-executing. */
+async function completeIdempotency(pool: pg.Pool, k: IdemKey, result: Record<string, unknown>): Promise<void> {
+  try {
+    await pool.query(
+      `UPDATE action_idempotency SET result=$5::jsonb, completed_at=now()
+        WHERE action=$1 AND subject_type=$2 AND subject_id=$3 AND idem_key=$4`,
+      [...IDEM_BINDS(k), JSON.stringify(result)],
+    );
+  } catch (err) {
+    // The action HAS happened and is recorded. Failing the response now would
+    // tell the caller it did not, which is the one answer that is certainly
+    // wrong — it invites the retry this whole mechanism exists to absorb.
+    console.warn('[actions] idempotency completion failed; a retry of this key may re-execute:', err instanceof Error ? err.message : err);
+  }
+}
+
+/** Drop the reservation so a failed action can be genuinely retried. */
+async function releaseIdempotency(pool: pg.Pool, k: IdemKey): Promise<void> {
+  try {
+    await pool.query(
+      `DELETE FROM action_idempotency
+        WHERE action=$1 AND subject_type=$2 AND subject_id=$3 AND idem_key=$4 AND result IS NULL`,
+      IDEM_BINDS(k),
+    );
+  } catch (err) {
+    // Swallowed on purpose: the caller is about to receive the real failure and
+    // that must not be replaced by a bookkeeping error. Worst case the key stays
+    // reserved until the takeover window expires.
+    console.warn('[actions] idempotency release failed:', err instanceof Error ? err.message : err);
+  }
+}
+
 export async function invokeAction(
   pool: pg.Pool,
   id: string,
-  input: { subjectType: string; subjectId: string; params?: Record<string, unknown>; actor: string; role: ActorRole; confirmedBy?: string },
+  input: {
+    subjectType: string; subjectId: string; params?: Record<string, unknown>;
+    actor: string; role: ActorRole; confirmedBy?: string;
+    /** The `Idempotency-Key` request header, verbatim. Absent = no dedupe. */
+    idempotencyKey?: string;
+  },
 ): Promise<Record<string, unknown>> {
   const action = ACTION_REGISTRY[id];
   if (!action) throw new ActionError('UNKNOWN_ACTION', `No such action: ${id}`, 404);
@@ -775,7 +991,43 @@ export async function invokeAction(
     );
   }
   const params = parsed.data as Record<string, unknown>;
-  const result = await action.execute({ pool, subjectType: input.subjectType, subjectId: input.subjectId, params, actor: input.actor, role: input.role });
+
+  // Replay protection comes AFTER validation and the permission gates: a request
+  // that would be refused anyway must not consume a key, or a client that fixed
+  // its params and retried under the same key would get the stale refusal.
+  const idemKey = normalizeIdempotencyKey(input.idempotencyKey);
+  const k: IdemKey | null = idemKey
+    ? { action: id, subjectType: input.subjectType, subjectId: input.subjectId, key: idemKey, actor: input.actor }
+    : null;
+  const reservation: Reservation = k ? await reserveIdempotency(pool, k) : { mode: 'off' };
+  if (reservation.mode === 'replay') return reservation.result;
+
+  /**
+   * Degradations that occurred while serving THIS request: a gate that could not
+   * be evaluated, or replay protection that was not in force. Collected rather
+   * than logged so they land in the ledger — a fail-open path that leaves no
+   * trace is indistinguishable from the path where everything worked, which is
+   * the property that let the bare catches survive seven phases.
+   */
+  const degradations: string[] = [];
+  const markGateDegraded = (reason: string) => {
+    if (!degradations.includes(reason)) degradations.push(reason);
+  };
+  const idempotencyDegraded = reservation.mode === 'degraded' ? reservation.reason : null;
+
+  let result: Record<string, unknown>;
+  try {
+    result = await action.execute({
+      pool, subjectType: input.subjectType, subjectId: input.subjectId,
+      params, actor: input.actor, role: input.role, markGateDegraded,
+    });
+  } catch (err) {
+    // The action did not happen, so the key must not be spent — otherwise a
+    // client correcting a transient failure would replay a result that never
+    // existed.
+    if (k && reservation.mode === 'held') await releaseIdempotency(pool, k);
+    throw err;
+  }
 
   // The spine — the action ledger and the audit log, both, always.
   //
@@ -785,7 +1037,21 @@ export async function invokeAction(
   // would then be readable by anyone with the audit surface. The credential has
   // already served its purpose by this point — it was verified before execute —
   // so the record needs to show only that step-up happened, not what was typed.
-  const recorded = redactSecrets(params);
+  //
+  // The degradation markers are stamped on AFTER redaction, deliberately: every
+  // paramsSchema is a z.object(), which strips unknown keys, so a client cannot
+  // supply `gateDegraded` itself — but building the record in this order means
+  // that even if some future schema passed one through, the server's own finding
+  // wins rather than being overwritten by the client's.
+  const recorded: Record<string, unknown> = { ...redactSecrets(params) };
+  if (degradations.length > 0) {
+    recorded.gateDegraded = true;
+    recorded.gateDegradedReason = degradations.join(' | ');
+  }
+  if (idempotencyDegraded) {
+    recorded.idempotencyDegraded = true;
+    recorded.idempotencyDegradedReason = idempotencyDegraded;
+  }
   await pool.query(
     `INSERT INTO object_actions (org_id, subject_type, subject_id, action, params, result, actor)
      VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7)`,
@@ -800,5 +1066,8 @@ export async function invokeAction(
      VALUES ($1,$2,$3,$4,$5::jsonb)`,
     [input.actor, `action:${id}`, input.subjectType, input.subjectId, JSON.stringify(auditMeta)],
   );
+  // Published only once the ledger and audit rows exist, so a replay can never
+  // return a result for an action that was never recorded.
+  if (k && reservation.mode === 'held') await completeIdempotency(pool, k, result);
   return result;
 }

@@ -195,8 +195,27 @@ function mapRow(r: Record<string, unknown>) {
 
 /**
  * Shared by the deals premortem gate: is there an active premortem for a deal?
- * FAIL-OPEN — if the table is missing (pre-migration) or the query errors, we
- * return true so the soft gate can never block a legitimate close on infra.
+ *
+ * FAILS OPEN FOR EXACTLY ONE REASON — `42P01`, the table does not exist yet,
+ * because migrations here land by hand after the API deploys and a soft gate must
+ * not block a legitimate close on deploy order.
+ *
+ * It used to fail open for ANY error, and that was the defect. Measured against a
+ * mocked pool (actions/__tests__/premortemGate.test.ts): `57014` statement
+ * timeout, `42501` permission denied, `40001` serialization failure and a bare
+ * `ECONNRESET` all returned `true` — "a premortem is on file" — so a busy
+ * Postgres let a >$25k deal close out of negotiating with no premortem and no
+ * record that the check had not run.
+ *
+ * What the caller now does with the throw, read rather than assumed: the gate is
+ * called from routes/deals.ts:241, inside a try whose catch at :374-377 logs and
+ * returns 500 STAGE_ERROR. So the deal does NOT advance — fail-closed, which is
+ * the right outcome — but the operator sees a generic "Failed to update stage"
+ * rather than something naming the fault. Improving that message means touching
+ * deals.ts; it is a handoff, not a silent gap.
+ *
+ * Same rule, same reasoning as access/entitlements.ts:69-76 and the two SAT
+ * gates in actions/registry.ts.
  */
 export async function hasActivePremortem(dealId: string, projectId: string | null): Promise<boolean> {
   const ids = [dealId, ...(projectId ? [projectId] : [])];
@@ -210,7 +229,8 @@ export async function hasActivePremortem(dealId: string, projectId: string | nul
     );
     return rows.length > 0;
   } catch (err) {
-    console.warn('[reviews] premortem check failed — gate open:', err instanceof Error ? err.message : err);
+    if ((err as { code?: string }).code !== '42P01') throw err;
+    console.warn('[reviews] analytic_reviews does not exist (42P01) — premortem gate NOT evaluated, treating as covered');
     return true;
   }
 }

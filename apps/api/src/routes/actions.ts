@@ -45,6 +45,28 @@ actionRoutes.post('/:id/invoke', requireOperator, async (c) => {
       params: body.params,
       actor: op.id,
       role: (op.role === 'approver' ? 'approver' : 'operator') as ActorRole,
+      // THE LINE THAT MAKES REPLAY PROTECTION REAL. Without it every piece of
+      // machinery behind it — migration 0045, the reserve/complete/release cycle,
+      // the `idempotencyDegraded` stamp — was unreachable code: `invokeAction`
+      // read `input.idempotencyKey`, this call site never set it, so the key was
+      // always undefined and the dedupe branch never once executed on the live
+      // route. An adversarial verifier caught it, and it is the characteristic
+      // defect of this programme: a correct mechanism, fully tested against its own
+      // helper, wired to nothing.
+      //
+      // Read from the header rather than the body deliberately. `Idempotency-Key`
+      // is the conventional transport for this (Stripe, and RFC draft
+      // `idempotency-key-header`), it survives a proxy retry that would not
+      // re-serialise a body, and keeping it out of the body means it can never
+      // collide with an action's own `params` — every `paramsSchema` is a strict
+      // `z.object`, so a body-borne key would be stripped as an unknown field and
+      // silently ignored, which is the worst of the three outcomes.
+      //
+      // Absent header = no dedupe, unchanged behaviour. That is the honest default:
+      // a server-invented key would deduplicate two genuinely distinct requests
+      // that happened to look alike, and refusing a real second action is worse
+      // than permitting a replayed one.
+      idempotencyKey: c.req.header('Idempotency-Key'),
     });
     return c.json({ data: { action: c.req.param('id'), result }, meta: meta() });
   } catch (err) {
