@@ -8,6 +8,7 @@ import { Footer } from './Footer';
 import { RequestAccess } from './RequestAccess';
 import { ErrorBoundary, ToastContainer, CommandPalette, PageSkeleton, useCommandPalette, toast } from '@/components/shared';
 import { InspectorHost } from '@/components/inspect/InspectorHost';
+import { EvidencePane } from '@/components/inspect/EvidencePane';
 import { useUIStore, useOperatorStore } from '@/stores';
 import { isTerminal } from '@/lib/container';
 import { beginInteraction, afterPaint, readTally, settleWhenQuiet } from '@/lib/perf';
@@ -19,6 +20,7 @@ import { useGoGrammar } from '@/hooks/useGoGrammar';
 import { useManual } from '@/hooks/useManual';
 import { ManualHost } from '@/components/help/ManualHost';
 import { useHints } from '@/hooks/useHints';
+import { useSplitViewChord } from '@/hooks/useSplitView';
 import { HintLayer } from '@/components/help/HintLayer';
 import { TourHost } from '@/components/teach/TourHost';
 
@@ -132,6 +134,16 @@ export function AppLayout() {
   // key listener is eager; the layer itself is a lazy chunk.
   const hints = useHints();
 
+  // LCX TERMINAL (T1 #12): `⌘\` docks the universal inspector BESIDE the surface
+  // instead of over it. The point is not the layout, it is the keyboard: an
+  // InspectorDrawer makes `isOverlayOpen()` true, which silences the row arrows and —
+  // on the BD queue — `s` snooze, `d` disqualify, `e` enroll and the split digits. So
+  // reading a lead's evidence and acting on it were mutually exclusive. Docked, the
+  // pane owns no keys and steals no focus, so the surface keeps all of them. The rule
+  // for which pane a keystroke lands in, and why Escape does nothing to the pane, are
+  // both argued in lib/split.ts.
+  const split = useSplitViewChord();
+
   // LCX TERMINAL (Phase 4): `g` then a digit reaches any workspace from the
   // keyboard. This is NOT a port of the native ⌘1-6 accelerators — those cannot be
   // ported, because Chrome reserves ⌘1-⌘9 for tab switching and never delivers
@@ -230,10 +242,15 @@ export function AppLayout() {
             </Suspense>
           </MainContent>
         </ErrorBoundary>
+        {/* A flex SIBLING of the content, not an overlay over it: the surface has to
+          * actually reflow to a narrower width, or the pane covers the columns the
+          * operator is triaging on and we have rebuilt the drawer. Rendered only when
+          * docked AND wide enough — see `canSplitAt`. */}
+        {split.docked && <EvidencePane />}
       </div>
       <Footer />
       <ToastContainer />
-      <InspectorHost />
+      <InspectorHost docked={split.docked} />
       <CommandPalette open={open} onClose={() => setOpen(false)} />
       {/* Below the manual's z-[120] on purpose: `f` stands down while any overlay owns
         * the keyboard, so the two are never up together by the front door — but `?`

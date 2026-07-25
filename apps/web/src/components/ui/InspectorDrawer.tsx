@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, ReactNode } from 'react';
 import { useDismissible } from '@/hooks/useDismissible';
-import { X } from 'lucide-react';
+import { X, PanelRightOpen } from 'lucide-react';
 import { clsx } from 'clsx';
 
 interface InspectorDrawerProps {
@@ -9,10 +9,29 @@ interface InspectorDrawerProps {
   /** Esc handler — hosts pass "walk the trail back" instead of hard close. */
   onEscape?: () => void;
   title: string;
+  /**
+   * Dock this drawer beside the surface instead of over it (T1 #12), when the caller has
+   * somewhere to dock it to.
+   *
+   * OPTIONAL, AND THAT IS THE POINT. `⌘\` only governs the UNIVERSAL inspector — the one
+   * `InspectorHost` renders from `useInspectorStore` — because that is the only content the
+   * `EvidencePane` knows how to show. Six other surfaces render this same component with
+   * their own local content (`ReadinessStack`, `ProductIntelligence`, `CompetitorInspector`,
+   * `StateMap`, `Dashboard`, `OntologyExplorer`); docking is not available for those, so they
+   * pass nothing and get no button rather than a button that lies.
+   *
+   * IT EXISTS BECAUSE THE CHORD ALONE MADE DOCKING KEYBOARD-ONLY. The programme's constraint
+   * is keyboard-FIRST, never keyboard-only, and I had shipped the pane with an undock button
+   * on it and no way in except `⌘\` — so a trackpad operator could leave the docked mode but
+   * could never discover or enter it. This is the way in, and it is also the discovery
+   * surface: the shortcut is in its `title`, which is how anyone learns the chord exists
+   * without pressing `?` first.
+   */
+  onDock?: () => void;
   children: ReactNode;
 }
 
-export function InspectorDrawer({ isOpen, onClose, onEscape, title, children }: InspectorDrawerProps) {
+export function InspectorDrawer({ isOpen, onClose, onEscape, title, onDock, children }: InspectorDrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   // Named from the visible <h2>, not a parallel aria-label — one source of truth.
   const titleId = useId();
@@ -77,6 +96,17 @@ export function InspectorDrawer({ isOpen, onClose, onEscape, title, children }: 
         {/* Drawer Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-line bg-ice-soft dark:bg-ice-soft/10">
           <h2 id={titleId} className="text-base font-bold tracking-tight uppercase font-mono">{title}</h2>
+          {onDock && (
+            <button
+              onClick={onDock}
+              aria-label="Dock the evidence beside the surface"
+              title="Dock beside the surface — the row keys keep working while you read it (⌘\)"
+              className="ml-auto mr-1 flex items-center gap-1 rounded p-1 font-mono text-[10px] text-grey hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/20"
+            >
+              <PanelRightOpen size={15} />
+              <span aria-hidden="true">⌘\</span>
+            </button>
+          )}
           <button
             onClick={onClose}
             className="rounded p-1 text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/20 transition-colors"

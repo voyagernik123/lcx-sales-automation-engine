@@ -328,3 +328,71 @@ That is the finish line. It is reachable at the end of Phase C, and Phases D–F
 ---
 
 *Approval requested. Phase by phase, as agreed — I will not start Phase B until you have approved Phase A’s result.*
+
+
+---
+
+## 9. PHASE LEDGER — what each phase actually cost and found
+
+Written after the fact, from the commit log, because an estimate that is never compared to an
+outcome teaches nothing.
+
+| Phase | Shipped | Wall-clock | The finding the plan did not anticipate |
+|---|---|---|---|
+| pre | `17cf731`…`cd28784` | ~1h | CI had **never run**. Five red runs, each a real defect: no database on the runner; `migrate()` with **zero callers** across 46 SQL files; a test borrowing `projects[0]` from a 54k-row dev database; a test pinning floating-point `Math.log` output; an e2e job that never built |
+| **A** | `62339f3` | ~50m | **The BD queue had two cursors, one invisible.** `s`/`d`/`e` read `selectedId` while the focus ring followed `useListNavigation` — arrow to row 2, press `d`, and the disqualify dialog opened for **row 1**. Fixing only the guard the ledger asked for would have made it worse |
+| **B** | `4f4b783`…`a647475` | ~1h40 | **Every release shipped pointing at `localhost:8791`.** Three signed builds that could never work on any machine but mine, and I misdiagnosed it three times from evidence gathered on the wrong side. Four silent-failure guards exist because of it |
+| **C** | `4c14e5d` | ~2h | **⌘K reached 7 of 22 governed actions**, so Phase 3's gate was false — its coverage test passed by checking the registry against itself. Also: 69 presses to triage one lead |
+| **D** | `f16040b` | ~1h | **Three of four agents found their own brand-new guard was a decoration.** A regex that could never match; an assertion satisfied by a parameter list; a positive control with its own copy of the regexes. Plus `ui_settle_p95` was a byte-for-byte copy of paint |
+| **C-fix + E** | `406a8ed` | ~2h | ⌘K **7 → 20 of 22**. A dialog that silently discarded everything typed into it, with a **second** defect underneath. The e2e suite **required** an absent API rather than tolerating one — 56 of 73 specs failed with a real one reachable |
+| **F** | see commit | — | **The docked pane does not follow the cursor, and the arrows were never structurally scoped.** Two true-sounding sentences in the shipped comments, both refuted by measurement (a request log in Chromium; a guard deleted and watched). Plus a live defect the tests could not see because every overlay case was pressed from the undocked side: `⌘\` **undocked behind the `?` manual's scrim** |
+
+**Every single gate found something the plan did not know about.** That is the finding about the
+findings, and it is the reason §4's briefs insist a gate is not a formality.
+
+## 10. THE CLAIMS WITHDRAWN, IN ONE PLACE
+
+Twelve, and this document contains two of them. Kept together because the programme's signature
+defect is not broken code — it is a true-sounding sentence about code that does something else.
+
+1. "The app shows a warning toast every launch" — it does not, and had not for a phase. I carried
+   it out of the quickstart into **this document**, whose §6 rule 8 forbids exactly that.
+2. "The update should land with no manual step" — contradicted T1 #8. One deliberate click is the
+   safety property, not a defect.
+3. "`?` works in any dialog" — the command line autofocuses, so `?` is a character there.
+4. "Outlines survive an `overflow: hidden` ancestor" — they do not; proven with pixels.
+5. "`audit_log` is hash-chained" — it is not; append-only by convention.
+6. "The Keychain replaces localStorage" — both are written; localStorage is what is read.
+7. "Operator B stops inheriting A's session" (T1 #4) — not deliverable client-side; the desk
+   passcode is shared by design. **Withdrawn, not deferred.**
+8. "One motion vocabulary replaced the ad-hoc durations" — written in the past tense while
+   `--t-hover` had zero consumers.
+9. "The subject-type mismatch is now structurally impossible" — **an agent refused this one of
+   mine**, proving `subjectTypes: string[]` accepts a typo silently. The honest claim is "caught
+   loudly in both directions."
+10. "Docked, the same work is `Space` then `j` `j` `j` — the pane follows the cursor row" (T1 #12)
+   — it does not. `move()` sets the selection and nothing else; only `Space`, `↵` and a click
+   peek. Measured in Chromium off the pane's own `/v1/projects/:id` request log: `j` asks for
+   nothing and the pane keeps showing the previous lead. Every row is still one `Space`, and the
+   leftover mismatch — evidence for one lead beside a disqualify dialog naming another — is now
+   named in `lib/split.ts` instead of denied.
+11. "The arrows need no guard at all — `useListNavigation` binds them on the container, so a
+   keypress with focus in the pane never reaches it" (T1 #12) — true of the hook, irrelevant to
+   the surface: `BdPipeline` does not use it and handles `↑`/`↓` on its own `window` listener.
+   The arrows are pane-scoped by `keysBelongToSurface()`, exactly like the letters. Proven by
+   deleting the guard and watching the arrow assertion go red with the three verb assertions.
+
+12. "Bubbling gives the innermost interested element the first claim — **it calls
+   `stopPropagation`**, so the key never reaches us" (`lib/dismiss.ts`, Phase 4's own docstring)
+   — five inline editors call neither `stopPropagation` nor `preventDefault` on Escape:
+   `ui/InlineEdit.tsx`, `queue/SavedScreens.tsx` ×2, `CommandDeck.tsx` ×2. What protects them is
+   `handleKeyDown`'s `stack.length === 0` early return and the fact that a non-empty stack has
+   so far always meant a backdrop no inline field can hold focus behind. **The property is held
+   up by emptiness, not by the inner handlers** — so the first non-modal entry anyone pushes
+   re-opens "one Escape closes two things" for all five. Found independently by both Phase F
+   agents; the docstring now says this, and it is the recorded reason the evidence pane stays
+   off the stack.
+
+Two agents refuted instructions I gave them, with measurement, and both were right: the tour must
+NOT register on the dismiss stack (it would kill `g` and `f`, 7 of its own 10 steps), and the seam
+fix does not make the mismatch impossible.

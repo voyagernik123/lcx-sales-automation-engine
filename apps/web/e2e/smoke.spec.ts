@@ -140,6 +140,24 @@ test.describe('a11y ratchet', () => {
   test('the first tab stop bypasses the shell chrome', async ({ page }) => {
     await goToDesk(page, '/deal-board');
 
+    // WAIT FOR THE LAZY PAGE CHUNK, and not as padding.
+    //
+    // `goToDesk` returns once the shell's status bar is up, which is before the route's
+    // lazy chunk has resolved. Until it does, <main> holds the Suspense fallback
+    // (`LoadingSkeleton`, role="status" aria-label="Loading page"), which contains NO
+    // focusable control — so the last assertion here fails, because the Tab after the
+    // skip link finds nothing inside the landmark and wraps back to the skip link itself.
+    //
+    // Measured: 3/3 failures in isolation on a warm machine (`mainFocusables: 0`), 3/3
+    // passes with this one wait (`mainFocusables: 3`). CI has been green only because a
+    // cold worker happened to resolve the chunk before the first keypress — i.e. this spec
+    // was passing on a race, which is the failure mode that reads as coverage and is not.
+    //
+    // Anchored on the skeleton going away rather than on a timeout, which can pass early.
+    await expect(page.getByRole('status', { name: /loading page/i })).toHaveCount(0, {
+      timeout: 15_000,
+    });
+
     await page.keyboard.press('Tab');
     const first = await page.evaluate(() => {
       const a = document.activeElement as HTMLElement | null;

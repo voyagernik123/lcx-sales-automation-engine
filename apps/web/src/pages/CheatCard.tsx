@@ -50,6 +50,8 @@ export type Binding =
   | 'session'
   /** `lib/dismiss` — Escape, centrally. */
   | 'dismiss'
+  /** `hooks/useSplitView` — the ⌘\ dock chord (T1 #12). */
+  | 'split'
   /** `hooks/useManual` — the `?` that opens the living manual. */
   | 'manual'
   /** `apps/desktop/src-tauri/src/lib.rs` — accelerators that exist only in the native app. */
@@ -162,9 +164,30 @@ export function cheatCard(): CardSection[] {
           chords: [[{ key: 'Escape', from: 'dismiss' }]],
           what: 'Close the most recently opened thing',
         },
+        /*
+         * ⌘\ is on the RETREAT card rather than with the list keys, and the reason is the
+         * footnote below it (T1 #12).
+         *
+         * That footnote read "Anything on screen that Escape will not close is a bug worth
+         * reporting" — and the docked evidence pane made it FALSE on a printed card. The pane
+         * deliberately does not register with the dismiss stack, because one entry there
+         * silences the very row keys it exists to preserve (argued at length in lib/split.ts,
+         * and measured: registering it kills `d` and the arrows). So Escape does not close it,
+         * that is not a bug, and the operator holding this card would have been told to report
+         * one.
+         *
+         * Two ways to fix a card that has gone stale: soften the sentence, or name the one
+         * exception. Naming it is better — the sentence is load-bearing (it is how an
+         * unreachable overlay gets reported instead of shrugged at), and softening it to
+         * "almost anything" would retire a useful bug report to protect one line.
+         */
+        {
+          chords: [[{ key: '\\', mod: 'meta', from: 'split' }]],
+          what: 'Dock the evidence beside the surface — or undock it',
+        },
       ],
       footnote:
-        'One layer per press, innermost first — never a navigation, never a discarded edit. Anything on screen that Escape will not close is a bug worth reporting.',
+        'One layer per press, innermost first — never a navigation, never a discarded edit. Anything on screen that Escape will not close is a bug worth reporting — with one exception, and it is the row above: the docked evidence pane owns no keys, so it is not on the Escape ladder and ⌘\\ is what closes it. It only appears on a window at least 1424px wide.',
     },
     {
       title: 'On any ranked list',

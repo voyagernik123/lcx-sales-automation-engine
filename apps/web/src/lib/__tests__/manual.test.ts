@@ -28,7 +28,11 @@ const section = (title: RegExp | string, ctx = base()) =>
 function base() {
   // `stack` is read live from the module here so the existing pushDismissible-based tests
   // keep exercising the real thing; production passes React's subscribed snapshot.
-  return { stack: dismissStack(), manifest: ACTION_MANIFEST, principal: approver, noun: null, isTerminal: false };
+  // `canSplit: false` is the DEFAULT for this fixture on purpose: it is the state of a
+  // narrow window, and it keeps every assertion below about a section's exact contents
+  // ("the Everywhere section is these N entries") measuring what it was written to
+  // measure. The `⌘\\` line has its own tests, which turn it on explicitly.
+  return { stack: dismissStack(), manifest: ACTION_MANIFEST, principal: approver, noun: null, isTerminal: false, canSplit: false, evidenceDocked: false };
 }
 
 describe('the manual is generated, not written', () => {
@@ -90,6 +94,8 @@ describe('the manual is generated, not written', () => {
       principal: operatorOnly,
       noun: { type: 'command_decision', id: 'd1', label: 'Launch decision 19' },
       isTerminal: false,
+      canSplit: false,
+      evidenceDocked: false,
     })[0];
     const blocked = here.entries.filter((e) => e.blocked);
     expect(blocked.length, 'a view-only operator should see something refused').toBeGreaterThan(0);

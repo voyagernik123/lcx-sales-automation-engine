@@ -1,64 +1,36 @@
 import { InspectorDrawer } from '@/components/ui/InspectorDrawer';
 import { useInspectorStore } from '@/stores/useInspectorStore';
-import { INSPECTOR_TO_OBJECT, OBJECT_TYPES } from '@/lib/objectRegistry';
-import { ProjectInspector } from './payloads/ProjectInspector';
-import { DealInspector } from './payloads/DealInspector';
-import { HandoffInspector } from './payloads/HandoffInspector';
-import { ContactInspector } from './payloads/ContactInspector';
-import { ClaimInspector } from './payloads/ClaimInspector';
-import {
-  DecisionInspector,
-  DocumentInspector,
-  JurisdictionInspector,
-  ListingInspector,
-  SignalInspector,
-  TaskInspector,
-} from './payloads/ExtendedInspectors';
-import { ArrowLeft } from 'lucide-react';
-import { RelatedPanel } from './RelatedPanel';
+import { useUIStore } from '@/stores';
+import { useEvidenceDock } from '@/hooks/useSplitView';
+import { InspectorBody, inspectorTitle } from './InspectorBody';
 
 /**
  * Mounted once in AppLayout. Renders whatever entity the inspector stack
  * points at, inside the same InspectorDrawer chrome the regulatory toolkit
  * uses — so both halves of the app share one drill-down feel.
+ *
+ * `docked` is `⌘\` (T1 #12): the SAME inspector, shown in `EvidencePane` beside the
+ * surface instead of over it. The two containers are mutually exclusive by construction —
+ * this returns null when docked, and `AppLayout` renders the pane only when docked — so
+ * one target can never be on screen twice, once modal and once not. What they render is
+ * `InspectorBody`, extracted for exactly that reason.
+ *
+ * The drawer also carries the DOCK button, and only this host passes it: `⌘\` moves the
+ * universal inspector, so the six surfaces that render `InspectorDrawer` with their own local
+ * content must not offer it. Without the button, docking was reachable by the chord alone —
+ * keyboard-ONLY, which this programme's constraint forbids.
  */
-export function InspectorHost() {
+export function InspectorHost({ docked }: { docked: boolean }) {
   const stack = useInspectorStore(s => s.stack);
   const back = useInspectorStore(s => s.back);
-  const jumpTo = useInspectorStore(s => s.jumpTo);
   const close = useInspectorStore(s => s.close);
+  const setEvidenceDocked = useUIStore(s => s.setEvidenceDocked);
+  // The button is offered on exactly the widths where the chord works, from the same
+  // predicate — a control that docks nothing is worse than no control.
+  const { canDock } = useEvidenceDock();
   const top = stack[stack.length - 1];
 
-  if (!top) return null;
-
-  const body = (() => {
-    switch (top.type) {
-      case 'project':
-        return <ProjectInspector id={top.id} seed={top.seed} />;
-      case 'deal':
-        return <DealInspector id={top.id} seed={top.seed} />;
-      case 'handoff':
-        return <HandoffInspector id={top.id} seed={top.seed} />;
-      case 'contact':
-        return <ContactInspector id={top.id} seed={top.seed} />;
-      case 'claim':
-        return <ClaimInspector id={top.id} seed={top.seed} />;
-      case 'task':
-        return <TaskInspector id={top.id} seed={top.seed} />;
-      case 'signal':
-        return <SignalInspector id={top.id} seed={top.seed} />;
-      case 'listing':
-        return <ListingInspector id={top.id} seed={top.seed} />;
-      case 'decision':
-        return <DecisionInspector id={top.id} seed={top.seed} />;
-      case 'jurisdiction':
-        return <JurisdictionInspector id={top.id} seed={top.seed} />;
-      case 'document':
-        return <DocumentInspector id={top.id} seed={top.seed} />;
-    }
-  })();
-
-  const title = OBJECT_TYPES[INSPECTOR_TO_OBJECT[top.type]].label.toUpperCase();
+  if (!top || docked) return null;
 
   return (
     <InspectorDrawer
@@ -66,45 +38,10 @@ export function InspectorHost() {
       onClose={close}
       // Esc walks the pivot trail back one step; only the last step closes.
       onEscape={stack.length > 1 ? back : close}
-      title={title}
+      title={inspectorTitle(stack)}
+      onDock={canDock ? () => setEvidenceDocked(true) : undefined}
     >
-      {stack.length > 1 && (
-        <nav
-          aria-label="Inspector trail"
-          className="mb-3 flex flex-wrap items-center gap-1 text-micro font-bold uppercase tracking-wider text-grey"
-        >
-          <button
-            onClick={back}
-            className="mr-1 flex items-center transition-colors hover:text-navy"
-            aria-label="Back"
-          >
-            <ArrowLeft size={12} />
-          </button>
-          {stack.map((t, i) => {
-            const label = OBJECT_TYPES[INSPECTOR_TO_OBJECT[t.type]].label;
-            const isLast = i === stack.length - 1;
-            return (
-              <span key={`${t.type}:${t.id}:${i}`} className="flex items-center gap-1">
-                {i > 0 && <span className="text-grey/50">/</span>}
-                {isLast ? (
-                  <span className="text-navy">{label}</span>
-                ) : (
-                  <button onClick={() => jumpTo(i)} className="transition-colors hover:text-navy">
-                    {label}
-                  </button>
-                )}
-              </span>
-            );
-          })}
-        </nav>
-      )}
-      {body}
-      {/* Universal search-around — the complete linked neighborhood, on every object. */}
-      <RelatedPanel
-        type={top.type}
-        id={top.id}
-        label={(top.seed?.name as string) || (top.seed?.title as string) || undefined}
-      />
+      <InspectorBody />
     </InspectorDrawer>
   );
 }

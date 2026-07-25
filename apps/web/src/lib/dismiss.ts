@@ -20,9 +20,26 @@
  * InlineEdit, the rename fields in SavedScreens, and the token bar — Escape would
  * close the surrounding panel instead of abandoning the edit, and the operator
  * would lose keystrokes. Bubbling gives the innermost interested element the first
- * claim (it calls `stopPropagation`, which React forwards to the native event, so
- * the key never reaches us) and the stack the last. Innermost-first is also just
- * what Escape means: back out of the smallest thing you are in.
+ * claim and the stack the last. Innermost-first is also just what Escape means:
+ * back out of the smallest thing you are in.
+ *
+ * BUT THE INNER HANDLERS DO NOT ACTUALLY DEFEND THEMSELVES, and this docstring
+ * used to say they did ("it calls `stopPropagation`, which React forwards to the
+ * native event, so the key never reaches us"). Measured, Phase F: five inline
+ * editors handle Escape with NEITHER `stopPropagation` nor `preventDefault` —
+ * `ui/InlineEdit.tsx`, `queue/SavedScreens.tsx` (×2) and `CommandDeck.tsx` (×2).
+ * What actually protects them is `handleKeyDown`'s `stack.length === 0` early
+ * return, plus the fact that a non-empty stack today always means a modal with a
+ * backdrop, which no inline field can hold focus behind. So the property is held
+ * up by EMPTINESS, not by the inner handlers.
+ *
+ * The consequence, and the reason this paragraph is here rather than a TODO: the
+ * first NON-MODAL entry pushed onto this stack re-opens "one Escape closes two
+ * things" — the exact defect Phase 4 existed to kill — for every one of those five
+ * fields. It is why the Phase F evidence pane is deliberately NOT on this stack
+ * (`components/inspect/EvidencePane.tsx`) and why a third "dismissible but not
+ * keyboard-owning" entry kind was rejected rather than added. Anyone adding one
+ * must first make those five fields stop the event themselves.
  *
  * FOCUS RESTORATION LIVES HERE. It is the same lifecycle: something took over the
  * screen, so something has to give focus back when it leaves. Doing it per-overlay

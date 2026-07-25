@@ -155,11 +155,17 @@ does not match the app, the card is from an older build.
   stale information. Nothing you typed is lost.
 - **A panel is stuck** — press **`?`**. The Escape section lists exactly what is open,
   in the order presses will close it. If something is on screen and *not* in that list,
-  that is a bug worth reporting, and naming the panel is enough. The one exception is
-  the **First run** card in the bottom-left corner on your very first sign-in: it owns
-  no keys on purpose, so that the `g` chords and `f` keep working while it walks you
-  through them. Escape does not reach it and it is not in the Escape list. Dismiss it
-  with the **Skip** button on the card, which is one **Tab** away.
+  that is a bug worth reporting, and naming the panel is enough. There are two exceptions,
+  and they are the same exception twice: a panel that deliberately owns no keys, so that
+  the ones you triage with keep working.
+  - The **First run** card in the bottom-left corner on your very first sign-in, which
+    walks you through the `g` chords and `f` while they still work. Dismiss it with the
+    **Skip** button on the card, one **Tab** away.
+  - The **evidence pane** on the right, if you docked it with **⌘\\**. It owns no keys for
+    the same reason — ↑↓, ↵ and the queue letters stay on the table beside it — so Escape
+    does not reach it and it is not in the Escape list. **⌘\\** again puts the evidence
+    back in a drawer, and the pane's own header shows that key next to its close button.
+    It only appears on a window at least 1424px wide.
 - **The app will not open after an update** — the previous version is still in
   Applications' Trash-safe location; ask Nik. Update failures are the one area where the
   shell is not yet self-diagnosing.

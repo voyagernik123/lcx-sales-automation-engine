@@ -78,6 +78,20 @@ export interface ManualContext {
   noun?: Noun | null;
   /** True in LCX TERMINAL, false in a browser tab. Changes what is honest to list. */
   isTerminal: boolean;
+  /**
+   * Is the window wide enough for `⌘\` to do anything (T1 #12)?
+   *
+   * The second field on this context whose only job is to stop the manual listing a key
+   * that does nothing, and it is the same argument as `isTerminal`: below
+   * `SPLIT_MIN_WIDTH` the chord is inert, so a line about it would send an operator to
+   * press a key and conclude the manual is wrong about the rest too. Passed in, not
+   * measured here, because this module is pure and a `window.innerWidth` read would make
+   * the section a snapshot the caller cannot declare a dependency on — the precise bug
+   * the Escape section already had once.
+   */
+  canSplit: boolean;
+  /** True while the evidence pane is docked, so the `⌘\` line can say which way it goes. */
+  evidenceDocked: boolean;
 }
 
 /**
@@ -271,6 +285,32 @@ function everywhereSection(ctx: ManualContext): ManualSection {
     { keys: ['⏎'], what: 'Open the row you are on' },
     { keys: ['⇥'], what: 'Next region. A ranked table is one stop, not one per row' },
   ];
+  /*
+   * `⌘\` (T1 #12), and three things this entry has to get right or it is worse than
+   * absent.
+   *
+   * OMITTED, NOT DIMMED, when the window is too narrow. Below `SPLIT_MIN_WIDTH` the chord
+   * is genuinely inert; listing it greyed out would still be a key an operator tries.
+   *
+   * THE NOTE NAMES THE COST, because it is the one thing about this key that will surprise
+   * someone: Escape does not close the pane. That is a deliberate trade argued in
+   * lib/split.ts (registering with the dismiss stack is what would silence the row keys
+   * the pane exists to preserve), and the surface whose job is telling operators the truth
+   * about keys is exactly where it has to be said. The pane's own header repeats it.
+   *
+   * IT SAYS WHICH DIRECTION THE PRESS GOES, read from the live flag rather than described
+   * in general — "dock" and "undock" are different sentences and the operator wants the
+   * one that applies.
+   */
+  if (ctx.canSplit) {
+    entries.push({
+      keys: ['⌘', '\\'],
+      what: ctx.evidenceDocked
+        ? 'Undock the evidence — it goes back to a drawer over the surface'
+        : 'Dock the evidence beside the surface, so the row keys keep working while you read it',
+      note: 'Escape does not close the pane — ⌘\\ does. It owns no keys, so ↑↓, ⏎ and the queue letters stay on the surface',
+    });
+  }
   if (ctx.isTerminal) {
     entries.push(
       { keys: ['⌥', 'space'], what: 'Summon the desk from anywhere on the Mac' },

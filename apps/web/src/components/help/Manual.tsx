@@ -9,6 +9,7 @@ import { useInspectorStore } from '@/stores';
 import { useAccessStore } from '@/stores/useAccessStore';
 import { useOperatorStore } from '@/stores';
 import { ACTION_MANIFEST } from '@/lib/command/generated/actionManifest';
+import { useEvidenceDock } from '@/hooks/useSplitView';
 import type { Noun, Principal } from '@/components/command/grammar';
 
 /**
@@ -39,6 +40,9 @@ export function Manual({ open, onClose }: { open: boolean; onClose: () => void }
   const operator = useOperatorStore((s) => s.operator);
   const me = useAccessStore((s) => s.me);
   const inspectorStack = useInspectorStore((s) => s.stack);
+  // The `⌘\` line is only honest when the chord can do something, so the manual reads the
+  // same two facts the chord itself reads rather than describing the key in general.
+  const { docked, canDock } = useEvidenceDock();
 
   // The Escape section is read from the LIVE stack, so the manual has to re-render when
   // it changes. Without this the section was a stale snapshot from the moment the manual
@@ -61,11 +65,19 @@ export function Manual({ open, onClose }: { open: boolean; onClose: () => void }
       : null;
     const principal: Principal | null =
       operator && me ? { role: operator.role === 'approver' ? 'approver' : 'operator', entitlements: me.entitlements } : null;
-    return manualFor({ stack, manifest: ACTION_MANIFEST, principal, noun, isTerminal: isTerminal() });
+    return manualFor({
+      stack,
+      manifest: ACTION_MANIFEST,
+      principal,
+      noun,
+      isTerminal: isTerminal(),
+      canSplit: canDock,
+      evidenceDocked: docked,
+    });
     // `stack` is both passed in AND a dependency, so ESLint can see the relationship and
     // the Escape section recomputes whenever a layer opens or closes underneath the
     // manual — the whole point of it being a report rather than a description.
-  }, [open, operator, me, inspectorStack, stack]);
+  }, [open, operator, me, inspectorStack, stack, canDock, docked]);
 
   if (!open) return null;
 

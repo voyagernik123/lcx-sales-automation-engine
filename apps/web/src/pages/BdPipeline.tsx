@@ -31,6 +31,7 @@ import {
 import { Target, Moon, Play } from 'lucide-react';
 import { clsx } from 'clsx';
 import { isOverlayOpen } from '@/lib/dismiss';
+import { keysBelongToSurface } from '@/lib/split';
 import { Button } from '@/components/ui';
 import { ConfirmDialog, EmptyState, TableSkeleton, toast, toastUndo } from '@/components/shared';
 import { FilterTokenBar } from '@/components/bd/FilterTokenBar';
@@ -525,6 +526,34 @@ export function BdPipeline() {
        * only fixes one overlay. The stack knows the answer for all of them.
        */
       if (isOverlayOpen()) return;
+      /*
+       * AND NOT WHEN FOCUS IS IN THE DOCKED EVIDENCE PANE (T1 #12).
+       *
+       * `⌘\` puts the inspector BESIDE this table instead of over it, and that is the
+       * whole point — the pane does not register on the dismiss stack, so the guard above
+       * no longer fires and `s`, `d`, `e` and the digits stay live while the operator
+       * reads the evidence. That is the feature. It is also, without this line, the
+       * defect: Tab from a row reaches the pane's own links and buttons, and `d` pressed
+       * there would open the disqualify dialog for whichever lead was still HIGHLIGHTED —
+       * a mutation aimed at a record the operator's focus is nowhere near. That exact
+       * defect was already fixed once on this page (`syncSelectionToFocus` below, and the
+       * two cursors it collapsed), and a docked pane is how it comes back.
+       *
+       * Standing down rather than acting on the highlight, deliberately: the highlight is
+       * not where the keyboard is, so there is no honest reading in which `d` means
+       * "disqualify that". Shift+Tab returns to the row, and the pane's header says which
+       * side owns the keys so the silence is explained before it is experienced.
+       *
+       * AND IT COVERS THE ARROWS, ENTER AND SPACE TOO — do not narrow it to the letters.
+       * This note used to say the arrows needed no guard because `useListNavigation` binds
+       * them on the `<tbody>`. That hook is real, `LeadTable` uses it, and it is beside the
+       * point: THIS listener also handles `ArrowDown`/`ArrowUp` (~70 lines below, next to
+       * `j`/`k`) plus `Enter` and `' '`, on `window`, where focus in the pane reaches it just
+       * as a letter does. MEASURED — remove this line and
+       * `pages/__tests__/bdPipelineSplitOwnership.test.tsx` reports "an arrow pressed in the
+       * evidence pane moved the queue cursor", alongside the three verb failures.
+       */
+      if (!keysBelongToSurface()) return;
       if (isTypingTarget(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       /*

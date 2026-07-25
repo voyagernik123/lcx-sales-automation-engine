@@ -9,6 +9,8 @@ import { GO_IDLE, stepGoGrammar } from '@/lib/navGrammar';
 import { isCommandChord } from '@/lib/keyboard';
 import { _resetDismiss, pushDismissible } from '@/lib/dismiss';
 import { useManual } from '@/hooks/useManual';
+import { useSplitViewChord } from '@/hooks/useSplitView';
+import { useUIStore } from '@/stores';
 import { useListNavigation } from '@/hooks/useListNavigation';
 import { SessionMode } from '@/components/queue/SessionMode';
 import type { QueueLead } from '@/lib/api/queue';
@@ -43,6 +45,7 @@ const BINDING_FILES: Record<Exclude<Binding, 'destinations'>, string> = {
   session: join(SRC, 'components', 'queue', 'SessionMode.tsx'),
   dismiss: join(SRC, 'lib', 'dismiss.ts'),
   manual: join(SRC, 'hooks', 'useManual.ts'),
+  split: join(SRC, 'hooks', 'useSplitView.ts'),
   // The one binding site no compiler can see from here: apps/desktop builds
   // separately, which is the same reason destinations.test.ts reads it.
   nativeMenu: join(REPO_WEB, '..', 'desktop', 'src-tauri', 'src', 'lib.rs'),
@@ -104,7 +107,17 @@ function allPresses(): Press[] {
 function spellsKey(press: Press): boolean {
   if (press.from === 'destinations') return DESTINATIONS.some((d) => d.key === press.key);
   if (press.from === 'nativeMenu') return true;
-  return code(bindingFile(press.from)).includes(`'${press.key}'`);
+  const src = code(bindingFile(press.from));
+  /*
+   * THE ONE KEY WHOSE RAW VALUE IS NOT ITS SOURCE SPELLING. `Press.key` stores the literal
+   * `KeyboardEvent.key`, which for ⌘\ is a single backslash — and no TypeScript file can
+   * contain `'\'`, because that is an unterminated escape. `hooks/useSplitView.ts` spells it
+   * `'\\'`, as it must. The quoted-literal search therefore reported the ⌘\ row as unbound
+   * the first time it was added, which is the check being right about the mechanism and wrong
+   * about the key; both spellings are accepted rather than the card storing a pre-escaped
+   * value that `pressLabel` would then have to un-escape for print.
+   */
+  return src.includes(`'${press.key}'`) || src.includes(`'${JSON.stringify(press.key).slice(1, -1)}'`);
 }
 
 /* ── The modifier half ───────────────────────────────────────────────────────
@@ -186,6 +199,17 @@ function ManualProbe() {
   return null;
 }
 
+/**
+ * `⌘\`. The chord refuses below `SPLIT_MIN_WIDTH`, so the probe has to stand on a wide desk
+ * or it would report the key as unbound for a reason the card is not claiming anything about.
+ * jsdom's `window.innerWidth` is 1024 and its `matchMedia` is undefined, so the width is the
+ * only input — see `useEvidenceDock`.
+ */
+function SplitProbe() {
+  useSplitViewChord();
+  return null;
+}
+
 function ListNavProbe() {
   const nav = useListNavigation({ count: 3, onActivate: () => {} });
   return (
@@ -227,6 +251,20 @@ const CLAIMS: Record<Binding, (press: Press) => boolean> = {
     return stepGoGrammar({ armed: true, armedAt: 0 }, keyEvent(p), 0).go?.key === p.key;
   },
   keyboard: (p) => isCommandChord(keyEvent(p)),
+  split: (p) => {
+    _resetDismiss();
+    const width = window.innerWidth;
+    Object.defineProperty(window, 'innerWidth', { value: 1440, configurable: true, writable: true });
+    useUIStore.setState({ evidenceDocked: false });
+    const view = render(<SplitProbe />);
+    try {
+      return claimedOn(document, p);
+    } finally {
+      view.unmount();
+      useUIStore.setState({ evidenceDocked: false });
+      Object.defineProperty(window, 'innerWidth', { value: width, configurable: true, writable: true });
+    }
+  },
   manual: (p) => {
     _resetDismiss();
     const view = render(<ManualProbe />);
