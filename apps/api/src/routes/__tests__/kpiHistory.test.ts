@@ -2,15 +2,16 @@
  * Integration tests for GET /v1/kpis/history (daily KPI snapshots).
  * Runs against the local dev database (same convention as features.test.ts).
  */
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, expect, it } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { createApp } from '../../app.js';
 import { closeDb, getDb } from '../../db/index.js';
+import { describeDb } from '../../test/db.js';
 
 const TEST_KEY = 'dev-operator-key-change-me';
 const AUTH = { Authorization: `Bearer ${TEST_KEY}` };
 
-describe('GET /v1/kpis/history', () => {
+describeDb('GET /v1/kpis/history', () => {
   const app = createApp();
   const today = new Date().toISOString().slice(0, 10);
 

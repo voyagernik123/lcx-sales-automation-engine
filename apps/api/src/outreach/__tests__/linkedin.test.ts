@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { MockLinkedInProvider, checkLiCap, LI_DAILY_CONNECTION_CAP, LI_WEEKLY_CONNECTION_CAP, LI_DAILY_MESSAGE_CAP } from '../linkedin.js';
 import type { ConnectionRequestParams, MessageParams } from '../linkedin.js';
+import { itDb } from '../../test/db.js';
 
 // Use the mock provider
 const provider = new MockLinkedInProvider();
@@ -51,7 +52,7 @@ describe('Cap enforcement logic', () => {
     expect(LI_DAILY_MESSAGE_CAP).toBe(20);
   });
 
-  it('returns canSendConnection=false when daily cap exceeded', async () => {
+  itDb('returns canSendConnection=false when daily cap exceeded', async () => {
     const caps = await checkLiCap('connection_request');
     // This will vary based on actual DB state, but structure should be correct
     expect(caps).toHaveProperty('connectionsRemainingToday');
@@ -60,7 +61,7 @@ describe('Cap enforcement logic', () => {
     expect(caps).toHaveProperty('canSendMessage');
   });
 
-  it('returns canSendMessage based on daily message cap', async () => {
+  itDb('returns canSendMessage based on daily message cap', async () => {
     const caps = await checkLiCap('message');
     expect(typeof caps.canSendMessage).toBe('boolean');
     expect(typeof caps.messagesRemainingToday).toBe('number');

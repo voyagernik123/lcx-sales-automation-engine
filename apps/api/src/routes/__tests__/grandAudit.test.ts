@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../app.js';
 import { closeDb } from '../../db/index.js';
 import { invalidateEntitlements } from '../../access/entitlements.js';
+import { itDb } from '../../test/db.js';
 import { draftListingPacket } from '../../ai/distributionOperator.js';
 import { ACTION_REGISTRY } from '../../actions/registry.js';
 
@@ -66,7 +67,7 @@ describe('grand audit — live surface (app-level)', () => {
   });
   afterAll(async () => { await closeDb(); });
 
-  it('the AI ask endpoint enforces the compartment gate + input validation (network-free checks)', async () => {
+  itDb('the AI ask endpoint enforces the compartment gate + input validation (network-free checks)', async () => {
     const anon = await app.request('/v1/distribution/ask', { method: 'POST', body: JSON.stringify({ question: 'which rail?' }) });
     expect(anon.status).toBe(401); // gate first — no auth, never reaches the model
     const short = await app.request('/v1/distribution/ask', { method: 'POST', headers: nik, body: JSON.stringify({ question: 'x' }) });

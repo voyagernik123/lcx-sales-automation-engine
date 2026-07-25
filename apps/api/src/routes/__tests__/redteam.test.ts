@@ -3,6 +3,7 @@ import { createApp } from '../../app.js';
 import { closeDb, getPool } from '../../db/index.js';
 import { invalidateEntitlements } from '../../access/entitlements.js';
 import { workspaceForApiPath } from '@lcx/shared';
+import { describeDb } from '../../test/db.js';
 
 /**
  * LCX ONE Phase 2 — compartment proofs (the red-team pass).
@@ -57,7 +58,7 @@ describe('LCX OS red-team: compartment proofs', () => {
     });
   });
 
-  describe('step-up cannot be forged', () => {
+  describeDb('step-up cannot be forged', () => {
     it('rejects a revoke with a wrong step-up passcode (approver, real target)', async () => {
       const res = await app.request('/v1/actions/revoke_entitlement/invoke', {
         method: 'POST', headers: json(nik),

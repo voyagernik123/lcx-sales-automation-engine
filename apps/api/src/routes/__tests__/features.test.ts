@@ -6,6 +6,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../app.js';
 import { closeDb } from '../../db/index.js';
+import { describeDb, itDb } from '../../test/db.js';
 
 const TEST_KEY = 'dev-operator-key-change-me';
 const AUTH = { Authorization: `Bearer ${TEST_KEY}` };
@@ -21,7 +22,7 @@ describe('master-plan feature routes', () => {
     await closeDb();
   });
 
-  describe('error mapping (onError)', () => {
+  describeDb('error mapping (onError)', () => {
     it('maps a malformed UUID to 400, not 500', async () => {
       const res = await app.request('/v1/dealdesk/invoices/not-a-uuid/status', {
         method: 'PATCH',
@@ -72,7 +73,7 @@ describe('master-plan feature routes', () => {
       expect(res.status).toBe(401);
     });
 
-    it('creates a manual task', async () => {
+    itDb('creates a manual task', async () => {
       const res = await app.request('/v1/tasks', {
         method: 'POST',
         headers: { ...AUTH, 'Content-Type': 'application/json' },
@@ -93,14 +94,14 @@ describe('master-plan feature routes', () => {
       expect(res.status).toBe(400);
     });
 
-    it('lists open tasks including the new one', async () => {
+    itDb('lists open tasks including the new one', async () => {
       const res = await app.request('/v1/tasks?status=open', { headers: AUTH });
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.data.some((t: { id: string }) => t.id === taskId)).toBe(true);
     });
 
-    it('completes the task and removes it from the open list', async () => {
+    itDb('completes the task and removes it from the open list', async () => {
       const done = await app.request(`/v1/tasks/${taskId}/done`, { method: 'POST', headers: AUTH });
       expect(done.status).toBe(200);
       const res = await app.request('/v1/tasks?status=open', { headers: AUTH });
@@ -108,7 +109,7 @@ describe('master-plan feature routes', () => {
       expect(body.data.some((t: { id: string }) => t.id === taskId)).toBe(false);
     });
 
-    it('404s on completing a missing task', async () => {
+    itDb('404s on completing a missing task', async () => {
       const res = await app.request('/v1/tasks/00000000-0000-0000-0000-000000000000/done', {
         method: 'POST',
         headers: AUTH,
@@ -117,7 +118,7 @@ describe('master-plan feature routes', () => {
     });
   });
 
-  describe('notifications', () => {
+  describeDb('notifications', () => {
     it('lists notifications with an unread count', async () => {
       const res = await app.request('/v1/notifications', { headers: AUTH });
       expect(res.status).toBe(200);
@@ -135,7 +136,7 @@ describe('master-plan feature routes', () => {
     });
   });
 
-  describe('send queue', () => {
+  describeDb('send queue', () => {
     it('returns items plus LinkedIn cap guidance', async () => {
       const res = await app.request('/v1/outreach/queue', { headers: AUTH });
       expect(res.status).toBe(200);
@@ -158,7 +159,7 @@ describe('master-plan feature routes', () => {
     });
   });
 
-  describe('deal board + forecast', () => {
+  describeDb('deal board + forecast', () => {
     it('returns board deals with project context', async () => {
       const res = await app.request('/v1/deals/board', { headers: AUTH });
       expect(res.status).toBe(200);
@@ -185,7 +186,7 @@ describe('master-plan feature routes', () => {
     });
   });
 
-  describe('gap analysis', () => {
+  describeDb('gap analysis', () => {
     it('returns gaps with exchange chips, none on LCX', async () => {
       const res = await app.request('/v1/analytics/gaps?minExchanges=1', { headers: AUTH });
       expect(res.status).toBe(200);
@@ -198,7 +199,7 @@ describe('master-plan feature routes', () => {
     });
   });
 
-  describe('unified timeline', () => {
+  describeDb('unified timeline', () => {
     it('merges activity kinds in descending time order', async () => {
       const projects = await app.request('/v1/projects?limit=1&sort=priority', { headers: AUTH });
       const pid = (await projects.json()).data[0]?.id;

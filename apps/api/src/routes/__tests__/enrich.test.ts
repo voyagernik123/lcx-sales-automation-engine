@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../app.js';
 import { closeDb } from '../../db/index.js';
+import { itDb } from '../../test/db.js';
 
 const TEST_KEY = 'dev-operator-key-change-me';
 
@@ -23,7 +24,7 @@ describe('POST /v1/projects/:id/enrich', () => {
     expect(res.status).toBe(401);
   });
 
-  it('returns 404 for non-existent project', async () => {
+  itDb('returns 404 for non-existent project', async () => {
     const res = await app.request('/v1/projects/00000000-0000-0000-0000-000000000000/enrich', {
       method: 'POST',
       headers: { Authorization: `Bearer ${TEST_KEY}` },

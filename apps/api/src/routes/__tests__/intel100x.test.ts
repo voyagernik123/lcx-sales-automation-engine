@@ -9,13 +9,14 @@ import { sql } from 'drizzle-orm';
 import { createApp } from '../../app.js';
 import { closeDb, getDb, getPool } from '../../db/index.js';
 import { runWeeklyDigest } from '../../notifications/digest.js';
+import { describeDb } from '../../test/db.js';
 
 const TEST_KEY = 'dev-operator-key-change-me';
 const AUTH = { Authorization: `Bearer ${TEST_KEY}` };
 const JSON_HEADERS = { ...AUTH, 'Content-Type': 'application/json' };
 const MISSING_UUID = '00000000-0000-0000-0000-000000000000';
 
-describe('intel 100x features', () => {
+describeDb('intel 100x features', () => {
   const app = createApp();
   const projectName = `intel100x-test-${Date.now()}`;
   let projectId: string;

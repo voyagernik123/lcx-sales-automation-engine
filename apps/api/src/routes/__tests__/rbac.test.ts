@@ -8,6 +8,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../app.js';
 import { closeDb } from '../../db/index.js';
+import { describeDb, itDb } from '../../test/db.js';
 
 const TEST_KEY = 'dev-operator-key-change-me';
 const FAKE_ID = '00000000-0000-0000-0000-000000000000';
@@ -38,7 +39,7 @@ describe('Wave 7 RBAC', () => {
       expect(data.canApprove).toBe(false);
     });
 
-    it('an operator email resolves to operator, canApprove false', async () => {
+    itDb('an operator email resolves to operator, canApprove false', async () => {
       const res = await app.request('/v1/me', { headers: { Authorization: 'Bearer sam@lcx.com:test#1234' } });
       const { data } = await res.json();
       expect(data.role).toBe('operator');
@@ -46,7 +47,7 @@ describe('Wave 7 RBAC', () => {
       expect(data.member?.role).toBe('operator');
     });
 
-    it('an approver email resolves to approver, canApprove true', async () => {
+    itDb('an approver email resolves to approver, canApprove true', async () => {
       const res = await app.request('/v1/me', { headers: { Authorization: 'Bearer nik@lcx.com:test#1234' } });
       const { data } = await res.json();
       expect(data.role).toBe('approver');
@@ -62,13 +63,13 @@ describe('Wave 7 RBAC', () => {
       expect((await res.json()).code).toBe('FORBIDDEN_REQUIRES_APPROVER');
     });
 
-    it('rejects an operator email with 403', async () => {
+    itDb('rejects an operator email with 403', async () => {
       const res = await decide(app, 'sam@lcx.com:test#1234');
       expect(res.status).toBe(403);
       expect((await res.json()).code).toBe('FORBIDDEN_REQUIRES_APPROVER');
     });
 
-    it('lets an approver through the gate (404 for a missing approval, not 403)', async () => {
+    itDb('lets an approver through the gate (404 for a missing approval, not 403)', async () => {
       const res = await decide(app, 'nik@lcx.com:test#1234');
       expect(res.status).not.toBe(403);
       expect(res.status).toBe(404);
@@ -76,7 +77,7 @@ describe('Wave 7 RBAC', () => {
     });
   });
 
-  describe('/v1/intel/ops observability shape', () => {
+  describeDb('/v1/intel/ops observability shape', () => {
     it('returns the governance panels', async () => {
       const res = await app.request('/v1/intel/ops', { headers: { Authorization: `Bearer ${TEST_KEY}` } });
       expect(res.status).toBe(200);

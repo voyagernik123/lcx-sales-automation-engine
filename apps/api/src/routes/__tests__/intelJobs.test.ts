@@ -6,6 +6,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../app.js';
 import { closeDb } from '../../db/index.js';
+import { itDb } from '../../test/db.js';
 
 const TEST_KEY = 'dev-operator-key-change-me';
 const AUTH = { Authorization: `Bearer ${TEST_KEY}`, 'Content-Type': 'application/json' };
@@ -33,7 +34,7 @@ describe('POST /v1/intel/jobs/:job', () => {
     expect(body.jobs).toContain('alpha');
   });
 
-  it('runs a job synchronously with ?wait=1 and returns stats', async () => {
+  itDb('runs a job synchronously with ?wait=1 and returns stats', async () => {
     const res = await app.request('/v1/intel/jobs/calibrate?wait=1', { method: 'POST', headers: AUTH });
     expect(res.status).toBe(200);
     const { data } = await res.json();

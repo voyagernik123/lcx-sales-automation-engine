@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { createApp } from '../../app.js';
 import { closeDb, getPool } from '../../db/index.js';
 import { invalidateEntitlements } from '../../access/entitlements.js';
+import { itDb } from '../../test/db.js';
 
 const TEST_KEY = 'dev-operator-key-change-me';
 const PASS = 'test#1234';
@@ -50,7 +51,7 @@ describe('LCX OS front door + workspace gates', () => {
     expect(departed.status).toBe(401);
   });
 
-  it('admits email:passcode with the real role attached', async () => {
+  itDb('admits email:passcode with the real role attached', async () => {
     const res = await app.request('/v1/me', { headers: nik });
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as { data: { id: string; role: string; entitlements: Record<string, string> } };
@@ -59,7 +60,7 @@ describe('LCX OS front door + workspace gates', () => {
     expect(data.entitlements.distribution).toBeDefined();
   });
 
-  it('honors the full-desk covenant: sam holds every compartment', async () => {
+  itDb('honors the full-desk covenant: sam holds every compartment', async () => {
     const res = await app.request('/v1/access/me', { headers: sam });
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as { data: { memberId: string; entitlements: Record<string, string>; workspaces: Array<{ id: string }> } };
@@ -127,7 +128,7 @@ describe('LCX OS front door + workspace gates', () => {
     expect(res.status).toBe(403);
   });
 
-  it('refuses self-lockout: an approver cannot revoke their own governance access', async () => {
+  itDb('refuses self-lockout: an approver cannot revoke their own governance access', async () => {
     const res = await app.request('/v1/actions/revoke_entitlement/invoke', {
       method: 'POST',
       headers: { ...nik, 'Content-Type': 'application/json' },

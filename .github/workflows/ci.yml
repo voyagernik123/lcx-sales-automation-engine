@@ -12,6 +12,52 @@ jobs:
   gate:
     name: type-check · test · build · perf-budget
     runs-on: ubuntu-latest
+
+    # A REAL POSTGRES, because without one this job proves 197 of 248 API tests.
+    #
+    # The first run of this workflow — its first run ever, since the file had never been
+    # committed — went red on `ECONNREFUSED 127.0.0.1:5432` in 10 of 30 API test files.
+    # Those files are the route and integration suites: RBAC enforcement, the governed
+    # action gates, error mapping, the LCX OS front door. They are the ones whose failure
+    # would matter most, and they are exactly the ones a runner without a database cannot
+    # run.
+    #
+    # `apps/api/src/test/db.ts` makes them SKIP rather than fail when `DATABASE_URL` is
+    # absent, which is what lets a contributor with no local Postgres run the suite. That
+    # guard alone would have been enough to turn this job green, and turning it green that
+    # way would have been the wrong trade: a green CI that silently skips a fifth of the
+    # API suite is worse than a red one, because nobody re-reads a green job.
+    #
+    # The two compose in the safe direction. The guard skips only when nothing configured
+    # a database. Here something did, so all 248 run — and if this container ever fails to
+    # come up, `DATABASE_URL` is still set, the tests still run, and the job goes RED
+    # instead of quietly proving less.
+    services:
+      postgres:
+        # 16 to match the Supabase major in production. A version skew here would let a
+        # migration pass CI and fail on prod, which is the one thing this container must
+        # not do. `pg_trgm` (migration 0044) ships in the official image's contrib set.
+        image: postgres:16
+        env:
+          POSTGRES_USER: lcx
+          POSTGRES_PASSWORD: lcx_ci
+          POSTGRES_DB: lcx_sales_ci
+        ports:
+          - 5432:5432
+        # Without the health check the job races the container's startup and the first
+        # test to connect loses. The start period is deliberately generous: a cold runner
+        # pulling the image is slow, and a flaky CI database teaches people to re-run red
+        # jobs rather than read them.
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+          --health-start-period 10s
+
+    env:
+      DATABASE_URL: postgresql://lcx:lcx_ci@localhost:5432/lcx_sales_ci
+
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -19,6 +65,19 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+
+      # Fill the container. An empty database is no more useful to the route suites than
+      # no database — they would fail on "relation does not exist" rather than on
+      # ECONNREFUSED, which is the worse error because it reads like a schema bug.
+      #
+      # `migrate()` had been exported and called by NOTHING since the first migration: 46
+      # .sql files with no runner, which is why every production migration in this
+      # project's history has been pasted into the Supabase SQL editor by hand. This step
+      # is its first real caller. Verified against an empty database before committing:
+      # 46/46 applied, 100 tables, second run skips all 46.
+      - name: Apply migrations to the CI database
+        run: npm run migrate -w @lcx/api
+
       # Root ci-check: type-check + tests (shared/api/web) + build.
       - run: npm run ci-check
       # Bundle budget — fails if a chunk >400KB or initial set >850KB.
@@ -28,6 +87,11 @@ jobs:
     name: playwright screenshots + interaction smoke
     runs-on: ubuntu-latest
     needs: gate
+    # No database here, on purpose — this job is NOT missing the service container above.
+    # Several of these specs assert what the app does with the API DOWN: lazy routes still
+    # resolve, the offline banner appears, cached reads still serve, the sign-in gate still
+    # renders. Giving this job a working backend would delete that coverage, and it is the
+    # coverage that matches how the desk actually fails.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
