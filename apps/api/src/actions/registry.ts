@@ -58,10 +58,18 @@ export interface RegistryAction {
 export class ActionError extends Error {
   code: string;
   status: number;
-  constructor(code: string, message: string, status = 400) {
+  /**
+   * Machine-readable detail carried alongside the code, spread into the response
+   * body by the invoke route. A refusal has to be actionable without parsing
+   * prose: the command line decides which remedy to offer from `code`, and needs
+   * this to say WHICH reviews are missing or WHICH workspace is required.
+   */
+  data?: Record<string, unknown>;
+  constructor(code: string, message: string, status = 400, data?: Record<string, unknown>) {
     super(message);
     this.code = code;
     this.status = status;
+    this.data = data;
   }
 }
 
@@ -206,7 +214,8 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
         if (missing.length > 0) {
           if (!params.overrideSat) {
             throw new ActionError('SAT_REQUIRED',
-              `Program-critical decision: run the missing tradecraft first (${missing.join(' + ')}) — or override with a reason.`, 409);
+              `Program-critical decision: run the missing tradecraft first (${missing.join(' + ')}) — or override with a reason.`, 409,
+              { missing, subjectType: 'command_decision' });
           }
           if (!String(params.overrideReason ?? '').trim()) {
             throw new ActionError('OVERRIDE_REASON_REQUIRED', 'SAT override requires a reason.', 400);
@@ -655,7 +664,8 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
           if (blockers.length > 0) {
             if (!params.overrideGate) {
               throw new ActionError('COMPLIANCE_GATE',
-                `Cannot launch: ${blockers.join('; ')}. File the reviews (subject_type=dist_campaign) or override with a reason.`, 409);
+                `Cannot launch: ${blockers.join('; ')}. File the reviews (subject_type=dist_campaign) or override with a reason.`, 409,
+                { blockers, missing, overBudget });
             }
             if (!String(params.overrideReason ?? '').trim()) {
               throw new ActionError('OVERRIDE_REASON_REQUIRED', 'Compliance-gate override requires a reason.', 400);
@@ -736,12 +746,20 @@ export async function invokeAction(
         'WORKSPACE_FORBIDDEN',
         `${id} requires '${needed}' on workspace '${action.workspace}'`,
         403,
+        { workspace: action.workspace, needed },
       );
     }
   }
   const parsed = action.paramsSchema.safeParse(input.params ?? {});
   if (!parsed.success) {
-    throw new ActionError('VALIDATION', parsed.error.issues.map((i) => i.message).join('; '));
+    throw new ActionError(
+      'VALIDATION',
+      parsed.error.issues.map((i) => i.message).join('; '),
+      400,
+      // Per-field detail so a param prompt can highlight the field that failed
+      // instead of showing one concatenated sentence.
+      { issues: parsed.error.issues.map((i) => ({ path: i.path.join('.'), message: i.message })) },
+    );
   }
   const params = parsed.data as Record<string, unknown>;
   const result = await action.execute({ pool, subjectType: input.subjectType, subjectId: input.subjectId, params, actor: input.actor, role: input.role });

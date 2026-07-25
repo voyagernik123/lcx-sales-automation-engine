@@ -2,7 +2,7 @@
   "name": "lcx-sales-automation-engine",
   "private": true,
   "version": "0.1.0",
-  "description": "LCX Sales Automation Engine — full-stack token listing BD (EU/MiCA + US pre/post CLARITY)",
+  "description": "LCX Sales Automation Engine \u2014 full-stack token listing BD (EU/MiCA + US pre/post CLARITY)",
   "workspaces": [
     "apps/*",
     "packages/*"
@@ -32,7 +32,8 @@
     "seed:demo": "tsx apps/api/src/seed/demo.ts",
     "deploy:migrate": "psql $DATABASE_URL -f apps/api/src/db/migrations/",
     "smoke": "./scripts/smoke-e2e.sh",
-    "ci-check": "npm run type-check && npm run test && npm run build"
+    "ci-check": "npm run type-check && npm run test && npm run build",
+    "gen:actions": "tsx apps/api/scripts/gen-action-manifest.ts"
   },
   "engines": {
     "node": ">=20"
