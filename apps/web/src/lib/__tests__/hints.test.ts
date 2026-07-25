@@ -105,29 +105,45 @@ describe('tag generation', () => {
       expect(Math.ceil(Math.log(k ** p) / Math.log(k)), `k=${k} p=${p}`).toBe(p);
     }
 
-    const overshoots: string[] = [];
+    /*
+     * The overshoot set is COMPUTED here, never pinned — and that is the second
+     * correction this test has needed.
+     *
+     * It used to assert `toEqual([...10 hardcoded pairs])` above a comment reading
+     * "Measured:". Measured on one machine: Node 22 on arm64 produces ten pairs, and the
+     * first CI run to execute this file — Node 20 on x86_64 — produced nine. The
+     * disagreement is real and unavoidable: `Math.log(9)/Math.log(3)` is
+     * 2.0000000000000004, not 2, because `log(9)` is not exactly twice `log(3)` in
+     * binary64, so which (size, power) pairs land on the wrong side of `ceil` depends on
+     * the libm the runtime was built against. Pinning that set asserted a property of the
+     * machine, not of this module, and would have failed on any contributor's laptop that
+     * did not match mine.
+     *
+     * What the test is actually FOR survives intact, and is stronger for being derived:
+     * wherever the logarithm miscounts, the shipped multiplicative `tagLength` must not.
+     * Both halves below are exact-integer, so both are platform-independent.
+     */
+    const overshoots: Array<{ size: number; p: number }> = [];
     for (let size = 2; size <= 40; size++) {
       for (const p of [2, 3, 4]) {
-        if (Math.ceil(Math.log(size ** p) / Math.log(size)) !== p) overshoots.push(`k=${size} p=${p}`);
+        if (Math.ceil(Math.log(size ** p) / Math.log(size)) !== p) overshoots.push({ size, p });
       }
     }
-    // Measured: k=3 at every power, plus the cube for 5, 6, 7, 18, 25, 36 and 39.
-    expect(overshoots).toEqual([
-      'k=3 p=2',
-      'k=3 p=3',
-      'k=3 p=4',
-      'k=5 p=3',
-      'k=6 p=3',
-      'k=7 p=3',
-      'k=18 p=3',
-      'k=25 p=3',
-      'k=36 p=3',
-      'k=39 p=3',
-    ]);
-    // And the shipped function is right for all of them.
-    for (const size of [3, 5, 6, 7, 18, 25, 36, 39]) {
+
+    // Non-vacuous: if the runtime's `Math.log` were exact everywhere, the loop below would
+    // assert nothing and the multiplicative form would need no defending. Every engine
+    // measured so far miscounts at k=3, so an empty set means the sweep is broken rather
+    // than the hazard being gone.
+    expect(
+      overshoots.length,
+      'the logarithm miscounted nowhere in 2..40 — this sweep no longer demonstrates anything',
+    ).toBeGreaterThan(0);
+
+    // THE claim: the shipped function is right for every case the logarithm gets wrong,
+    // whatever that set turns out to be on this runtime.
+    for (const { size, p } of overshoots) {
       const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789+-*/'.slice(0, size);
-      expect(tagLength(size ** 3, alphabet), `k=${size}`).toBe(3);
+      expect(tagLength(size ** p, alphabet), `k=${size} p=${p}`).toBe(p);
     }
   });
 
