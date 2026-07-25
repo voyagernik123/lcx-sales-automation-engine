@@ -287,7 +287,7 @@ A mode indicator is a permanent tax on the operator’s attention — *which mod
 
 ## 6. STANDING RULES
 
-Carried from `LCX_TERMINAL_PLAN.md` §5, plus four earned this session.
+Carried from `LCX_TERMINAL_PLAN.md` §5, plus five earned this session.
 
 1. **The gate includes the real emit builds** — `shared → api → web`, in Docker order, plus the Tauri bundle. Never just vitest. The root `build` script **skips api**, which has let api type errors reach Render before.
 2. **Keyless-first.** Ad-hoc signing until the Apple cert exists; nothing blocks on procurement.
@@ -299,7 +299,8 @@ Carried from `LCX_TERMINAL_PLAN.md` §5, plus four earned this session.
 8. **NEW — mutation-test the wire, not the mechanism.** A fix is not done when its unit test passes. It is done when a test **fails** after you delete the line connecting it to the app. Earned from a 16-case idempotency suite that was green while the feature had never executed on a real request.
 9. **NEW — a test may not depend on its environment.** No borrowing `projects[0]` from whatever the database happens to hold; no pinning floating-point output; no asserting a set that a different libm computes differently. Arrange the fixture or derive the assertion.
 10. **NEW — never buy green by proving less.** When a check fails because the environment lacks something, the default is to *give the environment what it lacks*, not to narrow the check. CI got a real Postgres and a build step for exactly this reason.
-11. **NEW — withdrawing a claim is a deliverable.** Six claims have now been withdrawn or narrowed across this programme, and every one was an improvement. Narrowing a sentence beats inflating the code, especially at the end of a long session.
+11. **NEW — a run's colour is looked at, never inferred.** `npm run gate` passing locally does not predict CI, and the reason is structural: **the local database is seeded and CI's is empty by design.** Reproduce it — `createdb probe && DATABASE_URL=…/probe npm run migrate` gives 100 tables and 0 rows — then run the suite against that. Earned by reporting a red run as green and, worse, by not noticing that a red test job makes the `playwright` job report `skipped`, so **one failure hides the entire e2e ratchet**. Note also that the test which broke this violated **rule 9, which I had already written** — a rule in a document stops nothing on its own; only the check that fails does.
+12. **NEW — withdrawing a claim is a deliverable.** Six claims have now been withdrawn or narrowed across this programme, and every one was an improvement. Narrowing a sentence beats inflating the code, especially at the end of a long session.
 
 ---
 
@@ -349,6 +350,19 @@ outcome teaches nothing.
 
 **Every single gate found something the plan did not know about.** That is the finding about the
 findings, and it is the reason §4's briefs insist a gate is not a formality.
+
+**AND THE LEDGER ITSELF CONTAINED A FALSE CLAIM, which is the last thing to go in it.** I recorded
+"CI green" for the C-fix + E row without opening the run. It was **red**, and had been since Phase
+D. Because the `playwright` job `needs:` the test job, the two runs after D report
+`playwright: skipped` — so the e2e ratchet, the thing Phase A existed to resurrect, **had not
+executed in CI at all** while this document called the suite enforcing. Cause: one api test
+asserted on whatever the developer's database happened to contain, and CI's Postgres is migrated
+and **empty by design**; two neighbouring tests said `if (!g) return` and had been passing while
+asserting nothing. Fixed in `8aa14f1`, and the fix was proven by reproducing CI's condition on
+this machine — `createdb` + `npm run migrate` → 100 tables, 0 rows — where the previous version of
+the file produced CI's message character for character. Reading the test had not found it. The
+rule this adds to §6: **a run's colour is a thing you look at, not a thing you infer from a local
+gate.** The local database is seeded; CI's is empty; a green `npm run gate` predicts neither.
 
 ## 10. THE CLAIMS WITHDRAWN, IN ONE PLACE
 

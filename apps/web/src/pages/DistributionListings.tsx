@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ListChecks } from 'lucide-react';
 import { clsx } from 'clsx';
 import { PageTitle } from '@/components/ui';
@@ -45,7 +45,39 @@ export function DistributionListings() {
   }, []);
   useEffect(() => { refresh(); }, [refresh]);
 
+  /* ── A BARE ARROW MUST NOT WRITE TO A GOVERNED RECORD ─────────────────────
+   *
+   * Found by CI, and only by CI. `e2e/keyboardday.spec.ts:903` asserts that three
+   * ArrowDowns on this select produce zero governed writes, and it had been passing
+   * on macOS for a reason that is a platform accident: Chrome and WKWebView on macOS
+   * OPEN the popup on an arrow and fire `change` only when you commit with ↵ or a
+   * click. On Linux — CI's Chromium, and any Windows or Linux browser hitting the
+   * web fallback — the arrow advances the selection immediately, so `change` fires
+   * per keypress. Measured in run 30162940695:
+   *
+   *   Error: three ArrowDowns produced a governed write
+   *   Received array: [{"actionId":"dist_listing_set_status",
+   *                     "params":{"status":"submitted"}, "subjectId":"srf_probe_one"}]
+   *
+   * So Tab-ing through this table and arrowing past a select advanced a real listing's
+   * status, audited and attributed, with no confirmation — the same defect class the
+   * queue's `j`/`k` deliberately avoids by not being bound to movement at all.
+   *
+   * The spec's own comment said that if this ever went red, the BEHAVIOUR should be
+   * corrected rather than the assertion softened. This is that correction: arrow
+   * traversal only STAGES a value, and a write needs an explicit commit — ↵, or a
+   * pointer selection, which is exactly macOS's own model. Escape and blur discard,
+   * also matching macOS, where clicking away from an open popup reverts.
+   *
+   * Escape here calls preventDefault + stopPropagation, unlike the app's five other
+   * inline editors — see the ledger note in `lib/dismiss.ts`. Their safety depends on
+   * the dismiss stack being empty; this one does not rely on that. */
+  const [staged, setStaged] = useState<Record<string, string>>({});
+  const traversing = useRef(false);
+  const ARROW_TRAVERSAL = new Set(['ArrowDown', 'ArrowUp', 'Home', 'End', 'PageDown', 'PageUp']);
+
   const change = async (surfaceId: string, status: string) => {
+    setStaged((s) => { const { [surfaceId]: _drop, ...rest } = s; return rest; });
     setBusy(surfaceId);
     try {
       await setListingStatus(surfaceId, { status });
@@ -96,13 +128,50 @@ export function DistributionListings() {
                       <td className="px-2 py-1.5 font-mono text-micro text-grey">{s.category}</td>
                       <td className="px-2 py-1.5">
                         <select
-                          value={st}
+                          value={staged[s.id] ?? st}
                           disabled={busy === s.id}
-                          onChange={(e) => void change(s.id, e.target.value)}
-                          className={clsx('rounded border border-line bg-card px-1 py-0.5 font-mono text-micro font-semibold', STATUS_TONE[st])}
+                          aria-describedby={staged[s.id] ? `staged-${s.id}` : undefined}
+                          onKeyDown={(e) => {
+                            if (ARROW_TRAVERSAL.has(e.key)) { traversing.current = true; return; }
+                            if (e.key === 'Enter') {
+                              const next = staged[s.id];
+                              // Nothing staged, or staged back to where it started: not a
+                              // change, so not a write. "Nothing changed" beats a tick.
+                              if (next && next !== st) void change(s.id, next);
+                              return;
+                            }
+                            if (e.key === 'Escape' && staged[s.id]) {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setStaged((m) => { const { [s.id]: _drop, ...rest } = m; return rest; });
+                            }
+                          }}
+                          onChange={(e) => {
+                            if (traversing.current) {
+                              traversing.current = false;
+                              setStaged((m) => ({ ...m, [s.id]: e.target.value }));
+                              return;
+                            }
+                            void change(s.id, e.target.value);
+                          }}
+                          // Leaving discards, like clicking away from an open macOS popup.
+                          onBlur={() => setStaged((m) => { const { [s.id]: _drop, ...rest } = m; return rest; })}
+                          className={clsx(
+                            'rounded border px-1 py-0.5 font-mono text-micro font-semibold',
+                            staged[s.id] ? 'border-amber-500 bg-amber-500/10' : 'border-line bg-card',
+                            STATUS_TONE[staged[s.id] ?? st],
+                          )}
                         >
                           {STATUSES.map((v) => <option key={v} value={v}>{v.replace('_', ' ')}</option>)}
                         </select>
+                        {/* Staged, not written. Said out loud, because a value on screen
+                            that is not the value in the record is exactly the kind of
+                            silent disagreement this programme keeps finding. */}
+                        {staged[s.id] ? (
+                          <span id={`staged-${s.id}`} className="ml-1.5 font-mono text-micro text-amber-700 dark:text-amber-400">
+                            ↵ to apply · esc to cancel
+                          </span>
+                        ) : null}
                       </td>
                       <td className="px-2 py-1.5">
                         <button onClick={() => setOpenMechanic(openMechanic === s.id ? null : s.id)} className="text-micro text-cyan-700 hover:underline dark:text-cyan-400">
