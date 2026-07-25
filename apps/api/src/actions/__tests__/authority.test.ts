@@ -85,14 +85,29 @@ describe('secrets never reach the ledger or the audit log', () => {
     expect(redactSecrets(input)).toBe(input);
   });
 
-  it('over-redacts rather than risk missing a credential', () => {
-    const out = redactSecrets({ title: 'x', tokenIncentivized: true });
+  it('over-redacts any STRING whose name merely suggests a credential', () => {
+    // The tradeoff, unchanged and still deliberate: the cost of over-redacting is a
+    // less informative audit row, the cost of under-redacting is a credential in a
+    // queryable table. Name-matching stays over-broad for strings.
+    const out = redactSecrets({ title: 'x', tokenValue: 'eyJhbGciOi', secretNote: 'shh' });
     expect(out.title).toBe('x');
-    // `tokenIncentivized` merely contains "token". Asserted so the tradeoff is
-    // explicit and visible as a choice rather than looking like an accident: the
-    // cost of over-redacting is a less informative audit row, the cost of
-    // under-redacting is a credential in a queryable table.
-    expect(out.tokenIncentivized).toBe('[redacted]');
+    expect(out.tokenValue).toBe('[redacted]');
+    expect(out.secretNote).toBe('[redacted]');
+  });
+
+  it('but keeps a boolean, because a boolean cannot BE a credential', () => {
+    // This test used to assert the opposite, and the P7 audit was right that the
+    // opposite had a real cost: `dist_campaign_create.tokenIncentivized` matches
+    // `token`, so the audit row for creating a token-incentivized campaign did not
+    // record that it was token-incentivized — the exact flag that makes the action
+    // require an approver, absent from the trail that records the approval.
+    //
+    // The exemption is by VALUE TYPE, not by adding a special case to the name
+    // pattern. That keeps deny-by-default intact for every string and generalises to
+    // any future `tokenEnabled` / `secretBallot` boolean.
+    const out = redactSecrets({ tokenIncentivized: true, secretBallot: false });
+    expect(out.tokenIncentivized).toBe(true);
+    expect(out.secretBallot).toBe(false);
   });
 
   it('invokeAction records the redacted copy, not the raw params', () => {

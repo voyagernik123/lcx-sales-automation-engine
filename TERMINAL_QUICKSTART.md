@@ -19,17 +19,33 @@ Developer-ID signed, so macOS has no certificate to check it against. It is **on
 Mac**, not once per launch. (If you would rather not see it at all, that needs an Apple
 Developer certificate — see the note at the end.)
 
-Updates install themselves. The app checks quietly on launch and only interrupts you if
-there is something to install.
+**Updates do not work yet, and today they complain about it.** The app checks on launch
+against a GitHub release channel that does not exist — the repo is private and has no
+releases — so the check fails and you get a warning toast every launch. Two things have
+to happen before self-update is real: a release has to be cut, and the channel has to
+move somewhere unauthenticated, because the updater sends no credentials and a private
+repo's download URL requires them. Until then, new builds arrive as a DMG from Nik.
 
 ## 2. Sign in
 
-Your **LCX email** and the **desk passcode**. Both are checked server-side; neither is
-stored in the browser. On this Mac the credential lives in the macOS **Keychain**, so
-you can inspect or revoke it in Keychain Access like any other password.
+Your **LCX email** and the **desk passcode**. Both are checked server-side.
 
-If you share a Mac: signing out wipes every local trace — filters, notes, desk state,
-cached reads. Nobody inherits your session.
+**Where the credential is kept, accurately.** It goes to the macOS **Keychain** — you
+can inspect or revoke it in Keychain Access like any other password — *and* to the
+webview's `localStorage`, in cleartext, at
+`~/Library/WebKit/com.lcx.terminal/WebsiteData/.../localstorage.sqlite3` (mode `0644`).
+The Keychain copy is redundant, not exclusive: `localStorage` is what the API client
+actually reads. An earlier version of this page said "neither is stored in the browser",
+which was simply false, and it is the kind of false that matters — anyone with your user
+account can read the desk passcode out of that file. `apps/desktop/README.md` has the
+long version.
+
+If you share a Mac: signing out clears your session, filters, notes and desk state, and
+nobody inherits your access. Two honest caveats — cached response *bodies* can survive
+on disk, because the page navigates away before the IndexedDB clear commits; they are
+namespaced per operator, so the next person cannot be served them, but the bytes are
+there. And the desk passcode is shared by design, so signing out is not the same as
+locking someone out.
 
 ## 3. The four keys that matter
 
@@ -64,10 +80,15 @@ success tick, on purpose. If the record did not move, you should not be told it 
 
 ## 5. Ranked lists
 
-The queue, the pipeline, the deal board — anywhere rows are ranked:
+**On the BD pipeline lead table** — and, honestly, only there for now:
 
 - **↑ ↓** move between rows, **Home / End** jump to the ends, **↵** opens the row.
+- **← →** reach the buttons *inside* the row you are on.
 - **⇥** treats the whole table as **one** stop, in and out. It does not walk 200 rows.
+
+The other tables (product intelligence, competition, the product matrix) still make
+every row its own Tab stop and ignore the arrows. An earlier version of this page said
+all ranked lists behaved the same way; they do not yet.
 
 Careful on the queue: **`s`** snoozes and **`d`** disqualifies the row you are on. Those
 are real, immediate, single-letter actions. (This is also why `j`/`k` are *not* bound to
@@ -99,8 +120,9 @@ does not match the app, the card is from an older build.
 
 ### If something is wrong
 
-- **"API DOWN" in the status bar** — reads may be served from cache and are marked as
-  such; governed writes are unavailable until it returns. This is deliberate: the gates
+- **"API DOWN" in the status bar** — reads may be served from cache; governed writes are
+  unavailable until it returns. Note the cache is *not* labelled per value yet, so a
+  cached number looks identical to a live one — the banner is your only signal. This is deliberate: the gates
   read their inputs at the moment of writing, so a queued write would be judged against
   stale information. Nothing you typed is lost.
 - **A panel is stuck** — press **`?`**. The Escape section lists exactly what is open,
@@ -116,5 +138,5 @@ does not match the app, the card is from an older build.
   certificate (~$99/yr, Account Holder only). Nothing else is blocked on it.
 - **Reads can be slower than 100ms.** Production sits behind ~165–195ms of fixed
   network latency before any of our code runs — it is geography, not something a faster
-  query fixes. That is why reads are cached locally and why the app tells you when a
-  value came from cache.
+  query fixes. That is why reads are cached locally. The app does **not** yet mark which
+  values came from cache — that affordance is designed and unbuilt.

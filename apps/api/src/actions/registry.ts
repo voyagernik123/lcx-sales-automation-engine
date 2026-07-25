@@ -709,7 +709,20 @@ export function redactSecrets(params: Record<string, unknown>): Record<string, u
   let touched = false;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(params)) {
-    if (SECRET_PARAM_PATTERN.test(k)) {
+    // Name AND type. Matching on the name alone is deliberately over-broad — the
+    // tradeoff is documented in authority.test.ts and it is the right way round: a
+    // less informative audit row beats a credential in a queryable table. But a
+    // BOOLEAN cannot BE a credential, so redacting one buys no safety and does cost
+    // information. The case that surfaced it: `dist_campaign_create.tokenIncentivized`
+    // matches `token`, so the audit row for creating a token-incentivized campaign did
+    // not record that it was token-incentivized — the exact flag that makes the action
+    // require an approver, missing from the trail that records the approval.
+    //
+    // Restricting the exemption to booleans, rather than adding `(?!Incentivized)` to
+    // the pattern, keeps the deny-by-default posture intact for every string and
+    // generalises: a future `tokenEnabled` or `secretBallot: true` is safe by the same
+    // reasoning, and a `token: "eyJ..."` is still destroyed.
+    if (SECRET_PARAM_PATTERN.test(k) && typeof v !== 'boolean') {
       // Kept as a present-but-empty marker rather than dropped, so the record
       // still shows that step-up was performed.
       out[k] = '[redacted]';

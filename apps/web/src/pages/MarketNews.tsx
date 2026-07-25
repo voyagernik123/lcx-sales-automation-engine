@@ -20,13 +20,16 @@ import {
   type NewsFilter,
   type NewsItem,
 } from '@/components/market/newsUtils';
+import { storage } from '@/lib/persistence';
 
-const VISITED_KEY = 'lcx.marketNews.visited';
+// Scoped: an unprefixed key leaked one operator's read-state to the next and
+// survived sign-out, which only sweeps the `lcx-os:` prefix.
+const VISITED_KEY = 'marketNews.visited';
 const VISITED_CAP = 300;
 
 function loadVisited(): Set<string> {
   try {
-    const raw = localStorage.getItem(VISITED_KEY);
+    const raw = storage.get<string | null>(VISITED_KEY, null);
     if (!raw) return new Set();
     const parsed: unknown = JSON.parse(raw);
     return new Set(Array.isArray(parsed) ? parsed.filter((v): v is string => typeof v === 'string') : []);
@@ -37,7 +40,7 @@ function loadVisited(): Set<string> {
 
 function persistVisited(ids: Set<string>): void {
   try {
-    localStorage.setItem(VISITED_KEY, JSON.stringify([...ids].slice(-VISITED_CAP)));
+    storage.set(VISITED_KEY, JSON.stringify([...ids].slice(-VISITED_CAP)));
   } catch {
     /* storage unavailable — visited state is cosmetic */
   }

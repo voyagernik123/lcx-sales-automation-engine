@@ -185,9 +185,21 @@ function everywhereSection(ctx: ManualContext): ManualSection {
       what: 'This manual, even while you are typing',
       note: '? is a character in a search box, so it yields — this never does',
     },
-    { keys: ['↑', '↓'], what: 'Move down a ranked list; Home and End jump to its ends' },
+    // Qualified deliberately. The P7 audit measured that `useListNavigation` has exactly
+    // one real consumer (the BD lead table): 15 of 16 tables still make every row a Tab
+    // stop and ignore the arrows entirely. Promising them everywhere sends an operator
+    // to press keys that do nothing, on the surface whose whole job is telling them
+    // which keys work.
+    {
+      keys: ['↑', '↓'],
+      what: 'Move between rows on the lead table; Home and End jump to its ends',
+      note: 'other tables do not have this yet',
+    },
+    // Added because the P7 roving-tabindex fix made these the ONLY route to a row's own
+    // buttons, and neither teaching surface mentioned them.
+    { keys: ['←', '→'], what: 'Reach the buttons inside the row you are on' },
     { keys: ['⏎'], what: 'Open the row you are on' },
-    { keys: ['⇥'], what: 'Next region. A list is one stop, not one per row' },
+    { keys: ['⇥'], what: 'Next region. The lead table is one stop, not one per row' },
   ];
   if (ctx.isTerminal) {
     entries.push(

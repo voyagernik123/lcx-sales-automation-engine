@@ -8,6 +8,7 @@ import { EmptyState, PageSkeleton } from '@/components/shared';
 import { ListingReadinessPanel } from '@/components/command/ListingReadinessPanel';
 import { PageTitle, Button } from '@/components/ui';
 import { clsx } from 'clsx';
+import { storage } from '@/lib/persistence';
 
 /**
  * LCX COMMAND — Command Ops (Wave 4). The further CEO surfaces, honest about
@@ -17,14 +18,19 @@ import { clsx } from 'clsx';
  * metals-distribution scaffold (referenced in the brief, empty in the strategy
  * per DATA_GAPS — never fabricated).
  */
-const LS_KEY = 'lcx-command-treasury-inputs';
+// Scoped, not raw. This held the CEO's own capital and burn figures under an
+// unprefixed key, so on a shared Mac — where all three members sign in with the same
+// desk passcode — the next person opened the page and read them, with no sign-out
+// involved. `lib/persistence` exists specifically to prevent that; bypassing it also
+// bypassed the sign-out sweep, which only walks the `lcx-os:` prefix.
+const LS_KEY = 'command-treasury-inputs';
 
 interface TreasuryInputs { capitalUsd: number | ''; burnUsd: number | ''; mtlStates: number | ''; waitlistScenario: 'lean' | 'base' | 'aggressive' }
 const DEFAULT_INPUTS: TreasuryInputs = { capitalUsd: '', burnUsd: '', mtlStates: 5, waitlistScenario: 'base' };
 
 function loadInputs(): TreasuryInputs {
   try {
-    const raw = localStorage.getItem(LS_KEY);
+    const raw = storage.get<string | null>(LS_KEY, null);
     if (!raw) return DEFAULT_INPUTS;
     const p = JSON.parse(raw) as Partial<TreasuryInputs>;
     return {
@@ -84,7 +90,7 @@ function TreasuryPanel({ financials }: { financials: CommandFinancial[] }) {
 
   const save = (next: TreasuryInputs) => {
     setInputs(next);
-    try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch { /* private mode */ }
+    try { storage.set(LS_KEY, JSON.stringify(next)); } catch { /* private mode */ }
   };
 
   // Pull the strategy's own assumption ranges (never invented here).
