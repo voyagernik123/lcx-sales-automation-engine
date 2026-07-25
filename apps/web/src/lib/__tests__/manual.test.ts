@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { MANUAL_LABEL, manualFor } from '../manual';
 import { DESTINATIONS } from '../destinations';
-import { _resetDismiss, pushDismissible } from '../dismiss';
+import { _resetDismiss, dismissStack, pushDismissible } from '../dismiss';
 import { ACTION_MANIFEST } from '../command/generated/actionManifest';
 import type { Principal } from '@/components/command/grammar';
 
@@ -26,7 +26,9 @@ const section = (title: RegExp | string, ctx = base()) =>
   manualFor(ctx).find((s) => (typeof title === 'string' ? s.title === title : title.test(s.title)));
 
 function base() {
-  return { manifest: ACTION_MANIFEST, principal: approver, noun: null, isTerminal: false };
+  // `stack` is read live from the module here so the existing pushDismissible-based tests
+  // keep exercising the real thing; production passes React's subscribed snapshot.
+  return { stack: dismissStack(), manifest: ACTION_MANIFEST, principal: approver, noun: null, isTerminal: false };
 }
 
 describe('the manual is generated, not written', () => {
@@ -83,6 +85,7 @@ describe('the manual is generated, not written', () => {
     // operator is refused on two independent grounds, which is the case worth showing.
     const operatorOnly: Principal = { role: 'operator', entitlements: { command: 'view' } };
     const here = manualFor({
+      stack: dismissStack(),
       manifest: ACTION_MANIFEST,
       principal: operatorOnly,
       noun: { type: 'command_decision', id: 'd1', label: 'Launch decision 19' },

@@ -1,6 +1,6 @@
 import { verbsFor, blockedExplanation, type Noun, type Principal } from '@/components/command/grammar';
 import { DESTINATIONS } from './destinations';
-import { dismissStack } from './dismiss';
+import type { DismissEntry } from './dismiss';
 import { GO_WINDOW_MS } from './navGrammar';
 import type { ActionManifest } from './command/types';
 
@@ -60,6 +60,17 @@ export interface ManualSection {
 }
 
 export interface ManualContext {
+  /**
+   * The live dismiss stack, PASSED IN rather than read from the module.
+   *
+   * It used to call `dismissStack()` internally, which made this file impure in the one
+   * way that mattered: the caller's `useMemo` could not declare a dependency on
+   * something it never referenced, so the Escape section was a snapshot frozen at the
+   * moment the manual opened — and `escapeSection`'s own comment claimed it was "a
+   * report of it". ESLint was right that the dependency was "unnecessary"; the honest
+   * response was to make it necessary rather than to silence the rule.
+   */
+  stack: readonly DismissEntry[];
   manifest: ActionManifest | null;
   principal: Principal | null;
   /** The object in front of the operator, if the surface has one. */
@@ -77,7 +88,7 @@ export interface ManualContext {
 export function manualFor(ctx: ManualContext): ManualSection[] {
   return [
     hereSection(ctx),
-    escapeSection(),
+    escapeSection(ctx.stack),
     goSection(ctx),
     everywhereSection(ctx),
   ];
@@ -119,14 +130,14 @@ function hereSection(ctx: ManualContext): ManualSection {
  * overlay: if something is on screen and not on this list, it is not dismissible and
  * that is a bug worth reporting.
  */
-function escapeSection(): ManualSection {
+function escapeSection(stack: readonly DismissEntry[]): ManualSection {
   // The manual is itself on the stack — it has to be, or Escape would close the panel
   // behind it and leave the manual floating over nothing. But reporting "esc closes:
   // manual" is technically true and useless: the operator opened this to find out what
   // happens to the thing UNDERNEATH. So the manual's own entry is dropped and the
   // press count is offset by one, which is what the numbers would be by the time they
   // matter — because the first press is the one that closes this panel.
-  const beneath = dismissStack().filter((entry) => entry.label !== MANUAL_LABEL);
+  const beneath = stack.filter((entry) => entry.label !== MANUAL_LABEL);
 
   if (beneath.length === 0) {
     return {

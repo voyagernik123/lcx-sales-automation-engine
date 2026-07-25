@@ -149,3 +149,61 @@ describe('durability', () => {
     expect(adoption).not.toThrow();
   });
 });
+
+describe('when the browser refuses to persist', () => {
+  /**
+   * The Phase 7 audit measured this: a capability already at two PERSISTED slow uses
+   * produced **50 nudges in 50 pointer uses**, because `markShown` could not write the
+   * cooldown or the shown-count, so every call re-read a ledger that never advanced. The
+   * feature whose entire design is "stay quiet" became a nag — in private browsing or on
+   * a full quota, i.e. exactly where an operator cannot explain why.
+   *
+   * The cause was a lie in `persistence.ts`: its `set` catch said "in-memory only" and
+   * there was no in-memory anything.
+   */
+  function refuseWrites(): () => void {
+    const real = Storage.prototype.setItem;
+    Storage.prototype.setItem = function denied() {
+      throw new DOMException('QuotaExceededError');
+    };
+    return () => {
+      Storage.prototype.setItem = real;
+    };
+  }
+
+  it('still shows at most one nudge across fifty pointer uses', () => {
+    // Prime the ledger on disk first, so the precondition matches the audit's exactly.
+    recordUse(CAP, 'pointer');
+    recordUse(CAP, 'pointer');
+
+    const restore = refuseWrites();
+    try {
+      let shown = 0;
+      for (let i = 0; i < 50; i++) {
+        const n = nudgeFor(CAP, T0 + i * 10);
+        if (n) {
+          markShown(CAP, T0 + i * 10);
+          shown++;
+        }
+        recordUse(CAP, 'pointer');
+      }
+      // One inside the cooldown window. Before the in-memory tier this was 50.
+      expect(shown, `${shown} nudges in 50 uses — the cooldown is not being retained`).toBe(1);
+    } finally {
+      restore();
+    }
+  });
+
+  it('reads back a value written while persistence was failing', () => {
+    const restore = refuseWrites();
+    try {
+      recordUse('memory-only-capability', 'keyboard');
+      recordUse('memory-only-capability', 'keyboard');
+      // Two keyboard uses is adoption. If the write vanished, this is false and the
+      // engine would keep teaching a shortcut the operator has demonstrably adopted.
+      expect(isAdopted('memory-only-capability')).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+});

@@ -171,6 +171,8 @@ export function pushDismissible(
   install();
   const id = ++seq;
   stack.push({ id, label, dismiss, origin: activeElement(), container: container ?? null });
+  snapshot = null;
+  emit();
   return id;
 }
 
@@ -183,6 +185,8 @@ export function removeDismissible(id: number): void {
   const index = stack.findIndex((entry) => entry.id === id);
   if (index === -1) return;
   const [entry] = stack.splice(index, 1);
+  snapshot = null;
+  emit();
   queueRestore(index, entry.origin);
 }
 
@@ -203,6 +207,41 @@ export function dismissTop(): string | null {
 export function topDismissible(): string | null {
   return stack[stack.length - 1]?.label ?? null;
 }
+
+/* ── Subscription ────────────────────────────────────────────────────────────
+ * Added in Phase 7 because the manual's Escape section was NOT the report it claimed
+ * to be. `Manual.tsx` read `dismissStack()` inside a `useMemo` keyed on `[open, …]`
+ * with no way to learn the stack had changed — so with the manual open you could press
+ * ⌘K, the real stack would become `['Command line', 'Manual']`, and the manual's text
+ * stayed byte-identical: "Nothing else is open, so Escape just closes this manual."
+ * It told the operator what Escape would do and was wrong.
+ *
+ * A subscription rather than polling, and exposed as a plain listener set so the
+ * consumer can use `useSyncExternalStore` — which is precisely the React primitive for
+ * "an external mutable thing that renders" and gets the tearing semantics right without
+ * this module knowing anything about React.
+ */
+
+const listeners = new Set<() => void>();
+
+/** Subscribe to stack changes. Returns an unsubscribe. */
+export function subscribeDismiss(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function emit(): void {
+  // Copied before iterating: a listener that unsubscribes during notification would
+  // otherwise mutate the set mid-loop.
+  for (const l of [...listeners]) l();
+}
+
+/**
+ * A cached snapshot, because `useSyncExternalStore` demands referential stability —
+ * returning a fresh array each call makes React re-render forever. Invalidated on every
+ * mutation and rebuilt lazily.
+ */
+let snapshot: readonly DismissEntry[] | null = null;
 
 /**
  * Is anything on screen that owns the keyboard?
@@ -229,9 +268,15 @@ export function topTraps(): boolean {
   return !!stack[stack.length - 1]?.container?.();
 }
 
-/** Introspection: what Escape will close, in order, bottom first. */
+/**
+ * Introspection: what Escape will close, in order, bottom first.
+ *
+ * Returns a STABLE reference until the stack actually changes, so it can be used
+ * directly as a `useSyncExternalStore` snapshot.
+ */
 export function dismissStack(): readonly DismissEntry[] {
-  return stack.map(({ id, label }) => ({ id, label }));
+  if (!snapshot) snapshot = stack.map(({ id, label }) => ({ id, label }));
+  return snapshot;
 }
 
 function activeElement(): Element | null {
@@ -284,6 +329,8 @@ function flushRestore(): void {
 /** Test-only. */
 export function _resetDismiss(): void {
   stack.length = 0;
+  snapshot = null;
+  listeners.clear();
   seq = 0;
   pendingRestore = [];
   restoreScheduled = false;

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { X, FileText, Radar as RadarIcon, Coins } from 'lucide-react';
 import { rfiEconomics } from '@lcx/shared';
 import { fetchCommandDeep, recordRfi, extractRfiText, type CommandDeep, type CommandPartner } from '@/lib/api/command';
 import { SourceChip } from './SourceChip';
 import { toast } from '@/components/shared/Toast';
 import { Button } from '@/components/ui';
+import { useDismissible } from '@/hooks/useDismissible';
 
 /**
  * Partner Dossier (100X Phase 3) — the dossier room: a partner's 10-dimension
@@ -13,6 +14,12 @@ import { Button } from '@/components/ui';
  * the effective-cost readout the moment spreads exist.
  */
 export function PartnerDossier({ partner, onClose }: { partner: CommandPartner; onClose: () => void }) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  // A refutation attempt failed here, which is why it is worth a comment: this LOOKS
+  // like it sits inside the command palette (its file lives under components/command),
+  // and the palette does register. It does not — `pages/CommandPartners.tsx` renders it
+  // at page level, so Escape did nothing on it.
+  useDismissible(true, onClose, `${partner.name} dossier`, panelRef);
   const [deep, setDeep] = useState<CommandDeep | null>(null);
   const [form, setForm] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<'issued' | 'returned' | 'signed'>('returned');
@@ -76,6 +83,8 @@ export function PartnerDossier({ partner, onClose }: { partner: CommandPartner; 
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={onClose}>
       <div
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
         aria-label={`Partner dossier: ${partner.name}`}
         className="h-full w-full max-w-xl overflow-y-auto border-l border-line bg-card p-4 shadow-card"

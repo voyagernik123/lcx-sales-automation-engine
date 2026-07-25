@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Mail, X } from 'lucide-react';
 import { Button } from '@/components/ui';
+import { useDismissible } from '@/hooks/useDismissible';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MAX_RECIPIENTS = 5;
@@ -14,6 +15,12 @@ export interface EmailRecipientsDialogProps {
 
 /** Small modal that collects up to five exec email addresses and sends the report. */
 export function EmailRecipientsDialog({ open, onClose, onSend }: EmailRecipientsDialogProps) {
+  const panelRef = useRef<HTMLDivElement>(null);
+  // This dialog declared `aria-modal="true"` and registered with nothing, so Escape did
+  // nothing at all on it — a modal that claims the rest of the document is unavailable
+  // and cannot be dismissed by the key everyone tries first. Found by the Phase 7 audit
+  // grepping the `fixed inset-0` set against the `useDismissible` set.
+  useDismissible(open, onClose, 'email recipients', panelRef);
   const [raw, setRaw] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -58,7 +65,14 @@ export function EmailRecipientsDialog({ open, onClose, onSend }: EmailRecipients
   };
 
   return (
-    <div className="br-no-print fixed inset-0 z-[90] flex items-center justify-center bg-navy/40 p-4" role="dialog" aria-modal="true" aria-label="Email report to execs">
+    <div
+      ref={panelRef}
+      tabIndex={-1}
+      className="br-no-print fixed inset-0 z-[90] flex items-center justify-center bg-navy/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Email report to execs"
+    >
       <div className="w-full max-w-md rounded-xl border border-line/70 bg-card p-4 shadow-overlay">
         <div className="mb-3 flex items-center gap-2">
           <Mail size={15} className="text-cyan-500" />

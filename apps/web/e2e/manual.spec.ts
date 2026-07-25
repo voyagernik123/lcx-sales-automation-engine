@@ -114,6 +114,45 @@ test.describe('the manual', () => {
   });
 });
 
+test.describe('the Escape section is a report, not a snapshot', () => {
+  /**
+   * The exact scenario the Phase 7 audit measured and I had claimed was impossible.
+   * `manual.ts` says of this section "Not a description of Escape — a report of it", and
+   * it was not: the component read `dismissStack()` inside a `useMemo` with no way to
+   * learn the stack had changed, so opening a layer UNDERNEATH the manual left the text
+   * byte-identical. The manual told the operator what Escape would do and was wrong.
+   */
+  test('a layer opening underneath the manual changes what it says', async ({ page }) => {
+    await goToDesk(page, '/bd-pipeline');
+    await page.keyboard.press('?');
+    const panel = page.locator(manual);
+    await expect(panel).toBeVisible();
+
+    // Nothing else open — the section says so.
+    await expect(panel.getByText(/Nothing else is open/i)).toBeVisible();
+
+    // ⌘K works while the manual is up, so the stack really does change underneath it.
+    await page.keyboard.press('Meta+k');
+    await expect(page.locator('[role="dialog"][aria-label="Command line"]')).toBeVisible();
+
+    // THE assertion. Before the subscription this text did not change at all.
+    await expect(panel.getByText(/Nothing else is open/i)).toBeHidden();
+    await expect(panel.getByText(/Escape closes/i)).toBeVisible();
+    await expect(panel.getByText(/command line/i).first()).toBeVisible();
+  });
+
+  /*
+   * There is deliberately no "and changes back when that layer closes" test. I wrote one
+   * and it could not pass, for a reason worth recording rather than working around: while
+   * the manual is open it IS the top of the stack and it covers the screen, so the layer
+   * beneath it cannot be closed by the operator at all — Escape closes the manual first
+   * (correct LIFO), and a backdrop click lands on the manual's own backdrop. Reaching the
+   * reverse direction would need a contrived path no operator has, and the test above
+   * already proves the subscription fires. The removal direction is covered where it is
+   * reachable: `lib/__tests__/dismiss.test.ts`.
+   */
+});
+
 test.describe('the focus trap', () => {
   /**
    * The Phase 7 audit MEASURED this escaping: with the manual open, one Shift+Tab

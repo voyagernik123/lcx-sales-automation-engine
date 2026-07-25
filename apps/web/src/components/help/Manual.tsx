@@ -1,9 +1,10 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useSyncExternalStore } from 'react';
 import { BookOpen, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useDismissible } from '@/hooks/useDismissible';
 import { isTerminal } from '@/lib/container';
 import { MANUAL_LABEL, manualFor, type ManualEntry, type ManualSection } from '@/lib/manual';
+import { dismissStack, subscribeDismiss } from '@/lib/dismiss';
 import { useInspectorStore } from '@/stores';
 import { useAccessStore } from '@/stores/useAccessStore';
 import { useOperatorStore } from '@/stores';
@@ -39,6 +40,11 @@ export function Manual({ open, onClose }: { open: boolean; onClose: () => void }
   const me = useAccessStore((s) => s.me);
   const inspectorStack = useInspectorStore((s) => s.stack);
 
+  // The Escape section is read from the LIVE stack, so the manual has to re-render when
+  // it changes. Without this the section was a stale snapshot from the moment the manual
+  // opened: press ⌘K with the manual up and it went on saying "nothing else is open".
+  const stack = useSyncExternalStore(subscribeDismiss, dismissStack);
+
   const sections = useMemo<ManualSection[]>(() => {
     if (!open) return [];
     const top = inspectorStack[inspectorStack.length - 1];
@@ -55,10 +61,11 @@ export function Manual({ open, onClose }: { open: boolean; onClose: () => void }
       : null;
     const principal: Principal | null =
       operator && me ? { role: operator.role === 'approver' ? 'approver' : 'operator', entitlements: me.entitlements } : null;
-    return manualFor({ manifest: ACTION_MANIFEST, principal, noun, isTerminal: isTerminal() });
-    // `open` is a dependency on purpose: the Escape section reads the LIVE dismiss
-    // stack, so it must be recomputed at open time rather than memoised from mount.
-  }, [open, operator, me, inspectorStack]);
+    return manualFor({ stack, manifest: ACTION_MANIFEST, principal, noun, isTerminal: isTerminal() });
+    // `stack` is both passed in AND a dependency, so ESLint can see the relationship and
+    // the Escape section recomputes whenever a layer opens or closes underneath the
+    // manual — the whole point of it being a report rather than a description.
+  }, [open, operator, me, inspectorStack, stack]);
 
   if (!open) return null;
 
