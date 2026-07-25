@@ -1,0 +1,58 @@
+name: CI
+
+# The ratchet (FINAL_MASTER_PLAN D3): every push/PR runs the full gate, so
+# type errors, failing tests, and bundle-budget regressions can't reach main.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  gate:
+    name: type-check · test · build · perf-budget
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Root ci-check: type-check + tests (shared/api/web) + build.
+      - run: npm run ci-check
+      # Bundle budget — fails if a chunk >400KB or initial set >850KB.
+      - run: npm run perf-budget -w @lcx/web
+
+  e2e:
+    name: playwright screenshots + interaction smoke
+    runs-on: ubuntu-latest
+    needs: gate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      # `--ignore-snapshots` deliberately. Playwright names baselines per platform,
+      # and the committed ones are `-chromium-darwin`; on ubuntu-latest it would look
+      # for `-chromium-linux`, find nothing, and fail every run from the first one —
+      # red for a font-rendering difference rather than for a regression, which is
+      # how a CI job gets ignored and then deleted.
+      #
+      # What still gates here is everything that is not a pixel: the a11y ratchet
+      # (unlabeled controls), the interaction specs (inspector opens, Escape closes
+      # it through the central dismiss stack), lazy-route resolution with the API
+      # down, and the Phase 5 frame budget. Visual diffing stays a local concern on
+      # the platform whose baselines are committed. Generating Linux baselines in CI
+      # would mean trusting a machine nobody has looked at to define "correct".
+      - run: npm run e2e -w @lcx/web -- --ignore-snapshots
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 14
