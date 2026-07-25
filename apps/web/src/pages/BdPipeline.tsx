@@ -478,7 +478,7 @@ export function BdPipeline() {
                 onClick={() => setFilter('tier', t)}
                 className={clsx(
                   'px-2.5 py-1 text-micro font-bold transition-colors',
-                  tier === t ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400' : 'text-grey hover:bg-ice-soft',
+                  tier === t ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400' : 'text-grey hover:bg-ice-soft',
                 )}
                 title={t === 'tracked' ? 'Deep-intel core — scored, contactable leads' : 'Full universe — all 50k+ tokens, promote any to track'}
               >
@@ -507,7 +507,7 @@ export function BdPipeline() {
             className={clsx(
               'flex items-center gap-1.5 rounded-full border px-3 py-1 text-micro font-bold transition-all duration-300',
               clarityEnacted
-                ? 'border-cyan-500 bg-cyan-500/10 text-cyan-600 dark:border-cyan-400 dark:bg-cyan-400/10 dark:text-cyan-400 shadow-sm shadow-cyan-500/10'
+                ? 'border-cyan-500 bg-cyan-500/10 text-cyan-700 dark:border-cyan-400 dark:bg-cyan-400/10 dark:text-cyan-400 shadow-sm shadow-cyan-500/10'
                 : 'border-line text-grey hover:bg-ice-soft',
             )}
           >
@@ -535,7 +535,7 @@ export function BdPipeline() {
                 onClick={() => setShowSnoozed(!showSnoozed)}
                 className={clsx(
                   'flex items-center gap-1 text-micro font-bold transition-colors',
-                  showSnoozed ? 'text-cyan-600 dark:text-cyan-400' : 'text-grey hover:text-navy',
+                  showSnoozed ? 'text-cyan-700 dark:text-cyan-400' : 'text-grey hover:text-navy',
                 )}
                 title={showSnoozed ? 'Hide snoozed rows' : 'Reveal snoozed rows (greyed, with wake dates)'}
               >

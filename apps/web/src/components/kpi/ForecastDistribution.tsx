@@ -11,7 +11,7 @@ import { binTotals, simulateTotals } from './forecastSim';
 const RUNS = 10_000;
 const BINS = 28;
 /** Cyan = the app-wide simulation/projection accent. */
-const SIM_TEXT = 'text-cyan-600 dark:text-cyan-400';
+const SIM_TEXT = 'text-cyan-700 dark:text-cyan-400';
 
 const fmtUsd = (v: number) => `$${Math.round(v).toLocaleString()}`;
 const fmtUsdCompact = (v: number) =>
@@ -135,7 +135,7 @@ export function ForecastDistribution({ forecast }: { forecast: ForecastData }) {
               type="button"
               onClick={() => setMathOpen((o) => !o)}
               aria-expanded={mathOpen}
-              className="flex items-center gap-1.5 text-xs font-semibold text-navy hover:text-cyan-600 dark:hover:text-cyan-400"
+              className="flex items-center gap-1.5 text-xs font-semibold text-navy hover:text-cyan-700 dark:hover:text-cyan-400"
             >
               <Sigma size={12} aria-hidden="true" />
               See the math

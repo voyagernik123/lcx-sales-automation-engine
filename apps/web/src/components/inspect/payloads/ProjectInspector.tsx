@@ -103,7 +103,7 @@ export function ProjectInspector({ id }: InspectorPayloadProps) {
           <BandBadge band={band} />
         </div>
         {lead.website && (
-          <a href={safeHref(lead.website)} target="_blank" rel="noreferrer" className="text-label text-cyan-600 hover:underline">
+          <a href={safeHref(lead.website)} target="_blank" rel="noreferrer" className="text-label text-cyan-700 hover:underline">
             {lead.website.replace(/^https?:\/\//, '')}
           </a>
         )}

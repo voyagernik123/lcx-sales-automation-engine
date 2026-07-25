@@ -18,7 +18,7 @@ const VERDICT_LABEL: Record<string, string> = {
 };
 const WINDOW_STYLE: Record<string, string> = {
   hot: 'text-amber-600 dark:text-amber-400',
-  warming: 'text-cyan-600 dark:text-cyan-400',
+  warming: 'text-cyan-700 dark:text-cyan-400',
   quiet: 'text-grey',
 };
 

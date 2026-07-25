@@ -35,7 +35,7 @@ export function SimPill({ className }: { className?: string }) {
   return (
     <span
       className={clsx(
-        'inline-flex items-center gap-1.5 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 text-micro font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400',
+        'inline-flex items-center gap-1.5 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 text-micro font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-400',
         className,
       )}
     >
@@ -76,7 +76,7 @@ export function ScenarioValue({ cents, className, baseline = 'inline' }: Scenari
   const adjusted = applyScenarioToValue(cents, scenario);
   return (
     <span className={clsx(baseline === 'stacked' ? 'inline-flex flex-col items-end' : 'inline-flex items-baseline gap-1', className)}>
-      <span className="num-tabular font-mono text-cyan-600 dark:text-cyan-400" title="Scenario-adjusted value">
+      <span className="num-tabular font-mono text-cyan-700 dark:text-cyan-400" title="Scenario-adjusted value">
         {fmtMoneyCents(adjusted)}
       </span>
       <span className="num-tabular text-[9px] text-grey line-through" title="Baseline value">
@@ -96,7 +96,7 @@ export function ScenarioWinProb({ pct, className }: { pct: number; className?: s
   const adjusted = applyScenarioToWinProb(pct, scenario);
   return (
     <span className={clsx('inline-flex items-baseline gap-1', className)}>
-      <span className="num-tabular font-mono text-cyan-600 dark:text-cyan-400" title="Scenario-adjusted win probability">
+      <span className="num-tabular font-mono text-cyan-700 dark:text-cyan-400" title="Scenario-adjusted win probability">
         {Math.round(adjusted)}%
       </span>
       <span className="num-tabular text-[9px] text-grey line-through" title="Baseline win probability">
@@ -125,7 +125,7 @@ function Dial({ label, value, min, max, step, format, onChange, hint }: DialProp
     <label className="block">
       <span className="flex items-baseline justify-between gap-2">
         <span className="text-micro font-bold uppercase tracking-wider text-grey">{label}</span>
-        <span className={clsx('num-tabular text-right font-mono text-label font-bold', off ? 'text-cyan-600 dark:text-cyan-400' : 'text-navy')}>
+        <span className={clsx('num-tabular text-right font-mono text-label font-bold', off ? 'text-cyan-700 dark:text-cyan-400' : 'text-navy')}>
           {format(value)}
         </span>
       </span>
@@ -172,7 +172,7 @@ export function ScenarioCard({ className }: { className?: string }) {
           <button
             type="button"
             onClick={reset}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-micro font-bold text-cyan-600 hover:bg-cyan-500/10 dark:text-cyan-400"
+            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-micro font-bold text-cyan-700 hover:bg-cyan-500/10 dark:text-cyan-400"
           >
             <RotateCcw size={10} aria-hidden="true" /> Reset
           </button>

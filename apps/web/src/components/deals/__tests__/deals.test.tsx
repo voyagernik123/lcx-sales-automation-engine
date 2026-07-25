@@ -234,7 +234,7 @@ describe('ScenarioValue / SimPill', () => {
     render(<ScenarioValue cents={1_000_000} />);
     const adjusted = screen.getByTitle('Scenario-adjusted value');
     expect(adjusted).toHaveTextContent('$8K');
-    expect(adjusted.className).toContain('text-cyan-600');
+    expect(adjusted.className).toContain('text-cyan-700');
     const baseline = screen.getByTitle('Baseline value');
     expect(baseline).toHaveTextContent('$10K');
     expect(baseline.className).toContain('line-through');

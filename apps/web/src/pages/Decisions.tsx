@@ -163,7 +163,7 @@ function DecisionCard({ d, onChange }: { d: Decision; onChange: () => void }) {
             <Button size="xs" variant="secondary" onClick={() => setRecording(false)}>Cancel</Button>
           </div>
         ) : (
-          <button onClick={() => setRecording(true)} className="ml-auto text-micro font-semibold text-cyan-600 hover:underline dark:text-cyan-400">
+          <button onClick={() => setRecording(true)} className="ml-auto text-micro font-semibold text-cyan-700 hover:underline dark:text-cyan-400">
             Record outcome
           </button>
         )}

@@ -109,7 +109,7 @@ export function EntityChip({
                 tabIndex={0}
                 onClick={activate}
                 onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && activate(e)}
-                className="cursor-pointer text-[10px] font-semibold text-cyan-600 hover:underline dark:text-cyan-400"
+                className="cursor-pointer text-[10px] font-semibold text-cyan-700 hover:underline dark:text-cyan-400"
               >
                 Inspect
               </span>

@@ -171,7 +171,7 @@ export function ScenarioPlanner() {
                     />
                   </div>
                   <p className="text-micro text-grey-dark mt-1.5 leading-normal">{sc.desc}</p>
-                  <div className="mt-2 text-[9px] font-mono text-cyan-600 dark:text-cyan-400 leading-tight">
+                  <div className="mt-2 text-[9px] font-mono text-cyan-700 dark:text-cyan-400 leading-tight">
                     <strong>Effect</strong>: {sc.effect}
                   </div>
                 </button>

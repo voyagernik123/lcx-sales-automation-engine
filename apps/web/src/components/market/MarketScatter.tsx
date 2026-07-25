@@ -208,7 +208,14 @@ export function MarketScatter({ points, lens, colorFor, sizeValue, selectedIds, 
             x={ZONE_POS[z].x}
             y={ZONE_POS[z].y}
             textAnchor={ZONE_POS[z].anchor}
-            className={`font-mono ${z === lens.target ? 'fill-cyan-600 dark:fill-cyan-400' : 'fill-grey'}`}
+            // fill-cyan-700, not -600: this is TEXT, and the Phase 7 sweep that moved
+            // cyan off 4.5:1-failing text sites grepped `text-cyan-600` and so walked
+            // straight past the one site that spells it `fill-`. cyan-600 measures
+            // 3.68:1 on white, 3.22 composited at the 0.9 below; cyan-700 is 5.36 and
+            // 4.43. Still short of 4.5, and the remaining 0.07 is the inline opacity,
+            // not the hue — the same alpha-on-text defect the three `fill-grey`
+            // siblings have far worse at 0.5 (2.16:1). Recorded in contrast.test.ts.
+            className={`font-mono ${z === lens.target ? 'fill-cyan-700 dark:fill-cyan-400' : 'fill-grey'}`}
             style={{ fontSize: 11, fontWeight: z === lens.target ? 700 : 500, opacity: z === lens.target ? 0.9 : 0.5 }}
           >
             {(lens.plotZones ?? lens.zones)[z].toUpperCase()}

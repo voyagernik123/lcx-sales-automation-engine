@@ -20,7 +20,7 @@ const MARKET_LABEL: Record<string, string> = {
   eu: 'EU first', eu_first: 'EU first', us: 'US first', us_first: 'US first', dual: 'Dual', none: 'Unclear',
 };
 const WINDOW_STYLE: Record<string, string> = {
-  hot: 'text-amber-600 dark:text-amber-400', warming: 'text-cyan-600 dark:text-cyan-400', quiet: 'text-grey',
+  hot: 'text-amber-600 dark:text-amber-400', warming: 'text-cyan-700 dark:text-cyan-400', quiet: 'text-grey',
 };
 
 function money(v: number | string | null | undefined): string {
@@ -73,7 +73,7 @@ export function CoverageReport() {
           {r.listedOnLcx && <span className="text-micro font-bold text-emerald-600 dark:text-emerald-400">ON LCX</span>}
         </div>
         {r.website && (
-          <a href={safeHref(r.website)} target="_blank" rel="noreferrer" className="text-label text-cyan-600 hover:underline">
+          <a href={safeHref(r.website)} target="_blank" rel="noreferrer" className="text-label text-cyan-700 hover:underline">
             {r.website.replace(/^https?:\/\//, '')}
           </a>
         )}

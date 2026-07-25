@@ -11,7 +11,7 @@ const TERM_COLOR: Record<string, string> = {
   'very unlikely': 'text-grey',
   'unlikely': 'text-amber-600 dark:text-amber-400',
   'roughly even chance': 'text-amber-600 dark:text-amber-400',
-  'likely': 'text-cyan-600 dark:text-cyan-400',
+  'likely': 'text-cyan-700 dark:text-cyan-400',
   'very likely': 'text-emerald-600 dark:text-emerald-400',
   'almost certain': 'text-emerald-600 dark:text-emerald-400',
 };

@@ -759,7 +759,7 @@ export function BriefGenerator() {
                             {activeProducts.map((p, idx) => (
                               <tr key={idx} className="border-b border-slate-100 align-top hover:bg-slate-50/50">
                                 <td className="p-2 font-mono font-bold text-slate-950">{p.name}</td>
-                                <td className="p-2 text-right font-mono font-bold text-cyan-600">{p.howeyScore ?? '—'}%</td>
+                                <td className="p-2 text-right font-mono font-bold text-cyan-700">{p.howeyScore ?? '—'}%</td>
                                 <td className="p-2 text-slate-500 max-w-[120px] text-[8.5px]">{p.howeyAnalysis?.investmentOfMoney || 'N/A'}</td>
                                 <td className="p-2 text-slate-500 max-w-[120px] text-[8.5px]">{p.howeyAnalysis?.commonEnterprise || 'N/A'}</td>
                                 <td className="p-2 text-slate-500 max-w-[120px] text-[8.5px]">{p.howeyAnalysis?.profitExpectation || 'N/A'}</td>

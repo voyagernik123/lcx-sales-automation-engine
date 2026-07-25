@@ -14,7 +14,7 @@ import { formatMoney, formatPct } from '@/lib/format';
  */
 
 const WINDOW_STYLE: Record<string, string> = {
-  hot: 'text-amber-600 dark:text-amber-400', warming: 'text-cyan-600 dark:text-cyan-400', quiet: 'text-grey',
+  hot: 'text-amber-600 dark:text-amber-400', warming: 'text-cyan-700 dark:text-cyan-400', quiet: 'text-grey',
 };
 
 export function DailyBrief() {
@@ -137,7 +137,7 @@ function Card({ title, icon, action, children }: { title: string; icon: React.Re
       <div className="mb-2 flex items-center gap-1.5">
         <span className="flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">{icon}{title}</span>
         {action && (
-          <button onClick={action.onClick} className="ml-auto text-micro font-semibold text-cyan-600 hover:underline dark:text-cyan-400">
+          <button onClick={action.onClick} className="ml-auto text-micro font-semibold text-cyan-700 hover:underline dark:text-cyan-400">
             {action.label}
           </button>
         )}

@@ -20,7 +20,7 @@ import { SloPanel } from '@/components/ops/SloPanel';
 
 const JOB_STATUS: Record<string, { cls: string; icon: typeof CheckCircle2 }> = {
   ok: { cls: 'text-emerald-600 dark:text-emerald-400', icon: CheckCircle2 },
-  running: { cls: 'text-cyan-600 dark:text-cyan-400', icon: Clock },
+  running: { cls: 'text-cyan-700 dark:text-cyan-400', icon: Clock },
   failed: { cls: 'text-red-600 dark:text-red-400', icon: XCircle },
 };
 
@@ -245,7 +245,7 @@ export function Ops() {
                         <div className="flex items-center gap-1.5">
                           <span className="font-semibold text-navy">{c.label}</span>
                           {c.termsUrl && (
-                            <a href={c.termsUrl} target="_blank" rel="noreferrer" className="text-grey hover:text-cyan-600" title="Terms / API docs">
+                            <a href={c.termsUrl} target="_blank" rel="noreferrer" className="text-grey hover:text-cyan-700" title="Terms / API docs">
                               <ExternalLink size={11} />
                             </a>
                           )}

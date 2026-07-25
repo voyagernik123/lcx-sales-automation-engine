@@ -51,7 +51,7 @@ export function FeasibilityMap() {
           <h2 className="text-lg font-bold text-navy">US Feasibility Map</h2>
           <p className="text-xs text-grey-dark mt-0.5">Implementation Complexity × Strategic Importance. Size = revenue potential. {clarityEnacted ? 'Post-CLARITY.' : 'Pre-CLARITY.'}</p>
         </div>
-        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${clarityEnacted ? 'border-cyan-500 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400' : 'border-line text-grey'}`}>{clarityEnacted ? 'Post-CLARITY View' : 'Pre-CLARITY Baseline'}</span>
+        <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border ${clarityEnacted ? 'border-cyan-500 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400' : 'border-line text-grey'}`}>{clarityEnacted ? 'Post-CLARITY View' : 'Pre-CLARITY Baseline'}</span>
       </div>
 
       <div className="relative bg-card border border-line rounded-lg overflow-hidden">

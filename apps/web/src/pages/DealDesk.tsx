@@ -81,7 +81,7 @@ function Section({
             type="button"
             onClick={() => setOpen((o) => !o)}
             aria-expanded={open}
-            className="-m-1 flex items-center gap-2 rounded p-1 text-sm font-bold tracking-tight text-navy transition-colors hover:text-cyan-600 dark:hover:text-cyan-400"
+            className="-m-1 flex items-center gap-2 rounded p-1 text-sm font-bold tracking-tight text-navy transition-colors hover:text-cyan-700 dark:hover:text-cyan-400"
           >
             {open ? <ChevronDown size={13} className="text-grey" /> : <ChevronRight size={13} className="text-grey" />}
             {icon}

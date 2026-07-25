@@ -60,7 +60,7 @@ export function DisqualifyDialog({ open, leadName, onClose, onConfirm }: Disqual
             onClick={() => setReason(r)}
             className={
               reason === r
-                ? 'rounded-full border border-cyan-500 bg-cyan-500/10 px-2 py-0.5 text-micro font-bold text-cyan-600 dark:text-cyan-400'
+                ? 'rounded-full border border-cyan-500 bg-cyan-500/10 px-2 py-0.5 text-micro font-bold text-cyan-700 dark:text-cyan-400'
                 : 'rounded-full border border-line px-2 py-0.5 text-micro font-bold text-grey hover:text-navy hover:border-navy/30 transition-colors'
             }
           >

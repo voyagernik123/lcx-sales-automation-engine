@@ -48,7 +48,7 @@ export function RelatedPanel({ type, id, label }: { type: InspectorEntityType; i
         <button
           type="button"
           onClick={openInGraph}
-          className="inline-flex items-center gap-1 text-micro font-semibold text-grey transition-colors hover:text-cyan-600 dark:hover:text-cyan-400"
+          className="inline-flex items-center gap-1 text-micro font-semibold text-grey transition-colors hover:text-cyan-700 dark:hover:text-cyan-400"
           title="Explore this object's neighborhood in the Sales Graph"
         >
           <Share2 size={11} /> Open in graph

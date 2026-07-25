@@ -77,7 +77,7 @@ export function ContactInspector({ id }: InspectorPayloadProps) {
           </div>
         )}
         {person.linkedin && (
-          <a className="block text-cyan-600 hover:underline" href={person.linkedin} target="_blank" rel="noreferrer">
+          <a className="block text-cyan-700 hover:underline" href={person.linkedin} target="_blank" rel="noreferrer">
             LinkedIn
           </a>
         )}

@@ -16,7 +16,7 @@ import { formatMoney } from '@/lib/format';
  */
 
 const BAND_STYLE: Record<string, string> = {
-  high: 'text-emerald-600 dark:text-emerald-400', fair: 'text-cyan-600 dark:text-cyan-400', low: 'text-grey',
+  high: 'text-emerald-600 dark:text-emerald-400', fair: 'text-cyan-700 dark:text-cyan-400', low: 'text-grey',
 };
 const MOMENTUM_STYLE: Record<string, string> = {
   accelerating: 'text-emerald-600 dark:text-emerald-400', steady: 'text-grey',

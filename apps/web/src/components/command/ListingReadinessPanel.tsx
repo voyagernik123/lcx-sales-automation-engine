@@ -98,7 +98,7 @@ export function ListingReadinessPanel() {
                   disabled={!live || busy === `r${r.num}`}
                   onChange={(e) => void setReq(r.num, e.target.value)}
                   className={clsx('shrink-0 rounded border border-line bg-card px-1 py-0.5 font-mono outline-none focus:border-cyan-500 disabled:opacity-50',
-                    r.status === 'Done' ? 'text-emerald-600 dark:text-emerald-400' : r.status === 'In progress' ? 'text-cyan-600 dark:text-cyan-400' : 'text-grey-dark')}>
+                    r.status === 'Done' ? 'text-emerald-600 dark:text-emerald-400' : r.status === 'In progress' ? 'text-cyan-700 dark:text-cyan-400' : 'text-grey-dark')}>
                   {REQ_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </div>

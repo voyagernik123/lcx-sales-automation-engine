@@ -81,6 +81,29 @@ function palettes(): { light: Palette; dark: Palette } {
   return { light, dark: { ...light, ...dark } };
 }
 
+/**
+ * Parse the `--token: #rrggbb;` chart palette out of tokens.css, per theme.
+ *
+ * A second parser is needed because the chart block writes hex rather than the
+ * `r g b` triples the base palette uses, so `palettes()` above silently skips
+ * every one of them — which is exactly how the chart series went unmeasured while
+ * a comment claimed they were validated.
+ */
+function hexPalettes(): { light: Palette; dark: Palette } {
+  const css = readFileSync(join(SRC, 'styles', 'tokens.css'), 'utf8');
+  const light: Palette = {};
+  const dark: Palette = {};
+  for (const block of css.matchAll(/(:root|\.dark)\s*\{([\s\S]*?)\n\}/g)) {
+    const target = block[1] === '.dark' ? dark : light;
+    for (const m of block[2].matchAll(/--([a-z0-9-]+):\s*#([0-9a-fA-F]{6})\s*;/g)) {
+      const h = m[2];
+      target[m[1]] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
+    }
+  }
+  expect(Object.keys(light).length, 'parsed no light hex tokens — did the chart block change shape?').toBeGreaterThan(8);
+  return { light, dark: { ...light, ...dark } };
+}
+
 /** The surfaces this app actually places body text on. */
 const SURFACES = ['card', 'page-bg', 'ice-soft'] as const;
 
@@ -93,24 +116,53 @@ const TEXT_ROLES = ['navy', 'grey-dark', 'grey', 'green', 'amber', 'red', 'indig
  * 4.5:1 fails the test asking you to delete the line, and any pair NOT listed
  * must clear 4.5:1. That way the list can only ever shrink.
  *
- * Both entries are the same defect in different themes — a mid-tone accent that
- * was tuned against white and never re-checked against the two darker surfaces
- * the app actually uses more often:
+ * IT IS NOW EMPTY, and that is the point of leaving it here rather than deleting
+ * the mechanism. It held three entries, all the same defect in two themes — a
+ * mid-tone accent tuned against pure white and never re-checked against the two
+ * darker surfaces this app uses more often:
  *
- *   --amber (light, #9a6b00) is the `status-conditional` role, 25 direct uses
- *   plus 157 `text-amber-*` sites. It clears 4.5:1 on pure white by 0.19 and
- *   fails on both the page canvas and the raised wash. Fixing it means darkening
- *   the token (#8a5f00 measures 5.2:1 on the canvas), which is a palette change
- *   across every "conditional" badge in the app and is not an audit's call.
+ *   light amber on page-bg   4.34   fixed: --amber #9a6b00 -> #8a5f00
+ *   light amber on ice-soft  4.13   now 5.22 / 4.98
+ *   dark red on ice-soft     4.04   fixed: --red (dark) #dc5064 -> #e4687a, now 4.93
  *
- *   --red (dark, #dc5064) fails only on the raised wash, and only in dark. It is
- *   marginal on the dark card too (4.53:1).
+ * The old note here said darkening --amber "is not an audit's call". That was the
+ * wrong call: the token is the whole defect, 29 `text-status-conditional` sites
+ * inherit it, and the change is a lightness move that does not touch the hue.
+ * Both tokens were also failing on their OWN badge background — 4.24:1 for amber
+ * on --amber-bg, 4.30:1 for dark red on --red-bg — which no test measured at all.
+ * That pair is now covered below, and it is why the fix had to move the token
+ * rather than the surfaces.
+ *
+ * STILL NOT FIXED, and deliberately not: `text-amber-*` Tailwind-scale sites are a
+ * SEPARATE and worse failure that this token change does nothing for —
+ * `text-amber-600` (#d97706) measures 3.19:1 on white, 2.81 on ice-soft. Those
+ * sites do not read the --amber token.
+ *
+ * ALSO STILL FAILING, found by the verifier re-walking the cyan sweep. The sweep
+ * moved 122 of the 137 `text-cyan-600` occurrences (121 lines, one of them a test
+ * assertion) to cyan-700 — 5.36 / 4.96 / 4.72 on card / canvas / wash — and
+ * deliberately left the other 15 on cyan-600 because all 15 are icons, which is
+ * the right call and not a blanket find-and-replace: an icon is a graphical object
+ * at 3:1 and cyan-600 clears that on all three surfaces (3.68 / 3.41 / 3.25). Two
+ * things it did not reach, because it grepped for the string `text-cyan-600`:
+ *
+ *   - `text-cyan-500` (#06b6d4) is untouched, and at 2.43:1 on white it is below
+ *     BOTH floors — worse as text than the defect the sweep fixed, and below 3:1
+ *     even as an icon. 57 source sites. Most are ornamental lucide icons beside a
+ *     text label, where 1.4.11's "required to identify a component or state" carve-
+ *     out is the only thing making them defensible; a dozen-odd render glyphs and
+ *     have no such defence — `{progressPercent}%` at text-2xl in ReadinessStack,
+ *     three figures in CapitalEstimator, `TODAY` in RoadmapTimeline, the charter
+ *     chips in CompetitorGrid (on `bg-cyan-50`, so worse still), the Phase 1 / NMLS
+ *     buttons in BriefGenerator and StateCohortGrid.
+ *   - `fill-cyan-600` on an SVG <text> in MarketScatter. Moved to cyan-700; it
+ *     still measures 4.43 because of an inline `opacity: 0.9`, which is the alpha
+ *     defect below, not a hue defect.
+ *
+ * None of this is token-driven, so no assertion here can catch it; it is recorded
+ * because the next sweep should grep for the COLOUR, not for one utility prefix.
  */
-const KNOWN_BELOW_MINIMUM: Record<string, number> = {
-  'light amber on page-bg': 4.34,
-  'light amber on ice-soft': 4.13,
-  'dark red on ice-soft': 4.04,
-};
+const KNOWN_BELOW_MINIMUM: Record<string, number> = {};
 
 describe('WCAG text contrast, computed from the tokens', () => {
   const { light, dark } = palettes();
@@ -167,6 +219,132 @@ describe('WCAG text contrast, computed from the tokens', () => {
         }
       }
     }
+  });
+
+  it('status text clears 4.5:1 on its OWN badge background', () => {
+    /*
+     * The gap this closes. The suite tested each status hue against card, canvas
+     * and wash, and against nothing else — but the commonest place these hues
+     * appear as text is inside their own tinted badge (`text-status-conditional`
+     * on `bg-status-conditional-bg`). Unmeasured, two of the six were failing:
+     * light --amber on --amber-bg at 4.24:1 and dark --red on --red-bg at 4.30:1.
+     * Both are fixed by the token moves recorded in KNOWN_BELOW_MINIMUM above,
+     * and this test is what stops them regressing.
+     */
+    const BADGES = [
+      ['green', 'green-bg'],
+      ['amber', 'amber-bg'],
+      ['red', 'red-bg'],
+    ] as const;
+    const failures: string[] = [];
+    for (const [themeName, palette] of themes) {
+      for (const [role, bg] of BADGES) {
+        const ratio = round(contrast(palette[role], palette[bg]));
+        if (ratio < 4.5) failures.push(`${themeName} --${role} on --${bg} — ${ratio}:1`);
+      }
+    }
+    expect(failures, `status text below 4.5:1 on its own badge:\n${failures.join('\n')}`).toEqual([]);
+  });
+
+  it('the chart series are tracked against the 3:1 non-text floor, shrink-only', () => {
+    /*
+     * This test is the thing tokens.css's chart comment CLAIMED already existed.
+     * It did not — the comment said the failures were "Tracked in
+     * lib/__tests__/contrast.test.ts as a shrink-only allowlist" and there was no
+     * chart assertion in this file at all, partly because `palettes()` only reads
+     * `r g b` triples and the chart block is written in hex. The claim is now true.
+     *
+     * The floor is 3:1 (SC 1.4.11, non-text UI), measured against --card-fill,
+     * which is the surface a chart is actually drawn on in each theme.
+     *
+     * WHY THESE THREE ARE NOT RE-HUED. The cost of fixing them is genuinely small
+     * — scaling toward black by 4% (chart-2 -> #1aa875), 16% (chart-3 -> #c78700)
+     * and 6% (chart-7 -> #da749a) is enough — and it is NOT being done here for
+     * two measured reasons rather than as a punt. First, a categorical palette's
+     * job is mutual distinguishability, and contrast RATIO is the wrong instrument
+     * for that: chart-2 (green) and chart-7 (pink) already sit 1.05:1 apart, i.e.
+     * near-identical luminance, and are trivially told apart by hue, so "improve
+     * the ratio against the background" and "keep the series separable" are not
+     * the same axis and this file cannot adjudicate the second. Second, all three
+     * are safe wherever the series also carries a label or a distinct shape and
+     * unsafe only as the SOLE encoding, and which charts do which is not knowable
+     * from a token file. Recorded here so the number can only go down.
+     */
+    const { light: chartLight, dark: chartDark } = hexPalettes();
+    const chartThemes = [
+      ['light', chartLight],
+      ['dark', chartDark],
+    ] as const;
+
+    // Measured against --card-fill at the time of writing. Shrink-only: a series
+    // that improves past 3:1 fails the test and must be deleted from the list.
+    const KNOWN_BELOW_NON_TEXT: Record<string, number> = {
+      'light chart-2': 2.82,
+      'light chart-3': 2.17,
+      'light chart-7': 2.69,
+    };
+
+    const unexpected: string[] = [];
+    const fixed: string[] = [];
+    for (const [themeName, palette] of chartThemes) {
+      const surface = palette['card-fill'];
+      expect(surface, `--card-fill missing from the ${themeName} chart palette`).toBeDefined();
+      for (let i = 1; i <= 8; i++) {
+        const key = `${themeName} chart-${i}`;
+        const series = palette[`chart-${i}`];
+        expect(series, `--chart-${i} missing from the ${themeName} palette`).toBeDefined();
+        const ratio = round(contrast(series, surface));
+        const known = KNOWN_BELOW_NON_TEXT[key];
+        if (known === undefined) {
+          if (ratio < 3) unexpected.push(`${key} — ${ratio}:1 (needs 3:1)`);
+          continue;
+        }
+        if (ratio >= 3) {
+          fixed.push(`${key} — now ${ratio}:1, delete it from KNOWN_BELOW_NON_TEXT`);
+        } else {
+          expect(ratio, `${key} regressed below its recorded ${known}:1`).toBeGreaterThanOrEqual(known - 0.05);
+        }
+      }
+    }
+    expect(unexpected, `chart series below the 3:1 non-text floor:\n${unexpected.join('\n')}`).toEqual([]);
+    expect(fixed, `chart contrast improved — tighten the ratchet:\n${fixed.join('\n')}`).toEqual([]);
+  });
+
+  it('avatar initials on --chart-1 are recorded as failing, with the reason they are hard', () => {
+    /*
+     * White initials on a --chart-1 fill measure 4.42:1 light and 3.64:1 dark,
+     * against the 4.5:1 in SC 1.4.3. Recorded rather than fixed, because in DARK
+     * the two requirements pull in opposite directions and the token cannot satisfy
+     * both — measured, not assumed:
+     *
+     *   fill        white-on-fill   fill-vs-dark-card
+     *   #3987e5     3.64            4.86   (today: text fails)
+     *   #2166b8     5.74            3.08   (text passes, fill nearly vanishes)
+     *   #1a559a     7.47            2.37   (fill fails 1.4.11 outright)
+     *
+     * So darkening the fill to rescue white text breaks the fill's own contrast
+     * against the canvas. The fix in dark is the TEXT colour, not the fill: the
+     * DARK --navy-deep, rgb(7 11 22), on #3987e5 measures 5.40:1. (Not 4.57 — that
+     * is the LIGHT --navy-deep, #141a45, which is not what a dark-theme avatar
+     * would resolve; the two themes give the token different values and mixing them
+     * up understates the remedy.) In light the gap is 0.08
+     * and nudging the fill to #2874d0 clears it (4.67) while also improving the
+     * fill against white — but --chart-1 is the primary series across every chart
+     * and the avatar, so that belongs in one deliberate palette edit, not here.
+     */
+    const { light: chartLight, dark: chartDark } = hexPalettes();
+    const white: [number, number, number] = [255, 255, 255];
+    const lightRatio = round(contrast(white, chartLight['chart-1']));
+    const darkRatio = round(contrast(white, chartDark['chart-1']));
+    expect(lightRatio, 'white on light --chart-1 improved — re-check the avatar and tighten this').toBeLessThan(4.5);
+    expect(darkRatio, 'white on dark --chart-1 improved — re-check the avatar and tighten this').toBeLessThan(4.5);
+    // Direction of travel only: these may improve, never decay.
+    expect(lightRatio).toBeGreaterThanOrEqual(4.42 - 0.05);
+    expect(darkRatio).toBeGreaterThanOrEqual(3.64 - 0.05);
+    // The dark remedy this comment recommends must actually hold. --navy-deep is
+    // an `r g b` triple, so it comes from palettes(), not the hex parser.
+    const remedy = round(contrast(dark['navy-deep'], chartDark['chart-1']));
+    expect(remedy, `dark --navy-deep on dark --chart-1 is ${remedy}:1`).toBeGreaterThanOrEqual(4.5);
   });
 
   it('alpha on TEXT is what breaks it, so the ladder is recorded not guessed', () => {

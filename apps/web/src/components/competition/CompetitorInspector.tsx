@@ -209,7 +209,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
           </div>
           <div className="grid grid-cols-3 gap-2 mt-1">
             <div className="text-center bg-ice-soft/20 dark:bg-navy-deep/10 rounded p-2">
-              <div className="text-sm font-bold font-mono text-cyan-600 dark:text-cyan-400">
+              <div className="text-sm font-bold font-mono text-cyan-700 dark:text-cyan-400">
                 {competitor.marketShare > 0 ? `${competitor.marketShare}%` : '—'}
               </div>
               <div className="text-[8px] text-grey uppercase font-bold">Est. US Share</div>
@@ -453,7 +453,7 @@ export function CompetitorInspector({ competitorId, isOpen, onClose }: Competito
             </div>
 
             <div className="rounded-lg border border-cyan-500/20 bg-cyan-500/[0.03] dark:bg-cyan-500/[0.02] p-2.5">
-              <h5 className="text-[9px] font-bold uppercase text-cyan-600 dark:text-cyan-400 mb-1 flex items-center gap-1">
+              <h5 className="text-[9px] font-bold uppercase text-cyan-700 dark:text-cyan-400 mb-1 flex items-center gap-1">
                 <Swords size={10} /> Asymmetric Advantage
               </h5>
               <p className="text-micro leading-snug text-grey-dark">{competitor.insights.asymmetry}</p>

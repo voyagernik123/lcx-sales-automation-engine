@@ -215,28 +215,56 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
             const ly = Math.max(PLOT_TOP + 8, Math.min(PLOT_BOTTOM - 4, dot.y + offset.dy));
 
             return (
-              // The dot group carries the activation: an SVG shape cannot be a
-              // <button>, and the two circles (visible + larger transparent hit
-              // area) are one target — hanging the handler on the group they share
-              // gives one tab stop and one click path instead of two of each.
+              // The group still carries the CLICK, because the visible dot and the
+              // larger transparent hit ring below are one target and one click path.
+              //
+              // It no longer carries the FOCUS, and that was a real defect rather
+              // than a tidying: this <g> had role="button" tabIndex={0}
+              // class="focus-ring", and WebKit paints no `outline` on an SVG
+              // container element, so all 14 dots were reachable by Tab with no
+              // visible indicator at all in the engine that ships. Verified in a
+              // WKWebView (see the note on `.focus-ring-svg` in globals.css): under
+              // real keyboard focus the <g> matches :focus-visible and computes
+              // `outline: solid 2px rgb(8,145,178)` and still paints ZERO ring
+              // pixels, while a <circle> in the same document paints the full ring.
+              // Chromium paints the <g>, which is exactly why the dev server never
+              // showed it. The tabindex therefore lives on the painted <circle>,
+              // and `focus-ring-svg` adds a stroke change so the signal does not
+              // rest on the outline alone. One tab stop still, since only one child
+              // is focusable.
               <g key={`dot-${dot.id}`} style={{ cursor: 'pointer' }}
-                role="button"
-                tabIndex={0}
-                aria-label={`${dot.name} — open competitor detail`}
                 onClick={() => onCompetitorClick?.(dot.id)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    onCompetitorClick?.(dot.id);
-                  }
-                }}
-                className="focus-ring"
               >
                 <circle cx={dot.x} cy={dot.y} r={radius}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`${dot.name} — open competitor detail`}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      onCompetitorClick?.(dot.id);
+                    }
+                  }}
+                  className="focus-ring-svg"
                   fill={isHovered ? colors.fill : dotFill}
                   stroke={isHovered ? dotColor : colors.stroke}
                   strokeWidth={isHovered ? 3 : 2}
-                  style={{ transition: 'all 0.3s', opacity: isHovered ? 1 : 0.85 }}
+                  // fillOpacity, not the element `opacity` this used to carry, for
+                  // the same reason PipelineSankey moved off `opacity` — and here it
+                  // was measurably breaking the ring this change exists to add.
+                  // Element opacity fades everything the element paints, INCLUDING
+                  // the focus outline: at 0.85 the ring composites to 2.67-2.81:1
+                  // against the four quadrant washes it actually sits on, under the
+                  // 3:1 in SC 1.4.11; at full strength it is 3.20-3.36:1. Measured
+                  // in a WKWebView on the focused shape: element `opacity: .85`
+                  // leaves 0 pixels of full-strength ring, `stroke-opacity: .85`
+                  // also fades it (WebKit paints an SVG element's outline through
+                  // the stroke pipeline), and `fill-opacity` alone leaves the ring
+                  // pixel-identical to a shape with no opacity at all. The resting
+                  // 2px data stroke is the one thing that changes — it now paints at
+                  // full alpha, over quadrant colours that already carry 0.5-0.6.
+                  fillOpacity={isHovered ? 1 : 0.85}
+                  style={{ transition: 'all 0.3s' }}
                   onMouseMove={(e) => handleMouseMove(e, dot)}
                   onMouseLeave={handleMouseLeave}
                 />

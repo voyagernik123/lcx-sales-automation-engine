@@ -24,8 +24,8 @@ const STAGES = [
 
 const STAGE_TONE: Record<string, string> = {
   signed: 'text-emerald-600 dark:text-emerald-400',
-  incumbent_onboarding: 'text-cyan-600 dark:text-cyan-400',
-  in_progress: 'text-cyan-600 dark:text-cyan-400',
+  incumbent_onboarding: 'text-cyan-700 dark:text-cyan-400',
+  in_progress: 'text-cyan-700 dark:text-cyan-400',
   recommended: 'text-emerald-600 dark:text-emerald-400',
   recommended_rfi: 'text-emerald-600 dark:text-emerald-400',
   select: 'text-emerald-600 dark:text-emerald-400',
@@ -134,7 +134,7 @@ function PartnerRow({ p, onChange, onOpen }: { p: CommandPartner; onChange: () =
   return (
     <div className="rounded-lg border border-line bg-card p-3 shadow-card">
       <div className="flex flex-wrap items-center gap-2">
-        <button onClick={onOpen} className="text-label font-bold text-navy hover:text-cyan-600 hover:underline dark:hover:text-cyan-400">{p.name}</button>
+        <button onClick={onOpen} className="text-label font-bold text-navy hover:text-cyan-700 hover:underline dark:hover:text-cyan-400">{p.name}</button>
         {p.tier && <span className="rounded bg-ice-soft px-1.5 py-0.5 text-micro font-bold text-grey-dark dark:bg-ice-soft/10">{p.tier}</span>}
         {p.capability_score != null && <span className="font-mono text-micro text-grey">{Number(p.capability_score).toFixed(2)}</span>}
         <span className="text-micro text-grey">{p.type}{p.subtype ? ` · ${p.subtype}` : ''}</span>
@@ -176,7 +176,7 @@ function PartnerRow({ p, onChange, onOpen }: { p: CommandPartner; onChange: () =
             <span className={p.terms ? 'text-navy' : 'text-amber-600 dark:text-amber-400'}>
               {p.terms ?? '⚠ terms unfilled'}
             </span>
-            <button onClick={() => setEditing(true)} className="ml-auto inline-flex items-center gap-1 text-micro text-cyan-600 hover:underline dark:text-cyan-400">
+            <button onClick={() => setEditing(true)} className="ml-auto inline-flex items-center gap-1 text-micro text-cyan-700 hover:underline dark:text-cyan-400">
               <Pencil size={10} /> edit
             </button>
           </div>

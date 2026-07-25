@@ -13,7 +13,7 @@ const STATUSES = ['not_started', 'submitted', 'live', 'ranked'] as const;
 const STATUS_TONE: Record<string, string> = {
   not_started: 'text-grey',
   submitted: 'text-amber-600 dark:text-amber-400',
-  live: 'text-cyan-600 dark:text-cyan-400',
+  live: 'text-cyan-700 dark:text-cyan-400',
   ranked: 'text-emerald-600 dark:text-emerald-400',
 };
 
@@ -105,10 +105,10 @@ export function DistributionListings() {
                         </select>
                       </td>
                       <td className="px-2 py-1.5">
-                        <button onClick={() => setOpenMechanic(openMechanic === s.id ? null : s.id)} className="text-micro text-cyan-600 hover:underline dark:text-cyan-400">
+                        <button onClick={() => setOpenMechanic(openMechanic === s.id ? null : s.id)} className="text-micro text-cyan-700 hover:underline dark:text-cyan-400">
                           {openMechanic === s.id ? 'hide' : 'how to list'}
                         </button>
-                        <button onClick={() => void genPacket(s.id)} disabled={packing === s.id} className="ml-2 text-micro text-cyan-600 hover:underline disabled:opacity-50 dark:text-cyan-400">
+                        <button onClick={() => void genPacket(s.id)} disabled={packing === s.id} className="ml-2 text-micro text-cyan-700 hover:underline disabled:opacity-50 dark:text-cyan-400">
                           {packing === s.id ? '…' : '🤖 packet'}
                         </button>
                       </td>

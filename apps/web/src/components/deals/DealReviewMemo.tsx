@@ -117,7 +117,7 @@ export function DealReviewMemo({ deal, health, events, winProbability, onClose }
           <div className="flex items-end justify-between">
             <div>
               <div className="text-lg font-bold tracking-tight">
-                LCX<span className="text-cyan-600">.</span> Deal Review
+                LCX<span className="text-cyan-700">.</span> Deal Review
               </div>
               <div className="text-[11px] uppercase tracking-[0.15em] text-slate-500">
                 Listing acquisition · internal memo

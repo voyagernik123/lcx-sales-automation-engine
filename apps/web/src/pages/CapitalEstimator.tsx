@@ -144,7 +144,7 @@ export function CapitalEstimator() {
             </Card>
             <Card className="bg-cyan-500/5 dark:bg-cyan-500/2 border-cyan-500/30">
               <CardBody className="p-3">
-                <span className="text-[9px] uppercase tracking-wider text-cyan-600 dark:text-cyan-400 block font-bold">Aggregate Reserves Required</span>
+                <span className="text-[9px] uppercase tracking-wider text-cyan-700 dark:text-cyan-400 block font-bold">Aggregate Reserves Required</span>
                 <span className="text-lg font-bold font-mono text-cyan-500 block mt-1">${calculations.totalReserve.toLocaleString()}</span>
               </CardBody>
             </Card>

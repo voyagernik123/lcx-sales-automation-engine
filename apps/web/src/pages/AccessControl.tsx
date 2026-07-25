@@ -232,7 +232,7 @@ export function AccessControl() {
                     {matrix.members.map((m) => (
                       <tr key={m.id} className="border-b border-line/60">
                         <td className="py-1.5 pr-2">
-                          <button onClick={() => void openDossier(m.id)} className="font-semibold text-navy underline-offset-2 hover:text-cyan-600 hover:underline dark:hover:text-cyan-400" title="View access dossier (purpose-gated)">{m.name}</button>{' '}
+                          <button onClick={() => void openDossier(m.id)} className="font-semibold text-navy underline-offset-2 hover:text-cyan-700 hover:underline dark:hover:text-cyan-400" title="View access dossier (purpose-gated)">{m.name}</button>{' '}
                           <span className="font-mono text-[10px] text-grey">{m.role}</span>
                           {m.profile?.unit && <span className="ml-1 font-mono text-[10px] text-grey">· {m.profile.unit}</span>}
                           <button onClick={() => void editProfile(m)} disabled={busyId === `profile:${m.id}`} className="ml-1.5 text-[10px] text-grey hover:text-navy" title="Edit unit/title">edit</button>

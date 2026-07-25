@@ -72,7 +72,7 @@ export function ConversationPanel({ subjectId }: { subjectId: string }) {
       ) : (
         <>
           <List icon={<CheckCircle2 size={11} />} label="Commitments" items={c.commitments} tone="text-emerald-600 dark:text-emerald-400" />
-          <List icon={<ArrowRight size={11} />} label="Next steps" items={c.nextSteps} tone="text-cyan-600 dark:text-cyan-400" />
+          <List icon={<ArrowRight size={11} />} label="Next steps" items={c.nextSteps} tone="text-cyan-700 dark:text-cyan-400" />
           <List icon={<AlertTriangle size={11} />} label="Risks" items={c.risks} tone="text-amber-600 dark:text-amber-400" />
           <List icon={<ShieldQuestion size={11} />} label="Objections" items={c.objections} tone="text-red-600 dark:text-red-400" />
           <div className="mt-2 font-mono text-[9px] text-grey/70">

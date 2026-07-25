@@ -88,7 +88,7 @@ export function ClaimLibrary() {
           className={clsx(
             'whitespace-nowrap rounded-full border px-2.5 py-1 text-micro font-semibold transition-colors',
             !activeCategory
-              ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+              ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400'
               : 'border-line text-grey hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10',
           )}
         >
@@ -102,7 +102,7 @@ export function ClaimLibrary() {
             className={clsx(
               'whitespace-nowrap rounded-full border px-2.5 py-1 text-micro font-semibold transition-colors',
               activeCategory === cat
-                ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+                ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400'
                 : 'border-line text-grey hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10',
             )}
           >

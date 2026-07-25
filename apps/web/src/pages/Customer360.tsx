@@ -203,7 +203,7 @@ function SectionCard({
         {headerLink && (
           <Link
             to={headerLink.to}
-            className="ml-auto text-xs font-bold text-cyan-600 hover:underline dark:text-cyan-400"
+            className="ml-auto text-xs font-bold text-cyan-700 hover:underline dark:text-cyan-400"
           >
             {headerLink.label} →
           </Link>
@@ -218,7 +218,7 @@ function NoneYet({ label, to, cta }: { label: string; to: string; cta: string })
   return (
     <p className="text-label text-grey">
       {label}{' '}
-      <Link to={to} className="font-semibold text-cyan-600 hover:underline dark:text-cyan-400">
+      <Link to={to} className="font-semibold text-cyan-700 hover:underline dark:text-cyan-400">
         {cta}
       </Link>
     </p>
@@ -445,7 +445,7 @@ export function Customer360() {
                 href={safeHref(project.website)}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-1 text-cyan-600 hover:underline dark:text-cyan-400"
+                className="inline-flex items-center gap-1 text-cyan-700 hover:underline dark:text-cyan-400"
               >
                 link <ExternalLink size={10} />
               </a>
@@ -779,7 +779,7 @@ export function Customer360() {
                     href={safeHref(d.url)}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 text-cyan-600 hover:underline dark:text-cyan-400"
+                    className="inline-flex items-center gap-1 text-cyan-700 hover:underline dark:text-cyan-400"
                   >
                     open <ExternalLink size={10} />
                   </a>

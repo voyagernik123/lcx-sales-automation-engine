@@ -33,7 +33,7 @@ const IMPACT_TONE: Record<string, string> = {
   Low: 'bg-grey/10 text-grey-dark border-line',
 };
 const STATUS_TONE: Record<string, string> = {
-  in_progress: 'text-cyan-600 dark:text-cyan-400', open: 'text-cyan-600 dark:text-cyan-400',
+  in_progress: 'text-cyan-700 dark:text-cyan-400', open: 'text-cyan-700 dark:text-cyan-400',
   blocked: 'text-red-500', tentative: 'text-amber-600 dark:text-amber-400',
   pending: 'text-amber-600 dark:text-amber-400', not_started: 'text-grey', future: 'text-grey',
 };
@@ -171,7 +171,7 @@ function Loaded({ deck, onChange }: { deck: Deck; onChange: () => void }) {
                 <div className="mt-1 flex items-center gap-3 text-micro">
                   <span className="text-grey">{w.total} tasks</span>
                   {w.done > 0 && <span className="text-emerald-600 dark:text-emerald-400">{w.done} done</span>}
-                  <span className="text-cyan-600 dark:text-cyan-400">{w.open} open</span>
+                  <span className="text-cyan-700 dark:text-cyan-400">{w.open} open</span>
                   {w.blocked > 0 && <span className="text-red-500">{w.blocked} blocked</span>}
                 </div>
               </div>
@@ -421,7 +421,7 @@ function DecisionRow({ d, onChange }: { d: CommandDecision; onChange: () => void
         {d.status === 'decided' ? (
           <span className="inline-flex shrink-0 items-center gap-1 text-micro font-semibold text-emerald-600 dark:text-emerald-400"><Check size={11} /> decided</span>
         ) : deciding ? null : (
-          <button onClick={() => setDeciding(true)} className="shrink-0 text-micro font-semibold text-cyan-600 hover:underline dark:text-cyan-400">Decide</button>
+          <button onClick={() => setDeciding(true)} className="shrink-0 text-micro font-semibold text-cyan-700 hover:underline dark:text-cyan-400">Decide</button>
         )}
       </div>
       {d.status === 'decided' && d.chosen ? (
@@ -452,7 +452,7 @@ function DecisionRow({ d, onChange }: { d: CommandDecision; onChange: () => void
           <button
             onClick={() => { setBusy(true); draftDecisionMemo(d.id).then((m) => { setMemo(m.memo); }).catch(() => toast('error', 'Memo failed')).finally(() => setBusy(false)); }}
             disabled={busy}
-            className="text-micro font-semibold text-cyan-600 hover:underline disabled:opacity-50 dark:text-cyan-400">
+            className="text-micro font-semibold text-cyan-700 hover:underline disabled:opacity-50 dark:text-cyan-400">
             🤖 Draft memo (AI)
           </button>
         </div>

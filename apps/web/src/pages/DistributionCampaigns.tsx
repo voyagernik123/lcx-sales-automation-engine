@@ -15,7 +15,7 @@ const LIFECYCLE = ['draft', 'compliance_review', 'approved', 'live', 'measured']
 const STATUS_TONE: Record<string, string> = {
   draft: 'text-grey',
   compliance_review: 'text-amber-600 dark:text-amber-400',
-  approved: 'text-cyan-600 dark:text-cyan-400',
+  approved: 'text-cyan-700 dark:text-cyan-400',
   live: 'text-emerald-600 dark:text-emerald-400',
   measured: 'text-navy',
 };
@@ -179,7 +179,7 @@ export function DistributionCampaigns() {
                   <span className="ml-2 font-mono text-[10px] text-grey">{c.kind}{c.token_incentivized ? ' · token' : ''}{c.budget_lcx ? ` · ${Number(c.budget_lcx).toLocaleString()} LCX` : ''}</span>
                 </span>
                 {c.token_incentivized && (
-                  <button onClick={() => void openDrawer(c)} className="flex items-center gap-1 text-micro text-cyan-600 hover:underline dark:text-cyan-400"><ShieldCheck size={12} /> Compliance</button>
+                  <button onClick={() => void openDrawer(c)} className="flex items-center gap-1 text-micro text-cyan-700 hover:underline dark:text-cyan-400"><ShieldCheck size={12} /> Compliance</button>
                 )}
                 <select value={c.status} onChange={(e) => void advance(c, e.target.value)} className={clsx('rounded border border-line bg-card px-1.5 py-0.5 font-mono text-micro font-semibold', STATUS_TONE[c.status])}>
                   {LIFECYCLE.map((v) => <option key={v} value={v}>{v.replace('_', ' ')}</option>)}

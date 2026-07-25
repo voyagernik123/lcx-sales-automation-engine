@@ -97,7 +97,7 @@ export function Monitors() {
                 <span className="rounded bg-ice-soft px-1.5 py-0.5 text-micro font-mono dark:bg-ice-soft/10">
                   {metricLabel(m.condition.metric)} {opLabel(m.condition.op)} {m.condition.threshold}
                 </span>
-                <span className="inline-flex items-center gap-1 text-micro font-semibold text-cyan-600 dark:text-cyan-400">
+                <span className="inline-flex items-center gap-1 text-micro font-semibold text-cyan-700 dark:text-cyan-400">
                   <Zap size={10} /> {m.action.id}
                 </span>
                 <span className="ml-auto text-micro text-grey num-tabular">{m.lastMatchCount} match{m.lastMatchCount === 1 ? '' : 'es'}</span>

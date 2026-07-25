@@ -97,7 +97,7 @@ function VulnerabilityCard({ items, stateGaps }: { items: VulnerabilityItem[]; s
                   {gap.missingCompetitors.join(', ')} not present
                 </span>
                 <span className="text-[9px] font-mono text-grey">{gap.population}</span>
-                <span className="text-[8px] bg-cyan-100 dark:bg-cyan-950/30 text-cyan-600 dark:text-cyan-400 px-1 py-0.5 rounded font-bold">
+                <span className="text-[8px] bg-cyan-100 dark:bg-cyan-950/30 text-cyan-700 dark:text-cyan-400 px-1 py-0.5 rounded font-bold">
                   LCX {gap.lcxPhase}
                 </span>
               </div>

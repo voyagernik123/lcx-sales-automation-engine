@@ -177,7 +177,7 @@ export function AuditLog() {
             className={clsx(
               'whitespace-nowrap rounded-full border px-2 py-0.5 text-micro font-semibold transition-colors',
               !action
-                ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+                ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400'
                 : 'border-line text-grey hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10',
             )}
           >
@@ -191,7 +191,7 @@ export function AuditLog() {
               className={clsx(
                 'whitespace-nowrap rounded-full border px-2 py-0.5 text-micro font-semibold transition-colors',
                 action === a
-                  ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+                  ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400'
                   : 'border-line text-grey hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10',
               )}
             >
@@ -255,7 +255,7 @@ export function AuditLog() {
                         ) : (
                           <button
                             onClick={() => inspect(inspectType, entry.entityId!)}
-                            className="font-semibold text-cyan-600 dark:text-cyan-400 hover:underline"
+                            className="font-semibold text-cyan-700 dark:text-cyan-400 hover:underline"
                             title={`Inspect ${inspectType}`}
                           >
                             {`${entry.entity} · ${entry.entityId.slice(0, 8)}`}

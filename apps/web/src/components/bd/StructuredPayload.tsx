@@ -35,7 +35,7 @@ function FormattedValue({ value }: { value: unknown }) {
   if (typeof value === 'string') {
     if (/^https?:\/\//.test(value)) {
       return (
-        <a href={safeHref(value)} target="_blank" rel="noopener noreferrer" className="text-cyan-600 dark:text-cyan-400 hover:underline break-all">
+        <a href={safeHref(value)} target="_blank" rel="noopener noreferrer" className="text-cyan-700 dark:text-cyan-400 hover:underline break-all">
           {value}
         </a>
       );
@@ -114,7 +114,7 @@ export function StructuredPayload({
           <button
             type="button"
             onClick={() => setExpanded(true)}
-            className="text-micro font-bold text-cyan-600 dark:text-cyan-400 hover:underline"
+            className="text-micro font-bold text-cyan-700 dark:text-cyan-400 hover:underline"
           >
             + {hidden} more field{hidden === 1 ? '' : 's'}
           </button>

@@ -128,7 +128,7 @@ export function SignalInspector({ seed }: InspectorPayloadProps) {
         {s.ts && <Fact label="Observed" value={formatDate(s.ts)} />}
       </div>
       {s.url && (
-        <a href={safeHref(s.url)} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-label font-semibold text-cyan-600 hover:underline">
+        <a href={safeHref(s.url)} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 text-label font-semibold text-cyan-700 hover:underline">
           <ExternalLink size={12} /> Source
         </a>
       )}

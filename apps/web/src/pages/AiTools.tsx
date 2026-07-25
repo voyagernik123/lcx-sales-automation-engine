@@ -54,7 +54,7 @@ export function AiTools() {
 
       <p className="text-label text-grey">
         Working a live reply? These same engines run inline in the{' '}
-        <Link to="/outreach" className="inline-flex items-center gap-1 font-semibold text-cyan-600 dark:text-cyan-400 hover:underline">
+        <Link to="/outreach" className="inline-flex items-center gap-1 font-semibold text-cyan-700 dark:text-cyan-400 hover:underline">
           <MessageSquare size={11} /> Handoffs inbox
         </Link>
         {' '}— sentiment on every reply, drafts one click away.

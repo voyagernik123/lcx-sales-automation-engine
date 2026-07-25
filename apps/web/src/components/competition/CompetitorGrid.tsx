@@ -272,7 +272,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
         return (
           <span className={clsx(
             'font-mono text-micro font-bold',
-            c.marketShare >= 10 ? 'text-cyan-600 dark:text-cyan-400' :
+            c.marketShare >= 10 ? 'text-cyan-700 dark:text-cyan-400' :
             c.marketShare > 0 ? 'text-grey-dark' :
             'text-grey'
           )}>
@@ -338,17 +338,17 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
     <tr className="border-t-2 border-cyan-500/50 bg-cyan-500/[0.04] dark:bg-cyan-500/[0.03] font-semibold">
       <td className="p-2.5 whitespace-nowrap">
         <div className="flex items-center gap-2">
-          <span className="font-bold text-xs text-cyan-600 dark:text-cyan-400">LCX USA</span>
+          <span className="font-bold text-xs text-cyan-700 dark:text-cyan-400">LCX USA</span>
           <span className="text-[9px] font-mono text-cyan-500 bg-cyan-50 dark:bg-cyan-950/20 px-1 rounded tracking-tight">
             PROJECTED
           </span>
         </div>
       </td>
       <td className="p-2.5">
-        <span className="text-micro text-cyan-600 dark:text-cyan-400 font-bold">New Entrant</span>
+        <span className="text-micro text-cyan-700 dark:text-cyan-400 font-bold">New Entrant</span>
       </td>
       <td className="p-2.5">
-        <span className="font-mono text-micro text-cyan-600 dark:text-cyan-400">—</span>
+        <span className="font-mono text-micro text-cyan-700 dark:text-cyan-400">—</span>
       </td>
       <td className="p-2.5">
         <span className="font-mono text-micro text-grey">—</span>
@@ -376,7 +376,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
             <X size={12} className="text-grey" />
             <span className="text-grey">BitLicense</span>
           </span>
-          <span className="flex items-center gap-1 text-cyan-600 dark:text-cyan-400">
+          <span className="flex items-center gap-1 text-cyan-700 dark:text-cyan-400">
             <Building2 size={12} />
             <span>SPDI (Option B)</span>
           </span>
@@ -479,7 +479,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
           </div>
           <div className="flex justify-between">
             <span className="text-grey">Share:</span>
-            <span className={clsx('font-mono font-bold', c.marketShare > 0 ? 'text-cyan-600 dark:text-cyan-400' : 'text-grey')}>
+            <span className={clsx('font-mono font-bold', c.marketShare > 0 ? 'text-cyan-700 dark:text-cyan-400' : 'text-grey')}>
               {c.marketShare > 0 ? `${c.marketShare}%` : '—'}
             </span>
           </div>
@@ -635,12 +635,12 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
             <CardBody className="p-3">
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-2">
-                  <span className="font-bold text-sm text-cyan-600 dark:text-cyan-400">LCX USA</span>
+                  <span className="font-bold text-sm text-cyan-700 dark:text-cyan-400">LCX USA</span>
                   <span className="text-[9px] font-mono text-cyan-500 bg-cyan-50 dark:bg-cyan-950/20 px-1.5 rounded tracking-tight">
                     PROJECTED (Phase 1–3)
                   </span>
                 </div>
-                <span className="text-micro text-cyan-600 dark:text-cyan-400 font-bold">New Entrant</span>
+                <span className="text-micro text-cyan-700 dark:text-cyan-400 font-bold">New Entrant</span>
               </div>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-micro mb-2">
                 <div className="flex justify-between">
@@ -653,7 +653,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-grey">Trust Charter:</span>
-                  <span className="text-cyan-600 dark:text-cyan-400 font-mono">{lcxTrustCharter}</span>
+                  <span className="text-cyan-700 dark:text-cyan-400 font-mono">{lcxTrustCharter}</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-grey">CLARITY Position:</span>

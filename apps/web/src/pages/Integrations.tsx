@@ -117,7 +117,7 @@ function ConnectDisclosure({ setup }: { setup: string }) {
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="inline-flex items-center gap-1 text-label font-semibold text-cyan-600 hover:text-cyan-700 dark:text-cyan-400 dark:hover:text-cyan-300 transition-colors"
+        className="inline-flex items-center gap-1 text-label font-semibold text-cyan-700 hover:text-cyan-800 dark:text-cyan-400 dark:hover:text-cyan-300 transition-colors"
       >
         <Plug size={11} /> Connect {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
       </button>

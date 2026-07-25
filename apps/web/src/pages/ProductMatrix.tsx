@@ -228,7 +228,7 @@ export function ProductMatrix() {
                               </button>
                               <button
                                 onClick={() => navigate('/howey?asset=' + p.id)}
-                                className="flex items-center gap-1.5 text-xs font-bold text-cyan-600 hover:text-cyan-700 dark:text-cyan-400 dark:hover:text-cyan-300 underline transition-colors"
+                                className="flex items-center gap-1.5 text-xs font-bold text-cyan-700 hover:text-cyan-800 dark:text-cyan-400 dark:hover:text-cyan-300 underline transition-colors"
                               >
                                 <Scale size={13} />
                                 <span>Simulate in Howey Calculator</span>

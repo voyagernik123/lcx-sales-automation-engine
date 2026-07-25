@@ -113,6 +113,13 @@ export function PipelineSankey({ stages, height = 150, formatValue = formatNumbe
           const cx = x + NODE_W / 2;
           const clickable = Boolean(s.onClick);
           return (
+            // The <g> keeps the click and the hover, so the whole column stays one
+            // target. Focus moved off it onto the painted <rect>: WebKit paints no
+            // `outline` on an SVG container, measured in a WKWebView at 0 ring
+            // pixels for a `<g>` against 4352 for a `<rect>`, so a keyboard user in
+            // the shipped Tauri build had no indicator here at all. The old
+            // `outline-none` on this element was doubly wrong — it was suppressing a
+            // ring that WebKit was never going to paint anyway.
             <g
               key={s.key}
               onClick={s.onClick}
@@ -120,19 +127,35 @@ export function PipelineSankey({ stages, height = 150, formatValue = formatNumbe
                 show((cx / VW) * 100, (MT / VH) * 100, <TipContent label={s.label} value={formatValue(s.value)} />)
               }
               onMouseLeave={hide}
-              role={clickable ? 'button' : undefined}
-              tabIndex={clickable ? 0 : undefined}
-              onKeyDown={
-                clickable
-                  ? (e) => {
-                      if (e.key === 'Enter' || e.key === ' ') s.onClick?.();
-                    }
-                  : undefined
-              }
-              className={clickable ? 'cursor-pointer outline-none' : undefined}
-              aria-label={clickable ? `${s.label}: ${formatValue(s.value)} — open workspace` : undefined}
+              className={clickable ? 'cursor-pointer' : undefined}
             >
-              <rect x={x} y={MT} width={NODE_W} height={hh} rx={2} fill="var(--chart-1)" opacity={stageOpacity(i)} />
+              <rect
+                x={x}
+                y={MT}
+                width={NODE_W}
+                height={hh}
+                rx={2}
+                fill="var(--chart-1)"
+                // fillOpacity, not opacity, now that this element is the focus
+                // target. Element `opacity` fades everything the element paints,
+                // which would have dimmed the focus stroke to the ramp value — 0.4
+                // on the last stage — and an outline with it, since opacity forms a
+                // stacking context. The rect declares no stroke when unfocused, so
+                // moving the ramp onto the fill is pixel-identical in the resting
+                // state and leaves the ring at full strength.
+                fillOpacity={stageOpacity(i)}
+                role={clickable ? 'button' : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                onKeyDown={
+                  clickable
+                    ? (e) => {
+                        if (e.key === 'Enter' || e.key === ' ') s.onClick?.();
+                      }
+                    : undefined
+                }
+                className={clickable ? 'focus-ring-svg' : undefined}
+                aria-label={clickable ? `${s.label}: ${formatValue(s.value)} — open workspace` : undefined}
+              />
               <text
                 x={cx}
                 y={MT - 6}

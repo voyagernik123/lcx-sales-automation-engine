@@ -34,7 +34,7 @@ export function PriorityEquation({
   const shown = priority ?? derived;
 
   const termCls =
-    'rounded border border-line bg-ice-soft dark:bg-ice-soft/10 px-1.5 py-0.5 font-mono num-tabular font-bold text-navy hover:border-cyan-400 hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors cursor-pointer';
+    'rounded border border-line bg-ice-soft dark:bg-ice-soft/10 px-1.5 py-0.5 font-mono num-tabular font-bold text-navy hover:border-cyan-400 hover:text-cyan-700 dark:hover:text-cyan-400 transition-colors cursor-pointer';
 
   return (
     <div className={`flex flex-wrap items-center ${compact ? 'gap-1 text-micro' : 'gap-1.5 text-label'}`}>

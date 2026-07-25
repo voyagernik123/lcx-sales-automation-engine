@@ -113,7 +113,7 @@ export function LpOptimizerPanel() {
       <div className="mb-3 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
         <SlidersHorizontal size={12} /> LP optimizer — live weights, live rank
         {weights && (
-          <button onClick={() => { setWeights(null); run(); }} className="ml-auto text-micro font-semibold text-cyan-600 hover:underline dark:text-cyan-400">
+          <button onClick={() => { setWeights(null); run(); }} className="ml-auto text-micro font-semibold text-cyan-700 hover:underline dark:text-cyan-400">
             Reset to strategy weights
           </button>
         )}
@@ -207,7 +207,7 @@ export function FunnelSimPanel() {
       <div className="mb-3 flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
         <TrendingUp size={12} /> Waitlist funnel simulator — budget what-ifs
         {budgets && (
-          <button onClick={() => { setBudgets(null); run(); }} className="ml-auto text-micro font-semibold text-cyan-600 hover:underline dark:text-cyan-400">
+          <button onClick={() => { setBudgets(null); run(); }} className="ml-auto text-micro font-semibold text-cyan-700 hover:underline dark:text-cyan-400">
             Reset to plan
           </button>
         )}

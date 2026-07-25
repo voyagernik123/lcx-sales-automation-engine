@@ -40,7 +40,7 @@ export function SplitTabs({ active, counts, onSelect }: SplitTabsProps) {
               className={clsx(
                 'rounded border px-1.5 font-mono text-micro leading-4',
                 isActive
-                  ? 'border-cyan-500/40 bg-cyan-500/5 text-cyan-600 dark:text-cyan-400'
+                  ? 'border-cyan-500/40 bg-cyan-500/5 text-cyan-700 dark:text-cyan-400'
                   : 'border-line bg-ice-soft dark:bg-navy-deep text-grey',
               )}
             >
@@ -51,7 +51,7 @@ export function SplitTabs({ active, counts, onSelect }: SplitTabsProps) {
               className={clsx(
                 'rounded-full px-1.5 text-micro font-mono font-semibold num-tabular',
                 isActive
-                  ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+                  ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400'
                   : 'bg-ice-soft dark:bg-navy-deep text-grey',
               )}
             >

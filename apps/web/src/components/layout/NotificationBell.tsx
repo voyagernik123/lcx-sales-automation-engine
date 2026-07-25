@@ -124,7 +124,7 @@ export function NotificationBell() {
             {unread > 0 && (
               <button
                 onClick={() => void markAllNotificationsRead().then(load)}
-                className="text-[10px] font-semibold text-cyan-600 hover:underline"
+                className="text-[10px] font-semibold text-cyan-700 hover:underline"
               >
                 Mark all read
               </button>

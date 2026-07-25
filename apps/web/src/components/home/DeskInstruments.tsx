@@ -74,7 +74,7 @@ export function PipelineInstrument({ board }: { board: BoardDeal[] | null }) {
         <button
           type="button"
           onClick={() => navigate('/deal-board')}
-          className="text-micro font-semibold text-cyan-600 hover:underline dark:text-cyan-400"
+          className="text-micro font-semibold text-cyan-700 hover:underline dark:text-cyan-400"
         >
           Open the board →
         </button>

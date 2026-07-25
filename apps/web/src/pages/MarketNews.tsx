@@ -221,7 +221,7 @@ export function MarketNews() {
                       target="_blank"
                       rel="noreferrer"
                       onClick={() => markVisited(b.id)}
-                      className="ml-1 inline-flex align-middle text-grey hover:text-cyan-600 dark:hover:text-cyan-400"
+                      className="ml-1 inline-flex align-middle text-grey hover:text-cyan-700 dark:hover:text-cyan-400"
                       title="Open article"
                       aria-label="Open article"
                     >
@@ -340,7 +340,7 @@ export function MarketNews() {
                       target="_blank"
                       rel="noreferrer"
                       onClick={() => markVisited(n.id)}
-                      className="mt-0.5 shrink-0 text-grey hover:text-cyan-600 dark:hover:text-cyan-400"
+                      className="mt-0.5 shrink-0 text-grey hover:text-cyan-700 dark:hover:text-cyan-400"
                       title="Open article"
                       aria-label="Open article"
                     >

@@ -317,6 +317,62 @@ path.state:hover {
     outline: none;
     box-shadow: inset 0 0 0 2px rgb(var(--focus));
   }
+  /**
+   * For a focusable SVG SHAPE (`<circle>`, `<rect>`), which needs its own utility
+   * for a reason that is invisible on the dev server.
+   *
+   * WebKit does not paint `outline` on an SVG CONTAINER element. Measured in a
+   * WKWebView — the engine the Tauri build actually ships — by rendering to a
+   * bitmap and counting ring pixels. Counts are relative, not absolute: they scale
+   * with the shape's geometry and with the backing scale factor, so what matters is
+   * the zero, which is stable. For one `outline: 4px solid red; outline-offset: 2px`
+   * applied unconditionally, with a 40x40 shape in a 300x300 viewport:
+   *
+   *     <div>            512 px  (top-left corner of the ring clipped at 0,0)
+   *     <svg> root       512 px
+   *     <circle>         768 px
+   *     <rect>           768 px
+   *     <text>           472 px
+   *     <g>                0 px   <-- paints nothing, offset 0 or 2
+   *
+   * Chromium paints all six, so a browser check on the dev server cannot see this
+   * defect and cannot prove it fixed. Three rules follow, and all three are encoded
+   * here rather than left to memory:
+   *
+   * 1. `tabindex` belongs on the painted shape, never on a wrapping `<g>`. Keep
+   *    the `<g>` for grouping and for the click target if a transparent hit area
+   *    is involved; give the shape the focus.
+   * 2. The outline is paired with a `stroke` change rather than trusted alone. An
+   *    offset outline is clipped by the SVG viewport when a shape sits flush
+   *    against the viewBox edge — the first and last node of a full-width Sankey
+   *    both do — whereas `stroke` is painted in the shape's own geometry and
+   *    cannot be clipped away. CSS `stroke` also beats a `stroke=` presentation
+   *    attribute, verified in the same probe (4492 px over a `stroke="#999"`
+   *    attribute), so a shape that colours itself by data still shows the ring.
+   * 3. The focus target must not carry element `opacity` OR `stroke-opacity`. Both
+   *    fade the painted ring, because WebKit puts an SVG element's outline through
+   *    the stroke pipeline: on a focused shape, `opacity: .85` leaves 0 pixels of
+   *    full-strength ring and `stroke-opacity: .85` leaves 16, while `fill-opacity:
+   *    .85` is pixel-identical to no opacity at all. StrategicMatrix's dots carried
+   *    `opacity: .85` and had to move it to `fill-opacity`; a 0.85 ring measures
+   *    2.67-2.81:1 on that chart's quadrant washes, under the 3:1 in SC 1.4.11.
+   *
+   * VERIFIED UNDER REAL FOCUS, which an earlier version of this comment could not
+   * claim. The probe was rebuilt as a bundled .app so the window can become key
+   * (`document.hasFocus()` is 1; in a bare binary it is 0, which is why the first
+   * attempt fell back to unconditional rules). With that, in WKWebView: Tab reaches
+   * a `<circle tabindex=0>` and a `<rect tabindex=0>`, `:focus-visible` MATCHES on
+   * both, and the ring paints (734 and 772 px of `rgb(8 145 178)`). The same
+   * document's `<g class="focus-ring" tabindex=0>` also matches `:focus-visible`
+   * and also computes `outline: solid 2px rgb(8, 145, 178)` — and paints 0 px. The
+   * computed style is not the evidence; the pixels are.
+   */
+  .focus-ring-svg:focus-visible {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: 2px;
+    stroke: rgb(var(--focus));
+    stroke-width: 3;
+  }
 }
 
 /* ── Reduced motion (TERMINAL Phase 4) ──────────────────────────────────────

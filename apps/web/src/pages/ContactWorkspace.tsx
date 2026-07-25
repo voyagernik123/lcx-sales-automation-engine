@@ -196,7 +196,7 @@ export function ContactWorkspace() {
                   href={person.linkedin}
                   target="_blank"
                   rel="noreferrer"
-                  className="block truncate text-cyan-600 hover:underline"
+                  className="block truncate text-cyan-700 hover:underline"
                 >
                   LinkedIn profile
                 </a>

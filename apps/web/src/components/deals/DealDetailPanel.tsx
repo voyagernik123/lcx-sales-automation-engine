@@ -11,7 +11,7 @@ import { useDismissible } from '@/hooks/useDismissible';
 const STAGE_BADGE: Record<DealStage, string> = {
   not_started: 'bg-ice-soft text-grey dark:bg-ice-soft/10',
   contacted: 'bg-sky-500/10 text-sky-600 dark:text-sky-400',
-  discovery: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
+  discovery: 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400',
   proposal: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
   negotiating: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
   won: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',

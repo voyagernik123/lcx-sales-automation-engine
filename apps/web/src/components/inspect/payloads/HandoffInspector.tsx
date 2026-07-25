@@ -80,7 +80,7 @@ export function HandoffInspector({ id }: InspectorPayloadProps) {
           <button
             type="button"
             onClick={() => push('project', handoff.projectId)}
-            className="text-base font-bold text-navy hover:text-cyan-600 dark:hover:text-cyan-400 hover:underline text-left"
+            className="text-base font-bold text-navy hover:text-cyan-700 dark:hover:text-cyan-400 hover:underline text-left"
             title="Inspect project"
           >
             {handoff.projectName ?? 'Handoff'}

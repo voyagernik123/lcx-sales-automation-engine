@@ -185,7 +185,7 @@ export function KpiDashboard() {
               className={clsx(
                 'rounded-full px-2.5 py-1 text-micro font-semibold transition-colors',
                 range === opt.key
-                  ? 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/40'
+                  ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-400 border border-cyan-500/40'
                   : 'border border-line text-grey hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-navy-deep',
               )}
             >

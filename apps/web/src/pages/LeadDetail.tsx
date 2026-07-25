@@ -584,7 +584,7 @@ export function LeadDetail() {
           <Section icon={<Globe size={14} />} title="Identity">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-label">
               <Field label="Website" value={lead.website}>
-                {lead.website && <a href={lead.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-600 dark:text-cyan-400 hover:underline"><ExternalLink size={10} /> {new URL(lead.website).hostname}</a>}
+                {lead.website && <a href={lead.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-700 dark:text-cyan-400 hover:underline"><ExternalLink size={10} /> {new URL(lead.website).hostname}</a>}
               </Field>
               <Field label="Jurisdiction" value={lead.jurisdiction ?? '—'} />
               <Field label="Chain" value={lead.chain ?? '—'} />
@@ -595,7 +595,7 @@ export function LeadDetail() {
               <Field label="DTI" value={lead.dti ?? '—'} />
               <Field label="Listed on LCX" value={lead.listedOnLcx ? 'Yes' : 'No'} />
               <Field label="Whitepaper" value={lead.whitepaperUrl ? (
-                <a href={lead.whitepaperUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-600 dark:text-cyan-400 hover:underline">
+                <a href={lead.whitepaperUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-700 dark:text-cyan-400 hover:underline">
                   <FileText size={10} /> View Whitepaper
                 </a>
               ) : '—'} />
@@ -649,7 +649,7 @@ export function LeadDetail() {
             {showAddPerson && (
               <div className="mb-3 rounded border border-cyan-200 dark:border-cyan-800 bg-cyan-50/50 dark:bg-cyan-950/10 p-3 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-micro font-bold uppercase tracking-wider text-cyan-600 dark:text-cyan-400">
+                  <span className="text-micro font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-400">
                     {editPerson ? 'Edit Contact' : 'Add Contact'}
                   </span>
                   <button onClick={() => { setShowAddPerson(false); setEditPerson(null); }} className="rounded p-0.5 hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors">
@@ -714,13 +714,13 @@ export function LeadDetail() {
                         <td className="py-1.5 px-2 text-grey">{person.title ?? '—'}</td>
                         <td className="py-1.5 px-2">
                           {person.email ? (
-                            <a href={`mailto:${person.email}`} className="text-cyan-600 dark:text-cyan-400 hover:underline">{person.email}</a>
+                            <a href={`mailto:${person.email}`} className="text-cyan-700 dark:text-cyan-400 hover:underline">{person.email}</a>
                           ) : '—'}
                         </td>
                         <td className="py-1.5 px-2"><EmailStatusBadge status={person.emailStatus} /></td>
                         <td className="py-1.5 px-2">
                           {person.linkedin ? (
-                            <a href={person.linkedin} target="_blank" rel="noopener noreferrer" className="text-cyan-600 dark:text-cyan-400 hover:underline inline-flex items-center gap-1">
+                            <a href={person.linkedin} target="_blank" rel="noopener noreferrer" className="text-cyan-700 dark:text-cyan-400 hover:underline inline-flex items-center gap-1">
                               <ExternalLink size={9} /> Profile
                             </a>
                           ) : '—'}
@@ -748,7 +748,7 @@ export function LeadDetail() {
             )}
 
             {!showAddPerson && (
-              <button onClick={handleAddClick} className="mt-2 flex items-center gap-1 text-micro font-bold text-cyan-600 dark:text-cyan-400 hover:underline">
+              <button onClick={handleAddClick} className="mt-2 flex items-center gap-1 text-micro font-bold text-cyan-700 dark:text-cyan-400 hover:underline">
                 <Plus size={11} /> Add Contact
               </button>
             )}
@@ -875,7 +875,7 @@ export function LeadDetail() {
                             </button>
                           )}
                           {seq.status === 'paused' && (
-                            <button onClick={() => handleResumeSequence(seq.id)} className="rounded border border-cyan-200 text-cyan-600 dark:border-cyan-800 dark:text-cyan-400 px-2 py-0.5 text-micro font-bold hover:bg-cyan-50 dark:hover:bg-cyan-950/20 transition-colors">
+                            <button onClick={() => handleResumeSequence(seq.id)} className="rounded border border-cyan-200 text-cyan-700 dark:border-cyan-800 dark:text-cyan-400 px-2 py-0.5 text-micro font-bold hover:bg-cyan-50 dark:hover:bg-cyan-950/20 transition-colors">
                               Resume
                             </button>
                           )}
@@ -1468,7 +1468,7 @@ function DealSection({ projectId }: { projectId: string }) {
       <div>
         <div className="flex items-center justify-between mb-1">
           <span className="text-micro font-bold text-grey">Objections ({objections.length})</span>
-          <button onClick={() => setShowObjections(!showObjections)} className="text-micro text-cyan-600 dark:text-cyan-400 hover:underline">
+          <button onClick={() => setShowObjections(!showObjections)} className="text-micro text-cyan-700 dark:text-cyan-400 hover:underline">
             {showObjections ? 'Hide' : 'Log'}
           </button>
         </div>

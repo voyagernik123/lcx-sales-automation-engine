@@ -333,7 +333,7 @@ function HandoffDetail({ handoff, onBack, onRefresh }: { handoff: HandoffRecord;
             {handoff.personEmail && <span className="text-grey">{handoff.personEmail}</span>}
           </div>
           {handoff.personLinkedin && (
-            <a href={handoff.personLinkedin} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-600 dark:text-cyan-400 hover:underline">
+            <a href={handoff.personLinkedin} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-700 dark:text-cyan-400 hover:underline">
               <ExternalLink size={9} /> LinkedIn Profile
             </a>
           )}
@@ -530,7 +530,7 @@ export function Handoffs() {
                 aria-pressed={isActive}
                 className={`rounded-full border px-2 py-0.5 text-micro font-semibold transition-colors ${
                   isActive
-                    ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400'
+                    ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-400'
                     : 'border-line bg-card text-grey hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-ice-soft/10'
                 }`}
               >

@@ -172,7 +172,7 @@ export function Home() {
               <button
                 type="button"
                 onClick={() => navigate('/bd-pipeline')}
-                className="text-micro font-semibold text-cyan-600 hover:underline dark:text-cyan-400"
+                className="text-micro font-semibold text-cyan-700 hover:underline dark:text-cyan-400"
               >
                 Work the queue →
               </button>

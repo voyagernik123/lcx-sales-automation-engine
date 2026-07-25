@@ -157,7 +157,7 @@ export function ReportBuilder() {
           {filters.map((f, i) => (
             <span key={`${f.column}-${i}`} className="flex items-center gap-1.5">
               <ChevronRight size={12} className="text-grey" aria-hidden="true" />
-              <span className="inline-flex items-center gap-1 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 font-mono text-micro font-semibold text-cyan-600 dark:text-cyan-400">
+              <span className="inline-flex items-center gap-1 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2 py-0.5 font-mono text-micro font-semibold text-cyan-700 dark:text-cyan-400">
                 {f.column} = {f.value}
                 <button
                   type="button"

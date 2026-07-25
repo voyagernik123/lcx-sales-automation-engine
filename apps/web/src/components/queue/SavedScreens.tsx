@@ -121,13 +121,13 @@ export function SavedScreens({ filters, onApply }: SavedScreensProps) {
                 aria-label="Rename screen"
               />
             ) : (
-              <button onClick={() => apply(screen)} title={`Apply "${screen.name}"`} className="hover:text-cyan-600 dark:hover:text-cyan-400 transition-colors">
+              <button onClick={() => apply(screen)} title={`Apply "${screen.name}"`} className="hover:text-cyan-700 dark:hover:text-cyan-400 transition-colors">
                 {screen.name}
               </button>
             )}
             {delta !== undefined && delta > 0 && (
               <span
-                className="rounded-full bg-cyan-500/10 px-1.5 font-mono text-cyan-600 dark:text-cyan-400"
+                className="rounded-full bg-cyan-500/10 px-1.5 font-mono text-cyan-700 dark:text-cyan-400"
                 title={`${delta}${delta >= DELTA_PROBE ? '+' : ''} new since your last visit`}
               >
                 Δ{delta}{delta >= DELTA_PROBE ? '+' : ''}
@@ -171,7 +171,7 @@ export function SavedScreens({ filters, onApply }: SavedScreensProps) {
             className="w-28 rounded border border-line bg-ice-soft dark:bg-navy-deep px-1.5 py-0.5 text-micro outline-none focus:border-cyan-500"
             aria-label="New screen name"
           />
-          <button onClick={saveCurrent} disabled={!draftName.trim()} className="p-0.5 text-cyan-600 dark:text-cyan-400 disabled:opacity-40" aria-label="Save screen">
+          <button onClick={saveCurrent} disabled={!draftName.trim()} className="p-0.5 text-cyan-700 dark:text-cyan-400 disabled:opacity-40" aria-label="Save screen">
             <Check size={11} />
           </button>
         </span>

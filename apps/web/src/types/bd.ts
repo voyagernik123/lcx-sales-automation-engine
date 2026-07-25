@@ -122,7 +122,7 @@ export const BAND_LABELS: Record<ScoreBand, string> = {
 
 export const BAND_COLORS: Record<ScoreBand, string> = {
   immediate: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800',
-  high: 'text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800',
+  high: 'text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800',
   nurture: 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800',
   watch: 'text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-900/50 border-slate-200 dark:border-slate-700',
   archive: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800',
@@ -394,7 +394,7 @@ export interface MessageRecord {
 
 export const SEQUENCE_STATUS_COLORS: Record<string, string> = {
   draft: 'text-slate-500 bg-slate-50 dark:bg-slate-900/50',
-  active: 'text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/30',
+  active: 'text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/30',
   paused: 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30',
   completed: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30',
   handoff: 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/30',
@@ -403,7 +403,7 @@ export const SEQUENCE_STATUS_COLORS: Record<string, string> = {
 export const LINKEDIN_STATUS_COLORS: Record<string, string> = {
   none: 'text-slate-500 bg-slate-50 dark:bg-slate-900/50',
   pending: 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30',
-  connected: 'text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/30',
+  connected: 'text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/30',
   messaged: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30',
   replied: 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/30',
   declined: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30',
@@ -411,7 +411,7 @@ export const LINKEDIN_STATUS_COLORS: Record<string, string> = {
 
 export const MESSAGE_STATUS_COLORS: Record<string, string> = {
   pending: 'text-slate-500 bg-slate-50 dark:bg-slate-900/50',
-  sent: 'text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/30',
+  sent: 'text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/30',
   delivered: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30',
   bounced: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30',
   complained: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30',
@@ -419,7 +419,7 @@ export const MESSAGE_STATUS_COLORS: Record<string, string> = {
 
 export const HANDOFF_STATUS_COLORS: Record<string, string> = {
   open: 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30',
-  in_progress: 'text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/30',
+  in_progress: 'text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/30',
   resolved_won_path: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30',
   resolved_lost: 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30',
   re_nurture: 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/30',
@@ -428,7 +428,7 @@ export const HANDOFF_STATUS_COLORS: Record<string, string> = {
 export const STAGE_COLORS: Record<string, string> = {
   not_started: 'text-slate-500 bg-slate-50 dark:bg-slate-900/50',
   contacted: 'text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/30',
-  discovery: 'text-cyan-600 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/30',
+  discovery: 'text-cyan-700 dark:text-cyan-400 bg-cyan-50 dark:bg-cyan-950/30',
   proposal: 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30',
   negotiating: 'text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/30',
   won: 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30',

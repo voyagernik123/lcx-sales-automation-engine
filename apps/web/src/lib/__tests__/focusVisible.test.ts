@@ -139,18 +139,22 @@ describe('focus stays visible', () => {
     expect(offenders, offenders.join('\n')).toEqual([]);
   });
 
-  it('focus-ring-inset is actually applied somewhere', () => {
-    // A utility no source file names is purged by Tailwind's content scan, so it
-    // silently does not exist in the shipped stylesheet. This one shipped dead in
-    // the first pass while five controls that needed it — both segmented view
-    // toggles and the Sign out button — sat flush inside `overflow: hidden`
-    // ancestors that clip the offset outline entirely. If this ever drops back to
-    // zero, either the clipped controls regressed or the utility should be deleted.
-    const users = files.filter(
-      (f) => !f.endsWith('globals.css') && codeOnly(readFileSync(f, 'utf8')).includes('focus-ring-inset'),
-    );
-    expect(users.length, 'focus-ring-inset is declared but unused, so Tailwind purges it').toBeGreaterThan(0);
-  });
+  // A utility no source file names is purged by Tailwind's content scan, so it
+  // silently does not exist in the shipped stylesheet. `focus-ring-inset` shipped
+  // dead in the first pass while five controls that needed it — both segmented view
+  // toggles and the Sign out button — sat flush inside `overflow: hidden` ancestors
+  // that clip the offset outline entirely. `focus-ring-svg` is the same shape of
+  // risk: it is the ONLY thing that makes focus visible on a focusable SVG shape in
+  // WebKit, and it is applied at exactly two places. If either count drops to zero,
+  // either the controls that needed it regressed or the utility should be deleted.
+  for (const utility of ['focus-ring-inset', 'focus-ring-svg']) {
+    it(`${utility} is actually applied somewhere`, () => {
+      const users = files.filter(
+        (f) => !f.endsWith('globals.css') && codeOnly(readFileSync(f, 'utf8')).includes(utility),
+      );
+      expect(users.length, `${utility} is declared but unused, so Tailwind purges it`).toBeGreaterThan(0);
+    });
+  }
 
   it('the focus colour is a token, not a hard-coded value', () => {
     // Scattered focus colours are how the previous treatment became 62

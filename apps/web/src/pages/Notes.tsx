@@ -371,7 +371,7 @@ export function Notes() {
                 </div>
                 <pre className="mt-1.5 whitespace-pre-wrap font-sans text-label text-grey">{n.body}</pre>
                 <div className="mt-2 flex gap-2">
-                  <button onClick={() => startEdit(n)} className="text-xs font-semibold text-cyan-600 dark:text-cyan-400 hover:underline">Edit</button>
+                  <button onClick={() => startEdit(n)} className="text-xs font-semibold text-cyan-700 dark:text-cyan-400 hover:underline">Edit</button>
                   <button onClick={() => void togglePin(n)} className="text-xs font-semibold text-amber-600 dark:text-amber-400 hover:underline">
                     {n.pinned ? 'Unpin' : 'Pin'}
                   </button>
@@ -431,7 +431,7 @@ export function Notes() {
                 <span className="text-grey">{d.mime}</span>
                 {d.sizeBytes > 0 && <span className="text-grey num-tabular">{fmtBytes(d.sizeBytes)}</span>}
                 {d.url && (
-                  <a href={safeHref(d.url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-600 dark:text-cyan-400 hover:underline">
+                  <a href={safeHref(d.url)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-cyan-700 dark:text-cyan-400 hover:underline">
                     open <ExternalLink size={10} />
                   </a>
                 )}
