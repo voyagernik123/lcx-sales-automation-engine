@@ -1,10 +1,27 @@
 /**
- * The Phase 3 gate: EVERY governed action must be reachable through the command
- * line. Not "most", and not "the ones someone remembered to wire".
+ * NOT THE REACHABILITY GATE. It was labelled as one and it never was.
  *
- * This is the assertion that makes the grammar complete by construction rather
- * than by diligence. Adding a 23rd action to the registry without a subject type
- * the command line can resolve will fail here, naming the action.
+ * What this file checks is that the registry is INTERNALLY consistent: every
+ * action declares a subject type, `verbsFor` offers it when handed a noun of that
+ * type, every required param gets a prompt, every action has readable prose. All
+ * worth checking, and all of it passed while ⌘K reached 7 of 22 governed actions
+ * — measured in a browser — because the first test below builds its probe noun
+ * FROM `action.subjectTypes`. It asks whether the registry agrees with itself,
+ * and the answer to that is yes by construction.
+ *
+ * The question it looked like it was asking — can an operator actually put such a
+ * subject in front of the command line — needs the other side of the boundary:
+ *
+ *   apps/api/src/routes/__tests__/searchActionBoundary.test.ts
+ *     ACTION_REGISTRY × the groups GET /v1/search can emit. Both real, both in
+ *     that package, which is why the assertion lives there.
+ *   ./searchNoun.test.ts
+ *     the same reachability question through `nounFromSearchResult` — the
+ *     function the command line really builds its noun with — rather than
+ *     through a noun a test invented.
+ *
+ * Keep this file for what it does prove. Do not read a green run here as the
+ * gate; that mistake is the whole reason the gate was false for a phase.
  */
 
 import { describe, it, expect } from 'vitest';
@@ -24,8 +41,8 @@ const OMNIPOTENT: Principal = {
   },
 };
 
-describe('every governed action is reachable', () => {
-  it('each action appears for at least one subject type, unblocked', () => {
+describe('the registry is internally consistent', () => {
+  it('each action appears for at least one subject type, unblocked — SELF-REFERENTIAL, see header', () => {
     const unreachable: string[] = [];
 
     for (const action of ACTION_MANIFEST.actions) {

@@ -20,6 +20,7 @@ import { useManual } from '@/hooks/useManual';
 import { ManualHost } from '@/components/help/ManualHost';
 import { useHints } from '@/hooks/useHints';
 import { HintLayer } from '@/components/help/HintLayer';
+import { TourHost } from '@/components/teach/TourHost';
 
 export function AppLayout() {
   const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed);
@@ -240,6 +241,13 @@ export function AppLayout() {
         * manual on top rather than behind the tags. */}
       <HintLayer open={hints.on} onClose={() => hints.setOn(false)} />
       <ManualHost open={manual.open} onClose={() => manual.setOpen(false)} />
+      {/* The per-persona first run (T1 #19). Generated from THIS operator's
+        * entitlements, so it never walks anyone through a compartment they cannot
+        * open; skipped or finished, it never returns. The gate is eager and tiny, the
+        * tour itself is a lazy chunk that a settled operator never fetches — and it
+        * deliberately does NOT register on the dismiss stack, because one entry there
+        * silences `g` and `f`, which are most of what it exists to teach. */}
+      <TourHost />
     </div>
   );
 }

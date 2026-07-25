@@ -527,6 +527,12 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &MenuItem::with_id(app, "go-ws-distribution", "DISTRIBUTION", true, Some("CmdOrCtrl+5"))?,
             &MenuItem::with_id(app, "go-ws-governance", "GOVERNANCE", true, Some("CmdOrCtrl+6"))?,
             &PredefinedMenuItem::separator(app)?,
+            // Not a workspace — the sandbox (Phase 8). Below a separator because it
+            // is a different KIND of place, and on ⌘7 because the web grammar's
+            // `g 7` has to mirror it: destinations.ts is the one table both read,
+            // and destinations.test.ts fails if this line and that row disagree.
+            &MenuItem::with_id(app, "go-practice", "PRACTICE RANGE", true, Some("CmdOrCtrl+7"))?,
+            &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "go-back", "Back", true, Some("CmdOrCtrl+["))?,
             &MenuItem::with_id(app, "go-forward", "Forward", true, Some("CmdOrCtrl+]"))?,
         ],

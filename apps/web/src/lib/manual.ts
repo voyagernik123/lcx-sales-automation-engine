@@ -207,9 +207,10 @@ function everywhereSection(ctx: ManualContext): ManualSection {
     // WHAT WAS NOT TRUE. This read "Tag EVERY control in view", which is a universal
     // claim on the one surface whose entire job is telling operators the truth about
     // keys, and it fails in three measured ways:
-    //  - `f` refuses to arm while an overlay is on the dismiss stack (useHints.ts:61) as
-    //    well as while you are typing. The old note listed only the typing case, under a
-    //    heading called "Everywhere".
+    //  - `f` refused to arm while ANY overlay was on the dismiss stack, as well as while
+    //    you are typing, and the old note listed only the typing case — under a heading
+    //    called "Everywhere". (Past tense as of the scope work below: that refusal is now
+    //    a scope, and only the cases it cannot resolve still refuse.)
     //  - the selector reaches controls, not click SURFACES. A chart that decodes where
     //    inside it you clicked (`src/pages/WinLoss.tsx:82 columnIndexFromClick` reads
     //    `e.clientX`; `src/components/kpi/FunnelSection.tsx:24` reads `e.target`) cannot
@@ -219,10 +220,28 @@ function everywhereSection(ctx: ManualContext): ManualSection {
     //    control scrolled out of a short `max-h-*` scroller can still be tagged. See the
     //    limits note on `isHintable` in `src/lib/hints.ts`.
     // "The controls in view" is what the code delivers, so it is what the line says.
+    //
+    // AND THE NOTE HAS NOW MOVED AGAIN, because the behaviour it described was fixed. The
+    // first bullet above was narrowed this morning to "not while you are typing or while a
+    // dialog is open"; `f` now DOES arm inside a dialog that confines Tab, and tags only
+    // that dialog's own controls (useHints.ts + `resolveHintScope` in lib/hints.ts). A note
+    // that still said "or while a dialog is open" would send an operator to Tab through 24
+    // fields on the partner dossier rather than press two keys — the precise cost this
+    // change exists to remove, re-imposed by a stale sentence on the surface that is
+    // supposed to be the one place they can trust.
+    //
+    // "MOST dialogs" rather than "a dialog", and rather than a list of the exceptions.
+    // Three cases still refuse — the top overlay does not confine Tab, two overlays are
+    // open at once, or the overlay paints above the layer (which is this manual itself) —
+    // and all three are one-way: the layer draws nothing rather than drawing the wrong
+    // thing. Spelling them out would be a paragraph inside a keys table, and it would be a
+    // paragraph the operator reads at the wrong moment. The layer says which one applies
+    // AT the moment it applies, in its own status line ("no tag scope for what is open"),
+    // so the manual states the capability and the surface states the exception.
     {
       keys: [HINT_KEY],
       what: 'Tag the controls in view — type a tag to activate one',
-      note: 'works on every screen; not while you are typing or while a dialog is open',
+      note: 'works on every screen, and inside most dialogs; not while you are typing',
     },
     // Qualified deliberately, and RE-qualified once. The P7 audit measured exactly one
     // consumer of `useListNavigation` (the BD lead table), so this line named only that

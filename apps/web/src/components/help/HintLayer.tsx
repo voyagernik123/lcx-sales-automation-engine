@@ -5,7 +5,7 @@ import { Suspense, lazy } from 'react';
  *
  * Identical in shape to `ManualHost`, and it exists for a sharper reason: the body
  * pulls in the whole target-discovery module and one rendered node per control on
- * screen, and the bundle has 11KB of headroom (measured — see `useHints.ts`). Nothing
+ * screen, and the bundle has 8KB of headroom (measured — see `useHints.ts`). Nothing
  * here is fetched, parsed or
  * rendered until the operator actually presses `f`.
  *

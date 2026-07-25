@@ -224,9 +224,13 @@ test.describe('the hint layer', () => {
      *
      *  - `?` is an off-alphabet character, so the layer swallows it and closes. The
      *    manual therefore opens with hint mode already gone.
-     *  - `f` will not arm while `isOverlayOpen()`, so hint mode can never be stacked
-     *    UNDER anything either — it is always alone on the stack, and the manual's report
-     *    is about what sits beneath the manual.
+     *  - hint mode is never stacked UNDER anything, so the manual's report — which is about
+     *    what sits BENEATH the manual — could not name it even in principle. Note this
+     *    reason changed and the old wording is kept as a warning: it used to be "`f` will
+     *    not arm while `isOverlayOpen()`", which was true until the hint layer was scoped to
+     *    the topmost dismiss container and started arming inside overlays. The conclusion
+     *    survived the premise, which is exactly the kind of stale comment that outlives its
+     *    fact — see the same mistake in the quickstart's "warning toast every launch".
      *
      * So the manual documents the KEY, which is what an operator needs, and the stack
      * registration earns its place by owning Escape rather than by being reportable.
@@ -253,7 +257,12 @@ test.describe('the hint layer', () => {
     // recorded at the entry in src/lib/manual.ts.
     await expect(manual.getByText(/Tag the controls in view/i)).toBeVisible();
     // And the second limit is stated, not just the typing one.
-    await expect(manual.getByText(/while a dialog is open/i)).toBeVisible();
+    // The note the manual actually carries now. It changed when `f` gained the ability to
+    // arm inside an overlay (scoped to the topmost dismiss container), so the old
+    // "not while a dialog is open" is no longer true and asserting it here would pin a
+    // sentence the app has correctly stopped saying.
+    await expect(manual.getByText(/inside most dialogs/i)).toBeVisible();
+    await expect(manual.getByText(/not while you are typing/i)).toBeVisible();
   });
 
   test('the chip height constant matches the chip that actually renders', async ({ page }) => {

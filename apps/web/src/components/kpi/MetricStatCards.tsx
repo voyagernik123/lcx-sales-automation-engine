@@ -1,4 +1,5 @@
 import { StatCard } from '@/components/charts';
+import { CountUp } from '@/components/ui/CountUp';
 import { Derived } from '@/components/lineage';
 import type { KpiDashboard } from '@/types/kpi';
 import { REVENUE_STREAM_LABELS } from '@/types/kpi';
@@ -46,14 +47,31 @@ export function MetricStatCards({ kpis, snapshots, deltaLabel }: MetricStatCards
     <div className="grid grid-cols-2 items-stretch gap-4 xl:grid-cols-4">
       <StatCard
         label="New high-score leads (7d)"
-        value={String(kpis.newHighScoreLeadsThisWeek)}
+        // T1 #18. These two tiles are counts that CHANGE UNDER THE OPERATOR without a
+        // remount, so a snap here is genuinely lossy: 12 becoming 47 between two frames is
+        // indistinguishable from 47 having always been there.
+        //
+        // WHICH CHANGE, PRECISELY — the first version of this comment credited the range
+        // selector, and that was wrong. `fetchKpis()` in KpiDashboard takes no range
+        // argument; `range` feeds only `windowSnapshots` (the sparklines) and `deltaLabel`,
+        // so moving it leaves both numbers below untouched and the no-op guard in `CountUp`
+        // correctly does nothing. The paths that DO move them in place are the auto-refresh
+        // poll (30s, `load({ silent: true })`) and the manual Refresh button — neither
+        // unmounts these tiles, because the loading skeleton is gated on `loading && !kpis`
+        // and `kpis` is already populated by then.
+        //
+        // The other two tiles in this row are deliberately left alone: both are wrapped in
+        // `<Derived>`, whose dotted underline is a click target for the lineage popover,
+        // and rolling a number the operator is about to click on is motion in the way of an
+        // action.
+        value={<CountUp value={kpis.newHighScoreLeadsThisWeek} />}
         delta={leads.delta}
         deltaLabel={leads.delta !== undefined ? deltaLabel : undefined}
         trend={leads.trend}
       />
       <StatCard
         label="Deals won"
-        value={String(kpis.funnel.won)}
+        value={<CountUp value={kpis.funnel.won} />}
         delta={won.delta}
         deltaLabel={won.delta !== undefined ? deltaLabel : undefined}
         trend={won.trend}

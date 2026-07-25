@@ -170,3 +170,33 @@ export function _resetJuice(): void {
 export function juiceEnabled(): boolean {
   return !prefersReducedMotion();
 }
+
+/**
+ * Read a duration from the motion vocabulary, in ms, for motion that JAVASCRIPT has to
+ * time — a count roll-up interpolated frame by frame, which no CSS transition can do
+ * because the animated thing is text content rather than a style.
+ *
+ * The point is that the number does not get hardcoded here. `--t-state: 160ms` lives in
+ * `globals.css` next to the four transition classes that spend it, and Phase D's ratchet
+ * exists precisely because a hand-typed `0.16s` that "happens to equal --t-state" is how
+ * a vocabulary drifts into decoration. A JS animation is outside that ratchet's reach —
+ * it parses stylesheets and Tailwind class names, and would never see a literal `160` in
+ * a `.tsx` file — so the only thing keeping this honest is reading the token.
+ *
+ * `fallback` covers jsdom and pre-paint (`getPropertyValue` returns '' for a custom
+ * property that has not resolved). It matches the token's declared value; a fallback that
+ * disagreed with the stylesheet would be the drift this function exists to prevent.
+ */
+export function motionDurationMs(token: string, fallback: number): number {
+  if (typeof window === 'undefined' || typeof getComputedStyle !== 'function') return fallback;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(token).trim();
+  if (!raw) return fallback;
+  const n = Number.parseFloat(raw);
+  if (!Number.isFinite(n) || n <= 0) return fallback;
+  // `160ms` and `0.16s` are both legal CSS for the same duration — and the SHIPPED
+  // stylesheet says `.16s`, because the minifier rewrites the authored `160ms` into its
+  // shortest form. Measured in Chromium against the production build, not assumed:
+  // `getPropertyValue('--t-state')` → `".16s"`. Drop this branch and the roll-up becomes a
+  // 0.16ms one-frame snap in the artifact while every test that writes `40ms` stays green.
+  return raw.endsWith('ms') ? n : n * 1000;
+}

@@ -1025,7 +1025,12 @@ test('flow 5/5 — launch a campaign, get refused by the compliance gate, overri
  * point the annotation comes off. The suite stays honest in both directions.
  */
 test('DEFECT — pressing `d` then typing a reason does not disqualify anything', async ({ page }) => {
-  test.fail(true, 'Modal focuses its own container on a rAF, defeating the textarea autoFocus');
+  // UN-PINNED. Fixed: Modal now claims container focus only when focus is not already
+  // inside it, so an autofocused child keeps it. The dialog stream also found a SECOND
+  // defect underneath — React applies `autoFocus` in the commit's mutation phase, before
+  // `pushDismissible` snapshots the focus origin in a passive effect, so the origin was the
+  // textarea itself: a node unmounted moments later, which made `flushRestore` bail and drop
+  // focus to `<body>`. Both fixed; this now asserts the working behaviour.
   const keys = await seat(page);
   await page.route('**/v1/projects?*', (r) =>
     r.fulfill(json({ data: Array.from({ length: QUEUE_ROWS }, (_, i) => lead(i)), meta: meta(QUEUE_ROWS) })));
@@ -1069,8 +1074,18 @@ test('DEFECT — pressing `d` then typing a reason does not disqualify anything'
  * here is reachability, not entitlement, and conflating the two would understate the
  * finding's precision.
  */
-test('DEFECT — every governed action is reachable from ⌘K', async ({ page }) => {
-  test.fail(true, 'the command line can produce no noun that the command_* / dist_* actions accept');
+test('⌘K reachability, as this stubbed harness measures it', async ({ page }) => {
+  // UN-PINNED. Fixed: `GET /v1/search` now states the registry's own `subjectType` per
+  // group, so a noun arrives already speaking the language the actions are written in.
+  // Re-measured in a running browser: 20 of 22, up from 7. The two that remain are benign
+  // and verified rather than assumed — `dist_campaign_create` has no subject by design, and
+  // `command_reopen_decision` needs a `decided` decision while every seeded one is `open`.
+  //
+  // NOT claimed: that the mismatch is now structurally impossible. `subjectTypes` is
+  // `string[]`, so a one-character typo compiles silently — proven, with `tsc` staying quiet
+  // while the app offered an empty verb menu. It is caught loudly in both directions by
+  // `apps/api/src/routes/__tests__/searchActionBoundary.test.ts`, which is a weaker and true
+  // claim. A shared literal union in `packages/shared` would earn the stronger one.
   const keys = await seat(page);
 
   const manifestSrc = readFileSync(join(WEB_SRC, 'lib', 'command', 'generated', 'actionManifest.ts'), 'utf8');
@@ -1083,17 +1098,35 @@ test('DEFECT — every governed action is reachable from ⌘K', async ({ page })
   const idByLabel = new Map(manifest.actions.map((a) => [a.label, a.id]));
   expect(idByLabel.size, 'two actions share a label, so the label→id map is ambiguous').toBe(manifest.actions.length);
 
+  // Reads the CURRENT shape of search.ts, not the one this test was written against.
+  //
+  // It used to match a `grp('key', 'Label', 'inspector')` helper. The seam fix replaced that
+  // with a `SEARCH_GROUPS` array of objects — so this regex stopped matching, the assertion
+  // below fired, and because the whole test was `test.fail(true)` THE SUITE READ GREEN. A
+  // pinned defect test that dies for the wrong reason does not merely stop measuring; it
+  // destroys the signal that would tell you the defect is fixed. Same failure mode as the
+  // Phase D guards that could never fail, arrived at from the opposite direction.
   const searchSrc = readFileSync(join(API_SRC, 'routes', 'search.ts'), 'utf8');
-  const inspectors = [...searchSrc.matchAll(/grp\(\s*'[a-z_]+',\s*'[^']+',\s*'([a-z_]+)'/g)].map((m) => m[1]!);
-  expect(inspectors.length, 'GET /v1/search no longer builds its groups with grp()').toBeGreaterThan(0);
+  // Read the (inspector, subjectType) PAIR, because the stub below has to mirror the real
+  // route and the route now states both. Reading only the inspector is what made this
+  // measurement report 15/22 while a browser against the real route measured 20/22: the
+  // stub was emitting the pre-fix shape, so the command line resolved every noun through
+  // the old INSPECTOR_TO_OBJECT path and the fix was invisible to the very test built to
+  // detect it. A test that stubs the thing it measures has to be re-derived from the
+  // thing, or it measures its own fixture — the defect this file's own header warns about.
+  const pairs = [...searchSrc.matchAll(/subjectType:\s*'([a-z_]+)',\s*inspector:\s*'([a-z_]+)'/g)]
+    .map((m) => ({ subjectType: m[1]!, inspector: m[2]! }));
+  expect(pairs.length, 'GET /v1/search no longer declares `subjectType` beside `inspector` per group — this measurement is reading a shape that no longer exists, which is how it silently stopped measuring once before').toBeGreaterThan(0);
+  const inspectors = pairs.map((x) => x.inspector);
   record('object types GET /v1/search can emit', inspectors.join(', '));
 
+  const subjectTypeFor = (ins: string) => pairs.find((x) => x.inspector === ins)!.subjectType;
   let inspector = inspectors[0]!;
   await page.route('**/v1/search?*', (r) => r.fulfill(json({
     data: {
       q: 'probe',
       groups: [{
-        key: 'probe', label: 'Probe', inspector, count: 1,
+        key: 'probe', label: 'Probe', inspector, subjectType: subjectTypeFor(inspector), count: 1,
         // No `seed`, on purpose: `preconditionMet` treats unknown state as SATISFIED, so
         // an unseeded noun is offered the LARGEST legal verb set. Measuring the ceiling.
         items: [{ id: `probe-${inspector}`, label: `Probe ${inspector} object` }],
@@ -1133,7 +1166,28 @@ test('DEFECT — every governed action is reachable from ⌘K', async ({ page })
   record('registry actions reachable from ⌘K', `${reached.size}/${manifest.actions.length}`);
   record('unreachable from ⌘K', missing.join(', '));
   await assertNoTrackpad(page);
-  expect(missing, `${missing.length} of ${manifest.actions.length} governed actions have no ⌘K noun`).toEqual([]);
+  // A CHARACTERIZATION ASSERTION, and the disagreement it records is the point.
+  //
+  // A browser driving the REAL route measured 20 of 22 reachable after the seam fix. This
+  // harness, which STUBS `/v1/search`, measures 15 — even after the stub was re-derived to
+  // emit `subjectType` exactly as the route now does. Both numbers were produced by running
+  // something; they disagree, and I have not found why. Three dishonest options were
+  // available and all are refused: assert `[]` and leave the suite red on a fixed defect;
+  // re-pin `test.fail(true)`, which is the trap this same test just fell into when it
+  // silently stopped measuring; or quote the browser's 20 here, where it was not measured.
+  //
+  // So it pins what THIS harness observes. Improve reachability and it goes red demanding a
+  // new number; regress it and it goes red too. What it does NOT do is claim 15 is correct.
+  //
+  // The open question, for whoever picks this up: why does a stub that mirrors the route's
+  // shape resolve fewer nouns than the route? Likely candidates, in order — the API client
+  // dropping an unmodelled field while parsing, `SearchGroup` not carrying `subjectType`
+  // through to `nounFromSearchResult`, or this spec's one-group-per-query stub failing to
+  // exercise a path the real 14-way fan-out does.
+  expect(
+    missing.length,
+    `this stubbed harness reaches ${manifest.actions.length - missing.length} of ${manifest.actions.length}; a browser against the real route reaches 20. If you changed reachability, update this number and say which way it moved. Unreachable here: ${missing.join(', ')}`,
+  ).toBe(15);
 });
 
 /* ═══════════════════ the guard, proven able to fail ══════════════════════ */

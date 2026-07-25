@@ -1,3 +1,4 @@
+import { isOverlayOpen } from '@/lib/dismiss';
 import { HINT_KEY } from '@/hooks/useHints';
 import { MANUAL_KEY } from '@/hooks/useManual';
 
@@ -137,6 +138,133 @@ export const HINT_SELECTOR = [
   '[contenteditable="true"]',
   '[tabindex]:not([tabindex^="-"])',
 ].join(',');
+
+/* ── Scope ───────────────────────────────────────────────────────────────────
+ * WHERE THE LAYER IS ALLOWED TO LOOK, added because the answer used to be "nowhere, if
+ * anything is open" and that cost the feature its most valuable surface.
+ *
+ * `useHints` used to refuse `f` outright while `isOverlayOpen()`, justified by "two
+ * overlays' worth of controls is 2-3 Tab stops". MEASURED on the partner dossier: 24 Tab
+ * stops, and e2e/keyboardday.spec.ts flow 3 attributes the worst keyboard cost of the five
+ * flows to exactly that drawer. So the mechanism built to make the platform
+ * keyboard-reachable was blind on the surface that needed it most.
+ *
+ * The stand-down was still protecting something real, and it is NOT the keystroke hazard.
+ * That one — a fumbled tag character reaching `d` disqualify / `s` snooze on the page
+ * behind — is now held by `HintTags`'s CAPTURE-phase listener plus `stopPropagation()`,
+ * which is a strictly stronger guarantee than going quiet and is asserted for the overlay
+ * case in `components/help/__tests__/hintTags.test.tsx`. What the stand-down also
+ * prevented is a chip drawn on a control BEHIND the backdrop: Tab is trapped away from it,
+ * so a tag that activates it acts on a surface the operator cannot see and did not choose.
+ *
+ * So the fix is a scope rather than a veto, and it is deliberately CONSERVATIVE in both
+ * directions — every branch that cannot answer "which overlay is the operator looking at?"
+ * with certainty returns `unscoped`, which draws nothing and behaves exactly as the old
+ * stand-down did. This can make the feature absent; it cannot make it wrong.
+ */
+
+/**
+ * The layer's own stacking level, pinned to the class on the chip container in
+ * `HintTags.tsx` by `lib/__tests__/hintScope.test.ts` — Tailwind needs the literal in the
+ * source, so the constant and the class can drift and the number is load-bearing below.
+ */
+export const HINT_LAYER_Z = 110;
+
+/**
+ * How an overlay announces itself. Not invented here: this is the same declaration
+ * `lib/__tests__/dismissRegistration.test.ts` already ratchets the whole app against
+ * ("every overlay is on the one Escape stack" recognises an overlay by exactly these three
+ * attributes), so scoping to it borrows an invariant that is already enforced rather than
+ * adding a second, weaker one.
+ */
+export const HINT_OVERLAY_SELECTOR = '[role="dialog"],[role="alertdialog"],[aria-modal="true"]';
+
+export type HintScopeKind = 'page' | 'overlay' | 'unscoped';
+
+export interface HintScope {
+  readonly kind: HintScopeKind;
+  /** What to query. `null` means draw nothing. */
+  readonly root: ParentNode | null;
+}
+
+/** `visibility`/`opacity`/`display` — the three ways a node keeps its rect and stops existing. */
+function isDisplayed(el: Element): boolean {
+  const check = (el as Element & { checkVisibility?: (o?: unknown) => boolean }).checkVisibility;
+  if (typeof check !== 'function') return true;
+  return check.call(el, { visibilityProperty: true, opacityProperty: true, contentVisibilityAuto: true });
+}
+
+/**
+ * Would this element, or anything it sits inside, paint at or above the hint layer?
+ *
+ * Read off the Tailwind class rather than out of `getComputedStyle`, and that is a
+ * deliberate choice with a real cost. The class is where this app states its stacking —
+ * `z-40` on the dossier, `z-[120]` on the manual — and a class is legible in jsdom, where
+ * no stylesheet is loaded and every computed `z-index` is `auto`. A computed-style version
+ * of this function would be a decoration in every unit test that "covers" it.
+ *
+ * What it therefore does NOT catch: a z-index applied from a stylesheet or an inline
+ * style. That direction of error is unsafe (it would let the layer scope to an overlay it
+ * paints under, and draw chips nobody can see), so `hintScope.test.ts` also enumerates the
+ * app's trapping overlays and fails if any of them stops expressing its level as a class.
+ */
+function paintsAtOrAbove(el: Element, level: number): boolean {
+  for (let node: Element | null = el; node; node = node.parentElement) {
+    for (const cls of Array.from(node.classList)) {
+      const m = /^z-(?:\[(\d+)\]|(\d+))$/.exec(cls);
+      if (m && Number(m[1] ?? m[2]) >= level) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Which subtree `f` may tag right now.
+ *
+ * `page` — nothing is open, so the whole document, exactly as before.
+ *
+ * `overlay` — one overlay is on screen and the layer can paint over it, so its root and
+ * nothing else. The controls behind the backdrop are unreachable by Tab and must stay
+ * untagged; the backdrop itself is outside the root, which is what keeps a chip off the
+ * one element whose job is to dismiss what the operator is reading.
+ *
+ * `unscoped` — draw nothing. Three cases reach it, and all three are the old behaviour:
+ *   · NO CANDIDATE. Something is on the dismiss stack without declaring overlay ARIA
+ *     (`SessionMode`'s letter-key surface, a tooltip). Nothing to scope to.
+ *   · MORE THAN ONE. A modal over a drawer. Document order is not paint order and this
+ *     module has no honest way to rank them — `lib/dismiss.ts` knows, because its stack IS
+ *     the ranking, but it exposes `topTraps()` as a boolean rather than the container. The
+ *     exact version of this function is three lines long and needs a `topContainer()`
+ *     export from that module; until then, ambiguity refuses.
+ *   · THE LAYER PAINTS UNDERNEATH IT. The manual is `z-[120]` and the chips are
+ *     `z-[110]`, so tagging the manual would draw a full status pill and zero visible
+ *     chips — a feature that looks broken rather than absent. `f` and `?` are mutually
+ *     exclusive by design already (rung 5 below closes hint mode on `?`); this is the
+ *     same exclusion pointed the other way.
+ */
+export function resolveHintScope(doc: ParentNode = document): HintScope {
+  if (!isOverlayOpen()) return { kind: 'page', root: doc };
+
+  const candidates = Array.from(doc.querySelectorAll(HINT_OVERLAY_SELECTOR)).filter(isDisplayed);
+  if (candidates.length !== 1) return { kind: 'unscoped', root: null };
+
+  const root = candidates[0]!;
+  if (paintsAtOrAbove(root, HINT_LAYER_Z)) return { kind: 'unscoped', root: null };
+  return { kind: 'overlay', root };
+}
+
+/**
+ * The snapshot the layer renders: what to tag, and which of the three answers above
+ * produced it, so the status line can say "nothing here" and "I cannot tell where you
+ * are" in different words.
+ */
+export function hintSnapshot(
+  viewport: Viewport = { width: window.innerWidth, height: window.innerHeight },
+): { kind: HintScopeKind; targets: HintTarget[] } {
+  const scope = resolveHintScope();
+  if (!scope.root) return { kind: scope.kind, targets: [] };
+  return { kind: scope.kind, targets: collectTargets(scope.root, viewport) };
+}
 
 /**
  * Chip height in CSS pixels, including its 1px border.

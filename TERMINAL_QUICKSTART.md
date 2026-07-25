@@ -128,9 +128,13 @@ Motion follows your macOS **Reduce Motion** setting automatically — you do not
 tell the app twice.
 
 **Settings → Your keyboard.** What you still do with the mouse, and the key that would
-be faster. It appears once there is something to show. The app will also mention a
+be faster — plus anything you had picked up and have gone back to the mouse on, and
+anything you own but have not used in a long time. At most three, worst first. It
+appears once there is something to show, and only when you open it: nothing here
+notifies you, and no number goes down while you are away. The app will also mention a
 faster key in passing, at most a few times, and then stop — if you keep using the
-mouse, that is an answer.
+mouse, that is an answer. Dismissing one of those stops the interruption for good; it
+does not hide the key from this page if you come looking for it.
 
 ## 7. Print the card
 
@@ -151,7 +155,11 @@ does not match the app, the card is from an older build.
   stale information. Nothing you typed is lost.
 - **A panel is stuck** — press **`?`**. The Escape section lists exactly what is open,
   in the order presses will close it. If something is on screen and *not* in that list,
-  that is a bug worth reporting, and naming the panel is enough.
+  that is a bug worth reporting, and naming the panel is enough. The one exception is
+  the **First run** card in the bottom-left corner on your very first sign-in: it owns
+  no keys on purpose, so that the `g` chords and `f` keep working while it walks you
+  through them. Escape does not reach it and it is not in the Escape list. Dismiss it
+  with the **Skip** button on the card, which is one **Tab** away.
 - **The app will not open after an update** — the previous version is still in
   Applications' Trash-safe location; ask Nik. Update failures are the one area where the
   shell is not yet self-diagnosing.

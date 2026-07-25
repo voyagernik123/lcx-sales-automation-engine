@@ -75,20 +75,38 @@ describe('f arms hint mode', () => {
     expect(state(r)).toBe('idle');
   });
 
-  it('stands down while an overlay owns the keyboard', () => {
-    // `f` is a MOTION, like `g`, and a motion inside a dialog would tag the page behind
-    // the backdrop — where Tab is trapped away from those controls and activating one
-    // acts on a surface the operator cannot see. Contrast `?`, which deliberately does
-    // NOT stand down; see useManual.ts.
+  it('stands down while a NON-trapping overlay owns the keyboard', () => {
+    // A tooltip, a lineage popover, the command line: on the stack, but Tab is not
+    // confined, so "the controls the operator can reach" is not a subtree and there is
+    // nothing honest to scope a tag layer to. Contrast `?`, which deliberately does NOT
+    // stand down at all; see useManual.ts.
     const r = render(<Probe />);
-    pushDismissible('confirm dialog', () => {});
+    pushDismissible('snooze menu', () => {});
     fireEvent.keyDown(document, { key: HINT_KEY });
     expect(state(r)).toBe('idle');
   });
 
-  it('arms again once the overlay has gone', () => {
+  it('arms inside an overlay that confines Tab, which is the whole point of this change', () => {
+    /*
+     * This assertion is the reversal. `f` used to refuse whenever ANYTHING was on the
+     * stack, justified in useHints.ts by "two overlays' worth of controls is 2-3 Tab
+     * stops" — and e2e/keyboardday.spec.ts then measured 24 stops on the partner dossier
+     * and named that drawer the biggest contributor to a 52-press flow. A trapping entry
+     * is one whose extent is well defined, so the layer can scope to it instead of going
+     * blind; where the scope cannot be resolved the LAYER refuses (see
+     * `resolveHintScope`), which keeps that decision in one place.
+     */
     const r = render(<Probe />);
-    pushDismissible('confirm dialog', () => {});
+    const panel = document.createElement('div');
+    document.body.appendChild(panel);
+    pushDismissible('partner dossier', () => {}, () => panel);
+    fireEvent.keyDown(document, { key: HINT_KEY });
+    expect(state(r)).toBe('armed');
+  });
+
+  it('arms again once a non-trapping overlay has gone', () => {
+    const r = render(<Probe />);
+    pushDismissible('snooze menu', () => {});
     fireEvent.keyDown(document, { key: HINT_KEY });
     expect(state(r)).toBe('idle');
     _resetDismiss();
@@ -110,6 +128,37 @@ describe('f arms hint mode', () => {
     pushDismissible('hint tags', () => {});
     fireEvent.keyDown(document, { key: HINT_KEY });
     expect(state(r)).toBe('armed');
+  });
+
+  /**
+   * The stand-down itself, asserted rather than inferred from the `on` flag.
+   *
+   * `on` staying true proves nothing: it is already true. What has to hold is that this
+   * eager listener does not CLAIM the second `f`, because the layer's own capture-phase
+   * handler is what turns it into a cancel. `preventDefault` is the observable, and the
+   * configuration that matters is the new one — hint mode armed INSIDE a trapping overlay,
+   * where the stack is [dossier, hint tags] and the top entry is the container-less one.
+   */
+  const pressF = () => {
+    const e = new KeyboardEvent('keydown', { key: HINT_KEY, cancelable: true, bubbles: true });
+    document.dispatchEvent(e);
+    return e.defaultPrevented;
+  };
+
+  it('hands the second f to the layer, on the page and inside a trapping overlay alike', () => {
+    render(<Probe />);
+    expect(pressF(), 'the first press must be claimed, or nothing opens the lazy chunk').toBe(true);
+
+    pushDismissible('hint tags', () => {});
+    expect(pressF(), 'the eager listener claimed the cancel key from the layer').toBe(false);
+
+    _resetDismiss();
+    const panel = document.createElement('div');
+    document.body.appendChild(panel);
+    pushDismissible('partner dossier', () => {}, () => panel);
+    expect(pressF(), 'arming inside a trapping overlay').toBe(true);
+    pushDismissible('hint tags', () => {});
+    expect(pressF(), 'hint mode over a dossier: the cancel must still reach the layer').toBe(false);
   });
 
   it('leaves every other key alone', () => {

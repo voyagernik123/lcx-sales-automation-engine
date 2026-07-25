@@ -64,6 +64,33 @@ export async function takeSeat(page: Page): Promise<void> {
     // spec fails on the sign-in gate with no clue why.
     localStorage.setItem(key, JSON.stringify({ state: { operator: seat.operator }, version: 3 }));
   }, SEAT);
+
+  // ENFORCE "no API" INSTEAD OF ASSUMING IT.
+  //
+  // This file's whole premise, stated above, is that the suite works with the API down —
+  // because CI has no database. It turns out the suite did not merely tolerate an absent
+  // API, it REQUIRED one, and that is a much more fragile thing to depend on.
+  //
+  // Measured: with a real API reachable on the dev proxy, 56 of 73 specs failed. The seeded
+  // passcode above is deliberately fake, so a LIVE server 401s it — and `apiClient` calls
+  // `forceFrontDoor()` on the first authenticated 401 (correctly; that is the Phase A fix for
+  // a passcode rotation). forceFrontDoor clears the credential and the operator store, so the
+  // seat this function just planted is torn out and every spec lands on the sign-in gate,
+  // failing at its first assertion with no hint that the cause is a process on another port.
+  //
+  // Three separate agents hit this independently and each spent time suspecting their own
+  // change. The failure is loudest for whoever is least likely to guess it: someone running
+  // the suite locally while the API happens to be up.
+  //
+  // So: abort every API request with `connectionrefused`, which is exactly what CI's absent
+  // API produces. The suite now behaves identically whether or not a server is listening, and
+  // the premise is a property of the harness rather than a property of the machine.
+  //
+  // Registered here, FIRST, on purpose. Playwright gives later handlers priority, so a spec
+  // that wants real fixture data — `populated.spec.ts` intercepting `**/v1/projects?*`, or
+  // `keyboardday.spec.ts` asserting on outbound governed writes — registers after `takeSeat`
+  // and still wins. This is the floor, not a ceiling.
+  await page.route('**/v1/**', (route) => route.abort('connectionrefused'));
 }
 
 /**

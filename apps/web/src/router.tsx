@@ -71,6 +71,10 @@ const CommandDeck = lazy(() => import('@/pages/CommandDeck').then((m) => ({ defa
 const CommandPartners = lazy(() => import('@/pages/CommandPartners').then((m) => ({ default: m.CommandPartners })));
 const CommandOps = lazy(() => import('@/pages/CommandOps').then((m) => ({ default: m.CommandOps })));
 const CheatCard = lazy(() => import('@/pages/CheatCard').then((m) => ({ default: m.CheatCard })));
+// The sandbox (Phase 8, T1 #20). Lazy like every other page, and it matters more
+// here than most: this chunk is the only eager-bundle risk in the feature, since it
+// is what pulls in the generated 22-action manifest.
+const PracticeRange = lazy(() => import('@/pages/PracticeRange').then((m) => ({ default: m.PracticeRange })));
 
 /**
  * The layer above the sign-in gate.
@@ -209,6 +213,7 @@ export const router = createBrowserRouter([
           { path: 'command-partners', element: <CommandPartners /> },
           { path: 'command-ops', element: <CommandOps /> },
           { path: 'cheat-card', element: <CheatCard /> },
+          { path: 'practice', element: <PracticeRange /> },
         ],
       },
     ],

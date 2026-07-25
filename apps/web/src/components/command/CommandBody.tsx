@@ -18,11 +18,11 @@ import { clsx } from 'clsx';
 import { states, products, redFlags } from '@/data';
 import { fetchObjectSearch } from '@/lib/api/graph';
 import { useInspectorStore, type InspectorEntityType } from '@/stores/useInspectorStore';
-import { OBJECT_TYPES, INSPECTOR_TO_OBJECT } from '@/lib/objectRegistry';
+import { searchTypeLabel, type SearchGroup } from '@/lib/objectRegistry';
 import { useAccessStore } from '@/stores/useAccessStore';
 import { useOperatorStore } from '@/stores';
 import { VerbPanel } from './VerbPanel';
-import type { Noun, Principal } from './grammar';
+import { nounFromSearchResult, type Noun, type Principal } from './grammar';
 
 interface CommandItem {
   id: string;
@@ -30,10 +30,18 @@ interface CommandItem {
   sublabel: string;
   to: string;
   type: 'state' | 'product' | 'flag' | 'page' | 'object';
-  /** For type 'object': open this inspector instead of navigating. */
+  /**
+   * For type 'object': open this inspector instead of navigating. ABSENT for the
+   * objects that have no reader (program tasks, blockers, listings, members) —
+   * they are actionable only, and Shift-Enter must not pretend otherwise.
+   */
   inspector?: InspectorEntityType;
   entityId?: string;
   seed?: Record<string, unknown>;
+  /** For type 'object': the noun the verb stage will act on. */
+  noun?: Noun;
+  /** For type 'object': the type chip. */
+  typeLabel?: string;
 }
 
 const PAGE_COMMANDS: CommandItem[] = [
@@ -94,10 +102,60 @@ const COMMAND_CODES: { code: string; to: string; label: string }[] = [
   { code: 'home', to: '/', label: 'Morning Brief' },
 ];
 
+export const OBJECT_ROWS = 10;
+
 /**
- * Debounced unified object search — every object type (projects, contacts,
- * deals, notes, news) over the 54k universe via /v1/search (Phase 1.4).
- * Results open the object's inspector in place rather than navigating away.
+ * Flatten search groups into rows: ONE from every group that matched, in group
+ * order, then the rest in group order until full.
+ *
+ * Not cosmetic. /v1/search now answers with up to fourteen groups, and a plain
+ * `for group { take 5 }` fill meant a query matching both a project and a
+ * program partner could spend all ten slots on projects — the partner, and
+ * therefore every partner verb, unreachable for that query. Taking one from each
+ * group first makes every match that exists visible, and keeping group order for
+ * the fill keeps the common navigational case (the top project first) intact.
+ *
+ * THE CAP IS APPLIED ON EVERY PATH, which it was not: the first pass takes one row
+ * per matched group with no bound, and fourteen groups CAN match — so on a query
+ * that matched eleven or more, the early return in the fill loop handed back the
+ * unbounded array and ⌘K rendered more object rows than the cap allows, pushing the
+ * page and state commands out of the list entirely. Exported for the test that
+ * pins it; this database cannot produce eleven simultaneous groups (market_news is
+ * empty and there is one note), which is exactly why it needed a unit test rather
+ * than a browser.
+ */
+export function flattenGroups(groups: SearchGroup[]): CommandItem[] {
+  const row = (g: SearchGroup, it: SearchGroup['items'][number]): CommandItem => ({
+    id: `obj-${g.key}-${it.id}`,
+    label: it.label,
+    sublabel: [searchTypeLabel(g), it.sublabel].filter(Boolean).join(' · '),
+    to: '',
+    type: 'object',
+    inspector: g.inspector,
+    entityId: it.id,
+    seed: it.seed,
+    noun: nounFromSearchResult(g, it) ?? undefined,
+    typeLabel: searchTypeLabel(g),
+  });
+
+  const rows: CommandItem[] = [];
+  for (const g of groups) {
+    if (g.items[0]) rows.push(row(g, g.items[0]));
+  }
+  for (const g of groups) {
+    for (const it of g.items.slice(1, 5)) {
+      if (rows.length >= OBJECT_ROWS) return rows.slice(0, OBJECT_ROWS);
+      rows.push(row(g, it));
+    }
+  }
+  return rows.slice(0, OBJECT_ROWS);
+}
+
+/**
+ * Debounced unified object search — every object type over /v1/search (Phase
+ * 1.4). Each result carries the REGISTRY's subject type, so the verb stage
+ * addresses it in the same language `invokeAction` validates against; results
+ * with an inspector can also be read in place with Shift.
  */
 function useObjectSearch(query: string, enabled: boolean): CommandItem[] {
   const [items, setItems] = useState<CommandItem[]>([]);
@@ -114,22 +172,12 @@ function useObjectSearch(query: string, enabled: boolean): CommandItem[] {
       try {
         const groups = await fetchObjectSearch(query, ctrl.signal);
         if (ctrl.signal.aborted) return;
-        const rows: CommandItem[] = [];
-        for (const g of groups) {
-          for (const it of g.items.slice(0, 5)) {
-            rows.push({
-              id: `obj-${g.inspector}-${it.id}`,
-              label: it.label,
-              sublabel: [OBJECT_TYPES[INSPECTOR_TO_OBJECT[g.inspector]].label, it.sublabel].filter(Boolean).join(' · '),
-              to: '',
-              type: 'object',
-              inspector: g.inspector,
-              entityId: it.id,
-              seed: it.seed,
-            });
-          }
-        }
-        setItems(rows.slice(0, 10));
+        // `RelatedGroup` (lib/api/graph.ts) declares `inspector` as always
+        // present because search-around's groups always have one. Search's do
+        // not — an actionable-only object has no drawer — so the shape is
+        // restated here. Widening RelatedGroup itself is the tidier fix and
+        // belongs to whoever owns that module.
+        setItems(flattenGroups(groups as unknown as SearchGroup[]));
       } catch {
         if (!ctrl.signal.aborted) setItems([]);
       }
@@ -238,22 +286,30 @@ export default function CommandBody({ open, onClose }: { open: boolean; onClose:
     // READING an object is a frequent, legitimate need and quietly removing it
     // would be a regression dressed up as a feature.
     if (item.type === 'object' && item.entityId) {
+      // Shift asks to READ. Only possible where an inspector exists: a program
+      // task or a launch blocker has no drawer, and silently doing something else
+      // on Shift would be worse than doing nothing, so it falls through to the
+      // verb stage — which is what the row is for.
       if (opts.read && item.inspector) {
         openInspector(item.inspector, item.entityId, item.seed);
         onClose();
         setQuery('');
         return;
       }
-      const objectType = item.inspector ? INSPECTOR_TO_OBJECT[item.inspector] : undefined;
-      setNoun({
-        // The registry addresses subjects by its own type names; the inspector
-        // registry uses its own. Mapping through objectRegistry keeps the command
-        // line addressing the same identifiers invokeAction validates against.
-        type: objectType ?? String(item.inspector ?? 'project'),
-        id: item.entityId,
-        label: item.label,
-        state: item.seed,
-      });
+      // The noun already speaks the registry's language: /v1/search stated the
+      // subject type on the group and nothing here translates it. When it could
+      // not be resolved at all (a pre-`subjectType` API with an inspector this
+      // build does not know) the row stays READABLE rather than becoming a dead
+      // click — offering an unaddressable verb stage would be the worse failure.
+      if (item.noun) {
+        setNoun(item.noun);
+        return;
+      }
+      if (item.inspector) {
+        openInspector(item.inspector, item.entityId, item.seed);
+        onClose();
+        setQuery('');
+      }
       return;
     }
     navigate(item.to);
@@ -334,8 +390,8 @@ export default function CommandBody({ open, onClose }: { open: boolean; onClose:
           )}
 
           {filtered.map((item, idx) => {
-            const typeLabel = item.type === 'object' && item.inspector
-              ? OBJECT_TYPES[INSPECTOR_TO_OBJECT[item.inspector]].label
+            const typeLabel = item.type === 'object'
+              ? item.typeLabel ?? 'Object'
               : { state: 'State', product: 'Asset', flag: 'Risk', page: 'Page', object: 'Object' }[item.type];
             const typeColor = {
               state: 'text-indigo-500',
@@ -356,7 +412,11 @@ export default function CommandBody({ open, onClose }: { open: boolean; onClose:
                     : 'hover:bg-ice-soft dark:hover:bg-ice-soft/10 text-navy'
                 )}
               >
-                <span className={clsx('text-[9px] font-bold uppercase w-12 shrink-0', typeColor)}>
+                {/* w-16, not w-12: the actionable-only object types have names
+                    ("Listing requirement", "Distribution surface") that a 3rem
+                    column breaks mid-word. Wrapping at the space is legible;
+                    truncating a type name is not. */}
+                <span className={clsx('text-[9px] font-bold uppercase w-16 shrink-0 leading-[1.15]', typeColor)}>
                   {typeLabel}
                 </span>
                 <div className="flex-1 min-w-0">

@@ -66,6 +66,48 @@ const EMPTY_SPLIT_COPY: Record<Exclude<SplitId, 'working'>, { title: string; des
   new: { title: 'No new high-scorers', description: 'No immediate/high-band leads added in the last 7 days.' },
 };
 
+/**
+ * Elements for which Enter or Space ALREADY MEANS SOMETHING.
+ *
+ * `isTypingTarget` draws this line for text entry; this is the same line for activation.
+ * A link, a button and a `<summary>` all treat Enter and/or Space as "activate me", and the
+ * browser performs that as the key's DEFAULT ACTION — so a page-level `preventDefault()`
+ * does not merely add a second behaviour, it CANCELS the control's only one.
+ *
+ * Listed as a selector rather than a tag-name check because half the class is ARIA: this
+ * app's own overlays are full of `role="button"` and `role="menuitem"` on non-button
+ * elements, and a check that only knew about `<button>` would be a guard with a hole in the
+ * exact shape of this codebase.
+ *
+ * `input`, `select` and `textarea` are here as well as in `isTypingTarget` on purpose:
+ * that predicate is about TEXT, so `input[type=checkbox]` and `input[type=submit]` are not
+ * typing targets but do own Space and Enter. Two predicates each covering what they name is
+ * better than one that quietly means both.
+ */
+const ACTIVATION_OWNER = [
+  'a[href]', 'area[href]', 'button', 'summary', 'input', 'select', 'textarea',
+  '[role="button"]', '[role="link"]', '[role="menuitem"]', '[role="menuitemcheckbox"]',
+  '[role="menuitemradio"]', '[role="tab"]', '[role="option"]', '[role="checkbox"]',
+  '[role="radio"]', '[role="switch"]',
+].join(', ');
+
+/**
+ * Does the focused element own the activation keys?
+ *
+ * Matches the TARGET only, never an ancestor, because focus lands ON a control rather than
+ * inside one — an element that owns Enter IS the focused element. I first justified `matches`
+ * over `closest` by claiming the latter would catch queue rows too; that was wrong and worth
+ * recording as wrong. Measured: a `tr[data-lead-id]` in this table returns false from BOTH,
+ * since nothing between it and the scroll container is a link or a button. The two are
+ * equivalent for every case on this page, and `matches` is the one that says what it means.
+ *
+ * A queue row is not in the class regardless: Enter on a row does open the lead, and the
+ * `defaultPrevented` guard is what stops this page opening it a second time.
+ */
+function ownsActivationKeys(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && target.matches(ACTIVATION_OWNER);
+}
+
 const enrichRow = (lead: BdLead): QueueLead => ({
   ...lead,
   hasContact: lead.verifiedContactCount > 0,
@@ -494,6 +536,29 @@ export function BdPipeline() {
        * listener that ignores the difference fires on keys that were already spent.
        */
       if (e.defaultPrevented) return;
+      /*
+       * AND ENTER/SPACE ARE NOT THIS PAGE'S WHEN FOCUS IS ON SOMETHING THAT OWNS THEM.
+       *
+       * `defaultPrevented` above catches a handler that ran; it cannot catch a control whose
+       * behaviour is the browser's DEFAULT, because the default has not happened yet when
+       * this listener runs. The skip link is exactly that case and it is the worst one: a
+       * plain `<a href="#main-content">`, the FIRST Tab stop in the app, whose only job is
+       * jumping the 24 chrome stops `AppLayout` counts. With a lead selected — which is the
+       * normal state of this page — `case 'Enter'` cancelled the fragment jump and navigated
+       * to a lead detail page instead. The operator's fast way in silently became a
+       * navigation they did not ask for, and the shell's one concession to keyboard users
+       * did nothing. `e2e/keyboardday.spec.ts:539` names it as a live hazard.
+       *
+       * Space is the same defect on the other key, and it was broader: every button in this
+       * page's own chrome — the Tracked/All toggle, "Start session", the CLARITY chip, the
+       * pagination — had its Space activation cancelled in favour of a peek.
+       *
+       * Scoped to these two keys only. `j`, `k`, `s`, `d`, `e` and `1`-`4` mean nothing to a
+       * button, so standing down for them would have made the whole triage grammar dead
+       * whenever focus sat on any control on the page — a much bigger regression than the
+       * bug, and the shape of fix this guard is deliberately narrower than.
+       */
+      if ((e.key === 'Enter' || e.key === ' ') && ownsActivationKeys(e.target)) return;
 
       if (/^[1-4]$/.test(e.key)) {
         e.preventDefault();

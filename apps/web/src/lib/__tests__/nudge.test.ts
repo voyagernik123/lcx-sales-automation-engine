@@ -137,6 +137,34 @@ describe('adoption', () => {
     expect(adoption()).toEqual([]);
     expect(isAdopted(CAP)).toBe(false);
   });
+
+  /**
+   * WHEN each route was last taken (added for the coach, T1 #21).
+   *
+   * Stamped here rather than at the call sites because the two places that produce this
+   * data — `components/layout/Sidebar.tsx` and `hooks/useGoGrammar.ts` — are owned by
+   * other streams in this run, and because `recordUse` already knew the moment and was
+   * throwing it away. The coach needs it to tell "went back to the mouse" apart from
+   * "has not needed that workspace lately", which is the difference between a useful
+   * observation and a lecture about something the operator did right.
+   */
+  it('stamps only the route that was actually taken', () => {
+    recordUse(CAP, 'pointer', T0);
+    expect(adoption()[0]).toMatchObject({ lastSlowAt: T0, lastFastAt: 0 });
+
+    recordUse(CAP, 'keyboard', T0 + 500);
+    // The pointer stamp must survive a later keyboard use, or "adopted, then went back
+    // to the mouse" becomes unrecoverable.
+    expect(adoption()[0]).toMatchObject({ lastSlowAt: T0, lastFastAt: T0 + 500 });
+  });
+
+  it('reports 0, not epoch 1970, for a route never taken', () => {
+    // 0 is the coach's "unknown", and it has to be distinguishable from a real stamp:
+    // a ledger written before this phase has no stamps at all, and reading those as 56
+    // years ago would mark every mastered capability forgotten on upgrade.
+    recordUse(CAP, 'keyboard', T0);
+    expect(adoption()[0]!.lastSlowAt).toBe(0);
+  });
 });
 
 describe('durability', () => {

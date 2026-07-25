@@ -33,8 +33,14 @@ import { storage } from './persistence';
 
 const KEY = 'teach:nudge';
 
-/** Two uses of the fast path is a habit; one could be a misfire. */
-const ADOPTED_AT = 2;
+/**
+ * Two uses of the fast path is a habit; one could be a misfire.
+ *
+ * Exported for `lib/coach.ts`, which has to agree with this engine about what
+ * adoption means. Two modules with two different thresholds would tell one operator
+ * two different stories about the same key, and that is how both stop being believed.
+ */
+export const ADOPTED_AT = 2;
 /** Three shown-and-ignored is an answer. */
 const GIVE_UP_AFTER = 3;
 /**
@@ -51,6 +57,23 @@ interface Record_ {
   fast: number;
   /** Nudges shown for it. */
   shown: number;
+  /**
+   * When the fast and slow paths were last taken, epoch ms — 0 or absent for "never,
+   * or before this was recorded".
+   *
+   * Added for the coach (T1 #21), and added HERE rather than at the call sites because
+   * the two call sites that produce this data — `components/layout/Sidebar.tsx` and
+   * `hooks/useGoGrammar.ts` — are owned by other streams in this run. `recordUse`
+   * already knows the capability, the route and the moment; the timestamp is the one
+   * thing it was throwing away.
+   *
+   * ABSENT IS NOT "LONG AGO". Every ledger written before this phase has no
+   * timestamps, and treating a missing stamp as epoch 0 would make every capability
+   * an operator had already mastered read as forgotten the moment they upgraded. The
+   * coach must therefore treat 0 as unknown; see `coach.ts`.
+   */
+  lastFastAt?: number;
+  lastSlowAt?: number;
 }
 
 type Ledger = Record<string, Record_ | undefined>;
@@ -86,7 +109,7 @@ export type Route = 'pointer' | 'keyboard';
  * `keyboard` covers the command line and the chords alike: the distinction that
  * matters to an operator is hand-on-mouse versus hands-on-keys, not which key.
  */
-export function recordUse(capability: string, via: Route): void {
+export function recordUse(capability: string, via: Route, now: number = Date.now()): void {
   const state = read();
   const current = rec(state.ledger, capability);
   write({
@@ -97,6 +120,8 @@ export function recordUse(capability: string, via: Route): void {
         ...current,
         slow: via === 'pointer' ? current.slow + 1 : current.slow,
         fast: via === 'keyboard' ? current.fast + 1 : current.fast,
+        lastSlowAt: via === 'pointer' ? now : current.lastSlowAt,
+        lastFastAt: via === 'keyboard' ? now : current.lastFastAt,
       },
     },
   });
@@ -175,7 +200,15 @@ export function isAdopted(capability: string): boolean {
  * able to see "you use ⌘K constantly and have never used `g`" is more motivating than
  * any nudge, and it is the honest version of a progress bar.
  */
-export function adoption(): Array<{ capability: string; slow: number; fast: number; adopted: boolean }> {
+export function adoption(): Array<{
+  capability: string;
+  slow: number;
+  fast: number;
+  adopted: boolean;
+  /** Epoch ms, or 0 for never / not recorded. See `Record_`: 0 means unknown, not long ago. */
+  lastFastAt: number;
+  lastSlowAt: number;
+}> {
   const { ledger } = read();
   return Object.entries(ledger)
     .filter((entry): entry is [string, Record_] => !!entry[1])
@@ -184,6 +217,8 @@ export function adoption(): Array<{ capability: string; slow: number; fast: numb
       slow: r.slow,
       fast: r.fast,
       adopted: r.fast >= ADOPTED_AT,
+      lastFastAt: r.lastFastAt ?? 0,
+      lastSlowAt: r.lastSlowAt ?? 0,
     }))
     // Most-used-the-slow-way first: that is where a coach's attention belongs.
     .sort((a, b) => b.slow - a.slow);

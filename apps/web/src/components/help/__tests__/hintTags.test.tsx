@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fireEvent, render } from '@testing-library/react';
 import { HintTags } from '../HintTags';
 import { HINT_LABEL } from '@/lib/hints';
-import { _resetDismiss, dismissStack, isOverlayOpen, topDismissible } from '@/lib/dismiss';
+import { _resetDismiss, dismissStack, isOverlayOpen, pushDismissible, topDismissible } from '@/lib/dismiss';
 
 /**
  * The rendered hint layer (TERMINAL Phase 7).
@@ -43,10 +43,12 @@ function Harness({ onClosed }: { onClosed?: () => void }) {
 }
 
 /** Lay `n` buttons out in a vertical stack that a 800x600 viewport contains. */
-function stackOfButtons(n: number, opts: { offscreenAfter?: number } = {}): HTMLElement[] {
-  const host = document.createElement('div');
-  host.id = 'targets';
-  document.body.appendChild(host);
+function stackOfButtons(n: number, opts: { offscreenAfter?: number; host?: HTMLElement } = {}): HTMLElement[] {
+  const host = opts.host ?? document.createElement('div');
+  if (!opts.host) {
+    host.id = 'targets';
+    document.body.appendChild(host);
+  }
   const made: HTMLElement[] = [];
   for (let i = 0; i < n; i++) {
     const b = document.createElement('button');
@@ -200,6 +202,159 @@ describe('activation', () => {
     fireEvent.keyDown(document, { key: 'l' });
     expect(closed).toHaveBeenCalled();
     expect(clicks).toBe(0);
+  });
+});
+
+/**
+ * A stand-in for the partner dossier: a full-screen backdrop carrying the stacking class,
+ * a `role="dialog"` panel that confines Tab, controls inside it, and controls on the page
+ * BEHIND it that the layer must not offer. Built as raw DOM rather than by rendering
+ * `PartnerDossier` on purpose — the property under test belongs to the layer and to
+ * `resolveHintScope`, and a test that mounted the real dossier would pass or fail on that
+ * component's fetches.
+ */
+function overlayOverPage(opts: { z?: string; inside?: number; behind?: number } = {}) {
+  const behind = stackOfButtons(opts.behind ?? 3);
+  const backdrop = document.createElement('div');
+  backdrop.className = `fixed inset-0 ${opts.z ?? 'z-40'}`;
+  const panel = document.createElement('div');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', 'Partner dossier: stand-in');
+  // tabIndex -1 for the same reason the real one carries it, and it also keeps the panel
+  // itself out of HINT_SELECTOR.
+  panel.tabIndex = -1;
+  backdrop.appendChild(panel);
+  document.body.appendChild(backdrop);
+  const inside = stackOfButtons(opts.inside ?? 5, { host: panel });
+  // A container getter is what makes this entry TRAP — the same thing `topTraps()` reads
+  // and the condition `useHints` now arms on.
+  const id = pushDismissible('partner dossier', () => {}, () => panel);
+  return { behind, inside, panel, id };
+}
+
+describe('inside an overlay, the layer scopes rather than standing down', () => {
+  /*
+   * WHY THIS BLOCK EXISTS. `f` used to refuse to arm whenever anything was on the dismiss
+   * stack, and `e2e/keyboardday.spec.ts` measured what that cost: the partner dossier is 24
+   * Tab stops and the biggest single contributor to a 52-press RFI flow, and it was the one
+   * surface the layer could not see. The veto is replaced by a scope, so the assertions
+   * that matter are (a) the scope really is the overlay and not the page, and (b) the
+   * keystroke safety property still holds — which is the half that, if it broke, would
+   * mutate records rather than merely annoy.
+   */
+
+  it('tags the controls in the overlay and nothing on the page behind it', () => {
+    const { inside, behind } = overlayOverPage({ inside: 5, behind: 3 });
+    render(<Harness />);
+    expect(chips()).toHaveLength(5);
+    // Not just the count: the tag has to belong to an element INSIDE the dialog. Counting
+    // alone would pass if the layer tagged three page buttons and two dialog ones.
+    const clicked: Element[] = [];
+    for (const b of [...inside, ...behind]) b.addEventListener('click', () => clicked.push(b));
+    fireEvent.keyDown(document, { key: 'a' });
+    fireEvent.keyDown(document, { key: 'a' });
+    expect(clicked).toEqual([inside[0]]);
+  });
+
+  it('does not offer the page underneath even when the overlay has nothing to tag', () => {
+    // The empty-dialog case is the one where falling back to `document` would look like a
+    // reasonable kindness and would be exactly the old hazard: chips on controls Tab is
+    // trapped away from.
+    overlayOverPage({ inside: 0, behind: 6 });
+    render(<Harness />);
+    expect(chips()).toHaveLength(0);
+    expect(document.querySelector('[data-hint-status]')!.textContent).toContain('nothing actionable in view');
+  });
+
+  it('a swallowed key still never reaches a page verb, or the overlay’s own', () => {
+    /*
+     * THE non-negotiable property, re-asserted for the case that did not exist before. The
+     * page-level version of this test (further down) was the one that proved
+     * `preventDefault()` alone was not enough: BdPipeline binds `s` snooze / `d` disqualify
+     * as a BUBBLE listener on `window` and never checks `defaultPrevented`.
+     *
+     * Arming inside a dialog adds a second class of listener to protect against — the
+     * OVERLAY's own keys, bound between the document and the window. A capture-phase
+     * listener on `document` runs before both, so both are covered by the same mechanism;
+     * that is the argument, and this is the measurement of it.
+     */
+    const { panel } = overlayOverPage();
+    render(<Harness />);
+
+    const reachedPage: string[] = [];
+    const reachedOverlay: string[] = [];
+    const pageVerb = (e: Event) => reachedPage.push((e as KeyboardEvent).key);
+    const overlayVerb = (e: Event) => reachedOverlay.push((e as KeyboardEvent).key);
+    window.addEventListener('keydown', pageVerb);
+    panel.addEventListener('keydown', overlayVerb);
+    try {
+      for (const key of ['d', 's', 'e', 'j', 'k', '3']) {
+        // Dispatched from inside the dialog, which is where the operator's focus is.
+        panel.dispatchEvent(new KeyboardEvent('keydown', { key, cancelable: true, bubbles: true }));
+      }
+      expect(reachedOverlay, `reached the dialog’s own verbs: ${reachedOverlay.join(',')}`).toEqual([]);
+      expect(reachedPage, `reached a page verb from hint mode inside a dialog: ${reachedPage.join(',')}`).toEqual([]);
+    } finally {
+      window.removeEventListener('keydown', pageVerb);
+      panel.removeEventListener('keydown', overlayVerb);
+    }
+  });
+
+  it('leaves hint mode’s own entry, and only that one, before activating', () => {
+    /*
+     * The page version of this asserts the stack is EMPTY at activation time. Inside an
+     * overlay it cannot be — the overlay is still open — so the invariant is narrower and
+     * is stated as what it is: hint mode is gone, the overlay remains. The consequence is
+     * recorded in HintTags.tsx: `useListNavigation` refuses Enter while `isOverlayOpen()`,
+     * so the Enter FALLBACK is dead for a row tagged inside an overlay. The click half,
+     * which is every ordinary control, is unaffected.
+     */
+    const { inside } = overlayOverPage({ inside: 2 });
+    let labelsAtClick: string[] | null = null;
+    inside[0]!.addEventListener('click', () => {
+      labelsAtClick = dismissStack().map((e) => e.label);
+    });
+    render(<Harness />);
+    expect(dismissStack().map((e) => e.label)).toEqual(['partner dossier', HINT_LABEL]);
+
+    fireEvent.keyDown(document, { key: 'a' });
+    fireEvent.keyDown(document, { key: 'a' });
+    expect(labelsAtClick, 'the click never happened').not.toBeNull();
+    expect(labelsAtClick).toEqual(['partner dossier']);
+  });
+
+  it('refuses, and says so, when two overlays are open at once', () => {
+    // Document order is not paint order, and this module cannot rank them — `lib/dismiss`
+    // can, but exposes `topTraps()` as a boolean rather than the container. Ambiguity draws
+    // nothing, which is exactly the old behaviour.
+    overlayOverPage({ inside: 4 });
+    const second = document.createElement('div');
+    second.className = 'fixed inset-0 z-50';
+    second.setAttribute('role', 'dialog');
+    document.body.appendChild(second);
+    render(<Harness />);
+    expect(chips()).toHaveLength(0);
+    expect(document.querySelector('[data-hint-status]')!.textContent).toContain('no tag scope');
+  });
+
+  it('refuses when the overlay paints above the layer, rather than drawing invisible chips', () => {
+    // The manual is `z-[120]` and the chips are `z-[110]`. Tagging it would render a status
+    // pill saying "4 of 4" and not one visible chip — a feature that looks broken instead
+    // of one that is honestly absent.
+    overlayOverPage({ inside: 4, z: 'z-[120]' });
+    render(<Harness />);
+    expect(chips()).toHaveLength(0);
+    expect(document.querySelector('[data-hint-status]')!.textContent).toContain('no tag scope');
+  });
+
+  it('refuses when what is open never declared itself an overlay', () => {
+    // SessionMode's letter-key surface and the tooltips are on the stack; something on it
+    // without overlay ARIA gives the scope nothing to resolve to.
+    stackOfButtons(4);
+    pushDismissible('lead session', () => {});
+    render(<Harness />);
+    expect(chips()).toHaveLength(0);
+    expect(document.querySelector('[data-hint-status]')!.textContent).toContain('no tag scope');
   });
 });
 

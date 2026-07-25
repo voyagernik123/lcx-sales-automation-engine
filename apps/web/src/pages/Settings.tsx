@@ -3,8 +3,7 @@ import { useAuditStore, AuditLog } from '@/stores/useAuditStore';
 import { Sliders, Terminal, Trash2, Info } from 'lucide-react';
 import { Button, PageTitle, SectionLabel } from '@/components/ui';
 import { feedback, feelPrefs, setFeelPref } from '@/lib/feedback';
-import { adoption } from '@/lib/nudge';
-import { fastPathFor } from '@/lib/fastPath';
+import { coachReport, type Standing } from '@/lib/coach';
 import { ConfirmDialog } from '@/components/shared';
 import { clsx } from 'clsx';
 
@@ -245,7 +244,31 @@ function FeelSettings() {
 }
 
 /**
- * What you do the slow way (TERMINAL Phase 6).
+ * A NOTE ON THE COPY BELOW, since it is the whole feature.
+ *
+ * Every line is written to be readable by someone who does not want a lesson. No streak,
+ * no counter that drains, no "you have not practised in 6 days", no exclamation mark. The
+ * standing words are the strongest thing on the screen and they are deliberately flat:
+ * "you went back to the mouse" is an observation an operator can act on or ignore, and
+ * "you are falling behind" is the same fact turned into a debt. `lib/coach.ts` guarantees
+ * the numbers do not decay; this function has to not undo that in prose.
+ */
+const STANDING_COPY: Record<Standing, string> = {
+  regressed: 'you had this and went back to the mouse',
+  learning: 'still reaching for the mouse',
+  rusty: 'quiet for a while',
+  adopted: 'yours',
+};
+
+function quietLabel(quietFor: number | null): string | null {
+  if (quietFor === null) return null;
+  const days = Math.floor(quietFor / (24 * 60 * 60 * 1000));
+  return days >= 1 ? `${days}d` : null;
+}
+
+/**
+ * What you do the slow way, and what you have stopped doing the slow way
+ * (TERMINAL Phase 6, extended by T1 #21 — the spaced-repetition coach).
  *
  * The honest version of a progress bar, and the counterpart to the nudge engine's
  * silence. The nudge can only speak three times per capability and never within ten
@@ -258,52 +281,76 @@ function FeelSettings() {
  * would be a tutorial with extra steps, and it would set the expectation that this
  * screen is where learning happens — when the actual claim of this phase is that the
  * app teaches you in the middle of your work.
+ *
+ * WHAT T1 #21 ADDED. The Phase 6 version of this block listed every capability with two
+ * or more mouse uses and no keyboard use. That is one of the three things worth saying,
+ * and it is the weakest of them: it can only ever describe a habit that never formed. The
+ * coach adds the two that involve memory — a shortcut that was adopted and then abandoned
+ * (`regressed`), and one still theirs but unexercised for longer than its expanding review
+ * interval (`rusty`) — and it caps the list at three, because "the 20% worth 80%" is a
+ * ranked slice and not a full inventory. See `lib/coach.ts` for why the ranking puts
+ * regression first and for the one claim in the plan that was withdrawn rather than faked.
  */
 function AdoptionSettings() {
-  const rows = adoption().filter((r) => r.slow + r.fast > 0);
-  if (rows.length === 0) return null;
+  const report = coachReport();
+  if (!report) return null;
 
-  const behind = rows.filter((r) => !r.adopted && r.slow >= 2);
+  const { cards, mastered, tracked, slowFallbacks, keyboardShare } = report;
 
   return (
     <div className="space-y-4">
       <SectionLabel className="block">Your keyboard</SectionLabel>
       <div className="space-y-2 pt-1">
-        {behind.length === 0 ? (
+        {cards.length === 0 ? (
           <p className="text-xs leading-relaxed text-grey-dark">
             Nothing here is being done the slow way. Everything you reach for, you reach for with the keyboard.
           </p>
         ) : (
           <>
             <p className="text-xs leading-relaxed text-grey-dark">
-              These you still reach for with the mouse. Not a scold — the fast key is just here if you want it.
+              Worth a look. Not a scold and not a schedule — the fast key is just here if you want it.
             </p>
             <ul className="space-y-1.5">
-              {behind.map((r) => {
-                const fast = fastPathFor(r.capability);
+              {cards.map((c) => {
+                const quiet = quietLabel(c.quietFor);
                 return (
-                  <li key={r.capability} className="flex items-baseline gap-2 text-xs">
+                  <li key={c.capability} className="flex items-baseline gap-2 text-xs">
                     <span className="flex shrink-0 gap-1">
-                      {(fast?.keys ?? ['—']).map((k) => (
+                      {c.keys.map((k) => (
                         <kbd key={k} className="rounded border border-line px-1.5 font-mono text-micro leading-5 text-navy">
                           {k}
                         </kbd>
                       ))}
                     </span>
-                    <span className="min-w-0 flex-1 truncate text-navy">{fast?.what ?? r.capability}</span>
-                    <span className="shrink-0 font-mono text-micro text-grey">{r.slow}× by mouse</span>
+                    <span className="min-w-0 flex-1 truncate text-navy">{c.what}</span>
+                    <span className="shrink-0 font-mono text-micro text-grey">
+                      {STANDING_COPY[c.standing]}
+                      {c.standing === 'rusty' && quiet ? ` · ${quiet}` : ''}
+                      {c.standing === 'learning' ? ` · ${c.slow}×` : ''}
+                    </span>
                   </li>
                 );
               })}
             </ul>
           </>
         )}
-        {rows.some((r) => r.adopted) && (
-          <p className="text-micro leading-relaxed text-grey">
-            Adopted: {rows.filter((r) => r.adopted).length} of {rows.length}. Counted per operator, so a shared Mac does
-            not mix two people's habits together.
-          </p>
-        )}
+        {/*
+         * The honest, self-referential figures. Mastered out of tracked rather than out of
+         * some notional total: an operator is not behind on a capability they have never
+         * had occasion to use. And "keyboard share" of the uses actually recorded, which is
+         * a measurement rather than a grade — there is no target for it anywhere in the UI,
+         * on purpose.
+         *
+         * The plan also asks for the operator's median time-to-decision. Nothing in this
+         * app times a decision, so it is absent rather than approximated; `lib/coach.ts`
+         * records that withdrawal in full.
+         */}
+        <p className="text-micro leading-relaxed text-grey">
+          {mastered} of {tracked} shortcuts are habit · {Math.round(keyboardShare * 100)}% of your recorded moves went by
+          keyboard
+          {slowFallbacks > 0 ? ` · ${slowFallbacks} mouse trips left on the rest` : ''}. Counted per operator, so a
+          shared Mac does not mix two people's habits together.
+        </p>
       </div>
     </div>
   );

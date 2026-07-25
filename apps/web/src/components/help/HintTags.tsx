@@ -5,9 +5,10 @@ import {
   HINT_CHIP_H,
   HINT_LABEL,
   activateTarget,
-  collectTargets,
+  hintSnapshot,
   narrow,
   stepHint,
+  type HintScopeKind,
   type HintTarget,
 } from '@/lib/hints';
 
@@ -25,6 +26,13 @@ import {
  * re-collection would have to reason about excluding them. Reading layout during
  * render is safe here precisely because none of this layer is on screen yet.
  *
+ * AND THE SCOPE IS DECIDED IN THE SAME BREATH, which is the second reason the
+ * initialiser is the right place. `resolveHintScope` asks `isOverlayOpen()`, and this
+ * component puts ITSELF on the dismiss stack — in an effect, which runs after render. So
+ * the initialiser is the only moment at which that question still means "was an overlay
+ * open when `f` was pressed?" rather than "is hint mode armed?". Moving this into an
+ * effect would make every snapshot think it was inside an overlay.
+ *
  * IT IS THROWN AWAY ON SCROLL, RESIZE OR A POINTER PRESS. The chips are positioned
  * from viewport coordinates captured at press time, so any of those three makes
  * every position a lie — and a chip that has drifted onto a neighbouring control is
@@ -34,29 +42,35 @@ import {
  */
 export function HintTags({ onClose }: { onClose: () => void }) {
   // Collected in the initialiser so it happens exactly once, before any of this
-  // layer's own nodes exist.
-  const [targets] = useState<HintTarget[]>(() => collectTargets());
+  // layer's own nodes exist and before this component joins the dismiss stack.
+  const [snapshot] = useState<{ kind: HintScopeKind; targets: HintTarget[] }>(() => hintSnapshot());
+  const targets: HintTarget[] = snapshot.targets;
   const [typed, setTyped] = useState('');
 
   /*
    * Escape closes hint mode through the one stack that owns Escape. That is the whole
    * reason to register: no second Escape listener, no ordering by mount time.
    *
-   * WHAT REGISTERING DOES *NOT* BUY, correcting a claim this comment used to make. It
-   * said registering also puts "hint tags" into the Phase 6 manual's live "esc closes,
-   * in this order" report. It is on the stack — `hintTags.test.tsx` asserts that — but
-   * the manual will never display it, for two reasons that only became visible when the
-   * e2e assertion for it failed. First, `f` refuses to arm while `isOverlayOpen()`, so
-   * hint mode is always the ONLY entry on the stack and the manual's report is about
-   * what is UNDERNEATH the manual. Second, `?` closes hint mode on its way through — it
-   * has its own rung in `stepHint`, which closes without claiming so the key still
-   * reaches `useManual` — so the manual mounts with hint mode already gone. The
-   * registration is load-bearing for Escape and inert for the manual, and the manual
-   * documents `f` in its Everywhere section instead (src/lib/manual.ts).
+   * WHAT REGISTERING DOES *NOT* BUY, correcting a claim this comment used to make — and
+   * then re-correcting half of the correction. It said registering also puts "hint tags"
+   * into the Phase 6 manual's live "esc closes, in this order" report. It is on the stack
+   * — `hintTags.test.tsx` asserts that — but the manual will never display it. The reason
+   * given here first was "`f` refuses to arm while `isOverlayOpen()`, so hint mode is
+   * always the ONLY entry on the stack": that is no longer true, because `f` now arms
+   * inside a trapping overlay and the stack there reads [that overlay, hint tags]. The
+   * OTHER reason is the one that actually holds, and it holds unchanged: `?` closes hint
+   * mode on its way through — it has its own rung in `stepHint`, which closes without
+   * claiming so the key still reaches `useManual` — so the manual always mounts with hint
+   * mode already gone. The registration is load-bearing for Escape and inert for the
+   * manual, and the manual documents `f` in its Everywhere section (src/lib/manual.ts).
    *
-   * NO CONTAINER REF, i.e. Tab is NOT trapped. This layer is not modal: it contains
-   * nothing focusable, so trapping Tab would hand `dismiss.ts`'s zero-tabbables
-   * branch a container to park focus on and strand the operator inside a decoration.
+   * NO CONTAINER REF, i.e. Tab is NOT trapped, and this line now does a second job. The
+   * first: this layer is not modal — it contains nothing focusable, so trapping Tab would
+   * hand `dismiss.ts`'s zero-tabbables branch a container to park focus on and strand the
+   * operator inside a decoration. The second: `useHints` stands its eager listener down
+   * when the TOP stack entry traps, so a container-less registration here is exactly what
+   * hands the second `f` to the handler below as a cancel — including from inside an
+   * overlay that does trap, because hint mode is the entry above it.
    */
   useDismissible(true, onClose, HINT_LABEL);
 
@@ -71,8 +85,18 @@ export function HintTags({ onClose }: { onClose: () => void }) {
    * overlay by that definition, so activating from inside the keydown handler would
    * make the Enter fallback silently do nothing on exactly the row targets it exists
    * for. Activating from a cleanup reads as clever, which is why the invariant is
-   * asserted in the tests rather than trusted: the stack must be empty when
+   * asserted in the tests rather than trusted: HINT MODE must be off the stack when
    * `activateTarget` is called.
+   *
+   * "Hint mode", not "the stack is empty", and the difference is a limit worth stating
+   * rather than a bug. On the page the stack IS empty at that moment. Inside an overlay it
+   * is not — the overlay is still open, by definition — so `isOverlayOpen()` is true and
+   * `useListNavigation` would refuse the Enter fallback for a row tagged INSIDE an
+   * overlay. The click half still lands, so every ordinary control works; what is dead
+   * there is specifically a row whose activation lives only in a container-level
+   * `onKeyDown`. No such row exists inside a trapping overlay in this app today (the four
+   * `useListNavigation` consumers are all page-level tables), which is why this is
+   * recorded here instead of fixed with a second activation path.
    */
   const pending = useRef<Element | null>(null);
   useEffect(
@@ -178,6 +202,10 @@ export function HintTags({ onClose }: { onClose: () => void }) {
         // "enumerate the controls" than a visual code. The status line below is the
         // part they need.
         aria-hidden="true"
+        // `z-[110]` is not free-floating: `HINT_LAYER_Z` in lib/hints.ts is the same number
+        // and is what `resolveHintScope` compares an overlay's own level against before it
+        // agrees to tag it. Tailwind needs the literal in the source, so the two are pinned
+        // together by `lib/__tests__/hintScope.test.ts` rather than by hope.
         className="pointer-events-none fixed inset-0 z-[110]"
       >
         {live.map((i) => {
@@ -213,9 +241,19 @@ export function HintTags({ onClose }: { onClose: () => void }) {
           {typed ? ` ${typed.toUpperCase()}` : ''}
         </span>
         <span className="font-normal">
-          {targets.length === 0
-            ? 'nothing actionable in view'
-            : `${live.length} of ${targets.length} · esc cancels`}
+          {/*
+            Three messages, not two, because "nothing actionable in view" would be a lie in
+            the third case and the operator would go looking for a control that IS there.
+            `unscoped` means the layer could not work out which of the open overlays it is
+            standing in, or that it paints underneath the one that is — see
+            `resolveHintScope`. Saying so is the difference between a feature that is absent
+            and one that looks broken.
+          */}
+          {snapshot.kind === 'unscoped'
+            ? 'no tag scope for what is open · esc cancels'
+            : targets.length === 0
+              ? 'nothing actionable in view'
+              : `${live.length} of ${targets.length} · esc cancels`}
         </span>
       </div>
     </>

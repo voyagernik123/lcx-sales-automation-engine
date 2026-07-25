@@ -20,13 +20,17 @@ export interface Destination {
   /** What the operator calls it. */
   label: string;
   /**
-   * The key pressed after the `g` prefix. Digits mirror the ⌘0-6 accelerators in
+   * The key pressed after the `g` prefix. Digits mirror the ⌘0-7 accelerators in
    * the native menu so the two feel like the same grammar rather than two unrelated
-   * ones — SEVEN, not six: `lib.rs` binds ⌘0 to My Desk alongside ⌘1-6 for the
-   * workspaces. This said "⌘1-6" until the cheat card was generated from it and the
-   * count came out one short of the menu it claims to mirror. `destinations.test.ts`
-   * asserts each key against the accelerator on its own menu line, so it verified
-   * every row and still could not catch a miscount in the prose above it.
+   * ones — EIGHT, not six: `lib.rs` binds ⌘0 to My Desk alongside ⌘1-6 for the
+   * workspaces, and ⌘7 for the practice range, which is a place you can go but not
+   * a workspace. This said "⌘1-6" until the cheat card was generated from it and the
+   * count came out one short of the menu it claims to mirror, then "⌘0-6/SEVEN"
+   * until Phase 8 added the eighth row — the same drift twice, which is the argument
+   * for a count nobody has to maintain rather than a more careful sentence.
+   * `destinations.test.ts` asserts each key against the accelerator on its own menu
+   * line, so it verified every row and still could not catch a miscount in the prose
+   * above it.
    */
   key: string;
 }
@@ -39,6 +43,16 @@ export const DESTINATIONS: readonly Destination[] = [
   { id: 'go-ws-regulatory', path: '/regulatory-dashboard', label: 'REGULATORY TOOLKIT', key: '4' },
   { id: 'go-ws-distribution', path: '/distribution', label: 'DISTRIBUTION', key: '5' },
   { id: 'go-ws-governance', path: '/wbr', label: 'GOVERNANCE', key: '6' },
+  /**
+   * NOT a workspace — a place to go that is deliberately not production
+   * (TERMINAL Phase 8, T1 #20). It is in this table rather than reachable only from
+   * a sidebar link because everything that makes a destination discoverable is
+   * generated from here: the `g 7` chord, the ⌘7 menu item, the `?` manual's "Go
+   * somewhere" section, and the printed cheat card. A sandbox nobody can find is a
+   * sandbox nobody practises in, and the plan's own research says to assume nobody
+   * reads anything — so it has to be in the grammar an operator already knows.
+   */
+  { id: 'go-practice', path: '/practice', label: 'PRACTICE RANGE', key: '7' },
 ];
 
 /** Menu id → route, for the native bridge. */

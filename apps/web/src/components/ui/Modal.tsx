@@ -30,7 +30,32 @@ export function Modal({ isOpen, onClose, title, children, footer, className }: M
     // A frame, not a 50ms timeout: the delay only ever needed to outlast the
     // mount, and a magic number that happens to work is a race waiting for a
     // slower machine.
-    const raf = requestAnimationFrame(() => dialogRef.current?.focus());
+    //
+    // BUT ONLY IF FOCUS IS NOT ALREADY INSIDE. Unconditionally, this line was a
+    // silent data-loss bug on the one dialog where it mattered most. React honours a
+    // child's `autoFocus` during the commit; a `requestAnimationFrame` lands after
+    // it. So `DisqualifyDialog` — whose textarea is `autoFocus` and is visibly
+    // labelled "Reason (required)…" — opened with focus back on this `<div>`: every
+    // character the operator typed was dropped, `⌘⏎` issued zero requests, and
+    // NOTHING FAILED. The lead stayed qualified and the operator had no signal,
+    // because no error is what a keystroke sent to a div produces. Recovering cost 7
+    // more Tab presses.
+    //
+    // The call itself is load-bearing and is NOT removable, which is why this is a
+    // condition and not a deletion. `lib/dismiss.ts` pulls focus to an edge of the
+    // container on Tab when focus is outside it, and parks focus on the container
+    // when the overlay has no tabbable content at all — both need focus to have
+    // landed inside in the first place, and a modal opened by a keystroke leaves
+    // `document.activeElement` on `<body>` unless someone sets it.
+    //
+    // `contains` covers both cases the condition has to distinguish and one more: an
+    // autofocused child, the container itself, and an operator who tabbed in the same
+    // frame the modal mounted (yanking that back would discard a deliberate move).
+    const raf = requestAnimationFrame(() => {
+      const panel = dialogRef.current;
+      if (!panel || panel.contains(document.activeElement)) return;
+      panel.focus();
+    });
     return () => {
       document.body.style.overflow = '';
       cancelAnimationFrame(raf);

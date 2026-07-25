@@ -24,6 +24,7 @@
  */
 
 import type { ActionManifest, ManifestAction, ParamKind, ParamProperty } from '@/lib/command/types';
+import { INSPECTOR_TO_OBJECT, type SearchGroup } from '@/lib/objectRegistry';
 
 export type Capability = 'view' | 'operate' | 'approve';
 
@@ -40,6 +41,37 @@ export interface Noun {
   label: string;
   /** Whatever state fields are known, for precondition checks. */
   state?: Record<string, unknown>;
+}
+
+/**
+ * The subject a search result denotes.
+ *
+ * ONE LINE, and it used to be the whole defect: the noun's type was resolved by
+ * mapping the result's INSPECTOR through `INSPECTOR_TO_OBJECT`, which yields the
+ * web reading vocabulary (`project`, `contact`, `signal`, …) and never the
+ * registry's addressing vocabulary (`command_decision`, `dist_listing`,
+ * `member`, …). `matchesSubject` compared them literally and was right to: they
+ * are different languages. 15 of 22 governed actions had no reachable noun.
+ *
+ * Now GET /v1/search states the registry's own subject type and this function
+ * passes it through untouched. There is no table to keep in step.
+ *
+ * THE FALLBACK IS FOR DEPLOY SKEW, not for convenience. Web and API deploy
+ * separately; a bundle that requires `subjectType` against an API that predates
+ * it would build nouns with `type: undefined` and offer NO verbs on ANY object —
+ * turning a 7-of-22 gap into 0 of 22. Falling back to the old mapping degrades to
+ * exactly the previous behaviour instead, which is the honest failure mode. It is
+ * dead code against a current API, and the boundary test in `apps/api` measures
+ * the real thing, so it cannot mask a regression.
+ */
+export function nounFromSearchResult(
+  group: Pick<SearchGroup, 'subjectType' | 'inspector'>,
+  item: { id: string; label: string; seed?: Record<string, unknown> },
+): Noun | null {
+  const type = group.subjectType
+    ?? (group.inspector ? INSPECTOR_TO_OBJECT[group.inspector] : undefined);
+  if (!type) return null;
+  return { type, id: item.id, label: item.label, state: item.seed };
 }
 
 export type BlockedReason =
