@@ -617,8 +617,19 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
         if (!camp) throw new ActionError('NOT_FOUND', 'Campaign not found', 404);
 
         if (camp.token_incentivized) {
-          // (a) approver-only launch.
-          if (role !== 'approver' && !params.overrideGate) {
+          // (a) approver-only launch. AUTHORITY IS NOT OVERRIDABLE.
+          //
+          // This check used to read `role !== 'approver' && !params.overrideGate`,
+          // which let any operator launch a token-incentivized campaign simply by
+          // sending `overrideGate: true` — a client-supplied boolean defeating an
+          // authority requirement. And because the reason is only demanded when
+          // there are review/budget blockers, an operator could take that path
+          // with no approver and no recorded justification at all.
+          //
+          // `overrideGate` exists to accept a documented risk on the REVIEW and
+          // BUDGET blockers below (with a reason, recorded). It has never been a
+          // way to grant yourself authority you do not hold.
+          if (role !== 'approver') {
             throw new ActionError('APPROVER_REQUIRED', 'Launching a token-incentivized campaign requires approver authority.', 403);
           }
           // (b) active premortem + legal_check on this campaign.
@@ -674,6 +685,32 @@ export function listActions(): Array<Pick<RegistryAction, 'id' | 'label' | 'desc
  * writes the object_actions ledger + audit_log. `actor`/`role` come from the
  * authenticated principal (or 'monitor:<id>' when a monitor fires it).
  */
+/**
+ * Parameter names that must never reach the ledger, the audit log, or any log
+ * line. Matched case-insensitively on a substring so a future
+ * `newStepUpPasscode` or `apiSecret` is caught without anyone remembering to
+ * extend this list — the failure mode of an allowlist here is a credential in a
+ * queryable table, so the bias is deliberately toward over-redacting.
+ */
+const SECRET_PARAM_PATTERN = /passcode|password|secret|token|apikey|api_key|credential/i;
+
+/** The recordable form of an action's params: same shape, secrets replaced. */
+export function redactSecrets(params: Record<string, unknown>): Record<string, unknown> {
+  let touched = false;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(params)) {
+    if (SECRET_PARAM_PATTERN.test(k)) {
+      // Kept as a present-but-empty marker rather than dropped, so the record
+      // still shows that step-up was performed.
+      out[k] = '[redacted]';
+      touched = true;
+    } else {
+      out[k] = v;
+    }
+  }
+  return touched ? out : params;
+}
+
 export async function invokeAction(
   pool: pg.Pool,
   id: string,
@@ -709,16 +746,24 @@ export async function invokeAction(
   const params = parsed.data as Record<string, unknown>;
   const result = await action.execute({ pool, subjectType: input.subjectType, subjectId: input.subjectId, params, actor: input.actor, role: input.role });
 
-  // The spine — ledger + hash-chained audit, both, always.
+  // The spine — the action ledger and the audit log, both, always.
+  //
+  // Recorded with the secrets stripped. `revoke_entitlement` takes a
+  // `stepUpPasscode` for step-up re-auth, and writing `params` verbatim put the
+  // shared desk passcode in plaintext into TWO tables on every revoke, where it
+  // would then be readable by anyone with the audit surface. The credential has
+  // already served its purpose by this point — it was verified before execute —
+  // so the record needs to show only that step-up happened, not what was typed.
+  const recorded = redactSecrets(params);
   await pool.query(
     `INSERT INTO object_actions (org_id, subject_type, subject_id, action, params, result, actor)
      VALUES ($1,$2,$3,$4,$5::jsonb,$6::jsonb,$7)`,
-    [DEFAULT_ORG_ID, input.subjectType, input.subjectId, id, JSON.stringify(params), JSON.stringify(result), input.actor],
+    [DEFAULT_ORG_ID, input.subjectType, input.subjectId, id, JSON.stringify(recorded), JSON.stringify(result), input.actor],
   );
   // When an AI proposal was confirmed by a human, actor stays 'ai' (the origin)
   // while the audit records who signed off — accountability without pretending
   // the machine acted alone.
-  const auditMeta = input.confirmedBy ? { ...params, _confirmedBy: input.confirmedBy } : params;
+  const auditMeta = input.confirmedBy ? { ...recorded, _confirmedBy: input.confirmedBy } : recorded;
   await pool.query(
     `INSERT INTO audit_log (actor, action, entity, entity_id, meta)
      VALUES ($1,$2,$3,$4,$5::jsonb)`,
