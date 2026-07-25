@@ -364,6 +364,19 @@ the file produced CI's message character for character. Reading the test had not
 rule this adds to §6: **a run's colour is a thing you look at, not a thing you infer from a local
 gate.** The local database is seeded; CI's is empty; a green `npm run gate` predicts neither.
 
+**AND THE FIRST THING THE REVIVED E2E JOB DID WAS FIND A GOVERNED WRITE REACHABLE BY A BARE
+ARROW.** With the test job green, `playwright` ran for the first time since Phase C and failed on
+`keyboardday.spec.ts:903` — `three ArrowDowns produced a governed write`, naming
+`dist_listing_set_status`. The assertion had been passing on this Mac for two phases because
+**macOS was satisfying it instead of our code**: Chrome and WKWebView open a select's popup on an
+arrow and fire `change` only on commit, while Linux advances the selection immediately. So on any
+Windows or Linux browser reaching the web fallback, Tab-ing into Listing Ops and arrowing once
+advanced a real listing's status — audited, attributed, unconfirmed. Fixed in `861a504` by making
+arrow traversal *stage* and requiring ↵ (macOS's own model, made platform-independent), with the
+staged value labelled on screen. **This is the strongest argument in the document for why a
+ratchet must actually execute**: the spec was correct, committed, and useless for two phases, and
+the defect it was written for was live the whole time.
+
 ## 10. THE CLAIMS WITHDRAWN, IN ONE PLACE
 
 Twelve, and this document contains two of them. Kept together because the programme's signature

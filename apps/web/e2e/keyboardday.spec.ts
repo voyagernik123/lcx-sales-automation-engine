@@ -915,13 +915,36 @@ test('flow 4 finding — ArrowDown does not operate a status select', async ({ p
   const select = page.locator('select').first();
   const start = await select.inputValue();
   await keys.press('ArrowDown', 3);
-  // No value change, therefore no `change` event, therefore no governed write. Recorded
-  // so that if a future Chromium (or the shipping WKWebView) starts advancing the
-  // selection on an arrow, this run turns red and the manual gets corrected rather than
-  // the behaviour changing silently under an operator's fingers.
-  expect(await select.inputValue()).toBe(start);
+
+  /* THE INVARIANT IS "NO WRITE", NOT "NO MOVEMENT" — and the difference is why this
+   * spec spent two phases green on a Mac while the defect was live.
+   *
+   * The original assertion here was `inputValue() === start`, justified as "no value
+   * change, therefore no change event, therefore no governed write". That reasoning
+   * described macOS, not this app: Chrome and WKWebView on macOS open the popup on an
+   * arrow and fire `change` only on commit, so the OS satisfied the assertion. On
+   * Linux the arrow advances the selection immediately, and CI run 30175719316 duly
+   * reported `three ArrowDowns produced a governed write`.
+   *
+   * Whether the DISPLAYED selection moves is therefore a property of the engine, and
+   * pinning it would be pinning the platform. What must hold everywhere is that no
+   * governed write happened, and that if the displayed value did move, the operator is
+   * TOLD it is not the value in the record — a control silently disagreeing with the
+   * record it represents is the defect this whole programme keeps finding. */
+  const moved = (await select.inputValue()) !== start;
   expect(invokes, 'three ArrowDowns produced a governed write').toHaveLength(0);
+  if (moved) {
+    await expect(
+      page.getByText(/to apply/i).first(),
+      'the arrow moved the displayed status with nothing on screen saying it is unsaved',
+    ).toBeVisible();
+    // And backing out must return the control to the record's value.
+    await keys.press('Escape');
+    expect(await select.inputValue(), 'esc did not discard the staged status').toBe(start);
+  }
+  expect(invokes, 'discarding a staged status produced a governed write').toHaveLength(0);
   record('governed writes produced by 3 ArrowDown on a focused select', 0);
+  record('arrow moves the displayed selection on this engine', moved ? 'yes (staged)' : 'no (popup opens)');
   await assertNoTrackpad(page);
 });
 
