@@ -41,11 +41,13 @@ account can read the desk passcode out of that file. `apps/desktop/README.md` ha
 long version.
 
 If you share a Mac: signing out clears your session, filters, notes and desk state, and
-nobody inherits your access. Two honest caveats — cached response *bodies* can survive
-on disk, because the page navigates away before the IndexedDB clear commits; they are
-namespaced per operator, so the next person cannot be served them, but the bytes are
-there. And the desk passcode is shared by design, so signing out is not the same as
-locking someone out.
+nobody inherits your access. Cached response *bodies* go too — sign-out now waits for
+the IndexedDB clear to commit before the page navigates away, where it used to fire the
+clear and navigate in the same breath and lose the race. Two honest limits on that: the
+wait is bounded at two seconds, so a storage layer that hangs or refuses will not trap
+you on a desk you asked to leave (in that case the bytes stay, still namespaced per
+operator, so the next person cannot be *served* them). And the desk passcode is shared
+by design, so signing out is not the same as locking someone out.
 
 ## 3. The four keys that matter
 
@@ -80,15 +82,24 @@ success tick, on purpose. If the record did not move, you should not be told it 
 
 ## 5. Ranked lists
 
-**On the BD pipeline lead table** — and, honestly, only there for now:
+**On four tables** — the BD pipeline lead table, product intelligence, competition and
+the product &amp; asset registry ledger:
 
 - **↑ ↓** move between rows, **Home / End** jump to the ends, **↵** opens the row.
-- **← →** reach the buttons *inside* the row you are on.
 - **⇥** treats the whole table as **one** stop, in and out. It does not walk 200 rows.
+- **← →** reach the buttons *inside* the row you are on — **on the lead table only.**
+  The other three put no buttons in a row, so there is nothing there for these keys to
+  reach. They are not broken; they have no target.
 
-The other tables (product intelligence, competition, the product matrix) still make
-every row its own Tab stop and ignore the arrows. An earlier version of this page said
-all ranked lists behaved the same way; they do not yet.
+Two exceptions worth knowing. On the registry ledger, **↵** opens the row's drawer, and
+the two buttons inside that drawer stay ordinary **⇥** stops — so that table is one stop
+*plus the drawer you opened*, which is what a disclosure panel should be. And on
+competition, the projected **LCX USA** row at the bottom is not a cursor position: it is
+a static comparison with nothing to open, so **End** stops at the last real competitor.
+
+The app's remaining tables still make every row its own Tab stop and ignore the arrows.
+An earlier version of this page said all ranked lists behaved the same way, and a later
+one said only the lead table did; both were true when written and neither is now.
 
 Careful on the queue: **`s`** snoozes and **`d`** disqualifies the row you are on. Those
 are real, immediate, single-letter actions. (This is also why `j`/`k` are *not* bound to
@@ -121,8 +132,10 @@ does not match the app, the card is from an older build.
 ### If something is wrong
 
 - **"API DOWN" in the status bar** — reads may be served from cache; governed writes are
-  unavailable until it returns. Note the cache is *not* labelled per value yet, so a
-  cached number looks identical to a live one — the banner is your only signal. This is deliberate: the gates
+  unavailable until it returns. Three surfaces label a cached figure with its age — **My
+  desk**, the **KPI dashboard**, and **listing readiness** — and the chip appears only
+  when the figure is *not* live. Everywhere else a cached number still looks identical to
+  a live one, so there the banner is your only signal. Writes being blocked is deliberate: the gates
   read their inputs at the moment of writing, so a queued write would be judged against
   stale information. Nothing you typed is lost.
 - **A panel is stuck** — press **`?`**. The Escape section lists exactly what is open,
@@ -138,5 +151,6 @@ does not match the app, the card is from an older build.
   certificate (~$99/yr, Account Holder only). Nothing else is blocked on it.
 - **Reads can be slower than 100ms.** Production sits behind ~165–195ms of fixed
   network latency before any of our code runs — it is geography, not something a faster
-  query fixes. That is why reads are cached locally. The app does **not** yet mark which
-  values came from cache — that affordance is designed and unbuilt.
+  query fixes. That is why reads are cached locally. Three surfaces now mark a cached
+  value with its age (My desk, the KPI dashboard, listing readiness); the rest do not
+  yet, so on those the age of a figure is still invisible.

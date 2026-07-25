@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useListNavigation } from '@/hooks/useListNavigation';
 import { Badge, PageTitle, SectionLabel, Button } from '@/components/ui';
 import { products } from '@/data';
 import { useAuditStore } from '@/stores/useAuditStore';
@@ -27,6 +28,45 @@ export function ProductMatrix() {
       [id]: !prev[id],
     }));
     addAuditLog(`CCO toggled registry details for product: [${id}]`, 'Audit');
+  };
+
+  // One tab stop for the registry, arrows within it (TERMINAL Phase 4's hook).
+  const bodyRef = useRef<HTMLTableSectionElement>(null);
+  const nav = useListNavigation({
+    container: bodyRef,
+    count: filteredProducts.length,
+    onActivate: (i) => {
+      const p = filteredProducts[i];
+      if (p) toggleRow(p.id);
+    },
+  });
+
+  /**
+   * The hook's container handler, minus Enter/Space from anything that is not a row.
+   *
+   * This table is the one of the three that is not a flat list: an expanded row adds a
+   * SIBLING <tr> drawer inside the same <tbody>, holding two real buttons. Two
+   * consequences, and only the second needs code.
+   *
+   * 1. Those buttons are not descendants of `[data-list-row]`, so `parkRowControls`
+   *    leaves them alone and they stay ordinary Tab stops. That is correct — a
+   *    disclosure panel's controls belong in the tab ring — and it is why this table is
+   *    "one stop, plus the drawer you opened" rather than flatly one.
+   * 2. Their keystrokes bubble to this <tbody>, and the hook answers ⏎ with
+   *    `preventDefault()`. MEASURED in Chromium with this guard removed: ⏎ on "Inspect
+   *    Registry connections" logged the row toggle TWICE and never redirected at all —
+   *    the preventDefault cancelled the button's own activation click, so the button was
+   *    dead AND the drawer collapsed under it. Both halves are worse than the traversal
+   *    this change fixes. The per-row handler this replaced was never an ancestor of the
+   *    drawer, so that risk is one the move creates and this guard is what stops it
+   *    being a regression. Arrows are NOT guarded: moving the row cursor from inside the
+   *    drawer is how you get back out to the rows.
+   */
+  const onBodyKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return nav.containerProps.onKeyDown(e);
+    const target = e.target as HTMLElement | null;
+    if (!target?.hasAttribute?.('data-list-row')) return;
+    nav.containerProps.onKeyDown(e);
   };
 
   const handleExportYAML = () => {
@@ -113,24 +153,21 @@ export function ProductMatrix() {
               <th className="py-2.5 px-3">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-line">
-            {filteredProducts.map(p => {
+          {/* No `role` from containerProps on purpose: role="grid" here would replace
+              the <tbody>'s implicit rowgroup and break the table. */}
+          <tbody ref={bodyRef} className="divide-y divide-line" onKeyDown={onBodyKeyDown}>
+            {filteredProducts.map((p, i) => {
               const isExpanded = !!expandedRows[p.id];
               return (
                 <React.Fragment key={p.id}>
                   <tr
                     onClick={() => toggleRow(p.id)}
-                    tabIndex={0}
                     aria-expanded={isExpanded}
                     // Stays a table row (role="button" would strip the row semantics
-                    // and aria-expanded with it): Enter/Space toggle the drawer,
-                    // Space prevented so the table does not scroll under it.
-                    onKeyDown={e => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        toggleRow(p.id);
-                      }
-                    }}
+                    // and aria-expanded with it), so movement comes from the shared
+                    // roving-tabindex hook rather than tabIndex={0} on every row.
+                    // Enter/Space still toggle the drawer, via onBodyKeyDown.
+                    {...nav.rowProps(i)}
                     className={clsx(
                       'hover:bg-ice-soft/30 dark:hover:bg-ice-soft/5 cursor-pointer transition-colors focus-ring',
                       isExpanded && 'bg-ice-soft/20 dark:bg-ice-soft/2'

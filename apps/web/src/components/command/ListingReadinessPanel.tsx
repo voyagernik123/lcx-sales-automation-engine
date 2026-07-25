@@ -3,6 +3,7 @@ import { ListChecks, ShieldAlert } from 'lucide-react';
 import { listingReadiness } from '@lcx/shared';
 import { fetchCommandDeep, invokeCommandAction, type CommandDeep } from '@/lib/api/command';
 import { toast } from '@/components/shared/Toast';
+import { CacheAge } from '@/components/ui/CacheAge';
 import { clsx } from 'clsx';
 
 /**
@@ -55,6 +56,13 @@ export function ListingReadinessPanel() {
           {score.score}/100
         </span>
         <span className="font-normal normal-case text-grey">blockers {score.blockerScore} · requirements {score.requirementScore}</span>
+        {/* The score above is recomputed locally from /v1/command/deep, so it is
+            only as current as that body: a colleague resolving a blocker moves the
+            real number and this panel would show the old one with no hint. Every
+            status flip here is an audited registry action, which makes acting on a
+            stale verdict expensive. */}
+        <CacheAge path="/v1/command/deep" className="font-normal normal-case" />
+
         <div className="ml-auto flex gap-1">
           {(['A', 'B'] as const).map((p) => (
             <button key={p} onClick={() => setPath(p)}

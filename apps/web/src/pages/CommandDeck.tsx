@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Command, RefreshCw, AlertTriangle, Rocket, Layers, Users, ShieldAlert,
   GitBranch, Scale, DollarSign, HelpCircle, CheckCircle2, Circle, Ban,
@@ -12,6 +12,11 @@ import {
   type CommandRisk, type CommandFinancial, type LaunchSim, type ProgramAnswer,
 } from '@/lib/api/command';
 import { EmptyState, PageSkeleton, toast } from '@/components/shared';
+import { ACTION_MANIFEST } from '@/lib/command/generated/actionManifest';
+import { verbsFor, blockedExplanation, type Principal } from '@/components/command/grammar';
+import { invoke } from '@/components/command/invoke';
+import { useAccessStore } from '@/stores/useAccessStore';
+import { useOperatorStore } from '@/stores';
 import { DeepOntologyPanel } from '@/components/command/DeepOntologyPanel';
 import { ReadinessDial, LpOptimizerPanel, FunnelSimPanel } from '@/components/command/CockpitPanels';
 import { AnalyticReviews } from '@/components/intel/AnalyticReviews';
@@ -388,14 +393,66 @@ function CriticalPath({ tasks, onChange }: { tasks: CommandTask[]; onChange: () 
 /** Program-critical decisions gated on tradecraft (100X Phase 4.2). */
 const CRITICAL_DECISIONS = new Set(['dec_01', 'dec_19']);
 
-/** One decision row with the governed decide flow (Wave 2) + SAT gate (Phase 4). */
+/**
+ * One decision row with the governed decide flow (Wave 2) + SAT gate (Phase 4)
+ * + the reopen affordance (TERMINAL Phase 7, T1 #28).
+ *
+ * `command_reopen_decision` was already reachable — ⌘K generates every verb from
+ * the manifest — but no SURFACE named it, so an operator looking at a decision
+ * recorded on evidence that later turned out wrong had nothing telling them the
+ * capability exists. Reachable is not discoverable.
+ *
+ * Which verb to show, and whether it is runnable, is NOT decided here: `verbsFor`
+ * decides, from the same generated manifest the command line uses, so this row and
+ * ⌘K cannot disagree about the rules. That also means the Phase 3 judgement calls
+ * come for free and stay tested in grammar.test.ts:
+ *   - wrong state (status='open') → the precondition filters it out → ABSENT;
+ *   - insufficient authority (not approver, or no 'approve' on `command`) → PRESENT
+ *     and blocked, with what to request. Hiding it would teach the operator the
+ *     capability does not exist.
+ * And the write goes through `invoke`, i.e. POST /v1/actions/:id/invoke — the same
+ * single audited door. No second write path.
+ */
 function DecisionRow({ d, onChange }: { d: CommandDecision; onChange: () => void }) {
   const [deciding, setDeciding] = useState(false);
   const [chosen, setChosen] = useState(d.recommendation ?? '');
   const [busy, setBusy] = useState(false);
   const [tradecraft, setTradecraft] = useState(false);
   const [memo, setMemo] = useState<string | null>(null);
+  const [reopening, setReopening] = useState(false);
+  const [reason, setReason] = useState('');
   const critical = CRITICAL_DECISIONS.has(d.id);
+
+  const operator = useOperatorStore((s) => s.operator);
+  const accessMe = useAccessStore((s) => s.me);
+  const reopen = useMemo(() => {
+    const principal: Principal = {
+      role: operator?.role === 'approver' ? 'approver' : 'operator',
+      entitlements: (accessMe?.entitlements ?? {}) as Principal['entitlements'],
+    };
+    return verbsFor(
+      ACTION_MANIFEST,
+      { type: 'command_decision', id: d.id, label: d.decision, state: { status: d.status } },
+      principal,
+    ).find((v) => v.action.id === 'command_reopen_decision') ?? null;
+  }, [operator, accessMe, d.id, d.decision, d.status]);
+
+  const doReopen = async () => {
+    // The server requires a NON-BLANK reason (registry.ts: min(1) plus a refine that
+    // rejects whitespace), because un-recording a decision without a justification in
+    // the audit beside it is the one thing this action must not permit. Trimming here
+    // is a courtesy so the operator is not round-tripped for a stray space; it is not
+    // the enforcement.
+    if (!reason.trim() || busy) return;
+    setBusy(true);
+    const out = await invoke('command_reopen_decision', 'command_decision', d.id, { reason: reason.trim() });
+    setBusy(false);
+    if (!out.ok) { toast('error', out.remedy); return; }
+    toast('success', 'Reopened — the reason is in the audit, and the decision log says it was superseded');
+    setReopening(false);
+    setReason('');
+    onChange();
+  };
 
   const decide = async () => {
     if (!chosen.trim() || busy) return;
@@ -423,7 +480,42 @@ function DecisionRow({ d, onChange }: { d: CommandDecision; onChange: () => void
         ) : deciding ? null : (
           <button onClick={() => setDeciding(true)} className="shrink-0 text-micro font-semibold text-cyan-700 hover:underline dark:text-cyan-400">Decide</button>
         )}
+        {reopen && !reopening && (
+          reopen.blocked ? (
+            // Shown refused, not hidden: the operator learns the capability exists
+            // and what authority it needs. The reason renders as visible text below
+            // rather than a `title` tooltip — a tooltip is not reachable by keyboard,
+            // and "why can't I do this?" is exactly the sentence that must not hide.
+            <span className="inline-flex shrink-0 items-center gap-1 text-micro font-semibold text-amber-600 dark:text-amber-400">
+              <ShieldAlert size={11} /> Reopen — blocked
+            </span>
+          ) : (
+            <button
+              onClick={() => setReopening(true)}
+              className="shrink-0 text-micro font-semibold text-amber-600 hover:underline dark:text-amber-400"
+            >
+              Reopen
+            </button>
+          )
+        )}
       </div>
+      {reopen?.blocked && !reopening && (
+        <p className="mt-0.5 text-micro text-amber-700 dark:text-amber-300">{blockedExplanation(reopen.blocked)}</p>
+      )}
+      {reopen && !reopen.blocked && reopening && (
+        <div className="mt-1.5 flex gap-1.5">
+          <input
+            autoFocus value={reason} onChange={(e) => setReason(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void doReopen(); if (e.key === 'Escape') setReopening(false); }}
+            placeholder="Why is this being un-decided? (recorded in the audit)"
+            maxLength={500}
+            aria-label={`Reason for reopening ${d.decision}`}
+            className="min-w-0 flex-1 rounded border border-line bg-card px-2 py-1 text-micro text-navy outline-none focus:border-amber-500"
+          />
+          <Button size="xs" onClick={() => void doReopen()} disabled={!reason.trim() || busy}>{busy ? '…' : 'Reopen'}</Button>
+          <Button size="xs" variant="secondary" onClick={() => { setReopening(false); setReason(''); }}>Cancel</Button>
+        </div>
+      )}
       {d.status === 'decided' && d.chosen ? (
         <p className="mt-0.5 text-micro text-emerald-700 dark:text-emerald-300">✓ {d.chosen}</p>
       ) : d.recommendation ? (

@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { KeyRound, Check, X, ShieldCheck } from 'lucide-react';
+import { useDismissible } from '@/hooks/useDismissible';
 import { WORKSPACES, capAtLeast, type Capability, type WorkspaceId } from '@lcx/shared';
 import {
   fetchAccessMatrix, fetchAccessRequests, decideAccessRequest,
@@ -37,6 +38,23 @@ export function AccessControl() {
   // sentinel — catching into it left the skeleton pulsing forever.
   const [requestsErr, setRequestsErr] = useState<unknown>(null);
   const [matrixErr, setMatrixErr] = useState<unknown>(null);
+
+  /**
+   * The dossier drawer joins the one Escape owner (lib/dismiss).
+   *
+   * It shipped with a backdrop, a `role="dialog"` and a close button, and Escape did
+   * NOTHING on it — the only ways out were the mouse and a route change. That is not a
+   * missing nicety on this particular panel: the stack is what the `?` manual READS to
+   * tell the operator what Escape will close, so an unregistered overlay makes the
+   * manual wrong as well as the key dead.
+   *
+   * The ref is what makes it modal — it confines Tab to the drawer. Without it Tab
+   * walks out into the entitlement matrix behind a purpose-gated read, which is the
+   * one surface on this page where wandering focus is a governance problem rather than
+   * an annoyance.
+   */
+  const dossierRef = useRef<HTMLDivElement>(null);
+  useDismissible(dossier !== null, () => setDossier(null), 'member dossier', dossierRef);
 
   const refresh = useCallback(() => {
     setRequestsErr(null);
@@ -295,9 +313,13 @@ export function AccessControl() {
       {dossier && (
         <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={() => setDossier(null)}>
           <div
+            ref={dossierRef}
+            // Focus has somewhere to land when the trap has nothing tabbable to offer,
+            // and when the stack hands focus back on close.
+            tabIndex={-1}
             role="dialog"
             aria-label={`Member dossier: ${dossier.member.name}`}
-            className="h-full w-full max-w-lg overflow-y-auto border-l border-line bg-card p-4 shadow-card"
+            className="h-full w-full max-w-lg overflow-y-auto border-l border-line bg-card p-4 shadow-card outline-none"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-center gap-2">

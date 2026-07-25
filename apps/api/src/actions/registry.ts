@@ -312,12 +312,55 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     subjectTypes: ['command_decision'],
     minRole: 'approver',
     workspace: 'command',
-    paramsSchema: z.object({ reason: z.string().min(1).max(500) }),
-    execute: async ({ pool, subjectId }) => {
+    // `reason` is REQUIRED, not optional: this un-records a decision, and
+    // invokeAction writes the params into object_actions.params AND audit_log.meta,
+    // so requiring it here is what makes "who reopened dec_01, and why" answerable
+    // afterwards. An optional reason would have made it answerable only sometimes.
+    //
+    // `.min(1)` alone was not enough: it accepts a single space, so the API would
+    // take `{ reason: " " }` and record a justification that says nothing — which is
+    // "no recorded justification" wearing a character. The UI trims, but the UI is
+    // not the authority. The refine is invisible to z.toJSONSchema (see the note in
+    // web grammar.ts on advisory validation), so the emitted manifest — and its hash
+    // — are unchanged; the server is simply stricter than the generated client.
+    paramsSchema: z.object({
+      reason: z.string().min(1).max(500).refine((s) => s.trim().length > 0, {
+        message: 'reason cannot be blank — a reopen has to say why',
+      }),
+    }),
+    execute: async ({ pool, subjectId, params, actor }) => {
       const { rowCount } = await pool.query(
         `UPDATE command_decisions SET status='open', chosen=NULL, decided_by=NULL, decided_at=NULL, updated_at=now()
           WHERE id=$1 AND status='decided'`, [subjectId]);
       if ((rowCount ?? 0) === 0) throw new ActionError('NOT_FOUND', 'Decision not found or not decided', 404);
+      // Retract the mirror, or the inverse is only half an inverse.
+      //
+      // `command_decide` above INSERTs a row into `decisions` — the Phase-4
+      // institutional memory, which /decisions presents un-outcomed rows from as
+      // live calls ("Open"). Reopening used to clear `command_decisions` and leave
+      // that row asserting a choice that no longer exists, so the log that exists
+      // to say "why we made the calls we made" kept a call nobody had made.
+      //
+      // Annotated rather than deleted: "on this date nik recorded choice X" stays
+      // TRUE and is the audit trail. What changes is that the row now says it was
+      // superseded, and by whom, for what stated reason. Written into `rationale`
+      // and not `outcome` deliberately — /decisions renders `outcome` as a green
+      // check ("Outcome: …"), which would present a retraction as a success.
+      //
+      // Best-effort, exactly like the mirror insert it undoes: a lagging decisions
+      // table must not block the governance action itself. The reopen HAS happened
+      // and is in both ledgers by the time this runs.
+      try {
+        await pool.query(
+          `UPDATE decisions
+              SET rationale = left(btrim(rationale || $1), 4000), updated_at = now()
+            WHERE subject_type='command_decision' AND subject_id=$2 AND source='command'
+              AND rationale NOT LIKE '%[REOPENED%'`,
+          [`\n\n[REOPENED by ${actor}] This decision was reopened — the choice above no longer stands. Stated reason: ${String(params.reason).slice(0, 500)}`, subjectId],
+        );
+      } catch (err) {
+        console.warn('[command] decision-log retraction skipped:', err instanceof Error ? err.message : err);
+      }
       return { reopened: true };
     },
   },

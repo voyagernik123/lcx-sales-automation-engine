@@ -27,6 +27,7 @@
 
 import { policyFor, type ReadPolicy } from './readPolicy';
 import { scopedKey } from './persistence';
+import { formatDuration } from './format';
 
 /**
  * Bump when the SHAPE of anything cached changes in a way an old entry would
@@ -43,7 +44,13 @@ const MAX_PERSIST_BYTES = 8 * 1024 * 1024;
 
 export interface CacheEntry<T = unknown> {
   body: T;
-  /** When this body was received. Rendered as "as of …" by surfaces that show it. */
+  /**
+   * When this body was received. Reported to surfaces through `cacheAge()` and
+   * rendered by components/ui/CacheAge as an age ("4m old") with the exact stamp
+   * in its tooltip — but ONLY when the body served came from here rather than off
+   * the wire. This comment used to promise an "as of …" rendering that had no
+   * consumer at all.
+   */
   storedAt: number;
   /** Freshness deadline; past it the entry is served but revalidated. */
   freshUntil: number;
@@ -80,8 +87,10 @@ export function canonicalPath(path: string): string {
 /**
  * The storage key. Scoped to the operator via the same helper the rest of the
  * app's local state uses — so a second person signing in on the same Mac can
- * never read the first person's cached rows, and sign-out's clearAll() takes the
- * cache with it. Derived from the resolved operator email, never from the bearer
+ * never read the first person's cached rows. (Note what this scoping does NOT do:
+ * `storage.clearAll()` sweeps localStorage and has never touched IndexedDB, so the
+ * bodies come out only via `clearReadCache()`, which sign-out now awaits.) Derived
+ * from the resolved operator email, never from the bearer
  * token: the desk passcode is shared, so a token-derived key would put a human
  * and a machine key in one namespace with different entitlement pictures.
  */
@@ -157,7 +166,35 @@ function idbGet(key: string): Promise<CacheEntry | null> {
   );
 }
 
+/**
+ * The durable tier is CLOSED between losing a credential and having one again.
+ *
+ * Awaiting the clear is not on its own enough to make "sign-out clears the cache"
+ * true. Sign-out is: clear → (transaction completes) → navigate, and those are
+ * separate turns. A background revalidation whose fetch resolves in between calls
+ * `store()`, which writes a body to disk AFTER the clear that was supposed to have
+ * emptied it — and IndexedDB's own transaction ordering does not help, because
+ * this write is issued later, not merely completed later.
+ *
+ * A monotonic epoch was the first attempt and it provably could not fire: a write
+ * issued BEFORE a clear is already serialised before it. The window that exists is
+ * the one after, so the fix has to be a seal.
+ *
+ * It is reopened by `setOperatorCredentials` — the one function that means "there
+ * is a credential again" — rather than never, because a forced return to the front
+ * door does NOT reload the document, so a permanent latch would silently disable
+ * the durable tier for the rest of the session after a passcode rotation. The
+ * memory tier is untouched while sealed, so the desk stays fast either way.
+ */
+let durableSealed = false;
+
+/** Called by apiClient when a credential exists again. */
+export function reopenDurableTier(): void {
+  durableSealed = false;
+}
+
 function idbPut(key: string, entry: CacheEntry): void {
+  if (durableSealed) return;
   void openDb().then((db) => {
     if (!db) return;
     try {
@@ -181,18 +218,123 @@ function idbDelete(key: string): void {
   });
 }
 
-/** Drop everything. Called on sign-out alongside storage.clearAll(). */
-export function clearReadCache(): void {
+/**
+ * Drop everything. Called on sign-out alongside storage.clearAll().
+ *
+ * AWAITABLE, and sign-out must await it (TERMINAL, handover). The memory tier and
+ * the provenance map go synchronously, but the durable tier is an IndexedDB
+ * transaction — and sign-out ends in `window.location.assign('/select')`, a real
+ * document navigation that aborts any transaction still in flight. So the bodies
+ * survived on disk while `TERMINAL_QUICKSTART.md` said they were cleared. They are
+ * namespaced per operator, so nobody could be SERVED them, but "the bytes are
+ * gone" and "nobody else can read them" are different promises and only the
+ * second one was true.
+ *
+ * The returned promise resolves on the transaction's `complete` event — the point
+ * at which IndexedDB guarantees durability — and also on error or abort, because
+ * a caller blocking a sign-out on a storage layer that has refused would trap the
+ * operator on a desk they asked to leave. `clearOperatorEmail` in apiClient joins
+ * this to the Keychain forget inside one bounded race, so it costs no extra
+ * wall-clock time: the two run concurrently and the Keychain IPC is the slower.
+ */
+export function clearReadCache(): Promise<void> {
   mem.clear();
-  void openDb().then((db) => {
-    if (!db) return;
-    try {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).clear();
-    } catch {
-      /* ignore */
-    }
-  });
+  provenance.clear();
+  // Closed BEFORE the transaction is requested, so a revalidation that resolves
+  // between the clear and the navigation cannot put a body back on disk.
+  durableSealed = true;
+  return openDb().then(
+    (db) =>
+      new Promise<void>((resolve) => {
+        if (!db) return resolve();
+        try {
+          const tx = db.transaction(STORE, 'readwrite');
+          // `complete`, not the request's `success`: success only means the
+          // operation was accepted, complete means it is durable.
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => resolve();
+          tx.onabort = () => resolve();
+          tx.objectStore(STORE).clear();
+        } catch {
+          resolve();
+        }
+      }),
+  );
+}
+
+/* ── how the last read was answered ───────────────────────────────────────── */
+
+/**
+ * WHY THIS EXISTS. Production sits behind 165-195ms of fixed infrastructure
+ * latency before our code runs, so this cache is not an optimisation — it is the
+ * only mechanism available, and it serves real values that real decisions are
+ * made on. `storedAt` has always been recorded and never shown, which made a
+ * cached number visually identical to a live one. The offline banner was the only
+ * signal, and it says "the API is down", not "THIS figure is four minutes old".
+ *
+ * So the cache records, per canonical path, how the body it last HANDED TO A
+ * CALLER was obtained. Two properties make it honest:
+ *
+ * 1. Only a body that reached a caller is recorded. A background SWR
+ *    revalidation deliberately does NOT update this, because its fresh body is
+ *    stored but not handed back — the surface is still painting the old one, and
+ *    marking it live would be the exact lie this affordance exists to remove.
+ * 2. `fromCache: false` produces no age at all. A badge on every number teaches
+ *    nothing; the signal is the difference.
+ */
+export interface Provenance {
+  /** `storedAt` of the body the caller received. */
+  storedAt: number;
+  /** True when it came out of the cache instead of off the wire. */
+  fromCache: boolean;
+}
+
+/**
+ * Keyed by canonical path only — it holds a timestamp and a boolean, never a
+ * body, so it needs no operator scope. It is still cleared by clearReadCache()
+ * so a forced return to the front door leaves no residue at all.
+ */
+const provenance = new Map<string, Provenance>();
+
+/** Record how a completed read was answered. Called by apiClient, nowhere else. */
+export function noteServed(canonical: string, p: Provenance): void {
+  provenance.delete(canonical); // re-insert so Map order is recency
+  provenance.set(canonical, p);
+  while (provenance.size > MAX_MEMORY_ENTRIES) {
+    const oldest = provenance.keys().next().value as string | undefined;
+    if (oldest === undefined) break;
+    provenance.delete(oldest);
+  }
+}
+
+/** How the most recent completed read of `path` was answered, if any. */
+export function servedFrom(path: string): Provenance | null {
+  return provenance.get(canonicalPath(path)) ?? null;
+}
+
+/**
+ * Age in ms of the body a surface is currently showing for `path`, or null when
+ * that body came off the wire — i.e. null means "live, say nothing".
+ *
+ * `now` is a parameter so the derivation is testable without mocking the clock.
+ */
+export function cacheAge(path: string, now: number = Date.now()): number | null {
+  const p = provenance.get(canonicalPath(path));
+  if (!p || !p.fromCache) return null;
+  return Math.max(0, now - p.storedAt);
+}
+
+/**
+ * The operator-facing label for an age. Routed through lib/format's duration
+ * formatter rather than inventing a fifth way to write a timespan.
+ *
+ * Sub-minute is "<1m old" and not "0m old" or "just now": a value can be six
+ * seconds old and still not be live, and "just now" reads as live.
+ */
+export function cacheAgeLabel(ageMs: number): string {
+  if (!Number.isFinite(ageMs) || ageMs < 0) return '';
+  if (ageMs < 60_000) return '<1m old';
+  return `${formatDuration(ageMs / 60_000)} old`;
 }
 
 /* ── degraded-body refusal ────────────────────────────────────────────────── */
@@ -363,4 +505,6 @@ export function cacheStats(): { entries: number; bytes: number } {
 export function _resetReadCache(): void {
   mem.clear();
   inFlight.clear();
+  provenance.clear();
+  durableSealed = false;
 }

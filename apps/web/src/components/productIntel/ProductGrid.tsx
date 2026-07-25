@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { productCatalog, competitorProductMap } from '@/data';
+import { useListNavigation } from '@/hooks/useListNavigation';
 import { useFilterStore } from '@/stores';
 import {
   ProductEntry,
@@ -147,6 +148,22 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
     else { setSortField(field); setSortDir('asc'); }
   };
 
+  // One tab stop for the table, arrows within it (TERMINAL Phase 4's hook, which
+  // until now had a single consumer). Every row carrying `tabIndex={0}` meant Tab
+  // visited all of them — measured 52 with no filters — AND could never leave the table.
+  const bodyRef = useRef<HTMLTableSectionElement>(null);
+  const nav = useListNavigation({
+    // Passed even though these rows currently hold no focusable descendants — that
+    // is a fact about today's cells, not a guarantee, and parkRowControls is what
+    // keeps the "one stop" claim true if one is ever added.
+    container: bodyRef,
+    count: sorted.length,
+    onActivate: (i) => {
+      const p = sorted[i];
+      if (p) onProductClick?.(p.id);
+    },
+  });
+
   const SortIcon = ({ field }: { field: ProductSortField }) => {
     if (sortField !== field) return <ArrowUpDown size={10} className="inline opacity-25" />;
     return sortDir === 'asc' ? <ChevronUp size={12} className="inline text-cyan-500" /> : <ChevronDown size={12} className="inline text-cyan-500" />;
@@ -236,18 +253,13 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
     }
   };
 
-  const tableRows = sorted.map(p => (
+  const tableRows = sorted.map((p, i) => (
     <tr key={p.id} className="border-b border-line hover:bg-ice-soft/30 dark:hover:bg-ice-soft/5 transition-colors cursor-pointer focus-ring"
       onClick={() => onProductClick?.(p.id)}
-      tabIndex={0}
-      // Stays a table row (role="button" would strip the row semantics): Enter and
-      // Space activate, Space prevented so the page does not scroll.
-      onKeyDown={e => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onProductClick?.(p.id);
-        }
-      }}>
+      // Stays a table row (role="button" would strip the row semantics), so movement
+      // comes from the shared roving-tabindex hook rather than tabIndex={0} on every
+      // row. Enter/Space still activate — via the hook's container handler.
+      {...nav.rowProps(i)}>
       {COLUMNS.map(col => (
         <td key={col.key} className="p-2 whitespace-nowrap">{renderCell(p, col)}</td>
       ))}
@@ -375,7 +387,9 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
                 ))}
               </tr>
             </thead>
-            <tbody>{tableRows}</tbody>
+            {/* No `role` from containerProps on purpose: role="grid" here would
+                replace the <tbody>'s implicit rowgroup and break the table. */}
+            <tbody ref={bodyRef} {...nav.containerProps}>{tableRows}</tbody>
           </table>
         </div>
       ) : (

@@ -5,7 +5,6 @@ import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 import { useUIStore, useOperatorStore, ROLE_LABEL } from '@/stores';
 import { clearOperatorEmail } from '@/lib/apiClient';
 import { storage } from '@/lib/persistence';
-import { clearReadCache } from '@/lib/readCache';
 import { useAccessStore } from '@/stores/useAccessStore';
 import { NotificationBell } from './NotificationBell';
 
@@ -175,7 +174,16 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
                   clearOperator(); // identity → the guard sends us to /select
                   useAccessStore.getState().reset(); // entitlements + active workspace
                   storage.clearAll(); // every locally persisted key, for every operator
-                  clearReadCache(); // cached response bodies, memory and IndexedDB
+                  // The read cache is NOT cleared here. `clearOperatorEmail()` above owns
+                  // it now (T1 #9) and returns the promise this handler waits on, because
+                  // the clear has to be awaited to its IndexedDB `complete` event — the
+                  // durability point, not the request's `success` — or the hard navigation
+                  // below tears down the transaction mid-flight and the bodies survive.
+                  // A second `clearReadCache()` call on this line would be harmless and
+                  // idempotent, and that is exactly why it was worth deleting: it read as
+                  // the thing making sign-out safe while the awaited `forgotten` promise
+                  // above was doing the work, so the next person to touch this handler
+                  // would have reordered around the wrong line.
 
                   // Hard navigation, not a client-side route change. Sign-out has to
                   // leave no residue: a SPA navigation keeps every zustand store alive

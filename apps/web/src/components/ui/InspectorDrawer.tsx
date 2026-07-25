@@ -53,9 +53,19 @@ export function InspectorDrawer({ isOpen, onClose, onEscape, title, children }: 
          * the header is what makes "the inspector opened, and it is about X"
          * audible.
          *
-         * No aria-modal here for the same reason as Modal.tsx: nothing in this
-         * app traps Tab, so declaring modality would scope a screen reader's
-         * cursor to a panel its focus can still leave. See the note there. */
+         * No aria-modal here, but NOT for the reason this comment used to give.
+         * It cited Modal.tsx for "nothing in this app traps Tab" — that stopped
+         * being true when `lib/dismiss.ts` took over Tab confinement, and
+         * Modal.tsx now declares `aria-modal` precisely because it is honest
+         * there. This drawer passes `panelRef` to `useDismissible` above, so it
+         * traps Tab too and could declare modality on the same grounds.
+         *
+         * It is left off pending a decision, not a capability: hosts may pass
+         * `onEscape` to "walk the trail back" to a PARENT inspector rather than
+         * close, so a trail of drawers is a stack of peers the operator moves
+         * through — and marking each one modal would tell a screen reader the
+         * others no longer exist. Whether that reading is right is an a11y call,
+         * not something to settle in a comment. */
         role="dialog"
         aria-labelledby={titleId}
         className={clsx(

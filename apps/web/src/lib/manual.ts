@@ -224,21 +224,33 @@ function everywhereSection(ctx: ManualContext): ManualSection {
       what: 'Tag the controls in view — type a tag to activate one',
       note: 'works on every screen; not while you are typing or while a dialog is open',
     },
-    // Qualified deliberately. The P7 audit measured that `useListNavigation` has exactly
-    // one real consumer (the BD lead table): 15 of 16 tables still make every row a Tab
-    // stop and ignore the arrows entirely. Promising them everywhere sends an operator
-    // to press keys that do nothing, on the surface whose whole job is telling them
-    // which keys work.
+    // Qualified deliberately, and RE-qualified once. The P7 audit measured exactly one
+    // consumer of `useListNavigation` (the BD lead table), so this line named only that
+    // table. T1 #11 then adopted the hook on three more — product intelligence
+    // (`ProductGrid`), competition (`CompetitorGrid`) and the registry ledger
+    // (`ProductMatrix`) — which made "other tables do not have this yet" false about
+    // precisely those three. Promising the arrows everywhere sends an operator to press
+    // keys that do nothing; denying them where they work is the same defect pointed the
+    // other way, on the surface whose whole job is telling them which keys work.
+    //
+    // Still a hand-maintained list, and that is the honest weakness of this entry: it is
+    // not derived from the hook's call sites, so the fifth adopter has to remember to
+    // come here. Deriving it would mean a build-time scan of `useListNavigation`
+    // consumers, which does not exist yet.
     {
       keys: ['↑', '↓'],
-      what: 'Move between rows on the lead table; Home and End jump to its ends',
-      note: 'other tables do not have this yet',
+      what: 'Move between rows on a ranked table; Home and End jump to its ends',
+      note: 'the lead table, product intelligence, competition and the registry ledger — not every table yet',
     },
     // Added because the P7 roving-tabindex fix made these the ONLY route to a row's own
-    // buttons, and neither teaching surface mentioned them.
-    { keys: ['←', '→'], what: 'Reach the buttons inside the row you are on' },
+    // buttons, and neither teaching surface mentioned them. The note is not padding: of
+    // the four ranked tables above, only the lead table puts controls in a row (measured
+    // 0 focusable descendants per row on the other three), so on those three these keys
+    // are real but have nothing to reach — and a manual that implies otherwise sends an
+    // operator to press a key that does nothing.
+    { keys: ['←', '→'], what: 'Reach the buttons inside the row you are on', note: 'only the lead table has buttons in a row' },
     { keys: ['⏎'], what: 'Open the row you are on' },
-    { keys: ['⇥'], what: 'Next region. The lead table is one stop, not one per row' },
+    { keys: ['⇥'], what: 'Next region. A ranked table is one stop, not one per row' },
   ];
   if (ctx.isTerminal) {
     entries.push(

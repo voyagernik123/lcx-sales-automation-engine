@@ -10,6 +10,7 @@ import { ChartCard, ColumnChart, DonutChart } from '@/components/charts';
 import { formatRate } from '@/lib/metricPolicy';
 import { ChartSkeleton, ErrorNotice, PageSkeleton, toast } from '@/components/shared';
 import { Button } from '@/components/ui';
+import { CacheAge } from '@/components/ui/CacheAge';
 import { MetricStatCards } from '@/components/kpi/MetricStatCards';
 import { FunnelSection } from '@/components/kpi/FunnelSection';
 import { ForecastDistribution } from '@/components/kpi/ForecastDistribution';
@@ -172,7 +173,13 @@ export function KpiDashboard() {
             <BarChart3 size={17} className="text-cyan-500" />
             KPI Dashboard
           </h1>
-          <p className="mt-0.5 text-micro text-grey">Pipeline, revenue &amp; forecast instruments</p>
+          <p className="mt-0.5 flex items-center gap-1.5 text-micro text-grey">
+            Pipeline, revenue &amp; forecast instruments
+            {/* /v1/kpis has the longest freshness window of any allowed read
+                (5 min) and every figure below it is money, so it is the surface
+                where an unlabelled cached number costs the most. */}
+            <CacheAge path="/v1/kpis" />
+          </p>
         </div>
 
         {/* DATE RANGE CHIPS */}

@@ -30,6 +30,7 @@ import {
 } from '@/components/queue/logic';
 import { Target, Moon, Play } from 'lucide-react';
 import { clsx } from 'clsx';
+import { isOverlayOpen } from '@/lib/dismiss';
 import { Button } from '@/components/ui';
 import { ConfirmDialog, EmptyState, TableSkeleton, toast, toastUndo } from '@/components/shared';
 import { FilterTokenBar } from '@/components/bd/FilterTokenBar';
@@ -264,9 +265,16 @@ export function BdPipeline() {
 
   useEffect(() => {
     if (!selectedId) return;
-    document
-      .querySelector(`[data-lead-id="${CSS.escape(selectedId)}"]`)
-      ?.scrollIntoView({ block: 'nearest' });
+    const row = document.querySelector(`[data-lead-id="${CSS.escape(selectedId)}"]`);
+    if (!row) return;
+    // Not when the row already holds focus. Selection now follows row focus (see
+    // `syncSelectionToFocus`), and the arrows are handled by useListNavigation, which has
+    // ALREADY scrolled the row — respecting the operator's reduced-motion setting, which
+    // this call does not. A second `auto` scroll in the same frame cancels that smooth one,
+    // so every arrow press would jump instead of glide. This stays for the `j`/`k` path,
+    // where nothing else moves the viewport.
+    if (row.contains(document.activeElement)) return;
+    row.scrollIntoView({ block: 'nearest' });
   }, [selectedId]);
 
   const move = useCallback(
@@ -381,11 +389,102 @@ export function BdPipeline() {
   /* ── Page-level triage grammar (session + sub-dialogs own their keys) ── */
   const dialogOpen = session !== null || snoozeFor !== null || dqFor !== null || enrollFor !== null;
 
+  /**
+   * Row focus IS the selection.
+   *
+   * There were two cursors on this surface and they could point at different leads:
+   * `useListNavigation`'s (real DOM focus, moved by the arrows inside the table) and
+   * this page's `selectedId` (the cyan highlight, moved by `j`/`k`). `s`, `d` and `e`
+   * act on `selectedId` — so the operator could arrow down to row 5, see the focus ring
+   * on row 5, press `d`, and disqualify row 2. Making focus write the selection collapses
+   * the two into the one thing the operator can see, and it is what makes the
+   * `defaultPrevented` guard below safe: once the row handler has claimed an arrow press,
+   * the page must NOT move the selection a second time, and it no longer needs to.
+   *
+   * `onFocus` on the container rather than per-row because the rows belong to LeadTable —
+   * React's focus event is `focusin`, which bubbles, so the container can see it.
+   */
+  const syncSelectionToFocus = useCallback((e: React.FocusEvent) => {
+    const el = e.target as HTMLElement | null;
+    if (!el?.matches?.('tr[data-lead-id]')) return;
+    const id = el.getAttribute('data-lead-id');
+    if (id) setSelectedId(id);
+  }, []);
+
+  /**
+   * Space PEEKS. Enter OPENS. Claimed here because the row would otherwise claim it first.
+   *
+   * `useListNavigation` binds Enter AND Space to `onActivate` (hooks/useListNavigation.ts:225),
+   * and LeadTable passes `onSelect` as `onActivate` — so Space OPENED the lead, while
+   * TriageBar tells the operator Space is peek and `↵` is open. Both then ran: the row's
+   * handler calls `preventDefault` without stopping propagation, and the `window` listener
+   * below peeked as well. One press, two actions, and the advertised one lost.
+   *
+   * The hook has three consumers and may not be changed for this surface alone, so the
+   * key is intercepted BEFORE the row sees it: React dispatches an ancestor's capture
+   * handler ahead of the target's own, and `stopPropagation` on the synthetic event calls
+   * through to the native event — which is what also keeps the `window` listener out of it,
+   * rather than trusting it to check `defaultPrevented`.
+   *
+   * Scoped to this container instead of a global capture listener on purpose. The one
+   * thing this needs to beat is a handler on the table underneath it; a document- or
+   * window-level capture grab would additionally cut in front of the hint layer, the
+   * command line and the manual, which is how the previous Escape model rotted.
+   */
+  const claimRowKeys = useCallback((e: React.KeyboardEvent) => {
+    if (e.key !== ' ' && e.key !== 'Enter') return;
+    if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+    const el = e.target as HTMLElement | null;
+    const row = el?.closest?.('tr[data-lead-id]') ?? null;
+    if (!row) return;
+
+    if (el !== row) {
+      /*
+       * A keystroke aimed at a control INSIDE the row belongs to that control. The peek
+       * eye and the unsnooze button are reached by ArrowRight (they are parked out of the
+       * tab ring by design), and the hook's Space/Enter binding fires for them too because
+       * it is bound on the `<tbody>` they bubble through — so pressing Space on the peek
+       * button opened the lead instead of peeking, and `preventDefault` in the hook
+       * cancelled the button's own activation on the way. Propagation is stopped and the
+       * default is deliberately NOT prevented, so the browser still activates the button.
+       */
+      e.stopPropagation();
+      return;
+    }
+    // Enter on the row keeps its meaning — the hook opens the lead, and the guard below
+    // stops this page opening it a second time.
+    if (e.key !== ' ') return;
+    if (dialogOpen || isOverlayOpen()) return;
+    const id = row.getAttribute('data-lead-id');
+    if (!id) return;
+    e.preventDefault();
+    e.stopPropagation();
+    handlePeek(id);
+  }, [dialogOpen, handlePeek]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (dialogOpen) return;
+      /*
+       * `dialogOpen` is only this page's OWN four dialogs. Every other overlay in the app
+       * — an inspector, the `?` manual, a PartnerDossier, the `f` hint layer — left `s`
+       * (snooze), `d` (disqualify), `e` (enroll) and `1`-`4` live on the selected lead
+       * underneath it. That is the defect the hint layer had to defend against from its
+       * side (components/help/__tests__/hintTags.test.tsx), and defending in one direction
+       * only fixes one overlay. The stack knows the answer for all of them.
+       */
+      if (isOverlayOpen()) return;
       if (isTypingTarget(e.target)) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
+      /*
+       * Something closer to the operator already handled this key. Without this the row's
+       * Enter — which opens the focused lead — was followed by this listener opening
+       * `selectedId`, a second navigation to whichever lead the highlight was on. Note the
+       * order this depends on: `window` is the LAST node in the bubble path, so by the time
+       * this runs the row has had its say. `preventDefault` is not `stopPropagation`, and a
+       * listener that ignores the difference fires on keys that were already spent.
+       */
+      if (e.defaultPrevented) return;
 
       if (/^[1-4]$/.test(e.key)) {
         e.preventDefault();
@@ -571,8 +670,8 @@ export function BdPipeline() {
         </span>
       </div>
 
-      {/* TABLE AREA */}
-      <div className="flex-1 overflow-auto">
+      {/* TABLE AREA — owns Space/Enter on a row before the row does (see claimRowKeys) */}
+      <div className="flex-1 overflow-auto" onKeyDownCapture={claimRowKeys} onFocus={syncSelectionToFocus}>
         {activeSplit === 'working' ? (
           <>
             {loading && (

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Megaphone, Plus } from 'lucide-react';
 import { clsx } from 'clsx';
+import { useDismissible } from '@/hooks/useDismissible';
 import { PageTitle, Button } from '@/components/ui';
 import { CardSkeleton, ErrorNotice } from '@/components/shared';
 import { toast } from '@/components/shared/Toast';
@@ -42,6 +43,23 @@ export function DistributionCampaigns() {
   // which is a lie the operator acts on: they draft a duplicate of a campaign
   // that is already there but unreachable. The list carries its own error.
   const [listErr, setListErr] = useState<unknown>(null);
+
+  /**
+   * The compliance drawer joins the one Escape owner (lib/dismiss).
+   *
+   * Same defect as the dossier drawer on Access Control, and it read the same way from
+   * the outside: a modal-looking panel over a backdrop where Escape did nothing, and a
+   * `?` manual that could not name it because it was never on the stack. Registering it
+   * is also what gives it focus restoration — closing it used to drop focus to `<body>`,
+   * which restarts Tab at the top of the document, so a keyboard operator lost the
+   * campaign row they were working.
+   *
+   * The ref confines Tab to the drawer: it holds the two review-filing buttons and the
+   * two export buttons, and Tab leaking past them into the lifecycle `<select>`s behind
+   * it means a stray keystroke can advance a campaign's status.
+   */
+  const drawerRef = useRef<HTMLDivElement>(null);
+  useDismissible(drawer !== null, () => setDrawer(null), 'campaign compliance', drawerRef);
 
   const refresh = useCallback(() => {
     setListErr(null);
@@ -194,9 +212,13 @@ export function DistributionCampaigns() {
       {drawer && (
         <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={() => setDrawer(null)}>
           <div
+            ref={drawerRef}
+            // Somewhere for focus to land when the trap has nothing tabbable, and when
+            // the stack hands focus back on close.
+            tabIndex={-1}
             role="dialog"
             aria-label={`Compliance detail: ${drawer.name}`}
-            className="h-full w-full max-w-lg overflow-y-auto border-l border-line bg-card p-4 shadow-card"
+            className="h-full w-full max-w-lg overflow-y-auto border-l border-line bg-card p-4 shadow-card outline-none"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="mb-3 flex items-center gap-2">

@@ -6,7 +6,15 @@
 
 import type { HealthResponse, OperatorPrincipal } from '@lcx/shared';
 import { isTerminal } from './container';
-import { canonicalPath, lookup, store, coalesce, clearReadCache } from './readCache';
+import {
+  canonicalPath,
+  lookup,
+  store,
+  coalesce,
+  clearReadCache,
+  noteServed,
+  reopenDurableTier,
+} from './readCache';
 import { noteRead } from './perf';
 import { invalidateAfterAction } from './readInvalidate';
 import { recordNetworkResult } from './online';
@@ -89,6 +97,11 @@ export async function hydrateCredentials(): Promise<void> {
  * disables the localStorage fallback that is the only thing keeping the desk usable
  * when the Keychain is unavailable. `getApiKey()` already treats a half credential
  * as no credential, so half a credential is never worth persisting.
+ *
+ * Note the consequence of routing that through `clearOperatorEmail`: a rejected
+ * sign-in now also drops the read cache. That is the behaviour you want — bodies
+ * fetched while a provisional credential was in place should not outlive it — and
+ * on a rejected sign-in there is nothing worth keeping anyway.
  */
 export function setOperatorCredentials(email: string, passcode: string): void {
   const e = email.trim().toLowerCase();
@@ -98,6 +111,13 @@ export function setOperatorCredentials(email: string, passcode: string): void {
   }
   memEmail = e;
   memPass = passcode;
+  // Reopen the read cache's durable tier. `clearReadCache` seals it so that a
+  // revalidation resolving between sign-out's clear and its navigation cannot put
+  // a body back on disk; this is the one function that means "there is a
+  // credential again", and a forced return to the front door does not reload the
+  // document, so without this a passcode rotation would leave the durable tier
+  // silently off for the rest of the session.
+  reopenDurableTier();
   // A NEW credential re-arms the forced-sign-out latch. See `frontDoorForced`: it
   // exists to make a burst of 401s act once, and it used to be justified by "a
   // successful sign-in is a fresh document" — which the front door does not do. It
@@ -138,6 +158,21 @@ export function setOperatorCredentials(email: string, passcode: string): void {
  * could see the result of: the next operator on this Mac could inherit the previous
  * one's desk passcode from the login keychain. Returning the promise costs nothing
  * and makes the guarantee real.
+ *
+ * THE READ CACHE GOES WITH IT, and it is awaited here rather than at each caller
+ * (handover, T1 #9). The IndexedDB clear had exactly the same race as the Keychain
+ * delete and lost it for the same reason: both sign-out paths fired it and then
+ * navigated, so cached response BODIES survived on disk while
+ * `TERMINAL_QUICKSTART.md` said they were cleared.
+ *
+ * Joined to the credential rather than left as a second call the caller must
+ * remember, because that is the invariant: bodies fetched with a credential must
+ * not outlive it. Both existing callers already await THIS promise inside a bounded
+ * race (TopNav's sign-out button and forceFrontDoor below), so wiring it here made
+ * the guarantee real without either of them changing, and a third sign-out path
+ * added later cannot forget half of it. It also costs no extra wall-clock time on
+ * the terminal: the clear runs concurrently with the Keychain IPC, which is the
+ * slower of the two.
  */
 export function clearOperatorEmail(): Promise<void> {
   memEmail = null;
@@ -152,11 +187,15 @@ export function clearOperatorEmail(): Promise<void> {
   } catch {
     /* no-op */
   }
+  // Started before the Keychain import so the two overlap. Memory and the
+  // provenance map are already empty by the time this returns; only the durable
+  // tier is still settling.
+  const cacheCleared = clearReadCache();
   // Forget the Keychain entries too, so sign-out on the terminal is real.
-  if (!isTerminal()) return Promise.resolve();
+  if (!isTerminal()) return cacheCleared;
   return (async () => {
     const { secretDelete } = await import('./terminal');
-    await Promise.all([secretDelete(EMAIL_KEY), secretDelete(PASS_KEY)]);
+    await Promise.all([cacheCleared, secretDelete(EMAIL_KEY), secretDelete(PASS_KEY)]);
   })();
 }
 
@@ -236,11 +275,15 @@ function forceFrontDoor(reason: string): void {
   // redirect happens regardless. Nothing is lost by the timeout: memory and
   // localStorage are cleared synchronously inside `clearOperatorEmail` before it
   // returns a promise at all, so the credential has already stopped being usable.
+  //
+  // The read cache goes too — it is keyed by PATH, not by credential, so bodies
+  // fetched under the credential that was just rejected must not be served to
+  // whoever signs in next. It used to be a separate call after this race;
+  // `clearOperatorEmail` now owns it, which both starts it immediately instead of
+  // up to two seconds later and makes it impossible for a sign-out path to do one
+  // half without the other.
   const bounded = new Promise<void>((resolve) => setTimeout(resolve, 2000));
   void Promise.race([clearOperatorEmail().catch(() => {}), bounded]).then(async () => {
-    // Keyed by PATH, not by credential: bodies fetched under the credential that
-    // was just rejected must not be served to whoever signs in next.
-    clearReadCache();
     // Dynamic, not static: apiClient is on the pre-render boot path (main.tsx
     // awaits hydrateCredentials before mounting React) and this is an exceptional
     // path. Rollup resolves it into the entry chunk the stores already sit in, so
@@ -442,6 +485,16 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
       // would otherwise silently get no invalidation — leaving the operator
       // looking at a value the server has already changed. Hooking the single
       // chokepoint makes it correct by construction.
+      // A GET that bypassed the cache is still a live answer, and it has to be
+      // RECORDED as one rather than merely not recorded. `cache: false` is what a
+      // surface uses when it must not be stale (re-reading a deal's stage as a
+      // close flow opens); without this the previous cached-age record survives
+      // and the surface goes on advertising an age for a value it just refreshed
+      // — which is the same lie as the one this affordance removes, pointed the
+      // other way.
+      if (method === 'GET') {
+        noteServed(canonicalPath(path), { storedAt: Date.now(), fromCache: false });
+      }
       const action = governedActionId(path, method);
       if (action) invalidateAfterAction(action);
       return out;
@@ -456,10 +509,18 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
 
   if (hit.usable && hit.entry) {
     noteRead(true);
+    // The one place a surface can learn that the number it is about to paint is
+    // not live. Recorded on the way OUT, next to the body being returned, so the
+    // record can never describe a body a caller did not receive.
+    noteServed(canonical, { storedAt: hit.entry.storedAt, fromCache: true });
     if (hit.stale) {
       // Stale-while-revalidate: the operator already has pixels; refresh behind
       // them. Coalesced, so five components revisiting the same surface at once
       // produce one request. Failures are swallowed — the cached body stands.
+      // Deliberately does NOT noteServed(): the fresh body is stored, but the
+      // caller above already has the OLD one and nothing hands them the new one.
+      // Marking the path live here would erase the age badge off a number the
+      // operator is still looking at — the precise dishonesty this pass removes.
       void coalesce(canonical, () => networkRequest<T>(path, opts, method))
         .then((fresh) => store(canonical, fresh, { noStore: noStoreFlag }))
         .catch((err) => {
@@ -473,6 +534,9 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
   try {
     const fresh = await coalesce(canonical, () => networkRequest<T>(path, opts, method));
     store(canonical, fresh, { noStore: noStoreFlag });
+    // Live. Recorded rather than merely left absent, so a surface that was on a
+    // cached body a moment ago stops claiming an age the instant it is refreshed.
+    noteServed(canonical, { storedAt: Date.now(), fromCache: false });
     return fresh;
   } catch (err) {
     if (isNetworkError(err)) noteTransport(false);

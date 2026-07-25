@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Briefcase, Siren, ListChecks, GitPullRequestArrow, LayoutGrid } from 'lucide-react';
 import { fetchMyDesk, type MyDesk as MyDeskData } from '@/lib/api/desk';
 import { formatMoney } from '@/lib/format';
+import { CacheAge } from '@/components/ui/CacheAge';
 import { clsx } from 'clsx';
 
 /**
@@ -26,6 +27,11 @@ export function MyDesk({ ownerName }: { ownerName: string }) {
         <LayoutGrid size={14} className="text-cyan-600 dark:text-cyan-400" />
         <h2 className="text-label font-bold text-navy">My desk</h2>
         <span className="text-micro text-grey">— {ownerName}'s lanes</span>
+        {/* Age of THIS panel's numbers, shown only when they came from the local
+            read cache. The landing surface is remounted on every return to Home,
+            so it is the single most likely place in the app to be looking at a
+            cached count and believe it is live. */}
+        {desk && <CacheAge path="/v1/me/desk" />}
         {desk && total === 0 && <span className="ml-auto text-micro text-grey">nothing assigned to you yet</span>}
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

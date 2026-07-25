@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { competitors as allCompetitors, states, products } from '@/data';
+import { useListNavigation } from '@/hooks/useListNavigation';
 import { useAuditStore, useFilterStore } from '@/stores';
 import { Badge, Card, CardBody } from '@/components/ui';
 import { EmptyState } from '@/components/shared';
@@ -188,6 +189,20 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
     setter(value);
     addAuditLog(`CCO filtered competition grid: ${label} = ${value}`, 'System');
   };
+
+  // One tab stop for the table, arrows within it (TERMINAL Phase 4's hook). The
+  // count is `sorted.length` and NOT the rendered row count: the LCX USA row after
+  // them is a static projection with nothing to activate and no controls, so it is
+  // deliberately not a cursor position.
+  const bodyRef = useRef<HTMLTableSectionElement>(null);
+  const nav = useListNavigation({
+    container: bodyRef,
+    count: sorted.length,
+    onActivate: (i) => {
+      const c = sorted[i];
+      if (c) onCompetitorClick?.(c.id);
+    },
+  });
 
   const lcxMTLCount = useMemo(() => {
     const p1States = states.filter(s => s.phase === 'Phase 1' && s.tier !== 'Unresearched');
@@ -389,7 +404,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
     </tr>
   );
 
-  const tableRows = sorted.map(c => (
+  const tableRows = sorted.map((c, i) => (
       <tr
         key={c.id}
         className={clsx(
@@ -398,16 +413,11 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
           clarityEnacted && c.clarityAct.position === 'strong_beneficiary' && 'border-l-2 border-l-cyan-500 bg-cyan-500/[0.02] dark:bg-cyan-500/[0.01]'
         )}
         onClick={() => onCompetitorClick?.(c.id)}
-        tabIndex={0}
-        // Stays a table row (role="button" would strip the row semantics), so it
-        // gets the focusable-row treatment: Enter/Space activate, Space prevented
-        // so the page does not scroll.
-        onKeyDown={e => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            onCompetitorClick?.(c.id);
-          }
-        }}
+        // Stays a table row (role="button" would strip the row semantics), so
+        // movement comes from the shared roving-tabindex hook rather than
+        // tabIndex={0} on every row: one Tab stop, arrows inside. Enter/Space still
+        // activate, via the hook's container handler.
+        {...nav.rowProps(i)}
       >
       {COLUMNS.filter(col => col.sortable).map(col => (
         <td key={col.key} className="p-2.5 whitespace-nowrap">
@@ -617,7 +627,9 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
                 </th>
               </tr>
             </thead>
-            <tbody>
+            {/* No `role` from containerProps on purpose: role="grid" here would
+                replace the <tbody>'s implicit rowgroup and break the table. */}
+            <tbody ref={bodyRef} {...nav.containerProps}>
               {tableRows}
               {renderLCXRow()}
             </tbody>
