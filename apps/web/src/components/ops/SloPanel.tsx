@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Gauge } from 'lucide-react';
 import { fetchSlos, fmtSlo, type SloReport, type Slo } from '@/lib/api/slo';
+import { TableSkeleton } from '@/components/shared';
 import { clsx } from 'clsx';
 
 /**
@@ -32,7 +33,7 @@ export function SloPanel() {
       {err ? (
         <p className="py-2 text-label text-grey">SLOs unavailable.</p>
       ) : !rep ? (
-        <p className="py-2 text-label text-grey">Loading…</p>
+        <TableSkeleton rows={3} cols={3} />
       ) : (
         <div className="space-y-2">
           {rep.slos.map((s) => <SloRow key={s.key} s={s} />)}

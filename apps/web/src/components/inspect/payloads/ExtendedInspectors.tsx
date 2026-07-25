@@ -9,7 +9,7 @@ import type { DealEvent } from '@/types/bd';
 import { TRIGGER_DAY_LABELS, TRIGGER_TYPE_LABELS } from '@/types/kpi';
 import { states } from '@/data';
 import { formatDate, formatMoney } from '@/lib/format';
-import { CardSkeleton, EmptyState } from '@/components/shared';
+import { CardSkeleton, EmptyState, TableSkeleton } from '@/components/shared';
 import { Button } from '@/components/ui';
 import { useInspectorStore } from '@/stores';
 import { RelationRail } from '../RelationRail';
@@ -191,7 +191,7 @@ export function ListingInspector({ id }: InspectorPayloadProps) {
           30/60/90 post-listing triggers
         </div>
         {triggers === null ? (
-          <p className="text-micro italic text-grey">Loading…</p>
+          <TableSkeleton rows={3} cols={1} />
         ) : triggers.length === 0 ? (
           <p className="text-micro italic text-grey">No triggers scheduled for this listing.</p>
         ) : (

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ListChecks } from 'lucide-react';
 import { clsx } from 'clsx';
 import { PageTitle } from '@/components/ui';
-import { CardSkeleton } from '@/components/shared';
+import { CardSkeleton, ErrorNotice } from '@/components/shared';
 import { toast } from '@/components/shared/Toast';
 import {
   fetchDistributionDeep, setListingStatus, draftListingPacket,
@@ -28,6 +28,9 @@ export function DistributionListings() {
   const [openMechanic, setOpenMechanic] = useState<string | null>(null);
   const [packet, setPacket] = useState<{ id: string; text: string; usedLlm: boolean } | null>(null);
   const [packing, setPacking] = useState<string | null>(null);
+  // `deep === null` is the LOADING sentinel — a failure must not reset to it, or
+  // the skeleton pulses forever with no way back but a page reload.
+  const [err, setErr] = useState<unknown>(null);
 
   const genPacket = async (id: string) => {
     setPacking(id);
@@ -36,7 +39,10 @@ export function DistributionListings() {
     finally { setPacking(null); }
   };
 
-  const refresh = useCallback(() => { fetchDistributionDeep().then(setDeep).catch(() => setDeep(null)); }, []);
+  const refresh = useCallback(() => {
+    setErr(null);
+    fetchDistributionDeep().then(setDeep).catch(setErr);
+  }, []);
   useEffect(() => { refresh(); }, [refresh]);
 
   const change = async (surfaceId: string, status: string) => {
@@ -61,7 +67,9 @@ export function DistributionListings() {
         Listing Ops
       </PageTitle>
 
-      {!deep ? (
+      {err ? (
+        <ErrorNotice error={err} onRetry={refresh} />
+      ) : !deep ? (
         <div className="mt-4"><CardSkeleton /></div>
       ) : !deep.live.listings ? (
         <p className="mt-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-label text-amber-700 dark:text-amber-400">

@@ -4,6 +4,7 @@ import {
   fetchReadiness, lpRescore, runWaitlistSim, fetchCommandDeep,
   type Readiness, type LpRescoreResult, type WaitlistSimOut, type CommandDeep,
 } from '@/lib/api/command';
+import { ErrorNotice } from '@/components/shared';
 import { clsx } from 'clsx';
 
 /**
@@ -13,10 +14,32 @@ import { clsx } from 'clsx';
  * an overlay — stored truth never changes from here.
  */
 
+/**
+ * All three panels gate on `if (!payload) return null`, which is right while
+ * loading — an instrument should not reserve space for a number it may not get —
+ * but was also what a FAILED read rendered, because each one caught into the
+ * same null. The panel then silently ceased to exist: no skeleton, no message,
+ * no gap. An instrument that quietly removes itself is worse than one reading
+ * zero, because the operator draws conclusions from the panels that are left.
+ *
+ * So: failure gets its own state and one compact line. Loading still renders
+ * nothing, deliberately, so the cockpit's layout while it settles is unchanged.
+ */
+function PanelError({ error, onRetry }: { error: unknown; onRetry?: () => void }) {
+  return (
+    <section className="br-section rounded-lg border border-line bg-card p-4 shadow-card">
+      <ErrorNotice error={error} onRetry={onRetry} compact />
+    </section>
+  );
+}
+
 /* ── Readiness dial header ── */
 export function ReadinessDial() {
   const [r, setR] = useState<Readiness | null>(null);
-  useEffect(() => { fetchReadiness().then(setR).catch(() => setR(null)); }, []);
+  const [err, setErr] = useState<unknown>(null);
+  const load = useCallback(() => { setErr(null); fetchReadiness().then(setR).catch(setErr); }, []);
+  useEffect(() => { load(); }, [load]);
+  if (err) return <PanelError error={err} onRetry={load} />;
   if (!r) return null;
   const angle = (r.score / 100) * 270 - 135;
   const tone = r.score >= 70 ? 'text-emerald-500' : r.score >= 40 ? 'text-amber-500' : 'text-red-500';
@@ -67,8 +90,11 @@ export function LpOptimizerPanel() {
   const [weights, setWeights] = useState<Record<string, number> | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [err, setErr] = useState<unknown>(null);
+
   const run = useCallback((w?: Record<string, number>) => {
-    lpRescore(w).then(setRes).catch(() => setRes(null));
+    setErr(null);
+    lpRescore(w).then(setRes).catch(setErr);
   }, []);
   useEffect(() => { run(); }, [run]);
 
@@ -79,6 +105,7 @@ export function LpOptimizerPanel() {
     timer.current = setTimeout(() => run(next), 250);
   };
 
+  if (err) return <PanelError error={err} onRetry={() => run(weights ?? undefined)} />;
   if (!res) return null;
   const current = weights ?? Object.fromEntries(res.dimensions.map((d) => [d.key, d.weight]));
   return (
@@ -150,11 +177,20 @@ export function FunnelSimPanel() {
   const [budgets, setBudgets] = useState<Record<string, number> | null>(null);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const run = useCallback((b?: Record<string, number>) => {
-    runWaitlistSim(b).then(setSim).catch(() => setSim(null));
-  }, []);
-  useEffect(() => { fetchCommandDeep().then(setDeep).catch(() => null); run(); }, [run]);
+  const [err, setErr] = useState<unknown>(null);
 
+  const run = useCallback((b?: Record<string, number>) => {
+    setErr(null);
+    runWaitlistSim(b).then(setSim).catch(setErr);
+  }, []);
+  const load = useCallback(() => {
+    setErr(null);
+    fetchCommandDeep().then(setDeep).catch(setErr);
+    run();
+  }, [run]);
+  useEffect(() => { load(); }, [load]);
+
+  if (err) return <PanelError error={err} onRetry={load} />;
   if (!deep || !sim) return null;
   const paid = deep.reference.funnel.channels.filter((ch) => ch.type === 'Paid');
   const cur = budgets ?? Object.fromEntries(paid.map((ch) => [ch.channelId, ch.budget]));

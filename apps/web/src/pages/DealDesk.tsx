@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Gavel, FileText, BookOpen, Briefcase, Check, X, RefreshCw, AlertTriangle, ShieldAlert } from 'lucide-react';
+import { Gavel, FileText, BookOpen, Briefcase, Check, X, RefreshCw, AlertTriangle, ShieldAlert, ChevronDown, ChevronRight } from 'lucide-react';
 import { request } from '@/lib/apiClient';
 import { useOperatorStore } from '@/stores';
 import { fetchDealBoard, fetchProjectDeal, type BoardDeal } from '@/lib/api/bd';
@@ -50,18 +50,53 @@ function Pill({ status }: { status: string }) {
   );
 }
 
-function Section({ title, icon, children, onRefresh }: { title: string; icon: React.ReactNode; children: React.ReactNode; onRefresh?: () => void }) {
+/**
+ * A desk section.
+ *
+ * `collapsible` exists because two of the five sections in the main column are
+ * reference material, not decisions: the negotiation playbooks are static text
+ * an operator reads once, and partners/referrals is admin CRUD. Both were
+ * always expanded, so the approvals queue — the only reason anyone opens this
+ * page — competed for the column with content nobody came for.
+ *
+ * The disclosure is conditional render behind a chevron, which is the pattern
+ * already used for the source payloads on LeadDetail, rather than <Panel>: a
+ * Panel here would put a `rounded-lg`, shadow-less card in a column of
+ * `rounded-xl shadow-card` sections, drop the section icon, and cap its body at
+ * the hard-coded `max-height: 2000px` its animation depends on.
+ */
+function Section({
+  title, icon, children, onRefresh, collapsible = false, defaultOpen = false,
+}: {
+  title: string; icon: React.ReactNode; children: React.ReactNode; onRefresh?: () => void;
+  collapsible?: boolean; defaultOpen?: boolean;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  const shown = !collapsible || open;
   return (
     <section className="rounded-xl border border-line/70 bg-card p-5 shadow-card">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="flex items-center gap-2 text-sm font-bold tracking-tight text-navy">{icon}{title}</h2>
-        {onRefresh && (
+      <div className={`flex items-center justify-between ${shown ? 'mb-4' : ''}`}>
+        {collapsible ? (
+          <button
+            type="button"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            className="-m-1 flex items-center gap-2 rounded p-1 text-sm font-bold tracking-tight text-navy transition-colors hover:text-cyan-600 dark:hover:text-cyan-400"
+          >
+            {open ? <ChevronDown size={13} className="text-grey" /> : <ChevronRight size={13} className="text-grey" />}
+            {icon}
+            <h2 className="text-sm font-bold tracking-tight">{title}</h2>
+          </button>
+        ) : (
+          <h2 className="flex items-center gap-2 text-sm font-bold tracking-tight text-navy">{icon}{title}</h2>
+        )}
+        {onRefresh && shown && (
           <Button variant="secondary" size="xs" onClick={onRefresh}>
             <RefreshCw size={10} /> Refresh
           </Button>
         )}
       </div>
-      {children}
+      {shown && children}
     </section>
   );
 }
@@ -390,7 +425,7 @@ export function DealDesk() {
           </Section>
 
           {/* Playbooks */}
-          <Section title="Negotiation playbooks" icon={<BookOpen size={15} className="text-indigo-600" />}>
+          <Section title="Negotiation playbooks" icon={<BookOpen size={15} className="text-indigo-600" />} collapsible>
             {playbooks.length === 0 ? (
               <p className="text-label text-grey">No playbooks seeded.</p>
             ) : (
@@ -413,7 +448,7 @@ export function DealDesk() {
           </Section>
 
           {/* Partners */}
-          <Section title="Partners & referrals" icon={<Briefcase size={15} className="text-emerald-600" />} onRefresh={() => void loadPartners()}>
+          <Section title="Partners & referrals" icon={<Briefcase size={15} className="text-emerald-600" />} onRefresh={() => void loadPartners()} collapsible>
             <div className="mb-3 flex gap-2">
               <input
                 value={newPartner.name}

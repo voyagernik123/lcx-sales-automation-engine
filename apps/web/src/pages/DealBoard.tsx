@@ -387,7 +387,7 @@ function BoardLegend() {
     return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
 
-  useDismissible(!!open, () => setOpen(false), 'stage menu');
+  useDismissible(!!open, () => setOpen(false), 'board legend');
 
   return (
     <div className="relative" ref={ref}>

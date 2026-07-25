@@ -24,6 +24,19 @@ tauri-plugin-os = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 keyring = { version = "3", features = ["apple-native"] }
+# Trackpad haptics (Phase 5). Chosen over raw `objc_msgSend` FFI because a
+# mistyped selector signature there is a hard crash of the whole terminal, and a
+# feedback nicety is not worth that risk.
+#
+# Version pinned to 0.6 to MATCH what Tauri already resolves. Pinning 0.5 first
+# put two objc2 versions in the tree (0.5.2 and 0.6.4) and compiled the ObjC
+# runtime wrapper twice, which `cargo build` reports nowhere — it looks like a
+# clean build. Worth noting the reasoning that led there was also wrong: I avoided
+# objc2-app-kit to keep the dependency small, but tao and wry already pull it in
+# transitively, so AppKit's bindings are in this binary either way. Using objc2
+# directly is still the right call, just for safety rather than for size.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
 
 [profile.release]
 codegen-units = 1

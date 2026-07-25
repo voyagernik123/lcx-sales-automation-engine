@@ -355,4 +355,142 @@ suggests — `Sidebar.tsx` imports the same `@/data` modules eagerly.
 
 **770 tests.**
 
-### Phases 4–7 — in progress, continuous run.
+### Phase 4 — the Motion Model · **SHIPPED** (`c5ee6b2`, `0391454`)
+
+**The claim was false in four ways I had to find by measuring.** P4.0 shipped a focus
+foundation whose commit message asserted that `outline` survives an
+`overflow: hidden` ancestor. It does not — rendered both cases side by side and
+looked at the pixels: a button flush inside a 200×60 clipping parent with
+`outline-offset: 2px` paints **no visible ring at all**, while `box-shadow: inset`
+in the same position paints fully. Five real controls were affected, worst of them
+**Sign out**, which had become a keyboard action with no visible focus. The
+`.focus-ring-inset` utility that fixes it already existed and was applied at **zero
+sites**, so Tailwind had purged it: a utility nothing names does not exist.
+
+Also found: every focused `Button` in **dark mode** painted
+`box-shadow: rgb(255,255,255) 0 0 0 2px` — a pure white halo on a dark card,
+because `ring-offset-2` sets the offset *width* and nothing in the app ever set
+`--tw-ring-offset-color`, so it fell through to preflight's `#fff`. Pre-existing and
+invisible in light mode. And the conversion was half done: **59 legacy
+`focus:ring-*`** utilities survived beside the new `focus-ring` on 12 files, all
+using the `focus:` variant, so the app kept drawing the pointer ring this phase
+claimed to have removed.
+
+**The dismiss stack** (`lib/dismiss.ts`) — Escape had sixteen claimants and no owner.
+Nine installed their own document listener, three in the **capture** phase with
+`stopPropagation()` and a comment conceding "one Escape closes two things at once";
+the workaround was an `isCommandOpen()` flag each of the three had to remember to
+consult. Now: one listener, one stack, last-opened-wins.
+
+- **Bubble, not capture** — a capture listener at `document` beats the focused
+  element, so it would eat the revert-on-Escape of `InlineEdit` and the rename
+  fields. Innermost claims first; the stack claims last.
+- **Focus restoration lives there too**, because it is the same lifecycle. Exactly
+  **one of sixteen** overlays restored focus on close; the other fifteen dropped it
+  to `<body>`, after which Tab restarts from the top of the document. The single
+  worst keyboard defect in the app, and invisible to anyone using a mouse.
+- The flag was **deleted**, not kept: a flag nothing sets is worse than none,
+  because the next reader calls it and always gets `false`.
+- Verified on the running app: inspector open → ⌘K on top → **one** Escape left the
+  stack at `['Coinbase inspector']`. The inspector survived.
+
+**⌘1–6 cannot be ported to the web, and that is the finding.** The plan said port the
+native accelerators to the webview. Measured first: a real **⌘2 in Chrome produces
+zero keydown events in the page**, even from a capture-phase listener — ⌘1–⌘9 are
+reserved for tab switching and never delivered. A handler would have been dead code
+that reads like a feature. So the webview got `g` **then a digit**; both triggers
+resolve through one `DESTINATIONS` table, and a test reads the **Rust** menu source
+to assert they agree, including that ⌘3 and `g 3` name the same place — the one
+drift in this repo no compiler can catch.
+
+**Roving tabindex** — the reachability sweep made 200 lead-table rows focusable,
+trading one defect for another. `useListNavigation` makes the table **one** tab stop
+with the arrows moving inside it. Bare `j`/`k` deliberately unbound, and WASD
+retired: on these surfaces `s` snoozes and `d` disqualifies, and a grammar where some
+bare letters move the cursor and others mutate a record will eventually disqualify a
+lead someone meant to scroll past.
+
+Plus 15 mouse-only controls made operable (preferring real `<button>`s over ARIA on a
+div; moving padding off a `<th>` exposed the UA's `th { padding: 1px }` and shifted
+header rows 2px, which no screenshot would have caught), `prefers-reduced-motion`
+honoured with spinners exempted, and a modifier guard on `SnoozeMenu` where `⌘1`
+snoozed a lead for a day as a side effect of switching workspace.
+
+**831 tests.**
+
+### Phase 5 — the Feel · **SHIPPED** (`b3d01d2`)
+
+**The juice layer.** Four one-shot feedbacks — flash, shake, snap, tick — as CSS
+animations triggered imperatively, because they are events rather than states and a
+React-idiomatic version would be three renders and a piece of dead state per animated
+element. One motion vocabulary replaces four ad-hoc durations (`duration-300` at 17
+sites, 200 at 5, 700 at 3, 500 at 1). **Overshoot is rationed** to commit moments by a
+test: the house rule is "UI chrome never bounces", and the juice reads as meaningful
+only because it is scarce.
+
+- **A refusal shakes AND speaks.** `refuse()` writes the remedy into a live region.
+  A shake conveys nothing to a screen-reader user, and a refusal is the most
+  important thing this app ever says — the governed write that did *not* happen.
+- **A no-op gets no celebration.** Several actions return 200 having changed nothing;
+  the feel follows the truth or it teaches the operator to trust a feeling that does
+  not correspond to a change in the record.
+- The 0.01ms-not-0s choice in the reduced-motion block became **load-bearing** here,
+  since `playJuice` removes its class on `animationend`. The tripwire the previous
+  phase left for exactly this fired, and is now shaped to guard comment/code
+  agreement in either direction.
+
+**Sound and haptics, off by default.** Two synthesised Web Audio cues (rising
+accepted, falling refused — no audio assets, no requests, no decode) and real
+**trackpad haptics** via a new Rust command calling `NSHapticFeedbackManager`. Off is
+a decision, not a placeholder: an instrument that makes noise the first time you open
+it, in an office, without asking, gets muted permanently. Settings gained **Sample a
+commit / Sample a refusal**, because asking someone to enable an unheard sound and
+then go find a governed action to judge it is how a setting gets switched off forever.
+Honest limits recorded in the code: haptics do nothing without a Force Touch
+trackpad, and **no test can prove a tap happened** — only a fingertip can. Pinning
+`objc2 = "0.5"` first put two versions of the ObjC runtime wrapper in the binary,
+which `cargo build` reports nowhere.
+
+**The gate, as a spec rather than an anecdote** (`e2e/framebudget.spec.ts`). Measures
+the synchronous cost of the juice — the forced reflow `playJuice` needs to replay an
+animation — because that is what the code controls: **50 elements in 2.10ms
+(0.042ms each, budget 0.5)**. The rAF comparison runs against an **idle control**, and
+reports p50 as well as dropped frames, because a run can drop nothing and still be at
+50Hz: **idle p50 16.7ms / 0 dropped · juiced p50 16.7ms / 1 dropped**. Both annotate
+their numbers, so the gate says what it measured instead of only "pass".
+
+**The e2e ratchet was dead, and that is the biggest find of the phase.** All eleven
+specs failed at their first line. The LCX OS hardening replaced the `/select` roster
+with a **server-verified** passcode form, which broke the suite's founding premise —
+stated at the top of its own file — that it works with the API down. Nobody noticed
+because the workflow that runs it lives in an **untracked `.github/`**, so it had
+never executed. Among the dead specs: *"opens a deal inspector and Escape closes it"*
+— precisely the behaviour Phase 4 rebuilt, which had to be verified by hand instead.
+Revived by seeding the session (`e2e/seat.ts`), and two specs were rewritten because
+they asserted the wrong thing: one demanded a heading that only exists on the success
+path, failing for **correct** product behaviour, and one asserted a roster that used
+to leak the team's names and roles to anyone who loaded the page. CI now runs e2e with
+`--ignore-snapshots` — the baselines are `-darwin`, CI is Linux, and going red for a
+font-rendering difference is how a job gets ignored and then deleted.
+
+**Eternal skeletons.** Five sites caught their error by resetting state to the
+*loading* sentinel, so the skeleton pulsed forever with no recovery but a reload —
+worse than a blank panel, which at least looks finished. Four more rendered a failed
+request as **"none"**: on `/monitors` that is the most dangerous lie available, since
+the operator concludes nothing is watching and recreates watches that already exist.
+And three cockpit instruments **removed themselves from the page** on failure, so
+conclusions got drawn from the panels that were left.
+
+**The Jobs pass.** `Start session` — the BD pipeline's only real verb — was
+pixel-identical to a status chip. `LeadDetail` gave six actions one class string, so
+`Force Re-score` carried the same authority as the approval gating all outreach, while
+the loudest control on the bar was a cache warm. Now three tiers. `DealBoard` was
+deliberately left alone: it already has one object, one action and its legend behind a
+disclosure, and churn on a working screen is a net negative. A real bug surfaced on
+the way — `LeadDetail` computed the operator's next action into an `anchor` holding
+button *label text* that matched no element, so it worked out what to point at and
+then had nowhere to point.
+
+**855 unit tests · 11 e2e.** Bundle 831/850KB.
+
+### Phases 6–7 — in progress, continuous run.

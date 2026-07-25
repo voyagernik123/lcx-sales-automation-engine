@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Rocket, Gauge, Compass, ListChecks, Megaphone, Search, ArrowRight } from 'lucide-react';
 import { clsx } from 'clsx';
 import { PageTitle } from '@/components/ui';
-import { CardSkeleton } from '@/components/shared';
+import { CardSkeleton, ErrorNotice } from '@/components/shared';
 import { AskDistribution } from '@/components/distribution/AskDistribution';
 import {
   fetchDistributionDeep, fetchPresence, fetchDistCampaigns, runEmission,
@@ -21,13 +21,21 @@ export function DistributionCockpit() {
   const [presence, setPresence] = useState<Presence | null>(null);
   const [campaigns, setCampaigns] = useState<DistCampaign[] | null>(null);
   const [emit, setEmit] = useState<Emission | null>(null);
+  // The page gates its whole body on `!deep || !presence`, which is also the
+  // LOADING state — so resetting either to null on failure pulsed the skeleton
+  // forever. The two lead reads carry the error; the two garnish reads
+  // (campaigns, emission) are allowed to stay absent, and each is rendered
+  // conditionally rather than counted as data.
+  const [err, setErr] = useState<unknown>(null);
 
-  useEffect(() => {
-    fetchDistributionDeep().then(setDeep).catch(() => setDeep(null));
-    fetchPresence().then(setPresence).catch(() => setPresence(null));
+  const load = useCallback(() => {
+    setErr(null);
+    fetchDistributionDeep().then(setDeep).catch(setErr);
+    fetchPresence().then(setPresence).catch(setErr);
     fetchDistCampaigns().then(setCampaigns).catch(() => setCampaigns([]));
     runEmission().then(setEmit).catch(() => setEmit(null));
   }, []);
+  useEffect(() => { load(); }, [load]);
 
   const liveListings = deep?.listings.filter((l) => l.status === 'live' || l.status === 'ranked').length ?? 0;
   const totalListings = deep?.listings.length ?? 0;
@@ -46,7 +54,9 @@ export function DistributionCockpit() {
         Distribution Cockpit
       </PageTitle>
 
-      {!deep || !presence ? (
+      {err ? (
+        <ErrorNotice error={err} onRetry={load} />
+      ) : !deep || !presence ? (
         <div className="mt-4"><CardSkeleton /></div>
       ) : (
         <>

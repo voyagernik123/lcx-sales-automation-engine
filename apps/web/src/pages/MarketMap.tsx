@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, Crosshair, X } from 'lucide-react';
 import { fetchMarketMap, type MapPoint } from '@/lib/api/bd';
 import { PageTitle, Button } from '@/components/ui';
-import { ChartSkeleton, ErrorNotice } from '@/components/shared';
+import { ChartSkeleton, EmptyState, ErrorNotice } from '@/components/shared';
 import { EntityChip } from '@/components/entity';
 import { useInspect } from '@/stores';
 import { formatMoney } from '@/lib/format';
@@ -107,6 +107,18 @@ export function MarketMap() {
       .sort((a, b) => (lens.y.value(b) ?? 0) - (lens.y.value(a) ?? 0) || (lens.x.value(b) ?? 0) - (lens.x.value(a) ?? 0))
       .slice(0, 12);
   }, [selected, focusSet, visible, lens]);
+
+  // "The universe is empty" and "you filtered it away" are the same blank field
+  // to look at and opposite conclusions to draw — an operator who has narrowed
+  // to Band=archive + On LCX=Listed and sees nothing reads the map as broken.
+  // Band and region are SERVER-side (they go into fetchMarketMap), listed is
+  // client-side, so the flag has to span both or clearing won't help.
+  const filtersActive = band !== '' || region !== '' || listedOnly !== 'all';
+  const clearFilters = useCallback(() => {
+    setBand('');
+    setRegion('');
+    setListedOnly('all');
+  }, []);
 
   const colorMode = getColorMode(colorModeId);
   const sizeMode = getSizeMode(sizeModeId);
@@ -234,7 +246,27 @@ export function MarketMap() {
 
           {/* ── Center: the field (the hero — always gets the space) ── */}
           <div className="min-w-[340px] flex-1 rounded-lg border border-line/80 bg-card p-2 shadow-card">
-            <MarketScatter points={visible} lens={lens} colorFor={colorFor} sizeValue={sizeValue} selectedIds={selected} onSelect={onSelect} onOpen={(p) => inspect('project', p.id)} />
+            {visible.length === 0 ? (
+              filtersActive ? (
+                <EmptyState
+                  variant="search"
+                  title="Nothing matches these filters"
+                  description="The universe has projects, but none inside the current band, region and listing filters."
+                  action={
+                    <Button size="sm" variant="secondary" onClick={clearFilters}>
+                      <X size={12} /> Clear filters
+                    </Button>
+                  }
+                />
+              ) : (
+                <EmptyState
+                  title="No projects scored yet"
+                  description="The map plots scored projects — once the scoring job has run, the universe appears here."
+                />
+              )
+            ) : (
+              <MarketScatter points={visible} lens={lens} colorFor={colorFor} sizeValue={sizeValue} selectedIds={selected} onSelect={onSelect} onOpen={(p) => inspect('project', p.id)} />
+            )}
           </div>
 
           {/* ── Right rail: ranked list (only when there's room; brushing +

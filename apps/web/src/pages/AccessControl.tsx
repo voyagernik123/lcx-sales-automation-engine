@@ -10,7 +10,7 @@ import {
 import { useAccessStore } from '@/stores/useAccessStore';
 import { useOperatorStore } from '@/stores';
 import { PageTitle, Button } from '@/components/ui';
-import { CardSkeleton } from '@/components/shared';
+import { CardSkeleton, ErrorNotice } from '@/components/shared';
 import { toast } from '@/components/shared/Toast';
 
 /**
@@ -31,11 +31,20 @@ export function AccessControl() {
   const [activity, setActivity] = useState<AccessActivityRow[] | null>(null);
   const [dossier, setDossier] = useState<MemberDossier | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Two separate failures, because they read as two different facts on screen:
+  // an empty request list renders "the compartments are quiet" (a lie if the
+  // request never landed), and `matrix === null` is the matrix's LOADING
+  // sentinel — catching into it left the skeleton pulsing forever.
+  const [requestsErr, setRequestsErr] = useState<unknown>(null);
+  const [matrixErr, setMatrixErr] = useState<unknown>(null);
 
   const refresh = useCallback(() => {
-    fetchAccessRequests().then(setRequests).catch(() => setRequests([]));
+    setRequestsErr(null);
+    fetchAccessRequests().then(setRequests).catch(setRequestsErr);
     if (isApprover) {
-      fetchAccessMatrix().then(setMatrix).catch(() => setMatrix(null));
+      setMatrixErr(null);
+      fetchAccessMatrix().then(setMatrix).catch(setMatrixErr);
+      // Activity is telemetry garnish: the section hides itself when absent.
       fetchAccessActivity().then(setActivity).catch(() => setActivity([]));
     }
   }, [isApprover]);
@@ -151,7 +160,9 @@ export function AccessControl() {
           <h2 className="mb-2 flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wider text-grey">
             <ShieldCheck size={12} /> Pending requests {pending.length > 0 && <span className="rounded bg-amber-500/15 px-1.5 font-bold text-amber-600 dark:text-amber-400">{pending.length}</span>}
           </h2>
-          {requests === null ? (
+          {requestsErr ? (
+            <ErrorNotice error={requestsErr} onRetry={refresh} compact />
+          ) : requests === null ? (
             <CardSkeleton />
           ) : pending.length === 0 ? (
             <p className="text-label text-grey">No pending requests — the compartments are quiet.</p>
@@ -198,7 +209,9 @@ export function AccessControl() {
       {isApprover && (
         <section className="rounded-lg border border-line bg-card p-4 shadow-card">
           <h2 className="mb-2 font-mono text-[11px] font-bold uppercase tracking-wider text-grey">Entitlement matrix</h2>
-          {matrix === null ? (
+          {matrixErr ? (
+            <ErrorNotice error={matrixErr} onRetry={refresh} />
+          ) : matrix === null ? (
             <CardSkeleton />
           ) : (
             <>

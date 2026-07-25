@@ -388,19 +388,26 @@ export function LeadDetail() {
   const hasContact = lead.people.some(p => p.email);
   const hasActiveSequence = sequences.some(s => s.status === 'active');
   const gateBlocked = gateState.gate != null && !gateState.gate.pass;
-  const nextStep = isSuppressed
+  //
+  // `anchor` used to hold the button's LABEL text ('Find Contact Email',
+  // 'Approve for Outreach', 'Sequences'). Nothing consumed it: only the 'gate'
+  // case was ever wired, via scrollToEl('lead-gate-banner'), and no element in
+  // the page carried an id matching any of the other three — so the page
+  // computed the operator's next action and then had no way to point at it.
+  // These are now stable keys, and each one resolves to something real below.
+  const nextStep: { label: string; anchor: 'discover' | 'gate' | 'approve' | 'sequences' | null } | null = isSuppressed
     ? null
     : !hasContact
-      ? { label: 'Next: find a contact email', anchor: 'Find Contact Email' }
+      ? { label: 'Next: find a contact email', anchor: 'discover' }
       : gateBlocked
         ? {
             label: `Next: clear outreach gate (${gateState.gate!.reasons.length} blocker${gateState.gate!.reasons.length === 1 ? '' : 's'})`,
             anchor: 'gate',
           }
         : !isApproved
-          ? { label: 'Next: approve for outreach', anchor: 'Approve for Outreach' }
+          ? { label: 'Next: approve for outreach', anchor: 'approve' }
           : !hasActiveSequence
-            ? { label: 'Next: enroll in a sequence', anchor: 'Sequences' }
+            ? { label: 'Next: enroll in a sequence', anchor: 'sequences' }
             : { label: 'Sequence running — watch for replies', anchor: null };
 
   const scrollToEl = (elId: string) => scrollToId(elId);
@@ -442,69 +449,49 @@ export function LeadDetail() {
         </div>
       </div>
 
-      {/* Actions Bar */}
+      {/* Actions Bar — three tiers, not seven equals.
+          Before: six hand-rolled buttons sharing one class string
+          (`rounded border border-line px-3 py-1 text-micro font-bold`), so
+          "Force Re-score" carried the same visual authority as the approval
+          that gates all outreach, and the loudest control on the bar was
+          "Track / Refresh Live" — a cache warm — because it alone was tinted
+          cyan. Now: ONE `primary`, whichever action `nextStep` has computed;
+          the other workflow decisions `secondary`; the three re-run-a-pipeline
+          actions `ghost`. Variants come from <Button>, so the hierarchy is the
+          design system's, not this file's. */}
       <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-line bg-card flex-wrap">
-        <button
-          onClick={() => handleAction('approve', () => approveLead(lead.id), 'Lead approved for outreach')}
-          disabled={actionLoading === 'approve' || isApproved}
-          className={clsx(
-            'flex items-center gap-1.5 rounded border px-3 py-1 text-micro font-bold transition-colors',
-            isApproved
-              ? 'border-emerald-300 bg-emerald-50 text-emerald-600 dark:border-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400'
-              : 'border-line text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10',
-            actionLoading === 'approve' && 'opacity-50 pointer-events-none',
-          )}
-        >
-          <CheckCircle size={12} />
-          {actionLoading === 'approve' ? 'Approving...' : isApproved ? 'Approved' : 'Approve for Outreach'}
-        </button>
+        {/* Spent state decisions are not re-rendered as disabled buttons
+            restating themselves: the header strip 40px above already shows
+            "Approved" / "Suppressed". */}
+        {!isApproved && (
+          <Button
+            size="xs"
+            variant={nextStep?.anchor === 'approve' ? 'primary' : 'secondary'}
+            onClick={() => handleAction('approve', () => approveLead(lead.id), 'Lead approved for outreach')}
+            disabled={actionLoading === 'approve'}
+          >
+            <CheckCircle size={12} />
+            {actionLoading === 'approve' ? 'Approving...' : 'Approve for Outreach'}
+          </Button>
+        )}
 
-        <button
-          onClick={() => handleAction('suppress', () => suppressLead(lead.id), 'Lead suppressed')}
-          disabled={actionLoading === 'suppress' || isSuppressed}
-          className={clsx(
-            'flex items-center gap-1.5 rounded border px-3 py-1 text-micro font-bold transition-colors',
-            isSuppressed
-              ? 'border-red-300 bg-red-50 text-red-600 dark:border-red-700 dark:bg-red-950/30 dark:text-red-400'
-              : 'border-line text-grey hover:bg-red-50 dark:hover:bg-red-950/20',
-            actionLoading === 'suppress' && 'opacity-50 pointer-events-none',
-          )}
-        >
-          <XCircle size={12} />
-          {actionLoading === 'suppress' ? 'Suppressing...' : isSuppressed ? 'Suppressed' : 'Mark Suppress'}
-        </button>
+        {!isSuppressed && (
+          <Button
+            size="xs"
+            variant="secondary"
+            onClick={() => handleAction('suppress', () => suppressLead(lead.id), 'Lead suppressed')}
+            disabled={actionLoading === 'suppress'}
+          >
+            <XCircle size={12} />
+            {actionLoading === 'suppress' ? 'Suppressing...' : 'Mark Suppress'}
+          </Button>
+        )}
 
-        <div className="w-px h-4 bg-line mx-1" />
-
-        <button
-          onClick={() => handleAction('rescore', () => triggerRescore(lead.id), 'Re-scoring complete')}
-          disabled={actionLoading === 'rescore'}
-          className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-micro font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
-        >
-          <RefreshCw size={12} className={clsx(actionLoading === 'rescore' && 'animate-spin motion-essential')} />
-          {actionLoading === 'rescore' ? 'Re-scoring...' : 'Force Re-score'}
-        </button>
-
-        <button
-          onClick={() => handleAction('enrich', () => triggerEnrich(lead.id), 'Enrichment complete')}
-          disabled={actionLoading === 'enrich'}
-          className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-micro font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
-        >
-          <Search size={12} className={clsx(actionLoading === 'enrich' && 'animate-spin motion-essential')} />
-          {actionLoading === 'enrich' ? 'Enriching...' : 'Force Enrich'}
-        </button>
-
-        <button
-          onClick={() => handleAction('track', async () => { await trackProject(lead.id); }, 'Tracking on — live market data pulled')}
-          disabled={actionLoading === 'track'}
-          title="Promote into the tracked tier and pull live market data now"
-          className="flex items-center gap-1.5 rounded border border-cyan-400/60 bg-cyan-50 px-3 py-1 text-micro font-bold text-cyan-700 hover:bg-cyan-100 dark:bg-cyan-950/40 dark:text-cyan-300 dark:hover:bg-cyan-950/60 transition-colors"
-        >
-          <Zap size={12} className={clsx(actionLoading === 'track' && 'animate-spin motion-essential')} />
-          {actionLoading === 'track' ? 'Tracking...' : 'Track / Refresh Live'}
-        </button>
-
-        <button
+        {/* A workflow step, not maintenance — it is the first thing `nextStep`
+            asks for on a lead with no contact, so it sits with the decisions. */}
+        <Button
+          size="xs"
+          variant={nextStep?.anchor === 'discover' ? 'primary' : 'secondary'}
           onClick={() =>
             handleAction(
               'discover',
@@ -516,20 +503,64 @@ export function LeadDetail() {
             )
           }
           disabled={actionLoading === 'discover'}
-          className="flex items-center gap-1.5 rounded border border-line px-3 py-1 text-micro font-bold text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
         >
           <Search size={12} className={clsx(actionLoading === 'discover' && 'animate-spin motion-essential')} />
           {actionLoading === 'discover' ? 'Crawling site...' : 'Find Contact Email'}
-        </button>
+        </Button>
 
-        {nextStep && (nextStep.anchor === 'gate' ? (
+        <div className="w-px h-4 bg-line mx-1" />
+
+        {/* Maintenance: re-run a pipeline stage by hand. Useful, never the
+            reason anyone opened this lead. */}
+        <Button
+          size="xs"
+          variant="ghost"
+          onClick={() => handleAction('rescore', () => triggerRescore(lead.id), 'Re-scoring complete')}
+          disabled={actionLoading === 'rescore'}
+        >
+          <RefreshCw size={12} className={clsx(actionLoading === 'rescore' && 'animate-spin motion-essential')} />
+          {actionLoading === 'rescore' ? 'Re-scoring...' : 'Force Re-score'}
+        </Button>
+
+        <Button
+          size="xs"
+          variant="ghost"
+          onClick={() => handleAction('enrich', () => triggerEnrich(lead.id), 'Enrichment complete')}
+          disabled={actionLoading === 'enrich'}
+        >
+          <Search size={12} className={clsx(actionLoading === 'enrich' && 'animate-spin motion-essential')} />
+          {actionLoading === 'enrich' ? 'Enriching...' : 'Force Enrich'}
+        </Button>
+
+        <Button
+          size="xs"
+          variant="ghost"
+          onClick={() => handleAction('track', async () => { await trackProject(lead.id); }, 'Tracking on — live market data pulled')}
+          disabled={actionLoading === 'track'}
+          title="Promote into the tracked tier and pull live market data now"
+        >
+          <Zap size={12} className={clsx(actionLoading === 'track' && 'animate-spin motion-essential')} />
+          {actionLoading === 'track' ? 'Tracking...' : 'Track / Refresh Live'}
+        </Button>
+
+        {/* The narration pill stays a pill — it explains WHY that primary is
+            primary, it is not a second copy of it. It becomes interactive only
+            when the action it names is off-screen (the gate banner, the
+            Sequences section); when the target is the primary button 40px to
+            the left, a jump-to-it button would be noise. */}
+        {nextStep && (nextStep.anchor === 'gate' || nextStep.anchor === 'sequences' ? (
           <button
             type="button"
-            onClick={() => scrollToEl('lead-gate-banner')}
-            className="ml-auto flex items-center gap-1.5 rounded-full bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-1 text-micro font-bold text-amber-700 dark:text-amber-300 hover:border-amber-400 transition-colors"
-            title="Jump to the gate banner for the exact blockers"
+            onClick={() => scrollToEl(nextStep.anchor === 'gate' ? 'lead-gate-banner' : 'lead-sequences')}
+            className={clsx(
+              'ml-auto flex items-center gap-1.5 rounded-full border px-3 py-1 text-micro font-bold transition-colors',
+              nextStep.anchor === 'gate'
+                ? 'bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 hover:border-amber-400'
+                : 'bg-cyan-50 dark:bg-cyan-950/30 border-cyan-200 dark:border-cyan-800 text-cyan-700 dark:text-cyan-300 hover:border-cyan-400',
+            )}
+            title={nextStep.anchor === 'gate' ? 'Jump to the gate banner for the exact blockers' : 'Jump to Sequences to enroll this lead'}
           >
-            <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+            <span className={clsx('h-1.5 w-1.5 rounded-full animate-pulse', nextStep.anchor === 'gate' ? 'bg-amber-500' : 'bg-cyan-500')} />
             {nextStep.label}
           </button>
         ) : (
@@ -773,7 +804,7 @@ export function LeadDetail() {
           </Section>
 
           {/* Sequences */}
-          <Section icon={<Send size={14} />} title="Sequences">
+          <Section icon={<Send size={14} />} title="Sequences" id="lead-sequences">
             <div className="space-y-3">
               <button
                 onClick={() => navigate('/outreach-ops')}
@@ -1097,9 +1128,9 @@ export function LeadDetail() {
 
 /* ── Sub-components ── */
 
-function Section({ icon, title, children }: { icon: React.ReactNode; title: string; children: React.ReactNode }) {
+function Section({ icon, title, children, id }: { icon: React.ReactNode; title: string; children: React.ReactNode; id?: string }) {
   return (
-    <div className="rounded-lg border border-line bg-card overflow-hidden">
+    <div id={id} className="rounded-lg border border-line bg-card overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-line bg-ice-soft dark:bg-ice-soft/5 text-navy">
         <span className="text-cyan-500">{icon}</span>
         <SectionLabel>{title}</SectionLabel>

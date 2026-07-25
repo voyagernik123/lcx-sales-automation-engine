@@ -7,7 +7,7 @@ import {
 import { triageSignal, type TriageResult } from '@/lib/api/aiOperator';
 import { toast } from '@/components/shared/Toast';
 import { PageTitle, Button } from '@/components/ui';
-import { CardSkeleton, EmptyState } from '@/components/shared';
+import { CardSkeleton, EmptyState, ErrorNotice } from '@/components/shared';
 
 /**
  * Object Monitors (Phase 3.1) — the standing watch. Define a condition over the
@@ -24,8 +24,16 @@ export function Monitors() {
   const [creating, setCreating] = useState(false);
   const [ticking, setTicking] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Failing into setMonitors([]) rendered "No monitors yet", which on a standing
+  // watch is the most dangerous possible lie: the operator concludes nothing is
+  // watching the universe and starts recreating watches that already exist.
+  const [err, setErr] = useState<unknown>(null);
 
-  const load = useCallback(() => { listMonitors().then(setMonitors).catch(() => setMonitors([])); }, []);
+  const load = useCallback(() => {
+    setErr(null);
+    listMonitors().then(setMonitors).catch(setErr);
+  }, []);
+  // The action registry only labels the fire targets — absent degrades to raw keys.
   useEffect(() => { load(); listActions().then(setActions).catch(() => setActions([])); }, [load]);
 
   const runTick = async () => {
@@ -66,7 +74,11 @@ export function Monitors() {
         />
       )}
 
-      {monitors == null ? (
+      {err ? (
+        <div className="rounded-lg border border-line bg-card">
+          <ErrorNotice error={err} onRetry={load} />
+        </div>
+      ) : monitors == null ? (
         <CardSkeleton count={3} />
       ) : monitors.length === 0 ? (
         <div className="rounded-lg border border-line bg-card">
@@ -176,7 +188,13 @@ const TRIAGE_TONE: Record<string, string> = {
 function MonitorActivity({ id, name, lastRunAt }: { id: string; name: string; lastRunAt: string | null }) {
   const [fires, setFires] = useState<Array<{ subjectId: string; name: string | null; ticker: string | null; firedAt: string }> | null>(null);
   const [triage, setTriage] = useState<Record<string, TriageResult | 'loading'>>({});
-  useEffect(() => { monitorActivity(id).then(setFires).catch(() => setFires([])); }, [id]);
+  // "No fires yet" and "the fire log did not load" are opposite conclusions
+  // about whether the watch is working, so they cannot share one rendering.
+  const [firesErr, setFiresErr] = useState(false);
+  useEffect(() => {
+    setFiresErr(false);
+    monitorActivity(id).then(setFires).catch(() => setFiresErr(true));
+  }, [id]);
 
   const runTriage = async (subjectId: string) => {
     setTriage((t) => ({ ...t, [subjectId]: 'loading' }));
@@ -191,7 +209,9 @@ function MonitorActivity({ id, name, lastRunAt }: { id: string; name: string; la
       <div className="mb-1 text-micro text-grey">
         {lastRunAt ? `Last run ${new Date(lastRunAt).toLocaleString()}` : 'Not yet run'} · fired on (click to AI-triage):
       </div>
-      {fires == null ? (
+      {firesErr ? (
+        <p className="text-micro text-amber-600 dark:text-amber-400">Fire log unavailable — reopen this monitor to retry.</p>
+      ) : fires == null ? (
         <Loader2 size={12} className="animate-spin motion-essential text-grey" />
       ) : fires.length === 0 ? (
         <p className="text-micro text-grey">No fires yet.</p>

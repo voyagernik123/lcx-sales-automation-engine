@@ -28,6 +28,7 @@ import {
 } from './grammar';
 import { invoke, wasNoOp, type Refusal } from './invoke';
 import { useDismissible } from '@/hooks/useDismissible';
+import { feedback } from '@/lib/feedback';
 
 type Stage = 'verbs' | 'params' | 'done';
 
@@ -50,6 +51,8 @@ export function VerbPanel({
   const [values, setValues] = useState<Record<string, unknown>>({});
   const [submitting, setSubmitting] = useState(false);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
+  /** The node the juice layer shakes on a refusal and snaps on a commit. */
+  const panelRef = useRef<HTMLDivElement>(null);
   const [success, setSuccess] = useState<{ noOp: boolean } | null>(null);
 
   const prompts = useMemo(
@@ -89,13 +92,23 @@ export function VerbPanel({
     if (out.ok) {
       // Never claim more than happened: several actions return 200 having changed
       // nothing (e.g. `track` on an already-tracked project).
-      setSuccess({ noOp: wasNoOp(out.result) });
+      const noOp = wasNoOp(out.result);
+      setSuccess({ noOp });
       setStage('done');
+      // The feel follows the truth. A no-op gets no snap, no cue and no haptic,
+      // because celebrating a write that did not happen is the one thing the juice
+      // layer must never do — it would teach the operator to trust a feeling that
+      // does not correspond to a change in the record.
+      if (!noOp) feedback.commit(panelRef.current);
       // Secrets are dropped the instant the request is away.
       setValues({});
       return;
     }
     setRefusal(out);
+    // Shake the panel and SPEAK the remedy. The remedy, not the code: `remedy` is
+    // the sentence that tells the operator what to do next, which is the whole
+    // point of a governed refusal.
+    feedback.refuse(panelRef.current, out.remedy);
   }
 
   /* ── keyboard ──────────────────────────────────────────────────────────── */
@@ -171,7 +184,10 @@ export function VerbPanel({
 
   if (stage === 'params' && verb) {
     return (
-      <div className="p-3">
+      // The shake/snap target is the params panel, not the whole command line: the
+      // refusal is about THIS action, and shaking the entire overlay would move the
+      // text the operator is trying to read.
+      <div ref={panelRef} className="p-3">
         <Breadcrumb noun={noun} verbLabel={verb.action.label} />
         <p className="mt-1 px-1 text-body text-grey">{verb.action.description}</p>
 

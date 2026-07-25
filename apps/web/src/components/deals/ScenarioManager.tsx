@@ -3,6 +3,7 @@ import { Bookmark, Trash2, Check, Plus } from 'lucide-react';
 import { listScenarios, saveScenario, deleteScenario, type SavedScenario } from '@/lib/api/planning';
 import { useSalesScenarioStore, useScenarioActive, type SalesScenario } from '@/stores/useSalesScenarioStore';
 import { toast } from '@/components/shared/Toast';
+import { ErrorNotice } from '@/components/shared/ErrorNotice';
 import { Button } from '@/components/ui';
 
 /**
@@ -29,7 +30,19 @@ export function ScenarioManager() {
   const [name, setName] = useState('');
   const current: SalesScenario = { closeRateDelta, valueDelta, timelineShiftDays };
 
-  const load = () => { listScenarios().then(setSaved).catch(() => setSaved([])); };
+  const [err, setErr] = useState<unknown>(null);
+  // `catch(() => setSaved([]))` rendered a failed request as "no saved scenarios",
+  // which invites the operator to re-save one they already have. An empty list and
+  // an unreachable list are different facts and must not share a rendering.
+  const load = () => {
+    setErr(null);
+    listScenarios()
+      .then(setSaved)
+      .catch((e: unknown) => {
+        setErr(e);
+        setSaved([]);
+      });
+  };
   useEffect(() => { load(); }, []);
 
   const doSave = async () => {
@@ -59,7 +72,9 @@ export function ScenarioManager() {
         <Button size="xs" onClick={() => void doSave()} disabled={!name.trim()}><Plus size={11} /> Save</Button>
       </div>
       <div className="space-y-1">
-        {saved == null ? null : saved.length === 0 ? (
+        {err ? (
+          <ErrorNotice error={err} onRetry={load} compact />
+        ) : saved == null ? null : saved.length === 0 ? (
           <p className="py-1 text-micro text-grey">No saved scenarios yet.</p>
         ) : saved.map((s) => {
           const isCurrent = fmt(s.deltas) === fmt(current);

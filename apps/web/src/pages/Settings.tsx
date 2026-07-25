@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useAuditStore, AuditLog } from '@/stores/useAuditStore';
 import { Sliders, Terminal, Trash2, Info } from 'lucide-react';
-import { PageTitle, SectionLabel } from '@/components/ui';
+import { Button, PageTitle, SectionLabel } from '@/components/ui';
+import { feedback, feelPrefs, setFeelPref } from '@/lib/feedback';
 import { ConfirmDialog } from '@/components/shared';
 import { clsx } from 'clsx';
 
@@ -80,6 +81,10 @@ export function Settings() {
               </div>
             ))}
           </div>
+
+          <div className="border-t border-line pt-4">
+            <FeelSettings />
+          </div>
         </div>
 
         <div className="flex-1 bg-slate-950 text-slate-100 rounded-lg border border-slate-900 shadow-md font-mono text-micro overflow-hidden h-full flex flex-col">
@@ -137,3 +142,98 @@ export function Settings() {
   );
 }
 export default Settings;
+
+/**
+ * The page's existing switch markup, extracted so the Feel block below reuses it
+ * rather than introducing a second visual language for the same affordance.
+ */
+function Switch({ on, onToggle, label }: { on: boolean; onToggle: () => void; label: string }) {
+  return (
+    <button
+      onClick={onToggle}
+      className={clsx(
+        'w-9 h-5 rounded-full p-0.5 transition-colors shrink-0 outline-none',
+        on ? 'bg-cyan-500' : 'bg-line',
+      )}
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+    >
+      <div
+        className={clsx(
+          'h-4 w-4 bg-card rounded-full shadow-sm transform transition-transform',
+          on ? 'translate-x-4' : 'translate-x-0',
+        )}
+      />
+    </button>
+  );
+}
+
+/**
+ * Sound and haptics (TERMINAL Phase 5).
+ *
+ * Both ship OFF. The sample button is the point of this block: these are taste
+ * calls, and asking someone to enable an unheard sound and then go find a governed
+ * action to invoke before they can judge it is how a setting gets enabled once,
+ * disliked, and switched off forever. Pressing Sample plays exactly what a real
+ * commit and a real refusal will play.
+ */
+function FeelSettings() {
+  const [prefs, setPrefs] = useState(feelPrefs);
+  const sampleRef = useRef<HTMLDivElement>(null);
+
+  function toggle(key: 'sound' | 'haptics') {
+    const next = !prefs[key];
+    setFeelPref(key, next);
+    setPrefs({ ...prefs, [key]: next });
+  }
+
+  const ROWS = [
+    {
+      key: 'sound' as const,
+      title: 'Confirmation cues',
+      desc: 'A near-subliminal rising tone when a governed write lands, and a falling one when a gate refuses. Off by default.',
+    },
+    {
+      key: 'haptics' as const,
+      title: 'Trackpad haptics',
+      desc: 'A physical detent under your finger on commit. Requires a Force Touch trackpad and the native terminal; silent everywhere else.',
+    },
+  ];
+
+  return (
+    <div className="space-y-4">
+      <SectionLabel className="block">The Feel</SectionLabel>
+      <div className="space-y-4 pt-1" ref={sampleRef}>
+        {ROWS.map(({ key, title, desc }) => (
+          <div
+            key={key}
+            className="flex items-start justify-between gap-4 border border-line rounded-lg p-3 bg-ice-soft/20 dark:bg-navy-deep/10"
+          >
+            <div className="space-y-1">
+              <span className="text-xs font-bold text-navy block">{title}</span>
+              <p className="text-xs text-grey-dark leading-relaxed">{desc}</p>
+            </div>
+            <Switch on={prefs[key]} onToggle={() => toggle(key)} label={`Toggle ${title}`} />
+          </div>
+        ))}
+        <div className="flex items-center gap-2">
+          <Button size="xs" variant="secondary" onClick={() => feedback.commit(sampleRef.current)}>
+            Sample a commit
+          </Button>
+          <Button
+            size="xs"
+            variant="secondary"
+            onClick={() => feedback.refuse(sampleRef.current, 'Sample refusal — a real one names what the gate wants instead.')}
+          >
+            Sample a refusal
+          </Button>
+        </div>
+        <p className="text-micro text-grey leading-relaxed">
+          Motion follows your macOS <span className="font-semibold">Reduce Motion</span> setting automatically; these two
+          are separate because sound and touch are not motion.
+        </p>
+      </div>
+    </div>
+  );
+}

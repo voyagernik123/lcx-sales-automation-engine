@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Megaphone, Plus } from 'lucide-react';
 import { clsx } from 'clsx';
 import { PageTitle, Button } from '@/components/ui';
-import { CardSkeleton } from '@/components/shared';
+import { CardSkeleton, ErrorNotice } from '@/components/shared';
 import { toast } from '@/components/shared/Toast';
 import {
   fetchDistCampaigns, createCampaign, setCampaignStatus, runEmission, runQuestCac,
@@ -38,8 +38,18 @@ export function DistributionCampaigns() {
   const [deep, setDeep] = useState<DistributionDeep | null>(null);
   const [drawer, setDrawer] = useState<DistCampaign | null>(null);
   const [reviews, setReviews] = useState<CampaignReview[]>([]);
+  // Failing into setCampaigns([]) rendered "No campaigns yet — draft one above",
+  // which is a lie the operator acts on: they draft a duplicate of a campaign
+  // that is already there but unreachable. The list carries its own error.
+  const [listErr, setListErr] = useState<unknown>(null);
 
-  const refresh = useCallback(() => { fetchDistCampaigns().then(setCampaigns).catch(() => setCampaigns([])); }, []);
+  const refresh = useCallback(() => {
+    setListErr(null);
+    fetchDistCampaigns().then(setCampaigns).catch(setListErr);
+  }, []);
+  // `deep` is a garnish only — the MiCA checklist inside the compliance drawer,
+  // read through optional chaining. Absent is a legitimate rendering, so this
+  // one is deliberately allowed to fail quiet.
   useEffect(() => { refresh(); fetchDistributionDeep().then(setDeep).catch(() => setDeep(null)); }, [refresh]);
 
   const openDrawer = async (c: DistCampaign) => {
@@ -60,7 +70,11 @@ export function DistributionCampaigns() {
     if (!drawer) return;
     try {
       const r = await exportCampaign(drawer.id, target);
-      await navigator.clipboard.writeText(JSON.stringify(r.spec, null, 2)).catch(() => {});
+      // Swallowing the clipboard rejection here still ran the success toast, so
+      // the operator was told the spec was copied and then pasted whatever was
+      // on the clipboard before. Clipboard writes DO get denied — no document
+      // focus, or no permission — so the failure needs its own words.
+      await navigator.clipboard.writeText(JSON.stringify(r.spec, null, 2));
       toast('success', `${target} spec copied to clipboard (keyless export)`);
     } catch (e) { toast('error', e instanceof Error ? e.message : 'Export failed'); }
   };
@@ -152,7 +166,9 @@ export function DistributionCampaigns() {
       {/* Lifecycle board */}
       <section className="mt-4">
         <div className="mb-2 text-micro font-bold uppercase tracking-wider text-grey">Campaigns</div>
-        {campaigns === null ? <CardSkeleton /> : campaigns.length === 0 ? (
+        {listErr ? (
+          <ErrorNotice error={listErr} onRetry={refresh} />
+        ) : campaigns === null ? <CardSkeleton /> : campaigns.length === 0 ? (
           <p className="text-label text-grey">No campaigns yet — draft one above.</p>
         ) : (
           <div className="space-y-2">

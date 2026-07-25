@@ -487,9 +487,14 @@ export function BdPipeline() {
             ))}
           </div>
 
+          {/* The one ACTION in a toolbar that is otherwise all state toggles and
+              counts: working the active split one lead at a time is what the
+              splits exist for. It was `secondary` — pixel-identical weight to
+              the CLARITY state chip beside it (both 11px/700, same border), so
+              the surface's primary verb read as chrome. */}
           <Button
             size="xs"
-            variant="secondary"
+            variant="primary"
             disabled={activeSplitLoading || visibleRows.length === 0}
             onClick={startSession}
             title={`Work ${SPLIT_LABELS[activeSplit]} one lead at a time — full-screen focus session`}

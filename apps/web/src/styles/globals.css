@@ -147,6 +147,95 @@ path.state:hover {
   }
 }
 
+/* ── Juice (TERMINAL Phase 5) ────────────────────────────────────────────────
+ * "Same mechanics feel dramatically better with layered feedback" is the one
+ * claim in the plan with a research base behind it (Swink's game feel; Jonasson
+ * & Purho's "Juice it or lose it"), and it is the cheapest thing here by a wide
+ * margin. The mechanics do not change at all. What changes is that a state
+ * BECOMING live is distinguishable from a state merely BEING live, and a refusal
+ * is felt rather than read.
+ *
+ * ONE VOCABULARY. Before this, motion was four ad-hoc durations —
+ * `duration-300` at 17 sites, `duration-200` at 5, `duration-700` at 3,
+ * `duration-500` at 1 — chosen per component. 300ms is roughly twice too slow
+ * for UI chrome and reads as lag on a 120Hz display, which is the machine this
+ * app is built for. The three tokens below are the durations the design notes
+ * already specified (120 hover / 160 state / 200 panels) but nothing enforced.
+ *
+ * OVERSHOOT IS RATIONED. `--e-snap` overshoots by ~12%, and it is for COMMIT
+ * moments only — a governed write landing, a row flipping state. The existing
+ * house rule in this file is "UI chrome never bounces or scales", and that rule
+ * is why the juice reads as meaningful instead of as decoration: if everything
+ * springs, nothing does. Hover and focus keep `--e-out`.
+ *
+ * These are one-shot ANIMATIONS rather than transitions, deliberately. A
+ * transition needs a style to change and stay changed; the whole point of a
+ * flash or a tick is that it happens and leaves no trace, so there is nothing to
+ * transition to. It also means `lib/juice.ts` can trigger them by adding a class
+ * and removing it on `animationend`, with no state to reconcile.
+ */
+:root {
+  --t-hover: 120ms;
+  --t-state: 160ms;
+  --t-panel: 200ms;
+  --e-out: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Back-out. The overshoot is what makes a commit feel like a physical detent
+   * rather than a fade — and 12% is deliberately modest: past ~20% it reads as
+   * a cartoon, which is the wrong register for an instrument that moves money. */
+  --e-snap: cubic-bezier(0.34, 1.42, 0.64, 1);
+}
+
+@keyframes juice-flash {
+  0% { background-color: rgb(var(--juice-tint) / 0); }
+  18% { background-color: rgb(var(--juice-tint) / 0.28); }
+  100% { background-color: rgb(var(--juice-tint) / 0); }
+}
+
+@keyframes juice-shake {
+  0%, 100% { transform: translateX(0); }
+  15% { transform: translateX(-5px); }
+  30% { transform: translateX(4px); }
+  45% { transform: translateX(-3px); }
+  60% { transform: translateX(2px); }
+  80% { transform: translateX(-1px); }
+}
+
+@keyframes juice-snap {
+  0% { transform: scale(0.94); }
+  100% { transform: scale(1); }
+}
+
+@keyframes juice-tick {
+  0% { transform: scale(0.6); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@layer utilities {
+  /* A status BECOMING something. Tint is passed per use so one animation serves
+   * every semantic colour instead of needing four near-identical keyframes. */
+  .juice-flash {
+    animation: juice-flash var(--t-panel) var(--e-out) 1;
+  }
+  /* Refusal. Shake alone would be a punishment with no information, so every
+   * call site pairs it with the reason — see lib/juice.ts. */
+  .juice-shake {
+    animation: juice-shake 340ms var(--e-out) 1;
+  }
+  /* Commit landed. The only place overshoot is allowed. */
+  .juice-snap {
+    animation: juice-snap var(--t-state) var(--e-snap) 1;
+  }
+  .juice-tick {
+    animation: juice-tick var(--t-state) var(--e-snap) 1;
+  }
+  /* Semantic tints for .juice-flash, so a call site names a meaning rather than
+   * a colour and dark mode is handled by the tokens it already defines. */
+  .tint-live { --juice-tint: var(--green); }
+  .tint-blocked { --juice-tint: var(--red); }
+  .tint-warn { --juice-tint: var(--amber); }
+  .tint-info { --juice-tint: var(--cyan, 8 145 178); }
+}
+
 /* ── Focus (TERMINAL Phase 4) ───────────────────────────────────────────────
  * "Focus is never invisible" is the single most important visual change in the
  * motion model: if you cannot see where you are, nothing else about keyboard
@@ -245,12 +334,13 @@ path.state:hover {
  * 0.01ms is indistinguishable from instant to a human and still fires the
  * event, so the same code path runs for everybody.
  *
- * Honesty about this app specifically: nothing here listens for those events.
- * Grepped across `src/` — zero hits for `transitionend`, `animationend`,
- * `onTransitionEnd`, `onAnimationEnd`. So the precaution is NOT load-bearing
- * today. It is insurance against the first person to write such a listener, who
- * would otherwise have no way to connect their hang to a stylesheet. It costs
- * nothing, so it stays.
+ * This WAS insurance when it was written — at the time nothing in `src/` listened
+ * for either event. Phase 5 made it load-bearing: `lib/juice.ts` removes a
+ * one-shot animation class on `animationend`, so at exactly `0s` the class would
+ * never come off, and the next flash or shake on that element would silently do
+ * nothing — for precisely the operators who asked for less motion, and only for
+ * them. Keeping the fallback timer in juice.ts as well is belt and braces, but
+ * the 0.01ms is what makes the normal path work.
  *
  * Not covered by this rule, and worth knowing: the eight
  * `scrollIntoView({ behavior: 'smooth' })` call sites. The JS option overrides

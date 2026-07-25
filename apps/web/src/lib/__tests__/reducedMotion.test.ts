@@ -154,14 +154,24 @@ describe('reduced motion is honoured', () => {
     ).toEqual([]);
   });
 
-  it('records whether anything yet depends on transitionend/animationend', () => {
+  it('the 0.01ms comment agrees with whether anything actually listens', () => {
     /*
-     * Not a rule — a tripwire on a claim. The comment in globals.css states
-     * plainly that no code in this app waits on a transition/animation end event,
-     * so the 0.01ms precaution is insurance rather than a live fix. If someone
-     * adds such a listener, that sentence becomes wrong and the 0.01ms choice
-     * becomes load-bearing. This test failing is the signal to go update the
-     * comment (and to keep the 0.01ms) — not to remove the listener.
+     * A tripwire on a CLAIM, not a rule about code — and it has already fired once,
+     * which is the reason it is now shaped like this.
+     *
+     * The original version asserted that nothing in the app waits on a
+     * transition/animation end event, because globals.css said so and the 0.01ms
+     * (rather than 0s) precaution was therefore insurance. Phase 5's juice layer
+     * added exactly such a listener: `lib/juice.ts` removes a one-shot animation
+     * class on `animationend`, so at 0s the class would stick and the next flash on
+     * that element would silently do nothing — for reduced-motion operators only.
+     *
+     * The test then failed as designed, telling the reader to correct the comment
+     * and keep the 0.01ms. Both happened. So the invariant worth guarding was never
+     * "no listeners exist" — it is that the COMMENT and the CODE agree, in either
+     * direction. That holds whether the app has one listener or twenty, and it still
+     * fails if someone deletes the last listener and leaves the comment claiming it
+     * is load-bearing, or adds one back while the comment says nothing listens.
      */
     const listeners: string[] = [];
     for (const file of walk(SRC)) {
@@ -174,10 +184,31 @@ describe('reduced motion is honoured', () => {
           }
         });
     }
+
+    const css = globals();
+    // The comment must state one of the two positions explicitly. Matching on the
+    // phrasing rather than on a marker keeps the assertion about the prose a human
+    // will actually read.
+    const claimsNoneListen = /nothing here listens for those events|NOT load-bearing/i.test(css);
+    const claimsLoadBearing = /made it load-bearing|is what makes the normal path work/i.test(css);
+
     expect(
-      listeners,
-      `globals.css claims nothing waits on transition/animation end events. That is now false:\n${listeners.join('\n')}\nKeep the 0.01ms duration and correct the comment.`,
-    ).toEqual([]);
+      claimsNoneListen || claimsLoadBearing,
+      'globals.css no longer says either way whether anything depends on transition/animation end events. Say so explicitly — the 0.01ms choice is unexplainable without it.',
+    ).toBe(true);
+
+    if (listeners.length > 0) {
+      expect(
+        claimsLoadBearing,
+        `${listeners.length} file(s) wait on transition/animation end events:\n${listeners.join('\n')}\n` +
+          'globals.css still describes the 0.01ms duration as insurance. Correct the comment; keep the 0.01ms.',
+      ).toBe(true);
+    } else {
+      expect(
+        claimsNoneListen,
+        'nothing waits on transition/animation end events any more, but globals.css still calls the 0.01ms load-bearing. Correct the comment; keep the 0.01ms anyway.',
+      ).toBe(true);
+    }
   });
 
   it('the map transition, which outranks the blanket rule, is named explicitly', () => {

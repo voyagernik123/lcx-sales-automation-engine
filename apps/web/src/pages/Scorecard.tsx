@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Gauge, RefreshCw, Trophy, Activity, Database, BrainCircuit } from 'lucide-react';
 import { fetchScorecard, fetchCalibration, type Scorecard as SC, type MetricCalibration } from '@/lib/api/intel';
-import { EmptyState, CardSkeleton } from '@/components/shared';
+import { EmptyState, CardSkeleton, TableSkeleton } from '@/components/shared';
 import { Button, PageTitle } from '@/components/ui';
 import { formatMoney } from '@/lib/format';
 
@@ -111,7 +111,7 @@ export function Scorecard() {
                 <BrainCircuit size={12} /> Does the alpha predict wins?
               </div>
               {calib === null ? (
-                <p className="text-micro text-grey">Loading…</p>
+                <TableSkeleton rows={3} cols={4} />
               ) : calib.length === 0 ? (
                 <p className="text-micro text-grey">No calibration yet — run the alpha/calibrate job.</p>
               ) : (

@@ -4,7 +4,7 @@ import { Copy } from 'lucide-react';
 import { fetchClaims } from '@/lib/api/bd';
 import { CLAIM_CATEGORY_LABELS, CLAIM_RISK_COLORS } from '@/types/bd';
 import type { Claim, ClaimLibrarySnapshot } from '@/types/bd';
-import { SectionLabel } from '@/components/ui';
+import { Button, SectionLabel } from '@/components/ui';
 import { EmptyState, CardSkeleton } from '@/components/shared';
 import { toast } from '@/components/shared/Toast';
 import { useInspect } from '@/stores';
@@ -115,7 +115,26 @@ export function ClaimLibrary() {
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-[900px] mx-auto p-4 space-y-3">
           {filtered.length === 0 ? (
-            <EmptyState variant="search" title="No claims" description="No claims in this category." />
+            // Two different facts: the library is empty, or the active category
+            // tab hides everything. The old copy said "in this category" even
+            // with no category selected, and gave no way back to All.
+            activeCategory ? (
+              <EmptyState
+                variant="search"
+                title="No claims in this category"
+                description={`${CLAIM_CATEGORY_LABELS[activeCategory] ?? activeCategory} has no approved claims yet — the library holds ${snapshot.claims.length}.`}
+                action={
+                  <Button size="sm" variant="secondary" onClick={() => setActiveCategory(null)}>
+                    Show all {snapshot.claims.length} claims
+                  </Button>
+                }
+              />
+            ) : (
+              <EmptyState
+                title="No claims yet"
+                description="The claim library is empty — approved messaging appears here once legal has signed it off."
+              />
+            )
           ) : (
             filtered.map(claim => (
               <ClaimCard key={claim.id} claim={claim} />

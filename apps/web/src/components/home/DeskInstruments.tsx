@@ -3,6 +3,7 @@ import { ChevronRight } from 'lucide-react';
 import { formatMoney } from '@/lib/format';
 import type { QueuePulse } from '@/lib/api/loop';
 import type { BoardDeal } from '@/lib/api/bd';
+import { TableSkeleton } from '@/components/shared';
 
 /**
  * Home's two lead instruments (FINAL_MASTER_PLAN Part 6): the one-digit
@@ -80,7 +81,9 @@ export function PipelineInstrument({ board }: { board: BoardDeal[] | null }) {
       </div>
 
       {board === null ? (
-        <p className="text-micro italic text-grey">Loading…</p>
+        // Flat bars, not CardSkeleton: this sits INSIDE the instrument card, and a
+        // bordered placeholder card here reads as a card nested in a card.
+        <TableSkeleton rows={2} cols={2} />
       ) : (
         <>
           <div className="flex items-baseline gap-2.5">

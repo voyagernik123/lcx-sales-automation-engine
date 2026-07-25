@@ -49,6 +49,10 @@ export function Targets() {
     fetchTargets(30)
       .then((d) => mine === seq.current && setRows(d))
       .catch((e) => mine === seq.current && setError(e instanceof Error ? e.message : 'Failed to load'));
+    // Both are garnish on the target list and render only when present (the
+    // backtest chip behind `backtest?.lift != null`, the indications strip behind
+    // `indications.length > 0`), so absent is a designed rendering rather than a
+    // hidden failure. `rows` above is the page's real payload and carries the error.
     fetchIndications(8).then((d) => mine === seq.current && setIndications(d)).catch(() => {});
     fetchBacktest().then((d) => mine === seq.current && setBacktest(d)).catch(() => {});
   }, []);

@@ -13,7 +13,7 @@ import { computeReplySla } from '@/lib/salesIntel';
 import { formatDate } from '@/lib/format';
 import { useLastSeen } from '@/lib/useLastSeen';
 import { PageTitle } from '@/components/ui';
-import { CardSkeleton, EmptyState } from '@/components/shared';
+import { CardSkeleton, EmptyState, TableSkeleton } from '@/components/shared';
 import { EntityChip } from '@/components/entity';
 import { HistoryStrip, type HistoryEntry } from '@/components/inspect/HistoryStrip';
 import { SlaChip } from '@/components/home/OvernightHandoffs';
@@ -147,7 +147,7 @@ export function ContactWorkspace() {
         <div className="space-y-4 lg:col-span-2">
           <Section title="Thread state">
             {loading ? (
-              <p className="text-micro italic text-grey">Loading…</p>
+              <TableSkeleton rows={2} cols={1} />
             ) : openHandoffs.length === 0 ? (
               <p className="text-label text-grey">
                 No open replies from {person.name.split(' ')[0]} — automation runs until they answer.
@@ -211,7 +211,7 @@ export function ContactWorkspace() {
 
           <Section title="Sequences">
             {loading ? (
-              <p className="text-micro italic text-grey">Loading…</p>
+              <TableSkeleton rows={2} cols={1} />
             ) : (sequences ?? []).length === 0 ? (
               <p className="text-micro italic text-grey">Never enrolled.</p>
             ) : (

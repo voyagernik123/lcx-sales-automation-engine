@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Search, Users, Sparkles } from 'lucide-react';
 import { clsx } from 'clsx';
 import { PageTitle, Button } from '@/components/ui';
-import { CardSkeleton } from '@/components/shared';
+import { CardSkeleton, ErrorNotice } from '@/components/shared';
 import { toast } from '@/components/shared/Toast';
 import { fetchDistributionDeep, draftGeoContent, type DistributionDeep } from '@/lib/api/distribution';
 
@@ -21,7 +21,15 @@ export function DistributionGeo() {
   const [deep, setDeep] = useState<DistributionDeep | null>(null);
   const [draft, setDraft] = useState<{ query: string; text: string; usedLlm: boolean } | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
-  useEffect(() => { fetchDistributionDeep().then(setDeep).catch(() => setDeep(null)); }, []);
+  // `deep === null` is the LOADING sentinel, so the failure has to land somewhere
+  // else: catching into setDeep(null) left the skeleton pulsing forever.
+  const [err, setErr] = useState<unknown>(null);
+
+  const load = useCallback(() => {
+    setErr(null);
+    fetchDistributionDeep().then(setDeep).catch(setErr);
+  }, []);
+  useEffect(() => { load(); }, [load]);
 
   const genDraft = async (id: string, query: string) => {
     setDrafting(id);
@@ -38,7 +46,9 @@ export function DistributionGeo() {
         GEO & Personas
       </PageTitle>
 
-      {!deep ? (
+      {err ? (
+        <ErrorNotice error={err} onRetry={load} />
+      ) : !deep ? (
         <div className="mt-4"><CardSkeleton /></div>
       ) : (
         <>

@@ -27,6 +27,77 @@ fn entry(key: &str) -> Result<Entry, String> {
     Entry::new(KEYRING_SERVICE, key).map_err(|e| e.to_string())
 }
 
+/// Trackpad haptics (Phase 5).
+///
+/// The "Apple-grade detail" from the plan: a governed write landing produces a
+/// physical detent under the finger, the same feedback AppKit gives when a window
+/// snaps to a guide. There is no web API for this — it is the one piece of the
+/// feel layer that genuinely requires the native shell, which makes it the
+/// clearest answer to "why is this an app and not a tab".
+///
+/// Three honest limitations, all of which the caller has to tolerate rather than
+/// treat as failure:
+///   1. It does nothing at all without a Force Touch trackpad. An external mouse,
+///      a Magic Trackpad 1, or a Mac desktop with no trackpad: silence. AppKit
+///      does not report which, so neither can we.
+///   2. `NSHapticFeedbackPerformanceTime::Now` is a request, not a guarantee; the
+///      window server may drop it under load.
+///   3. It cannot be verified from code. A test can prove this function returns
+///      without crashing; only a human with a fingertip can prove a tap happened.
+///      That distinction is recorded rather than papered over.
+///
+/// Returns whether the pattern was dispatched — false means the platform declined
+/// (no performer available), not that an error occurred, so the UI never surfaces
+/// it as a problem.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+fn haptic_tap(pattern: String) -> bool {
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+
+    // NSHapticFeedbackPattern, from AppKit's NSHapticFeedbackManager.h.
+    //   Generic = 0, Alignment = 1, LevelChange = 2
+    // `Alignment` is the crisp single detent used for snapping — the right one for
+    // a commit. `LevelChange` is a lighter double tick, for a value stepping.
+    let pattern_id: isize = match pattern.as_str() {
+        "alignment" => 1,
+        "level" => 2,
+        _ => 0,
+    };
+    // NSHapticFeedbackPerformanceTime: Default = 0, Now = 1, DrawCompleted = 2.
+    // `Now` because the visual confirmation has already been painted by the time
+    // the web layer calls this; `DrawCompleted` would wait for a draw that is not
+    // coming and drop the tap.
+    let performance_time: usize = 1;
+
+    // SAFETY: `defaultPerformer` is a documented AppKit class method returning an
+    // object conforming to NSHapticFeedbackPerformer, or nil. Both selectors and
+    // their argument types are taken from the AppKit headers, and the nil case is
+    // checked before use — which is the case that actually occurs, on every Mac
+    // without a Force Touch trackpad.
+    unsafe {
+        let cls = class!(NSHapticFeedbackManager);
+        let performer: *mut AnyObject = msg_send![cls, defaultPerformer];
+        if performer.is_null() {
+            return false;
+        }
+        let _: () = msg_send![
+            performer,
+            performFeedbackPattern: pattern_id,
+            performanceTime: performance_time
+        ];
+        true
+    }
+}
+
+/// Non-macOS builds have no haptics. Present so the webview can call the command
+/// unconditionally instead of branching on platform.
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+fn haptic_tap(_pattern: String) -> bool {
+    false
+}
+
 /// Persist a credential (desk email / passcode) in the macOS Keychain.
 #[tauri::command]
 fn secret_set(key: String, value: String) -> Result<(), String> {
@@ -270,7 +341,8 @@ pub fn run() {
             secret_set,
             secret_get,
             secret_delete,
-            is_terminal
+            is_terminal,
+            haptic_tap
         ])
         .setup(|app| {
             let handle = app.handle().clone();

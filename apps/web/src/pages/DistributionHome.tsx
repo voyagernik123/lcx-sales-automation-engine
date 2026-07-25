@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Rocket, Route, Compass, Swords, Target, Gauge } from 'lucide-react';
 import { PageTitle } from '@/components/ui';
-import { CardSkeleton } from '@/components/shared';
+import { CardSkeleton, ErrorNotice } from '@/components/shared';
 import { fetchDistributionDeep, type DistributionDeep } from '@/lib/api/distribution';
 import { RailsMap, ChannelAtlas, CompetitorRoom, GapRegister } from '@/components/distribution/DistributionPanels';
 import { GrowthEngines } from '@/components/distribution/GrowthEngines';
@@ -23,10 +23,21 @@ const TABS: Array<{ id: Tab; label: string; icon: typeof Rocket }> = [
  */
 export function DistributionHome() {
   const [deep, setDeep] = useState<DistributionDeep | null>(null);
-  const [err, setErr] = useState(false);
+  // The error itself, not a boolean: ErrorNotice classifies it (unreachable API vs
+  // 403 vs 500) and says something different for each, which a `true` cannot.
+  const [err, setErr] = useState<unknown>(null);
   const [tab, setTab] = useState<Tab>('atlas');
 
-  useEffect(() => { fetchDistributionDeep().then(setDeep).catch(() => setErr(true)); }, []);
+  const load = useCallback(() => {
+    setErr(null);
+    fetchDistributionDeep()
+      .then(setDeep)
+      .catch((e: unknown) => setErr(e));
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
 
   return (
     <div className="p-5">
@@ -38,7 +49,13 @@ export function DistributionHome() {
       </PageTitle>
 
       {err ? (
-        <p className="mt-4 rounded border border-red-500/30 bg-red-500/10 px-3 py-2 text-label text-red-600 dark:text-red-400">Failed to load the distribution ontology.</p>
+        // Was a bespoke red <p> with no retry, so the only recovery was a page
+        // reload. Its four sibling Distribution pages all share ErrorNotice; a
+        // fifth dialect of "it broke" teaches the operator nothing and costs them
+        // the retry.
+        <div className="mt-4">
+          <ErrorNotice error={err} onRetry={load} />
+        </div>
       ) : !deep ? (
         <div className="mt-4"><CardSkeleton /></div>
       ) : (
