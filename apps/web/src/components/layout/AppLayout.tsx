@@ -17,6 +17,8 @@ import { useAccessStore } from '@/stores/useAccessStore';
 import { useGoGrammar } from '@/hooks/useGoGrammar';
 import { useManual } from '@/hooks/useManual';
 import { ManualHost } from '@/components/help/ManualHost';
+import { useHints } from '@/hooks/useHints';
+import { HintLayer } from '@/components/help/HintLayer';
 
 export function AppLayout() {
   const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed);
@@ -78,6 +80,14 @@ export function AppLayout() {
   // action registry rather than written down, so it cannot describe a shortcut this
   // build does not have.
   const manual = useManual();
+
+  // LCX TERMINAL (Phase 7): `f` tags every actionable element in the viewport so a
+  // tag can be typed to activate it. This is the mechanism LCX_TERMINAL_PLAN.md §C
+  // promised for the 198 controls that arrow keys and a roving tabindex cannot
+  // reach — targets are discovered by querying the DOM at press time, so no page
+  // opts in and pages written later are covered on the day they render. Only the
+  // key listener is eager; the layer itself is a lazy chunk.
+  const hints = useHints();
 
   // LCX TERMINAL (Phase 4): `g` then a digit reaches any workspace from the
   // keyboard. This is NOT a port of the native ⌘1-6 accelerators — those cannot be
@@ -182,6 +192,11 @@ export function AppLayout() {
       <ToastContainer />
       <InspectorHost />
       <CommandPalette open={open} onClose={() => setOpen(false)} />
+      {/* Below the manual's z-[120] on purpose: `f` stands down while any overlay owns
+        * the keyboard, so the two are never up together by the front door — but `?`
+        * deliberately does NOT stand down, so pressing it from hint mode must put the
+        * manual on top rather than behind the tags. */}
+      <HintLayer open={hints.on} onClose={() => hints.setOn(false)} />
       <ManualHost open={manual.open} onClose={() => manual.setOpen(false)} />
     </div>
   );

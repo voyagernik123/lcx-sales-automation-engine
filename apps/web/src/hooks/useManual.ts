@@ -26,6 +26,15 @@ import { isTypingTarget } from '@/lib/keyboard';
  * Manual"), so the app and its menu now agree instead of the menu promising a key the
  * webview did not implement.
  */
+/**
+ * The bare key that opens the manual.
+ *
+ * Exported in Phase 7 for one consumer: `lib/hints.ts` has to let this key THROUGH while
+ * hint mode owns the keyboard, and a hard-coded `'?'` over there would be a second
+ * spelling of this binding that nothing keeps in step. See the manual rung in `stepHint`.
+ */
+export const MANUAL_KEY = '?';
+
 export function useManual(): { open: boolean; setOpen: (open: boolean) => void } {
   const [open, setOpen] = useState(false);
 
@@ -42,7 +51,7 @@ export function useManual(): { open: boolean; setOpen: (open: boolean) => void }
       // is Shift+/ on a US layout and elsewhere on others. Yields to typing: `?` in a
       // search box is a question mark, and the manual is the least urgent thing anyone
       // wants mid-sentence.
-      if (e.key !== '?') return;
+      if (e.key !== MANUAL_KEY) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       e.preventDefault();

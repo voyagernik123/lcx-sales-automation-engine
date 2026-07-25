@@ -1,4 +1,5 @@
 import { verbsFor, blockedExplanation, type Noun, type Principal } from '@/components/command/grammar';
+import { HINT_KEY } from '@/hooks/useHints';
 import { DESTINATIONS } from './destinations';
 import type { DismissEntry } from './dismiss';
 import { GO_WINDOW_MS } from './navGrammar';
@@ -195,6 +196,33 @@ function everywhereSection(ctx: ManualContext): ManualSection {
       keys: ['⌘', '/'],
       what: 'This manual, even while you are typing',
       note: '? is a character in a search box, so it yields — this never does',
+    },
+    // The Phase 7 hint layer, and a line that has already been narrowed once.
+    //
+    // WHAT IS TRUE AND IS WHY THIS SITS UNDER "EVERYWHERE": there is no per-control and
+    // no per-page wiring. Targets are found by querying the DOM at press time, so this
+    // works on a surface nobody wired it into, including one built after this line was
+    // written — that is the property the whole mechanic exists for.
+    //
+    // WHAT WAS NOT TRUE. This read "Tag EVERY control in view", which is a universal
+    // claim on the one surface whose entire job is telling operators the truth about
+    // keys, and it fails in three measured ways:
+    //  - `f` refuses to arm while an overlay is on the dismiss stack (useHints.ts:61) as
+    //    well as while you are typing. The old note listed only the typing case, under a
+    //    heading called "Everywhere".
+    //  - the selector reaches controls, not click SURFACES. A chart that decodes where
+    //    inside it you clicked (`src/pages/WinLoss.tsx:82 columnIndexFromClick` reads
+    //    `e.clientX`; `src/components/kpi/FunnelSection.tsx:24` reads `e.target`) cannot
+    //    be driven by a tag at all — a synthetic click carries no coordinates — so those
+    //    are deliberately not tagged rather than tagged and inert.
+    //  - visibility is judged against the VIEWPORT, not against clipping ancestors, so a
+    //    control scrolled out of a short `max-h-*` scroller can still be tagged. See the
+    //    limits note on `isHintable` in `src/lib/hints.ts`.
+    // "The controls in view" is what the code delivers, so it is what the line says.
+    {
+      keys: [HINT_KEY],
+      what: 'Tag the controls in view — type a tag to activate one',
+      note: 'works on every screen; not while you are typing or while a dialog is open',
     },
     // Qualified deliberately. The P7 audit measured that `useListNavigation` has exactly
     // one real consumer (the BD lead table): 15 of 16 tables still make every row a Tab
