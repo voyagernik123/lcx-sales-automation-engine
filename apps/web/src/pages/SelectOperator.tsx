@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-react';
 import { normalizeEmail } from '@lcx/shared';
 import { OPERATORS, useOperatorStore } from '@/stores';
 import { getHealth, getMe, setOperatorCredentials } from '@/lib/apiClient';
+import { LcxMark } from '@/components/brand/LcxMark';
 
 /**
  * The front door — a hard email gate, and the first thing the app renders when
@@ -95,13 +96,16 @@ export function SelectOperator() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-page px-6 text-navy antialiased">
       <div className="w-full max-w-sm">
-        {/* Wordmark */}
+        {/* The signature. This replaced the letters `LCX` set in a monospace box —
+          * a stand-in that was never artwork. The mark is now the approved symbol,
+          * knocked out of an LCX Black tile with the book's clear space reserved
+          * (page 12), which is the same lockup the app icon uses. */}
         <div className="flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-navy font-mono text-[12px] font-bold tracking-tight text-card">
-            LCX
+          <span className="flex h-9 w-9 items-center justify-center rounded-md bg-navy text-card">
+            <LcxMark size={36} withClearSpace />
           </span>
           <div className="leading-tight">
-            <div className="text-[14px] font-bold tracking-tight text-navy">LCX USA</div>
+            <div className="text-[14px] font-bold tracking-tight text-navy">LCXOS</div>
             <div className="font-mono text-[9px] uppercase tracking-[0.18em] text-grey">Launch Control</div>
           </div>
         </div>

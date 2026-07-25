@@ -1,5 +1,5 @@
 /**
- * LCX TERMINAL Phase 1 — the credential handoff between the macOS Keychain and
+ * LCXOS Phase 1 — the credential handoff between the macOS Keychain and
  * the API client.
  *
  * This is the single most failure-prone seam in the shell. Keychain reads are
@@ -39,7 +39,7 @@ async function freshClient() {
 const EMAIL_KEY = 'lcx_operator_email';
 const PASS_KEY = 'lcx_desk_passcode';
 
-describe('LCX TERMINAL credential handoff', () => {
+describe('LCXOS credential handoff', () => {
   beforeEach(() => {
     keychain.clear();
     localStorage.clear();

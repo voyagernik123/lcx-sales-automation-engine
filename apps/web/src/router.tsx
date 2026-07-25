@@ -1,5 +1,5 @@
 import { createBrowserRouter, Outlet, useLocation } from 'react-router-dom';
-import { lazy, useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { AppLayout } from '@/components/layout';
 import { SelectOperator } from '@/pages/SelectOperator';
 import { ToastContainer, useToastStore } from '@/components/shared/Toast';
@@ -74,6 +74,7 @@ const CheatCard = lazy(() => import('@/pages/CheatCard').then((m) => ({ default:
 // The sandbox (Phase 8, T1 #20). Lazy like every other page, and it matters more
 // here than most: this chunk is the only eager-bundle risk in the feature, since it
 // is what pulls in the generated 22-action manifest.
+const Launch = lazy(() => import('@/pages/Launch').then((m) => ({ default: m.Launch })));
 const PracticeRange = lazy(() => import('@/pages/PracticeRange').then((m) => ({ default: m.PracticeRange })));
 
 /**
@@ -148,6 +149,16 @@ export const router = createBrowserRouter([
     // A pathless layout route: it wraps both branches without owning a URL.
     element: <AboveTheGate />,
     children: [
+      // The public face. A SIBLING of AppLayout, so it renders outside the
+      // signed-in shell entirely — which is what makes "no action is reachable
+      // from this page" structural rather than a promise.
+      // Its OWN Suspense boundary. Every other lazy page sits under AppLayout,
+      // whose Outlet is already wrapped; this route is a sibling of AppLayout, so
+      // without this the lazy chunk suspends with no boundary above it and React
+      // throws instead of rendering the page. `null` rather than a skeleton: this
+      // is a static page behind a CDN, so the gap is a frame, and a flashing
+      // skeleton would be more noticeable than the load it hides.
+      { path: '/lcxos', element: <Suspense fallback={null}><Launch /></Suspense> },
       { path: '/select', element: <SelectOperator /> },
       {
         path: '/',

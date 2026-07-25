@@ -15,7 +15,7 @@
  */
 
 /**
- * True when running inside LCX TERMINAL. The Tauri v2 webview injects
+ * True when running inside LCXOS. The Tauri v2 webview injects
  * `__TAURI_INTERNALS__` into `window` before any app code runs, so this is
  * reliable at module-evaluation time — no await, no probing.
  */

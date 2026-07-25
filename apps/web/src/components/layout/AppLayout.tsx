@@ -121,12 +121,12 @@ export function AppLayout() {
   // fail open on error, so a queued write would be judged against stale truth.
   useEffect(() => startConnectivityWatch(), []);
 
-  // LCX TERMINAL (Phase 6): `?` answers "what can I do here", generated from the
+  // LCXOS (Phase 6): `?` answers "what can I do here", generated from the
   // action registry rather than written down, so it cannot describe a shortcut this
   // build does not have.
   const manual = useManual();
 
-  // LCX TERMINAL (Phase 7): `f` tags every actionable element in the viewport so a
+  // LCXOS (Phase 7): `f` tags every actionable element in the viewport so a
   // tag can be typed to activate it. This is the mechanism LCX_TERMINAL_PLAN.md §C
   // promised for the 198 controls that arrow keys and a roving tabindex cannot
   // reach — targets are discovered by querying the DOM at press time, so no page
@@ -134,7 +134,7 @@ export function AppLayout() {
   // key listener is eager; the layer itself is a lazy chunk.
   const hints = useHints();
 
-  // LCX TERMINAL (T1 #12): `⌘\` docks the universal inspector BESIDE the surface
+  // LCXOS (T1 #12): `⌘\` docks the universal inspector BESIDE the surface
   // instead of over it. The point is not the layout, it is the keyboard: an
   // InspectorDrawer makes `isOverlayOpen()` true, which silences the row arrows and —
   // on the BD queue — `s` snooze, `d` disqualify, `e` enroll and the split digits. So
@@ -144,14 +144,14 @@ export function AppLayout() {
   // both argued in lib/split.ts.
   const split = useSplitViewChord();
 
-  // LCX TERMINAL (Phase 4): `g` then a digit reaches any workspace from the
+  // LCXOS (Phase 4): `g` then a digit reaches any workspace from the
   // keyboard. This is NOT a port of the native ⌘1-6 accelerators — those cannot be
   // ported, because Chrome reserves ⌘1-⌘9 for tab switching and never delivers
   // them to the page (measured: zero keydowns from a capture-phase listener). Both
   // triggers resolve through lib/destinations, so they cannot drift apart.
   useGoGrammar((to) => navigate(to));
 
-  // LCX TERMINAL (Phase 1): wire the native macOS menu + self-updater to the
+  // LCXOS (Phase 1): wire the native macOS menu + self-updater to the
   // app. The menu exists as much for DISCOVERABILITY as for use — every
   // shortcut we add in later phases appears there with its key. No-op in a
   // browser, so the web build is unaffected.
@@ -174,7 +174,7 @@ export function AppLayout() {
         onCommandPalette: () => setOpen(true),
         onBack: () => navigate(-1),
         onForward: () => navigate(1),
-        // The menu item is literally "LCX TERMINAL Manual" at ⌘/ and it used to open
+        // The menu item is literally "LCXOS Manual" at ⌘/ and it used to open
         // Settings. A menu that promises one thing and does another is worse than a
         // missing menu item, because it teaches the operator the menu lies.
         onManual: () => setManualOpen(true),
@@ -197,7 +197,32 @@ export function AppLayout() {
     }
   }, []);
 
-  if (!operator) return <Navigate to="/select" replace />;
+  /* THE FRONT DOOR, and which door depends on where you arrived.
+   *
+   * This used to be one line — every signed-out visitor to any URL was bounced to
+   * `/select`, a passcode form that explains nothing. That is right for someone
+   * following a deep link into a lead, and wrong for the person opening the link
+   * we hand a colleague: they land on a credential prompt for a product they have
+   * never heard of, with no way to get the Mac app.
+   *
+   * So bare `/` on the WEB goes to the public LCXOS page, and everything else
+   * still goes straight to the door. Deep links keep their old behaviour on
+   * purpose: a shared link to a specific record should ask you to sign in, not
+   * silently show marketing and lose the thing you were sent.
+   *
+   * In the desktop app there is no landing page at all — you already downloaded
+   * it, so showing you a download page would be absurd. `isTerminal()` is the
+   * same check the rest of the shell uses for app-only behaviour.
+   *
+   * Note this deliberately keeps the desk at `/`. Moving it to `/desk` would have
+   * been the tidier URL and would have churned every route, the `g`+digit chords,
+   * ⌘K's page list, the tour and the e2e suite — a lot of risk bought with nothing
+   * the operator can see.
+   */
+  if (!operator) {
+    const toLanding = !isTerminal() && location.pathname === '/';
+    return <Navigate to={toLanding ? '/lcxos' : '/select'} replace />;
+  }
 
   // LCX OS compartment guard: a route inside a workspace you don't hold
   // renders the request-access surface in place of the page. Optimistic until

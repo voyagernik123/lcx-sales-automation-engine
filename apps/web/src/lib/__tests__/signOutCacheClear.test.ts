@@ -4,7 +4,7 @@
  * The bug: `clearReadCache()` fired an IndexedDB clear and returned immediately,
  * and both sign-out paths then navigated the document — which aborts a transaction
  * in flight. So cached response BODIES survived on disk while
- * `TERMINAL_QUICKSTART.md` said they were cleared. They are namespaced per
+ * `LCXOS_QUICKSTART.md` said they were cleared. They are namespaced per
  * operator, so nobody could be SERVED them, but "the bytes are gone" and "nobody
  * else can read them" are different promises and only the second one was true.
  *

@@ -1,4 +1,4 @@
-# LCX TERMINAL — quick start
+# LCXOS — quick start
 
 **Read time: three minutes. You will not need it again.**
 
@@ -11,8 +11,13 @@ have the app open.
 
 ## 1. Install (once)
 
-1. Open the DMG, drag **LCX TERMINAL** to Applications.
+1. Open the DMG, drag **LCXOS** to Applications.
 2. First launch: **right-click the app → Open**, then confirm.
+
+**If you already have `LCX TERMINAL.app`, delete it.** The rename means this DMG is a
+fresh install rather than an update — macOS identifies an app by its bundle name, so the
+two sit side by side instead of one replacing the other. Your sign-in is unaffected: the
+credential is keyed to the bundle identifier, which deliberately did NOT change.
 
 That second step is macOS Gatekeeper, and it is expected. The app is ad-hoc signed, not
 Developer-ID signed, so macOS has no certificate to check it against. It is **once per

@@ -42,7 +42,7 @@ describe('the open chord', () => {
 
 describe('chord de-duplication', () => {
   it('accepts one press and rejects an immediate repeat', () => {
-    // In LCX TERMINAL the same Cmd+K can arrive twice — once from the native menu
+    // In LCXOS the same Cmd+K can arrive twice — once from the native menu
     // item added for discoverability, once from the webview — and toggling twice
     // in the same instant opens then immediately closes.
     expect(acceptCommandChord(1_000)).toBe(true);

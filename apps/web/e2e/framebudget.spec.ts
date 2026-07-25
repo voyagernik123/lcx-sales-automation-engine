@@ -34,6 +34,11 @@ const PER_ELEMENT_BUDGET_MS = 0.5;
 const BATCH = 50;
 
 test.describe('frame budget with the juice on', () => {
+  // TEMP PROBE: emulate a slow/contended CI runner in-browser only.
+  test.beforeEach(async ({ page }) => {
+    const client = await page.context().newCDPSession(page);
+    await client.send('Emulation.setCPUThrottlingRate', { rate: 30 });
+  });
   test('juicing a table-sized batch stays well inside one frame', async ({ page }, testInfo) => {
     await goToDesk(page, '/settings');
     // The Feel section is rendered by the Settings page, which confirms the juice
@@ -69,6 +74,7 @@ test.describe('frame budget with the juice on', () => {
       [BATCH],
     );
 
+    console.log('PROBE batch result :: ' + JSON.stringify(result));
     // Report the measurement, not just the verdict. A gate that only says "pass"
     // cannot tell you it has been passing for a year because it measures nothing.
     testInfo.annotations.push({
@@ -153,6 +159,7 @@ test.describe('frame budget with the juice on', () => {
       };
     });
 
+    console.log('PROBE framebudget result :: ' + JSON.stringify(result));
     // Inconclusive is an honest outcome and must not read as a pass. If no frames
     // were produced the environment did not render, and the numbers below would be
     // vacuously fine — which is exactly how a false green happens.

@@ -1,4 +1,4 @@
-//! LCX TERMINAL — the native macOS shell for LCX ONE (Phase 1).
+//! LCXOS — the native macOS shell for LCX ONE (Phase 1).
 //!
 //! Deliberately thin: the entire product surface is the existing LCX ONE web
 //! app running in a native WebView. What the shell adds is what a browser
@@ -52,9 +52,9 @@ const KEYRING_SERVICE: &str = "com.lcx.terminal";
  * one `open -R` now shows.
  * ───────────────────────────────────────────────────────────────────────────── */
 
-/// `~/Library/Logs/LCX TERMINAL/shell.log` — the folder Console.app already lists
+/// `~/Library/Logs/LCXOS/shell.log` — the folder Console.app already lists
 /// under "Log Reports", so the log is reachable without our help too.
-const LOG_DIR_NAME: &str = "LCX TERMINAL";
+const LOG_DIR_NAME: &str = "LCXOS";
 const LOG_FILE_NAME: &str = "shell.log";
 
 /// Roll at ~1MB. The shell writes on the order of ten lines per launch, so this is
@@ -275,7 +275,7 @@ fn diagnostics_append(line: String) {
 fn update_install_precheck() -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| format!("cannot locate the running app: {e}"))?;
 
-    // …/LCX TERMINAL.app/Contents/MacOS/lcx-terminal → …/LCX TERMINAL.app
+    // …/LCXOS.app/Contents/MacOS/LCXOS → …/LCXOS.app
     let bundle = exe
         .ancestors()
         .find(|p| p.extension().is_some_and(|x| x == "app"))
@@ -294,7 +294,7 @@ fn update_install_precheck() -> Result<(), String> {
             Ok(())
         }
         Err(e) => Err(format!(
-            "LCX TERMINAL is running from a location it cannot update itself in ({}). \
+            "LCXOS is running from a location it cannot update itself in ({}). \
              Quit, drag the app into your Applications folder, and open it from there. \
              (Running from the disk image works, but an update has to replace the app, \
              and a mounted image is read-only.) [{}]",
@@ -419,7 +419,7 @@ fn secret_delete(key: String) -> Result<(), String> {
     }
 }
 
-/// True when the frontend is running inside LCX TERMINAL rather than a browser.
+/// True when the frontend is running inside LCXOS rather than a browser.
 #[tauri::command]
 fn is_terminal() -> bool {
     true
@@ -479,17 +479,17 @@ static WEBVIEW_RELOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::Atom
 fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
     let app_menu = Submenu::with_items(
         app,
-        "LCX TERMINAL",
+        "LCXOS",
         true,
         &[
-            &PredefinedMenuItem::about(app, Some("About LCX TERMINAL"), Some(AboutMetadata::default()))?,
+            &PredefinedMenuItem::about(app, Some("About LCXOS"), Some(AboutMetadata::default()))?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "check-update", "Check for Updates…", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::hide(app, Some("Hide LCX TERMINAL"))?,
+            &PredefinedMenuItem::hide(app, Some("Hide LCXOS"))?,
             &PredefinedMenuItem::hide_others(app, None)?,
             &PredefinedMenuItem::separator(app)?,
-            &PredefinedMenuItem::quit(app, Some("Quit LCX TERMINAL"))?,
+            &PredefinedMenuItem::quit(app, Some("Quit LCXOS"))?,
         ],
     )?;
 
@@ -566,7 +566,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
         "Help",
         true,
         &[
-            &MenuItem::with_id(app, "help-manual", "LCX TERMINAL Manual", true, Some("CmdOrCtrl+/"))?,
+            &MenuItem::with_id(app, "help-manual", "LCXOS Manual", true, Some("CmdOrCtrl+/"))?,
             &PredefinedMenuItem::separator(app)?,
             // No accelerator: nothing about this is worth a key, and every key we
             // spend is one the operator has to hold in their head.
@@ -720,7 +720,7 @@ mod tests {
     fn the_log_lives_under_library_logs() {
         let path = log_file_path().expect("HOME is set in any environment that runs tests");
         assert!(
-            path.ends_with("Library/Logs/LCX TERMINAL/shell.log"),
+            path.ends_with("Library/Logs/LCXOS/shell.log"),
             "unexpected diagnostics path: {}",
             path.display(),
         );
@@ -757,7 +757,7 @@ pub fn run() {
     // therefore no other way to leave a trace.
     install_panic_hook();
     log_line(&format!(
-        "launch — LCX TERMINAL {} on {}",
+        "launch — LCXOS {} on {}",
         env!("CARGO_PKG_VERSION"),
         std::env::consts::OS,
     ));
@@ -916,7 +916,7 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while building LCX TERMINAL")
+        .expect("error while building LCXOS")
         .run(|app, event| {
             // Clicking the Dock icon after ⌥Space hid the desk must bring it
             // back. Without this the window is unrecoverable by mouse: macOS

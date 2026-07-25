@@ -225,7 +225,7 @@ function idbDelete(key: string): void {
  * the provenance map go synchronously, but the durable tier is an IndexedDB
  * transaction — and sign-out ends in `window.location.assign('/select')`, a real
  * document navigation that aborts any transaction still in flight. So the bodies
- * survived on disk while `TERMINAL_QUICKSTART.md` said they were cleared. They are
+ * survived on disk while `LCXOS_QUICKSTART.md` said they were cleared. They are
  * namespaced per operator, so nobody could be SERVED them, but "the bytes are
  * gone" and "nobody else can read them" are different promises and only the
  * second one was true.

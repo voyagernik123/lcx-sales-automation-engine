@@ -105,7 +105,7 @@ if (!existsSync(sigPath)) {
 const signature = readFileSync(sigPath, 'utf8').trim();
 
 // THE ARTIFACT MUST BE THE VERSION WE ARE PUBLISHING. This nearly shipped: `tauri build`
-// emits `LCX TERMINAL.app.tar.gz` with no version in the filename, so bumping the config
+// emits `LCXOS.app.tar.gz` with no version in the filename, so bumping the config
 // and NOT rebuilding leaves last version's binary sitting in the bundle directory, and
 // everything downstream — the tag, the staged asset name, the URL, `latest.json` — is
 // derived from the config and therefore all agrees with itself while pointing at the wrong
@@ -161,9 +161,9 @@ console.log(`  api origin ${PROD_API_ORIGIN}  ← verified present in the built 
 //
 // STAGE THE ASSETS UNDER SPACE-FREE NAMES, and do not skip this as cosmetic.
 //
-// `tauri build` emits `LCX TERMINAL.app.tar.gz` — with a space, and with no version in
+// `tauri build` emits `LCXOS.app.tar.gz` — with a space, and with no version in
 // it. GitHub NORMALISES spaces to dots in release asset names, so uploading that file
-// produces an asset called `LCX.TERMINAL.app.tar.gz`. A `latest.json` whose URL was built
+// produces an asset called `LCXOS.app.tar.gz`. A `latest.json` whose URL was built
 // from the local filename therefore points at a path that does not exist, and the failure
 // mode is the worst available one: the launch check swallows its error by design, so every
 // desk would silently stop updating and look exactly like a desk that is current. Caught
@@ -171,14 +171,29 @@ console.log(`  api origin ${PROD_API_ORIGIN}  ← verified present in the built 
 //
 // Copying to an explicit name makes the URL deterministic instead of dependent on
 // GitHub's normalisation rules, and §4 asserts the asset really exists at it afterwards.
+// The version-less alias the public page links to. Keep in lockstep with
+// LCXOS_DOWNLOAD_URL in apps/web/src/pages/Launch.tsx — `launch.test.tsx` asserts
+// this exact filename appears at the end of that URL, so the two cannot drift.
+const LATEST_DMG_NAME = 'LCXOS-macOS-arm64.dmg';
+
 const stage = join(bundleDir, 'publish');
 mkdirSync(stage, { recursive: true });
-const tarballName = `LCX_TERMINAL_${version}_aarch64.app.tar.gz`;
+const tarballName = `LCXOS_${version}_aarch64.app.tar.gz`;
 const stagedTarball = join(stage, tarballName);
 const stagedSig = join(stage, `${tarballName}.sig`);
 copyFileSync(tarball, stagedTarball);
 copyFileSync(sigPath, stagedSig);
-const stagedDmg = dmg ? join(stage, `LCX_TERMINAL_${version}_aarch64.dmg`) : null;
+const stagedDmg = dmg ? join(stage, `LCXOS_${version}_aarch64.dmg`) : null;
+
+// AND A SECOND COPY UNDER A VERSION-LESS NAME. This is what the public LCXOS page
+// links to, via GitHub's `/releases/latest/download/<name>` redirect, so the page
+// never has to be edited when a version ships. That redirect resolves by ASSET
+// NAME, which means the name must be identical in every release — the moment it
+// carries a version, the landing page's download button 404s for every build after
+// the one it was written against. Both copies are uploaded: the versioned one so a
+// specific build stays fetchable, the alias so "latest" has a stable target.
+const stagedDmgLatest = dmg ? join(stage, LATEST_DMG_NAME) : null;
+if (dmg && stagedDmgLatest) copyFileSync(dmg, stagedDmgLatest);
 if (dmg && stagedDmg) copyFileSync(dmg, stagedDmg);
 
 const assetUrl = `https://github.com/${RELEASES_REPO}/releases/download/${tag}/${tarballName}`;
@@ -189,7 +204,7 @@ const assetUrl = `https://github.com/${RELEASES_REPO}/releases/download/${tag}/$
 // run. Add `darwin-x86_64` here the day there is a build for it.
 const latest = {
   version,
-  notes: `LCX TERMINAL ${version}`,
+  notes: `LCXOS ${version}`,
   pub_date: new Date().toISOString(),
   platforms: {
     'darwin-aarch64': { signature, url: assetUrl },
@@ -229,11 +244,11 @@ if (exists) {
   die(`${tag} already exists in ${RELEASES_REPO}.\n  Bump \`version\` in tauri.conf.json and rebuild. Overwriting a published version would ship two different binaries under one version number.`);
 }
 
-const assets = [latestPath, stagedTarball, stagedSig, ...(stagedDmg ? [stagedDmg] : [])];
+const assets = [latestPath, stagedTarball, stagedSig, ...(stagedDmg ? [stagedDmg] : []), ...(stagedDmgLatest ? [stagedDmgLatest] : [])];
 gh([
   'release', 'create', tag,
   '--repo', RELEASES_REPO,
-  '--title', `LCX TERMINAL ${version}`,
+  '--title', `LCXOS ${version}`,
   '--notes', `Ad-hoc signed, Apple Silicon. Updater artifacts signed with minisign key 21F2F8695FBD5658.`,
   ...assets,
 ]);
@@ -250,6 +265,23 @@ if (!names.includes(tarballName)) {
 }
 if (!names.includes('latest.json')) {
   die(`published, but there is no latest.json asset — the endpoint would 404.\n  actual: ${names.join(', ')}`);
+}
+
+if (dmg && !names.includes(LATEST_DMG_NAME)) {
+  die(`published, but the version-less DMG alias is missing.\n  expected: ${LATEST_DMG_NAME}\n  actual  : ${names.join(', ')}\n  The Download button on the public LCXOS page resolves by this name and would 404.`);
+}
+
+// AND THAT THE PAGE'S OWN BUTTON WORKS. Not the same check as the one above: that
+// asserts the asset exists under this tag, this asserts GitHub's `latest` redirect
+// actually lands on it — which is what a colleague's browser will follow, and which
+// silently breaks if a later release is ever marked pre-release or as a draft.
+if (dmg) {
+  const dl = `https://github.com/${RELEASES_REPO}/releases/latest/download/${LATEST_DMG_NAME}`;
+  const code = execFileSync('curl', ['-sS', '-o', '/dev/null', '-w', '%{http_code}', '-L', dl], { encoding: 'utf8' }).trim();
+  console.log(`  anonymous GET ${dl} → HTTP ${code}`);
+  if (code !== '200') {
+    die(`the public page's Download button returned HTTP ${code} anonymously. That is exactly what Sam and Monty would get.`);
+  }
 }
 
 // And that the endpoint the SHIPPED APP asks for is really reachable with no credentials,

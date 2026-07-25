@@ -135,7 +135,7 @@ export function cheatCard(): CardSection[] {
         what: d.label,
       })),
       footnote:
-        'The ⌘ column is the native Go menu, and works in the LCX TERMINAL app only: a browser reserves those chords for its own tabs and never delivers them to the page. Both columns resolve through one table, so they cannot come to mean different things.',
+        'The ⌘ column is the native Go menu, and works in the LCXOS app only: a browser reserves those chords for its own tabs and never delivers them to the page. Both columns resolve through one table, so they cannot come to mean different things.',
     },
     {
       title: 'Do something',
@@ -319,7 +319,7 @@ export function CheatCard() {
 
       <div className="cc-sheet mx-auto max-w-[210mm] rounded-xl border border-line/70 bg-card p-8 shadow-card">
         <div className="mb-5 flex items-baseline justify-between gap-3 border-b border-line pb-2.5">
-          <h2 className="text-lg font-bold tracking-tight text-navy">LCX TERMINAL — the keyboard grammar</h2>
+          <h2 className="text-lg font-bold tracking-tight text-navy">LCXOS — the keyboard grammar</h2>
           <span className="font-mono text-micro text-grey">manifest {MANIFEST_HASH}</span>
         </div>
 

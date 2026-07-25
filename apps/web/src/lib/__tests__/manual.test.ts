@@ -54,7 +54,7 @@ describe('the manual is generated, not written', () => {
     // mention ⌘ — it exists to say those keys are unavailable in a browser — and a
     // cruder assertion caught that sentence and called it a bug.
     expect(inBrowser.entries.filter((e) => e.note?.startsWith('also ⌘'))).toHaveLength(0);
-    expect(inBrowser.entries.at(-1)!.note).toMatch(/only work in the LCX TERMINAL app/i);
+    expect(inBrowser.entries.at(-1)!.note).toMatch(/only work in the LCXOS app/i);
 
     const inTerminal = section('Go somewhere', { ...base(), isTerminal: true })!;
     expect(inTerminal.entries.filter((e) => e.note?.startsWith('also ⌘'))).toHaveLength(DESTINATIONS.length);

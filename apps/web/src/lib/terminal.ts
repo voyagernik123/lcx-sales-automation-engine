@@ -1,8 +1,8 @@
 /**
- * The LCX TERMINAL bridge (Phase 1).
+ * The LCXOS bridge (Phase 1).
  *
  * The same React app runs in two containers: a browser (development, fallback)
- * and LCX TERMINAL — the native macOS shell. This module is the ONLY place that
+ * and LCXOS — the native macOS shell. This module is the ONLY place that
  * knows the difference. Everything is lazily imported so the browser bundle
  * never pays for, or breaks on, the Tauri APIs.
  *
@@ -11,7 +11,7 @@
  * localStorage". That was never true: `apiClient.ts` writes BOTH and reads the
  * credential from localStorage (`apiClient.ts:54`), using the Keychain only to
  * hydrate memory at startup. So the Keychain copy is redundant, not exclusive —
- * which `TERMINAL_QUICKSTART.md` states plainly, and which is why denying the
+ * which `LCXOS_QUICKSTART.md` states plainly, and which is why denying the
  * Keychain prompt costs an operator nothing. Under ad-hoc signing it is worse than
  * redundant; see the breaker below. The API contract is unchanged either way — the
  * credential is still `email:passcode`.
@@ -59,7 +59,7 @@ async function getInvoke(): Promise<InvokeFn | null> {
  * trains an operator to type their login password into any dialog that asks — on a desk whose
  * whole premise is governed access. And the prompt is pure cost: `apiClient.ts:54` reads the
  * credential from `localStorage`, so **denying loses nothing**. The Keychain copy is
- * redundant today, which is exactly what `TERMINAL_QUICKSTART.md` says.
+ * redundant today, which is exactly what `LCXOS_QUICKSTART.md` says.
  *
  * So: try once, and on refusal stop asking for the rest of the process and use the fallback.
  * Not a retry-with-backoff — there is nothing transient here. The answer will be the same
@@ -137,7 +137,7 @@ export async function secretDelete(key: string): Promise<void> {
 /* ── The rolling shell log ─────────────────────────────────────────────────── */
 
 /**
- * Write a line into `~/Library/Logs/LCX TERMINAL/shell.log`.
+ * Write a line into `~/Library/Logs/LCXOS/shell.log`.
  *
  * Why this exists on the web side at all: `console.error` is the only trace the
  * webview leaves, and it is readable ONLY with the inspector attached — which
@@ -246,13 +246,13 @@ async function checkForUpdate(interactive: boolean, notify: Notice): Promise<voi
     const { check: doCheck } = await import('@tauri-apps/plugin-updater');
     const update = await doCheck();
     if (!update) {
-      if (interactive) notify('info', 'LCX TERMINAL is up to date.');
+      if (interactive) notify('info', 'LCXOS is up to date.');
       return;
     }
     void logDiagnostic(`update ${update.version} available (interactive=${interactive})`);
     notify(
       'info',
-      `LCX TERMINAL ${update.version} is available. Installing replaces the running app and reopens it — finish anything in flight first.`,
+      `LCXOS ${update.version} is available. Installing replaces the running app and reopens it — finish anything in flight first.`,
       { label: 'Install and relaunch', onAction: () => void installUpdate(update, notify) },
     );
   } catch (err) {

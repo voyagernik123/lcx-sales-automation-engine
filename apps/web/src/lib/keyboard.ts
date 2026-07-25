@@ -38,7 +38,7 @@ export function isCommandChord(e: KeyboardEvent): boolean {
 /**
  * Guard against a double-fire of the open chord.
  *
- * In LCX TERMINAL the same ⌘K can arrive twice — once from the native menu item
+ * In LCXOS the same ⌘K can arrive twice — once from the native menu item
  * (added in Phase 1 so the shortcut is discoverable) and once from the webview's
  * own keydown. Toggling twice in the same instant would open and immediately
  * close, which reads as "the shortcut is broken".

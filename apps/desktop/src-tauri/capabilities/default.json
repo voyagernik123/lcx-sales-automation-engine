@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "LCX TERMINAL — the shell capabilities the operator desk needs.",
+  "description": "LCXOS — the shell capabilities the operator desk needs.",
   "windows": ["main"],
   "permissions": [
     "core:default",

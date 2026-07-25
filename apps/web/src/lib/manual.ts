@@ -76,7 +76,7 @@ export interface ManualContext {
   principal: Principal | null;
   /** The object in front of the operator, if the surface has one. */
   noun?: Noun | null;
-  /** True in LCX TERMINAL, false in a browser tab. Changes what is honest to list. */
+  /** True in LCXOS, false in a browser tab. Changes what is honest to list. */
   isTerminal: boolean;
   /**
    * Is the window wide enough for `⌘\` to do anything (T1 #12)?
@@ -195,7 +195,7 @@ function goSection(ctx: ManualContext): ManualSection {
         what: `Press g, then a digit within ${seconds}s`,
         note: ctx.isTerminal
           ? 'The ⌘ versions are in the Go menu too.'
-          : 'The ⌘ versions only work in the LCX TERMINAL app — a browser keeps ⌘1-9 for its own tabs.',
+          : 'The ⌘ versions only work in the LCXOS app — a browser keeps ⌘1-9 for its own tabs.',
       },
     ],
   };

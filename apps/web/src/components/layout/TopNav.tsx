@@ -7,6 +7,7 @@ import { clearOperatorEmail } from '@/lib/apiClient';
 import { storage } from '@/lib/persistence';
 import { useAccessStore } from '@/stores/useAccessStore';
 import { NotificationBell } from './NotificationBell';
+import { LcxMark } from '@/components/brand/LcxMark';
 
 const routeLabels: Record<string, string> = {
   'capital-estimator': 'Capital Estimator',
@@ -80,8 +81,16 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
 
   return (
     <header className="flex h-12 shrink-0 items-center gap-4 border-b border-line bg-card px-4">
-      <Link to="/" className="shrink-0 text-[13px] font-bold tracking-tight text-navy">
-        LCX USA
+      {/* The product signature. The mark inherits `text-navy` via currentColor, so it
+        * is legible in both themes without a second asset — and cannot become the
+        * low-contrast lockup the brand book forbids. */}
+      <Link
+        to="/"
+        className="flex shrink-0 items-center gap-1.5 text-[13px] font-bold tracking-tight text-navy"
+        aria-label="LCXOS — home"
+      >
+        <LcxMark size={16} />
+        LCXOS
       </Link>
 
       <WorkspaceSwitcher />
@@ -192,7 +201,7 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
                   // state. A fresh document guarantees a clean process.
                   //
                   // But it has to come AFTER the Keychain forget lands (TERMINAL
-                  // Phase 7). In LCX TERMINAL that delete is an IPC round-trip into
+                  // Phase 7). In LCXOS that delete is an IPC round-trip into
                   // the Rust shell, and this navigation tears down the JS context
                   // that owns it — so firing both in the same tick made "sign-out
                   // actually forgets" a race, with the previous operator's desk

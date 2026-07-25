@@ -36,7 +36,7 @@ scratch_pdf_*.txt
 data/seeds/*.csv
 data/seeds/*.xlsx
 
-# LCX TERMINAL
+# LCXOS
 # The updater signing PRIVATE key lives outside the repo (~/.lcx-terminal/) and
 # must never be committed — it is the only thing standing between an operator's
 # machine and a forged auto-update. Only the public key is in tauri.conf.json.

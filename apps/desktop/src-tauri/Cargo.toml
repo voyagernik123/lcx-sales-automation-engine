@@ -1,7 +1,7 @@
 [package]
 name = "lcx-terminal"
 version = "0.1.0"
-description = "LCX TERMINAL — the LCX ONE operator instrument"
+description = "LCXOS — the LCX ONE operator instrument"
 authors = ["LCX"]
 edition = "2021"
 rust-version = "1.77.2"

@@ -22,7 +22,7 @@ import { isTypingTarget } from '@/lib/keyboard';
  * around — stealing `?` from a search box would make it impossible to type. It does
  * mean the claim "? works inside any dialog" was too broad, so ⌘/ is bound as well: a
  * chord is unambiguous mid-sentence and reaches the manual from anywhere, typing or
- * not. It is also exactly what the native menu already advertises (⌘/ = "LCX TERMINAL
+ * not. It is also exactly what the native menu already advertises (⌘/ = "LCXOS
  * Manual"), so the app and its menu now agree instead of the menu promising a key the
  * webview did not implement.
  */

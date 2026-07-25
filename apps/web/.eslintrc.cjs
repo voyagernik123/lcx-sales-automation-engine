@@ -22,7 +22,7 @@ module.exports = {
     'no-redeclare': 'off',
     // Hook correctness. rules-of-hooks is an ERROR because breaking it produces
     // real runtime crashes and corrupted state — not a style opinion. This
-    // plugin was missing entirely until LCX TERMINAL P1, so every
+    // plugin was missing entirely until LCXOS P1, so every
     // `eslint-disable react-hooks/*` comment in the tree was silently a no-op
     // AND itself an error ("rule not found").
     // exhaustive-deps is a WARN (React's own default): the tree has deliberate

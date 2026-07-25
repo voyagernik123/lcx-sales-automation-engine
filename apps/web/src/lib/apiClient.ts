@@ -40,7 +40,7 @@ const LEGACY_KEY = 'lcx_api_key';
  * the shared key lives only in localStorage.
  */
 /**
- * In LCX TERMINAL the credential lives in the macOS Keychain, which is an
+ * In LCXOS the credential lives in the macOS Keychain, which is an
  * ASYNC read — but getApiKey() is synchronous and called from every request.
  * So the terminal hydrates this in-memory cache once at boot
  * (hydrateCredentials()), and every later read is instant. In a browser the
@@ -64,7 +64,7 @@ export function getApiKey(): string {
 
 /**
  * Load the desk credential out of the macOS Keychain into memory. Called once,
- * before the app renders, when running inside LCX TERMINAL. No-op in a browser.
+ * before the app renders, when running inside LCXOS. No-op in a browser.
  */
 export async function hydrateCredentials(): Promise<void> {
   // Container check BEFORE the dynamic import. main.tsx awaits this call before
@@ -171,7 +171,7 @@ export function setOperatorCredentials(email: string, passcode: string): void {
  * (handover, T1 #9). The IndexedDB clear had exactly the same race as the Keychain
  * delete and lost it for the same reason: both sign-out paths fired it and then
  * navigated, so cached response BODIES survived on disk while
- * `TERMINAL_QUICKSTART.md` said they were cleared.
+ * `LCXOS_QUICKSTART.md` said they were cleared.
  *
  * Joined to the credential rather than left as a second call the caller must
  * remember, because that is the invariant: bodies fetched with a credential must
@@ -273,7 +273,7 @@ function forceFrontDoor(reason: string): void {
   console.warn('[lcx] returning to the front door:', reason);
 
   // Order matters, and it is the same order TopNav's sign-out settled on: forget
-  // the credential FIRST, drop the identity second. In LCX TERMINAL the forget is
+  // the credential FIRST, drop the identity second. In LCXOS the forget is
   // an IPC round-trip into the Rust shell, and it is the half that actually
   // removes the passcode from the login keychain.
   //
@@ -299,7 +299,7 @@ function forceFrontDoor(reason: string): void {
     const { useOperatorStore } = await import('@/stores/useOperatorStore');
     useOperatorStore.getState().clearOperator();
     // Last, so the record describes what HAPPENED rather than what was about to.
-    // In the terminal this lands in ~/Library/Logs/LCX TERMINAL/shell.log; in a
+    // In the terminal this lands in ~/Library/Logs/LCXOS/shell.log; in a
     // browser it is a no-op and the console.warn above is the only trace.
     const { logDiagnostic } = await import('./terminal');
     void logDiagnostic(`forced sign-in: ${reason}`);
