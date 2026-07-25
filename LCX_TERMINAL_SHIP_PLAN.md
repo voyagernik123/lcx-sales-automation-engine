@@ -377,6 +377,19 @@ staged value labelled on screen. **This is the strongest argument in the documen
 ratchet must actually execute**: the spec was correct, committed, and useless for two phases, and
 the defect it was written for was live the whole time.
 
+**GREEN, ON BOTH JOBS, VERIFIED BY LOOKING: run `30176121615` on `b20a2c5`.** 35 api files / 306
+tests · 80 web files / 961 tests · perf budget 846/850KB · playwright **78 passed / 1 skipped**.
+The line worth keeping from that run's log is CI reporting on its own platform:
+
+```
+[keyboard-day] arrow moves the displayed selection on this engine: yes (staged)
+```
+
+That is Linux — the engine where the bare arrow used to write — confirming the value now *stages*
+and the assertion proves the invariant rather than the operating system. Three red runs were
+needed to get here (`8aa14f1` fixed the seeded-DB dependency; `861a504` fixed the governed write;
+`b20a2c5` corrected the assertion that had pinned the platform), and each one was a real defect.
+
 ## 10. THE CLAIMS WITHDRAWN, IN ONE PLACE
 
 Twelve, and this document contains two of them. Kept together because the programme's signature
