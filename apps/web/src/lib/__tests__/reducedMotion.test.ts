@@ -241,3 +241,44 @@ function walk(dir: string, out: string[] = []): string[] {
   }
   return out;
 }
+
+/**
+ * The print stylesheet pins the light-theme tokens so a report printed from dark mode
+ * is not near-white text on white paper. Pinned values are copies, and copies drift —
+ * so they are checked against the source rather than trusted.
+ *
+ * Not hypothetical: three of the six were wrong when first written, because they were
+ * guessed from memory of Tailwind's slate palette instead of read from tokens.css. The
+ * result would have printed grey text at the wrong weight on every board report, which
+ * nobody would ever have filed as a bug.
+ */
+describe('the print stylesheet does not drift from the tokens', () => {
+  it('every pinned token matches tokens.css :root', () => {
+    const print = readFileSync(join(SRC, 'components', 'report', 'PrintStyles.tsx'), 'utf8');
+    const tokens = readFileSync(join(SRC, 'styles', 'tokens.css'), 'utf8');
+    const root = tokens.slice(tokens.indexOf(':root'), tokens.indexOf('.dark'));
+
+    const pinned = [...print.matchAll(/(--[a-z-]+):\s*([\d\s]+);/g)].map(([, name, value]) => ({
+      name,
+      value: value.trim(),
+    }));
+    expect(pinned.length, 'no tokens pinned — has the print block been removed?').toBeGreaterThan(3);
+
+    const mismatched: string[] = [];
+    for (const { name, value } of pinned) {
+      // The one deliberate divergence: paper is white, so the page tint is dropped
+      // rather than copied. Named explicitly so the exemption is auditable.
+      if (name === '--page-bg') {
+        expect(value, '--page-bg should be pure white for paper').toBe('255 255 255');
+        continue;
+      }
+      const source = root.match(new RegExp(`${name}:\\s*([\\d\\s]+);`));
+      if (!source) {
+        mismatched.push(`${name} is pinned for print but not defined in tokens.css :root`);
+        continue;
+      }
+      if (source[1]!.trim() !== value) mismatched.push(`${name}: print has "${value}", tokens.css has "${source[1]!.trim()}"`);
+    }
+    expect(mismatched, mismatched.join('\n')).toEqual([]);
+  });
+});

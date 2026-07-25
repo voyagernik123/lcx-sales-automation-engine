@@ -117,7 +117,12 @@ export function Footer() {
         </span>
       )}
       <KpiTicker />
-      <span className="ml-auto hidden truncate text-grey/70 xl:inline">
+      {/* Was `text-grey/70`, measured at 3.16:1 light / 3.93:1 dark against the
+          footer surface — under the 4.5:1 minimum, and this is the legal
+          disclaimer, i.e. the last text in the app that should be hard to read.
+          The alpha was the whole problem: the token at full strength is 6.13:1
+          light / 6.71:1 dark. */}
+      <span className="ml-auto hidden truncate text-grey xl:inline">
         INTERNAL · NOT LEGAL ADVICE · US COUNSEL SIGN-OFF REQUIRED
       </span>
       <span title="Coordinated Universal Time">{utc} UTC</span>

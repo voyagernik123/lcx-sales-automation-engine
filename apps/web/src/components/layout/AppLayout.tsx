@@ -6,7 +6,7 @@ import { Sidebar } from './Sidebar';
 import { MainContent } from './MainContent';
 import { Footer } from './Footer';
 import { RequestAccess } from './RequestAccess';
-import { ErrorBoundary, ToastContainer, CommandPalette, PageSkeleton, useCommandPalette } from '@/components/shared';
+import { ErrorBoundary, ToastContainer, CommandPalette, PageSkeleton, useCommandPalette, toast } from '@/components/shared';
 import { InspectorHost } from '@/components/inspect/InspectorHost';
 import { useUIStore, useOperatorStore } from '@/stores';
 import { isTerminal } from '@/lib/container';
@@ -90,6 +90,15 @@ export function AppLayout() {
   // app. The menu exists as much for DISCOVERABILITY as for use — every
   // shortcut we add in later phases appears there with its key. No-op in a
   // browser, so the web build is unaffected.
+  // Depend on `manual.setOpen`, NEVER on `manual` (TERMINAL Phase 7). `useManual()`
+  // returns a fresh `{ open, setOpen }` literal on every render, so listing the
+  // object here re-ran this effect on every re-render of the shell — every route
+  // change, sidebar toggle, palette open, theme flip. That silently turned the
+  // once-per-launch update check into a check per render, and with an update
+  // actually available, into concurrent `downloadAndInstall()` calls over the same
+  // `.app` bundle. `setOpen` is a `useState` setter and is stable, as are
+  // `navigate` and the palette's `setOpen`.
+  const setManualOpen = manual.setOpen;
   useEffect(() => {
     if (!isTerminal()) return; // browser: never fetch the Tauri chunk at all
     let detach: (() => void) | undefined;
@@ -103,11 +112,15 @@ export function AppLayout() {
         // The menu item is literally "LCX TERMINAL Manual" at ⌘/ and it used to open
         // Settings. A menu that promises one thing and does another is worse than a
         // missing menu item, because it teaches the operator the menu lies.
-        onManual: () => manual.setOpen(true),
+        onManual: () => setManualOpen(true),
+        // The shell owns the only surface that can actually be seen: `alert()` is a
+        // silent no-op in the Tauri webview (wry implements no JS alert panel), so
+        // the updater has to speak through the toast layer or not at all.
+        onNotice: (kind, message) => toast(kind, message, kind === 'warning' ? 9000 : 6000),
       });
     })();
     return () => detach?.();
-  }, [navigate, setOpen, manual]);
+  }, [navigate, setOpen, setManualOpen]);
 
   useEffect(() => {
     // App mounted cleanly — clear the chunk-reload guard so a later stale
@@ -133,6 +146,25 @@ export function AppLayout() {
 
   return (
     <div className="flex h-screen flex-col bg-page text-navy">
+      {/* Bypass Blocks (WCAG 2.4.1), and the most expensive focus defect measured
+       * in this shell. Tabbing from the top of any route walked 24 chrome stops
+       * before reaching the page content — 6 in the top bar, 17 sidebar
+       * destinations, then the collapse toggle — and the shell re-renders on every
+       * navigation, so the operator pays it again on each route. Counted on /,
+       * /bd-pipeline, /deal-board and /command-deck; identical on all four.
+       *
+       * Parked off-screen with a transform rather than `sr-only` +
+       * `focus:not-sr-only`: `not-sr-only` sets `position: static`, which then
+       * races Tailwind's own `absolute` utility in the emitted cascade. A
+       * transform has no such conflict, keeps the link in the tab order and the
+       * a11y tree, and under `prefers-reduced-motion` the transition collapses to
+       * 0.01ms so it simply appears — still correct, just not animated. */}
+      <a
+        href="#main-content"
+        className="focus-ring fixed left-2 top-2 z-[300] -translate-y-16 rounded border border-line bg-card px-3 py-1.5 text-label font-semibold text-navy shadow-overlay transition-transform focus:translate-y-0"
+      >
+        Skip to content
+      </a>
       <TopNav onOpenSearch={() => setOpen(true)} />
       <OfflineBanner />
       <div className="flex flex-1 overflow-hidden">

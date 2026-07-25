@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import type React from 'react';
 import { pushDismissible, removeDismissible } from '@/lib/dismiss';
 
 /**
@@ -19,13 +20,42 @@ import { pushDismissible, removeDismissible } from '@/lib/dismiss';
  * a ref keeps the registration stable for exactly as long as the thing is open,
  * which is the lifetime the stack is supposed to model.
  */
-export function useDismissible(open: boolean, onDismiss: () => void, label: string): void {
+export function useDismissible(
+  open: boolean,
+  onDismiss: () => void,
+  label: string,
+  /**
+   * The overlay's root, when Tab should be confined to it.
+   *
+   * Optional on purpose: not everything dismissible is modal. A tooltip and a lineage
+   * popover belong on the stack — Escape should close them — but trapping Tab inside a
+   * tooltip would strand the operator. Passing this is the component asserting "I am
+   * modal", and it is also what lets it honestly claim `aria-modal`.
+   *
+   * A ref rather than a node so the hook can be called before the node exists, which
+   * is every conditional-render overlay in this app.
+   */
+  container?: React.RefObject<Element | null>,
+): void {
   const handler = useRef(onDismiss);
   handler.current = onDismiss;
 
   useEffect(() => {
     if (!open) return;
-    const id = pushDismissible(label, () => handler.current());
+    const id = pushDismissible(
+      label,
+      () => handler.current(),
+      container ? () => container.current : undefined,
+    );
     return () => removeDismissible(id);
-  }, [open, label]);
+    // `container` is in the deps and costs nothing: a ref OBJECT is stable for the
+    // component's lifetime, so this cannot churn the subscription the way an inline
+    // `onDismiss` would. Worth stating what the dep does NOT mean — the registration
+    // does not depend on the ref's current NODE, because a getter is stored rather
+    // than the node itself, so an overlay whose root mounts after this effect runs is
+    // picked up on the next Tab press for free. I first omitted it with a comment
+    // arguing that point, which bought a suppressed lint warning in exchange for
+    // nothing; this repo holds lint at 0 errors / 0 warnings precisely so a real
+    // warning is never lost in a crowd of tolerated ones.
+  }, [open, label, container]);
 }

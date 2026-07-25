@@ -39,11 +39,15 @@ export function LiveOpsFeed({ lines, loading = false }: LiveOpsFeedProps) {
           <span className="block h-3 w-1.5 shrink-0 animate-pulse bg-cyan-400" />
         </div>
 
+        {/* slate-500 measured 4.24:1 against this panel's slate-950 backdrop —
+            just under the 4.5:1 text minimum, and these two lines are the only
+            content shown when the feed is empty or connecting. slate-400 is
+            7.87:1 on the same backdrop. */}
         {loading && lines.length === 0 && (
-          <div className="text-[9px] text-slate-500">&gt; connecting to event stream…</div>
+          <div className="text-[9px] text-slate-400">&gt; connecting to event stream…</div>
         )}
         {!loading && lines.length === 0 && (
-          <div className="text-[9px] text-slate-500">&gt; no events recorded yet — actions land here as you work</div>
+          <div className="text-[9px] text-slate-400">&gt; no events recorded yet — actions land here as you work</div>
         )}
 
         {lines.map(line => {

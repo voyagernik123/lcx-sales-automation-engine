@@ -66,15 +66,38 @@ export async function hydrateCredentials(): Promise<void> {
   if (!isTerminal()) return;
   const { secretGet } = await import('./terminal');
   const [email, pass] = await Promise.all([secretGet(EMAIL_KEY), secretGet(PASS_KEY)]);
-  memEmail = email;
-  memPass = pass;
+  // Coerce an EMPTY Keychain value to null (TERMINAL Phase 7). Builds already in
+  // the field wrote `''` on a rejected sign-in, and the shell's Keychain reads that
+  // back as `Some("")` rather than absence. `''` is not nullish, so it would pin
+  // this cache non-null and permanently defeat the localStorage fallback in
+  // getApiKey() — the desk would be unable to authenticate with a perfectly good
+  // credential sitting one line below. Absence and emptiness must resolve the same.
+  memEmail = email || null;
+  memPass = pass || null;
 }
 
-/** Record the signed-in operator's credentials (front door): email + desk passcode. */
+/**
+ * Record the signed-in operator's credentials (front door): email + desk passcode.
+ *
+ * An EMPTY half means CLEAR, not store (TERMINAL Phase 7). The sign-in gate calls
+ * `setOperatorCredentials('', '')` to undo the credential it provisionally stored
+ * when the server rejects it (pages/SelectOperator.tsx). Writing that through
+ * literally used to leave `''` in every store — and in the terminal that is a
+ * present-but-EMPTY Keychain entry, which the shell's own test now pins as a real,
+ * distinct state (`Ok(Some(""))`, not `None`). Because the reads below resolve as
+ * `memEmail ?? localStorage…`, and `''` is not nullish, an empty entry silently
+ * disables the localStorage fallback that is the only thing keeping the desk usable
+ * when the Keychain is unavailable. `getApiKey()` already treats a half credential
+ * as no credential, so half a credential is never worth persisting.
+ */
 export function setOperatorCredentials(email: string, passcode: string): void {
   const e = email.trim().toLowerCase();
-  memEmail = e || null;
-  memPass = passcode || null;
+  if (!e || !passcode) {
+    void clearOperatorEmail();
+    return;
+  }
+  memEmail = e;
+  memPass = passcode;
   try {
     localStorage.setItem(EMAIL_KEY, e);
     localStorage.setItem(PASS_KEY, passcode);
@@ -90,8 +113,20 @@ export function setOperatorCredentials(email: string, passcode: string): void {
   })();
 }
 
-/** Clear the email credential on sign-out (leaves any legacy key untouched). */
-export function clearOperatorEmail(): void {
+/**
+ * Clear the email credential on sign-out (leaves any legacy key untouched).
+ *
+ * AWAITABLE, and the caller must await it before navigating (TERMINAL Phase 7).
+ * Memory and localStorage are cleared synchronously, but the Keychain is an IPC
+ * round-trip into the Rust shell — and sign-out ends with
+ * `window.location.assign('/select')`, a real document navigation that tears down
+ * the JS context and cancels the IPC in flight. So "sign-out actually forgets",
+ * the whole promise of moving the credential into the Keychain, was a race nobody
+ * could see the result of: the next operator on this Mac could inherit the previous
+ * one's desk passcode from the login keychain. Returning the promise costs nothing
+ * and makes the guarantee real.
+ */
+export function clearOperatorEmail(): Promise<void> {
   memEmail = null;
   memPass = null;
   try {
@@ -105,8 +140,8 @@ export function clearOperatorEmail(): void {
     /* no-op */
   }
   // Forget the Keychain entries too, so sign-out on the terminal is real.
-  if (!isTerminal()) return;
-  void (async () => {
+  if (!isTerminal()) return Promise.resolve();
+  return (async () => {
     const { secretDelete } = await import('./terminal');
     await Promise.all([secretDelete(EMAIL_KEY), secretDelete(PASS_KEY)]);
   })();

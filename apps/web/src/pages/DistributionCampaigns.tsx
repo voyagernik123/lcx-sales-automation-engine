@@ -193,7 +193,12 @@ export function DistributionCampaigns() {
       {/* Compliance drawer — SAT reviews + the MiCA checklist the gate cites */}
       {drawer && (
         <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={() => setDrawer(null)}>
-          <div className="h-full w-full max-w-lg overflow-y-auto border-l border-line bg-card p-4 shadow-card" onClick={(e) => e.stopPropagation()}>
+          <div
+            role="dialog"
+            aria-label={`Compliance detail: ${drawer.name}`}
+            className="h-full w-full max-w-lg overflow-y-auto border-l border-line bg-card p-4 shadow-card"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="mb-3 flex items-center gap-2">
               <h2 className="min-w-0 flex-1 truncate text-h3 font-bold text-navy">{drawer.name}</h2>
               <button onClick={() => setDrawer(null)} className="text-grey hover:text-navy" aria-label="Close"><X size={16} /></button>

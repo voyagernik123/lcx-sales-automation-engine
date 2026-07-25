@@ -20,9 +20,13 @@ export interface Destination {
   /** What the operator calls it. */
   label: string;
   /**
-   * The key pressed after the `g` prefix. Digits mirror the ⌘1-6 accelerators in
-   * the native menu so the two feel like the same grammar rather than two
-   * unrelated ones.
+   * The key pressed after the `g` prefix. Digits mirror the ⌘0-6 accelerators in
+   * the native menu so the two feel like the same grammar rather than two unrelated
+   * ones — SEVEN, not six: `lib.rs` binds ⌘0 to My Desk alongside ⌘1-6 for the
+   * workspaces. This said "⌘1-6" until the cheat card was generated from it and the
+   * count came out one short of the menu it claims to mirror. `destinations.test.ts`
+   * asserts each key against the accelerator on its own menu line, so it verified
+   * every row and still could not catch a miscount in the prose above it.
    */
   key: string;
 }

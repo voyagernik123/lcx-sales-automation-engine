@@ -69,10 +69,25 @@ test.describe('shell + navigation', () => {
       ['/win-loss', /win ?\/ ?loss/i],
     ] as const) {
       await page.goto(path);
+      /*
+       * The trailing `.first()` on the COMBINED locator is load-bearing, and its
+       * absence was a real flake caught in Phase 7 — this spec failed roughly one
+       * run in six with "strict mode violation: resolved to 2 elements".
+       *
+       * `a.first().or(b.first())` is not "one element": `.or()` matches the union,
+       * so when BOTH sides are present it resolves to two and `toBeVisible()`
+       * throws on strict mode instead of passing. Both sides are routinely present
+       * here — the OfflineBanner says "…the API is not answering. Retrying…",
+       * which matches `/retry/i`, and it appears asynchronously after the first
+       * failed health ping, i.e. it races the heading it is meant to substitute
+       * for. The assertion wanted "either of these exists", so collapse the union
+       * to one element and ask whether THAT is visible.
+       */
       const resolved = page
         .getByRole('heading', { name: heading })
         .first()
-        .or(page.getByText(/could not|unavailable|failed|try again|retry|no .* yet/i).first());
+        .or(page.getByText(/could not|unavailable|failed|try again|retry|no .* yet/i).first())
+        .first();
       await expect(resolved, `${path} rendered neither its heading nor a named state`).toBeVisible();
       // And never the raw Suspense fallback still on screen after settling.
       await expect(page.locator('body')).not.toHaveText(/^\s*$/);
@@ -103,6 +118,51 @@ test.describe('a11y ratchet', () => {
       expect(unlabeled.fields, 'form fields without a label').toBe(0);
     });
   }
+
+  /**
+   * Bypass Blocks (WCAG 2.4.1), added in Phase 7 and ratcheted here because the
+   * defect it fixes is invisible to anyone using a mouse.
+   *
+   * Measured before the skip link existed: reaching the first control inside the
+   * page content took 24 Tab presses on EVERY route — 6 top-bar controls, 17
+   * sidebar destinations, then the sidebar collapse toggle — and the shell
+   * re-renders on navigation, so the cost recurred on every page. Counted on /,
+   * /bd-pipeline, /deal-board and /command-deck; identical on all four.
+   *
+   * The assertion is behavioural rather than "a skip link element exists",
+   * because the two ways this feature ships broken both leave the element in
+   * place: it can be unreachable (not first in the tab order), or activating it
+   * can scroll without moving focus — which happens whenever the target is not
+   * focusable, and then the next Tab returns to the top bar as if nothing
+   * happened. Checking where focus actually lands is the only check that fails
+   * for either.
+   */
+  test('the first tab stop bypasses the shell chrome', async ({ page }) => {
+    await goToDesk(page, '/deal-board');
+
+    await page.keyboard.press('Tab');
+    const first = await page.evaluate(() => {
+      const a = document.activeElement as HTMLElement | null;
+      return { tag: a?.tagName, text: (a?.textContent ?? '').trim(), href: a?.getAttribute('href') };
+    });
+    expect(first.tag, 'the first tab stop is not a link').toBe('A');
+    expect(first.href, 'the first tab stop does not target the main landmark').toBe('#main-content');
+
+    // Activating it must MOVE focus into the landmark, not merely scroll to it.
+    await page.keyboard.press('Enter');
+    await expect
+      .poll(() => page.evaluate(() => document.activeElement?.id), {
+        message: 'activating the skip link did not move focus to <main id="main-content">',
+      })
+      .toBe('main-content');
+
+    // And the next Tab must land INSIDE main — i.e. the chrome really was skipped.
+    await page.keyboard.press('Tab');
+    const inside = await page.evaluate(
+      () => !!document.getElementById('main-content')?.contains(document.activeElement),
+    );
+    expect(inside, 'the stop after the skip link is still outside <main>').toBe(true);
+  });
 });
 
 test.describe('inspector interaction (ontology)', () => {

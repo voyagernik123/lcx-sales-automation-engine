@@ -582,7 +582,13 @@ export function BdPipeline() {
             )}
 
             {error && !loading && (
-              <div className="flex flex-col items-center justify-center py-20 text-red-500">
+              <div
+                /* Was `text-red-500`, measured 3.48:1 on the page canvas — a
+                 * failure message below the 4.5:1 text minimum. The app's own
+                 * --red token is 6.9:1 light / 4.93:1 dark and is theme-aware;
+                 * raw red-500 is neither. */
+                className="flex flex-col items-center justify-center py-20 text-status-blocked"
+              >
                 <p className="text-sm font-semibold">Failed to load leads</p>
                 <p className="text-xs mt-1 text-grey">{error}</p>
                 <Button variant="secondary" size="sm" className="mt-3" onClick={loadLeads}>

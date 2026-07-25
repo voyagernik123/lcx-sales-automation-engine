@@ -61,7 +61,17 @@
 
 /* === chart palette (dataviz kit) === */
 /* Fixed categorical series order — never cycle or generate hues past 8.       */
-/* Validated with the dataviz palette validator (light on white, dark on card).*/
+/* NOT fully validated, correcting a claim this comment used to make. It said
+   "validated with the dataviz palette validator (light on white, dark on card)",
+   and the Phase 7 audit recomputed the ratios: --chart-2 (2.82), --chart-3 (2.17)
+   and --chart-7 (2.69) are BELOW the WCAG 1.4.11 3:1 minimum for non-text UI on
+   white. Five of eight pass. Left as-is rather than re-hued, because these are
+   categorical series whose whole job is being distinguishable from EACH OTHER, and
+   darkening three of them to clear a contrast floor against the background is a
+   change that needs a look at the charts, not a find-and-replace. Tracked in
+   lib/__tests__/contrast.test.ts as a shrink-only allowlist, so the number can go
+   down and never up. The failing three are safe where a series also carries a label
+   or a shape; they are not safe as the sole encoding. */
 :root {
   --chart-1: #2a78d6;
   --chart-2: #1baf7a;

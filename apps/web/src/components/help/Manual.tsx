@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { BookOpen, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useDismissible } from '@/hooks/useDismissible';
@@ -30,7 +30,10 @@ import type { Noun, Principal } from '@/components/command/grammar';
  * paying for the wrong thing.
  */
 export function Manual({ open, onClose }: { open: boolean; onClose: () => void }) {
-  useDismissible(open, onClose, MANUAL_LABEL);
+  const panelRef = useRef<HTMLDivElement>(null);
+  // The manual was the surface the audit MEASURED escaping — one Shift+Tab from it
+  // reached buttons on the page behind. The ref confines Tab to it.
+  useDismissible(open, onClose, MANUAL_LABEL, panelRef);
 
   const operator = useOperatorStore((s) => s.operator);
   const me = useAccessStore((s) => s.me);
@@ -67,7 +70,10 @@ export function Manual({ open, onClose }: { open: boolean; onClose: () => void }
       }}
     >
       <div
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
+        aria-modal="true"
         aria-label="Manual"
         className="w-full max-w-2xl max-h-[80vh] overflow-y-auto rounded-lg border border-line bg-card shadow-overlay"
       >

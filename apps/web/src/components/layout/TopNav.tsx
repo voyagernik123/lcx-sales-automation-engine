@@ -171,7 +171,7 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
               <button
                 onClick={() => {
                   setShowOperatorMenu(false);
-                  clearOperatorEmail(); // credential: memory, localStorage AND Keychain
+                  const forgotten = clearOperatorEmail(); // memory + localStorage now, Keychain async
                   clearOperator(); // identity → the guard sends us to /select
                   useAccessStore.getState().reset(); // entitlements + active workspace
                   storage.clearAll(); // every locally persisted key, for every operator
@@ -182,7 +182,24 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
                   // in memory, so the next person to sign in on this Mac would still
                   // be looking at the previous operator's filters, notes and desk
                   // state. A fresh document guarantees a clean process.
-                  window.location.assign('/select');
+                  //
+                  // But it has to come AFTER the Keychain forget lands (TERMINAL
+                  // Phase 7). In LCX TERMINAL that delete is an IPC round-trip into
+                  // the Rust shell, and this navigation tears down the JS context
+                  // that owns it — so firing both in the same tick made "sign-out
+                  // actually forgets" a race, with the previous operator's desk
+                  // passcode left in the login keychain when it lost. The catch is
+                  // deliberate, and so is the bound: a Keychain that refuses — or that
+                  // sits behind an unanswered access prompt — must not trap the
+                  // operator on a desk they asked to leave, so the failure is ignored
+                  // rather than surfaced. Everything reachable from the webview has
+                  // ALREADY been cleared by the lines above; what a failure here loses
+                  // is only the Keychain copy, which the next sign-in overwrites.
+                  // Wait for the forget, but not forever.
+                  const bounded = new Promise<void>(r => setTimeout(r, 2000));
+                  void Promise.race([forgotten.catch(() => {}), bounded]).then(() =>
+                    window.location.assign('/select'),
+                  );
                 }}
                 className="focus-ring-inset flex w-full items-center gap-2 px-3 py-2 text-xs font-semibold text-navy transition-colors hover:bg-ice-soft dark:hover:bg-ice-soft/10"
               >

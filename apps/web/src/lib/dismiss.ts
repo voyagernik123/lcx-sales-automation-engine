@@ -45,6 +45,13 @@ interface Entry {
   dismiss: () => void;
   /** Where focus was when this opened, so it can be handed back. */
   origin: Element | null;
+  /**
+   * The overlay's root, when it wants Tab confined to it. Optional because not
+   * everything on this stack is modal — a tooltip and a lineage popover are
+   * dismissible without being a trap, and confining Tab inside a tooltip would be
+   * actively hostile.
+   */
+  container: (() => Element | null) | null;
 }
 
 let seq = 0;
@@ -55,7 +62,83 @@ let installed = false;
 let pendingRestore: Array<{ depth: number; origin: Element | null }> = [];
 let restoreScheduled = false;
 
+/**
+ * Elements Tab can actually reach, in document order.
+ *
+ * `tabindex="-1"` is deliberately excluded — it means "focusable by script, not by
+ * Tab", which is exactly the roving-tabindex rows in a list. Including them would put
+ * 200 stops back inside a trap that exists to make navigation predictable.
+ */
+function tabbable(root: Element): HTMLElement[] {
+  const candidates = root.querySelectorAll<HTMLElement>(
+    'a[href], button, input, select, textarea, [tabindex], audio[controls], video[controls], [contenteditable]',
+  );
+  return Array.from(candidates).filter((el) => {
+    if (el.hasAttribute('disabled') || el.getAttribute('aria-hidden') === 'true') return false;
+    if ((el.getAttribute('tabindex') ?? '0').startsWith('-')) return false;
+    // `offsetParent` is null for display:none and for anything in a collapsed
+    // subtree — cheaper and more reliable here than reading computed styles for
+    // every candidate on every Tab press.
+    return el.offsetParent !== null || el.tagName === 'AREA';
+  });
+}
+
+/**
+ * Confine Tab to the topmost modal overlay.
+ *
+ * WHY A KEY HANDLER RATHER THAN `inert`. Setting `inert` on everything else is the
+ * modern answer and is one line, but this app's shipping container is a WKWebView on
+ * whatever macOS the operator happens to run; `inert` landed in Safari 16.4 and this
+ * is not a feature worth a version floor. A Tab handler works everywhere, is testable
+ * in jsdom, and needs no cleanup on unmount.
+ *
+ * Only the TOP entry traps. A drawer with the manual open over it must not fight the
+ * manual for the key.
+ */
+function handleTab(e: KeyboardEvent): void {
+  const top = stack[stack.length - 1];
+  const root = top?.container?.();
+  if (!root) return;
+
+  const items = tabbable(root);
+  if (items.length === 0) {
+    // Nothing to move to, so Tab must not leave. Park focus on the container itself
+    // (it carries tabIndex={-1} for exactly this) rather than letting the browser
+    // walk out to the page behind.
+    e.preventDefault();
+    (root as HTMLElement).focus?.();
+    return;
+  }
+
+  const active = document.activeElement;
+  const first = items[0]!;
+  const last = items[items.length - 1]!;
+
+  // Focus outside the overlay entirely — it drifted, or the overlay just opened.
+  // Pull it to the appropriate edge rather than letting Tab continue from wherever
+  // it was on the page underneath.
+  if (!active || !root.contains(active)) {
+    e.preventDefault();
+    (e.shiftKey ? last : first).focus();
+    return;
+  }
+
+  if (!e.shiftKey && active === last) {
+    e.preventDefault();
+    first.focus();
+  } else if (e.shiftKey && active === first) {
+    e.preventDefault();
+    last.focus();
+  }
+  // Otherwise let the browser do it: native Tab order inside the overlay is correct
+  // and re-implementing it would be a second, worse focus model.
+}
+
 function handleKeyDown(e: KeyboardEvent): void {
+  if (e.key === 'Tab') {
+    if (!e.defaultPrevented) handleTab(e);
+    return;
+  }
   if (e.key !== 'Escape') return;
   // `defaultPrevented` respects any element that already handled this Escape
   // without stopping propagation — a browser-native combobox, say.
@@ -80,10 +163,14 @@ function install(): void {
  * Prefer `useDismissible`; this is exported for the handful of non-React callers
  * and for tests.
  */
-export function pushDismissible(label: string, dismiss: () => void): number {
+export function pushDismissible(
+  label: string,
+  dismiss: () => void,
+  container?: () => Element | null,
+): number {
   install();
   const id = ++seq;
-  stack.push({ id, label, dismiss, origin: activeElement() });
+  stack.push({ id, label, dismiss, origin: activeElement(), container: container ?? null });
   return id;
 }
 
@@ -128,6 +215,18 @@ export function topDismissible(): string | null {
  */
 export function isOverlayOpen(): boolean {
   return stack.length > 0;
+}
+
+/**
+ * Does the topmost entry confine Tab?
+ *
+ * Exported so a component can decide whether it may honestly claim
+ * `aria-modal="true"`. Declaring modality while focus can walk out is worse than not
+ * declaring it: it scopes a screen reader's virtual cursor to a panel that the
+ * keyboard can still leave, so the two disagree about where the user is.
+ */
+export function topTraps(): boolean {
+  return !!stack[stack.length - 1]?.container?.();
 }
 
 /** Introspection: what Escape will close, in order, bottom first. */

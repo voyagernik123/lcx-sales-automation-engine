@@ -294,7 +294,12 @@ export function AccessControl() {
       {/* Member dossier drawer — purpose-gated read */}
       {dossier && (
         <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={() => setDossier(null)}>
-          <div className="h-full w-full max-w-lg overflow-y-auto border-l border-line bg-card p-4 shadow-card" onClick={(e) => e.stopPropagation()}>
+          <div
+            role="dialog"
+            aria-label={`Member dossier: ${dossier.member.name}`}
+            className="h-full w-full max-w-lg overflow-y-auto border-l border-line bg-card p-4 shadow-card"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="mb-3 flex items-center gap-2">
               <h2 className="min-w-0 flex-1 truncate text-h3 font-bold text-navy">{dossier.member.name}</h2>
               <span className="rounded border border-line px-1.5 py-0.5 font-mono text-micro text-grey">{dossier.member.role}</span>

@@ -39,7 +39,14 @@ export function classifyError(err: unknown): ClassifiedError {
     }
   }
   if (err instanceof TypeError || (err instanceof Error && /fetch|network|Failed to fetch/i.test(err.message))) {
-    return { kind: 'network', title: 'No connection', message: 'The API is unreachable — the status bar shows when it’s back. Nothing was lost.', retryable: true, detail: err instanceof Error ? err.message : undefined };
+    // "Nothing was lost" used to be the second sentence here, and it is a promise
+    // this function is in no position to make (TERMINAL Phase 7). A transport
+    // failure means the RESPONSE never arrived — not that the request never
+    // landed. For a read that distinction is academic; for a governed write it is
+    // the whole question, and `/v1/actions/:id/invoke` carries no idempotency key,
+    // so an operator reassured that nothing happened and told to retry can append
+    // a second decision, task or campaign row. Say what is actually known.
+    return { kind: 'network', title: 'No connection', message: 'The API is unreachable — the status bar shows when it’s back. If you were saving something, re-open it to check before repeating the change.', retryable: true, detail: err instanceof Error ? err.message : undefined };
   }
   return {
     kind: 'system',

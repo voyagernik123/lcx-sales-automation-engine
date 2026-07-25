@@ -56,12 +56,11 @@ export function Wbr() {
     finally { setBusy(false); }
   };
 
-  const doPrint = () => {
-    const root = document.documentElement;
-    const wasDark = root.classList.contains('dark');
-    if (wasDark) root.classList.remove('dark');
-    setTimeout(() => { window.print(); if (wasDark) root.classList.add('dark'); }, 60);
-  };
+  // Was: strip `.dark`, wait 60ms, print, put it back. Three problems — it could not
+  // help a plain ⌘P, it restored the class under the print job if `window.print()`
+  // blocked longer than the timer, and 60ms was a guess. `PrintStyles` now pins the
+  // light tokens inside the media query, which needs no timing and covers both paths.
+  const doPrint = () => window.print();
 
   return (
     <div className="br-page p-5">

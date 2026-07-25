@@ -75,7 +75,67 @@ Audit log (hash-chained), notifications + daily sweep (per-workspace monitor rul
 
 ---
 
-## 8. THE PHASE LEDGER (prod SHAs)
+## 8. LCX TERMINAL (the native instrument — TERMINAL Phases 1–7)
+
+The browser app is the development loop and a fallback surface. **LCX TERMINAL is the
+product**: the same web app inside a Tauri v2 shell, plus the four things a browser
+cannot give an operator instrument — a system-wide summon key, real macOS chrome,
+Keychain-backed credentials, and signed self-updates. `apps/desktop/` is deliberately
+thin; it never talks to the API and never holds a session.
+
+**The command grammar is GENERATED, not authored.** The governed action registry
+(`apps/api/src/actions/registry.ts`) is compiled to a committed manifest that the
+webview reads, so the command line is complete by construction: an action cannot exist
+without a command, and a command cannot exist for an action the server does not have. A
+drift test fails CI if the two disagree, and the manifest carries a hash so a printed
+artefact can be checked against a running build.
+
+**What is deliberately NOT true, recorded because each was assumed once:**
+
+- **p95 < 100ms is unreachable over the network.** Production costs **165–195ms of
+  fixed infrastructure latency before our code runs** — an `OPTIONS` preflight that
+  touches nothing costs 193ms. The origin is GCP `us-west1` behind Cloudflare; it is
+  geography, not code. Local-first reads are therefore the mechanism, not an
+  optimisation. Two metrics are always published together — `ui_interaction_p95`
+  (paint) beside `ui_settle_p95` — because measuring paint alone would let the headline
+  number *improve* as the desk got slower, every time a read moved to network-only for
+  governance reasons.
+- **`audit_log` is not hash-chained.** It is append-only by convention. Saying
+  otherwise in a security conversation would be a material misstatement.
+- **Governed writes stay online**, and must: the gates read their inputs at write time
+  and three of them FAIL OPEN on error, so a queued offline write would be judged
+  against stale truth.
+- **⌘1–9 cannot be delivered to a web page.** Measured with a capture-phase listener:
+  a real ⌘2 in Chrome produces zero keydown events, because the browser reserves them
+  for tab switching. The workspace chords are therefore native-menu-only, and the
+  webview gets a `g`-prefix grammar instead. Both resolve through one table
+  (`apps/web/src/lib/destinations.ts`) that the Rust menu is tested against.
+- **Trackpad haptics cannot be verified by any test.** A test can prove
+  `haptic_tap` returns without crashing; only a fingertip can prove a tap happened. It
+  also does nothing at all without a Force Touch trackpad, which AppKit does not report.
+
+**The interaction spine, and where each piece lives:**
+
+| Concern | Module | The rule it enforces |
+|---|---|---|
+| Escape | `lib/dismiss.ts` | ONE listener, LIFO, last-opened-wins. Bubble phase, so an inline edit's revert-on-Escape claims the key first. Focus restoration lives here because it is the same lifecycle. **Nothing else may listen for Escape at the document level.** |
+| Navigation | `lib/destinations.ts` + `lib/navGrammar.ts` | `g` then a digit. One table shared with the native menu. |
+| Lists | `hooks/useListNavigation.ts` | Roving tabindex: a table is ONE tab stop, arrows move within it. Bare `j`/`k` deliberately unbound — `s` snoozes and `d` disqualifies on those same surfaces. |
+| Focus | `styles/globals.css` | One `:focus-visible` treatment, WCAG 3:1 on all six surfaces. `focus:outline-none` is banned by test; bare `outline-none` is not, because it loses to the global rule (verified in a browser). |
+| Feel | `lib/juice.ts` + `lib/feedback.ts` | Four one-shot animations; overshoot rationed to commits by test. A refusal SPEAKS its remedy into a live region. A no-op gets no celebration. Sound and haptics ship OFF. |
+| Teaching | `lib/manual.ts` + `lib/nudge.ts` | `?` and `⌘/` generate the manual from the registry, the destinations table and the LIVE dismiss stack. The nudge engine is mostly rules about staying quiet. |
+| The standard | `lib/__tests__/operability.test.ts` | Four of the five audit criteria, asserted for all 22 actions, so action 23 must meet them too. |
+
+**Gate for every terminal phase:** lint · type-check · **real emit builds
+(shared → api → web)** · perf budget · unit tests · **e2e**. The emit builds are not
+optional: vitest uses esbuild and does not type-check, and omitting them cost a silent
+Render deploy failure once. The e2e suite is in the gate because it was found DEAD —
+eleven of eleven specs failing since sign-in became server-verified, unnoticed because
+the workflow that runs it had never been committed.
+
+---
+
+## 9. THE PHASE LEDGER (prod SHAs)
 
 | Program | Phase | SHA |
 |---|---|---|
@@ -87,6 +147,13 @@ Audit log (hash-chained), notifications + daily sweep (per-workspace monitor rul
 | LCX ONE | P4 engines + x402 | 9cafb17 |
 | LCX ONE | P5 cockpit | c40fded |
 | LCX ONE | P6 governed loop | 36027a5 (+ 6c03c1a deploy fix) |
-| LCX ONE | P7 AI operator + audit | _this push_ |
+| LCX ONE | P7 AI operator + audit | dc99c02 |
+| TERMINAL | P1 the Shell | df42f5b, d4e6863 |
+| TERMINAL | P2 the Speed Floor | a3fbbb2 → 1866658 |
+| TERMINAL | P3 the Grammar | 82eaa83 → 78edd6d |
+| TERMINAL | P4 the Motion Model | c5ee6b2, 0391454 |
+| TERMINAL | P5 the Feel | 42f2d62 |
+| TERMINAL | P6 the Teacher | fb16b5f |
+| TERMINAL | P7 the Operator's Audit | _this push_ |
 
 **Doctrine, one line:** every fact is source-graded, every write is governed and audited, every compartment is need-to-know, every integration is keyless-first, and the AI drafts but never decides.

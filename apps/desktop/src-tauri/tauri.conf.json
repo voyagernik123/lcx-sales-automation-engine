@@ -68,8 +68,6 @@
   },
   "plugins": {
     "updater": {
-      "active": true,
-      "dialog": true,
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDIxRjJGODY5NUZCRDU2NTgKUldSWVZyMWZhZmp5SVNTUVI2ZkwyMmU0NmtwYmszWFZYcFErUWhOR0RHa0ZWeXBEdEhpTmhHQUQK",
       "endpoints": [
         "https://github.com/voyagernik123/lcx-sales-automation-engine/releases/latest/download/latest.json"

@@ -166,6 +166,18 @@ fn toggle_main_window(app: &tauri::AppHandle) {
     }
 }
 
+/// How many times a crashed web content process may be reloaded automatically
+/// before the shell stops trying (Phase 7).
+///
+/// Bounded because the alternative failure is worse than the one it fixes: a
+/// deterministic crash-on-load would otherwise spin the operator's desk in an
+/// endless reload with no way to read what is happening. Three attempts covers the
+/// transient case (a WebKit OOM, a GPU process hiccup) and stops well short of a
+/// loop. After that the window is left alone and ⌘R is the manual door — which is
+/// why ⌘R had to stop depending on the JavaScript that just died.
+const MAX_WEBVIEW_RELOADS: usize = 3;
+static WEBVIEW_RELOADS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 /// The macOS menu bar. It exists for discoverability as much as for use: the
 /// satisficing research says operators never find shortcuts on their own, so
 /// every shortcut we add in later phases gets a menu item with its key shown.
@@ -302,18 +314,33 @@ mod tests {
         secret_delete(key.to_string()).expect("idempotent delete");
     }
 
-    /// PROBE (temporary): what does the Keychain do with an empty value? The web
-    /// side writes `secretSet(key, '')` on a failed sign-in, so this is a state
-    /// the app actually reaches.
+    /// An EMPTY value is a real, storable Keychain state — not the same thing as
+    /// absence. Measured, not assumed: `set_password("")` succeeds and reads back
+    /// as `Some("")`, so a caller that "clears" a credential by writing `''`
+    /// leaves a present-but-empty entry behind.
+    ///
+    /// This matters to the web side, which resolves the credential as
+    /// `memValue ?? localStorage.getItem(key)` (apps/web/src/lib/apiClient.ts).
+    /// `''` is not nullish, so a present-but-empty Keychain entry silently DISABLES
+    /// that localStorage fallback — the one thing that keeps the desk usable when
+    /// the Keychain is unavailable. Phase 7 made `setOperatorCredentials` delete
+    /// instead of writing `''`; this test pins the platform behaviour that makes
+    /// that necessary, so nobody "simplifies" it back.
     #[test]
-    fn probe_empty_value() {
-        let key = "lcx_probe_empty_do_not_use";
-        secret_delete(key.to_string()).unwrap();
-        let set = secret_set(key.to_string(), String::new());
-        eprintln!("PROBE set('') -> {set:?}");
-        let got = secret_get(key.to_string());
-        eprintln!("PROBE get after set('') -> {got:?}");
-        secret_delete(key.to_string()).unwrap();
+    fn an_empty_value_is_stored_not_treated_as_absence() {
+        let key = "lcx_test_empty_value_do_not_use";
+        secret_delete(key.to_string()).expect("clean slate");
+
+        secret_set(key.to_string(), String::new()).expect("the Keychain accepts an empty value");
+        assert_eq!(
+            secret_get(key.to_string()).expect("get must not error"),
+            Some(String::new()),
+            "an empty write is readable as Some(\"\"), NOT as None — absence and \
+             emptiness are different states and the web side must not conflate them",
+        );
+
+        secret_delete(key.to_string()).expect("delete must succeed");
+        assert_eq!(secret_get(key.to_string()).expect("get must not error"), None);
     }
 }
 
@@ -332,6 +359,34 @@ pub fn run() {
         }));
     }
 
+    // A dead web content process must not leave a blank desk (Phase 7).
+    //
+    // WebKit runs page content out-of-process. When it dies — OOM on a heavy rollup,
+    // a GPU fault, a WebKit bug — the NSWindow survives and the operator is left
+    // staring at blank white with a working menu bar and no page. Tauri surfaces
+    // WKWebView's `webViewWebContentProcessDidTerminate:` here; with no handler
+    // nothing at all happens, in the shell or the web app, because every recovery
+    // path we own lives inside the process that just died.
+    //
+    // Reload is the right answer (it is what Safari does) as long as it is bounded —
+    // see MAX_WEBVIEW_RELOADS. A separate statement rather than a link in the
+    // builder chain because the method itself is macOS/iOS-only, and `#[cfg]` cannot
+    // be attached to one call in a chain.
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.on_web_content_process_terminate(|webview| {
+            let n = WEBVIEW_RELOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            if n > MAX_WEBVIEW_RELOADS {
+                eprintln!(
+                    "[lcx-terminal] web content process died ({n}x) — not reloading again; ⌘R or ⌘Q",
+                );
+                return;
+            }
+            eprintln!("[lcx-terminal] web content process died ({n}x) — reloading");
+            let _ = webview.reload();
+        });
+    }
+
     builder
         // Remember WHERE the desk was, never WHETHER it was showing. The
         // plugin's default StateFlags::all() includes VISIBLE, which means
@@ -347,6 +402,35 @@ pub fn run() {
                 )
                 .build(),
         )
+        // ⌘W must PUT THE DESK AWAY, not end the session (Phase 7).
+        //
+        // The Window menu carries a real `Close Window` item, and without this it
+        // destroys the only window — at which point tauri-runtime-wry sees an empty
+        // window list, emits ExitRequested, and nothing prevents it, so the whole
+        // process exits (tauri-runtime-wry-2.11.4/src/lib.rs:4308-4324). Two
+        // consequences, both bad:
+        //   1. ⌘W is indistinguishable from ⌘Q. On macOS that is the wrong muscle
+        //      memory in the most expensive direction: an in-flight governed write
+        //      is killed mid-request and the operator never learns whether it
+        //      committed, and every unsaved field in the app is gone.
+        //   2. It breaks the invariant the three Phase 1 window fixes all rest on —
+        //      that the "main" window EXISTS and is merely hidden. show_main_window,
+        //      toggle_main_window and the Reopen handler all resolve the window by
+        //      label and silently do nothing if it was destroyed.
+        //
+        // Hiding instead makes ⌘W the mouse-reachable twin of ⌥Space, and every
+        // recovery path (⌥Space, Dock click → Reopen, relaunch → single-instance)
+        // already knows how to bring a hidden desk back. Quitting stays ⌘Q's job.
+        // The window-state plugin is unaffected: it updates its cache on
+        // CloseRequested and only writes to disk on RunEvent::Exit.
+        .on_window_event(|win, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if win.label() == "main" {
+                    api.prevent_close();
+                    let _ = win.hide();
+                }
+            }
+        })
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
@@ -368,6 +452,20 @@ pub fn run() {
                 let id = event.id().0.as_str().to_string();
                 if id == "check-update" {
                     let _ = app.emit("lcx://check-update", ());
+                } else if id == "view-reload" {
+                    // Reload NATIVELY, not by asking the page to reload itself
+                    // (Phase 7). ⌘R used to be forwarded as `lcx://menu` and handled
+                    // in the webview with `window.location.reload()` — which is fine
+                    // right up to the one moment ⌘R exists for. WebKit runs the page
+                    // in a separate content process; when that process dies the window
+                    // stays up showing blank white, and the JS listener that was going
+                    // to reload it died with it. So the only recovery affordance was
+                    // itself a casualty of the thing it recovers from.
+                    if let Some(win) = app.get_webview_window("main") {
+                        WEBVIEW_RELOADS.store(0, std::sync::atomic::Ordering::Relaxed);
+                        let r = win.reload();
+                        eprintln!("[lcx-terminal] ⌘R native reload: ok={:?}", r.is_ok());
+                    }
                 } else {
                     let _ = app.emit("lcx://menu", id);
                 }

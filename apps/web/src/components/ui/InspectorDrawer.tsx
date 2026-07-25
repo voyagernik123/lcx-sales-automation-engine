@@ -1,4 +1,4 @@
-import { useEffect, useRef, ReactNode } from 'react';
+import { useEffect, useId, useRef, ReactNode } from 'react';
 import { useDismissible } from '@/hooks/useDismissible';
 import { X } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -14,13 +14,16 @@ interface InspectorDrawerProps {
 
 export function InspectorDrawer({ isOpen, onClose, onEscape, title, children }: InspectorDrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // Named from the visible <h2>, not a parallel aria-label — one source of truth.
+  const titleId = useId();
 
   // Escape and focus return are both the dismiss stack's job now. This component
   // was the ONLY one of sixteen overlays that restored focus on close; every other
   // one dropped it to <body>, which restarts Tab from the top of the document.
   // Moving it into the stack is what makes that fix universal instead of a habit
   // each new overlay has to remember.
-  useDismissible(isOpen, onEscape ?? onClose, `${title} inspector`);
+  // The ref makes this modal: it confines Tab, which is what licenses `aria-modal`.
+  useDismissible(isOpen, onEscape ?? onClose, `${title} inspector`, panelRef);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -45,6 +48,16 @@ export function InspectorDrawer({ isOpen, onClose, onEscape, title, children }: 
       <div
         ref={panelRef}
         tabIndex={-1}
+        /* This drawer is focused on open (below) but had no role, so AT
+         * announced the move into an unnamed group. role="dialog" + a name from
+         * the header is what makes "the inspector opened, and it is about X"
+         * audible.
+         *
+         * No aria-modal here for the same reason as Modal.tsx: nothing in this
+         * app traps Tab, so declaring modality would scope a screen reader's
+         * cursor to a panel its focus can still leave. See the note there. */
+        role="dialog"
+        aria-labelledby={titleId}
         className={clsx(
           'w-full sm:w-[460px] h-full bg-card border-l border-line shadow-2xl flex flex-col outline-none overflow-hidden animate-slide-in text-navy'
         )}
@@ -53,7 +66,7 @@ export function InspectorDrawer({ isOpen, onClose, onEscape, title, children }: 
 
         {/* Drawer Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-line bg-ice-soft dark:bg-ice-soft/10">
-          <h2 className="text-base font-bold tracking-tight uppercase font-mono">{title}</h2>
+          <h2 id={titleId} className="text-base font-bold tracking-tight uppercase font-mono">{title}</h2>
           <button
             onClick={onClose}
             className="rounded p-1 text-grey hover:bg-ice-soft dark:hover:bg-ice-soft/20 transition-colors"

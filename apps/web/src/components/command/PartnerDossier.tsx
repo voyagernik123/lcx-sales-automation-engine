@@ -75,7 +75,12 @@ export function PartnerDossier({ partner, onClose }: { partner: CommandPartner; 
 
   return (
     <div className="fixed inset-0 z-40 flex justify-end bg-black/30" onClick={onClose}>
-      <div className="h-full w-full max-w-xl overflow-y-auto border-l border-line bg-card p-4 shadow-card" onClick={(e) => e.stopPropagation()}>
+      <div
+        role="dialog"
+        aria-label={`Partner dossier: ${partner.name}`}
+        className="h-full w-full max-w-xl overflow-y-auto border-l border-line bg-card p-4 shadow-card"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="mb-3 flex items-center gap-2">
           <h2 className="min-w-0 flex-1 truncate text-h3 font-bold text-navy">{partner.name}</h2>
           {rfiRow?.grade && <span className="rounded border border-cyan-500/40 bg-cyan-500/10 px-1.5 py-0.5 font-mono text-micro font-bold text-cyan-700 dark:text-cyan-300">{rfiRow.grade}</span>}

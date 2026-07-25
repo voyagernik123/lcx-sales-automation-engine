@@ -127,7 +127,13 @@ path.state:hover {
     text-decoration-line: underline;
     text-decoration-style: dotted;
     text-decoration-thickness: 1px;
-    text-decoration-color: rgb(var(--grey) / 0.55);
+    /* Was `/ 0.55`, which composites to 2.36:1 — under the WCAG 1.4.11 3:1 floor for
+       non-text UI. That floor applies here rather than being decorative: this dotted
+       underline is the ONLY thing marking a value as derived and clickable, so at
+       2.36:1 the affordance is invisible to some operators and the "click any number
+       to see why" grammar silently does not exist for them. `/ 0.8` measures 3.91:1
+       and is still clearly subordinate to a solid underline. */
+    text-decoration-color: rgb(var(--grey) / 0.8);
     text-underline-offset: 3px;
     cursor: pointer;
   }

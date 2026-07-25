@@ -57,7 +57,13 @@ export async function invoke(
       // Governed writes stay online by design — gates read their inputs at write
       // time and three of them fail open, so a queued write would be judged
       // against truth that has since changed.
-      remedy: 'The desk could not reach the server. Governed actions require a live connection — try again when the connection returns.',
+      //
+      // But "try again" was the whole remedy until Phase 7, and it is unsafe on
+      // its own: a transport failure means the RESPONSE was lost, which does not
+      // prove the write was. There is no idempotency key on
+      // `/v1/actions/:id/invoke`, so a blind retry of an appending action writes a
+      // second row and a second audit entry. Check first, then retry.
+      remedy: 'The desk could not reach the server. Governed actions require a live connection — but the write may still have landed, so re-open the subject to check before running it again.',
     };
   }
 }

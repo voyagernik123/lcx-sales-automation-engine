@@ -58,7 +58,11 @@ export function SnoozeMenu({ open, leadName, onClose, onSnooze }: SnoozeMenuProp
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-72 rounded-lg border border-line bg-card shadow-overlay p-3 text-navy">
+      <div
+        role="dialog"
+        aria-label={`Snooze ${leadName}`}
+        className="w-72 rounded-lg border border-line bg-card shadow-overlay p-3 text-navy"
+      >
         <p className="flex items-center gap-1.5 text-micro font-bold uppercase tracking-wider text-grey">
           <Moon size={11} /> Snooze
         </p>

@@ -6,10 +6,27 @@ shell adds what a browser cannot give an operator instrument.
 | | Browser | LCX TERMINAL |
 |---|---|---|
 | Summon | find the tab | **⌥Space**, from anywhere on the machine |
-| Credential | `localStorage` | **macOS Keychain** (sign-out actually forgets) |
+| Credential | `localStorage` | localStorage **+ macOS Keychain** (see below) |
 | Shortcuts | invisible | listed in a real **menu bar** with their keys |
 | Updates | hard refresh | **signed self-update** on launch |
 | Second launch | second tab | focuses the desk you already have |
+
+The credential row used to claim the Keychain *replaced* `localStorage`. It does
+not, and the difference matters to anyone reasoning about this app's threat model.
+`setOperatorCredentials` (`apps/web/src/lib/apiClient.ts`) writes both halves to
+**both** stores, and `getApiKey()` resolves memory → `localStorage`, reaching the
+Keychain only via the boot-time hydrate. Verified on a real install: the webview's
+`localStorage` at
+`~/Library/WebKit/com.lcx.terminal/WebsiteData/.../localstorage.sqlite3` holds
+`lcx_desk_passcode` in cleartext, mode `0644`.
+
+That redundancy is load-bearing, not an oversight — it is what keeps the desk
+usable when the Keychain is locked, denied, or unavailable, because `secretGet`
+cannot distinguish those from "no entry" and returns `null` for all of them. But
+the honest claim is "Keychain **as well as** localStorage", and the security
+benefit is limited to the Keychain copy. What *is* true is that sign-out forgets
+all three stores (memory, `localStorage`, Keychain) — and since Phase 7 it waits
+for the Keychain half to land before navigating, which it previously did not.
 
 ## Build
 
@@ -140,6 +157,42 @@ Keychain reads are async; `getApiKey()` is synchronous and called on every
 request. So `main.tsx` awaits `hydrateCredentials()` into an in-memory cache
 *before* mounting React. Skip that and the first API calls fire unauthenticated
 and bounce the operator to the sign-in gate on every single launch.
+
+## Resilience notes (Phase 7 audit)
+
+Four facts about this shell that are invisible from the source and expensive to
+rediscover.
+
+**There are no JavaScript dialogs.** wry's `WKUIDelegate` implements four methods
+— file-open panel, media capture, new-window, `windowWillClose:` — and
+`runJavaScriptAlertPanelWithMessage:` is not one of them, in wry or in Tauri.
+WKWebView presents nothing when the delegate declines to, so `alert()`, `confirm()`
+and `prompt()` are **silent no-ops** in the packaged terminal. Anything the
+operator must see goes through the app's own toast layer. (Two `alert()` calls in
+the updater were dead for exactly this reason until Phase 7.)
+
+**`plugins.updater.dialog` and `.active` are Tauri v1 keys.** The v2 plugin's
+`Config` has neither field, so they were parsed and discarded. Nothing in v2 shows
+an update dialog: `downloadAndInstall()` has no UI, and after it resolves
+`relaunch()` restarts the app. The desk announces the install itself now, but the
+launch check is still **unattended** — see the handoff on consent.
+
+**Updates are not transactional, and the macOS installer deletes before it
+renames.** `tauri-plugin-updater` extracts to a temp dir, renames the running
+`.app` aside, then renames the new one into place. If that last rename fails —
+cross-device `$TMPDIR`, full disk, revoked permission — the error propagates, the
+backup `TempDir` drops and is deleted, and **no bundle is left on disk**. Two
+concurrent installs can produce the same outcome, which is why the bridge holds a
+single-flight guard. Never run the bare `target/release/lcx-terminal` binary with
+the updater live: with no `.app` ancestor the extract path resolves to the build
+directory, and that is what gets removed.
+
+**A Rust panic is silent and unreadable.** `panic = "abort"` plus `strip = true`
+means a panic SIGABRTs with no dialog, and the `.ips` report macOS writes to
+`~/Library/Logs/DiagnosticReports/` carries addresses with no symbol names. The
+`eprintln!` window-lifecycle diagnostics only reach a human when the app is
+launched from a terminal; from the Dock, stderr goes nowhere. There is no crash
+reporting.
 
 ### CORS
 

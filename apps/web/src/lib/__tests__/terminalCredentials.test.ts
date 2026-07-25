@@ -128,6 +128,64 @@ describe('LCX TERMINAL credential handoff', () => {
     });
   });
 
+  /* ── Phase 7: absence vs emptiness ─────────────────────────────────────────
+   * The Keychain stores an empty value happily and reads it back as present, not
+   * absent — measured in the shell's own test
+   * (src-tauri/src/lib.rs::an_empty_value_is_stored_not_treated_as_absence). The
+   * web side resolves credentials as `mem ?? localStorage`, and `''` is not
+   * nullish, so a present-but-empty entry does not read as "no credential" — it
+   * reads as "the credential is the empty string", which silently switches OFF the
+   * localStorage fallback. These three cases pin both ends of that.
+   * ────────────────────────────────────────────────────────────────────────── */
+
+  it('a rejected sign-in deletes the Keychain entries instead of emptying them', async () => {
+    const { setOperatorCredentials } = await freshClient();
+
+    setOperatorCredentials('nik@lcx.com', 'wrong-passcode');
+    await vi.waitFor(() => expect(keychain.get(PASS_KEY)).toBe('wrong-passcode'));
+
+    // What the sign-in gate does when the server refuses the pair it just stored.
+    setOperatorCredentials('', '');
+
+    await vi.waitFor(() => {
+      expect(keychain.has(EMAIL_KEY)).toBe(false);
+      expect(keychain.has(PASS_KEY)).toBe(false);
+    });
+    // Not `''` in localStorage either — same trap, same reason.
+    expect(localStorage.getItem(EMAIL_KEY)).toBeNull();
+    expect(localStorage.getItem(PASS_KEY)).toBeNull();
+  });
+
+  it('an empty Keychain value does not shadow a good localStorage credential', async () => {
+    // The state a build shipped before this fix leaves behind: emptied Keychain,
+    // intact localStorage. The desk must still authenticate.
+    keychain.set(EMAIL_KEY, '');
+    keychain.set(PASS_KEY, '');
+    localStorage.setItem(EMAIL_KEY, 'nik@lcx.com');
+    localStorage.setItem(PASS_KEY, 'test#1234');
+
+    const { hydrateCredentials, getApiKey } = await freshClient();
+    await hydrateCredentials();
+
+    expect(getApiKey()).toBe('nik@lcx.com:test#1234');
+  });
+
+  it('sign-out is awaitable, so the caller can navigate only after the forget lands', async () => {
+    const { setOperatorCredentials, clearOperatorEmail } = await freshClient();
+
+    setOperatorCredentials('nik@lcx.com', 'test#1234');
+    await vi.waitFor(() => expect(keychain.get(PASS_KEY)).toBe('test#1234'));
+
+    // The regression this guards is invisible without the await: sign-out ends in
+    // `window.location.assign`, which tears down the context the Keychain IPC is
+    // riding on, so a fire-and-forget delete could simply never arrive and leave
+    // the previous operator's passcode in the login keychain.
+    await clearOperatorEmail();
+
+    expect(keychain.has(EMAIL_KEY)).toBe(false);
+    expect(keychain.has(PASS_KEY)).toBe(false);
+  });
+
   it('survives a Keychain that returns nothing (first run) without throwing', async () => {
     const { hydrateCredentials, getApiKey } = await freshClient();
 

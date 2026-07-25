@@ -6,6 +6,7 @@ import {
   pushDismissible,
   removeDismissible,
   topDismissible,
+  topTraps,
 } from '../dismiss';
 
 /**
@@ -238,5 +239,143 @@ describe('focus restoration', () => {
     const id = pushDismissible('modal', () => {});
     removeDismissible(id);
     expect(settle).not.toThrow();
+  });
+});
+
+describe('the focus trap', () => {
+  /**
+   * The Phase 7 audit measured this and it was NOT true: with the manual open, one
+   * Shift+Tab reached a "Retry" button on the page behind it, and 4 of 5 forward stops
+   * were outside the dialog. The auditor correctly refused to add `aria-modal="true"`
+   * while that was the case — declaring modality that focus can walk out of makes a
+   * screen reader's virtual cursor and the keyboard disagree about where the user is,
+   * which is worse than claiming nothing.
+   *
+   * Tab is handled on the SAME single document listener as Escape, so there is still
+   * exactly one place that arbitrates keys between overlays.
+   */
+  function overlay(...labels: string[]): HTMLElement {
+    const root = document.createElement('div');
+    root.tabIndex = -1;
+    for (const label of labels) {
+      const b = document.createElement('button');
+      b.textContent = label;
+      // jsdom reports offsetParent as null for everything, so the visibility filter
+      // has to be satisfied explicitly for the test to exercise the real path.
+      Object.defineProperty(b, 'offsetParent', { value: root, configurable: true });
+      root.appendChild(b);
+    }
+    document.body.appendChild(root);
+    return root;
+  }
+
+  function tab(shift = false): boolean {
+    const e = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: shift, bubbles: true, cancelable: true });
+    document.body.dispatchEvent(e);
+    return e.defaultPrevented;
+  }
+
+  const btn = (root: HTMLElement, i: number) => root.querySelectorAll('button')[i] as HTMLElement;
+
+  it('wraps forward from the last control to the first', () => {
+    const root = overlay('one', 'two');
+    pushDismissible('modal', () => {}, () => root);
+    btn(root, 1).focus();
+    expect(tab()).toBe(true);
+    expect(document.activeElement).toBe(btn(root, 0));
+  });
+
+  it('wraps backward from the first control to the last', () => {
+    const root = overlay('one', 'two');
+    pushDismissible('modal', () => {}, () => root);
+    btn(root, 0).focus();
+    expect(tab(true)).toBe(true);
+    expect(document.activeElement).toBe(btn(root, 1));
+  });
+
+  it('leaves Tab alone in the middle of the overlay', () => {
+    // Re-implementing intra-overlay Tab order would be a second, worse focus model.
+    const root = overlay('one', 'two', 'three');
+    pushDismissible('modal', () => {}, () => root);
+    btn(root, 0).focus();
+    expect(tab(), 'the browser should handle this one').toBe(false);
+  });
+
+  it('pulls focus in when it is outside the overlay', () => {
+    // The measured defect: focus sitting on the page behind, so Tab continued from
+    // there instead of entering the dialog.
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    const root = overlay('one', 'two');
+    pushDismissible('modal', () => {}, () => root);
+    outside.focus();
+    expect(tab()).toBe(true);
+    expect(document.activeElement).toBe(btn(root, 0));
+  });
+
+  it('does not let Tab escape an overlay with nothing focusable in it', () => {
+    const root = overlay();
+    pushDismissible('modal', () => {}, () => root);
+    expect(tab()).toBe(true);
+    expect(document.activeElement, 'focus must land on the container, not the page').toBe(root);
+  });
+
+  it('only the TOP overlay traps', () => {
+    const lower = overlay('lower-one', 'lower-two');
+    pushDismissible('drawer', () => {}, () => lower);
+    const upper = overlay('upper-one', 'upper-two');
+    pushDismissible('manual', () => {}, () => upper);
+
+    btn(upper, 1).focus();
+    tab();
+    // A drawer with the manual over it must not fight the manual for the key.
+    expect(document.activeElement).toBe(btn(upper, 0));
+  });
+
+  it('does not trap for a dismissible that declares no container', () => {
+    // A tooltip and a lineage popover belong on the stack — Escape should close them —
+    // but confining Tab inside a tooltip would strand the operator.
+    const outside = document.createElement('button');
+    document.body.appendChild(outside);
+    outside.focus();
+    pushDismissible('tooltip', () => {});
+    expect(tab(), 'Tab must pass through to the browser').toBe(false);
+    expect(document.activeElement).toBe(outside);
+  });
+
+  it('ignores tabindex="-1" rows, so a roving list does not become 200 stops', () => {
+    const root = overlay('real');
+    const row = document.createElement('div');
+    row.tabIndex = -1;
+    Object.defineProperty(row, 'offsetParent', { value: root, configurable: true });
+    root.appendChild(row);
+    pushDismissible('modal', () => {}, () => root);
+
+    const real = btn(root, 0);
+    real.focus();
+    // One tabbable control means forward Tab wraps to itself, which proves the
+    // tabindex=-1 row was not counted.
+    expect(tab()).toBe(true);
+    expect(document.activeElement).toBe(real);
+  });
+
+  it('reports whether the top entry traps, so a component can claim aria-modal honestly', () => {
+    expect(topTraps()).toBe(false);
+    pushDismissible('tooltip', () => {});
+    expect(topTraps(), 'a non-modal entry must not license aria-modal').toBe(false);
+    const root = overlay('one');
+    pushDismissible('modal', () => {}, () => root);
+    expect(topTraps()).toBe(true);
+  });
+
+  it('defers to an element that already handled Tab', () => {
+    const root = overlay('one', 'two');
+    pushDismissible('modal', () => {}, () => root);
+    btn(root, 1).focus();
+    const e = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true });
+    e.preventDefault();
+    document.body.dispatchEvent(e);
+    // A component implementing its own grid navigation keeps its claim.
+    expect(document.activeElement).toBe(btn(root, 1));
   });
 });

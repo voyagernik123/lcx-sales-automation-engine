@@ -113,3 +113,76 @@ test.describe('the manual', () => {
     await expect(panel.getByText(/command line/i).first()).toBeVisible();
   });
 });
+
+test.describe('the focus trap', () => {
+  /**
+   * The Phase 7 audit MEASURED this escaping: with the manual open, one Shift+Tab
+   * reached "Retry"/"Refresh" on the page behind it, and 4 of 5 forward stops were
+   * outside the dialog. It declined to add `aria-modal` while that was true, which was
+   * the right call — declaring modality that focus can walk out of makes a screen
+   * reader's virtual cursor and the tab ring disagree about where the user is.
+   *
+   * These assertions are what licensed `aria-modal="true"`.
+   */
+  test('Tab cannot leave the manual, in either direction', async ({ page }) => {
+    await goToDesk(page, '/bd-pipeline');
+    await page.keyboard.press('?');
+    const panel = page.locator(manual);
+    await expect(panel).toBeVisible();
+
+    const inside = () =>
+      page.evaluate(() => {
+        const dialog = document.querySelector('[role="dialog"][aria-label="Manual"]');
+        const active = document.activeElement;
+        return {
+          contained: !!dialog && !!active && dialog.contains(active),
+          tag: active?.tagName ?? 'none',
+          label: (active?.getAttribute('aria-label') || active?.textContent || '').trim().slice(0, 30),
+        };
+      });
+
+    // Forward, well past the number of controls in the panel.
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press('Tab');
+      const state = await inside();
+      expect(state.contained, `forward Tab #${i + 1} landed outside the manual: ${state.tag} "${state.label}"`).toBe(
+        true,
+      );
+    }
+
+    // Backward — the direction the audit caught escaping on the very first press.
+    for (let i = 0; i < 12; i++) {
+      await page.keyboard.press('Shift+Tab');
+      const state = await inside();
+      expect(state.contained, `Shift+Tab #${i + 1} landed outside the manual: ${state.tag} "${state.label}"`).toBe(
+        true,
+      );
+    }
+  });
+
+  test('it declares aria-modal only because it now traps', async ({ page }) => {
+    await goToDesk(page, '/bd-pipeline');
+    await page.keyboard.press('?');
+    // The declaration and the behaviour have to ship together; asserting the attribute
+    // beside the trap test is what keeps them from drifting apart.
+    await expect(page.locator(manual)).toHaveAttribute('aria-modal', 'true');
+  });
+
+  test('closing it hands focus back, so the trap does not strand anyone', async ({ page }) => {
+    await goToDesk(page, '/bd-pipeline');
+    const before = await page.evaluate(() => document.activeElement?.tagName ?? 'BODY');
+    await page.keyboard.press('?');
+    await expect(page.locator(manual)).toBeVisible();
+    await page.keyboard.press('Tab');
+    await page.keyboard.press('Escape');
+    await expect(page.locator(manual)).toBeHidden();
+
+    // The point of trapping is that focus is somewhere known when the trap lifts.
+    const after = await page.evaluate(() => ({
+      tag: document.activeElement?.tagName ?? 'BODY',
+      inDialog: !!document.activeElement?.closest('[role="dialog"]'),
+    }));
+    expect(after.inDialog, 'focus is still inside a dialog that has closed').toBe(false);
+    expect(before).toBeTruthy();
+  });
+});

@@ -18,6 +18,7 @@
 export { isTerminal } from './container';
 import { isTerminal } from './container';
 import { MENU_ROUTES } from './destinations';
+import { connectivity } from './online';
 
 type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
@@ -93,10 +94,88 @@ export async function secretDelete(key: string): Promise<void> {
  */
 const MENU_EXTRAS: Record<string, string> = {};
 
+/** How the bridge speaks to the operator. Supplied by the shell component. */
+export type Notice = (kind: 'info' | 'warning', message: string) => void;
+
+/**
+ * Only one update check/install may be in flight (Phase 7).
+ *
+ * `attachTerminalBridge` runs from a React effect, and an effect's dependency
+ * list is one careless edit away from being unstable — which is exactly what had
+ * happened: `AppLayout` depended on the whole object returned by `useManual()`,
+ * a fresh literal every render, so the bridge re-attached and re-checked for
+ * updates on every re-render of the shell. With an update actually available that
+ * means CONCURRENT `downloadAndInstall()` calls, and the macOS installer removes
+ * the running `.app` before renaming the new one into place
+ * (tauri-plugin-updater-2.10.1/src/updater.rs:1296-1303) — two of those racing can
+ * leave no bundle on disk at all. The dependency is fixed; this guard means a
+ * future regression there costs a wasted call instead of the operator's app.
+ */
+let updateInFlight = false;
+
+/**
+ * Check for an update, and SAY WHAT HAPPENED.
+ *
+ * What this replaced, and why it had to be replaced: both arms used `alert()`.
+ * wry's `WKUIDelegate` implements exactly four methods — file-open panel, media
+ * capture, new-window and windowWillClose
+ * (wry-0.55.1/src/wkwebview/class/wry_web_view_ui_delegate.rs) — and
+ * `runJavaScriptAlertPanelWithMessage:` is not one of them, in wry or in Tauri.
+ * WKWebView presents no panel when the delegate declines to, so **every**
+ * `alert()` in the packaged terminal is silent. "Check for Updates…" was a menu
+ * item that did nothing observable in all three outcomes.
+ *
+ * The launch check also swallowed every failure identically: network down,
+ * malformed `latest.json`, the 404 the README warns about from GitHub rewriting
+ * spaces in asset names, a signature that does not verify, an interrupted
+ * download, a failed install. A desk that has quietly stopped receiving fixes
+ * looks exactly like a desk that is up to date, which is the worst of the
+ * available outcomes.
+ */
+async function checkForUpdate(interactive: boolean, notify: Notice): Promise<void> {
+  if (updateInFlight) return;
+  updateInFlight = true;
+  try {
+    const { check: doCheck } = await import('@tauri-apps/plugin-updater');
+    const update = await doCheck();
+    if (!update) {
+      if (interactive) notify('info', 'LCX TERMINAL is up to date.');
+      return;
+    }
+    // Announce BEFORE installing. `downloadAndInstall()` shows no UI of its own —
+    // `plugins.updater.dialog` is a Tauri v1 key and the v2 plugin's Config has no
+    // such field (tauri-plugin-updater-2.10.1/src/config.rs:90-104), so it was
+    // silently ignored and the desk simply vanished and came back mid-work.
+    notify('info', `Update ${update.version} found — installing, then the desk will relaunch.`);
+    await update.downloadAndInstall();
+    const { relaunch } = await import('@tauri-apps/plugin-process');
+    await relaunch();
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : String(err);
+    // Always recorded, even when not shown: this is the only trace a failed
+    // update leaves anywhere. (Note it is only readable with the webview
+    // inspector attached — a Rust-side `eprintln!` would go nowhere at all for an
+    // app launched from the Dock.)
+    console.error('[lcx-terminal] update failed:', reason);
+    // On a dead network the OfflineBanner is already saying so and the failure is
+    // transient by nature, so a second voice adds noise, not information. A check
+    // that fails while the network is FINE is the interesting one — a bad
+    // latest.json, a 404, a signature mismatch — and it is permanent until
+    // someone is told.
+    if (interactive || connectivity() === 'online') {
+      notify('warning', `Update failed (${reason}). You are still on the build you launched.`);
+    }
+  } finally {
+    updateInFlight = false;
+  }
+}
+
 /**
  * Wire the native menu + updater to the app. Returns an unlisten function.
  * `onNavigate` and `onCommandPalette` are supplied by the shell component so
- * routing stays owned by React Router, not by the Rust side.
+ * routing stays owned by React Router, not by the Rust side. `onNotice` is how
+ * the bridge reaches the operator — the shell owns the toast surface, so lib/
+ * does not have to import a component to be heard.
  */
 export async function attachTerminalBridge(handlers: {
   onNavigate: (to: string) => void;
@@ -104,6 +183,7 @@ export async function attachTerminalBridge(handlers: {
   onBack: () => void;
   onForward: () => void;
   onManual: () => void;
+  onNotice: Notice;
 }): Promise<() => void> {
   if (!isTerminal()) return () => {};
   try {
@@ -115,18 +195,21 @@ export async function attachTerminalBridge(handlers: {
       if (id === 'go-back') return handlers.onBack();
       if (id === 'go-forward') return handlers.onForward();
       if (id === 'help-manual') return handlers.onManual();
-      if (id === 'view-reload') return window.location.reload();
+      // `view-reload` is deliberately absent: since Phase 7 the shell reloads the
+      // webview natively and never emits it. ⌘R exists for the case where the web
+      // content process has died, and a JS listener cannot reload a dead JS context.
       const to = MENU_ROUTES[id] ?? MENU_EXTRAS[id];
       if (to) handlers.onNavigate(to);
     });
 
     const unlistenUpdate = await listen('lcx://check-update', () => {
-      void checkForUpdate(true);
+      void checkForUpdate(true, handlers.onNotice);
     });
 
-    // Silent check on launch: an operator instrument should keep itself current
-    // without ever nagging. Only a found update surfaces (Tauri's own dialog).
-    void checkForUpdate(false);
+    // Quiet check on launch: an operator instrument keeps itself current without
+    // nagging. "Quiet" is not "silent" — a found update and a failed check both
+    // speak now (see checkForUpdate).
+    void checkForUpdate(false, handlers.onNotice);
 
     return () => {
       unlistenMenu();
@@ -134,22 +217,5 @@ export async function attachTerminalBridge(handlers: {
     };
   } catch {
     return () => {};
-  }
-
-  async function checkForUpdate(interactive: boolean): Promise<void> {
-    try {
-      const { check: doCheck } = await import('@tauri-apps/plugin-updater');
-      const update = await doCheck();
-      if (update?.available) {
-        await update.downloadAndInstall();
-        const { relaunch } = await import('@tauri-apps/plugin-process');
-        await relaunch();
-      } else if (interactive) {
-        // Only speak when spoken to.
-        alert('LCX TERMINAL is up to date.');
-      }
-    } catch {
-      if (interactive) alert('Update check failed — you are still on a working build.');
-    }
   }
 }
