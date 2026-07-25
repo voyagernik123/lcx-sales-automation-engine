@@ -101,6 +101,21 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
         working-directory: apps/web
+
+      # BUILD, even though the browser specs run against the dev server.
+      #
+      # Two specs in `e2e/hints.spec.ts` ("the bundle") read `apps/web/dist/assets` to
+      # assert the `f` hint layer is NOT in the always-loaded chunks and that the eager
+      # side still owns the keybinding — the property that keeps a help overlay off the
+      # critical path for the operators who never press `f`. Jobs do not share a
+      # workspace, so the `gate` job's build is not visible here: the first time this job
+      # ever ran, both failed with "no build found".
+      #
+      # Building here rather than skipping them. A skip would have turned the job green
+      # while silently dropping the only CI check on the eager/lazy split, and the
+      # perf-budget in `gate` does not cover it — it measures chunk SIZES, not which
+      # module landed in which chunk. Costs a few seconds; buys back two real assertions.
+      - run: npm run build -w @lcx/shared && npm run build -w @lcx/web
       # `--ignore-snapshots` deliberately. Playwright names baselines per platform,
       # and the committed ones are `-chromium-darwin`; on ubuntu-latest it would look
       # for `-chromium-linux`, find nothing, and fail every run from the first one —
