@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { EvidenceNode, Lineage } from '@/lib/lineage';
+import { isCommandOpen } from '@/lib/keyboard';
 
 /**
  * The lineage affordance (FINAL_MASTER_PLAN 3.3): wrap any derived value and
@@ -62,6 +63,10 @@ export function Derived({ lineage, children, align = 'left', className }: Derive
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // The command line is a higher-priority overlay: while it is open it owns
+        // Escape. Without this, our capture-phase stopPropagation swallows the key
+        // and one Escape closes two things at once.
+        if (isCommandOpen()) return;
         e.stopPropagation();
         setOpen(false);
       }

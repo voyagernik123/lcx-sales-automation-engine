@@ -170,11 +170,10 @@ export function countNewSince(
 /* ─────────────────────── Keyboard / storage utils ───────────────────── */
 
 /** True when a key event originates in a typing context — triage keys must not fire. */
-export function isTypingTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  const tag = target.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable;
-}
+// Promoted to lib/keyboard.ts so the EAGER keyboard layer can use it without
+// pulling this module (and its data imports) into the initial bundle. Re-exported
+// here so existing importers keep working and there is one definition.
+export { isTypingTarget } from '@/lib/keyboard';
 
 export function readJson<T>(key: string, fallback: T): T {
   try {

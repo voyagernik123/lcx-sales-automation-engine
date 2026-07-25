@@ -6,6 +6,7 @@ import type { DealEvent } from '@/types/bd';
 import type { DealHealth } from '@/lib/salesIntel';
 import { fetchBatna, type Batna } from '@/lib/api/deals100x';
 import { fmtMoneyCents, packageLabel } from './dealFormat';
+import { isCommandOpen } from '@/lib/keyboard';
 
 /**
  * Deal Review memo — the print-ready "commit" artifact for a deal (the sales
@@ -83,6 +84,10 @@ export function DealReviewMemo({ deal, health, events, winProbability, onClose }
     // (topmost overlay) without also walking the inspector's trail back.
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // The command line is a higher-priority overlay: while it is open it owns
+        // Escape. Without this, our capture-phase stopPropagation swallows the key
+        // and one Escape closes two things at once.
+        if (isCommandOpen()) return;
         e.stopPropagation();
         onClose();
       }

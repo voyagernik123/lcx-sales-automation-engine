@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Moon } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { isTypingTarget } from './logic';
+import { isCommandOpen } from '@/lib/keyboard';
 
 interface SnoozeMenuProps {
   open: boolean;
@@ -29,6 +30,10 @@ export function SnoozeMenu({ open, leadName, onClose, onSnooze }: SnoozeMenuProp
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        // The command line is a higher-priority overlay: while it is open it owns
+        // Escape. Without this, our capture-phase stopPropagation swallows the key
+        // and one Escape closes two things at once.
+        if (isCommandOpen()) return;
         e.stopPropagation();
         onClose();
         return;
