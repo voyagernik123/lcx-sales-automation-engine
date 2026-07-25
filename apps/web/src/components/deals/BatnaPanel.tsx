@@ -192,7 +192,7 @@ export function BatnaPanel({ dealId, dealName, packageValue, className }: BatnaP
                   value={draft[f.key]}
                   onChange={e => setDraft(d => ({ ...d, [f.key]: e.target.value }))}
                   placeholder="—"
-                  className="num-tabular mt-1 w-full rounded border border-line bg-card px-1.5 py-1 text-right font-mono text-label text-navy focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                  className="num-tabular mt-1 w-full rounded border border-line bg-card px-1.5 py-1 text-right font-mono text-label text-navy focus-ring focus:ring-1 focus:ring-indigo-400"
                 />
               </label>
             ))}
@@ -201,7 +201,7 @@ export function BatnaPanel({ dealId, dealName, packageValue, className }: BatnaP
             value={draft.notes}
             onChange={e => setDraft(d => ({ ...d, notes: e.target.value }))}
             placeholder="Negotiation notes…"
-            className="mt-2 w-full rounded border border-line bg-card px-2 py-1 text-label text-navy focus:outline-none focus:ring-1 focus:ring-indigo-400"
+            className="mt-2 w-full rounded border border-line bg-card px-2 py-1 text-label text-navy focus-ring focus:ring-1 focus:ring-indigo-400"
           />
           <div className="mt-2 flex justify-end">
             <Button variant="secondary" size="xs" onClick={() => void save()} disabled={saving}>

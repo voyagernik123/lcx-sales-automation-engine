@@ -500,7 +500,7 @@ function ReportAnnotations({ period }: { period: BoardReportPeriod }) {
             if (e.key === 'Enter') add();
           }}
           placeholder="Add context the numbers can't say — 'Q3 dip is the Solaris slip, recovery signed Friday'…"
-          className="h-8 min-w-0 flex-1 rounded-md border border-line bg-page px-2.5 text-label text-navy placeholder:text-grey/60 focus:border-cyan-500 focus:outline-none"
+          className="h-8 min-w-0 flex-1 rounded-md border border-line bg-page px-2.5 text-label text-navy placeholder:text-grey/60 focus:border-cyan-500 focus-ring"
         />
         <Button size="xs" variant="secondary" onClick={add} disabled={!draft.trim()}>
           Pin note

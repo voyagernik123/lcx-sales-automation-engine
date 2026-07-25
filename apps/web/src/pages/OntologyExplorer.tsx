@@ -192,7 +192,7 @@ export function OntologyExplorer() {
           <div className="flex-1 max-w-md relative">
             <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-grey" />
             <input type="text" placeholder="Search..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-              className="w-full h-7 pl-7 pr-2 rounded border border-line bg-ice-soft dark:bg-navy-deep text-micro text-navy focus:outline-none placeholder-grey/50 font-mono" />
+              className="w-full h-7 pl-7 pr-2 rounded border border-line bg-ice-soft dark:bg-navy-deep text-micro text-navy focus-ring placeholder-grey/50 font-mono" />
             {searchMatches.length > 0 && (
               <div className="absolute top-8 left-0 right-0 z-20 bg-card border border-line rounded shadow-lg overflow-hidden text-micro divide-y divide-line">
                 {searchMatches.map(m => (
@@ -220,7 +220,7 @@ export function OntologyExplorer() {
           </div>
 
           <select value={colorBy} onChange={e => setColorBy(e.target.value as any)}
-            className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-1.5 text-[9px] font-semibold focus:outline-none text-navy shrink-0">
+            className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-1.5 text-[9px] font-semibold focus-ring text-navy shrink-0">
             <option value="status">Status</option>
             <option value="phase">Phase</option>
             <option value="domain">Domain</option>

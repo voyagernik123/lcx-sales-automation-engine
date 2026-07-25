@@ -131,7 +131,7 @@ export function StateMap() {
                 <select
                   value={filters[i]}
                   onChange={e => setter(e.target.value)}
-                  className="w-full h-8 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-xs focus:outline-none"
+                  className="w-full h-8 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-xs focus-ring"
                 >
                   {options[i].map(o => (
                     <option key={o.value} value={o.value}>{o.label}</option>

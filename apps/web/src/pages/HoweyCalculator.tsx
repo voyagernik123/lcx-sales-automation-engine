@@ -161,7 +161,7 @@ export function HoweyCalculator() {
                 type="text"
                 value={tokenSymbol}
                 onChange={e => setTokenSymbol(e.target.value.toUpperCase())}
-                className="w-16 h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep text-center text-xs font-bold font-mono focus:outline-none"
+                className="w-16 h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep text-center text-xs font-bold font-mono focus-ring"
               />
             </div>
           </>
@@ -176,7 +176,7 @@ export function HoweyCalculator() {
         <select
           value={selectedProductId}
           onChange={e => setSelectedProductId(e.target.value)}
-          className="flex-1 h-8 rounded border border-line bg-ice-soft dark:bg-navy-deep text-xs font-semibold font-mono focus:outline-none px-2 text-navy"
+          className="flex-1 h-8 rounded border border-line bg-ice-soft dark:bg-navy-deep text-xs font-semibold font-mono focus-ring px-2 text-navy"
         >
           <option value="">— Select a product to view Howey analysis —</option>
           {products.map(p => (

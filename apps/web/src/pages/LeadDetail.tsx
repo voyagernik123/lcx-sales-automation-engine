@@ -1309,7 +1309,7 @@ function DealSection({ projectId }: { projectId: string }) {
       <div className="space-y-2 py-2">
         <p className="text-micro text-grey italic">No deal for this project yet.</p>
         <div className="flex items-center gap-2">
-          <select value={pkgType} onChange={e => setPkgType(e.target.value)} className="rounded border border-line px-2 py-1 text-micro bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500">
+          <select value={pkgType} onChange={e => setPkgType(e.target.value)} className="rounded border border-line px-2 py-1 text-micro bg-surface dark:bg-navy-deep focus-ring focus:ring-1 focus:ring-cyan-500">
             <option value="listing">Listing ($20K)</option>
             <option value="marketing">Marketing ($20K)</option>
             <option value="liquidity">Liquidity ($10K)</option>
@@ -1374,7 +1374,7 @@ function DealSection({ projectId }: { projectId: string }) {
           ))}
           {/* Win/Loss with reason */}
           <div className="flex items-center gap-1 ml-2">
-            <input value={stageReason} onChange={e => setStageReason(e.target.value)} placeholder="Reason for close..." className="w-36 rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500" />
+            <input value={stageReason} onChange={e => setStageReason(e.target.value)} placeholder="Reason for close..." className="w-36 rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus-ring focus:ring-1 focus:ring-cyan-500" />
             <button onClick={() => handleStageTransition('won')} disabled={actionLoading === 'stage-won' || !stageReason.trim()} className="rounded bg-emerald-600 text-white px-2 py-0.5 text-micro font-bold hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center gap-1">
               <ThumbsUp size={9} /> {actionLoading === 'stage-won' ? '...' : 'Won'}
             </button>
@@ -1444,7 +1444,7 @@ function DealSection({ projectId }: { projectId: string }) {
         {showObjections && (
           <div className="space-y-1 mb-2">
             <div className="flex gap-1">
-              <select value={objCategory} onChange={e => setObjCategory(e.target.value)} className="rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500">
+              <select value={objCategory} onChange={e => setObjCategory(e.target.value)} className="rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus-ring focus:ring-1 focus:ring-cyan-500">
                 <option value="">Category...</option>
                 <option value="price">Price</option>
                 <option value="volume">Volume</option>
@@ -1455,13 +1455,13 @@ function DealSection({ projectId }: { projectId: string }) {
                 <option value="competitor">Competitor</option>
                 <option value="other">Other</option>
               </select>
-              <select value={objSeverity} onChange={e => setObjSeverity(e.target.value)} className="rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500">
+              <select value={objSeverity} onChange={e => setObjSeverity(e.target.value)} className="rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus-ring focus:ring-1 focus:ring-cyan-500">
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
                 <option value="blocker">Blocker</option>
               </select>
-              <input value={objDesc} onChange={e => setObjDesc(e.target.value)} placeholder="Describe objection..." className="flex-1 rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus:outline-none focus:ring-1 focus:ring-cyan-500" />
+              <input value={objDesc} onChange={e => setObjDesc(e.target.value)} placeholder="Describe objection..." className="flex-1 rounded border border-line px-1.5 py-0.5 text-micro bg-surface dark:bg-navy-deep focus-ring focus:ring-1 focus:ring-cyan-500" />
               <button onClick={handleAddObjection} disabled={actionLoading === 'objection' || !objCategory || !objDesc.trim()} className="rounded bg-cyan-600 text-white px-2 py-0.5 text-micro font-bold disabled:opacity-50">
                 Add
               </button>

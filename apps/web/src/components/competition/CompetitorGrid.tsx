@@ -527,7 +527,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
         <select
           value={threatFilter}
           onChange={e => handleFilterChange(setThreatFilter, e.target.value, 'Threat Level')}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus:outline-none text-navy"
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus-ring text-navy"
         >
           <option value="All">All Threat Levels</option>
           <option value="Critical">Critical</option>
@@ -540,7 +540,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
         <select
           value={clarityFilter}
           onChange={e => handleFilterChange(setClarityFilter, e.target.value, 'CLARITY')}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus:outline-none text-navy"
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus-ring text-navy"
         >
           <option value="All">All CLARITY Positions</option>
           <option value="strong_beneficiary">Strong Beneficiary</option>
@@ -553,7 +553,7 @@ export function CompetitorGrid({ onCompetitorClick }: CompetitorGridProps) {
         <select
           value={statusFilter}
           onChange={e => handleFilterChange(setStatusFilter, e.target.value, 'Status')}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus:outline-none text-navy"
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus-ring text-navy"
         >
           <option value="All">All Statuses</option>
           <option value="public">Public</option>

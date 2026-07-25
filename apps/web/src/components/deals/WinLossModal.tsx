@@ -87,7 +87,7 @@ export function WinLossModal({ mode, dealName, onConfirm, onCancel }: WinLossMod
             onChange={e => setNote(e.target.value)}
             rows={3}
             placeholder={mode === 'won' ? 'What actually closed it…' : 'What actually killed it…'}
-            className="block w-full rounded-md border border-line bg-card px-3 py-2 text-sm shadow-sm focus:border-navy focus:outline-none focus:ring-2 focus:ring-navy"
+            className="block w-full rounded-md border border-line bg-card px-3 py-2 text-sm shadow-sm focus:border-navy focus-ring focus:ring-2 focus:ring-navy"
           />
         </label>
         <p className="text-micro text-grey">

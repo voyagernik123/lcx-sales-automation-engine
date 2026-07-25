@@ -1,5 +1,16 @@
 export default {
-  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  // Tests are excluded from the content scan: a class name written in a comment
+  // or a regex inside a test is otherwise compiled into the shipped stylesheet.
+  // That is how `.focus\:outline-none:focus` and
+  // `.focus-visible\:outline-none:focus-visible` — both of which BLANK a focus
+  // ring — survived in dist/ after every real usage had been removed, purely
+  // because the ratchet test that forbids them mentions them.
+  content: [
+    './index.html',
+    './src/**/*.{js,ts,jsx,tsx}',
+    '!./src/**/__tests__/**',
+    '!./src/**/*.test.{ts,tsx}',
+  ],
   darkMode: 'class',
   theme: {
     extend: {

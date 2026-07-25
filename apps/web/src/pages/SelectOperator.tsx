@@ -140,7 +140,7 @@ export function SelectOperator() {
           <button
             type="submit"
             disabled={busy}
-            className="group mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-navy py-3 text-[13.5px] font-semibold text-card transition-opacity hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 disabled:opacity-60"
+            className="group mt-4 flex w-full items-center justify-center gap-2 rounded-lg bg-navy py-3 text-[13.5px] font-semibold text-card transition-opacity hover:opacity-90 focus-ring focus:ring-2 focus:ring-cyan-500/40 disabled:opacity-60"
           >
             {busy ? 'Verifying…' : 'Sign in'}
             <ArrowRight size={15} className="transition-transform group-hover:translate-x-0.5" />

@@ -147,9 +147,56 @@ path.state:hover {
   }
 }
 
-/* Professional focus treatment — visible only for keyboard users. */
+/* ── Focus (TERMINAL Phase 4) ───────────────────────────────────────────────
+ * "Focus is never invisible" is the single most important visual change in the
+ * motion model: if you cannot see where you are, nothing else about keyboard
+ * navigation matters.
+ *
+ * Three measured defects in the previous rule, all fixed here:
+ *
+ * 1. ALPHA. `rgb(8 145 178 / 0.6)` composited to 2.06-2.60:1 against the four
+ *    app surfaces — under the WCAG 2.2 SC 1.4.11 minimum of 3:1 for non-text.
+ *    At full opacity the same hue gives 3.68:1 on white and 5.23:1 on the dark
+ *    canvas. The cheapest real accessibility win in the phase was deleting
+ *    "/ 0.6".
+ *
+ * 2. BORDER-RADIUS. The rule set `border-radius: 4px` on whatever was focused,
+ *    so a `rounded-full` control snapped to a 4px rectangle the instant it took
+ *    focus. A focus indicator must never restyle the thing it indicates.
+ *
+ * 3. SPECIFICITY. `.focus\:outline-none:focus` compiles to (0,2,0) and is
+ *    emitted AFTER this rule, so it won unconditionally on 49 elements — 17 of
+ *    them with no replacement style at all, i.e. focus simply vanished. Those
+ *    sites now use `focus-visible:outline-none`, which only suppresses the
+ *    outline for POINTER focus, and pair it with .focus-ring below.
+ *
+ * Outline rather than box-shadow, deliberately: `outline` is painted outside the
+ * border box and is not clipped by the 98 `overflow-hidden` containers in this
+ * app, where a ring would be cropped on a first or last child.
+ */
 :focus-visible {
-  outline: 2px solid rgb(8 145 178 / 0.6);
+  outline: 2px solid rgb(var(--focus));
   outline-offset: 2px;
-  border-radius: 4px;
+}
+
+/**
+ * The shared focus treatment for controls that suppress the default outline
+ * because they draw their own affordance (dense filter selects, inline inputs).
+ * One class so the whole app's focus language can be tuned in one place instead
+ * of across 62 hand-written `focus:border-cyan-500` sites.
+ *
+ * `inset` so it is never clipped inside a scrolling or overflow-hidden parent,
+ * and paired with a border colour change so the signal survives even where a
+ * ring is visually crowded.
+ */
+@layer utilities {
+  .focus-ring:focus-visible {
+    outline: 2px solid rgb(var(--focus));
+    outline-offset: 2px;
+  }
+  /* For controls sitting flush inside a clipping container. */
+  .focus-ring-inset:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 2px rgb(var(--focus));
+  }
 }

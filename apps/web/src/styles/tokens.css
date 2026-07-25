@@ -17,6 +17,13 @@
   --red: 163 32 53;           /* #a32035 */
   --red-bg: 251 230 234;      /* #fbe6ea */
   --indigo: 79 70 229;        /* #4f46e5 — kept for pre-launch phase coloring */
+
+  /* Focus (TERMINAL Phase 4). A token, not a scattered utility, because the
+   * focus treatment is the load-bearing signal of the whole motion model and has
+   * to be tunable in one place. Full opacity is deliberate: the previous ring
+   * used 0.6 alpha and composited to 2.06:1 on this canvas, under the WCAG 3:1
+   * non-text minimum. At full strength this hue measures 3.68:1 on white. */
+  --focus: 8 145 178;         /* #0891b2 — cyan-600 */
 }
 
 /* Dark is a DESIGNED PARALLEL PALETTE (plan 4.2), not an inversion of light.
@@ -44,6 +51,11 @@
   --amber-bg: 50 40 15;       /* softened amber bg */
   --red: 220 80 100;          /* #dc5064 */
   --red-bg: 50 20 25;         /* softened red bg */
+
+  /* Lifted for dark: cyan-600 clears 3:1 on the canvas but is tight against
+   * the raised inverse-surface (#202B48) where controls actually sit.
+   * cyan-400 measures 7.74:1 there and 10.66:1 on the canvas. */
+  --focus: 34 211 238;        /* #22d3ee — cyan-400 */
   --indigo: 129 140 248;      /* #818cf8 */
 }
 

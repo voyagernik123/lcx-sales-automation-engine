@@ -60,7 +60,7 @@ export function RunButton({
 
 export const panelClass = 'rounded-lg border border-line bg-card p-4';
 export const inputClass =
-  'w-full rounded border border-line bg-transparent p-2 text-xs focus:outline-none focus:ring-1 focus:ring-cyan-500';
+  'w-full rounded border border-line bg-transparent p-2 text-xs focus-ring focus:ring-1 focus:ring-cyan-500';
 export const labelClass = 'text-micro font-bold uppercase tracking-wider text-grey';
 export const resultBoxClass =
   'whitespace-pre-wrap rounded border border-line bg-ice-soft/40 dark:bg-ice-soft/5 p-2.5 text-label leading-relaxed';

@@ -152,7 +152,7 @@ function ClaimCard({ claim }: { claim: Claim }) {
         }
       }}
       title="Inspect claim"
-      className="rounded-lg border border-line/70 bg-card shadow-card overflow-hidden cursor-pointer text-left lift hover:border-cyan-400 focus:outline-none focus:ring-1 focus:ring-cyan-500"
+      className="rounded-lg border border-line/70 bg-card shadow-card overflow-hidden cursor-pointer text-left lift hover:border-cyan-400 focus-ring focus:ring-1 focus:ring-cyan-500"
     >
       <div className="flex items-center gap-2 px-4 py-2 border-b border-line bg-ice-soft dark:bg-ice-soft/5">
         <span className="text-micro font-mono font-bold text-grey">{claim.id}</span>

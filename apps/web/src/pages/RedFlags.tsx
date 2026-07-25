@@ -241,7 +241,7 @@ export function RedFlags() {
                           value={evidenceNotes[rf.id] || ''}
                           onChange={e => updateEvidenceNote(rf.id, e.target.value)}
                           placeholder="Input counsel legal citations, bylaws sections, or verification hashes..."
-                          className="flex-1 rounded border border-line bg-ice-soft dark:bg-navy-deep p-2 text-xs focus:outline-none placeholder-grey/50 font-mono"
+                          className="flex-1 rounded border border-line bg-ice-soft dark:bg-navy-deep p-2 text-xs focus-ring placeholder-grey/50 font-mono"
                         />
                         <Button
                           variant="primary"

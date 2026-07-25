@@ -299,21 +299,21 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
 
       <div className="flex flex-wrap items-center gap-1.5">
         <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as any)}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus:outline-none text-navy">
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus-ring text-navy">
           <option value="All">All Categories</option>
           {categories.map(c => (
             <option key={c} value={c}>{CATEGORY_META[c].label}</option>
           ))}
         </select>
         <select value={audienceFilter} onChange={e => setAudienceFilter(e.target.value as any)}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus:outline-none text-navy">
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus-ring text-navy">
           <option value="All">All Audiences</option>
           <option value="retail">Retail</option>
           <option value="institutional">Institutional</option>
           <option value="both">Both</option>
         </select>
         <select value={tierFilter} onChange={e => setTierFilter(e.target.value === 'All' ? 'All' : parseInt(e.target.value))}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus:outline-none text-navy">
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus-ring text-navy">
           <option value="All">All Priorities</option>
           <option value="1">Tier 1 — Critical</option>
           <option value="2">Tier 2 — High</option>
@@ -321,7 +321,7 @@ export function ProductGrid({ onProductClick }: ProductGridProps) {
           <option value="4">Tier 4 — Monitor</option>
         </select>
         <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}
-          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus:outline-none text-navy">
+          className="h-7 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 text-micro font-semibold focus-ring text-navy">
           <option value="All">All Statuses</option>
           <option value="live">Live</option>
           <option value="building">Building</option>

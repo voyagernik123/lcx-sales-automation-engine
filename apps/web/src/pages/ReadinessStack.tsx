@@ -185,7 +185,7 @@ export function ReadinessStack() {
               <select
                 value={readinessStatusOverrides[selectedTask.id] || selectedTask.status}
                 onChange={e => updateReadinessStatus(selectedTask.id, e.target.value as ReadinessStatus)}
-                className="w-full h-8 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 font-semibold focus:outline-none"
+                className="w-full h-8 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 font-semibold focus-ring"
               >
                 <option value="Not Started">Not Started</option>
                 <option value="In Progress">In Progress</option>
@@ -200,7 +200,7 @@ export function ReadinessStack() {
               <select
                 value={owner}
                 onChange={e => setOwner(e.target.value)}
-                className="w-full h-8 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 font-semibold focus:outline-none"
+                className="w-full h-8 rounded border border-line bg-ice-soft dark:bg-navy-deep px-2 font-semibold focus-ring"
               >
                 <option value="Unassigned">Unassigned</option>
                 <option value="Chief Compliance Officer (CCO)">Chief Compliance Officer (CCO)</option>
@@ -249,7 +249,7 @@ export function ReadinessStack() {
                 onChange={e => setNotes(e.target.value)}
                 rows={3}
                 placeholder="Input notes, counsel references, or audit checklist comments..."
-                className="w-full rounded border border-line bg-ice-soft dark:bg-navy-deep p-2 text-micro focus:outline-none placeholder-grey/50"
+                className="w-full rounded border border-line bg-ice-soft dark:bg-navy-deep p-2 text-micro focus-ring placeholder-grey/50"
               />
             </div>
 

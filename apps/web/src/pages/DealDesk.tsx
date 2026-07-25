@@ -419,13 +419,13 @@ export function DealDesk() {
                 value={newPartner.name}
                 onChange={(e) => setNewPartner((p) => ({ ...p, name: e.target.value }))}
                 placeholder="Partner name…"
-                className="flex-1 rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs text-navy focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                className="flex-1 rounded-lg border border-line bg-card px-2.5 py-1.5 text-xs text-navy focus-ring focus:ring-1 focus:ring-indigo-400"
               />
               <input
                 value={newPartner.commissionPct}
                 onChange={(e) => setNewPartner((p) => ({ ...p, commissionPct: e.target.value }))}
                 placeholder="%"
-                className="w-16 rounded-lg border border-line bg-card px-2 py-1.5 text-xs text-navy focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                className="w-16 rounded-lg border border-line bg-card px-2 py-1.5 text-xs text-navy focus-ring focus:ring-1 focus:ring-indigo-400"
               />
               <Button variant="primary" size="sm" onClick={() => void addPartner()}>Add</Button>
             </div>

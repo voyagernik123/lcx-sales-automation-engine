@@ -296,28 +296,28 @@ export function BriefGenerator() {
                 placeholder="To (Default: Board / SEC)"
                 value={toOverride}
                 onChange={e => setToOverride(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus:outline-none focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
               />
               <input
                 type="text"
                 placeholder="From (Default: CCO)"
                 value={fromOverride}
                 onChange={e => setFromOverride(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus:outline-none focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
               />
               <input
                 type="text"
                 placeholder="Subject Line"
                 value={subjectOverride}
                 onChange={e => setSubjectOverride(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus:outline-none focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
               />
               <input
                 type="text"
                 placeholder="Date Override (e.g. July 4, 2026)"
                 value={dateOverride}
                 onChange={e => setDateOverride(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus:outline-none focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
               />
             </div>
           </div>
@@ -391,28 +391,28 @@ export function BriefGenerator() {
                 placeholder="Signatory Name"
                 value={signatoryName}
                 onChange={e => setSignatoryName(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus:outline-none focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
               />
               <input
                 type="text"
                 placeholder="Signatory Title"
                 value={signatoryTitle}
                 onChange={e => setSignatoryTitle(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus:outline-none focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
               />
               <input
                 type="text"
                 placeholder="Co-Signer Name (Optional)"
                 value={coSignerName}
                 onChange={e => setCoSignerName(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus:outline-none focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
               />
               <input
                 type="text"
                 placeholder="Co-Signer Title"
                 value={coSignerTitle}
                 onChange={e => setCoSignerTitle(e.target.value)}
-                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus:outline-none focus:ring-1 focus:ring-navy dark:focus:ring-ice"
+                className="w-full h-8 px-2 border border-line rounded bg-ice-soft dark:bg-navy-deep text-xs focus-ring focus:ring-1 focus:ring-navy dark:focus:ring-ice"
               />
             </div>
           </div>
@@ -495,7 +495,7 @@ export function BriefGenerator() {
                     <div 
                       contentEditable 
                       suppressContentEditableWarning
-                      className="p-1 hover:bg-cyan-500/10 focus:bg-cyan-500/5 focus:outline-none transition-colors border border-dashed border-transparent hover:border-cyan-500/25 rounded"
+                      className="p-1 hover:bg-cyan-500/10 focus:bg-cyan-500/5 focus-ring transition-colors border border-dashed border-transparent hover:border-cyan-500/25 rounded"
                     >
                       This memorandum provides an operational analysis of the U.S. launch strategy. The active committed rollout model is set to <strong>{committedArchitecture ? committedArchitecture.toUpperCase() : 'NOT COMMITTED (defaulting to Option C Custodial)'}</strong>. Using a phased jurisdiction deployment, LCX USA aims to coordinate banking connections and licensing.
                     </div>
@@ -645,7 +645,7 @@ export function BriefGenerator() {
                     <div 
                       contentEditable 
                       suppressContentEditableWarning
-                      className="p-1 hover:bg-cyan-500/10 focus:bg-cyan-500/5 focus:outline-none transition-colors border border-dashed border-transparent hover:border-cyan-500/25 rounded"
+                      className="p-1 hover:bg-cyan-500/10 focus:bg-cyan-500/5 focus-ring transition-colors border border-dashed border-transparent hover:border-cyan-500/25 rounded"
                     >
                       The compliance office recommends proceeding immediately with Delaware good standing verifications while monitoring congressional progress on the CLARITY preemption sandbox. Action items under federal MSB requirements remain priority one.
                     </div>
@@ -663,7 +663,7 @@ export function BriefGenerator() {
                     <div 
                       contentEditable 
                       suppressContentEditableWarning
-                      className="p-1 hover:bg-cyan-500/10 focus:bg-cyan-500/5 focus:outline-none transition-colors border border-dashed border-transparent hover:border-cyan-500/25 rounded"
+                      className="p-1 hover:bg-cyan-500/10 focus:bg-cyan-500/5 focus-ring transition-colors border border-dashed border-transparent hover:border-cyan-500/25 rounded"
                     >
                       This brief outlines the license registration structures submitted under NMLS guidelines for the following states: {activeStates.map(s => s.name).join(', ') || 'None selected'}. Intercompany transfer pricing agreements and Delaware formations have been organized for state bank inspections.
                     </div>
@@ -713,7 +713,7 @@ export function BriefGenerator() {
                     <div 
                       contentEditable 
                       suppressContentEditableWarning
-                      className="p-1 hover:bg-cyan-500/10 focus:bg-cyan-500/5 focus:outline-none transition-colors border border-dashed border-transparent hover:border-cyan-500/25 rounded"
+                      className="p-1 hover:bg-cyan-500/10 focus:bg-cyan-500/5 focus-ring transition-colors border border-dashed border-transparent hover:border-cyan-500/25 rounded"
                     >
                       Under state-by-state guidelines, LCX USA commits to maintaining physical residency of the Chief Compliance Officer in the United States and posting the required surety bonds prior to initial customer transaction matching.
                     </div>
@@ -731,7 +731,7 @@ export function BriefGenerator() {
                     <div 
                       contentEditable 
                       suppressContentEditableWarning
-                      className="p-1 hover:bg-cyan-500/10 focus:bg-cyan-500/5 focus:outline-none transition-colors border border-dashed border-transparent hover:border-cyan-500/25 rounded"
+                      className="p-1 hover:bg-cyan-500/10 focus:bg-cyan-500/5 focus-ring transition-colors border border-dashed border-transparent hover:border-cyan-500/25 rounded"
                     >
                       This outline represents the legal classifications of digital assets listed for retail spot trading by LCX USA. We maintain strict segregation rules, utilizing qualified custodians and prohibiting internal trade counterparty operations to avoid securities exposures.
                     </div>
@@ -782,7 +782,7 @@ export function BriefGenerator() {
                     <div 
                       contentEditable 
                       suppressContentEditableWarning
-                      className="p-1 hover:bg-cyan-500/10 focus:bg-cyan-500/5 focus:outline-none transition-colors border border-dashed border-transparent hover:border-cyan-500/25 rounded"
+                      className="p-1 hover:bg-cyan-500/10 focus:bg-cyan-500/5 focus-ring transition-colors border border-dashed border-transparent hover:border-cyan-500/25 rounded"
                     >
                       To satisfy requirements under the SEC exchange guidelines, LCX USA integrates real-time block screening protocols and transaction logs reporting directly via Elliptic/Chainalysis API interfaces, mitigating wash-trading and market manipulations.
                     </div>

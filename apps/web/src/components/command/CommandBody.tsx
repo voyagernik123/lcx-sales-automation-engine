@@ -312,7 +312,7 @@ export default function CommandBody({ open, onClose }: { open: boolean; onClose:
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Search an object to act on, or a page to open…"
-            className="flex-1 bg-transparent text-sm text-navy placeholder-grey focus:outline-none font-mono"
+            className="flex-1 bg-transparent text-sm text-navy placeholder-grey focus-ring font-mono"
             autoFocus
           />
           <kbd className="text-[10px] font-mono text-grey bg-ice-soft dark:bg-navy-deep px-1.5 py-0.5 rounded border border-line">
