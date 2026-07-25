@@ -68,18 +68,55 @@ interface Props {
   title?: string;
 }
 
+/**
+ * WHY THERE IS NO `<g transform>` HERE.
+ *
+ * Clear space used to be implemented with `transform="translate(…) scale(…)"`. A
+ * viewBox does the same job declaratively — widen it by 1/3 of the mark's height per
+ * side and the renderer maps it once, with no transform node to carry:
+ *
+ *     padded  = 194 * 5/3 = 323.333   (clear space = 1/3 of height, each side)
+ *     offset  = (323.333 - 194) / 2 = 64.667
+ *     viewBox = "-64.667 -64.667 323.333 323.333"
+ *
+ * Same geometry, same brand rule, less work per paint. Kept because it is simpler.
+ *
+ * WHAT THIS CHANGE DOES **NOT** FIX, stated because I twice guessed wrong about it.
+ * `e2e/framebudget.spec.ts` fails at ~3.6ms per juiced element against a 0.5ms
+ * budget, in CI and locally, and it passed on the commit before the rebrand. I
+ * suspected this mark, because `TopNav` puts it on every page including the juiced
+ * table and `playJuice` forces a reflow per element. **That is refuted:** the mark was
+ * removed from TopNav and the full suite re-run in the regime where the failure
+ * actually reproduces — still red. Removing it changes nothing measurable
+ * (1.14/1.16/1.62ms with, 1.10/1.48/1.21ms without, isolated).
+ *
+ * Two earlier readings of mine were also wrong and are recorded so nobody repeats
+ * them: "proven not my change" (drawn from isolated runs swinging 78→123ms, which is
+ * noise, not evidence) and "the transform is the cause" (this paragraph's first
+ * draft). The regime matters — isolated runs sit near 1.2ms, the full parallel suite
+ * near 3.6ms, and only the second one is what CI measures.
+ *
+ * So the cause is OPEN. The budget is deliberately not loosened (§6 rule 10: never
+ * buy green by proving less), which means the playwright job stays red until someone
+ * finds it. The unit/build/perf job is green, so this is a known unknown about one
+ * animation's cost, not about correctness.
+ */
+const MARK_W = 194;
+const MARK_H = 193.999;
+/** Clear space = 1/3 of the mark's height per side (book, page 12). */
+const PADDED_W = (MARK_W * 5) / 3;
+const PAD = (PADDED_W - MARK_W) / 2;
+
 export function LcxMark({ size = 24, withClearSpace = false, className, title }: Props) {
-  // 824 = mark * 5/3 is the icon-tile derivation; the same ratio inverted gives
-  // the mark's share of a padded box.
-  const inner = withClearSpace ? size * (3 / 5) : size;
-  const offset = (size - inner) / 2;
-  const scale = inner / 194;
+  const viewBox = withClearSpace
+    ? `${-PAD} ${-PAD} ${PADDED_W} ${PADDED_W}`
+    : `0 0 ${MARK_W} ${MARK_H}`;
 
   return (
     <svg
       width={size}
       height={size}
-      viewBox={`0 0 ${size} ${size}`}
+      viewBox={viewBox}
       className={className}
       fill="currentColor"
       role={title ? 'img' : undefined}
@@ -88,11 +125,9 @@ export function LcxMark({ size = 24, withClearSpace = false, className, title }:
       focusable="false"
     >
       {title ? <title>{title}</title> : null}
-      <g transform={`translate(${offset} ${offset}) scale(${scale})`}>
-        {MARK_PATHS.map((d) => (
-          <path key={d} d={d} />
-        ))}
-      </g>
+      {MARK_PATHS.map((d) => (
+        <path key={d} d={d} />
+      ))}
     </svg>
   );
 }
