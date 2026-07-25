@@ -126,7 +126,7 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
   watchlist_remove: {
     id: 'watchlist_remove',
     label: 'Remove from watchlist',
-    description: 'Unpin the object.',
+    description: 'Take the object off your watchlist, so it stops appearing on your desk.',
     subjectTypes: ['*'],
     minRole: 'operator',
     paramsSchema: z.object({}),

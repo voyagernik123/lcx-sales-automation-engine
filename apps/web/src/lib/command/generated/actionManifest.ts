@@ -14,7 +14,7 @@
  * unknown keys (so some valid input looks invalid). invokeAction on the server is
  * the only authority. See apps/api/src/actions/grammar.ts.
  *
- * 22 actions · manifest 2f0cff7fa0d6954c
+ * 22 actions · manifest 808b1fb9c6f1a9f2
  */
 
 import type { ActionManifest } from '../types';
@@ -801,7 +801,7 @@ export const ACTION_MANIFEST: ActionManifest = {
     {
       "id": "watchlist_remove",
       "label": "Remove from watchlist",
-      "description": "Unpin the object.",
+      "description": "Take the object off your watchlist, so it stops appearing on your desk.",
       "subjectTypes": [
         "*"
       ],
@@ -846,7 +846,7 @@ export const ACTION_MANIFEST: ActionManifest = {
       "us_entity_licences"
     ]
   },
-  "manifestHash": "2f0cff7fa0d6954c"
+  "manifestHash": "808b1fb9c6f1a9f2"
 } as const satisfies ActionManifest;
 
-export const MANIFEST_HASH = "2f0cff7fa0d6954c";
+export const MANIFEST_HASH = "808b1fb9c6f1a9f2";

@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 
 /**
  * Take a seat without the API (e2e shared helper).
@@ -66,8 +66,24 @@ export async function takeSeat(page: Page): Promise<void> {
   }, SEAT);
 }
 
-/** The desk, seated. */
+/**
+ * The desk, seated and READY FOR KEYS.
+ *
+ * The wait is not padding. `page.goto` resolves on the document's load event, which is
+ * before React has mounted and therefore before any `useEffect` has attached a
+ * document keydown listener. A spec that presses a key immediately after `goto` has
+ * its keypress silently dropped — and then fails with "element not found", pointing at
+ * the feature instead of at the race. That cost me a debugging round on the Phase 6
+ * manual, whose `?` handler worked perfectly the moment a wait was added.
+ *
+ * Anchoring on the status bar rather than a fixed timeout: it is rendered by the shell
+ * on every route, it is the same element the smoke spec already treats as proof the
+ * shell is up, and it cannot pass early the way a sleep can.
+ */
 export async function goToDesk(page: Page, path = '/'): Promise<void> {
   await takeSeat(page);
   await page.goto(path);
+  // `.first()` because the disclaimer also appears in print headers on some
+  // routes, and a strict-mode violation here would look like a shell failure.
+  await expect(page.getByText(/NOT LEGAL ADVICE/i).first()).toBeVisible({ timeout: 15_000 });
 }

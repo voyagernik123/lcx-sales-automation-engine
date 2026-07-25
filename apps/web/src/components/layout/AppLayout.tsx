@@ -15,6 +15,8 @@ import { OfflineBanner } from './OfflineBanner';
 import { startConnectivityWatch } from '@/lib/online';
 import { useAccessStore } from '@/stores/useAccessStore';
 import { useGoGrammar } from '@/hooks/useGoGrammar';
+import { useManual } from '@/hooks/useManual';
+import { ManualHost } from '@/components/help/ManualHost';
 
 export function AppLayout() {
   const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed);
@@ -72,6 +74,11 @@ export function AppLayout() {
   // fail open on error, so a queued write would be judged against stale truth.
   useEffect(() => startConnectivityWatch(), []);
 
+  // LCX TERMINAL (Phase 6): `?` answers "what can I do here", generated from the
+  // action registry rather than written down, so it cannot describe a shortcut this
+  // build does not have.
+  const manual = useManual();
+
   // LCX TERMINAL (Phase 4): `g` then a digit reaches any workspace from the
   // keyboard. This is NOT a port of the native ⌘1-6 accelerators — those cannot be
   // ported, because Chrome reserves ⌘1-⌘9 for tab switching and never delivers
@@ -93,10 +100,14 @@ export function AppLayout() {
         onCommandPalette: () => setOpen(true),
         onBack: () => navigate(-1),
         onForward: () => navigate(1),
+        // The menu item is literally "LCX TERMINAL Manual" at ⌘/ and it used to open
+        // Settings. A menu that promises one thing and does another is worse than a
+        // missing menu item, because it teaches the operator the menu lies.
+        onManual: () => manual.setOpen(true),
       });
     })();
     return () => detach?.();
-  }, [navigate, setOpen]);
+  }, [navigate, setOpen, manual]);
 
   useEffect(() => {
     // App mounted cleanly — clear the chunk-reload guard so a later stale
@@ -139,6 +150,7 @@ export function AppLayout() {
       <ToastContainer />
       <InspectorHost />
       <CommandPalette open={open} onClose={() => setOpen(false)} />
+      <ManualHost open={manual.open} onClose={() => manual.setOpen(false)} />
     </div>
   );
 }

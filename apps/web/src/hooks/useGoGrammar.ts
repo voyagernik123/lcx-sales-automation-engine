@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { GO_IDLE, stepGoGrammar, type GoState } from '@/lib/navGrammar';
+import { recordUse } from '@/lib/nudge';
 
 /**
  * Install the `g` prefix grammar for the lifetime of the shell.
@@ -20,7 +21,12 @@ export function useGoGrammar(onNavigate: (path: string) => void): void {
       const step = stepGoGrammar(go.current, e, Date.now());
       go.current = step.state;
       if (step.claim) e.preventDefault();
-      if (step.go) navigate.current(step.go.path);
+      if (step.go) {
+        // Adoption. One keyboard use silences the nudge for that destination, two
+        // marks it adopted — see lib/nudge.
+        recordUse(step.go.id, 'keyboard');
+        navigate.current(step.go.path);
+      }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);

@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield, Activity, Share2, Siren, CalendarClock, GitPullRequestArrow, Command, Landmark, KeyRound, Rocket, Megaphone, Compass } from 'lucide-react';
+import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield, Activity, Share2, Siren, CalendarClock, GitPullRequestArrow, Command, Landmark, KeyRound, Rocket, Megaphone, Compass, Keyboard } from 'lucide-react';
 import { useUIStore, useAuditStore } from '@/stores';
 import { useAccessStore, useMyWorkspaces } from '@/stores/useAccessStore';
 import type { WorkspaceId } from '@lcx/shared';
 import { redFlags } from '@/data';
 import { SidebarFieldNotes } from './SidebarFieldNotes';
 import { clsx } from 'clsx';
+import { DESTINATIONS } from '@/lib/destinations';
+import { markShown, nudgeFor, recordUse } from '@/lib/nudge';
+import { toast } from '@/components/shared/Toast';
 
 interface NavItem {
   to: string;
@@ -132,12 +135,21 @@ const WS_SECTIONS: Record<WorkspaceId, NavSection[]> = {
   ],
 };
 
-/** Always-yours desk group — personal surfaces outside every compartment. */
+/**
+ * Always-yours desk group — personal surfaces outside every compartment.
+ *
+ * The keyboard card lives here rather than under a workspace because the grammar it
+ * prints is workspace-independent (the `g` digits cross every compartment), and
+ * because it is the one page an operator visits to take something AWAY from the
+ * screen. Governance would have been the other candidate; it is not a governed
+ * artefact, it is a personal one.
+ */
 const DESK_SECTION: NavSection = {
   title: 'My Desk',
   items: [
     { to: '/tasks', label: 'My Tasks', icon: ListChecks },
     { to: '/notes', label: 'Notes & Docs', icon: FileText },
+    { to: '/cheat-card', label: 'Keyboard Card', icon: Keyboard },
     { to: '/integrations', label: 'Integrations', icon: Radar },
     { to: '/settings', label: 'Settings', icon: Settings },
   ],
@@ -161,6 +173,25 @@ export function Sidebar() {
     return rf.remediations.some(r => !resolvedRemediations.includes(r.id));
   }).length;
 
+  /**
+   * Record a mouse-driven navigation and, rarely, teach the keyboard equivalent.
+   *
+   * `nudgeFor` returns null far more often than not — never on the first two clicks,
+   * never once the operator has used `g` even once, never within ten minutes of the
+   * last suggestion, and never again after three. That silence is the feature: the
+   * failure mode of a shortcut coach is not a wrong tip, it is being told the same
+   * thing eleven times until you stop reading anything the app says.
+   */
+  const teachFasterNavigation = (to: string) => {
+    const destination = DESTINATIONS.find((d) => d.path === to);
+    if (!destination) return; // not a workspace root — nothing faster to teach
+    recordUse(destination.id, 'pointer');
+    const hint = nudgeFor(destination.id);
+    if (!hint) return;
+    markShown(destination.id);
+    toast('info', `Faster: press ${hint.keys.join(' then ')} — ${hint.what}`, 7000);
+  };
+
   const renderItem = ({ to, label, icon: Icon }: NavItem) => {
     const isRedFlags = to === '/red-flags';
     return (
@@ -168,6 +199,11 @@ export function Sidebar() {
         key={to}
         to={to}
         end={to === '/'}
+        // The nudge engine's only pointer call site. Clicking a workspace in the
+        // sidebar IS the slow way; `g` then a digit is the fast one. Recorded after
+        // the navigation, never before — the operator's task always wins, and a
+        // suggestion that delays what they asked for is not a suggestion.
+        onClick={() => teachFasterNavigation(to)}
         className={({ isActive }) =>
           clsx(
             'relative flex items-center gap-2.5 rounded-md px-2 py-[5px] text-body',

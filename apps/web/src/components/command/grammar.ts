@@ -131,6 +131,18 @@ export function blockedExplanation(blocked: BlockedReason): string {
 
 export interface Prompt {
   name: string;
+  /**
+   * What the operator reads, derived from `name`.
+   *
+   * The command line used to render the raw JSON key, uppercased by CSS, so a
+   * governed write asked for `SUBJECTID` and `OVERRIDEGATE`. That is documentation
+   * dependence by definition — it requires knowing the API to answer the prompt — and
+   * the Phase 7 operability audit is what surfaced it across all 44 parameters at
+   * once. Derived rather than hand-authored per param so a new action cannot ship
+   * without one, and computed HERE rather than in the view so the command line and the
+   * `?` manual cannot describe the same field differently.
+   */
+  label: string;
   required: boolean;
   kind: ParamKind;
   /** Fixed choices, from the schema enum or a runtime value set. */
@@ -138,6 +150,28 @@ export interface Prompt {
   type: 'string' | 'number' | 'boolean' | 'record';
   maxLength?: number;
   minimum?: number;
+}
+
+/** Acronyms that must not be title-cased into "Id" or "Url". */
+const ACRONYMS = new Set(['id', 'url', 'sla', 'usd', 'kyc', 'aml', 'rfi', 'pir', 'api']);
+
+/**
+ * `overrideGate` → "Override gate", `subjectId` → "Subject ID", `due_at` → "Due at".
+ *
+ * Deliberately mechanical. A per-parameter label table in the registry would be the
+ * nicer copy and the worse system: it is another thing to forget, and the failure is
+ * silent — the prompt just falls back to a key the operator cannot interpret.
+ */
+export function humaniseParam(name: string): string {
+  const words = name
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .toLowerCase()
+    .split(/\s+/);
+  return words
+    .map((w, i) => (ACRONYMS.has(w) ? w.toUpperCase() : i === 0 ? w[0]!.toUpperCase() + w.slice(1) : w))
+    .join(' ');
 }
 
 function kindOf(action: ManifestAction, name: string, prop: ParamProperty): ParamKind {
@@ -176,6 +210,7 @@ export function promptsFor(action: ManifestAction, valueSets: Record<string, str
     const source = action.grammar.enumFrom?.[name];
     return {
       name,
+      label: humaniseParam(name),
       required: required.has(name),
       kind,
       // A runtime value set wins over the schema: the schema has no enum for

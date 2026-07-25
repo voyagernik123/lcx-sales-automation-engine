@@ -157,6 +157,16 @@ test.describe('frame budget with the juice on', () => {
     // were produced the environment did not render, and the numbers below would be
     // vacuously fine — which is exactly how a false green happens.
     test.skip(result.idleN === 0 || result.juicedN === 0, 'no frames produced — environment did not render');
+    // A control that is not quiet is not a control. On a machine already saturated by
+    // other work, the juiced run drops frames for reasons that have nothing to do with
+    // the juice, and this comparison measures the load on the box instead. That fired
+    // for real — three subagents were building and running Playwright concurrently.
+    // Widening the tolerance would have been the wrong repair: a threshold loose enough
+    // to survive an overloaded machine is loose enough to miss a real regression.
+    test.skip(
+      result.idleDropped > 2,
+      `idle control dropped ${result.idleDropped} frames — machine too loaded for this comparison to mean anything`,
+    );
 
     testInfo.annotations.push({
       type: 'measurement',

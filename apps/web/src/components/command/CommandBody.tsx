@@ -286,6 +286,14 @@ export default function CommandBody({ open, onClose }: { open: boolean; onClose:
   return (
     <div className="fixed inset-0 z-[200] flex items-start justify-center pt-[20vh]" onClick={onClose}>
       <div
+        // The command line is a modal overlay and had NEITHER a dialog role nor an
+        // accessible name, so a screen reader announced nothing at all when ⌘K opened
+        // it — the operator's most-used surface was invisible to assistive tech.
+        // Found while writing the Phase 6 manual spec, whose selector had nothing to
+        // match. `aria-modal` because everything behind it is inert while it is up.
+        role="dialog"
+        aria-modal="true"
+        aria-label="Command line"
         className="w-full max-w-lg bg-card border border-line rounded-xl shadow-2xl overflow-hidden"
         onClick={e => e.stopPropagation()}
       >

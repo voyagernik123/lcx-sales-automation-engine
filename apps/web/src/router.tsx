@@ -66,6 +66,7 @@ const Decisions = lazy(() => import('@/pages/Decisions').then((m) => ({ default:
 const CommandDeck = lazy(() => import('@/pages/CommandDeck').then((m) => ({ default: m.CommandDeck })));
 const CommandPartners = lazy(() => import('@/pages/CommandPartners').then((m) => ({ default: m.CommandPartners })));
 const CommandOps = lazy(() => import('@/pages/CommandOps').then((m) => ({ default: m.CommandOps })));
+const CheatCard = lazy(() => import('@/pages/CheatCard').then((m) => ({ default: m.CheatCard })));
 
 export const router = createBrowserRouter([
   { path: '/select', element: <SelectOperator /> },
@@ -132,6 +133,7 @@ export const router = createBrowserRouter([
       { path: 'command-deck', element: <CommandDeck /> },
       { path: 'command-partners', element: <CommandPartners /> },
       { path: 'command-ops', element: <CommandOps /> },
+      { path: 'cheat-card', element: <CheatCard /> },
     ],
   },
 ]);

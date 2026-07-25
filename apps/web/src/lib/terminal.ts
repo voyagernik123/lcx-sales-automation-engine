@@ -91,9 +91,7 @@ export async function secretDelete(key: string): Promise<void> {
  * where ⌘3 goes. `help-manual` stays local: it is a menu affordance with no
  * keyboard equivalent.
  */
-const MENU_EXTRAS: Record<string, string> = {
-  'help-manual': '/settings',
-};
+const MENU_EXTRAS: Record<string, string> = {};
 
 /**
  * Wire the native menu + updater to the app. Returns an unlisten function.
@@ -105,6 +103,7 @@ export async function attachTerminalBridge(handlers: {
   onCommandPalette: () => void;
   onBack: () => void;
   onForward: () => void;
+  onManual: () => void;
 }): Promise<() => void> {
   if (!isTerminal()) return () => {};
   try {
@@ -115,6 +114,7 @@ export async function attachTerminalBridge(handlers: {
       if (id === 'go-command') return handlers.onCommandPalette();
       if (id === 'go-back') return handlers.onBack();
       if (id === 'go-forward') return handlers.onForward();
+      if (id === 'help-manual') return handlers.onManual();
       if (id === 'view-reload') return window.location.reload();
       const to = MENU_ROUTES[id] ?? MENU_EXTRAS[id];
       if (to) handlers.onNavigate(to);

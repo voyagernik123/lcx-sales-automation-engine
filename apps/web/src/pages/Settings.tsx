@@ -3,6 +3,8 @@ import { useAuditStore, AuditLog } from '@/stores/useAuditStore';
 import { Sliders, Terminal, Trash2, Info } from 'lucide-react';
 import { Button, PageTitle, SectionLabel } from '@/components/ui';
 import { feedback, feelPrefs, setFeelPref } from '@/lib/feedback';
+import { adoption } from '@/lib/nudge';
+import { fastPathFor } from '@/lib/fastPath';
 import { ConfirmDialog } from '@/components/shared';
 import { clsx } from 'clsx';
 
@@ -84,6 +86,10 @@ export function Settings() {
 
           <div className="border-t border-line pt-4">
             <FeelSettings />
+          </div>
+
+          <div className="border-t border-line pt-4 empty:hidden">
+            <AdoptionSettings />
           </div>
         </div>
 
@@ -233,6 +239,71 @@ function FeelSettings() {
           Motion follows your macOS <span className="font-semibold">Reduce Motion</span> setting automatically; these two
           are separate because sound and touch are not motion.
         </p>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What you do the slow way (TERMINAL Phase 6).
+ *
+ * The honest version of a progress bar, and the counterpart to the nudge engine's
+ * silence. The nudge can only speak three times per capability and never within ten
+ * minutes of the last one — deliberately, because a shortcut coach that repeats itself
+ * gets switched off. That restraint leaves a gap: an operator who WANTS to get faster
+ * has nowhere to look. This is that place, and being pulled rather than pushed is the
+ * whole difference.
+ *
+ * It shows nothing until there is something to show. A table of zeroes on day one
+ * would be a tutorial with extra steps, and it would set the expectation that this
+ * screen is where learning happens — when the actual claim of this phase is that the
+ * app teaches you in the middle of your work.
+ */
+function AdoptionSettings() {
+  const rows = adoption().filter((r) => r.slow + r.fast > 0);
+  if (rows.length === 0) return null;
+
+  const behind = rows.filter((r) => !r.adopted && r.slow >= 2);
+
+  return (
+    <div className="space-y-4">
+      <SectionLabel className="block">Your keyboard</SectionLabel>
+      <div className="space-y-2 pt-1">
+        {behind.length === 0 ? (
+          <p className="text-xs leading-relaxed text-grey-dark">
+            Nothing here is being done the slow way. Everything you reach for, you reach for with the keyboard.
+          </p>
+        ) : (
+          <>
+            <p className="text-xs leading-relaxed text-grey-dark">
+              These you still reach for with the mouse. Not a scold — the fast key is just here if you want it.
+            </p>
+            <ul className="space-y-1.5">
+              {behind.map((r) => {
+                const fast = fastPathFor(r.capability);
+                return (
+                  <li key={r.capability} className="flex items-baseline gap-2 text-xs">
+                    <span className="flex shrink-0 gap-1">
+                      {(fast?.keys ?? ['—']).map((k) => (
+                        <kbd key={k} className="rounded border border-line px-1.5 font-mono text-micro leading-5 text-navy">
+                          {k}
+                        </kbd>
+                      ))}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-navy">{fast?.what ?? r.capability}</span>
+                    <span className="shrink-0 font-mono text-micro text-grey">{r.slow}× by mouse</span>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        )}
+        {rows.some((r) => r.adopted) && (
+          <p className="text-micro leading-relaxed text-grey">
+            Adopted: {rows.filter((r) => r.adopted).length} of {rows.length}. Counted per operator, so a shared Mac does
+            not mix two people's habits together.
+          </p>
+        )}
       </div>
     </div>
   );

@@ -325,7 +325,9 @@ function Field({
 }) {
   const label = (
     <span className="mb-0.5 block font-mono text-[10px] uppercase tracking-wider text-grey">
-      {prompt.name}
+      {/* The derived label, not `prompt.name`: the raw key rendered "SUBJECTID"
+          asked the operator to know the API to answer the prompt. */}
+      {prompt.label}
       {prompt.required && <span className="text-amber-500"> *</span>}
       {prompt.kind === 'override' && <span className="text-amber-500"> · accepts risk</span>}
       {prompt.kind === 'secret' && <span className="text-grey"> · never stored</span>}

@@ -301,6 +301,20 @@ mod tests {
         // Deleting twice is not an error, so a double sign-out can't throw.
         secret_delete(key.to_string()).expect("idempotent delete");
     }
+
+    /// PROBE (temporary): what does the Keychain do with an empty value? The web
+    /// side writes `secretSet(key, '')` on a failed sign-in, so this is a state
+    /// the app actually reaches.
+    #[test]
+    fn probe_empty_value() {
+        let key = "lcx_probe_empty_do_not_use";
+        secret_delete(key.to_string()).unwrap();
+        let set = secret_set(key.to_string(), String::new());
+        eprintln!("PROBE set('') -> {set:?}");
+        let got = secret_get(key.to_string());
+        eprintln!("PROBE get after set('') -> {got:?}");
+        secret_delete(key.to_string()).unwrap();
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

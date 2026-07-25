@@ -3,7 +3,8 @@
 
 **Date:** 2026-07-25 · **Prepared for:** Nik (LCX) · **Program:** the next phase of LCX ONE
 **Doctrine:** Bloomberg Terminal (command grammar, panels, hidden complexity) × MetaTrader (a downloaded professional instrument) × Steve Jobs / Dieter Rams (extreme backend complexity, minimalist surface) × game design (flow, mastery, feel) × LCX (governed, audited, regulated).
-**Execution contract:** solo, no subagents; maximum rigor/depth/precision; time is not a constraint. Build → full gate (tests **+ real emit builds**) → verify → one push per phase → phase-by-phase approval.
+**Execution contract:** maximum rigor/depth/precision; time is not a constraint. Build → full gate (lint, tests, **real emit builds**, perf budget, e2e) → verify on the running app → one push per phase.
+*Amended mid-programme, and recorded rather than quietly overwritten:* this began as "solo, no subagents; phase-by-phase approval". Both were lifted from Phase 2 onward — parallel workstreams for the wide sweeps (reachability, reduced motion, state grammar, the Jobs pass), and a continuous run through Phase 7 with reporting at phase boundaries instead of approval gates.
 
 ---
 
@@ -493,4 +494,90 @@ then had nowhere to point.
 
 **855 unit tests · 11 e2e.** Bundle 831/850KB.
 
-### Phases 6–7 — in progress, continuous run.
+### Phase 6 — the Teacher · **SHIPPED** (`1693d74`)
+
+Phase 6 is written against the satisficing research — assume nobody reads anything —
+and that assumption is what shaped every decision here rather than being quoted at the
+top and then ignored.
+
+**`?` ANSWERS "HERE", NOT "IN GENERAL".** A manual that lists every shortcut is a
+document, and documents do not get read. What gets read is four lines answering the
+question that made someone press `?`: what can I do to THIS object, with the authority
+I actually hold. So the first section is generated from the object in front of the
+operator and the global grammar comes last.
+
+Every line is derived. The verbs come from `verbsFor` — the same function the command
+line uses, so the manual cannot offer what the command line refuses or omit what it
+allows. Navigation comes from `DESTINATIONS`, which the native menu also reads. And
+what Escape will do is read from the **live dismiss stack**, so that section is not a
+claim about Escape but a report of it — the one section that would be impossible to
+keep truthful by hand, and the one that diagnoses a stuck overlay.
+
+Blocked verbs are listed WITH their reason, deliberately. Hiding a capability teaches
+the operator it does not exist; showing it refused teaches what to request. "Why can't
+I do this?" is the question a manual most needs to answer and the one a list of
+shortcuts never does.
+
+**THE MENU HAD BEEN LYING.** Its Help item is literally "LCX TERMINAL Manual" at ⌘/
+and it routed to `/settings`. A menu that promises one thing and does another is worse
+than a missing item, because it teaches the operator the menu cannot be trusted. It now
+opens the manual.
+
+**A DESIGN CLAIM I HAD TO WITHDRAW, and the better feature that replaced it.** I wrote
+that `?` deliberately does NOT go quiet inside a dialog — right, because an unfamiliar
+dialog with a gate in it is exactly where you need to ask what you can do. Testing it
+showed the claim was too broad: the command line **autofocuses its search field**, so
+with ⌘K open the operator is typing and `?` is correctly a character. Stealing `?` from
+a search box would make it impossible to type. So `⌘/` is bound as well — a chord is
+unambiguous mid-sentence — and the app now agrees with the accelerator its own menu had
+been advertising all along. Both are documented, with the reason there are two.
+
+**THE NUDGE ENGINE IS MOSTLY RULES ABOUT STAYING QUIET.** The plan calls it "what
+actually converts clickers into operators": when you do something the slow way, show
+the fast way at that moment, in place, and stop once adopted. The third clause is the
+whole design. A shortcut-suggesting feature is trivial to write and almost always ends
+up switched off, because the failure is never a wrong tip — it is that being told the
+same thing eleven times costs you the operator's willingness to read anything the app
+says again. So: never on the first two uses (exploring with the mouse is how anyone
+finds a feature); never once the fast path has been used even once (after that, the
+mouse is a choice, and correcting a choice is nagging); a ten-minute cooldown across
+ALL capabilities (five tasks in a row must not produce five lessons); silence forever
+after three ignored, and immediately on an explicit dismissal, because clicking × is a
+clearer answer than ignoring. Counters are per operator, since adoption belongs to a
+person and these are shared Macs.
+
+Its counterpart is a **pull** surface in Settings — "these you still reach for with the
+mouse" — because the restraint above leaves an operator who *wants* to get faster with
+nowhere to look. It renders nothing until there is something to show: a table of zeroes
+on day one would be a tutorial with extra steps.
+
+**A BUNDLE TRAP, MEASURED NOT GUESSED.** `fastPathFor` started inside `lib/manual.ts`
+— correct by cohesion, wrong by weight. `manual.ts` imports the grammar, the grammar
+imports the generated 22-action manifest, and the Sidebar imports the nudge engine, so
+one convenient import dragged the manifest out of its lazy chunk into the eager bundle:
+**840/850KB**, 9KB of 19KB headroom gone. Confirmed by grepping the manifest's string
+keys (which survive minification) in `index-*.js`, fixed by moving `fastPathFor` to a
+leaf module that imports one seven-row table and nothing else. Back to **834KB**, and
+the manifest verified back in its own chunk.
+
+**TWO DEFECTS FOUND WHILE WRITING THE TESTS, both in code I did not set out to touch.**
+The command line — the most-used surface in the app — had **neither a `role="dialog"`
+nor an accessible name**, so a screen reader announced nothing at all when ⌘K opened a
+modal over everything. Found only because my spec's selector had nothing to match. And
+`e2e/seat.ts` now waits for the shell before returning: `page.goto` resolves on the
+document's load event, which is before React has attached any keydown listener, so a
+spec that presses a key immediately has it silently dropped and then fails pointing at
+the feature instead of the race. That cost a debugging round.
+
+**A VERIFICATION METHOD I HAD TO STOP TRUSTING.** I first checked the Escape ladder by
+injecting `import('/src/lib/dismiss.ts')` in the browser and reading `dismissStack()` —
+and got an empty stack at every step, including for the command line, which Phase 4 had
+already proven registers. Vite's dev server serves modules at `?t=<timestamp>` URLs
+after HMR, so a fresh import gets a SECOND instance with its own state: the probe was
+reading a stack nothing writes to. Any assertion about module-level state through an
+injected import can silently be about a different copy of the module. The assertions
+moved to Playwright, which drives real keys and observes the DOM.
+
+**516 unit tests · 16 e2e.** Bundle 835/850KB.
+
+### Phase 7 — in progress, continuous run.
