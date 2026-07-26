@@ -121,16 +121,35 @@ describe('announcements', () => {
 });
 
 describe('feel preferences', () => {
-  it('both default to OFF', () => {
-    // This is a promise to the operator: an instrument that makes noise the first
-    // time it is opened, in an office, without asking, gets muted permanently.
-    expect(feelPrefs()).toEqual({ sound: false, haptics: false });
+  /**
+   * These two defaults were BOTH off until ALIVE Phase 0, on the reasoning quoted
+   * below. That reasoning turned out to be about sound specifically — it was
+   * applied to haptics by association, and the costs are not the same.
+   */
+  it('sound defaults OFF', () => {
+    // Unchanged promise to the operator: an instrument that makes noise the first
+    // time it is opened, in an office, without asking, gets muted permanently —
+    // and muting it takes the refusal cue with it. Opt-in.
+    expect(feelPrefs().sound).toBe(false);
+  });
+
+  it('haptics default ON', () => {
+    // A trackpad detent is felt only by the person who caused it. No volume, no
+    // one else in the room hears it, nothing to be embarrassed by — none of the
+    // costs the sound default is protecting against apply. It is also the single
+    // clearest answer to "why is this an app rather than a browser tab", and it
+    // was shipped switched off, so nobody had ever felt it.
+    expect(feelPrefs().haptics).toBe(true);
   });
 
   it('round-trips and persists', () => {
     setFeelPref('sound', true);
     expect(feelPrefs().sound).toBe(true);
-    expect(feelPrefs().haptics).toBe(false);
+    // Setting one must not disturb the other — they are separate keys, and a
+    // shared object write would silently reset haptics to the default here.
+    expect(feelPrefs().haptics).toBe(true);
+    setFeelPref('haptics', false);
+    expect(feelPrefs()).toEqual({ sound: true, haptics: false });
   });
 
   it('plays no sound while sound is off', () => {

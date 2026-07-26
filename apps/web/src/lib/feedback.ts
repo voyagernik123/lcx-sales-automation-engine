@@ -1,5 +1,11 @@
 import { isTerminal } from './container';
-import { commit as juiceCommit, flash as juiceFlash, refuse as juiceRefuse } from './juice';
+import {
+  announce,
+  commit as juiceCommit,
+  flash as juiceFlash,
+  playJuice,
+  refuse as juiceRefuse,
+} from './juice';
 import { storage } from './persistence';
 
 /**
@@ -33,10 +39,31 @@ export interface FeelPrefs {
   haptics: boolean;
 }
 
+/**
+ * DEFAULTS, REVISITED (ALIVE Phase 0).
+ *
+ * The docstring above says both default off "until you approve the taste". The
+ * taste is approved, and the two halves turn out to deserve different answers:
+ *
+ *   haptics → ON. A trackpad detent is felt only by the person who caused it. It
+ *     cannot embarrass anyone in an open-plan office, it has no volume, and it is
+ *     the single clearest answer to "why is this an app and not a browser tab".
+ *     Off-by-default was protecting against a cost this one does not have.
+ *
+ *   sound → still OFF. Every argument in the docstring above holds: an instrument
+ *     that makes noise the first time you open it, in an office, without asking,
+ *     is one you disable permanently within a minute — and disabling it takes the
+ *     refusal cue with it. Opt-in.
+ *
+ * Terminal-only either way: `tap()` returns immediately in a browser.
+ */
+const HAPTICS_DEFAULT = true;
+const SOUND_DEFAULT = false;
+
 export function feelPrefs(): FeelPrefs {
   return {
-    sound: storage.get(SOUND_KEY, false),
-    haptics: storage.get(HAPTICS_KEY, false),
+    sound: storage.get(SOUND_KEY, SOUND_DEFAULT),
+    haptics: storage.get(HAPTICS_KEY, HAPTICS_DEFAULT),
   };
 }
 
@@ -134,6 +161,45 @@ export function tap(pattern: Pattern = 'alignment'): void {
 
 /* ── The combined events ─────────────────────────────────────────────────── */
 
+/* ── One event, one reaction ──────────────────────────────────────────────────
+ *
+ * ALIVE Phase 0 makes `apiClient` fire these centrally for every governed write,
+ * which means a surface that ALSO fires them by hand — `VerbPanel` does, and it
+ * is right to, because it holds the classified remedy prose — would produce two
+ * reactions for one action. A double shake reads as a bug, and a double haptic
+ * reads as a broken trackpad.
+ *
+ * Rather than coordinate (a flag threaded between the choke point and every
+ * caller, which is the class of thing that rots), collapse it here: the same
+ * event on the same element inside one window is one event. This makes the
+ * invariant true by construction and it protects every future wiring too, not
+ * just today's two.
+ *
+ * FIRST CALLER WINS, deliberately. The choke point fires from inside `request()`,
+ * so it lands before any `await` in the caller resumes — and for commits it is
+ * strictly the better reporter (it fires for all 22 actions, not just the ones a
+ * surface remembered). For refusals the caller usually knows more, which is why
+ * the choke point uses `refuseQuiet` and leaves the ANNOUNCEMENT to whoever holds
+ * the remedy: the dedupe suppresses a second shake without suppressing the words.
+ */
+const DEDUPE_MS = 180;
+let lastEvent: { kind: string; el: Element | null; at: number } | null = null;
+
+function isEcho(kind: string, el: Element | null | undefined): boolean {
+  const now = typeof performance !== 'undefined' ? performance.now() : 0;
+  const target = el ?? null;
+  if (lastEvent && lastEvent.kind === kind && lastEvent.el === target && now - lastEvent.at < DEDUPE_MS) {
+    return true;
+  }
+  lastEvent = { kind, el: target, at: now };
+  return false;
+}
+
+/** Test-only: forget the dedupe window. */
+export function _resetDedupe(): void {
+  lastEvent = null;
+}
+
 export const feedback = {
   /**
    * A governed write landed. Snap the row, rising cue, one crisp detent.
@@ -142,6 +208,7 @@ export const feedback = {
    * that reads as a value stepping rather than a thing being done.
    */
   commit(el?: Element | null): void {
+    if (isEcho('commit', el)) return;
     juiceCommit(el);
     playCue('accepted');
     tap('alignment');
@@ -155,7 +222,33 @@ export const feedback = {
    * cannot see the shake.
    */
   refuse(el: Element | null | undefined, reason: string): void {
+    if (isEcho('refuse', el)) {
+      // The shake already happened — but if the choke point fired it, the reason
+      // did NOT, because it had only the server's message. Say the good prose.
+      announce(reason, 'assertive');
+      return;
+    }
     juiceRefuse(el, reason);
+    playCue('refused');
+  },
+
+  /**
+   * A gate refused, and the caller does not know why in operator language.
+   *
+   * The choke point in `apiClient` is in this position: it has an `ApiError` code
+   * and the server's message, but the remedy map that turns `SAT_REQUIRED` into
+   * "this decision needs a premortem on file first" lives in
+   * `components/command/invoke.ts` — which imports apiClient, so apiClient cannot
+   * import it back.
+   *
+   * Rather than announce worse prose, announce nothing and let the surface that
+   * holds the remedy speak. The operator still gets the shake and the falling cue
+   * immediately, everywhere, for all 22 actions. Moving the remedy map into a
+   * dependency-free module so this can announce properly is Phase 3 work.
+   */
+  refuseQuiet(el: Element | null | undefined): void {
+    if (isEcho('refuse', el)) return;
+    playJuice(el, 'shake');
     playCue('refused');
   },
 

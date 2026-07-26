@@ -18,6 +18,9 @@ import {
 import { noteRead } from './perf';
 import { invalidateAfterAction } from './readInvalidate';
 import { recordNetworkResult } from './online';
+// `lastActivated` imports nothing at all, so it is safe and free to take
+// statically. `feedback` is deliberately NOT imported here — see `react()`.
+import { lastActivated } from './lastActivated';
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
 // DEV-only: gating on import.meta.env.DEV lets Vite dead-code-strip the key
@@ -504,10 +507,33 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
         noteServed(canonicalPath(path), { storedAt: Date.now(), fromCache: false });
       }
       const action = governedActionId(path, method);
-      if (action) invalidateAfterAction(action);
+      if (action) {
+        invalidateAfterAction(action);
+        // ALIVE Phase 0. The same argument the comment above makes for cache
+        // invalidation applies verbatim to the reaction: governed actions are
+        // invoked from at least five modules, and the feel layer was wired to
+        // exactly ONE of them — so 21 of the 22 registry actions committed in
+        // total silence. Hooking the chokepoint is what makes "every governed
+        // write reacts" true by construction instead of true by remembering.
+        //
+        // Resolves a tick after the caller's await, so where a surface ALSO
+        // reports by hand (VerbPanel does, and should — it holds the remedy
+        // prose) the hand-written call lands first and this one is collapsed by
+        // the dedupe in `feedback`. Either way: one write, one reaction.
+        react('commit');
+      }
       return out;
     } catch (err) {
       if (isNetworkError(err)) noteTransport(false);
+      // A refused governed write is the interaction most worth reacting to and
+      // the one that had the least: a red toast, if the surface remembered one.
+      // `refuseQuiet` shakes and plays the falling cue but says nothing — the
+      // remedy prose lives in `components/command/invoke.ts`, which imports this
+      // module, so the announcement has to come from the caller that holds it.
+      // The dedupe lets that caller's words through while suppressing its shake.
+      if (!isNetworkError(err) && governedActionId(path, method)) {
+        react('refuse');
+      }
       throw err;
     }
   }
@@ -561,6 +587,43 @@ function governedActionId(path: string, method: string): string | null {
   if (method === 'GET') return null;
   const m = /^\/v1\/actions\/([^/?]+)\/invoke\b/.exec(path);
   return m ? m[1] : null;
+}
+
+/**
+ * Fire the reaction for a governed write, without dragging the feel layer into
+ * the initial bundle.
+ *
+ * WHY THIS IS A DYNAMIC IMPORT, measured rather than guessed. Importing
+ * `./feedback` statically here took the initial bundle from **849KB to 853KB**
+ * against an 850KB budget, and dropped the lazy-chunk count from 109 to 107 —
+ * because every module in the app imports `apiClient`, so `feedback` + `juice`
+ * were hoisted out of the two lazy pages that used to own them and into the
+ * critical path. That is the whole §2 constraint of the ALIVE plan arriving on
+ * the first day of it.
+ *
+ * Loading it on demand keeps ~4KB out of first paint and is genuinely better than
+ * raising the ceiling: the feel layer is not needed to render anything, only to
+ * react to a write that has not happened yet. `main.tsx` warms the chunk after
+ * mount so the first governed write of a session does not pay a fetch.
+ *
+ * The element is captured SYNCHRONOUSLY. By the time the module resolves the
+ * operator may have clicked something else, and reacting on whatever they touched
+ * most recently would put a commit snap on an unrelated row.
+ *
+ * Failure is swallowed on purpose. A reaction is never worth failing a governed
+ * write over, and there is nothing the operator could do about a chunk that would
+ * not load.
+ */
+function react(kind: 'commit' | 'refuse'): void {
+  const el = lastActivated();
+  void import('./feedback')
+    .then((m) => {
+      if (kind === 'commit') m.feedback.commit(el);
+      else m.feedback.refuseQuiet(el);
+    })
+    .catch(() => {
+      /* no feel layer available; the write still landed */
+    });
 }
 
 /**
