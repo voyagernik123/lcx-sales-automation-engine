@@ -55,7 +55,11 @@ export const env = {
   coingeckoKeyType: (process.env.COINGECKO_KEY_TYPE === 'pro' ? 'pro' : 'demo') as 'demo' | 'pro',
   // AI (all LLM features fall back to deterministic when this is empty)
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? '',
-  anthropicModel: process.env.ANTHROPIC_MODEL ?? 'claude-sonnet-5',
+  // Opus 5 is the default because this is the quality path — the whole reason
+  // to set an Anthropic key. Override with ANTHROPIC_MODEL to trade quality for
+  // cost (`claude-sonnet-5`) or latency (`claude-haiku-4-5`); `ai/llm.ts`
+  // adapts the request body per model, so any of them is a one-env-var change.
+  anthropicModel: process.env.ANTHROPIC_MODEL ?? 'claude-opus-5',
   // Fallback LLM provider: OpenRouter (OpenAI-compatible). Used only when no
   // Anthropic key is set — lets the platform run its AI layer on a free
   // open-source model (default: NVIDIA Nemotron 3 Ultra 550B, $0/token).
