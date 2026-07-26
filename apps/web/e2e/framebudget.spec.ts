@@ -33,12 +33,31 @@ const PER_ELEMENT_BUDGET_MS = 0.5;
 /** A realistic worst case: a filtered table where every visible row changes state. */
 const BATCH = 50;
 
+/* HOW THIS SPEC SPENT FIVE CI RUNS FAILING, AND WHAT IT WAS ACTUALLY MEASURING.
+ *
+ * A `beforeEach` used to sit here applying `Emulation.setCPUThrottlingRate`
+ * at **rate 30** to every test in the describe block, commented "TEMP PROBE:
+ * emulate a slow/contended CI runner". I added it while investigating why this
+ * spec was red, committed it in b6439be with the LCXOS rebrand, and then spent
+ * five runs reading its output as evidence about the app.
+ *
+ * Everything the failure "showed" was the probe:
+ *   per-element 3.6ms vs a 0.5ms budget   → 3.6 / 30 ≈ 0.12ms, well inside
+ *   idleP50 33.3ms, 31 of 37 frames lost  → a 30x-throttled tab at ~30fps,
+ *                                           not a page that drops frames
+ *
+ * The second test in this block is guarded by `test.skip(idleDropped > 2, …)`
+ * precisely so a loaded machine reports inconclusive instead of failing. The
+ * probe drove the idle control so far past that line that the guard fired every
+ * run — so the throttle silently disabled the very comparison it was added to
+ * study, while the first test failed on the throttled number.
+ *
+ * The lesson is the one this file's own docstring already states about the P2
+ * 7700ms artifact, learned a second time: an instrument left in the measurement
+ * becomes the measurement. A throttle belongs in a local run, never in a commit.
+ * `e2eHygiene.test.ts` now fails if CPU throttling reappears in any spec.
+ */
 test.describe('frame budget with the juice on', () => {
-  // TEMP PROBE: emulate a slow/contended CI runner in-browser only.
-  test.beforeEach(async ({ page }) => {
-    const client = await page.context().newCDPSession(page);
-    await client.send('Emulation.setCPUThrottlingRate', { rate: 30 });
-  });
   test('juicing a table-sized batch stays well inside one frame', async ({ page }, testInfo) => {
     await goToDesk(page, '/settings');
     // The Feel section is rendered by the Settings page, which confirms the juice
