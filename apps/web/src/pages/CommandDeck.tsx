@@ -1,3 +1,4 @@
+import { AiProse } from '@/components/ai/AiProse';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Command, RefreshCw, AlertTriangle, Rocket, Layers, Users, ShieldAlert,
@@ -550,7 +551,7 @@ function DecisionRow({ d, onChange }: { d: CommandDecision; onChange: () => void
         </div>
       )}
       {memo && d.status !== 'decided' && (
-        <p className="mt-1.5 whitespace-pre-wrap rounded border border-cyan-500/30 p-2 text-micro text-grey-dark">{memo}</p>
+        <div className="mt-1.5 rounded border border-cyan-500/30 p-2"><AiProse text={memo} className="text-micro" /></div>
       )}
       {critical && tradecraft && d.status !== 'decided' && (
         <div className="mt-1.5"><AnalyticReviews subjectType="command_decision" subjectId={d.id} /></div>
@@ -639,7 +640,7 @@ function AskProgramPanel() {
       {busy && <p className="mt-2 text-micro text-grey">Reading the program graph…</p>}
       {res && (
         <div className="mt-2 rounded border border-line/70 p-2.5">
-          <p className="whitespace-pre-wrap text-label text-navy">{res.answer}</p>
+          <AiProse text={res.answer} />
           {res.citations && res.citations.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {res.citations.map((s) => (

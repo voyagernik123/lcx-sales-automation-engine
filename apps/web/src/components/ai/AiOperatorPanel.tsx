@@ -1,3 +1,4 @@
+import { AiProse } from '@/components/ai/AiProse';
 import { useState } from 'react';
 import { Sparkles, Send, ShieldCheck, Check, ChevronDown, Bot } from 'lucide-react';
 import {
@@ -100,7 +101,7 @@ export function AiOperatorPanel({ projectId }: { projectId: string }) {
           {answer && (
             <div className="rounded border border-line/70 p-2.5">
               {answer.answer ? (
-                <p className="whitespace-pre-wrap text-label text-navy">{answer.answer}</p>
+                <AiProse text={answer.answer} />
               ) : (
                 <p className="text-label text-grey">{answer.usedLlm === false ? 'AI narrative unavailable (no key) — the graded evidence behind this project:' : 'No answer.'}</p>
               )}
@@ -148,7 +149,7 @@ export function AiOperatorPanel({ projectId }: { projectId: string }) {
                 <span className="text-micro font-bold uppercase tracking-wider text-grey">Outreach draft</span>
                 <Button size="xs" variant="secondary" className="ml-auto" onClick={() => { void navigator.clipboard?.writeText(draft); toast('success', 'Copied'); }}>Copy</Button>
               </div>
-              <p className="whitespace-pre-wrap text-label text-navy">{draft}</p>
+              <AiProse text={draft} />
             </div>
           )}
         </div>

@@ -1,3 +1,4 @@
+import { AiProse } from '@/components/ai/AiProse';
 import { useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui';
@@ -38,7 +39,7 @@ export function AskDistribution() {
       </div>
       {ans && (
         <div className="mt-2 rounded border border-line bg-page p-2.5">
-          <p className="whitespace-pre-wrap text-label text-navy">{ans.answer}</p>
+          <AiProse text={ans.answer} />
           {ans.citations && ans.citations.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {ans.citations.map((c) => (

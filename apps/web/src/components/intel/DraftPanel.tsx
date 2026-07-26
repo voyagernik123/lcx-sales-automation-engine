@@ -1,3 +1,4 @@
+import { AiProse } from '@/components/ai/AiProse';
 import { useEffect, useState } from 'react';
 import { Sparkles, Copy, Check, Save, X } from 'lucide-react';
 import { fetchPlay, savePlay, type PlayDraft } from '@/lib/api/intel';
@@ -109,7 +110,7 @@ export function DraftPanel({ subjectId, onClose }: { subjectId: string; onClose:
                 <div className="text-micro font-bold uppercase tracking-wider text-grey">Subject</div>
                 <div className="mb-2 text-label font-semibold text-navy">{play.draft.subject}</div>
                 <div className="text-micro font-bold uppercase tracking-wider text-grey">Body</div>
-                <pre className="mt-1 whitespace-pre-wrap font-sans text-label leading-relaxed text-navy">{play.draft.body}</pre>
+                <div className="mt-1"><AiProse text={play.draft.body} /></div>
               </div>
             </div>
 

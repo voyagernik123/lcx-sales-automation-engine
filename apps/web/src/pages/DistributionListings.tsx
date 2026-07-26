@@ -1,3 +1,4 @@
+import { AiProse } from '@/components/ai/AiProse';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ListChecks } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -199,7 +200,7 @@ export function DistributionListings() {
           {packet && (
             <div className="mt-3 rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3">
               <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-wider text-grey">Submission packet — {surfaces.find((s) => s.id === packet.id)?.name}</div>
-              <pre className="whitespace-pre-wrap font-sans text-label text-navy">{packet.text}</pre>
+              <AiProse text={packet.text} />
               <p className="mt-1 text-[10px] text-grey">{packet.usedLlm ? 'AI-drafted — review, then submit. AI never submits.' : 'Deterministic packet — set an AI key for a tailored draft.'}</p>
             </div>
           )}
