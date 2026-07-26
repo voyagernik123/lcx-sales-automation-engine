@@ -1,6 +1,7 @@
+import { AiProse } from './AiProse';
 import { useState } from 'react';
 import { personalizeDraftAi, type PersonalizeFacts, type PersonalizeResult } from '@/lib/api/bd';
-import { CopyButton, LlmBadge, RunButton, inputClass, labelClass, panelClass, resultBoxClass } from './common';
+import { CopyButton, LlmBadge, RunButton, inputClass, labelClass, panelClass, aiBoxClass } from './common';
 
 export function PersonalizerPanel() {
   const [baseDraft, setBaseDraft] = useState('');
@@ -119,7 +120,9 @@ export function PersonalizerPanel() {
             )}
             <CopyButton text={result.draft} label="Copy draft" />
           </div>
-          <p className={resultBoxClass}>{result.draft}</p>
+          <div className={aiBoxClass}>
+            <AiProse text={result.draft} />
+          </div>
         </div>
       )}
     </div>

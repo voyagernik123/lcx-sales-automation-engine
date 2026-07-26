@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { CalendarClock, Download, RefreshCw, TrendingUp, TrendingDown, Minus, AlertTriangle, ListChecks, Activity, Bot } from 'lucide-react';
 import { fetchWbr, regenerateWbr, type WbrReport, type WbrMetric, type WbrSparkline } from '@/lib/api/wbr';
 import { wbrNarrative } from '@/lib/api/aiOperator';
+import { AiProse } from '@/components/ai/AiProse';
 import { EmptyState, PageSkeleton, toast } from '@/components/shared';
 import { PageTitle, Button } from '@/components/ui';
 import { PrintStyles } from '@/components/report/PrintStyles';
@@ -101,7 +102,7 @@ export function Wbr() {
               <span className="text-micro font-bold uppercase tracking-wider text-grey">Week of {report.weekStart}</span>
               {report.live && <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-micro font-bold text-amber-600 dark:text-amber-400">LIVE · not yet snapshotted</span>}
             </div>
-            <p className="mt-1.5 text-body text-navy">{report.narrative}</p>
+            <AiProse className="mt-1.5" text={report.narrative} />
           </div>
 
           {/* AI executive summary (Phase 5.4) — grounded in the report above; falls back to the deterministic line. */}
@@ -113,10 +114,15 @@ export function Wbr() {
               </Button>
             </div>
             {aiNarr ? (
-              <p className="text-body text-navy">
-                {aiNarr.text}
-                {!aiNarr.usedLlm && <span className="ml-1 text-micro text-grey">(deterministic — no AI key set)</span>}
-              </p>
+              <>
+                {/* The narrative goes in a board report, so it has to read as
+                    prose. It was a bare <p>, which showed the model's own
+                    `**bold**` to whoever the WBR was printed for. */}
+                <AiProse text={aiNarr.text} />
+                {!aiNarr.usedLlm && (
+                  <p className="mt-1 text-micro text-grey">(deterministic — no AI key set)</p>
+                )}
+              </>
             ) : (
               <p className="text-label text-grey">Generate an AI executive paragraph grounded strictly in this week's figures.</p>
             )}

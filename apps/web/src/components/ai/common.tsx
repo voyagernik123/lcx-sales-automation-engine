@@ -62,5 +62,21 @@ export const panelClass = 'rounded-lg border border-line bg-card p-4';
 export const inputClass =
   'w-full rounded border border-line bg-transparent p-2 text-xs focus-ring';
 export const labelClass = 'text-micro font-bold uppercase tracking-wider text-grey';
-export const resultBoxClass =
-  'whitespace-pre-wrap rounded border border-line bg-ice-soft/40 dark:bg-ice-soft/5 p-2.5 text-label leading-relaxed';
+/**
+ * The frame around a model answer. Renamed from `resultBoxClass`, and the
+ * `whitespace-pre-wrap` it used to carry is gone on purpose.
+ *
+ * That class was how four AI surfaces — objection rebuttals, personalized
+ * drafts, reply subjects and reply bodies — kept showing raw markdown to the
+ * operator (`**bold**`, backticks, `[[s_id]]`) long after `AiProse` existed to
+ * render it. The ratchet in `aiProse.test.tsx` did not catch them because it
+ * looked for `whitespace-pre-wrap` and an answer-shaped value ON THE SAME LINE,
+ * and here the class was factored into this shared constant one file away while
+ * the interpolation read `{result.draft}` — which its `{res\.` pattern misses.
+ *
+ * So the box no longer pre-wraps anything: put an `<AiProse>` inside it and the
+ * line breaks come from real paragraphs and lists. Keeping the old name with
+ * the old behaviour available is what let this persist, so the name is retired.
+ */
+export const aiBoxClass =
+  'rounded border border-line bg-ice-soft/40 dark:bg-ice-soft/5 p-2.5 text-label leading-relaxed';

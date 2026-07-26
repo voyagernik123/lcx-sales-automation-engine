@@ -1,6 +1,7 @@
+import { AiProse } from './AiProse';
 import { useState } from 'react';
 import { fetchObjectionResponse, type ObjectionResult } from '@/lib/api/bd';
-import { CopyButton, LlmBadge, RunButton, inputClass, panelClass, resultBoxClass } from './common';
+import { CopyButton, LlmBadge, RunButton, inputClass, panelClass, aiBoxClass } from './common';
 
 export function ObjectionPanel() {
   const [text, setText] = useState('');
@@ -46,7 +47,9 @@ export function ObjectionPanel() {
             {result.usedLlm && <LlmBadge />}
             <CopyButton text={result.response} label="Copy reply" />
           </div>
-          <p className={resultBoxClass}>{result.response}</p>
+          <div className={aiBoxClass}>
+            <AiProse text={result.response} />
+          </div>
         </div>
       )}
     </div>

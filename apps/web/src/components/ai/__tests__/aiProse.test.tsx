@@ -121,6 +121,80 @@ describe('model output is data, never markup — the security property', () => {
     ).toEqual([]);
   });
 
+  /**
+   * THE BLIND SPOT THAT HID FIVE MORE SURFACES.
+   *
+   * The sweep below looks for `whitespace-pre-wrap` and an answer-shaped value
+   * ON THE SAME LINE. Five surfaces evaded it for both possible reasons at once:
+   * `components/ai/common.tsx` factored the class into a shared `resultBoxClass`
+   * constant, so the pre-wrap and the interpolation were in different files; and
+   * the interpolations read `{result.response}` / `{result.draft}` / `{result.body}`,
+   * which its `{res\.` alternative does not match.
+   *
+   * Objection rebuttals, personalized drafts, reply subjects, reply bodies and the
+   * WBR executive summary were therefore still showing raw `**bold**` — the WBR
+   * one to whoever the board report was printed for.
+   *
+   * A name-based sweep could not see them, so this check is not name-based: the
+   * pre-wrapping box class is GONE, and its absence is what is asserted. There is
+   * no styling hook left that renders model text pre-wrapped.
+   */
+  it('the pre-wrapping answer box no longer exists anywhere', () => {
+    const hits: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const full = resolve(dir, e.name);
+        if (e.isDirectory()) {
+          if (e.name !== '__tests__') walk(full);
+        } else if (/\.tsx?$/.test(e.name)) {
+          const code = readFileSync(full, 'utf8')
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/^\s*\/\/.*$/gm, '');
+          if (code.includes('resultBoxClass')) hits.push(full.slice(REPO.length + 1));
+        }
+      }
+    };
+    walk(resolve(REPO, 'apps/web/src'));
+    expect(
+      hits,
+      `resultBoxClass pre-wrapped model markdown and hid it from the sweep below. ` +
+        `Use aiBoxClass with an <AiProse> inside: ${hits.join(', ')}`,
+    ).toEqual([]);
+  });
+
+  it('every surface that renders a model answer does it through AiProse', () => {
+    // Field names the API actually returns for generated prose. Rendering one
+    // directly into JSX is the defect; passing it to AiProse is the fix, so a
+    // bare `{x.body}` outside an AiProse prop is what this looks for.
+    const FIELDS = ['response', 'draft', 'body', 'narrative', 'packet', 'memo', 'answer'];
+    const offenders: string[] = [];
+    const walk = (dir: string) => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        const full = resolve(dir, e.name);
+        if (e.isDirectory()) {
+          if (e.name !== '__tests__') walk(full);
+        } else if (/\.tsx$/.test(e.name)) {
+          const src = readFileSync(full, 'utf8');
+          if (!/usedLlm|AiProse|aiBoxClass/.test(src)) continue; // not an AI surface
+          for (const line of src.split('\n')) {
+            if (/^\s*(\/\/|\*|\/\*)/.test(line)) continue;
+            for (const f of FIELDS) {
+              // `<p ...>{result.body}</p>` — a model field as an element's only
+              // child. `text={result.body}` (an AiProse prop) is fine.
+              const bare = new RegExp(`<(p|span|div)[^>]*>\\s*\\{\\s*\\w+\\.${f}\\s*\\}`);
+              if (bare.test(line)) offenders.push(`${full.slice(REPO.length + 1)}: ${line.trim().slice(0, 64)}`);
+            }
+          }
+        }
+      }
+    };
+    walk(resolve(REPO, 'apps/web/src'));
+    expect(
+      offenders,
+      `render model prose with <AiProse text={…} /> so the operator reads prose, not markdown: ${offenders.join(' | ')}`,
+    ).toEqual([]);
+  });
+
   it('no AI surface still renders an answer as raw pre-wrapped text', () => {
     // The eight sites that were swapped. A ninth appearing is the regression.
     const suspicious: string[] = [];

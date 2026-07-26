@@ -1,8 +1,9 @@
+import { AiProse } from './AiProse';
 import { useEffect, useState } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import { fetchBdPipeline, generateDraft } from '@/lib/api/bd';
 import type { BdFilters, BdLead, DraftOutput } from '@/types/bd';
-import { CopyButton, RunButton, inputClass, labelClass, panelClass, resultBoxClass } from './common';
+import { CopyButton, RunButton, inputClass, labelClass, panelClass, aiBoxClass } from './common';
 
 const PROJECT_FILTERS: BdFilters = {
   market: null,
@@ -140,14 +141,18 @@ export function ReplyDrafterPanel() {
               <span className={labelClass}>Subject</span>
               <CopyButton text={result.subject} label="Copy subject" />
             </div>
-            <p className={resultBoxClass}>{result.subject}</p>
+            <div className={aiBoxClass}>
+              <AiProse text={result.subject} />
+            </div>
           </div>
           <div>
             <div className="mb-1 flex items-center justify-between">
               <span className={labelClass}>Body</span>
               <CopyButton text={result.body} label="Copy body" />
             </div>
-            <p className={resultBoxClass}>{result.body}</p>
+            <div className={aiBoxClass}>
+              <AiProse text={result.body} />
+            </div>
           </div>
           {result.claimsUsed.length > 0 && (
             <p className="text-xs text-grey">Claims used: {result.claimsUsed.join(', ')}</p>
