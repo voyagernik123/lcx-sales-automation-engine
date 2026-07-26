@@ -21,6 +21,7 @@ import { deriveMarketTag, CHANNEL_LABELS, TOUCH_LABELS, STAGE_COLORS, STAGE_LABE
 import type { LeadDetail, LeadSignal, LeadPerson, DraftOutput, SavedDraft, Channel, SequenceRecord, MessageRecord } from '@/types/bd';
 import { SEQUENCE_STATUS_COLORS, MESSAGE_STATUS_COLORS, LINKEDIN_STATUS_COLORS } from '@/types/bd';
 import type { ReasonTrail, ScoreBand } from '@lcx/shared';
+import { parseLink } from '@/lib/url';
 
 
 const TIMELINE_KIND_STYLE: Record<string, string> = {
@@ -365,6 +366,10 @@ export function LeadDetail() {
     );
   }
 
+  // Parsed once, defensively: the website column is ingested and unvalidated, so
+  // this can legitimately be null for a lead that still has a website string.
+  const websiteLink = parseLink(lead.website);
+
   const outreachStatus = (lead.raw._outreach as { approved?: boolean; suppressed?: boolean } | undefined) ?? {};
   const isApproved = outreachStatus.approved === true;
   const isSuppressed = outreachStatus.suppressed === true;
@@ -584,7 +589,7 @@ export function LeadDetail() {
           <Section icon={<Globe size={14} />} title="Identity">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-label">
               <Field label="Website" value={lead.website}>
-                {lead.website && <a href={lead.website} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-700 dark:text-cyan-400 hover:underline"><ExternalLink size={10} /> {new URL(lead.website).hostname}</a>}
+                {websiteLink ? <a href={websiteLink.href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-700 dark:text-cyan-400 hover:underline"><ExternalLink size={10} /> {websiteLink.host}</a> : lead.website ? <span className="text-grey" title="This website could not be parsed as a URL, so it is shown as plain text rather than a link.">{lead.website}</span> : null}
               </Field>
               <Field label="Jurisdiction" value={lead.jurisdiction ?? '—'} />
               <Field label="Chain" value={lead.chain ?? '—'} />

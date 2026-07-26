@@ -4,6 +4,23 @@ import { AlertTriangle, RefreshCw } from 'lucide-react';
 interface ErrorBoundaryProps {
   children: ReactNode;
   fallback?: ReactNode;
+  /**
+   * Change this and the boundary clears itself.
+   *
+   * WHY IT EXISTS — a defect found by an operator clicking around the shipped Mac
+   * app, not by a test. One lead had `https://reppo foundation` in its website
+   * field; `LeadDetail` called `new URL()` on it, WebKit threw
+   * `"https://reppo foundation" cannot be parsed as a URL.`, and this boundary
+   * caught it. Correct so far. But the boundary wraps the ROUTED OUTLET and had no
+   * way to reset, so every page the operator opened afterwards — Deal Board,
+   * Exchange Gaps, Market Map, even Settings — rendered this same error. The app
+   * looked totally broken, and only a full reload cleared it.
+   *
+   * That also made the fallback's own copy false: "The rest of the application
+   * remains operational" was a sentence about a boundary that had latched over the
+   * entire application. Passing the current pathname here is what makes it true.
+   */
+  resetKey?: string;
 }
 
 interface ErrorBoundaryState {
@@ -48,6 +65,18 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       }
     }
     console.error('[ErrorBoundary]', error, errorInfo);
+  }
+
+  /**
+   * Clear on navigation. `componentDidUpdate` rather than
+   * `getDerivedStateFromProps` because the reset is a reaction to a prop CHANGING,
+   * which needs the previous value; deriving from props alone cannot tell the
+   * difference between "new route" and "same route, re-render".
+   */
+  componentDidUpdate(prev: ErrorBoundaryProps): void {
+    if (this.state.hasError && prev.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false, error: null });
+    }
   }
 
   handleReset = (): void => {

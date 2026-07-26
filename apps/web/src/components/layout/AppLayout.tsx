@@ -259,7 +259,11 @@ export function AppLayout() {
       <OfflineBanner />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
-        <ErrorBoundary>
+        {/* `resetKey` is what stops one page's crash from following the operator
+          * around the app. Without it, a lead with a malformed website URL took out
+          * every subsequent route until a full reload — see ErrorBoundary's own
+          * docstring for the measurement. */}
+        <ErrorBoundary resetKey={location.pathname}>
           <MainContent collapsed={sidebarCollapsed}>
             {/* Each route is code-split; the skeleton covers its first fetch. */}
             <Suspense fallback={<div className="p-5"><PageSkeleton /></div>}>
