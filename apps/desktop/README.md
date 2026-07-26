@@ -43,8 +43,8 @@ npm run build:dmg -w @lcx/desktop
 
 Output lands in `src-tauri/target/release/bundle/`:
 
-- `dmg/LCX TERMINAL_<version>_aarch64.dmg` — what people install
-- `macos/LCX TERMINAL.app.tar.gz` + `.sig` — what the updater consumes
+- `dmg/LCXOS_<version>_aarch64.dmg` — what people install
+- `macos/LCXOS.app.tar.gz` + `.sig` — what the updater consumes
 
 `VITE_API_URL` is **compiled into the bundle**. The desktop app has no Vite
 proxy, so a build without it will silently ship an app that talks to `/api` on
@@ -74,11 +74,11 @@ Consequence of (2): the DMG runs perfectly when built locally, but once it has
 been **downloaded** macOS quarantines it. First launch on someone else's Mac:
 
 ```
-right-click LCX TERMINAL.app → Open → Open
+right-click LCXOS.app → Open → Open
 ```
 or, if macOS refuses outright:
 ```bash
-xattr -dr com.apple.quarantine "/Applications/LCX TERMINAL.app"
+xattr -dr com.apple.quarantine "/Applications/LCXOS.app"
 ```
 
 To remove that friction, an Apple Developer Program membership (~$99/yr) is
@@ -93,43 +93,40 @@ Tauri notarizes automatically when those are present. Nothing else changes.
 
 ## Release
 
-The updater endpoint is a static `latest.json` on the repo's latest GitHub
-Release. To cut one:
+**Do not cut a release by hand.** `scripts/publish-release.mjs` owns it:
 
 ```bash
-V=0.1.0
-B=apps/desktop/src-tauri/target/release/bundle
-gh release create "terminal-v$V" \
-  "$B/dmg/LCX TERMINAL_${V}_aarch64.dmg" \
-  "$B/macos/LCX TERMINAL.app.tar.gz" \
-  latest.json \
-  --repo voyagernik123/lcx-sales-automation-engine \
-  --title "LCX TERMINAL $V" --notes "…"
+npm run release:dry -w @lcx/desktop   # every guard, publishes nothing
+npm run release     -w @lcx/desktop
 ```
 
-`latest.json` shape (the `signature` field is the **contents** of the `.sig`
-file, not a path):
+Build first (see Build above) — the publisher releases whatever is in
+`src-tauri/target/release/bundle`, and it will happily publish a stale build if
+you skip that step.
 
-```json
-{
-  "version": "0.1.0",
-  "notes": "…",
-  "pub_date": "2026-07-25T00:00:00Z",
-  "platforms": {
-    "darwin-aarch64": {
-      "signature": "<contents of LCX TERMINAL.app.tar.gz.sig>",
-      "url": "https://github.com/…/releases/download/terminal-v0.1.0/LCX.TERMINAL.app.tar.gz"
-    }
-  }
-}
-```
+What it does that the old hand-rolled `gh release create` did not:
 
-GitHub rewrites spaces in asset filenames to dots, so the URL says
-`LCX.TERMINAL.app.tar.gz` while the local file has a space. Getting this wrong
-produces a 404 on update check that fails silently.
+- writes `latest.json` with the `.sig` **contents** (not a path), the only shape
+  the updater accepts
+- publishes the versioned asset **and** a fixed `LCXOS-macOS-arm64.dmg` alias, so
+  the public download link on `/lcxos` never has to change per release
+- asserts the built bundle contains the production `VITE_API_URL` — a build
+  without it silently ships an app pointing at `localhost`
+- compares `LCXOS_DMG_MB` in `apps/web/src/pages/Launch.tsx` against the real
+  DMG size, so the page cannot advertise a wrong number (it once claimed 6.4MB
+  for a 3.8MB file)
+- re-fetches the `latest/download/…` endpoints **anonymously** after publishing
+  and fails if either is not HTTP 200 — a release nobody can download is not a
+  release
 
-Only `darwin-aarch64` is published — everyone on the desk is on Apple Silicon.
-An Intel Mac needs an `x86_64` build and a second platform entry.
+Releases go to the separate **`voyagernik123/lcx-terminal-releases`** repo, tagged
+`v<version>`, not to the app repo. Version comes from `tauri.conf.json` and must
+match `apps/web/package.json` and `LCXOS_VERSION` in `Launch.tsx`; the publisher
+refuses to run on a mismatch (it caught a 0.2.0-vs-0.1.4 drift).
+
+Only `darwin-aarch64` is published — everyone on the desk is on Apple Silicon. An
+Intel Mac finds no matching platform key and is told "no update available", which
+is the correct quiet answer for a target we have never built for.
 
 ## Architecture
 
