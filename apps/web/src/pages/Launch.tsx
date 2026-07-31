@@ -63,7 +63,7 @@ export const LCXOS_VERSION = '0.2.5';
  * with the DMG it is about to upload, so the next release cannot ship a stale figure
  * the way this one nearly did.
  */
-export const LCXOS_DMG_MB = 3.7;
+export const LCXOS_DMG_MB = 3.8;
 
 /**
  * The permanent download URL. `/releases/latest/download/<name>` is a GitHub

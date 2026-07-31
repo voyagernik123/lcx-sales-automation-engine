@@ -1,3 +1,11 @@
+// @vitest-environment node
+//
+// No DOM needed: every assertion here reads source text or calls a pure function.
+// Left on the default jsdom environment these three files span up extra jsdom
+// workers, and the added concurrency made pre-existing timing-sensitive focus
+// tests elsewhere (listNavAdoption, cheatCard) fail intermittently — measured at
+// roughly 4 failures in 10 full-suite runs, versus 4/4 clean with these files
+// held back. The fragility is theirs, but the pressure was ours to not add.
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
