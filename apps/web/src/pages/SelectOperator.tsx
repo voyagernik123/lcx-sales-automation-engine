@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { normalizeEmail } from '@lcx/shared';
 import { OPERATORS, useOperatorStore } from '@/stores';
-import { getHealth, getMe, setOperatorCredentials } from '@/lib/apiClient';
+import { apiConfig, getHealth, getMe, setOperatorCredentials } from '@/lib/apiClient';
+import { classifyUnreachable, originBlockedMessage, type Reachability } from '@/lib/reachability';
 import { LcxMark } from '@/components/brand/LcxMark';
 
 /**
@@ -25,6 +26,13 @@ export function SelectOperator() {
   const [error, setError] = useState<string | null>(null);
   const [clock, setClock] = useState(() => new Date());
   const [apiUp, setApiUp] = useState<boolean | null>(null);
+  /**
+   * WHY a failed health check is not enough to say "API DOWN". A CORS denial and
+   * a dead host are the same opaque TypeError in the browser, so this screen used
+   * to show a red API DOWN while the API was answering 200 — see lib/reachability.
+   * Only set when the readable probe has already failed.
+   */
+  const [reach, setReach] = useState<Reachability | null>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -36,9 +44,24 @@ export function SelectOperator() {
   }, []);
 
   useEffect(() => {
+    let live = true;
     getHealth()
-      .then(() => setApiUp(true))
-      .catch(() => setApiUp(false));
+      .then(() => {
+        if (!live) return;
+        setApiUp(true);
+        setReach(null);
+      })
+      .catch(async () => {
+        if (!live) return;
+        setApiUp(false);
+        // Second, no-cors probe: distinguishes "nothing answered" from "something
+        // answered and the browser was not allowed to read it".
+        const r = await classifyUnreachable(`${apiConfig.base}/health`);
+        if (live) setReach(r);
+      });
+    return () => {
+      live = false;
+    };
   }, []);
 
   const submit = async () => {
@@ -84,7 +107,22 @@ export function SelectOperator() {
       } else {
         // Credential deliberately KEPT: it was never judged. One press of Sign in
         // retries once the API is back, with nothing retyped.
-        setError(`${classified.title}. The desk could not reach the API to verify you — your credential has not been rejected. ${classified.retryable ? 'Try again in a moment.' : ''}`.trim());
+        //
+        // But first: say WHICH failure this is. "Could not reach the API" is true
+        // of a dead host and of a live host refusing this origin, and those need
+        // opposite responses from the operator — wait, versus open a different URL.
+        // A blocked origin will never fix itself by retrying, so telling them to
+        // "try again in a moment" is the one piece of advice guaranteed to fail.
+        const r = classified.kind === 'network'
+          ? await classifyUnreachable(`${apiConfig.base}/health`)
+          : null;
+        if (r === 'origin-blocked') {
+          setReach('origin-blocked');
+          setApiUp(false);
+          setError(`${originBlockedMessage(window.location.origin)} Your credential has not been rejected.`);
+        } else {
+          setError(`${classified.title}. The desk could not reach the API to verify you — your credential has not been rejected. ${classified.retryable ? 'Try again in a moment.' : ''}`.trim());
+        }
       }
     } finally {
       setBusy(false);
@@ -183,12 +221,33 @@ export function SelectOperator() {
             {import.meta.env.PROD ? 'LIVE' : 'LOCAL'} · v{__APP_VERSION__}
           </span>
           <span className="flex items-center gap-1.5">
+            {/*
+              ORIGIN BLOCKED is amber, not red: the API is healthy and the desk is
+              the thing in the wrong place. Calling it API DOWN sent an operator
+              hunting a nonexistent outage — the actual cause was a Cloudflare
+              Pages preview hostname that CORS_ORIGINS did not list.
+            */}
             <span
               className={`h-1.5 w-1.5 rounded-full ${
-                apiUp === null ? 'bg-grey/40' : apiUp ? 'bg-emerald-500' : 'bg-red-500'
+                apiUp === null
+                  ? 'bg-grey/40'
+                  : apiUp
+                    ? 'bg-emerald-500'
+                    : reach === 'origin-blocked'
+                      ? 'bg-amber-500'
+                      : 'bg-red-500'
               }`}
             />
-            {apiUp === null ? 'CONNECTING' : apiUp ? 'SECURE' : 'API DOWN'} · {utc} UTC
+            {apiUp === null
+              ? 'CONNECTING'
+              : apiUp
+                ? 'SECURE'
+                : reach === 'origin-blocked'
+                  ? 'ORIGIN BLOCKED'
+                  : reach === null
+                    ? 'CHECKING'
+                    : 'API DOWN'}{' '}
+            · {utc} UTC
           </span>
         </div>
       </div>
