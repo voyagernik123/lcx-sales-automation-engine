@@ -83,6 +83,7 @@ export type { WorkspaceId, Capability, EntitlementMap, WorkspaceDef } from './wo
 export {
   WORKSPACES, WORKSPACE_IDS, getWorkspace, capAtLeast,
   workspaceForPath, workspaceForApiPath, legacyEntitlements,
+  FOUNDING_MEMBER_IDS,
 } from './workspaces.js';
 
 // Intelligence spine (Wave 0) — provenance + actions

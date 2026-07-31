@@ -209,16 +209,47 @@ export function workspaceForApiPath(path: string): WorkspaceId | null {
 }
 
 /**
+ * The FOUNDING desk — the three members migration 0042's backfill enumerated.
+ *
+ * This list exists so the no-lockout covenant below can apply to the people it
+ * was actually written for, and to nobody else. It is deliberately a literal:
+ * deriving it from OPERATORS would silently re-open the hole the moment someone
+ * is added to the roster, which is exactly the failure this closes.
+ */
+export const FOUNDING_MEMBER_IDS: readonly string[] = ['nik', 'monty', 'sam'];
+
+/**
  * The no-lockout covenant (Phase 1 backfill, desk decision 2026-07-24): the
- * three-person desk — Nik, Monty (approvers), Sam (operator) — holds EVERY
- * compartment at their role-mapped capability. Compartmentalization stays
- * live in the machinery (grants are still governed, revocable, audited);
- * today's roster simply starts fully entitled. This map is also the fail-open
- * picture served until migration 0042 lands.
+ * three-person founding desk — Nik, Monty (approvers), Sam (operator) — keeps
+ * access to the compartments that predate LCX OS if the grant table cannot be
+ * read or has no rows for them. Grants remain governed, revocable and audited;
+ * this is the floor, not the model.
+ *
+ * WHY THIS NOW FILTERS ON `legacy`, AND WHY THAT IS THE WHOLE POINT.
+ *
+ * This function's contract is "exactly the access everyone had before LCX OS
+ * existed" (`apps/api/src/access/entitlements.ts:18`). A compartment created
+ * AFTER LCX OS existed is, by definition, not in that set. But the loop used to
+ * be `for (const w of WORKSPACES)` — every workspace, including the two declared
+ * `legacy: false` precisely to mean default-deny (`distribution`, `marketing`).
+ * So the fail-open path granted the two compartments that exist to be withheld.
+ *
+ * Worse, `legacy` was read by NO code anywhere: a grep across packages/shared,
+ * apps/api and apps/web found only this type's declaration, the literal values
+ * and two comments. A flag that documents a guarantee it does not enforce is
+ * worse than no flag, because it is quoted in review as though it were a
+ * control. Filtering here is what makes `legacy: false` mean something.
+ *
+ * CONSEQUENCE FOR NEW COMPARTMENTS. `marketing` (0046) and `gps` are reachable
+ * only through an explicit, audited grant row — never through fail-open, never
+ * through a fresh roster addition. That matters most for `gps`, which will hold
+ * third-party client material.
  */
 export function legacyEntitlements(role: TeamRole): EntitlementMap {
   const cap: Capability = role === 'approver' ? 'approve' : role === 'operator' ? 'operate' : 'view';
   const map: EntitlementMap = {};
-  for (const w of WORKSPACES) map[w.id] = cap;
+  for (const w of WORKSPACES) {
+    if (w.legacy) map[w.id] = cap;
+  }
   return map;
 }

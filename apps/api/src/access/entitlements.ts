@@ -2,6 +2,7 @@ import type pg from 'pg';
 import {
   type Capability,
   type EntitlementMap,
+  FOUNDING_MEMBER_IDS,
   WORKSPACE_IDS,
   findMemberById,
   legacyEntitlements,
@@ -54,10 +55,28 @@ export async function loadEntitlements(pool: pg.Pool, actorId: string): Promise<
       [actorId],
     );
     if (rows.length === 0) {
-      // Roster member with zero rows = pre-backfill state (or a brand-new
-      // roster addition): the no-lockout covenant applies, not default-deny.
-      // Full revocation is not a Phase-1 flow; rows only shrink one at a time.
-      map = legacyEntitlements(member.role);
+      // ZERO ROWS IS TWO DIFFERENT SITUATIONS, AND THIS USED TO CONFLATE THEM.
+      //
+      // (a) A FOUNDING member whose backfill row is missing — a botched 0042, a
+      //     restored database, a manual delete. Locking Nik or Monty out of the
+      //     desk over a missing row is the failure the covenant exists to stop,
+      //     so they still get the legacy (pre-LCX-OS) compartments.
+      //
+      // (b) A member added to `operators.ts` AFTER the backfill — a marketing
+      //     hire, a delivery specialist, an analyst. This branch used to hand
+      //     them `legacyEntitlements`, which before today meant EVERY workspace
+      //     at their role capability. So the sequence "add to the roster, deploy,
+      //     grant them their compartment tomorrow" gave them US COMMAND and
+      //     GOVERNANCE in the interim, at `approve` if their role was approver.
+      //     Default-deny was a property of having a grant row, not of the
+      //     `legacy: false` flag — which nothing read.
+      //
+      // (b) now gets NOTHING and lands on the request-access surface, which is
+      // the documented intent of a default-deny compartment. Two independent
+      // protections, because this guards third-party client data in `gps`:
+      // this allowlist, and `legacyEntitlements` itself now filtering on
+      // `legacy` so even (a) cannot reach a post-LCX-OS compartment.
+      map = FOUNDING_MEMBER_IDS.includes(actorId) ? legacyEntitlements(member.role) : {};
     } else {
       map = {};
       for (const r of rows) {
@@ -69,7 +88,12 @@ export async function loadEntitlements(pool: pg.Pool, actorId: string): Promise<
   } catch (err) {
     const code = (err as { code?: string }).code;
     if (code === '42P01') {
-      map = legacyEntitlements(member.role); // 0042 not applied yet
+      // 0042 not applied yet. Same split as the zero-rows branch above: a
+      // founding member keeps the pre-LCX-OS desk so a deploy-order accident
+      // cannot lock them out, and anyone added later gets nothing — on a
+      // database with no `entitlements` table there is no grant to honour, and
+      // guessing in their favour would be the same hole through a second door.
+      map = FOUNDING_MEMBER_IDS.includes(actorId) ? legacyEntitlements(member.role) : {};
     } else {
       throw err;
     }

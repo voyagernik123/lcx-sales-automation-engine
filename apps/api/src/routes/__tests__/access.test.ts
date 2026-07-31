@@ -77,10 +77,24 @@ describe('LCX OS front door + workspace gates', () => {
      * grant table, 0042 seeded only the six workspaces that existed then, and this
      * assertion failed with `entitlements.marketing === undefined`.
      *
-     * So `legacy: false` really is default-deny, migration 0046 extends the
-     * no-lockout covenant to the desk with an explicit audited grant, and a fourth
-     * person (a marketing hire) still gets nothing until an approver grants it.
-     * All three of those are what we want; none of them were true by accident.
+     * So `legacy: false` is default-deny FOR A MEMBER WHO HAS GRANT ROWS, and
+     * migration 0046 extends the covenant to the desk with an explicit audited
+     * grant. Both of those are what we want.
+     *
+     * CORRECTION 2026-07-31 — the third claim this docblock used to make ("a fourth
+     * person (a marketing hire) still gets nothing until an approver grants it")
+     * WAS FALSE, and this test could not have caught it because it only exercises
+     * `sam`, who has rows. A roster member with ZERO rows took the fail-open branch
+     * at `access/entitlements.ts:56` and received `legacyEntitlements`, which
+     * looped every workspace — so a new hire held US COMMAND and GOVERNANCE, at
+     * `approve` if approver-roled, until someone remembered to insert a grant.
+     * Default-deny was a property of having a row, not of the flag, and the flag
+     * was read by no code at all.
+     *
+     * Both halves are now closed and unit-tested in
+     * `packages/shared/src/workspaces.test.ts`: `legacyEntitlements` filters on
+     * `legacy`, and the loader consults `FOUNDING_MEMBER_IDS` so only the three
+     * backfilled members get the fail-open floor.
      */
     expect(data.workspaces).toHaveLength(7);
     for (const ws of ['command', 'sales', 'intel', 'regulatory', 'distribution', 'marketing', 'governance']) {
