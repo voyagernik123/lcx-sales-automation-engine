@@ -65,8 +65,25 @@ describe('LCX OS front door + workspace gates', () => {
     expect(res.status).toBe(200);
     const { data } = (await res.json()) as { data: { memberId: string; entitlements: Record<string, string>; workspaces: Array<{ id: string }> } };
     expect(data.memberId).toBe('sam');
-    expect(data.workspaces).toHaveLength(6);
-    for (const ws of ['command', 'sales', 'intel', 'regulatory', 'distribution', 'governance']) {
+    /*
+     * SEVEN since 2026-07-31, when `marketing` was added — and the count moving is
+     * exactly why this is asserted rather than derived.
+     *
+     * This test also settled a question the plan had flagged as unverified, and
+     * corrected a wrong assumption. `legacyEntitlements()` loops over ALL
+     * workspaces, which looked like it would hand the new compartment to the desk
+     * automatically. It does not: that function is only the FAIL-OPEN picture used
+     * before 0042 has landed. With the DB present, entitlements come from the
+     * grant table, 0042 seeded only the six workspaces that existed then, and this
+     * assertion failed with `entitlements.marketing === undefined`.
+     *
+     * So `legacy: false` really is default-deny, migration 0046 extends the
+     * no-lockout covenant to the desk with an explicit audited grant, and a fourth
+     * person (a marketing hire) still gets nothing until an approver grants it.
+     * All three of those are what we want; none of them were true by accident.
+     */
+    expect(data.workspaces).toHaveLength(7);
+    for (const ws of ['command', 'sales', 'intel', 'regulatory', 'distribution', 'marketing', 'governance']) {
       expect(data.entitlements[ws], ws).toBe('operate');
     }
   });

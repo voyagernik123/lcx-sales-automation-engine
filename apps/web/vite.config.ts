@@ -44,7 +44,31 @@ export default defineConfig(({ mode }) => {
             // Framework core only — react-router/history stay in vendor so the
             // dependency edge is one-directional (vendor → react-vendor), no cycle.
             if (/[\\/](?:react|react-dom|scheduler)[\\/]/.test(id)) return 'react-vendor';
-            if (/[\\/]lucide-react[\\/]/.test(id)) return 'icons';
+            /* ICONS ARE DELIBERATELY NOT A MANUAL CHUNK (ALIVE/MARKETING P0).
+             *
+             * They used to be: `return 'icons'`. That forced all 162 lucide icons
+             * the app imports into ONE chunk which `check-bundle.mjs` counts as
+             * always-loaded — so an icon used only by MarketMap was downloaded and
+             * parsed by every operator on every page.
+             *
+             * Returning undefined lets Rollup place each icon with whoever
+             * actually imports it: shell icons land in `index`, page-only icons
+             * ride along in that page's lazy chunk. Measured on this app:
+             *
+             *   initial   850KB → 825KB   (25KB less JS before first paint)
+             *   index-      385 → 423KB   (it absorbed the shell's own icons)
+             *   lazy chunks  109 → 138
+             *
+             * The initial saving is the one an operator feels. The `index` growth
+             * is why MAX_CHUNK_KB moved 400 → 440 in check-bundle.mjs — see the
+             * reasoning recorded there; 423KB is still far from the 500KB monolith
+             * that guard was written to prevent.
+             *
+             * NOTE the catch-all below: `return 'vendor'` would swallow lucide
+             * right back into an always-loaded chunk, so this early return has to
+             * stay ABOVE it. Deleting this line does not restore the old
+             * behaviour — it silently makes things worse than the old behaviour. */
+            if (/[\\/]lucide-react[\\/]/.test(id)) return undefined;
             return 'vendor';
           },
         },

@@ -6,8 +6,25 @@ import {
 import { TEAM } from './operators.js';
 
 describe('LCX OS workspace constitution (Phase 1)', () => {
-  it('declares exactly the six compartments', () => {
-    expect(WORKSPACE_IDS).toEqual(['command', 'sales', 'intel', 'regulatory', 'distribution', 'governance']);
+  /**
+   * An EXACT list, not a `length >= n`, and it is meant to fail when someone adds
+   * a compartment. A workspace is a need-to-know boundary: it decides what a
+   * whole team can and cannot see, it mounts an API guard, and once granted it is
+   * awkward to withdraw. That deserves a deliberate edit here rather than passing
+   * silently because the assertion was written loosely.
+   *
+   * Amended 2026-07-31 — six → seven, adding `marketing`. The marketing team
+   * needs X reply triage and has a different need-to-know from the BD desk;
+   * see the reasoning on the WorkspaceDef itself. Default-deny (`legacy: false`).
+   *
+   * If you are here because this test failed: that is the test doing its job.
+   * Add your id to this list on purpose, and say why on the definition — do not
+   * relax the assertion.
+   */
+  it('declares exactly the seven compartments', () => {
+    expect(WORKSPACE_IDS).toEqual([
+      'command', 'sales', 'intel', 'regulatory', 'distribution', 'marketing', 'governance',
+    ]);
   });
 
   it('owns each web path in at most one workspace (no contested territory)', () => {

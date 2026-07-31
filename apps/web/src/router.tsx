@@ -17,6 +17,7 @@ const DistributionListings = lazy(() => import('@/pages/DistributionListings').t
 const DistributionCampaigns = lazy(() => import('@/pages/DistributionCampaigns').then((m) => ({ default: m.DistributionCampaigns })));
 const DistributionGeo = lazy(() => import('@/pages/DistributionGeo').then((m) => ({ default: m.DistributionGeo })));
 const DistributionHome = lazy(() => import('@/pages/DistributionHome').then((m) => ({ default: m.DistributionHome })));
+const Marketing = lazy(() => import('@/pages/Marketing').then((m) => ({ default: m.Marketing })));
 const AccessControl = lazy(() => import('@/pages/AccessControl').then((m) => ({ default: m.AccessControl })));
 const Dashboard = lazy(() => import('@/pages/Dashboard').then((m) => ({ default: m.Dashboard })));
 const Home = lazy(() => import('@/pages/Home').then((m) => ({ default: m.Home })));
@@ -219,6 +220,7 @@ export const router = createBrowserRouter([
           { path: 'distribution/listings', element: <DistributionListings /> },
           { path: 'distribution/campaigns', element: <DistributionCampaigns /> },
           { path: 'distribution/geo', element: <DistributionGeo /> },
+          { path: 'marketing', element: <Marketing /> },
           { path: 'decisions', element: <Decisions /> },
           { path: 'command-deck', element: <CommandDeck /> },
           { path: 'command-partners', element: <CommandPartners /> },

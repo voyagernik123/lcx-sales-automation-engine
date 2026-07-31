@@ -34,15 +34,23 @@ import {
 const SRC = join(__dirname, '..', '..');
 const source = (...p: string[]) => readFileSync(join(SRC, ...p), 'utf8');
 
-/** Nik — every compartment, so nothing is hidden. */
-const FULL: EntitlementMap = {
-  command: 'approve',
-  sales: 'approve',
-  intel: 'approve',
-  regulatory: 'approve',
-  distribution: 'approve',
-  governance: 'approve',
-};
+/**
+ * Nik — every compartment, so nothing is hidden.
+ *
+ * DERIVED from `WORKSPACE_IDS`, not hand-listed. It was hand-listed until
+ * 2026-07-31, when adding the seventh compartment made this fixture silently
+ * incomplete: `marketing` was missing, so `tourFor(FULL)` filtered its step out
+ * on capability grounds, and the test that exists precisely to catch an omitted
+ * workspace failed for a reason that had nothing to do with the tour.
+ *
+ * A fixture claiming to be "every compartment" should not need editing when a
+ * compartment is added — that is what made it wrong. Deriving it means the
+ * neighbouring assertion ("a seventh one cannot be silently omitted") now tests
+ * the tour rather than testing this constant.
+ */
+const FULL: EntitlementMap = Object.fromEntries(
+  WORKSPACE_IDS.map((id) => [id, 'approve' as const]),
+);
 
 /** A restricted principal: the BD desk and the analyst layer, nothing else. */
 const RESTRICTED: EntitlementMap = { sales: 'operate', intel: 'view' };
@@ -104,6 +112,12 @@ describe('the tour is generated from entitlements', () => {
       'go-regulatory',
       'go-distribution',
       'go-governance',
+      // Seventh compartment, and it lands HERE rather than beside distribution
+      // because the tour walks `DESTINATIONS` in table order and marketing was
+      // appended to the end of that table on purpose — inserting it in taxonomic
+      // order would have rebound GOVERNANCE's ⌘6 and the sandbox's ⌘7 under
+      // operators who had already learned them. Menu order IS added order.
+      'go-marketing',
       'hints',
       'go-desk',
     ]);

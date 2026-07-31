@@ -532,6 +532,15 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             // `g 7` has to mirror it: destinations.ts is the one table both read,
             // and destinations.test.ts fails if this line and that row disagree.
             &MenuItem::with_id(app, "go-practice", "PRACTICE RANGE", true, Some("CmdOrCtrl+7"))?,
+            // The seventh compartment (2026-07-31). BELOW the practice range and on
+            // ⌘8 rather than slotted next to DISTRIBUTION, because inserting it in
+            // taxonomic order would have pushed GOVERNANCE from ⌘6 to ⌘7 and the
+            // sandbox from 7 to 8 — silently rebinding two accelerators operators
+            // have already learned. New destinations go on the end; the number is
+            // the order it was added in, not a category. `destinations.ts` is the
+            // one table this and the web `g 8` chord both read, and
+            // destinations.test.ts fails if this line and that row disagree.
+            &MenuItem::with_id(app, "go-ws-marketing", "LCX MARKETING", true, Some("CmdOrCtrl+8"))?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "go-back", "Back", true, Some("CmdOrCtrl+["))?,
             &MenuItem::with_id(app, "go-forward", "Forward", true, Some("CmdOrCtrl+]"))?,

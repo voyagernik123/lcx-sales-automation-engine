@@ -121,6 +121,14 @@ const WS_SECTIONS: Record<WorkspaceId, NavSection[]> = {
       ],
     },
   ],
+  marketing: [
+    {
+      title: 'LCX Marketing',
+      items: [
+        { to: '/marketing', label: 'Reply Desk', icon: Megaphone },
+      ],
+    },
+  ],
   governance: [
     {
       title: 'Governance',

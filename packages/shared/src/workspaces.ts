@@ -20,7 +20,8 @@ export type WorkspaceId =
   | 'intel'
   | 'regulatory'
   | 'distribution'
-  | 'governance';
+  | 'governance'
+  | 'marketing';
 
 /** Capability ladder within a workspace. approve ⊃ operate ⊃ view. */
 export type Capability = 'view' | 'operate' | 'approve';
@@ -130,6 +131,37 @@ export const WORKSPACES: readonly WorkspaceDef[] = [
     apiPrefixes: ['/v1/distribution'],
     defaultLanding: '/distribution',
     sensitivity: 'elevated',
+    legacy: false,
+  },
+  {
+    /**
+     * The seventh compartment (2026-07-31). Opened for the marketing team, whose
+     * first instrument is X reply triage — the desk currently loses replies under
+     * @lcx posts because nobody owns watching them.
+     *
+     * Deliberately a COMPARTMENT rather than a page on an existing one. Marketing
+     * is a different team with a different need-to-know from the BD desk: they
+     * should see their own surfaces and not the deal pipeline, and future
+     * marketing tools (content calendar, campaign performance, brand mentions,
+     * competitor social) should inherit gating and audit by adding a `webPath`
+     * here rather than by another architecture conversation.
+     *
+     * `sensitivity: 'standard'` — the content is public tweets. Purpose-prompting
+     * an operator for reading a reply that anyone on the internet can read would
+     * be friction with no protective value, and cheapening the purpose-prompt is
+     * how the elevated tiers stop meaning anything.
+     *
+     * `legacy: false` — default-deny, matching `distribution`. A new compartment
+     * is granted, never assumed.
+     */
+    id: 'marketing',
+    name: 'LCX MARKETING',
+    mission: 'The marketing desk — X reply triage, drafted answers, brand watch.',
+    icon: 'Megaphone',
+    webPaths: ['marketing'],
+    apiPrefixes: ['/v1/marketing'],
+    defaultLanding: '/marketing',
+    sensitivity: 'standard',
     legacy: false,
   },
   {

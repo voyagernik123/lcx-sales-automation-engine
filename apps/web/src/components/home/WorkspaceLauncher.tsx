@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Command, Target, Radar, Scale, Rocket, Shield, Lock, type LucideIcon } from 'lucide-react';
+import { Command, Target, Radar, Scale, Rocket, Shield, Lock, Megaphone, type LucideIcon } from 'lucide-react';
 import { WORKSPACES, capAtLeast, type WorkspaceId } from '@lcx/shared';
 import { useAccessStore } from '@/stores/useAccessStore';
 
@@ -9,6 +9,7 @@ const ICONS: Record<WorkspaceId, LucideIcon> = {
   intel: Radar,
   regulatory: Scale,
   distribution: Rocket,
+  marketing: Megaphone,
   governance: Shield,
 };
 

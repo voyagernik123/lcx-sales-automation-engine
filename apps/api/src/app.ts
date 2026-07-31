@@ -33,6 +33,7 @@ import { searchRoutes } from './routes/search.js';
 import { reviewRoutes } from './routes/reviews.js';
 import { actionRoutes } from './routes/actions.js';
 import { monitorRoutes } from './routes/monitors.js';
+import { marketingRoutes } from './routes/marketing.js';
 import { scenarioRoutes, pirRoutes } from './routes/planning.js';
 import { wbrRoutes } from './routes/wbr.js';
 import { decisionRoutes } from './routes/decisions.js';
@@ -137,6 +138,9 @@ export function createApp() {
   app.route('/v1/reviews', reviewRoutes);
   app.route('/v1/actions', actionRoutes);
   app.route('/v1/monitors', monitorRoutes);
+  // Guarded at 'view' automatically: app.ts mounts requireWorkspace from the
+  // registry's apiPrefixes, and '/v1/marketing' is declared there.
+  app.route('/v1/marketing', marketingRoutes);
   app.route('/v1/scenarios', scenarioRoutes);
   app.route('/v1/pirs', pirRoutes);
   app.route('/v1/wbr', wbrRoutes);

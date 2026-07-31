@@ -53,6 +53,23 @@ export const DESTINATIONS: readonly Destination[] = [
    * reads anything — so it has to be in the grammar an operator already knows.
    */
   { id: 'go-practice', path: '/practice', label: 'PRACTICE RANGE', key: '7' },
+  /**
+   * The seventh compartment (2026-07-31), APPENDED rather than slotted in beside
+   * the other workspaces — deliberately.
+   *
+   * Grouping it after DISTRIBUTION would read better and would have cost every
+   * existing operator their muscle memory: GOVERNANCE would slide from `g 6` to
+   * `g 7` and PRACTICE RANGE from 7 to 8. A keyboard accelerator someone has
+   * already learned is a promise; re-ordering this table silently breaks it, and
+   * the operator's hand is faster than their reading of a changelog.
+   *
+   * So new destinations go on the end, and the number is the order it was added
+   * in rather than a taxonomy. Everything discoverable is generated from this
+   * table — the `g 8` chord, the ⌘8 menu item, the `?` manual, the cheat card,
+   * and (per `lib/tour.ts`) the first-run tour step — so this one line is the
+   * whole wiring.
+   */
+  { id: 'go-ws-marketing', path: '/marketing', label: 'LCX MARKETING', key: '8' },
 ];
 
 /** Menu id → route, for the native bridge. */
