@@ -138,3 +138,27 @@ FROM (VALUES
   ('monty', 'approve'), ('nik', 'approve'), ('sam', 'operate')
 ) AS m(member_id, cap)
 ON CONFLICT (member_id, workspace) DO NOTHING;
+
+
+-- ── Row Level Security ────────────────────────────────────────────────────────
+--  DECLARED HERE, not left to a dashboard button.
+--
+--  Supabase's SQL editor offers "Run and enable RLS" when it sees a CREATE TABLE
+--  in `public` without it. Taking that option is correct — but it would leave the
+--  security posture living in a click nobody records, so a database restored from
+--  this file alone would come up with RLS OFF and nothing would say so. 0042 and
+--  0043 both declare their own (three tables each); this file was the odd one out.
+--
+--  WHY IT MATTERS FOR THESE TABLES SPECIFICALLY. Supabase exposes `public` tables
+--  through its auto-generated REST API. Without RLS, anyone holding the project's
+--  anon key could read `marketing_x_reply` — which holds third-party PERSONAL DATA
+--  (X handles and reply text) on a licensed exchange's infrastructure. That is a
+--  GDPR exposure, not a hypothetical one.
+--
+--  WHY IT CANNOT BREAK LCX OS. The API connects as the database owner, which
+--  bypasses RLS — the same arrangement 0042 relies on, proven by the fact that
+--  `entitlements` is RLS-enabled and the workspace switcher works in production
+--  today. No policies are defined because no non-owner role should reach these
+--  tables at all: RLS with no policy is deny-all, which is the intent.
+ALTER TABLE marketing_x_reply     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE marketing_reply_draft ENABLE ROW LEVEL SECURITY;
