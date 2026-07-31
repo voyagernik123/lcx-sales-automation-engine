@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { env } from './lib/env.js';
+import { resolveCorsOrigin } from './lib/cors.js';
 import { recordLatency } from './lib/latency.js';
 import { rateLimit } from './middleware/rateLimit.js';
 import { healthRoutes } from './routes/health.js';
@@ -67,11 +68,10 @@ export function createApp() {
   app.use(
     '*',
     cors({
-      origin: (origin) => {
-        if (!origin) return env.corsOrigins[0] ?? '*';
-        if (env.corsOrigins.includes('*')) return origin;
-        return env.corsOrigins.includes(origin) ? origin : env.corsOrigins[0] ?? '';
-      },
+      // Exact allowlist + this Pages project's own deployment subdomains. See
+      // lib/cors.ts: opening the desk on a per-commit preview URL used to fail
+      // every fetch and report itself as API DOWN.
+      origin: (origin) => resolveCorsOrigin(origin, env.corsOrigins),
       allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       allowHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Purpose'],
       // The web shell is ALWAYS cross-origin (Cloudflare Pages and
