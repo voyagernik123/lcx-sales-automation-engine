@@ -38,9 +38,10 @@
  * is `string[]`, so no literal type exists to import; see the test's header.
  */
 import { Hono } from 'hono';
-import { TEAM } from '@lcx/shared';
+import { TEAM, capAtLeast, type WorkspaceId } from '@lcx/shared';
 import type { AuthVariables } from '../middleware/auth.js';
 import { requireOperator } from '../middleware/auth.js';
+import { loadEntitlements } from '../access/entitlements.js';
 import { getPool } from '../db/index.js';
 import { env } from '../lib/env.js';
 
@@ -85,6 +86,23 @@ interface GroupSpec {
   subjectType: string;
   inspector?: string;
   source: Source;
+  /**
+   * The compartment that owns these rows, or omitted for genuinely desk-level
+   * objects (projects, people, notes, news) that every operator may read.
+   *
+   * WHY THIS EXISTS. `/v1/search` is mounted desk-level — it is deliberately not
+   * behind `requireWorkspace`, because ⌘K has to work everywhere. But it queries
+   * `command_*`, `dist_*` and `access_requests`, so it read across three
+   * compartments for anyone with an operator credential, whatever their grants
+   * said. The compartment gate on `/v1/command/*` was walked straight around by
+   * typing the same words into ⌘K.
+   *
+   * That was survivable while the roster was three people who hold everything.
+   * It stops being survivable the moment a compartment holds a third party's
+   * confidential material, which is what `gps` is for — so the fix lands before
+   * that data exists rather than after.
+   */
+  workspace?: WorkspaceId;
 }
 
 /**
@@ -115,6 +133,27 @@ function sqlSource(
 
 /** The common case: one `$1` bound to the ILIKE pattern. */
 const onLike = (sql: string) => (ctx: SearchCtx) => ({ sql, params: [ctx.like] as unknown[] });
+
+/**
+ * Which groups this principal may be shown — applied BEFORE any query runs.
+ *
+ * Filtering results afterwards would still execute every query and still pull
+ * other compartments' rows into this process; filtering the specs means an
+ * unentitled compartment is never read. Exported so the rule is testable without
+ * a database, because the interesting cases are about absence.
+ *
+ * An untagged group is desk-level by declaration (projects, contacts, notes,
+ * news, members) and always visible. `capAtLeast(undefined, 'view')` is false, so
+ * a missing grant denies rather than defaulting open.
+ */
+export function visibleGroups(
+  specs: readonly GroupSpec[],
+  ents: Partial<Record<WorkspaceId, string>>,
+): readonly GroupSpec[] {
+  return specs.filter(
+    (spec) => !spec.workspace || capAtLeast(ents[spec.workspace] as never, 'view'),
+  );
+}
 
 /**
  * Every group GET /v1/search can emit, and the ONLY place they are declared.
@@ -169,7 +208,7 @@ export const SEARCH_GROUPS: readonly GroupSpec[] = [
     ),
   },
   {
-    key: 'deals', label: 'Deals', typeLabel: 'Deal',
+    key: 'deals', workspace: 'sales', label: 'Deals', typeLabel: 'Deal',
     subjectType: 'deal', inspector: 'deal',
     source: sqlSource(
       onLike(
@@ -220,7 +259,7 @@ export const SEARCH_GROUPS: readonly GroupSpec[] = [
    * state is usually there. Sending it is what stops the menu offering a verb
    * whose only possible outcome is a 404 or a silent no-op. */
   {
-    key: 'command_tasks', label: 'Program tasks', typeLabel: 'Program task',
+    key: 'command_tasks', workspace: 'command', label: 'Program tasks', typeLabel: 'Program task',
     subjectType: 'command_task',
     source: sqlSource(
       onLike(
@@ -237,7 +276,7 @@ export const SEARCH_GROUPS: readonly GroupSpec[] = [
     ),
   },
   {
-    key: 'command_decisions', label: 'Program decisions', typeLabel: 'Program decision',
+    key: 'command_decisions', workspace: 'command', label: 'Program decisions', typeLabel: 'Program decision',
     subjectType: 'command_decision',
     source: sqlSource(
       onLike(
@@ -257,7 +296,7 @@ export const SEARCH_GROUPS: readonly GroupSpec[] = [
     ),
   },
   {
-    key: 'command_partners', label: 'Program partners', typeLabel: 'Partner',
+    key: 'command_partners', workspace: 'command', label: 'Program partners', typeLabel: 'Partner',
     subjectType: 'command_partner',
     source: sqlSource(
       onLike(
@@ -274,7 +313,7 @@ export const SEARCH_GROUPS: readonly GroupSpec[] = [
     ),
   },
   {
-    key: 'command_requirements', label: 'Listing requirements', typeLabel: 'Listing requirement',
+    key: 'command_requirements', workspace: 'command', label: 'Listing requirements', typeLabel: 'Listing requirement',
     subjectType: 'command_requirement',
     source: sqlSource(
       onLike(
@@ -293,7 +332,7 @@ export const SEARCH_GROUPS: readonly GroupSpec[] = [
     ),
   },
   {
-    key: 'command_blockers', label: 'Launch blockers', typeLabel: 'Launch blocker',
+    key: 'command_blockers', workspace: 'command', label: 'Launch blockers', typeLabel: 'Launch blocker',
     subjectType: 'command_blocker',
     source: sqlSource(
       onLike(
@@ -312,7 +351,7 @@ export const SEARCH_GROUPS: readonly GroupSpec[] = [
 
   /* ── DISTRIBUTION COMMAND ─────────────────────────────────────────────── */
   {
-    key: 'dist_listings', label: 'Distribution surfaces', typeLabel: 'Distribution surface',
+    key: 'dist_listings', workspace: 'distribution', label: 'Distribution surfaces', typeLabel: 'Distribution surface',
     subjectType: 'dist_listing',
     source: sqlSource(
       onLike(
@@ -331,7 +370,7 @@ export const SEARCH_GROUPS: readonly GroupSpec[] = [
     ),
   },
   {
-    key: 'dist_campaigns', label: 'Campaigns', typeLabel: 'Campaign',
+    key: 'dist_campaigns', workspace: 'distribution', label: 'Campaigns', typeLabel: 'Campaign',
     subjectType: 'dist_campaign',
     source: sqlSource(
       onLike(
@@ -350,7 +389,7 @@ export const SEARCH_GROUPS: readonly GroupSpec[] = [
 
   /* ── LCX OS governance ────────────────────────────────────────────────── */
   {
-    key: 'access_requests', label: 'Access requests', typeLabel: 'Access request',
+    key: 'access_requests', workspace: 'governance', label: 'Access requests', typeLabel: 'Access request',
     subjectType: 'access_request',
     // Read scope MIRRORS GET /v1/access/requests, which shows a non-approver
     // only their OWN requests. Search must not become the wide read that route
@@ -417,9 +456,25 @@ searchRoutes.get('/', requireOperator, async (c) => {
   const operator = c.get('operator');
   const ctx: SearchCtx = { q: raw, like, actor: operator.id, isApprover: operator.role === 'approver' };
 
-  const found = await Promise.all(SEARCH_GROUPS.map((spec) => spec.source(ctx)));
+  /**
+   * COMPARTMENT SCOPING, APPLIED BEFORE THE QUERIES RUN.
+   *
+   * Filtering the RESULTS would still have executed every query and still have
+   * put other compartments' rows in this process's memory; filtering the SPECS
+   * means an unentitled compartment is never read at all. It is also cheaper.
+   *
+   * `loadEntitlements` is called directly rather than read off the context: the
+   * grant map is only attached inside `requireWorkspace`, and this route is
+   * deliberately not behind it. The loader caches per member for 60s, so on the
+   * ⌘K path this is a map lookup, not a query. A machine principal (shared key,
+   * monitor, ai) holds blanket `operate` and is unaffected — cron keeps working.
+   */
+  const ents = await loadEntitlements(getPool(), operator.id);
+  const visible = visibleGroups(SEARCH_GROUPS, ents);
+
+  const found = await Promise.all(visible.map((spec) => spec.source(ctx)));
   const groups: Group[] = [];
-  SEARCH_GROUPS.forEach((spec, i) => {
+  visible.forEach((spec, i) => {
     const hit = found[i];
     if (!hit) return;
     groups.push({
