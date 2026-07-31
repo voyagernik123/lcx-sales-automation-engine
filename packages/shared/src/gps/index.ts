@@ -108,3 +108,34 @@ export {
   isReasonValidFor, wilson95Pct, winLossSummary, marginRealisation,
   weightReviewPacket, calibrationHealth,
 } from './calibration.js';
+
+/* ── Phase 3 — delivery, WITHOUT anywhere to put a client's document ──────────
+ * Everything AROUND the artifact: the request for it, its status, acceptance of
+ * the work, and the audit of who asked and when — while the artifact itself stays
+ * wherever the client and counsel already keep it. `EvidenceRequest.externalLocation`
+ * is a reference an operator TYPES; nothing fetches, resolves, previews or copies
+ * it, and `NO_CLIENT_DOCUMENT_STORE_REASON` carries the why (D2: LCX's DPO has not
+ * answered controller-vs-processor for third-party confidential material).
+ * Enforced by `apps/api/src/gps/__tests__/intakeLockout.test.ts`, which was
+ * mutation-tested against 12 adversarial edits — each went red on its intended
+ * assertion — so this is a lock, not an omission.
+ *
+ * `deriveMilestones` THROWS on scope drift in BOTH directions: a sold acceptance
+ * criterion no milestone delivers, and a milestone claiming no criterion. That is
+ * the difference between a plan and a decoration.
+ */
+export type {
+  DeliveryActor, DeliverableOwner, MilestoneState, MilestoneSpec, Milestone,
+  DeliverableState, Deliverable, EvidenceCounterparty, EvidenceStatus, EvidenceRequest,
+  AcceptanceState, AcceptanceBlockerCode, AcceptanceBlocker, AcceptanceVerdict,
+  ProgressState, ProgressBlocker, EngagementProgress, DeliveryLoadInput, WipLoad,
+} from './delivery.js';
+export {
+  NO_CLIENT_DOCUMENT_STORE_REASON,
+  deriveMilestones, deriveMilestonesForOffer,
+  REVIEW_REQUIRED_BY_DEFAULT, reviewSatisfied,
+  isEvidenceSettled, isEvidenceOutstanding, isEvidenceOverdue,
+  canAccept, engagementProgress,
+  COORDINATION_HOURS_ARE_PLACEHOLDERS, TODO_COORDINATION_CAPACITY_HOURS_PER_WEEK,
+  wipLoad,
+} from './delivery.js';
