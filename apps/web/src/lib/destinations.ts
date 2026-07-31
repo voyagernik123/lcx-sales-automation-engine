@@ -70,6 +70,17 @@ export const DESTINATIONS: readonly Destination[] = [
    * whole wiring.
    */
   { id: 'go-ws-marketing', path: '/marketing', label: 'LCX MARKETING', key: '8' },
+  /**
+   * The eighth compartment (GPS Phase 1). APPENDED, for the reason spelled out on
+   * the row above and not repeated here: the number is the order it was added in,
+   * not a taxonomy, and re-ordering this table silently rebinds accelerators an
+   * operator has already learned.
+   *
+   * `lib/tour.ts` derives the first-run tour from `WORKSPACE_IDS` and finds its
+   * step here, so `tour.test.ts:161` fails until this row exists — that test, not
+   * this comment, is what makes the wiring mandatory.
+   */
+  { id: 'go-ws-gps', path: '/gps', label: 'GLOBAL SERVICES', key: '9' },
 ];
 
 /** Menu id → route, for the native bridge. */

@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Command, Target, Radar, Scale, Rocket, Shield, Lock, Megaphone, type LucideIcon } from 'lucide-react';
+import { Command, Target, Radar, Scale, Rocket, Shield, Lock, Megaphone, Globe, type LucideIcon } from 'lucide-react';
 import { WORKSPACES, capAtLeast, type WorkspaceId } from '@lcx/shared';
 import { useAccessStore } from '@/stores/useAccessStore';
 
@@ -10,6 +10,10 @@ const ICONS: Record<WorkspaceId, LucideIcon> = {
   regulatory: Scale,
   distribution: Rocket,
   marketing: Megaphone,
+  // Matches `icon: 'Globe'` in the workspace constitution (@lcx/shared
+  // workspaces.ts). Nothing checks the two agree — the constitution's `icon` is a
+  // string this map does not read — so they are kept in step by hand.
+  gps: Globe,
   governance: Shield,
 };
 

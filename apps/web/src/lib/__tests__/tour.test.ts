@@ -118,6 +118,10 @@ describe('the tour is generated from entitlements', () => {
       // order would have rebound GOVERNANCE's ⌘6 and the sandbox's ⌘7 under
       // operators who had already learned them. Menu order IS added order.
       'go-marketing',
+      // Eighth compartment (GPS Phase 1), appended for the same reason as the row
+      // above — added order IS menu order, and re-sorting the table would rebind
+      // accelerators operators have learned.
+      'go-gps',
       'hints',
       'go-desk',
     ]);

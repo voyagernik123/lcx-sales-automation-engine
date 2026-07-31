@@ -70,7 +70,10 @@ const INTERNAL_ONLY = new Set<string>([]);
  * until the entry comes off, so the list cannot quietly become the place dead code lives.
  */
 const KNOWN_DEAD = new Map<string, string>([
-  ['Input.tsx', 'zero importers outside components/ui as of 2026-07-25'],
+  // Input.tsx was here until 2026-07-31 and is now REVIVED, not exempt: pages/Gps.tsx
+  // imports it for the client-name and price fields. The entry is deleted rather
+  // than annotated because this test fails on a stale entry — an exemption that is
+  // no longer true is exactly the blind spot the guard exists to prevent.
   ['Tooltip.tsx', 'zero importers outside components/ui as of 2026-07-25 (charts/tooltip.tsx is a different component)'],
 ]);
 

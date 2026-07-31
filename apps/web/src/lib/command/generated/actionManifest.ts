@@ -14,7 +14,7 @@
  * unknown keys (so some valid input looks invalid). invokeAction on the server is
  * the only authority. See apps/api/src/actions/grammar.ts.
  *
- * 22 actions · manifest a118154b6252a874
+ * 27 actions · manifest 7227f100ab795db7
  */
 
 import type { ActionManifest } from '../types';
@@ -586,6 +586,183 @@ export const ACTION_MANIFEST: ActionManifest = {
       "grammar": {}
     },
     {
+      "id": "gps_conflict_declare",
+      "label": "Declare conflict position",
+      "description": "Record the conflict-of-interest decision on a services engagement (GLOBAL SERVICES). Required before anything is issued to the client.",
+      "subjectTypes": [
+        "gps_engagement"
+      ],
+      "minRole": "operator",
+      "workspace": "gps",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "checkPerformed": {
+            "type": "string",
+            "minLength": 24,
+            "maxLength": 4000
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "cleared",
+              "cleared_with_disclosure",
+              "declined"
+            ]
+          },
+          "disclosureTextUsed": {
+            "type": "string",
+            "maxLength": 4000
+          }
+        },
+        "required": [
+          "checkPerformed",
+          "decision"
+        ],
+        "additionalProperties": false
+      },
+      "grammar": {}
+    },
+    {
+      "id": "gps_discount_approve",
+      "label": "Approve concession price",
+      "description": "Authorise issuing a services engagement at a price below cost or below its band (GLOBAL SERVICES). Approver only; cannot be self-approved.",
+      "subjectTypes": [
+        "gps_engagement"
+      ],
+      "minRole": "approver",
+      "workspace": "gps",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "priceCents": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000000
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 12,
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "priceCents",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "grammar": {}
+    },
+    {
+      "id": "gps_engagement_accept",
+      "label": "Record client acceptance",
+      "description": "Record that the client accepted the proposal (GLOBAL SERVICES). Sets accepted_at; the deposit is separate because a signature is not cash.",
+      "subjectTypes": [
+        "gps_engagement"
+      ],
+      "minRole": "operator",
+      "workspace": "gps",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "depositRequiredCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000000
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "additionalProperties": false
+      },
+      "grammar": {}
+    },
+    {
+      "id": "gps_proposal_issue",
+      "label": "Issue proposal",
+      "description": "Freeze the offer scope, set the price, and move a services engagement to proposed (GLOBAL SERVICES). Conflict-gated; a below-cost or below-band price needs a prior approval.",
+      "subjectTypes": [
+        "gps_engagement"
+      ],
+      "minRole": "operator",
+      "workspace": "gps",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "priceCents": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000000000
+          },
+          "vendorCostCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000000
+          },
+          "depositRequiredCents": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000000000
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Z]{3}$"
+          }
+        },
+        "required": [
+          "priceCents"
+        ],
+        "additionalProperties": false
+      },
+      "grammar": {}
+    },
+    {
+      "id": "gps_status_change",
+      "label": "Move engagement status",
+      "description": "Move a services engagement along its lifecycle by hand (GLOBAL SERVICES). Cannot set proposed or accepted — those have their own gated actions.",
+      "subjectTypes": [
+        "gps_engagement"
+      ],
+      "minRole": "operator",
+      "workspace": "gps",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "conflict_pending",
+              "deposit_paid",
+              "in_delivery",
+              "delivered",
+              "invoiced",
+              "collected",
+              "closed_lost",
+              "cancelled"
+            ]
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "additionalProperties": false
+      },
+      "grammar": {}
+    },
+    {
       "id": "grant_entitlement",
       "label": "Grant workspace access",
       "description": "Entitle a roster member to a workspace at a capability tier (LCX OS).",
@@ -607,6 +784,7 @@ export const ACTION_MANIFEST: ActionManifest = {
               "regulatory",
               "distribution",
               "marketing",
+              "gps",
               "governance"
             ]
           },
@@ -689,6 +867,7 @@ export const ACTION_MANIFEST: ActionManifest = {
               "regulatory",
               "distribution",
               "marketing",
+              "gps",
               "governance"
             ]
           },
@@ -848,7 +1027,7 @@ export const ACTION_MANIFEST: ActionManifest = {
       "us_entity_licences"
     ]
   },
-  "manifestHash": "a118154b6252a874"
+  "manifestHash": "7227f100ab795db7"
 } as const satisfies ActionManifest;
 
-export const MANIFEST_HASH = "a118154b6252a874";
+export const MANIFEST_HASH = "7227f100ab795db7";

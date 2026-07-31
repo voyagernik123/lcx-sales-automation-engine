@@ -21,7 +21,8 @@ export type WorkspaceId =
   | 'regulatory'
   | 'distribution'
   | 'governance'
-  | 'marketing';
+  | 'marketing'
+  | 'gps';
 
 /** Capability ladder within a workspace. approve ⊃ operate ⊃ view. */
 export type Capability = 'view' | 'operate' | 'approve';
@@ -162,6 +163,45 @@ export const WORKSPACES: readonly WorkspaceDef[] = [
     apiPrefixes: ['/v1/marketing'],
     defaultLanding: '/marketing',
     sensitivity: 'standard',
+    legacy: false,
+  },
+  {
+    /**
+     * The eighth compartment (2026-07-31) — GLOBAL SERVICES, the services
+     * business: MiCA white papers, legal-opinion coordination, GTM/TGE sprints,
+     * marketing activation. Sold manually today (~$250k, four offers); this
+     * compartment is where the offer→proposal→deposit loop lives.
+     *
+     * WHY A COMPARTMENT AND NOT A PAGE ON `sales`. `sales` is the LCX BD desk —
+     * it pursues projects to list on LCX's own venue. GPS holds THIRD-PARTY
+     * CLIENT material: a client's engagement scope, their price, their conflict
+     * check. Those two need-to-knows must not be the same one, because a client
+     * of the services business is not automatically a listing prospect and their
+     * commercial terms are not LCX desk information.
+     *
+     * `sensitivity: 'elevated'` — the highest the type allows, and the only
+     * defensible setting: these rows are a third party's confidential commercial
+     * terms held on a regulated exchange's infrastructure. Purpose-prompting a
+     * read here has real protective value (contrast `marketing`, where the
+     * content is public tweets and prompting would cheapen the tier).
+     *
+     * `legacy: false` — and as of today (commit d62b965) that flag is
+     * LOAD-BEARING, not documentation. `legacyEntitlements` below now filters on
+     * it, so a `legacy: false` compartment is unreachable through the fail-open
+     * path and unreachable by a freshly-added roster member: the ONLY way in is
+     * an explicit, audited grant row. That property is why GPS may hold client
+     * data at all. Before d62b965 the loop was `for (const w of WORKSPACES)` and
+     * every zero-row member held every compartment — shipping GPS on top of that
+     * would have produced a visible boundary the data plane did not honour.
+     */
+    id: 'gps',
+    name: 'GLOBAL SERVICES',
+    mission: 'The services business — scoped offers, priced proposals, engagements, margin.',
+    icon: 'Globe',
+    webPaths: ['gps'],
+    apiPrefixes: ['/v1/gps'],
+    defaultLanding: '/gps',
+    sensitivity: 'elevated',
     legacy: false,
   },
   {

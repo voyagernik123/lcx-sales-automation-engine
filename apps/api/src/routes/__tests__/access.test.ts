@@ -96,8 +96,13 @@ describe('LCX OS front door + workspace gates', () => {
      * `legacy`, and the loader consults `FOUNDING_MEMBER_IDS` so only the three
      * backfilled members get the fail-open floor.
      */
-    expect(data.workspaces).toHaveLength(7);
-    for (const ws of ['command', 'sales', 'intel', 'regulatory', 'distribution', 'marketing', 'governance']) {
+    // EIGHT since GPS Phase 1 (0047_gps.sql backfills monty/nik/sam on 'gps', the
+    // same explicit-audited-grant shape 0046 used for marketing). The literal count
+    // is kept rather than derived from WORKSPACE_IDS on purpose: derived, this
+    // assertion would pass for a workspace nobody granted anyone, which is the one
+    // thing it is here to catch.
+    expect(data.workspaces).toHaveLength(8);
+    for (const ws of ['command', 'sales', 'intel', 'regulatory', 'distribution', 'marketing', 'gps', 'governance']) {
       expect(data.entitlements[ws], ws).toBe('operate');
     }
   });

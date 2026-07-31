@@ -27,12 +27,24 @@
  */
 import { z } from 'zod';
 import type pg from 'pg';
-import { findMemberById, WORKSPACE_IDS, capAtLeast, emissionBudget, type WorkspaceId } from '@lcx/shared';
+import { findMemberById, WORKSPACE_IDS, capAtLeast, emissionBudget } from '@lcx/shared';
 import { notify } from '../notifications/service.js';
 import { createManualTask } from '../tasks/service.js';
 import { DEFAULT_ORG_ID } from '../intel/observations.js';
 import { loadEntitlements, invalidateEntitlements } from '../access/entitlements.js';
 import { env } from '../lib/env.js';
+import { ActionError } from './types.js';
+import type { ActorRole, RegistryAction } from './types.js';
+import { GPS_ACTIONS } from '../gps/actions.js';
+
+/**
+ * The action contract moved to ./types.js so an action module can live outside
+ * this file without a cycle (see the docblock there). Re-exported here because
+ * every existing importer names it from this module, and a rename with no
+ * behaviour change is churn a reviewer has to read past.
+ */
+export { ActionError } from './types.js';
+export type { ActorRole, ActionContext, RegistryAction } from './types.js';
 
 /** Timing-safe string compare (constant-time when lengths match). */
 function safeEqual(a: string, b: string): boolean {
@@ -63,61 +75,6 @@ function safeEqual(a: string, b: string): boolean {
  */
 function isMissingTable(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: string }).code === '42P01';
-}
-
-export type ActorRole = 'operator' | 'approver';
-
-export interface ActionContext {
-  pool: pg.Pool;
-  subjectType: string;
-  subjectId: string;
-  params: Record<string, unknown>;
-  actor: string;
-  /** The principal's role — some gates (e.g. campaign launch) require approver. */
-  role: ActorRole;
-  /**
-   * Declare that a gate could not be evaluated and was skipped. invokeAction
-   * stamps `gateDegraded: true` plus this reason into BOTH the object_actions
-   * ledger and the audit_log row, so a skipped gate is distinguishable after the
-   * fact from a satisfied one. Without it the fail-open path is invisible: the
-   * audit row for an ungated write looks exactly like the row for a cleared one.
-   */
-  markGateDegraded: (reason: string) => void;
-}
-
-export interface RegistryAction {
-  id: string;
-  label: string;
-  description: string;
-  subjectTypes: string[]; // ['project'] or ['*']
-  minRole: ActorRole;
-  /**
-   * LCX OS compartment (Phase 1): when set, invokeAction additionally requires
-   * the actor to hold this workspace at 'operate' (or 'approve' when minRole
-   * is approver). Untagged actions rely on minRole alone — cross-cutting desk
-   * actions stay workspace-free by design.
-   */
-  workspace?: WorkspaceId;
-  paramsSchema: z.ZodType<Record<string, unknown>>;
-  execute: (ctx: ActionContext) => Promise<Record<string, unknown>>;
-}
-
-export class ActionError extends Error {
-  code: string;
-  status: number;
-  /**
-   * Machine-readable detail carried alongside the code, spread into the response
-   * body by the invoke route. A refusal has to be actionable without parsing
-   * prose: the command line decides which remedy to offer from `code`, and needs
-   * this to say WHICH reviews are missing or WHICH workspace is required.
-   */
-  data?: Record<string, unknown>;
-  constructor(code: string, message: string, status = 400, data?: Record<string, unknown>) {
-    super(message);
-    this.code = code;
-    this.status = status;
-    this.data = data;
-  }
 }
 
 const projectOnly = ['project'];
@@ -783,7 +740,38 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       return { campaignId: subjectId, status: params.status };
     },
   },
+
 };
+
+/**
+ * GLOBAL SERVICES (GPS Phase 1). Declared in `../gps/actions.ts` and merged in
+ * here rather than written inline like everything above, because these five are
+ * the only write paths that touch a third party's commercial terms while the
+ * operator is an employee of a regulated exchange — the reasoning for each refusal
+ * is long enough that inlining it would bury the other 22 actions.
+ *
+ * Keyed by `a.id` rather than by repeated literals: every entry above states its
+ * id twice (once as the key, once as `id:`), and a mismatch makes the action
+ * unreachable through `invokeAction` while leaving it visible in `listActions`.
+ * `gps/__tests__/actions.test.ts:657` asserts key === id for all five.
+ *
+ * WRITTEN AS A LOOP, NOT A SPREAD, and that is the whole point of it. `{ ...desk,
+ * ...gps }` is last-wins and silent: a GPS id colliding with a desk id would
+ * REPLACE the desk action, so `assign` or `notify` would quietly start demanding
+ * the `gps` compartment and refusing every operator who lacks it. No type check
+ * catches that (both sides are `RegistryAction`) and no test that merely looks an
+ * id up catches it either, because the lookup still succeeds. Refusing at import
+ * time means the API fails to boot instead of serving a re-permissioned verb.
+ */
+for (const a of GPS_ACTIONS) {
+  if (ACTION_REGISTRY[a.id]) {
+    throw new Error(
+      `[actions] GPS action '${a.id}' collides with an existing registry entry — ` +
+        'merging it would silently re-permission the desk action it shadows.',
+    );
+  }
+  ACTION_REGISTRY[a.id] = a;
+}
 
 export function listActions(): Array<Pick<RegistryAction, 'id' | 'label' | 'description' | 'subjectTypes' | 'minRole'>> {
   return Object.values(ACTION_REGISTRY).map((a) => ({

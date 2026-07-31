@@ -63,7 +63,49 @@ const WEB_SRC = fileURLToPath(new URL('../../../../web/src', import.meta.url));
  * "an operator is not meant to find this on a surface, and here is why". An empty
  * list is the healthy state — it is empty today, which is the point.
  */
-const EXEMPT: Record<string, string> = {};
+const EXEMPT: Record<string, string> = {
+  /*
+   * THE FIVE GPS ACTIONS ARE DEAD CAPABILITIES TODAY AND THIS LIST IS NOT SAYING
+   * OTHERWISE. The list was empty, and "empty is the healthy state" is written
+   * above; five entries landing at once is a defect being recorded, not absorbed.
+   *
+   * WHAT IS ACTUALLY WRONG. GPS Phase 1 shipped TWO write paths for the same
+   * operations, built independently:
+   *   - `routes/gps.ts` → `gps/service.ts` — REST, and the only one any surface
+   *     calls (`apps/web/src/lib/api/gps.ts`, `pages/Gps.tsx`);
+   *   - `gps/actions.ts` → these five, wired into ACTION_REGISTRY, invoked by
+   *     nothing.
+   * The registry path is the one the plan asked for (GPS_IMPLEMENTATION_PLAN.md
+   * §6.6) and the one with the stronger controls: the object_actions ledger, the
+   * hash-less-but-real audit_log row, refusal on self-approval, a discount gate
+   * that matches a prior approval against the exact `priceCents`, and gates that
+   * fail CLOSED on a missing table. The REST path has its own conflict gate and
+   * writes no action ledger. They also disagree on substance —
+   * `service.setEngagementStatus` will set `proposed`/`accepted` (conflict-gated),
+   * while `gps_status_change` deliberately refuses those two so the gated actions
+   * cannot be walked around.
+   *
+   * So this is not "an action nobody needs a button for". It is a governed path
+   * that duplicates an ungoverned-by-comparison one, and the surface picked the
+   * other. Exempting is the least-bad of the options available in a wiring pass:
+   * wiring the page to the registry means rewriting two modules' write paths and
+   * their ~77 tests, and adding these to AI_PROPOSABLE would let an LLM propose a
+   * conflict-of-interest decision on a third party's commercial terms — which is
+   * precisely what `assertNamedHuman` in gps/actions.ts exists to forbid.
+   *
+   * TO REMOVE THESE ENTRIES: pick ONE write path. Either delete `gps/actions.ts`
+   * and keep REST (losing the ledger, the discount gate and the self-approval
+   * refusal — say so if you do), or make the mutating handlers in `routes/gps.ts`
+   * delegate to `invokeAction` and reconcile the status-transition disagreement
+   * above. The staleness check below deletes the exemption's cover the moment a
+   * surface names one of these, so the two cannot both quietly stay true.
+   */
+  gps_conflict_declare: 'GPS ships a duplicate REST write path and the surface calls that; see the block above',
+  gps_proposal_issue: 'GPS ships a duplicate REST write path and the surface calls that; see the block above',
+  gps_discount_approve: 'no REST equivalent, and no surface offers it — a concession cannot currently be authorised from the UI at all',
+  gps_engagement_accept: 'GPS ships a duplicate REST write path and the surface calls that; see the block above',
+  gps_status_change: 'GPS ships a duplicate REST write path and the surface calls that; see the block above',
+};
 
 /** Recursive walk, skipping tests and generated artifacts. */
 function sourceFiles(dir: string, out: string[] = []): string[] {
@@ -109,6 +151,29 @@ describe('every governed action is named by some channel other than ⌘K', () =>
     // A broken path would make every action "unreached" — or, if the assertion
     // were inverted, make the whole guard pass vacuously. Pin the floor.
     expect(WEB_SOURCES.length).toBeGreaterThan(100);
+  });
+
+  /**
+   * An exemption that is no longer true is worse than no exemption: it is a
+   * standing claim that a capability has no surface, sitting next to the surface.
+   * The guard had no such check while EXEMPT was empty, which was safe only for
+   * exactly as long as it stayed empty.
+   */
+  it('no exemption is stale — an exempt action that a surface DOES name must lose its entry', () => {
+    const revived = Object.keys(EXEMPT).filter((id) => namedBy(id).length > 0);
+    expect(
+      revived,
+      `these ids are exempted as having no surface affordance, but apps/web/src names them: ` +
+        `${revived.map((id) => `${id} (${namedBy(id).join(', ')})`).join('; ')}. Delete the EXEMPT ` +
+        `entry — a false exemption is how the next dead capability gets through.`,
+    ).toEqual([]);
+  });
+
+  it('every exemption is registered — an entry for an action that no longer exists must go', () => {
+    // The other half of the rot: deleting an action and leaving its exemption
+    // behind leaves a governance statement about nothing.
+    const orphans = Object.keys(EXEMPT).filter((id) => !ACTION_REGISTRY[id]);
+    expect(orphans, 'exempted ids that are not in ACTION_REGISTRY').toEqual([]);
   });
 
   for (const id of Object.keys(ACTION_REGISTRY)) {

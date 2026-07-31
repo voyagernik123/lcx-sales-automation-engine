@@ -541,6 +541,13 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             // one table this and the web `g 8` chord both read, and
             // destinations.test.ts fails if this line and that row disagree.
             &MenuItem::with_id(app, "go-ws-marketing", "LCX MARKETING", true, Some("CmdOrCtrl+8"))?,
+            // The eighth compartment (GPS Phase 1), appended on ⌘9 for the reason
+            // given above: the digit is the order the destination was added in, not
+            // its place in a taxonomy, so nothing an operator has learned moves.
+            // ⌘9 is the last single-digit accelerator available — a ninth
+            // destination has no digit left and will need a different key, which is
+            // a decision for whoever adds it rather than a rename of these.
+            &MenuItem::with_id(app, "go-ws-gps", "GLOBAL SERVICES", true, Some("CmdOrCtrl+9"))?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "go-back", "Back", true, Some("CmdOrCtrl+["))?,
             &MenuItem::with_id(app, "go-forward", "Forward", true, Some("CmdOrCtrl+]"))?,

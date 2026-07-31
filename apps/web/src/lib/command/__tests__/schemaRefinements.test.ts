@@ -67,6 +67,34 @@ import { ACTION_MANIFEST } from '../generated/actionManifest';
 const REGISTRY = join(__dirname, '..', '..', '..', '..', '..', 'api', 'src', 'actions', 'registry.ts');
 
 /**
+ * …and the second file that now declares governed actions.
+ *
+ * GPS Phase 1 is the first feature to define its actions OUTSIDE the registry
+ * object literal (`apps/api/src/gps/actions.ts`, merged into ACTION_REGISTRY by
+ * `registry.ts`), and it declares them in a different shape: a top-level
+ * `const gps_x: GpsAction = { … }` rather than a two-space-indented `gps_x: {` key.
+ *
+ * This guard therefore has to read both, and the ONLY safe way for it to fail is
+ * loudly. The tempting alternative — skip ids the registry locator cannot find —
+ * would have silently dropped all five GPS schemas out of the ledger, which is
+ * the precise failure mode this whole file was written about: `.refine()` is
+ * invisible to the manifest hash, so an unledgered GPS schema could lose a
+ * refinement with nothing anywhere going red. `property()` below throws when no
+ * source matches, and the anti-vacuity test asserts the ledger covers every
+ * manifest action.
+ */
+const GPS_ACTIONS_SRC = join(__dirname, '..', '..', '..', '..', '..', 'api', 'src', 'gps', 'actions.ts');
+
+/**
+ * Where an action's declaration can live, and how to find it in each place.
+ * Searched in order; the first hit wins.
+ */
+const SOURCES: ReadonlyArray<{ rel: string; path: string; locate: (id: string) => string }> = [
+  { rel: 'actions/registry.ts', path: REGISTRY, locate: (id) => `\n  ${id}: {\n` },
+  { rel: 'gps/actions.ts', path: GPS_ACTIONS_SRC, locate: (id) => `\nconst ${id}: GpsAction = {\n` },
+];
+
+/**
  * Strip `//` and block comments, tracking string and template state.
  *
  * Not the line-oriented `codeOnly` the other ratchets use: this one has to survive
@@ -147,33 +175,47 @@ function readExpression(text: string, start: number): string {
 
 const norm = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
-/** Pull one named property out of one action's entry in ACTION_REGISTRY. */
-function property(clean: string, id: string, key: 'paramsSchema' | 'execute'): string {
-  const at = clean.indexOf(`\n  ${id}: {\n`);
-  if (at < 0) {
-    throw new Error(
-      `'${id}' is in the manifest but no \`  ${id}: {\` entry was found in registry.ts — ` +
-        'either the registry was reformatted (fix the locator in this test) or the action moved.',
-    );
+/**
+ * Comment-stripped source of every declaring file, read once.
+ *
+ * Missing file is fatal, not skippable: a guard that reads source off disk and
+ * degrades to a pass when the path is wrong is the vacuity failure this file's
+ * first test exists to prevent.
+ */
+function sources(): ReadonlyArray<{ rel: string; clean: string; locate: (id: string) => string }> {
+  return SOURCES.map((s) => {
+    if (!existsSync(s.path)) {
+      throw new Error(`${s.path} not found — this guard reads the server registry off disk and cannot degrade to a pass.`);
+    }
+    return { rel: s.rel, clean: stripComments(readFileSync(s.path, 'utf8')), locate: s.locate };
+  });
+}
+
+/** Pull one named property out of one action's declaration, wherever it lives. */
+function property(id: string, key: 'paramsSchema' | 'execute'): string {
+  for (const s of sources()) {
+    const at = s.clean.indexOf(s.locate(id));
+    if (at < 0) continue;
+    const kv = s.clean.indexOf(`${key}:`, at);
+    if (kv < 0) throw new Error(`'${id}' has no ${key} in ${s.rel}`);
+    return norm(readExpression(s.clean, kv + key.length + 1));
   }
-  const kv = clean.indexOf(`${key}:`, at);
-  if (kv < 0) throw new Error(`'${id}' has no ${key} in registry.ts`);
-  return norm(readExpression(clean, kv + key.length + 1));
+  throw new Error(
+    `'${id}' is in the manifest but no declaration was found in ${SOURCES.map((s) => s.rel).join(' or ')} ` +
+      `(looked for ${SOURCES.map((s) => JSON.stringify(s.locate(id).trim())).join(' / ')}) — either a ` +
+      'declaring file was reformatted (fix the locator in this test), the action moved, or a THIRD file ' +
+      'now declares actions and has to be added to SOURCES.',
+  );
 }
 
 const ACTION_IDS = ACTION_MANIFEST.actions.map((a) => a.id).sort();
 
 function chains(): Record<string, string> {
-  if (!existsSync(REGISTRY)) {
-    throw new Error(`${REGISTRY} not found — this guard reads the server registry off disk and cannot degrade to a pass.`);
-  }
-  const clean = stripComments(readFileSync(REGISTRY, 'utf8'));
-  return Object.fromEntries(ACTION_IDS.map((id) => [id, property(clean, id, 'paramsSchema')]));
+  return Object.fromEntries(ACTION_IDS.map((id) => [id, property(id, 'paramsSchema')]));
 }
 
 function executes(): Record<string, string> {
-  const clean = stripComments(readFileSync(REGISTRY, 'utf8'));
-  return Object.fromEntries(ACTION_IDS.map((id) => [id, property(clean, id, 'execute')]));
+  return Object.fromEntries(ACTION_IDS.map((id) => [id, property(id, 'execute')]));
 }
 
 /** Every refinement mechanism zod has that `z.toJSONSchema()` throws away. */
@@ -219,6 +261,30 @@ const LEDGER: Record<string, string> = {
   dist_listing_set_status:
     "z.object({ status: z.enum(['not_started', 'submitted', 'live', 'ranked']), rankNote: z.string().max(200).optional(), usageNote: z.string().max(200).optional(), url: z.string().max(300).optional(), })",
   flag_review: 'z.object({ reason: z.string().max(300).optional() })',
+  /*
+   * The five GPS chains, ledgered from `apps/api/src/gps/actions.ts` rather than
+   * registry.ts (see SOURCES). Worth noting what the ledger is protecting here,
+   * because it is more than usual: `nonBlank` guards a compliance record and a
+   * concession's justification, and the two object-level `.refine()`s enforce
+   * cross-field rules the emitted JSON Schema cannot express at all —
+   * "cleared_with_disclosure requires the disclosure text" and "closing as lost
+   * requires a reason". Lose either and the server silently accepts a
+   * conflict-of-interest row with no disclosure, or a lost deal with no reason,
+   * with the manifest hash unmoved.
+   *
+   * `z .object(` in two of them is not a typo: the source breaks the chain across
+   * lines and normalization collapses the newline.
+   */
+  gps_conflict_declare:
+    "z .object({ checkPerformed: z.string().min(24).max(4000).refine(nonBlank, { message: 'checkPerformed cannot be blank' }), decision: z.enum(['cleared', 'cleared_with_disclosure', 'declined']), disclosureTextUsed: z.string().max(4000).optional(), }) .refine((v) => v.decision !== 'cleared_with_disclosure' || nonBlank(v.disclosureTextUsed ?? ''), { message: 'cleared_with_disclosure requires the disclosure text actually used', path: ['disclosureTextUsed'], })",
+  gps_discount_approve:
+    "z.object({ priceCents: centsAtLeast(1), reason: z.string().min(12).max(500).refine(nonBlank, { message: 'reason cannot be blank — a concession has to say why' }), })",
+  gps_engagement_accept:
+    'z.object({ depositRequiredCents: centsAtLeast(0).optional(), note: z.string().max(500).optional(), })',
+  gps_proposal_issue:
+    "z.object({ priceCents: centsAtLeast(1), vendorCostCents: centsAtLeast(0).optional(), depositRequiredCents: centsAtLeast(0).optional(), currency: z.string().regex(/^[A-Z]{3}$/, 'currency must be a 3-letter ISO-4217 code').optional(), })",
+  gps_status_change:
+    "z .object({ status: z.enum(MANUAL_TARGETS as unknown as [string, ...string[]]), reason: z.string().max(500).optional(), }) .refine((v) => !REQUIRES_REASON.includes(v.status as EngagementStatus) || nonBlank(v.reason ?? ''), { message: 'closing an engagement as lost or cancelled requires a reason', path: ['reason'], })",
   grant_entitlement:
     "z.object({ workspace: z.enum(WORKSPACE_IDS as unknown as [string, ...string[]]), capability: z.enum(['view', 'operate', 'approve']), justification: z.string().min(1).max(500), })",
   notify:
@@ -247,7 +313,14 @@ describe('the registry schemas the manifest hash cannot see', () => {
     expect(ACTION_IDS.length).toBeGreaterThan(0);
     for (const [id, chain] of Object.entries(parsed)) {
       expect(chain, `${id}: parsed an empty paramsSchema — the registry locator in this test is broken`).not.toBe('');
-      expect(chain.startsWith('z.'), `${id}: parsed ${JSON.stringify(chain.slice(0, 40))}, which is not a zod chain`).toBe(
+      // `/^z\s*\./`, not `startsWith('z.')`: a chain written across lines —
+      //   paramsSchema: z
+      //     .object({ … })
+      //     .refine(…)
+      // normalizes to `z .object({ … })`, which this rejected as "not a zod chain".
+      // Two GPS schemas are formatted that way. The check is here to catch an empty
+      // or mis-sliced parse, and a line break is neither.
+      expect(/^z\s*\./.test(chain), `${id}: parsed ${JSON.stringify(chain.slice(0, 40))}, which is not a zod chain`).toBe(
         true,
       );
     }

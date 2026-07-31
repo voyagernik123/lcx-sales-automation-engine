@@ -28,7 +28,20 @@ import { describe, it, expect } from 'vitest';
 import { ACTION_MANIFEST } from '@/lib/command/generated/actionManifest';
 import { verbsFor, promptsFor, type Principal } from '@/components/command/grammar';
 
-/** The most capable principal: if an action is unreachable for them, it is unreachable. */
+/**
+ * The most capable principal: if an action is unreachable for them, it is unreachable.
+ *
+ * MUST list every compartment in the constitution, and it did not — `marketing`
+ * was missing, and `gps` was missing until GPS Phase 1 added five workspace-tagged
+ * actions and turned the omission into five failures. A compartment absent here
+ * makes its actions look unreachable when the only thing that is missing is the
+ * grant on this fixture, which sends the reader looking for a bug in `verbsFor`.
+ *
+ * Deliberately still a literal rather than `WORKSPACE_IDS.map(…)`: the whole
+ * premise of the file's header is that a test built out of the thing it checks
+ * proves nothing, and a derived principal would silently absorb the next
+ * compartment too.
+ */
 const OMNIPOTENT: Principal = {
   role: 'approver',
   entitlements: {
@@ -37,6 +50,8 @@ const OMNIPOTENT: Principal = {
     intel: 'approve',
     regulatory: 'approve',
     distribution: 'approve',
+    marketing: 'approve',
+    gps: 'approve',
     governance: 'approve',
   },
 };

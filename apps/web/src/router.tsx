@@ -18,6 +18,7 @@ const DistributionCampaigns = lazy(() => import('@/pages/DistributionCampaigns')
 const DistributionGeo = lazy(() => import('@/pages/DistributionGeo').then((m) => ({ default: m.DistributionGeo })));
 const DistributionHome = lazy(() => import('@/pages/DistributionHome').then((m) => ({ default: m.DistributionHome })));
 const Marketing = lazy(() => import('@/pages/Marketing').then((m) => ({ default: m.Marketing })));
+const Gps = lazy(() => import('@/pages/Gps').then((m) => ({ default: m.Gps })));
 const AccessControl = lazy(() => import('@/pages/AccessControl').then((m) => ({ default: m.AccessControl })));
 const Dashboard = lazy(() => import('@/pages/Dashboard').then((m) => ({ default: m.Dashboard })));
 const Home = lazy(() => import('@/pages/Home').then((m) => ({ default: m.Home })));
@@ -221,6 +222,11 @@ export const router = createBrowserRouter([
           { path: 'distribution/campaigns', element: <DistributionCampaigns /> },
           { path: 'distribution/geo', element: <DistributionGeo /> },
           { path: 'marketing', element: <Marketing /> },
+          // GLOBAL SERVICES (GPS Phase 1). One route, deliberately: the workspace
+          // has a single surface, and the server gate is what enforces the
+          // compartment — an unentitled operator reaching this path gets a page
+          // whose every fetch 403s, not a hidden route.
+          { path: 'gps', element: <Gps /> },
           { path: 'decisions', element: <Decisions /> },
           { path: 'command-deck', element: <CommandDeck /> },
           { path: 'command-partners', element: <CommandPartners /> },

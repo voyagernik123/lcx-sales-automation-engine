@@ -76,6 +76,46 @@ const ONLY_STAR_VERBS = new Set([
  */
 const EXEMPT_SHAPE = 'pseudo';
 
+/**
+ * Subject types deliberately WITHHELD from desk-level search, and therefore from
+ * ⌘K — the opposite trade to EXEMPT_SHAPE above. There the action has no subject;
+ * here it has a perfectly real one that must not be findable yet.
+ *
+ * `/v1/search` is mounted desk-level with `requireOperator` and no
+ * `requireWorkspace` (search.ts:446) because ⌘K has to work everywhere. Groups
+ * that own a compartment are filtered by entitlement (search.ts:154), which is
+ * genuinely a fix — but `capAtLeast(ents.gps, 'view')` is satisfied by two
+ * principals GPS Phase 1 has not closed off:
+ *
+ *  1. the shared machine key — `access/entitlements.ts:39` `machineMap()` loops
+ *     `WORKSPACE_IDS` granting `operate`, so `OPERATOR_API_KEY` holds `gps`;
+ *  2. any newly-added roster member with zero grant rows —
+ *     `entitlements.ts:56-61` falls back to `legacyEntitlements(role)`, and
+ *     `workspaces.ts` loops every workspace (the plan's S0.1, not done).
+ *
+ * A GPS row names a third party's client relationship and its price. Adding a
+ * `gps_client`/`gps_engagement` group to SEARCH_GROUPS today would make those
+ * names typeable into ⌘K by both principals above, which is precisely the
+ * "visible separation the data plane does not honour" the plan calls the single
+ * most dangerous move in the programme (GPS_IMPLEMENTATION_PLAN.md §1.5).
+ *
+ * The cost is real and is the reason this is a Map with a reason string rather
+ * than a bare set: the five GPS actions are NOT reachable from the command line.
+ * They are invocable only via `POST /v1/actions/:id` and the GPS surface.
+ *
+ * TO RETIRE THIS: close S0.1 and exclude `legacy: false` compartments from
+ * `machineMap()`, then add the group and delete the entry — the staleness check
+ * below fails the moment the subject type becomes searchable, so the two cannot
+ * drift into both being true.
+ */
+const WITHHELD_FROM_DESK_SEARCH = new Map<string, string>([
+  [
+    'gps_engagement',
+    'a third party client relationship and its price; /v1/search is reachable by the shared ' +
+      'machine key and by zero-grant roster members (plan S0.1 + machineMap, both open)',
+  ],
+]);
+
 function addressables(): Addressable[] {
   return Object.values(ACTION_REGISTRY).map((a) => ({
     id: a.id,
@@ -92,11 +132,21 @@ function crossBoundary(actions: Addressable[], searchable: readonly string[]): {
   unreachable: string[];
   staleExemptions: string[];
   exempt: string[];
+  withheld: string[];
+  staleWithholdings: string[];
 } {
   const searchableSet = new Set(searchable);
   const unreachable: string[] = [];
   const staleExemptions: string[] = [];
   const exempt: string[] = [];
+  const withheld: string[] = [];
+
+  // A withholding is stale once the type IS searchable — checked against the
+  // search table itself, not against the actions, so it fires even if no action
+  // addresses the type any more.
+  const staleWithholdings = [...WITHHELD_FROM_DESK_SEARCH.keys()]
+    .filter((t) => searchableSet.has(t))
+    .map((t) => `${t} is now emitted by GET /v1/search — remove it from WITHHELD_FROM_DESK_SEARCH`);
 
   for (const a of actions) {
     // A '*' action accepts any subject, so it is reachable if search can emit
@@ -113,9 +163,16 @@ function crossBoundary(actions: Addressable[], searchable: readonly string[]): {
       }
       continue;
     }
+    // Withheld: EVERY subject type it names is withheld. An action that also
+    // addresses a searchable type is reachable and does not qualify — otherwise
+    // one withheld type would excuse an action that is genuinely unwired.
+    if (a.subjectTypes.length > 0 && a.subjectTypes.every((t) => WITHHELD_FROM_DESK_SEARCH.has(t))) {
+      withheld.push(a.id);
+      continue;
+    }
     if (!reachable) unreachable.push(`${a.id} (subjectTypes: ${a.subjectTypes.join(', ')})`);
   }
-  return { unreachable, staleExemptions, exempt };
+  return { unreachable, staleExemptions, exempt, withheld, staleWithholdings };
 }
 
 /** Subject types search emits that no action names, and that are not declared. */
@@ -126,7 +183,7 @@ function unaddressed(actions: Addressable[], searchable: readonly string[]): str
 
 describe('GET /v1/search × ACTION_REGISTRY — the two vocabularies are one', () => {
   it('every governed action has a subject an operator can actually search for', () => {
-    const { unreachable, staleExemptions, exempt } = crossBoundary(
+    const { unreachable, staleExemptions, exempt, withheld, staleWithholdings } = crossBoundary(
       addressables(),
       SEARCHABLE_SUBJECT_TYPES,
     );
@@ -147,6 +204,23 @@ describe('GET /v1/search × ACTION_REGISTRY — the two vocabularies are one', (
 
     // Pin the exemption set. Growing it is allowed; growing it SILENTLY is not.
     expect(exempt.sort()).toEqual(['dist_campaign_create']);
+
+    expect(
+      staleWithholdings,
+      'a subject type is listed as withheld from desk search AND emitted by it — one of the two ' +
+        'is a lie. Remove the WITHHELD_FROM_DESK_SEARCH entry',
+    ).toEqual([]);
+
+    // Pin the withheld set exactly, for the same reason as `exempt`: these actions
+    // are NOT reachable from ⌘K, which is a cost the change accepted knowingly.
+    // A sixth action inheriting that cost by accident must fail here.
+    expect(withheld.sort()).toEqual([
+      'gps_conflict_declare',
+      'gps_discount_approve',
+      'gps_engagement_accept',
+      'gps_proposal_issue',
+      'gps_status_change',
+    ]);
   });
 
   it('every subject type search emits is one the registry addresses', () => {
@@ -369,6 +443,28 @@ describe('the boundary check can fail', () => {
     const { staleExemptions } = crossBoundary(stale, SEARCHABLE_SUBJECT_TYPES);
     expect(staleExemptions).toHaveLength(1);
     expect(staleExemptions[0]).toContain('ghost_action');
+  });
+
+  it('a withholding stops applying the moment the type becomes searchable', () => {
+    // The trade WITHHELD_FROM_DESK_SEARCH makes is only defensible while the type
+    // really is absent from search. Pretend a gps_engagement group was added: the
+    // withholding must go stale rather than quietly keep excusing the five
+    // actions — which is how a documented exception becomes a blind spot.
+    const asIf = [...SEARCHABLE_SUBJECT_TYPES, 'gps_engagement'];
+    const { staleWithholdings } = crossBoundary(real, asIf);
+    expect(staleWithholdings).toHaveLength(1);
+    expect(staleWithholdings[0]).toContain('gps_engagement');
+  });
+
+  it('a withheld action that also names a searchable subject is not excused', () => {
+    // Withholding is all-or-nothing on purpose. If it matched on `some()`, naming
+    // one withheld type alongside anything else would move the action into the
+    // withheld bucket and out of `unreachable` — a genuinely unwired subject
+    // laundered through a documented exception. This control fails under `some()`.
+    const mixed = [{ id: 'ghost_action', subjectTypes: ['gps_engagement', 'ghost_object'] }];
+    const { withheld, unreachable } = crossBoundary(mixed, SEARCHABLE_SUBJECT_TYPES);
+    expect(withheld).toEqual([]);
+    expect(unreachable).toEqual(['ghost_action (subjectTypes: gps_engagement, ghost_object)']);
   });
 
   it('a real action becomes unreachable when its group leaves the search table', () => {

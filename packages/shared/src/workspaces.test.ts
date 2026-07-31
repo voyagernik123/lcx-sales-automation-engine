@@ -18,13 +18,21 @@ describe('LCX OS workspace constitution (Phase 1)', () => {
    * needs X reply triage and has a different need-to-know from the BD desk;
    * see the reasoning on the WorkspaceDef itself. Default-deny (`legacy: false`).
    *
+   * Amended again 2026-07-31 — seven → eight, adding `gps` (GLOBAL SERVICES).
+   * This one is the sharpest case for asserting the count exactly: GPS is the
+   * first compartment that will hold a THIRD PARTY's confidential commercial
+   * terms on a regulated exchange's infrastructure, and it is `legacy: false`,
+   * which since commit d62b965 genuinely means grant-only. Anyone adding a
+   * ninth id here is making a need-to-know decision about client data, and
+   * should have to write it down.
+   *
    * If you are here because this test failed: that is the test doing its job.
    * Add your id to this list on purpose, and say why on the definition — do not
    * relax the assertion.
    */
-  it('declares exactly the seven compartments', () => {
+  it('declares exactly the eight compartments', () => {
     expect(WORKSPACE_IDS).toEqual([
-      'command', 'sales', 'intel', 'regulatory', 'distribution', 'marketing', 'governance',
+      'command', 'sales', 'intel', 'regulatory', 'distribution', 'marketing', 'gps', 'governance',
     ]);
   });
 

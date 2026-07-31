@@ -43,6 +43,7 @@ import { commandRoutes } from './routes/command.js';
 import { distributionRoutes } from './routes/distribution.js';
 import { x402Routes } from './routes/x402.js';
 import { accessRoutes } from './routes/access.js';
+import { gpsRoutes } from './routes/gps.js';
 import { requireWorkspace } from './middleware/workspace.js';
 import { NO_STORE_HEADER, noStore } from './middleware/noStore.js';
 import { WORKSPACES } from '@lcx/shared';
@@ -141,6 +142,27 @@ export function createApp() {
   // Guarded at 'view' automatically: app.ts mounts requireWorkspace from the
   // registry's apiPrefixes, and '/v1/marketing' is declared there.
   app.route('/v1/marketing', marketingRoutes);
+  // GLOBAL SERVICES (GPS Phase 1). Gated at 'view' automatically by the loop
+  // above — '/v1/gps' is declared in the workspace constitution's apiPrefixes
+  // (@lcx/shared workspaces.ts), which is the ONLY thing that makes the
+  // compartment real on the server; mounting a route here without that entry
+  // would publish it to the whole desk. See the plan's §1.5 for what this
+  // boundary does and does not give you: it is routing, not tenancy. The rows
+  // carry client_id (0047_gps.sql).
+  //
+  // ⌘K IS SCOPED, contrary to an earlier draft of this comment. `/v1/search` is
+  // desk-level by design, but since 7eee9a6 every group declares its owning
+  // compartment and `visibleGroups()` (routes/search.ts) filters the SPECS before
+  // any query runs, so an unentitled compartment is never read. GPS contributes no
+  // search group yet; when one is added it MUST carry `workspace: 'gps'`, and
+  // `__tests__/searchCompartments.test.ts` fails if a new compartment-owned group
+  // arrives untagged.
+  //
+  // What remains genuinely absent is TENANCY: no client/controller dimension is
+  // enforced at the row level for non-GPS readers, and there is deliberately
+  // nowhere to store a client document at all — Phase 3's artifact intake is
+  // gated on the unanswered DPO question (GPS_IMPLEMENTATION_PLAN.md §4 S0.4).
+  app.route('/v1/gps', gpsRoutes);
   app.route('/v1/scenarios', scenarioRoutes);
   app.route('/v1/pirs', pirRoutes);
   app.route('/v1/wbr', wbrRoutes);

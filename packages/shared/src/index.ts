@@ -137,6 +137,25 @@ export {
   waitlistSim, listingReadiness, tokenDdScore, programReadiness,
 } from './commandEngines.js';
 
+// GLOBAL SERVICES (GPS) — the services business, Phase 1: offer → proposal → deposit.
+// Compiled offer catalogue + engagement domain. Prices are TODO placeholders
+// (PRICE_BANDS_ARE_PLACEHOLDERS) and CATALOGUE_TODOS names what is still missing.
+// No artifact/upload surface here by construction — Phase 3 is gated on the DPO
+// question (GPS_IMPLEMENTATION_PLAN.md §4 S0.4).
+export type {
+  ContractingEntity, OfferKey, PriceBandCents, ServiceOffer,
+  EngagementStatus, ConflictDecision, ClientStatus,
+  GpsClient, GpsEngagement, GpsConflictCheck, CatalogueTodo,
+} from './gps/index.js';
+export {
+  DEFAULT_CONTRACTING_ENTITY, OFFER_KEYS,
+  ENGAGEMENT_STATUSES, ENGAGEMENT_STATUS_LABELS, isTerminalEngagementStatus,
+  marginCents, marginPct,
+  OFFERS, getOffer, DIAGNOSTIC_OFFER, bandMidpointCents,
+  CATALOGUE_TODOS, CATALOGUE_DEFAULT_CONTRACTING_ENTITY,
+  NO_LEGAL_ADVICE_EXCLUSION, PRICE_BANDS_ARE_PLACEHOLDERS,
+} from './gps/index.js';
+
 // DISTRIBUTION — growth engines (LCX ONE Phase 4)
 export type {
   ReferralParams, ReferralSimResult, EmissionInput, EmissionResult,

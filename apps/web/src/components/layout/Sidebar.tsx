@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield, Activity, Share2, Siren, CalendarClock, GitPullRequestArrow, Command, Landmark, KeyRound, Rocket, Megaphone, Compass, Keyboard } from 'lucide-react';
+import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield, Activity, Share2, Siren, CalendarClock, GitPullRequestArrow, Command, Landmark, KeyRound, Rocket, Megaphone, Compass, Keyboard, Globe } from 'lucide-react';
 import { useUIStore, useAuditStore } from '@/stores';
 import { useAccessStore, useMyWorkspaces } from '@/stores/useAccessStore';
 import type { WorkspaceId } from '@lcx/shared';
@@ -126,6 +126,14 @@ const WS_SECTIONS: Record<WorkspaceId, NavSection[]> = {
       title: 'LCX Marketing',
       items: [
         { to: '/marketing', label: 'Reply Desk', icon: Megaphone },
+      ],
+    },
+  ],
+  gps: [
+    {
+      title: 'Global Services',
+      items: [
+        { to: '/gps', label: 'Engagement Desk', icon: Globe },
       ],
     },
   ],
