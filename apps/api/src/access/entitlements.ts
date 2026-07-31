@@ -3,6 +3,7 @@ import {
   type Capability,
   type EntitlementMap,
   FOUNDING_MEMBER_IDS,
+  WORKSPACES,
   WORKSPACE_IDS,
   findMemberById,
   legacyEntitlements,
@@ -20,9 +21,11 @@ import {
  *  LCX OS existed. Deploy order can never lock the desk out. Any OTHER
  *  database error propagates: a broken DB must not silently grant access.
  *
- *  MACHINES ARE OPERATORS, NEVER APPROVERS: the shared API key ('operator'),
- *  monitors ('monitor:<id>') and the AI ('ai') hold blanket 'operate' — cron
- *  and automation keep working, while approve-tier stays human-only.
+ *  MACHINES ARE OPERATORS, NEVER APPROVERS, AND NOT EVERYWHERE: the shared API
+ *  key ('operator'), monitors ('monitor:<id>') and the AI ('ai') hold 'operate'
+ *  on every compartment that declares `machineAccess` — cron and automation keep
+ *  working — while approve-tier stays human-only. Compartments holding a third
+ *  party's confidential material opt out (`gps`); see machineMap() below.
  */
 
 const TTL_MS = 60_000;
@@ -34,9 +37,28 @@ export function invalidateEntitlements(memberId?: string): void {
   else cache.clear();
 }
 
+/**
+ * What a NON-ROSTER actor holds: the shared `OPERATOR_API_KEY`, `monitor:<id>`, `ai`.
+ *
+ * This used to loop every workspace, which is correct for the compartments that
+ * have automation — the 15-minute marketing tick (`routes/marketing.ts:149`) posts
+ * with the shared key, and jobs across command/sales/intel/regulatory/distribution/
+ * governance depend on the same blanket grant. Narrowing it wholesale would break
+ * cron, which is why the decision is declared per compartment on the WorkspaceDef
+ * rather than inferred from `legacy` here.
+ *
+ * What it must NOT do is hand a machine a compartment holding a THIRD PARTY's
+ * confidential commercial terms. `gps` sets `machineAccess: false`: it has no cron,
+ * and the shared key is the least attributable principal in the system — every
+ * integration and monitor carries it, so a `gps_conflict_check.decided_by` of
+ * "operator" would be an audit row naming nobody. Approve-tier was already
+ * human-only; this closes the read.
+ */
 function machineMap(): EntitlementMap {
   const map: EntitlementMap = {};
-  for (const id of WORKSPACE_IDS) map[id] = 'operate' as Capability;
+  for (const ws of WORKSPACES) {
+    if (ws.machineAccess) map[ws.id] = 'operate' as Capability;
+  }
   return map;
 }
 

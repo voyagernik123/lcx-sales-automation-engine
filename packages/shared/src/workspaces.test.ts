@@ -162,6 +162,49 @@ describe('LCX OS workspace constitution (Phase 1)', () => {
     });
   });
 
+  /**
+   * THE SHARED MACHINE KEY, NARROWED 2026-07-31.
+   *
+   * `machineMap()` (`apps/api/src/access/entitlements.ts:54`) grants every
+   * non-roster actor — the shared `OPERATOR_API_KEY`, `monitor:<id>`, `ai` —
+   * blanket `operate`, and it used to loop every workspace. Correct for the
+   * compartments with cron: the 15-minute marketing tick
+   * (`apps/api/src/routes/marketing.ts:149`) posts with the shared key, so keying
+   * this off `legacy` would have broken automation on a `legacy: false` compartment
+   * that legitimately needs it.
+   *
+   * Wrong, though, for a compartment holding a THIRD PARTY's confidential
+   * commercial terms. The shared key is the least attributable principal in the
+   * system — every integration and monitor carries it — so a
+   * `gps_conflict_check.decided_by` of "operator" is an audit row naming nobody.
+   * Hence an explicit per-compartment opt-out rather than a rule inferred here.
+   */
+  describe('machine access is declared per compartment, not assumed', () => {
+    it('every workspace states it explicitly', () => {
+      for (const w of WORKSPACES) {
+        expect(typeof w.machineAccess, `${w.id} must declare machineAccess`).toBe('boolean');
+      }
+    });
+
+    it('gps withholds it — client data is not reachable by the shared key', () => {
+      expect(WORKSPACES.find((w) => w.id === 'gps')?.machineAccess).toBe(false);
+    });
+
+    it('keeps it for marketing, whose cron tick depends on the shared key', () => {
+      // If this flips, /v1/marketing/tick starts 403ing and reply collection
+      // silently stops — a failure that looks like "no replies today".
+      expect(WORKSPACES.find((w) => w.id === 'marketing')?.machineAccess).toBe(true);
+    });
+
+    it('does not simply mirror `legacy` — the two answer different questions', () => {
+      // `legacy` is about default-deny for humans; `machineAccess` is about
+      // automation. `distribution` and `marketing` are legacy:false yet keep
+      // machine access, which is exactly why one flag could not serve both.
+      const differs = WORKSPACES.filter((w) => w.legacy !== w.machineAccess);
+      expect(differs.length, 'expected at least one workspace where they diverge').toBeGreaterThan(0);
+    });
+  });
+
   it('every workspace lands somewhere it owns (or the desk)', () => {
     for (const w of WORKSPACES) {
       const home = workspaceForPath(w.defaultLanding);

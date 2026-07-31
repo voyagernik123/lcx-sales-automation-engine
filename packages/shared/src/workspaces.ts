@@ -58,6 +58,31 @@ export interface WorkspaceDef {
   sensitivity: 'standard' | 'elevated';
   /** New compartments are default-deny (only approvers seeded); legacy ones are backfilled. */
   legacy: boolean;
+  /**
+   * May the SHARED MACHINE PRINCIPAL hold this compartment?
+   *
+   * `machineMap()` (`apps/api/src/access/entitlements.ts:36`) grants any non-roster
+   * actor — the shared `OPERATOR_API_KEY`, `monitor:<id>`, `ai` — blanket `operate`,
+   * and it used to loop EVERY workspace. That is deliberate for the compartments
+   * with cron: the 15-minute marketing tick posts to `/v1/marketing/tick`
+   * (`routes/marketing.ts:149`) with the shared key, and jobs across command,
+   * sales, intel, regulatory, distribution and governance rely on the same thing.
+   * Breaking that would break automation, which is why this is opt-OUT per
+   * compartment rather than a blanket rule keyed off `legacy`.
+   *
+   * But a machine has no need-to-know for a compartment holding a THIRD PARTY's
+   * confidential commercial terms. `gps` is the first of those, it has no cron, and
+   * a shared key that every integration and monitor already carries is the least
+   * attributable principal in the system — `gps_conflict_check.decided_by` written
+   * by "operator" would be an audit row naming nobody. So `gps` opts out, and the
+   * plan's §1.5 "isolation from the shared machine key: ABSENT" stops being true
+   * for the one compartment where it mattered most.
+   *
+   * Set this `false` for any future compartment that holds client material and does
+   * not need automation. If it needs BOTH, that wants a scoped machine identity
+   * rather than the shared key — do not just flip this to `true`.
+   */
+  machineAccess: boolean;
 }
 
 export const WORKSPACES: readonly WorkspaceDef[] = [
@@ -71,6 +96,7 @@ export const WORKSPACES: readonly WorkspaceDef[] = [
     defaultLanding: '/command-deck',
     sensitivity: 'elevated',
     legacy: true,
+    machineAccess: true,
   },
   {
     id: 'sales',
@@ -89,6 +115,7 @@ export const WORKSPACES: readonly WorkspaceDef[] = [
     defaultLanding: '/bd-pipeline',
     sensitivity: 'standard',
     legacy: true,
+    machineAccess: true,
   },
   {
     id: 'intel',
@@ -107,6 +134,7 @@ export const WORKSPACES: readonly WorkspaceDef[] = [
     defaultLanding: '/command',
     sensitivity: 'standard',
     legacy: true,
+    machineAccess: true,
   },
   {
     id: 'regulatory',
@@ -122,6 +150,7 @@ export const WORKSPACES: readonly WorkspaceDef[] = [
     defaultLanding: '/regulatory-dashboard',
     sensitivity: 'standard',
     legacy: true,
+    machineAccess: true,
   },
   {
     id: 'distribution',
@@ -133,6 +162,7 @@ export const WORKSPACES: readonly WorkspaceDef[] = [
     defaultLanding: '/distribution',
     sensitivity: 'elevated',
     legacy: false,
+    machineAccess: true,
   },
   {
     /**
@@ -164,6 +194,7 @@ export const WORKSPACES: readonly WorkspaceDef[] = [
     defaultLanding: '/marketing',
     sensitivity: 'standard',
     legacy: false,
+    machineAccess: true,
   },
   {
     /**
@@ -203,6 +234,8 @@ export const WORKSPACES: readonly WorkspaceDef[] = [
     defaultLanding: '/gps',
     sensitivity: 'elevated',
     legacy: false,
+    // No cron, and it holds a third party's confidential terms — see machineAccess.
+    machineAccess: false,
   },
   {
     id: 'governance',
@@ -214,6 +247,7 @@ export const WORKSPACES: readonly WorkspaceDef[] = [
     defaultLanding: '/wbr',
     sensitivity: 'elevated',
     legacy: true,
+    machineAccess: true,
   },
 ] as const;
 
