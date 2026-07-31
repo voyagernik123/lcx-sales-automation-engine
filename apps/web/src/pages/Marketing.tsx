@@ -76,12 +76,14 @@ export function Marketing() {
       <PageTitle
         icon={<Megaphone size={20} />}
         subtitle="Replies under @lcx posts — triaged, drafted by AI, approved by a human. The desk never auto-posts."
-        actions={<Button size="sm" variant="secondary" onClick={() => setOpen((v) => !v)}><Send size={13} /> Add a reply</Button>}
+        actions={summary?.migrated !== false
+          ? <Button size="sm" variant="secondary" onClick={() => setOpen((v) => !v)}><Send size={13} /> Add a reply</Button>
+          : undefined}
       >
         Reply Desk
       </PageTitle>
 
-      {open && <PasteForm onDone={() => { setOpen(false); refresh(); }} />}
+      {open && summary?.migrated !== false && <PasteForm onDone={() => { setOpen(false); refresh(); }} />}
 
       {summary && <SummaryStrip s={summary} />}
 
@@ -129,7 +131,14 @@ function SummaryStrip({ s }: { s: MarketingSummary }) {
           model is the one the desk most needs to look at. */}
       <Stat label="Suspicious" value={String(s.suspicious)} tone={s.suspicious > 0 ? 'warn' : undefined} />
       <Stat label="Unreadable emails" value={String(s.unparsed)} tone={s.unparsed > 0 ? 'warn' : undefined} />
-      {!s.mailConfigured && (
+      {!s.migrated && (
+        <p className="sm:col-span-2 lg:col-span-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-label text-amber-700 dark:text-amber-400">
+          <strong>Awaiting migration 0046 on this environment.</strong> The compartment is deployed but its
+          tables do not exist yet, so the queue is empty and writes are declined. Apply
+          <span className="font-mono text-micro"> 0046_marketing.sql</span> and reload — nothing else in LCX OS is affected.
+        </p>
+      )}
+      {s.migrated && !s.mailConfigured && (
         <p className="sm:col-span-2 lg:col-span-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-label text-amber-700 dark:text-amber-400">
           Mailbox not configured — set <span className="font-mono text-micro">X_MAIL_*</span> to poll X notification
           emails automatically. Until then, add replies by hand; everything else works.

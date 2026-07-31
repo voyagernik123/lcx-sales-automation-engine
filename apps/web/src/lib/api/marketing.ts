@@ -42,6 +42,12 @@ export interface MarketingSummary {
   /** Emails the parser could not read — a human must look. */
   unparsed: number;
   mailConfigured: boolean;
+  /**
+   * False until migration 0046 is applied on this environment. The compartment
+   * reports itself as not-yet-enabled rather than erroring, so the page shows a
+   * banner instead of a crash during the window between deploy and migration.
+   */
+  migrated: boolean;
 }
 
 const unwrap = <T>(p: Promise<{ data: T }>): Promise<T> => p.then((r) => r.data);

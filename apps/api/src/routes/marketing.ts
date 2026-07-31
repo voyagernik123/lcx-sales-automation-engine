@@ -23,7 +23,7 @@ import { getPool } from '../db/index.js';
 import { env } from '../lib/env.js';
 import {
   approveDraft, ingestEmails, insertReply, listDrafts, listReplies,
-  queueSummary, saveDraft, setReplyStatus, sweepExpired,
+  isMigrated, queueSummary, saveDraft, setReplyStatus, sweepExpired,
   type ReplyStatus,
 } from '../marketing/service.js';
 import { fetchNotificationEmails, mailConfigured } from '../marketing/xMail.js';
@@ -32,14 +32,32 @@ const meta = () => ({ timestamp: new Date().toISOString(), version: env.version 
 
 const STATUSES: readonly ReplyStatus[] = ['new', 'triaged', 'drafted', 'answered', 'ignored'];
 
+
+/**
+ * Every route goes through this. Before 0046 is applied the compartment reports
+ * itself as not-yet-enabled instead of throwing — see `isMigrated`. A 500 here
+ * would read as "the platform is down" during a window that is really "one
+ * migration is pending", and those demand very different reactions.
+ *
+ * Reads answer with an empty, well-shaped body so the UI renders its banner
+ * rather than its error state. Writes answer 503 — the request was valid and
+ * would have worked; the environment is not ready. Never 500.
+ */
+const NOT_MIGRATED = {
+  error: 'LCX MARKETING is awaiting migration 0046 on this environment',
+  code: 'MIGRATION_PENDING',
+} as const;
+
 export const marketingRoutes = new Hono<{ Variables: AuthVariables }>();
 
 marketingRoutes.get('/queue', requireOperator, async (c) => {
   try {
     const raw = c.req.query('status');
     const status = STATUSES.includes(raw as ReplyStatus) ? (raw as ReplyStatus) : undefined;
-    const rows = await listReplies(getPool(), { status, limit: Number(c.req.query('limit') ?? 50) });
-    return c.json({ data: rows, meta: meta() });
+    const pool = getPool();
+    if (!(await isMigrated(pool))) return c.json({ data: [], meta: { ...meta(), migrated: false } });
+    const rows = await listReplies(pool, { status, limit: Number(c.req.query('limit') ?? 50) });
+    return c.json({ data: rows, meta: { ...meta(), migrated: true } });
   } catch (err) {
     console.error('[marketing] queue error:', err);
     return c.json({ error: 'Failed to load queue', code: 'MARKETING_ERROR' }, 500);
@@ -48,8 +66,18 @@ marketingRoutes.get('/queue', requireOperator, async (c) => {
 
 marketingRoutes.get('/summary', requireOperator, async (c) => {
   try {
-    const s = await queueSummary(getPool());
-    return c.json({ data: { ...s, mailConfigured: mailConfigured() }, meta: meta() });
+    const pool = getPool();
+    if (!(await isMigrated(pool))) {
+      return c.json({
+        data: {
+          counts: {}, oldestUnansweredHours: null, suspicious: 0, unparsed: 0,
+          mailConfigured: mailConfigured(), migrated: false,
+        },
+        meta: meta(),
+      });
+    }
+    const s = await queueSummary(pool);
+    return c.json({ data: { ...s, mailConfigured: mailConfigured(), migrated: true }, meta: meta() });
   } catch (err) {
     console.error('[marketing] summary error:', err);
     return c.json({ error: 'Failed to load summary', code: 'MARKETING_ERROR' }, 500);
@@ -83,6 +111,10 @@ marketingRoutes.post('/ingest', requireOperator, async (c) => {
     if (!/^[A-Za-z0-9_]{1,15}$/.test(handle)) {
       return c.json({ error: 'authorHandle is not a valid X handle', code: 'VALIDATION' }, 400);
     }
+    // Validation FIRST, migration probe second: a malformed request is malformed
+    // in every environment, and answering 503 for a bad handle would tell the
+    // caller to retry later something that will never succeed.
+    if (!(await isMigrated(getPool()))) return c.json(NOT_MIGRATED, 503);
 
     // A synthetic id when none is supplied keeps the UNIQUE dedupe meaningful and
     // makes the provenance obvious in the row itself.
@@ -117,6 +149,9 @@ marketingRoutes.post('/ingest', requireOperator, async (c) => {
 marketingRoutes.post('/tick', requireOperator, async (c) => {
   try {
     const pool = getPool();
+    if (!(await isMigrated(pool))) {
+      return c.json({ data: { migrated: false, note: 'awaiting migration 0046 — nothing to sweep or poll yet' }, meta: meta() });
+    }
     const swept = await sweepExpired(pool);
 
     if (!mailConfigured()) {
@@ -144,6 +179,7 @@ marketingRoutes.post('/:id/draft', requireOperator, async (c) => {
       return c.json({ error: 'invalid id', code: 'VALIDATION' }, 400);
     }
     const pool = getPool();
+    if (!(await isMigrated(pool))) return c.json(NOT_MIGRATED, 503);
     const rows = await pool.query(
       `SELECT author_handle, body FROM marketing_x_reply WHERE id = $1`, [id],
     );
@@ -170,6 +206,7 @@ marketingRoutes.get('/:id/drafts', requireOperator, async (c) => {
     if (!Number.isInteger(id) || id <= 0) {
       return c.json({ error: 'invalid id', code: 'VALIDATION' }, 400);
     }
+    if (!(await isMigrated(getPool()))) return c.json({ data: [], meta: { ...meta(), migrated: false } });
     return c.json({ data: await listDrafts(getPool(), id), meta: meta() });
   } catch (err) {
     console.error('[marketing] drafts error:', err);
@@ -187,6 +224,7 @@ marketingRoutes.post('/draft/:id/approve', requireOperator, async (c) => {
     if (!Number.isInteger(id) || id <= 0) {
       return c.json({ error: 'invalid id', code: 'VALIDATION' }, 400);
     }
+    if (!(await isMigrated(getPool()))) return c.json(NOT_MIGRATED, 503);
     const operator = c.get('operator');
     const row = await approveDraft(getPool(), id, operator?.id ?? 'unknown');
     if (!row) {
@@ -209,6 +247,7 @@ marketingRoutes.post('/:id/status', requireOperator, async (c) => {
     if (!STATUSES.includes(body.status as ReplyStatus)) {
       return c.json({ error: `status must be one of ${STATUSES.join(', ')}`, code: 'VALIDATION' }, 400);
     }
+    if (!(await isMigrated(getPool()))) return c.json(NOT_MIGRATED, 503);
     await setReplyStatus(getPool(), id, body.status as ReplyStatus);
     return c.json({ data: { ok: true }, meta: meta() });
   } catch (err) {

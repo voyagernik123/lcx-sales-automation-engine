@@ -14,6 +14,55 @@ import { parseXNotification, type RawEmail } from './xNotificationParse.js';
 /** Retention default. Overridable, but it must never be unbounded — see 0046. */
 const RETENTION_DAYS = Number(process.env.MARKETING_RETENTION_DAYS ?? '90');
 
+/**
+ * HAS MIGRATION 0046 LANDED ON THIS ENVIRONMENT?
+ *
+ * WHY THIS EXISTS. Deploy order cannot be assumed. The web bundle and the API
+ * ship together on a push to main, but 0046 is applied by hand against a database
+ * whose credentials live in Render's dashboard — so there is a window, possibly a
+ * long one, where the code is live and the tables are not.
+ *
+ * Without this check that window looks like an OUTAGE: every marketing endpoint
+ * throws `relation "marketing_x_reply" does not exist`, the route returns 500,
+ * and the compartment reads as broken rather than as not-yet-enabled. The desk
+ * cannot tell "we shipped this and you need to run one migration" from "the
+ * platform is down", and the second reading is the one people act on.
+ *
+ * So: probe once, degrade honestly, and say so on screen. The same pattern
+ * `distribution` uses for 0043 ("Read-only until migration 0043 is applied on
+ * this environment") — it was right there and it is right here.
+ *
+ * `to_regclass` rather than a query against information_schema: it is a single
+ * cheap lookup that returns NULL instead of throwing, so the probe itself can
+ * never be the thing that errors.
+ *
+ * Cached per process because the answer only changes when someone runs a
+ * migration, which means a deploy or a manual step — and the API restarts on
+ * deploy. A false negative would self-heal on the next restart; a per-request
+ * probe would add a round trip to every read forever to catch a once-ever event.
+ */
+let migratedCache: boolean | null = null;
+
+export async function isMigrated(pool: Pool): Promise<boolean> {
+  if (migratedCache !== null) return migratedCache;
+  try {
+    const res = await pool.query(
+      `SELECT to_regclass('public.marketing_x_reply') IS NOT NULL AS ok`,
+    );
+    migratedCache = Boolean(res.rows[0]?.ok);
+  } catch {
+    // A database that cannot answer this is a database that cannot serve the
+    // compartment either. Report not-migrated rather than propagating.
+    migratedCache = false;
+  }
+  return migratedCache;
+}
+
+/** Test-only: forget the probe. */
+export function _resetMigrated(): void {
+  migratedCache = null;
+}
+
 export type ReplyStatus = 'new' | 'triaged' | 'drafted' | 'answered' | 'ignored';
 
 export interface ReplyRow {
