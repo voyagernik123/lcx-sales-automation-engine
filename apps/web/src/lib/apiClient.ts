@@ -22,7 +22,36 @@ import { recordNetworkResult } from './online';
 // statically. `feedback` is deliberately NOT imported here — see `react()`.
 import { lastActivated } from './lastActivated';
 
-const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+/**
+ * The API origin this bundle talks to.
+ *
+ * WHY THERE IS A HARDCODED FALLBACK. `VITE_API_URL` is a BUILD-TIME variable, and
+ * on Cloudflare Pages it comes from the dashboard — where variables are scoped
+ * per environment, Production and Preview separately. It was set for Production
+ * only. So every preview deployment shipped with an empty base, fell back to a
+ * relative `/api`, and asked the Pages CDN for an API that does not exist there:
+ *
+ *   GET https://f2a86c32.lcx-sales-automation-engine.pages.dev/api/health → 503
+ *
+ * Every request failed, and the desk reported it as API DOWN. Diagnosed from the
+ * network log after the CORS fix did not change it — the requests were never
+ * reaching Render at all.
+ *
+ * A missing build variable should not be able to produce a bundle that cannot
+ * reach its own backend. The constant is already committed anyway
+ * (`apps/desktop/src-tauri/tauri.conf.json` sets exactly this value for the
+ * desktop build), so writing it here adds no secret and no new coupling — it
+ * turns a silent dashboard dependency into a default.
+ *
+ * DEV is unchanged and must stay that way: an empty base means the relative
+ * `/api` path, which is what Vite's proxy rewrites to 127.0.0.1:8787. An explicit
+ * `VITE_API_URL` still wins everywhere, so pointing a build at staging is exactly
+ * as it was.
+ */
+const PROD_API_FALLBACK = 'https://lcx-sales-api.onrender.com';
+const API_BASE =
+  (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ??
+  (import.meta.env.DEV ? '' : PROD_API_FALLBACK);
 // DEV-only: gating on import.meta.env.DEV lets Vite dead-code-strip the key
 // from production bundles, so a stray VITE_API_KEY in a prod build env can
 // never be inlined and shipped to browsers. Prod keys live in localStorage.
