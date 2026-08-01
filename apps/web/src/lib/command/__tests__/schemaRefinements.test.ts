@@ -281,8 +281,12 @@ const LEDGER: Record<string, string> = {
     "z.object({ priceCents: centsAtLeast(1), reason: z.string().min(12).max(500).refine(nonBlank, { message: 'reason cannot be blank — a concession has to say why' }), })",
   gps_engagement_accept:
     'z.object({ depositRequiredCents: centsAtLeast(0).optional(), note: z.string().max(500).optional(), })',
+  // vendorCostCents raised to centsAtLeast(1) 2026-08-01: a supplied 0 was the cost
+  // side of the below-cost gate's own input, so {priceCents, vendorCostCents: 0} on an
+  // offer with a real recorded cost cleared the gate with no approver and persisted a
+  // row claiming 100% margin on a loss. Omit the field to keep the row's cost.
   gps_proposal_issue:
-    "z.object({ priceCents: centsAtLeast(1), vendorCostCents: centsAtLeast(0).optional(), depositRequiredCents: centsAtLeast(0).optional(), currency: z.string().regex(/^[A-Z]{3}$/, 'currency must be a 3-letter ISO-4217 code').optional(), })",
+    "z.object({ priceCents: centsAtLeast(1), vendorCostCents: centsAtLeast(1).optional(), depositRequiredCents: centsAtLeast(0).optional(), currency: z.string().regex(/^[A-Z]{3}$/, 'currency must be a 3-letter ISO-4217 code').optional(), })",
   gps_status_change:
     "z .object({ status: z.enum(MANUAL_TARGETS as unknown as [string, ...string[]]), reason: z.string().max(500).optional(), }) .refine((v) => !REQUIRES_REASON.includes(v.status as EngagementStatus) || nonBlank(v.reason ?? ''), { message: 'closing an engagement as lost or cancelled requires a reason', path: ['reason'], })",
   grant_entitlement:

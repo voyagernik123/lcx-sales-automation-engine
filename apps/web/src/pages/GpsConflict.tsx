@@ -17,6 +17,8 @@ import {
 import {
   SECOND_TIER_ENDPOINT, fetchGpsEngagementConflict, fetchSecondTierSessions,
 } from '@/lib/api/gpsConflict';
+import { mergedMetaNotices, type MetaNotice } from '@/lib/api/meta';
+import { GpsMetaNotices } from './GpsMetaBanner';
 import { ApiError } from '@/lib/apiClient';
 /**
  * THE PERIMETER AND THE DISCLOSURE LIBRARY ARE IMPORTED BY RELATIVE PATH.
@@ -430,6 +432,8 @@ export function GpsConflict() {
   const [summary, setSummary] = useState<GpsSummary | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [notMigrated, setNotMigrated] = useState(false);
+  /** What the three reads declared about themselves, minus the sentence the wall's own banner owns. */
+  const [readNotices, setReadNotices] = useState<readonly MetaNotice[]>([]);
   const [overCap, setOverCap] = useState(0);
   const [secondTier, setSecondTier] = useState<SecondTier>({ state: 'loading' });
   const [open, setOpen] = useState<Record<string, boolean>>({});
@@ -438,20 +442,40 @@ export function GpsConflict() {
   const load = useCallback(async () => {
     setLoadError(null);
     try {
-      // `fetchGpsSummary` is here for ONE reason and it is not decoration: it is
-      // the only GPS read whose payload carries `migrated`
-      // (`lib/api/gps.ts:100`). `fetchGpsEngagements` unwraps `data` and drops
-      // `meta.migrated` (`routes/gps.ts:293`), so an environment without
-      // 0047_gps.sql — which is the state of production as this ships — returns an
-      // empty array indistinguishable from a genuinely empty book. "No conflict
-      // problems" and "the compartment does not exist here" are opposite readings
-      // of the same blank table, and this screen may not confuse them.
+      // `fetchGpsSummary` is here for ONE reason and it is not decoration: its
+      // payload carries `migrated` as a FIELD (`lib/api/gps.ts:100`). The two list
+      // reads report the same fact in `meta` (`routes/gps.ts:346`, `:409`) and that
+      // envelope used to die in the fetch layer, so an environment without
+      // 0047_gps.sql — the state of production as this ships — returned an empty
+      // array indistinguishable from a genuinely empty book. "No conflict problems"
+      // and "the compartment does not exist here" are opposite readings of the same
+      // blank table, and this screen may not confuse them. The envelope now arrives
+      // (`lib/api/meta.ts`), so BOTH sources count toward the verdict below and the
+      // summary read is no longer the only witness.
       const [clients, engagements, sum] = await Promise.all([
         fetchGpsClients(),
         fetchGpsEngagements(),
         fetchGpsSummary(),
       ]);
       setSummary(sum);
+
+      /*
+       * WHAT THE THREE READS DECLARED ABOUT THEMSELVES.
+       *
+       * Derived here and held as notices rather than holding the payloads: the wall
+       * keeps rows, not responses, and re-deriving on every render would mean keeping
+       * two full arrays alive for a banner.
+       *
+       * `not-migrated` is REMOVED from the rendered list on purpose. This page already
+       * owns that sentence in one place — the blocked notice below, which also fires on
+       * a detail read that came back null — and one fact stated twice reads as two
+       * problems. It is not discarded: it is folded into `setNotMigrated`, which is
+       * what puts the sentence on screen.
+       */
+      const envelope = mergedMetaNotices([sum, clients, engagements]);
+      setReadNotices(envelope.filter((n) => n.id !== 'not-migrated'));
+      const listsUnmigrated = envelope.some((n) => n.id === 'not-migrated');
+
       const byId = new Map(clients.map((c) => [c.id, c]));
 
       // Deterministic order: newest engagement first, id as the tiebreak so two
@@ -504,7 +528,7 @@ export function GpsConflict() {
           : (states.get(e.id) ?? (within.has(e.id) ? 'failed' : 'over_cap')),
         asOf,
       )));
-      setNotMigrated([...states.values()].some((s) => s === 'not_migrated'));
+      setNotMigrated(listsUnmigrated || [...states.values()].some((s) => s === 'not_migrated'));
     } catch (e) {
       setLoadError(errText(e));
       setRows(null);
@@ -645,6 +669,10 @@ export function GpsConflict() {
           policy and are unaffected — they need no database.
         </Notice>
       )}
+      {/* Everything ELSE the three reads declared: a lost envelope, a still-pending
+          migration, a perimeter that came from compiled placeholders. Beneath the
+          migration notice because that one, when it fires, subsumes them. */}
+      <GpsMetaNotices notices={readNotices} className="my-2" />
       {/*
         TWO INDEPENDENT COUNTS OF THE SAME THING, compared (D8). The wall counts
         MISSING by walking the rows it fetched; the server counts it in SQL
@@ -1540,7 +1568,24 @@ function PerimeterSection(props: { asOf: string; rows: WallRow[] | null }) {
         ) : unlisted.length === 0 ? (
           <div className="py-1 font-mono text-micro text-grey">
             None — every engagement&apos;s client jurisdiction matches a listed profile. That is a
-            statement about coverage, not about permission: every listed row is still unreviewed.
+            statement about coverage, not about permission:{' '}
+            {/* DERIVED. This sentence used to read "every listed row is still unreviewed"
+                as literal JSX — true on the day it was written, and a lie the moment a
+                second human reviews one row. `PerimeterEntry.reviewed` is itself derived
+                from `reviewed_at` being non-null, so this counts the same field the
+                matrix renders. */}
+            {(() => {
+              const all = groups.flatMap((g) => g.cells);
+              const unreviewed = all.filter((c) => !c.entry?.reviewed).length;
+              if (all.length === 0) return 'no rows are listed at all.';
+              if (unreviewed === all.length) {
+                return `all ${all.length} listed rows are still unreviewed.`;
+              }
+              if (unreviewed === 0) {
+                return `all ${all.length} listed rows have been reviewed — permission still depends on the class recorded and on the engagement's own facts.`;
+              }
+              return `${unreviewed} of ${all.length} listed rows are still unreviewed.`;
+            })()}
           </div>
         ) : (
           <table className="mt-0.5 w-full border-collapse" data-testid="perimeter-unlisted">

@@ -1,0 +1,55 @@
+-- ──────────────────────────────────────────────
+--  0055 — GPS PERIMETER: the table comment 0050 could no longer tell the truth
+--
+--  ══ WHY THIS IS A NEW FILE AND NOT AN EDIT TO 0050 ═══════════════════════════
+--  It was an edit to 0050. `0050_gps_perimeter.sql` is APPLIED ON PRODUCTION, and
+--  `db/migrate.ts` skips any filename already in `_migrations` — so the corrected
+--  COMMENT sat in the working tree, the repository showed the new wording, and
+--  production kept the old one. The gate was green throughout, because nothing in it
+--  compares a migration's content against what was applied. The diff that made the
+--  edit described the old comment as "the widest-audience false claim in the
+--  compartment" and then delivered the correction to nobody.
+--
+--  Migrations are FORWARD-ONLY. An applied file is immutable and now that is
+--  enforced twice: `db/migrate.ts` records a sha256 per applied file and refuses to
+--  proceed when the file on disk disagrees, and
+--  `db/__tests__/migrationImmutability.test.ts` pins the committed bytes in CI, where
+--  there is no database to consult at all.
+--
+--  ══ WHAT THE OLD COMMENT CLAIMED, AND WHY IT MATTERED ════════════════════════
+--  It said: "The system enforces it (packages/shared/src/gps/perimeter.ts
+--  gateService) and refuses while a position is missing, unreviewed, malformed or
+--  past review_by". At the time `gateService` had six callers and EVERY ONE WAS A
+--  READ — the grid, the wall, the disclosure view, and an advisory
+--  POST /conflict/quote-gate with no caller. POST /quote took no jurisdiction
+--  argument at all; POST /engagements and both paths to `proposed` never consulted
+--  it. The perimeter refused on a screen and permitted every act the screen
+--  described, and an auditor reading `\d+` — the widest audience this text has, and
+--  the one least able to check it — was told the opposite.
+--
+--  The DECISION still lives in reviewed code (`perimeter.ts gateService`) and it
+--  treats a row from that table exactly as it treats a compiled one. The ENFORCEMENT
+--  — the write paths that call it and refuse — is `apps/api/src/gps/perimeterGuard.ts`.
+--  Those are two different claims, and the old comment made only the first while
+--  sounding like both.
+--
+--  THE REPLACEMENT NAMES A MODULE, NOT A COUNT OF CALL SITES. An earlier draft of
+--  this correction enumerated "FOUR write paths" and was already out of date when it
+--  was written — the guard had grown a delivery and a loop entry point by the time
+--  anyone read it. A comment that has to be re-counted is a comment that will be
+--  wrong again, so this one states the invariant that can be checked in one place:
+--  the guard module is where the refusal happens, and everything else that reads
+--  gateService is display only.
+--
+--  COMMENT ON is idempotent by nature: it REPLACES, so re-running this file is a
+--  no-op. It creates no table, no column, no index and no grant, and it adds nothing
+--  that could hold a client document — decision D2 (LCX legal/DPO: controller vs
+--  processor for a third party's confidential material, the subprocessor chain,
+--  retention, erasure) remains UNANSWERED and the compartment stays incapable of
+--  accepting one (0047_gps.sql:26-36).
+--
+--  Applied BY HAND in the Supabase SQL editor, like every migration in this project.
+-- ──────────────────────────────────────────────
+
+COMMENT ON TABLE gps_jurisdiction_profile IS
+  'GPS jurisdiction perimeter: a position a QUALIFIED HUMAN entered about one service in one jurisdiction, with its source, its author and its EXPIRY. Policy, not client data — it carries no client_id and must never vary by client. It never originates a position. The DECISION is packages/shared/src/gps/perimeter.ts gateService, which treats a row here exactly as it treats a compiled position. The ENFORCEMENT is apps/api/src/gps/perimeterGuard.ts: every GPS write path that must respect the perimeter refuses through that module while a position is missing, unreviewed, malformed, past review_by or recorded as prohibited. Any other caller of gateService is DISPLAY ONLY — a screen that refuses is not an act that was prevented. See 0050_gps_perimeter.sql for the table and 0055_gps_perimeter_comment.sql for this correction.';

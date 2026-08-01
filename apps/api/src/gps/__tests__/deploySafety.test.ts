@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { PENDING_MIGRATIONS, SHIPPED_MIGRATIONS } from '../../db/migrationLedger.js';
 
 /**
  * DEPLOY SAFETY for GLOBAL SERVICES — the compartment must never look like an
@@ -37,14 +38,21 @@ const service = strip(readFileSync(resolve(SRC, 'gps/service.ts'), 'utf8'));
 /**
  * Handlers that touch NO table and therefore carry no probe.
  *
- * A quote is arithmetic over the compiled catalogue (`packages/shared/src/gps/
- * catalogue.ts`) and the catalogue listing is the catalogue itself, so both keep
- * working perfectly during the migration window — adding a probe to them would be
- * cargo cult. The allow-list is what stops that reasoning from being abused: an
- * entry here is only permitted if the handler contains no database access at all,
- * which the next test enforces.
+ * The catalogue listing is the catalogue itself, so it keeps working perfectly
+ * during the migration window — adding a probe to it would be cargo cult. The
+ * allow-list is what stops that reasoning from being abused: an entry here is only
+ * permitted if the handler contains no database access at all, which the next test
+ * enforces.
+ *
+ * `/quote` WAS HERE AND IS NOT ANY MORE. It now reads the jurisdictional perimeter
+ * (`perimeterClearanceFor` → `loadPerimeter`) before it returns a price, because a
+ * price for work the record says we may not sell is a number a human acts on. So it
+ * touches a table, and the allow-list did exactly what its own comment said it
+ * would: "adding a query to /quote later fails here rather than silently 500-ing on
+ * the first Sunday deploy". It came off the list rather than the assertion coming
+ * off the file.
  */
-const DB_FREE_HANDLERS: readonly string[] = ['/offers', '/quote'];
+const DB_FREE_HANDLERS: readonly string[] = ['/offers'];
 
 interface Handler {
   method: string;
@@ -158,5 +166,124 @@ describe('the probe itself cannot be the thing that breaks', () => {
   it('caches, so a once-ever event does not cost a round trip on every read', () => {
     expect(service).toContain('migratedCache');
     expect(service).toContain('export function _resetMigrated');
+  });
+});
+
+/**
+ * A 503 THAT NAMES AN ALREADY-APPLIED MIGRATION IS WORSE THAN NO 503.
+ *
+ * Three GPS surfaces await migrations nobody has written, and all three named numbers
+ * that were already taken by files on disk and applied on production:
+ *   · `gps/loop.ts` said `0051_gps_outcome.sql` — `0051_gps_evidence_refusal.sql` exists
+ *   · `routes/gpsOrigination.ts` said "awaiting migration 0050" — `0050_gps_perimeter.sql` exists
+ *   · `apps/web/src/lib/api/gpsLoop.ts` hard-coded `0050_gps_outcome.sql` as a fallback
+ * An operator told to run 0050 finds 0050 applied in `_migrations` and concludes the
+ * API is lying — the exact reaction `MIGRATION_PENDING` exists to prevent. The comment
+ * beside the first one claimed the number was "checked against the directory rather
+ * than assumed"; nothing checked it. This does.
+ *
+ * ── WHY THIS ASKS THE LEDGER AND NOT THE DIRECTORY ───────────────────────────
+ * It used to assert the declared file was ABSENT from `db/migrations`, using "exists
+ * on disk" as a proxy for "already applied". That proxy was only ever true while the
+ * pending migrations were unwritten. They are written now (0052-0056), so the proxy
+ * inverted: it demanded the operator be sent to a file nobody had authored. Absence
+ * was never the invariant. The invariant is that the named file is one they can run
+ * and that running it will do something — it EXISTS, and it is NOT YET APPLIED —
+ * and only `db/migrationLedger.ts` knows the second half, because applied-ness lives
+ * in a Supabase database no test can reach.
+ */
+describe('every pending-migration filename is free and distinct', () => {
+  const MIGRATIONS_DIR = resolve(SRC, 'db/migrations');
+  const onDisk = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql'));
+
+  /** Every `NNNN_name.sql` literal the GPS code offers an operator to run. */
+  function declaredPendingFiles(): Array<{ file: string; where: string }> {
+    const out: Array<{ file: string; where: string }> = [];
+    const files = [
+      'gps/loop.ts', 'gps/underwrite.ts', 'gps/origination.ts',
+      'routes/gpsOrigination.ts', 'routes/gpsLoop.ts', 'routes/gpsUnderwrite.ts',
+    ];
+    for (const rel of files) {
+      const code = strip(readFileSync(resolve(SRC, rel), 'utf8'));
+      for (const m of code.matchAll(/'(\d{4}_[a-z0-9_]+\.sql)'/g)) {
+        out.push({ file: m[1]!, where: rel });
+      }
+    }
+    return out;
+  }
+
+  it('finds the declarations at all', () => {
+    // Non-vacuity: three migrations are genuinely pending, so if this is empty the
+    // regex has stopped matching and every assertion below passes for free.
+    expect(declaredPendingFiles().length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('names a file that exists, so the operator has something to run', () => {
+    for (const { file, where } of declaredPendingFiles()) {
+      expect(
+        onDisk,
+        `${where} tells an operator to run ${file} and no such file is in db/migrations. `
+          + 'They cannot run it, so that surface refuses forever.',
+      ).toContain(file);
+    }
+  });
+
+  it('names no file that has already been applied', () => {
+    for (const { file, where } of declaredPendingFiles()) {
+      expect(
+        Object.keys(SHIPPED_MIGRATIONS),
+        `${where} tells an operator to run ${file}, which the ledger pins as ALREADY `
+          + 'APPLIED. They will find it in `_migrations`, conclude the API is lying, and be '
+          + 'right. Deliver the change as a new migration and point the constant at that.',
+      ).not.toContain(file);
+      expect(
+        PENDING_MIGRATIONS,
+        `${where} advertises ${file} as pending, but db/migrationLedger.ts does not list it `
+          + 'as pending. One of the two is wrong about the state of the database, and the '
+          + 'ledger is the one a human updates when they apply a file.',
+      ).toContain(file);
+    }
+  });
+
+  it('uses a distinct number per pending migration', () => {
+    const byNumber = new Map<string, Set<string>>();
+    for (const { file } of declaredPendingFiles()) {
+      const n = file.slice(0, 4);
+      byNumber.set(n, (byNumber.get(n) ?? new Set()).add(file));
+    }
+    for (const [n, files] of byNumber) {
+      expect(
+        [...files],
+        `two different pending migrations both claim number ${n}. Whichever the deploy `
+          + 'applies second silently wins.',
+      ).toHaveLength(1);
+    }
+    // …and no pending number is claimed by a DIFFERENT file on disk. Not "unused on
+    // disk": the pending migrations have been written, so 0053_gps_outcome.sql
+    // legitimately occupies 0053. What must never happen is `gps/loop.ts` naming
+    // 0053_gps_outcome.sql while some OTHER 0053_*.sql also exists — whichever the
+    // deploy applies second silently wins. That is the original bug verbatim
+    // (`0051_gps_outcome.sql` declared, `0051_gps_evidence_refusal.sql` on disk), and
+    // it still fails here.
+    for (const [n, files] of byNumber) {
+      const declared = [...files];
+      const rivals = onDisk.filter((f) => f.slice(0, 4) === n && !declared.includes(f));
+      expect(
+        rivals,
+        `pending migration number ${n} is also claimed by ${rivals.join(', ')} on disk. `
+          + 'Whichever the deploy applies second silently wins.',
+      ).toEqual([]);
+    }
+  });
+
+  it('hard-codes no migration filename in the web client', () => {
+    // A second copy of a filename in the browser is a second thing to keep in sync,
+    // and it was wrong. The server names the file in `data.migration.file`.
+    const web = resolve(SRC, '../../web/src/lib/api');
+    for (const f of readdirSync(web).filter((x) => x.endsWith('.ts'))) {
+      const code = strip(readFileSync(resolve(web, f), 'utf8'));
+      const hits = [...code.matchAll(/'(\d{4}_[a-z0-9_]+\.sql)'/g)].map((m) => m[1]);
+      expect(hits, `${f} hard-codes a migration filename`).toEqual([]);
+    }
   });
 });

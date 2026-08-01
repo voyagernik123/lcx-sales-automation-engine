@@ -130,6 +130,25 @@ function classify(err: ApiError, subjectType: string): Refusal {
       return { ...base, remedy: `You need '${needed}' on ${ws}. Request it from the workspace switcher.` };
     }
 
+    case 'SECOND_TIER_FORBIDDEN': {
+      // An approver tried to grant a second-tier `ext:` colleague something the
+      // ceiling in access/entitlements.ts will not honour — an elevated compartment,
+      // or the approve tier. The server refuses at grant time rather than storing a
+      // row that gets silently capped on read, so the approver is not left believing
+      // they granted access that does nothing.
+      //
+      // NOT overridable, and this is the one where that matters most: the ceiling
+      // exists because the second-tier passcode is SHARED and unattributable. No
+      // recorded reason from one approver can make it attributable, so an override
+      // would be a signature on somebody else's behalf.
+      const ws = typeof detail?.workspace === 'string' ? detail.workspace : null;
+      return {
+        ...base,
+        remedy: `${ws ? `${ws} is elevated. ` : ''}A second-tier sign-in is a shared passcode, so it cannot hold this. Put them on the roster, or grant a non-elevated compartment at operate.`,
+        overridable: false,
+      };
+    }
+
     case 'VALIDATION': {
       const issues = Array.isArray(detail?.issues)
         ? (detail!.issues as Array<{ path?: string; message?: string }>)

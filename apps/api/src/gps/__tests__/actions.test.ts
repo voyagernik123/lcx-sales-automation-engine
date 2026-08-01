@@ -27,6 +27,9 @@ import { describe, it, expect } from 'vitest';
 import { z } from 'zod';
 import { PRICE_BANDS_ARE_PLACEHOLDERS, ENGAGEMENT_STATUSES } from '@lcx/shared';
 import { GPS_ACTIONS, type GpsAction } from '../actions.js';
+import { _resetMigrated } from '../service.js';
+import { _resetPerimeterMigrated } from '../conflict.js';
+import { _resetUnderwritingProbes } from '../underwrite.js';
 import { ActionError } from '../../actions/registry.js';
 
 const byId = (id: string): GpsAction => {
@@ -52,6 +55,17 @@ function engagementRow(over: Record<string, unknown> = {}) {
     // and the margin half of the discount gate has something real to catch.
     vendor_cost_cents: '800000',
     owner: null as string | null,
+    // Read by `getEngagement` inside the underwriting guard — `toEngagement` maps
+    // these, and an absent `currency` reaches the engine as undefined.
+    project_id: null,
+    contracting_entity: 'lcx',
+    scope_snapshot: null,
+    currency: 'USD',
+    deposit_required_cents: '0',
+    deposit_paid_at: null,
+    accepted_at: null,
+    created_at: '2026-07-01T00:00:00.000Z',
+    updated_at: '2026-07-01T00:00:00.000Z',
     ...over,
   };
 }
@@ -66,6 +80,42 @@ interface StubOpts {
   updateRowCount?: number;
   /** [pattern, error] — the query matching the pattern throws. */
   fail?: [RegExp, Error];
+  /**
+   * THE PERIMETER, AS A DATABASE THAT HAS ONE. Default OFF, so the default stub
+   * reproduces production today: no position on record, and `gps_proposal_issue`
+   * refuses. Set to satisfy `gateService` — a reviewed, current, `permitted`
+   * position for (liechtenstein, mica_whitepaper) — when the test's subject is a
+   * later gate.
+   */
+  perimeter?: 'permitted' | 'prohibited' | 'unreviewed';
+  /**
+   * THE UNDERWRITING REGISTRIES, AS A DATABASE THAT HAS THEM. Default OFF: 0052 is
+   * unapplied, so `guardProposalIssue` refuses with
+   * `UNDERWRITING_PARTNER_UNASSIGNABLE` and that IS today's behaviour. Set to give
+   * the partner column, a usable rate card and a recorded effort triple, so a test
+   * about the UPDATE can reach it.
+   */
+  underwriting?: 'usable' | 'no_partner';
+}
+
+/** A perimeter row `gateService` accepts: reviewed, sourced, review date in the future. */
+function profileRow(serviceClass: string, reviewed: boolean) {
+  return {
+    id: '00000000-0000-0000-0000-0000000000pp'.replace('pp', 'p1'),
+    jurisdiction: 'liechtenstein',
+    offer_key: 'mica_whitepaper',
+    service_class: serviceClass,
+    source: 'Opinion of counsel, 2026-07-01',
+    source_url: null,
+    entered_by: 'nik',
+    entered_at: '2026-07-01T00:00:00.000Z',
+    review_by: '2099-01-01T00:00:00.000Z',
+    note: 'Recorded for the test fixture.',
+    reviewed_by: reviewed ? 'monty' : null,
+    reviewed_at: reviewed ? '2026-07-02T00:00:00.000Z' : null,
+    created_at: '2026-07-01T00:00:00.000Z',
+    updated_at: '2026-07-02T00:00:00.000Z',
+  };
 }
 
 function pgError(code: string, message: string): Error {
@@ -76,10 +126,92 @@ function pgError(code: string, message: string): Error {
 
 function stubPool(opts: StubOpts = {}) {
   const queries: Recorded[] = [];
+  // The two new guards on gps_proposal_issue read the schema through module-level
+  // probe caches. Reset them per stub or the first test in the file decides what
+  // every later one sees.
+  _resetMigrated();
+  _resetPerimeterMigrated();
+  _resetUnderwritingProbes();
   const pool = {
     query: async (sql: string, params: unknown[] = []) => {
       queries.push({ sql, params });
       if (opts.fail && opts.fail[0].test(sql)) throw opts.fail[1];
+
+      /* ── schema probes: to_regclass / information_schema ───────────────── */
+      if (/to_regclass\('public\.gps_jurisdiction_profile'\)/.test(sql)) {
+        return { rows: [{ ok: opts.perimeter !== undefined }], rowCount: 1 };
+      }
+      if (/to_regclass\('public\.gps_engagement'\)/.test(sql)) {
+        return { rows: [{ ok: true }], rowCount: 1 };
+      }
+      if (/to_regclass\('public\.gps_rate_card'\)/.test(sql)) {
+        const on = opts.underwriting !== undefined;
+        return { rows: [{ rate_cards: on, effort_triples: on }], rowCount: 1 };
+      }
+      if (/information_schema\.columns/.test(sql)) {
+        return opts.underwriting !== undefined
+          ? { rows: [{ ok: true }], rowCount: 1 }
+          : { rows: [], rowCount: 0 };
+      }
+
+      /* ── the perimeter, the subject join, the underwriting registries ──── */
+      if (/FROM gps_jurisdiction_profile/.test(sql)) {
+        if (opts.perimeter === undefined) return { rows: [], rowCount: 0 };
+        return {
+          rows: [profileRow(
+            opts.perimeter === 'prohibited' ? 'prohibited' : 'permitted',
+            opts.perimeter !== 'unreviewed',
+          )],
+          rowCount: 1,
+        };
+      }
+      if (/FROM gps_engagement e/.test(sql)) {
+        const row = opts.engagement === undefined ? engagementRow() : opts.engagement;
+        if (!row) return { rows: [], rowCount: 0 };
+        return {
+          rows: [{
+            engagement_id: row.id,
+            client_id: row.client_id,
+            offer_key: row.offer_key,
+            contracting_entity: 'lcx',
+            status: row.status,
+            price_cents: row.price_cents,
+            currency: 'USD',
+            owner: row.owner,
+            client_name: 'Test Client AG',
+            client_jurisdiction: 'liechtenstein',
+            check_id: null,
+          }],
+          rowCount: 1,
+        };
+      }
+      if (/SELECT partner_id FROM gps_engagement/.test(sql)) {
+        return {
+          rows: [{ partner_id: opts.underwriting === 'no_partner' ? null : 'p_anna' }],
+          rowCount: 1,
+        };
+      }
+      if (/FROM gps_rate_card/.test(sql)) {
+        return {
+          rows: [{
+            partner_id: 'p_anna', offer_key: 'mica_whitepaper', unit: 'fixed',
+            amount_cents: '400000', expected_units: null, hours_per_day: null,
+            fixed_cost_cents: '0', currency: 'USD', valid_until: '2099-01-01T00:00:00.000Z',
+            stated_by: 'nik', stated_at: '2026-07-01T00:00:00.000Z', partner_label: 'Anna',
+          }],
+          rowCount: 1,
+        };
+      }
+      if (/FROM gps_effort_triple/.test(sql)) {
+        return {
+          rows: [{
+            optimistic_days: '4', likely_days: '6', pessimistic_days: '9',
+            stated_by: 'nik', stated_at: '2026-07-01T00:00:00.000Z',
+          }],
+          rowCount: 1,
+        };
+      }
+
       if (/FROM gps_engagement/.test(sql)) {
         const row = opts.engagement === undefined ? engagementRow() : opts.engagement;
         return { rows: row ? [row] : [], rowCount: row ? 1 : 0 };
@@ -156,12 +288,33 @@ describe('capability requirements', () => {
    * screen would show.
    */
   const EXPECTED: Record<string, { minRole: 'operator' | 'approver'; workspace: 'gps' }> = {
-    gps_conflict_declare: { minRole: 'operator', workspace: 'gps' },
+    // APPROVER, raised 2026-08-01. The REST twin `POST /v1/gps/engagements/:id/
+    // conflict-check` has always been `requireApprover`, and `/v1/actions` is not
+    // workspace-gated at the app level — so `operator` here was a second, cheaper
+    // door onto the same `gps_conflict_check` row, and anyone holding `gps:operate`
+    // could clear a conflict the REST route refused them. The two doors now agree.
+    gps_conflict_declare: { minRole: 'approver', workspace: 'gps' },
     gps_proposal_issue: { minRole: 'operator', workspace: 'gps' },
     gps_discount_approve: { minRole: 'approver', workspace: 'gps' },
     gps_engagement_accept: { minRole: 'operator', workspace: 'gps' },
     gps_status_change: { minRole: 'operator', workspace: 'gps' },
   };
+
+  /**
+   * THE TWO DOORS ONTO A CONFLICT DECISION MUST AGREE.
+   *
+   * Not folded into the table above: the table records what each action declares,
+   * and this records the CROSS-FILE property that was violated — the action's
+   * `minRole` and the REST route's middleware are two independent statements of one
+   * policy, and the action's used to be the weaker one. Read as source text because
+   * the route is a Hono mount, not an exported value.
+   */
+  it('requires approver on BOTH doors onto gps_conflict_check', () => {
+    const routes = readFileSync(new URL('../../routes/gps.ts', import.meta.url), 'utf8');
+    const mount = routes.match(/gpsRoutes\.post\('\/engagements\/:id\/conflict-check'[^\n]*/)?.[0] ?? '';
+    expect(mount, 'the REST conflict-check route lost requireApprover').toContain('requireApprover');
+    expect(byId('gps_conflict_declare').minRole).toBe('approver');
+  });
 
   it('exports exactly the five Phase 1 actions, with unique ids', () => {
     const ids = GPS_ACTIONS.map((a) => a.id).sort();
@@ -323,7 +476,11 @@ describe('the conflict gate guards both client-facing boundaries', () => {
   });
 
   it('issues once cleared, freezing the catalogue scope and not caller input', async () => {
-    const { pool, queries } = stubPool({ conflict: { decision: 'cleared_with_disclosure' } });
+    // Perimeter + underwriting satisfied: this test's subject is the conflict gate
+    // and the frozen scope. `proposalGuards.test.ts` is where their absence refuses.
+    const { pool, queries } = stubPool({
+      conflict: { decision: 'cleared_with_disclosure' }, perimeter: 'permitted', underwriting: 'usable',
+    });
     const out = await issue.execute(ctx(pool, { params: priced }).args);
     expect(out.status).toBe('proposed');
     expect(out.marginCents).toBe(1_200_000);
@@ -365,7 +522,18 @@ describe('the conflict gate guards both client-facing boundaries', () => {
 
 describe('the discount gate binds an approval to one exact price', () => {
   const issue = byId('gps_proposal_issue');
-  const cleared = { conflict: { decision: 'cleared' } } as const;
+  /*
+   * The perimeter and the underwriting registries are SATISFIED here, because this
+   * block's subject is the discount gate and the two guards in front of it refuse
+   * first by default. Both are real stub rows through the real engines — not mocks —
+   * so a regression that removes either guard is caught by
+   * `proposalGuards.test.ts`, which runs the same executor with them absent.
+   */
+  const cleared = {
+    conflict: { decision: 'cleared' },
+    perimeter: 'permitted',
+    underwriting: 'usable',
+  } as const;
   const belowCost = { priceCents: 600_000 }; // $6,000 against the $8,000 partner cost
 
   it('refuses a price at or below partner cost with no prior approval', async () => {
@@ -625,7 +793,9 @@ describe('no action accepts client material (Phase 1 ratchet, D2 unanswered)', (
   it('freezes scope from the catalogue, never from caller-supplied text', async () => {
     // scope_snapshot is jsonb and is the one place client-authored prose could be
     // smuggled into the database. Every field of it comes from getOffer().
-    const { pool, queries } = stubPool({ conflict: { decision: 'cleared' } });
+    const { pool, queries } = stubPool({
+      conflict: { decision: 'cleared' }, perimeter: 'permitted', underwriting: 'usable',
+    });
     await byId('gps_proposal_issue').execute(
       ctx(pool, {
         params: {

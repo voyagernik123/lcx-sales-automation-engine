@@ -73,7 +73,8 @@ export type PracticeCode =
   | 'COMPLIANCE_GATE'
   | 'APPROVER_REQUIRED'
   | 'OVERRIDE_REASON_REQUIRED'
-  | 'STEP_UP_REQUIRED';
+  | 'STEP_UP_REQUIRED'
+  | 'SECOND_TIER_FORBIDDEN';
 
 /**
  * The remedy the real command line shows for each code.
@@ -127,6 +128,19 @@ export const PRACTICE_REMEDIES: Record<PracticeCode, PracticeRemedy> = {
   },
   STEP_UP_REQUIRED: {
     fragment: 'Re-enter the desk passcode to confirm this action. It is verified server-side and never stored.',
+    overridable: false,
+  },
+  /**
+   * `grant_entitlement` refusing to give a second-tier `ext:` colleague an elevated
+   * compartment or the approve tier. Kept practisable rather than exempt because the
+   * remedy is a real decision an approver has to make — put them on the roster, or
+   * grant something they can actually hold — and because it is the one refusal where
+   * reaching for the override is the wrong instinct: the ceiling exists because the
+   * passcode is shared, and no recorded reason makes a shared secret attributable.
+   */
+  SECOND_TIER_FORBIDDEN: {
+    fragment:
+      'A second-tier sign-in is a shared passcode, so it cannot hold this. Put them on the roster, or grant a non-elevated compartment at operate.',
     overridable: false,
   },
 };

@@ -2,6 +2,7 @@ import { ApiError, request } from '../apiClient';
 import type {
   LoopResponse, MarginRealisation, OutcomeCaptureDraft, OutcomeCaptureForm, WinLossSummary,
 } from '@lcx/shared';
+import { unwrapWithMeta } from './meta.js';
 
 /**
  * GLOBAL SERVICES — THE LOOP (Phase 12), browser side. Fetchers only.
@@ -38,7 +39,10 @@ import type {
  */
 
 /** The API's read-side envelope, identical to every other compartment's. */
-const unwrap = <T>(p: Promise<{ data: T }>): Promise<T> => p.then((r) => r.data);
+// The envelope's `meta` used to die here — see lib/api/meta.ts. `unwrapWithMeta`
+// attaches it under a non-enumerable symbol, so no call site or type changes and
+// `responseMeta(x)` / `isMigrated(x)` can finally answer.
+const unwrap = unwrapWithMeta;
 
 /**
  * `GET /v1/gps/loop` — the whole of Phase 12 in one response.
@@ -125,11 +129,14 @@ export type OutcomeSubmission =
   | { outcome: 'blocked'; form: OutcomeCaptureForm }
   /**
    * 503 — the entry was acceptable and the TABLE does not exist. `gps_outcome`
-   * arrives in `0050_gps_outcome.sql`, which nobody has applied; the server names it
+   * arrives in the outcome migration, which nobody has applied; the server names the file
+   * in `data.migration.file` and this module never guesses it — the number has moved twice
+   * and a hard-coded copy sent an operator to look for an already-applied migration. It names it
    * rather than answering 500, so the remedy is "run one file" and not "the platform
    * is down".
    */
-  | { outcome: 'store_missing'; form: OutcomeCaptureForm | null; migration: string; detail: unknown };
+  /** `migration` is NULL when the server did not name a file — never a guessed one. */
+  | { outcome: 'store_missing'; form: OutcomeCaptureForm | null; migration: string | null; detail: unknown };
 
 /**
  * Read a field off `ApiError.data`.
@@ -178,10 +185,16 @@ export async function recordGpsOutcome(
       return {
         outcome: 'store_missing',
         form: formFromError(e, 'form'),
+        // NO HARD-CODED FALLBACK FILENAME. This said `'0050_gps_outcome.sql'`, which
+        // was wrong twice: the server calls it 0053 and `0050_gps_perimeter.sql` is
+        // applied on production, so the fallback sent an operator to look for an
+        // already-applied migration. A second copy of a filename in the client is a
+        // second thing to keep in sync with the server, and the server always names it
+        // in `data.migration.file`. When it does not, say so rather than guess.
         migration: typeof e.data?.migration === 'object' && e.data.migration !== null
           && 'file' in (e.data.migration as Record<string, unknown>)
           ? String((e.data.migration as Record<string, unknown>).file)
-          : '0050_gps_outcome.sql',
+          : null,
         detail: e.data?.migration ?? null,
       };
     }

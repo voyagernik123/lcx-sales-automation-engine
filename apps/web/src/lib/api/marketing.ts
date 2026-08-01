@@ -1,4 +1,5 @@
 import { request } from '../apiClient';
+import { unwrapWithMeta } from './meta.js';
 
 /** LCX MARKETING — mirrors apps/api/src/routes/marketing.ts. */
 
@@ -50,7 +51,10 @@ export interface MarketingSummary {
   migrated: boolean;
 }
 
-const unwrap = <T>(p: Promise<{ data: T }>): Promise<T> => p.then((r) => r.data);
+// The envelope's `meta` used to die here — see lib/api/meta.ts. `unwrapWithMeta`
+// attaches it under a non-enumerable symbol, so no call site or type changes and
+// `responseMeta(x)` / `isMigrated(x)` can finally answer.
+const unwrap = unwrapWithMeta;
 
 export const fetchMarketingQueue = (status?: ReplyStatus) =>
   unwrap(request<{ data: MarketingReply[] }>(

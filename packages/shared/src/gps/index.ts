@@ -31,6 +31,21 @@ export {
   marginPct,
 } from './types.js';
 
+/**
+ * The lifecycle. Shared because it was private to `gps/actions.ts` while
+ * `routes/gps.ts` shipped a generic status setter that could write the two
+ * statuses the gates stand in front of. See `lifecycle.ts`.
+ */
+export type { ManualTransitionRefusal } from './lifecycle.js';
+export {
+  GATED_ENGAGEMENT_STATUSES,
+  isGatedEngagementStatus,
+  MANUAL_ENGAGEMENT_TARGETS,
+  MANUAL_ENGAGEMENT_TRANSITIONS,
+  ENGAGEMENT_STATUS_REQUIRES_REASON,
+  checkManualTransition,
+} from './lifecycle.js';
+
 export type { CatalogueTodo } from './catalogue.js';
 export {
   OFFERS,
@@ -168,6 +183,10 @@ export {
   SINGLE_HOLDER_ALARM_SHARE_PCT, SINGLE_HOLDER_WATCH_SHARE_PCT, TOP3_ALARM_SHARE_PCT,
   bookConcentration, FUNNEL_STAGES, FUNNEL_STAGE_LABELS,
   AGING_BRACKETS, bracketForAgeDays, AGED_DEPOSIT_ALARM_DAYS, cashConversion,
+  // The single currency normaliser. Every funnel and axis keys by it, so any
+  // consumer that filters positions by currency must key by it too — see the
+  // docblock: the cash.aging drill did not, and matched nothing.
+  normaliseCurrency,
   CONSTRAINT_LABEL, CONSTRAINT_PRECEDENCE, bindingConstraint,
   BOOK_HEALTH_GRADE_LABEL, BOOK_HEALTH_BANDS, bookHealthGrade,
   CONCENTRATION_PENALTY_WEIGHTS, bookHealth,

@@ -101,10 +101,15 @@ import { isOutcomeMigrated, listOutcomeRecords } from './loop.js';
 /* ══════════════════════════════════════════════════════════════════════════ */
 
 /**
- * NUMBERING IS PROVISIONAL AND A HUMAN OWNS IT. As this was written, `0050` was
- * claimed twice on disk — `0050_gps_perimeter.sql` exists and
- * `apps/api/src/gps/loop.ts:82` declares `0050_gps_outcome.sql` — so `0052` is
- * taken here to avoid becoming the third. One constant, one edit if it moves.
+ * 0052 — the first free number, and the premise this comment used to quote is stale.
+ *
+ * It said `loop.ts` declares `0050_gps_outcome.sql`, which was already out of date
+ * when it was written and then became wrong twice over: loop.ts moved to 0051, which
+ * collided with the applied `0051_gps_evidence_refusal.sql`, and outcome is now 0053.
+ * The three unapplied GPS migrations are 0052 (here), 0053 (`gps/loop.ts`
+ * OUTCOME_MIGRATION) and 0054 (`routes/gpsOrigination.ts`); `deploySafety.test.ts`
+ * asserts each is distinct and names no file that already exists on disk, so this is
+ * checked rather than asserted. One constant per migration, one edit if it moves.
  */
 export const UNDERWRITING_MIGRATION = '0052_gps_underwriting.sql';
 
@@ -1188,6 +1193,8 @@ export type IssueGuardCode =
   | 'MIGRATION_PENDING'
   | 'NOT_FOUND'
   | 'NO_PRICE'
+  /** A caller declared `proposedPriceCents` that is not a positive whole number of cents. */
+  | 'DECLARED_PRICE_INVALID'
   | 'UNDERWRITING_PARTNER_UNASSIGNABLE'
   | 'UNDERWRITING_NO_PARTNER'
   | 'UNDERWRITING_BLOCKED';
@@ -1253,11 +1260,40 @@ function snapshotOffer(offerKey: OfferKey, snapshot: unknown): ServiceOfferLike 
  * inside a `FOR UPDATE` transaction on the compartment's hot row, and the exposure
  * is one desk, one operator, one click. If GPS ever gains a second concurrent
  * writer, this is the line to revisit.
+ *
+ * ── `proposedPriceCents`, AND WHY IT IS NOT A HOLE ───────────────────────────
+ * The REST route does not set a price: `issueProposal` moves the status and the
+ * price was frozen at creation, so reading the row is reading the price that will be
+ * issued. The ACTION path (`gps_proposal_issue`) sets the price in the same statement
+ * that moves the status, so reading the row there would underwrite the OLD price and
+ * then write a different one — a guard evaluating a number that is about to be
+ * replaced. So the caller may declare the price it is about to write, and only that.
+ *
+ * It is not a bypass, and the distinction matters: `seed`, `samples`, `hoursPerDay`
+ * and the policy remain server facts (`SERVER_FACT_FIELDS`) precisely because those
+ * change the ANSWER without changing the world. The price is the opposite — it is
+ * the thing being decided, it is what gets persisted, and a caller who lowers it to
+ * flatter the simulation has lowered the actual price of the actual engagement. A
+ * HIGHER declared price than the row's is likewise fine: it is the price that will
+ * be on the proposal.
+ *
+ * A DECLARED PRICE IS AUTHORITATIVE, AND THAT MEANS IT IS NEVER SILENTLY IGNORED.
+ * This used to read `Number.isInteger(p) && p > 0 ? p : engagement.priceCents`, so a
+ * declared 0, -1, 0.5 or NaN FELL BACK to the row — the guard then underwrote a
+ * number the caller was not about to write, and answered `allowed` about it. That is
+ * the same shape as the sub-cent hole in `packages/shared/src/gps/underwrite.ts:443`:
+ * a guard that re-decides which input to trust is a guard with a door in it. Today's
+ * two callers cannot reach it — the action's zod schema is `centsAtLeast(1)` and the
+ * REST middleware declares nothing — but the exported contract is what the next
+ * caller reads, so the contract is what gets fixed. When the field is PRESENT it is
+ * used or it is refused (`DECLARED_PRICE_INVALID`); the row's own `<= 0` is still
+ * `NO_PRICE`, and the two codes are distinct because "this engagement was never
+ * quoted" and "you handed me a price I cannot write" are different findings.
  */
 export async function guardProposalIssue(
   pool: Pool,
   engagementId: string,
-  ctx: { operator: string; asOf: string },
+  ctx: { operator: string; asOf: string; proposedPriceCents?: number },
 ): Promise<IssueGuardDecision> {
   const shell = {
     engagementId,
@@ -1287,7 +1323,25 @@ export async function guardProposalIssue(
   if (!engagement) {
     return { ...shell, allowed: false, code: 'NOT_FOUND', status: 404, reason: 'engagement not found', remedy: null };
   }
-  if (engagement.priceCents <= 0) {
+  // The price about to be WRITTEN, when the caller is writing one. See the docblock:
+  // a declared price is USED or REFUSED, never quietly swapped for the row's.
+  const declared = ctx.proposedPriceCents;
+  if (declared !== undefined && !(Number.isSafeInteger(declared) && declared > 0)) {
+    return {
+      ...shell,
+      allowed: false,
+      code: 'DECLARED_PRICE_INVALID',
+      status: 409,
+      reason:
+        `The price declared for this proposal (${String(declared)}) is not a positive whole `
+        + 'number of cents, so there is nothing to underwrite. It was NOT replaced with the '
+        + 'price already on the engagement: underwriting one number while a different one is '
+        + 'written is how a below-cost proposal gets a green light.',
+      remedy: 'Declare priceCents as a positive integer, or omit it to underwrite the engagement’s own price.',
+    };
+  }
+  const priceCents = declared ?? engagement.priceCents;
+  if (priceCents <= 0) {
     // Refused here with the SAME code the route already uses for this, so a client
     // branching on NO_PRICE sees no change. Not delegated downstream: a guard that
     // relies on something after it to catch a case is a guard with a hole in it.
@@ -1342,7 +1396,7 @@ export async function guardProposalIssue(
     pool,
     {
       offerKey: engagement.offerKey,
-      priceCents: engagement.priceCents,
+      priceCents,
       currency: engagement.currency,
       quotedVendorCostCents: engagement.vendorCostCents,
       partnerId,

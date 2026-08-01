@@ -12,6 +12,7 @@ import {
 import type { AuthVariables } from '../middleware/auth.js';
 import { requireOperator } from '../middleware/auth.js';
 import { requireApprover } from '../middleware/permissions.js';
+import { guardDeliverablePerimeter, perimeterRefusalBody } from '../gps/perimeterGuard.js';
 import { getPool } from '../db/index.js';
 import { env } from '../lib/env.js';
 import {
@@ -514,6 +515,45 @@ gpsDeliveryRoutes.post('/engagements/:id/deliverables', requireOperator, async (
       return c.json({ error: 'reviewRequired must be a boolean', code: 'VALIDATION' }, 400);
     }
 
+    /*
+     * `reviewRequired: false` IS A WAIVER, AND A WAIVER IS AN APPROVER ACT.
+     *
+     * `canAccept` and the database constraint
+     * `gps_deliverable_no_acceptance_before_review` are BOTH conditioned on this
+     * column, so setting it false at creation deletes the approver-only review step
+     * for the row — on a `requireOperator`-only route, from a body field, with no
+     * reason recorded. `GpsDelivery.tsx` then prints a grey "not required" and "may
+     * be accepted", i.e. an unattributed operator assertion rendered as a policy
+     * property on the surface that authorises invoicing.
+     *
+     * So: the ROLE has to be approver, and the waiver has to say why. The reason is
+     * stored in `external_location_note` prefixed with `REVIEW WAIVED` because 0049
+     * has no column for it (`DELIVERY_SCHEMA_GAPS`) — an honest place beats no place,
+     * and the prefix is what lets a later migration lift it out.
+     */
+    const waived = body.reviewRequired === false;
+    const waiverReason = text(body.reviewWaiverReason, 500);
+    if (waived) {
+      const role = c.get('operator')?.role;
+      if (role !== 'approver') {
+        return c.json({
+          error:
+            'Creating a deliverable with reviewRequired: false WAIVES the approver-only review step for that row — '
+            + 'both canAccept and the gps_deliverable_no_acceptance_before_review constraint are conditioned on it. '
+            + 'A waiver is an approver act. Create it with review required, or have an approver create it.',
+          code: 'REVIEW_WAIVER_REQUIRES_APPROVER',
+        }, 403);
+      }
+      if (!waiverReason) {
+        return c.json({
+          error:
+            'reviewWaiverReason is required when reviewRequired is false. A waiver with no stated reason renders on '
+            + 'the acceptance table as if no review were ever policy.',
+          code: 'VALIDATION',
+        }, 400);
+      }
+    }
+
     if (!(await isDeliveryMigrated(getPool()))) return c.json(NOT_MIGRATED, 503);
 
     const operator = c.get('operator');
@@ -526,7 +566,10 @@ gpsDeliveryRoutes.post('/engagements/:id/deliverables', requireOperator, async (
       // per-row act, never the quiet path.
       reviewRequired: body.reviewRequired === undefined ? true : body.reviewRequired === true,
       externalLocation: text(body.externalLocation, 500),
-      externalLocationNote: text(body.externalLocationNote, 1000),
+      externalLocationNote: waived
+        ? `REVIEW WAIVED by ${c.get('operator')?.id ?? 'unknown'}: ${waiverReason}`
+          + `${text(body.externalLocationNote, 400) ? ` — ${text(body.externalLocationNote, 400)}` : ''}`
+        : text(body.externalLocationNote, 1000),
       operator: operator?.id ?? 'unknown',
     });
     if (!result.ok) return writeRefusal(c, result);
@@ -678,12 +721,36 @@ gpsDeliveryRoutes.post('/deliverables/:id/review', requireOperator, requireAppro
  * (`0049:328`) refuses it anyway, the constraint's name comes back. That means this
  * code and the database disagree about the same rule, which is worth seeing rather
  * than smoothing over.
+ *
+ * IT IS ALSO THE ONE WRITE IN THIS FILE THE JURISDICTIONAL PERIMETER GATES.
+ * Acceptance is what makes the work invoiceable, so "we may not sell this here"
+ * outranks every acceptance criterion — and a position can be amended to
+ * `prohibited`, or pass its review date, after the engagement was legitimately
+ * opened. The other five writers here (milestone state, deliverable declaration,
+ * evidence request, evidence status, LCX review) are NOT gated and that is a
+ * decision, not an omission: they record internal work on an already-cleared
+ * engagement, move no money and tell a client nothing, and the client-facing event
+ * downstream of all five is this one. `gps/__tests__/integrity.test.ts` holds that
+ * split as an exhaustive list, so a sixth writer cannot appear silently.
+ *
+ * The engagement is resolved from `gps_deliverable`, so the jurisdiction comes from
+ * `gps_client` and never from the request. Fails closed: an unreadable perimeter is
+ * a 409, not a pass.
  */
 gpsDeliveryRoutes.post('/deliverables/:id/accept', requireOperator, requireApprover, async (c) => {
   try {
     const id = c.req.param('id');
     if (!isUuid(id)) return c.json({ error: 'id must be a uuid', code: 'VALIDATION' }, 400);
     if (!(await isDeliveryMigrated(getPool()))) return c.json(NOT_MIGRATED, 503);
+
+    const cleared = await guardDeliverablePerimeter(getPool(), id, {
+      evaluatedBy: c.get('operator')?.id ?? 'unknown',
+      asOf: new Date().toISOString(),
+    });
+    if (!cleared.allowed) {
+      console.warn(`[gps-delivery] perimeter REFUSED accept of deliverable ${id}: ${cleared.code}`);
+      return c.json(perimeterRefusalBody(cleared), cleared.status as 404 | 409);
+    }
 
     const operator = c.get('operator');
     const result = await acceptDeliverable(getPool(), {

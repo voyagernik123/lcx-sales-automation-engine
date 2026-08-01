@@ -81,6 +81,49 @@ describe('rate card', () => {
     expect(rateCardCostCents(card('gtm_sprint', 'hourly', 25_000, 0))).toBeNull();
   });
 
+  // A 0c rate card is an unfilled form. Pricing it literally reports cost 0 —
+  // i.e. 100% margin on a partner working for nothing — which is the single most
+  // expensive lie this file could tell a proposal.
+  it('REFUSES a zero or negative amount on every unit type — 0 is not free', () => {
+    expect(rateCardCostCents(card('mica_whitepaper', 'fixed', 0))).toBeNull();
+    expect(rateCardCostCents(card('gtm_sprint', 'day_rate', 0, 5))).toBeNull();
+    expect(rateCardCostCents(card('marketing_activation', 'hourly', 0, 120))).toBeNull();
+    expect(rateCardCostCents(card('mica_whitepaper', 'fixed', -1))).toBeNull();
+    expect(rateCardCostCents(card('gtm_sprint', 'day_rate', -150_000, 5))).toBeNull();
+    // Rounds to zero rather than being written as zero — same refusal.
+    expect(rateCardCostCents(card('mica_whitepaper', 'fixed', 0.4))).toBeNull();
+  });
+
+  // THE SINGLE-UNIT CONTRACT `underwrite.ts:443` NOW STANDS ON. Its metered branch
+  // asks this function what ONE unit costs, because effort there is a triple and
+  // not a unit count, and refuses when the answer is null. It previously tested
+  // `amountCents <= 0` itself and so skipped the round-to-zero guard entirely,
+  // quoting a 0.0001c/day card at 100% margin. Loosening either assertion below
+  // reopens that hole, which is why they are pinned here and not only there.
+  it('prices ONE unit in whole cents, or refuses — the contract the metered underwriting branch uses', () => {
+    expect(rateCardCostCents(card('gtm_sprint', 'day_rate', 0.0001, 1))).toBeNull();
+    expect(rateCardCostCents(card('gtm_sprint', 'day_rate', 0.4, 1))).toBeNull();
+    expect(rateCardCostCents(card('marketing_activation', 'hourly', 0.0001, 1))).toBeNull();
+    // Non-null answers are integers, so the derived rate is whole cents and the
+    // caller never multiplies a fraction through a distribution.
+    expect(rateCardCostCents(card('gtm_sprint', 'day_rate', 0.6, 1))).toBe(1);
+    expect(rateCardCostCents(card('gtm_sprint', 'day_rate', 150_000, 1))).toBe(150_000);
+  });
+
+  it('degrades a zero-amount card to cost_not_derivable rather than margin_intact', () => {
+    const r = marginAtRisk(
+      { offerKey: 'mica_whitepaper', priceCents: 1_800_000, quotedVendorCostCents: 600_000, currency: 'USD' },
+      mkPartner('p_free', 'Free', { rateCards: [card('mica_whitepaper', 'fixed', 0)] }),
+      { asOf: NOW },
+    );
+    // Before the fix: verdict 'margin_intact', rateCardCostCents 0,
+    // impliedMarginPct 100, reasons "Quote is conservative".
+    expect(r.verdict).toBe('cost_not_derivable');
+    expect(r.rateCardCostCents).toBeNull();
+    expect(r.impliedMarginPct).toBeNull();
+    expect(r.atRiskCents).toBeNull();
+  });
+
   it('treats a missing validity date as unusable, not as valid forever', () => {
     expect(rateCardStatus(card('mica_whitepaper', 'fixed', 600_000, null, null), NOW)).toBe('no_validity_stated');
     expect(rateCardStatus(card('mica_whitepaper', 'fixed', 600_000, null, 'not-a-date'), NOW)).toBe('no_validity_stated');

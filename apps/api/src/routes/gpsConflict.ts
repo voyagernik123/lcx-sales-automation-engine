@@ -7,7 +7,6 @@ import {
   DisclosureError,
   ENGAGEMENT_STATUSES,
   OFFER_KEYS,
-  PERIMETER_IS_UNREVIEWED,
   PERIMETER_REVIEW_WARNING_DAYS,
   PERIMETER_UNREVIEWED_REASON,
   SERVICE_CLASS_LABEL,
@@ -176,8 +175,16 @@ export const gpsConflictRoutes = new Hono<{ Variables: AuthVariables }>();
  *
  * `missing` is a first-class position rather than an absent field, and it arrives
  * with `blocking` set when the engagement is at or past `proposed` — the states
- * `service.ts:760` already refuses to enter without a check. The database enforces
- * that; this makes it legible, which is the half that was missing.
+ * `setEngagementStatus` already refuses to enter without a check.
+ *
+ * THE DATABASE DOES NOT ENFORCE THAT, and this comment claimed it did. There is no
+ * CHECK, trigger or constraint in 0047/0049/0050/0051 tying `gps_engagement.status`
+ * to the existence of a `gps_conflict_check` row — it is application code in
+ * `service.ts`, plus `assertConflictCleared` on the action path, plus
+ * `engagementDeliverable` on the six delivery writes (all three added or extended
+ * 2026-08-01). Three enforcement points in one language, none of them the schema.
+ * The distinction is not pedantic: "the database enforces it" is what a reader relies
+ * on when deciding that hand-run SQL is safe, and it is not.
  *
  * Nothing is filtered out for being gated. Each row carries the whole
  * `ServiceGateDecision` from the perimeter — code, reason, remedy, recoverable,
@@ -364,7 +371,13 @@ gpsConflictRoutes.get('/perimeter', requireOperator, async (c) => {
         serviceClassLabels: SERVICE_CLASS_LABEL,
         gateOrder: SERVICE_GATE_ORDER,
         reviewWarningDays: PERIMETER_REVIEW_WARNING_DAYS,
-        placeholdersAreUnreviewed: PERIMETER_IS_UNREVIEWED,
+        // NOT the raw constant. `conflict.ts` computes a source-aware
+        // `placeholdersAreUnreviewed` in `view`, and overwriting it with
+        // `PERIMETER_IS_UNREVIEWED` made a DATABASE-backed perimeter ship
+        // `source: 'database'`, `storedRowCount: 3` AND "these are unreviewed
+        // placeholders" in the same body — false about its own contents, in the safe
+        // direction, which is the kind of falsehood that teaches a desk to ignore the
+        // badge. The spread above already carries the computed value.
         unreviewedReason: PERIMETER_UNREVIEWED_REASON,
       },
       meta: { ...meta(), perimeterMigrated: await isPerimeterMigrated(getPool()) },
@@ -385,11 +398,19 @@ gpsConflictRoutes.get('/perimeter', requireOperator, async (c) => {
  * typed it sees `perimeter_unreviewed` come straight back at them rather than
  * assuming the work is now permitted (D4 — the system argues back).
  *
- * A `reviewBy` IN THE PAST IS ACCEPTED. Counsel's two-year-old memo with an annual
- * review cycle is genuinely stale, and refusing to record it would mean the desk
- * cannot write down what it actually holds. It is recorded truthfully and the gate
- * refuses it as `perimeter_stale`, which is the honest outcome; the alternative
- * quietly encourages someone to type a future date to make the form accept it.
+ * A `reviewBy` IN THE PAST IS A 400, and this paragraph used to say the opposite.
+ * It argued the position "is recorded truthfully and the gate refuses it as
+ * `perimeter_stale`". Neither happened: `0050_gps_perimeter.sql:131` is
+ * `CHECK (review_by >= entered_at)` with `entered_at = now()`, so a past date raised
+ * 23514, `enterPosition` has no catch and does not use `constraintRefusal()`, and the
+ * request came back 500 `GPS_ERROR` with nothing stored. A wrong year is a routine
+ * typo and it looked like the server was broken.
+ *
+ * The underlying argument was sound and the schema disagreed with it. The schema wins
+ * for now — it is applied on production — so the refusal is explicit, names the
+ * constraint, and says what the field means. Recording a genuinely expired historical
+ * memo needs a nullable `expired_at` or a relaxed CHECK, which is a migration and a
+ * decision, not a silent 500.
  *
  * `enteredBy` is the SESSION's operator, never a body field — and it is not a
  * claim of qualification. The qualified determination goes in `source` as a
@@ -425,6 +446,26 @@ gpsConflictRoutes.post('/perimeter', requireOperator, requireApprover, async (c)
     const reviewByRaw = text(body.reviewBy, 40);
     if (!reviewByRaw || !Number.isFinite(Date.parse(reviewByRaw))) {
       return bad(c, 'reviewBy must be an ISO instant — it is the EXPIRY of this position, and the gate refuses once it has passed');
+    }
+    /*
+     * IN THE PAST IS A 400, NOT A 500. This route used to accept any parseable
+     * instant and hand it to `enterPosition`, which writes it against
+     * `CHECK (review_by >= entered_at)` (`0050_gps_perimeter.sql:131`) where
+     * `entered_at` is `now()`. So `"2020-01-01T00:00:00Z"` — a routine wrong-year typo
+     * — produced a 23514, which `enterPosition` does not catch and does not route
+     * through `constraintRefusal()`, so it reached the bare handler catch below as a
+     * 500 `GPS_ERROR` with nothing stored. The prose forty lines up claimed that input
+     * IS recorded and then refused as `perimeter_stale`; both halves were false. Every
+     * `reviewBy` in `conflict.test.ts` is 2027, so nothing caught it.
+     */
+    if (Date.parse(reviewByRaw) < Date.now()) {
+      return bad(
+        c,
+        'reviewBy is in the past. It is the EXPIRY of the position being recorded, so a past date describes a '
+        + 'position that was already stale on arrival, and the database refuses it outright '
+        + '(CHECK review_by >= entered_at, 0050_gps_perimeter.sql:131). Give the date this position must next be '
+        + 'reviewed by. To record that an existing position has expired, let it expire.',
+      );
     }
     const reviewBy = new Date(Date.parse(reviewByRaw)).toISOString();
 
@@ -504,6 +545,17 @@ gpsConflictRoutes.post('/perimeter/:id/review', requireOperator, requireApprover
     if (!result.ok) {
       if (result.reason === 'not_found') {
         return c.json({ error: 'position not found', code: 'NOT_FOUND' }, 404);
+      }
+      if (result.reason === 'concurrent_modification') {
+        // The row moved between the read that authorised this review and the write —
+        // most importantly, a supersede may have replaced the TEXT. Re-read and review
+        // again rather than stamping a reviewer's name on words they never saw.
+        return c.json({
+          error:
+            'This position changed while it was being reviewed — most likely it was superseded, which rewrites the '
+            + 'class, the source and the note and resets the review. Re-read it and review it again.',
+          code: 'CONCURRENT_MODIFICATION',
+        }, 409);
       }
       return c.json({
         error: `${result.enteredBy} entered this position and may not also review it — a second qualified human must`,

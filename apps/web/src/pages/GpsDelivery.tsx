@@ -11,6 +11,8 @@ import type {
   ProgressView, WipView,
 } from '@lcx/shared';
 import { fetchGpsDelivery } from '@/lib/api/gpsDelivery';
+import { responseMeta, type ApiMeta } from '@/lib/api/meta';
+import { GpsMetaBanner } from './GpsMetaBanner';
 import { useListNavigation } from '@/hooks/useListNavigation';
 // The digit-jump handler yields to typing and stands down while an overlay is open.
 // Both predicates are the app's, not re-implemented here: a page that decided for
@@ -938,9 +940,23 @@ function AcceptanceTable({ view, onOpen }: { view: AcceptanceView; onOpen: OpenR
                       {r.reviewRecorded ? `recorded ${(r.reviewedAt ?? '').slice(0, 10)}` : 'REQUIRED · not recorded'}
                     </span>
                   ) : (
-                    <span className="text-[10px] uppercase text-grey">not required</span>
+                    // NOT "not required". `review_required` is a per-row column an
+                    // approver waived at creation with a stated reason — it is not a
+                    // property of the offer, and rendering it as one turned one
+                    // person's assertion into policy on the screen that authorises
+                    // invoicing. `reviewBasis` is null on every row today
+                    // (DELIVERY_SCHEMA_GAPS: 0049 has no such column), so the absence
+                    // is stated rather than left as an empty line.
+                    <span className="text-[10px] uppercase text-status-conditional">
+                      waived at creation
+                      <span className="ml-1 normal-case text-grey">
+                        — an approver set review_required = false on this row. Not a property of the offer.
+                      </span>
+                    </span>
                   )}
-                  {r.reviewBasis && <p className="mt-0.5 leading-snug text-grey">{r.reviewBasis}</p>}
+                  {r.reviewBasis
+                    ? <p className="mt-0.5 leading-snug text-grey">{r.reviewBasis}</p>
+                    : <p className="mt-0.5 leading-snug text-grey">basis not recorded — 0049 has no review_basis column</p>}
                   {r.reviewRecorded && r.reviewedBy && <p className="text-[10px] text-grey">by {r.reviewedBy}</p>}
                 </Td>
                 <Td>
@@ -972,6 +988,51 @@ function AcceptanceTable({ view, onOpen }: { view: AcceptanceView; onOpen: OpenR
         This screen reports refusals; it does not implement the rule.
       </p>
     </div>
+  );
+}
+
+/**
+ * WHICH VALUES IN THE TABLE ABOVE ARE SUBSTITUTED RATHER THAN RECORDED.
+ *
+ * `deliveryDesk.ts` substitutes `reviewBasis: null`, `acceptedBy: null` and
+ * `milestoneKey: null` on every acceptance row because 0049 has no columns for them,
+ * and it ships a ledger saying so. That ledger travelled in `meta` — and the web
+ * `unwrap` dropped `meta` (`lib/api/meta.ts`), so the screen rendered the
+ * substitutions and discarded the explanation. A null then read as a fact: "not
+ * required", "no milestone", nobody accepted it.
+ *
+ * Rendered from the CARRIED meta, so if the server stops sending the ledger this
+ * block disappears rather than going stale.
+ */
+function SchemaGaps({ meta }: { meta: ApiMeta | undefined }) {
+  const gaps = meta?.schemaGaps;
+  if (!Array.isArray(gaps) || gaps.length === 0) return null;
+  const rows = gaps.filter(
+    (g): g is { field: string; substitution: string; consequence: string; closedBy: string } =>
+      typeof g === 'object' && g !== null && typeof (g as { field?: unknown }).field === 'string',
+  );
+  if (rows.length === 0) return null;
+  return (
+    <details className="mt-2 border-t border-line pt-1.5">
+      <summary className="cursor-pointer text-[10px] uppercase tracking-wider text-status-conditional">
+        {rows.length} field{rows.length === 1 ? '' : 's'} above are SUBSTITUTED, not recorded
+      </summary>
+      <p className="mt-1 leading-snug text-grey">
+        The schema has no column for these, so the value you see is a placeholder this
+        code inserted — not something a human entered. Reading one as a fact is the
+        failure this list exists to prevent.
+      </p>
+      <ul className="mt-1 space-y-1">
+        {rows.map((g) => (
+          <li key={g.field} className="leading-snug">
+            <p className="font-mono text-[10px] font-bold text-navy">{g.field}</p>
+            <p className="text-grey">{g.substitution}</p>
+            <p className="text-grey">{g.consequence}</p>
+            <p className="font-mono text-[10px] text-grey">closed by: {g.closedBy}</p>
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 
@@ -1347,6 +1408,14 @@ export function GpsDelivery() {
             <span className="ml-auto text-grey">as of {data.asOf}</span>
           </div>
 
+          {/* WHAT THE READ DECLARED ABOUT ITSELF, above the engine's own rail.
+              `meta.scopeBasis` is the one that changes a verdict's meaning: drift
+              measured against `live_catalogue` was measured against criteria the
+              client never agreed to (routes/gpsDelivery.ts:290), and the catalogue is
+              versioned code that has changed. It travelled in `meta` from the first
+              day this page existed and nothing rendered it. */}
+          <GpsMetaBanner className="mt-2" of={[data]} />
+
           {/* D4 — the rail, above everything, in the composer's order. */}
           <div className="mt-2">
             <NoticeRail notices={data.notices} />
@@ -1410,6 +1479,7 @@ export function GpsDelivery() {
 
           <Block id="acceptance" label="Acceptance" icon={<FileCheck2 size={12} />}>
             <AcceptanceTable view={data.acceptance} onOpen={openRows} />
+            <SchemaGaps meta={responseMeta(data)} />
           </Block>
 
           <Block

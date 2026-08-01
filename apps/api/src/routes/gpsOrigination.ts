@@ -97,9 +97,18 @@ const meta = () => ({ timestamp: new Date().toISOString(), version: env.version 
  * Reads degrade to this shape's `migrated: false`; writes answer 503 with it. The
  * message names the migration because "one migration is pending" and "the platform
  * is down" require completely different reactions from the desk.
+ *
+ * 0054, RENUMBERED 2026-08-01. This said "awaiting migration 0050" — and
+ * `0050_gps_perimeter.sql` is on disk AND applied on production, so the one thing this
+ * message exists to do, it did wrong: an operator sent to run 0050 found it applied
+ * and concluded the API was lying. The three unapplied GPS migrations now hold
+ * distinct, free numbers — 0052 underwriting, 0053 outcome, 0054 origination — and
+ * `deploySafety.test.ts` asserts none of them names a file that already exists.
  */
+export const ORIGINATION_MIGRATION = '0054_gps_origination.sql';
+
 const NOT_MIGRATED = {
-  error: 'GPS ORIGINATION is awaiting migration 0050 on this environment',
+  error: `GPS ORIGINATION is awaiting migration ${ORIGINATION_MIGRATION} on this environment (gps_target, gps_outreach_opening)`,
   code: 'MIGRATION_PENDING',
 };
 

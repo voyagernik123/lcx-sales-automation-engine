@@ -673,13 +673,33 @@ export interface CurrencyMix {
   headline: string;
 }
 
+/**
+ * ONE CURRENCY NORMALISER, BECAUSE THERE WERE FOUR COPIES AND A CONSUMER THAT USED
+ * NONE OF THEM.
+ *
+ * `buildCurrencyMix`, `bookConcentration` and `cashConversion` each inlined
+ * `(p.currency || '').trim().toUpperCase() || 'UNKNOWN'`, so every funnel and every
+ * concentration axis is keyed by the NORMALISED code. `apps/api/src/gps/book.ts`'s
+ * `cash.aging` drill then filtered positions with `p.currency === funnel.currency` —
+ * RAW against NORMALISED. Verified: a position stored as `'usd'` or `''` groups into
+ * the `USD` / `UNKNOWN` funnel, and the drill on that funnel then matches nothing, so
+ * the figure has rows and the drill behind it is empty. `reconcile()` discloses the
+ * class of defect as a DRIFT note; this removes the instance.
+ *
+ * Exported so the drill can key by exactly what the funnel keyed by. A second copy is
+ * how the divergence happened the first time.
+ */
+export function normaliseCurrency(v: string | null | undefined): string {
+  return (v || '').trim().toUpperCase() || 'UNKNOWN';
+}
+
 function buildCurrencyMix(
   positions: readonly BookPosition[],
   basis: ConcentrationBasis,
 ): CurrencyMix {
   const acc = new Map<string, { positions: number; valueCents: number }>();
   for (const p of positions) {
-    const ccy = (p.currency || '').trim().toUpperCase() || 'UNKNOWN';
+    const ccy = normaliseCurrency(p.currency);
     const cur = acc.get(ccy) ?? { positions: 0, valueCents: 0 };
     cur.positions += 1;
     cur.valueCents += positionValueCents(p, basis);
@@ -769,7 +789,7 @@ export function bookConcentration(
 
   const byCcy = new Map<string, BookPosition[]>();
   for (const p of considered) {
-    const ccy = (p.currency || '').trim().toUpperCase() || 'UNKNOWN';
+    const ccy = normaliseCurrency(p.currency);
     const list = byCcy.get(ccy);
     if (list) list.push(p);
     else byCcy.set(ccy, [p]);
@@ -1147,7 +1167,7 @@ function buildConversions(stages: readonly FunnelStageCount[]): FunnelConversion
 export function cashConversion(positions: readonly BookPosition[], asOf: string): CashConversion {
   const byCcy = new Map<string, BookPosition[]>();
   for (const p of positions) {
-    const ccy = (p.currency || '').trim().toUpperCase() || 'UNKNOWN';
+    const ccy = normaliseCurrency(p.currency);
     const list = byCcy.get(ccy);
     if (list) list.push(p);
     else byCcy.set(ccy, [p]);

@@ -1,4 +1,4 @@
-import type { Pool } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import {
   OFFER_KEYS,
   PERIMETER_IS_UNREVIEWED,
@@ -117,8 +117,22 @@ export async function isPerimeterMigrated(pool: Pool): Promise<boolean> {
       `SELECT to_regclass('public.gps_jurisdiction_profile') IS NOT NULL AS ok`,
     );
     perimeterMigratedCache = Boolean(res.rows[0]?.ok);
-  } catch {
-    perimeterMigratedCache = false;
+  } catch (err) {
+    // CACHE ONLY THE POSITIVE, AND LOG THE CATCH.
+    //
+    // This used to be `catch { cache = false }` with no log. One connection reset,
+    // statement timeout or pgbouncer restart therefore poisoned the process
+    // PERMANENTLY: every GPS read served `migrated: false` and every write answered
+    // 503 "awaiting migration", on a fully migrated production database, until
+    // someone restarted the API — with nothing in the logs saying why. Each of these
+    // probes justified caching with "the API restarts on deploy", but
+    // `db/migrate.ts` states migrations are deliberately NOT part of the deploy, so a
+    // true negative never self-heals either.
+    //
+    // Leaving the cache NULL means the next call re-probes: one extra round trip
+    // while the database is unhealthy, and correct behaviour the moment it is not.
+    console.error('[gps] perimeter migration probe failed; not caching the negative:', err);
+    return false;
   }
   return perimeterMigratedCache;
 }
@@ -589,7 +603,13 @@ export async function enterPosition(
 export type ReviewPositionResult =
   | { ok: true; position: StoredPerimeterEntry }
   | { ok: false; reason: 'not_found' }
-  | { ok: false; reason: 'self_review'; enteredBy: string };
+  | { ok: false; reason: 'self_review'; enteredBy: string }
+  /**
+   * The row changed between the read that authorised this review and the write.
+   * See the TOCTOU note on `reviewPosition`: without this, a reviewer's name could
+   * land on words they never read.
+   */
+  | { ok: false; reason: 'concurrent_modification' };
 
 /**
  * Review a position — the act that makes it capable of authorising anything.
@@ -616,25 +636,62 @@ export async function reviewPosition(
   reviewedBy: string,
   opts: { reviewBy?: string | null } = {},
 ): Promise<ReviewPositionResult> {
-  const found = await pool.query(
-    `SELECT ${PROFILE_COLS} FROM gps_jurisdiction_profile WHERE id = $1`,
-    [id],
-  );
-  const row = (found.rows as ProfileRow[])[0];
-  if (!row) return { ok: false, reason: 'not_found' };
-  if (row.entered_by === reviewedBy) {
-    return { ok: false, reason: 'self_review', enteredBy: row.entered_by };
+  /*
+   * ONE TRANSACTION, `FOR UPDATE`, AND A CONTENT PREDICATE — because this function
+   * could put a reviewer's name on words they never read.
+   *
+   * The read was an unlocked SELECT and the write an UPDATE keyed on `id` alone. Both
+   * `enterPosition`'s supersede path and this function move the same row, and supersede
+   * is a bare UPDATE that REWRITES `service_class`, `source` and `note` and NULLS the
+   * review columns (which is correct — a superseded position must be re-reviewed).
+   * Interleave a supersede-to-`permitted` between B's read and B's write and the final
+   * row is `permitted`, with a fresh `reviewed_at` and `reviewed_by = B`, and
+   * `gateService` returns `allowed: true` on text B never saw. That is the exact
+   * outcome the supersede reset exists to prevent.
+   *
+   * `FOR UPDATE` serialises the two writers; `AND updated_at = $4` is the content
+   * predicate, so if anything moved the row after the read the UPDATE matches nothing
+   * and this returns `concurrent_modification` — the shape `gps/actions.ts` already
+   * uses for a lost optimistic-concurrency race. Re-read and review again.
+   */
+  const client: PoolClient = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const found = await client.query(
+      `SELECT ${PROFILE_COLS} FROM gps_jurisdiction_profile WHERE id = $1 FOR UPDATE`,
+      [id],
+    );
+    const row = (found.rows as ProfileRow[])[0];
+    if (!row) {
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'not_found' };
+    }
+    if (row.entered_by === reviewedBy) {
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'self_review', enteredBy: row.entered_by };
+    }
+    const res = await client.query(
+      `UPDATE gps_jurisdiction_profile
+          SET reviewed_by = $2, reviewed_at = now(),
+              review_by = COALESCE($3::timestamptz, review_by),
+              updated_at = now()
+        WHERE id = $1 AND updated_at = $4
+      RETURNING ${PROFILE_COLS}`,
+      [id, reviewedBy, opts.reviewBy ?? null, row.updated_at],
+    );
+    const saved = (res.rows as ProfileRow[])[0];
+    if (!saved) {
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'concurrent_modification' };
+    }
+    await client.query('COMMIT');
+    return { ok: true, position: toStoredEntry(saved) };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
-  const res = await pool.query(
-    `UPDATE gps_jurisdiction_profile
-        SET reviewed_by = $2, reviewed_at = now(),
-            review_by = COALESCE($3::timestamptz, review_by),
-            updated_at = now()
-      WHERE id = $1
-    RETURNING ${PROFILE_COLS}`,
-    [id, reviewedBy, opts.reviewBy ?? null],
-  );
-  return { ok: true, position: toStoredEntry(res.rows[0] as ProfileRow) };
 }
 
 /* ── Disclosure records: the VERSION that was actually given ──────────────────── */

@@ -14,7 +14,7 @@
  * unknown keys (so some valid input looks invalid). invokeAction on the server is
  * the only authority. See apps/api/src/actions/grammar.ts.
  *
- * 27 actions · manifest 7227f100ab795db7
+ * 27 actions · manifest e4b70501e1915e26
  */
 
 import type { ActionManifest } from '../types';
@@ -592,7 +592,7 @@ export const ACTION_MANIFEST: ActionManifest = {
       "subjectTypes": [
         "gps_engagement"
       ],
-      "minRole": "operator",
+      "minRole": "approver",
       "workspace": "gps",
       "params": {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -703,7 +703,7 @@ export const ACTION_MANIFEST: ActionManifest = {
           },
           "vendorCostCents": {
             "type": "integer",
-            "minimum": 0,
+            "minimum": 1,
             "maximum": 1000000000
           },
           "depositRequiredCents": {
@@ -1027,7 +1027,7 @@ export const ACTION_MANIFEST: ActionManifest = {
       "us_entity_licences"
     ]
   },
-  "manifestHash": "7227f100ab795db7"
+  "manifestHash": "e4b70501e1915e26"
 } as const satisfies ActionManifest;
 
-export const MANIFEST_HASH = "7227f100ab795db7";
+export const MANIFEST_HASH = "e4b70501e1915e26";

@@ -229,13 +229,38 @@ export function rateCardStatus(card: RateCard, asOf: string): RateCardStatus {
  * Null, not zero and not a guessed unit count. A metered rate with no expected
  * units is exactly the case where a fabricated default (1 day? 10 days?) would
  * put an invented margin on a proposal.
+ *
+ * ZERO IS A REFUSAL, NOT A FREE PARTNER. `amountCents <= 0` returns null. A rate
+ * card of 0 is an unfilled form, never a partner working for nothing, and the
+ * consequence of reading it literally is the worst output this file can produce:
+ * cost 0 → 100% margin → `margin_intact` → "Quote is conservative" on a
+ * proposal, and in `underwrite.ts` a p50 margin equal to the whole price with
+ * pLoss 0 and nothing blocked. Round-to-zero is caught too: a metered card at
+ * 0.4c/unit with 1 unit would otherwise price at exactly 0 cents. Placeholders
+ * use a NEGATIVE sentinel (`underwrite.ts` docblock) precisely so that a
+ * not-yet-known rate can never be mistaken for a known-free one; this guard is
+ * what makes both directions refuse instead of only one.
+ *
+ * THE COVERAGE IS ONLY AS WIDE AS THE CALLERS, and this docblock previously
+ * implied otherwise. The round-to-zero guard lives HERE; it protects nothing in a
+ * caller that re-implements the test. `underwrite.ts` did exactly that on the
+ * metered branch — a bare `amountCents <= 0` — so a 0.0001c/day card skipped this
+ * function entirely and underwrote at 100% margin with pLoss 0, the precise
+ * outcome the paragraph above says is refused. That branch now derives its rate
+ * through this function (`underwrite.ts:443`, `expectedUnits: 1` = the cost of one
+ * unit). Anything that needs the guarantee must ask this function for the number
+ * rather than inspect `amountCents` and decide for itself.
  */
 export function rateCardCostCents(card: RateCard): number | null {
-  if (!Number.isFinite(card.amountCents) || card.amountCents < 0) return null;
-  if (card.unit === 'fixed') return Math.round(card.amountCents);
+  if (!Number.isFinite(card.amountCents) || card.amountCents <= 0) return null;
+  if (card.unit === 'fixed') {
+    const fee = Math.round(card.amountCents);
+    return fee > 0 ? fee : null;
+  }
   const units = card.expectedUnits;
   if (units == null || !Number.isFinite(units) || units <= 0) return null;
-  return Math.round(card.amountCents * units);
+  const cost = Math.round(card.amountCents * units);
+  return cost > 0 ? cost : null;
 }
 
 /* ── Capacity and the partner ────────────────────────────────────────────── */

@@ -1,4 +1,5 @@
 import { request } from '../apiClient';
+import { unwrapWithMeta } from './meta.js';
 
 /**
  * GLOBAL SERVICES — THE BOOK (Phase 6): the browser's view of the portfolio.
@@ -114,7 +115,10 @@ export {
 import type { BookResponse } from '@lcx/shared';
 
 /** The API's read-side envelope, identical to every other compartment's. */
-const unwrap = <T>(p: Promise<{ data: T }>): Promise<T> => p.then((r) => r.data);
+// The envelope's `meta` used to die here — see lib/api/meta.ts. `unwrapWithMeta`
+// attaches it under a non-enumerable symbol, so no call site or type changes and
+// `responseMeta(x)` / `isMigrated(x)` can finally answer.
+const unwrap = unwrapWithMeta;
 
 /**
  * The whole book in one request.

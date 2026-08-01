@@ -105,10 +105,22 @@ export async function isDeliveryMigrated(pool: Pool): Promise<boolean> {
           AND to_regclass('public.gps_evidence_request')  IS NOT NULL AS ok`,
     );
     deliveryMigratedCache = Boolean(res.rows[0]?.ok);
-  } catch {
-    // A database that cannot answer this cannot serve the delivery desk either.
-    // Report not-migrated rather than propagating a 500 up to the desk.
-    deliveryMigratedCache = false;
+  } catch (err) {
+    // CACHE ONLY THE POSITIVE, AND LOG THE CATCH.
+    //
+    // This used to be `catch { cache = false }` with no log. One connection reset,
+    // statement timeout or pgbouncer restart therefore poisoned the process
+    // PERMANENTLY: every GPS read served `migrated: false` and every write answered
+    // 503 "awaiting migration", on a fully migrated production database, until
+    // someone restarted the API — with nothing in the logs saying why. Each of these
+    // probes justified caching with "the API restarts on deploy", but
+    // `db/migrate.ts` states migrations are deliberately NOT part of the deploy, so a
+    // true negative never self-heals either.
+    //
+    // Leaving the cache NULL means the next call re-probes: one extra round trip
+    // while the database is unhealthy, and correct behaviour the moment it is not.
+    console.error('[gps] delivery migration probe failed; not caching the negative:', err);
+    return false;
   }
   return deliveryMigratedCache;
 }
@@ -883,7 +895,110 @@ export type DeliveryRefusalCode =
   | 'blocked_needs_reason'
   | 'acceptance_refused'
   | 'unwritable_status'
-  | 'db_constraint';
+  | 'db_constraint'
+  /** The engagement is cancelled / closed_lost / collected. */
+  | 'engagement_terminal'
+  /** The conflict check on this engagement was DECLINED. */
+  | 'conflict_declined'
+  /** No conflict decision is on file — the engagement is parked in conflict_pending. */
+  | 'conflict_check_missing';
+
+/**
+ * THE CONFLICT GATE, EXTENDED TO THE DELIVERY WRITES. Every one of the six was
+ * ungated.
+ *
+ * `setEngagementStatus` runs the conflict gate on `gps_engagement.status` and
+ * `gps_proposal_issue` runs it before issuing, so the compartment's compliance
+ * property held for the pre-delivery lifecycle. It did not hold for anything 0049
+ * added: not one of `recordMilestoneState`, `createDeliverable`,
+ * `recordDeliverableReview`, `acceptDeliverable`, `requestEvidence` or
+ * `setEvidenceStatus` read the engagement's status or its conflict decision.
+ *
+ * Measured on an engagement whose conflict check was DECLINED (status `cancelled`)
+ * and on one with NO check at all (`conflict_pending`): create deliverable 201 →
+ * request evidence 201 → review 200 → ACCEPT 200. That last one is what
+ * `deliveryDesk.ts` itself calls "THE COMMERCIAL EVENT", the write that lets a
+ * partner be paid and an invoice be raised (`0049_gps_delivery.sql:232`). So the
+ * work an LCX employee's services desk was told not to do could be delivered,
+ * accepted and billed, and the only record of the refusal was a status field
+ * nothing read.
+ *
+ * ONE HELPER, SIX CALL SITES, and it takes the same `q` shape as a `Pool` or a
+ * `PoolClient` so it can run INSIDE the transaction the write already opened —
+ * checking outside would be a read that a concurrent status change could invalidate
+ * before the write landed.
+ *
+ * `conflict_check_missing` refuses too, on the same reasoning `assertConflictCleared`
+ * gives for the issue path: an engagement whose conflict position has not been
+ * recorded is not a draft, it is an open question, and delivering against an open
+ * question is the thing that cannot be undone afterwards.
+ */
+type Queryable = Pick<Pool, 'query'> | Pick<PoolClient, 'query'>;
+
+export async function engagementDeliverable(
+  q: Queryable,
+  engagementId: string,
+): Promise<DeliveryWrite<never> | null> {
+  const res = await q.query(
+    `SELECT e.status, k.decision
+       FROM gps_engagement e
+       LEFT JOIN gps_conflict_check k ON k.engagement_id = e.id
+      WHERE e.id = $1`,
+    [engagementId],
+  );
+  const row = res.rows[0] as { status: string; decision: string | null } | undefined;
+  if (!row) return { ok: false, code: 'engagement_not_found', message: 'engagement not found' };
+
+  if (isTerminalEngagementStatus(row.status as EngagementStatus)) {
+    return {
+      ok: false,
+      code: 'engagement_terminal',
+      message:
+        `This engagement is ${row.status}; it accepts no further delivery writes. Recording delivery against a `
+        + 'closed engagement produces a record that says work continued after the file was shut, and acceptance '
+        + 'is what lets a partner be paid.',
+      detail: { status: row.status },
+    };
+  }
+  // `== null`, not `=== null`: a driver or a fake that omits the column hands back
+  // `undefined`, and "the column was not there" must refuse on the same footing as
+  // "there is no decision". A gate that passes on `undefined` is a gate with a hole.
+  if (row.decision == null) {
+    return {
+      ok: false,
+      code: 'conflict_check_missing',
+      message:
+        'No conflict-of-interest decision is on file for this engagement, so nothing may be delivered against it. '
+        + 'An LCX employee selling adjacent services records the position first; an engagement with no position '
+        + 'recorded is not a draft, it is an open question.',
+    };
+  }
+  if (row.decision === 'declined') {
+    return {
+      ok: false,
+      code: 'conflict_declined',
+      message:
+        'The conflict check on this engagement was DECLINED. This work does not proceed, and that includes '
+        + 'recording milestones, deliverables, evidence, reviews and acceptance against it.',
+      detail: { decision: row.decision },
+    };
+  }
+  return null;
+}
+
+/** The same gate keyed by a deliverable, for the two writes that only carry its id. */
+async function deliverableWritable(
+  q: Queryable,
+  deliverableId: string,
+): Promise<DeliveryWrite<never> | null> {
+  const res = await q.query(
+    'SELECT engagement_id FROM gps_deliverable WHERE id = $1',
+    [deliverableId],
+  );
+  const row = res.rows[0] as { engagement_id: string } | undefined;
+  if (!row) return { ok: false, code: 'deliverable_not_found', message: 'deliverable not found' };
+  return engagementDeliverable(q, row.engagement_id);
+}
 
 export type DeliveryWrite<T> =
   | { readonly ok: true; readonly value: T; readonly operator: string }
@@ -970,6 +1085,13 @@ export async function recordMilestoneState(
     if (!row) {
       await client.query('ROLLBACK');
       return { ok: false, code: 'engagement_not_found', message: 'engagement not found' };
+    }
+
+    // INSIDE the transaction, behind the FOR UPDATE — see `engagementDeliverable`.
+    const gated = await engagementDeliverable(client, args.engagementId);
+    if (gated) {
+      await client.query('ROLLBACK');
+      return gated;
     }
 
     const { offer } = offerAsSold(row);
@@ -1079,6 +1201,8 @@ export async function createDeliverable(
   },
 ): Promise<DeliveryWrite<{ id: string }>> {
   try {
+    const gated = await engagementDeliverable(pool, args.engagementId);
+    if (gated) return gated;
     const res = await pool.query(
       `INSERT INTO gps_deliverable
          (client_id, engagement_id, name, owner, review_required,
@@ -1131,6 +1255,8 @@ export async function recordDeliverableReview(
   args: { deliverableId: string; operator: string },
 ): Promise<DeliveryWrite<{ id: string; reviewedBy: string; reviewedAt: string }>> {
   try {
+    const gated = await deliverableWritable(pool, args.deliverableId);
+    if (gated) return gated;
     const res = await pool.query(
       `UPDATE gps_deliverable
           SET reviewed_by = $2, reviewed_at = now(), updated_at = now()
@@ -1191,6 +1317,15 @@ export async function acceptDeliverable(
     if (!row) {
       await client.query('ROLLBACK');
       return { ok: false, code: 'deliverable_not_found', message: 'deliverable not found' };
+    }
+
+    // Before `canAccept`, on the hardest-gate-first rule this function already
+    // states: a declined or absent conflict position outranks every acceptance
+    // criterion, and this write is what lets a partner be paid.
+    const gated = await engagementDeliverable(client, row.engagement_id);
+    if (gated) {
+      await client.query('ROLLBACK');
+      return gated;
     }
 
     const evidence = await client.query(
@@ -1267,6 +1402,8 @@ export async function requestEvidence(
   },
 ): Promise<DeliveryWrite<{ id: string }>> {
   try {
+    const gated = await engagementDeliverable(pool, args.engagementId);
+    if (gated) return gated;
     const res = await pool.query(
       `INSERT INTO gps_evidence_request
          (client_id, engagement_id, description, requested_from, due_by, external_location)
@@ -1334,6 +1471,14 @@ export async function setEvidenceStatus(
     };
   }
   try {
+    const found = await pool.query(
+      'SELECT engagement_id FROM gps_evidence_request WHERE id = $1',
+      [args.evidenceId],
+    );
+    const owner = found.rows[0] as { engagement_id: string } | undefined;
+    if (!owner) return { ok: false, code: 'evidence_not_found', message: 'evidence request not found' };
+    const gated = await engagementDeliverable(pool, owner.engagement_id);
+    if (gated) return gated;
     const res = await pool.query(
       `UPDATE gps_evidence_request
           SET status = $2,

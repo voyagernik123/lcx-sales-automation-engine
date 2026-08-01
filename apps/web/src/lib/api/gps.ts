@@ -3,6 +3,7 @@ import type {
   ClientStatus, ConflictDecision, ContractingEntity, EngagementStatus,
   GpsClient, GpsConflictCheck, GpsEngagement, OfferKey,
 } from '@lcx/shared';
+import { unwrapWithMeta } from './meta.js';
 
 /**
  * GLOBAL SERVICES (GPS) — the browser's view of the services desk.
@@ -37,7 +38,10 @@ import type {
  */
 
 /** The API's read-side envelope, identical to every other compartment's. */
-const unwrap = <T>(p: Promise<{ data: T }>): Promise<T> => p.then((r) => r.data);
+// The envelope's `meta` used to die here — see lib/api/meta.ts. `unwrapWithMeta`
+// attaches it under a non-enumerable symbol, so no call site or type changes and
+// `responseMeta(x)` / `isMigrated(x)` can finally answer.
+const unwrap = unwrapWithMeta;
 
 /**
  * An engagement as the LIST needs it: the row plus the two things a list cannot
@@ -148,10 +152,22 @@ export const fetchGpsEngagements = (status?: EngagementStatus) =>
   ));
 
 /**
- * Create the quote. Price and vendor cost are integer cents and are sent as the
- * desk set them — the server does not "helpfully" default a price from the
- * catalogue band, because the bands are placeholders until D4 and a
- * server-invented price is the exact thing this build must not do.
+ * Create the engagement. Price and vendor cost are integer cents and are sent as the
+ * desk set them.
+ *
+ * This comment used to assert that "the server does not 'helpfully' default a price
+ * from the catalogue band". IT DID. `badCents(undefined)` was false, so omitting
+ * `priceCents` made `quoteOffer` substitute `bandMidpointCents(offer)` out of
+ * `TODO_PRICE_BANDS` — the block headed "NOT REAL PRICES. DO NOT QUOTE THESE" — and
+ * `createEngagement` INSERTed it, with nothing on the row marking it invented. The
+ * claim was true of this client, which always sends a price, and false of the API it
+ * was describing.
+ *
+ * It is true of the server now: `POST /v1/gps/engagements` refuses a missing
+ * `priceCents` with `PRICE_NOT_SUPPLIED`, and `createEngagement` throws
+ * `PriceNotSuppliedError` for any caller that does not come through the route. The
+ * quote calculator may still SHOW a band midpoint; it now says so in `warnings` and
+ * in `priceSource: 'band_midpoint'`.
  */
 export const createGpsEngagement = (body: {
   clientId: string;

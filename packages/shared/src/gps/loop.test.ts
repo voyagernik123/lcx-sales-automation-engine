@@ -35,6 +35,8 @@ import {
   type OutcomeRecord,
   type PriorWeights,
 } from './calibration.js';
+// The frozen stated prior. `weightsMutated` is derived by comparison against it.
+import { WEIGHTS_V1 } from './targeting.js';
 
 /* ── Fixtures ─────────────────────────────────────────────────────────────── */
 
@@ -211,7 +213,6 @@ describe('the review packet reviews and changes nothing', () => {
   it('cannot express an adjustment', () => {
     const packet = reviewPacket(book(20, true), WEIGHTS);
 
-    expect(packet.weightsMutated).toBe(false);
     expect(packet.weightsAreAStatedPrior).toBe(true);
     // `never[]` — the empty array is the only assignable value.
     expect(packet.proposedWeightChanges).toEqual([]);
@@ -222,6 +223,30 @@ describe('the review packet reviews and changes nothing', () => {
     expect(Object.keys(packet)).not.toContain('weightsAfter');
     expect(Object.keys(packet)).not.toContain('newWeights');
     expect(Object.keys(packet.packet)).not.toContain('weightsAfter');
+  });
+
+  /**
+   * `weightsMutated` WAS TYPED `false` AND HARD-CODED `false`, on the one packet whose
+   * whole purpose is that claim — while `routes/gpsLoop.ts` told a reader `WEIGHTS_V1`
+   * "is the same frozen object" and `WEIGHTS_V1` was a plain mutable literal. Nothing
+   * verified either. It is now DERIVED by comparison against the frozen prior.
+   */
+  it('DERIVES weightsMutated by comparing against the frozen stated prior', () => {
+    // The shipped prior: not mutated.
+    expect(reviewPacket(book(20, true), WEIGHTS_V1).weightsMutated).toBe(false);
+    // Any other vector: mutated, and the reviewer is told before reading a verdict.
+    expect(reviewPacket(book(20, true), { ...WEIGHTS_V1, need: 99 }).weightsMutated).toBe(true);
+    // The fixture vector used elsewhere in this file is deliberately NOT the prior.
+    expect(reviewPacket(book(20, true), WEIGHTS).weightsMutated).toBe(true);
+  });
+
+  it('WEIGHTS_V1 is actually frozen, so the claim has a mechanism (D8)', () => {
+    expect(Object.isFrozen(WEIGHTS_V1)).toBe(true);
+    // Strict mode (all ESM): a write throws rather than silently succeeding.
+    expect(() => {
+      (WEIGHTS_V1 as unknown as Record<string, number>).need = 1;
+    }).toThrow();
+    expect(WEIGHTS_V1.need).toBe(30);
   });
 
   it('reports insufficient evidence as ROWS, not as an absence, at small n', () => {

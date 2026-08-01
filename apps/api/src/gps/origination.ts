@@ -119,8 +119,22 @@ export async function isOriginationMigrated(pool: Pool): Promise<boolean> {
           AND to_regclass('public.observations') IS NOT NULL AS ok`,
     );
     migratedCache = Boolean(res.rows[0]?.ok);
-  } catch {
-    migratedCache = false;
+  } catch (err) {
+    // CACHE ONLY THE POSITIVE, AND LOG THE CATCH.
+    //
+    // This used to be `catch { cache = false }` with no log. One connection reset,
+    // statement timeout or pgbouncer restart therefore poisoned the process
+    // PERMANENTLY: every GPS read served `migrated: false` and every write answered
+    // 503 "awaiting migration", on a fully migrated production database, until
+    // someone restarted the API — with nothing in the logs saying why. Each of these
+    // probes justified caching with "the API restarts on deploy", but
+    // `db/migrate.ts` states migrations are deliberately NOT part of the deploy, so a
+    // true negative never self-heals either.
+    //
+    // Leaving the cache NULL means the next call re-probes: one extra round trip
+    // while the database is unhealthy, and correct behaviour the moment it is not.
+    console.error('[gps] origination migration probe failed; not caching the negative:', err);
+    return false;
   }
   return migratedCache;
 }

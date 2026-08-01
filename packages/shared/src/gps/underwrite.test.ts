@@ -13,7 +13,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { OFFER_KEYS, type OfferKey } from './types.js';
+import { OFFER_KEYS, marginCents, marginPct, type OfferKey } from './types.js';
 import { getOffer } from './catalogue.js';
 import type { RateCard, RateUnit, RecordedOutcome } from './partners.js';
 import {
@@ -366,13 +366,78 @@ describe('a deliberately loss-making quote', () => {
     expect(decision.policy).toEqual(DEFAULT_ISSUE_POLICY);
   });
 
-  it('permits the same quote when the appetite is explicitly widened', () => {
+  /**
+   * WIDENING THE APPETITE NO LONGER PERMITS A MEDIAN LOSS, and this test used to assert
+   * that it did.
+   *
+   * `maxPLoss: 0.99` clears the P(loss) ceiling, and before `p50_margin_is_a_loss`
+   * existed that was the whole gate: this quote — p50 margin −308,151c, i.e. the MEDIAN
+   * outcome is a $3,081 loss — came back `blocked: false, code: 'ok'`. A risk appetite is
+   * a statement about the tail. "Half of the simulated outcomes lose money" is not a tail
+   * and no appetite makes it a price worth issuing, which is why the cents check is
+   * unconditional and outranks the percentage floor.
+   *
+   * The appetite still does its job: the P(loss) check itself PASSES, and that is
+   * asserted, so this is not the ceiling quietly becoming un-widenable.
+   */
+  it('still blocks a MEDIAN LOSS even when the P(loss) appetite is widened to 0.99', () => {
     const decision = shouldBlockIssue(u, { ...DEFAULT_ISSUE_POLICY, maxPLoss: 0.99, statedBy: 'nik' });
+    expect(decision.blocked).toBe(true);
+    expect(decision.code).toBe('p50_margin_is_a_loss');
+    // The widened appetite was honoured — the ceiling is not un-widenable.
+    expect(decision.passed.some((c) => c.code === 'p_loss_above_threshold')).toBe(true);
+    const failed = decision.failed.find((c) => c.code === 'p50_margin_is_a_loss')!;
+    expect(failed.unit).toBe('cents');
+    expect(failed.observed).toBe(u.distribution!.p50MarginCents);
+    expect(failed.threshold).toBe(0);
+    expect(decision.reason).toMatch(/MEDIAN simulated outcome/);
+    expect(decision.reason).toMatch(/Not a policy threshold/);
+  });
+
+  it('permits a quote whose median is positive once the appetite is widened', () => {
+    // The counterpart, or the new check would read as "nothing can ever be widened".
+    const healthy = underwrite(quote({ priceCents: 3_000_000 }), model(), OPTS);
+    expect(healthy.distribution!.p50MarginCents).toBeGreaterThan(0);
+    const decision = shouldBlockIssue(healthy, { ...DEFAULT_ISSUE_POLICY, maxPLoss: 0.99, statedBy: 'nik' });
     expect(decision.blocked).toBe(false);
     expect(decision.code).toBe('ok');
     // Permitted is not endorsed, and the reason has to say so.
     expect(decision.reason).toContain('not endorsed');
-    expect(decision.passed.some((c) => c.code === 'p_loss_above_threshold')).toBe(true);
+    expect(decision.passed.some((c) => c.code === 'p50_margin_is_a_loss')).toBe(true);
+  });
+
+  it('the median-loss check needs no policy floor set — it is unconditional', () => {
+    // `minP50MarginPct` is null by default, so the percentage check is SKIPPED entirely.
+    // That is what left a median loss unblocked once the ceiling was raised.
+    expect(DEFAULT_ISSUE_POLICY.minP50MarginPct).toBeNull();
+    const decision = shouldBlockIssue(u, { ...DEFAULT_ISSUE_POLICY, maxPLoss: 1, minP50MarginPct: null, statedBy: 'nik' });
+    expect(decision.failed.some((c) => c.code === 'p50_margin_is_a_loss')).toBe(true);
+    expect(decision.failed.some((c) => c.code === 'p50_margin_below_floor')).toBe(false);
+  });
+});
+
+/**
+ * `marginPct` RETURNED `-0`, AND JSON SERIALISED IT AS `0`.
+ *
+ * A $10 loss on a $250,000 price rounds to `-0`. `JSON.stringify(-0)` is `"0"` and
+ * `(-0 < 0) === false`, so the margin-floor check put `p50_margin_below_floor` in
+ * `passed` with `observed: 0` — an audit record stating a loss as "0%" and as cleared.
+ */
+describe('a rounded-to-nothing loss cannot present as zero margin', () => {
+  it('never returns negative zero', () => {
+    const pct = marginPct(25_000_000, 25_001_000); // a $10 loss
+    expect(pct).toBe(0);
+    expect(Object.is(pct, -0)).toBe(false);
+    // The direction is recoverable from the exact figure, which is cents.
+    expect(marginCents(25_000_000, 25_001_000)).toBe(-1_000);
+  });
+
+  it('is unchanged for every case that was already right', () => {
+    expect(marginPct(1_800_000, 600_000)).toBe(67);
+    expect(marginPct(2_500_000, 3_000_000)).toBe(-20);
+    expect(marginPct(1_000_000, 1_000_000)).toBe(0);
+    expect(marginPct(0, 100)).toBeNull();
+    expect(marginPct(-1, 100)).toBeNull();
   });
 });
 
@@ -672,13 +737,58 @@ describe('outcomeBlend and the basis transition', () => {
     );
     const u = underwrite(quote(), model(), { ...OPTS, outcomes: spread });
     expect(u.varianceDriver?.all).toHaveLength(2);
-    expect(u.varianceDriver?.note).toBeNull();
     const inputs = u.varianceDriver!.all.map((c) => c.input).sort();
     expect(inputs).toEqual(['effort', 'outcome_overrun']);
     for (const c of u.varianceDriver!.all) {
-      expect(c.contribution).toBeGreaterThanOrEqual(0);
+      // Capped ABOVE at 1 — a share over 100% is impossible arithmetic. NOT clamped
+      // below at 0: effort and the overrun ratio enter the cost multiplicatively, so
+      // pinning one can WIDEN the band, and a negative share is the true measurement.
+      // See the clamp note in `attributeVariance`.
       expect(c.contribution).toBeLessThanOrEqual(1);
     }
+    // The single-input caveat is dropped when two inputs vary; the note is either null
+    // or the not-decomposable refusal, never the "only one input varies" sentence.
+    expect(u.varianceDriver?.note ?? '').not.toMatch(/Only one input varies/);
+  });
+
+  /**
+   * THE CLAMP THAT REPORTED A NEGATIVE CONTRIBUTION AS 0%.
+   *
+   * `contribution` was `Math.max(0, removed / totalSpread)`. Over 79 seeds with ratios
+   * in [0.1, 3.0], 79 of 158 candidate evaluations had `removed < 0` — pinning an input
+   * left a WIDER band than the joint model, because the two stochastic inputs multiply.
+   * Each of those rendered as "dominated by <label> (0%)", beside a NEGATIVE
+   * `spreadExplainedCents` on the same object, which was never clamped.
+   */
+  it('refuses the attribution rather than reporting a negative share as 0%', () => {
+    // A wide, skewed overrun distribution is what makes pinning widen the band.
+    const wild = [0.1, 0.2, 0.5, 1.0, 1.6, 2.2, 2.8, 3.0].map((r, i) =>
+      outcome(`w${i}`, { quotedVendorCostCents: 600_000, actualVendorCostCents: Math.round(600_000 * r) }),
+    );
+    const results = Array.from({ length: 40 }, (_, s) =>
+      underwrite(quote(), model(), { ...OPTS, seed: 3_000 + s, outcomes: wild }).varianceDriver,
+    ).filter((v): v is NonNullable<typeof v> => v != null);
+    expect(results.length).toBeGreaterThan(0);
+
+    for (const v of results) {
+      if (v.input === null && v.label === 'Not decomposable') {
+        // The refusal states the mechanism and does not claim 0% of anything.
+        expect(v.note).toMatch(/MULTIPLICATIVELY/);
+        expect(v.note).toMatch(/refused rather than reported as 0%/);
+        expect(v.contribution).toBeLessThanOrEqual(0);
+      }
+      // The invariant that used to be violable: `contribution: 0` beside a negative
+      // `spreadExplainedCents` can no longer coexist with a NAMED dominant input.
+      if (v.input !== null) {
+        expect(v.contribution).toBeGreaterThan(0);
+        expect(v.spreadExplainedCents).toBeGreaterThan(0);
+      }
+    }
+
+    // And at least one of the 40 seeds must actually exercise the refusal, or this
+    // test is asserting over an empty set.
+    const negatives = results.flatMap((v) => v.all).filter((c) => c.contribution < 0);
+    expect(negatives.length, 'no seed produced a negative raw share — the fixture no longer reaches the case').toBeGreaterThan(0);
   });
 });
 
@@ -737,6 +847,30 @@ describe('refusals', () => {
       'refused_rate_not_derivable',
       /does not price/,
     ],
+    // Zero is the dangerous one: a negative amount was already refused, but 0
+    // multiplied out to a zero cost basis and underwrote as 100% margin, pLoss 0,
+    // nothing blocked — "this offer is pure profit" off an unfilled form.
+    [
+      'a ZERO fixed fee is an unfilled form, not a free partner',
+      quote(),
+      model({ card: card('fixed', 0) }),
+      'refused_rate_not_derivable',
+      /not a partner working for free/,
+    ],
+    [
+      'a ZERO day rate is refused on the same footing as a negative one',
+      quote(),
+      model({ card: card('day_rate', 0) }),
+      'refused_rate_not_derivable',
+      /Zero is refused on the same footing as negative/,
+    ],
+    [
+      'a ZERO hourly rate cannot bridge into a free cost basis',
+      quote(),
+      model({ card: card('hourly', 0), hoursPerDay: 8 }),
+      'refused_rate_not_derivable',
+      /not a usable rate/,
+    ],
     [
       'a negative price is corrupt data, not a discount',
       quote({ priceCents: -500 }),
@@ -781,6 +915,51 @@ describe('refusals', () => {
       expect(s.breakevenUpliftPct).toBeNull();
       expect(s.verdict).toBe(verdict);
       expect(s.reasons.join(' | ')).toContain('four fictional rows');
+    });
+  }
+
+  /**
+   * THE FULL HOSTILE RATE-CARD SET, asserted in one place so a future edit to one
+   * branch cannot quietly reopen the other.
+   *
+   * The last two rows are the ones that DID leak. The metered branch tested
+   * `amountCents <= 0` itself instead of asking `rateCardCostCents`, so it skipped
+   * that function's round-to-zero guard: a 0.0001c/day card is finite and positive,
+   * passed, multiplied out to a cost basis of 0, and underwrote a $17,500 price at
+   * p50 1,750,000c — 100% margin, pLoss 0, blocked=false — on work with a real
+   * cost. Both branches now route through the same derivation.
+   *
+   * The string rows are not hypothetical: `pg` returns `numeric` columns as
+   * strings, and `Number.isFinite('60000')` is false. A card that arrives as a
+   * string must refuse rather than coerce, so the cast is the point of the case.
+   */
+  const fromPg = (v: string): number => v as unknown as number;
+  const hostileCards: Array<[string, RateCard]> = [
+    ['fixed 0', card('fixed', 0)],
+    ['daily 0', card('day_rate', 0)],
+    ['hourly 0', card('hourly', 0)],
+    ['daily -1', card('day_rate', -1)],
+    ['daily NaN', card('day_rate', Number.NaN)],
+    ['daily "60000" (string from pg)', card('day_rate', fromPg('60000'))],
+    ['fixed "0" (string from pg)', card('fixed', fromPg('0'))],
+    ['fixed 0.4 (rounds to zero)', card('fixed', 0.4)],
+    ['daily 0.0001 (rounds to zero)', card('day_rate', 0.0001)],
+  ];
+
+  for (const [label, hostile] of hostileCards) {
+    it(`refuses a rate card of ${label} instead of quoting free work`, () => {
+      const q = quote({ priceCents: 1_750_000 });
+      const u = underwrite(q, model({ card: hostile, hoursPerDay: 8 }), OPTS);
+      expect(u.verdict).toBe('refused_rate_not_derivable');
+      expect(isRefusal(u.verdict)).toBe(true);
+      // No band, and specifically no 100%-margin band off a zero cost basis.
+      expect(u.distribution).toBeNull();
+      expect(u.pLoss).toBeNull();
+      expect(u.pLossLikelihood).toBeNull();
+      expect(u.reasons.join(' | ')).toMatch(/not a usable rate|does not price/);
+      // And the refusal reaches the gate, so nothing can be issued against it.
+      expect(shouldBlockIssue(u).blocked).toBe(true);
+      expect(overrunSensitivity(q, model({ card: hostile, hoursPerDay: 8 }), OPTS).points).toEqual([]);
     });
   }
 

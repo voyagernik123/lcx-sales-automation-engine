@@ -331,6 +331,68 @@ describe('no GPS code can receive bytes', () => {
       ).toBe('gpsRoutes');
     }
   });
+
+  /**
+   * THE FENCE MOVED AND THE ASSERTION DID NOT.
+   *
+   * The check above reads `app.ts` only, and app.ts holds ONE `/v1/gps` registration.
+   * Phases 6–12 moved composition INTO `routes/gps.ts`, which now does
+   * `gpsRoutes.route('/', gpsBookRoutes)` six times — and says in prose that it was done
+   * that way BECAUSE six `app.route('/v1/gps/book', …)` lines "would each have turned it
+   * red". So the six routers that actually serve most of the compartment are invisible to
+   * the fence above; verified, its regex over app.ts yields exactly `['gpsRoutes']`.
+   *
+   * A future `gpsRoutes.route('/', attachmentRoutes)` from `routes/attachments.ts` would
+   * defeat four mechanisms at once: the file is not discovered
+   * (`'routes/attachments.ts'.includes('gps') === false`), so the byte doors never scan
+   * it; its `'/engagements/:id/files'` path is never extracted; and the app.ts fence
+   * never sees the mount.
+   *
+   * So fence the ROUTER SYMBOL, not the file: extract every inner `.route('…', Sym)`
+   * from the GPS route files, resolve `Sym` to the import specifier it came from, and
+   * require that specifier to contain `gps` — which is exactly the condition that puts
+   * the file inside this ratchet's discovery.
+   */
+  it('mounts nothing INSIDE the GPS router that this ratchet does not discover', () => {
+    const mounted: Array<{ file: string; symbol: string; spec: string | null }> = [];
+    for (const file of GPS_ROUTE_FILES) {
+      // `import { a, b as c } from '…'` → symbol → specifier.
+      const bySymbol = new Map<string, string>();
+      for (const im of file.code.matchAll(/import\s*\{([^}]*)\}\s*from\s*'([^']+)'/g)) {
+        for (const part of im[1]!.split(',')) {
+          const name = part.trim().split(/\s+as\s+/).pop()?.trim();
+          if (name) bySymbol.set(name, im[2]!);
+        }
+      }
+      for (const m of file.code.matchAll(/\.route\s*\(\s*'[^']*'\s*,\s*([A-Za-z0-9_$]+)\s*\)/g)) {
+        mounted.push({ file: file.path, symbol: m[1]!, spec: bySymbol.get(m[1]!) ?? null });
+      }
+    }
+
+    // Non-vacuity: the six Phase 6–12 sub-routers are composed this way today, so an
+    // empty list means the extraction broke, not that the property holds.
+    expect(
+      mounted.length,
+      'no inner .route(…) mounts found in any GPS route file — this ratchet has gone '
+        + 'vacuous; routes/gps.ts composes six sub-routers',
+    ).toBeGreaterThanOrEqual(6);
+
+    for (const { file, symbol, spec } of mounted) {
+      expect(
+        spec,
+        `${file} mounts '${symbol}' but this test cannot find where it was imported from. `
+          + 'A router whose origin cannot be established cannot be fenced.',
+      ).not.toBeNull();
+      expect(
+        (spec ?? '').toLowerCase().includes('gps'),
+        `${file} mounts '${symbol}' from '${spec}' INSIDE the GPS router. Everything served `
+          + 'under /v1/gps must be in a file this ratchet discovers, and discovery is by '
+          + "path substring 'gps' — so a router from a file not named gps* is served inside "
+          + 'the compartment with none of the byte doors, path checks or column checks '
+          + 'above ever having looked at it.',
+      ).toBe(true);
+    }
+  });
 });
 
 /**
@@ -447,6 +509,60 @@ const BYTE_NAMES: readonly RegExp[] = [
   /storage_(path|key|bucket|url|id)/, /(^|_)bucket(_|$)/, /mime/, /media_type/,
 ];
 
+/**
+ * `currency` WAS THE DOOR, AND NOTHING IN THIS FILE COULD SEE IT.
+ *
+ * Every string in every GPS route handler goes through `text(v, max)` — except
+ * `currency`, which was read as `typeof body.currency === 'string' ? body.currency :
+ * undefined` and flowed uppercased into the `scope_snapshot` jsonb and into
+ * `currency text NOT NULL` (`0047_gps.sql:172`), a column with no length and no
+ * CHECK. There is no `bodyLimit` anywhere in `index.ts`. Verified before the fix by
+ * running `quoteOffer` with a 112,000-character payload: `q.currency.length ===
+ * 112000` and the payload appeared verbatim inside `JSON.stringify(q.scopeSnapshot)`.
+ * Hex and Base32 survive `.toUpperCase()` losslessly, so a client PDF encoded into
+ * that field was recoverable.
+ *
+ * Every mechanism in this file was blind to it by construction: `currency` is not in
+ * `BYTE_NAMES`, `text` is not in `BYTE_TYPES`, and the jsonb freeze compares only the
+ * NAME SET of jsonb columns — which did not change. A document landed in the exact
+ * column this file's docblock names as its acknowledged blind spot, with no new
+ * column, route, dependency or migration.
+ *
+ * The ratchet is a CLOSED PATTERN, not a length cap: three bytes drawn from 26
+ * letters is not a channel, whereas `text(body.currency, 3)` would be a smaller
+ * version of the same hole with 1.1 bits per request. The governed action path already
+ * did this (`gps/actions.ts`, `z.string().regex(/^[A-Z]{3}$/)`); this asserts the REST
+ * path cannot drift back.
+ */
+describe('currency is a closed three-letter code on every GPS route, never a free string', () => {
+  it('no GPS route reads body.currency as a bare string', () => {
+    for (const file of GPS_ROUTE_FILES) {
+      expect(
+        /typeof\s+body\.currency\s*===\s*'string'\s*\?\s*body\.currency\s*:/.test(file.code),
+        `${file.path} reads body.currency as an unbounded string. That field lands in a `
+          + 'jsonb snapshot and a text column with no length and no CHECK, and there is no '
+          + 'bodyLimit on the server: it is a document-sized channel into the compartment '
+          + 'that must not hold documents. Validate it against /^[A-Za-z]{3}$/ first.',
+      ).toBe(false);
+    }
+  });
+
+  it('every route file that accepts a currency validates it against a 3-letter pattern', () => {
+    const accepting = GPS_ROUTE_FILES.filter((f) => /body\.currency/.test(f.code));
+    expect(
+      accepting,
+      'no GPS route reads body.currency at all — this ratchet has gone vacuous; either the '
+        + 'field was removed (fine, delete this test) or the discovery above is broken (not fine)',
+    ).not.toHaveLength(0);
+    for (const file of accepting) {
+      expect(
+        /\[A-Za-z\]\{3\}|\[A-Z\]\{3\}/.test(file.code),
+        `${file.path} reads body.currency but declares no 3-letter pattern to check it against`,
+      ).toBe(true);
+    }
+  });
+});
+
 describe('no gps_* migration has anywhere to write bytes', () => {
   it('declares no column of a type that holds bytes', () => {
     for (const file of GPS_MIGRATIONS) {
@@ -496,6 +612,28 @@ describe('no gps_* migration has anywhere to write bytes', () => {
      * deliberate edit to this test — which is exactly the review trigger the lock
      * needs. If you are adding one, say in your commit message why it cannot hold a
      * document.
+     *
+     * ── REVIEW: `factor_scores_at_quote` (0053_gps_outcome.sql) ────────────────
+     * This ratchet FIRED on it, as designed, and the review it forced found a real
+     * hole rather than rubber-stamping the addition.
+     *
+     * The column's only writer is the `factorScoresAtQuote` body field of
+     * `POST /v1/gps/loop/outcome`, validated by `factorScoreMap`
+     * (`routes/gpsLoop.ts:482`). That validator refused any value that was not a
+     * finite number — so a base64 document could never be a VALUE — but it accepted
+     * ANY KEY NAME, unbounded in length and count. A payload could therefore ride in
+     * the keys, and it would survive a round trip: the read-side `factorScores`
+     * (`gps/loop.ts:244`) filters values and not keys, and `calibration.ts:732`
+     * republishes `Object.keys(...)` as `observedKeys`. That is a write channel and a
+     * read channel, which is a document store with extra steps.
+     *
+     * 0053's own comment claimed the column was "keyed by the six literal factor
+     * names in TARGET_FACTOR_KEYS and nothing else"; nothing enforced it. It is
+     * enforced now, at the edge, and `loopFactorKeyLockout.test.ts` pins it. With
+     * both halves closed the column can hold at most six finite numbers, so it is
+     * admitted to the frozen set.
+     *
+     * `scope_snapshot` has no such bound and this is NOT a claim that it does.
      */
     const jsonColumns = GPS_MIGRATIONS.flatMap((f) =>
       columnsOf(f.code).filter((c) => c.type === 'json' || c.type === 'jsonb').map((c) => c.name),
@@ -503,8 +641,11 @@ describe('no gps_* migration has anywhere to write bytes', () => {
     expect(
       [...new Set(jsonColumns)],
       'the set of jsonb columns on GPS tables changed. A jsonb column is the one shape ' +
-        'this ratchet is blind to, so the set is frozen and every addition is reviewed.',
-    ).toEqual(['scope_snapshot']);
+        'this ratchet is blind to, so the set is frozen and every addition is reviewed. ' +
+        'Read the review above for what that review has to establish before you extend ' +
+        'this list: name the ONLY writer, and show that no byte-bearing payload can ' +
+        'survive a write and a read through it.',
+    ).toEqual(['factor_scores_at_quote', 'scope_snapshot']);
   });
 });
 

@@ -81,12 +81,20 @@ import { weekStartOf } from '../kpi/wbr.js';
 /**
  * The migration a human must write and apply. Named in every 503.
  *
- * 0051 and not 0050: 0050 is `0050_gps_perimeter.sql`, added by the conflict-and-
- * perimeter phase in this same programme. Two migration files sharing a number is
- * a merge conflict that resolves itself silently in whichever order the deploy
- * applies them, so the number is checked against the directory rather than assumed.
+ * 0053, RENUMBERED 2026-08-01, and the reason is the whole point of naming a file in
+ * an error message. This said `0051_gps_outcome.sql` — and `0051_gps_evidence_refusal.sql`
+ * is on disk AND applied on production. So an operator told "awaiting migration 0051"
+ * looked in `_migrations`, found 0051 applied, and concluded the API was lying to
+ * them: the exact reaction `MIGRATION_PENDING` exists to prevent. The comment that
+ * used to sit here claimed the number was "checked against the directory rather than
+ * assumed", and nothing checked it.
+ *
+ * The three unapplied GPS migrations now hold distinct, free numbers and each is
+ * declared exactly once: 0052 underwriting (`gps/underwrite.ts`), 0053 outcome (here),
+ * 0054 origination (`routes/gpsOrigination.ts`). `deploySafety.test.ts` asserts none of
+ * them collides with a file that exists.
  */
-export const OUTCOME_MIGRATION = '0051_gps_outcome.sql';
+export const OUTCOME_MIGRATION = '0053_gps_outcome.sql';
 
 /**
  * What the pending migration must contain, as data rather than a comment, so a
@@ -163,8 +171,22 @@ export async function isOutcomeMigrated(pool: Pool): Promise<boolean> {
   try {
     const res = await pool.query(`SELECT to_regclass('public.gps_outcome') IS NOT NULL AS ok`);
     outcomeMigratedCache = Boolean(res.rows[0]?.ok);
-  } catch {
-    outcomeMigratedCache = false;
+  } catch (err) {
+    // CACHE ONLY THE POSITIVE, AND LOG THE CATCH.
+    //
+    // This used to be `catch { cache = false }` with no log. One connection reset,
+    // statement timeout or pgbouncer restart therefore poisoned the process
+    // PERMANENTLY: every GPS read served `migrated: false` and every write answered
+    // 503 "awaiting migration", on a fully migrated production database, until
+    // someone restarted the API — with nothing in the logs saying why. Each of these
+    // probes justified caching with "the API restarts on deploy", but
+    // `db/migrate.ts` states migrations are deliberately NOT part of the deploy, so a
+    // true negative never self-heals either.
+    //
+    // Leaving the cache NULL means the next call re-probes: one extra round trip
+    // while the database is unhealthy, and correct behaviour the moment it is not.
+    console.error('[gps] outcome migration probe failed; not caching the negative:', err);
+    return false;
   }
   return outcomeMigratedCache;
 }

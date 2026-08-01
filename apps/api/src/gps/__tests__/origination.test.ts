@@ -169,7 +169,7 @@ vi.mock('../../db/index.js', () => ({
   closeDb: async () => {},
 }));
 
-const { gpsOriginationRoutes } = await import('../../routes/gpsOrigination.js');
+const { gpsOriginationRoutes, ORIGINATION_MIGRATION } = await import('../../routes/gpsOrigination.js');
 const { _resetOriginationMigrated, PROVENANCEABLE_FIELDS } = await import('../origination.js');
 
 /* ── The harness ───────────────────────────────────────────────────────────── */
@@ -786,7 +786,14 @@ describe('0050 pending: honest, not broken', () => {
     for (const w of writes) {
       expect(w.status).toBe(503);
       expect(w.body.code).toBe('MIGRATION_PENDING');
-      expect(w.body.error).toMatch(/0050/);
+      // NOT /0050/. This asserted the number 0050 while `0050_gps_perimeter.sql` is on
+      // disk AND applied on production, so the message sent an operator to run a
+      // migration they would find already applied — the exact reaction
+      // MIGRATION_PENDING exists to prevent. Asserted against the CONSTANT so the test
+      // cannot drift from the message, and `deploySafety.test.ts` separately asserts
+      // that constant names no file that exists.
+      expect(w.body.error).toContain(ORIGINATION_MIGRATION);
+      expect(w.body.error).toMatch(/gps_target/);
     }
   });
 

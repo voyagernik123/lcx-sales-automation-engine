@@ -56,6 +56,45 @@ const outcomes = new Map<string, Record<string, unknown>>();
 let outcomeTableExists = true;
 let engagementTableExists = true;
 
+/**
+ * THE JURISDICTIONAL PERIMETER, WHICH `POST /outcome` NOW CONSULTS BEFORE IT WRITES.
+ *
+ * The route records a realised price and vendor cost against a named client's
+ * engagement, and those are the figures `/margin`, `/win-loss` and the next quote's
+ * calibration are computed from — so a position that is missing, unreviewed, past its
+ * review date or `prohibited` refuses the write (`gps/perimeterGuard.ts`).
+ *
+ * DEFAULT `'permitted'` HERE IS A FIXTURE, NOT A CLAIM: production has an EMPTY
+ * matrix, so the honest default in the world is `'absent'` and every one of these
+ * writes would refuse. The tests below are about the loop's arithmetic and its
+ * suppression rules, and they need a written position to reach the arithmetic at all.
+ * The gate itself is asserted, at both settings, in the perimeter describe at the foot
+ * of this file.
+ */
+let perimeterPosition: 'permitted' | 'prohibited' | 'unreviewed' | 'absent' | 'unreadable' = 'permitted';
+
+/** The client row the perimeter reads its jurisdiction FROM. Never a body field. */
+const CLIENT_JURISDICTION = 'liechtenstein';
+
+function profileRow() {
+  return {
+    id: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+    jurisdiction: CLIENT_JURISDICTION,
+    offer_key: 'diagnostic',
+    service_class: perimeterPosition === 'prohibited' ? 'prohibited' : 'permitted',
+    source: 'Opinion of counsel, 2026-07-01',
+    source_url: null,
+    entered_by: 'nik',
+    entered_at: '2026-07-01T00:00:00.000Z',
+    review_by: '2099-01-01T00:00:00.000Z',
+    note: 'Fixture position.',
+    reviewed_by: perimeterPosition === 'unreviewed' ? null : 'monty',
+    reviewed_at: perimeterPosition === 'unreviewed' ? null : '2026-07-02T00:00:00.000Z',
+    created_at: '2026-07-01T00:00:00.000Z',
+    updated_at: '2026-07-02T00:00:00.000Z',
+  };
+}
+
 /** Every (sql, params) pair the code issued, for the parameterisation assertions. */
 const calls: Array<{ sql: string; params: unknown[] }> = [];
 
@@ -98,6 +137,42 @@ const query = vi.fn(async (sql: string, params: unknown[] = []) => {
 
   if (/to_regclass\('public\.gps_engagement'\)/.test(sql)) return { rows: [{ ok: engagementTableExists }] };
   if (/to_regclass\('public\.gps_outcome'\)/.test(sql)) return { rows: [{ ok: outcomeTableExists }] };
+  if (/to_regclass\('public\.gps_jurisdiction_profile'\)/.test(sql)) {
+    return { rows: [{ ok: perimeterPosition !== 'absent' }] };
+  }
+
+
+  if (/FROM gps_jurisdiction_profile/.test(sql)) {
+    // A gate that permits what it could not evaluate is the door every bypass uses.
+    if (perimeterPosition === 'unreadable') throw new Error('connection reset');
+    return { rows: perimeterPosition === 'absent' ? [] : [profileRow()] };
+  }
+
+  // `loadSubject` — the join the perimeter guard reads the CLIENT's jurisdiction from.
+  if (/FROM gps_engagement e/.test(sql)) {
+    const e = engagements.get(String(params[0]));
+    if (!e) return { rows: [] };
+    return {
+      rows: [{
+        engagement_id: e.id,
+        client_id: e.client_id,
+        offer_key: e.offer_key,
+        contracting_entity: 'lcx',
+        status: e.status,
+        price_cents: e.price_cents,
+        currency: 'USD',
+        owner: null,
+        client_name: 'Test Client AG',
+        client_jurisdiction: CLIENT_JURISDICTION,
+        check_id: null,
+        check_performed: null,
+        decision: null,
+        check_decided_by: null,
+        disclosure_text_used: null,
+        check_decided_at: null,
+      }],
+    };
+  }
 
   if (/INSERT INTO gps_outcome/.test(sql)) {
     const [engagementId, disposition, reason, rp, rc, cycle, firstPass, partner, scores, decidedAt, recordedBy] = params;
@@ -146,6 +221,7 @@ vi.mock('../../db/index.js', () => ({
 const { gpsLoopRoutes } = await import('../../routes/gpsLoop.js');
 const { _resetOutcomeMigrated, OUTCOME_MIGRATION } = await import('../loop.js');
 const { _resetMigrated } = await import('../service.js');
+const { _resetPerimeterMigrated } = await import('../conflict.js');
 
 /**
  * A tiny app with the operator pre-set. `requireOperator` returns early when
@@ -166,8 +242,10 @@ beforeEach(() => {
   query.mockClear();
   outcomeTableExists = true;
   engagementTableExists = true;
+  perimeterPosition = 'permitted';
   _resetOutcomeMigrated();
   _resetMigrated();
+  _resetPerimeterMigrated();
 });
 
 type Json = Record<string, unknown>;
@@ -667,5 +745,79 @@ describe('absence, asserted', () => {
     await seedThreeOutcomes();
     const { body } = await get('');
     expect(((body.data as Json).notices as string[]).join(' ')).toContain('Cancelled engagements are excluded');
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* THE JURISDICTIONAL PERIMETER, ON THE ONE WRITE IN THIS FILE                  */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * `POST /outcome` used to run with the perimeter never consulted, so an engagement in
+ * a jurisdiction whose position is missing, unreviewed or recorded as PROHIBITED could
+ * still book a realised price — and then price the next quote off it.
+ *
+ * WHAT A REFUSAL HERE IS NOT: it is not the 422. A 422 says "these facts do not
+ * constitute a record" and carries the form; a 409 says "the position is missing or
+ * says no" and carries the gate trail. And it destroys nothing — `gps_outcome` is the
+ * analytic book, not the audit trail, and the same facts record unchanged once a
+ * qualified human enters the position.
+ */
+describe('recording an outcome consults the jurisdictional perimeter', () => {
+  const draft = {
+    engagementId: ENGAGEMENT_A, disposition: 'won', reason: 'referral',
+    realisedPriceCents: 900_000, realisedVendorCostCents: 600_000, decidedAt: '2026-07-27',
+  };
+
+  const REFUSED: ReadonlyArray<[string, typeof perimeterPosition, string]> = [
+    ['no position on record at all — production today', 'absent', 'perimeter_'],
+    ['a recorded prohibition', 'prohibited', 'service_prohibited'],
+    ['a position nobody has reviewed', 'unreviewed', 'perimeter_unreviewed'],
+  ];
+
+  for (const [name, position, code] of REFUSED) {
+    it(`refuses the write on ${name}`, async () => {
+      seedEngagement(ENGAGEMENT_A, 1_000_000, 600_000);
+      perimeterPosition = position;
+      const { status, body } = await post('/outcome', draft);
+      expect(status).toBe(409);
+      expect(String(body.code)).toMatch(new RegExp(`^${code}`));
+      // NOTHING WAS WRITTEN, and the refusal carries the trail rather than a boolean.
+      expect(outcomes.size).toBe(0);
+      expect(calls.some((x) => /INSERT INTO gps_outcome/.test(x.sql))).toBe(false);
+      expect((body.data as Json).gates).toBeTruthy();
+      expect((body.data as Json).failsClosedNotice).toBeTruthy();
+    });
+  }
+
+  it('records it once the position permits, and the 422 still means the entry', async () => {
+    seedEngagement(ENGAGEMENT_A, 1_000_000, 600_000);
+    const ok = await post('/outcome', draft);
+    expect(ok.status).toBe(200);
+    expect(outcomes.size).toBe(1);
+
+    // Same permitted position, an unrecordable draft: 422 with the form, never 409.
+    outcomes.clear();
+    seedEngagement(ENGAGEMENT_B, 1_000_000, 600_000);
+    const blocked = await post('/outcome', { engagementId: ENGAGEMENT_B, disposition: 'won' });
+    expect(blocked.status).toBe(422);
+  });
+
+  it('reads the jurisdiction from the client row, never from the request', async () => {
+    seedEngagement(ENGAGEMENT_A, 1_000_000, 600_000);
+    const { status } = await post('/outcome', { ...draft, jurisdiction: 'permitted-land' });
+    // The extra field changes nothing: it is not read, and the gate ran on the join.
+    expect(status).toBe(200);
+    const join = calls.find((x) => /FROM gps_engagement e/.test(x.sql));
+    expect(join?.params).toEqual([ENGAGEMENT_A]);
+    expect(calls.some((x) => x.params.includes('permitted-land'))).toBe(false);
+  });
+
+  it('fails CLOSED when the perimeter cannot be read at all', async () => {
+    seedEngagement(ENGAGEMENT_A, 1_000_000, 600_000);
+    perimeterPosition = 'unreadable';
+    const { status } = await post('/outcome', draft);
+    expect(status).toBe(409);
+    expect(outcomes.size).toBe(0);
   });
 });

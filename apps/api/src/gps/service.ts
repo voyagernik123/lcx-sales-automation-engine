@@ -71,9 +71,10 @@ import {
  * exists they all do.
  *
  * Cached per process: the answer changes only when someone runs a migration,
- * which means a deploy or a manual step, and the API restarts on deploy. A false
- * negative self-heals on restart; a per-request probe would add a round trip to
- * every read forever to catch a once-ever event.
+ * which means a deploy or a manual step, and the API restarts on deploy. Only the POSITIVE is cached: a
+ * probe that THREW is not an answer, and caching it as `false` used to poison the
+ * process until restart (see the catch below). A per-request probe would add a round
+ * trip to every read forever to catch a once-ever event, so the positive stays cached.
  */
 let migratedCache: boolean | null = null;
 
@@ -84,10 +85,22 @@ export async function isMigrated(pool: Pool): Promise<boolean> {
       `SELECT to_regclass('public.gps_engagement') IS NOT NULL AS ok`,
     );
     migratedCache = Boolean(res.rows[0]?.ok);
-  } catch {
-    // A database that cannot answer this cannot serve the compartment either.
-    // Report not-migrated rather than propagating a 500 up to the desk.
-    migratedCache = false;
+  } catch (err) {
+    // CACHE ONLY THE POSITIVE, AND LOG THE CATCH.
+    //
+    // This used to be `catch { cache = false }` with no log. One connection reset,
+    // statement timeout or pgbouncer restart therefore poisoned the process
+    // PERMANENTLY: every GPS read served `migrated: false` and every write answered
+    // 503 "awaiting migration", on a fully migrated production database, until
+    // someone restarted the API — with nothing in the logs saying why. Each of these
+    // probes justified caching with "the API restarts on deploy", but
+    // `db/migrate.ts` states migrations are deliberately NOT part of the deploy, so a
+    // true negative never self-heals either.
+    //
+    // Leaving the cache NULL means the next call re-probes: one extra round trip
+    // while the database is unhealthy, and correct behaviour the moment it is not.
+    console.error('[gps] migration probe failed (gps_engagement); not caching the negative:', err);
+    return false;
   }
   return migratedCache;
 }
@@ -273,9 +286,19 @@ export interface Quote {
   withinBand: boolean;
   depositRequiredCents: number;
   depositPct: number;
-  /** True while `PRICE_BANDS_ARE_PLACEHOLDERS` — badge it, do not present it. */
+  /**
+   * True while `PRICE_BANDS_ARE_PLACEHOLDERS` — badge it, do not present it.
+   *
+   * A CONSTANT, NOT A PER-QUOTE FACT, and the distinction cost real money once: this
+   * is identically true for a price the founder typed and a price the server invented,
+   * so it could never distinguish them. `priceSource` is the field that can.
+   */
   priceIsPlaceholder: boolean;
   vendorCostIsPlaceholder: boolean;
+  /** `supplied` = a human's number. `band_midpoint` = invented from TODO_PRICE_BANDS. */
+  priceSource: PriceSource;
+  /** `supplied` = a human's number. `catalogue_expected` = the offer's placeholder. */
+  vendorCostSource: VendorCostSource;
   depositPolicyIsPlaceholder: boolean;
   isDiagnostic: boolean;
   creditableAgainstEngagement: boolean;
@@ -323,15 +346,57 @@ export interface ScopeSnapshot {
   quotedAt: string;
 }
 
+/**
+ * WHERE THE NUMBER CAME FROM. The field that did not exist, and had to.
+ *
+ * `badCents(undefined)` is false ("absent is fine — defaults apply"), so omitting
+ * `priceCents` made `quoteOffer` substitute `bandMidpointCents(offer)` — a value out
+ * of `TODO_PRICE_BANDS`, the block whose own header reads "NOT REAL PRICES. DO NOT
+ * QUOTE THESE." `createEngagement` then INSERTed it, and nothing on the row
+ * distinguished it from a price the founder set. It went on to drive concentration,
+ * the cash funnel, deposit chasing, `marginPct`, WIP and margin realisation.
+ *
+ * `priceIsPlaceholder` did not catch it: that flag is the CONSTANT
+ * `PRICE_BANDS_ARE_PLACEHOLDERS` dressed as a per-quote fact, so it is identically
+ * true for a real founder-set price and an invented one. This is the per-quote fact.
+ *
+ * The web client's own comment claimed the server "does not 'helpfully' default a
+ * price from the catalogue band, because … a server-invented price is the exact thing
+ * this build must not do". That statement is now true, and it is true because of this
+ * field and the refusal in `createEngagement`.
+ */
+export type PriceSource = 'supplied' | 'band_midpoint';
+export type VendorCostSource = 'supplied' | 'catalogue_expected';
+
+/** Thrown by `createEngagement` when no price was supplied. Routes map it to a 400. */
+export class PriceNotSuppliedError extends Error {
+  readonly code = 'PRICE_NOT_SUPPLIED';
+  readonly offerKey: string;
+  readonly bandMidpointCents: number;
+  constructor(offerKey: string, midpoint: number) {
+    super(
+      'priceCents is required to create an engagement. Omitting it used to persist the midpoint of a PLACEHOLDER '
+      + `band (${midpoint} cents for ${offerKey}) as the engagement's real price — a number nobody agreed, on the row `
+      + 'that drives concentration, cash, deposits and margin. Quote it deliberately.',
+    );
+    this.name = 'PriceNotSuppliedError';
+    this.offerKey = offerKey;
+    this.bandMidpointCents = midpoint;
+  }
+}
+
 export function quoteOffer(input: QuoteInput): Quote {
   // Throws on an unknown key (`getOffer`, catalogue.ts:434) rather than pricing
   // an offer that does not exist at zero. Route validation catches it first.
   const offer = getOffer(input.offerKey);
 
-  const priceCents = Number.isFinite(input.priceCents as number) && (input.priceCents as number) >= 0
-    ? Math.round(input.priceCents as number)
-    : bandMidpointCents(offer);
-  const vendorCostCents = Number.isFinite(input.vendorCostCents as number) && (input.vendorCostCents as number) >= 0
+  const priceSupplied = Number.isFinite(input.priceCents as number) && (input.priceCents as number) >= 0;
+  const priceSource: PriceSource = priceSupplied ? 'supplied' : 'band_midpoint';
+  const priceCents = priceSupplied ? Math.round(input.priceCents as number) : bandMidpointCents(offer);
+
+  const costSupplied = Number.isFinite(input.vendorCostCents as number) && (input.vendorCostCents as number) >= 0;
+  const vendorCostSource: VendorCostSource = costSupplied ? 'supplied' : 'catalogue_expected';
+  const vendorCostCents = costSupplied
     ? Math.round(input.vendorCostCents as number)
     : offer.expectedVendorCostCents;
 
@@ -368,6 +433,18 @@ export function quoteOffer(input: QuoteInput): Quote {
       'Price band and vendor cost are UNCALIBRATED PLACEHOLDERS (D4/D5). Margin arithmetic is correct; the inputs are not agreed numbers.',
     );
   }
+  if (priceSource === 'band_midpoint') {
+    warnings.push(
+      `No price was supplied, so this quote shows the MIDPOINT OF A PLACEHOLDER BAND (${priceCents} cents) — a number `
+      + 'nobody agreed. It is an illustration of the arithmetic, not a price. `createEngagement` refuses to persist it.',
+    );
+  }
+  if (vendorCostSource === 'catalogue_expected') {
+    warnings.push(
+      `No partner cost was supplied, so the catalogue's EXPECTED cost (${vendorCostCents} cents) is standing in. `
+      + 'No partner has quoted this, so the margin above is an expectation, not a spread.',
+    );
+  }
 
   return {
     offerKey: offer.key,
@@ -384,6 +461,8 @@ export function quoteOffer(input: QuoteInput): Quote {
     depositPct: TODO_DEPOSIT_PCT,
     priceIsPlaceholder: PRICE_BANDS_ARE_PLACEHOLDERS,
     vendorCostIsPlaceholder: PRICE_BANDS_ARE_PLACEHOLDERS,
+    priceSource,
+    vendorCostSource,
     depositPolicyIsPlaceholder: DEPOSIT_PCT_IS_PLACEHOLDER,
     isDiagnostic: offer.isDiagnostic,
     creditableAgainstEngagement: offer.creditableAgainstEngagement,
@@ -528,6 +607,28 @@ export async function getEngagement(pool: Pool, id: string): Promise<GpsEngageme
 }
 
 /**
+ * The client's recorded jurisdiction, or `undefined` when no such client exists.
+ *
+ * Split out from the client row on purpose: the perimeter gate that runs before
+ * `createEngagement` needs exactly this one field, and it must come from the ROW
+ * rather than the request. A caller who could name the jurisdiction their
+ * engagement is gated against could name a permitted one — the rule
+ * `requireUnderwritingClearance` already applies to every input it reads.
+ *
+ * `null` (client exists, jurisdiction never recorded) is DISTINCT from `undefined`
+ * (no such client) and both refuse: `gateService` classifies a null jurisdiction
+ * as `perimeter_unknown_jurisdiction`, and an unknown client is a 404.
+ */
+export async function clientJurisdiction(
+  pool: Pool,
+  clientId: string,
+): Promise<string | null | undefined> {
+  const res = await pool.query('SELECT jurisdiction FROM gps_client WHERE id = $1', [clientId]);
+  const row = res.rows[0] as { jurisdiction: string | null } | undefined;
+  return row ? row.jurisdiction : undefined;
+}
+
+/**
  * Create an engagement in `conflict_pending`, NOT `draft`.
  *
  * This is the one opinionated default in the file and it is the compliance
@@ -565,6 +666,23 @@ export async function createEngagement(
     contractingEntity: input.contractingEntity,
     currency: input.currency,
   });
+
+  /*
+   * A SERVER-INVENTED PRICE IS NOT PERSISTED. See `PriceSource`.
+   *
+   * `quoteOffer` may still SHOW the band midpoint — it is a calculator, and an
+   * illustration of the arithmetic is useful. Writing that illustration into
+   * `gps_engagement.price_cents` is a different act: the row then drives the
+   * concentration surface, the cash funnel, deposit chasing, margin realisation and
+   * WIP, and nothing on it says the number was invented. `scope_snapshot` freezes it
+   * as "what the client agreed to".
+   *
+   * Refused here rather than only at the route, because the action path and any future
+   * caller reach this function and not that handler.
+   */
+  if (quote.priceSource === 'band_midpoint') {
+    throw new PriceNotSuppliedError(input.offerKey, quote.priceCents);
+  }
 
   const res = await pool.query(
     `INSERT INTO gps_engagement
@@ -669,6 +787,53 @@ export async function recordConflictCheck(
     if (existing && !input.amend) {
       await client.query('ROLLBACK');
       return { ok: false, reason: 'already_recorded', existing: toConflictCheck(existing) };
+    }
+
+    /*
+     * THE PRIOR DECISION IS PRESERVED BEFORE IT IS OVERWRITTEN.
+     *
+     * `gps_conflict_check.engagement_id` is UNIQUE, there is no history table, and
+     * 0047 declares NO append-only trigger on this table (unlike
+     * `gps_disclosure_record`, which has one at `0050:319`). So the amend path was a
+     * destructive UPDATE: one request with `{"decision":"cleared","amend":true}`
+     * erased a DECLINE — the text of the check, who declined it, and when — and
+     * `service.ts` then moved the engagement from `cancelled` back to `draft`,
+     * sidestepping the terminality refusal that exists two functions away.
+     * `gps/actions.ts` says "the prior decision survives in the audit_log row
+     * invokeAction writes", which was true of the action path and of nothing here:
+     * `recordConflictCheck` wrote no audit row at all.
+     *
+     * It writes one now, INSIDE THIS TRANSACTION, carrying the whole prior row. If the
+     * insert fails the amendment fails with it, which is the correct coupling: an
+     * amendment whose history could not be written must not happen. `audit_log` is in
+     * the 0029 spine and is applied everywhere, so this needs no migration — and GPS
+     * `meta` on `/v1/audit` is now gated on `gps:view`, so preserving the disclosure
+     * text here does not publish it.
+     */
+    if (existing) {
+      await client.query(
+        `INSERT INTO audit_log (actor, action, entity, entity_id, meta)
+         VALUES ($1, 'gps_conflict_check.amended', 'gps_engagement', $2, $3::jsonb)`,
+        [
+          input.decidedBy,
+          input.engagementId,
+          JSON.stringify({
+            supersededDecision: existing.decision,
+            supersededCheckPerformed: existing.check_performed,
+            supersededDisclosureTextUsed: existing.disclosure_text_used,
+            supersededDecidedBy: existing.decided_by,
+            supersededDecidedAt: iso(existing.decided_at),
+            supersededCheckId: existing.id,
+            newDecision: input.decision,
+            newDecidedBy: input.decidedBy,
+            engagementStatusBefore: row.status,
+            note:
+              'gps_conflict_check has no history table and engagement_id is UNIQUE, so the row above is the '
+              + 'only surviving record of the superseded decision. Written in the same transaction as the '
+              + 'overwrite: if this row is absent, the amendment did not happen.',
+          }),
+        ],
+      );
     }
 
     const params = [

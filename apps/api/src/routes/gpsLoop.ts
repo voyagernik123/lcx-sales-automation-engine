@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import {
   LOSS_REASONS,
+  TARGET_FACTOR_KEYS,
   WEIGHTS_V1,
   WIN_REASONS,
   calibrationHealthView,
@@ -18,6 +19,7 @@ import { requireOperator } from '../middleware/auth.js';
 import { getPool } from '../db/index.js';
 import { env } from '../lib/env.js';
 import { isMigrated } from '../gps/service.js';
+import { guardEngagementPerimeter, perimeterRefusalBody } from '../gps/perimeterGuard.js';
 import {
   OUTCOME_MIGRATION,
   OUTCOME_MIGRATION_SPEC,
@@ -241,6 +243,14 @@ gpsLoopRoutes.get('/margin', requireOperator, async (c) => {
  * The quarterly review packet. READ-ONLY IN THE STRONGEST SENSE: there is no PATCH
  * or POST beside it, `proposedWeightChanges` is typed `never[]`, and `WEIGHTS_V1`
  * is the same frozen object after the request as before it.
+ *
+ * "FROZEN" IS NOW LITERAL. When this sentence was written `WEIGHTS_V1` was a plain
+ * mutable object literal in `targeting.ts` and nothing enforced the claim — the only
+ * frozen copy was the shallow one `weightReviewPacket` publishes. It is
+ * `Object.freeze`d at the declaration now, so a write throws in strict mode (all ESM),
+ * and `packet.weightsMutated` is DERIVED by comparing the weights the packet was
+ * computed with against it rather than being a hard-coded `false` on the object whose
+ * purpose is that assertion (D8).
  */
 gpsLoopRoutes.get('/review', requireOperator, async (c) => {
   try {
@@ -321,11 +331,13 @@ gpsLoopRoutes.get('/outcome/:engagementId', requireOperator, async (c) => {
 /**
  * Record the outcome at close.
  *
- * FOUR OUTCOMES, and the difference between them is the whole design:
+ * FIVE OUTCOMES, and the difference between them is the whole design:
  *   400 — the request is not describable (bad uuid, non-integer cents, unknown
  *         reason string, malformed date). Checked BEFORE the probe.
  *   404 — no such engagement.
  *   503 — describable and correct, but `gps_outcome` does not exist yet.
+ *   409 — the jurisdictional perimeter refuses this jurisdiction/offer pair. Not a
+ *         statement about the entry; see the gate below the probe.
  *   422 — describable, but these facts do not constitute a record. The response
  *         carries the FULL `OutcomeCaptureForm`, so the blockers, the per-field
  *         status and the reason options travel with the refusal instead of a toast
@@ -374,7 +386,16 @@ gpsLoopRoutes.post('/outcome', requireOperator, async (c) => {
   }
   const scores = factorScoreMap(b.factorScoresAtQuote);
   if (scores === false) {
-    return c.json({ error: 'factorScoresAtQuote must be an object of finite numbers', code: 'VALIDATION' }, 400);
+    return c.json(
+      {
+        error:
+          'factorScoresAtQuote must be an object of finite numbers keyed only by '
+          + `${TARGET_FACTOR_KEYS.join(', ')}. It is the one jsonb column in this `
+          + 'compartment and it holds scores, not free-form keys.',
+        code: 'VALIDATION',
+      },
+      400,
+    );
   }
   const partnerRaw = b.partner;
   if (partnerRaw !== undefined && partnerRaw !== null && typeof partnerRaw !== 'string') {
@@ -411,6 +432,38 @@ gpsLoopRoutes.post('/outcome', requireOperator, async (c) => {
       );
     }
 
+    /*
+     * THE JURISDICTIONAL PERIMETER, IMMEDIATELY BEFORE THE WRITE.
+     *
+     * This route records a REALISED price and vendor cost against a named client's
+     * engagement, and those figures are what `margin`, `win-loss` and the calibration
+     * behind the next quote are computed from. It ran with the perimeter never
+     * consulted, so a jurisdiction whose position is prohibited, unreviewed or past
+     * its review date could still book realised revenue and then price future work
+     * off it.
+     *
+     * REFUSING HERE DESTROYS NOTHING, which is why the gate is defensible on a
+     * record-keeping route: `gps_outcome` is the analytic book, not the audit trail —
+     * the engagement row, the proposal and `object_actions`/`audit_log` are unaffected —
+     * and the refusal is recoverable, so the same facts record unchanged once a
+     * qualified human enters the position. A 409 here means "the position is missing or
+     * says no", never "your entry was wrong": that answer is the 422 below.
+     *
+     * The jurisdiction is read from `gps_client` through the engagement id, never from
+     * the body — `engagementId` names the subject and decides nothing else. Placed
+     * after the 503 so an unmigrated environment still gets "run one file", and last
+     * before `recordOutcome` because that is where a reader looks for the thing that
+     * stops the write.
+     */
+    const cleared = await guardEngagementPerimeter(pool, engagementId, {
+      evaluatedBy: c.get('operator').id,
+      asOf: new Date().toISOString(),
+    });
+    if (!cleared.allowed) {
+      console.warn(`[gps.loop] perimeter REFUSED outcome for ${engagementId}: ${cleared.code}`);
+      return c.json(perimeterRefusalBody(cleared), cleared.status as 404 | 409);
+    }
+
     const { form, stored } = await recordOutcome(pool, {
       subject,
       draft,
@@ -436,11 +489,40 @@ gpsLoopRoutes.post('/outcome', requireOperator, async (c) => {
  * when the shape is wrong. Three-valued on purpose: absent is legitimate (the
  * engagement predates scoring) and must not be confused with malformed.
  */
-function factorScoreMap(v: unknown): Readonly<Record<string, number>> | null | false {
+/**
+ * THE ONLY DOOR INTO THE ONE JSONB COLUMN GPS ADDS, so it is the door that has to
+ * hold the intake lockout.
+ *
+ * `intakeLockout.test.ts` proves by CONTENT that no GPS table can hold bytes — no
+ * bytea, no large object, no url/mime/filename column. It is blind to exactly one
+ * shape, jsonb, which is why the set of jsonb columns is frozen and every addition
+ * is reviewed. `gps_outcome.factor_scores_at_quote` (0053) is the second member of
+ * that set, and it is written from THIS BODY FIELD.
+ *
+ * VALUES were already closed: a non-finite-number value refuses the whole request,
+ * so no base64 string, nested object or array gets in.
+ *
+ * KEYS WERE NOT, and that was the hole. `Record<string, number>` accepted any key
+ * name, of any length, in any quantity — so a payload could ride in the KEYS
+ * (`{"<base64 chunk>": 1}`), and unlike a bad value it would survive: the read-side
+ * `factorScores` (gps/loop.ts:244) filters values, not keys, and
+ * `calibration.ts:732` publishes `Object.keys(...)` back out as `observedKeys`. A
+ * write channel plus a read channel is a file store with extra steps.
+ *
+ * So the keys are now the six the scorer actually has. This is what 0053's own
+ * comment already promised — "keyed by the six literal factor names in
+ * TARGET_FACTOR_KEYS and nothing else" — and it was not true anywhere until here.
+ *
+ * REFUSED, NOT DROPPED. Silently discarding an unrecognised factor would throw away
+ * a score the operator typed and report success; and a lockout that quietly ignores
+ * what it will not store teaches nobody. The 400 names the offending key.
+ */
+export function factorScoreMap(v: unknown): Readonly<Record<string, number>> | null | false {
   if (v === undefined || v === null) return null;
   if (typeof v !== 'object' || Array.isArray(v)) return false;
   const out: Record<string, number> = {};
   for (const [k, raw] of Object.entries(v as Record<string, unknown>)) {
+    if (!(TARGET_FACTOR_KEYS as readonly string[]).includes(k)) return false;
     if (typeof raw !== 'number' || !Number.isFinite(raw)) return false;
     out[k] = raw;
   }

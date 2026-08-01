@@ -12,6 +12,7 @@ import {
   type DeferredCut, type FactProvenance, type WhyNowTrigger, type TriggerState,
   type BriefResponse, type BriefAssertion, type BriefIntegrity,
 } from '@/lib/api/gpsOrigination';
+import { GpsMetaBanner } from './GpsMetaBanner';
 
 /**
  * GLOBAL SERVICES — THE ORIGINATION QUEUE (Phase 8).
@@ -126,6 +127,10 @@ export function GpsOrigination() {
         Origination · the queue
       </PageTitle>
 
+      {/* THE READ, DECLARING ITSELF — above the queue and above the empty state,
+          because the empty state is the thing it corrects. */}
+      <GpsMetaBanner of={[res]} />
+
       {error ? (
         <EmptyState variant="error" title="Origination unavailable" description={error} />
       ) : !res ? (
@@ -141,15 +146,15 @@ export function GpsOrigination() {
          * database with no `gps_target` table — which is TODAY's state, because no
          * migration creates it (`gps/origination.ts` probes for it and the route
          * serves an empty queue when the probe fails). The route knows which it is
-         * and reports it as `meta.migrated`; this page cannot see `meta`, because
-         * `lib/api/gpsOrigination.ts` unwraps to `data`. Until that carries through,
-         * the screen must not assert the stronger of the two readings. A page that
-         * says "nothing is being hidden" while a table is missing is exactly the
-         * confident wrong answer the plan calls slop. */
+         * and reports it as `meta.migrated`, and as of `lib/api/meta.ts` the envelope
+         * reaches the browser: `<GpsMetaBanner>` above prints the missing-tables
+         * reading when that is the reason, so THIS text is now the other reading only
+         * — an empty watchlist — and no longer has to hedge between the two. It still
+         * does not claim nothing is hidden: the banner is what would say so. */
         <EmptyState
           variant="default"
           title="No watchlist yet"
-          description="Nothing has been recorded to originate against. This queue ranks a curated watchlist — it does not source targets, by design — so it stays empty until targets exist. This screen cannot yet distinguish an empty watchlist from a storage layer that has not been migrated; if you expected targets here, check that the origination tables exist before concluding the list is empty."
+          description="Nothing has been recorded to originate against. This queue ranks a curated watchlist — it does not source targets, by design — so it stays empty until targets exist. If the storage layer were missing instead, the notice above this list would say so; nothing above it means the watchlist itself is empty."
         />
       ) : (
         <Loaded res={res} />

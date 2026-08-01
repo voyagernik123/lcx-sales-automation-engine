@@ -16,6 +16,7 @@ import {
   fetchGpsSummary, issueGpsProposal, recordGpsConflictCheck,
   type GpsEngagementRow, type GpsSummary,
 } from '@/lib/api/gps';
+import { GpsMetaBanner } from './GpsMetaBanner';
 import type { GpsClient } from '@lcx/shared';
 
 /**
@@ -91,6 +92,14 @@ export function Gps() {
       {PRICE_BANDS_ARE_PLACEHOLDERS && <PlaceholderPriceBanner />}
 
       {summary && !summary.migrated && <MigrationBanner />}
+
+      {/* THE THREE READS, EACH DECLARING ITSELF. `summary.migrated` is a field on the
+          summary payload and covers only the summary: `/clients` and `/engagements`
+          report their own state in `meta` (routes/gps.ts:346, :409), and before this
+          banner an unmigrated environment returned `[]` from both and the lists
+          rendered "no clients yet" — a claim about the business made from a fact about
+          the environment. */}
+      <GpsMetaBanner of={[summary, clients, engagements]} />
 
       {summary && summary.migrated && <SummaryStrip s={summary} />}
 

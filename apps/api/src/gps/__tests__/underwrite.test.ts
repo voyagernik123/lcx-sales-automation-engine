@@ -170,7 +170,7 @@ vi.mock('../../db/index.js', () => ({
 }));
 
 const { gpsUnderwriteRoutes, requireUnderwritingClearance } = await import('../../routes/gpsUnderwrite.js');
-const { _resetUnderwritingProbes, MIN_DECISION_SAMPLES, validateUnderwriteBody, tightenPolicy } =
+const { _resetUnderwritingProbes, MIN_DECISION_SAMPLES, validateUnderwriteBody, tightenPolicy, guardProposalIssue } =
   await import('../underwrite.js');
 const { _resetMigrated } = await import('../service.js');
 const { _resetOutcomeMigrated } = await import('../loop.js');
@@ -940,6 +940,109 @@ describe('parameterised SQL, integer cents, and one declaration of the response'
       expect(typeof d.label).toBe('string');
       expect(typeof d.unit).toBe('string');
     }
+  });
+
+  /**
+   * A DECLARED PRICE IS USED OR REFUSED — IT IS NEVER SWAPPED FOR THE ROW'S.
+   *
+   * `guardProposalIssue` accepts `ctx.proposedPriceCents` because the action path sets
+   * the price in the same statement that moves the status, so reading the row there
+   * would underwrite a number about to be replaced. The guard used to accept that
+   * field only when it was already a positive integer and otherwise FALL BACK to
+   * `engagement.priceCents` — so a declared 0, -1, 0.5 or NaN meant the guard
+   * underwrote the row's healthy price, answered `allowed: true`, and the caller then
+   * wrote its own number. Same shape as the sub-cent hole at
+   * `packages/shared/src/gps/underwrite.ts:443`: the guard re-decided which input to
+   * trust.
+   *
+   * The row is seeded HEALTHY in every case below, which is what makes these
+   * non-vacuous — under the old fallback each one returns `allowed: true`.
+   *
+   * Called directly rather than through `proposalApp`: `requireUnderwritingClearance`
+   * deliberately declares no price (it reads the row), so the middleware cannot reach
+   * this parameter at all. The exported function is the contract the next caller gets.
+   */
+  describe('a declared proposedPriceCents is authoritative', () => {
+    const pool = { query } as unknown as Parameters<typeof guardProposalIssue>[0];
+    const ctx = (proposedPriceCents?: number) => ({
+      operator: 'nik',
+      asOf: '2026-07-20T00:00:00.000Z',
+      ...(proposedPriceCents === undefined ? {} : { proposedPriceCents }),
+    });
+
+    it('is honoured when it is a positive whole number of cents', async () => {
+      seedEngagement(HEALTHY_PRICE_CENTS);
+      const d = await guardProposalIssue(pool, ENGAGEMENT, ctx(HEALTHY_PRICE_CENTS + 100_000));
+      expect(d.code).not.toBe('DECLARED_PRICE_INVALID');
+      expect(d.underwriting?.priceCents).toBe(HEALTHY_PRICE_CENTS + 100_000);
+    });
+
+    it('is the number underwritten, not the row’s', async () => {
+      // The whole reason the parameter exists. A loss-making declared price must be
+      // refused even though the row on disk is healthy.
+      seedEngagement(HEALTHY_PRICE_CENTS);
+      const d = await guardProposalIssue(pool, ENGAGEMENT, ctx(LOSS_PRICE_CENTS));
+      expect(d.allowed).toBe(false);
+      expect(d.code).toBe('UNDERWRITING_BLOCKED');
+      expect(d.underwriting?.priceCents).toBe(LOSS_PRICE_CENTS);
+    });
+
+    it('refuses every declared price that is not a positive integer, instead of falling back', async () => {
+      // Each of these previously fell through to HEALTHY_PRICE_CENTS and was ALLOWED.
+      const hostile: Array<[string, unknown]> = [
+        ['zero', 0],
+        ['negative', -1],
+        ['negative whole', -HEALTHY_PRICE_CENTS],
+        ['sub-cent', 0.5],
+        ['fractional cents', 17_500.4],
+        ['NaN', Number.NaN],
+        ['Infinity', Number.POSITIVE_INFINITY],
+        ['-Infinity', Number.NEGATIVE_INFINITY],
+        ['beyond safe integer', Number.MAX_SAFE_INTEGER + 2],
+        ['a pg numeric string', '2500000'],
+        ['null', null],
+      ];
+      for (const [label, value] of hostile) {
+        seedEngagement(HEALTHY_PRICE_CENTS);
+        const d = await guardProposalIssue(
+          pool,
+          ENGAGEMENT,
+          ctx(value as number),
+        );
+        expect(d.allowed, `${label} must not be allowed`).toBe(false);
+        expect(d.code, `${label} must be refused as DECLARED_PRICE_INVALID`).toBe('DECLARED_PRICE_INVALID');
+        expect(d.status).toBe(409);
+        // It must not have underwritten anything at all — a refusal that carries a
+        // simulation invites someone to read the figure as the answer.
+        expect(d.underwriting).toBeNull();
+        expect(d.issue).toBeNull();
+        expect(d.reason).toMatch(/positive whole number of cents/);
+        expect(d.remedy).toMatch(/omit it/);
+      }
+    });
+
+    it('still reads the row when the field is omitted, and NO_PRICE stays NO_PRICE', async () => {
+      // The two codes are distinct findings: "never quoted" vs "you handed me a price
+      // I cannot write". Collapsing them would hide which one happened.
+      seedEngagement(HEALTHY_PRICE_CENTS);
+      const ok = await guardProposalIssue(pool, ENGAGEMENT, ctx());
+      expect(ok.code).not.toBe('DECLARED_PRICE_INVALID');
+      expect(ok.underwriting?.priceCents).toBe(HEALTHY_PRICE_CENTS);
+
+      seedEngagement(0);
+      const unpriced = await guardProposalIssue(pool, ENGAGEMENT, ctx());
+      expect(unpriced.allowed).toBe(false);
+      expect(unpriced.code).toBe('NO_PRICE');
+    });
+
+    it('refuses a bad declared price without writing anything', async () => {
+      seedEngagement(HEALTHY_PRICE_CENTS);
+      calls.length = 0;
+      await guardProposalIssue(pool, ENGAGEMENT, ctx(0));
+      for (const { sql } of calls) {
+        expect(sql).not.toMatch(/\b(?:INSERT|UPDATE|DELETE|BEGIN|COMMIT|FOR UPDATE)\b/i);
+      }
+    });
   });
 
   it('the guard writes NOTHING — a refusal is observable, not recorded', async () => {

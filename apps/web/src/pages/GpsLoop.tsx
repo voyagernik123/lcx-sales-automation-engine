@@ -15,6 +15,7 @@ import {
   fetchGpsLoop, fetchGpsMarginRealisation, fetchGpsWinLoss, recordGpsOutcome,
   type OutcomeSubmission,
 } from '@/lib/api/gpsLoop';
+import { GpsMetaBanner } from './GpsMetaBanner';
 
 /**
  * GLOBAL SERVICES — THE LOOP (plan §8, Phase 12).
@@ -58,7 +59,7 @@ import {
  *     which carries the whole form so the reasons travel with the "no" (D2). A
  *     second copy of `won_before_acceptance` in this file would drift from the
  *     engine, and the drifting copy would be the one the operator saw. When
- *     `gps_outcome` (migration `0050_gps_outcome.sql`) is not applied the server
+ *     `gps_outcome` (the outcome migration, named by the server in `data.migration.file` — never hard-coded here, the number has moved twice) is not applied the server
  *     answers 503 with the migration named and the accepted form attached, and the
  *     screen states that — the operator learns their entry was fine and one file is
  *     missing, rather than seeing a generic failure.
@@ -454,7 +455,7 @@ function inputToCents(v: string): number | null {
  * time either side changed, and the drifting copy would be the one the operator saw.
  *
  * ═══ THE TABLE DOES NOT EXIST YET, AND THE FORM SAYS SO WHEN IT LEARNS ═══
- * `gps_outcome` arrives in `0050_gps_outcome.sql`, which nobody has applied. The
+ * `gps_outcome` arrives in the outcome migration, which nobody has applied and whose FILENAME comes from the server. The
  * server answers 503 with the migration named AND the accepted form attached, so the
  * operator can see that their entry was fine and the only missing thing is one file.
  * The screen renders that as a stated absence, never as a generic failure — and it
@@ -670,7 +671,11 @@ function CaptureBlock({
         <Stated tone="block">
           <strong>Your entry was acceptable. The table does not exist.</strong>{' '}
           <span className="font-mono">gps_outcome</span> arrives in{' '}
-          <span className="font-mono">{result.migration}</span> and nobody has applied it on this
+          {/* The filename comes from the SERVER (`data.migration.file`). When it does
+              not, say so — a guessed number sent an operator to look for a migration
+              that was already applied, which reads as "the API is lying to me". */}
+          <span className="font-mono">{result.migration ?? 'a migration the server did not name'}</span>{' '}
+          and nobody has applied it on this
           environment, so nothing was written and nothing was lost — the remedy is to run one file,
           not to re-enter this. Until it is applied,{' '}
           <strong>every aggregate on this page rests on zero readable outcomes</strong>, which is a
@@ -1422,6 +1427,23 @@ export function GpsLoop({ engagementId: engagementIdProp }: { engagementId?: str
       </div>
 
       <VolumeBanner v={loop.volume} />
+
+      {/* WHAT THE READS DECLARE ABOUT THEMSELVES, above every figure they produced.
+          The loop's `meta` is the only place three facts travel: `migrated`,
+          `outcomeStoreMigrated` and `pendingMigration` (routes/gpsLoop.ts:170, :311).
+          Without them a calibration page served from an environment with no outcome
+          store printed rates, factor verdicts and a review packet over ZERO records
+          and looked identical to a page served from a full one — the exact reading a
+          calibration surface must never allow. The two detail reads are included
+          because a win-rate carries the same obligation. */}
+      <GpsMetaBanner
+        className="mt-0"
+        of={[
+          loop,
+          winLoss.status === 'ok' ? winLoss.value : null,
+          margin.status === 'ok' ? margin.value : null,
+        ]}
+      />
 
       {/* D2 — top-level refusals and exclusions, before any figure. These are not a
           footer: the survivorship-bias disclosure in particular changes how every

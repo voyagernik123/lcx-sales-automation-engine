@@ -64,9 +64,13 @@ import type {
   BriefResponse,
   OriginationResponse,
 } from '@lcx/shared';
+import { unwrapWithMeta } from './meta.js';
 
 /** The API's read-side envelope, identical to every other compartment's. */
-const unwrap = <T>(p: Promise<{ data: T }>): Promise<T> => p.then((r) => r.data);
+// The envelope's `meta` used to die here — see lib/api/meta.ts. `unwrapWithMeta`
+// attaches it under a non-enumerable symbol, so no call site or type changes and
+// `responseMeta(x)` / `isMigrated(x)` can finally answer.
+const unwrap = unwrapWithMeta;
 
 /**
  * The queue, the deferred cut, the refusal ledger and the derived counts.

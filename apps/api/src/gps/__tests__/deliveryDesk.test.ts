@@ -297,6 +297,12 @@ interface Fixture {
   deskEngagements?: Row[];
   /** Whether the milestone UPDATE matched an existing row. */
   milestoneUpdateHits?: number;
+  /**
+   * The engagement's conflict decision, as `engagementDeliverable` reads it. Default
+   * `'cleared'` so existing fixtures keep working; `null` is "no check on file" and
+   * `'declined'` is a refusal. Every delivery write consults it.
+   */
+  conflict?: string | null;
 }
 
 const NOW = '2026-08-01T09:00:00.000Z';
@@ -335,6 +341,15 @@ function fake(f: Fixture) {
       if (q.includes('gps_evidence_request')) return rows([{ id: EVIDENCE_ID }]);
       return rows([{ id: 'updated' }]);
     }
+    // THE DELIVERY GATE's own read: the engagement's status and its conflict decision,
+    // in one statement. Matched BEFORE the generic `FROM gps_engagement` branch, which
+    // returns a row with no `decision` column at all — and a gate that passes on a
+    // missing column is a gate with a hole in it.
+    if (q.includes('LEFT JOIN gps_conflict_check')) {
+      return rows(f.engagement
+        ? [{ status: f.engagement.status, decision: f.conflict === undefined ? 'cleared' : f.conflict }]
+        : []);
+    }
     if (q.includes('LEFT JOIN gps_client')) return rows(f.engagement ? [f.engagement] : []);
     if (q.includes('WHERE status = ANY')) return rows(f.deskEngagements ?? []);
     if (q.includes('FROM gps_engagement')) return rows(f.engagement ? [f.engagement] : []);
@@ -362,7 +377,7 @@ function fake(f: Fixture) {
 
 const OFFER = getOffer('diagnostic');
 
-function engagementRow(scopeSnapshot: unknown = null): Row {
+function engagementRow(scopeSnapshot: unknown = null, over: Row = {}): Row {
   return {
     id: ENGAGEMENT_ID,
     client_id: CLIENT_ID,
@@ -370,6 +385,7 @@ function engagementRow(scopeSnapshot: unknown = null): Row {
     offer_key: OFFER.key,
     status: 'in_delivery',
     scope_snapshot: scopeSnapshot,
+    ...over,
   };
 }
 
@@ -802,5 +818,93 @@ describe('the translation between 0049 and the shared domain is stated, never si
     const f = fake({ migrated: false });
     expect(await import('../deliveryDesk.js').then((m) => m.isDeliveryMigrated(f.pool))).toBe(false);
     expect(f.statements.every((s) => s.includes('to_regclass'))).toBe(true);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* THE CONFLICT GATE, EXTENDED TO THE SIX DELIVERY WRITES                       */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * NONE OF THE SIX WRITES 0049 ADDED CONSULTED THE ENGAGEMENT AT ALL.
+ *
+ * `setEngagementStatus` runs the conflict gate on `gps_engagement.status` and
+ * `gps_proposal_issue` runs it before issuing, so the compliance property held for the
+ * pre-delivery lifecycle. It did not hold for anything delivery-side: not one of
+ * `recordMilestoneState`, `createDeliverable`, `recordDeliverableReview`,
+ * `acceptDeliverable`, `requestEvidence` or `setEvidenceStatus` read the status or the
+ * decision.
+ *
+ * Measured on a DECLINED engagement (status `cancelled`) and on one with NO check
+ * (`conflict_pending`): create deliverable 201 → request evidence 201 → review 200 →
+ * ACCEPT 200. That last is what this file calls "THE COMMERCIAL EVENT", the write that
+ * lets a partner be paid and an invoice be raised (`0049_gps_delivery.sql:232`). So work
+ * an LCX employee's services desk had been told not to do could be delivered, accepted
+ * and billed.
+ */
+describe('no delivery write lands on a declined, unchecked or closed engagement', () => {
+  const CASES: ReadonlyArray<[string, Partial<Fixture>, string]> = [
+    ['a DECLINED conflict decision', { conflict: 'declined' }, 'conflict_declined'],
+    ['NO conflict decision on file', { conflict: null }, 'conflict_check_missing'],
+    ['a cancelled engagement', { engagement: engagementRow(null, { status: 'cancelled' }) }, 'engagement_terminal'],
+    ['a collected engagement', { engagement: engagementRow(null, { status: 'collected' }) }, 'engagement_terminal'],
+    ['a closed_lost engagement', { engagement: engagementRow(null, { status: 'closed_lost' }) }, 'engagement_terminal'],
+  ];
+
+  for (const [why, over, code] of CASES) {
+    it(`refuses a milestone state on ${why}`, async () => {
+      const f = fake({ engagement: engagementRow(null), ...over });
+      const r = await recordMilestoneState(f.pool, {
+        engagementId: ENGAGEMENT_ID, milestoneKey: 'inputs_received',
+        state: 'complete', blockedReason: null, operator: 'nik',
+      });
+      expect(r.ok).toBe(false);
+      expect(r.ok === false && r.code).toBe(code);
+      expect(f.wrote(), 'a refused write must not have written').toHaveLength(0);
+      expect(f.statements).toContain('ROLLBACK');
+    });
+
+    it(`refuses ACCEPTANCE — the commercial event — on ${why}`, async () => {
+      const f = fake({
+        engagement: engagementRow(null),
+        deliverables: [deliverableRow({ status: 'submitted', reviewed_by: 'nik', reviewed_at: NOW })],
+        ...over,
+      });
+      const r = await acceptDeliverable(f.pool, { deliverableId: DELIVERABLE_ID, operator: 'nik' });
+      expect(r.ok).toBe(false);
+      expect(r.ok === false && r.code).toBe(code);
+      expect(f.wrote(), 'nothing may be accepted, and nothing written').toHaveLength(0);
+    });
+
+    it(`refuses an evidence status change on ${why}`, async () => {
+      const f = fake({ engagement: engagementRow(null), evidence: [evidenceRow({})], ...over });
+      const r = await setEvidenceStatus(f.pool, {
+        evidenceId: EVIDENCE_ID, status: 'received', externalLocation: null, operator: 'nik',
+      });
+      expect(r.ok).toBe(false);
+      expect(r.ok === false && r.code).toBe(code);
+      expect(f.wrote()).toHaveLength(0);
+    });
+  }
+
+  it('names the gate in the refusal rather than saying "invalid"', async () => {
+    const f = fake({ engagement: engagementRow(null), conflict: 'declined' });
+    const r = await recordMilestoneState(f.pool, {
+      engagementId: ENGAGEMENT_ID, milestoneKey: 'inputs_received',
+      state: 'complete', blockedReason: null, operator: 'nik',
+    });
+    expect(r.ok === false && r.message).toMatch(/DECLINED/);
+    expect(r.ok === false && r.message).toMatch(/does not proceed/);
+  });
+
+  it('still allows the writes on a cleared, live engagement', async () => {
+    // The counterpart, or the gate could be satisfied by refusing everything.
+    const f = fake({ engagement: engagementRow(null), conflict: 'cleared', milestoneUpdateHits: 1 });
+    const r = await recordMilestoneState(f.pool, {
+      engagementId: ENGAGEMENT_ID, milestoneKey: 'inputs_received',
+      state: 'complete', blockedReason: null, operator: 'nik',
+    });
+    expect(r.ok).toBe(true);
+    expect(f.wrote().length).toBeGreaterThan(0);
   });
 });

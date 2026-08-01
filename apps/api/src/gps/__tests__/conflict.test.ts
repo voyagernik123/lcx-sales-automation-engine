@@ -65,9 +65,34 @@ class FakePool {
     return `00000000-0000-0000-0000-${String(this.id).padStart(12, '0')}`;
   }
 
+  released = 0;
+
+  /**
+   * Serve ONE locked read from this snapshot instead of the live row.
+   *
+   * A single-threaded fake cannot interleave two writers, and the defect being pinned
+   * is precisely an interleaving: a supersede between the read that authorises a review
+   * and the write that records it. This is the read half of that ordering.
+   */
+  staleReadOnce: Row | null = null;
+
+  /**
+   * `reviewPosition` runs in a TRANSACTION now (`FOR UPDATE` + a content predicate on
+   * `updated_at`), so the fake has to hand out a client. Same `query`, so every branch
+   * below is shared; BEGIN/COMMIT/ROLLBACK land in `log` and are asserted on.
+   */
+  async connect(): Promise<{ query: FakePool['query']; release: () => void }> {
+    return {
+      query: this.query.bind(this),
+      release: () => { this.released += 1; },
+    };
+  }
+
   async query(sql: string, params: readonly unknown[] = []): Promise<{ rows: Row[] }> {
     this.log.push({ sql, params });
     const one = (rows: Row[]) => ({ rows });
+
+    if (/^(BEGIN|COMMIT|ROLLBACK)$/.test(sql.trim())) return one([]);
 
     if (sql.includes("to_regclass('public.gps_jurisdiction_profile')")) {
       return one([{ ok: this.perimeterExists }]);
@@ -79,6 +104,11 @@ class FakePool {
     // ── gps_jurisdiction_profile
     if (/^SELECT[\s\S]*FROM gps_jurisdiction_profile/.test(sql)) {
       if (sql.includes('WHERE id = $1')) {
+        if (this.staleReadOnce && this.staleReadOnce.id === params[0]) {
+          const stale = this.staleReadOnce;
+          this.staleReadOnce = null;
+          return one([stale]);
+        }
         return one(this.profiles.filter((p) => p.id === params[0]));
       }
       if (sql.includes('WHERE jurisdiction = $1 AND offer_key = $2')) {
@@ -89,6 +119,10 @@ class FakePool {
     if (/^UPDATE gps_jurisdiction_profile\s+SET reviewed_by = \$2/.test(sql)) {
       const row = this.profiles.find((p) => p.id === params[0]);
       if (!row) return one([]);
+      // The CONTENT PREDICATE. `updated_at = $4` is what makes a supersede between the
+      // read and the write lose the race instead of silently stamping a reviewer's
+      // name onto rewritten text.
+      if (sql.includes('updated_at = $4') && row.updated_at !== params[3]) return one([]);
       row.reviewed_by = params[1];
       row.reviewed_at = T_NOW;
       row.review_by = params[2] ?? row.review_by;
@@ -430,6 +464,65 @@ describe('a position arrives unreviewed and a second human must review it', () =
       jurisdiction: 'us', offer: 'mica_whitepaper', asOf: T_NOW,
     });
     expect(decision.allowed).toBe(true);
+  });
+
+  /**
+   * THE INTERLEAVING THAT PUT A REVIEWER'S NAME ON WORDS THEY NEVER READ.
+   *
+   * The read was an unlocked SELECT and the write an UPDATE keyed on `id` alone.
+   * `enterPosition`'s supersede path is a bare UPDATE that rewrites `service_class`,
+   * `source` and `note` and NULLS the review columns — correct, because a superseded
+   * position must be re-reviewed. Interleave a supersede-to-`permitted` between B's
+   * read and B's write, and the final row was `permitted` with a fresh `reviewed_at`
+   * and `reviewed_by = B`, and `gateService` returned `allowed: true` on text B never
+   * saw. That is the exact outcome the reset exists to prevent.
+   */
+  it('refuses to complete a review whose row was superseded mid-flight', async () => {
+    pool.profiles = [position({
+      id: 'p1', jurisdiction: 'us', service_class: 'prohibited',
+      entered_by: 'nik', reviewed_by: null, reviewed_at: null,
+    })];
+
+    // B reads the PROHIBITED position it is about to review…
+    const before = pool.profiles[0]!.updated_at;
+    // …and nik supersedes it to `permitted` before B's write lands. The supersede
+    // bumps `updated_at`, which is the content predicate B's UPDATE now carries.
+    pool.profiles[0]!.service_class = 'permitted';
+    pool.profiles[0]!.note = 'Rewritten by the supersede.';
+    pool.profiles[0]!.updated_at = '2026-08-01T12:00:00.000Z';
+    expect(pool.profiles[0]!.updated_at).not.toBe(before);
+
+    // `staleReadOnce` serves B the row AS IT WAS on the locked read while the stored
+    // row has already moved — which is exactly the interleaving, and the only way a
+    // single-threaded fake can express it.
+    pool.staleReadOnce = { ...pool.profiles[0]!, service_class: 'prohibited', updated_at: before };
+    const raced = await reviewPosition(db, 'p1', 'monty');
+    expect(raced.ok).toBe(false);
+    if (!raced.ok) expect(raced.reason).toBe('concurrent_modification');
+
+    // The row is STILL unreviewed, so the gate still refuses.
+    expect(pool.profiles[0]!.reviewed_by).toBeNull();
+    const { decision } = await gateQuote(db, {
+      jurisdiction: 'us', offer: 'mica_whitepaper', asOf: T_NOW,
+    });
+    expect(decision.allowed).toBe(false);
+  });
+
+  it('runs the review inside a transaction with FOR UPDATE, and releases the client', async () => {
+    pool.profiles = [position({ id: 'p1', entered_by: 'nik', reviewed_by: null, reviewed_at: null })];
+    pool.log = [];
+    const releasedBefore = pool.released;
+
+    const ok = await reviewPosition(db, 'p1', 'monty');
+    expect(ok.ok).toBe(true);
+
+    const sqls = pool.log.map((l) => l.sql.trim());
+    expect(sqls).toContain('BEGIN');
+    expect(sqls).toContain('COMMIT');
+    // The lock, not just the transaction: without FOR UPDATE the two writers do not
+    // serialise and the predicate is the only thing left.
+    expect(sqls.some((q) => /FROM gps_jurisdiction_profile WHERE id = \$1 FOR UPDATE/.test(q))).toBe(true);
+    expect(pool.released).toBe(releasedBefore + 1);
   });
 
   it('superseding a reviewed position RESETS the review, so it refuses again', async () => {

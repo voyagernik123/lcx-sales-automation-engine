@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -6,8 +7,31 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const MIGRATIONS_DIR = resolve(__dirname, 'migrations');
 
+/** sha256 of a migration's bytes, hex. The identity of the file's CONTENT. */
+export function migrationChecksum(sql: string): string {
+  return createHash('sha256').update(sql, 'utf8').digest('hex');
+}
+
 /**
  * Apply all .sql migration files sequentially (no fancy rollback — forward-only for v1).
+ *
+ * ══ AN APPLIED MIGRATION IS IMMUTABLE, AND NOW THAT IS CHECKED ═══════════════
+ * The loop below skips a file whose NAME is in `_migrations` and never looked at
+ * its content. So editing an already-applied file was a silent no-op with a green
+ * gate: `0050_gps_perimeter.sql` had its `COMMENT ON TABLE` rewritten in the
+ * working tree to correct what the diff itself called "the widest-audience false
+ * claim", the file is applied on production, and production therefore kept the
+ * false comment. Nothing anywhere said so — not the runner, not CI, not `\d+`.
+ *
+ * A checksum is recorded per applied file and compared on every subsequent run. A
+ * mismatch THROWS, naming the file and both digests, because the only correct way
+ * to change an applied migration is a new forward-only migration.
+ *
+ * WHAT THIS CANNOT SEE, stated rather than implied: a file edited BEFORE its
+ * checksum was ever recorded backfills with the edited content — there is no
+ * pre-existing digest to disagree with. The repo-side ratchet
+ * (`db/__tests__/migrationImmutability.test.ts`) is what closes that window,
+ * because it pins the committed bytes in CI where no database is involved at all.
  */
 export async function migrate(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL ?? 'postgresql://lcx:lcx_dev_password@localhost:5432/lcx_sales';
@@ -24,22 +48,53 @@ export async function migrate(): Promise<void> {
       );
     `);
 
+    // Separate statement, IF NOT EXISTS: every environment that already has this
+    // table predates the column, and a database applied by hand in the Supabase
+    // editor must pick it up without anyone editing the table there.
+    await client.query('ALTER TABLE _migrations ADD COLUMN IF NOT EXISTS checksum TEXT;');
+
     const files = readdirSync(MIGRATIONS_DIR)
       .filter((f) => f.endsWith('.sql'))
       .sort();
 
-    const { rows: applied } = await client.query('SELECT file FROM _migrations ORDER BY file');
-    const appliedSet = new Set(applied.map((r: { file: string }) => r.file));
+    const { rows: applied } = await client.query('SELECT file, checksum FROM _migrations ORDER BY file');
+    const appliedChecksums = new Map<string, string | null>(
+      (applied as Array<{ file: string; checksum: string | null }>).map((r) => [r.file, r.checksum]),
+    );
 
     for (const file of files) {
-      if (appliedSet.has(file)) {
+      // READ AND HASH BEFORE THE SKIP. The old loop read the file only when it was
+      // about to apply it, which is exactly why an edit to an applied file was
+      // invisible: the content was never looked at again.
+      const sql = readFileSync(resolve(MIGRATIONS_DIR, file), 'utf8');
+      const checksum = migrationChecksum(sql);
+
+      if (appliedChecksums.has(file)) {
+        const recorded = appliedChecksums.get(file) ?? null;
+        if (recorded === null) {
+          // First run since the column existed. Backfill, and say so — this is the
+          // one path that trusts the file, and a reader deserves to know which run
+          // established the baseline.
+          await client.query('UPDATE _migrations SET checksum = $1 WHERE file = $2', [checksum, file]);
+          console.log(`[migrate] already applied, checksum recorded: ${file} (${checksum})`);
+          continue;
+        }
+        if (recorded !== checksum) {
+          throw new Error(
+            `${file} was EDITED AFTER IT WAS APPLIED. Recorded ${recorded}, on disk ${checksum}. `
+              + 'This runner skips applied filenames, so the edit has changed nothing in this '
+              + 'database and never will: the environment is running the old content while the '
+              + 'repository shows the new. Migrations are forward-only — revert the file to the '
+              + 'content that was applied and deliver the change as a NEW migration.',
+          );
+        }
         console.log(`[migrate] already applied: ${file}`);
         continue;
       }
-      const sql = readFileSync(resolve(MIGRATIONS_DIR, file), 'utf8');
+
       console.log(`[migrate] applying: ${file}`);
       await client.query(sql);
-      await client.query('INSERT INTO _migrations (file) VALUES ($1)', [file]);
+      await client.query('INSERT INTO _migrations (file, checksum) VALUES ($1, $2)', [file, checksum]);
     }
 
     console.log('[migrate] all migrations applied');

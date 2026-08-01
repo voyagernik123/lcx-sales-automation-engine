@@ -45,6 +45,9 @@ import {
   type EngagementStatus,
   type OfferKey,
 } from './types.js';
+// The frozen stated prior, so `weightsMutated` can be DERIVED by comparison rather
+// than asserted as a literal on the packet whose purpose is that assertion.
+import { TARGET_FACTOR_KEYS, WEIGHTS_V1 } from './targeting.js';
 import {
   ASSUMED_ANNUAL_ENGAGEMENT_VOLUME,
   CALIBRATION_IS_A_REVIEW_INSTRUMENT_NOT_A_MODEL,
@@ -625,8 +628,18 @@ export interface ReviewPacket {
    * failure to produce one.
    */
   noFactorReviewable: boolean;
-  /** Literal `false`. */
-  weightsMutated: false;
+  /**
+   * DERIVED, not a literal.
+   *
+   * It was typed `false` and hard-coded `false` on the one packet whose purpose is
+   * that assertion — a claim standing in for its own mechanism, which D8 forbids and
+   * which `routes/gpsLoop.ts` compounded by telling a reader `WEIGHTS_V1` "is the same
+   * frozen object" when it was a plain mutable literal. Now: `WEIGHTS_V1` is
+   * `Object.freeze`d, and this is `currentWeights` compared field by field against it.
+   * `true` here means the weights this packet was computed with are NOT the stated
+   * prior, which a reviewer must be told before reading a single factor verdict.
+   */
+  weightsMutated: boolean;
   /** Literal `true`. The prior is stated, not fitted. */
   weightsAreAStatedPrior: true;
   /** Literal `never[]`. See device (2) above. */
@@ -705,7 +718,11 @@ export function reviewPacket(
     verdictCounts,
     insufficientEvidenceCount,
     noFactorReviewable,
-    weightsMutated: false,
+    // DERIVED, not asserted. Compared field-by-field against the frozen
+    // `WEIGHTS_V1` rather than hard-coded false on the one packet whose purpose is
+    // this claim (D8: no claim without a mechanism). `Object.freeze` on WEIGHTS_V1
+    // makes the comparison a belt to that brace.
+    weightsMutated: TARGET_FACTOR_KEYS.some((k) => currentWeights[k] !== WEIGHTS_V1[k]),
     weightsAreAStatedPrior: true,
     proposedWeightChanges: [],
     weightChangeMechanism: 'a human edits WEIGHTS_V1 in targeting.ts and says why in the commit',

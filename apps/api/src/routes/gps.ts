@@ -55,9 +55,13 @@ import type { Context } from 'hono';
 import {
   CATALOGUE_TODOS,
   ENGAGEMENT_STATUSES,
+  MANUAL_ENGAGEMENT_TARGETS,
+  MANUAL_ENGAGEMENT_TRANSITIONS,
   OFFERS,
   OFFER_KEYS,
   PRICE_BANDS_ARE_PLACEHOLDERS,
+  checkManualTransition,
+  isGatedEngagementStatus,
   type ClientStatus,
   type ConflictDecision,
   type ContractingEntity,
@@ -78,6 +82,13 @@ import { gpsConflictRoutes } from './gpsConflict.js';
 import { gpsDeliveryRoutes } from './gpsDelivery.js';
 import { gpsLoopRoutes } from './gpsLoop.js';
 import {
+  perimeterClearanceFor,
+  perimeterRefusalBody,
+  requirePerimeterClearance,
+} from '../gps/perimeterGuard.js';
+import { clientJurisdiction } from '../gps/service.js';
+import {
+  PriceNotSuppliedError,
   TODO_DEPOSIT_PCT,
   createClient,
   createEngagement,
@@ -142,6 +153,46 @@ function text(v: unknown, max: number): string | null {
   return t ? t.slice(0, max) : null;
 }
 
+/**
+ * `currency` WAS THE ONE UNBOUNDED STRING IN THE WHOLE GPS ROUTE SURFACE.
+ *
+ * It was read as `typeof body.currency === 'string' ? body.currency : undefined`
+ * — the only body string in either handler not passed through `text(v, max)` — and
+ * flowed uppercased into `quote.scopeSnapshot` and into `currency text NOT NULL`
+ * (`0047_gps.sql:172`), which carries no length and no CHECK. With no `bodyLimit`
+ * anywhere in `index.ts`, that is a document-sized channel into a jsonb column the
+ * no-intake docblock names as its acknowledged blind spot: hex and Base32 survive
+ * `.toUpperCase()` losslessly, so a client PDF encoded into this field is
+ * recoverable verbatim. Verified at 112,000 characters before this guard existed.
+ *
+ * The governed action path already validated it — `gps/actions.ts:517` is
+ * `z.string().regex(/^[A-Z]{3}$/)`. This is the REST path catching up, and the
+ * closed pattern (not a length cap) is what makes it a channel of three bytes
+ * drawn from 26 letters rather than a smaller version of the same hole.
+ */
+const CURRENCY_RE = /^[A-Za-z]{3}$/;
+function badCurrency(v: unknown): boolean {
+  if (v === undefined || v === null) return false; // absent is fine — the default applies
+  return typeof v !== 'string' || !CURRENCY_RE.test(v);
+}
+const CURRENCY_ERROR = {
+  error: 'currency must be a 3-letter ISO-4217 code',
+  code: 'VALIDATION',
+} as const;
+
+/**
+ * The ONLY way a currency reaches the service layer from this file.
+ *
+ * Returning `undefined` for anything that is not three letters means the bare-string
+ * read (`typeof body.currency === 'string' ? body.currency : undefined`) exists
+ * nowhere, which is what `intakeLockout.test.ts` asserts: a validator a handler can
+ * forget to call is a validator. `badCurrency` above 400s the request; this is the
+ * belt that makes the braces unnecessary.
+ */
+function currencyCode(v: unknown): string | undefined {
+  return typeof v === 'string' && CURRENCY_RE.test(v) ? v : undefined;
+}
+
 /** A body that is not JSON is a 400, not an unhandled throw. */
 async function jsonBody(c: Context<{ Variables: AuthVariables }>): Promise<Record<string, unknown> | null> {
   try {
@@ -196,6 +247,19 @@ gpsRoutes.get('/offers', requireOperator, (c) =>
  *
  * Nothing is persisted here. A quote becomes real by creating an engagement,
  * which freezes it into `scope_snapshot`.
+ *
+ * ── IT IS GATED ON THE PERIMETER, AND THEREFORE NO LONGER DB-FREE ────────────
+ * `jurisdiction` (or a `clientId` to read one from) is now REQUIRED. This route
+ * used to take no jurisdiction argument at all, which is what made the perimeter
+ * unenforceable here by construction: the founder read a confident margin off a
+ * screen for work the record says we may not sell, and put that number in an
+ * email. Nothing is persisted, but a number a human acts on is an output.
+ *
+ * That makes this handler touch a table (`loadPerimeter`), so it has come OFF
+ * `deploySafety.test.ts`'s `DB_FREE_HANDLERS` allow-list and carries the
+ * `isMigrated` probe like every other DB-touching handler. The allow-list did its
+ * job — its own comment predicted exactly this ("adding a query to /quote later
+ * fails here rather than silently 500-ing on the first Sunday deploy").
  */
 gpsRoutes.post('/quote', requireOperator, async (c) => {
   const body = await jsonBody(c);
@@ -217,6 +281,44 @@ gpsRoutes.post('/quote', requireOperator, async (c) => {
   ) {
     return c.json({ error: 'contractingEntity must be lcx or external', code: 'VALIDATION' }, 400);
   }
+  if (badCurrency(body.currency)) return c.json(CURRENCY_ERROR, 400);
+  if (body.clientId !== undefined && !isUuid(body.clientId)) {
+    return c.json({ error: 'clientId must be a uuid when supplied', code: 'VALIDATION' }, 400);
+  }
+  const jurisdictionInput = text(body.jurisdiction, 120);
+  if (body.clientId === undefined && jurisdictionInput === null) {
+    return c.json(
+      {
+        error:
+          'Supply clientId or jurisdiction. A price cannot be quoted without knowing where the work is going: '
+          + 'the jurisdictional perimeter is what decides whether this service may be sold at all.',
+        code: 'VALIDATION',
+      },
+      400,
+    );
+  }
+
+  // Validation first, in every environment. Then the probe, then the gate.
+  if (!(await isMigrated(getPool()))) return c.json(NOT_MIGRATED, 503);
+
+  let jurisdiction = jurisdictionInput;
+  if (isUuid(body.clientId)) {
+    const jur = await clientJurisdiction(getPool(), body.clientId);
+    if (jur === undefined) return c.json({ error: 'client not found', code: 'NOT_FOUND' }, 404);
+    // The ROW wins over the body when both are present. A caller who could
+    // override the client's recorded jurisdiction could name a permitted one.
+    jurisdiction = jur;
+  }
+
+  const perimeter = await perimeterClearanceFor(getPool(), {
+    jurisdiction,
+    offerKey,
+    evaluatedBy: c.get('operator')?.id ?? 'unknown',
+    asOf: new Date().toISOString(),
+  });
+  if (!perimeter.allowed) {
+    return c.json(perimeterRefusalBody(perimeter), perimeter.status === 404 ? 404 : 409);
+  }
 
   return c.json({
     data: quoteOffer({
@@ -224,9 +326,9 @@ gpsRoutes.post('/quote', requireOperator, async (c) => {
       priceCents: body.priceCents as number | undefined,
       vendorCostCents: body.vendorCostCents as number | undefined,
       contractingEntity: body.contractingEntity as ContractingEntity | undefined,
-      currency: typeof body.currency === 'string' ? body.currency : undefined,
+      currency: currencyCode(body.currency),
     }),
-    meta: meta(),
+    meta: { ...meta(), migrated: true, perimeter: { allowed: true, source: perimeter.perimeterSource } },
   });
 });
 
@@ -383,14 +485,62 @@ gpsRoutes.post('/engagements', requireOperator, async (c) => {
         400,
       );
     }
+    /*
+     * REQUIRED. `badCents(undefined)` is false, so an absent price used to fall
+     * through to `bandMidpointCents(offer)` — the midpoint of TODO_PRICE_BANDS, the
+     * block headed "NOT REAL PRICES. DO NOT QUOTE THESE" — and be INSERTed as the
+     * engagement's price with nothing on the row saying it was invented. The web
+     * client already sends it and already claims in a comment that the server does not
+     * default it; this is the server keeping that promise. `createEngagement` refuses
+     * again for callers that do not come through here (see `PriceNotSuppliedError`).
+     */
+    if (body.priceCents === undefined || body.priceCents === null) {
+      return c.json({
+        error:
+          'priceCents is required. It is not defaulted from the catalogue band: the bands are placeholders '
+          + '(PRICE_BANDS_ARE_PLACEHOLDERS) and a server-invented price would drive concentration, cash, '
+          + 'deposits and margin with nothing marking it as invented.',
+        code: 'PRICE_NOT_SUPPLIED',
+      }, 400);
+    }
     if (
       body.contractingEntity !== undefined
       && !CONTRACTING_ENTITIES.includes(body.contractingEntity as ContractingEntity)
     ) {
       return c.json({ error: 'contractingEntity must be lcx or external', code: 'VALIDATION' }, 400);
     }
+    // See `badCurrency`. This is the field a client document was encodable into.
+    if (badCurrency(body.currency)) return c.json(CURRENCY_ERROR, 400);
 
     if (!(await isMigrated(getPool()))) return c.json(NOT_MIGRATED, 503);
+
+    /*
+     * THE PERIMETER GATE, BEFORE THE INSERT.
+     *
+     * Opening a file on work we are recorded as unable to sell into the client's
+     * jurisdiction is the act this compartment exists to prevent, and until now
+     * `gateService` was consulted on no write path at all — the grid refused and
+     * every button beside it succeeded. The jurisdiction comes from `gps_client`,
+     * never from the body: a caller who could name the jurisdiction they are gated
+     * against could name a permitted one.
+     *
+     * An unknown client is a 404 here rather than the 23503 branch below, because
+     * the gate has to read the row before the insert either way.
+     */
+    const jur = await clientJurisdiction(getPool(), body.clientId);
+    if (jur === undefined) {
+      return c.json({ error: 'client not found', code: 'NOT_FOUND' }, 404);
+    }
+    const perimeter = await perimeterClearanceFor(getPool(), {
+      jurisdiction: jur,
+      offerKey: body.offerKey as OfferKey,
+      evaluatedBy: c.get('operator')?.id ?? 'unknown',
+      asOf: new Date().toISOString(),
+    });
+    if (!perimeter.allowed) {
+      console.warn(`[gps] perimeter REFUSED engagement create for ${perimeter.evaluatedBy}: ${perimeter.code}`);
+      return c.json(perimeterRefusalBody(perimeter), perimeter.status === 404 ? 404 : 409);
+    }
 
     try {
       const created = await createEngagement(getPool(), {
@@ -400,7 +550,7 @@ gpsRoutes.post('/engagements', requireOperator, async (c) => {
         contractingEntity: body.contractingEntity as ContractingEntity | undefined,
         priceCents: body.priceCents as number | undefined,
         vendorCostCents: body.vendorCostCents as number | undefined,
-        currency: typeof body.currency === 'string' ? body.currency : undefined,
+        currency: currencyCode(body.currency),
         owner: text(body.owner, 100),
       });
       return c.json({ data: created, meta: meta() }, 201);
@@ -409,6 +559,11 @@ gpsRoutes.post('/engagements', requireOperator, async (c) => {
       // can act on, not a 500 — `gps_engagement.client_id` REFERENCES gps_client.
       if ((err as { code?: string }).code === '23503') {
         return c.json({ error: 'client not found', code: 'NOT_FOUND' }, 404);
+      }
+      // The service's own refusal to persist an invented price. A 400, not a 500: the
+      // request is missing a field, and the message names which.
+      if (err instanceof PriceNotSuppliedError) {
+        return c.json({ error: err.message, code: err.code }, 400);
       }
       throw err;
     }
@@ -569,8 +724,16 @@ function refusal(
  * refuses. It reads only the path param: no body field, header or query string
  * changes the answer, and it fails CLOSED when the underwriting throws. The screen
  * shows the same verdict, but the screen is not what stops it.
+ *
+ * ── `requirePerimeterClearance` IS THE OTHER HALF ─────────────────────────────
+ * Money and law are separate refusals and both belong in front of this handler. A
+ * proposal is the client-facing artifact; issuing one into a jurisdiction whose
+ * recorded position is prohibited, unreviewed, malformed or expired is the failure
+ * the perimeter exists to prevent, and it ran on no write path until
+ * `gps/perimeterGuard.ts`. Perimeter FIRST, because "we may not sell this here at
+ * all" outranks "the margin is thin".
  */
-gpsRoutes.post('/engagements/:id/proposal', requireOperator, requireUnderwritingClearance, async (c) => {
+gpsRoutes.post('/engagements/:id/proposal', requireOperator, requirePerimeterClearance, requireUnderwritingClearance, async (c) => {
   try {
     const id = c.req.param('id');
     if (!isUuid(id)) return c.json({ error: 'id must be a uuid', code: 'VALIDATION' }, 400);
@@ -598,6 +761,16 @@ gpsRoutes.post('/engagements/:id/proposal', requireOperator, requireUnderwriting
  * `depositRequiredCents` is accepted here because the deposit term is a
  * placeholder (`TODO_DEPOSIT_PCT`, D4 unanswered) and a human must be able to
  * override it at acceptance without editing code.
+ *
+ * ── THIS WAS THE BYPASS OF EVERY GATE IN THE COMPARTMENT ─────────────────────
+ * It accepted all of `ENGAGEMENT_STATUSES`, so `{"status":"proposed"}` reached the
+ * exact state `requirePerimeterClearance` and `requireUnderwritingClearance` sit
+ * in front of, on an engagement both had refused — then `{"status":"collected"}`
+ * took it to cash in one hop, skipping `accepted` and `deposit_paid`.
+ * `gps/actions.ts` had already written down that this would happen and kept the
+ * rule private to itself; the rule now lives in `packages/shared/src/gps/
+ * lifecycle.ts` and BOTH paths read it. `MANUAL_ENGAGEMENT_TARGETS` is the enum
+ * this route validates against, and `checkManualTransition` enforces the edges.
  */
 gpsRoutes.post('/engagements/:id/status', requireOperator, async (c) => {
   try {
@@ -611,6 +784,17 @@ gpsRoutes.post('/engagements/:id/status', requireOperator, async (c) => {
         400,
       );
     }
+    if (isGatedEngagementStatus(body.status as EngagementStatus)) {
+      const refused = checkManualTransition('draft', body.status as EngagementStatus);
+      return c.json(
+        {
+          error: refused.ok ? 'refused' : refused.reason,
+          code: refused.ok ? 'STATUS_IS_GATED' : refused.code,
+          data: { manualTargets: MANUAL_ENGAGEMENT_TARGETS },
+        },
+        409,
+      );
+    }
     if (badCents(body.depositRequiredCents)) {
       return c.json(
         { error: 'depositRequiredCents must be non-negative integer cents', code: 'VALIDATION' },
@@ -618,6 +802,23 @@ gpsRoutes.post('/engagements/:id/status', requireOperator, async (c) => {
       );
     }
     if (!(await isMigrated(getPool()))) return c.json(NOT_MIGRATED, 503);
+
+    // The edge map, read from the CURRENT row. `setEngagementStatus` enforces
+    // terminality and the conflict decision; it has never enforced the edges, so
+    // `draft → collected` in one call was accepted.
+    const current = await getEngagement(getPool(), id);
+    if (!current) return c.json({ error: 'engagement not found', code: 'NOT_FOUND' }, 404);
+    const edge = checkManualTransition(current.status, body.status as EngagementStatus);
+    if (!edge.ok) {
+      return c.json(
+        {
+          error: edge.reason,
+          code: edge.code,
+          data: { from: current.status, allowed: MANUAL_ENGAGEMENT_TRANSITIONS[current.status] },
+        },
+        409,
+      );
+    }
 
     const result = await setEngagementStatus(
       getPool(), id, body.status as EngagementStatus,

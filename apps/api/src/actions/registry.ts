@@ -27,11 +27,19 @@
  */
 import { z } from 'zod';
 import type pg from 'pg';
-import { findMemberById, WORKSPACE_IDS, capAtLeast, emissionBudget } from '@lcx/shared';
+import {
+  findMemberById, WORKSPACE_IDS, capAtLeast, emissionBudget,
+  type Capability, type WorkspaceId,
+} from '@lcx/shared';
 import { notify } from '../notifications/service.js';
 import { createManualTask } from '../tasks/service.js';
 import { DEFAULT_ORG_ID } from '../intel/observations.js';
-import { loadEntitlements, invalidateEntitlements } from '../access/entitlements.js';
+import {
+  loadEntitlements,
+  invalidateEntitlements,
+  isSecondTierPrincipal,
+  secondTierMayHold,
+} from '../access/entitlements.js';
 import { env } from '../lib/env.js';
 import { ActionError } from './types.js';
 import type { ActorRole, RegistryAction } from './types.js';
@@ -75,6 +83,30 @@ function safeEqual(a: string, b: string): boolean {
  */
 function isMissingTable(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: string }).code === '42P01';
+}
+
+/**
+ * WHICH COMPARTMENT A SUBJECT BELONGS TO — the gate `action.workspace` cannot make.
+ *
+ * `action.workspace` tags the verb. Three verbs are cross-cutting and carry no tag
+ * (`notify`, `watchlist_add`, `flag_review`, all `subjectTypes: ['*']`), so the
+ * compartment gate below was skipped for them entirely — and any of them accepts
+ * `subjectType: 'gps_engagement'`. A principal holding no GPS grant could therefore
+ * write `object_actions` and an `audit_log` row stamped `entity='gps_engagement'`
+ * with free text in `meta`, on the audit trail of a client's compliance file.
+ *
+ * A PREFIX MAP, deliberately: an unlisted subject type keeps its existing
+ * behaviour, so this cannot silently start refusing the four compartments that have
+ * always worked this way. The one prefix here is the one that holds a third party's
+ * confidential material.
+ */
+const SUBJECT_TYPE_WORKSPACES: ReadonlyArray<[RegExp, WorkspaceId]> = [
+  [/^gps_/, 'gps'],
+];
+
+export function subjectTypeWorkspace(subjectType: string): WorkspaceId | null {
+  for (const [re, ws] of SUBJECT_TYPE_WORKSPACES) if (re.test(subjectType)) return ws;
+  return null;
 }
 
 const projectOnly = ['project'];
@@ -474,7 +506,48 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       justification: z.string().min(1).max(500),
     }),
     execute: async ({ pool, subjectId, params, actor }) => {
-      if (!findMemberById(subjectId)) throw new ActionError('NOT_FOUND', `No roster member '${subjectId}'`, 404);
+      /*
+       * WHO MAY BE GRANTED TO — a roster member, or a second-tier `ext:` colleague.
+       *
+       * This was roster-only, which left the second-tier sign-in half-built. An `ext:`
+       * principal can file a request (`routes/access.ts:76`), an approver can approve
+       * it, `decide_access_request` writes the row by `req.member_id` with no roster
+       * check, and `loadEntitlements` reads it — so the REQUEST path worked end to end
+       * while the DIRECT grant an approver would reach for first answered 404 "No
+       * roster member". One door open and one shut, for the same decision.
+       *
+       * THE CEILING IS ENFORCED HERE TOO, and refuses rather than silently clamps.
+       * `loadEntitlements` caps an `ext:` map after reading it (`entitlements.ts:146`),
+       * so a row granting `gps` or `approve` to a second-tier principal would be
+       * stored and then ignored — an approver reading the matrix would believe they
+       * had granted something that does nothing. Both bounds come from
+       * `secondTierMayHold` / the capability clamp in `access/entitlements.ts`, the
+       * same functions the request surface asks, so the three cannot disagree.
+       */
+      const secondTier = isSecondTierPrincipal(subjectId);
+      if (!findMemberById(subjectId) && !secondTier) {
+        throw new ActionError('NOT_FOUND', `No roster member '${subjectId}'`, 404);
+      }
+      if (secondTier && !secondTierMayHold(params.workspace as WorkspaceId)) {
+        throw new ActionError(
+          'SECOND_TIER_FORBIDDEN',
+          `${String(params.workspace)} holds elevated material and is not grantable to a `
+          + 'second-tier sign-in. That colleague needs a named roster account; a shared '
+          + 'passcode does not reach this compartment even with an approval.',
+          403,
+          { subjectId, workspace: params.workspace },
+        );
+      }
+      if (secondTier && params.capability === 'approve') {
+        throw new ActionError(
+          'SECOND_TIER_FORBIDDEN',
+          'A second-tier sign-in is pinned to the operator role by middleware/auth.ts, so an '
+          + 'approve-tier grant would be stored and then ignored. Grant operate, or put them '
+          + 'on the roster.',
+          403,
+          { subjectId, capability: params.capability },
+        );
+      }
       await pool.query(
         `INSERT INTO entitlements (member_id, workspace, capability, granted_by, justification)
          VALUES ($1,$2,$3,$4,$5)
@@ -998,16 +1071,42 @@ export async function invokeAction(
   // actor to hold the workspace at operate-tier (approve-tier when the action
   // itself is approver-only). Machines (shared key, monitor:<id>, ai) hold
   // blanket operate; the fail-open loader keeps pre-0042 deploys safe.
+  /*
+   * THE SUBJECT'S COMPARTMENT, NOT ONLY THE ACTION'S.
+   *
+   * `action.workspace` is the compartment the ACTION belongs to. Three actions carry
+   * no tag at all because they are cross-cutting — `watchlist_add`, `flag_review`,
+   * `notify` (`subjectTypes: ['*']`) — so the gate below was skipped entirely for
+   * them. `POST /v1/actions/watchlist_add/invoke {"subjectType":"gps_engagement"}`
+   * therefore let a principal with NO gps grant write `object_actions` and an
+   * `audit_log` row with `entity='gps_engagement'` and free text in `meta`, against
+   * an engagement id it never had to prove exists. The audit trail of a client's
+   * compliance file was writable from outside the compartment.
+   *
+   * So the subject type is mapped to a compartment too, and BOTH gates run. This is
+   * a prefix map rather than an exhaustive registry on purpose: an untagged subject
+   * type keeps today's behaviour, and the one prefix that matters — anything
+   * `gps_` — is the one holding a third party's material.
+   */
+  const subjectWorkspace = subjectTypeWorkspace(input.subjectType);
+  const gates: Array<{ workspace: WorkspaceId; needed: Capability }> = [];
   if (action.workspace) {
+    gates.push({ workspace: action.workspace, needed: action.minRole === 'approver' ? 'approve' : 'operate' });
+  }
+  if (subjectWorkspace && subjectWorkspace !== action.workspace) {
+    gates.push({ workspace: subjectWorkspace, needed: 'operate' });
+  }
+  if (gates.length > 0) {
     const entitlements = await loadEntitlements(pool, input.actor);
-    const needed = action.minRole === 'approver' ? 'approve' : 'operate';
-    if (!capAtLeast(entitlements[action.workspace], needed)) {
-      throw new ActionError(
-        'WORKSPACE_FORBIDDEN',
-        `${id} requires '${needed}' on workspace '${action.workspace}'`,
-        403,
-        { workspace: action.workspace, needed },
-      );
+    for (const g of gates) {
+      if (!capAtLeast(entitlements[g.workspace], g.needed)) {
+        throw new ActionError(
+          'WORKSPACE_FORBIDDEN',
+          `${id} requires '${g.needed}' on workspace '${g.workspace}'`,
+          403,
+          { workspace: g.workspace, needed: g.needed },
+        );
+      }
     }
   }
   const parsed = action.paramsSchema.safeParse(input.params ?? {});

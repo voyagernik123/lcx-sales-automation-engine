@@ -26,6 +26,7 @@ import {
   cashConversion,
   isOpenPosition,
   isTerminalEngagementStatus,
+  normaliseCurrency,
   marginCents,
   marginRealisation,
   positionValueCents,
@@ -185,7 +186,7 @@ function toPosition(r: PositionRow): BookPosition {
     offerKey: r.offer_key as OfferKey,
     status: r.status as EngagementStatus,
     // Normalised here so two spellings of one currency cannot become two holders.
-    currency: (r.currency || '').trim().toUpperCase() || 'UNKNOWN',
+    currency: normaliseCurrency(r.currency),
     priceCents: cents(r.price_cents),
     vendorCostCents: cents(r.vendor_cost_cents),
     jurisdiction: r.jurisdiction,
@@ -1565,7 +1566,12 @@ export function drillBook(
           refusal: `No positions are denominated in ${req.currency}. Currencies present: ${book.cash.currencies.join(', ') || 'none'}.`,
         });
       }
-      const rowsIn = positions.filter((p) => p.currency === funnel.currency);
+      // `normaliseCurrency`, not the raw field. `funnel.currency` is already
+      // normalised (`cashConversion` keys by it), so comparing `p.currency` raw made
+      // a position stored as 'usd' or '' invisible to the drill behind the very
+      // funnel it was counted in. Verified before the fix: figure has rows, drill is
+      // empty.
+      const rowsIn = positions.filter((p) => normaliseCurrency(p.currency) === funnel.currency);
 
       if (req.leg === 'deposit') {
         const profile = funnel.depositAging;

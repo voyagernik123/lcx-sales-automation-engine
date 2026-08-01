@@ -14,6 +14,7 @@ import {
   type IssueCheck, type IssueDecision, type DevilsAdvocate,
   type UnderwriteDriver, type VarianceAttribution, type EffortTriple,
 } from '@/lib/api/gpsUnderwrite';
+import { GpsMetaBanner } from './GpsMetaBanner';
 
 /**
  * GLOBAL SERVICES — THE UNDERWRITING SCREEN (Phase 7).
@@ -332,6 +333,16 @@ export function GpsUnderwriting() {
 
       <div className="space-y-4">
         <QuoteBar form={form} set={set} />
+
+        {/* WHAT THE SIMULATION DECLARES ABOUT ITS OWN BASIS. `envelope()`
+            (routes/gpsUnderwrite.ts:161) carries `migrated` — false when the rate-card
+            registry is absent, i.e. when the cost side of every figure below came from
+            nothing — and `issueDecisionIsAdvisory`, which is the difference between the
+            block verdict on this screen and the guard's verdict at issue. Both used to
+            travel in `meta` and die in the fetch layer, so a distribution computed
+            without a rate card printed a p50 that read like a price. */}
+        <GpsMetaBanner className="mt-0" of={[res]} />
+
         <InputProvenance form={form} res={res} set={set} />
 
         {error ? (
@@ -1322,7 +1333,16 @@ function Variance({ v, drivers, open, onToggle }: {
             {v.all.map((c) => (
               <tr key={c.input} className="border-b border-line/50">
                 <Td className="text-grey-dark">{c.label}</Td>
-                <Td className="text-right font-mono font-bold tabular-nums text-navy">{Math.round(c.contribution * 100)}%</Td>
+                {/* A NEGATIVE share is a real measurement, not a bug to hide: effort
+                    and the overrun ratio multiply, so pinning one can WIDEN the band.
+                    The engine used to clamp it to 0, which read as "this input does not
+                    matter". Rendered as "widens" because a bare "-12%" of a share reads
+                    as a typo. */}
+                <Td className="text-right font-mono font-bold tabular-nums text-navy">
+                  {c.contribution < 0
+                    ? <span className="text-amber-700 dark:text-amber-400">widens ({Math.round(c.contribution * 100)}%)</span>
+                    : `${Math.round(c.contribution * 100)}%`}
+                </Td>
                 <Td className="text-right font-mono tabular-nums text-grey-dark">{money(c.spreadIfPinnedCents)}</Td>
               </tr>
             ))}

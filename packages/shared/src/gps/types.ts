@@ -281,7 +281,21 @@ export function marginCents(priceCents: number, vendorCostCents: number): number
  */
 export function marginPct(priceCents: number, vendorCostCents: number): number | null {
   if (!Number.isFinite(priceCents) || priceCents <= 0) return null;
-  return Math.round((marginCents(priceCents, vendorCostCents) / priceCents) * 100);
+  const pct = Math.round((marginCents(priceCents, vendorCostCents) / priceCents) * 100);
+  /*
+   * `+ 0` NORMALISES NEGATIVE ZERO, and that is not cosmetic.
+   *
+   * `Math.round(-0.004)` is `-0`. `JSON.stringify(-0)` is `"0"`, so a $10 median LOSS
+   * on a $250,000 price serialised as `0` — and `(-0 < 0) === false`, so the margin-floor
+   * check in `underwrite.ts` put `p50_margin_below_floor` in `passed` with
+   * `observed: 0`. The audit record then stated a loss as "0%" AND as cleared.
+   *
+   * The rounding itself stays: a percent is a percent. What is removed is the one value
+   * that is simultaneously negative for arithmetic and non-negative for every comparison
+   * a reader would write. Callers that need the sign of a small loss read the CENTS,
+   * which are exact — see `p50MarginIsLoss`.
+   */
+  return pct === 0 ? 0 : pct;
 }
 
 // ── Row shapes ────────────────────────────────────────────────────────────────

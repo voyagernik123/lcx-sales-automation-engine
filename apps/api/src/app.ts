@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { MiddlewareHandler } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { env } from './lib/env.js';
@@ -48,6 +49,51 @@ import { requireWorkspace } from './middleware/workspace.js';
 import { NO_STORE_HEADER, noStore } from './middleware/noStore.js';
 import { WORKSPACES } from '@lcx/shared';
 
+/** Methods that cannot change state, so they gate at 'view'. */
+const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
+/**
+ * READ-SHAPED POSTS — endpoints that are POSTs only because a question does not
+ * fit in a query string, and that write NOTHING.
+ *
+ * The reads-at-view/writes-at-operate split was aimed at GPS writes, but "not a
+ * GET" is not the same as "mutates". Applied by method alone it silently took
+ * cited Q&A and ad-hoc reporting away from every `view`-granted member — a policy
+ * change nobody asked for. So the requirement is scoped to actual state mutation
+ * via an explicit, verified allowlist. Default stays 'operate': an endpoint that
+ * is not on this list requires the write tier, so a new route is deny-by-default
+ * and adding an exemption is a code review.
+ *
+ * Each entry was read before it was added:
+ *   /v1/command/ask            → ai/commandOperator.askProgram, SELECT-only
+ *   /v1/distribution/ask       → ai/distributionOperator.askDistribution, no pool
+ *   /v1/analytics/reports/run  → runReport(config), explicitly "not persisted"
+ *   /v1/analytics/reports/:id/run → loads the saved config, then the same runReport
+ *
+ * DELIBERATELY ABSENT: `/v1/projects/score`. It reads like a query and is not one
+ * — score/batch.ts:165 does INSERT INTO scores … ON CONFLICT DO UPDATE, i.e. it
+ * rewrites every project's band. It stays at 'operate'.
+ *
+ * ALSO DELIBERATELY ABSENT: everything under /v1/gps. No exemption may ever match
+ * a GPS path; `__tests__/workspaceWriteGate.test.ts` fails if one does.
+ */
+const READ_SHAPED_POSTS: readonly RegExp[] = [
+  /^\/v1\/command\/ask$/,
+  /^\/v1\/distribution\/ask$/,
+  /^\/v1\/analytics\/reports\/run$/,
+  /^\/v1\/analytics\/reports\/[^/]+\/run$/,
+];
+
+/**
+ * Does this request need the 'operate' tier, or only 'view'? Exported because
+ * this is the boundary itself and it is tested directly, not by inspecting source.
+ */
+export function requiresOperate(method: string, path: string): boolean {
+  if (READ_METHODS.has(method.toUpperCase())) return false;
+  if (method.toUpperCase() !== 'POST') return true;
+  return !READ_SHAPED_POSTS.some((re) => re.test(path));
+}
+
 export function createApp() {
   const app = new Hono();
 
@@ -91,14 +137,37 @@ export function createApp() {
 
   // ── LCX OS compartment gates (Phase 1) ─────────────────────────────────
   // The workspace constitution (@lcx/shared) declares which /v1 namespaces
-  // each workspace owns; every one is guarded at 'view' capability BEFORE the
-  // route mounts below. Desk-level namespaces (me, tasks, notifications,
-  // integrations, search, reviews, actions) stay ungated here — actions are
-  // gated per-action inside the registry instead.
+  // each workspace owns; every one is guarded BEFORE the route mounts below.
+  // Desk-level namespaces (me, tasks, notifications, integrations, search,
+  // reviews, actions) stay ungated here — actions are gated per-action inside
+  // the registry instead.
+  /*
+   * READS AT 'view', WRITES AT 'operate'.
+   *
+   * This loop used to mount `requireWorkspace(ws.id, 'view')` for every method, and
+   * no GPS route re-checked the capability — `requireOperator` is authentication,
+   * not authorisation. So a member granted `gps:view`, which is exactly what the
+   * request-access flow hands out by default (`routes/access.ts`), could
+   * `POST /v1/gps/clients`, `/quote`, `/engagements`, `/engagements/:id/status`,
+   * `origination/targets`, `milestones/:key/state`, `deliverables`, `evidence` and
+   * `loop/outcome`. "Can read the compartment" and "can write a third party's
+   * commercial terms" were the same grant.
+   *
+   * `view` on anything that cannot change state, `operate` on everything that can —
+   * see `requiresOperate` above, which is method PLUS a small audited allowlist of
+   * POSTs that only ask questions. The approve-tier acts keep their own
+   * `requireApprover` on top — this is the floor, not the ceiling. Applied to every
+   * compartment, not just GPS: the capability ladder exists in `@lcx/shared` for
+   * exactly this and no mount was using it.
+   */
   for (const ws of WORKSPACES) {
+    const readGate = requireWorkspace(ws.id, 'view');
+    const writeGate = requireWorkspace(ws.id, 'operate');
+    const gate: MiddlewareHandler = async (c, next) =>
+      (requiresOperate(c.req.method, c.req.path) ? writeGate : readGate)(c, next);
     for (const prefix of ws.apiPrefixes) {
-      app.use(`${prefix}/*`, requireWorkspace(ws.id, 'view'));
-      app.use(prefix, requireWorkspace(ws.id, 'view'));
+      app.use(`${prefix}/*`, gate);
+      app.use(prefix, gate);
     }
   }
 

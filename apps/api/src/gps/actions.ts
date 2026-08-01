@@ -27,15 +27,22 @@
  * monty/nik `approve` and sam `operate`, so exactly one of the five actions
  * (`gps_discount_approve`) is out of sam's reach by construction.
  *
- * KNOWN HOLE, NOT CLOSED HERE. `access/entitlements.ts:39` `machineMap()` loops
- * `WORKSPACE_IDS` and grants every workspace at `operate`, so the SHARED MACHINE
- * KEY holds `gps` at operate — i.e. an automation credential can issue a
- * proposal on a client. That file is not owned by this change (plan §1.5 records
- * it as "isolation from the shared machine key: ABSENT"). What IS done here: the
- * two actions whose records must name a human — `gps_conflict_declare` and
- * `gps_discount_approve` — refuse any actor that is not a desk roster member, so
- * a machine principal cannot author a compliance decision or authorise a
- * concession even while it holds the compartment. See `assertNamedHuman`.
+ * THE MACHINE-KEY HOLE IS CLOSED, AND THIS PARAGRAPH USED TO SAY IT WAS OPEN.
+ * It described `machineMap()` looping `WORKSPACE_IDS` and granting the shared key
+ * `gps` at operate. That stopped being true when `gps` was given
+ * `machineAccess: false` (`packages/shared/src/workspaces.ts`), so the shared key,
+ * the monitors and `ai` hold no GPS capability and `invokeAction`'s compartment gate
+ * refuses every action below. The stale text mattered: a reviewer reading it would
+ * have concluded the boundary was missing and either duplicated it or given up on it.
+ *
+ * Two things still belong to this file rather than to that boolean, because a
+ * compartment flag in another package is not the right place for either:
+ *   · `assertNamedHuman` on `gps_conflict_declare`, `gps_discount_approve` and
+ *     `gps_proposal_issue` — the three records that must name a human. Role and
+ *     named-humanity are different properties.
+ *   · `gps_conflict_declare` is `minRole: 'approver'`, matching the REST route's
+ *     `requireApprover`. It was `operator`, which made `/v1/actions` a cheaper door
+ *     onto the same compliance row.
  *
  * NO CLIENT ARTIFACT INTAKE. No param on any action below accepts a document, an
  * upload, a filename or a URL to client material, and `scope_snapshot` is
@@ -56,12 +63,16 @@ import {
   marginPct,
   isTerminalEngagementStatus,
   PRICE_BANDS_ARE_PLACEHOLDERS,
-  ENGAGEMENT_STATUSES,
+  MANUAL_ENGAGEMENT_TARGETS,
+  MANUAL_ENGAGEMENT_TRANSITIONS,
+  ENGAGEMENT_STATUS_REQUIRES_REASON,
   type OfferKey,
   type EngagementStatus,
   type ConflictDecision,
 } from '@lcx/shared';
 import { ActionError, type RegistryAction } from '../actions/types.js';
+import { ISSUE_GUARD_FAILS_CLOSED, guardProposalIssue } from './underwrite.js';
+import { assertPerimeterCleared } from './perimeterGuard.js';
 
 /**
  * The only subject type in this module. Every GPS action acts on ONE engagement,
@@ -252,6 +263,64 @@ async function assertConflictCleared(pool: pg.Pool, engagementId: string): Promi
 }
 
 /**
+ * THE UNDERWRITING GUARD, AS A THROW — the same decision the REST route's
+ * `requireUnderwritingClearance` middleware turns into a response.
+ *
+ * `guardProposalIssue` reads the ENGAGEMENT ROW and ignores every request field, so
+ * this cannot be talked round by a param: the price the caller is proposing is not
+ * what it evaluates. It fails closed for the reason `ISSUE_GUARD_FAILS_CLOSED`
+ * states — a guard that permits what it could not evaluate is the door every bypass
+ * uses — so a throw inside it becomes a 409, not a pass.
+ *
+ * `MIGRATION_PENDING` is preserved as 503 rather than flattened into a 409: an
+ * environment where the underwriting registries are absent is not the same finding
+ * as a proposal that loses money, and a caller branching on the status should see
+ * the difference.
+ */
+async function assertUnderwritingCleared(
+  pool: pg.Pool,
+  engagementId: string,
+  actor: string,
+  proposedPriceCents: number,
+): Promise<void> {
+  let decision;
+  try {
+    decision = await guardProposalIssue(pool, engagementId, {
+      operator: actor,
+      asOf: new Date().toISOString(),
+      // The price this action is about to WRITE, not the one the row still holds —
+      // this executor sets the price in the same statement that moves the status, so
+      // reading the row would underwrite a number about to be replaced.
+      proposedPriceCents,
+    });
+  } catch (err) {
+    console.error('[gps] underwriting clearance error in gps_proposal_issue:', err);
+    throw new ActionError(
+      'UNDERWRITING_UNAVAILABLE',
+      'The margin on this proposal could not be underwritten, so issuing it is refused. '
+      + ISSUE_GUARD_FAILS_CLOSED,
+      409,
+      { engagementId },
+    );
+  }
+  if (!decision.allowed) {
+    throw new ActionError(
+      decision.code,
+      decision.reason ?? 'Issuing this proposal is refused by the underwriting guard.',
+      decision.status === 503 ? 503 : decision.status === 404 ? 404 : 409,
+      {
+        remedy: decision.remedy,
+        issue: decision.issue,
+        underwriting: decision.underwriting,
+        provenance: decision.provenance,
+        policyNotice: decision.policyNotice,
+        failsClosedNotice: decision.failsClosedNotice,
+      },
+    );
+  }
+}
+
+/**
  * THE DISCOUNT GATE'S STATE LIVES IN THE LEDGER, AND THAT IS A SEAM.
  *
  * `gps_engagement` has NO `discount_approved_by` column — 0047 does not create
@@ -343,55 +412,22 @@ function freezeScope(offerKey: OfferKey, priceCents: number, currency: string) {
 }
 
 /**
- * WHICH STATUSES A HUMAN MAY SET BY HAND — and the two it deliberately excludes.
+ * WHICH STATUSES A HUMAN MAY SET BY HAND, AND THE LIFECYCLE EDGES — both now read
+ * from `packages/shared/src/gps/lifecycle.ts`.
  *
- * `'proposed'` and `'accepted'` are NOT here. They are produced only by
- * `gps_proposal_issue` and `gps_engagement_accept`, which run the conflict gate
- * and (for issue) the discount gate. If a generic status setter could write them,
- * every gate in this file would be one `gps_status_change` call away from being
- * bypassed — which is the single most likely way this compartment's compliance
- * property would be lost, and it would look like a convenience feature.
+ * They used to be private to this file, with this note beside them:
+ *
+ *   "If a generic status setter could write [proposed/accepted], every gate in
+ *    this file would be one `gps_status_change` call away from being bypassed."
+ *
+ * `POST /v1/gps/engagements/:id/status` was that generic status setter, and it
+ * accepted every member of `ENGAGEMENT_STATUSES`. The rule was correct and it lived
+ * next to only one of its two enforcement points. Moving it to the shared package
+ * is the fix: both callers read the same map, and neither can drift.
  */
-const MANUAL_TARGETS = ENGAGEMENT_STATUSES.filter((s) => s !== 'proposed' && s !== 'accepted');
-
-/**
- * The lifecycle, as edges rather than as a comment.
- *
- * Two edges encode money rules and not taxonomy, and they are the reason this is
- * a map and not a free-for-all:
- *  - `deposit_paid` is reachable ONLY from `accepted`. A deposit against nothing
- *    signed is not a deposit.
- *  - `in_delivery` is reachable ONLY from `deposit_paid`. Partners deliver and
- *    partners invoice us, so committing a partner before the client's cash
- *    arrives is how a $10-25k engagement turns into a personal liability
- *    (`gps/types.ts` on `deposit_paid`: "a signature is not cash, and only one of
- *    the two pays a partner").
- *
- * `cancelled` is reachable from every live state; `closed_lost` only from the
- * pre-delivery states, because work that was delivered was not lost.
- *
- * Lives here rather than in `packages/shared` because it has exactly one consumer
- * today; it should move next to `ENGAGEMENT_STATUSES` the moment the web app
- * needs to grey out a button.
- */
-const MANUAL_TRANSITIONS: Record<EngagementStatus, readonly EngagementStatus[]> = {
-  draft: ['conflict_pending', 'closed_lost', 'cancelled'],
-  conflict_pending: ['draft', 'closed_lost', 'cancelled'],
-  proposed: ['draft', 'closed_lost', 'cancelled'],
-  accepted: ['deposit_paid', 'closed_lost', 'cancelled'],
-  deposit_paid: ['in_delivery', 'cancelled'],
-  in_delivery: ['delivered', 'cancelled'],
-  delivered: ['invoiced', 'cancelled'],
-  invoiced: ['collected', 'cancelled'],
-  // Terminal by isTerminalEngagementStatus; listed explicitly so the record is
-  // total and a new status cannot be added without deciding its edges.
-  collected: [],
-  closed_lost: [],
-  cancelled: [],
-};
-
-/** A status change into one of these must say why, in the ledger. */
-const REQUIRES_REASON: readonly EngagementStatus[] = ['closed_lost', 'cancelled'];
+const MANUAL_TARGETS = MANUAL_ENGAGEMENT_TARGETS;
+const MANUAL_TRANSITIONS = MANUAL_ENGAGEMENT_TRANSITIONS;
+const REQUIRES_REASON = ENGAGEMENT_STATUS_REQUIRES_REASON;
 
 /* ══════════════════════════ THE FIVE ACTIONS ══════════════════════════ */
 
@@ -401,13 +437,25 @@ const gps_conflict_declare: GpsAction = {
   description:
     'Record the conflict-of-interest decision on a services engagement (GLOBAL SERVICES). Required before anything is issued to the client.',
   subjectTypes: [ENGAGEMENT_SUBJECT],
-  // OPERATOR, not approver, and that is deliberate. This action does not GRANT
-  // anything — it records what was checked and what was decided. Requiring
-  // approve-tier would mean sam (granted 'operate' by 0047) could not record a
-  // check, and the failure mode that matters here is a MISSING record, not an
-  // over-eager one. Authority is constrained differently: the actor must be a
-  // named human (assertNamedHuman), because decided_by is the whole point.
-  minRole: 'operator',
+  /*
+   * APPROVER. This was `operator`, and the REST twin — `POST /v1/gps/engagements/
+   * :id/conflict-check` (`routes/gps.ts`) — has always required approver, with a
+   * long docblock explaining why: a conflict decision is the one artifact that
+   * makes an exchange employee's services business defensible, and it must be
+   * authored by monty or nik signed in as themselves.
+   *
+   * `/v1/actions` is not workspace-gated at the app level, so the two doors were
+   * `requireApprover` and `minRole:'operator'` onto the SAME `gps_conflict_check`
+   * row. Anyone holding `gps:operate` could clear a conflict through the action
+   * that the REST route refuses them. The stated policy wins; the cheaper door
+   * closes.
+   *
+   * The cost is the one the REST route already accepted and documented: sam holds
+   * `operate` and therefore cannot record a check, so an engagement he creates
+   * waits for an approver. `assertNamedHuman` stays — role and named-humanity are
+   * different properties, and the shared machine key satisfies neither now.
+   */
+  minRole: 'approver',
   workspace: 'gps',
   auditSubjectType: ENGAGEMENT_SUBJECT,
   auditWrites: ['gps_conflict_check', 'gps_engagement'],
@@ -436,8 +484,57 @@ const gps_conflict_declare: GpsAction = {
     // ON CONFLICT DO UPDATE with a fresh decided_at is the AMENDMENT path
     // 0047_gps.sql:252-255 sanctions ("an amended row with a new decided_at,
     // never a rewrite of history") — the engagement_id UNIQUE constraint means
-    // there is exactly one current check, and the prior decision survives in the
-    // audit_log row invokeAction writes, not here.
+    // there is exactly one current check. The prior decision is preserved by the
+    // audit_log insert immediately below — NOT by the row invokeAction writes, which
+    // records the new params and never saw the old ones.
+    /*
+     * PRESERVE THE PRIOR DECISION BEFORE THE UPSERT REPLACES IT.
+     *
+     * The comment above says the prior decision "survives in the audit_log row
+     * invokeAction writes". `invokeAction` records the NEW params, which is what the
+     * caller sent — it does not record the row that was destroyed, so a DECLINE
+     * amended to CLEARED left nothing anywhere saying a decline had ever existed.
+     * `gps_conflict_check.engagement_id` is UNIQUE and 0047 declares no history
+     * table and no append-only trigger.
+     *
+     * Read-then-write, so the window `assertConflictCleared`'s own SEAM note already
+     * accepts applies here too; the alternative is a transaction this path does not
+     * have. `recordConflictCheck` (the REST twin) does the same thing inside its
+     * transaction.
+     */
+    const prior = await pool.query(
+      `SELECT id, decision, check_performed, disclosure_text_used, decided_by, decided_at
+         FROM gps_conflict_check WHERE engagement_id = $1`,
+      [subjectId],
+    );
+    const superseded = prior.rows[0] as
+      | { id: string; decision: string; check_performed: string; disclosure_text_used: string | null;
+          decided_by: string; decided_at: unknown }
+      | undefined;
+    if (superseded) {
+      await pool.query(
+        `INSERT INTO audit_log (actor, action, entity, entity_id, meta)
+         VALUES ($1, 'gps_conflict_check.amended', 'gps_engagement', $2, $3::jsonb)`,
+        [
+          actor,
+          subjectId,
+          JSON.stringify({
+            supersededCheckId: superseded.id,
+            supersededDecision: superseded.decision,
+            supersededCheckPerformed: superseded.check_performed,
+            supersededDisclosureTextUsed: superseded.disclosure_text_used,
+            supersededDecidedBy: superseded.decided_by,
+            supersededDecidedAt: superseded.decided_at,
+            newDecision: decision,
+            newDecidedBy: actor,
+            note:
+              'The row above is the only surviving record of the superseded decision — gps_conflict_check has '
+              + 'no history table and engagement_id is UNIQUE.',
+          }),
+        ],
+      );
+    }
+
     const { rows } = await pool.query<{ id: string }>(
       `INSERT INTO gps_conflict_check
          (client_id, engagement_id, check_performed, decision, decided_by, disclosure_text_used)
@@ -509,14 +606,28 @@ const gps_proposal_issue: GpsAction = {
   auditWrites: ['gps_engagement'],
   paramsSchema: z.object({
     priceCents: centsAtLeast(1),
-    /** What we expect to pay the partner. Omitted = keep what the row has. */
-    vendorCostCents: centsAtLeast(0).optional(),
+    /**
+     * What we expect to pay the partner. Omitted = keep what the row has.
+     *
+     * `centsAtLeast(1)`, not `(0)`. A supplied 0 was the cost side of the
+     * below-cost gate's own input, so `{priceCents: 400000, vendorCostCents: 0}`
+     * on a $6,000-cost offer reported a 100% margin on a $2,000 loss and needed no
+     * approver. No partner delivers a GPS offer for nothing; a caller who means
+     * "keep what the row has" omits the field.
+     */
+    vendorCostCents: centsAtLeast(1).optional(),
     /** Omitted = keep what the row has. NOT defaulted to a percentage of price: a deposit policy nobody has decided is not a number this code may invent. */
     depositRequiredCents: centsAtLeast(0).optional(),
     /** ISO-4217, uppercase. Omitted = keep the row's currency. */
     currency: z.string().regex(/^[A-Z]{3}$/, 'currency must be a 3-letter ISO-4217 code').optional(),
   }),
   execute: async ({ pool, subjectId, params, actor, markGateDegraded }) => {
+    // A proposal is the client-facing artifact, so the record must name who issued
+    // it. `gps.machineAccess` is false in the registry, but that is one boolean in
+    // another package standing between the shared machine key and a client
+    // proposal; this is the assertion that belongs to the operation.
+    assertNamedHuman(actor, 'A client proposal');
+
     const row = await loadEngagement(pool, subjectId);
     assertNotTerminal(row);
 
@@ -532,9 +643,40 @@ const gps_proposal_issue: GpsAction = {
 
     const conflictDecision = await assertConflictCleared(pool, subjectId);
 
+    /*
+     * THE PERIMETER GATE, BECAUSE THIS IS THE SECOND DOOR.
+     *
+     * `POST /v1/gps/engagements/:id/proposal` carries `requirePerimeterClearance`
+     * and `requireUnderwritingClearance` as middleware. This executor performs the
+     * SAME transition to `status='proposed'` through `POST /v1/actions/:id/invoke`,
+     * whose only middleware is `requireOperator` — so both guards were one route
+     * away from not existing. Measured: an engagement whose server-side underwriting
+     * gives pLoss 0.9154 and p50 −308,151 was refused 409 by the REST route and
+     * issued 200 by this one.
+     *
+     * They live INSIDE the executor rather than on a router because the guard has to
+     * belong to the operation. `assertConflictCleared` above already established
+     * that shape; these follow it. Both fail closed — a load or evaluation that
+     * throws is a refusal, never a pass.
+     *
+     * ORDER: law, then authorisation, then the model. The perimeter is first because
+     * "we may not sell this here at all" outranks every price question. The
+     * underwriting guard is LAST, immediately before the UPDATE — partly because it
+     * is the most expensive check (a 200,000-sample simulation should not run to
+     * refuse a request a two-integer comparison already refuses), and partly because
+     * the last thing before the state moves is where a reader looks for the thing
+     * that stops it.
+     */
+    await assertPerimeterCleared(pool, subjectId, {
+      evaluatedBy: actor,
+      asOf: new Date().toISOString(),
+    });
+
     const priceCents = Number(params.priceCents);
-    const vendorCostCents =
-      params.vendorCostCents !== undefined ? Number(params.vendorCostCents) : Number(row.vendor_cost_cents);
+    const suppliedVendorCost =
+      params.vendorCostCents !== undefined ? Number(params.vendorCostCents) : null;
+    const rowVendorCost = Number(row.vendor_cost_cents);
+    const vendorCostCents = suppliedVendorCost ?? rowVendorCost;
     const margin = marginCents(priceCents, vendorCostCents);
 
     /*
@@ -564,6 +706,29 @@ const gps_proposal_issue: GpsAction = {
     if (margin <= 0) {
       reasons.push(`price ${priceCents} is at or below the expected partner cost ${vendorCostCents} (margin ${margin} cents)`);
     }
+    /*
+     * THE GATE WAS SELF-AUTHORISING, and this is the half that closes it.
+     *
+     * `margin` above is computed against the CALLER'S cost, which the same
+     * statement then writes to the row. So the caller supplied the number the gate
+     * was evaluated against: `{priceCents: 400000, vendorCostCents: 0}` on a
+     * `mica_whitepaper` whose recorded cost is 600,000c passed with no approver and
+     * persisted a row claiming 100% margin on a $2,000 loss. Only the schema's new
+     * `centsAtLeast(1)` and this second evaluation together make the cost side
+     * unforgeable: the gate must also hold against the cost the row ALREADY
+     * carried, which the caller did not choose.
+     *
+     * Deliberately not a refusal of the overwrite — lowering a recorded cost is a
+     * legitimate renegotiation. It is a refusal to do it WITHOUT an approver.
+     */
+    const marginAgainstRow = marginCents(priceCents, rowVendorCost);
+    if (suppliedVendorCost !== null && suppliedVendorCost < rowVendorCost && marginAgainstRow <= 0) {
+      reasons.push(
+        `price ${priceCents} is at or below the partner cost ALREADY RECORDED on this engagement `
+        + `(${rowVendorCost}c, margin ${marginAgainstRow} cents). The supplied cost ${suppliedVendorCost}c is lower `
+        + 'than the row\'s, so the gate is evaluated against both and the worse answer stands.',
+      );
+    }
     if (PRICE_BANDS_ARE_PLACEHOLDERS) {
       markGateDegraded(
         'GPS price bands are TODO placeholders (PRICE_BANDS_ARE_PLACEHOLDERS=true in packages/shared/src/gps/catalogue.ts) — the below-band half of the discount gate was NOT evaluated',
@@ -584,6 +749,9 @@ const gps_proposal_issue: GpsAction = {
         );
       }
     }
+
+    // THE LAST THING BEFORE THE STATE MOVES. See the ORDER note above.
+    await assertUnderwritingCleared(pool, subjectId, actor, priceCents);
 
     const { rowCount } = await pool.query(
       `UPDATE gps_engagement
@@ -752,7 +920,7 @@ const gps_engagement_accept: GpsAction = {
      */
     note: z.string().max(500).optional(),
   }),
-  execute: async ({ pool, subjectId, params }) => {
+  execute: async ({ pool, subjectId, params, actor }) => {
     const row = await loadEngagement(pool, subjectId);
     if (row.status !== 'proposed') {
       throw new ActionError('WRONG_STATUS', `Only a proposed engagement can be accepted (this one is '${row.status}').`, 409, {
@@ -764,6 +932,27 @@ const gps_engagement_accept: GpsAction = {
     // (gps_conflict_declare upserts), and in that case the acceptance must not be
     // recordable even though the engagement reached 'proposed' legitimately.
     const conflictDecision = await assertConflictCleared(pool, subjectId);
+
+    /*
+     * THE PERIMETER GATE, FOR EXACTLY THE REASON THE CONFLICT GATE IS HERE TWICE.
+     *
+     * Acceptance is the act that makes the work invoiceable, and it was the one
+     * client-facing money event in the compartment reached with the jurisdictional
+     * perimeter never consulted — the conflict gate above was its only gate. A
+     * position is not static: `gps_jurisdiction_profile` can be amended to
+     * `prohibited`, its `review_by` can pass, or the sole reviewer's clearance can be
+     * withdrawn AFTER a proposal legitimately went out. Recording acceptance in that
+     * window books revenue against work the perimeter now refuses, so the check
+     * belongs on THIS write and not only on the one before it.
+     *
+     * ORDER: conflict, then perimeter, then the UPDATE — the same order
+     * `gps_proposal_issue` uses, so the two client-facing executors refuse in the
+     * same sequence and a reader learns one shape. Fails closed.
+     */
+    await assertPerimeterCleared(pool, subjectId, {
+      evaluatedBy: actor,
+      asOf: new Date().toISOString(),
+    });
 
     const { rowCount } = await pool.query(
       `UPDATE gps_engagement

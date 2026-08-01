@@ -1,8 +1,9 @@
 import { sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { actionsFor, getAction, type TeamRole } from '@lcx/shared';
-import { getDb } from '../db/index.js';
-import { ActionError, redactSecrets } from '../actions/registry.js';
+import { actionsFor, capAtLeast, getAction, type TeamRole } from '@lcx/shared';
+import { getDb, getPool } from '../db/index.js';
+import { loadEntitlements } from '../access/entitlements.js';
+import { ActionError, redactSecrets, subjectTypeWorkspace } from '../actions/registry.js';
 import { DEFAULT_ORG_ID } from './observations.js';
 
 export interface ObjectState {
@@ -91,6 +92,27 @@ export async function executeAction(input: ExecuteActionInput): Promise<{ result
   const permitted = actionsFor(subjectType, input.role).some((a) => a.id === input.action);
   if (!permitted) {
     throw new ActionError('FORBIDDEN', `${input.action} is not available on ${subjectType} for role ${input.role}`, 403);
+  }
+
+  /*
+   * THE SUBJECT'S COMPARTMENT. This is the SECOND door `invokeAction`'s gate did
+   * not cover, and `note_add` here takes 2,000 characters of free text with
+   * `appliesTo: ['*']` — so a principal holding no GPS grant could stamp
+   * `audit_log(entity='gps_engagement', meta=<their text>)` onto a client's
+   * compliance trail. Same map, same refusal, both doors. Deliberately after the
+   * role check and before anything is written.
+   */
+  const subjectWs = subjectTypeWorkspace(subjectType);
+  if (subjectWs) {
+    const ents = await loadEntitlements(getPool(), actor);
+    if (!capAtLeast(ents[subjectWs], 'operate')) {
+      throw new ActionError(
+        'WORKSPACE_FORBIDDEN',
+        `${input.action} on a ${subjectType} requires 'operate' on workspace '${subjectWs}'`,
+        403,
+        { workspace: subjectWs, needed: 'operate' },
+      );
+    }
   }
 
   const schema = PARAM_SCHEMAS[input.action];

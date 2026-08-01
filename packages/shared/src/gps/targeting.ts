@@ -167,14 +167,25 @@ export const FACTOR_LABELS: Record<TargetFactorKey, string> = {
  */
 export type TargetingWeights = Record<TargetFactorKey, number>;
 
-export const WEIGHTS_V1: TargetingWeights = {
+/**
+ * FROZEN, because two surfaces assert it cannot be mutated.
+ *
+ * `routes/gpsLoop.ts` tells a reader this "is the same frozen object" and
+ * `reviewPacket` publishes a hard-coded `weightsMutated: false` on the very packet
+ * whose purpose is that assertion. Neither was backed by anything: this was a plain
+ * mutable object literal, and the published copy in `calibration.ts` was the only one
+ * actually frozen. No path mutates it today — the claim was true and unmechanised,
+ * which is exactly what D8 forbids. `Object.freeze` makes a write throw in strict mode
+ * (all ESM) instead of silently succeeding.
+ */
+export const WEIGHTS_V1: TargetingWeights = Object.freeze({
   need: 30,
   abilityToPay: 25,
   expectedMargin: 20,
   access: 15,
   urgency: 10,
   deliveryComplexity: 15,
-};
+});
 
 /**
  * The provenance of `WEIGHTS_V1`, as data rather than as a comment nobody reads,

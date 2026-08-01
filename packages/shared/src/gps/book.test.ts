@@ -33,6 +33,7 @@ import {
   bookHealth,
   bracketForAgeDays,
   cashConversion,
+  normaliseCurrency,
   isOpenPosition,
   positionValueCents,
   type BookPosition,
@@ -495,6 +496,37 @@ describe('cash conversion funnel', () => {
       ['EUR', 2_000_000], ['USD', 1_000_000],
     ]);
     expect(cash.crossCurrencyTotalCents).toBeNull();
+  });
+
+  /**
+   * THE FUNNEL AND ITS DRILL MUST KEY BY THE SAME THING.
+   *
+   * Every funnel and every concentration axis groups by the NORMALISED code, and the
+   * API's `cash.aging` drill filtered positions with `p.currency === funnel.currency`
+   * — raw against normalised. A position stored as `'usd'` or `''` was therefore
+   * counted in the `USD` / `UNKNOWN` funnel and then invisible to the drill behind that
+   * very figure: rows on the surface, nothing underneath.
+   */
+  it('groups a lower-cased or blank currency by its normalised code', () => {
+    const cash = cashConversion(
+      [
+        pos({ engagementId: 'e1', status: 'collected', currency: 'usd', priceCents: 1_000_000 }),
+        pos({ engagementId: 'e2', status: 'collected', currency: ' USD ', priceCents: 500_000 }),
+        pos({ engagementId: 'e3', status: 'collected', currency: '', priceCents: 300_000 }),
+      ],
+      ASOF,
+    );
+    expect(cash.perCurrency.map((c) => [c.currency, c.collectedCents])).toEqual([
+      ['UNKNOWN', 300_000], ['USD', 1_500_000],
+    ]);
+    // The exported normaliser is what a consumer must key by. Asserted directly so a
+    // fifth inlined copy of the expression cannot drift from it.
+    expect(normaliseCurrency('usd')).toBe('USD');
+    expect(normaliseCurrency(' USD ')).toBe('USD');
+    expect(normaliseCurrency('')).toBe('UNKNOWN');
+    expect(normaliseCurrency(null)).toBe('UNKNOWN');
+    expect(normaliseCurrency(undefined)).toBe('UNKNOWN');
+    for (const c of cash.perCurrency) expect(normaliseCurrency(c.currency)).toBe(c.currency);
   });
 });
 

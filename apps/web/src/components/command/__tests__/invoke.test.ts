@@ -144,6 +144,55 @@ describe('authority is never presented as overridable', () => {
     expect(out.remedy).toMatch(/cannot grant authority/i);
     expect(out.remedy).toMatch(/ask an approver/i);
   });
+
+  /**
+   * `grant_entitlement` gained this refusal when the second-tier `ext:` sign-in became
+   * grantable at all. Before the classify case existed the operator got the raw server
+   * message with no remedy, which for a governance action is the least useful moment to
+   * be vague — the approver is deciding whether to put a colleague on the roster.
+   */
+  it('SECOND_TIER_FORBIDDEN names the remedy and offers no override', async () => {
+    respond = () => ({
+      status: 403,
+      // `ActionError.data` is spread into the body's TOP LEVEL by the invoke route,
+      // the same shape the WORKSPACE_FORBIDDEN case above relies on.
+      body: {
+        error: 'gps holds elevated material',
+        code: 'SECOND_TIER_FORBIDDEN',
+        subjectId: 'ext:priya',
+        workspace: 'gps',
+      },
+    });
+    const { invoke } = await fresh();
+    const out = await invoke('grant_entitlement', 'member', 'ext:priya', { workspace: 'gps' });
+    if (out.ok) throw new Error('expected refusal');
+
+    // The ceiling exists because the passcode is SHARED. An override would be one
+    // approver signing for an unattributable principal, so it must not be offered.
+    expect(out.overridable).toBe(false);
+    expect(out.remedy).toContain('gps is elevated');
+    expect(out.remedy).toMatch(/shared passcode/i);
+    expect(out.remedy).toMatch(/roster/i);
+  });
+
+  it('SECOND_TIER_FORBIDDEN still reads properly when no workspace is carried', async () => {
+    // The approve-tier refusal carries `capability`, not `workspace`. The sentence must
+    // not degrade into "undefined is elevated".
+    respond = () => ({
+      status: 403,
+      body: {
+        error: 'approve tier would be ignored',
+        code: 'SECOND_TIER_FORBIDDEN',
+        subjectId: 'ext:priya',
+        capability: 'approve',
+      },
+    });
+    const { invoke } = await fresh();
+    const out = await invoke('grant_entitlement', 'member', 'ext:priya', { capability: 'approve' });
+    if (out.ok) throw new Error('expected refusal');
+    expect(out.remedy).not.toMatch(/undefined/);
+    expect(out.remedy).toMatch(/^A second-tier sign-in/);
+  });
 });
 
 describe('classification is by code, never by message', () => {

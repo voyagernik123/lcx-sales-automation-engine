@@ -22,6 +22,7 @@ import {
   type BookPlaceholders, type BookUnresolved, type ValueAxis,
   type BenchHeadroom, type WipLoad, type MarginRealisation, type Driver,
 } from '@/lib/api/gpsBook';
+import { GpsMetaBanner } from './GpsMetaBanner';
 
 /**
  * GLOBAL SERVICES — THE BOOK (Phase 6). "Is this book healthy?", on one screen.
@@ -197,6 +198,14 @@ export function GpsBook() {
       >
         The Book · portfolio
       </PageTitle>
+
+      {/* WHAT THE READ DECLARES ABOUT ITSELF. The book is the one GPS payload that
+          carries `migrated` in DATA (`BookResponse.migrated`, book.ts:2061) and the
+          state below is rendered from it — so on this page the banner's job is
+          narrower and still necessary: it is the thing that speaks up if the envelope
+          stops arriving, rather than letting the page render a confident book with the
+          provenance silently gone. */}
+      <GpsMetaBanner of={[res]} />
 
       {error ? (
         <EmptyState variant="error" title="The book is unavailable" description={error} />

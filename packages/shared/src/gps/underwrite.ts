@@ -356,8 +356,16 @@ interface CostBasisResolution {
  *    exact "reads well and is wrong" failure `GPS_100X_PLAN.md` §11 lists as a
  *    programme risk. So: refuse, name the date, and let a human re-confirm.
  *  · HOURLY CARD WITH NO HOURS-PER-DAY. See `CostModel.hoursPerDay`.
- *  · NON-DERIVABLE RATE. A negative or non-finite amount, or a `fixed` card that
- *    `rateCardCostCents` itself will not price (`partners.ts:233`).
+ *  · NON-DERIVABLE RATE. Any card `rateCardCostCents` will not price
+ *    (`partners.ts:233`) — zero, negative, non-finite, or sub-cent enough that one
+ *    unit rounds to 0c. BOTH branches ask that one function: the metered branch
+ *    used to test `amountCents <= 0` itself and thereby skipped the round-to-zero
+ *    guard, which let 0.0001c/day underwrite as 100% margin. ZERO
+ *    refuses on the same footing as negative: a 0c rate card is an unfilled form,
+ *    and pricing it literally yields cost 0, p50 margin equal to the whole price,
+ *    100% margin percent and pLoss 0 — an unblockable "this offer is pure profit"
+ *    band built on a blank field. That is the exact failure the placeholder
+ *    sentinel below is negative to avoid, and it is now refused from both sides.
  *
  * `asOf` is REQUIRED by the caller (see `UnderwriteOptions.asOf`), so staleness is
  * always evaluated. `marginAtRisk` permits skipping it and reports
@@ -395,10 +403,12 @@ function resolveCostBasis(quote: UnderwriteQuote, model: CostModel, asOf: string
   }
 
   if (card.unit === 'fixed') {
+    // `rateCardCostCents` refuses <= 0, so a 0c fixed fee lands here rather than
+    // in a `fixedCents: 0` basis that would underwrite the offer as free.
     const fee = rateCardCostCents(card);
-    if (fee == null) {
+    if (fee == null || fee <= 0) {
       reasons.push(
-        `${model.partnerLabel}'s fixed-fee card for ${quote.offerKey} does not price (amount ${card.amountCents}). Nothing is assumed in its place.`,
+        `${model.partnerLabel}'s fixed-fee card for ${quote.offerKey} does not price (amount ${card.amountCents}). Nothing is assumed in its place — a zero or negative fee is an unfilled form, not a partner working for free.`,
       );
       return { basis: null, verdict: 'refused_rate_not_derivable', reasons, rateCardStatus: status };
     }
@@ -418,8 +428,21 @@ function resolveCostBasis(quote: UnderwriteQuote, model: CostModel, asOf: string
     };
   }
 
-  if (!Number.isFinite(card.amountCents) || card.amountCents < 0) {
-    reasons.push(`${RATE_UNIT_LABEL[card.unit]} card amount is ${card.amountCents}, which is not a usable rate.`);
+  // Routed through `rateCardCostCents` — the SAME derivation the `fixed` branch
+  // above uses — and NOT through a bare `amountCents <= 0`. The bare test was a
+  // hole: 0.0001c/day is finite and positive, so it passed, and then multiplied
+  // out to a cost basis that rounds to 0 — p50 margin equal to the whole price,
+  // 100% margin percent, pLoss 0, nothing blocked, on work with a real cost. That
+  // is the identical failure the fixed branch refuses, reached by the other door.
+  //
+  // `expectedUnits: 1` asks the only question answerable here — effort is a
+  // triple, not a unit count — namely what ONE unit of this card costs. A card
+  // whose single unit rounds to 0c cannot produce a non-zero cost at any effort
+  // level, so it does not price at all. The derived integer is then the rate, so
+  // the metered basis is in whole cents exactly as the fixed fee is.
+  const unitCents = rateCardCostCents({ ...card, expectedUnits: 1 });
+  if (unitCents == null || unitCents <= 0) {
+    reasons.push(`${RATE_UNIT_LABEL[card.unit]} card amount is ${card.amountCents}, which is not a usable rate: it does not price a single unit. Zero is refused on the same footing as negative — an unstated rate is not a free one — and so is a rate that ROUNDS to zero, which would otherwise multiply out to a free cost basis and read as pure profit.`);
     return { basis: null, verdict: 'refused_rate_not_derivable', reasons, rateCardStatus: status };
   }
 
@@ -433,11 +456,11 @@ function resolveCostBasis(quote: UnderwriteQuote, model: CostModel, asOf: string
       );
       return { basis: null, verdict: 'refused_hours_per_day_not_stated', reasons, rateCardStatus: status };
     }
-    centsPerDay = card.amountCents * hpd;
-    formula = `${card.amountCents}c/hour × ${hpd}h/day × effort days${fixedCents ? ` + pass-through ${fixedCents}c` : ''}`;
+    centsPerDay = unitCents * hpd;
+    formula = `${unitCents}c/hour × ${hpd}h/day × effort days${fixedCents ? ` + pass-through ${fixedCents}c` : ''}`;
   } else {
-    centsPerDay = card.amountCents;
-    formula = `${card.amountCents}c/day × effort days${fixedCents ? ` + pass-through ${fixedCents}c` : ''}`;
+    centsPerDay = unitCents;
+    formula = `${unitCents}c/day × effort days${fixedCents ? ` + pass-through ${fixedCents}c` : ''}`;
   }
 
   const dur = effortToDuration(model.effort);
@@ -899,6 +922,29 @@ function attributeVariance(base: SimParams, totalSpread: number, effortIsStochas
     };
   }
 
+  /*
+   * PINNING AN INPUT CAN WIDEN THE SPREAD, and the clamp used to hide that.
+   *
+   * `contribution` was `Math.max(0, removed / totalSpread)`. Effort and the overrun
+   * ratio enter the cost MULTIPLICATIVELY, so freezing one at its mean can leave a
+   * WIDER p10–p90 band than the joint model: `removed` goes negative. Measured over 79
+   * seeds with ratios in [0.1, 3.0]: 79 of 158 candidate evaluations had `removed < 0`
+   * (seed 1 — total spread 1,577,794, spread when pinned 1,740,000, reported
+   * `contribution: 0`).
+   *
+   * Reporting 0 for that is two lies in one field. It says "this input explains none
+   * of the variance" when the truth is "pinning it does not reduce the variance, so
+   * this decomposition does not apply to this model". And it is inconsistent with
+   * `spreadExplainedCents` on the same object, which was never clamped — so a response
+   * could carry `contribution: 0` beside a NEGATIVE `spreadExplainedCents`, while the
+   * driver line rendered "dominated by <label> (0%)".
+   *
+   * So: keep the SIGNED raw share on every candidate, and when the best of them is
+   * <= 0, refuse the attribution outright — `input: null` with a note that says why.
+   * `null` is the value every consumer of this shape already handles (it is what the
+   * no-stochastic-input branch above returns), and a refusal that names the reason is
+   * the D2 answer.
+   */
   const all: VarianceContribution[] = candidates.map((input) => {
     const pinned = simulate({ ...base, freeze: input });
     const a = pinned.marginsAsc;
@@ -909,13 +955,34 @@ function attributeVariance(base: SimParams, totalSpread: number, effortIsStochas
     return {
       input,
       label: STOCHASTIC_INPUT_LABEL[input],
-      contribution: round4(Math.min(1, Math.max(0, removed / totalSpread))),
+      // Signed, and capped only ABOVE at 1: a share over 100% is impossible
+      // arithmetic, a negative share is a real property of a multiplicative model.
+      contribution: round4(Math.min(1, removed / totalSpread)),
       spreadIfPinnedCents: residual,
     };
   });
 
   all.sort((x, y) => y.contribution - x.contribution);
   const top = all[0]!;
+
+  if (top.contribution <= 0) {
+    return {
+      input: null,
+      label: 'Not decomposable',
+      contribution: top.contribution,
+      totalSpreadCents: totalSpread,
+      spreadExplainedCents: totalSpread - top.spreadIfPinnedCents,
+      all,
+      method: VARIANCE_METHOD,
+      note:
+        'No single input can be credited with the spread: pinning each of them in turn leaves a band at least as '
+        + 'wide as the joint model. That happens because effort and the overrun ratio enter the cost '
+        + 'MULTIPLICATIVELY, so removing one source of variation can widen the other\'s effect. The spread is real '
+        + `(${totalSpread}c p10–p90); the attribution is refused rather than reported as 0%, which would read as `
+        + '"this input does not matter".',
+    };
+  }
+
   return {
     input: top.input,
     label: top.label,
@@ -1386,6 +1453,12 @@ export type IssueBlockCode =
   | 'ok'
   | 'underwriting_refused'
   | 'p_loss_above_threshold'
+  /**
+   * The MEDIAN outcome is a loss, in cents. Unconditional — no policy floor is
+   * consulted — and ranked above the percentage floor, because it is exact where the
+   * percentage rounds. See the check for why `-0` made the percentage defeatable.
+   */
+  | 'p50_margin_is_a_loss'
   | 'p50_margin_below_floor'
   | 'basis_is_prior'
   | 'effort_is_placeholder';
@@ -1397,7 +1470,8 @@ export interface IssueCheck {
   /** The policy's value. A string for label-valued checks such as the basis. */
   threshold: number | string;
   observed: number | string;
-  unit: 'ratio' | 'pct' | 'label';
+  /** `cents` added for `p50_margin_is_a_loss`, which is exact where `pct` rounds. */
+  unit: 'ratio' | 'pct' | 'label' | 'cents';
 }
 
 export interface IssueDecision {
@@ -1458,6 +1532,35 @@ export function shouldBlockIssue(u: Underwriting, policy: IssuePolicy = DEFAULT_
       };
       (observed == null || observed < policy.minP50MarginPct ? failed : passed).push(c2);
     }
+
+    /*
+     * A MEDIAN LOSS BLOCKS UNCONDITIONALLY, GATED ON CENTS, WITH NO POLICY FLOOR
+     * INVOLVED.
+     *
+     * The percentage check above cannot do this job. It is skipped entirely while
+     * `minP50MarginPct` is null (the default), and it was defeatable even when set:
+     * `marginPct` rounded a small loss to `-0`, `JSON.stringify(-0)` is `"0"`, and
+     * `(-0 < 0) === false` — so a $10 median loss on a $250,000 price landed in
+     * `passed` with `observed: 0`, i.e. the audit record stated a loss as "0%" AND as
+     * cleared. `marginPct` no longer returns `-0`, and this makes the property
+     * independent of the rounding altogether: cents are exact.
+     *
+     * Not policy-conditioned, because "in half of simulated outcomes this engagement
+     * loses money" is not an appetite question. Masked today by the P(loss) ceiling —
+     * a negative median implies pLoss >= 0.5, which the un-raisable 0.2 ceiling already
+     * blocks — so this is the guard that survives someone raising that ceiling.
+     */
+    const p50Cents = u.distribution?.p50MarginCents;
+    if (p50Cents != null) {
+      const c3: IssueCheck = {
+        code: 'p50_margin_is_a_loss',
+        name: 'Median outcome is not a loss',
+        threshold: 0,
+        observed: p50Cents,
+        unit: 'cents',
+      };
+      (p50Cents < 0 ? failed : passed).push(c3);
+    }
   }
 
   if (policy.blockOnPriorBasis) {
@@ -1469,7 +1572,9 @@ export function shouldBlockIssue(u: Underwriting, policy: IssuePolicy = DEFAULT_
     (u.effortIsPlaceholder ? failed : passed).push(c);
   }
 
-  const ORDER: IssueBlockCode[] = ['underwriting_refused', 'p_loss_above_threshold', 'p50_margin_below_floor', 'basis_is_prior', 'effort_is_placeholder'];
+  // `p50_margin_is_a_loss` outranks the percentage floor: it is exact (cents), it is
+  // unconditional, and "the median outcome loses money" is the more urgent sentence.
+  const ORDER: IssueBlockCode[] = ['underwriting_refused', 'p_loss_above_threshold', 'p50_margin_is_a_loss', 'p50_margin_below_floor', 'basis_is_prior', 'effort_is_placeholder'];
   failed.sort((a, b) => ORDER.indexOf(a.code) - ORDER.indexOf(b.code));
   const top = failed[0];
 
@@ -1493,6 +1598,8 @@ export function shouldBlockIssue(u: Underwriting, policy: IssuePolicy = DEFAULT_
         return `BLOCKED: the margin on this quote could not be computed (${UNDERWRITE_VERDICT_LABEL[u.verdict]}). A proposal may not be issued against a margin nobody has. Fix the input named in the underwriting reasons, then re-run.`;
       case 'p_loss_above_threshold':
         return `BLOCKED: this price loses money in ${((u.pLoss ?? 0) * 100).toFixed(1)}% of simulated outcomes, above the ${(policy.maxPLoss * 100).toFixed(0)}% ceiling set by ${policy.statedBy} at ${policy.statedAt}. Raise the price, cut the scope, or have the threshold changed on the record.`;
+      case 'p50_margin_is_a_loss':
+        return `BLOCKED: the MEDIAN simulated outcome of this engagement is a LOSS of ${Math.abs(u.distribution?.p50MarginCents ?? 0)} cents. Not a policy threshold — half the outcomes are worse than break-even, and no risk appetite makes that a price worth issuing. Raise the price or cut the scope.`;
       case 'p50_margin_below_floor':
         return `BLOCKED: median margin ${u.distribution?.p50MarginPct == null ? 'is not computable' : `is ${u.distribution.p50MarginPct}%`}, below the ${policy.minP50MarginPct}% floor set by ${policy.statedBy}.`;
       case 'basis_is_prior':

@@ -3,7 +3,7 @@ import {
   DIAGNOSTIC_OFFER, NO_LEGAL_ADVICE_EXCLUSION, OFFERS, OFFER_KEYS,
   PRICE_BANDS_ARE_PLACEHOLDERS, bandMidpointCents, getOffer,
 } from '@lcx/shared';
-import { TODO_DEPOSIT_PCT, quoteOffer } from '../service.js';
+import { PriceNotSuppliedError, TODO_DEPOSIT_PCT, createEngagement, quoteOffer } from '../service.js';
 
 /**
  * QUOTING — behaviour, not shape.
@@ -186,5 +186,67 @@ describe('the diagnostic is priced to actually sell', () => {
 
   it('is exactly one offer', () => {
     expect(OFFERS.filter((o) => o.isDiagnostic)).toHaveLength(1);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* WHERE THE NUMBER CAME FROM — the field that had to exist                     */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+describe('a server-invented price is marked, and is not persistable', () => {
+  it('reports priceSource: band_midpoint when no price was supplied', () => {
+    // `badCents(undefined)` is false — "absent is fine, defaults apply" — so an
+    // omitted price fell through to the midpoint of TODO_PRICE_BANDS, the block
+    // headed "NOT REAL PRICES. DO NOT QUOTE THESE", and `createEngagement` INSERTed
+    // it as the engagement's real price.
+    const q = quoteOffer({ offerKey: 'mica_whitepaper' });
+    expect(q.priceSource).toBe('band_midpoint');
+    expect(q.vendorCostSource).toBe('catalogue_expected');
+    expect(q.warnings.join(' ')).toMatch(/MIDPOINT OF A PLACEHOLDER BAND/);
+  });
+
+  it('reports priceSource: supplied for a price a human typed', () => {
+    const q = quoteOffer({ offerKey: 'mica_whitepaper', priceCents: 1_800_000, vendorCostCents: 600_000 });
+    expect(q.priceSource).toBe('supplied');
+    expect(q.vendorCostSource).toBe('supplied');
+    expect(q.warnings.join(' ')).not.toMatch(/MIDPOINT OF A PLACEHOLDER BAND/);
+  });
+
+  it('priceIsPlaceholder cannot tell the two apart — which is why priceSource exists', () => {
+    // Not a complaint about the flag: it is the CONSTANT PRICE_BANDS_ARE_PLACEHOLDERS
+    // and is honest about the band. It is simply incapable of answering "did a human
+    // choose this number", which is the question the persisted row needed answered.
+    const invented = quoteOffer({ offerKey: 'gtm_sprint' });
+    const chosen = quoteOffer({ offerKey: 'gtm_sprint', priceCents: 1_000_000 });
+    expect(invented.priceIsPlaceholder).toBe(chosen.priceIsPlaceholder);
+    expect(invented.priceSource).not.toBe(chosen.priceSource);
+  });
+
+  it('createEngagement REFUSES to persist a band-midpoint price', async () => {
+    // The pool is never reached: the refusal is before the INSERT. If it were not,
+    // this test would pass by accident on a stub that returns no rows.
+    let queried = false;
+    const pool = { query: async () => { queried = true; return { rows: [], rowCount: 0 }; } };
+    await expect(
+      createEngagement(pool as never, { clientId: 'c1', offerKey: 'mica_whitepaper' }),
+    ).rejects.toBeInstanceOf(PriceNotSuppliedError);
+    expect(queried).toBe(false);
+  });
+
+  it('createEngagement accepts a supplied price of zero — 0 is a decision, absent is not', async () => {
+    // $0 is a real thing a founder may quote (a written-off diagnostic). The refusal
+    // is about a number nobody chose, not about a small one.
+    const rows = [{
+      id: 'e1', client_id: 'c1', project_id: null, offer_key: 'mica_whitepaper',
+      contracting_entity: 'lcx', scope_snapshot: null, price_cents: '0',
+      vendor_cost_cents: '600000', currency: 'USD', status: 'conflict_pending',
+      owner: null, deposit_required_cents: '0', deposit_paid_at: null,
+      accepted_at: null, created_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-01T00:00:00Z',
+    }];
+    const pool = { query: async () => ({ rows, rowCount: 1 }) };
+    const out = await createEngagement(pool as never, {
+      clientId: 'c1', offerKey: 'mica_whitepaper', priceCents: 0,
+    });
+    expect(out.quote.priceSource).toBe('supplied');
   });
 });
