@@ -38,9 +38,69 @@ export function findMemberByEmail(email: string): TeamMember | null {
   return TEAM.find((m) => m.email === e) ?? null;
 }
 
-/** Is this email allowed on the desk? */
+/**
+ * Is this email allowed on the desk?
+ *
+ * NOTE THE SCOPE, because it has been misread: this is a ROSTER check, not a
+ * domain check. Only the three people in TEAM pass. For the second-tier
+ * sign-in — any colleague's address plus SECONDARY_PASSCODE — use
+ * `isLcxDomainEmail` below, which is the domain gate.
+ */
 export function isAllowedEmail(email: string): boolean {
   return findMemberByEmail(email) !== null;
+}
+
+/** The one domain the second tier will admit. */
+export const LCX_EMAIL_DOMAIN = 'lcx.com';
+
+/**
+ * Exactly one @, and the part after it is exactly `lcx.com`.
+ *
+ * WHAT THIS DELIBERATELY REFUSES, because a loose check here is the difference
+ * between "any colleague" and "anyone on the internet":
+ *   - `nik@lcx.com.evil.example` — the classic suffix trick; an `endsWith` on
+ *     'lcx.com' would let it through, an `includes` even more so.
+ *   - `nik@sub.lcx.com` — a subdomain is not the domain, and whoever controls a
+ *     subdomain's mail is not necessarily LCX IT.
+ *   - `a@lcx.com@b.com`, `nik@LCX.com ` (handled by normalizeEmail), and an empty
+ *     local part.
+ */
+export function isLcxDomainEmail(email: string): boolean {
+  const e = normalizeEmail(email);
+  const at = e.indexOf('@');
+  if (at <= 0) return false;                       // no @, or empty local part
+  if (e.indexOf('@', at + 1) !== -1) return false; // a second @
+  return e.slice(at + 1) === LCX_EMAIL_DOMAIN;     // exact, not endsWith
+}
+
+/**
+ * People who have LEFT. Refused on the second tier even though their address
+ * still matches the domain.
+ *
+ * WHY THIS LIST HAS TO EXIST. Migration `0042_lcx_os_access.sql:69-70` does
+ * `DELETE FROM entitlements WHERE member_id IN ('rida','jatin')` — deliberately
+ * stripping residual access when they left. The second-tier sign-in admits any
+ * address on the LCX domain, so without this list it would hand that access
+ * straight back, and their mailbox would not even need to still work: nothing on
+ * this path sends mail or verifies control of the address.
+ *
+ * A literal, exactly like FOUNDING_MEMBER_IDS in workspaces.ts, and for the same
+ * reason: deriving it from anything would re-open the hole the next time the
+ * source of truth drifted.
+ *
+ * OFFBOARDING IS NOW TWO STEPS, not one: add the address here, AND rotate
+ * SECONDARY_PASSCODE. The rotation is the part that actually revokes — this list
+ * only stops the lazy attempt. That is the honest limit of a shared secret and it
+ * is the tradeoff the second tier was accepted with.
+ */
+export const DEPARTED_MEMBER_EMAILS: readonly string[] = [
+  'rida@lcx.com',
+  'jatin@lcx.com',
+];
+
+/** True when this address belongs to someone who has left. */
+export function hasDeparted(email: string): boolean {
+  return DEPARTED_MEMBER_EMAILS.includes(normalizeEmail(email));
 }
 
 /**

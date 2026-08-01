@@ -78,7 +78,13 @@ export { squash, squashEntity } from './normalize.js';
 
 // Desk roster + email allowlist (shared by the web front door and API auth)
 export type { TeamMember, TeamRole } from './operators.js';
-export { TEAM, normalizeEmail, findMemberByEmail, isAllowedEmail, findMemberById, ownerLabel } from './operators.js';
+export {
+  TEAM, normalizeEmail, findMemberByEmail, isAllowedEmail, findMemberById, ownerLabel,
+  // Second-tier sign-in (2026-08-01): the DOMAIN gate — distinct from the roster
+  // gate `isAllowedEmail` — plus the leavers list that keeps a departed colleague
+  // from walking back in on a shared passcode.
+  LCX_EMAIL_DOMAIN, isLcxDomainEmail, DEPARTED_MEMBER_EMAILS, hasDeparted,
+} from './operators.js';
 export type { WorkspaceId, Capability, EntitlementMap, WorkspaceDef } from './workspaces.js';
 export {
   WORKSPACES, WORKSPACE_IDS, getWorkspace, capAtLeast,

@@ -1,5 +1,12 @@
 import { createMiddleware } from 'hono/factory';
-import { type OperatorPrincipal, findMemberByEmail } from '@lcx/shared';
+import {
+  type OperatorPrincipal,
+  findMemberByEmail,
+  hasDeparted,
+  isLcxDomainEmail,
+  normalizeEmail,
+} from '@lcx/shared';
+import { secondTierSeen } from '../lib/secondTier.js';
 import { env } from '../lib/env.js';
 
 export type AuthVariables = {
@@ -73,6 +80,64 @@ export function resolvePrincipal(
         role: member.role === 'approver' ? 'approver' : 'operator',
         authMethod: 'email',
       };
+    }
+
+    // 3) SECOND-TIER SIGN-IN — any @lcx.com address plus SECONDARY_PASSCODE.
+    //
+    //    Requested explicitly by Nik (2026-08-01) after being shown the tradeoff
+    //    and reaffirming: the wider team must be able to work without waiting on
+    //    a roster edit and a deploy. This is a deliberate, documented widening,
+    //    not an oversight — the notes below exist so nobody later "discovers" it
+    //    and assumes it was a mistake.
+    //
+    //    WHAT IT DELIBERATELY IS NOT:
+    //      - Not `approver`. Second tier is always 'operator', so the two
+    //        approve-gated acts (discount approval, clearing a conflict) stay with
+    //        the named roster. Handing approve-tier to a short shared secret would
+    //        exceed what was asked and cannot be undone from an audit log.
+    //      - Not domain-optional. `isAllowedEmail` still gates on the LCX domain,
+    //        so this is "any colleague", never "anyone on the internet".
+    //      - Not silent. `id` is `ext:<local-part>`, which is visibly distinct from
+    //        a roster id in every audit row, and `secondTierSeen()` records the
+    //        session (see lib/secondTier.ts) because the honest limit of a shared
+    //        secret is that the row names the credential, not the person.
+    //
+    //    THE RISK, STATED PLAINLY AND ACCEPTED BY THE OWNER: a shared passcode is
+    //    guessable and unattributable. `gps` holds third parties' unpublished
+    //    regulatory filings and legal work product. If a client ever asks who read
+    //    their file, the answer this path can give is "someone holding the
+    //    secondary passcode". Rotate SECONDARY_PASSCODE when anyone leaves, and
+    //    prefer per-person credentials when there is time to build them.
+    if (env.secondaryPasscode && safeEqual(passcode, env.secondaryPasscode)) {
+      const normalized = normalizeEmail(email);
+      // `isLcxDomainEmail`, NOT `isAllowedEmail` — the latter is a ROSTER check
+      // (operators.ts:47), so using it here would have admitted only the three
+      // people who can already sign in, i.e. the feature would have done nothing.
+      // Caught before shipping; the domain gate is exact, not endsWith, so
+      // `nik@lcx.com.evil.example` and `nik@sub.lcx.com` are refused.
+      //
+      // `hasDeparted` refuses people who LEFT. 0042 deliberately deleted their
+      // entitlements; without this the second tier hands that access straight back,
+      // and their mailbox need not even work — nothing here verifies control of the
+      // address. Rotating SECONDARY_PASSCODE is what actually revokes; this list
+      // only stops the lazy attempt.
+      if (isLcxDomainEmail(normalized) && !hasDeparted(normalized)) {
+        // A roster member who typed the SECONDARY passcode is still themselves —
+        // resolve to their real id and role rather than shadowing them with an
+        // `ext:` principal, or their audit history would fork by which password
+        // they happened to use.
+        const known = findMemberByEmail(normalized);
+        if (known) {
+          return {
+            id: known.id,
+            role: known.role === 'approver' ? 'approver' : 'operator',
+            authMethod: 'email',
+          };
+        }
+        const local = normalized.slice(0, normalized.indexOf('@')).replace(/[^a-z0-9._-]/g, '') || 'unknown';
+        secondTierSeen(normalized);
+        return { id: `ext:${local}`, role: 'operator', authMethod: 'email' };
+      }
     }
   }
   return null;

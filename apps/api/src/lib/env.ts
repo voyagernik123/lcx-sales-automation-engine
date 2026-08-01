@@ -33,6 +33,36 @@ export const env = {
   operatorApiKey: required('OPERATOR_API_KEY', 'dev-operator-key-change-me'),
   /** LCX OS front-door passcode: email sign-in requires `email:passcode`. */
   deskPasscode: process.env.DESK_PASSCODE ?? 'test#1234',
+  /**
+   * SECOND-TIER desk passcode. Any @lcx.com address plus this signs in at
+   * 'operator' on every compartment — no roster edit, no deploy, no grant wait.
+   *
+   * Requested by Nik on 2026-08-01 after the tradeoff was put to him explicitly
+   * and he reaffirmed it: the team must be able to work now. See
+   * `middleware/auth.ts` case (3) for what it deliberately does NOT grant
+   * (approve-tier stays with the named roster) and `lib/secondTier.ts` for the
+   * usage recording that makes a shared secret operationally survivable.
+   *
+   * NO DEFAULT, DELIBERATELY. An empty value disables the path entirely, and that
+   * is the only safe default: a shared sign-in secret committed to the repo is
+   * public to everyone with a checkout and to git history forever, while LOOKING
+   * like a secret. `DESK_PASSCODE` above has a dev default because it gates a
+   * roster of three known people; this one gates "any colleague", so it must be
+   * set deliberately, per environment, by a human.
+   *
+   * Set SECONDARY_PASSCODE in the Render dashboard to open the door; unset or
+   * empty it to close it. Rotating it is also the only thing that truly revokes a
+   * departed colleague — see DEPARTED_MEMBER_EMAILS in @lcx/shared, which stops the
+   * lazy attempt but cannot revoke a code someone already knows.
+   *
+   * A GETTER, not a snapshot, for two reasons: the value is read at request time
+   * so rotating it takes effect without waiting on a module reload, and a test can
+   * enable the path without the module having already frozen an empty string at
+   * import time.
+   */
+  get secondaryPasscode(): string {
+    return process.env.SECONDARY_PASSCODE ?? '';
+  },
   /** x402 seller layer (Phase 4): unset → sandbox mode (keyless-first). */
   x402FacilitatorUrl: process.env.X402_FACILITATOR_URL ?? '',
   x402PayTo: process.env.X402_PAY_TO ?? '',
