@@ -20,6 +20,24 @@ export interface Destination {
   /** What the operator calls it. */
   label: string;
   /**
+   * TRUE for a desk INSIDE a compartment, as opposed to a compartment itself.
+   *
+   * The table used to hold nothing but compartment roots, so three generators were
+   * free to assume it: `tour.ts` derives one step per destination and keys it by
+   * `workspaceForPath`, `CheatCard` prints a `⌘<key>` chip beside every g-chord, and
+   * both were right until GPS added six desks under `/gps/*`. Left unmarked, the
+   * tour emitted the GPS step SEVEN TIMES and the card printed ⌘B/⌘O/⌘U/⌘C/⌘D/⌘L —
+   * accelerators the native menu does not bind, i.e. the card teaching a chord that
+   * does nothing. Both were caught by their own tests, which is why this is a field
+   * and not a rule someone has to remember.
+   *
+   * A marked row is still a first-class destination: menu item, `g` chord, cheat
+   * card row, `MENU_ROUTES` entry. It just has no ⌘ mirror and is not a tour step,
+   * because the tour teaches the shape of the system and there are eight
+   * compartments, not sixteen.
+   */
+  withinWorkspace?: boolean;
+  /**
    * The key pressed after the `g` prefix. Digits mirror the ⌘0-7 accelerators in
    * the native menu so the two feel like the same grammar rather than two unrelated
    * ones — EIGHT, not six: `lib.rs` binds ⌘0 to My Desk alongside ⌘1-6 for the
@@ -81,6 +99,41 @@ export const DESTINATIONS: readonly Destination[] = [
    * this comment, is what makes the wiring mandatory.
    */
   { id: 'go-ws-gps', path: '/gps', label: 'GLOBAL SERVICES', key: '9' },
+  /**
+   * ── GPS PHASES 6-12: SIX DESKS INSIDE THE EIGHTH COMPARTMENT ────────────────
+   *
+   * APPENDED, and the existing ten rows are untouched. Nothing above moved, so no
+   * accelerator anyone has learned changed meaning.
+   *
+   * THE KEYS ARE LETTERS AND THEY HAVE NO ⌘ ACCELERATOR. Two reasons, and the
+   * second is the real one:
+   *
+   *  1. There is no digit left. `go-ws-gps` took ⌘9, which the native menu already
+   *     recorded as "the last single-digit accelerator available"
+   *     (`apps/desktop/src-tauri/src/lib.rs:548`). A sequence like `g 1 0` would be
+   *     a second grammar bolted onto the first — `stepGoGrammar` reads exactly one
+   *     key after the prefix and a two-key form would need a timeout nobody can
+   *     feel.
+   *  2. These are not compartments. ⌘0-9 mean "go to a workspace", and giving a
+   *     desk inside GPS the same class of accelerator would make the menu claim
+   *     there are sixteen compartments when there are eight. `g b` reads as "go,
+   *     book" and mirrors the initial of the label, which is a grammar an operator
+   *     can extend by guessing rather than by consulting this file.
+   *
+   * `destinations.test.ts` still requires a native menu item for every row (a
+   * destination reachable by chord but absent from the menu is a hidden feature),
+   * so each has one — under a GLOBAL SERVICES submenu, with no accelerator. The
+   * "g-key digits match the ⌘ accelerators" assertion is satisfied because it only
+   * fires when the menu line HAS an accelerator; these deliberately do not, which
+   * is the difference between agreeing with the menu and having nothing to disagree
+   * about.
+   */
+  { id: 'go-gps-book', path: '/gps/book', label: 'GPS · THE BOOK', key: 'b' , withinWorkspace: true },
+  { id: 'go-gps-origination', path: '/gps/origination', label: 'GPS · ORIGINATION', key: 'o' , withinWorkspace: true },
+  { id: 'go-gps-underwriting', path: '/gps/underwriting', label: 'GPS · UNDERWRITING', key: 'u' , withinWorkspace: true },
+  { id: 'go-gps-conflict', path: '/gps/conflict', label: 'GPS · THE CONFLICT WALL', key: 'c' , withinWorkspace: true },
+  { id: 'go-gps-delivery', path: '/gps/delivery', label: 'GPS · DELIVERY DESK', key: 'd' , withinWorkspace: true },
+  { id: 'go-gps-loop', path: '/gps/loop', label: 'GPS · THE LOOP', key: 'l' , withinWorkspace: true },
 ];
 
 /** Menu id → route, for the native bridge. */

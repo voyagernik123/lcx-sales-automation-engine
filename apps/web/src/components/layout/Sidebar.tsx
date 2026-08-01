@@ -132,8 +132,19 @@ const WS_SECTIONS: Record<WorkspaceId, NavSection[]> = {
   gps: [
     {
       title: 'Global Services',
+      // Ordered as the WORK runs, not alphabetically and not by phase number:
+      // origination finds the target, underwriting prices it, the conflict wall
+      // decides whether we may take it, delivery does it, the loop learns from it,
+      // and the book is what all of that adds up to. A sidebar that reads in the
+      // order of the motion is the cheapest onboarding this compartment gets.
       items: [
         { to: '/gps', label: 'Engagement Desk', icon: Globe },
+        { to: '/gps/origination', label: 'Origination', icon: Crosshair },
+        { to: '/gps/underwriting', label: 'Underwriting', icon: BarChart3 },
+        { to: '/gps/conflict', label: 'Conflict Wall', icon: Shield },
+        { to: '/gps/delivery', label: 'Delivery Desk', icon: ListChecks },
+        { to: '/gps/loop', label: 'The Loop', icon: Activity },
+        { to: '/gps/book', label: 'The Book', icon: Table2 },
       ],
     },
   ],

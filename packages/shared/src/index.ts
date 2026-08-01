@@ -148,19 +148,15 @@ export {
 // (PRICE_BANDS_ARE_PLACEHOLDERS) and CATALOGUE_TODOS names what is still missing.
 // No artifact/upload surface here by construction — Phase 3 is gated on the DPO
 // question (GPS_IMPLEMENTATION_PLAN.md §4 S0.4).
-export type {
-  ContractingEntity, OfferKey, PriceBandCents, ServiceOffer,
-  EngagementStatus, ConflictDecision, ClientStatus,
-  GpsClient, GpsEngagement, GpsConflictCheck, CatalogueTodo,
-} from './gps/index.js';
-export {
-  DEFAULT_CONTRACTING_ENTITY, OFFER_KEYS,
-  ENGAGEMENT_STATUSES, ENGAGEMENT_STATUS_LABELS, isTerminalEngagementStatus,
-  marginCents, marginPct,
-  OFFERS, getOffer, DIAGNOSTIC_OFFER, bandMidpointCents,
-  CATALOGUE_TODOS, CATALOGUE_DEFAULT_CONTRACTING_ENTITY,
-  NO_LEGAL_ADVICE_EXCLUSION, PRICE_BANDS_ARE_PLACEHOLDERS,
-} from './gps/index.js';
+//
+// This is a WHOLESALE re-export, not a name list, and that is deliberate. The
+// name list was the binding gap that made every `import … from '@lcx/shared'` in
+// apps/api and apps/web a TS2305: a symbol could be in `gps/index.ts` and still be
+// invisible here, which is a failure mode with no signal until an emit build in
+// Docker order fails. `export *` cannot drift from the compartment it publishes.
+// Collisions surface as TS2308 at compile time and are aliased inside
+// `gps/index.ts` (see `PerimeterStatus as PerimeterEntryStatus` there), never here.
+export * from './gps/index.js';
 
 // DISTRIBUTION — growth engines (LCX ONE Phase 4)
 export type {

@@ -548,6 +548,21 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             // destination has no digit left and will need a different key, which is
             // a decision for whoever adds it rather than a rename of these.
             &MenuItem::with_id(app, "go-ws-gps", "GLOBAL SERVICES", true, Some("CmdOrCtrl+9"))?,
+            // The six GPS desks (Phases 6-12). NO ACCELERATOR ON ANY OF THEM, and
+            // that is the decision the comment above deferred to whoever added a
+            // tenth destination. ⌘0-9 mean "go to a compartment"; there are eight
+            // compartments and these are surfaces inside one of them, so giving
+            // them the same class of key would make this menu assert a structure
+            // the system does not have. They are reachable by `g b`/`g o`/`g u`/
+            // `g c`/`g d`/`g l` in the webview and by clicking here, which is what
+            // destinations.test.ts requires — it asserts a menu item exists for
+            // every destination, and only compares accelerators when there is one.
+            &MenuItem::with_id(app, "go-gps-book", "GPS · THE BOOK", true, None::<&str>)?,
+            &MenuItem::with_id(app, "go-gps-origination", "GPS · ORIGINATION", true, None::<&str>)?,
+            &MenuItem::with_id(app, "go-gps-underwriting", "GPS · UNDERWRITING", true, None::<&str>)?,
+            &MenuItem::with_id(app, "go-gps-conflict", "GPS · THE CONFLICT WALL", true, None::<&str>)?,
+            &MenuItem::with_id(app, "go-gps-delivery", "GPS · DELIVERY DESK", true, None::<&str>)?,
+            &MenuItem::with_id(app, "go-gps-loop", "GPS · THE LOOP", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "go-back", "Back", true, Some("CmdOrCtrl+["))?,
             &MenuItem::with_id(app, "go-forward", "Forward", true, Some("CmdOrCtrl+]"))?,

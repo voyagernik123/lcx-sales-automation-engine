@@ -19,6 +19,15 @@ const DistributionGeo = lazy(() => import('@/pages/DistributionGeo').then((m) =>
 const DistributionHome = lazy(() => import('@/pages/DistributionHome').then((m) => ({ default: m.DistributionHome })));
 const Marketing = lazy(() => import('@/pages/Marketing').then((m) => ({ default: m.Marketing })));
 const Gps = lazy(() => import('@/pages/Gps').then((m) => ({ default: m.Gps })));
+// GPS Phases 6-12. Each is its own lazy chunk — six eagerly-imported desks would
+// land in the initial bundle and the web perf budget has ~26KB of headroom, so a
+// static import here is the thing that would break the build rather than a slow page.
+const GpsBook = lazy(() => import('@/pages/GpsBook').then((m) => ({ default: m.GpsBook })));
+const GpsUnderwriting = lazy(() => import('@/pages/GpsUnderwriting').then((m) => ({ default: m.GpsUnderwriting })));
+const GpsOrigination = lazy(() => import('@/pages/GpsOrigination').then((m) => ({ default: m.GpsOrigination })));
+const GpsConflict = lazy(() => import('@/pages/GpsConflict').then((m) => ({ default: m.GpsConflict })));
+const GpsDelivery = lazy(() => import('@/pages/GpsDelivery').then((m) => ({ default: m.GpsDelivery })));
+const GpsLoop = lazy(() => import('@/pages/GpsLoop').then((m) => ({ default: m.GpsLoop })));
 const AccessControl = lazy(() => import('@/pages/AccessControl').then((m) => ({ default: m.AccessControl })));
 const Dashboard = lazy(() => import('@/pages/Dashboard').then((m) => ({ default: m.Dashboard })));
 const Home = lazy(() => import('@/pages/Home').then((m) => ({ default: m.Home })));
@@ -222,11 +231,19 @@ export const router = createBrowserRouter([
           { path: 'distribution/campaigns', element: <DistributionCampaigns /> },
           { path: 'distribution/geo', element: <DistributionGeo /> },
           { path: 'marketing', element: <Marketing /> },
-          // GLOBAL SERVICES (GPS Phase 1). One route, deliberately: the workspace
-          // has a single surface, and the server gate is what enforces the
-          // compartment — an unentitled operator reaching this path gets a page
-          // whose every fetch 403s, not a hidden route.
+          // GLOBAL SERVICES (GPS). The desk at /gps, plus one route per Phase 6-12
+          // surface. The server gate is what enforces the compartment — an
+          // unentitled operator reaching any of these paths gets a page whose every
+          // fetch 403s, not a hidden route. `workspaceForPath` classifies by prefix,
+          // so all seven belong to `gps` from the `webPaths: ['gps']` declaration
+          // alone and none of them needed a second entry in the registry.
           { path: 'gps', element: <Gps /> },
+          { path: 'gps/book', element: <GpsBook /> },
+          { path: 'gps/underwriting', element: <GpsUnderwriting /> },
+          { path: 'gps/origination', element: <GpsOrigination /> },
+          { path: 'gps/conflict', element: <GpsConflict /> },
+          { path: 'gps/delivery', element: <GpsDelivery /> },
+          { path: 'gps/loop', element: <GpsLoop /> },
           { path: 'decisions', element: <Decisions /> },
           { path: 'command-deck', element: <CommandDeck /> },
           { path: 'command-partners', element: <CommandPartners /> },

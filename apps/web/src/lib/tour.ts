@@ -176,6 +176,15 @@ function navSteps(): TourStep[] {
   for (const d of DESTINATIONS) {
     const ws = workspaceForPath(d.path);
     if (ws === null) continue; // the desk itself — appended last, see `tourFor`
+    // ONE STEP PER COMPARTMENT, not one per destination. A desk inside a workspace
+    // classifies to the SAME workspace as its root (`workspaceForPath` matches by
+    // prefix), so the six GPS desks would each push a step whose id, prompt and
+    // `reached` predicate were identical to the GLOBAL SERVICES one — seven
+    // consecutive steps the operator satisfies by arriving once, six of which then
+    // auto-advance with nothing done. The tour teaches the SHAPE of the system;
+    // there are eight compartments, and a step per desk would misstate that at the
+    // exact moment a new operator is forming their model of it.
+    if (d.withinWorkspace) continue;
     steps.push({
       id: `go-${ws}`,
       workspace: ws,

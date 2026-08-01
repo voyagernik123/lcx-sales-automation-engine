@@ -69,6 +69,14 @@ import { requireOperator } from '../middleware/auth.js';
 import { requireApprover } from '../middleware/permissions.js';
 import { getPool } from '../db/index.js';
 import { env } from '../lib/env.js';
+// Phases 6–12 sub-routers. Mounted at the FOOT of this file, never in app.ts —
+// see the block there for the ratchet that requires it.
+import { gpsBookRoutes } from './gpsBook.js';
+import { gpsUnderwriteRoutes, requireUnderwritingClearance } from './gpsUnderwrite.js';
+import { gpsOriginationRoutes } from './gpsOrigination.js';
+import { gpsConflictRoutes } from './gpsConflict.js';
+import { gpsDeliveryRoutes } from './gpsDelivery.js';
+import { gpsLoopRoutes } from './gpsLoop.js';
 import {
   TODO_DEPOSIT_PCT,
   createClient,
@@ -551,8 +559,18 @@ function refusal(
  * Attribution is the session's operator. Nothing is stored as a document — the
  * client-facing terms were already frozen into `scope_snapshot` at creation, and
  * generating a file here would be the first step across the D2 line.
+ *
+ * ── `requireUnderwritingClearance` IS THE GATE, NOT A WARNING (P7, P13) ────────
+ * `shouldBlockIssue` is computed server-side and ENFORCED here. It sits in front of
+ * the handler rather than inside it because `issueProposal` moves the engagement to
+ * `proposed` before it assembles anything (`service.ts` → `setEngagementStatus`), so
+ * a check inside the handler would have to be textually first — and "first, please
+ * remember" is not a control. In front, the state cannot move when the guard
+ * refuses. It reads only the path param: no body field, header or query string
+ * changes the answer, and it fails CLOSED when the underwriting throws. The screen
+ * shows the same verdict, but the screen is not what stops it.
  */
-gpsRoutes.post('/engagements/:id/proposal', requireOperator, async (c) => {
+gpsRoutes.post('/engagements/:id/proposal', requireOperator, requireUnderwritingClearance, async (c) => {
   try {
     const id = c.req.param('id');
     if (!isUuid(id)) return c.json({ error: 'id must be a uuid', code: 'VALIDATION' }, 400);
@@ -638,3 +656,31 @@ gpsRoutes.get('/summary', requireOperator, async (c) => {
     return c.json({ error: 'Failed to load summary', code: 'GPS_ERROR' }, 500);
   }
 });
+
+/* ══ PHASES 6–12: SUB-ROUTERS, MOUNTED HERE AND NOT IN app.ts ═════════════════
+ *
+ * WHY NOT app.ts. `gps/__tests__/intakeLockout.test.ts:315` ("mounts nothing under
+ * /v1/gps except the reviewed GPS router") reads every `app.route('/v1/gps…', X)`
+ * in app.ts and asserts X is literally `gpsRoutes`. That ratchet exists because the
+ * per-file artifact-intake checks discover files BY PATH, so a router from a file
+ * not named `gps*` mounted at the GPS prefix would serve inside the compartment
+ * while sitting outside the lock. Six `app.route('/v1/gps/book', …)` lines would
+ * each have turned it red. Nesting here keeps the ratchet true and is not a
+ * workaround: `/v1/gps` is the only prefix in the `gps` workspace's `apiPrefixes`
+ * (`packages/shared/src/workspaces.ts:233`), and app.ts:98-103 installs
+ * `requireWorkspace('gps','view')` on `'/v1/gps'` and `'/v1/gps/*'`, so every path
+ * reachable through these routers is behind the compartment gate by construction —
+ * there is no sub-prefix that could fall outside it. Capability above 'view'
+ * (`requireOperator` / `requireApprover`) is declared per route inside each file.
+ *
+ * PREFIXES ARE FIXED BY THE URLS THE WEB FETCHERS ALREADY CALL, not chosen here:
+ *   book, origination and delivery declare their own first segment, so they mount
+ *   at '/'; underwrite, conflict and loop declare paths relative to their segment.
+ * Mounting any of them elsewhere silently 404s a shipped fetcher.
+ */
+gpsRoutes.route('/', gpsBookRoutes); //          GET  /v1/gps/book, /book/figures, /book/rows
+gpsRoutes.route('/', gpsOriginationRoutes); //   GET/POST /v1/gps/origination…
+gpsRoutes.route('/', gpsDeliveryRoutes); //      /v1/gps/engagements/:id/delivery, /wip, /deliverables/:id/…
+gpsRoutes.route('/underwriting', gpsUnderwriteRoutes); // POST /v1/gps/underwriting…
+gpsRoutes.route('/conflict', gpsConflictRoutes); //       /v1/gps/conflict/wall, /perimeter, /quote-gate…
+gpsRoutes.route('/loop', gpsLoopRoutes); //               /v1/gps/loop…

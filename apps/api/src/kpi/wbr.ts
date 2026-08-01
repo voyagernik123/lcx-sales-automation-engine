@@ -18,6 +18,7 @@
  */
 import type pg from 'pg';
 import { ownerLabel } from '@lcx/shared';
+import type { WbrGpsBlock } from '@lcx/shared';
 import { buildOpsHealth } from '../intel/ops.js';
 
 export type MetricKind = 'flow' | 'stock';
@@ -76,6 +77,22 @@ export interface WbrReport {
   program?: { readiness: number; readinessDelta: number | null; simP50Days: number | null };
   /** PayAgent distribution block (LCX ONE Phase 6) — presence + campaign posture. */
   distribution?: { presence: number; presenceDelta: number | null; liveListings: number; liveCampaigns: number; rewardSpendLcx: number };
+  /**
+   * GLOBAL SERVICES block (GPS Phase 12) — the services book as the weekly review
+   * sees it. Typed as the SHARED `WbrGpsBlock` rather than an inline shape like its
+   * two siblings above, deliberately: it is produced by `wbrGpsBlock()`
+   * (`packages/shared/src/gps/loop.ts`), so an inline copy here would be a second
+   * declaration of a computed contract and free to drift from the engine that fills
+   * it. Every rate inside it is a `SuppressibleRate` whose `pct` is
+   * `number | null` — at ~29 engagements a year the block can and does decline to
+   * state a percentage, and that null must survive into the report.
+   *
+   * OPTIONAL, and it stays optional: the GPS compartment is default-deny
+   * (`legacy: false`), so a WBR composed for a reader without the `gps` grant must
+   * be able to omit the block entirely rather than send zeros that read as a quiet
+   * quarter.
+   */
+  gps?: WbrGpsBlock;
   /** true when composed on the fly (no stored report for the week yet). */
   live?: boolean;
 }

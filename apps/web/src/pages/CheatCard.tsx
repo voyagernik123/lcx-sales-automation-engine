@@ -123,19 +123,25 @@ export function cheatCard(): CardSection[] {
   return [
     {
       title: 'Go somewhere',
-      lede: `Press G, then the digit — within ${seconds}s.`,
-      rows: DESTINATIONS.map((d) => ({
-        chords: [
-          [
-            { key: 'g', from: 'navGrammar' },
-            { key: d.key, from: 'destinations' },
-          ],
-          [{ key: d.key, mod: 'meta', from: 'nativeMenu' }],
-        ],
-        what: d.label,
-      })),
+      lede: `Press G, then the key — within ${seconds}s.`,
+      // THE ⌘ MIRROR IS PRINTED ONLY WHERE ONE EXISTS. Every compartment root has a
+      // ⌘<digit> accelerator in the native menu; the desks inside a compartment
+      // (`withinWorkspace`) are letters with no accelerator, because ⌘0-9 were spent
+      // and ⌘B/⌘L would in any case claim a class of key that means "compartment".
+      // Printing the mirror unconditionally taught six chords that do nothing — the
+      // one failure mode a card that exists to be trusted cannot have.
+      rows: DESTINATIONS.map((d): CardRow => {
+        const goChord: Press[] = [
+          { key: 'g', from: 'navGrammar' },
+          { key: d.key, from: 'destinations' },
+        ];
+        const cmdMirror: Press[][] = d.withinWorkspace
+          ? []
+          : [[{ key: d.key, mod: 'meta', from: 'nativeMenu' }]];
+        return { chords: [goChord, ...cmdMirror], what: d.label };
+      }),
       footnote:
-        'The ⌘ column is the native Go menu, and works in the LCXOS app only: a browser reserves those chords for its own tabs and never delivers them to the page. Both columns resolve through one table, so they cannot come to mean different things.',
+        'The ⌘ column is the native Go menu, and works in the LCXOS app only: a browser reserves those chords for its own tabs and never delivers them to the page. Both columns resolve through one table, so they cannot come to mean different things. Rows with no ⌘ chord are desks inside a compartment: the digits are spent, and the G chord is the whole grammar for them.',
     },
     {
       title: 'Do something',

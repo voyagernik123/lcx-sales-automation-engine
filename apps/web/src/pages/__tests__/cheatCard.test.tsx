@@ -365,8 +365,22 @@ describe('the printable cheat card', () => {
     expect(DESTINATIONS.length).toBeGreaterThan(0);
     for (const d of DESTINATIONS) {
       expect(screen.getByText(d.label), `${d.label} is a destination with no row on the card`).toBeInTheDocument();
-      expect(chips, `${d.label}: the g-chord digit ${d.key} is not on the card`).toContain(d.key);
-      expect(chips, `${d.label}: the ⌘${d.key} mirror is not on the card`).toContain(`⌘${d.key}`);
+      // `renderChord` upper-cases a single character (CheatCard.tsx:103), which is
+      // invisible for the digit keys and load-bearing for the letter keys the GPS
+      // desks use.
+      const printed = d.key.length === 1 ? d.key.toUpperCase() : d.key;
+      expect(chips, `${d.label}: the g-chord key ${printed} is not on the card`).toContain(printed);
+      // THE ⌘ MIRROR IS ASSERTED ONLY WHERE THE NATIVE MENU BINDS ONE. Compartment
+      // roots have ⌘<digit>; desks inside a compartment (`withinWorkspace`) do not,
+      // and the card must not print a chord the menu never claimed — the assertion
+      // below it in this file would catch that, and this is the same rule stated
+      // from the side that decides what to draw.
+      if (d.withinWorkspace) {
+        expect(chips, `${d.label} has no ⌘ accelerator; the card must not invent one`)
+          .not.toContain(`⌘${printed}`);
+      } else {
+        expect(chips, `${d.label}: the ⌘${printed} mirror is not on the card`).toContain(`⌘${printed}`);
+      }
     }
   });
 
