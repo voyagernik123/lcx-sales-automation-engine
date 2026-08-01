@@ -154,47 +154,97 @@ function MigrationBanner() {
   );
 }
 
+/**
+ * REWRITTEN 2026-08-01 to match the server's actual payload.
+ *
+ * This read `s.counts`, `s.clientCount`, `s.openValueCents`, `s.openMarginCents`
+ * and `s.missingConflictChecks` — none of which the API has ever returned. The
+ * whole strip was built against an interface that described a payload nobody
+ * served, so `Object.entries(s.counts)` threw
+ * `Cannot convert undefined or null to object` and the compartment showed a Module
+ * Error. It only surfaced when 0047 landed: until then the page returned early on
+ * `migrated: false` and never reached here.
+ *
+ * Every field below is now read from `GpsSummary`, which mirrors `DeskSummary`
+ * (apps/api/src/gps/service.ts:1053).
+ *
+ * MULTI-CURRENCY IS NOT A FLOURISH. The server groups money BY CURRENCY because a
+ * partner may invoice in EUR against a USD price; summing them into one number
+ * would state a total that is not true in any currency. So the strip shows the
+ * dominant currency's figures and says how many others exist rather than adding
+ * them up.
+ */
 function SummaryStrip({ s }: { s: GpsSummary }) {
-  const open = Object.entries(s.counts)
+  const live = Object.entries(s.engagements.byStatus)
     .filter(([k]) => !isTerminalEngagementStatus(k as EngagementStatus))
     .reduce((n, [, v]) => n + (v ?? 0), 0);
-  const pct = marginPct(s.openValueCents, s.openValueCents - s.openMarginCents);
+
+  // Largest open currency by price. Sorted rather than assumed: with no rows this
+  // is undefined, which is why every read below is guarded.
+  const open = [...s.openByCurrency].sort((a, b) => b.priceCents - a.priceCents)[0];
+  const others = Math.max(0, s.openByCurrency.length - 1);
+  const pct = open ? marginPct(open.priceCents, open.vendorCostCents) : null;
+  const gaps = s.gaps;
+
   return (
     <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-      <Stat label="Live engagements" value={String(open)} />
-      <Stat label="Clients" value={String(s.clientCount)} />
-      <Stat label="Open value" value={formatMoney(s.openValueCents / 100)} />
+      <Stat label="Live engagements" value={String(live)} />
+      <Stat label="Clients" value={String(s.clients.total)} />
+      <Stat
+        label={open ? `Open value (${open.currency})` : 'Open value'}
+        value={open ? formatMoney(open.priceCents / 100) : '—'}
+        hint={others > 0 ? `+${others} other ${others === 1 ? 'currency' : 'currencies'}` : undefined}
+      />
       {/* Margin, not revenue, is the number that decides whether this business
           works — partners deliver, so revenue with an unknown cost is noise. */}
       <Stat
         label={pct == null ? 'Open margin' : `Open margin (${pct}%)`}
-        value={formatMoney(s.openMarginCents / 100)}
-        tone={s.openMarginCents < 0 ? 'bad' : undefined}
+        value={open ? formatMoney(open.marginCents / 100) : '—'}
+        tone={open && open.marginCents < 0 ? 'bad' : undefined}
       />
+
       {/* Surfaced as a first-class number rather than buried in a detail view:
           a proposal issued with no recorded conflict check is the one failure an
           LCX employee's services business cannot explain after the fact (plan §5). */}
-      {s.missingConflictChecks > 0 && (
+      {gaps.missingConflictCheck > 0 && (
         <p
           role="alert"
           className="sm:col-span-2 lg:col-span-4 rounded border border-status-blocked/40 bg-status-blocked-bg px-3 py-2 text-label text-status-blocked"
         >
           <ShieldAlert size={12} className="mr-1.5 inline" />
-          <strong>{s.missingConflictChecks} issued engagement{s.missingConflictChecks === 1 ? '' : 's'} with
-          no recorded conflict check.</strong> Record one on each below. The record is what makes an
-          exchange employee selling adjacent services defensible; it cannot be back-dated honestly.
+          <strong>
+            {gaps.missingConflictCheck} live engagement{gaps.missingConflictCheck === 1 ? '' : 's'} with
+            no recorded conflict check.
+          </strong>{' '}
+          Record one on each below. The record is what makes an exchange employee selling adjacent
+          services defensible; it cannot be back-dated honestly.
+        </p>
+      )}
+
+      {/* Sold on an offer with no named partner. Not cosmetic: with partners
+          delivering, an unstaffable engagement is a promise nobody can keep. */}
+      {gaps.unstaffable > 0 && (
+        <p className="sm:col-span-2 lg:col-span-4 rounded border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-label text-amber-700 dark:text-amber-400">
+          <strong>{gaps.unstaffable} engagement{gaps.unstaffable === 1 ? '' : 's'} with no named
+          partner.</strong> The bench is empty until the partner-per-offer decision (D5) is made, so
+          nothing here can be accepted for delivery yet.
         </p>
       )}
     </div>
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: 'bad' }) {
+function Stat({
+  label, value, tone, hint,
+}: { label: string; value: string; tone?: 'bad'; hint?: string }) {
   return (
     <div className="rounded-lg border border-line bg-card p-3">
       <div className="font-mono text-[10px] uppercase tracking-wider text-grey">{label}</div>
       <div className={clsx('mt-1 text-[22px] font-bold tabular-nums',
         tone === 'bad' ? 'text-status-blocked' : 'text-navy')}>{value}</div>
+      {/* Says "there is money in other currencies" without adding currencies
+          together, which would state a total that is true in none of them. */}
+      {hint && <div className="mt-0.5 font-mono text-[10px] text-grey">{hint}</div>}
     </div>
   );
 }

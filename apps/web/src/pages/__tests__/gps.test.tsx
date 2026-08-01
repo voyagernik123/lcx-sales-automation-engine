@@ -43,13 +43,42 @@ vi.mock('@/lib/api/gps', () => ({
   recordGpsConflictCheck: vi.fn().mockResolvedValue(undefined),
 }));
 
+/**
+ * REBUILT 2026-08-01 against the server's real payload.
+ *
+ * This fixture used to describe `counts` / `clientCount` / `openValueCents` /
+ * `openMarginCents` / `missingConflictChecks` — a shape the API has never returned.
+ * That is why the page shipped broken with a green suite: the test mocked the API
+ * module, so it asserted the page against the SAME invented contract the page was
+ * written against. Two wrongs agreeing is not a passing test.
+ *
+ * The lesson, and the reason this comment is long: a mocked boundary can only ever
+ * verify internal consistency. It cannot tell you the boundary is real. The shape
+ * below is copied from `DeskSummary` (apps/api/src/gps/service.ts:1053) and must
+ * follow it — and `gpsContract.test.ts` now checks the two against each other
+ * without a mock, which is what would actually have caught this.
+ */
 const summary = (over: Partial<gpsApi.GpsSummary> = {}): gpsApi.GpsSummary => ({
   migrated: true,
-  counts: { draft: 1 },
-  clientCount: 1,
-  openValueCents: 1_750_000,
-  openMarginCents: 1_150_000,
-  missingConflictChecks: 0,
+  clients: { total: 1, byStatus: { prospect: 1 } },
+  engagements: { total: 1, byStatus: { draft: 1 }, byOffer: { mica_whitepaper: 1 } },
+  openByCurrency: [
+    { currency: 'USD', count: 1, priceCents: 1_750_000, vendorCostCents: 600_000, marginCents: 1_150_000 },
+  ],
+  collectedByCurrency: [],
+  awaitingDeposit: { count: 0, byCurrency: [], oldestAcceptedDays: null },
+  gaps: {
+    missingConflictCheck: 0,
+    conflictDeclined: 0,
+    unpriced: 0,
+    depositWithoutAcceptance: 0,
+    unstaffable: 0,
+  },
+  catalogue: {
+    priceBandsArePlaceholders: true,
+    depositPolicyIsPlaceholder: true,
+    blockingTodoCount: 2,
+  },
   ...over,
 });
 

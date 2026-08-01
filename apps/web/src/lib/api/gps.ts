@@ -67,20 +67,65 @@ export interface GpsEngagementRow extends GpsEngagement {
  * compartment reports itself not-yet-enabled rather than throwing, so the page
  * shows an amber banner instead of an error boundary. GPS is migration 0047.
  */
+/** One currency's rollup. Money is integer cents, always. */
+export interface GpsCurrencyTotal {
+  currency: string;
+  count: number;
+  priceCents: number;
+  vendorCostCents: number;
+  marginCents: number;
+}
+
+/**
+ * MIRRORS `DeskSummary` in `apps/api/src/gps/service.ts:1053`. The API is the
+ * source of truth for this shape and this interface must follow it.
+ *
+ * WHY THAT SENTENCE IS HERE. The first version of this file declared a completely
+ * different summary — `counts`, `clientCount`, `openValueCents`, `openMarginCents`,
+ * `missingConflictChecks` — none of which the API has ever returned. TypeScript
+ * cannot catch that: a response interface is a CLAIM about a runtime payload, and
+ * the compiler believes it. So `tsc`, lint and 1081 web tests were all green while
+ * the page was guaranteed to crash.
+ *
+ * It crashed exactly when the data arrived, too, not before: while 0047 was pending
+ * the page short-circuited on `migrated: false` and rendered its banner, never
+ * touching these fields. Applying the migration was what turned a green build into
+ * `Cannot convert undefined or null to object` from `Object.entries(s.counts)`.
+ *
+ * If you change the server shape, change it here in the same commit. The safest
+ * pattern is to read the API's own interface and copy it, which is what this now is.
+ */
 export interface GpsSummary {
   /** False until `0047_gps.sql` is applied on this environment. */
   migrated: boolean;
-  counts: Partial<Record<EngagementStatus, number>>;
-  clientCount: number;
-  /** Sum of `price_cents` on live (non-terminal) engagements. */
-  openValueCents: number;
-  /** Sum of price − vendor cost on the same set. Derived server-side, never stored. */
-  openMarginCents: number;
-  /**
-   * Engagements at `proposed` or beyond with NO row in `gps_conflict_check`.
-   * A number that should always be zero; showing it is how it stays zero.
-   */
-  missingConflictChecks: number;
+  clients: { total: number; byStatus: Record<string, number> };
+  engagements: {
+    total: number;
+    byStatus: Record<string, number>;
+    byOffer: Record<string, number>;
+  };
+  /** Non-terminal engagements: what is actually in play. */
+  openByCurrency: GpsCurrencyTotal[];
+  /** `collected` only — cash in, not bookings. */
+  collectedByCurrency: GpsCurrencyTotal[];
+  awaitingDeposit: {
+    count: number;
+    byCurrency: Array<{ currency: string; depositRequiredCents: number }>;
+    oldestAcceptedDays: number | null;
+  };
+  /** The things a desk should be uncomfortable about, counted so they get acted on. */
+  gaps: {
+    missingConflictCheck: number;
+    conflictDeclined: number;
+    unpriced: number;
+    depositWithoutAcceptance: number;
+    unstaffable: number;
+  };
+  catalogue: {
+    priceBandsArePlaceholders: boolean;
+    depositPolicyIsPlaceholder: boolean;
+    blockingTodoCount: number;
+  };
 }
 
 export const fetchGpsSummary = () =>
