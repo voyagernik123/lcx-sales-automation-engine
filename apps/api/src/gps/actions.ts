@@ -72,7 +72,7 @@ import {
 } from '@lcx/shared';
 import { ActionError, type RegistryAction } from '../actions/types.js';
 import { ISSUE_GUARD_FAILS_CLOSED, guardProposalIssue } from './underwrite.js';
-import { assertPerimeterCleared } from './perimeterGuard.js';
+import { assertPerimeterCleared, perimeterStamp } from './perimeterGuard.js';
 
 /**
  * The only subject type in this module. Every GPS action acts on ONE engagement,
@@ -314,7 +314,7 @@ async function assertUnderwritingCleared(
         underwriting: decision.underwriting,
         provenance: decision.provenance,
         policyNotice: decision.policyNotice,
-        failsClosedNotice: decision.failsClosedNotice,
+        perimeterGateNotice: decision.perimeterGateNotice,
       },
     );
   }
@@ -667,7 +667,7 @@ const gps_proposal_issue: GpsAction = {
      * the last thing before the state moves is where a reader looks for the thing
      * that stops it.
      */
-    await assertPerimeterCleared(pool, subjectId, {
+    const perimeter = await assertPerimeterCleared(pool, subjectId, {
       evaluatedBy: actor,
       asOf: new Date().toISOString(),
     });
@@ -794,6 +794,15 @@ const gps_proposal_issue: GpsAction = {
       conflictDecision,
       discountApprovedBy: approval?.actor ?? null,
       scopeFrozen: true,
+      /*
+       * THE LEGAL-POSITION STAMP, ON THE OUTPUT OF THE ACT THAT PRODUCES THE DOCUMENT.
+       * `assertPerimeterCleared` throws when the perimeter blocks, so reaching this line
+       * means it did not — which since 2026-08-02 includes the case where it refused for
+       * want of a human-entered position and the act proceeded on an advisory basis. The
+       * governed-action result is what `object_actions` records and what the desk reads
+       * back, so the stamp belongs on it and not only on the REST refusal body.
+       */
+      ...perimeterStamp(perimeter),
     };
   },
 };
@@ -949,7 +958,7 @@ const gps_engagement_accept: GpsAction = {
      * `gps_proposal_issue` uses, so the two client-facing executors refuse in the
      * same sequence and a reader learns one shape. Fails closed.
      */
-    await assertPerimeterCleared(pool, subjectId, {
+    const perimeter = await assertPerimeterCleared(pool, subjectId, {
       evaluatedBy: actor,
       asOf: new Date().toISOString(),
     });
@@ -966,7 +975,9 @@ const gps_engagement_accept: GpsAction = {
     if ((rowCount ?? 0) === 0) {
       throw new ActionError('CONCURRENT_MODIFICATION', 'The engagement is no longer proposed. Re-read it and retry.', 409);
     }
-    return { engagementId: subjectId, status: 'accepted', conflictDecision };
+    // Stamped for the reason gps_proposal_issue gives: acceptance is the act that books
+    // revenue, and it can now happen with no legal position on file for the jurisdiction.
+    return { engagementId: subjectId, status: 'accepted', conflictDecision, ...perimeterStamp(perimeter) };
   },
 } satisfies GpsAction;
 

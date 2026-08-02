@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 import { OFFER_KEYS } from './types.js';
 import type { OfferKey } from './types.js';
 import {
+  NO_LEGAL_POSITION_NOTICE,
+  PERIMETER_ABSENCE_CODES,
   PERIMETER_IS_UNREVIEWED,
   PERIMETER_PROFILES,
   PERIMETER_REVIEW_WARNING_DAYS,
@@ -464,6 +466,172 @@ describe('PROHIBITED CANNOT BE OVERRIDDEN', () => {
   });
 });
 
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* THE DISPOSITION — ADVISORY IS DERIVED FROM AN EMPTY PERIMETER, NOT SET      */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * The owner's decision of 2026-08-02: with no human-entered positions anywhere,
+ * the gate refused every quote in every jurisdiction, so it now stamps instead of
+ * refusing — WITHOUT the verdict changing. Every test in this block therefore
+ * asserts two things at once: the gate still reaches the same code (the tests
+ * above pin those codes), and the disposition says what may be done about it.
+ *
+ * There is no flag to set anywhere in this suite. Advisory operation is read off
+ * the record, which is why the last test in the block — one reviewed position
+ * flipping one pair back to blocking while its neighbour stays advisory — is the
+ * important one.
+ */
+describe('the disposition travels beside the verdict and never inside it', () => {
+  const gate = (over: Partial<ServiceGateInput> = {}) =>
+    gateService({ jurisdiction: 'testland', offer: ONE_OFFER, asOf: NOW, ...over });
+
+  /** Every absence code, and the state that produces it. */
+  const ABSENT: ReadonlyArray<[string, Partial<ServiceGateInput>, string]> = [
+    ['an unlisted jurisdiction', { jurisdiction: 'Neverland' }, 'perimeter_unknown_jurisdiction'],
+    ['a blank jurisdiction', { jurisdiction: '  ' }, 'perimeter_unknown_jurisdiction'],
+    ['an offer nobody classified', { offer: 'gtm_sprint', profiles: profileWith({ [ONE_OFFER]: entry() }) }, 'perimeter_unknown_offer'],
+    ['a row with no source', { profiles: profileWith({ [ONE_OFFER]: entry({ source: '  ' }) }) }, 'perimeter_malformed'],
+    ['a row past its review date', { profiles: profileWith({ [ONE_OFFER]: entry({ reviewBy: '2026-07-01T00:00:00.000Z' }) }) }, 'perimeter_stale'],
+    ['a row nobody reviewed', { profiles: profileWith({ [ONE_OFFER]: entry({ reviewed: false }) }) }, 'perimeter_unreviewed'],
+  ];
+
+  for (const [name, over, code] of ABSENT) {
+    it(`is advisory on ${name}, with the code and the reason kept verbatim`, () => {
+      const d = gate(over);
+      // THE VERDICT IS UNCHANGED. This is the half that must not move.
+      expect(d.allowed).toBe(false);
+      expect(d.code).toBe(code);
+      expect(d.gates.map((g) => g.code)).toEqual([...SERVICE_GATE_ORDER]);
+      // And the disposition says the act may proceed, stamped.
+      expect(d.disposition.blocked).toBe(false);
+      expect(d.disposition.advisory).toBe(true);
+      expect(d.disposition.legalPositionOnFile).toBe(false);
+      expect(d.disposition.gateCode).toBe(code);
+      expect(d.disposition.gateReason).toBe(d.reason);
+      expect(d.disposition.notice).toBe(NO_LEGAL_POSITION_NOTICE);
+      expect(PERIMETER_ABSENCE_CODES).toContain(code);
+    });
+  }
+
+  it('every absence code is a real gate code, and no other code is on the list', () => {
+    for (const c of PERIMETER_ABSENCE_CODES) expect(SERVICE_GATE_ORDER).toContain(c);
+    // The three codes that report a DECISION a human took must never be advisory:
+    // one is a prohibition, and the other two can only be reached through a
+    // position that is already reviewed, current and well formed.
+    for (const c of ['service_prohibited', 'counsel_not_engaged', 'local_partner_not_named'] as const) {
+      expect(PERIMETER_ABSENCE_CODES).not.toContain(c);
+    }
+  });
+
+  it('reports a position on file, and no notice, when one really exists', () => {
+    const d = gate({ profiles: profileWith({ [ONE_OFFER]: entry() }) });
+    expect(d.allowed).toBe(true);
+    expect(d.disposition.legalPositionOnFile).toBe(true);
+    expect(d.disposition.advisory).toBe(false);
+    expect(d.disposition.blocked).toBe(false);
+    expect(d.disposition.notice).toBeNull();
+    expect(d.disposition.gateCode).toBeNull();
+  });
+
+  it('BLOCKS a prohibition, and blocks it while the rest of the perimeter is empty', () => {
+    for (const over of [
+      {},
+      { reviewBy: '2026-01-01T00:00:00.000Z' },
+      { reviewed: false },
+      { source: '   ' },
+    ] as Partial<PerimeterEntry>[]) {
+      const d = gate({
+        profiles: profileWith({ [ONE_OFFER]: entry({ serviceClass: 'prohibited', ...over }) }),
+      });
+      expect(d.code, JSON.stringify(over)).toBe('service_prohibited');
+      expect(d.disposition.blocked, JSON.stringify(over)).toBe(true);
+      expect(d.disposition.advisory, JSON.stringify(over)).toBe(false);
+    }
+  });
+
+  it('BLOCKS when the evaluation instant could not be parsed — an unread check is not an empty one', () => {
+    const d = gate({ asOf: 'yesterday', profiles: profileWith({ [ONE_OFFER]: entry() }) });
+    expect(d.code).toBe('perimeter_stale');
+    expect(d.classification.status).toBe('unevaluable_asof');
+    // `perimeter_stale` IS an absence code, and this is the one state carrying it
+    // that must still refuse: the position may be perfectly good and unreadable.
+    expect(PERIMETER_ABSENCE_CODES).toContain('perimeter_stale');
+    expect(d.disposition.blocked).toBe(true);
+    expect(d.disposition.advisory).toBe(false);
+  });
+
+  it('BLOCKS an unmet condition, because a condition implies a position exists', () => {
+    for (const [cls, code] of [
+      ['counsel_required', 'counsel_not_engaged'],
+      ['partner_required', 'local_partner_not_named'],
+    ] as const) {
+      const d = gate({ profiles: profileWith({ [ONE_OFFER]: entry({ serviceClass: cls }) }) });
+      expect(d.code).toBe(code);
+      expect(d.disposition.blocked).toBe(true);
+      expect(d.disposition.advisory).toBe(false);
+      // A condition is only reachable through a reviewed, current, well-formed row.
+      expect(d.disposition.legalPositionOnFile).toBe(true);
+      expect(d.disposition.notice).toBeNull();
+    }
+  });
+
+  it('the whole SHIPPED perimeter is advisory — that is production today', () => {
+    for (const p of PERIMETER_PROFILES) {
+      for (const key of OFFER_KEYS) {
+        const d = gateService({ jurisdiction: p.jurisdiction, offer: key, asOf: NOW });
+        expect(d.allowed, `${p.jurisdiction}/${key}`).toBe(false);
+        expect(d.disposition.advisory, `${p.jurisdiction}/${key}`).toBe(true);
+        expect(d.disposition.legalPositionOnFile).toBe(false);
+      }
+    }
+  });
+
+  /**
+   * THE SELF-HEAL. No code changes between the two halves of this test and no
+   * argument differs — only the contents of the perimeter.
+   */
+  it('ONE reviewed position flips that pair to blocking while its neighbours stay advisory', () => {
+    const neighbour: OfferKey = 'gtm_sprint';
+    const empty = profileWith({});
+    const filled = profileWith({ [ONE_OFFER]: entry({ serviceClass: 'counsel_required' }) });
+
+    // Before: both pairs advisory, for want of any position at all.
+    for (const offer of [ONE_OFFER, neighbour]) {
+      expect(gate({ offer, profiles: empty }).disposition.advisory, offer).toBe(true);
+    }
+
+    // After: the pair a human wrote down BLOCKS on its own condition...
+    const decided = gate({ offer: ONE_OFFER, profiles: filled });
+    expect(decided.code).toBe('counsel_not_engaged');
+    expect(decided.disposition.blocked).toBe(true);
+    expect(decided.disposition.legalPositionOnFile).toBe(true);
+    // ...and naming the counsel it asks for clears it outright.
+    expect(gate({ offer: ONE_OFFER, profiles: filled, counselEngaged: 'Some Firm LLP' }).allowed).toBe(true);
+
+    // ...while the offer beside it, still unwritten, is untouched and stays advisory.
+    const untouched = gate({ offer: neighbour, profiles: filled });
+    expect(untouched.code).toBe('perimeter_unknown_offer');
+    expect(untouched.disposition.advisory).toBe(true);
+    expect(untouched.disposition.legalPositionOnFile).toBe(false);
+
+    // The same is true one jurisdiction over: a position in Testland says nothing
+    // about anywhere else, so that pair is advisory too.
+    expect(gate({ jurisdiction: 'Elsewhere', profiles: filled }).disposition.advisory).toBe(true);
+  });
+
+  it('a PROHIBITION entered for one pair does not become advisory as its neighbours are filled in', () => {
+    const profiles = profileWith({
+      [ONE_OFFER]: entry({ serviceClass: 'prohibited' }),
+      gtm_sprint: entry({ serviceClass: 'permitted' }),
+    });
+    expect(gate({ offer: 'gtm_sprint', profiles }).allowed).toBe(true);
+    const d = gate({ offer: ONE_OFFER, profiles });
+    expect(d.code).toBe('service_prohibited');
+    expect(d.disposition.blocked).toBe(true);
+  });
+});
+
 /**
  * THE RATCHET. Source-text assertion, in the spirit of the artifact lockout
  * (`apps/api/src/gps/__tests__/intakeLockout.test.ts`): a behavioural test can
@@ -486,6 +654,25 @@ describe('ratchet — no override exists in the perimeter module', () => {
       expect(code, `"${word}" appears in perimeter.ts code`)
         .not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
     }
+  });
+
+  /**
+   * ADVISORY OPERATION MUST STAY DERIVED. The owner's standing instruction is that
+   * nothing lands on his list — so the moment this module reads an environment
+   * variable or a flag to decide whether a refusal counts, advisory mode has become a
+   * setting somebody has to remember to turn off, and the self-healing property is
+   * gone. The only input to `perimeterDisposition` is the record.
+   */
+  it('decides advisory operation from the record alone — no env var, no flag', () => {
+    expect(code, 'the perimeter engine reads an environment variable').not.toMatch(/process\s*\.\s*env/);
+    for (const word of [
+      'ADVISORY_MODE', 'advisoryMode', 'featureFlag', 'enableAdvisory', 'GPS_ADVISORY',
+    ]) {
+      expect(code, `"${word}" makes advisory operation a setting`)
+        .not.toMatch(new RegExp(`\\b${word}\\b`, 'i'));
+    }
+    // And the derivation takes the decision, not options: one parameter, no second.
+    expect(code).toMatch(/export function perimeterDisposition\(\s*\n?\s*d:/);
   });
 
   it('never defaults asOf to the wall clock', () => {

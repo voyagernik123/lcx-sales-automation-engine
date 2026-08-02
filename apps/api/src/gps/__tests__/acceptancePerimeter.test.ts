@@ -39,6 +39,8 @@ interface Opts {
   jurisdiction?: string | null;
   /** Absent = the deliverable resolves to ENGAGEMENT_ID. */
   deliverable?: 'missing' | 'unreadable';
+  /** Absent = the advisory record can be written. */
+  auditLog?: 'unwritable';
 }
 
 function profileRow(o: Opts) {
@@ -126,6 +128,13 @@ function stubPool(o: Opts = {}) {
         };
       }
       if (/UPDATE gps_engagement/.test(sql)) return { rows: [], rowCount: 1 };
+      // THE ADVISORY RECORD. `recordAdvisoryPass` writes here, and an advisory pass
+      // that cannot be written is refused — so this branch is what the difference
+      // between an advisory gate and a disabled one is tested through.
+      if (/INSERT INTO audit_log/.test(sql)) {
+        if (o.auditLog === 'unwritable') throw new Error('audit_log is read only');
+        return { rows: [], rowCount: 1 };
+      }
       return { rows: [], rowCount: 1 };
     },
   };
@@ -157,16 +166,41 @@ beforeEach(() => {
   _resetPerimeterMigrated();
 });
 
-describe('recording client acceptance cannot walk past the jurisdictional perimeter', () => {
-  const REFUSED: ReadonlyArray<[string, Opts, string]> = [
-    ['no position on record at all', {}, 'perimeter_'],
+/**
+ * ══ WHAT CHANGED ON 2026-08-02, AND WHAT DID NOT ══════════════════════════════
+ *
+ * Until this date every row below was a REFUSAL, and the file asserted that an
+ * acceptance could not be recorded unless a qualified human had entered a reviewed,
+ * sourced, unexpired position for the jurisdiction and the offer.
+ *
+ * `gps_jurisdiction_profile` is EMPTY in production and has never held a row, so that
+ * ratchet described a system in which nothing could be quoted, proposed or accepted
+ * anywhere — which is what it actually did after the pen-test fix made the gate
+ * load-bearing. The owner's decision was to let the acts through, stamp every artifact
+ * "no legal position on file", and log each one.
+ *
+ * SO THE DISTINCTION THESE TESTS NOW DRAW is between the two things a gate can say,
+ * which the old file could not tell apart because it refused both:
+ *
+ *   ABSENCE — nobody has recorded a position. The act proceeds, an `audit_log` row is
+ *     written naming the gate code and the actor, and the result carries
+ *     `legalPositionOnFile: false`. There is nothing to enforce, and refusing on
+ *     nothing meant no legal question was ever actually asked.
+ *   A HUMAN'S DECISION — somebody wrote down that this is prohibited. That still
+ *     blocks, and the emptiness of the rest of the matrix is not an argument against
+ *     them.
+ *
+ * AND THE GATE STILL EXISTS, which is the assertion doing the real work here: an
+ * advisory pass that cannot be RECORDED is refused (`PERIMETER_ADVISORY_UNRECORDED`),
+ * and a perimeter that could not be READ is refused. Advisory operation is a
+ * consequence of the perimeter being empty, never of the check not happening.
+ */
+describe('recording client acceptance consults the perimeter, and a human decision still stops it', () => {
+  const BLOCKED: ReadonlyArray<[string, Opts, string]> = [
     ['a position amended to PROHIBITED after the proposal went out', { perimeter: 'prohibited' }, 'service_prohibited'],
-    ['a position nobody has reviewed', { perimeter: 'unreviewed' }, 'perimeter_unreviewed'],
-    ['a position past its review date', { perimeter: 'expired' }, 'perimeter_stale'],
-    ['a client with no jurisdiction recorded', { perimeter: 'permitted', jurisdiction: null }, 'perimeter_unknown_jurisdiction'],
   ];
 
-  for (const [name, opts, code] of REFUSED) {
+  for (const [name, opts, code] of BLOCKED) {
     it(`refuses acceptance on ${name}`, async () => {
       const { pool, queries } = stubPool(opts);
       const err = await refusal(accept().execute(args(pool)));
@@ -177,6 +211,60 @@ describe('recording client acceptance cannot walk past the jurisdictional perime
       expect(queries.some((q) => /UPDATE gps_engagement/.test(q.sql))).toBe(false);
     });
   }
+
+  /**
+   * The four states that report NO POSITION rather than a decision. Each proceeds, and
+   * each has to leave the two traces that make "we accepted with nothing on file"
+   * answerable six months later: the audit row, and the stamp on the result.
+   */
+  const ADVISORY: ReadonlyArray<[string, Opts, string]> = [
+    ['no position on record at all — the state of production today', {}, 'perimeter_'],
+    ['a position nobody has reviewed', { perimeter: 'unreviewed' }, 'perimeter_unreviewed'],
+    ['a position past its review date', { perimeter: 'expired' }, 'perimeter_stale'],
+    ['a client with no jurisdiction recorded', { perimeter: 'permitted', jurisdiction: null }, 'perimeter_unknown_jurisdiction'],
+  ];
+
+  for (const [name, opts, code] of ADVISORY) {
+    it(`records the acceptance, the gate's verdict and the stamp on ${name}`, async () => {
+      const { pool, queries } = stubPool(opts);
+      const out = await accept().execute(args(pool)) as Record<string, unknown>;
+
+      // It proceeded, and it proceeded to the actual write.
+      expect(out.status).toBe('accepted');
+      expect(queries.some((q) => /UPDATE gps_engagement/.test(q.sql))).toBe(true);
+
+      // THE GATE RAN AND ITS VERDICT IS ON THE RECORD. Not a boolean: the code the
+      // gate produced on the day, which is the only thing that makes the row
+      // answerable afterwards.
+      const audit = queries.find((q) => /INSERT INTO audit_log/.test(q.sql));
+      expect(audit, 'the acceptance proceeded with no position on file and nothing recorded it').toBeTruthy();
+      expect(audit!.params).toContain('gps_perimeter.advisory_pass');
+      const meta = JSON.parse(String(audit!.params[4])) as Record<string, unknown>;
+      expect(String(meta.gateCode)).toMatch(new RegExp(`^${code}`));
+      expect(meta.legalPositionOnFile).toBe(false);
+      expect(meta.evaluatedBy).toBe('nik');
+      expect(meta.gateReason).toBeTruthy();
+
+      // AND THE ARTIFACT SAYS SO. An acceptance that reads as cleared is the failure
+      // this whole arrangement is trying not to be.
+      expect(out.legalPositionOnFile).toBe(false);
+      expect(String(out.legalPositionGateCode)).toMatch(new RegExp(`^${code}`));
+      expect(String(out.legalPositionNotice)).toMatch(/No legal position on file/);
+    });
+  }
+
+  /**
+   * THE LINE BETWEEN AN ADVISORY GATE AND A DISABLED ONE. If the record cannot be
+   * written, the pass is indistinguishable from no gate at all, so it is refused —
+   * and nothing is accepted.
+   */
+  it('refuses when the advisory pass cannot be recorded', async () => {
+    const { pool, queries } = stubPool({ auditLog: 'unwritable' });
+    const err = await refusal(accept().execute(args(pool)));
+    expect(err.code).toBe('PERIMETER_ADVISORY_UNRECORDED');
+    expect(err.status).toBe(409);
+    expect(queries.some((q) => /UPDATE gps_engagement/.test(q.sql))).toBe(false);
+  });
 
   it('records the acceptance when the position permits it', async () => {
     const { pool, queries } = stubPool({ perimeter: 'permitted' });
@@ -222,10 +310,29 @@ describe('accepting a deliverable resolves its engagement and gates on the clien
     expect(cl.perimeterSource).toBeTruthy();
   });
 
-  it('refuses with no position on record — the state of production today', async () => {
-    const { pool } = stubPool({});
+  it('passes advisory with no position on record — the state of production today', async () => {
+    const { pool, queries } = stubPool({});
+    const cl = await guardDeliverablePerimeter(pool, DELIVERABLE_ID, ctx);
+    // Allowed, and every field that says why is populated. `advisory` and `allowed` are
+    // reported separately because they are different facts: this act proceeded AND the
+    // gate refused it.
+    expect(cl.allowed).toBe(true);
+    expect(cl.status).toBe(200);
+    expect(cl.advisory).toBe(true);
+    expect(cl.legalPositionOnFile).toBe(false);
+    expect(cl.legalPositionGateCode).toBeTruthy();
+    expect(cl.legalPositionNotice).toMatch(/No legal position on file/);
+    // The refusal channel is empty because nothing was refused; the verdict is not
+    // lost — it is in the gate code and in the row just written.
+    expect(cl.code).toBeNull();
+    expect(queries.some((q) => /INSERT INTO audit_log/.test(q.sql))).toBe(true);
+  });
+
+  it('refuses the deliverable when the advisory pass cannot be recorded', async () => {
+    const { pool } = stubPool({ auditLog: 'unwritable' });
     const cl = await guardDeliverablePerimeter(pool, DELIVERABLE_ID, ctx);
     expect(cl.allowed).toBe(false);
+    expect(cl.code).toBe('PERIMETER_ADVISORY_UNRECORDED');
     expect(cl.status).toBe(409);
   });
 

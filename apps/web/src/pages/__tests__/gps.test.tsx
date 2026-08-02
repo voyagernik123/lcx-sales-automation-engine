@@ -125,60 +125,98 @@ const mount = async (opts: {
 
 beforeEach(() => { vi.clearAllMocks(); });
 
-// ── 1. The D2 gate: no artifact intake, anywhere ──────────────────────────────
+// ── 1. The quote desk holds no client file (D2 answered; this desk is still not it) ──
 
-describe('GPS — client artifact intake is absent by construction (D2)', () => {
-  /*
-   * THE RATCHET. Two halves, because either alone fails open.
-   *
-   * The DOM half would go green if someone added an upload endpoint to the API
-   * client without a control for it yet; the source half would go green if
-   * someone rendered a drop zone that posts through a differently-named helper.
-   * Together they cover both the capability and its surface.
-   *
-   * Read as SOURCE TEXT rather than by rendering, because the offending commit
-   * might guard the control behind a flag that is off in this fixture — and a
-   * feature that exists but is switched off is exactly what this gate forbids.
-   */
+/**
+ * ══ RE-POINTED 2026-08-02, BECAUSE THIS BLOCK HAD GONE HOLLOW. ════════════════
+ *
+ * It was titled "client artifact intake is absent by construction (D2)" and its three
+ * assertions read `Gps.tsx` and `lib/api/gps.ts` for upload-shaped exports, file inputs,
+ * FormData and drop zones. On 2026-08-02 the owner answered D2 YES and intake shipped —
+ * in `components/gps/ArtifactIntake.tsx`, `components/gps/artifactIntakeApi.ts` and the
+ * delivery screen. None of which is a file this block reads.
+ *
+ * So all three assertions stayed GREEN through the exact change they existed to catch.
+ * That is worse than a red test: a green ratchet is read as evidence, and this one was
+ * evidence for a claim that had stopped being true.
+ *
+ * WHAT STILL HOLDS, and is what they now assert. The intake is scoped to an ENGAGEMENT,
+ * on the delivery surface. The quote desk (`Gps.tsx`) is where a price is composed for a
+ * prospect who may not be a client yet — there is no engagement to scope a document to,
+ * no retention clock that could start, and no row to attach it to. A document control
+ * here would have nowhere to put a file, which is exactly how a file ends up somewhere
+ * unintended. That is a narrower claim than the original and it is one that is true.
+ */
+describe('GPS — the quote desk composes prices and receives no client file', () => {
   const src = (rel: string) => readFileSync(resolve(__dirname, rel), 'utf8');
 
-  it('the GPS api client exports no upload-shaped function', async () => {
+  it('the quote desk api client exports no upload-shaped function', async () => {
     /*
      * `importActual`, NOT the `gpsApi` binding this file already has.
      *
-     * Measured fail-open: written first as `Object.keys(gpsApi)`, it enumerated
-     * the vi.mock factory's own keys — so a real `uploadGpsArtifact` export could
-     * be added to `lib/api/gps.ts` and the test would stay green forever, because
-     * the mock does not know about it. The ratchet has to read the real module.
+     * Measured fail-open: written first as `Object.keys(gpsApi)`, it enumerated the
+     * vi.mock factory's own keys — so a real export could be added to `lib/api/gps.ts`
+     * and the test would stay green forever, because the mock does not know about it.
+     *
+     * The intake client is a DIFFERENT module (`components/gps/artifactIntakeApi.ts`),
+     * deliberately: it is imported by the delivery screen, where an engagement exists.
+     * Its arrival on THIS module is the drift being fenced.
      */
     const real = await vi.importActual<typeof gpsApi>('@/lib/api/gps');
     const names = Object.keys(real);
     expect(names.length, 'the real module exported nothing, so this proves nothing').toBeGreaterThan(3);
     const offenders = names.filter((n) => /upload|attach|artifact|document|file/i.test(n));
-    expect(offenders, 'an artifact-intake function appeared on the GPS api client — D2 is unanswered').toEqual([]);
+    expect(
+      offenders,
+      'an artifact function appeared on the quote-desk api client. Client documents attach to an '
+        + 'ENGAGEMENT and are handled by components/gps/artifactIntakeApi.ts; a quote is composed for '
+        + 'a prospect with no engagement, so a file arriving here has no retention clock, no row to '
+        + 'hang off and no client scope in its storage key.',
+    ).toEqual([]);
   });
 
-  it('neither GPS source file contains a file input, FormData or multipart body', () => {
+  it('neither quote-desk source file contains a file input, FormData or multipart body', () => {
     for (const rel of ['../Gps.tsx', '../../lib/api/gps.ts']) {
       const text = src(rel);
-      // Strip block and line comments first: the files DISCUSS the absent
-      // capability at length, and a naive grep would match the prose explaining
-      // why it is absent. The claim is about code, so comments are removed.
+      // Strip block and line comments first: these files DISCUSS the intake and where it
+      // lives, and a naive grep would match the prose. The claim is about code.
       const code = text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
       expect(code, `${rel} gained a file input`).not.toMatch(/type\s*=\s*["']file["']/);
+      // FormData specifically, and everywhere: the real upload route takes a RAW body
+      // with X-Artifact-Filename (routes/gpsArtifact.ts), so FormData anywhere in the web
+      // client is either a 400 waiting to happen or a second, unreviewed intake shape.
       expect(code, `${rel} gained FormData`).not.toMatch(/FormData/);
       expect(code, `${rel} gained a multipart request`).not.toMatch(/multipart/i);
       expect(code, `${rel} gained a drop zone`).not.toMatch(/onDrop|dataTransfer/);
     }
   });
 
-  it('renders no file input and no upload control', async () => {
+  it('renders no file input and no upload control on the quote desk', async () => {
     await mount({ rows: [engagement()] });
     expect(document.querySelectorAll('input[type="file"]')).toHaveLength(0);
     const controls = [...document.querySelectorAll('button, a[href], label')]
       .map((el) => (el.textContent ?? '').toLowerCase())
       .filter((t) => /\bupload\b|\battach\b|drop a file|choose file/.test(t));
-    expect(controls, 'an upload affordance appeared on the GPS desk').toEqual([]);
+    expect(controls, 'an upload affordance appeared on the quote desk, where there is no engagement to scope it to').toEqual([]);
+  });
+
+  it('the intake really does exist somewhere else, so the claim above is a scope and not a lockout', () => {
+    /*
+     * Non-vacuity, and the assertion that would have caught the hollowing. If the intake
+     * surface is absent from the web app entirely, the three tests above are once again
+     * describing a system that has no intake — and a reader would take them as proof of a
+     * lockout that the API no longer implements.
+     */
+    const intake = src('../../components/gps/artifactIntakeApi.ts');
+    expect(intake.length, 'the web intake client is missing — the tests above have become a lockout claim again').toBeGreaterThan(500);
+    expect(intake, 'the web intake client no longer posts to the artifacts path').toMatch(/artifacts/);
+    // CODE, comments stripped: that file explains at length why it does NOT use FormData
+    // (the route takes a raw body and would answer 400 FILENAME_MISSING), and a scan of
+    // raw text fires on the explanation — which teaches the next reader to delete the
+    // explanation instead of keeping the property.
+    const intakeCode = intake.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ');
+    expect(intakeCode, 'the web intake client uses FormData; the route takes a raw body and would 400').not.toMatch(/FormData/);
+    expect(intakeCode, 'the web intake client no longer sends the filename header the route requires').toMatch(/[Xx]-[Aa]rtifact-[Ff]ilename/);
   });
 });
 

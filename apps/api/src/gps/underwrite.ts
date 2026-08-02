@@ -1217,7 +1217,7 @@ export interface IssueGuardDecision {
   issue: IssueDecision | null;
   provenance: UnderwriteProvenance | null;
   policyNotice: string;
-  failsClosedNotice: string;
+  perimeterGateNotice: string;
 }
 
 /** The frozen snapshot, when it is one, so the argument is about what was SOLD. */
@@ -1305,7 +1305,7 @@ export async function guardProposalIssue(
     policyNotice: DEFAULT_ISSUE_POLICY.statedBy === 'system:default'
       ? 'The 20% P(loss) ceiling is a stated default, not a founder-agreed risk appetite. It should be reviewed the first time it blocks something.'
       : `Appetite stated by ${DEFAULT_ISSUE_POLICY.statedBy}.`,
-    failsClosedNotice: ISSUE_GUARD_FAILS_CLOSED,
+    perimeterGateNotice: ISSUE_GUARD_FAILS_CLOSED,
   };
 
   if (!(await isMigrated(pool))) {

@@ -281,16 +281,26 @@ describe('nothing reaches a client without a recorded conflict position', () => 
  * green — and the six delivery writers, `POST /loop/outcome`, the four origination
  * writers and `gps_engagement_accept` (client acceptance: the act that makes work
  * invoiceable) were all outside it. The enumeration below is the fix: EVERY write
- * in the compartment is listed, each one either GUARDED or an argued EXEMPTION, and
+ * in the compartment is listed, each one either CONSULTED or an argued EXEMPTION, and
  * the list is asserted EXHAUSTIVE against the source. A write path added without a
  * decision recorded here turns this suite red, which is the only property that makes
  * the block's title true.
+ *
+ * ── AND THE BLOCK CHANGED MEANING AGAIN ON 2026-08-02 ────────────────────────
+ * The owner made the gate ADVISORY where the perimeter is empty: with no position
+ * entered anywhere, it refused every quote in every jurisdiction, so a refusal whose
+ * code reports the ABSENCE of a position now lets the write proceed and is WRITTEN
+ * DOWN instead. So this block no longer asserts "these paths refuse" — that would be
+ * the third version of the same lie. It asserts what is now true and is the property
+ * worth ratcheting: every write in the compartment either CONSULTS the perimeter and
+ * records its verdict, or carries an argued exemption; a prohibition and an unreadable
+ * perimeter still refuse; and the pass is never silent.
  *
  * These read source text because the installations are Hono mounts and a pool-backed
  * gate, neither of which this database-free suite can execute. The behavioural half
  * lives in `proposalGuards.test.ts`, which runs the real engines against a stub pool.
  */
-describe('the perimeter guards the enumerated GPS writes, and the enumeration is exhaustive', () => {
+describe('the perimeter is consulted on the enumerated GPS writes, and the enumeration is exhaustive', () => {
   const handler = (path: string): string => {
     const at = routes.indexOf(`gpsRoutes.post('${path}'`);
     expect(at, `no POST ${path} in routes/gps.ts`).toBeGreaterThan(-1);
@@ -334,7 +344,7 @@ describe('the perimeter guards the enumerated GPS writes, and the enumeration is
     'routes/gpsOrigination.ts': ['gpsOriginationRoutes', read('routes/gpsOrigination.ts')],
   } as const satisfies Record<string, readonly [string, string]>;
 
-  /** The perimeter's entry points. A guarded write must name one of them. */
+  /** The perimeter's entry points. A consulted write must name one of them. */
   const GUARD_CALLS = [
     'perimeterClearanceFor(',
     'requirePerimeterClearance',
@@ -343,15 +353,22 @@ describe('the perimeter guards the enumerated GPS writes, and the enumeration is
     'guardDeliverablePerimeter(',
   ] as const;
 
-  const GUARDED = { guarded: true } as const;
-  const exempt = (why: string) => ({ guarded: false, why }) as const;
-  type Decision = typeof GUARDED | ReturnType<typeof exempt>;
+  /**
+   * CONSULTED, not GUARDED. The rename is the honest one: since the advisory
+   * decision, reaching one of these entry points means the perimeter is asked and its
+   * answer is recorded — it does not mean the act is refused when the answer is bad.
+   * What it still means, and what these tests pin, is that no write in the compartment
+   * reaches a client without the perimeter having been asked and answered on the record.
+   */
+  const CONSULTED = { consulted: true } as const;
+  const exempt = (why: string) => ({ consulted: false, why }) as const;
+  type Decision = typeof CONSULTED | ReturnType<typeof exempt>;
 
   /**
    * A GATED ENGAGEMENT WAS CLEARED AT CREATION AND AGAIN AT ISSUE, so the question
    * for each write below is not "is this GPS" but "would a jurisdictional refusal
    * genuinely apply to THIS act". Three answers recur:
-   *   - it prices, opens, issues, or makes work invoiceable → GUARDED;
+   *   - it prices, opens, issues, or makes work invoiceable → CONSULTED;
    *   - it records what already happened, or records the refusal itself → exempt,
    *     because a gate there suppresses a record instead of preventing an act;
    *   - it has no honest jurisdiction to read (no `gps_client` row, or only a
@@ -360,18 +377,18 @@ describe('the perimeter guards the enumerated GPS writes, and the enumeration is
    */
   const WRITES: Record<keyof typeof ROUTERS, Record<string, Decision>> = {
     'routes/gps.ts': {
-      'POST /quote': GUARDED,
+      'POST /quote': CONSULTED,
       'POST /clients': exempt(
         'Creates the very row the perimeter reads a jurisdiction FROM. Gating it would mean gating on the'
         + ' body field being stored, and refusing to write down who a prospect is prevents no sale.',
       ),
-      'POST /engagements': GUARDED,
+      'POST /engagements': CONSULTED,
       'POST /engagements/:id/conflict-check': exempt(
         'This IS the compliance record, approver-only. A declined or disclosure-bearing position must be'
         + ' recordable in every jurisdiction — most of all a refused one — so a perimeter gate here would'
         + ' remove the only way to write the refusal down.',
       ),
-      'POST /engagements/:id/proposal': GUARDED,
+      'POST /engagements/:id/proposal': CONSULTED,
       'POST /engagements/:id/status': exempt(
         'MANUAL_ENGAGEMENT_TARGETS excludes proposed and accepted, so every status it can reach is either'
         + ' downstream of an acceptance the perimeter gated, a bookkeeping fact about cash already received,'
@@ -382,11 +399,11 @@ describe('the perimeter guards the enumerated GPS writes, and the enumeration is
     'routes/gpsDelivery.ts': {
       'POST /engagements/:id/milestones/:key/state': exempt(
         'Internal delivery record on an already-cleared engagement: no money moves and no client is told'
-        + ' anything. The client-facing event downstream of it is acceptance, which is guarded.',
+        + ' anything. The client-facing event downstream of it is acceptance, which is consulted.',
       ),
       'POST /engagements/:id/deliverables': exempt(
         'Declares what the client will receive — an internal plan row, not an issue to the client. The'
-        + ' commercial event on it is acceptance, which is guarded.',
+        + ' commercial event on it is acceptance, which is consulted.',
       ),
       'POST /engagements/:id/evidence': exempt(
         'Records that LCX needs an input, on the desk chase list. Nothing is sent, fetched or received —'
@@ -400,10 +417,10 @@ describe('the perimeter guards the enumerated GPS writes, and the enumeration is
         'The LCX-internal quality sign-off, approver-only. It is the PRECONDITION of acceptance, and'
         + ' acceptance is where the perimeter stands; gating both would refuse twice for one act.',
       ),
-      'POST /deliverables/:id/accept': GUARDED,
+      'POST /deliverables/:id/accept': CONSULTED,
     },
     'routes/gpsLoop.ts': {
-      'POST /outcome': GUARDED,
+      'POST /outcome': CONSULTED,
     },
     'routes/gpsOrigination.ts': {
       'POST /origination/targets': exempt(
@@ -420,7 +437,7 @@ describe('the perimeter guards the enumerated GPS writes, and the enumeration is
       ),
       'POST /origination/:targetId/opening': exempt(
         'Generates and stores draft outreach text. Nothing is sent from this compartment, and the priced'
-        + ' act it may lead to is POST /quote, which is guarded on the client row.',
+        + ' act it may lead to is POST /quote, which is consulted on the client row.',
       ),
     },
   };
@@ -449,13 +466,13 @@ describe('the perimeter guards the enumerated GPS writes, and the enumeration is
       expect(found).toEqual(Object.keys(WRITES[file as keyof typeof ROUTERS]).sort());
     });
 
-    it(`${file}: every write marked GUARDED reaches a perimeter entry point`, () => {
+    it(`${file}: every write marked CONSULTED reaches a perimeter entry point`, () => {
       for (const [key, d] of Object.entries(WRITES[file as keyof typeof ROUTERS])) {
-        if (!d.guarded) continue;
+        if (!d.consulted) continue;
         const body = mountBody(router, src, key);
         expect(
           GUARD_CALLS.some((call) => body.includes(call)),
-          `${file} ${key} is enumerated GUARDED but names no perimeter entry point`,
+          `${file} ${key} is enumerated CONSULTED but names no perimeter entry point`,
         ).toBe(true);
       }
     });
@@ -464,7 +481,7 @@ describe('the perimeter guards the enumerated GPS writes, and the enumeration is
   it('every exemption is argued, not merely asserted', () => {
     for (const [file, table] of Object.entries(WRITES)) {
       for (const [key, d] of Object.entries(table)) {
-        if (d.guarded) continue;
+        if (d.consulted) continue;
         // An exemption is a decision someone has to be able to disagree with. A bare
         // "internal" would let the next reader re-derive nothing.
         expect(d.why.length, `${file} ${key} exemption is too thin to review`).toBeGreaterThan(80);
@@ -484,12 +501,12 @@ describe('the perimeter guards the enumerated GPS writes, and the enumeration is
       'Records the conflict position itself and cancels the engagement on a decline. Approver-only, and a'
       + ' refusal must be recordable in every jurisdiction, so a gate here would suppress the refusal.',
     ),
-    gps_proposal_issue: GUARDED,
+    gps_proposal_issue: CONSULTED,
     gps_discount_approve: exempt(
       'Writes no row — auditWrites is empty and the authorisation lives in object_actions. The price it'
-      + ' authorises can only be issued through gps_proposal_issue, which is guarded.',
+      + ' authorises can only be issued through gps_proposal_issue, which is consulted.',
     ),
-    gps_engagement_accept: GUARDED,
+    gps_engagement_accept: CONSULTED,
     gps_status_change: exempt(
       'Cannot reach proposed or accepted. Its reachable targets are downstream of a gated acceptance,'
       + ' bookkeeping about cash already received, or a withdrawal — and refusing a withdrawal on'
@@ -497,16 +514,16 @@ describe('the perimeter guards the enumerated GPS writes, and the enumeration is
     ),
   };
 
-  it('every GPS action is enumerated, and the guarded ones call assertPerimeterCleared', () => {
+  it('every GPS action is enumerated, and the consulted ones call assertPerimeterCleared', () => {
     expect(GPS_ACTIONS.map((a) => a.id).sort()).toEqual(Object.keys(ACTIONS).sort());
     for (const [id, d] of Object.entries(ACTIONS)) {
-      if (!d.guarded) continue;
+      if (!d.consulted) continue;
       const at = actionsSrc.indexOf(`const ${id}: GpsAction`);
       expect(at, `no declaration for ${id}`).toBeGreaterThan(-1);
       const rest = actionsSrc.slice(at);
       const next = rest.slice(1).search(/\nconst gps_|\nexport const GPS_ACTIONS/);
       const body = next === -1 ? rest : rest.slice(0, next + 1);
-      expect(body, `${id} is enumerated GUARDED but never calls the perimeter`)
+      expect(body, `${id} is enumerated CONSULTED but never calls the perimeter`)
         .toContain('assertPerimeterCleared(');
       // Attribution for the refusal is the principal the registry passed, never a param.
       expect(body).toMatch(/assertPerimeterCleared\(pool, subjectId, \{\s*evaluatedBy: actor,/);
@@ -517,6 +534,153 @@ describe('the perimeter guards the enumerated GPS writes, and the enumeration is
     for (const word of ['force', 'acceptRisk', 'skipPerimeter', 'assumePermitted', 'founderApproved']) {
       expect(routes, word).not.toContain(word);
     }
+  });
+
+  /* ── CONSULTED MEANS RECORDED. THE ADVISORY PASS IS NOT SILENT ────────────── */
+
+  /**
+   * The advisory decision put one new failure mode into this compartment: a gate that
+   * runs, refuses, and lets the act through leaves NO trace unless something writes
+   * one — and a gate whose refusals are discarded is indistinguishable from a deleted
+   * gate. Everything in this block is that property, plus the two refusals that
+   * survive the decision (a recorded prohibition, and a perimeter nobody could read).
+   */
+  describe('the verdict is recorded rather than discarded, and the pass funnels through one place', () => {
+    const guard = read('gps/perimeterGuard.ts');
+
+    it('writes the refusal it did not enforce to the audit log, parameterised', () => {
+      expect(guard).toContain('INSERT INTO audit_log');
+      expect(guard).toContain("PERIMETER_ADVISORY_ACTION = 'gps_perimeter.advisory_pass'");
+      // Same standing rule as the data layer: no caller value in the statement text.
+      const insert = guard.slice(guard.indexOf('INSERT INTO audit_log'));
+      expect(insert.slice(0, insert.indexOf(');'))).not.toMatch(/\$\{/);
+    });
+
+    it('records the four things a refusal is unanswerable without', () => {
+      const fn = guard.slice(guard.indexOf('async function recordAdvisoryPass'));
+      const body = fn.slice(0, fn.indexOf('return true;'));
+      for (const field of ['gateCode', 'gateReason', 'jurisdictionInput', 'offerKey', 'evaluatedBy']) {
+        expect(body, `the advisory record omits ${field}`).toContain(field);
+      }
+      // Attribution is the session's, exactly as everywhere else in this compartment.
+      expect(body).toContain('input.evaluatedBy');
+      expect(body).not.toMatch(/body\./);
+    });
+
+    it('REFUSES when the record cannot be written — an unrecorded pass is no gate', () => {
+      expect(guard).toContain('PERIMETER_ADVISORY_UNRECORDED');
+      const branch = guard.slice(guard.indexOf('const recorded = await recordAdvisoryPass('));
+      const upTo = branch.slice(0, branch.indexOf('console.warn'));
+      expect(upTo).toContain('if (!recorded)');
+      expect(upTo).toContain('allowed: false');
+      expect(upTo).toContain('PERIMETER_ADVISORY_UNRECORDED');
+    });
+
+    it('decides whether to refuse from the disposition, never from a setting', () => {
+      // The advisory branch keys off `disposition.blocked` — which `gateService`
+      // derives from the record — and not off `allowed`, which is now a different
+      // question. `!d.allowed && !d.disposition.blocked` is the whole switch.
+      expect(guard).toContain('!d.allowed && !d.disposition.blocked');
+      // NO FLAG, NO ENVIRONMENT VARIABLE, NOWHERE ON THIS PATH. This is the property
+      // the owner asked for twice: nothing for a human to set, and nothing to unset.
+      expect(guard, 'the perimeter path reads an environment variable').not.toContain('process.env');
+      for (const word of ['ADVISORY_MODE', 'advisoryMode', 'featureFlag', 'GPS_ADVISORY']) {
+        expect(guard, `${word} is a setting, and advisory mode must be derived`).not.toContain(word);
+      }
+    });
+
+    it('funnels every entry point through the one function that records', () => {
+      // Five entry points, one recorder. A second path to a pass would be a second
+      // path to an UNRECORDED pass, which is the original defect wearing a new hat.
+      const fn = (name: string) => {
+        const at = guard.indexOf(`export async function ${name}`);
+        expect(at, `no ${name} in perimeterGuard.ts`).toBeGreaterThan(-1);
+        const rest = guard.slice(at);
+        const next = rest.slice(1).search(/\nexport (async function|const|function)/);
+        return next === -1 ? rest : rest.slice(0, next + 1);
+      };
+      expect(fn('guardEngagementPerimeter')).toContain('perimeterClearanceFor(');
+      expect(fn('guardDeliverablePerimeter')).toContain('guardEngagementPerimeter(');
+      expect(fn('assertPerimeterCleared')).toContain('guardEngagementPerimeter(');
+      const middleware = guard.slice(guard.indexOf('export const requirePerimeterClearance'));
+      expect(middleware).toContain('guardEngagementPerimeter(');
+      // And only that one function may write the pass.
+      expect(guard.match(/recordAdvisoryPass\(/g)?.length).toBe(2); // declaration + one call
+    });
+
+    /**
+     * ══ THE STAMP REACHES THE ALLOWED ANSWER, NOT ONLY THE REFUSAL. ═══════════
+     *
+     * The half of the decision that is easiest to ship incompletely, and the half that
+     * matters to a client. While every absent position refused, a success implied a
+     * position existed — the refusal body carried the reason and the success carried
+     * nothing, which was safe precisely because there were no successes without a
+     * position. There are now: in production, EVERY success is one.
+     *
+     * So a caller that consults the perimeter and then answers 200 must put the three
+     * flat stamp keys on that answer. Asserted by DISCOVERY over every file that
+     * consults the perimeter at all, so a seventh caller written next month is covered
+     * on the day it appears rather than when someone remembers this rule.
+     *
+     * `perimeterGuard.ts` itself is excluded: it DEFINES `perimeterStamp` and is where
+     * the refusal bodies are built. The behavioural half — that the keys actually reach
+     * the wire with the right values — is `routes/__tests__/gpsQuotePerimeter.test.ts`,
+     * `proposalGuards.test.ts` and `acceptancePerimeter.test.ts`.
+     */
+    it('every caller that consults the perimeter stamps its ALLOWED answer too', () => {
+      const CONSULTERS = [
+        'routes/gps.ts',
+        'routes/gpsDelivery.ts',
+        'routes/gpsLoop.ts',
+        'gps/actions.ts',
+      ] as const;
+      for (const rel of CONSULTERS) {
+        const code = read(rel);
+        // Non-vacuity: this file must actually consult the perimeter, or the assertion
+        // below is a requirement placed on a file that has nothing to stamp.
+        expect(
+          /perimeterClearanceFor\(|guardEngagementPerimeter\(|guardDeliverablePerimeter\(|assertPerimeterCleared\(/.test(code),
+          `${rel} no longer consults the perimeter at all — either the gate was removed from a `
+            + 'client-facing write, or this list is stale',
+        ).toBe(true);
+        expect(
+          code,
+          `${rel} consults the perimeter but never spreads perimeterStamp(...) — so the act it `
+            + 'permits comes back looking cleared. In production nothing has a legal position on '
+            + 'file, so this is not an edge case: it is every quote, proposal, engagement, '
+            + 'acceptance and recorded outcome the desk produces.',
+        ).toMatch(/\.\.\.perimeterStamp\(/);
+        expect(code, `${rel} does not import perimeterStamp`).toMatch(/perimeterStamp/);
+      }
+    });
+
+    it('publishes the stamp on every clearance, refused or allowed', () => {
+      for (const field of ['legalPositionOnFile', 'legalPositionGateCode', 'legalPositionNotice']) {
+        expect(guard, `the clearance does not publish ${field}`).toContain(field);
+      }
+      // The refusal body and the action error both carry it, so a client-facing
+      // surface cannot render either one without the sentence available to it.
+      const refusalBody = guard.slice(guard.indexOf('export function perimeterRefusalBody'));
+      expect(refusalBody.slice(0, refusalBody.indexOf('};'))).toContain('perimeterStamp(cl)');
+      const assertFn = guard.slice(guard.indexOf('export async function assertPerimeterCleared'));
+      expect(assertFn).toContain('perimeterStamp(cl)');
+    });
+
+    it('keeps the two refusals the advisory decision did not touch', () => {
+      // A prohibition is a human saying no, and an unreadable perimeter is a check
+      // that did not happen. Both still refuse; the shared engine decides the first
+      // (`perimeterDisposition`) and this file the second.
+      expect(guard).toContain('PERIMETER_UNAVAILABLE');
+      expect(guard).toMatch(/PERIMETER_GATE_DISCIPLINE\s*=/);
+      // The notice on the wire must describe what the gate ACTUALLY does now — the
+      // previous text claimed a missing position refuses the act, which it no longer
+      // does, and that string is published to every refused caller.
+      const notice = guard.slice(guard.indexOf('PERIMETER_GATE_DISCIPLINE ='));
+      const text = notice.slice(0, notice.indexOf(';'));
+      expect(text).toMatch(/PROHIBITED/);
+      expect(text).toMatch(/could not be read/);
+      expect(text).toMatch(/no legal position on file/);
+    });
   });
 });
 

@@ -84,6 +84,38 @@ export const SHIPPED_MIGRATIONS: Readonly<Record<string, string>> = {
  *   0054 → routes/gpsOrigination.ts ORIGINATION_MIGRATION (targets, openings)
  *   0055 → the COMMENT correction 0050 could not deliver
  *   0056 → the four DELIVERY_SCHEMA_GAPS columns and the milestone unique index
+ *   0057 → gps_artifact plus the private `gps-artifacts` bucket and its policies.
+ *          THE ONE MIGRATION THAT ALSO WRITES OUTSIDE `public`: it upserts a row into
+ *          `storage.buckets` and creates a restrictive policy on `storage.objects`, so
+ *          applying it is the moment client-file intake becomes physically possible.
+ *          Until a human pastes it into the Supabase SQL editor there is no bucket, no
+ *          policy and no table — an upload route would fail with 42P01, not store a
+ *          document somewhere unprotected.
+ *   0058 → gps_artifact_blob (the bytes) and gps_artifact_grant (one download link).
+ *          MUST BE APPLIED AFTER 0057 — it references gps_artifact(id). The intake
+ *          surface probes for all THREE tables (`gps/artifact.ts isArtifactMigrated`),
+ *          so 0057 alone leaves it inert rather than half-working: reads answer empty
+ *          and writes answer 503 until both files have been run.
+ *
+ * MARKETING (LCX_MARKETING_100X_PLAN.md). Apply IN ORDER; each is additive, none
+ * contains a destructive verb, and the surfaces refuse honestly until they land:
+ *   0059 → M0, the eight live defects. Sender-authentication columns on the inbound
+ *          row so a forged email is QUARANTINED rather than graded C3, the real
+ *          `posted_at` from oEmbed, a `raw_email` field clock, and the
+ *          id-collision-with-differing-content lane. Also carries a
+ *          `COMMENT ON COLUMN` that corrects a false sentence in 0046, which could
+ *          not be edited in place: 0046 is applied and frozen, and
+ *          `db/__tests__/migrationImmutability.test.ts` correctly rejected the edit.
+ *          Until this is applied, marketing ingest still grades unauthenticated mail.
+ *   0060 → M2, the market-abuse perimeter: `marketing_asset_embargo` and
+ *          `marketing_holdings_declaration`. Named by
+ *          `marketing/abuseRegister.ts ABUSE_MIGRATION`. THE TWO TABLES THAT MAKE THE
+ *          INVISIBLE AXIS LOAD-BEARING (Art 90, Art 91(3)(c)); with neither present
+ *          the perimeter refuses and says so rather than passing a draft it could not
+ *          check. An empty table is also a refusal, not a clean bill.
+ *   0061 → M7, the record. Named by `marketing/record.ts RECORD_MIGRATION`. Art 8(2)
+ *          is produce-on-demand and Art 7(3) means the asking authority need not be
+ *          the FMA, so the export bundle is a feature and this is its storage.
  */
 export const PENDING_MIGRATIONS: readonly string[] = [
   '0052_gps_underwriting.sql',
@@ -91,4 +123,9 @@ export const PENDING_MIGRATIONS: readonly string[] = [
   '0054_gps_origination.sql',
   '0055_gps_perimeter_comment.sql',
   '0056_gps_delivery_gaps.sql',
+  '0057_gps_artifact.sql',
+  '0058_gps_artifact_custody.sql',
+  '0059_marketing_m0.sql',
+  '0060_marketing_abuse.sql',
+  '0061_marketing_record.sql',
 ];

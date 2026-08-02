@@ -1,12 +1,14 @@
 /**
  * LCX MARKETING routes.
  *   GET    /v1/marketing/queue        the reply queue, worst-SLA first
- *   GET    /v1/marketing/summary      counts + oldest-unanswered + suspicious
+ *   GET    /v1/marketing/summary      counts + oldest-since-learned + suspicious
+ *   GET    /v1/marketing/quarantined  what failed sender authentication, and id collisions
  *   POST   /v1/marketing/ingest       paste a reply by hand (works with zero setup)
- *   POST   /v1/marketing/tick         pull the mailbox + sweep retention (cron)
+ *   POST   /v1/marketing/tick         pull the mailbox + sweep rows AND raw_email (cron)
  *   POST   /v1/marketing/:id/draft    ask the AI for an answer
  *   GET    /v1/marketing/:id/drafts   drafts for a reply
- *   POST   /v1/marketing/draft/:id/approve   the governed act
+ *   POST   /v1/marketing/draft/:id/approve   clear the text; audited, does NOT mean sent
+ *   POST   /v1/marketing/draft/:id/sent      a named human asserts they pasted it
  *   POST   /v1/marketing/:id/status   triage without drafting
  *
  * The whole namespace is guarded at 'view' by `requireWorkspace('marketing')`,
@@ -22,8 +24,9 @@ import { requireOperator } from '../middleware/auth.js';
 import { getPool } from '../db/index.js';
 import { env } from '../lib/env.js';
 import {
-  approveDraft, ingestEmails, insertReply, listDrafts, listReplies,
-  isMigrated, queueSummary, saveDraft, setReplyStatus, sweepExpired,
+  approveDraft, assertSent, ingestEmails, insertReply, listDrafts, listQuarantined,
+  listReplies, isMigrated, queueSummary, saveDraft, setReplyStatus, sweepExpired,
+  sweepRawEmail,
   type ReplyStatus,
 } from '../marketing/service.js';
 import { fetchNotificationEmails, mailConfigured } from '../marketing/xMail.js';
@@ -142,9 +145,23 @@ marketingRoutes.post('/ingest', requireOperator, async (c) => {
  * which holds blanket 'operate' on every workspace, so the tick never needs a
  * human grant (see middleware/workspace.ts).
  *
- * Pull, never push: nothing about this opens an inbound endpoint that the public
- * internet can write fabricated replies into. Verified during design — 308 of the
- * API's routes are authenticated and only 3 are not; this is not becoming the 4th.
+ * Pull, never push: this route opens no endpoint the public internet can write to
+ * unauthenticated. 308 of the API's routes are authenticated and only 3 are not; this is
+ * not becoming the 4th.
+ *
+ * BUT IT IS NOT AN ANTI-FORGERY CONTROL, and the sentence here used to claim it was
+ * ("nothing about this opens an inbound endpoint that the public internet can write
+ * fabricated replies into"). That was false in the way that matters: the tick polls a
+ * MAILBOX, and anyone who learns the polled address can post a message into it with an
+ * attacker-chosen handle, comment id and body. Authentication on this route protects the
+ * trigger, not the content.
+ *
+ * What actually makes a forged item harmless is downstream and is not a comment:
+ * `xMail.ts:211 readSenderEvidence` reads the topmost `Authentication-Results` from a
+ * trusted authserv-id or ARC instance 1, and `service.ts:196` grades an unauthenticated
+ * row F6, quarantines it, and excludes it from the queue, the counts and every SLA. With
+ * `X_MAIL_TRUSTED_AUTHSERV` unset, NOTHING passes. Migration 0059 carries the columns
+ * that record it, so until 0059 is applied the quarantine has nowhere to write.
  */
 marketingRoutes.post('/tick', requireOperator, async (c) => {
   try {
@@ -153,19 +170,28 @@ marketingRoutes.post('/tick', requireOperator, async (c) => {
       return c.json({ data: { migrated: false, note: 'awaiting migration 0046 — nothing to sweep or poll yet' }, meta: meta() });
     }
     const swept = await sweepExpired(pool);
+    /*
+     * THE FIELD SWEEP, WHICH NOTHING CALLED BEFORE. `raw_email` is the most incidental
+     * third-party data in the compartment and 0046's comment claimed it was "cleared once
+     * parsed" while no code cleared it. `sweepRawEmail` existed after M0 and was reachable
+     * from no route, which is the same defect one layer up: a retention promise nothing
+     * executes. It runs on the same tick as the row sweep and on a much shorter clock,
+     * because data minimisation is per-field, not per-table.
+     */
+    const rawCleared = await sweepRawEmail(pool);
 
     if (!mailConfigured()) {
       // Keyless-first, like x402 and the AI layer: unconfigured is a normal
       // state that reports itself, not an error that pages someone.
       return c.json({
-        data: { mailConfigured: false, swept, ingested: null, note: 'X_MAIL_* not configured — retention swept, no mailbox polled' },
+        data: { mailConfigured: false, swept, rawCleared, ingested: null, note: 'X_MAIL_* not configured — retention swept, no mailbox polled' },
         meta: meta(),
       });
     }
 
     const emails = await fetchNotificationEmails();
     const ingested = await ingestEmails(pool, emails);
-    return c.json({ data: { mailConfigured: true, swept, fetched: emails.length, ingested }, meta: meta() });
+    return c.json({ data: { mailConfigured: true, swept, rawCleared, fetched: emails.length, ingested }, meta: meta() });
   } catch (err) {
     console.error('[marketing] tick error:', err);
     return c.json({ error: 'Tick failed', code: 'MARKETING_ERROR' }, 500);
@@ -234,6 +260,74 @@ marketingRoutes.post('/draft/:id/approve', requireOperator, async (c) => {
   } catch (err) {
     console.error('[marketing] approve error:', err);
     return c.json({ error: 'Failed to approve', code: 'MARKETING_ERROR' }, 500);
+  }
+});
+
+/**
+ * A named human asserts they pasted an approved draft into X. THE ONLY WAY 'answered'
+ * BECOMES TRUE, and it is separate from approve on purpose.
+ *
+ * Defect 5 of the eight was that `answered` was set on APPROVAL. There is no send path in
+ * this compartment and there must never be one, so approval could never mean "sent": the
+ * approved text and the sent text need not be equal, and nothing here can check. M0 split
+ * approval into `approved_pending_send` and put the assertion behind this route, then left
+ * the route unwritten — so the split existed and the state could never advance past
+ * pending. Attributed to the authenticated principal, never to a body field, for the same
+ * reason approve is: an assertion the client could sign for somebody else is not testimony.
+ *
+ * `assertSent` records it as testimony (`observed: false`). Whether the post exists is a
+ * question for oEmbed, which is an independent channel and does not read this column.
+ */
+marketingRoutes.post('/draft/:id/sent', requireOperator, async (c) => {
+  try {
+    const id = Number(c.req.param('id'));
+    if (!Number.isInteger(id) || id <= 0) {
+      return c.json({ error: 'invalid id', code: 'VALIDATION' }, 400);
+    }
+    if (!(await isMigrated(getPool()))) return c.json(NOT_MIGRATED, 503);
+    const operator = c.get('operator');
+    const row = await assertSent(getPool(), id, operator?.id ?? 'unknown');
+    if (!row) {
+      return c.json(
+        { error: 'draft not found, not approved, or already asserted sent', code: 'NOT_FOUND' },
+        404,
+      );
+    }
+    return c.json({ data: row, meta: meta() });
+  } catch (err) {
+    console.error('[marketing] assert-sent error:', err);
+    return c.json({ error: 'Failed to record the send', code: 'MARKETING_ERROR' }, 500);
+  }
+});
+
+/**
+ * The quarantine lane. Everything that could not be sender-authenticated, plus every id
+ * collision with differing content.
+ *
+ * IT HAS TO BE VISIBLE OR THE CONTROL IS WORSE THAN NOTHING. `service.ts:196` grades an
+ * unauthenticated row F6 and excludes it from the queue, the counts and every SLA — which
+ * is correct, and which also means a forgery attempt disappears silently unless a surface
+ * can show it. "We are being attacked" is a thing the desk must be able to see, and
+ * `listQuarantined` was reachable from no route.
+ *
+ * Read-only, at 'view'. Nothing here promotes a row out of quarantine: authentication is
+ * evidence that either survived or did not, and a button that overrode it would be the
+ * whole control undone by one tired click.
+ */
+marketingRoutes.get('/quarantined', async (c) => {
+  try {
+    if (!(await isMigrated(getPool()))) return c.json({ data: [], meta: { ...meta(), migrated: false } });
+    const limit = Number(c.req.query('limit') ?? '50');
+    return c.json({
+      data: await listQuarantined(getPool(), Number.isFinite(limit) ? limit : 50),
+      meta: {
+        ...meta(),
+        note: 'Rows that failed sender authentication or collided with an existing id. Excluded from the queue, the counts and every SLA. There is no path from here into the queue.',
+      },
+    });
+  } catch (err) {
+    console.error('[marketing] quarantine error:', err);
+    return c.json({ error: 'Failed to load quarantine', code: 'MARKETING_ERROR' }, 500);
   }
 });
 

@@ -82,16 +82,34 @@ describe('the probe itself cannot be the thing that breaks', () => {
     expect(service).toContain('to_regclass');
   });
 
-  it('treats an unanswerable database as not-migrated rather than propagating', () => {
-    // Sliced to `_resetMigrated`, not to the first `return migratedCache` — the
-    // function opens with a cache-hit early return, so the naive slice ended
-    // before the try/catch it is asserting about.
-    const fn = service.slice(service.indexOf('export async function isMigrated'));
+  it('treats an unanswerable database as unavailable rather than propagating', () => {
+    // The try/catch moved from `isMigrated` to `migrationState` when the third state
+    // was added (M0 defect 8); `isMigrated` is now the boolean adapter over it.
+    const fn = service.slice(service.indexOf('export async function migrationState'));
     expect(fn.slice(0, fn.indexOf('_resetMigrated'))).toContain('catch');
   });
 
   it('caches, so a once-ever event does not cost a round trip on every read', () => {
     expect(service).toContain('migratedCache');
+  });
+
+  /**
+   * M0 DEFECT 8. The `catch` used to write `migratedCache = false`, and the cache is
+   * permanent for the life of the process — so one transient database error pinned the
+   * compartment into "awaiting migration 0046" until somebody restarted the API, and
+   * the desk would go looking for a migration that had been applied for weeks.
+   *
+   * Source-level as well as behavioural (`m0Service.test.ts` proves the behaviour),
+   * because the shape is the thing that must not come back: the cache may only ever be
+   * assigned where a definitive answer exists.
+   */
+  it('never caches an error as an answer', () => {
+    const fn = service.slice(service.indexOf('export async function migrationState'));
+    const body = fn.slice(0, fn.indexOf('_resetMigrated'));
+    const catchBlock = body.slice(body.indexOf('} catch'));
+    expect(catchBlock).not.toMatch(/migratedCache\s*=/);
+    // And the assignment that does exist is inside the try, before the catch.
+    expect(body.indexOf('migratedCache = Boolean')).toBeLessThan(body.indexOf('} catch'));
   });
 });
 

@@ -443,7 +443,7 @@ describe('the evidence chase derives overdue from dates', () => {
     expect(row.hasExternalReference).toBe(true);
     expect(chase.referenceNotice).toBe(EXTERNAL_REFERENCE_IS_INERT);
     expect(chase.referenceNotice).toMatch(/typed by an operator/i);
-    expect(chase.referenceNotice).toMatch(/never resolves, retrieves or copies it/i);
+    expect(chase.referenceNotice).toMatch(/never resolves, retrieves, copies or previews it/i);
 
     // The lockout, asserted as absence on the wire itself: there is no field a
     // surface could turn into a link, a preview or a download.
@@ -759,7 +759,13 @@ describe('DeliveryResponse', () => {
 
   it('carries the lockout, with where it is enforced', () => {
     const res = response();
-    expect(res.lockout.noClientDocumentStore).toMatch(/GPS does not (hold|store)|no place|nowhere/i);
+    // The claim NARROWED on 2026-08-02: it no longer says GPS holds nothing (false), it
+    // says this row is a reference and names the upload as the other choice. Both halves
+    // are required — a reference notice with no alternative leaves an operator holding a
+    // file with nowhere to be told to put it.
+    expect(res.lockout.noClientDocumentStore).toMatch(/reference/i);
+    expect(res.lockout.noClientDocumentStore).toMatch(/upload/i);
+    expect(res.lockout.noClientDocumentStore).not.toMatch(/does not hold client documents/);
     expect(res.lockout.externalReferenceIsInert).toBe(EXTERNAL_REFERENCE_IS_INERT);
     expect(res.lockout.enforcedBy.join(' ')).toMatch(/intakeLockout\.test\.ts/);
     expect(res.lockout.enforcedBy.join(' ')).toMatch(/0049_gps_delivery\.sql/);

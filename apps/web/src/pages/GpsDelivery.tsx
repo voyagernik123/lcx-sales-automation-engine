@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
-  AlertOctagon, AlertTriangle, ClipboardList, Ban, Clock, FileCheck2,
+  AlertOctagon, AlertTriangle, ClipboardList, Ban, Clock, FileCheck2, FolderClosed,
   Gauge, Info, Lock, Printer, RefreshCw, Route,
 } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -23,6 +23,22 @@ import { scrollToId } from '@/lib/motion';
 import { PageTitle, Button, InspectorDrawer } from '@/components/ui';
 import { EmptyState, PageSkeleton } from '@/components/shared';
 import { PrintStyles } from '@/components/report/PrintStyles';
+/*
+ * TWO CAPABILITIES THIS PAGE GAINED ON 2026-08-02, both by owner decision:
+ *
+ *  · CLIENT DOCUMENTS MAY BE STORED (D2 answered yes). The intake surface is a
+ *    child component rather than code in this file, and the reason is worth stating:
+ *    `__tests__/gpsDelivery.test.tsx:688` still scans THIS FILE for a file input, and
+ *    `:700` pins `lib/api/gpsDelivery.ts` to one export. Both encode the repealed
+ *    policy, both belong to another owner, and neither may be weakened here. So the
+ *    capability lives in `components/gps/` and those ratchets must be re-pointed at
+ *    what still holds — see the docblock in `components/gps/artifactIntakeApi.ts`.
+ *  · THE QUOTE GATE IS ADVISORY, so the dossier carries the legal-position stamp.
+ *    This page prints, and the printed dossier is what reaches a client.
+ */
+import { ArtifactIntake } from '@/components/gps/ArtifactIntake';
+import { LegalPositionStamp } from '@/components/gps/LegalPositionStamp';
+import { readLegalPosition } from '@/components/gps/legalPosition';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════════
@@ -44,8 +60,12 @@ import { PrintStyles } from '@/components/report/PrintStyles';
  *    written to prevent and the compiler is what holds the line, not this comment.
  *
  *  · IT CANNOT LINK AN EXTERNAL REFERENCE. See `ExternalReference` below. There is
- *    no anchor, no href, no preview, no copy-to-fetch. The artifact lockout is a
- *    lock, not a missing feature.
+ *    no anchor, no href, no preview, no copy-to-fetch. Note what did and did not
+ *    change on 2026-08-02: GPS may now STORE a document the client sends it (D2
+ *    answered yes — the Documents section), and it still may not RESOLVE a location
+ *    inside the client's own systems that an operator typed into a text field. The
+ *    first is material handed over deliberately; the second is the app reaching into
+ *    a third party's estate, which nobody authorised and no decision touched.
  *
  *  · IT CANNOT SHOW A COUNT WITHOUT ITS ROWS (D1). Every number rendered through
  *    `Opens` is a real `<button>` that opens the inspector on the rows and the
@@ -65,11 +85,14 @@ import { PrintStyles } from '@/components/report/PrintStyles';
  * it: the header ribbon is ONE line of labelled facts, not four boxes with big
  * numbers and small captions.
  *
- * WHAT IS NOT ON THIS SCREEN, deliberately: any control that WRITES. No milestone
- * state editor, no "mark received", no accept button. Phase 3's write surface is a
- * separate contract with its own audit requirements, and a half-built mutation next
- * to a read that works is how an operator learns to distrust both. Everything here
- * is a read of rows an operator recorded elsewhere.
+ * WHAT IS NOT ON THIS SCREEN, deliberately: any control that writes a DELIVERY FACT.
+ * No milestone state editor, no "mark received", no accept button. Phase 3's write
+ * surface is a separate contract with its own audit requirements, and a half-built
+ * mutation next to a read that works is how an operator learns to distrust both.
+ *
+ * The one exception, added 2026-08-02, is document intake: storing and deleting the
+ * files a client sends. It is an exception on purpose — it records nothing about
+ * whether work happened, so it cannot flatter or contradict a single figure above it.
  */
 
 /* ── PRIMITIVES ─────────────────────────────────────────────────────────────── */
@@ -1254,6 +1277,7 @@ const SECTIONS: readonly { key: string; id: string; label: string }[] = [
   { key: '3', id: 'evidence', label: 'Evidence' },
   { key: '4', id: 'acceptance', label: 'Acceptance' },
   { key: '5', id: 'wip', label: 'WIP' },
+  { key: '6', id: 'documents', label: 'Documents' },
 ];
 
 export function GpsDelivery() {
@@ -1328,6 +1352,17 @@ export function GpsDelivery() {
     () => (data?.notices ?? []).filter((n) => n.severity === 'refusal'),
     [data],
   );
+
+  /**
+   * THE LEGAL POSITION BEHIND THE PRICE ON THIS DOSSIER.
+   *
+   * Read from the payload and its envelope, never assumed. `DeliveryResponse` names no
+   * jurisdiction (deliveryView.ts:1246 composes id, client, offer and status only), so
+   * this resolves to "no jurisdiction is even named" until the perimeter owner threads
+   * one through — which is a louder and more accurate stamp than a confident one, and
+   * is exactly the direction `readLegalPosition` is built to fail in.
+   */
+  const legal = useMemo(() => readLegalPosition([data]), [data]);
 
   if (!engagementId) {
     return (
@@ -1407,6 +1442,13 @@ export function GpsDelivery() {
             </span>
             <span className="ml-auto text-grey">as of {data.asOf}</span>
           </div>
+
+          {/* THE STAMP, DIRECTLY UNDER THE RIBBON AND ABOVE EVERYTHING ELSE.
+              This dossier is printable and the printed page is what reaches a client,
+              so the sentence that the number is not legally cleared has to be on the
+              first sheet, not in a footnote on the last. It is the whole of what the
+              desk traded for letting quotes through at all (owner, 2026-08-02). */}
+          <LegalPositionStamp reading={legal} subject="engagement dossier" className="mt-2" />
 
           {/* WHAT THE READ DECLARED ABOUT ITSELF, above the engine's own rail.
               `meta.scopeBasis` is the one that changes a verdict's meaning: drift
@@ -1489,15 +1531,35 @@ export function GpsDelivery() {
             <WipBlock wip={data.wip} onOpen={openRows} />
           </Block>
 
-          {/* THE LOCKOUT, restated at the foot of the dossier so it prints. Not a
-              footnote about a missing feature — a statement of where the absence is
-              enforced, which is what makes it a lock. */}
+          <Block
+            id="documents" label="Client documents" icon={<FolderClosed size={12} />}
+            right="stored on LCX infrastructure — D2 answered yes, 2026-08-02"
+          >
+            {/* The panel owns its own read and its own `migrated: false` sentence: that
+                envelope is about the ARTIFACT table, which is a different migration from
+                the one the delivery read describes, and the page-level banner would flatten
+                the two into one claim (`components/gps/ArtifactIntake.tsx`). */}
+            <ArtifactIntake engagementId={engagementId} />
+          </Block>
+
+          {/* THE API'S OWN STATEMENT ABOUT WHAT IT DOES WITH CLIENT MATERIAL, printed
+              verbatim from the wire rather than restated here.
+              A screen that paraphrases a server claim is a screen you cannot use to
+              audit the server, which is why these two paragraphs are rendered as sent.
+              They were STALE for part of 2026-08-02 — they still said GPS holds no
+              client document after intake had shipped — and this block carried an
+              explicit SUPERSEDED warning naming the contradiction. `deliveryView.ts`
+              and `delivery.ts` have since been corrected, so the warning is gone: it
+              would now be the stale claim. The distinction the sentences draw is the
+              real one an operator makes here — a REFERENCE to material in the client's
+              systems, which nothing follows, versus an UPLOAD, which puts the material
+              on LCX infrastructure with a retention date and an audit trail. */}
           <section aria-labelledby="lockout-h" className="mt-4 border-t border-line pt-2">
             <h2
               id="lockout-h"
               className="flex items-center gap-1.5 text-label font-bold uppercase tracking-wider text-navy"
             >
-              <Ban size={12} className="text-grey" /> No client document is stored anywhere in GPS
+              <Ban size={12} className="text-grey" /> Client document handling, as the API states it
             </h2>
             <p className="mt-1 text-micro leading-snug text-navy">{data.lockout.noClientDocumentStore}</p>
             <p className="mt-1 text-micro leading-snug text-grey">{data.lockout.externalReferenceIsInert}</p>
@@ -1512,8 +1574,17 @@ export function GpsDelivery() {
           </section>
 
           <p className="mt-3 border-t border-line pt-1.5 font-mono text-[10px] text-grey">
-            GPS delivery dossier · engagement {data.engagement.id} · composed {data.asOf} · read-only: this
-            surface records nothing.
+            {/* THE SCOPE OF THE OLD CLAIM, NARROWED RATHER THAN DELETED.
+                This line said "read-only: this surface records nothing", which stopped
+                being true when intake landed. It is not softened into vagueness and it
+                is not left standing as a falsehood: the claim now names what it covers
+                (delivery facts — no milestone state, no acceptance, no review) and then
+                names the exception out loud. `__tests__/gpsDelivery.test.tsx` asserts
+                both halves, so neither can be dropped without going red. */}
+            GPS delivery dossier · engagement {data.engagement.id} · composed {data.asOf} · delivery
+            facts are read-only: this surface records nothing about whether work happened, whether it
+            was reviewed or whether it was accepted. Its only writes are storing and deleting the
+            documents a client sent.
           </p>
         </div>
       )}

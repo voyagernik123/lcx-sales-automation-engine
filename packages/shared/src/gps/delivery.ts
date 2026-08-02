@@ -61,15 +61,28 @@ import { getOffer } from './catalogue.js';
  */
 
 /**
- * The one string a surface may show where a document control would otherwise be.
+ * The one string a surface may show beside a reference to material held elsewhere.
  *
- * Exported as text rather than as a boolean on purpose: a boolean invites someone
- * to flip it, and flipping it would enable NOTHING, because no code path in GPS
- * accepts a document. Saying so in words is honest; a disabled-feature flag would
- * imply a feature exists behind it.
+ * ══ REWRITTEN 2026-08-02, BECAUSE THE OLD SENTENCE BECAME FALSE. ══════════════
+ * It read "GPS does not hold client documents… whether LCX may hold third-party
+ * confidential material is an open question for LCX legal/DPO (decision D2)". D2 was
+ * answered YES by the owner that day and GPS gained an intake surface, so that
+ * sentence was a claim the software contradicted — printed, on the delivery screen, to
+ * the people deciding what to do with a client's file. A stale reassurance is worse
+ * than no reassurance: it is the sentence someone quotes to a client.
+ *
+ * WHAT IT SAYS NOW is the distinction that is actually true and actually useful at the
+ * point of use: THIS ROW is a reference to material in the client's own systems and
+ * nothing resolves it; if you want GPS to hold the material, upload it, and then it is
+ * on LCX infrastructure with a retention clock and an audit trail. Those are two
+ * different decisions and the operator makes them one at a time.
+ *
+ * Still exported as text rather than as a boolean: a boolean invites someone to flip
+ * it, and the state of the world is not a flag — it is which of two things the
+ * operator did.
  */
 export const NO_CLIENT_DOCUMENT_STORE_REASON =
-  'GPS does not hold client documents. Keep the material where you and your counsel already keep it and record a reference here. Whether LCX may hold third-party confidential material is an open question for LCX legal/DPO (decision D2).';
+  'This row is a REFERENCE, not a copy: it records where the material lives in the client\'s own systems, and GPS never resolves, retrieves or copies it. If GPS should hold the material itself, upload it to the engagement — a stored document is kept on LCX infrastructure under a retention date, every download is recorded against a named person, and removal is a decision with a name on it. Client documents may be held: decision D2 (controller vs processor for a third party\'s confidential material) was answered by the owner on 2026-08-02.';
 
 // ── Actors ────────────────────────────────────────────────────────────────────
 

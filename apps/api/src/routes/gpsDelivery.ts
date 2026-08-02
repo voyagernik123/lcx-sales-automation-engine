@@ -12,7 +12,7 @@ import {
 import type { AuthVariables } from '../middleware/auth.js';
 import { requireOperator } from '../middleware/auth.js';
 import { requireApprover } from '../middleware/permissions.js';
-import { guardDeliverablePerimeter, perimeterRefusalBody } from '../gps/perimeterGuard.js';
+import { guardDeliverablePerimeter, perimeterRefusalBody, perimeterStamp } from '../gps/perimeterGuard.js';
 import { getPool } from '../db/index.js';
 import { env } from '../lib/env.js';
 import {
@@ -759,11 +759,20 @@ gpsDeliveryRoutes.post('/deliverables/:id/accept', requireOperator, requireAppro
     });
     if (!result.ok) return writeRefusal(c, result);
     return c.json({
-      data: result.value,
+      // Stamped on the acceptance, not only on the refusal. Acceptance is the act that
+      // makes work invoiceable, so it is the one most likely to be printed and sent —
+      // and since the gate turned advisory it can happen with no legal position on
+      // file for the jurisdiction. The stamp is the only thing that says so.
+      data: { ...result.value, ...perimeterStamp(cleared) },
       // 0049 has no accepted_by column, so the acceptor is named on the response and
       // forgotten by the row — DELIVERY_SCHEMA_GAPS carries that gap and the ALTER
       // that closes it.
-      meta: { ...meta(), acceptedBy: result.operator, schemaGaps: DELIVERY_SCHEMA_GAPS },
+      meta: {
+        ...meta(),
+        acceptedBy: result.operator,
+        schemaGaps: DELIVERY_SCHEMA_GAPS,
+        perimeterAdvisory: cleared.advisory,
+      },
     });
   } catch (err) {
     console.error('[gps-delivery] accept error:', err);

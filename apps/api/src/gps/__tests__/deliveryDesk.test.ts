@@ -655,7 +655,7 @@ describe('acceptance is refused, with a reason, while a review is outstanding', 
     const { pool } = fake({ engagement: engagementRow(null), deliverables: [deliverableRow()] });
     const lockout = (await deliveryDesk(pool, ENGAGEMENT_ID, NOW))!.response.lockout;
     expect(lockout.noClientDocumentStore).toBeTruthy();
-    expect(lockout.externalReferenceIsInert).toMatch(/never resolves, retrieves or copies it/i);
+    expect(lockout.externalReferenceIsInert).toMatch(/never resolves, retrieves, copies or previews it/i);
     expect(lockout.enforcedBy.length).toBeGreaterThanOrEqual(3);
   });
 });

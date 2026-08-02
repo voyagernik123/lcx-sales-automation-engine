@@ -17,6 +17,8 @@ import {
   type GpsEngagementRow, type GpsSummary,
 } from '@/lib/api/gps';
 import { GpsMetaBanner } from './GpsMetaBanner';
+import { LegalPositionStamp } from '@/components/gps/LegalPositionStamp';
+import { readLegalPosition } from '@/components/gps/legalPosition';
 import type { GpsClient } from '@lcx/shared';
 
 /**
@@ -32,12 +34,17 @@ import type { GpsClient } from '@lcx/shared';
  *
  * WHAT THIS SURFACE DELIBERATELY CANNOT DO — each one is a gate, not a gap:
  *
- *  1. ACCEPT A CLIENT DOCUMENT. No upload control, no file input, no drop zone,
- *     and no function behind one (`lib/api/gps.ts` has no upload export, and
- *     `__tests__/gps.test.tsx` fails if one appears). Decision D2 — whether LCX
- *     legal/DPO accepts third-party confidential material on LCX infrastructure
- *     — is unanswered, so Phase 3 is gated (plan §3 D2, §4 S0.4). The offers
- *     list `requiredClientInputs`; those are collected in conversation.
+ *  1. ACCEPT A CLIENT DOCUMENT ON THIS SCREEN. No upload control, no file input,
+ *     no drop zone, and no function behind one — `lib/api/gps.ts` has no upload
+ *     export and `__tests__/gps.test.tsx` fails if one appears.
+ *     WHAT CHANGED ON 2026-08-02: decision D2 (whether LCX legal/DPO accepts
+ *     third-party confidential material on LCX infrastructure) was answered YES, so
+ *     GPS does now store client documents — against an ENGAGEMENT, on the delivery
+ *     desk (`components/gps/ArtifactIntake.tsx`, mounted by `GpsDelivery.tsx`). It
+ *     stays off the quote desk because there is nothing to attach a document to
+ *     until an engagement exists: a file dropped beside a half-built quote has no
+ *     row to belong to, and the natural fix for that is a temporary holding area
+ *     for client confidential material, which is the one thing nobody asked for.
  *  2. SEND ANYTHING TO A CLIENT. "Issue proposal" records that a proposal was
  *     issued and by when; it does not email, publish or deliver. Same shape as
  *     the reply desk, which approves text and never posts (`pages/Marketing.tsx:20`).
@@ -81,7 +88,7 @@ export function Gps() {
     <div className="p-5">
       <PageTitle
         icon={<Globe size={20} />}
-        subtitle="Offer → proposal → deposit for the services business. Exclusions and margin are visible before anything is issued. The desk never sends to a client and never accepts a client document."
+        subtitle="Offer → proposal → deposit for the services business. Exclusions and margin are visible before anything is issued. The desk never sends to a client, and no price here is legally cleared."
       >
         Global Services
       </PageTitle>
@@ -111,10 +118,19 @@ export function Gps() {
         <div className="mt-4"><CardSkeleton /></div>
       ) : (
         <>
+          {/* `reads` is every payload this page is holding, handed down so the stamp
+              can be derived from what the SERVER said rather than from what a child
+              component assumed. If `legalPositionOnFile` lands on the summary, the
+              client list or the engagement list — or in any of their envelopes — it is
+              found. If it lands nowhere, the stamp fires, which is the safe direction
+              (`components/gps/legalPosition.ts`). */}
           {enabled && (
-            <QuoteBuilder clients={clients} onCreated={refresh} />
+            <QuoteBuilder clients={clients} onCreated={refresh} reads={[summary, clients, engagements]} />
           )}
-          <EngagementList rows={engagements} onChanged={refresh} enabled={enabled} />
+          <EngagementList
+            rows={engagements} onChanged={refresh} enabled={enabled}
+            clients={clients} reads={[summary, clients, engagements]}
+          />
         </>
       )}
     </div>
@@ -337,7 +353,9 @@ const money = (cents: number) => formatMoney(cents / 100, { exact: true });
  * guards against is a placeholder presented as real. The midpoint is offered as a
  * one-click fill instead, labelled as a placeholder, so using it is an act.
  */
-function QuoteBuilder({ clients, onCreated }: { clients: GpsClient[]; onCreated: () => void }) {
+function QuoteBuilder({ clients, onCreated, reads }: {
+  clients: GpsClient[]; onCreated: () => void; reads: readonly unknown[];
+}) {
   const [clientId, setClientId] = useState('');
   const [offerKey, setOfferKey] = useState<OfferKey>(OFFERS[0].key);
   const [entity, setEntity] = useState<ContractingEntity>('lcx');
@@ -356,6 +374,17 @@ function QuoteBuilder({ clients, onCreated }: { clients: GpsClient[]; onCreated:
 
   const belowBand = priceCents != null && priceCents < offer.priceBandCents.min;
   const aboveBand = priceCents != null && priceCents > offer.priceBandCents.max;
+
+  /**
+   * THE JURISDICTION IS THE CLIENT'S, AND IT IS FREE TEXT A HUMAN TYPED
+   * (`0047_gps.sql:67` stores it that way on purpose, and `NewClientForm` below says
+   * so). The stamp names it verbatim rather than mapping it to a code, because a
+   * mapping is where "Liechtenstein" quietly becomes a jurisdiction the perimeter has
+   * a row for. When no client is selected there is no jurisdiction at all, and the
+   * stamp says that too — it is the strongest version of the sentence, not the weakest.
+   */
+  const selected = clients.find((c) => c.id === clientId) ?? null;
+  const legal = readLegalPosition(reads, { jurisdiction: selected?.jurisdiction ?? null });
 
   const submit = async () => {
     if (!clientId) { toast('error', 'Pick a client first'); return; }
@@ -453,6 +482,12 @@ function QuoteBuilder({ clients, onCreated }: { clients: GpsClient[]; onCreated:
                 value={deposit} onChange={(e) => setDeposit(e.target.value)}
               />
             </div>
+
+            {/* BESIDE THE MONEY, ABOVE IT, AND BEFORE THE BUTTON THAT COMMITS IT.
+                The quote gate stopped refusing on 2026-08-02 and this sentence is what
+                the desk accepted in exchange, so it cannot sit under the fold or after
+                the create control. */}
+            <LegalPositionStamp reading={legal} subject="quote" className="mt-4" />
 
             <MarginReadout priceCents={priceCents} vendorCents={vendorCents} />
 
@@ -632,8 +667,12 @@ function NewClientForm({ onCreated }: { onCreated: () => void }) {
  * delivered-and-never-collected, so the collected ones are the evidence and the
  * lost ones are the calibration.
  */
-function EngagementList({ rows, onChanged, enabled }: {
+function EngagementList({ rows, onChanged, enabled, clients, reads }: {
   rows: GpsEngagementRow[]; onChanged: () => void; enabled: boolean;
+  /** For the jurisdiction only: `GpsEngagementRow` joins the client NAME, not its
+   *  jurisdiction (`lib/api/gps.ts:60`), and the stamp has to name a place. */
+  clients: GpsClient[];
+  reads: readonly unknown[];
 }) {
   return (
     <section className="mt-6" data-testid="gps-engagements">
@@ -648,7 +687,10 @@ function EngagementList({ rows, onChanged, enabled }: {
       ) : (
         <div className="mt-2 space-y-3">
           {rows.map((r) => (
-            <EngagementCard key={r.id} row={r} onChanged={onChanged} enabled={enabled} />
+            <EngagementCard
+              key={r.id} row={r} onChanged={onChanged} enabled={enabled} reads={reads}
+              jurisdiction={clients.find((c) => c.id === r.clientId)?.jurisdiction ?? null}
+            />
           ))}
         </div>
       )}
@@ -671,11 +713,16 @@ function statusTone(s: EngagementStatus): 'ready' | 'conditional' | 'blocked' | 
   return 'conditional';
 }
 
-function EngagementCard({ row, onChanged, enabled }: {
+function EngagementCard({ row, onChanged, enabled, jurisdiction, reads }: {
   row: GpsEngagementRow; onChanged: () => void; enabled: boolean;
+  jurisdiction: string | null; reads: readonly unknown[];
 }) {
   const [busy, setBusy] = useState(false);
   const offer = getOffer(row.offerKey);
+  // Per card, because the jurisdiction is per client: one row on this list may have a
+  // position on file and the next may not, and a page-level banner would flatten that
+  // into one sentence that is wrong about half the rows.
+  const legal = readLegalPosition([row, ...reads], { jurisdiction });
   const m = marginCents(row.priceCents, row.vendorCostCents);
   const pct = marginPct(row.priceCents, row.vendorCostCents);
 
@@ -733,6 +780,11 @@ function EngagementCard({ row, onChanged, enabled }: {
           />
         )}
       </div>
+
+      {/* THE STAMP ON THE PROPOSAL. Above the conflict record and above the issue
+          control, because this card is the proposal surface: the button below it is
+          what marks a proposal issued, and the sentence has to be read first. */}
+      <LegalPositionStamp reading={legal} subject="proposal" className="mt-3" />
 
       {row.conflict ? (
         <p className="mt-3 rounded border border-line bg-ice-soft/40 px-2.5 py-2 text-micro text-grey dark:bg-ice-soft/5">

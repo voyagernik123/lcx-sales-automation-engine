@@ -81,9 +81,12 @@ import { gpsOriginationRoutes } from './gpsOrigination.js';
 import { gpsConflictRoutes } from './gpsConflict.js';
 import { gpsDeliveryRoutes } from './gpsDelivery.js';
 import { gpsLoopRoutes } from './gpsLoop.js';
+// Client intake (owner decision, 2026-08-02: GPS may store client documents).
+import { gpsArtifactRoutes } from './gpsArtifact.js';
 import {
   perimeterClearanceFor,
   perimeterRefusalBody,
+  perimeterStamp,
   requirePerimeterClearance,
 } from '../gps/perimeterGuard.js';
 import { clientJurisdiction } from '../gps/service.js';
@@ -321,14 +324,40 @@ gpsRoutes.post('/quote', requireOperator, async (c) => {
   }
 
   return c.json({
-    data: quoteOffer({
-      offerKey: offerKey,
-      priceCents: body.priceCents as number | undefined,
-      vendorCostCents: body.vendorCostCents as number | undefined,
-      contractingEntity: body.contractingEntity as ContractingEntity | undefined,
-      currency: currencyCode(body.currency),
-    }),
-    meta: { ...meta(), migrated: true, perimeter: { allowed: true, source: perimeter.perimeterSource } },
+    data: {
+      ...quoteOffer({
+        offerKey: offerKey,
+        priceCents: body.priceCents as number | undefined,
+        vendorCostCents: body.vendorCostCents as number | undefined,
+        contractingEntity: body.contractingEntity as ContractingEntity | undefined,
+        currency: currencyCode(body.currency),
+      }),
+      /*
+       * THE STAMP GOES ON THE ALLOWED ANSWER, and that is the whole point of it.
+       * While the gate refused every absent position, a price on the wire implied a
+       * position existed — the refusal carried the reason and the success carried
+       * nothing, which was fine because there were no successes without a position.
+       * The gate is advisory now, so a price is returned in jurisdictions where
+       * nobody has recorded a legal position at all, and this is the only thing on
+       * the response that says so. It is spread flat, next to the numbers, because
+       * `apps/web` reads these three keys to print the notice beside the price and a
+       * nested key that goes missing renders as a quote that looks cleared.
+       */
+      ...perimeterStamp(perimeter),
+    },
+    meta: {
+      ...meta(),
+      migrated: true,
+      perimeter: {
+        allowed: true,
+        // `advisory: true` means the gate refused and the act proceeded anyway.
+        // Reported separately from `allowed` because they are different facts, and
+        // conflating them is the bug class this whole change is about.
+        advisory: perimeter.advisory,
+        gateCode: perimeter.legalPositionGateCode,
+        source: perimeter.perimeterSource,
+      },
+    },
   });
 });
 
@@ -553,7 +582,13 @@ gpsRoutes.post('/engagements', requireOperator, async (c) => {
         currency: currencyCode(body.currency),
         owner: text(body.owner, 100),
       });
-      return c.json({ data: created, meta: meta() }, 201);
+      // Stamped on the allowed answer for the reason the quote route gives: an
+      // engagement can now be opened in a jurisdiction with no recorded position, and
+      // this is the only field on the response that says so.
+      return c.json(
+        { data: { ...created, ...perimeterStamp(perimeter) }, meta: meta() },
+        201,
+      );
     } catch (err) {
       // 23503 = FK violation on client_id. An unknown client is a 404 the caller
       // can act on, not a 500 — `gps_engagement.client_id` REFERENCES gps_client.
@@ -885,3 +920,23 @@ gpsRoutes.route('/', gpsDeliveryRoutes); //      /v1/gps/engagements/:id/deliver
 gpsRoutes.route('/underwriting', gpsUnderwriteRoutes); // POST /v1/gps/underwriting…
 gpsRoutes.route('/conflict', gpsConflictRoutes); //       /v1/gps/conflict/wall, /perimeter, /quote-gate…
 gpsRoutes.route('/loop', gpsLoopRoutes); //               /v1/gps/loop…
+/*
+ * CLIENT INTAKE. Mounted at '/' because it declares its own first segments
+ * ('/engagements/:id/artifacts', '/artifacts/:id/…'), exactly like book,
+ * origination and delivery above.
+ *
+ * THE DECISION THIS FILE'S HEADER USED TO REST ON HAS BEEN MADE. Everything above
+ * about there being no upload route was true, and load-bearing, while decision D2
+ * (LCX legal/DPO: controller vs processor for a third party's confidential
+ * material) was unanswered. The owner answered it YES on 2026-08-02, so intake
+ * exists — with a size ceiling, a MIME allowlist checked against the leading bytes,
+ * a server-computed sha256, a derived storage key, short-TTL single-use download
+ * links, an audit row on every download and soft delete only. The reasoning and the
+ * schema it needs (migration 0057) are in `../gps/artifact.ts`.
+ *
+ * Mounting it HERE rather than in app.ts is what keeps it inside the compartment
+ * gate: 'view' on the reads, 'operate' on the upload and the delete, decided by
+ * `app.ts:requiresOperate` over the `/v1/gps` prefix and asserted per path in
+ * `__tests__/gpsArtifact.test.ts`.
+ */
+gpsRoutes.route('/', gpsArtifactRoutes); //  /v1/gps/engagements/:id/artifacts, /artifacts/:id/…

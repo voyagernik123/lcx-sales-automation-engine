@@ -15,6 +15,8 @@ import {
   type UnderwriteDriver, type VarianceAttribution, type EffortTriple,
 } from '@/lib/api/gpsUnderwrite';
 import { GpsMetaBanner } from './GpsMetaBanner';
+import { LegalPositionStamp } from '@/components/gps/LegalPositionStamp';
+import { readLegalPosition } from '@/components/gps/legalPosition';
 
 /**
  * GLOBAL SERVICES — THE UNDERWRITING SCREEN (Phase 7).
@@ -333,6 +335,15 @@ export function GpsUnderwriting() {
 
       <div className="space-y-4">
         <QuoteBar form={form} set={set} />
+
+        {/* THE STAMP. This screen prints, and what it prints is a price with a loss
+            probability beside it — the most quotable artefact in the compartment.
+            NOTE WHAT IT WILL SAY: `UnderwriteBody` carries no jurisdiction (there is no
+            field for one, deliberately — the simulation is about effort and cost), so
+            the reading resolves to "no jurisdiction is even named on this screen". That
+            is the honest sentence for a distribution computed with no place attached to
+            it, and it is louder than a per-jurisdiction one, not quieter. */}
+        <LegalPositionStamp reading={readLegalPosition([res])} subject="underwritten price" />
 
         {/* WHAT THE SIMULATION DECLARES ABOUT ITS OWN BASIS. `envelope()`
             (routes/gpsUnderwrite.ts:161) carries `migrated` — false when the rate-card

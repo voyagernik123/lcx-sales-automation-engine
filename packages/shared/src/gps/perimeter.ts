@@ -518,6 +518,113 @@ export const SERVICE_GATE_ORDER: readonly ServiceGateCode[] = [
   'local_partner_not_named',
 ] as const;
 
+/* ── What a refusal MEANS when there is no position to refuse from ──────────── */
+
+/**
+ * The codes that report the ABSENCE OF A HUMAN POSITION rather than a decision a
+ * human took. Everything else in `SERVICE_GATE_ORDER` is somebody's recorded
+ * answer: `service_prohibited` is a human saying no, and `counsel_not_engaged` /
+ * `local_partner_not_named` are conditions attached to a position that exists and
+ * is reviewed, current and well formed — the gate cannot reach either of them
+ * otherwise.
+ *
+ * This split is the whole mechanism behind advisory operation, and it is DERIVED
+ * FROM THE RECORD, not configured. There is no setting, no flag and no
+ * environment variable anywhere in this file: the moment a reviewed, well-formed,
+ * unexpired position exists for a jurisdiction × offer pair, `classify` returns
+ * `status: 'ok'` for it, no absence code can be produced for it, and that pair
+ * blocks again — with no edit here and nothing for a human to remember to switch
+ * back. Its neighbours, which still have no position, stay advisory. Self-healing
+ * is not a feature added on top; it is what "the perimeter is empty" stopping
+ * being true does on its own.
+ *
+ * `perimeter_malformed` belongs on this list. A row that cites no source or
+ * names no accountable human is not a position anybody took, whatever it says in
+ * its `serviceClass` — and if what it says is `prohibited`, the prohibition gate
+ * fires first and the act is blocked regardless.
+ */
+export const PERIMETER_ABSENCE_CODES: readonly ServiceGateCode[] = [
+  'perimeter_unknown_jurisdiction',
+  'perimeter_unknown_offer',
+  'perimeter_malformed',
+  'perimeter_stale',
+  'perimeter_unreviewed',
+] as const;
+
+/**
+ * The sentence that must appear on every quote, proposal and engagement produced
+ * while no position is on file. It is not a disclaimer in small print: it is the
+ * only honest description of what the artifact rests on, which is nothing.
+ */
+export const NO_LEGAL_POSITION_NOTICE =
+  'No legal position on file. No qualified human has entered a reviewed, sourced, unexpired '
+  + 'position for this jurisdiction and this offer, so nothing here has been cleared. The '
+  + 'perimeter was consulted, it refused, and the refusal was recorded rather than enforced.';
+
+/**
+ * Is there a human position here that could be enforced at all? True only for a
+ * reviewed, well-formed, unexpired entry — exactly `classify`'s `ok`. The two
+ * extra conjuncts are belt-and-braces against a future `ok` that forgets one.
+ */
+export function hasLegalPositionOnFile(c: PerimeterClassification): boolean {
+  return c.status === 'ok' && c.entry !== null && c.defects.length === 0;
+}
+
+/**
+ * What the verdict MEANS, travelling beside the verdict and never inside it (D3).
+ *
+ * `blocked` is the only field an enforcement point may act on. It is NOT the
+ * negation of `allowed`: a refusal whose code reports the absence of any position
+ * is `allowed: false, advisory: true, blocked: false`, and the caller proceeds
+ * while recording exactly what it proceeded past.
+ */
+export interface PerimeterDisposition {
+  /** True iff a reviewed, well-formed, unexpired human position was found. */
+  legalPositionOnFile: boolean;
+  /** True when the gate refused for want of a position, and the act proceeds anyway. */
+  advisory: boolean;
+  /** True when the act must be refused. Prohibitions and unevaluable checks always are. */
+  blocked: boolean;
+  /** `gateService`'s own code, unchanged. Null iff allowed. */
+  gateCode: ServiceGateCode | null;
+  /** `gateService`'s own sentence, unchanged. Null iff allowed. */
+  gateReason: string | null;
+  /** `NO_LEGAL_POSITION_NOTICE` whenever `legalPositionOnFile` is false; else null. */
+  notice: string | null;
+}
+
+/**
+ * Derive the disposition from a decision. Pure, total, and it changes NOTHING
+ * about the decision it reads.
+ *
+ * Two things always block, whatever the state of the perimeter:
+ *   - `prohibited`. If a human has written down that a thing is forbidden, the
+ *     emptiness of the rest of the matrix is not an argument against them. Tested
+ *     on a prohibition that is also stale, and one that is also unreviewed.
+ *   - `unevaluable_asof`. Advisory operation is the consequence of a perimeter
+ *     that is EMPTY, never of one that could not be READ; an unparseable instant
+ *     means the check did not happen, and a check that did not happen is a
+ *     refusal on the same reasoning `classify` fails closed on it.
+ */
+export function perimeterDisposition(
+  d: Pick<ServiceGateDecision, 'allowed' | 'code' | 'reason' | 'classification'>,
+): PerimeterDisposition {
+  const legalPositionOnFile = hasLegalPositionOnFile(d.classification);
+  const base = {
+    legalPositionOnFile,
+    gateCode: d.code,
+    gateReason: d.reason,
+    notice: legalPositionOnFile ? null : NO_LEGAL_POSITION_NOTICE,
+  };
+  if (d.allowed) return { ...base, advisory: false, blocked: false };
+  const absent =
+    d.code !== null
+    && PERIMETER_ABSENCE_CODES.includes(d.code)
+    && d.classification.serviceClass !== 'prohibited'
+    && d.classification.status !== 'unevaluable_asof';
+  return { ...base, advisory: absent, blocked: !absent };
+}
+
 /**
  * One evaluated gate. `skipped` gates were never reached — never silently
  * passed. Same shape and same reasoning as `GateResult` (`partners.ts:595`):
@@ -580,6 +687,14 @@ export interface ServiceGateDecision {
   gates: readonly ServiceGateResult[];
   /** What the caller asserted, echoed back for the record. */
   conditionsAsserted: { counsel: string | null; localPartner: string | null };
+  /**
+   * What the verdict above MEANS — `perimeterDisposition`, computed here so that
+   * every caller of `gateService`, on either side of the API, reads ONE derivation
+   * of it. `allowed`, `code`, `reason`, `remedy`, `recoverable` and `gates` are
+   * untouched by its presence: the disposition interprets the verdict, it does not
+   * participate in reaching it.
+   */
+  disposition: PerimeterDisposition;
 }
 
 function named(v: string | null | undefined): string | null {
@@ -623,7 +738,8 @@ export function gateService(input: ServiceGateInput): ServiceGateDecision {
     for (const c of SERVICE_GATE_ORDER.slice(SERVICE_GATE_ORDER.indexOf(code) + 1)) {
       gates.push({ code: c, passed: false, skipped: true, detail: 'not reached' });
     }
-    return { allowed: false, code, reason: detail, remedy, recoverable, classification, gates, conditionsAsserted };
+    const verdict = { allowed: false as const, code, reason: detail, remedy, recoverable, classification };
+    return { ...verdict, gates, conditionsAsserted, disposition: perimeterDisposition(verdict) };
   };
   const pass = (code: ServiceGateCode, detail: string): void => {
     gates.push({ code, passed: true, skipped: false, detail });
@@ -683,5 +799,6 @@ export function gateService(input: ServiceGateInput): ServiceGateDecision {
   }
   pass('local_partner_not_named', localPartner ? `Local partner named: ${localPartner}.` : 'Local partner not required by the recorded position.');
 
-  return { allowed: true, code: null, reason: null, remedy: null, recoverable: true, classification, gates, conditionsAsserted };
+  const cleared = { allowed: true as const, code: null, reason: null, remedy: null, recoverable: true, classification };
+  return { ...cleared, gates, conditionsAsserted, disposition: perimeterDisposition(cleared) };
 }

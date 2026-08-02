@@ -158,6 +158,48 @@ export {
 // `gps/index.ts` (see `PerimeterStatus as PerimeterEntryStatus` there), never here.
 export * from './gps/index.js';
 
+// MARKETING — the X desk. Pure engine: which regime applies (Art 66 vs Art 7 vs Title VI
+// vs UCPD), the claim-safety gate with the strip-versus-refuse split, the Art 7
+// boilerplate arithmetic that proves a listing promo cannot fit in a tweet, the
+// engagement-verb adoption model, the RESIST 2 triage taxonomy, the market-abuse
+// perimeter, the crisis room, desk mode including an Art 94 suspension, and the honesty
+// ceiling that keeps reach, impressions and share-of-voice off every panel by making them
+// a compile error. No I/O, no clock, no randomness anywhere in it.
+//
+// THERE IS NO X CREDENTIAL AND NEVER WILL BE, and nothing in this compartment posts,
+// authenticates as, or holds a token for the LCX account. Drafts are handed to a human
+// who sends by hand, outside this system.
+//
+// WHOLESALE, for the reason recorded above the GPS export and proved again here: this
+// barrel's marketing entry did not exist, `marketing/index.ts` was a hand-maintained name
+// list covering `types.ts` only, and `apps/api/src/marketing/abuseRegister.ts` therefore
+// failed with eight TS2305s on symbols that WERE exported from their own module. A name
+// list is a second place to forget, with no signal until an emit build in Docker order
+// fails. Collisions surface as TS2308 at compile time and are resolved inside
+// `marketing/index.ts` — see the fourteen recorded there, each of which was a duplicated
+// rule rather than a naming accident.
+export * from './marketing/index.js';
+
+// THE ONE CROSS-COMPARTMENT COLLISION, resolved by precedence rather than by renaming a
+// hundred call sites. `gps/partners.ts` and `marketing/types.ts` both export a type named
+// `RefusalCode`, and two `export *` providing one name is a TS2308. An explicit named
+// re-export in THIS module wins over both stars, which is what the compiler's own
+// "consider explicitly re-exporting" message means.
+//
+// GPS keeps the unqualified name because it is the incumbent: it is already bound across
+// apps/api and apps/web, and this compartment is the newcomer. Marketing's is published
+// under a name that says which desk it belongs to.
+//
+// WHY THIS IS NOT COSMETIC. `apps/api/src/marketing/abuseRegister.ts:56-72` hit this and
+// worked around it by QUOTING three code strings as a literal union, because
+// `import type { RefusalCode } from '@lcx/shared'` silently resolved to GPS's union —
+// which contains none of them — and produced an error that read as though the marketing
+// vocabulary were wrong. Silent resolution to the wrong compartment's union is the exact
+// failure this alias removes: `MarketingRefusalCode` cannot be mistaken for GPS's, and
+// `PerimeterRefusalHint` is now a checked subset of it rather than three hopeful strings.
+export type { RefusalCode } from './gps/index.js';
+export type { RefusalCode as MarketingRefusalCode } from './marketing/index.js';
+
 // DISTRIBUTION — growth engines (LCX ONE Phase 4)
 export type {
   ReferralParams, ReferralSimResult, EmissionInput, EmissionResult,

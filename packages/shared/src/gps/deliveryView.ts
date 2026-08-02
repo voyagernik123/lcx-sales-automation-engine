@@ -576,11 +576,27 @@ export function composeProgressView(plan: EngagementPlan, asOf: string = new Dat
  * reference is human-entered free text — an operator types it — and nothing in GPS
  * resolves, retrieves, copies, previews or indexes it.
  */
+/**
+ * ══ THE SECOND HALF OF THIS SENTENCE WAS REPLACED ON 2026-08-02. ══════════════
+ * It used to end "…decision D2 is unanswered, so the material stays where the client and
+ * their counsel already keep it" — which stopped being true the day D2 was answered YES
+ * and GPS gained an upload surface. The FIRST half did not change and did not need to:
+ * this field is still a note a human types and nothing in GPS resolves it.
+ *
+ * WHY THE INERTNESS IS NOW A SHARPER CLAIM, not a softer one. While there was no intake
+ * at all, "nothing fetches this" was almost tautological. Now that the compartment
+ * demonstrably can receive and serve a document, a reader's natural next thought is that
+ * this column should resolve itself — and a server that followed it would be retrieving
+ * third-party material through a path with no size ceiling, no verified type, no digest,
+ * no retention date and no audit row, i.e. with none of the controls the upload surface
+ * exists to impose. `intakeLockout.test.ts` fails the build on any dereference.
+ */
 export const EXTERNAL_REFERENCE_IS_INERT =
   'Where the client says the material lives, in their own systems, typed by an operator. ' +
-  'GPS never resolves, retrieves or copies it — decision D2 (controller vs processor for a ' +
-  "third party's confidential material) is unanswered, so the material stays where the client " +
-  'and their counsel already keep it.';
+  'GPS never resolves, retrieves, copies or previews it: it is inert text in a row. ' +
+  'Uploading the material is the other, separate choice — that puts it on LCX ' +
+  'infrastructure with a retention date and an audit trail, and this field records ' +
+  'instead that it stays where the client and their counsel already keep it.';
 
 /**
  * One outstanding (or settled) client input, as a chase-list row.
@@ -1072,13 +1088,27 @@ export interface DeliveryNotice {
   mechanism?: string;
 }
 
-/** The lockout, restated on the wire so a surface cannot render the screen without it. */
+/**
+ * The document posture, restated on the wire so a surface cannot render the screen
+ * without it.
+ *
+ * THE FIELD NAMES ARE KEPT AND THE MEANINGS ARE NARROWED (2026-08-02). While D2 was
+ * open this was "the lockout"; it is now the distinction between a reference and an
+ * upload, which is the thing an operator standing in front of a client's file actually
+ * has to decide. The keys are unchanged deliberately: `apps/web` reads them, an API
+ * response shape is a contract, and renaming a field to describe a policy change is how
+ * a deploy takes a screen down for no benefit.
+ */
 export interface DeliveryLockoutNotice {
-  /** `NO_CLIENT_DOCUMENT_STORE_REASON`, verbatim from `delivery.ts:71`. */
+  /**
+   * `NO_CLIENT_DOCUMENT_STORE_REASON`, verbatim from `delivery.ts`. Despite the name,
+   * this no longer says GPS holds nothing — it says THIS ROW holds a reference and names
+   * the upload as the other choice.
+   */
   noClientDocumentStore: string;
   /** `EXTERNAL_REFERENCE_IS_INERT`. */
   externalReferenceIsInert: string;
-  /** Where the absence is enforced, so it reads as a lock and not as a missing feature. */
+  /** Where each half is enforced, so it reads as a design and not as a missing feature. */
   enforcedBy: readonly string[];
 }
 
@@ -1262,9 +1292,12 @@ export function composeDeliveryResponse(rows: DeliveryResponseInput): DeliveryRe
       noClientDocumentStore: NO_CLIENT_DOCUMENT_STORE_REASON,
       externalReferenceIsInert: EXTERNAL_REFERENCE_IS_INERT,
       enforcedBy: [
-        'apps/api/src/gps/__tests__/intakeLockout.test.ts — 20 assertions, mutation-tested against 12 adversarial edits',
+        'apps/api/src/gps/__tests__/intakeLockout.test.ts — 36 assertions, mutation-tested against 24 adversarial edits: one intake surface, at five named paths, and nowhere else in GPS',
+        'apps/api/src/gps/artifact.ts — 25 MiB ceiling enforced on the stream, MIME allowlist checked against the leading bytes, server-computed sha256, storage key derived from ids, an audit row before any byte is served',
+        '0057_gps_artifact.sql — retention_until NOT NULL and capped at 10 years, so "kept forever" is unrepresentable; deleted_at (settled) and purged_at (bytes gone) are separate facts',
+        '0058_gps_artifact_custody.sql — the bytes are in ONE column of ONE table, deny-all under RLS with no policy',
         'packages/shared/src/gps/delivery.test.ts — the ratchet for the domain layer',
-        '0049_gps_delivery.sql — no column on any gps_ table can hold the material',
+        '0049_gps_delivery.sql — external_location stays plain text that nothing dereferences',
       ],
     },
   };

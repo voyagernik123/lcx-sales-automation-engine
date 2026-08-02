@@ -29,6 +29,8 @@
  * separate concern so neither can be skipped by "the other one handles it".
  */
 
+import type { SenderAuthEvidence } from './provenanceLadder.js';
+
 export interface ParsedReply {
   ok: true;
   xCommentId: string;
@@ -36,7 +38,31 @@ export interface ParsedReply {
   authorHandle: string;
   authorDisplay: string | null;
   body: string;
-  postedAt: Date | null;
+  /**
+   * When the NOTIFICATION EMAIL was stamped. Observation time, and nothing else.
+   *
+   * IT USED TO BE CALLED `postedAt` AND WRITTEN INTO `marketing_x_reply.posted_at`.
+   * That is plan §1 defect 4: an email header date measures when the mail was sent
+   * through however many forwarding hops, so the desk's "oldest waiting" figure was
+   * measuring mail latency, and because `posted_at` fell back to `received_at` the
+   * number flattered the desk by exactly the delay it was supposed to expose.
+   *
+   * The true post time comes from X's own oEmbed endpoint and is a CALENDAR DATE
+   * only (`oembed.ts` `postedOnDisplayed` — X prints "August 1, 2026" and nothing
+   * finer). So the two are now different columns with different types, and nothing
+   * derived from post time may substitute an observation time for it. Where the post
+   * time is unknown, the derived figure refuses.
+   */
+  emailDate: Date | null;
+  /**
+   * Every distinct status id seen in the message, in order of appearance.
+   *
+   * Recorded because the choice of "which id is the reply" is attackable: the reply
+   * id is the dedupe key, so whoever chooses it can pre-claim a real complaint's id
+   * (defect 6). Keeping the whole list lets the ingest see the ambiguity instead of
+   * inheriting a guess.
+   */
+  permalinkIds: readonly string[];
 }
 
 export interface ParseFailure {
@@ -91,8 +117,28 @@ export interface RawEmail {
   text?: string;
   /** text/html part, used only as a fallback. */
   html?: string;
-  /** Header date, the last resort for `postedAt`. */
+  /**
+   * Header date. OBSERVATION TIME. It is not the post time and it is never used as
+   * one — see the note on `ParsedReply.emailDate`.
+   */
   date?: Date;
+  /**
+   * The `From:` header. EVIDENCE ONLY. It is free text, it is trivially spoofed, and
+   * a forwarded message fails SPF by construction — so nothing may be accepted
+   * because of this field. It is carried so the audit row can show what the forger
+   * wrote.
+   */
+  from?: string | null;
+  /**
+   * DKIM/ARC evidence as the mailbox reader found it (`xMail.readSenderEvidence`).
+   * Absent or null means NO EVIDENCE WAS PRODUCED, which is not the same as a fail
+   * and is certainly not a pass: the ingest quarantines on it.
+   */
+  sender?: SenderAuthEvidence | null;
+  /** Fields impersonating our own provider's authserv-id. Above zero is hostile. */
+  impersonatedAuthservFields?: number;
+  /** True when no `X_MAIL_TRUSTED_AUTHSERV` is configured, so nothing can pass. */
+  noTrustAnchor?: boolean;
 }
 
 /**
@@ -130,7 +176,40 @@ export function parseXNotification(email: RawEmail): ParseResult {
     };
   }
 
-  const reply = links[0]!;
+  /*
+   * WHICH PERMALINK IS THE REPLY? IT USED TO BE "THE FIRST ONE", WHICH IS A HOLE.
+   *
+   * The reply id is the dedupe key (`marketing_x_reply.x_comment_id` is UNIQUE), so
+   * whoever decides it decides which row can ever exist under that id. Taking the
+   * first permalink in subject+body handed that decision to the message: writing an
+   * extra `x.com/…/status/…` earlier in the prose chose the id independently of what
+   * was written, which is half of defect 6 (mkt-r5 §1.2).
+   *
+   * Two structural facts replace the guess:
+   *
+   *   1. THE OWN ACCOUNT IS NEVER THE AUTHOR OF A REPLY TO ITSELF. A notification
+   *      links the reply AND the @lcx post being replied to. Any permalink under the
+   *      handle this deployment declares as its own is therefore the parent, so it is
+   *      skipped when choosing the reply. `X_MAIL_OWN_HANDLE` defaults to `lcx`.
+   *   2. MORE THAN TWO DISTINCT IDS IS NOT A NOTIFICATION SHAPE. X's reply mail
+   *      carries the reply and (usually) its parent. Three or more distinct ids means
+   *      either the format changed or somebody is choosing ids for us — and both are
+   *      answered the same way, by refusing to guess and putting the raw message in
+   *      front of a human. That is lossless; a wrong guess is not.
+   */
+  const distinctIds = [...new Set(links.map((l) => l.id))];
+  if (distinctIds.length > MAX_DISTINCT_PERMALINKS) {
+    return {
+      ok: false,
+      reason:
+        `${distinctIds.length} distinct status permalinks in one notification — the reply id cannot be `
+        + 'chosen without guessing, and the id is the dedupe key. Raised for a human rather than guessed.',
+      raw,
+    };
+  }
+
+  const own = ownHandle();
+  const reply = links.find((l) => l.handle.toLowerCase() !== own) ?? links[0]!;
   const parent = links.find((l) => l.id !== reply.id) ?? null;
 
   const text = email.text?.trim() ? email.text.trim() : htmlToText(raw);
@@ -151,8 +230,18 @@ export function parseXNotification(email: RawEmail): ParseResult {
     authorHandle: reply.handle,
     authorDisplay: displayFromSubject,
     body,
-    postedAt: email.date ?? null,
+    // NOT the post time. See the note on `emailDate`.
+    emailDate: email.date ?? null,
+    permalinkIds: distinctIds,
   };
+}
+
+/** X's reply mail carries the reply and its parent. A third id is not that shape. */
+const MAX_DISTINCT_PERMALINKS = 2;
+
+/** The handle this deployment posts as. Its own posts are parents, never replies. */
+function ownHandle(): string {
+  return (process.env.X_MAIL_OWN_HANDLE ?? 'lcx').trim().replace(/^@/, '').toLowerCase();
 }
 
 /**

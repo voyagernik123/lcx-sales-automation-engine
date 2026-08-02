@@ -792,7 +792,7 @@ describe('a blocked proposal cannot be issued, and the handler never runs', () =
     expect(body.data.issue.code).toBe('underwriting_refused');
     expect(body.data.provenance.refusedForMissingInputs).toBe(true);
     expect(body.data.remedy).toMatch(/Record the rate card/);
-    expect(body.data.failsClosedNotice).toMatch(/every bypass goes through/);
+    expect(body.data.perimeterGateNotice).toMatch(/every bypass goes through/);
   });
 
   it('refuses an unpriced engagement with the code the route already used', async () => {

@@ -396,7 +396,7 @@ describe('the evidence chase', () => {
     expect(ev.querySelector('[data-inert-reference="true"]')!.closest('a, button')).toBeNull();
 
     // And the reason travels with it, from the wire rather than from an import.
-    expect(ev.textContent).toMatch(/GPS never resolves, retrieves or copies it/);
+    expect(ev.textContent).toMatch(/GPS never resolves, retrieves, copies or previews it/);
   });
 
   it('states the lockout and where it is enforced, on the printed dossier', async () => {
@@ -649,7 +649,26 @@ describe('the system argues back, on the keyboard, on paper', () => {
     // Dated, and named. A printed page with no timestamp is a page that ages silently.
     expect(document.body.textContent).toContain(`composed ${ASOF}`);
     expect(document.body.textContent).toMatch(/GPS delivery dossier · engagement e-1/);
-    expect(document.body.textContent).toMatch(/read-only: this surface records nothing/);
+    /*
+     * THE DOSSIER FOOTER, ASSERTED AS THE NARROWED CLAIM IT IS NOW.
+     *
+     * It used to read "read-only: this surface records nothing", full stop, and this
+     * assertion matched that. On 2026-08-02 the page gained a Documents section that
+     * uploads and deletes client files, so the unqualified sentence became false — on a
+     * page whose whole purpose is to be printed and handed to somebody.
+     *
+     * Both halves are required, and requiring both is the point: the scope ("delivery
+     * facts") without the exception is the old falsehood with a hedge in front of it, and
+     * the exception without the scope loses the property that actually matters on a
+     * printed dossier — that no milestone, acceptance or review state can be changed from
+     * it.
+     */
+    expect(document.body.textContent, 'the dossier no longer scopes its read-only claim to delivery facts')
+      .toMatch(/delivery\s+facts are read-only: this surface records nothing about whether work happened/);
+    expect(document.body.textContent, 'the dossier claims to record nothing without naming the document writes it does perform')
+      .toMatch(/only writes are storing and deleting the documents/i);
+    expect(document.body.textContent, 'the dossier has gone back to the unqualified claim that it records nothing at all')
+      .not.toMatch(/read-only: this surface records nothing\./);
   });
 });
 
@@ -685,24 +704,65 @@ describe('the ratchets — these guard an absence, so they must go red on a good
     expect(code).not.toMatch(/\b(?:downloadUrl|fileUrl|previewUrl|signedUrl|presigned)\b/i);
   });
 
-  it('the page contains no intake surface — no file input, no multipart, no clipboard read', () => {
+  /**
+   * ══ RE-POINTED 2026-08-02 ═════════════════════════════════════════════════
+   * This assertion read `GpsDelivery.tsx` for a file input and found none — because the
+   * intake that shipped that day lives in `components/gps/ArtifactIntake.tsx`, which this
+   * page renders. It stayed green through the change it existed to catch.
+   *
+   * The claim now: this page BUILDS no intake of its own, it DELEGATES to the one
+   * reviewed component. That is the property worth holding. A hand-rolled `<input
+   * type="file">` beside the reviewed one would have its own idea of the size ceiling, the
+   * accepted types and the two-step download, and all three being wrong is invisible until
+   * a client asks what happened to their file.
+   */
+  it('the page builds no intake of its own — it delegates to the one reviewed component', () => {
     const code = stripComments(read('pages/GpsDelivery.tsx'));
-    expect(code).not.toMatch(/type\s*=\s*["'{]?file/i);
-    expect(code).not.toMatch(/FormData|multipart|FileReader|DataTransfer|onDrop|dropzone/i);
+    expect(code, 'GpsDelivery.tsx declares its own file input instead of rendering <ArtifactIntake>').not.toMatch(/type\s*=\s*["'{]?file/i);
+    expect(code, 'GpsDelivery.tsx builds its own upload body shape').not.toMatch(/FormData|multipart|FileReader|DataTransfer|onDrop|dropzone/i);
     expect(code).not.toMatch(/navigator\.clipboard/);
-    expect(code).not.toMatch(/\bbase64\b|toDataURL|createObjectURL/i);
+    expect(code, 'GpsDelivery.tsx encodes bytes itself — a document must never become a data URL on this page').not.toMatch(/\bbase64\b|toDataURL|createObjectURL/i);
+    // And the delegation is real: without this the three absences above are once again a
+    // description of a page with no document handling at all.
+    expect(code, 'GpsDelivery.tsx no longer renders the reviewed intake component').toMatch(/<ArtifactIntake\b/);
+    expect(code, 'the intake is mounted without an engagement to scope the documents to').toMatch(/<ArtifactIntake\s+engagementId=/);
   });
 
-  it('the page WRITES nothing — it is a read surface, and a half-built mutation is worse than none', () => {
+  it('the reviewed intake component is the only thing that writes, and it speaks the route\'s contract', () => {
+    /*
+     * The controls the page delegated to, asserted where they actually live. The upload
+     * route takes a RAW body with `X-Artifact-Filename` (apps/api/src/routes/gpsArtifact.ts),
+     * so FormData here is a guaranteed 400 — and it is the shape a first draft reaches for,
+     * which is exactly why it is pinned.
+     */
+    const intake = stripComments(read('components/gps/artifactIntakeApi.ts'));
+    expect(intake.length, 'the intake client is missing — every absence asserted above proves nothing').toBeGreaterThan(500);
+    expect(intake, 'the intake client posts FormData; the route takes a raw body and would 400').not.toMatch(/FormData/);
+    expect(intake, 'the intake client no longer sends the filename header the route requires').toMatch(/[Xx]-[Aa]rtifact-[Ff]ilename/);
+    // The download is a two-step grant, and the credential travels in a header — never in
+    // a URL, which lands in browser history, referrers and server logs.
+    expect(intake, 'the intake client no longer mints a download grant before fetching bytes').toMatch(/download-url/);
+    expect(intake, 'a client-document credential appears in a query string').not.toMatch(/\?grant=|&grant=/);
+  });
+
+  it('the page WRITES no delivery fact — its only mutations are the documents', () => {
+    /*
+     * NARROWED, NOT DROPPED. The page still cannot move a milestone, record a review or
+     * accept a deliverable: those are the writes a printed dossier must not be able to
+     * perform, and `fetchGpsDelivery` being the module's only export is what holds it.
+     * Document storage is the named exception and it goes through a different module.
+     */
     const code = stripComments(read('pages/GpsDelivery.tsx'));
-    expect(code).not.toMatch(/method:\s*['"](?:POST|PATCH|PUT|DELETE)['"]/);
-    // The fetcher module is the only API surface it may reach, and it has one function.
+    expect(code, 'GpsDelivery.tsx issues its own mutating request').not.toMatch(/method:\s*['"](?:POST|PATCH|PUT|DELETE)['"]/);
+    // The delivery fetcher is a read module and has exactly one function.
     expect(Object.keys(api).sort()).toEqual(['fetchGpsDelivery']);
   });
 
-  it('the fetcher module exports nothing upload-shaped, and no re-declared response type', () => {
+  it('the delivery fetcher stays a read module, and declares no response type of its own', () => {
     // The EXPORT LIST, not the prose — the same shape of ratchet `gps.test.tsx` uses,
     // for the same reason: the docblock has to be allowed to name what is forbidden.
+    // Document calls belong to `components/gps/artifactIntakeApi.ts`; their arrival HERE
+    // would put a write on the module every read surface imports.
     for (const name of Object.keys(api)) {
       expect(name).not.toMatch(/upload|attach|file|document|artifact|multipart|blob/i);
     }

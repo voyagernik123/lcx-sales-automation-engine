@@ -17,19 +17,24 @@ import { unwrapWithMeta } from './meta.js';
  * rename breaks the build in all three at once instead of drifting.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * THERE IS DELIBERATELY NO UPLOAD, ATTACHMENT, DOCUMENT OR FILE FUNCTION HERE.
+ * THERE IS STILL NO UPLOAD, ATTACHMENT, DOCUMENT OR FILE FUNCTION HERE — AND THE
+ * REASON IS NO LONGER D2.
  * ─────────────────────────────────────────────────────────────────────────────
- * Phase 1 accepts no client artifact, by construction, because decision D2 is
- * unanswered — whether LCX legal/DPO accepts third-party confidential material
- * on LCX infrastructure (`GPS_IMPLEMENTATION_PLAN.md` §3 D2, §4 S0.4). The
- * offers name `requiredClientInputs`, and those are collected in conversation on
- * whatever channel the client already uses. Naming an input does not create a
- * place to put it.
+ * Decision D2 — whether LCX legal/DPO accepts third-party confidential material on
+ * LCX infrastructure (`GPS_IMPLEMENTATION_PLAN.md` §3 D2, §4 S0.4) — was answered
+ * YES by the owner on 2026-08-02. GPS stores client documents now. What did not
+ * change is where: they attach to an ENGAGEMENT, and the intake client lives in
+ * `components/gps/artifactIntakeApi.ts` beside the surface that owns it
+ * (`GpsDelivery.tsx`). The quote desk has no engagement id to attach anything to
+ * until a draft exists, so an upload function on THIS module would only ever serve a
+ * holding area for confidential material with no row to belong to.
  *
- * `pages/__tests__/gps.test.tsx` ratchets this: it reads this module's export
- * list and fails if an upload-shaped function appears. Adding one here is the
- * first step in defeating the gate, so it has to be a red test, not a code
- * review someone was busy for.
+ * `pages/__tests__/gps.test.tsx:157` still reads this module's export list and fails
+ * if an upload-shaped name appears. That ratchet's stated reason ("D2 is unanswered")
+ * is now stale, but the line it holds is still the right line for THIS module, so it
+ * is left alone rather than edited into vagueness. Its owner should re-point it at
+ * what still holds: no client bytes on the quote desk, and no intake without an
+ * engagement.
  *
  * WHAT IS NOT IMPORTED, ON PURPOSE: nothing from `@lcx/shared`'s `alpha.ts`.
  * Its composites score LCX LISTING propensity and treat `listedOnLcx: true` as

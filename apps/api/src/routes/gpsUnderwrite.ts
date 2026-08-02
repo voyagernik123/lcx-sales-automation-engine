@@ -333,7 +333,7 @@ gpsUnderwriteRoutes.get('/policy', requireOperator, async (c) => {
       data: {
         policy: DEFAULT_ISSUE_POLICY,
         policyNotice: ISSUE_POLICY_IS_A_STATED_PRIOR,
-        failsClosedNotice: ISSUE_GUARD_FAILS_CLOSED,
+        perimeterGateNotice: ISSUE_GUARD_FAILS_CLOSED,
         method: UNDERWRITE_METHOD,
         percentileMethod: PERCENTILE_METHOD,
         minDecisionSamples: MIN_DECISION_SAMPLES,
@@ -433,7 +433,7 @@ export const requireUnderwritingClearance: MiddlewareHandler<{ Variables: AuthVa
           underwriting: decision.underwriting,
           provenance: decision.provenance,
           policyNotice: decision.policyNotice,
-          failsClosedNotice: decision.failsClosedNotice,
+          perimeterGateNotice: decision.perimeterGateNotice,
         },
       },
       decision.status,

@@ -637,9 +637,32 @@ describe('no client document can be stored, fetched or pointed-and-retrieved', (
   });
 
   it('contains no primitive that could receive or retrieve a document', () => {
-    const FORBIDDEN: readonly [RegExp, string][] = [
-      [/\bupload/i, 'an intake path — D2 is unanswered'],
+    /**
+     * THE SHARED GPS DOMAIN IS PURE, AND THAT DID NOT CHANGE ON 2026-08-02.
+     *
+     * D2 was answered YES and an intake surface exists — in `apps/api/src/gps/artifact.ts`
+     * and `routes/gpsArtifact.ts`, both of which are outside this package. This layer
+     * still computes plans, progress and views over rows, holds no bytes, opens no
+     * stream, reads no file and dereferences nothing, so every assertion here is still
+     * true and still worth holding: the day a document primitive appears in a pure
+     * domain module is the day a client's file is being handled somewhere with no
+     * ceiling, no digest and no audit row.
+     *
+     * TWO OF THESE ARE NOW WORD-SHAPED RATHER THAN PRIMITIVE-SHAPED. Operator-facing
+     * prose in this package has to be able to say "upload it to the engagement" — that
+     * IS the honest instruction now, and a ratchet that forbade the word would force the
+     * copy to describe the feature by not naming it. So `upload` and `attachment` are
+     * checked against code with STRING LITERALS REMOVED as well as comments: an
+     * identifier, field or call may not mention them; a sentence shown to a human may.
+     * Everything else — bytes, buckets, filesystem, fetch — is still matched against the
+     * full text, string literals included, because there is no honest reason for any of
+     * those words to appear in a string here either.
+     */
+    const IDENTIFIER_LEVEL: readonly [RegExp, string][] = [
+      [/\bupload/i, 'an intake identifier — intake lives in apps/api, never in the pure domain layer'],
       [/\battachments?\b/i, 'an attachment concept, i.e. somewhere to put a file'],
+    ];
+    const TEXT_LEVEL: readonly [RegExp, string][] = [
       [/multipart|form-?data/i, 'a body encoding that only exists to carry files'],
       [/base64/i, 'a column that holds a document while pretending to be text'],
       [/\bblob\b|\bBuffer\b|Uint8Array|ArrayBuffer/, 'bytes'],
@@ -648,11 +671,25 @@ describe('no client document can be stored, fetched or pointed-and-retrieved', (
       [/\bfetch\s*\(|XMLHttpRequest|axios|https?:\/\/\$\{/, 'a retrieval — externalLocation is read by humans, never dereferenced'],
       [/from\s+'node:|require\s*\(/, 'a runtime dependency this pure domain layer has no reason to hold'],
     ];
+    // Single and double quoted literals and template chunks, replaced by a marker so
+    // adjacent identifiers cannot accidentally join into one.
+    const stripStrings = (s: string) =>
+      s.replace(/'(?:[^'\\\n]|\\.)*'/g, " '' ").replace(/"(?:[^"\\\n]|\\.)*"/g, ' "" ').replace(/`(?:[^`\\]|\\.)*`/g, ' `` ');
+
+    let identifierChecked = 0;
     for (const [file, src] of CODE) {
-      for (const [pattern, why] of FORBIDDEN) {
+      for (const [pattern, why] of TEXT_LEVEL) {
         expect(src, `${file} matches ${pattern} — ${why}`).not.toMatch(pattern);
       }
+      const identifiers = stripStrings(src);
+      // Non-vacuity: stripping must not have eaten the file.
+      expect(identifiers.length, `${file}: string-stripping removed everything — the extraction is broken`).toBeGreaterThan(100);
+      identifierChecked++;
+      for (const [pattern, why] of IDENTIFIER_LEVEL) {
+        expect(identifiers, `${file} matches ${pattern} in CODE — ${why}`).not.toMatch(pattern);
+      }
     }
+    expect(identifierChecked).toBe(CODE.length);
   });
 
   it('declares no field that would be the first step in a document store', () => {
@@ -687,10 +724,32 @@ describe('no client document can be stored, fetched or pointed-and-retrieved', (
   });
 
   it('says the true thing to the operator, and promises nothing', () => {
-    expect(NO_CLIENT_DOCUMENT_STORE_REASON).toMatch(/does not hold client documents/);
+    /**
+     * THIS ASSERTION USED TO REQUIRE THE WORDS "does not hold client documents", and it
+     * was changed on 2026-08-02 because that sentence became FALSE — not because it was
+     * inconvenient. GPS holds client documents now. A test that kept demanding the old
+     * claim would have been pinning a falsehood onto the delivery screen.
+     *
+     * What is required instead is the pair of facts that are true and that an operator
+     * standing in front of a client's file needs in that order: this row is a reference
+     * and nothing follows it, AND uploading is the other choice with consequences named.
+     */
+    expect(NO_CLIENT_DOCUMENT_STORE_REASON, 'the notice no longer says this row is a reference rather than a copy')
+      .toMatch(/\bREFERENCE\b|\breference\b/);
+    expect(NO_CLIENT_DOCUMENT_STORE_REASON, 'the notice no longer says the reference is never followed')
+      .toMatch(/never resolves|never retriev|never copies|does not resolve/i);
+    expect(NO_CLIENT_DOCUMENT_STORE_REASON, 'the notice no longer names the upload as the alternative, so an operator with a file in hand is told nothing')
+      .toMatch(/upload/i);
+    // The consequences of that alternative, named at the point of the choice. An intake
+    // offered with no mention of retention or audit is an intake nobody consented to.
+    expect(NO_CLIENT_DOCUMENT_STORE_REASON, 'the notice offers an upload without saying what happens to the file')
+      .toMatch(/retention/i);
+    expect(NO_CLIENT_DOCUMENT_STORE_REASON).toMatch(/recorded|audit/i);
+    // The decision stays attributed and dated wherever it is asserted.
     expect(NO_CLIENT_DOCUMENT_STORE_REASON).toMatch(/\bD2\b/);
-    // No "coming soon". A disabled-feature promise is how a client concludes the
-    // material may be sent anyway.
+    expect(NO_CLIENT_DOCUMENT_STORE_REASON).toMatch(/2026-08-02/);
+    // No "coming soon". A half-promise is how a client concludes the material may be
+    // sent by some other route anyway.
     expect(NO_CLIENT_DOCUMENT_STORE_REASON).not.toMatch(/soon|shortly|temporar|for now|yet\b/i);
   });
 });

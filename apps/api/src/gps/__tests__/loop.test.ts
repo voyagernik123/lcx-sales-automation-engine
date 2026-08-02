@@ -73,6 +73,12 @@ let engagementTableExists = true;
  */
 let perimeterPosition: 'permitted' | 'prohibited' | 'unreviewed' | 'absent' | 'unreadable' = 'permitted';
 
+/**
+ * Whether `audit_log` accepts the advisory record. False is the state that separates an
+ * advisory gate from a disabled one: the pass is refused rather than taken silently.
+ */
+let auditLogWritable = true;
+
 /** The client row the perimeter reads its jurisdiction FROM. Never a body field. */
 const CLIENT_JURISDICTION = 'liechtenstein';
 
@@ -142,10 +148,27 @@ const query = vi.fn(async (sql: string, params: unknown[] = []) => {
   }
 
 
+  // `readPerimeterExtent` — the probe that CONFIRMS the perimeter is empty before an
+  // absent position is allowed to pass advisory. Answered before the row read below,
+  // because the generic /FROM gps_jurisdiction_profile/ pattern also matches this
+  // count and would hand it a profile row with no `n` on it.
+  if (/count\(\*\)::int AS n FROM gps_jurisdiction_profile/.test(sql)) {
+    if (perimeterPosition === 'unreadable') throw new Error('connection reset');
+    return { rows: [{ n: perimeterPosition === 'absent' ? 0 : 1 }] };
+  }
+
   if (/FROM gps_jurisdiction_profile/.test(sql)) {
     // A gate that permits what it could not evaluate is the door every bypass uses.
     if (perimeterPosition === 'unreadable') throw new Error('connection reset');
     return { rows: perimeterPosition === 'absent' ? [] : [profileRow()] };
+  }
+
+  // THE ADVISORY RECORD. Since 2026-08-02 a gate refusal for want of a human-entered
+  // position lets the act proceed and writes this row instead; a pass that cannot be
+  // written is still refused, which `auditLogWritable = false` exercises below.
+  if (/INSERT INTO audit_log/.test(sql)) {
+    if (!auditLogWritable) throw new Error('audit_log is read only');
+    return { rows: [] };
   }
 
   // `loadSubject` — the join the perimeter guard reads the CLIENT's jurisdiction from.
@@ -243,6 +266,7 @@ beforeEach(() => {
   outcomeTableExists = true;
   engagementTableExists = true;
   perimeterPosition = 'permitted';
+  auditLogWritable = true;
   _resetOutcomeMigrated();
   _resetMigrated();
   _resetPerimeterMigrated();
@@ -762,6 +786,19 @@ describe('absence, asserted', () => {
  * says no" and carries the gate trail. And it destroys nothing — `gps_outcome` is the
  * analytic book, not the audit trail, and the same facts record unchanged once a
  * qualified human enters the position.
+ *
+ * ══ 2026-08-02: ONLY A HUMAN'S "NO" STILL REFUSES ═════════════════════════════
+ * `gps_jurisdiction_profile` is empty in production, so "refuse unless a position
+ * exists" refused every outcome in every jurisdiction — a gate with no matrix behind it
+ * is not a legal check, it is an outage. The owner's decision was to let the acts
+ * through with the refusal recorded and stamped, and this file now splits the rows
+ * accordingly: a recorded PROHIBITION still blocks, an ABSENT or unreviewed position
+ * proceeds and is written to `audit_log`.
+ *
+ * THE OUTCOME BOOK IS THE PLACE THIS MATTERS MOST, which is why the advisory rows below
+ * assert the audit row and the stamp rather than just a 200: `calibration.ts` prices
+ * later quotes off these records, so an outcome booked with no legal position on file
+ * propagates into every subsequent price. The row is what makes that traceable.
  */
 describe('recording an outcome consults the jurisdictional perimeter', () => {
   const draft = {
@@ -770,9 +807,7 @@ describe('recording an outcome consults the jurisdictional perimeter', () => {
   };
 
   const REFUSED: ReadonlyArray<[string, typeof perimeterPosition, string]> = [
-    ['no position on record at all — production today', 'absent', 'perimeter_'],
     ['a recorded prohibition', 'prohibited', 'service_prohibited'],
-    ['a position nobody has reviewed', 'unreviewed', 'perimeter_unreviewed'],
   ];
 
   for (const [name, position, code] of REFUSED) {
@@ -786,9 +821,55 @@ describe('recording an outcome consults the jurisdictional perimeter', () => {
       expect(outcomes.size).toBe(0);
       expect(calls.some((x) => /INSERT INTO gps_outcome/.test(x.sql))).toBe(false);
       expect((body.data as Json).gates).toBeTruthy();
-      expect((body.data as Json).failsClosedNotice).toBeTruthy();
+      expect((body.data as Json).perimeterGateNotice).toBeTruthy();
     });
   }
+
+  const ADVISORY: ReadonlyArray<[string, typeof perimeterPosition, string]> = [
+    ['no position on record at all — production today', 'absent', 'perimeter_'],
+    ['a position nobody has reviewed', 'unreviewed', 'perimeter_unreviewed'],
+  ];
+
+  for (const [name, position, code] of ADVISORY) {
+    it(`records the outcome, the gate's verdict and the stamp on ${name}`, async () => {
+      seedEngagement(ENGAGEMENT_A, 1_000_000, 600_000);
+      perimeterPosition = position;
+      const { status, body } = await post('/outcome', draft);
+      expect(status).toBe(200);
+      // The outcome IS booked — that is the decision — and it is booked with the reason
+      // it should not have been on the record beside it.
+      expect(outcomes.size).toBe(1);
+
+      const audit = calls.find((x) => /INSERT INTO audit_log/.test(x.sql));
+      expect(audit, 'an outcome was booked with no legal position on file and nothing recorded it').toBeTruthy();
+      expect(audit!.params).toContain('gps_perimeter.advisory_pass');
+      const meta = JSON.parse(String(audit!.params[4])) as Record<string, unknown>;
+      expect(String(meta.gateCode)).toMatch(new RegExp(`^${code}`));
+      expect(meta.legalPositionOnFile).toBe(false);
+      expect(meta.jurisdictionKey).toBe(CLIENT_JURISDICTION);
+
+      // AND THE RESPONSE SAYS SO, so the desk reading it back cannot mistake this for a
+      // cleared record.
+      expect((body.data as Json).legalPositionOnFile).toBe(false);
+      expect(String((body.data as Json).legalPositionNotice)).toMatch(/No legal position on file/);
+      expect((body.meta as Json).perimeterAdvisory).toBe(true);
+    });
+  }
+
+  /**
+   * WHERE THE ADVISORY GATE STOPS BEING ADVISORY. An unrecorded pass is
+   * indistinguishable from no gate at all, so it is refused and nothing is booked.
+   */
+  it('refuses the write when the advisory pass cannot be recorded', async () => {
+    seedEngagement(ENGAGEMENT_A, 1_000_000, 600_000);
+    perimeterPosition = 'absent';
+    auditLogWritable = false;
+    const { status, body } = await post('/outcome', draft);
+    expect(status).toBe(409);
+    expect(body.code).toBe('PERIMETER_ADVISORY_UNRECORDED');
+    expect(outcomes.size).toBe(0);
+    expect(calls.some((x) => /INSERT INTO gps_outcome/.test(x.sql))).toBe(false);
+  });
 
   it('records it once the position permits, and the 422 still means the entry', async () => {
     seedEngagement(ENGAGEMENT_A, 1_000_000, 600_000);

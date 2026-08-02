@@ -19,7 +19,7 @@ import { requireOperator } from '../middleware/auth.js';
 import { getPool } from '../db/index.js';
 import { env } from '../lib/env.js';
 import { isMigrated } from '../gps/service.js';
-import { guardEngagementPerimeter, perimeterRefusalBody } from '../gps/perimeterGuard.js';
+import { guardEngagementPerimeter, perimeterRefusalBody, perimeterStamp } from '../gps/perimeterGuard.js';
 import {
   OUTCOME_MIGRATION,
   OUTCOME_MIGRATION_SPEC,
@@ -477,7 +477,17 @@ gpsLoopRoutes.post('/outcome', requireOperator, async (c) => {
         422,
       );
     }
-    return c.json({ data: form, meta: { ...meta(), migrated: true, stored: true } });
+    /*
+     * STAMPED, AND IT MATTERS MORE HERE THAN ANYWHERE. A recorded outcome is the
+     * analytic book the next quote is priced off (`calibration.ts`), so an outcome
+     * booked in a jurisdiction with no legal position on file propagates into every
+     * later price. The stamp travels with the record rather than only with the
+     * refusal, which is what makes that traceable afterwards.
+     */
+    return c.json({
+      data: { ...form, ...perimeterStamp(cleared) },
+      meta: { ...meta(), migrated: true, stored: true, perimeterAdvisory: cleared.advisory },
+    });
   } catch (err) {
     console.error('[gps.loop] record outcome error:', err);
     return c.json({ error: 'Failed to record the outcome', code: 'GPS_LOOP_ERROR' }, 500);

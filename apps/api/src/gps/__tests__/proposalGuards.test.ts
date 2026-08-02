@@ -24,6 +24,7 @@ import { GPS_ACTIONS, type GpsAction } from '../actions.js';
 import { _resetMigrated } from '../service.js';
 import { _resetPerimeterMigrated } from '../conflict.js';
 import { _resetUnderwritingProbes } from '../underwrite.js';
+import { PERIMETER_ADVISORY_ACTION, guardEngagementPerimeter } from '../perimeterGuard.js';
 import { ActionError } from '../../actions/registry.js';
 
 const issue = (): GpsAction => {
@@ -37,7 +38,11 @@ const CLIENT_ID = '00000000-0000-0000-0000-0000000000c1';
 
 interface Opts {
   /** Absent = no position on record at all (production today). */
-  perimeter?: 'permitted' | 'prohibited' | 'unreviewed' | 'expired';
+  perimeter?: 'permitted' | 'prohibited' | 'unreviewed' | 'expired' | 'counsel_required';
+  /** The engagement's offer. A position on one offer is not a position on another. */
+  offerKey?: string;
+  /** False makes the audit insert throw, so the unrecorded-pass path can be exercised. */
+  auditWritable?: boolean;
   /** Absent = the underwriting registries do not exist (production today). */
   underwriting?: 'usable' | 'no_partner';
   /** The partner's cost per engagement, so a loss-making price can be built. */
@@ -47,7 +52,9 @@ interface Opts {
 }
 
 function profileRow(o: Opts) {
-  const cls = o.perimeter === 'prohibited' ? 'prohibited' : 'permitted';
+  const cls = o.perimeter === 'prohibited' || o.perimeter === 'counsel_required'
+    ? o.perimeter
+    : 'permitted';
   const reviewed = o.perimeter !== 'unreviewed';
   return {
     id: '00000000-0000-0000-0000-0000000000p1',
@@ -75,7 +82,7 @@ function stubPool(o: Opts = {}) {
     id: ENGAGEMENT_ID,
     client_id: CLIENT_ID,
     project_id: null,
-    offer_key: 'mica_whitepaper',
+    offer_key: o.offerKey ?? 'mica_whitepaper',
     contracting_entity: 'lcx',
     scope_snapshot: null,
     status: o.status ?? 'draft',
@@ -93,7 +100,17 @@ function stubPool(o: Opts = {}) {
     query: async (sql: string, params: unknown[] = []) => {
       queries.push({ sql, params });
       if (/to_regclass\('public\.gps_jurisdiction_profile'\)/.test(sql)) {
-        return { rows: [{ ok: o.perimeter !== undefined }], rowCount: 1 };
+        // `ok` for `isPerimeterMigrated`, `present` for the guard's own extent probe:
+        // one row answers both, because both ask the same question of the same table.
+        const there = o.perimeter !== undefined;
+        return { rows: [{ ok: there, present: there }], rowCount: 1 };
+      }
+      if (/count\(\*\)::int AS n FROM gps_jurisdiction_profile/.test(sql)) {
+        return { rows: [{ n: o.perimeter === undefined ? 0 : 1 }], rowCount: 1 };
+      }
+      if (/INSERT INTO audit_log/.test(sql)) {
+        if (o.auditWritable === false) throw new Error('audit_log is read-only on this replica');
+        return { rows: [], rowCount: 1 };
       }
       if (/to_regclass\('public\.gps_engagement'\)/.test(sql)) return { rows: [{ ok: true }], rowCount: 1 };
       if (/to_regclass\('public\.gps_rate_card'\)/.test(sql)) {
@@ -192,39 +209,101 @@ beforeEach(() => {
 /* THE PERIMETER GATE                                                          */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
-describe('the action path cannot walk past the jurisdictional perimeter', () => {
+describe('the action path consults the perimeter, and records what it walks past', () => {
   const PRICED = { priceCents: 2_000_000 };
 
+  const advisoryRows = (queries: ReadonlyArray<{ sql: string; params: unknown[] }>) =>
+    queries.filter((q) => /INSERT INTO audit_log/.test(q.sql)
+      && q.params[1] === PERIMETER_ADVISORY_ACTION);
+
   /**
-   * Each row is a state `gateService` refuses, and each is reachable in production:
-   * the matrix is empty today, positions are entered unreviewed by construction,
-   * and every compiled placeholder is expired on arrival.
+   * ── THE OWNER'S DECISION OF 2026-08-02, MEASURED ─────────────────────────────
+   * This table used to be called REFUSED and asserted that each of these states
+   * turned the action into a 409. Every one of them is the state of production: the
+   * matrix is empty, so the desk could not issue a single proposal. The gate now
+   * lets them through AND WRITES DOWN THAT IT DID. Both halves are asserted on every
+   * row, because either half alone is a worse system than the one before: a pass
+   * with no record is a deleted gate, and a record with no pass is the old wall.
    */
-  const REFUSED: ReadonlyArray<[string, Opts, string]> = [
-    ['no position on record at all', {}, 'perimeter_'],
-    ['a recorded PROHIBITION', { perimeter: 'prohibited' }, 'service_prohibited'],
+  const ADVISORY: ReadonlyArray<[string, Opts, string]> = [
+    // The compiled placeholders are malformed as well as expired — `enteredBy` is
+    // 'UNASSIGNED' — and `perimeter_malformed` is evaluated first. Both are absence
+    // codes, so the pass is the same; the RECORD says which one answered.
+    ['no position on record at all — production today', {}, 'perimeter_malformed'],
     ['a position nobody has reviewed', { perimeter: 'unreviewed' }, 'perimeter_unreviewed'],
     ['a position past its review date', { perimeter: 'expired' }, 'perimeter_stale'],
     ['a client with no jurisdiction recorded', { perimeter: 'permitted', jurisdiction: null }, 'perimeter_unknown_jurisdiction'],
   ];
 
-  for (const [name, opts, code] of REFUSED) {
-    it(`refuses on ${name}`, async () => {
+  for (const [name, opts, code] of ADVISORY) {
+    it(`issues on ${name}, and records the refusal it did not enforce`, async () => {
       const { pool, queries } = stubPool({ underwriting: 'usable', ...opts });
-      const err = await refusal(issue().execute(args(pool, PRICED)));
-      expect(err.code).toMatch(new RegExp(`^${code}`));
-      expect(err.status).toBe(409);
-      // THE STATE MUST NOT HAVE MOVED. A refusal that already wrote is a warning.
-      expect(queries.some((q) => /UPDATE gps_engagement/.test(q.sql))).toBe(false);
+      const out = await issue().execute(args(pool, PRICED));
+      expect(out.status).toBe('proposed');
+      expect(queries.some((q) => /UPDATE gps_engagement/.test(q.sql))).toBe(true);
+
+      // THE RECORD. One row, naming the code, the actor, the place and the offer.
+      const rows = advisoryRows(queries);
+      expect(rows.length, 'the advisory pass left no audit row').toBe(1);
+      const [actor, , entity, entityId, meta] = rows[0].params;
+      expect(actor).toBe('nik');
+      expect(entity).toBe('gps_engagement');
+      expect(entityId).toBe(ENGAGEMENT_ID);
+      const m = JSON.parse(String(meta)) as Record<string, unknown>;
+      expect(m.gateCode).toBe(code);
+      expect(String(m.gateReason).length).toBeGreaterThan(20);
+      expect(m.offerKey).toBe('mica_whitepaper');
+      expect(m.jurisdictionInput).toBe(opts.jurisdiction === null ? null : 'liechtenstein');
+      expect(m.evaluatedBy).toBe('nik');
+      expect(m.legalPositionOnFile).toBe(false);
+      expect(String(m.notice)).toMatch(/No legal position on file/);
+
+      /*
+       * AND THE STAMP IS ON THE ACTION'S OWN OUTPUT, not only in the audit row.
+       * `object_actions` records this result and the desk reads it back, so a proposal
+       * that returns a price and no legal-position field reads as cleared work. Three
+       * flat keys, because `apps/web/src/components/gps/legalPosition.ts` reads them flat
+       * and a key that goes missing renders as a proposal with nothing wrong with it.
+       */
+      const stamped = out as Record<string, unknown>;
+      expect(
+        stamped.legalPositionOnFile,
+        'gps_proposal_issue returned a proposal with no legalPositionOnFile field, so nothing '
+          + 'downstream can tell it was issued with no position on file',
+      ).toBe(false);
+      expect(String(stamped.legalPositionGateCode)).toBe(code);
+      expect(String(stamped.legalPositionNotice)).toMatch(/No legal position on file/);
     });
   }
 
-  it('refuses when the perimeter itself cannot be read — it does not fail open', async () => {
-    // A connection reset on the perimeter table. The probe catches internally and
-    // reports "not migrated", so the compiled placeholders answer — and they are
-    // expired-on-arrival and double-locked, so the gate still refuses. Whichever way
-    // the failure lands, the required property is the same: a perimeter that could
-    // not be read is a refusal, and nothing is written.
+  /**
+   * WHAT ADVISORY DID NOT TOUCH. A prohibition is a human saying no, and an unmet
+   * condition is a human saying "not until". Neither is an absence, so neither is
+   * softened by the perimeter being empty elsewhere.
+   */
+  const BLOCKED: ReadonlyArray<[string, Opts, string]> = [
+    ['a recorded PROHIBITION', { perimeter: 'prohibited' }, 'service_prohibited'],
+    ['a reviewed position whose condition is unmet', { perimeter: 'counsel_required' }, 'counsel_not_engaged'],
+  ];
+
+  for (const [name, opts, code] of BLOCKED) {
+    it(`still refuses on ${name}, and records no pass`, async () => {
+      const { pool, queries } = stubPool({ underwriting: 'usable', ...opts });
+      const err = await refusal(issue().execute(args(pool, PRICED)));
+      expect(err.code).toBe(code);
+      expect(err.status).toBe(409);
+      // THE STATE MUST NOT HAVE MOVED. A refusal that already wrote is a warning.
+      expect(queries.some((q) => /UPDATE gps_engagement/.test(q.sql))).toBe(false);
+      expect(advisoryRows(queries).length, 'a blocked act must not record a pass').toBe(0);
+    });
+  }
+
+  it('refuses when the perimeter itself cannot be read — an unreadable perimeter is not an empty one', async () => {
+    // A connection reset on the perimeter table. `isPerimeterMigrated` catches
+    // internally and reports "not migrated", so the compiled placeholders answer and
+    // the gate reaches `perimeter_stale` — an ABSENCE code, which would now pass. The
+    // guard's own extent probe is what stops it: it asks the table directly, the read
+    // fails, and a pass that rests on a table nobody could read is refused.
     const { pool, queries } = stubPool({ perimeter: 'permitted', underwriting: 'usable' });
     const boom = {
       query: async (sql: string, params: unknown[] = []) => {
@@ -233,7 +312,16 @@ describe('the action path cannot walk past the jurisdictional perimeter', () => 
       },
     } as unknown as pg.Pool;
     const err = await refusal(issue().execute(args(boom, PRICED)));
-    expect(err.code).toMatch(/^(perimeter_|service_prohibited|PERIMETER_UNAVAILABLE)/);
+    expect(err.code).toBe('PERIMETER_UNAVAILABLE');
+    expect(queries.some((q) => /UPDATE gps_engagement/.test(q.sql))).toBe(false);
+    expect(advisoryRows(queries).length).toBe(0);
+  });
+
+  it('refuses the advisory pass it could not write down — an unrecorded pass is no gate', async () => {
+    const { pool, queries } = stubPool({ underwriting: 'usable', auditWritable: false });
+    const err = await refusal(issue().execute(args(pool, PRICED)));
+    expect(err.code).toBe('PERIMETER_ADVISORY_UNRECORDED');
+    expect(err.status).toBe(409);
     expect(queries.some((q) => /UPDATE gps_engagement/.test(q.sql))).toBe(false);
   });
 
@@ -245,6 +333,68 @@ describe('the action path cannot walk past the jurisdictional perimeter', () => 
     expect(gates!.find((g) => g.code === 'service_prohibited')!.passed).toBe(false);
     // Not recoverable: a recorded prohibition is a wall, not a task.
     expect(err.data?.recoverable).toBe(false);
+    // The refusal carries the stamp too — and here it reads TRUE, because a recorded
+    // prohibition IS a legal position on file. The stamp says whether a human has
+    // written something down, not whether the answer was yes.
+    expect(err.data?.legalPositionOnFile).toBe(true);
+    expect(err.data?.legalPositionNotice).toBeNull();
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* THE SELF-HEAL — ADVISORY IS A CONSEQUENCE, NOT A SETTING                    */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * These call the guard directly rather than through the executor, because the
+ * property is about the perimeter alone and the action would drag underwriting into
+ * it. Nothing here sets anything: the two halves differ only in what the profile
+ * table contains, and there is no third state to configure.
+ */
+describe('one reviewed position turns its own pair back into a wall', () => {
+  const ctx = { evaluatedBy: 'nik', asOf: '2026-08-01T00:00:00.000Z' };
+
+  it('blocks the pair a human wrote down while its neighbour offer stays advisory', async () => {
+    // The stored row is (liechtenstein, mica_whitepaper, counsel_required, reviewed,
+    // fresh) — one cell of the matrix, filled in by hand.
+    const filled = stubPool({ perimeter: 'counsel_required' });
+    const decided = await guardEngagementPerimeter(filled.pool, ENGAGEMENT_ID, ctx);
+    expect(decided.allowed).toBe(false);
+    expect(decided.code).toBe('counsel_not_engaged');
+    expect(decided.advisory).toBe(false);
+    expect(decided.legalPositionOnFile).toBe(true);
+    expect(decided.legalPositionNotice).toBeNull();
+
+    // The engagement beside it sells a DIFFERENT offer in the same jurisdiction. The
+    // position above says nothing about it, so it is still advisory — the perimeter
+    // heals one cell at a time and not one country at a time.
+    const neighbour = stubPool({ perimeter: 'counsel_required', offerKey: 'gtm_sprint' });
+    const cl = await guardEngagementPerimeter(neighbour.pool, ENGAGEMENT_ID, ctx);
+    expect(cl.allowed).toBe(true);
+    expect(cl.advisory).toBe(true);
+    expect(cl.legalPositionGateCode).toBe('perimeter_unknown_offer');
+    expect(cl.legalPositionOnFile).toBe(false);
+    expect(String(cl.legalPositionNotice)).toMatch(/No legal position on file/);
+  });
+
+  it('clears outright once the condition that position asks for is met', async () => {
+    const { pool } = stubPool({ perimeter: 'permitted' });
+    const cl = await guardEngagementPerimeter(pool, ENGAGEMENT_ID, ctx);
+    expect(cl.allowed).toBe(true);
+    expect(cl.advisory).toBe(false);
+    expect(cl.legalPositionOnFile).toBe(true);
+    expect(cl.legalPositionNotice).toBeNull();
+  });
+
+  it('takes no parameter, flag or setting that could choose advisory operation', async () => {
+    // The signature is the proof, as it is for the jurisdiction: an engagement id and
+    // a session context. There is nowhere to put an instruction.
+    expect(guardEngagementPerimeter.length).toBe(3);
+    const { pool } = stubPool({});
+    const cl = await guardEngagementPerimeter(pool, ENGAGEMENT_ID, ctx);
+    expect(cl.advisory).toBe(true);
+    // Same pool, same call, same everything — and the answer came from the table.
+    expect(cl.perimeterSource).toBe('compiled_placeholder');
   });
 });
 
