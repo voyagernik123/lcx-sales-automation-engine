@@ -2,7 +2,7 @@
 //
 // Source-level and DOM-free, so it adds no jsdom worker pressure.
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MARKETING_CLIENT_OVERLAPS, MARKETING_CONTRACTS_OWED } from '../marketing';
@@ -36,9 +36,32 @@ const WEB = readFileSync(resolve(HERE, '../marketing.ts'), 'utf8');
 const SERVICE = readFileSync(
   resolve(HERE, '../../../../../api/src/marketing/service.ts'), 'utf8',
 );
-const ROUTE = readFileSync(
-  resolve(HERE, '../../../../../api/src/routes/marketing.ts'), 'utf8',
-);
+/**
+ * EVERY MARKETING ROUTER, NOT JUST THE FIRST ONE.
+ *
+ * This used to read `routes/marketing.ts` alone, and that made the last test in this file
+ * silently stop working the moment the compartment split: `marketingDesk.ts`,
+ * `marketingMemory.ts` and `marketingRecord.ts` mount fourteen of the routes the ledger
+ * below calls owed, and a ledger row for a route that EXISTS is the exact defect the test
+ * was written to catch — a debt somebody already paid, still recorded as outstanding, with
+ * a client still typing its response `unknown`.
+ *
+ * Concatenated rather than checked one by one: the assertions ask "is this segment mounted
+ * anywhere", and which file mounts it is the gate agent's business.
+ *
+ * A NEW ROUTER MUST BE ADDED HERE. There is no glob, deliberately — a glob would make this
+ * test quietly weaker on a filename typo, and the failure mode of forgetting a file is a
+ * ledger row that stops being checked.
+ */
+const ROUTE_FILES = [
+  'marketing.ts', 'marketingDesk.ts', 'marketingMemory.ts', 'marketingRecord.ts',
+] as const;
+const ROUTE = ROUTE_FILES
+  .map((f) => {
+    const path = resolve(HERE, `../../../../../api/src/routes/${f}`);
+    return existsSync(path) ? readFileSync(path, 'utf8') : '';
+  })
+  .join('\n');
 
 /**
  * Top-level field names of a `{ ... }` block starting at `from`.
@@ -153,18 +176,26 @@ describe('web marketing row shapes match the API', () => {
     );
   });
 
-  it('the queue really does ship raw_email to the browser', () => {
-    // NOT a nice-to-have assertion. `listReplies` is `SELECT *`
-    // (`service.ts:201`), so up to 20KB of a stranger's forwarded email crosses
-    // to the client on every queue read. `MarketingReply` declares the field
-    // because the payload contains it — the alternative is a type that quietly
-    // lies about what arrived.
+  it('the queue no longer ships raw_email to the browser', () => {
+    // THIS TEST USED TO ASSERT THE OPPOSITE, DELIBERATELY. `listReplies` was
+    // `SELECT * FROM marketing_x_reply`, so up to 20KB of a stranger's forwarded email
+    // crossed to the client on every queue read, and `MarketingReply` declared the
+    // field because the payload really did contain it — a type that omitted it would
+    // have been quietly lying about what arrived. The assertion was written to FAIL the
+    // day the route was fixed, with the instruction to delete the field in the same
+    // change. That day is this one, so it is inverted rather than deleted: the
+    // regression it now guards against is re-adding the wildcard.
     //
-    // WHEN THE ROUTE IS FIXED to a column list, this test fails. That is the
-    // point: delete `raw_email` from `MarketingReply` in the same commit, and
-    // the pair stays honest in both directions.
-    expect(SERVICE).toContain('SELECT * FROM marketing_x_reply');
-    expect(interfaceFields(WEB, 'MarketingReply')).toContain('raw_email');
+    // Comment lines are stripped because `service.ts` quotes the old query verbatim
+    // when explaining the fix, and matching prose would make this pass on a revert.
+    const serviceCode = SERVICE.split('\n')
+      .filter((line) => !/^\s*(?:\*|\/\/|\/\*)/.test(line))
+      .join('\n');
+    expect(serviceCode).not.toContain('SELECT * FROM marketing_x_reply');
+    expect(serviceCode).toContain('REPLY_COLUMNS');
+    expect(interfaceFields(WEB, 'MarketingReply')).not.toContain('raw_email');
+    // The cleared-at timestamp is an audit fact, not content, and stays on both sides.
+    expect(interfaceFields(WEB, 'MarketingReply')).toContain('raw_email_cleared_at');
   });
 });
 
@@ -235,6 +266,62 @@ describe('the owed-contract ledger cannot drift from the code', () => {
     }
   });
 
+  /**
+   * THE OTHER DIRECTION, AND THE ONE THAT WAS MISSING.
+   *
+   * The tests above prove that an UNCONTRACTED fetcher has a ledger row. Nothing proved that
+   * a CONTRACTED one does not — so sixteen paid debts could have sat in the ledger with
+   * their fetchers already typed, and the list would have kept reporting twenty-three owed.
+   * A ledger that over-reports debt is as misleading as one that under-reports it: it is the
+   * number a reader uses to decide how much of this compartment is surface-ready.
+   */
+  it('a fetcher that imports its shared type is not still listed as owed', () => {
+    const owed = new Set(MARKETING_CONTRACTS_OWED.map((c) => c.fn));
+    const starts = [...WEB.matchAll(/^export (?:const|function) (\w+)/gm)];
+    starts.forEach((m, i) => {
+      const name = m[1]!;
+      const body = WEB.slice(m.index!, starts[i + 1]?.index ?? WEB.length);
+      if (!body.includes('request<{ data: ')) return;
+      const typed = /request<\{ data: (\w+) \}>/.exec(body)?.[1];
+      if (typed === undefined || typed === 'UncontractedPayload') return;
+      expect(
+        owed.has(name),
+        `${name} is typed \`${typed}\` and still carries a ledger row. Drop the row: a debt `
+        + 'that is still recorded after it is paid inflates the count a reader trusts.',
+      ).toBe(false);
+    });
+  });
+
+  it('every type this client imports from @lcx/shared is really declared there', () => {
+    /*
+     * WHY A FILE READ AND NOT A TYPE IMPORT. The names below are TYPES, so a `tsc` failure is
+     * the primary check and it is the right one. This test exists for the case `tsc` cannot
+     * make loud enough: the contracts live in `marketing/contracts/*.ts` and reach this
+     * client only if `marketing/index.ts` re-exports them. When that barrel line is missing,
+     * every one of these fails as TS2305 in a build log alongside the API's own — and the
+     * sentence in this failure names the one line that fixes all of them.
+     */
+    const imported = /import \{([\s\S]*?)\} from '@lcx\/shared';/.exec(WEB)?.[1] ?? '';
+    /* Anchored to a whole import LINE. An unanchored `type (\w+)` matches the prose in the
+       import block's own docblock — "the type each owes" — and reports `each` as a missing
+       contract, which is a test failing on its own comment. */
+    const names = [...imported.matchAll(/^\s+type (\w+),$/gm)].map((m) => m[1]!);
+    expect(names.length, 'the client stopped importing its contracts from shared').toBeGreaterThan(10);
+
+    const SHARED = resolve(HERE, '../../../../../../packages/shared/src/marketing');
+    const sources = ['types.ts', 'abuse.ts', 'contracts/desk.ts', 'contracts/memory.ts', 'contracts/record.ts']
+      .map((f) => (existsSync(resolve(SHARED, f)) ? readFileSync(resolve(SHARED, f), 'utf8') : ''))
+      .join('\n');
+    for (const n of names) {
+      expect(
+        new RegExp(`export (?:interface|type) ${n}\\b`).test(sources),
+        `${n} is imported from '@lcx/shared' and is declared in no marketing module. Either the `
+        + 'name is wrong, or the contract has not been written yet — and a web-local copy is not '
+        + 'the fix (lib/api/gps.ts:83).',
+      ).toBe(true);
+    }
+  });
+
   it('no route in the ledger has been quietly built already', () => {
     // The moment one of these lands on the server, its response shape becomes
     // checkable and its row must go. A ledger of debts that were already paid is
@@ -242,8 +329,11 @@ describe('the owed-contract ledger cannot drift from the code', () => {
     for (const c of MARKETING_CONTRACTS_OWED) {
       const segment = c.path.replace('/v1/marketing', '').split('/:')[0]!;
       expect(
-        ROUTE.includes(`marketingRoutes.get('${segment}'`)
-        || ROUTE.includes(`marketingRoutes.post('${segment}'`),
+        // Any of the four routers, and either verb. `Routes.get('` matches
+        // `marketingRoutes`, `marketingDeskRoutes`, `marketingMemoryRoutes` and
+        // `marketingRecordRoutes` alike.
+        ROUTE.includes(`Routes.get('${segment}'`)
+        || ROUTE.includes(`Routes.post('${segment}'`),
         `${c.path} is mounted now — import its real type from @lcx/shared and drop the ledger row`,
       ).toBe(false);
     }

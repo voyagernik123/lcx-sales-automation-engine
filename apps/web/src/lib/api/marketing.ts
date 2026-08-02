@@ -1,5 +1,40 @@
 import { request } from '../apiClient';
 import { unwrapWithMeta } from './meta.js';
+// Response contracts, declared ONCE in shared and imported by the API route too. See
+// §16 of `packages/shared/src/marketing/types.ts` for why they do not live here.
+import {
+  assertHonestPayload,
+  type AbusePerimeterState,
+  /* ── THE SIXTEEN CONTRACTS THAT HAVE LANDED ────────────────────────────────────
+   * Each name below is declared exactly ONCE — in `packages/shared/src/marketing/
+   * contracts/{desk,memory,record}.ts`, or in `types.ts` §16 / `abuse.ts` for the two that
+   * predate the contracts directory — and is imported from that single declaration by the
+   * route handler AND by this module. That is the whole discipline, and the reason it is a
+   * discipline rather than a preference is `lib/api/gps.ts:83`: a hand-written web-side
+   * `GpsSummary` claimed four fields the API had never returned, `tsc` was green because a
+   * copy is syntactically perfect, the page's own test agreed because it mocked the module,
+   * and the page crashed on the first real payload.
+   *
+   * The SEVEN still typed `UncontractedPayload` are listed in `MARKETING_CONTRACTS_OWED`
+   * below with the type each one owes. `unknown` is deliberately inconvenient: a page
+   * cannot read a field off it without narrowing, so a missing contract obstructs at
+   * compile time instead of crashing in front of an operator. */
+  type ClaimExpiryLedger,
+  type ClearanceBoard,
+  type CrisisStatementInstance,
+  type CrisisStatementLibrary,
+  type DeskBoard,
+  type DeskModeRecord,
+  type ErasureOutcome,
+  type ExportBundle,
+  type MarketAbuseVerdict,
+  type MarketingRecordRow,
+  type PeerPreclearLibrary,
+  type PrecedentSearchResult,
+  type PublicationCloseOut,
+  type SubjectAccessResponse,
+  type WatchDigest,
+} from '@lcx/shared';
 
 /**
  * LCX MARKETING — the browser's view of the desk.
@@ -63,7 +98,29 @@ import { unwrapWithMeta } from './meta.js';
 // does not exist yet. Seven surfaces lost `migrated: false` and their provenance
 // last week by peeling `.data` by hand; a new fetcher that does the same would
 // make a screen look warning-free rather than look broken.
-const unwrap = unwrapWithMeta;
+// ── AND IT NOW APPLIES THE RUNTIME HALF OF THE HONESTY CEILING ────────────────
+// `observation.ts:31` claims "THREE LAYERS GUARD THE CEILING, AND ONLY THE FIRST TWO ARE
+// PROOFS". Layer 2 is `assertHonestPayload`, and it had ZERO production callers — only its
+// own tests — so the claim was describing a function nobody ran. A proof that is never
+// applied is a definition.
+//
+// This is the one place every marketing read passes through, and it is the right place: the
+// walk is over a PARSED JSON payload, which is exactly the case `HonestFigures<T>` cannot
+// see. If the API ever starts returning `impressions`, `reach`, `follower_delta` or any of
+// the other banned names — from a new route, a JSON column or an AI response — the read
+// fails here with the refusal's own sentence, before a component can render it.
+//
+// IT THROWS RATHER THAN LOGGING. Doctrine rule 1: a number nobody can defend is not
+// softened into a warning beside itself. The pages already handle a failed read; they have
+// no handling for a plausible figure that should not exist.
+const unwrap = async <T>(p: Promise<{ data: T; meta?: unknown }>): Promise<T> => {
+  const out = await unwrapWithMeta(p);
+  const refused = assertHonestPayload(out);
+  if (refused !== null) {
+    throw Object.assign(new Error(refused.sentence), { code: refused.code });
+  }
+  return out;
+};
 
 /* ════════ §1 THE LIVE COMPARTMENT — routes/marketing.ts, mounted today ════════ */
 
@@ -109,6 +166,18 @@ export interface MarketingReply {
    *
    * X prints a DATE and no time on an embed, so `posted_on_displayed` is the honest field
    * for what oEmbed actually observed. Do not render `posted_at` as a time-of-day.
+   *
+   * ── AND TODAY IT IS ALWAYS NULL, WHICH "REPAIRED" DOES NOT CONVEY ──
+   * `apps/api/src/marketing/oembed.ts` is imported for TYPES ONLY, by
+   * `provenanceLadder.ts:67`, and `service.ts recordPostedOn` has no caller anywhere in
+   * `apps/api/src`. So the lookup that would write this column never runs, on any path,
+   * and post-time coverage on a live environment is 0% rather than partial. The panels
+   * report that rather than hiding it — which is why the coverage sentence had to stop
+   * dividing by the loaded page, since a page-wide ratio would have read 100% the moment
+   * one row happened to carry a date.
+   *
+   * The shape is right and the writer is missing. `corroborateReply` in
+   * `MARKETING_CONTRACTS_OWED` is the route that would call it.
    */
   posted_at: string | null;
   /** Which channel supplied `posted_at`. Null means nothing did. Never assume `oembed`. */
@@ -128,23 +197,30 @@ export interface MarketingReply {
   source_kind: string;
   parse_failed: boolean;
   /**
-   * PRESENT BECAUSE THE ROUTE SELECTS `*`, NOT BECAUSE ANY SCREEN NEEDS IT.
+   * `raw_email` IS GONE FROM THIS SHAPE, AND THAT IS THE FIX RATHER THAN A TIDY-UP.
    *
-   * `listReplies` is `SELECT * FROM marketing_x_reply` (`service.ts:201`), so up
-   * to 20KB of a stranger's forwarded email crosses to the browser on every
-   * queue read. Declared rather than omitted because the field IS in the
-   * payload and pretending otherwise is the same class of lie this module is
-   * built to avoid — but nothing may render it, and the fix belongs to the
-   * route (a column list), not to this client.
+   * It used to be declared here, with a comment saying it was present only because
+   * `listReplies` was `SELECT * FROM marketing_x_reply` — so up to 20KB of a stranger's
+   * forwarded email crossed to the browser on every queue read, for every row not yet
+   * triaged. That comment was honest about the payload and correct about where the fix
+   * belonged: the route, via a column list.
+   *
+   * The route now names its columns (`service.ts REPLY_COLUMNS`) and `raw_email` is not
+   * among them, so the field is no longer in the payload and declaring it would be the
+   * *opposite* lie — a field the API never sends, which is how `Object.entries(s.counts)`
+   * crashed the GPS compartment on real data. `marketingContract.test.ts` compares the
+   * two field sets in both directions and fails either way round.
+   *
+   * What survives is the timestamp below: the fact that the body was cleared, which is an
+   * audit fact and not content.
    */
-  raw_email: string | null;
-  /** When the field sweep nulled `raw_email`. Null while it is still held. */
+  /** When the field sweep nulled `raw_email` server-side. Null while it is still held. */
   raw_email_cleared_at: string | null;
 
   /* ── M0 defect 1: how the sender was established, if at all ──────────────────────────
-   * These four cross to the browser for the same `SELECT *` reason as `raw_email`, and
-   * they are declared for the same reason: the field IS in the payload, and pretending
-   * otherwise is the lie this module exists to avoid.
+   * These four are DELIBERATELY in the payload, unlike `raw_email` above: they are named
+   * in `REPLY_COLUMNS` because the desk has to be able to see whether an inbound message
+   * was authenticated at all. They are sender metadata, not the sender's message.
    *
    * `sender_auth_evidence` is the provider's verbatim `Authentication-Results` field. It
    * is diagnostic, it names third-party infrastructure, and NOTHING MAY RENDER IT on a
@@ -234,6 +310,18 @@ export interface MarketingSummary {
    * subset that has one is a lower bound presented as a maximum.
    */
   oldestSincePostedHours: number | null | { code: string; message: string; needs: string };
+  /**
+   * POST-TIME COVERAGE OVER THE WHOLE OPEN POPULATION. Read this; never divide the queue
+   * array, which is a PAGE.
+   *
+   * `fetchMarketingQueue` passes no `limit`, the route defaults to 50 and the service caps
+   * at 200, so `queue.length` is `min(open rows, 50)`. `DeskMeasurement` and `TriageBoard`
+   * both computed coverage from it and rendered "50 of 50 … Every open item carries one"
+   * for a desk where 70 of 120 open replies had no post date — on the same screen as the
+   * refusal that says so correctly. Absent from a response (an older API), this is
+   * `undefined`, and a panel must refuse rather than fall back to the page.
+   */
+  postTimeCoverage?: { openRows: number; withPostTime: number };
   /** Replies whose text looks like an attempt to steer the model. */
   suspicious: number;
   /** Emails the parser could not read — a human must look. */
@@ -417,7 +505,7 @@ export interface MarketAbuseCheckBody {
  * as a pass — the GPS perimeter pattern, which is now the house pattern.
  */
 export const checkMarketAbuse = (body: MarketAbuseCheckBody) =>
-  unwrap(request<{ data: UncontractedPayload }>(
+  unwrap(request<{ data: MarketAbuseVerdict }>(
     '/v1/marketing/abuse-check', { method: 'POST', body, auth: true },
   ));
 
@@ -429,9 +517,57 @@ export const checkMarketAbuse = (body: MarketAbuseCheckBody) =>
  * cannot tell them apart is guessing on the highest-consequence axis. The
  * registers are the owner's and legal's to produce (plan §7), so the expected
  * steady state on day one is "absent", said out loud.
+ *
+ * CONTRACTED — the route exists and its response type is `AbusePerimeterState`, declared
+ * in `packages/shared/src/marketing/types.ts` §16 and imported by BOTH sides. It is not
+ * re-declared here: a web-side interface mirroring what the API probably sends is the
+ * defect that crashed the GPS compartment on real data.
  */
 export const fetchAbusePerimeter = () =>
-  unwrap(request<{ data: UncontractedPayload }>('/v1/marketing/perimeter', { auth: true }));
+  unwrap(request<{ data: AbusePerimeterState }>('/v1/marketing/perimeter', { auth: true }));
+
+/**
+ * THE THREE GOVERNED WRITES ON THE PERIMETER.
+ *
+ * These go through `/v1/actions/:id/invoke`, not through a bespoke marketing route, and
+ * that is the whole point: the registry path carries the `object_actions` ledger, the
+ * `audit_log` row, the `approver` role check and `assertNamedHuman`. A REST twin would be
+ * a second write path with weaker controls, which is exactly the defect GPS Phase 1 shipped
+ * (two write paths for one operation, and the surfaces called the weaker one).
+ *
+ * They were unreachable from any surface until this wave: `MARKETING_ABUSE_ACTIONS` was
+ * exported and merged into nothing, so the register the whole compartment refuses against
+ * had no governed way to be populated. `actions/__tests__/surfaceReach.test.ts` is the
+ * ratchet that caught it — an action only ⌘K can name is one an operator has to already
+ * know exists.
+ *
+ * SUBJECT IS THE ASSET SYMBOL (`MARKETING_ASSET_SUBJECT` = `marketing_asset`), so
+ * `audit_log.entity_id` is the symbol — which is why `/v1/audit` withholds it below
+ * `marketing:view`.
+ */
+async function invokeMarketingAbuse(
+  actionId: string,
+  assetSymbol: string,
+  params: Record<string, unknown>,
+): Promise<void> {
+  await request(`/v1/actions/${actionId}/invoke`, {
+    auth: true,
+    method: 'POST',
+    body: { subjectType: 'marketing_asset', subjectId: assetSymbol, params },
+  });
+}
+
+/** Record an asset's inside-information state. Approver-only, named human, server-side. */
+export const enterAssetEmbargo = (assetSymbol: string, params: Record<string, unknown>) =>
+  invokeMarketingAbuse('marketing_embargo_enter', assetSymbol, params);
+
+/** Lift a live embargo — normally because the event became public. */
+export const liftAssetEmbargo = (assetSymbol: string, params: Record<string, unknown>) =>
+  invokeMarketingAbuse('marketing_embargo_lift', assetSymbol, params);
+
+/** Declare whether a named member holds an asset. Art 91(3)(c)'s invisible limb. */
+export const declareAssetHoldings = (assetSymbol: string, params: Record<string, unknown>) =>
+  invokeMarketingAbuse('marketing_holdings_declare', assetSymbol, params);
 
 /* ──── M3 — the provenance ladder ──── */
 
@@ -482,7 +618,7 @@ export const corroborateReply = (replyId: number) =>
  * anything, and nothing on this board may be presented as coverage.
  */
 export const fetchDeskBoard = () =>
-  unwrap(request<{ data: UncontractedPayload }>('/v1/marketing/desk', { auth: true }));
+  unwrap(request<{ data: DeskBoard }>('/v1/marketing/desk', { auth: true }));
 
 /**
  * `POST /v1/marketing/desk-mode` — declare the desk's mode, including the one a
@@ -504,7 +640,7 @@ export interface DeskModeBody {
 }
 
 export const setDeskMode = (body: DeskModeBody) =>
-  unwrap(request<{ data: UncontractedPayload }>(
+  unwrap(request<{ data: DeskModeRecord }>(
     '/v1/marketing/desk-mode', { method: 'POST', body, auth: true },
   ));
 
@@ -523,7 +659,7 @@ export const fetchPrecedent = (params: { q?: string; asset?: string; limit?: num
   if (params.asset) qs.set('asset', params.asset);
   if (params.limit !== undefined) qs.set('limit', String(params.limit));
   const suffix = qs.toString();
-  return unwrap(request<{ data: UncontractedPayload }>(
+  return unwrap(request<{ data: PrecedentSearchResult }>(
     `/v1/marketing/precedent${suffix ? `?${suffix}` : ''}`, { auth: true },
   ));
 };
@@ -575,7 +711,7 @@ export const recordSilenceDecision = (replyId: number, body: SilenceDecisionBody
  * renders a migration banner instead of the statements has defeated the point.
  */
 export const fetchCrisisStatements = () =>
-  unwrap(request<{ data: UncontractedPayload }>('/v1/marketing/crisis/statements', { auth: true }));
+  unwrap(request<{ data: CrisisStatementLibrary }>('/v1/marketing/crisis/statements', { auth: true }));
 
 /**
  * `POST /v1/marketing/crisis/statements/:key/instance` — start a live instance of
@@ -598,7 +734,7 @@ export interface CrisisInstanceBody {
 }
 
 export const openCrisisStatement = (templateKey: string, body: CrisisInstanceBody) =>
-  unwrap(request<{ data: UncontractedPayload }>(
+  unwrap(request<{ data: CrisisStatementInstance }>(
     `/v1/marketing/crisis/statements/${encodeURIComponent(templateKey)}/instance`,
     { method: 'POST', body, auth: true },
   ));
@@ -608,7 +744,7 @@ export const openCrisisStatement = (templateKey: string, body: CrisisInstanceBod
  * board and its clock.
  */
 export const fetchCrisisInstance = (instanceId: string) =>
-  unwrap(request<{ data: UncontractedPayload }>(
+  unwrap(request<{ data: CrisisStatementInstance }>(
     `/v1/marketing/crisis/instance/${encodeURIComponent(instanceId)}`, { auth: true },
   ));
 
@@ -641,7 +777,7 @@ export interface CrisisClearanceBody {
 }
 
 export const recordCrisisClearance = (instanceId: string, body: CrisisClearanceBody) =>
-  unwrap(request<{ data: UncontractedPayload }>(
+  unwrap(request<{ data: ClearanceBoard }>(
     `/v1/marketing/crisis/instance/${encodeURIComponent(instanceId)}/clearance`,
     { method: 'POST', body, auth: true },
   ));
@@ -654,7 +790,7 @@ export const recordCrisisClearance = (instanceId: string, body: CrisisClearanceB
  * that class: the question arrives whether or not there is anything to it.
  */
 export const fetchPeerPreclears = () =>
-  unwrap(request<{ data: UncontractedPayload }>('/v1/marketing/crisis/preclears', { auth: true }));
+  unwrap(request<{ data: PeerPreclearLibrary }>('/v1/marketing/crisis/preclears', { auth: true }));
 
 /* ──── M6 — the watch ──── */
 
@@ -672,7 +808,7 @@ export const fetchPeerPreclears = () =>
  * watch panel.
  */
 export const fetchMarketingWatch = () =>
-  unwrap(request<{ data: UncontractedPayload }>('/v1/marketing/watch', { auth: true }));
+  unwrap(request<{ data: WatchDigest }>('/v1/marketing/watch', { auth: true }));
 
 /**
  * `GET /v1/marketing/watch/claim-expiry` — the claim-freshness ledger.
@@ -683,7 +819,7 @@ export const fetchMarketingWatch = () =>
  * and there is no grandfathering left to cover it.
  */
 export const fetchClaimExpiry = () =>
-  unwrap(request<{ data: UncontractedPayload }>('/v1/marketing/watch/claim-expiry', { auth: true }));
+  unwrap(request<{ data: ClaimExpiryLedger }>('/v1/marketing/watch/claim-expiry', { auth: true }));
 
 /* ──── M7 — the record ──── */
 
@@ -703,7 +839,7 @@ export const fetchClaimExpiry = () =>
  * server format nobody diffs.
  */
 export const fetchExportBundle = (itemId: string) =>
-  unwrap(request<{ data: UncontractedPayload }>(
+  unwrap(request<{ data: ExportBundle }>(
     `/v1/marketing/export/${encodeURIComponent(itemId)}`, { auth: true },
   ));
 
@@ -741,6 +877,54 @@ export const fetchProcessMetrics = () =>
 export const fetchMarketingLoop = () =>
   unwrap(request<{ data: UncontractedPayload }>('/v1/marketing/loop', { auth: true }));
 
+/* ──── M7 — the three GDPR / retention paths whose engine has no caller ──── */
+
+/**
+ * `POST /v1/marketing/subject-access` — GDPR Art 15, everything held about one handle.
+ *
+ * THE ENGINE EXISTS AND IS DEAD. `apps/api/src/marketing/record.ts subjectAccess` is
+ * written and tested; nothing in `apps/api/src` imports the module, so there is no route,
+ * and a data subject's Art 15 request cannot be answered from this product at all. Art
+ * 12(3) allows one month. That is a compliance gap with a clock on it, and it was the only
+ * absence in this compartment that was not written down anywhere — the other twenty were.
+ *
+ * `POST` and not `GET` on purpose: the handle is personal data and must not travel in a
+ * URL, a referrer or an access log.
+ */
+export const requestSubjectAccess = (body: { handle: string; requestedBy: string }) =>
+  unwrap(request<{ data: SubjectAccessResponse }>('/v1/marketing/subject-access', {
+    method: 'POST', body, auth: true,
+  }));
+
+/**
+ * `POST /v1/marketing/erasure` — GDPR Art 17, and it is NOT a delete button.
+ *
+ * `record.ts eraseByHandle` erases third-party content while preserving what Art 17(3)(b)
+ * and (e) require the desk to keep, and writes `marketing_erasure_log` so the erasure
+ * itself is provable. Also dead for want of an importer.
+ */
+export const requestErasure = (body: { handle: string; requestedBy: string; basis: string }) =>
+  unwrap(request<{ data: ErasureOutcome }>('/v1/marketing/erasure', {
+    method: 'POST', body, auth: true,
+  }));
+
+/**
+ * `POST /v1/marketing/record` — put one of LCX's OWN statements on the five-year clock.
+ *
+ * The 90-day sweep is wired; `writeRecord` is not. So the retention split 0061 designs is
+ * inoperative in one direction: nothing is ever placed on the long clock, and on day 91 the
+ * compartment retains nothing at all — which is the opposite of what Art 68(9) and Art
+ * 88(1) require of the statements LCX itself published. The DPO ruling in §7 of the plan is
+ * arriving as a default instead of as a decision, and this is the route that would let it
+ * be a decision.
+ */
+export const recordOwnStatement = (body: {
+  itemId: string; text: string; recordedBy: string;
+}) =>
+  unwrap(request<{ data: MarketingRecordRow }>('/v1/marketing/record', {
+    method: 'POST', body, auth: true,
+  }));
+
 /* ──── The close-out — a RECORD, and the reason there is no publish path ──── */
 
 /**
@@ -769,7 +953,7 @@ export interface PublicationCloseOutBody {
 }
 
 export const recordPublicationCloseOut = (draftId: number, body: PublicationCloseOutBody) =>
-  unwrap(request<{ data: UncontractedPayload }>(
+  unwrap(request<{ data: PublicationCloseOut }>(
     // `/handoff`, not `/close-out`. `handoff` is the word the shared vocabulary
     // already uses for the terminal state of a cleared draft
     // (`packages/shared/src/marketing/types.ts` §9), and
@@ -816,28 +1000,62 @@ export interface MarketingContractOwed {
   readonly sharedTypeOwed: string;
 }
 
+/**
+ * SIXTEEN OF THE TWENTY-THREE ARE NOW DELIVERED, and the fact is recorded here rather
+ * than left to be inferred from a shorter list.
+ *
+ * `contracts/desk.ts`, `contracts/memory.ts` and `contracts/record.ts` landed the response
+ * shapes for the desk board, desk mode, the precedent index, all five crisis routes, the
+ * watch, the claim-expiry ledger, the Art 8(2) export bundle and the three statutory paths;
+ * `types.ts` §16 already held `AbusePerimeterState` and `PublicationCloseOut`, and
+ * `abuse.ts` held `MarketAbuseVerdict`. Each is imported at the top of this file from that
+ * single declaration, and the route handler imports the same symbol.
+ *
+ * WHAT THAT BUYS, CONCRETELY. `WatchDigest` is nothing like the payload this client's
+ * surfaces had guessed at while the contract was being authored — the guess had `feeds[]`,
+ * `mentionsUs` and a `standing` string, and the real shape has three named source panels,
+ * a term-coverage block and `matchesObserved: number | null`. Every one of those guesses
+ * would have compiled, satisfied a mocked test, and rendered an empty watch forever.
+ *
+ * THE SEVEN BELOW REMAIN `UncontractedPayload = unknown`, deliberately and unchanged.
+ * An uncontracted route obstructs at compile time; the alternative — a hand-written
+ * web-side interface guessing at the payload — is the exact defect that crashed the GPS
+ * compartment on 2026-08-01. Their surfaces narrow `unknown` at runtime through
+ * `components/marketing/narrow.ts`, which is the only other honest move, and the length of
+ * this list is the honest measure of how much of this compartment is still guessing.
+ */
 export const MARKETING_CONTRACTS_OWED: readonly MarketingContractOwed[] = [
-  { fn: 'recordPublicationCloseOut', method: 'POST', path: '/v1/marketing/draft/:id/handoff', phase: 'M0', sharedTypeOwed: 'PublicationCloseOut' },
   { fn: 'checkClaimSafety', method: 'POST', path: '/v1/marketing/claim-safety', phase: 'M1', sharedTypeOwed: 'ClaimSafetyVerdict' },
-  { fn: 'checkMarketAbuse', method: 'POST', path: '/v1/marketing/abuse-check', phase: 'M2', sharedTypeOwed: 'MarketAbuseVerdict' },
-  { fn: 'fetchAbusePerimeter', method: 'GET', path: '/v1/marketing/perimeter', phase: 'M2', sharedTypeOwed: 'AbusePerimeterState' },
   { fn: 'fetchReplyProvenance', method: 'GET', path: '/v1/marketing/replies/:id/provenance', phase: 'M3', sharedTypeOwed: 'ReplyProvenanceRecord' },
   { fn: 'corroborateReply', method: 'POST', path: '/v1/marketing/replies/:id/corroborate', phase: 'M3', sharedTypeOwed: 'CorroborationResult' },
-  { fn: 'fetchDeskBoard', method: 'GET', path: '/v1/marketing/desk', phase: 'M4', sharedTypeOwed: 'DeskBoard' },
-  { fn: 'setDeskMode', method: 'POST', path: '/v1/marketing/desk-mode', phase: 'M4', sharedTypeOwed: 'DeskModeRecord' },
-  { fn: 'fetchPrecedent', method: 'GET', path: '/v1/marketing/precedent', phase: 'M4', sharedTypeOwed: 'PrecedentSearchResult' },
   { fn: 'fetchSilenceLog', method: 'GET', path: '/v1/marketing/silence', phase: 'M4', sharedTypeOwed: 'SilenceLog' },
   { fn: 'recordSilenceDecision', method: 'POST', path: '/v1/marketing/:id/silence', phase: 'M4', sharedTypeOwed: 'SilenceLogEntry' },
-  { fn: 'fetchCrisisStatements', method: 'GET', path: '/v1/marketing/crisis/statements', phase: 'M5', sharedTypeOwed: 'CrisisStatementLibrary' },
-  { fn: 'openCrisisStatement', method: 'POST', path: '/v1/marketing/crisis/statements/:key/instance', phase: 'M5', sharedTypeOwed: 'CrisisStatementInstance' },
-  { fn: 'fetchCrisisInstance', method: 'GET', path: '/v1/marketing/crisis/instance/:id', phase: 'M5', sharedTypeOwed: 'CrisisStatementInstance' },
-  { fn: 'recordCrisisClearance', method: 'POST', path: '/v1/marketing/crisis/instance/:id/clearance', phase: 'M5', sharedTypeOwed: 'ClearanceBoard' },
-  { fn: 'fetchPeerPreclears', method: 'GET', path: '/v1/marketing/crisis/preclears', phase: 'M5', sharedTypeOwed: 'PeerPreclearLibrary' },
-  { fn: 'fetchMarketingWatch', method: 'GET', path: '/v1/marketing/watch', phase: 'M6', sharedTypeOwed: 'WatchDigest' },
-  { fn: 'fetchClaimExpiry', method: 'GET', path: '/v1/marketing/watch/claim-expiry', phase: 'M6', sharedTypeOwed: 'ClaimExpiryLedger' },
-  { fn: 'fetchExportBundle', method: 'GET', path: '/v1/marketing/export/:itemId', phase: 'M7', sharedTypeOwed: 'ExportBundle' },
   { fn: 'fetchProcessMetrics', method: 'GET', path: '/v1/marketing/metrics', phase: 'M8', sharedTypeOwed: 'ProcessMetrics' },
   { fn: 'fetchMarketingLoop', method: 'GET', path: '/v1/marketing/loop', phase: 'M8', sharedTypeOwed: 'MarketingLoopReport' },
+  /*
+   * ── THE THREE THAT WERE UNDECLARED DEBT, AND THE ONLY ONES WITH A STATUTORY DEADLINE ──
+   *
+   * `apps/api/src/marketing/record.ts` is 84KB with NO IMPORTER anywhere in `apps/api/src`.
+   * `routes/marketing.ts` imports `service`, `xMail`, `outboundGate` and `abuseRegister`,
+   * and nothing else. So `subjectAccess` (:1729), `eraseByHandle` (:1862) and `writeRecord`
+   * (:1397) are dead code, `marketing_record`, `marketing_erasure_log` and
+   * `marketing_subject_access_log` are permanently empty, and a GDPR Art 15 or Art 17
+   * request cannot be honoured by any surface in this product. Art 12(3) gives one month.
+   *
+   * The 90-day sweep, by contrast, IS wired (`routes/marketing.ts:180` →
+   * `service.ts:918`), so the retention SPLIT that 0061 designs — third-party content on
+   * the short clock, LCX's own statements on the five-year clock — is inoperative in one
+   * direction only: nothing is ever placed on the long clock, and at day 91 the compartment
+   * retains nothing. That is the DPO ruling in §7 of the plan arriving as a default rather
+   * than as a decision.
+   *
+   * These three sit in the ledger and not in a comment because the ledger is what
+   * `marketingContract.test.ts` enumerates. Twenty-three owed, not twenty — and all three of
+   * these now have their contracts and their routes (`routes/marketingRecord.ts`), so they are
+   * no longer in the list below. They are described here rather than deleted because the
+   * reason they were missing is the general lesson: an engine with no importer is invisible to
+   * every test that does not go looking for callers.
+   */
 ] as const;
 
 /**
@@ -855,31 +1073,41 @@ export const MARKETING_CONTRACTS_OWED: readonly MarketingContractOwed[] = [
  * agree until the day one of them changes.
  */
 /**
- * ONE ROUTE, TWO CLIENTS — read before adding a third.
+ * ONE ROUTE, TWO CLIENTS — and now one of them is known to be aimed at nothing.
  *
- * `components/marketing/deskApi.ts` is a SECOND web client for this compartment,
- * written concurrently with this module by the wave that owns the desk components.
- * It is not sloppy — it narrows `unknown` at runtime rather than declaring a
- * response interface, which is the right instinct — but four of its routes overlap
- * this file's, and two of them disagree about the path:
+ * `components/marketing/deskApi.ts` is a SECOND web client for this compartment, written
+ * concurrently with this module by the wave that built the desk components. It is not sloppy
+ * — it narrows `unknown` at runtime rather than declaring a response interface, which is the
+ * right instinct — but four of its routes overlap this file's, and the API has now decided
+ * two of the arguments:
  *
- *  · `GET /v1/marketing/silence` — `listSilences` there, `fetchSilenceLog` here.
- *  · `GET /v1/marketing/precedent` — `findPrecedent` there, `fetchPrecedent` here.
- *    Same path in both, so nothing breaks; two fetchers for one route is still one
- *    of them that will not be updated when the response shape lands.
- *  · `POST /v1/marketing/review` (there) versus `POST /v1/marketing/claim-safety`
- *    plus `POST /v1/marketing/abuse-check` (here). A REAL CONFLICT: the API wave
- *    will mount one shape and the other is dead on arrival. `deskApi`'s combined
- *    call is the one already wired to a screen; this file's split is the one that
- *    matches the plan's separation of the wording axis from the state-join axis
- *    (M1 versus M2). It needs deciding, not averaging.
- *  · `POST /v1/marketing/:id/triage` (there) has no counterpart here;
- *    `recordSilenceDecision` covers only the decision-not-to-answer case.
+ *  · `POST /v1/marketing/review` (deskApi's `reviewText`) IS NOT MOUNTED and no router
+ *    declares it. What the API built instead is three narrower routes — `POST /regime`,
+ *    `POST /triage/assess` and `POST /adoption` in `routes/marketingDesk.ts` — which is the
+ *    plan's separation of the wording axis from the state-join axis rather than one combined
+ *    verdict. So the drafting room's engine call currently reaches a 404, and its gates
+ *    render as `absent` — which is the honest outcome of the wrong path, and is exactly why
+ *    `Gate`'s `absent` source exists. This wave did NOT repoint it: the three replacement
+ *    routes need `RegimeReading`, `TriageReading` and `AdoptionReading` read off their
+ *    contracts and a decision about which of them the drafting room asks for and when, and
+ *    guessing at that is how a screen ends up showing a triage verdict as a wording verdict.
+ *  · `GET /v1/marketing/silence` and `POST /v1/marketing/:id/silence` are mounted by NOBODY.
+ *    `listSilences` and `fetchSilenceLog` are two fetchers for one route that does not exist,
+ *    so the silence log is `absent` on every environment and the duplication costs nothing
+ *    yet. It will cost something the day the route lands and only one of them is updated.
+ *  · `GET /v1/marketing/precedent` — `findPrecedent` there, `fetchPrecedent` here. The route
+ *    EXISTS now (`routes/marketingMemory.ts:445`) and its response is typed
+ *    `PrecedentSearchResult`. `fetchPrecedent` imports that type; `findPrecedent` still
+ *    narrows a guess. The panel on screen is wired to the narrower.
+ *  · `POST /v1/marketing/:id/triage` (deskApi's `recordTriage`) is mounted
+ *    (`routes/marketingDesk.ts:1187`) and has no counterpart here. That one is fine as it is.
  *
- * Recorded rather than resolved because this wave does not own `deskApi.ts`, and
- * editing another wave's file mid-flight is how two agents produce three
- * contracts. `recordPublicationCloseOut` was pointed at `deskApi`'s `/handoff`
- * path for the one case where alignment was free and unambiguous.
+ * THIS WAVE OWNS `deskApi.ts` and still did not merge the two clients, which is a choice and
+ * not an oversight. Repointing four live, tested surfaces at differently-shaped responses is
+ * a change whose failure mode is a screen that renders a verdict about the wrong axis, and it
+ * belongs in a pass that can re-test each panel against the real payloads rather than at the
+ * end of a wave whose remaining budget is one file. The list below is checked by
+ * `marketingContract.test.ts` against `deskApi.ts` on disk, so it cannot rot quietly.
  */
 export const MARKETING_CLIENT_OVERLAPS: readonly string[] = [
   'components/marketing/deskApi.ts listSilences → GET /v1/marketing/silence',

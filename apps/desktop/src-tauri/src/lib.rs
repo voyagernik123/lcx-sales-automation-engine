@@ -563,6 +563,14 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &MenuItem::with_id(app, "go-gps-conflict", "GPS · THE CONFLICT WALL", true, None::<&str>)?,
             &MenuItem::with_id(app, "go-gps-delivery", "GPS · DELIVERY DESK", true, None::<&str>)?,
             &MenuItem::with_id(app, "go-gps-loop", "GPS · THE LOOP", true, None::<&str>)?,
+            // LCX MARKETING's three surfaces, on identical terms to the six above: no
+            // accelerator, because ⌘0-9 mean "go to a compartment" and these are
+            // surfaces inside one. Reachable by `g k`/`g r`/`g m` in the webview and by
+            // clicking here. All three were built and routed nowhere until the wiring
+            // pass, so the menu had one line for a compartment with four surfaces.
+            &MenuItem::with_id(app, "go-marketing-desk", "MARKETING · THE DESK", true, None::<&str>)?,
+            &MenuItem::with_id(app, "go-marketing-record", "MARKETING · THE RECORD", true, None::<&str>)?,
+            &MenuItem::with_id(app, "go-marketing-crisis", "MARKETING · CRISIS ROOM", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "go-back", "Back", true, Some("CmdOrCtrl+["))?,
             &MenuItem::with_id(app, "go-forward", "Forward", true, Some("CmdOrCtrl+]"))?,

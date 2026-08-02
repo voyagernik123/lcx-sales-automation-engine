@@ -49,6 +49,13 @@ import {
   type Clearance, type ClearanceRole, type ClockSuppression, type DeskMode,
   type IncidentPhase, type IncidentType, type RefusalRecovery, type StatementBody,
 } from '../../../../packages/shared/src/marketing/types';
+// The WORDS gate. The same engine the desk's outbound gate runs, not a second opinion: it
+// is pure, so it works with the API down, which is the condition this room is built for.
+import {
+  CLAIM_SAFETY_RULESET_VERSION,
+  checkClaimSafety,
+} from '../../../../packages/shared/src/marketing/claimSafety';
+import { namedAssets } from '@/components/marketing/preChecks';
 
 /**
  * THE CRISIS ROOM — LCX MARKETING M5.
@@ -140,6 +147,22 @@ function useTickingNow(): string {
 function usePrintInstant(): string {
   const [at] = useState(() => new Date().toISOString());
   return at;
+}
+
+/**
+ * Every digit run inside the next-update instant, declared as substantiated.
+ *
+ * `checkClaimSafety` normalises figures by stripping thousands separators and trailing
+ * punctuation, so `2026-08-03T04:00` yields `2026`, `08`, `03`, `04`, `00`. They are listed
+ * individually with the same reference, because the sourced-figure set is a set of figure
+ * STRINGS and a single entry holding the whole timestamp would not match the parts.
+ */
+function nextUpdateFigures(nextUpdateBy: string): { figure: string; sourceRef: string }[] {
+  const parts = nextUpdateBy.match(/\d[\d,.]*\d|\d/g) ?? [];
+  const ref = 'the next-update instant recorded in this room by the operator';
+  return [...new Set(parts.map((p) => p.replace(/,(?=\d{3}\b)/g, '').replace(/[.,]+$/, '')))]
+    .filter((p) => p.length > 0)
+    .map((figure) => ({ figure, sourceRef: ref }));
 }
 
 /** ISO → `2026-08-02 02:14Z`. Never renders "Invalid Date" onto a crisis record. */
@@ -373,7 +396,79 @@ function Verbatim(props: { label: string; text: string; testid?: string }) {
   );
 }
 
+/**
+ * The state of one desk assertion, in words, beside the checkbox that sets it.
+ *
+ * NOT decoration, and not a colour. The three assertions in the panel at the foot of
+ * this screen are `<input type="checkbox">` carrying `br-no-print`, so on paper the
+ * control disappears and its sentence — "This statement discloses inside information
+ * under MiCA Art 88(1)" — stays behind unqualified. A printed crisis record therefore
+ * read as though all three were asserted no matter what the operator had ticked, and
+ * the one that matters most is the Art 88(1) limb: combining an inside-information
+ * disclosure with marketing is prohibited outright, so a sheet that asserts it by
+ * accident and a sheet that omits it are both wrong, in opposite directions, and
+ * neither is visible on screen where the box is still there to read.
+ *
+ * The word carries the state and the colour only agrees with it — that is the rule
+ * for every signal on this page, because a printed sheet may be photocopied, faxed to
+ * a competent authority, or read by someone who cannot distinguish the two hues.
+ */
+function AssertedMark(props: { on: boolean }) {
+  return (
+    <span
+      className={clsx('mr-1 font-bold', props.on ? 'text-status-blocked' : 'text-grey')}
+      data-asserted={props.on ? 'yes' : 'no'}
+    >
+      [{props.on ? 'ASSERTED' : 'not asserted'}]
+    </span>
+  );
+}
+
 const FIELD = 'w-full rounded border border-line bg-card px-2 py-1 font-mono text-micro text-navy focus-ring';
+
+/**
+ * A `<textarea>` that actually prints what has been typed into it.
+ *
+ * THE CLAIM THAT WAS FALSE. The print block below used to say "a `<textarea>` prints
+ * its content" and merely stripped its border and set `height: auto`. A textarea is a
+ * replaced element with its own scroll box: `height: auto` resolves to its `rows`
+ * default — two lines — and everything past that is clipped on paper with no
+ * scrollbar and no ellipsis to show that anything was removed. Six fields on this
+ * screen are textareas, including the three tri-slot boxes whose whole purpose is to
+ * hold more than two lines, so the printed sheet quietly truncated the operator's own
+ * words. Setting a large `min-height` instead only moves the cut.
+ *
+ * So the value is mirrored into a `<pre>` that only exists on paper, and the control
+ * itself is hidden there. `pre` wraps, grows and breaks across pages, which is what
+ * paper needs. Both nodes read the same `value` in the same render, so they cannot
+ * disagree — the mirror is not a copy kept in step by hand.
+ */
+function MirroredTextarea(props: {
+  className: string;
+  value: string;
+  onChange: (v: string) => void;
+  label: string;
+  placeholder?: string;
+  testid?: string;
+}) {
+  return (
+    <>
+      <textarea
+        className={props.className}
+        aria-label={props.label}
+        placeholder={props.placeholder}
+        data-testid={props.testid}
+        value={props.value}
+        onChange={(e) => props.onChange(e.target.value)}
+      />
+      <pre
+        aria-hidden="true"
+        data-print-mirror={props.testid ?? props.label}
+        className="hidden whitespace-pre-wrap break-words border-l-2 border-line px-2 py-1 font-mono text-micro leading-relaxed text-navy print:block"
+      >{props.value === '' ? '(nothing entered)' : props.value}</pre>
+    </>
+  );
+}
 
 /* ════════ §D This screen's own small decisions, named ════════ */
 
@@ -512,6 +607,68 @@ export function MarketingCrisis() {
 
   const text = useMemo(() => renderStatementText(body), [body]);
   const fingerprint = useFingerprint(text);
+
+  /*
+   * ══ THE WORDING GATE, ON THE ONLY OUTBOUND PATH THIS ROOM HAS ══
+   *
+   * This page makes ZERO API calls, by design — it must work with the API down, which is
+   * when an incident is most likely. The consequence nobody had stated: `copy()` put the
+   * composed LCX statement, including operator free text typed at 02:00, on the clipboard
+   * having consulted `activateCrisisStatement` and NOTHING ELSE. The crisis engine checks
+   * clearance, completeness, over-reassurance and desk mode. It does not read the WORDS
+   * against MiCA Art 66(2)-(3): a price promise, a return promise, an invented licence or a
+   * personalised recommendation typed into the `known` column reached the clipboard
+   * unexamined, while `/:id/draft` refused the same sentence.
+   *
+   * `checkClaimSafety` is pure, needs no data and no network, so it runs here. It is the
+   * SAME engine and the same ruleset version as the desk's gate — not a second opinion
+   * written in a component, which is what `preChecks.ts` exists to refuse to be.
+   *
+   * WHAT IT STILL CANNOT DO, and §5 says so on screen rather than here only: the Art 90
+   * embargo and Art 91(3)(c) holdings joins need the registers, the registers need the API,
+   * and the API may be down. So a statement naming an asset symbol is refused outright by
+   * `assetsNamedButUnjoinable` below rather than passed as clear — an unavailable check is
+   * not a passed check, and that is the same rule the server gate applies.
+   */
+  const wording = useMemo(() => checkClaimSafety({
+    text,
+    channel: 'x_public',
+    verb: 'original',
+    claimIdsCited: [],
+    topic: null,
+    jurisdiction: 'eu',
+    product: null,
+    sourceText: null,
+    /*
+     * THE ONE FIGURE THE INSTRUMENT ITSELF PUT IN THE TEXT.
+     *
+     * `figuresIn` treats every digit run as a figure, and the next-update instant is
+     * rendered into the statement body from a datetime control. Left unsourced, EVERY
+     * crisis statement refused `UNSOURCED_FIGURE` on the timestamp the template requires —
+     * a rule with a known false-positive mode holding a refusal, which this compartment
+     * elsewhere refuses to do (see the `"buy "` note in `claimSafety.ts:1258`).
+     *
+     * It is substantiated by what it is: a commitment the desk recorded in this room, not
+     * an assertion about the world. Nothing else is whitelisted — every other digit the
+     * operator types is still checked, which is the case the rule was written for.
+     */
+    substantiatedFigures: nextUpdateFigures(body.nextStep.nextUpdateBy),
+    solvencyAttestationRef: null,
+  }), [text, body.nextStep.nextUpdateBy]);
+
+  /** Error-severity findings block, exactly as they do in `outboundGate.ts`. */
+  const wordingBlocks = useMemo(
+    () => [
+      ...wording.verdict.refusals.map((r) => ({ code: r.code as string, sentence: r.sentence })),
+      ...wording.verdict.violations
+        .filter((v) => v.severity === 'error')
+        .map((v) => ({ code: v.rule, sentence: v.remedy })),
+    ],
+    [wording],
+  );
+
+  /** Symbols this statement names, which this room cannot join against any register. */
+  const assetsNamedButUnjoinable = useMemo(() => namedAssets(text), [text]);
 
   /**
    * EVERY CLEARANCE AGAINST OLD BYTES IS KEPT, NOT DISCARDED.
@@ -844,13 +1001,13 @@ export function MarketingCrisis() {
         </summary>
         <div className="mt-1.5 grid gap-2 lg:grid-cols-3">
           <Field label="Empathy line (optional)">
-            <textarea className={`${FIELD} min-h-[54px]`} aria-label="Empathy line" value={empathy} onChange={(e) => setEmpathy(e.target.value)} />
+            <MirroredTextarea className={`${FIELD} min-h-[54px]`} label="Empathy line" value={empathy} onChange={setEmpathy} />
           </Field>
           <Field label="Being withheld">
-            <textarea className={`${FIELD} min-h-[54px]`} aria-label="Withheld" value={withheldWhat} onChange={(e) => setWithheldWhat(e.target.value)} />
+            <MirroredTextarea className={`${FIELD} min-h-[54px]`} label="Withheld" value={withheldWhat} onChange={setWithheldWhat} />
           </Field>
           <Field label="Why it cannot be released">
-            <textarea className={`${FIELD} min-h-[54px]`} aria-label="Why withheld" value={withheldWhy} onChange={(e) => setWithheldWhy(e.target.value)} />
+            <MirroredTextarea className={`${FIELD} min-h-[54px]`} label="Why withheld" value={withheldWhy} onChange={setWithheldWhy} />
           </Field>
         </div>
       </details>
@@ -996,10 +1153,13 @@ export function MarketingCrisis() {
         onPromotional={setPromotional}
       />
       <GateLadder activation={activation} />
+      <WordingGate blocks={wordingBlocks} assets={assetsNamedButUnjoinable} />
       <HandoffPanel
         activation={activation}
         text={text}
         firstStatementAt={firstStatementAt}
+        wordingBlocks={wordingBlocks}
+        assetsNamedButUnjoinable={assetsNamedButUnjoinable}
         onCopy={() => void copy(text, 'The statement')}
         onIssued={markIssued}
       />
@@ -1302,12 +1462,12 @@ function SlotBox(props: {
       <div className={clsx('font-mono text-[10px] font-bold uppercase tracking-wider', props.held ? TONE_TEXT.ready : TONE_TEXT.blocked)}>
         {props.label} · {props.held ? 'present' : 'MISSING — BLOCKS ISSUE'}
       </div>
-      <textarea
+      <MirroredTextarea
         className={`${FIELD} mt-1 min-h-[110px]`}
-        aria-label={props.label}
-        data-testid={props.testid}
+        label={props.label}
+        testid={props.testid}
         value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
+        onChange={props.onChange}
       />
       <p className="mt-0.5 font-mono text-[10px] leading-relaxed text-grey">{props.hint}</p>
     </div>
@@ -1437,12 +1597,12 @@ function LaneCard(props: {
             ))}
           </div>
         </fieldset>
-        <textarea
+        <MirroredTextarea
           className={`${FIELD} min-h-[44px]`}
-          aria-label={`${props.role} comment`}
+          label={`${props.role} comment`}
           placeholder="comment (required if you answered no)"
           value={props.form.comment}
-          onChange={(e) => props.onForm({ comment: e.target.value })}
+          onChange={(comment) => props.onForm({ comment })}
         />
         <div className="flex flex-wrap gap-1.5">
           <Button size="xs" onClick={() => props.onRecord('blocking')} disabled={props.disabled}>
@@ -1586,21 +1746,29 @@ function DeskStandingControls(props: {
       <div className="mt-1 space-y-1">
         <label className="flex items-start gap-2 font-mono text-micro text-navy">
           <input type="checkbox" className="br-no-print mt-0.5 focus-ring" checked={props.insideInformation} onChange={(e) => props.onInsideInformation(e.target.checked)} />
-          <span>This statement discloses <strong>inside information</strong> under MiCA Art 88(1).</span>
+          <span><AssertedMark on={props.insideInformation} />This statement discloses <strong>inside information</strong> under MiCA Art 88(1).</span>
         </label>
         <label className="flex items-start gap-2 font-mono text-micro text-navy">
           <input type="checkbox" className="br-no-print mt-0.5 focus-ring" checked={props.promotional} onChange={(e) => props.onPromotional(e.target.checked)} />
-          <span>This statement also carries <strong>promotional content</strong>.</span>
+          <span><AssertedMark on={props.promotional} />This statement also carries <strong>promotional content</strong>.</span>
         </label>
         <label className="flex items-start gap-2 font-mono text-micro text-navy">
           <input type="checkbox" className="br-no-print mt-0.5 focus-ring" checked={props.suspended} onChange={(e) => props.onSuspended(e.target.checked)} />
           <span>
+            <AssertedMark on={props.suspended} />
             A competent authority has <strong>suspended LCX&apos;s marketing communications</strong>
             {' '}under MiCA Art 94. Drafting, clearing, logging and export stay available — the record
             is what the supervisor will ask for.
           </span>
         </label>
       </div>
+      {props.suspended && (
+        <div className="hidden print:block mt-1.5 font-mono text-micro leading-relaxed text-navy" data-testid="suspension-printed">
+          Suspension particulars — authority: {props.authority.trim() === '' ? 'NOT STATED' : props.authority}
+          {' · '}order reference: {props.orderRef.trim() === '' ? 'NOT STATED' : props.orderRef}
+          {' · '}counsel who ruled on classification: {props.counselNamed.trim() === '' ? 'NOT NAMED' : props.counselNamed}
+        </div>
+      )}
       {props.suspended && (
         <div className="br-no-print mt-1.5 grid gap-2 sm:grid-cols-3">
           <Field label="Authority (home or host)">
@@ -1701,18 +1869,80 @@ function GateLadder(props: { activation: CrisisActivation }) {
  * separate, later act, and it is what stops the clock — the clock is stopped by a
  * human confirming they spoke, never by this software deciding it has.
  */
+/**
+ * THE WORDS, CHECKED — and the two joins that cannot be, said out loud.
+ *
+ * Rendered between the crisis ladder and the handoff so the order on screen is the order of
+ * the argument: the engine's gates, then the wording gate, then whether anything may leave.
+ * A refusal here removes the copy affordance, for the reason the handoff panel already
+ * states — a refusal beside a copy button is a suggestion, and at 02:00 an operator takes
+ * whichever affordance is present.
+ */
+function WordingGate(props: { blocks: readonly { code: string; sentence: string }[]; assets: readonly string[] }) {
+  const blocked = props.blocks.length > 0 || props.assets.length > 0;
+  return (
+    <div
+      className={clsx('mt-2 border-l-4 px-2 py-1.5', blocked ? TONE_BORDER.blocked : TONE_BORDER.ready)}
+      data-testid="crisis-wording-gate"
+    >
+      <div
+        className={clsx('font-mono text-label font-bold uppercase tracking-wider', blocked ? TONE_TEXT.blocked : TONE_TEXT.ready)}
+      >
+        {blocked ? 'THE WORDS ARE REFUSED' : 'The words matched no rule this room holds'}
+      </div>
+      {props.blocks.length > 0 && (
+        <ol className="mt-1 list-decimal space-y-0.5 pl-4" data-testid="crisis-wording-refusals">
+          {props.blocks.map((b) => (
+            <li key={b.code} className="font-mono text-micro leading-relaxed text-status-blocked">
+              <span className="font-bold">{b.code}</span> — {b.sentence}
+            </li>
+          ))}
+        </ol>
+      )}
+      {props.assets.length > 0 && (
+        <p className="mt-1 font-mono text-micro leading-relaxed text-status-blocked" data-testid="crisis-assets-unjoinable">
+          This statement names {props.assets.join(', ')}. The Art 90 embargo register and the
+          Art 91(3)(c) holdings register are server-side, this room reads no API by design, and an
+          unavailable check is not a passed check. Take a statement naming an asset through the
+          desk&apos;s drafting room, where both joins run against live state.
+        </p>
+      )}
+      <p className="mt-1 font-mono text-[10px] leading-relaxed text-grey">
+        This is the claim-safety engine the desk&apos;s outbound gate runs — the same ruleset,
+        version {String(wordingRulesetVersionNote)}. A clean result means &ldquo;matched no rule
+        it holds&rdquo;, never &ldquo;cleared&rdquo;: the two market-abuse joins and the Art 7
+        element check are not reachable from this screen.
+      </p>
+    </div>
+  );
+}
+
+/** Said once, so the sentence above cannot drift from the engine's own number. */
+const wordingRulesetVersionNote = CLAIM_SAFETY_RULESET_VERSION;
+
 function HandoffPanel(props: {
   activation: CrisisActivation;
   text: string;
   firstStatementAt: string | null;
+  /** Error-severity wording findings. Non-empty removes the copy affordance. */
+  wordingBlocks: readonly { code: string; sentence: string }[];
+  /** Symbols named that this room cannot join against a register. */
+  assetsNamedButUnjoinable: readonly string[];
   onCopy: () => void;
   onIssued: () => void;
 }) {
   const a = props.activation;
+  const wordingRefused = props.wordingBlocks.length > 0 || props.assetsNamedButUnjoinable.length > 0;
   return (
     <div className="mt-2 border border-line bg-card p-2.5" data-testid="handoff-panel">
       <div className="font-mono text-[10px] font-bold uppercase tracking-wider text-grey">Handoff</div>
-      {!a.issuable ? (
+      {wordingRefused ? (
+        <p className="mt-0.5 font-mono text-micro leading-relaxed text-status-blocked" data-testid="handoff-wording-blocked">
+          There is no copy affordance here, because the claim-safety gate above refused these
+          words — or they name an asset whose embargo and holdings state this room cannot read.
+          Every other gate may have passed; this one has not.
+        </p>
+      ) : !a.issuable ? (
         <p className="mt-0.5 font-mono text-micro leading-relaxed text-status-blocked" data-testid="handoff-blocked">
           There is no copy affordance here, because this statement is not issuable. A refusal beside a
           copy button is a suggestion, and at 02:00 an operator takes whichever affordance is present.
@@ -1818,20 +2048,52 @@ function ClosingStatement(props: {
 /**
  * Crisis-specific print rules, on top of the shared chrome reset in `PrintStyles`.
  *
- * The three that matter here:
+ * This room says on its face that printing or copying is the only way its record
+ * leaves, so the print path is the product and not a convenience. Six rules:
  *
  *  1. THE THREE LANES PRINT AS THREE LANES. A grid that collapses to one column on
  *     paper would present the parallel clears as a sequence — the exact reading this
  *     screen exists to prevent.
- *  2. FORM CONTROLS PRINT THEIR VALUES. A `<textarea>` prints its content, but the
- *     borders and the resize affordance are noise on paper, so they go.
+ *  2. FORM CONTROLS PRINT THEIR VALUES — now that `MirroredTextarea` makes that
+ *     true. The controls themselves are hidden here rather than restyled: a textarea
+ *     is a scroll box and `height: auto` clips it to its `rows` default, which is
+ *     what the previous version of this rule did to six fields. `input`/`select` are
+ *     single-line and render their value, so they only lose their chrome.
  *  3. THE `dark:` VARIANTS ARE NEUTRALISED BY NAME. `PrintStyles` pins the colour
  *     tokens to their light values, but `.dark` stays on `<html>`, so a `dark:bg-*`
  *     utility still matches and still paints. Pinning tokens is not sufficient.
+ *  4. THE STATUS AND SURFACE TOKENS ARE PINNED. `PrintStyles` pins six tokens and
+ *     `--red`, `--amber`, `--green` and `--ice-soft` are not among them, so printed
+ *     from dark mode every refusal, every MISSING — BLOCKS ISSUE heading and every
+ *     breach line came out as #e4687a on white paper — roughly 2.4:1, which is a
+ *     refusal notice that is technically present and practically absent — while the
+ *     unconditional `bg-ice-soft/50` on the verbatim statement resolved to a
+ *     near-black wash under dark navy text. `components/gps/LegalPositionStamp.tsx`
+ *     pins this by hand for one element; pinning the tokens covers every element,
+ *     and a test checks the values against `styles/tokens.css` so they cannot rot.
+ *  5. A `<summary>` PRINTS AS A HEADING instead of being deleted. `details` is
+ *     forced open on paper, and the old rule then removed the very line that says
+ *     what the disclosed block is.
+ *  6. NOTHING IS TRAPPED IN A SCROLL BOX. There is no scrollbar on paper, so any
+ *     overflow container is a silent guillotine; the same rule as the record bundle.
  */
 function CrisisPrintStyles() {
   const css = `
 @media print {
+  /* The tokens PrintStyles does not pin. Light values, from styles/tokens.css. */
+  :root, :root.dark {
+    --red: 163 32 53;
+    --red-bg: 251 230 234;
+    --amber: 138 95 0;
+    --amber-bg: 253 243 215;
+    --green: 30 122 74;
+    --green-bg: 227 244 234;
+    --ice: 202 220 252;
+    --ice-soft: 234 241 254;
+    --grey-light: 185 198 224;
+    --navy-deep: 20 26 69;
+  }
+
   /* The parallel clears must not become a queue on paper. */
   [data-testid="clearance-lanes"] {
     display: grid !important;
@@ -1839,15 +2101,21 @@ function CrisisPrintStyles() {
   }
   [data-testid="clock-panel"], [data-testid^="lane-"], [data-contagion-attribute],
   [data-refusal-code], section { break-inside: avoid; page-break-inside: avoid; }
-  textarea, input, select {
+  /* A textarea's content is clipped to its box on paper; the mirror carries it. */
+  textarea { display: none !important; }
+  input, select {
     border: none !important;
-    resize: none !important;
-    height: auto !important;
-    min-height: 0 !important;
     background: #fff !important;
   }
+  .overflow-x-auto, .overflow-auto { overflow: visible !important; }
+  th, td { white-space: normal !important; overflow-wrap: anywhere !important; }
+  thead { display: table-header-group; }
   details { display: block !important; }
-  details > summary { display: none !important; }
+  details > summary {
+    display: block !important;
+    list-style: none !important;
+    font-weight: 700;
+  }
   pre { white-space: pre-wrap !important; word-break: break-word !important; }
   .dark\\:bg-ice-soft\\/10 { background: #fff !important; }
 }

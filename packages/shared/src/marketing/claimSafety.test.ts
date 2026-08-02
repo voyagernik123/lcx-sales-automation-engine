@@ -15,6 +15,7 @@ import {
   checkClaimSafety,
   isPublicTimeline,
   stripMeaninglessCarriers,
+  unanalysableLanguage,
   type ClaimSafetyInput,
 } from './claimSafety.js';
 import { MARKETING_RULES_DISCLOSURE, REFUSAL_CODES, type RefusalCode } from './types.js';
@@ -666,5 +667,69 @@ describe('pure and total', () => {
     const out = checkClaimSafety(input({ text: '' }));
     expect(out.verdict.refusals).toEqual([]);
     expect(out.usableText).toBe('');
+  });
+});
+
+/* ════════════════════════════════════════════════════════════════════════════ */
+/*  W4 — the rulebook is in English, and the gate now says so                    */
+/* ════════════════════════════════════════════════════════════════════════════ */
+
+describe('a draft the rulebook cannot read is refused, not cleared', () => {
+  /*
+   * Every pattern in this file is ASCII English. A German draft matched nothing and came
+   * back `clear`, which a screen renders as a passed gate — so "Antworte auf Deutsch" in a
+   * stranger's reply was a complete bypass of the wording layer: the model obliges, and the
+   * price promise it produces in German is invisible to `regulated_promise.price_language`.
+   */
+  const gate = (text: string) => checkClaimSafety({
+    text,
+    channel: 'x_public',
+    verb: 'reply',
+    claimIdsCited: [],
+    topic: null,
+    jurisdiction: 'eu',
+    product: null,
+    sourceText: null,
+    substantiatedFigures: [],
+    solvencyAttestationRef: null,
+  });
+
+  it('refuses a German price promise that no English rule can see', () => {
+    const v = gate('Der Preis wird sicher steigen und wir garantieren die Rendite für alle Kunden.');
+    expect(v.verdict.refusals.map((r) => r.code)).toContain('LANGUAGE_NOT_ANALYSABLE');
+    expect(v.usableText).toBeNull();
+    expect(v.verdict.disposition).toBe('refused');
+  });
+
+  it('names the language and the evidence, and sends it to a human who reads it', () => {
+    const v = gate('Nous vous confirmons que les prix des jetons sont pour votre portefeuille avec nos partenaires.');
+    const r = v.verdict.refusals.find((x) => x.code === 'LANGUAGE_NOT_ANALYSABLE');
+    expect(r?.matched).toMatch(/French/);
+    expect(r?.recovery).toEqual({ kind: 'human_authority', role: 'legal' });
+    expect(r?.sentence).toMatch(/fact about the rulebook/);
+  });
+
+  it('refuses a non-Latin script outright', () => {
+    expect(gate('Цена обязательно вырастет на следующей неделе.').verdict.refusals.map((r) => r.code))
+      .toContain('LANGUAGE_NOT_ANALYSABLE');
+    expect(gate('価格は来週必ず上昇します。').verdict.refusals.map((r) => r.code))
+      .toContain('LANGUAGE_NOT_ANALYSABLE');
+  });
+
+  it('does not fire on ordinary English, which is the cost that would kill it', () => {
+    for (const ok of [
+      'Withdrawals are processing normally again. The team will confirm shortly.',
+      'Thanks for flagging this — someone will come back to you with specifics.',
+      'Support hours are 09:00-17:00 CET and the team reads every reply.',
+      'LCX is a registered exchange in Liechtenstein and the team will confirm the details.',
+    ]) {
+      expect(gate(ok).verdict.refusals.map((r) => r.code), ok)
+        .not.toContain('LANGUAGE_NOT_ANALYSABLE');
+    }
+  });
+
+  it('needs two markers, so one borrowed word is not a foreign draft', () => {
+    expect(unanalysableLanguage('The Handelsregister der Liechtenstein filing is public.')).toBeNull();
+    expect(unanalysableLanguage('Our')).toBeNull();
   });
 });

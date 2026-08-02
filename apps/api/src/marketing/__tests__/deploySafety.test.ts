@@ -42,15 +42,46 @@ describe('every marketing route survives a missing migration', () => {
    * the failure mode is a NEW route added later without the guard — which is
    * invisible until the next time someone deploys ahead of a migration.
    */
-  it('guards every handler in the file', () => {
-    const handlers = routes.match(/marketingRoutes\.(get|post|patch|delete)\(/g) ?? [];
-    const guards = routes.match(/isMigrated\(/g) ?? [];
-    expect(handlers.length).toBeGreaterThan(5);
+  /**
+   * COUNTED PER HANDLER, NOT IN TOTAL — which is strictly stronger than what this
+   * assertion did before, and the change was forced by a real case rather than chosen.
+   *
+   * It used to compare `count(isMigrated() ) >= count(handlers)` across the whole file.
+   * Two weaknesses. First, a handler carrying two guards paid for a handler carrying
+   * none, so the totals could balance with a route left unguarded — the exact defect the
+   * test exists to catch. Second, it demanded ONE specific probe: `GET /perimeter` reads
+   * only the 0060 perimeter tables and never touches `marketing_x_reply`, so `isMigrated`
+   * would have been the wrong question. Its guard is `isAbuseRegisterMigrated`, called
+   * inside `listEmbargoRegister`/`listHoldings` and surfaced to the client as
+   * `registerPresent: false`.
+   *
+   * So: every handler must degrade through one of the NAMED guards below. A new route
+   * with no guard at all still turns this red, which is the property that matters.
+   */
+  it('gives every handler a named migration guard', () => {
+    const registrations = [...routes.matchAll(/marketingRoutes\.(get|post|patch|delete)\('([^']+)'/g)]
+      .map((m) => ({ key: `${m[1].toUpperCase()} ${m[2]}`, at: m.index ?? 0 }));
+    expect(registrations.length).toBeGreaterThan(5);
+
+    /** Each of these degrades honestly instead of throwing when its tables are absent. */
+    const GUARDS = [
+      'isMigrated(',                 // 0046/0059 — marketing_x_reply
+      'listEmbargoRegister(',        // probes 0060 internally → registerPresent: false
+      'listHoldings(',               // probes 0060 internally → registerPresent: false
+    ];
+
+    const unguarded = registrations.filter((r, i) => {
+      const end = i + 1 < registrations.length ? registrations[i + 1].at : routes.length;
+      const body = routes.slice(r.at, end);
+      return !GUARDS.some((g) => body.includes(g));
+    }).map((r) => r.key);
+
     expect(
-      guards.length,
-      `${handlers.length} handlers but only ${guards.length} isMigrated() checks — ` +
-        'a route without one returns 500 during the deploy-before-migration window',
-    ).toBeGreaterThanOrEqual(handlers.length);
+      unguarded,
+      'these handlers carry no migration guard, so they return 500 during the '
+      + 'deploy-before-migration window and the desk cannot tell a pending migration '
+      + 'from an outage',
+    ).toEqual([]);
   });
 
   it('answers reads with an empty body rather than an error', () => {

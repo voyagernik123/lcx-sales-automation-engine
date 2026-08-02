@@ -84,6 +84,7 @@ const REGISTRY = join(__dirname, '..', '..', '..', '..', '..', 'api', 'src', 'ac
  * manifest action.
  */
 const GPS_ACTIONS_SRC = join(__dirname, '..', '..', '..', '..', '..', 'api', 'src', 'gps', 'actions.ts');
+const ABUSE_REGISTER_SRC = join(__dirname, '..', '..', '..', '..', '..', 'api', 'src', 'marketing', 'abuseRegister.ts');
 
 /**
  * Where an action's declaration can live, and how to find it in each place.
@@ -92,6 +93,18 @@ const GPS_ACTIONS_SRC = join(__dirname, '..', '..', '..', '..', '..', 'api', 'sr
 const SOURCES: ReadonlyArray<{ rel: string; path: string; locate: (id: string) => string }> = [
   { rel: 'actions/registry.ts', path: REGISTRY, locate: (id) => `\n  ${id}: {\n` },
   { rel: 'gps/actions.ts', path: GPS_ACTIONS_SRC, locate: (id) => `\nconst ${id}: GpsAction = {\n` },
+  /*
+   * THE THIRD DECLARING FILE, which this test's own error message predicted would arrive.
+   *
+   * `marketing/abuseRegister.ts` declares the three market-abuse actions inside an array
+   * literal (`MARKETING_ABUSE_ACTIONS`) rather than as keys of an object or as named
+   * consts, so neither locator above could find them — and the schemas of the only three
+   * actions in the repo that gate inside information would have been outside this ledger.
+   * That is exactly the blind spot the file exists to prevent: a `.refine(` quietly
+   * removed from an embargo schema is a server-side relaxation no hash and no type check
+   * would report.
+   */
+  { rel: 'marketing/abuseRegister.ts', path: ABUSE_REGISTER_SRC, locate: (id) => `\n    id: '${id}',\n` },
 ];
 
 /**
@@ -291,6 +304,19 @@ const LEDGER: Record<string, string> = {
     "z .object({ status: z.enum(MANUAL_TARGETS as unknown as [string, ...string[]]), reason: z.string().max(500).optional(), }) .refine((v) => !REQUIRES_REASON.includes(v.status as EngagementStatus) || nonBlank(v.reason ?? ''), { message: 'closing an engagement as lost or cancelled requires a reason', path: ['reason'], })",
   grant_entitlement:
     "z.object({ workspace: z.enum(WORKSPACE_IDS as unknown as [string, ...string[]]), capability: z.enum(['view', 'operate', 'approve']), justification: z.string().min(1).max(500), })",
+  /*
+   * The three market-abuse writes. The bounds are the control, not decoration:
+   * `EVENT_REF_RE` forbids spaces, so the inside information cannot be written into the
+   * reference to itself; `reviewInDays` is capped at 365 so an embargo cannot be entered
+   * and then never looked at again; and `amendmentReason` is an enum because "I changed
+   * my mind" is not a reason a holdings declaration may be amended for.
+   */
+  marketing_embargo_enter:
+    "z.object({ eventRef: slug(SLUG_MAX, EVENT_REF_RE, 'eventRef'), state: z.enum(EMBARGO_STATES as unknown as [EmbargoState, ...EmbargoState[]]), sourceRef: slug(SOURCE_REF_MAX, SOURCE_REF_RE, 'sourceRef'), reviewInDays: z.number().int().min(1).max(365), embargoUntilDays: z.number().int().min(1).max(3650).optional(), })",
+  marketing_embargo_lift:
+    "z.object({ eventRef: slug(SLUG_MAX, EVENT_REF_RE, 'eventRef'), })",
+  marketing_holdings_declare:
+    'z.object({ holds: z.boolean(), renewInDays: z.number().int().min(1).max(366), amendmentReason: z.enum( HOLDINGS_AMENDMENT_REASONS as unknown as [HoldingsAmendmentReason, ...HoldingsAmendmentReason[]], ).optional(), })',
   notify:
     'z.object({ title: z.string().min(1).max(200), detail: z.string().max(500).optional(), href: z.string().max(300).optional() })',
   revoke_entitlement:

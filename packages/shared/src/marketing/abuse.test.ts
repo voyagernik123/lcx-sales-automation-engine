@@ -1216,3 +1216,85 @@ describe('market-abuse invariants', () => {
     }
   });
 });
+
+/* ════════════════════════════════════════════════════════════════════════════ */
+/*  W4 — the two findings that survived the concurrent waves                     */
+/* ════════════════════════════════════════════════════════════════════════════ */
+
+describe('a symbol-scoped register slice is not an empty register', () => {
+  /*
+   * `loadEmbargoRegister` (abuseRegister.ts) selects `WHERE asset_symbol = ANY($1)`, so a
+   * register holding 500 rows returns `entries: []` for one unlisted symbol.
+   * `resolveEmbargo` read that as `register_empty` and told the desk to supply an embargo
+   * register it had already supplied — while `absent_from_unattested_register`, the
+   * correct reason with the correct remedy (the listings desk, not the owner), was
+   * unreachable in production and covered only by tests that built the register by hand.
+   *
+   * Both outcomes still refuse. What changes is which fact the refusal names.
+   */
+  const scoped = (entries: EmbargoRegister['entries'], anyRows: boolean): EmbargoRegister => ({
+    entries,
+    completeness: { kind: 'not_attested' },
+    scopedToSymbols: true,
+    anyRowsInRegister: anyRows,
+  });
+
+  it('reports absence from an unattested register when the table holds other rows', () => {
+    const r = resolveEmbargo('SOL', scoped([], true), NOW);
+    expect(r.reason).toBe('absent_from_unattested_register');
+    expect(r.state).toBe('unknown');
+    expect(r.narrative).not.toContain('register is empty');
+  });
+
+  it('still reports an empty register when the table really is empty', () => {
+    const r = resolveEmbargo('SOL', scoped([], false), NOW);
+    expect(r.reason).toBe('register_empty');
+    expect(r.narrative).toContain('empty');
+  });
+
+  it('treats an unscoped load with no entries as empty, so an omission cannot soften it', () => {
+    // `scopedToSymbols` absent means the caller did not say. The conservative reading is
+    // that these entries ARE the register.
+    const r = resolveEmbargo('SOL', { entries: [], completeness: { kind: 'not_attested' } }, NOW);
+    expect(r.reason).toBe('register_empty');
+  });
+
+  it('makes ASSET_STATE_UNKNOWN reachable, which it was not on the production path', () => {
+    const verdict = assessMarketAbuse(input({
+      act: act({ namedAssets: ['SOL'] }),
+      text: 'SOL deposits are open on LCX.',
+      embargoRegister: scoped([], true),
+      holdingsRegister: holdingsRegister([
+        { actor: 'nik@lcx.com', asset: 'SOL', declared: 'declared_none', declaredAt: PAST, reviewBy: FUTURE, note: null },
+      ]),
+    }));
+    expect(codes(verdict)).toContain('ASSET_STATE_UNKNOWN');
+    expect(codes(verdict)).not.toContain('EMBARGO_REGISTER_ABSENT');
+  });
+});
+
+describe('the no-named-asset finding is error severity, because it says a gate did not run', () => {
+  it('raises it at error severity so a blocking caller can see it', () => {
+    // As a `warning` it was raised, carried and dropped: `outboundGate.ts` cleared the
+    // draft, answered 201 and wrote `allowed: true`. The two limbs carrying unlawful
+    // disclosure and a EUR 700 000 personal fine had both no-opped.
+    const verdict = assessMarketAbuse(
+      input({ act: act({ namedAssets: [] }), text: 'Very bullish here.' }),
+    );
+    const found = verdict.violations.find((v) => v.rule === 'title_vi.directional_with_no_named_asset');
+    expect(found).toBeDefined();
+    expect(found!.severity).toBe('error');
+  });
+
+  it('leaves the satisfied-Art-88(1) finding at warning, so compliance is not refused', () => {
+    const verdict = assessMarketAbuse(input({
+      intents: ['inside_information_disclosure'],
+      linkPresent: false,
+    }));
+    const found = verdict.violations.find(
+      (v) => v.rule === 'art_88_1.disclosure_artefact_must_stay_clean',
+    );
+    expect(found).toBeDefined();
+    expect(found!.severity).toBe('warning');
+  });
+});

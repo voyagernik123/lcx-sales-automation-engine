@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui';
 import { PrintStyles } from '@/components/report/PrintStyles';
+import { ExportBundlePanel } from '@/components/marketing/ExportBundlePanel';
+import { SubjectRights } from '@/components/marketing/SubjectRights';
 import { isMigrated } from '@/lib/api/meta';
 import {
   fetchDrafts, fetchMarketingQueue, fetchMarketingSummary,
@@ -883,6 +885,45 @@ export function MarketingRecord() {
         excluded={excluded}
       />
       <WindowSection asOf={asOf} from={from} to={to} held={items?.length ?? null} />
+
+      {/* ── §6 THE PRODUCTION, AND §7 THE STATUTORY PATHS ─────────────────────────
+          Everything above this line is assembled IN THE BROWSER from the queue and the
+          draft chains: it is this screen's reconstruction of the record, and its own
+          completeness statement says so. What follows is the SERVER's record.
+
+          The distinction is the reason they are separate sections rather than merged. A
+          reconstruction and a production can disagree, and when they do that disagreement
+          is the finding — so a screen that folded the server's bundle into its own tables
+          would destroy the only comparison worth making.
+
+          Both were unreachable before this wave. `apps/api/src/marketing/record.ts` had no
+          importer anywhere in `apps/api/src`, so the Art 8(2) production, the Art 15
+          access response, the Art 17 erasure and the five-year retention clock were
+          written, tested and dead. */}
+      <SectionHead
+        n="6"
+        title="The production, as the server holds it"
+        note={
+          <>
+            Sections 1 to 5 are this screen&apos;s reconstruction. This one asks the server for its record and
+            prints what it says is missing from it. Where the two disagree, the disagreement is the finding.
+          </>
+        }
+      />
+      <ExportBundlePanel />
+
+      <SectionHead
+        n="7"
+        title="Data subject rights and the retention clock"
+        note={
+          <>
+            An Art 15 request has one month to run under Art 12(3), an Art 17 erasure has to be provable, and
+            nothing places one of our own statements on the long clock unless somebody does it here.
+          </>
+        }
+      />
+      <SubjectRights />
+
       <ClosingStatement asOf={asOf} tallies={tallies} />
     </div>
   );
@@ -1607,7 +1648,10 @@ function ClosingStatement(props: {
 /**
  * Bundle-specific print rules, on top of the shared chrome reset in `PrintStyles`.
  *
- * Three things, each of which was a defect in some other printable surface first:
+ * MiCA Art 8(2) is produce-on-demand, so paper is this page's real output and the
+ * screen is the draft of it. Six rules, and the last three were found by reading
+ * what the box model does to a `w-full` table inside a scroll container rather than
+ * by looking at a preview:
  *
  *  1. EVERY ITEM'S EVIDENCE PRINTS. Collapsed evidence rows are hidden with
  *     `.record-evidence-closed`, and this block unsets that in print. So ⌘P from a
@@ -1620,15 +1664,64 @@ function ClosingStatement(props: {
  *     pins the colour tokens to their light values, but `.dark` stays on `<html>`,
  *     so a `dark:bg-*` utility still MATCHES and still paints. Pinning tokens alone
  *     is not sufficient; the variant has to be overridden by name.
+ *
+ *  4. THE SCROLL CONTAINERS ARE UNLOCKED, AND THIS IS THE ONE THAT SILENTLY
+ *     MUTILATED THE COMPLETENESS STATEMENT. All four tables sit in
+ *     `overflow-x-auto` wrappers, and `PrintStyles` unlocks `.overflow-hidden` but
+ *     not that. On screen the wrapper gives you a scrollbar; on paper there is no
+ *     scrollbar, so anything past the page box is simply CUT — and every `TH` on
+ *     this page carries `whitespace-nowrap`, which pushes the six-column
+ *     completeness table's min-content width well past 186mm. The two right-hand
+ *     columns of §1 are "What the record actually contains" and "What cannot be
+ *     answered": the printed bundle would have asserted its own completeness while
+ *     the statement of its gaps had been trimmed off the right-hand edge. Unlocking
+ *     the overflow is not enough on its own — a nowrap cell would then run off the
+ *     sheet instead — so `white-space` is released on cells in the same breath.
+ *     Nothing is exempted, not even the tabular timestamps: a date that wraps is
+ *     ugly, a date that is not on the page is a defect.
+ *  5. THE COLUMN HEADS REPEAT ON EVERY SHEET. `table-header-group` is what makes a
+ *     bundle that runs to four pages readable; without it pages 2-4 are anonymous
+ *     grids of ids and stamps.
+ *  6. THE STATUS AND SURFACE TOKENS ARE PINNED TOO. `PrintStyles` pins six tokens
+ *     and none of them are `--red`/`--amber`/`--green`/`--ice-soft`, so printed from
+ *     dark mode every refusal and every completeness notice came out as dark
+ *     salmon (#e4687a) on white — about 2.4:1, present in the DOM and gone from the
+ *     page — and `bg-ice-soft/50` on the evidence quotes resolved to a near-black
+ *     wash. This is the same defect `components/gps/LegalPositionStamp.tsx` pins by
+ *     hand for one element; the tokens are pinned here so it holds for all of them.
+ *     Values are checked against `styles/tokens.css` by test, because a copied
+ *     colour rots silently.
  */
 function RecordPrintStyles() {
   const css = `
 .record-evidence-closed { display: none; }
 
 @media print {
+  /* The tokens PrintStyles does not pin. Light values, from styles/tokens.css. */
+  :root, :root.dark {
+    --red: 163 32 53;
+    --red-bg: 251 230 234;
+    --amber: 138 95 0;
+    --amber-bg: 253 243 215;
+    --green: 30 122 74;
+    --green-bg: 227 244 234;
+    --ice: 202 220 252;
+    --ice-soft: 234 241 254;
+    --grey-light: 185 198 224;
+    --navy-deep: 20 26 69;
+  }
+
   .record-evidence-closed { display: table-row !important; }
   tr, .record-evidence { break-inside: avoid; page-break-inside: avoid; }
-  table { width: 100% !important; }
+  table { width: 100% !important; table-layout: auto !important; }
+  /* No scrollbar exists on paper, so an overflow container is a guillotine. */
+  .overflow-x-auto, .overflow-auto { overflow: visible !important; }
+  th, td {
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+  }
+  thead { display: table-header-group; }
+  tfoot { display: table-footer-group; }
   pre { white-space: pre-wrap !important; word-break: break-word !important; }
   /* The dark-variant utilities on evidence surfaces: the class is still on <html>
      in print, so these still match. Force paper. */

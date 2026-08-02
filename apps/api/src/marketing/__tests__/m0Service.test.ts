@@ -12,6 +12,7 @@ import {
   migrationState,
   queueSummary,
   recordPostedOn,
+  saveDraft,
   setReplyStatus,
   sweepRawEmail,
 } from '../service.js';
@@ -498,5 +499,66 @@ describe('quarantined rows count towards nothing', () => {
     }
     expect(s.quarantined).toBe(3);
     expect(s.collisions).toBe(1);
+  });
+});
+
+/* ── W4 — the hostility signal, and the coverage figure the panels needed ────── */
+
+describe('a draft written from hostile input says so after a reload', () => {
+  /*
+   * `suspiciousInput` was a transient toast: `MarketingDesk.tsx` showed it once when the
+   * 201 came back, and `saveDraft` stored only the SANITISER's `flagged`. So the draft
+   * generated from a reply carrying "ignore all previous instructions" was, after a
+   * refresh, indistinguishable from any other draft in the table — and the reviewer who
+   * comes back to it tomorrow is the one who most needs to know.
+   *
+   * It does not block, and the stored reason says that in as many words: a reply that tries
+   * this is exactly the reply the desk most wants answered.
+   */
+  const insertOf = (log: Recorded[]) => sqlOf(log, /INSERT INTO marketing_reply_draft/)[0];
+
+  it('persists the flag and the reason', async () => {
+    const { pool, log } = fakePool({ probeAnswer: true });
+    await saveDraft(pool, 1, 'Thanks — the team is looking into it.', true, true);
+    const row = insertOf(log);
+    expect(row).toBeDefined();
+    expect(row.params[3]).toBe(true);
+    expect(String(row.params[4])).toMatch(/instruction aimed at the model/);
+    expect(String(row.params[4])).toMatch(/Nothing was blocked on that basis/);
+  });
+
+  it('leaves an ordinary draft unflagged, so the flag keeps meaning something', async () => {
+    const { pool, log } = fakePool({ probeAnswer: true });
+    await saveDraft(pool, 1, 'Thanks — the team is looking into it.', true, false);
+    expect(insertOf(log).params[3]).toBe(false);
+    expect(insertOf(log).params[4]).toBeNull();
+  });
+
+  it('keeps the sanitiser reason alongside it rather than replacing it', async () => {
+    const { pool, log } = fakePool({ probeAnswer: true });
+    // A live URL is redacted by the sanitiser, which sets its own flag and reason.
+    await saveDraft(pool, 1, 'See https://not-lcx.example for details.', true, true);
+    const reason = String(insertOf(log).params[4]);
+    expect(reason).toMatch(/Removed/);
+    expect(reason).toMatch(/instruction aimed at the model/);
+  });
+});
+
+describe('the summary reports post-time coverage over the population', () => {
+  it('returns the open-row and with-date counts as first-class fields', async () => {
+    // Both panels used to divide by `queue.length`, which is a PAGE capped at 50: a desk
+    // with 120 open replies of which 50 carried a post time rendered "100% — 50 of 50".
+    const { pool } = fakePool({ probeAnswer: true, summary: { openRows: 120, withDate: 50 } });
+    const s = await queueSummary(pool);
+    expect(s.postTimeCoverage).toEqual({ openRows: 120, withPostTime: 50 });
+    // And the refusal built from the same two numbers still agrees with them.
+    expect(s.oldestSincePostedHours).toMatchObject({ code: 'MKT_CLOCK_POST_TIME_UNKNOWN' });
+  });
+
+  it('reports a real zero denominator as zero rather than omitting it', async () => {
+    const { pool } = fakePool({ probeAnswer: true, summary: { openRows: 0, withDate: 0 } });
+    const s = await queueSummary(pool);
+    expect(s.postTimeCoverage).toEqual({ openRows: 0, withPostTime: 0 });
+    expect(s.oldestSincePostedHours).toBeNull();
   });
 });

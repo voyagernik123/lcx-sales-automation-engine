@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button, SectionLabel } from '@/components/ui';
 import { CardSkeleton, ErrorNotice } from '@/components/shared';
 import { toast } from '@/components/shared/Toast';
@@ -14,14 +15,16 @@ import { DraftingRoom } from '@/components/marketing/DraftingRoom';
 import { PrecedentPanel } from '@/components/marketing/PrecedentPanel';
 import { SilenceLog } from '@/components/marketing/SilenceLog';
 import { TriageBoard } from '@/components/marketing/TriageBoard';
+import { PerimeterPanel } from '@/components/marketing/PerimeterPanel';
+import { WatchPanel } from '@/components/marketing/WatchPanel';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════════
- *  THE DESK — six surfaces, one compartment, and no way to publish from any of them
+ *  THE DESK — eight surfaces, one compartment, and no way to publish from any of them
  * ══════════════════════════════════════════════════════════════════════════════
  *
- * `pages/Marketing.tsx` is the door; this is the room. It is split into six because the
- * six are genuinely different jobs and a single scrolling column made the desk look like
+ * `pages/Marketing.tsx` is the door; this is the room. It is split into eight because the
+ * eight are genuinely different jobs and a single scrolling column made the desk look like
  * a reply queue with extras bolted on:
  *
  *   Triage        the decision, in RESIST 2's vocabulary. Comes first because the
@@ -31,14 +34,24 @@ import { TriageBoard } from '@/components/marketing/TriageBoard';
  *   Silence       every decision NOT to answer. Half the desk's judgement.
  *   Precedent     what we said before, and whether it still holds.
  *   Crisis        prepared language and three parallel clears. Needs no data at all.
+ *   Watch         the outside view: what a supervisor published, and which of our claims
+ *                 has already expired. Its engine had no importer anywhere.
+ *   Perimeter     the market-abuse registers. Read-only, and the only reader the three
+ *                 governed embargo writes have ever had.
  *   Measurement   what can honestly be counted, and the seven figures that cannot.
  *
  * PANELS STAY MOUNTED across a tab switch, the way `pages/AiTools.tsx` keeps its own:
  * a half-finished assessment is work, and losing it to a mis-click teaches an operator
  * to distrust the surface.
+ *
+ * THE TWO EXCEPTIONS ARE WATCH AND PERIMETER, and the reason is the same rule read the
+ * other way: they hold no operator input, so there is no work to lose, and mounting them
+ * eagerly would fire four network reads on every visit to the desk — including on the
+ * environments where all four answer 404. Nothing is preserved by keeping a failed read
+ * warm.
  */
 
-type Tab = 'triage' | 'drafting' | 'silence' | 'precedent' | 'crisis' | 'measurement';
+type Tab = 'triage' | 'drafting' | 'silence' | 'precedent' | 'crisis' | 'watch' | 'perimeter' | 'measurement';
 
 const TABS: readonly { id: Tab; label: string }[] = [
   { id: 'triage', label: 'Triage' },
@@ -46,8 +59,21 @@ const TABS: readonly { id: Tab; label: string }[] = [
   { id: 'silence', label: 'Silence' },
   { id: 'precedent', label: 'Precedent' },
   { id: 'crisis', label: 'Crisis' },
+  { id: 'watch', label: 'Watch' },
+  { id: 'perimeter', label: 'Perimeter' },
   { id: 'measurement', label: 'Measurement' },
 ];
+
+/**
+ * The tab ids, as a set, for the URL to be checked against rather than cast to.
+ *
+ * `?tab=` arrives from the command palette (`components/command/marketingGrammar.ts`),
+ * which means it also arrives from anything a person can paste into the address bar. An
+ * unrecognised value leaves the desk on Triage — the safe default, since Triage is the
+ * upstream decision and landing there is never wrong — rather than rendering six hidden
+ * panels and an empty page.
+ */
+const TAB_IDS: ReadonlySet<string> = new Set(TABS.map((t) => t.id));
 
 export function MarketingDesk() {
   const [queue, setQueue] = useState<MarketingReply[] | null>(null);
@@ -58,6 +84,42 @@ export function MarketingDesk() {
   const [tab, setTab] = useState<Tab>('triage');
   const [selected, setSelected] = useState<number | null>(null);
   const [pasteOpen, setPasteOpen] = useState(false);
+
+  /**
+   * ── DEEP LINKS, so ⌘K can aim at a surface and not just at a page (M9) ────────────
+   *
+   * `?tab=` picks the panel and `?reply=` pre-selects an item. The palette's noun rows
+   * carry the first and its reply rows carry both.
+   *
+   * A DEEP-LINKED REPLY LANDS ON TRIAGE, NOT ON DRAFTING, and that is the desk's own rule
+   * rather than a routing convenience: drafting is downstream of a decision, so opening
+   * straight into a draft for an item nobody has assessed is exactly the sequence the
+   * Drafting panel warns about. The id is carried through so the Drafting select is
+   * already pointing at it when the operator has decided.
+   *
+   * Effects rather than lazy initial state, because the desk stays mounted: a second ⌘K
+   * jump while it is already on screen has to move it. `params.get` is read outside the
+   * effect so the dependency is the VALUE and not the URLSearchParams identity, which
+   * changes on every navigation and would re-fire on unrelated ones.
+   *
+   * NOTHING IS INVENTED FOR AN UNKNOWN ID. `current` resolves against the queue, so
+   * `?reply=99999`, or the id of a quarantined item (which is not in the queue by
+   * construction), leaves the Drafting panel saying no item is chosen. That is the honest
+   * answer; a placeholder row would be a fabricated inbound message.
+   */
+  const [params] = useSearchParams();
+  const wantedTab = params.get('tab');
+  const wantedReply = params.get('reply');
+
+  useEffect(() => {
+    if (wantedTab && TAB_IDS.has(wantedTab)) setTab(wantedTab as Tab);
+  }, [wantedTab]);
+
+  useEffect(() => {
+    if (wantedReply === null) return;
+    const id = Number(wantedReply);
+    if (Number.isInteger(id) && id > 0) setSelected(id);
+  }, [wantedReply]);
 
   /**
    * ONE `now` FOR THE WHOLE DESK, taken on mount.
@@ -174,7 +236,7 @@ export function MarketingDesk() {
               </span>
             </div>
             {pasteOpen && !unmigrated && <PasteForm onDone={() => { setPasteOpen(false); refresh(); }} />}
-            {queue === null ? <CardSkeleton /> : <TriageBoard queue={queue} now={now} onChanged={refresh} />}
+            {queue === null ? <CardSkeleton /> : <TriageBoard queue={queue} now={now} onChanged={refresh} summary={summary} />}
           </div>
 
           {/* ── DRAFTING ────────────────────────────────────────────────────────── */}
@@ -225,6 +287,19 @@ export function MarketingDesk() {
             <PrecedentPanel query={current?.body ?? ''} />
           </div>
           <div className={tab === 'crisis' ? '' : 'hidden'}><CrisisRoom now={now} /></div>
+          {/* ── THE OUTSIDE VIEW AND THE INVISIBLE AXIS ──────────────────────────
+              Both were engines with no caller: `apps/api/src/marketing/watch.ts` had no
+              importer at all, and `/v1/marketing/perimeter` had no reader, so the three
+              governed writes that populate the embargo register could be used and never
+              seen. They are mounted here rather than on the record page because both are
+              things an operator consults BEFORE drafting, not evidence produced after.
+
+              RENDERED ONLY WHEN SELECTED, unlike the four panels above. Those keep their
+              state across a tab switch because a half-finished assessment is work; these
+              two hold no operator input, so mounting them eagerly would fire four network
+              reads on every visit to the desk for panels nobody opened. */}
+          {tab === 'watch' && <div><WatchPanel /></div>}
+          {tab === 'perimeter' && <div><PerimeterPanel /></div>}
           <div className={tab === 'measurement' ? '' : 'hidden'}>
             <DeskMeasurement queue={queue ?? []} summary={summary} now={now} />
           </div>

@@ -1,4 +1,5 @@
 import type { Pool } from 'pg';
+import type { IngestChannel } from '@lcx/shared';
 import { verifySender } from './provenanceLadder.js';
 import { looksLikeInjection, sanitiseDraft } from './sanitise.js';
 import { trustedArcSealers } from './xMail.js';
@@ -115,6 +116,44 @@ export type ReplyStatus =
 /** The statuses that mean a human still owes this customer something. */
 const OPEN_STATUSES = ['new', 'triaged', 'drafted'] as const;
 
+/**
+ * THE QUEUE'S COLUMN LIST, NAMED — BECAUSE `SELECT *` SHIPPED A STRANGER'S EMAIL.
+ *
+ * `listReplies` and `listQuarantined` were `SELECT * FROM marketing_x_reply`, and that
+ * table carries `raw_email`: up to 20,000 characters of the original notification
+ * message — headers, envelope addresses, whatever the forwarder attached. Every queue
+ * read serialised it into the route payload and sent it to the browser, for every row
+ * not yet triaged.
+ *
+ * `setReplyStatus` clearing the column at triage does not help, because the exposure is
+ * on exactly the rows that have NOT been triaged: `new` is the status the queue is for.
+ * The retention sweep does not help either — it runs on `retention_expires_at`, days
+ * later, long after the payload has been in a browser.
+ *
+ * Two rules, both broken by one wildcard: GDPR data minimisation (Art 5(1)(c)) — a
+ * third party's message body is not needed to decide whether to reply to it — and plain
+ * over-exposure, since the body was never rendered by any surface and no caller ever
+ * read the field. It was shipped because nobody had written the column list.
+ *
+ * `raw_email` IS DELIBERATELY ABSENT FROM `ReplyRow` as well as from this list. Keeping
+ * it in the type but out of the query would leave a declared field the API never sends,
+ * which is the defect that crashed `GpsSummary` on real data — and keeping it in the
+ * type is also an invitation to add it back to a SELECT. The column still exists and is
+ * still written on a parse failure (by `ingestReplies`), so a brittle regex never
+ * silently loses a customer's comment. NO CODE PATH READS ITS CONTENTS: every other
+ * statement naming it — `setReplyStatus`, `clearRawEmail`, `sweepRawEmail` — sets it to
+ * NULL. Recovering a mis-parsed comment is a database operation a named human performs,
+ * not an API response, which is why taking it out of the payload costs the desk nothing.
+ */
+const REPLY_COLUMNS = `
+  id, x_comment_id, x_post_id, author_handle, author_display, body,
+  posted_at, posted_on_displayed, posted_at_source, received_at,
+  status, sentiment, source_grade, source_kind, parse_failed,
+  raw_email_cleared_at,
+  sender_from, sender_auth_state, sender_dkim_domain, sender_auth_evidence,
+  quarantined, quarantine_code, collision_of_comment_id
+`;
+
 export interface ReplyRow {
   id: number;
   x_comment_id: string;
@@ -136,7 +175,10 @@ export interface ReplyRow {
   source_grade: string;
   source_kind: string;
   parse_failed: boolean;
-  raw_email: string | null;
+  /**
+   * NOT `raw_email`. See REPLY_COLUMNS: the body is never sent to a caller. This
+   * timestamp is the audit fact that it was cleared, which is not itself content.
+   */
   raw_email_cleared_at: string | null;
   sender_from: string | null;
   sender_auth_state: string | null;
@@ -173,10 +215,29 @@ export interface IngestOutcome {
  * parser can mis-attribute — and the platform already knows how to show that on
  * screen. A future paid source arrives graded BETTER, visibly, rather than the
  * upgrade being invisible.
+ *
+ * ══ `manual_paste` WAS THE THIRD SPELLING OF ONE CONCEPT, AND THE LOOKUP WAS UNTYPED ══
+ * `types.ts` calls a human paste `operator_paste`, `provenanceLadder.ts` called it
+ * `human_paste`, and this map called it `manual_paste`. Three names, each consistent
+ * inside its own file, disagreeing only where they met — and this is where they met.
+ *
+ * The map was `Record<string, string>` and read as `SOURCE_GRADE[r.sourceKind] ?? 'C3'`,
+ * with `sender_auth_state` decided separately by `r.sourceKind === 'operator_paste'`. So a
+ * caller handing over the compartment's own spelling missed BOTH lookups and the row was
+ * stored as `C3` "fairly reliable source, possibly true content" with
+ * `sender_auth_state: 'unverified'` — the grade of an anonymous mailbox, for something a
+ * named colleague typed. No type error, because every key was a `string`. Nothing had
+ * triggered it only because the ladder had no caller yet; wiring the ingest path is
+ * exactly what would have.
+ *
+ * NOW KEYED ON THE UNION. `Partial<Record<IngestChannel, string>>` plus `x_api` means a
+ * misspelled channel is a compile error rather than a silent downgrade. `Partial`
+ * because `mirror_discovery` and `syndication_embed` deliberately have NO grade here:
+ * neither may ever be a text source, so a row must never be stored from one.
  */
-export const SOURCE_GRADE: Record<string, string> = {
+export const SOURCE_GRADE: Partial<Record<IngestChannel | 'x_api', string>> = {
   x_notification_email: 'C3', // fairly reliable source, possibly true content
-  manual_paste: 'B2',         // a named operator typed it — usually reliable
+  operator_paste: 'B2',       // a named operator typed it — usually reliable
   x_api: 'A1',                // reserved: official API, if ever paid for
 };
 
@@ -204,7 +265,11 @@ export interface InsertReplyInput {
   authorHandle: string;
   authorDisplay: string | null;
   body: string;
-  sourceKind: string;
+  /**
+   * WAS `string`, WHICH IS WHAT LET THE THREE SPELLINGS COEXIST. Typed on the union so
+   * a channel this store has no grade for cannot be inserted at all — see SOURCE_GRADE.
+   */
+  sourceKind: IngestChannel | 'x_api';
   /** Sender-authentication outcome. Absent means unverified — never means verified. */
   senderAuth?: SenderAuthState;
   senderFrom?: string | null;
@@ -258,7 +323,7 @@ export type InsertReplyResult = 'inserted' | 'duplicate' | 'quarantined' | 'coll
  */
 export async function insertReply(pool: Pool, r: InsertReplyInput): Promise<InsertReplyResult> {
   const auth: SenderAuthState =
-    r.senderAuth ?? (r.sourceKind === 'manual_paste' ? 'operator_asserted' : 'unverified');
+    r.senderAuth ?? (r.sourceKind === 'operator_paste' ? 'operator_asserted' : 'unverified');
   const authenticated = auth === 'dkim' || auth === 'arc' || auth === 'operator_asserted';
   const grade = authenticated ? SOURCE_GRADE[r.sourceKind] ?? 'C3' : UNVERIFIED_GRADE;
   const quarantineCode = authenticated
@@ -530,12 +595,12 @@ export async function listReplies(
   const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200);
   const res = opts.status
     ? await pool.query(
-        `SELECT * FROM marketing_x_reply WHERE status = $1 AND NOT quarantined
+        `SELECT ${REPLY_COLUMNS} FROM marketing_x_reply WHERE status = $1 AND NOT quarantined
          ORDER BY received_at ASC LIMIT $2`,
         [opts.status, limit],
       )
     : await pool.query(
-        `SELECT * FROM marketing_x_reply
+        `SELECT ${REPLY_COLUMNS} FROM marketing_x_reply
          WHERE status = ANY($1::text[]) AND NOT quarantined
          ORDER BY received_at ASC LIMIT $2`,
         [[...OPEN_STATUSES], limit],
@@ -549,7 +614,7 @@ export async function listReplies(
  */
 export async function listQuarantined(pool: Pool, limit = 50): Promise<ReplyRow[]> {
   const res = await pool.query(
-    `SELECT * FROM marketing_x_reply WHERE quarantined
+    `SELECT ${REPLY_COLUMNS} FROM marketing_x_reply WHERE quarantined
      ORDER BY received_at DESC LIMIT $1`,
     [Math.min(Math.max(limit, 1), 200)],
   );
@@ -651,6 +716,18 @@ export async function saveDraft(
   replyId: number,
   body: string,
   usedLlm: boolean,
+  /**
+   * True when the INBOUND reply looked like an attempt to steer the model.
+   *
+   * Persisted with the draft rather than only returned in the 201, because it was a
+   * transient toast: `MarketingDesk.tsx` showed it once, and after a reload the draft
+   * generated from a hostile reply was indistinguishable from any other. The reviewer who
+   * comes back to it tomorrow is the one who most needs to know.
+   *
+   * It does NOT block. A reply that tries this is exactly the reply the desk most wants
+   * answered, and `looksLikeInjection` is advisory by construction — see its docblock.
+   */
+  suspiciousInput = false,
 ): Promise<DraftRow> {
   /*
    * The handle being answered is allowed through the sanitiser; every other @handle is
@@ -664,10 +741,16 @@ export async function saveDraft(
   );
   const authorHandle = (who.rows[0]?.author_handle as string | undefined) ?? '';
   const clean = sanitiseDraft(body, { allowHandles: authorHandle ? [authorHandle] : [] });
+  const hostile = suspiciousInput
+    ? 'The reply this answers contained an instruction aimed at the model, so read this draft as '
+      + 'having been written from hostile input. Nothing was blocked on that basis and nothing should be: '
+      + 'the finding is a reason to read closely, not a verdict on the words.'
+    : '';
+  const reason = [clean.reason, hostile].filter((s) => s !== '').join(' ');
   const res = await pool.query(
     `INSERT INTO marketing_reply_draft (reply_id, body, used_llm, flagged, flag_reason)
      VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-    [replyId, clean.text, usedLlm, clean.flagged, clean.reason || null],
+    [replyId, clean.text, usedLlm, clean.flagged || suspiciousInput, reason || null],
   );
   await setReplyStatus(pool, replyId, 'drafted');
   return res.rows[0] as DraftRow;
@@ -848,10 +931,135 @@ export async function assertSent(pool: Pool, draftId: number, memberId: string):
   }
 }
 
-/** GDPR sweep. Retention is a property of the row, so this is a one-liner. */
-export async function sweepExpired(pool: Pool): Promise<number> {
-  const res = await pool.query(`DELETE FROM marketing_x_reply WHERE retention_expires_at < now()`);
-  return res.rowCount ?? 0;
+/**
+ * What one run of the 90-day sweep did, and what it REFUSED to do.
+ *
+ * It was `Promise<number>`. One number cannot say "and I held three rows back", and the
+ * whole defect below is invisible unless the caller is told.
+ */
+export interface ExpirySweepResult {
+  /** Rows deleted. */
+  readonly deleted: number;
+  /**
+   * Rows past 90 days that were NOT deleted because an approved LCX statement depends on
+   * them and no `marketing_record` row exists for it yet. Null when the guard could not be
+   * evaluated (see `guard`), which is not zero.
+   */
+  readonly heldInJeopardy: number | null;
+  /**
+   * Which guard actually ran:
+   *   `anti_join`      — 0061 present; jeopardy rows identified and held.
+   *   `held_all_approved` — 0061 ABSENT, so no statement can be on the long clock at all
+   *                      and every row with an approved draft is in jeopardy. All held.
+   *   `unavailable`    — the probe itself failed. NOTHING is deleted, because a sweep that
+   *                      cannot tell which rows are load-bearing must not guess.
+   */
+  readonly guard: 'anti_join' | 'held_all_approved' | 'unavailable';
+  /** Present whenever rows were held or the guard could not run. Null on a clean sweep. */
+  readonly sentence: string | null;
+}
+
+/**
+ * THE 90-DAY SWEEP, WHICH USED TO BE ONE UNCONDITIONAL DELETE.
+ *
+ * ══ THE DEFECT, EXACTLY ══
+ * It was `DELETE FROM marketing_x_reply WHERE retention_expires_at < now()`, called from
+ * `POST /v1/marketing/tick` on every cron beat. `marketing_reply_draft` cascades on
+ * `reply_id` (0046), so the row, its inbound text AND every draft LCX approved against it
+ * went at day 91 — including drafts a human published. MiCA Art 68(9) requires that record
+ * for five years. Nothing wrote to the long-clock register (`marketing_record`) because
+ * `writeRecord` had no caller until this wave, so the split 0061 designs ran in ONE
+ * direction: the short clock deleted and the long clock was never populated. On day 91 the
+ * compartment retained nothing at all.
+ *
+ * ══ WHY THE GUARD IS HERE AND NOT ONLY IN `retention.ts` ══
+ * `retention.ts runRetentionClock` does this properly — it reads jeopardy first, minimises
+ * those bodies to a sha256 and deletes the rest by id-exclusion — but it REFUSES until
+ * migration 0064 is applied, and it is not what the mail tick calls. So on every
+ * environment today the blind delete was the only clock running, and the careful one was
+ * unreachable. A control that exists in a file the live path does not call is the defect
+ * this compartment has now found four times.
+ *
+ * ══ THE TRADE, STATED PLAINLY, BECAUSE NEITHER SIDE IS FREE ══
+ * A row in jeopardy is a genuine conflict: GDPR storage limitation says delete the third
+ * party's text at 90 days, Art 68(9) says keep LCX's record for five years. The clean
+ * resolution is 0064's `body_hash` — minimise the third party's words and keep the hash —
+ * and until it is applied the only two options are to delete and lose the record, or hold
+ * the row and be late on erasure. This holds, because holding is RECOVERABLE (apply 0064,
+ * run the clock, the body becomes a hash) and deletion is not. The count is returned and
+ * the tick reports it, so a held row cannot be silent.
+ *
+ * ══ FAIL CLOSED ON THE PROBE ══
+ * If `to_regclass` throws, nothing is deleted. `guard: 'unavailable'` with `heldInJeopardy:
+ * null` — not 0, because "I could not look" is not "there were none".
+ */
+export async function sweepExpired(pool: Pool): Promise<ExpirySweepResult> {
+  /*
+   * `marketing_reply_draft` is created by 0046 alongside the queue, so it is present
+   * whenever this function can run at all; `marketing_record` is 0061 and pending on most
+   * environments, which is the case the second branch exists for.
+   */
+  let recordRegisterPresent: boolean;
+  try {
+    const probe = await pool.query<{ ok: boolean }>(
+      `SELECT to_regclass('public.marketing_record') IS NOT NULL AS ok`,
+    );
+    recordRegisterPresent = Boolean(probe.rows[0]?.ok);
+  } catch {
+    return {
+      deleted: 0,
+      heldInJeopardy: null,
+      guard: 'unavailable',
+      sentence:
+        'The 90-day sweep did not run: the database would not answer whether the five-year '
+        + 'record register exists, so this sweep cannot tell which expired rows still carry the '
+        + 'only trace of a statement LCX published. Nothing was deleted. Retry.',
+    };
+  }
+
+  /*
+   * THE JEOPARDY PREDICATE. An expired row is held when it has an APPROVED draft — i.e. LCX
+   * cleared words against it — and no row in the five-year register names its comment id.
+   * With 0061 absent the second half is vacuously true for every row, so the predicate
+   * collapses to "has an approved draft", which is the honest reading: no statement can be
+   * on the long clock on an environment that has no long clock.
+   */
+  const jeopardy = recordRegisterPresent
+    ? `EXISTS (SELECT 1 FROM marketing_reply_draft d
+                WHERE d.reply_id = r.id AND d.status = 'approved')
+       AND NOT EXISTS (SELECT 1 FROM marketing_record m
+                        WHERE m.x_comment_id IS NOT NULL AND m.x_comment_id = r.x_comment_id)`
+    : `EXISTS (SELECT 1 FROM marketing_reply_draft d
+                WHERE d.reply_id = r.id AND d.status = 'approved')`;
+
+  const held = await pool.query<{ n: number }>(
+    `SELECT count(*)::int AS n FROM marketing_x_reply r
+      WHERE r.retention_expires_at < now() AND (${jeopardy})`,
+  );
+  const heldInJeopardy = Number(held.rows[0]?.n ?? 0);
+
+  const res = await pool.query(
+    `DELETE FROM marketing_x_reply r
+      WHERE r.retention_expires_at < now() AND NOT (${jeopardy})`,
+  );
+
+  const guard = recordRegisterPresent ? 'anti_join' as const : 'held_all_approved' as const;
+  return {
+    deleted: res.rowCount ?? 0,
+    heldInJeopardy,
+    guard,
+    sentence: heldInJeopardy === 0
+      ? null
+      : `${heldInJeopardy} expired inbound row${heldInJeopardy === 1 ? '' : 's'} were NOT deleted: `
+        + 'LCX approved a statement against each and no five-year record exists for it, so deleting '
+        + `now would destroy the record MiCA Art 68(9) requires. ${
+          recordRegisterPresent
+            ? 'Record those statements with POST /v1/marketing/record.'
+            : 'Migration 0061_marketing_record.sql is not applied here, so NO statement can be on the '
+              + 'five-year clock and every approved row is in jeopardy.'
+        } Apply 0064_marketing_retention.sql and run POST /v1/marketing/retention/run to minimise the `
+        + 'third party\'s words to a hash and clear the conflict properly.',
+  };
 }
 
 /**
@@ -900,6 +1108,22 @@ export async function queueSummary(pool: Pool): Promise<{
   oldestObservedWaitingHours: number | null;
   /** `null` when nothing is open — the same shape the observed figure uses. */
   oldestSincePostedHours: number | null | FigureRefusal;
+  /**
+   * Post-time coverage over THE WHOLE OPEN POPULATION, not over a page.
+   *
+   * WHY IT IS RETURNED SEPARATELY rather than left for a panel to compute. The web
+   * surfaces derived it from `queue.length`, and the queue is a PAGE — `limit` defaults to
+   * 50 (`routes/marketing.ts:70`) and the client never passes one. With 120 open replies
+   * whose 50 oldest carry a post time, `DeskMeasurement` rendered
+   * "100% — 50 of 50 open items carry a true post time" while the refusal built from these
+   * same two numbers, on the same screen, correctly said "70 of 120 open replies have no
+   * post date". Two surfaces, one fact, opposite answers, and the confident one was wrong.
+   *
+   * Doctrine rule 3: never claim a number you cannot observe. A ratio over a page is not a
+   * ratio over a population, and rounding it to one is the most damaging thing a
+   * measurement panel can do.
+   */
+  postTimeCoverage: { openRows: number; withPostTime: number };
   suspicious: number;
   unparsed: number;
   quarantined: number;
@@ -962,6 +1186,7 @@ export async function queueSummary(pool: Pool): Promise<{
               needs:
                 'A successful oEmbed lookup per reply (publish.twitter.com/oembed), recorded by recordPostedOn.',
             },
+    postTimeCoverage: { openRows, withPostTime: withDate },
     // Computed in JS rather than SQL: the marker list lives in sanitise.ts and
     // duplicating it as a LIKE clause is how the two would drift apart.
     suspicious: open.filter((r) => looksLikeInjection(r.body)).length,

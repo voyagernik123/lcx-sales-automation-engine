@@ -71,3 +71,28 @@ export * from './observation.js';
 
 /* M8 — honest measurement and the loop. Owns the twelve process metrics. */
 export * from './loop.js';
+
+/* ══ THE RESPONSE CONTRACTS ═══════════════════════════════════════════════════════
+ *
+ * Everything above is ENGINE — pure functions and their vocabulary. Everything below is
+ * the WIRE: the exact shape each HTTP route answers with. They are in this barrel and
+ * not a separate package export because `@lcx/shared` publishes one `"."` entry, so a
+ * deep specifier like `@lcx/shared/marketing/contracts/desk.js` does not resolve; a
+ * contract not listed here is invisible to both sides no matter what its own file says.
+ *
+ * WHY THE WIRE IS DECLARED AT ALL, once, here. `apps/web/src/lib/api/marketing.ts` typed
+ * twenty of its twenty-one fetchers `unknown`, and the four surfaces that guessed a shape
+ * instead compiled, passed a mocked test, and rendered empty against the real API — twice
+ * caught in this wave alone (`WatchDigest` was guessed as `feeds[]/mentionsUs/standing`,
+ * `SubjectAccessResponse` as `categories[]`). A web-side interface that declares fields
+ * the API does not return is not a type error anywhere; it is a blank panel in production.
+ * So the route file and the browser import the SAME symbol, and a drift is a TS error at
+ * the moment it is written.
+ *
+ * THESE FILES ADD NO VOCABULARY. Each one imports the engine types and composes them into
+ * envelopes; none re-declares a `Figure`, a `Refusal` or a verdict. That is what keeps the
+ * fourteen collisions recorded above from growing a fifteenth here.
+ */
+export * from './contracts/desk.js';
+export * from './contracts/memory.js';
+export * from './contracts/record.js';

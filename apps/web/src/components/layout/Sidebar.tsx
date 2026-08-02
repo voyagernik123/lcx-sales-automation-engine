@@ -124,8 +124,16 @@ const WS_SECTIONS: Record<WorkspaceId, NavSection[]> = {
   marketing: [
     {
       title: 'LCX Marketing',
+      // Ordered as the WORK runs, on the same principle as Global Services below: a
+      // reply arrives and is triaged, the desk drafts and clears it, the record is what
+      // survives for Art 8(2) produce-on-demand, and the crisis room is the one you open
+      // when the clock is already running. Three of these four were built and routed
+      // nowhere — the sidebar had one line for a compartment with four surfaces.
       items: [
         { to: '/marketing', label: 'Reply Desk', icon: Megaphone },
+        { to: '/marketing/desk', label: 'The Desk', icon: ListChecks },
+        { to: '/marketing/record', label: 'The Record', icon: Table2 },
+        { to: '/marketing/crisis', label: 'Crisis Room', icon: Siren },
       ],
     },
   ],

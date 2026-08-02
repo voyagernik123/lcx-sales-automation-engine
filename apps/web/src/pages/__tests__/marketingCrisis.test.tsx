@@ -562,3 +562,241 @@ describe('preparation', () => {
       .toMatch(/cannot be closed now/);
   });
 });
+
+/* ── M9. The printed artefact ─────────────────────────────────────────────────
+ *
+ * This room states on its own face that printing or copying is the ONLY way its
+ * record leaves the tab, so paper is the product. jsdom has no layout and no print
+ * pipeline, so nothing below claims to know what a printer emits; each test closes
+ * one way the sheet was losing content that a screen reading could never reveal —
+ * a control that clips its own value, a state carried only by a widget that print
+ * deletes, a refusal notice printed at 2.4:1 — by asserting the rule against the
+ * DOM that would otherwise suffer it, and asserting the hazard is still there.
+ */
+
+/** The tokens `components/report/PrintStyles.tsx` already pins for paper. */
+const PINNED_BY_PRINTSTYLES = ['--card', '--navy', '--grey', '--grey-dark', '--line', '--page-bg'];
+
+describe('the printed artefact', () => {
+  const printCss = () => screen.getByTestId('crisis-print-styles').textContent ?? '';
+
+  it('pins, for paper, every dark-mode token this room can reach', () => {
+    // Printed from dark mode, --red stays #e4687a: every refusal card, every
+    // "MISSING — BLOCKS ISSUE" head and every breach line comes out at about 2.4:1
+    // on white — present in the DOM, absent from the page. --ice-soft is worse: the
+    // verbatim statement's `bg-ice-soft/50` is unconditional, so it resolves to a
+    // near-black wash beneath dark navy text.
+    render(<MarketingCrisis />);
+    const block = printCss().slice(printCss().indexOf('@media print'));
+    const pinned = [...block.matchAll(/(--[a-z-]+):\s*([\d\s]+);/g)];
+    expect(pinned.length, 'the print block pins no tokens at all').toBeGreaterThanOrEqual(6);
+
+    const src = readFileSync(join(__dirname, '..', '..', 'styles', 'tokens.css'), 'utf8');
+    const light = src.slice(src.indexOf(':root {'), src.indexOf('}', src.indexOf(':root {')));
+    for (const [, name, value] of pinned) {
+      const actual = new RegExp(`${name}:\\s*([\\d\\s]+);`).exec(light);
+      expect(actual, `${name} is pinned for print but is not a :root token`).toBeTruthy();
+      expect(
+        value.trim(),
+        `${name} pinned as "${value.trim()}" but tokens.css :root says "${actual![1].trim()}"`,
+      ).toBe(actual![1].trim());
+    }
+
+    // The coverage half. Anything the dark palette overrides is pinned by one of the
+    // two blocks, or belongs to a family this page provably does not use.
+    const dark = src.slice(src.indexOf('.dark {'), src.indexOf('\n}', src.indexOf('.dark {')));
+    const overridden = [...dark.matchAll(/^\s*(--[a-z-]+):/gm)].map((m) => m[1]);
+    const covered = new Set([...PINNED_BY_PRINTSTYLES, ...pinned.map(([, n]) => n)]);
+    const page = readFileSync(join(__dirname, '..', 'MarketingCrisis.tsx'), 'utf8');
+    for (const u of ['indigo', 'chart-', 'shadow-', 'focus:']) {
+      expect(page, `${u} is used here, so its dark token must be pinned for print`).not.toContain(u);
+    }
+    const open = overridden
+      .filter((t) => !covered.has(t))
+      .filter((t) => !/^--(focus|indigo|chart-|card-fill|shadow-)/.test(t));
+    expect(open, `dark overrides these and nothing pins them for print: ${open.join(', ')}`).toEqual([]);
+  });
+
+  it('prints what was typed into every textarea, because a textarea clips its own value', async () => {
+    // THE DEFECT THIS CLOSES. The old rule set `height: auto` on textareas and
+    // claimed they print their content. A textarea is a scroll box: `height: auto`
+    // resolves to its `rows` default — two lines — and the rest is cut on paper with
+    // no scrollbar and no mark to show anything was removed. Six fields here are
+    // textareas, including the tri-slot boxes that exist to hold more than two lines.
+    await mountOpened();
+    const areas = [...document.querySelectorAll('textarea')];
+    expect(areas.length, 'no textarea on the page — is the mirror still needed?').toBeGreaterThanOrEqual(4);
+    for (const area of areas) {
+      const mirror = area.parentElement?.querySelector('[data-print-mirror]');
+      expect(mirror, `${area.getAttribute('aria-label')} has no print mirror, so its value clips on paper`)
+        .not.toBeNull();
+      expect(mirror!.className, 'the mirror must not also show on screen').toContain('hidden');
+      expect(mirror!.className).toContain('print:block');
+    }
+    // And the control itself is hidden on paper rather than restyled, since no
+    // amount of restyling makes a scroll box grow.
+    expect(printCss()).toMatch(/textarea \{ display: none !important; \}/);
+  });
+
+  it('mirrors the value it was given, not a stale copy', async () => {
+    await mountOpened();
+    const long = Array.from({ length: 12 }, (_, i) => `line ${i + 1} of what the desk knows`).join('\n');
+    const known = screen.getByTestId('slot-known');
+    fireEvent.change(known, { target: { value: long } });
+    const mirror = known.parentElement?.querySelector('[data-print-mirror]');
+    // Twelve lines: past any textarea's default box, which is the whole point.
+    expect(mirror?.textContent).toBe(long);
+  });
+
+  it('says (nothing entered) rather than printing an empty box', async () => {
+    await mountOpened();
+    const mirror = screen.getByTestId('slot-known').parentElement?.querySelector('[data-print-mirror]');
+    // An empty printed rectangle is indistinguishable from a field that was cut off.
+    expect(mirror?.textContent).toBe('(nothing entered)');
+  });
+
+  it('prints each desk assertion with its own state in words', () => {
+    // THE DEFECT THIS CLOSES, and it is the worst one on this page. The three
+    // assertions are checkboxes carrying `br-no-print`, so on paper the control
+    // vanishes and its sentence stays behind unqualified: the sheet read as though
+    // all three were asserted whatever the operator had ticked. The Art 88(1) limb
+    // is the one that matters — combining an inside-information disclosure with
+    // marketing is prohibited outright — so a sheet that asserts it by accident and
+    // one that omits it are both wrong, in opposite directions.
+    render(<MarketingCrisis />);
+    const marks = [...document.querySelectorAll('[data-asserted]')];
+    expect(marks.length, 'the desk assertions carry no printed state').toBeGreaterThanOrEqual(3);
+    expect(marks.every((m) => m.getAttribute('data-asserted') === 'no')).toBe(true);
+    for (const m of marks) expect(m.textContent).toBe('[not asserted]');
+
+    const box = screen.getByRole('checkbox', { name: /discloses inside information/i });
+    fireEvent.click(box);
+    const on = [...document.querySelectorAll('[data-asserted="yes"]')];
+    expect(on.length, 'ticking Art 88(1) changed no printed state').toBe(1);
+    expect(on[0].textContent).toBe('[ASSERTED]');
+    expect(on[0].closest('label')?.textContent).toMatch(/Art 88\(1\)/);
+  });
+
+  it('carries the suspension particulars onto paper, naming what is missing', () => {
+    // The three fields are in a `br-no-print` grid, so an Art 94 suspension would
+    // print as a bare assertion with no authority and no order reference — the two
+    // things a supervisor asks for first. A blank is stated, never left empty.
+    render(<MarketingCrisis />);
+    expect(screen.queryByTestId('suspension-printed')).toBeNull();
+    fireEvent.click(screen.getByRole('checkbox', { name: /suspended LCX/i }));
+    const printed = screen.getByTestId('suspension-printed');
+    expect(printed.textContent).toMatch(/authority: NOT STATED/);
+    expect(printed.textContent).toMatch(/order reference: NOT STATED/);
+    expect(printed.textContent).toMatch(/counsel who ruled on classification: NOT NAMED/);
+    fireEvent.change(screen.getByLabelText('Order reference'), { target: { value: 'FMA-2026-0042' } });
+    expect(screen.getByTestId('suspension-printed').textContent).toMatch(/order reference: FMA-2026-0042/);
+  });
+
+  it('lets no refusal be deleted from the sheet by a print-hidden container', async () => {
+    // Doctrine rule 1 is refuse, don't warn — which is worth nothing if the refusal
+    // is inside a `br-no-print` block, because `PrintStyles` removes those outright
+    // and the paper record then shows a statement with no reason it could not issue.
+    // `br-no-print` is correct on controls; it is never correct above a refusal.
+    await mountOpened();
+    const cards = [...document.querySelectorAll('[data-refusal-code]')];
+    expect(cards.length, 'no refusal is on the page, so this test proves nothing').toBeGreaterThan(0);
+    for (const card of cards) {
+      const code = card.getAttribute('data-refusal-code');
+      for (let el: Element | null = card; el; el = el.parentElement) {
+        expect(
+          typeof el.className === 'string' ? el.className : '',
+          `refusal ${code} is inside a br-no-print container and would not print`,
+        ).not.toContain('br-no-print');
+      }
+    }
+  });
+
+  it('prints a disclosed <summary> as a heading instead of deleting it', () => {
+    // `details` is forced open on paper; the old rule then removed the one line that
+    // says what the opened block is.
+    render(<MarketingCrisis />);
+    expect(document.querySelector('details > summary'), 'no <details> left — is the rule needed?').not.toBeNull();
+    const css = printCss();
+    expect(css).toMatch(/details \{ display: block !important; \}/);
+    expect(css).toMatch(/details > summary \{[\s\S]*display: block !important;/);
+    expect(css).not.toMatch(/details > summary \{[\s\S]*display: none/);
+  });
+});
+
+/* ── 13. The words, checked — the gate this room did not have ───────────────── */
+
+describe('the wording gate on the only outbound path this room has', () => {
+  /*
+   * `copy()` put the composed LCX statement — operator free text included — on the
+   * clipboard having consulted `activateCrisisStatement` and nothing else. The crisis
+   * engine checks clearance, completeness, over-reassurance and desk mode; it does not
+   * read the WORDS against MiCA Art 66(2)-(3). So a price promise typed into the known
+   * column at 02:00 reached the clipboard unexamined, while `POST /:id/draft` refused
+   * the identical sentence. Doctrine rule 5 was false on this page.
+   */
+  /**
+   * A statement that every OTHER gate passes, so the copy button would be on screen but
+   * for the wording gate. Without this the copy-affordance assertions below would pass for
+   * the wrong reason — an incomplete statement has no copy button either.
+   */
+  async function issuableWith(known: string) {
+    await mountOpened();
+    const statement = await seedPeerContagion();
+    fireEvent.change(screen.getByLabelText('Author'), { target: { value: 'the-author' } });
+    fireEvent.change(screen.getByTestId('slot-known'), { target: { value: known } });
+    // Every precondition, ticked by its own prompt id — the engine refuses at
+    // `preconditions acknowledged` before it ever reaches the clearance gate.
+    for (const p of statement.requiresBeforeUse) {
+      fireEvent.click(within(screen.getByTestId('preconditions')).getByLabelText(p));
+    }
+    await settle();
+    await clearLane('reputation', 'anna');
+    await clearLane('policy', 'bruno');
+    await clearLane('sme', 'chen');
+    await settle();
+  }
+
+  it('leaves the copy affordance in place when the words match no rule', async () => {
+    // The control for the two tests after it: this fixture IS issuable.
+    await issuableWith('Deposits and withdrawals are unaffected.');
+    expect(screen.getByTestId('issuable-verdict').textContent).toMatch(/Every gate passed/);
+    expect(screen.getByRole('button', { name: /copy the statement/i })).toBeTruthy();
+  });
+
+  it('refuses a regulated promise typed into the known column, citing the code', async () => {
+    const { container } = render(<div />);
+    await issuableWith('LCX guarantees a 12% return on every deposit this month.');
+    const gate = screen.getByTestId('crisis-wording-gate');
+    expect(gate.textContent).toMatch(/THE WORDS ARE REFUSED/);
+    expect(screen.getByTestId('crisis-wording-refusals').textContent)
+      .toMatch(/REGULATED_PROMISE|RETURN|UNSOURCED/i);
+    // And no copy affordance beside it — the whole point of the panel.
+    expect(screen.queryByRole('button', { name: /copy the statement/i })).toBeNull();
+    expect(screen.getByTestId('handoff-wording-blocked').textContent)
+      .toMatch(/no copy affordance/i);
+    expect(container.textContent).not.toMatch(/publish this statement/i);
+  });
+
+  it('refuses a statement naming an asset, because neither register is readable here', async () => {
+    // The room reads no API by design (it must work with the API down). An unavailable
+    // check is not a passed check, so the Art 90 / Art 91(3)(c) joins refuse rather than
+    // being silently skipped — which is what the server gate does with an absent register.
+    await issuableWith('Deposits and withdrawals for $SOL are unaffected.');
+    const said = screen.getByTestId('crisis-assets-unjoinable').textContent ?? '';
+    expect(said).toMatch(/SOL/);
+    expect(said).toMatch(/Art 90/);
+    expect(said).toMatch(/unavailable check is not a passed check/);
+    expect(screen.queryByRole('button', { name: /copy the statement/i })).toBeNull();
+  });
+
+  it('does not claim a clean result means cleared', async () => {
+    await mountOpened();
+    await seedPeerContagion();
+    await settle();
+    const gate = screen.getByTestId('crisis-wording-gate');
+    expect(gate.textContent).toMatch(/matched no rule/i);
+    // The three things it cannot reach are named on the panel, not only in a comment.
+    expect(gate.textContent).toMatch(/market-abuse joins/);
+    expect(gate.textContent).toMatch(/Art 7 element check/);
+  });
+});

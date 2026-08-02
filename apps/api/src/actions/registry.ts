@@ -44,6 +44,7 @@ import { env } from '../lib/env.js';
 import { ActionError } from './types.js';
 import type { ActorRole, RegistryAction } from './types.js';
 import { GPS_ACTIONS } from '../gps/actions.js';
+import { MARKETING_ABUSE_ACTIONS } from '../marketing/abuseRegister.js';
 
 /**
  * The action contract moved to ./types.js so an action module can live outside
@@ -97,11 +98,23 @@ function isMissingTable(err: unknown): boolean {
  *
  * A PREFIX MAP, deliberately: an unlisted subject type keeps its existing
  * behaviour, so this cannot silently start refusing the four compartments that have
- * always worked this way. The one prefix here is the one that holds a third party's
- * confidential material.
+ * always worked this way. Both prefixes here hold material that is somebody else's:
+ * a third party's confidential terms, or inside information and a colleague's
+ * financial position.
+ *
+ * `marketing_` CARRIES THE SAME EXPOSURE ONE STEP SHARPER. `marketing/abuseRegister.ts`
+ * declares three actions on subject type `marketing_asset`, and the subject id is an
+ * ASSET SYMBOL. Untagged, `notify` or `note_add` with
+ * `subjectType: 'marketing_asset'` would let any operator stamp free text onto the
+ * audit trail of an embargo decision — and, worse, would let them assert an asset into
+ * that trail at all. An embargo row states that LCX holds unpublished price-significant
+ * information about a named token (MiCA Art 90(1)); a holdings row states a named
+ * colleague's position (Art 91(3)(c), personal fines from EUR 700,000). Neither is
+ * writable, or readable, on a `notify` grant.
  */
 const SUBJECT_TYPE_WORKSPACES: ReadonlyArray<[RegExp, WorkspaceId]> = [
   [/^gps_/, 'gps'],
+  [/^marketing_/, 'marketing'],
 ];
 
 export function subjectTypeWorkspace(subjectType: string): WorkspaceId | null {
@@ -840,6 +853,40 @@ for (const a of GPS_ACTIONS) {
   if (ACTION_REGISTRY[a.id]) {
     throw new Error(
       `[actions] GPS action '${a.id}' collides with an existing registry entry — ` +
+        'merging it would silently re-permission the desk action it shadows.',
+    );
+  }
+  ACTION_REGISTRY[a.id] = a;
+}
+
+/**
+ * LCX MARKETING's market-abuse perimeter (M2). Three write paths, declared in
+ * `../marketing/abuseRegister.ts` and merged here on exactly the terms above.
+ *
+ * WITHOUT THIS LOOP THE ENGINE WAS DECORATION. `MARKETING_ABUSE_ACTIONS` was exported
+ * and imported by nothing, so `enterEmbargo`, `liftEmbargo` and `declareHoldings` were
+ * unreachable through `invokeAction` — meaning the embargo register that
+ * `claimSafety`/`abuse` refuse against had no governed way to be populated, and the
+ * whole "the dangerous axis is the invisible one" doctrine rested on a table nobody
+ * could write. This is the same defect the GPS perimeter had last week: a gate existed
+ * and no write path consulted it.
+ *
+ * A LOOP, NOT A SPREAD, for the reason recorded above: `{ ...desk, ...marketing }` is
+ * last-wins and silent, so a marketing id colliding with a desk id would REPLACE the
+ * desk action — and these three demand `approver` plus a named human, so `notify` or
+ * `assign` would quietly start refusing every operator who is neither. No type check
+ * catches it (both sides are `RegistryAction`) and an id lookup still succeeds.
+ * Refusing at import time means the API fails to boot rather than serving a
+ * re-permissioned verb.
+ *
+ * The subject-compartment map above is the other half: these carry
+ * `workspace: 'marketing'` so the VERB is gated, and `/^marketing_/` gates the SUBJECT
+ * so an untagged cross-cutting verb cannot reach it either.
+ */
+for (const a of MARKETING_ABUSE_ACTIONS) {
+  if (ACTION_REGISTRY[a.id]) {
+    throw new Error(
+      `[actions] marketing action '${a.id}' collides with an existing registry entry — ` +
         'merging it would silently re-permission the desk action it shadows.',
     );
   }

@@ -61,40 +61,36 @@ import {
   RELIABILITY_LABEL,
   type Credibility,
   type Reliability,
+  type IngestChannel,
+  type SenderAuthEvidence,
 } from '@lcx/shared';
 import type { OEmbedResult, SyndicationObservation } from './oembed.js';
 
-/** Where an inbound item physically came from. */
-export type IngestChannel =
-  /** Forwarded X notification email — the mailbox anyone can write to. */
-  | 'x_notification_email'
-  /** A named human pasted it, from their own logged-in session. */
-  | 'human_paste'
-  /** A public X mirror (nitter et al). DISCOVERY ONLY — never a text source. */
-  | 'x_mirror'
-  /** Undocumented syndication counters. Never a text source, graded low. */
-  | 'syndication_undocumented';
-
 /**
- * DKIM/ARC evidence, recorded per row.
+ * `IngestChannel` AND `SenderAuthEvidence` NOW COME FROM `@lcx/shared`.
  *
- * SPF is deliberately absent: the arrangement is a forwarding rule, so the forwarder is
- * the sender and SPF is guaranteed to fail (RFC 7489; ARC exists for exactly this hop,
- * RFC 8617). A `From:` header check is spoofable and worthless alone (mkt-r5 §1.1).
+ * Both were declared locally here, and honestly so: `packages/shared/src/marketing/`
+ * did not exist when this file was written, and the docblock said as much. They are the
+ * compartment's vocabulary rather than this file's, so they live in `types.ts` — where
+ * the reasoning for each is recorded, including why `IngestChannel` is an `Extract` of
+ * `InboundSourceKind` and why SPF is absent from the evidence.
  *
- * NOTE FOR THE INGEST OWNER: this interface is structural on purpose. It is the shape
- * this file needs, not a claim about how the mailbox reader produces it.
+ * WHAT THE COLLAPSE CHANGED HERE: the channel members are renamed to the compartment's
+ * names. The three that moved were spelled `human_paste`, `x_mirror` and
+ * `syndication_undocumented` here, and are now `operator_paste`, `mirror_discovery` and
+ * `syndication_embed`. They are not cosmetic renames.
+ * `service.ts` keyed a grade lookup and the `sender_auth_state` decision on a third
+ * spelling (`manual_paste`) through a `Record<string, string>` with a `?? 'C3'` fallback,
+ * so handing this file's channel to the store — which is what wiring the ingest path
+ * does — would have graded a colleague's paste as an anonymous mailbox, with no type
+ * error anywhere. One union, one spelling, and a rename is now a compile error.
+ *
+ * `isXSigningDomain` stays: it is this file's rule about which domains count as X, not
+ * a shared vocabulary item.
  */
-export interface SenderAuthEvidence {
-  dkimPass: boolean;
-  /** The `d=` value of the surviving signature. */
-  dkimDomain: string | null;
-  arcPass: boolean;
-  /** Who sealed the ARC chain. Trusted only if the deployment names it. */
-  arcSealerDomain: string | null;
-  /** Kept verbatim for the audit trail — the evidence, not our summary of it. */
-  rawAuthenticationResults: string | null;
-}
+
+/** Re-exported so existing importers keep working; the declaration is in `types.ts`. */
+export type { IngestChannel, SenderAuthEvidence };
 
 /** Signing domains that count as X. A subdomain of one of these also counts. */
 const X_SIGNING_DOMAINS = ['x.com', 'twitter.com'] as const;
@@ -135,9 +131,9 @@ export interface InboundItem {
   oembed: OEmbedResult | null;
   /** Optional, low-graded, undocumented. */
   syndication: SyndicationObservation | null;
-  /** The named human, for `human_paste`. */
+  /** The named human, for `operator_paste`. */
   operator: string | null;
-  /** Which mirror, for `x_mirror`. Recorded so the hint's origin is auditable. */
+  /** Which mirror, for `mirror_discovery`. Recorded so the hint's origin is auditable. */
   mirrorHost: string | null;
 }
 
@@ -375,7 +371,7 @@ export function compareText(claimed: string | null, confirmed: string | null): T
 
 /** One thing that did (or did not) back the item up. */
 export interface Corroboration {
-  channel: 'oembed' | 'x_notification_email' | 'human_paste' | 'x_mirror' | 'syndication_undocumented';
+  channel: 'oembed' | 'x_notification_email' | 'operator_paste' | 'mirror_discovery' | 'syndication_embed';
   /** Did this channel support the item, contradict it, or say nothing? */
   outcome: 'supported' | 'contradicted' | 'unavailable' | 'not_attempted' | 'discovery_only';
   detail: string;
@@ -418,7 +414,7 @@ export interface GradedVerdict extends VerdictBase {
    */
   postedOnDisplayed: string | null;
   postedAtExact: string | null;
-  postedAtSource: 'oembed_displayed_date' | 'syndication_undocumented' | 'unknown';
+  postedAtSource: 'oembed_displayed_date' | 'syndication_embed' | 'unknown';
   /** True when a human has to read this before it is trusted. */
   needsHumanRead: boolean;
   /** True when the post is no longer publicly retrievable. */
@@ -534,7 +530,7 @@ function oembedCorroboration(r: OEmbedResult | null): Corroboration {
 
 function syndicationCorroboration(o: SyndicationObservation): Corroboration {
   return {
-    channel: 'syndication_undocumented',
+    channel: 'syndication_embed',
     outcome: 'supported',
     detail:
       'Undocumented syndication backend answered. Counters are lower bounds as of the fetch time and never raise this item’s grade.',
@@ -554,7 +550,7 @@ export function gradeInboundItem(item: InboundItem, opts: LadderOptions = {}): L
   const itemId = (item.itemId ?? '').trim();
   if (!itemId) return refuse(null, 'MKT_PROV_NO_ITEM_ID');
   const channel = item.channel;
-  if (channel !== 'x_notification_email' && channel !== 'human_paste' && channel !== 'x_mirror' && channel !== 'syndication_undocumented') {
+  if (channel !== 'x_notification_email' && channel !== 'operator_paste' && channel !== 'mirror_discovery' && channel !== 'syndication_embed') {
     return refuse(itemId, 'MKT_PROV_UNKNOWN_CHANNEL');
   }
   if (!item.receivedAt || Number.isNaN(Date.parse(item.receivedAt))) return refuse(itemId, 'MKT_PROV_NO_RECEIVED_AT');
@@ -569,22 +565,22 @@ export function gradeInboundItem(item: InboundItem, opts: LadderOptions = {}): L
     if (confirmed?.postedOnDisplayed) {
       return { postedOnDisplayed: confirmed.postedOnDisplayed, postedAtExact: exact, postedAtSource: 'oembed_displayed_date' };
     }
-    if (exact) return { postedOnDisplayed: exact.slice(0, 10), postedAtExact: exact, postedAtSource: 'syndication_undocumented' };
+    if (exact) return { postedOnDisplayed: exact.slice(0, 10), postedAtExact: exact, postedAtSource: 'syndication_embed' };
     return { postedOnDisplayed: null, postedAtExact: null, postedAtSource: 'unknown' };
   };
 
   if (item.syndication) corroborations.push(syndicationCorroboration(item.syndication));
 
   /* ── the undocumented counters, on their own ── */
-  if (channel === 'syndication_undocumented') {
+  if (channel === 'syndication_embed') {
     if (!item.syndication) return refuse(itemId, 'MKT_PROV_NO_SYNDICATION_DATA');
     return graded(base, 'syndication_undocumented_only', { ...dateFields(), storableText: null });
   }
 
   /* ── a mirror: DISCOVERY ONLY ── */
-  if (channel === 'x_mirror') {
+  if (channel === 'mirror_discovery') {
     corroborations.push({
-      channel: 'x_mirror',
+      channel: 'mirror_discovery',
       outcome: 'discovery_only',
       detail: `Id discovered via ${item.mirrorHost ?? 'an unnamed public mirror'}. Its text is discarded, never stored.`,
       at: item.receivedAt,
@@ -607,10 +603,10 @@ export function gradeInboundItem(item: InboundItem, opts: LadderOptions = {}): L
   }
 
   /* ── a named human pasted it ── */
-  if (channel === 'human_paste') {
+  if (channel === 'operator_paste') {
     if (!(item.operator ?? '').trim()) return refuse(itemId, 'MKT_PROV_NO_OPERATOR');
     corroborations.push({
-      channel: 'human_paste',
+      channel: 'operator_paste',
       outcome: 'supported',
       detail: `Asserted by ${item.operator}. The assertion and the text are the same channel, so it cannot corroborate itself.`,
       at: item.receivedAt,

@@ -433,6 +433,53 @@ export const SEARCH_GROUPS: readonly GroupSpec[] = [
       };
     },
   },
+  /**
+   * THE MARKET-ABUSE PERIMETER'S SUBJECT — an asset symbol the desk has an opinion about.
+   *
+   * `workspace: 'marketing'` IS LOAD-BEARING HERE IN A WAY IT IS NOT FOR MOST GROUPS.
+   * `visibleGroups()` filters the SPECS before any query runs, so an operator without
+   * `marketing` at view never causes this SELECT to execute. That matters more than
+   * usual because the rows ARE the inside information: a hit on `SOL` in this group says
+   * LCX holds unpublished price-significant information about SOL (MiCA Art 90(1)). A
+   * result-side filter would have run the query and pulled the symbols into this process
+   * first, which is why the compartment check is on the spec and not on the output.
+   *
+   * WHY IT EXISTS AT ALL. `marketing_embargo_enter`, `marketing_embargo_lift` and
+   * `marketing_holdings_declare` address `subjectType: 'marketing_asset'`, and
+   * `searchActionBoundary.test.ts` refuses a governed action whose subject no ⌘K noun can
+   * ever match — a verb an operator cannot aim is not a capability. Without this group
+   * the three actions were reachable only by typing an id nobody could look up.
+   *
+   * LIVE ROWS ONLY (`lifted_at IS NULL`). A lifted embargo is public history, not a
+   * perimeter, and offering it as a target for `marketing_embargo_lift` would invite
+   * lifting something already lifted.
+   *
+   * NO `sublabel` CARRYING THE STATE, deliberately: `mnpi_pending` next to a symbol in a
+   * result list is the disclosure in three words, and ⌘K results are the one surface that
+   * shows up over a shared screen. The state is on the desk page, behind the compartment.
+   */
+  {
+    key: 'marketing_assets', workspace: 'marketing',
+    label: 'Assets under embargo', typeLabel: 'Asset',
+    subjectType: 'marketing_asset',
+    source: sqlSource(
+      onLike(
+        `SELECT asset_symbol, event_ref, review_by, COUNT(*) OVER() AS total
+           FROM marketing_asset_embargo
+          WHERE lifted_at IS NULL AND asset_symbol ILIKE $1
+          ORDER BY review_by ASC
+          LIMIT ${PER_GROUP}`,
+      ),
+      (r) => ({
+        // The action's subjectId IS the symbol (abuseRegister.ts MARKETING_ASSET_SUBJECT).
+        id: String(r.asset_symbol),
+        label: String(r.asset_symbol),
+        // The opaque event slug, which the 0060 CHECK constraint guarantees carries no
+        // prose — so it cannot leak the substance of the event into a result row.
+        sublabel: String(r.event_ref),
+      }),
+    ),
+  },
 ];
 
 /**

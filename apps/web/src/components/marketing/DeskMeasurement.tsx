@@ -3,11 +3,13 @@ import { SectionLabel } from '@/components/ui';
 import type { MarketingReply, MarketingSummary } from '@/lib/api/marketing';
 import { LowerBoundTile, ObservationFrameNote, Th, Td } from './DeskAtoms';
 import {
+  MARKETING_INBOUND_RETENTION_DAYS as RETENTION_DAYS,
   MARKETING_MEASUREMENT_IS_ABOUT_THE_DESK,
   PROCESS_METRIC_KEYS,
   REFUSED_METRICS,
   notificationCensusFrame,
   ownRecordsFrame,
+  type ObservationFrame,
   type ProcessMetricKey,
   type RefusedMetricKey,
 } from './vocabulary';
@@ -109,22 +111,73 @@ export function DeskMeasurement({ queue, summary, now }: {
   summary: MarketingSummary | null;
   now: number;
 }) {
+  /*
+   * COVERAGE COMES FROM THE SUMMARY, NEVER FROM `queue`.
+   *
+   * `queue` is a PAGE: `fetchMarketingQueue` sends no `limit`, the route defaults to 50.
+   * This panel used to compute `withPosted.length / queue.length` and render the result as
+   * a confident percentage, so a desk with 120 open replies of which the 50 oldest carried
+   * a post time read "100% — 50 of 50 open items carry a true post time" while
+   * `oldestSincePostedHours`, six lines further down the same response, refused with
+   * "70 of 120 open replies have no post date". The panel was wrong and looked certain.
+   *
+   * `postTimeCoverage` is computed in SQL over every open, non-quarantined row. When the
+   * API does not send it, this refuses — it does not fall back to the page.
+   */
   const clock = useMemo(() => {
-    const withPosted = queue.filter((r) => r.posted_at != null && !Number.isNaN(Date.parse(r.posted_at)));
+    const c = summary?.postTimeCoverage;
+    if (!c) return null;
     return {
-      covered: withPosted.length,
-      total: queue.length,
-      pct: queue.length === 0 ? null : Math.round((withPosted.length / queue.length) * 100),
+      covered: c.withPostTime,
+      total: c.openRows,
+      pct: c.openRows === 0 ? null : Math.round((c.withPostTime / c.openRows) * 100),
     };
-  }, [queue]);
+  }, [summary]);
 
+  /*
+   * THE FRAME MUST STATE THE WINDOW THE FIGURE WAS COMPUTED OVER.
+   *
+   * These frames used to say `now − 7 days` while the queue query has NO time bound and
+   * retention is 90 days: a reply received 40 days ago and still `proposed` is inside
+   * `queue.length`, so a standing backlog was framed as a weekly rate. `checkFrame` only
+   * verifies the window runs forwards, so nothing caught the one field the frame exists to
+   * state. The retention boundary is the real left edge of everything this table can hold.
+   */
   const inboundFrame = notificationCensusFrame(
-    new Date(now - 7 * 86_400_000).toISOString(), new Date(now).toISOString(), null,
+    new Date(now - RETENTION_DAYS * 86_400_000).toISOString(), new Date(now).toISOString(), null,
   );
   const ownFrame = ownRecordsFrame(
-    new Date(now - 90 * 86_400_000).toISOString(), new Date(now).toISOString(),
+    new Date(now - RETENTION_DAYS * 86_400_000).toISOString(), new Date(now).toISOString(),
     { truncatedByRetention: true },
   );
+  /*
+   * A FRAME EACH, because they are two different populations wearing one shape.
+   * `queueSummary` counts `suspicious` over OPEN rows via a read capped at 200, and
+   * `unparsed` over the whole table INCLUDING quarantined rows. Rendered side by side with
+   * no frame on either, the pair invited the reading that they were comparable.
+   */
+  const suspiciousFrame: ObservationFrame = {
+    ...inboundFrame,
+    captures:
+      'open, non-quarantined replies whose text matches one of six English injection markers, '
+      + 'counted over at most the 200 most recent open rows. A lower bound twice over.',
+    doesNotCapture: [
+      ...inboundFrame.doesNotCapture,
+      'open rows beyond the 200 the summary reads',
+      'quarantined rows, which are excluded from this count',
+      'any attempt written in another language, in homoglyphs, base64 or role-play framing — the marker list is ASCII English',
+    ],
+  };
+  const unparsedFrame: ObservationFrame = {
+    ...inboundFrame,
+    captures:
+      'every row in the table the parser could not read, quarantined rows included and with no '
+      + 'status filter. A DIFFERENT population from the figure beside it.',
+    doesNotCapture: [
+      ...inboundFrame.doesNotCapture,
+      'emails that never arrived, and emails the parser read wrongly rather than failing',
+    ],
+  };
 
   return (
     <section aria-label="Measurement" className="space-y-3">
@@ -141,26 +194,38 @@ export function DeskMeasurement({ queue, summary, now }: {
         </p>
         <div className="mt-1 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
           <LowerBoundTile label="Open items observed" value={queue.length} frame={inboundFrame} />
+          {/* TWO DIFFERENT POPULATIONS, AND THEY USED TO SHARE ONE UNMARKED FRAMING.
+              `suspicious` is counted over OPEN rows only and is capped at 200 by the read
+              behind it; `unparsed` counts the whole table, quarantined rows included. Same
+              tile shape, same absence of a frame, and a reader had no way to tell. Each now
+              carries its own frame naming its own population. */}
           <LowerBoundTile
             label="Replies that tried to steer the model"
             value={summary ? summary.suspicious : null}
             tone={summary && summary.suspicious > 0 ? 'warn' : undefined}
+            frame={suspiciousFrame}
           />
           <LowerBoundTile
             label="Emails the parser could not read"
             value={summary ? summary.unparsed : null}
             tone={summary && summary.unparsed > 0 ? 'warn' : undefined}
+            frame={unparsedFrame}
           />
           <div className="border-l-2 border-line px-2 py-1.5">
             <div className="font-mono text-[10px] uppercase tracking-wider text-grey">Post-time coverage</div>
             <div className="mt-0.5 text-[20px] font-bold tabular-nums text-navy">
-              {clock.pct === null ? '—' : `${clock.pct}%`}
+              {clock === null || clock.pct === null ? '—' : `${clock.pct}%`}
             </div>
-            <p className="text-[10px] leading-snug text-grey">
-              {clock.total === 0
-                ? 'No open items, so there is nothing to measure coverage over.'
-                : `${clock.covered} of ${clock.total} open items carry a true post time. Any latency figure quoted for this desk covers only those, and the rest are excluded rather than timed from when the email arrived.`}
+            <p className="text-[10px] leading-snug text-grey" data-testid="mkt-post-time-coverage">
+              {clock === null
+                ? 'Coverage is not being reported by this environment. It is deliberately NOT computed from '
+                  + 'the loaded page: the queue is capped, so a page-wide ratio would read as a population-wide '
+                  + 'one and would be highest exactly when the backlog is longest.'
+                : clock.total === 0
+                  ? 'No open items, so there is nothing to measure coverage over.'
+                  : `${clock.covered} of ${clock.total} open items carry a true post time — counted over every open row, not over the ${queue.length} loaded here. Any latency figure quoted for this desk covers only those, and the rest are excluded rather than timed from when the email arrived.`}
             </p>
+            <ObservationFrameNote frame={ownFrame} />
           </div>
         </div>
       </div>

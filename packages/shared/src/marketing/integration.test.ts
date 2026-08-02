@@ -32,6 +32,19 @@ import { ABSENCE_REFUSAL_CODE, requiredElementsFor } from './regime.js';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MODULES = readdirSync(HERE).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && f !== 'index.ts');
 
+/**
+ * THE WIRE, which is a second directory the barrel must publish.
+ *
+ * `readdirSync(HERE)` is not recursive, so `contracts/` was invisible to this file: three
+ * response-contract modules could land, be imported by both apps/api and apps/web, and be
+ * absent from the barrel — which is the SAME defect the assertions below were written for,
+ * one directory deeper. `@lcx/shared` publishes a single `"."` export, so a deep specifier
+ * cannot be used as a workaround: a contract missing from the barrel is invisible to both
+ * sides no matter what its own file says.
+ */
+const CONTRACTS = readdirSync(resolve(HERE, 'contracts'))
+  .filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts') && f !== 'index.ts');
+
 describe('the barrel publishes the whole compartment, not a name list', () => {
   /**
    * THE DEFECT THIS REPLACES. `marketing/index.ts` was a hand-maintained list of names from
@@ -48,14 +61,35 @@ describe('the barrel publishes the whole compartment, not a name list', () => {
     }
   });
 
+  it('re-exports every response contract too', () => {
+    // Non-vacuity: an empty contracts directory would make the loop pass for free, which
+    // is how a directory-derived ratchet dies quietly.
+    expect(CONTRACTS.length, 'no contract modules found — has the directory moved?')
+      .toBeGreaterThanOrEqual(3);
+    const src = readFileSync(resolve(HERE, 'index.ts'), 'utf8');
+    for (const file of CONTRACTS) {
+      const spec = `./contracts/${file.replace(/\.ts$/, '.js')}`;
+      expect(
+        src,
+        `${file} declares response shapes both apps import and the barrel does not publish `
+        + 'it. `@lcx/shared` has one entry point, so those names do not resolve at all.',
+      ).toContain(`export * from '${spec}'`);
+    }
+  });
+
   /** A star export cannot drift from what it publishes; a name list can and did. */
   it('uses only star exports, so it cannot omit a symbol', () => {
     const src = readFileSync(resolve(HERE, 'index.ts'), 'utf8')
       .replace(/\/\*[\s\S]*?\*\//g, '')
       .replace(/^\s*\/\/.*$/gm, '');
     const exports = src.match(/^export .*$/gm) ?? [];
-    expect(exports.length).toBe(MODULES.length);
-    for (const line of exports) expect(line).toMatch(/^export \* from '\.\/[a-zA-Z]+\.js';$/);
+    // Engines plus contracts, and nothing else: an `export { x as y }` line here would be a
+    // collision aliased in the barrel instead of resolved in the module that caused it,
+    // which is the rule this file's header argues for at length.
+    expect(exports.length).toBe(MODULES.length + CONTRACTS.length);
+    for (const line of exports) {
+      expect(line).toMatch(/^export \* from '\.\/(?:contracts\/)?[a-zA-Z]+\.js';$/);
+    }
   });
 
   /** A sample from each lane, resolved through the barrel rather than through the module. */

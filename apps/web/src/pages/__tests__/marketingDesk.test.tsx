@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { Marketing } from '../Marketing';
 import { attachMeta } from '@/lib/api/meta';
+import { ApiError } from '@/lib/apiClient';
 import * as api from '@/lib/api/marketing';
 import * as desk from '@/components/marketing/deskApi';
 import { previewRefusals } from '@/components/marketing/preChecks';
@@ -45,6 +46,13 @@ vi.mock('@/lib/api/marketing', () => ({
   ingestReply: vi.fn(),
   setReplyStatus: vi.fn(),
   fetchDrafts: vi.fn(),
+  /* The two panels wired in the contract wave. They are mounted only when their tab is
+     selected, so the suites above never touch them — which is exactly why they are mocked
+     here rather than left out: a factory missing a name fails as `is not a function` at the
+     moment somebody opens the tab, which is a worse signal than a red test. */
+  fetchAbusePerimeter: vi.fn(),
+  fetchMarketingWatch: vi.fn(),
+  fetchClaimExpiry: vi.fn(),
 }));
 
 vi.mock('@/components/marketing/deskApi', async (importOriginal) => {
@@ -75,7 +83,9 @@ const reply = (over: Partial<api.MarketingReply> = {}): api.MarketingReply => ({
   source_grade: 'C3',
   source_kind: 'x_notification_email',
   parse_failed: false,
-  raw_email: null,
+  // No `raw_email`: the route names its columns (`service.ts REPLY_COLUMNS`) and the
+  // body is not among them, so a fixture carrying it would model a payload the API
+  // does not send.
   /*
    * The M0 columns. Spelled out rather than left optional on the interface: making them
    * `?:` would let a fixture omit them and let the page read `undefined` where the API
@@ -129,6 +139,15 @@ const summary = (over: Partial<api.MarketingSummary> = {}): api.MarketingSummary
     message: 'At least one open reply has no observed post date, so the wait since posting cannot be reported for the queue.',
     needs: 'an oEmbed lookup for every open reply',
   },
+  /*
+   * COVERAGE OVER THE POPULATION, matching the two-row fixture above.
+   *
+   * The panels used to divide by `queue.length`, which is a page capped at 50 — so a desk
+   * with 120 open replies whose 50 oldest carried a post time rendered "100% — 50 of 50".
+   * The figure now comes from the summary, and a fixture without this field exercises the
+   * refusal path rather than a silent fallback to the page.
+   */
+  postTimeCoverage: { openRows: 2, withPostTime: 1 },
   suspicious: 0,
   unparsed: 0,
   quarantined: 0,
@@ -207,8 +226,13 @@ describe('the clock refuses rather than flatters', () => {
 
     // The one row that CAN be timed: 12:00 minus 09:00.
     expect(within(await screen.findByTestId('mkt-triage-row-1')).getByText(/3h/)).toBeTruthy();
-    // And the aggregate names its coverage instead of averaging the two populations.
-    expect(screen.getByText(/Measured over 1 of 2 open items/i)).toBeTruthy();
+    // And the aggregate names its coverage instead of averaging the two populations —
+    // separating what was LOADED from how many are OPEN, which is the fix for the panel
+    // that read "50 of 50 … Every open item carries one" over a 50-row page of 120.
+    const said = screen.getByTestId('mkt-clock-coverage').textContent ?? '';
+    expect(said).toMatch(/Measured over 1 of the 2 items loaded here/i);
+    expect(said).toMatch(/2 open in total/i);
+    expect(said).toMatch(/The other 1 are excluded/i);
   });
 });
 
@@ -439,5 +463,62 @@ describe('the page no longer makes the claims the backend cannot support', () =>
   it('does not describe the queue as AI-triaged, or approval as sending', () => {
     expect(src).not.toMatch(/triaged, drafted by AI/);
     expect(src).not.toMatch(/copy it into X to send/i);
+  });
+});
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ *  REACHABILITY — the defect this repository has now found three times
+ * ══════════════════════════════════════════════════════════════════════════════
+ *
+ * Nine engines in this compartment had no caller. `apps/api/src/marketing/watch.ts` had no
+ * importer anywhere in `apps/api/src`; `/v1/marketing/perimeter` had no reader, so the three
+ * governed writes that populate the embargo register could be used and never seen.
+ *
+ * A panel that exists and cannot be REACHED is the same defect one level up, and it is
+ * invisible to a unit test of the panel. So this block opens the desk the way a person does
+ * — clicking the tab — and asserts the panel answered.
+ *
+ * FALSIFIED BY: deleting either tab from `TABS`, or rendering the panel behind a condition
+ * that is false on a fresh mount. Both leave the panel's own tests green.
+ */
+describe('the two panels wired in the contract wave are reachable from the desk', () => {
+  it('Watch opens, calls the watch routes, and says so when they are not mounted', async () => {
+    vi.mocked(api.fetchMarketingWatch).mockRejectedValue(new ApiError('no route', 404));
+    vi.mocked(api.fetchClaimExpiry).mockRejectedValue(new ApiError('no route', 404));
+    const u = userEvent.setup();
+    await mount();
+    await u.click(screen.getByRole('tab', { name: 'Watch' }));
+
+    expect(api.fetchMarketingWatch).toHaveBeenCalled();
+    expect(api.fetchClaimExpiry).toHaveBeenCalled();
+    const notes = await screen.findAllByTestId('mkt-empty-absent');
+    // Both halves refuse, and neither renders as a quiet week.
+    expect(notes.some((n) => /watch route is not on this environment/i.test(n.textContent ?? ''))).toBe(true);
+    expect(notes.some((n) => /claim-expiry route is not on this environment/i.test(n.textContent ?? ''))).toBe(true);
+  });
+
+  it('Perimeter opens and calls the register read', async () => {
+    vi.mocked(api.fetchAbusePerimeter).mockResolvedValue({
+      embargo: { registerPresent: false, detailWithheld: false, withheldReason: null, entries: [] },
+      holdings: { registerPresent: false, detailWithheld: false, withheldReason: null, entries: [] },
+      absenceIsNotClearance: 'Absence from an unattested register is absence of knowledge, not clearance.',
+      writeActions: ['marketing.embargo.enter'],
+    });
+    const u = userEvent.setup();
+    await mount();
+    await u.click(screen.getByRole('tab', { name: 'Perimeter' }));
+
+    expect(api.fetchAbusePerimeter).toHaveBeenCalled();
+    expect(await screen.findByText(/absence of knowledge, not clearance/i)).toBeTruthy();
+  });
+
+  it('neither new panel is fetched before its tab is opened', async () => {
+    // The reason they are conditionally rendered rather than kept mounted: four network reads
+    // on every visit to the desk, for panels nobody opened, on environments where all four
+    // answer 404. Nothing is preserved by keeping a failed read warm.
+    await mount();
+    expect(api.fetchMarketingWatch).not.toHaveBeenCalled();
+    expect(api.fetchAbusePerimeter).not.toHaveBeenCalled();
   });
 });

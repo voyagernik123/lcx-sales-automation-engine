@@ -18,6 +18,23 @@ const DistributionCampaigns = lazy(() => import('@/pages/DistributionCampaigns')
 const DistributionGeo = lazy(() => import('@/pages/DistributionGeo').then((m) => ({ default: m.DistributionGeo })));
 const DistributionHome = lazy(() => import('@/pages/DistributionHome').then((m) => ({ default: m.DistributionHome })));
 const Marketing = lazy(() => import('@/pages/Marketing').then((m) => ({ default: m.Marketing })));
+/**
+ * LCX MARKETING's three built surfaces, each its own lazy chunk.
+ *
+ * ALL THREE WERE UNROUTED. `MarketingDesk`, `MarketingRecord` and `MarketingCrisis` were
+ * built (183KB of TSX between them) and reachable from nothing — `MarketingCrisis` alone
+ * is 85KB of statement prose. The build emitted exactly one `Marketing-*.js` chunk, which
+ * is how the omission was found: three pages that compile, have passing tests, and cannot
+ * be opened.
+ *
+ * LAZY IS LOAD-BEARING, NOT A STYLE CHOICE. The initial bundle budget is 850KB and sat at
+ * 826KB before this compartment existed — 24KB of headroom against 183KB of page. Eagerly
+ * importing any one of them breaks `perf-budget`, and the answer to that is never to raise
+ * the budget.
+ */
+const MarketingDesk = lazy(() => import('@/pages/MarketingDesk').then((m) => ({ default: m.MarketingDesk })));
+const MarketingRecord = lazy(() => import('@/pages/MarketingRecord').then((m) => ({ default: m.MarketingRecord })));
+const MarketingCrisis = lazy(() => import('@/pages/MarketingCrisis').then((m) => ({ default: m.MarketingCrisis })));
 const Gps = lazy(() => import('@/pages/Gps').then((m) => ({ default: m.Gps })));
 // GPS Phases 6-12. Each is its own lazy chunk — six eagerly-imported desks would
 // land in the initial bundle and the web perf budget has ~26KB of headroom, so a
@@ -231,6 +248,14 @@ export const router = createBrowserRouter([
           { path: 'distribution/campaigns', element: <DistributionCampaigns /> },
           { path: 'distribution/geo', element: <DistributionGeo /> },
           { path: 'marketing', element: <Marketing /> },
+          // The three surfaces above. `workspaceForPath` classifies by prefix, so all
+          // four belong to `marketing` from the `webPaths: ['marketing']` declaration
+          // alone — none of them needed a second registry entry. The SERVER gate is what
+          // enforces the compartment: an unentitled operator reaching one of these paths
+          // gets a page whose every fetch 403s, not a hidden route.
+          { path: 'marketing/desk', element: <MarketingDesk /> },
+          { path: 'marketing/record', element: <MarketingRecord /> },
+          { path: 'marketing/crisis', element: <MarketingCrisis /> },
           // GLOBAL SERVICES (GPS). The desk at /gps, plus one route per Phase 6-12
           // surface. The server gate is what enforces the compartment — an
           // unentitled operator reaching any of these paths gets a page whose every

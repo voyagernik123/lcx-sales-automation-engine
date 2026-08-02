@@ -134,6 +134,27 @@ export const DESTINATIONS: readonly Destination[] = [
   { id: 'go-gps-conflict', path: '/gps/conflict', label: 'GPS · THE CONFLICT WALL', key: 'c' , withinWorkspace: true },
   { id: 'go-gps-delivery', path: '/gps/delivery', label: 'GPS · DELIVERY DESK', key: 'd' , withinWorkspace: true },
   { id: 'go-gps-loop', path: '/gps/loop', label: 'GPS · THE LOOP', key: 'l' , withinWorkspace: true },
+  /**
+   * LCX MARKETING's three surfaces, on exactly the terms recorded above the GPS block:
+   * `withinWorkspace: true`, so they get a menu line and a `g` chord but no ⌘ mirror and
+   * no tour step. There are eight compartments, not nineteen destinations.
+   *
+   * APPENDED, and the keys are unused letters rather than mnemonic ones. `d` and `c` were
+   * the obvious picks for the desk and the crisis room, and both are already bound to GPS
+   * DELIVERY DESK and THE CONFLICT WALL — rebinding an accelerator an operator has already
+   * learned is worse than a less memorable letter.
+   *
+   * `k` IS ALSO SPOKEN FOR, less obviously: it is the command palette's ⌘K
+   * (`pages/CheatCard.tsx:151`). A g-chord `g k` would not have collided functionally,
+   * but the printable cheat card renders a chip per chord and cannot tell the palette's
+   * ⌘K from a ⌘ mirror this row never claimed — so `cheatCard.test.tsx` reads the card as
+   * inventing an accelerator for a `withinWorkspace` destination, and it is right to. The
+   * card is the artefact an operator learns the system from; a letter that makes it
+   * ambiguous is the wrong letter.
+   */
+  { id: 'go-marketing-desk', path: '/marketing/desk', label: 'MARKETING · THE DESK', key: 'y', withinWorkspace: true },
+  { id: 'go-marketing-record', path: '/marketing/record', label: 'MARKETING · THE RECORD', key: 'r', withinWorkspace: true },
+  { id: 'go-marketing-crisis', path: '/marketing/crisis', label: 'MARKETING · CRISIS ROOM', key: 'm', withinWorkspace: true },
 ];
 
 /** Menu id → route, for the native bridge. */

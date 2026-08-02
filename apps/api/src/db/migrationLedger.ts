@@ -116,6 +116,36 @@ export const SHIPPED_MIGRATIONS: Readonly<Record<string, string>> = {
  *   0061 → M7, the record. Named by `marketing/record.ts RECORD_MIGRATION`. Art 8(2)
  *          is produce-on-demand and Art 7(3) means the asking authority need not be
  *          the FMA, so the export bundle is a feature and this is its storage.
+ *   0062 → THE WIRING PASS. `marketing_outbound_gate_decision` (every verdict from
+ *          `marketing/outboundGate.ts`, cleared and refused alike — a ledger holding
+ *          only refusals cannot tell "cleared" from "never checked");
+ *          `marketing_reply_corroboration`, which is where the provenance ladder's
+ *          reasoning finally persists — 0059 already covers DKIM/ARC evidence and the
+ *          quarantine lane, but the per-channel agreement list is a table, not a
+ *          column; and a value migration renaming `source_kind = 'manual_paste'` to
+ *          `operator_paste`, because that column held a third spelling of a concept
+ *          `types.ts` and `provenanceLadder.ts` each named differently.
+ *          MUST BE APPLIED AFTER 0059 — the corroboration table references
+ *          `marketing_x_reply(id)`, and the UPDATE targets a column 0046 created.
+ *   0063 → THE DESK'S MEMORY AND THE CRISIS ROOM'S RECORD. Named by
+ *          `routes/marketingMemory.ts MEMORY_MIGRATION`. Four tables:
+ *          `marketing_own_statement` (the precedent corpus — LCX's own words only, with
+ *          no handle, inbound-body or permalink column, which IS the retention argument
+ *          for keeping it past the 90-day sweep), plus `marketing_crisis_incident`,
+ *          `marketing_crisis_statement_instance` and `marketing_crisis_clearance`.
+ *          INDEPENDENT OF 0059-0062 — it references only its own tables, so its position
+ *          in this list is chronological rather than a dependency. Until it lands the
+ *          precedent index is permanently empty (`GET /precedent` answers
+ *          `corpus_empty`/`index_absent`, which are different states and stay apart) and
+ *          the crisis room's clearances vanish on reload.
+ *   0064 → THE FIVE-YEAR CLOCK, and the sweeper that honours the split 0061 designed.
+ *          `marketing_retention_run` plus `body_hash`, `body_minimised_at` and
+ *          `retention_hold_reason` on the inbound row, the jeopardy index, and a
+ *          `to_regclass`-guarded `marketing_record` DDL. MUST BE APPLIED AFTER 0059 AND
+ *          0061 — it adds columns to `marketing_x_reply` as 0059 leaves it and its
+ *          jeopardy anti-join reads `marketing_record`. Until it lands, nothing places an
+ *          LCX statement on the long clock and the 90-day sweep is the only clock
+ *          running, so on day 91 the record MiCA requires for five years is gone.
  */
 export const PENDING_MIGRATIONS: readonly string[] = [
   '0052_gps_underwriting.sql',
@@ -128,4 +158,7 @@ export const PENDING_MIGRATIONS: readonly string[] = [
   '0059_marketing_m0.sql',
   '0060_marketing_abuse.sql',
   '0061_marketing_record.sql',
+  '0062_marketing_gate_decisions.sql',
+  '0063_marketing_memory.sql',
+  '0064_marketing_retention.sql',
 ];

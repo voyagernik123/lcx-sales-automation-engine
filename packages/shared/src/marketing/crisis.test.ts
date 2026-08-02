@@ -3,6 +3,7 @@ import {
   ART_94_MAX_SUSPENSION_WORKING_DAYS,
   CLEARANCE_HEADLINE_TEST_QUESTION,
   CRISIS_BLOCKING_CLEARANCES,
+  INSTRUMENTS,
   REFUSAL_CODES,
 } from './types.js';
 import type { Clearance, ClearanceRole, DeskMode, StatementBody } from './types.js';
@@ -1167,5 +1168,52 @@ describe('the module surface consumers bind to', () => {
     ]) {
       expect(Object.keys(crisis)).toContain(name);
     }
+  });
+});
+
+/**
+ * THE EVIDENCE AND THE INSTRUMENT REGISTER MUST AGREE ABOUT AN AUTHORITY'S ADDRESS.
+ *
+ * `INSTRUMENTS` had no key for SEC v. Bankman-Fried or the Federal Reserve's SVB review,
+ * so both citations rode as `instrument: 'desk_policy'` and their URLs lived only inside
+ * `CrisisEvidence` — a second copy of an authority's address, free to drift from the
+ * register every other citation in the compartment resolves through. Both now have
+ * non-binding keys, and these assertions are what stop the two copies diverging.
+ */
+describe('crisis evidence resolves through the instrument register', () => {
+  it('every non-null instrument key exists in INSTRUMENTS', () => {
+    for (const e of crisis.CRISIS_EVIDENCE) {
+      if (e.instrument === null) continue;
+      expect(INSTRUMENTS[e.instrument], `${e.key} names a missing instrument`).toBeTruthy();
+    }
+  });
+
+  it('the URL on the evidence matches the URL on the instrument', () => {
+    // The whole reason for the field. If someone updates one copy, this fails.
+    for (const e of crisis.CRISIS_EVIDENCE) {
+      if (e.instrument === null) continue;
+      expect(INSTRUMENTS[e.instrument].url, `${e.key} disagrees with its instrument`).toBe(e.url);
+    }
+  });
+
+  it('neither of the two new keys is marked binding on LCX', () => {
+    // A US complaint and a Fed supervisory review are evidence, not law binding LCX.
+    // `binding: true` here would restate them as rules, which is the dishonesty the
+    // desk_policy citation exists to avoid.
+    expect(INSTRUMENTS.sec_v_bankman_fried.binding).toBe(false);
+    expect(INSTRUMENTS.fed_svb_review.binding).toBe(false);
+  });
+
+  it('the contagion evidence stays unkeyed, because press reporting is not an instrument', () => {
+    // A null here is a real answer and must not be "fixed" by inventing a key.
+    expect(crisis.CRYPTO_COM_CONTAGION_EVIDENCE.instrument).toBeNull();
+  });
+
+  it('the rule about over-reassurance is still the desk\'s own, not the complaint', () => {
+    // Collapsing the rule onto sec_v_bankman_fried would state a US complaint as a
+    // rule binding LCX. The evidence is keyed; the RULE stays desk_policy.
+    const refusal = crisis.CRISIS_EVIDENCE.find((e) => e.key === 'ftx_over_reassurance');
+    expect(refusal?.instrument).toBe('sec_v_bankman_fried');
+    expect(INSTRUMENTS.desk_policy.binding).toBe(false);
   });
 });

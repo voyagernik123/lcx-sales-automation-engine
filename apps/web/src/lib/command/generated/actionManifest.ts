@@ -14,7 +14,7 @@
  * unknown keys (so some valid input looks invalid). invokeAction on the server is
  * the only authority. See apps/api/src/actions/grammar.ts.
  *
- * 27 actions · manifest e4b70501e1915e26
+ * 30 actions · manifest 9243b51884272a58
  */
 
 import type { ActionManifest } from '../types';
@@ -812,6 +812,125 @@ export const ACTION_MANIFEST: ActionManifest = {
       "grammar": {}
     },
     {
+      "id": "marketing_embargo_enter",
+      "label": "Enter asset embargo state",
+      "description": "Record an asset's inside-information state (MiCA Art 87-90) so drafts naming it refuse. Approver-only, named human, one live entry per asset.",
+      "subjectTypes": [
+        "marketing_asset"
+      ],
+      "minRole": "approver",
+      "workspace": "marketing",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "eventRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "mnpi_pending",
+              "announced",
+              "clear",
+              "exempt_offer"
+            ]
+          },
+          "sourceRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "reviewInDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 365
+          },
+          "embargoUntilDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3650
+          }
+        },
+        "required": [
+          "eventRef",
+          "state",
+          "sourceRef",
+          "reviewInDays"
+        ],
+        "additionalProperties": false
+      },
+      "grammar": {}
+    },
+    {
+      "id": "marketing_embargo_lift",
+      "label": "Lift asset embargo entry",
+      "description": "Record that an embargo entry is no longer in force, naming who lifted it. One-way; the next state is a new entry. Approver-only.",
+      "subjectTypes": [
+        "marketing_asset"
+      ],
+      "minRole": "approver",
+      "workspace": "marketing",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "eventRef": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
+        },
+        "required": [
+          "eventRef"
+        ],
+        "additionalProperties": false
+      },
+      "grammar": {}
+    },
+    {
+      "id": "marketing_holdings_declare",
+      "label": "Declare your position in an asset",
+      "description": "Declare (or amend, or renew) whether YOU hold a named asset — MiCA Art 91(3)(c). Self-service: it records the authenticated member and nobody else.",
+      "subjectTypes": [
+        "marketing_asset"
+      ],
+      "minRole": "operator",
+      "workspace": "marketing",
+      "params": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "holds": {
+            "type": "boolean"
+          },
+          "renewInDays": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 366
+          },
+          "amendmentReason": {
+            "type": "string",
+            "enum": [
+              "position_opened",
+              "position_closed",
+              "earlier_entry_wrong",
+              "asset_renamed",
+              "periodic_renewal"
+            ]
+          }
+        },
+        "required": [
+          "holds",
+          "renewInDays"
+        ],
+        "additionalProperties": false
+      },
+      "grammar": {}
+    },
+    {
       "id": "notify",
       "label": "Send notification",
       "description": "Raise an in-app notification on the subject.",
@@ -1027,7 +1146,7 @@ export const ACTION_MANIFEST: ActionManifest = {
       "us_entity_licences"
     ]
   },
-  "manifestHash": "e4b70501e1915e26"
+  "manifestHash": "9243b51884272a58"
 } as const satisfies ActionManifest;
 
-export const MANIFEST_HASH = "e4b70501e1915e26";
+export const MANIFEST_HASH = "9243b51884272a58";

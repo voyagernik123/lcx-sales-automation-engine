@@ -43,6 +43,51 @@ const GPS_META_WITHHELD = {
     + 'the actor, the action, the engagement id and the timestamp are above.',
 } as const;
 
+/**
+ * THE SAME DOOR, ONE DEGREE WORSE: MARKETING'S SUBJECT *IS* THE SECRET.
+ *
+ * `marketing/abuseRegister.ts` writes three governed actions — `marketing_embargo_enter`,
+ * `marketing_embargo_lift`, `marketing_holdings_declare` — on subject type
+ * `marketing_asset`, so `invokeAction` lands `entity='marketing_asset'` with
+ * `entity_id=<asset symbol>`. `marketing` is `machineAccess: true`, so the shared
+ * operator key holds the compartment; `/v1/audit` sits under `governance` and was gated
+ * at `requireOperator` only. The exposure was recorded at `abuseRegister.ts:1060` by the
+ * phase that could not reach this file, and it is not the same shape as GPS's:
+ *
+ *   - An embargo row IS INSIDE INFORMATION. `action:marketing_embargo_enter` on
+ *     `entity_id:SOL` tells any operator on any workspace that LCX holds unpublished
+ *     price-significant information about SOL. MiCA Art 90(1) prohibits onward
+ *     disclosure; the audit reader was the disclosure.
+ *   - A holdings row IS PERSONAL FINANCIAL DATA about a named colleague, with Art
+ *     91(3)(c) personal fines from EUR 700,000 attached to the position it describes.
+ *
+ * SO THE REDACTION GOES ONE FIELD FURTHER THAN GPS'S. For GPS the engagement id is an
+ * opaque internal key and only `meta` carries the confidential material, so the row is
+ * shown whole minus `meta`. Here the symbol in `entity_id` is the disclosure all by
+ * itself, and withholding `meta` while printing `SOL` would close nothing. Both fields
+ * are withheld together.
+ *
+ * WHAT IS DELIBERATELY STILL VISIBLE: actor, action, timestamp. That is the same
+ * judgement `abuseRegister.ts:1060` reached from the other side — "an unattributable
+ * embargo decision is worse than a widely-readable one". A reader without the
+ * compartment still sees THAT a named human entered an embargo at a given minute, and
+ * can ask for access; they cannot learn which asset it was about.
+ */
+const MARKETING_ENTITY_RE = /^marketing_/;
+const MARKETING_WITHHELD_REASON =
+  'This audit row belongs to LCX MARKETING\'s market-abuse perimeter. The subject is an asset symbol, and '
+  + 'on an embargo row that symbol is itself inside information (MiCA Art 90(1)); on a holdings row it is a '
+  + 'named colleague\'s financial position (Art 91(3)(c)). Both the subject and the action parameters are shown '
+  + 'only to principals holding the marketing compartment at view or above. The row itself is not hidden: the '
+  + 'actor, the action and the timestamp are above, so the decision stays attributable.';
+const MARKETING_META_WITHHELD = {
+  withheld: true,
+  reason: MARKETING_WITHHELD_REASON,
+} as const;
+/** Replaces the asset symbol. A constant, not a hash: a stable digest would still let a
+ * reader without the compartment correlate rows and count embargoes per asset. */
+const MARKETING_ENTITY_ID_WITHHELD = '[withheld:marketing]';
+
 auditRoutes.get('/', requireOperator, async (c) => {
   const db = getDb();
 
@@ -86,17 +131,24 @@ auditRoutes.get('/', requireOperator, async (c) => {
     const operator = c.get('operator');
     const ents = operator ? await loadEntitlements(getPool(), operator.id) : {};
     const mayReadGps = capAtLeast(ents.gps, 'view');
+    const mayReadMarketing = capAtLeast(ents.marketing, 'view');
 
     return c.json({
       data: (rowsResult.rows ?? []).map((r: Record<string, unknown>) => {
         const gpsRow = typeof r.entity === 'string' && GPS_ENTITY_RE.test(r.entity);
+        const marketingRow = typeof r.entity === 'string' && MARKETING_ENTITY_RE.test(r.entity);
+        // Marketing is checked first and withholds BOTH fields; the two regexes are
+        // disjoint, so the order is documentation rather than precedence.
+        const hideMarketing = marketingRow && !mayReadMarketing;
         return {
           id: r.id,
           actor: r.actor,
           action: r.action,
           entity: r.entity,
-          entityId: r.entity_id,
-          meta: gpsRow && !mayReadGps ? GPS_META_WITHHELD : r.meta,
+          entityId: hideMarketing ? MARKETING_ENTITY_ID_WITHHELD : r.entity_id,
+          meta: hideMarketing
+            ? MARKETING_META_WITHHELD
+            : gpsRow && !mayReadGps ? GPS_META_WITHHELD : r.meta,
           projectName: r.project_name ?? null,
           createdAt: r.created_at,
         };
@@ -109,6 +161,7 @@ auditRoutes.get('/', requireOperator, async (c) => {
         timestamp: new Date().toISOString(),
         version: env.version,
         gpsMetaVisible: mayReadGps,
+        marketingSubjectVisible: mayReadMarketing,
       },
     });
   } catch (err) {

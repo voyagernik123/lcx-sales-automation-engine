@@ -731,6 +731,23 @@ export async function loadEmbargoRegister(
   if (!(await isAbuseRegisterMigrated(pool))) return { entries: [], completeness: { kind: 'not_attested' } };
   if (wanted !== null && wanted.length === 0) return { entries: [], completeness: { kind: 'not_attested' } };
 
+  /*
+   * DOES THE REGISTER HOLD ANYTHING AT ALL? Asked separately from the scoped SELECT
+   * below, because those are two different facts and the engine reports a different
+   * missing fact for each: "the desk holds no register" sends the drafter to the owner
+   * for the list, "this symbol is not in it and nobody has attested completeness" sends
+   * them to the listings desk. Conflating them told a desk with 500 rows on file to
+   * supply a register. One extra existence probe per gated draft is the price.
+   */
+  const anyRows = wanted === null
+    ? null
+    // BYTE-IDENTICAL to the probe `loadEmbargoStates` issues at :350. One concept, one
+    // spelling: two statements meaning "does the register hold anything" would be two
+    // things to keep in step, and the answer they give decides which refusal a desk reads.
+    : await pool.query<{ any_rows: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM marketing_asset_embargo) AS any_rows`,
+    );
+
   const res = await pool.query<{
     asset_symbol: string; state: EmbargoState; embargoed_from: Date | string;
     review_by: Date | string; entered_by: string; entered_at: Date | string;
@@ -760,7 +777,12 @@ export async function loadEmbargoRegister(
     announcedAt: r.state === 'announced' ? iso(r.embargoed_from) : null,
   }));
 
-  return { entries, completeness: { kind: 'not_attested' } };
+  return {
+    entries,
+    completeness: { kind: 'not_attested' },
+    scopedToSymbols: wanted !== null,
+    anyRowsInRegister: anyRows === null ? undefined : Boolean(anyRows.rows[0]?.any_rows),
+  };
 }
 
 /**

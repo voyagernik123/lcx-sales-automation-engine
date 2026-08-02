@@ -15,6 +15,7 @@ import type {
   IncidentPhase,
   IncidentType,
   Instant,
+  InstrumentKey,
   Refusal,
   RefusalCode,
   RefusalRecovery,
@@ -251,9 +252,12 @@ const MICA_94: RuleCitation = {
  * all checkable. Dressing a US complaint up as a MiCA provision would be the
  * exact species of dishonesty this compartment exists to prevent.
  *
- * INTEGRATION NOTE: `INSTRUMENTS` has no key for SEC v. Bankman-Fried or for the
- * Federal Reserve's SVB review. Two non-binding keys would let these citations
- * carry their URL inside the citation rather than beside it.
+ * DONE — the two non-binding keys now exist. `INSTRUMENTS` gained
+ * `sec_v_bankman_fried` and `fed_svb_review`, so the complaint and the review carry
+ * their title and URL in the register every other citation resolves through, and
+ * `CrisisEvidence.instrument` names them. THE RULE BELOW STILL CITES `desk_policy`, and
+ * that is not an oversight: the rule is the desk's, the case is the evidence for it, and
+ * collapsing the two would restate a US complaint as a rule binding LCX.
  */
 const DESK_NO_OVER_REASSURANCE: RuleCitation = {
   instrument: 'desk_policy',
@@ -343,6 +347,21 @@ export interface CrisisEvidence {
   readonly authority: string;
   readonly locator: string;
   readonly url: string;
+  /**
+   * THE `INSTRUMENTS` ENTRY THIS EVIDENCE IS THE EVIDENCE *OF*, WHERE ONE EXISTS.
+   *
+   * `INSTRUMENTS` had no key for SEC v. Bankman-Fried or the Federal Reserve's SVB
+   * review, so those two citations rode as `desk_policy` and their `url` lived only
+   * here — a second copy of an authority's address, free to drift from the register
+   * every other citation in the compartment resolves through. Both now have
+   * non-binding keys and this field names them.
+   *
+   * `null` IS A REAL ANSWER, not a gap to be filled later: `crypto_com_contagion`
+   * rests on contemporaneous press reporting, which is not an instrument and must not
+   * be dressed as one. `crisis.test.ts` asserts that a non-null key resolves and that
+   * its URL matches `INSTRUMENTS[key].url`, so the two copies cannot disagree.
+   */
+  readonly instrument: InstrumentKey | null;
 }
 
 /**
@@ -357,6 +376,7 @@ export const SVB_RUN_SPEED_EVIDENCE: CrisisEvidence = {
     'The Federal Reserve\'s own review records that "On March 9, SVB lost over $40 billion in deposits, and SVBFG management expected to lose over $100 billion more on March 10", representing "roughly 85 percent of the bank\'s deposit base", against Wachovia\'s "$10 billion in outflows over 8 days" in 2008 and Washington Mutual\'s "$19 billion over 16 days". The review concludes that "the combination of social media, a highly networked and concentrated depositor base, and technology may have fundamentally changed the speed of bank runs". An exchange is worse-positioned on every dimension named: withdrawals are 24/7, settle in minutes, and there is no deposit insurance to slow a panic. So the unit for this desk is minutes, not hours. Note the second-order finding too: SVB\'s own 8 March announcement was the trigger. A badly-sequenced disclosure caused the run.',
   authority: "Federal Reserve, Review of the Federal Reserve's Supervision and Regulation of Silicon Valley Bank (28 April 2023)",
   locator: "Vice Chair Barr's foreword; body, deposit-outflow findings",
+  instrument: 'fed_svb_review',
   url: 'https://www.federalreserve.gov/publications/files/svb-review-20230428.pdf',
 };
 
@@ -371,6 +391,7 @@ export const FTX_OVER_REASSURANCE_EVIDENCE: CrisisEvidence = {
     'The SEC\'s complaint pleads, at paragraph 78: "Attempting to maintain public and investor confidence in FTX, Bankman-Fried tweeted on or about November 7, 2022: \'FTX is fine. Assets are fine ... FTX has enough to cover all client holdings. We don\'t invest client assets (even in treasuries). We have been processing all withdrawals, and will continue to be ....\' That tweet was false and misleading, and Bankman-Fried later deleted it." Paragraph 79: "The next day, November 8, 2022, FTX paused all customer withdrawals, and the price of FTT plummeted by approximately 80%." Paragraph 52 pleads earlier reassurances in the same way, including "We will always allow withdrawals". Three things follow and all three are encoded: a solvency assertion is a regulated claim and not a reassurance; an unconditional forward commitment is a distinct and higher class than a present-tense fact; and deletion is not remediation, because the complaint records both the tweet and its deletion.',
   authority: 'SEC v. Samuel Bankman-Fried, No. 1:22-cv-10501 (S.D.N.Y., filed 13 December 2022)',
   locator: 'Complaint paragraphs 52, 78, 79',
+  instrument: 'sec_v_bankman_fried',
   url: 'https://www.sec.gov/files/litigation/complaints/2022/comp-pr2022-219.pdf',
 };
 
@@ -385,6 +406,7 @@ export const CRYPTO_COM_CONTAGION_EVIDENCE: CrisisEvidence = {
     'A decline in the value of Cronos, the exchange\'s own token, triggered fears of a collapse similar to FTX\'s and spurred withdrawals; the CEO gave assurances that the firm was liquid and that it did not use Cronos in the way FTX used FTT. The attribute under attack was structural — a native exchange token — and the question asked was "are you like them". LCX is in that class. The answer has to be written before the peer fails, because the window in which it is asked is measured in the minutes the SVB review describes.',
   authority: 'Contemporaneous reporting on FTX contagion (Reuters, collected)',
   locator: 'Crypto.com / Cronos, November 2022',
+  instrument: null,
   url: 'https://en.wikipedia.org/wiki/Bankruptcy_of_FTX',
 };
 
@@ -399,6 +421,7 @@ export const CERC_CLEARANCE_EVIDENCE: CrisisEvidence = {
     'CERC names the tension — "The need to ensure that information is confirmed to be accurate through a clearance process [and] The need to ensure that information is communicated quickly" — then prescribes three reviewers: reputation, policy, and a subject matter expert "who is both fast and knowledgeable". And the constraints: "Keep the legal department out of the clearance process unless the subject has specific legal implications"; "you may have others review and comment on the document, but not delay its release"; "Clear all information simultaneously"; "Ask if he or she would be comfortable seeing this as a news headline"; and "it is worse to release nothing than to release information that is not yet complete". A serial approval chain is what makes regulated desks structurally too slow to matter in a crisis, so clearance is modelled as a set of independent holds and never as a pipeline.',
   authority: 'CDC Crisis and Emergency Risk Communication (CERC) manual, Crisis Communication Plans chapter',
   locator: 'Information verification and clearance procedures',
+  instrument: 'cerc',
   url: 'https://emergency.cdc.gov/cerc/manual/index.asp',
 };
 

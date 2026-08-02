@@ -210,6 +210,27 @@ export interface EmbargoRegisterEntry {
 export interface EmbargoRegister {
   readonly entries: readonly EmbargoRegisterEntry[];
   readonly completeness: RegisterCompleteness;
+  /**
+   * Whether `entries` is the WHOLE register or a per-symbol slice of it.
+   *
+   * WHY THIS FIELD HAD TO EXIST. `resolveEmbargo` reported `register_empty` — "the desk
+   * holds no register at all" — from `entries.length === 0`, and the only production
+   * loader (`abuseRegister.ts loadEmbargoRegister`) is SYMBOL-SCOPED: it selects
+   * `WHERE asset_symbol = ANY($1)`. So a register with 500 rows returned zero entries for
+   * one unlisted symbol and the desk was told to supply a register it had already
+   * supplied. Every embargo refusal on that path named the wrong missing fact, and
+   * `absent_from_unattested_register` — the correct reason, with the correct remedy — was
+   * unreachable in production while being covered by tests.
+   *
+   * `undefined` reads as "the caller did not say", and is treated as the WHOLE register so
+   * an omission cannot silently turn `register_empty` into a softer answer.
+   */
+  readonly scopedToSymbols?: boolean;
+  /**
+   * Whether the register table holds ANY row, independent of the scope above. Only
+   * meaningful when `scopedToSymbols` is true; `undefined` means the loader did not ask.
+   */
+  readonly anyRowsInRegister?: boolean;
 }
 
 /**
@@ -370,7 +391,19 @@ export function resolveEmbargo(
   register: EmbargoRegister,
   now: Instant,
 ): EmbargoResolution {
-  if (register.entries.length === 0) {
+  /*
+   * A SYMBOL-SCOPED LOAD THAT FOUND NOTHING IS NOT AN EMPTY REGISTER, and conflating the
+   * two made every refusal on the production path name the wrong missing fact. Both
+   * outcomes still REFUSE — `state: 'unknown'` either way, and the empty-register branch
+   * below still has no escape — so this changes which sentence the desk reads and which
+   * human it sends them to, not whether the draft is blocked.
+   */
+  const scoped = register.scopedToSymbols === true;
+  const registerHasRows = scoped
+    ? register.anyRowsInRegister === true
+    : register.entries.length > 0;
+
+  if (!registerHasRows) {
     return {
       asset,
       state: 'unknown',
@@ -663,6 +696,29 @@ export function resolveHoldings(
  *    `declared_none` still clears. The refusal only arrives where the desk cannot say
  *    whether an opinion was voiced AND cannot say what the author holds. That is two
  *    unknowns stacked, and refusing on two unknowns is not over-gating.
+ *
+ *    ══ DECIDED, 2026-08-02: THERE IS DELIBERATELY NO `STANCE_UNDETERMINED` CODE. ══
+ *    The wiring pass asked whether this withholding should become a visible refusal of
+ *    its own. It should not, for two reasons.
+ *
+ *    First, a refusal names a MISSING FACT and who can supply it. Nobody can supply a
+ *    stance: it is this classifier's own uncertainty about text that already exists. The
+ *    fact actually missing is the holdings declaration, and
+ *    `HOLDINGS_DECLARATION_MISSING` names it precisely, together with the person who can
+ *    close it. A `STANCE_UNDETERMINED` beside it would name the instrument's doubt rather
+ *    than the desk's gap, and its recovery would have to be "reword so the classifier is
+ *    surer", which is advice to game a gate.
+ *
+ *    Second, `loop.ts refusalCodeFrequency` enumerates `REFUSAL_CODES` to report which
+ *    gates have never fired. A code that only ever fires ALONGSIDE the holdings code
+ *    would double-count one refusal as two and make the holdings gate look twice as
+ *    load-bearing as it is — the same defect as the ten process metrics implemented
+ *    twice.
+ *
+ *    What the verdict DOES carry is `stance` on `StanceAssessment`, so a surface can say
+ *    "we could not tell whether this voices an opinion" as context beside the refusal.
+ *    That is the honest shape: the uncertainty is visible, and it is not pretending to be
+ *    a rule.
  *
  * WHAT THIS IS NOT: a sentiment score, and not a clever regex. `STANCE_MARKERS` is an
  * enumerated, categorised, individually-justified list of phrases, each carrying the
@@ -995,10 +1051,17 @@ function violation(
   citation: MarketAbuseCitationKey,
   matched: string,
   remedy: string,
+  /**
+   * `warning` by default because most findings here record that a limb was SATISFIED and
+   * must stay that way. `error` is for the one finding that says a gate did not run:
+   * `outboundGate.ts` blocks on error severity, and a finding whose own remedy is "record
+   * which" cannot be delivered by a field nobody reads.
+   */
+  severity: MarketingViolation['severity'] = 'warning',
 ): MarketingViolation {
   return {
     rule,
-    severity: 'warning',
+    severity,
     rule_citation: MARKET_ABUSE_CITATIONS[citation],
     matched,
     remedy,
@@ -1820,8 +1883,18 @@ export function assessMarketAbuse(input: MarketAbuseInput): MarketAbuseVerdict {
     ...combination.violations,
   ];
 
-  // A directional statement that names no asset is a fact about the extractor, not
-  // about the world. Say so rather than reporting a clean pass over an empty list.
+  /*
+   * A directional statement that names no asset is a fact about the extractor, not about
+   * the world. Say so rather than reporting a clean pass over an empty list.
+   *
+   * `error`, NOT `warning`, and the severity is the load-bearing part. "The Solana
+   * listing is live tomorrow" extracts no symbol, so `checkEmbargo` loops an empty list
+   * and `checkUndisclosedHolding` gates on `namedAssets.length > 0` — the two limbs
+   * carrying unlawful disclosure and a EUR 700 000 personal fine both no-op, and this is
+   * the ONLY finding that says so. As a warning it was raised, carried, and dropped: the
+   * outbound gate cleared the draft, returned 201 and wrote `allowed: true`. There is
+   * nowhere to "record which" other than by stopping.
+   */
   if (namedAssets.length === 0 && stance.stance === 'directional') {
     violations.push(
       violation(
@@ -1830,7 +1903,9 @@ export function assessMarketAbuse(input: MarketAbuseInput): MarketAbuseVerdict {
         stance.findings.map((f) => f.matched).join(', '),
         'This item voices an opinion but names no asset, so the Art 90 and Art 91(3)(c) joins had nothing to ' +
           'run against. Either the asset extraction missed a symbol — in which case the two most dangerous ' +
-          'gates were skipped — or the opinion is about something outside Title VI. Record which.',
+          'gates were skipped — or the opinion is about something outside Title VI. Record which: name the ' +
+          'asset with its ticker so the joins can run, or state that the opinion is not about a crypto-asset.',
+        'error',
       ),
     );
   }

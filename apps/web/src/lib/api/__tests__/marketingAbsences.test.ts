@@ -102,9 +102,23 @@ describe('the envelope reaches the browser on every read', () => {
   });
 
   it('every request is authenticated', () => {
-    const requests = (CODE.match(/request</g) ?? []).length;
+    /*
+     * COUNTS `request(` AS WELL AS `request<`, and that widening closed a blind spot
+     * rather than accommodating a new call.
+     *
+     * This used to count `request</g` only — every call with a type parameter. A call
+     * written `await request('/v1/...', { method: 'POST' })`, with no response type
+     * because it returns void, was INVISIBLE to it: an unauthenticated one would have
+     * left both counts equal and the test green. The three governed perimeter writes
+     * (`invokeMarketingAbuse`) are exactly that shape, which is how the gap surfaced.
+     *
+     * The unwrap assertion above deliberately still keys on `request<`: a void write has
+     * no envelope to unwrap, so pairing it with `unwrap(` would be wrong. Authentication
+     * is required of every call; unwrapping is required only of reads.
+     */
+    const requests = (CODE.match(/\brequest[<(]/g) ?? []).length;
     const authed = (CODE.match(/auth: true/g) ?? []).length;
-    expect(authed, 'an unauthenticated marketing read would sit outside the workspace gate')
+    expect(authed, 'an unauthenticated marketing call would sit outside the workspace gate')
       .toBe(requests);
   });
 

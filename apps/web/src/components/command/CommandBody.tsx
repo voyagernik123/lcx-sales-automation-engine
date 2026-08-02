@@ -23,6 +23,25 @@ import { useAccessStore } from '@/stores/useAccessStore';
 import { useOperatorStore } from '@/stores';
 import { VerbPanel } from './VerbPanel';
 import { nounFromSearchResult, type Noun, type Principal } from './grammar';
+/**
+ * LCX MARKETING's rows and codes are GENERATED, not listed below (M9).
+ *
+ * `PAGE_COMMANDS` and `COMMAND_CODES` in this file are hand-written literals that predate
+ * the seventh and eighth compartments, and neither gained a row when those shipped — so
+ * marketing and GPS are reachable by `g` chord and absent from the surface an operator
+ * actually uses. Appending eight more literals here would have been the same defect with a
+ * later date on it. `marketingGrammar.ts` derives its rows from `DESTINATIONS` and its
+ * codes from its own noun table, and `__tests__/marketingGrammar.test.ts` reads THIS FILE
+ * and fails if a marketing path or code appears in it literally.
+ *
+ * GPS is the identical gap and is not fixed here — it is another lane's file. It is
+ * recorded in `PALETTE_PAGE_GAP_NOT_OURS`, and `destinationsUnder('/gps')` is all its
+ * owner needs.
+ */
+import {
+  MARKETING_PALETTE_CODES, MARKETING_PALETTE_PAGES, MARKETING_WORKSPACE,
+  searchMarketingNouns, searchMarketingReplies, type PaletteRow,
+} from './marketingGrammar';
 
 interface CommandItem {
   id: string;
@@ -44,7 +63,7 @@ interface CommandItem {
   typeLabel?: string;
 }
 
-const PAGE_COMMANDS: CommandItem[] = [
+const HAND_LISTED_PAGES: CommandItem[] = [
   { id: 'bd-pipeline', label: 'BD Engine', sublabel: 'Priority lead queue', to: '/bd-pipeline', type: 'page' },
   { id: 'exchange-gaps', label: 'Exchange Gaps', sublabel: 'Listed elsewhere, not on LCX', to: '/exchange-gaps', type: 'page' },
   { id: 'deal-board', label: 'Deal Board', sublabel: 'Kanban pipeline', to: '/deal-board', type: 'page' },
@@ -82,11 +101,24 @@ const PAGE_COMMANDS: CommandItem[] = [
 ];
 
 /**
+ * The page rows, hand-listed ones first and the generated compartment rows appended.
+ *
+ * APPENDED rather than merged in taxonomic order for the same reason `DESTINATIONS`
+ * appends: the empty-query view is the first eight of this list, and re-ordering it moves
+ * what an operator sees when they open ⌘K and type nothing.
+ */
+const PAGE_COMMANDS: CommandItem[] = [...HAND_LISTED_PAGES, ...MARKETING_PALETTE_PAGES];
+
+/**
  * Bloomberg-style command codes: type the code, hit enter, you're there.
  * Codes surface as the top result when the query exactly matches or
  * prefixes one.
+ *
+ * Exported so `__tests__/marketingGrammar.test.ts` can assert that no generated code
+ * collides with a hand-listed one — a collision would silently give one code two
+ * destinations, and the loser would be whichever sorted second.
  */
-const COMMAND_CODES: { code: string; to: string; label: string }[] = [
+export const COMMAND_CODES: { code: string; to: string; label: string }[] = [
   { code: 'q', to: '/bd-pipeline', label: 'BD Engine (queue)' },
   { code: 'db', to: '/deal-board', label: 'Deal Board' },
   { code: 'dd', to: '/deal-desk', label: 'Deal Desk' },
@@ -100,6 +132,7 @@ const COMMAND_CODES: { code: string; to: string; label: string }[] = [
   { code: 'br', to: '/board-report', label: 'Board Report' },
   { code: 'ai', to: '/ai-tools', label: 'AI Console' },
   { code: 'home', to: '/', label: 'Morning Brief' },
+  ...MARKETING_PALETTE_CODES,
 ];
 
 export const OBJECT_ROWS = 10;
@@ -191,6 +224,46 @@ function useObjectSearch(query: string, enabled: boolean): CommandItem[] {
   return items;
 }
 
+/**
+ * Marketing reply INSTANCES — the one marketing noun with a mounted list route.
+ *
+ * A second hook rather than a branch inside `useObjectSearch`, because the two answer
+ * different questions: that one asks the server's own search, this one filters a list the
+ * desk already reads. Same 200ms debounce and same abort discipline, so a fast typist
+ * cannot leave a stale row behind.
+ *
+ * `enabled` carries the entitlement check. An operator without `marketing` never causes
+ * the request — the route would refuse them, and a 403 per keystroke is noise in someone
+ * else's log.
+ */
+function useMarketingReplySearch(query: string, enabled: boolean): readonly PaletteRow[] {
+  const [items, setItems] = useState<readonly PaletteRow[]>([]);
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    if (!enabled || query.trim().length < 2) {
+      setItems([]);
+      return;
+    }
+    clearTimeout(timer.current);
+    const ctrl = new AbortController();
+    timer.current = setTimeout(async () => {
+      try {
+        const rows = await searchMarketingReplies(query, ctrl.signal);
+        if (!ctrl.signal.aborted) setItems(rows);
+      } catch {
+        if (!ctrl.signal.aborted) setItems([]);
+      }
+    }, 200);
+    return () => {
+      ctrl.abort();
+      clearTimeout(timer.current);
+    };
+  }, [query, enabled]);
+
+  return items;
+}
+
 function buildDataCommands(): CommandItem[] {
   const results: CommandItem[] = [];
 
@@ -251,6 +324,12 @@ export default function CommandBody({ open, onClose }: { open: boolean; onClose:
     [operator, accessMe],
   );
 
+  // Held-compartment gate, not a feature flag: see useMarketingReplySearch.
+  const marketingReplies = useMarketingReplySearch(
+    query,
+    open && Boolean(principal.entitlements[MARKETING_WORKSPACE]),
+  );
+
   const allCommands = useMemo(() => {
     return [...PAGE_COMMANDS, ...buildDataCommands()];
   }, []);
@@ -273,8 +352,26 @@ export default function CommandBody({ open, onClose }: { open: boolean; onClose:
     const staticMatches = allCommands.filter(c =>
       c.label.toLowerCase().includes(q) || c.sublabel.toLowerCase().includes(q)
     );
-    return [...codeMatches, ...objectResults, ...staticMatches].slice(0, 14);
-  }, [query, allCommands, objectResults]);
+    // Marketing rows sit between the real registry nouns and the plain page matches:
+    // an instance outranks "the kind of thing you asked about lives here", and both
+    // outrank a page whose sublabel happens to contain the query.
+    //
+    // A noun row whose destination is ALREADY in the list is dropped — 'crisis' matches
+    // both the Crisis statements noun and the Crisis Room page row, and two rows that
+    // navigate identically read as a bug rather than as two answers. Scoped to the
+    // marketing rows deliberately: the hand-listed table has its own long-standing
+    // near-duplicates (`home` and Dashboard both go to '/') and changing those is not
+    // this lane's call.
+    const alreadyGoing = new Set([...codeMatches, ...staticMatches].map((c) => c.to));
+    const nounRows = searchMarketingNouns(query).filter((r) => !alreadyGoing.has(r.to));
+    return [
+      ...codeMatches,
+      ...objectResults,
+      ...marketingReplies,
+      ...nounRows,
+      ...staticMatches,
+    ].slice(0, 14);
+  }, [query, allCommands, objectResults, marketingReplies]);
 
   useEffect(() => {
     setSelectedIndex(0);

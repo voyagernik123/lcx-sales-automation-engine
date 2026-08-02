@@ -69,6 +69,77 @@ describe('the M0 controls that existed but were reachable from no route', () => 
     // Reported, not silent: a sweep whose count nobody sees cannot be audited.
     expect(tick).toContain('rawCleared');
   });
+
+  /**
+   * THE 90-DAY SWEEP USED TO DESTROY THE FIVE-YEAR RECORD.
+   *
+   * `sweepExpired` was `DELETE FROM marketing_x_reply WHERE retention_expires_at < now()`
+   * and `marketing_reply_draft` cascades on `reply_id` (0046), so at day 91 every draft LCX
+   * had APPROVED against the row went with it — the record MiCA Art 68(9) wants for five
+   * years. `retention.ts` had the careful sweep and REFUSES until 0064; the tick called the
+   * blind one. A control in a file the live path does not call is this compartment's
+   * recurring defect.
+   */
+  it('holds an expired row carrying an unrecorded LCX statement instead of deleting it', () => {
+    const svc = strip(readFileSync(resolve(SRC, 'marketing/service.ts'), 'utf8'));
+    const fn = svc.slice(svc.indexOf('export async function sweepExpired'));
+    const body = fn.slice(0, fn.indexOf('\nexport ', 1) === -1 ? fn.length : fn.indexOf('\nexport ', 1));
+    // The DELETE is conditional on NOT being in jeopardy. An unqualified delete is the bug.
+    expect(body, 'sweepExpired deletes without a jeopardy guard').toMatch(/AND NOT \(\$\{jeopardy\}\)/);
+    expect(body).toMatch(/d\.status = 'approved'/);
+    expect(body).toMatch(/NOT EXISTS \(SELECT 1 FROM marketing_record m/);
+    // And it FAILS CLOSED: a probe that throws deletes nothing.
+    expect(body).toMatch(/guard: 'unavailable'/);
+    expect(body).toMatch(/deleted: 0,/);
+    /*
+     * `heldInJeopardy: null` on the unavailable path, never 0 — "I could not look" is not
+     * "there were none", and a 0 on a panel is indistinguishable from a clean sweep.
+     */
+    expect(body).toMatch(/heldInJeopardy: null/);
+  });
+
+  it('reports the held count on the tick rather than swallowing it', () => {
+    const tick = routes.slice(routes.indexOf("'/tick'"), routes.indexOf("'/:id/draft'"));
+    expect(tick).toContain('sweepExpired(pool)');
+    // `swept` is now the whole result object, so heldInJeopardy reaches the caller with it.
+    expect(tick).toMatch(/swept,/);
+  });
+
+  /**
+   * `marketing/postTime.ts` is the only caller of `fetchOEmbed`, `gradeInboundBatch` and
+   * `recordPostedOn`, and it had NO CALLER OF ITS OWN. The consequence was exact and
+   * permanent: post-time coverage is 0 on every live environment forever, because the one
+   * act that could raise it never ran — while `GET /summary` reported the 0 as a fact.
+   *
+   * A *scheduled* engine nothing schedules is worse than an unreachable one, because the
+   * number it would have moved is published.
+   */
+  it('runs the post-time corroboration sweep on the same tick', () => {
+    const tick = routes.slice(routes.indexOf("'/tick'"), routes.indexOf("'/:id/draft'"));
+    expect(tick, 'nothing schedules runPostTimeSweep — coverage stays 0 forever')
+      .toContain('runPostTimeSweep(pool)');
+    // Reported on the response, not run and discarded.
+    expect(tick).toMatch(/postTime,/);
+    /*
+     * BEFORE the `mailConfigured` early return. Corroborating rows already in the queue
+     * does not need a mailbox, and putting the sweep after that return would have made it
+     * dead on exactly the environments that have no mailbox yet — which is most of them.
+     */
+    expect(
+      tick.indexOf('runPostTimeSweep(pool)'),
+      'the sweep sits after the unconfigured-mail early return, so it never runs there',
+    ).toBeLessThan(tick.indexOf('if (!mailConfigured())'));
+  });
+
+  /**
+   * The sweep's one outbound call is a credential-free GET. Asserted at the route, because
+   * this is the file a reader checks when they ask "can this thing post as LCX".
+   */
+  it('adds no credential and no publish path to the tick', () => {
+    const tick = routes.slice(routes.indexOf("'/tick'"), routes.indexOf("'/:id/draft'"));
+    expect(tick).not.toMatch(/X_API_KEY|bearer|Bearer|oauth|OAuth|access_token/);
+    expect(tick).not.toMatch(/method:\s*'POST'/);
+  });
 });
 
 describe('the comments that asserted guarantees the code did not keep', () => {

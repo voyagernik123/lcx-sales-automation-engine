@@ -192,7 +192,7 @@ describe('the rungs', () => {
 describe('a mirror is discovery only', () => {
   const mirror = (over: Partial<InboundItem> = {}): InboundItem =>
     emailItem({
-      channel: 'x_mirror',
+      channel: 'mirror_discovery',
       sender: null,
       mirrorHost: 'nitter.net',
       claimedText: 'text the mirror operator chose',
@@ -213,13 +213,13 @@ describe('a mirror is discovery only', () => {
     expect(v.storableText).toBe(TEXT);
     expect(v.storableText).not.toContain('mirror operator');
     expect(v.rung).toBe('oembed_confirmed_single_channel');
-    expect(v.corroborations.some((c) => c.channel === 'x_mirror' && c.outcome === 'discovery_only')).toBe(true);
+    expect(v.corroborations.some((c) => c.channel === 'mirror_discovery' && c.outcome === 'discovery_only')).toBe(true);
   });
 });
 
 describe('human paste', () => {
   const paste = (over: Partial<InboundItem> = {}): InboundItem =>
-    emailItem({ channel: 'human_paste', sender: null, operator: 'nikhil@lcx.com', ...over });
+    emailItem({ channel: 'operator_paste', sender: null, operator: 'nikhil@lcx.com', ...over });
 
   it('refuses a paste with no named human', () => {
     const v = gradeInboundItem(paste({ operator: null }));
@@ -232,7 +232,7 @@ describe('human paste', () => {
     if (v.state !== 'graded') throw new Error('expected graded');
     expect(v.rung).toBe('operator_paste_asserted');
     expect(v.grade.code).toBe('C3');
-    expect(v.corroborations.find((c) => c.channel === 'human_paste')?.detail).toMatch(/cannot corroborate itself/);
+    expect(v.corroborations.find((c) => c.channel === 'operator_paste')?.detail).toMatch(/cannot corroborate itself/);
   });
 
   it('quarantines contradicted text on an unauthenticated channel', () => {
@@ -268,19 +268,19 @@ describe('the undocumented source never buys credibility', () => {
     expect(v.rung).toBe('email_authenticated_unchecked');
     expect(v.grade.code).toBe('C3');
     expect(v.postedAtExact).toBe('2026-08-01T16:53:07.000Z');
-    expect(v.postedAtSource).toBe('syndication_undocumented');
-    expect(v.corroborations.find((c) => c.channel === 'syndication_undocumented')?.undocumented).toBe(true);
+    expect(v.postedAtSource).toBe('syndication_embed');
+    expect(v.corroborations.find((c) => c.channel === 'syndication_embed')?.undocumented).toBe(true);
   });
 
   it('on its own it is graded low and is never a text source', () => {
-    const v = gradeInboundItem(emailItem({ channel: 'syndication_undocumented', sender: null, syndication: obs }));
+    const v = gradeInboundItem(emailItem({ channel: 'syndication_embed', sender: null, syndication: obs }));
     if (v.state !== 'graded') throw new Error('expected graded');
     expect(v.grade.code).toBe('D4');
     expect(v.storableText).toBeNull();
   });
 
   it('refuses when the channel is declared but carries no observation', () => {
-    const v = gradeInboundItem(emailItem({ channel: 'syndication_undocumented', sender: null, syndication: null }));
+    const v = gradeInboundItem(emailItem({ channel: 'syndication_embed', sender: null, syndication: null }));
     if (v.state !== 'refused') throw new Error('expected refusal');
     expect(v.code).toBe('MKT_PROV_NO_SYNDICATION_DATA');
   });

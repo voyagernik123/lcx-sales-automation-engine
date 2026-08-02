@@ -154,13 +154,19 @@ function refusal(
  * hold all of them, which is exactly why the process metrics are defensible and the
  * audience metrics are not.
  *
- * KNOWN IMPRECISION, named rather than hidden: `ObservationFrame.source` is an
- * `InboundSourceKind`, and that union has no member meaning "our own records" — it
- * enumerates ways things arrive from outside. `operator_paste` is the closest honest
- * choice, since these records exist because colleagues entered them. The frame's
- * `captures` string says what the population really is so nothing downstream reads the
- * source field as a claim that this data came from X. Adding an `own_records` member
- * belongs to whoever owns `types.ts`, not to this file.
+ * THE IMPRECISION THIS COMMENT USED TO RECORD IS FIXED. `ObservationFrame.source` is an
+ * `InboundSourceKind`, and that union had no member meaning "our own records" — it only
+ * enumerated ways things arrive from outside. This function therefore labelled a census
+ * of the desk's own decisions `operator_paste`, which reads on a panel as "a human typed
+ * this in" and understates how complete the population is; the note said adding a member
+ * belonged to whoever owned `types.ts`.
+ *
+ * `own_record` NOW EXISTS and is used here. It is graded reliability 'A' in
+ * `INBOUND_SOURCE_RELIABILITY` because it is the only member of that union which is not
+ * somebody else's claim about the world. `observation.ts ownCorpusFrame` uses the same
+ * member for the same population, so the two frames no longer disagree about what our
+ * own records are — which matters because `loop.ts` owns the arithmetic and
+ * `observation.ts` owns the frame, and a panel joins them.
  */
 export function ownRecordsFrame(
   windowFrom: Instant,
@@ -178,7 +184,7 @@ export function ownRecordsFrame(
     );
   }
   return {
-    source: 'operator_paste',
+    source: 'own_record',
     captures:
       "the desk's own records inside the window: drafts, refusals, clearances, published close-outs, recorded statements and recorded silences. The population is ours, so this is a census rather than a sample.",
     doesNotCapture,

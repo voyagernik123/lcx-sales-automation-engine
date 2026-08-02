@@ -29,12 +29,20 @@
  * has written down what it counts and when it refuses. Read that table to learn what a
  * metric means; call `loop.ts` to get its number.
  *
- * THREE LAYERS GUARD THE CEILING, AND ONLY THE FIRST TWO ARE PROOFS:
- *   1. Compile-time. `types.ts`'s `HonestFigures<T>` resolves to `never` when a
- *      payload carries a forbidden field name. tsc rejects it.
- *   2. Runtime. `assertHonestPayload` (§3) walks a payload — nested, with a cycle
- *      guard — and refuses on a forbidden key, because a value crossing a JSON
- *      boundary from a route or an AI response has no compile-time identity at all.
+ * THREE LAYERS GUARD THE CEILING, AND ONLY ONE OF THEM IS CURRENTLY APPLIED:
+ *   1. Compile-time. `types.ts`'s `HonestFigures<T>` resolves to `never` when a payload
+ *      carries a forbidden field name, and tsc rejects it — WHERE A TYPE USES IT. NOTHING
+ *      IN THIS REPOSITORY DOES. It is a definition and its own tests, so today it guards
+ *      nothing; the honest reading is "available", not "in force". Wrapping the marketing
+ *      response contracts in it is the outstanding work, and it is named in
+ *      `MARKETING_CONTRACTS_OWED` rather than implied by this paragraph.
+ *   2. Runtime. `assertHonestPayload` (§3) walks a payload — nested, with a cycle guard —
+ *      and refuses on a forbidden key, because a value crossing a JSON boundary from a
+ *      route or an AI response has no compile-time identity at all. THIS ONE IS WIRED:
+ *      `apps/web/src/lib/api/marketing.ts`'s `unwrap` runs it on every marketing read and
+ *      throws the refusal's own sentence, so a route that started returning `impressions`
+ *      fails the read instead of reaching a component. It had zero production callers when
+ *      this paragraph first claimed both layers were proofs.
  *   3. Review. Neither layer catches an engagement rate named `score`. That gap is
  *      stated here rather than left for someone to discover; what makes it survivable
  *      is that a figure with no honest frame has nothing to render beside it.

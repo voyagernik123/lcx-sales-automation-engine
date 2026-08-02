@@ -395,9 +395,19 @@ export const X_POST_MAX_CHARS = 280;
  * exercise of an employment" is not a defence a social-media coordinator can hold.
  *
  * `unknown` IS NOT `clear`. A compartment that cannot read the register must refuse
- * (`EMBARGO_REGISTER_EMPTY` / `MARKET_ABUSE_PERIMETER_UNKNOWN`), because the
- * alternative is guessing on the single highest-consequence axis. Empty registers
- * refuse honestly and say so.
+ * (`EMBARGO_REGISTER_ABSENT` / `ASSET_STATE_UNKNOWN`), because the alternative is
+ * guessing on the single highest-consequence axis. Empty registers refuse honestly and
+ * say so.
+ *
+ * BOTH CODE NAMES IN THIS PARAGRAPH USED TO BE WRONG — it cited
+ * `EMBARGO_REGISTER_EMPTY` and `MARKET_ABUSE_PERIMETER_UNKNOWN`, neither of which is a
+ * member of `RefusalCode`. That is not a typo class this compartment can shrug at: the
+ * codes are the vocabulary in which a refusal explains itself, `loop.ts` enumerates
+ * `REFUSAL_CODES` to report which gates have NEVER FIRED, and a doc comment naming a
+ * code that does not exist sends the next reader looking for a gate that was never
+ * built. The two real codes are in the union below and in `REFUSAL_CODES`;
+ * `refusalCodesReferencedInDocs.test.ts` now checks every code named in a doc comment
+ * in this file against the array.
  */
 export type AssetEmbargoState =
   | 'clear'          // publicly announced, or never inside information
@@ -1060,6 +1070,37 @@ export const INSTRUMENTS = {
     url: 'https://gcs.civilservice.gov.uk/publications/resist-2-counter-disinformation-toolkit/',
     binding: false,
   },
+  /**
+   * NOT LAW BINDING LCX, AND THE `binding: false` IS THE WHOLE POINT.
+   *
+   * These two were cited by `crisis.ts` with no key of their own, so both rode as
+   * `instrument: 'desk_policy'` — which made the desk's own rule the only visible
+   * authority for the two findings the crisis room actually rests on. That is backwards
+   * twice over: it hid the checkable source (the case number, the paragraph, the URL
+   * lived in a `CrisisEvidence` beside the citation instead of inside it), and it let a
+   * reader conclude the desk invented the rule.
+   *
+   * A US complaint and a Federal Reserve review are EVIDENCE that over-reassurance is
+   * the charged act and that run speed is now measured in minutes. Dressing either up as
+   * a MiCA provision would be the exact dishonesty this compartment exists to prevent,
+   * so they are keyed, non-binding, and titled to say what they are.
+   */
+  sec_v_bankman_fried: {
+    key: 'sec_v_bankman_fried',
+    title:
+      'SEC v. Samuel Bankman-Fried, No. 1:22-cv-10501 (S.D.N.Y., filed 13 December 2022) '
+      + '— US complaint, evidence only, not binding on LCX',
+    url: 'https://www.sec.gov/files/litigation/complaints/2022/comp-pr2022-219.pdf',
+    binding: false,
+  },
+  fed_svb_review: {
+    key: 'fed_svb_review',
+    title:
+      "Federal Reserve, Review of the Federal Reserve's Supervision and Regulation of "
+      + 'Silicon Valley Bank (April 2023) — supervisory review, evidence only, not binding on LCX',
+    url: 'https://www.federalreserve.gov/publications/files/svb-review-20230428.pdf',
+    binding: false,
+  },
   desk_policy: {
     key: 'desk_policy',
     title: "LCX marketing desk policy — this compartment's own rules, not law",
@@ -1193,6 +1234,17 @@ export type RefusalCode =
   | 'PRE_APPROVAL_MISSING'
   | 'REVIEW_SAMPLING_RECORD_ABSENT'
   | 'REVIEW_SAMPLING_BASIS_UNFALSIFIABLE'
+  /* ──
+   * THE RULEBOOK IS IN ENGLISH, AND THAT IS A FACT ABOUT THE INSTRUMENT.
+   *
+   * Every pattern in `claimSafety.ts` and every marker in `sanitise.ts` is ASCII English.
+   * A draft written in German, French or Cyrillic script therefore matches nothing and
+   * came back `clear` — a verdict that says "matched no rule I hold" being read as "this
+   * is safe to publish". "Antworte auf Deutsch" in an inbound reply was enough: the model
+   * answered in German, the price promise inside it was invisible to every rule, and the
+   * gate cleared it. Doctrine rule 8: say when the instrument cannot do its job.
+   * ── */
+  | 'LANGUAGE_NOT_ANALYSABLE'
   /* ── Governance and authorship ── */
   | 'AUTHORED_BY_MODEL_UNEDITED'
   | 'SELF_APPROVAL_FORBIDDEN'
@@ -1400,6 +1452,7 @@ export const REFUSAL_CODES: readonly RefusalCode[] = [
   'PRE_APPROVAL_MISSING',
   'REVIEW_SAMPLING_RECORD_ABSENT',
   'REVIEW_SAMPLING_BASIS_UNFALSIFIABLE',
+  'LANGUAGE_NOT_ANALYSABLE',
   'WORKING_DAY_CALENDAR_ABSENT',
   'INSTANT_UNPARSEABLE',
   'ART_29_2_REDEMPTION_RIGHT_STATEMENT_MISSING',
@@ -1609,25 +1662,87 @@ export const INBOUND_SOURCE_RELIABILITY: Record<InboundSourceKind, Reliability> 
 };
 
 /**
- * Evidence that a notification email really came from X.
+ * WHERE AN INBOUND ITEM PHYSICALLY CAME FROM — the channels that can deliver one.
  *
- * A naive `From:` header check is useless: forwarding breaks SPF, and the display
- * name is attacker-controlled. What can survive a forward is X's own DKIM signature
- * (`d=`) or an ARC chain added by the forwarding hop. So authentication rests on
- * those, and their absence is `quarantined`, not a lower grade.
+ * A NARROWED VIEW OF `InboundSourceKind`, NOT A SECOND UNION, and it is derived with
+ * `Extract` so it cannot drift: renaming a member of the parent union makes this a
+ * compile error instead of quietly leaving a channel unreachable.
+ *
+ * COLLAPSED FROM `apps/api/src/marketing/provenanceLadder.ts`, which declared its own
+ * `IngestChannel` because `packages/shared/src/marketing/` did not exist yet when it
+ * was written. That left THREE vocabularies for one concept, each self-consistent
+ * inside its own file and disagreeing only where they met:
+ *
+ *   | concept              | types.ts          | provenanceLadder.ts        | service.ts      |
+ *   |----------------------|-------------------|----------------------------|-----------------|
+ *   | a human pasted it    | `operator_paste`  | `human_paste`              | `manual_paste`  |
+ *   | a public mirror      | `mirror_discovery`| `x_mirror`                 | —               |
+ *   | syndication counters | `syndication_embed`| `syndication_undocumented`| —               |
+ *
+ * WHY THAT WAS A BUG AND NOT A NAMING PREFERENCE. `service.ts SOURCE_GRADE` was typed
+ * `Record<string, string>` and read with `?? 'C3'`, and `sender_auth_state` was decided
+ * by `sourceKind === 'manual_paste'`. So the moment the ladder handed its channel to
+ * the store — which is what wiring the ingest path does — a human paste would miss both
+ * lookups and be recorded as C3 "fairly reliable source, possibly true content" with
+ * `sender_auth_state: 'unverified'`: the grade of an anonymous mailbox, silently, for
+ * something a named colleague typed. No type error, because every key was `string`.
+ *
+ * The ladder's four channels are the ones that can carry an inbound item. `own_record`,
+ * `oembed`, `regulator_feed`, `news_feed` and `first_party_site` are excluded here on
+ * purpose: oEmbed is a CORROBORATION channel rather than an intake channel, and the
+ * other four are not somebody else's message arriving.
  */
-export interface SenderAuthentication {
-  /** DKIM signing domains recovered from the message, in order of appearance. */
-  readonly dkimDomains: readonly string[];
-  /** Whether a DKIM `d=` matched an expected X signing domain. */
-  readonly dkimMatchedExpected: boolean;
-  /** Whether an ARC chain was present and internally consistent. */
-  readonly arcChainPresent: boolean;
+export type IngestChannel = Extract<
+  InboundSourceKind,
+  'x_notification_email' | 'operator_paste' | 'mirror_discovery' | 'syndication_embed'
+>;
+
+/**
+ * DKIM/ARC evidence that a notification email really came from X, recorded per row.
+ *
+ * A naive `From:` header check is useless: forwarding breaks SPF, and the display name
+ * is attacker-controlled. What survives a forward is X's own DKIM signature (`d=`) or
+ * an ARC chain added by the forwarding hop. So authentication rests on those, and their
+ * absence is `quarantined` — not a lower grade.
+ *
+ * SPF IS DELIBERATELY ABSENT. The arrangement is a forwarding rule, so the forwarder is
+ * the sender and SPF is *guaranteed* to fail (RFC 7489; ARC exists for exactly this hop,
+ * RFC 8617). Recording a field whose failure carries no information invites someone to
+ * read the expected gap as a finding.
+ *
+ * ══ COLLAPSED FROM TWO DECLARATIONS THAT DISAGREED ON THAT LAST POINT ══
+ * `types.ts` used to declare a `SenderAuthentication` with `dkimDomains`,
+ * `dkimMatchedExpected`, `arcChainPresent` and an `spfResult` member documented as
+ * "recorded but NOT relied on". `provenanceLadder.ts` separately declared this shape,
+ * documented as "SPF is deliberately absent". Two files stating opposite rules about
+ * the same evidence is the seam this compartment forbids, so one had to go.
+ *
+ * THE ONE THAT READS REAL HEADERS WON, and it is also the one whose reasoning cites the
+ * RFCs. `SenderAuthentication` was referenced only by `InboundProvenance` in this same
+ * file — a type describing a type, with no code anywhere that produced or consumed a
+ * value of it. This shape is used by `xMail.ts`, `xNotificationParse.ts` and
+ * `provenanceLadder.ts`: the code that actually parses `Authentication-Results`.
+ * `InboundProvenance.senderAuth` now carries this type, so the record and the parser
+ * finally describe the same evidence.
+ *
+ * `arcSealerDomain` and `rawAuthenticationResults` are the two fields that made the
+ * difference: a trust anchor cannot be checked without knowing who sealed the chain, and
+ * the audit trail needs the provider's verbatim field rather than our summary of it.
+ * Nothing was lost in the merge except `spfResult`, deliberately, per the paragraph above.
+ */
+export interface SenderAuthEvidence {
+  dkimPass: boolean;
+  /** The `d=` value of the surviving signature. */
+  dkimDomain: string | null;
+  arcPass: boolean;
+  /** Who sealed the ARC chain. Trusted only if the deployment names it. */
+  arcSealerDomain: string | null;
   /**
-   * SPF result, recorded but NOT relied on. Kept because its absence after a
-   * forward is expected and someone will otherwise read the gap as a failure.
+   * Kept verbatim for the audit trail — the evidence, not our summary of it. NOTHING
+   * MAY RENDER THIS on a shared screen: it names third-party infrastructure. What a
+   * surface shows is the derived auth state.
    */
-  readonly spfResult: 'pass' | 'fail' | 'softfail' | 'neutral' | 'none' | 'unknown';
+  rawAuthenticationResults: string | null;
 }
 
 /** Which field a second channel agreed or disagreed about. */
@@ -1691,7 +1806,7 @@ export type InboundProvenance =
       readonly state: 'quarantined';
       readonly reasons: readonly QuarantineReason[];
       readonly channel: InboundSourceKind;
-      readonly senderAuth: SenderAuthentication | null;
+      readonly senderAuth: SenderAuthEvidence | null;
       readonly collectedAt: Instant;
       /** What it would take to promote this out of quarantine. */
       readonly promotionRequires: string;
@@ -1703,7 +1818,7 @@ export type InboundProvenance =
       readonly credibility: Credibility;
       /** `admiraltyCode(reliability, credibility)` — stored so the record is readable. */
       readonly admiralty: string;
-      readonly senderAuth: SenderAuthentication | null;
+      readonly senderAuth: SenderAuthEvidence | null;
       /** At least one entry, or this should have been `quarantined`. */
       readonly corroboration: readonly Corroboration[];
       readonly observedAt: Instant;
@@ -2355,6 +2470,23 @@ export const MICA_RECORD_RETENTION_YEARS = 5;
 export const MICA_RECORD_RETENTION_MAX_YEARS = 7;
 
 /**
+ * The inbound sweep, in days — the LEFT EDGE OF EVERY OBSERVATION WINDOW over
+ * `marketing_x_reply`, which is why it belongs in the vocabulary and not only in
+ * `service.ts` (where it is `MARKETING_RETENTION_DAYS`, defaulting to this number).
+ *
+ * A panel that framed a queue figure as "the last 7 days" was stating a window the figure
+ * was not computed over: the queue query has no time bound, so a reply received 40 days
+ * ago and still open is inside the count. A standing backlog framed as a weekly rate reads
+ * as a burst of new work. Nothing older than this can be in the table at all, so this is
+ * the widest honest window and the one the frames state.
+ *
+ * If the environment shortens the sweep, a frame built on this constant OVERSTATES the
+ * window rather than understating it, which is the safe direction for a statement about
+ * what could not be seen.
+ */
+export const MARKETING_INBOUND_RETENTION_DAYS = 90;
+
+/**
  * THE UNRESOLVED CONTRADICTION, named here rather than papered over.
  *
  * The compartment's existing retention sweep deletes inbound rows after 90 days for
@@ -2372,3 +2504,84 @@ export const RETENTION_RULING_OUTSTANDING = true;
 
 export const RETENTION_RULING_QUESTION =
   "May LCX's own published statements be retained past the 90-day inbound sweep? MiCA Art 68(9) implies five to seven years; the current cascade deletes at ninety days. A DPO ruling is required.";
+
+/* ════════ §16 THE ROUTE CONTRACTS — declared ONCE, imported by both sides ════════ */
+
+/**
+ * RESPONSE SHAPES FOR `/v1/marketing/*`, AND WHY THEY LIVE HERE.
+ *
+ * `apps/web/src/lib/api/marketing.ts` typed 21 response payloads as
+ * `UncontractedPayload = unknown`, deliberately: a route that did not exist yet should
+ * obstruct at compile time rather than crash on real data. That was the right default,
+ * and `MARKETING_CONTRACTS_OWED` lists what each one owes.
+ *
+ * The alternative — a hand-written interface on the web side mirroring what the API
+ * *probably* sends — is the defect that crashed the GPS compartment on 2026-08-01:
+ * `Object.entries(s.counts)` on a field the API never returned. It compiles, it passes a
+ * mocked test, and it fails on the first real payload. So a contract is declared here,
+ * in shared, and imported by the route AND the client. One declaration cannot drift from
+ * itself.
+ *
+ * Each type below is added as its route is built, and only then.
+ */
+
+/** How complete a register read was. `null` means the tables are not present here. */
+export interface RegisterPresence {
+  readonly registerPresent: boolean;
+  /**
+   * What the caller was allowed to see. The perimeter's detail is inside information
+   * (Art 87) and a holdings row is personal data (Art 91(3)(c)), so both loaders refuse
+   * below approver rather than returning a thinner row — and a surface has to be able to
+   * say "withheld" rather than render an empty list as "nothing to see".
+   */
+  readonly detailWithheld: boolean;
+  readonly withheldReason: string | null;
+}
+
+/** One live embargo, as the desk surface may see it. */
+export interface AbusePerimeterEmbargoView {
+  readonly assetSymbol: AssetSymbol;
+  readonly state: AssetEmbargoState;
+  /**
+   * NULLABLE, AND NOT DEFAULTED TO ANYTHING. `EmbargoCell.reviewBy` is null when
+   * staleness has already forced `state` to `unknown`, and the first draft of this route
+   * fell back to `enteredAt` to satisfy a non-null type — which would have printed a
+   * review date the register does not hold. Doctrine rule 3: absent data produces an
+   * absence, never a substitute.
+   */
+  readonly reviewBy: Instant | null;
+  /** The named approver to ask. Null where the register holds no live row. */
+  readonly enteredBy: ActorId | null;
+  readonly enteredAt: Instant;
+  /** Approver-only. `null` for an operator: the slug points at an unannounced decision. */
+  readonly eventRef: string | null;
+  readonly sourceRef: string | null;
+}
+
+/** One holdings declaration. Self-or-approver, enforced server-side. */
+export interface AbusePerimeterHoldingView {
+  readonly memberId: ActorId;
+  readonly assetSymbol: AssetSymbol;
+  readonly holds: boolean;
+  readonly declaredAt: Instant;
+  readonly renewBy: Instant;
+}
+
+/**
+ * `GET /v1/marketing/perimeter` — the market-abuse perimeter as a surface may read it.
+ *
+ * THE STATE THAT MAKES THE INVISIBLE AXIS VISIBLE. Two registers, and the honest
+ * statement of what is missing: an EMPTY register is not a clean bill of health, so
+ * `registerPresent: false` and `entries: []` must never render the same way.
+ */
+export interface AbusePerimeterState {
+  readonly embargo: RegisterPresence & { readonly entries: readonly AbusePerimeterEmbargoView[] };
+  readonly holdings: RegisterPresence & { readonly entries: readonly AbusePerimeterHoldingView[] };
+  /**
+   * Restated on the payload rather than left to the client to remember: absence from an
+   * unattested register is absence of knowledge, not clearance.
+   */
+  readonly absenceIsNotClearance: string;
+  /** The three governed actions that write these registers, so a surface can name them. */
+  readonly writeActions: readonly string[];
+}

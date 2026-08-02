@@ -1099,6 +1099,62 @@ const CITE_DESK_POLICY_OBFUSCATION: RuleCitation = {
 };
 
 /**
+ * Non-Latin scripts this gate cannot read a word of. Detected by block, not by guessing a
+ * language: a single Cyrillic or CJK word is enough to put the sentence outside the
+ * rulebook, and `obfuscation.mixed_script` covers the single-character homoglyph case.
+ */
+const NON_LATIN_SCRIPTS: readonly { readonly name: string; readonly re: RegExp }[] = [
+  { name: 'Cyrillic', re: /[Ѐ-ӿ]{2,}/ },
+  { name: 'Greek', re: /[Ͱ-Ͽ]{2,}/ },
+  { name: 'Hebrew', re: /[֐-׿]{2,}/ },
+  { name: 'Arabic', re: /[؀-ۿ]{2,}/ },
+  { name: 'Devanagari', re: /[ऀ-ॿ]{2,}/ },
+  { name: 'Han, kana or Hangul', re: /[぀-ヿ㐀-䶿一-鿿가-힯]/ },
+];
+
+/**
+ * Function words that do not occur in English marketing copy, per language.
+ *
+ * DELIBERATELY SHORT AND HIGH-PRECISION. Every entry is a word that cannot appear in an
+ * English sentence about an exchange, so a hit is evidence rather than a hint. Two hits are
+ * required, because one borrowed word ("und" in a company name, "de" in a surname) is not a
+ * German or French draft — and a false refusal on an English draft would teach the desk to
+ * distrust the gate, which costs more than this rule buys.
+ */
+const NON_ENGLISH_MARKERS: readonly { readonly name: string; readonly words: readonly string[] }[] = [
+  { name: 'German', words: ['der', 'die', 'das', 'und', 'ist', 'nicht', 'für', 'wir', 'sie', 'ihre', 'werden', 'mit', 'auf', 'sind', 'wird'] },
+  { name: 'French', words: ['les', 'des', 'est', 'nous', 'vous', 'votre', 'pour', 'avec', 'sur', 'sont', 'pas', 'nos', 'cette'] },
+  { name: 'Spanish', words: ['los', 'las', 'una', 'para', 'con', 'que', 'nuestro', 'nuestra', 'son', 'está', 'sus', 'por'] },
+  { name: 'Italian', words: ['gli', 'della', 'sono', 'nostro', 'nostra', 'con', 'per', 'che', 'sui', 'delle'] },
+  { name: 'Portuguese', words: ['nosso', 'nossa', 'para', 'com', 'não', 'são', 'está', 'seus', 'pelo'] },
+  { name: 'Dutch', words: ['het', 'een', 'onze', 'niet', 'zijn', 'wordt', 'voor', 'met', 'uw'] },
+];
+
+/**
+ * Which language this draft appears to be in, when it is not English. `null` means the gate
+ * has no reason to think its rulebook does not apply.
+ *
+ * NOT A LANGUAGE DETECTOR, and the limits are the point. It answers one question — "is
+ * there positive evidence this is outside my rulebook" — and it will miss a Danish draft, a
+ * transliterated one, and English prose with a German promise buried in it. Those misses
+ * leave the gate exactly where it was before this function existed; what it removes is the
+ * case where a whole draft in another language was reported as `clear`.
+ */
+export function unanalysableLanguage(text: string): string | null {
+  for (const script of NON_LATIN_SCRIPTS) {
+    if (script.re.test(text)) return `${script.name} script`;
+  }
+  const words = text.toLowerCase().match(/[\p{L}]+/gu) ?? [];
+  if (words.length < 4) return null;
+  const seen = new Set(words);
+  for (const lang of NON_ENGLISH_MARKERS) {
+    const hits = lang.words.filter((w) => seen.has(w));
+    if (hits.length >= 2) return `${lang.name}, on the words ${hits.slice(0, 3).join(', ')}`;
+  }
+  return null;
+}
+
+/**
  * Score a draft. Pure, total, and the same answer every time for the same input.
  *
  * Reading order of the result: if `usableText` is `null` there is nothing to copy, and
@@ -1145,6 +1201,40 @@ export function checkClaimSafety(input: ClaimSafetyInput): ClaimSafetyOutcome {
   const read = matchingCopy(stripped);
   const refusals: Refusal[] = [];
   const violations: MarketingViolation[] = [];
+
+  /*
+   * FIRST, BECAUSE EVERYTHING AFTER IT IS WRITTEN IN ENGLISH.
+   *
+   * Every pattern in this file is ASCII English, so a draft in another language matched
+   * nothing and came back `clear` — and `clear` here means "matched no rule I hold", which
+   * a screen renders as a passed gate. The attack needed no cleverness: "Antworte auf
+   * Deutsch" in a stranger's reply, the model obliges, and the German price promise it
+   * produces is invisible to `regulated_promise.price_language` and to every other rule.
+   *
+   * A refusal, not a violation, and not a strip. There is no wording change that makes a
+   * German sentence reviewable by an English rulebook, so the recovery is a human who
+   * reads the language — `human_authority`, the same shape used where the library holds no
+   * claim for the topic.
+   */
+  const unanalysable = unanalysableLanguage(stripped);
+  if (unanalysable !== null) {
+    refusals.push(refusal(
+      'LANGUAGE_NOT_ANALYSABLE',
+      `This draft is not in English (${unanalysable}), and every rule this gate holds is written in English. `
+      + 'It matched nothing, and that is a fact about the rulebook rather than about the text — a clear '
+      + 'verdict here would mean "unreviewed", which is the one thing it must never mean.',
+      {
+        instrument: 'desk_policy',
+        provision: 'The gate reviews only what its rulebook covers',
+        text:
+          'Where a communication is in a language the claim-safety ruleset does not cover, the gate refuses '
+          + 'rather than reporting a clear verdict. An unexamined draft and an examined one must not produce '
+          + 'the same answer.',
+      },
+      { kind: 'human_authority', role: 'legal' },
+      unanalysable,
+    ));
+  }
 
   for (const rule of LEXICAL_RULES) {
     const span = lexicalSpan(read, rule);

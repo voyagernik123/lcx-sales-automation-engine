@@ -1,9 +1,15 @@
 import type { ReactNode } from 'react';
-import { AlertTriangle, EyeOff, ShieldAlert } from 'lucide-react';
+import { AlertTriangle, EyeOff, Lock, ShieldAlert } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
   INSTRUMENTS,
   type GateReading,
+  /* A ROUTE CONTRACT, declared once in
+   * `packages/shared/src/marketing/contracts/record.ts` and imported by the route handler
+   * and by this atom from the same symbol. Not restated here, for the reason `narrow.ts`
+   * opens with: a web-local copy of a response shape compiles, passes a mocked test, and
+   * crashes on the first real payload. */
+  type MarketingWireRefusal,
   type ObservationFrame,
   type Refusal,
   type RefusalRecovery,
@@ -131,6 +137,63 @@ export function Refused({ r }: { r: RenderableRefusal }) {
 }
 
 /**
+ * ONE WIRE REFUSAL — the flat I/O shape the watch, record and retention engines send.
+ *
+ * `MarketingWireRefusal` is NOT `Refusal`, and the contract file says why: its codes are
+ * about the REGISTER or the TRANSPORT (`WATCH_SOURCE_UNREACHABLE`,
+ * `RETENTION_CLOCK_NEVER_RAN`) rather than about content, so widening `RefusalCode` to
+ * hold them would let a fetch failure be reported as a wording violation. `rule` is a
+ * string, and `ruleText`/`remedy` are optional because the two engines differ.
+ *
+ * THE CODE IS NEVER THE MESSAGE. It is printed last, small, in mono, as the thing a person
+ * quotes when they ask why. What an operator reads first is the sentence, then the one
+ * thing they can do about it. A surface that renders `WATCH_SOURCE_UNREACHABLE` and stops
+ * has handed a log line to somebody holding a screen.
+ *
+ * A refusal with no `remedy` says so rather than printing nothing: silence where an action
+ * should be reads as "there is nothing to do", and that is a different claim.
+ */
+export function WireRefused({ r }: { r: MarketingWireRefusal }) {
+  return (
+    <div
+      role="note"
+      data-testid={`mkt-wire-refusal-${r.code}`}
+      className="border-l-2 border-status-blocked/50 bg-status-blocked-bg px-2 py-1.5 text-status-blocked"
+    >
+      <p className="text-micro font-semibold leading-snug">{r.sentence}</p>
+      <p className="mt-1 text-micro leading-snug text-grey">
+        {r.remedy ?? 'The engine stated nothing that would clear this. It is a fact about this environment, not something to edit around.'}
+      </p>
+      {r.subject !== undefined && (
+        <p className="mt-1 break-words font-mono text-[10px] leading-snug text-grey">
+          <span className="font-bold uppercase">about · </span>{r.subject}
+        </p>
+      )}
+      {r.ruleText !== undefined && (
+        <p className="mt-1 text-[10px] leading-snug text-grey">{r.ruleText}</p>
+      )}
+      <p className="font-mono text-[10px] leading-snug text-grey">{r.rule} · {r.code}</p>
+    </div>
+  );
+}
+
+/**
+ * A LIST of wire refusals, or the sentence that there were none.
+ *
+ * `refusals.length === 0` is rendered as nothing at all deliberately: unlike an empty
+ * TABLE, an empty refusal list is not a claim about the world, and printing "no refusals"
+ * beside every panel trains an operator to skip the region where refusals appear.
+ */
+export function WireRefusals({ list }: { list: readonly MarketingWireRefusal[] }) {
+  if (list.length === 0) return null;
+  return (
+    <div className="space-y-1">
+      {list.map((r) => <WireRefused key={`${r.code}-${r.subject ?? ''}-${r.sentence.slice(0, 24)}`} r={r} />)}
+    </div>
+  );
+}
+
+/**
  * A READ THAT FAILED, as a refusal rather than as an empty panel.
  *
  * The distinction this exists to keep: a read that threw is NOT a read that found
@@ -221,8 +284,19 @@ export function LowerBoundTile({ label, value, frame, tone }: {
 }
 
 /**
- * The frame, rendered beside the figure rather than behind a disclosure. A metric with no
- * frame does not render at all — the same discipline as a statistic with no source.
+ * The frame, rendered beside the figure rather than behind a disclosure.
+ *
+ * THIS DOCBLOCK USED TO CLAIM "a metric with no frame does not render at all", and that
+ * was false in the type immediately above it: `frame` is optional and rendered
+ * conditionally, and `DeskMeasurement` was passing two figures without one — including
+ * `suspicious`, computed over a different population from the `unparsed` tile beside it.
+ * A comment asserting a guarantee the code does not keep is worse than no comment, because
+ * the next reader stops checking.
+ *
+ * The property that IS true: every caller in this compartment now passes a frame, and
+ * `deskAtoms.test.ts` fails if one stops. `frame` stays optional rather than required
+ * because making it required would push callers toward inventing a frame to satisfy the
+ * compiler, and an invented frame is the dishonesty this shape exists to prevent.
  *
  * `lastSuccessfulPollAt` is printed because a fall in a line has to be readable as a
  * pipeline fault rather than as a market signal.
@@ -249,6 +323,40 @@ export function ObservationFrameNote({ frame }: { frame: ObservationFrame }) {
         last successful poll · {frame.lastSuccessfulPollAt ?? 'never — a fall in any figure derived from this may be a pipeline fault rather than a change in the world'}
       </p>
     </details>
+  );
+}
+
+/**
+ * YOU MAY NOT READ THIS — a fact about authority, not about the data or the deployment.
+ *
+ * Five marketing routes are `requireApprover`: the Art 8(2) production, the five-year record
+ * write, Art 15 access, Art 17 erasure and the retention sweep. An operator who opens one of
+ * those surfaces gets a 403, and the three wrong ways to render it are all worse than useless
+ * — "not on this environment" sends them to escalate a deployment bug that does not exist,
+ * "read failed" makes them retry forever, and an empty table tells them there is nothing
+ * there.
+ *
+ * Deliberately NOT the blocked tone. This is the control working, and it reads as a
+ * conditional rather than as a fault.
+ */
+export function NotPermitted({ what, sentence }: { what: string; sentence: string }) {
+  return (
+    <div
+      role="note"
+      data-testid="mkt-not-permitted"
+      className="border-l-2 border-status-conditional/60 bg-status-conditional-bg px-2 py-1.5 text-status-conditional"
+    >
+      <p className="flex items-start gap-1.5 text-micro font-semibold leading-snug">
+        <Lock size={11} className="mt-0.5 shrink-0" aria-hidden="true" />
+        <span>{what} requires an approver, and this session is not one.</span>
+      </p>
+      <p className="mt-1 text-micro leading-snug text-grey">{sentence}</p>
+      <p className="mt-1 text-[10px] leading-snug text-grey">
+        Nothing is wrong with this environment and nothing needs retrying. Ask an approver to open this surface —
+        and note that two people sharing one passcode is not two people, which is why the role is checked
+        server-side rather than hidden client-side.
+      </p>
+    </div>
   );
 }
 

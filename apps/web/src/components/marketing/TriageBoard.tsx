@@ -3,10 +3,17 @@ import { Clock, ShieldAlert } from 'lucide-react';
 import { clsx } from 'clsx';
 import { SectionLabel } from '@/components/ui';
 import { AiProse } from '@/components/ai/AiProse';
-import type { MarketingReply } from '@/lib/api/marketing';
+import type { MarketingReply, MarketingSummary } from '@/lib/api/marketing';
 import { LowerBoundTile, Nothing, Th, Td } from './DeskAtoms';
 import { TriageAssessment } from './TriageAssessment';
-import { ATTRIBUTION_MIN_CONCURRING, PRIORITY_MEANING, REACH_RANK, notificationCensusFrame, type PriorityTier } from './vocabulary';
+import {
+  ATTRIBUTION_MIN_CONCURRING,
+  MARKETING_INBOUND_RETENTION_DAYS as RETENTION_DAYS,
+  PRIORITY_MEANING,
+  REACH_RANK,
+  notificationCensusFrame,
+  type PriorityTier,
+} from './vocabulary';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════════
@@ -74,24 +81,41 @@ const TIERS: readonly PriorityTier[] = ['high', 'medium', 'low'];
  * teaches the operator to ignore the field. So an item with no recorded assessment
  * sits in its own column and the column says what it is.
  */
-export function TriageBoard({ queue, now, onChanged }: {
+export function TriageBoard({ queue, now, onChanged, summary = null }: {
   queue: readonly MarketingReply[];
   now: number;
   onChanged: () => void;
+  /**
+   * The population figures. Optional so the board still renders with the summary read
+   * failing, and when it is absent the coverage sentence REFUSES rather than quietly
+   * measuring over the page — which is what it used to do unconditionally.
+   */
+  summary?: MarketingSummary | null;
 }) {
   const [open, setOpen] = useState<number | null>(null);
 
+  /*
+   * THE FIGURE IS OVER THE PAGE; THE COVERAGE SENTENCE MUST NOT PRETEND OTHERWISE.
+   *
+   * `queue` is capped (50 by default, 200 at most), so "Measured over 50 of 50 open items …
+   * Every open item carries one" was printed for a desk where 70 of 120 open replies had no
+   * post date. The longest wait is still computed from the loaded rows — it has to be, the
+   * timestamps are on them — but the DENOMINATOR is the population figure from the summary,
+   * and the sentence says which of the two each number is.
+   */
   const clock = useMemo(() => {
     const withTrue = queue
       .map((r) => waitOn(r, now).hours)
       .filter((h): h is number => h !== null);
     const oldest = withTrue.length > 0 ? Math.max(...withTrue) : null;
+    const population = summary?.postTimeCoverage ?? null;
     return {
       covered: withTrue.length,
-      total: queue.length,
+      loaded: queue.length,
+      population,
       oldestHours: oldest,
     };
-  }, [queue, now]);
+  }, [queue, now, summary]);
 
   return (
     <section aria-label="Triage board" className="space-y-3">
@@ -105,20 +129,29 @@ export function TriageBoard({ queue, now, onChanged }: {
             clock.oldestHours === null ? 'text-grey' : clock.oldestHours > 2 ? 'text-status-conditional' : 'text-navy')}>
             {clock.oldestHours === null ? 'not measurable' : `${Math.round(clock.oldestHours)}h`}
           </div>
-          <p className="text-[10px] leading-snug text-grey">
-            {clock.total === 0
+          <p className="text-[10px] leading-snug text-grey" data-testid="mkt-clock-coverage">
+            {clock.loaded === 0
               ? 'No open items, so there is nothing to time.'
-              : `Measured over ${clock.covered} of ${clock.total} open items — the ones carrying a true post time. `
-                + (clock.covered < clock.total
-                  ? `The other ${clock.total - clock.covered} are excluded rather than timed from when the email arrived, which would measure mail delay and read better than reality.`
-                  : 'Every open item carries one.')}
+              : clock.population === null
+                ? `Measured over ${clock.covered} of the ${clock.loaded} items loaded on this page. `
+                  + 'How many open items exist in total is not being reported by this environment, so what '
+                  + 'share of the desk this covers is unknown — and it is not assumed to be all of it.'
+                : `Measured over ${clock.covered} of the ${clock.loaded} items loaded here, out of `
+                  + `${clock.population.openRows} open in total, of which ${clock.population.withPostTime} carry a true post time. `
+                  + (clock.population.withPostTime < clock.population.openRows
+                    ? `The other ${clock.population.openRows - clock.population.withPostTime} are excluded rather than timed from when the email arrived, which would measure mail delay and read better than reality.`
+                    : 'Every open item carries one.')}
           </p>
         </div>
         <LowerBoundTile
           label="Items in the queue (observed)"
           value={queue.length}
+          /* The retention boundary, not an arbitrary seven days. The queue query has no
+             time bound, so an item received 40 days ago and still open is inside this
+             count — framing it as a weekly window made a standing backlog read as a
+             burst of new work, and `checkFrame` only verifies the window runs forwards. */
           frame={notificationCensusFrame(
-            new Date(now - 7 * 86_400_000).toISOString(), new Date(now).toISOString(), null,
+            new Date(now - RETENTION_DAYS * 86_400_000).toISOString(), new Date(now).toISOString(), null,
           )}
         />
         <div className="border-l-2 border-line px-2 py-1.5">
