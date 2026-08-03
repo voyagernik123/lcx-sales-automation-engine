@@ -187,6 +187,27 @@ async function mountAndSettle() {
   return r;
 }
 
+/**
+ * Settle on the section the assertion is ABOUT, rather than on `coverage-rows`.
+ *
+ * `mountAndSettle` waits for the coverage table and then returns, and for most of this
+ * file that is the right barrier. It is NOT right for the retention section: the two
+ * tables are populated from different state, so a page that has rendered `coverage-rows`
+ * has not necessarily rendered `retention-rows` yet.
+ *
+ * This failed only in CI (run #44, 2026-08-03) and passed on the author's machine every
+ * time, which is exactly the shape of that mistake: locally both tables land in the same
+ * tick, so waiting on the first appears to wait for the second. Under a slower scheduler
+ * the retention table was still showing its EMPTY state, and the assertion read
+ * `retention-empty` and reported "0 items in bundle".
+ *
+ * Raising a timeout would have hidden this. The barrier was simply pointed at the wrong
+ * element.
+ */
+async function settleOn(testid: string) {
+  await waitFor(() => expect(screen.getByTestId(testid)).toBeInTheDocument());
+}
+
 /* ── 1. The sixteen fields, and the one that matters most ──────────────────── */
 
 describe('the completeness declaration', () => {
@@ -309,6 +330,7 @@ describe('the two retention regimes', () => {
   it('marks a row scheduled for deletion before the five-year horizon', async () => {
     queueFrom({ answered: [rowWithExpiry({ id: 1, received_at: iso(-10) }, iso(80))] });
     await mountAndSettle();
+    await settleOn('retention-rows');
     const row = screen.getByTestId('retention-rows').querySelector('[data-retention-verdict]');
     expect(row?.getAttribute('data-retention-verdict')).toBe('swept_before_horizon');
     expect(row?.textContent).toContain('DELETED BEFORE THE FIVE-YEAR HORIZON');
@@ -318,6 +340,7 @@ describe('the two retention regimes', () => {
   it('marks a row whose sweep is already due', async () => {
     queueFrom({ answered: [rowWithExpiry({ id: 2, received_at: iso(-100) }, iso(-3))] });
     await mountAndSettle();
+    await settleOn('retention-rows');
     const row = screen.getByTestId('retention-rows').querySelector('[data-retention-verdict]');
     expect(row?.getAttribute('data-retention-verdict')).toBe('sweep_due');
     expect(row?.textContent).toContain('SWEEP ALREADY DUE');
@@ -326,6 +349,7 @@ describe('the two retention regimes', () => {
   it('never renders a missing expiry as a row that is not expiring', async () => {
     queueFrom({ answered: [rowWithExpiry({ id: 3 }, null)] });
     await mountAndSettle();
+    await settleOn('retention-rows');
     const row = screen.getByTestId('retention-rows').querySelector('[data-retention-verdict]');
     expect(row?.getAttribute('data-retention-verdict')).toBe('not_recorded');
     expect(row?.textContent).toContain('REGIME NOT RECORDED');
@@ -342,6 +366,7 @@ describe('the two retention regimes', () => {
 
   it('does not present an empty window as a clean record', async () => {
     await mountAndSettle();
+    await settleOn('retention-empty');
     expect(screen.getByTestId('retention-empty').textContent)
       .toMatch(/indistinguishable from a row that never existed/);
   });

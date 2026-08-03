@@ -52,7 +52,7 @@ import { LcxMark } from '@/components/brand/LcxMark';
  * `apps/desktop/src-tauri/tauri.conf.json`, so a release that forgets this line
  * turns the suite red instead of leaving a stale number on the front page.
  */
-export const LCXOS_VERSION = '0.2.5';
+export const LCXOS_VERSION = '0.2.6';
 /**
  * The download's size in MB, one decimal place.
  *
@@ -63,7 +63,7 @@ export const LCXOS_VERSION = '0.2.5';
  * with the DMG it is about to upload, so the next release cannot ship a stale figure
  * the way this one nearly did.
  */
-export const LCXOS_DMG_MB = 3.8;
+export const LCXOS_DMG_MB = 4.0;
 
 /**
  * The permanent download URL. `/releases/latest/download/<name>` is a GitHub
