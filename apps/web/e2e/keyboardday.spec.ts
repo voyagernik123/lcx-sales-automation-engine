@@ -1192,12 +1192,34 @@ test('⌘K reachability, as this stubbed harness measures it', async ({ page }) 
   // A CHARACTERIZATION ASSERTION, and the disagreement it records is the point.
   //
   // A browser driving the REAL route measured 20 of 22 reachable after the seam fix. This
-  // harness, which STUBS `/v1/search`, measures 15 — even after the stub was re-derived to
+  // harness, which STUBS `/v1/search`, reaches 7 — even after the stub was re-derived to
   // emit `subjectType` exactly as the route now does. Both numbers were produced by running
   // something; they disagree, and I have not found why. Three dishonest options were
   // available and all are refused: assert `[]` and leave the suite red on a fixed defect;
   // re-pin `test.fail(true)`, which is the trap this same test just fell into when it
   // silently stopped measuring; or quote the browser's 20 here, where it was not measured.
+  //
+  // ── UPDATED 2026-08-03, AND WHICH WAY IT MOVED ────────────────────────────────
+  // The pin is on `missing.length`, so the old `15` meant SEVEN reachable of 22 — not
+  // fifteen. The prose above said "measures 15" and that was the confusing half of a true
+  // sentence; it now says 7, which is what the number in the failure message computes.
+  //
+  // The registry then grew from 22 actions to 30 while the marketing compartment was built
+  // (`marketing_embargo_enter`, `marketing_embargo_lift`, `marketing_holdings_declare` among
+  // them). Every one of the eight new actions is unreachable HERE, so `missing` moved 15 → 23
+  // while reachability held flat at exactly seven:
+  //   assign, create_task, flag_review, notify, track, watchlist_add, watchlist_remove
+  // — the project-scoped verbs, which are the only ones this stub's single noun can aim.
+  //
+  // So reachability did NOT regress; the denominator grew. Stated because "23 unreachable"
+  // reads like a collapse and is not one, and because the next person to see this go red
+  // deserves to know which of the two numbers moved.
+  //
+  // The marketing actions SHOULD be reachable against the real route: `embargo` is a
+  // `server_search` noun on the `marketing_assets` group (marketingGrammar.ts). They are
+  // absent here because this spec's stub emits one group per query and never emits that one.
+  // That is a limitation of the harness, not a gap in the palette, and the browser number
+  // above is the one that would show it.
   //
   // So it pins what THIS harness observes. Improve reachability and it goes red demanding a
   // new number; regress it and it goes red too. What it does NOT do is claim 15 is correct.
@@ -1210,7 +1232,7 @@ test('⌘K reachability, as this stubbed harness measures it', async ({ page }) 
   expect(
     missing.length,
     `this stubbed harness reaches ${manifest.actions.length - missing.length} of ${manifest.actions.length}; a browser against the real route reaches 20. If you changed reachability, update this number and say which way it moved. Unreachable here: ${missing.join(', ')}`,
-  ).toBe(15);
+  ).toBe(23);
 });
 
 /* ═══════════════════ the guard, proven able to fail ══════════════════════ */
