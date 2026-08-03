@@ -310,3 +310,30 @@ export {
   calibrationHealthView, BOOK_MONITOR_SPECS, registerableBookMonitors, wbrGpsBlock,
   loopResponse,
 } from './loop.js';
+
+/* ── THE INPUT DESK CONTRACT — the three inputs only a human can supply ───────
+ * `contracts/inputs.ts` is the wire shape for `apps/api/src/routes/gpsInputs.ts` (price
+ * bands, effort triples, rate cards) and for `apps/web/src/pages/GpsInputs.tsx`, plus
+ * `deskContractDefects` — a runtime predicate BOTH sides are measured against, because
+ * the `GpsSummary` crash was two hand-written artefacts agreeing with each other.
+ *
+ * WHOLESALE, unlike the twelve blocks above, and the reason is the failure mode this line
+ * closes rather than a change of taste: a name list is a second place to forget, and a
+ * symbol can be exported from its own module and still be invisible here — TS2305 at every
+ * call site, with no signal until an emit build in Docker order fails. The blocks above
+ * predate that lesson and are left alone because rewriting a working list buys nothing.
+ *
+ * WHAT THIS LINE UNBLOCKS. `apps/api/src/routes/gpsInputs.ts` carried its own copy of the
+ * currency rule (`ISO_4217`) because it could not name `CURRENCY_CODE_RE`; the api now
+ * imports the shared one and there is a single definition of what a currency code is. The
+ * web page moves off its relative specifier at the same time.
+ *
+ * NO COLLISION TO ALIAS. Checked before the line was added: all nineteen symbols were
+ * grepped against the whole of `packages/shared/src`, in declaration and re-export form,
+ * and none matched. `GpsInputRefusalCode` is deliberately NOT named `RefusalCode` — that
+ * name is already the one cross-compartment collision (`../index.ts:200`), resolved there
+ * by precedence. A clash would be TS2308 on the shared emit build, and it would be aliased
+ * HERE, inside this compartment, exactly as `PerimeterStatus as PerimeterEntryStatus` is
+ * above — never in `../index.ts`. Reachability of every symbol through the root barrel is
+ * asserted by `../barrelReachability.test.ts`, so this is a checked claim. */
+export * from './contracts/inputs.js';

@@ -43,6 +43,7 @@ import { marketingDeskRoutes } from './marketingDesk.js';
 import { marketingMemoryRoutes } from './marketingMemory.js';
 import { marketingRecordRoutes } from './marketingRecord.js';
 import { marketingGatesRoutes } from './marketingGates.js';
+import { marketingHoldingsRoutes } from './marketingHoldings.js';
 
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
 
@@ -295,6 +296,23 @@ marketingRoutes.post('/:id/draft', requireOperator, async (c) => {
       actor: c.get('operator')?.id ?? 'unknown',
       phase: 'draft',
       targetHandle: reply.author_handle,
+      /*
+       * THE Art 90 NEED-TO-KNOW SPLIT, WIRED FROM THE PRINCIPAL'S ROLE.
+       *
+       * `outboundGate.ts:406` defaults this to NOT cleared, so leaving it off would have
+       * been safe but wrong here: a drafter who is themselves an approver would have been
+       * refused the explanation they are entitled to read, and the register's own recorder
+       * is cleared regardless (`embargoBasisClearance`).
+       *
+       * ROLE, NOT `true`. This route is `requireOperator`, and the shared machine key
+       * resolves to `role: 'operator'` (`middleware/auth.ts:65`) — the cron tick runs as
+       * it. Hardcoding `true` would hand the Art 90 basis to a shared secret, which is the
+       * one principal that cannot be a member of any insider list. Which ring is the RIGHT
+       * ring is a human decision, written out at `outboundGate.ts:381-404`; this is the
+       * alternative that file implements, wired to the only ring the compartment can
+       * actually consult today.
+       */
+      viewerIsEmbargoApprover: c.get('operator')?.role === 'approver',
     });
     // BOTH OUTCOMES, before the branch — a ledger holding only refusals cannot tell
     // "cleared" from "never checked".
@@ -411,6 +429,17 @@ marketingRoutes.post('/draft/:id/approve', requireOperator, async (c) => {
       channel: 'x_public',
       actor: operator?.id ?? 'unknown',
       phase: 'clearance',
+      /*
+       * Same expression as the draft path, and the reason it is not simply `true` matters
+       * more here. This is the CLEARANCE act, so it is tempting to say the caller "is the
+       * approver" by definition — but the route gates at `requireOperator`, not
+       * `requireApprover`, so the caller may be a plain operator or the shared machine
+       * key. Reading the role keeps the two questions apart: who may approve text, and who
+       * may read WHY an asset is embargoed. Nothing in MiCA says the first implies the
+       * second, and a non-cleared approver still gets a refusal that names the ring to ask
+       * plus a reference to the 0062 row — so the remedy survives the scoping.
+       */
+      viewerIsEmbargoApprover: operator?.role === 'approver',
     });
     await recordGateDecision(pool, {
       replyId: draft.reply_id,
@@ -661,19 +690,19 @@ marketingRoutes.get('/perimeter', requireOperator, async (c) => {
 
 /* ══ THE SUB-ROUTERS, MOUNTED HERE AND NOT IN app.ts ══════════════════════════════
  *
- * Thirty-five routes across four files, following the shape GPS already uses
- * (`routes/gps.ts:917-942`). Nesting rather than four more `app.route('/v1/marketing', …)`
+ * Thirty-eight routes across five files, following the shape GPS already uses
+ * (`routes/gps.ts:917-942`). Nesting rather than five more `app.route('/v1/marketing', …)`
  * lines is not tidiness — it is what keeps two properties true at once:
  *
  *  1. THE COMPARTMENT GATE COVERS THEM BY CONSTRUCTION. `app.ts:163-172` installs
  *     `requireWorkspace('marketing','view'|'operate')` on `'/v1/marketing'` and
  *     `'/v1/marketing/*'`, read off the workspace constitution's `apiPrefixes`
  *     (`@lcx/shared workspaces.ts:193`), which lists that one prefix and nothing else.
- *     Every path reachable through these four routers therefore sits behind the gate
+ *     Every path reachable through these five routers therefore sits behind the gate
  *     with no sub-prefix that could fall outside it. Capability above the floor
  *     (`requireOperator`, `requireApprover`) is declared per route inside each file.
  *  2. THE OUTBOUND RATCHET SEES THEM. `marketing/__tests__/outboundGateCoverage.test.ts`
- *     reads all four router files and requires every registration to be classified as
+ *     reads all five router files and requires every registration to be classified as
  *     producing outbound text or not. A router mounted from somewhere the ratchet does
  *     not read would serve inside the compartment while sitting outside that
  *     classification — which is the precise shape of the defect this wave exists to end.
@@ -683,7 +712,7 @@ marketingRoutes.get('/perimeter', requireOperator, async (c) => {
  * asserted here: registered under `/v1/marketing` and nowhere else, refused before any
  * handler runs when unauthenticated, and demanding the tier this file believes it demands.
  *
- * ALL FOUR MOUNT AT '/' because each declares its own first segment — the URLs are
+ * ALL FIVE MOUNT AT '/' because each declares its own first segment — the URLs are
  * already fixed by the fetchers in `apps/web/src/lib/api/marketing.ts` (`/v1/marketing/desk`,
  * `/precedent`, `/crisis/…`, `/watch`, `/export/:itemId`, `/subject-access`, `/erasure`,
  * `/record`). Mounting any of them under a segment of its own would silently 404 a
@@ -718,3 +747,22 @@ marketingRoutes.route('/', marketingDeskRoutes); //   /regime, /triage/assess, /
 marketingRoutes.route('/', marketingMemoryRoutes); // /precedent…, /crisis/…
 marketingRoutes.route('/', marketingRecordRoutes); // /watch…, /export…, /record, /subject-access, /erasure, /retention…
 marketingRoutes.route('/', marketingGatesRoutes); //  /claim-safety, /review, /replies/:id/…, /silence, /:id/silence, /metrics, /loop
+/*
+ * ── THE FIFTH ROUTER: THE HOLDINGS REGISTER, READ-ONLY ───────────────────────────
+ * `/holdings`, `/holdings/cells`, `/holdings/register`. At '/' like the other four,
+ * because it declares its own first segment.
+ *
+ * IT ADDS NO WRITE PATH, deliberately. Declaring stays on the governed action
+ * `marketing_holdings_declare` (`actions/registry.ts`), which already carries the
+ * append-only chain, the amendment reasons and the audit row. A second door to the same
+ * table would be a second place for the Art 91(3)(c) rules to be enforced — or not.
+ *
+ * SO EVERY REGISTRATION IN THIS FILE IS NOT-OUTBOUND, and it is classified as such in
+ * `marketing/__tests__/outboundGateCoverage.test.ts` rather than left for the reader to
+ * infer: a read of the register the gate consults cannot put words in front of anyone.
+ * Reachability, the prefix, the 401-before-any-handler property and the tier each path
+ * gates at are asserted per path in `__tests__/marketingMount.test.ts` — the same
+ * treatment the other four get, for the same reason: "the compartment gate covers it
+ * automatically" is a claim about wiring in three other files.
+ */
+marketingRoutes.route('/', marketingHoldingsRoutes); // /holdings, /holdings/cells, /holdings/register

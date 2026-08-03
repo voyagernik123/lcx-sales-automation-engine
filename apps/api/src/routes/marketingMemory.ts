@@ -1864,6 +1864,18 @@ async function gateCrisisStatement(
     readonly carriesPromotionalContent: boolean;
     readonly isInsideInformationDisclosure: boolean;
     readonly now: Instant;
+    /**
+     * IS THIS CALLER CLEARED TO READ THE Art 90 BASIS? Passed in, never derived here — the
+     * helper has no `Context` and inventing a default of `true` inside a shared helper is
+     * how one route's decision silently becomes another's. `outboundGate.ts:406` defaults
+     * to NOT cleared, so both call sites state it.
+     *
+     * IT IS A SEPARATE FIELD FROM `actor` ON PURPOSE. The actor is who is accountable for
+     * the words; this is who may be told why an asset is restricted. A crisis composition
+     * is exactly where the two come apart: the person typing at 03:00 is often not on any
+     * insider list, and the right answer is a refusal that names the ring — not the basis.
+     */
+    readonly viewerIsEmbargoApprover: boolean;
   },
 ): Promise<{ verdict: CrisisOutboundGateVerdict; refusals: readonly Refusal[] }> {
   const gate = await gateOutboundText(pool, {
@@ -1874,6 +1886,7 @@ async function gateCrisisStatement(
     phase: input.phase,
     intents: crisisIntents(input.carriesPromotionalContent, input.isInsideInformationDisclosure),
     now: input.now,
+    viewerIsEmbargoApprover: input.viewerIsEmbargoApprover,
   });
   const recordedInLedger = await recordGateDecision(pool, {
     replyId: null,
@@ -2150,6 +2163,11 @@ marketingMemoryRoutes.post('/crisis/statements/:key/instance', requireOperator, 
       carriesPromotionalContent,
       isInsideInformationDisclosure,
       now,
+      // Read from the ROLE, not from `authoredBy`. The shared machine key resolves to
+      // `role: 'operator'` and composes as `machine`, and a shared secret cannot be a
+      // member of an insider list. Which ring is right is a human decision —
+      // `outboundGate.ts:381-404` writes out all three.
+      viewerIsEmbargoApprover: c.get('operator')?.role === 'approver',
     });
 
     /*
@@ -2417,6 +2435,10 @@ marketingMemoryRoutes.post('/crisis/instance/:id/clearance', requireOperator, as
       carriesPromotionalContent: row.carries_promotional_content,
       isInsideInformationDisclosure: row.is_inside_information_disclosure,
       now: at,
+      // The reviewer granting a clear. Same expression, and still the role rather than
+      // `true`: this route accepts a clear from any of the three lanes, not only from an
+      // approver, so the authority to object is not the authority to read the basis.
+      viewerIsEmbargoApprover: c.get('operator')?.role === 'approver',
     });
 
     /*

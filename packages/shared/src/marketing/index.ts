@@ -115,3 +115,25 @@ export * from './contracts/record.js';
  * top-level barrel, and the rule stated above is that it would be aliased HERE, inside
  * the marketing compartment, never in `../index.ts`. */
 export * from './contracts/gates.js';
+
+/* `contracts/holdings.ts` — the three read routes in
+ * `apps/api/src/routes/marketingHoldings.ts` and the page that renders them, plus the
+ * DERIVATIONS: `bearishLimbOf`, `positionOf`, `expiryBucketOf`, `cellBearishLimb` and the
+ * two sentences a surface must show (`SHORT_NOT_ASKED_IS_NOT_NO_SHORT`,
+ * `NOT_DECLARED_IS_NOT_CLEAR`).
+ *
+ * THIS LINE IS WHY THE api CAN STOP MIRRORING THE VOCABULARY. That file's own header says
+ * `apps/api` cannot reach it by a deep relative specifier — TS6059 on the emit build, in
+ * Docker order — so `abuseRegister.ts` carried its own copy of `SHORT_POSITION_ANSWERS`
+ * and `ShortQuestionPolicy` held together by a test that read both sides. With this line
+ * `@lcx/shared` names them and the mirror is one import instead of a duplicate union.
+ * `apps/web/src/pages/MarketingHoldings.tsx` likewise moves off its relative path.
+ *
+ * NO COLLISION TO ALIAS. Checked before the line was added, not assumed: every symbol it
+ * publishes was grepped against the rest of `packages/shared/src` in both declaration and
+ * re-export form, and nothing matched. `shortQuestionIsAsked` is the near miss worth
+ * naming — `abuseRegister.ts` has a same-named function, but that file is in `apps/api`
+ * and cannot collide in this barrel. A clash would be TS2308 on the shared emit build,
+ * and the rule stated at the head of this file is that it would be resolved INSIDE this
+ * compartment, never in `../index.ts`. */
+export * from './contracts/holdings.js';

@@ -1298,3 +1298,272 @@ describe('the no-named-asset finding is error severity, because it says a gate d
     expect(found!.severity).toBe('warning');
   });
 });
+
+/* ════════ §11 NEED TO KNOW — THE REFUSAL WAS ITSELF A DISCLOSURE ════════ */
+
+describe('the Art 90 explanation is scoped, and the refusal is not', () => {
+  const REF = 'gate:0123456789abcdef';
+  const RECORDER = 'listings@lcx.com';
+
+  /** One draft, one asset, three register states. Only the register varies. */
+  const embargoedInput = (): MarketAbuseInput => input({
+    act: act({ namedAssets: ['XYZ'], author: 'drafter@lcx.com' }),
+    text: 'XYZ deposits are open.',
+    embargoRegister: attestedEmbargoRegister([{
+      asset: 'XYZ',
+      state: 'mnpi_pending',
+      basis: 'listing committee approved, announcement not yet made',
+      recordedBy: RECORDER,
+      recordedAt: PAST,
+      reviewBy: FUTURE,
+      announcedAt: null,
+    }]),
+    holdingsRegister: holdingsRegister([
+      { actor: 'drafter@lcx.com', asset: 'XYZ', declared: 'declared_none', declaredAt: PAST, reviewBy: FUTURE, note: null },
+    ]),
+  });
+
+  /** Benign case 1: the desk holds no register at all → `EMBARGO_REGISTER_ABSENT`. */
+  const emptyRegisterInput = (): MarketAbuseInput => ({
+    ...embargoedInput(),
+    embargoRegister: EMPTY_EMBARGO_REGISTER,
+  });
+
+  /** Benign case 2: rows exist, none for XYZ, nobody attested → `ASSET_STATE_UNKNOWN`. */
+  const symbolAbsentInput = (): MarketAbuseInput => ({
+    ...embargoedInput(),
+    embargoRegister: {
+      entries: [{
+        asset: 'ETH',
+        state: 'clear',
+        basis: 'listed since 2021',
+        recordedBy: RECORDER,
+        recordedAt: PAST,
+        reviewBy: FUTURE,
+        announcedAt: PAST,
+      }],
+      completeness: { kind: 'not_attested' },
+    },
+  });
+
+  const scopedFor = (i: MarketAbuseInput) =>
+    abuseModule.scopeEmbargoDisclosure(assessMarketAbuse(i), {
+      clearance: 'not_cleared',
+      reference: REF,
+    });
+
+  it('produces the three codes it is scoping, so the premise of the split is real', () => {
+    // If these ever collapsed on their own there would be nothing to scope, and this whole
+    // section would be dead code claiming to close a hole that had closed itself.
+    expect(codes(assessMarketAbuse(embargoedInput()))).toContain('ART_90_ASSET_UNDER_EMBARGO');
+    expect(codes(assessMarketAbuse(emptyRegisterInput()))).toContain('EMBARGO_REGISTER_ABSENT');
+    expect(codes(assessMarketAbuse(symbolAbsentInput()))).toContain('ASSET_STATE_UNKNOWN');
+  });
+
+  it('makes all three indistinguishable to a reader who is not cleared', () => {
+    /*
+     * THE ASSERTION THE CHANGE RESTS ON. Two of these three are benign, so any observable
+     * difference between them identifies the one that is not. Deep equality over the whole
+     * scoped verdict is the only form of this test a partial redaction cannot pass.
+     */
+    const a = scopedFor(embargoedInput()).verdict;
+    const b = scopedFor(emptyRegisterInput()).verdict;
+    const c = scopedFor(symbolAbsentInput()).verdict;
+    expect(a).toEqual(b);
+    expect(a).toEqual(c);
+  });
+
+  it('still refuses, and says nothing about which asset', () => {
+    const scoped = scopedFor(embargoedInput());
+    expect(scoped.verdict.disposition).toBe('refused');
+    expect(codes(scoped.verdict)).toEqual(['ASSET_STATE_UNKNOWN']);
+    const r = scoped.verdict.refusals[0]!;
+    // `matched` is the offending span everywhere else in this module, and here the offending
+    // span IS the secret. A sentence that redacts and a `matched` that does not has redacted
+    // nothing — every surface renders both.
+    expect(r.matched).toBeNull();
+    expect(r.sentence).not.toContain('XYZ');
+    expect(r.sentence).toContain(REF);
+    expect(r.rule.provision).toBe('Art 90(1)');
+    expect(r.recovery).toEqual({
+      kind: 'supply_data',
+      missing: expect.stringContaining('approver'),
+      whoCanSupply: abuseModule.EMBARGO_BASIS_RING,
+    });
+  });
+
+  it('keeps the unscoped codes on the wrapper, for the record only', () => {
+    // Without these the desk's own ledger would agree with the redaction, the approver the
+    // drafter was told to ask would find nothing, and the remedy would be a dead end.
+    const scoped = scopedFor(embargoedInput());
+    expect(scoped.unscopedRefusalCodes).toContain('ART_90_ASSET_UNDER_EMBARGO');
+    expect(scoped.explanationWithheld).toBe(true);
+  });
+
+  it('leaves a refusal from another limb exactly as it was', () => {
+    // Only the Art 90 explanation is inside information. Scoping the holdings refusal too
+    // would be redaction as a habit rather than as a rule.
+    const withHolding = assessMarketAbuse(input({
+      act: act({ namedAssets: ['XYZ'], author: 'drafter@lcx.com' }),
+      text: 'We are very bullish on XYZ.',
+      embargoRegister: EMPTY_EMBARGO_REGISTER,
+      holdingsRegister: EMPTY_HOLDINGS_REGISTER,
+    }));
+    const scoped = abuseModule.scopeEmbargoDisclosure(withHolding, {
+      clearance: 'not_cleared', reference: REF,
+    });
+    const holding = withHolding.refusals.find((r) => r.code === 'HOLDINGS_DECLARATION_MISSING');
+    expect(holding).toBeDefined();
+    expect(scoped.verdict.refusals).toContain(holding);
+  });
+
+  it('empties the per-asset resolutions, including the ones that came back clear', () => {
+    // An array showing `clear` for two symbols and nothing for the third names the third.
+    const three = assessMarketAbuse(input({
+      act: act({ namedAssets: ['XYZ', 'ETH'], author: 'drafter@lcx.com' }),
+      text: 'XYZ and ETH deposits are open.',
+      embargoRegister: attestedEmbargoRegister([
+        {
+          asset: 'XYZ', state: 'mnpi_pending', basis: 'not yet announced',
+          recordedBy: RECORDER, recordedAt: PAST, reviewBy: FUTURE, announcedAt: null,
+        },
+        {
+          asset: 'ETH', state: 'clear', basis: 'listed since 2021',
+          recordedBy: RECORDER, recordedAt: PAST, reviewBy: FUTURE, announcedAt: PAST,
+        },
+      ]),
+      holdingsRegister: holdingsRegister([
+        { actor: 'drafter@lcx.com', asset: 'XYZ', declared: 'declared_none', declaredAt: PAST, reviewBy: FUTURE, note: null },
+        { actor: 'drafter@lcx.com', asset: 'ETH', declared: 'declared_none', declaredAt: PAST, reviewBy: FUTURE, note: null },
+      ]),
+    }));
+    expect(three.embargo).toHaveLength(2);
+    const scoped = abuseModule.scopeEmbargoDisclosure(three, {
+      clearance: 'not_cleared', reference: REF,
+    });
+    expect(scoped.verdict.embargo).toEqual([]);
+    expect(codes(scoped.verdict)).toEqual(['ASSET_STATE_UNKNOWN']);
+  });
+
+  it('hands a cleared reader the verdict object untouched', () => {
+    // Not a copy with the same fields — the same object. A projection that rebuilt the
+    // verdict for approvers could drift from the one the engines produced.
+    const full = assessMarketAbuse(embargoedInput());
+    const scoped = abuseModule.scopeEmbargoDisclosure(full, {
+      clearance: 'cleared', reference: REF,
+    });
+    expect(scoped.verdict).toBe(full);
+    expect(scoped.explanationWithheld).toBe(false);
+  });
+
+  it('enumerates every code the Art 90 limb can emit, so a fourth cannot leak past it', () => {
+    /*
+     * `EMBARGO_LIMB_REFUSAL_CODES` is the filter. If a future branch of `checkEmbargo` emits
+     * a code that is not on that list, the scoping would pass it through verbatim and the
+     * oracle would reopen silently. So the list is checked against the limb itself, over
+     * every register state that refuses.
+     */
+    const states: EmbargoRegister[] = [
+      attestedEmbargoRegister([{
+        asset: 'XYZ', state: 'mnpi_pending', basis: 'b',
+        recordedBy: RECORDER, recordedAt: PAST, reviewBy: FUTURE, announcedAt: null,
+      }]),
+      EMPTY_EMBARGO_REGISTER,
+      { entries: [{
+        asset: 'ETH', state: 'clear', basis: 'b',
+        recordedBy: RECORDER, recordedAt: PAST, reviewBy: FUTURE, announcedAt: PAST,
+      }], completeness: { kind: 'not_attested' } },
+      attestedEmbargoRegister([{
+        asset: 'XYZ', state: 'unknown', basis: 'b',
+        recordedBy: RECORDER, recordedAt: PAST, reviewBy: FUTURE, announcedAt: null,
+      }]),
+      attestedEmbargoRegister([{
+        asset: 'XYZ', state: 'clear', basis: 'b',
+        recordedBy: RECORDER, recordedAt: PAST, reviewBy: PAST, announcedAt: null,
+      }]),
+    ];
+    const emitted = new Set<string>();
+    for (const register of states) {
+      for (const r of checkEmbargo(['XYZ'], register, NOW).refusals) emitted.add(r.code);
+    }
+    expect(emitted.size).toBeGreaterThan(0);
+    for (const code of emitted) {
+      expect(abuseModule.EMBARGO_LIMB_REFUSAL_CODES, `${code} is not scoped`).toContain(code);
+    }
+  });
+});
+
+describe('who is inside the ring for the Art 90 basis', () => {
+  const RECORDER = 'listings@lcx.com';
+  const resolution = (over: Partial<abuseModule.EmbargoResolution> = {}): abuseModule.EmbargoResolution => ({
+    asset: 'XYZ',
+    state: 'mnpi_pending',
+    reason: 'entry_found',
+    entry: {
+      asset: 'XYZ', state: 'mnpi_pending', basis: 'b',
+      recordedBy: RECORDER, recordedAt: PAST, reviewBy: FUTURE, announcedAt: null,
+    },
+    narrative: 'n',
+    ...over,
+  });
+
+  it('clears an approver', () => {
+    expect(abuseModule.embargoBasisClearance({
+      viewer: 'anyone@lcx.com', viewerIsApprover: true, resolutions: [resolution()],
+    })).toBe('cleared');
+  });
+
+  it('clears anybody when there is nothing to withhold', () => {
+    // A verdict with no restricted state has no secret in it, so redacting it would be
+    // theatre — and would hide the `clear` rows a drafter can legitimately see.
+    expect(abuseModule.embargoBasisClearance({
+      viewer: 'drafter@lcx.com',
+      viewerIsApprover: false,
+      resolutions: [resolution({ state: 'clear', entry: null })],
+    })).toBe('cleared');
+  });
+
+  it('clears the person who recorded every restriction in play', () => {
+    expect(abuseModule.embargoBasisClearance({
+      viewer: RECORDER, viewerIsApprover: false, resolutions: [resolution()],
+    })).toBe('cleared');
+  });
+
+  it('does NOT clear a recorder when somebody else\'s row is also in play', () => {
+    /*
+     * PER-ASSET CLEARANCE LEAKS BY OMISSION: if the recorder of XYZ saw XYZ and not the
+     * other asset, the missing entry would name it. So the clearance is all-or-nothing.
+     */
+    expect(abuseModule.embargoBasisClearance({
+      viewer: RECORDER,
+      viewerIsApprover: false,
+      resolutions: [
+        resolution(),
+        resolution({ asset: 'ABC', entry: { ...resolution().entry!, asset: 'ABC', recordedBy: 'someone@lcx.com' } }),
+      ],
+    })).toBe('not_cleared');
+  });
+
+  it('does NOT clear anyone on a state nobody recorded', () => {
+    // An empty register, or an asset absent from one, has no `entry` and therefore no
+    // recorder. That is the state this desk is in today, so in practice only approvers.
+    expect(abuseModule.embargoBasisClearance({
+      viewer: RECORDER,
+      viewerIsApprover: false,
+      resolutions: [resolution({ state: 'unknown', reason: 'register_empty', entry: null })],
+    })).toBe('not_cleared');
+  });
+
+  it('compares actors exactly, so a near-match does not read inside information', () => {
+    expect(abuseModule.embargoBasisClearance({
+      viewer: ' listings@lcx.com', viewerIsApprover: false, resolutions: [resolution()],
+    })).toBe('not_cleared');
+  });
+
+  it('names a role and never a person', () => {
+    // This module holds no directory. A name here would be an invented fact about a real
+    // person, and confirming who recorded a row is most of the secret anyway.
+    expect(abuseModule.EMBARGO_BASIS_RING).toContain('approver');
+    expect(abuseModule.EMBARGO_BASIS_RING).not.toMatch(/@/);
+  });
+});

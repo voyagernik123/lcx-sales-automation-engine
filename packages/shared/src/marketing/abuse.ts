@@ -1922,3 +1922,263 @@ export function assessMarketAbuse(input: MarketAbuseInput): MarketAbuseVerdict {
     ruleSetVersion: MARKET_ABUSE_RULESET_VERSION,
   };
 }
+
+/* ════════ §11 NEED TO KNOW — WHO MAY READ THE Art 90 BASIS ════════ */
+
+/**
+ * ══ THE REFUSAL WAS ITSELF AN UNLAWFUL DISCLOSURE ══
+ *
+ * `checkEmbargo` hands `ART_90_ASSET_UNDER_EMBARGO` — with the asset, the basis, the
+ * name of whoever recorded it and the date — to WHOEVER ASKED. The caller is a social
+ * media drafter. Art 90(1) reads "No person in possession of inside information shall
+ * unlawfully disclose inside information TO ANY OTHER PERSON", and an embargo row IS
+ * inside information: it says a listing (or an intermediate step under Art 87(2)-(3))
+ * exists and is not public. So the gate built to prevent an Art 90 disclosure was
+ * performing one on every refusal, to a person with no need to know.
+ *
+ * It is worse than a leak of a fact. A drafter who reads that sentence is now IN
+ * POSSESSION of inside information, and Art 89(2) then forbids them from trading the
+ * asset — a legal disability the desk imposed on them silently, with no insider list and
+ * no acknowledgement. The refusal made the reader an insider as a side effect of being
+ * told they could not post.
+ *
+ * ══ AND REDACTING IT ENTIRELY IS ALSO WRONG ══
+ * A refusal with no explanation leaves the drafter with no move. That is the 02:00
+ * failure this compartment has already had once (`marketingMemory.test.ts`): when the
+ * gate refuses without a route forward, humans route around the gate, and the real risk
+ * goes UP. Both extremes are wrong, so the EXPLANATION is scoped and the REFUSAL is not.
+ *
+ * ══ WHAT A NON-CLEARED READER GETS, AND WHY EACH PART IS THERE ══
+ *  · the draft is refused, in the same words whatever the register holds;
+ *  · that the basis is held at a clearance they do not have — stated WITHOUT asserting
+ *    that a restriction exists, because "there is a restriction" is the secret;
+ *  · a ring to ask, as a ROLE and never a name (naming the recorder would confirm both
+ *    that a row exists and who wrote it);
+ *  · a reference that ties this exact refusal to its ledger row, so the approver they ask
+ *    can look up the verdict instead of being asked "is SOL embargoed?" — which is the
+ *    question a drafter must not have to ask out loud.
+ *
+ * ══ THE PROPERTY THIS RESTS ON ══
+ * A non-cleared reader must not be able to tell `mnpi_pending` from `unknown` from an
+ * empty register, because separating those three IS the oracle: two of them are benign
+ * and one of them is the secret, so any observable difference identifies the secret. So
+ * the scoped output is byte-identical across all three, carries ONE refusal rather than
+ * one per asset (a count identifies how many symbols are restricted), carries
+ * `matched: null` (the span identifies which), and empties `embargo` entirely — including
+ * the resolutions that came back `clear`, because a per-asset array showing three clears
+ * and one omission names the fourth.
+ *
+ * ══ WHAT THIS DOES NOT CLOSE, STATED PLAINLY ══
+ * A drafter can still submit one symbol at a time and watch refused-versus-released. That
+ * distinguishes "not cleared" from "cleared" — it does NOT distinguish embargo from
+ * unknown from empty, which is the axis that carries Art 90 — and every probe writes its
+ * own row into the 0062 ledger under the prober's name. The bulk bound in
+ * `outboundGate.ts` is what forces that pattern to be many recorded requests instead of
+ * one. This is a detectable residual, not a closed hole, and calling it closed would be
+ * the lie.
+ *
+ * `embargo.exempt_offer_is_fragile` still names its asset to any reader, and that is a
+ * decision rather than an oversight: an Art 4(2)/(3) OFFER exemption is a fact about a
+ * public offer, not about unpublished inside information, and it is warning-severity so
+ * the 0062 row (which records blocking findings only) holds no copy of it. Redacting it
+ * would delete the drafter's only instruction — "route this through the regime lane" —
+ * and leave the finding recorded nowhere at all.
+ */
+export type EmbargoBasisClearance = 'cleared' | 'not_cleared';
+
+/**
+ * The three codes the Art 90 limb emits, as data, so the scoping filter is a list a test
+ * can read rather than a regex over sentences.
+ *
+ * `ASSET_STATE_UNKNOWN` is also emitted by `outboundGate.ts gateFailure` for a gate that
+ * threw. That is why `scopeEmbargoDisclosure` runs on the market-abuse verdict ALONE,
+ * before it is merged with anything: a filter applied to the merged list would silently
+ * eat a gate-failure refusal and report the softer scoped one in its place.
+ */
+export const EMBARGO_LIMB_REFUSAL_CODES: readonly Refusal['code'][] = [
+  'ART_90_ASSET_UNDER_EMBARGO',
+  'EMBARGO_REGISTER_ABSENT',
+  'ASSET_STATE_UNKNOWN',
+];
+
+/**
+ * The states whose BASIS is inside information and therefore withholdable.
+ *
+ * `mnpi_pending` is the secret. `unknown` is in the list not because ignorance is secret
+ * but because it must be indistinguishable from the secret — the whole point. `clear`,
+ * `announced` and `exempt_offer` are not: an announced asset is public by definition, and
+ * the other two are the absence of a live embargo.
+ */
+function embargoStateIsWithholdable(state: AssetEmbargoState): boolean {
+  return state === 'mnpi_pending' || state === 'unknown';
+}
+
+/**
+ * Is this reader inside the ring for the Art 90 basis on THIS item?
+ *
+ * Two ways in, and no third:
+ *  · they are an approver — the ring the caller declares, see `viewerIsApprover`;
+ *  · they RECORDED every withholdable restriction in play, so the verdict would tell them
+ *    only what they themselves entered.
+ *
+ * THE SECOND TEST IS ALL-OR-NOTHING, and per-asset clearance was rejected for a reason
+ * worth writing down: if a reader who recorded SOL's row saw SOL's resolution and not
+ * BTC's, the OMISSION would name BTC. A clearance that leaks by omission is not a
+ * clearance. So a recorder reads the full verdict only when every withheld restriction on
+ * the item is their own; the moment somebody else's row is in play they are outside the
+ * ring, exactly like any other drafter.
+ *
+ * A resolution with `entry: null` — an empty register, or an asset absent from one — can
+ * never have been recorded by anybody, so those cases put every non-approver outside the
+ * ring. That is the state this desk is in today: the register is `not_attested` by
+ * design, so in practice only approvers are ever cleared.
+ *
+ * Actor comparison is EXACT, via `sameActor`. A near-match is not a match: this decides
+ * who reads inside information, and it is not the place to be generous about whitespace.
+ */
+export function embargoBasisClearance(input: {
+  readonly viewer: ActorId;
+  readonly viewerIsApprover: boolean;
+  readonly resolutions: readonly EmbargoResolution[];
+}): EmbargoBasisClearance {
+  if (input.viewerIsApprover) return 'cleared';
+  const withheld = input.resolutions.filter((r) => embargoStateIsWithholdable(r.state));
+  if (withheld.length === 0) return 'cleared';
+  const allTheirOwn = withheld.every(
+    (r) => r.entry !== null && sameActor(r.entry.recordedBy, input.viewer),
+  );
+  return allTheirOwn ? 'cleared' : 'not_cleared';
+}
+
+/**
+ * Who a non-cleared drafter is told to ask. A ROLE, NEVER A NAME.
+ *
+ * Naming the person who recorded the row would confirm both that a row exists and who
+ * wrote it, which is most of the secret. And this module holds no directory: inventing a
+ * name here would be inventing a fact about a real person, which the house rules forbid
+ * outright. `approver` is the role that already exists in `AttributedActor` — whoever may
+ * clear outbound text on this desk — so this sentence points at a ring the compartment can
+ * actually describe rather than at a person it cannot.
+ */
+export const EMBARGO_BASIS_RING =
+  'an approver on this desk — the `approver` role in `AttributedActor`, i.e. anyone who may '
+  + 'clear outbound text — or, failing that, whoever maintains the asset embargo register';
+
+/**
+ * THE ONE SENTENCE, AND WHY IT SAYS WHAT IT SAYS.
+ *
+ * `ASSET_STATE_UNKNOWN` IS A REUSED CODE, and that is a compromise this file should not
+ * pretend is a design. The right code is a dedicated one — the reader's clearance is not
+ * the asset's state — and `RefusalCode` lives in `types.ts`, which this pass does not own.
+ * Of the codes that exist it is the only honest fit: from this reader's position the asset
+ * state IS unknown, because the gate declines to state it. Two consequences are stated
+ * rather than left to be discovered. First, it collapses three outcomes into one code, so
+ * a refusal-frequency panel fed from RESPONSES will under-count `ART_90_ASSET_UNDER_EMBARGO`
+ * — the 0062 gate ledger keeps the unscoped codes and is the authoritative read. Second,
+ * `ASSET_STATE_UNKNOWN` already fires for benign reasons, which is a small mercy here: its
+ * presence in a scoped verdict carries no signal at all.
+ *
+ * The sentence DISCLOSES ITS OWN UNIFORMITY — "the same sentence is returned whether the
+ * register holds a restriction, holds nothing, or holds no rows" — so a reader cannot
+ * over-read it as confirmation that something is embargoed. A redaction that hides the
+ * fact of redaction invites exactly that inference.
+ */
+export function embargoBasisWithheldRefusal(reference: string): Refusal {
+  return refusal(
+    'ASSET_STATE_UNKNOWN',
+    'This draft cannot be released. It names at least one crypto-asset symbol whose embargo '
+      + 'state this desk will not state on this response, because the basis for that state is '
+      + 'held at a clearance this account does not have. Read nothing into that: the same '
+      + 'sentence is returned whether the register holds a restriction on one of these symbols, '
+      + 'holds a row that cannot be resolved, or holds no rows at all. There is no wording '
+      + `change that resolves it. Quote reference ${reference} to an approver — that reference `
+      + 'identifies this exact check in the outbound gate ledger, so they can read the full '
+      + 'verdict and tell you what to do with the draft without either of you naming an asset.',
+    'art_90_1',
+    {
+      kind: 'supply_data',
+      missing:
+        'an approver\'s reading of the Art 90 embargo state of the symbols this draft names. '
+        + 'The desk holds an answer; this account is not cleared to be shown it, so the missing '
+        + 'input is the approver\'s decision rather than any fact the drafter can supply',
+      whoCanSupply: EMBARGO_BASIS_RING,
+    },
+    /*
+     * `null`, ALWAYS. `matched` is the offending span everywhere else in this module, and
+     * here the offending span is the asset symbol — which is the thing being withheld. A
+     * refusal that redacts the sentence and then puts the asset in `matched` has redacted
+     * nothing; the field is rendered on every surface that renders a refusal.
+     */
+    null,
+  );
+}
+
+/**
+ * A market-abuse verdict, scoped to what one reader may be shown.
+ *
+ * `verdict` is the ONLY member safe to serialise to that reader. `unscopedRefusalCodes` is
+ * for the control ledger and must never reach a response body — see the field comment.
+ */
+export interface ScopedMarketAbuseVerdict {
+  /** Safe to hand to the reader this was scoped for. */
+  readonly verdict: MarketAbuseVerdict;
+  readonly clearance: EmbargoBasisClearance;
+  /**
+   * True when detail was actually removed. Carries no signal a non-cleared reader does not
+   * already have from the refusal itself, and lets a surface say "the explanation on this
+   * one is scoped" rather than implying the gate had nothing more to say.
+   */
+  readonly explanationWithheld: boolean;
+  /**
+   * ══ FOR THE RECORD ONLY. NEVER PUT THIS IN A RESPONSE. ══
+   * The codes the limb ACTUALLY produced, so `recordGateDecision` can write the true
+   * verdict to the 0062 ledger — without it an approver has nothing to look up and the
+   * scoping becomes a deletion. Serialising this field to a non-cleared reader
+   * reintroduces the exact oracle this section exists to close.
+   */
+  readonly unscopedRefusalCodes: readonly Refusal['code'][];
+}
+
+/**
+ * Project a verdict for one reader. PURE, and it never weakens the refusal.
+ *
+ * `refusals` keeps every non-embargo refusal untouched and replaces the whole embargo limb
+ * with ONE `embargoBasisWithheldRefusal`, placed FIRST so the documented gate order
+ * (embargo, holdings, rumour, combination) still holds and refusal lists stay diffable.
+ * `disposition` is recomputed from the scoped lists by the same rule
+ * `assessMarketAbuse` uses, so a scoped verdict can never say `clear` where the unscoped
+ * one said `refused`: the limb contributed at least one refusal in and exactly one out.
+ *
+ * `embargo` is emptied for a non-cleared reader UNCONDITIONALLY — including resolutions
+ * that came back `clear` — because an array of four entries with one missing names the
+ * missing one, and an array that shows `clear` for three symbols and nothing for the
+ * fourth is the oracle wearing a different hat. Nothing downstream reads this field to
+ * decide anything; `allowed` and `refusals` carry the decision.
+ */
+export function scopeEmbargoDisclosure(
+  verdict: MarketAbuseVerdict,
+  input: { readonly clearance: EmbargoBasisClearance; readonly reference: string },
+): ScopedMarketAbuseVerdict {
+  const unscopedRefusalCodes = verdict.refusals.map((r) => r.code);
+  if (input.clearance === 'cleared') {
+    return { verdict, clearance: 'cleared', explanationWithheld: false, unscopedRefusalCodes };
+  }
+
+  const limb = verdict.refusals.filter((r) => EMBARGO_LIMB_REFUSAL_CODES.includes(r.code));
+  const kept = verdict.refusals.filter((r) => !EMBARGO_LIMB_REFUSAL_CODES.includes(r.code));
+  const refusals: readonly Refusal[] =
+    limb.length === 0 ? kept : [embargoBasisWithheldRefusal(input.reference), ...kept];
+
+  return {
+    verdict: {
+      ...verdict,
+      refusals,
+      disposition:
+        refusals.length > 0 ? 'refused' : verdict.violations.length > 0 ? 'flagged' : 'clear',
+      embargo: [],
+    },
+    clearance: 'not_cleared',
+    explanationWithheld: limb.length > 0,
+    unscopedRefusalCodes,
+  };
+}

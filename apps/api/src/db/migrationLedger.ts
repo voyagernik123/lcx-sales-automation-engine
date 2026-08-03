@@ -146,6 +146,28 @@ export const SHIPPED_MIGRATIONS: Readonly<Record<string, string>> = {
  *          jeopardy anti-join reads `marketing_record`. Until it lands, nothing places an
  *          LCX statement on the long clock and the 90-day sweep is the only clock
  *          running, so on day 91 the record MiCA requires for five years is gone.
+ *   0065 → THE SHORT LIMB of the holdings declaration. One column,
+ *          `marketing_holdings_declaration.short_position`, its CHECK and a partial
+ *          index. Named by `marketing/abuseRegister.ts SHORT_LIMB_MIGRATION`. MUST BE
+ *          APPLIED AFTER 0060 — it alters the table 0060 creates. `holds` is a boolean,
+ *          so a short seller's row reads `holds = false`, which reads as "no position",
+ *          and a bearish draft clears; Art 91(3)(c) is direction-neutral. Until this
+ *          lands the API reports `shortLimbMigrated: false` and REFUSES to record any
+ *          short answer rather than storing one in a column that does not exist.
+ *          IT ASKS NOBODY ANYTHING: whether the question is put at all is
+ *          `SHORT_QUESTION_POLICY` (`marketing/abuseRegister.ts:610`), an HR/legal
+ *          decision that ships set to `not_asked`.
+ *   0066 → THE GPS PRICE BAND REGISTER, the SELL side. `gps_price_band`, RLS on with no
+ *          policy. The COST side (`gps_rate_card`) and the effort triples already have
+ *          tables in 0052; the sell side had none, so every price in the system was the
+ *          compiled placeholder (`packages/shared/src/gps/catalogue.ts:61`) and there
+ *          was nowhere to put a real one. INDEPENDENT of 0052-0065 — it creates one
+ *          table and references nothing. It is byte-for-byte the DDL
+ *          `routes/gpsInputs.ts:674` hands an operator in the `meta` of its
+ *          register-absent refusal, held so by
+ *          `db/__tests__/gpsPriceBandMigration.test.ts`. Until it lands, price-band
+ *          writes refuse `PRICE_BAND_REGISTER_ABSENT` and every band renders badged
+ *          `PLACEHOLDER` with the number struck through — which is the true state.
  */
 export const PENDING_MIGRATIONS: readonly string[] = [
   '0052_gps_underwriting.sql',
@@ -161,4 +183,6 @@ export const PENDING_MIGRATIONS: readonly string[] = [
   '0062_marketing_gate_decisions.sql',
   '0063_marketing_memory.sql',
   '0064_marketing_retention.sql',
+  '0065_marketing_holdings_position.sql',
+  '0066_gps_price_band.sql',
 ];

@@ -77,16 +77,35 @@
  * outcomes carry it to the caller. Warning-severity findings still travel without
  * blocking: `art_88_1.disclosure_artefact_must_stay_clean` fires when Art 88(1) is
  * SATISFIED, and a gate that refused on it would be refusing compliance.
+ *
+ * ══ THE REFUSAL WAS ITSELF A DISCLOSURE, AND THE EXPLANATION IS NOW SCOPED ══
+ * The Art 90 refusal named the asset, the basis, the recorder and the date, to whoever
+ * asked — and an embargo IS inside information, so the gate built to stop an Art 90
+ * disclosure was performing one on every block. It is now scoped by need to know:
+ * `abuse.ts §11` holds the reasoning and the projection, this file holds the decision
+ * about WHO is cleared (`viewerIsEmbargoApprover`, default NO), the reference a drafter
+ * quotes to an approver, and the guarantee that only the EXPLANATION is scoped — the
+ * release decision is taken from the unscoped verdict and the unscoped codes still reach
+ * the 0062 ledger via `ledgerOnly`.
+ *
+ * ══ AND ONE REQUEST NO LONGER CLASSIFIES HUNDREDS OF TICKERS ══
+ * `POST /claim-safety` takes 20 000 characters and answers per symbol, so one request was
+ * a register report. `MAX_SYMBOLS_PER_GATE_CALL` bounds it here rather than on one route,
+ * so every caller is bounded and the bound cannot be forgotten by the next route added.
  */
 import type { Pool } from 'pg';
 import {
+  EMBARGO_BASIS_RING,
   VERB_ADOPTION,
   assessMarketAbuse,
   checkClaimSafety,
+  embargoBasisClearance,
+  scopeEmbargoDisclosure,
   type ArtefactIntent,
   type ClaimSafetyOutcome,
   type ContentSurface,
   type Disposition,
+  type EmbargoBasisClearance,
   type EngagementVerb,
   type MarketAbuseVerdict,
   type MarketingViolation,
@@ -94,6 +113,74 @@ import {
   type SafetyChannel,
 } from '@lcx/shared';
 import { loadEmbargoRegister, loadHoldingsRegister, recordedSymbolsAmong } from './abuseRegister.js';
+
+/**
+ * HOW MANY DISTINCT SYMBOLS ONE REQUEST MAY BE ABOUT.
+ *
+ * ══ THE BULK ORACLE THIS CLOSES ══
+ * `POST /claim-safety` accepts 20 000 characters and the response carries a per-symbol
+ * embargo answer. So ONE authenticated request at `operate` tier could enumerate several
+ * hundred tickers and read back which of them the desk is sitting on — a listings roadmap,
+ * assembled at the cost of one HTTP call, by a caller who is allowed to draft a tweet.
+ * The need-to-know scoping below makes each answer uniform; this makes the sweep expensive
+ * as well, which matters because the residual probe (submit one symbol, watch
+ * refused-versus-released) is per-request by construction.
+ *
+ * ══ IT REFUSES. IT DOES NOT TRUNCATE ══
+ * Dropping the symbols past the ceiling and checking the rest would mean the Art 90 and
+ * Art 91(3)(c) joins silently did not run on part of the draft — the exact fail-open this
+ * whole file exists to prevent. Over the bound the text is refused and the drafter is told
+ * to split it.
+ *
+ * ══ WHY THE BOUND IS ON THE LEXICAL SET, BEFORE ANY QUERY ══
+ * Counting the NOT_TICKERS promotions too would make the reported number depend on what
+ * the register contains: "24 symbols, refused" versus "24 symbols, released" would tell
+ * the drafter the desk holds a row for one of their suppressed words. A budget that leaks
+ * register contents is a strange way to close an oracle. So the count is taken from the
+ * drafter's own text before the registers are touched, which also means the DB never sees
+ * a several-hundred-symbol `= ANY($1)`.
+ *
+ * ══ THE NUMBER IS A JUDGEMENT, AND IS WRITTEN HERE SO IT CAN BE MOVED IN ONE LINE ══
+ * 25 is not measured. It is set above any artefact this desk has a use for — an X post
+ * holds 280 characters and cannot carry 25 tickers with prose around them, and a landing
+ * page that names 25 distinct assets is a listings directory rather than a marketing
+ * communication — and far below the hundreds a classification sweep needs. A bound set too
+ * low is its own failure: a gate that refuses real work stops being used, which is the
+ * 02:00 failure recorded in `marketingMemory.test.ts`.
+ */
+export const MAX_SYMBOLS_PER_GATE_CALL = 25;
+
+/** How many hex characters of the text digest the drafter is asked to quote. */
+export const GATE_REFERENCE_PREFIX_LEN = 16;
+
+/** Reported when the digest could not be computed. Never silently blank. */
+export const GATE_REFERENCE_UNAVAILABLE = 'gate:reference-unavailable';
+
+/**
+ * The gated bytes, as the 0062 ledger stores them. ONE definition, used by both the
+ * reference a drafter is told to quote and the row an approver looks it up in — if these
+ * were computed separately, the reference would eventually point at nothing and the
+ * remedy in the scoped refusal would quietly become a dead end.
+ */
+export async function gateTextSha256(text: string): Promise<string> {
+  const { createHash } = await import('node:crypto');
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+/**
+ * The quotable reference: a prefix of the ledger's `text_sha256`.
+ *
+ * A PREFIX, because a 64-character hex string in a refusal sentence does not get quoted
+ * accurately by a human under time pressure, and 16 hex characters is 64 bits — ample to
+ * identify one row in a desk's gate ledger. It is a prefix rather than a separate id so
+ * `SELECT … WHERE text_sha256 LIKE 'abc…%'` finds the row with no new column and no new
+ * migration.
+ *
+ * IT LEAKS NOTHING. It is the digest of the drafter's own text, which they wrote.
+ */
+export function gateReferenceFrom(sha256: string): string {
+  return `gate:${sha256.slice(0, GATE_REFERENCE_PREFIX_LEN)}`;
+}
 
 /** Said out loud on any surface that shows a clear verdict. */
 export const EXTRACTION_IS_LEXICAL =
@@ -165,6 +252,16 @@ const NOT_TICKERS = new Set([
   'OK', 'NO', 'IT', 'IS', 'AT', 'ON', 'IN', 'TO', 'OF', 'BY', 'WE', 'AN', 'AS', 'IF',
   'HTTPS', 'HTTP', 'WWW', 'COM',
 ]);
+
+/**
+ * The true ceiling on symbols looked up in one request, DERIVED rather than asserted.
+ *
+ * `MAX_SYMBOLS_PER_GATE_CALL` is applied to the lexical set for the reason its docblock
+ * gives, so the promotion can add suppressed words on top of it — at most every entry in
+ * `NOT_TICKERS`, since that set is the whole population the promotion draws from. Computed
+ * rather than written down so the stated ceiling cannot drift from the enforced one.
+ */
+export const MAX_SYMBOLS_LOOKED_UP = MAX_SYMBOLS_PER_GATE_CALL + NOT_TICKERS.size;
 
 /**
  * Latin lookalikes for the Cyrillic and Greek characters that appear in real tickers.
@@ -274,6 +371,39 @@ export interface OutboundGateRequest {
    */
   readonly intents?: readonly ArtefactIntent[];
   readonly now?: string;
+  /**
+   * IS THIS CALLER CLEARED TO READ THE Art 90 BASIS? DEFAULTS TO NO.
+   *
+   * ══ THE DEFAULT IS THE SAFETY PROPERTY ══
+   * `undefined` reads as NOT cleared, so every route that has not been changed — all of
+   * them, as of this pass — now gets the scoped explanation. A gate that had to be opted
+   * into would have shipped as a no-op on every existing caller, which is how a control
+   * ends up green and absent at the same time. Wiring the approver view is therefore an
+   * additive, reviewable change per route, and forgetting it fails toward silence rather
+   * than toward disclosure.
+   *
+   * ══ WHAT A HUMAN MUST DECIDE, AND WHERE THE ONE LINE GOES ══
+   * This field is a BOOLEAN because the compartment has no ring membership to consult, and
+   * inventing one would be inventing a fact about real people. A route sets it from the
+   * authenticated principal — the intended one line being, in `marketingGates.ts`:
+   *
+   *     viewerIsEmbargoApprover: c.get('operator')?.canApprove === true
+   *
+   * and the alternatives, written down so the decision is a decision:
+   *   · APPROVERS (the assumption encoded here): everyone who may clear outbound text.
+   *     Widest of the three, and it means a clearance right implies an
+   *     inside-information right, which nothing in MiCA says it does.
+   *   · A NAMED EMBARGO RING: a separate list, narrower than approvers, maintained beside
+   *     the register. Correct under Art 90(1) — an insider list is the instrument the
+   *     regulation contemplates — and it needs a table and an owner, which is why it is
+   *     not assumed here.
+   *   · RECORDERS ONLY: nobody but whoever entered each row. Already supported and always
+   *     on (`embargoBasisClearance`), and on its own it means nobody can help a drafter
+   *     with a restriction they did not enter.
+   * Nothing in this file picks between them; it implements the first and leaves the switch
+   * to one expression on the caller.
+   */
+  readonly viewerIsEmbargoApprover?: boolean;
 }
 
 /**
@@ -330,11 +460,71 @@ export interface OutboundGateVerdict {
   readonly marketAbuse: MarketAbuseVerdict | null;
   /** Set when a gate threw. A thrown check is a refusal, never a pass. */
   readonly gateError: string | null;
+  /**
+   * WHAT THIS READER WAS AND WAS NOT SHOWN. Safe to serialise.
+   *
+   * Every field here is uniform across "asset embargoed", "row unresolvable" and "register
+   * empty" — that is the assertion `outboundGateNeedToKnow.test.ts` rests on. `reference`
+   * is a digest of the caller's own text, so it varies with the draft and with nothing
+   * else.
+   */
+  readonly embargoScope: {
+    readonly clearance: EmbargoBasisClearance;
+    /** True when the Art 90 explanation was replaced with the scoped one. */
+    readonly explanationWithheld: boolean;
+    /** Quote this to an approver. A prefix of the 0062 row's `text_sha256`. */
+    readonly reference: string;
+    /** Who to ask, as a role. Never a person's name. */
+    readonly ring: string;
+  };
+  /**
+   * ══ THE UNSCOPED RECORD. NEVER SERIALISE THIS TO A CALLER. ══
+   *
+   * `refusals` above may have had the Art 90 limb replaced by one scoped refusal. The
+   * ledger must still hold the TRUE codes, or scoping the explanation has silently become
+   * deleting the evidence — and then the approver the scoped refusal tells the drafter to
+   * ask has nothing to look up, which makes the remedy a lie.
+   *
+   * `recordGateDecision` reads this field and nothing else for its `refusal_codes` column.
+   * A route that spreads this into a response body reopens the oracle in full; no route
+   * does, because `marketingGates.ts` builds its response field by field, and the field is
+   * named to make an accidental spread read as wrong.
+   */
+  readonly ledgerOnly: {
+    readonly refusalCodes: readonly Refusal['code'][];
+  };
+}
+
+/**
+ * The two fields every verdict on every path must carry, in one place.
+ *
+ * `clearance: 'not_cleared'` on the failure paths is not laziness: a verdict produced
+ * because a check DID NOT RUN has no basis to disclose, and claiming a reader was cleared
+ * to see one would be a claim about a decision nobody made.
+ */
+function scopeFields(reference: string, codes: readonly Refusal['code'][]): {
+  readonly embargoScope: OutboundGateVerdict['embargoScope'];
+  readonly ledgerOnly: OutboundGateVerdict['ledgerOnly'];
+} {
+  return {
+    embargoScope: {
+      clearance: 'not_cleared',
+      explanationWithheld: false,
+      reference,
+      ring: EMBARGO_BASIS_RING,
+    },
+    ledgerOnly: { refusalCodes: codes },
+  };
 }
 
 /** The refusal used when a gate itself fails. Not a code the engines emit. */
-function gateFailure(message: string, assets: readonly string[]): OutboundGateVerdict {
+function gateFailure(
+  message: string,
+  assets: readonly string[],
+  reference: string,
+): OutboundGateVerdict {
   return {
+    ...scopeFields(reference, ['ASSET_STATE_UNKNOWN']),
     allowed: false,
     usableText: null,
     disposition: 'refused',
@@ -370,6 +560,73 @@ function gateFailure(message: string, assets: readonly string[]): OutboundGateVe
 }
 
 /**
+ * Over the per-request symbol bound. See `MAX_SYMBOLS_PER_GATE_CALL` for the reasoning.
+ *
+ * `LENGTH_BUDGET_EXCEEDED` IS A REUSED CODE, deliberately and with its limit stated: it
+ * means "this request is over a stated budget", which is exactly what happened, and the two
+ * existing users (`regime.ts` for the mandated-text block, `preChecks.ts` for the 280-
+ * character post) are both budgets on one artefact. A refusal-frequency panel therefore
+ * cannot tell a too-long post from a too-broad one; the sentence distinguishes them, and a
+ * dedicated code would have to be added to `RefusalCode` in `types.ts`, which this pass
+ * does not own.
+ *
+ * THE SENTENCE REPORTS ONLY THE DRAFTER'S OWN TEXT — a count of symbols they typed and the
+ * ceiling. It names no symbol and consults no register, so the refusal cannot become the
+ * oracle that the bound exists to make expensive.
+ */
+function symbolBudgetExceeded(
+  lexical: readonly string[],
+  reference: string,
+): OutboundGateVerdict {
+  const count = lexical.length;
+  return {
+    ...scopeFields(reference, ['LENGTH_BUDGET_EXCEEDED']),
+    allowed: false,
+    usableText: null,
+    disposition: 'refused',
+    refusals: [{
+      code: 'LENGTH_BUDGET_EXCEEDED',
+      sentence:
+        `This text names ${count} distinct asset symbols and one check covers at most `
+        + `${MAX_SYMBOLS_PER_GATE_CALL}. Each symbol is a separate embargo and holdings `
+        + 'join, and a single request that resolves dozens of them stops being a check on '
+        + 'an artefact and becomes a report on the register. Split the draft.',
+      rule: {
+        instrument: 'desk_policy',
+        provision: 'Outbound gate — one artefact per check',
+        text:
+          'A single outbound check covers one artefact. Where a request names more distinct '
+          + 'asset symbols than an artefact plausibly does, it is refused rather than '
+          + 'answered in part: truncating the symbol list would mean the Art 90 and '
+          + 'Art 91(3)(c) joins silently did not run on the remainder.',
+      },
+      recovery: {
+        kind: 'edit_text',
+        what:
+          `split this into drafts that each name at most ${MAX_SYMBOLS_PER_GATE_CALL} distinct `
+          + 'symbols, and check each one. Nothing here is a finding about the words: the '
+          + 'checks were not run.',
+      },
+      matched: null,
+      ruleSetVersion: 1,
+    }],
+    violations: [],
+    blockingViolations: [],
+    /*
+     * Reported, because a drafter cannot act on "too many symbols" without seeing which
+     * ones the extractor believed were symbols — over-inclusive matching is documented at
+     * the top of this file and this is the refusal where it bites. These are lexical
+     * matches on the drafter's own text and no register was read.
+     */
+    assetsExtracted: lexical,
+    extractionCaveat: EXTRACTION_IS_LEXICAL,
+    claimSafety: null,
+    marketAbuse: null,
+    gateError: null,
+  };
+}
+
+/**
  * Run both gates. Resolves with a refusal rather than throwing, so no caller can read a
  * thrown error as an absent verdict.
  */
@@ -386,8 +643,29 @@ export async function gateOutboundText(
    * `assetsExtracted` honest on both paths.
    */
   let assets: readonly string[] = lexical;
+  /*
+   * Same reason `assets` is `let`: the catch below needs a reference to hand back, and the
+   * digest is computed inside the try so a failing `node:crypto` import cannot escape as a
+   * rejection. `GATE_REFERENCE_UNAVAILABLE` is what the drafter is asked to quote when the
+   * digest never happened — a stated absence, never a blank.
+   */
+  let reference = GATE_REFERENCE_UNAVAILABLE;
 
   try {
+    reference = gateReferenceFrom(await gateTextSha256(req.text));
+
+    /*
+     * THE PER-REQUEST SYMBOL BOUND, BEFORE ANY QUERY AND BEFORE THE PROMOTION.
+     *
+     * On the lexical set only, and first, for the reason in `MAX_SYMBOLS_PER_GATE_CALL`: a
+     * budget whose count depended on the promotion would report a number that varies with
+     * register contents, and would itself be the oracle. Refusing here also means the DB
+     * never receives a several-hundred-element `= ANY($1)`.
+     */
+    if (lexical.length > MAX_SYMBOLS_PER_GATE_CALL) {
+      return symbolBudgetExceeded(lexical, reference);
+    }
+
     /*
      * THE PRESUMPTION IS CHECKED BEFORE IT IS RELIED ON.
      *
@@ -463,8 +741,33 @@ export async function gateOutboundText(
       now,
     });
 
-    const refusals = [...claim.verdict.refusals, ...abuse.refusals];
-    const violations = [...claim.verdict.violations, ...abuse.violations];
+    /*
+     * ══ NEED TO KNOW, APPLIED ONCE, HERE ══
+     *
+     * `abuse` stays the UNSCOPED verdict for the rest of this function, and every decision
+     * below is taken from it. That ordering is the safety property: `scopeEmbargoDisclosure`
+     * only ever rewrites an EXPLANATION, and if the release decision were computed from the
+     * scoped list a future edit to the scoping could quietly release a draft the Art 90 limb
+     * had refused. The scoped verdict is what the caller is HANDED; the unscoped one is what
+     * the caller is JUDGED by, and the two must not be confused.
+     *
+     * Applied to `abuse` alone, before the merge, because `ASSET_STATE_UNKNOWN` is also the
+     * code `gateFailure` uses: a filter over the merged list would eat a gate-failure
+     * refusal and put the softer scoped sentence in its place.
+     */
+    const scoped = scopeEmbargoDisclosure(abuse, {
+      clearance: embargoBasisClearance({
+        viewer: req.actor,
+        // `=== true` and not a truthiness test: an absent field must read as NOT cleared,
+        // and so must any value a caller passes that is not the boolean it promised.
+        viewerIsApprover: req.viewerIsEmbargoApprover === true,
+        resolutions: abuse.embargo,
+      }),
+      reference,
+    });
+
+    const refusals = [...claim.verdict.refusals, ...scoped.verdict.refusals];
+    const violations = [...claim.verdict.violations, ...scoped.verdict.violations];
     /*
      * AN ERROR VIOLATION BLOCKS. Both engines set `severity: 'error'` on findings that
      * are not refusals only because the remedy is a routing step rather than a rewording
@@ -505,11 +808,35 @@ export async function gateOutboundText(
       assetsExtracted: assets,
       extractionCaveat: EXTRACTION_IS_LEXICAL,
       claimSafety: claim,
-      marketAbuse: abuse,
+      /*
+       * THE SCOPED ONE. `marketAbuse` is serialised whole by `POST /claim-safety`, so
+       * returning `abuse` here would hand back the asset, the basis, the recorder's name
+       * and the date inside `marketAbuse.embargo[].narrative` no matter how carefully the
+       * refusal list had been redacted. The scoped verdict is the default in the field a
+       * route reaches for; the unscoped one is not reachable from this return at all.
+       */
+      marketAbuse: scoped.verdict,
       gateError: null,
+      embargoScope: {
+        clearance: scoped.clearance,
+        explanationWithheld: scoped.explanationWithheld,
+        reference,
+        ring: EMBARGO_BASIS_RING,
+      },
+      /*
+       * The ledger keeps the TRUE codes from both engines — identical to what
+       * `verdict.refusals.map(r => r.code)` produced before this pass, so the 0062 rows
+       * written yesterday and today mean the same thing.
+       */
+      ledgerOnly: {
+        refusalCodes: [
+          ...claim.verdict.refusals.map((r) => r.code),
+          ...scoped.unscopedRefusalCodes,
+        ],
+      },
     };
   } catch (err) {
-    return gateFailure(err instanceof Error ? err.message : String(err), assets);
+    return gateFailure(err instanceof Error ? err.message : String(err), assets, reference);
   }
 }
 
@@ -571,8 +898,14 @@ export async function recordGateDecision(
 ): Promise<boolean> {
   try {
     if (!(await gateLedgerMigrated(pool))) return false;
-    const { createHash } = await import('node:crypto');
-    const hash = createHash('sha256').update(input.text, 'utf8').digest('hex');
+    /*
+     * THE SAME DIGEST THE SCOPED REFUSAL ASKS THE DRAFTER TO QUOTE. `gateTextSha256` is
+     * shared with `gateReferenceFrom` for exactly this reason: two independent hash
+     * expressions would drift, and the failure would be silent — the drafter quotes a
+     * reference, the approver's `LIKE 'gate…%'` finds nothing, and the remedy in the refusal
+     * becomes a dead end that nothing tests.
+     */
+    const hash = await gateTextSha256(input.text);
     await pool.query(
       `INSERT INTO marketing_outbound_gate_decision
          (reply_id, phase, actor, allowed, disposition, text_sha256,
@@ -586,7 +919,15 @@ export async function recordGateDecision(
         input.verdict.disposition,
         hash,
         input.verdict.assetsExtracted,
-        input.verdict.refusals.map((r) => r.code),
+        /*
+         * `ledgerOnly`, NOT `refusals`. `refusals` may have had the Art 90 limb replaced by
+         * one scoped refusal for a reader who is not cleared to read the basis; writing that
+         * to the control ledger would mean the desk's own record of an embargo block said
+         * `ASSET_STATE_UNKNOWN`, and the approver the drafter was told to ask would find a
+         * row that agrees with the redaction instead of the register. Scoping the
+         * explanation must not scope the evidence.
+         */
+        input.verdict.ledgerOnly.refusalCodes,
         // The BLOCKING ones only. A warning that travelled without stopping anything is
         // not why this row says allowed=false, and recording it here would make the
         // ledger unreadable on the one question it exists to answer.

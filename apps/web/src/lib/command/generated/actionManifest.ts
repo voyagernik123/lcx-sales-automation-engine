@@ -14,7 +14,7 @@
  * unknown keys (so some valid input looks invalid). invokeAction on the server is
  * the only authority. See apps/api/src/actions/grammar.ts.
  *
- * 30 actions · manifest 9243b51884272a58
+ * 30 actions · manifest 7aa93c214ef5f44c
  */
 
 import type { ActionManifest } from '../types';
@@ -920,6 +920,15 @@ export const ACTION_MANIFEST: ActionManifest = {
               "asset_renamed",
               "periodic_renewal"
             ]
+          },
+          "shortPosition": {
+            "type": "string",
+            "enum": [
+              "holds_short",
+              "no_short",
+              "declined",
+              "not_asked"
+            ]
           }
         },
         "required": [
@@ -1146,7 +1155,7 @@ export const ACTION_MANIFEST: ActionManifest = {
       "us_entity_licences"
     ]
   },
-  "manifestHash": "9243b51884272a58"
+  "manifestHash": "7aa93c214ef5f44c"
 } as const satisfies ActionManifest;
 
-export const MANIFEST_HASH = "9243b51884272a58";
+export const MANIFEST_HASH = "7aa93c214ef5f44c";

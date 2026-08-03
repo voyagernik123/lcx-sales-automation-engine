@@ -940,8 +940,30 @@ describe('the outbound gate on composition', () => {
       refusals: { code: string }[];
       outboundGate: { allowed: boolean; assetsExtracted: string[] };
     };
-    expect(body.refusals.map((r) => r.code)).toContain('EMBARGO_REGISTER_ABSENT');
+    /*
+     * `ASSET_STATE_UNKNOWN`, NOT `EMBARGO_REGISTER_ABSENT` — and the difference is the
+     * Art 90 need-to-know split, not a weaker refusal.
+     *
+     * `compose()` authenticates with the SHARED MACHINE KEY, which resolves to
+     * `role: 'operator'` (`middleware/auth.ts:65`), so the route passes
+     * `viewerIsEmbargoApprover: false` and `scopeEmbargoDisclosure` replaces the Art 90
+     * limb with ONE scoped refusal. That is the point: "the register is absent" is itself a
+     * fact about the register, and a caller who may not read the register may not learn it
+     * by probing. The unscoped code still reaches the 0062 row through
+     * `ledgerOnly.refusalCodes`, so the approver this refusal tells the drafter to ask has
+     * something to look up.
+     *
+     * BOTH HALVES ARE ASSERTED. If someone wires the machine key as cleared — the widest
+     * of the three rings written out at `outboundGate.ts:381-404`, and the one no shared
+     * secret can honestly be in — the second assertion goes red rather than this test
+     * quietly passing on a wider disclosure.
+     */
+    expect(body.refusals.map((r) => r.code)).toContain('ASSET_STATE_UNKNOWN');
+    expect(body.refusals.map((r) => r.code)).not.toContain('EMBARGO_REGISTER_ABSENT');
     expect(body.outboundGate.allowed).toBe(false);
+    // The symbol is still shown. Scoping withholds the BASIS, never the fact that the gate
+    // read the draft and matched a symbol in it — a refusal that hid its own subject would
+    // be unactionable.
     expect(body.outboundGate.assetsExtracted).toContain('SOL');
     // A refused statement left in the table is one a surface can serve while the refusal
     // sits somewhere else — the route's own stated rule for its other refusals.

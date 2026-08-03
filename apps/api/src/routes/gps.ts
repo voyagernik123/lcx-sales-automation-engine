@@ -83,6 +83,8 @@ import { gpsDeliveryRoutes } from './gpsDelivery.js';
 import { gpsLoopRoutes } from './gpsLoop.js';
 // Client intake (owner decision, 2026-08-02: GPS may store client documents).
 import { gpsArtifactRoutes } from './gpsArtifact.js';
+// The input desk: price bands, effort triples, rate cards. Mounted at '/inputs' below.
+import { gpsInputsRoutes } from './gpsInputs.js';
 import {
   perimeterClearanceFor,
   perimeterRefusalBody,
@@ -940,3 +942,26 @@ gpsRoutes.route('/loop', gpsLoopRoutes); //               /v1/gps/loop…
  * `__tests__/gpsArtifact.test.ts`.
  */
 gpsRoutes.route('/', gpsArtifactRoutes); //  /v1/gps/engagements/:id/artifacts, /artifacts/:id/…
+/*
+ * THE INPUT DESK — the three inputs only a human can supply.
+ *
+ * Mounted at '/inputs' and NOT at '/', because this router declares its paths RELATIVE to
+ * that segment: its read is registered as `'/'` and its three writes as `'/price-bands'`,
+ * `'/effort-triples'` and `'/rate-cards'`. Mounting it at '/' would put a second handler
+ * on `GET /v1/gps`, which `gpsRoutes` itself already owns — the first registration wins in
+ * Hono, so the desk read would have been shadowed and the three writes would have answered
+ * on paths no fetcher calls. Same shape as underwriting, conflict and loop above.
+ *
+ * WHAT THE MOUNT BUYS: `requireWorkspace('gps','view')` in front of the read and
+ * `…,'operate')` in front of the writes, from `app.ts:183-190` over the one `/v1/gps`
+ * prefix — plus `requireOperator` declared per route inside the file, which is
+ * authentication rather than authorisation and does not replace the gate. Asserted per
+ * path and per method in `__tests__/gpsInputsMount.test.ts` rather than trusted here.
+ *
+ * NOTHING HERE INVENTS A NUMBER. Every price band is still the compiled placeholder and
+ * every effort distribution still `basis: 'prior'` until a human types real ones; the
+ * rate-card write refuses 409 while `PARTNER_BENCH` is empty, and `gps_price_band` does
+ * not exist until 0066 is pasted in. Absent inputs refuse and say which register is
+ * missing — they never render as zero.
+ */
+gpsRoutes.route('/inputs', gpsInputsRoutes); //  GET /v1/gps/inputs, POST /inputs/price-bands|effort-triples|rate-cards

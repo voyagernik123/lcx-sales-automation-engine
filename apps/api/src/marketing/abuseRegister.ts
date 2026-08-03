@@ -40,7 +40,28 @@
  */
 import { z } from 'zod';
 import type pg from 'pg';
-import { findMemberById } from '@lcx/shared';
+import {
+  findMemberById,
+  /*
+   * THE SHORT-POSITION VOCABULARY, IMPORTED — NOT MIRRORED ANY MORE.
+   *
+   * These two arrays used to be re-declared below as literals, because `@lcx/shared`
+   * publishes a single `"."` export and `marketing/index.ts` did not re-export
+   * `contracts/holdings.ts`; a deep relative specifier type-checks and then fails the api
+   * EMIT build with TS6059 (`not under rootDir`), which is the Docker-order failure
+   * `gate-must-run-emit-build` exists to catch. The barrel line has landed, so the copy is
+   * deleted rather than held in step by an assertion.
+   *
+   * TWO COPIES REMAIN AND BOTH ARE DELIBERATE: this module's own re-export below (so no
+   * importer had to change) and the CHECK constraint in 0065, which is the 0047 convention
+   * — the database keeps its own copy so a value the application never emits cannot arrive
+   * through psql. `routes/__tests__/marketingHoldingsShort.test.ts` holds the SQL and the
+   * TypeScript equal by reading the migration off disk.
+   */
+  SHORT_POSITION_ANSWERED,
+  SHORT_POSITION_ANSWERS,
+  SHORT_QUESTION_POLICIES,
+} from '@lcx/shared';
 import type {
   ActorId,
   AssetEmbargoState,
@@ -50,6 +71,8 @@ import type {
   HoldingsDeclarationEntry,
   HoldingsDeclarationState,
   HoldingsRegister,
+  ShortPositionAnswer,
+  ShortQuestionPolicy,
   // Marketing's refusal-code union. NOT `RefusalCode`, which is GPS's through the same
   // barrel — see the note on `PerimeterRefusalHint` below and the aliasing block in
   // `packages/shared/src/index.ts`.
@@ -208,27 +231,54 @@ function assertNamedHuman(actor: string, what: string): ActorId {
  * that could not be answered returns `false` for THIS call — the fail-closed
  * direction — and leaves the cache unset, so the next call re-probes.
  */
-let migratedCache: boolean | null = null;
+let migratedCache: { tables: boolean; shortColumn: boolean } | null = null;
 
-export async function isAbuseRegisterMigrated(pool: pg.Pool): Promise<boolean> {
+/**
+ * ONE ROUND TRIP FOR BOTH MIGRATIONS, because they are two independent questions asked
+ * on every read of this register and an environment can genuinely have 0060 and not
+ * 0065. Asking separately would have cost a second query on every request and — worse —
+ * would have made a caller that forgot the second one emit
+ * `SELECT d.short_position` against a table that has no such column, which is a 42703
+ * that turns a read of the register into a 500.
+ */
+async function probeMigrations(pool: pg.Pool): Promise<{ tables: boolean; shortColumn: boolean }> {
   if (migratedCache !== null) return migratedCache;
   try {
     // BOTH tables, because a half-applied migration is not applied: the loaders
     // join across them and 0060 creates them in one file. `to_regclass` returns
-    // NULL rather than throwing, so the probe itself cannot be the failure.
-    const res = await pool.query<{ ok: boolean }>(
+    // NULL rather than throwing, so the probe itself cannot be the failure. The
+    // `information_schema` half is a catalogue read for the same reason: it answers
+    // `false` for a missing column instead of raising.
+    const res = await pool.query<{ ok: boolean; short_ok: boolean }>(
       `SELECT to_regclass('public.marketing_asset_embargo') IS NOT NULL
-          AND to_regclass('public.marketing_holdings_declaration') IS NOT NULL AS ok`,
+          AND to_regclass('public.marketing_holdings_declaration') IS NOT NULL AS ok,
+              EXISTS (
+                SELECT 1 FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'marketing_holdings_declaration'
+                   AND column_name = 'short_position'
+              ) AS short_ok`,
     );
-    migratedCache = Boolean(res.rows[0]?.ok);
+    const tables = Boolean(res.rows[0]?.ok);
+    migratedCache = {
+      tables,
+      // A column cannot be present on a table that is not. Guarding this way means a
+      // stub or a database that answers the first half and not the second resolves to
+      // "no short limb", which refuses, rather than to a column that is not there.
+      shortColumn: tables && Boolean(res.rows[0]?.short_ok),
+    };
     return migratedCache;
   } catch (err) {
     console.warn(
       '[marketing] abuse-register probe failed; treating the perimeter as unavailable for this request:',
       err instanceof Error ? err.message : err,
     );
-    return false;
+    return { tables: false, shortColumn: false };
   }
+}
+
+export async function isAbuseRegisterMigrated(pool: pg.Pool): Promise<boolean> {
+  return (await probeMigrations(pool)).tables;
 }
 
 /** Test-only: forget the probe. */
@@ -510,6 +560,135 @@ export async function listEmbargoRegister(
   };
 }
 
+/* ════════════════ The short limb: vocabulary, and the one-line switch ════════════════ */
+
+/**
+ * WHAT A DECLARATION CAN SAY ABOUT A SHORT POSITION (0065 `short_position`).
+ *
+ * `holds` is a boolean, so before 0065 a declaration could say "I hold spot" or "I hold
+ * nothing" and nothing else. Art 91(3)(c) says "an opinion", not "a favourable
+ * opinion": a staffer who is short an asset and calls it a dead project is inside the
+ * same definition, and their `holds = false` row read as "no position" and cleared.
+ * `abuse.ts:680` names that gap; this vocabulary is what closes it.
+ *
+ * ══ 'not_asked' IS NOT 'no_short'. ══ That conflation is the whole defect. One is the
+ * absence of a question, the other is an answer. `bearishLimbOf` (shared) maps
+ * 'not_asked' AND 'declined' to `unknown`, and unknown refuses — there is deliberately
+ * no value meaning "probably not".
+ *
+ * ══ NO LONGER A MIRROR. ══ The vocabulary is IMPORTED from
+ * `packages/shared/src/marketing/contracts/holdings.ts` (see the import block at the head
+ * of this file for why it could not be, and what changed). It is RE-EXPORTED here, under
+ * the same names, so no importer of this module had to move: `actions/registry.ts`,
+ * `routes/marketingHoldings.ts` and four test files all name them from here.
+ *
+ * The DATABASE still keeps its own copy as a CHECK in 0065 — the 0047 convention, and the
+ * one duplicate worth having, because it stops a value the application never emits arriving
+ * through psql. `routes/__tests__/marketingHoldingsShort.test.ts` reads the migration off
+ * disk and holds the two equal, and it asserts this module IMPORTS rather than re-declares
+ * so the copy cannot quietly grow back.
+ */
+export { SHORT_POSITION_ANSWERS, SHORT_QUESTION_POLICIES };
+export type { ShortPositionAnswer, ShortQuestionPolicy };
+
+/**
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║  WHETHER LCX ASKS ITS STAFF ABOUT SHORT POSITIONS AT ALL.                    ║
+ * ║  THIS IS A HUMAN'S DECISION. IT IS ONE LINE, AND IT IS THIS LINE.            ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
+ * IT IS NOT AN ENGINEERING QUESTION AND IT IS NOT DECIDED HERE. Asking an employee
+ * about positions held in a personal account outside the firm engages employment law
+ * and GDPR — a new purpose, a new lawful basis and a new retention answer, and the DPO
+ * item in LCX_MARKETING_100X_PLAN.md §7 is still open. So the question is made
+ * EXPRESSIBLE and left NOT COMPULSORY, and this ships in the state that asks nothing.
+ *
+ * THE THREE SETTINGS, and what changes for whom:
+ *
+ *   'not_asked'  (SHIPPED) The question is not put. `MarketingHoldings.tsx` renders no
+ *                short control, and a submitted short answer is REFUSED
+ *                (`HOLDINGS_SHORT_QUESTION_NOT_ASKED`) rather than stored as an answer
+ *                to a question nobody asked. Every row is written 'not_asked', so every
+ *                bearish limb is `unknown` and every bearish draft refuses. The cost is
+ *                refusals, which is the safe direction; the benefit is that no legal
+ *                position is asserted by a default.
+ *   'voluntary'  The question is put and may be skipped. A skip stores 'declined',
+ *                which is kept distinct from 'not_asked' because it names a different
+ *                party's gap. The bearish limb clears only for members who answered
+ *                'no_short'. Nobody is refused for declining.
+ *   'required'   A declaration with no short answer is refused
+ *                (`HOLDINGS_SHORT_ANSWER_REQUIRED`). READ THIS CONSEQUENCE BEFORE
+ *                CHOOSING IT: answering becomes a condition of filing AT ALL, so a
+ *                member who will not answer cannot record their LONG position either,
+ *                and their drafts then refuse on `HOLDINGS_DECLARATION_MISSING`. That
+ *                is a personnel outcome, not a technical one.
+ *
+ * Changing this value is the ONLY change needed to switch behaviour: the column, the
+ * CHECK, the action param, the refusals, the register views and the screen are all
+ * already here and all already tested at all three settings.
+ */
+export const SHORT_QUESTION_POLICY: ShortQuestionPolicy = 'not_asked';
+
+/** True when the surface should render the short question. Reported on every response. */
+export function shortQuestionIsAsked(policy: ShortQuestionPolicy = SHORT_QUESTION_POLICY): boolean {
+  return policy !== 'not_asked';
+}
+
+/**
+ * A value out of the database, or out of a stub that predates 0065, resolved to a
+ * member of the vocabulary. AN UNRECOGNISED OR MISSING VALUE BECOMES 'not_asked',
+ * which is the fail-closed direction: 'not_asked' resolves to `unknown` and refuses,
+ * whereas defaulting to 'no_short' would clear a bearish draft on the strength of a
+ * column that was not there.
+ */
+export function normaliseShortAnswer(raw: unknown): ShortPositionAnswer {
+  return (SHORT_POSITION_ANSWERS as readonly string[]).includes(String(raw))
+    ? (raw as ShortPositionAnswer)
+    : 'not_asked';
+}
+
+/** The migration that adds `short_position`. Named in every refusal that needs it. */
+export const SHORT_LIMB_MIGRATION = '0065_marketing_holdings_position.sql';
+
+/**
+ * HAS 0065 LANDED HERE? A separate question from 0060 — an environment can have the two
+ * perimeter tables and not the column — answered by the same single probe, which is why
+ * this is a thin read of `probeMigrations` rather than a second round trip.
+ *
+ * ONLY A DEFINITE ANSWER IS CACHED, inherited from that probe: one database blip cannot
+ * convince a process for its lifetime that the column is missing.
+ */
+export async function isHoldingsShortLimbMigrated(pool: pg.Pool): Promise<boolean> {
+  return (await probeMigrations(pool)).shortColumn;
+}
+
+/**
+ * Test-only: forget the probe.
+ *
+ * The same cache `_resetAbuseRegisterMigrated` clears, because one probe answers both
+ * questions. Kept as its own name so a test about the short limb reads as one, and so a
+ * future split of the probe does not have to rewrite the tests.
+ */
+export function _resetHoldingsShortLimbMigrated(): void {
+  migratedCache = null;
+}
+
+/**
+ * The `short_position` column, or nothing, as a SELECT-list fragment.
+ *
+ * A CONSTANT chosen by a boolean — no value, identifier or fragment here is derived
+ * from a request, and every VALUE in every query in this file is still bound. The
+ * alternative (`COALESCE(d.short_position, …)`) does not work: a column that does not
+ * exist is a parse error, not a null.
+ *
+ * `prefix` exists because not every query in this file aliases the table: `listHoldings`
+ * addresses it unqualified, and qualifying it there would be a cosmetic change to a
+ * query other tests match on by its opening columns.
+ */
+function shortColumn(present: boolean, prefix = 'd.'): string {
+  return present ? `${prefix}short_position,` : '';
+}
+
 /* ═══════════════════════ The holdings declaration: reads ═══════════════════════ */
 
 /** `${memberId}|${assetSymbol}`. Both sides are slug/symbol shaped, so '|' cannot collide. */
@@ -523,6 +702,18 @@ export interface HoldingsCell {
   readonly state: HoldingsDeclarationState;
   /** `null` whenever the state is not a live declaration — never a defaulted `false`. */
   readonly holds: boolean | null;
+  /**
+   * The short limb (0065), or `null` when there is no live declaration to read one
+   * from — register absent, never declared, or a declaration past `renew_by`.
+   *
+   * `null` AND 'not_asked' ARE DIFFERENT AND BOTH REFUSE. `null` means this desk has no
+   * live answer of any kind for this cell; 'not_asked' means there IS a live
+   * declaration and the short question was never put to its author. A surface that
+   * collapsed them would tell a member their declaration is missing when it is not, or
+   * that it is complete when the short half was never asked. Neither is `no_short`, and
+   * nothing may read either as a cleared bearish limb.
+   */
+  readonly shortPosition: ShortPositionAnswer | null;
   readonly declaredAt: string | null;
   readonly renewBy: string | null;
   /** True when a declaration exists but has passed `renew_by`, hence `not_declared`. */
@@ -544,6 +735,8 @@ interface HoldingsRow {
   member_id: string;
   asset_symbol: string;
   holds: boolean;
+  /** 0065. Typed as `unknown` because a pre-0065 stub or database has no such column. */
+  short_position?: unknown;
   declared_at: Date | string;
   renew_by: Date | string;
   amendments: string | number;
@@ -588,10 +781,11 @@ export async function loadHoldingsStates(
     return absentHoldingsLookup(pairs, { registerPresent: true, registerEmpty: true });
   }
 
+  const hasShort = await isHoldingsShortLimbMigrated(pool);
   const res = pairs.length === 0
     ? { rows: [] as HoldingsRow[] }
     : await pool.query<HoldingsRow>(
-        `SELECT d.member_id, d.asset_symbol, d.holds, d.declared_at, d.renew_by,
+        `SELECT d.member_id, d.asset_symbol, d.holds, ${shortColumn(hasShort)} d.declared_at, d.renew_by,
                 (SELECT count(*) FROM marketing_holdings_declaration a
                   WHERE a.member_id = d.member_id AND a.asset_symbol = d.asset_symbol) - 1
                   AS amendments
@@ -612,7 +806,7 @@ export async function loadHoldingsStates(
     const r = byKey.get(holdingsKey(memberId, assetSymbol));
     if (!r) {
       return {
-        memberId, assetSymbol, state: 'not_declared', holds: null,
+        memberId, assetSymbol, state: 'not_declared', holds: null, shortPosition: null,
         declaredAt: null, renewBy: null, stale: false, amendments: 0,
       };
     }
@@ -625,6 +819,11 @@ export async function loadHoldingsStates(
       // alongside `not_declared` invites a surface to render "no position (expired)"
       // and an operator to act on it, which is the whole failure this guards.
       holds: stale ? null : r.holds,
+      // The short limb is withheld on the same argument and for the same reason: a
+      // stale 'no_short' rendered beside `not_declared` reads as a cleared bearish
+      // limb. On a database without 0065 the column is not selected at all, so this is
+      // 'not_asked' — which is TRUE (the question cannot be put yet) and refuses.
+      shortPosition: stale ? null : normaliseShortAnswer(r.short_position),
       declaredAt: iso(r.declared_at),
       renewBy: iso(r.renew_by),
       stale,
@@ -647,7 +846,7 @@ function absentHoldingsLookup(
   opts: { registerPresent: boolean; registerEmpty: boolean },
 ): HoldingsLookup {
   const cells: HoldingsCell[] = pairs.map(([memberId, assetSymbol]) => ({
-    memberId, assetSymbol, state: 'register_absent', holds: null,
+    memberId, assetSymbol, state: 'register_absent', holds: null, shortPosition: null,
     declaredAt: null, renewBy: null, stale: false, amendments: 0,
   }));
   return {
@@ -673,7 +872,16 @@ function absentHoldingsLookup(
 export async function listHoldings(
   pool: pg.Pool,
   opts: { viewer: string; role: ActorRole; memberId?: string; assetSymbol?: unknown; limit?: number },
-): Promise<{ registerPresent: boolean; rows: Array<HoldingsRow & { id: string; supersedes_id: string | null; amendment_reason: string | null }> }> {
+): Promise<{
+  registerPresent: boolean;
+  rows: Array<HoldingsRow & {
+    id: string;
+    supersedes_id: string | null;
+    amendment_reason: string | null;
+    /** True once a later row points at this one. History, not state. */
+    superseded: boolean;
+  }>;
+}> {
   const subject = (opts.memberId ?? opts.viewer).trim();
   if (subject !== opts.viewer && opts.role !== 'approver') {
     throw new ActionError(
@@ -686,14 +894,67 @@ export async function listHoldings(
   if (!(await isAbuseRegisterMigrated(pool))) return { registerPresent: false, rows: [] };
   const symbol = opts.assetSymbol === undefined ? null : requireSymbol(opts.assetSymbol, 'assetSymbol');
   const limit = Math.min(Math.max(opts.limit ?? 200, 1), 500);
+  const hasShort = await isHoldingsShortLimbMigrated(pool);
+  // UNQUALIFIED, and it stays that way. The correlated subquery names the table in full
+  // rather than an alias so the opening columns of this statement are byte-identical to
+  // what they were before 0065 — `marketing/__tests__/abuseRegister.test.ts` matches this
+  // query by that prefix, and an alias would have silently un-stubbed it.
   const res = await pool.query(
-    `SELECT id, member_id, asset_symbol, holds, declared_at, renew_by,
-            supersedes_id, amendment_reason, 0 AS amendments
+    `SELECT id, member_id, asset_symbol, holds, ${shortColumn(hasShort, '')}
+            declared_at, renew_by, supersedes_id, amendment_reason, 0 AS amendments,
+            EXISTS (
+              SELECT 1 FROM marketing_holdings_declaration s
+               WHERE s.supersedes_id = marketing_holdings_declaration.id
+            ) AS superseded
        FROM marketing_holdings_declaration
       WHERE member_id = $1 AND ($2::text IS NULL OR asset_symbol = $2)
       ORDER BY declared_at DESC
       LIMIT $3`,
     [subject, symbol, limit],
+  );
+  return { registerPresent: true, rows: res.rows };
+}
+
+/**
+ * THE SUPERVISION HALF: every member's CURRENT declaration, for an approver.
+ *
+ * `listHoldings` is one member's chain and is self-or-approver. This is the whole desk
+ * and is APPROVER-ONLY, which is the same authority model read the other way round —
+ * not a second one. It exists because an approver's actual question is "how much of the
+ * desk can the gate clear", and answering it by calling `listHoldings` once per roster
+ * member would make the surface enumerate colleagues to find out.
+ *
+ * CURRENT ROWS ONLY. The chain is history and history is read per member; a register
+ * view that listed superseded rows for everybody would bury the state it exists to
+ * show. Superseded rows are still never deleted, and `listHoldings` still returns them.
+ */
+export async function listHoldingsRegister(
+  pool: pg.Pool,
+  opts: { role: ActorRole; limit?: number },
+): Promise<{ registerPresent: boolean; rows: Array<Record<string, unknown>> }> {
+  if (opts.role !== 'approver') {
+    throw new ActionError(
+      'HOLDINGS_APPROVER_ONLY',
+      'The desk-wide holdings register lists named colleagues\' financial positions under MiCA Art 91(3)(c), so reading it requires approver authority. Your own declarations are readable without it.',
+      403,
+    );
+  }
+  if (!(await isAbuseRegisterMigrated(pool))) return { registerPresent: false, rows: [] };
+  const limit = Math.min(Math.max(opts.limit ?? 500, 1), 1000);
+  const hasShort = await isHoldingsShortLimbMigrated(pool);
+  const res = await pool.query(
+    `SELECT d.id, d.member_id, d.asset_symbol, d.holds, ${shortColumn(hasShort)}
+            d.declared_at, d.renew_by, d.supersedes_id, d.amendment_reason,
+            (SELECT count(*) FROM marketing_holdings_declaration a
+              WHERE a.member_id = d.member_id AND a.asset_symbol = d.asset_symbol) - 1
+              AS amendments
+       FROM marketing_holdings_declaration d
+      WHERE NOT EXISTS (
+              SELECT 1 FROM marketing_holdings_declaration s WHERE s.supersedes_id = d.id
+            )
+      ORDER BY d.renew_by ASC, d.member_id ASC, d.asset_symbol ASC
+      LIMIT $1`,
+    [limit],
   );
   return { registerPresent: true, rows: res.rows };
 }
@@ -849,25 +1110,42 @@ export async function recordedSymbolsAmong(
  * applies `reviewBy` — the same division of labour as above. `note` is always null:
  * these tables hold no free text and no position size, and Art 91(3)(c) turns on
  * whether a position exists rather than on how large it is.
+ *
+ * ══ THE SHORT LIMB TRAVELS BESIDE THE ENTRIES, NOT ON THEM. ══
+ * `shortByKey` (keyed by `holdingsKey`) carries each current declaration's 0065
+ * `short_position`. It is a parallel map rather than a field on
+ * `HoldingsDeclarationEntry` because that type lives in
+ * `packages/shared/src/marketing/abuse.ts`, which this pass does not own — and adding
+ * an OPTIONAL field there would be worse than a parallel map, because every existing
+ * construction site would keep compiling with `undefined` and some later `?? 'no_short'`
+ * would convert "nobody asked" into a cleared bearish limb. The handover is written out
+ * at the foot of `packages/shared/src/marketing/contracts/holdings.ts`: when
+ * `HoldingsDeclarationEntry` gains a REQUIRED `shortPosition`, this map folds into the
+ * entries and disappears.
+ *
+ * UNTIL THEN `assessMarketAbuse` STILL ONLY SEES THE SPOT LIMB. This function makes the
+ * fact available; it does not change what the engine decides.
  */
 export async function loadHoldingsRegister(
   pool: pg.Pool,
   scope: { memberIds?: readonly string[]; symbols?: readonly unknown[] } = {},
-): Promise<HoldingsRegister> {
+): Promise<HoldingsRegister & { shortByKey: Readonly<Record<string, ShortPositionAnswer>> }> {
   const symbols = scope.symbols === undefined ? null : normaliseSymbolList(scope.symbols);
   const members = scope.memberIds === undefined
     ? null
     : [...new Set(scope.memberIds.map((m) => String(m).trim()).filter(Boolean))];
-  if (!(await isAbuseRegisterMigrated(pool))) return { entries: [], completeness: { kind: 'not_attested' } };
+  const empty = { entries: [], completeness: { kind: 'not_attested' }, shortByKey: {} } as const;
+  if (!(await isAbuseRegisterMigrated(pool))) return empty;
   if ((symbols !== null && symbols.length === 0) || (members !== null && members.length === 0)) {
-    return { entries: [], completeness: { kind: 'not_attested' } };
+    return empty;
   }
 
+  const hasShort = await isHoldingsShortLimbMigrated(pool);
   const res = await pool.query<{
-    member_id: string; asset_symbol: string; holds: boolean;
+    member_id: string; asset_symbol: string; holds: boolean; short_position?: unknown;
     declared_at: Date | string; renew_by: Date | string;
   }>(
-    `SELECT d.member_id, d.asset_symbol, d.holds, d.declared_at, d.renew_by
+    `SELECT d.member_id, d.asset_symbol, d.holds, ${shortColumn(hasShort)} d.declared_at, d.renew_by
        FROM marketing_holdings_declaration d
       WHERE ($1::text[] IS NULL OR d.member_id = ANY($1::text[]))
         AND ($2::text[] IS NULL OR d.asset_symbol = ANY($2::text[]))
@@ -886,7 +1164,12 @@ export async function loadHoldingsRegister(
     note: null,
   }));
 
-  return { entries, completeness: { kind: 'not_attested' } };
+  const shortByKey: Record<string, ShortPositionAnswer> = {};
+  for (const r of res.rows) {
+    shortByKey[holdingsKey(r.member_id, r.asset_symbol)] = normaliseShortAnswer(r.short_position);
+  }
+
+  return { entries, completeness: { kind: 'not_attested' }, shortByKey };
 }
 
 /* ══════════════════════════════ Writes ══════════════════════════════ */
@@ -1039,6 +1322,69 @@ export const HOLDINGS_AMENDMENT_REASONS = [
 export type HoldingsAmendmentReason = (typeof HOLDINGS_AMENDMENT_REASONS)[number];
 
 /**
+ * WHAT SHORT ANSWER GETS STORED, given what was submitted and what the policy is.
+ *
+ * Pure, exported and tested at all three settings, because it is the one place where
+ * the HR decision meets the record and every way of getting it wrong writes a fact
+ * about a named person that is not true.
+ *
+ * ══ AN OMITTED ANSWER IS ALWAYS 'not_asked', NEVER 'declined'. ══
+ * Even under `voluntary`. THE SERVER CANNOT KNOW WHETHER THE QUESTION WAS DISPLAYED:
+ * this action is reachable from the command line and from any client, and treating
+ * silence as "asked and declined" would record that a member refused a question nobody
+ * put to them. A skip is therefore EXPLICIT — the surface sends 'declined' when the
+ * member chooses to skip — and both values refuse the bearish limb anyway, so nothing
+ * is gained by guessing and a false statement about a colleague is avoided.
+ */
+export function resolveShortAnswer(input: {
+  requested?: ShortPositionAnswer | null;
+  policy?: ShortQuestionPolicy;
+  columnPresent: boolean;
+}): ShortPositionAnswer {
+  const policy = input.policy ?? SHORT_QUESTION_POLICY;
+  const requested = input.requested ?? null;
+
+  if (policy === 'not_asked') {
+    if (requested !== null && requested !== 'not_asked') {
+      throw new ActionError(
+        'HOLDINGS_SHORT_QUESTION_NOT_ASKED',
+        `This desk does not ask staff about short positions, so '${requested}' cannot be recorded — storing an answer to a question the firm never put would misstate a named person's declaration. Whether the question is asked at all is an HR and legal decision, held at SHORT_QUESTION_POLICY in apps/api/src/marketing/abuseRegister.ts. Declare your long position without it; bearish statements will refuse.`,
+        409,
+        { policy, requested, policies: SHORT_QUESTION_POLICIES },
+      );
+    }
+    return 'not_asked';
+  }
+
+  /*
+   * WHICH ANSWERS COUNT AS AN ANSWER is `SHORT_POSITION_ANSWERED`, imported — not a local
+   * `['holds_short', 'no_short']`, which is what this line used to be. That literal was the
+   * SAME RULE as `bearishLimbOf`'s "only these two are answers" and a third place for
+   * 'declined' to be quietly promoted to one. The sentence below names the two members from
+   * the array, so the refusal text cannot drift from the check either.
+   */
+  if (policy === 'required' && !SHORT_POSITION_ANSWERED.includes((requested ?? '') as ShortPositionAnswer)) {
+    throw new ActionError(
+      'HOLDINGS_SHORT_ANSWER_REQUIRED',
+      `This desk requires a short-position answer on every declaration (MiCA Art 91(3)(c) is direction-neutral), and '${requested ?? 'nothing'}' is not one. Answer ${SHORT_POSITION_ANSWERED.map((a) => `'${a}'`).join(' or ')}. Nothing was recorded.`,
+      422,
+      { policy, requested, answers: SHORT_POSITION_ANSWERED },
+    );
+  }
+
+  const resolved = requested ?? 'not_asked';
+  if (resolved !== 'not_asked' && !input.columnPresent) {
+    throw new ActionError(
+      'HOLDINGS_SHORT_UNRECORDABLE',
+      `A short-position answer cannot be recorded on this environment: marketing_holdings_declaration has no short_position column. Apply ${SHORT_LIMB_MIGRATION} in the Supabase SQL editor, then retry. This refuses rather than dropping the answer — a declaration silently stripped of its short limb reads as 'not asked' and would clear nothing while looking complete.`,
+      503,
+      { migration: SHORT_LIMB_MIGRATION },
+    );
+  }
+  return resolved;
+}
+
+/**
  * Declare, amend or renew one member's position in one asset.
  *
  * SELF-SERVICE: `memberId` comes from the authenticated principal at the action, and
@@ -1058,10 +1404,24 @@ export async function declareHoldings(
     holds: boolean;
     renewInDays: number;
     amendmentReason?: HoldingsAmendmentReason | null;
+    /** The short limb. Omitted is 'not_asked', which is not an answer. See `resolveShortAnswer`. */
+    shortPosition?: ShortPositionAnswer | null;
   },
-): Promise<{ id: string; supersededId: string | null; state: HoldingsDeclarationState }> {
+): Promise<{
+  id: string;
+  supersededId: string | null;
+  state: HoldingsDeclarationState;
+  shortPosition: ShortPositionAnswer;
+}> {
   const symbol = requireSymbol(input.assetSymbol, 'assetSymbol');
   if (!(await isAbuseRegisterMigrated(pool))) throw perimeterUnavailable('A holdings declaration');
+  const hasShort = await isHoldingsShortLimbMigrated(pool);
+  // BEFORE the chain is read and before anything is written: a refused short answer
+  // must leave the register exactly as it was.
+  const shortPosition = resolveShortAnswer({
+    requested: input.shortPosition ?? null,
+    columnPresent: hasShort,
+  });
 
   const current = await pool.query<{ id: string }>(
     `SELECT d.id FROM marketing_holdings_declaration d
@@ -1092,13 +1452,24 @@ export async function declareHoldings(
   }
 
   try {
-    const res = await pool.query<{ id: string }>(
-      `INSERT INTO marketing_holdings_declaration
-         (member_id, asset_symbol, holds, renew_by, supersedes_id, amendment_reason)
-       VALUES ($1, $2, $3, now() + make_interval(days => $4::int), $5, $6)
-       RETURNING id`,
-      [input.memberId, symbol, input.holds, input.renewInDays, priorId, reason],
-    );
+    // The column is named only where it exists. On a pre-0065 database the answer can
+    // only be 'not_asked' (`resolveShortAnswer` refused anything else above), and
+    // 'not_asked' is what the absence of the column means, so nothing is lost.
+    const res = hasShort
+      ? await pool.query<{ id: string }>(
+          `INSERT INTO marketing_holdings_declaration
+             (member_id, asset_symbol, holds, short_position, renew_by, supersedes_id, amendment_reason)
+           VALUES ($1, $2, $3, $4, now() + make_interval(days => $5::int), $6, $7)
+           RETURNING id`,
+          [input.memberId, symbol, input.holds, shortPosition, input.renewInDays, priorId, reason],
+        )
+      : await pool.query<{ id: string }>(
+          `INSERT INTO marketing_holdings_declaration
+             (member_id, asset_symbol, holds, renew_by, supersedes_id, amendment_reason)
+           VALUES ($1, $2, $3, now() + make_interval(days => $4::int), $5, $6)
+           RETURNING id`,
+          [input.memberId, symbol, input.holds, input.renewInDays, priorId, reason],
+        );
     const row = res.rows[0];
     if (!row) {
       throw new ActionError('HOLDINGS_WRITE_UNCONFIRMED', 'The declaration was not confirmed by the database, so nothing may rely on it. Re-read your declarations.', 500);
@@ -1106,7 +1477,12 @@ export async function declareHoldings(
     return {
       id: row.id,
       supersededId: priorId,
+      // The state vocabulary is unchanged by 0065: it describes the SPOT limb, which is
+      // what `loadHoldingsStates` has always reported and what the engine reads today.
+      // The short answer is returned ALONGSIDE it rather than folded into it, because a
+      // fifth state would silently change what every existing consumer means.
       state: input.holds ? 'declared_holding' : 'declared_none',
+      shortPosition,
     };
   } catch (err) {
     const { code, constraint } = pgCode(err);
@@ -1255,6 +1631,15 @@ export const MARKETING_ABUSE_ACTIONS: readonly RegistryAction[] = [
       amendmentReason: z.enum(
         HOLDINGS_AMENDMENT_REASONS as unknown as [HoldingsAmendmentReason, ...HoldingsAmendmentReason[]],
       ).optional(),
+      // THE SHORT LIMB (0065). OPTIONAL, and it stays optional at every policy setting:
+      // whether the question may be asked is an HR and legal decision, and a required
+      // param would be this file deciding it. `resolveShortAnswer` enforces the live
+      // policy — including REFUSING this param outright while the policy asks nothing —
+      // so the schema's job is only to keep the value inside the vocabulary. An enum
+      // rather than a boolean because 'not_asked' and 'declined' are values, not nulls.
+      shortPosition: z.enum(
+        SHORT_POSITION_ANSWERS as unknown as [ShortPositionAnswer, ...ShortPositionAnswer[]],
+      ).optional(),
     }),
     execute: async ({ pool, subjectId, params, actor }) => {
       const memberId = assertNamedHuman(actor, 'A holdings declaration');
@@ -1264,6 +1649,7 @@ export const MARKETING_ABUSE_ACTIONS: readonly RegistryAction[] = [
         holds: Boolean(params.holds),
         renewInDays: Number(params.renewInDays),
         amendmentReason: (params.amendmentReason as HoldingsAmendmentReason | undefined) ?? null,
+        shortPosition: (params.shortPosition as ShortPositionAnswer | undefined) ?? null,
       });
       return {
         declarationId: out.id,
@@ -1271,6 +1657,10 @@ export const MARKETING_ABUSE_ACTIONS: readonly RegistryAction[] = [
         state: out.state,
         supersededId: out.supersededId,
         amended: out.supersededId !== null,
+        // Reported back so a caller cannot believe it recorded a short answer it did
+        // not. Under the shipped policy this is always 'not_asked'.
+        shortPosition: out.shortPosition,
+        shortQuestionPolicy: SHORT_QUESTION_POLICY,
       };
     },
   },

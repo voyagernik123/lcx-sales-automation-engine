@@ -35,6 +35,11 @@ const Marketing = lazy(() => import('@/pages/Marketing').then((m) => ({ default:
 const MarketingDesk = lazy(() => import('@/pages/MarketingDesk').then((m) => ({ default: m.MarketingDesk })));
 const MarketingRecord = lazy(() => import('@/pages/MarketingRecord').then((m) => ({ default: m.MarketingRecord })));
 const MarketingCrisis = lazy(() => import('@/pages/MarketingCrisis').then((m) => ({ default: m.MarketingCrisis })));
+// The fourth: the staff holdings register (Art 91(3)(c)). Lazy for the reason above —
+// the budget is 850KB and the initial bundle measures 828KB, so 22KB is the whole
+// margin and this page is larger than that. A static import here is what would break
+// `perf-budget`, and raising the budget is not the fix.
+const MarketingHoldings = lazy(() => import('@/pages/MarketingHoldings').then((m) => ({ default: m.MarketingHoldings })));
 const Gps = lazy(() => import('@/pages/Gps').then((m) => ({ default: m.Gps })));
 // GPS Phases 6-12. Each is its own lazy chunk — six eagerly-imported desks would
 // land in the initial bundle and the web perf budget has ~26KB of headroom, so a
@@ -45,6 +50,10 @@ const GpsOrigination = lazy(() => import('@/pages/GpsOrigination').then((m) => (
 const GpsConflict = lazy(() => import('@/pages/GpsConflict').then((m) => ({ default: m.GpsConflict })));
 const GpsDelivery = lazy(() => import('@/pages/GpsDelivery').then((m) => ({ default: m.GpsDelivery })));
 const GpsLoop = lazy(() => import('@/pages/GpsLoop').then((m) => ({ default: m.GpsLoop })));
+// The input desk (price bands, effort triples, rate cards). Lazy on the same argument:
+// it is the screen where the founder types the five numbers the whole underwriting
+// stack is still waiting on, and it must not cost the initial bundle to ship.
+const GpsInputs = lazy(() => import('@/pages/GpsInputs').then((m) => ({ default: m.GpsInputs })));
 const AccessControl = lazy(() => import('@/pages/AccessControl').then((m) => ({ default: m.AccessControl })));
 const Dashboard = lazy(() => import('@/pages/Dashboard').then((m) => ({ default: m.Dashboard })));
 const Home = lazy(() => import('@/pages/Home').then((m) => ({ default: m.Home })));
@@ -256,6 +265,12 @@ export const router = createBrowserRouter([
           { path: 'marketing/desk', element: <MarketingDesk /> },
           { path: 'marketing/record', element: <MarketingRecord /> },
           { path: 'marketing/crisis', element: <MarketingCrisis /> },
+          // `marketing/holdings` — the fourth surface. It needs no registry entry either:
+          // `webPaths: ['marketing']` classifies by prefix, and the SERVER gate is what
+          // enforces the compartment. Every fetch on this page 403s for an unentitled
+          // operator; `/holdings/register` additionally answers only to an approver, which
+          // the route enforces and this table cannot.
+          { path: 'marketing/holdings', element: <MarketingHoldings /> },
           // GLOBAL SERVICES (GPS). The desk at /gps, plus one route per Phase 6-12
           // surface. The server gate is what enforces the compartment — an
           // unentitled operator reaching any of these paths gets a page whose every
@@ -269,6 +284,10 @@ export const router = createBrowserRouter([
           { path: 'gps/conflict', element: <GpsConflict /> },
           { path: 'gps/delivery', element: <GpsDelivery /> },
           { path: 'gps/loop', element: <GpsLoop /> },
+          // The input desk. Same prefix classification as the seven above, so no second
+          // registry entry — and the writes behind it demand 'operate', which this table
+          // does not and cannot express: `app.ts:requiresOperate` does.
+          { path: 'gps/inputs', element: <GpsInputs /> },
           { path: 'decisions', element: <Decisions /> },
           { path: 'command-deck', element: <CommandDeck /> },
           { path: 'command-partners', element: <CommandPartners /> },

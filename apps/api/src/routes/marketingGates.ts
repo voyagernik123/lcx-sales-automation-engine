@@ -470,6 +470,25 @@ const actorOf = (c: { get: (k: 'operator') => { id: string } | undefined }): Act
   c.get('operator')?.id ?? 'unknown';
 
 /**
+ * IS THIS CALLER CLEARED TO READ THE Art 90 BASIS? Read from the authenticated principal's
+ * ROLE, never from the body — for the same reason `actorOf` is not a body field.
+ *
+ * `outboundGate.ts:406` defaults to NOT cleared, so a route that omits this gets the scoped
+ * refusal: one code, `matched: null`, no asset, no basis, no recorder, no date, plus the
+ * ring to ask and a reference to the 0062 row. That is the safe default and it is why this
+ * is an additive per-route change rather than an opt-out.
+ *
+ * WHICH RING IS RIGHT IS NOT DECIDED HERE. The three alternatives are written out at
+ * `outboundGate.ts:381-404`; approvers is the one that file implements, and a NAMED EMBARGO
+ * RING is the Art 90(1) answer, which needs a table and an owner. `role === 'approver'`
+ * deliberately excludes the shared machine key (`middleware/auth.ts:65` resolves it to
+ * `operator`): a shared secret cannot be a member of an insider list, and the cron tick
+ * runs as it.
+ */
+const embargoClearedOf = (c: { get: (k: 'operator') => { role?: string } | undefined }): boolean =>
+  c.get('operator')?.role === 'approver';
+
+/**
  * Run both gates over one body, and fold in the refusals this ROUTE owns.
  *
  * `extra` refusals are appended to the engine's own list and then `allowed` is RECOMPUTED
@@ -533,6 +552,11 @@ marketingGatesRoutes.post('/claim-safety', requireOperator, async (c) => {
         phase,
         targetPermalink,
         now,
+        // The RELEASE path. A refusal here is the last thing standing between a drafter and
+        // copyable text, so the scoped refusal must still be actionable — it names the ring
+        // and carries the 0062 reference, and `ledgerOnly.refusalCodes` keeps the true codes
+        // in the row the approver will look up.
+        viewerIsEmbargoApprover: embargoClearedOf(c),
       }),
       considerationStated ? [] : [CONSIDERATION_UNSTATED()],
     );
@@ -626,6 +650,12 @@ marketingGatesRoutes.post('/review', requireOperator, async (c) => {
       actor,
       phase: 'draft',
       now,
+      // `/review` writes no ledger row (see its docblock: `deskApi` debounces it per
+      // keystroke), so a non-cleared reader gets the scoped refusal with a reference to a
+      // row that does not exist for THIS call. That is correct and not a defect: the
+      // reference digests the caller's own text, and the recorded decision an approver
+      // looks up is the one `POST /claim-safety` wrote when the same words were released.
+      viewerIsEmbargoApprover: embargoClearedOf(c),
     });
 
     const data: ReviewVerdict = {

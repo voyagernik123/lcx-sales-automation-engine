@@ -79,10 +79,201 @@ import {
  *   · THE OWNER STILL OWES A DPO RULING. `RETENTION_DPO_RULING_OUTSTANDING` states
  *     the question. This file implements the STATED DEFAULT — LCX statements long,
  *     third-party content minimised, only a hash retained across the boundary — and
- *     labels it a default rather than a decision.
+ *     labels it a default rather than a decision. Since §0 the default is a named
+ *     constant with a document behind it (`RETENTION_POLICY`, `RETENTION_POLICY.md`)
+ *     and `signedByDpo` is literally `null`. Overriding it is one line; it is still
+ *     nobody's signed decision, and the payload says so on every read.
  *
  *  Every statement below is parameterised. Nothing is concatenated into SQL.
  */
+
+/* ════════ §0 THE POLICY OF RECORD ════════ */
+
+/**
+ * ONE PLACE WHERE THE RULING LIVES.
+ *
+ * The conflict this settles is real and code cannot settle it: the retention inferred
+ * from MiCA Art 68(9) wants LCX's records kept for five years, extendable to seven,
+ * and migration 0046 gives every inbound row ninety days and deletes on it. Both
+ * cannot be honoured for the same bytes. Until this section the resolution — LCX's OWN
+ * statements retained long, the third party's content minimised — was an assumption
+ * spread across a comment block in 0064, a paragraph in `record.ts`, and the ORDER of
+ * statements in §6. Reading it took archaeology; changing it took finding every site.
+ *
+ * IT IS NOW A CONSTANT. `RETENTION_POLICY` is the ruling and §6 does what it says.
+ * Overriding the ruling is ONE EDIT — point `RETENTION_POLICY` at another member of
+ * `RETENTION_POLICY_ALTERNATIVES`. `retentionPolicySweepShape` is the function the
+ * sweep branches on, so a test can prove the sweep follows the constant instead of
+ * trusting that it does.
+ *
+ * WHAT THIS CONSTANT IS NOT: a legal opinion, and not signed. `signedByDpo: null` is
+ * the literal state of the world — no data protection officer has ruled on it. The
+ * written decision is `RETENTION_POLICY.md` at the repository root and it says the
+ * same about itself. A default that presents itself as a decision is worse than no
+ * default, so this one states which it is, in a field, in the payload.
+ */
+
+/** What the clock does with an inbound row whose short period has run out. */
+export type ExpiredRowDisposition =
+  /** Deleted. Drafts cascade (0046). The third party's words are gone. */
+  | 'delete'
+  /** Body replaced by `MINIMISED_BODY_MARKER`, sha256 kept in `body_hash`, row held with a reason. */
+  | 'minimise_and_hold'
+  /** Row and body kept, held with a stated reason. Retention past the stated period, on purpose. */
+  | 'hold_intact';
+
+export type RetentionPolicyId = 'split_default' | 'retain_everything' | 'minimise_everything';
+
+export interface RetentionPolicy {
+  readonly id: RetentionPolicyId;
+  readonly label: string;
+  /** The written decision. A constant with no document behind it is a preference. */
+  readonly document: string;
+  /** ISO date the default was written down — not the date anybody approved it. */
+  readonly decidedOn: string;
+  /** The DPO who signed. `null` because none has: never a placeholder name. */
+  readonly signedByDpo: string | null;
+  /** An expired row carrying an approved LCX statement with no row in `marketing_record`. */
+  readonly expiredWithUnrecordedStatement: ExpiredRowDisposition;
+  /** Every other expired inbound row. */
+  readonly expiredOtherwise: ExpiredRowDisposition;
+  /**
+   * Years an LCX statement is kept from drafting. §6 also treats it as a FLOOR: the
+   * long clock will not delete a record younger than this even if the row's own
+   * `retention_expires_at` says it may.
+   */
+  readonly lcxStatementYears: number;
+  /**
+   * Art 68(9)'s extension ceiling. Reported, and asserted by 0061's CHECK constraint
+   * at write time; §6 does not compute it — the extension is worked by `legal_hold`.
+   */
+  readonly lcxStatementCeilingYears: number;
+  /** `false` stops the long clock entirely: no LCX statement is ever swept. */
+  readonly sweepLcxStatements: boolean;
+  /** What this choice gives up. All three give something up; that is why it is a ruling. */
+  readonly tradeoff: string;
+}
+
+/**
+ * THE IMPLEMENTED DEFAULT — the split, and the reason it is defensible.
+ *
+ * LCX's own cleared statements go on the long clock; the stranger's words leave on the
+ * short one; what crosses the boundary is a sha256, not text. The only genuinely hard
+ * row — an expired inbound row that an approved-but-unrecorded LCX statement depends on
+ * — is minimised and HELD, because deleting it destroys the Art 68(9) record and
+ * keeping it whole breaches minimisation, and a hash breaches neither.
+ */
+export const RETENTION_POLICY_SPLIT_DEFAULT: RetentionPolicy = {
+  id: 'split_default',
+  label: 'LCX statements retained long, third-party content minimised',
+  document: 'RETENTION_POLICY.md',
+  decidedOn: '2026-08-03',
+  signedByDpo: null,
+  expiredWithUnrecordedStatement: 'minimise_and_hold',
+  expiredOtherwise: 'delete',
+  lcxStatementYears: RETENTION_YEARS_BASE,
+  lcxStatementCeilingYears: RETENTION_YEARS_MAX,
+  sweepLcxStatements: true,
+  tradeoff:
+    'A held row keeps a stranger\'s row (not their words) past the ninety days, and the hash is '
+    + 'retained for years. If the DPO reads Art 5(1)(c) strictly, that is a breach this default '
+    + 'accepts in order to keep the record.',
+};
+
+/**
+ * ALTERNATIVE ONE — retain everything. The maximal reading of Art 68(9): nothing is
+ * deleted on either clock, expired inbound rows are held with their text intact and a
+ * stated reason. Lawful only if a supervisory duty covers the third party's words too.
+ */
+export const RETENTION_POLICY_RETAIN_EVERYTHING: RetentionPolicy = {
+  id: 'retain_everything',
+  label: 'retain everything, delete nothing on either clock',
+  document: 'RETENTION_POLICY.md',
+  decidedOn: '2026-08-03',
+  signedByDpo: null,
+  expiredWithUnrecordedStatement: 'hold_intact',
+  expiredOtherwise: 'hold_intact',
+  lcxStatementYears: RETENTION_YEARS_MAX,
+  lcxStatementCeilingYears: RETENTION_YEARS_MAX,
+  sweepLcxStatements: false,
+  tradeoff:
+    'Storage limitation is abandoned for third-party personal data: every stranger\'s message is '
+    + 'held indefinitely under a compliance label, which is the exact failure mode GDPR Art '
+    + '5(1)(e) exists to prevent. Do not select this without a written basis for the third party\'s '
+    + 'words specifically.',
+};
+
+/**
+ * ALTERNATIVE TWO — minimise everything. The maximal reading of Art 5(1)(c): the short
+ * clock deletes on schedule with no exception, including the collision row, and LCX
+ * statements are kept only for the inferred floor. Accepts losing the MiCA record for
+ * any statement nobody recorded in time.
+ */
+export const RETENTION_POLICY_MINIMISE_EVERYTHING: RetentionPolicy = {
+  id: 'minimise_everything',
+  label: 'minimise everything; the short clock has no exception',
+  document: 'RETENTION_POLICY.md',
+  decidedOn: '2026-08-03',
+  signedByDpo: null,
+  expiredWithUnrecordedStatement: 'delete',
+  expiredOtherwise: 'delete',
+  lcxStatementYears: RETENTION_YEARS_BASE,
+  lcxStatementCeilingYears: RETENTION_YEARS_MAX,
+  sweepLcxStatements: true,
+  tradeoff:
+    'The Art 68(9) record is lost for every approved statement that was not recorded before its '
+    + 'inbound row expired, silently and unrecoverably. The jeopardy list still names the rows '
+    + 'before they go, so the loss is evidenced — but it is a loss, not a deferral.',
+};
+
+/** Every ruling this file can execute. `RETENTION_POLICY` must be one of them. */
+export const RETENTION_POLICY_ALTERNATIVES: readonly RetentionPolicy[] = [
+  RETENTION_POLICY_SPLIT_DEFAULT,
+  RETENTION_POLICY_RETAIN_EVERYTHING,
+  RETENTION_POLICY_MINIMISE_EVERYTHING,
+];
+
+/**
+ * ══════════════ THE ONE LINE ══════════════
+ * THIS is the retention ruling in force. To override it, change this line to
+ * `RETENTION_POLICY_RETAIN_EVERYTHING` or `RETENTION_POLICY_MINIMISE_EVERYTHING` and
+ * change nothing else — then update `RETENTION_POLICY.md`, because a ruling in code
+ * that contradicts the document of record is two rulings.
+ */
+export const RETENTION_POLICY: RetentionPolicy = RETENTION_POLICY_SPLIT_DEFAULT;
+
+/**
+ * The shape of the sweep implied by a policy. §6 branches on THIS and on nothing else,
+ * so `retentionPolicySweepShape(RETENTION_POLICY)` is a checkable prediction of what
+ * the next enforcing run will do — which is what makes the constant load-bearing
+ * rather than decorative.
+ */
+export interface RetentionSweepShape {
+  /** Are the collision rows excluded from the delete by id? */
+  readonly protectsUnrecordedStatements: boolean;
+  /** Does any expired inbound row get deleted at all? */
+  readonly deletesExpiredRows: boolean;
+  /** Does any body get replaced by its hash? */
+  readonly minimisesBodies: boolean;
+  /** Does any row get held with its text intact? */
+  readonly holdsBodiesIntact: boolean;
+  /** Does the long clock run? */
+  readonly sweepsRecords: boolean;
+  /** Years the long clock refuses to delete inside, whatever the row says. */
+  readonly recordFloorYears: number;
+}
+
+export function retentionPolicySweepShape(policy: RetentionPolicy): RetentionSweepShape {
+  const d = [policy.expiredWithUnrecordedStatement, policy.expiredOtherwise];
+  return {
+    protectsUnrecordedStatements: policy.expiredWithUnrecordedStatement !== 'delete',
+    deletesExpiredRows: d.includes('delete'),
+    minimisesBodies: d.includes('minimise_and_hold'),
+    holdsBodiesIntact: d.includes('hold_intact'),
+    sweepsRecords: policy.sweepLcxStatements,
+    recordFloorYears: policy.lcxStatementYears,
+  };
+}
 
 /* ════════ §1 THE MIGRATION GATE ════════ */
 
@@ -420,6 +611,12 @@ export interface ClockState {
 
 export interface RetentionPostureValue {
   readonly asOf: string;
+  /**
+   * The ruling in force, returned rather than described. An operator reading this
+   * payload is entitled to see WHICH policy produced the numbers below and that nobody
+   * has signed it.
+   */
+  readonly policy: RetentionPolicy;
   readonly shortClock: ClockState;
   readonly longClock: ClockState;
   readonly lastRunAt: string | null;
@@ -468,12 +665,24 @@ export async function retentionPosture(
     + 'the held bodies with a sha256. Recording statements at clearance time removes the conflict '
     + 'entirely, because a recorded statement puts nothing in jeopardy.',
   ));
+  /*
+   * The policy is now written down and it is still unsigned, so this refusal names the
+   * document and the constant instead of restating the split in prose that could drift
+   * from either. `signedByDpo` is read, not assumed: if a DPO ever signs, this stops
+   * claiming they have not.
+   */
   top.push(retentionRefusal(
     'RETENTION_DPO_RULING_PENDING',
-    'The retention split below is the stated default, not a ruling: LCX statements for five years, '
-    + 'third-party content minimised on the short clock, only a hash retained across the boundary.',
-    'Obtain the DPO ruling named in RETENTION_DPO_RULING_OUTSTANDING and apply it to the rows it '
-    + 'changes — retention_basis is recorded per row so a later ruling can be applied precisely.',
+    RETENTION_POLICY.signedByDpo === null
+      ? `The retention ruling in force is "${RETENTION_POLICY.label}" (${RETENTION_POLICY.document}, `
+        + `written ${RETENTION_POLICY.decidedOn}), and NO DPO HAS SIGNED IT. It is the default this `
+        + 'system implements, not a decision anybody took.'
+      : `The retention ruling in force is "${RETENTION_POLICY.label}", signed by `
+        + `${RETENTION_POLICY.signedByDpo} — recorded here so the basis of the numbers below is `
+        + 'attributable to a person.',
+    'Obtain the DPO ruling named in RETENTION_DPO_RULING_OUTSTANDING. To change what this system '
+    + 'does, change RETENTION_POLICY in apps/api/src/marketing/retention.ts and RETENTION_POLICY.md '
+    + 'together — retention_basis is recorded per row so a later ruling can be applied precisely.',
   ));
 
   const ledgerPresent = await isRetentionMigrated(pool);
@@ -617,8 +826,9 @@ export async function retentionPosture(
         'RETENTION_STATEMENTS_IN_JEOPARDY',
         `${jeopardy.length} inbound row(s) carry an approved LCX statement with no row in the record `
         + 'register, and the short clock is about to destroy them.',
-        'Record each statement (POST /v1/marketing/record) or record the decision not to. The '
-        + 'rows are held with their body minimised in the meantime, not deleted.',
+        'Record each statement (POST /v1/marketing/record) or record the decision not to. What the '
+        + `next enforcing run does with them is the ruling in force: ${RETENTION_POLICY.label} `
+        + `(${RETENTION_POLICY.expiredWithUnrecordedStatement}).`,
       ));
       const pastGrace = jeopardy.filter(
         (r) => r.daysUntilExpiry < -JEOPARDY_GRACE_DAYS,
@@ -640,6 +850,7 @@ export async function retentionPosture(
 
   return {
     asOf: now.toISOString(),
+    policy: RETENTION_POLICY,
     shortClock: {
       cls: 'third_party_content',
       register: 'marketing_x_reply',
@@ -656,7 +867,9 @@ export async function retentionPosture(
       register: 'marketing_record',
       registerPresent: recordPresent,
       periodDays: null,
-      periodYears: RETENTION_YEARS_BASE,
+      /* From the ruling, not from a second copy of the number: if the policy moves the
+       * period, the posture reports the period the sweep will actually keep. */
+      periodYears: RETENTION_POLICY.lcxStatementYears,
       basis: RETENTION_BASIS,
       dueForSweep: longDue,
       refusals: longRefusals,
@@ -679,8 +892,12 @@ export interface SweepReportValue {
   readonly ranAt: string;
   readonly ranBy: string;
   readonly mode: 'dry_run' | 'enforce';
+  /** The ruling this run executed, returned so the counts below can be read against it. */
+  readonly policy: RetentionPolicy;
   readonly thirdPartyRowsDeleted: number | null;
   readonly thirdPartyRowsMinimised: number | null;
+  /** Rows held with their text intact. Non-zero only under a policy that says so. */
+  readonly thirdPartyRowsHeldIntact: number | null;
   readonly recordRowsExpired: number | null;
   readonly jeopardy: readonly JeopardyRow[];
   readonly recorded: boolean;
@@ -691,6 +908,86 @@ export interface SweepReportValue {
 export const MINIMISED_BODY_MARKER =
   '[minimised: third-party content removed on the retention clock; sha256 retained in body_hash '
   + 'so a later paste-back can be proved identical]';
+
+/** Why a collision row is held. LCX's own sentence about LCX's own decision. */
+export const JEOPARDY_HOLD_REASON =
+  'held past expiry: an approved LCX statement on this reply is not yet in '
+  + 'marketing_record, so deleting the row would destroy the record MiCA requires';
+
+/** Why an ordinary expired row is held when the ruling in force keeps everything. */
+export const POLICY_HOLD_REASON =
+  'held past expiry by the retention policy of record (see RETENTION_POLICY.md): the ruling in '
+  + 'force retains this row rather than deleting it on the short clock';
+
+/**
+ * Replace bodies with `MINIMISED_BODY_MARKER`, keeping the sha256.
+ *
+ * THE HASH IS COMPUTED IN NODE, NOT IN SQL, and that is a deliberate choice rather than
+ * a round trip nobody noticed: `digest()` lives in pgcrypto, which is an extension that
+ * may not be enabled in this schema, and a retention sweep that throws `function
+ * digest(text, unknown) does not exist` on a production database is a sweep that
+ * silently stops running. `sha256Hex` is the one hash this compartment uses everywhere
+ * else, so the value is comparable with every other hash in the record.
+ *
+ * `body_minimised_at IS NULL` twice — once to choose the rows, once in the UPDATE — so a
+ * second run neither re-hashes a marker nor counts a row it already minimised.
+ */
+async function minimiseRows(
+  pool: Pool,
+  ids: readonly number[],
+  now: Date,
+  reason: string,
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  const held = await pool.query(
+    `SELECT id, body FROM marketing_x_reply
+      WHERE id = ANY($1::bigint[]) AND body_minimised_at IS NULL`,
+    [ids],
+  );
+  const targets: number[] = [];
+  const hashes: string[] = [];
+  for (const row of held.rows as Array<{ id: number | string; body: string | null }>) {
+    targets.push(Number(row.id));
+    hashes.push(sha256Hex(row.body ?? ''));
+  }
+  if (targets.length === 0) return 0;
+  const res = await pool.query(
+    `UPDATE marketing_x_reply AS r
+        SET body = $2,
+            body_hash = COALESCE(r.body_hash, v.hash),
+            body_minimised_at = COALESCE(r.body_minimised_at, $3),
+            retention_hold_reason = $4
+       FROM (SELECT * FROM unnest($1::bigint[], $5::text[]) AS t(id, hash)) AS v
+      WHERE r.id = v.id
+        AND r.body_minimised_at IS NULL`,
+    [targets, MINIMISED_BODY_MARKER, now.toISOString(), reason, hashes],
+  );
+  return res.rowCount ?? 0;
+}
+
+/**
+ * Hold rows with their text INTACT, stating why.
+ *
+ * The body is not touched and no hash is written: under a retain-everything ruling the
+ * words themselves are what is being kept, and writing a digest of text you still hold
+ * would be theatre. `retention_hold_reason IS NULL` keeps the count to rows newly held,
+ * so a daily run does not report the same row every day as though it just decided.
+ */
+async function holdRowsIntact(
+  pool: Pool,
+  ids: readonly number[],
+  reason: string,
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  const res = await pool.query(
+    `UPDATE marketing_x_reply
+        SET retention_hold_reason = $2
+      WHERE id = ANY($1::bigint[])
+        AND retention_hold_reason IS NULL`,
+    [ids, reason],
+  );
+  return res.rowCount ?? 0;
+}
 
 /**
  * RUN BOTH CLOCKS, IN THIS ORDER, AND RECORD THAT IT HAPPENED.
@@ -715,10 +1012,25 @@ export const MINIMISED_BODY_MARKER =
  */
 export async function runRetentionClock(
   pool: Pool,
-  input: { ranBy: string; mode?: 'dry_run' | 'enforce'; now?: Date; horizonDays?: number },
+  input: {
+    ranBy: string;
+    mode?: 'dry_run' | 'enforce';
+    now?: Date;
+    horizonDays?: number;
+    /**
+     * The ruling to execute. Defaults to `RETENTION_POLICY`, the policy of record, which
+     * is what every caller in this repository uses. The parameter exists so a test can
+     * drive the alternatives without editing the ruling — NOT so a route can choose a
+     * retention policy per request, which would make the ruling unknowable after the
+     * fact.
+     */
+    policy?: RetentionPolicy;
+  },
 ): Promise<RetentionResult<SweepReportValue>> {
   const now = input.now ?? new Date();
   const mode = input.mode ?? 'dry_run';
+  const policy = input.policy ?? RETENTION_POLICY;
+  const shape = retentionPolicySweepShape(policy);
   const ranBy = (input.ranBy ?? '').trim();
   if (ranBy === '') {
     return retentionRefusal(
@@ -758,80 +1070,87 @@ export async function runRetentionClock(
     // deleting blind is precisely how the MiCA record was lost in the first place.
     return jeopardyRead;
   }
-  const heldIds = jeopardy.map((r) => r.replyId);
+  /*
+   * WHICH ROWS THE DELETE MUST NOT REACH. Under the policy of record the collision rows
+   * are protected by ID, not by predicate: a predicate re-evaluated at delete time could
+   * drift from the one jeopardy was read with, and these are exactly the rows that must
+   * not be lost to a race. Under a ruling that says delete them, this list is EMPTY and
+   * they go with the rest — the policy decides, this function does not.
+   */
+  const heldIds = shape.protectsUnrecordedStatements ? jeopardy.map((r) => r.replyId) : [];
 
   let minimised: number | null = null;
+  let heldIntact: number | null = null;
   let deleted: number | null = null;
   let recordsExpired: number | null = null;
 
   if (mode === 'enforce') {
-    /* 2. minimise the held rows.
-     *
-     * THE HASH IS COMPUTED IN NODE, NOT IN SQL, and that is a deliberate choice
-     * rather than a round trip nobody noticed: `digest()` lives in pgcrypto, which
-     * is an extension that may not be enabled in this schema, and a retention sweep
-     * that throws `function digest(text, unknown) does not exist` on a production
-     * database is a sweep that silently stops running. `sha256Hex` is the one hash
-     * this compartment uses everywhere else, so the value is comparable with every
-     * other hash in the record. */
     minimised = 0;
-    if (heldIds.length > 0) {
-      const held = await pool.query(
-        `SELECT id, body FROM marketing_x_reply
-          WHERE id = ANY($1::bigint[]) AND body_minimised_at IS NULL`,
-        [heldIds],
+    heldIntact = 0;
+
+    /* 2. the collision rows, disposed of as the ruling in force says. */
+    if (policy.expiredWithUnrecordedStatement === 'minimise_and_hold') {
+      minimised += await minimiseRows(pool, heldIds, now, JEOPARDY_HOLD_REASON);
+    } else if (policy.expiredWithUnrecordedStatement === 'hold_intact') {
+      heldIntact += await holdRowsIntact(pool, heldIds, JEOPARDY_HOLD_REASON);
+    }
+    /* 'delete' needs no statement here: `heldIds` is empty, so step 3 takes them. */
+
+    /* 3. every other expired row. */
+    if (policy.expiredOtherwise === 'delete') {
+      const del = await pool.query(
+        `DELETE FROM marketing_x_reply
+          WHERE retention_expires_at < $1
+            AND NOT (id = ANY($2::bigint[]))`,
+        [now.toISOString(), heldIds],
       );
-      const ids: number[] = [];
-      const hashes: string[] = [];
-      for (const row of held.rows as Array<{ id: number | string; body: string | null }>) {
-        ids.push(Number(row.id));
-        hashes.push(sha256Hex(row.body ?? ''));
+      deleted = del.rowCount ?? 0;
+    } else {
+      /* The ruling deletes nothing here, so the rows are resolved to ids and held. The
+       * count is 0 because the sweep LOOKED and deleted none — not null, which would
+       * mean it could not look. */
+      const others = await pool.query(
+        `SELECT id FROM marketing_x_reply
+          WHERE retention_expires_at < $1
+            AND NOT (id = ANY($2::bigint[]))`,
+        [now.toISOString(), heldIds],
+      );
+      const otherIds = (others.rows as Array<{ id: number | string }>).map((r) => Number(r.id));
+      if (policy.expiredOtherwise === 'minimise_and_hold') {
+        minimised += await minimiseRows(pool, otherIds, now, POLICY_HOLD_REASON);
+      } else {
+        heldIntact += await holdRowsIntact(pool, otherIds, POLICY_HOLD_REASON);
       }
-      if (ids.length > 0) {
-        const res = await pool.query(
-          `UPDATE marketing_x_reply AS r
-              SET body = $2,
-                  body_hash = COALESCE(r.body_hash, v.hash),
-                  body_minimised_at = COALESCE(r.body_minimised_at, $3),
-                  retention_hold_reason = $4
-             FROM (SELECT * FROM unnest($1::bigint[], $5::text[]) AS t(id, hash)) AS v
-            WHERE r.id = v.id
-              AND r.body_minimised_at IS NULL`,
-          [
-            ids,
-            MINIMISED_BODY_MARKER,
-            now.toISOString(),
-            'held past expiry: an approved LCX statement on this reply is not yet in '
-            + 'marketing_record, so deleting the row would destroy the record MiCA requires',
-            hashes,
-          ],
-        );
-        minimised = res.rowCount ?? 0;
-      }
+      deleted = 0;
     }
 
-    /* 3. delete the rest. The held ids are excluded by id, not by predicate: a
-     *    predicate re-evaluated here could drift from the one jeopardy was read
-     *    with, and the row this protects is exactly the row that must not be lost
-     *    to a race. */
-    const del = await pool.query(
-      `DELETE FROM marketing_x_reply
-        WHERE retention_expires_at < $1
-          AND NOT (id = ANY($2::bigint[]))`,
-      [now.toISOString(), heldIds],
-    );
-    deleted = del.rowCount ?? 0;
-
-    /* 4. the long clock. Legal holds are skipped — that is what Art 68(9)'s
-     *    extension is for, and a sweep that ignored it would expire records
-     *    mid-investigation. */
-    if (await isRecordMigrated(pool)) {
+    /* 4. the long clock, if the ruling runs it at all.
+     *
+     * TWO GUARDS, and they fail in different directions. Legal holds are skipped
+     * because that is what Art 68(9)'s extension is for, and a sweep that ignored it
+     * would expire records mid-investigation — that guard is NOT a policy dial, since a
+     * competent authority's request is not LCX's choice. The floor is the policy's:
+     * `drafted_at` must be at least `lcxStatementYears` in the past before a record can
+     * go, so a wrong `retention_expires_at` written by some other path cannot delete a
+     * record the ruling says to keep. 0061's CHECK asserts the same floor at write time;
+     * this is a second lock on the destructive side of it, not a claim the CHECK is
+     * missing. */
+    if (!shape.sweepsRecords) {
+      refusals.push(retentionRefusal(
+        'RETENTION_DPO_RULING_PENDING',
+        `The long clock did not run: the retention policy in force (${policy.id}) sweeps no LCX `
+        + 'statement at all, so records past their stated expiry are still held.',
+        'That is the ruling in RETENTION_POLICY.md. If it is wrong, change RETENTION_POLICY in '
+        + 'apps/api/src/marketing/retention.ts and the document together.',
+      ));
+    } else if (await isRecordMigrated(pool)) {
       const rec = await pool.query(
         `DELETE FROM marketing_record
           WHERE retention_expires_at < $1
+            AND drafted_at < ($1::timestamptz - make_interval(years => $2::int))
             AND legal_hold = false
             AND (legal_hold_until IS NULL OR legal_hold_until < $1)`,
-        [now.toISOString()],
+        [now.toISOString(), shape.recordFloorYears],
       );
       recordsExpired = rec.rowCount ?? 0;
     } else {
@@ -844,15 +1163,27 @@ export async function runRetentionClock(
   }
 
   if (jeopardy.length > 0) {
+    /* The sentence states what the ruling in force ACTUALLY did to these rows. Saying
+     * "held rather than deleted" under a policy that deletes them would be a comfortable
+     * lie in the one place an operator is reading for the truth. */
+    const fate = policy.expiredWithUnrecordedStatement === 'delete'
+      ? `DELETED with the rest: the retention policy in force (${policy.id}) grants them no `
+        + 'exception, so the record of what LCX said on each is gone'
+      : policy.expiredWithUnrecordedStatement === 'hold_intact'
+        ? 'held rather than deleted, with their third-party body intact'
+        : 'held rather than deleted, with their third-party body minimised to a sha256';
     refusals.push(retentionRefusal(
       'RETENTION_STATEMENTS_IN_JEOPARDY',
-      `${jeopardy.length} row(s) were held rather than deleted because an approved LCX statement on `
-      + 'each has never been recorded.',
-      'Record the statements (POST /v1/marketing/record). The rows stay held, with their '
-      + 'third-party body minimised, until that happens.',
+      `${jeopardy.length} row(s) were ${fate}, because an approved LCX statement on each has never `
+      + 'been recorded.',
+      'Record the statements (POST /v1/marketing/record). Until that happens the disposition is '
+      + `whatever RETENTION_POLICY.md rules — today, ${policy.label}.`,
     ));
     const pastGrace = jeopardy.filter((r) => r.daysUntilExpiry < -JEOPARDY_GRACE_DAYS);
-    if (pastGrace.length > 0) {
+    /* Only a ruling that HOLDS can hold too long. Under a delete ruling these rows are
+     * gone in this very run, and telling an operator to "release the rows" would be
+     * advice about rows that no longer exist. */
+    if (pastGrace.length > 0 && shape.protectsUnrecordedStatements) {
       refusals.push(retentionRefusal(
         'RETENTION_JEOPARDY_PAST_GRACE',
         `${pastGrace.length} of those have been held more than ${JEOPARDY_GRACE_DAYS} days past `
@@ -880,9 +1211,15 @@ export async function runRetentionClock(
         recordsExpired,
         jeopardy.length,
         refusals.map((r) => r.code),
-        mode === 'dry_run'
-          ? 'dry run: nothing was deleted or minimised; the counts above are null by design'
-          : null,
+        /* The ruling goes in the ledger. 0064 has no column for it and this file adds no
+         * migration, so it rides in `notes` — which is enough to answer "under which
+         * policy was this row deleted?" months later, and that question WILL be asked
+         * the first time the ruling changes. `third_party_rows_held_intact` has no
+         * column either: it is in the response and in this note, not invented in SQL. */
+        `policy=${policy.id} (${policy.document}, unsigned)`
+        + (mode === 'dry_run'
+          ? '; dry run: nothing was deleted, minimised or held; the counts above are null by design'
+          : `; rows held intact=${heldIntact ?? 0}`),
       ],
     );
     recorded = true;
@@ -901,8 +1238,10 @@ export async function runRetentionClock(
       ranAt: now.toISOString(),
       ranBy,
       mode,
+      policy,
       thirdPartyRowsDeleted: deleted,
       thirdPartyRowsMinimised: minimised,
+      thirdPartyRowsHeldIntact: heldIntact,
       recordRowsExpired: recordsExpired,
       jeopardy,
       recorded,
@@ -917,9 +1256,11 @@ export async function runRetentionClock(
  * The hash that survives minimisation.
  *
  * Re-exported from `record.ts` rather than re-implemented: one compartment, one hash.
- * The SQL in §6 computes the same digest server-side with `encode(digest(...))` so the
- * body never travels to the API to be hashed — and this function is what a later
- * paste-back is checked against, which is the only reason the hash is worth keeping.
+ * §6 computes the digest with this same `sha256Hex`, IN NODE — pgcrypto's `digest()` may
+ * not be enabled in the schema and a sweep that throws on it stops running silently. So
+ * a body does travel to the API to be hashed, once, on the run that minimises it. This
+ * function is what a later paste-back is checked against, which is the only reason the
+ * hash is worth keeping.
  */
 export function inboundBodyHash(body: string): string {
   return sha256Hex(body);

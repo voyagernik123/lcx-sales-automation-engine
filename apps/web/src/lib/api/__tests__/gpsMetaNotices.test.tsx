@@ -239,6 +239,15 @@ describe('every GPS surface renders what its own reads declared', () => {
       page: 'GpsConflict.tsx',
       passes: ['mergedMetaNotices([sum, clients, engagements])', 'notices={readNotices}'],
     },
+    /*
+     * The input desk. It unpacks `{ data, meta }` by hand — it needs
+     * `meta.priceBandRegisterDdl` as an ordinary string to print inside a refusal — so it
+     * RE-ATTACHES the envelope with `attachMeta` before holding the payload. Both tokens are
+     * pinned: without the attach, `metaNotices` would correctly report
+     * `envelope-not-carried` on every render and the banner would say the screen cannot tell
+     * what it is missing, which is true but useless when the envelope is right there.
+     */
+    { page: 'GpsInputs.tsx', passes: ['of={[desk]}', 'attachMeta(res.data'] },
   ];
 
   for (const { page, passes } of SURFACES) {
@@ -254,7 +263,8 @@ describe('every GPS surface renders what its own reads declared', () => {
   /**
    * THE RATCHET. The defect was one component reading the envelope while seven
    * surfaces did not, so the guard is "no GPS surface omits it" rather than "these
-   * seven include it" — a ninth page must fail this on the day it is added.
+   * seven include it" — the ninth page (GpsInputs.tsx) failed it on the day it was added,
+   * which is the whole point, and it is in SURFACES above now that it renders the banner.
    */
   it('no GPS page omits it', () => {
     const dir = join(__dirname, '../../../pages');

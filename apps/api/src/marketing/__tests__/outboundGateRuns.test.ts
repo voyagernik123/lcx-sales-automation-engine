@@ -162,7 +162,13 @@ describe('the house token cannot hide behind the missing $ sigil', () => {
     });
     const v = await gateOutboundText(pool, gate('LCX deposits are open.'));
     expect(v.assetsExtracted).toContain('LCX');
-    expect(v.refusals.map((r) => r.code)).toContain('ART_90_ASSET_UNDER_EMBARGO');
+    /*
+     * READ FROM `ledgerOnly`, NOT FROM `refusals`. The default caller is not cleared to read
+     * the Art 90 basis, so the refusal a drafter SEES is the scoped one — see
+     * `outboundGateNeedToKnow.test.ts`. What this test is about is whether the LIMB RAN on a
+     * promoted bare symbol, and the desk's own record is where that is visible.
+     */
+    expect(v.ledgerOnly.refusalCodes).toContain('ART_90_ASSET_UNDER_EMBARGO');
     expect(v.allowed).toBe(false);
   });
 
@@ -213,7 +219,8 @@ describe('the not-a-ticker presumption is checked against the register, not trus
     });
     const v = await gateOutboundText(pool, gate('Join our AMA later today.'));
     expect(v.assetsExtracted).toContain('AMA');
-    expect(v.refusals.map((r) => r.code)).toContain('ART_90_ASSET_UNDER_EMBARGO');
+    // The record, not the response: the Art 90 explanation is scoped by need to know.
+    expect(v.ledgerOnly.refusalCodes).toContain('ART_90_ASSET_UNDER_EMBARGO');
     expect(v.allowed).toBe(false);
   });
 
@@ -370,7 +377,15 @@ describe('the embargo join runs against the symbols the text names', () => {
       embargoRows: [embargo('SOL', 'mnpi_pending')], holdingsRows: [declaredNone('SOL')],
     });
     const v = await gateOutboundText(pool, gate('SOL deposits are open.'));
-    expect(v.refusals.map((r) => r.code)).toContain('ART_90_ASSET_UNDER_EMBARGO');
+    /*
+     * Asserted twice on purpose. The LIMB fired — visible in the desk's record — and the
+     * DRAFTER was refused without being told which asset or why, because an embargo is
+     * inside information and Art 90(1) does not carve out the person who happens to be
+     * drafting the tweet. `outboundGateNeedToKnow.test.ts` proves the two are
+     * indistinguishable from the benign cases.
+     */
+    expect(v.ledgerOnly.refusalCodes).toContain('ART_90_ASSET_UNDER_EMBARGO');
+    expect(v.refusals.map((r) => r.code)).toEqual(['ASSET_STATE_UNKNOWN']);
     expect(v.allowed).toBe(false);
   });
 
@@ -384,7 +399,8 @@ describe('the embargo join runs against the symbols the text names', () => {
     });
     const v = await gateOutboundText(pool, gate('SОL deposits are open.'));
     expect(v.assetsExtracted).toContain('SOL');
-    expect(v.refusals.map((r) => r.code)).toContain('ART_90_ASSET_UNDER_EMBARGO');
+    // The record: the join ran on the folded symbol rather than being walked past.
+    expect(v.ledgerOnly.refusalCodes).toContain('ART_90_ASSET_UNDER_EMBARGO');
   });
 
   it('folds fullwidth forms too, without altering the text either engine reads', async () => {

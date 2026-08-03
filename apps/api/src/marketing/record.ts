@@ -1968,13 +1968,52 @@ export async function eraseByHandle(
 }
 
 /**
+ * ╔══════════════════════════════════════════════════════════════════════════════╗
+ * ║  THE ONE PLACE PER-HANDLE SCORING IS ENABLED. IT IS OFF.                     ║
+ * ╚══════════════════════════════════════════════════════════════════════════════╝
+ *
+ * `null` means OFF, and OFF is the only correct value until `DPIA_MARKETING.md` is signed
+ * under its §12 by a named human. Setting this to a string ASSERTS THAT A SIGNED DPIA
+ * EXISTS and that this is its reference — a claim a person makes, not a default.
+ *
+ * DO NOT SET IT TO ENABLE A TEST. Tests pass `dpiaRef` explicitly and assert the refusal;
+ * `__tests__/dpiaGate.test.ts` and `__tests__/dpiaGateSource.test.ts` are written against
+ * the OFF state and one of them reads this file's source.
+ *
+ * WHY A CONSTANT AND NOT A CONFIG (DPIA_MARKETING.md §11.3 records the full table):
+ *   · an ENV VAR would let anyone with deploy access begin systematic evaluation of
+ *     natural persons with no DPIA, no review and no trace in the repository;
+ *   · a DATABASE ROW would make the gate depend on migration state and readable only
+ *     after I/O, destroying the property that this check cannot be reached through a
+ *     query;
+ *   · DELETING `scoreHandleOverTime` entirely is a legitimate fourth option, not a
+ *     rhetorical one — if the per-reply signals are sufficient, removing the capability
+ *     removes the Art 35 exposure rather than governing it. That is open question O5.
+ *
+ * ══ THE COUPLED EDIT NOBODY MAY FORGET ══
+ * `subjectAccess` tells every Art 15 requester "Nothing in this compartment scores, ranks
+ * or profiles a handle over time" (see the `notes` array above, at the Art 15 answer).
+ * THAT SENTENCE BECOMES FALSE THE MOMENT THIS CONSTANT IS SET, and a false Art 15 answer
+ * is worse than none. Whoever sets it rewrites that note in the same commit;
+ * `dpiaGateSource.test.ts` is what fails if they do not.
+ */
+export const PER_HANDLE_SCORING_DPIA: string | null = null;
+
+/**
  * THE DPIA GATE. Per-handle scoring over time is refused, not warned about.
  *
  * Accumulating a judgement about a named human across their posts — a reputation score,
  * a "difficult account" flag, a bot-likelihood that persists — is systematic evaluation
  * under GDPR Art 35(3)(a) and needs a DPIA BEFORE it ships. A comment saying so would be
- * decoration; a function that refuses is the control. It stays refusing until a real DPIA
- * reference is passed in, which is a thing only a human who did the DPIA can produce.
+ * decoration; a function that refuses is the control.
+ *
+ * ══ WHAT CHANGED, AND WHY THE OLD CHECK WAS NOT ENOUGH ══
+ * This used to refuse only on an EMPTY reference, so ANY non-empty string opened the gate:
+ * `scoreHandleOverTime(h, { dpiaRef: 'x' })` passed, and nothing in the codebase named the
+ * capability's state, so "is scoring on?" was not a question `grep` could answer. The
+ * reference now has to EQUAL the one a human committed to `PER_HANDLE_SCORING_DPIA`, which
+ * is `null` — so there is no string that opens it, and the gate is closed by construction
+ * rather than by everyone remembering to pass nothing.
  *
  * Deliberately synchronous and I/O-free: it must be impossible to reach a query.
  */
@@ -1983,7 +2022,7 @@ export function scoreHandleOverTime(
   opts: { dpiaRef?: string | null } = {},
 ): RecordResult<{ dpiaRef: string }> {
   const ref = (opts.dpiaRef ?? '').trim();
-  if (ref === '') {
+  if (PER_HANDLE_SCORING_DPIA === null || ref !== PER_HANDLE_SCORING_DPIA) {
     return recordRefusal(
       'RECORD_DPIA_ABSENT',
       'Scoring a handle over time is systematic evaluation of a natural person and is refused: no '

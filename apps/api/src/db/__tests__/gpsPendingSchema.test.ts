@@ -175,6 +175,12 @@ describe('every new migration keeps the compartment closed', () => {
     '0054_gps_origination.sql': ORIGINATION,
     '0055_gps_perimeter_comment.sql': sql('0055_gps_perimeter_comment.sql'),
     '0056_gps_delivery_gaps.sql': DELIVERY_GAPS,
+    // 0066, the price-band register. Listed HERE as well as in its own file
+    // (`gpsPriceBandMigration.test.ts`) so the three compartment-wide properties — it names
+    // D2, it enables RLS with no policy, it is forward-only — are checked by the ratchet that
+    // knows about all GPS migrations rather than only by the one that knows about this table.
+    // A per-migration test is where a new file's rules get forgotten.
+    '0066_gps_price_band.sql': sql('0066_gps_price_band.sql'),
   };
 
   it('names the unanswered DPO question, as every GPS migration must', () => {

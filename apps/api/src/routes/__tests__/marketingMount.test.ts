@@ -8,18 +8,18 @@ import { invalidateEntitlements } from '../../access/entitlements.js';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════════
- *  ARE THE FOUR NESTED MARKETING ROUTERS REALLY INSIDE THE COMPARTMENT GATE?
+ *  ARE THE FIVE NESTED MARKETING ROUTERS REALLY INSIDE THE COMPARTMENT GATE?
  * ══════════════════════════════════════════════════════════════════════════════
  *
- * `routes/marketingDesk.ts`, `marketingMemory.ts`, `marketingRecord.ts` and
- * `marketingGates.ts` declare NO workspace middleware of their own. They rely entirely on
- * being nested inside `marketingRoutes`, which `app.ts` gates from the workspace
- * constitution's `apiPrefixes`. That is the correct design — a per-router gate is a second
+ * `routes/marketingDesk.ts`, `marketingMemory.ts`, `marketingRecord.ts`,
+ * `marketingGates.ts` and `marketingHoldings.ts` declare NO workspace middleware of their
+ * own. They rely entirely on being nested inside `marketingRoutes`, which `app.ts` gates
+ * from the workspace constitution's `apiPrefixes`. That is the correct design — a per-router gate is a second
  * thing to forget — but "it is covered automatically" is a claim about wiring in four other
  * files, and a comment asserting it is worth nothing. `__tests__/gpsArtifact.test.ts` makes
  * the same argument for the same reason; this is its marketing counterpart.
  *
- * ══ THE FOURTH ROUTER IS WHY THIS FILE IS NOT OPTIONAL ══
+ * ══ THE FOURTH ROUTER IS WHY THIS FILE EXISTS; THE FIFTH IS WHY IT KEEPS EARNING ITS PLACE ══
  * `marketingGates.ts` shipped with eight routes and NOTHING mounted it — only its own tests
  * referenced the export. `POST /claim-safety`, the only route in the compartment that hands
  * a human copyable text with a ledger row behind it, answered 404. Nothing was red. This
@@ -27,14 +27,14 @@ import { invalidateEntitlements } from '../../access/entitlements.js';
  * fails to mount cannot shrink the list it is checked against.
  *
  * ══ WHAT THIS VERIFIES ══
- *   · every path the three routers declare is REGISTERED under /v1/marketing — not merely
+ *   · every path the five routers declare is REGISTERED under /v1/marketing — not merely
  *     404-behind-a-gate, which is indistinguishable from "gated" to a caller;
  *   · nothing they declare is registered outside that prefix, because the gate is
  *     installed on that prefix and on nothing else;
  *   · an unauthenticated call is refused BEFORE any handler runs, which is the only way to
  *     show the gate precedes the handler without a database;
  *   · `requiresOperate` demands the tier this compartment intends for each path, so a new
- *     `READ_SHAPED_POSTS` entry cannot quietly downgrade one of the twenty-seven;
+ *     `READ_SHAPED_POSTS` entry cannot quietly downgrade one of the thirty-eight;
  *   · the source of each router is free of its own `app.route`/`app.use`, so the mount
  *     stays in one place.
  *
@@ -74,14 +74,15 @@ interface Surface {
   /** The tier `app.ts:requiresOperate` must demand. */
   readonly needed: 'view' | 'operate';
   /** Which router file declares it. */
-  readonly file: 'marketingDesk.ts' | 'marketingMemory.ts' | 'marketingRecord.ts' | 'marketingGates.ts';
+  readonly file: 'marketingDesk.ts' | 'marketingMemory.ts' | 'marketingRecord.ts' | 'marketingGates.ts'
+  | 'marketingHoldings.ts';
 }
 
 const INSTANCE = 'stmt:11111111-1111-4111-8111-111111111111';
 const INCIDENT = 'inc:22222222-2222-4222-8222-222222222222';
 
 /**
- * The thirty-five paths, each with the tier it gates at.
+ * The thirty-eight paths, each with the tier it gates at.
  *
  * WRITTEN OUT RATHER THAN DERIVED from `app.routes`. Deriving the expectation from the
  * thing under test is the standard way this class of assertion becomes a tautology: a
@@ -134,9 +135,24 @@ const SURFACE: readonly Surface[] = [
   { method: 'POST', url: '/v1/marketing/41/silence', route: '/:id/silence', needed: 'operate', file: 'marketingGates.ts' },
   { method: 'GET', url: '/v1/marketing/metrics', route: '/metrics', needed: 'view', file: 'marketingGates.ts' },
   { method: 'GET', url: '/v1/marketing/loop', route: '/loop', needed: 'view', file: 'marketingGates.ts' },
+
+  /* ── marketingHoldings.ts ──
+   * Three GETs, so all three gate at 'view' by method alone — `requiresOperate` needs no
+   * allowlist entry for them and none was added. There is NO write here on purpose:
+   * declaring goes through the governed action `marketing_holdings_declare`, so this file
+   * cannot be a second door to the same table with its own idea of the rules.
+   *
+   * `/holdings/register` is APPROVER-ONLY, and that is enforced inside the handler
+   * (`listHoldingsRegister`) rather than by the mount — the compartment ladder has no
+   * 'approve' floor for a read, and this table's supervision view is the one read on the
+   * desk that needs one. `requiresOperate` cannot express it and this test does not claim
+   * it does; `__tests__/marketingHoldings.test.ts` asserts the 403. */
+  { method: 'GET', url: '/v1/marketing/holdings', route: '/holdings', needed: 'view', file: 'marketingHoldings.ts' },
+  { method: 'GET', url: '/v1/marketing/holdings/cells', route: '/holdings/cells', needed: 'view', file: 'marketingHoldings.ts' },
+  { method: 'GET', url: '/v1/marketing/holdings/register', route: '/holdings/register', needed: 'view', file: 'marketingHoldings.ts' },
 ];
 
-describe('the four marketing sub-routers are mounted under /v1/marketing', () => {
+describe('the five marketing sub-routers are mounted under /v1/marketing', () => {
   const app = createApp();
   beforeAll(() => {
     process.env.ALLOW_DB_SKIP = 'true';
@@ -146,14 +162,15 @@ describe('the four marketing sub-routers are mounted under /v1/marketing', () =>
     await closeDb();
   });
 
-  it('lists all thirty-five paths, so no loop below runs over a short list', () => {
+  it('lists all thirty-eight paths, so no loop below runs over a short list', () => {
     // Non-vacuity: if a router failed to mount, the assertions still have to be about
-    // thirty-five paths rather than about however many happen to be here.
-    expect(SURFACE.length).toBe(35);
+    // thirty-eight paths rather than about however many happen to be here.
+    expect(SURFACE.length).toBe(38);
     expect(SURFACE.filter((s) => s.file === 'marketingDesk.ts').length).toBe(6);
     expect(SURFACE.filter((s) => s.file === 'marketingMemory.ts').length).toBe(11);
     expect(SURFACE.filter((s) => s.file === 'marketingRecord.ts').length).toBe(10);
     expect(SURFACE.filter((s) => s.file === 'marketingGates.ts').length).toBe(8);
+    expect(SURFACE.filter((s) => s.file === 'marketingHoldings.ts').length).toBe(3);
   });
 
   it('registers every one of them under /v1/marketing', () => {
@@ -192,7 +209,7 @@ describe('the four marketing sub-routers are mounted under /v1/marketing', () =>
     });
   }
 
-  it('demands the intended tier for each of the twenty-seven', () => {
+  it('demands the intended tier for each of the thirty-eight', () => {
     for (const s of SURFACE) {
       expect(
         requiresOperate(s.method, s.url) ? 'operate' : 'view',
@@ -206,17 +223,21 @@ describe('the four marketing sub-routers are mounted under /v1/marketing', () =>
   it('leaves the mount in one file — no sub-router mounts itself', () => {
     // Two places that can mount a router is two places to disagree about the prefix, and
     // the one in the router file would not be visible from the compartment's route table.
-    for (const file of ['marketingDesk.ts', 'marketingMemory.ts', 'marketingRecord.ts', 'marketingGates.ts'] as const) {
+    for (const file of [
+      'marketingDesk.ts', 'marketingMemory.ts', 'marketingRecord.ts', 'marketingGates.ts',
+      'marketingHoldings.ts',
+    ] as const) {
       expect(codeOf(file), `${file} mounts itself`).not.toMatch(/\bapp\.(route|use)\(/);
     }
   });
 
-  it('mounts all four from routes/marketing.ts and at the root segment', () => {
+  it('mounts all five from routes/marketing.ts and at the root segment', () => {
     // '/' and not a segment of its own: each router declares its own first segment, and
     // mounting one under e.g. '/crisis' would double the segment and 404 a shipped fetcher.
     const code = codeOf('marketing.ts');
     for (const router of [
       'marketingDeskRoutes', 'marketingMemoryRoutes', 'marketingRecordRoutes', 'marketingGatesRoutes',
+      'marketingHoldingsRoutes',
     ]) {
       expect(code).toMatch(new RegExp(`marketingRoutes\\.route\\('/', ${router}\\)`));
     }

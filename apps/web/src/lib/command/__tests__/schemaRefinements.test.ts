@@ -310,13 +310,22 @@ const LEDGER: Record<string, string> = {
    * reference to itself; `reviewInDays` is capped at 365 so an embargo cannot be entered
    * and then never looked at again; and `amendmentReason` is an enum because "I changed
    * my mind" is not a reason a holdings declaration may be amended for.
+   *
+   * `shortPosition` (0065) is the newest of these and the one this ledger is most useful
+   * for: it is an ENUM over four values, not a boolean, because 'not_asked' and 'declined'
+   * are answers-shaped absences that must never resolve to "no short position". The
+   * emitted JSON Schema carries the enum, so the manifest hash does move when a value is
+   * added — but it cannot show that the param stays OPTIONAL at every setting of
+   * `SHORT_QUESTION_POLICY`, which is the property that keeps an HR decision out of a Zod
+   * schema. Making it required would compile, pass the manifest hash, and quietly oblige
+   * every member of the desk to answer a question the firm has not decided to ask.
    */
   marketing_embargo_enter:
     "z.object({ eventRef: slug(SLUG_MAX, EVENT_REF_RE, 'eventRef'), state: z.enum(EMBARGO_STATES as unknown as [EmbargoState, ...EmbargoState[]]), sourceRef: slug(SOURCE_REF_MAX, SOURCE_REF_RE, 'sourceRef'), reviewInDays: z.number().int().min(1).max(365), embargoUntilDays: z.number().int().min(1).max(3650).optional(), })",
   marketing_embargo_lift:
     "z.object({ eventRef: slug(SLUG_MAX, EVENT_REF_RE, 'eventRef'), })",
   marketing_holdings_declare:
-    'z.object({ holds: z.boolean(), renewInDays: z.number().int().min(1).max(366), amendmentReason: z.enum( HOLDINGS_AMENDMENT_REASONS as unknown as [HoldingsAmendmentReason, ...HoldingsAmendmentReason[]], ).optional(), })',
+    'z.object({ holds: z.boolean(), renewInDays: z.number().int().min(1).max(366), amendmentReason: z.enum( HOLDINGS_AMENDMENT_REASONS as unknown as [HoldingsAmendmentReason, ...HoldingsAmendmentReason[]], ).optional(), shortPosition: z.enum( SHORT_POSITION_ANSWERS as unknown as [ShortPositionAnswer, ...ShortPositionAnswer[]], ).optional(), })',
   notify:
     'z.object({ title: z.string().min(1).max(200), detail: z.string().max(500).optional(), href: z.string().max(300).optional() })',
   revoke_entitlement:

@@ -134,6 +134,11 @@ const WS_SECTIONS: Record<WorkspaceId, NavSection[]> = {
         { to: '/marketing/desk', label: 'The Desk', icon: ListChecks },
         { to: '/marketing/record', label: 'The Record', icon: Table2 },
         { to: '/marketing/crisis', label: 'Crisis Room', icon: Siren },
+        // A routed page with no way to click to it is the same defect as an unrouted
+        // one, one step further along, so the fifth surface gets its line here in the
+        // same commit that routes it. Last in the list because it is the one a member
+        // opens once a quarter to renew, not daily.
+        { to: '/marketing/holdings', label: 'Holdings', icon: Table2 },
       ],
     },
   ],
@@ -153,6 +158,10 @@ const WS_SECTIONS: Record<WorkspaceId, NavSection[]> = {
         { to: '/gps/delivery', label: 'Delivery Desk', icon: ListChecks },
         { to: '/gps/loop', label: 'The Loop', icon: Activity },
         { to: '/gps/book', label: 'The Book', icon: Table2 },
+        // The input desk goes LAST though the work starts here, because it is the only
+        // line whose job is to become boring: once the five price bands and five effort
+        // triples are typed, nobody opens it again until a number changes.
+        { to: '/gps/inputs', label: 'Inputs', icon: Sliders },
       ],
     },
   ],

@@ -14,6 +14,7 @@ import {
   isRecordMigrated,
   listOutstandingCloseOuts,
   normaliseHandle,
+  PER_HANDLE_SCORING_DPIA,
   recordProcessorTransfer,
   renderBundleText,
   retentionExpiry,
@@ -598,9 +599,29 @@ describe('per-handle scoring is refused until a DPIA exists', () => {
     }
   });
 
-  it('only proceeds when a real DPIA reference is supplied', () => {
+  /*
+   * THIS TEST PINNED THE DEFECT, and the defect had a name: N7 in DPIA_MARKETING.md §9.
+   *
+   * It used to assert `{ dpiaRef: 'DPIA-2026-004' }` SUCCEEDS — i.e. that an invented string
+   * opens a gate whose whole purpose is to require a completed assessment. That is what the
+   * code did, so the test was accurate; it was accurate about the wrong thing, in the way
+   * `outboundGateCoverage.test.ts` was once accurate about a SELECT naming a column that did
+   * not exist.
+   *
+   * The gate now compares the reference to `PER_HANDLE_SCORING_DPIA` (`record.ts`), which is
+   * `null` — so there is NO string that opens it, and the successful branch is unreachable
+   * until a human sets that constant, having signed §12.2. Asserting the old `true` here
+   * would now require re-opening the gate to satisfy a test, which is the inversion this
+   * comment exists to prevent.
+   */
+  it('refuses every reference, including a plausible one, while the constant is null', () => {
+    expect(PER_HANDLE_SCORING_DPIA).toBeNull();
     expect(scoreHandleOverTime('lcxfan', { dpiaRef: '  ' }).ok).toBe(false);
-    expect(scoreHandleOverTime('lcxfan', { dpiaRef: 'DPIA-2026-004' }).ok).toBe(true);
+    expect(scoreHandleOverTime('lcxfan', { dpiaRef: 'DPIA-2026-004' }).ok).toBe(false);
+    // The refusal is still a refusal with a cited rule, not a bare false.
+    const got = scoreHandleOverTime('lcxfan', { dpiaRef: 'DPIA-2026-004' });
+    expect(got.ok).toBe(false);
+    if (!got.ok) expect(got.code).toBe('RECORD_DPIA_ABSENT');
   });
 });
 

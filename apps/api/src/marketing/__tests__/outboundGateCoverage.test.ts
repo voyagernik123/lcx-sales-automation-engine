@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * EVERY ROUTE IN ALL FIVE MARKETING ROUTERS IS CLASSIFIED, AND THE OUTBOUND ONES REACH
+ * EVERY ROUTE IN ALL SIX MARKETING ROUTERS IS CLASSIFIED, AND THE OUTBOUND ONES REACH
  * THE GATE.
  *
  * `checkClaimSafety` and `assessMarketAbuse` are 148KB of engine and NOTHING CALLED EITHER
@@ -14,7 +14,7 @@ import { fileURLToPath } from 'node:url';
  * compartment produced outbound text unchecked — the same defect the GPS perimeter had a
  * week earlier, where a gate existed and no write path consulted it.
  *
- * ══ WHY IT NOW READS FIVE FILES ══
+ * ══ WHY IT NOW READS SIX FILES ══
  * The compartment split into `marketing.ts` + `marketingDesk.ts` + `marketingMemory.ts` +
  * `marketingRecord.ts`, and this test read the first one alone. Twenty-six routes landed
  * outside its view — two of them composing and approving the text a human publishes during
@@ -34,7 +34,7 @@ import { fileURLToPath } from 'node:url';
  * unguarded path turn it red.
  *
  * ══ WHAT THIS FILE VERIFIES, PRECISELY ══
- * It reads the source of the five routers and of `marketing/outboundGate.ts` and checks:
+ * It reads the source of the six routers and of `marketing/outboundGate.ts` and checks:
  *   - every registered route in every listed file is classified, and no classification
  *     names a route that no longer exists;
  *   - no two registrations share a `METHOD path` key, which would mean one shadows another;
@@ -61,8 +61,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const routeSrc = (file: string) => readFileSync(resolve(HERE, '..', '..', 'routes', file), 'utf8');
 
 /**
- * The five routers, each with the identifier its registrations are written against. All
- * five are mounted under `/v1/marketing`: `marketing.ts` nests the other four at `'/'`.
+ * The six routers, each with the identifier its registrations are written against. All
+ * six are mounted under `/v1/marketing`: `marketing.ts` nests the other five at `'/'`.
  *
  * `marketingGates.ts` IS THE FIFTH AND IT WAS THE PROOF OF THE PARAGRAPH ABOVE. It existed
  * for a whole wave with eight routes — two of them releasing or re-checking outbound text —
@@ -76,6 +76,11 @@ const ROUTER_FILES = [
   { file: 'marketingMemory.ts', router: 'marketingMemoryRoutes' },
   { file: 'marketingRecord.ts', router: 'marketingRecordRoutes' },
   { file: 'marketingGates.ts', router: 'marketingGatesRoutes' },
+  // The holdings register. Added in the same change that MOUNTED it in `routes/marketing.ts`,
+  // deliberately: a router mounted without being listed here would serve inside the
+  // compartment while sitting outside the "every route is classified" ratchet — which is the
+  // worse of the two states, because it is the one that looks finished.
+  { file: 'marketingHoldings.ts', router: 'marketingHoldingsRoutes' },
 ] as const;
 
 const GATE = readFileSync(resolve(HERE, '..', 'outboundGate.ts'), 'utf8');
@@ -93,7 +98,7 @@ interface Registration {
 }
 
 /**
- * Every registration across the five files, each carrying its own handler body.
+ * Every registration across the six files, each carrying its own handler body.
  *
  * The body is sliced per FILE — from one registration to the next in that file — so a
  * handler at the end of one router cannot absorb the top of another.
@@ -244,10 +249,24 @@ const NOT_OUTBOUND: Record<string, string> = {
     + 'so it cannot become a quiet way to clear the queue.',
   'GET /metrics': 'the twelve process metrics over stored rows. Counts and refusals.',
   'GET /loop': 'the loop report over those same metrics. Reads no text and returns none.',
+
+  /* ── marketingHoldings.ts: three READS of the register the gate consults. The file
+   *    declares no write at all — declaring goes through the governed action
+   *    `marketing_holdings_declare` — so there is no fourth entry to argue about. ── */
+  'GET /holdings': 'reads one member\'s own declaration chain, superseded rows included. A '
+    + 'read of a member\'s answers about themselves; it authors no LCX text and releases none.',
+  'GET /holdings/cells': 'runs the join the gate performs, for NAMED symbols, so a member '
+    + 'can see what would refuse BEFORE they draft. It returns states — `not_declared`, '
+    + '`declared_holding` — and never a draft. Note what it is NOT: a clearance. A cell '
+    + 'reading `declared_none` does not release any words; `POST /claim-safety` is the only '
+    + 'route that does.',
+  'GET /holdings/register': 'the approver-only census of current declarations across the '
+    + 'desk, plus the members the register has never heard from. Supervision of the gate\'s '
+    + 'inputs, carrying no position size and no free text because neither table holds any.',
 };
 
-describe('every route in all five marketing routers is classified as outbound or not', () => {
-  it('finds the registrations in all five files, or every assertion below is vacuous', () => {
+describe('every route in all six marketing routers is classified as outbound or not', () => {
+  it('finds the registrations in all six files, or every assertion below is vacuous', () => {
     for (const { file } of ROUTER_FILES) {
       expect(
         REGISTRATIONS.filter((r) => r.file === file).length,
@@ -255,8 +274,11 @@ describe('every route in all five marketing routers is classified as outbound or
         + 'is probably stale, and this whole file just stopped checking that router',
       ).toBeGreaterThan(0);
     }
-    // 11 in marketing.ts + 6 desk + 11 memory + 10 record + 8 gates when this was written.
-    expect(REGISTRATIONS.length).toBeGreaterThanOrEqual(46);
+    // 11 in marketing.ts + 6 desk + 11 memory + 10 record + 8 gates + 3 holdings = 49 when
+    // this line was last moved. `GreaterThanOrEqual` rather than an exact count because a new
+    // route must fail the CLASSIFICATION assertions below, not this one — but the floor has to
+    // rise with each router or a whole file could vanish from ROUTER_FILES unnoticed.
+    expect(REGISTRATIONS.length).toBeGreaterThanOrEqual(49);
   });
 
   it('registers no two routes under the same METHOD and path', () => {

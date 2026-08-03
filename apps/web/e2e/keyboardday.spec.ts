@@ -1224,6 +1224,18 @@ test('⌘K reachability, as this stubbed harness measures it', async ({ page }) 
   // So it pins what THIS harness observes. Improve reachability and it goes red demanding a
   // new number; regress it and it goes red too. What it does NOT do is claim 15 is correct.
   //
+  // ── CHECKED AGAIN 2026-08-03 (the wiring pass) AND IT DID NOT MOVE ────────────
+  // Five lanes landed a holdings register, a retention ruling, an Art 90 need-to-know
+  // split, a GPS input desk and a DPIA gate. NO GOVERNED ACTION WAS ADDED OR REMOVED:
+  // `npm run gen:actions` reports 30 actions before and after, and the only manifest
+  // difference is one new OPTIONAL param on `marketing_holdings_declare`
+  // (`shortPosition`), which changed the manifest HASH and not the count. So the
+  // denominator is still 30, reachability is still the same seven project-scoped verbs,
+  // and 23 is still the right number — it is recorded here because "unchanged" is a
+  // finding, and the next person to see this go red should not re-derive it.
+  // The three new API paths (`/v1/marketing/holdings*`) and the four new GPS ones
+  // (`/v1/gps/inputs*`) are ROUTES, not actions; nothing in the palette aims at them.
+  //
   // The open question, for whoever picks this up: why does a stub that mirrors the route's
   // shape resolve fewer nouns than the route? Likely candidates, in order — the API client
   // dropping an unmodelled field while parsing, `SearchGroup` not carrying `subjectType`
