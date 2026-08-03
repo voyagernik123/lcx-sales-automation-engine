@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Globe, ShieldAlert, ShieldCheck, Send, Ban, CircleDollarSign, ListChecks } from 'lucide-react';
 import { clsx } from 'clsx';
 import {
@@ -19,6 +19,9 @@ import {
 import { GpsMetaBanner } from './GpsMetaBanner';
 import { LegalPositionStamp } from '@/components/gps/LegalPositionStamp';
 import { readLegalPosition } from '@/components/gps/legalPosition';
+import { GpsSplit } from '@/components/gps/GpsSplit';
+import { engagementLens } from '@/components/gps/gpsLenses';
+import { requestFeel, signalGps } from '@/lib/gpsFeel';
 import type { GpsClient } from '@lcx/shared';
 
 /**
@@ -674,7 +677,25 @@ function EngagementList({ rows, onChanged, enabled, clients, reads }: {
   clients: GpsClient[];
   reads: readonly unknown[];
 }) {
-  return (
+  /**
+   * THE INSPECTED ROW, and it is a SEPARATE affordance from the card's own controls.
+   *
+   * The card already shows the four figures that decide what to do next. What it cannot
+   * show without becoming a wall of caveats is where each of them CAME FROM — which price
+   * band is a placeholder, whether the vendor cost was typed or fell back to the catalogue,
+   * that margin is derived and never stored. That is the inspector's job, and it is why
+   * "Provenance" is the word on the control rather than "Details": an operator quoting real
+   * money needs to know which figures are evidence.
+   *
+   * Held here rather than on the page, so opening one engagement does not re-render the
+   * quote builder above it and lose a half-typed price.
+   */
+  const [inspecting, setInspecting] = useState<string | null>(null);
+  const subject = rows.find((r) => r.id === inspecting) ?? null;
+  const jurisdictionOf = (r: GpsEngagementRow) =>
+    clients.find((c) => c.id === r.clientId)?.jurisdiction ?? null;
+
+  const list = (
     <section className="mt-6" data-testid="gps-engagements">
       <SectionLabel>Engagements</SectionLabel>
       {rows.length === 0 ? (
@@ -689,12 +710,31 @@ function EngagementList({ rows, onChanged, enabled, clients, reads }: {
           {rows.map((r) => (
             <EngagementCard
               key={r.id} row={r} onChanged={onChanged} enabled={enabled} reads={reads}
-              jurisdiction={clients.find((c) => c.id === r.clientId)?.jurisdiction ?? null}
+              jurisdiction={jurisdictionOf(r)}
+              inspecting={r.id === inspecting}
+              onInspect={() => setInspecting((cur) => (cur === r.id ? null : r.id))}
             />
           ))}
         </div>
       )}
     </section>
+  );
+
+  return (
+    <GpsSplit
+      list={list}
+      subject={subject}
+      // The lens is rebuilt per render and that is not a leak: it closes over `money` and
+      // the row's own jurisdiction, and `GpsInspectorBody` calls it during render rather
+      // than storing it. Memoising it would tie the inspector's reading to a dependency
+      // list, which is how a stale provenance claim survives a refresh.
+      lens={engagementLens({
+        money,
+        jurisdiction: subject ? jurisdictionOf(subject) : null,
+      })}
+      onClose={() => setInspecting(null)}
+      label="engagements"
+    />
   );
 }
 
@@ -713,11 +753,13 @@ function statusTone(s: EngagementStatus): 'ready' | 'conditional' | 'blocked' | 
   return 'conditional';
 }
 
-function EngagementCard({ row, onChanged, enabled, jurisdiction, reads }: {
+function EngagementCard({ row, onChanged, enabled, jurisdiction, reads, inspecting, onInspect }: {
   row: GpsEngagementRow; onChanged: () => void; enabled: boolean;
   jurisdiction: string | null; reads: readonly unknown[];
+  inspecting: boolean; onInspect: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const offer = getOffer(row.offerKey);
   // Per card, because the jurisdiction is per client: one row on this list may have a
   // position on file and the next may not, and a page-level banner would flatten that
@@ -736,19 +778,37 @@ function EngagementCard({ row, onChanged, enabled, jurisdiction, reads }: {
    */
   const canIssue = row.conflict != null && (row.status === 'draft' || row.status === 'conflict_pending');
 
+  /**
+   * THE ONE GOVERNED WRITE ON THIS DESK, and the three outcomes now feel different.
+   *
+   * `toast` alone told an operator what happened only if they were looking at the corner of
+   * the screen; `signalGps` reacts on the CARD the thing happened to and announces it, which
+   * matters most in the case nobody tests by hand — with `prefers-reduced-motion` on, every
+   * juice animation is 0.01ms and a landed write was previously undetectable (`lib/gpsFeel.ts:171`).
+   *
+   * `requestFeel` decides refused-vs-undetermined from the error, NOT from the fact that
+   * something went wrong: a 409 from the conflict gate is a rule saying no and should shake,
+   * while a 503 from an environment where 0047/0049 were never applied cannot answer the
+   * question and must not claim a rule stopped anyone. The toast keeps the words; the feel
+   * only decides which of the three this was.
+   */
   const issue = async () => {
     setBusy(true);
     try {
       await issueGpsProposal(row.id);
-      toast('success', 'Proposal issued and recorded. Sending it is still a human act.');
+      const said = 'Proposal issued and recorded. Sending it is still a human act.';
+      toast('success', said);
+      signalGps(cardRef.current, 'committed', said);
       onChanged();
     } catch (e) {
-      toast('error', e instanceof Error ? e.message : 'Could not issue');
+      const said = e instanceof Error ? e.message : 'Could not issue';
+      toast('error', said);
+      signalGps(cardRef.current, requestFeel(e), said);
     } finally { setBusy(false); }
   };
 
   return (
-    <div data-juice className="rounded-lg border border-line bg-card p-4">
+    <div ref={cardRef} data-juice className="rounded-lg border border-line bg-card p-4">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-semibold text-navy">{row.clientName}</span>
         <span className="text-label text-grey">{offer.name}</span>
@@ -759,8 +819,27 @@ function EngagementCard({ row, onChanged, enabled, jurisdiction, reads }: {
         >
           {row.contractingEntity}
         </span>
-        <span className="ml-auto font-mono text-micro text-grey">
-          {new Date(row.createdAt).toLocaleDateString()}
+        <span className="ml-auto flex items-center gap-2">
+          <span className="font-mono text-micro text-grey">
+            {new Date(row.createdAt).toLocaleDateString()}
+          </span>
+          {/* PROVENANCE, not "details". The card shows the figures; this says which of them
+              are evidence and which are constants nobody has decided yet. `aria-pressed`
+              because it is a toggle over one row rather than a navigation. */}
+          <button
+            type="button"
+            onClick={onInspect}
+            aria-pressed={inspecting}
+            aria-label={`Provenance of the ${row.clientName || 'engagement'} figures`}
+            className={clsx(
+              'flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-micro transition-colors',
+              inspecting
+                ? 'bg-navy text-white dark:bg-ice dark:text-navy'
+                : 'text-grey hover:bg-ice-soft hover:text-navy dark:hover:bg-ice-soft/20',
+            )}
+          >
+            <ListChecks size={11} /> Provenance
+          </button>
         </span>
       </div>
 

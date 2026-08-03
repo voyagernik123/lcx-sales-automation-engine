@@ -31,6 +31,22 @@ interface InspectorDrawerProps {
   children: ReactNode;
 }
 
+/**
+ * How another module finds this drawer's PANEL in the DOM.
+ *
+ * Exported so that "the drawer's container is the thing with `role=dialog`" is stated once,
+ * in the file that puts the role there. A caller that needs to ask "is focus inside the
+ * drawer?" — `components/gps/gpsPaneFocus.ts` does — otherwise has to re-type the selector,
+ * and a duplicated selector is one that keeps matching after the role moves.
+ *
+ * IT ALSO KEEPS A RATCHET HONEST. `lib/__tests__/dismissRegistration.test.ts` enumerates
+ * overlays by the ARIA they declare, and cannot tell a file that DECLARES `role="dialog"`
+ * from one that merely queries for it — so a selector literal in a non-overlay component
+ * reads to that scan as an unregistered overlay. This file declares the role and registers
+ * with the dismiss stack (line 45), so the literal belongs here and nowhere else.
+ */
+export const INSPECTOR_DRAWER_PANEL_SELECTOR = '[role="dialog"]';
+
 export function InspectorDrawer({ isOpen, onClose, onEscape, title, onDock, children }: InspectorDrawerProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   // Named from the visible <h2>, not a parallel aria-label — one source of truth.

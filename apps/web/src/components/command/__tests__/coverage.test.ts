@@ -27,6 +27,8 @@
 import { describe, it, expect } from 'vitest';
 import { ACTION_MANIFEST } from '@/lib/command/generated/actionManifest';
 import { verbsFor, promptsFor, type Principal } from '@/components/command/grammar';
+import { DESTINATIONS } from '@/lib/destinations';
+import { COMMAND_CODES, PAGE_COMMANDS, rankPaletteRows } from '@/components/command/CommandBody';
 
 /**
  * The most capable principal: if an action is unreachable for them, it is unreachable.
@@ -113,5 +115,83 @@ describe('the registry is internally consistent', () => {
       // A label that is just the id is not a label.
       expect(a.label).not.toBe(a.id);
     }
+  });
+});
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ *  CAN AN OPERATOR REACH THE PLACE AT ALL? — added by GPS Phase 11
+ * ══════════════════════════════════════════════════════════════════════════════
+ *
+ * This one is NOT self-referential, which is the header's whole complaint about the block
+ * above: it crosses two independently maintained tables. `DESTINATIONS` is where a place
+ * exists (the native menu, the `g` chord, the cheat card, the tour); `PAGE_COMMANDS` +
+ * `COMMAND_CODES` is where ⌘K can find it. Two compartments have already shipped into the
+ * first and not the second — marketing in M9 and GPS in Phase 1 — each producing surfaces
+ * reachable only by an operator who already knew the chord. Both are generated now, and
+ * nothing stopped either from happening except somebody noticing.
+ *
+ * SO THE GAP IS PINNED RATHER THAN ASSERTED AWAY. Six destinations are still absent and
+ * every one of them predates both grammar files; the exact list is below with what it costs.
+ * A ratchet that demanded zero would have to be satisfied by inventing six page rows for
+ * five compartments this pass does not own, which is how a gate gets weakened to green. A
+ * ratchet on the exact set fails on a NEW absence, which is the failure that matters.
+ */
+describe('every destination is reachable from the command line', () => {
+  /**
+   * Where ⌘K can take an operator who types the destination's own name.
+   *
+   * THROUGH THE REAL RANKER, not by reading `PAGE_COMMANDS` for a matching `to`: a row that
+   * exists in the table and is never ranked is not reachable, and that is the difference
+   * between this and a test of an array. The query is the destination's LABEL — what an
+   * operator who wants to go there would type — so a row present under some other word
+   * does not count either.
+   */
+  function palettePaths(): Set<string> {
+    const found = DESTINATIONS.flatMap((d) =>
+      rankPaletteRows({
+        query: d.label,
+        allCommands: PAGE_COMMANDS,
+        objectResults: [],
+        marketingReplies: [],
+        gpsEngagements: [],
+      }).map((r) => r.to),
+    );
+    // Codes count too: `q` reaches the BD engine whatever its page row says.
+    return new Set([...found, ...COMMAND_CODES.map((c) => c.to.split('?')[0]!)]);
+  }
+
+  /**
+   * The six that were already missing, with the cost of each. NOT an allowance for future
+   * ones: the assertion is equality, so a seventh fails and a fixed one fails too — and the
+   * correct response to the second kind of failure is to delete the line.
+   */
+  const ABSENT_BEFORE_THIS_PHASE: readonly string[] = [
+    '/command',              // INTELLIGENCE — the compartment root
+    '/command-deck',         // US COMMAND — the compartment root
+    '/distribution',         // DISTRIBUTION — the compartment root
+    '/practice',             // PRACTICE RANGE — the sandbox the plan says nobody will find
+    '/regulatory-dashboard', // REGULATORY TOOLKIT — the compartment root
+    '/wbr',                  // GOVERNANCE — the compartment root
+  ];
+
+  it('reaches every GPS and marketing destination — the two gaps that were closed', () => {
+    const reachable = palettePaths();
+    const missing = DESTINATIONS
+      .filter((d) => d.path.startsWith('/gps') || d.path.startsWith('/marketing'))
+      .map((d) => d.path)
+      .filter((p) => !reachable.has(p));
+    expect(missing, 'a generated compartment destination is not reachable from ⌘K').toEqual([]);
+  });
+
+  it('leaves exactly the six that predate the generators, and no more', () => {
+    const reachable = palettePaths();
+    const missing = DESTINATIONS.map((d) => d.path).filter((p) => !reachable.has(p)).sort();
+    expect(
+      missing,
+      'a destination is reachable by `g` chord and by the native menu and absent from ⌘K — the '
+      + 'defect both grammar files exist to prevent. Generate its row from DESTINATIONS; if one of '
+      + 'the six listed here was fixed, delete it from ABSENT_BEFORE_THIS_PHASE instead',
+    ).toEqual([...ABSENT_BEFORE_THIS_PHASE]);
   });
 });

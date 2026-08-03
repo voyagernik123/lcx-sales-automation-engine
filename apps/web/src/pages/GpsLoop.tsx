@@ -11,6 +11,8 @@ import type {
 import { PageTitle, Button, Badge, Input, Select } from '@/components/ui';
 import { ErrorNotice, PageSkeleton } from '@/components/shared';
 import { formatMoney } from '@/lib/format';
+import { isOverlayOpen } from '@/lib/dismiss';
+import { gpsKeysBelongToSurface } from '@/components/gps/gpsPaneFocus';
 import {
   fetchGpsLoop, fetchGpsMarginRealisation, fetchGpsWinLoss, recordGpsOutcome,
   type OutcomeSubmission,
@@ -1382,6 +1384,25 @@ export function GpsLoop({ engagementId: engagementIdProp }: { engagementId?: str
     const t = e.target as HTMLElement | null;
     const tag = t?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || t?.isContentEditable) return;
+    /*
+     * ── THE STANDDOWN, ADDED BY PHASE 11 ──────────────────────────────────────
+     *
+     * Two guards, and neither is defensive:
+     *
+     * `isOverlayOpen()` — this listener is on `window` for the life of the page, so `p`
+     * pressed with a modal up opened the PRINT DIALOG behind the scrim and `d` reshaped a
+     * disclosure nobody could see. `GpsDelivery` has had this guard since it shipped and
+     * this page did not; the argument is the same one made there.
+     *
+     * `gpsKeysBelongToSurface()` — a DOCKED pane registers nothing with the dismiss stack
+     * on purpose (`lib/split.ts` argues it at length: one entry makes `isOverlayOpen()`
+     * true and kills the very keys docking exists to preserve), so `isOverlayOpen()` cannot
+     * see it. `⌘\` docks the universal evidence pane over any desk in the app, this one
+     * included, which is why this was a live defect and not a hypothetical about a GPS pane
+     * that no desk mounts yet.
+     */
+    if (isOverlayOpen()) return;
+    if (!gpsKeysBelongToSurface()) return;
 
     const digit = SECTIONS.find((s) => String(s.n) === e.key);
     if (digit) {

@@ -1,0 +1,136 @@
+/*
+ * ══════════════════════════════════════════════════════════════════════════════
+ *  THE PRINT RULES FOR A GPS ARTEFACT — the page a client or an auditor holds
+ * ══════════════════════════════════════════════════════════════════════════════
+ *
+ * Loaded by `components/gps/GpsPrint.tsx`, which is the only thing that should
+ * import it: every selector below is scoped to `[data-gps-artefact]` or to a
+ * `data-gps-*` attribute that component sets, so nothing here can reach a surface
+ * that did not opt in. It is ADDITIVE to `components/report/PrintStyles.tsx`
+ * (@page A4, chrome hidden, dark tokens pinned, scroll containers unlocked), which
+ * `GpsPrintArtefact` mounts alongside it — this file fixes only what that sheet
+ * leaves for the artefact to fix, and does not restate it.
+ *
+ * WHY A FILE AND NOT AN INLINE `<style>` LIKE ITS TWO NEIGHBOURS. `PrintStyles`
+ * and `RecordPrintStyles` (`pages/MarketingRecord.tsx:1695`) are inline because
+ * they are one surface's own rules. These are shared by four artefacts, so they
+ * live in one place and are checked in one place; `__tests__/gpsPrint.test.tsx`
+ * reads this file as text and asserts the four properties below, exactly as
+ * `lib/__tests__/reducedMotion.test.ts:255` reads `PrintStyles.tsx`.
+ *
+ * THE FOUR THINGS IT FIXES, each of which cost a real page somewhere:
+ *
+ *  1. NOTHING IS CLIPPED. `PrintStyles` unlocks the app's own scroll containers
+ *     but not the per-table `overflow-x-auto` wrappers this compartment puts round
+ *     every wide table. A scrollbar is a guillotine on paper: the columns past the
+ *     fold are simply absent, and a printed proposal is the one place nobody can
+ *     scroll to find them. `table-layout: auto` plus wrapping cells is what makes
+ *     a 9-column underwriting table fit an A4 instead of losing its last three.
+ *
+ *  2. THE HEADS REPEAT. A delivery record runs to several sheets; without
+ *     `table-header-group` sheets 2-n are anonymous grids of ids and cents.
+ *
+ *  3. A REFUSAL STILL READS AS A REFUSAL IN BLACK AND WHITE. The screen carries
+ *     refusals in `--red` on `--red-bg`; neither token is pinned by `PrintStyles`,
+ *     so printed from dark mode a refusal notice came out as dark salmon on white
+ *     at about 2.4:1 — in the DOM, gone from the sheet. The tokens are pinned
+ *     below, and the notices additionally get a 2px rule and dark ink so they
+ *     survive a greyscale printer, where every hue in this palette lands within a
+ *     few percent of every other. THE COLOUR IS NEVER THE SIGNAL: `GpsPrint`
+ *     writes the word REFUSED and the rule that refused into the text, and the
+ *     test asserts that. This rule only stops the ink disappearing.
+ *
+ *  4. THE `dark:` VARIANTS ARE NEUTRALISED. `.dark` stays on `<html>` during a
+ *     `window.print()`, so a `dark:bg-*` utility still matches while the tokens
+ *     under it have been pinned light — the failure `PrintStyles.tsx:27` warns
+ *     about and `MarketingRecord` hit at 1.3:1. Neutralised by attribute match
+ *     inside the artefact rather than by listing utilities, because the list is
+ *     the part that rots.
+ *
+ * ORDER IS LOAD-BEARING AT THE BOTTOM OF THIS FILE. The `dark:text-*`
+ * neutraliser and the refusal-ink rule both carry `!important` and both have two
+ * compound selectors, so source order decides which wins on a refusal notice that
+ * also carries a `dark:text-*` utility. The refusal rule is LAST on purpose, and
+ * the test asserts that ordering — reversed, every refusal on a page printed from
+ * dark mode goes navy and reads as ordinary prose.
+ */
+
+/*
+ * Content that exists only on paper: the method and provenance appendix, and any
+ * evidence a screen keeps collapsed. Not `hidden`, so no utility has to be
+ * toggled and no state can leave it out of a print job.
+ */
+.gps-print-only { display: none; }
+
+@media print {
+  .gps-print-only { display: block !important; }
+
+  /*
+   * The tokens PrintStyles does not pin. Light values, copied from
+   * styles/tokens.css :root and checked against it by test.
+   *
+   * PINNED ON THE ARTEFACT, NOT ON `:root` — which is where `PrintStyles` and
+   * `RecordPrintStyles` pin theirs. Custom properties inherit, so a declaration
+   * here covers the whole subtree, and nothing outside the artefact is recoloured
+   * by a stylesheet loaded for it. That is the difference between a shared file
+   * and one surface's own `<style>`: this one can be on a page it does not own.
+   */
+  [data-gps-artefact] {
+    --red: 163 32 53;
+    --red-bg: 251 230 234;
+    --amber: 138 95 0;
+    --amber-bg: 253 243 215;
+    --green: 30 122 74;
+    --green-bg: 227 244 234;
+    --ice: 202 220 252;
+    --ice-soft: 234 241 254;
+    --grey-light: 185 198 224;
+    --navy-deep: 20 26 69;
+  }
+
+  /* 1 — nothing is clipped. */
+  [data-gps-artefact] .overflow-x-auto,
+  [data-gps-artefact] .overflow-y-auto,
+  [data-gps-artefact] .overflow-auto {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+  [data-gps-artefact] table { width: 100% !important; table-layout: auto !important; }
+  [data-gps-artefact] th,
+  [data-gps-artefact] td {
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+  }
+  [data-gps-artefact] pre { white-space: pre-wrap !important; word-break: break-word !important; }
+
+  /* 2 — the heads repeat, and rows are not split across sheets. */
+  [data-gps-artefact] thead { display: table-header-group; }
+  [data-gps-artefact] tfoot { display: table-footer-group; }
+  [data-gps-artefact] tr { break-inside: avoid; page-break-inside: avoid; }
+
+  /* Nothing that qualifies a figure may be split, and the dateline that lets a
+     page found in six months be dated must stay whole. */
+  [data-gps-caveat], [data-gps-refusal], [data-gps-dateline] {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* 4 — the dark variants, neutralised inside the artefact only. */
+  [data-gps-artefact] [class*="dark:bg-"] { background: #fff !important; }
+  [data-gps-artefact] [class*="dark:text-"] { color: rgb(var(--navy)) !important; }
+
+  /* 3 — refusals and caveats keep their ink on paper. LAST: see the header. */
+  [data-gps-artefact] [data-gps-refusal],
+  [data-gps-artefact] [data-gps-refusal] *,
+  [data-gps-artefact] [data-gps-caveat],
+  [data-gps-artefact] [data-gps-caveat] * {
+    background: #fff !important;
+    color: #7a0d1e !important;
+    border-color: #7a0d1e !important;
+  }
+  [data-gps-artefact] [data-gps-refusal],
+  [data-gps-artefact] [data-gps-caveat] {
+    border-width: 2px !important;
+    border-style: solid !important;
+  }
+}

@@ -647,3 +647,128 @@ describe('before a price exists', () => {
     expect(document.querySelectorAll('[data-margin-figure]').length).toBe(0);
   });
 });
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* GPS PHASE 11 — THE ANSWER IS AN ARTEFACT, AND IT FEELS LIKE WHAT IT WAS     */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * `GpsPrintArtefact` and `lib/gpsFeel.ts` both shipped with "nothing imports this yet" in
+ * their headers, which is the defect one layer along from having no print sheet at all.
+ * These assertions go through the RENDERED page, so a future edit that unwraps the answer or
+ * drops the feel call fails here rather than in the apparatus's own green suite.
+ *
+ * The fixtures are the four already verified at the top of this file, so nothing below has
+ * to re-establish that LOSS loses money or that REFUSED produced no distribution.
+ */
+describe('the underwriting answer prints as an artefact', () => {
+  it('wraps the answer, dates it to two instants, and counts its own notices', async () => {
+    // THE MUTATION THAT PROVES THIS: unwrap `<Answer>` from `<GpsPrintArtefact>` and every
+    // assertion here goes red — which is the state the print apparatus shipped in.
+    mocked.mockResolvedValue(LOSS);
+    const u = userEvent.setup();
+    render(<GpsUnderwriting />);
+    await fill(u);
+
+    const sheet = await screen.findByTestId('gps-print-artefact');
+    expect(sheet).toHaveAttribute('data-gps-artefact', 'underwriting');
+    // READ AT is the browser's clock; FIGURES COMPUTED is the server's `asOf`. Two facts, and
+    // a sheet dated only to the first cannot be told from a stale one.
+    expect(screen.getByTestId('gps-print-computed-at').textContent).toContain('2026-08-01');
+    expect(screen.getByTestId('gps-print-read-at').textContent).toMatch(/READ AT \d{4}-\d{2}-\d{2}/);
+    expect(screen.getByTestId('gps-print-notice-count').textContent).toMatch(/\d+ NOTICES? QUALIFY/);
+  });
+
+  it('carries the placeholder-price notice with its mark, on a prior basis', async () => {
+    mocked.mockResolvedValue(LOSS);
+    const u = userEvent.setup();
+    render(<GpsUnderwriting />);
+    await fill(u);
+
+    await screen.findByTestId('gps-print-artefact');
+    // Both are true of this fixture and both are asserted at the top of the file: the bands
+    // are placeholders and the basis is `prior`, not measured.
+    expect(screen.getByTestId('gps-print-caveat-placeholder_price')).toBeTruthy();
+    expect(screen.getByTestId('gps-print-caveat-distribution_basis')).toBeTruthy();
+    // THE WORD, not the colour. A greyscale printer flattens every hue in this palette.
+    expect(screen.getByTestId('gps-print-mark-placeholder_price').textContent!.trim().length)
+      .toBeGreaterThan(0);
+  });
+
+  it('prints P(loss) with the sample count behind it, and omits it on a refusal', async () => {
+    mocked.mockResolvedValue(LOSS);
+    const u = userEvent.setup();
+    const { unmount } = render(<GpsUnderwriting />);
+    await fill(u);
+    const table = await screen.findByTestId('gps-print-provenance');
+    expect(within(table).getByText('P(margin < 0)')).toBeTruthy();
+    unmount();
+
+    // A refusal produces a null `pLoss` — never a zero, because "no loss risk found" and
+    // "loss risk not computable" are opposite statements. The row is omitted rather than
+    // zeroed, and the REFUSED notice is what says why.
+    // THE MUTATION THAT PROVES THIS: print `prob(u.pLoss ?? 0)` unconditionally and the
+    // second half goes red with a 0.0% row on a refused sheet.
+    mocked.mockResolvedValue(REFUSED);
+    const u2 = userEvent.setup();
+    render(<GpsUnderwriting />);
+    await fill(u2);
+    const refusedTable = await screen.findByTestId('gps-print-provenance');
+    expect(within(refusedTable).queryByText('P(margin < 0)')).toBeNull();
+    expect(screen.getByTestId('gps-print-refusal-refused_currency_mismatch')).toBeTruthy();
+  });
+
+  it('has no header, footer, aside or role=status inside the sheet', async () => {
+    // `PrintStyles` hides all four in print, so the dateline and the notices — the two parts
+    // that matter most — would vanish from the paper. The apparatus asserts this over its own
+    // render; this asserts it over the real page, where `Answer` supplies the body.
+    mocked.mockResolvedValue(LOSS);
+    const u = userEvent.setup();
+    render(<GpsUnderwriting />);
+    await fill(u);
+    const sheet = await screen.findByTestId('gps-print-artefact');
+    expect(sheet.querySelectorAll('header, footer, aside, [role="status"]').length).toBe(0);
+  });
+});
+
+describe('a computed verdict feels like what it was', () => {
+  it('announces an underwritten distribution politely, not as a refusal', async () => {
+    mocked.mockResolvedValue(PROFIT);
+    const u = userEvent.setup();
+    render(<GpsUnderwriting />);
+    await fill(u, '25000');
+    await screen.findByTestId('gps-print-artefact');
+    // The live region is the only channel that distinguishes the three under
+    // `prefers-reduced-motion`, where every juice animation is 0.01ms.
+    await waitFor(() => {
+      expect(document.querySelector('[aria-live="polite"]')?.textContent ?? '')
+        .toContain('Underwritten');
+    });
+  });
+
+  it('a missing founder input is UNDETERMINED, so it does not shake at the operator', async () => {
+    // `refused_price_not_set` and four siblings are the founder's gap, not the operator's:
+    // `underwriteFeel` routes them to `became`+amber rather than to `refuse`+red.
+    // THE MUTATION THAT PROVES THIS: flip that row to `refused` in `lib/gpsFeel.ts` and this
+    // goes red on the assertive region.
+    const missing = { ...REFUSED, underwriting: { ...REFUSED.underwriting, verdict: 'refused_price_not_set' as const } };
+    mocked.mockResolvedValue(missing);
+    const u = userEvent.setup();
+    render(<GpsUnderwriting />);
+    await fill(u);
+    await waitFor(() => {
+      expect(document.querySelector('[aria-live="polite"]')?.textContent ?? '').toMatch(/price/i);
+    });
+    expect(document.querySelector('[aria-live="assertive"]')?.textContent ?? '').toBe('');
+  });
+
+  it('a real refusal IS assertive — the governed answer that did not happen', async () => {
+    mocked.mockResolvedValue(REFUSED);
+    const u = userEvent.setup();
+    render(<GpsUnderwriting />);
+    await fill(u);
+    await waitFor(() => {
+      expect(document.querySelector('[aria-live="assertive"]')?.textContent ?? '').not.toBe('');
+    });
+  });
+});

@@ -329,21 +329,37 @@ describe('nothing in the grammar could publish', () => {
   });
 });
 
-describe('the GPS gap is recorded and not fixed', () => {
-  it('GPS still has no palette page rows — noted, another lane owns it', () => {
-    // Stated as a test so it is a known quantity rather than a discovery. If someone
-    // wires GPS this goes red and gets deleted, which is the correct end for it.
+describe('the GPS gap this file recorded is closed', () => {
+  /*
+   * WHAT WAS HERE. Two tests: "GPS still has no palette page rows — noted, another lane
+   * owns it", asserting no `/gps*` literal appeared in CommandBody, and its own note that
+   * "if someone wires GPS this goes red and gets deleted, which is the correct end for it".
+   * GPS Phase 11 wired it. `gpsGrammar.ts` is that lane's file and it did reuse
+   * `destinationsUnder`, exactly as the invitation below was written for.
+   *
+   * The deletion is not silent: what replaces it asserts the gap stayed closed the way it
+   * was closed — GENERATED, so no `/gps` literal appears in CommandBody either. A hand-typed
+   * `/gps` row would satisfy the old test's opposite and reintroduce the original defect.
+   */
+  it('GPS reaches the palette without a route literal in CommandBody', () => {
     const gpsDests = destinationsUnder('/gps');
     expect(gpsDests.length).toBeGreaterThan(0);
     for (const d of gpsDests) {
       expect(
         COMMAND_BODY_CODE.includes(`'${d.path}'`),
-        `${d.path} is now in the palette — delete this test and the PALETTE_PAGE_GAP_NOT_OURS note`,
+        `${d.path} is hand-listed in CommandBody — it must come from GPS_PALETTE_PAGES`,
       ).toBe(false);
     }
+    expect(COMMAND_BODY_CODE).toContain('...GPS_PALETTE_PAGES');
   });
 
-  it('the generator is not marketing-specific, so that lane can reuse it', () => {
+  it('the generator is not marketing-specific, and that lane did reuse it', () => {
     expect(destinationsUnder('/gps').map((d) => d.path)).toContain('/gps/book');
+    // Read from the GPS grammar's own source: the reuse is the point of the invitation in
+    // `marketingGrammar.ts`'s header, and a copy of the filter would be the second place
+    // both files exist to remove.
+    expect(readFileSync(join(HERE, '..', 'gpsGrammar.ts'), 'utf8')).toContain(
+      "destinationsUnder(GPS_PATH_PREFIX)",
+    );
   });
 });

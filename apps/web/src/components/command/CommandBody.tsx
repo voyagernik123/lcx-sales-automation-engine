@@ -24,24 +24,25 @@ import { useOperatorStore } from '@/stores';
 import { VerbPanel } from './VerbPanel';
 import { nounFromSearchResult, type Noun, type Principal } from './grammar';
 /**
- * LCX MARKETING's rows and codes are GENERATED, not listed below (M9).
+ * LCX MARKETING's and GLOBAL SERVICES' rows and codes are GENERATED, not listed below
+ * (M9, then GPS Phase 11).
  *
  * `PAGE_COMMANDS` and `COMMAND_CODES` in this file are hand-written literals that predate
  * the seventh and eighth compartments, and neither gained a row when those shipped — so
- * marketing and GPS are reachable by `g` chord and absent from the surface an operator
- * actually uses. Appending eight more literals here would have been the same defect with a
- * later date on it. `marketingGrammar.ts` derives its rows from `DESTINATIONS` and its
- * codes from its own noun table, and `__tests__/marketingGrammar.test.ts` reads THIS FILE
- * and fails if a marketing path or code appears in it literally.
- *
- * GPS is the identical gap and is not fixed here — it is another lane's file. It is
- * recorded in `PALETTE_PAGE_GAP_NOT_OURS`, and `destinationsUnder('/gps')` is all its
- * owner needs.
+ * for two releases both were reachable by `g` chord and absent from the surface an operator
+ * actually uses. Appending twenty-four more literals here would have been the same defect
+ * with a later date on it. Each compartment's grammar file derives its rows from
+ * `DESTINATIONS` and its codes from its own noun table, and both test files read THIS FILE
+ * and fail if one of their paths or codes appears in it literally.
  */
 import {
   MARKETING_PALETTE_CODES, MARKETING_PALETTE_PAGES, MARKETING_WORKSPACE,
   searchMarketingNouns, searchMarketingReplies, type PaletteRow,
 } from './marketingGrammar';
+import {
+  GPS_PALETTE_CODES, GPS_PALETTE_PAGES, GPS_WORKSPACE,
+  searchGpsNouns, searchGpsEngagements,
+} from './gpsGrammar';
 
 interface CommandItem {
   id: string;
@@ -107,7 +108,11 @@ const HAND_LISTED_PAGES: CommandItem[] = [
  * appends: the empty-query view is the first eight of this list, and re-ordering it moves
  * what an operator sees when they open ⌘K and type nothing.
  */
-const PAGE_COMMANDS: CommandItem[] = [...HAND_LISTED_PAGES, ...MARKETING_PALETTE_PAGES];
+export const PAGE_COMMANDS: CommandItem[] = [
+  ...HAND_LISTED_PAGES,
+  ...MARKETING_PALETTE_PAGES,
+  ...GPS_PALETTE_PAGES,
+];
 
 /**
  * Bloomberg-style command codes: type the code, hit enter, you're there.
@@ -133,9 +138,24 @@ export const COMMAND_CODES: { code: string; to: string; label: string }[] = [
   { code: 'ai', to: '/ai-tools', label: 'AI Console' },
   { code: 'home', to: '/', label: 'Morning Brief' },
   ...MARKETING_PALETTE_CODES,
+  ...GPS_PALETTE_CODES,
 ];
 
 export const OBJECT_ROWS = 10;
+
+/**
+ * How many CODE rows a query may produce. Exported for the test that pins it.
+ *
+ * THIS CAP IS NOT TIDYING — it is the one thing GPS's sixteen codes broke. Codes rank
+ * ahead of everything else and were unbounded, which was harmless while the largest
+ * prefix cluster was `gap` alone. Every GPS code begins with `g` (`gc`, `ge`, `gp`, `go`,
+ * `gq`, `get`, `grc`, `gpt`, `gt`, `gop`, `gdv`, `gms`, `gou`, `gpm`, `gdl`, `gcd`), so a
+ * bare `g` now matches seventeen — more than the fourteen rows the list renders. Without a
+ * cap, typing one letter on the way to any word starting with `g` replaced the entire
+ * palette with GPS codes and pushed the object results, the noun rows and every page out
+ * of the list. An exact match still sorts to the front and therefore always survives.
+ */
+export const CODE_ROWS = 5;
 
 /**
  * Flatten search groups into rows: ONE from every group that matched, in group
@@ -225,18 +245,28 @@ function useObjectSearch(query: string, enabled: boolean): CommandItem[] {
 }
 
 /**
- * Marketing reply INSTANCES — the one marketing noun with a mounted list route.
+ * Compartment INSTANCES — a marketing reply, a GPS engagement.
  *
  * A second hook rather than a branch inside `useObjectSearch`, because the two answer
- * different questions: that one asks the server's own search, this one filters a list the
- * desk already reads. Same 200ms debounce and same abort discipline, so a fast typist
- * cannot leave a stale row behind.
+ * different questions: that one asks the server's own search, this one filters a list a
+ * desk already reads. GPS needs it for a reason marketing did not have: `GET /v1/search`
+ * emits no `gps` group at all, so `useObjectSearch` can never return a GPS row and the
+ * engagement — the noun carrying all five governed GPS verbs — would otherwise be
+ * unreachable as an instance.
  *
- * `enabled` carries the entitlement check. An operator without `marketing` never causes
+ * ONE HOOK, TWO CALL SITES, and the fetcher passed in. Copying it per compartment is how
+ * the 200ms debounce and the abort discipline drift apart, and a stale row left behind by
+ * a fast typist is the failure both halves exist to prevent.
+ *
+ * `enabled` carries the entitlement check. A member without the compartment never causes
  * the request — the route would refuse them, and a 403 per keystroke is noise in someone
- * else's log.
+ * else's log. It is honesty, not security: both routes check too, and `gps` is default-deny.
  */
-function useMarketingReplySearch(query: string, enabled: boolean): readonly PaletteRow[] {
+function useCompartmentInstances(
+  query: string,
+  enabled: boolean,
+  fetchRows: (q: string, signal?: AbortSignal) => Promise<readonly PaletteRow[]>,
+): readonly PaletteRow[] {
   const [items, setItems] = useState<readonly PaletteRow[]>([]);
   const timer = useRef<ReturnType<typeof setTimeout>>();
 
@@ -249,7 +279,7 @@ function useMarketingReplySearch(query: string, enabled: boolean): readonly Pale
     const ctrl = new AbortController();
     timer.current = setTimeout(async () => {
       try {
-        const rows = await searchMarketingReplies(query, ctrl.signal);
+        const rows = await fetchRows(query, ctrl.signal);
         if (!ctrl.signal.aborted) setItems(rows);
       } catch {
         if (!ctrl.signal.aborted) setItems([]);
@@ -259,7 +289,7 @@ function useMarketingReplySearch(query: string, enabled: boolean): readonly Pale
       ctrl.abort();
       clearTimeout(timer.current);
     };
-  }, [query, enabled]);
+  }, [query, enabled, fetchRows]);
 
   return items;
 }
@@ -300,6 +330,90 @@ function buildDataCommands(): CommandItem[] {
   return results;
 }
 
+/** The most rows the list renders, whatever matched. */
+export const PALETTE_ROWS = 14;
+
+export interface RankInput {
+  query: string;
+  /** Page rows plus the static data rows — what a plain substring match runs over. */
+  allCommands: CommandItem[];
+  objectResults: CommandItem[];
+  marketingReplies: readonly PaletteRow[];
+  gpsEngagements: readonly PaletteRow[];
+}
+
+/**
+ * Every row the palette shows, in the order it shows them. PURE, and exported for the
+ * reason `flattenGroups` is: two of the decisions inside it are only observable through a
+ * query that a browser cannot easily be put into, and both were bugs found by writing
+ * them down rather than by looking (see `CODE_ROWS`, and the GPS supersession below).
+ *
+ * The precedence, once, in words: a CODE is an exact instruction and outranks everything;
+ * a real object INSTANCE outranks "the kind of thing you asked about lives here"; and both
+ * outrank a page whose label or sublabel merely contains the query.
+ */
+export function rankPaletteRows(
+  { query, allCommands, objectResults, marketingReplies, gpsEngagements }: RankInput,
+): CommandItem[] {
+  if (!query.trim()) return PAGE_COMMANDS.slice(0, 8);
+  const q = query.toLowerCase();
+  // Command codes rank first: exact match beats prefix match.
+  const codeMatches: CommandItem[] = COMMAND_CODES.filter(
+    c => c.code === q || c.code.startsWith(q),
+  )
+    .sort((a, b) => Number(b.code === q) - Number(a.code === q))
+    // Bounded AFTER the exact-first sort, so the code the operator actually typed is
+    // never the one dropped. See CODE_ROWS for what overflowed.
+    .slice(0, CODE_ROWS)
+    .map(c => ({
+      id: `code-${c.code}`,
+      label: c.label,
+      sublabel: `code: ${c.code}`,
+      to: c.to,
+      type: 'page' as const,
+    }));
+  const staticMatches = allCommands.filter(c =>
+    c.label.toLowerCase().includes(q) || c.sublabel.toLowerCase().includes(q)
+  );
+  // A marketing noun row whose destination is ALREADY in the list is dropped — 'crisis'
+  // matches both the Crisis statements noun and the Crisis Room page row, and two rows
+  // that navigate identically read as a bug rather than as two answers. Scoped to the
+  // marketing rows deliberately: the hand-listed table has its own long-standing
+  // near-duplicates (`home` and Dashboard both go to '/') and changing those is not this
+  // lane's call.
+  const alreadyGoing = new Set([...codeMatches, ...staticMatches].map((c) => c.to));
+  const nounRows = searchMarketingNouns(query).filter((r) => !alreadyGoing.has(r.to));
+  /*
+   * GPS RESOLVES THE SAME COLLISION THE OTHER WAY ROUND, and the difference is in the rows
+   * rather than in taste. A marketing noun row deep-links to a desk TAB, so when it collides
+   * with a page row the page row is the more general answer and keeping it loses nothing. No
+   * GPS surface reads a query param except delivery and the loop
+   * (`GPS_SURFACES_WITHOUT_SELECTION`), so every GPS noun row and its desk's page row
+   * navigate to the identical bare path — and the noun row is the one carrying the truth:
+   * "Partners · GPS · Underwriting · nothing fetches it (fetchGpsPartners does not exist) ·
+   * the partner roster is an owner input nobody has recorded yet" against a page row that
+   * just lists the plurals living there, `Partners` among them. Dropping the noun row would
+   * answer "partner" by hiding the one sentence the operator needed.
+   *
+   * So for GPS the noun row supersedes the page row, and a CODE still supersedes both —
+   * typing `gpt` is an exact instruction, not a search.
+   */
+  const gpsNounRows = searchGpsNouns(query).filter(
+    (r) => !codeMatches.some((c) => c.to === r.to),
+  );
+  const supersededPages = new Set(gpsNounRows.map((r) => r.to));
+  const pageRows = staticMatches.filter((c) => !supersededPages.has(c.to));
+  return [
+    ...codeMatches,
+    ...objectResults,
+    ...marketingReplies,
+    ...gpsEngagements,
+    ...nounRows,
+    ...gpsNounRows,
+    ...pageRows,
+  ].slice(0, PALETTE_ROWS);
+}
+
 
 export default function CommandBody({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [query, setQuery] = useState('');
@@ -324,54 +438,26 @@ export default function CommandBody({ open, onClose }: { open: boolean; onClose:
     [operator, accessMe],
   );
 
-  // Held-compartment gate, not a feature flag: see useMarketingReplySearch.
-  const marketingReplies = useMarketingReplySearch(
+  // Held-compartment gate, not a feature flag: see useCompartmentInstances.
+  const marketingReplies = useCompartmentInstances(
     query,
     open && Boolean(principal.entitlements[MARKETING_WORKSPACE]),
+    searchMarketingReplies,
+  );
+  const gpsEngagements = useCompartmentInstances(
+    query,
+    open && Boolean(principal.entitlements[GPS_WORKSPACE]),
+    searchGpsEngagements,
   );
 
   const allCommands = useMemo(() => {
     return [...PAGE_COMMANDS, ...buildDataCommands()];
   }, []);
 
-  const filtered = useMemo(() => {
-    if (!query.trim()) return PAGE_COMMANDS.slice(0, 8);
-    const q = query.toLowerCase();
-    // Command codes rank first: exact match beats prefix match.
-    const codeMatches: CommandItem[] = COMMAND_CODES.filter(
-      c => c.code === q || c.code.startsWith(q),
-    )
-      .sort((a, b) => Number(b.code === q) - Number(a.code === q))
-      .map(c => ({
-        id: `code-${c.code}`,
-        label: c.label,
-        sublabel: `code: ${c.code}`,
-        to: c.to,
-        type: 'page' as const,
-      }));
-    const staticMatches = allCommands.filter(c =>
-      c.label.toLowerCase().includes(q) || c.sublabel.toLowerCase().includes(q)
-    );
-    // Marketing rows sit between the real registry nouns and the plain page matches:
-    // an instance outranks "the kind of thing you asked about lives here", and both
-    // outrank a page whose sublabel happens to contain the query.
-    //
-    // A noun row whose destination is ALREADY in the list is dropped — 'crisis' matches
-    // both the Crisis statements noun and the Crisis Room page row, and two rows that
-    // navigate identically read as a bug rather than as two answers. Scoped to the
-    // marketing rows deliberately: the hand-listed table has its own long-standing
-    // near-duplicates (`home` and Dashboard both go to '/') and changing those is not
-    // this lane's call.
-    const alreadyGoing = new Set([...codeMatches, ...staticMatches].map((c) => c.to));
-    const nounRows = searchMarketingNouns(query).filter((r) => !alreadyGoing.has(r.to));
-    return [
-      ...codeMatches,
-      ...objectResults,
-      ...marketingReplies,
-      ...nounRows,
-      ...staticMatches,
-    ].slice(0, 14);
-  }, [query, allCommands, objectResults, marketingReplies]);
+  const filtered = useMemo(
+    () => rankPaletteRows({ query, allCommands, objectResults, marketingReplies, gpsEngagements }),
+    [query, allCommands, objectResults, marketingReplies, gpsEngagements],
+  );
 
   useEffect(() => {
     setSelectedIndex(0);

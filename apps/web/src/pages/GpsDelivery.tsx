@@ -19,6 +19,7 @@ import { useListNavigation } from '@/hooks/useListNavigation';
 // itself what "an overlay is open" means is a page whose keys fight the dismiss stack.
 import { isTypingTarget } from '@/lib/keyboard';
 import { isOverlayOpen } from '@/lib/dismiss';
+import { gpsKeysBelongToSurface } from '@/components/gps/gpsPaneFocus';
 import { scrollToId } from '@/lib/motion';
 import { PageTitle, Button, InspectorDrawer } from '@/components/ui';
 import { EmptyState, PageSkeleton } from '@/components/shared';
@@ -1325,6 +1326,16 @@ export function GpsDelivery() {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isTypingTarget(e.target)) return;
       if (isOverlayOpen()) return;
+      /*
+       * AND STANDS DOWN FOR A DOCKED PANE, which `isOverlayOpen()` cannot see.
+       *
+       * A docked pane registers NOTHING with the dismiss stack, deliberately — `lib/split.ts`
+       * argues that one entry there makes `isOverlayOpen()` true and silently kills the very
+       * keys docking exists to preserve. So the guard above returns false for a docked pane,
+       * and `⌘\` can dock the universal evidence pane over this desk: focus a control inside
+       * it, press `4`, and this listener moved the page behind the operator's cursor.
+       */
+      if (!gpsKeysBelongToSurface()) return;
       const section = SECTIONS.find((s) => s.key === e.key);
       if (!section) return;
       const h = document.getElementById(`${section.id}-h`);

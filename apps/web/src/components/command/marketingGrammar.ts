@@ -53,12 +53,16 @@ export const MARKETING_WORKSPACE = 'marketing';
 export const MARKETING_PATH_PREFIX = '/marketing';
 
 /**
- * Recorded, not fixed. See the header: these are reachable by `g` chord and by the
- * native menu, and absent from ⌘K, and they are not this lane's files.
+ * The compartments reachable by `g` chord and by the native menu and absent from ⌘K.
+ *
+ * EMPTY, AND THAT IS THE POINT OF KEEPING IT. It held one row — `/gps` and its six desks —
+ * from M9 until GPS Phase 11 wired `gpsGrammar.ts`, which is the correct end for a recorded
+ * gap. The constant stays because the NEXT compartment will ship the same way this one did:
+ * a route table, a `g` chord, and no palette row. `__tests__/marketingGrammar.test.ts`
+ * asserts the GPS half is now generated rather than hand-listed, so the fix cannot be
+ * reverted into a literal.
  */
-export const PALETTE_PAGE_GAP_NOT_OURS: readonly string[] = [
-  '/gps and the six desks under it (GPS Phases 6-12) have no ⌘K page row',
-] as const;
+export const PALETTE_PAGE_GAP_NOT_OURS: readonly string[] = [] as const;
 
 /* ── the noun table ───────────────────────────────────────────────────────────── */
 

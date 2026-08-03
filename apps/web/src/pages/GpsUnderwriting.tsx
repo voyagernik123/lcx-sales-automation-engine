@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Calculator, Lock, Printer, RotateCcw, ShieldAlert, Swords } from 'lucide-react';
+import { Calculator, Lock, RotateCcw, ShieldAlert, Swords } from 'lucide-react';
 import { clsx } from 'clsx';
 import { OFFERS, type OfferKey } from '@lcx/shared';
 import { PageTitle, Button, Input, Select } from '@/components/ui';
@@ -17,6 +17,10 @@ import {
 import { GpsMetaBanner } from './GpsMetaBanner';
 import { LegalPositionStamp } from '@/components/gps/LegalPositionStamp';
 import { readLegalPosition } from '@/components/gps/legalPosition';
+import {
+  GpsPrintArtefact, gpsUnderwritingRefusal, type GpsPrintProvenanceRow,
+} from '@/components/gps/GpsPrint';
+import { signalGps, underwriteFeel } from '@/lib/gpsFeel';
 
 /**
  * GLOBAL SERVICES — THE UNDERWRITING SCREEN (Phase 7).
@@ -256,6 +260,51 @@ function toRequest(f: QuoteForm): UnderwriteBody | null {
   };
 }
 
+/**
+ * WHAT PRODUCED EACH FIGURE ON THE SHEET, for the artefact's provenance table.
+ *
+ * READ OFF THE RESPONSE, NEVER RECOMPUTED. Every `source` names the field on the wire or
+ * the server function that produced it, and `GpsPrintArtefact` prints "NOT STATED by the
+ * surface that printed this" for a row that omits one — so a figure whose origin nobody can
+ * name is visibly unsourced rather than quietly authoritative. Only figures that survive a
+ * REFUSAL are listed: on a refused verdict `distribution` is absent, so the rows below it
+ * would be a table of em-dashes claiming to be provenance.
+ */
+function printProvenance(res: UnderwriteResponse): readonly GpsPrintProvenanceRow[] {
+  const u = res.underwriting;
+  const rows: GpsPrintProvenanceRow[] = [
+    { label: 'Price', value: `${money(u.priceCents)} ${u.currency}`, source: 'typed on this screen — the thing being argued with' },
+    { label: 'Offer', value: u.offerKey, source: 'UnderwriteBody.offerKey → OFFERS' },
+    { label: 'Partner', value: u.partnerId, source: 'UnderwriteBody.partnerId — rate card loaded server-side by id' },
+    { label: 'Verdict', value: u.verdict, source: 'buildUnderwriteResponse → UnderwriteVerdict' },
+    { label: 'Seed', value: String(u.seed), source: 'server-chosen; the run is reproducible from it' },
+    { label: 'Samples', value: u.sampleCount.toLocaleString('en-US'), source: 'Underwriting.sampleCount' },
+    { label: 'Percentile method', value: res.percentileMethod, source: 'PERCENTILE_METHOD, verbatim off the wire' },
+  ];
+  if (u.distribution) {
+    rows.push({
+      label: 'p50 realised margin',
+      value: money(u.distribution.p50MarginCents),
+      source: `MarginDistribution.p50MarginCents · ${u.distribution.method}`,
+    });
+  }
+  /*
+   * `pLoss` IS NULL ON EVERY REFUSAL AND IS NEVER PRINTED AS 0. "No loss risk found" and
+   * "loss risk not computable" are opposite statements (`underwrite.ts:1044`); the row is
+   * omitted rather than zeroed, and the REFUSED notice above the table is what says why.
+   */
+  if (u.pLoss != null) {
+    rows.push({
+      label: 'P(margin < 0)',
+      value: prob(u.pLoss),
+      source: u.lossSampleCount != null
+        ? `Underwriting.pLoss — ${u.lossSampleCount} of ${u.sampleCount} sampled runs`
+        : 'Underwriting.pLoss',
+    });
+  }
+  return rows;
+}
+
 export function GpsUnderwriting() {
   const [form, setForm] = useState<QuoteForm>(EMPTY_FORM);
   const [res, setRes] = useState<UnderwriteResponse | null>(null);
@@ -305,15 +354,46 @@ export function GpsUnderwriting() {
   const set = <K extends keyof QuoteForm>(k: K, v: QuoteForm[K]) =>
     setForm((prev) => ({ ...prev, [k]: v }));
 
-  // Two-step print: the print tokens are pinned inside the media query, but a
-  // `dark:` variant still matches while the class is on <html>, so it comes off for
-  // the duration of the job (`components/report/PrintStyles.tsx`).
-  const print = () => {
-    const root = document.documentElement;
-    const wasDark = root.classList.contains('dark');
-    if (wasDark) root.classList.remove('dark');
-    setTimeout(() => { window.print(); if (wasDark) root.classList.add('dark'); }, 60);
-  };
+  /**
+   * THE INSTANT THE BROWSER READ ITS CLOCK, captured ONCE per page load.
+   *
+   * Two instants go onto the printed sheet and they are not the same fact: this one is when
+   * the operator was looking, `res.asOf` is when the SERVER computed the figures. A sheet
+   * dated only to the read is a sheet that cannot be told from a stale one, which is why
+   * `GpsPrintArtefact` raises a notice when the second is absent rather than substituting
+   * the first. A ref, not state: re-reading the clock per render would make the dateline
+   * move under a reader who changed nothing, which is the defect the request key above
+   * exists to prevent for the numbers.
+   */
+  const readAtRef = useRef<string>();
+  readAtRef.current ??= new Date().toISOString();
+
+  /**
+   * HOW A COMPUTED VERDICT NOW FEELS, and the asymmetry is the point.
+   *
+   * Before this, pressing Compute produced a refusal and a distribution with exactly the
+   * same silence. `underwriteFeel` maps the eight verdicts onto three outcomes, and the
+   * split it draws is the one that matters commercially: `refused_price_not_set` and the
+   * other four missing-input verdicts are UNDETERMINED, not refused, because the input
+   * nobody supplied is the founder's and shaking at an operator for it is a lie about whose
+   * problem it is (`lib/gpsFeel.ts:216`).
+   *
+   * Fired from an effect keyed on the verdict rather than inside the fetch, so a re-render
+   * cannot re-announce a verdict the operator has already been told about, and so the DOM
+   * node the reaction lands on exists by then.
+   */
+  const answerRef = useRef<HTMLDivElement | null>(null);
+  const verdict = res?.underwriting.verdict ?? null;
+  useEffect(() => {
+    if (verdict == null) return;
+    const { outcome, because } = underwriteFeel(verdict);
+    signalGps(answerRef.current, outcome, `${UNDERWRITE_VERDICT_LABEL[verdict]} — ${because}`);
+  }, [verdict]);
+
+  useEffect(() => {
+    if (error == null) return;
+    signalGps(answerRef.current, 'undetermined', `${error} No distribution is shown.`);
+  }, [error]);
 
   return (
     <div className="br-page mx-auto max-w-[1500px] p-5">
@@ -322,8 +402,17 @@ export function GpsUnderwriting() {
         icon={<Calculator size={20} />}
         subtitle="Type a price. The answer is a distribution of realised margin, the probability it loses money, and the reasons it runs over — not a number."
         actions={
+          /*
+           * THE PRINT CONTROL MOVED ONTO THE ARTEFACT, and the `.dark`-stripping dance it
+           * used to do is gone with it. That dance removed `.dark` from `<html>`, waited
+           * 60ms, called `window.print()` and put the class back — which cannot help a plain
+           * ⌘P (the one an operator actually presses) and restores the class under a
+           * blocking print job, so the sheet could come out of the restore half dark.
+           * `pages/Wbr.tsx:60` removed exactly this for exactly this reason.
+           * `styles/gpsPrint.css` neutralises the surviving `dark:` variants inside the
+           * artefact instead, which works for ⌘P too.
+           */
           <div className="br-no-print flex items-center gap-2">
-            <Button size="sm" variant="secondary" onClick={print}><Printer size={13} /> Print</Button>
             <Button size="sm" variant="secondary" onClick={() => { setForm(EMPTY_FORM); setRes(null); setUplift(0); }}>
               <RotateCcw size={13} /> Clear
             </Button>
@@ -373,7 +462,41 @@ export function GpsUnderwriting() {
             Running {'…'} 4,000 seeded samples over partner effort and recorded-overrun ratios.
           </p>
         ) : (
-          <Answer res={res} busy={busy} uplift={uplift} setUplift={setUplift} />
+          /*
+           * THE ARTEFACT WRAPPER, and it is only around the ANSWER.
+           *
+           * Not around the whole page: the quote bar is the input, and a printed sheet that
+           * carries the fields you were typing into is a screenshot, not a document. The
+           * notices, the dateline and the provenance table belong above and below the figures
+           * they qualify, which is where they land here.
+           *
+           * `sources` is every payload this screen holds — one, `res`. `gpsPrintCaveats`
+           * reads it for the distribution BASIS, for `migrated` and for the perimeter, and
+           * resolves an absent field to UNVERIFIED rather than to clean, so handing it the
+           * response is not an optimisation of a longer list: it is the whole list, and if
+           * this screen ever holds a second payload it must be added here or the sheet will
+           * quietly stop qualifying it.
+           *
+           * `refusals` is the underwriting verdict reprinted with the guard's own reasons.
+           * `gpsUnderwritingRefusal` returns null when the quote was underwritten, so the
+           * REFUSED block appears exactly when `Refusal` does inside `Answer` — one verdict,
+           * said once on screen and once on paper, never derived twice.
+           */
+          <GpsPrintArtefact
+            kind="underwriting"
+            title={`${res.underwriting.offerKey} · ${money(res.underwriting.priceCents)} ${res.underwriting.currency}`}
+            asOf={readAtRef.current!}
+            computedAt={res.asOf}
+            sources={[res]}
+            refusals={[gpsUnderwritingRefusal(res.underwriting)].filter(
+              (r): r is NonNullable<typeof r> => r != null,
+            )}
+            provenance={printProvenance(res)}
+          >
+            <div ref={answerRef}>
+              <Answer res={res} busy={busy} uplift={uplift} setUplift={setUplift} />
+            </div>
+          </GpsPrintArtefact>
         )}
       </div>
     </div>
