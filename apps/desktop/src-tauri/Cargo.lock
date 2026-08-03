@@ -1952,7 +1952,7 @@ dependencies = [
 
 [[package]]
 name = "lcx-terminal"
-version = "0.1.0"
+version = "0.2.6"
 dependencies = [
  "keyring",
  "objc2",
