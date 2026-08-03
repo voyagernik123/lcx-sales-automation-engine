@@ -786,6 +786,62 @@ export async function loadEmbargoRegister(
 }
 
 /**
+ * WHICH OF THESE CANDIDATE TOKENS HAS THE DESK ACTUALLY RECORDED AS AN ASSET?
+ *
+ * The safety net under `outboundGate.ts:NOT_TICKERS`. That list is a PRESUMPTION about
+ * which uppercase words are English rather than tickers, and a presumption held five real
+ * tokens — `LCX` (the house token), `GMT`, `ATH`, `NOW`, `CAN` — each of which made the
+ * Art 90 and Art 91(3)(c) limbs skip silently for any text naming it without the `$` sigil.
+ * The entries are gone; this function is what stops the next wrong entry being a hole
+ * rather than a delay.
+ *
+ * ── WHAT IT IS AND IS NOT ─────────────────────────────────────────────────────
+ * It answers PRESENCE only: is there a live embargo row or any holdings row naming this
+ * symbol? It returns no state, no basis, no `event_ref` and no member — the promoted symbol
+ * goes back through `loadEmbargoRegister` / `loadHoldingsRegister` like any other, so the
+ * staleness and completeness rules are applied in exactly one place and this cannot become a
+ * second, softer opinion about the perimeter.
+ *
+ * PRESENCE IS THE RIGHT TEST HERE AND WOULD BE THE WRONG TEST ANYWHERE ELSE. Absence from
+ * an unattested register means "not known", not "clear" (`abuse.ts:476`), and nothing here
+ * treats it as clearance: a candidate with no row is left exactly where the presumption put
+ * it — outside the lookup — and `EXTRACTION_IS_LEXICAL` says so on every surface that shows
+ * a verdict. What this closes is the strictly worse case, where the desk HAD recorded the
+ * asset and a word list stopped anyone asking.
+ *
+ * ── FAILURE ──────────────────────────────────────────────────────────────────
+ * Un-migrated returns `[]`, which leaves the presumption in force — and on that environment
+ * `loadEmbargoRegister` already returns an empty, not-attested register, so every symbol
+ * the text does name refuses anyway. A THROWN query is not caught here: it propagates to
+ * `gateOutboundText`, whose catch turns it into `gateFailure` and refuses the text. An
+ * unavailable check is not a passed check.
+ *
+ * The `LOOKUP_SYMBOL_MAX` cap in `normaliseSymbolList` applies, so a 20 000-character body
+ * cannot turn this into a wide read.
+ */
+export async function recordedSymbolsAmong(
+  pool: pg.Pool,
+  candidates: readonly unknown[],
+): Promise<readonly string[]> {
+  if (candidates.length === 0) return [];
+  const wanted = normaliseSymbolList(candidates);
+  if (wanted.length === 0) return [];
+  if (!(await isAbuseRegisterMigrated(pool))) return [];
+
+  const res = await pool.query<{ asset_symbol: string }>(
+    `SELECT DISTINCT asset_symbol
+       FROM marketing_asset_embargo
+      WHERE lifted_at IS NULL AND asset_symbol = ANY($1::text[])
+      UNION
+     SELECT DISTINCT asset_symbol
+       FROM marketing_holdings_declaration
+      WHERE asset_symbol = ANY($1::text[])`,
+    [wanted],
+  );
+  return res.rows.map((r) => r.asset_symbol);
+}
+
+/**
  * The holdings register the engine consumes.
  *
  * `HoldingsDeclarationEntry.declared` carries only the two states a human can ASSERT

@@ -740,6 +740,44 @@ export function observedRate(spec: {
   );
 }
 
+/**
+ * A WHOLE-PERCENT SHARE THAT CANNOT ROUND ITS WAY TO "ALL" OR TO "NONE".
+ *
+ * ══ THE DEFECT THIS EXISTS TO KILL, WITH THE FAILING INPUT ══
+ * `observedRate` above reports `pct` to one decimal, so 199 of 200 is `99.5` and reads as
+ * what it is. A panel that wanted a whole number re-implemented the arithmetic instead of
+ * calling this file — `Math.round((withPostTime / openRows) * 100)` — and 199 of 200
+ * rendered as **`100%`** in a headline whose own docblock said it was written to stop
+ * exactly that. 398/400 and 999/1000 do the same, and the queue's coverage query has no
+ * cap, so a desk with 200-plus open rows reaches it in the ordinary course. The guard test
+ * beside it used 70/120 → 58%, so `queryByText('100%')` passed trivially and would have
+ * kept passing at 199/200.
+ *
+ * ══ THE RULE, WHICH IS AN EXACTNESS RULE AND NOT A ROUNDING PREFERENCE ══
+ * The two endpoints of this scale are the only two values a reader treats as claims about
+ * the population rather than as approximations. `100` asserts "every one of them"; `0`
+ * asserts "not a single one". So each is returned if and only if it is literally true, and
+ * every genuinely partial share is clamped into `[1, 99]`. A share of 99.5% displays as
+ * `99` — understated, which is the safe direction here, because the number is a coverage
+ * figure and the cost of overstating it is a reader trusting a clock that has holes in it.
+ *
+ * `null` for a denominator that cannot carry a share: absent, never `0`. A caller that
+ * gets `null` must render its refusal sentence, not a dash beside a confident label.
+ *
+ * WHY IT LIVES HERE. The barrel above this compartment records fourteen collisions, ten of
+ * them process metrics implemented twice, and states the reason: "a second implementation
+ * of a threshold is how a suppressed rate becomes an expressed one." This is that, in the
+ * one direction that hands an operator a false certainty about their own desk. One
+ * implementation, in the file that owns honest measurement.
+ */
+export function partialSharePct(part: number, whole: number): number | null {
+  if (!Number.isInteger(part) || !Number.isInteger(whole)) return null;
+  if (whole <= 0 || part < 0 || part > whole) return null;
+  if (part === 0) return 0;
+  if (part === whole) return 100;
+  return Math.min(99, Math.max(1, Math.round((part / whole) * 100)));
+}
+
 /* ══════════════════════════════════════════════════════════════════════════ */
 /* §4 THE TWELVE PROCESS METRICS — MEASURING THE DESK, NOT THE MARKET          */
 /* ══════════════════════════════════════════════════════════════════════════ */

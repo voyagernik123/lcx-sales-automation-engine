@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { partialSharePct } from '@lcx/shared';
 import { SectionLabel } from '@/components/ui';
 import type { MarketingReply, MarketingSummary } from '@/lib/api/marketing';
 import { LowerBoundTile, ObservationFrameNote, Th, Td } from './DeskAtoms';
@@ -123,6 +124,15 @@ export function DeskMeasurement({ queue, summary, now }: {
    *
    * `postTimeCoverage` is computed in SQL over every open, non-quarantined row. When the
    * API does not send it, this refuses — it does not fall back to the page.
+   *
+   * ══ AND THE PERCENTAGE ITSELF WAS STILL FORGING COMPLETENESS ══
+   * Fixing the DENOMINATOR left the FIGURE wrong. `Math.round((withPostTime / openRows) *
+   * 100)` returns 100 for 199 of 200, so the headline this docblock describes still read
+   * `100%` beside prose that said one open row had no post date. 398/400 and 999/1000 do
+   * the same and the coverage query has no cap. `partialSharePct` (`@lcx/shared`,
+   * `marketing/observation.ts`) is the one implementation of the rule: 100 and 0 are
+   * returned only when they are literally true, every partial share is clamped into
+   * [1, 99], and a denominator that cannot carry a share is `null` rather than zero.
    */
   const clock = useMemo(() => {
     const c = summary?.postTimeCoverage;
@@ -130,7 +140,7 @@ export function DeskMeasurement({ queue, summary, now }: {
     return {
       covered: c.withPostTime,
       total: c.openRows,
-      pct: c.openRows === 0 ? null : Math.round((c.withPostTime / c.openRows) * 100),
+      pct: partialSharePct(c.withPostTime, c.openRows),
     };
   }, [summary]);
 

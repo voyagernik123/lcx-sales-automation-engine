@@ -96,3 +96,22 @@ export * from './loop.js';
 export * from './contracts/desk.js';
 export * from './contracts/memory.js';
 export * from './contracts/record.js';
+
+/* `contracts/gates.ts` — the eight routes in `apps/api/src/routes/marketingGates.ts`:
+ * claim-safety release, engine review, reply provenance and its corroboration, the
+ * silence log and its write, the twelve process metrics and the loop report.
+ *
+ * WITHOUT THIS LINE the route file and the browser BOTH fail, identically and for the
+ * same reason as the `abuseRegister.ts` incident recorded above: 18 TS2305s in
+ * `marketingGates.ts` and 19 in `apps/web`, on symbols that ARE exported from
+ * `contracts/gates.ts`. Two agents reached the same diagnosis independently and neither
+ * owned this file. It is one line and it is load-bearing, so
+ * `__tests__/marketingBarrel.test.ts` asserts the compartment can be imported by name
+ * rather than trusting that nobody deletes it.
+ *
+ * NO COLLISION TO ALIAS. Checked, not assumed: every symbol this file publishes was
+ * grepped against the rest of `packages/shared/src` before the line was added, and the
+ * shared emit build is the proof — a clash with the GPS star would be a TS2308 at the
+ * top-level barrel, and the rule stated above is that it would be aliased HERE, inside
+ * the marketing compartment, never in `../index.ts`. */
+export * from './contracts/gates.js';

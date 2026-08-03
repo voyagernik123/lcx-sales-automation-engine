@@ -11,7 +11,6 @@ import {
   type RefusalRecovery,
   type RuleCitation,
 } from './vocabulary';
-import type { ReviewVerdict } from './deskApi';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════════
@@ -270,36 +269,82 @@ export function previewRefusals(input: PreCheckInput): Refusal[] {
 /* ── Composition: what the drafting room actually renders ────────────────────── */
 
 /**
- * Turn one engine answer (or its absence) plus the local previews into the four gates
+ * THE ENGINE ANSWERS THIS SCREEN ACTUALLY GETS, per axis, tri-state per axis.
+ *
+ * ── WHY THIS REPLACED `ReviewVerdict` ─────────────────────────────────────────
+ * `ReviewVerdict` was the shape of `POST /v1/marketing/review`, and NO ROUTER EVER
+ * DECLARED THAT ROUTE. It was recorded as a known defect rather than found later
+ * (`lib/api/marketing.ts MARKETING_CLIENT_OVERLAPS`), and its consequence was that the
+ * drafting room's gates rendered `absent` on every environment — the correct outcome of
+ * calling nothing, which is exactly why `Gate`'s `absent` source exists.
+ *
+ * The API built two narrower endpoints instead, and they are mounted and contracted:
+ * `POST /regime` → `RegimeReading` and `POST /adoption` → `AdoptionReading`. So the axes
+ * are now filled by the engines that own them, and the axes NOBODY answers are named
+ * individually instead of being covered by one sentence about a route that never existed.
+ *
+ * `null` per field is load-bearing and is not the same as `[]`: `null` means that axis was
+ * not examined, `[]` means the engine examined it and matched nothing. Collapsing the two
+ * turns a missing endpoint into a green tick.
+ */
+export interface EngineGateVerdicts {
+  /**
+   * `packages/shared/src/marketing/claimSafety.ts checkClaimSafety` — 1 164 lines, and it
+   * has NO ROUTE CALLER anywhere in `apps/api/src`. `POST /v1/marketing/claim-safety` is in
+   * `MARKETING_CONTRACTS_OWED` and is not mounted, so this is `null` on every environment
+   * today and the gate says so in those words.
+   */
+  readonly claimSafety: readonly Refusal[] | null;
+  /** `POST /abuse-check` is likewise unmounted. The invisible axis stays unexamined. */
+  readonly marketAbuse: readonly Refusal[] | null;
+  /** From `RegimeReading.decision.refusals`, minus the Art 7 arithmetic. */
+  readonly regime: readonly Refusal[] | null;
+  /**
+   * The Art 7 character arithmetic AS THE ENGINE COMPUTED IT. When this is non-null the
+   * length gate stops being this screen's own estimate and becomes a verdict: the engine
+   * measures on X's weighting, against the surface's real ceiling, over the mandated block
+   * it assembled — none of which a component can do.
+   */
+  readonly lengthBudget: readonly Refusal[] | null;
+  /** From `AdoptionReading.verdict.refusals` — what a like or a repost would adopt. */
+  readonly adoption: readonly Refusal[] | null;
+}
+
+/**
+ * Turn the engine answers (or their absences) plus the local previews into the five gates
  * the drafting room shows.
  *
  * THE RULE THIS FUNCTION EXISTS TO ENFORCE: a gate the engine did not answer renders as
  * `absent` with a sentence, never as an empty pass. `claim_safety` matters most, because
  * it is the entire ruleset about regulated promises and there is no honest browser-side
  * substitute for it.
+ *
+ * `engineAbsentBecause` IS NOW PER-AXIS rather than one string for all of them. One
+ * sentence about a single missing endpoint was accurate when a single endpoint was missing;
+ * with two axes answered and two unmounted it would have told an operator that a live
+ * verdict had not been reached.
  */
 export function composeGates(args: {
   pre: readonly Refusal[];
-  engine: ReviewVerdict | null;
-  /** Why the engine did not answer, in a sentence. */
-  engineAbsentBecause: string;
+  engine: EngineGateVerdicts | null;
+  /** Why an axis has no answer, in a sentence, keyed by gate. */
+  absentBecause: Readonly<Record<GateReading['gate'], string>>;
 }): GateReading[] {
-  const { pre, engine, engineAbsentBecause } = args;
+  const { pre, engine, absentBecause } = args;
   const byCode = (...codes: RefusalCode[]) => pre.filter((r) => codes.includes(r.code));
 
   const gate = (
     g: GateReading['gate'],
     fromEngine: readonly Refusal[] | null | undefined,
     preview: readonly Refusal[],
-    absentSentence: string,
   ): GateReading => {
     if (fromEngine) {
       return { gate: g, source: 'engine', refusals: [...fromEngine, ...preview], absentBecause: null };
     }
     if (preview.length > 0) {
-      return { gate: g, source: 'preview', refusals: preview, absentBecause: absentSentence };
+      return { gate: g, source: 'preview', refusals: preview, absentBecause: absentBecause[g] };
     }
-    return { gate: g, source: 'absent', refusals: [], absentBecause: absentSentence };
+    return { gate: g, source: 'absent', refusals: [], absentBecause: absentBecause[g] };
   };
 
   return [
@@ -307,27 +352,43 @@ export function composeGates(args: {
       'claim_safety',
       engine?.claimSafety,
       byCode('ESMA_REGULATORY_STATUS_AS_PROMOTION', 'ART_81_PERSONALISED_RECOMMENDATION'),
-      `${engineAbsentBecause} Nothing here has been checked for price predictions, return promises, solvency assertions, invented licences or any other regulated promise — the claim library and its rule validator run on the API and this screen cannot reach them.`,
     ),
     gate(
       'market_abuse',
       engine?.marketAbuse,
       byCode('ASSET_STATE_UNKNOWN', 'ADOPTION_OF_UNVERIFIED_TARGET'),
-      `${engineAbsentBecause} The embargo register and the holdings declaration are joins against state and no register exists yet, so this axis is unexamined rather than clear.`,
     ),
+    gate('regime', engine?.regime, byCode('ART_66_3_WHITE_PAPER_LINK_MISSING')),
+    /*
+     * THE ONE GATE THAT WAS COMPLETE WITHOUT AN ENGINE, AND IS NO LONGER ONLY THAT.
+     *
+     * It used to be hard-coded `source: 'preview'` with the comment "arithmetic over two
+     * constants … it is the only one that may". That was true of what this screen can
+     * compute — `text.length` against `X_POST_MAX_CHARS` — and it was NOT the Art 7
+     * arithmetic, which weighs characters X's way, uses the surface's real ceiling and
+     * measures a mandated block this screen never sees. So when the engine answers, its
+     * number wins and the source becomes `engine`; the local estimate stays as the
+     * advisory fallback it always was.
+     */
     gate(
-      'regime',
-      engine?.regime,
-      byCode('ART_7_BOILERPLATE_DOES_NOT_FIT', 'ART_66_3_WHITE_PAPER_LINK_MISSING'),
-      `${engineAbsentBecause} Which law applies to this item, and therefore which mandatory elements it needs, has not been classified.`,
+      'length_budget',
+      engine?.lengthBudget,
+      /*
+       * BOTH CODES, and the second one is here because dropping it was a live regression for
+       * about twenty minutes: `ART_7_BOILERPLATE_DOES_NOT_FIT` used to ride on the `regime`
+       * gate, and when the axes were re-cut it was removed from there and not added here — so
+       * `previewRefusals` produced it and NO gate rendered it. A refusal computed and then
+       * silently dropped is worse than one never computed, and `deskGates.test.tsx` now
+       * asserts that every code this screen can emit lands on some gate.
+       */
+      byCode('LENGTH_BUDGET_EXCEEDED', 'ART_7_BOILERPLATE_DOES_NOT_FIT'),
     ),
-    /* The one gate that is genuinely complete without the engine, because it is
-       arithmetic over two constants. It says so, and it is the only one that may. */
-    {
-      gate: 'length_budget',
-      source: 'preview',
-      refusals: byCode('LENGTH_BUDGET_EXCEEDED'),
-      absentBecause: null,
-    },
+    /*
+     * THE VERB'S OWN GATE, which did not exist while the only engine call was a combined
+     * "review". A like produces no words of ours and adopts everything the target said;
+     * scoring that on the same axis as our wording is how "we only retweeted it" became a
+     * defence nobody could check.
+     */
+    gate('adoption', engine?.adoption, byCode('ADOPTION_OF_UNVERIFIED_TARGET')),
   ];
 }

@@ -5,6 +5,7 @@ import { SectionLabel } from '@/components/ui';
 import { AiProse } from '@/components/ai/AiProse';
 import type { MarketingReply, MarketingSummary } from '@/lib/api/marketing';
 import { LowerBoundTile, Nothing, Th, Td } from './DeskAtoms';
+import { PostTimeMark } from './PostTimePanel';
 import { TriageAssessment } from './TriageAssessment';
 import {
   ATTRIBUTION_MIN_CONCURRING,
@@ -99,23 +100,83 @@ export function TriageBoard({ queue, now, onChanged, summary = null }: {
    *
    * `queue` is capped (50 by default, 200 at most), so "Measured over 50 of 50 open items …
    * Every open item carries one" was printed for a desk where 70 of 120 open replies had no
-   * post date. The longest wait is still computed from the loaded rows — it has to be, the
-   * timestamps are on them — but the DENOMINATOR is the population figure from the summary,
-   * and the sentence says which of the two each number is.
+   * post date. The DENOMINATOR is now the population figure from the summary, and the
+   * sentence says which of the two each number is. (The FIGURE was fixed separately, and
+   * is no longer always computed from the loaded rows — see immediately below.)
+   */
+  /*
+   * ══ AND THE FIGURE WAS STILL A LOWER BOUND WORN AS A MAXIMUM ══
+   *
+   * Fixing the SENTENCE left the NUMBER lying. `Math.max` over the loaded page was
+   * rendered bare as "Longest wait since it was posted — 30h", with no `≥` and no frame,
+   * while `summary.oldestSincePostedHours` — computed in SQL over the whole open
+   * population, and REFUSING with `MKT_CLOCK_POST_TIME_UNKNOWN` unless every open row has
+   * a post date — was transported in the same response and read by no component in the
+   * app. 120 open rows, a page of 50, the true oldest on page 3: the tile stated a number
+   * lower than reality, as a measurement.
+   *
+   * So the server's field decides which of three things the figure IS, and the figure says
+   * which one on its face:
+   *   · a number   → the API computed it over every open row. EXACT.
+   *   · a refusal  → the page maximum is a floor and is prefixed `≥`, with the API's own
+   *                  sentence beneath it. Never substituted for the exact figure.
+   *   · null       → no open rows. Nothing to time.
+   * A `summary` that never arrived is the same floor, with the share unknown.
    */
   const clock = useMemo(() => {
     const withTrue = queue
       .map((r) => waitOn(r, now).hours)
       .filter((h): h is number => h !== null);
-    const oldest = withTrue.length > 0 ? Math.max(...withTrue) : null;
+    const pageMax = withTrue.length > 0 ? Math.max(...withTrue) : null;
     const population = summary?.postTimeCoverage ?? null;
+    const server = summary === null ? undefined : summary.oldestSincePostedHours;
+    const exact = typeof server === 'number' ? server : null;
+    const refused = server !== null && server !== undefined && typeof server === 'object' ? server : null;
     return {
       covered: withTrue.length,
       loaded: queue.length,
       population,
-      oldestHours: oldest,
+      /** Set only when the API measured it over the whole open population. */
+      exactHours: exact,
+      /** A floor from the loaded page. Rendered with `≥`, and only when `exactHours` is null. */
+      atLeastHours: exact === null ? pageMax : null,
+      /** The API's refusal, shown verbatim rather than paraphrased. */
+      refusal: refused,
+      /** `null` from the API means there are no open rows at all. */
+      noOpenRows: server === null,
     };
   }, [queue, now, summary]);
+
+  /*
+   * TWO SENTENCES, BECAUSE THEY ANSWER TWO DIFFERENT QUESTIONS, and collapsing them is how
+   * one of them gets lost. The first says what KIND of number is above it — the figure
+   * itself, or a floor. The second says what POPULATION it was drawn from. An earlier pass
+   * of this fix made the refusal replace the coverage prose, which silently deleted the
+   * denominator disclosure that four tests in `deskHonesty.test.tsx` exist to hold.
+   */
+  const clockStatusSentence =
+    clock.refusal !== null
+      ? `${clock.refusal.message} The figure above is the longest wait among the ${String(clock.covered)} of `
+        + `${String(clock.loaded)} loaded rows that do carry a post date, so it is a FLOOR and is shown with ≥: `
+        + `the true longest wait cannot be lower than it, and may be higher. Needs: ${clock.refusal.needs}`
+      : clock.exactHours !== null
+        ? `Computed by the API over all ${String(clock.population?.openRows ?? clock.loaded)} open replies, every `
+          + 'one of which carries a post date, so this is the longest wait itself rather than the longest one '
+          + 'visible from this page.'
+        : 'This environment reported no post-time clock over the open population, so the figure above is a FLOOR '
+          + 'over the loaded page and is shown with ≥.';
+
+  /* The denominator, unchanged in wording and in the three cases it distinguishes. */
+  const clockCoverageSentence =
+    clock.population === null
+      ? `Measured over ${clock.covered} of the ${clock.loaded} items loaded on this page. `
+        + 'How many open items exist in total is not being reported by this environment, so what '
+        + 'share of the desk this covers is unknown — and it is not assumed to be all of it.'
+      : `Measured over ${clock.covered} of the ${clock.loaded} items loaded here, out of `
+        + `${clock.population.openRows} open in total, of which ${clock.population.withPostTime} carry a true post time. `
+        + (clock.population.withPostTime < clock.population.openRows
+          ? `The other ${clock.population.openRows - clock.population.withPostTime} are excluded rather than timed from when the email arrived, which would measure mail delay and read better than reality.`
+          : 'Every open item carries one.');
 
   return (
     <section aria-label="Triage board" className="space-y-3">
@@ -125,22 +186,23 @@ export function TriageBoard({ queue, now, onChanged, summary = null }: {
           <div className="font-mono text-[10px] uppercase tracking-wider text-grey">
             Longest wait since it was posted
           </div>
-          <div className={clsx('mt-0.5 text-[20px] font-bold tabular-nums',
-            clock.oldestHours === null ? 'text-grey' : clock.oldestHours > 2 ? 'text-status-conditional' : 'text-navy')}>
-            {clock.oldestHours === null ? 'not measurable' : `${Math.round(clock.oldestHours)}h`}
+          <div
+            className={clsx('mt-0.5 text-[20px] font-bold tabular-nums',
+              clock.exactHours === null && clock.atLeastHours === null
+                ? 'text-grey'
+                : (clock.exactHours ?? clock.atLeastHours ?? 0) > 2 ? 'text-status-conditional' : 'text-navy')}
+            data-testid="mkt-clock-figure"
+          >
+            {clock.exactHours !== null
+              ? `${String(Math.round(clock.exactHours))}h`
+              : clock.atLeastHours !== null
+                ? `≥ ${String(Math.round(clock.atLeastHours))}h`
+                : 'not measurable'}
           </div>
           <p className="text-[10px] leading-snug text-grey" data-testid="mkt-clock-coverage">
-            {clock.loaded === 0
+            {clock.noOpenRows || clock.loaded === 0
               ? 'No open items, so there is nothing to time.'
-              : clock.population === null
-                ? `Measured over ${clock.covered} of the ${clock.loaded} items loaded on this page. `
-                  + 'How many open items exist in total is not being reported by this environment, so what '
-                  + 'share of the desk this covers is unknown — and it is not assumed to be all of it.'
-                : `Measured over ${clock.covered} of the ${clock.loaded} items loaded here, out of `
-                  + `${clock.population.openRows} open in total, of which ${clock.population.withPostTime} carry a true post time. `
-                  + (clock.population.withPostTime < clock.population.openRows
-                    ? `The other ${clock.population.openRows - clock.population.withPostTime} are excluded rather than timed from when the email arrived, which would measure mail delay and read better than reality.`
-                    : 'Every open item carries one.')}
+              : `${clockStatusSentence} ${clockCoverageSentence}`}
           </p>
         </div>
         <LowerBoundTile
@@ -237,9 +299,18 @@ export function TriageBoard({ queue, now, onChanged, summary = null }: {
                         {/* The grade is NOT a trust score. The mailbox has no sender
                             check, so a fabricated reply arrives graded the same as a
                             real one until an independent channel corroborates it. */}
-                        Admiralty grade as recorded. It is not corroboration: nothing on this row proves the
-                        email came from X.
+                        Admiralty grade as recorded. It is not corroboration on its own.
                       </p>
+                      {/* AND THIS IS WHERE THE ROW STOPS LOOKING THE SAME. The sentence
+                          above used to end "nothing on this row proves the email came from
+                          X", which was true of every row and therefore invisible: an
+                          identical caveat under every grade is read once and then never
+                          again. `PostTimeMark` renders three visually different states, so a
+                          row X's own oEmbed endpoint has confirmed does not look like a row
+                          that arrived only through an unauthenticated mailbox — which is the
+                          anti-forgery signal for defect 1, on the surface where an operator
+                          decides whether to answer. */}
+                      <PostTimeMark reply={r} />
                     </Td>
                     <Td>
                       {wait.hours === null ? (

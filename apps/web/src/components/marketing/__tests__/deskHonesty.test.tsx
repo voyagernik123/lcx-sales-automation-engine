@@ -88,6 +88,39 @@ describe('post-time coverage is stated over the population, not the page', () =>
     expect(screen.queryByText('100%')).toBeNull();
   });
 
+  it('does not render 100% when 199 of 200 open replies carry a post date', () => {
+    /*
+     * THE DENOMINATOR FIX LEFT THE FIGURE WRONG, and the guard above could not see it:
+     * 50/120 is 42%, so `queryByText('100%')` passed for free and would have kept passing
+     * here. `Math.round((199 / 200) * 100)` is 100, and the coverage query has no cap, so
+     * a desk with 200 open rows reaches this in the ordinary course.
+     */
+    render(
+      <DeskMeasurement
+        queue={PAGE}
+        summary={summary({ counts: { new: 200 }, postTimeCoverage: { openRows: 200, withPostTime: 199 } })}
+        now={NOW}
+      />,
+    );
+    expect(screen.queryByText('100%')).toBeNull();
+    expect(screen.getByText('99%')).toBeTruthy();
+    // And the sentence still names both real numbers, so the two agree.
+    expect(screen.getByTestId('mkt-post-time-coverage').textContent).toMatch(/199 of 200/);
+  });
+
+  it('renders 100% only when every open reply carries a post date', () => {
+    // The other half of the exactness rule: clamping must not make completeness
+    // unsayable, or the fix would have replaced one lie with another.
+    render(
+      <DeskMeasurement
+        queue={PAGE}
+        summary={summary({ counts: { new: 200 }, postTimeCoverage: { openRows: 200, withPostTime: 200 } })}
+        now={NOW}
+      />,
+    );
+    expect(screen.getByText('100%')).toBeTruthy();
+  });
+
   it('says which of the two numbers came from the page', () => {
     render(<DeskMeasurement queue={PAGE} summary={summary()} now={NOW} />);
     expect(screen.getByTestId('mkt-post-time-coverage').textContent)
@@ -133,6 +166,32 @@ describe('the triage clock says what it measured over', () => {
     const said = screen.getByTestId('mkt-clock-coverage').textContent ?? '';
     expect(said).toMatch(/is not being reported by this environment/);
     expect(said).toMatch(/not assumed to be all of it/);
+  });
+
+  it('marks the figure as a floor when the API refused the population clock', () => {
+    /*
+     * THE FIGURE, NOT THE SENTENCE. `Math.max` over the loaded page was rendered bare as a
+     * measurement while `oldestSincePostedHours` — in the same response, refusing with
+     * MKT_CLOCK_POST_TIME_UNKNOWN — was read by no component in the app. With 120 open rows
+     * and a page of 50, the true oldest can be on page 3, so the bare number is lower than
+     * reality and states it as fact.
+     */
+    board(summary());
+    const figure = screen.getByTestId('mkt-clock-figure').textContent ?? '';
+    expect(figure).toMatch(/^≥ \d+h$/);
+    // And the refusal the API actually sent is shown, not paraphrased away.
+    const said = screen.getByTestId('mkt-clock-coverage').textContent ?? '';
+    expect(said).toMatch(/70 of 120 open replies have no post date/);
+    expect(said).toMatch(/FLOOR/);
+  });
+
+  it('drops the ≥ only when the API measured the whole open population', () => {
+    // The mirror: if the floor marker were unconditional it would understate a figure the
+    // API computed exactly, and ≥ would stop meaning anything.
+    board(summary({ oldestSincePostedHours: 41, postTimeCoverage: { openRows: 50, withPostTime: 50 } }));
+    expect(screen.getByTestId('mkt-clock-figure').textContent).toBe('41h');
+    expect(screen.getByTestId('mkt-clock-coverage').textContent)
+      .toMatch(/longest wait itself rather than the longest one visible from this page/);
   });
 
   it('still says "every open item carries one" when that is actually true', () => {

@@ -88,11 +88,30 @@
  * second copy of `TTFS_BUDGET_MINUTES_BY_SEVERITY` is how two surfaces disagree about
  * whether the desk was late.
  *
- * It also does NOT read desk mode. `crisisCapabilities` needs a `DeskMode`, the desk-mode
- * store belongs to `POST /v1/marketing/desk-mode` (owed, `MARKETING_CONTRACTS_OWED`),
- * and accepting the mode as a request field would let a client assert the desk is not
- * suspended. So capabilities are absent rather than invented, and `activateCrisisStatement`
- * — whose last gate is `desk_permits_handoff` — is deliberately not called here.
+ * ══ IT NOW READS DESK MODE, THROUGH ONE STORE ══
+ * It used to not, and said so: `crisisCapabilities` needs a `DeskMode`, the mode lived
+ * privately inside `routes/marketingDesk.ts`, and accepting it as a request field would let
+ * a client assert the desk is not suspended. So capabilities were absent and
+ * `activateCrisisStatement` — whose last gate is `desk_permits_handoff` — was never called.
+ * That left the one state the crisis engine was built for unreachable: a competent
+ * authority has suspended LCX's marketing communications under MiCA Art 94(1) and an
+ * incident starts anyway.
+ *
+ * `marketing/deskModeStore.ts` is now the single place the mode is read and written, and
+ * both routers use it. Three consequences, all deliberate:
+ *
+ *  · A SUSPENDED DESK STILL COMPOSES, CLEARS, RECORDS AND EXPORTS. Only handoff is lost.
+ *    Disabling the room would be wrong twice over — the record is exactly what the
+ *    supervisor will ask for, and Art 88(1) still requires the public to be informed of
+ *    inside information as soon as possible. So a suspension never turns a write here into
+ *    a refusal; it changes what the response SAYS the desk may do next.
+ *  · THE CLASSIFICATION IS NOT MADE HERE. Whether a given statement is a marketing
+ *    communication, an Art 88(1) disclosure, or both is a legal call.
+ *    `ART_94_CLASSIFICATION_REQUIRES_COUNSEL` fires until counsel is named, and the name
+ *    comes from the incident record (`counsel_named`, stated when the incident was opened),
+ *    never from the body of the request asking for the permission.
+ *  · AN UNREADABLE MODE OFFERS NO PERMISSION. It is reported absent with its reason, never
+ *    defaulted to `normal`.
  */
 import { Hono } from 'hono';
 import { createHash, randomUUID } from 'node:crypto';
@@ -132,10 +151,12 @@ import {
   INCIDENT_SEVERITIES,
   LCX_CONTAGION_APPLICABILITY,
   TTFS_BUDGET_BASIS,
+  activateCrisisStatement,
   assessClearance,
   assessStatementCompleteness,
   assessTimeToFirstStatement,
   contagionReadiness,
+  crisisCapabilities,
   gateContagionAnswer,
   getHoldingStatement,
   holdingStatementsFor,
@@ -146,6 +167,12 @@ import {
   unpreparedIncidentTypes,
 } from '@lcx/shared';
 import { gateOutboundText, recordGateDecision } from '../marketing/outboundGate.js';
+import {
+  LedgerUnreadable,
+  type ModeSource,
+  modeInForce,
+  readDeskStanding,
+} from '../marketing/deskModeStore.js';
 import type {
   ActorId,
   ArtefactIntent,
@@ -153,6 +180,8 @@ import type {
   ClearanceBoard,
   ClearanceRole,
   ContradictionDebtReport,
+  CrisisActivation,
+  CrisisCapabilities,
   CrisisOutboundGateVerdict,
   CrisisFirstStatementRecorded,
   CrisisIncidentOpened,
@@ -162,6 +191,8 @@ import type {
   CrisisStatementDraft,
   CrisisStatementInstance,
   CrisisStatementLibrary,
+  DeskMode,
+  DeskStanding,
   HoldingPrecondition,
   HoldingStatementId,
   ImpactSeverity,
@@ -1512,6 +1543,199 @@ async function loadInstance(pool: Pool, uid: string): Promise<InstanceRow | null
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+ *  A SUSPENDED DESK IN A CRISIS — THE STATE NOBODY DESIGNS FOR
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * ══ WHAT THIS SECTION IS FOR ══
+ * A competent authority has suspended LCX's marketing communications — MiCA Art 94(1)(q),
+ * up to 30 consecutive WORKING days — and an incident starts. `crisisCapabilities` answers
+ * what the room may still do, and the answer is nearly everything: draft, clear, record a
+ * publication after the fact, export the record for the authority. ONLY HANDOFF IS LOST,
+ * because handoff is the act a marketing suspension bites on.
+ *
+ * So nothing in this file turns a suspension into a refused write. A desk that stops
+ * keeping its record during a suspension has made its position worse, and Art 88(1) does
+ * not switch off: the public must still be informed of inside information as soon as
+ * possible. Every capability that IS false says why, in the engine's own sentence.
+ *
+ * ══ WHERE THE MODE COMES FROM, AND WHERE IT DOES NOT ══
+ * `marketing/deskModeStore.ts` — the same store `POST /v1/marketing/desk-mode` writes and
+ * `GET /v1/marketing/desk` reports. Never a request field: a client that could assert
+ * `deskMode: normal` could assert its way out of a regulator's order.
+ *
+ * `object_actions` (0029) holds it, so the mode is readable when 0063 is not — which is the
+ * case that matters, since a suspension recorded during a migration window must still be
+ * visible to the room.
+ *
+ * ══ WHY THESE ARE SIBLINGS OF `data` AND NOT FIELDS INSIDE IT ══
+ * `CrisisStatementInstance` and `ClearanceBoard` are declared in
+ * `packages/shared/src/marketing/contracts/memory.ts`, which this wave does not own. A
+ * response type must be declared ONCE and imported by both sides, so rather than widen a
+ * contract this file cannot edit — or worse, quietly return a field the declared type says
+ * does not exist — the desk half travels BESIDE `data`. Every value inside it is a shared
+ * engine type (`DeskStanding`, `DeskMode`, `CrisisCapabilities`, `CrisisActivation`,
+ * `Refusal`), so nothing here invents a vocabulary; only the envelope is local, and no
+ * declared contract is made to lie. A browser surface should not read these fields until
+ * they are declared in `contracts/memory.ts` — that is the owed half of this change.
+ */
+
+/** The desk-mode half of a crisis response. A local ENVELOPE over shared engine types. */
+interface CrisisDeskSurface {
+  /** `null` only when the newest mode record could not be read. Never a default mode. */
+  readonly standing: DeskStanding | null;
+  /**
+   * The mode the permission question was actually answered against — see
+   * `deskModeStore.modeInForce`. A suspension that has lapsed or has not started yet is
+   * recorded and is NOT biting, and refusing longer than the authority ordered is its own
+   * compliance problem.
+   */
+  readonly modeResolvedAgainst: DeskMode | null;
+  readonly source: ModeSource | 'unreadable';
+  readonly capabilities: CrisisCapabilities | null;
+  /** From the INCIDENT RECORD, never from the request. `null` is the common case. */
+  readonly counselNamed: string | null;
+  readonly counselSource: 'incident_record';
+  /** Non-empty only where the mode could not be read. Absence, never a permission. */
+  readonly refusals: readonly Refusal[];
+}
+
+const DESK_MODE_UNREADABLE_RULE = DESK_POLICY(
+  'desk_mode.absence_is_not_normal',
+  'A desk mode that cannot be read is reported as absent with its reason. Reading it as `normal` turns a corrupt record into a claim that the desk is open.',
+);
+
+interface DeskModeReading {
+  readonly standing: DeskStanding | null;
+  readonly mode: DeskMode | null;
+  readonly source: ModeSource | 'unreadable';
+  readonly refusals: readonly Refusal[];
+}
+
+/**
+ * Read the desk's standing for a crisis response. Never throws.
+ *
+ * ══ THE UNREADABLE CASE FAILS TO ABSENT, NOT TO OPEN ══
+ * `LedgerUnreadable` means the NEWEST mode record did not parse, and the store raises it
+ * rather than reading the row below — because the row below could be `normal` while the
+ * newest is a regulator's prohibition. Here that cannot be allowed to 500 the whole crisis
+ * read either: the statement, its board and its clock are the record, and taking them away
+ * because the mode is corrupt would remove the evidence at the moment it is needed. So the
+ * mode is reported ABSENT with its reason, no capability is offered, and no issuance
+ * verdict is computed. `DATA_ABSENT_NOT_ZERO` is the code for exactly this shape of
+ * failure elsewhere in the compartment — absent with the reason, never a default.
+ */
+async function readCrisisDeskMode(pool: Pool, now: Instant): Promise<DeskModeReading> {
+  try {
+    const reading = await readDeskStanding(pool, now);
+    return {
+      standing: reading.standing,
+      mode: modeInForce(reading.standing),
+      source: reading.source,
+      refusals: [],
+    };
+  } catch (err) {
+    if (err instanceof LedgerUnreadable) {
+      console.error('[marketing/memory] desk mode unreadable:', err);
+      return {
+        standing: null,
+        mode: null,
+        source: 'unreadable',
+        refusals: [
+          refuse(
+            'DATA_ABSENT_NOT_ZERO',
+            `The newest desk-mode record (${err.ledgerRef}) cannot be read: ${err.why}. This room will not say whether the desk may hand off text it cannot verify the mode of — treat the desk as CLOSED until the record is corrected. Drafting, clearance, recording and export are unaffected, and the record they produce is the point.`,
+            DESK_MODE_UNREADABLE_RULE,
+            {
+              kind: 'supply_data',
+              missing: `a readable desk-mode record in place of object_actions row ${err.ledgerRef}`,
+              whoCanSupply: 'whoever can correct the mode ledger on this environment',
+            },
+            err.ledgerRef,
+            CRISIS_RULESET_VERSION,
+          ),
+        ],
+      };
+    }
+    throw err;
+  }
+}
+
+/**
+ * Assemble the surface. `capabilities` is passed in rather than computed here, so the one
+ * that travels beside `data` is the same object the nine-gate activation used — two calls
+ * to a pure function could not disagree, but one call cannot even be asked to.
+ */
+const deskSurface = (
+  reading: DeskModeReading,
+  counselNamed: string | null,
+  capabilities: CrisisCapabilities | null,
+): CrisisDeskSurface => ({
+  standing: reading.standing,
+  modeResolvedAgainst: reading.mode,
+  source: reading.source,
+  capabilities,
+  counselNamed,
+  counselSource: 'incident_record',
+  refusals: reading.refusals,
+});
+
+/**
+ * COUNSEL IS READ FROM THE INCIDENT RECORD, and that is the load-bearing part.
+ *
+ * Under an Art 94 suspension, `crisisCapabilities` permits handoff of an Art 88(1)
+ * inside-information disclosure only on a NAMED counsel's ruling, because whether a given
+ * statement is a marketing communication, a disclosure or both is a legal question this
+ * instrument refuses to answer. `counsel_named` is stated by a human when the incident is
+ * opened (`POST /crisis/incident`) and stored on the incident row; taking it from the body
+ * of the request that wants the permission would make the refusal self-clearing — the same
+ * rule that keeps `reviewer` and `authoredBy` out of request bodies.
+ *
+ * A blank column is `null` and `null` refuses. That is the honest outcome and it is worse
+ * than either answer, which is the point: the alternative is an instrument that classifies
+ * a disclosure by itself.
+ */
+const counselOf = (incident: IncidentRow): string | null =>
+  typeof incident.counsel_named === 'string' && incident.counsel_named.trim() !== ''
+    ? incident.counsel_named.trim()
+    : null;
+
+/**
+ * THE NINE-GATE ACTIVATION over a STORED statement. May this be handed to a human, now?
+ *
+ * `CRISIS_GATE_ORDER` is the engine's, and the order is not cosmetic: the library checks
+ * come first so an expired statement reports as expired rather than as three missing
+ * clears, and `desk_permits_handoff` comes LAST so an operator learns the text is sound
+ * before being told the desk is switched off. A consequence worth stating: under a
+ * suspension with clears outstanding the desk gate reads `skipped: true` — which is why
+ * `capabilities` travels beside the gates and is populated whether or not the gate was
+ * reached. An operator must not have to gather three clears to discover the desk is shut.
+ *
+ * TWO GATES RUN AGAINST DATA 0063 DOES NOT HOLD, and neither claims otherwise:
+ *  · `no_over_reassurance` scans with `bases: []`, because there is no basis column — so a
+ *    solvency claim with a real, recent attestation behind it still reads as uncited and
+ *    REFUSES. That is absence refusing, not a finding that the text over-reassures.
+ *  · `statement_matches_incident` and the precondition check read the stored library id and
+ *    acknowledgements, which are columns, so those two are answered from the record.
+ */
+function activationFor(
+  row: InstanceRow,
+  incident: IncidentRow,
+  clearances: readonly Clearance[],
+  mode: DeskMode,
+  now: Instant,
+): CrisisActivation {
+  return activateCrisisStatement({
+    draft: draftFrom(row, incident),
+    clearances,
+    authoredAt: iso(row.authored_at),
+    legalImplications: incident.legal_implications,
+    deskMode: mode,
+    counselNamed: counselOf(incident),
+    now,
+  });
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
  *  THE OUTBOUND GATE, ON THE TWO CRISIS PATHS THAT NEED IT
  * ══════════════════════════════════════════════════════════════════════════
  *
@@ -1703,12 +1927,25 @@ const AD_HOC_KEY = 'ad-hoc';
  * under pressure. Operator lines are APPENDED to the seed, never substituted for it.
  *
  * ══ WHAT IS NOT GATED HERE, STATED PLAINLY ══
- * `activateCrisisStatement` — the full nine-gate hard gate — is NOT called, because its
- * last gate is `desk_permits_handoff` and that needs a `DeskMode` this compartment cannot
- * read (see the file header). Three of its gates are enforced here against the engine's
- * own data and with its own refusal codes: the library statement must resolve, be current,
- * and match the incident type; and its preconditions must be acknowledged. The reassurance
- * scan and the desk-mode gate are absent, and no comment here may imply otherwise.
+ * `activateCrisisStatement` — the full nine-gate hard gate — is NOT called on this route,
+ * and the reason is that it could only ever answer one way here: a clearance is keyed to an
+ * instance_uid, so at the instant a statement is composed NO CLEAR CAN EXIST and the
+ * `clearances_held` gate must fail. An issuance verdict that is knowably "no" before it is
+ * computed is noise, and noise beside a real refusal is how an operator learns to stop
+ * reading. It runs on `GET /crisis/instance/:id` and on the clearance route, where clears
+ * exist. Three of its gates ARE enforced here against the engine's own data and with its
+ * own refusal codes: the library statement must resolve, be current, and match the incident
+ * type; and its preconditions must be acknowledged. The reassurance scan is absent, and no
+ * comment here may imply otherwise.
+ *
+ * ══ A SUSPENDED DESK STILL COMPOSES ══
+ * `capabilities` travels beside `data` on BOTH the 201 and the 422, and a suspension is
+ * never a reason to refuse this write. Under an Art 94 order the response records that
+ * drafting, clearance, recording and export remain available and that handoff does not —
+ * with the engine's sentence saying why, and, for an Art 88(1) disclosure, naming what is
+ * missing: counsel. It appears on the 422 too, deliberately: the refused statement is the
+ * one most likely to be edited and resubmitted, and an operator about to do that under a
+ * suspension needs to know before they start.
  */
 marketingMemoryRoutes.post('/crisis/statements/:key/instance', requireOperator, async (c) => {
   try {
@@ -1915,6 +2152,22 @@ marketingMemoryRoutes.post('/crisis/statements/:key/instance', requireOperator, 
       now,
     });
 
+    /*
+     * WHAT THE ROOM MAY DO NEXT, read from the desk mode. It is computed for BOTH exits
+     * below and it gates NOTHING here: a suspension may not stop the desk composing,
+     * clearing, recording or exporting, and this route is the composing half.
+     */
+    const deskReading = await readCrisisDeskMode(pool, now);
+    const capabilities =
+      deskReading.mode === null
+        ? null
+        : crisisCapabilities(deskReading.mode, {
+            isInsideInformationDisclosure,
+            carriesPromotionalContent,
+            counselNamed: counselOf(incident),
+          });
+    const desk = deskSurface(deskReading, counselOf(incident), capabilities);
+
     const allRefusals = [...refusals, ...completeness.refusals, ...gate.refusals];
     /*
      * `!gate.verdict.allowed` IS ITS OWN CONDITION, not folded into the refusal count.
@@ -1933,6 +2186,10 @@ marketingMemoryRoutes.post('/crisis/statements/:key/instance', requireOperator, 
           // still says what stopped it.
           outboundGate: gate.verdict,
           renderedText: renderStatementText(body),
+          // What the room may still do. A refused statement under a suspension is the case
+          // where an operator most needs to know that redrafting is worth it and that
+          // handing off is not available at the end of it.
+          desk,
         },
         422,
       );
@@ -1981,8 +2238,10 @@ marketingMemoryRoutes.post('/crisis/statements/:key/instance', requireOperator, 
     }
     const data = await instancePayload(pool, row, incident, now);
     // The CLEAR verdict travels with the stored statement, caveat attached, so no surface
-    // can render "gated" without what the gate could not see.
-    return c.json({ data: { ...data, outboundGate: gate.verdict }, meta: meta() }, 201);
+    // can render "gated" without what the gate could not see. `desk` says what the room may
+    // do with the statement that now exists — including, under a suspension, that it may
+    // not be handed to a human, and why.
+    return c.json({ data: { ...data, outboundGate: gate.verdict }, desk, meta: meta() }, 201);
   } catch (err) {
     console.error('[marketing/memory] compose error:', err);
     return c.json({ error: 'Failed to compose the statement', code: 'MARKETING_ERROR' }, 500);
@@ -1996,6 +2255,17 @@ marketingMemoryRoutes.post('/crisis/statements/:key/instance', requireOperator, 
  * read. Nothing is cached and nothing is trusted from a column: an hour after
  * composition the same bytes can be a breached next-update commitment, and a stored
  * `true` would show it as complete.
+ *
+ * ══ THIS IS THE READ THAT ANSWERS "MAY WE HAND THIS OVER, NOW" ══
+ * `activation` beside `data` is the engine's nine-gate verdict, recomputed here for the
+ * same reason completeness is: the text is immutable and the world is not. A statement that
+ * was issuable at 02:00 is not issuable at 03:00 if a supervisor suspended the desk at
+ * 02:30, and the desk mode is read from the store on every one of these reads rather than
+ * captured at composition.
+ *
+ * `issuable: true` STILL DOES NOT PUBLISH ANYTHING and there is nowhere here to add it. It
+ * means a named human may now be handed the text to post by hand, outside this system;
+ * `cannotPublish: true` and `handoffReason` stay on the payload beside it.
  */
 marketingMemoryRoutes.get('/crisis/instance/:id', requireOperator, async (c) => {
   try {
@@ -2015,8 +2285,22 @@ marketingMemoryRoutes.get('/crisis/instance/:id', requireOperator, async (c) => 
       // computed from a default opening instant.
       return c.json({ error: 'the incident this statement belongs to is missing', code: 'NOT_FOUND' }, 404);
     }
-    const data = await instancePayload(pool, row, incident, nowIso());
-    return c.json({ data, meta: meta() });
+    const now = nowIso();
+    const data = await instancePayload(pool, row, incident, now);
+
+    /*
+     * The clears are loaded once more here rather than threaded out of `instancePayload`:
+     * that function builds the CONTRACT and returns no rows, and an activation computed from
+     * a board it did not see could disagree with the board on screen. One extra unordered
+     * SELECT is the cheap half of that trade.
+     */
+    const clearances = await loadClearances(pool, row.instance_uid);
+    const deskReading = await readCrisisDeskMode(pool, now);
+    const activation =
+      deskReading.mode === null ? null : activationFor(row, incident, clearances, deskReading.mode, now);
+    const desk = deskSurface(deskReading, counselOf(incident), activation?.capabilities ?? null);
+
+    return c.json({ data, activation, desk, meta: meta() });
   } catch (err) {
     console.error('[marketing/memory] instance error:', err);
     return c.json({ error: 'Failed to load the statement', code: 'MARKETING_ERROR' }, 500);
@@ -2181,7 +2465,20 @@ marketingMemoryRoutes.post('/crisis/instance/:id/clearance', requireOperator, as
       // gate said — including on the objection path, where the words were refused too.
       outboundGate: gate.verdict,
     };
-    return c.json({ data, meta: meta() }, 201);
+
+    /*
+     * DID THAT CLEAR UNLOCK ANYTHING? The clearance that completes the board is the moment
+     * the answer changes, so the nine-gate verdict is recomputed here over the clears as
+     * they now stand. Under an Art 94 suspension this is where an operator sees the third
+     * clear land and `desk_permits_handoff` refuse anyway — the state nobody designs for,
+     * reported at the moment it bites rather than at the moment somebody tries to publish.
+     */
+    const deskReading = await readCrisisDeskMode(pool, at);
+    const activation =
+      deskReading.mode === null ? null : activationFor(row, incident, clearances, deskReading.mode, at);
+    const desk = deskSurface(deskReading, counselOf(incident), activation?.capabilities ?? null);
+
+    return c.json({ data, activation, desk, meta: meta() }, 201);
   } catch (err) {
     console.error('[marketing/memory] clearance error:', err);
     return c.json({ error: 'Failed to record the clearance', code: 'MARKETING_ERROR' }, 500);

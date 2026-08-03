@@ -225,7 +225,26 @@ describe('the honesty ceiling is encoded, not narrated', () => {
       expect(OWED_ROUTE_FNS, `${kind} waits on ${owedFn}, which is not in MARKETING_CONTRACTS_OWED`)
         .toContain(owedFn);
     }
-    expect(marketingNounsAwaitingRoute().length).toBeGreaterThan(0);
+
+    /*
+     * There used to be a `marketingNounsAwaitingRoute().length > 0` guard here, to stop
+     * the loop above passing vacuously. It was right while routes were still owed, and it
+     * went red on 2026-08-03 when the LAST one landed — `checkClaimSafety`, which `claim`
+     * was waiting on. Keeping it would have meant asserting that the compartment still
+     * owes a route when it owes none: a guard against vacuity that had itself become the
+     * false claim. `claim` moved to `surface_route`, so `surface_only` is now empty.
+     *
+     * The vacuity risk is real though, so it is guarded on the thing that is actually
+     * invariant — the noun table is populated, and every noun's reach is a declared
+     * variant. A noun added with no reach, or the table emptied, still fails here.
+     */
+    expect(MARKETING_NOUNS.length).toBeGreaterThan(0);
+    for (const n of MARKETING_NOUNS) {
+      expect(
+        ['server_search', 'client_list', 'per_parent', 'surface_only', 'surface_route'],
+        `${n.kind} declares reach via "${n.reach.via}", which is not a known variant`,
+      ).toContain(n.reach.via);
+    }
   });
 
   it('a surface-only noun row says the route is missing rather than implying rows exist', () => {
@@ -248,8 +267,14 @@ describe('the honesty ceiling is encoded, not narrated', () => {
      * still listed as owed is a paid-debt claim over an unpaid debt.
      */
     const mounted = marketingNounsWithRouteNotEnumerable();
+    // `claim` joined on 2026-08-03, when `checkClaimSafety` landed as the LAST of the
+    // twenty-one owed routes and emptied `surface_only` entirely. Same reasoning as the
+    // other three, and worth stating because it is the least obvious of the four:
+    // `POST /claim-safety` returns a verdict on one piece of text. There is no list of
+    // claims behind it to enumerate, so promoting it to `client_list` would assert a
+    // capability the palette does not have.
     expect(mounted.map((m) => m.kind).sort())
-      .toEqual(['crisis_statement', 'precedent', 'record_bundle']);
+      .toEqual(['claim', 'crisis_statement', 'precedent', 'record_bundle']);
     for (const { kind, fn, notEnumerable } of mounted) {
       expect(OWED_ROUTE_FNS, `${kind} claims ${fn} is mounted, and the ledger still owes it`)
         .not.toContain(fn);

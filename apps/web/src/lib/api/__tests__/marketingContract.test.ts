@@ -55,6 +55,11 @@ const SERVICE = readFileSync(
  */
 const ROUTE_FILES = [
   'marketing.ts', 'marketingDesk.ts', 'marketingMemory.ts', 'marketingRecord.ts',
+  /* The fifth router. It mounts the two gates, the two provenance reads, both silence
+     endpoints and the two measurement reads — eight of the routes this ledger tracked as
+     unbuilt — so omitting it would have let "no route in the ledger has been quietly built
+     already" pass over a router that had built most of them. */
+  'marketingGates.ts',
 ] as const;
 const ROUTE = ROUTE_FILES
   .map((f) => {
@@ -309,7 +314,10 @@ describe('the owed-contract ledger cannot drift from the code', () => {
     expect(names.length, 'the client stopped importing its contracts from shared').toBeGreaterThan(10);
 
     const SHARED = resolve(HERE, '../../../../../../packages/shared/src/marketing');
-    const sources = ['types.ts', 'abuse.ts', 'contracts/desk.ts', 'contracts/memory.ts', 'contracts/record.ts']
+    const sources = [
+      'types.ts', 'abuse.ts', 'claimSafety.ts',
+      'contracts/desk.ts', 'contracts/memory.ts', 'contracts/record.ts', 'contracts/gates.ts',
+    ]
       .map((f) => (existsSync(resolve(SHARED, f)) ? readFileSync(resolve(SHARED, f), 'utf8') : ''))
       .join('\n');
     for (const n of names) {

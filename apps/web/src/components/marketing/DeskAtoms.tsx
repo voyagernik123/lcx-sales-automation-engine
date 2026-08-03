@@ -365,6 +365,9 @@ const GATE_LABEL: Record<GateReading['gate'], string> = {
   market_abuse: 'Market abuse',
   regime: 'Which law applies',
   length_budget: 'Length and boilerplate',
+  /* Named for the act rather than for the rule, because it is the only gate whose answer
+     can be "the words are fine and you still may not do this". */
+  adoption: 'What the act would adopt',
 };
 
 /**

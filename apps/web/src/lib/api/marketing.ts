@@ -19,6 +19,15 @@ import {
    * below with the type each one owes. `unknown` is deliberately inconvenient: a page
    * cannot read a field off it without narrowing, so a missing contract obstructs at
    * compile time instead of crashing in front of an operator. */
+  type AdoptionReading,
+  type ClaimSafetyVerdict,
+  type CorroborationResult,
+  type MarketingLoopReport,
+  type ProcessMetrics,
+  type ReplyProvenanceRecord,
+  type ReviewVerdict,
+  type SilenceLog,
+  type SilenceLogEntry,
   type ClaimExpiryLedger,
   type ClearanceBoard,
   type CrisisStatementInstance,
@@ -30,8 +39,10 @@ import {
   type MarketAbuseVerdict,
   type MarketingRecordRow,
   type PeerPreclearLibrary,
+  type PostTimeCoverageReport,
   type PrecedentSearchResult,
   type PublicationCloseOut,
+  type RegimeReading,
   type SubjectAccessResponse,
   type WatchDigest,
 } from '@lcx/shared';
@@ -411,6 +422,13 @@ export const setReplyStatus = (id: number, status: ReplyStatus) =>
  * `packages/shared/src/index.ts` re-exports it, the fix is one import and one
  * generic per function, and the ledger entry is deleted.
  */
+/*
+ * NO FETCHER IN THIS FILE USES IT ANY MORE, and it is exported anyway. The seven that did
+ * were contracted when `contracts/gates.ts` landed. The alias stays because the next route
+ * to be built ahead of its contract needs somewhere honest to point, and re-deriving the
+ * argument for it under deadline is how a hand-written guess gets written instead.
+ * `marketingContract.test.ts` proves the count is zero rather than asserting it in a comment.
+ */
 export type UncontractedPayload = unknown;
 
 /**
@@ -473,8 +491,156 @@ export interface ClaimSafetyBody {
  * changes (`lib/api/gpsLoop.ts:117` makes the same argument about blockers).
  */
 export const checkClaimSafety = (body: ClaimSafetyBody) =>
-  unwrap(request<{ data: UncontractedPayload }>(
+  unwrap(request<{ data: ClaimSafetyVerdict }>(
     '/v1/marketing/claim-safety', { method: 'POST', body, auth: true },
+  ));
+
+/**
+ * `POST /v1/marketing/review` — the live advisory read, as an operator types.
+ *
+ * THE TWO AXES NOTHING ELSE ANSWERS. `checkClaimSafety` reads THE WORDS and
+ * `assessMarketAbuse` reads THE STATE the words sit in — whether the named asset is under
+ * embargo (Art 90) and whether the author holds it (Art 91(3)(c), personal fines from
+ * €700,000). Doctrine rule 2 is that the dangerous axis is the invisible one, and a wording
+ * review passes a perfectly-worded bullish reply about a token the author owns.
+ *
+ * `regime` IS ALWAYS `null` HERE AND THAT IS NOT A GAP. `classifyRegimes` needs facts this
+ * request does not carry — the jurisdictions addressed and excluded, asset treatment,
+ * consideration kind, the Art 7 role — and defaulting any of them would clear Art 7 by
+ * omission. `regimeRefusal` names them, and the full classification is `POST /regime`, which
+ * the drafting room calls separately with the operator's own declarations.
+ *
+ * IT WRITES NOTHING AND RELEASES NO TEXT: `releasesNoText` is the literal `true` and there is
+ * no `usableText` field on the type at all, so a future edit wanting to return copyable text
+ * from an unrecorded check has to change the contract. That is what makes it safe on a
+ * debounce. The gate that DOES release text is `POST /claim-safety`, whose `usableText` is
+ * `null` whenever its ledger row could not be written.
+ */
+export interface ReviewCheckBody {
+  /** Shared `EngagementVerb`. */
+  verb: string;
+  /** Our own text. May be empty. */
+  text: string;
+  draftId?: number | null;
+  replyId?: number | null;
+}
+
+export const checkReview = (body: ReviewCheckBody) =>
+  unwrap(request<{ data: ReviewVerdict }>(
+    '/v1/marketing/review', { method: 'POST', body, auth: true },
+  ));
+
+/**
+ * `POST /v1/marketing/regime` — WHICH LAW BITES, and the arithmetic that ends the argument.
+ *
+ * ── THIS IS THE ROUTE `POST /review` WAS NEVER GOING TO BE ────────────────────
+ * `MARKETING_CLIENT_OVERLAPS` records the finding: `components/marketing/deskApi.ts
+ * reviewText` posts to `/v1/marketing/review`, NO ROUTER DECLARES IT, and the drafting
+ * room's gates therefore rendered `absent` on every environment — the honest outcome of the
+ * wrong path. The API built three narrower endpoints instead, separating the wording axis
+ * from the state-join axis, and the earlier wave declined to repoint the surface because
+ * "guessing at [which one the drafting room asks for] is how a screen ends up showing a
+ * triage verdict as a wording verdict". This is that decision made rather than deferred:
+ * the drafting room asks `/regime` about the words and `/adoption` about the verb, and asks
+ * `/triage/assess` about NOTHING, because triage is an upstream decision that belongs to the
+ * board and putting it here is exactly the confusion that was feared.
+ *
+ * ── THE BODY IS LONG BECAUSE THE ENGINE REFUSES TO GUESS, AND SO MUST THE FORM ─
+ * `bool()` throws on a missing key rather than defaulting to `false`, and
+ * `giveawayRequiresPersonalDataOrBenefit` is a `Known<boolean>` where an omission is
+ * `'unknown'` and widens the regime set. That is the point: a clearance obtained by leaving
+ * a field blank is the failure mode the whole compartment is built against, so every one of
+ * these is a recorded judgement an operator makes on screen and none of them has a default.
+ *
+ * REQUEST SHAPES ARE DECLARED HERE, response shapes are not — this module's header sets out
+ * why the two directions are not symmetric. `RegimeReading` comes from
+ * `packages/shared/src/marketing/contracts/desk.ts` and the route handler assigns to the
+ * same symbol.
+ */
+export interface RegimeCheckBody {
+  /** Shared `EngagementVerb`. */
+  verb: string;
+  /** Shared `ContentSurface` — it carries the channel ceiling the arithmetic divides by. */
+  surface: string;
+  /** Our own text. May be empty for a verb that produces none. */
+  body: string;
+  /** The target's text as OBSERVED. `null` is a real answer: unread text can still be adopted. */
+  targetBody?: string | null;
+  /** Shared `ItemPurpose`. */
+  purpose: string;
+  /** Shared `ConsiderationKind`. Absent is NOT `none`. */
+  consideration: string;
+  /** Whether the item links to something LCX controls. No default. */
+  firstPartyLinkPresent: boolean;
+  /** ESMA's halo-effect DON'T: LCX's own best line is its highest-frequency risk. */
+  citesOwnRegulatoryStatus: boolean;
+  authorAccount: 'lcx_official' | 'staff_personal';
+  employmentRelationshipDisclosed: boolean;
+  /** Shared `Art7Role`. */
+  art7Role: string;
+  /** `true`, `false` or `'unknown'` — and `'unknown'` widens the regime set rather than clearing it. */
+  giveawayRequiresPersonalDataOrBenefit: boolean | 'unknown';
+  /** Shared `MarketingJurisdiction[]`. `unknown` may not be treated as cleared. */
+  addressedTo?: string[];
+  excludedFrom?: string[];
+  /**
+   * `null` means the list was not supplied, which is a NAMED GAP
+   * (`AUTHORISED_SERVICE_LIST_ABSENT`) and the owner's to close (plan §7). An omitted key
+   * must not become `[]`: an empty list reads as "authorised for nothing", which is a
+   * different, confident, wrong answer.
+   */
+  authorisedServices?: string[] | null;
+}
+
+export const checkRegime = (body: RegimeCheckBody) =>
+  unwrap(request<{ data: RegimeReading }>(
+    '/v1/marketing/regime', { method: 'POST', body, auth: true },
+  ));
+
+/**
+ * `POST /v1/marketing/adoption` — what "we only retweeted it" actually means.
+ *
+ * The answer to the question an operator is asking with their cursor over the repost
+ * button, and the reason the verb is modelled separately from the words: a like produces no
+ * text of ours and still adopts everything the target said (FINRA RN 17-18 Q9). The desk
+ * mode is read from the ledger SERVER-SIDE and not taken from this body, so an amplification
+ * cannot be assessed against a mode the caller supplied while a regulator's Art 94
+ * suspension sits in the record.
+ *
+ * `target.text: null` is a real and different answer — the verdict reports
+ * `adoptsUnreadText`, "LCX cannot adopt what it has not read" — where an empty string would
+ * be the same sentence with a confident zero in it.
+ */
+export interface AdoptionCheckBody {
+  /** Shared `EngagementVerb`. */
+  verb: string;
+  /** Shared `ContentSurface`. */
+  surface: string;
+  speaker: {
+    /** Shared `SpeakerCapacity`. The actor itself is the session's, never this body's. */
+    capacity: string;
+    handle?: string | null;
+    employmentDisclosedInProfileOnly: boolean;
+    itemPromotesEmployer: boolean;
+  };
+  /** `null` for an original post, which has no target to adopt. */
+  target: {
+    permalink?: string | null;
+    handle?: string | null;
+    /** As observed. `null` means unread, which the verdict reports rather than hides. */
+    text?: string | null;
+    /** Shared `TargetVerificationState`. */
+    verification: string;
+    isLcxOwnAccount: boolean;
+  } | null;
+  ownText?: string | null;
+  /** Observed on the surface, never estimated. Omit rather than guess. */
+  visibleChars?: number | null;
+}
+
+export const checkAdoption = (body: AdoptionCheckBody) =>
+  unwrap(request<{ data: AdoptionReading }>(
+    '/v1/marketing/adoption', { method: 'POST', body, auth: true },
   ));
 
 /* ──── M2 — the market-abuse perimeter ──── */
@@ -582,7 +748,7 @@ export const declareAssetHoldings = (assetSymbol: string, params: Record<string,
  * fabricated reply graded identically to a real one.
  */
 export const fetchReplyProvenance = (replyId: number) =>
-  unwrap(request<{ data: UncontractedPayload }>(
+  unwrap(request<{ data: ReplyProvenanceRecord }>(
     `/v1/marketing/replies/${replyId}/provenance`, { auth: true },
   ));
 
@@ -598,7 +764,7 @@ export const fetchReplyProvenance = (replyId: number) =>
  * the ingest defect needs.
  */
 export const corroborateReply = (replyId: number) =>
-  unwrap(request<{ data: UncontractedPayload }>(
+  unwrap(request<{ data: CorroborationResult }>(
     `/v1/marketing/replies/${replyId}/corroborate`, { method: 'POST', auth: true },
   ));
 
@@ -674,7 +840,11 @@ export const fetchPrecedent = (params: { q?: string; asset?: string; limit?: num
  * evidence.
  */
 export const fetchSilenceLog = (limit?: number) =>
-  unwrap(request<{ data: UncontractedPayload }>(
+  /* `unwrap`, like every other read here. It calls `unwrapWithMeta` internally, so the
+     `SilenceLogMeta` this route puts beside the array — the frame, and whether the ledger was
+     readable at all — survives on the non-enumerable symbol and `responseMeta(rows)` can
+     still answer. Peeling `.data` by hand is what cost seven surfaces their `migrated: false`. */
+  unwrap(request<{ data: SilenceLog }>(
     `/v1/marketing/silence${limit !== undefined ? `?limit=${limit}` : ''}`, { auth: true },
   ));
 
@@ -696,7 +866,7 @@ export interface SilenceDecisionBody {
 }
 
 export const recordSilenceDecision = (replyId: number, body: SilenceDecisionBody) =>
-  unwrap(request<{ data: UncontractedPayload }>(
+  unwrap(request<{ data: SilenceLogEntry }>(
     `/v1/marketing/${replyId}/silence`, { method: 'POST', body, auth: true },
   ));
 
@@ -843,6 +1013,35 @@ export const fetchExportBundle = (itemId: string) =>
     `/v1/marketing/export/${encodeURIComponent(itemId)}`, { auth: true },
   ));
 
+/**
+ * `GET /v1/marketing/post-time` — what fraction of the queue carries X's own post date.
+ *
+ * ── WHY THIS FETCHER IS WORTH ITS OWN ENTRY IN A FILE THAT AVOIDS DECORATION ──
+ * The route's own docblock (`routes/marketingRecord.ts:975`) ended with "No browser surface
+ * fetches this route … a client fetcher with no component would be the same decoration this
+ * wave exists to remove, so there is none." That sentence was true and is now false in both
+ * halves: `components/marketing/PostTimePanel.tsx` is the component, and this is the
+ * fetcher it uses. The API's comment is the one thing this wave could not edit, so it is
+ * quoted here rather than left to contradict the code silently.
+ *
+ * ── AND WHY THE NUMBER MATTERS MORE THAN A COVERAGE FIGURE USUALLY WOULD ──
+ * Two clocks run over an inbound reply: since the desk LEARNED of it (`received_at`, always
+ * known) and since the customer POSTED it (`posted_on_displayed`, known only where X's
+ * public oEmbed endpoint answered). Only the second is the customer's wait, and every
+ * surface needing it refuses rather than substituting the first. So this fraction is the
+ * size of the honest-refusal surface — at 0 every "how long have they waited" question in
+ * the compartment refuses forever — and, because oEmbed is an INDEPENDENT channel from the
+ * mailbox, it is simultaneously the anti-forgery corroboration rate for defect 1.
+ *
+ * CONTRACTED. `PostTimeCoverageReport` is declared once, in
+ * `packages/shared/src/marketing/contracts/record.ts` §8, and the route handler assigns its
+ * response to that same symbol. `coverage` is a `Figure`, so an empty corpus arrives as
+ * `absent` with a refusal and never as `0 of 0` — which on a panel is indistinguishable
+ * from full coverage.
+ */
+export const fetchCorroborationCoverage = () =>
+  unwrap(request<{ data: PostTimeCoverageReport }>('/v1/marketing/post-time', { auth: true }));
+
 /* ──── M8 — honest measurement, and the loop ──── */
 
 /**
@@ -865,7 +1064,7 @@ export const fetchExportBundle = (itemId: string) =>
  * getting safer, which is why it is a first-class metric and not a debug log.
  */
 export const fetchProcessMetrics = () =>
-  unwrap(request<{ data: UncontractedPayload }>('/v1/marketing/metrics', { auth: true }));
+  unwrap(request<{ data: ProcessMetrics }>('/v1/marketing/metrics', { auth: true }));
 
 /**
  * `GET /v1/marketing/loop` — the post-mortem loop and the WBR block.
@@ -875,7 +1074,7 @@ export const fetchProcessMetrics = () =>
  * act on, and an empty panel is not.
  */
 export const fetchMarketingLoop = () =>
-  unwrap(request<{ data: UncontractedPayload }>('/v1/marketing/loop', { auth: true }));
+  unwrap(request<{ data: MarketingLoopReport }>('/v1/marketing/loop', { auth: true }));
 
 /* ──── M7 — the three GDPR / retention paths whose engine has no caller ──── */
 
@@ -1025,36 +1224,28 @@ export interface MarketingContractOwed {
  * this list is the honest measure of how much of this compartment is still guessing.
  */
 export const MARKETING_CONTRACTS_OWED: readonly MarketingContractOwed[] = [
-  { fn: 'checkClaimSafety', method: 'POST', path: '/v1/marketing/claim-safety', phase: 'M1', sharedTypeOwed: 'ClaimSafetyVerdict' },
-  { fn: 'fetchReplyProvenance', method: 'GET', path: '/v1/marketing/replies/:id/provenance', phase: 'M3', sharedTypeOwed: 'ReplyProvenanceRecord' },
-  { fn: 'corroborateReply', method: 'POST', path: '/v1/marketing/replies/:id/corroborate', phase: 'M3', sharedTypeOwed: 'CorroborationResult' },
-  { fn: 'fetchSilenceLog', method: 'GET', path: '/v1/marketing/silence', phase: 'M4', sharedTypeOwed: 'SilenceLog' },
-  { fn: 'recordSilenceDecision', method: 'POST', path: '/v1/marketing/:id/silence', phase: 'M4', sharedTypeOwed: 'SilenceLogEntry' },
-  { fn: 'fetchProcessMetrics', method: 'GET', path: '/v1/marketing/metrics', phase: 'M8', sharedTypeOwed: 'ProcessMetrics' },
-  { fn: 'fetchMarketingLoop', method: 'GET', path: '/v1/marketing/loop', phase: 'M8', sharedTypeOwed: 'MarketingLoopReport' },
   /*
-   * ── THE THREE THAT WERE UNDECLARED DEBT, AND THE ONLY ONES WITH A STATUTORY DEADLINE ──
+   * ══ EMPTY, AND THE EMPTINESS IS THE ENTRY ══
    *
-   * `apps/api/src/marketing/record.ts` is 84KB with NO IMPORTER anywhere in `apps/api/src`.
-   * `routes/marketing.ts` imports `service`, `xMail`, `outboundGate` and `abuseRegister`,
-   * and nothing else. So `subjectAccess` (:1729), `eraseByHandle` (:1862) and `writeRecord`
-   * (:1397) are dead code, `marketing_record`, `marketing_erasure_log` and
-   * `marketing_subject_access_log` are permanently empty, and a GDPR Art 15 or Art 17
-   * request cannot be honoured by any surface in this product. Art 12(3) gives one month.
+   * All twenty-three are declared. `contracts/gates.ts` landed the last seven —
+   * `ClaimSafetyVerdict`, `ReplyProvenanceRecord`, `CorroborationResult`, `SilenceLog` and
+   * `SilenceLogEntry`, `ProcessMetrics`, `MarketingLoopReport` — and every fetcher above now
+   * imports its response type from `packages/shared`, which the route handler imports from
+   * the same declaration. There is no `UncontractedPayload` left in this file, and
+   * `marketingContract.test.ts` compares this list against the `unknown`-returning fetchers
+   * on disk in BOTH directions, so it fails if either side drifts.
    *
-   * The 90-day sweep, by contrast, IS wired (`routes/marketing.ts:180` →
-   * `service.ts:918`), so the retention SPLIT that 0061 designs — third-party content on
-   * the short clock, LCX's own statements on the five-year clock — is inoperative in one
-   * direction only: nothing is ever placed on the long clock, and at day 91 the compartment
-   * retains nothing. That is the DPO ruling in §7 of the plan arriving as a default rather
-   * than as a decision.
+   * THE TYPE, THE INTERFACE AND THIS ARRAY ARE ALL KEPT rather than deleted with the debt.
+   * Deleting the apparatus is how the next uncontracted route arrives with no place to be
+   * recorded, and the argument for `unknown` — that a missing contract must obstruct at
+   * compile time instead of crashing in front of an operator — is not a fact about these
+   * twenty-three. It is the rule for the next one.
    *
-   * These three sit in the ledger and not in a comment because the ledger is what
-   * `marketingContract.test.ts` enumerates. Twenty-three owed, not twenty — and all three of
-   * these now have their contracts and their routes (`routes/marketingRecord.ts`), so they are
-   * no longer in the list below. They are described here rather than deleted because the
-   * reason they were missing is the general lesson: an engine with no importer is invisible to
-   * every test that does not go looking for callers.
+   * WHAT THIS DID NOT BUY, said plainly. A contract is a guarantee that both sides read the
+   * same field names; it is not a guarantee that a route is mounted, that its migration is
+   * applied, or that its engine has a caller. Three of the seven were dead engines with
+   * contracts written for them, and `useDeskRead`'s `absent` state is what still carries that
+   * distinction on screen.
    */
 ] as const;
 
@@ -1081,20 +1272,30 @@ export const MARKETING_CONTRACTS_OWED: readonly MarketingContractOwed[] = [
  * right instinct — but four of its routes overlap this file's, and the API has now decided
  * two of the arguments:
  *
- *  · `POST /v1/marketing/review` (deskApi's `reviewText`) IS NOT MOUNTED and no router
- *    declares it. What the API built instead is three narrower routes — `POST /regime`,
+ *  · `POST /v1/marketing/review` (deskApi's `reviewText`) WAS NOT MOUNTED and no router ever
+ *    declared it. What the API built instead is three narrower routes — `POST /regime`,
  *    `POST /triage/assess` and `POST /adoption` in `routes/marketingDesk.ts` — which is the
  *    plan's separation of the wording axis from the state-join axis rather than one combined
- *    verdict. So the drafting room's engine call currently reaches a 404, and its gates
- *    render as `absent` — which is the honest outcome of the wrong path, and is exactly why
- *    `Gate`'s `absent` source exists. This wave did NOT repoint it: the three replacement
- *    routes need `RegimeReading`, `TriageReading` and `AdoptionReading` read off their
- *    contracts and a decision about which of them the drafting room asks for and when, and
- *    guessing at that is how a screen ends up showing a triage verdict as a wording verdict.
- *  · `GET /v1/marketing/silence` and `POST /v1/marketing/:id/silence` are mounted by NOBODY.
- *    `listSilences` and `fetchSilenceLog` are two fetchers for one route that does not exist,
- *    so the silence log is `absent` on every environment and the duplication costs nothing
- *    yet. It will cost something the day the route lands and only one of them is updated.
+ *    verdict. The previous wave declined to repoint the surface and said why: the three
+ *    replacement routes need their contracts read and a decision about which of them the
+ *    drafting room asks for, and guessing is how a screen ends up showing a triage verdict as
+ *    a wording verdict.
+ *
+ *    THAT DECISION IS NOW MADE. The drafting room asks `/regime` about the words (and takes
+ *    its Art 7 arithmetic as the length gate's verdict) and `/adoption` about the verb, and
+ *    asks `/triage/assess` NOTHING — triage is the board's upstream decision, which is the
+ *    confusion that was feared. `reviewText` and `ReviewVerdict` are deleted from
+ *    `deskApi.ts` rather than left pointing at a 404, so this row is history and not a live
+ *    overlap; the deletion is documented in that file at the place they used to be.
+ *  · `GET /v1/marketing/silence` and `POST /v1/marketing/:id/silence` ARE MOUNTED NOW
+ *    (`routes/marketingGates.ts:1240`, `:1395`), and the prediction in this bullet's earlier
+ *    wording — "it will cost something the day the route lands and only one of them is
+ *    updated" — is why the duplication was resolved rather than updated. `listSilences` and
+ *    `SilenceEntry` are deleted; the panel reads the contracted `SilenceLog` through
+ *    `fetchSilenceLog`, so a server-side rename is a TS error instead of a blank column.
+ *    The write is wired too, which it never was: `POST /:id/silence` had no caller in any
+ *    component, so the desk's most common decision could only be recorded as a status flip
+ *    with no reason at all.
  *  · `GET /v1/marketing/precedent` — `findPrecedent` there, `fetchPrecedent` here. The route
  *    EXISTS now (`routes/marketingMemory.ts:445`) and its response is typed
  *    `PrecedentSearchResult`. `fetchPrecedent` imports that type; `findPrecedent` still
@@ -1110,9 +1311,7 @@ export const MARKETING_CONTRACTS_OWED: readonly MarketingContractOwed[] = [
  * `marketingContract.test.ts` against `deskApi.ts` on disk, so it cannot rot quietly.
  */
 export const MARKETING_CLIENT_OVERLAPS: readonly string[] = [
-  'components/marketing/deskApi.ts listSilences → GET /v1/marketing/silence',
   'components/marketing/deskApi.ts findPrecedent → GET /v1/marketing/precedent',
-  'components/marketing/deskApi.ts reviewText → POST /v1/marketing/review (conflicts with claim-safety + abuse-check)',
   'components/marketing/deskApi.ts recordTriage → POST /v1/marketing/:id/triage (no counterpart here)',
 ] as const;
 

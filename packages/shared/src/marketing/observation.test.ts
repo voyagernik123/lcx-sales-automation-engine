@@ -13,6 +13,7 @@ import {
   measured,
   notificationFrame,
   observedRate,
+  partialSharePct,
   ownCorpusFrame,
   type ObservationWindow,
 } from './observation.js';
@@ -301,5 +302,47 @@ describe('the twelve process metrics', () => {
     ]) {
       expect(typeof loop[name], name).toBe('function');
     }
+  });
+});
+
+describe('partialSharePct — 100 and 0 are claims, not roundings', () => {
+  it('does not report 199 of 200 as 100', () => {
+    // The exact input that rendered `100%` in the post-time coverage headline while one
+    // open reply had no post date. `Math.round` alone returns 100 here.
+    expect(Math.round((199 / 200) * 100)).toBe(100); // the defect, shown
+    expect(partialSharePct(199, 200)).toBe(99);
+  });
+
+  it('does not report any other near-complete share as 100', () => {
+    for (const [part, whole] of [[398, 400], [999, 1000], [9_999, 10_000]] as const) {
+      expect(Math.round((part / whole) * 100), `${part}/${whole} rounds up`).toBe(100);
+      expect(partialSharePct(part, whole), `${part}/${whole}`).toBe(99);
+    }
+  });
+
+  it('does not report a share that exists as 0', () => {
+    // The mirror forgery: one covered row out of 250 reads as "not a single one".
+    expect(Math.round((1 / 250) * 100)).toBe(0);
+    expect(partialSharePct(1, 250)).toBe(1);
+  });
+
+  it('returns 100 only when every one is covered, and 0 only when none is', () => {
+    expect(partialSharePct(200, 200)).toBe(100);
+    expect(partialSharePct(0, 200)).toBe(0);
+  });
+
+  it('rounds an ordinary share to the nearest whole percent', () => {
+    expect(partialSharePct(50, 120)).toBe(42);
+    expect(partialSharePct(1, 3)).toBe(33);
+    expect(partialSharePct(2, 3)).toBe(67);
+  });
+
+  it('refuses rather than returning 0 when the denominator cannot carry a share', () => {
+    // Absent, never zero. A caller that gets null must print its refusal sentence.
+    for (const [part, whole] of [[0, 0], [1, 0], [3, 2], [-1, 10]] as const) {
+      expect(partialSharePct(part, whole), `${part}/${whole}`).toBeNull();
+    }
+    expect(partialSharePct(1.5, 10)).toBeNull();
+    expect(partialSharePct(1, 10.5)).toBeNull();
   });
 });

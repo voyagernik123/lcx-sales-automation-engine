@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /**
- * EVERY ROUTE IN ALL FOUR MARKETING ROUTERS IS CLASSIFIED, AND THE OUTBOUND ONES REACH
+ * EVERY ROUTE IN ALL FIVE MARKETING ROUTERS IS CLASSIFIED, AND THE OUTBOUND ONES REACH
  * THE GATE.
  *
  * `checkClaimSafety` and `assessMarketAbuse` are 148KB of engine and NOTHING CALLED EITHER
@@ -14,11 +14,11 @@ import { fileURLToPath } from 'node:url';
  * compartment produced outbound text unchecked — the same defect the GPS perimeter had a
  * week earlier, where a gate existed and no write path consulted it.
  *
- * ══ WHY IT NOW READS FOUR FILES ══
+ * ══ WHY IT NOW READS FIVE FILES ══
  * The compartment split into `marketing.ts` + `marketingDesk.ts` + `marketingMemory.ts` +
  * `marketingRecord.ts`, and this test read the first one alone. Twenty-six routes landed
  * outside its view — two of them composing and approving the text a human publishes during
- * an incident — and it stayed green throughout. A ratchet that watches one file of four is
+ * an incident — and it stayed green throughout. A ratchet that watches one file of five is
  * not a weaker ratchet, it is a false one: it reports "every route is classified" while
  * most routes are invisible to it.
  *
@@ -27,21 +27,21 @@ import { fileURLToPath } from 'node:url';
  * precisely the one above.
  *
  * ══ WHY THIS IS A CLASSIFICATION TEST AND NOT A LIST OF THE GATED ROUTES ══
- * Asserting "these four routes call the gate" would stay green forever after someone adds
- * a fifth route that produces text. So EVERY route registration in EVERY listed file must
+ * Asserting "these five routes call the gate" would stay green forever after someone adds
+ * a sixth route that produces text. So EVERY route registration in EVERY listed file must
  * appear in exactly one of the two lists below. A new route fails this test until a human
  * decides which it is, and writes down why. That is the property that makes the next
  * unguarded path turn it red.
  *
  * ══ WHAT THIS FILE VERIFIES, PRECISELY ══
- * It reads the source of the four routers and of `marketing/outboundGate.ts` and checks:
+ * It reads the source of the five routers and of `marketing/outboundGate.ts` and checks:
  *   - every registered route in every listed file is classified, and no classification
  *     names a route that no longer exists;
  *   - no two registrations share a `METHOD path` key, which would mean one shadows another;
  *   - each route classified as outbound reaches `gateOutboundText` — either in its own
  *     handler body or through exactly one named helper declared in the same file, which
  *     must itself call `gateOutboundText` and `recordGateDecision`;
- *   - the gate call precedes the write, per named write, in each of those four handlers;
+ *   - the gate call precedes the write, per named write, in each of those five handlers;
  *   - the gate module itself fails closed on a thrown check and on an unattested register.
  *
  * ══ WHAT IT DOES NOT VERIFY — read this before trusting a green run ══
@@ -61,14 +61,21 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const routeSrc = (file: string) => readFileSync(resolve(HERE, '..', '..', 'routes', file), 'utf8');
 
 /**
- * The four routers, each with the identifier its registrations are written against. All
- * four are mounted under `/v1/marketing`: `marketing.ts` nests the other three at `'/'`.
+ * The five routers, each with the identifier its registrations are written against. All
+ * five are mounted under `/v1/marketing`: `marketing.ts` nests the other four at `'/'`.
+ *
+ * `marketingGates.ts` IS THE FIFTH AND IT WAS THE PROOF OF THE PARAGRAPH ABOVE. It existed
+ * for a whole wave with eight routes — two of them releasing or re-checking outbound text —
+ * and it was in neither this list nor any mount. This file reported "every route in all
+ * four marketing routers is classified" and was green, while `POST /claim-safety`, the only
+ * route in the compartment that hands a human copyable text, was invisible to it.
  */
 const ROUTER_FILES = [
   { file: 'marketing.ts', router: 'marketingRoutes' },
   { file: 'marketingDesk.ts', router: 'marketingDeskRoutes' },
   { file: 'marketingMemory.ts', router: 'marketingMemoryRoutes' },
   { file: 'marketingRecord.ts', router: 'marketingRecordRoutes' },
+  { file: 'marketingGates.ts', router: 'marketingGatesRoutes' },
 ] as const;
 
 const GATE = readFileSync(resolve(HERE, '..', 'outboundGate.ts'), 'utf8');
@@ -86,7 +93,7 @@ interface Registration {
 }
 
 /**
- * Every registration across the four files, each carrying its own handler body.
+ * Every registration across the five files, each carrying its own handler body.
  *
  * The body is sliced per FILE — from one registration to the next in that file — so a
  * handler at the end of one router cannot absorb the top of another.
@@ -135,6 +142,13 @@ const OUTBOUND: Record<string, string> = {
     'grants a reviewer\'s clear over stored crisis text — the crisis room\'s approval act. '
     + 'The bytes are immutable and the perimeter is not, so the gate re-runs here for the '
     + 'same reason `POST /draft/:id/approve` re-runs it.',
+  'POST /claim-safety':
+    'RELEASES the exact bytes a human may copy. It is the only route in the compartment '
+    + 'that returns `usableText`, so it is the last point at which a rule can still stop '
+    + 'the words — every other outbound entry above merely moves them closer. The release '
+    + 'is conditional on the 0062 row: `usableText` is null when the record could not be '
+    + 'written, because "it was checked and cleared" is the claim this desk would have to '
+    + 'defend and a check that left no record cannot support it.',
 };
 
 /**
@@ -210,10 +224,30 @@ const NOT_OUTBOUND: Record<string, string> = {
     + 'expired rows. Deletion and hashing only.',
   'GET /post-time': 'measures what fraction of the queue carries X\'s own post date. SQL only '
     + '— it performs no oEmbed lookup and stores nothing.',
+
+  /* ── marketingGates.ts: one release path (classified OUTBOUND above) and seven that
+   *    cannot put words in front of a human. Each reason is about what the handler
+   *    RETURNS, not about what it reads. ── */
+  'POST /review': 'runs both engines over a supplied body and returns the verdicts WITHOUT '
+    + '`usableText` — the type has no such field, so no wording can leave by this route. It '
+    + 'writes nothing either, which is why it carries no ledger row: `deskApi` debounces it '
+    + 'per keystroke and recording intermediate drafts would bury the one question 0062 '
+    + 'exists to answer. `POST /claim-safety` is the recorded release path.',
+  'GET /replies/:id/provenance': 'reads one inbound row\'s corroboration history and grades '
+    + 'it. Somebody else\'s post, and a read.',
+  'POST /replies/:id/corroborate': 'performs ONE credential-free GET to '
+    + 'publish.twitter.com/oembed and stores what X answered about a third party\'s post. It '
+    + 'reads X and writes an observation; it authors no LCX text.',
+  'GET /silence': 'reads the log of decisions NOT to speak.',
+  'POST /:id/silence': 'records a decision not to reply, with its rationale. The opposite of '
+    + 'outbound text — and it refuses without a rationale and without a recorded assessment, '
+    + 'so it cannot become a quiet way to clear the queue.',
+  'GET /metrics': 'the twelve process metrics over stored rows. Counts and refusals.',
+  'GET /loop': 'the loop report over those same metrics. Reads no text and returns none.',
 };
 
-describe('every route in all four marketing routers is classified as outbound or not', () => {
-  it('finds the registrations in all four files, or every assertion below is vacuous', () => {
+describe('every route in all five marketing routers is classified as outbound or not', () => {
+  it('finds the registrations in all five files, or every assertion below is vacuous', () => {
     for (const { file } of ROUTER_FILES) {
       expect(
         REGISTRATIONS.filter((r) => r.file === file).length,
@@ -221,8 +255,8 @@ describe('every route in all four marketing routers is classified as outbound or
         + 'is probably stale, and this whole file just stopped checking that router',
       ).toBeGreaterThan(0);
     }
-    // 11 in marketing.ts + 6 desk + 11 memory + 10 record when this was written.
-    expect(REGISTRATIONS.length).toBeGreaterThanOrEqual(38);
+    // 11 in marketing.ts + 6 desk + 11 memory + 10 record + 8 gates when this was written.
+    expect(REGISTRATIONS.length).toBeGreaterThanOrEqual(46);
   });
 
   it('registers no two routes under the same METHOD and path', () => {
@@ -347,6 +381,22 @@ describe('each route classified as outbound reaches the gate from its own handle
       write: 'INSERT INTO marketing_crisis_clearance',
       why: 'a clear written before the check is a green lane over refused text',
     },
+    {
+      route: 'POST /claim-safety',
+      gate: 'gateOutboundText(',
+      write: 'recordGateDecision(',
+      /*
+       * The other four entries read "gate, THEN write the row". This one reads "gate, then
+       * write the row, THEN release", and the order that matters is the same order: the
+       * verdict must exist before the ledger row describes it, and the row must exist
+       * before `usableText` is non-null. `recordGateDecision` takes `verdict: gate` as an
+       * argument, so it is not physically possible to invert them — which is exactly why
+       * the assertion is cheap and worth keeping: the day someone records a placeholder
+       * ahead of the check to "reserve the row", this goes red.
+       */
+      why: 'the ledger row describes the verdict, so a row written first would describe '
+        + 'nothing — and `usableText` is released only after the row exists',
+    },
   ];
 
   for (const o of ORDER) {
@@ -449,8 +499,47 @@ describe('the gate module fails closed', () => {
     // `assessMarketAbuse` does not extract symbols (abuse.ts:76). Taking the list from
     // the client would put the drafter in charge of whether the embargo check runs.
     expect(GATE).toContain('extractNamedAssets(');
-    expect(GATE).toMatch(/const assets = extractNamedAssets\(req\.text\)/);
+    expect(GATE).toMatch(/const lexical = extractNamedAssets\(req\.text\)/);
+    expect(GATE).toMatch(/let assets: readonly string\[\] = lexical;/);
     expect(GATE).not.toMatch(/namedAssets: req\.namedAssets/);
+    // `assets` is reassigned exactly once, by the NOT_TICKERS promotion, and from the
+    // register rather than from the request. A second writer would be the way the drafter
+    // gets back in charge of the list.
+    const writes = [...GATE.matchAll(/^\s*assets = |assets = \[/gm)].length;
+    expect(writes, 'assets is assigned somewhere new').toBe(1);
+    expect(GATE).toMatch(/assets = \[\.\.\.new Set\(\[\.\.\.lexical, \.\.\.promoted\]\)\]/);
+    expect(GATE).not.toMatch(/assets = .*req\./);
+  });
+
+  it('re-checks the not-a-ticker presumption against the register before relying on it', () => {
+    /*
+     * `NOT_TICKERS` holds the HOUSE TOKEN, and before the promotion that made the bare form a
+     * complete bypass: `LCX deposits are open.` extracted `[]`, so
+     * `loadEmbargoRegister(pool, [])` returned nothing and both high-consequence limbs —
+     * Art 90 embargo and Art 91(3)(c) holdings — never ran. `$LCX` was caught, so the whole
+     * evasion was deleting one character.
+     *
+     * The entry stays for the reason its docblock gives, and the list stops being the last
+     * word: `extractSuppressedCandidates` hands back what was filtered,
+     * `recordedSymbolsAmong` asks whether the desk RECORDED any of them, and anything it did
+     * is promoted into the lookup. Behaviour is asserted in `outboundGateRuns.test.ts`; this
+     * pins the wiring, so an edit that drops the second call — and silently restores the
+     * bypass — cannot pass.
+     */
+    expect(GATE).toContain('export function extractSuppressedCandidates(');
+    expect(GATE).toMatch(/const suppressed = extractSuppressedCandidates\(req\.text\)/);
+    expect(GATE).toMatch(/await recordedSymbolsAmong\(pool, suppressed\)/);
+    // Promotion happens BEFORE the scoped register loads, or it needs a second round trip
+    // to be of any use.
+    expect(GATE.indexOf('recordedSymbolsAmong(pool, suppressed)'))
+      .toBeLessThan(GATE.indexOf('loadEmbargoRegister(pool, assets)'));
+    // The five entries that are real traded symbols are named in the docblock, so the next
+    // reader learns which ones the promotion is carrying rather than assuming the list is
+    // safe by inspection.
+    for (const real of ['LCX', 'GMT', 'ATH', 'NOW', 'CAN']) {
+      expect(GATE, `${real} is a live traded symbol and the docblock must name it`)
+        .toContain(`\`${real}\``);
+    }
   });
 
   it('carries the extraction caveat on the verdict', () => {

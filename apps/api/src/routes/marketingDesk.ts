@@ -33,18 +33,18 @@
  * `POST /:id/:anything` in either file would capture all of them and answer 400 on a
  * path that looks right.
  *
- * ── THE CAPABILITY TIER IS DECIDED IN app.ts, NOT HERE ───────────────────────
+ * ── THE CAPABILITY TIER IS APPLIED IN app.ts AND DECLARED HERE ───────────────
  * `app.ts:requiresOperate` gates GET/HEAD/OPTIONS at `marketing:view` and everything
- * else at `marketing:operate`, unless the path is on the `READ_SHAPED_POSTS`
- * allowlist. So `GET /desk` reads at 'view' and all five POSTs write-tier at
- * 'operate'. THREE OF THEM MUTATE NOTHING — `/regime`, `/triage/assess` and
- * `/adoption` are POSTs only because a classification input does not fit in a query
- * string. They are deliberately NOT added to that allowlist by this file: the
- * allowlist lives in `app.ts`, each entry there was read before it was added, and an
- * exemption is a code review rather than a side effect of a new router. The
- * consequence is stated rather than hidden: a `view`-only member cannot ask "what
- * would this adopt?". `requireOperator` is on every handler, matching every sibling
- * marketing and GPS route, so the router is never open when mounted bare in a test.
+ * else at `marketing:operate`, unless the path is on its `READ_SHAPED_POSTS`
+ * allowlist. THREE OF THE FIVE POSTS MUTATE NOTHING — `/regime`, `/triage/assess`
+ * and `/adoption` are POSTs only because a classification input does not fit in a
+ * query string — and gating them as writes took the instrument's most-used reads away
+ * from every `view`-granted member. Each of the three was read line by line and they
+ * are declared by `MARKETING_READ_SHAPED_POSTS` below, with the verification and the
+ * one owed `app.ts` line written out at that constant. `POST /:id/triage` and
+ * `POST /desk-mode` append to `object_actions` and stay at `operate`.
+ * `requireOperator` is on every handler, matching every sibling marketing and GPS
+ * route, so the router is never open when mounted bare in a test.
  *
  * ── NOTHING HERE POSTS, AND THERE IS NOWHERE TO ADD IT ───────────────────────
  * There is no X credential in this system and never will be. `POST /adoption` answers
@@ -54,7 +54,14 @@
  * refusal each of those doors would give under the live mode; a suspended desk refuses
  * outbound and says so, in the sentence `gateDeskAct` wrote.
  *
- * ── WHERE THE MODE IS STORED, AND WHY IT IS NOT A NEW TABLE ──────────────────
+ * ── WHERE THE MODE IS STORED, AND WHO OWNS THE READ ──────────────────────────
+ * `marketing/deskModeStore.ts` owns it now — the ledger identity, the lock, the read, the
+ * append and the fail-closed parse. It moved out of this file because
+ * `routes/marketingMemory.ts` must read the same fact: `crisisCapabilities` takes a
+ * `DeskMode`, and a second reader of "is the desk suspended" is how the crisis room and
+ * this board come to print opposite sentences about one instant. Nothing about the storage
+ * decision changed, and it is worth restating:
+ *
  * `object_actions` (migration 0029, applied everywhere) is an append-only ledger of
  * `{subject_type, subject_id, action, params, result, actor, created_at}`. The desk
  * mode is written there as a sequence of transitions and the current mode is the
@@ -207,6 +214,15 @@ import { requireOperator } from '../middleware/auth.js';
 import { getPool } from '../db/index.js';
 import { env } from '../lib/env.js';
 import { isMigrated, queueSummary, setReplyStatus } from '../marketing/service.js';
+import {
+  LedgerUnreadable,
+  type Queryable,
+  appendModeRecord,
+  lockModeLedger,
+  readDeskStanding,
+  readModeLedger,
+  standingFrom,
+} from '../marketing/deskModeStore.js';
 
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
 
@@ -220,6 +236,61 @@ const NOT_MIGRATED = {
 } as const;
 
 export const marketingDeskRoutes = new Hono<{ Variables: AuthVariables }>();
+
+/**
+ * THE THREE POSTS ON THIS ROUTER THAT MUTATE NOTHING, so they belong at `marketing:view`.
+ *
+ * ── THE DEFECT THIS FIXES ────────────────────────────────────────────────────
+ * `app.ts:requiresOperate` gates GET/HEAD/OPTIONS at `view` and everything else at
+ * `operate` unless the path is on its `READ_SHAPED_POSTS` allowlist. Applied by method
+ * alone that is wrong in a specific way this repo has already been through: "not a GET" is
+ * not the same as "mutates". `/regime`, `/triage/assess` and `/adoption` are POSTs ONLY
+ * because a classification input does not fit in a query string. Leaving them at the write
+ * tier took the instrument's most-used reads — which law bites, what this reply is, what a
+ * retweet would adopt — away from every `view`-granted member, which is exactly what the
+ * request-access flow hands out by default. app.ts records the mirror-image mistake in its
+ * own words: cited Q&A and ad-hoc reporting were silently removed from view members, "a
+ * policy change nobody asked for".
+ *
+ * ── EACH ONE WAS READ BEFORE IT WAS LISTED, and here is what it does ─────────
+ *   POST /regime         `classifyRegimes(parseRegimeInput(...))` and `art7FitOf`. Pure.
+ *                        It touches no pool at all: there is no `getPool()` in the handler.
+ *   POST /triage/assess  `isMigrated(pool)` (a `to_regclass` probe) and, through
+ *                        `buildTriageReading` → `readReuse`, ONE `SELECT ... FROM
+ *                        marketing_x_reply`. Reads a corpus; writes nothing. The handler
+ *                        docblock has said "A read that happens to be a POST" since it was
+ *                        written.
+ *   POST /adoption       `readDeskStanding(pool)` — one SELECT on `object_actions` — then
+ *                        `assessAmplification`. It answers what an act WOULD adopt and
+ *                        performs no act.
+ * `__tests__/marketingCapabilityTier.test.ts` re-asserts that against the source: if a
+ * write appears in any of those three handlers while it sits on this list, it turns red.
+ *
+ * ── WHAT IS DELIBERATELY ABSENT ──────────────────────────────────────────────
+ * `POST /:id/triage` and `POST /desk-mode`. Both append to `object_actions` and the first
+ * also moves a queue row. They stay at `operate`, and the same test asserts it, because
+ * the tier that matters is the one a mutation cannot slip out of.
+ *
+ * ── THE PATHS ARE ABSOLUTE, AND THAT IS A COUPLING THIS FILE ALREADY HAS ─────
+ * `app.ts` matches `c.req.path`, so these are anchored `/v1/marketing/...` patterns. This
+ * router MUST be mounted at that prefix — `apps/web` already calls it, and
+ * `__tests__/marketingMount.test.ts` fails if it moves — so the assumption is not a new
+ * one. Anchored at both ends: an unanchored pattern would exempt
+ * `/v1/marketing/regime/anything` a later route might add.
+ *
+ * ── THE ONE LINE THIS FILE CANNOT WRITE ──────────────────────────────────────
+ * The allowlist itself lives in `app.ts`, which this wave does not own, so the exemption
+ * takes effect when `app.ts` spreads this constant into `READ_SHAPED_POSTS` (and
+ * `marketingMount.test.ts` flips those three `needed: 'operate'` rows to `'view'`). Until
+ * then a `view` member still gets 403, and the consequence is stated rather than hidden.
+ * Deciding the tier in ONE place is right, and it means the decision arrives as a code
+ * review rather than as a side effect of a router edit.
+ */
+export const MARKETING_READ_SHAPED_POSTS: readonly RegExp[] = [
+  /^\/v1\/marketing\/regime$/,
+  /^\/v1\/marketing\/triage\/assess$/,
+  /^\/v1\/marketing\/adoption$/,
+];
 
 /* ══════════════════════════════════════════════════════════════════════════ */
 /* §1 THE VALIDATION KIT — REFUSE, NAME THE FIELD, NAME THE VALID VALUES        */
@@ -615,43 +686,47 @@ const parseAction = (raw: unknown): ResponseAction => {
 };
 
 /* ══════════════════════════════════════════════════════════════════════════ */
-/* §3 THE MODE LEDGER — APPEND-ONLY, SERIALISED, AND FAILING CLOSED             */
+/* §3 THE MODE LEDGER — NOW OWNED BY marketing/deskModeStore.ts                  */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
-const MODE_SUBJECT_TYPE = 'marketing_desk';
-const MODE_SUBJECT_ID = 'mode';
-const MODE_ACTION = 'marketing_desk_mode_change';
+/*
+ * THE LEDGER IDENTITY, THE LOCK, THE READ AND THE APPEND ALL MOVED OUT, and the move is
+ * the point rather than tidiness. `routes/marketingMemory.ts` has to know whether the desk
+ * is suspended — `crisisCapabilities` and `activateCrisisStatement` take a `DeskMode` and
+ * their entire subject is a suspended desk in a live incident — and it could only get one
+ * by reading `object_actions` a second time. Two readers of one governance fact is how the
+ * crisis room and this board come to print opposite sentences about the same instant.
+ *
+ * `deskModeStore.ts` therefore owns: `MODE_SUBJECT_TYPE`/`_ID`/`_ACTION`, `MODE_LOCK_KEY`,
+ * `LedgerUnreadable`, `readModeLedger`, `standingFrom`, `lockModeLedger` and
+ * `appendModeRecord`. Nothing about the SQL, the ordering tiebreak or the fail-closed
+ * behaviour changed in the move; `__tests__/marketingDesk.test.ts` drives all of it
+ * through these routes unchanged.
+ *
+ * The triage ledger stays here: it is a different subject, keyed per reply row, and it is
+ * written by exactly one route in this file.
+ */
 const TRIAGE_SUBJECT_TYPE = 'marketing_x_reply';
 const TRIAGE_ACTION = 'marketing_triage_decision';
-/** One lock for the whole desk mode. `hashtext` of this string, as `withJobRun` does. */
-const MODE_LOCK_KEY = 'marketing:desk_mode';
 
 /**
- * A ledger row this code cannot read as a mode.
+ * Parse a `DeskMode` OUT OF A REQUEST BODY.
  *
- * IT IS AN ERROR AND NOT A FALLBACK, and that is the single most important decision in
- * this file. The alternative — skip the unreadable row and read the one below it — would
- * answer "the desk is normal" when the newest record might be a regulator's prohibition
- * that a bad deploy or a hand-edited JSONB left unparseable. Reporting a closed desk as
- * open is the failure this compartment exists to prevent, so the read fails loudly and
- * the sentence tells the operator to treat the desk as closed until it is fixed.
- */
-class LedgerUnreadable extends Error {
-  constructor(readonly ledgerRef: string, readonly why: string) {
-    super(`desk mode ledger row ${ledgerRef} is unreadable: ${why}`);
-    this.name = 'LedgerUnreadable';
-  }
-}
-
-/**
- * Parse a `DeskMode`.
+ * `imposedBy` / `recordedBy` are taken from the session and any value in the body is
+ * ignored, because a client-named imposer makes the governance record a suggestion, and
+ * `effectiveFrom` defaults to now because a caller declaring heightened mode is declaring
+ * it now unless they say otherwise. Every refusal is a 400 naming the field and its valid
+ * values.
  *
- * `actor` non-null is the REQUEST path: `imposedBy` / `recordedBy` are taken from the
- * session and any value in the body is ignored, because a client-named imposer makes the
- * governance record a suggestion. `actor` null is the LEDGER path, where those fields are
- * read back from the row that recorded them.
+ * THE LEDGER PATH IS A DIFFERENT FUNCTION, deliberately:
+ * `marketing/deskModeStore.ts:parseStoredDeskMode` reads a row this system already wrote,
+ * where nothing may be substituted or defaulted and a missing field is a corrupt record
+ * rather than a caller's mistake — it raises `LedgerUnreadable` and the desk is treated as
+ * CLOSED. Two readers is a drift risk and it is held shut by a test rather than by hope:
+ * `__tests__/marketingCrisisCapsStore.test.ts` round-trips every mode kind through
+ * `POST /desk-mode` and back out through the store's parser, field for field.
  */
-const parseDeskMode = (field: string, raw: unknown, actor: ActorId | null, now: Instant): DeskMode => {
+const parseDeskMode = (field: string, raw: unknown, actor: ActorId, now: Instant): DeskMode => {
   const o = asObject(field, raw);
   const kind = oneOf(`${field}.kind`, o.kind, MODE_KINDS);
   if (kind === 'normal') return { kind };
@@ -659,8 +734,8 @@ const parseDeskMode = (field: string, raw: unknown, actor: ActorId | null, now: 
     return {
       kind,
       reason: str(`${field}.reason`, o.reason, { max: 2000 }),
-      imposedBy: actor ?? str(`${field}.imposedBy`, o.imposedBy, { max: 200 }),
-      effectiveFrom: o.effectiveFrom === undefined && actor !== null ? now : instant(`${field}.effectiveFrom`, o.effectiveFrom),
+      imposedBy: actor,
+      effectiveFrom: o.effectiveFrom === undefined ? now : instant(`${field}.effectiveFrom`, o.effectiveFrom),
       expiresAt: nullableInstant(`${field}.expiresAt`, o.expiresAt),
     };
   }
@@ -671,7 +746,7 @@ const parseDeskMode = (field: string, raw: unknown, actor: ActorId | null, now: 
     effectiveFrom: instant(`${field}.effectiveFrom`, o.effectiveFrom),
     expiresAt: nullableInstant(`${field}.expiresAt`, o.expiresAt),
     suspensionPower: oneOf(`${field}.suspensionPower`, o.suspensionPower, ['cease_or_suspend_30_days', 'prohibit_or_suspend'] as const),
-    recordedBy: actor ?? str(`${field}.recordedBy`, o.recordedBy, { max: 200 }),
+    recordedBy: actor,
   };
 };
 
@@ -698,103 +773,6 @@ const parseCalendar = (raw: unknown): WorkingDayCalendar | null => {
     source: str('calendar.source', o.source, { max: 600 }),
   };
 };
-
-/** One row of the ledger, already validated. */
-interface ModeLedgerRow {
-  readonly ledgerRef: string;
-  readonly recordedAt: Instant;
-  readonly recordedBy: ActorId;
-  readonly reason: string;
-  readonly mode: DeskMode | null;
-  readonly transitionRaw: unknown;
-  readonly order: OrderAssessment | null;
-  readonly calendar: WorkingDayCalendar | null;
-}
-
-interface Queryable {
-  query(sql: string, params?: readonly unknown[]): Promise<{ rows: Record<string, unknown>[] }>;
-}
-
-/**
- * Read the newest rows of the mode ledger, newest first.
- *
- * `created_at DESC, id DESC` — the tiebreak matters because `object_actions` has no
- * unique constraint tying a row to the desk and `NOW()` is the transaction's start
- * instant, so two appends in the same microsecond would otherwise order arbitrarily.
- * Under the advisory lock they cannot be concurrent, and the tiebreak makes the read
- * deterministic anyway.
- */
-async function readModeLedger(q: Queryable, limit: number): Promise<readonly ModeLedgerRow[]> {
-  const res = await q.query(
-    `SELECT id, result, actor, created_at FROM object_actions
-      WHERE subject_type = $1 AND subject_id = $2 AND action = $3
-      ORDER BY created_at DESC, id DESC LIMIT $4`,
-    [MODE_SUBJECT_TYPE, MODE_SUBJECT_ID, MODE_ACTION, limit],
-  );
-  return res.rows.map((row) => {
-    const ledgerRef = String(row.id);
-    const result = row.result;
-    if (result === null || typeof result !== 'object' || Array.isArray(result)) {
-      throw new LedgerUnreadable(ledgerRef, 'the stored result is not an object');
-    }
-    const r = result as Record<string, unknown>;
-    const transitionRaw = r.transition ?? null;
-    let mode: DeskMode | null = null;
-    if (transitionRaw !== null) {
-      const t = asObject('transition', transitionRaw);
-      try {
-        mode = parseDeskMode('transition.to', t.to, null, '');
-      } catch (err) {
-        throw new LedgerUnreadable(ledgerRef, err instanceof Invalid ? err.message : 'the stored mode did not validate');
-      }
-    }
-    const order = (r.order ?? null) as OrderAssessment | null;
-    if (mode === null && order === null) {
-      throw new LedgerUnreadable(ledgerRef, 'the row carries neither a transition nor an order');
-    }
-    return {
-      ledgerRef,
-      recordedAt: new Date(String(row.created_at)).toISOString(),
-      recordedBy: String(row.actor ?? 'unknown'),
-      reason: typeof r.reason === 'string' ? r.reason : '',
-      mode,
-      transitionRaw,
-      order,
-      calendar: (r.calendar ?? null) as WorkingDayCalendar | null,
-    };
-  });
-}
-
-/**
- * The standing the newest row implies. `null` rows away means nothing was ever recorded,
- * which is `default_normal` — the desk is open because nobody has said otherwise, and the
- * board says which of those two it is.
- */
-function standingFrom(newest: ModeLedgerRow | undefined, now: Instant): {
-  standing: DeskStanding;
-  order: OrderAssessment | null;
-  calendar: WorkingDayCalendar | null;
-  source: 'ledger' | 'default_normal';
-} {
-  if (newest === undefined) {
-    return { standing: deskStanding({ kind: 'normal' }, now), order: null, calendar: null, source: 'default_normal' };
-  }
-  if (newest.mode === null && newest.order !== null) {
-    return {
-      standing: standingFromOrder(newest.order, now, newest.calendar),
-      order: newest.order,
-      calendar: newest.calendar,
-      source: 'ledger',
-    };
-  }
-  const scope = newest.order?.order.scope;
-  return {
-    standing: deskStanding(newest.mode as DeskMode, now, newest.calendar, scope),
-    order: newest.order,
-    calendar: newest.calendar,
-    source: 'ledger',
-  };
-}
 
 /** The three doors text can leave through, each with the sentence that shuts it. */
 const outboundGateRows = (standing: DeskStanding, itemRef: string | null = null): readonly DeskOutboundGateRow[] =>
@@ -1487,8 +1465,7 @@ marketingDeskRoutes.post('/adoption', requireOperator, async (c) => {
     const body = await readJson(c);
     const actor = c.get('operator')?.id ?? 'unknown';
     const now = new Date().toISOString();
-    const ledger = await readModeLedger(getPool(), 1);
-    const { standing } = standingFrom(ledger[0], now);
+    const { standing } = await readDeskStanding(getPool(), now);
     const request = parseAmplification(body, actor, standing.mode);
     const verdict = assessAmplification(request);
     const data: AdoptionReading = {
@@ -1729,13 +1706,17 @@ marketingDeskRoutes.post('/desk-mode', requireOperator, async (c) => {
   try {
     await client.query('BEGIN');
     /*
-     * ONE WRITER AT A TIME, AND IT WAITS ITS TURN. `pg_advisory_xact_lock` blocks rather
-     * than returning false: two operators changing the mode in the same second must both
-     * be recorded against the state they actually followed, and dropping one governance
-     * act because a lock was busy is worse than a caller waiting. The lock is released by
-     * COMMIT or ROLLBACK, so no path leaks it.
+     * ONE WRITER AT A TIME, AND IT WAITS ITS TURN. `lockModeLedger` takes
+     * `pg_advisory_xact_lock`, which BLOCKS rather than returning false: two operators
+     * changing the mode in the same second must both be recorded against the state they
+     * actually followed, and dropping one governance act because a lock was busy is worse
+     * than a caller waiting. The lock is released by COMMIT or ROLLBACK, so no path leaks
+     * it — and it is taken on the CLIENT, inside this transaction, never on the pool.
+     *
+     * The `from` mode is read under that lock, through the same store the crisis room
+     * reads, so no writer computes a transition against a base another writer has moved.
      */
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1))', [MODE_LOCK_KEY]);
+    await lockModeLedger(client);
     const before = await readModeLedger(client, 1);
     const { standing: fromStanding } = standingFrom(before[0], now);
 
@@ -1781,21 +1762,18 @@ marketingDeskRoutes.post('/desk-mode', requireOperator, async (c) => {
       }, 422);
     }
 
-    const inserted = await client.query(
-      `INSERT INTO object_actions (subject_type, subject_id, action, params, result, actor)
-       VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6) RETURNING id, created_at`,
-      [
-        MODE_SUBJECT_TYPE,
-        MODE_SUBJECT_ID,
-        MODE_ACTION,
-        JSON.stringify({ requestedKind: targetKind, byRoles, hasCalendar: calendar !== null }),
-        JSON.stringify({ transition, order: assessment, calendar, reason }),
-        actor,
-      ],
-    );
+    const inserted = await appendModeRecord(client, {
+      requestedKind: targetKind,
+      byRoles,
+      transition,
+      order: assessment,
+      calendar,
+      reason,
+      actor,
+    });
     await client.query('COMMIT');
 
-    const ledgerRef = String(inserted.rows[0]?.id ?? '');
+    const ledgerRef = inserted.ledgerRef;
     /*
      * The standing is COMPUTED from what was just recorded, never asserted. When the order
      * had no expressible mode, `standingFromOrder` is the function that carries exactly

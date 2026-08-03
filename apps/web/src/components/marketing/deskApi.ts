@@ -1,6 +1,5 @@
 import { ApiError, request } from '@/lib/apiClient';
 import { unwrapWithMeta } from '@/lib/api/meta';
-import type { Refusal, RefusalCode } from './vocabulary';
 
 /**
  * The record written when a human takes text out of the instrument by hand — the web
@@ -130,117 +129,45 @@ export const recordHandoff = (draftId: number, hash: string, surface: string) =>
     ).then((d) => asHandoff(d, draftId, hash)),
   );
 
-/* ════════ THE ENGINE'S VERDICT ON A PIECE OF TEXT ════════ */
-
-export interface ReviewVerdict {
-  readonly claimSafety: readonly Refusal[] | null;
-  readonly marketAbuse: readonly Refusal[] | null;
-  readonly regime: readonly Refusal[] | null;
-  readonly regimes: readonly string[];
-}
-
-/**
- * Narrow the engine's refusals into the shared `Refusal` shape.
+/* ════════ THE ENGINE'S VERDICT — REMOVED, AND WHY THE HOLE IS DOCUMENTED ════════
  *
- * NARROWED, NOT CAST. `lib/api/gps.ts:60` carries the post-mortem for the alternative: a
- * hand-written type in the browser claimed three fields the API had never returned, `tsc`
- * believed the copy because a copy is syntactically perfect, and the page's own test
- * agreed with it because the test mocked the module. Two artefacts agreeing with each
- * other is not a contract.
+ * `reviewText` and `ReviewVerdict` used to live here, posting to `POST /v1/marketing/review`.
+ * NO ROUTER HAS EVER DECLARED THAT ROUTE. The drafting room's four gates therefore rendered
+ * `absent` on every environment — the honest outcome of the wrong path, and the reason
+ * `Gate`'s `absent` source exists, but it meant no axis on that screen had ever been checked
+ * by a rulebook.
  *
- * Where a field is missing the substitute is deliberately UGLY rather than friendly: a
- * refusal that says the engine gave no sentence is a visible defect, and an invented
- * sentence is an invisible one.
+ * They are DELETED rather than left in place because they are now actively misleading: the
+ * drafting room asks `POST /regime` and `POST /adoption` through `lib/api/marketing.ts`, both
+ * of which are mounted and CONTRACTED, so a second client here narrowing a guess at a route
+ * that does not exist is exactly the parallel-client drift `MARKETING_CLIENT_OVERLAPS` was
+ * written to track. `asRefusals` went with them — it had no other caller.
+ *
+ * The removal is recorded rather than silent because the next person to want "one combined
+ * verdict" needs to know it was tried: the two axes are separate because the wording rules and
+ * the state joins answer different questions, and collapsing them is how a triage verdict ends
+ * up displayed as a wording verdict.
  */
-function asRefusals(v: unknown): Refusal[] | null {
-  if (!Array.isArray(v)) return null;
-  return v.map((x): Refusal => {
-    const r = rec(x);
-    const rule = rec(r.rule);
-    const recovery = rec(r.recovery);
-    return {
-      code: (str(r.code) ?? 'RULESET_VERSION_UNKNOWN') as RefusalCode,
-      sentence: str(r.sentence) ?? str(r.message) ?? 'The engine refused this text and did not send a sentence with it.',
-      rule: {
-        instrument: (str(rule.instrument) ?? 'desk_policy') as Refusal['rule']['instrument'],
-        provision: str(rule.provision) ?? 'no provision stated',
-        text: str(rule.text) ?? 'The engine cited no rule text.',
-      },
-      recovery: (typeof recovery.kind === 'string'
-        ? (recovery as unknown as Refusal['recovery'])
-        : { kind: 'not_recoverable', why: 'The engine stated no way to clear this. Ask compliance rather than editing until it stops complaining.' }),
-      matched: str(r.matched),
-      ruleSetVersion: typeof r.ruleSetVersion === 'number' ? r.ruleSetVersion : 0,
-    };
-  });
-}
 
-/**
- * Ask the compartment's engines what is wrong with this text.
+/* ════════ THE SILENCE LOG — MOVED TO THE CONTRACT, AND WHY ════════
  *
- * Resolves `null` where the route is absent, and the drafting room then renders every
- * gate as UNCHECKED rather than as clean. Debounced by the caller, never on a
- * keystroke: this is a network round trip and the live pre-checks are the thing that
- * runs on every character.
+ * `SilenceEntry` and `listSilences` used to live here, narrowing an unknown payload field by
+ * field. That was the right instinct while `GET /v1/marketing/silence` was mounted by nobody
+ * and `MARKETING_CLIENT_OVERLAPS` recorded them as one of two fetchers for one absent route.
+ *
+ * The route is mounted now (`routes/marketingGates.ts:1240`) and its response is
+ * `SilenceLog = readonly SilenceLogEntry[]`, declared once in
+ * `packages/shared/src/marketing/contracts/gates.ts` §3 and imported by the handler and by
+ * `lib/api/marketing.ts fetchSilenceLog` from that one declaration. So the narrower is
+ * deleted rather than kept beside it: two clients for one route cost nothing while the route
+ * did not exist, and cost a blanked column the day it did — the contract's own docblock warns
+ * that renaming any of the eight fields `listSilences` read would silently empty a column on
+ * `SilenceLog.tsx`, and a runtime narrower cannot be told about a rename by a compiler.
+ *
+ * `SilenceLog.tsx` now reads the contracted type and also WRITES, which it never could: there
+ * was no rationale-write surface anywhere in this compartment, so the desk's most common
+ * decision was recordable only as `status = 'ignored'` with no reason at all.
  */
-export const reviewText = (body: {
-  text: string;
-  verb: string;
-  draftId?: number;
-  replyId?: number;
-}) =>
-  optional(
-    unwrapWithMeta(
-      request<{ data: unknown; meta?: unknown }>('/v1/marketing/review', {
-        method: 'POST',
-        body,
-        auth: true,
-      }),
-    ).then((d): ReviewVerdict => {
-      const r = rec(d);
-      return {
-        claimSafety: asRefusals(r.claimSafety),
-        marketAbuse: asRefusals(r.marketAbuse),
-        regime: asRefusals(r.regime),
-        regimes: strs(r.regimes),
-      };
-    }),
-  );
-
-/* ════════ THE SILENCE LOG ════════ */
-
-export interface SilenceEntry {
-  readonly id: string;
-  readonly subject: string;
-  readonly disposition: string;
-  readonly reasonCode: string;
-  /** Required by the record. Empty here means the row was written without one. */
-  readonly rationale: string;
-  readonly decidedBy: string;
-  readonly decidedAt: string;
-  readonly revisitBy: string | null;
-}
-
-export const listSilences = () =>
-  optional(
-    unwrapWithMeta(
-      request<{ data: unknown[]; meta?: unknown }>('/v1/marketing/silence', { auth: true }),
-    ).then((rows) =>
-      (Array.isArray(rows) ? rows : []).map((x): SilenceEntry => {
-        const r = rec(x);
-        return {
-          id: str(r.id) ?? '',
-          subject: str(r.subject) ?? str(r.authorHandle) ?? '',
-          disposition: str(r.disposition) ?? 'unstated',
-          reasonCode: str(r.reasonCode) ?? 'unstated',
-          rationale: str(r.rationale) ?? '',
-          decidedBy: str(r.decidedBy) ?? '',
-          decidedAt: str(r.decidedAt) ?? '',
-          revisitBy: str(r.revisitBy),
-        };
-      }),
-    ),
-  );
 
 /* ════════ THE PRECEDENT INDEX ════════ */
 

@@ -53,15 +53,27 @@ vi.mock('@/lib/api/marketing', () => ({
   fetchAbusePerimeter: vi.fn(),
   fetchMarketingWatch: vi.fn(),
   fetchClaimExpiry: vi.fn(),
+  /* And the three the LAST wave wired, for the same reason spelled out above — plus one
+     lesson the comment above did not yet carry. `fetchCorroborationCoverage` is read by the
+     Measurement tab, which every suite in this file DOES open, and leaving it out did not
+     produce a clear "is not a function": it produced four unrelated measurement assertions
+     failing on a React error boundary. A factory that is one name short fails somewhere
+     other than where the name is missing. */
+  fetchCorroborationCoverage: vi.fn(),
+  checkRegime: vi.fn(),
+  checkAdoption: vi.fn(),
+  checkReview: vi.fn(),
+  fetchSilenceLog: vi.fn(),
+  recordSilenceDecision: vi.fn(),
+  fetchReplyProvenance: vi.fn(),
+  corroborateReply: vi.fn(),
 }));
 
 vi.mock('@/components/marketing/deskApi', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/components/marketing/deskApi')>();
   return {
     ...actual,
-    reviewText: vi.fn(),
     recordHandoff: vi.fn(),
-    listSilences: vi.fn(),
     findPrecedent: vi.fn(),
     recordTriage: vi.fn(),
   };
@@ -193,11 +205,26 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.setSystemTime(NOW);
   clipboard.mockReset().mockResolvedValue(undefined);
-  vi.mocked(desk.reviewText).mockResolvedValue(null);
-  vi.mocked(desk.listSilences).mockResolvedValue([]);
   vi.mocked(desk.findPrecedent).mockResolvedValue([]);
   vi.mocked(desk.recordTriage).mockResolvedValue(null);
   vi.mocked(desk.recordHandoff).mockResolvedValue(null);
+  /*
+   * THE SILENCE LOG READS ON MOUNT AND STAYS MOUNTED, so it needs an answer in every suite.
+   * Its default lives HERE and not in `mount` on purpose: a default inside `mount` is applied
+   * after a test has set its own, and the suite asserting the undeployed sentence silently lost
+   * that race — a green-looking test for the one distinction this panel exists to keep.
+   */
+  vi.mocked(api.fetchSilenceLog).mockResolvedValue([]);
+  vi.mocked(api.fetchCorroborationCoverage).mockRejectedValue(new ApiError('not deployed', 404));
+  /* The provenance panel mounts with the drafting room, so it needs an answer too. 404 is what
+     an environment without the gates router gives, and it is the state these suites are about:
+     they assert what the DRAFTING surface says, and a provenance read that threw would take the
+     whole panel down with it — which is how five unrelated assertions failed on an error
+     boundary rather than on the thing they were checking. */
+  vi.mocked(api.fetchReplyProvenance).mockRejectedValue(new ApiError('not deployed', 404));
+  vi.mocked(api.checkRegime).mockRejectedValue(new ApiError('not deployed', 404));
+  vi.mocked(api.checkAdoption).mockRejectedValue(new ApiError('not deployed', 404));
+  vi.mocked(api.checkReview).mockRejectedValue(new ApiError('not deployed', 404));
 });
 
 describe('the desk states what it cannot do', () => {
@@ -253,7 +280,11 @@ describe('an empty log and an undeployed log are different facts', () => {
   });
 
   it('shows "we cannot see" when the silence route is not deployed', async () => {
-    vi.mocked(desk.listSilences).mockResolvedValue(null);
+    /* A 404, not a `null` return. The panel moved from `deskApi`'s optional-route narrower to
+       `useDeskRead`, whose `absent` state IS the 404 — so the fact the test asserts is now
+       produced by the same code path a real unmounted environment produces. Set BEFORE `mount`,
+       because the read fires on the same tick the render does. */
+    vi.mocked(api.fetchSilenceLog).mockRejectedValue(new ApiError('not deployed', 404));
     const u = userEvent.setup();
     mount();
     await u.click(await screen.findByRole('tab', { name: 'Silence' }));
@@ -354,7 +385,11 @@ describe('the triage board is a decision, not a workflow', () => {
     await u.selectOptions(screen.getByLabelText('Response action'), 'reply_public');
     await u.click(screen.getByRole('button', { name: /Record this decision/i }));
 
-    const absent = await screen.findByTestId('mkt-empty-absent');
+    /* SCOPED TO THE TRIAGE BOARD. Every tab stays mounted, and the silence panel renders its
+       own `mkt-empty-absent` whenever its route is not there — so an unscoped query became
+       ambiguous the moment a second panel could be honestly absent at the same time. */
+    const board = within(screen.getByRole('region', { name: 'Triage board' }));
+    const absent = await board.findByTestId('mkt-empty-absent');
     expect(absent.textContent).toMatch(/cannot record a triage decision/i);
     expect(absent.textContent).toMatch(/still undecided/i);
   });

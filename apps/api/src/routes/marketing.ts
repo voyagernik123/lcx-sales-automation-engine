@@ -42,6 +42,7 @@ import type { AbusePerimeterState } from '@lcx/shared';
 import { marketingDeskRoutes } from './marketingDesk.js';
 import { marketingMemoryRoutes } from './marketingMemory.js';
 import { marketingRecordRoutes } from './marketingRecord.js';
+import { marketingGatesRoutes } from './marketingGates.js';
 
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
 
@@ -660,15 +661,15 @@ marketingRoutes.get('/perimeter', requireOperator, async (c) => {
 
 /* ══ THE SUB-ROUTERS, MOUNTED HERE AND NOT IN app.ts ══════════════════════════════
  *
- * Twenty-six routes across three files, following the shape GPS already uses
- * (`routes/gps.ts:917-942`). Nesting rather than three more `app.route('/v1/marketing', …)`
+ * Thirty-five routes across four files, following the shape GPS already uses
+ * (`routes/gps.ts:917-942`). Nesting rather than four more `app.route('/v1/marketing', …)`
  * lines is not tidiness — it is what keeps two properties true at once:
  *
  *  1. THE COMPARTMENT GATE COVERS THEM BY CONSTRUCTION. `app.ts:163-172` installs
  *     `requireWorkspace('marketing','view'|'operate')` on `'/v1/marketing'` and
  *     `'/v1/marketing/*'`, read off the workspace constitution's `apiPrefixes`
  *     (`@lcx/shared workspaces.ts:193`), which lists that one prefix and nothing else.
- *     Every path reachable through these three routers therefore sits behind the gate
+ *     Every path reachable through these four routers therefore sits behind the gate
  *     with no sub-prefix that could fall outside it. Capability above the floor
  *     (`requireOperator`, `requireApprover`) is declared per route inside each file.
  *  2. THE OUTBOUND RATCHET SEES THEM. `marketing/__tests__/outboundGateCoverage.test.ts`
@@ -682,7 +683,7 @@ marketingRoutes.get('/perimeter', requireOperator, async (c) => {
  * asserted here: registered under `/v1/marketing` and nowhere else, refused before any
  * handler runs when unauthenticated, and demanding the tier this file believes it demands.
  *
- * ALL THREE MOUNT AT '/' because each declares its own first segment — the URLs are
+ * ALL FOUR MOUNT AT '/' because each declares its own first segment — the URLs are
  * already fixed by the fetchers in `apps/web/src/lib/api/marketing.ts` (`/v1/marketing/desk`,
  * `/precedent`, `/crisis/…`, `/watch`, `/export/:itemId`, `/subject-access`, `/erasure`,
  * `/record`). Mounting any of them under a segment of its own would silently 404 a
@@ -690,13 +691,30 @@ marketingRoutes.get('/perimeter', requireOperator, async (c) => {
  *
  * PATHS ARE DISJOINT FROM THIS FILE'S. The two-segment patterns are the ones worth naming:
  * this file owns `POST /:id/draft` and `POST /:id/status`, the desk router owns
- * `POST /:id/triage`; the third segment differs, so no registration shadows another.
+ * `POST /:id/triage` and the gates router owns `POST /:id/silence`; the third segment
+ * differs in each, so no registration shadows another — and the mount test asserts that
+ * over the route table rather than trusting this sentence.
+ *
+ * ── WHY `marketingGatesRoutes` IS THE FOURTH, AND WHY IT WAS THE URGENT ONE ──────
+ * It was written, tested and reachable from NOTHING: only its own tests referenced the
+ * export, so `POST /claim-safety` — the sole route in this compartment that returns
+ * copyable text WITH a ledger row behind it — answered 404, as did the silence log, its
+ * write, reply provenance, corroboration, the twelve process metrics and the loop report.
+ * Worse than the 404s: while it was unmounted it was also missing from `ROUTER_FILES` in
+ * `marketing/__tests__/outboundGateCoverage.test.ts`, so eight routes could have been
+ * served inside the compartment while sitting outside the "every route is classified"
+ * ratchet, and that ratchet would have stayed green. Both halves are closed in one commit
+ * deliberately: mounting a router without adding it to the ratchet is the worse of the two
+ * states, because it is the one that looks finished.
  *
  * STILL NOT POSTING ANYTHING. Nothing below holds a credential, and no route in any of
- * the three publishes: the crisis router's composed statement carries `cannotPublish: true`
- * and the record router only reads and retains. The two routes that bring outbound text
- * into existence go through `gateOutboundText` first.
+ * the four publishes: the crisis router's composed statement carries `cannotPublish: true`,
+ * the record router only reads and retains, and the gates router releases text only for a
+ * human to copy — and only when the decision to release it reached 0062, which is the
+ * `PUBLISHED_TEXT_NOT_PASTED_BACK` refusal on that route. The three routes that bring
+ * outbound text into existence or release it go through `gateOutboundText` first.
  */
 marketingRoutes.route('/', marketingDeskRoutes); //   /regime, /triage/assess, /:id/triage, /adoption, /desk, /desk-mode
 marketingRoutes.route('/', marketingMemoryRoutes); // /precedent…, /crisis/…
 marketingRoutes.route('/', marketingRecordRoutes); // /watch…, /export…, /record, /subject-access, /erasure, /retention…
+marketingRoutes.route('/', marketingGatesRoutes); //  /claim-safety, /review, /replies/:id/…, /silence, /:id/silence, /metrics, /loop

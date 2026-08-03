@@ -16,6 +16,8 @@ import { PrecedentPanel } from '@/components/marketing/PrecedentPanel';
 import { SilenceLog } from '@/components/marketing/SilenceLog';
 import { TriageBoard } from '@/components/marketing/TriageBoard';
 import { PerimeterPanel } from '@/components/marketing/PerimeterPanel';
+import { PostTimePanel } from '@/components/marketing/PostTimePanel';
+import { ProvenancePanel } from '@/components/marketing/ProvenancePanel';
 import { WatchPanel } from '@/components/marketing/WatchPanel';
 
 /**
@@ -44,11 +46,16 @@ import { WatchPanel } from '@/components/marketing/WatchPanel';
  * a half-finished assessment is work, and losing it to a mis-click teaches an operator
  * to distrust the surface.
  *
- * THE TWO EXCEPTIONS ARE WATCH AND PERIMETER, and the reason is the same rule read the
- * other way: they hold no operator input, so there is no work to lose, and mounting them
- * eagerly would fire four network reads on every visit to the desk — including on the
- * environments where all four answer 404. Nothing is preserved by keeping a failed read
- * warm.
+ * THE THREE EXCEPTIONS ARE WATCH, PERIMETER AND MEASUREMENT, and the reason is the same
+ * rule read the other way: they hold no operator input, so there is no work to lose, and
+ * mounting them eagerly would fire five network reads on every visit to the desk —
+ * including on the environments where all five answer 404. Nothing is preserved by keeping
+ * a failed read warm.
+ *
+ * Measurement joined that group in this wave rather than being born in it: `DeskMeasurement`
+ * is a pure function of its props and always was, but `PostTimePanel` beneath it reads
+ * `GET /v1/marketing/post-time`, so leaving the pair mounted would have made the desk fetch
+ * a coverage figure nobody had asked to see.
  */
 
 type Tab = 'triage' | 'drafting' | 'silence' | 'precedent' | 'crisis' | 'watch' | 'perimeter' | 'measurement';
@@ -276,13 +283,24 @@ export function MarketingDesk() {
                   onDraft={() => void draft(current.id)}
                   onApprove={(d) => void approve(d)}
                 />
+                {/* WHO SENT THIS, before what to say back. It sits under the drafting room
+                    rather than on an audit screen because the ingest is forgeable: the mailbox
+                    has no sender check, so deciding whether to answer an item is inseparable
+                    from deciding whether the item is real. It is also the only surface that can
+                    corroborate one — the button is a keyless read of X's public oEmbed. */}
+                <ProvenancePanel replyId={current.id} />
                 <PrecedentPanel query={current.body} />
               </>
             )}
           </div>
 
           {/* ── THE OTHER FOUR ──────────────────────────────────────────────────── */}
-          <div className={tab === 'silence' ? '' : 'hidden'}><SilenceLog now={now} /></div>
+          <div className={tab === 'silence' ? '' : 'hidden'}>
+            {/* The queue is passed so the write form can name an item. It stays MOUNTED with
+                the other three because a half-typed rationale is work, and losing it to a
+                mis-click is how an operator learns to record silences nowhere. */}
+            <SilenceLog now={now} queue={queue ?? []} />
+          </div>
           <div className={tab === 'precedent' ? '' : 'hidden'}>
             <PrecedentPanel query={current?.body ?? ''} />
           </div>
@@ -300,9 +318,24 @@ export function MarketingDesk() {
               reads on every visit to the desk for panels nobody opened. */}
           {tab === 'watch' && <div><WatchPanel /></div>}
           {tab === 'perimeter' && <div><PerimeterPanel /></div>}
-          <div className={tab === 'measurement' ? '' : 'hidden'}>
-            <DeskMeasurement queue={queue ?? []} summary={summary} now={now} />
-          </div>
+          {/* MEASUREMENT JOINED THE CONDITIONALLY-RENDERED GROUP, and the reason is the
+              rule above read once more rather than an exception to it. `DeskMeasurement`
+              is a pure function of `queue`, `summary` and `now` — no state, no effect, no
+              operator input — so nothing is lost by unmounting it, and `PostTimePanel`
+              below it DOES read the network. Keeping the pair mounted would fire the
+              coverage read on every visit to the desk for a tab nobody opened, which is
+              precisely what the Watch and Perimeter comment above refuses to do. */}
+          {tab === 'measurement' && (
+            <div className="space-y-4">
+              <DeskMeasurement queue={queue ?? []} summary={summary} now={now} />
+              {/* The corroboration rate, and the only surface that reads
+                  `GET /v1/marketing/post-time` — a route whose own docblock recorded that
+                  no browser surface fetched it. It sits under Measurement because it is a
+                  figure about the DESK's own records, which is the only population this
+                  compartment holds a census of. */}
+              <PostTimePanel />
+            </div>
+          )}
         </>
       )}
     </div>

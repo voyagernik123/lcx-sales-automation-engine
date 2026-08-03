@@ -2,6 +2,7 @@ import type pg from 'pg';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { _resetAbuseRegisterMigrated } from '../abuseRegister.js';
 import {
+  EXTRACTION_IS_LEXICAL,
   _resetGateLedgerMigrated,
   extractNamedAssets,
   gateOutboundText,
@@ -65,6 +66,21 @@ function stub(opts: {
       if (/SELECT d\.member_id, d\.asset_symbol, d\.holds/.test(sql)) {
         return { rows: opts.holdingsRows ?? [], rowCount: (opts.holdingsRows ?? []).length };
       }
+      /*
+       * The NOT_TICKERS promotion probe. Answered from the SAME rows the two register
+       * loads are answered from, deliberately: a stub that could say "the desk has
+       * recorded GMT" while the embargo load returns nothing would let a test assert a
+       * promotion the real database could not produce.
+       */
+      if (/SELECT DISTINCT asset_symbol/.test(sql)) {
+        const wanted = new Set((params[0] as string[] | undefined) ?? []);
+        const symbols = [
+          ...(opts.embargoRows ?? []).map((r) => r.asset_symbol as string),
+          ...(opts.holdingsRows ?? []).map((r) => r.asset_symbol as string),
+        ];
+        const hit = [...new Set(symbols.filter((sym) => wanted.has(sym)))];
+        return { rows: hit.map((asset_symbol) => ({ asset_symbol })), rowCount: hit.length };
+      }
       if (/INSERT INTO marketing_outbound_gate_decision/.test(sql)) {
         inserts.push({ sql, params });
         return { rows: [], rowCount: 1 };
@@ -98,13 +114,18 @@ const embargo = (symbol: string, state: string): Row => ({
 });
 
 /**
- * The whole perimeter answering YES for one symbol: an in-date `clear` embargo row and an
- * in-date `declared_none`. Anything less refuses, which is the point of the perimeter —
- * so every "this is allowed" assertion below has to supply both facts first.
+ * The whole perimeter answering YES for EVERY named symbol: an in-date `clear` embargo row
+ * and an in-date `declared_none` for each. Anything less refuses, which is the point of the
+ * perimeter — so every "this is allowed" assertion below has to supply both facts first.
+ *
+ * IT TAKES A LIST so a fixture can supply the perimeter for a promoted symbol as well as a
+ * lexically extracted one — `recordedSymbolsAmong` promotes a suppressed word only when the
+ * embargo or holdings register names it, and a test asserting that has to put the row in both
+ * places the loaders read.
  */
-const cleared = (symbol: string) => ({
-  embargoRows: [embargo(symbol, 'clear')],
-  holdingsRows: [declaredNone(symbol)],
+const cleared = (...symbols: readonly string[]) => ({
+  embargoRows: symbols.map((s) => embargo(s, 'clear')),
+  holdingsRows: symbols.map((s) => declaredNone(s)),
 });
 
 const gate = (text: string, over: Partial<Parameters<typeof gateOutboundText>[1]> = {}) => ({
@@ -120,6 +141,121 @@ const gate = (text: string, over: Partial<Parameters<typeof gateOutboundText>[1]
 beforeEach(() => {
   _resetAbuseRegisterMigrated();
   _resetGateLedgerMigrated();
+});
+
+describe('the house token cannot hide behind the missing $ sigil', () => {
+  /*
+   * `NOT_TICKERS` contains `'LCX'`, and before the promotion that made the bare form a
+   * complete bypass: `LCX deposits are open.` extracted NOTHING, so
+   * `loadEmbargoRegister(pool, [])` returned nothing and Art 90 and Art 91(3)(c) never ran —
+   * on the one symbol this desk is most likely to hold inside information about. `$LCX` was
+   * caught, so the entire evasion was deleting one character.
+   *
+   * The entry stays, because extracting `LCX` unconditionally refuses every pre-cleared
+   * holding statement in `crisis.ts` against a register that is `not_attested` by design. What
+   * changed is that the desk's own record now overrides the word list.
+   */
+  it('promotes a bare LCX and refuses it when the desk has recorded an embargo', async () => {
+    const { pool } = stub({
+      embargoRows: [embargo('LCX', 'mnpi_pending')],
+      holdingsRows: [declaredNone('LCX')],
+    });
+    const v = await gateOutboundText(pool, gate('LCX deposits are open.'));
+    expect(v.assetsExtracted).toContain('LCX');
+    expect(v.refusals.map((r) => r.code)).toContain('ART_90_ASSET_UNDER_EMBARGO');
+    expect(v.allowed).toBe(false);
+  });
+
+  it('answers the bare form exactly as it answers the sigil form', async () => {
+    // The two spellings differed by a whole gate. On a recorded symbol they must not differ
+    // at all — that equality is the finding, restated as an assertion.
+    const rows = { embargoRows: [embargo('LCX', 'mnpi_pending')], holdingsRows: [declaredNone('LCX')] };
+    const bare = await gateOutboundText(stub(rows).pool, gate('LCX deposits are open.'));
+    const sigil = await gateOutboundText(stub(rows).pool, gate('$LCX deposits are open.'));
+    expect(bare.assetsExtracted).toEqual(sigil.assetsExtracted);
+    expect(bare.refusals.map((r) => r.code)).toEqual(sigil.refusals.map((r) => r.code));
+    expect(bare.allowed).toBe(sigil.allowed);
+  });
+
+  it('leaves the bare form unextracted when no row names it, and says so in the caveat', () => {
+    // THE RESIDUAL LIMIT, asserted rather than described. An embargo the desk has not
+    // recorded is not detected on a suppressed word. `EXTRACTION_IS_LEXICAL` states it, and
+    // this pins that the statement and the behaviour agree.
+    expect(extractNamedAssets('LCX is a regulated European exchange.')).toEqual([]);
+    expect(extractNamedAssets('$LCX is a regulated European exchange.')).toEqual(['LCX']);
+    expect(EXTRACTION_IS_LEXICAL).toContain('It can hide one the desk has not.');
+  });
+
+  it('still blocks a STANCE about the house token, which is the compensating control', async () => {
+    // With no symbol extracted, `title_vi.directional_with_no_named_asset` fires at error
+    // severity. So the suppression cannot be used to clear an opinion — only a factual line.
+    const { pool } = stub(cleared('BTC'));
+    const v = await gateOutboundText(pool, gate('We are very bullish on LCX right now.'));
+    expect(v.assetsExtracted).toEqual([]);
+    expect(v.blockingViolations.map((x) => x.rule))
+      .toContain('title_vi.directional_with_no_named_asset');
+    expect(v.allowed).toBe(false);
+  });
+});
+
+describe('the not-a-ticker presumption is checked against the register, not trusted', () => {
+  /*
+   * The list is a presumption and a presumption can be wrong — it was wrong five times
+   * (`LCX`, `GMT`, `ATH`, `NOW`, `CAN` are all live traded symbols). `recordedSymbolsAmong` is
+   * what makes a wrong entry a delay instead of a hole.
+   */
+  it('promotes a suppressed word the desk HAS recorded, and refuses on it', async () => {
+    // 'AMA' is on the presumption list as "ask me anything". If the desk has recorded it as
+    // an embargoed symbol, the desk's own record wins over the word list.
+    const { pool } = stub({
+      embargoRows: [embargo('AMA', 'mnpi_pending')],
+      holdingsRows: [declaredNone('AMA')],
+    });
+    const v = await gateOutboundText(pool, gate('Join our AMA later today.'));
+    expect(v.assetsExtracted).toContain('AMA');
+    expect(v.refusals.map((r) => r.code)).toContain('ART_90_ASSET_UNDER_EMBARGO');
+    expect(v.allowed).toBe(false);
+  });
+
+  it('leaves a suppressed word alone when no row anywhere names it', async () => {
+    // The other half, and the reason this is not just "delete the list": a word with no row
+    // is the case where the lookup has nothing to say, so promoting it would add a refusal
+    // about the English language. `extractionCaveat` states the limit on every surface.
+    const { pool } = stub(cleared('BTC'));
+    const v = await gateOutboundText(pool, gate('BTC deposits are processing normally again. Our AMA is later.'));
+    expect(v.assetsExtracted).toContain('BTC');
+    expect(v.assetsExtracted).not.toContain('AMA');
+    expect(v.assetsExtracted).not.toContain('OUR');
+    expect(v.allowed).toBe(true);
+  });
+
+  it('refuses the text when the promotion probe itself fails', async () => {
+    // An unavailable check is not a passed check. Without the probe inside the try, a
+    // throwing query would be a 500 that a caller reads as "retry later".
+    const pool = {
+      query: async (sql: string) => {
+        if (/to_regclass/.test(sql)) return { rows: [{ ok: true }], rowCount: 1 };
+        if (/SELECT DISTINCT asset_symbol/.test(sql)) throw new Error('connection reset');
+        return { rows: [], rowCount: 0 };
+      },
+    } as unknown as pg.Pool;
+    const v = await gateOutboundText(pool, gate('Our AMA is later today.'));
+    expect(v.gateError).toBe('connection reset');
+    expect(v.disposition).toBe('refused');
+    expect(v.allowed).toBe(false);
+    // And it still reports what it believed the text named at the moment it broke.
+    expect(v.assetsExtracted).toEqual([]);
+  });
+
+  it('states the one-character limit in the caveat every surface renders', () => {
+    // The bare form needs two characters, because every standalone capital in prose would
+    // otherwise be looked up. 0060 admits a one-character symbol, so this is a real limit
+    // and it is disclosed rather than left for an operator to discover.
+    expect(extractNamedAssets('We paused X deposits.')).toEqual([]);
+    expect(extractNamedAssets('We paused $X deposits.')).toEqual(['X']);
+    expect(EXTRACTION_IS_LEXICAL).toContain('one-character symbol');
+    expect(EXTRACTION_IS_LEXICAL).toContain('$X');
+  });
 });
 
 describe('the holdings join resolves the real author', () => {

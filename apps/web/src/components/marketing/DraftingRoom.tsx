@@ -4,12 +4,17 @@ import { Button, SectionLabel } from '@/components/ui';
 import { AiProse } from '@/components/ai/AiProse';
 import type { MarketingDraft, MarketingReply } from '@/lib/api/marketing';
 import { Absent, Gate, NoPostingPath, Refused } from './DeskAtoms';
-import { contentHash, recordHandoff, reviewText, type HandoffView, type ReviewVerdict } from './deskApi';
+import { contentHash, recordHandoff, type HandoffView } from './deskApi';
+import {
+  AdoptionReadingNote, DeclarationsForm, EngineStanding, RegimeReadingNote,
+  ReviewVerdictNote, UNANSWERED, useEngineVerdicts, type Declarations,
+} from './EngineVerdicts';
 import { PRECHECK_RULESET_VERSION, composeGates, previewRefusals } from './preChecks';
 import {
   ENGAGEMENT_VERBS,
   MARKETING_RULES_DISCLOSURE,
   VERB_ADOPTION,
+  VERB_INHERITS_TARGET_RISK,
   VERB_PRODUCES_OWN_TEXT,
   X_POST_MAX_CHARS,
   type EngagementVerb,
@@ -35,9 +40,16 @@ import {
  *     does not reach the clipboard. Nothing leaves without a record.
  *  3. THE VERB WAS INVISIBLE. A like and a reply were the same weight. The verb is the
  *     act: a like produces no text of ours and still adopts everything the target said.
- *  4. THE GATES WERE ONE BOOLEAN. Claim safety, market abuse and regime are three
- *     different questions with three different answers, and a gate nobody answered is
- *     shown as unanswered rather than as clean.
+ *  4. THE GATES WERE ONE BOOLEAN. Claim safety, market abuse, regime, length and what the
+ *     ACT adopts are five different questions with five different answers, and a gate
+ *     nobody answered is shown as unanswered rather than as clean.
+ *  5. AND THE ENGINE CALL POINTED AT NOTHING. This room asked `POST /v1/marketing/review`,
+ *     which no router has ever declared, so all four gates rendered `absent` on every
+ *     environment — correct behaviour over a wrong path, which is worse than a visible
+ *     failure because it looks like caution. It now asks the two routes that exist:
+ *     `POST /regime` for the words and their Art 7 arithmetic, `POST /adoption` for the
+ *     verb. The two axes still unmounted are named individually rather than covered by one
+ *     sentence about an endpoint that never existed.
  *
  * HONEST LIMIT OF THE CLIPBOARD GATE, stated because a control that overclaims is
  * worse than none: an operator can select the text with a mouse and copy it, and no
@@ -45,8 +57,6 @@ import {
  * the easy one and the unrecorded path leaves a hole in the record — a published post
  * with no handoff row is visible as such, which is the whole point.
  */
-
-const REVIEW_DEBOUNCE_MS = 600;
 
 export function DraftingRoom({ reply, draft, onDraft, onApprove, busy }: {
   reply: MarketingReply;
@@ -58,9 +68,7 @@ export function DraftingRoom({ reply, draft, onDraft, onApprove, busy }: {
   const [verb, setVerb] = useState<EngagementVerb>('reply');
   const [promotes, setPromotes] = useState(false);
   const [text, setText] = useState('');
-  const [engine, setEngine] = useState<ReviewVerdict | null>(null);
-  const [engineChecked, setEngineChecked] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
+  const [declarations, setDeclarations] = useState<Declarations>(UNANSWERED);
   const [handoff, setHandoff] = useState<HandoffView | null>(null);
   const [handoffAbsent, setHandoffAbsent] = useState(false);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
@@ -78,28 +86,57 @@ export function DraftingRoom({ reply, draft, onDraft, onApprove, busy }: {
     [text, verb, promotes],
   );
 
-  /* THE ENGINE, DEBOUNCED. Not on a keystroke: this is a round trip, and the pre-checks
-     are what keep the surface responsive while it is in flight. */
-  useEffect(() => {
-    if (text.trim() === '') { setEngine(null); setEngineChecked(false); return; }
-    let live = true;
-    setReviewing(true);
-    const t = setTimeout(() => {
-      void reviewText({ text, verb, draftId: draft?.id, replyId: reply.id })
-        .then((v) => { if (live) { setEngine(v); setEngineChecked(true); } })
-        .catch(() => { if (live) { setEngine(null); setEngineChecked(true); } })
-        .finally(() => { if (live) setReviewing(false); });
-    }, REVIEW_DEBOUNCE_MS);
-    return () => { live = false; clearTimeout(t); };
-  }, [text, verb, draft?.id, reply.id]);
+  /*
+   * THE TWO ENGINES, DEBOUNCED — and the reason this replaced one call.
+   *
+   * It used to ask `POST /v1/marketing/review`, which NO ROUTER DECLARES. Every gate
+   * therefore rendered `absent` on every environment: the honest outcome of the wrong path,
+   * and the reason `Gate`'s `absent` source exists, but it meant nothing on this screen had
+   * ever been checked by a rulebook. `useEngineVerdicts` asks the two routes that ARE mounted
+   * and contracted — `POST /regime` for the words and `POST /adoption` for the verb — and
+   * asks `/triage/assess` nothing, because triage is the board's decision and answering it
+   * here is how a triage verdict gets shown as a wording verdict.
+   *
+   * `targetText` is the inbound item's own body. It is not decoration on the request: the
+   * verbs that inherit their target's risk are judged against what the target SAID, and a
+   * `null` there is a real answer the engine reports as `adoptsUnreadText`.
+   */
+  const engines = useEngineVerdicts({
+    replyId: reply.id,
+    verb,
+    text,
+    targetText: reply.body,
+    declarations,
+    verbHasTarget: VERB_INHERITS_TARGET_RISK[verb],
+  });
 
-  const gates: GateReading[] = useMemo(() => composeGates({
-    pre,
-    engine,
-    engineAbsentBecause: engineChecked
-      ? 'The compartment\'s review engine is not deployed on this environment.'
-      : 'The review engine has not answered for this text yet.',
-  }), [pre, engine, engineChecked]);
+  /*
+   * WHY EACH AXIS HAS NO ANSWER, PER AXIS.
+   *
+   * One sentence for all four was accurate while one endpoint was missing. Two of the five
+   * are now answered by live engines, so a shared sentence would tell an operator that a
+   * verdict they DID get had not been reached — and, worse, would stop naming which of the
+   * two genuinely dead engines is dead.
+   */
+  const absentBecause = useMemo(() => {
+    const notAsked = engines.blockedBy.length > 0
+      ? 'The engines have not been asked yet, because a declaration above is unanswered.'
+      : engines.settled
+        ? ''
+        : 'The engines have not answered for this text yet.';
+    return {
+      claim_safety: `${notAsked} Nothing here has been checked for price predictions, return promises, solvency assertions, invented licences or any other regulated promise: POST /v1/marketing/claim-safety is not mounted on any router, and the engine behind it (packages/shared/src/marketing/claimSafety.ts checkClaimSafety) has no route caller anywhere in the API. This axis is unexamined, and it is the axis about regulated promises.`.trim(),
+      market_abuse: `${notAsked} POST /v1/marketing/abuse-check is likewise unmounted, and the embargo register and holdings declaration are joins against state rather than readings of the text. Art 90 and Art 91(3)(c) are invisible to a wording review, so this axis is unexamined rather than clear.`.trim(),
+      regime: `${notAsked} Which law applies to this item, and therefore which mandatory elements it needs, has not been classified.`.trim(),
+      length_budget: `${notAsked} The Art 7 arithmetic weighs characters the way X does, against the surface's real ceiling and over a mandated block this screen never sees. Without it, only this screen's own count against ${X_POST_MAX_CHARS} has run, and that is not the same measurement.`.trim(),
+      adoption: `${notAsked} What a ${verb} would adopt from the target has not been assessed, and "we only retweeted it" is not an answer this screen can check on its own.`.trim(),
+    };
+  }, [engines.blockedBy.length, engines.settled, verb]);
+
+  const gates: GateReading[] = useMemo(
+    () => composeGates({ pre, engine: engines.verdicts, absentBecause }),
+    [pre, engines.verdicts, absentBecause],
+  );
 
   const blocking = gates.flatMap((g) => g.refusals);
   const anyUnchecked = gates.some((g) => g.source === 'absent');
@@ -250,7 +287,7 @@ export function DraftingRoom({ reply, draft, onDraft, onApprove, busy }: {
               <span className={text.trim().length > X_POST_MAX_CHARS ? 'text-status-blocked' : undefined}>
                 {text.trim().length} / {X_POST_MAX_CHARS}
               </span>
-              {reviewing && <span className="inline-flex items-center gap-1"><Loader2 size={9} className="animate-spin motion-essential" /> asking the engine</span>}
+              {engines.inFlight && <span className="inline-flex items-center gap-1"><Loader2 size={9} className="animate-spin motion-essential" /> asking the engines</span>}
             </p>
             {!VERB_PRODUCES_OWN_TEXT[verb] && (
               <p className="mt-1 border-l-2 border-line px-2 py-1 text-[10px] leading-snug text-grey">
@@ -271,13 +308,29 @@ export function DraftingRoom({ reply, draft, onDraft, onApprove, busy }: {
             )}
           </div>
 
-          {/* ── THE THREE VERDICTS, BEFORE ANY ACTION IS REACHABLE. ───────────── */}
+          {/* ── WHAT THE OPERATOR DECLARES, BEFORE ANY ENGINE IS ASKED. ───────── */}
+          <div className="border-t border-line pt-2">
+            <DeclarationsForm
+              id={reply.id}
+              value={declarations}
+              onChange={setDeclarations}
+              verbHasTarget={VERB_INHERITS_TARGET_RISK[verb]}
+            />
+          </div>
+
+          {/* ── THE FIVE VERDICTS, BEFORE ANY ACTION IS REACHABLE. ───────────── */}
           <div className="space-y-1.5 border-t border-line pt-2">
             <SectionLabel as="h3">Before anyone acts</SectionLabel>
             {/* The limit of the whole apparatus, printed on the surface that renders its
                 verdicts — the same device GPS uses for its disclosure constants. A clear
                 verdict is a statement about the rulebook and not about the draft. */}
             <p className="text-[10px] leading-snug text-grey">{MARKETING_RULES_DISCLOSURE}</p>
+            {/* The read's own standing FIRST: not asked, in flight, absent, or failed. A
+                gate row cannot carry that, because it is a fact about the whole read. */}
+            <EngineStanding reads={engines} />
+            {engines.review !== null && <ReviewVerdictNote v={engines.review} />}
+            {engines.regime !== null && <RegimeReadingNote r={engines.regime} />}
+            {engines.adoption !== null && <AdoptionReadingNote a={engines.adoption} />}
             {gates.map((g) => <Gate key={g.gate} reading={g} />)}
           </div>
 

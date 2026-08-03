@@ -43,13 +43,20 @@
 
 export type {
   ActorId,
+  Art7Role,
   AssetSymbol,
   Clearance,
+  ConsiderationKind,
+  ContentSurface,
+  ItemPurpose,
+  SpeakerCapacity,
+  TargetVerificationState,
   ClearanceRole,
   Confidence,
   ContentHash,
   DeskMode,
   EngagementVerb,
+  Figure,
   FirstIndicator,
   Graded,
   Handle,
@@ -92,8 +99,12 @@ export {
   ATTRIBUTION_MIN_CONCURRING,
   CLEARANCE_HEADLINE_TEST_QUESTION,
   CONFIDENCE_DEFINITION,
+  CONSIDERATION_DUTY,
   CRISIS_BLOCKING_CLEARANCES,
   ENGAGEMENT_VERBS,
+  ITEM_PURPOSES,
+  SURFACE_APPROVAL_REGIME,
+  SURFACE_CLASS,
   FIRST_INDICATOR_QUESTION,
   INSTRUMENTS,
   MARKETING_INBOUND_RETENTION_DAYS,
@@ -167,6 +178,38 @@ export type {
   RegisterPresence,
 } from '@lcx/shared';
 
+/* The three verdicts the drafting room asks for. `POST /regime` and `POST /adoption` are in
+ * `contracts/desk.ts` (`routes/marketingDesk.ts:892`, `:1485`); `POST /review`, which this
+ * surface called for weeks against no router at all, is in `contracts/gates.ts` and is now
+ * mounted at `routes/marketingGates.ts:548`.
+ *
+ * ── THE ONE BARREL LINE THESE NAMES WAIT ON, recorded here and not discovered in CI ──
+ * `MarketingViolation`, `ReviewVerdict`, `ClaimSafetyVerdict`, `ReplyProvenanceRecord`,
+ * `CorroborationResult`, `SilenceLog`, `SilenceLogEntry`, `ProcessMetrics` and
+ * `MarketingLoopReport` resolve only once `packages/shared/src/marketing/index.ts` carries
+ * `export * from './contracts/gates.js'` beside the three it already has. That barrel is NOT
+ * this lane's file — five agents editing one barrel is how a merge eats a declaration — and
+ * `routes/marketingGates.ts:173` records the same dependency from the API side, where the
+ * same names are equally unresolved until it lands. A TS2305 on any name below is that line
+ * and nothing in this compartment. */
+export type {
+  AdoptionReading,
+  Art7FitStatement,
+  ClaimSafetyVerdict,
+  CorroborationResult,
+  CorroborationState,
+  MarketingLoopReport,
+  MarketingViolation,
+  ProcessMetrics,
+  ProvenanceGrade,
+  RegimeReading,
+  ReplyProvenanceRecord,
+  ReviewVerdict,
+  SilenceLog,
+  SilenceLogEntry,
+  SilenceLogMeta,
+} from '@lcx/shared';
+
 export type {
   BundleCompletenessLine,
   BundleRecordEntry,
@@ -177,6 +220,8 @@ export type {
   ExportBundle,
   MarketingRecordRow,
   MarketingWireRefusal,
+  PostTimeCoverageCounts,
+  PostTimeCoverageReport,
   RetentionPosture,
   SubjectAccessResponse,
   WatchDigest,
@@ -210,7 +255,14 @@ import type { Refusal } from '@lcx/shared';
 export type GateSource = 'engine' | 'preview' | 'absent';
 
 export interface GateReading {
-  readonly gate: 'claim_safety' | 'market_abuse' | 'regime' | 'length_budget';
+  /**
+   * `adoption` joined the four in the last wave, when the drafting room stopped calling the
+   * unmounted `POST /review` and started calling `POST /adoption` — which is a verdict about
+   * the VERB rather than about the words. Scoring "what a repost would adopt" on the same
+   * row as "is this sentence fair and clear" is how "we only retweeted it" became a defence
+   * nobody could check.
+   */
+  readonly gate: 'claim_safety' | 'market_abuse' | 'regime' | 'length_budget' | 'adoption';
   readonly source: GateSource;
   readonly refusals: readonly Refusal[];
   /** Why the gate is not authoritative, when it is not. Printed verbatim. */

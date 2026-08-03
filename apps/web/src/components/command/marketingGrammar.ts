@@ -179,7 +179,10 @@ export const MARKETING_NOUNS: readonly MarketingNounDef[] = [
     kind: 'claim', label: 'Marketing claim', plural: 'Marketing claims', code: 'mc',
     destination: 'go-marketing-desk', deepLink: { tab: 'drafting' },
     subjectType: null,
-    reach: { via: 'surface_only', owedFn: 'checkClaimSafety' },
+    reach: {
+      via: 'surface_route', fn: 'checkClaimSafety',
+      notEnumerable: 'a verdict on one piece of text, not a list of claims',
+    },
     aliases: ['claim safety', 'refusal'],
   },
   {

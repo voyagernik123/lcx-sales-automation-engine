@@ -36,6 +36,8 @@ import { reviewRoutes } from './routes/reviews.js';
 import { actionRoutes } from './routes/actions.js';
 import { monitorRoutes } from './routes/monitors.js';
 import { marketingRoutes } from './routes/marketing.js';
+import { MARKETING_READ_SHAPED_POSTS } from './routes/marketingDesk.js';
+import { MARKETING_GATES_READ_SHAPED_POSTS } from './routes/marketingGates.js';
 import { scenarioRoutes, pirRoutes } from './routes/planning.js';
 import { wbrRoutes } from './routes/wbr.js';
 import { decisionRoutes } from './routes/decisions.js';
@@ -76,12 +78,29 @@ const READ_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  *
  * ALSO DELIBERATELY ABSENT: everything under /v1/gps. No exemption may ever match
  * a GPS path; `__tests__/workspaceWriteGate.test.ts` fails if one does.
+ *
+ * ── THE FOUR MARKETING ENTRIES ARE DECLARED IN THEIR OWN ROUTERS ─────────────
+ * `MARKETING_READ_SHAPED_POSTS` (`routes/marketingDesk.ts`) carries `/regime`,
+ * `/triage/assess` and `/adoption`; `MARKETING_GATES_READ_SHAPED_POSTS`
+ * (`routes/marketingGates.ts`) carries `/review`. They are spread rather than
+ * restated because the reading that justifies an exemption — "this handler calls
+ * `to_regclass` and one SELECT and nothing else" — belongs beside the handler,
+ * where a later edit to it is in the same diff as the claim. Restated here, the
+ * exemption survives the handler growing an INSERT.
+ *
+ * THE ANCHORED-PATTERN RULE STILL APPLIES TO THEM: both constants are
+ * `/^\/v1\/marketing\/…$/`, `app.ts` matches `c.req.path`, and
+ * `routes/__tests__/marketingCapabilityTier.test.ts` asserts that no marketing
+ * handler on either list contains a write marker. Four exemptions, each of which
+ * was read; the default for the other thirty-one marketing routes is unchanged.
  */
 const READ_SHAPED_POSTS: readonly RegExp[] = [
   /^\/v1\/command\/ask$/,
   /^\/v1\/distribution\/ask$/,
   /^\/v1\/analytics\/reports\/run$/,
   /^\/v1\/analytics\/reports\/[^/]+\/run$/,
+  ...MARKETING_READ_SHAPED_POSTS,
+  ...MARKETING_GATES_READ_SHAPED_POSTS,
 ];
 
 /**

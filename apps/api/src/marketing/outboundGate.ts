@@ -93,21 +93,70 @@ import {
   type Refusal,
   type SafetyChannel,
 } from '@lcx/shared';
-import { loadEmbargoRegister, loadHoldingsRegister } from './abuseRegister.js';
+import { loadEmbargoRegister, loadHoldingsRegister, recordedSymbolsAmong } from './abuseRegister.js';
 
 /** Said out loud on any surface that shows a clear verdict. */
 export const EXTRACTION_IS_LEXICAL =
   'Asset symbols are matched lexically from the text. An asset named in prose, in lower '
   + 'case, or by project name rather than ticker is NOT detected, so a clear verdict on '
-  + 'the market-abuse limbs means "clear for the symbols listed", never "clear".';
+  + 'the market-abuse limbs means "clear for the symbols listed", never "clear". A '
+  + 'one-character symbol written without the $ sigil is also not detected: the bare form '
+  + 'requires two characters, because every standalone capital in ordinary prose would '
+  + 'otherwise be looked up. Write $X to have a one-character symbol checked. Common words '
+  + 'that are also tickers — LCX, GMT, ATH, NOW, CAN — are not extracted from their bare '
+  + 'form on their own, but they ARE promoted and checked whenever this desk holds an '
+  + 'embargo or holdings row naming them, so the presumption cannot hide an asset the desk '
+  + 'has recorded. It can hide one the desk has not.';
 
 /**
- * Tokens that look like tickers and are not.
+ * Tokens PRESUMED not to be tickers when written bare.
  *
- * Kept SHORT on purpose. Every entry here is a token the gate will stop checking against
- * the embargo register, so a wrong entry is a hole rather than noise — the cost of a
- * false positive is one lookup that returns `unknown`, and the cost of a false negative
- * is an undetected embargoed asset. Only words that cannot be a listed symbol qualify.
+ * ══ THIS LIST WAS FAIL-OPEN, AND `LCX` WAS THE WORST ENTRY IN IT ══
+ * The rule was "only words that cannot be a listed symbol qualify", and five entries broke
+ * it outright with real, currently-traded tokens: `LCX` (the house token, listed on LCX's own
+ * exchange), `GMT` (STEPN), `ATH` (Aethir), `NOW` (ChangeNOW), `CAN` (CanYaCoin). The worst
+ * was the first. `LCX deposits are open.` extracted `[]`, so `loadEmbargoRegister(pool, [])`
+ * returned nothing and BOTH high-consequence limbs — Art 90 embargo and Art 91(3)(c)
+ * holdings — never ran, on every gated route. `$LCX` was caught, so the whole evasion was
+ * deleting one character, on the one symbol this desk is most likely to hold inside
+ * information about.
+ *
+ * ══ THE FIX IS THE PROMOTION, NOT A SHORTER LIST — AND HERE IS THE WORKING ══
+ * Deleting the five entries was tried first and it is the wrong fix. `loadEmbargoRegister`
+ * reports `completeness: { kind: 'not_attested' }` and always will until the desk records an
+ * attestation of its own, so absence from the register resolves to `unknown`, which REFUSES.
+ * Extracting the bare word `LCX` therefore refuses every draft, every crisis statement and
+ * every pre-cleared holding statement in `crisis.ts` — whose reviewed text says "LCX" by
+ * design — until an approver keeps an in-date `clear` row for it. That is the 02:00 failure
+ * this compartment has already had once, recorded in `marketingMemory.test.ts`: when the gate
+ * refuses everything, humans stop using the gate, and the real risk goes UP.
+ *
+ * So the entries stay, and the list stops being the last word. `extractSuppressedCandidates`
+ * hands back exactly what this filter removed, and `gateOutboundText` asks the registers
+ * whether the desk has ACTUALLY RECORDED any of them (`recordedSymbolsAmong`). Anything it
+ * has is promoted into `assets` and checked like any other symbol. A wrong entry is now a
+ * delay, not a hole:
+ *
+ *   · LCX under embargo, recorded  → promoted → `ART_90_ASSET_UNDER_EMBARGO`. The exploit is
+ *     closed on the case that carries the consequence, in both the bare and `$` forms.
+ *   · a declared holding in LCX    → promoted → Art 91(3)(c) runs against the real author.
+ *   · no row anywhere names it     → not promoted, and the register had nothing to say.
+ *
+ * ══ WHAT IS STILL NOT COVERED, STATED RATHER THAN IMPLIED ══
+ * An embargo on a suppressed word that the desk has NOT recorded is not detected. That is a
+ * weaker guarantee than the one every other symbol gets, where absence from an unattested
+ * register refuses. Two things bound it. The register is the desk's own record, so "embargoed
+ * and unrecorded" is a failure of the perimeter rather than of this filter — and it is the
+ * failure `POST /perimeter` and the attestation work exist to close. And a STANCE about a
+ * suppressed word cannot be cleared regardless: with no symbol extracted,
+ * `title_vi.directional_with_no_named_asset` fires at `error` severity and blocks, which is
+ * asserted behaviourally in `outboundGateRuns.test.ts` rather than trusted here.
+ *
+ * `EXTRACTION_IS_LEXICAL` says all of this on every surface that shows a verdict.
+ *
+ * ADDING AN ENTRY IS STILL A DECISION, not a way to quiet noise: the promotion covers
+ * recorded symbols and nothing else. The `$` form is never filtered, here or anywhere — the
+ * author typed the sigil.
  */
 const NOT_TICKERS = new Set([
   'LCX', 'AND', 'THE', 'FOR', 'ARE', 'NOT', 'YOU', 'ALL', 'CAN', 'NEW', 'NOW', 'OUR',
@@ -171,6 +220,28 @@ export function extractNamedAssets(text: string): readonly string[] {
   }
   for (const m of folded.matchAll(/\b([A-Z][A-Z0-9]{1,19})\b/g)) {
     if (!NOT_TICKERS.has(m[1])) found.add(m[1]);
+  }
+  return [...found];
+}
+
+/**
+ * The bare tokens `NOT_TICKERS` REMOVED — the presumption's own working, handed back so it
+ * can be checked instead of trusted.
+ *
+ * `gateOutboundText` passes these to `recordedSymbolsAmong` and promotes any that the desk
+ * has actually recorded in the embargo or holdings registers. That inverts the failure mode
+ * of a suppression list: a wrong entry used to mean an asset was never looked up, and now
+ * means an asset is looked up one query later. A word with no row anywhere is still not
+ * looked up, which is the case where the lookup has nothing to say.
+ *
+ * SIGIL FORMS ARE NOT INCLUDED. `$AND` is already in `extractNamedAssets` — it was never
+ * filtered — so returning it here would double-count it in `assetsExtracted`.
+ */
+export function extractSuppressedCandidates(text: string): readonly string[] {
+  const found = new Set<string>();
+  const folded = foldForExtraction(text);
+  for (const m of folded.matchAll(/\b([A-Z][A-Z0-9]{1,19})\b/g)) {
+    if (NOT_TICKERS.has(m[1])) found.add(m[1]);
   }
   return [...found];
 }
@@ -306,10 +377,33 @@ export async function gateOutboundText(
   pool: Pool,
   req: OutboundGateRequest,
 ): Promise<OutboundGateVerdict> {
-  const assets = extractNamedAssets(req.text);
+  const lexical = extractNamedAssets(req.text);
   const now = req.now ?? new Date().toISOString();
+  /*
+   * `assets` is `let` for exactly one reason: `gateFailure` in the catch below must report
+   * whatever the gate believed the text named at the moment it broke, and the promotion step
+   * happens inside the try. Assigning once, before the registers are read, keeps
+   * `assetsExtracted` honest on both paths.
+   */
+  let assets: readonly string[] = lexical;
 
   try {
+    /*
+     * THE PRESUMPTION IS CHECKED BEFORE IT IS RELIED ON.
+     *
+     * `NOT_TICKERS` removed some uppercase words on the presumption that they are English.
+     * That presumption held the house token for a whole phase, so it no longer gets the last
+     * word: any suppressed word the desk has ACTUALLY recorded in either register is promoted
+     * back into the lookup. One extra query, and only when the text contains a suppressed
+     * ALL-CAPS token at all — lower-case prose never reaches the bare-form matcher.
+     *
+     * BEFORE the register loads, not after, because the loads are scoped to `assets` and a
+     * promotion discovered afterwards would need a second round trip to be of any use.
+     */
+    const suppressed = extractSuppressedCandidates(req.text);
+    const promoted = await recordedSymbolsAmong(pool, suppressed);
+    if (promoted.length > 0) assets = [...new Set([...lexical, ...promoted])];
+
     // Scoped loads: only the symbols this text names, and only this actor's holdings.
     // A full-register read would pull every embargoed symbol into the request for a
     // draft that names one of them.

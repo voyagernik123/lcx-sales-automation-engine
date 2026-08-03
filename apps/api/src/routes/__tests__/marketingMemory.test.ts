@@ -581,6 +581,16 @@ async function compose(
     `/crisis/statements/${key}/instance`,
     {
       incidentId,
+      /*
+       * "LCX" HERE IS THE COMPANY, AND THE GATE CANNOT TELL. `outboundGate.ts:NOT_TICKERS`
+       * keeps `LCX` off bare-form extraction for exactly this reason: the pre-cleared holding
+       * statements in `crisis.ts` say "LCX" by design, and extracting it unconditionally
+       * refuses all of them against a register that is `not_attested` by construction. What
+       * closes the bypass instead is `recordedSymbolsAmong` — if the desk has RECORDED an
+       * embargo or a holding on the LCX token, the bare word is promoted and this composition
+       * refuses. That behaviour is asserted in `marketing/__tests__/outboundGateRuns.test.ts`,
+       * where the register can be stubbed; this stub pool has no abuse register at all.
+       */
       known: ['We are aware of reports about LCX withdrawals and we are looking at it now.'],
       notKnown: ['We do not yet know the cause.'],
       nextStepAction: 'Our engineers are reviewing the withdrawal queue.',
