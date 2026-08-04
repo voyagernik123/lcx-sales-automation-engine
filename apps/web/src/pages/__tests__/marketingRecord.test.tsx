@@ -180,10 +180,26 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-/** Every test waits on this: the bundle is assembled across several awaits. */
-async function mountAndSettle() {
+/**
+ * Every test waits on this: the bundle is assembled across several awaits.
+ *
+ * `alsoWaitFor` is NOT optional politeness — it is the fix for a bug this file has
+ * now produced TWICE in CI (run #44 and run #30894215553, both 2026-08-03/04).
+ * `coverage-rows` is populated from different state than the retention tables, the
+ * bundle rows and the tallies strip, so a page that has rendered it has NOT
+ * necessarily rendered them. Locally every section lands in the same tick, so
+ * waiting on the first appears to wait for the rest; under CI's slower scheduler
+ * it does not, and the assertion reads an empty state.
+ *
+ * Pass the testid the assertion is ABOUT. Raising a timeout would hide this; the
+ * barrier was simply pointed at the wrong element.
+ */
+async function mountAndSettle(...alsoWaitFor: string[]) {
   const r = render(<MarketingRecord />);
   await waitFor(() => expect(screen.getByTestId('coverage-rows')).toBeInTheDocument());
+  for (const id of alsoWaitFor) {
+    await waitFor(() => expect(screen.getByTestId(id)).toBeInTheDocument());
+  }
   return r;
 }
 
@@ -239,7 +255,7 @@ describe('the completeness declaration', () => {
   });
 
   it('states that no item in the record was written by a human', async () => {
-    await mountAndSettle();
+    await mountAndSettle('authorship-unreachable');
     expect(screen.getByTestId('authorship-unreachable').textContent)
       .toMatch(/no compose box and no edit box/i);
   });
@@ -259,7 +275,7 @@ describe('the shape of the artefact', () => {
   });
 
   it('uses no <header> and no <footer>, because PrintStyles hides both in print', async () => {
-    const { container } = await mountAndSettle();
+    const { container } = await mountAndSettle('record-asof', 'record-does-not-prove');
     // Not a style preference: `components/report/PrintStyles.tsx` emits
     // `header, aside, footer { display: none !important }` inside `@media print`,
     // so the as-of stamp and the "what this does not prove" list would be deleted
@@ -273,7 +289,7 @@ describe('the shape of the artefact', () => {
   });
 
   it('mounts the print rule that un-hides collapsed evidence', async () => {
-    await mountAndSettle();
+    await mountAndSettle('record-print-styles');
     const css = screen.getByTestId('record-print-styles').textContent ?? '';
     expect(css).toContain('.record-evidence-closed { display: none; }');
     expect(css).toMatch(/@media print \{[\s\S]*\.record-evidence-closed \{ display: table-row !important; \}/);
@@ -298,7 +314,7 @@ describe('coverage', () => {
     queueFrom({
       answered: [...Array(PER_STATUS_ROW_CEILING)].map((_, i) => reply({ id: i + 1 })),
     });
-    await mountAndSettle();
+    await mountAndSettle('coverage-shortfall');
     const row = screen.getByTestId('coverage-rows').querySelector('[data-coverage-status="answered"]');
     expect(row?.textContent).toContain('70 row(s) NOT IN THIS BUNDLE');
     expect(row?.textContent).toMatch(/truncated, not empty/);
@@ -317,7 +333,7 @@ describe('coverage', () => {
   it('refuses to claim completeness when the summary read failed', async () => {
     vi.mocked(api.fetchMarketingSummary).mockRejectedValue(new Error('down'));
     queueFrom({ answered: [reply({ id: 1 })] });
-    await mountAndSettle();
+    await mountAndSettle('coverage-no-denominator');
     expect(screen.getByTestId('coverage-no-denominator').textContent).toMatch(/Treat it as incomplete/);
     const row = screen.getByTestId('coverage-rows').querySelector('[data-coverage-status="answered"]');
     expect(row?.textContent).toContain('NOT READ');
@@ -358,7 +374,7 @@ describe('the two retention regimes', () => {
   });
 
   it('states the conflict, that five years is an inference, and that swept rows are invisible', async () => {
-    await mountAndSettle();
+    await mountAndSettle('retention-conflict', 'retention-gap-honest', 'retention-invisible-loss');
     expect(screen.getByTestId('retention-conflict').textContent).toMatch(/DPO ruling, not an engineering decision/);
     expect(screen.getByTestId('retention-gap-honest').textContent).toMatch(/no express retention period/i);
     expect(screen.getByTestId('retention-invisible-loss').textContent).toMatch(/persisted nowhere/);
@@ -378,7 +394,7 @@ describe('four eyes', () => {
   it('reports NOT ACHIEVED even when a real name is on the approval', async () => {
     queueFrom({ answered: [reply({ id: 7 })] });
     vi.mocked(api.fetchDrafts).mockResolvedValue([draft({ id: 71, reply_id: 7 })]);
-    await mountAndSettle();
+    await mountAndSettle('bundle-rows');
     const row = screen.getByTestId('bundle-rows').querySelector('[data-bundle-item="7"]');
     expect(row?.textContent).toContain('NOT ACHIEVED');
     // The reason has to be the missing drafter, not a vague failure.
@@ -399,14 +415,14 @@ describe('four eyes', () => {
     vi.mocked(api.fetchDrafts).mockResolvedValue([
       draft({ id: 81, reply_id: 8, approved_by: UNRESOLVED_APPROVER }),
     ]);
-    await mountAndSettle();
+    await mountAndSettle('bundle-rows', 'record-tallies');
     expect(screen.getByTestId('bundle-rows').textContent).toMatch(/APPROVER IS NOT NAMED/);
     expect(screen.getByTestId('record-tallies').textContent).toMatch(/APPROVER NOT NAMED 1/);
   });
 
   it('does not assess clearance on an item that has none', async () => {
     queueFrom({ ignored: [reply({ id: 9, status: 'ignored' })] });
-    await mountAndSettle();
+    await mountAndSettle('bundle-rows');
     const row = screen.getByTestId('bundle-rows').querySelector('[data-bundle-item="9"]');
     expect(row?.textContent).toContain('N/A');
     expect(screen.getByTestId('bundle-rows').textContent).toMatch(/no clearance to assess/i);
@@ -418,7 +434,7 @@ describe('four eyes', () => {
       draft({ id: 101, reply_id: 10 }),
       draft({ id: 102, reply_id: 10 }),
     ]);
-    await mountAndSettle();
+    await mountAndSettle('bundle-rows');
     expect(screen.getByTestId('bundle-rows').textContent).toMatch(/MORE THAN ONE APPROVED DRAFT/);
   });
 });
@@ -427,7 +443,7 @@ describe('authorship', () => {
   it('classifies an approved model draft as unedited machine text and counts it', async () => {
     queueFrom({ answered: [reply({ id: 11 })] });
     vi.mocked(api.fetchDrafts).mockResolvedValue([draft({ id: 111, reply_id: 11, used_llm: true })]);
-    await mountAndSettle();
+    await mountAndSettle('bundle-rows', 'record-tallies');
     const row = screen.getByTestId('bundle-rows').querySelector('[data-bundle-item="11"]');
     expect(row?.textContent).toContain('MODEL, UNEDITED');
     expect(screen.getByTestId('record-tallies').textContent).toMatch(/APPROVED MACHINE TEXT, UNEDITED 1/);
@@ -436,7 +452,7 @@ describe('authorship', () => {
   it('does not call a deterministic template a human author', async () => {
     queueFrom({ answered: [reply({ id: 12 })] });
     vi.mocked(api.fetchDrafts).mockResolvedValue([draft({ id: 121, reply_id: 12, used_llm: false })]);
-    await mountAndSettle();
+    await mountAndSettle('bundle-rows');
     const row = screen.getByTestId('bundle-rows').querySelector('[data-bundle-item="12"]');
     expect(row?.textContent).toContain('TEMPLATE, UNEDITED');
   });
@@ -448,7 +464,7 @@ describe('printability', () => {
   it('keeps every item\'s evidence in the DOM while the row is collapsed', async () => {
     queueFrom({ answered: [reply({ id: 13, body: 'are my funds safe' })] });
     vi.mocked(api.fetchDrafts).mockResolvedValue([draft({ id: 131, reply_id: 13, body: 'we are looking into it' })]);
-    const { container } = await mountAndSettle();
+    const { container } = await mountAndSettle('inbound-13', 'draft-131');
     // Nothing was expanded.
     expect(container.querySelector('.record-evidence-closed')).not.toBeNull();
     // And the evidence is nevertheless present, verbatim, both sides of it.
@@ -459,7 +475,7 @@ describe('printability', () => {
   it('reproduces stored text without truncation or reformatting', async () => {
     const body = `line one\n\nline three with <script>alert(1)</script> and  double  spaces`;
     queueFrom({ answered: [reply({ id: 14, body })] });
-    await mountAndSettle();
+    await mountAndSettle('inbound-14');
     const pre = screen.getByTestId('inbound-14');
     // Exact bytes: a record that prettifies is not a record. And React escaped it,
     // so the markup is inert text rather than an element.
@@ -501,7 +517,7 @@ describe('the printed artefact', () => {
     // "row(s) NOT IN THIS BUNDLE" reading prints at about 2.4:1 — in the DOM, off
     // the page. `--ice-soft` is worse: `bg-ice-soft/50` on the evidence quotes is
     // unconditional, so it resolves to a near-black wash under dark navy text.
-    await mountAndSettle();
+    await mountAndSettle('record-print-styles');
     const css = screen.getByTestId('record-print-styles').textContent ?? '';
     const printBlock = css.slice(css.indexOf('@media print'));
     const pinned = [...printBlock.matchAll(/(--[a-z-]+):\s*([\d\s]+);/g)];
@@ -541,7 +557,7 @@ describe('the printed artefact', () => {
     // show it was — and §1's two right-hand columns are the statement of the
     // bundle's own gaps. The bundle would have asserted completeness with the
     // caveats sliced off the edge.
-    const { container } = await mountAndSettle();
+    const { container } = await mountAndSettle('record-print-styles');
     const css = screen.getByTestId('record-print-styles').textContent ?? '';
 
     const clipped = [...container.querySelectorAll('table')].filter((t) => {
@@ -568,7 +584,7 @@ describe('the printed artefact', () => {
     // incomplete bundle producible instead of a misrepresentation. Asserted as
     // content that exists and is in no print-hidden container, which is the part
     // jsdom can actually see.
-    const { container } = await mountAndSettle();
+    const { container } = await mountAndSettle('completeness-fields', 'record-print-styles');
     const rows = [...screen.getByTestId('completeness-fields').querySelectorAll('tr')];
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
@@ -589,7 +605,7 @@ describe('the printed artefact', () => {
     // A printed sheet gets photocopied, faxed and read by people who cannot tell the
     // two hues apart. Every "Held" cell is coloured AND labelled; the label is the
     // signal and the colour only agrees with it.
-    await mountAndSettle();
+    await mountAndSettle('completeness-fields');
     for (const row of screen.getByTestId('completeness-fields').querySelectorAll('tr')) {
       const held = row.querySelectorAll('td')[2];
       expect(held.className, 'the Held cell carries no colour at all').toMatch(/text-/);
@@ -605,14 +621,14 @@ describe('honesty', () => {
   it('says it read nothing when the compartment is not migrated, rather than showing a clean record', async () => {
     vi.mocked(api.fetchMarketingSummary).mockResolvedValue(summary({ migrated: false }));
     queueFrom({}, { migrated: false });
-    await mountAndSettle();
+    await mountAndSettle('record-not-migrated', 'bundle-empty');
     expect(screen.getByTestId('record-not-migrated').textContent).toMatch(/evidence of NOTHING/);
     expect(screen.getByTestId('bundle-empty').textContent).toMatch(/failure to read, not a finding/);
   });
 
   it('shows no forbidden metric in the tallies strip', async () => {
     queueFrom({ answered: [reply({ id: 15 })] });
-    await mountAndSettle();
+    await mountAndSettle('record-tallies');
     const strip = screen.getByTestId('record-tallies').textContent ?? '';
     for (const banned of [/impression/i, /\breach\b/i, /follower/i, /engagement rate/i, /click.?through/i, /share of voice/i]) {
       expect(strip, `the tallies strip must not carry ${banned}`).not.toMatch(banned);
@@ -620,7 +636,7 @@ describe('honesty', () => {
   });
 
   it('names the unavailable metrics as unavailable instead of leaving the row out', async () => {
-    await mountAndSettle();
+    await mountAndSettle('window-cannot-see');
     const text = screen.getByTestId('window-cannot-see').textContent ?? '';
     expect(text).toMatch(/Impressions, reach, follower change, engagement rate, click-through, share of voice/);
     expect(text).toMatch(/denominator/);
@@ -628,7 +644,7 @@ describe('honesty', () => {
   });
 
   it('states that an item marked answered is not evidence that anything was published', async () => {
-    await mountAndSettle();
+    await mountAndSettle('record-does-not-prove');
     const text = screen.getByTestId('record-does-not-prove').textContent ?? '';
     expect(text).toMatch(/THAT ANYTHING WAS PUBLISHED/);
     expect(text).toMatch(/not by anything being sent/);
@@ -639,7 +655,7 @@ describe('honesty', () => {
     // lands between two of the five reads.
     const r = reply({ id: 16 });
     queueFrom({ drafted: [r], answered: [reply({ id: 16, status: 'answered' })] });
-    await mountAndSettle();
+    await mountAndSettle('record-status-race', 'bundle-rows');
     expect(screen.getByTestId('record-status-race').textContent).toMatch(/appeared in more than one status read/);
     // And the item is listed exactly once.
     expect(screen.getByTestId('bundle-rows').querySelectorAll('[data-bundle-item="16"]').length).toBe(1);
@@ -648,7 +664,7 @@ describe('honesty', () => {
   it('marks an unread clearance chain as unread, not as an absence of clearance', async () => {
     queueFrom({ answered: [reply({ id: 17 })] });
     vi.mocked(api.fetchDrafts).mockRejectedValue(new Error('boom'));
-    await mountAndSettle();
+    await mountAndSettle('bundle-rows');
     const row = screen.getByTestId('bundle-rows').querySelector('[data-bundle-item="17"]');
     expect(row?.textContent).toContain('NOT READ');
     expect(screen.getByTestId('bundle-rows').textContent)
@@ -688,13 +704,13 @@ describe('what the record page must never contain', () => {
 
 describe('the window', () => {
   it('offers a time window and states that a jurisdiction window is impossible', async () => {
-    await mountAndSettle();
+    await mountAndSettle('window-cannot-see');
     expect(screen.getByLabelText('Window from')).toBeInTheDocument();
     expect(within(screen.getByTestId('window-cannot-see')).getByText(/Which Member State an item was addressed to/)).toBeInTheDocument();
   });
 
   it('warns that a window reaching past the sweep is silently incomplete', async () => {
-    await mountAndSettle();
+    await mountAndSettle('window-cannot-see');
     expect(screen.getByTestId('window-cannot-see').textContent)
       .toMatch(/beginning more than ninety days ago is close to guaranteed to be missing material/);
   });
