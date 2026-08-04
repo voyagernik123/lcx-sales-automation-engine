@@ -130,11 +130,19 @@ describe('NOT ASKED is never rendered as "no short position"', () => {
   it('labels an unanswered short limb as NOT ASKED and says unknown refuses', async () => {
     chain = { ...CHAIN, rows: [row({ holds: false, shortPosition: 'not_asked' })] };
     render(<MarketingHoldings />);
-    await waitFor(() => expect(screen.getByTestId('holdings-chain')).toBeTruthy());
+      /* ASSERT-IN-WAITFOR. The barrier used to be a DIFFERENT element (the container),
+       * and a container arriving does not imply its rows have rendered — the two come
+       * from different state. Locally they land in the same tick so it looked settled;
+       * under CI's slower scheduler the assertion read an empty section (CI run
+       * 30900660294). Making the positive assertion itself the barrier cannot go stale.
+       *
+       * The NEGATIVE assertions stay OUTSIDE: `not.toMatch` inside waitFor passes
+       * instantly against a DOM that has not rendered yet, which is a false pass. */
+    await waitFor(() => {
+      expect(pageText()).toContain('short position UNKNOWN');
+      expect(pageText()).toContain(SHORT_NOT_ASKED_IS_NOT_NO_SHORT);
+    });
     const text = pageText();
-    // The row says the short limb is UNKNOWN...
-    expect(text).toContain('short position UNKNOWN');
-    expect(text).toContain(SHORT_NOT_ASKED_IS_NOT_NO_SHORT);
     // ...and NOWHERE claims the member has no short position. This is the assertion the
     // whole widening exists for: `holds: false` alone must not read as flat.
     expect(text).not.toMatch(/Declared no short/);

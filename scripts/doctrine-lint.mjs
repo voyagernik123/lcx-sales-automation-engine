@@ -148,6 +148,92 @@ if (!has(DOCTRINE_SRC)) {
   );
 }
 
+/* ── RULE 5 — a React test's barrier must be the thing it asserts ─────────────
+ * THREE CI failures in one day, all this class, all green locally:
+ *   run #44               marketingRecord retention section
+ *   run 30894215553       marketingRecord status race (26 blocks fixed)
+ *   run 30900660294       marketingHoldings short limb + marketingRecord coverage
+ *
+ * The shape: `await waitFor(<container>)`, then read a text blob or query a CHILD,
+ * then assert on it OUTSIDE a waitFor. The container and the child render from
+ * different state, so the container arriving proves nothing about the child. Locally
+ * everything lands in one tick and the barrier looks correct; under CI's slower
+ * scheduler the assertion reads an empty section.
+ *
+ * A timeout does not fix this and the lane contract forbids raising one. The barrier
+ * was pointed at the wrong element. The robust form is ASSERT-IN-WAITFOR: put the
+ * positive assertion inside the waitFor so it cannot go stale. Negative assertions
+ * must stay OUTSIDE — `not.toMatch` inside a waitFor passes instantly against a DOM
+ * that has not rendered, which is a false pass.
+ *
+ * This exists so the next instance fails on a laptop in 2 seconds instead of in CI
+ * after a push.
+ */
+const WEB_TESTS = 'apps/web/src';
+if (has(WEB_TESTS)) {
+  let blocks = 0;
+  for (const rel of walk(WEB_TESTS)) {
+    if (!/\.test\.tsx?$/.test(rel)) continue;
+    const src = read(rel);
+    for (const m of src.matchAll(/  it\((?:'[^']*'|"[^"]*")[\s\S]*?\n  \}\);/g)) {
+      const b = m[0];
+      if (!/waitFor\(|mountAndSettle\(|settleOn\(/.test(b)) continue;
+      blocks += 1;
+      // Strip every waitFor callback body: what remains is asserted UNGUARDED.
+      // Strip every waitFor callback body: what remains is asserted UNGUARDED.
+      const unguarded = b.replace(/waitFor\(\s*(?:async\s*)?\(\)\s*=>\s*\{[\s\S]*?\n\s*\}\s*\)/g, '')
+                         .replace(/waitFor\([^\n]*\)/g, '');
+      /*
+       * WHICH element the barrier actually named. The first version of this rule flagged
+       * `mountAndSettle('window-cannot-see')` followed by
+       * `getByTestId('window-cannot-see').textContent` — which is CORRECT, the barrier is
+       * the asserted element. That is the same false-positive error the `reach` rule made
+       * (see RULE 3), and a rule that demands edits to correct code gets deleted. So the
+       * comparison is explicit: only flag when the assertion reads something the barrier
+       * did NOT settle.
+       */
+      /*
+       * SETTLED = every testid referenced INSIDE any waitFor, plus those named at a
+       * mountAndSettle/settleOn barrier. Two earlier versions of this set were too narrow
+       * and produced false positives against correct code — first by ignoring the barrier
+       * entirely, then by only reading mountAndSettle/settleOn and missing the inline
+       * `await waitFor(() => expect(getByTestId('X')).toBeTruthy())` form, which is a
+       * perfectly good barrier. A rule that demands edits to correct code gets deleted
+       * (see RULE 3), so this is deliberately generous: if the block waited on it in any
+       * form, it counts.
+       */
+      const barriers = [...b.matchAll(/waitFor\([\s\S]*?\n\s*\}\s*\)|waitFor\([^\n]*\)/g)].map((x) => x[0]).join(' ');
+      const settled = new Set([
+        ...[...barriers.matchAll(/getByTestId\('([^']+)'\)/g)].map((mm) => mm[1]),
+        ...[...b.matchAll(/(?:mountAnd\w+|settleOn)\(([^)]*)\)/g)]
+          .flatMap((mm) => [...mm[1].matchAll(/'([^']+)'/g)].map((x) => x[1])),
+      ]);
+      // A whole-page blob is never implied by one element settling.
+      const pageBlob = /expect\(\s*(?:\w*[Tt]ext|body)\s*\)\.(?:toContain|toMatch)/.test(unguarded)
+        && /pageText\(\)|container\.textContent/.test(b);
+      // A CHILD queried off a settled container is not implied by the container.
+      const childQuery = /expect\(\s*\w+\??\.textContent\s*\)\.(?:toContain|toMatch)/.test(unguarded)
+        && /getByTestId\([^)]*\)\s*\n?\s*\.?querySelector/.test(b);
+      // A DIFFERENT testid's text, read outside a waitFor, when the barrier settled another.
+      const otherId = [...b.matchAll(/getByTestId\('([^']+)'\)\.textContent/g)]
+        .some((mm) => !settled.has(mm[1]))
+        && /expect\(\s*(?:\w*[Tt]ext)\s*\)\.(?:toContain|toMatch)/.test(unguarded);
+      const textBlob = pageBlob || otherId;
+      if (textBlob || childQuery) {
+        const name = /  it\('([^']*)'/.exec(b)?.[1] ?? '(unnamed)';
+        fail(
+          'test-barrier',
+          `${rel} — "${name.slice(0, 60)}" waits on one element then asserts on a text blob or a `
+            + 'child OUTSIDE a waitFor. The container arriving does not imply the child rendered; '
+            + 'this passes locally and fails in CI. Move the POSITIVE assertion inside the '
+            + 'waitFor (negatives must stay outside).',
+        );
+      }
+    }
+  }
+  notes.push(`test-barrier: ${blocks} async React test block(s) checked`);
+}
+
 /* ── RULE 4 — a phase that claims done has its evidence beside it ─────────────
  * §7.1: "the command and its output, or it did not happen."
  */

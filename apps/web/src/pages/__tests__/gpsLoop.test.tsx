@@ -223,16 +223,17 @@ describe('signed money', () => {
   it('renders a realised loss with its sign, never as a magnitude', async () => {
     const { container } = mountAll([...THREE, LOSS_RECORD]);
     await waitFor(() => expect(mocked.fetchGpsMarginRealisation).toHaveBeenCalled());
+    /* The barrier waits for BOTH figures, not for any minus sign. Waiting on a loose
+     * predicate and then asserting two specific values outside it can pass on the first
+     * and fail on the second — the same staleness as barrier-on-container, narrower.
+     * U+2212 MINUS SIGN is the character `formatMoney` emits. Realised margin −$6,000
+     * and slippage −$18,000 both come from the engine's arithmetic, not from this test. */
     const text = await waitFor(() => {
       const t = container.textContent ?? '';
-      expect(t).toMatch(/−\$/);
+      expect(t).toContain('−$6,000');
+      expect(t).toContain('−$18,000');
       return t;
     });
-
-    // U+2212 MINUS SIGN, the character `formatMoney` emits. Realised margin −$6,000
-    // and slippage −$18,000 both come from the engine's arithmetic, not from this test.
-    expect(text).toContain('−$6,000');
-    expect(text).toContain('−$18,000');
 
     // And the unsigned form must NOT appear on its own: an absolute value here would
     // make an overrun read identically to coming in under budget.

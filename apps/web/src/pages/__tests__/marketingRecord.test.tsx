@@ -315,9 +315,15 @@ describe('coverage', () => {
       answered: [...Array(PER_STATUS_ROW_CEILING)].map((_, i) => reply({ id: i + 1 })),
     });
     await mountAndSettle('coverage-shortfall');
-    const row = screen.getByTestId('coverage-rows').querySelector('[data-coverage-status="answered"]');
-    expect(row?.textContent).toContain('70 row(s) NOT IN THIS BUNDLE');
-    expect(row?.textContent).toMatch(/truncated, not empty/);
+    /* ASSERT-IN-WAITFOR: the barrier settles the CONTAINER, and a container arriving
+     * does not imply this child rendered — they come from different state. Positives
+     * go inside so they cannot go stale; negatives stay outside because `not` inside
+     * a waitFor passes instantly against a DOM that has not rendered. */
+    await waitFor(() => {
+      const row = screen.getByTestId('coverage-rows').querySelector('[data-coverage-status="answered"]');
+      expect(row?.textContent).toContain('70 row(s) NOT IN THIS BUNDLE');
+      expect(row?.textContent).toMatch(/truncated, not empty/);
+    });
     expect(screen.getByTestId('coverage-shortfall').textContent).toContain('TRUNCATED production');
   });
 
@@ -325,9 +331,19 @@ describe('coverage', () => {
     vi.mocked(api.fetchMarketingSummary).mockResolvedValue(summary({ counts: { answered: 5 } }));
     queueFrom({ answered: [reply({ id: 1 }), reply({ id: 2 })] });
     await mountAndSettle();
-    const row = screen.getByTestId('coverage-rows').querySelector('[data-coverage-status="answered"]');
-    expect(row?.textContent).toContain('3 row(s) NOT IN THIS BUNDLE');
-    expect(row?.textContent).toMatch(/did not hit its ceiling/);
+      /* ASSERT-IN-WAITFOR. The barrier used to be a DIFFERENT element (the container),
+       * and a container arriving does not imply its rows have rendered — the two come
+       * from different state. Locally they land in the same tick so it looked settled;
+       * under CI's slower scheduler the assertion read an empty section (CI run
+       * 30900660294). Making the positive assertion itself the barrier cannot go stale.
+       *
+       * The NEGATIVE assertions stay OUTSIDE: `not.toMatch` inside waitFor passes
+       * instantly against a DOM that has not rendered yet, which is a false pass. */
+    await waitFor(() => {
+      const r = screen.getByTestId('coverage-rows').querySelector('[data-coverage-status="answered"]');
+      expect(r?.textContent).toContain('3 row(s) NOT IN THIS BUNDLE');
+      expect(r?.textContent).toMatch(/did not hit its ceiling/);
+    });
   });
 
   it('refuses to claim completeness when the summary read failed', async () => {
@@ -335,8 +351,14 @@ describe('coverage', () => {
     queueFrom({ answered: [reply({ id: 1 })] });
     await mountAndSettle('coverage-no-denominator');
     expect(screen.getByTestId('coverage-no-denominator').textContent).toMatch(/Treat it as incomplete/);
-    const row = screen.getByTestId('coverage-rows').querySelector('[data-coverage-status="answered"]');
-    expect(row?.textContent).toContain('NOT READ');
+    /* ASSERT-IN-WAITFOR: the barrier settles the CONTAINER, and a container arriving
+     * does not imply this child rendered — they come from different state. Positives
+     * go inside so they cannot go stale; negatives stay outside because `not` inside
+     * a waitFor passes instantly against a DOM that has not rendered. */
+    await waitFor(() => {
+      const row = screen.getByTestId('coverage-rows').querySelector('[data-coverage-status="answered"]');
+      expect(row?.textContent).toContain('NOT READ');
+    });
   });
 });
 
@@ -347,30 +369,48 @@ describe('the two retention regimes', () => {
     queueFrom({ answered: [rowWithExpiry({ id: 1, received_at: iso(-10) }, iso(80))] });
     await mountAndSettle();
     await settleOn('retention-rows');
-    const row = screen.getByTestId('retention-rows').querySelector('[data-retention-verdict]');
-    expect(row?.getAttribute('data-retention-verdict')).toBe('swept_before_horizon');
-    expect(row?.textContent).toContain('DELETED BEFORE THE FIVE-YEAR HORIZON');
-    expect(row?.textContent).toContain('80');
+    /* ASSERT-IN-WAITFOR: the barrier settles the CONTAINER, and a container arriving
+     * does not imply this child rendered — they come from different state. Positives
+     * go inside so they cannot go stale; negatives stay outside because `not` inside
+     * a waitFor passes instantly against a DOM that has not rendered. */
+    await waitFor(() => {
+      const row = screen.getByTestId('retention-rows').querySelector('[data-retention-verdict]');
+      expect(row?.getAttribute('data-retention-verdict')).toBe('swept_before_horizon');
+      expect(row?.textContent).toContain('DELETED BEFORE THE FIVE-YEAR HORIZON');
+      expect(row?.textContent).toContain('80');
+    });
   });
 
   it('marks a row whose sweep is already due', async () => {
     queueFrom({ answered: [rowWithExpiry({ id: 2, received_at: iso(-100) }, iso(-3))] });
     await mountAndSettle();
     await settleOn('retention-rows');
-    const row = screen.getByTestId('retention-rows').querySelector('[data-retention-verdict]');
-    expect(row?.getAttribute('data-retention-verdict')).toBe('sweep_due');
-    expect(row?.textContent).toContain('SWEEP ALREADY DUE');
+    /* ASSERT-IN-WAITFOR: the barrier settles the CONTAINER, and a container arriving
+     * does not imply this child rendered — they come from different state. Positives
+     * go inside so they cannot go stale; negatives stay outside because `not` inside
+     * a waitFor passes instantly against a DOM that has not rendered. */
+    await waitFor(() => {
+      const row = screen.getByTestId('retention-rows').querySelector('[data-retention-verdict]');
+      expect(row?.getAttribute('data-retention-verdict')).toBe('sweep_due');
+      expect(row?.textContent).toContain('SWEEP ALREADY DUE');
+    });
   });
 
   it('never renders a missing expiry as a row that is not expiring', async () => {
     queueFrom({ answered: [rowWithExpiry({ id: 3 }, null)] });
     await mountAndSettle();
     await settleOn('retention-rows');
-    const row = screen.getByTestId('retention-rows').querySelector('[data-retention-verdict]');
-    expect(row?.getAttribute('data-retention-verdict')).toBe('not_recorded');
-    expect(row?.textContent).toContain('REGIME NOT RECORDED');
-    // The cell says NOT RECORDED, never a blank or a dash that reads as "no expiry".
-    expect(row?.textContent).toContain('NOT RECORDED');
+    /* ASSERT-IN-WAITFOR: the barrier settles the CONTAINER, and a container arriving
+     * does not imply this child rendered — they come from different state. Positives
+     * go inside so they cannot go stale; negatives stay outside because `not` inside
+     * a waitFor passes instantly against a DOM that has not rendered. */
+    await waitFor(() => {
+      const row = screen.getByTestId('retention-rows').querySelector('[data-retention-verdict]');
+      expect(row?.getAttribute('data-retention-verdict')).toBe('not_recorded');
+      expect(row?.textContent).toContain('REGIME NOT RECORDED');
+      // The cell says NOT RECORDED, never a blank or a dash that reads as "no expiry".
+      expect(row?.textContent).toContain('NOT RECORDED');
+    });
   });
 
   it('states the conflict, that five years is an inference, and that swept rows are invisible', async () => {
@@ -395,8 +435,14 @@ describe('four eyes', () => {
     queueFrom({ answered: [reply({ id: 7 })] });
     vi.mocked(api.fetchDrafts).mockResolvedValue([draft({ id: 71, reply_id: 7 })]);
     await mountAndSettle('bundle-rows');
-    const row = screen.getByTestId('bundle-rows').querySelector('[data-bundle-item="7"]');
-    expect(row?.textContent).toContain('NOT ACHIEVED');
+    /* ASSERT-IN-WAITFOR: the barrier settles the CONTAINER, and a container arriving
+     * does not imply this child rendered — they come from different state. Positives
+     * go inside so they cannot go stale; negatives stay outside because `not` inside
+     * a waitFor passes instantly against a DOM that has not rendered. */
+    await waitFor(() => {
+      const row = screen.getByTestId('bundle-rows').querySelector('[data-bundle-item="7"]');
+      expect(row?.textContent).toContain('NOT ACHIEVED');
+    });
     // The reason has to be the missing drafter, not a vague failure.
     expect(screen.getByTestId('bundle-rows').textContent).toMatch(/drafter is not recorded/);
   });
@@ -423,8 +469,14 @@ describe('four eyes', () => {
   it('does not assess clearance on an item that has none', async () => {
     queueFrom({ ignored: [reply({ id: 9, status: 'ignored' })] });
     await mountAndSettle('bundle-rows');
-    const row = screen.getByTestId('bundle-rows').querySelector('[data-bundle-item="9"]');
-    expect(row?.textContent).toContain('N/A');
+    /* ASSERT-IN-WAITFOR: the barrier settles the CONTAINER, and a container arriving
+     * does not imply this child rendered — they come from different state. Positives
+     * go inside so they cannot go stale; negatives stay outside because `not` inside
+     * a waitFor passes instantly against a DOM that has not rendered. */
+    await waitFor(() => {
+      const row = screen.getByTestId('bundle-rows').querySelector('[data-bundle-item="9"]');
+      expect(row?.textContent).toContain('N/A');
+    });
     expect(screen.getByTestId('bundle-rows').textContent).toMatch(/no clearance to assess/i);
   });
 
@@ -444,8 +496,14 @@ describe('authorship', () => {
     queueFrom({ answered: [reply({ id: 11 })] });
     vi.mocked(api.fetchDrafts).mockResolvedValue([draft({ id: 111, reply_id: 11, used_llm: true })]);
     await mountAndSettle('bundle-rows', 'record-tallies');
-    const row = screen.getByTestId('bundle-rows').querySelector('[data-bundle-item="11"]');
-    expect(row?.textContent).toContain('MODEL, UNEDITED');
+    /* ASSERT-IN-WAITFOR: the barrier settles the CONTAINER, and a container arriving
+     * does not imply this child rendered — they come from different state. Positives
+     * go inside so they cannot go stale; negatives stay outside because `not` inside
+     * a waitFor passes instantly against a DOM that has not rendered. */
+    await waitFor(() => {
+      const row = screen.getByTestId('bundle-rows').querySelector('[data-bundle-item="11"]');
+      expect(row?.textContent).toContain('MODEL, UNEDITED');
+    });
     expect(screen.getByTestId('record-tallies').textContent).toMatch(/APPROVED MACHINE TEXT, UNEDITED 1/);
   });
 
@@ -453,8 +511,14 @@ describe('authorship', () => {
     queueFrom({ answered: [reply({ id: 12 })] });
     vi.mocked(api.fetchDrafts).mockResolvedValue([draft({ id: 121, reply_id: 12, used_llm: false })]);
     await mountAndSettle('bundle-rows');
-    const row = screen.getByTestId('bundle-rows').querySelector('[data-bundle-item="12"]');
-    expect(row?.textContent).toContain('TEMPLATE, UNEDITED');
+    /* ASSERT-IN-WAITFOR: the barrier settles the CONTAINER, and a container arriving
+     * does not imply this child rendered — they come from different state. Positives
+     * go inside so they cannot go stale; negatives stay outside because `not` inside
+     * a waitFor passes instantly against a DOM that has not rendered. */
+    await waitFor(() => {
+      const row = screen.getByTestId('bundle-rows').querySelector('[data-bundle-item="12"]');
+      expect(row?.textContent).toContain('TEMPLATE, UNEDITED');
+    });
   });
 });
 
@@ -665,8 +729,14 @@ describe('honesty', () => {
     queueFrom({ answered: [reply({ id: 17 })] });
     vi.mocked(api.fetchDrafts).mockRejectedValue(new Error('boom'));
     await mountAndSettle('bundle-rows');
-    const row = screen.getByTestId('bundle-rows').querySelector('[data-bundle-item="17"]');
-    expect(row?.textContent).toContain('NOT READ');
+    /* ASSERT-IN-WAITFOR: the barrier settles the CONTAINER, and a container arriving
+     * does not imply this child rendered — they come from different state. Positives
+     * go inside so they cannot go stale; negatives stay outside because `not` inside
+     * a waitFor passes instantly against a DOM that has not rendered. */
+    await waitFor(() => {
+      const row = screen.getByTestId('bundle-rows').querySelector('[data-bundle-item="17"]');
+      expect(row?.textContent).toContain('NOT READ');
+    });
     expect(screen.getByTestId('bundle-rows').textContent)
       .toMatch(/absence of knowledge, not an absence of clearance/);
   });
