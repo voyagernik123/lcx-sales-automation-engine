@@ -21,6 +21,13 @@ export interface NotificationEvent {
   projectId: string | null;
   href: string | null;
   createdAt: string;
+  /**
+   * The compartment this alert belongs to (0067). Required, because the bus
+   * broadcasts to every connected client — without it the stream cannot filter
+   * per subscriber, and a distribution alert lands in a sales-only operator's
+   * bell in real time even after the REST list was fixed.
+   */
+  workspace: string;
 }
 
 class NotificationBus extends EventEmitter {}
@@ -41,19 +48,56 @@ function tokenSecret(): string {
   return env.operatorApiKey || 'dev-secret';
 }
 
-export function mintStreamToken(now = Date.now()): string {
+/**
+ * Mint a stream token BOUND TO A SUBJECT (0067).
+ *
+ * The first version signed only `stream:<expires>`, so the token carried no
+ * identity at all. That made per-subscriber filtering impossible even in
+ * principle: the stream could authenticate that *somebody* authorised had asked
+ * for it, but never *who*, so it had no choice but to broadcast every
+ * compartment to every listener. The subject is inside the signed payload, so it
+ * cannot be swapped for another actor's without invalidating the HMAC.
+ */
+export function mintStreamToken(subject: string, now = Date.now()): string {
   const expires = now + TOKEN_TTL_MS;
-  const sig = createHmac('sha256', tokenSecret()).update(`stream:${expires}`).digest('hex');
-  return `${expires}.${sig}`;
+  // Length-prefixed inside the signed payload so a subject cannot be shifted
+  // across a delimiter to impersonate another.
+  const payload = `stream:${expires}:${subject.length}:${subject}`;
+  const sig = createHmac('sha256', tokenSecret()).update(payload).digest('hex');
+  // base64url, NOT encodeURIComponent: '.' is an *unreserved* character so
+  // encodeURIComponent leaves it intact, and the second-tier sign-in mints ids
+  // like `ext:nikhil.sharma` (middleware/auth.ts). Those produced a four-segment
+  // token that failed to verify, silently killing the live stream for every
+  // second-tier colleague. base64url's alphabet contains no '.' at all.
+  const subj = Buffer.from(subject, 'utf8').toString('base64url');
+  return `${expires}.${subj}.${sig}`;
 }
 
-export function verifyStreamToken(token: string, now = Date.now()): boolean {
-  const dot = token.indexOf('.');
-  if (dot <= 0) return false;
-  const expires = Number(token.slice(0, dot));
-  if (!Number.isFinite(expires) || expires < now) return false;
-  const expected = createHmac('sha256', tokenSecret()).update(`stream:${expires}`).digest('hex');
-  const given = token.slice(dot + 1);
-  if (given.length !== expected.length) return false;
-  return timingSafeEqual(Buffer.from(given, 'utf8'), Buffer.from(expected, 'utf8'));
+/**
+ * Verify a stream token and return WHO it was minted for, or null.
+ *
+ * Returns the subject rather than a boolean because the caller needs the
+ * identity to resolve entitlements — a boolean is what forced the old stream to
+ * broadcast indiscriminately.
+ */
+export function verifyStreamToken(token: string, now = Date.now()): { subject: string } | null {
+  const parts = token.split('.');
+  if (parts.length !== 3) return null;
+  const [expiresRaw, subjectRaw, given] = parts;
+  const expires = Number(expiresRaw);
+  if (!Number.isFinite(expires) || expires < now) return null;
+
+  // base64url round-trip. Decoding is lenient by nature, so the value is
+  // re-encoded and compared: anything that is not the canonical encoding of what
+  // it decoded to is rejected rather than accepted in a second spelling.
+  if (!subjectRaw || !/^[A-Za-z0-9_-]+$/.test(subjectRaw)) return null;
+  const subject = Buffer.from(subjectRaw, 'base64url').toString('utf8');
+  if (!subject) return null;
+  if (Buffer.from(subject, 'utf8').toString('base64url') !== subjectRaw) return null;
+
+  const payload = `stream:${expires}:${subject.length}:${subject}`;
+  const expected = createHmac('sha256', tokenSecret()).update(payload).digest('hex');
+  if (!given || given.length !== expected.length) return null;
+  const ok = timingSafeEqual(Buffer.from(given, 'utf8'), Buffer.from(expected, 'utf8'));
+  return ok ? { subject } : null;
 }

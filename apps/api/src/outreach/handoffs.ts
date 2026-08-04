@@ -91,6 +91,8 @@ export async function createHandoff(params: CreateHandoffParams): Promise<Record
     await createHandoffTask(handoff.id, params.projectId, personName);
     await notify({
       rule: 'reply_received',
+      // /outreach is a sales webPath
+      workspace: 'sales',
       title: 'Reply received' + (personName ? ` from ${personName}` : ''),
       detail: `${params.channel} — sequences paused, handoff open`,
       projectId: params.projectId,

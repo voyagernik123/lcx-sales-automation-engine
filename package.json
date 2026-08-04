@@ -17,6 +17,8 @@
     "build:shared": "npm run build -w @lcx/shared",
     "preview": "npm run preview -w @lcx/web",
     "lint": "npm run lint -w @lcx/web",
+    "doctrine-lint": "node scripts/doctrine-lint.mjs",
+    "verify-ci": "node scripts/verify-ci.mjs",
     "type-check": "npm run type-check -w @lcx/shared && npm run type-check -w @lcx/api && npm run type-check -w @lcx/web",
     "test": "npm run test -w @lcx/shared && npm run test -w @lcx/api && npm run test -w @lcx/web",
     "test:web": "npm run test -w @lcx/web",
@@ -32,7 +34,7 @@
     "seed:demo": "tsx apps/api/src/seed/demo.ts",
     "deploy:migrate": "psql $DATABASE_URL -f apps/api/src/db/migrations/",
     "smoke": "./scripts/smoke-e2e.sh",
-    "ci-check": "npm run type-check && npm run test && npm run build",
+    "ci-check": "npm run doctrine-lint && npm run type-check && npm run test && npm run build",
     "gen:actions": "tsx apps/api/scripts/gen-action-manifest.ts",
     "gate": "npm run lint && npm run ci-check && npm run perf-budget -w @lcx/web && npm run e2e -w @lcx/web"
   },

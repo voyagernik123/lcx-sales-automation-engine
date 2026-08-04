@@ -89,6 +89,11 @@ export async function runWeeklyDigest(pool: pg.Pool): Promise<WeeklyDigestResult
   const dedupKey = `digest:${isoWeek}`;
   await notify({
     rule: 'weekly_digest',
+    // SALES, not DESK_SCOPE. The digest body is entirely deals and handoffs —
+    // project names, stages and owners — so a desk-level alert would put sales
+    // content in every member's bell. The href ('/') is desk-level; the CONTENT
+    // is what decides the scope.
+    workspace: 'sales',
     title: `Weekly digest — W${isoWeek}`,
     detail: parts.join(' • '),
     href: '/',

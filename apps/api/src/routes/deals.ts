@@ -358,6 +358,8 @@ dealRoutes.post('/:id/stage', requireOperator, async (c) => {
     try {
       await notify({
         rule: 'deal_stage_change',
+        // /deal-board is a sales webPath (packages/shared/src/workspaces.ts)
+        workspace: 'sales',
         title: `Deal moved to ${newStage.replace(/_/g, ' ')}`,
         detail: `${oldStage} → ${newStage}`,
         projectId: deal.projectId,

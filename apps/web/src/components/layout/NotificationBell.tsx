@@ -63,6 +63,14 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<AppNotification[]>([]);
   const [unread, setUnread] = useState(0);
+  // What this reader is NOT being shown (0067). Held in state because an empty
+  // list must never render as "nothing happened" when the truth is "nothing you
+  // can see" — those are different facts and the bell has to tell them apart.
+  const [withheld, setWithheld] = useState(0);
+  const [unattributed, setUnattributed] = useState(0);
+  // `null` = never loaded (API offline), which is a third state distinct from
+  // "loaded and empty". Without it the offline bell reads as a quiet bell.
+  const [loaded, setLoaded] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -70,8 +78,11 @@ export function NotificationBell() {
       const res = await fetchNotifications();
       setItems(res.items);
       setUnread(res.unread);
+      setWithheld(res.withheld);
+      setUnattributed(res.unattributed);
+      setLoaded(true);
     } catch {
-      // API offline — bell stays quiet
+      // API offline — bell stays quiet, but does not claim emptiness.
     }
   }, []);
 
@@ -124,6 +135,7 @@ export function NotificationBell() {
             {unread > 0 && (
               <button
                 onClick={() => void markAllNotificationsRead().then(load)}
+                title="Marks everything read in the compartments you hold — not other compartments'."
                 className="text-[10px] font-semibold text-cyan-700 hover:underline"
               >
                 Mark all read
@@ -131,7 +143,31 @@ export function NotificationBell() {
             )}
           </div>
           <div className="max-h-96 overflow-y-auto">
-            {items.length === 0 && <p className="p-4 text-center text-[11px] text-grey">Nothing yet</p>}
+            {/*
+              Three distinct empty states, never collapsed into one (0067):
+                not loaded        — the API did not answer; we know nothing
+                empty + withheld  — there ARE alerts, in compartments you do not hold
+                empty             — genuinely nothing
+              "Nothing yet" over a withheld alert is the "nothing changed" /
+              "nothing happened" conflation the governance register exists to stop.
+            */}
+            {items.length === 0 && !loaded && (
+              <p className="p-4 text-center text-[11px] text-grey">Not loaded — the API did not answer.</p>
+            )}
+            {items.length === 0 && loaded && withheld + unattributed > 0 && (
+              <p className="p-4 text-center text-[11px] text-grey">
+                Nothing in your compartments.
+                <br />
+                <span className="text-[10px]">
+                  {withheld > 0 && `${withheld} withheld (need-to-know)`}
+                  {withheld > 0 && unattributed > 0 && ' · '}
+                  {unattributed > 0 && `${unattributed} unattributed`}
+                </span>
+              </p>
+            )}
+            {items.length === 0 && loaded && withheld + unattributed === 0 && (
+              <p className="p-4 text-center text-[11px] text-grey">Nothing yet</p>
+            )}
             {items.map((n) => (
               <button
                 key={n.id}
@@ -154,6 +190,19 @@ export function NotificationBell() {
               </button>
             ))}
           </div>
+          {/*
+            The redaction is stated even when the list is NOT empty. A
+            compartmented system tells you something is there without telling you
+            what it is; silently shortening the list would be the leak's mirror
+            image — an operator with no way to know they are seeing a subset.
+          */}
+          {items.length > 0 && withheld + unattributed > 0 && (
+            <div className="border-t border-line px-3 py-1.5 text-[9px] text-grey" data-testid="notif-withheld">
+              {withheld > 0 && `${withheld} withheld — other compartments`}
+              {withheld > 0 && unattributed > 0 && ' · '}
+              {unattributed > 0 && `${unattributed} unattributed (pre-0067, compartment unknown)`}
+            </div>
+          )}
         </div>
       )}
     </div>

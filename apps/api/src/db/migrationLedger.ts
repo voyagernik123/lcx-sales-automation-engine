@@ -185,4 +185,16 @@ export const PENDING_MIGRATIONS: readonly string[] = [
   '0064_marketing_retention.sql',
   '0065_marketing_holdings_position.sql',
   '0066_gps_price_band.sql',
+  /**
+   * 0067 — `notifications.workspace` (LCX OS 100x P0 / F3). Closes a LIVE
+   * need-to-know breach: `listNotifications` had no workspace filter, so every
+   * operator's bell showed every compartment, and `markRead('all')` cleared rows
+   * the actor could not see. Applied to the local database; NOT yet on prod,
+   * which is why it is pending rather than pinned.
+   *
+   * Until it lands on an environment, `notify()` INSERTs there fail on the
+   * missing column — the bell degrades loudly rather than leaking quietly, which
+   * is the correct failure direction for this particular fix.
+   */
+  '0067_notifications_workspace.sql',
 ];

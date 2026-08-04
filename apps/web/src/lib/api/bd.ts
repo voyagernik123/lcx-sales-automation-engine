@@ -450,10 +450,28 @@ export interface AppNotification {
   href: string | null;
   readAt: string | null;
   createdAt: string;
+  /** Compartment this alert belongs to, or '_desk' for desk-level (0067). */
+  workspace: string;
 }
 
-export async function fetchNotifications(): Promise<{ items: AppNotification[]; unread: number }> {
-  const res = await request<{ data: { items: AppNotification[]; unread: number } }>('/v1/notifications', { auth: true });
+/**
+ * A bell page is now compartment-scoped (0067), so it carries what it is NOT
+ * showing. `withheld`/`unattributed` exist so an empty list can never be
+ * rendered as "nothing happened" when the truth is "nothing you can see".
+ */
+export interface NotificationPage {
+  items: AppNotification[];
+  /** Unread WITHIN the reader's compartments — not a global count. */
+  unread: number;
+  /** Alerts in compartments this reader does not hold. */
+  withheld: number;
+  /** Legacy rows predating 0067 with no compartment recorded; withheld from everyone. */
+  unattributed: number;
+  scopes: string[];
+}
+
+export async function fetchNotifications(): Promise<NotificationPage> {
+  const res = await request<{ data: NotificationPage }>('/v1/notifications', { auth: true });
   return res.data;
 }
 

@@ -122,6 +122,8 @@ accessRoutes.post('/requests', requireOperator, async (c) => {
     );
     await notify({
       rule: 'access',
+      // /access is a GOVERNANCE webPath, not command — read off the registry
+      workspace: 'governance',
       title: `Access request: ${ws.name}`,
       detail: `${operator.id} requests ${capability} — ${justification.slice(0, 140)}`,
       href: '/access',

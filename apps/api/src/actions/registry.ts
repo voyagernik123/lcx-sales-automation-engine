@@ -30,6 +30,7 @@ import type pg from 'pg';
 import {
   findMemberById, WORKSPACE_IDS, capAtLeast, emissionBudget,
   type Capability, type WorkspaceId,
+  workspaceForPath,
 } from '@lcx/shared';
 import { notify } from '../notifications/service.js';
 import { createManualTask } from '../tasks/service.js';
@@ -133,8 +134,17 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     minRole: 'operator',
     paramsSchema: z.object({ title: z.string().min(1).max(200), detail: z.string().max(500).optional(), href: z.string().max(300).optional() }),
     execute: async ({ subjectType, subjectId, params }) => {
+      // Monitor-fired alert. Scope from the surface it points at when that
+      // resolves; otherwise the monitor feature's OWN compartment ('monitors' is
+      // an intel webPath), and never DESK_SCOPE — an unattributable alert shown
+      // to every member is precisely the leak 0067 closed, reintroduced as a
+      // default. Falling back narrow can hide an alert; falling back wide leaks.
+      const monitorHref = params.href as string | undefined;
+      const monitorScope: WorkspaceId =
+        (monitorHref ? workspaceForPath(monitorHref) : null) ?? 'intel';
       await notify({
         rule: 'monitor',
+        workspace: monitorScope,
         title: String(params.title),
         detail: params.detail as string | undefined,
         projectId: subjectType === 'project' ? subjectId : undefined,
@@ -572,6 +582,8 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       invalidateEntitlements(subjectId);
       await notify({
         rule: 'access',
+        // this action declares workspace: 'governance' on its own def
+        workspace: 'governance',
         title: `Access granted: ${String(params.workspace)} (${String(params.capability)})`,
         detail: `${actor} entitled ${subjectId} — ${String(params.justification)}`,
         dedupKey: `access-grant:${subjectId}:${String(params.workspace)}:${Date.now()}`,
@@ -673,6 +685,8 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       }
       await notify({
         rule: 'access',
+        // this action declares workspace: 'governance' on its own def
+        workspace: 'governance',
         title: `Access request ${String(params.decision)}: ${req.workspace}`,
         detail: `${actor} ${String(params.decision)} ${req.member_id}'s request for ${req.capability} on ${req.workspace}`,
         dedupKey: `access-decide:${subjectId}`,
