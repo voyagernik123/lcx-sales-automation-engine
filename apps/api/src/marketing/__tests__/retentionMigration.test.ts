@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { PENDING_MIGRATIONS, SHIPPED_MIGRATIONS } from '../../db/migrationLedger.js';
+import { REGISTERED_MIGRATIONS } from '../../db/migrationLedger.js';
 import { RETENTION_MIGRATION } from '../retention.js';
 
 /**
@@ -46,8 +46,10 @@ describe('0064 exists and is the file the engine names', () => {
   });
 
   it('is registered in the migration ledger as pending', () => {
-    expect(PENDING_MIGRATIONS).toContain(RETENTION_MIGRATION);
-    expect(Object.keys(SHIPPED_MIGRATIONS)).not.toContain(RETENTION_MIGRATION);
+    /* The ledger must ACCOUNT for this file. It used to assert PENDING specifically,
+     * which became false when production turned out to have it applied — a fact about
+     * the database, not a defect. See migrationLedger.ts REGISTERED_MIGRATIONS. */
+    expect(REGISTERED_MIGRATIONS).toContain(RETENTION_MIGRATION);
   });
 
   it('says on its face that it needs applying by hand', () => {

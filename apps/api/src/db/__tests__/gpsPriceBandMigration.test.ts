@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PENDING_MIGRATIONS, SHIPPED_MIGRATIONS } from '../migrationLedger.js';
+import { REGISTERED_MIGRATIONS } from '../migrationLedger.js';
 import { PRICE_BAND_REGISTER_DDL } from '../../routes/gpsInputs.js';
 
 /**
@@ -124,9 +124,12 @@ describe('0066 is the DDL the input desk tells an operator to run', () => {
     expect(/\bD2\b|\bDPO\b|controller vs processor/i.test(SQL)).toBe(true);
   });
 
-  it('is listed as PENDING in the ledger, and is not frozen as shipped', () => {
-    expect(PENDING_MIGRATIONS, `${FILE} exists and the ledger has never heard of it`).toContain(FILE);
-    expect(Object.keys(SHIPPED_MIGRATIONS), `${FILE} cannot be both editable and frozen`)
-      .not.toContain(FILE);
+  it('is accounted for in the ledger', () => {
+    /* Repointed 2026-08-04 from PENDING to REGISTERED: production turned out to have
+     * these applied, so "is pending" became a false premise. The invariant that
+     * matters — the ledger accounts for the file, and the order it must be applied in
+     * is preserved — is unchanged. See migrationLedger.ts REGISTERED_MIGRATIONS. */
+    expect(REGISTERED_MIGRATIONS, `${FILE} exists and the ledger has never heard of it`)
+      .toContain(FILE);
   });
 });

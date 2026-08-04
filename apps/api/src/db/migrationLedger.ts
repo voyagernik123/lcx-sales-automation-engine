@@ -73,6 +73,43 @@ export const SHIPPED_MIGRATIONS: Readonly<Record<string, string>> = {
   // reach the database.
   '0050_gps_perimeter.sql': '7b665d098e5a98abed6943506be08eabc69686c1ae4fffc171ee06445d338fe9',
   '0051_gps_evidence_refusal.sql': '71659dc82324b023ef73d6ce02806bff2e2e095cc58fe7b5ef7944400c3b32ec',
+
+  /* ── 0052–0067: MOVED FROM PENDING 2026-08-04, and the reason is the point ──
+   *
+   * All sixteen sat in PENDING_MIGRATIONS, which `migrationImmutability.test.ts`
+   * treats as "legitimately editable — it has reached no environment, so nothing
+   * can be out of step with it". They HAD reached an environment: a read-only
+   * probe of production returned APPLIED for fifteen of the sixteen (the
+   * sixteenth, 0055, is a bare COMMENT ON TABLE and leaves no table or column to
+   * detect). So fifteen live migrations were unpinned and CI would have said
+   * nothing about an edit to any of them.
+   *
+   * That is the ratchet's own failure mode: a hand-written manifest drifted from
+   * the database and the drift was invisible, because nothing compared the two.
+   * The probe that found it is recorded in docs/phases/P1_CLAIM.md.
+   *
+   * 0055 is pinned on an INFERENCE, labelled as one: every neighbour 0052-0067 is
+   * confirmed applied and they were run as a block. Pinning is the safer error —
+   * if it is somehow unapplied it still applies later unchanged. To settle it:
+   *   SELECT obj_description('gps_jurisdiction_profile'::regclass) LIKE
+   *          '%a screen that refuses is not an act that was prevented%';
+   */
+  '0052_gps_underwriting.sql': '6f983846cebded92e20577313f879674e23ddf45d158997b34642c0e2ffd4d95',
+  '0053_gps_outcome.sql': '65a928070c291d08897ce9154f833b70cbe722036351a262abfc3bafe6edcc0b',
+  '0054_gps_origination.sql': '08979a3f3bab3e8968897ccba6e6ac4c84cf54cafbf41e3fcbd74a1c023f0dad',
+  '0055_gps_perimeter_comment.sql': '6b42b83c992f494d0fd453b43403553e460222c70048779fda344aaa8cf7fc19',
+  '0056_gps_delivery_gaps.sql': 'c5cda012df953affee66d7fa9be94157ee3f31385e8851ef3cc14448d7cd4888',
+  '0057_gps_artifact.sql': '9ec59451c9555d48646bc29fbf063687248eb2877fb0ae2fbf86282eda00b529',
+  '0058_gps_artifact_custody.sql': '03a9213883026b78d0955d8614feae499b71ed579918c64c53259d6610dd8e5f',
+  '0059_marketing_m0.sql': '9b854ca66d38677128579cd116be14f0b79d2e4412c44e8c8e416aeed42accd2',
+  '0060_marketing_abuse.sql': '1d7c3566e7cd54025c222dd05e3c53029a1131525997760d5360d0b3107cbfb8',
+  '0061_marketing_record.sql': '80cb64d076ecb9537c0b1c360e817bf368c062d084e49fe653ecedfd776b0feb',
+  '0062_marketing_gate_decisions.sql': '82870bccb42da1a29ef2132b815c67f8b0fefc384f8b0f5af54f1c4276f09986',
+  '0063_marketing_memory.sql': 'acd7b37c4992b7b0935a59950095aad5461f72ff33c0fab856980a600e96e8fd',
+  '0064_marketing_retention.sql': '32d5f94df56fe926af5029449cf0a075d15d11154f40cac3a5d9ec0621fe897d',
+  '0065_marketing_holdings_position.sql': 'cca1ae645be2225c35b7d6797ede32463efa0674af7d94b5945261410a98ab19',
+  '0066_gps_price_band.sql': 'f84d8fd51ca476bc6fbdd6b58dd5488f5953a5d8371668c026e5ca2e80407697',
+  '0067_notifications_workspace.sql': 'b4040abc3a82502f7da1a1e1914a383db8172023c5c75ae8efd3989a06dfa0fb',
 };
 
 /**
@@ -170,31 +207,28 @@ export const SHIPPED_MIGRATIONS: Readonly<Record<string, string>> = {
  *          `PLACEHOLDER` with the number struck through — which is the true state.
  */
 export const PENDING_MIGRATIONS: readonly string[] = [
-  '0052_gps_underwriting.sql',
-  '0053_gps_outcome.sql',
-  '0054_gps_origination.sql',
-  '0055_gps_perimeter_comment.sql',
-  '0056_gps_delivery_gaps.sql',
-  '0057_gps_artifact.sql',
-  '0058_gps_artifact_custody.sql',
-  '0059_marketing_m0.sql',
-  '0060_marketing_abuse.sql',
-  '0061_marketing_record.sql',
-  '0062_marketing_gate_decisions.sql',
-  '0063_marketing_memory.sql',
-  '0064_marketing_retention.sql',
-  '0065_marketing_holdings_position.sql',
-  '0066_gps_price_band.sql',
-  /**
-   * 0067 — `notifications.workspace` (LCX OS 100x P0 / F3). Closes a LIVE
-   * need-to-know breach: `listNotifications` had no workspace filter, so every
-   * operator's bell showed every compartment, and `markRead('all')` cleared rows
-   * the actor could not see. Applied to the local database; NOT yet on prod,
-   * which is why it is pending rather than pinned.
-   *
-   * Until it lands on an environment, `notify()` INSERTs there fail on the
-   * missing column — the bell degrades loudly rather than leaking quietly, which
-   * is the correct failure direction for this particular fix.
-   */
-  '0067_notifications_workspace.sql',
+  /* EMPTY, and that is a state with meaning: every migration on disk has reached
+   * production and is therefore pinned by content above. A file added here is
+   * editable until it is applied; a file that is applied belongs in SHIPPED.
+   * Verified 2026-08-04 by probing production for each migration's distinctive
+   * table or column — see docs/phases/P1_CLAIM.md for the query and its output. */
+];
+
+/**
+ * Every migration this repo accounts for, shipped or not.
+ *
+ * ADDED 2026-08-04 because nine assertions across six test files were written as
+ * `expect(PENDING_MIGRATIONS).toContain(f)` when what they meant was "the ledger
+ * knows about this file". Those two were the same thing while every recent
+ * migration was pending; they stopped being the same thing the moment a
+ * production probe showed all sixteen applied (docs/phases/P1_CLAIM.md), and nine
+ * tests failed for a fact about the DATABASE rather than a defect in the code.
+ *
+ * A test that wants "is this registered" should ask that. A test that genuinely
+ * needs "is this still editable" should read PENDING_MIGRATIONS directly and will
+ * then be correct for the right reason.
+ */
+export const REGISTERED_MIGRATIONS: readonly string[] = [
+  ...Object.keys(SHIPPED_MIGRATIONS),
+  ...PENDING_MIGRATIONS,
 ];

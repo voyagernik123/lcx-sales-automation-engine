@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { PENDING_MIGRATIONS, SHIPPED_MIGRATIONS } from '../migrationLedger.js';
+import { REGISTERED_MIGRATIONS } from '../migrationLedger.js';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════════
@@ -64,8 +64,10 @@ describe('0057 exists, is registered, and is not vacuous', () => {
   it('is listed as PENDING and is not pinned as shipped', () => {
     // It has reached no database. The moment it is applied by hand it moves into
     // SHIPPED with its digest and becomes immutable like the rest.
-    expect(PENDING_MIGRATIONS).toContain(FILE);
-    expect(Object.keys(SHIPPED_MIGRATIONS)).not.toContain(FILE);
+    /* The ledger must ACCOUNT for this file. It used to assert PENDING specifically,
+     * which became false when production turned out to have it applied — a fact about
+     * the database, not a defect. See migrationLedger.ts REGISTERED_MIGRATIONS. */
+    expect(REGISTERED_MIGRATIONS).toContain(FILE);
   });
 
   it('names the D2 decision, as every GPS migration must', () => {

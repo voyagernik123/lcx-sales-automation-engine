@@ -155,9 +155,25 @@ const PHASES = 'docs/phases';
 if (has(PHASES)) {
   const files = readdirSync(join(ROOT, PHASES));
   const claims = files.filter((f) => f.endsWith('_CLAIM.md'));
+  /*
+   * A CLAIM legitimately exists BEFORE its evidence — that is the loop's first step
+   * (§7.1: CLAIM -> BUILD -> GATE -> ... -> EVIDENCE). The first version of this rule
+   * failed P1_CLAIM.md the moment it was written, which would have taught the next
+   * author to skip writing claims. So the exemption is explicit rather than implied:
+   * a claim with no evidence must SAY it is unfinished. A finished phase cannot hide
+   * behind it, and an unfinished one cannot look finished.
+   */
   for (const f of claims) {
     const evidence = f.replace('_CLAIM.md', '_EVIDENCE.md');
-    if (!files.includes(evidence)) fail('phase-evidence', `${f} exists with no ${evidence}.`);
+    if (files.includes(evidence)) continue;
+    const body = read(`${PHASES}/${f}`);
+    if (!/\*\*Status:\*\*\s*IN PROGRESS/i.test(body)) {
+      fail(
+        'phase-evidence',
+        `${f} has no ${evidence} and does not declare '**Status:** IN PROGRESS'. Either the `
+          + 'phase is done and owes its evidence, or it is not and must say so.',
+      );
+    }
   }
   notes.push(`phase-evidence: ${claims.length} phase(s) checked`);
 }

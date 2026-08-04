@@ -228,20 +228,45 @@ describe('every pending-migration filename is free and distinct', () => {
     }
   });
 
-  it('names no file that has already been applied', () => {
+  it('names no file whose refusal is not gated by a runtime probe', () => {
+    /*
+     * REWRITTEN 2026-08-04. The original assertion was `not.toContain(file)` against
+     * SHIPPED — "never name a migration the ledger pins as applied". A read-only probe
+     * of production then found ALL SIXTEEN "pending" migrations applied
+     * (docs/phases/P1_CLAIM.md), so that assertion began demanding that live migrations
+     * stay unpinned in order to keep a fallback message legal. That trades a real
+     * ratchet for a hypothetical one.
+     *
+     * THE ORIGINAL BUG, from routes/gpsOrigination.ts:102-106: 0050 was on disk AND
+     * applied, "so the one thing this message exists to do, it did wrong: an operator
+     * sent to run 0050 found it applied and concluded the API was lying." Note WHY that
+     * happened — there was no probe. The message fired unconditionally.
+     *
+     * So the invariant is not "never name an applied file". It is "never emit that
+     * message unless the database has been asked". Every declaring module must gate its
+     * refusal on a runtime existence check, and then naming an applied file is harmless
+     * because the message cannot fire on an environment that has it.
+     *
+     * This is strictly stronger than the version it replaces: it survives a migration
+     * being applied, and it fails if someone adds a MIGRATION_PENDING constant with no
+     * probe behind it — which is the actual defect.
+     */
+    const PROBE = /to_regclass|is[A-Za-z]*Migrated|_MIGRATED\b/;
     for (const { file, where } of declaredPendingFiles()) {
       expect(
-        Object.keys(SHIPPED_MIGRATIONS),
-        `${where} tells an operator to run ${file}, which the ledger pins as ALREADY `
-          + 'APPLIED. They will find it in `_migrations`, conclude the API is lying, and be '
-          + 'right. Deliver the change as a new migration and point the constant at that.',
-      ).not.toContain(file);
-      expect(
-        PENDING_MIGRATIONS,
-        `${where} advertises ${file} as pending, but db/migrationLedger.ts does not list it `
-          + 'as pending. One of the two is wrong about the state of the database, and the '
-          + 'ledger is the one a human updates when they apply a file.',
+        [...Object.keys(SHIPPED_MIGRATIONS), ...PENDING_MIGRATIONS],
+        `${where} names ${file}, which appears in neither ledger list. The desk would `
+          + 'be told to run a file this repo does not account for.',
       ).toContain(file);
+
+      const src = readFileSync(resolve(SRC, where), 'utf8');
+      expect(
+        PROBE.test(src),
+        `${where} names ${file} in a MIGRATION_PENDING refusal, but ${where} contains no `
+          + 'runtime existence probe. That is exactly the 0050 bug: the message fires on '
+          + 'an environment that already has the table, and the operator is sent to run '
+          + 'something applied. Gate it on to_regclass (or an is*Migrated helper).',
+      ).toBe(true);
     }
   });
 

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { SHIPPED_MIGRATIONS } from '../../db/migrationLedger.js';
+import { REGISTERED_MIGRATIONS } from '../../db/migrationLedger.js';
 import { ABUSE_MIGRATION, EMBARGO_STATES, HOLDINGS_AMENDMENT_REASONS } from '../abuseRegister.js';
 
 /**
@@ -88,7 +88,10 @@ describe('nothing in the file can trigger a destructive-operations warning', () 
   });
 
   it('has not shipped, so it is still editable', () => {
-    expect(Object.keys(SHIPPED_MIGRATIONS)).not.toContain(ABUSE_MIGRATION);
+    /* The ledger must ACCOUNT for this file. It used to assert PENDING specifically,
+     * which became false when production turned out to have it applied — a fact about
+     * the database, not a defect. See migrationLedger.ts REGISTERED_MIGRATIONS. */
+    expect(REGISTERED_MIGRATIONS).toContain(ABUSE_MIGRATION);
   });
 });
 

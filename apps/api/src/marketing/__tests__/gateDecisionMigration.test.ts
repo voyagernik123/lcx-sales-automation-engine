@@ -3,7 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { GATE_MIGRATION } from '../outboundGate.js';
-import { PENDING_MIGRATIONS, SHIPPED_MIGRATIONS } from '../../db/migrationLedger.js';
+import { PENDING_MIGRATIONS, REGISTERED_MIGRATIONS, SHIPPED_MIGRATIONS } from '../../db/migrationLedger.js';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════════
@@ -173,9 +173,13 @@ describe('the marketing migrations and the ledger agree', () => {
   it('lists the pending marketing migrations in the order they must be applied', () => {
     // The ledger's own docblock says "Apply IN ORDER". A list out of numeric order makes
     // that instruction unfollowable for 0064, which needs 0059 and 0061 first.
-    const pendingMarketing = PENDING_MIGRATIONS.filter((f) => /marketing/i.test(f));
-    expect(pendingMarketing.length).toBeGreaterThanOrEqual(5);
-    expect(pendingMarketing).toEqual([...pendingMarketing].sort());
+    /* Repointed 2026-08-04 from PENDING to REGISTERED: production turned out to have
+     * these applied, so "is pending" became a false premise. The invariant that
+     * matters — the ledger accounts for the file, and the order it must be applied in
+     * is preserved — is unchanged. See migrationLedger.ts REGISTERED_MIGRATIONS. */
+    const marketingFiles = REGISTERED_MIGRATIONS.filter((f) => /marketing/i.test(f));
+    expect(marketingFiles.length).toBeGreaterThanOrEqual(5);
+    expect(marketingFiles).toEqual([...marketingFiles].sort());
   });
 
   it('names a real, unshipped file in every marketing MIGRATION constant', () => {

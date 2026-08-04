@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PENDING_MIGRATIONS } from '../../db/migrationLedger.js';
+import { PENDING_MIGRATIONS, REGISTERED_MIGRATIONS } from '../../db/migrationLedger.js';
 
 /**
  * THE INTEGRATION PASS — the defects that only existed BETWEEN the lanes.
@@ -191,10 +191,14 @@ describe('the migration ledger accounts for the marketing files', () => {
    * has to run it.
    */
   it('lists 0059, 0060 and 0061 as pending, in order', () => {
+    /* Repointed 2026-08-04 from PENDING to REGISTERED: production turned out to have
+     * these applied, so "is pending" became a false premise. The invariant that
+     * matters — the ledger accounts for the file, and the order it must be applied in
+     * is preserved — is unchanged. See migrationLedger.ts REGISTERED_MIGRATIONS. */
     for (const f of ['0059_marketing_m0.sql', '0060_marketing_abuse.sql', '0061_marketing_record.sql']) {
-      expect(PENDING_MIGRATIONS, f).toContain(f);
+      expect(REGISTERED_MIGRATIONS, f).toContain(f);
     }
-    const idx = (f: string) => PENDING_MIGRATIONS.indexOf(f);
+    const idx = (f: string) => REGISTERED_MIGRATIONS.indexOf(f);
     expect(idx('0059_marketing_m0.sql')).toBeLessThan(idx('0060_marketing_abuse.sql'));
     expect(idx('0060_marketing_abuse.sql')).toBeLessThan(idx('0061_marketing_record.sql'));
   });
@@ -203,7 +207,7 @@ describe('the migration ledger accounts for the marketing files', () => {
   it('matches the file names the refusing surfaces quote', async () => {
     const { ABUSE_MIGRATION } = await import('../abuseRegister.js');
     const { RECORD_MIGRATION } = await import('../record.js');
-    expect(PENDING_MIGRATIONS).toContain(ABUSE_MIGRATION);
-    expect(PENDING_MIGRATIONS).toContain(RECORD_MIGRATION);
+    expect(REGISTERED_MIGRATIONS).toContain(ABUSE_MIGRATION);
+    expect(REGISTERED_MIGRATIONS).toContain(RECORD_MIGRATION);
   });
 });

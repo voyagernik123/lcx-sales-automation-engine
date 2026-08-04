@@ -112,11 +112,31 @@ describe('shipped migrations are immutable', () => {
         `the API tells an operator to run ${file} and no such file exists. They cannot `
           + 'run it, so the surface refuses forever.',
       ).toContain(file);
+      /*
+       * THIS ASSERTION WAS INVERTED ON 2026-08-04, deliberately, and the reason
+       * matters more than the change.
+       *
+       * It used to require that a migration the API names must NOT be pinned as
+       * shipped — on the theory that naming one means it is pending. That theory
+       * broke when a read-only probe of production found all sixteen "pending"
+       * migrations applied (docs/phases/P1_CLAIM.md). The API does not assert
+       * pendingness: it probes with to_regclass AT RUNTIME and names the file only
+       * when the table is genuinely absent — which is the correct message on a
+       * fresh local database and never fires on prod.
+       *
+       * So the original assertion, taken literally, now demands that a live
+       * migration stay unpinned in order to keep a fallback message legal. That is
+       * backwards: it trades a real ratchet for a hypothetical one.
+       *
+       * What must remain true is the half above — the named file EXISTS, so an
+       * operator told to run it can run it. That was always the bug this test was
+       * written for (three surfaces naming files nobody had written).
+       */
       expect(
-        Object.keys(SHIPPED),
-        `${file} is advertised as PENDING by the API but is pinned as already shipped. `
-          + 'One of the two is lying to the desk.',
-      ).not.toContain(file);
+        [...Object.keys(SHIPPED), ...PENDING],
+        `${file} is named by an API refusal but appears in neither ledger list. `
+          + 'The desk would be told to run a file this repo does not account for.',
+      ).toContain(file);
     }
   });
 });
