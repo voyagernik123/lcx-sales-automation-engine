@@ -483,6 +483,36 @@ account for; decode the PNG bytes.
 - **Data geometry as SVG** — a small pure module (`packages/shared/src/geometry/`) plus renderers,
   5–9KB each on already-lazy routes, so zero initial bytes and no new dependency.
 
+  **SHIPPED `2550ac4`, AND MOUNTED — which was the part at risk.** `geometry/index.ts` is the pure
+  projector and mesh builder; `apps/web/src/components/geometry/SurfacePlot.tsx` draws coordinates
+  and computes nothing. Measured after wiring: **initial JS unchanged at 835KB**, 168 lazy chunks,
+  largest chunk 433/440, passthrough 720/1024 — the promise of zero initial bytes held.
+
+  It did not land as a library awaiting a caller. The readout shipped as four files reachable from
+  none and passed its own tests the whole time; a pure projector is easier still to leave that way.
+  So `<MarginSurface>` renders inside `Distribution` on `/gps/underwriting`, and a test asserts the
+  mount from the page source rather than trusting it.
+
+  **The one test this track sets for itself is met concretely.** `SensitivityTable` on that page
+  holds the price at the quoted number and walks the effort overrun — it answers what an overrun
+  costs. It cannot answer what the desk asks, *how much price buys back an overrun*, because that is
+  a relationship between two independent variables and a table with the price fixed has no column
+  for it. Pinned as one equality: a 50% overrun needs $24,000 to reach the same 50% median margin
+  the baseline reaches at $16,000. Both cells are off the table's edge. Remove the dimension and the
+  fact is unstateable.
+
+  Every height is arithmetic on the engine's own output, not a second simulation — median cost is
+  recovered exactly as `price − p50 margin`, the identical expression `underwrite.ts:843` uses to
+  publish `p50MarginPct` — so an auditor with the response and a calculator reproduces every cell.
+  Exactly one cell is a quote on the record, and the figure says so where a reader sees it.
+  `valuesArePlaceholders` is wired to the server's own `effortTriplesArePlaceholders`, so the
+  surface stops hatching itself the day real effort triples land, without anyone remembering it
+  exists.
+
+  **Still only one consumer.** Nothing else imports `buildSurfaceMesh`, because no other page has a
+  grid-shaped reading to give it. Further surfaces need a data source first, not a renderer — and a
+  second renderer built before that source would be the decoration this track exists to refuse.
+
 **Blocker, and it comes first:** `apps/web/scripts/check-bundle.mjs:47` filters
 `.endsWith('.js')` inside `dist/assets`, so `public/` is never measured — **744KB is invisible
 today** and a 40MB asset tree would land green. A 2048² RGBA PNG is 2.0MB, which is why web imagery
