@@ -470,6 +470,7 @@ export interface HonestyCeilingOptions {
    * `POST /v1/distribution/engines/channel-mix`, which is the point of the warning.
    */
   readonly exempt?: readonly CeilingExemptionRule[];
+
 }
 
 /**

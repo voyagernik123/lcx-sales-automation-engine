@@ -181,5 +181,9 @@ export const RELATED_RESOLVERS: Partial<Record<InspectorType, (pool: pg.Pool, id
 };
 
 export function isResolvableType(t: string): t is InspectorType {
-  return t in RELATED_RESOLVERS;
+  // hasOwnProperty.call, not `in`: `in` walks the prototype chain, so 'constructor',
+  // 'toString', 'valueOf' and '__proto__' all answer TRUE and this type guard would
+  // narrow a non-type to InspectorType. Same defect as intel/monitors.ts:44, where it
+  // made a monitor pass validation and then never fire.
+  return Object.prototype.hasOwnProperty.call(RELATED_RESOLVERS, t);
 }

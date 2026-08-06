@@ -330,13 +330,45 @@ describe('exemptions are off unless asked for', () => {
   });
 
   it('every exemption rule is a shape test on exactly one name', () => {
-    // There is deliberately no way to exempt a NAME without a shape test — "exempt
-    // impressions on this route" is how a blocklist becomes a formality.
+    /*
+     * There is deliberately no way to exempt a NAME without a shape test — "exempt
+     * impressions on this route" is how a blocklist becomes a formality.
+     *
+     * THIS ASSERTED `normalisedName === 'reach'`, WHICH IS NOT WHAT THE TITLE SAYS. It
+     * pinned the list's CONTENTS while claiming to test a PROPERTY of every rule, so it
+     * failed the first time a rule was added for a different name — a legitimate one, for
+     * INTEL's conversation sentiment census, whose value has an explicit denominator. A
+     * test whose name and assertion disagree fails on correct work, and the usual response
+     * is to weaken it.
+     *
+     * It now checks the property: ONE name per rule, a real shape function, and a stated
+     * reason. Which names are on the list is a separate question, asserted below against
+     * the forbidden set, where adding a rule for a name nobody banned would fail.
+     */
+    expect(DOCTRINE_CEILING_EXEMPTIONS.length).toBeGreaterThan(0);
     for (const rule of DOCTRINE_CEILING_EXEMPTIONS) {
-      expect(rule.normalisedName).toBe('reach');
+      expect(rule.normalisedName, 'a rule may name exactly one field').toMatch(/^[a-z0-9]+$/);
       expect(typeof rule.matches).toBe('function');
       expect(rule.because.length).toBeGreaterThan(40);
+      // An exemption for a name that is not forbidden is dead weight pretending to be a
+      // safeguard — and would hide the fact that the blocklist no longer bans it.
+      expect(
+        assertHonestPayloadAll({ [rule.normalisedName]: 'x' }).map((r) => r.code),
+        `${rule.normalisedName} is exempted but not forbidden`,
+      ).toEqual(['METRIC_NOT_OBSERVABLE']);
     }
+    /*
+     * TWO RULES MAY SHARE A NAME, and asserting otherwise was my own mistake — caught
+     * immediately, which is the argument for writing the assertion down rather than assuming.
+     * `reach` legitimately has two: the RESIST 2 circulation ladder and the ordinal 1-5
+     * scoring dimension are two DIFFERENT SHAPES of one banned name, and collapsing them into
+     * one rule would mean one `because` sentence covering two unrelated justifications.
+     *
+     * What must be unique is the ID, because that is what a log line carries and what a
+     * reader greps when they want to know which exemption fired.
+     */
+    const ids = DOCTRINE_CEILING_EXEMPTIONS.map((r) => r.id);
+    expect(new Set(ids).size, `duplicate exemption id in ${ids.join(', ')}`).toBe(ids.length);
   });
 });
 

@@ -36,7 +36,10 @@ const PROFILES: Record<string, RegionProfile> = {
 
 function normalizeRegion(input: string | null | undefined): string {
   const r = (input || '').toLowerCase().trim();
-  if (r in PROFILES) return r;
+  // hasOwnProperty.call, not `in` — see intel/monitors.ts:44. Here the consequence is
+  // milder (a bogus region name would be accepted as a profile key and then read as
+  // undefined downstream) but the shape is identical and it is not worth keeping.
+  if (Object.prototype.hasOwnProperty.call(PROFILES, r)) return r;
   if (['europe', 'eea', 'liechtenstein', 'germany', 'france'].some((x) => r.includes(x))) return 'eu';
   if (['united states', 'usa', 'america'].some((x) => r.includes(x))) return 'us';
   if (['england', 'britain', 'london'].some((x) => r.includes(x))) return 'uk';

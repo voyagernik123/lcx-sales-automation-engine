@@ -41,8 +41,32 @@ export interface MonitorRow {
 export function isValidMonitor(m: { condition?: MonitorCondition; action?: MonitorAction }): string | null {
   const metric = m.condition?.metric;
   const op = m.condition?.op;
-  if (!metric || !(metric in METRIC_SQL)) return `Unknown metric: ${metric}`;
-  if (!op || !(op in OP_SQL)) return `Unknown operator: ${op}`;
+  /*
+   * `hasOwnProperty.call`, NOT the `in` OPERATOR, and this is a real defect it fixes.
+   *
+   * `in` walks the prototype chain, so `'constructor' in METRIC_SQL` is TRUE — as are
+   * toString, valueOf, hasOwnProperty and __proto__. Every one of those passed this
+   * validation, and `buildQuery` then interpolated `METRIC_SQL[metric]` — the coerced
+   * FUNCTION SOURCE — into the WHERE clause, producing
+   *
+   *     function Object() { [native code] } > $1
+   *
+   * which Postgres rejects with a syntax error. That error is caught below and the tick
+   * `continue`s, so the monitor never advances `last_run_at` and never fires its action,
+   * every tick, forever — while `enabled` is still true. The result is not injection (the
+   * broken SQL only errors); it is a GOVERNED STANDING WATCH THAT READS AS LIVE AND IS
+   * PERMANENTLY DEAD, which is the fabrication class this platform treats as a real
+   * vulnerability. An operator believes a compliance watch is running.
+   *
+   * Verified: `'constructor' in {a:1}` → true, `hasOwnProperty.call({a:1},'constructor')`
+   * → false. The same pattern was fixed in `graph/links.ts` and `ai/schedule.ts`.
+   */
+  if (!metric || !Object.prototype.hasOwnProperty.call(METRIC_SQL, metric)) {
+    return `Unknown metric: ${metric}`;
+  }
+  if (!op || !Object.prototype.hasOwnProperty.call(OP_SQL, op)) {
+    return `Unknown operator: ${op}`;
+  }
   if (typeof m.condition?.threshold !== 'number') return 'threshold must be a number';
   const actionId = m.action?.id;
   if (!actionId || !ACTION_REGISTRY[actionId]) return `Unknown action: ${actionId}`;
@@ -79,24 +103,67 @@ function buildQuery(m: MonitorRow): { sql: string; params: unknown[] } {
   return { sql, params };
 }
 
-export interface MonitorTickStats { monitors: number; matched: number; fired: number }
+export interface MonitorTickStats {
+  monitors: number;
+  matched: number;
+  fired: number;
+  /**
+   * Monitors whose query FAILED this tick, by id — and it is in the returned stats rather
+   * than only in a log line for a specific reason.
+   *
+   * A monitor that throws is skipped by `continue` below, which means it never reaches the
+   * `UPDATE monitors SET last_run_at = now()` at the end of the loop. So it keeps
+   * `enabled = true`, keeps `last_match_count` at whatever it last was, and simply never
+   * fires — indefinitely. The only tell was a null `last_run_at` and a console.warn on a
+   * server nobody reads, which is a governed standing watch that reads as live and is dead.
+   *
+   * Both callers surface this: `intel/jobs.ts` records it on the job run, and
+   * `routes/monitors.ts` returns it to the operator who asked for the tick. An empty array
+   * is a claim that every monitor ran, not an absence of information.
+   */
+  failed: string[];
+}
 
 /** Evaluate all enabled monitors; fire actions on newly-matched subjects. */
 export async function evaluateMonitors(pool: pg.Pool): Promise<MonitorTickStats> {
   const { rows: monitors } = await pool.query(`SELECT * FROM monitors WHERE enabled = true`);
   let matched = 0;
+  const failed: string[] = [];
   let fired = 0;
 
   for (const raw of monitors as Record<string, unknown>[]) {
     const m = mapMonitor(raw);
-    if (isValidMonitor(m)) continue; // skip malformed monitors defensively
+    /*
+     * A MONITOR THAT FAILS VALIDATION IS REPORTED, NOT JUST SKIPPED.
+     *
+     * This line read `if (isValidMonitor(m)) continue;` with the comment "skip malformed
+     * monitors defensively". Skipping is right; being silent about it is not — and fixing
+     * the prototype-chain hole above MOVED the problem here rather than closing it. A
+     * monitor stored with `metric: 'constructor'` used to pass validation and die on the
+     * SQL; now it fails validation and dies here. Either way it is enabled, never runs,
+     * and says nothing. Same invisibility, one branch to the left.
+     *
+     * So both skip paths land in `failed`. The reason is recorded in the log line; the
+     * fact that a named monitor did not run is in the returned stats, where a caller
+     * cannot miss it.
+     */
+    const invalid = isValidMonitor(m);
+    if (invalid) {
+      console.warn(`[monitors] ${m.id} skipped as invalid: ${invalid}`);
+      failed.push(m.id);
+      continue;
+    }
     let matchIds: string[] = [];
     try {
       const { sql, params } = buildQuery(m);
       const { rows } = await pool.query(sql, params);
       matchIds = rows.map((r) => String((r as Record<string, unknown>).id));
     } catch (err) {
+      // NOT swallowed. `continue` still skips the fire — that part is correct, because a
+      // monitor whose condition could not be evaluated must not act — but the failure is
+      // now reported to the caller instead of dying in a log line. See MonitorTickStats.
       console.warn(`[monitors] ${m.id} query failed:`, err instanceof Error ? err.message : err);
+      failed.push(m.id);
       continue;
     }
     matched += matchIds.length;
@@ -132,7 +199,7 @@ export async function evaluateMonitors(pool: pg.Pool): Promise<MonitorTickStats>
     await pool.query(`UPDATE monitors SET last_run_at = now(), last_match_count = $2 WHERE id = $1`, [m.id, matchIds.length]);
   }
 
-  return { monitors: monitors.length, matched, fired };
+  return { monitors: monitors.length, matched, fired, failed };
 }
 
 /** Give notify/create_task a sensible default title if the monitor didn't set one. */

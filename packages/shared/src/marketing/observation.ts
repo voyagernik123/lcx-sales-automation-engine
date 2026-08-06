@@ -874,6 +874,19 @@ export interface CeilingFieldContext {
   readonly parentKey: string | null;
   /** Dotted path of the field itself, e.g. `data.rows[0].scores.reach`. */
   readonly path: string;
+  /**
+   * The other own keys of the ENCLOSING object. Optional, so every existing caller that
+   * builds a context by hand keeps compiling.
+   *
+   * WHY A SHAPE TEST NEEDS THIS. `CeilingExemptionRule` deliberately refuses to exempt a
+   * name without a shape test, "because 'exempt impressions on this route' is how a
+   * blocklist becomes a formality". The two `reach` rules can test shape from `parentKey`
+   * alone, because the enclosing key (`scores`) IS the discriminator. Not every collision
+   * is like that: INTEL's `sentimentScore` sits directly under `data`, which discriminates
+   * nothing. What identifies it is the CENSUS it belongs to — the sibling fields
+   * `analyzeConversation` returns with it. So the siblings are part of where a field sits.
+   */
+  readonly siblingKeys?: readonly string[];
 }
 
 /** One applied exemption. Counted and named, never silent. */
@@ -997,9 +1010,65 @@ export const REACH_ORDINAL_SCORE_EXEMPTION: CeilingExemptionRule = {
  * without a shape test, because "exempt `impressions` on this route" is how a blocklist
  * becomes a formality.
  */
+/**
+ * The sibling set `analyzeConversation` (`packages/shared/src/conversation.ts:79-87`) always
+ * returns. All six, or the exemption does not apply.
+ */
+const CONVERSATION_CENSUS_SIBLINGS: readonly string[] = [
+  'sentiment',
+  'commitments',
+  'nextSteps',
+  'risks',
+  'objections',
+  'messageCount',
+];
+
+/**
+ * INTEL's conversation sentiment score, WHICH HAS A DENOMINATOR — and that is the entire
+ * argument, not a convenience.
+ *
+ * The blocklist bans `sentiment*` for one stated reason: on X/Twitter those numbers are
+ * unobtainable without a credential this desk does not have, so any value in such a field was
+ * inferred, proxied or invented. `conversation.ts:76` computes
+ *
+ *     sentimentScore = total === 0 ? 0 : Math.round(((pos - neg) / total) * 100)
+ *
+ * where `pos` and `neg` are counts of cue phrases matched in thread text the desk owns
+ * outright and `total = pos + neg`. It is a census of an owned corpus with an explicit
+ * denominator — the exact opposite of the thing the rule exists to stop.
+ *
+ * WHY THIS RULE EXISTS AT ALL. `middleware/honesty.ts` was mounted globally, which applied
+ * marketing's missing-credential argument to every compartment, and
+ * `GET /v1/intel/conversation` collided: every 200 from that route had a true number replaced
+ * by a refusal asserting it was "inferred, proxied or invented". The name matched; nothing
+ * else did. That is the same class as the nine false positives the two `reach` rules exist
+ * for, and it is fixed the same way — with a shape test, not a route exception.
+ *
+ * THE SHAPE TEST IS THE CENSUS, NOT THE NUMBER. An integer in [-100, 100] is not
+ * distinctive; a fabricated sentiment score would be one too. What is distinctive is that it
+ * sits beside all six other `ConversationInsights` fields. A payload that wants this
+ * exemption has to be returning the whole census — which is why it cannot be obtained by
+ * naming a field `sentimentScore`.
+ */
+const SENTIMENT_CENSUS_EXEMPTION: CeilingExemptionRule = {
+  id: 'sentiment-score-owned-corpus-census',
+  normalisedName: 'sentimentscore',
+  because:
+    'a cue balance over a thread corpus the desk owns, with an explicit denominator '
+    + '(pos + neg), returned as part of the full ConversationInsights census — not a '
+    + 'platform metric that needs an X credential',
+  matches: (value, context) =>
+    typeof value === 'number'
+    && Number.isInteger(value)
+    && value >= -100
+    && value <= 100
+    && CONVERSATION_CENSUS_SIBLINGS.every((k) => context.siblingKeys?.includes(k) === true),
+};
+
 export const DOCTRINE_CEILING_EXEMPTIONS: readonly CeilingExemptionRule[] = [
   REACH_LADDER_EXEMPTION,
   REACH_ORDINAL_SCORE_EXEMPTION,
+  SENTIMENT_CENSUS_EXEMPTION,
 ];
 
 /** What the caller may tell the walk. Every field optional; the default is the old behaviour. */
@@ -1279,6 +1348,7 @@ export function walkHonestyCeiling(
             path === '' ? key : `${path}.${key}`,
             () => (node as unknown as Record<string, unknown>)[key],
             parentKey,
+            Object.getOwnPropertyNames(node),
           );
         }
       }
@@ -1334,11 +1404,12 @@ export function walkHonestyCeiling(
     where: string,
     readValue: () => unknown,
     parentKey: string | null,
+    siblingKeys: readonly string[],
   ): boolean {
     /* Not a second copy of the decision: this can only skip work where the verdict would have
        been `allowed`, and `ceilingFieldVerdict` still makes every actual call. */
     if (!NORMALISED_FORBIDDEN.has(normaliseFieldName(key))) return false;
-    const verdict = ceilingFieldVerdict(key, readValue(), { parentKey, path: where }, options);
+    const verdict = ceilingFieldVerdict(key, readValue(), { parentKey, path: where, siblingKeys }, options);
     if (verdict.kind === 'allowed') return false;
     if (verdict.kind === 'exempt') {
       exempted.push(verdict.exemption);
@@ -1359,7 +1430,7 @@ export function walkHonestyCeiling(
        name nested under an already-refused path is the same defect reported twice at a path
        nobody will render. An EXEMPTED field IS descended into: a `ReachAssessment` is a real
        object whose own keys have never been checked by anything. */
-    if (refuseIfForbidden(key, where, () => node[key], parentKey)) return;
+    if (refuseIfForbidden(key, where, () => node[key], parentKey, Object.getOwnPropertyNames(node))) return;
     walk(node[key], depth + 1, where, key);
   }
 
