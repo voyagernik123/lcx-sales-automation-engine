@@ -35,7 +35,7 @@
     "seed:demo": "tsx apps/api/src/seed/demo.ts",
     "deploy:migrate": "psql $DATABASE_URL -f apps/api/src/db/migrations/",
     "smoke": "./scripts/smoke-e2e.sh",
-    "ci-check": "npm run doctrine-lint && npm run type-check && npm run test && npm run build",
+    "ci-check": "npm run doctrine-lint && npm run type-check && npm run test && npm run build && npm run perf-budget -w @lcx/web",
     "gen:actions": "tsx apps/api/scripts/gen-action-manifest.ts",
     "gate": "npm run lint && npm run ci-check && npm run perf-budget -w @lcx/web && npm run e2e -w @lcx/web"
   },
