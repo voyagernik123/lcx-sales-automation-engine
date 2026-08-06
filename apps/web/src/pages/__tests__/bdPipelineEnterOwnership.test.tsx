@@ -120,10 +120,33 @@ async function renderQueue() {
  * pass through it.
  */
 async function settle(): Promise<void> {
-  await waitFor(() => {
+  const quiet = () => {
     expect(useBdStore.getState().loading).toBe(false);
     expect(document.querySelectorAll('[data-list-row]').length).toBe(ROWS);
-  }, { timeout: 10_000 });
+  };
+  await waitFor(quiet, { timeout: 10_000 });
+
+  /*
+   * AND IT HAS TO STAY SETTLED, which the single wait above could not establish.
+   *
+   * The paragraph above says the page passes through the settled state TWICE. That makes the
+   * first `waitFor` satisfiable on pass ONE, with the mount refetch still to come — so a
+   * harness could settle, press `j`, take the selection correctly, and then have the refetch
+   * land and re-render the rows out from under it. The next key then arrives with nothing
+   * selected, and the failure surfaces wherever that key was supposed to act: the 2-press
+   * test read it as "`j` then `d` did not open the disqualify dialog", which is a verdict
+   * about the grammar and was nothing of the kind.
+   *
+   * It reproduced only under full-suite load, and only sometimes — it took ADDING AN
+   * UNRELATED TEST FILE, which shifted vitest's worker assignment, to surface it once in a
+   * run that had otherwise been green. That is the worst shape a test defect comes in.
+   *
+   * The `setTimeout(0)` is not padding: a refetch dispatched in an effect has to reach the
+   * store through at least one macrotask, so yielding one and re-checking is what makes the
+   * difference between "settled" and "between two loads" observable at all.
+   */
+  await act(async () => { await new Promise<void>((r) => setTimeout(r, 0)); });
+  await waitFor(quiet, { timeout: 10_000 });
 }
 
 /**
@@ -352,6 +375,18 @@ describe('and Enter still opens the selected lead everywhere it should', () => {
 
     let presses = 0;
     press('j', main); presses++;
+    /*
+     * THE PRECONDITION, STATED. `d` can only open the dialog for a SELECTED lead, so without
+     * this line a lost selection is reported as "the grammar no longer reaches the dialog in
+     * two presses" — a false verdict about the thing under test, which is exactly how it read
+     * when the settle race above let it happen. `selectFirst()` is not reused here because it
+     * presses at `document.body` and would add a press to the count being measured; the
+     * assertion it makes is what matters and it is made here, at `main`.
+     */
+    expect(
+      Array.from(document.querySelectorAll('tr[aria-selected="true"]')).map((r) => r.getAttribute('data-lead-id')),
+      'the precondition failed: `j` from <main> did not select a lead, so `d` has nothing to disqualify',
+    ).toEqual(['p-0']);
     press('d', main); presses++;
     const dialog = document.querySelector('[role="dialog"]');
     expect(dialog, 'j then d from <main> did not open the disqualify dialog').not.toBeNull();

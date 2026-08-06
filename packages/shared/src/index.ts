@@ -222,3 +222,23 @@ export {
   referralViralitySim, emissionBudget, questCacSim,
   channelMix, attributeChannels, presenceScore,
 } from './distributionEngines.js';
+
+// GEOMETRY — the third dimension, as an engine rather than as decoration.
+//
+// A pure isometric projector and mesh builder. It takes a grid of z values and returns
+// COORDINATES; it draws nothing, holds no DOM, and has no colour in it. `components/geometry`
+// is the only thing that renders, which is what makes a figure on this platform recomputable
+// by an auditor from the same numbers rather than merely inspectable.
+//
+// IT REFUSES ON THE SAME TERMS AS EVERY OTHER READING HERE. A grid with no environment, no
+// observation date, no source, a degenerate axis, a non-finite z or nothing observed at all
+// returns refusals with codes and rule citations instead of a figure — because a 3-D surface
+// is the single most persuasive thing this platform can put on a screen, and a persuasive
+// figure built on an absent measurement is worse than no figure. `null` is a cell nobody
+// measured and draws as a HOLE; `WITHHELD` is a cell that was measured and may not be shown,
+// and it counts and draws separately. Collapsing those two is the failure the doctrine names.
+//
+// WHOLESALE, for the reason recorded above the GPS and MARKETING exports and proved twice by
+// it: a hand-maintained name list is a second place to forget, with no signal until an emit
+// build in Docker order fails.
+export * from './geometry/index.js';

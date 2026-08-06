@@ -381,15 +381,24 @@ describe('the overrun slider', () => {
 
     const callsBefore = mocked.mock.calls.length;
     expect(screen.getByTestId('overrun-current')).toHaveTextContent('+0%');
-    // The chart's own description carries the baseline median before the move.
-    const chartBefore = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    /*
+     * The chart's own description carries the baseline median before the move.
+     *
+     * NAMED, not `getByRole('img')` alone. There are now TWO figures in this section — the
+     * band, and the margin SURFACE over price × overrun that was added beside it — so a bare
+     * role query is ambiguous and threw. Naming the band is also the stronger assertion: an
+     * unnamed query that survived a second figure appearing could silently start reading the
+     * wrong one and still pass.
+     */
+    const band = () => screen.getByRole('img', { name: /Realised margin band/ });
+    const chartBefore = band().getAttribute('aria-label') ?? '';
 
     fireEvent.change(screen.getByTestId('overrun-slider'), { target: { value: String(points.length - 1) } });
 
     await waitFor(() => expect(screen.getByTestId('overrun-current')).toHaveTextContent(`+${last.effortUpliftPct}%`));
     // The BAND moved, not only a caption: `aria-label` is generated from the selected
     // point's percentiles, so a changed label is a changed chart.
-    const chartAfter = screen.getByRole('img').getAttribute('aria-label') ?? '';
+    const chartAfter = band().getAttribute('aria-label') ?? '';
     expect(chartAfter).not.toBe(chartBefore);
     expect(chartAfter).toContain(`+${last.effortUpliftPct}% effort`);
 

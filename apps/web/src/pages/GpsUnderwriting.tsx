@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Calculator, Lock, RotateCcw, ShieldAlert, Swords } from 'lucide-react';
 import { clsx } from 'clsx';
-import { OFFERS, type OfferKey } from '@lcx/shared';
+import {
+  OFFERS, type OfferKey,
+  buildSurfaceMesh, marginPct, type SurfaceOutcome,
+} from '@lcx/shared';
+import { SurfacePlot } from '@/components/geometry/SurfacePlot';
+import { apiConfig } from '@/lib/apiClient';
 import { PageTitle, Button, Input, Select } from '@/components/ui';
 import { EmptyState } from '@/components/shared';
 import { PrintStyles } from '@/components/report/PrintStyles';
@@ -1170,8 +1175,154 @@ function Distribution({ res, uplift, setUplift, onOpenTrail }: {
         <SensitivityTable s={s} points={points} selectedIdx={idx} setUplift={setUplift} />
       </div>
 
+      <div className="mt-4">
+        <MarginSurface res={res} />
+      </div>
+
       <p className="mt-2 text-[10px] leading-snug text-grey" data-testid="percentile-method">{res.percentileMethod}</p>
     </section>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════════ */
+/* THE MARGIN SURFACE — the one figure on this platform that needs three dimensions   */
+/* ══════════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * `SensitivityTable`, directly above this, is the 2-D slice: it holds the price at the
+ * quoted number and walks the effort overrun. It answers "what does an overrun cost me".
+ * It cannot answer the question the desk actually asks, which is **"how much price buys
+ * back an overrun"** — that is a relationship between TWO independent variables, and a
+ * table with the price fixed has no column for it.
+ *
+ * So the third axis here is not decoration, and the test the plan sets for this whole
+ * track is met concretely: remove a dimension and a specific fact becomes unreadable.
+ *
+ * ── WHY EVERY HEIGHT IS ARITHMETIC AND NOT A SECOND SIMULATION ────────────────────
+ * The engine returns, per overrun point, the median margin AT THE QUOTED PRICE. Median
+ * cost is recovered exactly: cost = price − p50 margin. That is not an approximation —
+ * margin is a decreasing affine transform of cost at a fixed price, so the median maps
+ * through it exactly. Vendor cost does not move because LCX charges more, so re-pricing
+ * against that fixed simulated cost is arithmetic, and it is done by `marginPct`, the
+ * same pure function the quote itself uses. No second Monte Carlo is run, nothing is
+ * refetched, and no percentile is invented: an auditor with `s.points` and a calculator
+ * reproduces every cell.
+ *
+ * ── WHAT IS ON THE RECORD, AND WHAT IS NOT ────────────────────────────────────────
+ * Exactly ONE cell is the quote — the quoted price at baseline effort. Every other cell
+ * is a counterfactual, and `readsAs` says so on the figure rather than in this comment,
+ * because a reader who takes the whole surface as a set of committed quotes has been
+ * misled by a figure that was technically accurate.
+ *
+ * `valuesArePlaceholders` is wired to the SERVER'S OWN flag, never to a literal `true`.
+ * The effort triples behind these costs are still `TODO_EFFORT_DAYS`, so the figure must
+ * look like a placeholder — and on the day real triples land, `EFFORT_TRIPLES_ARE_
+ * PLACEHOLDERS` flips in that same commit and this surface stops hatching itself without
+ * anyone remembering it exists.
+ */
+const PRICE_MULTIPLES = [0.8, 0.9, 1, 1.1, 1.2] as const;
+
+/**
+ * EXACTLY what the surface reads, and nothing else.
+ *
+ * Narrow on purpose rather than taking `Underwriting` and `OverrunSensitivity` whole: it lets
+ * the test drive THIS function with an honest four-field fixture instead of casting a
+ * half-built `Underwriting`, and a cast is how a renamed field passes a suite. The real call
+ * site satisfies it structurally, so nothing is adapted or copied at the boundary.
+ */
+export interface MarginSurfaceInput {
+  readonly priceCents: number;
+  readonly currency: string;
+  readonly asOf: string;
+  readonly points: readonly Pick<OverrunPoint, 'effortUpliftPct' | 'p50MarginCents'>[];
+  /** The SERVER's placeholder flag. Never a literal — see the note above. */
+  readonly placeholders: boolean;
+}
+
+export function buildMarginSurface({
+  priceCents: price, currency, asOf, points, placeholders,
+}: MarginSurfaceInput): SurfaceOutcome {
+  const priceAt = (m: number) => Math.round(price * m);
+
+  /*
+   * Row-major, `rows[j][i]` at (price i, overrun j) — the engine's own order for both.
+   * `marginPct` returns null at a non-positive price, which the mesh draws as a HOLE
+   * rather than as a zero. Unreachable from this screen (a price is required to get a
+   * distribution at all) and deliberately not special-cased: the one thing this figure
+   * must never do is put a break-even-looking cell where there is no margin to state.
+   */
+  const rows = points.map((p) =>
+    PRICE_MULTIPLES.map((m) => marginPct(priceAt(m), price - p.p50MarginCents)),
+  );
+
+  return buildSurfaceMesh({
+    rows,
+    xAxis: {
+      label: 'Price',
+      unit: currency,
+      ticks: PRICE_MULTIPLES.map((m) => ({ value: priceAt(m), label: money(priceAt(m)) })),
+    },
+    yAxis: {
+      label: 'Effort overrun',
+      unit: '% over the sampled triple',
+      ticks: points.map((p) => ({
+        value: p.effortUpliftPct,
+        label: p.effortUpliftPct === 0 ? 'baseline' : `+${p.effortUpliftPct}%`,
+      })),
+    },
+    zAxis: {
+      label: 'Median margin',
+      unit: '% of price',
+      formatTick: (v) => `${Math.round(v)}%`,
+    },
+    frame: {
+      /*
+       * THE API HOST, NAMED AS THE API HOST. The response carries no database identity,
+       * and inventing one ('production') would be the exact laundering the frame exists
+       * to prevent. What this screen actually knows is which service answered it.
+       */
+      environment: `API ${apiConfig.base}`,
+      observedAt: asOf,
+      /* A snapshot at one instant, not a window — so both endpoints are null, not `asOf`. */
+      windowFrom: null,
+      windowTo: null,
+      source:
+        'gps/underwrite.ts simulate → OverrunPoint.p50MarginCents, repriced by gps/types.ts marginPct',
+      valuesArePlaceholders: placeholders,
+    },
+  });
+}
+
+const MARGIN_SURFACE_READS_AS =
+  'Height is the MEDIAN margin as a percent of price. The floor axes are the two things that '
+  + 'move a services P&L against each other: what LCX charges, and how far the effort overruns. '
+  + 'The ridge between them is the answer the table beside this cannot give — how much price '
+  + 'buys back an overrun. Only ONE cell is a quote on the record, the quoted price at baseline '
+  + 'effort; every other cell is arithmetic on the same simulated median cost, at a price nobody '
+  + 'has offered. Heights are medians, so half of the simulated outcomes fall below each one.';
+
+function MarginSurface({ res }: { res: UnderwriteResponse }) {
+  const u = res.underwriting;
+  const s = res.sensitivity;
+
+  const surface = useMemo(
+    () => buildMarginSurface({
+      priceCents: u.priceCents,
+      currency: u.currency,
+      asOf: u.asOf,
+      points: s.points,
+      placeholders: res.effortTriplesArePlaceholders,
+    }),
+    [u.priceCents, u.currency, u.asOf, s.points, res.effortTriplesArePlaceholders],
+  );
+
+  return (
+    <SurfacePlot
+      surface={surface}
+      title={`Median margin over price × effort overrun (${u.currency})`}
+      readsAs={MARGIN_SURFACE_READS_AS}
+      heightPx={340}
+    />
   );
 }
 
