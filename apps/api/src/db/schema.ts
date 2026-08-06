@@ -2,6 +2,7 @@ import {
   pgTable,
   uuid,
   text,
+  bigint,
   boolean,
   integer,
   numeric,
@@ -771,6 +772,97 @@ export const modelCalibrations = pgTable('model_calibrations', {
 }, (t) => [
   index('idx_calib_metric_date').on(t.metricKey, t.snapshotDate),
   index('idx_calib_date').on(t.snapshotDate),
+]);
+
+/**
+ * platform_forecast — WHAT WAS PREDICTED, PENDING migration 0074.
+ *
+ * THE ONE THING NO EARLIER MIGRATION HAD. Nothing in 0000–0073 pairs a prediction
+ * with an outcome: `model_calibrations` above stores the RESULT of a calibration and
+ * none of its inputs, `observations` stores values with no horizon and no notion of
+ * resolution, and `gps_outcome` (0050) stores what happened with no instant at which
+ * anything was predicted. So every accuracy claim the platform could make was
+ * unfalsifiable.
+ *
+ * AND IT IS WHY `intel/calibration.ts` WAS MEASURING ITSELF. That loop read the
+ * LATEST observation per subject, while `packages/shared/src/alpha.ts` subtracts 40
+ * from listing propensity and 50 from winnability once `listed_on_lcx` is true —
+ * which every won deal is. `predicted_at` is what lets the loop read a value AS OF
+ * the moment the call was made instead.
+ *
+ * THE DECLARATION CONFERS NO TYPE SAFETY ON THE READER, and the honest note is the
+ * same one `listing_labels` above carries: `kpi/platformForecast.ts` uses raw SQL
+ * throughout (it needs `GROUPING SETS`, `DISTINCT ON` and `to_char` at microsecond
+ * precision, none of which survive a Drizzle round-trip), so nothing here is checked
+ * by the compiler. It is declared so the shape lives in one place with the rest of
+ * the schema — and so the next lane that reaches for a nullable outcome column on
+ * this table reads the comment below first.
+ *
+ * NOTHING SELECTS THESE TWO TABLES THROUGH DRIZZLE, and nothing must until 0074 is
+ * applied. `platformForecastLedgerPresent` probes with `to_regclass` for exactly that
+ * reason.
+ */
+export const platformForecast = pgTable('platform_forecast', {
+  seq: bigint('seq', { mode: 'number' }).notNull(),
+  id: uuid('id').default(sql`gen_random_uuid()`).primaryKey(),
+  orgId: uuid('org_id').notNull().default('11111111-1111-1111-1111-111111111111'),
+  engine: text('engine').notNull(),
+  /** Grouped by, never pooled across: a review of two versions reviews a model that never existed. */
+  engineVersion: text('engine_version').notNull(),
+  subjectType: text('subject_type').notNull(),
+  subjectId: text('subject_id').notNull(),
+  metricKey: text('metric_key').notNull(),
+  /** probability | ordinal | scalar | category — a 0.7 probability and a 0.7 ordinal are not one claim. */
+  predictionKind: text('prediction_kind').notNull(),
+  predictedNum: numeric('predicted_num'),
+  predictedLabel: text('predicted_label'),
+  /** Supplied by the caller, NOT defaulted: a DEFAULT now() dates every backfill to the backfill. */
+  predictedAt: timestamp('predicted_at', { withTimezone: true }).notNull(),
+  /** Without it, "not yet happened" and "we were wrong" are the same row. */
+  horizonDays: integer('horizon_days').notNull(),
+  inputsFrame: jsonb('inputs_frame').default({}).notNull(),
+  /** NOT NULL, and 0074 also refuses the literal 'unknown' — that sentinel shipped a price once. */
+  environment: text('environment').notNull(),
+  recordedAt: timestamp('recorded_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  uniqueIndex('idx_pforecast_identity').on(
+    t.engine, t.engineVersion, t.subjectType, t.subjectId, t.metricKey, t.predictedAt,
+  ),
+  index('idx_pforecast_subject').on(t.subjectType, t.subjectId),
+  index('idx_pforecast_engine').on(t.engine, t.engineVersion, t.metricKey),
+]);
+
+/**
+ * platform_forecast_outcome — WHAT ACTUALLY HAPPENED, appended. PENDING 0074.
+ *
+ * WHY THIS IS NOT NULLABLE COLUMNS ON THE TABLE ABOVE. A nullable `observed_num` up
+ * there makes resolution an UPDATE, and an UPDATE is how a prediction stops being
+ * one: whoever types the outcome is one keystroke from correcting the prediction to
+ * match. That is not hypothetical — `gps/loop.ts:277-281` records copying the quoted
+ * price onto the outcome row at close, which made every slippage figure zero. 0074
+ * puts an append-only trigger on both tables, so a correction is a NEW row here and
+ * the reader reports how many earlier rows it superseded.
+ *
+ * There is deliberately NO unique key on `forecast_id`: one outcome per forecast
+ * would make a correction an UPDATE again.
+ */
+export const platformForecastOutcome = pgTable('platform_forecast_outcome', {
+  seq: bigint('seq', { mode: 'number' }).notNull(),
+  id: uuid('id').default(sql`gen_random_uuid()`).primaryKey(),
+  forecastId: uuid('forecast_id').references(() => platformForecast.id).notNull(),
+  /** resolved | unresolvable. 'unresolvable' is a first-class outcome, not a missing row. */
+  outcomeKind: text('outcome_kind').notNull(),
+  observedNum: numeric('observed_num'),
+  observedLabel: text('observed_label'),
+  /** 0074 refuses a row whose `observed_at` precedes its prediction's `predicted_at`. */
+  observedAt: timestamp('observed_at', { withTimezone: true }).notNull(),
+  source: text('source').notNull(),
+  note: text('note'),
+  /** observed | reconstructed. Same distinction 0071 draws for entitlement events. */
+  provenance: text('provenance').notNull(),
+  recordedAt: timestamp('recorded_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => [
+  index('idx_pfoutcome_forecast').on(t.forecastId),
 ]);
 
 /** collection_state — per (object, source) freshness + intelligence-gap ledger. */

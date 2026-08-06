@@ -1,3 +1,4 @@
+import type { TaskCompression } from '@lcx/shared';
 import { request } from '../apiClient';
 
 /** LCX COMMAND (Wave 1) — mirrors apps/api/src/routes/command.ts + overview.ts. */
@@ -57,6 +58,22 @@ export interface LaunchSim {
   p10Days: number; p50Days: number; p90Days: number; meanDays: number;
   p10Date: string; p50Date: string; p90Date: string;
   criticality: Array<{ id: string; title: string; status: string; criticality: number; meanDuration: number }>;
+  /**
+   * The MAGNITUDE limb — days of launch bought per day of compression, beside
+   * `criticality`, which is only a frequency. The ROW TYPE IS THE SHARED ONE ON
+   * PURPOSE: CommandDeck.tsx used to declare a structural copy of it here-adjacent
+   * because this interface predated the limb, and the copy had already drifted —
+   * it typed `meanSlackDays` as nullable (the engine guarantees a number so a null
+   * can never arrive without a code) and `code` as bare `string` (it is the
+   * `CompressionRefusal` union the UI keys off).
+   *
+   * OPTIONAL, and that is not laziness: the deployed API may predate this limb, and
+   * "the field is absent" must stay distinguishable from "every row is withheld"
+   * and from "there is nothing to rank". CommandDeck renders all three differently.
+   */
+  compression?: TaskCompression[];
+  /** The finite step the slope was measured at, in days. Absent with `compression`. */
+  compressionStepDays?: number;
   warnings: string[];
   assumptions: Array<{ id: string; title: string; status: string; min: number; mode: number; max: number }>;
   disclaimer: string;

@@ -1,7 +1,7 @@
 import { Suspense, useEffect } from 'react';
 import { Outlet, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { workspaceForPath, capAtLeast } from '@lcx/shared';
-import { TopNav } from './TopNav';
+import { TopNav, TRAFFIC_LIGHT_INSET_PX } from './TopNav';
 import { Sidebar } from './Sidebar';
 import { MainContent } from './MainContent';
 import { Footer } from './Footer';
@@ -249,8 +249,15 @@ export function AppLayout() {
        * transform has no such conflict, keeps the link in the tab order and the
        * a11y tree, and under `prefers-reduced-motion` the transition collapses to
        * 0.01ms so it simply appears — still correct, just not animated. */}
+      {/* …and in LCXOS it has to move out from under the traffic lights. `left-2 top-2`
+       * puts it at (8,8); the close button's measured frame is x 9..23, y 9..23 (see
+       * TRAFFIC_LIGHT_INSET_PX), and macOS draws its buttons OVER the webview — so the
+       * first tab stop of the whole app was appearing underneath them. Same inset as the
+       * header, same one definition, and `undefined` in a browser so the web build keeps
+       * `left-2` exactly. */}
       <a
         href="#main-content"
+        style={isTerminal() ? { left: TRAFFIC_LIGHT_INSET_PX } : undefined}
         className="focus-ring fixed left-2 top-2 z-[300] -translate-y-16 rounded border border-line bg-card px-3 py-1.5 text-label font-semibold text-navy shadow-overlay transition-transform focus:translate-y-0"
       >
         Skip to content

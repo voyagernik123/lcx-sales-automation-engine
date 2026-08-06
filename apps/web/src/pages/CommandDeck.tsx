@@ -336,6 +336,18 @@ function RiskHeat({ risks }: { risks: CommandRisk[] }) {
   );
 }
 
+/**
+ * The WRITE vocabulary for a program task — mirrors the zod enum on
+ * apps/api/src/actions/registry.ts:233, which is the gate that actually validates
+ * the governed action, so any status added here and not there is rejected server-side.
+ *
+ * ── THE SPLIT WITH `FINISHED_STATUSES` IS DELIBERATE AND PENDING THE OWNER'S CALL ──
+ * The only TERMINAL status an operator can set here is 'done'. The read-side set
+ * `FINISHED_STATUSES` below treats four ('done', 'complete', 'completed', 'live')
+ * as finished, because seeded rows and direct SQL writes carry those. Unifying the
+ * two would change what counts as finished on a live surface — see the note at
+ * `FINISHED_STATUSES` for why neither side is being moved here.
+ */
 const TASK_STATUSES = ['not_started', 'pending', 'open', 'in_progress', 'blocked', 'tentative', 'future', 'done'] as const;
 
 /** Critical path: the gating/unblocker tasks + anything blocked, with governed status control. */
@@ -561,34 +573,27 @@ function DecisionRow({ d, onChange }: { d: CommandDecision; onChange: () => void
 }
 
 /**
- * The days-bought limb of the launch sim (P1e). The shared LaunchSim type lives
- * in apps/web/src/lib/api/command.ts, which this lane does not own, so the new
- * fields are read through a local structural view of the same payload.
- */
-type CompressionRow = {
-  id: string;
-  title: string;
-  status: string;
-  meanSlackDays: number | null;
-  slackStdErr: number | null;
-  daysBoughtPerDay: number | null;
-  slopeStdErr: number | null;
-  slopeRuns: number;
-  code: string | null;
-  bindingPredecessor: string | null;
-  bindingPredecessorRuns: number;
-};
-type LaunchSimWithCompression = LaunchSim & { compression?: CompressionRow[]; compressionStepDays?: number };
-
-/**
- * The one definition of "finished" this panel uses, for BOTH lists on it. These
- * are exactly the statuses whose duration default is 0/0/0 in
+ * The one definition of "finished" this panel uses for READING, for BOTH lists on
+ * it. These are exactly the statuses whose duration default is 0/0/0 in
  * packages/shared/src/launchSim.ts, and they match the set
- * apps/api/src/ai/commandOperator.ts:82 uses. The criticality list previously
- * filtered the single status 'done' while the days-bought list filtered nothing,
- * so a finished task appeared in the withheld line — "we cannot tell you" for
- * work that is over. Zero of the 24 production tasks are in any terminal state
- * today, so nothing visible moves; it is fixed now because it is cheap now.
+ * apps/api/src/ai/commandOperator.ts:82 and apps/api/src/command/overview.ts:29
+ * use. The criticality list previously filtered the single status 'done' while the
+ * days-bought list filtered nothing, so a finished task appeared in the withheld
+ * line — "we cannot tell you" for work that is over. Zero of the 24 production
+ * tasks are in any terminal state today, so nothing visible moves; it is fixed now
+ * because it is cheap now.
+ *
+ * ── THE SPLIT WITH `TASK_STATUSES` IS DELIBERATE AND PENDING THE OWNER'S CALL ──
+ * `TASK_STATUSES` above (this file, the status <select> on CriticalPath) is the
+ * WRITE vocabulary, and its only terminal member is 'done'. So an operator can
+ * only ever mark a task 'done', while this READ set treats four statuses as
+ * finished. The other three can therefore only arrive from the seed extract or a
+ * direct SQL write — they are not reachable through the UI.
+ * The two are NOT unified here on purpose: widening the write list would let an
+ * operator create states nothing else in the program models, and narrowing this
+ * read set to 'done' alone would reclassify any already-seeded 'complete' /
+ * 'completed' / 'live' task as unfinished — which changes what counts as finished
+ * on a live surface. That is the owner's decision, not this lane's.
  */
 const FINISHED_STATUSES = new Set(['done', 'complete', 'completed', 'live']);
 const isFinished = (status: string) => FINISHED_STATUSES.has(status);
@@ -599,7 +604,7 @@ const isFinished = (status: string) => FINISHED_STATUSES.has(status);
  * in order and does not re-sort. Withheld slopes are shown as their refusal
  * code: a null slope means "the question does not apply", which is not 0.
  */
-function CompressionList({ sim }: { sim: LaunchSimWithCompression }) {
+function CompressionList({ sim }: { sim: LaunchSim }) {
   const rows = sim.compression;
   // Three states kept apart: field absent (API predates this limb) / present but
   // every row withheld / genuinely nothing to rank.
@@ -633,6 +638,12 @@ function CompressionList({ sim }: { sim: LaunchSimWithCompression }) {
             <div key={c.id} className="flex items-center gap-2">
               <span className="min-w-0 flex-1 truncate text-micro text-grey-dark">{c.title}</span>
               <span className="shrink-0 font-mono text-micro text-grey">
+                {/*
+                  The shared `TaskCompression.meanSlackDays` is NON-nullable by
+                  design, so this guard is unreachable through the type. It stays
+                  because JSON.stringify turns a non-finite number into `null` on
+                  the wire, and printing "nulld float" is worse than saying n/a.
+                */}
                 {c.meanSlackDays != null ? `${c.meanSlackDays}d float` : 'float n/a'}
                 {/*
                   The binding edge is MODAL, not certain: bindingPredecessorRuns
@@ -681,7 +692,7 @@ function CompressionList({ sim }: { sim: LaunchSimWithCompression }) {
 
 /** Launch-schedule Monte Carlo panel (Wave 2) — planning simulation, clearly labeled. */
 function LaunchSimPanel() {
-  const [sim, setSim] = useState<LaunchSimWithCompression | null>(null);
+  const [sim, setSim] = useState<LaunchSim | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => { fetchLaunchSim().then(setSim).catch((e) => setErr(e instanceof Error ? e.message : 'unavailable')); }, []);
 

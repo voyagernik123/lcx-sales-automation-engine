@@ -44,6 +44,14 @@
  *      `impressions` fails the read instead of reaching a component. It had zero production
  *      callers when this paragraph first claimed both layers were proofs.
  *
+ *      AND IT IS NOW ALSO SERVER-SIDE, PER-COMPARTMENT — `apps/api/src/middleware/honesty.ts`
+ *      walks every `application/json` response body, stamps each refusal with the compartment
+ *      the path belongs to (`CeilingScope`), and replaces the offending FIELD with its own
+ *      refusal. Read the honest bound at the top of that file: it is EXPORTED READY TO MOUNT
+ *      and is NOT mounted in `app.ts`, because mounting it wrongly breaks the SSE stream in
+ *      production. Until the lead mounts it, "the ceiling is enforced platform-wide" remains
+ *      a false sentence, which is why this paragraph does not say it.
+ *
  *      AND IT IS A GUARD ABOUT ITS OWN LIMITS. Past `MAX_PAYLOAD_DEPTH` it refuses with
  *      `PAYLOAD_TOO_DEEP_TO_VERIFY` rather than returning "clean": for three waves the
  *      truncation branch returned the same value as a completed clean walk, so "checked
@@ -76,6 +84,10 @@
 import {
   INSTRUMENTS,
   PROCESS_METRIC_KEYS,
+  /* The RESIST 2 reach ladder, imported for §3's ONE sanctioned exemption. The
+     exemption's bounds are derived from this table rather than written as `1..5`, so a
+     sixth level cannot silently fall outside the range the exemption covers. */
+  REACH_RANK,
   type FetchOutcome,
   type Figure,
   type ForbiddenMetricField,
@@ -699,9 +711,49 @@ export type CeilingRefusalCode =
   | typeof PAYLOAD_TOO_DEEP_CODE
   | typeof PAYLOAD_NOT_WALKABLE_CODE;
 
-/** A `Refusal` in every respect except that its code may be the ceiling's own. */
+/**
+ * WHOSE PAYLOAD THIS IS — the parameterised half of the citation.
+ *
+ * A `Refusal` already carries `rule` (the provision and its text) and `matched` (the
+ * offending path). Both are properties of the FINDING. What neither says is which
+ * compartment's response the finding was made in, and that is the field a log reader needs
+ * first: "some payload named `impressions`" is not actionable, "`/v1/marketing/metrics`
+ * named it at `data.tiles[3].impressions`" is.
+ *
+ * It existed as a field on nothing while the only caller was a single browser module, where
+ * the compartment was implied by the file. Server-side middleware sees every compartment, so
+ * the implication is gone and the fact has to be carried.
+ *
+ * `compartment` is NEVER blank and never a guess: where the namespace belongs to no
+ * compartment the value is `NO_COMPARTMENT` and `derivedFrom` says how that was established.
+ * An absent compartment is a stated case, not a silent one — doctrine rule 2.
+ */
+export interface CeilingScope {
+  /** A `WorkspaceId`, or `NO_COMPARTMENT`. Typed as a string so `shared` keeps no
+   *  dependency direction from the marketing compartment onto the workspace table. */
+  readonly compartment: string;
+  /** How the compartment was established, in words a log reader can check. */
+  readonly derivedFrom: string;
+  /** What was walked — e.g. `'GET /v1/marketing/metrics'`. */
+  readonly subject: string;
+}
+
+/**
+ * The compartment value for a namespace that belongs to no compartment.
+ *
+ * A sentinel rather than `null` on `CeilingScope.compartment`, so a refusal rendered or
+ * grepped shows the STATED case instead of an empty cell that reads as a missing field. The
+ * desk-level namespaces (`/v1/me`, `/v1/tasks`, `/v1/notifications`, `/v1/audit`, …) are
+ * genuinely uncompartmented — that is a fact about the API, not a failure to look one up.
+ */
+export const NO_COMPARTMENT = 'none:desk-level-namespace';
+
+/** A `Refusal` in every respect except that its code may be the ceiling's own, plus the
+ *  compartment it was made in. `scope` is `null` where the caller did not name one — which
+ *  is the browser's case, where the file IS the compartment. */
 export interface CeilingRefusal extends Omit<Refusal, 'code'> {
   readonly code: CeilingRefusalCode;
+  readonly scope: CeilingScope | null;
 }
 
 const DEPTH_RULE = DESK_POLICY(
@@ -721,8 +773,230 @@ function ceilingRefusal(
   rule: RuleCitation,
   recovery: Refusal['recovery'],
   matched: string | null = null,
+  scope: CeilingScope | null = null,
 ): CeilingRefusal {
-  return { code, sentence, rule, recovery, matched, ruleSetVersion: OBSERVATION_RULESET_VERSION };
+  return {
+    code,
+    sentence,
+    rule,
+    recovery,
+    matched,
+    ruleSetVersion: OBSERVATION_RULESET_VERSION,
+    scope,
+  };
+}
+
+/* ── §3.1 THE ONE SANCTIONED EXEMPTION, AND WHY IT IS A SHAPE AND NOT A NAME ──── */
+
+/**
+ * A forbidden NAME that a specific VALUE SHAPE makes legitimate.
+ *
+ * ── WHY THIS EXISTS AT ALL, WHICH IS A COST ALREADY PAID ──────────────────────
+ * `reach` is on the blocklist because audience reach is derived from impressions and there is
+ * no credential for either. But `reach` is ALSO the name of two things this platform
+ * legitimately computes and must keep showing:
+ *
+ *   · the RESIST 2 five-level reach ladder — `little_interest` … `headline_story` — which is
+ *     a human's ordinal judgement about circulation and is the input to crisis triage
+ *     (`triage.ts derivePriority`, `routes/marketingDesk.ts` `parseReach`);
+ *   · an ordinal 1-5 SCORING DIMENSION in the channel-mix matrix, sitting beside `cost`,
+ *     `effort` and `complianceRisk` (`routes/distribution.ts:119`,
+ *     `commandEngines.ts EngineRow.scores`).
+ *
+ * Neither is an audience measurement and neither has a denominator problem. The first
+ * attempt at a mechanical `reach` check in this repo did not know that and produced NINE
+ * false positives against correct code — the post-mortem is in `scripts/doctrine-lint.mjs`
+ * RULE 3, and the conclusion recorded there is that a guard which demands edits to correct
+ * code is a guard that gets deleted.
+ *
+ * ── SO THE DISCRIMINATOR IS THE VALUE, NOT THE COMPARTMENT ────────────────────
+ * The alternative was to exempt `reach` inside `/v1/distribution` and `/v1/marketing`, which
+ * is worse in both directions: `marketing` is precisely the compartment where an audience
+ * `reach` must never pass, and a new compartment reusing the scoring matrix would be refused
+ * for no reason. A shape test is the same rule everywhere and says what it means: a member of
+ * the declared ladder, or an ordinal inside a score set. `reach: 4_200_000` matches neither.
+ *
+ * ── AND IT IS OFF BY DEFAULT ──────────────────────────────────────────────────
+ * `walkHonestyCeiling` applies no exemption unless one is passed. So the browser's read path
+ * (`apps/web/src/lib/api/marketing.ts`) behaves EXACTLY as before, and
+ * `observation.test.ts`'s pinned assertion that `{ reach: 1 }` refuses stays true. Only a
+ * caller that has read this block and passed `DOCTRINE_CEILING_EXEMPTIONS` gets the
+ * exemptions, and every application is REPORTED (`HonestyCeilingReading.exempted`) rather
+ * than silently dropped — exempted, clean and refused are three states, not two.
+ */
+export interface CeilingExemptionRule {
+  /** Stable id, reported on every application. Ends up in a log line. */
+  readonly id: string;
+  /** The ONE normalised field name this rule can ever apply to. */
+  readonly normalisedName: string;
+  /** Why the doctrine sanctions it, in one sentence, for the log. */
+  readonly because: string;
+  /** True only for the value shapes the exemption covers. */
+  readonly matches: (value: unknown, context: CeilingFieldContext) => boolean;
+}
+
+/** Where a field sits. `parentKey` is what makes "an ordinal inside a score set" checkable. */
+export interface CeilingFieldContext {
+  /** The key by which the ENCLOSING object was reached; `null` at the root, and unchanged
+   *  across array rungs because an array element has no key of its own. */
+  readonly parentKey: string | null;
+  /** Dotted path of the field itself, e.g. `data.rows[0].scores.reach`. */
+  readonly path: string;
+}
+
+/** One applied exemption. Counted and named, never silent. */
+export interface CeilingExemption {
+  readonly ruleId: string;
+  /** The key exactly as it was written, not the normalised form. */
+  readonly name: string;
+  readonly path: string;
+  readonly because: string;
+}
+
+const REACH_LEVEL_NAMES: ReadonlySet<string> = new Set(Object.keys(REACH_RANK));
+const REACH_RANKS: readonly number[] = Object.values(REACH_RANK);
+/* Derived, so a sixth ladder level widens the ordinal range automatically rather than
+   silently falling outside it and being refused. */
+const MIN_REACH_RANK = Math.min(...REACH_RANKS);
+const MAX_REACH_RANK = Math.max(...REACH_RANKS);
+
+/**
+ * The enclosing keys under which an ordinal is an ordinal.
+ *
+ * `EngineRow.scores` (`commandEngines.ts:16`) is `Record<string, number>` and is the only
+ * live shape that carries a bare numeric `reach`. Requiring the parent key keeps the
+ * exemption from covering a top-level `{ reach: 3 }`, which nothing legitimate produces and
+ * which `observation.test.ts` already pins as a refusal.
+ */
+const SCORE_SET_KEYS: ReadonlySet<string> = new Set(['scores', 'score']);
+
+const isReachLevel = (value: unknown): boolean =>
+  typeof value === 'string' && REACH_LEVEL_NAMES.has(value);
+
+/** A `ReachAssessment` (`types.ts:827`): `current` is a `Graded<ReachLevel>`. */
+const isReachAssessment = (value: unknown): boolean => {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+  const current = (value as { current?: unknown }).current;
+  if (current === null || typeof current !== 'object') return false;
+  return isReachLevel((current as { value?: unknown }).value);
+};
+
+/**
+ * `reach` as the RESIST 2 ladder — either the bare level (`'trending'`, which is what
+ * `routes/marketingGates.ts:1457` reads back out of a stored assessment) or the whole
+ * `ReachAssessment`. A level name is a member of a five-element enum; no audience count can
+ * be one, so this limb has no false-negative surface at all.
+ */
+export const REACH_LADDER_EXEMPTION: CeilingExemptionRule = {
+  id: 'REACH_RESIST_LADDER',
+  normalisedName: 'reach',
+  because:
+    "the RESIST 2 five-level circulation ladder (little_interest…headline_story) — a named human's ordinal judgement about how far an item has travelled, which is the input to crisis triage. It is not an audience count and needs no denominator.",
+  matches: (value) => isReachLevel(value) || isReachAssessment(value),
+};
+
+/**
+ * `reach` as an ordinal 1-5 scoring dimension inside a score set.
+ *
+ * ── THE WEAK LIMB, SAID PLAINLY ───────────────────────────────────────────────
+ * An audience reach of literally 3, sitting under a key called `scores`, would pass. That is
+ * a real hole and it is not closed by anything here. Three things make it survivable rather
+ * than rounded off:
+ *   · it is COUNTED and NAMED. Every application lands in
+ *     `HonestyCeilingReading.exempted` with the rule id and the full path, so a log shows
+ *     which fields the ceiling let through and on what grounds. A silent skip would not.
+ *   · the range is the ladder's own (`REACH_RANK`), so the numbers that pass are 1-5 and
+ *     nothing else. `reach: 4_200_000`, `reach: 0`, `reach: 2.5` and `reach: '12k'` are all
+ *     refused, which covers every shape an audience figure actually arrives in.
+ *   · the parent key must be a score set, so the exemption cannot cover a top-level
+ *     `{ reach: 3 }`.
+ * The alternative — refusing it — breaks a live surface (`POST
+ * /v1/distribution/engines/channel-mix`) for a metric the doctrine explicitly names as
+ * legitimate, which is the nine-false-positives failure again.
+ */
+export const REACH_ORDINAL_SCORE_EXEMPTION: CeilingExemptionRule = {
+  id: 'REACH_ORDINAL_SCORE',
+  normalisedName: 'reach',
+  because: `an ordinal ${String(MIN_REACH_RANK)}-${String(MAX_REACH_RANK)} scoring dimension inside a score set, beside cost/effort/complianceRisk (routes/distribution.ts, commandEngines.ts EngineRow.scores). A rank, not a count.`,
+  matches: (value, context) =>
+    context.parentKey !== null
+    && SCORE_SET_KEYS.has(normaliseFieldName(context.parentKey))
+    && typeof value === 'number'
+    && Number.isInteger(value)
+    && value >= MIN_REACH_RANK
+    && value <= MAX_REACH_RANK,
+};
+
+/**
+ * THE COMPLETE EXEMPTION SET. Two rules, both about `reach`, both structural.
+ *
+ * A caller passes this or passes nothing. There is deliberately no way to exempt a name
+ * without a shape test, because "exempt `impressions` on this route" is how a blocklist
+ * becomes a formality.
+ */
+export const DOCTRINE_CEILING_EXEMPTIONS: readonly CeilingExemptionRule[] = [
+  REACH_LADDER_EXEMPTION,
+  REACH_ORDINAL_SCORE_EXEMPTION,
+];
+
+/** What the caller may tell the walk. Every field optional; the default is the old behaviour. */
+export interface CeilingOptions {
+  /** Stamped onto every refusal the walk produces. */
+  readonly scope?: CeilingScope | null;
+  /** Structural exemptions to apply. Default: NONE. See `CeilingExemptionRule`. */
+  readonly exempt?: readonly CeilingExemptionRule[];
+}
+
+/**
+ * THE VERDICT ON ONE FIELD NAME — allowed, exempt, or refused.
+ *
+ * Exported because the walk is not the only thing that has to make this decision. API
+ * middleware that REPLACES a refused field with its refusal has to traverse the payload
+ * itself (it holds a parsed JSON tree it is about to re-serialise), and a second copy of the
+ * name test in that traverser is exactly the drift this module keeps deleting. So the
+ * traversal may be duplicated; the DECISION and the REFUSAL TEXT may not.
+ *
+ * Three states, not two, for the same reason the module exists: `exempt` is not `allowed`.
+ */
+export type CeilingFieldVerdict =
+  | { readonly kind: 'allowed' }
+  | { readonly kind: 'exempt'; readonly exemption: CeilingExemption }
+  | { readonly kind: 'refused'; readonly refusal: CeilingRefusal };
+
+const ALLOWED: CeilingFieldVerdict = { kind: 'allowed' };
+
+export function ceilingFieldVerdict(
+  key: string,
+  value: unknown,
+  context: CeilingFieldContext,
+  options: CeilingOptions = {},
+): CeilingFieldVerdict {
+  const normalised = normaliseFieldName(key);
+  if (!NORMALISED_FORBIDDEN.has(normalised)) return ALLOWED;
+
+  for (const rule of options.exempt ?? []) {
+    if (rule.normalisedName !== normalised) continue;
+    if (!rule.matches(value, context)) continue;
+    return {
+      kind: 'exempt',
+      exemption: { ruleId: rule.id, name: key, path: context.path, because: rule.because },
+    };
+  }
+
+  return {
+    kind: 'refused',
+    refusal: ceilingRefusal(
+      'METRIC_NOT_OBSERVABLE',
+      `Refused: this payload carries a field named '${key}' at ${context.path}. That metric cannot be observed without an X credential, so any value in that field was inferred, proxied or invented — and the honest answer is to show the row as unavailable instead.`,
+      CEILING_RULE,
+      {
+        kind: 'not_recoverable',
+        why: 'There is no keyless source for this metric. Renaming the field would hide the problem rather than fix it.',
+      },
+      context.path,
+      options.scope ?? null,
+    ),
+  };
 }
 
 /**
@@ -797,8 +1071,43 @@ function ceilingRefusal(
  * enumeration reaches, so "clean" would be a claim about something never read. An EMPTY
  * `Map`/`Set` is not refused — there is nothing unchecked in it.
  */
-export function assertHonestPayloadAll(payload: unknown): readonly CeilingRefusal[] {
+export function assertHonestPayloadAll(
+  payload: unknown,
+  options: CeilingOptions = {},
+): readonly CeilingRefusal[] {
+  return walkHonestyCeiling(payload, options).refusals;
+}
+
+/**
+ * What one walk found: every refusal, and every exemption it applied.
+ *
+ * TWO LISTS BECAUSE THERE ARE THREE STATES. `refusals` empty and `exempted` empty is a clean
+ * payload. `refusals` empty and `exempted` non-empty is a payload that carried a banned NAME
+ * and was allowed through on a stated shape test — which a reader must be able to tell apart
+ * from the first case, or the exemption is indistinguishable from the guard not running.
+ */
+export interface HonestyCeilingReading {
+  /** In walk order. A report must not reorder its own findings. */
+  readonly refusals: readonly CeilingRefusal[];
+  /** In walk order. Empty unless the caller passed `exempt`. */
+  readonly exempted: readonly CeilingExemption[];
+}
+
+/**
+ * The plural walk, with its exemption ledger. `assertHonestPayloadAll` is this function's
+ * `.refusals` and nothing else — there is one walker, and the name the house pattern and
+ * `scripts/doctrine-lint.mjs` RULE 3 know is a projection of it, not a second implementation.
+ *
+ * See `assertHonestPayloadAll` above for the whole argument about depth, cycles, the
+ * `cleared` memo, and what is refused for being unreadable. All of it applies here.
+ */
+export function walkHonestyCeiling(
+  payload: unknown,
+  options: CeilingOptions = {},
+): HonestyCeilingReading {
+  const scope = options.scope ?? null;
   const found: CeilingRefusal[] = [];
+  const exempted: CeilingExemption[] = [];
   /* Only the ancestors of the node being visited. Removed on the way back up — see the
      docblock: a permanent set is a dedupe, and a dedupe suppresses real findings. */
   const onPath = new Set<object>();
@@ -809,7 +1118,11 @@ export function assertHonestPayloadAll(payload: unknown): readonly CeilingRefusa
      one that walked itself to the bottom. Only ever compared, never reported. */
   let cycleCuts = 0;
 
-  const walk = (node: unknown, depth: number, path: string): void => {
+  /* `parentKey` is the key by which THIS node was reached, and it exists for one reason: the
+     ordinal-`reach` exemption is "a rank inside a score set", which is not decidable from the
+     field name alone. It is threaded UNCHANGED across array rungs — an array element has no
+     key of its own, so `rows[0].scores.reach` still sees `scores` as its parent. */
+  const walk = (node: unknown, depth: number, path: string, parentKey: string | null): void => {
     if (node === null || typeof node !== 'object') return;
     if (onPath.has(node)) {
       /* A GENUINE CYCLE: this node is one of its own ancestors, so its keys were already
@@ -836,6 +1149,7 @@ export function assertHonestPayloadAll(payload: unknown): readonly CeilingRefusa
             whoCanSupply: 'whoever owns the route or contract producing this shape',
           },
           path === '' ? null : path,
+          scope,
         ),
       );
       return;
@@ -844,6 +1158,12 @@ export function assertHonestPayloadAll(payload: unknown): readonly CeilingRefusa
     onPath.add(node);
     const foundBefore = found.length;
     const cutsBefore = cycleCuts;
+    /* An APPLIED EXEMPTION disqualifies a subtree from the `cleared` memo exactly as a finding
+       does. Not for soundness of the refusal verdict — an exemption is not a refusal — but so
+       the exemption LEDGER stays exact: a memo hit on a shared node would skip the revisit and
+       undercount, and a count that is sometimes short is worse than no count. Costs nothing on
+       parsed JSON, which has no shared nodes at all. */
+    const exemptBefore = exempted.length;
 
     /* A container whose contents no property enumeration reaches. REFUSED, not skipped:
        `[]` is what a completed clean walk returns, and handing it back for a value that was
@@ -864,6 +1184,7 @@ export function assertHonestPayloadAll(payload: unknown): readonly CeilingRefusa
               whoCanSupply: 'whoever owns the route or function producing this shape',
             },
             path === '' ? null : path,
+            scope,
           ),
         );
       }
@@ -895,24 +1216,30 @@ export function assertHonestPayloadAll(payload: unknown): readonly CeilingRefusa
               whoCanSupply: 'whoever owns the route or function producing this shape',
             },
             path === '' ? null : path,
+            scope,
           ),
         );
       } else {
         for (const key of Object.getOwnPropertyNames(node)) {
           if (INDEX_KEY.test(key)) continue;
-          refuseIfForbidden(key, path === '' ? key : `${path}.${key}`);
+          refuseIfForbidden(
+            key,
+            path === '' ? key : `${path}.${key}`,
+            () => (node as unknown as Record<string, unknown>)[key],
+            parentKey,
+          );
         }
       }
     } else if (Array.isArray(node)) {
       for (let i = 0; i < node.length; i += 1) {
-        walk(node[i], depth + 1, `${path}[${String(i)}]`);
+        walk(node[i], depth + 1, `${path}[${String(i)}]`, parentKey);
       }
       /* An array can also carry NAMED properties. JSON cannot produce one, a hand-built
          server-side payload can, and `{ rows: Object.assign([], { ctr: 1 }) }` would
          otherwise walk only the index side. */
       for (const key in node) {
         if (INDEX_KEY.test(key)) continue;
-        visitKey(node as unknown as Record<string, unknown>, key, path === '' ? key : `${path}.${key}`, depth);
+        visitKey(node as unknown as Record<string, unknown>, key, path === '' ? key : `${path}.${key}`, depth, parentKey);
       }
     } else {
       /* `for…in`, NOT `Object.keys`. The difference is enumerable INHERITED properties:
@@ -921,7 +1248,7 @@ export function assertHonestPayloadAll(payload: unknown): readonly CeilingRefusa
          are non-enumerable, so this costs nothing on an ordinary object or instance and
          closes a hole that a non-JSON server-side value can walk straight through. */
       for (const key in node) {
-        visitKey(node as Record<string, unknown>, key, path === '' ? key : `${path}.${key}`, depth);
+        visitKey(node as Record<string, unknown>, key, path === '' ? key : `${path}.${key}`, depth, parentKey);
       }
     }
 
@@ -930,45 +1257,67 @@ export function assertHonestPayloadAll(payload: unknown): readonly CeilingRefusa
        nothing found in this subtree, no cycle cut inside it, and (implied by the first) no
        truncation. Anything less and a shallower revisit could have a different, correct
        answer, which is exactly the defect the per-path guard was introduced to fix. */
-    if (found.length === foundBefore && cycleCuts === cutsBefore) {
+    if (found.length === foundBefore && cycleCuts === cutsBefore && exempted.length === exemptBefore) {
       const prior = cleared.get(node);
       if (prior === undefined || depth > prior) cleared.set(node, depth);
     }
   };
 
-  /** One banned-name check, one refusal, one path. Used by every enumeration branch. */
-  function refuseIfForbidden(key: string, where: string): boolean {
+  /**
+   * One banned-name check, one refusal, one path — via `ceilingFieldVerdict`, which is the
+   * ONE implementation of that decision and is exported for the API middleware's redaction
+   * pass. `false` covers both `allowed` and `exempt`, because both mean "keep walking"; the
+   * two are still told apart in the ledger.
+   *
+   * `value` is passed as a THUNK, not a value, and that is a defect this caught rather than a
+   * style choice. The exemption test needs the value, but reading `node[key]` for every key
+   * INVOKES ENUMERABLE GETTERS — `observation.test.ts`'s exponential-walk test counts leaf
+   * visits with one, and an eager read doubled the count on a walk that had not changed. On a
+   * server-side payload a getter could also throw, or be the expensive thing the route was
+   * avoiding. So the name is tested first and the value is read only where the name is
+   * already banned, which is never on the path every clean payload takes.
+   */
+  function refuseIfForbidden(
+    key: string,
+    where: string,
+    readValue: () => unknown,
+    parentKey: string | null,
+  ): boolean {
+    /* Not a second copy of the decision: this can only skip work where the verdict would have
+       been `allowed`, and `ceilingFieldVerdict` still makes every actual call. */
     if (!NORMALISED_FORBIDDEN.has(normaliseFieldName(key))) return false;
-    found.push(
-      ceilingRefusal(
-        'METRIC_NOT_OBSERVABLE',
-        `Refused: this payload carries a field named '${key}' at ${where}. That metric cannot be observed without an X credential, so any value in that field was inferred, proxied or invented — and the honest answer is to show the row as unavailable instead.`,
-        CEILING_RULE,
-        {
-          kind: 'not_recoverable',
-          why: 'There is no keyless source for this metric. Renaming the field would hide the problem rather than fix it.',
-        },
-        where,
-      ),
-    );
+    const verdict = ceilingFieldVerdict(key, readValue(), { parentKey, path: where }, options);
+    if (verdict.kind === 'allowed') return false;
+    if (verdict.kind === 'exempt') {
+      exempted.push(verdict.exemption);
+      return false;
+    }
+    found.push(verdict.refusal);
     return true;
   }
 
-  function visitKey(node: Record<string, unknown>, key: string, where: string, depth: number): void {
+  function visitKey(
+    node: Record<string, unknown>,
+    key: string,
+    where: string,
+    depth: number,
+    parentKey: string | null,
+  ): void {
     /* Do NOT descend into a refused field. The finding is the NAME, and a second banned
        name nested under an already-refused path is the same defect reported twice at a path
-       nobody will render. */
-    if (refuseIfForbidden(key, where)) return;
-    walk(node[key], depth + 1, where);
+       nobody will render. An EXEMPTED field IS descended into: a `ReachAssessment` is a real
+       object whose own keys have never been checked by anything. */
+    if (refuseIfForbidden(key, where, () => node[key], parentKey)) return;
+    walk(node[key], depth + 1, where, key);
   }
 
-  walk(payload, 0, '');
+  walk(payload, 0, '', null);
   /* NO CAP AND NO DEDUPE, deliberately. Every entry has a distinct path, so there is
      nothing to dedupe (unlike `marketingGates.ts`, where two gates legitimately produce
      one code for one fact). A payload with 4,400 banned keys returns 4,400 refusals,
      which is the truth about that payload; the cost of finding them all is the 0.68ms
      the walk already pays. */
-  return found;
+  return { refusals: found, exempted };
 }
 
 /**
@@ -982,7 +1331,8 @@ export function assertHonestPayloadAll(payload: unknown): readonly CeilingRefusa
  *
  * A caller building a report or a middleware response should call
  * `assertHonestPayloadAll` instead: one banned field at a time is a control that gets
- * routed around one field at a time.
+ * routed around one field at a time. `apps/api/src/middleware/honesty.ts` therefore does NOT
+ * call this function — it calls `walkHonestyCeiling` and seats every refusal it returns.
  *
  * ── WHICH ONE IS "FIRST", AND WHY IT IS NOT WALK ORDER ──
  * It used to be `all[0]`, i.e. whichever the walker met first. On
@@ -998,8 +1348,11 @@ export function assertHonestPayloadAll(payload: unknown): readonly CeilingRefusa
  * refusals of the same rank, so `{ ctr: 1, sov: 2 }` still answers `ctr`. The plural form is
  * untouched and remains in walk order — a report must not reorder its own findings.
  */
-export function assertHonestPayload(payload: unknown): CeilingRefusal | null {
-  const all = assertHonestPayloadAll(payload);
+export function assertHonestPayload(
+  payload: unknown,
+  options: CeilingOptions = {},
+): CeilingRefusal | null {
+  const all = assertHonestPayloadAll(payload, options);
   if (all.length === 0) return null;
   return all.find((r) => r.code === 'METRIC_NOT_OBSERVABLE') ?? all[0]!;
 }

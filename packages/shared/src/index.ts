@@ -125,11 +125,23 @@ export {
 } from './deals/index.js';
 
 // Deal forecasting (win probability + Monte Carlo)
-export type { ForecastDealInput, MonteCarloResult } from './forecast/index.js';
+// `DealDecisiveness`, `DecisivenessRefusal` and `ForecastExclusion` are published
+// here because consumers were otherwise reaching into
+// '@lcx/shared/dist/forecast/index.js' or redeclaring the shape locally — and a
+// second declaration of a refusal type is how two definitions of "withheld" drift
+// apart. A name list is a place to forget (see the two `export *` notes below);
+// these are the ones that were forgotten.
+export type {
+  ForecastDealInput, MonteCarloResult,
+  DealDecisiveness, DecisivenessRefusal, ForecastExclusion,
+} from './forecast/index.js';
 export { dealWinProbability, monteCarloForecast } from './forecast/index.js';
 
 // LCX COMMAND — launch-schedule Monte Carlo (Wave 2)
-export type { SimTaskInput, DurationTriple, LaunchSimOptions, LaunchSimResult, TaskCriticality } from './launchSim.js';
+// `TaskCompression` is the MAGNITUDE limb (days bought per day of compression),
+// added after this line was first written and missing from it: apps/web declared a
+// structural copy of the row to compensate.
+export type { SimTaskInput, DurationTriple, LaunchSimOptions, LaunchSimResult, TaskCriticality, TaskCompression } from './launchSim.js';
 export { runLaunchSim, prepareGraph, sampleTriangular, resolveDuration, DEFAULT_DURATIONS } from './launchSim.js';
 
 // LCX COMMAND — decision engines (100X Phase 2)

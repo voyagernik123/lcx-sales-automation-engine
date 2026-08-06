@@ -8,6 +8,52 @@ import { storage } from '@/lib/persistence';
 import { useAccessStore } from '@/stores/useAccessStore';
 import { NotificationBell } from './NotificationBell';
 import { LcxMark } from '@/components/brand/LcxMark';
+import { isTerminal } from '@/lib/container';
+
+/**
+ * How far the header's content is pushed in so nothing sits under macOS's own
+ * close/minimise/zoom buttons.
+ *
+ * THIS NUMBER IS ONLY CORRECT WHILE `tauri.conf.json` SAYS `titleBarStyle: "Overlay"`,
+ * and that config line was changed with this one — pinned by
+ * `__tests__/topNavChrome.test.tsx` so the pair cannot drift.
+ *
+ * The window used to say `"Transparent"`, and the widely-repeated reading of that value
+ * ("it removes the title bar and hands you the full window") is WRONG. Measured, not
+ * assumed:
+ *
+ *   Transparent  windowH=932 contentH=900 contentTop=32  close y 9..23  zoom maxX=69
+ *   Overlay      windowH=900 contentH=900 contentTop=0   close y 9..23  zoom maxX=69
+ *
+ * Under `Transparent` the webview starts 32pt DOWN, below a real (if transparent) title
+ * strip — the traffic lights never touched the wordmark, and the strip dragged the window
+ * natively. Upstream says so too: `TitleBarStyle::Transparent` sets
+ * `titlebarAppearsTransparent(true)` with `fullsize_content_view(FALSE)`
+ * (tauri-runtime-wry-2.11.4/src/lib.rs:1207-1210), and only `FullSizeContentView` pulls
+ * the content view up (tao-0.35.3/src/platform_impl/macos/window.rs:242-243). So an inset
+ * added under `Transparent` would have been a 78px hole below a stock grey band — the
+ * browser regression this file guards against, shipped on the desk instead.
+ *
+ * `Overlay` is the state worth having: the app's own header IS the title bar, which is
+ * what makes the two consequences real and this inset necessary — the buttons now sit on
+ * the header, and the window can only be moved by a declared drag region.
+ *
+ * The inset itself is MEASURED on this machine (macOS 26 / Darwin 27), because the button
+ * metrics moved in Big Sur and every "known" value in circulation is one of the older ones.
+ * An NSWindow built with the mask `Overlay` produces —
+ * `.titled|.closable|.miniaturizable|.resizable|.fullSizeContentView`,
+ * `titlebarAppearsTransparent`, `titleVisibility = .hidden` — reports:
+ *
+ *     close  x=9   w=14      min  x=32  w=14      zoom  x=55  w=14
+ *
+ * so the buttons occupy the leading 69pt. The inset is 69 + 9 = 78pt: the strip they
+ * cover, plus a gutter equal to the leading margin macOS itself gave the first button.
+ * Only the HORIZONTAL axis needs it — the buttons occupy y 9..23, inside the header's 48px.
+ *
+ * In a browser this must be 0. A 78px hole in the web build's header is a regression for
+ * every operator who never installs the app.
+ */
+export const TRAFFIC_LIGHT_INSET_PX = 78;
 
 const routeLabels: Record<string, string> = {
   'capital-estimator': 'Capital Estimator',
@@ -79,8 +125,28 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
     return () => document.removeEventListener('mousedown', handleClick);
   }, []);
 
+  /* Which container is this? Read at render, through the shell's ONE definition
+   * (`lib/container.ts`), so the drag region and the inset cannot disagree with the rest
+   * of the app about whether we are in LCXOS. Everything below is `undefined` in a
+   * browser, which makes React omit the attribute entirely — not render it empty. */
+  const terminal = isTerminal();
+  /* `false`, not absent, on the three subtrees that open panels. Tauri's walk
+   * (tauri-2.11.5/src/window/scripts/drag.js:51-69) climbs from the click target: a
+   * BUTTON stops it, but a panel's own divs and text do not, so reading an open dropdown
+   * would drag the window. `display: contents` keeps these guards out of the layout —
+   * the attribute is found via the DOM path, which does not care that the box is gone. */
+  const noDrag = terminal ? 'false' : undefined;
+
   return (
-    <header className="flex h-12 shrink-0 items-center gap-4 border-b border-line bg-card px-4">
+    <header
+      /* `deep` rather than a bare attribute: bare drags only on a DIRECT hit on the
+       * element (drag.js:66), which in a flex header is the gaps between children. `deep`
+       * (drag.js:64) makes the breadcrumb and the empty middle draggable too, while
+       * clickable tags still block it (drag.js:58) — so no control is sacrificed. */
+      data-tauri-drag-region={terminal ? 'deep' : undefined}
+      style={terminal ? { paddingLeft: TRAFFIC_LIGHT_INSET_PX } : undefined}
+      className="flex h-12 shrink-0 items-center gap-4 border-b border-line bg-card px-4"
+    >
       {/* The product signature. The mark inherits `text-navy` via currentColor, so it
         * is legible in both themes without a second asset — and cannot become the
         * low-contrast lockup the brand book forbids. */}
@@ -93,7 +159,9 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
         LCXOS
       </Link>
 
-      <WorkspaceSwitcher />
+      <span className="contents" data-tauri-drag-region={noDrag}>
+        <WorkspaceSwitcher />
+      </span>
 
       <nav className="flex min-w-0 items-center gap-1.5 text-body text-grey" aria-label="Breadcrumb">
         {crumbs.length === 0 ? (
@@ -135,7 +203,9 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
           {import.meta.env.PROD ? 'LIVE' : 'LOCAL'}
         </span>
 
-        <NotificationBell />
+        <span className="contents" data-tauri-drag-region={noDrag}>
+          <NotificationBell />
+        </span>
 
         <button
           onClick={toggleDarkMode}
@@ -145,7 +215,7 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
           {darkMode ? <Sun size={16} /> : <Moon size={16} />}
         </button>
 
-        <div className="relative" ref={operatorMenuRef}>
+        <div className="relative" ref={operatorMenuRef} data-tauri-drag-region={noDrag}>
           <button
             onClick={() => setShowOperatorMenu(o => !o)}
             className="flex items-center gap-2 rounded-md border border-line py-1 pl-1 pr-2 transition-colors hover:bg-ice-soft dark:hover:bg-ice-soft/10"
