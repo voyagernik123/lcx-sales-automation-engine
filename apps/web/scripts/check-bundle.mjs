@@ -59,6 +59,45 @@ import { fileURLToPath } from 'node:url';
  *
  * If a future change pushes past 440, the answer is to code-split `index`, not
  * to raise this again.
+ *
+ * ── "CODE-SPLIT `index`" IS NOT ACTIONABLE AS WRITTEN, AND WAS MEASURED ──────────
+ * Corrected 2026-08-07, because the advice above and in the near-budget warning below
+ * sends the next reader into a change that makes the number WORSE.
+ *
+ * The 825KB figure recorded above is STALE — it is 835KB now, 15KB from the ceiling.
+ * Of that, ≈80KB of source is `src/data/*` regulatory reference PROSE, not code: the
+ * `index` chunk is 66% long string literals (286 of 432KiB), and sampling them returns
+ * US state licensing narrative. `states.ts` alone is 54.8KB of source.
+ *
+ * Three fixes were tried against a real build. All three failed, and the order matters
+ * because each is the obvious next guess:
+ *
+ *  1. The `@/data` barrel is unshakable because `ontology.ts` does module-scope work.
+ *     NO — `competitors.ts` (76KB) and `productCatalog.ts` (79KB) are both absent from
+ *     the shell, so shaking works through the barrel and `ontology.ts` is shaken out.
+ *  2. An eager reference anchors it — `Sidebar.tsx` (redFlags) and
+ *     `ExtendedInspectors.tsx` (states), both eager via `AppLayout`. NO: severing
+ *     `states` left the shell at 431.8KiB with the prose present; severing BOTH left it
+ *     at 437KiB with the prose STILL present, and moved initial JS only 835 → 830KB.
+ *     5KB is the entire value of that refactor, which is the number that kills it.
+ *  3. A `manualChunks` rule for `src/data/` — the advice above. **STRICTLY WORSE.** It
+ *     emitted `regulatory-data` at 225KB, and because the shell statically imports it
+ *     Vite added a `modulepreload` to index.html, so it counts as INITIAL: 835 → ~902KiB.
+ *     It is also larger than the 80KB it was meant to move, because a manual chunk forces
+ *     whole modules together and thereby DEFEATS the per-export shaking that had been
+ *     correctly dropping `competitors.ts` and `productCatalog.ts`.
+ *
+ * The real cause is Rollup's shared-module placement: `states.ts` is imported by six or
+ * more DYNAMIC chunks (Dashboard, BriefGenerator, OntologyExplorer, StateMap, CommandBody,
+ * the competition components) and a module shared across dynamic chunks is hoisted into
+ * their common ancestor, which is the entry. Nothing about eagerness is involved, which is
+ * exactly why (2) failed twice.
+ *
+ * SO THE FIX IS NOT A CHUNKING RULE. 54.8KB of prose is not code and does not belong in a
+ * JS chunk: move the narrative to a JSON asset fetched by the pages that render it, and
+ * leave `states.ts` holding the small structured fields the shell actually looks up
+ * (`JurisdictionInspector` does exactly one `states.find` on `abbreviation`). That is a
+ * content-medium problem wearing a packaging problem's clothes.
  */
 const MAX_CHUNK_KB = 440;
 const MAX_INITIAL_KB = 850;
@@ -264,9 +303,11 @@ if (Math.abs(initialJsKb - prefixJsKb) > 1) {
 const headroom = MAX_INITIAL_KB - initialJsKb;
 if (headroom >= 0 && headroom < INITIAL_HEADROOM_WARN_KB) {
   console.warn(
-    `  ! initial JS has ${headroom.toFixed(0)}KB of headroom left. The note above records ` +
-      `825KB; it is ${initialJsKb.toFixed(0)}KB now. The next page added to the shell ` +
-      `fails this build. Code-split \`index\` rather than raising the budget.`,
+    `  ! initial JS has ${headroom.toFixed(0)}KB of headroom left (${initialJsKb.toFixed(0)}KB ` +
+      `of ${MAX_INITIAL_KB}). The next page added to the shell fails this build.\n` +
+      `    Roughly 80KB of it is \`src/data/*\` regulatory PROSE, not code. Do NOT reach for a ` +
+      `manualChunks rule — that was measured at ~902KB, WORSE. See the note above ` +
+      `MAX_CHUNK_KB for the three fixes that failed and the one that has not been tried.`,
   );
 }
 
