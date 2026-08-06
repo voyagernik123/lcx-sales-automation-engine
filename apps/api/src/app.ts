@@ -50,6 +50,7 @@ import { accessRoutes } from './routes/access.js';
 import { gpsRoutes } from './routes/gps.js';
 import { requireWorkspace } from './middleware/workspace.js';
 import { NO_STORE_HEADER, noStore } from './middleware/noStore.js';
+import { honestyCeiling, HONESTY_CEILING_HEADER } from './middleware/honesty.js';
 import { WORKSPACES } from '@lcx/shared';
 
 /** Methods that cannot change state, so they gate at 'view'. */
@@ -145,7 +146,13 @@ export function createApp() {
       // tauri://localhost → onrender.com), and fetch() hides any response header
       // not listed here. X-LCX-No-Store must be exposed or the cache kill switch
       // is set by the server, dropped by the browser, and silently does nothing.
-      exposeHeaders: ['Content-Type', NO_STORE_HEADER],
+      // HONESTY_CEILING_HEADER for the same reason, and the omission is not
+      // cosmetic: the header states one of FOUR things (absent / unreadable /
+      // stated-and-clean / stated-and-refused), and a header fetch() strips
+      // collapses all four into "absent" — including on a response that WAS
+      // inspected and DID refuse a field. The four-state reader in honesty.ts
+      // would be reading a channel that never arrives.
+      exposeHeaders: ['Content-Type', NO_STORE_HEADER, HONESTY_CEILING_HEADER],
       maxAge: 86400,
       credentials: false,
     }),
@@ -154,6 +161,33 @@ export function createApp() {
   // Server-authoritative, deny-only cache veto. Ahead of the compartment gates
   // so it also stamps their 401/403 envelopes.
   app.use('*', noStore());
+
+  /*
+   * F1 — THE HONESTY CEILING, MOUNTED. Position is the whole correctness argument.
+   *
+   * Until now the doctrine "no forbidden metric field name reaches a human" was enforced
+   * by ONE call in ONE browser file (apps/web/src/lib/api/marketing.ts), for one
+   * compartment, across 76 pages and 236 API files — and that file's own comment records
+   * that it previously had ZERO callers. Here it becomes mechanical instead of depending
+   * on whoever is paying attention.
+   *
+   * AHEAD OF THE COMPARTMENT GATES, for the same reason noStore() is, stated one comment
+   * above. Hono composes in registration order, so a middleware registered AFTER the gate
+   * loop is DOWNSTREAM of it: `requireWorkspace` denies by `return c.json(...)`
+   * (middleware/workspace.ts:60 for the 401, :102 for the 403) and never calls next(), so
+   * a later mount would never run on the largest class of JSON responses this API emits.
+   * honesty.ts said the opposite in its own mount instruction for a while; it now says
+   * this, and a test mounts a c.json(403) stand-in gate both ways to pin it.
+   *
+   * WHAT THIS DOES NOT COVER, so nobody reads the mount as total: rateLimit()'s 429
+   * short-circuits above this line and cannot be reached from any later app.use('*'),
+   * and the CORS preflight has no body. Both are stated in honesty.ts.
+   *
+   * It inspects ONLY application/json response bodies. `/v1/notifications/stream` is
+   * Server-Sent Events and passes through untouched — buffering it would break a live
+   * surface — as do the CSV/print/text exports enumerated in NON_JSON_RESPONSE_SURFACES.
+   */
+  app.use('*', honestyCeiling());
 
   // ── LCX OS compartment gates (Phase 1) ─────────────────────────────────
   // The workspace constitution (@lcx/shared) declares which /v1 namespaces

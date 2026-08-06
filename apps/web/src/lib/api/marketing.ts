@@ -124,8 +124,16 @@ import {
 // `apps/api/src/middleware/honesty.ts` now walks every `application/json` response body
 // server-side, per compartment, and replaces an offending FIELD with its refusal rather than
 // failing the response — because a 500 on a live surface over a field name has a larger blast
-// radius than the defect it catches. (It is EXPORTED READY TO MOUNT and not yet mounted in
-// `app.ts`; the reason is in that file's header and it is about not breaking SSE.)
+// radius than the defect it catches. Past `MAX_PAYLOAD_DEPTH` there is no offending field to
+// replace (nothing below the bound was read), so the server replaces the whole UNVERIFIED
+// SUB-TREE with a `PAYLOAD_TOO_DEEP_TO_VERIFY` refusal instead — the argument, including that
+// this deletes data the walk never read, is above `seatRefusals` in that file.
+//
+// (It is EXPORTED READY TO MOUNT and not yet mounted in `app.ts`; the reason is in that file's
+// header and it is about not breaking SSE. When it is mounted it goes AHEAD of the compartment
+// gates, not after them — a Hono gate that denies with `c.json` never calls `next()`, so
+// anything registered after it does not run on the refusal envelope. That file said the
+// opposite until an adversary pass caught it.)
 //
 // THE TWO LAYERS DO NOT OVERLAP AND NEITHER IS REDUNDANT. The server refuses the FIELD and
 // leaves the NAME in place, so this walk still sees `impressions` and still throws — which is
@@ -133,6 +141,12 @@ import {
 // here has no rendering for "a refusal object where a figure was". The other seven
 // compartments have no browser ceiling at all, and for them the server's field-level refusal
 // is the only thing standing between a fabricated number and a screen.
+//
+// THE ONE CASE WHERE THE NAME DOES NOT SURVIVE is the too-deep sub-tree, which the server
+// replaces wholesale — the banned name goes with it. This walk still throws on such a payload,
+// but with `PAYLOAD_TOO_DEEP_TO_VERIFY` rather than `METRIC_NOT_OBSERVABLE`: the seated refusal
+// object itself sits below the bound, so the browser walk runs out of depth at the same node the
+// server did. Different code, same outcome — the read fails and no figure is rendered.
 //
 // A CONSEQUENCE, SO IT IS NOT DISCOVERED IN AN INCIDENT: once the middleware is mounted, a
 // marketing route that starts returning a banned name produces a THROWN read here whose

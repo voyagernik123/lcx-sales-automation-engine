@@ -786,6 +786,38 @@ function ceilingRefusal(
   };
 }
 
+/**
+ * THE TOO-DEEP REFUSAL, CONSTRUCTED IN ONE PLACE BECAUSE TWO CALLERS SEAT IT.
+ *
+ * `walkHonestyCeiling` produces this refusal when it runs out of depth. `apps/api/src/
+ * middleware/honesty.ts` has to produce the SAME one: it seats every refusal into the body it
+ * is about to re-serialise, and the only way to seat a finding about the payload's SHAPE is to
+ * replace the sub-tree the walk never reached with the refusal itself. Two copies of this
+ * sentence would drift — the walker would say one thing in a log and the response body would
+ * say another about the same node — so the sentence, the code, the rule and the recovery are
+ * written once, here, and both callers use it.
+ *
+ * `path` is the path of the node the walk STOPPED AT (the first node past
+ * `MAX_PAYLOAD_DEPTH`), not of its parent. The root cannot be that node — the root is walked
+ * at depth 0 — so `path` is empty only if a caller invents an impossible case, and the `null`
+ * limb is kept for that rather than pretended away.
+ */
+export function payloadTooDeepRefusal(path: string, scope: CeilingScope | null = null): CeilingRefusal {
+  const at = path === '' ? 'the root' : path;
+  return ceilingRefusal(
+    PAYLOAD_TOO_DEEP_CODE,
+    `Refused: this payload nests deeper than ${String(MAX_PAYLOAD_DEPTH)} levels, and the honesty ceiling stopped at ${at}. Everything below that point is UNCHECKED — it is not known to be clean, and a payload the guard could not finish reading may not be presented as one that passed it.`,
+    DEPTH_RULE,
+    {
+      kind: 'supply_data',
+      missing: `a payload the ceiling can walk to the bottom, or a raised depth limit justified by the shape that needs it (stopped at ${at})`,
+      whoCanSupply: 'whoever owns the route or contract producing this shape',
+    },
+    path === '' ? null : path,
+    scope,
+  );
+}
+
 /* ── §3.1 THE ONE SANCTIONED EXEMPTION, AND WHY IT IS A SHAPE AND NOT A NAME ──── */
 
 /**
@@ -867,6 +899,16 @@ const MAX_REACH_RANK = Math.max(...REACH_RANKS);
  * live shape that carries a bare numeric `reach`. Requiring the parent key keeps the
  * exemption from covering a top-level `{ reach: 3 }`, which nothing legitimate produces and
  * which `observation.test.ts` already pins as a refusal.
+ *
+ * ── THESE ARE NOT TWO LITERALS. THEY ARE TWO NORMALISED FORMS ─────────────────
+ * The gate below runs `normaliseFieldName` over the parent key, and that function lowercases
+ * and strips every non-alphanumeric character. So any key that REDUCES to `scores` or `score`
+ * qualifies — `Scores`, `SCORE`, `score-s`, `s.c.o.r.e.s` — not just the two spellings in this
+ * set. That is deliberate and it is the same normalisation
+ * the blocklist itself uses (a JSON column or an AI response can hand back `Scores` where the
+ * contract says `scores`), but it is WIDER than a two-literal check and saying "the two
+ * literals" would be false. What it still cannot do is match a DIFFERENT word: `scoreSet`
+ * normalises to `scoreset` and is not in this set, so a `reach` under it is refused.
  */
 const SCORE_SET_KEYS: ReadonlySet<string> = new Set(['scores', 'score']);
 
@@ -910,6 +952,18 @@ export const REACH_LADDER_EXEMPTION: CeilingExemptionRule = {
  *     refused, which covers every shape an audience figure actually arrives in.
  *   · the parent key must be a score set, so the exemption cannot cover a top-level
  *     `{ reach: 3 }`.
+ *
+ * ── AND THE PARENT KEY IS INHERITED ACROSS ARRAY RUNGS, WHICH WIDENS IT ───────
+ * `parentKey` is threaded UNCHANGED through arrays, because an array element has no key of its
+ * own and `rows[0].scores.reach` has to still see `scores`. The consequence, which is real:
+ * every object at any depth inside an array under a score-set key inherits the exemption, so
+ * `scores: [{ reach: 3 }]` and `scores: [[{ reach: 3 }]]` are exempt too. An OBJECT rung does
+ * not inherit — `scores: { inner: { reach: 3 } }` sees `inner` and is refused — so the
+ * widening is bounded to array nesting, and every application is still counted in
+ * `HonestyCeilingReading.exempted` with its full path. Nothing live emits that shape; it is
+ * written here because the previous version of this block implied the parent had to be the
+ * immediate one.
+ *
  * The alternative — refusing it — breaks a live surface (`POST
  * /v1/distribution/engines/channel-mix`) for a metric the doctrine explicitly names as
  * legitimate, which is the nine-false-positives failure again.
@@ -1138,20 +1192,9 @@ export function walkHonestyCeiling(
     if (clearedAt !== undefined && depth <= clearedAt) return; // proved clean with less budget
 
     if (depth > MAX_PAYLOAD_DEPTH) {
-      found.push(
-        ceilingRefusal(
-          PAYLOAD_TOO_DEEP_CODE,
-          `Refused: this payload nests deeper than ${String(MAX_PAYLOAD_DEPTH)} levels, and the honesty ceiling stopped at ${path === '' ? 'the root' : path}. Everything below that point is UNCHECKED — it is not known to be clean, and a payload the guard could not finish reading may not be presented as one that passed it.`,
-          DEPTH_RULE,
-          {
-            kind: 'supply_data',
-            missing: `a payload the ceiling can walk to the bottom, or a raised depth limit justified by the shape that needs it (stopped at ${path === '' ? 'the root' : path})`,
-            whoCanSupply: 'whoever owns the route or contract producing this shape',
-          },
-          path === '' ? null : path,
-          scope,
-        ),
-      );
+      /* One constructor, two seats: `middleware/honesty.ts` replaces THIS node in the response
+         body with the refusal this call returns. See `payloadTooDeepRefusal`. */
+      found.push(payloadTooDeepRefusal(path, scope));
       return;
     }
 

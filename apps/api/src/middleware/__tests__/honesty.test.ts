@@ -22,7 +22,7 @@
  *      actually emit them rather than as a simplified stand-in.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { Hono } from 'hono';
+import { Hono, type MiddlewareHandler } from 'hono';
 import { streamSSE } from 'hono/streaming';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -30,6 +30,7 @@ import {
   MAX_PAYLOAD_DEPTH,
   NO_COMPARTMENT,
   DOCTRINE_CEILING_EXEMPTIONS,
+  assertHonestPayload,
   assertHonestPayloadAll,
   walkHonestyCeiling,
 } from '@lcx/shared';
@@ -40,6 +41,9 @@ import {
   honestyScope,
   isJsonResponse,
   parseCeilingHeader,
+  seatRefusals,
+  type CeilingCounts,
+  type CeilingSummary,
 } from '../honesty.js';
 
 /* ── The harness ───────────────────────────────────────────────────────────────
@@ -64,6 +68,29 @@ const jsonRead = async (path: string, payload: unknown) => {
   });
   const res = await app.request(path);
   return { res, body: (await res.json()) as Record<string, unknown> };
+};
+
+/**
+ * The ceiling header, read through the four-state reader and ASSERTED to be a header this
+ * middleware actually wrote.
+ *
+ * Every assertion below goes through this rather than through `parseCeilingHeader(...)?.field`,
+ * because the old reader returned a fully-populated object for a header it did not recognise —
+ * `compartment` defaulted to `NO_COMPARTMENT`, the counts to 0 — so a test could pass against a
+ * missing or truncated header while appearing to assert on the response. `unreadable` fails
+ * here instead.
+ */
+const statedCeiling = (res: Response): CeilingSummary => {
+  const reading = parseCeilingHeader(res.headers.get(HONESTY_CEILING_HEADER));
+  expect(reading, JSON.stringify(reading)).toMatchObject({ kind: 'stated' });
+  return (reading as { kind: 'stated'; summary: CeilingSummary }).summary;
+};
+
+/** The counts, which exist only where a walk happened. `unparseable` has none — see below. */
+const statedCounts = (res: Response): CeilingCounts => {
+  const summary = statedCeiling(res);
+  expect(summary.counts).not.toBeNull();
+  return summary.counts as CeilingCounts;
 };
 
 /* ══════════════════════════════════════════════════════════════════════════════ */
@@ -102,12 +129,8 @@ describe('a forbidden metric field name is refused in place', () => {
     const spy = quiet();
     const { res } = await jsonRead('/v1/marketing/metrics', { data: { ctr: 0.4 } });
     spy.mockRestore();
-    expect(parseCeilingHeader(res.headers.get(HONESTY_CEILING_HEADER))).toMatchObject({
-      compartment: 'marketing',
-      refused: 1,
-      seated: 1,
-      exempted: 0,
-    });
+    expect(statedCeiling(res).compartment).toBe('marketing');
+    expect(statedCounts(res)).toEqual({ refused: 1, seated: 1, exempted: 0 });
   });
 
   it('logs the refusal so it is self-explaining without the response', async () => {
@@ -126,10 +149,7 @@ describe('a forbidden metric field name is refused in place', () => {
     const { res, body } = await jsonRead('/v1/marketing/queue', {
       data: { repliesObserved: { kind: 'lower_bound', atLeast: 3 } },
     });
-    expect(parseCeilingHeader(res.headers.get(HONESTY_CEILING_HEADER))).toMatchObject({
-      refused: 0,
-      exempted: 0,
-    });
+    expect(statedCounts(res)).toEqual({ refused: 0, seated: 0, exempted: 0 });
     expect(body).toEqual({ data: { repliesObserved: { kind: 'lower_bound', atLeast: 3 } } });
   });
 
@@ -183,13 +203,10 @@ describe('the legitimate ordinal reach keeps flowing', () => {
     const { res, body } = await jsonRead('/v1/distribution/engines/channel-mix', CHANNEL_MIX);
     spy.mockRestore();
     expect(body).toEqual(CHANNEL_MIX);
-    expect(parseCeilingHeader(res.headers.get(HONESTY_CEILING_HEADER))).toMatchObject({
-      compartment: 'distribution',
-      refused: 0,
-      // NOT SILENT. The exemption is counted, so "the ceiling let a `reach` through on a
-      // stated shape test" is distinguishable from "the payload had no `reach`".
-      exempted: 1,
-    });
+    expect(statedCeiling(res).compartment).toBe('distribution');
+    // NOT SILENT. The exemption is counted, so "the ceiling let a `reach` through on a
+    // stated shape test" is distinguishable from "the payload had no `reach`".
+    expect(statedCounts(res)).toEqual({ refused: 0, seated: 0, exempted: 1 });
   });
 
   it('names which rule exempted it and where', () => {
@@ -252,10 +269,7 @@ describe('the RESIST 2 ReachAssessment keeps flowing', () => {
     const { res, body } = await jsonRead('/v1/marketing/1/triage-reading', ASSESSMENT);
     spy.mockRestore();
     expect(body).toEqual(ASSESSMENT);
-    expect(parseCeilingHeader(res.headers.get(HONESTY_CEILING_HEADER))).toMatchObject({
-      refused: 0,
-      exempted: 1,
-    });
+    expect(statedCounts(res)).toEqual({ refused: 0, seated: 0, exempted: 1 });
   });
 
   it('passes a bare ReachLevel through untouched', async () => {
@@ -423,7 +437,13 @@ describe('every other non-JSON body passes through untouched', () => {
     const res = await app.request('/v1/marketing/broken');
     spy.mockRestore();
     expect(await res.text()).toBe('not json at all');
-    expect(parseCeilingHeader(res.headers.get(HONESTY_CEILING_HEADER))?.state).toBe('unparseable');
+    const summary = statedCeiling(res);
+    expect(summary.state).toBe('unparseable');
+    // AND IT STATES NO COUNTS. `refused=0` on this header would be three measurements about a
+    // body that was never read, in the same field whose 0 means "walked and clean". The header
+    // must carry the state and the compartment and nothing numeric.
+    expect(summary.counts).toBeNull();
+    expect(res.headers.get(HONESTY_CEILING_HEADER)).not.toMatch(/refused|seated|exempted/);
   });
 });
 
@@ -524,10 +544,7 @@ describe('every refusal is returned, not the first one found', () => {
       expect((at as Record<string, unknown>).code).toBe('METRIC_NOT_OBSERVABLE');
     }
     // The house pattern: four findings, four refusals — not one 422 about the first one.
-    expect(parseCeilingHeader(res.headers.get(HONESTY_CEILING_HEADER))).toMatchObject({
-      refused: 4,
-      seated: 4,
-    });
+    expect(statedCounts(res)).toMatchObject({ refused: 4, seated: 4 });
     // Every path is named, so a log reader can delete four fields in one pass rather than
     // discovering them one deploy at a time.
     const matched = [data.ctr, data.sov, tiles[0]!.impressions, tiles[1]!.engagement_rate]
@@ -557,7 +574,7 @@ describe('every refusal is returned, not the first one found', () => {
     const lines = spy.mock.calls.map((c) => c.join(' ')).filter((l) => l.includes('[honesty]'));
     spy.mockRestore();
     expect(lines).toEqual([]);
-    expect(parseCeilingHeader(res.headers.get(HONESTY_CEILING_HEADER))?.exempted).toBe(1);
+    expect(statedCounts(res).exempted).toBe(1);
   });
 
   it('but a refused payload logs what else it let through in the same body', async () => {
@@ -593,8 +610,7 @@ describe('a request with no compartment states that rather than skipping', () =>
     expect(scope.compartment).toBe(NO_COMPARTMENT);
     // `derivedFrom` names the mechanism, so the value can be checked rather than believed.
     expect(scope.derivedFrom).toMatch(/workspaceForApiPath/);
-    expect(parseCeilingHeader(res.headers.get(HONESTY_CEILING_HEADER))?.compartment)
-      .toBe(NO_COMPARTMENT);
+    expect(statedCeiling(res).compartment).toBe(NO_COMPARTMENT);
   });
 
   it('derives the compartment from the workspace table and nowhere else', () => {
@@ -615,34 +631,147 @@ describe('a request with no compartment states that rather than skipping', () =>
 });
 
 /* ══════════════════════════════════════════════════════════════════════════════ */
-/* 6. THE LIMITS THIS MIDDLEWARE ADMITS TO                                        */
+/* 6. THE PART OF THE PAYLOAD THE WALK NEVER READ                                 */
 /* ══════════════════════════════════════════════════════════════════════════════ */
 
-describe('what the middleware cannot seat, it reports rather than hides', () => {
-  it('reports a too-deep payload as refused-but-unseated instead of claiming clean', async () => {
-    // Below `MAX_PAYLOAD_DEPTH` the walker stops looking, and there is no offending FIELD to
-    // replace — the finding is about the shape. The honest answer is a counted, logged
-    // refusal with `seated` short of `refused`, not a cheerful `refused=0`.
-    let deep: unknown = { impressions: 1 };
-    for (let i = 0; i <= MAX_PAYLOAD_DEPTH + 1; i += 1) deep = { a: deep };
+describe('a payload deeper than the ceiling walks is refused, not passed through unread', () => {
+  /** 34 rungs of `{ a: … }` over a banned name, i.e. two past `MAX_PAYLOAD_DEPTH`. */
+  const tooDeep = (leaf: unknown): unknown => {
+    let node = leaf;
+    for (let i = 0; i <= MAX_PAYLOAD_DEPTH + 1; i += 1) node = { a: node };
+    return node;
+  };
+
+  /** The depth refusal the middleware seated, found by searching the body rather than by
+   *  counting rungs — so a test does not encode the arithmetic it is checking. */
+  const seatedDepthRefusal = (body: unknown): Record<string, unknown> | null => {
+    if (body === null || typeof body !== 'object') return null;
+    const obj = body as Record<string, unknown>;
+    if (obj.code === 'PAYLOAD_TOO_DEEP_TO_VERIFY') return obj;
+    for (const value of Array.isArray(obj) ? obj : Object.values(obj)) {
+      const hit = seatedDepthRefusal(value);
+      if (hit !== null) return hit;
+    }
+    return null;
+  };
+
+  it('replaces the unread sub-tree with the depth refusal, so no raw value survives it', async () => {
+    /*
+     * THE DEFECT THIS PINS, because it shipped: the first version of the middleware left this
+     * finding unseated on the grounds that a SHAPE finding has no field to replace. The
+     * consequence, which the report did not state, was that `impressions: 4_200_000` at depth
+     * 34 reached the client with its raw value and the body carried no refusal of any kind —
+     * only a header count, on a header that is not CORS-exposed and so unreadable by any
+     * browser. The sub-tree the walk never read is now refused in place.
+     */
     const spy = quiet();
-    const { res } = await jsonRead('/v1/marketing/deep', deep);
+    const { res, body } = await jsonRead('/v1/marketing/deep', tooDeep({ impressions: 4_200_000 }));
     const lines = spy.mock.calls.map((c) => c.join(' '));
     spy.mockRestore();
 
-    const summary = parseCeilingHeader(res.headers.get(HONESTY_CEILING_HEADER));
-    expect(summary?.refused).toBeGreaterThan(0);
-    expect(summary?.seated).toBeLessThan(summary!.refused);
+    // The fabricated number is GONE from the response. This is the assertion the old test
+    // could not have made, because the number was still there.
+    expect(JSON.stringify(body)).not.toMatch(/4200000/);
+
+    const refusal = seatedDepthRefusal(body);
+    expect(refusal).not.toBeNull();
+    // It names its own path and cites the rule, like every other refusal this file seats: the
+    // node it replaced is the first one past the limit, 33 rungs down.
+    expect(refusal!.matched).toBe(Array(MAX_PAYLOAD_DEPTH + 1).fill('a').join('.'));
+    expect((refusal!.rule as Record<string, string>).provision).toMatch(/honesty ceiling/);
+    expect((refusal!.scope as Record<string, string>).compartment).toBe('marketing');
+    expect(statedCounts(res)).toMatchObject({ refused: 1, seated: 1 });
     expect(lines.some((l) => l.includes('PAYLOAD_TOO_DEEP_TO_VERIFY'))).toBe(true);
   });
 
+  it('seats every depth refusal it reports — `seated < refused` is now a divergence, not a limit', async () => {
+    // Two independent over-deep branches under one node: two refusals, two seats. A shortfall
+    // here would mean the seating traversal and the walker disagree about depth.
+    const spy = quiet();
+    const { res, body } = await jsonRead('/v1/marketing/deep', {
+      left: tooDeep({ impressions: 1 }),
+      right: tooDeep({ ctr: 1 }),
+      shallow: { ok: 1 },
+    });
+    spy.mockRestore();
+    expect(statedCounts(res)).toMatchObject({ refused: 2, seated: 2 });
+    /* AND BOTH SEATS ARE THE DEPTH REFUSAL. The counts alone are not a barrier here: a seater
+       that descended past the bound would find the two banned FIELDS instead and report
+       `seated: 2` as well — two seats for two refusals about different nodes. So the class is
+       asserted, and the absence of a field refusal with it. */
+    expect(seatedDepthRefusal(body.left)).not.toBeNull();
+    expect(seatedDepthRefusal(body.right)).not.toBeNull();
+    expect(JSON.stringify(body)).not.toMatch(/METRIC_NOT_OBSERVABLE/);
+    // Everything the walk DID read arrives unchanged — the refusal is scoped to the unread part.
+    expect((body.shallow as Record<string, unknown>)).toEqual({ ok: 1 });
+  });
+
+  it('seats a depth refusal that sits under an array rung', async () => {
+    const spy = quiet();
+    const { res, body } = await jsonRead('/v1/marketing/deep', { rows: [tooDeep({ sov: 1 })] });
+    spy.mockRestore();
+    expect(statedCounts(res)).toMatchObject({ refused: 1, seated: 1 });
+    const refusal = seatedDepthRefusal(body.rows);
+    expect(refusal).not.toBeNull();
+    expect(refusal!.matched).toMatch(/^rows\[0\](\.a)+$/);
+  });
+
+  it('a payload exactly AT the limit is walked normally and not refused', async () => {
+    // The barrier is `depth > MAX_PAYLOAD_DEPTH`. A shape that reaches exactly the limit is
+    // fully read, so its banned name is refused as a FIELD, not swallowed by a depth refusal.
+    let deep: unknown = { impressions: 1 };
+    for (let i = 0; i < MAX_PAYLOAD_DEPTH; i += 1) deep = { a: deep };
+    const spy = quiet();
+    const { res, body } = await jsonRead('/v1/marketing/deep', deep);
+    const lines = spy.mock.calls.map((c) => c.join(' '));
+    spy.mockRestore();
+    expect(statedCounts(res)).toMatchObject({ refused: 1, seated: 1 });
+    expect(lines.some((l) => l.includes('PAYLOAD_TOO_DEEP_TO_VERIFY'))).toBe(false);
+    let node = body as Record<string, unknown>;
+    for (let i = 0; i < MAX_PAYLOAD_DEPTH; i += 1) node = node.a as Record<string, unknown>;
+    expect((node.impressions as Record<string, unknown>).code).toBe('METRIC_NOT_OBSERVABLE');
+  });
+
+  it('the browser layer still refuses the rewritten body, with the depth code', async () => {
+    /* Pins the sentence in `apps/web/src/lib/api/marketing.ts`. For a FIELD refusal the banned
+       NAME survives the server rewrite, so the browser's `assertHonestPayload` still throws
+       `METRIC_NOT_OBSERVABLE`. For the too-deep class the name goes with the sub-tree, and the
+       claim is that the browser walk runs out of depth at the same node — a different code and
+       the same outcome. Asserted rather than reasoned about, because the two layers'
+       independence is the whole argument for having both. */
+    const spy = quiet();
+    const deepRead = await jsonRead('/v1/marketing/deep', tooDeep({ impressions: 4_200_000 }));
+    const fieldRead = await jsonRead('/v1/marketing/metrics', { data: { impressions: 1 } });
+    spy.mockRestore();
+
+    expect(assertHonestPayload(deepRead.body)?.code).toBe('PAYLOAD_TOO_DEEP_TO_VERIFY');
+    expect(assertHonestPayload(fieldRead.body)?.code).toBe('METRIC_NOT_OBSERVABLE');
+  });
+
+  it('the walker and the seating pass agree on the node, the path and the sentence', () => {
+    // One arithmetic and ONE STRING, checked directly rather than inferred from the counts.
+    // Both callers build the refusal through `payloadTooDeepRefusal`, so the sentence in the
+    // log and the sentence in the response body cannot drift apart.
+    const payload = tooDeep({ impressions: 1 });
+    const walked = walkHonestyCeiling(payload, {}).refusals;
+    expect(walked.map((r) => r.code)).toEqual(['PAYLOAD_TOO_DEEP_TO_VERIFY']);
+
+    expect(seatRefusals(payload, {})).toBe(1);
+    const refusal = seatedDepthRefusal(payload);
+    expect(refusal).not.toBeNull();
+    expect(refusal!.matched).toBe(walked[0]!.matched);
+    expect(refusal!.sentence).toBe(walked[0]!.sentence);
+  });
+});
+
+describe('what the middleware cannot seat, it reports rather than hides', () => {
   it('does not descend into an already-refused field', async () => {
     // The finding is the NAME. A second banned name under an already-refused path is the
     // same defect reported twice at a path nobody will render.
     const spy = quiet();
     const { res } = await jsonRead('/v1/marketing/metrics', { data: { impressions: { ctr: 1, sov: 2 } } });
     spy.mockRestore();
-    expect(parseCeilingHeader(res.headers.get(HONESTY_CEILING_HEADER))?.refused).toBe(1);
+    expect(statedCounts(res).refused).toBe(1);
   });
 
   it('walks a top-level array and a top-level scalar without reshaping either', async () => {
@@ -658,14 +787,42 @@ describe('what the middleware cannot seat, it reports rather than hides', () => 
     expect(scalar.body as unknown).toBe(7);
   });
 
-  it('does not add a stale content-length to a rewritten body', async () => {
+  it('does not let a stale content-length survive a rewritten body', async () => {
+    /*
+     * THE BARRIER MOVED, because the first version of this test proved nothing. It asked
+     * `jsonRead` for a body and then asserted inside `if (declared !== null)` — and `c.json`
+     * in this harness never sets `content-length`, so `declared` was null with the middleware
+     * and null without it. The assertion never ran and `honesty.ts`'s
+     * `res.headers.delete('content-length')` was covered by nothing; deleting that line left
+     * the test green.
+     *
+     * So the handler now DECLARES a content-length, the way a hand-built `new Response` can.
+     * Hono's `c.res` setter copies every header except `content-type` onto the replacement, so
+     * without the delete this header describes the pre-rewrite body — and the refusal object
+     * is far longer than the number it replaced, so the declared length would be short enough
+     * to truncate the response at the socket.
+     */
+    const original = JSON.stringify({ data: { impressions: 1 } });
+    const app = appWith((a) => {
+      a.get('/v1/marketing/metrics', () =>
+        new Response(original, {
+          headers: {
+            'content-type': 'application/json',
+            'content-length': String(Buffer.byteLength(original)),
+          },
+        }));
+    });
     const spy = quiet();
-    const { res } = await jsonRead('/v1/marketing/metrics', { data: { impressions: 1 } });
+    const res = await app.request('/v1/marketing/metrics');
     spy.mockRestore();
+
+    const rewritten = await res.clone().text();
+    // The body really was rewritten, so a stale length would really be wrong.
+    expect(rewritten.length).toBeGreaterThan(original.length);
     const declared = res.headers.get('content-length');
-    if (declared !== null) {
-      expect(Number(declared)).toBe(Buffer.byteLength(await res.clone().text()));
-    }
+    // Either absent (deleted, which is what the middleware does) or truthful. Never stale.
+    if (declared !== null) expect(Number(declared)).toBe(Buffer.byteLength(rewritten));
+    expect(declared).toBeNull();
   });
 
   it('preserves the status and the other headers of the response it rewrites', async () => {
@@ -683,5 +840,145 @@ describe('what the middleware cannot seat, it reports rather than hides', () => 
     expect(res.headers.get('content-type')).toMatch(/application\/json/);
     expect(((await res.json()) as Record<string, Record<string, unknown>>).ctr.code)
       .toBe('METRIC_NOT_OBSERVABLE');
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════ */
+/* 7. THE READER HALF OF THE FOUR-STATE HEADER                                    */
+/* ══════════════════════════════════════════════════════════════════════════════ */
+
+describe('parseCeilingHeader keeps not-stated apart from stated', () => {
+  /*
+   * The header exists to hold four states apart. A reader that defaults its way out of a
+   * missing field collapses them again, and that is what the first version did: a missing
+   * `compartment=` became `NO_COMPARTMENT` (the AFFIRMATIVE "this namespace has none") and a
+   * missing `refused=` became 0 ("walked and clean"). `parseCeilingHeader('walked')` therefore
+   * answered "a clean walk of an uncompartmented namespace" about a header that stated neither.
+   */
+  it('reports an absent header as absent, not as a clean walk', () => {
+    expect(parseCeilingHeader(null)).toEqual({ kind: 'absent' });
+    expect(parseCeilingHeader(undefined)).toEqual({ kind: 'absent' });
+  });
+
+  it('reports a header that states no compartment as unreadable', () => {
+    // The old reader answered `{ compartment: 'none:desk-level-namespace', refused: 0 }` here.
+    expect(parseCeilingHeader('walked')).toEqual({ kind: 'unreadable', raw: 'walked' });
+    expect(parseCeilingHeader('walked; refused=1; seated=1; exempted=0'))
+      .toMatchObject({ kind: 'unreadable' });
+  });
+
+  it('reports a walked header that states no counts as unreadable', () => {
+    expect(parseCeilingHeader('walked; compartment=marketing'))
+      .toMatchObject({ kind: 'unreadable' });
+    // Truncated mid-header — the shape a proxy or a log truncation produces.
+    expect(parseCeilingHeader('walked; compartment=marketing; refused=1; seated='))
+      .toMatchObject({ kind: 'unreadable' });
+  });
+
+  it('never turns a corrupt count into a number', () => {
+    // `Number('x')` is NaN, which satisfies neither `> 0` nor `=== 0`, so every guard
+    // downstream would have treated a corrupt count as not-refused.
+    for (const bad of ['x', '-1', '1.5', '', ' 1', '0x1', 'NaN']) {
+      expect(parseCeilingHeader(`walked; compartment=marketing; refused=${bad}; seated=0; exempted=0`), bad)
+        .toMatchObject({ kind: 'unreadable' });
+    }
+  });
+
+  it('reads an unparseable header as stating a compartment and NO counts', () => {
+    expect(parseCeilingHeader('unparseable; compartment=marketing')).toEqual({
+      kind: 'stated',
+      summary: { state: 'unparseable', compartment: 'marketing', counts: null },
+    });
+  });
+
+  it('rejects an unparseable header that also claims counts, because it cannot be both', () => {
+    expect(parseCeilingHeader('unparseable; compartment=marketing; refused=0; seated=0; exempted=0'))
+      .toMatchObject({ kind: 'unreadable' });
+  });
+
+  it('round-trips what the middleware actually writes', async () => {
+    const spy = quiet();
+    const { res } = await jsonRead('/v1/marketing/metrics', { data: { ctr: 1 } });
+    spy.mockRestore();
+    expect(parseCeilingHeader(res.headers.get(HONESTY_CEILING_HEADER))).toEqual({
+      kind: 'stated',
+      summary: {
+        state: 'walked',
+        compartment: 'marketing',
+        counts: { refused: 1, seated: 1, exempted: 0 },
+      },
+    });
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════ */
+/* 8. THE MOUNT ORDER THE FILE INSTRUCTS, PINNED                                  */
+/* ══════════════════════════════════════════════════════════════════════════════ */
+
+describe('a compartment gate that short-circuits is only covered from upstream', () => {
+  /**
+   * WHY THIS TEST EXISTS: `honesty.ts` used to instruct the lead to mount the middleware
+   * "after the compartment gates, so it also inspects their 401/403/422 envelopes". Hono
+   * composes in registration order as an onion, so that mount puts the middleware DOWNSTREAM
+   * of the gate — and `requireWorkspace` denies with `return c.json(...)` and never calls
+   * `next()`. The instruction described the one arrangement in which the middleware does not
+   * run on the envelope it claimed to cover. The corrected instruction is now pinned here
+   * rather than only asserted in prose.
+   *
+   * The stand-in gate is the SHAPE of `middleware/workspace.ts:102` — a `c.json` refusal
+   * envelope with no `next()` — because the real one loads entitlements from a pool. What is
+   * under test is Hono's composition, which does not care which middleware short-circuits.
+   */
+  const gate: MiddlewareHandler = (c) =>
+    c.json(
+      { error: "Forbidden: Marketing requires 'view' access", code: 'WORKSPACE_FORBIDDEN', ctr: 0.4 },
+      403,
+    );
+
+  const appWithOrder = (order: 'ceiling-first' | 'gate-first'): Hono => {
+    const app = new Hono();
+    if (order === 'ceiling-first') app.use('*', honestyCeiling());
+    app.use('/v1/marketing/*', gate);
+    if (order === 'gate-first') app.use('*', honestyCeiling());
+    app.get('/v1/marketing/queue', (c) => c.json({ data: [] }));
+    return app;
+  };
+
+  it('mounted AHEAD of the gate, the 403 envelope is inspected and its banned field refused', async () => {
+    const spy = quiet();
+    const res = await appWithOrder('ceiling-first').request('/v1/marketing/queue');
+    spy.mockRestore();
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as Record<string, Record<string, unknown>>;
+    expect(body.ctr!.code).toBe('METRIC_NOT_OBSERVABLE');
+    expect(statedCounts(res)).toMatchObject({ refused: 1, seated: 1 });
+    // The envelope's own fields are intact — a refusal envelope is still a refusal envelope.
+    expect(body.code as unknown).toBe('WORKSPACE_FORBIDDEN');
+  });
+
+  it('mounted AFTER the gate, the middleware does not run at all — no header, raw field', async () => {
+    // This is the arrangement the old instruction asked for. Nothing is refused and nothing
+    // says the ceiling did not look at the body: the header's absence is the only signal, and
+    // it reads identically to "this was not a JSON response".
+    const spy = quiet();
+    const res = await appWithOrder('gate-first').request('/v1/marketing/queue');
+    spy.mockRestore();
+    expect(res.status).toBe(403);
+    expect((await res.json()) as Record<string, unknown>).toMatchObject({ ctr: 0.4 });
+    expect(parseCeilingHeader(res.headers.get(HONESTY_CEILING_HEADER))).toEqual({ kind: 'absent' });
+  });
+
+  it('and a handler that the gate lets through is inspected either way', async () => {
+    for (const order of ['ceiling-first', 'gate-first'] as const) {
+      const app = new Hono();
+      if (order === 'ceiling-first') app.use('*', honestyCeiling());
+      app.use('/v1/marketing/*', async (_c, next) => { await next(); });
+      if (order === 'gate-first') app.use('*', honestyCeiling());
+      app.get('/v1/marketing/queue', (c) => c.json({ data: { ctr: 1 } }));
+      const spy = quiet();
+      const res = await app.request('/v1/marketing/queue');
+      spy.mockRestore();
+      expect(statedCounts(res), order).toMatchObject({ refused: 1, seated: 1 });
+    }
   });
 });

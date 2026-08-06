@@ -4,6 +4,7 @@ import {
   MAX_PAYLOAD_DEPTH,
   NO_COMPARTMENT,
   ceilingFieldVerdict,
+  payloadTooDeepRefusal,
   walkHonestyCeiling,
   workspaceForApiPath,
   type CeilingExemption,
@@ -66,6 +67,15 @@ import {
  *     would have been. That is doctrine rule 1 exactly: absent data refuses, it never renders
  *     0 and never an estimate, and the placeholder LOOKS like a placeholder.
  *
+ * ONE CLASS HAS NO OFFENDING FIELD, AND IT IS REFUSED AT THE GRANULARITY IT HAS. Past
+ * `MAX_PAYLOAD_DEPTH` the walker's finding is about the payload's SHAPE — everything below the
+ * bound is UNREAD, so no field is named because none was seen. That sub-tree is replaced,
+ * whole, by the depth refusal. The sentence above therefore holds for every class the walker
+ * can report on a parsed body, which is precisely what it did NOT do in the first version of
+ * this file: there, a 34-deep payload's `impressions` reached the client with its raw value and
+ * the body carried no refusal at all. The full argument, including what that choice destroys,
+ * is above `seatRefusals`.
+ *
  * The field-level refusal is also the only option that composes with the browser layer rather
  * than fighting it. The forbidden NAME survives the rewrite (only its value changes), so
  * `apps/web/src/lib/api/marketing.ts`'s `unwrap` still throws for a marketing read — the
@@ -76,9 +86,20 @@ import {
  * Every inspected response carries `X-LCX-Honesty-Ceiling`, and its ABSENCE means the
  * middleware did not look. Four states, never two: no header (not inspected — every non-JSON
  * surface and every bodyless reply), `unparseable` (the header claimed JSON, the body was not,
- * nothing was changed), `refused=0` (walked and clean), `refused=N` (walked and refused). The
- * header also carries `exempted=N`, so a banned name the ceiling ALLOWED on a shape test is
- * never indistinguishable from a payload that never had one.
+ * nothing was changed and NO COUNTS ARE STATED, because nothing was counted), `refused=0`
+ * (walked and clean), `refused=N` (walked and refused). The header also carries `exempted=N` on
+ * both walked states, so a banned name the ceiling ALLOWED on a shape test is never
+ * indistinguishable from a payload that never had one. `parseCeilingHeader` is the reader half
+ * and it holds the same four states apart — including "a header this middleware did not write",
+ * which it reports as `unreadable` rather than defaulting into a clean walk.
+ *
+ * A BROWSER SEES NONE OF IT, AND THAT IS A GAP WITH A ONE-LINE FIX. `X-LCX-Honesty-Ceiling` is
+ * absent from `app.ts:148 exposeHeaders`, so `fetch()` strips it and every web consumer reads
+ * all four states as "absent". The four-state design is intact for the server, the logs and any
+ * non-browser client; on the surface where humans read the numbers it is currently one state.
+ * The body is where the honesty lands for the web — a refused field IS the refusal object — and
+ * the missing CORS line is named again at the mount instruction below because it belongs in the
+ * same commit as the mount.
  *
  * Every refusal is logged with its code, path, compartment, rule provision and ruleset
  * version, so it is self-explaining from the log alone. Exemptions are logged only alongside a
@@ -96,7 +117,9 @@ const LOG = '[honesty]';
  *
  * THERE ARE FOUR, NOT THREE. The brief for this lane said "there are other non-JSON response
  * bodies; do NOT assume there are exactly three", and it was right to: `c.text(`, `c.html(`,
- * `c.body(`, `new Response(` and `streamSSE(` across all 234 non-test files of `apps/api/src`
+ * `c.body(`, `new Response(` and `streamSSE(` across the 236 non-test files of `apps/api/src`
+ * — the count under the exclusion rules `__tests__/honesty.test.ts` itself applies, and it said
+ * 234 here until the adversary pass recounted it —
  * hit exactly five files — the four below plus this one — and one of the four
  * (`/v1/outreach/unsubscribe`) answers text on its refusal limb and HTML on its success limb
  * from the same handler.
@@ -201,26 +224,76 @@ export function honestyScope(method: string, path: string): CeilingScope {
   };
 }
 
+/** What the walk counted. Present only where a walk happened — see `CeilingSummary.counts`. */
+export interface CeilingCounts {
+  readonly refused: number;
+  /** How many refusals were REPLACED in the body. On a `JSON.parse` output every class is
+   *  seatable, so this should always equal `refused`; less than `refused` is a DIVERGENCE
+   *  between the seating pass and the walker, and it means a refused value is still in the
+   *  body that went out. Reported, never rounded up — see `seatRefusals`. */
+  readonly seated: number;
+  readonly exempted: number;
+}
+
 /** What the middleware did, for the header and the caller. */
 export interface CeilingSummary {
   /** `walked` — the body was parsed and inspected. `unparseable` — the header said JSON and
    *  the body was not, so nothing was inspected and nothing was changed. */
   readonly state: 'walked' | 'unparseable';
   readonly compartment: string;
-  readonly refused: number;
-  /** How many refusals were REPLACED in the body. Less than `refused` means the rest could
-   *  not be seated — see `seatRefusals`. Never silently equal. */
-  readonly seated: number;
-  readonly exempted: number;
+  /**
+   * NULL WHERE NOTHING WAS COUNTED, WHICH IS NOT THE SAME AS COUNTED ZERO.
+   *
+   * The first version of this type made `refused`/`seated`/`exempted` unconditional numbers, so
+   * the `unparseable` header asserted `refused=0; seated=0; exempted=0` about a body it had
+   * never read — three measurements presented for a measurement that did not happen, and
+   * `refused=0` is defined in this file's header as "walked and clean". `state` did disambiguate
+   * it for a reader who checked `state`, but the numeric fields are what a machine consumer
+   * reads. So the counts are absent when there was no walk, in the type and on the wire.
+   */
+  readonly counts: CeilingCounts | null;
 }
 
 const formatSummary = (s: CeilingSummary): string =>
-  `${s.state}; compartment=${s.compartment}; refused=${String(s.refused)};`
-  + ` seated=${String(s.seated)}; exempted=${String(s.exempted)}`;
+  `${s.state}; compartment=${s.compartment}`
+  + (s.counts === null
+    ? ''
+    : `; refused=${String(s.counts.refused)}; seated=${String(s.counts.seated)};`
+      + ` exempted=${String(s.counts.exempted)}`);
+
+/**
+ * WHAT A READER OF THE HEADER MAY CONCLUDE — three outcomes, because the header has four
+ * states and a reader who cannot tell them apart makes the header decorative.
+ *
+ * ── WHY THIS IS NOT `CeilingSummary | null` ──────────────────────────────────
+ * It was, and that reader was the mirror image of the defect the header exists to prevent. It
+ * defaulted a missing `compartment=` to `NO_COMPARTMENT` — which `observation.ts` defines as
+ * the AFFIRMATIVE statement "this namespace genuinely belongs to no compartment" — and a
+ * missing `refused=` to `0`, which this file defines as "walked and clean". So
+ * `parseCeilingHeader('walked')`, a truncated or foreign header, read back as a clean walk of
+ * an uncompartmented namespace: not-stated laundered into stated, twice, in the one function
+ * whose job is to keep those apart. Corrupt counts were worse — `Number('x')` is `NaN`, which
+ * satisfies neither `> 0` nor `=== 0`, so every guard downstream would treat it as not-refused.
+ *
+ * `absent` is the not-inspected state (no header at all: every non-JSON surface and every
+ * bodyless reply). `unreadable` is a header this middleware did not write, or wrote and
+ * something truncated — the raw value is carried so a reader can say what they actually saw.
+ * `stated` is a header this middleware wrote, and only then are its fields facts.
+ */
+export type CeilingHeaderReading =
+  | { readonly kind: 'absent' }
+  | { readonly kind: 'unreadable'; readonly raw: string }
+  | { readonly kind: 'stated'; readonly summary: CeilingSummary };
+
+/** A count on the wire is a non-negative integer or it is not a count this file wrote. */
+const readCount = (raw: string | undefined): number | null => {
+  if (raw === undefined || !/^(?:0|[1-9][0-9]*)$/.test(raw)) return null;
+  return Number(raw);
+};
 
 /** Read back what `formatSummary` wrote. Exported for tests and for anyone reading a trace. */
-export function parseCeilingHeader(value: string | null | undefined): CeilingSummary | null {
-  if (value === null || value === undefined || value === '') return null;
+export function parseCeilingHeader(value: string | null | undefined): CeilingHeaderReading {
+  if (value === null || value === undefined) return { kind: 'absent' };
   const parts = new Map<string, string>();
   let state: CeilingSummary['state'] | null = null;
   for (const chunk of value.split(';')) {
@@ -229,15 +302,27 @@ export function parseCeilingHeader(value: string | null | undefined): CeilingSum
     const eq = piece.indexOf('=');
     if (eq > 0) parts.set(piece.slice(0, eq), piece.slice(eq + 1));
   }
-  if (state === null) return null;
-  const num = (k: string): number => Number(parts.get(k) ?? '0');
-  return {
-    state,
-    compartment: parts.get('compartment') ?? NO_COMPARTMENT,
-    refused: num('refused'),
-    seated: num('seated'),
-    exempted: num('exempted'),
-  };
+  const compartment = parts.get('compartment');
+  if (state === null || compartment === undefined || compartment === '') {
+    return { kind: 'unreadable', raw: value };
+  }
+
+  if (state === 'unparseable') {
+    /* No walk happened, so counts must not be present. A header that states BOTH
+       `unparseable` and counts is self-contradictory and is not read as either. */
+    if (parts.has('refused') || parts.has('seated') || parts.has('exempted')) {
+      return { kind: 'unreadable', raw: value };
+    }
+    return { kind: 'stated', summary: { state, compartment, counts: null } };
+  }
+
+  const refused = readCount(parts.get('refused'));
+  const seated = readCount(parts.get('seated'));
+  const exempted = readCount(parts.get('exempted'));
+  if (refused === null || seated === null || exempted === null) {
+    return { kind: 'unreadable', raw: value };
+  }
+  return { kind: 'stated', summary: { state, compartment, counts: { refused, seated, exempted } } };
 }
 
 /**
@@ -255,15 +340,58 @@ export function parseCeilingHeader(value: string | null | undefined): CeilingSum
  * Only the TRAVERSAL is duplicated. The DECISION and the refusal text come from
  * `ceilingFieldVerdict`, the same exported function the authoritative walker calls, so the two
  * cannot disagree about whether a name is banned, about the normalisation, or about the
- * exemptions. The depth bound is the same imported `MAX_PAYLOAD_DEPTH`.
+ * exemptions. The depth bound is the same imported `MAX_PAYLOAD_DEPTH`, and the depth refusal
+ * itself is built by the walker's own `payloadTooDeepRefusal` — so neither the verdict nor any
+ * sentence in this file is a second copy of anything.
  *
- * ── AND WHERE IT COULD STILL DISAGREE, THE MIDDLEWARE SAYS SO ────────────────
- * A refusal with no offending field to replace — `PAYLOAD_TOO_DEEP_TO_VERIFY`, whose finding
- * is about the payload's SHAPE — cannot be seated by anything. Rather than pretend, the
- * summary reports `seated` short of `refused` and the refusal is logged. That is the honest
- * handling of a control that could not fully apply, and it is deliberately visible rather than
- * rounded to a pass. It is also, today, unreachable in practice: the deepest declared response
- * contract in this repo nests roughly a dozen levels against a limit of 32.
+ * ── THE SHAPE FINDING IS SEATED TOO, BY REFUSING THE SUB-TREE ────────────────
+ * `PAYLOAD_TOO_DEEP_TO_VERIFY` is a finding about the payload's SHAPE, so there is no
+ * offending FIELD to replace. The first version of this function therefore left it unseated,
+ * reported `seated` short of `refused`, and called that honest. It was not, and the adversary
+ * pass was right: past `MAX_PAYLOAD_DEPTH` the sub-tree the walk never read went to the client
+ * BYTE FOR BYTE, so a 34-deep payload carrying `impressions: 4_200_000` shipped that number to
+ * a screen while the response body contained no refusal of any kind. The only trace was a
+ * header count, and that header is not in `app.ts:148 exposeHeaders`, so no browser could even
+ * read it. The file's central claim — a component that reads `data.impressions` renders a
+ * refusal where a fabricated number would have been — was false for exactly that class.
+ *
+ * So the finding IS seated, at the only place it can be: the node the walk stopped at is
+ * REPLACED, whole, by the refusal. Three options were on the table and this is the third:
+ *
+ *   · leave it, and state the consequence. Rejected. "A fabricated number renders, and the
+ *     only record is a header nothing can read" is not a consequence a control gets to state
+ *     and keep; it is the fabrication the ceiling exists to stop, arrived at by a different
+ *     route.
+ *   · refuse the whole response. Rejected for the same reason a 500 was rejected above: the
+ *     blast radius of the CONTROL would exceed the defect's. A legitimately deep payload would
+ *     take a compartment's surface offline over a nesting level.
+ *   · REFUSE THE UNVERIFIED SUB-TREE. The rest of the payload — every field the walk actually
+ *     read and cleared — arrives unchanged, and the part nobody verified arrives as a refusal
+ *     that names its own path, its code and the rule. That is the same remedy as the
+ *     field-level one, applied at the granularity the finding actually has.
+ *
+ * WHAT THIS DELIBERATELY DESTROYS, said out loud: the data below depth 32 is REMOVED from the
+ * response. A client that needed it gets a refusal object instead of a sub-tree, which is a
+ * visible failure — and a visible failure is the point, because `MAX_PAYLOAD_DEPTH`'s own
+ * docblock says the limit is an estimate off the type declarations and that a real payload
+ * refused on it means the LIMIT was wrong. The refusal names the path, so that argument can be
+ * had with evidence. Today no declared response contract in this repo nests past roughly a
+ * dozen levels, so this limb is expected to be unreachable in practice — expected, not
+ * assumed, which is why it is a seat rather than a note.
+ *
+ * The refusal object itself comes from `payloadTooDeepRefusal` in `observation.ts`, the same
+ * constructor the authoritative walker uses, so the sentence in the body and the sentence in
+ * the log are one string with one owner.
+ *
+ * ── SO `seated < refused` NOW MEANS SOMETHING ELSE ENTIRELY ──────────────────
+ * On a body that came out of `JSON.parse`, every class of refusal the walker can produce is
+ * now seatable: `METRIC_NOT_OBSERVABLE` replaces the field, `PAYLOAD_TOO_DEEP_TO_VERIFY`
+ * replaces the sub-tree, and `PAYLOAD_NOT_WALKABLE` cannot arise at all — a `Map`, a `Set` and
+ * a typed array do not survive JSON serialisation, so no parsed body contains one. `seated`
+ * short of `refused` is therefore no longer a stated limit of the control; it is a
+ * DIVERGENCE between this traversal and the walker's, i.e. a bug. It is still reported rather
+ * than asserted on, and the honest reading of it is in the caller, where the log line says
+ * plainly that some refused value remains in the body.
  *
  * `Object.keys`, not `for…in`: this walks `JSON.parse` output, whose properties are all own
  * and enumerable. The authoritative walker uses `for…in` because it also sees hand-built
@@ -274,15 +402,31 @@ export function parseCeilingHeader(value: string | null | undefined): CeilingSum
  */
 export function seatRefusals(root: unknown, options: CeilingOptions): number {
   let seated = 0;
+  const scope = options.scope ?? null;
+
+  /* The walker refuses a node it reaches at `depth > MAX_PAYLOAD_DEPTH`, and only if that node
+     is a non-null object — a scalar past the bound carries no field names, and the KEY holding
+     it was already checked by its parent. Same test here, asked at the DESCENT site rather
+     than on entry, because the replacement has to be written by whoever holds the reference. */
+  const beyondCeiling = (child: unknown, childDepth: number): boolean =>
+    childDepth > MAX_PAYLOAD_DEPTH && child !== null && typeof child === 'object';
 
   const visit = (node: unknown, parentKey: string | null, path: string, depth: number): void => {
+    /* No depth guard on entry: the root is visited at depth 0 and every deeper visit is
+       guarded by `beyondCeiling` before it happens, so a node past the bound is never entered
+       — it is replaced. A guard here as well would be dead code that read as the live one. */
     if (node === null || typeof node !== 'object') return;
-    if (depth > MAX_PAYLOAD_DEPTH) return; // the walker did not look past here either
 
     if (Array.isArray(node)) {
       // An array rung does not rename the parent: `rows[0].scores.reach` still sees `scores`.
       for (let i = 0; i < node.length; i += 1) {
-        visit(node[i], parentKey, `${path}[${String(i)}]`, depth + 1);
+        const where = `${path}[${String(i)}]`;
+        if (beyondCeiling(node[i], depth + 1)) {
+          node[i] = payloadTooDeepRefusal(where, scope);
+          seated += 1;
+          continue;
+        }
+        visit(node[i], parentKey, where, depth + 1);
       }
       return;
     }
@@ -296,6 +440,13 @@ export function seatRefusals(root: unknown, options: CeilingOptions): number {
         seated += 1;
         // Do NOT descend, matching the walker: a second banned name under an already-refused
         // path is the same defect reported twice at a path nobody will render.
+        continue;
+      }
+      if (beyondCeiling(obj[key], depth + 1)) {
+        /* The walk stopped here, so nothing below is known. The sub-tree is replaced by the
+           refusal rather than passed through unread — see the docblock. */
+        obj[key] = payloadTooDeepRefusal(where, scope);
+        seated += 1;
         continue;
       }
       visit(obj[key], key, where, depth + 1);
@@ -322,9 +473,51 @@ export interface HonestyCeilingOptions {
 }
 
 /**
- * Mount at `app.use('*', honestyCeiling())`, AFTER `noStore()` and after the compartment
- * gates, so it also inspects their 401/403/422 envelopes — a refusal envelope is a payload a
- * human reads, and there is no reason to hold it to a lower standard than a 200.
+ * WHERE TO MOUNT IT: `app.use('*', honestyCeiling())` on the line after `app.use('*',
+ * noStore())` (`app.ts:156`) — i.e. AHEAD OF THE COMPARTMENT GATE LOOP at `app.ts:183`.
+ *
+ * ── AND THE FIRST VERSION OF THIS PARAGRAPH SAID THE OPPOSITE, WHICH WAS A LIE ─
+ * It said "AFTER `noStore()` and after the compartment gates, so it also inspects their
+ * 401/403/422 envelopes". The second half is exactly backwards. Hono composes middleware in
+ * REGISTRATION order as an onion: a middleware registered earlier WRAPS the ones registered
+ * after it. `requireWorkspace` denies by `return c.json(...)` (`middleware/workspace.ts:60`
+ * for the 401, `:102` for the 403) and never calls `next()`, so nothing registered after it
+ * runs at all on a denied request. Mounted where that paragraph said, this middleware would
+ * not have inspected those envelopes — it would not have EXECUTED, and the envelope would
+ * carry any banned field it had, raw, with no header to say the ceiling had not looked.
+ *
+ * The repo already had the rule written down two lines above the gate loop, on `noStore()`:
+ * "Ahead of the compartment gates so it also stamps their 401/403 envelopes" (`app.ts:154`).
+ * Same composition, same reason, opposite instruction. Registering AFTER `noStore()` and
+ * BEFORE the gates satisfies both: `noStore()` stays outermost so its header lands on whatever
+ * body finally exists (including a body this middleware rewrote), and the gates run inside this
+ * one so their refusal envelopes come back up through it.
+ *
+ * ── WHAT IS THEN COVERED, AND WHAT IS STILL NOT ───────────────────────────────
+ * COVERED at that mount point: every route handler's JSON response in every compartment; the
+ * compartment gates' 401 and 403 envelopes; every per-route `requireOperator` /
+ * `requireApprover` / per-action refusal, since all of those are downstream of `app.use('*')`.
+ *
+ * NOT COVERED, because they short-circuit UPSTREAM of that line and no `app.use('*')` after
+ * them can see it:
+ *   · `rateLimit()` (`app.ts:134`) — its `429 { code: 'RATE_LIMITED' }` envelope
+ *     (`middleware/rateLimit.ts:102`) is written before this middleware is reached.
+ *   · the CORS preflight (`app.ts:135`), which answers bodyless and is correctly not inspected.
+ *   · anything the `logger()` or the latency wrapper ahead of them ever chose to answer, which
+ *     today is nothing.
+ * Both non-covered envelopes are hand-written constants with no metric field in them; that is
+ * the reason it is acceptable, not an argument that the gap does not exist. Moving the mount
+ * above `rateLimit()` would close it and would also put a body-reading middleware in front of
+ * the thing whose whole job is to answer cheaply under load, which is a worse trade.
+ *
+ * ── AND THE HEADER IS INVISIBLE TO A BROWSER UNTIL ONE MORE LINE IS ADDED ─────
+ * `HONESTY_CEILING_HEADER` is NOT in `app.ts:148 exposeHeaders`, and `fetch()` hides any
+ * response header not listed there. So for every web client all four states of the header
+ * collapse into one ("absent"), including on a response that WAS inspected and refused. The
+ * body is still honest — that is what the seating is for — but the counts are not readable from
+ * the browser. Adding `HONESTY_CEILING_HEADER` to that array is one line and belongs in the
+ * same commit as the mount; `lib/cors.ts` carries the post-mortem for `X-LCX-No-Store`, which
+ * was set by the server, dropped by the browser, and silently did nothing.
  *
  * COST, stated because it is a global middleware on a production API: every JSON response
  * pays one extra `JSON.parse` of its own body plus one walk (measured in `observation.ts` at
@@ -366,11 +559,18 @@ export function honestyCeiling(options: HonestyCeilingOptions = {}) {
     } catch {
       /* The header claimed JSON and the body is not. Nothing was inspected and nothing is
          changed — but `unparseable` is recorded rather than left to look like `refused=0`,
-         which is the not-loaded/genuinely-empty collapse the doctrine forbids. */
+         which is the not-loaded/genuinely-empty collapse the doctrine forbids.
+
+         AND IT STATES NO COUNTS. The first version wrote `refused=0; seated=0; exempted=0`
+         here: three measurements about a body that was never read, in the same header whose
+         `refused=0` means "walked and clean". `state=unparseable` disambiguated it for a reader
+         who checked `state`, but the numbers are what a machine consumer reads, and
+         not-measured presented as measured-zero is the exact collapse this header exists to
+         prevent. `counts: null` omits them from the wire. */
       console.error(`${LOG} ${scope.subject} declared application/json and did not parse; the ceiling did not run on it.`);
       res.headers.set(
         HONESTY_CEILING_HEADER,
-        formatSummary({ state: 'unparseable', compartment: scope.compartment, refused: 0, seated: 0, exempted: 0 }),
+        formatSummary({ state: 'unparseable', compartment: scope.compartment, counts: null }),
       );
       return;
     }
@@ -392,7 +592,11 @@ export function honestyCeiling(options: HonestyCeilingOptions = {}) {
          means "walked and clean", which the header's absence would not. */
       res.headers.set(
         HONESTY_CEILING_HEADER,
-        formatSummary({ state: 'walked', compartment: scope.compartment, refused: 0, seated: 0, exempted }),
+        formatSummary({
+          state: 'walked',
+          compartment: scope.compartment,
+          counts: { refused: 0, seated: 0, exempted },
+        }),
       );
       /* NO LOG LINE HERE, EVEN WITH EXEMPTIONS. See `logExemptions`. */
       return;
@@ -405,13 +609,19 @@ export function honestyCeiling(options: HonestyCeilingOptions = {}) {
     const summary = formatSummary({
       state: 'walked',
       compartment: scope.compartment,
-      refused: reading.refusals.length,
-      seated,
-      exempted,
+      counts: { refused: reading.refusals.length, seated, exempted },
     });
     if (seated < reading.refusals.length) {
+      /* THIS IS NOW A DIVERGENCE ALARM, NOT A STATED LIMIT. Every class of refusal the walker
+         can produce on a `JSON.parse` output is seatable — the named field is replaced, the
+         too-deep sub-tree is replaced, and `PAYLOAD_NOT_WALKABLE` cannot occur because a Map,
+         a Set and a typed array do not survive JSON serialisation. So a shortfall here means
+         this traversal and the walker's disagreed, which is a bug in one of them, and the
+         consequence is stated rather than softened: a value the ceiling REFUSED is still in
+         the body that went out, and the header plus these log lines are the only record of it
+         (and the header is not CORS-exposed, so a browser cannot see even that). */
       console.error(
-        `${LOG} ${scope.subject} — ${String(reading.refusals.length - seated)} of ${String(reading.refusals.length)} refusals could not be seated in the body (a shape finding has no field to replace). The response was NOT blocked; the refusals above are the record.`,
+        `${LOG} ${scope.subject} — ${String(reading.refusals.length - seated)} of ${String(reading.refusals.length)} refusals could not be seated in the body. This should be impossible: the seating pass and the walker disagreed. The response was NOT blocked, so a refused value is still in it; the refusals above are the record and this is a defect to fix, not a limit to accept.`,
       );
     }
 
