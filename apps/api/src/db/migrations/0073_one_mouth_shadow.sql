@@ -59,6 +59,23 @@
 --  indistinguishable from "we have not attested our own register". They are different
 --  findings with different owners.
 --
+--  ══ AND THE THIRD CAUSE, WHICH IS `gate_error` AND NOT A CODE ══
+--  A would-be refusal has THREE possible causes, not two: the register is unattested,
+--  the words are unlawful, or THE CHECK NEVER RAN. The third cannot be read off
+--  `refusal_codes`, because `outboundGate.ts gateFailure` labels its own crash
+--  `ASSET_STATE_UNKNOWN` — a code in the list above. So a reader (and
+--  `marketing/oneMouth.ts`) must attribute using BOTH columns:
+--
+--      gate_error IS NOT NULL              the check did not complete. Nothing is known
+--                                          about the text or about the register.
+--      perimeter_attributable AND no error  the register is unattested.
+--      neither                              the words.
+--
+--  `perimeter_attributable` is therefore written FALSE on every observation carrying a
+--  `gate_error`, whatever code the failure stamped. The first version of the writer did
+--  the opposite, and a window of connection resets was reported as an unattested
+--  register — a claim about a register nothing had read.
+--
 --  Zero DROP / DELETE / TRUNCATE. One table, four indexes, RLS on (deny-all with no
 --  policy; the API connects as the owner and bypasses it), matching 0046/0060/0062.
 -- ──────────────────────────────────────────────────────────────────────────────
@@ -83,6 +100,13 @@ CREATE TABLE IF NOT EXISTS marketing_one_mouth_shadow (
   -- ENOUGH TO FIND THE TEXT AGAIN. A finding a human cannot go and read is a number,
   -- not evidence. `locator_columns` records WHICH bytes were gated ('subject+body'),
   -- because a hash over a different composition is a hash of something else.
+  --
+  -- IT MAY NAME SOMETHING THAT IS NOT A COLUMN, and it must say so when it does. The
+  -- campaign composition includes three CONSTANT task labels and a fallback description
+  -- the export substitutes for a NULL `detail` — neither is stored anywhere on
+  -- `dist_campaigns`. A locator reading `name+detail+task_labels` sent an operator to a
+  -- row holding two of the three parts, with no way to recompute the digest, which is
+  -- the one thing this field exists for. See SOURCE_COLUMNS in marketing/oneMouth.ts.
   locator_table          text NOT NULL CHECK (length(btrim(locator_table)) > 0),
   locator_row_id         text NOT NULL CHECK (length(btrim(locator_row_id)) > 0),
   locator_columns        text NOT NULL CHECK (length(btrim(locator_columns)) > 0),
@@ -167,8 +191,11 @@ COMMENT ON COLUMN marketing_one_mouth_shadow.would_block IS
 COMMENT ON COLUMN marketing_one_mouth_shadow.perimeter_attributable IS
   'True when the would-be refusal is caused by the register being unattested '
   '(EMBARGO_REGISTER_ABSENT / HOLDINGS_DECLARATION_MISSING / ASSET_STATE_UNKNOWN) '
-  'rather than by the words. Without this split the base rate reads ~100% and means '
-  'nothing.';
+  'rather than by the words. FALSE on every row with a gate_error, whatever code the '
+  'failure carried: ASSET_STATE_UNKNOWN is also what gateFailure stamps on its own '
+  'crash, and "the check never ran" is a third cause with a third owner. Read this '
+  'column together with gate_error, never alone. Without this split the base rate '
+  'reads ~100% and means nothing.';
 
 COMMENT ON COLUMN marketing_one_mouth_shadow.rules_cited IS
   'The provisions the refusals cite. NOT positionally paired with refusal_codes: the '

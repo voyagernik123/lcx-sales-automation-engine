@@ -7,6 +7,7 @@ import {
   ONE_MOUTH_MIGRATION,
   ONE_MOUTH_MODE,
   PERIMETER_CODES,
+  SOURCE_COLUMNS,
   UNATTRIBUTED_ACTOR,
   _resetOneMouthLedgerMigrated,
   loadOneMouthShadowReport,
@@ -36,8 +37,18 @@ import {
  *     enough to go and read the text again.
  *  4. THE THREE STATES NEVER COLLAPSE. not_loaded / recording_nothing_observed /
  *     observed_no_findings are three different facts and each one says which it is.
- *  5. SYMBOLS ARE EXTRACTED SERVER-SIDE. Proven with a payload that carries a client
- *     symbol field — nothing reads it, and the check still fires.
+ *  5. SYMBOLS ARE EXTRACTED SERVER-SIDE. Proven with a payload whose symbol list
+ *     CONTRADICTS the text: the contradicting value reaches neither the extraction nor
+ *     the observation. (The first version of that test asserted only that `$SOL` was
+ *     still extracted while passing empty lists no interface declares — which no
+ *     implementation could fail. It described the module instead of testing it.)
+ *  6. A WOULD-BE REFUSAL HAS THREE CAUSES, NOT TWO. The register is unattested / the
+ *     words are unlawful / THE CHECK NEVER RAN. The third used to be filed under the
+ *     first, because `gateFailure` labels its own crash with a perimeter code — so a
+ *     window of connection resets was reported as an unattested register.
+ *  7. EVERY READ FAILURE REFUSES WITH A CODE. Not only 42P01. A statement timeout or a
+ *     permission denial used to reject the whole report, so the surface 500ed and the two
+ *     UNREADABLE codes the module declares were unreachable.
  *
  * ── WHAT THESE TESTS CANNOT SEE ──────────────────────────────────────────────
  * The pool is a fake dispatching on SQL text, so they prove the composition and all of
@@ -59,6 +70,15 @@ const missingTable = (rel: string) =>
  * to a query nobody anticipated is how a test passes against code that is asking the
  * database the wrong question.
  */
+/**
+ * A read failure that is NOT a missing relation. 57014 (statement timeout), 42501
+ * (permission denied) and a bare connection reset are the failures that actually happen
+ * once the table exists — and they were the ones the report rethrew, so the two UNREADABLE
+ * codes it declares could never fire and the surface 500ed instead of refusing.
+ */
+const readFails = (code: string, message: string) =>
+  Object.assign(new Error(message), { code });
+
 function stub(opts: {
   embargoRows?: Row[];
   holdingsRows?: Row[];
@@ -67,8 +87,17 @@ function stub(opts: {
   /** Tables that do not exist on this fake environment. */
   absent?: readonly string[];
   totals?: Row;
+  /** Thrown by the totals read instead of answering. */
+  totalsThrows?: Error;
   byCode?: Row[];
+  /** Thrown by the `unnest(refusal_codes)` read instead of answering. */
+  byCodeThrows?: Error;
+  byViolation?: Row[];
+  /** Thrown by the `unnest(violation_codes)` read instead of answering. */
+  byViolationThrows?: Error;
   bySurface?: Row[];
+  /** Thrown by the per-surface read instead of answering. */
+  bySurfaceThrows?: Error;
   sources?: Partial<Record<'messages' | 'outreach_tasks' | 'dist_campaigns', Row[]>>;
 } = {}) {
   const inserts: { sql: string; params: unknown[] }[] = [];
@@ -108,14 +137,27 @@ function stub(opts: {
         inserts.push({ sql, params });
         return { rows: [], rowCount: 1 };
       }
-      if (/FROM marketing_one_mouth_shadow, unnest/.test(sql)) {
+      /*
+       * THE TWO HISTOGRAMS ARE DISPATCHED ON THE COLUMN, and they have to be. One branch
+       * matching `unnest(` answered both, so a report that read `violation_codes` was handed
+       * the `refusal_codes` fixture and every assertion about the second histogram passed
+       * against a value it never produced.
+       */
+      if (/unnest\(refusal_codes\)/.test(sql)) {
+        if (opts.byCodeThrows) throw opts.byCodeThrows;
         return { rows: opts.byCode ?? [], rowCount: (opts.byCode ?? []).length };
       }
+      if (/unnest\(violation_codes\)/.test(sql)) {
+        if (opts.byViolationThrows) throw opts.byViolationThrows;
+        return { rows: opts.byViolation ?? [], rowCount: (opts.byViolation ?? []).length };
+      }
       if (/GROUP BY surface/.test(sql)) {
+        if (opts.bySurfaceThrows) throw opts.bySurfaceThrows;
         return { rows: opts.bySurface ?? [], rowCount: (opts.bySurface ?? []).length };
       }
       if (/FROM marketing_one_mouth_shadow/.test(sql)) {
         if (absent.has('marketing_one_mouth_shadow')) throw missingTable('marketing_one_mouth_shadow');
+        if (opts.totalsThrows) throw opts.totalsThrows;
         return { rows: [opts.totals ?? {}], rowCount: 1 };
       }
       if (/FROM messages m/.test(sql)) {
@@ -202,7 +244,9 @@ describe('the Title VI engine runs over sales email and campaign text', () => {
     });
     const obs = await observeOneMouth(pool, subject({
       surface: 'dist_campaign',
-      locator: { table: 'dist_campaigns', rowId: 'camp-1', columns: 'name+detail+task_labels' },
+      locator: {
+        table: 'dist_campaigns', rowId: 'camp-1', columns: SOURCE_COLUMNS.dist_campaign,
+      },
       text: 'Earn rewards for paying with $SOL support coming soon',
       actor: 'monty@lcx.com',
     }));
@@ -305,6 +349,57 @@ describe('shadow mode records and blocks nothing', () => {
     expect(obs.wouldBlock).toBe(true);
     expect(obs.blocked).toBe(false);
   });
+
+  it('does not file a gate CRASH under "the register is unattested"', async () => {
+    /*
+     * THE THIRD CAUSE. `gateFailure` stamps its own crash `ASSET_STATE_UNKNOWN`, which is in
+     * PERIMETER_CODES — so attributing from the codes alone made a connection reset
+     * indistinguishable from an unattested register, and `loadOneMouthShadowReport` then
+     * stated the register as the CAUSE of a window of crashes. The code is still recorded
+     * (grep-parity with the gate), and `gateError` is what separates the two.
+     */
+    const pool = {
+      query: async (sql: string) => {
+        if (/to_regclass/.test(sql)) return { rows: [{ ok: true }], rowCount: 1 };
+        if (/SELECT DISTINCT asset_symbol/.test(sql)) throw new Error('connection reset');
+        return { rows: [], rowCount: 0 };
+      },
+    } as unknown as pg.Pool;
+    const obs = await observeOneMouth(pool, subject({ text: 'Our AMA is later today.' }));
+
+    expect(obs.gateError).toBe('connection reset');
+    expect(obs.wouldBlock).toBe(true);
+    // The code the crash carries IS a perimeter code, which is the whole trap: attribution
+    // from the code list alone cannot tell these two facts apart.
+    expect(obs.refusalCodes).toContain('ASSET_STATE_UNKNOWN');
+    expect(PERIMETER_CODES).toContain('ASSET_STATE_UNKNOWN');
+    // The claim under test: nothing here read a register, so nothing here is evidence about
+    // one. NEGATIVE assertion, so it is not wrapped in anything that could pass vacuously.
+    expect(obs.perimeterAttributable).toBe(false);
+  });
+
+  it('states the digest as unavailable — and blames no register — when the observer itself throws', async () => {
+    /*
+     * THE OTHER FAILURE PATH, which is `observeOneMouth`'s own catch rather than the gate's.
+     * `gateOutboundText` never rejects (its whole body is a try that resolves with
+     * `gateFailure`), so the only way in is a `gateTextSha256` that throws — a `text` that is
+     * not a string, which is what a driver shape change on `messages.body` looks like from
+     * here. Recorded as a would-be refusal with a STATED 64-zero digest, because 0073's CHECK
+     * admits only 64 hex characters and a row that cannot be written is an observation lost —
+     * and NOT as perimeter-attributable, because no register was read.
+     */
+    const { pool } = stub(cleared('BTC'));
+    const obs = await observeOneMouth(pool, subject({
+      text: { length: 12 } as unknown as string,
+    }));
+
+    expect(obs.gateError).not.toBeNull();
+    expect(obs.wouldBlock).toBe(true);
+    expect(obs.blocked).toBe(false);
+    expect(obs.textSha256).toBe('0'.repeat(64));
+    expect(obs.reference).toBe('gate:reference-unavailable');
+    expect(obs.perimeterAttributable).toBe(false);
+  });
 });
 
 /* ════════ 3. A FINDING IS ACTIONABLE ════════ */
@@ -377,13 +472,22 @@ describe('every would-be refusal carries a code, the rule it cites, and a locato
 /* ════════ 4. SYMBOLS ARE EXTRACTED SERVER-SIDE ════════ */
 
 describe('a caller cannot suppress the check by omitting a field', () => {
-  it('extracts symbols from the text even when the payload declares none', async () => {
+  it('never lets a caller-supplied symbol list reach the observation', async () => {
     /*
-     * THE PAYLOAD LIES AND IT DOES NOT MATTER. `namedAssets: []` and `symbols: []` are
-     * exactly what a client would send to say "this text is about nothing", and both are
-     * extra keys that nothing in this module reads. The subject interface has no symbol
-     * field at all, so there is nothing to omit — the extraction happens over the text,
-     * server-side, as `gateOutboundText` documents at length.
+     * WHAT THE FIRST VERSION OF THIS TEST PROVED, WHICH WAS NOTHING. It passed
+     * `namedAssets: []`, `symbols: []` and `assetsExtracted: []` and asserted that `$SOL` was
+     * still extracted. No interface declares any of those keys, so no implementation could
+     * read them without being written to do it: the assertion held for every possible
+     * implementation, which makes it a description rather than a test.
+     *
+     * WHAT IS ACTUALLY FALSIFIABLE. The payload now carries a symbol list that CONTRADICTS
+     * the text — `DOGE`, which the text never names — and the assertions are that the
+     * caller's value never appears in the extraction, and that no key the caller invented
+     * appears anywhere on the observation. Both fail against the obvious wrong
+     * implementation, `return { ...subject, ...base, … }`, which is exactly how a
+     * caller-controlled field gets into a control record. There is still no symbol field on
+     * `OneMouthSubject` — that is what the interface's own docblock is for; this is the
+     * behavioural half.
      */
     const { pool } = stub({
       embargoRows: [embargo('SOL', 'mnpi_pending')],
@@ -391,15 +495,23 @@ describe('a caller cannot suppress the check by omitting a field', () => {
     });
     const payload = {
       ...subject({ text: 'Heads-up: $SOL is going live.' }),
-      namedAssets: [],
-      symbols: [],
-      assetsExtracted: [],
+      namedAssets: ['DOGE'],
+      symbols: ['DOGE'],
+      assetsExtracted: ['DOGE'],
+      perimeterAttributable: false,
+      wouldBlock: false,
     } as Parameters<typeof observeOneMouth>[1];
 
     const obs = await observeOneMouth(pool, payload);
+    // Extracted from the text, server-side.
     expect(obs.assetsExtracted).toContain('SOL');
     expect(obs.refusalCodes).toContain('ART_90_ASSET_UNDER_EMBARGO');
     expect(obs.wouldBlock).toBe(true);
+    // And the caller's contradicting claims reached nothing.
+    expect(obs.assetsExtracted).not.toContain('DOGE');
+    expect(Object.keys(obs)).not.toContain('namedAssets');
+    expect(Object.keys(obs)).not.toContain('symbols');
+    expect(JSON.stringify(obs)).not.toContain('DOGE');
   });
 
   it('folds a homoglyph so a lookalike ticker is still looked up', async () => {
@@ -523,6 +635,139 @@ describe('a surface showing nothing says which nothing it is', () => {
     });
     const r = await loadOneMouthShadowReport(pool, { now: new Date(NOW) });
     expect(r.refusals.map((x) => x.code)).toContain('ONE_MOUTH_RATE_IS_PERIMETER_ONLY');
+    expect(r.counts.gateErrors).toBe(0);
+  });
+
+  it('does not state the register as the cause of a window of gate crashes', async () => {
+    /*
+     * THE LIE THIS ASSERTS AGAINST, IN THE REPORT RATHER THAN THE OBSERVATION.
+     * ONE_MOUTH_RATE_IS_PERIMETER_ONLY states as FACT that "the embargo and holdings
+     * registers are not attested". These rows are perimeter-attributable AND carry a gate
+     * error on every one — which is what the ledger looks like for observations written
+     * before `observeOneMouth` stopped conflating the two — and in that window the sentence
+     * is simply false: nothing read a register.
+     *
+     * The gate-error count is published beside it and nothing consulted it. Now it decides.
+     */
+    const { pool } = stub({
+      totals: {
+        observations: '50', would_block: '50', perimeter: '50', distinct_texts: '9',
+        unattributed: '0', gate_errors: '50',
+        earliest: '2026-07-10T09:00:00.000Z', latest: '2026-08-05T18:00:00.000Z',
+      },
+      byCode: [{ code: 'ASSET_STATE_UNKNOWN', n: '50' }],
+      bySurface: [{ surface: 'sales_email', n: '50', wb: '50' }],
+    });
+    const r = await loadOneMouthShadowReport(pool, { now: new Date(NOW) });
+    const codes = r.refusals.map((x) => x.code);
+
+    expect(codes).toContain('ONE_MOUTH_BLOCKS_ARE_GATE_FAILURES');
+    // NEGATIVE, and outside anything that could make it pass against an unbuilt payload.
+    expect(codes).not.toContain('ONE_MOUTH_RATE_IS_PERIMETER_ONLY');
+    // The third cause is named in the headline sentence too, not only in a refusal.
+    expect(r.stateStatement).toContain('CHECK ITSELF DID NOT COMPLETE');
+    expect(r.counts.gateErrors).toBe(50);
+  });
+
+  it('refuses with a stable code when the ledger read fails for any reason but 42P01', async () => {
+    /*
+     * IT USED TO RETHROW. Only a missing relation was handled, so a statement timeout took
+     * the whole surface to a 500 — and a 500 is the one answer this report may not give,
+     * because it says nothing about which of the four states the ledger is in.
+     */
+    const { pool } = stub({ totalsThrows: readFails('57014', 'canceling statement due to statement timeout') });
+    const r = await loadOneMouthShadowReport(pool, { now: new Date(NOW) });
+
+    expect(r.state).toBe('not_loaded');
+    expect(r.refusals.map((x) => x.code)).toContain('ONE_MOUTH_LEDGER_UNREADABLE');
+    // Not conflated with "the table does not exist here": different code, different remedy.
+    expect(r.refusals.map((x) => x.code)).not.toContain('ONE_MOUTH_LEDGER_ABSENT');
+    expect(r.counts.observations).toBeNull();
+    expect(r.stateStatement).toContain('statement timeout');
+  });
+
+  it('fires the declared UNREADABLE codes on the failures that can actually happen', async () => {
+    /*
+     * BOTH CODES WERE UNREACHABLE. They are documented as "the breakdown failed while the
+     * totals succeeded" and both only fired on 42P01 — which cannot happen once the totals
+     * query over the same relation has answered. The reachable failures rethrew.
+     */
+    const totals = {
+      observations: '120', would_block: '96', perimeter: '90', distinct_texts: '31',
+      unattributed: '12', gate_errors: '0', earliest: NOW, latest: NOW,
+    };
+    const histogramTimedOut = await loadOneMouthShadowReport(
+      stub({ totals, byCodeThrows: readFails('57014', 'canceling statement due to statement timeout') }).pool,
+      { now: new Date(NOW) },
+    );
+    expect(histogramTimedOut.byCode).toBeNull();
+    expect(histogramTimedOut.refusals.map((x) => x.code))
+      .toContain('ONE_MOUTH_CODE_HISTOGRAM_UNREADABLE');
+
+    const splitDenied = await loadOneMouthShadowReport(
+      stub({ totals, bySurfaceThrows: readFails('42501', 'permission denied for table marketing_one_mouth_shadow') }).pool,
+      { now: new Date(NOW) },
+    );
+    expect(splitDenied.bySurface).toBeNull();
+    expect(splitDenied.refusals.map((x) => x.code))
+      .toContain('ONE_MOUTH_SURFACE_SPLIT_UNREADABLE');
+    // And the split disagreement is NOT also claimed: there is no split to disagree with.
+    expect(splitDenied.refusals.map((x) => x.code)).not.toContain('ONE_MOUTH_SPLIT_DISAGREES');
+  });
+
+  it('never publishes a per-surface count it could not read as a measured zero', async () => {
+    /*
+     * `int(r.n) ?? 0` WAS THE SAME FAIL-OPEN THE TOTALS HAD ALREADY BEEN HARDENED AGAINST,
+     * one block below the hardening. An unread surface was published as a measured zero, and
+     * the reconciliation cannot catch it while the other surfaces still sum to the total —
+     * which is precisely the arrangement here: 100 + (unread) against a total of 120.
+     */
+    const { pool } = stub({
+      totals: {
+        observations: '120', would_block: '96', perimeter: '90', distinct_texts: '31',
+        unattributed: '12', gate_errors: '0', earliest: NOW, latest: NOW,
+      },
+      bySurface: [
+        { surface: 'dist_campaign', n: 'not-a-number', wb: '16' },
+        { surface: 'sales_email', n: '100', wb: '80' },
+      ],
+    });
+    const r = await loadOneMouthShadowReport(pool, { now: new Date(NOW) });
+    const campaign = r.bySurface!.find((s) => s.surface === 'dist_campaign')!;
+
+    expect(campaign.observations).toBeNull();
+    expect(campaign.observations).not.toBe(0);
+    expect(r.refusals.map((x) => x.code)).toContain('ONE_MOUTH_SURFACE_COUNT_UNREADABLE');
+    expect(r.refusals.find((x) => x.code === 'ONE_MOUTH_SURFACE_COUNT_UNREADABLE')!.sentence)
+      .toContain('dist_campaign');
+    // A sum over a hole is not a sum, so the disagreement is NOT also asserted.
+    expect(r.refusals.map((x) => x.code)).not.toContain('ONE_MOUTH_SPLIT_DISAGREES');
+  });
+
+  it('says why the code breakdown is empty beside a non-zero would-block', async () => {
+    /*
+     * THE REACHABLE CASE THE CODE'S OWN COMMENT FORBIDS. An error-severity VIOLATION blocks
+     * while emitting NO refusal code (`outboundGate.ts`), so `would_block: 2` with zero rows
+     * in `unnest(refusal_codes)` is ordinary — and `byCode: {}` rendered beside it reads as
+     * "no gate fired", which contradicts the count. The read succeeded, so `null` would be a
+     * lie; the empty object stays and a sentence says what it means and where to look.
+     */
+    const { pool } = stub({
+      totals: {
+        observations: '10', would_block: '2', perimeter: '0', distinct_texts: '10',
+        unattributed: '0', gate_errors: '0', earliest: NOW, latest: NOW,
+      },
+      byCode: [],
+      byViolation: [{ code: 'title_vi.directional_with_no_named_asset', n: '2' }],
+      bySurface: [{ surface: 'sales_email', n: '10', wb: '2' }],
+    });
+    const r = await loadOneMouthShadowReport(pool, { now: new Date(NOW) });
+
+    expect(r.byCode).toEqual({});
+    expect(r.refusals.map((x) => x.code)).toContain('ONE_MOUTH_BLOCK_CODES_ABSENT');
+    // And the report now publishes the histogram that CAN explain those blocks. Before this
+    // there was nowhere in the payload a reader could learn which gate fired.
+    expect(r.byViolation).toEqual({ 'title_vi.directional_with_no_named_asset': 2 });
   });
 
   it('states a disagreement between the total and the split instead of picking a number', async () => {
@@ -571,10 +816,32 @@ describe('a surface showing nothing says which nothing it is', () => {
 
     expect(r.coverage.complete).toBe(false);
     expect(r.frame.completeness).toBe('population_is_what_was_submitted');
-    // No ratio anywhere in the payload: a rate over an unknown denominator is the one
-    // number this report must never produce.
+    /*
+     * No ratio anywhere in the payload: a rate over an unknown denominator is the one number
+     * this report must never produce.
+     *
+     * THE FIRST VERSION OF THIS GUARD ONLY MATCHED KEYS THAT STARTED WITH A FORBIDDEN WORD
+     * (`/"(rate|percent|…)[A-Za-z]*":/`), and every key in this payload is camelCase with the
+     * qualifier FIRST — so `wouldBlockRate`, `perimeterShare` and `refusalPct`, the three
+     * spellings anybody adding a rate here would actually reach for, all passed it untouched.
+     * The pattern now catches the forbidden word as a camelCase suffix as well as a prefix.
+     *
+     * DELIBERATELY NOT A SUBSTRING MATCH: `/rate/` would fire on an innocent `accurateAt`,
+     * and a guard that cries wolf is a guard somebody deletes. A key that needs one of these
+     * words for an honest reason has to be argued for here, which is the point.
+     */
+    const forbidden = /"(?:[A-Za-z_]*(?:Rate|Pct|Percent|Percentage|Proportion|Share)|(?:rate|pct|percent|percentage|proportion|share)[A-Za-z_]*)":/;
     const flat = JSON.stringify(r);
-    expect(flat).not.toMatch(/"(rate|percent|percentage|proportion|share)[A-Za-z]*":/);
+    expect(flat).not.toMatch(forbidden);
+    // Non-vacuity: the pattern must actually catch the spellings it exists to catch, or the
+    // assertion above is a comment. All four of these passed the first version.
+    for (const spelling of ['wouldBlockRate', 'blockRate', 'perimeterShare', 'refusalPct']) {
+      expect(
+        JSON.stringify({ ...r, [spelling]: 0.5 }),
+        `the no-proportion guard does not catch "${spelling}", which is exactly the shape a `
+        + 'future rate would arrive in',
+      ).toMatch(forbidden);
+    }
   });
 
   it('never reports a migration nobody has applied as applied', async () => {
@@ -639,6 +906,33 @@ describe('the sweep reads the corpora itself and stops nothing', () => {
       expect(i.params[0]).toBe('shadow');
       expect(i.params[1]).toBe(false);
     }
+  });
+
+  it('records a locator whose named parts an operator could actually find', async () => {
+    /*
+     * 0073 calls `locator_columns` "enough to find the text again". The campaign locator said
+     * `name+detail+task_labels` — and there is no `task_labels` column on `dist_campaigns`,
+     * nothing reads one, and a NULL `detail` is published as the export's fallback sentence
+     * rather than as nothing. An operator following it to the row would have found two of the
+     * three parts and been unable to recompute the digest, which is the only thing the
+     * locator is for.
+     */
+    const { pool, inserts } = stub({
+      ...cleared('BTC'),
+      sources: {
+        dist_campaigns: [{ row_id: 'c1', subject: 'Pay with PayAgent', body: null, actor: 'monty@lcx.com' }],
+      },
+    });
+    await sweepOneMouth(pool, { now: new Date(NOW), surfaces: ['dist_campaign'] });
+
+    expect(inserts).toHaveLength(1);
+    const columns = String(inserts[0]!.params[5]);
+    expect(columns).toBe(SOURCE_COLUMNS.dist_campaign);
+    // It must not imply a column that does not exist…
+    expect(columns).not.toContain('task_labels');
+    // …and it must name where the two non-column parts come from.
+    expect(columns).toContain('CAMPAIGN_TASK_LABELS');
+    expect(columns).toContain('CAMPAIGN_DESCRIPTION_FALLBACK_PREFIX');
   });
 
   it('reports a missing source as not_loaded with null counts, not as zero', async () => {

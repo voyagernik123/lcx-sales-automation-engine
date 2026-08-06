@@ -24,16 +24,22 @@
  * name`, so a campaign with a NULL detail still publishes a real sentence. The first
  * composition here contributed NO line in that case and also `.trim()`ed a detail that
  * was present, so for two ordinary campaigns the digest identified bytes nobody
- * publishes and `warrantCoversText` was false against the actual page. Both the
- * fallback and the verbatim rule are pinned by the source-parity test below.
+ * publishes and `warrantCoversText` was false against the actual page.
+ *
+ * TWO DIFFERENT TESTS PIN THE TWO RULES, and they are different KINDS of test. The
+ * fallback is pinned by SOURCE PARITY — `__tests__/emissionWarrant.test.ts` reads
+ * `routes/distribution.ts` and asserts the prefix and the `??` are still in it — because
+ * the claim is about another file. The verbatim rule is pinned BEHAVIOURALLY, by
+ * "never edits the text it is about to warrant", which composes a padded detail and
+ * compares the bytes and the digest; no amount of reading the route could establish it.
  *
  * THE TASK LABELS AND THE FALLBACK ARE MIRRORED, NOT IMPORTED, AND THAT IS A KNOWN SEAM.
  * `routes/distribution.ts` builds them inline inside the handler, so there is nothing
  * exported to import, and that file belongs to another lane. `CAMPAIGN_TASK_LABELS` and
- * `CAMPAIGN_DESCRIPTION_FALLBACK_PREFIX` below therefore hold copies, and
- * `__tests__/emissionWarrant.test.ts` reads the route file and asserts every one of them
- * still appears in it. A silent drift would mean the warrant covers text the platform
- * never saw — so the drift is made loud instead.
+ * `CAMPAIGN_DESCRIPTION_FALLBACK_PREFIX` below therefore hold copies, and the
+ * source-parity test asserts every label AND the fallback prefix still appear in the
+ * route. A silent drift would mean the warrant covers text the platform never saw — so
+ * the drift is made loud instead.
  *
  * ══ THE LAUNCHER'S LCX POSITION IS CHECKED SEPARATELY, AND HERE IS WHY ══
  * `gateOutboundText` extracts symbols server-side and runs the Art 91(3)(c) join on
@@ -67,6 +73,14 @@
  * number a human is asked to supply. `capDeclarationFaults` now does, and a declaration
  * that does not survive it is NOT A CAP: the arithmetic never sees it, and the refusal
  * names every fault rather than the first.
+ *
+ * AND A REJECTED DECLARATION IS NOT AN ABSENT ONE. Both leave `cap` null, so the limb fell
+ * through to EMISSION_CAP_NOT_DECLARED — whose sentence opens "No owner has declared a
+ * cap", which is false when one did and it was rejected, and which sends that owner to
+ * declare a cap they have already declared. EMISSION_CAP_DECLARATION_INVALID was in the
+ * union, in the RULES map, and emitted by nothing. It is the refusal that fires now, and
+ * `capDeclarationFaults` on the warrant is how the immutable record keeps the two apart
+ * after the fact.
  *
  * ══ THE WARRANT GOES IN `audit_log`, NOT IN A TABLE OF ITS OWN ══
  * As of `0070_audit_seal.sql` `audit_log` is hash-chained and append-only, enforced by
@@ -929,7 +943,34 @@ export async function evaluateEmissionWarrant(
    * every other limb is clean, and even when the aggregate is zero. A zero aggregate
    * under no cap is not "plenty of room" — it is an unbounded envelope.
    */
-  if (cap === null) {
+  if (capFaults.length > 0) {
+    /*
+     * A REJECTED DECLARATION IS NOT AN ABSENT ONE, AND THE FIRST VERSION SAID IT WAS.
+     *
+     * `cap` is null in both cases, so the limb fell through to EMISSION_CAP_NOT_DECLARED —
+     * whose sentence opens "No owner has declared a cap". That is false when an owner
+     * declared one and it was rejected, and it sends them to declare a cap they have already
+     * declared instead of to the fault in the one they supplied. It also left
+     * EMISSION_CAP_DECLARATION_INVALID unreachable: a code in the union, in the RULES map,
+     * documented in the docblock, and emitted by nothing.
+     *
+     * EVERY fault, in one sentence, for the reason `capDeclarationFaults` collects them all:
+     * an owner who fixes one and re-runs to find the next abandons the control.
+     */
+    refusals.push(refusal(
+      'EMISSION_CAP_DECLARATION_INVALID',
+      `A cap declaration was supplied and it is not a cap, on ${capFaults.length} count(s): `
+      + `${capFaults.join(' ')} The arithmetic therefore had NO cap to compare against — the `
+      + 'declaration is not used at reduced confidence, it is not used at all — and this warrant '
+      + `records capLcx as null beside those faults so the immutable record cannot later be read `
+      + 'as "no cap was ever declared here".',
+      'Correct EVERY fault named above and re-run. A cap is a finite, non-negative number on the '
+      + 'concurrent in-flight basis, with who declared it, when, and under which instrument. Note '
+      + 'that NaN and Infinity are refused rather than tolerated because `total > NaN` is false '
+      + 'for every total: a cap that cannot be exceeded is the gate that cannot fail, which is the '
+      + 'defect this whole module replaces.',
+    ));
+  } else if (cap === null) {
     refusals.push(refusal(
       'EMISSION_CAP_NOT_DECLARED',
       'No owner has declared a cap on concurrent in-flight LCX emission, so there is nothing for '

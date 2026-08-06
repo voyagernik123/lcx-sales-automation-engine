@@ -56,6 +56,20 @@
  * the shadow rate would read ~100% and would mean nothing, and "our sales email is
  * unlawful" would be indistinguishable from "we have not attested our own register".
  * Those are different findings with different owners, so they are different fields.
+ *
+ * ══ THERE ARE THREE CAUSES AND THE FIRST VERSION HAD TWO ══
+ * A would-be refusal has one of three causes: the REGISTER is unattested, the WORDS are
+ * unlawful, or THE CHECK NEVER RAN. The third was being filed under the first, because
+ * `outboundGate.ts gateFailure` labels its own crash `ASSET_STATE_UNKNOWN` — which is in
+ * `PERIMETER_CODES` — and this module attributed from the codes alone. Fifty connection
+ * resets therefore produced `perimeterAttributable: 50` and made
+ * `loadOneMouthShadowReport` state as FACT that "the embargo and holdings registers are
+ * not attested", in a window where nothing had been read from either register at all.
+ *
+ * So `gateError` decides, not the code: an observation whose check did not complete is
+ * NEVER `perimeterAttributable`, whatever code the failure carried. `gate_error` is its
+ * own column (0073) and `gateErrors` is its own count, and the report now consults it in
+ * the sentence rather than publishing it beside a sentence that contradicts it.
  */
 import type { Pool } from 'pg';
 import type { Disposition } from '@lcx/shared';
@@ -94,6 +108,13 @@ export const ONE_MOUTH_SURFACES: readonly OneMouthSurface[] = [
  * Taken from the shared union rather than invented: `abuse.ts` emits the first two when
  * the perimeter is absent or unattested, and `gateOutboundText` uses the third for its
  * own fail-closed path. See the file docblock for why they are counted separately.
+ *
+ * MEMBERSHIP HERE IS NOT SUFFICIENT FOR ATTRIBUTION, and reading it as if it were is the
+ * defect this comment exists to prevent. `ASSET_STATE_UNKNOWN` is BOTH the code `abuse.ts`
+ * emits for an asset the register cannot answer for AND the code `gateFailure` stamps on
+ * its own crash (`outboundGate.ts:527`). The two are different findings with different
+ * owners, and the only thing that separates them is `gateError`, so
+ * `perimeterAttributable` is computed from both — see `observeOneMouth`.
  */
 export const PERIMETER_CODES: readonly string[] = [
   'EMBARGO_REGISTER_ABSENT',
@@ -272,7 +293,16 @@ export async function observeOneMouth(
       rulesCited,
       blockingViolations,
       assetsExtracted: verdict.assetsExtracted,
-      perimeterAttributable: refusalCodes.some((c) => PERIMETER_CODES.includes(c)),
+      /*
+       * `gateError === null` IS THE FIRST CONDITION AND IT IS LOAD-BEARING. A gate that
+       * threw returns `ASSET_STATE_UNKNOWN` from `gateFailure`, which IS in
+       * `PERIMETER_CODES` — so attributing from the codes alone filed "the check never ran"
+       * under "the register is unattested", and the report then stated the register as the
+       * CAUSE of a window of connection resets. A crash is a third cause and it is carried
+       * by `gateError` (and by `gate_error` on 0073), never by this flag.
+       */
+      perimeterAttributable: verdict.gateError === null
+        && refusalCodes.some((c) => PERIMETER_CODES.includes(c)),
       gateError: verdict.gateError,
     };
   } catch (err) {
@@ -294,7 +324,15 @@ export async function observeOneMouth(
       rulesCited: ['desk_policy Outbound gate — fail closed'],
       blockingViolations: [],
       assetsExtracted: [],
-      perimeterAttributable: true,
+      /*
+       * FALSE, AND IT USED TO BE TRUE. Nothing here read a register: `gateTextSha256` or
+       * `gateOutboundText` threw before any answer existed. Marking it perimeter-attributable
+       * put "the check crashed" into the count of "our register is unattested", and
+       * ONE_MOUTH_RATE_IS_PERIMETER_ONLY then asserted the register as the cause of a window
+       * of connection resets. The code is kept as `ASSET_STATE_UNKNOWN` for grep-parity with
+       * `outboundGate.ts gateFailure`; `gateError` below is what says which of the two it is.
+       */
+      perimeterAttributable: false,
       gateError: message,
     };
   }
@@ -495,13 +533,26 @@ const SOURCE_TABLE: Readonly<Record<OneMouthSurface, string>> = {
   dist_campaign: 'dist_campaigns',
 };
 
-const SOURCE_COLUMNS: Readonly<Record<OneMouthSurface, string>> = {
+export const SOURCE_COLUMNS: Readonly<Record<OneMouthSurface, string>> = {
   sales_email: 'subject+body',
   assisted_touch: 'subject+coalesce(edited_body,body)',
-  // ONE definition, shared with the warrant: `composeCampaignPublicText` is what
-  // `emissionWarrant.ts` digests, so the shadow observation and the warrant are about the
-  // same bytes and their `text_sha256` values join.
-  dist_campaign: 'name+detail+task_labels',
+  /*
+   * ONE definition, shared with the warrant: `composeCampaignPublicText` is what
+   * `emissionWarrant.ts` digests, so the shadow observation and the warrant are about the
+   * same bytes and their `text_sha256` values join.
+   *
+   * TWO OF THE THREE PARTS ARE NOT COLUMNS, AND THE FIRST VERSION IMPLIED THEY WERE. It
+   * read `name+detail+task_labels`. There is no `task_labels` column on `dist_campaigns`
+   * and none is read — the labels are the constant `CAMPAIGN_TASK_LABELS` in
+   * `emissionWarrant.ts` — and a NULL `detail` is published by the export as the fallback
+   * sentence rather than as nothing. 0073 calls this field "enough to find the text again";
+   * an operator who followed it to the row would have found two of three parts, no trace of
+   * the third, and no way to recompute the digest. So it names where each part comes from.
+   */
+  dist_campaign:
+    'name + coalesce(detail, CAMPAIGN_DESCRIPTION_FALLBACK_PREFIX||name) + CAMPAIGN_TASK_LABELS '
+    + '(the last two are constants in marketing/emissionWarrant.ts, NOT columns; '
+    + 'composeCampaignPublicText joins the parts with \\n)',
 };
 
 /** The bytes gated for one row, per surface. */
@@ -705,10 +756,29 @@ export interface OneMouthShadowReport {
   readonly counts: OneMouthCounts;
   /** Refusal code → how many observations carried it. `null` when not read. */
   readonly byCode: Readonly<Record<string, number>> | null;
+  /**
+   * `MarketingViolation.rule` → how many observations carried it. `null` when not read.
+   *
+   * PUBLISHED BECAUSE `byCode` ALONE CANNOT ANSWER "WHICH GATE FIRED". An error-severity
+   * VIOLATION blocks while emitting no refusal code at all (`outboundGate.ts`: the
+   * `blockingViolations` filter), so `wouldBlock > 0` beside an EMPTY `byCode` is an
+   * ordinary state and not a fault — and with no histogram over `violation_codes` a reader
+   * had no way, anywhere in this report, to learn what had fired. A different vocabulary
+   * from `byCode`; merging the two would corrupt any refusal-frequency read (0073 says the
+   * same thing about the columns).
+   */
+  readonly byViolation: Readonly<Record<string, number>> | null;
+  /**
+   * Per mouth. THE COUNTS ARE NULLABLE FOR THE SAME REASON THE TOTALS ARE: a per-surface
+   * count that could not be read as a number was being published as `0`, which is a
+   * measurement, and the reconciliation below misses it whenever the other surfaces still
+   * sum to the total. `null` here is "not read" and carries
+   * ONE_MOUTH_SURFACE_COUNT_UNREADABLE.
+   */
   readonly bySurface: readonly {
     surface: string;
-    observations: number;
-    wouldBlock: number;
+    observations: number | null;
+    wouldBlock: number | null;
   }[] | null;
   readonly coverage: {
     /** The literal `false`. There is no denominator for "everything the desk sent". */
@@ -850,7 +920,21 @@ export async function loadOneMouthShadowReport(
     ],
   };
 
-  const notLoaded = (sentence: string): OneMouthShadowReport => ({
+  /**
+   * THE CODE IS A PARAMETER BECAUSE THERE ARE THREE WAYS TO KNOW NOTHING, and the first
+   * version of this helper hardcoded ONE_MOUTH_LEDGER_ABSENT for all of them. "The table
+   * does not exist here", "the read failed" and "the read returned something that is not a
+   * number" send an operator to three different places, and a refusal whose code names the
+   * wrong one is a refusal that wastes the only person who can fix it.
+   */
+  const notLoaded = (
+    code: string,
+    sentence: string,
+    rule =
+      'house_doctrine — three states are never collapsed. Not-loaded, '
+      + 'present-but-withheld and genuinely-empty are three facts. A ledger that cannot be '
+      + 'read is NOT a ledger of zero findings.',
+  ): OneMouthShadowReport => ({
     contract: ONE_MOUTH_CONTRACT,
     mode: ONE_MOUTH_MODE,
     blocked: false,
@@ -866,19 +950,10 @@ export async function loadOneMouthShadowReport(
       gateErrors: null,
     },
     byCode: null,
+    byViolation: null,
     bySurface: null,
     coverage,
-    refusals: [
-      ...refusals,
-      {
-        code: 'ONE_MOUTH_LEDGER_ABSENT',
-        sentence,
-        rule:
-          'house_doctrine — three states are never collapsed. Not-loaded, '
-          + 'present-but-withheld and genuinely-empty are three facts. A ledger that cannot be '
-          + 'read is NOT a ledger of zero findings.',
-      },
-    ],
+    refusals: [...refusals, { code, sentence, rule }],
   });
 
   let totals: TotalsRow | null;
@@ -901,70 +976,158 @@ export async function loadOneMouthShadowReport(
   } catch (err) {
     if (typeof err === 'object' && err !== null && (err as { code?: string }).code === '42P01') {
       return notLoaded(
+        'ONE_MOUTH_LEDGER_ABSENT',
         `There is no marketing_one_mouth_shadow relation on this environment: `
         + `${ONE_MOUTH_MIGRATION} has not been applied. NOTHING IS KNOWN about what the three `
         + 'mouths emitted — this is not a report that they emitted nothing, and it is not a '
         + 'report that nothing would have been refused.',
       );
     }
-    throw err;
+    /*
+     * IT USED TO RETHROW, AND A 500 IS THE ONE ANSWER THIS SURFACE MAY NOT GIVE. Only
+     * 42P01 was handled, so a statement timeout (57014), a permission denial (42501) or a
+     * connection reset rejected the whole report and the surface returned a server error
+     * instead of a stated absence with a code. "Absent data refuses" means it refuses — it
+     * does not mean it throws and lets the framework decide what a reader sees.
+     */
+    return notLoaded(
+      'ONE_MOUTH_LEDGER_UNREADABLE',
+      'The shadow ledger could not be read: '
+      + `${err instanceof Error ? err.message : String(err)}. The relation may well exist and `
+      + 'hold observations; this read did not get them. NOTHING IS KNOWN about what the three '
+      + 'mouths emitted in this window — this is a failed read, not a finding of no findings.',
+      'house_doctrine — absent data refuses. A failed read is stated with a stable code, not '
+      + 'raised as a 500 and not rendered as zero.',
+    );
   }
 
   const observations = totals ? int(totals.observations) : null;
   const wouldBlock = totals ? int(totals.would_block) : null;
   const perimeter = totals ? int(totals.perimeter) : null;
+  const gateErrors = totals ? int(totals.gate_errors) : null;
   /*
-   * ALL THREE OR NONE. `COUNT(*)` never returns NULL on real Postgres, so this is
+   * ALL FOUR OR NONE. `COUNT(*)` never returns NULL on real Postgres, so this is
    * reachable only through a shape fault — a renamed column, a view, a driver returning
    * something non-numeric. It matters because the state machine below reads
    * `wouldBlock > 0`: a null `wouldBlock` beside a real `observations` would have produced
    * `observed_no_findings`, i.e. a POSITIVE claim that outbound text was checked and found
    * clean, from a read that failed. `int()` refusing to fabricate a zero is only half the
    * fix; this is the other half.
+   *
+   * `gate_errors` JOINED THE LIST when the sentence below started depending on it. It is
+   * the count that separates "the check crashed" from "the register is unattested" and from
+   * "the words are unlawful", so an unreadable one makes the narrative unsayable rather
+   * than merely less detailed.
    */
-  if (observations === null || wouldBlock === null || perimeter === null) {
+  if (observations === null || wouldBlock === null || perimeter === null || gateErrors === null) {
     return notLoaded(
+      'ONE_MOUTH_TOTALS_NOT_NUMERIC',
       'The shadow ledger exists and its aggregate returned counts that could not be read as '
       + 'numbers, so nothing here is READ. That is a shape fault in the read, not a finding that '
       + 'no text was observed and not a finding that nothing would have been refused.',
+      'house_doctrine — three states are never collapsed. A count that could not be read as a '
+      + 'number is not-loaded, and not-loaded is never rendered as zero.',
     );
   }
 
-  let byCode: Record<string, number> | null = {};
-  try {
-    const res = await pool.query<{ code: unknown; n: unknown }>(
-      `SELECT code, COUNT(*) AS n
-         FROM marketing_one_mouth_shadow, unnest(refusal_codes) AS code
-        WHERE observed_at >= $1 AND observed_at <= $2
-        GROUP BY code ORDER BY n DESC, code ASC`,
-      [windowFrom, windowTo],
-    );
-    for (const r of res.rows) {
-      const code = typeof r.code === 'string' ? r.code : null;
-      const n = int(r.n);
-      if (code !== null && n !== null) byCode[code] = n;
+  /**
+   * One histogram over an array column, or `null` and a stated reason.
+   *
+   * WHY EVERY FAILURE LANDS HERE AND NOT ONLY 42P01. The first version rethrew anything
+   * that was not a missing relation, which made both UNREADABLE codes below unreachable:
+   * the totals query over the SAME relation had already succeeded, so 42P01 could not
+   * happen. The failures that DO happen — 57014 statement timeout, 42501 permission denied,
+   * a connection reset — were the ones that escaped, and they 500ed the whole surface. The
+   * declared code now fires for the reason it was declared for.
+   *
+   * `column` IS INTERPOLATED AND IT IS A TWO-MEMBER LITERAL UNION. An identifier cannot be a
+   * bind parameter, and the union is what makes the interpolation safe: there is no caller
+   * input on this path at all — the two call sites below pass the literals.
+   */
+  const histogram = async (
+    column: 'refusal_codes' | 'violation_codes',
+  ): Promise<{ counts: Record<string, number> } | { failed: string }> => {
+    try {
+      const res = await pool.query<{ code: unknown; n: unknown }>(
+        `SELECT code, COUNT(*) AS n
+           FROM marketing_one_mouth_shadow, unnest(${column}) AS code
+          WHERE observed_at >= $1 AND observed_at <= $2
+          GROUP BY code ORDER BY n DESC, code ASC`,
+        [windowFrom, windowTo],
+      );
+      const counts: Record<string, number> = {};
+      for (const r of res.rows) {
+        const code = typeof r.code === 'string' ? r.code : null;
+        const n = int(r.n);
+        if (code !== null && n !== null) counts[code] = n;
+      }
+      return { counts };
+    } catch (err) {
+      return { failed: err instanceof Error ? err.message : String(err) };
     }
-  } catch (err) {
-    if (typeof err !== 'object' || err === null || (err as { code?: string }).code !== '42P01') {
-      throw err;
-    }
-    /*
-     * A CONTRADICTION, AND IT IS PUBLISHED AS ONE. The totals read above succeeded, so the
-     * relation exists; a 42P01 here means the histogram read is asking for something else.
-     * `byCode: {}` would render as "no refusal codes in this window" beside a non-zero
-     * `wouldBlock` — the empty list that reads as "nothing happened", which is the exact
-     * thing doctrine forbids. `null` is not-loaded, and the refusal says why.
-     */
-    byCode = null;
+  };
+
+  /*
+   * A CONTRADICTION, AND IT IS PUBLISHED AS ONE. The totals read above succeeded, so the
+   * relation exists and holds rows. `byCode: {}` from a FAILED read would render as "no
+   * refusal codes in this window" beside a non-zero `wouldBlock` — the empty list that reads
+   * as "nothing happened", which is the exact thing doctrine forbids. `null` is not-loaded,
+   * and the refusal says why.
+   */
+  const codeHistogram = await histogram('refusal_codes');
+  const byCode = 'counts' in codeHistogram ? codeHistogram.counts : null;
+  if (!('counts' in codeHistogram)) {
     refusals.push({
       code: 'ONE_MOUTH_CODE_HISTOGRAM_UNREADABLE',
       sentence:
-        'The per-code breakdown could not be read even though the totals could. WHICH gates would '
-        + 'have fired is therefore NOT KNOWN — an empty breakdown here would read as "no codes '
-        + 'fired", which contradicts the count beside it.',
+        'The per-code breakdown could not be read even though the totals could: '
+        + `${codeHistogram.failed}. WHICH gates would have fired is therefore NOT KNOWN — an `
+        + 'empty breakdown here would read as "no codes fired", which contradicts the count '
+        + 'beside it.',
       rule:
         'house_doctrine — absent data refuses. It never renders an empty list that reads as '
         + '"nothing happened".',
+    });
+  }
+
+  const violationHistogram = await histogram('violation_codes');
+  const byViolation = 'counts' in violationHistogram ? violationHistogram.counts : null;
+  if (!('counts' in violationHistogram)) {
+    refusals.push({
+      code: 'ONE_MOUTH_VIOLATION_HISTOGRAM_UNREADABLE',
+      sentence:
+        'The per-violation breakdown could not be read even though the totals could: '
+        + `${violationHistogram.failed}. This is the half of "which gate fired" that carries the `
+        + 'blocks with no refusal code — an error-severity violation blocks while emitting none — '
+        + 'so with it missing a would-block may be unexplainable by anything in this report.',
+      rule:
+        'house_doctrine — absent data refuses. A breakdown that could not be read is null and '
+        + 'says so; it is never an empty object beside a non-zero count.',
+    });
+  }
+
+  /*
+   * AN EMPTY `byCode` BESIDE A NON-ZERO `wouldBlock` IS ORDINARY, AND SILENCE ABOUT IT IS
+   * NOT. `outboundGate.ts` blocks on any error-severity VIOLATION, and those emit no refusal
+   * code at all, so a window can legitimately hold blocks that `unnest(refusal_codes)`
+   * cannot see. The read succeeded — this is not not-loaded and `null` would be a lie — so
+   * the empty object stays and a sentence says what it means and where to look instead.
+   */
+  if (byCode !== null && Object.keys(byCode).length === 0 && wouldBlock > 0) {
+    refusals.push({
+      code: 'ONE_MOUTH_BLOCK_CODES_ABSENT',
+      sentence:
+        `${wouldBlock} observation(s) in this window would have blocked and NOT ONE of them `
+        + 'carries a refusal code. The breakdown below is empty because the rows are empty, not '
+        + 'because the read failed: an error-severity violation blocks while emitting no refusal '
+        + `code, so read byViolation ${
+          byViolation === null
+            ? '— which could not be read either, leaving the cause of these blocks unstated here'
+            : `(${Object.keys(byViolation).length} rule(s) named)`
+        } rather than reading this empty object as "no gate fired".`,
+      rule:
+        'house_doctrine — absent data refuses. An empty breakdown must never read as "nothing '
+        + 'happened" beside a count that says something did.',
     });
   }
 
@@ -977,24 +1140,45 @@ export async function loadOneMouthShadowReport(
         GROUP BY surface ORDER BY surface ASC`,
       [windowFrom, windowTo],
     );
+    /*
+     * `int(...) ?? 0` IS WHAT THIS USED TO SAY, AND IT WAS THE SAME FAIL-OPEN THE TOTALS
+     * WERE HARDENED AGAINST ONE BLOCK EARLIER. A per-surface count that could not be read as
+     * a number was published as a MEASURED ZERO for that mouth, and the reconciliation below
+     * cannot catch it whenever the remaining surfaces still sum to the total. Null is
+     * not-loaded here as everywhere else, and the refusal names the surface.
+     */
     bySurface = res.rows.map((r) => ({
       surface: String(r.surface),
-      observations: int(r.n) ?? 0,
-      wouldBlock: int(r.wb) ?? 0,
+      observations: int(r.n),
+      wouldBlock: int(r.wb),
     }));
-  } catch (err) {
-    if (typeof err !== 'object' || err === null || (err as { code?: string }).code !== '42P01') {
-      throw err;
+    const unreadable = bySurface.filter((s) => s.observations === null || s.wouldBlock === null);
+    if (unreadable.length > 0) {
+      refusals.push({
+        code: 'ONE_MOUTH_SURFACE_COUNT_UNREADABLE',
+        sentence:
+          `The per-mouth split was read and ${unreadable.length} of its row(s) carry a count that `
+          + `could not be read as a number (${unreadable.map((s) => s.surface).join(', ')}). Those `
+          + 'counts are null and NOT zero: nothing is known about what those mouths emitted in '
+          + 'this window, and the split cannot be reconciled against the total while they are '
+          + 'missing.',
+        rule:
+          'house_doctrine — three states are never collapsed. A count that could not be read is '
+          + 'not-loaded, and not-loaded is never published as a measured zero.',
+      });
     }
-    // Same reasoning as the histogram above: `null` is not-loaded, and the per-mouth split
-    // being missing is stated rather than rendered as three surfaces with nothing on them.
+  } catch (err) {
+    // Every failure, not only 42P01 — see `histogram` above for why the narrow catch made
+    // this declared code unreachable. `null` is not-loaded, and the per-mouth split being
+    // missing is stated rather than rendered as three surfaces with nothing on them.
     bySurface = null;
     refusals.push({
       code: 'ONE_MOUTH_SURFACE_SPLIT_UNREADABLE',
       sentence:
-        'The per-mouth split could not be read even though the totals could, so WHICH mouth '
-        + 'produced these observations is NOT KNOWN. That matters most where it is missing: the '
-        + 'whole point of the count is to say which surface needs the gate first.',
+        'The per-mouth split could not be read even though the totals could: '
+        + `${err instanceof Error ? err.message : String(err)}. So WHICH mouth produced these `
+        + 'observations is NOT KNOWN. That matters most where it is missing: the whole point of '
+        + 'the count is to say which surface needs the gate first.',
       rule:
         'house_doctrine — three states are never collapsed. Not-loaded is not genuinely-empty.',
     });
@@ -1004,9 +1188,13 @@ export async function loadOneMouthShadowReport(
    * THE TOTAL AND THE SPLIT MUST NOT DISAGREE SILENTLY. Both read the same rows over the
    * same window; if they do not add up, one of the two reads is wrong and neither is
    * trustworthy — which is a thing to say, not a thing to reconcile by picking a number.
+   *
+   * SKIPPED WHEN ANY PER-SURFACE COUNT IS NULL, because a sum over a hole is not a sum. The
+   * refusal above has already said which mouth is missing; adding a disagreement computed
+   * from an incomplete addition would name the wrong fault.
    */
-  if (bySurface !== null) {
-    const summed = bySurface.reduce((n, s) => n + s.observations, 0);
+  if (bySurface !== null && bySurface.every((s) => s.observations !== null)) {
+    const summed = bySurface.reduce((n, s) => n + (s.observations ?? 0), 0);
     if (summed !== observations) {
       refusals.push({
         code: 'ONE_MOUTH_SPLIT_DISAGREES',
@@ -1041,8 +1229,10 @@ export async function loadOneMouthShadowReport(
         + 'which is what was submitted to the gate, not everything the desk sent.'
       : `${observations} piece(s) of outbound text were observed and ${wouldBlock} would have been `
         + `blocked had this been enforcement. ${perimeter} of those are attributable to the `
-        + 'register being unattested rather than to the words — read the two numbers together, '
-        + 'because they have different owners and different remedies.';
+        + `register being unattested rather than to the words, and ${gateErrors} are observations `
+        + 'where the CHECK ITSELF DID NOT COMPLETE and nothing about the text is known either '
+        + 'way — read the three numbers together, because they have three different owners and '
+        + 'three different remedies.';
 
   if (!ledgerKnowsFile) {
     refusals.push({
@@ -1070,17 +1260,55 @@ export async function loadOneMouthShadowReport(
     });
   }
 
-  if (wouldBlock > 0 && perimeter === wouldBlock) {
+  /*
+   * `gateErrors === 0` IS THE CONDITION THAT MAKES THIS SENTENCE TRUE.
+   *
+   * It states the register as the CAUSE, as a fact. That was false for any window in which
+   * the would-be refusals were crashes: `gateFailure` stamps `ASSET_STATE_UNKNOWN`, which is
+   * a perimeter code, so 50 connection resets produced `perimeter === wouldBlock` and this
+   * sentence asserted an unattested register in a window where no register had been read.
+   * `observeOneMouth` no longer marks a crash perimeter-attributable, which alone makes the
+   * equality unreachable in that case; this second condition is here anyway, because the
+   * sentence is a claim about the whole window and the count it depends on is published
+   * beside it — a future change to the attribution must not be able to revive the lie
+   * silently.
+   */
+  if (wouldBlock > 0 && perimeter === wouldBlock && gateErrors === 0) {
     refusals.push({
       code: 'ONE_MOUTH_RATE_IS_PERIMETER_ONLY',
       sentence:
         `Every one of the ${wouldBlock} would-be refusals in this window is attributable to the `
-        + 'register rather than to the words. This number therefore says nothing about the '
-        + 'lawfulness of the desk\'s copy: it says the embargo and holdings registers are not '
-        + 'attested, which they are not, by design. Do not present it as a text-quality finding.',
+        + 'register rather than to the words, and no observation in it recorded a gate error. This '
+        + 'number therefore says nothing about the lawfulness of the desk\'s copy: it says the '
+        + 'embargo and holdings registers are not attested, which they are not, by design. Do not '
+        + 'present it as a text-quality finding.',
       rule:
         'house_doctrine — an inference is never laundered into a certainty. A count whose whole '
         + 'cause is a missing attestation is reported as that, not as a finding about the text.',
+    });
+  }
+
+  /*
+   * THE THIRD CAUSE, WHICH USED TO BE FILED UNDER THE FIRST. An observation whose gate threw
+   * says nothing about the register and nothing about the words: `outboundGate.ts` puts it
+   * plainly — nothing about the text is known to be wrong, and nothing about it is known to
+   * be right. Without this sentence a window of connection resets reads as
+   * `wouldBlock: 50, perimeterAttributable: 0`, which a reader would take for fifty findings
+   * about the copy — a worse lie than the one it replaced.
+   */
+  if (gateErrors > 0) {
+    refusals.push({
+      code: 'ONE_MOUTH_BLOCKS_ARE_GATE_FAILURES',
+      sentence:
+        `${gateErrors} of the ${wouldBlock} would-be refusal(s) in this window are observations `
+        + `where the gate ITSELF did not complete${
+          gateErrors === wouldBlock ? ', which is every one of them' : ''
+        }. Those are counted as would-block because an unavailable check is not a passed check, `
+        + 'and they are evidence about this instrument rather than about the desk\'s copy or its '
+        + 'registers. Subtract them before reading this window as a base rate.',
+      rule:
+        'house_doctrine — three states are never collapsed. "The register is unattested", "the '
+        + 'words are unlawful" and "the check never ran" are three findings with three owners.',
     });
   }
 
@@ -1101,9 +1329,10 @@ export async function loadOneMouthShadowReport(
       perimeterAttributable: perimeter,
       distinctTexts: int(totals!.distinct_texts),
       unattributedActor: int(totals!.unattributed),
-      gateErrors: int(totals!.gate_errors),
+      gateErrors,
     },
     byCode,
+    byViolation,
     bySurface,
     coverage,
     refusals,

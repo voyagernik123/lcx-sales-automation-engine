@@ -1,13 +1,16 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { _resetAbuseRegisterMigrated } from '../abuseRegister.js';
-import { _resetGateLedgerMigrated } from '../outboundGate.js';
+import { _resetGateLedgerMigrated, gateTextSha256 } from '../outboundGate.js';
 import {
+  CAMPAIGN_DESCRIPTION_FALLBACK_PREFIX,
   CAMPAIGN_TASK_LABELS,
   DECLARED_EMISSION_CAP,
+  capDeclarationFaults,
+  campaignPublicDescription,
   EMISSION_ASSET,
   EMISSION_WARRANT_ACTION,
   EMISSION_WARRANT_ENTITY,
@@ -34,17 +37,30 @@ import {
  *  1. THE DEFAULT ANSWER IS NO. No cap is declared, so the budget limb REFUSES. A gate
  *     compared against an absent cap returns OK for every input; this platform shipped
  *     exactly that once (`budget <= budget` in the launch limb) and the refusal is what
- *     makes this one capable of failing.
+ *     makes this one capable of failing. AND THE SAME DEFECT CAN ARRIVE THROUGH THE
+ *     DECLARATION: `capLcx: NaN` cannot be exceeded by any emission, `JSON.stringify`
+ *     writes it as `null`, and an unattributed number in a compliance gate is a magic
+ *     constant — so a declaration that is not a cap refuses on its own code and names
+ *     EVERY fault. A negative quantity, in this campaign's row or in another campaign's,
+ *     refuses too: one such value would satisfy any cap.
  *  2. THE TRIGGER IS READ FROM THE DATABASE. `token_incentivized` is a column, not a
- *     request field, so nothing a caller sends or omits can suppress the warrant. An
- *     unreadable trigger condition refuses rather than reading as "does not apply".
+ *     request field, so nothing a caller sends or omits can suppress the warrant — and
+ *     nothing a caller sends reaches the immutable record either. A trigger that is
+ *     neither true nor false is UNKNOWN and refuses; only the literal `false` means "the
+ *     gate does not apply".
  *  3. THE WARRANT IS THE LEDGER ROW. It carries the sha256 of the exact text checked and
  *     the refusal codes, it goes into `audit_log` (append-only as of 0070), and a failed
  *     append REFUSES — a warrant nobody can look up is not a warrant.
  *  4. THE LAUNCHER'S LCX POSITION IS CHECKED WHATEVER THE COPY SAYS. `LCX` is on the
  *     gate's not-a-ticker list, so the text limb alone would miss it.
  *  5. NOT APPLICABLE IS NOT GRANTED. A three-member union, so no caller can read a
- *     boolean the wrong way round.
+ *     boolean the wrong way round. And its narrative does not claim a control is running:
+ *     the shadow engine next door has no caller, the sentence says so, and a source walk
+ *     here fails the day that stops being true.
+ *  6. THE DIGEST IS OVER THE BYTES THE PLATFORM PUBLISHES. Verbatim — no trim — and
+ *     including the sentence the export substitutes for a NULL `detail`. A warrant over
+ *     tidied-up or missing bytes identifies text nobody published, and
+ *     `warrantCoversText` would be false against the actual page forever.
  *
  * ── WHAT THESE TESTS CANNOT SEE ──────────────────────────────────────────────
  * The pool is a fake dispatching on SQL text. They prove the composition, the arithmetic
@@ -274,26 +290,165 @@ describe('an undeclared cap refuses and can never pass', () => {
 /* ════════ 2. THE TRIGGER IS A COLUMN, NOT A REQUEST FIELD ════════ */
 
 describe('the trigger condition is read server-side', () => {
-  it('cannot be suppressed by anything the caller sends or omits', async () => {
+  it('cannot be suppressed by anything the caller sends, and nothing it sends reaches the warrant', async () => {
     /*
-     * The payload claims the campaign is not token-incentivised and states a cap of its
-     * own. Both are extra keys nothing reads: the flag comes from
-     * `dist_campaigns.token_incentivized` and the cap from the module (or the typed `cap`
-     * parameter). The warrant still runs and still refuses.
+     * WHAT THE FIRST VERSION OF THIS TEST PROVED, WHICH WAS NOTHING. It added
+     * `tokenIncentivized: false` and `capLcx: 1e9` to the payload and asserted the check still
+     * refused. No interface declares those keys, so no implementation could read them without
+     * being written to: the assertion held for every possible implementation.
+     *
+     * WHAT IS FALSIFIABLE. The payload's claims CONTRADICT the database row (which says
+     * token_incentivized = true and budget_lcx = 1000), and the assertions are that the
+     * database won on every axis AND that not one caller-supplied value reached the immutable
+     * record. The second half is the one that bites: `1000000000` appearing in
+     * `audit_log.meta` is what a `{ ...input, ...draft }` implementation produces, and that is
+     * a caller-controlled number inside a compliance record.
      */
-    const { pool } = stub(perimeterClear());
+    const { pool, audit } = stub(perimeterClear());
     const payload = {
       ...input(),
       tokenIncentivized: false,
       token_incentivized: false,
       capLcx: 1_000_000_000,
-      namedAssets: [],
+      cap: undefined,
+      namedAssets: ['DOGE'],
+      granted: true,
     } as Parameters<typeof evaluateEmissionWarrant>[1];
 
     const d = await evaluateEmissionWarrant(pool, payload);
     expect(d.outcome).toBe('refused');
     if (d.outcome !== 'refused') throw new Error('unreachable');
+    // The trigger came from the column, so the token limbs ran at all.
+    expect(d.warrant!.thisCampaignLcx).toBe(1000);
+    // The caller's cap was not a cap.
     expect(d.refusals.map((r) => r.code)).toContain('EMISSION_CAP_NOT_DECLARED');
+    expect(d.warrant!.capLcx).toBeNull();
+    expect(d.warrant!.granted).toBe(false);
+    // And nothing the caller sent is in the permanent record.
+    const metaJson = String((audit[0]!.params as unknown[])[4]);
+    expect(metaJson).not.toContain('1000000000');
+    expect(metaJson).not.toContain('DOGE');
+    expect(Object.keys(JSON.parse(metaJson) as object)).not.toContain('namedAssets');
+  });
+
+  it('refuses a cap declaration that is not a cap, and names every fault', async () => {
+    /*
+     * THE SAME DEFECT ONE LEVEL UP, AND IT SHIPPED. `capLcx: NaN` makes `total > cap.capLcx`
+     * false for every total, so the limb becomes arithmetically incapable of failing — the
+     * `budget <= budget` shape this whole module exists to replace. Worse,
+     * `JSON.stringify(NaN)` is `null`, so the IMMUTABLE warrant recorded `"capLcx":null`
+     * beside `"granted":true`: the permanent record of a launch asserting the one state this
+     * module says must refuse.
+     *
+     * A rejected declaration is also NOT an absent one. Falling through to
+     * EMISSION_CAP_NOT_DECLARED ("No owner has declared a cap") would be false and would send
+     * the owner to declare a cap they had already declared.
+     */
+    const { pool, audit } = stub({ ...perimeterClear(), inFlight: { total: '0' } });
+    const d = await evaluateEmissionWarrant(pool, input({
+      cap: { ...cap(Number.NaN) },
+    }));
+
+    expect(d.outcome).toBe('refused');
+    if (d.outcome !== 'refused') throw new Error('unreachable');
+    const codes = d.refusals.map((r) => r.code);
+    expect(codes).toContain('EMISSION_CAP_DECLARATION_INVALID');
+    // NEGATIVE: the arithmetic must not have run, and the absent-cap sentence must not be
+    // used for a declaration that was supplied.
+    expect(codes).not.toContain('EMISSION_CAP_EXCEEDED');
+    expect(codes).not.toContain('EMISSION_CAP_NOT_DECLARED');
+    expect(d.warrant!.granted).toBe(false);
+
+    // The immutable record distinguishes "none was declared" from "one was and it was
+    // rejected" — `capLcx: null` cannot carry that, and the warrant cannot be edited later.
+    const meta = JSON.parse(String((audit[0]!.params as unknown[])[4])) as Record<string, unknown>;
+    expect(meta.capLcx).toBeNull();
+    expect(meta.granted).toBe(false);
+    expect((meta.capDeclarationFaults as string[]).length).toBeGreaterThan(0);
+    expect((meta.capDeclarationFaults as string[]).join(' ')).toContain('NaN');
+  });
+
+  it('rejects every shape of non-cap, and reports all of a declaration\'s faults at once', () => {
+    /*
+     * DIRECT, BECAUSE THE FAULT LIST IS THE THING A HUMAN READS. An owner who fixes one fault,
+     * re-runs, and finds the next is an owner who abandons the control — so every fault is
+     * named on the first pass.
+     */
+    expect(capDeclarationFaults(cap(1000))).toEqual([]);
+    expect(capDeclarationFaults(cap(0))).toEqual([]);
+
+    // Each of these on its own is a limb that could never fail, or a number nobody owns.
+    expect(capDeclarationFaults(cap(Number.NaN)).join(' ')).toContain('not a finite number');
+    expect(capDeclarationFaults(cap(Number.POSITIVE_INFINITY)).join(' '))
+      .toContain('not a finite number');
+    expect(capDeclarationFaults(cap(-1)).join(' ')).toContain('negative envelope');
+    expect(capDeclarationFaults({ ...cap(1000), capLcx: '1000' as unknown as number }).join(' '))
+      .toContain('not a finite number');
+
+    // Provenance is required by the type AND, now, by the code: `declaredBy: ''` was accepted
+    // and the launch was granted, against an interface docblock saying an unattributed number
+    // in a compliance gate is a magic constant.
+    const unattributed = capDeclarationFaults({
+      capLcx: Number.NaN,
+      basis: 'per_quarter' as unknown as 'concurrent_in_flight',
+      declaredBy: '',
+      declaredAt: '   ',
+      instrument: '',
+    });
+    expect(unattributed.length).toBe(5);
+    for (const field of ['declaredBy', 'declaredAt', 'instrument']) {
+      expect(unattributed.some((f) => f.startsWith(field))).toBe(true);
+    }
+    // And a date this runtime cannot read means WHEN is unknown.
+    expect(capDeclarationFaults({ ...cap(1000), declaredAt: 'last Tuesday' }).join(' '))
+      .toContain('not a date this runtime can read');
+  });
+
+  it('refuses a negative emission rather than treating it as headroom', async () => {
+    /*
+     * `dist_campaigns.budget_lcx` IS A BARE `numeric` WITH NO CHECK (0043:39), so this is a
+     * value the database will hold. Read as a measurement it satisfies any cap on its own —
+     * the same "a gate that cannot fail is not a gate" defect, arriving as data instead of as
+     * code. Note the cap here is TINY and the campaign would still clear it.
+     */
+    const { pool } = stub({
+      ...perimeterClear(),
+      campaign: { ...defaultCampaign, budget_lcx: '-5000' },
+      inFlight: { total: '0' },
+    });
+    const d = await evaluateEmissionWarrant(pool, input({ cap: cap(1) }));
+
+    expect(d.outcome).toBe('refused');
+    if (d.outcome !== 'refused') throw new Error('unreachable');
+    expect(d.refusals.map((r) => r.code)).toContain('EMISSION_AMOUNT_NEGATIVE');
+    expect(d.warrant!.granted).toBe(false);
+    expect(d.warrant!.thisCampaignLcx).toBe(-5000);
+  });
+
+  it('refuses when the in-flight aggregate is negative, whatever it does to the sum', async () => {
+    /*
+     * ONE ROW DEFEATS THE LIMB FOR EVERY LAUNCH AFTER IT. A single approved or live campaign
+     * with a negative `budget_lcx` drags `SUM(budget_lcx)` below zero, and this campaign's
+     * emission is then added to a negative number — clearing any cap. The refusal is what
+     * stops another campaign's data defect from becoming this campaign's clearance.
+     */
+    const { pool } = stub({
+      ...perimeterClear(),
+      inFlight: { total: '-1000000', unstated: '0', n: '2' },
+    });
+    const d = await evaluateEmissionWarrant(pool, input({ cap: cap(1) }));
+
+    expect(d.outcome).toBe('refused');
+    if (d.outcome !== 'refused') throw new Error('unreachable');
+    const codes = d.refusals.map((r) => r.code);
+    expect(codes).toContain('EMISSION_AGGREGATE_NEGATIVE');
+    // The arithmetic would have PASSED: -1000000 + 1000 is inside a cap of 1. That is the
+    // whole point — the limb is not saved by the comparison, it is saved by the refusal.
+    expect(codes).not.toContain('EMISSION_CAP_EXCEEDED');
+    expect(d.warrant!.granted).toBe(false);
+    // And the remedy names the missing constraint rather than implying the read was wrong.
+    expect(d.refusals.find((r) => r.code === 'EMISSION_AGGREGATE_NEGATIVE')!.remedy)
+      .toContain('CHECK constraint');
   });
 
   it('refuses rather than skipping when the campaign register cannot be read', async () => {
@@ -304,6 +459,40 @@ describe('the trigger condition is read server-side', () => {
     if (d.outcome !== 'refused') throw new Error('unreachable');
     expect(d.refusals.map((r) => r.code)).toEqual(['EMISSION_CAMPAIGN_REGISTER_ABSENT']);
     expect(d.warrant).toBeNull();
+  });
+
+  it('refuses when the trigger condition is neither true nor false', async () => {
+    /*
+     * THE THIRD STATE, WHICH THE FIRST VERSION DID NOT HAVE. It read
+     * `row.token_incentivized === true`, so NULL, the string 'true', and anything a driver
+     * shape change produced went down the `not_applicable` branch — and `mayReachStatus`
+     * returns TRUE for that, so the wiring `if (!mayReachStatus(w)) throw` would have let a
+     * possibly token-incentivised campaign reach approved or live with no warrant and no Art
+     * 91(3)(c) check on the launcher. Unknown must never resolve to "the gate does not apply".
+     *
+     * The union declares `tokenIncentivized: boolean | null`; before this the third member was
+     * typed and never produced.
+     */
+    for (const value of [null, 'true', 1, undefined]) {
+      const { pool, audit } = stub({
+        ...perimeterClear(),
+        campaign: { ...defaultCampaign, token_incentivized: value },
+      });
+      const d = await evaluateEmissionWarrant(pool, input({ cap: cap(1_000_000) }));
+
+      expect(d.outcome, `token_incentivized = ${JSON.stringify(value)}`).toBe('refused');
+      if (d.outcome !== 'refused') throw new Error('unreachable');
+      expect(d.refusals.map((r) => r.code)).toEqual(['EMISSION_TRIGGER_NOT_STATED']);
+      expect(mayReachStatus(d)).toBe(false);
+      // No warrant is minted, because nothing was checked — and nothing is written that a
+      // later reader could mistake for a check.
+      expect(d.warrant).toBeNull();
+      expect(audit).toHaveLength(0);
+    }
+
+    // And the literal `false` is still the ONLY value that means "the gate does not apply".
+    const { pool } = stub({ campaign: { ...defaultCampaign, token_incentivized: false } });
+    expect((await evaluateEmissionWarrant(pool, input())).outcome).toBe('not_applicable');
   });
 
   it('refuses a campaign that does not exist, as a genuine absence', async () => {
@@ -383,10 +572,20 @@ describe('the warrant is ledgered into audit_log with the digest and the codes',
     expect(meta.textSha256).toBe(d.warrant.textSha256);
     expect(meta.granted).toBe(true);
     expect(meta.refusalCodes).toEqual([]);
-    // The composition travels with the digest: a digest whose composition is unstated
-    // cannot be recomputed by anybody checking it later.
-    expect(meta.textComposition).toContain('dist_campaigns.name');
-    expect(meta.textComposition).toContain('dist_campaigns.detail');
+    /*
+     * The composition travels with the digest: a digest whose composition is unstated cannot
+     * be recomputed by anybody checking it later.
+     *
+     * `toContain` ON THE DETAIL LINE WAS AN EXACT-ELEMENT MATCH AND IT FAILED, correctly. The
+     * composition entry no longer reads `dist_campaigns.detail` alone, because the published
+     * description is `detail` OR the route's fallback sentence, and an entry naming only the
+     * column would describe a composition this module does not use. So the assertion is what
+     * the field has to promise: the column is named, and so is what happens when it is NULL.
+     */
+    const composition = meta.textComposition as string[];
+    expect(composition).toContain('dist_campaigns.name');
+    expect(composition.some((c) => c.startsWith('dist_campaigns.detail'))).toBe(true);
+    expect(composition.join(' ')).toContain(CAMPAIGN_DESCRIPTION_FALLBACK_PREFIX);
     // And NOT the text itself. A warrant is a control record, not a second copy of the
     // campaign copy.
     expect(metaJson).not.toContain('Complete three quests');
@@ -541,6 +740,60 @@ describe('not applicable is a third outcome and never a grant', () => {
     expect(audit).toHaveLength(0);
     expect(mayReachStatus(d)).toBe(true);
     expect('warrant' in d).toBe(false);
+    /*
+     * AND IT MUST NOT CLAIM A CONTROL IS RUNNING. This sentence is surfaced to a human, and
+     * the first version told them "the Title VI engine over campaign text runs in shadow mode
+     * for every campaign (marketing/oneMouth.ts)" — present tense, about a module with no
+     * caller anywhere in the repository. A non-token campaign's COPY has met no check at all,
+     * and that is what the sentence has to say.
+     */
+    expect(d.why).toContain('NOT WIRED');
+    expect(d.why).toContain('met no check');
+    expect(d.why).not.toMatch(/runs (in shadow mode )?for every campaign/);
+  });
+
+  it('is telling the truth about the shadow engine not being wired in', () => {
+    /*
+     * THE SENTENCE ABOVE IS A CLAIM ABOUT THE REPOSITORY, so it is checked against the
+     * repository rather than trusted — the same reasoning as the route-parity test.
+     *
+     * THE DAY SOMEBODY WIRES `observeOneMouth` INTO A SEND OR LAUNCH PATH, THIS FAILS. That is
+     * the intended outcome: the disclosure becomes false at that moment, and a governance
+     * sentence that has quietly gone stale is worse than no sentence. Update the narrative in
+     * `evaluateEmissionWarrant` and this list together.
+     */
+    const here = dirname(fileURLToPath(import.meta.url));
+    const roots = [resolve(here, '..', '..'), resolve(here, '..', '..', '..', '..', 'web', 'src')];
+    const callers: string[] = [];
+    let scanned = 0;
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = resolve(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (entry.name === 'node_modules' || entry.name === 'dist') continue;
+          walk(full);
+        } else if (/\.tsx?$/.test(entry.name) && !/oneMouth/.test(entry.name)) {
+          scanned += 1;
+          if (/\b(observeOneMouth|sweepOneMouth)\s*\(/.test(readFileSync(full, 'utf8'))) {
+            callers.push(full);
+          }
+        }
+      }
+    };
+    for (const root of roots) walk(root);
+
+    // NON-VACUITY FIRST. An empty walk makes the assertion below pass for free, which is the
+    // standard way a content ratchet dies quietly (`migrationImmutability.test.ts` opens the
+    // same way and for the same reason).
+    expect(scanned, 'the source walk read nothing, so it proves nothing').toBeGreaterThan(50);
+    expect(
+      callers,
+      'observeOneMouth/sweepOneMouth now HAS a caller, so the not_applicable narrative in '
+      + 'evaluateEmissionWarrant — which tells a human the shadow engine is NOT WIRED into any '
+      + 'send or launch path — has become false. Update the sentence, then this assertion.',
+    ).toEqual([]);
+    const module = readFileSync(resolve(here, '..', 'oneMouth.ts'), 'utf8');
+    expect(module).toContain('export async function observeOneMouth');
   });
 
   it('is not applicable for a status that is not a publication point', async () => {
@@ -568,10 +821,72 @@ describe('the warranted text is the campaign name, detail and task labels', () =
     const text = composeCampaignPublicText({ name: 'Quests', detail: 'Do three things.' });
     expect(text.split('\n')).toEqual(['Quests', 'Do three things.', ...CAMPAIGN_TASK_LABELS]);
 
-    // A null detail contributes no line at all, so the digest of a campaign with no
-    // detail is the same whether the column is NULL or absent from the SELECT.
+    // NULL and absent are the same input — both mean "the column states no detail" — so the
+    // digest is the same for either.
     expect(composeCampaignPublicText({ name: 'Quests', detail: null }))
       .toBe(composeCampaignPublicText({ name: 'Quests' }));
+  });
+
+  it('digests the sentence the export publishes when detail is NULL, not nothing', async () => {
+    /*
+     * WHAT THE FIRST VERSION DID, AND WHY IT WAS A WARRANT OVER NOTHING. It contributed NO
+     * line for a NULL `detail`. The export does not: `routes/distribution.ts` publishes
+     * `camp.detail ?? 'PayAgent distribution campaign — ' + name`, which is a REAL sentence a
+     * human reads on Galxe or Layer3. So the digest identified bytes nobody publishes, the
+     * published description met no check at all, and `warrantCoversText` was false against
+     * the actual page for every campaign with no detail.
+     *
+     * This is the assertion that pins the fallback, and it is a source-parity assertion as
+     * well: the sibling test below checks the same prefix is still in the route file.
+     */
+    const lines = composeCampaignPublicText({ name: 'Quests', detail: null }).split('\n');
+    expect(lines[1]).toBe(`${CAMPAIGN_DESCRIPTION_FALLBACK_PREFIX}Quests`);
+    expect(lines[1]).not.toBe('');
+    expect(campaignPublicDescription({ name: 'Quests', detail: null })).toBe(lines[1]);
+
+    // An EMPTY-STRING detail is a stated empty description and is digested as one: the route
+    // uses `??`, not a truthiness test, so '' publishes ''.
+    expect(composeCampaignPublicText({ name: 'Quests', detail: '' }).split('\n')[1]).toBe('');
+
+    // And the warrant a campaign with no detail gets covers the text the export would emit.
+    const { pool } = stub({
+      ...perimeterClear(),
+      campaign: { ...defaultCampaign, detail: null },
+      inFlight: { total: '0' },
+    });
+    const d = await evaluateEmissionWarrant(pool, input({ cap: cap(1_000_000) }));
+    if (d.outcome !== 'granted') throw new Error(`expected granted, got ${d.outcome}`);
+    const published = composeCampaignPublicText({ name: 'PayAgent launch quests', detail: null });
+    expect(warrantCoversText(d.warrant, await gateTextSha256(published))).toBe(true);
+  });
+
+  it('never edits the text it is about to warrant', async () => {
+    /*
+     * THE VERBATIM RULE, PINNED. The first version `.trim()`ed `detail`; the export emits
+     * `camp.detail` untouched. A digest over tidied-up bytes identifies something else, and
+     * the failure is silent — `warrantCoversText` simply returns false forever against a page
+     * whose copy has a leading space in the database.
+     */
+    const padded = '  Complete three quests to earn rewards.\n\n';
+    expect(composeCampaignPublicText({ name: 'Quests', detail: padded }).split('\n')[1])
+      .toBe('  Complete three quests to earn rewards.');
+    expect(campaignPublicDescription({ name: 'Quests', detail: padded })).toBe(padded);
+
+    // The whole composition, byte for byte, against the export's own concatenation order.
+    expect(composeCampaignPublicText({ name: ' Quests ', detail: padded }))
+      .toBe([' Quests ', padded, ...CAMPAIGN_TASK_LABELS].join('\n'));
+
+    // And the digest on the warrant is over exactly those bytes.
+    const { pool } = stub({
+      ...perimeterClear(),
+      campaign: { ...defaultCampaign, name: ' Quests ', detail: padded },
+      inFlight: { total: '0' },
+    });
+    const d = await evaluateEmissionWarrant(pool, input({ cap: cap(1_000_000) }));
+    if (d.outcome !== 'granted') throw new Error(`expected granted, got ${d.outcome}`);
+    expect(d.warrant.textSha256).toBe(
+      await gateTextSha256(composeCampaignPublicText({ name: ' Quests ', detail: padded })),
+    );
   });
 
   it('keeps the mirrored task labels honest against the route that publishes them', () => {
@@ -584,6 +899,23 @@ describe('the warranted text is the campaign name, detail and task labels', () =
     const here = dirname(fileURLToPath(import.meta.url));
     const route = readFileSync(resolve(here, '..', '..', 'routes', 'distribution.ts'), 'utf8');
     expect(route).toContain('keyless-export');
+    /*
+     * THE FALLBACK IS MIRRORED TOO, AND THIS IS THE ASSERTION THE DOCBLOCK PROMISED. The file
+     * docblock claims "both the fallback and the verbatim rule are pinned by the source-parity
+     * test below"; before this line only the task labels were checked, so the sentence the
+     * export publishes for a NULL detail could have been reworded in the route and every
+     * warrant afterwards would have digested a sentence the platform no longer emits.
+     */
+    expect(
+      route,
+      'routes/distribution.ts no longer publishes the description fallback '
+      + `"${CAMPAIGN_DESCRIPTION_FALLBACK_PREFIX}<name>". CAMPAIGN_DESCRIPTION_FALLBACK_PREFIX `
+      + 'mirrors it; update it, and note that every warrant minted before the change covers a '
+      + 'different composition.',
+    ).toContain(CAMPAIGN_DESCRIPTION_FALLBACK_PREFIX);
+    // The route reaches the fallback with `??`, so an empty-string detail publishes empty.
+    // A truthiness test there would change what every warrant is over.
+    expect(route).toContain(`camp.detail ?? \`${CAMPAIGN_DESCRIPTION_FALLBACK_PREFIX}`);
     for (const label of CAMPAIGN_TASK_LABELS) {
       expect(
         route,
