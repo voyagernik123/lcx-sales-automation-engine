@@ -49,9 +49,16 @@ whether the three empty states stay distinct on every path including errors.
 
 Nothing fires it at 07:00. It is a computed, requestable surface that is correct whenever it is
 asked for, and the file says so. That was a deliberate instruction, because the precedent is
-sitting in this repo: `wbr_reports` has ONE row and its "schedule" is a COMMENT, which is why
-RECESSION RATE was dropped from P4 as unmeasurable. A capability that claims a schedule it does not
-have is precisely the defect this platform is being rebuilt to remove.
+sitting in this repo: `wbr_reports` has ONE row, which is why RECESSION RATE was dropped from P4 as
+unmeasurable. A capability that claims a schedule it does not have is precisely the defect this
+platform is being rebuilt to remove.
+
+**AND THE PRECEDENT IS WORSE THAN "ITS SCHEDULE IS A COMMENT", WHICH IS HOW I DESCRIBED IT.**
+Reviewing this readout is what turned it up: the schedule is not a comment, it is a complete
+workflow file in a directory GitHub never reads. Eight cron jobs — including `kpi_snapshot`, which
+fills the ledger the readout ranks — have never run. See
+`docs/SCHEDULED_JOBS_NOT_INSTALLED.md`. So the readout's empty window is a claim about its LEDGER
+and not about the platform, and the surface now says exactly that.
 
 ## OUTSTANDING
 

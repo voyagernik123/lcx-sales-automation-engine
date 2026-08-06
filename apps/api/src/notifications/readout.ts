@@ -22,6 +22,38 @@ import { listNotifications, type NotificationScope } from './service.js';
  * alongside the items, and this module's job is to SURFACE them rather than to
  * re-derive them.
  *
+ * ── THE WITHHELD COUNT IS A CHANNEL, AND THE CHANNEL IS NAMED ────────────────
+ * "3 items withheld" is information flowing OUT of compartments the reader does not
+ * hold, and calling it a governance fact does not stop it being one. Read the SQL in
+ * `service.ts` and it is exactly:
+ *
+ *   COUNT(*) FILTER (WHERE workspace IS NOT NULL AND workspace NOT IN (…scopes))
+ *   FROM notifications                                   -- no time predicate at all
+ *
+ * so the number is: every alert row ever written to any compartment this reader does
+ * not hold. Three properties follow, and NONE of them was stated before this comment
+ * existed — which is the defect, not the count:
+ *
+ *  1. IT IS AN AGGREGATE, NOT AN ATTRIBUTION — with one exception. A reader holding
+ *     {sales, _desk} learns a single total across gps ∪ marketing ∪ … and cannot say
+ *     which. But when `compartmentsNotHeld.length === 1` the aggregate DEGENERATES
+ *     into that one compartment's exact ledger-wide alert count. A reader who holds
+ *     seven of eight compartments is reading the eighth's counter directly.
+ *  2. IT HAS NO TIME BOUND. It is deliberately not window-scoped ("so they do not
+ *     move when `limit` does" — service.ts), which means it includes rows older than
+ *     the reader's own tenure. It is not a fact about last night.
+ *  3. IT MOVES, SO IT CAN BE POLLED. Two reads minutes apart yield a delta: how many
+ *     alerts fired in compartments the reader does not hold, in that interval. A
+ *     counter that moves when another desk works is an oracle on that desk's
+ *     activity, at rule-firing granularity.
+ *
+ * (1) and (2) are consequences of the design; (3) is inherent to any live count. The
+ * trade is deliberate and is the constitution's — THAT material exists and how much,
+ * never what it says — but a channel a reader cannot see is not a trade a reader
+ * agreed to, so `redaction.channelStatement` puts all three on the payload and the
+ * page renders it whether anything is withheld or not. `withheld === 0` is a channel
+ * too, and a sharper one: it says NO compartment you lack has ever recorded an alert.
+ *
  * ── COMPOSED, NOT REIMPLEMENTED ──────────────────────────────────────────────
  * Every read goes through `notifications/service.ts`. That file is P0's verified
  * fix for a live need-to-know leak: before 0067 the bell was `SELECT … FROM
@@ -31,18 +63,50 @@ import { listNotifications, type NotificationScope } from './service.js';
  * would be a second place for that leak to come back, so there is no SQL in this
  * file at all.
  *
+ * ── THE LIMIT IS APPLIED AFTER THE SCOPE FILTER, WHICH WAS CHECKED ───────────
+ * VERIFIED IN THE SQL, NOT ASSUMED: `listNotifications` issues
+ * `… WHERE workspace IN (…) ORDER BY created_at DESC LIMIT n`, so the cap counts
+ * rows the reader MAY see. Had it been the other way round — take n rows, then
+ * filter in JS — the shortfall would itself be a second channel, and a subtler one
+ * than the withheld count: a page short of its own cap would tell the reader exactly
+ * how many of the most recent n rows platform-wide were not theirs, per request,
+ * with no aggregation to hide behind. Everything downstream leans on this ordering:
+ * `counts.fetched`, the truncation arithmetic, and the claim that a full page means
+ * the reader's own history is exhausted. `__tests__/readout.test.ts` pins the
+ * rendered statement so a future refactor to fetch-then-filter fails here.
+ *
  * ── THE 07:00 IN THE NAME IS AN INTENTION, NOT A CLAIM ───────────────────────
  * NOTHING FIRES THIS AT 07:00. There is no scheduler, no cron entry, no job. It is
  * a computed surface that is correct whenever it is asked for, and `frame.scheduled`
  * is the literal `false` with READOUT_NOT_SCHEDULED emitted on EVERY payload so the
  * absence cannot be read past. For it to be true there would have to be: a
- * scheduled trigger per reader (the jobs CLI runs `evaluateAlertRules` daily and is
- * the obvious host); a delivery channel that is not this HTTP response; and a
- * record of what was sent to whom, because a brief nobody can prove was delivered
- * is not a brief. `wbr_reports` is the precedent being deliberately avoided: it has
- * ONE row and its "schedule" is a COMMENT, which is why RECESSION RATE was dropped
- * from the programme as unmeasurable. A capability that claims a cadence it does
- * not have is the exact defect this platform is being rebuilt to remove.
+ * scheduled trigger per reader; a delivery channel that is not this HTTP response;
+ * and a record of what was sent to whom, because a brief nobody can prove was
+ * delivered is not a brief. `wbr_reports` is the precedent being deliberately
+ * avoided: it has ONE row and its "schedule" is a COMMENT, which is why RECESSION
+ * RATE was dropped from the programme as unmeasurable. A capability that claims a
+ * cadence it does not have is the exact defect this platform is being rebuilt to
+ * remove.
+ *
+ * AND THE SOURCE HAS NO CADENCE EITHER — CORRECTED, HAVING BEEN CLAIMED HERE.
+ * The first version of this comment and of `scheduleStatement` said the jobs CLI
+ * "already runs the daily alert sweep" and named it as the obvious host. IT DOES NOT
+ * RUN IT. `evaluateAlertRules` is reachable only as `jobs/cli.ts`'s `daily_rules`
+ * case, i.e. when a human or a runner invokes it. The one cron that names it is
+ * `ops/github-workflows/jobs.yml:18` ("daily_rules — daily 07:30 UTC"), and that
+ * file is NOT under `.github/workflows/` — which holds `ci.yml` and nothing else —
+ * so GitHub never reads it; `render.yaml` declares a single web service with no cron.
+ * A schedule sitting in an uninstalled template is `wbr_reports` again, one level
+ * down: this surface refused its own cadence in the same sentence that asserted one
+ * for the ledger it reads.
+ *
+ * IT MATTERS BEYOND THE COMMENT. If no sweep runs, an empty window can mean "no rule
+ * has been evaluated since somebody last ran the CLI by hand" rather than "no alert
+ * condition arose", and those are different facts. The reader cannot tell them apart
+ * from anything in the ledger, so READOUT_WINDOW_GENUINELY_EMPTY says so instead of
+ * letting the silence be read as calm. What the brief can honestly claim is exactly
+ * what it does claim: the ledger was read, and it holds nothing for you in this
+ * window.
  *
  * ── THE RANK, WHICH IS THE PART THAT COULD MOST EASILY LIE ───────────────────
  * IT IS RECENCY, AND IT SAYS SO — in the payload, not only in this comment.
@@ -79,8 +143,13 @@ export const READOUT_CODES = {
   ITEM_INSTANT_UNREADABLE: 'READOUT_ITEM_INSTANT_UNREADABLE',
   /** The ledger returned a row outside the reader's scopes. Dropped, and said aloud. */
   SCOPE_MISMATCH: 'READOUT_SCOPE_MISMATCH',
-  /** Nothing fires this at 07:00. Emitted on every payload. */
+  /** Nothing fires this at 07:00, and nothing fires the sweep that fills the ledger either. */
   NOT_SCHEDULED: 'READOUT_NOT_SCHEDULED',
+  /**
+   * The reader holds NO compartment, so no window could contain anything for them.
+   * A fourth thing that must not be collapsed into "the window was quiet".
+   */
+  NO_COMPARTMENTS_HELD: 'READOUT_NO_COMPARTMENTS_HELD',
   /** The database this was read from cannot be named. */
   ENVIRONMENT_UNNAMED: 'READOUT_ENVIRONMENT_UNNAMED',
   /** The window or the cap that was asked for is not the one that was applied. */
@@ -212,6 +281,16 @@ export interface ReadoutRedaction {
   readonly countFrame: 'whole_ledger';
   readonly statement: string;
   /**
+   * WHAT THE TWO COUNTS ABOVE TELL THIS READER ABOUT COMPARTMENTS THEY DO NOT HOLD.
+   *
+   * Present on EVERY payload, including when nothing is withheld, because `withheld: 0`
+   * is a statement about other compartments too. It names the aggregate, the absence of
+   * a time bound, the pollable delta, and the case where the aggregate degenerates into
+   * one compartment's counter — see the channel section of this file's header. A channel
+   * a reader cannot see is not a trade a reader agreed to.
+   */
+  readonly channelStatement: string;
+  /**
    * Items the ledger returned that are NOT in the reader's scopes. Must always be 0;
    * anything else is a leak in the service and is refused rather than rendered.
    */
@@ -319,6 +398,18 @@ export const FETCH_BOUNDS = { min: 1, max: 100 } as const;
 
 const DEFAULT_WINDOW_HOURS = 24;
 const DEFAULT_FETCH = 50;
+
+/**
+ * A COMPARTMENT LIST THAT NEVER RENDERS AS NOTHING.
+ *
+ * `[].join(', ')` is the empty string, and these lists are interpolated into sentences
+ * a human reads — "no item for your compartments () between …" both looks broken and,
+ * worse, reads as though the set were unknown rather than empty. Every list that
+ * reaches a sentence goes through here.
+ */
+function nameList(xs: readonly string[], whenEmpty: string): string {
+  return xs.length > 0 ? xs.join(', ') : whenEmpty;
+}
 
 /** 42P01 — the one fault the whole codebase reads as "the migration has not landed". */
 function isMissingTable(err: unknown): boolean {
@@ -472,9 +563,14 @@ export async function composeReadout(
   const scheduleStatement =
     'NOTHING FIRES THIS AT 07:00. There is no scheduler, no cron entry and no delivery record: this '
     + 'brief was computed because it was requested, at the instant on the frame. For the name to be '
-    + 'true there would have to be a per-reader scheduled trigger (the jobs CLI that already runs the '
-    + 'daily alert sweep is the obvious host), a delivery channel that is not this HTTP response, and '
-    + 'a record of what was sent to whom — because a brief nobody can prove was delivered is not a brief.';
+    + 'true there would have to be a per-reader scheduled trigger, a delivery channel that is not this '
+    + 'HTTP response, and a record of what was sent to whom — because a brief nobody can prove was '
+    + 'delivered is not a brief. AND THE ALERT SWEEP THAT FILLS THIS LEDGER IS NOT SCHEDULED EITHER: '
+    + 'the daily rule evaluation runs only when the jobs CLI is invoked, and the one cron that names it '
+    + 'lives in an uninstalled template (ops/github-workflows/jobs.yml) rather than in .github/workflows, '
+    + 'so nothing runs it on a cadence. An empty window may therefore mean no rule has been evaluated '
+    + 'since the CLI was last run by hand, which is a different fact from no alert condition arising, '
+    + 'and nothing in the ledger can tell you which.';
   refuse({
     code: READOUT_CODES.NOT_SCHEDULED,
     sentence: scheduleStatement,
@@ -535,6 +631,53 @@ export async function composeReadout(
 
   /** The compartments the reader does NOT hold, from the public workspace constitution. */
   const compartmentsNotHeld = WORKSPACES.map((w) => w.id).filter((id) => !scopes.includes(id));
+  const heldNamed = nameList(scopes, 'none — you hold no compartment');
+  const notHeldNamed = nameList(compartmentsNotHeld, 'none — you hold every compartment');
+
+  /*
+   * A READER WHO HOLDS NOTHING IS A FOURTH CASE, NOT A QUIET WINDOW.
+   *
+   * The HTTP route cannot produce it — `scopesFor` always appends DESK_SCOPE — but this
+   * function is exported and its bounds and its refusals have to be safe for a second
+   * caller, which is the same reason the option clamp lives here and not in the route.
+   * With no scopes the item query is skipped entirely (`IN ()` is a syntax error), so
+   * `items` is empty for a reason that has nothing to do with the window, and letting
+   * that land in `genuinely_empty` would collapse "you may read nothing" into "nothing
+   * happened" — the collapse this whole surface exists to prevent.
+   */
+  if (scopes.length === 0) {
+    refuse({
+      code: READOUT_CODES.NO_COMPARTMENTS_HELD,
+      sentence:
+        'You hold no compartment, so this brief could not contain an item whatever the ledger holds and '
+        + 'whatever window is chosen: the scoped item query is not run at all rather than run with an '
+        + 'empty filter. An empty list below is a fact about your entitlements, NOT a fact about the '
+        + 'window and NOT a report that the platform was quiet. The withheld count is still shown, '
+        + 'because being told the size of what you cannot see is the one thing that does not depend on '
+        + 'holding anything.',
+      rule: RULE_THREE_STATES,
+    });
+  }
+
+  /*
+   * THE CHANNEL, NAMED. See the header. Computed before the read so both return paths —
+   * including NOT LOADED, where the counts are null and the channel is therefore closed —
+   * publish the same statement about what the counts would and would not reveal.
+   */
+  const channelStatement =
+    `The withheld and unattributed counts are the ONLY things this brief tells you about the `
+    + `compartments you do not hold (${notHeldNamed}), and here is exactly what they tell you. `
+    + (compartmentsNotHeld.length === 1
+      ? `You hold every compartment but one, so the withheld count is NOT an aggregate: it is `
+        + `${compartmentsNotHeld[0]}'s own alert count, read directly.`
+      : `The withheld count is one AGGREGATE over all ${compartmentsNotHeld.length} of them, so it `
+        + 'cannot be attributed to any single compartment — except that were you to hold all but one, '
+        + 'it would become that one\'s counter.')
+    + ' It carries NO time bound: it counts every alert row ever written there, not last night\'s, '
+    + 'which is why it must not be read against the window above. And it is live, so comparing two '
+    + 'reads minutes apart yields a delta — how many alerts fired in compartments you do not hold, in '
+    + 'that interval. That is the deliberate trade this system makes (you are told THAT material '
+    + 'exists and how much, never what it says), stated here so it is a trade you can see.';
 
   /* ── The one read ────────────────────────────────────────────────────────── */
 
@@ -584,6 +727,10 @@ export async function composeReadout(
         statement:
           'How much material exists in compartments you do not hold is UNKNOWN here, because the ledger '
           + 'that holds the count could not be read. Unknown is not zero.',
+        // Published even with the counts null: what the channel WOULD carry is part of
+        // reading the brief, and a reader must not have to see a number to be told what
+        // the number means. Here it carried nothing, because nothing was read.
+        channelStatement,
         droppedOutOfScope: 0,
       },
       refusals,
@@ -665,21 +812,39 @@ export async function composeReadout(
 
   /*
    * TRUNCATION, STATED PRECISELY RATHER THAN WHENEVER THE CAP IS HIT. The service
-   * returns the reader's most recent `fetchLimit` rows with no window predicate, so the
-   * window can only be short of items if the cap was reached AND the oldest row fetched
-   * is still inside the window. Firing on "cap reached" alone would cry truncation at a
-   * complete 24-hour brief every time the ledger held 50 older rows.
+   * returns the reader's most recent `fetchLimit` rows with no window predicate — and,
+   * as the header records, it applies the cap AFTER the scope filter, so a full page
+   * means the reader's OWN recent history was exhausted. The window can therefore only
+   * be short of items if the cap was reached AND the oldest row fetched is still inside
+   * the window. Firing on "cap reached" alone would cry truncation at a complete
+   * 24-hour brief every time the ledger held 50 older rows.
+   *
+   * THE THIRD CASE, WHICH WAS SILENTLY TREATED AS COMPLETE. `oldestPlaced` is null when
+   * NOTHING fetched had a readable instant. The first version required
+   * `oldestPlaced !== null`, so a full page of rows with unreadable timestamps produced
+   * no refusal at all: the brief presented its window as fully examined when the oldest
+   * instant fetched — the only evidence that the fetch reached back past `windowFrom` —
+   * did not exist. Completeness was ASSERTED BY SILENCE in the one case where it cannot
+   * be known. Unknown is not complete, so it refuses, with its own sentence: crying
+   * "subset" would be a different lie, since there may be no further items at all.
    */
   const oldestPlaced = placed.length > 0 ? placed[placed.length - 1]!.at : null;
-  const truncated = page.items.length >= fetchLimit && oldestPlaced !== null && oldestPlaced >= windowFrom;
-  if (truncated) {
+  const capReached = page.items.length >= fetchLimit;
+  const reachIsUnknown = capReached && oldestPlaced === null;
+  const definitelyShort = capReached && oldestPlaced !== null && oldestPlaced >= windowFrom;
+  if (definitelyShort || reachIsUnknown) {
     refuse({
       code: READOUT_CODES.TRUNCATED,
-      sentence:
-        `The fetch cap of ${fetchLimit} was reached and the oldest item fetched (${oldestPlaced}) is still `
-        + 'inside this window, so the window holds an unknown number of further items that are not in this '
-        + 'brief. The order below is a recency order over a SUBSET, and the bottom of it is not the '
-        + 'beginning of the window. Narrow the window or raise the fetch cap to close the gap.',
+      sentence: definitelyShort
+        ? `The fetch cap of ${fetchLimit} was reached and the oldest item fetched (${oldestPlaced}) is still `
+          + 'inside this window, so the window holds an unknown number of further items that are not in this '
+          + 'brief. The order below is a recency order over a SUBSET, and the bottom of it is not the '
+          + 'beginning of the window. Narrow the window or raise the fetch cap to close the gap.'
+        : `The fetch cap of ${fetchLimit} was reached and NOT ONE of the items fetched carries a readable `
+          + 'instant, so there is no evidence that the fetch reached back as far as the start of this '
+          + 'window. Whether the window holds further items is UNKNOWN — not known to be complete and not '
+          + 'known to be short. It is stated because the alternative is presenting an unexamined window as '
+          + 'an examined one. Raise the fetch cap, or read the unrankable items below, to close the gap.',
       rule: RULE_NO_LAUNDERED_INFERENCE,
     });
   }
@@ -693,11 +858,13 @@ export async function composeReadout(
     refuse({
       code: READOUT_CODES.ITEMS_WITHHELD,
       sentence:
-        `${withheld} item(s) exist in compartments you do not hold (${compartmentsNotHeld.join(', ') || 'none named'}) `
+        `${withheld} item(s) exist in compartments you do not hold (${notHeldNamed}) `
         + 'and are NOT in this brief. You are told that they exist and how many there are; you are not '
         + 'told what they say. THIS COUNT IS OVER THE WHOLE LEDGER, NOT THIS WINDOW — it is the count '
         + 'notifications/service.ts computes so that it does not move when a page size does — so it is '
-        + 'not a figure to subtract from the items above.',
+        + 'not a figure to subtract from the items above. What it does and does not reveal about those '
+        + 'compartments is spelled out in full on redaction.channelStatement, including that it carries '
+        + 'no time bound and that it moves as other desks work.',
       rule: RULE_NEED_TO_KNOW,
     });
   }
@@ -734,11 +901,15 @@ export async function composeReadout(
     refuse({
       code: READOUT_CODES.WINDOW_GENUINELY_EMPTY,
       sentence:
-        `The ledger was read and holds no item for your compartments (${scopes.join(', ')}) between `
+        `The ledger was read and holds no item for your compartments (${heldNamed}) between `
         + `${windowFrom} and ${windowTo}. That is a CLAIM ABOUT THIS WINDOW and about nothing else: it is `
         + 'not a statement that the platform is healthy, that nothing needs your attention, or that '
         + 'anything outside this window is quiet. Nothing is withheld from you and no unattributed rows '
-        + 'exist, which is what distinguishes this from a redacted brief.',
+        + 'exist, which is what distinguishes this from a redacted brief. AND IT IS A CLAIM ABOUT THE '
+        + 'LEDGER, NOT ABOUT THE PLATFORM: nothing runs the alert sweep on a cadence (see '
+        + 'READOUT_NOT_SCHEDULED), so an unwritten row and an unevaluated rule are indistinguishable '
+        + 'from here. The honest reading is that no alert WAS RECORDED for you in this window — not that '
+        + 'no condition arose.',
       rule: RULE_THREE_STATES,
     });
   }
@@ -770,8 +941,10 @@ export async function composeReadout(
             + 'both are shown as counts without content: the fact that material exists is yours, the '
             + 'material is not.'
           : 'Nothing is being withheld from you in this ledger, and no row lacks a compartment. This is '
-            + `stated as a fact about your scopes (${scopes.join(', ')}) — the compartments you do not `
-            + `hold (${compartmentsNotHeld.join(', ') || 'none'}) simply contain no rows at all.`,
+            + `stated as a fact about your scopes (${heldNamed}) — the compartments you do not `
+            + `hold (${notHeldNamed}) simply contain no rows at all. That zero is itself something this `
+            + 'brief tells you about them.',
+      channelStatement,
       droppedOutOfScope,
     },
     refusals,

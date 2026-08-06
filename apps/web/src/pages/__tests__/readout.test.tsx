@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Readout } from '../Readout';
 import type { Readout as Brief, ReadoutItem } from '@/lib/api/readout';
 import * as apiClient from '@/lib/apiClient';
+import { ApiError } from '@/lib/apiClient';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════════
@@ -118,6 +119,10 @@ function brief(over: Partial<Brief> = {}): Brief {
       unattributed: 0,
       countFrame: 'whole_ledger',
       statement: 'Nothing is being withheld from you in this ledger, and no row lacks a compartment.',
+      channelStatement:
+        'The withheld and unattributed counts are the ONLY things this brief tells you about the compartments you '
+        + 'do not hold. The withheld count is one AGGREGATE over them, carries NO time bound, and is live — comparing '
+        + 'two reads minutes apart yields a delta.',
       droppedOutOfScope: 0,
     },
     refusals: [{
@@ -151,6 +156,10 @@ describe('the redaction is visible on screen', () => {
         statement:
           '3 item(s) sit in compartments you do not hold and 1 records no compartment at all. Both counts are '
           + 'over the whole ledger rather than this window.',
+        channelStatement:
+          'The withheld and unattributed counts are the ONLY things this brief tells you about the compartments you '
+          + 'do not hold. The withheld count is one AGGREGATE over them, carries NO time bound, and is live — comparing '
+          + 'two reads minutes apart yields a delta.',
         droppedOutOfScope: 0,
       },
       refusals: [{
@@ -192,6 +201,10 @@ describe('the redaction is visible on screen', () => {
         unattributed: 0,
         countFrame: 'whole_ledger',
         statement: '3 item(s) sit in compartments you do not hold.',
+        channelStatement:
+          'The withheld and unattributed counts are the ONLY things this brief tells you about the compartments you '
+          + 'do not hold. The withheld count is one AGGREGATE over them, carries NO time bound, and is live — comparing '
+          + 'two reads minutes apart yields a delta.',
         droppedOutOfScope: 0,
       },
     }));
@@ -213,6 +226,10 @@ describe('the redaction is visible on screen', () => {
         unattributed: null,
         countFrame: 'whole_ledger',
         statement: 'How much material exists in compartments you do not hold is UNKNOWN here. Unknown is not zero.',
+        channelStatement:
+          'The withheld and unattributed counts are the ONLY things this brief tells you about the compartments you '
+          + 'do not hold. The withheld count is one AGGREGATE over them, carries NO time bound, and is live — comparing '
+          + 'two reads minutes apart yields a delta.',
         droppedOutOfScope: 0,
       },
       counts: { fetched: null, inWindow: null, shown: null, unreadInScopeAllTime: null, unplaceable: null },
@@ -225,6 +242,76 @@ describe('the redaction is visible on screen', () => {
     });
     expect(screen.queryByTestId('redaction-banner')).toBeNull();
     expect(screen.queryByTestId('redaction-none')).toBeNull();
+  });
+
+  /*
+   * THE CHANNEL THE COUNT OPENS IS ON THE SCREEN IN ALL THREE LIMBS.
+   *
+   * The banner told the reader the number and its frame and stopped there. The number
+   * is information leaving compartments they do not hold, and its properties — an
+   * aggregate, no time bound, live and therefore pollable — were nowhere on the screen.
+   * The quiet limb matters most: `withheld: 0` is a statement about other compartments
+   * too, and it is the limb a reader is least likely to think of as a disclosure.
+   */
+  it('states what the withheld count reveals, in every limb including the quiet one', async () => {
+    mockedRequest.mockResolvedValue(brief());
+    render(<Readout />);
+    await waitFor(() => {
+      const t = screen.getByTestId('redaction-channel').textContent ?? '';
+      expect(t).toMatch(/WHAT THIS TELLS YOU ABOUT COMPARTMENTS YOU DO NOT HOLD/);
+      expect(t).toMatch(/AGGREGATE/);
+      expect(t).toMatch(/NO time bound/);
+      expect(t).toMatch(/yields a delta/);
+    });
+    // The quiet limb is the one rendered here, so this is not the withheld banner.
+    expect(screen.getByTestId('redaction-none')).toBeTruthy();
+  });
+
+  it('states it on the withheld limb too, beside the number', async () => {
+    mockedRequest.mockResolvedValue(brief({
+      redaction: {
+        scopesHeld: ['sales', '_desk'],
+        compartmentsNotHeld: ['gps'],
+        withheld: 3,
+        unattributed: 0,
+        countFrame: 'whole_ledger',
+        statement: '3 item(s) sit in compartments you do not hold.',
+        channelStatement:
+          'You hold every compartment but one, so the withheld count is NOT an aggregate: it is gps\'s own alert '
+          + 'count, read directly. It carries NO time bound.',
+        droppedOutOfScope: 0,
+      },
+    }));
+    render(<Readout />);
+    await waitFor(() => {
+      const t = screen.getByTestId('redaction-banner').textContent ?? '';
+      expect(t).toMatch(/3 ITEM\(S\) WITHHELD/);
+      // The degenerate case — one compartment unheld — is the sharp one, and it is said.
+      expect(t).toMatch(/NOT an aggregate/);
+      expect(t).toMatch(/gps's own alert count/);
+    });
+  });
+
+  it('states it even when the counts could not be read', async () => {
+    mockedRequest.mockResolvedValue(brief({
+      state: 'not_loaded',
+      items: null,
+      counts: { fetched: null, inWindow: null, shown: null, unreadInScopeAllTime: null, unplaceable: null },
+      redaction: {
+        scopesHeld: ['sales', '_desk'],
+        compartmentsNotHeld: ['gps'],
+        withheld: null,
+        unattributed: null,
+        countFrame: 'whole_ledger',
+        statement: 'How much material exists in compartments you do not hold is UNKNOWN here. Unknown is not zero.',
+        channelStatement: 'The withheld count is one AGGREGATE over them and carries NO time bound.',
+        droppedOutOfScope: 0,
+      },
+    }));
+    render(<Readout />);
+    await waitFor(() => {
+      expect(screen.getByTestId('redaction-channel').textContent).toMatch(/NO time bound/);
+    });
   });
 });
 
@@ -244,6 +331,10 @@ describe('the four states never collapse on screen', () => {
         unattributed: null,
         countFrame: 'whole_ledger',
         statement: 'How much material exists in compartments you do not hold is UNKNOWN here.',
+        channelStatement:
+          'The withheld and unattributed counts are the ONLY things this brief tells you about the compartments you '
+          + 'do not hold. The withheld count is one AGGREGATE over them, carries NO time bound, and is live — comparing '
+          + 'two reads minutes apart yields a delta.',
         droppedOutOfScope: 0,
       },
       refusals: [{
@@ -271,6 +362,61 @@ describe('the four states never collapse on screen', () => {
     expect(screen.queryByTestId('readout-items')).toBeNull();
   });
 
+  /*
+   * THE DISCRIMINATOR IS `state`, NOT THE SHAPE OF `items`.
+   *
+   * The first version tested `items === null` for NOT LOADED and then fell through to
+   * `items.length === 0`, so a fault payload carrying an EMPTY ARRAY instead of null —
+   * a stale client against a newer API, a proxy that rewrote the null, any future
+   * composer that returns `[]` on the failure path — rendered the genuinely-empty panel,
+   * whose text asserts "The ledger was read" and "Nothing is being withheld from you".
+   * Both are false of a failed read, and the second is a claim about compartments the
+   * reader cannot see. `state` exists to prevent exactly this and was not being read.
+   */
+  it('NOT LOADED with an empty array is still not loaded, never a quiet window', async () => {
+    mockedRequest.mockResolvedValue(brief({
+      state: 'not_loaded',
+      items: [],
+      counts: { fetched: null, inWindow: null, shown: null, unreadInScopeAllTime: null, unplaceable: null },
+    }));
+    render(<Readout />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('items-not-loaded').textContent).toMatch(/short because nothing was looked at/i);
+    });
+    // The empty-window claim, and its "nothing is being withheld from you", must not appear.
+    expect(screen.queryByTestId('items-empty')).toBeNull();
+    expect(pageText()).not.toMatch(/The ledger was read and holds no item/);
+  });
+
+  it('refuses a payload whose state and item list disagree, instead of picking a branch', async () => {
+    // `ranked` with nothing in it. Rendering the empty panel would print a quiet-window
+    // claim the server never made; rendering an empty list would say nothing at all.
+    mockedRequest.mockResolvedValue(brief({ state: 'ranked', items: [] }));
+    render(<Readout />);
+    await waitFor(() => {
+      const t = screen.getByTestId('items-state-contradictory').textContent ?? '';
+      expect(t).toMatch(/READOUT_STATE_CONTRADICTORY/);
+      expect(t).toMatch(/cannot both be true/);
+    });
+    expect(screen.queryByTestId('items-empty')).toBeNull();
+  });
+
+  it('still renders items a contradictory payload did carry, rather than hiding them', async () => {
+    // `genuinely_empty` with an item in it: the refusal is stated AND the item is shown,
+    // because a shorter list for a reason the reader cannot see is the failure this
+    // screen exists to prevent.
+    mockedRequest.mockResolvedValue(brief({ state: 'genuinely_empty', items: [item({ id: 'ghost' })] }));
+    render(<Readout />);
+    await waitFor(() => {
+      expect(screen.getByTestId('items-state-contradictory').textContent).toMatch(/genuinely_empty/);
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('readout-item-ghost').textContent).toMatch(/Deal stalled: Acme/);
+    });
+    expect(screen.queryByTestId('items-empty')).toBeNull();
+  });
+
   it('every null count renders NOT READ and never 0', async () => {
     mockedRequest.mockResolvedValue(brief({
       state: 'not_loaded',
@@ -281,9 +427,16 @@ describe('the four states never collapse on screen', () => {
     await waitFor(() => {
       const t = screen.getByTestId('readout-counts').textContent ?? '';
       expect(t).toMatch(/NOT READ/);
-      expect([...t.matchAll(/NOT READ/g)]).toHaveLength(3);
+      // Three tiles NOT READ, plus the fetched tile's note refusing to say anything
+      // about coverage: "not read is not zero and not complete".
+      expect([...t.matchAll(/NOT READ/g)].length).toBeGreaterThanOrEqual(3);
+      expect(t).toMatch(/Not read is not zero and not complete/);
     });
-    expect(screen.getByTestId('readout-counts').textContent).not.toMatch(/\b0\b/);
+    const counts = screen.getByTestId('readout-counts').textContent ?? '';
+    expect(counts).not.toMatch(/\b0\b/);
+    // And it must NOT claim the window was covered — the completeness sentence reasons
+    // from "the cap was not reached", which is vacuously true when nothing was fetched.
+    expect(counts).not.toMatch(/every item the ledger holds for you/);
   });
 
   it('PRESENT-BUT-WITHHELD: an empty window with withheld rows is not an empty window', async () => {
@@ -298,6 +451,10 @@ describe('the four states never collapse on screen', () => {
         unattributed: 0,
         countFrame: 'whole_ledger',
         statement: '7 item(s) sit in compartments you do not hold.',
+        channelStatement:
+          'The withheld and unattributed counts are the ONLY things this brief tells you about the compartments you '
+          + 'do not hold. The withheld count is one AGGREGATE over them, carries NO time bound, and is live — comparing '
+          + 'two reads minutes apart yields a delta.',
         droppedOutOfScope: 0,
       },
     }));
@@ -343,6 +500,29 @@ describe('the four states never collapse on screen', () => {
     });
     expect(screen.queryByTestId('items-withheld-only')).toBeNull();
     expect(screen.queryByTestId('items-not-loaded')).toBeNull();
+  });
+
+  /*
+   * THE EMPTY STATE SAYS WHAT IT CAN SUPPORT, WHICH IS LESS THAN A READER WILL TAKE.
+   *
+   * Nothing runs the rule sweep on a cadence — the cron naming `daily_rules` lives in
+   * `ops/github-workflows/jobs.yml`, which is not under `.github/workflows/` — so an
+   * unwritten row and an unevaluated rule are the same observation from this chair. The
+   * empty panel is the state most likely to be over-read and was the one saying least.
+   */
+  it('the empty window is a claim about the ledger, not about the platform', async () => {
+    mockedRequest.mockResolvedValue(brief({
+      state: 'genuinely_empty',
+      items: [],
+      counts: { fetched: 0, inWindow: 0, shown: 0, unreadInScopeAllTime: 0, unplaceable: 0 },
+    }));
+    render(<Readout />);
+    await waitFor(() => {
+      const t = screen.getByTestId('empty-cadence-caveat').textContent ?? '';
+      expect(t).toMatch(/No alert was RECORDED for you in this window/);
+      expect(t).toMatch(/not the same as no condition arising/);
+      expect(t).toMatch(/nothing fires the rule sweep/);
+    });
   });
 
   it('holds unrankable items in their own bucket rather than dropping or placing them', async () => {
@@ -452,8 +632,33 @@ describe('the ranking basis is on the screen, beside the list', () => {
     await waitFor(() => {
       const t = screen.getByTestId('count-fetched-from-the-ledger').textContent ?? '';
       expect(t).toMatch(/50/);
+      expect(t).toMatch(/THIS IS A SUBSET/);
       expect(t).toMatch(/READOUT_TRUNCATED/);
     });
+  });
+
+  /*
+   * THE NEGATIVE CONTROL THAT MAKES THE ASSERTION ABOVE MEAN ANYTHING.
+   *
+   * The tile's note used to contain the string "READOUT_TRUNCATED" on EVERY brief —
+   * it was static prose telling the reader how to infer truncation for themselves —
+   * so the test above passed with no truncation refusal anywhere in the payload. It
+   * proved the tile had a caption, not that the tile tracked the server's finding.
+   * The tile now states which case it is, and this is the other case.
+   */
+  it('does NOT call the window a subset when the server did not refuse', async () => {
+    mockedRequest.mockResolvedValue(brief({
+      counts: { fetched: 1, inWindow: 1, shown: 1, unreadInScopeAllTime: 1, unplaceable: 0 },
+    }));
+    render(<Readout />);
+    await waitFor(() => {
+      expect(screen.getByTestId('count-fetched-from-the-ledger').textContent)
+        .toMatch(/every item the ledger holds for you in it is below/);
+    });
+    const tile = screen.getByTestId('count-fetched-from-the-ledger').textContent ?? '';
+    expect(tile).not.toMatch(/THIS IS A SUBSET/);
+    expect(tile).not.toMatch(/READOUT_TRUNCATED/);
+    expect(screen.queryByTestId('refusal-READOUT_TRUNCATED')).toBeNull();
   });
 });
 
@@ -535,6 +740,10 @@ describe('the observation frame and the schedule that does not exist', () => {
         unattributed: 2,
         countFrame: 'whole_ledger',
         statement: '3 withheld, 2 unattributed.',
+        channelStatement:
+          'The withheld and unattributed counts are the ONLY things this brief tells you about the compartments you '
+          + 'do not hold. The withheld count is one AGGREGATE over them, carries NO time bound, and is live — comparing '
+          + 'two reads minutes apart yields a delta.',
         droppedOutOfScope: 0,
       },
     }));
@@ -560,6 +769,90 @@ describe('the observation frame and the schedule that does not exist', () => {
       expect(t).toMatch(/nothing is being withheld/i);
     });
     expect(screen.queryByTestId('items-empty')).toBeNull();
+  });
+
+  /*
+   * A FAULT IS A REFUSAL, SO IT CARRIES A STABLE CODE AND CITES ITS RULE.
+   *
+   * The panel used to print the raw transport message under the words NOT LOADED and
+   * nothing else: no code to grep for, nothing for a test to pin, and no rule — while
+   * every other refusal on the same screen carried all three. It also said nothing about
+   * the window, so an empty screen beside a control reading "Last 24 hours" was left to
+   * be read as a claim about those 24 hours, which is the one thing a failed fetch
+   * cannot support.
+   */
+  it('gives the fault a stable code, the rule it cites, and the window it never examined', async () => {
+    mockedRequest.mockRejectedValue(new Error('Network error'));
+    render(<Readout />);
+    await waitFor(() => {
+      const t = screen.getByTestId('readout-error').textContent ?? '';
+      expect(t).toMatch(/READOUT_NOT_LOADED_TRANSPORT/);
+      expect(t).toMatch(/the last 24 hours were NOT examined/);
+      expect(t).toMatch(/house_doctrine · Absent data refuses/);
+      expect(t).toMatch(/unknown is not zero/i);
+    });
+  });
+
+  it('shows the SERVER’s code when the server refused, rather than relabelling it', async () => {
+    // The route's own 500 carries READOUT_ERROR. Calling that a transport fault would
+    // lose the one thing that distinguishes "the API refused" from "nothing answered".
+    const err = new ApiError('The readout could not be computed.', 500, 'READOUT_ERROR');
+    mockedRequest.mockRejectedValue(err);
+    render(<Readout />);
+    await waitFor(() => {
+      expect(screen.getByTestId('readout-error').textContent).toMatch(/NOT LOADED · READOUT_ERROR/);
+    });
+    expect(screen.getByTestId('readout-error').textContent).not.toMatch(/READOUT_NOT_LOADED_TRANSPORT/);
+  });
+
+  /*
+   * THE LAST REQUEST WINS. The window control re-fetches, and two briefs are in flight
+   * the moment a reader changes it twice. With no guard the LATER-ARRIVING response was
+   * rendered whatever window it described, so a 6-hour brief could land under a control
+   * reading "Last 168 hours" — and `fetchReadout` had always accepted a signal the page
+   * never passed. The frame panel would still name the window it describes; the control
+   * the reader just moved would be the thing lying.
+   */
+  it('never renders a brief for a window the reader has moved on from', async () => {
+    let resolveStale!: (b: Brief) => void;
+    const stale = new Promise<Brief>((res) => { resolveStale = res; });
+    mockedRequest
+      .mockImplementationOnce(() => stale)
+      .mockImplementationOnce(() => Promise.resolve(brief({
+        frame: { ...brief().frame, windowHours: 168, windowFrom: '2026-07-30T07:00:00.000Z' },
+      })));
+
+    render(<Readout />);
+    fireEvent.change(screen.getByLabelText('Window'), { target: { value: '168' } });
+    await waitFor(() => {
+      expect(screen.getByTestId('readout-frame').textContent).toMatch(/168 hours/);
+    });
+
+    // The abandoned 24-hour request now answers, late. It must be discarded.
+    await act(async () => {
+      resolveStale(brief({ frame: { ...brief().frame, windowHours: 24 } }));
+      await Promise.resolve();
+    });
+    expect(screen.getByTestId('readout-frame').textContent).toMatch(/168 hours/);
+    expect(screen.getByTestId('readout-frame').textContent).not.toMatch(/24 hours/);
+  });
+
+  it('does not render an aborted request as a fault', async () => {
+    // The cleanup aborts the abandoned fetch, and that rejection is not a finding about
+    // anything. Rendering it would put NOT LOADED on screen for a request the page
+    // itself cancelled, over a brief that arrived perfectly well.
+    mockedRequest
+      .mockImplementationOnce(() => Promise.reject(new DOMException('Aborted', 'AbortError')))
+      .mockImplementationOnce(() => Promise.resolve(brief({
+        frame: { ...brief().frame, windowHours: 72 },
+      })));
+
+    render(<Readout />);
+    fireEvent.change(screen.getByLabelText('Window'), { target: { value: '72' } });
+    await waitFor(() => {
+      expect(screen.getByTestId('readout-frame').textContent).toMatch(/72 hours/);
+    });
+    expect(screen.queryByTestId('readout-error')).toBeNull();
   });
 });
 

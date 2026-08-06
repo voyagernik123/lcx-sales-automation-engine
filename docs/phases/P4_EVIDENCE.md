@@ -17,9 +17,19 @@ stated up front rather than discovered later."*
 
 ## THE HEADLINE IS A REFUSAL, AND THAT IS THE DELIVERABLE
 
-There is far too little resolved history to claim calibration. The code returns **the refusal and
-the real N**, never a percentage, below a named floor justified in a comment rather than a magic
-number. A calibration figure computed from a handful of resolved forecasts is the single most
+There is far too little resolved history to claim calibration.
+
+**AND I NOW KNOW WHY, WHICH CHANGES WHAT THE REFUSAL MEANS.** When this file was first written it
+said only "too little history", implying a young platform that needs to wait. The real cause is
+that **`score_refresh` has never run** — the eight scheduled jobs are defined in
+`ops/github-workflows/jobs.yml`, which is not under `.github/workflows/`, so GitHub has never read
+it. Score vintages never accumulated because nothing was collecting them. "We have not measured
+long enough" and "we never started measuring" are different facts, and only one of them is fixed by
+waiting. See `docs/SCHEDULED_JOBS_NOT_INSTALLED.md`; the same cause explains `wbr_reports` having
+one row, which this programme repeatedly cited as the reason RECESSION RATE was unmeasurable.
+
+The code returns **the refusal and the real N**, never a percentage, below a named floor justified
+in a comment rather than a magic number. A calibration figure computed from a handful of resolved forecasts is the single most
 dangerous number this platform could print, because it is precisely the number a human would act
 on. Three states are distinct: *we hold none* / *we hold some and can read none as of the anchor* /
 *too few* — three codes, not one empty result.
@@ -64,8 +74,14 @@ as omitted** rather than invented.
 
 ## RECESSION RATE IS DROPPED, NOT FORGOTTEN
 
-`wbr_reports` has ONE row and its schedule is a comment, so a rate computed over it would be
-fiction. It is recorded here as a deliberate absence so nobody rebuilds it from the same basis.
+`wbr_reports` has ONE row, so a rate computed over it would be fiction. It is recorded here as a
+deliberate absence so nobody rebuilds it from the same basis.
+
+**The reason it has one row is now known, and it is not that the schedule is "a comment"** — which
+is how this programme described it more than once, including earlier in this file. `kpi_snapshot` is
+a real cron in `ops/github-workflows/jobs.yml`, a directory GitHub never reads. So RECESSION RATE is
+not permanently unmeasurable: it is unmeasurable until that file is installed, and then it needs
+weeks of accumulated rows. Reinstating it before those rows exist would rebuild the same fiction.
 
 ## OUTSTANDING
 

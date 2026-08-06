@@ -28,6 +28,7 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import type { SQL } from 'drizzle-orm';
+import { WORKSPACES } from '@lcx/shared';
 
 const dialect = new PgDialect();
 const rendered: { sql: string; params: unknown[] }[] = [];
@@ -189,6 +190,84 @@ describe('the redaction is visible', () => {
     expect(r.redaction.statement).toMatch(/Nothing is being withheld from you/);
     expect(codes(r)).not.toContain(READOUT_CODES.ITEMS_WITHHELD);
   });
+
+  /*
+   * THE CHANNEL THE COUNT OPENS, WHICH THE FIRST VERSION DID NOT NAME ANYWHERE.
+   * "3 items withheld" is information leaving compartments the reader does not hold.
+   * The trade is the constitution's and it is deliberate, but three properties of the
+   * count were nowhere on the payload: it is an aggregate, it has no time bound, and
+   * it moves. `redaction.channelStatement` states all three, on every payload.
+   */
+  it('names the channel the withheld count opens, on every payload including a quiet one', async () => {
+    ledger.items = [row()];
+    const quiet = await composeReadout(['sales', DESK_SCOPE], { now: NOW, databaseUrl: DSN });
+    ledger.withheld = 9;
+    const noisy = await composeReadout(['sales', DESK_SCOPE], { now: NOW, databaseUrl: DSN });
+
+    for (const r of [quiet, noisy]) {
+      // The aggregate, the missing time bound and the pollable delta, all three.
+      expect(r.redaction.channelStatement).toMatch(/AGGREGATE/);
+      expect(r.redaction.channelStatement).toMatch(/NO time bound/);
+      expect(r.redaction.channelStatement).toMatch(/comparing two reads minutes apart yields a delta/);
+    }
+    // `withheld: 0` is a statement about other compartments too, so the quiet payload
+    // carries the same sentence rather than omitting it as uninteresting.
+    expect(quiet.redaction.withheld).toBe(0);
+    expect(quiet.redaction.channelStatement).toBe(noisy.redaction.channelStatement);
+  });
+
+  it('says the aggregate is one compartment’s own counter when only one is unheld', async () => {
+    /*
+     * THE DEGENERATE CASE, WHICH IS THE SHARP ONE. A reader holding every compartment
+     * but one is not reading an aggregate at all — they are reading that compartment's
+     * exact ledger-wide alert count, and its delta. Naming the compartment is safe
+     * (WORKSPACES is the public constitution and `compartmentsNotHeld` already lists
+     * it); NOT naming what the number becomes is what left the reader mis-reading it.
+     */
+    const all = WORKSPACES.map((w) => w.id);
+    const allButGps = all.filter((id) => id !== 'gps');
+    ledger.items = [row()];
+    ledger.withheld = 4;
+
+    const r = await composeReadout([...allButGps, DESK_SCOPE], { now: NOW, databaseUrl: DSN });
+
+    expect(r.redaction.compartmentsNotHeld).toEqual(['gps']);
+    expect(r.redaction.channelStatement).toMatch(/NOT an aggregate/);
+    expect(r.redaction.channelStatement).toMatch(/gps's own alert count, read directly/);
+  });
+
+  it('publishes the channel statement even when the counts could not be read', async () => {
+    // NOT LOADED closes the channel — it carried nothing — but what it WOULD carry is
+    // part of reading the brief, and must not depend on a number arriving.
+    ledger.throws = new Error('connection terminated unexpectedly');
+    const r = await composeReadout(['sales', DESK_SCOPE], { now: NOW, databaseUrl: DSN });
+    expect(r.redaction.withheld).toBeNull();
+    expect(r.redaction.channelStatement).toMatch(/NO time bound/);
+  });
+
+  it('never prints an empty compartment list into a sentence a human reads', async () => {
+    /*
+     * `[].join(', ')` is the empty string, and it reached three sentences: "no item for
+     * your compartments () between …" reads as an unknown set rather than an empty one.
+     * A reader holding nothing is also a fourth case that must not be filed as a quiet
+     * window — the item query is not even run for them.
+     */
+    ledger.items = [];
+    const r = await composeReadout([], { now: NOW, databaseUrl: DSN });
+
+    expect(codes(r)).toContain(READOUT_CODES.NO_COMPARTMENTS_HELD);
+    expect(sentence(r, READOUT_CODES.NO_COMPARTMENTS_HELD)).toMatch(/fact about your entitlements/);
+    const whole = JSON.stringify(r);
+    expect(whole).not.toMatch(/compartments \(\)/);
+    expect(whole).not.toMatch(/scopes \(\)/);
+    expect(r.redaction.channelStatement).toMatch(/you do not hold \(/);
+  });
+
+  it('does not cry NO_COMPARTMENTS_HELD at a reader who holds one', async () => {
+    ledger.items = [row()];
+    const r = await composeReadout([DESK_SCOPE], { now: NOW, databaseUrl: DSN });
+    expect(codes(r)).not.toContain(READOUT_CODES.NO_COMPARTMENTS_HELD);
+  });
 });
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -334,6 +413,40 @@ describe('the ranking basis is on the payload and it does not lie', () => {
     expect(r.counts.inWindow).toBe(1);
     expect(codes(r)).not.toContain(READOUT_CODES.TRUNCATED);
   });
+
+  it('refuses when the cap was reached and NOTHING fetched had a readable instant', async () => {
+    /*
+     * THE CASE COMPLETENESS WAS ASSERTED BY SILENCE IN. The evidence that the fetch
+     * reached back past the start of the window is the OLDEST INSTANT fetched. When
+     * every fetched row has an unreadable timestamp there is no such evidence, and the
+     * first version required `oldestPlaced !== null` before it would refuse — so a full
+     * page of unreadable rows produced a brief presenting an unexamined window as an
+     * examined one. Unknown is not complete, and it is not "subset" either: there may be
+     * no further items at all, so the sentence says UNKNOWN rather than picking a side.
+     */
+    ledger.items = [
+      row({ id: 'x', created_at: 'not-a-date' }),
+      row({ id: 'y', created_at: 'also-not-a-date' }),
+    ];
+    const r = await composeReadout(['sales', DESK_SCOPE], { now: NOW, fetch: 2, databaseUrl: DSN });
+
+    expect(r.counts.unplaceable).toBe(2);
+    expect(codes(r)).toContain(READOUT_CODES.TRUNCATED);
+    const s = sentence(r, READOUT_CODES.TRUNCATED);
+    expect(s).toMatch(/NOT ONE of the items fetched carries a readable instant/);
+    expect(s).toMatch(/UNKNOWN — not known to be complete and not known to be short/);
+    // It must not claim a subset, which would assert further items exist.
+    expect(s).not.toMatch(/recency order over a SUBSET/);
+  });
+
+  it('does not fire the unknown-reach refusal when the cap was NOT reached', async () => {
+    // Same unreadable rows, cap not reached: the reader's whole history came back, so
+    // the window IS complete and the only fault is that the rows cannot be ranked.
+    ledger.items = [row({ id: 'x', created_at: 'not-a-date' })];
+    const r = await composeReadout(['sales', DESK_SCOPE], { now: NOW, fetch: 5, databaseUrl: DSN });
+    expect(codes(r)).toContain(READOUT_CODES.ITEM_INSTANT_UNREADABLE);
+    expect(codes(r)).not.toContain(READOUT_CODES.TRUNCATED);
+  });
 });
 
 /* ════════════════════════════════════════════════════════════════════════════
@@ -375,6 +488,40 @@ describe('the observation frame', () => {
       // And it names what would have to exist for the name to be true.
       expect(r.frame.scheduleStatement).toMatch(/delivery channel/);
     }
+  });
+
+  /*
+   * THE CLAIM THAT WAS FALSE, PINNED SO IT CANNOT COME BACK.
+   *
+   * The first version of `scheduleStatement` — on the wire and rendered on screen —
+   * said "the jobs CLI that already runs the daily alert sweep is the obvious host".
+   * It does not run it. `evaluateAlertRules` is reachable only through
+   * `jobs/cli.ts daily_rules`; the one cron naming it is `ops/github-workflows/jobs.yml`,
+   * which is not under `.github/workflows/` (that holds `ci.yml` alone), and
+   * `render.yaml` declares one web service with no cron. So this surface refused its own
+   * cadence in the same sentence that asserted one for the ledger it reads — `wbr_reports`
+   * one level down. The assertions below are BOTH limbs: the sweep's absence is stated,
+   * and the old sentence cannot return.
+   */
+  it('does not claim the alert sweep that fills the ledger runs on a cadence', async () => {
+    ledger.items = [row()];
+    const r = await composeReadout(['sales', DESK_SCOPE], { now: NOW, databaseUrl: DSN });
+    expect(r.frame.scheduleStatement).toMatch(/ALERT SWEEP THAT FILLS THIS LEDGER IS NOT SCHEDULED EITHER/);
+    expect(r.frame.scheduleStatement).toMatch(/uninstalled template/);
+    // The exact overclaim, which read as a live daily job to anybody who saw it.
+    expect(r.frame.scheduleStatement).not.toMatch(/already runs the daily alert sweep/);
+  });
+
+  it('an empty window says the ledger was quiet, never that the platform was', async () => {
+    // With no sweep on a cadence, "no row written" and "no rule evaluated" are the same
+    // observation from this chair. The empty state is where a reader supplies the
+    // cheerful reading, so it is the state that has to say which one it can support.
+    ledger.items = [];
+    const r = await composeReadout(['sales', DESK_SCOPE], { now: NOW, databaseUrl: DSN });
+    const s = sentence(r, READOUT_CODES.WINDOW_GENUINELY_EMPTY);
+    expect(s).toMatch(/CLAIM ABOUT THE LEDGER, NOT ABOUT THE PLATFORM/);
+    expect(s).toMatch(/no alert WAS RECORDED for you in this window/);
+    expect(s).toMatch(/not that no condition arose/);
   });
 
   it('reports a clamped window rather than silently describing a different one', async () => {
@@ -443,6 +590,36 @@ describe('the compartment filter reaches Postgres as bound parameters', () => {
     expect(items[0]!.params.slice(0, 3)).toEqual(['sales', 'gps', '_desk']);
     expect(items[0]!.sql).not.toContain("'sales'");
     expect(items[0]!.sql).not.toContain("'_desk'");
+  });
+
+  it('applies the LIMIT AFTER the scope filter, so a short page is not a second channel', async () => {
+    /*
+     * THE SUBTLER CHANNEL, PINNED. Nothing in this lane noticed which order these two
+     * clauses came in, and everything downstream depends on it:
+     *
+     *   filter-then-limit (what it does)  the cap counts rows the reader MAY see, so a
+     *                                    full page means their own history is exhausted
+     *                                    and a short page means the ledger held no more
+     *                                    of THEIRS.
+     *   limit-then-filter (the danger)   take n rows platform-wide, drop the ones that
+     *                                    are not theirs. The SHORTFALL would then tell
+     *                                    the reader exactly how many of the most recent
+     *                                    n rows across every compartment were not theirs
+     *                                    — per request, with no aggregation to hide
+     *                                    behind, and far sharper than the withheld count.
+     *
+     * `counts.fetched`, the truncation arithmetic and the tile that says the window is
+     * complete all read as lies under the second arrangement. This asserts the rendered
+     * statement, so a refactor into JS-side filtering fails here rather than in review.
+     */
+    ledger.items = [row()];
+    await composeReadout(['sales', DESK_SCOPE], { now: NOW, fetch: 7, databaseUrl: DSN });
+
+    const items = rendered.filter((r) => r.sql.includes('FROM notifications WHERE workspace IN'));
+    expect(items).toHaveLength(1);
+    expect(items[0]!.sql).toMatch(/WHERE workspace IN \([^)]*\) ORDER BY created_at DESC LIMIT/);
+    // The cap is bound, not inlined, and it is the one that was asked for.
+    expect(items[0]!.params.at(-1)).toBe(7);
   });
 
   it('runs no second query path of its own — every statement is the service’s', async () => {

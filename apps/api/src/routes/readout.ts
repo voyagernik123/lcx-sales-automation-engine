@@ -35,12 +35,21 @@ import { composeReadout } from '../notifications/readout.js';
  * that opening the readout does not change what the bell says, which is deliberate: a
  * brief that silently clears its own contents cannot be read twice.
  *
- * ── NOTHING FIRES THIS AT 07:00 ──────────────────────────────────────────────
+ * ── NOTHING FIRES THIS AT 07:00, AND NOTHING FILLS IT ON A CADENCE EITHER ────
  * There is no scheduler in this lane and no cron entry anywhere pointing at it. The
  * name is an intention; the payload says so under READOUT_NOT_SCHEDULED on EVERY
  * response, and `frame.scheduled` is the literal `false`. `wbr_reports` is the
  * precedent being avoided — one row, a "schedule" that is a COMMENT, and a programme
  * metric dropped as unmeasurable because of it.
+ *
+ * NOR IS THE SWEEP THAT WRITES THE ROWS THIS ROUTE READS. An earlier version of this
+ * file's sibling comment said the jobs CLI "already runs the daily alert sweep": it
+ * does not. `evaluateAlertRules` runs only when `jobs/cli.ts daily_rules` is invoked,
+ * and the one cron naming it lives in `ops/github-workflows/jobs.yml`, which is not
+ * under `.github/workflows/` (that holds `ci.yml` alone) and which GitHub therefore
+ * never reads; `render.yaml` declares one web service and no cron. So an empty brief
+ * from this endpoint can mean the sweep has not run, and READOUT_WINDOW_GENUINELY_EMPTY
+ * says so rather than letting the reader supply the cheerful reading.
  */
 
 export const readoutRoutes = new Hono<{ Variables: AuthVariables }>();
@@ -48,12 +57,25 @@ export const readoutRoutes = new Hono<{ Variables: AuthVariables }>();
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
 
 /**
- * Parses, and deliberately does not validate. An absent parameter is `undefined` so the
- * composer applies its default silently (nothing was asked for), and anything present
- * is passed through as the caller wrote it — including `abc`, which comes back as a
- * stated refusal naming what was requested rather than as a quiet 24 hours. The bounds
- * live with the composer because it is the exported entry point and must be safe for
- * its second caller; see `controlRegister.ts` for the measured cost of splitting them.
+ * Parses, and deliberately does not validate. An ABSENT parameter is `undefined` so the
+ * composer applies its default silently — nothing was asked for, so there is nothing to
+ * refuse — and any parameter with a VALUE is passed through as the caller wrote it,
+ * including `abc`, which comes back as a stated refusal naming what was requested rather
+ * than as a quiet 24 hours.
+ *
+ * THE ONE CASE THAT IS NEITHER, STATED BECAUSE THIS COMMENT USED TO CLAIM OTHERWISE:
+ * `?windowHours=` — present, with an empty value — is treated as ABSENT and takes the
+ * default silently, so that request gets no READOUT_OPTIONS_CLAMPED. The comment
+ * previously said "anything present is passed through", which this contradicts. It is
+ * mapped that way on purpose: `Number('')` is 0, and 0 is a legal-looking number that
+ * would clamp to the 1-hour bound and refuse, so a browser serialising an unset control
+ * as an empty string would be told its window had been substituted when it had never
+ * named one. An empty value expresses no window; the alternative is a refusal that
+ * fires on the absence of an opinion.
+ *
+ * The bounds live with the composer because it is the exported entry point and must be
+ * safe for its second caller; see `controlRegister.ts` for the measured cost of
+ * splitting them.
  */
 function asNumber(raw: string | undefined): number | undefined {
   return raw === undefined || raw === '' ? undefined : Number(raw);

@@ -57,6 +57,7 @@ export type ReadoutCode =
   | 'READOUT_ITEM_INSTANT_UNREADABLE'
   | 'READOUT_SCOPE_MISMATCH'
   | 'READOUT_NOT_SCHEDULED'
+  | 'READOUT_NO_COMPARTMENTS_HELD'
   | 'READOUT_ENVIRONMENT_UNNAMED'
   | 'READOUT_OPTIONS_CLAMPED';
 
@@ -139,6 +140,15 @@ export interface ReadoutRedaction {
    */
   countFrame: 'whole_ledger';
   statement: string;
+  /**
+   * WHAT THE TWO COUNTS ABOVE TELL THIS READER ABOUT COMPARTMENTS THEY DO NOT HOLD:
+   * that the withheld count is an aggregate (and whose counter it becomes when only one
+   * compartment is unheld), that it carries no time bound, and that it moves as other
+   * desks work so two reads yield a delta. Sent on EVERY payload — `withheld: 0` is a
+   * statement about other compartments too — so the page renders it unconditionally and
+   * never behind a control.
+   */
+  channelStatement: string;
   /** Items the ledger returned outside the reader's scopes. Must always be 0. */
   droppedOutOfScope: number;
 }
