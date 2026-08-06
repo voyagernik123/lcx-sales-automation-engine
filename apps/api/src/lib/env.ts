@@ -31,8 +31,30 @@ export const env = {
   databaseUrl: process.env.DATABASE_URL ?? '',
   allowDbSkip: bool('ALLOW_DB_SKIP', false),
   operatorApiKey: required('OPERATOR_API_KEY', 'dev-operator-key-change-me'),
-  /** LCX OS front-door passcode: email sign-in requires `email:passcode`. */
-  deskPasscode: process.env.DESK_PASSCODE ?? 'test#1234',
+  /**
+   * LCX OS front-door passcode: email sign-in requires `email:passcode`.
+   *
+   * THIS WAS THE ONE SECRET THAT SKIPPED `required()`, AND IT IS THE FRONT DOOR.
+   *
+   * It read `process.env.DESK_PASSCODE ?? 'test#1234'`. Read the comment on
+   * `required()` above — it was written for exactly this hazard and every other real
+   * secret already routes through it. With a plain `??`, an unset DESK_PASSCODE in
+   * production did not crash the boot and did not log anything: it silently became
+   * the literal on this line.
+   *
+   * Both halves of the resulting credential are public. The roster emails are
+   * committed at `packages/shared/src/operators.ts:25-27`, two of them
+   * (`monty@lcx.com`, `nik@lcx.com`) with `role: 'approver'`, and the fallback string
+   * is committed here and in test fixtures. `middleware/auth.ts:77` compares the
+   * supplied passcode against this value and returns `role: 'approver'` on a match.
+   * So an unset env var turns `nik@lcx.com:test#1234` into an approver session —
+   * the highest desk role, which clears deal sign-off and conflict-clearing.
+   *
+   * Now fail-closed like the rest: unset in production throws at boot. An API that
+   * refuses to start is a visible, five-minute problem. An API that starts with a
+   * publicly-known front-door passcode is an invisible one.
+   */
+  deskPasscode: required('DESK_PASSCODE', 'test#1234'),
   /**
    * SECOND-TIER desk passcode. Any @lcx.com address plus this signs in at
    * 'operator' on every compartment — no roster edit, no deploy, no grant wait.
