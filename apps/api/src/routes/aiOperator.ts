@@ -10,6 +10,7 @@
 import { Hono } from 'hono';
 import type { AuthVariables } from '../middleware/auth.js';
 import { requireOperator } from '../middleware/auth.js';
+import { requireWorkspace } from '../middleware/workspace.js';
 import { getPool } from '../db/index.js';
 import { env } from '../lib/env.js';
 import { llm } from '../ai/llm.js';
@@ -125,7 +126,34 @@ aiOperatorRoutes.post('/triage', requireOperator, async (c) => {
  * narrative the WBR already carries. (Distinct path from the existing
  * /narrative/:projectId route to avoid a dynamic-segment collision.)
  */
-aiOperatorRoutes.post('/wbr-narrative', requireOperator, async (c) => {
+/*
+ * ══ THE GOVERNANCE GATE ON THIS ONE ROUTE, AND WHY IT IS NOT THE INTEL GATE ══
+ *
+ * Found by an adversarial pass and DEMONSTRATED against a real database: an authenticated
+ * principal holding exactly `intel: operate` — and nothing else — read COMMAND and
+ * DISTRIBUTION content through this endpoint.
+ *
+ * The mechanism is entirely in the mounting. `/v1/ai` appears in exactly one workspace's
+ * apiPrefixes (`packages/shared/src/workspaces.ts:131`, INTEL), so `app.ts` mounts exactly one
+ * compartment gate on this path: `requireWorkspace('intel', …)`. `requireOperator` below is
+ * AUTHENTICATION, not authorisation. But the handler calls `getLatestWbr`, and `kpi/wbr.ts`
+ * composes its report from `command_tasks`, `command_launch_targets`, `dist_campaigns` and
+ * `dist_listings` — i.e. from two ELEVATED compartments, one of which (DISTRIBUTION) is
+ * `legacy: false`, meaning default-deny and reachable only through an explicit audited grant.
+ *
+ * The same report at `/v1/wbr` IS correctly gated: that prefix belongs to GOVERNANCE
+ * (workspaces.ts:246, `sensitivity: 'elevated'`). So the WBR had two doors with different
+ * locks, and this was the cheap one — INTEL is `standard` and `legacy: true`, which the
+ * request-access flow hands out, `legacyEntitlements` grants to a zero-row roster member, and
+ * a second-tier `ext:` principal may hold.
+ *
+ * Worse, line ~139 returns `deterministic: report.narrative` unconditionally, so the
+ * disclosure never needed an ANTHROPIC_API_KEY to work.
+ *
+ * Gated at 'view' rather than 'operate': composing a narrative reads and writes nothing, and
+ * the requirement is to hold the compartment, not to be able to act in it.
+ */
+aiOperatorRoutes.post('/wbr-narrative', requireOperator, requireWorkspace('governance', 'view'), async (c) => {
   try {
     const report = await getLatestWbr(getPool());
     const facts = [
