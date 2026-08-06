@@ -560,9 +560,128 @@ function DecisionRow({ d, onChange }: { d: CommandDecision; onChange: () => void
   );
 }
 
+/**
+ * The days-bought limb of the launch sim (P1e). The shared LaunchSim type lives
+ * in apps/web/src/lib/api/command.ts, which this lane does not own, so the new
+ * fields are read through a local structural view of the same payload.
+ */
+type CompressionRow = {
+  id: string;
+  title: string;
+  status: string;
+  meanSlackDays: number | null;
+  slackStdErr: number | null;
+  daysBoughtPerDay: number | null;
+  slopeStdErr: number | null;
+  slopeRuns: number;
+  code: string | null;
+  bindingPredecessor: string | null;
+  bindingPredecessorRuns: number;
+};
+type LaunchSimWithCompression = LaunchSim & { compression?: CompressionRow[]; compressionStepDays?: number };
+
+/**
+ * The one definition of "finished" this panel uses, for BOTH lists on it. These
+ * are exactly the statuses whose duration default is 0/0/0 in
+ * packages/shared/src/launchSim.ts, and they match the set
+ * apps/api/src/ai/commandOperator.ts:82 uses. The criticality list previously
+ * filtered the single status 'done' while the days-bought list filtered nothing,
+ * so a finished task appeared in the withheld line — "we cannot tell you" for
+ * work that is over. Zero of the 24 production tasks are in any terminal state
+ * today, so nothing visible moves; it is fixed now because it is cheap now.
+ */
+const FINISHED_STATUSES = new Set(['done', 'complete', 'completed', 'live']);
+const isFinished = (status: string) => FINISHED_STATUSES.has(status);
+
+/**
+ * Days-of-launch bought per day of compression — the MAGNITUDE ranking, beside
+ * the frequency one. Already sorted by the API (launchSim.ts), so this renders
+ * in order and does not re-sort. Withheld slopes are shown as their refusal
+ * code: a null slope means "the question does not apply", which is not 0.
+ */
+function CompressionList({ sim }: { sim: LaunchSimWithCompression }) {
+  const rows = sim.compression;
+  // Three states kept apart: field absent (API predates this limb) / present but
+  // every row withheld / genuinely nothing to rank.
+  if (!rows) return <p className="text-micro text-grey">Days-bought ranking not returned by this API build.</p>;
+  if (rows.length === 0) return <p className="text-micro text-grey">No tasks in the simulated graph.</p>;
+
+  const ranked = rows.filter((c) => c.daysBoughtPerDay !== null);
+  // FOUR states, not three: scored / withheld with a reason / already finished /
+  // absent. A finished task is not withheld information.
+  const finished = rows.filter((c) => c.daysBoughtPerDay === null && isFinished(c.status));
+  const withheld = rows.filter((c) => c.daysBoughtPerDay === null && !isFinished(c.status));
+  const step = sim.compressionStepDays ?? 1;
+  // The ObservationFrame is PER ROW: slopeRuns is the number of runs that row's
+  // slope was averaged over, which is not the makespan run count and need not be
+  // the same for two rows. Borrowing row 0's count and printing it under every
+  // row was accidentally right only because every status default has min > 0.
+  const slopeRunCounts = ranked.map((c) => c.slopeRuns);
+  const runsLo = slopeRunCounts.length ? Math.min(...slopeRunCounts) : null;
+  const runsHi = slopeRunCounts.length ? Math.max(...slopeRunCounts) : null;
+
+  return (
+    <div className="mt-3">
+      <div className="mb-1 text-micro font-bold uppercase tracking-wider text-grey">
+        Days of launch bought per day of compression
+      </div>
+      {ranked.length === 0 ? (
+        <p className="text-micro text-grey">Every task's slope is withheld — see the codes below.</p>
+      ) : (
+        <div className="space-y-1">
+          {ranked.slice(0, 5).map((c) => (
+            <div key={c.id} className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-micro text-grey-dark">{c.title}</span>
+              <span className="shrink-0 font-mono text-micro text-grey">
+                {c.meanSlackDays != null ? `${c.meanSlackDays}d float` : 'float n/a'}
+                {/*
+                  The binding edge is MODAL, not certain: bindingPredecessorRuns
+                  is the number of runs in which that predecessor set the start.
+                  Measured 34% of runs on three symmetric predecessors — "bound
+                  by X" flat told the reader a dependency binds the task when in
+                  fact it does not in two runs out of three.
+                */}
+                {c.bindingPredecessor
+                  ? ` · bound by ${c.bindingPredecessor} in ${Math.round((c.bindingPredecessorRuns / Math.max(1, sim.runs)) * 100)}% of runs`
+                  : ''}
+              </span>
+              <span className="w-24 shrink-0 text-right font-mono text-micro text-navy">
+                {c.daysBoughtPerDay!.toFixed(3)} ±{(c.slopeStdErr ?? 0).toFixed(3)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {withheld.length > 0 && (
+        <p className="mt-1 text-micro text-grey">
+          {withheld.length} task{withheld.length === 1 ? '' : 's'} withheld, not scored 0:{' '}
+          {withheld.slice(0, 4).map((c) => `${c.title} (${c.code})`).join(' · ')}
+          {withheld.length > 4 ? ' …' : ''}
+        </p>
+      )}
+      {finished.length > 0 && (
+        <p className="mt-1 text-micro text-grey">
+          {finished.length} task{finished.length === 1 ? '' : 's'} not ranked because the work is finished (nothing to compress):{' '}
+          {finished.slice(0, 4).map((c) => c.title).join(' · ')}
+          {finished.length > 4 ? ' …' : ''}
+        </p>
+      )}
+      <p className="mt-1 text-[10px] text-grey">
+        Finite {step}-day compression, mean ± standard error.{' '}
+        {runsLo != null && runsHi != null
+          ? runsLo === runsHi
+            ? `Every slope above is averaged over ${runsLo.toLocaleString()} of the ${sim.runs.toLocaleString()} simulation runs.`
+            : `Each slope is averaged over its OWN run count (${runsLo.toLocaleString()}–${runsHi.toLocaleString()} of the ${sim.runs.toLocaleString()} simulation runs).`
+          : `${sim.runs.toLocaleString()} simulation runs.`}{' '}
+        A slope of 0 is measured: compressing that task buys nothing because a parallel branch takes over.
+      </p>
+    </div>
+  );
+}
+
 /** Launch-schedule Monte Carlo panel (Wave 2) — planning simulation, clearly labeled. */
 function LaunchSimPanel() {
-  const [sim, setSim] = useState<LaunchSim | null>(null);
+  const [sim, setSim] = useState<LaunchSimWithCompression | null>(null);
   const [err, setErr] = useState<string | null>(null);
   useEffect(() => { fetchLaunchSim().then(setSim).catch((e) => setErr(e instanceof Error ? e.message : 'unavailable')); }, []);
 
@@ -584,9 +703,22 @@ function LaunchSimPanel() {
             ))}
           </div>
           <div className="mt-3">
-            <div className="mb-1 text-micro font-bold uppercase tracking-wider text-grey">Highest criticality (drives the date)</div>
+            {/*
+              Was "Highest criticality (drives the date)" — a causal claim about
+              a frequency. `criticality` is the SHARE OF RUNS a task sat on the
+              critical path; it does not say compressing it moves the date. Two
+              tasks can both be critical in every run while shortening one buys
+              nothing. The magnitude ranking is CompressionList below.
+              Both lists on this panel now use ONE definition of finished
+              (FINISHED_STATUSES above) instead of this list filtering 'done'
+              and the days-bought list filtering nothing.
+              Neither list is sorted here; both arrive ordered from launchSim.ts.
+            */}
+            <div className="mb-1 text-micro font-bold uppercase tracking-wider text-grey">
+              Most often on the critical path <span className="normal-case text-grey">(frequency, not days)</span>
+            </div>
             <div className="space-y-1">
-              {sim.criticality.filter((c) => c.status !== 'done').slice(0, 5).map((c) => (
+              {sim.criticality.filter((c) => !isFinished(c.status)).slice(0, 5).map((c) => (
                 <div key={c.id} className="flex items-center gap-2">
                   <span className="min-w-0 flex-1 truncate text-micro text-grey-dark">{c.title}</span>
                   <div className="h-2 w-24 shrink-0 overflow-hidden rounded-full bg-ice-soft dark:bg-ice-soft/10">
@@ -597,6 +729,7 @@ function LaunchSimPanel() {
               ))}
             </div>
           </div>
+          <CompressionList sim={sim} />
           {sim.warnings.length > 0 && <p className="mt-2 text-micro text-amber-600 dark:text-amber-400">⚠ {sim.warnings.join(' · ')}</p>}
           <p className="mt-2 text-[10px] text-grey">{sim.disclaimer} {sim.runs.toLocaleString()} runs, seeded.</p>
         </>

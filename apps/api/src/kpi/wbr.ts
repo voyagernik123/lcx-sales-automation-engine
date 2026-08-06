@@ -211,7 +211,12 @@ export async function composeWbr(pool: pg.Pool, now = new Date()): Promise<WbrRe
     const r = await computeProgramReadiness(pool);
     let simP50Days: number | null = null;
     try {
-      const { rows } = await pool.query(`SELECT id, title, status, depends_on FROM command_tasks`);
+      // ORDER BY id is load-bearing: the sim draws one sample per task in the
+      // order given, so heap order (which moves on any UPDATE) shifts the
+      // percentiles at a fixed seed — measured at 1–2 days on p50. simP50Days
+      // is compared week over week, so an unordered read makes the WoW move
+      // partly an artefact of row order.
+      const { rows } = await pool.query(`SELECT id, title, status, depends_on FROM command_tasks ORDER BY id`);
       if (rows.length > 0) {
         simP50Days = runLaunchSim(rows.map((t: Record<string, unknown>) => ({
           id: String(t.id), title: String(t.title), status: String(t.status ?? 'not_started'),

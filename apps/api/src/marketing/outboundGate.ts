@@ -941,3 +941,287 @@ export async function recordGateDecision(
     return false;
   }
 }
+
+/* ════════ THE READER `gate:<16 hex>` NEVER HAD ════════ */
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ *  RESOLVING A GATE REFERENCE. This is a DEFECT FIX, not a capability.
+ * ══════════════════════════════════════════════════════════════════════════════
+ *
+ *  `embargoBasisWithheldRefusal` (packages/shared/src/marketing/abuse.ts) tells a drafter
+ *  who is not cleared to read an embargo basis: "Quote reference gate:abc… to an approver —
+ *  that reference identifies this exact check in the outbound gate ledger, so they can read
+ *  the full verdict and tell you what to do with the draft". `gateReferenceFrom` mints that
+ *  reference and `recordGateDecision` writes the row it points at.
+ *
+ *  NOTHING COULD READ IT BACK. There was no reader of `text_sha256` anywhere outside the
+ *  INSERT, so the approver the drafter was sent to had no way to resolve the string they
+ *  were handed. The remedy in the refusal was a dead end, and the comment at the INSERT
+ *  above warns in as many words about exactly this failure — it was already true.
+ *
+ *  ── ONE HONEST CORRECTION TO THAT REFUSAL'S WORDING ──
+ *  The reference does NOT identify "this exact check". It is a prefix of the digest of the
+ *  TEXT, and the same text is gated twice by design — once at draft, once at clearance — so
+ *  a reference legitimately covers several rows. This resolver therefore returns EVERY
+ *  matching decision, newest first, and says so in `note`. Returning only the newest would
+ *  hide the draft-phase verdict, which is often the one that explains the refusal.
+ *
+ *  APPROVER-ONLY AT THE ROUTE. `refusalCodes` here are the UNSCOPED codes from
+ *  `ledgerOnly` — the whole point of the ledger column — so this reads out the very Art 90
+ *  basis the scoped refusal withheld. Exposing it to the drafter would reopen the oracle
+ *  the scoping exists to close; the route in `routes/marketingRecord.ts` gates on
+ *  `requireApprover`.
+ */
+
+/** One 0062 row, as an approver reads it. Field names are the wire shape, not the columns. */
+export interface GateDecisionRecord {
+  readonly id: string;
+  readonly replyId: string | null;
+  readonly phase: string;
+  readonly actor: string;
+  readonly allowed: boolean;
+  readonly disposition: string;
+  readonly textSha256: string;
+  readonly assetsExtracted: readonly string[];
+  /** The TRUE codes, including the Art 90 limb the drafter's copy had replaced. */
+  readonly refusalCodes: readonly string[];
+  readonly violationCodes: readonly string[];
+  readonly gateError: string | null;
+  readonly createdAt: string;
+}
+
+/**
+ * Why a reference could not be resolved. Three codes, because three different things go
+ * wrong and only one of them is the caller's fault.
+ *
+ * These are NOT members of the shared `RefusalCode` union — like `RecordRefusalCode` in
+ * `record.ts`, they are about the REGISTER rather than about the words in a draft, and the
+ * shape below mirrors that file's I/O-boundary refusal field for field on purpose.
+ */
+export type GateReferenceRefusalCode =
+  /** Not `gate:` + exactly 16 lowercase hex. Nothing was queried. */
+  | 'GATE_REFERENCE_MALFORMED'
+  /** 0062 is not applied on this environment. */
+  | 'GATE_LEDGER_ABSENT'
+  /** The ledger was read and holds no decision under that reference. */
+  | 'GATE_REFERENCE_NOT_FOUND';
+
+export interface GateReferenceRefusal {
+  readonly ok: false;
+  readonly code: GateReferenceRefusalCode;
+  readonly sentence: string;
+  readonly rule: string;
+  readonly ruleText: string;
+  readonly remedy: string;
+}
+
+export type GateReferenceResolution =
+  | {
+    readonly ok: true;
+    readonly reference: string;
+    readonly decisions: readonly GateDecisionRecord[];
+    /**
+     * `true` means MORE ROWS CARRY THIS REFERENCE THAN ARE SHOWN. `decisions.length` is then
+     * a ceiling, not a measurement, and the oldest rows — including the draft-phase verdict
+     * the note promises would be here, which `created_at DESC` drops first — are missing.
+     */
+    readonly truncated: boolean;
+    /** The bound that produced `truncated`. Stated so the ceiling is legible as one. */
+    readonly limit: number;
+    readonly note: string;
+  }
+  | GateReferenceRefusal;
+
+/**
+ * How many decisions one lookup returns. A BOUND, not a filter — but a bound whose effect
+ * has to be visible, so the read asks for `LIMIT + 1` and the extra row is the only thing
+ * that can prove truncation happened.
+ */
+export const GATE_REFERENCE_DECISION_LIMIT = 200;
+
+const GATE_REFERENCE_RULES: Record<
+  GateReferenceRefusalCode,
+  { rule: string; ruleText: string }
+> = {
+  GATE_REFERENCE_MALFORMED: {
+    rule: 'MiCA Art 90(1)',
+    ruleText:
+      'Persons professionally arranging or executing transactions shall have effective '
+      + 'arrangements to detect and report market abuse. An arrangement whose escalation step '
+      + 'cannot be followed is not effective.',
+  },
+  GATE_LEDGER_ABSENT: {
+    rule: 'MiCA Art 8(2)',
+    ruleText:
+      'Marketing communications shall, upon request, be notified to the competent authority of '
+      + 'the home Member State and to the competent authority of the host Member State.',
+  },
+  GATE_REFERENCE_NOT_FOUND: {
+    rule: 'MiCA Art 68(9)',
+    ruleText:
+      'Records shall be sufficient to enable competent authorities to fulfil their supervisory '
+      + 'tasks and in particular to ascertain compliance with all obligations.',
+  },
+};
+
+function gateReferenceRefusal(
+  code: GateReferenceRefusalCode,
+  sentence: string,
+  remedy: string,
+): GateReferenceRefusal {
+  const r = GATE_REFERENCE_RULES[code];
+  return { ok: false, code, sentence, rule: r.rule, ruleText: r.ruleText, remedy };
+}
+
+export const GATE_REFERENCE_REFUSAL_CODES =
+  Object.keys(GATE_REFERENCE_RULES) as GateReferenceRefusalCode[];
+
+/**
+ * Resolve `gate:<16 hex>` to the decisions it covers.
+ *
+ * THE SHAPE CHECK IS A SECURITY CONTROL, NOT VALIDATION POLITENESS. The lookup is a prefix
+ * `LIKE`, so `%` and `_` inside the reference would be WILDCARDS: `gate:%` would return the
+ * desk's entire gate ledger — every refusal code, on every draft, to any approver who typed
+ * it. The regex below is anchored and admits only `[0-9a-f]`, and the function returns
+ * before issuing any statement when it does not match. `GATE_REFERENCE_PREFIX_LEN` is read
+ * rather than restated so the two cannot drift.
+ */
+export async function resolveGateReference(
+  pool: Pool,
+  reference: string,
+): Promise<GateReferenceResolution> {
+  const raw = String(reference ?? '').trim();
+  const expected = new RegExp(`^gate:([0-9a-f]{${GATE_REFERENCE_PREFIX_LEN}})$`);
+  const m = expected.exec(raw);
+  if (!m) {
+    return gateReferenceRefusal(
+      'GATE_REFERENCE_MALFORMED',
+      `"${raw.slice(0, 40)}" is not a gate reference. The form is "gate:" followed by exactly `
+      + `${GATE_REFERENCE_PREFIX_LEN} lowercase hexadecimal characters. Nothing was looked up: a `
+      + 'reference carrying a SQL wildcard would match the whole ledger, so a malformed one is '
+      + 'refused before any statement runs.'
+      + (raw === GATE_REFERENCE_UNAVAILABLE
+        ? ` This is ${GATE_REFERENCE_UNAVAILABLE}, which the gate returns when the digest could `
+          + 'not be computed at all — there is no row to find, and that is a stated absence '
+          + 'rather than a lookup failure.'
+        : ''),
+      'Ask the drafter to re-copy the reference exactly as the refusal printed it. If they were '
+      + `shown ${GATE_REFERENCE_UNAVAILABLE}, the check itself failed before it was recorded and `
+      + 'the draft must be re-gated rather than looked up.',
+    );
+  }
+  const prefix = m[1]!;
+
+  if (!(await gateLedgerMigrated(pool))) {
+    return gateReferenceRefusal(
+      'GATE_LEDGER_ABSENT',
+      `The outbound gate ledger does not exist on this environment, so no reference can be `
+      + `resolved here — including this one. Migration ${GATE_MIGRATION} has not been applied. `
+      + 'This is not a finding that the check never ran; it is a statement that this '
+      + 'environment cannot say either way.',
+      `Apply ${GATE_MIGRATION} by hand in the SQL editor. Until then the remedy printed on every `
+      + 'scoped Art 90 refusal cannot be followed, and drafters should be told that rather than '
+      + 'left to quote a reference at somebody.',
+    );
+  }
+
+  let rows: unknown[];
+  try {
+    const res = await pool.query(
+      /*
+       * Ordered newest first: the clearance verdict is the operative one and the draft-phase
+       * row beneath it is the history. LIMIT is a bound, not a filter — a runaway result set
+       * on a lookup an approver performs under time pressure is its own failure.
+       *
+       * IT ASKS FOR ONE MORE ROW THAN IT WILL SHOW. "One text cannot plausibly have been
+       * gated 200 times" was the justification and it is wrong: every re-gate of the same
+       * bytes writes a row (`routes/marketing.ts` on every draft, `routes/marketingGates.ts`
+       * on every claim-safety call), so a template reply accumulates rows indefinitely. At
+       * the bound the count was reported as a total and the note asserted that the
+       * draft-phase row "appears here" — the row `created_at DESC` drops FIRST. The extra
+       * row makes truncation detectable, and a detected ceiling is stated as a ceiling.
+       */
+      `SELECT id::text AS id, reply_id::text AS reply_id, phase, actor, allowed, disposition,
+              text_sha256, assets_extracted, refusal_codes, violation_codes, gate_error, created_at
+         FROM marketing_outbound_gate_decision
+        WHERE text_sha256 LIKE $1
+        ORDER BY created_at DESC, id DESC
+        LIMIT ${GATE_REFERENCE_DECISION_LIMIT + 1}`,
+      // Parameterised, and the prefix is hex-only by the guard above, so no wildcard can be
+      // smuggled in. The trailing '%' is ours.
+      [`${prefix}%`],
+    );
+    rows = res.rows;
+  } catch (err) {
+    // A failed read is not an empty ledger. Same rule as everywhere else in this file: an
+    // error about bookkeeping must not be readable as a finding about the draft.
+    return gateReferenceRefusal(
+      'GATE_LEDGER_ABSENT',
+      'The outbound gate ledger could not be read, so this reference is unresolved. That is a '
+      + `failure of the lookup, NOT a finding that no such check exists: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+      'Retry. If it persists, the ledger is unreadable and every scoped Art 90 refusal issued '
+      + 'meanwhile carries a remedy nobody can follow — say so to the desk rather than letting '
+      + 'drafters quote references into silence.',
+    );
+  }
+
+  if (rows.length === 0) {
+    return gateReferenceRefusal(
+      'GATE_REFERENCE_NOT_FOUND',
+      'The ledger was read and NO decision carries that reference. The ledger exists and this '
+      + 'is a genuine absence, not an unavailable answer — so either the reference was '
+      + 'mistyped, or the check was never recorded (the write is best-effort by design so that '
+      + 'a bookkeeping failure cannot turn a refusal into a 500).',
+      'Ask the drafter to re-run the gate on the same text and quote the new reference. If it '
+      + 'still resolves to nothing, the ledger write is failing and that is the finding.',
+    );
+  }
+
+  const truncated = rows.length > GATE_REFERENCE_DECISION_LIMIT;
+  const decisions: GateDecisionRecord[] = rows.slice(0, GATE_REFERENCE_DECISION_LIMIT).map((r) => {
+    const row = r as Record<string, unknown>;
+    return {
+      id: String(row.id),
+      replyId: row.reply_id == null ? null : String(row.reply_id),
+      phase: String(row.phase),
+      actor: String(row.actor),
+      allowed: Boolean(row.allowed),
+      disposition: String(row.disposition),
+      textSha256: String(row.text_sha256),
+      assetsExtracted: Array.isArray(row.assets_extracted) ? row.assets_extracted.map(String) : [],
+      refusalCodes: Array.isArray(row.refusal_codes) ? row.refusal_codes.map(String) : [],
+      violationCodes: Array.isArray(row.violation_codes) ? row.violation_codes.map(String) : [],
+      gateError: row.gate_error == null ? null : String(row.gate_error),
+      createdAt: row.created_at instanceof Date
+        ? row.created_at.toISOString()
+        : String(row.created_at),
+    };
+  });
+
+  return {
+    ok: true,
+    reference: raw,
+    decisions,
+    truncated,
+    limit: GATE_REFERENCE_DECISION_LIMIT,
+    note:
+      (truncated
+        ? `AT LEAST ${GATE_REFERENCE_DECISION_LIMIT} decisions carry this reference and only the `
+          + `newest ${GATE_REFERENCE_DECISION_LIMIT} are shown. THIS IS A CEILING, NOT A COUNT: `
+          + 'the true total is not reported because this lookup did not measure it. The rows '
+          + 'that are missing are the OLDEST, which is where the draft-phase verdict sits — so '
+          + 'if you came here for the draft-phase reasoning, it may be one of the rows dropped. '
+          + 'Narrow by re-gating the text and quoting the fresh reference, or read the ledger '
+          + 'directly for the full history. '
+        : `${decisions.length} decision(s) carry this reference, and that is the whole set — the `
+          + `${GATE_REFERENCE_DECISION_LIMIT}-row bound was not reached. `)
+      + 'A reference is a prefix of the digest of the TEXT, so it identifies the same bytes '
+      + 'rather than one check — the same draft is gated at draft and again at clearance, and '
+      + (truncated ? 'both rows are in the ledger though not necessarily above. ' : 'both rows appear here. ')
+      + 'The refusal codes are the UNSCOPED ones: they may name an Art 90 embargo limb that the '
+      + 'drafter\'s own copy of the refusal deliberately did not.',
+  };
+}

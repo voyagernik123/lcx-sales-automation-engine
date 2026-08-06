@@ -87,16 +87,66 @@ export const STATE_LICENSE_MAP: Record<string, string> = {
 
 export const EXEMPTION_FREE_STATES = ['MT', 'NH'] as const;
 
-export function computeBriefDigest(
-  template: string,
-  cco: string,
-  statesList: string[],
-  productsList: string[]
-): string {
-  const payload = `${template}|${cco}|${statesList.join(',')}|${productsList.join(',')}`;
-  let hash = 5381;
-  for (let i = 0; i < payload.length; i++) {
-    hash = (hash * 33) ^ payload.charCodeAt(i);
+// The function that used to live here was a djb2 hash printed with a 'sha256_'
+// prefix and a hardcoded 'bcf1c3' tail. It had zero callers; BriefGenerator.tsx
+// carried its own identical copy. A fabricated cryptographic digest on a
+// document whose default addressees are the board, state regulators and the SEC
+// is the single worst thing this lane found, so both copies are gone and what
+// follows is a real digest or an explicit refusal.
+
+export interface BriefSelection {
+  template: string;
+  signatory: string;
+  states: string[];
+  products: string[];
+}
+
+/**
+ * The exact bytes that get hashed. Versioned, because a digest is only
+ * meaningful if the thing it covers is pinned: if the payload shape ever
+ * changes, the version changes with it and old hexes stop matching by design.
+ * State and product lists are sorted so that click order cannot alter the hex.
+ */
+export function briefSelectionPayload(selection: BriefSelection): string {
+  return [
+    'lcx-brief-selection/v1',
+    `template=${selection.template}`,
+    `signatory=${selection.signatory}`,
+    `states=${[...selection.states].sort().join(',')}`,
+    `products=${[...selection.products].sort().join(',')}`,
+  ].join('\n');
+}
+
+export type DigestUnavailableCode = 'DIGEST_NO_WEBCRYPTO' | 'DIGEST_FAILED';
+
+export type DigestResult =
+  | { kind: 'digest'; algorithm: 'SHA-256'; hex: string }
+  | { kind: 'unavailable'; code: DigestUnavailableCode; rule: string };
+
+const DIGEST_RULES: Record<DigestUnavailableCode, string> = {
+  DIGEST_NO_WEBCRYPTO:
+    'SubtleCrypto is unavailable in this context (it requires a secure origin), so no digest can be computed. None is printed.',
+  DIGEST_FAILED: 'The digest computation failed, so no digest is printed.',
+};
+
+/**
+ * SHA-256 over the selection payload, or a refusal. Covers the SELECTION
+ * PARAMETERS ONLY — the memo body is contentEditable, so no digest computed
+ * here says anything about the words on the page, and the surface must say so.
+ */
+export async function computeSelectionDigest(selection: BriefSelection): Promise<DigestResult> {
+  const subtle = globalThis.crypto?.subtle;
+  if (!subtle) {
+    return { kind: 'unavailable', code: 'DIGEST_NO_WEBCRYPTO', rule: DIGEST_RULES.DIGEST_NO_WEBCRYPTO };
   }
-  return 'sha256_' + Math.abs(hash).toString(16).padEnd(8, 'e') + 'bcf1c3';
+  try {
+    const bytes = new TextEncoder().encode(briefSelectionPayload(selection));
+    const buffer = await subtle.digest('SHA-256', bytes);
+    const hex = Array.from(new Uint8Array(buffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+    return { kind: 'digest', algorithm: 'SHA-256', hex };
+  } catch {
+    return { kind: 'unavailable', code: 'DIGEST_FAILED', rule: DIGEST_RULES.DIGEST_FAILED };
+  }
 }

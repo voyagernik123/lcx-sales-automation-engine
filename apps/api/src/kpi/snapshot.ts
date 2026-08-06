@@ -85,9 +85,26 @@ export async function writeKpiSnapshot(): Promise<SnapshotResult> {
   let forecastStored = false;
   try {
     const f = await computeForecast();
+    /*
+     * THE REFUSAL IS PERSISTED AS A REFUSAL, not as a number.
+     *
+     * This column is TREND HISTORY — a chart is drawn through it later. A day the
+     * simulation could not price anything must not enter that series as a zero,
+     * because a zero is a data point and would draw a line down to it and back.
+     * Storing the refusal code instead means a future reader can tell "the quarter
+     * was forecast at nothing" from "we could not forecast", which is the whole
+     * distinction P1e exists to preserve. `distributionRefusal` is null on a normal
+     * day, so nothing changes for the days that have figures.
+     */
     await db.execute(sql`
       UPDATE kpi_daily_snapshots
-      SET forecast = ${JSON.stringify({ p10: f.p10, p50: f.p50, p90: f.p90, expected: f.expected })}::jsonb
+      SET forecast = ${JSON.stringify({
+        p10: f.p10, p50: f.p50, p90: f.p90, expected: f.expected,
+        distributionRefusal: f.distributionRefusal,
+        unpricedCount: f.unpriced.count,
+        unrateableCount: f.unrateable.count,
+        simulatedDealCount: f.simulatedDealCount,
+      })}::jsonb
       WHERE snapshot_date = ${today}
     `);
     forecastStored = true;

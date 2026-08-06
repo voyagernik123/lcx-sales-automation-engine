@@ -4,6 +4,7 @@ import { unwrapWithMeta } from './meta.js';
 // §16 of `packages/shared/src/marketing/types.ts` for why they do not live here.
 import {
   assertHonestPayload,
+  assertHonestPayloadAll,
   type AbusePerimeterState,
   /* ── THE SIXTEEN CONTRACTS THAT HAVE LANDED ────────────────────────────────────
    * Each name below is declared exactly ONCE — in `packages/shared/src/marketing/
@@ -110,28 +111,157 @@ import {
 // last week by peeling `.data` by hand; a new fetcher that does the same would
 // make a screen look warning-free rather than look broken.
 // ── AND IT NOW APPLIES THE RUNTIME HALF OF THE HONESTY CEILING ────────────────
-// `observation.ts:31` claims "THREE LAYERS GUARD THE CEILING, AND ONLY THE FIRST TWO ARE
-// PROOFS". Layer 2 is `assertHonestPayload`, and it had ZERO production callers — only its
-// own tests — so the claim was describing a function nobody ran. A proof that is never
-// applied is a definition.
+// `observation.ts`'s header claims three layers guard the ceiling. Layer 2 is the runtime
+// walk, and it had ZERO production callers — only its own tests — so the claim was
+// describing a function nobody ran. A proof that is never applied is a definition.
 //
-// This is the one place every marketing read passes through, and it is the right place: the
-// walk is over a PARSED JSON payload, which is exactly the case `HonestFigures<T>` cannot
-// see. If the API ever starts returning `impressions`, `reach`, `follower_delta` or any of
-// the other banned names — from a new route, a JSON column or an AI response — the read
-// fails here with the refusal's own sentence, before a component can render it.
+// This is the right place for it: the walk is over a PARSED JSON payload, which is exactly
+// the case `HonestFigures<T>` cannot see. If the API ever starts returning `impressions`,
+// `follower_delta` or any of the other banned names — from a new route, a JSON column or an
+// AI response — the read fails here, before a component can render it.
+//
+// ── WHAT THIS COMMENT HAS NOW CLAIMED FALSELY TWICE ───────────────────────────
+// Version 1 said: "This is the one place every marketing read passes through." Version 2
+// replaced it with "the ceiling covers every marketing READ" and named two exceptions. Both
+// sentences were falsified by the same one-line grep, `grep -rn "v1/marketing" apps/web/src`,
+// and the second one is the more instructive failure: the lane's whole thesis is that this
+// comment is what a reader checks INSTEAD of the imports, and it shipped a fresh version of
+// the same defect.
+//
+// SO THE CLAIM IS NOW AN ENUMERATION, AND A TEST HOLDS IT. `__tests__/marketingCeiling.test.ts`
+// greps the web source for `/v1/marketing` and fails if any file other than the three below
+// reaches the compartment. That is the only form of this statement that cannot rot, because
+// the next bypass makes a test red instead of making a comment stale.
+//
+// FOUR CLIENTS TOUCH `/v1/marketing`. THIS ONE, AND THREE THAT DO NOT USE THE CEILING:
+//
+//   1. THIS MODULE — every fetcher here goes through `unwrap`, so every read it owns is
+//      walked. That is a statement about this file and nothing wider.
+//   2. `components/marketing/deskApi.ts` — the compartment's second web client. Its one GET,
+//      `findPrecedent`, goes through `unwrapMarketingRead` below (this same function,
+//      exported rather than copied). Its two POSTs do NOT, deliberately — see (3), the
+//      argument is identical and that file states it at each call.
+//   3. `invokeMarketingAbuse` HERE (the three governed perimeter writes) calls `request(`
+//      with no unwrap and DELIBERATELY still does. It returns `Promise<void>` and discards
+//      the response, so there is no payload any surface could render; and throwing on a
+//      response body AFTER a governed write has been committed to `object_actions` would
+//      report a completed write as a failed one, which is a worse lie than the one it would
+//      be catching.
+//   4. `pages/MarketingHoldings.tsx` — THREE LIVE READS WITH NO CEILING AND NO ENVELOPE:
+//      `GET /v1/marketing/holdings` (:120), `/holdings/register` (:126) and
+//      `/holdings/cells` (:182). All three are mounted (`routes/marketing.ts:768` mounts
+//      `routes/marketingHoldings.ts`, handlers at :168/:210/:283) and the page imports
+//      `request` from `@/lib/apiClient` directly.
+//      IT IS NOT A ONE-LINE FIX AND THAT IS WHY IT IS STILL OPEN. Those three handlers
+//      answer with a BARE object — `c.json({ memberId, rows, … })`, no `{ data, meta }`
+//      envelope — so `unwrapMarketingRead` would peel a `.data` that does not exist and
+//      return `undefined` for all three panels. Putting them behind the ceiling means
+//      enveloping the routes or giving the ceiling a bare-payload entry point, and the page
+//      and the route are both outside this lane's file set. The holdings contracts carry no
+//      banned name today (`packages/shared/src/marketing/contracts/holdings.ts`), which is
+//      the condition the ceiling exists to defend against CHANGING — so this is a real hole,
+//      not a theoretical one, and it is written here rather than rounded off.
 //
 // IT THROWS RATHER THAN LOGGING. Doctrine rule 1: a number nobody can defend is not
 // softened into a warning beside itself. The pages already handle a failed read; they have
 // no handling for a plausible figure that should not exist.
 const unwrap = async <T>(p: Promise<{ data: T; meta?: unknown }>): Promise<T> => {
   const out = await unwrapWithMeta(p);
+  /* The cheap probe first — it answers `null` for a clean payload, which is the case every
+     read takes. It is also the call `scripts/doctrine-lint.mjs` RULE 3 counts to prove the
+     ceiling has not regressed to zero production callers; do not collapse it into the line
+     below without reading that rule. */
   const refused = assertHonestPayload(out);
   if (refused !== null) {
-    throw Object.assign(new Error(refused.sentence), { code: refused.code });
+    /* EVERY refusal, not the first one found — the house pattern at
+       `apps/api/src/routes/marketingDesk.ts`. A guard that names one banned field per read
+       gets routed around one field per deploy. The second walk only ever runs on a payload
+       that is already failing, so it costs nothing on the path that matters. */
+    throw new HonestyCeilingError(refused, assertHonestPayloadAll(out));
   }
   return out;
 };
+
+/**
+ * DERIVED FROM THE FUNCTION, NOT RE-DECLARED AND NOT IMPORTED BY NAME.
+ *
+ * `CeilingRefusal` and `CeilingRefusalCode` are declared once, in
+ * `packages/shared/src/marketing/observation.ts`. They are not on the `type X,` import list
+ * above for one mechanical reason: `marketingContract.test.ts` proves every name on that
+ * list is declared in a RESPONSE-CONTRACT module (`types.ts`, `abuse.ts`, `claimSafety.ts`,
+ * `contracts/*.ts`), and these two are not response contracts — they are the ceiling's own
+ * vocabulary, which lives with the walker.
+ *
+ * Deriving them off the function's return type keeps the one-declaration rule exactly, and
+ * more tightly than an import would: there is no second copy to drift, and a rename or a
+ * shape change in shared is a TS error at this line rather than a shape mismatch later.
+ */
+export type CeilingRefusal = NonNullable<ReturnType<typeof assertHonestPayload>>;
+export type CeilingRefusalCode = CeilingRefusal['code'];
+
+/**
+ * THE WHOLE REFUSAL, NOT JUST ITS SENTENCE.
+ *
+ * This used to be `throw Object.assign(new Error(refused.sentence), { code })`, which
+ * dropped `rule`, `recovery`, `matched` and `ruleSetVersion` on the floor. The doctrine
+ * says a refusal CITES THE RULE IT APPLIES, and at the one place in the browser where the
+ * ceiling actually fires, the citation never reached a surface — so the only honest
+ * rendering available to a page was a bare sentence with no provision behind it and no
+ * statement of what would make the read succeed.
+ *
+ * `message` is still `refusal.sentence` and `code` is still an own property, because
+ * `__tests__/marketingCeiling.test.ts` asserts on both and a caller catching this today
+ * reads them. What is added is additive: `refusal` is the whole `CeilingRefusal`, and
+ * `refusals` is every one the payload carried.
+ */
+export class HonestyCeilingError extends Error {
+  /** The PRIMARY refusal's code, for a caller that switches on one. */
+  readonly code: CeilingRefusalCode;
+  /**
+   * The primary refusal, whole: rule, recovery, matched span and ruleset version.
+   *
+   * PRIMARY, NOT FIRST-IN-WALK-ORDER, and this is `assertHonestPayload`'s choice rather than
+   * this class's: a named forbidden field outranks a container the walker could not read, so
+   * a payload that is both too deep AND carries `ctr` reports the `ctr`. `refusals` stays in
+   * walk order, so `refusals[0]` and `refusal` are not always the same entry.
+   */
+  readonly refusal: CeilingRefusal;
+  /** Every refusal the payload carried, in walk order. Length is at least 1. */
+  readonly refusals: readonly CeilingRefusal[];
+
+  constructor(first: CeilingRefusal, all: readonly CeilingRefusal[]) {
+    super(first.sentence);
+    this.name = 'HonestyCeilingError';
+    this.code = first.code;
+    this.refusal = first;
+    /* `all` is recomputed and could in principle come back empty if the payload were
+       mutated between the two walks. Fall back to the refusal we already hold rather than
+       hand a surface an empty list beside a thrown refusal — an empty `refusals` on an
+       error object reads as "nothing was wrong". */
+    this.refusals = all.length > 0 ? all : [first];
+  }
+}
+
+/**
+ * THE CEILING, EXPORTED — for the compartment's OTHER web client.
+ *
+ * `components/marketing/deskApi.ts` exists for the reasons its own header gives, and it
+ * was calling `unwrapWithMeta` directly. That is not a style difference: it meant its reads
+ * reached components with the ceiling never applied, while this file's comment said every
+ * marketing read passed through it.
+ *
+ * ONE CALLER TODAY, NOT THREE: `findPrecedent`, which is a GET. The two POSTs in that module
+ * were briefly put behind this and had to be taken back out — a response-body refusal on a
+ * request the server has already committed makes the screen state that nothing was written.
+ * That argument is at both call sites there, and at `invokeMarketingAbuse` here.
+ *
+ * Exported rather than duplicated. `lib/api/meta.ts` records what eight hand-rolled
+ * `unwrap` one-liners cost the GPS compartment, and a second copy of the ceiling would be
+ * the same failure with higher stakes — the two copies agree until one of them is the only
+ * one someone remembers to update.
+ */
+export const unwrapMarketingRead = <T>(p: Promise<{ data: T; meta?: unknown }>): Promise<T> =>
+  unwrap(p);
 
 /* ════════ §1 THE LIVE COMPARTMENT — routes/marketing.ts, mounted today ════════ */
 
@@ -1309,6 +1439,22 @@ export const MARKETING_CONTRACTS_OWED: readonly MarketingContractOwed[] = [
  * belongs in a pass that can re-test each panel against the real payloads rather than at the
  * end of a wave whose remaining budget is one file. The list below is checked by
  * `marketingContract.test.ts` against `deskApi.ts` on disk, so it cannot rot quietly.
+ *
+ * ── THE TWO CLIENTS ARE STILL TWO, BUT THEY NO LONGER DISAGREE ABOUT THE CEILING ──
+ * The unmerged part was never the expensive part. `deskApi.ts` imported `unwrapWithMeta`
+ * directly and applied NO honesty ceiling to any of its three reads, while this file's
+ * `unwrap` comment claimed to be the one place every marketing read passed through. A second
+ * client is a maintenance cost; a second client with weaker guarantees than the first is the
+ * GPS two-write-paths defect in read form — and the surfaces used the weaker one. All three
+ * now call `unwrapMarketingRead`, so both clients share one ceiling and one refusal shape.
+ *
+ * ONE THING WAS CHECKED BEFORE DOING IT, because getting it wrong would break a live board:
+ * `recordTriage` SENDS a body carrying `reach` — the legitimate RESIST 2 ordinal, not the
+ * banned audience metric. The ceiling walks RESPONSES and never request bodies, and the
+ * response (`TriageDecisionRecord`) names its reach-shaped fields `reachTrajectory`,
+ * `reachLadder` and `reachAtDecision`, none of which normalise to a banned key. If a future
+ * route echoed the request body back, the ceiling would fire on it — and that would be the
+ * ceiling doing its job on a payload that had no business carrying the bare name.
  */
 export const MARKETING_CLIENT_OVERLAPS: readonly string[] = [
   'components/marketing/deskApi.ts findPrecedent → GET /v1/marketing/precedent',

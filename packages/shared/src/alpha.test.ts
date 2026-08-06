@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ach, assess, dealValue, listingPropensity, timingWindow, winnability, type SignalBundle } from './alpha.js';
 
@@ -27,12 +30,41 @@ describe('alpha — composite scores', () => {
     expect(quiet.window).toBe('quiet');
   });
 
-  it('deal value: bigger + more liquid ⇒ higher USD estimate, within the package range', () => {
-    const big = dealValue({ ...base, marketCapUsd: 3e9, volume24hUsd: 5e8 }).usd;
-    const small = dealValue({ ...base, marketCapUsd: 2e6, volume24hUsd: 5e4 }).usd;
-    expect(big).toBeGreaterThan(small);
-    expect(small).toBeGreaterThanOrEqual(15_000);
-    expect(big).toBeLessThanOrEqual(250_000);
+  /*
+   * ══ UNPINNED DELIBERATELY. WHAT THIS ASSERTED AND WHY IT WAS WRONG ══
+   *
+   *   const big = dealValue({...}).usd;
+   *   expect(small).toBeGreaterThanOrEqual(15_000);
+   *   expect(big).toBeLessThanOrEqual(250_000);
+   *
+   * It asserted that a USD deal value could be computed from market cap and volume,
+   * and it pinned the bounds of the fabrication — 15_000 and 250_000, the two constants
+   * `dealValue` interpolated between. Those numbers were chosen to look like the desk's
+   * package range, which its own comment admitted. A green test asserting the range of
+   * an invented price is how the invention survived four waves.
+   *
+   * The quantity that remains is an ORDINAL of observable size. It is tested as one:
+   * monotone in size and liquidity, carrying no currency, and refusing to name a price.
+   */
+  it('prize size: bigger + more liquid ⇒ higher ordinal, and NO usd figure at all', () => {
+    const big = dealValue({ ...base, marketCapUsd: 3e9, volume24hUsd: 5e8 });
+    const small = dealValue({ ...base, marketCapUsd: 2e6, volume24hUsd: 5e4 });
+    expect(big.score).toBeGreaterThan(small.score);
+    expect(big.score).toBeLessThanOrEqual(100);
+    expect(small.score).toBeGreaterThanOrEqual(0);
+    // The deleted fabrication, and the refusal that replaced it.
+    expect(big.usd).toBeNull();
+    expect(small.usd).toBeNull();
+    expect(big.markRefusal.code).toBe('MARK_NOT_DERIVABLE_FROM_MARKET_DATA');
+    expect(big.markRefusal.sentence).toMatch(/not what a counterparty agreed to pay/);
+  });
+
+  it('no market-data score claims to be money', () => {
+    // The arithmetic that manufactured a price is gone from the source, not just from
+    // the return value — a reader looking for "where did $47,500 come from" finds nothing.
+    const src = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'alpha.ts'), 'utf8');
+    const body = src.split('export function dealValue')[1]?.split('\n}')[0] ?? '';
+    expect(body, 'dealValue is manufacturing a currency figure again').not.toMatch(/235_000|15_000/);
   });
 
   it('winnability: EU fit is the LCX edge; already-listed kills it', () => {

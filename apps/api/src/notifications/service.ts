@@ -348,5 +348,92 @@ export async function evaluateAlertRules(pool: pg.Pool): Promise<Record<string, 
     counts.dist_listing_stale = 0;
   }
 
+  // 7. GOVERNANCE — THE CONTROL THAT DID NOT RUN (LCX OS 100x, P3a). Six families
+  //    existed and none of them watched governance, which is the compartment whose
+  //    whole job is noticing.
+  //
+  //    `actions/registry.ts` stamps `gateDegraded`, `overrideSat`, `overrideGate` and
+  //    `idempotencyDegraded` onto `audit_log.meta` on every governed act, from three
+  //    call sites in three compartments. NOTHING READ THEM until
+  //    `access/controlRegister.ts`. So a governed act could SUCCEED with a control
+  //    unevaluated and the only trace was a jsonb key nobody queried.
+  //
+  //    THIS FIRES ONLY ON THE UNREMEDIATED ONES. A marker with an active review
+  //    filed afterwards is a closed gap and does not need a weekly reminder; the
+  //    register still shows it. `NOT EXISTS` over `analytic_reviews` on the
+  //    polymorphic subject is the same join shape the launch gate above already runs.
+  //
+  //    DEDUPED PER SUBJECT, NOT PER ROW, and that is load-bearing rather than tidy.
+  //    The GPS discount limb marks EVERY quote today (PRICE_BANDS_ARE_PLACEHOLDERS is
+  //    true), so a per-row key would put one alert in the bell per quote per week —
+  //    write amplification aimed at the surface that is supposed to be readable. The
+  //    GROUP BY is required for the same reason: `ON CONFLICT DO NOTHING` cannot see
+  //    rows inserted by its own statement, so two rows sharing a dedup key in one
+  //    INSERT ... SELECT would both land.
+  //
+  //    `workspace = 'governance'` (0067). Without it the INSERT writes a row no
+  //    reader can see, and doctrine-lint rule 2 fails the build.
+  //
+  //    THE TITLE IS SPLIT BY WHICH FAMILY MATCHED, and the single title it replaced was
+  //    a doctrine defect rather than a wording nit. `'Control not evaluated: ' || …` was
+  //    emitted for rows matched by `overrideSat = 'true'` too — a control that DID run,
+  //    blocked, and was accepted by a named human with a recorded reason. Verified
+  //    against Postgres 16.14: a `command_decision/dec_01` row with meta
+  //    `{"overrideSat":true,"overrideReason":"board deadline"}` produced the bell row
+  //    "Control not evaluated: command_decision dec_01". Nothing on that act failed to
+  //    be evaluated. A bell list shows ONLY the title, so the hedge in the detail
+  //    ("not evaluated or was overridden") never reached the reader — and this is the
+  //    exact distinction `controlRegister.ts`'s weighting comment calls counter-
+  //    intuitive and the point: an unevaluated control has nobody to ask, an overridden
+  //    one has a name and a reason.
+  //
+  //    The CASE branches in CONSEQUENCE ORDER (the register's ranking argument), so a
+  //    subject carrying both families is titled by the worse one.
+  //
+  //    THE PREDICATE IS TRUTHINESS ON ALL FOUR KEYS, matching
+  //    `controlRegister.ts`'s `TRUTHY_MARKER_PREDICATE` exactly. It previously mixed
+  //    `meta ? 'gateDegraded'` (key existence) with `meta ->> 'overrideSat' = 'true'`,
+  //    which meant the bell and the register could disagree about the same row.
+  //
+  //    Degrades quietly: `audit_log` always exists, but `analytic_reviews` does not on
+  //    every environment, and a governance alert must never be the thing that breaks
+  //    the daily sweep.
+  try {
+    const controlGaps = await pool.query(`
+      INSERT INTO notifications (id, rule, title, detail, project_id, href, dedup_key, workspace)
+      SELECT gen_random_uuid(), 'governance_control_unfiled',
+             CASE
+               WHEN bool_or(al.meta ->> 'gateDegraded' = 'true')
+                 THEN 'Control not evaluated, no review filed: '
+               WHEN bool_or(al.meta ->> 'overrideSat' = 'true' OR al.meta ->> 'overrideGate' = 'true')
+                 THEN 'Control overridden, no review filed: '
+               ELSE 'Replay guard not held, no review filed: '
+             END || COALESCE(al.entity, 'unknown') || ' ' || COALESCE(al.entity_id, '?'),
+             COUNT(*) || ' governed act(s) since ' || TO_CHAR(MIN(al.created_at), 'YYYY-MM-DD')
+               || ' succeeded while a control was not evaluated, was overridden with a recorded reason, or '
+               || 'the replay guard was not held — and no review has been filed since. File one, or record '
+               || 'why the gap is accepted. The register at /control-register says which of the three applies '
+               || 'to each act.',
+             NULL, '/control-register',
+             'ctrlunfiled:' || COALESCE(al.entity, '') || ':' || COALESCE(al.entity_id, '')
+               || ':' || TO_CHAR(NOW(), 'IYYY-IW'),
+             'governance'
+      FROM audit_log al
+      WHERE al.created_at > NOW() - INTERVAL '30 days'
+        AND (al.meta ->> 'gateDegraded' = 'true' OR al.meta ->> 'idempotencyDegraded' = 'true'
+             OR al.meta ->> 'overrideSat' = 'true' OR al.meta ->> 'overrideGate' = 'true')
+        AND NOT EXISTS (
+          SELECT 1 FROM analytic_reviews ar
+           WHERE ar.subject_type = al.entity AND ar.subject_id = al.entity_id
+             AND ar.status = 'active' AND ar.created_at > al.created_at
+        )
+      GROUP BY al.entity, al.entity_id
+      ON CONFLICT DO NOTHING
+    `);
+    counts.governance_control_unfiled = controlGaps.rowCount ?? 0;
+  } catch {
+    counts.governance_control_unfiled = 0;
+  }
+
   return counts;
 }

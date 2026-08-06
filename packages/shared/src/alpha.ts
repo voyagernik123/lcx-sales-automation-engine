@@ -8,7 +8,12 @@
  * drivers) and honest about certainty (each carries a confidence derived from
  * the inputs). No LLM, no paid data — free-tier safe. Weights are a v1 prior to
  * be recalibrated by the backtest/learning loop (Wave 6).
+ *
+ * ONE OF THE FIVE IS NO LONGER A NUMBER. `dealValue` used to manufacture a USD figure
+ * from market cap; see its comment. Prices come from `marks/mark.ts`, which reads the
+ * closed book, or they are refused.
  */
+import { MARKET_DATA_IS_NOT_A_PRICE, type MarkRefusal } from './marks/mark.js';
 
 export interface SignalBundle {
   marketCapUsd?: number | null;
@@ -148,21 +153,48 @@ export function timingWindow(s: SignalBundle): ScoreResult & { window: TimingWin
   return { score: sc, window, drivers: top(drivers), confidence: baseConfidence(s, [mom, tvlmom, rivals]) };
 }
 
-/* ── Deal Value — what's it worth? (USD estimate) ─────────────────── */
-export function dealValue(s: SignalBundle): ScoreResult & { usd: number } {
+/* ── Prize Size — how big is the counterparty? NOT what they will pay ────── */
+/**
+ * THE MANUFACTURED DEAL VALUE IS DELETED. What was here:
+ *
+ *   const usd = Math.round((15_000 + blended * 235_000) / 500) * 500;
+ *   // Anchor tiers (USD) chosen to land in the desk's real package range (~$15k–$250k).
+ *
+ * Its own comment admitted the anchors were CHOSEN to look plausible. Market cap and
+ * 24h volume describe how a token trades; a listing fee is the outcome of a
+ * negotiation. No function of the former is the latter, and this one was rendered to
+ * the desk as "Worth" on three screens.
+ *
+ * `usd` is now `null` at the type level and `markRefusal` says why. The field is KEPT
+ * rather than removed because `apps/api/src/intel/alpha.ts:119` reads `a.value.usd`
+ * type-checked and that file belongs to another lane: with `usd: null` it persists
+ * `value_num = NULL` for the `deal_value_usd` observation, which is the honest value.
+ * Removing the field outright would be a TS2339 in a compartment this lane may not edit.
+ * Real prices come from `marks/mark.ts` against `listing_labels`.
+ *
+ * `score` SURVIVES AND IS NOT MONEY. It is an ordinal 0–100 of observable size and
+ * liquidity, consumed by `assess` as the 'Prize size' term in conviction. It carries no
+ * currency and must never be rendered as one. The function keeps the name `dealValue`
+ * because six call sites and the package barrel name it; the name is now a misnomer
+ * held in place by reachability, which is a smaller lie than the number was.
+ */
+export function dealValue(s: SignalBundle): ScoreResult & { usd: null; markRefusal: MarkRefusal } {
   const drivers: Driver[] = [];
   const mcap = n(s.marketCapUsd) ?? 0;
   const vol = n(s.volume24hUsd) ?? 0;
   const tvl = n(s.tvlUsd) ?? 0;
-  // A listing's value scales with the token's size and liquidity. Anchor tiers
-  // (USD) chosen to land in the desk's real package range (~$15k–$250k).
   const sizeScore = log(mcap, 1e6, 5e9);
   const liqScore = log(Math.max(vol, tvl), 1e5, 1e9);
   const blended = 0.6 * sizeScore + 0.4 * liqScore;
-  const usd = Math.round((15_000 + blended * 235_000) / 500) * 500;
   if (mcap > 0) drivers.push({ label: 'Market cap tier', points: Math.round(sizeScore * 60) });
   if (Math.max(vol, tvl) > 0) drivers.push({ label: 'Liquidity tier', points: Math.round(liqScore * 40) });
-  return { score: Math.round(blended * 100), usd, drivers: top(drivers), confidence: baseConfidence(s, [n(s.marketCapUsd), n(s.volume24hUsd) ?? n(s.tvlUsd)]) };
+  return {
+    score: Math.round(blended * 100),
+    usd: null,
+    markRefusal: MARKET_DATA_IS_NOT_A_PRICE,
+    drivers: top(drivers),
+    confidence: baseConfidence(s, [n(s.marketCapUsd), n(s.volume24hUsd) ?? n(s.tvlUsd)]),
+  };
 }
 
 /* ── Winnability — can LCX win this vs competitors? ───────────────── */
@@ -208,7 +240,8 @@ export function winnability(s: SignalBundle): ScoreResult {
 export interface AlphaAssessment {
   propensity: ScoreResult;
   timing: ScoreResult & { window: TimingWindow };
-  value: ScoreResult & { usd: number };
+  /** `usd` is permanently `null` — a size ordinal, not a price. See `dealValue`. */
+  value: ScoreResult & { usd: null; markRefusal: MarkRefusal };
   winnability: ScoreResult;
   conviction: ScoreResult;
   ach: AchResult;

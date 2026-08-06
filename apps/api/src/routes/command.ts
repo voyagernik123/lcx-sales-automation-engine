@@ -183,7 +183,12 @@ commandRoutes.get('/launch', requireOperator, async (c) =>
 commandRoutes.get('/launch-sim', requireOperator, async (c) => {
   try {
     const { runLaunchSim } = await import('@lcx/shared');
-    const rows = await list(`SELECT id, title, status, depends_on FROM command_tasks`);
+    // ORDER BY id is LOAD-BEARING, not tidiness. The sim draws one sample per
+    // task in the order it receives them, so heap order (which moves on any
+    // UPDATE) changes which task gets which draw. Measured: a p50 spread of 1–2
+    // days across 12 row permutations of identical data at the same seed 42.
+    // Without it the seed does not bind and no comparison over time is valid.
+    const rows = await list(`SELECT id, title, status, depends_on FROM command_tasks ORDER BY id`);
     if (rows.length === 0) {
       return c.json({ error: 'No program tasks — apply migration 0040 and seed first', code: 'NO_TASKS' }, 409);
     }

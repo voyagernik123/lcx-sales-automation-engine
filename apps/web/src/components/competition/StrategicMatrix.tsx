@@ -6,6 +6,7 @@ import {
   QUADRANT_COLORS,
   QUADRANT_LABELS,
   CompetitorScores,
+  type Quadrant,
 } from '@/lib/competitiveScoring';
 import { clsx } from 'clsx';
 
@@ -24,7 +25,17 @@ interface StrategicMatrixProps {
   onCompetitorClick?: (competitorId: string) => void;
 }
 
-interface PlacedDot extends CompetitorScores {
+/**
+ * A dot exists only for a competitor that HAS a y coordinate. marketVolume is
+ * `number | null` on CompetitorScores and a null has no position on this axis —
+ * plotting it lands an unmeasured competitor at the origin, which is a reading
+ * nobody took. So the coordinate fields are non-nullable here and the narrowing
+ * happens once, where the dots are built.
+ */
+interface PlacedDot extends Omit<CompetitorScores, 'marketVolume' | 'quadrant' | 'postClarityQuadrant'> {
+  marketVolume: number;
+  quadrant: Quadrant;
+  postClarityQuadrant: Quadrant;
   x: number;
   y: number;
   postX: number;
@@ -70,22 +81,54 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
   const allScores = useMemo(() => computeAllScores(competitors), []);
-  const activeScores = useMemo(() => {
-    return allScores.filter(s => {
-      if (clarityEnacted) return true;
-      return s.marketVolume > 0 || s.preClarityRegulatory > 0;
-    });
+
+  /*
+   * THE VISIBILITY RULE, and why the old one was a defect rather than a taste
+   * call. It read:
+   *
+   *     if (clarityEnacted) return true;
+   *     return s.marketVolume > 0 || s.preClarityRegulatory > 0;
+   *
+   * `marketVolume > 0` was doing two incompatible jobs. As a proxy for "we
+   * measured something" it DELETED five competitors outright — KuCoin, Bybit,
+   * Ondo Finance, MetaMask and Lido, each with preClarityRegulatory 0 — so the
+   * matrix showed 16 dots and gave the reader no sign that ten more existed.
+   * And it was not even a reliable proxy: it also deleted Superstate, whose
+   * volume is a MEASURED 0 and which belongs at the origin, while ten unmeasured
+   * competitors sailed through on their regulatory score and were plotted at
+   * y=0 with "0/100" in the tooltip.
+   *
+   * Absent data refuses; it does not vanish and it does not render as 0. So the
+   * split is now on the one thing that decides whether a y coordinate exists:
+   * measured competitors are plotted (including a real 0), unmeasured ones are
+   * named under the plot as unmeasured. Nobody is dropped.
+   */
+  const dots: PlacedDot[] = useMemo(() => {
+    const placed: PlacedDot[] = [];
+    for (const s of allScores) {
+      // The three go null together (determineQuadrant returns null exactly when
+      // volume is null); testing all three is what lets the compiler prove the
+      // dot is fully coordinated rather than trusting this comment.
+      if (s.marketVolume === null || s.quadrant === null || s.postClarityQuadrant === null) continue;
+      placed.push({
+        ...s,
+        marketVolume: s.marketVolume,
+        quadrant: s.quadrant,
+        postClarityQuadrant: s.postClarityQuadrant,
+        x: toX(clarityEnacted ? s.postClarityRegulatory : s.preClarityRegulatory),
+        y: toY(s.marketVolume),
+        postX: toX(s.postClarityRegulatory),
+        postY: toY(s.marketVolume),
+      });
+    }
+    return placed;
   }, [allScores, clarityEnacted]);
 
-  const dots: PlacedDot[] = useMemo(() => {
-    return activeScores.map(s => ({
-      ...s,
-      x: toX(clarityEnacted ? s.postClarityRegulatory : s.preClarityRegulatory),
-      y: toY(s.marketVolume),
-      postX: toX(s.postClarityRegulatory),
-      postY: toY(s.marketVolume),
-    }));
-  }, [activeScores, clarityEnacted]);
+  /** Competitors with no readable volume figure at all. Not plotted, not hidden. */
+  const unmeasured = useMemo(
+    () => allScores.filter(s => s.marketVolume === null),
+    [allScores]
+  );
 
   const handleMouseMove = useCallback((e: React.MouseEvent<SVGElement>, dot: PlacedDot) => {
     const svg = e.currentTarget.closest('svg');
@@ -121,7 +164,9 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
             Strategic Positioning Matrix
           </h2>
           <p className="text-xs text-grey-dark mt-0.5">
-            Regulatory Coverage Index × Market Volume &amp; Foothold. Click a dot to inspect.
+            Regulatory Coverage Index × Market Volume &amp; Foothold. Click a dot to inspect. Volume
+            scores are lower bounds — an open-ended figure counts only its floor and an unreadable
+            one is dropped from the weighting, never counted as zero.
           </p>
         </div>
 
@@ -299,7 +344,7 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
             fontFamily="Inter, system-ui, sans-serif" letterSpacing="1"
             transform={`rotate(-90, ${PLOT_LEFT - 62}, ${MID_Y})`}
           >
-            MARKET VOLUME &amp; FOOTHOLD →
+            MARKET VOLUME &amp; FOOTHOLD (LOWER BOUND) →
           </text>
 
           <line x1={PLOT_LEFT} y1={PLOT_BOTTOM} x2={PLOT_RIGHT} y2={PLOT_BOTTOM} stroke={axisColor} strokeWidth="1.5" />
@@ -317,10 +362,21 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
                 <span className="text-slate-400">Regulatory:</span>
                 <span className="font-bold">{clarityEnacted ? hoveredDot.postClarityRegulatory : hoveredDot.preClarityRegulatory}/100</span>
               </div>
+              {/* The score is built from LOWER BOUNDS ('$312B+' contributes
+                  $312B, '$50,000-$100,000' contributes $50,000) and unreadable
+                  dimensions are dropped from the denominator. It therefore reads
+                  "at least", and competitiveScoring.ts says every surface
+                  printing one must say so. */}
               <div className="flex justify-between gap-4">
                 <span className="text-slate-400">Volume:</span>
-                <span className="font-bold">{hoveredDot.marketVolume}/100</span>
+                <span className="font-bold">at least {hoveredDot.marketVolume}/100</span>
               </div>
+              {hoveredDot.unvaluedFigures.length > 0 && (
+                <div className="text-[9px] text-amber-300/90 leading-snug max-w-[220px] whitespace-normal">
+                  {hoveredDot.unvaluedFigures.length} of 4 volume figures unreadable:{' '}
+                  {hoveredDot.unvaluedFigures.map(f => f.dimension).join(', ')}
+                </div>
+              )}
               <div className="flex justify-between gap-4">
                 <span className="text-slate-400">Share:</span>
                 <span className="font-bold">{hoveredDot.marketShare}%</span>
@@ -334,7 +390,7 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
         )}
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-micro">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-micro" data-testid="matrix-quadrant-counts">
         {(['leaders', 'regulatoryHedge', 'volumeRiders', 'outsiders'] as const).map(q => {
           const colors = QUADRANT_COLORS[q];
           const count = dots.filter(d => (clarityEnacted ? d.postClarityQuadrant : d.quadrant) === q).length;
@@ -346,7 +402,51 @@ export function StrategicMatrix({ onCompetitorClick }: StrategicMatrixProps) {
             </div>
           );
         })}
+        {/* A fifth tile, because four quadrant counts that sum to 7 of 26
+            competitors read as if the other 19 were nowhere. */}
+        <div className="flex items-center gap-2 bg-card border border-dashed border-line rounded px-2.5 py-1.5">
+          <span className="h-2.5 w-2.5 rounded-full shrink-0 border border-grey" />
+          <span className="text-grey-dark font-semibold">NOT MEASURED</span>
+          <span className="ml-auto font-mono font-bold text-navy">{unmeasured.length}</span>
+        </div>
       </div>
+
+      {/* Absent data refuses; it is not a dot at the origin and it is not an
+          omission. Every competitor with no readable volume figure is named
+          here, with what was recorded in its place. */}
+      {unmeasured.length > 0 && (
+        <div
+          className="bg-card border border-line rounded-lg p-3 space-y-1.5 text-micro"
+          data-testid="matrix-unmeasured"
+        >
+          <div className="font-bold text-navy">
+            {unmeasured.length} of {allScores.length} competitors are not plotted — market volume
+            not measured
+          </div>
+          <p className="text-grey-dark leading-snug">
+            None of the four volume dimensions (users, quarterly volume, assets on platform,
+            revenue) held a figure that could be read without guessing, so these competitors have no
+            position on the vertical axis. They are absent from the plot rather than placed at zero,
+            and no quadrant verdict is assigned to them. The recorded values are shown below as
+            written.
+          </p>
+          <ul className="divide-y divide-line">
+            {unmeasured.map(s => (
+              <li key={s.id} className="py-1 flex flex-wrap gap-x-2 gap-y-0.5 items-baseline">
+                <span className="font-semibold text-navy">{s.name}</span>
+                <span className="font-mono text-[9px] text-grey">
+                  reg {clarityEnacted ? s.postClarityRegulatory : s.preClarityRegulatory}/100
+                </span>
+                <span className="font-mono text-[9px] text-grey-dark">
+                  {s.unvaluedFigures
+                    .map(f => `${f.dimension}: ${f.source.trim() === '' ? 'NOT RECORDED' : f.source}`)
+                    .join(' · ')}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

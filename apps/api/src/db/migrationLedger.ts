@@ -207,11 +207,133 @@ export const SHIPPED_MIGRATIONS: Readonly<Record<string, string>> = {
  *          `PLACEHOLDER` with the number struck through — which is the true state.
  */
 export const PENDING_MIGRATIONS: readonly string[] = [
-  /* EMPTY, and that is a state with meaning: every migration on disk has reached
-   * production and is therefore pinned by content above. A file added here is
+  /* 0000-0067 are all applied and pinned above. Verified 2026-08-04 by probing
+   * production for each migration's distinctive table or column — see
+   * docs/phases/P1_CLAIM.md for the query and its output. A file listed here is
    * editable until it is applied; a file that is applied belongs in SHIPPED.
-   * Verified 2026-08-04 by probing production for each migration's distinctive
-   * table or column — see docs/phases/P1_CLAIM.md for the query and its output. */
+   *
+   * 0068 → THE UNIQUE INDEX THAT WAS DELETING CONTRACTS. `0013_propensity.sql:22`
+   *        made `(source, record_name)` unique on `listing_labels` — the key is the
+   *        COUNTERPARTY'S NAME, so two contracts with the same counterparty are one
+   *        row, and 'Vulcan Forged' (twice in the closed book) loses one on every
+   *        extract run. 0013 is applied and byte-pinned, so the fix could not be made
+   *        in place. This replaces the index with `(source, record_name,
+   *        contract_discriminator)`, where the discriminator is a STORED GENERATED column
+   *        holding `coalesce(ticker, '')` so the extractor need not supply it.
+   *        NO DATA IS DROPPED — one index is dropped and replaced, which is the only
+   *        way to change a uniqueness constraint.
+   *
+   *        THE KEY IS THE TOKEN, NOT A CONTENT HASH, AND THE FIRST DRAFT GOT THIS WRONG.
+   *        It keyed on md5 over ticker + listing_fee_usd + marketing_fee_usd +
+   *        liquidity_amount_usd + stage, justified as "two rows that differ in any of
+   *        those fields are two facts". They are not: a CORRECTED FEE differs in those
+   *        fields, so a correction would have INSERTED a second row and left the old one,
+   *        putting the wrong fee and the right fee for one contract both into the closed
+   *        book and both into the median the mark engine quotes. The mutable payload is
+   *        out of the key and stays live in the extractor's DO UPDATE. What the token key
+   *        does NOT separate — a renegotiation, or a later package on the same token — is
+   *        stated in the migration rather than claimed as solved; nothing in the CRM
+   *        export distinguishes those from a re-export of the same row.
+   *
+   *        IT IS NOT SAFE TO APPLY ALONE. `labels/extract.ts:131` upserts
+   *        `ON CONFLICT (source, record_name)`, which fails with 42P10 once the
+   *        two-column index is gone; Postgres cannot infer a three-column index from a
+   *        two-column specification, and no key both admits duplicates and satisfies the
+   *        old clause. The conflict target in that file must move to the three columns
+   *        in the same wave; its DO UPDATE SET list is kept as it is, because no column
+   *        in it is part of the key. `extract.ts` is a hand-run CLI script — nothing
+   *        served depends on it — so leaving 0068 unapplied costs nothing and the
+   *        extractor keeps working exactly as it does today.
+   *
+   *        WORTH DOING IN THE SAME CHANGE, THOUGH NOT REQUIRED: add
+   *        `stage_changed_at = EXCLUDED.stage_changed_at` to that DO UPDATE. The first
+   *        draft of this note and of the migration both asserted "the extractor rewrites
+   *        that field on every run" — FALSE. `extract.ts:131-140` assigns project_id,
+   *        outcome, listing_fee_usd, marketing_fee_usd, liquidity_amount_usd, stage,
+   *        stage_trail and raw, and `stage_changed_at` is absent, so it is written on
+   *        INSERT only and never refreshed. The mark engine derives its ObservationFrame
+   *        window from exactly that column, so a reader who believed the old sentence
+   *        would believe the closed book's close dates are current. They are not.
+   *
+   *        APPLYING IT DOES NOT RECOVER THE ROW ALREADY LOST. That contract was never
+   *        written; re-run the extractor against
+   *        `data/seeds/LCX Listings - Closed Token Listings.csv` afterwards. */
+  '0068_listing_labels_dedupe.sql',
+
+  /* 0069 → THE CONTROL MARKERS BECOME READABLE. Three indexes on `audit_log`, no column
+   *        and no table: two PARTIAL ones over the marker families
+   *        `gateDegraded`/`idempotencyDegraded` and `overrideSat`/`overrideGate` that
+   *        `actions/registry.ts` has written since 2026-07-24 and nothing has ever read,
+   *        plus `idx_audit_actor` — which `db/schema.ts` declares as
+   *        `index('idx_audit_actor')` with NO `.on()` columns, so Drizzle emits nothing
+   *        and the index has never existed in any environment while the schema file
+   *        asserted it. Every actor-filtered `/v1/audit` read is a full scan today.
+   *
+   *        INDEPENDENT AND SAFE TO APPLY ALONE. It contains no DROP, DELETE, TRUNCATE or
+   *        UPDATE, references no other migration, and adds nothing any code requires:
+   *        `access/controlRegister.ts` reads the markers correctly WITHOUT it — just
+   *        sequentially. So leaving it unapplied costs query time and no correctness, and
+   *        applying it changes no result. What it must NOT be is applied `CONCURRENTLY`
+   *        through `db/migrate.ts`: that runner sends the file as one simple query, which
+   *        Postgres wraps in an implicit transaction, and CREATE INDEX CONCURRENTLY errors
+   *        inside one. Run the three statements by hand if the ACCESS EXCLUSIVE on
+   *        `audit_log` ever matters. */
+  '0069_audit_control_markers.sql',
+
+  /* 0070 → THE SEAL. `audit_log` becomes hash-chained and append-only — which six live
+   *        files and `0029_spine.sql:6` have asserted since Phase 3 while
+   *        `0000_equal_beyonder.sql:1-9` created seven columns and no constraints. Adds
+   *        three nullable columns, a sequence, a partial unique index, six functions,
+   *        `audit_seal_state` and FIVE triggers. SHA-256 comes from the Postgres 11+
+   *        built-in, NOT pgcrypto, so it needs no extension.
+   *
+   *        TWO OF THE FIVE TRIGGERS ARE ON `audit_seal_state` ITSELF. The first draft
+   *        protected the data and left the boundary record — the row the verdict cites,
+   *        carrying `pre_seal_rows`, `genesis_digest` and `canon_version` — fully
+   *        mutable, so one UPDATE erased the pre-seal segment from the report while the
+   *        unsealed rows stayed in the table. `access/seal.ts` also stopped believing
+   *        that row: it counts `seal_seq IS NULL` itself and reports any divergence
+   *        under AUDIT_SEAL_UNSEALED_ROWS_PRESENT / AUDIT_SEAL_UNSEALED_COUNT_DIVERGED.
+   *
+   *        NOTHING IS RETRO-SEALED. Rows written before it lands keep `seal_seq IS NULL`
+   *        and `access/seal.ts` reports them as AUDIT_SEAL_PRE_SEAL_UNVERIFIABLE — a
+   *        third state that is neither intact nor broken, because those rows were
+   *        mutable and unchained for their whole life and a digest computed now would
+   *        assert an integrity that was never held. No DROP, DELETE or TRUNCATE.
+   *
+   *        APPLYING IT BREAKS ONE TEST, AND THAT TEST IS THE PREREQUISITE.
+   *        `routes/__tests__/intel100x.test.ts:49` cleans up with
+   *        `DELETE FROM audit_log WHERE entity_id = ...`; the append-only trigger refuses
+   *        it with AUDIT_SEAL_APPEND_ONLY. That DELETE has to go first. It was
+   *        deliberately given no bypass — a switch a test can flip is a switch an
+   *        attacker can flip, and the control being non-optional is the whole point.
+   *
+   *        It also shares `audit_log` with 0069 above, so applying both in one window
+   *        takes ACCESS EXCLUSIVE twice; order between them does not matter.
+   *
+   *        Until it is applied, `verifyAuditSeal` returns AUDIT_SEAL_NOT_INSTALLED
+   *        rather than a green chain, so nothing reads as sealed while it is not.
+   *
+   * 0071 → THE GRANT LEDGER. `entitlement_events`, append-only, so revoking stops
+   *        destroying the grant it revokes. Two tables, four indexes, three functions,
+   *        three triggers — two of those ON `entitlements`, which is the part to weigh:
+   *        every insert/update of a grant row now also writes an event row, and a DELETE
+   *        nobody attributed writes one too. No data is dropped; the genesis
+   *        reconstruction derives from existing rows and is guarded on the events table
+   *        being empty, so re-running the file cannot double it.
+   *
+   *        INDEPENDENT OF 0070 in both directions — different tables, no shared
+   *        functions — so either may be applied alone.
+   *
+   *        `registry.ts` revoke ALREADY calls `recordRevocation` (access/asOf.ts), which
+   *        is written for a database where this has not landed: the 42P01 on the event
+   *        insert is caught, the revocation still takes effect, and the action returns
+   *        `historyRecorded: false` with ENTITLEMENT_LEDGER_UNRECORDED. So leaving 0071
+   *        unapplied costs history, never access — but every revocation in that window
+   *        is permanently unreconstructable, which is the argument for applying it
+   *        before the next one rather than after. */
+  '0070_audit_seal.sql',
+  '0071_grant_ledger.sql',
 ];
 
 /**

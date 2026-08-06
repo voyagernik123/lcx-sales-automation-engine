@@ -150,8 +150,37 @@ describe('effort triples', () => {
     expect(effortToDuration(triple(-5, 6, 8))).toEqual({ min: 0, mode: 6, max: 8 });
     // Inverted input is repaired upward, never silently reordered downward.
     expect(effortToDuration(triple(10, 2, 4))).toEqual({ min: 10, mode: 10, max: 10 });
-    expect(effortToDuration(triple(Number.NaN, 6, 8))).toEqual({ min: 0, mode: 6, max: 8 });
     expect(effortToDuration(triple(2, 6, 1))).toEqual({ min: 2, mode: 6, max: 6 });
+  });
+
+  /*
+   * UNPINNED 2026-08-04, deliberately, and the old expectation was a defect.
+   *
+   * This assertion used to read `effortToDuration(triple(NaN, 6, 8))` ->
+   * `{ min: 0, ... }`, and it passed because `resolveDuration` coerced a non-finite
+   * override to 0. That is the laundering the launch-sim lane removed: NaN means
+   * "nobody supplied a number", and 0 means "this work takes no time". For GPS the
+   * consequence was not cosmetic — `min` feeds the optimistic leg of the cost
+   * Monte Carlo, so an unreadable effort input produced a p10 cost approaching
+   * zero, i.e. a free engagement, and the margin band widened downward off a value
+   * nobody entered.
+   *
+   * `resolveDuration` now IGNORES an unusable override and lets the declared
+   * default for the task's status stand, emitting a warning per dropped component
+   * (launchSim.ts:289-299, overrideWarnings at :302). So the replacement figure is
+   * GPS's own default rather than an invented one, and the drop is never silent.
+   *
+   * This test is in the GPS compartment and the change came from `launchSim.ts`,
+   * which is exactly why it is worth keeping: it is the cross-compartment tripwire
+   * that caught a shared clamp changing meaning under a compartment that delegates
+   * to it. Do not re-pin it to 0.
+   */
+  it('lets the status default stand when an effort component is unreadable, never 0', () => {
+    const resolved = effortToDuration(triple(Number.NaN, 6, 8));
+    expect(resolved.min).toBeGreaterThan(0);
+    expect(resolved).toEqual({ min: 5, mode: 6, max: 8 });
+    // The whole point: an unreadable optimistic effort must not imply free work.
+    expect(resolved.min).not.toBe(0);
   });
 
   it('detects the zero-variance collapse', () => {

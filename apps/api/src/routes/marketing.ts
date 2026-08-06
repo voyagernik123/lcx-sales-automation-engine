@@ -30,7 +30,9 @@ import {
   type ReplyStatus,
 } from '../marketing/service.js';
 import { fetchNotificationEmails, mailConfigured } from '../marketing/xMail.js';
-import { gateOutboundText, recordGateDecision } from '../marketing/outboundGate.js';
+import {
+  gateOutboundText, recordGateDecision, resolveGateReference,
+} from '../marketing/outboundGate.js';
 import {
   MARKETING_ABUSE_ACTIONS,
   isAbuseRegisterMigrated,
@@ -441,13 +443,127 @@ marketingRoutes.post('/draft/:id/approve', requireOperator, async (c) => {
        */
       viewerIsEmbargoApprover: operator?.role === 'approver',
     });
-    await recordGateDecision(pool, {
+    /*
+     * THE RETURN VALUE IS READ NOW, AND THAT IS THE FIX.
+     *
+     * `recordGateDecision` never throws — deliberately, so a bookkeeping failure cannot turn
+     * a clean 422-with-reasons into a 500 — and it reports whether the row was actually
+     * written. That boolean was discarded. It matters because the refusal this route is
+     * about to return TELLS THE DRAFTER TO QUOTE `gate:<16 hex>` TO AN APPROVER: if the
+     * ledger row was not written, the reference resolves to nothing and the remedy the
+     * drafter is given is a dead end that neither of them can detect. So the response now
+     * says whether the reference is resolvable, rather than implying it always is.
+     */
+    const ledgerWritten = await recordGateDecision(pool, {
       replyId: draft.reply_id,
       verdict: gate,
       actor: operator?.id ?? 'unknown',
       phase: 'clearance',
       text: draft.body,
     });
+    /*
+     * WHERE THE REFERENCE CAN BE RESOLVED. `embargoBasisWithheldRefusal` names the reference
+     * inside its sentence and stops there, so until now a drafter and an approver held a
+     * string and no route. Stated as data rather than left in prose, and stated once, so the
+     * scoped and the unscoped paths cannot disagree about it.
+     *
+     * ── `resolvable` IS ASKED, NOT INFERRED, AND IT IS NOT A BOOLEAN ──
+     *
+     * It used to be `ledgerWritten` — the return value of THIS request's INSERT — and on a
+     * failed insert the response stated as fact that the reference "resolves to nothing" and
+     * that quoting it "will fail". That is false in the normal case: the draft path writes a
+     * `phase = 'draft'` row for the same bytes on every draft (`recordGateDecision` above,
+     * line ~319), the reference is a prefix of the digest of the TEXT rather than of one
+     * check, and `resolveGateReference`'s own header says a reference legitimately covers
+     * several rows. So a clearance row that never landed leaves the reference resolving
+     * perfectly well to the draft-phase verdict — which is often the one that explains the
+     * refusal. The response was telling the drafter their only remedy was dead while it
+     * worked.
+     *
+     * Three states, never collapsed, because there are three: the ledger answered and holds
+     * rows (`resolves`), it answered and holds none (`resolves_to_nothing`), or it could not
+     * be read at all (`unknown` — 0062 unapplied, or the read threw). A single boolean had to
+     * lie about one of them, and `resolveGateReference` already returns three distinct
+     * refusal codes for exactly this distinction.
+     *
+     * `clearanceRowWritten` stays as its own field: whether THIS clearance was recorded is a
+     * separate fact from whether the reference resolves, and it is the one that matters for
+     * the Art 8(2) production.
+     *
+     * ONLY THE COUNT CROSSES OVER. `got.decisions` holds the UNSCOPED refusal codes — the Art
+     * 90 basis the scoping deliberately removed — and this route is `requireOperator`, so the
+     * caller may be a plain drafter or the shared machine key. Spreading the decisions here
+     * would reopen the oracle in one field. The number of rows is not the basis.
+     *
+     * THE COST: one extra read per approval, an unindexed prefix scan of the gate ledger
+     * (no index on `text_sha256` — see the notes on `readClearanceLedger`). Approval is a
+     * human act at human frequency and nothing polls it, so the authoritative answer is
+     * worth the scan; a dashboard must not do this.
+     */
+    const resolved = await resolveGateReference(pool, gate.embargoScope.reference);
+    const referenceState = resolved.ok
+      ? 'resolves' as const
+      : resolved.code === 'GATE_REFERENCE_NOT_FOUND'
+        ? 'resolves_to_nothing' as const
+        : 'unknown' as const;
+    const gateReference = {
+      reference: gate.embargoScope.reference,
+      /** Whether THIS request's clearance row landed. Best-effort by design. */
+      clearanceRowWritten: ledgerWritten,
+      /** Three states. Never a boolean: one of the three would have had to be a lie. */
+      resolvable: referenceState,
+      /**
+       * How many rows the ledger holds under it. THREE STATES: a measured N, a measured 0
+       * (`resolves_to_nothing` — the ledger answered and holds none), and `null` for "could
+       * not be asked". The 0 and the null must not share a rendering.
+       */
+      decisionsUnderReference: resolved.ok
+        ? resolved.decisions.length
+        : resolved.code === 'GATE_REFERENCE_NOT_FOUND' ? 0 : null,
+      /** Set when the lookup itself refused, so the reason is arguable rather than implied. */
+      lookupRefusalCode: resolved.ok ? null : resolved.code,
+      resolveAt: 'GET /v1/marketing/gate-reference/:reference (approver only)',
+      note: referenceState === 'resolves'
+        ? `The ledger was asked and ${resolved.ok ? resolved.decisions.length : 0} row(s) carry `
+          + 'this reference. An approver can read the full, unscoped verdict there — including '
+          + 'any Art 90 basis withheld from this response.'
+          + (ledgerWritten
+            ? ''
+            : ' NOTE: this clearance\'s OWN row was not written, so what resolves is an earlier '
+              + 'gate decision on the same text (the draft-phase check writes one for the same '
+              + 'bytes). The reference works; the record of THIS clearance is the thing missing, '
+              + 'and it is missing from the Art 8(2) production too.')
+        : referenceState === 'resolves_to_nothing'
+          ? 'The ledger was asked and NO row carries this reference — this is a measured '
+            + 'absence, not a guess.'
+            + (ledgerWritten
+              ? ' That is contradictory (the clearance write reported success) and the '
+                + 'contradiction itself is the finding: report it rather than trusting either half.'
+              : ' The clearance row was not written and no earlier gate row for these bytes '
+                + 'exists either, so quoting this reference to an approver will find nothing. '
+                + 'The gate verdict above still stands; what is missing is the record of it.')
+          : 'WHETHER THIS REFERENCE RESOLVES IS UNKNOWN — not false. '
+            + (!resolved.ok && resolved.code === 'GATE_REFERENCE_MALFORMED'
+              /*
+               * THIS IS THE SENTINEL CASE, not a typo. The gate returns
+               * `GATE_REFERENCE_UNAVAILABLE` as the reference when it could not compute the
+               * digest at all, and that string is not a well-formed reference — so there is
+               * no reference to resolve rather than a reference that resolves to nothing.
+               * Blaming 0062 here would send somebody to apply a migration that is fine.
+               */
+              ? 'The gate could not compute a digest for this text, so what is above is a '
+                + 'stated absence rather than a reference. There is nothing to look up and no '
+                + 'migration to apply: the CHECK failed before it could be recorded, and the '
+                + 'draft must be re-gated rather than quoted at an approver.'
+              : 'The ledger could not be read. Migration 0062 may be unapplied on this '
+                + 'environment, or the read failed. Do not tell a drafter the reference is '
+                + 'dead on this basis; tell them the ledger is unreadable, which is a '
+                + 'different problem and somebody else\'s to fix.')
+            + ` The lookup refused with ${resolved.ok ? '' : resolved.code}.`
+            + (ledgerWritten
+              ? ''
+              : ' This clearance\'s row was not written either.'),
+    };
     if (!gate.allowed) {
       return c.json({
         error: 'This draft cannot be approved: the outbound gate refused it at clearance.',
@@ -461,6 +577,14 @@ marketingRoutes.post('/draft/:id/approve', requireOperator, async (c) => {
         assetsExtracted: gate.assetsExtracted,
         extractionCaveat: gate.extractionCaveat,
         gateError: gate.gateError,
+        /*
+         * The SCOPED fields only. `gate.ledgerOnly` is never spread into a response body —
+         * it holds the true refusal codes and reaching for it here would hand the drafter the
+         * Art 90 basis the scoping just removed. These four are safe: the clearance state,
+         * whether an explanation was withheld, the ring to ask, and the reference.
+         */
+        embargoScope: gate.embargoScope,
+        gateReference,
       }, 422);
     }
 
@@ -470,7 +594,19 @@ marketingRoutes.post('/draft/:id/approve', requireOperator, async (c) => {
     }
     return c.json({
       data: row,
-      meta: { ...meta(), assetsExtracted: gate.assetsExtracted, extractionCaveat: gate.extractionCaveat },
+      meta: {
+        ...meta(),
+        assetsExtracted: gate.assetsExtracted,
+        extractionCaveat: gate.extractionCaveat,
+        /*
+         * Carried on the SUCCESS path too, and this is the half that matters for the Art 8(2)
+         * production. This approval wrote a gate-ledger row and NO `marketing_record` row —
+         * that is the gap the export bundle's produce-or-admit section now names — so the
+         * reference here is the handle by which this cleared statement will appear in that
+         * section until somebody records it.
+         */
+        gateReference,
+      },
     });
   } catch (err) {
     console.error('[marketing] approve error:', err);

@@ -1,19 +1,91 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { states, products, requirements, redFlags } from '@/data';
 import { useAuditStore } from '@/stores/useAuditStore';
 import { useFilterStore } from '@/stores/useFilterStore';
 import { FileText, Printer, Sliders, CheckSquare, ShieldAlert, Award, FileCode, Check } from 'lucide-react';
 import { PageTitle, SectionLabel, Button } from '@/components/ui';
 import { clsx } from 'clsx';
+import {
+  aggregateRefusalLine,
+  bandDisplay,
+  maxMoneyBand,
+  moneyDisplay,
+  parseMoney,
+  sourceLabel,
+  sumMoneyBand,
+  type MoneyAggregateRefusalCode,
+  type MoneyBandTotal,
+} from '@/lib/money';
+import {
+  cohortTimelineBand,
+  parseTimeline,
+  timelineBandCell,
+  type ParsedTimeline,
+} from '@/lib/formatting';
+import { computeSelectionDigest, type DigestResult } from '@/lib/compliance';
 
-// Simple hash generator for PKCS#7 visual digital seal signature
-function computeBriefDigest(template: string, cco: string, statesList: string[], productsList: string[]): string {
-  const payload = `${template}|${cco}|${statesList.join(',')}|${productsList.join(',')}`;
-  let hash = 5381;
-  for (let i = 0; i < payload.length; i++) {
-    hash = (hash * 33) ^ payload.charCodeAt(i);
-  }
-  return 'sha256_' + Math.abs(hash).toString(16).padEnd(8, 'e') + 'bcf1c3';
+/**
+ * This page had three separate money parsers and a fabricated cryptographic
+ * digest. What it printed, to the addressees named in memoHeader below (the
+ * board, state regulators, the SEC):
+ *
+ *   - '$100,000-$500,000' as $100,000,500,000 — the two ends concatenated.
+ *   - a $100,000 statutory minimum net worth for the eight states whose
+ *     recorded minimum is '$0', because `parseInt(...) || 100000` treats a real
+ *     zero as absent.
+ *   - a default $15,000 licence fee for any state with no recorded cost.
+ *   - 'Signature Digest: sha256_…' over a djb2 hash, beside a hardcoded
+ *     'Verification Authority: sha256_e8d21b37' that was identical on every
+ *     brief ever printed.
+ *
+ * All of it is gone. Parsing lives in lib/money.ts, the digest is real or
+ * absent, and a figure that cannot be valued prints as the string somebody
+ * actually recorded.
+ */
+
+/** One state's row in the ledger. Figures are parse results, not numbers. */
+interface LedgerMember {
+  abbr: string;
+  name: string;
+  regulator: string;
+  nmlsRequired: boolean;
+  /** The effective source strings after preemption — the row and the cohort
+   *  aggregate read the same string, so they can never disagree. */
+  feeSource: string;
+  bondSource: string;
+  netWorthSource: string;
+  timeline: ParsedTimeline;
+  clarityPreempted: boolean;
+}
+
+/** A band prints as a band; a refusal prints its codes. Never a bare number. */
+function bandCell(total: MoneyBandTotal): string {
+  return total.kind === 'band'
+    ? bandDisplay(total.lowCents, total.highCents)
+    : aggregateRefusalLine(total.refusals);
+}
+
+/**
+ * One refusal as the ledger reports it, merged across the three money columns.
+ *
+ * The two counts are SEPARATE and that is the whole point. The previous version
+ * merged refusals from the fee, bond and net-worth columns into one bucket keyed
+ * by code, then printed the merged `unvaluedCount` — a count of FIGURES — with
+ * the label "of N jurisdictions". Selecting New York alone, whose estCost
+ * '$500K+' and suretyBond '$150,000+' are both open-ended, printed
+ * "(2 of 1 jurisdictions)" on a memo whose default addressees are the Board,
+ * state regulators and the SEC. A ratio that cannot exist tells the reader the
+ * ledger does not know what it is counting.
+ */
+interface LedgerRefusal {
+  code: MoneyAggregateRefusalCode;
+  rule: string;
+  /** Figures across all three money columns that carry this refusal. */
+  figureCount: number;
+  /** Distinct jurisdictions contributing at least one such figure. */
+  memberAbbrs: string[];
+  /** The recorded strings, deduped, with an absent field labelled. */
+  sources: string[];
 }
 
 export function BriefGenerator() {
@@ -132,75 +204,81 @@ export function BriefGenerator() {
     return redFlags.filter(rf => flags.has(rf.id));
   }, [activeProducts, activeStates]);
 
-  // Dynamic budget comparison ledger calculations
-  const tableData = useMemo(() => {
-    let totalFees = 0;
-    let totalBonds = 0;
-    let maxNetWorth = 0;
-    let maxTimeline = 0;
+  // Dynamic budget comparison ledger. Every figure is a parse result carried
+  // whole; nothing here reduces a range or an open-ended floor to a number.
+  const ledger = useMemo(() => {
+    // A preemption sets a figure to zero as a matter of law, so it is a real
+    // '$0' and is written as one. It is not a missing figure.
+    const PREEMPTED = '$0';
 
-    const rows = activeStates.map(s => {
-      // Net worth parse (NY pre-empted under SPDI)
-      let netWorth = 0;
-      if (s.minNetWorth) {
-        netWorth = parseInt(s.minNetWorth.replace(/[^0-9]/g, '')) || 100000;
-      }
-      if (s.abbreviation === 'NY' && spdiEquivalence) {
-        netWorth = 0;
-      }
-
-      // Fee parse (preempted under CLARITY or SPDI)
-      let fee = 15000;
-      if (clarityEnacted && s.nmlsRequired) {
-        fee = 0;
-      } else if (s.abbreviation === 'NY' && spdiEquivalence) {
-        fee = 0;
-      } else if (s.estCost) {
-        const parsed = parseInt(s.estCost.replace(/[^0-9]/g, ''));
-        fee = isNaN(parsed) ? 15000 : parsed * (s.estCost.includes('K') ? 1000 : 1);
-      }
-
-      // Bond parse
-      let bond = 0;
-      if (clarityEnacted && s.nmlsRequired) {
-        bond = 0;
-      } else if (s.abbreviation === 'NY' && spdiEquivalence) {
-        bond = 0;
-      } else if (s.suretyBond) {
-        bond = parseInt(s.suretyBond.replace(/[^0-9]/g, '')) || 0;
-      }
-
-      // Timeline parse
-      let timelineMonths = 0;
-      if (clarityEnacted && s.nmlsRequired) {
-        timelineMonths = 0;
-      } else if (s.estTimeline) {
-        const match = s.estTimeline.match(/(\d+)\s*-\s*(\d+)/);
-        if (match) {
-          timelineMonths = parseInt(match[2]);
-        } else {
-          timelineMonths = parseInt(s.estTimeline) || 0;
-        }
-      }
-
-      totalFees += fee;
-      totalBonds += bond;
-      maxNetWorth = Math.max(maxNetWorth, netWorth);
-      maxTimeline = Math.max(maxTimeline, timelineMonths);
-
+    const members: LedgerMember[] = activeStates.map(s => {
+      const clarityPreempted = clarityEnacted && s.nmlsRequired;
+      const spdiPreempted = s.abbreviation === 'NY' && spdiEquivalence;
+      const preempted = clarityPreempted || spdiPreempted;
       return {
         abbr: s.abbreviation,
         name: s.name,
-        regulator: s.regulator || 'N/A',
-        nmls: s.nmlsRequired ? 'Yes' : 'No',
-        netWorth,
-        bond,
-        fee,
-        timeline: clarityEnacted && s.nmlsRequired ? 'Preempted' : s.estTimeline || 'N/A'
+        regulator: s.regulator || 'NOT RECORDED',
+        nmlsRequired: s.nmlsRequired,
+        feeSource: preempted ? PREEMPTED : s.estCost ?? '',
+        bondSource: preempted ? PREEMPTED : s.suretyBond ?? '',
+        // CLARITY preempts the licence, not the capital requirement, so only
+        // SPDI reciprocity clears a net worth figure here. That asymmetry is
+        // inherited from the original and is deliberate.
+        netWorthSource: spdiPreempted ? PREEMPTED : s.minNetWorth ?? '',
+        timeline: clarityPreempted
+          ? { kind: 'noStateProcess', source: 'Preempted' }
+          : parseTimeline(s.estTimeline),
+        clarityPreempted,
       };
     });
 
-    return { rows, totalFees, totalBonds, maxNetWorth, maxTimeline };
+    // Fees and bonds are BANDS: the caller (this page) states that it means
+    // "low end summed to high end", which is the only way to aggregate a range
+    // without picking an end nobody in this repo is entitled to pick.
+    const feeTotal = sumMoneyBand(members.map(m => m.feeSource));
+    const bondTotal = sumMoneyBand(members.map(m => m.bondSource));
+    // Net worth is a ceiling, not a sum — the reserve covering several states is
+    // the highest single requirement.
+    const netWorthCeiling = maxMoneyBand(members.map(m => m.netWorthSource));
+    const timelineBand = cohortTimelineBand(members.map(m => m.timeline));
+
+    // Every refusal on the page, deduped by code, so the surface can cite the
+    // rule behind each one instead of just printing a token. Figures and
+    // jurisdictions are counted separately — see LedgerRefusal above.
+    const byCode = new Map<MoneyAggregateRefusalCode, LedgerRefusal>();
+    for (const total of [feeTotal, bondTotal, netWorthCeiling]) {
+      if (total.kind !== 'refused') continue;
+      for (const r of total.refusals) {
+        const entry: LedgerRefusal =
+          byCode.get(r.code) ??
+          { code: r.code, rule: r.rule, figureCount: 0, memberAbbrs: [], sources: [] };
+        entry.figureCount += r.unvaluedCount;
+        for (const index of r.memberIndexes) {
+          const abbr = members[index]?.abbr;
+          if (abbr && !entry.memberAbbrs.includes(abbr)) entry.memberAbbrs.push(abbr);
+        }
+        for (const src of r.sources) {
+          // An absent field has no source string, and printing '' put a bare
+          // comma in the list of values the reader is told were not summed.
+          const label = sourceLabel(src);
+          if (!entry.sources.includes(label)) entry.sources.push(label);
+        }
+        byCode.set(r.code, entry);
+      }
+    }
+    const timelineRefusals = timelineBand.kind === 'refused' ? timelineBand.refusals : [];
+
+    return {
+      members,
+      feeTotal,
+      bondTotal,
+      netWorthCeiling,
+      timelineBand,
+      moneyRefusals: [...byCode.values()],
+      timelineRefusals,
+      preemptedCount: members.filter(m => m.clarityPreempted).length,
+    };
   }, [activeStates, clarityEnacted, spdiEquivalence]);
 
   const handlePrint = () => {
@@ -226,8 +304,25 @@ export function BriefGenerator() {
     };
   }, [selectedTemplate, toOverride, fromOverride, dateOverride, subjectOverride]);
 
-  const digestHash = useMemo(() => {
-    return computeBriefDigest(selectedTemplate, signatoryName, selectedStates, selectedProducts);
+  // Three states, never collapsed: not computed yet / computed / cannot be
+  // computed here. SubtleCrypto needs a secure origin, so 'unavailable' is a
+  // real outcome and prints as a refusal rather than as a plausible hex string.
+  const [digest, setDigest] = useState<DigestResult | 'computing'>('computing');
+
+  useEffect(() => {
+    let live = true;
+    setDigest('computing');
+    computeSelectionDigest({
+      template: selectedTemplate,
+      signatory: signatoryName,
+      states: selectedStates,
+      products: selectedProducts,
+    }).then(result => {
+      if (live) setDigest(result);
+    });
+    return () => {
+      live = false;
+    };
   }, [selectedTemplate, signatoryName, selectedStates, selectedProducts]);
 
   return (
@@ -520,35 +615,145 @@ export function BriefGenerator() {
                           </tr>
                         </thead>
                         <tbody>
-                          {tableData.rows.length === 0 ? (
+                          {ledger.members.length === 0 ? (
                             <tr>
                               <td colSpan={7} className="p-2 text-center text-slate-500">No states selected. Use target selectors to populate.</td>
                             </tr>
                           ) : (
-                            tableData.rows.map((row, idx) => (
-                              <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50/50">
-                                <td className="p-2 font-bold font-mono">{row.abbr}</td>
-                                <td className="p-2 truncate max-w-[120px]" title={row.regulator}>{row.regulator}</td>
-                                <td className="p-2">{row.nmls}</td>
-                                <td className="p-2 text-right font-mono">${row.netWorth.toLocaleString()}</td>
-                                <td className="p-2 text-right font-mono">${row.bond.toLocaleString()}</td>
-                                <td className="p-2 text-right font-mono">${row.fee.toLocaleString()}</td>
-                                <td className="p-2 text-right font-mono">{row.timeline}</td>
+                            ledger.members.map(m => (
+                              <tr key={m.abbr} className="border-b border-slate-100 hover:bg-slate-50/50">
+                                <td className="p-2 font-bold font-mono">{m.abbr}</td>
+                                <td className="p-2 truncate max-w-[120px]" title={m.regulator}>{m.regulator}</td>
+                                <td className="p-2">{m.nmlsRequired ? 'Yes' : 'No'}</td>
+                                {/* moneyDisplay prints the recorded string for anything that is not
+                                    a single exact figure — a range, an open-ended floor and prose
+                                    all reach the reader as written. */}
+                                <td className="p-2 text-right font-mono" data-testid={`brief-row-${m.abbr}-networth`}>
+                                  {moneyDisplay(parseMoney(m.netWorthSource))}
+                                </td>
+                                <td className="p-2 text-right font-mono" data-testid={`brief-row-${m.abbr}-bond`}>
+                                  {moneyDisplay(parseMoney(m.bondSource))}
+                                </td>
+                                <td className="p-2 text-right font-mono" data-testid={`brief-row-${m.abbr}-fee`}>
+                                  {moneyDisplay(parseMoney(m.feeSource))}
+                                </td>
+                                <td className="p-2 text-right font-mono" data-testid={`brief-row-${m.abbr}-timeline`}>
+                                  {m.clarityPreempted ? 'Preempted' : m.timeline.source || 'NOT RECORDED'}
+                                </td>
                               </tr>
                             ))
                           )}
                           <tr className="bg-slate-50 font-bold border-t-2 border-slate-300 text-slate-900">
                             <td className="p-2" colSpan={3}>Aggregate Cohort Projections</td>
-                            <td className="p-2 text-right font-mono">Max: ${tableData.maxNetWorth.toLocaleString()}</td>
-                            <td className="p-2 text-right font-mono">${tableData.totalBonds.toLocaleString()}</td>
-                            <td className="p-2 text-right font-mono">${tableData.totalFees.toLocaleString()}</td>
-                            <td className="p-2 text-right font-mono">Max: {tableData.maxTimeline}m</td>
+                            <td className="p-2 text-right font-mono" data-testid="brief-networth-ceiling">
+                              {bandCell(ledger.netWorthCeiling)}
+                            </td>
+                            <td className="p-2 text-right font-mono" data-testid="brief-bond-total">
+                              {bandCell(ledger.bondTotal)}
+                            </td>
+                            <td className="p-2 text-right font-mono" data-testid="brief-fee-total">
+                              {bandCell(ledger.feeTotal)}
+                            </td>
+                            {/* Never a duration for a cohort that has none: with
+                                every member on 'no state MTL requirement' this
+                                printed "0m", which reads as "instant". */}
+                            <td className="p-2 text-right font-mono" data-testid="brief-timeline-band">
+                              {timelineBandCell(ledger.timelineBand)}
+                            </td>
                           </tr>
                         </tbody>
                       </table>
                     </div>
-                    <div className="text-[9px] text-slate-500 leading-tight">
-                      * Preemption values reflect the activation of the CLARITY Act or SPDI Trust Reciprocity rules toggled in the systems console. Net worth reserves represent the cohort ceiling requirement rather than an additive sum.
+
+                    {/* Every refusal, with the rule it applies and the strings it
+                        could not value. A code with no rule beside it is an error
+                        message, not a refusal. */}
+                    <div className="text-[9px] text-slate-600 leading-tight space-y-1" data-testid="brief-refusal-notes">
+                      {ledger.moneyRefusals.length === 0 && ledger.timelineRefusals.length === 0 ? (
+                        <div>* Every figure in this cohort was read as recorded; no aggregate was refused.</div>
+                      ) : (
+                        <>
+                          {ledger.moneyRefusals.map(r => (
+                            <div key={r.code}>
+                              <span className="font-bold font-mono">REFUSED [{r.code}]</span>{' '}
+                              {r.figureCount > 0 && (
+                                <>
+                                  ({r.figureCount} {r.figureCount === 1 ? 'figure' : 'figures'} across{' '}
+                                  {r.memberAbbrs.length} of {ledger.members.length}{' '}
+                                  {ledger.members.length === 1 ? 'jurisdiction' : 'jurisdictions'}
+                                  {r.memberAbbrs.length > 0 && <> — {r.memberAbbrs.join(', ')}</>}){' '}
+                                </>
+                              )}
+                              {r.rule}
+                              {r.sources.length > 0 && (
+                                <> Values not summed: <span className="font-mono">{r.sources.join(', ')}</span>.</>
+                              )}
+                            </div>
+                          ))}
+                          {ledger.timelineRefusals.map(r => (
+                            <div key={r.code}>
+                              <span className="font-bold font-mono">REFUSED [{r.code}]</span>{' '}
+                              {r.unvaluedCount > 0 && (
+                                <>
+                                  ({r.unvaluedCount} of {ledger.members.length}{' '}
+                                  {ledger.members.length === 1 ? 'jurisdiction' : 'jurisdictions'}
+                                  {r.memberIndexes.length > 0 && (
+                                    <> — {r.memberIndexes.map(i => ledger.members[i]?.abbr).filter(Boolean).join(', ')}</>
+                                  )}){' '}
+                                </>
+                              )}
+                              {r.rule}
+                              {r.sources.length > 0 && (
+                                <>
+                                  {' '}Timelines not banded:{' '}
+                                  <span className="font-mono">{r.sources.map(sourceLabel).join(', ')}</span>.
+                                </>
+                              )}
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+
+                    {/* The previous version of this note told the reader the band
+                        was "the slowest jurisdiction's range". It is not: it is
+                        max-of-lows to max-of-highs, and for the default cohort
+                        (WY 8-14, TX 6-12, CA 9-12) it prints 9–14m — a range no
+                        selected jurisdiction has. The same sentence asserted
+                        "applications run in parallel" as fact; that is an
+                        assumption about how LCX would file, and it is labelled
+                        as one now. */}
+                    <div className="text-[9px] text-slate-500 leading-tight" data-testid="brief-timeline-note">
+                      * Fee and bond aggregates are BANDS (low ends summed to high ends), not
+                      single figures: which end of a recorded range applies depends on projected
+                      transmission volume, which this system does not hold. Net worth is the cohort
+                      ceiling, not a sum. The timeline band is not any one jurisdiction's range: it
+                      is the latest low end to the latest high end across the cohort, so read it as
+                      "no earlier than the low figure, no later than the high figure". It rests on
+                      an ASSUMPTION, not on anything in the dataset — that applications are filed in
+                      parallel rather than in sequence. Filed sequentially the cohort would take
+                      longer than the band shows, and this system holds no filing plan either way
+                      {ledger.timelineBand.kind === 'band' && ledger.timelineBand.noProcessCount > 0 && (
+                        <> — {ledger.timelineBand.noProcessCount} of {ledger.members.length} selected
+                        jurisdictions have no state licensing process at all and wait on nothing</>
+                      )}
+                      {ledger.timelineBand.kind === 'noProcess' && (
+                        <> — and no band is shown at all here, because all {ledger.timelineBand.memberCount}{' '}
+                        selected jurisdictions record no state licensing process. That is a
+                        statement, not a duration of zero</>
+                      )}
+                      . Preemption values reflect the CLARITY Act or SPDI Trust Reciprocity toggles
+                      in the systems console.
+                    </div>
+
+                    {/* Doctrine: a figure carries an ObservationFrame or says it has none. */}
+                    <div className="text-[9px] text-slate-500 leading-tight border border-slate-300 rounded p-2" data-testid="brief-frame-caveat">
+                      <span className="font-bold uppercase">Observation frame: missing.</span>{' '}
+                      The jurisdiction dataset records one source-authority rating per state and
+                      carries no per-figure source, no as-of date and no observation window. No
+                      figure in this ledger can therefore state when it was observed or from which
+                      authority it was taken, and none should be relied on as a current statutory
+                      quotation without counsel confirming it against the state's own schedule.
                     </div>
                   </div>
 
@@ -687,7 +892,12 @@ export function BriefGenerator() {
                           {activeStates.map((s, idx) => (
                             <tr key={idx} className="border-b border-slate-100">
                               <td className="p-2 font-bold">{s.name}</td>
-                              <td className="p-2 text-slate-600">{s.regulator || 'Division of Banking'}</td>
+                              {/* Was `|| 'Division of Banking'` — a memo sent TO a
+                                  state regulator cannot invent that regulator's
+                                  name when the dataset has none. */}
+                              <td className="p-2 text-slate-600" data-testid={`brief-state-${s.abbreviation}-regulator`}>
+                                {s.regulator || 'NOT RECORDED'}
+                              </td>
                               <td className="p-2 font-semibold">
                                 <span className={clsx(
                                   'px-1.5 py-0.5 rounded text-[8px] uppercase font-bold tracking-wider',
@@ -696,8 +906,11 @@ export function BriefGenerator() {
                                   {s.sandboxAvailable ? 'Exempt Sandbox' : 'Standard'}
                                 </span>
                               </td>
-                              <td className="p-2 text-slate-500 italic max-w-[200px] truncate" title={s.sandboxNotes || 'None'}>
-                                {s.sandboxNotes || 'No sandbox programs available; standard MTL required.'}
+                              {/* Was a sentence asserting that no sandbox exists and
+                                  that a standard MTL is required — a legal claim
+                                  manufactured out of an empty field. */}
+                              <td className="p-2 text-slate-500 italic max-w-[200px] truncate" title={s.sandboxNotes || 'NOT RECORDED'}>
+                                {s.sandboxNotes || 'NOT RECORDED'}
                               </td>
                             </tr>
                           ))}
@@ -759,11 +972,17 @@ export function BriefGenerator() {
                             {activeProducts.map((p, idx) => (
                               <tr key={idx} className="border-b border-slate-100 align-top hover:bg-slate-50/50">
                                 <td className="p-2 font-mono font-bold text-slate-950">{p.name}</td>
-                                <td className="p-2 text-right font-mono font-bold text-cyan-700">{p.howeyScore ?? '—'}%</td>
-                                <td className="p-2 text-slate-500 max-w-[120px] text-[8.5px]">{p.howeyAnalysis?.investmentOfMoney || 'N/A'}</td>
-                                <td className="p-2 text-slate-500 max-w-[120px] text-[8.5px]">{p.howeyAnalysis?.commonEnterprise || 'N/A'}</td>
-                                <td className="p-2 text-slate-500 max-w-[120px] text-[8.5px]">{p.howeyAnalysis?.profitExpectation || 'N/A'}</td>
-                                <td className="p-2 text-slate-500 max-w-[120px] text-[8.5px]">{p.howeyAnalysis?.effortsOfOthers || 'N/A'}</td>
+                                {/* An absent score printed '—%'. An absent prong printed
+                                    'N/A', which on an SEC filing reads as an assertion that
+                                    the prong does not apply. Both branches are unreachable
+                                    with the current catalogue (all 8 products carry a score
+                                    and a full analysis) and are written so that adding a
+                                    ninth cannot quietly make a legal claim. */}
+                                <td className="p-2 text-right font-mono font-bold text-cyan-700">{p.howeyScore === undefined ? 'NOT SCORED' : `${p.howeyScore}%`}</td>
+                                <td className="p-2 text-slate-500 max-w-[120px] text-[8.5px]">{p.howeyAnalysis?.investmentOfMoney || 'NOT RECORDED'}</td>
+                                <td className="p-2 text-slate-500 max-w-[120px] text-[8.5px]">{p.howeyAnalysis?.commonEnterprise || 'NOT RECORDED'}</td>
+                                <td className="p-2 text-slate-500 max-w-[120px] text-[8.5px]">{p.howeyAnalysis?.profitExpectation || 'NOT RECORDED'}</td>
+                                <td className="p-2 text-slate-500 max-w-[120px] text-[8.5px]">{p.howeyAnalysis?.effortsOfOthers || 'NOT RECORDED'}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -790,8 +1009,13 @@ export function BriefGenerator() {
                 </div>
               )}
 
-              {/* CCO Digital Stamp Signatures */}
-              <div className="pt-6 border-t border-slate-300 flex justify-between items-center text-micro font-mono mt-8 select-none">
+              {/* CCO signature block.
+                  It used to read '[Digitally Certified Stamp]' over a djb2 hash
+                  labelled 'sha256_', beside a 'Verification Authority' constant
+                  that never changed. Nothing digitally certifies this document:
+                  the body is contentEditable and no signature is applied. The
+                  block now says exactly that. */}
+              <div className="pt-6 border-t border-slate-300 flex justify-between items-start text-micro font-mono mt-8 select-none" data-testid="brief-signature-block">
                 <div>
                   <span className="font-bold text-slate-500 uppercase block">Published &amp; Approved by:</span>
                   <span className="font-bold text-slate-950 block">{signatoryName}</span>
@@ -803,10 +1027,20 @@ export function BriefGenerator() {
                     </div>
                   )}
                 </div>
-                <div className="border-2 border-slate-900 rounded p-2 text-[9px] uppercase tracking-wider text-slate-950 font-bold border-double bg-slate-50">
-                  [Digitally Certified Stamp]
-                  <span className="block text-[8px] text-slate-500 font-normal mt-0.5">Signature Digest: {digestHash}</span>
-                  <span className="block text-[8px] text-slate-500 font-normal">Verification Authority: sha256_e8d21b37</span>
+                <div className="border-2 border-slate-900 rounded p-2 text-[9px] uppercase tracking-wider text-slate-950 font-bold border-double bg-slate-50 max-w-[280px]">
+                  Unsigned draft — no seal applied
+                  <span className="block text-[8px] text-slate-700 font-normal mt-0.5 break-all normal-case" data-testid="brief-digest">
+                    {digest === 'computing'
+                      ? 'Selection digest: computing…'
+                      : digest.kind === 'digest'
+                      ? `Selection digest: ${digest.algorithm} ${digest.hex}`
+                      : `Selection digest: REFUSED [${digest.code}]`}
+                  </span>
+                  <span className="block text-[8px] text-slate-500 font-normal mt-0.5 normal-case" data-testid="brief-digest-scope">
+                    {digest !== 'computing' && digest.kind === 'unavailable'
+                      ? digest.rule
+                      : 'Covers the selection parameters only (template, signatory, jurisdictions, assets) — not the body text, which is editable in place. It is not a signature, a seal, or evidence of approval.'}
+                  </span>
                 </div>
               </div>
 

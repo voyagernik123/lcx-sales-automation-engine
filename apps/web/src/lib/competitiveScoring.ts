@@ -1,44 +1,92 @@
 import { Competitor } from '@/types/competitors';
+import { lowerBoundCents, parseMoney, type MoneyRefusalCode } from '@/lib/money';
 
-export function parseNumericRevenue(revenue: string): number {
-  const cleaned = revenue.replace(/[^0-9.BbMmTtKk]/g, '');
-  if (/[Tt]/.test(cleaned)) return parseFloat(cleaned) * 1_000_000_000_000;
-  if (/[Bb]/.test(cleaned)) return parseFloat(cleaned) * 1_000_000_000;
-  if (/[Mm]/.test(cleaned)) return parseFloat(cleaned) * 1_000_000;
-  if (/[Kk]/.test(cleaned)) return parseFloat(cleaned) * 1_000;
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? 0 : num;
+/**
+ * The old parsers here were NOT a reference implementation, they were the worst
+ * of the four: the char class /[^0-9.BbMmTtKk]/ preserved B/M/T/K inside
+ * English words, so the suffix tests matched prose. Measured consequences:
+ *   - 'Trillions annually' and 'Institutional OTC only' tested positive for the
+ *     T multiplier (they produced NaN, which then silently dropped the
+ *     dimension).
+ *   - '$500M-$1B+ est. annual' became $500 TRILLION — the 't' in 'est.' — and
+ *     since scores are normalised against the cohort maximum, that one string
+ *     drove every other competitor's revenue score to ~0.13% of its weight.
+ *   - '$1.6T+ total AUM' in the USERS field became 1,600,000 users, from the M
+ *     in 'AUM'.
+ *
+ * Everything now routes through the one parser, which refuses anything that
+ * does not round-trip.
+ *
+ * SCORING CONVENTION, stated because the doctrine requires it to be stated:
+ * these scores are computed from LOWER BOUNDS. '$312B+' contributes $312B and
+ * '$50,000-$100,000' contributes $50,000. A lower bound is not a value, so
+ * every score here reads "at least", and any surface printing one must say so.
+ * A figure with no readable bound at all is EXCLUDED from the weighting rather
+ * than counted as zero, and every exclusion is reported on the result.
+ */
+
+/** Dollars, as a lower bound, or null when the string yields no bound. */
+export function lowerBoundDollars(raw: string | undefined): number | null {
+  const cents = lowerBoundCents(parseMoney(raw));
+  return cents === null ? null : cents / 100;
 }
 
-export function parseNumericUsers(users: string): number {
-  const cleaned = users.replace(/[^0-9.MmKk]/g, '');
-  if (/[Mm]/.test(cleaned)) return parseFloat(cleaned) * 1_000_000;
-  if (/[Kk]/.test(cleaned)) return parseFloat(cleaned) * 1_000;
-  const num = parseFloat(cleaned);
-  return isNaN(num) ? 0 : num;
+/**
+ * A headcount as a lower bound. A '$' anywhere is a category error — the users
+ * field of several competitors holds a dollar figure ('$1.6T+ total AUM',
+ * 'USDT: $90B+ circulation'), and reading those as people is how a custodian
+ * with no retail users acquired 1.6 million of them.
+ */
+export function lowerBoundCount(raw: string | undefined): number | null {
+  if (raw === undefined || raw.includes('$')) return null;
+  const cents = lowerBoundCents(parseMoney(raw));
+  return cents === null ? null : cents / 100;
 }
 
-export function parseNumericAssets(assets: string): number {
-  if (assets.includes('Consolidated') || assets.includes('Not disclosed') || assets.includes('Unknown') || assets.includes('Undisclosed')) return 0;
-  return parseNumericRevenue(assets);
+export type VolumeDimension = 'users' | 'quarterlyVolume' | 'assetsOnPlatform' | 'revenue';
+
+export interface UnvaluedFigure {
+  dimension: VolumeDimension;
+  /** Printed verbatim by any surface that shows the gap. */
+  source: string;
+  code: MoneyRefusalCode;
 }
 
-export function parseNumericVolume(volume: string): number {
-  if (volume.includes('Negligible') || volume.includes('Not disclosed') || volume.includes('Undisclosed')) return 0;
-  return parseNumericRevenue(volume);
-}
+export type Quadrant = 'leaders' | 'regulatoryHedge' | 'volumeRiders' | 'outsiders';
 
 export interface CompetitorScores {
   id: string;
   name: string;
   regulatoryCoverage: number;
-  marketVolume: number;
+  /**
+   * NULL when NOT ONE of the four volume dimensions was readable — 19 of the 26
+   * competitors in data/competitors.ts, today.
+   *
+   * It used to be 0 with a `marketVolumeMeasured: false` flag beside it, and the
+   * flag was advisory: StrategicMatrix plotted the 0 on the y-axis and printed
+   * "0/100" in the tooltip for ten competitors whose four volume figures were
+   * all unreadable, while its visibility predicate (`marketVolume > 0 ||
+   * preClarityRegulatory > 0`) DELETED five more rather than showing them as
+   * unmeasured. The type is null now so that a surface cannot plot it without
+   * first deciding, in code, what an unmeasured competitor looks like.
+   */
+  marketVolume: number | null;
   preClarityRegulatory: number;
   postClarityRegulatory: number;
   marketShare: number;
   threatLevel: string;
-  quadrant: 'leaders' | 'regulatoryHedge' | 'volumeRiders' | 'outsiders';
-  postClarityQuadrant: 'leaders' | 'regulatoryHedge' | 'volumeRiders' | 'outsiders';
+  /**
+   * NULL whenever marketVolume is null. A quadrant is a published verdict —
+   * 'OUTSIDERS — Limited or no US access' — and it cannot be reached for a
+   * competitor whose volume was never measured: the verdict would be an artefact
+   * of the missing data, not a reading of it.
+   */
+  quadrant: Quadrant | null;
+  postClarityQuadrant: Quadrant | null;
+  /** Sugar for `marketVolume !== null`. The null is the load-bearing signal. */
+  marketVolumeMeasured: boolean;
+  /** Every figure that could not be valued, with its source string. */
+  unvaluedFigures: UnvaluedFigure[];
 }
 
 export function computeRegulatoryScore(competitor: Competitor, postClarity: boolean): number {
@@ -66,42 +114,75 @@ export function computeRegulatoryScore(competitor: Competitor, postClarity: bool
   return Math.min(100, score);
 }
 
-function computeMarketVolumeScore(competitor: Competitor, maxUsers: number, maxVolume: number, maxAssets: number, maxRevenue: number): number {
-  const userWeight = 30;
-  const volumeWeight = 30;
-  const assetWeight = 25;
-  const revenueWeight = 15;
+/** The four volume dimensions and their weights, in one place. */
+const VOLUME_WEIGHTS: Record<VolumeDimension, number> = {
+  users: 30,
+  quarterlyVolume: 30,
+  assetsOnPlatform: 25,
+  revenue: 15,
+};
 
-  const users = parseNumericUsers(competitor.users);
-  const volume = parseNumericVolume(competitor.financials.quarterlyVolume);
-  const assets = parseNumericAssets(competitor.financials.assetsOnPlatform);
-  const revenue = parseNumericRevenue(competitor.financials.revenue);
+interface VolumeBounds {
+  /** null = no readable bound; 0 = a figure that really is zero. */
+  bounds: Record<VolumeDimension, number | null>;
+  unvalued: UnvaluedFigure[];
+}
 
+function readVolumeBounds(competitor: Competitor): VolumeBounds {
+  const raw: Record<VolumeDimension, string> = {
+    users: competitor.users,
+    quarterlyVolume: competitor.financials.quarterlyVolume,
+    assetsOnPlatform: competitor.financials.assetsOnPlatform,
+    revenue: competitor.financials.revenue,
+  };
+
+  const bounds = {} as Record<VolumeDimension, number | null>;
+  const unvalued: UnvaluedFigure[] = [];
+
+  for (const dimension of Object.keys(raw) as VolumeDimension[]) {
+    const source = raw[dimension];
+    const value = dimension === 'users' ? lowerBoundCount(source) : lowerBoundDollars(source);
+    bounds[dimension] = value;
+    if (value === null) {
+      const parsed = parseMoney(source);
+      unvalued.push({
+        dimension,
+        source,
+        // A '$' in the users field yields no MoneyRefusalCode of its own — the
+        // string parses fine as money, it is simply not a headcount.
+        code: parsed.kind === 'unparseable' ? parsed.code : 'MONEY_NOT_NUMERIC',
+      });
+    }
+  }
+
+  return { bounds, unvalued };
+}
+
+/** The score, or null when no dimension was readable. Never 0-as-unmeasured. */
+function computeMarketVolumeScore(
+  bounds: Record<VolumeDimension, number | null>,
+  maxima: Record<VolumeDimension, number | null>
+): number | null {
   let totalWeight = 0;
   let score = 0;
 
-  if (users > 0 && maxUsers > 0) {
-    score += (users / maxUsers) * userWeight;
-    totalWeight += userWeight;
-  }
-  if (volume > 0 && maxVolume > 0) {
-    score += (volume / maxVolume) * volumeWeight;
-    totalWeight += volumeWeight;
-  }
-  if (assets > 0 && maxAssets > 0) {
-    score += (assets / maxAssets) * assetWeight;
-    totalWeight += assetWeight;
-  }
-  if (revenue > 0 && maxRevenue > 0) {
-    score += (revenue / maxRevenue) * revenueWeight;
-    totalWeight += revenueWeight;
+  for (const dimension of Object.keys(VOLUME_WEIGHTS) as VolumeDimension[]) {
+    const value = bounds[dimension];
+    const max = maxima[dimension];
+    // A dimension with no readable bound is dropped from the denominator, not
+    // scored as zero. A dimension whose value is genuinely 0 stays in.
+    if (value === null || max === null || max <= 0) continue;
+    score += (value / max) * VOLUME_WEIGHTS[dimension];
+    totalWeight += VOLUME_WEIGHTS[dimension];
   }
 
-  if (totalWeight === 0) return 0;
+  if (totalWeight === 0) return null;
   return Math.round((score / totalWeight) * 100);
 }
 
-function determineQuadrant(regulatory: number, volume: number): 'leaders' | 'regulatoryHedge' | 'volumeRiders' | 'outsiders' {
+/** No volume, no verdict. */
+function determineQuadrant(regulatory: number, volume: number | null): Quadrant | null {
+  if (volume === null) return null;
   if (regulatory >= 50 && volume >= 50) return 'leaders';
   if (regulatory >= 50 && volume < 50) return 'regulatoryHedge';
   if (regulatory < 50 && volume >= 50) return 'volumeRiders';
@@ -109,20 +190,23 @@ function determineQuadrant(regulatory: number, volume: number): 'leaders' | 'reg
 }
 
 export function computeAllScores(competitors: Competitor[]): CompetitorScores[] {
-  const numericUsers = competitors.map(c => parseNumericUsers(c.users));
-  const numericVolumes = competitors.map(c => parseNumericVolume(c.financials.quarterlyVolume));
-  const numericAssets = competitors.map(c => parseNumericAssets(c.financials.assetsOnPlatform));
-  const numericRevenues = competitors.map(c => parseNumericRevenue(c.financials.revenue));
+  const read = competitors.map(readVolumeBounds);
 
-  const maxUsers = Math.max(...numericUsers, 1);
-  const maxVolume = Math.max(...numericVolumes, 1);
-  const maxAssets = Math.max(...numericAssets, 1);
-  const maxRevenue = Math.max(...numericRevenues, 1);
+  // The cohort maximum per dimension, over readable bounds only. Null means no
+  // member of the cohort had a readable figure for that dimension, so it scores
+  // for nobody — that is a gap in the data, not a tie at zero.
+  const maxima = {} as Record<VolumeDimension, number | null>;
+  for (const dimension of Object.keys(VOLUME_WEIGHTS) as VolumeDimension[]) {
+    const values = read
+      .map(r => r.bounds[dimension])
+      .filter((v): v is number => v !== null);
+    maxima[dimension] = values.length === 0 ? null : Math.max(...values);
+  }
 
-  return competitors.map(c => {
+  return competitors.map((c, i) => {
     const preClarityReg = computeRegulatoryScore(c, false);
     const postClarityReg = computeRegulatoryScore(c, true);
-    const marketVol = computeMarketVolumeScore(c, maxUsers, maxVolume, maxAssets, maxRevenue);
+    const marketVol = computeMarketVolumeScore(read[i].bounds, maxima);
 
     return {
       id: c.id,
@@ -135,6 +219,8 @@ export function computeAllScores(competitors: Competitor[]): CompetitorScores[] 
       threatLevel: c.threatLevel,
       quadrant: determineQuadrant(preClarityReg, marketVol),
       postClarityQuadrant: determineQuadrant(postClarityReg, marketVol),
+      marketVolumeMeasured: marketVol !== null,
+      unvaluedFigures: read[i].unvalued,
     };
   });
 }

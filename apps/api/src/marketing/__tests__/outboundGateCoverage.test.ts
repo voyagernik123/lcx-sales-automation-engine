@@ -217,6 +217,12 @@ const NOT_OUTBOUND: Record<string, string> = {
   'GET /export': 'produces the Art 8(2) bundle from stored records. A print path; no text '
     + 'becomes newly publishable by being exported.',
   'GET /export/:itemId': 'the same bundle narrowed to one record uid.',
+  'GET /gate-reference/:reference': 'resolves the `gate:<16 hex>` reference a scoped Art 90 '
+    + 'refusal tells a drafter to quote, into the 0062 gate-ledger rows it covers. A READ of '
+    + 'verdicts already taken: it authors nothing, releases no text, and cannot make any draft '
+    + 'publishable — an approver reading it may decide to clear the draft, but the clearing act '
+    + 'is `POST /draft/:id/approve`, which does reach the gate. Approver-only, because the '
+    + 'refusal codes it returns are the UNSCOPED ones.',
   'POST /record': 'writes the five-year record of text that was ALREADY cleared and '
     + 'published — `text` is documented as "the exact bytes as cleared". Approver-only, and '
     + 'the same shape of act as `POST /draft/:id/sent`.',

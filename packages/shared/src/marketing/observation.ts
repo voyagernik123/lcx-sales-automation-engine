@@ -36,13 +36,27 @@
  *      nothing; the honest reading is "available", not "in force". Wrapping the marketing
  *      response contracts in it is the outstanding work, and it is named in
  *      `MARKETING_CONTRACTS_OWED` rather than implied by this paragraph.
- *   2. Runtime. `assertHonestPayload` (§3) walks a payload — nested, with a cycle guard —
- *      and refuses on a forbidden key, because a value crossing a JSON boundary from a
- *      route or an AI response has no compile-time identity at all. THIS ONE IS WIRED:
- *      `apps/web/src/lib/api/marketing.ts`'s `unwrap` runs it on every marketing read and
- *      throws the refusal's own sentence, so a route that started returning `impressions`
- *      fails the read instead of reaching a component. It had zero production callers when
- *      this paragraph first claimed both layers were proofs.
+ *   2. Runtime. `assertHonestPayloadAll` (§3) walks a payload — nested, with a per-path
+ *      cycle guard — and returns EVERY forbidden key it carries, because a value crossing
+ *      a JSON boundary from a route or an AI response has no compile-time identity at all.
+ *      THIS ONE IS WIRED: `apps/web/src/lib/api/marketing.ts`'s `unwrap` runs it on every
+ *      marketing read and throws the whole refusal, so a route that started returning
+ *      `impressions` fails the read instead of reaching a component. It had zero production
+ *      callers when this paragraph first claimed both layers were proofs.
+ *
+ *      AND IT IS A GUARD ABOUT ITS OWN LIMITS. Past `MAX_PAYLOAD_DEPTH` it refuses with
+ *      `PAYLOAD_TOO_DEEP_TO_VERIFY` rather than returning "clean": for three waves the
+ *      truncation branch returned the same value as a completed clean walk, so "checked
+ *      and honest" and "never looked" were indistinguishable at the call site. That is the
+ *      exact laundering the ceiling exists to prevent, committed by the ceiling.
+ *
+ *      THE SAME RULE NOW COVERS EVERY OTHER THING IT CANNOT READ, which the first version
+ *      of that fix did not. A `Map` or `Set` with contents refuses with
+ *      `PAYLOAD_NOT_WALKABLE`; a typed array, `DataView` or `ArrayBuffer` has its NAMED
+ *      properties checked and only its BYTES skipped; and enumerable inherited properties
+ *      are read, because `Object.keys` cannot see them and `Object.create({impressions:1})`
+ *      was reported clean. Three containers returned `[]` — the completed-clean value — for
+ *      a walk that never happened, which is the depth defect again in three new places.
  *   3. Review. Neither layer catches an engagement rate named `score`. That gap is
  *      stated here rather than left for someone to discover; what makes it survivable
  *      is that a figure with no honest frame has nothing to render beside it.
@@ -537,26 +551,230 @@ export const FORBIDDEN_METRIC_FIELD_NAMES: readonly ForbiddenMetricField[] = Obj
   FORBIDDEN_FIELD_TABLE,
 ) as readonly ForbiddenMetricField[];
 
+/** Case and separators stripped. `Impressions`, `impression_count` and `impression count`
+ *  all reduce to the same key; `impressions7d` does not, and that is stated in §3. */
+const normaliseFieldName = (name: string): string => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+
 const NORMALISED_FORBIDDEN: ReadonlySet<string> = new Set(
-  FORBIDDEN_METRIC_FIELD_NAMES.map((n) => n.toLowerCase().replace(/[^a-z0-9]/g, '')),
+  FORBIDDEN_METRIC_FIELD_NAMES.map(normaliseFieldName),
 );
+
+/** An array index or a typed-array byte offset: a digit string, never a field name. */
+const INDEX_KEY = /^(?:0|[1-9][0-9]*)$/;
+
+/**
+ * How large a byte view the ceiling will enumerate before it refuses instead.
+ *
+ * A typed array answers any key enumeration with one key per byte. Measured here: 4,096
+ * elements costs 0.28ms per enumeration, the same order as the 0.68ms the walk pays for a
+ * whole realistic 4,400-key payload; 1,000,000 elements costs 184ms. So the ceiling reads
+ * the names on a small view and REFUSES a large one — it never silently skips either, which
+ * is what the first version of this fix did to both.
+ *
+ * Nothing in this compartment returns a byte view in a JSON payload, so this is a guard for
+ * F1's server-side middleware rather than a live constraint. If it ever fires on a real
+ * response, the fix is at the route: hand the ceiling the metadata object and keep the bytes
+ * out of the walked payload.
+ */
+const MAX_BYTE_VIEW_ELEMENTS = 4_096;
+
+/**
+ * THE 25 KEYS THE 38 DECLARED NAMES ACTUALLY REDUCE TO.
+ *
+ * Exported because the gap between 38 and 25 is the kind of arithmetic a reader assumes
+ * rather than checks: `FORBIDDEN_METRIC_FIELD_NAMES.length` looks like the size of the
+ * blocklist and is not.
+ */
+export const NORMALISED_FORBIDDEN_FIELD_NAMES: readonly string[] = [...NORMALISED_FORBIDDEN];
+
+/**
+ * THE THIRTEEN SPELLINGS THAT CAN NEVER BE THE REASON A PAYLOAD IS CAUGHT — REPORTED,
+ * NOT DELETED.
+ *
+ * Every one is the snake_case twin of a camelCase name already in the table, and the
+ * matcher strips separators before it looks, so removing them would change nothing about
+ * what is banned. They stay for two reasons and both are load-bearing:
+ *
+ *  · `FORBIDDEN_FIELD_TABLE` is `Record<ForbiddenMetricField, true>`, which is what
+ *    makes the union and the runtime list provably the same set. Dropping a key here
+ *    without dropping the union member is a tsc error; dropping both would delete the
+ *    only written statement that `impression_count` is banned — and that is the spelling
+ *    a Postgres row and a Python-authored payload actually arrive with.
+ *  · The table is READ by humans deciding whether a field name is allowed. A reader
+ *    looking for `share_of_voice` and finding only `shareOfVoice` has to know the
+ *    normalisation rule to conclude anything, and a blocklist that requires an inference
+ *    is a blocklist that gets guessed at.
+ *
+ * Derived rather than hand-listed, so it cannot drift from the table it describes.
+ */
+export const REDUNDANT_UNDER_NORMALISATION: readonly ForbiddenMetricField[] = (() => {
+  const firstSeen = new Set<string>();
+  const redundant: ForbiddenMetricField[] = [];
+  for (const name of FORBIDDEN_METRIC_FIELD_NAMES) {
+    const key = normaliseFieldName(name);
+    if (firstSeen.has(key)) redundant.push(name);
+    else firstSeen.add(key);
+  }
+  return redundant;
+})();
 
 const CEILING_RULE = DESK_POLICY(
   'the honesty ceiling',
   'Impressions, reach, follower delta, engagement rate, click-through, share of voice and aggregate audience sentiment are unobtainable without an X credential, and the two ratios among them need a denominator that does not exist. No payload this compartment renders may carry a field named after one of them.',
 );
 
-const MAX_PAYLOAD_DEPTH = 8;
+/**
+ * HOW DEEP THE WALKER GOES, AND WHY THE NUMBER MOVED FROM 8 TO 32.
+ *
+ * 8 was chosen for cost and was never the binding constraint: the walk measures 0.68ms
+ * at p95 over a realistic 200-row payload of ~4,400 keys, and depth does not drive that
+ * — breadth does. What 8 actually did was decide how much of a payload went UNCHECKED,
+ * because past it the walker returned `null`. Measured on the old code: a forbidden key
+ * was caught at nesting up to 9 and missed from 10, and since an array consumes a level
+ * of its own, an alternating array/object payload went unchecked from four alternations.
+ *
+ * Raising it is not a loosening, it is the other half of making the boundary REFUSE.
+ * A limit that answers "I could not verify this" has to sit above every payload the
+ * compartment honestly returns, or the ceiling stops being a guard and becomes an outage
+ * on the desk's own reads. 32 still bounds the recursion, which is all the constant was
+ * ever for.
+ *
+ * WHERE 32 CAME FROM, said precisely so nobody reads it as measured. It is an estimate off
+ * the TYPE DECLARATIONS in `contracts/` — the deepest declared shape nests roughly a dozen
+ * levels once the array rungs are counted — and not an observation of production JSON,
+ * which this lane had no environment to sample. So 32 is headroom over a reading, not a
+ * margin over a measurement. If the API middleware in F1 ever refuses a real payload on
+ * this limit, the limit is the thing that was wrong, and the refusal names the path so the
+ * argument can be had with evidence instead of with two guesses.
+ */
+export const MAX_PAYLOAD_DEPTH = 32;
 
 /**
- * Walk a payload and refuse on a forbidden field name. `null` means the payload is
- * clean of the names this compartment bans.
+ * The refusal a bounded walker owes its caller when it ran out of depth.
+ *
+ * ── THIS CODE IS NOT IN `RefusalCode`, AND THAT IS RECORDED RATHER THAN HIDDEN ──
+ * `RefusalCode` and `REFUSAL_CODES` live in `types.ts`, which this lane does not own, so
+ * the code is declared here and the refusal type widened locally. The consequence is
+ * real and is the only reason to say so out loud: `loop.ts refusalCodeFrequency`
+ * enumerates `REFUSAL_CODES` to report the gates that have NEVER FIRED, and a code
+ * outside that array is invisible to it. Folding this one in is a two-line change in
+ * `types.ts` — one union member, one array entry — and it is owed.
+ *
+ * It is a distinct code rather than a reuse of `METRIC_NOT_OBSERVABLE` or
+ * `FETCH_OUTCOME_UNKNOWN` because those two mean "this number cannot be observed" and
+ * "the channel did not answer". This one means "the instrument did not finish looking",
+ * which has a different owner and a different fix: the payload's shape, not the data.
+ * `types.ts` records the same argument about the four approval-regime codes that were
+ * `DATA_ABSENT_NOT_ZERO` until someone noticed one bucket cannot answer two questions.
+ */
+export const PAYLOAD_TOO_DEEP_CODE = 'PAYLOAD_TOO_DEEP_TO_VERIFY';
+
+/**
+ * The refusal a walker owes its caller for a CONTAINER IT CANNOT ENUMERATE.
+ *
+ * ── WHY THIS CODE EXISTS AT ALL, WHICH IS AN ADMISSION ────────────────────────
+ * The first version of the depth fix wrote "a check that did not run is not a check that
+ * passed" and then committed that exact error three more times in the same function. A
+ * `Map` with entries, a `Set` with members and a typed array all fell out of the walk
+ * through a bare `return`, which produced `[]` — the SAME value a completed clean walk
+ * produces. `assertHonestPayloadAll(new Map([['impressions', 1]]))` answered "clean", and
+ * a test asserted that a real `impressions` property planted on a `Uint8Array` was
+ * correctly ignored. It was not ignored, it was UNREAD, and those are the two states this
+ * whole module exists to keep apart.
+ *
+ * Same ledger entry as `PAYLOAD_TOO_DEEP_CODE`: NOT in `RefusalCode`/`REFUSAL_CODES`,
+ * because `types.ts` is not this lane's file, so `loop.ts refusalCodeFrequency` cannot see
+ * it either. Folding both in is a four-line change there and it is owed.
+ *
+ * It is distinct from `PAYLOAD_TOO_DEEP_TO_VERIFY` because the fix is different: too-deep
+ * is about the walker's bound, and this one is about a value that cannot be serialised to
+ * JSON at all (`JSON.stringify(new Map([['a',1]]))` is `{}`), so the owner's action is to
+ * convert the container before it becomes a response, not to raise a limit.
+ */
+export const PAYLOAD_NOT_WALKABLE_CODE = 'PAYLOAD_NOT_WALKABLE';
+
+/** `RefusalCode` plus the two codes the ceiling needs and `types.ts` does not yet hold. */
+export type CeilingRefusalCode =
+  | RefusalCode
+  | typeof PAYLOAD_TOO_DEEP_CODE
+  | typeof PAYLOAD_NOT_WALKABLE_CODE;
+
+/** A `Refusal` in every respect except that its code may be the ceiling's own. */
+export interface CeilingRefusal extends Omit<Refusal, 'code'> {
+  readonly code: CeilingRefusalCode;
+}
+
+const DEPTH_RULE = DESK_POLICY(
+  'the honesty ceiling — a check that did not run is not a check that passed',
+  'The ceiling walks a payload to a bounded depth. Where the payload is deeper than the walker goes, the answer is that it could not be verified — which is a refusal. Returning "clean" for "did not look" would launder an unchecked payload into a checked one, which is the same error the ceiling exists to catch.',
+);
+
+const UNWALKABLE_RULE = DESK_POLICY(
+  'the honesty ceiling — a container the guard cannot enumerate is not a container it cleared',
+  'The ceiling reads FIELD NAMES. A Map or a Set holds its contents somewhere no property enumeration reaches, so the guard cannot say whether a forbidden name is in there. The answer is that it could not be verified — a refusal — and not the empty list a completed clean walk returns. Such a value also cannot survive JSON serialisation, so a payload carrying one is already not the payload a caller will receive.',
+);
+
+/** As `refusal`, but over the widened code set. Same shape, same ruleset stamp. */
+function ceilingRefusal(
+  code: CeilingRefusalCode,
+  sentence: string,
+  rule: RuleCitation,
+  recovery: Refusal['recovery'],
+  matched: string | null = null,
+): CeilingRefusal {
+  return { code, sentence, rule, recovery, matched, ruleSetVersion: OBSERVATION_RULESET_VERSION };
+}
+
+/**
+ * Walk a payload and return EVERY forbidden field name it carries, plus a refusal for
+ * any branch the walker could not finish. An empty array means the payload is clean of
+ * the names this compartment bans, all the way down.
  *
  * WHY A RUNTIME CHECK EXISTS ALONGSIDE `HonestFigures<T>`: the compile-time ban only
  * protects values whose type passed through the wrapper. A row from a route body, a
  * parsed AI response or a JSON column has no compile-time identity, and
  * `impressions: 12000` inside one of those is exactly how a number nobody can defend
  * reaches a screen.
+ *
+ * ── WHY PLURAL, WHEN IT USED TO RETURN THE FIRST AND STOP ──
+ * The house pattern is two files over: "EVERY refusal, then one 422 — never the first
+ * one found" (`apps/api/src/routes/marketingDesk.ts`, and `marketingGates.ts` dedupes
+ * the plural list). A gate that reports one banned field per attempt gets routed around
+ * one field per attempt, and a payload with four of them takes four deploys to clean.
+ * This is about to become platform middleware, where that difference is the whole cost.
+ *
+ * ── THE CYCLE GUARD IS PER-PATH, AND THE OLD ONE WAS NOT ──
+ * The previous `WeakSet` was added to and never removed, which makes it a permanent
+ * first-visit-wins dedupe rather than a cycle guard. With `S = { q: { impressions: 1 } }`
+ * shared between a branch the depth limit truncated and a branch it could have checked,
+ * the verdict depended on `Object.keys` order: the truncated visit marked `S` seen and
+ * the checkable visit was skipped. Same object, same payload, opposite answer. The set
+ * here holds only the nodes on the CURRENT path and is unwound on the way back up, so it
+ * still terminates on a cycle and no longer suppresses a sibling.
+ *
+ * ── AND THAT MADE IT EXPONENTIAL, WHICH THE `cleared` MEMO PUTS BACK ──
+ * A per-path set alone turns the walk from O(distinct NODES) into O(distinct PATHS).
+ * Measured on `let n = {leaf:true}; for (i<L) n = {a:n, b:n}` — a shared-reference DAG with
+ * no cycle in it — the per-path guard on its own ran L=16 in 24ms, L=18 in 87ms, L=20 in
+ * 380ms and L=22 in 1,840ms: a clean 4x per level, i.e. 2^L visits, unbounded to ~2^32 at
+ * `MAX_PAYLOAD_DEPTH`. That was latent in the browser, where the payload is `JSON.parse`
+ * output and therefore a tree, and NOT latent for F1's API middleware, which walks
+ * pre-serialisation objects where a shared module constant (every `DESK_POLICY` citation is
+ * one) appears in dozens of places.
+ *
+ * `cleared` restores linearity without restoring the dedupe defect, because it records a
+ * PROOF rather than a visit. An entry means: this exact node was walked starting at that
+ * depth, the walk reached the bottom of its own subtree, and it produced NOTHING —
+ * no forbidden name, no truncation, and no cycle cut inside it. Such a subtree is clean at
+ * any SHALLOWER depth too, since a shallower start has strictly more budget and the shape
+ * is identical, so a later visit at `depth <= recorded` can be skipped soundly. A visit at
+ * a DEEPER depth is not skipped, because it might truncate where the first did not.
+ *
+ * The three conditions are all load-bearing and the third is the subtle one: a subtree
+ * whose walk was cut short by the cycle guard was not proved clean BY ITSELF — it leaned on
+ * an ancestor having enumerated the cut node — and that ancestor is not on the path the
+ * second time. So a cycle cut anywhere inside disqualifies the memo entry. The consequence
+ * is only lost sharing on payloads that contain cycles, which JSON cannot.
  *
  * WHAT IT DOES NOT CATCH, said plainly: an engagement rate computed and named `score`.
  * Nothing mechanical catches that. What makes the gap survivable is that such a field
@@ -565,45 +783,225 @@ const MAX_PAYLOAD_DEPTH = 8;
  *
  * Case and separators are normalised, so `Impressions` and `impression_count` are both
  * caught; `impressions7d` is not, and that is stated rather than implied.
+ *
+ * ── WHAT IS READ, AND WHAT IS REFUSED FOR BEING UNREADABLE ──
+ * Enumerable INHERITED properties are read (`for…in`, not `Object.keys`), because
+ * `Object.create({ impressions: 1 })` used to answer clean. Class methods are
+ * non-enumerable so this adds nothing for an instance, which is why it is not a cost.
+ * A typed array, `DataView` or `ArrayBuffer` has its NAMED properties checked and only its
+ * numeric byte indices skipped — a byte index cannot normalise to a forbidden name, so
+ * skipping the indices loses nothing while skipping the object lost a real `impressions`.
+ * Past `MAX_BYTE_VIEW_ELEMENTS` even the enumeration is the cost, and the view is REFUSED
+ * `PAYLOAD_NOT_WALKABLE` rather than skipped in silence. A `Map` or
+ * `Set` WITH CONTENTS refuses `PAYLOAD_NOT_WALKABLE`: its entries live where no property
+ * enumeration reaches, so "clean" would be a claim about something never read. An EMPTY
+ * `Map`/`Set` is not refused — there is nothing unchecked in it.
  */
-export function assertHonestPayload(payload: unknown): Refusal | null {
-  const seen = new WeakSet<object>();
+export function assertHonestPayloadAll(payload: unknown): readonly CeilingRefusal[] {
+  const found: CeilingRefusal[] = [];
+  /* Only the ancestors of the node being visited. Removed on the way back up — see the
+     docblock: a permanent set is a dedupe, and a dedupe suppresses real findings. */
+  const onPath = new Set<object>();
+  /* node -> the DEEPEST depth at which its whole subtree was proved clean and
+     self-contained. See the docblock; this is what keeps the walk linear. */
+  const cleared = new Map<object, number>();
+  /* Incremented on every cycle cut, so a subtree that relied on one can be told apart from
+     one that walked itself to the bottom. Only ever compared, never reported. */
+  let cycleCuts = 0;
 
-  const walk = (node: unknown, depth: number, path: string): Refusal | null => {
-    if (depth > MAX_PAYLOAD_DEPTH || node === null || typeof node !== 'object') return null;
-    if (seen.has(node)) return null;
-    seen.add(node);
-
-    if (Array.isArray(node)) {
-      for (let i = 0; i < node.length; i += 1) {
-        const found = walk(node[i], depth + 1, `${path}[${String(i)}]`);
-        if (found !== null) return found;
-      }
-      return null;
+  const walk = (node: unknown, depth: number, path: string): void => {
+    if (node === null || typeof node !== 'object') return;
+    if (onPath.has(node)) {
+      /* A GENUINE CYCLE: this node is one of its own ancestors, so its keys were already
+         enumerated further up this same path and descending again cannot find anything new.
+         That is why this `return` is silent where the depth and Map/Set branches refuse —
+         the check DID run, at the ancestor. The counter records that this subtree's verdict
+         leaned on that fact, which is what disqualifies it from `cleared`. */
+      cycleCuts += 1;
+      return;
     }
 
-    for (const key of Object.keys(node)) {
-      const normalised = key.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (NORMALISED_FORBIDDEN.has(normalised)) {
-        const where = path === '' ? key : `${path}.${key}`;
-        return refusal(
-          'METRIC_NOT_OBSERVABLE',
-          `Refused: this payload carries a field named '${key}' at ${where}. That metric cannot be observed without an X credential, so any value in that field was inferred, proxied or invented — and the honest answer is to show the row as unavailable instead.`,
-          CEILING_RULE,
+    const clearedAt = cleared.get(node);
+    if (clearedAt !== undefined && depth <= clearedAt) return; // proved clean with less budget
+
+    if (depth > MAX_PAYLOAD_DEPTH) {
+      found.push(
+        ceilingRefusal(
+          PAYLOAD_TOO_DEEP_CODE,
+          `Refused: this payload nests deeper than ${String(MAX_PAYLOAD_DEPTH)} levels, and the honesty ceiling stopped at ${path === '' ? 'the root' : path}. Everything below that point is UNCHECKED — it is not known to be clean, and a payload the guard could not finish reading may not be presented as one that passed it.`,
+          DEPTH_RULE,
           {
-            kind: 'not_recoverable',
-            why: 'There is no keyless source for this metric. Renaming the field would hide the problem rather than fix it.',
+            kind: 'supply_data',
+            missing: `a payload the ceiling can walk to the bottom, or a raised depth limit justified by the shape that needs it (stopped at ${path === '' ? 'the root' : path})`,
+            whoCanSupply: 'whoever owns the route or contract producing this shape',
           },
-          where,
+          path === '' ? null : path,
+        ),
+      );
+      return;
+    }
+
+    onPath.add(node);
+    const foundBefore = found.length;
+    const cutsBefore = cycleCuts;
+
+    /* A container whose contents no property enumeration reaches. REFUSED, not skipped:
+       `[]` is what a completed clean walk returns, and handing it back for a value that was
+       never read is the not-loaded/genuinely-empty collapse this module is about. Size zero
+       is exempt because there is then nothing unread. */
+    if (node instanceof Map || node instanceof Set) {
+      if (node.size > 0) {
+        const kind = node instanceof Map ? 'Map' : 'Set';
+        const at = path === '' ? 'the root' : path;
+        found.push(
+          ceilingRefusal(
+            PAYLOAD_NOT_WALKABLE_CODE,
+            `Refused: this payload carries a ${kind} with ${String(node.size)} ${node.size === 1 ? 'entry' : 'entries'} at ${at}, and the honesty ceiling cannot enumerate it. Whether a forbidden field name is inside is UNKNOWN — not known to be absent — and a container the guard could not read may not be presented as one that passed it. A ${kind} also serialises to '{}', so a caller would not receive these entries at all.`,
+            UNWALKABLE_RULE,
+            {
+              kind: 'supply_data',
+              missing: `the same data as a plain object or array, so the ceiling can read its field names (a ${kind} at ${at})`,
+              whoCanSupply: 'whoever owns the route or function producing this shape',
+            },
+            path === '' ? null : path,
+          ),
         );
       }
-      const found = walk((node as Record<string, unknown>)[key], depth + 1, path === '' ? key : `${path}.${key}`);
-      if (found !== null) return found;
+    } else if (ArrayBuffer.isView(node) || node instanceof ArrayBuffer) {
+      /* THE BYTES ARE SKIPPED. THE OBJECT IS NOT — and where the bytes cannot be skipped
+         cheaply, the object is REFUSED rather than passed.
+         A typed array answers any key enumeration with ONE KEY PER BYTE: measured on this
+         machine, 1,000,000 keys off a 1MB `Uint8Array` costs 184ms with
+         `getOwnPropertyNames` and 78ms with `Object.keys`, against 0.68ms for a whole
+         realistic 4,400-key payload. A byte index is a digit string and cannot normalise to
+         a forbidden name, so reading them buys nothing.
+         The earlier fix skipped the whole object to avoid that, and so lost its NAMED
+         properties — `Object.assign(new Uint8Array(4), { impressions: 1 })` was reported
+         clean, with a test asserting that as correct. Enumerating own names and filtering
+         the indices costs 0.28ms at 4,096 elements, which is the bound below; above it the
+         enumeration itself is the cost, and the honest answer is that the guard did not
+         look. No descent either way — the values under a byte view are bytes. */
+      const elements = 'length' in node && typeof node.length === 'number' ? node.length : 0;
+      if (elements > MAX_BYTE_VIEW_ELEMENTS) {
+        const at = path === '' ? 'the root' : path;
+        found.push(
+          ceilingRefusal(
+            PAYLOAD_NOT_WALKABLE_CODE,
+            `Refused: this payload carries a ${elements > 0 ? 'byte view' : 'buffer'} of ${String(elements)} elements at ${at}, and the honesty ceiling did not read its field names — enumerating them would materialise one key per byte, which is the cost the ceiling refuses to pay on a read path. Whether a forbidden field name is hung on it is UNKNOWN, not known to be absent.`,
+            UNWALKABLE_RULE,
+            {
+              kind: 'supply_data',
+              missing: `the metadata as a plain object beside the bytes rather than as properties on the view, or a view of at most ${String(MAX_BYTE_VIEW_ELEMENTS)} elements (found ${String(elements)} at ${at})`,
+              whoCanSupply: 'whoever owns the route or function producing this shape',
+            },
+            path === '' ? null : path,
+          ),
+        );
+      } else {
+        for (const key of Object.getOwnPropertyNames(node)) {
+          if (INDEX_KEY.test(key)) continue;
+          refuseIfForbidden(key, path === '' ? key : `${path}.${key}`);
+        }
+      }
+    } else if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i += 1) {
+        walk(node[i], depth + 1, `${path}[${String(i)}]`);
+      }
+      /* An array can also carry NAMED properties. JSON cannot produce one, a hand-built
+         server-side payload can, and `{ rows: Object.assign([], { ctr: 1 }) }` would
+         otherwise walk only the index side. */
+      for (const key in node) {
+        if (INDEX_KEY.test(key)) continue;
+        visitKey(node as unknown as Record<string, unknown>, key, path === '' ? key : `${path}.${key}`, depth);
+      }
+    } else {
+      /* `for…in`, NOT `Object.keys`. The difference is enumerable INHERITED properties:
+         `Object.create({ impressions: 1 })` answered clean under `Object.keys`, because the
+         banned name is on the prototype. Class methods and everything on `Object.prototype`
+         are non-enumerable, so this costs nothing on an ordinary object or instance and
+         closes a hole that a non-JSON server-side value can walk straight through. */
+      for (const key in node) {
+        visitKey(node as Record<string, unknown>, key, path === '' ? key : `${path}.${key}`, depth);
+      }
     }
-    return null;
+
+    onPath.delete(node);
+    /* THE MEMO RECORDS A PROOF, NOT A VISIT — see the docblock. All three conditions:
+       nothing found in this subtree, no cycle cut inside it, and (implied by the first) no
+       truncation. Anything less and a shallower revisit could have a different, correct
+       answer, which is exactly the defect the per-path guard was introduced to fix. */
+    if (found.length === foundBefore && cycleCuts === cutsBefore) {
+      const prior = cleared.get(node);
+      if (prior === undefined || depth > prior) cleared.set(node, depth);
+    }
   };
 
-  return walk(payload, 0, '');
+  /** One banned-name check, one refusal, one path. Used by every enumeration branch. */
+  function refuseIfForbidden(key: string, where: string): boolean {
+    if (!NORMALISED_FORBIDDEN.has(normaliseFieldName(key))) return false;
+    found.push(
+      ceilingRefusal(
+        'METRIC_NOT_OBSERVABLE',
+        `Refused: this payload carries a field named '${key}' at ${where}. That metric cannot be observed without an X credential, so any value in that field was inferred, proxied or invented — and the honest answer is to show the row as unavailable instead.`,
+        CEILING_RULE,
+        {
+          kind: 'not_recoverable',
+          why: 'There is no keyless source for this metric. Renaming the field would hide the problem rather than fix it.',
+        },
+        where,
+      ),
+    );
+    return true;
+  }
+
+  function visitKey(node: Record<string, unknown>, key: string, where: string, depth: number): void {
+    /* Do NOT descend into a refused field. The finding is the NAME, and a second banned
+       name nested under an already-refused path is the same defect reported twice at a path
+       nobody will render. */
+    if (refuseIfForbidden(key, where)) return;
+    walk(node[key], depth + 1, where);
+  }
+
+  walk(payload, 0, '');
+  /* NO CAP AND NO DEDUPE, deliberately. Every entry has a distinct path, so there is
+     nothing to dedupe (unlike `marketingGates.ts`, where two gates legitimately produce
+     one code for one fact). A payload with 4,400 banned keys returns 4,400 refusals,
+     which is the truth about that payload; the cost of finding them all is the 0.68ms
+     the walk already pays. */
+  return found;
+}
+
+/**
+ * The single-refusal form: the FIRST violation, or `null` for a clean payload.
+ *
+ * Kept because callers read exactly that — `apps/web/src/lib/api/marketing.ts`'s
+ * `unwrap` and `apps/api/.../marketingGatesMetrics.test.ts` both treat `null` as the
+ * pass. `null` now means what it always claimed to mean: the walk finished and found
+ * nothing. It no longer doubles as "the walk stopped early", which is the defect
+ * `PAYLOAD_TOO_DEEP_CODE` exists to name.
+ *
+ * A caller building a report or a middleware response should call
+ * `assertHonestPayloadAll` instead: one banned field at a time is a control that gets
+ * routed around one field at a time.
+ *
+ * ── WHICH ONE IS "FIRST", AND WHY IT IS NOT WALK ORDER ──
+ * It used to be `all[0]`, i.e. whichever the walker met first. On
+ * `{ a: <33 levels>, z: { ctr: 1 } }` that is the DEPTH refusal, so the sentence and code a
+ * caller renders described the payload's shape while the actual forbidden metric sat in
+ * `.refusals`, which — checked, not assumed — no production surface in this repo reads. The
+ * screen therefore said "too deep to verify" about a payload whose real problem was a named
+ * unobservable metric.
+ *
+ * A NAMED FORBIDDEN FIELD OUTRANKS A CONTAINER THE WALKER COULD NOT READ. It is the more
+ * actionable finding (there is a field and a path to delete, versus a shape to argue about),
+ * and it is a certainty rather than an unknown. Walk order still decides between two
+ * refusals of the same rank, so `{ ctr: 1, sov: 2 }` still answers `ctr`. The plural form is
+ * untouched and remains in walk order — a report must not reorder its own findings.
+ */
+export function assertHonestPayload(payload: unknown): CeilingRefusal | null {
+  const all = assertHonestPayloadAll(payload);
+  if (all.length === 0) return null;
+  return all.find((r) => r.code === 'METRIC_NOT_OBSERVABLE') ?? all[0]!;
 }
 
 /**

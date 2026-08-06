@@ -45,7 +45,9 @@ import {
   writeRecord,
   type BundleRequest,
   type BundleSource,
+  type ClearanceReconciliation,
 } from '../marketing/record.js';
+import { resolveGateReference } from '../marketing/outboundGate.js';
 import {
   retentionPosture,
   runRetentionClock,
@@ -61,6 +63,7 @@ import {
  *    GET  /watch/claim-expiry     the claim-freshness ledger
  *    GET  /export/:itemId         one record, produced on demand (Art 8(2))
  *    GET  /export                 a WINDOW of records, jurisdiction-filtered
+ *    GET  /gate-reference/:ref    resolve the `gate:<16 hex>` a scoped refusal hands out
  *    POST /record                 put one LCX statement on the five-year clock
  *    POST /subject-access         GDPR Art 15
  *    POST /erasure                GDPR Art 17
@@ -486,10 +489,30 @@ const NOT_MIGRATED_0061 = {
  */
 function recordRefusalResponse(
   c: Context<{ Variables: AuthVariables }>,
-  r: { code: string; sentence: string; rule: string; ruleText?: string; remedy?: string },
+  r: {
+    code: string; sentence: string; rule: string; ruleText?: string; remedy?: string;
+    clearanceReconciliation?: ClearanceReconciliation;
+  },
 ) {
   const status = r.code === 'RECORD_REGISTER_ABSENT' ? 503 : 422;
-  return c.json({ error: r.sentence, code: r.code, data: { refusal: wireRefusal(r) } }, status);
+  return c.json({
+    error: r.sentence,
+    code: r.code,
+    data: {
+      refusal: wireRefusal(r),
+      /*
+       * THE FINDING TRAVELS ON THE REFUSAL. `composeExportBundle` attaches this to
+       * `RECORD_REGISTER_EMPTY` (422) and to `RECORD_REGISTER_ABSENT` (503), which are the
+       * two states in which it would otherwise be lost: the empty register is the day-one
+       * state, and the absent register is the state in which 100% of what the desk cleared is
+       * UNRECORDABLE rather than merely unrecorded. `wireRefusal` is deliberately narrow and
+       * drops unknown fields, which is why it is added here rather than passed through it.
+       */
+      ...(r.clearanceReconciliation === undefined
+        ? {}
+        : { clearanceReconciliation: r.clearanceReconciliation }),
+    },
+  }, status);
 }
 
 /** Parse the window and the asking authority off the query string. */
@@ -636,7 +659,69 @@ marketingRecordRoutes.get('/export/:itemId', requireOperator, requireApprover, a
     // is excluded here rather than coerced to '' and silently matched.
     transfers: source.transfers.filter((r) => r.record_uid !== null && uids.has(r.record_uid)),
     ...(source.presentCommentIds ? { presentCommentIds: source.presentCommentIds } : {}),
+    /*
+     * FORWARDED, AND IT WAS NOT.
+     *
+     * This route re-assembles a filtered `BundleSource` and every field it forgets becomes an
+     * absence the engine then reports. `clearance` was omitted, so the produce-or-admit
+     * section on THE ONLY EXPORT ROUTE A BROWSER SURFACE REACHES was permanently
+     * `RECORD_CLEARANCE_LEDGER_UNREAD` — and that refusal's remedy says "produce the bundle
+     * through a caller that reads the clearance ledger", which this route did, one line above.
+     * A refusal blaming the caller for something the caller did is worse than no refusal.
+     *
+     * IT IS FORWARDED CONDITIONALLY on purpose: if `readBundleSource` did not supply it, the
+     * honest answer is still UNREAD, and inventing an empty ledger here would turn "we did
+     * not look" into "we looked and found nothing".
+     *
+     * THE WINDOW BELOW IS A ZERO-WIDTH INSTANT (`windowFrom = windowTo = drafted_at`), so the
+     * ledger read can only match clearances stamped at exactly that instant and any figure in
+     * that section is an artefact of the window. Widening it here would silently change what
+     * "this production" covers, so instead `ClearanceScope.instantaneousWindow` carries the
+     * fact and both the structured completeness list and the rendered block say it outright.
+     */
+    ...(source.clearance ? { clearance: source.clearance } : {}),
   });
+});
+
+/**
+ * RESOLVE `gate:<16 hex>` — the reader that reference never had.
+ *
+ * `GET /v1/marketing/gate-reference/gate:abcdef0123456789`.
+ *
+ * WHY IT LIVES ON THIS ROUTER. The scoped Art 90 refusal that a drafter receives tells
+ * them to quote a reference "to an approver ... so they can read the full verdict".
+ * Nothing could read `text_sha256` back, so that remedy was a dead end — the same class
+ * of defect as `watch.ts` and `record.ts` having no importer. This router is where the
+ * approver-only regulatory reads already live, and the produce-or-admit section of the
+ * export bundle now prints one of these references beside every unrecorded statement,
+ * so the two surfaces answer each other.
+ *
+ * `requireApprover`, NOT `requireOperator` ALONE. What comes back includes the UNSCOPED
+ * refusal codes from the 0062 `refusal_codes` column — the Art 90 embargo limb the
+ * drafter's own copy of the refusal had replaced. Serving that to the drafter would
+ * reopen the oracle the scoping exists to close, and `viewerIsEmbargoApprover` on the
+ * gate already reads the role rather than assuming it.
+ *
+ * THE REFERENCE IS IN THE PATH, AND THAT IS SAFE HERE. It is a digest of LCX's own draft
+ * text, not personal data, and it leaks nothing — the file that mints it says so. The
+ * subject-access route next door is POST for the opposite reason: a handle is personal
+ * data and must not appear in a URL or an access log.
+ */
+marketingRecordRoutes.get('/gate-reference/:reference', requireOperator, requireApprover, async (c) => {
+  const raw = text(c.req.param('reference'), 40);
+  if (!raw) return bad(c, 'A gate reference is required, in the form gate:<16 hex characters>.');
+  const got = await resolveGateReference(getPool(), raw);
+  if (!got.ok) {
+    // MALFORMED is the caller's fault (400). ABSENT is the environment's (503). NOT_FOUND is
+    // a genuine, readable absence in a ledger that answered (404) — and the sentence says
+    // which of the two reasons it is, because "mistyped" and "never recorded" are different
+    // findings and only the second one is about this desk's controls.
+    const status = got.code === 'GATE_REFERENCE_MALFORMED'
+      ? 400
+      : got.code === 'GATE_LEDGER_ABSENT' ? 503 : 404;
+    return c.json({ error: got.sentence, code: got.code, data: { refusal: wireRefusal(got) } }, status);
+  }
+  return c.json({ data: got, meta: meta() });
 });
 
 /* ══════════════════════════════════════════════════════════════════════════════

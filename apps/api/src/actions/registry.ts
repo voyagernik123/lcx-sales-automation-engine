@@ -41,6 +41,7 @@ import {
   isSecondTierPrincipal,
   secondTierMayHold,
 } from '../access/entitlements.js';
+import { recordRevocation } from '../access/asOf.js';
 import { env } from '../lib/env.js';
 import { ActionError } from './types.js';
 import type { ActorRole, RegistryAction } from './types.js';
@@ -617,13 +618,41 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       if (subjectId === actor && params.workspace === 'governance') {
         throw new ActionError('SELF_LOCKOUT', 'You cannot revoke your own governance access — another approver must.', 400);
       }
-      const { rowCount } = await pool.query(
-        `DELETE FROM entitlements WHERE member_id=$1 AND workspace=$2`,
-        [subjectId, params.workspace],
-      );
-      if ((rowCount ?? 0) === 0) throw new ActionError('NOT_FOUND', 'No such entitlement', 404);
+      /*
+       * THIS USED TO BE A BARE DELETE, AND THE DELETE WAS THE ONLY RECORD.
+       *
+       * `entitlements` holds one row per (member, workspace) and nothing else
+       * recorded the grant, so revoking destroyed the evidence it had ever
+       * existed. "Who could read this compartment on 12 July" was unanswerable,
+       * and — worse — indistinguishable from "nobody could".
+       *
+       * `recordRevocation` (access/asOf.ts) APPENDS the revocation to
+       * `entitlement_events` (migration 0071) and then deletes the live row, in
+       * one transaction. The live behaviour is unchanged on purpose: the row still
+       * leaves `entitlements`, which is what `loadEntitlements` reads, so the
+       * request path and every cron principal behave exactly as before. What is
+       * new is that the history survives the deletion.
+       *
+       * `historyRecorded: false` means 0071 has not been applied yet: the access
+       * really was revoked and the trail really was not written. It is returned
+       * rather than swallowed, because a silent version of that is the defect 0071
+       * exists to close.
+       */
+      const outcome = await recordRevocation(pool, {
+        memberId: subjectId,
+        workspace: String(params.workspace),
+        actor,
+        justification: String(params.justification),
+      });
+      if (outcome.kind === 'not_found') throw new ActionError('NOT_FOUND', 'No such entitlement', 404);
       invalidateEntitlements(subjectId);
-      return { memberId: subjectId, workspace: params.workspace, revoked: true };
+      return {
+        memberId: subjectId,
+        workspace: params.workspace,
+        revoked: true,
+        historyRecorded: outcome.historyRecorded,
+        refusal: outcome.code,
+      };
     },
   },
   set_member_profile: {

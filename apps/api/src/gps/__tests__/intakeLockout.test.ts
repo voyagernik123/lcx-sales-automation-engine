@@ -269,6 +269,39 @@ const GPS_MIGRATIONS = load(
   stripSql,
 );
 
+/**
+ * MENTIONING A GPS TABLE AND TOUCHING ONE ARE DIFFERENT THINGS, and the set above
+ * cannot tell them apart — deliberately. It matches the raw text, comments included,
+ * because a byte channel that arrives as `COPY gps_artifact FROM ...` must be found
+ * whatever else the file does, and a file too clever to be classified should still be
+ * scanned.
+ *
+ * That breadth is wrong for exactly two of the checks below. 0070_audit_seal.sql
+ * creates and alters nothing in GPS; its single `gps_` mention is line 247, inside a
+ * block comment enumerating which call sites audit inside a transaction:
+ *
+ *     · gps/service.ts:768          BEGIN → gps_engagement FOR UPDATE → audit.   OK
+ *
+ * That comment is a lock-order safety argument. It pulled the file into the GPS
+ * ratchet's scope, where the frozen-jsonb-set check and the D2 naming rule then
+ * asked it questions about GPS tables it does not have — and the D2 rule's own
+ * failure message already said "adds or alters a gps_ table", so its intent and its
+ * input set had silently diverged.
+ *
+ * Two claims, two sets. Byte-channel scans keep the broad set. Claims of the form
+ * "every migration that adds or alters a gps_ table" get this one, which reads the
+ * stripped SQL and requires an actual statement naming a gps_ table. String literals
+ * survive `stripSql`, so `EXECUTE 'CREATE TABLE gps_x ...'` still classifies here.
+ */
+const GPS_DDL = new RegExp(
+  '(?:CREATE\\s+TABLE(?:\\s+IF\\s+NOT\\s+EXISTS)?|ALTER\\s+TABLE(?:\\s+IF\\s+EXISTS)?' +
+    '|DROP\\s+TABLE(?:\\s+IF\\s+EXISTS)?|TRUNCATE(?:\\s+TABLE)?|COPY|INSERT\\s+INTO' +
+    '|CREATE\\s+TRIGGER[\\s\\S]{0,200}?\\bON|CREATE(?:\\s+UNIQUE)?\\s+INDEX[\\s\\S]{0,200}?\\bON)' +
+    '\\s+(?:ONLY\\s+)?(?:public\\.)?gps_[a-z0-9_]*',
+  'i',
+);
+const GPS_SCHEMA_MIGRATIONS = GPS_MIGRATIONS.filter((f) => GPS_DDL.test(f.code));
+
 describe('the surface this ratchet covers is discovered, not listed', () => {
   /**
    * If discovery silently returns nothing, every absence assertion below passes
@@ -300,6 +333,65 @@ describe('the surface this ratchet covers is discovered, not listed', () => {
     expect(paths).toContain('apps/api/src/db/migrations/0057_gps_artifact.sql');
     expect(paths).toContain('apps/api/src/db/migrations/0058_gps_artifact_custody.sql');
     expect(paths.length).toBeGreaterThanOrEqual(2);
+  });
+
+  /**
+   * The narrower set gets the same floor as the broad one, for the same reason. The
+   * checks that read it — the frozen jsonb set and the D2 naming rule — are both
+   * "every migration that adds or alters a gps_ table must …", and if this filter ever
+   * returned nothing, both would pass while asserting nothing at all. A filter is a
+   * more inviting place for that failure than a directory read: it is one wrong
+   * character in a regex away, and it fails silently GREEN.
+   */
+  it('finds every migration that adds or alters a gps_ table, and is never empty', () => {
+    const paths = GPS_SCHEMA_MIGRATIONS.map((f) => f.path);
+    expect(
+      paths,
+      'GPS schema-migration discovery returned nothing — the frozen jsonb set and the D2 ' +
+        'naming rule would both pass vacuously.',
+    ).not.toHaveLength(0);
+    expect(paths).toContain('apps/api/src/db/migrations/0047_gps.sql');
+    expect(paths).toContain('apps/api/src/db/migrations/0057_gps_artifact.sql');
+    expect(paths).toContain('apps/api/src/db/migrations/0058_gps_artifact_custody.sql');
+    // The distinction this set exists to make, pinned by the file that forced it.
+    // 0070 mentions a gps_ table in a block comment and touches none, so it belongs to
+    // the broad set and not to this one. If a future edit gives 0070 real GPS DDL, this
+    // fails and the D2 question gets asked of it — which is the correct outcome.
+    expect(GPS_MIGRATIONS.map((f) => f.path)).toContain('apps/api/src/db/migrations/0070_audit_seal.sql');
+    expect(
+      paths,
+      '0070_audit_seal.sql now appears to add or alter a gps_ table. Either that is real — ' +
+        'in which case it must name D2 and its columns join the frozen set — or the ' +
+        'classifier has started matching prose.',
+    ).not.toContain('apps/api/src/db/migrations/0070_audit_seal.sql');
+  });
+
+  /**
+   * THE BLIND SPOT `columnsOf` DELIBERATELY CREATES, ASSERTED SHUT.
+   *
+   * `columnsOf` excises PL/pgSQL routines before looking for columns, because a
+   * routine's parameters and locals have a column's exact shape and are not columns.
+   * The cost is that anything inside a routine is invisible to every column check in
+   * this file — so a table created by dynamic DDL in a trigger function would carry no
+   * column ratchet at all:
+   *
+   *     EXECUTE 'CREATE TABLE gps_side (doc bytea)';
+   *
+   * Nothing in GPS needs to build a GPS table from inside a routine, so the honest
+   * position is to forbid it outright rather than to parse it.
+   */
+  it('no routine body builds or fills a gps_ table, which is what makes the excision safe', () => {
+    for (const file of GPS_MIGRATIONS) {
+      for (const body of routineBodies(file.code)) {
+        expect(
+          GPS_DDL.test(body),
+          `${file.path} has a routine whose body contains DDL against a gps_ table. ` +
+            'columnsOf() does not read routine bodies, so a table declared there would ' +
+            'carry none of the byte-column checks in this file. Declare GPS tables at the ' +
+            'top level of a migration where they can be read.',
+        ).toBe(false);
+      }
+    }
   });
 
   /**
@@ -938,7 +1030,46 @@ type Column = { name: string; type: string; table: string };
  * statement per table in file order, and a file that did something cleverer would
  * attribute a column to the wrong table and fail LOUDLY rather than pass quietly.
  */
-function columnsOf(sql: string): ReadonlyArray<Column> {
+/**
+ * A ROUTINE IS NOT A TABLE, and this function could not tell the difference until
+ * 0070_audit_seal.sql arrived with PL/pgSQL in it.
+ *
+ * `columnsOf` recognises a column by shape — `name type` at the start of a line, or
+ * `ADD COLUMN name type`. A PL/pgSQL routine has that shape twice over and neither
+ * occurrence is a column:
+ *
+ *   CREATE OR REPLACE FUNCTION audit_seal_content(
+ *     p_meta       jsonb,          ← a PARAMETER, in the signature, outside the body
+ *   ) ... AS $$
+ *   DECLARE
+ *     el    jsonb;                 ← a LOCAL VARIABLE, inside the body
+ *
+ * Both were reported as jsonb columns and both failed the frozen-set ratchet below.
+ * That is a false positive on a file that creates no GPS table at all, and a false
+ * positive is not harmless here: the fix it invites is "add the name to the frozen
+ * list", which is precisely the review this ratchet exists to force. A ratchet that
+ * cries wolf gets widened until it is silent.
+ *
+ * So the whole routine is excised — from `CREATE FUNCTION` through the closing
+ * dollar-quote — which removes the signature and the body in one cut. Excising
+ * anything is a blind spot by construction, so `NO_DDL_IN_ROUTINE_BODIES` below
+ * asserts that nothing excised here contains DDL against a gps_ table. Without that
+ * assertion, `EXECUTE 'CREATE TABLE gps_x (doc bytea)'` inside a trigger function
+ * would be invisible to every column check in this file.
+ */
+const ROUTINE = /CREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)[\s\S]*?\$([a-z_]*)\$[\s\S]*?\$\1\$/gi;
+/** A bare `DO $$ ... $$` block: no signature, but the body has the same shape. */
+const DO_BLOCK = /\bDO\s+\$([a-z_]*)\$[\s\S]*?\$\1\$/gi;
+
+/** The routine text this file deliberately stops reading as table definitions. */
+function routineBodies(sql: string): string[] {
+  return [...sql.matchAll(ROUTINE), ...sql.matchAll(DO_BLOCK)].map((m) => m[0]);
+}
+
+const withoutRoutines = (sql: string) => sql.replace(ROUTINE, ' ').replace(DO_BLOCK, ' ');
+
+function columnsOf(rawSql: string): ReadonlyArray<Column> {
+  const sql = withoutRoutines(rawSql);
   const owners = [...sql.matchAll(/(?:CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?|ALTER\s+TABLE(?:\s+IF\s+EXISTS)?)\s+(?:ONLY\s+)?([a-z_][a-z0-9_.]*)/gi)]
     .map((m) => ({ at: m.index ?? 0, table: m[1]!.toLowerCase().replace(/^public\./, '') }));
   const tableAt = (at: number) => {
@@ -1267,9 +1398,26 @@ describe('the bytes live in exactly one column of one table, and nowhere else in
      *
      * `scope_snapshot` has no such bound and this is NOT a claim that it does.
      */
-    const jsonColumns = GPS_MIGRATIONS.flatMap((f) =>
-      columnsOf(f.code).filter((c) => c.type === 'json' || c.type === 'jsonb').map((c) => c.name),
-    ).sort();
+    const jsonAll = GPS_SCHEMA_MIGRATIONS.flatMap((f) =>
+      columnsOf(f.code)
+        .filter((c) => c.type === 'json' || c.type === 'jsonb')
+        .map((c) => ({ ...c, path: f.path })),
+    );
+    // The claim is about columns ON GPS TABLES, so the enclosing table decides
+    // membership. That makes a failed attribution a hole: a jsonb column whose owner
+    // could not be resolved would drop out of the frozen set and never be reviewed.
+    // Attribution failing is therefore its own failure, LOUDLY, before the set is
+    // compared — the same reason `columnsOf` resolves an owner by position at all.
+    const unattributed = jsonAll.filter((c) => !c.table.startsWith('gps_'));
+    expect(
+      unattributed.map((c) => `${c.path}: ${c.name} ${c.type} on ${c.table}`),
+      'a json/jsonb column in a migration that alters a GPS table could not be attributed ' +
+        'to a gps_ table. It is therefore outside the frozen set below and would never be ' +
+        'reviewed. Either it belongs to a non-GPS table in a mixed migration — split the ' +
+        'migration — or the owner resolution missed, which is the loud failure this ' +
+        'attribution exists to produce.',
+    ).toEqual([]);
+    const jsonColumns = jsonAll.map((c) => c.name).sort();
     expect(
       [...new Set(jsonColumns)],
       'the set of jsonb columns on GPS tables changed. A jsonb column is the one shape ' +
@@ -1424,7 +1572,11 @@ describe('the compartment carries its own reason, wherever GPS grows', () => {
    * not.
    */
   it('every migration touching a gps_ table names D2, the decision the compartment turns on', () => {
-    for (const file of GPS_MIGRATIONS) {
+    // GPS_SCHEMA_MIGRATIONS, not GPS_MIGRATIONS: this rule is about what a migration
+    // DOES to the compartment, and a migration that merely names a gps_ table in a
+    // comment has no D2 question to answer. See the set's own note for the file that
+    // proved the difference.
+    for (const file of GPS_SCHEMA_MIGRATIONS) {
       expect(
         /\bD2\b|\bDPO\b|controller vs processor|controller-vs-processor/i.test(file.raw),
         `${file.path} adds or alters a gps_ table without naming D2 / the DPO question. ` +

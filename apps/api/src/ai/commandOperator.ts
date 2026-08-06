@@ -34,7 +34,19 @@ export async function assembleProgramContext(pool: pg.Pool): Promise<ProgramCont
     try { return (await pool.query(sql, params)).rows as Record<string, unknown>[]; } catch { return []; }
   };
 
-  const taskRows = await q(`SELECT id, title, status, depends_on, workstream FROM command_tasks`);
+  /*
+   * ORDER BY id — THE THIRD INSTANCE OF THE SEED-NOT-BINDING DEFECT.
+   *
+   * `runLaunchSim` is seeded and therefore deterministic FOR A GIVEN ROW ORDER. An
+   * unordered SELECT returns heap order, which changes on UPDATE, so the same data
+   * produced a MEASURED p50 spread of 1-2 days across 12 row permutations at the
+   * same seed. The other two reads (routes/command.ts, kpi/wbr.ts) were fixed with
+   * the P1e lane; this one fed /v1/command/ask, so the AI operator was answering
+   * with a p50 and a topCritical list drawn from heap order while the panel beside
+   * it used a different one. Both agents on that lane named this as the highest-value
+   * remaining item; it is one clause.
+   */
+  const taskRows = await q(`SELECT id, title, status, depends_on, workstream FROM command_tasks ORDER BY id`);
   if (taskRows.length === 0) return null;
 
   const tasks: SimTaskInput[] = taskRows.map((r) => ({

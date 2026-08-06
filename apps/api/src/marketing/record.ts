@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
 import type { Pool } from 'pg';
+/*
+ * IMPORTED RATHER THAN RESTATED, and the reason is written down in `outboundGate.ts`
+ * itself: the reference a drafter is told to quote and the row an approver looks it up in
+ * are computed from ONE expression, because two would drift and the failure would be
+ * silent — the drafter quotes a reference and the lookup finds nothing. This file prints
+ * that reference beside every unrecorded statement, so it must be the same function.
+ */
+import { GATE_MIGRATION, gateReferenceFrom } from './outboundGate.js';
 
 /**
  * ══════════════════════════════════════════════════════════════════════════════
@@ -151,7 +159,18 @@ export type RecordRefusalCode =
   /** A close-out arrived with nothing in it. */
   | 'RECORD_CLOSE_OUT_TEXT_ABSENT'
   /** A transfer was logged without saying whether third-party personal data left. */
-  | 'RECORD_TRANSFER_SCOPE_UNDECLARED';
+  | 'RECORD_TRANSFER_SCOPE_UNDECLARED'
+  /**
+   * 0062 is not applied, so the bundle cannot compare what the desk CLEARED against what
+   * it RECORDED. The completeness claim is withdrawn rather than answered with a zero.
+   */
+  | 'RECORD_CLEARANCE_LEDGER_ABSENT'
+  /**
+   * The clearance ledger exists and this composition was not handed it. Distinct from
+   * ABSENT on purpose: "we did not look" and "there is nothing to look at" are different
+   * facts about the same blank space, and only one of them is somebody's fault.
+   */
+  | 'RECORD_CLEARANCE_LEDGER_UNREAD';
 
 /**
  * The I/O-boundary refusal. Four things, all required: a stable machine code, one
@@ -168,6 +187,24 @@ export interface RecordRefusal {
   readonly rule: string;
   readonly ruleText: string;
   readonly remedy: string;
+  /**
+   * SET ON `RECORD_REGISTER_EMPTY` **AND** ON `RECORD_REGISTER_ABSENT`.
+   *
+   * An empty register is the day-one state, and refusing with nothing attached would throw
+   * away the finding that matters most: the desk cleared statements and recorded none of
+   * them. The refusal is still a refusal — a zero-record bundle must not be produced — but
+   * it carries the list, so the approver learns WHAT is missing rather than only that
+   * something is. `ClearanceReconciliation` is defined in §5a below.
+   *
+   * IT IS ON `RECORD_REGISTER_ABSENT` FOR THE STRONGER VERSION OF THE SAME REASON. When
+   * 0061 is unapplied and 0062 is not, the register cannot hold anything, so 100% of what
+   * the gate cleared is unrecordable. Returning only "migration 0061 has not been applied"
+   * reads as a configuration nit rather than as the total absence of the register the
+   * completeness claim depends on. It is attached in BOTH states of the reconciliation, so
+   * a reader can tell "0061 absent and the gate cleared 40 statements" from "0061 absent
+   * and we could not read the gate ledger either".
+   */
+  readonly clearanceReconciliation?: ClearanceReconciliation;
 }
 
 export type RecordResult<T> = { readonly ok: true; readonly value: T } | RecordRefusal;
@@ -268,6 +305,20 @@ const RULES: Record<RecordRefusalCode, { rule: string; ruleText: string }> = {
     ruleText:
       'The record of processing activities shall contain, where applicable, transfers of '
       + 'personal data to a third country, including the identification of that third country.',
+  },
+  RECORD_CLEARANCE_LEDGER_ABSENT: {
+    rule: 'MiCA Art 8(2)',
+    ruleText:
+      'Marketing communications shall, upon request, be notified to the competent authority '
+      + 'of the home Member State and to the competent authority of the host Member State. '
+      + 'What must be notified is the communications, not the subset that happens to be on file.',
+  },
+  RECORD_CLEARANCE_LEDGER_UNREAD: {
+    rule: 'MiCA Art 68(9)',
+    ruleText:
+      'Records shall be sufficient to enable competent authorities to fulfil their supervisory '
+      + 'tasks. A production that never compared what was cleared against what was recorded is '
+      + 'not sufficient to answer whether it is complete.',
   },
 };
 
@@ -581,6 +632,302 @@ export interface TransferRow {
   occurred_at: string;
 }
 
+/* ════════ §5a PRODUCE OR ADMIT — the completeness claim, withdrawn ════════ */
+
+/**
+ * ══ WHY THIS SECTION EXISTS AT ALL ══
+ *
+ * Everything above makes a bundle honest about the records it HOLDS. Nothing above
+ * makes it honest about the records it DOES NOT hold, and that is the one question the
+ * approver signing an Art 8(2) production is actually answering: "is this everything?".
+ * A bundle that lists twelve records perfectly, while the desk cleared forty statements
+ * in the same window, is not incomplete — it is a misrepresentation, and it is the one a
+ * reader cannot detect, because nothing in the artefact points at the missing twenty-eight.
+ *
+ * THE JOIN IS A 256-BIT CONTENT DIGEST, NOT A NAME MATCH. `marketing_outbound_gate_decision`
+ * (0062) holds `text_sha256` and `marketing_record` (0061) holds `statement_hash`, and both
+ * are the SAME EXPRESSION over the SAME BYTES — `gateTextSha256` in `outboundGate.ts` and
+ * `sha256Hex` here. So "did the register receive the statement the gate cleared?" is
+ * answerable exactly, with no fuzzy matching and no room for a near miss to read as a hit.
+ *
+ * THE ANSWER IS CURRENTLY "ALMOST NONE OF THEM", AND THAT IS THE CORRECT OUTPUT. The
+ * clearance path in `routes/marketing.ts` writes a gate-ledger row and no record;
+ * `writeRecord`'s only caller is a separate manual approver POST; `closeOutPublication`
+ * and `listOutstandingCloseOuts` below have no callers at all, so `close_out_state`
+ * stays `'outstanding'` forever behind an index nobody queries. The drift was anticipated
+ * by the design and no detector was built. This is the detector, and on day one it reports
+ * a large number rather than rounding it into a reassurance.
+ *
+ * THERE IS NO MIGRATION HERE. Both tables exist, both have live writers, and this is one
+ * left join expressed as three window-bounded reads — see `readClearanceLedger` for why
+ * three reads and not one statement.
+ */
+
+/**
+ * A cleared statement, as 0062 holds it. One row per clearance decision that ALLOWED
+ * text out, which is the unit the approver is signing for.
+ */
+export interface ClearedStatementRow {
+  /** 0062's `bigserial`. `pg` hands `bigint` back as a string; it is kept as one. */
+  id: string;
+  /** The inbound reply this answered, or null for a desk-authored original. */
+  reply_id: string | null;
+  actor: string;
+  created_at: string;
+  text_sha256: string;
+  disposition: string;
+}
+
+/** Just enough of a record to answer "were these bytes ever recorded?". */
+export interface RecordedDigestRow {
+  record_uid: string;
+  statement_hash: string;
+  x_comment_id: string | null;
+  drafted_at: string;
+}
+
+/**
+ * `reply_id` → the queue row's `x_comment_id`, for the SECONDARY correlation only.
+ *
+ * Rows the 90-day sweep has taken are simply absent, which is why an empty list and an
+ * absent list mean different things here and are kept apart by the optional field on
+ * `ClearanceLedgerSource`.
+ */
+export interface ReplyCommentRow {
+  id: string;
+  x_comment_id: string;
+}
+
+/**
+ * What the reconciliation is computed from.
+ *
+ * `ledgerPresent: false` means 0062 is not applied, so NOTHING may be counted — not even
+ * zero. `replyComments: undefined` means the queue was not consulted, which is a weaker
+ * absence: the hash answer still stands, only the "was this an edit?" refinement is
+ * unavailable.
+ */
+export interface ClearanceLedgerSource {
+  readonly ledgerPresent: boolean;
+  readonly cleared: readonly ClearedStatementRow[];
+  readonly recordedDigests: readonly RecordedDigestRow[];
+  readonly replyComments?: readonly ReplyCommentRow[];
+  /**
+   * `false` means 0061 is unapplied, so `recordedDigests` is EMPTY BECAUSE THE TABLE DOES
+   * NOT EXIST rather than because nothing matched. Those are different facts and the
+   * rendered artefact states which one it is; without this field an absent register would
+   * be indistinguishable from a register that answered "no".
+   *
+   * Optional so every existing hand-built source keeps compiling; `undefined` is read as
+   * "the register's existence was not established", which is what a partial source means.
+   */
+  readonly registerPresent?: boolean;
+}
+
+/**
+ * THREE BUCKETS, NEVER TWO.
+ *
+ * `hash_differs` is not a shade of `never_recorded`. It is the ordinary, legitimate case
+ * — the text was edited between clearance and recording — and an approver who cannot tell
+ * it from a missing record will either chase an edit or sign off a gap.
+ */
+export type ClearanceOutcome = 'recorded' | 'never_recorded' | 'hash_differs';
+
+/**
+ * HOW FAR THE LOOKUP GOT. This field is what stops `never_recorded` from being read as
+ * "and we confirmed it was not merely edited": on three of these values, nobody checked
+ * or nobody could.
+ */
+export type ClearanceCorrelation =
+  /** The register holds a record with these exact bytes. */
+  | 'hash_match'
+  /** Same thread, different bytes — an edit between clearance and recording. */
+  | 'same_thread_different_bytes'
+  /** The thread was resolved and holds no record at all. */
+  | 'thread_checked_no_record'
+  /** The queue row is gone: the 90-day sweep in 0046 took it. Not "no such reply". */
+  | 'thread_row_swept'
+  /**
+   * `reply_id IS NULL` on the 0062 row, AND THAT DOES NOT MEAN "desk-authored original".
+   *
+   * It used to be named `no_thread_to_correlate` and documented as "a desk-authored
+   * original with no inbound reply", which stated an inference as a fact in an Art 8(2)
+   * filing. THREE live surfaces write `phase = 'clearance'` rows with a null `reply_id`
+   * and only one of them owes a record:
+   *   · `routes/marketing.ts` `POST /draft/:id/approve` — a reply clearance, which does
+   *     carry a `reply_id`, so it is NOT in this bucket;
+   *   · `routes/marketingMemory.ts` `POST /crisis/instance/:id/clearance` — the crisis
+   *     room, which accepts a clear from any of the three lanes and writes `replyId: null`;
+   *   · `routes/marketingGates.ts` `POST /claim-safety` — takes `phase` from the request
+   *     BODY on a `requireOperator` route, so any operator (including the shared machine
+   *     key) can put a row here.
+   * 0062 has no source column, so the reconciliation CANNOT tell them apart. The name says
+   * that plainly rather than naming a human in a regulatory filing on a guess.
+   */
+  | 'originating_surface_unknown'
+  /** The queue was never consulted, so an edit was neither found nor ruled out. */
+  | 'thread_not_checked';
+
+/**
+ * ONE CLEARANCE EVENT — one 0062 row that allowed these bytes out.
+ *
+ * A statement can be cleared many times: the crisis room accepts a clear from any of the
+ * three lanes and writes one row per lane for the SAME `text_sha256`, and a template reply
+ * re-gated on every draft accumulates rows indefinitely. Each event is its own act by its
+ * own human, and they are all printed.
+ */
+export interface ClearanceEvent {
+  /** 0062's row id, so an approver can go straight to the row. */
+  readonly gateId: string;
+  /** The 0062 `actor`: the authenticated principal who performed the clearance. */
+  readonly clearedBy: string;
+  readonly clearedAt: string;
+  readonly disposition: string;
+  readonly replyId: string | null;
+  /** How far the lookup got FOR THIS EVENT. The statement's own value is the strongest. */
+  readonly correlation: ClearanceCorrelation;
+}
+
+/**
+ * ONE CLEARED STATEMENT — one distinct `text_sha256`, and what became of it.
+ *
+ * THE UNIT IS THE STATEMENT, NOT THE CLEARANCE EVENT. It was the event, and one statement
+ * cleared by three lanes of the crisis room was therefore reported as THREE unrecorded
+ * statements under the label "statements cleared by the desk", with the single digest
+ * printed three times and three humans named. That is an overstatement of the gap in a
+ * document produced for a competent authority under Art 8(2). `readClearanceLedger` already
+ * de-duplicated the digests for its own read, so the code knew they repeat.
+ */
+export interface ClearedStatement {
+  /** The digest of the bytes that were cleared. This is the identifier, not a name. */
+  readonly statementHash: string;
+  /**
+   * `gate:<16 hex>` — the SAME reference the scoped Art 90 refusal tells a drafter to
+   * quote to an approver, so a reader of this bundle can resolve the exact check.
+   */
+  readonly gateReference: string;
+  /**
+   * EVERY clearance event for these bytes, earliest first. Never truncated and never
+   * reduced to a count: each one is a named human performing an act, and the second and
+   * third are the evidence that the control operated more than once.
+   */
+  readonly clearances: readonly ClearanceEvent[];
+  readonly firstClearedAt: string;
+  readonly lastClearedAt: string;
+  readonly outcome: ClearanceOutcome;
+  readonly recordUid: string | null;
+  /** `hash_differs` only: the digest the record holds. BOTH digests, or neither. */
+  readonly recordedStatementHash: string | null;
+  /**
+   * The STRONGEST correlation any of this statement's events reached, by the precedence in
+   * `CORRELATION_STRENGTH`. Weaker ones stay visible on the events themselves, so a reader
+   * can see that one lane's thread was checked and another's was swept.
+   */
+  readonly correlation: ClearanceCorrelation;
+}
+
+/**
+ * WHAT THIS SECTION IS AND IS NOT SCOPED TO, AS DATA.
+ *
+ * The bundle's header prints a Member State filter and a window, and this section obeys
+ * exactly one of them. Printing a count under a header that advertises a filter the count
+ * does not apply is how a desk-wide figure gets read as a per-Member-State one, so the
+ * asymmetry is carried in the artefact rather than left to the reader to know.
+ */
+export interface ClearanceScope {
+  readonly windowFrom: string;
+  readonly windowTo: string;
+  /**
+   * `windowFrom === windowTo`. The clearance read is `created_at >= $1 AND created_at <= $2`,
+   * so on a zero-width window it can only ever match rows stamped at that exact instant —
+   * and a zero is then an artefact of the window, not a finding about the ledger.
+   * `GET /export/:itemId` builds precisely such a window from one record's `drafted_at`.
+   */
+  readonly instantaneousWindow: boolean;
+  /** What the caller asked to narrow the RECORDS to, printed in the header. */
+  readonly jurisdictionRequested: string | null;
+  /**
+   * ALWAYS `false`. 0062 has no Member State column (checked: 0062 indexes `reply_id` and
+   * `created_at` and holds no jurisdiction), so this section CANNOT be narrowed to one and
+   * is desk-wide for the window. Since it cannot be scoped, it has to be said.
+   */
+  readonly jurisdictionApplied: false;
+  /**
+   * ALWAYS `false`. "Was this statement ever recorded?" is not a windowed question, so the
+   * digest lookup spans the whole register — which means `counts.recorded` can exceed the
+   * bundle's own `counts.records`, because it counts rows outside this production.
+   */
+  readonly recordLookupWindowed: false;
+}
+
+/**
+ * The completeness claim, stated or WITHDRAWN.
+ *
+ * `state: 'refused'` sets `counts` to null on purpose. An object shaped
+ * `{ neverRecorded: 0 }` alongside a refusal is exactly the collapse this whole file
+ * argues against: 0 and "we could not look" are different facts and they must not share
+ * a rendering.
+ *
+ * AND THE TWO LISTS ARE NULL IN THAT STATE FOR THE SAME REASON. They used to be `[]`
+ * alongside `counts: null`, so only `state` disambiguated and any consumer reading
+ * `.neverRecorded.length === 0` as "nothing missing" got the collapse `counts` was
+ * carefully protected from. `null` cannot be read that way by accident.
+ *
+ * `refusals` is a LIST because the house pattern is to return every refusal that fired,
+ * not the first one found (`routes/marketingDesk.ts`).
+ */
+export interface ClearanceReconciliation {
+  readonly state: 'measured' | 'refused';
+  /** Stated in both states: a withdrawn claim still had a scope it would have covered. */
+  readonly scope: ClearanceScope;
+  readonly refusals: readonly RecordRefusal[];
+  readonly counts: {
+    /**
+     * 0062 ROWS. The number of times the desk allowed text out, which is larger than the
+     * number of statements whenever one statement was cleared by more than one lane.
+     */
+    readonly clearanceEvents: number;
+    /** DISTINCT `text_sha256`. This is the figure a regulator should read as "statements". */
+    readonly distinctStatements: number;
+    /** Distinct statements the register holds. Counted over the WHOLE register — see `scope`. */
+    readonly recorded: number;
+    readonly neverRecorded: number;
+    readonly hashDiffers: number;
+  } | null;
+  /** `null`, NOT `[]`, when the claim is withdrawn. */
+  readonly neverRecorded: readonly ClearedStatement[] | null;
+  /** `null`, NOT `[]`, when the claim is withdrawn. */
+  readonly hashDiffers: readonly ClearedStatement[] | null;
+}
+
+/**
+ * WHICH CORRELATION WINS when one statement's events disagree. Higher is stronger, in the
+ * sense of "more was actually established". `same_thread_different_bytes` outranks the rest
+ * because it is the one value that moves the statement out of the unrecorded bucket, and
+ * `thread_not_checked` / `originating_surface_unknown` rank lowest because on those values
+ * nobody established anything at all.
+ */
+const CORRELATION_STRENGTH: Record<ClearanceCorrelation, number> = {
+  hash_match: 6,
+  same_thread_different_bytes: 5,
+  thread_checked_no_record: 4,
+  thread_row_swept: 3,
+  originating_surface_unknown: 2,
+  thread_not_checked: 1,
+};
+
+/** Printed verbatim in every bundle. The claim this production does NOT make. */
+export const PRODUCTION_COMPLETENESS_DISCLAIMER =
+  'THIS PRODUCTION does NOT assert that every statement LCX published in this window is '
+  + 'recorded here. It asserts the opposite where it can prove it: the section below joins '
+  + 'this desk\'s outbound gate ledger (migration 0062) to the record register (0061) on a '
+  + 'sha256 digest of the cleared bytes, and names every statement the desk cleared and '
+  + 'never recorded. Where that join could not be made, the completeness claim is withdrawn '
+  + 'and the reason is stated — it is never reported as "none found". THAT SECTION IS '
+  + 'DESK-WIDE FOR THE WINDOW AND IS NOT NARROWED BY THE MEMBER STATE FILTER PRINTED IN THE '
+  + 'HEADER ABOVE: the gate ledger holds no Member State, so it cannot be scoped to one, and '
+  + 'saying so is the only honest alternative to letting a desk-wide figure be read as a '
+  + 'per-Member-State one.';
+
 /** What a bundle was asked for, and by whom. All of it is printed in the header. */
 export interface BundleRequest {
   /** The named human at LCX who produced it. Not a job name. */
@@ -675,6 +1022,15 @@ export interface ExportBundle {
   };
   /** Bundle-level absences: things missing from the WHOLE bundle, not from one record. */
   readonly completeness: readonly CompletenessLine[];
+  /**
+   * WHAT THE DESK CLEARED AND NEVER RECORDED. §5a.
+   *
+   * The one field that speaks to records NOT in `records` above. It is not folded into
+   * `counts`, because `counts` describes the rows this bundle holds and this describes the
+   * rows it should have held — and a `neverRecorded` figure sitting in the same block as
+   * `records` would read as a property of the register rather than of the production.
+   */
+  readonly clearanceReconciliation: ClearanceReconciliation;
   /** Printed verbatim. The retention inference and the outstanding DPO ruling. */
   readonly caveats: readonly string[];
 }
@@ -695,9 +1051,250 @@ export interface BundleSource {
   readonly claims: readonly ClaimRow[];
   readonly transfers: readonly TransferRow[];
   readonly presentCommentIds?: readonly string[];
+  /**
+   * THE PRODUCE-OR-ADMIT SIDE. Optional, and `undefined` means "this composition was never
+   * handed the clearance ledger" — which produces `RECORD_CLEARANCE_LEDGER_UNREAD` and a
+   * withdrawn completeness claim, NOT a count of zero. Every existing caller that omits it
+   * therefore gets a bundle that says it cannot speak to completeness, which is the honest
+   * answer for a caller that did not look.
+   */
+  readonly clearance?: ClearanceLedgerSource;
 }
 
 const byStringAsc = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * THE JOIN, IN ONE PURE FUNCTION.
+ *
+ * Pure because this is the number a human acts on, and a number computed inside an async
+ * database read is a number nobody can write a test for that fails when the bucketing is
+ * wrong. `readClearanceLedger` does the three reads; every judgement is made here.
+ *
+ * `never_recorded` MEANS EXACTLY ONE THING: no row in `marketing_record` holds these
+ * bytes. That is provable from the digest alone and is the Art 8(2)-relevant fact. Whether
+ * a DIFFERENT record for the same conversation exists — an ordinary edit between clearance
+ * and recording — is a separate question, answered by `correlation`, and on three of its
+ * six values the answer is "nobody could check". Reporting a statement as unrecorded while
+ * silently implying an edit had been ruled out is the laundering this file forbids.
+ *
+ * THE UNIT OF THE ANSWER IS THE DISTINCT DIGEST. Rows are grouped by `text_sha256` before
+ * anything is counted, because one statement cleared by three crisis lanes is one statement
+ * and reporting it as three unrecorded statements overstates the gap threefold in a filing
+ * to a competent authority. `clearanceEvents` carries the row count separately, so nothing
+ * is lost — the two figures are simply not the same figure.
+ *
+ * `req` IS READ ONLY FOR THE SCOPE, never to filter. It supplies the window this section
+ * covers and the Member State filter it does NOT apply, so the artefact can state both.
+ */
+function reconcileClearances(
+  src: ClearanceLedgerSource | undefined,
+  req: BundleRequest,
+): ClearanceReconciliation {
+  const scope: ClearanceScope = {
+    windowFrom: req.windowFrom.toISOString(),
+    windowTo: req.windowTo.toISOString(),
+    instantaneousWindow: req.windowFrom.getTime() === req.windowTo.getTime(),
+    jurisdictionRequested: req.jurisdiction ?? null,
+    jurisdictionApplied: false,
+    recordLookupWindowed: false,
+  };
+  const withdrawn = (r: RecordRefusal): ClearanceReconciliation => ({
+    state: 'refused',
+    scope,
+    refusals: [r],
+    // Null, not zero. See the field comment on `ClearanceReconciliation.counts`.
+    counts: null,
+    // Null, NOT `[]`. An empty list beside a refusal reads as "nothing missing".
+    neverRecorded: null,
+    hashDiffers: null,
+  });
+
+  if (src === undefined) {
+    return withdrawn(recordRefusal(
+      'RECORD_CLEARANCE_LEDGER_UNREAD',
+      'This production did not compare what the desk CLEARED against what it RECORDED, so it '
+      + 'cannot say whether it is complete. No number is reported here, because a zero would '
+      + 'read as "we checked and found nothing missing".',
+      'Produce the bundle through a caller that reads the clearance ledger — '
+      + '`readBundleSource` does. A composition assembled from partial rows cannot answer '
+      + 'the completeness question and says so instead of guessing.',
+    ));
+  }
+  if (!src.ledgerPresent) {
+    return withdrawn(recordRefusal(
+      'RECORD_CLEARANCE_LEDGER_ABSENT',
+      `The outbound gate ledger does not exist on this environment, so this production cannot `
+      + `name the statements the desk cleared and never recorded. Migration ${GATE_MIGRATION} `
+      + `has not been applied. The completeness claim is WITHDRAWN — it is not reported as `
+      + `"0 unrecorded", because 0 and "we could not look" are different facts.`,
+      `Apply ${GATE_MIGRATION} by hand in the SQL editor. Until then every production from `
+      + 'this environment is of unknown completeness and should be filed saying so.',
+    ));
+  }
+
+  /*
+   * FIRST MATCH BY (drafted_at, record_uid) so a statement recorded twice — same bytes, two
+   * instants, two content-derived uids — resolves to the same record on every run. Without
+   * the sort the bundle digest would depend on row order, which is the property
+   * `renderBundleText` promises not to have.
+   */
+  const digests = [...src.recordedDigests].sort(
+    (a, b) => byStringAsc(a.drafted_at, b.drafted_at) || byStringAsc(a.record_uid, b.record_uid),
+  );
+  const byHash = new Map<string, RecordedDigestRow>();
+  const byComment = new Map<string, RecordedDigestRow[]>();
+  for (const d of digests) {
+    if (!byHash.has(d.statement_hash)) byHash.set(d.statement_hash, d);
+    if (d.x_comment_id != null) {
+      const list = byComment.get(d.x_comment_id);
+      if (list) list.push(d);
+      else byComment.set(d.x_comment_id, [d]);
+    }
+  }
+  const threadOf = src.replyComments
+    ? new Map(src.replyComments.map((r) => [r.id, r.x_comment_id]))
+    : null;
+
+  /*
+   * GROUPED BY DIGEST, IN CLEARANCE ORDER. The sort is on (created_at, id) as before so the
+   * rendered bytes stay a function of the rows and not of their arrival order; grouping
+   * preserves the order of FIRST clearance, which is the order an approver reads events in.
+   */
+  const rows = [...src.cleared].sort(
+    (a, b) => byStringAsc(a.created_at, b.created_at) || byStringAsc(a.id, b.id),
+  );
+  const groups = new Map<string, ClearedStatementRow[]>();
+  for (const row of rows) {
+    const list = groups.get(row.text_sha256);
+    if (list) list.push(row);
+    else groups.set(row.text_sha256, [row]);
+  }
+
+  /**
+   * WHAT BECAME OF ONE EVENT. Per event, because two events on the same digest can reach
+   * different answers — one lane's queue row swept, another's still present — and the
+   * statement then reports the strongest while the events keep the detail.
+   */
+  const assess = (row: ClearedStatementRow): {
+    correlation: ClearanceCorrelation;
+    outcome: ClearanceOutcome;
+    recordUid: string | null;
+    recordedStatementHash: string | null;
+  } => {
+    const hit = byHash.get(row.text_sha256);
+    if (hit) {
+      return {
+        correlation: 'hash_match',
+        outcome: 'recorded',
+        recordUid: hit.record_uid,
+        recordedStatementHash: hit.statement_hash,
+      };
+    }
+    // No record holds these bytes. The only remaining question is WHY, and it is asked
+    // against the conversation rather than against the text.
+    if (row.reply_id == null) {
+      /*
+       * NOT "a desk-authored original". `reply_id IS NULL` is written by the crisis room and
+       * by `POST /claim-safety` as well as by a desk original, 0062 has no source column, and
+       * this row is about to be printed with a named human beside it in a filing. The value
+       * says the originating surface is unknown, which is the only thing that is known.
+       */
+      return {
+        correlation: 'originating_surface_unknown',
+        outcome: 'never_recorded',
+        recordUid: null,
+        recordedStatementHash: null,
+      };
+    }
+    if (threadOf === null) {
+      return {
+        correlation: 'thread_not_checked',
+        outcome: 'never_recorded',
+        recordUid: null,
+        recordedStatementHash: null,
+      };
+    }
+    const comment = threadOf.get(row.reply_id);
+    if (comment === undefined) {
+      // The queue row is gone, and 0062's own header says a reader must treat a missing
+      // reply as SWEPT rather than as "no such reply".
+      return {
+        correlation: 'thread_row_swept',
+        outcome: 'never_recorded',
+        recordUid: null,
+        recordedStatementHash: null,
+      };
+    }
+    const edited = (byComment.get(comment) ?? []).find(
+      (d) => d.statement_hash !== row.text_sha256,
+    );
+    if (edited) {
+      return {
+        correlation: 'same_thread_different_bytes',
+        outcome: 'hash_differs',
+        recordUid: edited.record_uid,
+        // BOTH digests. One of them alone is an accusation with no way to check it.
+        recordedStatementHash: edited.statement_hash,
+      };
+    }
+    return {
+      correlation: 'thread_checked_no_record',
+      outcome: 'never_recorded',
+      recordUid: null,
+      recordedStatementHash: null,
+    };
+  };
+
+  const assessed: ClearedStatement[] = [];
+  for (const [hash, events] of groups) {
+    const judged = events.map((row) => ({ row, verdict: assess(row) }));
+    // The strongest verdict decides the STATEMENT. `hash_match` is a property of the digest
+    // so it is unanimous by construction; the tie-break exists for the thread values, where
+    // one lane's queue row survives and another's does not.
+    const best = judged.reduce((a, b) =>
+      CORRELATION_STRENGTH[b.verdict.correlation] > CORRELATION_STRENGTH[a.verdict.correlation]
+        ? b
+        : a,
+    );
+    assessed.push({
+      statementHash: hash,
+      gateReference: gateReferenceFrom(hash),
+      clearances: judged.map(({ row, verdict }) => ({
+        gateId: row.id,
+        clearedBy: row.actor,
+        clearedAt: row.created_at,
+        disposition: row.disposition,
+        replyId: row.reply_id,
+        correlation: verdict.correlation,
+      })),
+      firstClearedAt: events[0]!.created_at,
+      lastClearedAt: events[events.length - 1]!.created_at,
+      outcome: best.verdict.outcome,
+      recordUid: best.verdict.recordUid,
+      recordedStatementHash: best.verdict.recordedStatementHash,
+      correlation: best.verdict.correlation,
+    });
+  }
+
+  return {
+    state: 'measured',
+    scope,
+    refusals: [],
+    counts: {
+      // TWO FIGURES, NOT ONE. Rows, and distinct statements. Collapsing them is how one
+      // statement cleared by three lanes became "3 statements this desk cleared".
+      clearanceEvents: rows.length,
+      distinctStatements: assessed.length,
+      recorded: assessed.filter((s) => s.outcome === 'recorded').length,
+      neverRecorded: assessed.filter((s) => s.outcome === 'never_recorded').length,
+      hashDiffers: assessed.filter((s) => s.outcome === 'hash_differs').length,
+    },
+    // NOT truncated. A count with a sample list under it is how twenty-eight missing
+    // statements become "and 25 more", which is the omission in a different costume.
+    neverRecorded: assessed.filter((s) => s.outcome === 'never_recorded'),
+    hashDiffers: assessed.filter((s) => s.outcome === 'hash_differs'),
+  };
+}
 
 /**
  * Compose the bundle. PURE and DETERMINISTIC: the same rows and the same
@@ -741,23 +1338,68 @@ export function composeExportBundle(
       + 'prospective holders in a Member State during a period.',
     );
   }
+  /*
+   * COMPUTED BEFORE BOTH REGISTER REFUSALS, because those are the states in which the
+   * finding is most valuable and it was being lost in both of them.
+   *
+   * The empty register IS the day-one state: a refusal that says "the register is empty"
+   * while the gate ledger holds forty cleared statements is technically true and materially
+   * misleading. AND THE ABSENT REGISTER IS THE STRONGER CASE — it used to return above this
+   * line, so when 0061 was unapplied and 0062 was not, the state in which 100% of what the
+   * desk cleared is unrecordable printed nothing but the migration's name. That is the same
+   * guard-ordering mistake this comment was written to avoid, made one branch earlier.
+   */
+  const production = reconcileClearances(data.clearance, req);
+  const unrecorded = production.counts?.neverRecorded ?? 0;
+  const plural = (n: number) => (n === 1 ? '' : 's');
+
   if (!data.registerPresent) {
-    return recordRefusal(
+    const refusal = recordRefusal(
       'RECORD_REGISTER_ABSENT',
       `The record register does not exist on this environment, so no communication can be `
-      + `produced — not even to say there were none. Migration ${RECORD_MIGRATION} has not been applied.`,
+      + `produced — not even to say there were none. Migration ${RECORD_MIGRATION} has not been applied.`
+      + (unrecorded > 0
+        ? ` A register that does not exist can hold nothing, so ALL ${unrecorded} statement`
+          + `${plural(unrecorded)} the desk cleared in this window ${
+            unrecorded === 1 ? 'is' : 'are'
+          } unrecordable here — not merely unrecorded. ${
+            unrecorded === 1 ? 'It is' : 'They are'
+          } named by digest on this refusal. This is a total absence of the register the `
+          + 'completeness claim depends on, not a configuration nit.'
+        : ''),
       `Apply ${RECORD_MIGRATION} by hand in the SQL editor. Until then this surface refuses `
       + 'rather than returning an empty bundle that would read as "we published nothing".',
     );
+    return { ...refusal, clearanceReconciliation: production };
   }
+
   if (data.records.length === 0) {
-    return recordRefusal(
+    const missing = unrecorded;
+    const refusal = recordRefusal(
       'RECORD_REGISTER_EMPTY',
       'The register exists and holds NO communication in this window. It is empty — this is not '
-      + 'a finding that LCX published nothing, only that nothing was recorded.',
+      + 'a finding that LCX published nothing, only that nothing was recorded.'
+      /*
+       * Appended, never substituted: the first two sentences are the ones the existing
+       * suite pins, and the distinction they draw is still the point. This adds the number
+       * the gate ledger can prove, and stays silent when the ledger could not be read
+       * rather than appending a zero.
+       */
+      + (missing > 0
+        ? ` AND THE DESK CLEARED ${missing} statement${missing === 1 ? '' : 's'} in this `
+          + 'window that no record holds. They are named by digest on this refusal.'
+        : ''),
       'If communications were published in this window, they were published without a record and '
       + 'that gap is the finding. Widen the window, or say plainly that the register was empty.',
     );
+    /*
+     * ATTACHED IN BOTH STATES, and the state is legible from the object itself. When the
+     * ledger was read the caller gets the list; when it was not, it gets
+     * `state: 'refused'` with `counts: null` and the reason — which is the more important
+     * of the two, because an empty register plus an unreadable clearance ledger is a
+     * production of entirely unknown completeness and must not read as a small one.
+     */
+    return { ...refusal, clearanceReconciliation: production };
   }
 
   const refusalsBy = groupBy(data.refusals, (r) => r.record_uid);
@@ -805,6 +1447,62 @@ export function composeExportBundle(
       + 'no X API credential, so those numbers were never observable and are not estimated here. '
       + 'Reply counts elsewhere in this system are lower bounds, not totals.',
   });
+  /*
+   * The completeness of the PRODUCTION, as opposed to the completeness of each record. It
+   * belongs in this list because a reader who scans only the bundle-level absences must not
+   * miss that the bundle cannot vouch for its own scope.
+   */
+  if (production.state === 'refused') {
+    for (const r of production.refusals) {
+      bundleCompleteness.push({
+        field: 'production_completeness',
+        state: 'unverifiable',
+        why: `${r.sentence} (${r.code}; ${r.rule})`,
+      });
+    }
+  } else if (production.counts!.neverRecorded > 0 || production.counts!.hashDiffers > 0) {
+    bundleCompleteness.push({
+      field: 'production_completeness',
+      state: 'absent',
+      why:
+        `${production.counts!.neverRecorded} distinct statement(s) this desk cleared in this `
+        + `window are held by no record, and ${production.counts!.hashDiffers} were recorded with `
+        + 'different bytes than the ones cleared. Both lists are printed in full below; neither '
+        + 'is a rounding of the other. The unit is the distinct sha256 of the cleared bytes, NOT '
+        + `the clearance event: ${production.counts!.clearanceEvents} gate-ledger row(s) produced `
+        + `these ${production.counts!.distinctStatements} statement(s), because one statement can `
+        + 'be cleared by more than one lane.',
+    });
+  }
+  /*
+   * THE SCOPE OF THAT SECTION, AS ITS OWN BUNDLE-LEVEL ABSENCE. Stated in every state,
+   * including a measured zero, because a reader who scans only this list must not carry away
+   * a desk-wide figure believing it was narrowed to the Member State in the header.
+   */
+  if (production.scope.jurisdictionRequested !== null) {
+    bundleCompleteness.push({
+      field: 'production_completeness_member_state_scope',
+      state: 'unverifiable',
+      why:
+        `The records above are filtered to Member State "${production.scope.jurisdictionRequested}". `
+        + 'The produce-or-admit section is NOT: migration 0062 has no Member State column, so the '
+        + 'gate ledger cannot be narrowed to one and that section is DESK-WIDE for the window. '
+        + 'Its counts therefore cover clearances for every Member State, and comparing them '
+        + 'against the filtered record counts above compares two different populations.',
+    });
+  }
+  if (production.scope.instantaneousWindow) {
+    bundleCompleteness.push({
+      field: 'production_completeness_window',
+      state: 'unverifiable',
+      why:
+        `The window of this production is a single instant (${production.scope.windowFrom}), so `
+        + 'the gate-ledger read could only match clearances stamped at exactly that instant. Any '
+        + 'figure in the produce-or-admit section is therefore an artefact of the window rather '
+        + 'than a finding about the ledger, and a zero there does NOT mean the desk cleared '
+        + 'nothing. Produce a period through GET /export?from=...&to=... to ask that question.',
+    });
+  }
 
   const counts = {
     records: records.length,
@@ -839,7 +1537,9 @@ export function composeExportBundle(
       records,
       counts,
       completeness: bundleCompleteness,
+      clearanceReconciliation: production,
       caveats: [
+        PRODUCTION_COMPLETENESS_DISCLAIMER,
         RETENTION_INFERENCE_CAVEAT,
         RETENTION_DPO_RULING_OUTSTANDING,
         'THIS SYSTEM CANNOT PUBLISH. It holds no X credential and has no posting path, so the '
@@ -1135,6 +1835,142 @@ export function renderBundleText(b: ExportBundle): string {
     out.push('');
   }
 
+  /*
+   * PRINTED BEFORE THE RECORDS, deliberately.
+   *
+   * A reader under a deadline reads the top of the artefact and skims the rest. What is
+   * MISSING from a production is worth more to them than any single record in it, so the
+   * gap goes above the records rather than into an appendix — the same reasoning as the
+   * caveats block, and the opposite of the per-record completeness statement, which is
+   * printed inline because it is about the record it sits next to.
+   */
+  out.push(RULE);
+  out.push('COMPLETENESS OF THIS PRODUCTION — what the desk cleared vs. what it recorded');
+  out.push(RULE);
+  const p = b.clearanceReconciliation;
+  /*
+   * THE SCOPE, PRINTED FIRST AND IN EVERY STATE. The header twelve lines above prints a
+   * Member State filter, and this section does not obey it — so the section says so where
+   * the reader is, rather than trusting them to know which figures a filter reached.
+   */
+  out.push(`Window read      : ${p.scope.windowFrom} .. ${p.scope.windowTo}`);
+  out.push(
+    `Member State     : NOT APPLIED to this section${
+      p.scope.jurisdictionRequested === null
+        ? ' (and none was requested)'
+        : ` — the header's filter "${p.scope.jurisdictionRequested}" narrows the RECORDS only`
+    }`,
+  );
+  out.push(...wrap(
+    'Migration 0062 has no Member State column, so the gate ledger cannot be narrowed to '
+    + 'one and this section is DESK-WIDE for the window above. Comparing its counts against '
+    + 'the record counts at the top of this document compares two different populations.',
+    74,
+  ).map((l) => `  ${l}`));
+  if (p.scope.instantaneousWindow) {
+    out.push('');
+    out.push(...wrap(
+      'THE WINDOW ABOVE IS A SINGLE INSTANT, so the gate-ledger read could only match '
+      + 'clearances stamped at exactly that instant. Every figure below is an artefact of '
+      + 'that window rather than a finding about the ledger, and a zero here does NOT mean '
+      + 'the desk cleared nothing. Ask the desk-wide question with a period instead: '
+      + 'GET /export?from=...&to=... . A per-record production cannot answer it.',
+      74,
+    ).map((l) => `  ${l}`));
+  }
+  out.push('');
+  if (p.state === 'refused') {
+    out.push('THE COMPLETENESS CLAIM IS WITHDRAWN. No count is given below, because a count');
+    out.push('would be an answer and there is none. No list either: an empty list here would');
+    out.push('read as "nothing missing", which is the answer this refusal does not have.');
+    out.push('');
+    for (const r of p.refusals) {
+      out.push(`  ${r.code}  (${r.rule})`);
+      out.push(...wrap(r.sentence, 72).map((l) => `      ${l}`));
+      out.push(...wrap(`REMEDY: ${r.remedy}`, 72).map((l) => `      ${l}`));
+      out.push('');
+    }
+  } else {
+    const c = p.counts!;
+    if (c.distinctStatements === 0) {
+      out.push('The outbound gate ledger was read for this window, and this desk');
+      out.push('cleared no statement in it. That is a MEASURED zero — the ledger answered —');
+      out.push('and not the unavailable one a withdrawn claim above would have printed.');
+      out.push('');
+    } else {
+      out.push(`  DISTINCT statements cleared ..... ${c.distinctStatements}`);
+      out.push(`  clearance events behind them ... ${c.clearanceEvents}   (0062 rows)`);
+      out.push(`  of those statements, recorded .. ${c.recorded}`);
+      out.push(`  CLEARED AND NEVER RECORDED ..... ${c.neverRecorded}`);
+      out.push(`  recorded with different bytes .. ${c.hashDiffers}   (hash_differs)`);
+      out.push('');
+      out.push(...wrap(
+        'THE UNIT IS THE DISTINCT STATEMENT, not the clearance event. One statement can be '
+        + 'cleared several times — the crisis room accepts a clear from any of three lanes '
+        + 'and writes a row per lane for the same bytes — so the two figures above differ '
+        + 'whenever that happened, and only the first is a count of statements.',
+        74,
+      ).map((l) => `  ${l}`));
+      out.push('');
+      out.push(...wrap(
+        '"recorded" IS COUNTED OVER THE WHOLE REGISTER, deliberately: "was this statement '
+        + 'ever recorded?" is not a windowed question, and a record written a week after the '
+        + 'window still records the statement. So that figure counts rows OUTSIDE this '
+        + 'production and is not comparable with the record count at the top of this '
+        + 'document — it can legitimately exceed it.',
+        74,
+      ).map((l) => `  ${l}`));
+      out.push('');
+    }
+    const never = p.neverRecorded ?? [];
+    if (never.length > 0) {
+      out.push('CLEARED AND NEVER RECORDED — no record in the register holds these bytes.');
+      out.push('ONE ENTRY PER DISTINCT STATEMENT, with every clearance of it listed beneath:');
+      out.push('the sha256 as cleared, and each principal, instant and 0062 row that cleared');
+      out.push('it. `correlation` says how far the lookup got — only `thread_checked_no_record`');
+      out.push('and `same_thread_different_bytes` mean an ordinary edit was actually checked;');
+      out.push('`originating_surface_unknown` means the 0062 row carries no reply id and 0062');
+      out.push('holds no source column, so which surface cleared it CANNOT be established from');
+      out.push('this ledger — three surfaces write such rows and only one of them owes a record.');
+      for (const s of never) {
+        out.push(THIN);
+        out.push(`  sha256      : ${s.statementHash}`);
+        out.push(`  reference   : ${s.gateReference}   (resolvable by an approver)`);
+        out.push(`  correlation : ${s.correlation}   (strongest of ${s.clearances.length})`);
+        out.push(`  cleared ${s.clearances.length} time(s), first ${s.firstClearedAt}, last ${s.lastClearedAt}:`);
+        for (const e of s.clearances) {
+          out.push(
+            `    · ${e.clearedBy} at ${e.clearedAt} — gate row ${e.gateId}, `
+            + `reply ${e.replyId ?? '(none on the row)'}, ${e.disposition}, ${e.correlation}`,
+          );
+        }
+      }
+      out.push('');
+    }
+    const differs = p.hashDiffers ?? [];
+    if (differs.length > 0) {
+      out.push('RECORDED WITH DIFFERENT BYTES (hash_differs) — a record exists for the same');
+      out.push('conversation whose statement digest differs from the cleared one. That is the');
+      out.push('signature of a legitimate edit between clearance and recording, and it is');
+      out.push('reported as its own finding: BOTH digests are printed, and this is neither a');
+      out.push('missing record nor a matched one.');
+      for (const s of differs) {
+        out.push(THIN);
+        out.push(`  cleared sha256  : ${s.statementHash}`);
+        out.push(`  recorded sha256 : ${s.recordedStatementHash ?? '(absent)'}`);
+        out.push(`  record          : ${s.recordUid ?? '(absent)'}`);
+        out.push(`  correlation     : ${s.correlation}`);
+        out.push(`  cleared ${s.clearances.length} time(s):`);
+        for (const e of s.clearances) {
+          out.push(
+            `    · ${e.clearedBy} at ${e.clearedAt} — gate row ${e.gateId}, ${e.correlation}`,
+          );
+        }
+      }
+      out.push('');
+    }
+  }
+
   let n = 0;
   for (const r of b.records) {
     n += 1;
@@ -1297,8 +2133,27 @@ const RECORD_COLUMNS = `
  * quiet omission this whole file exists to prevent.
  */
 export async function readBundleSource(pool: Pool, req: BundleRequest): Promise<BundleSource> {
-  if (!(await isRecordMigrated(pool))) {
-    return { registerPresent: false, records: [], refusals: [], claims: [], transfers: [] };
+  const registerPresent = await isRecordMigrated(pool);
+  /*
+   * READ FIRST — BEFORE THE 0061 GUARD, and not inside the `uids.length === 0` guard below.
+   *
+   * The empty-register case is exactly when this read matters most: on day one the register
+   * holds nothing and the gate ledger holds every statement the desk cleared. Computing the
+   * reconciliation only when there are records to reconcile against would have hidden the
+   * finding in the one state where it is the entire answer.
+   *
+   * AND THE ABSENT-REGISTER CASE IS STRONGER STILL. This used to return before the read
+   * happened at all, so `0062 present + 0061 absent` — the state in which 100% of what the
+   * desk cleared is UNRECORDABLE — produced a `BundleSource` with no `clearance` key, and the
+   * production said only that a migration was pending. `registerPresent` is passed down so
+   * the ledger read can skip the two `marketing_record` statements (which would throw against
+   * a table that does not exist) while still reading the gate ledger.
+   */
+  const clearance = await readClearanceLedger(pool, req, registerPresent);
+  if (!registerPresent) {
+    return {
+      registerPresent: false, records: [], refusals: [], claims: [], transfers: [], clearance,
+    };
   }
   const params: unknown[] = [req.windowFrom.toISOString(), req.windowTo.toISOString()];
   let where = 'drafted_at >= $1 AND drafted_at <= $2';
@@ -1312,7 +2167,7 @@ export async function readBundleSource(pool: Pool, req: BundleRequest): Promise<
   );
   const uids = (records.rows as RecordRow[]).map((r) => r.record_uid);
   if (uids.length === 0) {
-    return { registerPresent: true, records: [], refusals: [], claims: [], transfers: [] };
+    return { registerPresent: true, records: [], refusals: [], claims: [], transfers: [], clearance };
   }
   const [refusals, claims, transfers, present] = await Promise.all([
     pool.query(
@@ -1344,6 +2199,148 @@ export async function readBundleSource(pool: Pool, req: BundleRequest): Promise<
     claims: claims.rows as ClaimRow[],
     transfers: transfers.rows as TransferRow[],
     presentCommentIds: (present.rows as Array<{ x_comment_id: string }>).map((r) => r.x_comment_id),
+    clearance,
+  };
+}
+
+/**
+ * THE PRODUCE-OR-ADMIT READ. One left join, expressed as up to four statements.
+ *
+ * ── WHY NOT ONE STATEMENT ──
+ * Written as a single `LEFT JOIN marketing_record ON statement_hash = text_sha256`, two
+ * records sharing a statement digest (the same words drafted twice — the digest does not
+ * include the instant, the `record_uid` does) FAN THE RESULT OUT and the unrecorded count
+ * silently inflates. Deduplicating in SQL means a lateral per row, and there is no index on
+ * `statement_hash` in 0061 or on `text_sha256` in 0062, so a lateral is a sequential scan
+ * per cleared statement. Two set-membership reads are one scan each and the bucketing is
+ * then done by `reconcileClearances`, which is pure and can be tested against the exact
+ * three-bucket contract. `presentCommentIds` above is a second query for the same family of
+ * reason, stated in that function's comment.
+ *
+ * ── WHAT IS AND IS NOT WINDOW-SCOPED, WHICH IS NOT SYMMETRIC ──
+ * The CLEARANCES are window-scoped: the production answers for a period. The RECORDS are
+ * NOT, because "was this statement ever recorded?" is not a windowed question — a statement
+ * cleared inside the window and recorded a week after it is recorded, and a window-scoped
+ * lookup would report it as a gap that does not exist.
+ *
+ * ── THE COST, STATED ──
+ * `created_at DESC` on 0062 is indexed (0062:123) so the clearance read is bounded. Neither
+ * digest column is indexed, so each `= ANY(...)` read is one sequential scan of
+ * `marketing_record`. That is acceptable for an on-demand regulatory production and would
+ * not be for a dashboard poll; no caller polls this. Adding the indexes needs a migration
+ * this lane does not own.
+ */
+async function readClearanceLedger(
+  pool: Pool,
+  req: BundleRequest,
+  registerPresent: boolean,
+): Promise<ClearanceLedgerSource> {
+  /*
+   * BOTH TABLES PROBED IN ONE STATEMENT, EACH ANSWERING ONLY FOR ITSELF — the idiom in
+   * `routes/marketingGates.ts probeStorage`. The gate ledger and the inbound queue are
+   * separate migrations and either can be missing alone.
+   */
+  let gate = false;
+  let queue = false;
+  try {
+    const probe = await pool.query(
+      `SELECT to_regclass('public.marketing_outbound_gate_decision') IS NOT NULL AS gate,
+              to_regclass('public.marketing_x_reply')                IS NOT NULL AS queue`,
+    );
+    const row = (probe.rows[0] ?? {}) as Record<string, unknown>;
+    gate = Boolean(row.gate);
+    queue = Boolean(row.queue);
+  } catch {
+    // A failed probe is NOT a present ledger. `ledgerPresent: false` makes the bundle
+    // withdraw the completeness claim, which is the right answer to "we could not look".
+    return { ledgerPresent: false, cleared: [], recordedDigests: [], registerPresent };
+  }
+  if (!gate) return { ledgerPresent: false, cleared: [], recordedDigests: [], registerPresent };
+
+  const cleared = await pool.query(
+    /*
+     * `allowed = true` AND `phase = 'clearance'`. A refused clearance produced no statement
+     * to record, and a `draft`-phase pass is not a clearance — counting either would report
+     * gaps that are not gaps and bury the ones that are.
+     */
+    `SELECT id::text AS id, reply_id::text AS reply_id, actor, created_at, text_sha256, disposition
+       FROM marketing_outbound_gate_decision
+      WHERE phase = 'clearance' AND allowed = true
+        AND created_at >= $1 AND created_at <= $2
+      ORDER BY created_at, id`,
+    [req.windowFrom.toISOString(), req.windowTo.toISOString()],
+  );
+  const clearedRows = cleared.rows as ClearedStatementRow[];
+  if (clearedRows.length === 0) {
+    // A MEASURED zero: the ledger was read and this desk cleared nothing in the window.
+    // `replyComments` is supplied (empty) so the reconciliation does not report "the queue
+    // was not checked" about a set with nothing in it to check.
+    return {
+      ledgerPresent: true, cleared: [], recordedDigests: [], replyComments: [], registerPresent,
+    };
+  }
+
+  const hashes = [...new Set(clearedRows.map((r) => r.text_sha256))];
+  const replyIds = [...new Set(clearedRows.map((r) => r.reply_id).filter((v): v is string => !!v))];
+
+  /*
+   * SKIPPED WHEN 0061 IS UNAPPLIED, and the empty result is then a PROVEN empty rather than
+   * an unread one: a table that does not exist holds no row that could record anything. The
+   * two `marketing_record` statements would throw against it, and a thrown read here would
+   * take the gate-ledger finding down with it — which is exactly how the absent-register
+   * state used to lose the finding entirely.
+   */
+  const byHash = registerPresent
+    ? await pool.query(
+      `SELECT record_uid, statement_hash, x_comment_id, drafted_at
+         FROM marketing_record WHERE statement_hash = ANY($1)`,
+      [hashes],
+    )
+    : { rows: [] as unknown[] };
+
+  /*
+   * THE SECONDARY CORRELATION, and it only exists to keep `hash_differs` out of the
+   * unrecorded bucket. `marketing_x_reply` is destroyed by the 90-day sweep in 0046, so
+   * beyond 90 days this resolves nothing and the reconciliation reports `thread_row_swept`
+   * rather than pretending an edit was ruled out. When 0046 is absent entirely,
+   * `replyComments` is left UNDEFINED — a weaker statement than an empty list, and the
+   * distinction is what `thread_not_checked` renders.
+   */
+  let replyComments: ReplyCommentRow[] | undefined;
+  let commentIds: string[] = [];
+  if (queue && replyIds.length > 0) {
+    const q = await pool.query(
+      `SELECT id::text AS id, x_comment_id FROM marketing_x_reply WHERE id = ANY($1::bigint[])`,
+      [replyIds],
+    );
+    replyComments = q.rows as ReplyCommentRow[];
+    commentIds = replyComments.map((r) => r.x_comment_id).filter((v): v is string => !!v);
+  } else if (queue) {
+    // The queue exists and no cleared statement answered a reply. Nothing to look up, and
+    // an empty list is the honest report: it was checked.
+    replyComments = [];
+  }
+
+  const digests = [...(byHash.rows as RecordedDigestRow[])];
+  if (registerPresent && commentIds.length > 0) {
+    // Indexed (`marketing_record_comment_idx`, 0061:244), unlike the digest read above.
+    const byComment = await pool.query(
+      `SELECT record_uid, statement_hash, x_comment_id, drafted_at
+         FROM marketing_record WHERE x_comment_id = ANY($1)`,
+      [commentIds],
+    );
+    const seen = new Set(digests.map((d) => d.record_uid));
+    for (const d of byComment.rows as RecordedDigestRow[]) {
+      if (!seen.has(d.record_uid)) digests.push(d);
+    }
+  }
+
+  return {
+    ledgerPresent: true,
+    cleared: clearedRows,
+    recordedDigests: digests,
+    registerPresent,
+    ...(replyComments === undefined ? {} : { replyComments }),
   };
 }
 
