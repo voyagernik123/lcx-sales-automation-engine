@@ -75,10 +75,34 @@ let led: pg.Pool | undefined;
 let bare: pg.Pool | undefined;
 let noGrants: pg.Pool | undefined;
 
-const scopedPool = (schema: string) =>
+/**
+ * `publicFallback: false` IS LOAD-BEARING, and CI is what proved it.
+ *
+ * These suites fabricate three databases in three schemas to test three states of
+ * migration 0071. The bare one asserts the LEDGER-ABSENT branch — a revocation that
+ * takes effect while its history cannot be written. That branch is detected by
+ * `recordRevocation` catching 42P01 (undefined_table) from its INSERT, so the branch
+ * is only reachable if `entitlement_events` resolves to NOTHING.
+ *
+ * With `search_path=<schema>,public` it resolved to something. This suite passed on a
+ * laptop whose database has never had 0071 applied, and failed in CI, where the
+ * workflow runs `npm run migrate` first and `public.entitlement_events` therefore
+ * exists. The INSERT then succeeded through the public fallback — so the test was not
+ * merely asserting the wrong value, it was WRITING TEST REVOCATION EVENTS INTO THE
+ * REAL LEDGER TABLE, which is append-only and cannot be cleaned up afterwards.
+ *
+ * The absence has to be real, not arranged by naming. The bare pool therefore drops
+ * the public fallback entirely; nothing on this path needs it — `entitlements` is
+ * created in the scoped schema below, and every type and function it uses
+ * (text, timestamptz, now()) lives in pg_catalog, which is always in scope.
+ *
+ * The other two pools keep the fallback: each creates its OWN `entitlement_events`
+ * in its own schema, which precedes public in the search path and so wins.
+ */
+const scopedPool = (schema: string, publicFallback = true) =>
   new pg.Pool({
     connectionString: process.env.DATABASE_URL,
-    options: `-c search_path=${schema},public`,
+    options: `-c search_path=${publicFallback ? `${schema},public` : schema}`,
     max: 3,
   });
 
@@ -111,7 +135,8 @@ beforeAll(async () => {
     await admin.query(`CREATE SCHEMA ${s}`);
   }
   led = scopedPool(LEDGERED);
-  bare = scopedPool(NO_LEDGER);
+  // No public fallback: the ledger's absence must be real. See scopedPool's note.
+  bare = scopedPool(NO_LEDGER, false);
   noGrants = scopedPool(NO_GRANTS);
 
   await led.query(ENTITLEMENTS_DDL);

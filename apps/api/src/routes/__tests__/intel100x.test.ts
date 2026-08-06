@@ -46,7 +46,22 @@ describeDb('intel 100x features', () => {
     const db = getDb();
     if (projectId) {
       await db.execute(sql`DELETE FROM deals WHERE project_id = ${projectId}`);
-      await db.execute(sql`DELETE FROM audit_log WHERE entity_id = ${projectId} OR entity_id = ${dealId ?? ''}`);
+      /*
+       * THE AUDIT ROWS THIS TEST WROTE ARE LEFT WHERE THEY ARE, DELIBERATELY.
+       *
+       * This used to be `DELETE FROM audit_log WHERE entity_id = ...`. Migration
+       * 0070_audit_seal.sql makes `audit_log` append-only by trigger and refuses it with
+       * AUDIT_SEAL_APPEND_ONLY, so this line failed the whole suite the moment the
+       * migration reached CI. 0070 was given NO bypass on purpose — a switch a test can
+       * flip is a switch an attacker can flip, and the control being non-optional is the
+       * entire value of a hash-chained audit log.
+       *
+       * So the cleanup goes rather than the control. Nothing depends on it: every row
+       * this suite writes is keyed to `projectId`/`dealId`, both freshly generated
+       * UUIDs, so leftover rows cannot collide with another test's assertions, and the
+       * CI database is a throwaway container. `entity_id` carries no foreign key, so
+       * the DELETE FROM projects below still succeeds with the audit rows in place.
+       */
       await db.execute(sql`DELETE FROM projects WHERE id = ${projectId}`);
     }
     await closeDb();

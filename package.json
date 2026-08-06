@@ -19,6 +19,7 @@
     "lint": "npm run lint -w @lcx/web",
     "doctrine-lint": "node scripts/doctrine-lint.mjs",
     "verify-ci": "node scripts/verify-ci.mjs",
+    "ci-mirror": "node scripts/ci-mirror.mjs",
     "type-check": "npm run type-check -w @lcx/shared && npm run type-check -w @lcx/api && npm run type-check -w @lcx/web",
     "test": "npm run test -w @lcx/shared && npm run test -w @lcx/api && npm run test -w @lcx/web",
     "test:web": "npm run test -w @lcx/web",
