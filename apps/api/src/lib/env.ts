@@ -5,6 +5,14 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 config({ path: resolve(__dirname, '../../.env') });
 
+/**
+ * The dev-only front-door passcode. Committed, therefore PUBLIC, therefore usable only
+ * where nothing is at stake. Named rather than inlined so `deskPasscodeIsPublicDefault`
+ * below and the refusal in `middleware/auth.ts` are demonstrably talking about this exact
+ * value, and so a test can assert the production path never accepts it.
+ */
+export const DESK_PASSCODE_DEV_FALLBACK = 'test#1234';
+
 function required(name: string, devFallback?: string): string {
   const v = process.env[name];
   if (v !== undefined && v !== '') return v;
@@ -50,11 +58,32 @@ export const env = {
    * So an unset env var turns `nik@lcx.com:test#1234` into an approver session —
    * the highest desk role, which clears deal sign-off and conflict-clearing.
    *
-   * Now fail-closed like the rest: unset in production throws at boot. An API that
-   * refuses to start is a visible, five-minute problem. An API that starts with a
-   * publicly-known front-door passcode is an invisible one.
+   * The value still falls back, so nothing crashes and no other credential is affected.
+   * What closes the hole is `deskPasscodeIsPublicDefault` below, which
+   * `middleware/auth.ts` uses to refuse THIS PATH ONLY when production is running on the
+   * public literal. See that flag for why the refusal is at the door and not at boot.
    */
-  deskPasscode: required('DESK_PASSCODE', 'test#1234'),
+  deskPasscode: process.env.DESK_PASSCODE ?? DESK_PASSCODE_DEV_FALLBACK,
+  /**
+   * TRUE when production is running on the committed literal, i.e. DESK_PASSCODE is unset.
+   *
+   * WHY THIS IS A FLAG AND NOT A `required()` THROW, WHICH IS WHAT I WROTE FIRST.
+   * Routing this through `required()` was correct about the danger and wrong about the
+   * remedy: it fails closed AT BOOT, so an API deployed without the variable does not
+   * start at all. That trades a silent security hole for an outage of every compartment,
+   * including the paths that authenticate perfectly well by JWT or by OPERATOR_API_KEY.
+   *
+   * Fail closed at the DOOR instead. The process starts, every other credential keeps
+   * working, and the ONE path whose secret is publicly known — email + passcode — is the
+   * only thing refused (`middleware/auth.ts`). That is the smallest blast radius that
+   * still closes the hole, and unlike a boot crash it is visible in a log line rather
+   * than in a deploy that rolls back.
+   *
+   * Setting DESK_PASSCODE in the environment clears this and restores email sign-in.
+   */
+  deskPasscodeIsPublicDefault:
+    (process.env.NODE_ENV === 'production')
+    && (process.env.DESK_PASSCODE === undefined || process.env.DESK_PASSCODE === ''),
   /**
    * SECOND-TIER desk passcode. Any @lcx.com address plus this signs in at
    * 'operator' on every compartment — no roster edit, no deploy, no grant wait.

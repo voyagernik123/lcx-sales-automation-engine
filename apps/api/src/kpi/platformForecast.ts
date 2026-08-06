@@ -60,6 +60,22 @@ export const PLATFORM_FORECAST_CODES = {
   SUBJECT_UNKNOWN: 'PLATFORM_FORECAST_SUBJECT_UNKNOWN',
   /** A probability outcome that is neither 0 nor 1 — see `scoreResolved`. */
   OUTCOME_NOT_BINARY: 'PLATFORM_FORECAST_OUTCOME_NOT_BINARY',
+  /**
+   * The identity tuple already holds a DIFFERENT prediction. The offered one was NOT
+   * stored (0074 forbids an overwrite) and is NOT reported as stored either.
+   */
+  IDENTITY_HOLDS_DIFFERENT_PREDICTION: 'PLATFORM_FORECAST_IDENTITY_HOLDS_DIFFERENT_PREDICTION',
+  /**
+   * A number Postgres accepts in a `numeric` column and JavaScript cannot carry:
+   * 'NaN', '±Infinity', or a magnitude past 1e308. Excluded from every figure, named.
+   */
+  VALUE_NOT_FINITE: 'PLATFORM_FORECAST_VALUE_NOT_FINITE',
+  /** A resolved row with nothing on the side the score needs. Excluded and counted. */
+  VALUE_NOT_SCORABLE: 'PLATFORM_FORECAST_VALUE_NOT_SCORABLE',
+  /** A Date that carries no instant (`new Date('nope')`). Refused, never coerced to now. */
+  INSTANT_INVALID: 'PLATFORM_FORECAST_INSTANT_INVALID',
+  /** 0074 refused the row on one of its own constraints. The constraint name travels. */
+  REJECTED_BY_LEDGER: 'PLATFORM_FORECAST_REJECTED_BY_LEDGER',
 } as const;
 
 export type PlatformForecastCode = (typeof PLATFORM_FORECAST_CODES)[keyof typeof PLATFORM_FORECAST_CODES];
@@ -213,10 +229,18 @@ export interface ResolvedForecast {
 /**
  * The accuracy figure for one group, expressed ONLY above the floor.
  *
- * There is no `accuracyPct` anywhere in this union, for probability forecasts least
- * of all. "73% accurate" is the shape a reader remembers and it is not a property
- * of a probabilistic forecaster at all — a forecaster that says 30% and is right
- * 30% of the time is perfectly calibrated and would score 70% "wrong".
+ * NO PROBABILITY FORECAST GETS A PERCENTAGE. "73% accurate" is the shape a reader
+ * remembers and it is not a property of a probabilistic forecaster at all — a forecaster
+ * that says 30% and is right 30% of the time is perfectly calibrated and would score 70%
+ * "wrong". So the probability branch expresses a Brier score and a skill score against
+ * its own base rate, and nothing that can be quoted as an accuracy.
+ *
+ * `agreementPct` ON THE CATEGORY BRANCH IS AN ACCURACY PERCENTAGE, and saying "there is
+ * no accuracyPct in this union" was true by field name only. For a CATEGORY prediction it
+ * is the right figure — either the label matched or it did not — and it carries its own
+ * Wilson interval so the width is visible. It is only dangerous when the two label
+ * vocabularies cannot ever match, which is what the GPS adapter used to do; see the note
+ * on `gpsOutcomeToForecast`.
  */
 export type PlatformForecastFigure =
   | {
@@ -301,6 +325,46 @@ export function environmentLabel(databaseUrl: string | null | undefined): string
   }
 }
 
+/**
+ * The environment label for a figure, from an explicit URL or from the process.
+ *
+ * `databaseUrl: null` MEANS "I CANNOT NAME ONE" AND IS NOT A MISSING ARGUMENT. Every
+ * entry point here used to read `opts?.databaseUrl ?? process.env.DATABASE_URL`, which
+ * quietly stamped the PROCESS's database name onto a figure whose caller had
+ * explicitly said it had none — so the one input that most obviously has to produce
+ * ENVIRONMENT_UNNAMED was the one input that could not, and only the empty string got
+ * there. `undefined`, or no `opts` at all, still falls back to the process: that is a
+ * caller who never spoke about the database, not one who disclaimed it.
+ */
+export function environmentFor(opts?: { readonly databaseUrl?: string | null }): string | null {
+  if (opts && opts.databaseUrl === null) return null;
+  return environmentLabel(opts?.databaseUrl ?? process.env.DATABASE_URL);
+}
+
+/**
+ * The instant, or null for a Date that carries none.
+ *
+ * `new Date('not a date').toISOString()` throws `RangeError: Invalid time value`, which
+ * used to leave `recordForecast` (whose return type promises a refusal path) rejecting
+ * instead. An unparseable instant is absent data and absent data refuses.
+ */
+const instantOf = (d: Date): string | null => {
+  const t = d instanceof Date ? d.getTime() : Number.NaN;
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+};
+
+/**
+ * Is this a number the ledger may hold and the reader may print?
+ *
+ * `numeric` ACCEPTS 'NaN' AND '±Infinity' IN POSTGRES, and `JSON.stringify(NaN)` is
+ * `null` — so a NaN that reached the ledger came back out as a figure key that is
+ * present and null, indistinguishable from one that was deliberately withheld and with
+ * no refusal beside it. The 1e308 bound is the same fact one step earlier: a numeric
+ * larger than that becomes `Infinity` the moment `Number()` touches it.
+ */
+const JS_SAFE_MAGNITUDE = 1e308;
+const isFiniteFigure = (v: number): boolean => Number.isFinite(v) && Math.abs(v) <= JS_SAFE_MAGNITUDE;
+
 /* ══════════════════════════════════════════════════════════════════════════════ */
 /* PROBES AND WRITES                                                               */
 /* ══════════════════════════════════════════════════════════════════════════════ */
@@ -358,57 +422,196 @@ export function isAppendOnlyRefusal(err: unknown): boolean {
   return codeFromPgError(err) === PLATFORM_FORECAST_CODES.APPEND_ONLY;
 }
 
+const instantInvalid = (field: string, environment: string | null): ForecastRefusal => ({
+  code: PLATFORM_FORECAST_CODES.INSTANT_INVALID,
+  sentence:
+    `The ${field} of this record carries no instant — an Invalid Date — so nothing about it can be dated `
+    + 'and it was refused. It is NOT defaulted to now(): a prediction dated to the moment it was filed is a '
+    + 'prediction with a zero horizon, which is the contamination this ledger exists to stop.',
+  rule: RULE_ABSENT_REFUSES,
+  n: null,
+  environment,
+});
+
+const valueNotFinite = (field: string, value: number, environment: string | null): ForecastRefusal => ({
+  code: PLATFORM_FORECAST_CODES.VALUE_NOT_FINITE,
+  sentence:
+    `The ${field} of this record is ${String(value)}, which is not a number any figure can be computed from, `
+    + 'so it was refused rather than stored. Postgres would have accepted it in a numeric column and JSON '
+    + 'would have serialised it back out as null — a figure key that is present and empty, with no refusal '
+    + 'beside it and nothing to tell it apart from one deliberately withheld.',
+  rule: RULE_ABSENT_REFUSES,
+  n: null,
+  environment,
+});
+
+/**
+ * A refusal when the failure was 0074 declining the row, or null when it was not.
+ *
+ * Matched on SQLSTATE, not on message text: 23514 check_violation (every CHECK in 0074,
+ * including the value-matches-kind one and the finite bounds), 23502 not_null_violation,
+ * 22003 numeric_value_out_of_range, 22007/22P02 malformed input. Anything else is NOT a
+ * refusal and is rethrown — a broken deployment must not read as "the data was bad".
+ * The constraint name travels in the sentence, because "the ledger refused this row"
+ * without saying which rule it applied is not an explanation.
+ */
+function rejectedByLedger(err: unknown, environment: string | null): ForecastRefusal | null {
+  const e = err as { code?: string; constraint?: string } | null;
+  const sqlstate = typeof e?.code === 'string' ? e.code : '';
+  if (!['23514', '23502', '22003', '22007', '22P02'].includes(sqlstate)) return null;
+  const named = e?.constraint ? `constraint ${e.constraint}` : `SQLSTATE ${sqlstate}`;
+  return {
+    code: PLATFORM_FORECAST_CODES.REJECTED_BY_LEDGER,
+    sentence:
+      `Migration ${PLATFORM_FORECAST_MIGRATION} refused this row on ${named}, so no prediction was recorded. `
+      + 'The ledger is the authority on what a well-formed prediction is and this was not one; the refusal is '
+      + 'returned rather than thrown so a job can report it beside the rows it did record.',
+    rule: RULE_ABSENT_REFUSES,
+    n: null,
+    environment,
+  };
+}
+
+interface IdentityRow {
+  id: string;
+  prediction_kind: string;
+  predicted_num: string | null;
+  predicted_label: string | null;
+  horizon_days: number;
+  inserted: boolean;
+}
+
+/** Same number, allowing for `numeric` coming back as a differently-scaled string. */
+const sameNum = (stored: string | null, offered: number | null | undefined): boolean => {
+  const o = offered ?? null;
+  if (stored === null || o === null) return stored === null && o === null;
+  return Number(stored) === o;
+};
+
 /**
  * Record a prediction.
  *
  * `ON CONFLICT DO NOTHING` on the identity index, then a RETURNING-or-select: a job
  * re-running over the same pass must not double the corpus the n-floor is measured
- * against. It returns the EXISTING id in that case rather than an error, because
- * "this exact prediction is already on file" is not a failure.
+ * against, so re-recording an identical call returns the EXISTING id rather than an
+ * error — "this prediction is already on file" is not a failure.
+ *
+ * BUT THE IDENTITY INDEX DOES NOT COVER THE VALUE, AND THE FIRST CUT OF THIS REPORTED
+ * SUCCESS FOR A PREDICTION IT HAD NOT STORED. `(engine, engine_version, subject_type,
+ * subject_id, metric_key, predicted_at)` says nothing about `predicted_num`, so a
+ * SECOND, DIFFERENT call at the same instant was swallowed by DO NOTHING and the
+ * pre-existing id was handed back with ok:true. The caller was told its number was in
+ * the ledger; the ledger held somebody else's. So the existing row is read back and
+ * COMPARED, and a genuine disagreement is a refusal — 0074 will not let it be
+ * overwritten, and this will not let it be silently dropped either. Which of the two
+ * is right is not a question this function can answer, so it does not guess.
  */
 export async function recordForecast(
   pool: pg.Pool,
   input: ForecastPredictionInput,
   opts?: { readonly databaseUrl?: string | null },
 ): Promise<RecordResult> {
-  const environment = environmentLabel(opts?.databaseUrl ?? process.env.DATABASE_URL);
+  const environment = environmentFor(opts);
   if (environment === null) return { ok: false, refusal: environmentUnnamed() };
   if (!(await platformForecastLedgerPresent(pool))) {
     return { ok: false, refusal: ledgerAbsent(environment) };
   }
 
-  const { rows } = await pool.query<{ id: string }>(
-    `WITH ins AS (
-       INSERT INTO platform_forecast
-         (engine, engine_version, subject_type, subject_id, metric_key, prediction_kind,
-          predicted_num, predicted_label, predicted_at, horizon_days, inputs_frame, environment)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::timestamptz,$10,$11::jsonb,$12)
-       ON CONFLICT (engine, engine_version, subject_type, subject_id, metric_key, predicted_at)
-         DO NOTHING
-       RETURNING id
-     )
-     SELECT id FROM ins
-     UNION ALL
-     SELECT id FROM platform_forecast
-      WHERE engine=$1 AND engine_version=$2 AND subject_type=$3 AND subject_id=$4
-        AND metric_key=$5 AND predicted_at=$9::timestamptz
-      LIMIT 1`,
-    [
-      input.engine,
-      input.engineVersion,
-      input.subjectType,
-      input.subjectId,
-      input.metricKey,
-      input.kind,
-      input.predictedNum ?? null,
-      input.predictedLabel ?? null,
-      input.predictedAt.toISOString(),
-      input.horizonDays,
-      JSON.stringify(input.inputsFrame ?? {}),
-      environment,
-    ],
-  );
-  return { ok: true, id: rows[0]!.id };
+  const predictedAt = instantOf(input.predictedAt);
+  if (predictedAt === null) {
+    return { ok: false, refusal: instantInvalid('predictedAt', environment) };
+  }
+  if (input.predictedNum != null && !isFiniteFigure(input.predictedNum)) {
+    return { ok: false, refusal: valueNotFinite('predictedNum', input.predictedNum, environment) };
+  }
+
+  let rows: IdentityRow[];
+  try {
+    // The `existing` CTE runs against the statement's own snapshot, so it sees a
+    // pre-existing conflicting row and never the row `ins` is inserting. `ORDER BY
+    // inserted DESC` is what makes the branch below deterministic — the bare
+    // `UNION ALL … LIMIT 1` this replaces bounded the WHOLE union and relied on
+    // Postgres happening to emit the CTE's row first.
+    ({ rows } = await pool.query<IdentityRow>(
+      `WITH ins AS (
+         INSERT INTO platform_forecast
+           (engine, engine_version, subject_type, subject_id, metric_key, prediction_kind,
+            predicted_num, predicted_label, predicted_at, horizon_days, inputs_frame, environment)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::timestamptz,$10,$11::jsonb,$12)
+         ON CONFLICT (engine, engine_version, subject_type, subject_id, metric_key, predicted_at)
+           DO NOTHING
+         RETURNING id, prediction_kind, predicted_num, predicted_label, horizon_days
+       ),
+       existing AS (
+         SELECT id, prediction_kind, predicted_num, predicted_label, horizon_days
+           FROM platform_forecast
+          WHERE engine=$1 AND engine_version=$2 AND subject_type=$3 AND subject_id=$4
+            AND metric_key=$5 AND predicted_at=$9::timestamptz
+          LIMIT 1
+       )
+       SELECT * FROM (
+         SELECT id, prediction_kind, predicted_num, predicted_label, horizon_days, true  AS inserted FROM ins
+         UNION ALL
+         SELECT id, prediction_kind, predicted_num, predicted_label, horizon_days, false AS inserted FROM existing
+       ) u
+       ORDER BY inserted DESC
+       LIMIT 1`,
+      [
+        input.engine,
+        input.engineVersion,
+        input.subjectType,
+        input.subjectId,
+        input.metricKey,
+        input.kind,
+        input.predictedNum ?? null,
+        input.predictedLabel ?? null,
+        predictedAt,
+        input.horizonDays,
+        JSON.stringify(input.inputsFrame ?? {}),
+        environment,
+      ],
+    ));
+  } catch (err) {
+    // 0074's own constraints (value-matches-kind, positive horizon, non-empty text,
+    // finite numbers) become refusals rather than rejections: `RecordResult` promises
+    // a refusal path and a calibration job handed a probability of 1.0000000000000002
+    // by ordinary floating point used to die instead of refusing. Anything that is NOT
+    // one of 0074's constraints still throws — an unexpected failure laundered into a
+    // refusal would read as "the data was bad" about a broken deployment.
+    const refusal = rejectedByLedger(err, environment);
+    if (refusal) return { ok: false, refusal };
+    throw err;
+  }
+
+  const row = rows[0]!;
+  if (row.inserted !== true) {
+    const differs =
+      row.prediction_kind !== input.kind
+      || !sameNum(row.predicted_num, input.predictedNum ?? null)
+      || (row.predicted_label ?? null) !== (input.predictedLabel ?? null)
+      || Number(row.horizon_days) !== input.horizonDays;
+    if (differs) {
+      return {
+        ok: false,
+        refusal: {
+          code: PLATFORM_FORECAST_CODES.IDENTITY_HOLDS_DIFFERENT_PREDICTION,
+          sentence:
+            `A DIFFERENT prediction is already on file for ${input.engine}@${input.engineVersion} / `
+            + `${input.subjectType} ${input.subjectId} / ${input.metricKey} at `
+            + `${predictedAt}: the ledger holds ${row.prediction_kind} `
+            + `${row.predicted_num ?? row.predicted_label ?? 'null'} over ${row.horizon_days} days, and this `
+            + `call offered ${input.kind} ${input.predictedNum ?? input.predictedLabel ?? 'null'} over `
+            + `${input.horizonDays} days. Nothing was overwritten and nothing was silently dropped. Which of `
+            + 'the two is the real call is not something this function can know, so it does not choose: record '
+            + 'the new one at its own instant, or bump the engine version.',
+          rule: RULE_NO_LAUNDERING,
+          n: null,
+          environment,
+        },
+      };
+    }
+  }
+  return { ok: true, id: row.id };
 }
 
 /**
@@ -424,9 +627,16 @@ export async function recordForecastOutcome(
   input: ForecastOutcomeInput,
   opts?: { readonly databaseUrl?: string | null },
 ): Promise<RecordResult> {
-  const environment = environmentLabel(opts?.databaseUrl ?? process.env.DATABASE_URL);
+  const environment = environmentFor(opts);
   if (!(await platformForecastLedgerPresent(pool))) {
     return { ok: false, refusal: ledgerAbsent(environment) };
+  }
+  const observedAt = instantOf(input.observedAt);
+  if (observedAt === null) {
+    return { ok: false, refusal: instantInvalid('observedAt', environment) };
+  }
+  if (input.observedNum != null && !isFiniteFigure(input.observedNum)) {
+    return { ok: false, refusal: valueNotFinite('observedNum', input.observedNum, environment) };
   }
   try {
     const { rows } = await pool.query<{ id: string }>(
@@ -439,7 +649,7 @@ export async function recordForecastOutcome(
         input.kind,
         input.observedNum ?? null,
         input.observedLabel ?? null,
-        input.observedAt.toISOString(),
+        observedAt,
         input.source,
         input.note ?? null,
         input.provenance,
@@ -474,6 +684,8 @@ export async function recordForecastOutcome(
         },
       };
     }
+    const rejected = rejectedByLedger(err, environment);
+    if (rejected) return { ok: false, refusal: rejected };
     throw err;
   }
 }
@@ -482,20 +694,55 @@ export async function recordForecastOutcome(
 /* THE AS-OF SEAM — what `intel/calibration.ts` needs and could not have            */
 /* ══════════════════════════════════════════════════════════════════════════════ */
 
+export interface SubjectAnchor {
+  /**
+   * The EARLIEST resolved prediction instant for the subject, and the reason it is the
+   * earliest is the whole of this lane's headline defect.
+   *
+   * THIS WAS `max(predicted_at)` AND THAT DID NOT HOLD. The argument for max() was that
+   * 0074's guard trigger forbids an outcome dated before its prediction, so a resolved
+   * prediction is at or before its own outcome. That is true and it is not the claim
+   * that matters: the trigger relates a forecast to ITS OWN outcome row, and says
+   * nothing about the instant the SUBJECT's real-world outcome happened — the deal's
+   * win date lives in another table the ledger cannot see. So a pass that records a
+   * forecast for an already-won project, and resolves it against the win it can read
+   * today, is perfectly legal, and `max()` deliberately picks that latest one as the
+   * anchor. The as-of read then returns the current, post-outcome value and the whole
+   * fix evaporates. That is not hypothetical: `intel/alpha.ts` is instructed to record
+   * each scheduled pass at the pass instant, which produces exactly this row for every
+   * subject already decided.
+   *
+   * `min()` is the earliest defensible instant — the first call anyone made about this
+   * subject — and it cannot be dragged later by an after-the-fact pass. It is still not
+   * a GUARANTEE that the anchor precedes the outcome (if every recorded call postdates
+   * the win, the earliest one does too), which is why `outcomeAt` and
+   * `predictionsAtOrAfterOwnOutcome` travel beside it and why the caller must bound the
+   * anchor against the outcome IT is validating against. `intel/calibration.ts` does
+   * that with `deals.won_at` and refuses the subjects that fail it.
+   */
+  readonly asOf: string;
+  /**
+   * The earliest outcome instant among the subject's resolved forecasts.
+   *
+   * `asOf <= outcomeAt` ALWAYS, by the trigger, so this is NOT a contamination check —
+   * it is what a caller needs to see how much room there is between the two, and to
+   * cross-check its own notion of when the subject was decided.
+   */
+  readonly outcomeAt: string;
+  /**
+   * Resolved predictions for this subject recorded at or after that earliest outcome
+   * instant. Non-zero means the ledger holds calls made about a subject already
+   * decided — legal, sometimes deliberate, and never usable as an as-of anchor.
+   */
+  readonly predictionsAtOrAfterOwnOutcome: number;
+}
+
 export interface AsOfAnchors {
   /** False when 0074 is unapplied. Then `bySubject` is empty and MUST NOT read as "no predictions". */
   readonly ledgerPresent: boolean;
   readonly migration: string;
-  /**
-   * subjectId → the instant of the LATEST RESOLVED prediction for that subject.
-   *
-   * Resolved only, and that is the load-bearing part. An unresolved forecast
-   * recorded today for a project that was won in March would anchor the as-of read
-   * AFTER the outcome and re-admit exactly the contamination this exists to remove.
-   * 0074's guard trigger already forbids an outcome dated before its prediction, so
-   * a resolved prediction is structurally at or before its own outcome.
-   */
-  readonly bySubject: ReadonlyMap<string, string>;
+  /** subjectId → its anchor. Resolved forecasts only. */
+  readonly bySubject: ReadonlyMap<string, SubjectAnchor>;
 }
 
 /**
@@ -513,31 +760,62 @@ export interface AsOfAnchors {
  * Returning an empty map when the ledger is missing would reproduce the same class
  * of error one level up, so `ledgerPresent` is a separate field and the caller has
  * to branch on it.
+ *
+ * WHAT THIS FUNCTION STILL CANNOT DO, stated because the comment it replaces claimed
+ * otherwise: it cannot certify that an anchor precedes the subject's real outcome. It
+ * knows about forecasts and their recorded outcomes, not about `deals`. It reports
+ * everything a caller needs to make that judgement (`SubjectAnchor`) and leaves the
+ * judgement — and the refusal — to the caller that knows what "the outcome" is.
  */
 export async function asOfAnchors(pool: pg.Pool, subjectType: string): Promise<AsOfAnchors> {
   if (!(await platformForecastLedgerPresent(pool))) {
     return { ledgerPresent: false, migration: PLATFORM_FORECAST_MIGRATION, bySubject: new Map() };
   }
-  const { rows } = await pool.query<{ subject_id: string; as_of: string }>(
-    `SELECT f.subject_id,
-            to_char(max(f.predicted_at) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS as_of
-       FROM platform_forecast f
-       JOIN LATERAL (
-         SELECT o.outcome_kind
-           FROM platform_forecast_outcome o
-          WHERE o.forecast_id = f.id
-          ORDER BY o.seq DESC
-          LIMIT 1
-       ) latest ON true
-      WHERE f.subject_type = $1
-        AND latest.outcome_kind = 'resolved'
-      GROUP BY f.subject_id`,
+  const { rows } = await pool.query<{
+    subject_id: string;
+    as_of: string;
+    outcome_at: string;
+    after_own_outcome: string;
+  }>(
+    `WITH resolved AS (
+       SELECT f.subject_id, f.predicted_at, latest.observed_at
+         FROM platform_forecast f
+         JOIN LATERAL (
+           SELECT o.outcome_kind, o.observed_at
+             FROM platform_forecast_outcome o
+            WHERE o.forecast_id = f.id
+            ORDER BY o.seq DESC
+            LIMIT 1
+         ) latest ON true
+        WHERE f.subject_type = $1
+          AND latest.outcome_kind = 'resolved'
+     ),
+     agg AS (
+       SELECT subject_id, min(predicted_at) AS as_of, min(observed_at) AS outcome_at
+         FROM resolved
+        GROUP BY subject_id
+     )
+     SELECT a.subject_id,
+            to_char(a.as_of      AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS as_of,
+            to_char(a.outcome_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS outcome_at,
+            (SELECT count(*) FROM resolved r
+              WHERE r.subject_id = a.subject_id AND r.predicted_at >= a.outcome_at) AS after_own_outcome
+       FROM agg a`,
     [subjectType],
   );
   return {
     ledgerPresent: true,
     migration: PLATFORM_FORECAST_MIGRATION,
-    bySubject: new Map(rows.map((r) => [r.subject_id, r.as_of])),
+    bySubject: new Map(
+      rows.map((r) => [
+        r.subject_id,
+        {
+          asOf: r.as_of,
+          outcomeAt: r.outcome_at,
+          predictionsAtOrAfterOwnOutcome: Number(r.after_own_outcome ?? 0),
+        },
+      ]),
+    ),
   };
 }
 
@@ -724,15 +1002,21 @@ function scoreResolved(
   if (kind === 'probability') {
     const pairs: { p: number; o: number }[] = [];
     let nonBinary = 0;
+    let notFinite = 0;
     for (const r of rows) {
       const p = r.predictedNum;
       const o = r.observedNum;
+      if ((p != null && !isFiniteFigure(p)) || (o != null && !isFiniteFigure(o))) {
+        notFinite += 1;
+        continue;
+      }
       if (p == null || o == null || (o !== 0 && o !== 1)) {
         nonBinary += 1;
         continue;
       }
       pairs.push({ p, o });
     }
+    if (notFinite > 0) refusals.push(notFiniteRows(notFinite, environment));
     if (nonBinary > 0) {
       refusals.push({
         code: PLATFORM_FORECAST_CODES.OUTCOME_NOT_BINARY,
@@ -753,6 +1037,10 @@ function scoreResolved(
     const brier = mean(pairs.map((x) => (x.p - x.o) ** 2));
     const referenceBrier = mean(pairs.map((x) => (base - x.o) ** 2));
     const successes = pairs.filter((x) => x.o === 1).length;
+    if (![base, brier, referenceBrier].every(isFiniteFigure)) {
+      refusals.push(figureNotFinite('brier', environment));
+      return { figure: null, refusals };
+    }
     return {
       figure: {
         kind: 'brier',
@@ -772,6 +1060,9 @@ function scoreResolved(
 
   if (kind === 'category') {
     const usable = rows.filter((r) => r.predictedLabel != null && r.observedLabel != null);
+    if (usable.length < rows.length) {
+      refusals.push(notScorableRows(rows.length - usable.length, 'a label on both sides', environment));
+    }
     if (usable.length < MIN_RESOLVED_FOR_CALIBRATION) {
       refusals.push(belowFloor(usable.length, environment));
       return { figure: null, refusals };
@@ -790,21 +1081,93 @@ function scoreResolved(
   }
 
   // ordinal | scalar
-  const errs = rows
-    .filter((r) => r.predictedNum != null && r.observedNum != null)
-    .map((r) => Math.abs(r.predictedNum! - r.observedNum!));
+  const errs: number[] = [];
+  let notFinite = 0;
+  let notScorable = 0;
+  for (const r of rows) {
+    const p = r.predictedNum;
+    const o = r.observedNum;
+    if (p == null || o == null) {
+      // A resolved row whose outcome arrived as a LABEL for a numeric prediction. It
+      // used to be filtered out in silence, so above the floor a shrinking n had
+      // nothing to explain it.
+      notScorable += 1;
+      continue;
+    }
+    if (!isFiniteFigure(p) || !isFiniteFigure(o)) {
+      notFinite += 1;
+      continue;
+    }
+    errs.push(Math.abs(p - o));
+  }
+  if (notScorable > 0) refusals.push(notScorableRows(notScorable, 'a number on both sides', environment));
+  if (notFinite > 0) refusals.push(notFiniteRows(notFinite, environment));
   if (errs.length < MIN_RESOLVED_FOR_CALIBRATION) {
     refusals.push(belowFloor(errs.length, environment));
+    return { figure: null, refusals };
+  }
+  const meanErr = mean(errs);
+  const medianErr = median(errs);
+  // Every input is finite by construction above, and a sum of finite doubles can still
+  // reach Infinity. `round4(Infinity)` serialises as null, which is why this is checked
+  // rather than assumed: a null figure key with no refusal beside it is exactly the
+  // shape the doctrine forbids.
+  if (!isFiniteFigure(meanErr) || !isFiniteFigure(medianErr)) {
+    refusals.push(figureNotFinite('absolute_error', environment));
     return { figure: null, refusals };
   }
   return {
     figure: {
       kind: 'absolute_error',
-      meanAbsoluteError: round4(mean(errs)),
-      medianAbsoluteError: round4(median(errs)),
+      meanAbsoluteError: round4(meanErr),
+      medianAbsoluteError: round4(medianErr),
       unit: 'points_of_the_predicted_metric',
     },
     refusals,
+  };
+}
+
+/** Rows the ledger accepted before 0074's finite bounds existed, or from another writer. */
+function notFiniteRows(n: number, environment: string | null): ForecastRefusal {
+  return {
+    code: PLATFORM_FORECAST_CODES.VALUE_NOT_FINITE,
+    sentence:
+      `${n} resolved forecast${n === 1 ? '' : 's'} in this group carr${n === 1 ? 'ies' : 'y'} a value that is `
+      + 'not a finite number (NaN, ±Infinity, or past 1e308) and w'
+      + `${n === 1 ? 'as' : 'ere'} excluded from the figure. Postgres accepts these in a numeric column; `
+      + 'JSON turns them back into null, which would have put an empty figure key on screen with nothing '
+      + 'saying why.',
+    rule: RULE_ABSENT_REFUSES,
+    n,
+    environment,
+  };
+}
+
+/** Resolved, but with nothing on the side the arithmetic needs. */
+function notScorableRows(n: number, needs: string, environment: string | null): ForecastRefusal {
+  return {
+    code: PLATFORM_FORECAST_CODES.VALUE_NOT_SCORABLE,
+    sentence:
+      `${n} resolved forecast${n === 1 ? '' : 's'} in this group ${n === 1 ? 'does' : 'do'} not carry ${needs}, `
+      + `so ${n === 1 ? 'it was' : 'they were'} excluded from the figure. The exclusion is named because an n `
+      + 'that quietly got smaller is how a figure moves for a reason nobody can see.',
+    rule: RULE_ABSENT_REFUSES,
+    n,
+    environment,
+  };
+}
+
+/** The arithmetic ran and did not produce a number. Refused, never serialised as null. */
+function figureNotFinite(which: string, environment: string | null): ForecastRefusal {
+  return {
+    code: PLATFORM_FORECAST_CODES.VALUE_NOT_FINITE,
+    sentence:
+      `The ${which} figure for this group did not evaluate to a finite number, so no figure is expressed. `
+      + 'This is a refusal and not an empty field: JSON would have rendered the result as null, which is '
+      + 'indistinguishable from a value deliberately withheld.',
+    rule: RULE_ABSENT_REFUSES,
+    n: null,
+    environment,
   };
 }
 
@@ -866,7 +1229,7 @@ export async function computePlatformForecastCalibration(
   pool: pg.Pool,
   opts?: { readonly databaseUrl?: string | null },
 ): Promise<PlatformForecastCalibration> {
-  const environment = environmentLabel(opts?.databaseUrl ?? process.env.DATABASE_URL);
+  const environment = environmentFor(opts);
   const present = await platformForecastLedgerPresent(pool);
   const refusals: ForecastRefusal[] = [];
   if (environment === null) refusals.push(environmentUnnamed());
@@ -915,16 +1278,23 @@ export async function computePlatformForecastCalibration(
     .map(([key, rs]) => {
       const [engine, engineVersion, metricKey, kind] =
         key.split(GROUP_KEY_SEP) as [string, string, string, PredictionKind];
-      const scored = suppressAll
-        ? { figure: null, refusals: [environmentUnnamed()] }
-        : scoreResolved(rs, kind, environment);
+      /*
+       * THE GROUP IS SCORED EVEN WHEN THE FIGURE IS SUPPRESSED, and only the figure is
+       * dropped. Replacing the whole call with `{ figure: null, refusals:
+       * [environmentUnnamed()] }` — which is what this did — DELETED the group's other
+       * refusals: a group that was also below the floor, or had nothing resolved, or had
+       * non-binary outcomes excluded, lost every one of those and reported the
+       * environment as its only problem. The house rule is to return EVERY refusal, not
+       * the first one found, and an unnamed environment is not a licence to stop looking.
+       */
+      const scored = scoreResolved(rs, kind, environment);
       return {
         engine,
         engineVersion,
         metricKey,
         kind,
-        figure: scored.figure,
-        refusals: scored.refusals,
+        figure: suppressAll ? null : scored.figure,
+        refusals: suppressAll ? [environmentUnnamed(), ...scored.refusals] : scored.refusals,
         // THIS GROUP'S counts, not the whole ledger's. See `census`.
         frame: frameFor(rs, c.byGroup.get(key) ?? null, environment, true),
       };
@@ -944,6 +1314,23 @@ export async function computePlatformForecastCalibration(
 export interface ForecastPair {
   readonly prediction: ForecastPredictionInput;
   readonly outcome: Omit<ForecastOutcomeInput, 'forecastId'>;
+}
+
+/**
+ * What the mapping produced, AND what it deliberately did not.
+ *
+ * `omitted` EXISTS BECAUSE A DROPPED FORECAST IS ABSENT DATA and absent data refuses.
+ * A caller looping over an array of pairs cannot tell "GPS has no such prediction" from
+ * "this version of the adapter forgot", and the difference is the entire question the
+ * ledger was built to answer.
+ */
+export interface GpsForecastMapping {
+  readonly pairs: readonly ForecastPair[];
+  readonly omitted: readonly {
+    readonly metricKey: string;
+    /** Why nothing was recorded. One sentence, to the operator. */
+    readonly reason: string;
+  }[];
 }
 
 /**
@@ -973,7 +1360,7 @@ export function gpsOutcomeToForecast(
     readonly decidedAt: Date;
     readonly horizonDays: number;
   },
-): readonly ForecastPair[] {
+): GpsForecastMapping {
   const pairs: ForecastPair[] = [];
   const base = {
     engine: 'gps.underwrite',
@@ -984,27 +1371,36 @@ export function gpsOutcomeToForecast(
     horizonDays: args.horizonDays,
   } as const;
 
-  // The disposition, as a probability of winning. NOT derived from the factor
-  // scores: nothing in GPS produces a win probability today, so the prediction is
-  // the only one actually on file — the quoted price implies the desk thought the
-  // engagement worth quoting — and it is recorded as an ordinal 1, never as a
-  // fabricated 0.65. A caller with a real probability model passes it instead.
-  pairs.push({
-    prediction: {
-      ...base,
+  /*
+   * NO WIN FORECAST IS RECORDED, AND THAT IS THE FINDING RATHER THAN A GAP.
+   *
+   * THE FIRST CUT OF THIS SHIPPED A LIE. It recorded `engagement_won` as a CATEGORY
+   * prediction with `predictedLabel: 'quoted'` and resolved it with `observedLabel =
+   * disposition` ('won' | 'lost'). 'quoted' is not a disposition and can never equal
+   * one, so the agreement branch scored 0 for every row FOREVER — and above the floor of
+   * 8 the platform would have expressed a real-looking figure asserting the underwriting
+   * engine was wrong 100% of the time. The comment above it described different code
+   * ("recorded as an ordinal 1, never as a fabricated 0.65"), so nothing on the page
+   * said what the rows actually were.
+   *
+   * The two ways out are both worse than refusing. Recording `predictedLabel: 'won'`
+   * asserts the desk predicted a win on every engagement it quoted, which no desk does
+   * and nothing in GPS says. Recording an ordinal 1, or a probability, invents a number
+   * (`OutcomeRecord` carries `factorScoresAtQuote`, `offerKey` and a quoted price —
+   * nothing in `packages/shared/src/gps` turns any of those into a win probability). So
+   * the win side is OMITTED and says so: an inference is never laundered into a
+   * certainty. When GPS grows a real win-probability model, its caller passes the
+   * probability and this omission disappears on its own.
+   */
+  const omitted = [
+    {
       metricKey: 'engagement_won',
-      kind: 'category',
-      predictedLabel: 'quoted',
-      inputsFrame: { factorScoresAtQuote: record.factorScoresAtQuote, offerKey: record.offerKey },
+      reason:
+        'No win forecast is recorded for this engagement: nothing in GPS produces a win probability at quote '
+        + 'time, and neither the quoted price nor the factor scores is one. A prediction invented here would '
+        + 'be scored against the real disposition and read as the underwriting engine\'s accuracy.',
     },
-    outcome: {
-      kind: 'resolved',
-      observedLabel: record.disposition,
-      observedAt: args.decidedAt,
-      source: 'gps_outcome',
-      provenance: 'observed',
-    },
-  });
+  ];
 
   // The quoted price against the realised one. `realisedPriceCents` is nullable and
   // a null is UNRESOLVABLE, not a zero: `gps/loop.ts:122` records that defaulting it
@@ -1037,5 +1433,5 @@ export function gpsOutcomeToForecast(
           },
   });
 
-  return pairs;
+  return { pairs, omitted };
 }

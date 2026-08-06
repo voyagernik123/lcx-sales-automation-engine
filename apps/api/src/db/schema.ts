@@ -814,6 +814,12 @@ export const platformForecast = pgTable('platform_forecast', {
   metricKey: text('metric_key').notNull(),
   /** probability | ordinal | scalar | category — a 0.7 probability and a 0.7 ordinal are not one claim. */
   predictionKind: text('prediction_kind').notNull(),
+  /**
+   * 0074 bounds this to ±1e308 as well as to the kind's own range. Postgres accepts
+   * 'NaN' and '±Infinity' in a numeric column and `JSON.stringify(NaN)` is `null`, so an
+   * unbounded column shipped a figure key that was present and empty with no refusal
+   * beside it.
+   */
   predictedNum: numeric('predicted_num'),
   predictedLabel: text('predicted_label'),
   /** Supplied by the caller, NOT defaulted: a DEFAULT now() dates every backfill to the backfill. */
@@ -852,6 +858,7 @@ export const platformForecastOutcome = pgTable('platform_forecast_outcome', {
   forecastId: uuid('forecast_id').references(() => platformForecast.id).notNull(),
   /** resolved | unresolvable. 'unresolvable' is a first-class outcome, not a missing row. */
   outcomeKind: text('outcome_kind').notNull(),
+  /** Same ±1e308 bound as `platform_forecast.predicted_num`, and for the same reason. */
   observedNum: numeric('observed_num'),
   observedLabel: text('observed_label'),
   /** 0074 refuses a row whose `observed_at` precedes its prediction's `predicted_at`. */

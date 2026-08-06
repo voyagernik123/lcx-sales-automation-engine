@@ -41,9 +41,12 @@
 --  anywhere that would let an absent outcome read as a correct one. Every figure is
 --  computed in `kpi/platformForecast.ts`, which refuses below a stated n.
 --
---  ZERO DROP / DELETE / TRUNCATE of existing data. Two new tables, six indexes,
---  three functions, five triggers. Idempotent. RLS on both (the API's postgres
---  owner bypasses), matching 0042/0071.
+--  ZERO DROP / DELETE / TRUNCATE of existing data. Two new tables, six indexes, two
+--  functions, five triggers, and two finite-value constraints added by the DO block at
+--  the end (see the note there for why they are not in the table bodies). Idempotent —
+--  re-running it on a database that already has the tables adds the constraints and
+--  changes nothing else. RLS on both (the API's postgres owner bypasses), matching
+--  0042/0071.
 -- ──────────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS platform_forecast (
@@ -245,6 +248,59 @@ DROP TRIGGER IF EXISTS trg_pfoutcome_after_prediction ON platform_forecast_outco
 CREATE TRIGGER trg_pfoutcome_after_prediction
   BEFORE INSERT ON platform_forecast_outcome
   FOR EACH ROW EXECUTE FUNCTION platform_forecast_outcome_after_prediction();
+
+-- ══════════════════════════════════════════════════════════════════════════════
+--  NaN AND ±Infinity ARE VALID `numeric` VALUES IN POSTGRES, AND THEY BECAME A
+--  FIGURE THAT WAS PRESENT AND EMPTY.
+--
+--  The value-matches-kind CHECK above bounds the 'probability' kind only, and it does
+--  so by accident of arithmetic: NaN sorts ABOVE every number in Postgres, so
+--  `NaN <= 1` is false and the row is refused. For 'ordinal' and 'scalar' the check
+--  only requires `predicted_num IS NOT NULL`, and `INSERT … VALUES ('NaN')` was
+--  accepted. `kpi/platformForecast.ts` then computed a mean over it and
+--  `JSON.stringify(NaN)` is `null` — so `meanAbsoluteError: null` shipped beside a
+--  computed `medianAbsoluteError: 2`, with no refusal, indistinguishable from a figure
+--  deliberately withheld. That is the one shape the doctrine forbids outright.
+--
+--  THE BOUND IS ±1e308 AND NOT ±Infinity, deliberately. The reader is JavaScript: a
+--  numeric larger than about 1.8e308 becomes `Infinity` the moment `Number()` touches
+--  it, so a value the database considers finite can still arrive as one that is not.
+--  1e308 is a round number below that edge. NaN fails `<= 1e308` (it sorts above
+--  everything) and ±Infinity fail their respective sides, so all three are refused by
+--  the same expression.
+--
+--  ADDED IN A DO BLOCK, not in the CREATE TABLE bodies above, because those are
+--  `IF NOT EXISTS`: on a database where 0074 has already run, a constraint added to the
+--  table body would never be applied. This form is correct on a fresh database and on
+--  one that already has the tables, which is what "idempotent" has to mean here.
+-- ══════════════════════════════════════════════════════════════════════════════
+DO $do$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'platform_forecast_predicted_num_finite'
+       AND conrelid = 'platform_forecast'::regclass
+  ) THEN
+    ALTER TABLE platform_forecast
+      ADD CONSTRAINT platform_forecast_predicted_num_finite CHECK (
+        predicted_num IS NULL
+        OR (predicted_num >= -1e308::numeric AND predicted_num <= 1e308::numeric)
+      );
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+     WHERE conname = 'platform_forecast_outcome_observed_num_finite'
+       AND conrelid = 'platform_forecast_outcome'::regclass
+  ) THEN
+    ALTER TABLE platform_forecast_outcome
+      ADD CONSTRAINT platform_forecast_outcome_observed_num_finite CHECK (
+        observed_num IS NULL
+        OR (observed_num >= -1e308::numeric AND observed_num <= 1e308::numeric)
+      );
+  END IF;
+END
+$do$;
 
 ALTER TABLE platform_forecast         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE platform_forecast_outcome ENABLE ROW LEVEL SECURITY;

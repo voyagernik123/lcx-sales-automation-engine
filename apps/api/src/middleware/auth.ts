@@ -74,7 +74,31 @@ export function resolvePrincipal(
     const email = key.slice(0, sep);
     const passcode = key.slice(sep + 1);
     const member = findMemberByEmail(email);
-    if (member && safeEqual(passcode, env.deskPasscode)) {
+    /*
+     * THE PATH IS CLOSED WHEN ITS SECRET IS PUBLIC.
+     *
+     * `env.deskPasscodeIsPublicDefault` is true only in production with DESK_PASSCODE
+     * unset, in which case `env.deskPasscode` is the literal committed in `lib/env.ts`
+     * and in test fixtures. The other half is public too: the roster emails are committed
+     * at `packages/shared/src/operators.ts`, two of them with `role: 'approver'`. So this
+     * comparison would hand the highest desk role — deal sign-off, conflict-clearing — to
+     * anyone with a checkout of this repository.
+     *
+     * REFUSED HERE, NOT AT BOOT. Throwing in `lib/env.ts` was the first fix and it was
+     * the wrong trade: it stops the whole API, including JWT and OPERATOR_API_KEY
+     * requests that are perfectly well authenticated, so it converts a quiet hole into a
+     * loud outage of eight compartments. This refuses the ONE path whose secret is known
+     * and leaves everything else serving.
+     *
+     * Setting DESK_PASSCODE in the environment re-opens it. Until then this is not a
+     * degraded mode to be worked around — the door genuinely has no lock.
+     *
+     * IT FALLS THROUGH, IT DOES NOT RETURN. An early `return null` here — which is what I
+     * wrote first — would also skip case (3) below, so a roster member signing in with
+     * SECONDARY_PASSCODE would be refused by a guard that has nothing to do with that
+     * credential. Only this comparison is disabled; the next case still runs.
+     */
+    if (member && !env.deskPasscodeIsPublicDefault && safeEqual(passcode, env.deskPasscode)) {
       return {
         id: member.id,
         role: member.role === 'approver' ? 'approver' : 'operator',

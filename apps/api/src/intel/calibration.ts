@@ -6,8 +6,10 @@ import {
   MIN_RESOLVED_FOR_CALIBRATION,
   PLATFORM_FORECAST_MIGRATION,
   asOfAnchors,
+  environmentFor,
   environmentLabel,
   type AsOfAnchors,
+  type SubjectAnchor,
 } from '../kpi/platformForecast.js';
 
 /**
@@ -62,10 +64,31 @@ import {
  *       measurable is a change to `intel/alpha.ts` (record each pass as a forecast
  *       instead of deleting the previous one), which is another lane's file.
  *
- *  The SIGNAL metrics are different: nothing deletes `tvl_usd` or
- *  `github_commits_30d`, so their history is real and an as-of read is a genuine
- *  read of what was observable when the call was made. Those are computed — once
- *  there are anchors, and once the won sample clears the floor.
+ *       THE SAME IS TRUE OF TWO OF THE FOUR "SIGNALS", and this file used to state the
+ *       opposite as a fact. `intel/backfill.ts:34` runs
+ *
+ *           DELETE FROM observations WHERE source IN ('coingecko','internal')
+ *                                     AND predicate = ANY(BACKFILL_PREDICATES)
+ *
+ *       and that list contains `market_cap_usd` (rewritten at backfill.ts:74, source
+ *       'coingecko') and `priority_score` (backfill.ts:85, source 'internal', which is
+ *       the internal model's own output and not an outside signal at all). One row per
+ *       subject survives, always the newest. Those two therefore refuse with
+ *       `CALIBRATION_HISTORY_DESTROYED_BY_BACKFILL` and their real counts.
+ *
+ *  Only `tvl_usd` (connectors/defillama.ts) and `github_commits_30d`
+ *  (connectors/github.ts) are genuinely append-only, so only those two get an as-of
+ *  read — once there are anchors, once the anchors are provably pre-outcome, and once
+ *  the won sample clears the floor.
+ *
+ *  ══ AND THE ANCHOR ITSELF HAS TO BE EARNED ══
+ *  `asOfAnchors` gives the EARLIEST resolved prediction instant per subject, which a
+ *  later after-the-fact pass cannot drag forward. That is necessary and not sufficient:
+ *  the forecast ledger cannot see `deals`, so it cannot know when a project was actually
+ *  won. A subject whose earliest recorded call is not strictly BEFORE its own `won_at`
+ *  — or whose `won_at` is unknown — has no honest as-of instant at all, and is excluded
+ *  from every figure and counted under `CALIBRATION_ANCHOR_POSTDATES_OUTCOME` rather
+ *  than read at an instant after the fact.
  *
  *  ══ THE HEADLINE IS A REFUSAL, AND IT SHIPS AS THE HEADLINE ══
  *  On the day this landed: 0074 unapplied, no engine writing forecasts, so EVERY
@@ -80,6 +103,24 @@ import {
 export const CALIBRATION_CODES = {
   /** The four alpha scores have no surviving history to read as of. See the header. */
   SCORE_HISTORY_DESTROYED: 'CALIBRATION_SCORE_HISTORY_DESTROYED_BY_RECOMPUTE',
+  /**
+   * Same mechanism, different writer: `intel/backfill.ts` DELETEs its predicates on
+   * every run, so `market_cap_usd` and `priority_score` keep exactly one row each.
+   */
+  BACKFILL_HISTORY_DESTROYED: 'CALIBRATION_HISTORY_DESTROYED_BY_BACKFILL',
+  /**
+   * The subject's earliest recorded prediction instant is NOT before the outcome it
+   * would be validated against, so no honest as-of read exists for it. Excluded, counted.
+   */
+  ANCHOR_POSTDATES_OUTCOME: 'CALIBRATION_ANCHOR_POSTDATES_OUTCOME',
+  /** Anchors exist, rows for this predicate exist, and none is readable at or before any anchor. */
+  NO_VALUE_AS_OF_ANCHOR: 'CALIBRATION_NO_VALUE_READABLE_AS_OF_ANCHOR',
+  /** Nothing anywhere carries this predicate. Genuinely empty — the third state. */
+  NO_OBSERVATION_OF_METRIC: 'CALIBRATION_NO_OBSERVATION_OF_METRIC',
+  /** The universe median is 0, so a lift (a RATIO against it) is undefined, not small. */
+  LIFT_UNDEFINED: 'CALIBRATION_LIFT_UNDEFINED_ZERO_UNIVERSE_MEDIAN',
+  /** The top-quintile threshold is at or below the whole distribution, so "top 20%" is everyone. */
+  QUINTILE_DEGENERATE: 'CALIBRATION_QUINTILE_THRESHOLD_DEGENERATE',
   /** 0074 is not applied, so no prediction instant exists to read as of. */
   ANCHOR_LEDGER_ABSENT: 'CALIBRATION_PREDICTION_INSTANT_LEDGER_ABSENT',
   /** 0074 is applied and no subject has a resolved forecast. Distinct from the above. */
@@ -138,8 +179,15 @@ export interface CalibrationRefusal {
 export interface CalibrationFrame {
   /** Which database. `null` refuses; no figure renders off an unnamed environment. */
   readonly environment: string | null;
+  /**
+   * WHAT WAS ACTUALLY READ. The third member exists because the first was asserted as
+   * fact even when the as-of read came back with nothing — the frame testified to a read
+   * that had not happened as described, which is an inference laundered into a
+   * provenance claim.
+   */
   readonly observed:
     | 'observation_value_as_of_prediction_instant'
+    | 'no_value_readable_as_of_prediction_instant'
     | 'subject_counts_only_no_value_read';
   readonly asOf: string;
   /** Earliest / latest anchor instant that actually fed the figure. */
@@ -155,6 +203,21 @@ export interface CalibrationFrame {
    * for a reason nobody can see.
    */
   readonly subjectsWithoutAnchor: number;
+  /**
+   * COVERAGE, NOT READABILITY, and the two were indistinguishable on the wire.
+   * `sampleUniverse` / `sampleWon` mean different things in different branches — real
+   * coverage in the refusing branches, the as-of readable count in the scoring one — so
+   * "we hold no market-cap data" and "we hold it and cannot read it as of anything"
+   * rendered identically as 0. These two are always the coverage count: subjects that
+   * carry this predicate at all, and how many of those are won.
+   */
+  readonly subjectsWithMetric: number;
+  readonly wonSubjectsWithMetric: number;
+  /**
+   * Won subjects excluded because their earliest recorded prediction instant does not
+   * precede their win. Not a smaller sample: a named exclusion.
+   */
+  readonly wonSubjectsAnchorPostdatesOutcome: number;
   readonly minWonSample: number;
 }
 
@@ -191,10 +254,97 @@ export interface MetricCalibration {
 const SCORE_METRICS = ['conviction', 'listing_propensity', 'winnability', 'timing_window'];
 
 /**
- * Signals from outside the platform. Nothing deletes these, so their history is
- * real and an as-of read means something.
+ * The signals whose history IS REAL, and it is two of them, not four.
+ *
+ * `tvl_usd` is written by `connectors/defillama.ts:105` with source 'defillama' and
+ * `github_commits_30d` by `connectors/github.ts:91` with source 'github'. Nothing in
+ * this repo deletes either — no DELETE anywhere names those predicates or those sources
+ * — so every pass appends and an as-of read is a genuine read of what was observable
+ * when the call was made.
  */
-const SIGNAL_METRICS = ['tvl_usd', 'github_commits_30d', 'market_cap_usd', 'priority_score'];
+const SIGNAL_METRICS_APPEND_ONLY = ['tvl_usd', 'github_commits_30d'];
+
+/**
+ * THE TWO "SIGNALS" WHOSE HISTORY IS DELETED, and the sentence this file used to carry
+ * about them was false: "Signals from outside the platform. Nothing deletes these, so
+ * their history is real and an as-of read means something."
+ *
+ * `intel/backfill.ts:34` opens every run with
+ *
+ *     DELETE FROM observations WHERE source IN ('coingecko','internal')
+ *                               AND predicate = ANY(BACKFILL_PREDICATES)
+ *
+ * and `BACKFILL_PREDICATES` contains `market_cap_usd` — written back at backfill.ts:74
+ * with source 'coingecko' — and `priority_score` — backfill.ts:85, source 'internal'.
+ * So exactly one row per subject survives for each, and it is always the newest: the
+ * IDENTICAL mechanism this file diagnoses for the alpha scores, and it was routed into
+ * the branch that computes a lift and prints a verdict instead of the branch that
+ * refuses.
+ *
+ * `priority_score` is also not "from outside the platform" in any sense — it is the
+ * internal model's own output, read out of `scores` by backfill.ts:47.
+ *
+ * Making these measurable is a change to `intel/backfill.ts` (append a new observation
+ * instead of deleting the previous one), which is another lane's file.
+ */
+const SIGNAL_METRICS_HISTORY_DELETED = ['market_cap_usd', 'priority_score'];
+
+/** How `intel/backfill.ts` destroys the history, named exactly, for the refusal. */
+const BACKFILL_DELETER =
+  'observations rows for predicate=%P prior to the latest backfill pass — deleted by intel/backfill.ts '
+  + "(DELETE FROM observations WHERE source IN ('coingecko','internal') AND predicate = ANY(BACKFILL_PREDICATES)) "
+  + 'on every run';
+
+/**
+ * ONE METRIC, AND WHETHER ANYTHING DELETES ITS HISTORY.
+ *
+ * The deletion is a property of the PREDICATE and its writer, not of `kind`, and that
+ * distinction is the whole of the second defect this file carried: the branch that
+ * refuses was selected by `kind === 'score'`, so two predicates whose history is deleted
+ * by a different writer went down the branch that computes a lift and prints a verdict.
+ * `kind` stays what it always was — how the scorecard groups the row — and
+ * `historyDestroyedBy` is what decides whether a value may be read at all.
+ */
+interface MetricSpec {
+  readonly predicate: string;
+  readonly kind: 'score' | 'signal';
+  readonly historyDestroyedBy: {
+    readonly code: CalibrationCode;
+    /** Completes "…the only surviving observation of it is the newest one, because ___". */
+    readonly why: string;
+    /** `%P` is replaced by the predicate. Names the rows that are gone and who deleted them. */
+    readonly missingHistory: string;
+  } | null;
+}
+
+const ALPHA_DELETER = {
+  code: CALIBRATION_CODES.SCORE_HISTORY_DESTROYED,
+  why:
+    'every alpha recompute deletes the previous pass, and that newest value carries the listing-status '
+    + 'adjustment alpha.ts applies once a project is on LCX — which every won deal is.',
+  missingHistory:
+    'observations rows for predicate=%P prior to the latest alpha pass — deleted by '
+    + 'intel/alpha.ts (DELETE FROM observations WHERE predicate = ANY(ALPHA_PREDICATES)) on every run',
+} as const;
+
+const BACKFILL_DELETED = {
+  code: CALIBRATION_CODES.BACKFILL_HISTORY_DESTROYED,
+  why:
+    'every backfill pass deletes its own predicates before rewriting them (intel/backfill.ts:34), so exactly '
+    + 'one row per subject survives and it is always the newest — the same mechanism that makes the alpha '
+    + 'scores unmeasurable, with a different writer.',
+  missingHistory: BACKFILL_DELETER,
+} as const;
+
+const METRICS: readonly MetricSpec[] = [
+  ...SCORE_METRICS.map((predicate) => ({ predicate, kind: 'score' as const, historyDestroyedBy: ALPHA_DELETER })),
+  ...SIGNAL_METRICS_APPEND_ONLY.map((predicate) => ({
+    predicate, kind: 'signal' as const, historyDestroyedBy: null,
+  })),
+  ...SIGNAL_METRICS_HISTORY_DELETED.map((predicate) => ({
+    predicate, kind: 'signal' as const, historyDestroyedBy: BACKFILL_DELETED,
+  })),
+];
 
 /**
  * Below this many anchored won deals, no lift and no capture — the counts only.
@@ -265,17 +415,35 @@ interface AsOfRow {
   won_median: string | null;
   won_top: string;
   unanchored_n: string;
+  contaminated_won_n: string;
+  quintile_degenerate: boolean | null;
 }
 
 /**
  * The as-of read: for each anchored subject, the last observation of `predicate`
  * AT OR BEFORE that subject's prediction instant.
  *
- * `observed_at <= a.as_of` IS THE WHOLE FIX. The old query was
+ * `observed_at <= a.as_of` IS HALF THE FIX. The old query was
  * `DISTINCT ON (subject_id) … ORDER BY subject_id, observed_at DESC` with no bound,
  * which for a won subject returns a value observed after the outcome. Anchors are
  * passed as parallel arrays through `unnest` rather than `= ANY(...)` — see
  * `intel/alpha.ts:137` for why an array literal is the reliable form here.
+ *
+ * `a.as_of < w.won_at` IS THE OTHER HALF, and without it the first half was decorative.
+ * The bound is only worth anything if the anchor itself predates the outcome, and the
+ * forecast ledger cannot know that — it can only guarantee a forecast is at or before
+ * ITS OWN outcome row. `deals.won_at` is where this file finds out when the subject was
+ * really decided, so a won subject is admitted ONLY when its earliest recorded call is
+ * strictly before its win. The rest are counted in `contaminated_won_n` and excluded —
+ * from the universe as well as from the won side, because a post-outcome value in the
+ * denominator moves the lift exactly as far as one in the numerator.
+ *
+ * MEDIANS ARE NEAREST-RANK (`percentile_disc`), NOT INTERPOLATED. `percentile_cont`
+ * returns the mean of the two middle values at an even n, which is a number no subject
+ * ever had — and this lane's other half (`kpi/platformForecast.ts:median`) argues the
+ * opposite rule for itself in as many words: "every number reported is one that was
+ * measured". Two halves of one lane disagreeing about what a median is, with the
+ * interpolated one reaching the screen, is not a defensible split.
  *
  * `unanchored_n` counts subjects that have the predicate and no instant, so the
  * exclusion is visible in the frame instead of just making the sample smaller.
@@ -283,7 +451,7 @@ interface AsOfRow {
 async function asOfRead(
   pool: pg.Pool,
   predicate: string,
-  anchors: ReadonlyMap<string, string>,
+  anchors: ReadonlyMap<string, SubjectAnchor>,
 ): Promise<{
   universeN: number;
   wonN: number;
@@ -291,33 +459,59 @@ async function asOfRead(
   wonMedian: number | null;
   wonTop: number;
   unanchoredN: number;
+  contaminatedWonN: number;
+  quintileDegenerate: boolean;
 }> {
   const ids = [...anchors.keys()];
-  const instants = ids.map((id) => anchors.get(id)!);
+  const instants = ids.map((id) => anchors.get(id)!.asOf);
   const { rows } = await pool.query<AsOfRow>(
     `WITH anchor(subject_id, as_of) AS (
        SELECT * FROM unnest($2::text[], $3::timestamptz[])
      ),
+     won AS (
+       SELECT d.project_id::text AS pid, min(d.won_at) AS won_at
+         FROM deals d
+        WHERE d.stage = 'won'
+        GROUP BY d.project_id
+     ),
+     -- A won subject is readable only as of an instant STRICTLY BEFORE its win. An
+     -- unknown won_at is not a pass: it is an unknown, and it refuses.
+     won_ok AS (
+       SELECT w.pid FROM won w JOIN anchor a ON a.subject_id = w.pid
+        WHERE w.won_at IS NOT NULL AND a.as_of < w.won_at
+     ),
+     won_bad AS (
+       SELECT w.pid FROM won w JOIN anchor a ON a.subject_id = w.pid
+        WHERE w.won_at IS NULL OR a.as_of >= w.won_at
+     ),
+     elig AS (
+       SELECT a.subject_id, a.as_of FROM anchor a
+        WHERE NOT EXISTS (SELECT 1 FROM won_bad b WHERE b.pid = a.subject_id)
+     ),
      m AS (
        SELECT DISTINCT ON (o.subject_id) o.subject_id, o.value_num AS v
          FROM observations o
-         JOIN anchor a ON a.subject_id = o.subject_id
+         JOIN elig a ON a.subject_id = o.subject_id
         WHERE o.predicate = $1 AND o.value_num IS NOT NULL
           AND o.observed_at <= a.as_of
         ORDER BY o.subject_id, o.observed_at DESC
      ),
-     won AS (SELECT DISTINCT project_id::text AS pid FROM deals WHERE stage = 'won'),
-     wonm AS (SELECT m.v FROM won JOIN m ON m.subject_id = won.pid),
-     thr AS (SELECT percentile_cont(0.8) WITHIN GROUP (ORDER BY v) AS t FROM m)
+     wonm AS (SELECT m.v FROM won_ok JOIN m ON m.subject_id = won_ok.pid),
+     thr AS (SELECT percentile_disc(0.8) WITHIN GROUP (ORDER BY v) AS t, min(v) AS lo FROM m)
      SELECT
        (SELECT count(*) FROM m) AS universe_n,
        (SELECT count(*) FROM wonm) AS won_n,
-       (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY v) FROM m) AS universe_median,
-       (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY v) FROM wonm) AS won_median,
+       (SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY v) FROM m) AS universe_median,
+       (SELECT percentile_disc(0.5) WITHIN GROUP (ORDER BY v) FROM wonm) AS won_median,
        (SELECT count(*) FROM wonm, thr WHERE wonm.v >= thr.t) AS won_top,
        (SELECT count(DISTINCT o.subject_id) FROM observations o
           WHERE o.predicate = $1 AND o.value_num IS NOT NULL
-            AND NOT EXISTS (SELECT 1 FROM anchor a WHERE a.subject_id = o.subject_id)) AS unanchored_n`,
+            AND NOT EXISTS (SELECT 1 FROM anchor a WHERE a.subject_id = o.subject_id)) AS unanchored_n,
+       (SELECT count(*) FROM won_bad) AS contaminated_won_n,
+       -- "The top quintile" means nothing when the threshold sits at or below the
+       -- bottom of the distribution: every subject is in it and the capture is 100% by
+       -- construction. Flagged here, refused above.
+       (SELECT thr.t <= thr.lo FROM thr) AS quintile_degenerate`,
     [predicate, ids, instants],
   );
   const r = rows[0];
@@ -328,31 +522,39 @@ async function asOfRead(
     wonMedian: r?.won_median != null ? Number(r.won_median) : null,
     wonTop: Number(r?.won_top ?? 0),
     unanchoredN: Number(r?.unanchored_n ?? 0),
+    contaminatedWonN: Number(r?.contaminated_won_n ?? 0),
+    quintileDegenerate: r?.quintile_degenerate === true,
   };
 }
 
-function frame(
-  environment: string | null,
-  anchors: AsOfAnchors,
-  observed: CalibrationFrame['observed'],
-  subjectsAnchored: number,
-  subjectsWithoutAnchor: number,
-  window: { from: string | null; to: string | null },
-): CalibrationFrame {
+function frame(args: {
+  environment: string | null;
+  anchors: AsOfAnchors;
+  observed: CalibrationFrame['observed'];
+  subjectsAnchored: number;
+  subjectsWithoutAnchor: number;
+  /** Real coverage of the predicate, whatever the branch. Never the readable count. */
+  coverage: { universeN: number; wonN: number };
+  wonSubjectsAnchorPostdatesOutcome: number;
+  window: { from: string | null; to: string | null };
+}): CalibrationFrame {
   return {
-    environment,
-    observed,
+    environment: args.environment,
+    observed: args.observed,
     asOf: new Date().toISOString(),
-    windowFrom: window.from,
-    windowTo: window.to,
-    anchorBasis: !anchors.ledgerPresent
+    windowFrom: args.window.from,
+    windowTo: args.window.to,
+    anchorBasis: !args.anchors.ledgerPresent
       ? 'ledger_absent'
-      : subjectsAnchored === 0
+      : args.subjectsAnchored === 0
         ? 'no_anchor_available'
         : 'resolved_platform_forecast',
-    anchorMigration: anchors.migration,
-    subjectsAnchored,
-    subjectsWithoutAnchor,
+    anchorMigration: args.anchors.migration,
+    subjectsAnchored: args.subjectsAnchored,
+    subjectsWithoutAnchor: args.subjectsWithoutAnchor,
+    subjectsWithMetric: args.coverage.universeN,
+    wonSubjectsWithMetric: args.coverage.wonN,
+    wonSubjectsAnchorPostdatesOutcome: args.wonSubjectsAnchorPostdatesOutcome,
     minWonSample: MIN_WON_SAMPLE,
   };
 }
@@ -360,20 +562,25 @@ function frame(
 /**
  * One metric, calibrated or refused.
  *
- * The score branch is UNCONDITIONAL and does not consult the anchors, which looks
- * like a missing feature and is the opposite. An as-of read against a table whose
- * history was deleted returns either nothing (anchor before the last recompute) or
- * the current penalised row (anchor after it) — and the second case is silent
+ * The deleted-history branch is UNCONDITIONAL and does not consult the anchors, which
+ * looks like a missing feature and is the opposite. An as-of read against a table whose
+ * history was deleted returns either nothing (anchor before the last recompute) or the
+ * current post-outcome row (anchor after it) — and the second case is silent
  * contamination that LOOKS like it was fixed. There is no anchor that makes the
- * surviving alpha row honest, so no anchor is consulted.
+ * surviving row honest, so no anchor is consulted.
+ *
+ * `historyDestroyedBy` is what selects that branch, NOT `kind`. Two of the four
+ * "signals" have their history deleted too, by a different writer (`intel/backfill.ts`),
+ * and routing on `kind` is exactly how they ended up in the branch that computes a lift.
  */
 async function calibrateMetric(
   pool: pg.Pool,
-  predicate: string,
-  kind: 'score' | 'signal',
+  spec: MetricSpec,
   anchors: AsOfAnchors,
   environment: string | null,
 ): Promise<MetricCalibration> {
+  const predicate = spec.predicate;
+  const kind = spec.kind;
   const refusals: CalibrationRefusal[] = [];
   if (environment === null) {
     refusals.push({
@@ -389,52 +596,67 @@ async function calibrateMetric(
   }
 
   const anchorWindow = (() => {
-    const xs = [...anchors.bySubject.values()].sort();
+    const xs = [...anchors.bySubject.values()].map((a) => a.asOf).sort();
     return { from: xs[0] ?? null, to: xs[xs.length - 1] ?? null };
   })();
 
-  /* ── The score metrics: unmeasurable, with their real counts. ── */
-  if (kind === 'score') {
-    const c = await counts(pool, predicate, [...anchors.bySubject.keys()]);
+  /*
+   * COVERAGE IS READ FOR EVERY METRIC, IN EVERY BRANCH. It used to be read only where
+   * the code was about to refuse, which left `sampleUniverse` meaning "real coverage"
+   * in one branch and "as-of readable count" in another — so 0 could mean "we hold no
+   * rows of this predicate" or "we hold nine and cannot read one of them as of any
+   * anchor", and the two rendered identically. The frame now carries coverage
+   * separately from whatever fed the figure.
+   */
+  const c = await counts(pool, predicate, [...anchors.bySubject.keys()]);
+  const coverage = { universeN: c.universeN, wonN: c.wonN };
+
+  const refused = (
+    verdict: CalibrationVerdict,
+    observed: CalibrationFrame['observed'],
+    samples: { won: number; universe: number },
+    postdates = 0,
+  ): MetricCalibration => ({
+    metricKey: predicate,
+    kind,
+    lift: null,
+    quintileCapture: null,
+    wonMedian: null,
+    universeMedian: null,
+    sampleWon: samples.won,
+    sampleUniverse: samples.universe,
+    verdict,
+    refusals,
+    frame: frame({
+      environment,
+      anchors,
+      observed,
+      subjectsAnchored: anchors.bySubject.size,
+      subjectsWithoutAnchor: c.unanchoredN,
+      coverage,
+      wonSubjectsAnchorPostdatesOutcome: postdates,
+      window: anchorWindow,
+    }),
+  });
+
+  /* ── History deleted by its own writer: unmeasurable, with the real counts. ── */
+  if (spec.historyDestroyedBy) {
     refusals.push({
-      code: CALIBRATION_CODES.SCORE_HISTORY_DESTROYED,
+      code: spec.historyDestroyedBy.code,
       sentence:
         `No lift is expressed for ${predicate}: the only surviving observation of it is the newest one, `
-        + 'because every alpha recompute deletes the previous pass, and that newest value carries the '
-        + 'listing-status adjustment alpha.ts applies once a project is on LCX — which every won deal is. '
+        + `because ${spec.historyDestroyedBy.why} `
         + `The ${c.wonN} won and ${c.universeN} universe subjects that carry it are the finding.`,
       rule: RULE_NO_LAUNDERING,
       n: c.wonN,
-      missingHistory:
-        'observations rows for predicate=' + predicate + ' prior to the latest alpha pass — deleted by '
-        + 'intel/alpha.ts (DELETE FROM observations WHERE predicate = ANY(ALPHA_PREDICATES)) on every run',
+      missingHistory: spec.historyDestroyedBy.missingHistory.replace('%P', predicate),
       environment,
     });
-    return {
-      metricKey: predicate,
-      kind,
-      lift: null,
-      quintileCapture: null,
-      wonMedian: null,
-      universeMedian: null,
-      sampleWon: c.wonN,
-      sampleUniverse: c.universeN,
-      verdict: 'unmeasurable',
-      refusals,
-      frame: frame(
-        environment,
-        anchors,
-        'subject_counts_only_no_value_read',
-        anchors.bySubject.size,
-        c.unanchoredN,
-        anchorWindow,
-      ),
-    };
+    return refused('unmeasurable', 'subject_counts_only_no_value_read', { won: c.wonN, universe: c.universeN });
   }
 
   /* ── No prediction instant: refuse, but still report coverage. ── */
   if (!anchors.ledgerPresent || anchors.bySubject.size === 0) {
-    const c = await counts(pool, predicate, [...anchors.bySubject.keys()]);
     refusals.push(
       !anchors.ledgerPresent
         ? {
@@ -460,30 +682,79 @@ async function calibrateMetric(
             environment,
           },
     );
-    return {
-      metricKey: predicate,
-      kind,
-      lift: null,
-      quintileCapture: null,
-      wonMedian: null,
-      universeMedian: null,
-      sampleWon: c.wonN,
-      sampleUniverse: c.universeN,
-      verdict: 'unmeasurable',
-      refusals,
-      frame: frame(
-        environment,
-        anchors,
-        'subject_counts_only_no_value_read',
-        anchors.bySubject.size,
-        c.unanchoredN,
-        anchorWindow,
-      ),
-    };
+    return refused('unmeasurable', 'subject_counts_only_no_value_read', { won: c.wonN, universe: c.universeN });
   }
 
   /* ── The genuine as-of read. ── */
   const r = await asOfRead(pool, predicate, anchors.bySubject);
+
+  /*
+   * A won subject whose earliest recorded call does not precede its win has no honest
+   * as-of instant, and `asOfRead` has already excluded it from BOTH sides. It is named
+   * here rather than left to show up as a smaller n, because "the anchor postdates the
+   * outcome" is the exact defect this whole lane exists to remove and it must never
+   * again be invisible.
+   */
+  if (r.contaminatedWonN > 0) {
+    refusals.push({
+      code: CALIBRATION_CODES.ANCHOR_POSTDATES_OUTCOME,
+      sentence:
+        `${r.contaminatedWonN} won ${r.contaminatedWonN === 1 ? 'subject' : 'subjects'} could not be read as of `
+        + 'any prediction instant that precedes the win, so they were excluded from the won side AND from the '
+        + 'universe. Either the earliest recorded forecast for them was made after the deal closed, or the deal '
+        + 'carries no won_at to compare against. Reading them at the instant on file would have returned the '
+        + 'post-outcome value — the original defect, through the new seam.',
+      rule: RULE_NO_LAUNDERING,
+      n: r.contaminatedWonN,
+      missingHistory: 'a platform_forecast row for these subjects dated before deals.won_at',
+      environment,
+    });
+  }
+
+  /*
+   * NOTHING READABLE AT ALL IS NOT A SMALL SAMPLE. This used to fall through to the
+   * floor refusal and report "0 won subjects … below the stated minimum of 8" with
+   * verdict 'insufficient' — collapsing three states into one and telling the operator
+   * to wait for something that will never arrive. Which of the two it is comes from
+   * COVERAGE, not from the as-of read.
+   */
+  if (r.universeN === 0) {
+    const nothingHeld = c.universeN === 0;
+    refusals.push(
+      nothingHeld
+        ? {
+            code: CALIBRATION_CODES.NO_OBSERVATION_OF_METRIC,
+            sentence:
+              `Nothing on this environment carries ${predicate}: there is no observation of it for any subject, `
+              + 'won or otherwise. This is an empty predicate, not a lift of zero and not a small sample — when '
+              + 'the connector that writes it runs, this resolves on its own.',
+            rule: RULE_ABSENT_REFUSES,
+            n: 0,
+            missingHistory: `observations rows for predicate=${predicate} — none exist here`,
+            environment,
+          }
+        : {
+            code: CALIBRATION_CODES.NO_VALUE_AS_OF_ANCHOR,
+            sentence:
+              `${c.universeN} subject${c.universeN === 1 ? '' : 's'} carr${c.universeN === 1 ? 'ies' : 'y'} `
+              + `${predicate} and not one of them has a value recorded at or before its prediction instant, so `
+              + 'nothing could be read as of anything. Every value on file postdates every anchor. More recent '
+              + 'observations do not fix this; earlier history would, and it does not exist.',
+            rule: RULE_ABSENT_REFUSES,
+            n: 0,
+            missingHistory:
+              `observations rows for predicate=${predicate} dated at or before the anchored prediction instants`,
+            environment,
+          },
+    );
+    return refused(
+      nothingHeld ? 'insufficient' : 'unmeasurable',
+      'no_value_readable_as_of_prediction_instant',
+      { won: 0, universe: 0 },
+      r.contaminatedWonN,
+    );
+  }
+
   const wonBelowFloor = r.wonN < MIN_WON_SAMPLE;
   const universeBelowFloor = r.universeN < MIN_WON_SAMPLE;
 
@@ -514,23 +785,76 @@ async function calibrateMetric(
     });
   }
 
+  /*
+   * A LIFT IS A RATIO AND A RATIO AGAINST 0 IS UNDEFINED, NOT WEAK. The first cut
+   * guarded the division with a truthiness test on `universeMedian`, so a universe
+   * median of exactly 0 produced lift = null with an EMPTY refusals array, verdict
+   * 'weak' — a stated finding about the metric — and a quintile capture of 100% that
+   * `Scorecard.tsx:132` drew, because it only blanks a cell on verdict 'insufficient'.
+   * Undefined arithmetic is absent data and absent data refuses, with a code.
+   */
+  const liftUndefined = r.universeMedian == null || r.universeMedian === 0;
+  if (liftUndefined && !wonBelowFloor && !universeBelowFloor && environment !== null) {
+    refusals.push({
+      code: CALIBRATION_CODES.LIFT_UNDEFINED,
+      sentence:
+        `The universe median of ${predicate} as of the prediction instants is `
+        + `${r.universeMedian == null ? 'unreadable' : '0'}, so a lift — which is a RATIO against it — has no `
+        + 'value at all. This is not a weak lift and it is not a lift of zero; there is no number here. A '
+        + 'measure that survives a zero denominator (a difference, not a ratio) would be a code change.',
+      rule: RULE_NO_LAUNDERING,
+      n: r.wonN,
+      missingHistory: null,
+      environment,
+    });
+  }
+
+  /*
+   * AND A "TOP QUINTILE" THAT CONTAINS EVERYONE MEASURES NOTHING. When the 80th
+   * percentile sits at or below the bottom of the distribution — every value ties the
+   * threshold, which is what an all-zero or single-valued distribution does — the
+   * capture is 100% by construction and reads as the strongest possible result.
+   */
+  if (r.quintileDegenerate && !wonBelowFloor && !universeBelowFloor && environment !== null) {
+    refusals.push({
+      code: CALIBRATION_CODES.QUINTILE_DEGENERATE,
+      sentence:
+        `The top-quintile threshold for ${predicate} is at or below the lowest value in the universe, so every `
+        + 'subject is inside the "top 20%" and the capture would have been 100% whatever the deals did. No '
+        + 'capture is expressed. This is what a distribution with no spread looks like, not a result.',
+      rule: RULE_NO_LAUNDERING,
+      n: r.universeN,
+      missingHistory: null,
+      environment,
+    });
+  }
+
   const suppress = wonBelowFloor || universeBelowFloor || environment === null;
   const lift =
-    !suppress && r.wonMedian != null && r.universeMedian
-      ? Math.round((r.wonMedian / r.universeMedian) * 100) / 100
+    !suppress && !liftUndefined && r.wonMedian != null
+      ? Math.round((r.wonMedian / r.universeMedian!) * 100) / 100
       : null;
-  const quintileCapture = !suppress && r.wonN > 0 ? Math.round((r.wonTop / r.wonN) * 100) / 100 : null;
-  // An unnamed environment is UNMEASURABLE, not insufficient: no amount of further
-  // sample makes a figure whose database nobody can name reportable, so it must not
-  // read as "nearly there" the way a small n legitimately does.
+  const quintileCapture =
+    !suppress && !liftUndefined && !r.quintileDegenerate && r.wonN > 0
+      ? Math.round((r.wonTop / r.wonN) * 100) / 100
+      : null;
+  /*
+   * An unnamed environment is UNMEASURABLE, not insufficient: no amount of further
+   * sample makes a figure whose database nobody can name reportable, so it must not
+   * read as "nearly there" the way a small n legitimately does. An undefined lift is
+   * unmeasurable for the same reason — more subjects at the same distribution still
+   * divide by zero — and it must never fall through to 'weak', which is a FINDING.
+   */
   const verdict: CalibrationVerdict =
     environment === null
       ? 'unmeasurable'
       : suppress
         ? 'insufficient'
-        : lift != null && lift >= 1.3
-          ? 'predictive'
-          : 'weak';
+        : liftUndefined
+          ? 'unmeasurable'
+          : lift != null && lift >= 1.3
+            ? 'predictive'
+            : 'weak';
 
   return {
     metricKey: predicate,
@@ -540,20 +864,22 @@ async function calibrateMetric(
     // and the capture alongside a suppressed verdict, which put the numbers in the
     // payload for anything downstream to quote.
     quintileCapture,
-    wonMedian: suppress ? null : r.wonMedian,
+    wonMedian: suppress || liftUndefined ? null : r.wonMedian,
     universeMedian: universeBelowFloor || environment === null ? null : r.universeMedian,
     sampleWon: r.wonN,
     sampleUniverse: r.universeN,
     verdict,
     refusals,
-    frame: frame(
+    frame: frame({
       environment,
       anchors,
-      'observation_value_as_of_prediction_instant',
-      anchors.bySubject.size,
-      r.unanchoredN,
-      anchorWindow,
-    ),
+      observed: 'observation_value_as_of_prediction_instant',
+      subjectsAnchored: anchors.bySubject.size,
+      subjectsWithoutAnchor: r.unanchoredN,
+      coverage,
+      wonSubjectsAnchorPostdatesOutcome: r.contaminatedWonN,
+      window: anchorWindow,
+    }),
   };
 }
 
@@ -564,13 +890,14 @@ export async function computeCalibration(
   pool: pg.Pool,
   opts?: { readonly databaseUrl?: string | null },
 ): Promise<{ metrics: MetricCalibration[]; snapshotted: number }> {
-  const environment = environmentLabel(opts?.databaseUrl ?? process.env.DATABASE_URL);
+  // `databaseUrl: null` means "I cannot name one" and reaches ENVIRONMENT_UNNAMED;
+  // `undefined` still falls back to the process. See `environmentFor`.
+  const environment = environmentFor(opts);
   // One anchor read for the whole pass: the instants do not depend on the metric.
   const anchors = await asOfAnchors(pool, 'project');
 
   const metrics: MetricCalibration[] = [];
-  for (const k of SCORE_METRICS) metrics.push(await calibrateMetric(pool, k, 'score', anchors, environment));
-  for (const k of SIGNAL_METRICS) metrics.push(await calibrateMetric(pool, k, 'signal', anchors, environment));
+  for (const spec of METRICS) metrics.push(await calibrateMetric(pool, spec, anchors, environment));
 
   // Idempotent per day: clear today's snapshots, then re-insert.
   await pool.query(`DELETE FROM model_calibrations WHERE snapshot_date = CURRENT_DATE::text`);
@@ -681,7 +1008,13 @@ export async function getCalibration(pool?: pg.Pool): Promise<CalibrationView> {
           anchorBasis: 'no_anchor_available',
           anchorMigration: PLATFORM_FORECAST_MIGRATION,
           subjectsAnchored: 0,
+          // 0 here is "this stored row does not say", which is why `observed` above is
+          // the counts-only member: a stored row with no frame gets one that admits it
+          // knows nothing, never a plausible-looking frame invented at read time.
           subjectsWithoutAnchor: 0,
+          subjectsWithMetric: 0,
+          wonSubjectsWithMetric: 0,
+          wonSubjectsAnchorPostdatesOutcome: 0,
           minWonSample: MIN_WON_SAMPLE,
         },
     };

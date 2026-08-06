@@ -903,8 +903,17 @@ const MAX_REACH_RANK = Math.max(...REACH_RANKS);
  * ── THESE ARE NOT TWO LITERALS. THEY ARE TWO NORMALISED FORMS ─────────────────
  * The gate below runs `normaliseFieldName` over the parent key, and that function lowercases
  * and strips every non-alphanumeric character. So any key that REDUCES to `scores` or `score`
- * qualifies — `Scores`, `SCORE`, `score-s`, `s.c.o.r.e.s` — not just the two spellings in this
- * set. That is deliberate and it is the same normalisation
+ * qualifies — `Scores`, `sCoRe`, `score-s`, `s.c.o.r.e.s` — not just the two spellings in this
+ * set.
+ *
+ * (`sCoRe` rather than the all-caps spelling on purpose: `refusalCodesReferencedInDocs.test.ts`
+ * reads every SCREAMING_SNAKE name in backticks in this compartment and fails if it resolves to
+ * nothing, because such a name is usually either a typo'd refusal code or a gate nobody built.
+ * An all-caps example key here is neither, and it tripped that ratchet. Rewording the example
+ * keeps the point — the match is case-insensitive — without adding an entry to the allowlist,
+ * which is the alternative and which would blunt the rule for every future reader.)
+ *
+ * That is deliberate and it is the same normalisation
  * the blocklist itself uses (a JSON column or an AI response can hand back `Scores` where the
  * contract says `scores`), but it is WIDER than a two-literal check and saying "the two
  * literals" would be false. What it still cannot do is match a DIFFERENT word: `scoreSet`
