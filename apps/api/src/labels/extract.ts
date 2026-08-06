@@ -128,7 +128,22 @@ export async function extractLabels(pool: pg.Pool, dataDir: string): Promise<{ u
       `INSERT INTO listing_labels (id, project_id, record_name, ticker, source, outcome,
          listing_fee_usd, marketing_fee_usd, liquidity_amount_usd, stage, stage_trail, stage_changed_at, raw)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-       ON CONFLICT (source, record_name) DO UPDATE SET
+       /*
+        * THREE COLUMNS, BECAUSE TWO OF THEM ARE NOT UNIQUE IN REALITY.
+        *
+        * 0013_propensity.sql:22 made (source, record_name) unique, and record_name is the
+        * COUNTERPARTY'S name — so two contracts with the same counterparty were one row,
+        * and 'Vulcan Forged' (twice in the closed book) lost one on every extract run.
+        * 0068 replaces that index with (source, record_name, contract_discriminator).
+        *
+        * This clause HAD to move in the same change: Postgres cannot infer a
+        * three-column unique index from a two-column conflict specification, so the
+        * moment 0068 is applied the old clause fails with 42P10 and the extractor stops.
+        * contract_discriminator is GENERATED ALWAYS AS (coalesce(ticker,'')) STORED, so
+        * it is not in the INSERT column list above and must not be — Postgres rejects a
+        * write to a generated column — but it is still a legal conflict target.
+        */
+       ON CONFLICT (source, record_name, contract_discriminator) DO UPDATE SET
          project_id = COALESCE(EXCLUDED.project_id, listing_labels.project_id),
          outcome = EXCLUDED.outcome,
          listing_fee_usd = EXCLUDED.listing_fee_usd,
@@ -136,6 +151,17 @@ export async function extractLabels(pool: pg.Pool, dataDir: string): Promise<{ u
          liquidity_amount_usd = EXCLUDED.liquidity_amount_usd,
          stage = EXCLUDED.stage,
          stage_trail = EXCLUDED.stage_trail,
+         /*
+          * stage_changed_at was written on INSERT only and never refreshed, so a contract
+          * whose close date moved in the CRM kept its first-seen date here forever. The
+          * mark engine derives its ObservationFrame WINDOW from this column, which means
+          * the closed book was reporting stale close dates as current observations.
+          *
+          * COALESCE, not a bare EXCLUDED: the CSV leaves this blank for some rows, and
+          * assigning EXCLUDED directly would overwrite a known date with NULL on the next
+          * run. A missing value in the source is not a statement that the date is unknown.
+          */
+         stage_changed_at = COALESCE(EXCLUDED.stage_changed_at, listing_labels.stage_changed_at),
          raw = EXCLUDED.raw`,
       [
         randomUUID(), projectId, l.recordName, l.ticker, l.source, l.outcome,
