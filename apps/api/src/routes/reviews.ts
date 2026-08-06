@@ -15,8 +15,11 @@
  * reads this table.
  */
 import { Hono } from 'hono';
+import type { Context } from 'hono';
+import { capAtLeast, type Capability, type WorkspaceId } from '@lcx/shared';
 import type { AuthVariables } from '../middleware/auth.js';
 import { requireOperator } from '../middleware/auth.js';
+import { loadEntitlements } from '../access/entitlements.js';
 import { getPool } from '../db/index.js';
 import { env } from '../lib/env.js';
 
@@ -26,12 +29,103 @@ type Kind = (typeof KINDS)[number];
 // 'command_decision' (100X Phase 4): SATs on program-critical decisions.
 const SUBJECTS = ['deal', 'project', 'command_decision', 'dist_campaign'] as const;
 
+
+/*
+ * ══ THE COMPARTMENT GATE, WHICH THIS ROUTE HAD NONE OF ══
+ *
+ * `/v1/reviews` appears in NO workspace's `apiPrefixes`, so `app.ts` mounts NO
+ * `requireWorkspace` on it. The only middleware was `requireOperator`, which is
+ * AUTHENTICATION, not authorisation. Every handler then filtered on subject_type and
+ * subject_id and nothing else — the GET had no compartment predicate and the PATCH was a bare
+ * `WHERE id = $N` with no author check either.
+ *
+ * Found by an adversarial pass and demonstrated against a real database: a principal with
+ * ZERO grant rows read the full content of DISTRIBUTION and COMMAND reviews, and could
+ * overwrite them.
+ *
+ * THE READ HALF IS A CROSS-COMPARTMENT DISCLOSURE. `analytic_reviews` holds premortems, key
+ * assumptions and legal checks on deals, program decisions and campaigns — DISTRIBUTION is
+ * `legacy: false` (default-deny, reachable only through an audited grant) and COMMAND is
+ * elevated. Neither was checked.
+ *
+ * THE WRITE HALF IS WORSE, because it is an integrity break on a gate. `actions/registry.ts`
+ * requires an ACTIVE `premortem` AND `legal_check` on a campaign before a token-incentivised
+ * launch may proceed. With no gate here, anyone authenticated could POST exactly those two
+ * rows and satisfy that requirement without a review having happened — or PATCH an existing
+ * BLOCKED legal_check to CLEARED so the approver reads a false clearance. That is the record
+ * carrying an Art 91(3)(c) decision, which attaches PERSONALLY at roughly EUR 700k.
+ *
+ * ── WHY THE GATE IS PER-SUBJECT AND NOT PER-PATH ─────────────────────────────────
+ * One path serves four subject types belonging to three compartments, so the compartment is a
+ * property of the ROW, not of the URL. `requireWorkspace` middleware cannot express that; it
+ * has to be resolved from `subjectType` inside the handler.
+ *
+ * ── UNKNOWN SUBJECT TYPES DENY ────────────────────────────────────────────────────
+ * `subjectWorkspace` returns null for anything not in this map and every caller treats null
+ * as REFUSE. That is the whole point: if someone adds a fifth subject type to `SUBJECTS` and
+ * forgets this map, the new type is unreachable rather than ungated. Failing closed on a
+ * forgotten entry is the only version of this that stays correct without being remembered.
+ */
+const SUBJECT_WORKSPACE: Readonly<Record<(typeof SUBJECTS)[number], WorkspaceId>> = {
+  deal: 'sales',
+  project: 'sales',
+  command_decision: 'command',
+  dist_campaign: 'distribution',
+};
+
+function subjectWorkspace(subjectType: unknown): WorkspaceId | null {
+  if (typeof subjectType !== 'string') return null;
+  if (!Object.prototype.hasOwnProperty.call(SUBJECT_WORKSPACE, subjectType)) return null;
+  return SUBJECT_WORKSPACE[subjectType as (typeof SUBJECTS)[number]];
+}
+
+/**
+ * Does this caller hold the compartment that owns `subjectType`, at `need`?
+ *
+ * Returns a Hono response to RETURN on refusal, or null to proceed. `hasOwnProperty` above
+ * rather than `in`: `'constructor' in SUBJECT_WORKSPACE` is true, and that exact mistake was
+ * found in `intel/monitors.ts` in this same review round.
+ */
+async function refuseUnlessHolds(
+  c: Context<{ Variables: AuthVariables }>,
+  subjectType: unknown,
+  need: Capability,
+) {
+  const ws = subjectWorkspace(subjectType);
+  if (!ws) {
+    return c.json(
+      {
+        error: `Unknown subject type — a review's compartment is derived from it, so an unmapped type is refused rather than read`,
+        code: 'REVIEW_SUBJECT_UNMAPPED',
+      },
+      400,
+    );
+  }
+  const operator = c.get('operator');
+  if (!operator) return c.json({ error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
+  const ents = await loadEntitlements(getPool(), operator.id);
+  if (!capAtLeast(ents[ws], need)) {
+    return c.json(
+      {
+        error: `A ${subjectType} review belongs to the ${ws.toUpperCase()} compartment, which you do not hold at '${need}'`,
+        code: 'REVIEW_COMPARTMENT_WITHHELD',
+        compartment: ws,
+      },
+      403,
+    );
+  }
+  return null;
+}
+
 export const reviewRoutes = new Hono<{ Variables: AuthVariables }>();
 
 reviewRoutes.get('/', requireOperator, async (c) => {
   const subjectType = c.req.query('subjectType');
   const subjectId = c.req.query('subjectId');
   if (!subjectType || !subjectId) return c.json({ error: 'subjectType and subjectId required', code: 'VALIDATION' }, 400);
+  // Gate BEFORE the query. An unentitled caller must not learn whether the row exists.
+  const denied = await refuseUnlessHolds(c, subjectType, 'view');
+  if (denied) return denied;
   try {
     const { rows } = await getPool().query(
       `SELECT id, kind, subject_type, subject_id, title, content, author, status, created_at, updated_at
@@ -53,6 +147,13 @@ reviewRoutes.post('/', requireOperator, async (c) => {
   if (!SUBJECTS.includes(body.subjectType as (typeof SUBJECTS)[number]) || !body.subjectId) {
     return c.json({ error: 'Invalid subject', code: 'VALIDATION' }, 400);
   }
+  /*
+   * 'operate', not 'view'. A review is not commentary: `actions/registry.ts` requires an
+   * ACTIVE premortem AND legal_check before a token-incentivised campaign may launch, so
+   * CREATING one is what satisfies a compliance gate. Writing it needs the write tier.
+   */
+  const deniedWrite = await refuseUnlessHolds(c, body.subjectType, 'operate');
+  if (deniedWrite) return deniedWrite;
   const payload = JSON.stringify(body.content ?? {});
   if (payload.length > 200_000) return c.json({ error: 'Content too large', code: 'VALIDATION' }, 413);
   const status = body.status === 'draft' || body.status === 'resolved' ? body.status : 'active';
@@ -69,6 +170,23 @@ reviewRoutes.post('/', requireOperator, async (c) => {
   }
 });
 
+
+/**
+ * PATCH and DELETE carry only an `:id`, so the compartment cannot be read off the request —
+ * it has to come from the ROW. One extra SELECT, deliberately: the alternative is adding the
+ * predicate to the UPDATE/DELETE, which would make an unentitled write indistinguishable
+ * from a missing row and silently report success as 404.
+ *
+ * Returns the resolved subject type, or a response to return.
+ */
+async function subjectTypeOf(id: string): Promise<string | null> {
+  const { rows } = await getPool().query(
+    `SELECT subject_type FROM analytic_reviews WHERE id = $1`,
+    [id],
+  );
+  return rows.length === 0 ? null : String((rows[0] as { subject_type: unknown }).subject_type);
+}
+
 reviewRoutes.patch('/:id', requireOperator, async (c) => {
   const body = await c.req.json<{ title?: string; content?: unknown; status?: string }>().catch(() => ({} as { title?: string; content?: unknown; status?: string }));
   const sets: string[] = [];
@@ -84,6 +202,11 @@ reviewRoutes.patch('/:id', requireOperator, async (c) => {
   if (sets.length === 0) return c.json({ error: 'Nothing to update', code: 'VALIDATION' }, 400);
   sets.push(`updated_at = now()`);
   params.push(c.req.param('id'));
+  const subjectOfRow = await subjectTypeOf(c.req.param('id'));
+  if (subjectOfRow === null) return c.json({ error: 'Not found', code: 'NOT_FOUND' }, 404);
+  // 'operate': flipping a BLOCKED legal_check to CLEARED is what this guard exists to stop.
+  const deniedPatch = await refuseUnlessHolds(c, subjectOfRow, 'operate');
+  if (deniedPatch) return deniedPatch;
   try {
     const { rowCount } = await getPool().query(`UPDATE analytic_reviews SET ${sets.join(', ')} WHERE id = $${i}`, params);
     if ((rowCount ?? 0) === 0) return c.json({ error: 'Not found', code: 'NOT_FOUND' }, 404);
@@ -96,6 +219,15 @@ reviewRoutes.patch('/:id', requireOperator, async (c) => {
 
 reviewRoutes.delete('/:id', requireOperator, async (c) => {
   const author = c.get('operator').id;
+  const subjectOfRow = await subjectTypeOf(c.req.param('id'));
+  if (subjectOfRow === null) return c.json({ error: 'Not found', code: 'NOT_FOUND' }, 404);
+  /*
+   * The author check below was the ONLY control here, and it is not a compartment check:
+   * `$2 = 'operator'` lets the SHARED OPERATOR_API_KEY delete any review regardless of who
+   * wrote it. Both now apply — hold the compartment AND be the author (or the shared key).
+   */
+  const deniedDelete = await refuseUnlessHolds(c, subjectOfRow, 'operate');
+  if (deniedDelete) return deniedDelete;
   try {
     const { rowCount } = await getPool().query(
       `DELETE FROM analytic_reviews WHERE id = $1 AND (author = $2 OR $2 = 'operator')`,
