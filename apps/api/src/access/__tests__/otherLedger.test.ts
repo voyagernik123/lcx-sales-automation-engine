@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import type pg from 'pg';
 import { VERDICT_BROKER_CODES } from '../verdictBroker.js';
@@ -230,14 +231,21 @@ describe('the ticker join — normalised values only', () => {
     },
   );
 
-  it('refuses a stored ticker_norm padded with a TAB — the case 0072\'s first predicate missed', async () => {
-    // JS `.trim()` strips a tab; Postgres `btrim(x)` with no second argument does not.
-    // So this value is refused here and was INVISIBLE to the detector index until the
-    // predicate named the whitespace set. Pinned so the two cannot drift apart again.
-    const { pool } = fakePool(() => [{ ticker_norm: 'SOL\t' }]);
-    const out = await assetSymbolForProject(pool, PROJECT);
-    expect(out.kind === 'refused' && out.code).toBe(OTHER_LEDGER_CODES.TICKER_NOT_NORMALISED);
-  });
+  it.each([['SOL\t', 'a TAB'], ['SOL\v', 'a VERTICAL TAB'], ['SOL\f', 'a FORM FEED'], ['SOL\n', 'a NEWLINE']])(
+    'refuses a stored ticker_norm padded with %j (%s) — the cases 0072\'s predicate kept missing',
+    async (stored) => {
+      // JS `.trim()` strips all of these; Postgres `btrim(x)` with no second argument strips
+      // SPACES ONLY. So each value is refused here and was INVISIBLE to the detector index
+      // until its predicate named the whitespace set explicitly. The VERTICAL TAB is the one
+      // that survived the first fix as well: the set was written E'\v', and Postgres does not
+      // define \v as an escape — "any other character following a backslash is taken
+      // literally" — so E'\v' is the LETTER v and U+000B was still not in the set. Pinned
+      // here and, for the SQL side, in the 0072 group at the bottom of this file.
+      const { pool } = fakePool(() => [{ ticker_norm: stored }]);
+      const out = await assetSymbolForProject(pool, PROJECT);
+      expect(out.kind === 'refused' && out.code).toBe(OTHER_LEDGER_CODES.TICKER_NOT_NORMALISED);
+    },
+  );
 
   it('reports a project with no ticker as an ABSENCE that carries a code, a message and a rule', async () => {
     const noTicker = fakePool(() => [{ ticker_norm: null }]);
@@ -560,10 +568,28 @@ describe('the verdict is derived from counts and RECORDED STATES, and only from 
   });
 
   it('an unpopulated register is UNAVAILABLE, never a genuine absence', () => {
-    expect(verdictFromRegisterCounts(rc({ registerPopulated: false })).kind).toBe('unavailable');
+    const out = verdictFromRegisterCounts(rc({ registerPopulated: false }));
+    expect(out.kind).toBe('unavailable');
+    if (out.kind !== 'unavailable') throw new Error('unreachable');
+    // The detail is what an operator acts on, and the three jobs behind one NOT-LOADED code
+    // (not migrated / migrated but never filled in / the read failed) are different people.
+    expect(out.detail).toBe('register_empty');
     // And the two facts are not derived from each other: a populated register with no
     // row for this symbol IS a genuine absence.
     expect(verdictFromRegisterCounts(rc({ registerPopulated: true })).kind).toBe('none');
+  });
+
+  it('"the table is empty" contradicting "this symbol has rows" does not assert either cause', () => {
+    // One statement produces both numbers — an uncorrelated EXISTS and a filtered count —
+    // so they cannot disagree unless the query and the interpreter mean different things.
+    // The answer is still unavailable, but the detail must NOT say `register_empty`: the
+    // other number contradicts that cause, and naming it anyway is an inference published
+    // as the observation, which sends the wrong operator at the wrong problem.
+    const out = verdictFromRegisterCounts(rc({ registerPopulated: false, total: 2 }));
+    expect(out.kind).toBe('unavailable');
+    if (out.kind !== 'unavailable') throw new Error('unreachable');
+    expect(out.detail).not.toBe('register_empty');
+    expect(out.detail).toContain('contradicts');
   });
 
   it.each([
@@ -679,17 +705,87 @@ describe('a deal reaching proposal writes the embargo signal', () => {
     // the insert could never succeed again. Three states in one non-refusal.
     const { pool } = fakePool((sql) => {
       if (/INSERT INTO/i.test(sql)) throw uniqueViolation(EVENT_IDX);
+      return [{ live: false, asset_live: false }];
+    });
+    const out = await recordProposalListingSignal(pool, { entitlements: SALES_WRITER, ...input });
+
+    expect(out.kind).toBe('refused');
+    if (out.kind !== 'refused') throw new Error('unreachable');
+    expect(out.refusals.map((r) => r.code)).toEqual([OTHER_LEDGER_CODES.SIGNAL_LIFTED_NOT_IN_FORCE]);
+    // The perimeter really IS open in this fixture — nothing else holds the asset — so the
+    // message says so. The next two tests are the states where it must NOT say so.
+    expect(out.refusals[0]?.message.toUpperCase()).toContain('PERIMETER IS OPEN');
+    // And it names which index refused — observed from the error, not inferred.
+    expect(out.refusals[0]?.message).toContain(EVENT_IDX);
+  });
+
+  it('a LIFTED entry of our own WITH a foreign live entry does NOT claim the perimeter is open', async () => {
+    // THE LIE THE PREVIOUS FIX INTRODUCED. `explainSignalCollision` read our own row only
+    // and then asserted, of a lifted one, "no embargo is in force and the asset can be
+    // named… the perimeter is OPEN". 0060 requires a NEW event for every state change, so
+    // "marketing lifted this deal's entry and entered its own" is the ORDINARY sequence —
+    // and in that state a different live entry holds the asset while our row is history.
+    // The refusal still stopped the deal, so nothing unsafe shipped; what shipped was a
+    // certainty about the asset that had not been observed. Both facts are now read in one
+    // statement and BOTH refusals are returned, per "every refusal, not the first one".
+    const { pool } = fakePool((sql) => {
+      if (/INSERT INTO/i.test(sql)) throw uniqueViolation(EVENT_IDX);
+      return [{ live: false, asset_live: true }];
+    });
+    const out = await recordProposalListingSignal(pool, { entitlements: SALES_WRITER, ...input });
+
+    expect(out.kind).toBe('refused');
+    if (out.kind !== 'refused') throw new Error('unreachable');
+    expect(out.refusals.map((r) => r.code)).toEqual([
+      OTHER_LEDGER_CODES.SIGNAL_LIFTED_NOT_IN_FORCE,
+      OTHER_LEDGER_CODES.SIGNAL_BLOCKED_BY_LIVE_ENTRY,
+    ]);
+    // NEGATIVE assertion on the exact claim that was false. Note it is a SUBSTRING check,
+    // so a message that hedges the phrase ("this is not a report that the perimeter is
+    // open") fails it too — deliberately: the phrase must not be in a string an operator
+    // greps or an alert matches on, whatever the surrounding grammar does with it.
+    expect(out.refusals[0]?.message.toUpperCase()).not.toContain('PERIMETER IS OPEN');
+    expect(out.refusals[0]?.message).toContain('NOT free to be named');
+    expect(out.refusals[1]?.message).toContain('DIFFERENT event');
+  });
+
+  it('a LIFTED entry whose asset-wide liveness was NOT observed says UNKNOWN, not "open"', async () => {
+    // not-observed is a third state and it is not `false`. A row shape that does not carry
+    // `asset_live` is a code-level disagreement, not a fact about the register, and reading
+    // the missing boolean as "nothing else is live" is how the false clean returns.
+    const { pool } = fakePool((sql) => {
+      if (/INSERT INTO/i.test(sql)) throw uniqueViolation(EVENT_IDX);
       return [{ live: false }];
     });
     const out = await recordProposalListingSignal(pool, { entitlements: SALES_WRITER, ...input });
 
     expect(out.kind).toBe('refused');
     if (out.kind !== 'refused') throw new Error('unreachable');
-    expect(out.refusals.map((r) => r.code)).toContain(OTHER_LEDGER_CODES.SIGNAL_LIFTED_NOT_IN_FORCE);
-    // The message must say the perimeter is OPEN, because that is the operative fact.
-    expect(out.refusals[0]?.message.toUpperCase()).toContain('OPEN');
-    // And it names which index refused — observed from the error, not inferred.
-    expect(out.refusals[0]?.message).toContain(EVENT_IDX);
+    expect(out.refusals.map((r) => r.code)).toEqual([OTHER_LEDGER_CODES.SIGNAL_LIFTED_NOT_IN_FORCE]);
+    expect(out.refusals[0]?.message.toUpperCase()).toContain('UNKNOWN');
+    expect(out.refusals[0]?.message.toUpperCase()).not.toContain('PERIMETER IS OPEN');
+  });
+
+  it('asks for both booleans in ONE statement, and never selects lifted_at or lifted_by', async () => {
+    // The date and the name of whoever lifted an entry belong to the marketing
+    // compartment; this function runs for a sales caller, so only the FACTS of liveness
+    // are read. And it is one round trip, not two — the second read is what the
+    // abuseRegister prohibition is about.
+    const { pool, calls } = fakePool((sql) => {
+      if (/INSERT INTO/i.test(sql)) throw uniqueViolation(EVENT_IDX);
+      return [{ live: false, asset_live: false }];
+    });
+    await recordProposalListingSignal(pool, { entitlements: SALES_WRITER, ...input });
+
+    expect(calls).toHaveLength(2);
+    const cause = calls[1]?.sql ?? '';
+    expect(cause).toContain('lifted_at IS NULL');
+    expect(cause).not.toMatch(/\blifted_by\b/);
+    expect(cause).not.toMatch(/SELECT\s+lifted_at\b/i);
+    // Both facts, one statement, bound parameters only.
+    expect(cause).toMatch(/asset_live/);
+    expect(calls[1]?.params).toEqual(['SOL', proposalSignalEventRef(DEAL)]);
+    expect(cause).not.toContain('SOL');
   });
 
   it('a DIFFERENT live entry blocks the write, and that is a REFUSAL and not a success', async () => {
@@ -722,6 +818,37 @@ describe('a deal reaching proposal writes the embargo signal', () => {
       if (out.kind !== 'refused') throw new Error('unreachable');
       expect(out.refusals.map((r) => r.code)).toContain(OTHER_LEDGER_CODES.SIGNAL_BLOCKED_BY_LIVE_ENTRY);
     }
+  });
+
+  it('a collision under an index 0060 does not declare is UNCONFIRMED, not "blocked by a live entry"', async () => {
+    // "No row of our own exists, therefore a foreign LIVE entry blocked us" is sound only
+    // while 0060's two unique indexes are the only candidates. A third one added in a
+    // year's time would turn that step into an inference stated as a certainty — the exact
+    // move this lane exists to remove — so an unrecognised constraint name refuses instead
+    // of naming a cause it did not observe. The deal stops either way; what changes is
+    // whether an operator is sent after the right thing.
+    const { pool } = fakePool((sql) =>
+      /INSERT INTO/i.test(sql) ? (() => { throw uniqueViolation('marketing_asset_embargo_pkey'); })() : []);
+    const out = await recordProposalListingSignal(pool, { entitlements: SALES_WRITER, ...input });
+
+    expect(out.kind).toBe('refused');
+    if (out.kind !== 'refused') throw new Error('unreachable');
+    expect(out.refusals.map((r) => r.code)).toEqual([OTHER_LEDGER_CODES.SIGNAL_WRITE_UNCONFIRMED]);
+    expect(out.refusals[0]?.message).toContain('marketing_asset_embargo_pkey');
+    expect(out.refusals[0]?.message.toUpperCase()).toContain('UNKNOWN');
+  });
+
+  it('a collision with NO constraint name and no row of our own still names the live index', async () => {
+    // `pg` does carry `constraint` on a 23505, but it is not guaranteed by the driver's
+    // types. With nothing reported there is exactly one explanation left, so it is stated.
+    const { pool } = fakePool((sql) => {
+      if (/INSERT INTO/i.test(sql)) throw Object.assign(new Error('duplicate key'), { code: '23505' });
+      return [];
+    });
+    const out = await recordProposalListingSignal(pool, { entitlements: SALES_WRITER, ...input });
+    expect(out.kind).toBe('refused');
+    if (out.kind !== 'refused') throw new Error('unreachable');
+    expect(out.refusals.map((r) => r.code)).toEqual([OTHER_LEDGER_CODES.SIGNAL_BLOCKED_BY_LIVE_ENTRY]);
   });
 
   it('a collision whose cause cannot be re-read is UNCONFIRMED, never success', async () => {
@@ -879,5 +1006,85 @@ describe('the question is declared once, and declares its own absences', () => {
   it.each([['0'], ['false'], [''], ['maybe']])('stays off for %j', (value) => {
     process.env[GPS_LISTING_VERDICT_ENV] = value;
     expect(LISTING_PIPELINE_QUESTION.authorised()).toBe(false);
+  });
+});
+
+/* ══ 8. 0072's detector and this file's refusal set are one set ════════════════
+ *
+ * The index exists so that "how many rows would silently miss this join?" is answerable
+ * in one scan. That number is only worth having if the predicate is EXACTLY the set
+ * `assetSymbolForProject` refuses — a predicate that is narrower under-reports, and an
+ * under-reported count on a MiCA Art 91(3)(c) control is worse than no count, because
+ * somebody will read it as zero and stop looking.
+ *
+ * These are assertions about the migration's TEXT. They cannot prove Postgres agrees;
+ * the predicate was run against a live server by hand and the results recorded in the
+ * migration's own comment. Reading the SQL from a test is the idiom this directory
+ * already uses (`controlRegister.test.ts` pins 0069's index predicates the same way).
+ */
+describe('0072\'s unjoinable-ticker index indexes exactly what the code refuses', () => {
+  const MIGRATION_0072 = readFileSync(
+    new URL('../../db/migrations/0072_verdict_broker.sql', import.meta.url),
+    'utf8',
+  );
+  /** The CREATE INDEX statement alone. Anchored, because the prose above it also says
+   *  "CREATE INDEX" (where it explains why this one is not CONCURRENTLY). */
+  const CREATE_INDEX = /^CREATE INDEX IF NOT EXISTS[\s\S]*?;/m.exec(MIGRATION_0072)?.[0] ?? '';
+
+  /**
+   * The VERBS the migration actually executes. Asserted on the statements and not on the
+   * whole file, because the file's prose legitimately contains the words DROP and UPDATE
+   * (it explains what it deliberately does NOT do, and what the predicate costs on every
+   * UPDATE of `projects`). A grep over the comments would be a test of the English.
+   */
+  const VERBS = MIGRATION_0072
+    .split('\n')
+    .filter((l) => !l.trimStart().startsWith('--'))
+    /* Column 0 only. Every statement starts at the margin and every continuation line —
+     * including the COMMENT bodies, whose prose contains semicolons and would defeat a
+     * split on `;` — is indented. */
+    .map((l) => /^([A-Z]+)/.exec(l)?.[1] ?? '')
+    .filter((v) => v !== '');
+
+  it('is one partial index on projects, and executes nothing that can lose a row', () => {
+    expect(CREATE_INDEX).toContain('idx_projects_ticker_norm_unjoinable');
+    expect(CREATE_INDEX).toContain('ON projects (id)');
+    // Two verbs only. A CHECK on projects — even NOT VALID — would start REJECTING the
+    // catalog and runner inserts the moment one feed carries '$ sol', which is breaking
+    // the importer to enforce a join. The read path already refuses such a value.
+    expect(new Set(VERBS)).toEqual(new Set(['CREATE', 'COMMENT']));
+    expect(VERBS.filter((v) => v === 'CREATE')).toHaveLength(1);
+  });
+
+  it('trims the VERTICAL TAB by its hex code, because E\'\\v\' in Postgres is the letter v', () => {
+    // Verified against a live server, not reasoned about:
+    //   select length(E' \t\n\r\f\v'), ascii(right(E' \t\n\r\f\v',1));   →  6 | 118  ('v')
+    //   select ascii(right(E' \t\n\r\f\x0B',1));                         →  11
+    // Postgres documents \b \f \n \r \t and the numeric forms and says any other
+    // character after a backslash is taken literally. So the first fix's set trimmed a
+    // LOWERCASE LETTER and left U+000B in place — meaning a stored 'SOL' || chr(11),
+    // which the code refuses because JS `.trim()` strips U+000B, was still invisible to
+    // the index whose whole job is to count the refused rows.
+    expect(CREATE_INDEX).toContain("E' \\t\\n\\r\\f\\x0B'");
+    expect(CREATE_INDEX).not.toMatch(/\\v'/);
+  });
+
+  it('mirrors all three parts of cleanTicker plus 0060\'s length bound', () => {
+    // trim → strip a leading '$' → upper, in cleanTicker's own order, then the 20-char
+    // bound 0060 puts on asset_symbol. Each of the three was a separate under-report.
+    expect(CREATE_INDEX).toMatch(/upper\(regexp_replace\(btrim\(ticker_norm/);
+    expect(CREATE_INDEX).toContain("'^\\$'");
+    expect(CREATE_INDEX).toMatch(/length\(ticker_norm\)\s*>\s*20/);
+    // The blank case is EXCLUDED on purpose: an all-whitespace ticker_norm is an ABSENT
+    // ticker (no_ticker / OTHER_LEDGER_TICKER_ABSENT), a different state and a different
+    // job, and the code reports it before the normalisation comparison is ever reached.
+    expect(CREATE_INDEX).toMatch(/btrim\(ticker_norm, E' \\t\\n\\r\\f\\x0B'\) <> ''/);
+  });
+
+  it('names, in the index comment, the two codes whose row set it counts', () => {
+    expect(MIGRATION_0072).toContain(OTHER_LEDGER_CODES.TICKER_NOT_NORMALISED);
+    expect(MIGRATION_0072).toContain(OTHER_LEDGER_CODES.TICKER_UNUSABLE);
+    // And it records the residual it does NOT cover rather than implying completeness.
+    expect(MIGRATION_0072).toMatch(/NOT covered: non-ASCII/);
   });
 });

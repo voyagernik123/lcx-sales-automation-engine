@@ -7,6 +7,7 @@ import {
   TURNOVER_SUSPECT_HAS_NO_RECORDED_DERIVATION,
   WITNESSES,
   WITNESS_IDS,
+  WITNESS_REFUSAL_CODES,
   absent,
   bandSuppresses,
   crossExamine,
@@ -296,6 +297,29 @@ describe('the materiality gate', () => {
     expect(r.escalate).toBe(true);
   });
 
+  it('claims only the FLAG for the escalation, never the appearance on the surface', () => {
+    /*
+     * WHERE THE OLD SENTENCE OVERSTATED. It said the witness "decides whether this
+     * project appears in Targets, the DailyBrief and the I&W list at all". The flag is
+     * what flips; whether the project then APPEARS on the I&W list depends on three more
+     * conditions in the same `iw.ts:43` WHERE clause — `p.listed_on_lcx = false`, a
+     * `hot|warming` timing window, and no open deal — none of which this examination
+     * reads. A conditional stated as a certainty is the laundering this module exists to
+     * catch, so the sentence must carry the conditions it does not know.
+     */
+    const d = crossExamine(input({
+      readings: READINGS({
+        volume_projects_row: observed(2.5e8, { observedAt: null, source: 'coingecko' }),
+        volume_venue_sum: observed(1e8, { observedAt: null, source: 'coinpaprika' }),
+      }),
+    })).disagreements[0]!;
+    expect(d.disposition).toBe('escalated');
+    expect(d.sentence).toMatch(/carries the wash-trading flag at all/);
+    expect(d.sentence).toMatch(/listed_on_lcx = false/);
+    expect(d.sentence).toMatch(/none of which this examination reads/);
+    expect(d.sentence).not.toMatch(/decides whether this project appears/i);
+  });
+
   it('leaves a gap inside the tolerance alone entirely', () => {
     expect(DEFAULT_DISPUTE_TOLERANCE).toBe(0.2);
     // Same suppression on both sides AND inside tolerance → corroboration, no entry.
@@ -394,7 +418,32 @@ describe('an absent denominator', () => {
     const r = noSize();
     expect(r.bandAsDetected).toBeNull();
     expect(r.suppressesAsDetected).toBeNull();
-    expect(codes(r)).toContain('XWIT_RATIO_DENOMINATOR_ABSENT');
+    expect(codes(r)).toContain('XWIT_RATIO_DENOMINATOR_UNUSABLE');
+  });
+
+  it('does not name a state in the ratio refusal\'s CODE, and names it in the sentence', () => {
+    /*
+     * The code used to be `XWIT_RATIO_DENOMINATOR_ABSENT` for all four ways the
+     * denominator can fail a division. A withheld denominator reported under a code that
+     * says ABSENT is a need-to-know boundary rendered as a data gap — in the identifier
+     * a panel keys off, which is the one part of a refusal that cannot carry a caveat.
+     * So the state lives in the sentence, and it is a DIFFERENT sentence per state.
+     */
+    const ratioSentence = (denominator: WitnessReading): string => {
+      const r = crossExamine(input({ readings: READINGS({ size_projects_row: denominator }) }));
+      const ref = r.refusals.find((x) => x.code === 'XWIT_RATIO_DENOMINATOR_UNUSABLE');
+      expect(ref, 'no ratio refusal was emitted at all').toBeTruthy();
+      return ref!.sentence;
+    };
+    expect(ratioSentence(notLoaded())).toMatch(/not loaded/i);
+    expect(ratioSentence(withheld('gps'))).toMatch(/withheld from this reader \(compartment gps\)/);
+    expect(ratioSentence(absent('column_null'))).toMatch(/absent \(column_null\)/);
+    expect(ratioSentence(observed(0, { observedAt: null, source: 'coingecko' })))
+      .toMatch(/not a positive denominator/);
+    // Three distinct states, three distinct sentences — the collapse this pins is one
+    // sentence serving all of them.
+    const seen = [notLoaded(), withheld('gps'), absent('column_null')].map(ratioSentence);
+    expect(new Set(seen).size).toBe(3);
   });
 
   it('makes the volume dispute undeterminable rather than immaterial', () => {
@@ -421,8 +470,8 @@ describe('an absent denominator', () => {
     expect(r.readings.size_projects_row.state).toBe('present');
     expect(r.bandAsDetected).toBeNull();
     expect(r.suppressesAsDetected).toBeNull();
-    expect(codes(r)).toContain('XWIT_RATIO_DENOMINATOR_ABSENT');
-    expect(r.refusals.find((x) => x.code === 'XWIT_RATIO_DENOMINATOR_ABSENT')?.sentence)
+    expect(codes(r)).toContain('XWIT_RATIO_DENOMINATOR_UNUSABLE');
+    expect(r.refusals.find((x) => x.code === 'XWIT_RATIO_DENOMINATOR_UNUSABLE')?.sentence)
       .toMatch(/not a positive denominator/);
   });
 
@@ -623,6 +672,45 @@ describe('the frame\'s completeness label', () => {
     }));
     expect(none.frame.completeness).toBe('no_witness');
     expect(crossExamine(input()).frame.completeness).toBe('two_witness_partial');
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════ */
+/* THE REGISTER MATCHES WHAT THE ENGINE CAN ACTUALLY EMIT                          */
+/* ══════════════════════════════════════════════════════════════════════════════ */
+
+describe('the deliberate-absences register', () => {
+  it('lists exactly the codes the engine can emit — no strays, no unregistered', () => {
+    /*
+     * BOTH DIRECTIONS ON PURPOSE. A registered code that nothing emits is a documented
+     * refusal that never fires — the shape of decoration the doctrine linter exists to
+     * catch. A code emitted but unregistered is a refusal nobody promised to keep. This
+     * is also the test that fails on the next rename of a code, which is how
+     * `XWIT_RATIO_DENOMINATOR_ABSENT` → `..._UNUSABLE` was allowed to happen at all.
+     */
+    const emitted = new Set<string>();
+    const collect = (i: CrossExamineInput): void => {
+      for (const c of codes(crossExamine(i))) emitted.add(c);
+    };
+    // absent / not_loaded / withheld / no-corroboration / unusable denominator
+    collect(input({
+      readings: READINGS({
+        volume_venue_sum: absent('no_rows'),
+        size_projects_row: withheld('gps'),
+        size_defillama: notLoaded(),
+      }),
+    }));
+    // unlabelled environment
+    collect(input({ environment: null }));
+    // a negative reading no quantity of this kind can have
+    collect(input({
+      readings: READINGS({ volume_projects_row: observed(-1, { observedAt: null, source: 'coingecko' }) }),
+    }));
+    // outside the detector's population, and population unknown
+    collect(input({ subjectTier: 'catalog' }));
+    collect(input({ subjectTier: null }));
+
+    expect([...emitted].sort()).toEqual([...WITNESS_REFUSAL_CODES].sort());
   });
 });
 

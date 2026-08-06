@@ -232,11 +232,22 @@ const RULE_ENVIRONMENT_LABEL: WitnessRuleCitation = {
   text: 'Every figure carries an ObservationFrame and an environment label where it came from a database.',
 };
 
+/**
+ * `XWIT_RATIO_DENOMINATOR_UNUSABLE` IS DELIBERATELY NOT `..._ABSENT`, and the rename
+ * is the point. The denominator can fail a division from four different states —
+ * not-loaded, withheld, absent, or present-but-non-positive — and a code called
+ * `_ABSENT` names one of them as a fact about the other three. A code is the part a
+ * downstream panel keys off and the part a human greps for, so it must not assert a
+ * state; the refusal's `sentence` names which state it actually was, and the witness
+ * carries its own `XWIT_WITNESS_{NOT_LOADED,WITHHELD,ABSENT}` refusal alongside.
+ * Two refusals about one witness is correct here: one about the witness, one about the
+ * ratio that no longer exists because of it.
+ */
 export type WitnessRefusalCode =
   | 'XWIT_WITNESS_NOT_LOADED'
   | 'XWIT_WITNESS_WITHHELD'
   | 'XWIT_WITNESS_ABSENT'
-  | 'XWIT_RATIO_DENOMINATOR_ABSENT'
+  | 'XWIT_RATIO_DENOMINATOR_UNUSABLE'
   | 'XWIT_NO_CORROBORATING_WITNESS'
   | 'XWIT_ENVIRONMENT_UNLABELLED'
   | 'XWIT_SUBJECT_OUTSIDE_DETECTOR_POPULATION'
@@ -248,7 +259,7 @@ export const WITNESS_REFUSAL_CODES: readonly WitnessRefusalCode[] = [
   'XWIT_WITNESS_NOT_LOADED',
   'XWIT_WITNESS_WITHHELD',
   'XWIT_WITNESS_ABSENT',
-  'XWIT_RATIO_DENOMINATOR_ABSENT',
+  'XWIT_RATIO_DENOMINATOR_UNUSABLE',
   'XWIT_NO_CORROBORATING_WITNESS',
   'XWIT_ENVIRONMENT_UNLABELLED',
   'XWIT_SUBJECT_OUTSIDE_DETECTOR_POPULATION',
@@ -647,21 +658,29 @@ export function crossExamine(input: CrossExamineInput): CrossExamination {
 
   /*
    * NO RATIO EXISTS, and the honest consequence is that no band exists either — not
-   * `clean`, not 0. TWO ways to get here and both are refused: the denominator was
-   * never recorded, or it was recorded as something a division cannot use. The second
-   * is easy to miss because the reading IS present, so a caller that only checks
-   * presence would divide by zero and get Infinity, which clears every threshold.
+   * `clean`, not 0. FOUR ways to get here and all four are refused, each naming its own
+   * state rather than borrowing "absent": the query was never run, the reader is not
+   * cleared, nothing was recorded, or something WAS recorded that a division cannot use.
+   * The last is easy to miss because the reading IS present, so a caller that only
+   * checks presence would divide by zero and get Infinity, which clears every threshold.
+   * See `WitnessRefusalCode` for why the code itself does not name a state.
    */
   const sizeUsable = isPresent(incSize) && incSize.value > 0;
   if (!sizeUsable) {
     const why = isPresent(incSize)
       ? `recorded as ${incSize.value}, which is not a positive denominator`
-      : `${incSize.state.replace('_', '-')}`;
+      : incSize.state === 'not_loaded'
+        ? 'not loaded — its query was never run for this subject, which is not the same as its '
+          + 'having no value'
+        : incSize.state === 'withheld'
+          ? `present but withheld from this reader (compartment ${incSize.compartment}) — the figure `
+            + 'exists and this reader may not see it'
+          : `absent (${incSize.because})`;
     refusals.push(refuse(
-      'XWIT_RATIO_DENOMINATOR_ABSENT',
+      'XWIT_RATIO_DENOMINATOR_UNUSABLE',
       `No turnover ratio is computed: the denominator (${WITNESSES.size_projects_row.label}) is `
-      + `${why}, and dividing by an absent denominator is how a real target gets suppressed. `
-      + 'No band is reported for this subject.',
+      + `${why}, and dividing by a denominator this examination does not have is how a real target `
+      + 'gets suppressed. No band is reported for this subject.',
       RULE_ABSENT_REFUSES, INCUMBENT.size_usd, 'size_usd',
     ));
   }

@@ -354,6 +354,35 @@ describe('verdict broker — the asker must hold its own compartment', () => {
     expect(answer.kind === 'not_loaded' && answer.code).toBe(VERDICT_BROKER_CODES.SUBJECT_UNUSABLE);
     expect(calls).toEqual([]);
   });
+
+  it.each([[null], [undefined], [0], [{}]])(
+    'refuses an ABSENT subject (%j) under a stable code rather than throwing a 500',
+    async (subject) => {
+      // THE DEFECT THIS TEST EXISTS FOR, and it is the one shape a route actually hands
+      // over. `null`/`undefined` is what a missing query parameter or an unsent JSON body
+      // field is, whatever the TypeScript signature says at the boundary; `asking.subject`
+      // went straight into `.trim()`, so this module — the one whose entire thesis is that
+      // absent data refuses UNDER A STABLE CODE — answered with an uncaught TypeError and
+      // a 500 carrying no code at all. The BLANK-string case above was handled and the
+      // ABSENT case was not, which is the two halves of one module disagreeing about how
+      // defensive to be while `normaliseAssetSymbol` already accepted `null | undefined`.
+      // The non-string cases are here too because a JSON body can carry any type and the
+      // refusal must be a refusal for all of them, not only for the two we thought of.
+      process.env[ENV_VAR] = '1';
+      const { pool, calls } = fakePool(() => {
+        throw new Error('the broker must not query for an absent subject');
+      });
+      const answer = await brokerVerdict(pool, question(holdingProbe('holding_restricted', 2)), {
+        entitlements: ENTITLED,
+        subject: subject as unknown as string,
+      });
+      expect(answer.kind).toBe('not_loaded');
+      if (answer.kind !== 'not_loaded') throw new Error('unreachable');
+      expect(answer.code).toBe(VERDICT_BROKER_CODES.SUBJECT_UNUSABLE);
+      expect(answer.reason).toBe('subject_unusable');
+      expect(calls).toEqual([]);
+    },
+  );
 });
 
 describe('verdict broker — a probe that throws is not an empty answer', () => {

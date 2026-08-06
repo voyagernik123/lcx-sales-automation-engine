@@ -84,11 +84,25 @@
 --      ONLY. JS `.trim()` strips all whitespace. So a stored 'SOL' || chr(9) (tab) is
 --      REFUSED by the code (cleanTicker trims the tab, giving 'SOL' <> the stored value)
 --      and the old predicate was FALSE for it — because btrim left the tab alone and
---      upper() of the result equalled the stored value. The tab set is now explicit.
+--      upper() of the result equalled the stored value. The set is now explicit.
 --      (The same asymmetry means 'SOL'||chr(9) is a LEGAL asset_symbol under 0060's
 --      btrim-based CHECK, and no subject this read path can produce will ever equal it,
 --      so a genuine embargo on such a symbol reads as `empty`. THAT one is not fixable
 --      from here — it is 0060's CHECK — and it is named rather than papered over.)
+--
+--      AND THE SET ITSELF HAD THE SAME CLASS OF BUG, VERIFIED AGAINST A REAL SERVER.
+--      It was written E' \t\n\r\f\v'. Postgres' escape-string syntax defines \b \f \n \r
+--      \t and the numeric forms AND NOTHING ELSE: "any other character following a
+--      backslash is taken literally", so E'\v' IS THE LETTER v, not U+000B.
+--        select length(E' \t\n\r\f\v'), ascii(right(E' \t\n\r\f\v',1));  →  6 | 118
+--      That set therefore trimmed a lowercase 'v' and did NOT trim a vertical tab, so a
+--      stored 'SOL' || chr(11) — refused by the code, because JS .trim() strips U+000B —
+--      was still invisible to this index, which is the exact under-report this section
+--      claims to have closed. \x0B is the documented hex form and is 11:
+--        select ascii(right(E' \t\n\r\f\x0B',1));                        →  11
+--      (No well-formed row was falsely indexed by the old set: a normalised ticker_norm
+--      is uppercase, so it cannot contain a lowercase 'v'. The fault was one-directional
+--      — under-reporting — which is the direction that matters here.)
 --   2. THE LEADING '$'. cleanTicker strips it, so a stored '$SOL' is refused by the code
 --      (cleanTicker('$SOL') = 'SOL' <> '$SOL'), while '$SOL' IS its own upper(btrim(...))
 --      and was invisible to the old predicate. regexp_replace now mirrors the strip.
@@ -112,9 +126,9 @@
 CREATE INDEX IF NOT EXISTS idx_projects_ticker_norm_unjoinable
   ON projects (id)
   WHERE ticker_norm IS NOT NULL
-    AND btrim(ticker_norm, E' \t\n\r\f\v') <> ''
+    AND btrim(ticker_norm, E' \t\n\r\f\x0B') <> ''
     AND (length(ticker_norm) > 20
-         OR ticker_norm <> upper(regexp_replace(btrim(ticker_norm, E' \t\n\r\f\v'), '^\$', '')));
+         OR ticker_norm <> upper(regexp_replace(btrim(ticker_norm, E' \t\n\r\f\x0B'), '^\$', '')));
 
 COMMENT ON INDEX idx_projects_ticker_norm_unjoinable IS
   'Rows whose ticker_norm is not its own cleanTicker() output, or is longer than the 20 '

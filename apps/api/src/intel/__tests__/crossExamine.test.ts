@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  SWEEP_REFUSAL_CODES,
   WITNESS_KEYS,
   crossExamineFlagged,
   crossExamineProject,
@@ -19,6 +20,7 @@ import {
  * makes the two halves testable together before the barrel line lands.
  */
 import {
+  DETECTOR_POPULATION_TIER,
   DETECTOR_THRESHOLDS_AS_MIRRORED,
   WITNESS_IDS,
   absent,
@@ -191,11 +193,200 @@ describe('every statement is parameterised', () => {
   it('writes nothing — the sweep over flagged projects is read-only', async () => {
     const { q, calls } = fake({ project: PROJECT(), flagged: [{ subject_id: PID }] });
     const sweep = await crossExamineFlagged(q, ENGINE, { environment: ENV });
-    expect(sweep.scanned).toBe(1);
+    // `examined`, not the old `scanned`: that name was documented as "how many flagged
+    // subjects the sweep looked at", which a caller reads as the population. See the
+    // truncation tests below for what now travels with it.
+    expect(sweep.examined).toBe(1);
     expect(sweep.examinations).toHaveLength(1);
     for (const c of calls) {
       expect(c.text).not.toMatch(/\b(INSERT|UPDATE|DELETE|TRUNCATE|ALTER)\b/i);
     }
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════ */
+/* A TRUNCATED SWEEP IS NOT THE POPULATION                                         */
+/* ══════════════════════════════════════════════════════════════════════════════ */
+
+describe('the sweep over the flagged population', () => {
+  /** n distinct, well-formed subject ids, so the reader's `str()` filter keeps them all. */
+  const flaggedIds = (n: number): Record<string, unknown>[] =>
+    Array.from({ length: n }, (_, i) => ({
+      subject_id: `${String(i).padStart(8, '0')}-2222-3333-4444-555555555555`,
+    }));
+
+  const sweep = (f: Fixtures, limit: number) =>
+    crossExamineFlagged(fake(f).q, ENGINE, { environment: ENV, examinedAt: '2026-08-06T12:00:00.000Z', limit });
+
+  it('reports the whole book as the whole book, and refuses nothing', async () => {
+    const s = await sweep({ project: PROJECT(), flagged: flaggedIds(3) }, 10);
+    expect(s.examined).toBe(3);
+    expect(s.flaggedTotal).toBe(3);
+    expect(s.limit).toBe(10);
+    expect(s.truncated).toBe(false);
+    expect(s.refusals).toEqual([]);
+  });
+
+  it('refuses to let a capped sweep read as the population', async () => {
+    /*
+     * THE DEFECT. The old return was `{ scanned, examinations }` and nothing else, with a
+     * cap of 200 — so over 250 flagged projects it returned 200 and said nothing, and a
+     * panel built on it would have reported "200 suppressed projects cross-examined" as
+     * the whole book. That is the same shape of lie as an empty list reading as "nothing
+     * happened", so the cap, the count and a refusal all travel with the result.
+     */
+    const s = await sweep({ project: PROJECT(), flagged: flaggedIds(7) }, 2);
+    expect(s.examined).toBe(2);
+    expect(s.flaggedTotal).toBe(7);
+    expect(s.truncated).toBe(true);
+    const ref = s.refusals.find((r) => r.code === 'XWIT_FLAGGED_POPULATION_TRUNCATED');
+    expect(ref, 'a capped sweep returned no truncation refusal').toBeTruthy();
+    expect(ref!.sentence).toMatch(/2 suppressed project\(s\) of 7 flagged/);
+    expect(ref!.rule.provision).toBe('absent data refuses');
+    // And every one of the codes it can emit is in the register beside it.
+    for (const r of s.refusals) expect(SWEEP_REFUSAL_CODES).toContain(r.code);
+  });
+
+  it('keeps an uncountable population apart from an empty one, and returns BOTH refusals', async () => {
+    /*
+     * An unreadable `count()` is not a count of zero. And a FULL page is evidence on its
+     * own that there may be more, which is what keeps `truncated` honest when the count
+     * could not be read — two independent grounds, and the house pattern is to return
+     * every refusal, not the first one found.
+     */
+    const s = await sweep({ project: PROJECT(), flagged: flaggedIds(2), flaggedTotal: null }, 2);
+    expect(s.flaggedTotal).toBeNull();
+    expect(s.truncated).toBe(true);
+    expect(s.refusals.map((r) => r.code).sort())
+      .toEqual(['XWIT_FLAGGED_POPULATION_TRUNCATED', 'XWIT_FLAGGED_POPULATION_UNCOUNTED']);
+    expect(s.refusals.find((r) => r.code === 'XWIT_FLAGGED_POPULATION_TRUNCATED')!.sentence)
+      .toMatch(/an unknown number/);
+  });
+
+  it('says nothing was examined without saying nothing is flagged', async () => {
+    // The genuinely-empty case, which must stay distinguishable from the two above.
+    const s = await sweep({ project: PROJECT(), flagged: [] }, 10);
+    expect(s.examined).toBe(0);
+    expect(s.flaggedTotal).toBe(0);
+    expect(s.truncated).toBe(false);
+    expect(s.refusals).toEqual([]);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════ */
+/* A BLANK COLUMN IS AN ABSENCE, NEVER A ZERO                                      */
+/* ══════════════════════════════════════════════════════════════════════════════ */
+
+describe('the coercions manufacture no zeroes', () => {
+  it('refuses a whitespace-only market cap instead of reading it as a $0 cap', async () => {
+    /*
+     * THE DEFECT, IN THE GUARD WRITTEN TO PREVENT IT. `num()` exists because
+     * `Number(null)` is 0; it checked `''` and not whitespace, and `Number('  ')` is also
+     * 0. So a blank-ish numeric column became a PRESENT reading with `value: 0` — a
+     * genuine zero market cap — which the engine then correctly refuses to divide by but
+     * reports as a recorded figure rather than as an enrichment gap.
+     */
+    const w = (await read({ project: PROJECT({ market_cap_usd: '   ' }) })).readings;
+    expect(w.size_projects_row.state).toBe('absent');
+    expect(w.size_projects_row).not.toHaveProperty('value');
+    expect(w.size_projects_row.state === 'absent' && w.size_projects_row.because).toBe('column_null');
+  });
+
+  it('refuses every other shape Number() turns into 0, because the allow-list is the point', async () => {
+    // `Number('')`, `Number('  ')`, `Number('\t\n')`, `Number(false)` and `Number([])`
+    // are all 0. Only a number, a bigint, or a string that parses finite gets through.
+    for (const blank of ['', '  ', '\t\n', false, [], {}, 'n/a', null, undefined]) {
+      const w = (await read({ project: PROJECT({ volume_24h_usd: blank }) })).readings;
+      expect(
+        w.volume_projects_row.state,
+        `Number(${JSON.stringify(blank) ?? String(blank)}) must not become a present reading`,
+      ).toBe('absent');
+    }
+    // …and a real numeric-as-string still gets through, or the allow-list would be a wall.
+    const ok = (await read({ project: PROJECT({ volume_24h_usd: ' 1.25e8 ' }) })).readings.volume_projects_row;
+    expect(isPresent(ok) && ok.value).toBe(1.25e8);
+  });
+
+  it('leaves the venue count UNKNOWN when it does not read as a number, rather than asserting zero rows', async () => {
+    /*
+     * The removed `int()` was `num(v) ?? 0` applied to the load-bearing venue
+     * discriminator — the count that separates "no venue rows at all" from "rows that
+     * record no volume". A NULL count coerced to 0 produced the asserted note "no
+     * exchange_listings rows for this project", a fact the query never established.
+     */
+    const b = (await read({
+      project: PROJECT(),
+      venues: { venues: null, venues_with_volume: null, volume_sum: null },
+    })).readings.volume_venue_sum;
+    expect(b.state === 'absent' && b.because).toBe('column_null');
+    expect(b.state === 'absent' && b.note).toMatch(/unknown/);
+    expect(b.state === 'absent' && b.note).not.toMatch(/no exchange_listings rows/);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════ */
+/* THE TIER IS NOT A WITNESS                                                       */
+/* ══════════════════════════════════════════════════════════════════════════════ */
+
+describe('a clearance boundary rewrites no other witness\'s absence cause', () => {
+  const CATALOG_NO_VENUES = {
+    project: PROJECT({ tier: 'catalog' }),
+    venues: { venues: 0, venues_with_volume: 0, volume_sum: null },
+  };
+
+  it('reads the tier even when BOTH project-row witnesses are withheld', async () => {
+    /*
+     * THE DEFECT THIS PINS. Skipping the `projects` SELECT when neither project-row
+     * witness would be reported left `tier` null, which did two things at once: it erased
+     * the engine's population gate, and it downgraded witness B's absence from STRUCTURAL
+     * (`not_collected_for_this_tier` — the exchange sync only ever visits tier = 'tracked',
+     * enrich/exchanges.ts:83) to CONTINGENT (`no_rows`). The second is the one that costs
+     * a human time: it tells an operator to go and wait for enrichment that is never
+     * coming. A need-to-know boundary on one witness must not do that to another.
+     */
+    const bundle = await readWitnesses(fake(CATALOG_NO_VENUES).q, PID, ENGINE, {
+      environment: ENV,
+      examinedAt: '2026-08-06T12:00:00.000Z',
+      withhold: ['volume_projects_row', 'size_projects_row'],
+      withholdCompartment: 'gps',
+    });
+    expect(bundle.readings.volume_projects_row.state).toBe('withheld');
+    expect(bundle.readings.size_projects_row.state).toBe('withheld');
+    expect(bundle.subjectTier).toBe('catalog');
+    const b = bundle.readings.volume_venue_sum;
+    expect(b.state === 'absent' && b.because).toBe('not_collected_for_this_tier');
+    // …and the engine still knows production never scans this subject.
+    expect(crossExamine(bundle).detectorPopulation).toBe('outside_population');
+  });
+
+  it('reads the tier — and only the tier — when neither project-row witness is in the read subset', async () => {
+    const { q, calls } = fake(CATALOG_NO_VENUES);
+    const bundle = await readWitnesses(q, PID, ENGINE, {
+      environment: ENV,
+      examinedAt: '2026-08-06T12:00:00.000Z',
+      read: ['volume_venue_sum'],
+    });
+    // The two witness COLUMNS are genuinely never selected, so both are not-loaded …
+    expect(bundle.readings.volume_projects_row.state).toBe('not_loaded');
+    expect(bundle.readings.size_projects_row.state).toBe('not_loaded');
+    const projectCall = calls.find((c) => c.text.includes('FROM projects'));
+    expect(projectCall, 'the projects row was not read at all, so the tier is unknowable').toBeTruthy();
+    expect(projectCall!.text).toContain('tier');
+    expect(projectCall!.text).not.toContain('market_cap_usd');
+    expect(projectCall!.text).not.toContain('volume_24h_usd');
+    // … while the tier, which is not a witness, is read anyway, and witness B's absence
+    // is still the structural one.
+    expect(bundle.subjectTier).toBe('catalog');
+    const b = bundle.readings.volume_venue_sum;
+    expect(b.state === 'absent' && b.because).toBe('not_collected_for_this_tier');
+  });
+
+  it('reports the tier as unknown, not as a witness gap, when there is no projects row', async () => {
+    // No row means no tier, and no tier means the engine refuses the verdict rather than
+    // assuming either way. The witnesses' own absence is a separate refusal.
+    const bundle = await readWitnesses(fake({ project: null }).q, PID, ENGINE, { environment: ENV });
+    expect(bundle.subjectTier).toBeNull();
+    expect(crossExamine(bundle).detectorPopulation).toBe('unknown');
   });
 });
 
@@ -263,7 +454,7 @@ describe('the project row and witness C', () => {
     expect(x.readings.size_projects_row.state).toBe('absent');
     expect(x.bandAsDetected).toBeNull();
     expect(x.suppressesAsDetected).toBeNull();
-    expect(codes(x)).toContain('XWIT_RATIO_DENOMINATOR_ABSENT');
+    expect(codes(x)).toContain('XWIT_RATIO_DENOMINATOR_UNUSABLE');
   });
 
   it('refuses both project-row witnesses when the subject itself is not there', async () => {
@@ -375,21 +566,79 @@ describe('the reader and the engine together', () => {
     expect(codes(x)).toContain('XWIT_ENVIRONMENT_UNLABELLED');
   });
 
-  it('marks an unqueried witness not-loaded, distinct from absent and from zero', async () => {
-    // `notLoaded` is the state a caller reaches for when it deliberately reads a
-    // subset; asserted here so the constructor the reader depends on cannot be
-    // dropped from the engine without this failing.
-    const bundle = await read({
+  it('marks a witness outside the read subset not-loaded, distinct from absent and from zero', async () => {
+    /*
+     * NOT A HAND-BUILT READING ANY MORE, AND THAT WAS THE WHOLE DEFECT. The previous
+     * version of this test called `ENGINE.notLoaded()` itself and injected it into an
+     * already-read bundle, so it exercised the engine's own already-tested constructor
+     * and proved nothing about the reader — while claiming to prove "the constructor the
+     * reader depends on cannot be dropped". The reader depended on no such thing:
+     * `notLoaded` appeared in crossExamine.ts only as an interface member and
+     * `readWitnesses` could not emit `not_loaded` on any path, so the fourth state was an
+     * overclaim. `read` is now that path, and this test goes through it.
+     */
+    const { q, calls } = fake({
       project: PROJECT(),
       venues: { venues: 6, venues_with_volume: 6, volume_sum: '95000000', source_count: 2, first_source: 'coinpaprika' },
+      // A matchable observation IS on disk. If the reader queried it, the witness would
+      // come back present — which is what makes not_loaded here a fact about the read.
+      fdv: { value_num: '1e8', observed_at: null, source: 'defillama', reliability: 'A' },
     });
-    const unasked = ENGINE.notLoaded();
+    const bundle = await readWitnesses(q, PID, ENGINE, {
+      environment: ENV,
+      examinedAt: '2026-08-06T12:00:00.000Z',
+      read: ['volume_projects_row', 'volume_venue_sum', 'size_projects_row'],
+    });
+    const unasked = bundle.readings.size_defillama;
     expect(unasked.state).toBe('not_loaded');
     expect(unasked).not.toHaveProperty('value');
-    const x = crossExamine({ ...bundle, readings: { ...bundle.readings, size_defillama: unasked } });
+    // …and it is not-loaded because the statement was never issued, not because a
+    // constructor was called on its behalf.
+    expect(calls.some((c) => c.text.includes("predicate = 'fdv_usd'"))).toBe(false);
+
+    const x = crossExamine(bundle);
     expect(x.frame.witnessesNotLoaded).toEqual(['size_defillama']);
     expect(codes(x)).toContain('XWIT_WITNESS_NOT_LOADED');
     // The one witness with nothing to say was NOT read; it is not reported as empty.
     expect(codes(x)).not.toContain('XWIT_WITNESS_ABSENT');
+  });
+
+  it('reports NO production verdict for a project the detector never scans', async () => {
+    /*
+     * THE HEADLINE DEFECT, AT THE SEAM BETWEEN THE TWO HALVES. The reader selected
+     * `tier`, stored it, and used it two branches later to name witness B's absence — and
+     * then never handed it to the engine. So the identical $2.2M-on-$1M arithmetic that
+     * escalates in the first test of this block was reported as a live `wash_suspected`
+     * suppression, with `escalate: true`, for a catalog-tier project `deception.ts:35`
+     * never looks at. Nothing about such a project is suppressed, so nothing can flip.
+     */
+    const x = await examine({
+      project: PROJECT({ tier: 'catalog', market_cap_usd: '1000000', volume_24h_usd: '2200000' }),
+      venues: { venues: 0, venues_with_volume: 0, volume_sum: null },
+      fdv: { value_num: '4000000', observed_at: null, source: 'defillama', reliability: 'A' },
+    });
+    expect(x.frame.subjectTier).toBe('catalog');
+    expect(x.detectorPopulation).toBe('outside_population');
+    expect(x.bandAsDetected).toBeNull();
+    expect(x.suppressesAsDetected).toBeNull();
+    expect(x.escalate).toBe(false);
+    expect(codes(x)).toContain('XWIT_SUBJECT_OUTSIDE_DETECTOR_POPULATION');
+    // Filed as outside-the-population, which is not a weaker `immaterial`: an immaterial
+    // gap is one production weighed and would decide the same way either side, while this
+    // one production never weighed at all.
+    expect(x.disagreements.map((d) => d.quantity)).toEqual(['size_usd']);
+    expect(x.disagreements[0]!.materiality).toBe('outside_detector_population');
+    expect(x.disagreements[0]!.bandUnder).toEqual([null, null]);
+  });
+
+  it('refuses the verdict rather than assuming a tier when the row records none', async () => {
+    const x = await examine({ project: PROJECT({ tier: null }) });
+    expect(x.frame.subjectTier).toBeNull();
+    expect(x.detectorPopulation).toBe('unknown');
+    expect(x.bandAsDetected).toBeNull();
+    expect(codes(x)).toContain('XWIT_DETECTOR_POPULATION_UNKNOWN');
+    // "We did not read the tier" and "production does not scan this tier" call for
+    // different things from whoever reads it, so they never share a code.
+    expect(codes(x)).not.toContain('XWIT_SUBJECT_OUTSIDE_DETECTOR_POPULATION');
   });
 });

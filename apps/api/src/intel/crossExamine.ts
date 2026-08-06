@@ -4,9 +4,12 @@
  * `packages/shared/src/intel/witnesses.ts` decides what a set of witness readings
  * MEANS (agree / disagree / absent, and whether a disagreement moves a decision).
  * This file decides only what each witness ACTUALLY SAYS, which is the part that
- * needs a database and is therefore the part where the three states get collapsed
- * if nobody is watching. Three collapses were available here and all three are
- * refused explicitly:
+ * needs a database and is therefore the part where the four states collapse into one
+ * another if nobody is watching. FIVE collapses were available here and all five are
+ * refused explicitly. The count is stated because the first version of this comment said
+ * "three collapses … and all three are refused" — a claim that was true of the list it
+ * was written above and became false as soon as items 4 and 5 were found. If a sixth
+ * turns up, the number moves with the list:
  *
  *   1. `SUM(volume_24h_usd)` over rows that ALL have a NULL volume returns NULL in
  *      Postgres. `COALESCE(SUM(...), 0)` — the obvious thing to write — turns "five

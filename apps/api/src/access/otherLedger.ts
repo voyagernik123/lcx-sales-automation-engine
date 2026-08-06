@@ -108,11 +108,16 @@ export const OTHER_LEDGER_CODES = {
    */
   SIGNAL_BLOCKED_BY_LIVE_ENTRY: 'OTHER_LEDGER_SIGNAL_BLOCKED_BY_LIVE_ENTRY',
   /**
-   * This deal's own entry exists AND HAS BEEN LIFTED by a named human, so nothing is
-   * in force and 0060's `(asset_symbol, event_ref)` index — which includes lifted
+   * This deal's own entry exists AND HAS BEEN LIFTED by a named human, so THIS SIGNAL is
+   * not in force, and 0060's `(asset_symbol, event_ref)` index — which includes lifted
    * rows — means it can never be re-entered under this key. A lifted entry is history,
    * not a control, and reporting it as `already_recorded` was the collapse of three
    * states into one.
+   *
+   * IT SAYS NOTHING BY ITSELF ABOUT THE ASSET. Whether some OTHER live entry holds the
+   * symbol is a separate fact, read in the same statement and stated separately (it
+   * arrives alongside `SIGNAL_BLOCKED_BY_LIVE_ENTRY` when it does). This code means "our
+   * signal is history", never "the asset is clear".
    */
   SIGNAL_LIFTED_NOT_IN_FORCE: 'OTHER_LEDGER_SIGNAL_LIFTED_NOT_IN_FORCE',
 } as const;
@@ -301,10 +306,20 @@ export async function assetSymbolForProject(pool: pg.Pool, projectId: string): P
     return {
       kind: 'refused',
       code: OTHER_LEDGER_CODES.PROJECT_ID_UNUSABLE,
+      /*
+       * THIS MESSAGE MUST NOT CONTAIN THE OLD FALSEHOOD, NOT EVEN AS NARRATION. An earlier
+       * version of this refusal explained itself by quoting the sentence it replaced ("would
+       * be reported as a table that could not be read"), which put that phrase back into the
+       * output an operator greps and an alert matches on — a refusal whose text still says
+       * the table could not be read is indistinguishable, to anything scanning strings, from
+       * one that means it. `__tests__/otherLedger.test.ts` asserts the phrase is ABSENT. The
+       * history belongs in the docblock above, where no consumer reads it.
+       */
       message: `'${id.slice(0, 64)}' is not a uuid, and projects.id is one, so this was NOT put to the `
-        + 'database — a malformed id would raise 22P02 and be reported as a table that could not be '
-        + 'read, which is a false statement about the database and hides the real fault. Nothing has '
-        + 'been established about any embargo.',
+        + 'database. It is refused as BAD INPUT under its own code — 22P02 is a fact about the '
+        + 'value the caller supplied and never a fact about the relation, and collapsing the two '
+        + 'sends an operator chasing a migration that is fine. Nothing has been established about '
+        + 'any embargo.',
       rule: RULE_ABSENT_REFUSES,
     };
   }
@@ -450,7 +465,12 @@ export interface RegisterCounts {
  * without a database, because the interesting cases are the incoherent ones.
  *
  * ══ AN UNPOPULATED REGISTER IS NOT-LOADED, NOT A GENUINE ABSENCE ═════════════
- * FIRST, before anything is counted. `total === 0` used to map straight to `none`,
+ * BEFORE `total` IS INTERPRETED AT ALL. Not literally the first statement in the
+ * function — the two coherence checks run ahead of it, and they answer with the same
+ * `unavailable` kind, so no ordering between them can turn an unpopulated register
+ * into an absence. What matters is that it is decided BEFORE the `total === 0` branch,
+ * because that branch is the only one that can produce a genuine absence.
+ * `total === 0` used to map straight to `none`,
  * which the broker turns into `empty` — a labelled, frame-carrying, environment-
  * stamped ZERO whose message says "This is a genuine absence". On an
  * ENTIRELY UNPOPULATED register that sentence is false, and 0060 SEEDS NOTHING, so
@@ -493,6 +513,18 @@ export function verdictFromRegisterCounts(counts: RegisterCounts): ProbeResult<L
     return {
       kind: 'unavailable',
       detail: 'the recorded states of the live entries do not partition into the states 0060 declares',
+    };
+  }
+
+  if (!registerPopulated && total > 0) {
+    /* The uncorrelated EXISTS says the table holds no row at all, and the filtered count
+     * says it holds rows for THIS symbol. One statement produced both, so they cannot
+     * disagree unless the query and this function mean different things — and the detail
+     * deliberately does not say `register_empty`, because the other number contradicts
+     * that cause and naming it would be an inference stated as the observation. */
+    return {
+      kind: 'unavailable',
+      detail: 'register_populated contradicts the row count returned for this symbol',
     };
   }
 
@@ -1024,6 +1056,18 @@ export async function recordProposalListingSignal(
 /** Postgres' unique-violation code, named so the branch below reads as intent. */
 const UNIQUE_VIOLATION = '23505';
 
+/**
+ * 0060'S TWO UNIQUE INDEXES ON THIS TABLE, BY NAME — the complete list this INSERT can
+ * violate, as of 0060 lines 190 and 196. They are named here because the "no row of our
+ * own exists, therefore a foreign LIVE entry blocked us" step is only sound if those two
+ * are the only candidates: add a third unique index to `marketing_asset_embargo` in a
+ * year's time and that step becomes an inference stated as a certainty. So an
+ * unrecognised constraint name is refused as UNCONFIRMED instead, and this constant is
+ * where a future migration will notice it owes an update.
+ */
+const EMBARGO_LIVE_INDEX = 'marketing_asset_embargo_live_idx';
+const EMBARGO_EVENT_INDEX = 'marketing_asset_embargo_event_idx';
+
 function pgError(err: unknown): { code?: string; constraint?: string } {
   return typeof err === 'object' && err !== null ? (err as { code?: string; constraint?: string }) : {};
 }
@@ -1031,27 +1075,53 @@ function pgError(err: unknown): { code?: string; constraint?: string } {
 /**
  * A unique violation happened. WHICH ONE, AND WHAT IS ACTUALLY IN FORCE?
  *
- * ONE STATEMENT, ONE ROW, TWO BOOLEANS. It reads the row keyed by this deal's own
+ * ONE STATEMENT, ONE ROW, TWO BOOLEANS — and the second boolean is the one that stops
+ * this function stating a falsehood. It reads the row keyed by this deal's own
  * idempotency key and selects `lifted_at IS NULL` — not `lifted_at`, not `lifted_by`.
  * The date and the name of whoever lifted an entry are the marketing compartment's, and
- * this function runs for a sales caller; the fact of liveness is what the decision needs
+ * this function runs for a sales caller; the FACT of liveness is what the decision needs
  * and it is all that is read.
  *
- * THE THREE ANSWERS, AND NONE OF THEM IS THE OTHERS:
+ * ══ WHY THE SECOND BOOLEAN EXISTS, AND THE SENTENCE IT REMOVED ═══════════════
+ * The first version of this function read our own row ONLY, and then said, of a lifted
+ * one: "no embargo is in force and the asset can be named… the perimeter is OPEN". That
+ * is a statement about THE ASSET inferred from ONE ROW, and it is false in a sequence
+ * 0060 makes ordinary rather than exotic: 0060 requires a NEW event for every state
+ * change, so "marketing lifted this deal's entry and entered its own" is the expected
+ * shape — and in that state a DIFFERENT live entry does hold the asset while our row is
+ * history. The refusal still stopped the deal, so nothing unsafe shipped; what shipped
+ * was a certainty about the perimeter that had not been observed, which is the doctrine
+ * line this whole lane is about. `asset_live` is now read in the same statement, and the
+ * three possibilities (a live entry exists / none does / it was not observed) are three
+ * different sentences.
+ *
+ * THE ANSWERS, AND NONE OF THEM IS THE OTHERS:
  *   · the row exists and is LIVE       → `already_recorded`. The idempotent repeat, and
  *                                        the only non-refusal here.
- *   · the row exists and was LIFTED    → `SIGNAL_LIFTED_NOT_IN_FORCE`. A named human
- *                                        lifted this deal's own entry, so the perimeter
- *                                        is OPEN, and 0060's event index includes lifted
+ *   · the row exists, was LIFTED, and
+ *     NO other live entry holds it     → `SIGNAL_LIFTED_NOT_IN_FORCE`. The perimeter is
+ *                                        OPEN, and 0060's event index includes lifted
  *                                        rows so it can never be re-entered under this
  *                                        key. Reporting this as "already recorded" was
  *                                        the false clean.
+ *   · the row exists, was LIFTED, and
+ *     another live entry DOES hold it  → BOTH refusals, because both facts are true and
+ *                                        doctrine returns every refusal rather than the
+ *                                        first: our own signal is history AND a foreign
+ *                                        live row makes re-entry impossible.
  *   · no such row                      → `SIGNAL_BLOCKED_BY_LIVE_ENTRY`. The collision
  *                                        was the one-live-row-per-asset index and the
  *                                        live row belongs to a DIFFERENT event. This
  *                                        deal has no entry of its own and cannot get one
  *                                        while that row lives.
  * If the read itself fails we do not know which, and not knowing is `UNCONFIRMED`.
+ *
+ * WHAT THIS PATH DISCLOSES, NAMED RATHER THAN LEFT IMPLICIT. A sales caller learns THAT
+ * the asset carries a live register entry — not its state, event, window or author. That
+ * disclosure is forced by 0060's own unique index (it refused the write) and is not
+ * behind `GPS_MAY_READ_LISTING_VERDICT`, because a caller that must refuse a stage change
+ * has to be told the write did not land. It is strictly less than the read path's verdict
+ * and it is the minimum that makes the refusal actionable.
  */
 async function explainSignalCollision(
   pool: pg.Pool,
@@ -1060,10 +1130,14 @@ async function explainSignalCollision(
   constraint: string | undefined,
 ): Promise<ProposalSignalOutcome> {
   const named = constraint ? `The database refused it under '${constraint}'. ` : '';
-  let rows: readonly { live: boolean }[];
+  let rows: readonly { live: boolean; asset_live?: boolean }[];
   try {
-    const res = await pool.query<{ live: boolean }>(
-      `SELECT (lifted_at IS NULL) AS live
+    const res = await pool.query<{ live: boolean; asset_live: boolean }>(
+      `SELECT (lifted_at IS NULL) AS live,
+              EXISTS (
+                SELECT 1 FROM marketing_asset_embargo
+                 WHERE asset_symbol = $1 AND lifted_at IS NULL
+              ) AS asset_live
          FROM marketing_asset_embargo
         WHERE asset_symbol = $1 AND event_ref = $2`,
       [assetSymbol, eventRef],
@@ -1085,6 +1159,30 @@ async function explainSignalCollision(
 
   const own = rows[0];
   if (own === undefined) {
+    /*
+     * NO ROW OF OUR OWN EXISTS, SO THE COLLISION MUST HAVE BEEN THE LIVE INDEX — and that
+     * "must" is sound only while 0060's two unique indexes are the only ones this INSERT
+     * can violate. If Postgres named a constraint that is neither, the cause is not
+     * observed and not derivable, and naming the live index anyway would be exactly the
+     * inference-as-certainty this lane exists to remove. (A reported EVENT index with no
+     * matching row is equally unexplainable — it would mean the row was deleted between
+     * the two statements, and 0060's history is append-only.) Either way the deal stops;
+     * the difference is whether an operator is sent after the right thing.
+     */
+    if (constraint !== undefined && constraint !== EMBARGO_LIVE_INDEX) {
+      return {
+        kind: 'refused',
+        refusals: [{
+          code: OTHER_LEDGER_CODES.SIGNAL_WRITE_UNCONFIRMED,
+          message: `${named}That is not ${EMBARGO_LIVE_INDEX} or ${EMBARGO_EVENT_INDEX}, the only two unique `
+            + 'indexes 0060 declares on this table, and no entry keyed to this deal exists — so WHICH rule '
+            + 'the database applied, and therefore whether any control is in force for this asset, is '
+            + 'UNKNOWN. The deal must not advance on the strength of this call. If a migration added a '
+            + 'unique index to marketing_asset_embargo, this branch is what owes an update.',
+          rule: RULE_NEVER_SILENT,
+        }],
+      };
+    }
     return {
       kind: 'refused',
       refusals: [{
@@ -1105,17 +1203,55 @@ async function explainSignalCollision(
     return { kind: 'already_recorded', assetSymbol, eventRef };
   }
 
-  return {
-    kind: 'refused',
-    refusals: [{
-      code: OTHER_LEDGER_CODES.SIGNAL_LIFTED_NOT_IN_FORCE,
-      message: `${named}This deal's own entry for ${assetSymbol} EXISTS AND HAS BEEN LIFTED, so no embargo `
-        + 'is in force and the asset can be named. 0060\'s (asset_symbol, event_ref) index includes lifted '
-        + 'rows, so this signal can never be re-entered under this key. A lifted entry is history, not a '
-        + 'control: the perimeter is OPEN and the deal must not rely on it. A named human decided to lift '
-        + 'it — if that decision no longer holds, the marketing desk enters a NEW event, which is what 0060 '
-        + 'requires for every state change.',
+  /*
+   * THE THIRD STATE IS "NOT OBSERVED" AND IT IS NOT `false`. `asset_live` is only absent
+   * if the statement above did not select it, which is a code-level disagreement rather
+   * than a fact about the register — so it is reported as UNKNOWN and the sentence about
+   * the perimeter is simply not said. Reading `undefined` as "no live entry" is how the
+   * false clean gets back in through the back door.
+   */
+  const assetLive = own.asset_live;
+  /*
+   * ONLY THE BRANCH THAT OBSERVED IT USES THE WORDS "THE PERIMETER IS OPEN". The other two
+   * do not phrase themselves as a negation or a hedge OF that sentence ("this is not a
+   * report that the perimeter is open", "whether the perimeter is open is unknown"),
+   * because both still put the phrase into a string an operator greps and an alert matches
+   * on — and a message that contains it is indistinguishable, to anything scanning text,
+   * from one that means it. Same lesson as the PROJECT_ID_UNUSABLE message above; the tests
+   * assert the phrase is ABSENT from these two.
+   */
+  const perimeter = assetLive === false
+    ? 'NO live entry holds this asset at all, so the perimeter is OPEN and the deal must not rely on it.'
+    : assetLive === true
+      ? 'A DIFFERENT live entry DOES hold this asset — see the second refusal — so the asset is NOT free '
+        + 'to be named, and none of this is a permission.'
+      : 'WHETHER ANY OTHER LIVE ENTRY HOLDS THIS ASSET WAS NOT OBSERVED, so whether the asset is free to '
+        + 'be named is UNKNOWN and is asserted in neither direction.';
+
+  const refusals: OtherLedgerRefusal[] = [{
+    code: OTHER_LEDGER_CODES.SIGNAL_LIFTED_NOT_IN_FORCE,
+    message: `${named}This deal's own entry for ${assetSymbol} EXISTS AND HAS BEEN LIFTED, so it is history `
+      + 'and not a control, and 0060\'s (asset_symbol, event_ref) index includes lifted rows, so this '
+      + `signal can never be re-entered under this key. ${perimeter} A named human decided to lift it — if `
+      + 'that decision no longer holds, the marketing desk enters a NEW event, which is what 0060 requires '
+      + 'for every state change.',
+    rule: RULE_NEVER_SILENT,
+  }];
+
+  if (assetLive === true) {
+    /* BOTH facts are true and doctrine returns every refusal, not the first one found. The
+     * second is the one that says why no retry can work. */
+    refusals.push({
+      code: OTHER_LEDGER_CODES.SIGNAL_BLOCKED_BY_LIVE_ENTRY,
+      message: `${assetSymbol} carries a LIVE register entry for a DIFFERENT event, and 0060 permits exactly `
+        + 'one live entry per asset, so this deal\'s own signal cannot be re-entered while that entry lives. '
+        + 'The asset is NOT unprotected right now — but the control belongs to somebody else\'s event and may '
+        + 'be lifted by a named human at any moment, and there is then no record that this deal reached '
+        + 'proposal on this asset. Resolve it at the marketing desk so both events are on the record, or '
+        + 'refuse the stage change.',
       rule: RULE_NEVER_SILENT,
-    }],
-  };
+    });
+  }
+
+  return { kind: 'refused', refusals };
 }
