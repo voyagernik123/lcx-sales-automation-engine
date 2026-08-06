@@ -898,7 +898,22 @@ export async function evaluateEmissionWarrant(
       'Retry. Refusing is the only direction in which a failed read cannot become a granted '
       + 'launch.',
     ));
-  } else if (inFlightIsLowerBound) {
+  }
+  if (inFlight !== null && inFlight < 0) {
+    refusals.push(refusal(
+      'EMISSION_AGGREGATE_NEGATIVE',
+      `The in-flight total over other approved and live token campaigns is ${inFlight}, so at least `
+      + 'one of those rows states a negative LCX budget. A sum below zero is not room: added to this '
+      + `campaign's ${thisCampaignLcx === null ? 'unstated' : thisCampaignLcx} LCX it would produce a `
+      + 'total that clears any cap, which means one value in another campaign\'s row would defeat '
+      + 'this limb for every launch after it.',
+      'Find and correct the approved or live token campaigns whose budget_lcx is negative '
+      + '(`SELECT id, name, budget_lcx FROM dist_campaigns WHERE token_incentivized AND status IN '
+      + '(\'approved\',\'live\') AND budget_lcx < 0`). The column has no CHECK constraint, so the '
+      + 'register cannot be trusted to hold quantities until it does.',
+    ));
+  }
+  if (inFlight !== null && inFlightIsLowerBound) {
     refusals.push(refusal(
       'EMISSION_AGGREGATE_INCOMPLETE',
       `At least one approved or live token campaign states no LCX budget, so the in-flight total of `
@@ -971,6 +986,17 @@ export async function evaluateEmissionWarrant(
     launcherPositionNarrative: launcherNarrative,
     capLcx: cap === null ? null : cap.capLcx,
     capBasis: cap === null ? null : cap.basis,
+    /*
+     * WHY THIS IS IN THE WARRANT AND NOT ONLY IN THE REFUSALS.
+     *
+     * `capLcx: null` is ambiguous on its own — it means BOTH "no cap has been declared"
+     * (today's answer) and "a cap was supplied and rejected". Those are different facts
+     * about how carefully this launch was governed, and the warrant is immutable, so the
+     * distinction has to be recorded at write time or it is never recoverable. This field
+     * carries the faults `capDeclarationFaults` found; empty means none was supplied, or
+     * the one supplied was sound.
+     */
+    capDeclarationFaults: capFaults,
     emissionInFlightLcx: inFlight,
     emissionInFlightIsLowerBound: inFlightIsLowerBound,
     thisCampaignLcx,

@@ -103,6 +103,12 @@ const KpiDashboard = lazy(() => import('@/pages/KpiDashboard').then((m) => ({ de
 const AuditLog = lazy(() => import('@/pages/AuditLog').then((m) => ({ default: m.AuditLog })));
 const Ops = lazy(() => import('@/pages/Ops').then((m) => ({ default: m.Ops })));
 const Wbr = lazy(() => import('@/pages/Wbr').then((m) => ({ default: m.Wbr })));
+/*
+ * LAZY IS NOT OPTIONAL HERE. `npm run perf-budget -w @lcx/web` measures the initial JS at
+ * 835KB against an 850KB budget — fifteen kilobytes of headroom. An eager import of a new
+ * page fails the build, which is the correct outcome and the reason this is a ratchet.
+ */
+const Readout = lazy(() => import('@/pages/Readout').then((m) => ({ default: m.Readout })));
 const Decisions = lazy(() => import('@/pages/Decisions').then((m) => ({ default: m.Decisions })));
 const CommandDeck = lazy(() => import('@/pages/CommandDeck').then((m) => ({ default: m.CommandDeck })));
 const CommandPartners = lazy(() => import('@/pages/CommandPartners').then((m) => ({ default: m.CommandPartners })));
@@ -250,6 +256,7 @@ export const router = createBrowserRouter([
           { path: 'audit-log', element: <AuditLog /> },
           { path: 'ops', element: <Ops /> },
           { path: 'wbr', element: <Wbr /> },
+          { path: 'readout', element: <Readout /> },
           { path: 'access', element: <AccessControl /> },
           { path: 'distribution', element: <DistributionCockpit /> },
           { path: 'distribution/atlas', element: <DistributionHome /> },

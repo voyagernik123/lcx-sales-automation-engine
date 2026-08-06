@@ -16,6 +16,7 @@ import { discoveryRoutes } from './routes/discovery.js';
 import { analyticsRoutes } from './routes/analytics.js';
 import { taskRoutes } from './routes/tasks.js';
 import { notificationRoutes } from './routes/notifications.js';
+import { readoutRoutes } from './routes/readout.js';
 import { userRoutes, projectAssignmentRoutes } from './routes/users.js';
 import { customer360Routes } from './routes/customer360.js';
 import { noteRoutes } from './routes/notes.js';
@@ -221,6 +222,21 @@ export function createApp() {
   app.route('/v1/integrations', integrationRoutes);
   app.route('/v1/tasks', taskRoutes);
   app.route('/v1/notifications', notificationRoutes);
+  /*
+   * DESK-LEVEL ON PURPOSE, like notifications above it, and for the same reason.
+   *
+   * The 07:00 readout is ONE ranked brief PER READER spanning every compartment that
+   * reader is entitled to. Putting it behind a single workspace gate would be wrong in
+   * both directions: it would deny a reader entitled to two compartments, and it would
+   * make "which compartment does this route belong to" a question with no answer.
+   *
+   * It is not ungated. `requireOperator` authenticates it at `routes/readout.ts:62`, and
+   * the filtering that matters happens INSIDE, per reader, through `scopesFor()` /
+   * `scopeList()` — the same parameterised scope filter that closed P0's live
+   * notification leak. That is the only correct place for it, because the redaction is
+   * part of the answer here: the readout reports how many items it withheld.
+   */
+  app.route('/v1/readout', readoutRoutes);
   app.route('/v1/intel', intelRoutes);
   app.route('/v1/graph', graphRoutes);
   app.route('/v1/search', searchRoutes);

@@ -334,6 +334,52 @@ export const PENDING_MIGRATIONS: readonly string[] = [
    *        before the next one rather than after. */
   '0070_audit_seal.sql',
   '0071_grant_ledger.sql',
+
+  /* 0072 → THE UNJOINABLE-TICKER INDEX. ONE partial index on `projects` and nothing else:
+   *        no table, no column, no trigger, no data change. It supports the verdict
+   *        broker's join from `projects.ticker_norm` to
+   *        `marketing_asset_embargo.asset_symbol` by making the rows that CANNOT join —
+   *        a null, blank or denormalised ticker — cheap to find, because the broker has to
+   *        report "this project has no joinable symbol" as its own refusal rather than as
+   *        an absence of embargo.
+   *
+   *        SAFE TO APPLY ALONE, and safe to leave unapplied: `access/otherLedger.ts` reads
+   *        correctly without it, just sequentially. Takes a brief ACCESS EXCLUSIVE on
+   *        `projects`. Same CONCURRENTLY caveat as 0069 — `db/migrate.ts` sends the file as
+   *        one simple query, which Postgres wraps in an implicit transaction, and CREATE
+   *        INDEX CONCURRENTLY cannot run inside one. */
+  '0072_verdict_broker.sql',
+
+  /* 0073 → THE ONE MOUTH SHADOW LEDGER. `marketing_one_mouth_shadow` plus four indexes and
+   *        RLS enabled. Shadow mode means the Title VI engine RECORDS what it would have
+   *        refused on sales email and campaign text and blocks NOTHING — the point is to
+   *        measure the base rate before enforcement is switched on, because enforcing first
+   *        on live traffic with no measured rate is how a desk gets an outage and then
+   *        turns the control off permanently.
+   *
+   *        NEW TABLE, NO EXISTING TABLE TOUCHED, so it cannot break a running surface.
+   *        Nothing in apps/api or apps/web calls the recorder yet — the wiring is owed, and
+   *        until it exists this table stays empty. An empty table here must READ as
+   *        "recording, nothing observed yet in this window" and never as "zero violations";
+   *        that distinction is the whole reason the surface carries an ObservationFrame. */
+  '0073_one_mouth_shadow.sql',
+
+  /* 0074 → `platform_forecast` + `platform_forecast_outcome`. THE ONE THING THAT EXISTED IN
+   *        NO FORM across all 74 migrations: nothing could resolve a prediction against an
+   *        outcome, so every "are we any good" claim was unfalsifiable. Two tables, six
+   *        indexes (two of them unique), a mutation-forbidding function and append-only +
+   *        no-truncate triggers on the forecast table — an outcome that could overwrite its
+   *        prediction would destroy the only property that makes it a forecast.
+   *
+   *        APPEND-ONLY, LIKE 0070. After this, UPDATE and DELETE on `platform_forecast` are
+   *        refused by trigger. No production path writes these tables today, so there is
+   *        nothing to break; the risk is entirely in the future, when a job that wants to
+   *        "correct" a prediction must append instead.
+   *
+   *        ITS HONEST HEADLINE IS A REFUSAL. There is far too little resolved history to
+   *        claim calibration, and the code returns the refusal and the real N rather than a
+   *        percentage. Do not read an early figure off this as accuracy. */
+  '0074_platform_forecast.sql',
 ];
 
 /**
