@@ -1,7 +1,14 @@
 # P1 — CLAIM
 
-**Status:** IN PROGRESS — P1a (the parser) is the active workstream. This file is the plan;
-`P1_EVIDENCE.md` is owed when the phase gates.
+**Status:** GATED — all five acceptance criteria in §5 are met, each verified against source AND
+test rather than against a lane's report, and `P1_EVIDENCE.md` records the gate output, the four
+defects in my own work, and what is still outstanding. Shipped at `e009970` with both CI jobs
+green and `ci-mirror` green against a database built from all 75 migrations.
+
+**What "GATED" does NOT mean.** It does not mean the surfaces P1 touched are now beyond doubt.
+L16's readout has had no adversary pass, three attack angles are unrun, and migrations 0068–0074
+are not applied to production — so nothing that depends on those tables is doing anything yet.
+Those are named in the EVIDENCE file rather than left for someone to discover.
 
 Per `LCX_OS_100X_PLAN.md` §7.1. **This CLAIM re-scopes P1**, because a verification pass over the
 ~30 claims P1 rested on overturned enough of them that building the plan as written would have
