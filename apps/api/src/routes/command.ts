@@ -85,7 +85,7 @@ commandRoutes.post('/engines/lp-rescore', requireOperator, async (c) => {
   const body = await c.req.json<{ weights?: Record<string, number>; selectedIds?: string[] }>()
     .catch(() => ({} as { weights?: Record<string, number>; selectedIds?: string[] }));
   try {
-    const { rescore, sensitivity, analyzeSet } = await import('@lcx/shared');
+    const { rescoreDetailed, sensitivity, analyzeSet } = await import('@lcx/shared');
     const { COMMAND_DEEP_SEED } = await import('../seed/command/data2.js');
     const lp = (COMMAND_DEEP_SEED as unknown as { scorecards: { lp: { dimensions: Array<{ key: string; label: string; weight: number }>; rows: Array<{ subjectId: string; subjectLabel: string; scores: Record<string, number>; tier: string | null }> } } }).scorecards.lp;
     const weights: Record<string, number> = {};
@@ -95,11 +95,20 @@ commandRoutes.post('/engines/lp-rescore', requireOperator, async (c) => {
         weights[d.key] = Number.isFinite(v) && v >= 0 && v <= 1 ? v : d.weight;
       }
     }
-    const rows = rescore(lp.dimensions, lp.rows, body.weights ? weights : undefined);
+    /*
+     * `rescoreDetailed`, not `rescore`. `rescore` returns `.ranked` ONLY, so a partner that
+     * carries no score under the live weighting was dropped from this response entirely —
+     * an operator comparing a scorecard against the bench had no way to tell "not scored"
+     * from "not a partner". `unrankable` is returned beside the ranking, with the code and
+     * the reason each row could not be ranked, because absent is not zero and it is not
+     * nothing either.
+     */
+    const scored = rescoreDetailed(lp.dimensions, lp.rows, body.weights ? weights : undefined);
+    const rows = scored.ranked;
     const sens = sensitivity(lp.dimensions, lp.rows);
     const set = analyzeSet(lp.dimensions, lp.rows,
       Array.isArray(body.selectedIds) && body.selectedIds.length ? body.selectedIds.map(String).slice(0, 10) : ['pt_b2c2', 'pt_falconx', 'pt_cumberland']);
-    return c.json({ data: { dimensions: lp.dimensions, rows, sensitivity: sens, setAnalysis: set }, meta: meta() });
+    return c.json({ data: { dimensions: lp.dimensions, rows, unrankable: scored.unrankable, sensitivity: sens, setAnalysis: set }, meta: meta() });
   } catch (err) {
     console.error('[command] lp-rescore error:', err);
     return c.json({ error: 'LP rescore failed', code: 'COMMAND_ENGINE_ERROR' }, 500);

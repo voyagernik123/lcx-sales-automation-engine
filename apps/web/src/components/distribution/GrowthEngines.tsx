@@ -78,6 +78,22 @@ export function GrowthEngines() {
             <li key={r.subjectId} className="flex justify-between"><span className="text-navy">{r.rank}. {r.subjectLabel}</span><span className="font-mono text-grey">{r.weighted.toFixed(2)}</span></li>
           ))}
         </ol>
+        {/*
+          CHANNELS THAT COULD NOT BE SCORED, NAMED RATHER THAN DROPPED. `rescore` returns only
+          the ranked rows, so before this a channel nobody had scored simply vanished from the
+          mix — and a reader comparing three ranked channels against a business with eight had
+          no way to tell "not scored" from "not a channel". Never rendered as a zero and never
+          sorted to the bottom: it is a different fact and it gets its own line.
+        */}
+        {(mix.unrankable ?? []).length > 0 && (
+          <p className="mt-1.5 border-t border-line/60 pt-1.5 text-[10px] text-grey" data-testid="mix-unrankable">
+            <span className="font-bold">{(mix.unrankable ?? []).length} not ranked</span>
+            {' — '}
+            {(mix.unrankable ?? []).map((u) => u.subjectLabel).join(', ')}
+            {'. '}
+            {(mix.unrankable ?? [])[0]!.reason}
+          </p>
+        )}
       </div>
 
       {/* x402 seller catalog */}

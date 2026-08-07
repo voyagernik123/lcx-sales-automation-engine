@@ -188,6 +188,14 @@ export const fetchReadiness = () => get<Readiness>('/readiness');
 export interface LpRescoreResult {
   dimensions: ScorecardDim[];
   rows: Array<ScorecardRow & { weighted: number; rank: number }>;
+  /*
+   * PARTNERS THE WEIGHTING COULD NOT SCORE. This is a hand-written mirror of the API shape,
+   * not an import, so nothing errors when the two drift — which is precisely how it drifted:
+   * the route began returning `unrankable` and this type did not know, so the panel could not
+   * have rendered it even if it tried. Rows here are NOT ranked, NOT zero, and must never be
+   * merged into `rows`.
+   */
+  unrankable?: Array<{ subjectId: string; subjectLabel: string; code: string; reason: string; scoredDims: number; totalDims: number }>;
   sensitivity: Array<{ dimKey: string; dimLabel: string; currentWeight: number; flipWeight: number | null; gapPerHundredth: number }>;
   setAnalysis: { strengths: Array<{ dimKey: string; dimLabel: string; best: number; coveredBy: string }>; gaps: Array<{ dimKey: string; dimLabel: string; best: number }>; concentration: number };
 }

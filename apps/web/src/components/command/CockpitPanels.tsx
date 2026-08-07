@@ -148,6 +148,21 @@ export function LpOptimizerPanel() {
               </div>
             ))}
           </div>
+          {/*
+            PARTNERS THE WEIGHTING COULD NOT SCORE. Same reason as the channel mix: `rescore`
+            returns the ranked rows only, so an unscored partner was dropped from the panel
+            entirely and read as "not on the bench". It carries the engine's own code and
+            reason rather than a UI-invented sentence.
+          */}
+          {res.unrankable && res.unrankable.length > 0 && (
+            <div className="mt-2 border-t border-line/60 pt-2 text-[10px] text-grey" data-testid="lp-unrankable">
+              <span className="font-bold">{res.unrankable.length} not ranked under this weighting</span>
+              {': '}
+              {res.unrankable.map((u) => u.subjectLabel).join(', ')}
+              {'. '}
+              {res.unrankable[0]!.reason}
+            </div>
+          )}
           <div className="mt-3 border-t border-line/60 pt-2">
             <div className="mb-1 text-micro font-bold uppercase tracking-wider text-grey">Rank-flip sensitivity (authored weights)</div>
             {res.sensitivity.filter((s) => s.flipWeight !== null).length === 0 ? (

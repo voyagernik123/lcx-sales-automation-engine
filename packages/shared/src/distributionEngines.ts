@@ -1,5 +1,5 @@
 import { mulberry32, sampleTriangular } from './launchSim.js';
-import { rescore, sensitivity, type EngineDim, type EngineRow } from './commandEngines.js';
+import { rescoreDetailed, sensitivity, type EngineDim, type EngineRow , type UnrankableRow } from './commandEngines.js';
 
 /**
  * DISTRIBUTION growth engines (LCX ONE Phase 4) — the models that turn the
@@ -184,19 +184,28 @@ export function questCacSim(channels: QuestChannelInput[], opts: { runs?: number
 export interface ChannelMixResult {
   dimensions: EngineDim[];
   rows: Array<EngineRow & { weighted: number; rank: number }>;
+  /**
+   * Channels that carry NO score under this weighting. Not ranked, not zero, not sorted to
+   * the bottom — and NOT dropped, which is what this field exists to stop. `rescore` returns
+   * only the ranked rows, so before this a channel nobody had scored simply disappeared from
+   * the mix, and a reader comparing five channels against a list of eight had no way to know
+   * three were missing rather than absent from the business.
+   */
+  unrankable: UnrankableRow[];
   sensitivity: ReturnType<typeof sensitivity>;
 }
 
 /** The LP-optimizer pattern aimed at channels: reach × agent-density × cost ×
  *  compliance-risk × effort, live-reweightable, with rank-flip sensitivity. */
 export function channelMix(dims: EngineDim[], rows: EngineRow[], weightOverrides?: Record<string, number>): ChannelMixResult {
-  const scored = rescore(dims, rows, weightOverrides);
+  const scored = rescoreDetailed(dims, rows, weightOverrides);
   const effectiveDims = weightOverrides
     ? dims.map((d) => (weightOverrides[d.key] != null ? { ...d, weight: weightOverrides[d.key]! } : d))
     : dims;
   return {
     dimensions: effectiveDims,
-    rows: scored.map((r) => ({ ...r, weighted: r.weighted, rank: r.rank })),
+    rows: scored.ranked.map((r) => ({ ...r, weighted: r.weighted, rank: r.rank })),
+    unrankable: scored.unrankable,
     sensitivity: sensitivity(effectiveDims, rows),
   };
 }

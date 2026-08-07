@@ -151,8 +151,20 @@ export type {
   BlockerState, RequirementState, DdDim, ProgramReadinessInput,
 } from './commandEngines.js';
 export {
-  rescore, sensitivity, analyzeSet, parseSpreadBps, rfiEconomics,
+  rescore, rescoreDetailed, sensitivity, analyzeSet, parseSpreadBps, rfiEconomics,
   waitlistSim, listingReadiness, tokenDdScore, programReadiness,
+} from './commandEngines.js';
+/*
+ * `rescoreDetailed` and its result types were added when `rescore` stopped scoring an
+ * omitted dimension as a genuine zero — and were then unreachable, because this barrel is a
+ * hand-maintained name list and nobody added them. So every caller kept using `rescore`,
+ * which returns `.ranked` ONLY, and a row that could not be scored vanished from the
+ * response with no trace. `RescoreResult.unrankable`'s own docblock names that exact
+ * failure: "A surface that shows `ranked` and drops this on the floor is telling the reader
+ * that these subjects do not exist."
+ */
+export type {
+  RescoreResult, UnrankableRow, RowScoreCoverage, RescoreRefusalCode,
 } from './commandEngines.js';
 
 // GLOBAL SERVICES (GPS) — the services business, Phase 1: offer → proposal → deposit.

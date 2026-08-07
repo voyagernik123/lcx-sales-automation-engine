@@ -103,7 +103,16 @@ export interface ReferralSim {
 }
 export interface Emission { emittedLcx: number; feeRevenueLcx: number; netTreasuryLcx: number; budgetUtilizationPct: number; withinBudget: boolean; status: string }
 export interface QuestCac { fundedAgents: { p10: number; p50: number; p90: number }; totalBudgetUsd: number; blendedCacP50: number | null; marginal: Array<{ channelId: string; label: string; fundedPerExtra1kUsd: number }> }
-export interface ChannelMix { rows: Array<{ subjectId: string; subjectLabel: string; weighted: number; rank: number }> }
+export interface ChannelMix {
+  rows: Array<{ subjectId: string; subjectLabel: string; weighted: number; rank: number }>;
+  /*
+   * CHANNELS THE WEIGHTING COULD NOT SCORE — not ranked, not zero, and never merged into
+   * `rows`. Optional because a response predating the field is a real shape this client can
+   * still meet; `?? []` at the call site treats that as "none reported", which is honest,
+   * whereas defaulting to a count would invent one.
+   */
+  unrankable?: Array<{ subjectId: string; subjectLabel: string; code: string; reason: string; scoredDims: number; totalDims: number }>;
+}
 export interface Presence { presenceScore: number; surfaces: Array<{ surfaceId: string; label: string; score: number }> }
 
 const post = <T>(path: string, body: Record<string, unknown> = {}) =>
