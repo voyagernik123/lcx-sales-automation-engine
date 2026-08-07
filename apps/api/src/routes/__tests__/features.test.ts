@@ -174,13 +174,51 @@ describe('master-plan feature routes', () => {
       }
     });
 
-    it('returns a coherent Monte Carlo forecast', async () => {
+    /**
+     * THIS ASSERTED THE ORDERING AND NOTHING ELSE, SO IT COULD ONLY PASS ON A POPULATED
+     * DATABASE — and `17cf731` had just given CI its first database.
+     *
+     * With no deals there is nothing to simulate, so `p10/p50/p90` are `null` and the route
+     * says so. That is `kpi/forecast.ts:91` behaving exactly as designed: *"Null passes
+     * THROUGH. Dividing null by 100 in JS yields 0, which is exactly how a refusal would have
+     * become a $0 quarter on the dashboard."* The engine is right; the assertion was written
+     * for one of the two states.
+     *
+     * `expect(null).toBeLessThanOrEqual(...)` throws `actual value must be number or bigint,
+     * received "object"` — because `typeof null === 'object'` — which reads like a type bug in
+     * the route and is not one. Caught by `npm run ci-mirror` against a freshly migrated empty
+     * database; the local gate passes because a developer's database has deals in it. That
+     * divergence is the whole reason ci-mirror exists, and this is it earning its keep: no CI
+     * run has been created since `e009970` (Actions minutes), so this would have failed on
+     * whichever push next got one, with nobody expecting it.
+     *
+     * Both states are now covered, and the refusal branch is asserted rather than skipped —
+     * a test that quietly returns early on empty data is how an unmeasurable surface passes
+     * forever.
+     */
+    it('returns a coherent Monte Carlo forecast, or a stated refusal when there is nothing to simulate', async () => {
       const res = await app.request('/v1/kpis/forecast', { headers: AUTH });
       expect(res.status).toBe(200);
       const { data } = await res.json();
       expect(data.runs).toBe(10000);
-      expect(data.p10).toBeLessThanOrEqual(data.p50);
-      expect(data.p50).toBeLessThanOrEqual(data.p90);
+
+      const quantiles = [data.p10, data.p50, data.p90];
+      const allNull = quantiles.every((q) => q === null);
+      const allNumbers = quantiles.every((q) => typeof q === 'number');
+      // Never a mix: three quantiles from one simulation are all present or all absent.
+      expect(allNull || allNumbers, `mixed quantiles: ${JSON.stringify(quantiles)}`).toBe(true);
+
+      if (allNumbers) {
+        expect(data.p10).toBeLessThanOrEqual(data.p50);
+        expect(data.p50).toBeLessThanOrEqual(data.p90);
+        expect(data.simulatedDealCount).toBeGreaterThan(0);
+      } else {
+        // A refusal must SAY it is one. A silent null trio is the $0 quarter this route's
+        // own comment exists to prevent.
+        expect(data.simulatedDealCount).toBe(0);
+        expect(data.distributionRefusal ?? null, 'null quantiles with no stated refusal').not.toBeNull();
+      }
+
       for (const d of data.deals) {
         expect(d.winProbability).toBeGreaterThanOrEqual(0);
         expect(d.winProbability).toBeLessThanOrEqual(100);
