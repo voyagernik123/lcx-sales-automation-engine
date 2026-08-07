@@ -6,6 +6,7 @@ import {
   EMBARGO_EVENT_REF_RE,
   EMBARGO_SOURCE_REF_RE,
   GPS_LISTING_VERDICT_ENV,
+  LISTING_VERDICT_DECISION,
   LISTING_PIPELINE_QUESTION,
   OTHER_LEDGER_CODES,
   type RegisterCounts,
@@ -310,6 +311,14 @@ describe('GPS asks the listing pipeline — default-deny until the owner decides
   })]);
 
   it('flag OFF: a stable refusal code, no query, and NOT an empty', async () => {
+    /*
+     * `= '0'` IS EXPLICIT SINCE 2026-08-07. The owner made the decision, so it lives in
+     * `LISTING_VERDICT_DECISION` and an UNSET variable now means "the declaration governs"
+     * — i.e. authorised. The variable is a kill switch, so switching it off is how this test
+     * reaches the refusal it exists to assert. Deleting the variable would now assert the
+     * opposite of its own name.
+     */
+    process.env[GPS_LISTING_VERDICT_ENV] = '0';
     const { pool, calls } = registerHolds();
     const answer = await askListingPipeline(pool, { entitlements: GPS_READER, symbol: 'SOL' });
 
@@ -489,6 +498,14 @@ describe('asking about a deal\'s project rather than a bare symbol', () => {
    * AND by the absence of an exception.
    */
   it('flag OFF: refuses before reading projects at all', async () => {
+    /*
+     * `= '0'` IS EXPLICIT SINCE 2026-08-07. The owner made the decision, so it lives in
+     * `LISTING_VERDICT_DECISION` and an UNSET variable now means "the declaration governs"
+     * — i.e. authorised. The variable is a kill switch, so switching it off is how this test
+     * reaches the refusal it exists to assert. Deleting the variable would now assert the
+     * opposite of its own name.
+     */
+    process.env[GPS_LISTING_VERDICT_ENV] = '0';
     const { pool, calls } = fakePool(() => {
       throw new Error('projects must not be read before the gates');
     });
@@ -994,8 +1011,44 @@ describe('the question is declared once, and declares its own absences', () => {
     expect(LISTING_PIPELINE_QUESTION.rule).toMatch(/Art\s*9[01]/);
   });
 
-  it('is off by default in a clean environment', () => {
-    expect(LISTING_PIPELINE_QUESTION.authorised()).toBe(false);
+  it('is ON in a clean environment, because the decision is DECLARED not configured', () => {
+    /*
+     * INVERTED ON 2026-08-07, and the inversion is the point. This read shipped default-deny
+     * because the owner had not decided; he decided (yes, verdict-only, logged), so the
+     * answer moved into reviewed code as `LISTING_VERDICT_DECISION` — attributable, diffable,
+     * and not flippable from a dashboard by anyone with console access.
+     *
+     * "Works with nothing configured" is the requirement being asserted here. An unset
+     * variable must not mean denied, or the capability is one forgotten env var away from
+     * being silently off in production.
+     */
+    delete process.env[GPS_LISTING_VERDICT_ENV];
+    expect(LISTING_PIPELINE_QUESTION.authorised()).toBe(true);
+    expect(LISTING_VERDICT_DECISION.authorised).toBe(true);
+
+    // The declaration is only a declaration if it says who made it.
+    expect(LISTING_VERDICT_DECISION.decidedBy.trim()).not.toBe('');
+    expect(LISTING_VERDICT_DECISION.decidedBy.toLowerCase()).not.toContain('system');
+    expect(LISTING_VERDICT_DECISION.basis.trim()).not.toBe('');
+    expect(Number.isFinite(Date.parse(LISTING_VERDICT_DECISION.decidedAt))).toBe(true);
+  });
+
+  it('the kill switch turns it off without a deploy, and fails SAFE on anything unrecognised', () => {
+    /*
+     * The half that caught a real defect in my first attempt. I wrote the switch as "off only
+     * when explicitly off", so a typo — `of`, `disabled`, a stray space — read as not-off and
+     * AUTHORISED the cross-read. A kill switch that fails open on a typo is worse than none.
+     * A present value nobody can interpret is a misconfiguration, and the safe reading of a
+     * misconfiguration on an Art 91(3)(c) control is "no".
+     */
+    for (const off of ['0', 'false', 'no', 'off', 'FALSE', ' no ', '', 'maybe', 'of', 'disabled']) {
+      process.env[GPS_LISTING_VERDICT_ENV] = off;
+      expect(LISTING_PIPELINE_QUESTION.authorised(), `${JSON.stringify(off)} must deny`).toBe(false);
+    }
+    for (const on of ['1', 'true', 'yes', 'on', 'TRUE', ' 1 ']) {
+      process.env[GPS_LISTING_VERDICT_ENV] = on;
+      expect(LISTING_PIPELINE_QUESTION.authorised(), `${JSON.stringify(on)} must permit`).toBe(true);
+    }
   });
 
   it.each([['1'], ['true'], ['TRUE'], ['yes']])('is on for %j', (value) => {

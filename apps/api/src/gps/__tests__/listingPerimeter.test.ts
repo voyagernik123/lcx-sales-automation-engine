@@ -175,7 +175,9 @@ afterEach(() => {
 
 describe('the gates run before anything is queried', () => {
   it('with the owner flag off, NOTHING is read — not even gps_engagement', async () => {
-    delete process.env[GPS_LISTING_VERDICT_ENV];
+    // `= '0'`, not `delete`: since 2026-08-07 an UNSET variable means the declaration
+    // governs (authorised). Off is now an explicit act, which is what a kill switch is.
+    process.env[GPS_LISTING_VERDICT_ENV] = '0';
     const { pool, calls } = world();
     const out = await ask(pool);
 
@@ -371,7 +373,9 @@ describe('every read is logged', () => {
   });
 
   it('logs the refusals too — including the one that means the flag is off', async () => {
-    delete process.env[GPS_LISTING_VERDICT_ENV];
+    // `= '0'`, not `delete`: since 2026-08-07 an UNSET variable means the declaration
+    // governs (authorised). Off is now an explicit act, which is what a kill switch is.
+    process.env[GPS_LISTING_VERDICT_ENV] = '0';
     const { pool, audits } = world();
     await ask(pool);
 

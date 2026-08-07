@@ -8,7 +8,6 @@ import {
   type ProbeResult,
   brokerGate,
   brokerVerdict,
-  envFlagIsOn,
 } from './verdictBroker.js';
 
 /**
@@ -54,21 +53,29 @@ import {
  * statement anywhere in this file, and `__tests__/otherLedger.test.ts` asserts the
  * symbol appears in `params` and never in the statement text.
  *
- * ══ THE DECISION THAT IS NOT THIS FILE'S ═════════════════════════════════════
- * WHETHER GPS MAY READ THE LISTING PIPELINE, EVEN VERDICT-ONLY, IS THE OWNER'S CALL
- * AND HE HAS NOT MADE IT. So the read half SHIPS DEFAULT-DENY. The mechanism is
- * complete and both states are tested; with the flag off, `askListingPipeline`
- * returns `VERDICT_BROKER_CROSS_READ_NOT_AUTHORISED` — a refusal naming the rule and
- * the variable. NOT a silent empty. NOT a 0. NOT unreachable code either: the tests
- * exercise both states, so the authorised path has been run.
+ * ══ THE DECISION, MADE ═══════════════════════════════════════════════════════
+ * WHETHER GPS MAY READ THE LISTING PIPELINE WAS THE OWNER'S CALL, AND HE MADE IT ON
+ * 2026-08-07: YES, VERDICT ONLY, EVERY READ LOGGED. See `LISTING_VERDICT_DECISION`
+ * below, which records who decided, when, and on what basis.
  *
- * FLIPPING IT IS ONE ENVIRONMENT VARIABLE AND HIS DECISION:
- *   GPS_MAY_READ_LISTING_VERDICT=1
- * set in the Render dashboard. Unset or empty closes it again. There is no code
- * change, no deploy and no migration on either side of that switch. The same
- * shape as the two other unresolved-decision gates in this codebase: `lib/env.ts`
- * `secondaryPasscode` (no default, deliberately, because the safe state is off) and
- * `gps/artifact.ts` (inert until the owner answered decision D2).
+ * WHY THAT NOW LIVES IN CODE AND NOT IN AN ENVIRONMENT VARIABLE. This shipped
+ * default-deny behind `GPS_MAY_READ_LISTING_VERDICT` for exactly one reason: nobody
+ * had decided, and the safe state while a decision is outstanding is off. That reason
+ * is spent. A resolved decision belongs in reviewed, version-controlled, attributable
+ * code — the same treatment `DECLARED_EMISSION_CAP` gets — and NOT in a dashboard
+ * field, where it can be flipped by anyone with console access, leaves no diff, and
+ * names nobody. An env var was the right home for "undecided"; it is the wrong home
+ * for "decided".
+ *
+ * THE VARIABLE IS STILL READ, AS A KILL SWITCH. Setting
+ * `GPS_MAY_READ_LISTING_VERDICT` to `0`, `false` or `no` shuts the read off WITHOUT a
+ * deploy. It can no longer turn the read ON — that is what the declaration is for —
+ * so the variable is now strictly a brake and never an accelerator. Unset means the
+ * declaration governs, which is why nothing has to be configured for this to work.
+ *
+ * A refusal is still a refusal: `askListingPipeline` returns
+ * `VERDICT_BROKER_CROSS_READ_NOT_AUTHORISED` naming the rule. NOT a silent empty,
+ * NOT a 0. Both states remain tested.
  */
 
 /* ── The codes ────────────────────────────────────────────────────────────────
@@ -376,8 +383,77 @@ export async function assetSymbolForProject(pool: pg.Pool, projectId: string): P
  *  VERDICT ONLY. DEFAULT-DENY.
  * ════════════════════════════════════════════════════════════════════════════ */
 
-/** The one variable that authorises the read. See the file header: the owner's call. */
+/**
+ * The KILL SWITCH. Set it to `0`, `false` or `no` to shut the cross-read off without a
+ * deploy. It can no longer authorise the read — see `LISTING_VERDICT_DECISION`.
+ */
 export const GPS_LISTING_VERDICT_ENV = 'GPS_MAY_READ_LISTING_VERDICT';
+
+/** A resolved cross-compartment read decision, with the attribution that makes it one. */
+export interface CrossReadDecision {
+  readonly authorised: boolean;
+  /** Who decided. A person or a body, never 'system'. */
+  readonly decidedBy: string;
+  readonly decidedAt: string;
+  /** What authorises it, and the limit it was granted under. */
+  readonly basis: string;
+}
+
+/**
+ * THE OWNER'S ANSWER TO "MAY GPS READ THE LISTING PIPELINE?" — YES, VERDICT ONLY, LOGGED.
+ *
+ * The reasoning is recorded because a future reader deserves it rather than an unexplained
+ * `true`: a conflict wall that cannot see whether a services client is also a listing
+ * candidate is blind to the single case it exists for. GPS sells MiCA whitepapers and legal
+ * opinion coordination to token issuers, some of whom are in the listing pipeline. Refusing
+ * the read leaves the Art 88/90/91(3)(c) exposure — the plan's largest uninsured liability —
+ * uncontrolled, which is the worse failure than the disclosure this permits.
+ *
+ * WHAT IT DOES NOT AUTHORISE, and the type is what enforces it rather than this comment:
+ * `ListingPerimeterReading` carries a VERDICT and cannot carry a pipeline row. Minimum
+ * disclosure is a property of the return type. `doesNotCapture` below enumerates what stays
+ * inside marketing, and every read is written to the log.
+ */
+export const LISTING_VERDICT_DECISION: CrossReadDecision = {
+  authorised: true,
+  decidedBy: 'Nikhil Sharma (nikhil.sharma@lcx.com), founder',
+  decidedAt: '2026-08-07T16:10:43.000Z',
+  basis:
+    'Founder authority, no board minute. Granted VERDICT-ONLY and on condition that every read '
+    + 'is logged: GPS learns whether an asset is restricted, never why, and never anything about '
+    + 'an asset it did not ask about. Rescind by setting GPS_MAY_READ_LISTING_VERDICT to 0.',
+};
+
+/**
+ * Authorised by the declaration, unless the kill switch says otherwise.
+ *
+ * `envFlagIsOn` cannot be reused: it returns false for unset, and unset must mean "the
+ * declaration governs" rather than "denied" — otherwise nothing works until someone
+ * configures something, which is the state this change exists to remove.
+ *
+ * ── ONLY THREE INPUTS ARE ABSENT, AND EVERYTHING ELSE FAILS SAFE ─────────────────────
+ * My first version of this asked only "is it explicitly off?", so ANY unrecognised value —
+ * `of`, a typo for `off`; `disabled`; a stray space — read as "not off" and AUTHORISED the
+ * cross-read. A kill switch that fails OPEN on a typo is worse than no kill switch, on a
+ * control whose whole purpose is an Art 91(3)(c) exposure. The suite caught it: a test
+ * asserting `maybe` stays off went red, and it was right.
+ *
+ * So: unset, null-ish or whitespace means ABSENT and the declaration governs. A recognised
+ * on-word confirms it. EVERY OTHER VALUE, recognised-off or not, denies — because a present
+ * value nobody can interpret is a misconfiguration, and the safe reading of a
+ * misconfiguration on this control is "no".
+ */
+const KILL_SWITCH_ON_WORDS = ['1', 'true', 'yes', 'on'];
+
+export function listingVerdictReadAuthorised(): boolean {
+  if (!LISTING_VERDICT_DECISION.authorised) return false;
+
+  const raw = process.env[GPS_LISTING_VERDICT_ENV];
+  if (raw === undefined) return true;          // absent — the declaration governs
+  const v = raw.trim().toLowerCase();
+  if (v === '') return false;                  // PRESENT and empty is a misconfiguration, not absence
+  return KILL_SWITCH_ON_WORDS.includes(v);     // anything unrecognised denies
+}
 
 /**
  * WHAT MAY CROSS THE BOUNDARY, and it is one word and a count.
@@ -598,7 +674,7 @@ export const LISTING_PIPELINE_QUESTION: BrokeredQuestion<ListingPipelineVerdict>
     + 'records the POINTER, not the reason). Art 88(1) is the reason a lifted-but-announced asset is '
     + 'still not a free hand.',
   authorisationEnvVar: GPS_LISTING_VERDICT_ENV,
-  authorised: () => envFlagIsOn(GPS_LISTING_VERDICT_ENV),
+  authorised: listingVerdictReadAuthorised,
   captures: 'whether LCX MARKETING\'s asset register holds any entry for this symbol, whether one is '
     + 'live and inside its window, and how many entries are being withheld.',
   doesNotCapture: [
