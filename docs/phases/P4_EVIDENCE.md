@@ -25,7 +25,7 @@ that **`score_refresh` has never run** — the eight scheduled jobs are defined 
 `ops/github-workflows/jobs.yml`, which is not under `.github/workflows/`, so GitHub has never read
 it. Score vintages never accumulated because nothing was collecting them. "We have not measured
 long enough" and "we never started measuring" are different facts, and only one of them is fixed by
-waiting. See `docs/SCHEDULED_JOBS_NOT_INSTALLED.md`; the same cause explains `wbr_reports` having
+waiting. See `docs/SCHEDULED_JOBS.md`; the same cause explains `wbr_reports` having
 one row, which this programme repeatedly cited as the reason RECESSION RATE was unmeasurable.
 
 The code returns **the refusal and the real N**, never a percentage, below a named floor justified
@@ -79,7 +79,8 @@ deliberate absence so nobody rebuilds it from the same basis.
 
 **The reason it has one row is now known, and it is not that the schedule is "a comment"** — which
 is how this programme described it more than once, including earlier in this file. `kpi_snapshot` is
-a real cron in `ops/github-workflows/jobs.yml`, a directory GitHub never reads. So RECESSION RATE is
+a real cron, and as of 2026-08-07 it is installed under `.github/workflows/` — but ARMED BY A SECRET
+the owner must add, so it has still never run. So RECESSION RATE is
 not permanently unmeasurable: it is unmeasurable until that file is installed, and then it needs
 weeks of accumulated rows. Reinstating it before those rows exist would rebuild the same fiction.
 

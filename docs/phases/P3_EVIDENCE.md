@@ -55,9 +55,12 @@ platform is being rebuilt to remove.
 
 **AND THE PRECEDENT IS WORSE THAN "ITS SCHEDULE IS A COMMENT", WHICH IS HOW I DESCRIBED IT.**
 Reviewing this readout is what turned it up: the schedule is not a comment, it is a complete
-workflow file in a directory GitHub never reads. Eight cron jobs — including `kpi_snapshot`, which
-fills the ledger the readout ranks — have never run. See
-`docs/SCHEDULED_JOBS_NOT_INSTALLED.md`. So the readout's empty window is a claim about its LEDGER
+workflow file that sat in a directory GitHub never read. **As of 2026-08-07 it is installed under
+`.github/workflows/` and ARMED BY A SECRET the owner must add** — so the cause changed from "wrong
+directory" to "no credential", and until that secret exists the consequence below is unchanged.
+Eight cron jobs — including `kpi_snapshot`, which fills the ledger the readout ranks — have STILL
+never run. See
+`docs/SCHEDULED_JOBS.md`. So the readout's empty window is a claim about its LEDGER
 and not about the platform, and the surface now says exactly that.
 
 ## OUTSTANDING

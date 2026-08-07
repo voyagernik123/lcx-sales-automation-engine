@@ -1,4 +1,22 @@
-# Eight scheduled jobs are defined. None has ever run.
+# Eight scheduled jobs — INSTALLED, and armed by a secret only the owner can add
+
+> **STATUS CHANGED 2026-08-07.** This file was called
+> `SCHEDULED_JOBS_NOT_INSTALLED.md` and its first line was "Eight scheduled jobs are defined.
+> None has ever run." The first half is no longer true: `jobs.yml` now lives under
+> `.github/workflows/`, so GitHub reads it. The second half is still true and stays true until
+> the secret below exists.
+>
+> **What arms it:** the `DATABASE_URL` repo secret. With it absent every run SKIPS cleanly and
+> emits a notice saying the job has NEVER RUN — deliberately not a failure (eight red crosses a
+> day trains everyone to ignore the workflow) and deliberately not a silent green (that would
+> read as "the sweep ran and found nothing", the exact never-ran-vs-genuinely-quiet collapse
+> this platform refuses everywhere else).
+>
+> **So the owner controls the hour it starts**, by choosing when to add the secret. Nothing
+> touches production before that. Everything below describes what is still not happening.
+
+## The original finding, kept because it explains the refusals still on screen
+
 
 Found while reviewing the 07:00 readout, which asserted on screen that "the jobs CLI that already
 runs the daily alert sweep" exists. It does not. Chasing that one false sentence turned up the
@@ -10,7 +28,7 @@ cause, and the cause is bigger than the sentence.
 `name: scheduled-jobs`, an `on: schedule:` block with eight crons, and a dispatcher that maps each
 cron to a job CLI. Its own header lists the repo secrets it needs.
 
-**It is not under `.github/workflows/`, so GitHub has never read it.**
+**It WAS not under `.github/workflows/`, so GitHub had never read it. It is now** (`git mv`, 2026-08-07) **— but see the status block at the top: it is installed, not yet armed.**
 
 Verified:
 
@@ -58,7 +76,7 @@ None of that is a code defect. Every one of those refusals is behaving correctly
 that the platform is refusing because it has no inputs, and the reason it has no inputs is one
 `git mv` and two secrets.
 
-## WHY I DID NOT JUST INSTALL IT
+## WHY IT WAS NOT INSTALLED EARLIER, and what changed
 
 Moving the file is one command. Doing it unilaterally would be wrong for three reasons:
 
@@ -73,13 +91,9 @@ Moving the file is one command. Doing it unilaterally would be wrong for three r
    real tables on Supabase. Switching on eight writers at once, unattended, on a schedule, is not
    something to do on someone's behalf without them knowing the hour it starts.
 
-## TO INSTALL IT
+## TO ARM IT — the only step left, and it is the owner's
 
-```bash
-git mv ops/github-workflows/jobs.yml .github/workflows/jobs.yml
-```
-
-Then, before pushing:
+The `git mv` is DONE. What remains cannot be done by anyone without repo-settings access:
 
 1. Add the two repo secrets (`DATABASE_URL` session-pooler, `COINGECKO_API_KEY`).
 2. Confirm Actions minutes are available.
@@ -87,8 +101,9 @@ Then, before pushing:
    per day to `kpi_daily_snapshots` and nothing reads it destructively — watch a run, then enable
    the rest.
 
-`workflow_dispatch` is worth adding at the same time, to both this file and `ci.yml`: neither can be
-triggered manually today, which is why a dropped push event left CI unable to run at all.
+`workflow_dispatch` is now on BOTH files. `jobs.yml` already had it; `ci.yml` gained it in the same
+commit, because its absence is why a dropped push event once left CI unable to run at all — there was
+no way to ask for a run on a commit that had already landed.
 
 ## THE READOUT'S OWN CLAIM, CORRECTED
 

@@ -61,7 +61,34 @@ jobs:
               *) echo "Unknown schedule" && exit 1 ;;
             esac
           fi
+      # ── THE SECRET IS THE SWITCH ────────────────────────────────────────────
+      #
+      # These eight jobs WRITE TO PRODUCTION. Installing eight unattended writers
+      # on a schedule is not something to switch on for someone without them
+      # knowing the hour it starts — so the file can be installed safely, and the
+      # thing that actually starts it is the repo secret only the owner can add.
+      #
+      # With no `DATABASE_URL` secret the run SKIPS cleanly and says so. It does
+      # not fail: eight red crosses every day would be noise that trains everyone
+      # to ignore this workflow, and a job that has never run is not a job that
+      # failed. It also does not silently succeed — a green tick with no notice
+      # would read as "the sweep ran and found nothing", which is the exact
+      # collapse (never-ran vs genuinely-quiet) this platform refuses everywhere
+      # else. See docs/SCHEDULED_JOBS_NOT_INSTALLED.md.
+      - name: Are the credentials present?
+        id: creds
+        env:
+          DB: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DB" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=scheduled-jobs NOT ARMED::${{ steps.pick.outputs.job }} did not run: no DATABASE_URL repo secret. This job has NEVER run — that is not the same as running and finding nothing. Add DATABASE_URL (Supabase SESSION POOLER, runners need IPv4) and COINGECKO_API_KEY under Settings → Secrets and variables → Actions, and the next scheduled tick starts it."
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run ${{ steps.pick.outputs.job }}
+        if: steps.creds.outputs.present == 'true'
         working-directory: apps/api
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
