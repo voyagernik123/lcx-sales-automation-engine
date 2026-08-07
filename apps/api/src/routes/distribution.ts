@@ -71,6 +71,256 @@ distributionRoutes.post('/seed', requireOperator, async (c) => {
 
 const D = DISTRIBUTION_DEEP_SEED.funnel.params;
 
+/* ══════════════════════════════════════════════════════════════════════════
+ * ENGINE INPUT BOUNDS — an AVAILABILITY control, not input hygiene.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * WHY ONLY TWO OF THESE FIVE ROUTES ARE BOUNDED. `referral-sim`, `emission` and
+ * `presence` read SCALARS (or read the compiled ontology); their cost is fixed inside
+ * the engine and no body can make them loop longer. The two bounded below take ARRAYS
+ * straight from the caller into a nested scan:
+ *
+ *   channel-mix → channelMix() → sensitivity() (packages/shared/src/commandEngines.ts:61)
+ *     scans wk = 0.005 … 0.6001 at 0.005 resolution — ~123 rescores PER DIMENSION — and
+ *     each rescore is O(rows × dims). Total O(123 × dims² × rows). QUADRATIC IN dims,
+ *     which is why dims is capped harder than rows.
+ *   quest-cac → questCacSim() (packages/shared/src/distributionEngines.ts:151)
+ *     fixes runs = 2000 and loops every unlocked channel per run: O(2000 × channels).
+ *
+ * `apps/api/src/index.ts` is a bare `serve()` — one Node thread, no cluster, no worker
+ * threads — so one slow request blocks EVERY route in all eight compartments, including
+ * `/health`, which flaps the platform health check. Both routes sit behind
+ * `distribution:operate`, which the SHARED `OPERATOR_API_KEY` grants, so the caller who
+ * can do this is not exotic.
+ *
+ * WHERE THE NUMBERS COME FROM.
+ *   Observation frame: `channelMix` called DIRECTLY on the compiled artifact
+ *   `packages/shared/dist/distributionEngines.js` (not through HTTP, so no server or JSON
+ *   cost is included), median of 7 runs after warm-up, rows carrying `scores: {}` — the
+ *   worst case, because an ABSENT score still costs the full inner loop: `rescore` does
+ *   `r.scores[d.key] ?? 0` per dim per row.
+ *   Environment: node v22.23.1, darwin arm64, developer laptop, measured 2026-08-07.
+ *   NOT the Render production instance, which is smaller and will be slower.
+ *
+ *     dims=5,   rows=8   →    1.3 ms   ← what apps/web actually sends
+ *     dims=12,  rows=64  →   30.1 ms
+ *     dims=16,  rows=64  →   48.4 ms   ← THE CAP
+ *     dims=16,  rows=96  →   72.2 ms
+ *     dims=32,  rows=96  →  286.2 ms
+ *     dims=64,  rows=64  →  641.3 ms
+ *     dims=100, rows=100 →    2.6 s
+ *   questCacSim: 1 channel 0.6 ms · 2 channels 0.8 ms · 64 channels 2.2 ms.
+ *
+ * WHAT THE WEB APP SENDS, so a real user is never refused. There are exactly three
+ * callers in `apps/web` (`grep -rn "runChannelMix\|runQuestCac" apps/web/src`):
+ *   · `components/distribution/GrowthEngines.tsx:27-28` — `runChannelMix()` and
+ *     `runQuestCac()` with NO BODY, so both fall through to the compiled defaults
+ *     (5 dims × 8 rows; 2 channels).
+ *   · `pages/DistributionCampaigns.tsx:104` — `runQuestCac` with ONE channel.
+ * The caps are 3.2× the observed dims, 8× the observed rows, 32× the observed channels.
+ * No shipped surface can reach them.
+ */
+export const ENGINE_INPUT_LIMITS = {
+  /** The quadratic term. Capped hardest. */
+  channelMixDims: 16,
+  channelMixRows: 64,
+  questCacChannels: 64,
+} as const;
+
+/** The one rule every bound refusal cites. */
+export const ENGINE_BOUND_RULE = 'distribution.engines.input_bounds';
+
+/** Stable refusal codes. A caller can branch on these; they do not change with wording. */
+export type EngineBoundCode =
+  | 'ENGINE_INPUT_NOT_ARRAY'
+  | 'ENGINE_INPUT_EMPTY'
+  | 'ENGINE_INPUT_OVER_CAP'
+  | 'ENGINE_INPUT_ELEMENT_MALFORMED'
+  | 'ENGINE_INPUT_WEIGHTS_UNUSABLE';
+
+interface EngineRefusal {
+  code: EngineBoundCode;
+  reason: string;
+  field: string;
+  observed: number | string;
+  permitted: number | string;
+}
+
+/**
+ * The wire body. Same envelope as `routes/gpsInputs.ts refusalBody` —
+ * `{ error, code, data: { rule, field, … } }` — extended with the two figures a caller
+ * needs in order to fix the request, each stamped with the frame it was read in and the
+ * environment that read it, so neither is mistaken for a platform-wide constant.
+ */
+function boundRefusalBody(r: EngineRefusal) {
+  return {
+    error: r.reason,
+    code: r.code,
+    data: {
+      rule: ENGINE_BOUND_RULE,
+      field: r.field,
+      observed: r.observed,
+      permitted: r.permitted,
+      frame: 'request_body_at_admission',
+      environment: process.env.NODE_ENV ?? 'development',
+    },
+  };
+}
+
+const isPlainObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null && !Array.isArray(v);
+
+const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** What the caller actually sent, named so the refusal is diagnosable without a guess. */
+function describeValue(v: unknown): string {
+  if (v === null) return 'null';
+  if (v === undefined) return 'absent';
+  if (Array.isArray(v)) return 'array';
+  if (v === '') return 'empty string';
+  if (typeof v === 'number' && !Number.isFinite(v)) return Number.isNaN(v) ? 'NaN' : 'non-finite number';
+  return typeof v;
+}
+
+/**
+ * THREE STATES, NEVER COLLAPSED. `undefined`/`null` means NOT SUPPLIED and hands the
+ * route to its compiled default — a stated default, echoed back in the response body.
+ * Anything else is SUPPLIED, and a supplied collection must be a well-formed, non-empty,
+ * within-cap array. `[]` is GENUINELY EMPTY: a caller asserting "these are the rows",
+ * which must not be silently upgraded into the platform's own numbers.
+ */
+function boundArray(value: unknown, field: string, cap: number): EngineRefusal | null {
+  if (!Array.isArray(value)) {
+    return {
+      code: 'ENGINE_INPUT_NOT_ARRAY',
+      reason: `${field} must be an array`,
+      field,
+      observed: describeValue(value),
+      permitted: 'array',
+    };
+  }
+  if (value.length === 0) {
+    return {
+      code: 'ENGINE_INPUT_EMPTY',
+      reason: `${field} was supplied but empty — omit the field to use the compiled default, or send at least one element; an empty set is not the same as no set`,
+      field,
+      observed: 0,
+      permitted: `1..${cap}`,
+    };
+  }
+  if (value.length > cap) {
+    return {
+      code: 'ENGINE_INPUT_OVER_CAP',
+      reason: `${field} carries ${value.length} elements; ${cap} is the permitted maximum`,
+      field,
+      observed: value.length,
+      permitted: cap,
+    };
+  }
+  return null;
+}
+
+const malformed = (field: string, permitted: string, observed: unknown): EngineRefusal => ({
+  code: 'ENGINE_INPUT_ELEMENT_MALFORMED',
+  reason: `${field} must be ${permitted}`,
+  field,
+  observed: describeValue(observed),
+  permitted,
+});
+
+function checkDims(value: unknown): EngineRefusal | null {
+  const bound = boundArray(value, 'dims', ENGINE_INPUT_LIMITS.channelMixDims);
+  if (bound) return bound;
+  const arr = value as unknown[];
+  for (let i = 0; i < arr.length; i++) {
+    const d = arr[i];
+    if (!isPlainObject(d)) return malformed(`dims[${i}]`, 'an object', d);
+    if (typeof d.key !== 'string' || d.key.length === 0) return malformed(`dims[${i}].key`, 'a non-empty string', d.key);
+    if (typeof d.label !== 'string') return malformed(`dims[${i}].label`, 'a string', d.label);
+    if (!isFiniteNumber(d.weight)) return malformed(`dims[${i}].weight`, 'a finite number', d.weight);
+  }
+  return null;
+}
+
+function checkRows(value: unknown): EngineRefusal | null {
+  const bound = boundArray(value, 'rows', ENGINE_INPUT_LIMITS.channelMixRows);
+  if (bound) return bound;
+  const arr = value as unknown[];
+  for (let i = 0; i < arr.length; i++) {
+    const r = arr[i];
+    if (!isPlainObject(r)) return malformed(`rows[${i}]`, 'an object', r);
+    if (typeof r.subjectId !== 'string' || r.subjectId.length === 0) return malformed(`rows[${i}].subjectId`, 'a non-empty string', r.subjectId);
+    if (typeof r.subjectLabel !== 'string') return malformed(`rows[${i}].subjectLabel`, 'a string', r.subjectLabel);
+    // `rescore` reads `r.scores[d.key]` unguarded, so a missing or non-object `scores`
+    // is a TypeError INSIDE the engine — reported as a 500, i.e. as our fault, when the
+    // truth is that the request was malformed.
+    if (!isPlainObject(r.scores)) return malformed(`rows[${i}].scores`, 'an object', r.scores);
+    for (const [k, sv] of Object.entries(r.scores)) {
+      if (!isFiniteNumber(sv)) return malformed(`rows[${i}].scores.${k}`, 'a finite number', sv);
+    }
+  }
+  return null;
+}
+
+function checkWeights(value: unknown): EngineRefusal | null {
+  if (value === undefined || value === null) return null;
+  if (!isPlainObject(value)) return malformed('weights', 'an object', value);
+  for (const [k, wv] of Object.entries(value)) {
+    if (!isFiniteNumber(wv)) return malformed(`weights.${k}`, 'a finite number', wv);
+  }
+  return null;
+}
+
+/**
+ * `rescore` THROWS `Error('weights sum to zero')` (commandEngines.ts:34) when every
+ * EFFECTIVE weight is ≤ 0 — reachable today with `{"dims":[]}` or all-zero weights, and
+ * answered with a 500. It is a caller error and refuses as one, citing the engine
+ * precondition it would have violated.
+ */
+function checkWeightSum(dims: EngineDim[], overrides?: Record<string, number>): EngineRefusal | null {
+  let sum = 0;
+  for (const d of dims) sum += Math.max(0, overrides?.[d.key] ?? d.weight);
+  if (sum > 0) return null;
+  return {
+    code: 'ENGINE_INPUT_WEIGHTS_UNUSABLE',
+    reason: 'every effective dimension weight is zero or negative, so the scorecard cannot be normalized',
+    field: 'dims[].weight',
+    observed: sum,
+    permitted: '> 0',
+  };
+}
+
+function checkChannels(value: unknown): EngineRefusal | null {
+  const bound = boundArray(value, 'channels', ENGINE_INPUT_LIMITS.questCacChannels);
+  if (bound) return bound;
+  const arr = value as unknown[];
+  for (let i = 0; i < arr.length; i++) {
+    const ch = arr[i];
+    if (!isPlainObject(ch)) return malformed(`channels[${i}]`, 'an object', ch);
+    if (typeof ch.channelId !== 'string' || ch.channelId.length === 0) return malformed(`channels[${i}].channelId`, 'a non-empty string', ch.channelId);
+    if (typeof ch.label !== 'string') return malformed(`channels[${i}].label`, 'a string', ch.label);
+    if (!isFiniteNumber(ch.budgetUsd)) return malformed(`channels[${i}].budgetUsd`, 'a finite number', ch.budgetUsd);
+    if (!isFiniteNumber(ch.cacUsd)) return malformed(`channels[${i}].cacUsd`, 'a finite number', ch.cacUsd);
+    // `questCacSim` filters on `!c.locked`, so the STRING "false" is TRUTHY and would
+    // silently drop the channel from the simulation — the result would report a smaller
+    // book and never say why. A non-boolean is refused, never coerced.
+    if (ch.locked !== undefined && typeof ch.locked !== 'boolean') return malformed(`channels[${i}].locked`, 'a boolean', ch.locked);
+  }
+  return null;
+}
+
+/**
+ * `c.req.json()` returns `null` for the literal body `null` and a string for `"x"`, and
+ * the `.catch(() => ({}))` these routes used covers only a PARSE failure — so `b.channels`
+ * on a `null` body was a TypeError and a 500. Anything that is not a JSON object is read
+ * as "no fields supplied", which is exactly what the no-body case (the only case the web
+ * app produces) already means.
+ */
+async function readObjectBody(c: { req: { json: <T>() => Promise<T> } }): Promise<Record<string, unknown>> {
+  const raw = await c.req.json<unknown>().catch(() => null);
+  return isPlainObject(raw) ? raw : {};
+}
+
 distributionRoutes.post('/engines/referral-sim', requireOperator, async (c) => {
   const b = await c.req.json<Record<string, number>>().catch(() => ({}) as Record<string, number>);
   const r = referralViralitySim({
@@ -96,8 +346,12 @@ distributionRoutes.post('/engines/emission', requireOperator, async (c) => {
 });
 
 distributionRoutes.post('/engines/quest-cac', requireOperator, async (c) => {
-  const b = await c.req.json<{ channels?: QuestChannelInput[] }>().catch(() => ({}) as { channels?: QuestChannelInput[] });
-  const channels: QuestChannelInput[] = b.channels ?? [
+  const b = await readObjectBody(c);
+  if (b.channels !== undefined && b.channels !== null) {
+    const bad = checkChannels(b.channels);
+    if (bad) return c.json(boundRefusalBody(bad), 400);
+  }
+  const channels: QuestChannelInput[] = (b.channels as QuestChannelInput[] | undefined | null) ?? [
     { channelId: 'galxe', label: 'Galxe', budgetUsd: 10000, cacUsd: 45 },
     { channelId: 'layer3', label: 'Layer3', budgetUsd: 6000, cacUsd: 38 },
   ];
@@ -105,20 +359,33 @@ distributionRoutes.post('/engines/quest-cac', requireOperator, async (c) => {
 });
 
 distributionRoutes.post('/engines/channel-mix', requireOperator, async (c) => {
-  const b = await c.req.json<{ dims?: EngineDim[]; rows?: EngineRow[]; weights?: Record<string, number> }>().catch(() => ({}) as { dims?: EngineDim[]; rows?: EngineRow[]; weights?: Record<string, number> });
+  const b = await readObjectBody(c);
+  // REFUSED BEFORE THE ENGINE RUNS. The scan is O(123 × dims² × rows) on one Node
+  // thread; validating after the call would be validating after the outage.
+  const supplied: Array<EngineRefusal | null> = [
+    b.dims === undefined || b.dims === null ? null : checkDims(b.dims),
+    b.rows === undefined || b.rows === null ? null : checkRows(b.rows),
+    checkWeights(b.weights),
+  ];
+  for (const bad of supplied) if (bad) return c.json(boundRefusalBody(bad), 400);
   // Default channel scorecard derived from the ontology surfaces.
-  const dims: EngineDim[] = b.dims ?? [
+  const dims: EngineDim[] = (b.dims as EngineDim[] | undefined | null) ?? [
     { key: 'reach', label: 'Reach', weight: 0.30 },
     { key: 'agentDensity', label: 'Agent density', weight: 0.30 },
     { key: 'cost', label: 'Cost efficiency', weight: 0.15 },
     { key: 'complianceRisk', label: 'Compliance safety', weight: 0.15 },
     { key: 'effort', label: 'Low effort', weight: 0.10 },
   ];
-  const rows: EngineRow[] = b.rows ?? DISTRIBUTION_DEEP_SEED.surfaces.slice(0, 8).map((s, i) => ({
+  const rows: EngineRow[] = (b.rows as EngineRow[] | undefined | null) ?? DISTRIBUTION_DEEP_SEED.surfaces.slice(0, 8).map((s, i) => ({
     subjectId: s.id, subjectLabel: s.name,
     scores: { reach: 3 + ((i * 2) % 3), agentDensity: 3 + ((i + 1) % 3), cost: 3 + (i % 3), complianceRisk: s.constraint ? 2 : 5, effort: 4 - (i % 3) },
   }));
-  return c.json({ data: channelMix(dims, rows, b.weights) });
+  const weights = (b.weights as Record<string, number> | undefined | null) ?? undefined;
+  // Checked against the RESOLVED dims (caller's or the compiled default) because a
+  // weights override alone can zero the whole scorecard.
+  const unusable = checkWeightSum(dims, weights);
+  if (unusable) return c.json(boundRefusalBody(unusable), 400);
+  return c.json({ data: channelMix(dims, rows, weights) });
 });
 
 /**
