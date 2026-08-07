@@ -202,21 +202,47 @@ describe('master-plan feature routes', () => {
       const { data } = await res.json();
       expect(data.runs).toBe(10000);
 
+      /*
+       * THREE STATES, AND THE FIRST VERSION OF THIS FIX COLLAPSED TWO OF THEM.
+       *
+       * I first asserted that numeric quantiles imply `simulatedDealCount > 0`, and CI failed
+       * with "expected 0 to be greater than 0". That assertion was wrong, not the engine:
+       * `MonteCarloResult` documents the distinction at its own definition — "Null means the
+       * simulation had nothing it could price ... An EMPTY OPEN PIPELINE is a different state:
+       * that genuinely forecasts 0 and reports 0" — and `forecast/index.ts:343` implements it
+       * as `allExcluded = open.length > 0 && n === 0`.
+       *
+       * So a $0 forecast is only dishonest when something was excluded. With nothing open at
+       * all, zero is the answer, and refusing there would be its own kind of lie.
+       *
+       * ci-mirror did NOT catch this because other suites leave deals in its database; CI's is
+       * genuinely empty. Two environments, two different states, and only running both showed
+       * the third.
+       */
       const quantiles = [data.p10, data.p50, data.p90];
       const allNull = quantiles.every((q) => q === null);
       const allNumbers = quantiles.every((q) => typeof q === 'number');
       // Never a mix: three quantiles from one simulation are all present or all absent.
       expect(allNull || allNumbers, `mixed quantiles: ${JSON.stringify(quantiles)}`).toBe(true);
 
-      if (allNumbers) {
+      if (allNumbers && data.simulatedDealCount > 0) {
+        // (1) A real book: the ordering must hold.
         expect(data.p10).toBeLessThanOrEqual(data.p50);
         expect(data.p50).toBeLessThanOrEqual(data.p90);
-        expect(data.simulatedDealCount).toBeGreaterThan(0);
-      } else {
-        // A refusal must SAY it is one. A silent null trio is the $0 quarter this route's
-        // own comment exists to prevent.
+        expect(data.distributionRefusal ?? null).toBeNull();
+      } else if (allNumbers) {
+        // (2) An EMPTY open pipeline. Genuinely zero, and it must be exactly zero rather than
+        // some other number arrived at with nothing to simulate.
         expect(data.simulatedDealCount).toBe(0);
-        expect(data.distributionRefusal ?? null, 'null quantiles with no stated refusal').not.toBeNull();
+        expect(quantiles).toEqual([0, 0, 0]);
+        expect(data.distributionRefusal ?? null, 'an empty pipeline is not a refusal').toBeNull();
+      } else {
+        // (3) Deals were open and NONE could be priced. A refusal must SAY it is one — a
+        // silent null trio is the $0 quarter `kpi/forecast.ts:91` exists to prevent.
+        expect(data.simulatedDealCount).toBe(0);
+        expect(data.distributionRefusal?.code, 'null quantiles with no stated refusal')
+          .toBe('ALL_OPEN_DEALS_UNPRICEABLE');
+        expect(data.distributionRefusal?.rule, 'a refusal that cites no rule').toBeTruthy();
       }
 
       for (const d of data.deals) {
