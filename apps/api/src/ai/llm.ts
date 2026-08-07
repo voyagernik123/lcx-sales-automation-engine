@@ -3,9 +3,11 @@
  *
  * DESIGN RULE: every AI feature has a deterministic path that always works.
  * The LLM only ever *refines* that result. If ANTHROPIC_API_KEY is unset
- * (the default) `complete()` returns { text: '', usedLlm: false } immediately
- * and callers fall back to their deterministic output. Nothing here throws on
- * a missing key, so the engine compiles and runs with no key configured.
+ * (the default) `complete()` returns usedLlm:false immediately — with
+ * status:'no_provider' and code:'AI_NO_PROVIDER', so the caller can say which of
+ * the four ways this can happen actually happened — and callers fall back to their
+ * deterministic output. Nothing here throws on a missing key, so the engine
+ * compiles and runs with no key configured.
  *
  * Every call — LLM or fallback — is logged to ai_usage_log for cost/telemetry.
  */
@@ -22,9 +24,100 @@ export interface CompleteOpts {
   temperature?: number;
 }
 
-export interface CompleteResult {
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ *  WHY THE RESULT IS A DISCRIMINATED OUTCOME AND NOT A BOOLEAN.
+ * ══════════════════════════════════════════════════════════════════════════════
+ *
+ * `complete()` used to return the IDENTICAL `{ text: '', usedLlm: false }` for four
+ * unrelated conditions:
+ *
+ *   1. no provider configured        — nothing was ever asked
+ *   2. `!res.ok`                     — a 429, or a model-shape 400 (see the caps table)
+ *   3. HTTP 200, `stop_reason:'refusal'` — the model declined
+ *   4. a transport throw             — DNS, TLS, timeout
+ *
+ * and `logAiUsage` recorded `used_llm = false` for all four with no reason attached.
+ * The operator panel then named ONE of them out loud: "AI narrative unavailable
+ * (no key)". That sentence is a FALSE STATEMENT in three cases out of four — the key
+ * may be perfectly good and the provider may be down, throttling us, rejecting the
+ * body shape, or refusing the content. That is the three-states-collapsed failure the
+ * house doctrine forbids (not-loaded / withheld / genuinely-empty are never the same
+ * state) and it is a UI laundering an inference into a certainty.
+ *
+ * So every non-`ok` return now carries a STABLE CODE and the rule it cites. The two
+ * `provider_error` shapes stay distinguishable without a fifth code: an HTTP rejection
+ * carries `httpStatus: <number>`, a transport throw carries `httpStatus: null`.
+ *
+ * `usedLlm` is retained and unchanged so the twelve existing callers that destructure
+ * `{ text, usedLlm }` keep working exactly as before. It is now derived
+ * (`status === 'ok'`), not the only thing we know.
+ */
+export type AiStatus = 'ok' | 'no_provider' | 'provider_error' | 'refused';
+export type AiCode = 'AI_NO_PROVIDER' | 'AI_PROVIDER_ERROR' | 'AI_MODEL_REFUSED';
+
+export interface AiOutcome {
+  status: AiStatus;
+  /** Stable, greppable, safe to branch on. `null` only when `status === 'ok'`. */
+  code: AiCode | null;
+  /** Operator-facing sentence. Never a bare code, never a guess at the cause. */
+  detail: string;
+  /** The house rule this outcome cites. Empty only when `status === 'ok'`. */
+  rule: string;
+  /** The provider actually attempted; `null` when none was configured. */
+  provider: 'anthropic' | 'openrouter' | null;
+  /** The HTTP status when one came back. `null` for no-provider and transport throws. */
+  httpStatus: number | null;
+}
+
+export interface CompleteResult extends AiOutcome {
   text: string;
   usedLlm: boolean;
+}
+
+/** The rule each refusal cites, in the words of the doctrine it enforces. */
+const AI_RULE: Record<Exclude<AiStatus, 'ok'>, string> = {
+  no_provider:
+    'Absent data refuses: with no provider configured nothing was asked, so nothing is missing — this is not-loaded, not empty.',
+  provider_error:
+    'Three states are never collapsed: a provider failure is withheld, not genuinely-empty. The deterministic result below stands on its own evidence.',
+  refused:
+    'An inference is never laundered into a certainty: the model declined to answer, and a decline is not an answer.',
+};
+
+const AI_CODE: Record<Exclude<AiStatus, 'ok'>, AiCode> = {
+  no_provider: 'AI_NO_PROVIDER',
+  provider_error: 'AI_PROVIDER_ERROR',
+  refused: 'AI_MODEL_REFUSED',
+};
+
+const DEFAULT_DETAIL: Record<Exclude<AiStatus, 'ok'>, string> = {
+  no_provider:
+    'No AI provider is configured (neither ANTHROPIC_API_KEY nor OPENROUTER_API_KEY), so no model was called.',
+  provider_error: 'The AI provider did not return a usable response.',
+  refused: 'The model declined to answer this request.',
+};
+
+/**
+ * Build an outcome. Pure and exported so callers can construct the same shape for
+ * their own refusals (e.g. a context the operator refuses to send at all) without
+ * inventing a second vocabulary of codes.
+ */
+export function aiOutcome(
+  status: AiStatus,
+  opts: { provider?: 'anthropic' | 'openrouter' | null; httpStatus?: number | null; detail?: string } = {},
+): AiOutcome {
+  const provider = opts.provider ?? null;
+  const httpStatus = opts.httpStatus ?? null;
+  if (status === 'ok') return { status, code: null, detail: '', rule: '', provider, httpStatus };
+  return {
+    status,
+    code: AI_CODE[status],
+    detail: opts.detail ?? DEFAULT_DETAIL[status],
+    rule: AI_RULE[status],
+    provider,
+    httpStatus,
+  };
 }
 
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -173,13 +266,50 @@ export function stripLeakedThinking(text: string): string {
 /**
  * Best-effort insert into ai_usage_log. Never throws: telemetry must not break
  * a feature. Silently no-ops when the DB is unavailable (dev without Postgres).
+ *
+ * ── A STATED ABSENCE, NOT AN OVERSIGHT ──────────────────────────────────────────
+ * The outcome is passed in and printed, but it is NOT persisted, because
+ * `ai_usage_log` has no column to hold it — migration 0021_ai.sql defines exactly
+ * feature / input_chars / output_chars / used_llm / created_at. Migrations 0068–0074
+ * are already unapplied to production and this lane was told not to add a 0075. The
+ * DDL that would close it, checked against 0021 so it is drop-in:
+ *
+ *     ALTER TABLE ai_usage_log
+ *       ADD COLUMN IF NOT EXISTS caller      text,
+ *       ADD COLUMN IF NOT EXISTS status      text,
+ *       ADD COLUMN IF NOT EXISTS code        text,
+ *       ADD COLUMN IF NOT EXISTS http_status integer;
+ *     CREATE INDEX IF NOT EXISTS idx_ai_usage_status ON ai_usage_log (status, created_at DESC);
+ *
+ * Until that lands, "why did used_llm go false at 14:03" is answerable only from the
+ * process log, and that limitation is real rather than hidden.
  */
+export interface UsageOutcome {
+  /** The feature that made the call — the `caller` column, when it exists. */
+  caller: string;
+  status: AiStatus;
+  code: AiCode | null;
+  httpStatus: number | null;
+  provider: 'anthropic' | 'openrouter' | null;
+  detail: string;
+}
+
 export async function logAiUsage(
   feature: string,
   inChars: number,
   outChars: number,
   usedLlm: boolean,
+  outcome?: UsageOutcome,
 ): Promise<void> {
+  if (outcome && outcome.status !== 'ok') {
+    // ONE structured line per non-ok outcome. Centralised here rather than repeated
+    // at each branch so that "a call did not use the model" always says why, in one
+    // shape, in one place — which is the only durable record until the DDL above lands.
+    console.warn(
+      `[ai] ${outcome.code} caller=${outcome.caller} provider=${outcome.provider ?? 'none'} ` +
+        `http=${outcome.httpStatus ?? '-'} — ${outcome.detail}`,
+    );
+  }
   if (!env.databaseUrl) return;
   try {
     const db = getDb();
@@ -219,8 +349,9 @@ export class LLMClient {
     const provider = this.provider;
 
     if (!provider) {
-      await logAiUsage(opts.feature, inChars, 0, false);
-      return { text: '', usedLlm: false };
+      const outcome = aiOutcome('no_provider');
+      await logAiUsage(opts.feature, inChars, 0, false, { ...outcome, caller: opts.feature });
+      return { text: '', usedLlm: false, ...outcome };
     }
 
     try {
@@ -264,10 +395,20 @@ export class LLMClient {
       }
 
       if (!res.ok) {
-        const detail = await res.text().catch(() => '');
-        console.warn(`[ai] ${provider} ${res.status}: ${detail.slice(0, 200)}`);
-        await logAiUsage(opts.feature, inChars, 0, false);
-        return { text: '', usedLlm: false };
+        const body = await res.text().catch(() => '');
+        // The provider's own message, truncated. It is the reason, and hiding it
+        // behind "unavailable" is the defect this file is fixing — a 400 on the
+        // request SHAPE and a 429 on quota need completely different responses from
+        // whoever is reading the panel.
+        const outcome = aiOutcome('provider_error', {
+          provider,
+          httpStatus: res.status,
+          detail:
+            `The ${provider} API rejected the request with HTTP ${res.status}` +
+            (body ? `: ${body.replace(/\s+/g, ' ').slice(0, 160)}` : '.'),
+        });
+        await logAiUsage(opts.feature, inChars, 0, false, { ...outcome, caller: opts.feature });
+        return { text: '', usedLlm: false, ...outcome };
       }
 
       let text = '';
@@ -285,13 +426,19 @@ export class LLMClient {
             .join(''),
         );
         /* A refusal is an HTTP 200 with an empty or partial `content`, so the
-         * ok-check above does not catch it. Left as a deterministic fallback
-         * rather than surfaced: the caller has a real answer to fall back to,
-         * and a refusal is not something the operator can act on. */
+         * ok-check above does not catch it. The caller still falls back to its
+         * deterministic answer — but the refusal is now SURFACED with its own code
+         * rather than dressed as a missing key. "The model declined" and "nobody
+         * configured a key" are different facts about the world and an operator
+         * acts differently on each. */
         if (json.stop_reason === 'refusal') {
-          console.warn(`[ai] anthropic refused ${opts.feature}`);
-          await logAiUsage(opts.feature, inChars, 0, false);
-          return { text: '', usedLlm: false };
+          const outcome = aiOutcome('refused', {
+            provider,
+            httpStatus: res.status,
+            detail: `The model returned stop_reason="refusal" for "${opts.feature}". Nothing was generated; the deterministic result is shown instead.`,
+          });
+          await logAiUsage(opts.feature, inChars, 0, false, { ...outcome, caller: opts.feature });
+          return { text: '', usedLlm: false, ...outcome };
         }
       } else {
         const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
@@ -300,12 +447,20 @@ export class LLMClient {
         text = stripLeakedThinking(json.choices?.[0]?.message?.content ?? '');
       }
 
-      await logAiUsage(opts.feature, inChars, text.length, true);
-      return { text, usedLlm: true };
+      const ok = aiOutcome('ok', { provider, httpStatus: res.status });
+      await logAiUsage(opts.feature, inChars, text.length, true, { ...ok, caller: opts.feature });
+      return { text, usedLlm: true, ...ok };
     } catch (err) {
-      console.warn(`[ai] ${provider} call failed:`, err instanceof Error ? err.message : err);
-      await logAiUsage(opts.feature, inChars, 0, false);
-      return { text: '', usedLlm: false };
+      // The fourth collapsed condition. Same code as an HTTP rejection — it is the
+      // same class of fact, "the provider did not answer" — but distinguishable by
+      // `httpStatus: null`, because no HTTP response ever arrived.
+      const outcome = aiOutcome('provider_error', {
+        provider,
+        httpStatus: null,
+        detail: `The ${provider} call did not complete: ${err instanceof Error ? err.message : String(err)}`,
+      });
+      await logAiUsage(opts.feature, inChars, 0, false, { ...outcome, caller: opts.feature });
+      return { text: '', usedLlm: false, ...outcome };
     }
   }
 }

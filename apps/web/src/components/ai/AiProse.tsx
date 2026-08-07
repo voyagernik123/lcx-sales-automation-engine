@@ -32,10 +32,27 @@ import { Fragment, type ReactNode } from 'react';
  * renders the same sources as chips underneath. Inline, they became noise mid
  * sentence. They now collapse into a small superscript marker that keeps the
  * attribution visible without breaking the line.
+ *
+ * AND A MARKER IS ONLY A SOURCE IF SOMETHING BACKS IT. `[[…]]` used to become a
+ * `<sup title="source: …">` unconditionally — ANY marker, including an id the model
+ * was never given. The surrounding panel filtered its chips to ids that exist, but the
+ * prose did not, so a hallucinated id rendered to the operator as a cited source. That
+ * needs no attacker; one wrong hex digit does it.
+ *
+ * `validIds` closes it: pass the ids the surface can actually resolve and an
+ * unresolvable marker renders as a visible "unverified citation" instead of as
+ * attribution. It is OPTIONAL because the eight other surfaces cite `s_*` ids they
+ * resolve elsewhere — omitting it keeps their behaviour exactly as it was, and this
+ * component is the second of two guards, not the only one (the API rewrites unbacked
+ * markers out of `[[…]]` syntax before they ever arrive).
  */
 
 /** `**bold**`, `` `code` ``, `[[s_id]]` → React nodes. Never HTML. */
-function renderInline(text: string, keyPrefix: string): ReactNode[] {
+function renderInline(
+  text: string,
+  keyPrefix: string,
+  validIds: ReadonlySet<string> | null,
+): ReactNode[] {
   const out: ReactNode[] = [];
   // One pass, one regex, three alternatives. Ordered so that ** wins over *.
   const pattern = /(\*\*[^*]+\*\*)|(`[^`]+`)|(\[\[[^\]]+\]\])/g;
@@ -66,15 +83,30 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
     } else {
       // `[[s_payagent]]` → a quiet superscript. The full source list is rendered
       // as chips by the surrounding panel, so this only has to mark the claim.
-      const id = token.slice(2, -2).replace(/^s_/, '');
+      const raw = token.slice(2, -2).trim();
+      const id = raw.replace(/^s_/, '');
+      const backed =
+        validIds === null || validIds.has(raw.toLowerCase()) || validIds.has(id.toLowerCase());
       out.push(
-        <sup
-          key={key}
-          className="ml-0.5 font-mono text-[9px] text-cyan-700 dark:text-cyan-400"
-          title={`source: ${id}`}
-        >
-          {id}
-        </sup>,
+        backed ? (
+          <sup
+            key={key}
+            className="ml-0.5 font-mono text-[9px] text-cyan-700 dark:text-cyan-400"
+            title={`source: ${id}`}
+          >
+            {id}
+          </sup>
+        ) : (
+          // NOT a <sup>, and the word "source" appears nowhere near it. An operator
+          // scanning for attribution must not be able to read this as one.
+          <span
+            key={key}
+            className="ml-0.5 rounded border border-amber-500/40 bg-amber-500/10 px-1 font-mono text-[9px] text-amber-700 dark:text-amber-300"
+            title="unverified: the model cited an id that resolves to no source here"
+          >
+            unverified citation: {id}
+          </span>
+        ),
       );
     }
     last = m.index + token.length;
@@ -129,8 +161,22 @@ function toBlocks(src: string): Block[] {
  * `text` is whatever the model returned. There is no "trusted" variant on purpose:
  * a second, HTML-rendering path is exactly how the safe one gets bypassed later.
  */
-export function AiProse({ text, className }: { text: string; className?: string }) {
+export function AiProse({
+  text,
+  className,
+  validIds,
+}: {
+  text: string;
+  className?: string;
+  /**
+   * The ids this surface can resolve to a real source. Omit and every marker renders
+   * as before (the eight surfaces that resolve `s_*` ids elsewhere). Supply it and a
+   * marker outside the set renders as visibly unbacked rather than as attribution.
+   */
+  validIds?: readonly string[];
+}) {
   const blocks = toBlocks(text);
+  const valid = validIds ? new Set(validIds.map((v) => v.trim().toLowerCase())) : null;
 
   // An empty or whitespace-only answer is a real state (a refusal, a timeout that
   // returned 200), and rendering nothing would look like a broken panel.
@@ -149,7 +195,7 @@ export function AiProse({ text, className }: { text: string; className?: string 
         if (b.kind === 'h') {
           return (
             <h4 key={key} className="pt-1 text-label font-semibold text-navy">
-              {renderInline(b.lines[0], key)}
+              {renderInline(b.lines[0], key, valid)}
             </h4>
           );
         }
@@ -162,7 +208,7 @@ export function AiProse({ text, className }: { text: string; className?: string 
             >
               {b.lines.map((l, li) => (
                 <li key={`${key}-${li}`} className="pl-0.5">
-                  {renderInline(l, `${key}-${li}`)}
+                  {renderInline(l, `${key}-${li}`, valid)}
                 </li>
               ))}
             </List>
@@ -171,7 +217,7 @@ export function AiProse({ text, className }: { text: string; className?: string 
         return (
           <p key={key}>
             {b.lines.map((l, li) => (
-              <Fragment key={`${key}-${li}`}>{renderInline(l, `${key}-${li}`)}</Fragment>
+              <Fragment key={`${key}-${li}`}>{renderInline(l, `${key}-${li}`, valid)}</Fragment>
             ))}
           </p>
         );

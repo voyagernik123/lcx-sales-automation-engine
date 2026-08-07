@@ -1,6 +1,6 @@
 import { AiProse } from '@/components/ai/AiProse';
 import { useState } from 'react';
-import { Sparkles, Send, ShieldCheck, Check, ChevronDown, Bot } from 'lucide-react';
+import { Sparkles, Send, ShieldCheck, Check, ChevronDown, Bot, AlertTriangle } from 'lucide-react';
 import {
   askDossier, estimateOutlook, proposeActions, confirmProposal, draftOutreach,
   type DossierAnswer, type ActionProposal,
@@ -23,10 +23,39 @@ const GRADE_TONE = (g: string): string => {
   return 'bg-red-500/10 text-red-600 dark:text-red-400 border-red-500/30';
 };
 
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ *  THE PANEL MAY NOT GUESS WHY THE MODEL DID NOT ANSWER.
+ * ══════════════════════════════════════════════════════════════════════════════
+ *
+ * This surface used to print, on any `usedLlm === false`:
+ *
+ *     "AI narrative unavailable (no key) — the graded evidence behind this project:"
+ *
+ * `llm.ts` returned that same false for FOUR unrelated conditions — no provider, a
+ * provider error (429, or a 400 on the request shape), an explicit model refusal, and
+ * a transport failure. So the sentence above was a FALSE STATEMENT in three cases out
+ * of four, and it was the confident kind: someone reading it goes and checks the key,
+ * which is fine, and then has nowhere to go. An inference ("usedLlm is false, so
+ * probably no key") was being rendered as a certainty.
+ *
+ * The API now returns a discriminated outcome with a stable code and the rule it
+ * cites. This renders THAT, and when the API does not supply one it says so rather
+ * than inventing a cause.
+ */
+type AnswerOutcome = DossierAnswer & {
+  status?: string;
+  code?: string | null;
+  detail?: string;
+  rule?: string;
+  unbackedCitations?: number;
+  looksLikeInjection?: boolean;
+};
+
 export function AiOperatorPanel({ projectId }: { projectId: string }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
-  const [answer, setAnswer] = useState<DossierAnswer | null>(null);
+  const [answer, setAnswer] = useState<AnswerOutcome | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
   const [proposals, setProposals] = useState<ActionProposal[] | null>(null);
@@ -100,10 +129,48 @@ export function AiOperatorPanel({ projectId }: { projectId: string }) {
           {/* Answer */}
           {answer && (
             <div className="rounded border border-line/70 p-2.5">
+              {/* The dossier itself tried to talk to the model. Advisory, and above the
+                  answer because it changes how the answer should be read. */}
+              {answer.looksLikeInjection && (
+                <p className="mb-2 flex items-start gap-1.5 rounded border border-amber-500/40 bg-amber-500/10 p-1.5 text-micro text-amber-700 dark:text-amber-300">
+                  <AlertTriangle size={12} className="mt-px shrink-0" />
+                  <span>
+                    A field in this dossier reads like an instruction aimed at the model. It was
+                    passed as fenced data, never as instruction — read the answer with that in mind.
+                  </span>
+                </p>
+              )}
               {answer.answer ? (
-                <AiProse text={answer.answer} />
+                <AiProse text={answer.answer} validIds={answer.citations.map((c) => c.id)} />
               ) : (
-                <p className="text-label text-grey">{answer.usedLlm === false ? 'AI narrative unavailable (no key) — the graded evidence behind this project:' : 'No answer.'}</p>
+                <div>
+                  <p className="text-label text-grey">
+                    {answer.detail
+                      ? answer.detail
+                      : answer.usedLlm === false
+                        ? 'No AI narrative was produced, and this API build did not report why.'
+                        : 'No answer.'}
+                  </p>
+                  {answer.code && (
+                    <p className="mt-1 font-mono text-micro font-semibold text-grey">{answer.code}</p>
+                  )}
+                  {answer.rule && <p className="mt-0.5 text-[10px] italic text-grey">{answer.rule}</p>}
+                  {answer.citations.length > 0 && (
+                    <p className="mt-1.5 text-micro text-grey">The graded evidence behind this project:</p>
+                  )}
+                </div>
+              )}
+              {/* A marker the dossier cannot back is a fabricated attribution, and the
+                  count is stated rather than quietly swallowed by the rewrite. */}
+              {!!answer.unbackedCitations && answer.unbackedCitations > 0 && (
+                <p className="mt-2 flex items-start gap-1.5 rounded border border-amber-500/40 bg-amber-500/10 p-1.5 text-micro text-amber-700 dark:text-amber-300">
+                  <AlertTriangle size={12} className="mt-px shrink-0" />
+                  <span>
+                    {answer.unbackedCitations} citation marker
+                    {answer.unbackedCitations === 1 ? '' : 's'} in this answer resolve to no evidence
+                    in the dossier. They are shown as unverified, not as sources.
+                  </span>
+                </p>
               )}
               {answer.citations.length > 0 && (
                 <div className="mt-2 flex flex-wrap gap-1">
@@ -149,7 +216,15 @@ export function AiOperatorPanel({ projectId }: { projectId: string }) {
                 <span className="text-micro font-bold uppercase tracking-wider text-grey">Outreach draft</span>
                 <Button size="xs" variant="secondary" className="ml-auto" onClick={() => { void navigator.clipboard?.writeText(draft); toast('success', 'Copied'); }}>Copy</Button>
               </div>
-              <AiProse text={draft} />
+              {/* `validIds={[]}` — "this surface can back nothing", and it is the truth
+                  rather than a precaution. `draftOutreach` returns no citation set at
+                  all, yet it is built by the same `renderContext` whose footer tells the
+                  model to cite evidence ids in double brackets. Without this prop any
+                  `[[id]]` the model carried into an outreach EMAIL rendered as
+                  `<sup title="source: …">` on a panel with no source list behind it —
+                  the F2 defect, on the one AiProse call site that can never resolve an
+                  id. `markUnbackedCitations` does not run on this path either. */}
+              <AiProse text={draft} validIds={[]} />
             </div>
           )}
         </div>
