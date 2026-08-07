@@ -202,8 +202,14 @@ beforeEach(() => {
 
 describe('an undeclared cap refuses and can never pass', () => {
   it('refuses with a stable code when no cap is declared, even with everything else clean', async () => {
+    /*
+     * `cap: null` IS EXPLICIT SINCE 2026-08-07, and that is the whole reason this still tests
+     * something. A cap IS now declared in production, so an `input()` with no cap inherits a
+     * real one and the absent-cap refusal becomes unreachable. Injecting null keeps the limb
+     * under test instead of quietly retiring it the day someone declared a number.
+     */
     const { pool } = stub(perimeterClear());
-    const d = await evaluateEmissionWarrant(pool, input());
+    const d = await evaluateEmissionWarrant(pool, input({ cap: null }));
 
     expect(d.outcome).toBe('refused');
     if (d.outcome !== 'refused') throw new Error('unreachable');
@@ -218,16 +224,39 @@ describe('an undeclared cap refuses and can never pass', () => {
      * cheapest possible database.
      */
     const { pool } = stub({ ...perimeterClear(), inFlight: { total: '0', unstated: '0', n: '0' } });
-    const d = await evaluateEmissionWarrant(pool, input());
+    const d = await evaluateEmissionWarrant(pool, input({ cap: null }));
     expect(d.outcome).toBe('refused');
     if (d.outcome !== 'refused') throw new Error('unreachable');
     expect(d.refusals.map((r) => r.code)).toContain('EMISSION_CAP_NOT_DECLARED');
   });
 
-  it('ships with no cap declared, so the refusal is the production path', () => {
-    // If this ever becomes non-null it is because an owner declared one, and the
-    // provenance fields are required so the number cannot arrive anonymously.
-    expect(DECLARED_EMISSION_CAP).toBeNull();
+  it('ships with a cap that is a REAL cap — declared, attributed, and fault-free', () => {
+    /*
+     * WAS: `expect(DECLARED_EMISSION_CAP).toBeNull()`, with a comment predicting the day an
+     * owner would declare one. That day was 2026-08-07, so the assertion is inverted rather
+     * than deleted — and it is now the STRONGER of the two, because a declared cap can be
+     * malformed in ways an absent one cannot.
+     *
+     * `capDeclarationFaults` is the production validator, not a copy of its rules: NaN and
+     * Infinity are rejected (a cap that cannot fail arithmetically is worse than none), a
+     * periodic basis is rejected (it would understate a concurrent total), and every
+     * provenance field must be a non-empty string so the number cannot arrive anonymously.
+     */
+    expect(DECLARED_EMISSION_CAP, 'the cap was un-declared without updating this test').not.toBeNull();
+    const cap = DECLARED_EMISSION_CAP!;
+
+    expect(capDeclarationFaults(cap), 'the shipped declaration is not a valid cap').toEqual([]);
+
+    // A ceiling of zero is legal and meaningful, so the floor is >= 0, not > 0.
+    expect(Number.isFinite(cap.capLcx)).toBe(true);
+    expect(cap.capLcx).toBeGreaterThanOrEqual(0);
+    expect(cap.basis).toBe('concurrent_in_flight');
+
+    // Attribution is the point: a cap nobody put their name to is not a declaration.
+    expect(cap.declaredBy.trim()).not.toBe('');
+    expect(cap.declaredBy.toLowerCase()).not.toContain('system');
+    expect(cap.instrument.trim()).not.toBe('');
+    expect(Number.isFinite(Date.parse(cap.declaredAt))).toBe(true);
   });
 
   it('is not the budget <= budget shape: the same numbers can pass and fail', async () => {
@@ -316,14 +345,32 @@ describe('the trigger condition is read server-side', () => {
     } as Parameters<typeof evaluateEmissionWarrant>[1];
 
     const d = await evaluateEmissionWarrant(pool, payload);
-    expect(d.outcome).toBe('refused');
-    if (d.outcome !== 'refused') throw new Error('unreachable');
+    /*
+     * THIS NOW GRANTS, AND THE TEST IS STRONGER FOR IT. Before a cap was declared this
+     * payload refused on EMISSION_CAP_NOT_DECLARED, so every suppression assertion below was
+     * being checked against a REFUSED record. A granted warrant is the case that actually
+     * matters: a caller-injected value inside a refusal is embarrassing, but inside a GRANT it
+     * is a compliance record asserting a clearance partly written by the party being cleared.
+     *
+     * The grant is correct here — 1000 LCX against a 6,212,723.65805169 ceiling, a clean
+     * perimeter and a declared launcher position. `mayReachStatus` is asserted below so the
+     * outcome is pinned rather than merely observed.
+     */
+    expect(d.outcome).toBe('granted');
+    if (d.outcome !== 'granted') throw new Error('unreachable');
+    expect(mayReachStatus(d)).toBe(true);
     // The trigger came from the column, so the token limbs ran at all.
     expect(d.warrant!.thisCampaignLcx).toBe(1000);
-    // The caller's cap was not a cap.
-    expect(d.refusals.map((r) => r.code)).toContain('EMISSION_CAP_NOT_DECLARED');
-    expect(d.warrant!.capLcx).toBeNull();
-    expect(d.warrant!.granted).toBe(false);
+    /*
+     * THE CALLER'S CAP WAS NOT A CAP — and since 2026-08-07 this is a POSITIVE assertion
+     * rather than a null check, which makes it a better test than it was. `cap: undefined` in
+     * the payload deliberately stays: sending undefined is the shape a caller would use to
+     * try to suppress the limb, and the point is that it resolves to the DECLARED cap and
+     * never to the caller's `capLcx: 1_000_000_000`.
+     */
+    expect(d.warrant!.capLcx).toBe(DECLARED_EMISSION_CAP!.capLcx);
+    expect(d.warrant!.capLcx).not.toBe(1_000_000_000);
+    expect(d.warrant!.granted).toBe(true);
     // And nothing the caller sent is in the permanent record.
     const metaJson = String((audit[0]!.params as unknown[])[4]);
     expect(metaJson).not.toContain('1000000000');
@@ -595,7 +642,7 @@ describe('the warrant is ledgered into audit_log with the digest and the codes',
     // "The check ran and refused" is exactly as much a record as "the check cleared it",
     // and a ledger holding only grants cannot tell a refusal from a check that never ran.
     const { pool, audit } = stub(perimeterClear());
-    const d = await evaluateEmissionWarrant(pool, input());
+    const d = await evaluateEmissionWarrant(pool, input({ cap: null }));
 
     expect(d.outcome).toBe('refused');
     expect(audit).toHaveLength(1);
@@ -808,7 +855,7 @@ describe('not applicable is a third outcome and never a grant', () => {
     expect([...WARRANT_REQUIRED_STATUSES]).toEqual(['approved', 'live']);
     for (const status of WARRANT_REQUIRED_STATUSES) {
       const { pool } = stub(perimeterClear());
-      const d = await evaluateEmissionWarrant(pool, input({ targetStatus: status }));
+      const d = await evaluateEmissionWarrant(pool, input({ targetStatus: status, cap: null }));
       expect(d.outcome, `${status} must be gated`).toBe('refused');
     }
   });

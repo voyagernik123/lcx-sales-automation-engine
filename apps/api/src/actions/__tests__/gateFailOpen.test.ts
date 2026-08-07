@@ -146,11 +146,15 @@ for (const gate of GATED) {
      * ── THE COMPLIANCE GATE IS NOW BEHIND THE EMISSION WARRANT, FOR ONE GATE ONLY ──────
      *
      * As of 2026-08-07 a token-incentivised launch must clear the EMISSION WARRANT before
-     * the compliance gate is consulted at all, and the warrant refuses today because
-     * `DECLARED_EMISSION_CAP` is `null` — "and will stay null until an owner declares one"
-     * (marketing/emissionWarrant.ts:234) — and no launcher has declared an LCX position.
-     * Both are refusals BY DESIGN: absence refuses. So for `dist_campaign_set_status` the
-     * three fail-open cases below now describe a state that cannot be reached.
+     * the compliance gate is consulted at all.
+     *
+     * ONE OF THE TWO BLOCKERS IS NOW CLEARED. The owner declared a cap the same day
+     * (6,212,723.65805169 LCX, concurrent in-flight, founder authority), so
+     * `EMISSION_CAP_NOT_DECLARED` no longer fires. I re-ran these three with the skip removed
+     * to check: they STILL fail, on `EMISSION_LAUNCHER_POSITION_UNDECLARED`. The launcher's
+     * own LCX position is the remaining limb, and no system may answer it — Art 91(3)(c)
+     * attaches to a person. So the state below is still unreachable, for one reason now
+     * instead of two.
      *
      * THEY ARE SKIPPED, NOT DELETED AND NOT MADE TO PASS. Making them pass would have meant
      * fabricating an emission cap and a holdings declaration into the fixture — a figure only
@@ -163,7 +167,8 @@ for (const gate of GATED) {
      * still run for the SAT gate, and every other case in this file — including all four
      * FAULTS, which are the ones that matter most — still runs for BOTH.
      *
-     * TO RESTORE: declare a cap, then change `itUnlessWarrantBlocks` back to `it`.
+     * TO RESTORE: the launcher declares an LCX position, then change
+     * `itUnlessWarrantBlocks` back to `it`. The cap half is already done.
      */
     const itUnlessWarrantBlocks = gate.name.includes('dist_campaign') ? it.skip : it;
     for (const [code, message] of FAULTS) {

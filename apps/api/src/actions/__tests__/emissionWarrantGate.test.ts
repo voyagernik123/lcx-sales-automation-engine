@@ -50,7 +50,7 @@ import { _resetAbuseRegisterMigrated, loadHoldingsRegister } from '../../marketi
 import { _resetGateLedgerMigrated } from '../../marketing/outboundGate.js';
 import { _resetOneMouthLedgerMigrated } from '../../marketing/oneMouth.js';
 import { gateTextSha256 } from '../../marketing/outboundGate.js';
-import { DECLARED_EMISSION_CAP, composeCampaignPublicText } from '../../marketing/emissionWarrant.js';
+import { DECLARED_EMISSION_CAP, capDeclarationFaults, composeCampaignPublicText } from '../../marketing/emissionWarrant.js';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CAMPAIGN = '11111111-2222-3333-4444-555555555555';
@@ -212,7 +212,14 @@ describe('the warrant gates both publication points and only those', () => {
     const err = await launch(pool).catch((e: unknown) => e) as {
       data?: { refusalCodes?: string[]; refusals?: { rule: string }[]; launcher?: string };
     };
-    expect(err.data?.refusalCodes).toContain('EMISSION_CAP_NOT_DECLARED');
+    /*
+     * The live blocker changed on 2026-08-07: a cap IS now declared, so what stops a token
+     * launch is the LAUNCHER'S POSITION, not the treasury envelope. The subject of this test
+     * is unchanged — every refusal names a code AND cites a rule, and the record says whose
+     * position was resolved — so only the code moved.
+     */
+    expect(err.data?.refusalCodes).toContain('EMISSION_LAUNCHER_POSITION_UNDECLARED');
+    expect(err.data?.refusalCodes, 'the cap is declared; it must not be a blocker').not.toContain('EMISSION_CAP_NOT_DECLARED');
     expect(err.data?.refusals?.every((r) => typeof r.rule === 'string' && r.rule !== '')).toBe(true);
     // WHOSE position was resolved, on the record. The acting principal is not it.
     expect(err.data?.launcher).toBe(HUMAN);
@@ -255,9 +262,29 @@ describe('the declaration is required and its absence refuses', () => {
         declared_at: '2026-08-01T00:00:00.000Z', renew_by: '2027-08-01T00:00:00.000Z',
       }],
     });
+    /*
+     * SINCE 2026-08-07 BOTH LIMBS CAN BE SATISFIED, so this now asserts the thing the old
+     * version could not: that the gate is PASSABLE. A control that has never granted is
+     * indistinguishable from one that cannot, and "it refuses everything" is not evidence
+     * that it refuses the right things.
+     *
+     * 1000 LCX against a 6,212,723.65805169 concurrent ceiling, with the launcher's position
+     * on file. The launch must SUCCEED.
+     */
+    await expect(launch(pool), 'a declared cap and a declared position must permit a launch').resolves.toBeTruthy();
+  });
+
+  it('keeps the two limbs independent — a declared cap does not excuse an undeclared position', async () => {
+    /*
+     * The other half of the same property, and the half that still bites. The cap limb is now
+     * satisfied for every campaign under the ceiling, so if the limbs were ever collapsed this
+     * is where it would show: a launch with NO holdings declaration must still refuse, and
+     * must refuse on the LAUNCHER, never on the cap.
+     */
+    const { pool } = stubPool({ holdingsRows: [] });
     const err = await launch(pool).catch((e: unknown) => e) as { data?: { refusalCodes?: string[] } };
-    expect(err.data?.refusalCodes).not.toContain('EMISSION_LAUNCHER_POSITION_UNDECLARED');
-    expect(err.data?.refusalCodes).toContain('EMISSION_CAP_NOT_DECLARED');
+    expect(err.data?.refusalCodes).toContain('EMISSION_LAUNCHER_POSITION_UNDECLARED');
+    expect(err.data?.refusalCodes).not.toContain('EMISSION_CAP_NOT_DECLARED');
   });
 
   it('refuses when the launcher has declared a holding', async () => {
@@ -271,15 +298,25 @@ describe('the declaration is required and its absence refuses', () => {
     expect(err.data?.refusalCodes).toContain('EMISSION_LAUNCHER_HOLDS_EMISSION_ASSET');
   });
 
-  it('has no declared cap in this build, so no token campaign can launch today', async () => {
+  it('HAS a declared cap in this build, so the cap is no longer what blocks a launch', async () => {
     /*
-     * STATED AS A TEST BECAUSE IT IS AN OPERATIONAL FACT, not a detail: until an owner
-     * declares a treasury envelope, this gate blocks EVERY token-incentivised launch.
-     * That is the intended default — `TREASURY_CAP_NOT_DECLARED` is a refusal and not
-     * `withinBudget: true` — and it is the kind of consequence that must not be
-     * discovered in production.
+     * STATED AS A TEST BECAUSE IT IS AN OPERATIONAL FACT, not a detail — and the fact
+     * changed on 2026-08-07. It used to read "has no declared cap … so no token campaign can
+     * launch today", which was true for as long as nobody had declared one.
+     *
+     * A cap is now declared on founder authority. What still blocks a launch is the
+     * LAUNCHER'S OWN LCX POSITION, which no system may answer for: Art 91(3)(c) attaches to a
+     * person. So the gate is still shut for any launcher who has not declared, and this test
+     * pins WHICH limb is holding it shut, because "blocked" without "by what" is the kind of
+     * thing that gets discovered in production.
      */
-    expect(DECLARED_EMISSION_CAP).toBeNull();
+    expect(DECLARED_EMISSION_CAP, 'the cap was un-declared without updating this test').not.toBeNull();
+    expect(capDeclarationFaults(DECLARED_EMISSION_CAP!), 'the shipped cap is not a valid cap').toEqual([]);
+
+    const { pool } = stubPool();
+    const err = await launch(pool).catch((e: unknown) => e) as { data?: { refusalCodes?: string[] } };
+    expect(err.data?.refusalCodes).toContain('EMISSION_LAUNCHER_POSITION_UNDECLARED');
+    expect(err.data?.refusalCodes).not.toContain('EMISSION_CAP_NOT_DECLARED');
   });
 });
 

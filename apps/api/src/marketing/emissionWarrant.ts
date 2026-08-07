@@ -225,13 +225,41 @@ export interface EmissionCapDeclaration {
 }
 
 /**
- * THE CAP IS NOT DECLARED, AND `null` IS THE CORRECT VALUE.
+ * THE CAP IS DECLARED, as of 2026-08-07. It was `null` until a human put a number to it,
+ * and `null` was the correct value for as long as nobody had.
  *
- * It is an open owner decision (see `humanInputNeeded` in this pass's report). Nothing
- * in this repository knows LCX's treasury envelope, and a plausible-looking default
- * would be the worst possible outcome: a number a reviewer would read as a policy.
+ * WHAT THE NUMBER IS, AND WHAT IT IS NOT. It caps CONCURRENT IN-FLIGHT LCX — the sum of
+ * `budget_lcx` over every token-incentivised campaign at `approved` or `live`, plus the one
+ * being launched. It is a ceiling on STOCK, not on flow: a campaign reaching `completed`
+ * returns its headroom. It is NOT a periodic or annual emissions budget, and `checkCap`
+ * refuses a declaration whose `basis` says otherwise precisely because comparing a periodic
+ * cap against a concurrent total would understate the exposure.
+ *
+ * WHY THE FIGURE HAS EIGHT DECIMALS, which no policy threshold would. The owner's intent
+ * was USD 100,000 of simultaneous exposure, converted to LCX at the spot rate on the day.
+ * The precision is an artefact of that conversion, not a precisely-chosen boundary.
+ *
+ * AND THE CONSEQUENCE OF THAT, STATED HERE BECAUSE NOTHING ELSE WILL SAY IT: THE CAP IS
+ * ENFORCED IN LCX AND DOES NOT RE-PEG. As the LCX price moves, this ceiling stops being
+ * USD 100,000 — it drifts up in dollar terms if LCX falls and down if LCX rises. That is a
+ * deliberate consequence of there being NO LCX/USD RATE ANYWHERE IN THIS CODEBASE: the old
+ * hardcoded 0.5 LCX/USD rate is one of the four fabricated figures this programme deleted
+ * (plan section 4.5), and re-introducing one here — inside a market-abuse control carrying
+ * Art 91(3)(c) personal liability — to keep a dollar peg would be the worse error by far.
+ * Re-declare with a fresh `capLcx` and `declaredAt` when the dollar intent matters again.
  */
-export const DECLARED_EMISSION_CAP: EmissionCapDeclaration | null = null;
+export const DECLARED_EMISSION_CAP: EmissionCapDeclaration | null = {
+  capLcx: 6212723.65805169,
+  basis: 'concurrent_in_flight',
+  declaredBy: 'Nikhil Sharma (nikhil.sharma@lcx.com), founder',
+  declaredAt: '2026-08-07T16:10:43.000Z',
+  instrument:
+    'Founder authority. No board minute and no separate written treasury policy stands behind '
+    + 'this: the founder declared it directly, and it is recorded that way rather than dressed '
+    + 'up as a policy instrument. Ceiling chosen as the LCX equivalent of USD 100,000 of '
+    + 'simultaneous in-flight exposure at the spot rate on 2026-08-07; enforced in LCX and NOT '
+    + 're-pegged as the price moves.',
+};
 
 /**
  * EVERY WAY A "DECLARED CAP" CAN FAIL TO BE ONE. Empty means it is a cap.
