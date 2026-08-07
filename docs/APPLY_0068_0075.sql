@@ -78,7 +78,7 @@ $guard$;
 
 -- ==========================================================================
 -- 0068_listing_labels_dedupe.sql
--- sha256 0230e2db15df3ea348bb94afe7eebb9a3f486c251e47614e00108a82e84d6518
+-- sha256 0230e2db15df3ea348bb94afe7eebb9a3f486c251e47614e00108a82e84d6518  (of the ORIGINAL file, transaction lines included)
 -- ==========================================================================
 
 -- 0068 — listing_labels: stop a unique index from destroying a real contract.
@@ -229,7 +229,7 @@ COMMENT ON TABLE listing_labels IS
 
 -- ==========================================================================
 -- 0069_audit_control_markers.sql
--- sha256 a12fabe5ef35125aed1db50a0bc0b8606fa423e43598f7c1d1e76bf4b717be9b
+-- sha256 a12fabe5ef35125aed1db50a0bc0b8606fa423e43598f7c1d1e76bf4b717be9b  (of the ORIGINAL file, transaction lines included)
 -- ==========================================================================
 
 -- ──────────────────────────────────────────────
@@ -386,7 +386,7 @@ COMMENT ON INDEX idx_audit_actor IS
 
 -- ==========================================================================
 -- 0070_audit_seal.sql
--- sha256 3b9d556d9127a7442d33ec65f2c2cc1764c12c0b928722f4d010334e907496ff
+-- sha256 3b9d556d9127a7442d33ec65f2c2cc1764c12c0b928722f4d010334e907496ff  (of the ORIGINAL file, transaction lines included)
 -- ==========================================================================
 
 -- ──────────────────────────────────────────────
@@ -781,7 +781,7 @@ ALTER TABLE audit_seal_state ENABLE ROW LEVEL SECURITY;
 
 -- ==========================================================================
 -- 0071_grant_ledger.sql
--- sha256 d24427e6a3f1ebc62f2842a1ae87213a7af01dc1bc652aa0c4f85ae58d3504a6
+-- sha256 d24427e6a3f1ebc62f2842a1ae87213a7af01dc1bc652aa0c4f85ae58d3504a6  (of the ORIGINAL file, transaction lines included)
 -- ==========================================================================
 
 -- ──────────────────────────────────────────────
@@ -1036,7 +1036,7 @@ ALTER TABLE entitlement_ledger_state ENABLE ROW LEVEL SECURITY;
 
 -- ==========================================================================
 -- 0072_verdict_broker.sql
--- sha256 4e922bf300a3235015c430ef241c8095b36c210b97be4459e90a43562dd5fa0f
+-- sha256 4e922bf300a3235015c430ef241c8095b36c210b97be4459e90a43562dd5fa0f  (of the ORIGINAL file, transaction lines included)
 -- ==========================================================================
 
 -- ──────────────────────────────────────────────
@@ -1218,7 +1218,7 @@ COMMENT ON COLUMN marketing_asset_embargo.asset_symbol IS
 
 -- ==========================================================================
 -- 0073_one_mouth_shadow.sql
--- sha256 40515bd01a104ba5316714a121f4d80ee01e42fb3d443ae913ab51f0425863f6
+-- sha256 40515bd01a104ba5316714a121f4d80ee01e42fb3d443ae913ab51f0425863f6  (of the ORIGINAL file, transaction lines included)
 -- ==========================================================================
 
 -- ──────────────────────────────────────────────────────────────────────────────
@@ -1303,7 +1303,6 @@ COMMENT ON COLUMN marketing_asset_embargo.asset_symbol IS
 --  policy; the API connects as the owner and bypasses it), matching 0046/0060/0062.
 -- ──────────────────────────────────────────────────────────────────────────────
 
-BEGIN;
 
 CREATE TABLE IF NOT EXISTS marketing_one_mouth_shadow (
   id                     bigserial PRIMARY KEY,
@@ -1431,11 +1430,9 @@ COMMENT ON COLUMN marketing_one_mouth_shadow.rules_cited IS
 -- legitimate changes.
 ALTER TABLE marketing_one_mouth_shadow ENABLE ROW LEVEL SECURITY;
 
-COMMIT;
-
 -- ==========================================================================
 -- 0074_platform_forecast.sql
--- sha256 2122715b1fdcc5f2fd603383bf991a604e8522845940665beba2a51937bdbfda
+-- sha256 2122715b1fdcc5f2fd603383bf991a604e8522845940665beba2a51937bdbfda  (of the ORIGINAL file, transaction lines included)
 -- ==========================================================================
 
 -- ──────────────────────────────────────────────
@@ -1747,7 +1744,7 @@ ALTER TABLE platform_forecast_outcome ENABLE ROW LEVEL SECURITY;
 
 -- ==========================================================================
 -- 0075_gps_partner_registry.sql
--- sha256 bde64f17d3746800f97256c0d8716b71b7c076575c08a725b55452e2de846673
+-- sha256 bde64f17d3746800f97256c0d8716b71b7c076575c08a725b55452e2de846673  (of the ORIGINAL file, transaction lines included)
 -- ==========================================================================
 
 -- ──────────────────────────────────────────────
