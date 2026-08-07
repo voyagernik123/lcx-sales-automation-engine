@@ -111,6 +111,29 @@ a height. The frame counts them apart.
   needs to be read precisely. Written up with measurements, owed a fix and the three tests that
   would have caught them.
 
+## TWO ROUTES WHOSE COMPARTMENT IS UNDECIDED (`51543d1`)
+
+`app.ts` mounts `requireWorkspace` only for paths inside a workspace's `apiPrefixes`. Thirteen
+mounted paths sit outside that set. Two of them were leaking and are fixed — `/v1/reviews` (five
+handlers, no gate, a copilot composing the sales dossier and feeding it to a model) and
+`/v1/tasks` (`'Unstick deal: ' || p.name` with each deal's stage and staleness, to any
+authenticated principal). The remaining thirteen are now a **declared register** asserted by
+`apps/api/src/__tests__/routeCompartmentCoverage.test.ts`, so a fourteenth cannot appear quietly.
+
+Two entries in that register are **OPEN**, and are recorded here because a decision that lives
+only in a test file is half-recorded:
+
+| path | what is undecided |
+|---|---|
+| `/v1/integrations` | `GET /email-threads/:projectId` and `/social-mentions/:projectId` return per-project counterparty communications with no per-reader filter. Same shape as the tasks defect. |
+| `/v1/users` | `GET /:id/assignments` joins `project_assignments` to `projects`, so it names which projects a person works. The roster itself (id/email/name/role) is desk-level; the join is the open part. |
+
+**Not fixed on purpose.** Both turn on a question I cannot answer from the code: whether "who is
+working what" and "what a counterparty emailed about a project" are desk-level facts at LCX.
+Guessing would either break the desk for three people who currently see everything, or write down
+a need-to-know decision nobody made. The register test fails if either is closed without updating
+it, so the answer lands in the same commit as the change.
+
 ## The three empty states this register exists to protect
 
 Written out because collapsing them is the specific error the governance compartment is built to
