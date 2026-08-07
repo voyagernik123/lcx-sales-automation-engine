@@ -54,6 +54,8 @@ const GpsLoop = lazy(() => import('@/pages/GpsLoop').then((m) => ({ default: m.G
 // it is the screen where the founder types the five numbers the whole underwriting
 // stack is still waiting on, and it must not cost the initial bundle to ship.
 const GpsInputs = lazy(() => import('@/pages/GpsInputs').then((m) => ({ default: m.GpsInputs })));
+const GpsPartnerRegistry = lazy(() => import('@/pages/GpsPartnerRegistry').then((m) => ({ default: m.GpsPartnerRegistry })));
+const ControlRegister = lazy(() => import('@/pages/ControlRegister').then((m) => ({ default: m.ControlRegister })));
 const AccessControl = lazy(() => import('@/pages/AccessControl').then((m) => ({ default: m.AccessControl })));
 const Dashboard = lazy(() => import('@/pages/Dashboard').then((m) => ({ default: m.Dashboard })));
 const Home = lazy(() => import('@/pages/Home').then((m) => ({ default: m.Home })));
@@ -295,6 +297,13 @@ export const router = createBrowserRouter([
           // registry entry — and the writes behind it demand 'operate', which this table
           // does not and cannot express: `app.ts:requiresOperate` does.
           { path: 'gps/inputs', element: <GpsInputs /> },
+          { path: 'gps/partner-registry', element: <GpsPartnerRegistry /> },
+          /*
+           * THE CONTROL REGISTER HAS NEVER BEEN REACHABLE. The page shipped in P3 and no
+           * router entry was ever added, so `verifyAuditSeal` — the seal's own evidence —
+           * had no surface at all. Same failure as the readout's four unreachable files.
+           */
+          { path: 'governance/controls', element: <ControlRegister /> },
           { path: 'decisions', element: <Decisions /> },
           { path: 'command-deck', element: <CommandDeck /> },
           { path: 'command-partners', element: <CommandPartners /> },

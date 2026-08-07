@@ -70,6 +70,12 @@ export const ENTITLEMENT_AS_OF_CODES = {
   RECONSTRUCTED_ONLY: 'ENTITLEMENT_AS_OF_RECONSTRUCTED_ONLY',
   /** `at` is not something Postgres can read as an instant at all. */
   UNPARSEABLE_INSTANT: 'ENTITLEMENT_AS_OF_UNPARSEABLE_INSTANT',
+  /**
+   * No instant was supplied at all. Its OWN code, and never `now()`: see
+   * RULE_INSTANT_MUST_BE_ASKED. Distinct from UNPARSEABLE_INSTANT, which is a
+   * statement about a value that was given.
+   */
+  INSTANT_REQUIRED: 'ENTITLEMENT_AS_OF_INSTANT_REQUIRED',
   /** `at` parsed but is not a point in time: ±infinity, or an Invalid Date. */
   NOT_AN_INSTANT: 'ENTITLEMENT_AS_OF_NOT_AN_INSTANT',
   /** The member or compartment asked about appears nowhere the ledger can vouch for. */
@@ -88,6 +94,21 @@ const RULE_ONE_PARSER =
   'House doctrine: a refusal is exactly as strong as the check behind it. The boundary '
   + 'test and the replay query must be decided by ONE parser (Postgres), or the gap '
   + 'between two parsers resolves to an answer for an instant that is unanswerable.';
+/**
+ * WHY AN ABSENT `at` IS NOT `now()`.
+ *
+ * "As of when" IS the question. A surface that defaults it silently converts
+ * "what did this person hold on 12 July" into "what do they hold today" — which is
+ * the one answer `entitlements` could already give, and precisely the answer whose
+ * inadequacy 0071 exists to fix. The failure is invisible at the call site: the
+ * payload comes back `known` with real holdings and nothing on it says the instant
+ * was invented. So it refuses, under its own code.
+ */
+const RULE_INSTANT_MUST_BE_ASKED =
+  'House doctrine: absent data refuses — never a default, never an estimate. The instant '
+  + 'is the whole question here, so an absent one is refused under ENTITLEMENT_AS_OF_'
+  + 'INSTANT_REQUIRED rather than defaulted to now(), which would answer a different '
+  + 'question in a payload that looks identical to an answer to the one that was asked.';
 const RULE_SCOPE_MUST_EXIST =
   'House doctrine: absent data refuses — it never renders an empty list that reads as '
   + '"nothing happened". A subject the ledger has never heard of cannot be reported as '
@@ -183,7 +204,8 @@ export type EntitlementAsOf =
       code:
         | typeof ENTITLEMENT_AS_OF_CODES.UNPARSEABLE_INSTANT
         | typeof ENTITLEMENT_AS_OF_CODES.NOT_AN_INSTANT
-        | typeof ENTITLEMENT_AS_OF_CODES.UNKNOWN_SCOPE;
+        | typeof ENTITLEMENT_AS_OF_CODES.UNKNOWN_SCOPE
+        | typeof ENTITLEMENT_AS_OF_CODES.INSTANT_REQUIRED;
       rule: string;
       message: string;
       at: string;
@@ -237,6 +259,48 @@ const ledgerAbsent = (at: string): EntitlementAsOf => ({
     + 'of a record, not a record of nothing.',
   at,
 });
+
+/**
+ * The refusal for "you did not say WHEN".
+ *
+ * IT LIVES HERE, NOT IN THE ROUTE, so the code and the rule it cites stay in the
+ * module that owns every other code in `ENTITLEMENT_AS_OF_CODES`. A route that
+ * hand-rolled the refusal would be a second place the vocabulary is defined, and the
+ * copy that drifted would be the one an operator reads.
+ *
+ * `entitlementsAsOf` itself cannot express this: its `at` is `Date | string`, so an
+ * absent instant is not representable as an argument. Constructing a `Date` to pass
+ * in — which is what a caller does by reflex — IS the default this refuses.
+ */
+export function entitlementAsOfInstantRequired(
+  raw: string | null | undefined,
+  scope: { memberId: string | null; workspace: string | null } = { memberId: null, workspace: null },
+): EntitlementAsOf {
+  const supplied = raw !== undefined && raw !== null;
+  return {
+    kind: 'unanswerable',
+    code: ENTITLEMENT_AS_OF_CODES.INSTANT_REQUIRED,
+    rule: RULE_INSTANT_MUST_BE_ASKED,
+    at: raw ?? '',
+    unresolved: [
+      {
+        field: 'at',
+        value: supplied ? raw : '(absent)',
+        why: supplied
+          ? 'supplied but empty, which names no instant'
+          : 'no instant was supplied, and this replay will not choose one',
+      },
+    ],
+    boundary: null,
+    scope,
+    message:
+      'No instant was asked about, so there is nothing to replay to. This is NOT answered '
+      + 'as of now: "as of when" is the entire question, and defaulting it would return a '
+      + 'holder set for TODAY in a payload indistinguishable from an answer about the date '
+      + 'you meant. Supply an instant — an ISO-8601 timestamp is read at full microsecond '
+      + 'precision.',
+  };
+}
 
 interface StateRow {
   ledger_floor: Date;

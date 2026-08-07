@@ -95,6 +95,77 @@ export const AUDIT_SEAL_CODES = {
   HEAD_GAP: 'AUDIT_SEAL_HEAD_GAP',
 } as const;
 
+/* ══════════════════════════════════════════════════════════════════════════════
+ *  WHAT AN `intact` VERDICT IS NOT EVIDENCE OF.
+ *
+ *  CARRIED AS DATA, NOT AS PROSE IN THIS COMMENT, because the thing that must not
+ *  happen is a SURFACE rendering a green chain without these sentences beside it.
+ *  A comment cannot be rendered and cannot be asserted; a value can be both, and
+ *  `routes/governanceRegister.ts` publishes this array on every seal payload while
+ *  `pages/ControlRegister.tsx` renders it unconditionally.
+ *
+ *  THIS REPO HAS ALREADY CARRIED THE OVERCLAIM ONCE. `docs/phases/P5_EVIDENCE.md`
+ *  F9 records it: the claim that ownership-level tampering is "still DETECTED after
+ *  the fact" is FALSE once the attacker re-chains, and the evidence file says the
+ *  overclaim is worth more than the finding. So the correction lives in the module
+ *  that would otherwise be quoted as making the claim.
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+export interface SealUndetected {
+  /** Stable id. A surface keys off this, never off the prose. */
+  readonly id:
+    | 'ownership_level_tampering'
+    | 'head_not_externally_anchored'
+    | 'canonicaliser_not_cross_checked';
+  readonly statement: string;
+  /** Where it was ESTABLISHED. Not an assertion — a probe was run and is named. */
+  readonly evidence: string;
+}
+
+export const AUDIT_SEAL_DOES_NOT_DETECT: readonly SealUndetected[] = [
+  {
+    id: 'ownership_level_tampering',
+    statement:
+      'Tampering by the role the API itself connects as. audit_log and audit_seal_state are '
+      + 'OWNED by that role, and ownership alone permits ALTER TABLE … DISABLE TRIGGER ALL. '
+      + 'Rows can then be rewritten and RE-CHAINED using this database\'s own published digest '
+      + 'functions — the chain is keyless and rooted at a genesis constant this file publishes '
+      + '— and this verifier reports the result as intact. An intact verdict is therefore '
+      + 'evidence against accident and against a lesser principal. It is NOT evidence against '
+      + 'whoever holds the application\'s database credential.',
+    evidence:
+      'docs/phases/P5_EVIDENCE.md F9 — an attack pass drove this exact function against a '
+      + 'forged, re-chained log on the CI mirror and it answered intact, whole chain covered. '
+      + 'Only the head digest differed, and nothing records the expected head. The structural '
+      + 'fix (audit tables owned by a role the application never connects as, plus a head '
+      + 'anchored outside the database) is open and is the owner\'s to schedule.',
+  },
+  {
+    id: 'head_not_externally_anchored',
+    statement:
+      'Which of two things a missing head means. Nothing outside the database records how '
+      + 'long the chain should be, so a deleted newest row and a rolled-back audit append '
+      + 'leave the SAME trace — a burnt sequence number. AUDIT_SEAL_HEAD_GAP reports the gap '
+      + 'and refuses to choose between the readings, and it costs the whole-chain coverage '
+      + 'claim rather than being called a break.',
+    evidence:
+      'routes/deals.ts:510 writes audit rows inside a transaction that really can roll back, '
+      + 'so the benign reading is not hypothetical and calling the gap tampering would be a '
+      + 'verifier crying wolf.',
+  },
+  {
+    id: 'canonicaliser_not_cross_checked',
+    statement:
+      'A subverted canonicaliser, unless crossCheckCanon was asked for. The DIGEST function is '
+      + 'cross-implemented — Postgres computes it, Node re-computes it — so a swapped digest '
+      + 'shows up as a break. audit_seal_content() is the server\'s and is trusted on the '
+      + 'default path, so one that lied consistently would verify itself.',
+    evidence:
+      'Stated on canonicalMeta in this file; crossCheckCanon is off by default because a '
+      + 'known jsonb numeric-form divergence would otherwise be reported on ordinary rows.',
+  },
+] as const;
+
 const RULE_APPEND_ONLY =
   'House doctrine: an artefact every other honesty claim rests on must be sealed in '
   + 'the database, not by convention. 0070_audit_seal.sql — BEFORE UPDATE OR DELETE '

@@ -121,7 +121,7 @@ export function PersonalizerPanel() {
             <CopyButton text={result.draft} label="Copy draft" />
           </div>
           <div className={aiBoxClass}>
-            <AiProse text={result.draft} />
+            <AiProse text={result.draft} validIds={[]} />
           </div>
         </div>
       )}

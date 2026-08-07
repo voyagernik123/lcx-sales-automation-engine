@@ -20,7 +20,13 @@ const PRIORITY_TONE: Record<string, string> = {
  */
 export function DistributionGeo() {
   const [deep, setDeep] = useState<DistributionDeep | null>(null);
-  const [draft, setDraft] = useState<{ query: string; text: string; usedLlm: boolean } | null>(null);
+  // `validIds` carries the citation set the SERVER resolved for this draft. It was being
+  // thrown away here — `draftGeoContent` returns `citations`, and this state shape simply
+  // did not have a field for it — so every `[[id]]` the model emitted rendered as a source
+  // marker whether or not anything backed it. `?? []` is not a default standing in for a
+  // missing figure: a response with no citation set can back NOTHING, and [] says exactly
+  // that. It is the difference between "unverified" and a fabricated attribution.
+  const [draft, setDraft] = useState<{ query: string; text: string; usedLlm: boolean; validIds: string[] } | null>(null);
   const [drafting, setDrafting] = useState<string | null>(null);
   // `deep === null` is the LOADING sentinel, so the failure has to land somewhere
   // else: catching into setDeep(null) left the skeleton pulsing forever.
@@ -36,7 +42,7 @@ export function DistributionGeo() {
     setDrafting(id);
     try {
       const r = await draftGeoContent(query);
-      setDraft({ query, text: r.draft, usedLlm: r.usedLlm });
+      setDraft({ query, text: r.draft, usedLlm: r.usedLlm, validIds: (r.citations ?? []).map((c) => c.id) });
     } catch { toast('error', 'Draft failed'); }
     finally { setDrafting(null); }
   };
@@ -72,7 +78,7 @@ export function DistributionGeo() {
             {draft && (
               <div className="mt-2 rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3">
                 <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-wider text-grey">Draft for “{draft.query}”</div>
-                <AiProse text={draft.text} />
+                <AiProse text={draft.text} validIds={draft.validIds} />
                 <p className="mt-1 text-[10px] text-grey">{draft.usedLlm ? 'AI-drafted — review, then publish through your content workflow. AI never publishes.' : 'Deterministic draft — no AI answer was produced; this engine does not report the cause.'}</p>
               </div>
             )}

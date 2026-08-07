@@ -1,19 +1,35 @@
 import { describe, expect, it } from 'vitest';
 import { OFFER_KEYS, type OfferKey } from './types.js';
 import {
+  FLOOR_EFFORT_POINTS,
+  FLOOR_REFUSAL_CODES,
+  PARTNER_ASSERTION_IS_A_CLAIM,
   PARTNER_BENCH,
   benchHeadroom,
   canAcceptEngagement,
   capabilityCoversJurisdiction,
   headroomFor,
+  inputEmpty,
+  inputLoaded,
+  inputNotLoaded,
+  inputWithheld,
+  isAssertedPartner,
+  isPriceFloor,
   marginAtRisk,
   meetsSeniority,
+  partnerAssertionDefects,
   partnerScorecard,
+  priceFloor,
   rateCardCostCents,
   rateCardStatus,
   type ActiveEngagementRef,
+  type FloorEffortInput,
+  type FloorRefusalCode,
   type Partner,
+  type PartnerAssertion,
   type PartnerCapability,
+  type PriceFloorOutcome,
+  type PriceFloorRequest,
   type RateCard,
   type RecordedOutcome,
   type Seniority,
@@ -44,10 +60,23 @@ const card = (
   statedAt: '2026-07-01T00:00:00Z',
 });
 
+/**
+ * The attribution the owner's 2026-08-07 decision requires on every bench member.
+ * A fixture, not a default: `partnerAssertionDefects` is what decides whether a real
+ * one is well-formed, and the tests below hand it broken ones on purpose.
+ */
+const assertion = (over: Partial<PartnerAssertion> = {}): PartnerAssertion => ({
+  assertedBy: 'nikhil.sharma@lcx.com',
+  assertedAt: '2026-08-07T09:00:00.000Z',
+  basis: 'Delivered two MiCA papers with us in 2025; rate confirmed by email 6 Aug.',
+  ...over,
+});
+
 function mkPartner(id: string, name: string, over: Partial<Partner> = {}): Partner {
   return {
     id,
     name,
+    assertion: assertion(),
     active: true,
     capabilities: [cap('mica_whitepaper')],
     rateCards: [card('mica_whitepaper', 'fixed', 600_000)],
@@ -620,5 +649,404 @@ describe('marginAtRisk — refuses to invent numbers', () => {
     expect(overrun.verdict).toBe('margin_negative');
     expect(overrun.atRiskCents).toBe(600_000); // 250,000 quoted margin → −350,000 implied
     expect(overrun.reasons.join(' ')).toContain('scoped at 9 units against a card assuming 5');
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* THE ASSERTION — who put this partner on the bench                          */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+describe('partner assertion', () => {
+  it('accepts a complete assertion and reports nothing wrong with it', () => {
+    const p = mkPartner('p_anna', 'Anna Reiter');
+    expect(partnerAssertionDefects(p)).toEqual([]);
+    expect(isAssertedPartner(p)).toBe(true);
+  });
+
+  // Every defect, not the first: a human told one thing at a time submits the form
+  // four times and learns the surface is hostile.
+  it('reports EVERY defect at once, each with its own code', () => {
+    const broken = mkPartner('  ', '  ', {
+      assertion: { assertedBy: '   ', assertedAt: '', basis: '' },
+    });
+    const codes = partnerAssertionDefects(broken).map((d) => d.code).sort();
+    expect(codes).toEqual([
+      'PARTNER_ASSERTED_AT_BLANK',
+      'PARTNER_ASSERTED_BY_BLANK',
+      'PARTNER_ASSERTION_BASIS_BLANK',
+      'PARTNER_ID_BLANK',
+      'PARTNER_NAME_BLANK',
+    ]);
+    expect(isAssertedPartner(broken)).toBe(false);
+  });
+
+  it('refuses to interpret an unparseable assertion date rather than defaulting it', () => {
+    const p = mkPartner('p_x', 'X', { assertion: assertion({ assertedAt: 'last tuesday' }) });
+    const codes = partnerAssertionDefects(p).map((d) => d.code);
+    expect(codes).toEqual(['PARTNER_ASSERTED_AT_UNPARSEABLE']);
+    expect(partnerAssertionDefects(p)[0].sentence).toContain('last tuesday');
+  });
+
+  // The basis is the only field a reviewer can argue with, so a whitespace-only
+  // basis must not satisfy the requirement the decision was made about.
+  it('treats a whitespace-only basis as no basis', () => {
+    const p = mkPartner('p_x', 'X', { assertion: assertion({ basis: '   \n  ' }) });
+    expect(partnerAssertionDefects(p).map((d) => d.code)).toEqual(['PARTNER_ASSERTION_BASIS_BLANK']);
+  });
+
+  it('states in exported data that an assertion is a claim and not a verification', () => {
+    expect(PARTNER_ASSERTION_IS_A_CLAIM).toMatch(/not verified/i);
+    expect(PARTNER_ASSERTION_IS_A_CLAIM).toMatch(/not a reference check/i);
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* THE FLOOR                                                                  */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+const ENV = 'supabase:db.test.supabase.co/postgres';
+
+const effortReal = (over: Partial<FloorEffortInput> = {}): FloorEffortInput => ({
+  offerKey: 'mica_whitepaper',
+  optimisticDays: 8,
+  likelyDays: 15,
+  pessimisticDays: 30,
+  statedBy: 'nikhil.sharma@lcx.com',
+  statedAt: '2026-08-06T10:00:00.000Z',
+  isPlaceholder: false,
+  ...over,
+});
+
+/** The shipped placeholder's shape — `underwrite.ts` stamps exactly these. */
+const effortPlaceholder = (): FloorEffortInput => ({
+  ...effortReal(),
+  statedBy: 'system:placeholder',
+  statedAt: '1970-01-01T00:00:00.000Z',
+  isPlaceholder: true,
+});
+
+function floorReq(over: Partial<PriceFloorRequest> = {}): PriceFloorRequest {
+  return {
+    offerKey: 'mica_whitepaper',
+    partner: mkPartner('p_anna', 'Anna Reiter', {
+      rateCards: [card('mica_whitepaper', 'day_rate', 150_000, 5)],
+    }),
+    card: inputLoaded(card('mica_whitepaper', 'day_rate', 150_000, 5)),
+    hoursPerDay: inputEmpty('hours_per_day is null on the row: this is not an hourly card'),
+    passThroughCents: inputLoaded(0),
+    effort: inputLoaded(effortReal()),
+    effortPoint: 'likely',
+    quoteCurrency: 'USD',
+    asOf: NOW,
+    environment: ENV,
+    ...over,
+  };
+}
+
+const codesOf = (o: PriceFloorOutcome): readonly FloorRefusalCode[] =>
+  o.kind === 'refused' ? o.refusals.map((r) => r.code) : [];
+
+describe('price floor — the arithmetic', () => {
+  it('multiplies the day rate by the effort point the caller named, and says which', () => {
+    // $1,500/day × 15 likely days = $22,500.
+    const likely = priceFloor(floorReq());
+    expect(isPriceFloor(likely)).toBe(true);
+    if (!isPriceFloor(likely)) return;
+    expect(likely.floorCents).toBe(2_250_000);
+    expect(likely.currency).toBe('USD');
+    expect(likely.frame.effortPoint).toBe('likely');
+    expect(likely.frame.effortDays).toBe(15);
+    expect(likely.frame.unitsCharged).toBe(15);
+
+    // $1,500/day × 30 pessimistic days = $45,000. Same card, double the floor —
+    // which is the whole reason the point is stated rather than assumed.
+    const pess = priceFloor(floorReq({ effortPoint: 'pessimistic' }));
+    expect(isPriceFloor(pess)).toBe(true);
+    if (!isPriceFloor(pess)) return;
+    expect(pess.floorCents).toBe(4_500_000);
+    expect(pess.frame.effortDays).toBe(30);
+  });
+
+  it('offers no optimistic point at all — the floor a salesperson would reach for', () => {
+    expect(FLOOR_EFFORT_POINTS).toEqual(['likely', 'pessimistic']);
+    expect(FLOOR_EFFORT_POINTS).not.toContain('optimistic');
+  });
+
+  it('adds the pass-through, and reports it separately rather than folding it in', () => {
+    const withCounselFee = priceFloor(floorReq({ passThroughCents: inputLoaded(500_000) }));
+    expect(isPriceFloor(withCounselFee)).toBe(true);
+    if (!isPriceFloor(withCounselFee)) return;
+    expect(withCounselFee.floorCents).toBe(2_750_000);
+    expect(withCounselFee.frame.passThroughCents).toBe(500_000);
+    expect(withCounselFee.reasons.join(' ')).toContain('500000 cents of pass-through');
+  });
+
+  it('converts DAYS to HOURS only with a stated hours-per-day, never an assumed 8', () => {
+    const hourly = priceFloor(floorReq({
+      card: inputLoaded(card('mica_whitepaper', 'hourly', 25_000)),
+      hoursPerDay: inputLoaded(7),
+      partner: mkPartner('p_anna', 'Anna Reiter', { rateCards: [card('mica_whitepaper', 'hourly', 25_000)] }),
+    }));
+    expect(isPriceFloor(hourly)).toBe(true);
+    if (!isPriceFloor(hourly)) return;
+    // $250/hour × 15 days × 7 hours = $26,250. With an assumed 8 it would be $30,000
+    // — a $3,750 error in a floor, in the direction that looks safer.
+    expect(hourly.floorCents).toBe(2_625_000);
+    expect(hourly.frame.hoursPerDay).toBe(7);
+    expect(hourly.frame.unitsCharged).toBe(105);
+  });
+
+  it('prices a fixed fee without consulting the effort triple at all', () => {
+    const fixed = priceFloor(floorReq({
+      card: inputLoaded(card('mica_whitepaper', 'fixed', 600_000)),
+      // A PLACEHOLDER triple, which on a metered card is a hard refusal. On a fixed
+      // fee it is irrelevant, and refusing on it would be inventing a dependency.
+      effort: inputLoaded(effortPlaceholder()),
+    }));
+    expect(isPriceFloor(fixed)).toBe(true);
+    if (!isPriceFloor(fixed)) return;
+    expect(fixed.floorCents).toBe(600_000);
+    expect(fixed.frame.effortPoint).toBeNull();
+    expect(fixed.frame.effortDays).toBeNull();
+    expect(fixed.frame.unitsCharged).toBeNull();
+    expect(fixed.reasons.join(' ')).toContain('the effort triple never entered this arithmetic');
+  });
+
+  it('carries the environment, the asOf and the attribution onto the figure', () => {
+    const f = priceFloor(floorReq());
+    expect(isPriceFloor(f)).toBe(true);
+    if (!isPriceFloor(f)) return;
+    expect(f.frame.environment).toBe(ENV);
+    expect(f.frame.asOf).toBe(NOW);
+    expect(f.frame.assertedBy).toBe('nikhil.sharma@lcx.com');
+    expect(f.frame.assertionBasis).toContain('Delivered two MiCA papers');
+    expect(f.frame.assertionIsAClaim).toBe(PARTNER_ASSERTION_IS_A_CLAIM);
+    expect(f.frame.rateStatedBy).toBe('nikhil');
+    expect(f.frame.rateCardStatus).toBe('usable');
+    expect(f.frame.method).toBe('rate_card_unit_cost × effort_at_stated_point + pass_through');
+  });
+
+  it('names what the floor excludes, so it is not read as a break-even', () => {
+    const f = priceFloor(floorReq());
+    if (!isPriceFloor(f)) throw new Error('expected a floor');
+    const excludes = f.frame.excludes.join(' ');
+    expect(excludes).toMatch(/overhead/i);
+    expect(excludes).toMatch(/unbilled founder time/i);
+    expect(excludes).toMatch(/rework/i);
+    expect(f.reasons.join(' ')).toContain('LOSES money');
+  });
+
+  it('says a partner is off the bench without pretending the rate is not a rate', () => {
+    const f = priceFloor(floorReq({
+      partner: mkPartner('p_anna', 'Anna Reiter', {
+        active: false,
+        rateCards: [card('mica_whitepaper', 'day_rate', 150_000, 5)],
+      }),
+    }));
+    expect(isPriceFloor(f)).toBe(true);
+    if (!isPriceFloor(f)) return;
+    expect(f.reasons.join(' ')).toContain('OFF THE BENCH');
+  });
+
+  it('never returns a fractional cent', () => {
+    // 333c/day × 15 days = 4,995c exactly; a 0.5c/day card would round, not drift.
+    const f = priceFloor(floorReq({
+      card: inputLoaded(card('mica_whitepaper', 'day_rate', 333, 5)),
+      passThroughCents: inputLoaded(7),
+    }));
+    if (!isPriceFloor(f)) throw new Error('expected a floor');
+    expect(Number.isInteger(f.floorCents)).toBe(true);
+    expect(f.floorCents).toBe(5_002);
+  });
+});
+
+describe('price floor — the refusals', () => {
+  it('refuses when nobody named the database the rate came from', () => {
+    expect(codesOf(priceFloor(floorReq({ environment: null })))).toContain('FLOOR_ENVIRONMENT_UNSTATED');
+    expect(codesOf(priceFloor(floorReq({ environment: '   ' })))).toContain('FLOOR_ENVIRONMENT_UNSTATED');
+  });
+
+  // Elsewhere in this module a missing asOf SKIPS the staleness check and says so.
+  // A floor may not: it is held to as a policy, and an expired rate becomes one.
+  it('refuses without an asOf instead of skipping the expiry check', () => {
+    expect(codesOf(priceFloor(floorReq({ asOf: null })))).toContain('FLOOR_AS_OF_ABSENT');
+    expect(codesOf(priceFloor(floorReq({ asOf: 'not a date' })))).toContain('FLOOR_AS_OF_ABSENT');
+  });
+
+  it('refuses on an unattributed partner, naming the fields that are missing', () => {
+    const out = priceFloor(floorReq({
+      partner: mkPartner('p_ghost', 'Ghost', {
+        assertion: { assertedBy: '', assertedAt: '', basis: '' },
+        rateCards: [card('mica_whitepaper', 'day_rate', 150_000, 5)],
+      }),
+    }));
+    expect(codesOf(out)).toContain('FLOOR_PARTNER_NOT_ASSERTED');
+    if (out.kind !== 'refused') throw new Error('expected a refusal');
+    const r = out.refusals.find((x) => x.code === 'FLOOR_PARTNER_NOT_ASSERTED')!;
+    expect(r.sentence).toContain('PARTNER_ASSERTED_BY_BLANK');
+    expect(r.rule.provision).toBe('a partner is asserted by a named human');
+    expect(r.environment).toBe(ENV);
+  });
+
+  it('refuses when the partner has no recorded capability for the offer', () => {
+    const out = priceFloor(floorReq({
+      partner: mkPartner('p_anna', 'Anna Reiter', {
+        capabilities: [cap('gtm_sprint')],
+        rateCards: [card('mica_whitepaper', 'day_rate', 150_000, 5)],
+      }),
+    }));
+    expect(codesOf(out)).toContain('FLOOR_PARTNER_NOT_CAPABLE');
+  });
+
+  // The doctrine this whole request shape exists for.
+  it('keeps not-loaded, withheld and genuinely-absent as three different answers', () => {
+    expect(codesOf(priceFloor(floorReq({ card: inputNotLoaded('the registry was never queried') }))))
+      .toContain('FLOOR_RATE_CARD_NOT_LOADED');
+    expect(codesOf(priceFloor(floorReq({ card: inputWithheld('gps compartment: view not granted') }))))
+      .toContain('FLOOR_RATE_CARD_WITHHELD');
+    expect(codesOf(priceFloor(floorReq({ card: inputEmpty('no row for (p_anna, mica_whitepaper)') }))))
+      .toContain('FLOOR_RATE_CARD_ABSENT');
+
+    // …and the same three for the effort register, on a metered card.
+    expect(codesOf(priceFloor(floorReq({ effort: inputNotLoaded('not read') })))).toContain('FLOOR_EFFORT_NOT_LOADED');
+    expect(codesOf(priceFloor(floorReq({ effort: inputWithheld('withheld') })))).toContain('FLOOR_EFFORT_WITHHELD');
+    expect(codesOf(priceFloor(floorReq({ effort: inputEmpty('no row') })))).toContain('FLOOR_EFFORT_ABSENT');
+  });
+
+  it('says the refusal list is incomplete while the card unit is unknown', () => {
+    const out = priceFloor(floorReq({ card: inputEmpty('no row'), effort: inputEmpty('no row') }));
+    if (out.kind !== 'refused') throw new Error('expected a refusal');
+    // The effort is ALSO missing, and it is deliberately not reported: whether it is
+    // needed depends on a unit nobody has. The refusal says that rather than
+    // implying the card is the only obstacle.
+    expect(codesOf(out)).not.toContain('FLOOR_EFFORT_ABSENT');
+    expect(out.refusals[0].sentence).toContain('not exhaustive');
+  });
+
+  it('REFUSES a floor built on the shipped placeholder triple', () => {
+    const out = priceFloor(floorReq({ effort: inputLoaded(effortPlaceholder()) }));
+    expect(codesOf(out)).toContain('FLOOR_EFFORT_IS_PLACEHOLDER');
+    if (out.kind !== 'refused') throw new Error('expected a refusal');
+    const r = out.refusals.find((x) => x.code === 'FLOOR_EFFORT_IS_PLACEHOLDER')!;
+    expect(r.sentence).toContain('system:placeholder');
+    expect(r.rule.provision).toBe('an inference is never laundered into a certainty');
+    expect(r.remedyOwner).toBe('the founder');
+  });
+
+  it('refuses an expired card and a card with no expiry, differently', () => {
+    const expired = priceFloor(floorReq({
+      card: inputLoaded(card('mica_whitepaper', 'day_rate', 150_000, 5, '2026-01-01T00:00:00Z')),
+    }));
+    expect(codesOf(expired)).toContain('FLOOR_RATE_CARD_EXPIRED');
+
+    const noValidity = priceFloor(floorReq({
+      card: inputLoaded(card('mica_whitepaper', 'day_rate', 150_000, 5, null)),
+    }));
+    expect(codesOf(noValidity)).toContain('FLOOR_RATE_CARD_NO_VALIDITY');
+    expect(codesOf(noValidity)).not.toContain('FLOOR_RATE_CARD_EXPIRED');
+  });
+
+  it('refuses a currency mismatch and converts nothing', () => {
+    const out = priceFloor(floorReq({ quoteCurrency: 'EUR' }));
+    expect(codesOf(out)).toContain('FLOOR_RATE_CARD_CURRENCY_MISMATCH');
+    if (out.kind !== 'refused') throw new Error('expected a refusal');
+    expect(out.refusals.find((r) => r.code === 'FLOOR_RATE_CARD_CURRENCY_MISMATCH')!.sentence)
+      .toContain('Nothing here converts');
+  });
+
+  it('refuses a card or a triple belonging to a different offer', () => {
+    expect(codesOf(priceFloor(floorReq({ card: inputLoaded(card('gtm_sprint', 'day_rate', 150_000, 5)) }))))
+      .toContain('FLOOR_RATE_CARD_OFFER_MISMATCH');
+    expect(codesOf(priceFloor(floorReq({ effort: inputLoaded(effortReal({ offerKey: 'gtm_sprint' })) }))))
+      .toContain('FLOOR_EFFORT_OFFER_MISMATCH');
+  });
+
+  it('refuses a zero, sub-cent or unusable rate rather than pricing the work as free', () => {
+    expect(codesOf(priceFloor(floorReq({ card: inputLoaded(card('mica_whitepaper', 'day_rate', 0, 5)) }))))
+      .toContain('FLOOR_RATE_NOT_DERIVABLE');
+    // 0.01c/day × 15 days rounds to 0 cents — the round-to-zero case the guard in
+    // `rateCardCostCents` exists for, reached through that function rather than
+    // re-tested here.
+    expect(codesOf(priceFloor(floorReq({ card: inputLoaded(card('mica_whitepaper', 'day_rate', 0.01, 5)) }))))
+      .toContain('FLOOR_RATE_NOT_DERIVABLE');
+  });
+
+  it('refuses an effort point that is zero, negative or not a number', () => {
+    expect(codesOf(priceFloor(floorReq({ effort: inputLoaded(effortReal({ likelyDays: 0 })) }))))
+      .toContain('FLOOR_EFFORT_UNUSABLE');
+    expect(codesOf(priceFloor(floorReq({ effort: inputLoaded(effortReal({ likelyDays: Number.NaN })) }))))
+      .toContain('FLOOR_EFFORT_UNUSABLE');
+    expect(codesOf(priceFloor(floorReq({
+      effortPoint: 'pessimistic',
+      effort: inputLoaded(effortReal({ pessimisticDays: -3 })),
+    })))).toContain('FLOOR_EFFORT_UNUSABLE');
+  });
+
+  it('refuses an hourly card with no hours-per-day on the row', () => {
+    const out = priceFloor(floorReq({
+      card: inputLoaded(card('mica_whitepaper', 'hourly', 25_000)),
+      hoursPerDay: inputEmpty('hours_per_day is null'),
+    }));
+    expect(codesOf(out)).toContain('FLOOR_HOURS_PER_DAY_ABSENT');
+    if (out.kind !== 'refused') throw new Error('expected a refusal');
+    expect(out.refusals.find((r) => r.code === 'FLOOR_HOURS_PER_DAY_ABSENT')!.sentence)
+      .toContain('Assuming 8');
+  });
+
+  // 0 pass-through is a truthful value written by the person entering the card;
+  // NOT LOADED is not, and the difference is counsel's whole fee on one offer.
+  it('accepts a stated pass-through of 0 and refuses an unstated one', () => {
+    expect(isPriceFloor(priceFloor(floorReq({ passThroughCents: inputLoaded(0) })))).toBe(true);
+    expect(codesOf(priceFloor(floorReq({ passThroughCents: inputNotLoaded('column not read') }))))
+      .toContain('FLOOR_PASS_THROUGH_UNUSABLE');
+    expect(codesOf(priceFloor(floorReq({ passThroughCents: inputLoaded(-1) }))))
+      .toContain('FLOOR_PASS_THROUGH_UNUSABLE');
+  });
+
+  it('returns EVERY refusal, not the first one found', () => {
+    const out = priceFloor(floorReq({
+      environment: null,
+      asOf: null,
+      card: inputNotLoaded('never queried'),
+      passThroughCents: inputNotLoaded('never read'),
+      partner: mkPartner('p_ghost', 'Ghost', {
+        assertion: { assertedBy: '', assertedAt: '', basis: '' },
+        capabilities: [],
+      }),
+    }));
+    const codes = codesOf(out);
+    expect(codes).toContain('FLOOR_ENVIRONMENT_UNSTATED');
+    expect(codes).toContain('FLOOR_AS_OF_ABSENT');
+    expect(codes).toContain('FLOOR_PARTNER_NOT_ASSERTED');
+    expect(codes).toContain('FLOOR_PARTNER_NOT_CAPABLE');
+    expect(codes).toContain('FLOOR_RATE_CARD_NOT_LOADED');
+    expect(codes).toContain('FLOOR_PASS_THROUGH_UNUSABLE');
+    expect(codes.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it('gives every refusal a stable code, a rule, a named missing input and an owner', () => {
+    const out = priceFloor(floorReq({ card: inputEmpty('no row') }));
+    if (out.kind !== 'refused') throw new Error('expected a refusal');
+    for (const r of out.refusals) {
+      expect(FLOOR_REFUSAL_CODES).toContain(r.code);
+      expect(r.rule.instrument).toBe('LCX_HOUSE_DOCTRINE');
+      expect(r.rule.text.length).toBeGreaterThan(20);
+      expect(r.missing.trim()).not.toBe('');
+      expect(['the partner', 'the founder', 'the desk', 'the server']).toContain(r.remedyOwner);
+      expect(r.sentence).not.toMatch(/\b0 cents\b/);
+    }
+  });
+
+  it('never produces a floor of 0 and never a floor with an unusable input', () => {
+    // Everything that could produce a zero — a zero rate, a zero day count, a
+    // zero-rounding product — is a refusal, so the union of the two is empty.
+    const attempts: PriceFloorOutcome[] = [
+      priceFloor(floorReq({ card: inputLoaded(card('mica_whitepaper', 'fixed', 0)) })),
+      priceFloor(floorReq({ effort: inputLoaded(effortReal({ likelyDays: 0 })) })),
+      priceFloor(floorReq({ card: inputLoaded(card('mica_whitepaper', 'day_rate', 0.001, 5)) })),
+    ];
+    for (const a of attempts) {
+      expect(a.kind).toBe('refused');
+    }
   });
 });

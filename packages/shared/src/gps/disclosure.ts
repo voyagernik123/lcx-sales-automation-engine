@@ -529,6 +529,470 @@ export function disclosureRecord(r: RenderedDisclosure): DisclosureUseRecord {
   };
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+ *  THE LISTING PERIMETER — what GPS is allowed to LEARN about the other ledger,
+ *  and what it must DO about it.
+ * ══════════════════════════════════════════════════════════════════════════════
+ *
+ * THE CONFLICT THIS WALL EXISTS FOR IS THE ONE IT COULD NOT SEE. GPS sells a MiCA
+ * whitepaper and legal-opinion coordination to token issuers. Some of those issuers
+ * are simultaneously candidates in LCX's listing pipeline. A conflict check that
+ * cannot see whether a client sits inside that pipeline is not a strict check — it
+ * is a BLIND one, and it reports the single case it was built for as "no conflict
+ * found". `types.ts:362` and the four prohibited promises above defend the
+ * PERCEPTION; this defends the fact.
+ *
+ * THE OWNER'S DECISION, taken and recorded: GPS may read the listing pipeline
+ * VERDICT ONLY, and every read is logged. Reading the verdict — and not the row,
+ * the dossier, the stage history, the event, the window or the human who decided —
+ * is the minimum disclosure that makes the control function at all. MiCA Art 90(1)
+ * prohibits onward disclosure of inside information and Art 91(3)(c) attaches
+ * PERSONAL liability to the breach, so anything finer than a verdict would be the
+ * breach rather than the control.
+ *
+ * ══ WHY THE ENGINE LIVES HERE AND THE QUERY LIVES IN THE API ═════════════════
+ * `conflict.ts:56` states the division and it is not decorative: "a rule that lives
+ * [in the API] would be a rule that changed without a code review of the engine that
+ * enforces it". WHAT A VERDICT MEANS FOR AN ENGAGEMENT IS A RULE. So the mapping
+ * from a reading to a consequence is here — pure, total, no clock, no I/O — and the
+ * API file owns only the read, the log and the refusals that come from the database.
+ */
+
+/**
+ * THE FIVE VERDICTS, MIRRORED — and mirrored deliberately rather than imported.
+ *
+ * The producing union is `ListingPipelineVerdict` in
+ * `apps/api/src/access/otherLedger.ts`. `packages/shared` CANNOT import from
+ * `apps/api` (the dependency runs the other way and always has), so the choice is
+ * between duplicating five strings and moving a database-shaped module into the
+ * shared package. Duplication, with a CONFORMANCE TEST that fails the moment the
+ * two lists differ: `apps/api/src/gps/__tests__/listingPerimeter.test.ts` asserts
+ * set equality in both directions, so a sixth verdict added on the API side breaks
+ * a test rather than falling through this engine.
+ *
+ * AND IT FALLS THROUGH TO A REFUSAL, NOT TO A CLEARANCE, IF THE TEST IS EVER
+ * DELETED. `listingPerimeterFinding` takes the verdict as a `string`, not as this
+ * union, precisely so an unrecognised value is REPRESENTABLE and REFUSES.
+ * `otherLedger.ts` records the same lesson from the other side: a fifth embargo
+ * state added to 0060 would otherwise "quietly read as clear_on_record".
+ *
+ * The meanings are not restated here; they are stated once, on the producing union.
+ */
+export const GPS_LISTING_VERDICTS = [
+  'restricted',
+  'conditional',
+  'clear_on_record',
+  'stale_unresolved',
+  'history_only',
+] as const;
+
+export type GpsListingVerdict = (typeof GPS_LISTING_VERDICTS)[number];
+
+/**
+ * Stable codes. Values, not messages: an alert, a dashboard and a regulator's
+ * report all key off them, and the whole point of this control is that a false
+ * clean is greppable after the fact.
+ */
+export const LISTING_PERIMETER_CODES = {
+  /** We did not establish anything. NEVER a clearance. Carries the upstream code. */
+  NOT_LOADED: 'GPS_LISTING_PERIMETER_NOT_LOADED',
+  /** A live, in-window entry records unpublished price-significant information. */
+  RESTRICTED: 'GPS_LISTING_PERIMETER_RESTRICTED',
+  /** Live and in-window, not MNPI. Not a block and NOT a free hand. */
+  CONDITIONAL: 'GPS_LISTING_PERIMETER_CONDITIONAL',
+  /** The desk looked at this asset and wrote `clear`, with a review date on it. */
+  CLEAR_ON_RECORD: 'GPS_LISTING_PERIMETER_CLEAR_ON_RECORD',
+  /** A live entry is past its review date. 0060: the calendar does not lift it. */
+  STALE_UNRESOLVED: 'GPS_LISTING_PERIMETER_STALE_UNRESOLVED',
+  /** Entries exist, none is live. Different from never having had any. */
+  HISTORY_ONLY: 'GPS_LISTING_PERIMETER_HISTORY_ONLY',
+  /** The one clearance: a populated register holds nothing about this asset. */
+  NO_ENTRY: 'GPS_LISTING_PERIMETER_NO_ENTRY',
+  /** A verdict string this engine has never heard of. Refuses; never clears. */
+  VERDICT_UNRECOGNISED: 'GPS_LISTING_PERIMETER_VERDICT_UNRECOGNISED',
+  /** `withheld` with a count that cannot be true of a non-empty holding. */
+  COUNT_INCOHERENT: 'GPS_LISTING_PERIMETER_COUNT_INCOHERENT',
+  /** A recorded conflict position that the listing perimeter contradicts. */
+  DECISION_CONTRADICTED: 'GPS_LISTING_PERIMETER_DECISION_CONTRADICTED',
+  /** Whether the position is contradicted CANNOT BE SAID. Not "it is not". */
+  CONTRADICTION_UNESTABLISHED: 'GPS_LISTING_PERIMETER_CONTRADICTION_UNESTABLISHED',
+} as const;
+
+export type ListingPerimeterCode =
+  (typeof LISTING_PERIMETER_CODES)[keyof typeof LISTING_PERIMETER_CODES];
+
+const RULE_ONLY_ABSENCE_CLEARS =
+  'House doctrine: three states are never collapsed — not-loaded / present-but-withheld / '
+  + 'genuinely-empty — and only the third is a clearance. A listing perimeter that was not '
+  + 'read, or that is withholding entries, is UNKNOWN, and unknown refuses. There is '
+  + 'deliberately no flag anywhere on this path that lets an unloaded or unattested register '
+  + 'read as clear: that flag is the false negative, and the false negative is the liability.';
+
+const RULE_VERDICT_ONLY =
+  'MiCA Art 90(1) prohibits onward disclosure of inside information and Art 91(3)(c) attaches '
+  + 'personal liability. GPS learns the VERDICT and the number of entries withheld, and never '
+  + 'the state, the event, the minute pointer, the window, the review date or the human who '
+  + 'decided. The verdict is coarser than the register on purpose.';
+
+const RULE_NO_LAUNDERING =
+  'House doctrine: an inference is never laundered into a certainty. A verdict this engine '
+  + 'does not recognise, or a count that contradicts the state it arrived with, is refused '
+  + 'under a stable code — never rounded toward the answer that lets work proceed.';
+
+/**
+ * WHAT CROSSES THE COMPARTMENT BOUNDARY INTO THIS ENGINE. Three shapes and no
+ * fourth, and none of them can carry a row.
+ *
+ * MINIMUM DISCLOSURE IS A PROPERTY OF THIS TYPE, NOT A PROMISE IN A COMMENT. There
+ * is no field here that could hold an embargo row, an event slug, a source ref, a
+ * window, a state string or a name, so no future edit to the API-side caller can
+ * spread one into this engine's output by accident. A function that CAN return the
+ * pipeline row will eventually be read for the pipeline row.
+ *
+ * `not_loaded` HAS NO `withheldCount` AND NO `verdict` — not `0`, not `null`. The
+ * union makes reading one a compile error, which is the same mechanism
+ * `access/verdictBroker.ts` uses on the answer it produces, for the same reason:
+ * a caller cannot read a zero out of a state that never looked.
+ */
+export type ListingPerimeterReading =
+  | {
+      readonly state: 'not_loaded';
+      /**
+       * The producing code, verbatim — `VERDICT_BROKER_CROSS_READ_NOT_AUTHORISED`,
+       * `VERDICT_BROKER_HOLDER_UNAVAILABLE`, `OTHER_LEDGER_TICKER_NOT_NORMALISED`
+       * and so on. Carried so an operator can tell "the owner has not switched this
+       * on" from "the register could not be read" from "this project's ticker is
+       * denormalised" — three different jobs for three different people behind one
+       * answer to the asker.
+       */
+      readonly reasonCode: string;
+    }
+  | { readonly state: 'withheld'; readonly verdict: string; readonly withheldCount: number }
+  | { readonly state: 'empty' };
+
+interface ListingFindingCommon {
+  readonly code: ListingPerimeterCode;
+  readonly rule: string;
+  /** Plain language, for the wall and for a printed record. */
+  readonly message: string;
+  /**
+   * TRUE ON EXACTLY ONE SHAPE: `no_entry`. This is the field a caller is tempted to
+   * write `!blocked` for, so it is stated positively and derived from the state
+   * rather than from the verdict — an unread compartment and a withheld holding
+   * both leave it false, and neither can be turned true by adding a verdict.
+   */
+  readonly clearsListingConflict: boolean;
+  /** The engagement may not proceed without the marketing desk being consulted. */
+  readonly requiresMarketingDesk: boolean;
+  /** The asset may not be NAMED in anything client-facing or public. */
+  readonly namingBlocked: boolean;
+  /** What this means for what the client is told. Rendered beside the wall row. */
+  readonly disclosureConsequence: string;
+}
+
+export type ListingPerimeterFinding =
+  | (ListingFindingCommon & {
+      readonly kind: 'not_loaded';
+      /* NO `withheldCount`, NO `verdict`. The absence is the mechanism. */
+      readonly upstreamCode: string;
+    })
+  | (ListingFindingCommon & {
+      readonly kind: 'withheld';
+      readonly verdict: GpsListingVerdict;
+      /** Always > 0. A count of records WITHHELD; it has no denominator. */
+      readonly withheldCount: number;
+    })
+  | (ListingFindingCommon & { readonly kind: 'no_entry'; readonly withheldCount: 0 });
+
+const NOT_LOADED_CONSEQUENCE =
+  'Tell the client nothing about the listing perimeter, because nothing has been established. '
+  + 'Do not record this engagement as cleared on the strength of it: the position is UNKNOWN and '
+  + 'must be resolved by a named human at the marketing desk before client-facing work proceeds.';
+
+function notLoadedFinding(upstreamCode: string, message: string): ListingPerimeterFinding {
+  return {
+    kind: 'not_loaded',
+    code: LISTING_PERIMETER_CODES.NOT_LOADED,
+    rule: RULE_ONLY_ABSENCE_CLEARS,
+    message,
+    clearsListingConflict: false,
+    requiresMarketingDesk: true,
+    namingBlocked: true,
+    disclosureConsequence: NOT_LOADED_CONSEQUENCE,
+    upstreamCode,
+  };
+}
+
+/**
+ * ONE VERDICT'S CONSEQUENCE, one row each, so the table is reviewable as a table.
+ *
+ * `namingBlocked` IS TRUE FOR EVERY VERDICT INCLUDING `clear_on_record`, and that is
+ * the entry most likely to be argued with, so it is argued here. `clear_on_record`
+ * means the marketing desk looked at this asset and recorded `clear`, WITH A REVIEW
+ * DATE ON IT (0060). That is the desk's position, not a permission, and it is a
+ * position about the MARKETING register — it says nothing about whether a GPS
+ * engagement with the issuer of that asset creates a conflict. GPS naming the asset
+ * off the back of another desk's record, without that desk being told a services
+ * engagement exists, is exactly the coordination failure the wall is for. The verdict
+ * routes to the desk; the desk clears the naming.
+ */
+const VERDICT_CONSEQUENCE: Record<
+  GpsListingVerdict,
+  {
+    code: ListingPerimeterCode;
+    namingBlocked: boolean;
+    message: string;
+    disclosureConsequence: string;
+  }
+> = {
+  restricted: {
+    code: LISTING_PERIMETER_CODES.RESTRICTED,
+    namingBlocked: true,
+    message:
+      'LCX MARKETING holds a live, in-window entry for this engagement\'s asset recording '
+      + 'unpublished price-significant information. THIS ENGAGEMENT IS INSIDE THE LISTING '
+      + 'PERIMETER. The asset may not be named, and no engagement artifact, proposal or public '
+      + 'reference may identify it, until the marketing desk says otherwise.',
+    disclosureConsequence:
+      'The engagement cannot proceed to anything client-facing without the marketing desk. What '
+      + 'the client is told is the marketing desk\'s decision to make, not this compartment\'s: '
+      + 'the fact that an embargo exists is itself inside information (MiCA Art 90(1)).',
+  },
+  conditional: {
+    code: LISTING_PERIMETER_CODES.CONDITIONAL,
+    namingBlocked: true,
+    message:
+      'LCX MARKETING holds a live, in-window entry for this asset that is not an MNPI hold. It is '
+      + 'NOT A BLOCK AND IT IS NOT A FREE HAND: an announced asset still requires the marketing to '
+      + 'be a separate artefact from the disclosure (MiCA Art 88(1)), and an exempt offer sits '
+      + 'under an exemption one sentence in one post can destroy (Art 4(4)).',
+    disclosureConsequence:
+      'Route through the marketing desk before the asset is named anywhere client-facing. Do not '
+      + 'read this as a clearance; it is a routing instruction with a named owner.',
+  },
+  clear_on_record: {
+    code: LISTING_PERIMETER_CODES.CLEAR_ON_RECORD,
+    namingBlocked: true,
+    message:
+      'LCX MARKETING holds a live, in-window entry for this asset and every such entry records '
+      + '`clear` — the desk\'s recorded position, with a review date on it. THIS IS NOT THE SAME '
+      + 'FACT AS "no entry exists": somebody looked at this asset and wrote something down, which '
+      + 'means the asset is known to that desk and this engagement is not invisible to it.',
+    disclosureConsequence:
+      'Tell the marketing desk that a GPS engagement exists for this asset before naming it. Their '
+      + 'recorded position was taken without that fact in front of them.',
+  },
+  stale_unresolved: {
+    code: LISTING_PERIMETER_CODES.STALE_UNRESOLVED,
+    namingBlocked: true,
+    message:
+      'A live entry exists for this asset and it is PAST its review date or its declared window. '
+      + '0060 is explicit that an embargo is not lifted by the calendar; it is lifted by a named '
+      + 'human. So the position is UNKNOWN, and unknown refuses — this is not a lapsed restriction, '
+      + 'it is an unanswered one.',
+    disclosureConsequence:
+      'Chase the named human at the marketing desk. Until the entry is resolved or lifted, treat '
+      + 'this engagement as inside the perimeter.',
+  },
+  history_only: {
+    code: LISTING_PERIMETER_CODES.HISTORY_ONLY,
+    namingBlocked: false,
+    message:
+      'LCX MARKETING holds entries about this asset and NONE of them is live. There is no '
+      + 'restriction in force. This is deliberately not reported as an absence: the register has '
+      + 'held inside information about this asset before, which is a fact about the relationship '
+      + 'between this client and the listing pipeline, and an absence would erase it.',
+    disclosureConsequence:
+      'No restriction is in force. The prior history is a reason to record the conflict position '
+      + 'explicitly with a disclosure rather than as a plain clearance.',
+  },
+};
+
+/**
+ * A reading → a finding. Pure, total, no clock.
+ *
+ * THE THREE STATES SURVIVE THE FUNCTION. There is no path from `not_loaded` or
+ * `withheld` to `clearsListingConflict: true`, and the incoherent inputs — an
+ * unrecognised verdict, a `withheld` with a count that cannot be true — become
+ * NOT-LOADED rather than being rounded toward the answer that lets the work go
+ * ahead. `verdictBroker.ts` refuses the same contradiction one layer up; it is
+ * refused again here because this engine is reachable from tests and from any
+ * future caller that assembles a reading by hand, and a rule enforced in exactly
+ * one place is enforced until someone adds a second caller.
+ */
+export function listingPerimeterFinding(reading: ListingPerimeterReading): ListingPerimeterFinding {
+  if (reading.state === 'not_loaded') {
+    return notLoadedFinding(
+      reading.reasonCode,
+      'The listing perimeter was NOT READ for this engagement, so nothing has been established '
+        + 'about whether its asset sits inside it. This is not a report that the asset is clear and '
+        + 'it must never be shown as one. The upstream code says which of the several reasons '
+        + 'applied — the owner has not authorised the read, the register could not be reached, the '
+        + 'register is unpopulated, or this project\'s ticker cannot be joined.',
+    );
+  }
+
+  if (reading.state === 'empty') {
+    return {
+      kind: 'no_entry',
+      code: LISTING_PERIMETER_CODES.NO_ENTRY,
+      rule: RULE_ONLY_ABSENCE_CLEARS,
+      message:
+        'We looked, in a register that has been populated, and LCX MARKETING holds no entry at all '
+        + 'about this engagement\'s asset. This is a genuine observed absence and it is the only '
+        + 'shape on this path that clears the listing conflict.',
+      clearsListingConflict: true,
+      requiresMarketingDesk: false,
+      namingBlocked: false,
+      disclosureConsequence:
+        'No listing-perimeter disclosure arises from the register. Every other disclosure this '
+        + 'engagement requires is unaffected — in particular the standing employee-conflict '
+        + 'statement, which applies to every engagement without exception.',
+      withheldCount: 0,
+    };
+  }
+
+  const verdict = reading.verdict;
+  if (!(GPS_LISTING_VERDICTS as readonly string[]).includes(verdict)) {
+    return {
+      ...notLoadedFinding(
+        LISTING_PERIMETER_CODES.VERDICT_UNRECOGNISED,
+        `The listing perimeter answered with a verdict this engine does not recognise. It is `
+          + 'refused rather than interpreted: the recognised verdicts are '
+          + `${GPS_LISTING_VERDICTS.join(', ')}, and silently bucketing an unknown one is how a `
+          + 'verdict added on the producing side in a year\'s time reads as permission. The '
+          + 'conformance test that is supposed to make this branch unreachable is named in the '
+          + 'docblock on GPS_LISTING_VERDICTS; if you are seeing this code, it is not doing its job.',
+      ),
+      code: LISTING_PERIMETER_CODES.VERDICT_UNRECOGNISED,
+      rule: RULE_NO_LAUNDERING,
+    };
+  }
+
+  if (!Number.isInteger(reading.withheldCount) || reading.withheldCount <= 0) {
+    return {
+      ...notLoadedFinding(
+        LISTING_PERIMETER_CODES.COUNT_INCOHERENT,
+        'The listing perimeter reported that entries are being withheld and then gave a count that '
+          + 'cannot be true of a non-empty holding. The two statements contradict each other, so '
+          + 'neither is reported as fact and nothing has been established. Rounding this into an '
+          + 'absence would manufacture the exact false clean this control exists to prevent.',
+      ),
+      code: LISTING_PERIMETER_CODES.COUNT_INCOHERENT,
+      rule: RULE_NO_LAUNDERING,
+    };
+  }
+
+  const c = VERDICT_CONSEQUENCE[verdict as GpsListingVerdict];
+  return {
+    kind: 'withheld',
+    code: c.code,
+    rule: RULE_VERDICT_ONLY,
+    message: `${c.message} ${reading.withheldCount} register entr${reading.withheldCount === 1 ? 'y is' : 'ies are'} `
+      + 'being withheld from this compartment; the count is published so that "withheld" can never be '
+      + 'mistaken for "nothing", and it is the whole of what crosses the boundary besides the verdict.',
+    clearsListingConflict: false,
+    requiresMarketingDesk: true,
+    namingBlocked: c.namingBlocked,
+    disclosureConsequence: c.disclosureConsequence,
+    verdict: verdict as GpsListingVerdict,
+    withheldCount: reading.withheldCount,
+  };
+}
+
+/**
+ * DOES THE RECORDED CONFLICT POSITION SURVIVE THE LISTING PERIMETER?
+ *
+ * THIS IS THE FINDING THE WHOLE PATH WAS BUILT TO PRODUCE. An engagement recorded
+ * `cleared` — plain, no disclosure — whose asset the other desk is holding inside
+ * the listing perimeter is the case in `catalogue.ts`'s severe-risk paragraph: a
+ * client paid an exchange employee for services while their token sat in that
+ * exchange's pipeline, and the defensible record says "cleared" with nothing beside
+ * it. Until this function existed, nothing in the codebase could produce that
+ * sentence, because the check could not see the pipeline.
+ *
+ * THE THIRD RETURN IS THE HONEST ONE AND IT IS THE POINT. When the perimeter was
+ * not read, the answer is `unestablished` — NOT `none`. "We found no contradiction"
+ * and "we could not look for one" are different facts, and a wall that renders them
+ * identically has quietly turned a sealed compartment back into a clean row.
+ */
+export type ListingContradiction =
+  | { readonly kind: 'none' }
+  | {
+      readonly kind: 'contradiction';
+      readonly code: typeof LISTING_PERIMETER_CODES.DECISION_CONTRADICTED;
+      readonly message: string;
+      readonly rule: string;
+    }
+  | {
+      readonly kind: 'unestablished';
+      readonly code: typeof LISTING_PERIMETER_CODES.CONTRADICTION_UNESTABLISHED;
+      readonly message: string;
+      readonly rule: string;
+    };
+
+/**
+ * @param decision the position as recorded, or `'unresolved'` when no check exists.
+ *   Exactly the type `DisclosureContext.conflictDecision` carries, so a caller
+ *   cannot accidentally pass a decision this engine has not been shown how to read.
+ */
+export function listingContradiction(
+  decision: ConflictDecision | 'unresolved',
+  finding: ListingPerimeterFinding,
+): ListingContradiction {
+  if (finding.kind === 'not_loaded') {
+    return {
+      kind: 'unestablished',
+      code: LISTING_PERIMETER_CODES.CONTRADICTION_UNESTABLISHED,
+      message:
+        'Whether this engagement\'s recorded conflict position is contradicted by the listing '
+        + 'perimeter CANNOT BE SAID, because the perimeter was not read. This is not "no '
+        + 'contradiction found". A surface that renders it the same as a clean result has undone '
+        + 'the control.',
+      rule: RULE_ONLY_ABSENCE_CLEARS,
+    };
+  }
+
+  if (finding.kind === 'no_entry') return { kind: 'none' };
+
+  /*
+   * A `declined` engagement is not contradicted by anything: the desk refused the
+   * work, which is the strictest available position and cannot be made stricter by
+   * a register entry. Listed rather than falling out of an `else`, because the
+   * temptation on the next edit is to treat `declined` as "already handled" and
+   * skip the rest — and the rest is where the two live states are decided.
+   */
+  if (decision === 'declined') return { kind: 'none' };
+
+  /*
+   * `history_only` is the one live-register verdict with NO restriction in force, so
+   * a plain `cleared` is not contradicted by it — it is merely under-documented, and
+   * `VERDICT_CONSEQUENCE.history_only` already says so in the finding's own
+   * disclosure consequence. Reporting it as a contradiction would put a red row on
+   * every engagement whose asset was ever mentioned, and a wall whose red rows are
+   * mostly noise stops being read.
+   */
+  if (finding.verdict === 'history_only') return { kind: 'none' };
+
+  if (decision === 'cleared_with_disclosure') return { kind: 'none' };
+
+  return {
+    kind: 'contradiction',
+    code: LISTING_PERIMETER_CODES.DECISION_CONTRADICTED,
+    message:
+      decision === 'unresolved'
+        ? 'This engagement\'s asset is inside the listing perimeter and NO conflict position has '
+          + 'been recorded for it at all. This is the shape the conflict wall exists to make '
+          + 'impossible to miss: an exchange employee\'s services engagement with an issuer whose '
+          + 'token the exchange is handling, with nothing written down.'
+        : 'This engagement is recorded as CLEARED with no disclosure, and its asset is inside the '
+          + 'listing perimeter. The recorded position was taken without that fact in front of the '
+          + 'human who took it. It must be re-taken — the available positions are cleared WITH '
+          + 'disclosure, or declined.',
+    rule: RULE_ONLY_ABSENCE_CLEARS,
+  };
+}
+
 export interface DisclosureLibrarySnapshot {
   libraryVersion: number;
   unreviewed: boolean;

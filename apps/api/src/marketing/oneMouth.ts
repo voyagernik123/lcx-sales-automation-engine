@@ -31,6 +31,29 @@
  * "count it and let it through" is not survivable there. Shadow mode applies to this
  * file, not to that one.
  *
+ * ══ WHICH MOUTHS ARE ACTUALLY WIRED, AS OF THIS PASS — ONE OF THREE ══
+ * This module spent its whole life with NO CALLER: `observeOneMouth` and `sweepOneMouth`
+ * appeared seven times in the repository and every hit was inside this file. A shadow
+ * control that is never called reports `recording_nothing_observed`, and on a screen that
+ * is indistinguishable from a desk whose copy is clean. THAT is the defect, and it is
+ * worse than no control, because the zero is reassuring.
+ *
+ *   dist_campaign    WIRED. `actions/registry.ts dist_campaign_set_status` observes every
+ *                    campaign — token-incentivised or not — at the moment it is advanced
+ *                    to `approved` or `live`, which is when its copy becomes public. The
+ *                    bytes are `composeCampaignPublicText`, so the observation and the
+ *                    emission warrant over the same campaign carry the same digest.
+ *   sales_email      NOT WIRED. The send is `outreach/scheduler.ts` (`resend.sendEmail`,
+ *                    then the `messages` insert). That file is not this lane's.
+ *   assisted_touch   NOT WIRED. The send is `outreach/queue.ts markTaskSent`, where a
+ *                    human confirms a LinkedIn/Telegram touch. Also not this lane's.
+ *
+ * `observeAndRecordOneMouth` below is the one-line call those two paths need, and the
+ * reason it exists is so that wiring them is a one-line change rather than a design
+ * decision taken twice more. UNTIL THEY ARE WIRED, EVERY COUNT THIS MODULE PUBLISHES IS
+ * ABOUT CAMPAIGN COPY AND SAYS NOTHING ABOUT SALES EMAIL — `bySurface` is what keeps that
+ * legible, and `doesNotCapture` states it in words on every report.
+ *
  * ══ A SHADOW COUNT NOBODY CAN QUERY IS NOT EVIDENCE ══
  * Everything is recorded with its stable code, the provision that code cites, and a
  * LOCATOR — table, row id, and which columns were concatenated — so a finding can be
@@ -418,6 +441,117 @@ export async function recordOneMouthObservation(
     console.error('[marketing] one-mouth observation not recorded:', err);
     return false;
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ *  THE CALL SITE — what a send path invokes, in one line.
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * The result a send path gets back. NOTE WHAT IS ABSENT, for the same reason
+ * `OneMouthObservation` omits it: there is no `allowed`, no `ok`, no field a caller could
+ * branch on to decide whether to send. A caller that reads this at all is reading a
+ * measurement.
+ *
+ * `recorded` is the one thing worth reporting upward, and it is NOT a synonym for
+ * "observed". An observation that was made and could not be written is a datum this
+ * process saw and the ledger did not, so `loadOneMouthShadowReport` will under-count it
+ * and will never know by how much. A caller that surfaces send statistics should carry
+ * this number rather than assume the two are equal.
+ */
+export interface OneMouthCallSiteResult {
+  readonly observation: OneMouthObservation;
+  readonly recorded: boolean;
+}
+
+/**
+ * OBSERVE ONE PIECE OF OUTBOUND TEXT AND LEDGER IT. Blocks nothing, throws nothing.
+ *
+ * ══ WHY THIS EXISTS RATHER THAN TWO CALLS AT EVERY SEND PATH ══
+ * `observeOneMouth` and `recordOneMouthObservation` are separate because the sweep needs
+ * them separate — it observes many rows and counts the writes. A SEND PATH does not: it
+ * has one piece of text, it must not care that measuring and recording are two steps with
+ * two failure modes, and every extra `await` in a send path is another place a
+ * well-meaning refactor can drop the control. One function, one line, one thing to grep
+ * for at the call site.
+ *
+ * ══ IT CANNOT BREAK THE PATH IT OBSERVES, AND THAT IS ENFORCED HERE RATHER THAN ASSUMED ══
+ * `observeOneMouth` documents that it never throws and `recordOneMouthObservation`
+ * documents that it never throws, and both are true today. Neither is a property the type
+ * system holds, both are in another function's docblock, and this is called from inside
+ * a live send. So the guarantee is made structural: the `catch` below cannot be removed
+ * by a change to either of those files, and shadow mode's whole premise — that it changes
+ * no outcome — does not rest on a comment in a third file staying accurate.
+ *
+ * A caller that has genuinely nothing to observe must not call this with an empty string.
+ * That would ledger a digest of zero bytes as if the desk had sent it, and the base rate
+ * this module exists to produce would then include rows for text that does not exist.
+ * `null` comes back instead, and the caller reports it as what it is.
+ */
+export async function observeAndRecordOneMouth(
+  pool: Pool,
+  subject: OneMouthSubject,
+): Promise<OneMouthCallSiteResult | null> {
+  if (typeof subject.text !== 'string' || subject.text.trim() === '') return null;
+  try {
+    const observation = await observeOneMouth(pool, subject);
+    const recorded = await recordOneMouthObservation(pool, observation);
+    return { observation, recorded };
+  } catch (err) {
+    /*
+     * REACHED ONLY IF ONE OF THE TWO BREAKS ITS OWN CONTRACT. It is logged with a distinct
+     * prefix from the one `recordOneMouthObservation` uses, because the two mean different
+     * things: that one is "the ledger write failed", this one is "a function documented as
+     * never throwing threw", which is a defect in this module rather than a fact about the
+     * database.
+     */
+    console.error('[marketing] one-mouth call site swallowed a contract violation:', err);
+    return null;
+  }
+}
+
+/**
+ * The `dist_campaign` subject for one campaign row, composed HERE rather than at the call
+ * site.
+ *
+ * ══ WHY THE CALLER MAY NOT COMPOSE THE TEXT ITSELF ══
+ * The bytes are `composeCampaignPublicText` — the same function `emissionWarrant.ts`
+ * digests — so a shadow observation and a warrant over the same campaign carry the SAME
+ * `text_sha256` and join on it. A call site that assembled `name + detail` by hand would
+ * produce a digest that silently identifies different bytes, and the two ledgers would
+ * stop joining with nothing anywhere reporting that they had.
+ *
+ * `locator.columns` is `SOURCE_COLUMNS.dist_campaign`, which is the sweep's own answer to
+ * "which bytes were these" — so a row written from a launch path and a row written from a
+ * sweep describe their provenance identically and can be compared.
+ *
+ * THE ACTOR IS THE CAMPAIGN'S `created_by` AND NOT THE PRINCIPAL PRESSING THE BUTTON.
+ * Art 91(3)(c) attaches to whoever puts the promotion in front of the public, and the
+ * campaign row records that person; the approver who advances a status is performing a
+ * supervision. `null` when the column is null, which `observeOneMouth` turns into
+ * `UNATTRIBUTED_ACTOR` with `actorAttributed: false` — so the holdings limb still runs and
+ * still refuses, and the refusal is never read as a finding about a named colleague.
+ */
+export function oneMouthCampaignSubject(campaign: {
+  readonly id: string;
+  readonly name: string;
+  readonly detail?: string | null;
+  readonly createdBy?: string | null;
+  readonly now?: string;
+}): OneMouthSubject {
+  return {
+    surface: 'dist_campaign',
+    locator: {
+      table: SOURCE_TABLE.dist_campaign,
+      rowId: campaign.id,
+      columns: SOURCE_COLUMNS.dist_campaign,
+    },
+    text: composeCampaignPublicText({ name: campaign.name, detail: campaign.detail ?? null }),
+    actor: typeof campaign.createdBy === 'string' && campaign.createdBy.trim() !== ''
+      ? campaign.createdBy
+      : null,
+    now: campaign.now,
+  };
 }
 
 /* ══════════════════════════════════════════════════════════════════════════════
@@ -899,6 +1033,19 @@ export async function loadOneMouthShadowReport(
       + 'beside the total for exactly that reason',
       'a mouth that is not wired in contributes nothing and looks identical to a mouth that '
       + 'emitted nothing',
+      /*
+       * THE SHAPE OF THE BIAS IS NAMED, NOT JUST ITS EXISTENCE. The line above has been on
+       * every report since this module was written and was true of ALL THREE mouths, because
+       * nothing called the engine at all. One is wired now, which makes the count real and
+       * makes it lopsided in a specific direction — and a reader who takes it for "the desk's
+       * outbound text" would be reading campaign copy and calling it sales email. The two
+       * unwired paths are named so the gap is a work item rather than a caveat.
+       */
+      'ONLY dist_campaign is wired to a live path (actions/registry.ts, on the transition to '
+      + 'approved/live). sales_email (outreach/scheduler.ts) and assisted_touch '
+      + '(outreach/queue.ts markTaskSent) call nothing here, so their zero in bySurface is '
+      + 'not-wired and NOT a measured zero — the totals on this report are campaign copy plus '
+      + 'whatever a sweep has back-filled, and nothing else',
     ],
     completeness: 'population_is_what_was_submitted' as const,
     environment: environmentLabel(),
@@ -1221,8 +1368,12 @@ export async function loadOneMouthShadowReport(
   const stateStatement = state === 'recording_nothing_observed'
     ? `The shadow ledger is readable and holds NO observations in this window (${windowDays} `
       + 'day(s)). The instrument is installed and nothing has been put through it, which is not '
-      + 'the same as text having been observed and found clean. Wire a send path into '
-      + 'observeOneMouth, or run sweepOneMouth, before reading anything into this zero.'
+      + 'the same as text having been observed and found clean. ONE path calls the engine '
+      + '(campaign launch, actions/registry.ts), so an empty window means no campaign was '
+      + 'advanced to approved/live in it — it does NOT mean the desk sent nothing: sales email '
+      + 'and assisted touches still call nothing. Wire those paths into '
+      + 'observeAndRecordOneMouth, or run sweepOneMouth over the back catalogue, before '
+      + 'reading anything into this zero.'
     : state === 'observed_no_findings'
       ? `${observations} piece(s) of outbound text were observed in this window and NONE would `
         + 'have been blocked. This is a measured zero, over the population stated in the frame — '

@@ -46,6 +46,7 @@ import { aiOperatorRoutes } from './routes/aiOperator.js';
 import { commandRoutes } from './routes/command.js';
 import { distributionRoutes } from './routes/distribution.js';
 import { x402Routes } from './routes/x402.js';
+import { governanceRegisterRoutes } from './routes/governanceRegister.js';
 import { accessRoutes } from './routes/access.js';
 import { gpsRoutes } from './routes/gps.js';
 import { requireWorkspace } from './middleware/workspace.js';
@@ -229,6 +230,7 @@ export function createApp() {
   app.route('/v1/me', meRoutes);
   app.route('/v1/perf', perfRoutes);
   app.route('/v1/access', accessRoutes);
+  app.route('/v1/governance', governanceRegisterRoutes);
   app.route('/v1/projects', projectsRoutes);
   // additional /v1/projects sub-routers (disjoint paths: /:id/360, /:id/assign, /:id/notes, /:id/documents)
   app.route('/v1/projects', projectAssignmentRoutes);

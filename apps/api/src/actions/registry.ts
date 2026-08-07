@@ -28,7 +28,7 @@
 import { z } from 'zod';
 import type pg from 'pg';
 import {
-  findMemberById, WORKSPACE_IDS, capAtLeast, emissionBudget,
+  findMemberById, WORKSPACE_IDS, capAtLeast,
   type Capability, type WorkspaceId,
   workspaceForPath,
 } from '@lcx/shared';
@@ -47,6 +47,8 @@ import { ActionError } from './types.js';
 import type { ActorRole, RegistryAction } from './types.js';
 import { GPS_ACTIONS } from '../gps/actions.js';
 import { MARKETING_ABUSE_ACTIONS } from '../marketing/abuseRegister.js';
+import { evaluateEmissionWarrant, mayReachStatus } from '../marketing/emissionWarrant.js';
+import { observeAndRecordOneMouth, oneMouthCampaignSubject } from '../marketing/oneMouth.js';
 
 /**
  * The action contract moved to ./types.js so an action module can live outside
@@ -142,6 +144,93 @@ const navigableHref = (max: number) =>
  */
 function isMissingTable(err: unknown): boolean {
   return typeof err === 'object' && err !== null && (err as { code?: string }).code === '42P01';
+}
+
+/** The campaign columns the launch gate reads. All `unknown` except where 0043
+ *  constrains the shape: `token_incentivized` is typed `unknown` deliberately so
+ *  the three-state check on it cannot be short-circuited by the type. */
+interface CampaignGateRow {
+  token_incentivized: unknown;
+  budget_lcx: string | null;
+  name: unknown;
+  detail: string | null;
+  created_by: string | null;
+}
+
+/**
+ * The shape `marketing_holdings_declaration.member_id` will accept
+ * (0060_marketing_abuse.sql:308). Mirrored rather than imported because it is a
+ * SQL CHECK and there is no exported constant for it; the test in
+ * `__tests__/emissionWarrantGate.test.ts` reads the migration and asserts the two
+ * still agree, so a drift is loud instead of silent.
+ */
+const HOLDINGS_MEMBER_ID_RE = /^[a-z0-9][a-z0-9._:-]{0,63}$/;
+
+type LauncherOfRecord =
+  | { ok: true; memberId: string }
+  | { ok: false; code: string; message: string };
+
+/**
+ * WHO THE ART 91(3)(c) QUESTION IS ABOUT — resolved from the campaign row, never
+ * from the request and never from the principal pressing the button.
+ *
+ * ══ THE THING THIS FUNCTION EXISTS TO REFUSE TO DO ══
+ * It never answers on a human's behalf. There is no fallback to `actor`, no
+ * default, no empty-register-means-no-holding. Every branch that cannot identify
+ * a named human REFUSES, because the alternative — quietly nominating somebody
+ * as the launcher of record — attaches a personal liability to a person who was
+ * never asked a question.
+ *
+ * ══ THREE ABSENCES, THREE CODES, AND THEY ARE NOT THE SAME FACT ══
+ *  · `created_by` NULL — the campaign records no author. NOT-LOADED. The row
+ *    predates the column being populated, or an insert path skipped it. Nobody
+ *    is being accused of anything; there is simply no one to ask.
+ *  · present but not slug-shaped — a display name, an email, a padded string.
+ *    `marketing_holdings_declaration.member_id` has a CHECK that this value can
+ *    never satisfy, so NO DECLARATION FOR IT CAN EVER EXIST. Passing it to the
+ *    engine would return EMISSION_LAUNCHER_POSITION_UNDECLARED, which is true
+ *    and useless: it sends a human off to make a declaration the database will
+ *    reject. This is a data defect on the campaign row and says so.
+ *  · slug-shaped but not on the roster — a machine principal (`operator`, the
+ *    shared desk key; `monitor:*`; `ai`) or an `ext:` second-tier sign-in.
+ *    Art 91(3)(c) attaches to a natural person. A service account cannot hold a
+ *    position, cannot declare one, and cannot carry the liability, so a campaign
+ *    authored by one has no launcher of record at all. This is the same rule
+ *    `abuseRegister.ts assertNamedHuman` applies to declaring holdings, applied
+ *    to relying on them.
+ *
+ * WHAT IS DELIBERATELY NOT CHECKED HERE: whether that human holds LCX. This
+ * function establishes only that there IS a human to ask. The answer belongs to
+ * `evaluateEmissionWarrant`, which resolves it against the register and refuses
+ * on its own codes.
+ */
+function launcherOfRecord(createdBy: string | null | undefined): LauncherOfRecord {
+  const raw = typeof createdBy === 'string' ? createdBy.trim() : '';
+  if (raw === '') {
+    return {
+      ok: false,
+      code: 'CAMPAIGN_LAUNCHER_NOT_RECORDED',
+      message:
+        'This campaign records no created_by, so there is no human whose LCX position the Art 91(3)(c) limb can be resolved against. That is an unanswered question, NOT a finding that nobody holds LCX, and it is not something this system may answer on anyone\'s behalf. Set dist_campaigns.created_by to the desk member who is launching this campaign — a person, named — and have them declare their LCX position in the marketing holdings register.',
+    };
+  }
+  if (!HOLDINGS_MEMBER_ID_RE.test(raw)) {
+    return {
+      ok: false,
+      code: 'CAMPAIGN_LAUNCHER_NOT_JOINABLE',
+      message:
+        `This campaign's created_by is ${JSON.stringify(raw)}, which cannot be a member_id in the marketing holdings register: that column has a CHECK constraint this value does not satisfy, so no declaration for it can exist and none ever could. The Art 91(3)(c) limb is therefore unanswerable rather than unanswered. Correct dist_campaigns.created_by to the launcher's roster id.`,
+    };
+  }
+  if (!findMemberById(raw)) {
+    return {
+      ok: false,
+      code: 'CAMPAIGN_LAUNCHER_NOT_A_NAMED_HUMAN',
+      message:
+        `This campaign's created_by is '${raw}', which is not a named desk member — the shared machine key ('operator'), monitors, 'ai' and ext: second-tier sign-ins all reach the distribution compartment and can author a campaign. MiCA Art 91(3)(c) attaches personal liability to a natural person, so a service account cannot be the launcher of record and cannot declare a position. Re-author this campaign under the roster id of the human launching it.`,
+    };
+  }
+  return { ok: true, memberId: raw };
 }
 
 /**
@@ -780,8 +869,9 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     },
   },
   /* ── DISTRIBUTION COMMAND (LCX ONE Phase 5) — the governed surface loop. ──
-   * Listing status + campaign lifecycle. The Phase-6 compliance gate + budget
-   * cap will layer on top of dist_campaign_set_status (launch transitions). */
+   * Listing status + campaign lifecycle. The Phase-6 compliance gate and the
+   * emission warrant both hang off dist_campaign_set_status (launch
+   * transitions); see the comments inside it. */
   dist_listing_set_status: {
     id: 'dist_listing_set_status',
     label: 'Set listing status',
@@ -857,25 +947,56 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       overrideGate: z.boolean().optional(),
       overrideReason: z.string().max(500).optional(),
     }),
-    execute: async ({ pool, subjectId, params, role, markGateDegraded }) => {
+    execute: async ({ pool, subjectId, params, actor, role, markGateDegraded }) => {
       const LAUNCH = new Set(['approved', 'live']);
       const target = String(params.status);
 
       // The COMPLIANCE GATE (LCX ONE Phase 6): launching a token-incentivized
       // campaign requires (a) approver authority, (b) an active premortem AND
-      // legal_check review on file, and (c) projected LCX reward spend within
-      // the emission budget envelope. Soft-blockable only with an audited
-      // override + reason. Fail-open ONLY on 42P01 (the reviews table has not
-      // been created yet) so governance never dead-locks ops; every other
-      // database error propagates. Non-token campaigns advance freely.
+      // legal_check review on file, and (c) AN EMISSION WARRANT. Soft-blockable
+      // only with an audited override + reason — EXCEPT the warrant, which is
+      // not overridable at all; see the block that evaluates it. Fail-open ONLY
+      // on 42P01 (the reviews table has not been created yet) so governance
+      // never dead-locks ops; every other database error propagates.
+      let camp: CampaignGateRow | undefined;
       if (LAUNCH.has(target)) {
-        const { rows: crows } = await pool.query<{ token_incentivized: boolean; budget_lcx: string | null }>(
-          `SELECT token_incentivized, budget_lcx FROM dist_campaigns WHERE id=$1`, [subjectId],
+        const { rows: crows } = await pool.query<CampaignGateRow>(
+          // `name`, `detail` and `created_by` are read here and NOT taken from
+          // the request: they are the three inputs to the emission warrant (the
+          // bytes it digests, and the human whose Art 91(3)(c) position it
+          // resolves). A drafter who could supply them could suppress the check.
+          `SELECT token_incentivized, budget_lcx, name, detail, created_by FROM dist_campaigns WHERE id=$1`,
+          [subjectId],
         );
-        const camp = crows[0];
+        camp = crows[0];
         if (!camp) throw new ActionError('NOT_FOUND', 'Campaign not found', 404);
 
-        if (camp.token_incentivized) {
+        /*
+         * THREE STATES ON THE TRIGGER, AND THIS USED TO HAVE TWO.
+         *
+         * `if (camp.token_incentivized)` is a truthiness test, so NULL, the
+         * string 'true', undefined from a renamed column, and anything a driver
+         * shape change produced all took the ELSE branch — which advances the
+         * campaign with no gate at all. Reading an UNKNOWN trigger as "not a
+         * token campaign" is the one direction that cannot be recovered from:
+         * the campaign is live before anybody notices the column is wrong.
+         *
+         * Only the literal `false` may mean "this gate does not apply".
+         * `evaluateEmissionWarrant` makes the identical distinction one level
+         * down (EMISSION_TRIGGER_NOT_STATED) and for the identical reason.
+         */
+        const trigger = camp.token_incentivized;
+        const tokenIncentivized = typeof trigger === 'boolean' ? trigger : null;
+        if (tokenIncentivized === null) {
+          throw new ActionError(
+            'CAMPAIGN_TRIGGER_NOT_STATED',
+            `dist_campaigns.token_incentivized for this campaign is ${JSON.stringify(trigger)}, which is not a boolean. Whether this campaign emits LCX is UNKNOWN, and unknown is not no: advancing it to ${target} would put a possibly token-incentivized campaign in front of the public with no emission warrant and no Art 91(3)(c) check on its launcher.`,
+            409,
+            { campaignId: subjectId, tokenIncentivized: null, observed: trigger === null ? 'null' : typeof trigger },
+          );
+        }
+
+        if (tokenIncentivized) {
           // (a) approver-only launch. AUTHORITY IS NOT OVERRIDABLE.
           //
           // This check used to read `role !== 'approver' && !params.overrideGate`,
@@ -905,21 +1026,89 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
             markGateDegraded('analytic_reviews does not exist (42P01) — the compliance review half of the launch gate was NOT evaluated');
           }
           const missing = ['premortem', 'legal_check'].filter((k) => !kinds.includes(k));
-          // (c) budget envelope via the emission engine.
-          const budget = camp.budget_lcx != null ? Number(camp.budget_lcx) : 0;
-          const projectedPaidLinks = budget; // 1 paid link ≈ 1 LCX creator reward (Standard)
-          const em = emissionBudget({ projectedPaidLinks, creatorRewardLcx: 1, serviceFeeLcx: 1, treasuryBudgetLcx: Math.max(budget, 1) });
-          const overBudget = !em.withinBudget;
+
+          /* ── (c) THE EMISSION WARRANT. NOT OVERRIDABLE. ───────────────────
+           *
+           * WHAT THIS REPLACED, because it shipped and it read as a control:
+           *
+           *   const budget = camp.budget_lcx != null ? Number(camp.budget_lcx) : 0;
+           *   const projectedPaidLinks = budget;
+           *   const em = emissionBudget({ projectedPaidLinks, creatorRewardLcx: 1,
+           *     serviceFeeLcx: 1, treasuryBudgetLcx: Math.max(budget, 1) });
+           *   const overBudget = !em.withinBudget;
+           *
+           * `emissionBudget` computes `withinBudget: emitted <= treasuryBudgetLcx`
+           * where `emitted = round(projectedPaidLinks * 1)` — so this asked
+           * `budget <= Math.max(budget, 1)`, which is TRUE for every input that
+           * exists. The limb was arithmetically incapable of failing. It could not
+           * be repaired in place either, because the honest input is LCX's treasury
+           * envelope and nothing in this repository knows it; `Math.max(budget, 1)`
+           * WAS the fabrication, standing in for a number no human had supplied.
+           *
+           * AND THE NULL BRANCH WAS THE SAME DEFECT IN DATA: `budget_lcx` NULL
+           * became `0`, so a token campaign that states no budget at all was
+           * measured as emitting nothing and passed. Absent is not zero.
+           *
+           * `evaluateEmissionWarrant` is what a budget limb has to be: it refuses
+           * with EMISSION_CAP_NOT_DECLARED until an owner declares a cap, refuses
+           * with EMISSION_AMOUNT_NOT_STATED when budget_lcx is NULL, aggregates the
+           * OTHER in-flight campaigns rather than comparing this one to itself, and
+           * ledgers the whole picture to the append-only audit log either way.
+           *
+           * ══ WHY `overrideGate` CANNOT REACH THIS ══
+           * The review blockers below are a DESK judgement and an approver may
+           * accept that risk in writing. Art 91(3)(c) is not a desk judgement: it
+           * attaches personally, at roughly EUR 700,000, to the human whose name is
+           * on the launch. One approver cannot waive another person's personal
+           * declaration, and an override flag that could would be a button for
+           * signing a colleague up to a liability they never answered a question
+           * about. So the warrant is checked in the same place authority is, and is
+           * refused in the same way: with no flag that turns it off.
+           */
+          const launcher = launcherOfRecord(camp.created_by);
+          if (!launcher.ok) {
+            throw new ActionError(launcher.code, launcher.message, 409, {
+              campaignId: subjectId, createdBy: camp.created_by ?? null, actingPrincipal: actor,
+            });
+          }
+          const decision = await evaluateEmissionWarrant(pool, {
+            campaignId: subjectId,
+            targetStatus: target,
+            launcher: launcher.memberId,
+          });
+          if (!mayReachStatus(decision)) {
+            const refusals = decision.outcome === 'refused' ? decision.refusals : [];
+            throw new ActionError(
+              'EMISSION_WARRANT_REFUSED',
+              `Cannot launch: the emission warrant was refused (${refusals.map((r) => r.code).join(', ') || 'no code'}). ${refusals.map((r) => r.sentence).join(' ')} This gate is NOT overridable${missing.length > 0 ? `, and separately the compliance reviews are incomplete (${missing.join(' + ')})` : ''}.`,
+              409,
+              {
+                campaignId: subjectId,
+                launcher: launcher.memberId,
+                actingPrincipal: actor,
+                refusals: refusals.map((r) => ({ code: r.code, rule: r.rule, remedy: r.remedy })),
+                refusalCodes: refusals.map((r) => r.code),
+                overridable: false,
+                // REPORTED TOGETHER, NOT ONE AT A TIME. A refusal that names only
+                // the warrant while the reviews are also missing sends the approver
+                // back twice; `emissionWarrant.ts` returns every refusal for the
+                // same reason and this carries them across the boundary.
+                missing,
+                warrantAuditRowId: decision.outcome === 'refused'
+                  ? decision.warrant?.auditRowId ?? null
+                  : null,
+              },
+            );
+          }
 
           const blockers: string[] = [];
           if (missing.length > 0) blockers.push(`compliance review missing (${missing.join(' + ')})`);
-          if (overBudget) blockers.push('projected reward spend exceeds the budget envelope');
 
           if (blockers.length > 0) {
             if (!params.overrideGate) {
               throw new ActionError('COMPLIANCE_GATE',
                 `Cannot launch: ${blockers.join('; ')}. File the reviews (subject_type=dist_campaign) or override with a reason.`, 409,
-                { blockers, missing, overBudget });
+                { blockers, missing });
             }
             if (!String(params.overrideReason ?? '').trim()) {
               throw new ActionError('OVERRIDE_REASON_REQUIRED', 'Compliance-gate override requires a reason.', 400);
@@ -933,7 +1122,87 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
         [params.status, subjectId],
       );
       if ((rowCount ?? 0) === 0) throw new ActionError('NOT_FOUND', 'Campaign not found', 404);
-      return { campaignId: subjectId, status: params.status };
+
+      /* ── THE ONE MOUTH SHADOW LEDGER (Title VI, measuring only) ────────────
+       *
+       * This is the first caller `marketing/oneMouth.ts` has ever had. Before
+       * this line, `observeOneMouth` and `sweepOneMouth` appeared seven times in
+       * the repository and every one of them was inside that file — so the
+       * shadow report read `recording_nothing_observed` forever, which on a
+       * screen is indistinguishable from a desk whose copy is clean. An
+       * unevaluated path and a genuinely clean one must not produce the same
+       * number.
+       *
+       * ══ EVERY CAMPAIGN, NOT ONLY THE TOKEN ONES ══
+       * The warrant above gates token-incentivised campaigns. This observes ALL
+       * of them, because the point of a shadow count is the BASE RATE over
+       * everything the desk publishes — a content campaign's copy is outbound
+       * text about a crypto-asset exchange too, and excluding it would bias the
+       * only number that will ever justify enforcement.
+       *
+       * ══ AFTER THE UPDATE, ON PURPOSE ══
+       * The population is "campaign copy that actually reached approved/live".
+       * Observing before the gates would ledger text that was refused and never
+       * published, and the base rate would then describe drafts rather than
+       * sends. Observing after a `rowCount` of 0 would ledger a campaign that
+       * does not exist.
+       *
+       * ══ IT CANNOT BLOCK AND IT CANNOT THROW ══
+       * `observeAndRecordOneMouth` swallows everything, including a contract
+       * violation by the engine itself. The status transition has already
+       * happened and been ledgered; a measurement failing afterwards must not
+       * turn a completed governed write into a 500. The state below is how the
+       * caller learns what actually happened, and the report on the other side
+       * never reads an empty ledger as "clean".
+       */
+      let shadowObservation:
+        | 'not_a_publication_point'
+        | 'no_text_to_observe'
+        | 'engine_failed'
+        | 'observed_not_recorded'
+        | 'recorded' = 'not_a_publication_point';
+      if (camp !== undefined) {
+        const subject = oneMouthCampaignSubject({
+          id: subjectId,
+          name: String(camp.name ?? ''),
+          detail: camp.detail ?? null,
+          createdBy: camp.created_by ?? null,
+        });
+        const shadow = await observeAndRecordOneMouth(pool, subject);
+        /*
+         * FIVE STATES, NOT A BOOLEAN AND NOT THREE, because `null` from
+         * `observeAndRecordOneMouth` means TWO different things and the first
+         * version of this block reported both of them — plus the transitions
+         * that are not publication points — as one token, `not_observed`,
+         * documented as "there was nothing to observe". A swallowed contract
+         * violation by the engine is not "nothing to observe": it is the
+         * control blowing up on a campaign that DID reach the public, reported
+         * to the caller as though the observation had been skipped on purpose.
+         * An unevaluated path and a deliberately-skipped one must not produce
+         * the same token, which is the same defect one level up that wiring the
+         * engine at all was supposed to close.
+         *
+         *  · not_a_publication_point — draft/compliance_review/measured. The
+         *    observation is about text becoming public; nothing became public.
+         *  · no_text_to_observe — the composed bytes were blank, so ledgering
+         *    would record a digest of nothing as if the desk had published it.
+         *  · engine_failed — `observeOneMouth` or `recordOneMouthObservation`
+         *    threw despite documenting that they never do. The copy reached the
+         *    public and met NO check, and the shadow count will not know.
+         *  · observed_not_recorded — the engine ran and the ledger refused the
+         *    row, so the count under-reports by an amount nothing can recover.
+         *  · recorded — measured and ledgered.
+         */
+        shadowObservation = shadow === null
+          ? (subject.text.trim() === '' ? 'no_text_to_observe' : 'engine_failed')
+          : shadow.recorded ? 'recorded' : 'observed_not_recorded';
+      }
+
+      return {
+        campaignId: subjectId,
+        status: params.status,
+        shadowObservation,
+      };
     },
   },
 

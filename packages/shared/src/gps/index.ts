@@ -72,12 +72,36 @@ export type {
   OfferHeadroom, BenchHeadroom, BenchOptions, RefusalCode, GateResult,
   AcceptanceDecision, RecordedOutcome, ScorecardConfidence, PartnerScorecard,
   QuotedEngagement, MarginVerdict, MarginAtRisk,
+  /*
+   * F5 + THE FLOOR (2026-08-07). Unblocked by the owner's decision that a NAMED HUMAN may
+   * assert a partner and a rate card, attributed to them — the one foundation the plan said
+   * needed an answer before it could exist at all.
+   *
+   * `SuppliedInput<T>` is the reason this list grew rather than a convenience: the floor's
+   * inputs each carry loaded / not_loaded / withheld / empty as a TYPE, so the three states
+   * cannot collapse on the way to a price. A floor is the most dangerous number GPS can
+   * print — it reads as a policy minimum — so every one of its twenty refusal codes is
+   * exported too, and callers return ALL of them rather than the first.
+   */
+  PartnerAssertion, PartnerAssertionDefectCode, PartnerAssertionDefect,
+  SuppliedInput, FloorEffortPoint, FloorEffortInput,
+  FloorRefusalCode, FloorRuleCitation, FloorRemedyOwner, FloorRefusal,
+  FloorObservationFrame, PriceFloorRequest, PriceFloorOutcome,
+  PartnerRegistryRegisters, PartnerRegistryBenchMember, PartnerRegistryBench,
+  PartnerRegistryDesk, PartnerRegistryFloorView,
 } from './partners.js';
 export {
   SENIORITY_LABEL, SENIORITY_ORDER, RATE_UNIT_LABEL, PARTNER_BENCH,
   SCORECARD_CONFIDENCE_LABEL,
   meetsSeniority, capabilityCoversJurisdiction, rateCardStatus, rateCardCostCents,
   benchHeadroom, headroomFor, canAcceptEngagement, partnerScorecard, marginAtRisk,
+  // F5 + THE FLOOR — see the note in the type block above.
+  PARTNER_ASSERTION_IS_A_CLAIM, PARTNER_REGISTRY_FLOOR_CONTRACT,
+  FLOOR_EFFORT_POINTS, FLOOR_EFFORT_POINT_LABEL, FLOOR_REFUSAL_CODES, FLOOR_EXCLUDES,
+  partnerAssertionDefects, isAssertedPartner,
+  inputLoaded, inputNotLoaded, inputWithheld, inputEmpty,
+  priceFloor, isPriceFloor,
+  partnerRegistryDeskDefects, partnerRegistryFloorDefects,
 } from './partners.js';
 
 /* ── Phase 4 — surgical targeting: hard GATES, then an additive SCORE ─────────
@@ -262,8 +286,21 @@ export type {
   ProhibitedPromise, DisclosureField, DisclosureContext, DisclosureId,
   DisclosureTemplate, DisclosureErrorCode, RenderOptions, RenderedDisclosure,
   DisclosureUseRecord, DisclosureLibrarySnapshot,
+  /*
+   * THE OTHER LEDGER (2026-08-07). The owner's answer: GPS may read the listing pipeline
+   * VERDICT ONLY, and every read is logged.
+   *
+   * `ListingPerimeterReading` is the whole design in one type — it carries a verdict, never
+   * a pipeline row — because minimum disclosure is a property of what the function CAN
+   * return, not a promise in a comment. A conflict wall that cannot see whether a services
+   * client is a listing candidate is blind to the one case it exists for; this is the
+   * plan's largest uninsured liability (Art 88/90/91(3)(c), ~EUR 700k PERSONAL).
+   */
+  ListingPerimeterCode, ListingPerimeterReading, ListingPerimeterFinding,
+  ListingContradiction,
 } from './disclosure.js';
 export {
+  GPS_LISTING_VERDICTS, listingPerimeterFinding, listingContradiction,
   DISCLOSURES_ARE_NOT_COUNSEL_REVIEWED, DISCLOSURES_UNREVIEWED_REASON,
   PROHIBITED_PROMISES, PROHIBITED_PROMISE_LABEL, PROHIBITED_PROMISE_SENTENCE,
   CONTRACTING_ENTITY_DISCLOSURE_NAME, DISCLOSURE_TEMPLATES, getDisclosureTemplate,

@@ -31,6 +31,21 @@ import { DEFAULT_CONTRACTING_ENTITY } from './types.js';
  * `expectedVendorCostCents` is a placeholder — there is no named bench yet
  * (decision D5, blocking Phase 2). That is stated rather than papered over: a
  * null owner means the engagement CANNOT BE STAFFED, and the UI should say so.
+ *
+ * ── WHAT CHANGED ON 2026-08-07, AND WHAT DID NOT ─────────────────────────────
+ * The owner answered the decision behind D5: A NAMED HUMAN MAY ASSERT A PARTNER
+ * AND A RATE CARD, ATTRIBUTED TO THEM. A registry now exists for that
+ * (`gps_partner_registry`, `0075_gps_partner_registry.sql`; the domain model is
+ * `partners.ts`).
+ *
+ * NOTHING IN THIS FILE MOVED, and that is the point. `partnerOwner` is still null
+ * on all five offers because no partner has been asserted yet;
+ * `TODO_VENDOR_COSTS` is still a placeholder because a rate card is a row a
+ * partner confirms, not a constant; `PRICE_BANDS_ARE_PLACEHOLDERS` is still
+ * `true` because D4 — the SELL side — is a different decision and it is still
+ * unanswered. A mechanism arriving is not data arriving, and the day the two get
+ * confused is the day a placeholder ships as a price. Both flip in the commit
+ * that supplies the real numbers, never before.
  */
 
 /**
@@ -494,9 +509,24 @@ export const CATALOGUE_TODOS: readonly CatalogueTodo[] = [
   {
     decision: 'D5',
     owner: 'partner',
+    /**
+     * VERBATIM, AND IT MUST STAY VERBATIM. `apps/web/src/components/gps/gpsLenses.ts:42`
+     * pins this exact string as `TODO_PARTNER_RATE_CARD` and matches it by equality; a
+     * clarifying clause appended here makes the desk inspector render "the decision was
+     * made" for a decision that is still open. The registry existing is recorded in
+     * `consequence` below, which is read from the ledger rather than pinned.
+     */
     what: 'Named partner or specialist per offer, with a rate card.',
     consequence:
-      'partnerOwner is null on all five offers and vendor costs are placeholders, so margin arithmetic is correct but UNCALIBRATED, and no engagement can honestly be staffed.',
+      'partnerOwner is null on all five offers and vendor costs are placeholders, so margin arithmetic is correct but UNCALIBRATED, and no engagement can honestly be staffed. Since 2026-08-07 a named human MAY assert a partner and a rate card (gps_partner_registry, 0075_gps_partner_registry.sql) and every assertion records who, when and on what basis — so this item is now a data gap a person can close in a screen, not a decision waiting on the owner.',
+    blocksQuoting: false,
+  },
+  {
+    decision: 'D5',
+    owner: 'partner',
+    what: 'A price FLOOR per (partner, offer) — which is a rate card and a real effort triple, not a separate number anyone types.',
+    consequence:
+      'The margin-below-floor monitor is registered DISABLED with a threshold of 0 (loop.ts, BOOK_MONITOR_SPECS margin_below_floor), because 0 stands in for "at least do not lose money" and is not a policy. `priceFloor` (partners.ts) computes the real one from an asserted partner\'s rate card and a founder-supplied effort triple, and REFUSES — with a code naming the partner, the offer and the missing input — while either is absent, expired or still the shipped placeholder. A floor derived from placeholders would read on screen as a policy minimum, which is why it is refused rather than estimated.',
     blocksQuoting: false,
   },
   {

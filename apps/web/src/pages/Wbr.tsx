@@ -102,7 +102,7 @@ export function Wbr() {
               <span className="text-micro font-bold uppercase tracking-wider text-grey">Week of {report.weekStart}</span>
               {report.live && <span className="rounded bg-amber-500/10 px-1.5 py-0.5 text-micro font-bold text-amber-600 dark:text-amber-400">LIVE · not yet snapshotted</span>}
             </div>
-            <AiProse className="mt-1.5" text={report.narrative} />
+            <AiProse className="mt-1.5" text={report.narrative} validIds={[]} />
           </div>
 
           {/* AI executive summary (Phase 5.4) — grounded in the report above; falls back to the deterministic line. */}
@@ -118,7 +118,7 @@ export function Wbr() {
                 {/* The narrative goes in a board report, so it has to read as
                     prose. It was a bare <p>, which showed the model's own
                     `**bold**` to whoever the WBR was printed for. */}
-                <AiProse text={aiNarr.text} />
+                <AiProse text={aiNarr.text} validIds={[]} />
                 {!aiNarr.usedLlm && (
                   <p className="mt-1 text-micro text-grey">(deterministic — no AI answer; cause not reported by this engine)</p>
                 )}

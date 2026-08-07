@@ -974,6 +974,161 @@ mod tests {
         assert_eq!(split_web_records("just one line").len(), 1);
         assert_eq!(split_web_records("just one line")[0], "[web] just one line");
     }
+
+    /* ────────────────────── the app-command ACL, and its ratchet ────────────────────── */
+
+    /// Every name registered in `run()`'s invoke handler, read out of this file's own source.
+    ///
+    /// The marker is assembled with `concat!` so the literal string never appears contiguously
+    /// in `lib.rs` — otherwise this helper would match ITSELF and the tests below would read
+    /// their own source instead of `run()`'s. That is not hypothetical: the first draft spelled
+    /// the macro out in THIS doc comment, and the parse returned `["…"]` — a list of one
+    /// ellipsis, scraped from the prose. The assertion on `commands.len()` below is what turned
+    /// that into a failure instead of a vacuous pass over an empty list.
+    /// (The existing `diagnostics_append` ratchet solves
+    /// the same problem with `.nth(1)`; that trick is position-dependent, and this module sits
+    /// ABOVE `run()`, so a counted offset would silently invert if either moved.)
+    fn registered_commands() -> Vec<String> {
+        const MARKER: &str = concat!("tauri::generate_", "handler![");
+        let src = include_str!("lib.rs");
+        let after = src.split(MARKER).nth(1).expect("run() must register an invoke handler");
+        let block = after.split(']').next().expect("the handler list must be bracket-closed");
+        block
+            .split(',')
+            .map(|c| c.trim())
+            .filter(|c| !c.is_empty() && !c.starts_with("//"))
+            .map(|c| c.to_string())
+            .collect()
+    }
+
+    /// THE SWITCH, asserted at the place that throws it.
+    ///
+    /// `tauri-2.11.5/src/webview/mod.rs:1820` only consults the ACL for an app command from a
+    /// local origin when `has_app_acl_manifest` is true, and that flag is true only because
+    /// `build.rs` calls `app_manifest(...)`. Revert `build.rs` to a bare `tauri_build::build()`
+    /// and every command in `generate_handler!` — the Keychain getter included — goes back to
+    /// being invocable with no permission consulted, and NOTHING ELSE IN THIS REPO NOTICES.
+    /// That silence is what this test exists to break.
+    #[test]
+    fn the_app_declares_an_acl_manifest_at_all() {
+        let build_rs = include_str!("../build.rs");
+        assert!(
+            build_rs.contains("app_manifest("),
+            "build.rs no longer declares an app ACL manifest. Tauri adjudicates app commands \
+             from a LOCAL origin only when one is declared, so without this every \
+             #[tauri::command] below is reachable by any script in the webview with no \
+             permission consulted — the capability half of SECURITY_FINDINGS_2026-08-07 #7, \
+             reopened.",
+        );
+    }
+
+    /// THE ENUMERATION, pinned from both ends.
+    ///
+    /// A hand-listed set cannot fail on a member nobody thought of — that is exactly how
+    /// `/v1/reviews` shipped four gated handlers and a fifth ungated one. So this does not
+    /// trust the list in `build.rs`: it derives the truth from `generate_handler!`, which is
+    /// the thing that actually makes a command callable, and demands that each name have been
+    /// RULED ON — allowed in `permissions/lcxos-desk.toml`, or denied in the capability.
+    /// Adding a command and forgetting it is a red test, not a live command.
+    #[test]
+    fn every_registered_command_is_adjudicated() {
+        let build_rs = include_str!("../build.rs");
+        let capability = include_str!("../capabilities/default.json");
+        let desk_set = include_str!("../permissions/lcxos-desk.toml");
+
+        let commands = registered_commands();
+        assert!(
+            commands.len() >= 7,
+            "expected the shell's command list, parsed {commands:?} — the marker probably moved",
+        );
+
+        for cmd in &commands {
+            // tauri-build slugifies underscores to hyphens when it autogenerates
+            // `allow-$command` / `deny-$command`. See tauri-utils acl::build.
+            let slug = cmd.replace('_', "-");
+
+            assert!(
+                build_rs.contains(&format!("\"{cmd}\"")),
+                "`{cmd}` is registered in generate_handler! but is not named in build.rs's \
+                 app manifest, so no allow-/deny- permission is generated for it and no \
+                 capability can reach it. Under the ACL that is fail-CLOSED (the desk breaks \
+                 loudly), but it is still a defect: add it to build.rs and then rule on it.",
+            );
+
+            let allowed = desk_set.contains(&format!("\"allow-{slug}\""));
+            let denied = capability.contains(&format!("\"deny-{slug}\""));
+
+            assert!(
+                allowed || denied,
+                "`{cmd}` has been left unruled. Every native command must be either granted in \
+                 permissions/lcxos-desk.toml (with the frontend line that calls it) or denied \
+                 outright in capabilities/default.json. Silence is not a decision.",
+            );
+            assert!(
+                !(allowed && denied),
+                "`{cmd}` is both granted and denied. Tauri's resolve_access treats ANY deny \
+                 entry as absolute, so the grant is dead text that reads like a live one.",
+            );
+        }
+    }
+
+    /// `is_terminal` is registered and NOTHING CALLS IT.
+    ///
+    /// The container check the app really uses is `apps/web/src/lib/container.ts`, which reads
+    /// `'__TAURI_INTERNALS__' in window` synchronously and imports nothing — deliberately, to
+    /// avoid a 240ms chunk fetch on every browser boot. So the native `is_terminal` is a
+    /// command with no caller: reachable surface bought for nothing, which is the same shape of
+    /// defect as a capability nobody can reach, pointing the other way.
+    ///
+    /// It is DENIED rather than deleted. Deletion is the stronger fix and remains available;
+    /// the deny is chosen because `tauri-2.11.5/src/ipc/authority.rs:446` short-circuits on any
+    /// deny entry before consulting allows or origins, so the denial is absolute and cannot be
+    /// re-granted by a later capability that adds `allow-is-terminal` without removing this.
+    #[test]
+    fn the_command_with_no_caller_is_denied_not_merely_ungranted() {
+        let capability = include_str!("../capabilities/default.json");
+        assert!(
+            registered_commands().iter().any(|c| c == "is_terminal"),
+            "this test is about is_terminal; if it was deleted from generate_handler! that is \
+             the stronger fix and this test should be deleted with it",
+        );
+        assert!(
+            capability.contains("\"deny-is-terminal\""),
+            "is_terminal must be denied, not just left ungranted. Ungranted is already \
+             unreachable, but it is unreachable by ABSENCE — a later hand adding a blanket \
+             grant re-opens it. A deny cannot be overridden.",
+        );
+        assert!(
+            !capability.contains("\"allow-is-terminal\""),
+            "is_terminal is granted somewhere in the capability",
+        );
+    }
+
+    /// The grant lists the CALL SITE, not just the command.
+    ///
+    /// A permission file that says "allow-secret-get" and nothing else records that somebody
+    /// typed it, not that anybody checked. Each grant in `lcxos-desk.toml` carries the
+    /// `apps/web/src` line that invokes it, so the next reader can re-run the grep instead of
+    /// re-deriving the decision — and so a grant whose caller has since been deleted shows up
+    /// as a citation that no longer resolves.
+    #[test]
+    fn each_grant_cites_the_frontend_line_that_needs_it() {
+        let desk_set = include_str!("../permissions/lcxos-desk.toml");
+        for cmd in ["secret_set", "secret_get", "secret_delete", "diagnostics_append", "haptic_tap", "update_install_precheck"] {
+            assert!(
+                desk_set.contains(&format!("\"allow-{}\"", cmd.replace('_', "-"))),
+                "{cmd} must be granted in the desk set — the frontend calls it",
+            );
+            assert!(
+                desk_set.contains(cmd),
+                "{cmd} is granted with no note of what calls it",
+            );
+        }
+        assert!(
+            desk_set.contains("lib/terminal.ts") && desk_set.contains("lib/feedback.ts"),
+            "the grants must cite the frontend files that invoke them",
+        );
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

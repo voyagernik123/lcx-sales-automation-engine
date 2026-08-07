@@ -89,7 +89,7 @@ export function PrecedentPanel({ query }: { query: string }) {
         <ul className="space-y-1.5">
           {rows.map((p) => (
             <li key={p.id} data-testid={`mkt-precedent-${p.id}`} className="border-l-2 border-line px-2 py-1.5">
-              <AiProse text={p.body} />
+              <AiProse text={p.body} validIds={[]} />
               <p className="mt-1 font-mono text-[10px] leading-snug text-grey">
                 approved by {p.approvedBy || 'not stated'} · {p.approvedAt || 'date not stated'} · {p.matchBasis}
               </p>

@@ -105,6 +105,28 @@ function classify(err: ApiError, subjectType: string): Refusal {
       };
     }
 
+    /*
+     * THE EMISSION WARRANT (2026-08-07). Neither is overridable, and that is the whole
+     * point: a compliance blocker is a risk an approver can accept with a recorded reason,
+     * but a missing emission cap is a figure only the owner can state, and a missing holdings
+     * declaration attaches to a named person under Art 91(3)(c). There is nothing an operator
+     * can type that substitutes for either, so the remedy names WHO must act instead of
+     * offering a door.
+     */
+    case 'EMISSION_WARRANT_REFUSED':
+      return {
+        ...base,
+        remedy: 'This launch has no emission warrant. Nobody can override it: the owner must declare the quarterly LCX cap, and the launcher must declare their own LCX position, before a token-incentivised campaign goes live.',
+        overridable: false,
+      };
+
+    case 'CAMPAIGN_TRIGGER_NOT_STATED':
+      return {
+        ...base,
+        remedy: 'This campaign does not say whether it emits LCX. Unknown is not no — set token_incentivized to a real boolean before advancing it.',
+        overridable: false,
+      };
+
     case 'APPROVER_REQUIRED':
       return {
         ...base,

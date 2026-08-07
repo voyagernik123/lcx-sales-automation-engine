@@ -48,7 +48,7 @@ export function ObjectionPanel() {
             <CopyButton text={result.response} label="Copy reply" />
           </div>
           <div className={aiBoxClass}>
-            <AiProse text={result.response} />
+            <AiProse text={result.response} validIds={[]} />
           </div>
         </div>
       )}

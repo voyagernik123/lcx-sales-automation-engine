@@ -418,7 +418,7 @@ export function WinLoss() {
           >
             {insightsOpen && (
               <div className="space-y-3">
-                <AiProse text={data.narrative} />
+                <AiProse text={data.narrative} validIds={[]} />
                 <div className="flex flex-wrap gap-2 text-label">
                   <span className="num-tabular rounded-md border border-line/70 bg-ice-soft/50 px-2 py-1 font-mono text-navy dark:bg-ice-soft/10">
                     Overall {pct(data.overall.winRate)} · {data.overall.won}W / {data.overall.lost}L

@@ -290,7 +290,7 @@ export function TriageBoard({ queue, now, onChanged, summary = null }: {
                       {/* Untrusted third-party text. AiProse emits React nodes and
                           never HTML, so hostile markup is inert by construction. */}
                       <div className="mt-1 border-l-2 border-line px-1.5 py-1">
-                        <AiProse text={r.body} />
+                        <AiProse text={r.body} validIds={[]} />
                       </div>
                     </Td>
                     <Td>

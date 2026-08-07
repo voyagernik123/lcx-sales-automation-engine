@@ -53,7 +53,27 @@ interface Refusal {
 }
 
 const dimsOf = (n: number) => Array.from({ length: n }, (_, i) => ({ key: `d${i}`, label: `D${i}`, weight: 1 / n }));
+/*
+ * ROWS CARRY REAL SCORES, and that changed on 2026-08-07.
+ *
+ * These fixtures used `scores: {}` because an empty object is the DoS WORST CASE — `rescore`
+ * looped every dimension for every row regardless, so an attacker paid nothing per row for
+ * the full inner cost. That is still true of the cost, and the over-cap tests below still use
+ * empty rows for exactly that reason.
+ *
+ * But `rescore` no longer RANKS a row it could not score: a row with no dimension present is
+ * unrankable and is reported as such rather than sorting to the bottom as if it had scored
+ * zero on everything. So an at-the-cap request of empty rows now correctly returns an empty
+ * ranking, and this fixture would have been asserting the scoring change rather than the
+ * admission bound it exists for. `scoredRowsOf` keeps the bound test about the BOUND.
+ */
 const rowsOf = (n: number) => Array.from({ length: n }, (_, i) => ({ subjectId: `s${i}`, subjectLabel: `S${i}`, scores: {} }));
+const scoredRowsOf = (n: number, dims: number) =>
+  Array.from({ length: n }, (_, i) => ({
+    subjectId: `s${i}`,
+    subjectLabel: `S${i}`,
+    scores: Object.fromEntries(Array.from({ length: dims }, (_, d) => [`d${d}`, (i + d) % 5])),
+  }));
 
 describe('distribution engine input bounds', () => {
   const app = createApp();
@@ -94,11 +114,28 @@ describe('distribution engine input bounds', () => {
   it('serves a request sitting exactly ON the cap — the bound refuses excess, not use', async () => {
     const res = await post(CHANNEL_MIX, {
       dims: dimsOf(ENGINE_INPUT_LIMITS.channelMixDims),
-      rows: rowsOf(ENGINE_INPUT_LIMITS.channelMixRows),
+      rows: scoredRowsOf(ENGINE_INPUT_LIMITS.channelMixRows, ENGINE_INPUT_LIMITS.channelMixDims),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as { data: { rows: unknown[] } };
     expect(body.data.rows).toHaveLength(ENGINE_INPUT_LIMITS.channelMixRows);
+  });
+
+  it('admits at the cap but RANKS NOTHING when no row carries a score — absent is not zero', async () => {
+    /*
+     * The other half of the same fact, pinned so neither half can drift. A row that was
+     * scored on no dimension used to be ranked as though it scored zero on every one of
+     * them, which put an unmeasured subject on a leaderboard next to measured ones. It is
+     * now unrankable. The BOUND still admits the request — 64 rows is under the cap — so a
+     * 200 with an empty ranking is the honest answer, not a refusal.
+     */
+    const res = await post(CHANNEL_MIX, {
+      dims: dimsOf(ENGINE_INPUT_LIMITS.channelMixDims),
+      rows: rowsOf(ENGINE_INPUT_LIMITS.channelMixRows),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { rows: unknown[] } };
+    expect(body.data.rows, 'a row scored on nothing must not be ranked').toHaveLength(0);
   });
 
   /* ══ 2. OVER-CAP REFUSES, WITH A CODE, AND THE ENGINE NEVER RUNS ════════════ */

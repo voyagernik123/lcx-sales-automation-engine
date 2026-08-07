@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  rescore, sensitivity, analyzeSet, parseSpreadBps, rfiEconomics,
+  rescore, rescoreDetailed, sensitivity, analyzeSet, parseSpreadBps, rfiEconomics,
   waitlistSim, listingReadiness, tokenDdScore, programReadiness,
   type EngineDim, type EngineRow,
 } from './commandEngines.js';
@@ -39,6 +39,224 @@ describe('LP optimizer — rescore', () => {
 
   it('throws on all-zero weights', () => {
     expect(() => rescore(DIMS, ROWS, { reg: 0, liq: 0, oes: 0 })).toThrow();
+  });
+});
+
+/**
+ * ABSENT IS NOT ZERO — the defect recorded as owed in docs/SECURITY_FINDINGS_2026-08-07.md.
+ *
+ * `rescore` used to do `(r.scores[d.key] ?? 0)`, so a subject that simply OMITTED a
+ * dimension was scored a genuine zero on it and then RANKED against subjects that had been
+ * scored on everything. Every test below is written to fail loudly if that line comes back.
+ */
+describe('LP optimizer — an omitted dimension is not a zero (rescore)', () => {
+  // Alpha is scored on `reg` alone. Under the old formula: 5×0.5 + 0×0.3 + 0×0.2 = 2.5,
+  // which sorts it BELOW fully-scored Beta (4.0) on the strength of two invented zeroes.
+  const PARTIAL: EngineRow[] = [
+    { subjectId: 'p', subjectLabel: 'Partial', scores: { reg: 5 } },
+    { subjectId: 'b', subjectLabel: 'Beta', scores: { reg: 3, liq: 5, oes: 5 } },
+  ];
+
+  it('renormalizes over the dimensions the row actually has', () => {
+    const r = rescore(DIMS, PARTIAL);
+    const p = r.find((x) => x.subjectId === 'p')!;
+    expect(p.weighted).toBe(5);
+    expect(p.weighted).not.toBe(2.5); // 2.5 is the old `?? 0` answer, exactly
+    expect(p.rank).toBe(1);
+  });
+
+  it('carries how many dimensions it was judged on, and which were missing', () => {
+    const p = rescore(DIMS, PARTIAL).find((x) => x.subjectId === 'p')!;
+    expect(p.scoredDims).toBe(1);
+    expect(p.totalDims).toBe(3);
+    expect(p.partial).toBe(true);
+    expect(p.absentDims.sort()).toEqual(['liq', 'oes']);
+  });
+
+  it('leaves a fully-scored row bit-identical to the old arithmetic', () => {
+    // The whole point of the safety argument: renormalizing over ALL dimensions is
+    // dividing by the same sum, so nothing that is completely scored moves.
+    const r = rescore(DIMS, ROWS);
+    expect(r.map((x) => x.weighted)).toEqual([4.0, 4.0, 2.0]);
+    expect(r.map((x) => x.rank)).toEqual([1, 2, 3]);
+    expect(r.every((x) => x.partial === false && x.scoredDims === 3)).toBe(true);
+  });
+
+  it('a fully-scored row is bit-identical to the pre-change expression, across the sensitivity grid', () => {
+    /**
+     * THE SAFETY ARGUMENT, EXECUTED INSTEAD OF ASSERTED.
+     *
+     * The change was defended as "for a fully-scored row the denominator is the full
+     * weight sum, so the arithmetic is identical". That is true in real arithmetic and
+     * FALSE IN DOUBLES: `sum(v·w)/S` is not `sum(v·w/S)` bit for bit. Swept over the real
+     * seed at the same 0.005 resolution `sensitivity` scans, 55 of 3,630 points crossed a
+     * 2-dp rounding boundary and four of `arch`'s eight published rank-flip thresholds
+     * moved a whole scan step (0.46→0.465, 0.40→0.405, 0.43→0.435, 0.38→0.385).
+     *
+     * `weighted` is rounded to 2dp, so a divergence is invisible at every weight except
+     * the ones sitting on a .xx5 boundary — which is exactly why eyeballing a handful of
+     * numbers passed it. This sweeps a grid instead, and asserts against the literal old
+     * expression recomputed here rather than against remembered constants.
+     */
+    const oldExpression = (dims: EngineDim[], row: EngineRow, ov: Record<string, number>) => {
+      const w: Record<string, number> = {};
+      let sum = 0;
+      for (const d of dims) { const v = Math.max(0, ov[d.key] ?? d.weight); w[d.key] = v; sum += v; }
+      let acc = 0;
+      for (const d of dims) acc += (row.scores[d.key] ?? 0) * (w[d.key]! / sum);
+      return Math.round(acc * 100) / 100;
+    };
+    // Scores chosen to land on rounding boundaries under this weight grid; the assertion
+    // does not depend on that, but without it the sweep would be vacuously green.
+    const rows: EngineRow[] = [
+      { subjectId: 'a', subjectLabel: 'A', scores: { reg: 4, liq: 3, oes: 5 } },
+      { subjectId: 'b', subjectLabel: 'B', scores: { reg: 3, liq: 5, oes: 2 } },
+      { subjectId: 'c', subjectLabel: 'C', scores: { reg: 5, liq: 2, oes: 4 } },
+    ];
+    let compared = 0;
+    for (const d of DIMS) {
+      for (let wk = 0; wk <= 0.6001; wk += 0.005) {
+        const ov: Record<string, number> = {};
+        for (const dd of DIMS) ov[dd.key] = dd.key === d.key ? wk : dd.weight;
+        const got = rescore(DIMS, rows, ov);
+        for (const r of got) {
+          const want = oldExpression(DIMS, rows.find((x) => x.subjectId === r.subjectId)!, ov);
+          compared++;
+          if (r.weighted !== want) {
+            throw new Error(
+              `fully-scored row "${r.subjectId}" diverged from the pre-change expression at ` +
+              `${d.key}=${wk.toFixed(3)}: got ${r.weighted}, the old engine gave ${want}. ` +
+              `sum(v·w)/S is not sum(v·w/S) in doubles — the fully-scored path must keep the ` +
+              `original terms, not be re-derived from the renormalized one.`,
+            );
+          }
+        }
+      }
+    }
+    expect(compared).toBeGreaterThan(1000); // the sweep ran, rather than matching nothing
+  });
+
+  it('treats a REAL zero as a measurement, not as absence', () => {
+    // The half of "absent is not zero" that is easy to break while fixing the other half.
+    const r = rescore(DIMS, [{ subjectId: 'z', subjectLabel: 'Zero', scores: { reg: 0, liq: 0, oes: 0 } }]);
+    expect(r).toHaveLength(1);
+    expect(r[0]!.weighted).toBe(0);
+    expect(r[0]!.scoredDims).toBe(3);
+    expect(r[0]!.partial).toBe(false);
+    expect(r[0]!.absentDims).toEqual([]);
+  });
+
+  it('keeps not-scored, withheld and malformed apart instead of collapsing them', () => {
+    const row = {
+      subjectId: 'm', subjectLabel: 'Mixed',
+      scores: { reg: 5, liq: null, oes: NaN } as unknown as Record<string, number>,
+    };
+    const r = rescore(DIMS, [row])[0]!;
+    expect(r.absentDims).toEqual([]);           // nothing is simply missing
+    expect(r.withheldDims).toEqual(['liq']);    // explicitly recorded as having no value
+    expect(r.malformedDims).toEqual(['oes']);   // present, but not a number
+    expect(r.scoredDims).toBe(1);
+    // `??` never caught NaN, so the old code let it into `weighted` and from there into
+    // the sort comparator, whose ordering for NaN is implementation-defined.
+    expect(Number.isFinite(r.weighted)).toBe(true);
+    expect(r.weighted).toBe(5);
+  });
+});
+
+describe('LP optimizer — a row with nothing scored cannot be ranked at all', () => {
+  const WITH_EMPTY: EngineRow[] = [
+    ...ROWS,
+    { subjectId: 'void', subjectLabel: 'Unscored Co', scores: {} },
+  ];
+
+  it('refuses the row with a stable code instead of sorting it last on invented zeroes', () => {
+    const { ranked, unrankable } = rescoreDetailed(DIMS, WITH_EMPTY);
+    expect(ranked.map((r) => r.subjectId)).not.toContain('void');
+    expect(unrankable).toHaveLength(1);
+    expect(unrankable[0]!.code).toBe('ENGINE_ROW_NO_DIMENSIONS_SCORED');
+    expect(unrankable[0]!.subjectId).toBe('void');
+    expect(unrankable[0]!.scoredDims).toBe(0);
+    expect(unrankable[0]!.absentDims.sort()).toEqual(['liq', 'oes', 'reg']);
+    // The refusal cites the rule it is applying, not just that it failed.
+    expect(unrankable[0]!.permitted).toMatch(/at least 1 dimension/);
+  });
+
+  it('never gives the unscored row a weighted score of zero', () => {
+    // The precise old behaviour: rank 4, weighted 0.00, printed beside three real scores
+    // as though it had been assessed and found worthless.
+    const { ranked } = rescoreDetailed(DIMS, WITH_EMPTY);
+    expect(ranked).toHaveLength(3);
+    expect(ranked.some((r) => r.weighted === 0)).toBe(false);
+    expect(ranked.map((r) => r.rank)).toEqual([1, 2, 3]);
+  });
+
+  it('separates "scored on nothing" from "scored only where the weight is zero"', () => {
+    // Two different facts. The first says nobody assessed the subject; the second says
+    // this WEIGHTING is silent about a subject that was assessed.
+    const { ranked, unrankable } = rescoreDetailed(
+      DIMS,
+      [{ subjectId: 'w', subjectLabel: 'Zero-weight', scores: { liq: 5 } }, ROWS[0]!],
+      { reg: 1, liq: 0, oes: 1 },
+    );
+    expect(ranked.map((r) => r.subjectId)).toEqual(['a']);
+    expect(unrankable[0]!.code).toBe('ENGINE_ROW_SCORED_DIMENSIONS_CARRY_NO_WEIGHT');
+    expect(unrankable[0]!.scoredDims).toBe(1); // it WAS scored — that is the distinction
+  });
+
+  it('rescore() keeps its old signature so out-of-lane .toFixed(2) callers still work', () => {
+    // GrowthEngines.tsx:78 and CockpitPanels.tsx:145,147 call .toFixed(2) on every element.
+    const r = rescore(DIMS, WITH_EMPTY);
+    expect(Array.isArray(r)).toBe(true);
+    expect(() => r.map((x) => x.weighted.toFixed(2))).not.toThrow();
+    expect(r.every((x) => typeof x.weighted === 'number' && Number.isFinite(x.weighted))).toBe(true);
+  });
+});
+
+describe('LP optimizer — sensitivity survives a row that is unrankable mid-scan', () => {
+  it('does not throw when driving a weight to zero strands a partially-scored leader', () => {
+    // THE CRASH RENORMALIZING INTRODUCED, pinned. `sensitivity` scans one dimension's
+    // weight down to 0. `Partial` is scored ONLY on `reg`, so at reg=0 its renormalizing
+    // denominator is zero, it becomes unrankable, and it drops out of the rescored array —
+    // where the old `rs.find(...)!` asserted non-null and would read `.weighted` of
+    // undefined. That is a TypeError, not a wrong number.
+    const rows: EngineRow[] = [
+      { subjectId: 'p', subjectLabel: 'Partial', scores: { reg: 5 } },
+      { subjectId: 'b', subjectLabel: 'Beta', scores: { reg: 3, liq: 5, oes: 5 } },
+      { subjectId: 'c', subjectLabel: 'Gamma', scores: { reg: 2, liq: 2, oes: 2 } },
+    ];
+    expect(() => sensitivity(DIMS, rows)).not.toThrow();
+    const s = sensitivity(DIMS, rows);
+    expect(s).toHaveLength(3);
+    // Unevaluable is null, and null is not 0 — 0 would claim the gap does not move.
+    const reg = s.find((x) => x.dimKey === 'reg')!;
+    expect(reg.gapPerHundredth === null || Number.isFinite(reg.gapPerHundredth)).toBe(true);
+  });
+
+  it('still finds the flip on fully-scored rows', () => {
+    // The unchanged case must stay unchanged.
+    const reg = sensitivity(DIMS, ROWS).find((x) => x.dimKey === 'reg')!;
+    expect(reg.flipWeight).not.toBeNull();
+    expect(reg.gapPerHundredth).not.toBeNull();
+  });
+});
+
+describe('LP optimizer — an unassessed dimension is not a gap (analyzeSet)', () => {
+  it('reports best=null and unassessed=true rather than best=0', () => {
+    // `best` was `max(scores[key] ?? 0)`. A dimension nobody in the set had been scored on
+    // came back as `best: 0` and was published as a gap — an assertion that the set is
+    // uniformly terrible at something nobody ever looked at.
+    const a = analyzeSet(DIMS, [{ subjectId: 'u', subjectLabel: 'Unscored on two', scores: { reg: 5 } }], ['u']);
+    expect(a.strengths.map((s) => s.dimKey)).toEqual(['reg']);
+    const liq = a.gaps.find((g) => g.dimKey === 'liq')!;
+    expect(liq.best).toBeNull();
+    expect(liq.best).not.toBe(0);
+    expect(liq.unassessed).toBe(true);
+  });
+
+  it('a set genuinely scored low is still a gap, with its real number', () => {
+    const solo = analyzeSet(DIMS, ROWS, ['c']); // Gamma scored 2 everywhere
+    expect(solo.gaps).toHaveLength(3);
+    expect(solo.gaps.every((g) => g.best === 2 && g.unassessed === false)).toBe(true);
   });
 });
 

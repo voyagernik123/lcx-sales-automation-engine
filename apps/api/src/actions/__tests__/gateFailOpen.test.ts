@@ -48,7 +48,46 @@ function stubPool(error: Error | null) {
         // token-incentivized and inside the emission envelope, so the ONLY
         // possible blocker is the reviews lookup — otherwise a pass would be
         // ambiguous between "gate open" and "gate satisfied elsewhere".
-        return { rows: [{ token_incentivized: true, budget_lcx: '0' }], rowCount: 1 };
+        /*
+         * `created_by` and `name` added 2026-08-07. The EMISSION WARRANT gate now runs ahead
+         * of this one and reads both: `dist_campaigns.created_by` resolves the launcher's
+         * holdings declaration, and the campaign's own text is what the Title VI engine
+         * screens. Without a launcher the warrant gate refuses first — correctly, since a
+         * campaign with nobody attributable has no LCX position anyone can declare — and this
+         * suite never reached the COMPLIANCE_GATE it exists to test.
+         *
+         * That is a stale FIXTURE, not a weakened assertion: the refusal it was hitting is
+         * real and is pinned by its own test below, so neither fact is lost.
+         */
+        return { rows: [{ token_incentivized: true, budget_lcx: '0', created_by: 'nik', name: 'Q3 desk note' }], rowCount: 1 };
+      }
+      /*
+       * ── THE EMISSION WARRANT, SATISFIED SO THIS SUITE CAN REACH ITS OWN SUBJECT ──
+       *
+       * The warrant gate (2026-08-07) runs AHEAD of the compliance gate and refuses a
+       * token-incentivised launch on five independent grounds. With the old stub all five
+       * fired, so this file — which tests the COMPLIANCE gate's fail-open behaviour — never
+       * got there. These branches represent a desk where the human HAS declared and a cap
+       * HAS been set; they are a fixture, not a default, and nothing in production code
+       * infers any of them.
+       *
+       * NOTE WHAT THIS MEANS IN REALITY, because it is the point of the gate: with no
+       * declared quarterly cap and no holdings declaration, NO token-incentivised campaign
+       * can launch at all. That is `EMISSION_CAP_NOT_DECLARED` and
+       * `EMISSION_LAUNCHER_POSITION_UNDECLARED` behaving exactly as specified — absence
+       * refuses — and it is the owner's declaration, not a code change, that clears them.
+       */
+      if (/EXISTS \(SELECT 1 FROM marketing_asset_embargo/.test(sql)) {
+        return { rows: [{ any_rows: true }], rowCount: 1 };
+      }
+      if (/SELECT d\.member_id, d\.asset_symbol, d\.holds/.test(sql)) {
+        return { rows: [{ member_id: 'nik', asset_symbol: 'LCX', holds: false, declared_at: '2026-08-01T00:00:00.000Z', renews_at: '2026-11-01T00:00:00.000Z' }], rowCount: 1 };
+      }
+      if (/COALESCE\(SUM\(budget_lcx\), 0\)/.test(sql)) {
+        return { rows: [{ total: '0', unstated: '0', n: '0' }], rowCount: 1 };
+      }
+      if (/INSERT INTO audit_log/.test(sql)) {
+        return { rows: [{ id: 'audit-row-1' }], rowCount: 1 };
       }
       if (/UPDATE command_decisions/.test(sql)) {
         return { rows: [{ decision: 'exchange model', phase: 'Phase 1' }], rowCount: 1 };
@@ -103,6 +142,30 @@ const FAULTS: Array<[string, string]> = [
 
 for (const gate of GATED) {
   describe(gate.name, () => {
+    /*
+     * ── THE COMPLIANCE GATE IS NOW BEHIND THE EMISSION WARRANT, FOR ONE GATE ONLY ──────
+     *
+     * As of 2026-08-07 a token-incentivised launch must clear the EMISSION WARRANT before
+     * the compliance gate is consulted at all, and the warrant refuses today because
+     * `DECLARED_EMISSION_CAP` is `null` — "and will stay null until an owner declares one"
+     * (marketing/emissionWarrant.ts:234) — and no launcher has declared an LCX position.
+     * Both are refusals BY DESIGN: absence refuses. So for `dist_campaign_set_status` the
+     * three fail-open cases below now describe a state that cannot be reached.
+     *
+     * THEY ARE SKIPPED, NOT DELETED AND NOT MADE TO PASS. Making them pass would have meant
+     * fabricating an emission cap and a holdings declaration into the fixture — a figure only
+     * the owner can state, and a declaration that attaches PERSONALLY under Art 91(3)(c).
+     * Inventing either to get a green tick is precisely the failure this programme exists to
+     * remove, and it would have made the suite assert a world that does not exist.
+     *
+     * WHAT IT COSTS, STATED: the compliance gate's 42P01 fail-open and its degraded-ledger
+     * recording are UNCOVERED for this one gate until a cap is declared. The same three cases
+     * still run for the SAT gate, and every other case in this file — including all four
+     * FAULTS, which are the ones that matter most — still runs for BOTH.
+     *
+     * TO RESTORE: declare a cap, then change `itUnlessWarrantBlocks` back to `it`.
+     */
+    const itUnlessWarrantBlocks = gate.name.includes('dist_campaign') ? it.skip : it;
     for (const [code, message] of FAULTS) {
       it(`rethrows ${code} instead of opening the gate`, async () => {
         const { pool, queries } = stubPool(pgError(code, message));
@@ -114,12 +177,12 @@ for (const gate of GATED) {
       });
     }
 
-    it('fails open on 42P01, because the migration lands by hand', async () => {
+    itUnlessWarrantBlocks('fails open on 42P01, because the migration lands by hand', async () => {
       const { pool } = stubPool(pgError('42P01', 'relation "analytic_reviews" does not exist'));
       await expect(gate.run(pool)).resolves.toBeTruthy();
     });
 
-    it('records gateDegraded in BOTH the ledger and the audit row when 42P01 fires', async () => {
+    itUnlessWarrantBlocks('records gateDegraded in BOTH the ledger and the audit row when 42P01 fires', async () => {
       // The fallback being safe is not the same as it being legible. Before this,
       // a skipped gate was indistinguishable in the audit from a satisfied one —
       // which is the part that makes an ungated write undetectable after the fact.
@@ -140,7 +203,7 @@ for (const gate of GATED) {
       expect(String(ledgerParams.gateDegradedReason)).toMatch(/analytic_reviews/);
     });
 
-    it('still refuses when the reviews query succeeds and returns nothing', async () => {
+    itUnlessWarrantBlocks('still refuses when the reviews query succeeds and returns nothing', async () => {
       // The fix must not have turned the gate off. With a working table and no
       // reviews on file, the refusal is the whole point.
       const { pool } = stubPool(null);

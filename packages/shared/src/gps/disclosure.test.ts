@@ -16,6 +16,10 @@ import {
   missingDisclosures,
   renderDisclosure,
   requiredDisclosures,
+  GPS_LISTING_VERDICTS,
+  LISTING_PERIMETER_CODES,
+  listingContradiction,
+  listingPerimeterFinding,
 } from './disclosure.js';
 import type { DisclosureContext, DisclosureField } from './disclosure.js';
 
@@ -339,5 +343,220 @@ describe('what the caller persists', () => {
     for (const t of getDisclosureLibrarySnapshot().templates) {
       expect(Object.keys(t).sort()).toEqual(['appliesWhenLabel', 'id', 'title', 'version']);
     }
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ *  THE LISTING PERIMETER ENGINE — the three states, and the one shape that clears.
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * WHAT THESE DEFEND. The owner authorised GPS to read the listing pipeline VERDICT
+ * ONLY. That decision is worth nothing if the engine that interprets a verdict can
+ * be made to produce a clearance from anything other than an observed absence — and
+ * "anything other than" includes the two shapes that look most like nothing: a
+ * compartment that was never read, and a holding whose count arrived as 0.
+ *
+ * Every assertion below fails if the corresponding branch is reverted; each is
+ * mutation-tested and the observed failure is reported in the lane summary.
+ */
+describe('listing perimeter — three states, one clearance', () => {
+  const NOT_LOADED_CODES = [
+    'VERDICT_BROKER_CROSS_READ_NOT_AUTHORISED',
+    'VERDICT_BROKER_HOLDER_UNAVAILABLE',
+    'VERDICT_BROKER_ASKER_NOT_ENTITLED',
+    'OTHER_LEDGER_TICKER_NOT_NORMALISED',
+    'OTHER_LEDGER_TICKER_ABSENT',
+    'GPS_LISTING_JOIN_DETECTOR_ABSENT',
+  ];
+
+  it.each(NOT_LOADED_CODES)('a not-loaded reading (%s) NEVER clears', (code) => {
+    const f = listingPerimeterFinding({ state: 'not_loaded', reasonCode: code });
+    expect(f.kind).toBe('not_loaded');
+    expect(f.clearsListingConflict).toBe(false);
+    expect(f.requiresMarketingDesk).toBe(true);
+    expect(f.namingBlocked).toBe(true);
+    expect(f.code).toBe(LISTING_PERIMETER_CODES.NOT_LOADED);
+    if (f.kind === 'not_loaded') expect(f.upstreamCode).toBe(code);
+  });
+
+  /**
+   * THE STRUCTURAL ASSERTION, not a value assertion. `not_loaded` must have no
+   * `withheldCount` PROPERTY at all — not `0`, not `null`, not `undefined`-valued —
+   * because a JSON boundary turns a `null` count into a `0` in the first consumer
+   * that does `count ?? 0`, and a 0 is indistinguishable from an observed absence.
+   * `verdictBroker.ts` makes the same claim about its own answer and asserts it the
+   * same way; this is the second half of that guarantee, on the shape GPS renders.
+   */
+  it('a not-loaded finding carries NO withheldCount and NO verdict property', () => {
+    const f = listingPerimeterFinding({ state: 'not_loaded', reasonCode: 'ANY' });
+    expect('withheldCount' in f).toBe(false);
+    expect('verdict' in f).toBe(false);
+    expect(JSON.parse(JSON.stringify(f))).not.toHaveProperty('withheldCount');
+  });
+
+  it('an observed absence in a populated register is the ONLY clearance', () => {
+    const f = listingPerimeterFinding({ state: 'empty' });
+    expect(f.kind).toBe('no_entry');
+    expect(f.clearsListingConflict).toBe(true);
+    expect(f.namingBlocked).toBe(false);
+    expect(f.requiresMarketingDesk).toBe(false);
+    expect(f.code).toBe(LISTING_PERIMETER_CODES.NO_ENTRY);
+  });
+
+  it('no withheld verdict clears, whatever it is', () => {
+    for (const verdict of GPS_LISTING_VERDICTS) {
+      const f = listingPerimeterFinding({ state: 'withheld', verdict, withheldCount: 2 });
+      expect(f.kind).toBe('withheld');
+      expect(f.clearsListingConflict).toBe(false);
+      expect(f.requiresMarketingDesk).toBe(true);
+    }
+  });
+
+  /**
+   * `clear_on_record` IS THE ONE MOST LIKELY TO BE "SIMPLIFIED" INTO A CLEARANCE by
+   * a later reader, because the word `clear` is in it. It is the marketing desk's
+   * recorded position about the REGISTER, taken without knowing a GPS engagement
+   * exists, and it is not this compartment's permission to name the asset.
+   */
+  it('clear_on_record is not a clearance and does not unblock naming', () => {
+    const f = listingPerimeterFinding({
+      state: 'withheld',
+      verdict: 'clear_on_record',
+      withheldCount: 1,
+    });
+    expect(f.clearsListingConflict).toBe(false);
+    expect(f.namingBlocked).toBe(true);
+    expect(f.code).toBe(LISTING_PERIMETER_CODES.CLEAR_ON_RECORD);
+  });
+
+  it('history_only reports no restriction in force but is still not a clearance', () => {
+    const f = listingPerimeterFinding({
+      state: 'withheld',
+      verdict: 'history_only',
+      withheldCount: 3,
+    });
+    expect(f.namingBlocked).toBe(false);
+    expect(f.clearsListingConflict).toBe(false);
+  });
+
+  it('an unrecognised verdict REFUSES rather than being bucketed', () => {
+    const f = listingPerimeterFinding({
+      state: 'withheld',
+      verdict: 'newly_added_verdict_nobody_told_this_engine_about',
+      withheldCount: 1,
+    });
+    expect(f.kind).toBe('not_loaded');
+    expect(f.code).toBe(LISTING_PERIMETER_CODES.VERDICT_UNRECOGNISED);
+    expect(f.clearsListingConflict).toBe(false);
+  });
+
+  it.each([0, -1, 1.5, Number.NaN])(
+    'a withheld holding with an impossible count (%s) refuses, and does not become an absence',
+    (n) => {
+      const f = listingPerimeterFinding({
+        state: 'withheld',
+        verdict: 'restricted',
+        withheldCount: n,
+      });
+      expect(f.kind).toBe('not_loaded');
+      expect(f.code).toBe(LISTING_PERIMETER_CODES.COUNT_INCOHERENT);
+      expect(f.clearsListingConflict).toBe(false);
+    },
+  );
+
+  it('the withheld count reaches the message, so "withheld" cannot read as "nothing"', () => {
+    const f = listingPerimeterFinding({ state: 'withheld', verdict: 'restricted', withheldCount: 4 });
+    expect(f.message).toContain('4 register entries are being withheld');
+  });
+
+  /**
+   * THE LEAK TEST. The finding is the only thing that crosses into a GPS surface, so
+   * it is the last place a register field could appear. Asserted on the KEY SET,
+   * not by eyeballing: a field added to the finding in future has to be justified
+   * against this list rather than slipping in beside the ones that were reviewed.
+   */
+  it('a finding carries no field that could hold register contents', () => {
+    const withheld = listingPerimeterFinding({
+      state: 'withheld',
+      verdict: 'restricted',
+      withheldCount: 2,
+    });
+    expect(Object.keys(withheld).sort()).toEqual([
+      'clearsListingConflict',
+      'code',
+      'disclosureConsequence',
+      'kind',
+      'message',
+      'namingBlocked',
+      'requiresMarketingDesk',
+      'rule',
+      'verdict',
+      'withheldCount',
+    ]);
+    const blob = JSON.stringify(withheld);
+    for (const forbidden of ['event_ref', 'source_ref', 'entered_by', 'embargoed_until', 'review_by']) {
+      expect(blob).not.toContain(forbidden);
+    }
+  });
+});
+
+describe('listing perimeter — does the recorded position survive it', () => {
+  const restricted = listingPerimeterFinding({
+    state: 'withheld',
+    verdict: 'restricted',
+    withheldCount: 1,
+  });
+
+  it('a plain `cleared` against a restricted asset is a CONTRADICTION', () => {
+    const c = listingContradiction('cleared', restricted);
+    expect(c.kind).toBe('contradiction');
+    if (c.kind === 'contradiction') {
+      expect(c.code).toBe(LISTING_PERIMETER_CODES.DECISION_CONTRADICTED);
+      expect(c.message).toMatch(/re-taken/);
+    }
+  });
+
+  it('no recorded position at all against a restricted asset is a CONTRADICTION', () => {
+    const c = listingContradiction('unresolved', restricted);
+    expect(c.kind).toBe('contradiction');
+  });
+
+  it('cleared WITH disclosure, and declined, are not contradicted', () => {
+    expect(listingContradiction('cleared_with_disclosure', restricted).kind).toBe('none');
+    expect(listingContradiction('declined', restricted).kind).toBe('none');
+  });
+
+  /**
+   * THE ONE THAT MATTERS MOST. "We found no contradiction" and "we could not look
+   * for one" are different facts. Collapsing them puts a green row on the wall for
+   * an engagement nobody checked, which is the false clean the whole path exists to
+   * prevent — and it is one `=== 'none'` away at every call site.
+   */
+  it('an unread perimeter is UNESTABLISHED, never `none`', () => {
+    const notLoaded = listingPerimeterFinding({
+      state: 'not_loaded',
+      reasonCode: 'VERDICT_BROKER_CROSS_READ_NOT_AUTHORISED',
+    });
+    const c = listingContradiction('cleared', notLoaded);
+    expect(c.kind).toBe('unestablished');
+    expect(c.kind).not.toBe('none');
+    if (c.kind === 'unestablished') {
+      expect(c.code).toBe(LISTING_PERIMETER_CODES.CONTRADICTION_UNESTABLISHED);
+    }
+  });
+
+  it('an observed absence contradicts nothing', () => {
+    expect(listingContradiction('cleared', listingPerimeterFinding({ state: 'empty' })).kind)
+      .toBe('none');
+  });
+
+  it('history_only does not make every past-mentioned asset a red row', () => {
+    const history = listingPerimeterFinding({
+      state: 'withheld',
+      verdict: 'history_only',
+      withheldCount: 2,
+    });
+    expect(listingContradiction('cleared', history).kind).toBe('none');
   });
 });

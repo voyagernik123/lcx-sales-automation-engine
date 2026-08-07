@@ -71,6 +71,14 @@ export type PracticeCode =
   | 'SELF_LOCKOUT'
   | 'SAT_REQUIRED'
   | 'COMPLIANCE_GATE'
+  /*
+   * THE EMISSION WARRANT (2026-08-07). An operator meets both of these on a real
+   * token-incentivised launch, so the practice range has to teach them or it is training
+   * people for a system that no longer exists — which is what this file's own ratchet
+   * caught the moment the gate landed.
+   */
+  | 'EMISSION_WARRANT_REFUSED'
+  | 'CAMPAIGN_TRIGGER_NOT_STATED'
   | 'APPROVER_REQUIRED'
   | 'OVERRIDE_REASON_REQUIRED'
   | 'STEP_UP_REQUIRED'
@@ -117,6 +125,15 @@ export const PRACTICE_REMEDIES: Record<PracticeCode, PracticeRemedy> = {
     overridable: true,
   },
   COMPLIANCE_GATE: { fragment: 'Clear the blockers, or override with a recorded reason.', overridable: true },
+  /*
+   * NEITHER IS OVERRIDABLE, and that is the lesson. A compliance blocker can be overridden
+   * with a recorded reason; an emission warrant cannot, because what it is missing is a
+   * figure only the owner can state (the quarterly cap) or a declaration that attaches to a
+   * named person under Art 91(3)(c). There is no reason an operator can type that substitutes
+   * for either, so the remedy names who must act rather than offering an override.
+   */
+  EMISSION_WARRANT_REFUSED: { fragment: 'Nobody can override it: the owner must declare the quarterly LCX cap, and the launcher must declare their own LCX position, before a token-incentivised campaign goes live.', overridable: false },
+  CAMPAIGN_TRIGGER_NOT_STATED: { fragment: 'This campaign does not say whether it emits LCX. Unknown is not no — set token_incentivized to a real boolean before advancing it.', overridable: false },
   APPROVER_REQUIRED: {
     fragment:
       'This needs approver authority. Ask an approver to run it — an override cannot grant authority you do not hold.',

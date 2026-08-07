@@ -380,6 +380,18 @@ export const PENDING_MIGRATIONS: readonly string[] = [
    *        claim calibration, and the code returns the refusal and the real N rather than a
    *        percentage. Do not read an early figure off this as accuracy. */
   '0074_platform_forecast.sql',
+
+  /* 0075 → `gps_partner_registry` + `gps_partner_capability`. F5, which the plan called
+   * "NAMED, NOT BUILT" — four namespaces named partners and TWO MIGRATIONS REFUSED THE
+   * FOREIGN KEY IN PROSE (0052_gps_underwriting.sql:52, 0049_gps_delivery.sql:156), because
+   * the bench did not exist as a table. The owner's 2026-08-07 decision — a NAMED HUMAN may
+   * assert a partner and a rate card, attributed to them — is what let it exist, and the
+   * attribution is enforced (asserted_by / asserted_at / assertion_basis NOT NULL + non-blank
+   * CHECK), not conventional. `max_concurrent` is nullable with a CHECK that the capacity
+   * claim travels whole or not at all: NULL is "nobody asked", 0 is "full", and they never
+   * collapse. RLS enabled with no policies — deny-all. NOT APPLIED ANYWHERE, including the
+   * CI mirror, so the registry and THE FLOOR are real and INERT until a human applies it. */
+  '0075_gps_partner_registry.sql',
 ];
 
 /**

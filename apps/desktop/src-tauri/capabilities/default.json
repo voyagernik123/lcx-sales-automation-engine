@@ -1,7 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "LCXOS — the shell capabilities the operator desk needs.",
+  "description": "LCXOS — the shell capabilities the operator desk needs. The `lcxos-desk` set (permissions/lcxos-desk.toml) is the app's OWN native commands, which before build.rs declared an ACL manifest were reachable with no permission consulted at all; `deny-is-terminal` is an absolute denial of the one registered command nothing invokes. `local: true` with no `remote` block is stated rather than inherited: no remote origin gets any of this.",
+  "local": true,
   "windows": ["main"],
   "permissions": [
     "core:default",
@@ -13,6 +14,8 @@
     "os:default",
     "process:default",
     "updater:default",
-    "global-shortcut:default"
+    "global-shortcut:default",
+    "lcxos-desk",
+    "deny-is-terminal"
   ]
 }

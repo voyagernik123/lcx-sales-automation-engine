@@ -246,7 +246,7 @@ export function DraftingRoom({ reply, draft, onDraft, onApprove, busy }: {
           <div className="border-t border-line pt-2">
             <SectionLabel as="h3">As stored — this is what an approval would cover</SectionLabel>
             <div className="mt-1 border-l-2 border-line px-2 py-1">
-              <AiProse text={stored} />
+              <AiProse text={stored} validIds={[]} />
             </div>
             <p className="mt-1 font-mono text-[10px] leading-snug text-grey">
               {draft.used_llm ? 'AI-drafted' : 'deterministic draft — no AI answer (cause not reported by this engine)'} · {draft.status}

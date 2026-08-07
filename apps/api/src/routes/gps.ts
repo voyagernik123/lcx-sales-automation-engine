@@ -84,6 +84,7 @@ import { gpsLoopRoutes } from './gpsLoop.js';
 // Client intake (owner decision, 2026-08-02: GPS may store client documents).
 import { gpsArtifactRoutes } from './gpsArtifact.js';
 // The input desk: price bands, effort triples, rate cards. Mounted at '/inputs' below.
+import { gpsPartnerRegistryRoutes } from './gpsPartnerRegistry.js';
 import { gpsInputsRoutes } from './gpsInputs.js';
 import {
   perimeterClearanceFor,
@@ -965,3 +966,12 @@ gpsRoutes.route('/', gpsArtifactRoutes); //  /v1/gps/engagements/:id/artifacts, 
  * missing — they never render as zero.
  */
 gpsRoutes.route('/inputs', gpsInputsRoutes); //  GET /v1/gps/inputs, POST /inputs/price-bands|effort-triples|rate-cards
+
+/*
+ * F5 — THE PARTNER REGISTRY (2026-08-07). Mounted HERE and not in `app.ts` on purpose: the
+ * `gps` workspace declares `apiPrefixes: ['/v1/gps']`, so every path under it inherits
+ * `requireWorkspace('gps', view|operate)` from the mount loop automatically. A sibling mount
+ * in app.ts would sit OUTSIDE that prefix and arrive ungated — which is exactly how
+ * `/v1/reviews` ended up with no compartment gate on any of its five handlers.
+ */
+gpsRoutes.route('/partner-registry', gpsPartnerRegistryRoutes); //  /v1/gps/partner-registry, /partners, /floor

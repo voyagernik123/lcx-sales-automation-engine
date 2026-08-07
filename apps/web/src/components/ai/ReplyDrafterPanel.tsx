@@ -142,7 +142,7 @@ export function ReplyDrafterPanel() {
               <CopyButton text={result.subject} label="Copy subject" />
             </div>
             <div className={aiBoxClass}>
-              <AiProse text={result.subject} />
+              <AiProse text={result.subject} validIds={[]} />
             </div>
           </div>
           <div>
@@ -151,7 +151,7 @@ export function ReplyDrafterPanel() {
               <CopyButton text={result.body} label="Copy body" />
             </div>
             <div className={aiBoxClass}>
-              <AiProse text={result.body} />
+              <AiProse text={result.body} validIds={[]} />
             </div>
           </div>
           {result.claimsUsed.length > 0 && (

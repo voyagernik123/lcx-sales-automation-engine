@@ -16,6 +16,8 @@ import {
   getDisclosureLibrarySnapshot,
   getDisclosureTemplate,
   getOffer,
+  listingContradiction,
+  listingPerimeterFinding,
   missingDisclosures,
   normaliseJurisdiction,
   perimeterEntryDefects,
@@ -28,8 +30,12 @@ import {
   type DisclosureLibrarySnapshot,
   type DisclosureUseRecord,
   type EngagementStatus,
+  type EntitlementMap,
   type GpsConflictCheck,
   type JurisdictionProfile,
+  type ListingContradiction,
+  type ListingPerimeterFinding,
+  type ListingPerimeterReading,
   type OfferKey,
   type PerimeterEntry,
   type ProhibitedPromise,
@@ -37,6 +43,8 @@ import {
   type ServiceClass,
   type ServiceGateDecision,
 } from '@lcx/shared';
+import { askListingPipelineForProject, LISTING_PIPELINE_QUESTION } from '../access/otherLedger.js';
+import { brokerGate } from '../access/verdictBroker.js';
 import { env } from '../lib/env.js';
 import { secondTierUnexpected, secondTierUsage, type SecondTierUse } from '../lib/secondTier.js';
 import { REQUIRES_CONFLICT_CLEARANCE } from './service.js';
@@ -1475,6 +1483,473 @@ export function standingLimits(): readonly StandingLimit[] {
     label: PROHIBITED_PROMISE_LABEL[key],
     sentence: PROHIBITED_PROMISE_SENTENCE[key],
   }));
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+ *  THE LISTING PERIMETER READ — the one cross-compartment question this wall asks,
+ *  verdict only, logged without exception.
+ * ══════════════════════════════════════════════════════════════════════════════
+ *
+ * THE OWNER'S DECISION, TAKEN: GPS may read the listing pipeline VERDICT ONLY, and
+ * every read is logged. The engine that says what a verdict MEANS is
+ * `packages/shared/src/gps/disclosure.ts` (pure, reviewed, no I/O); the broker that
+ * produces a verdict without producing a row is `access/verdictBroker.ts` +
+ * `access/otherLedger.ts`. THIS FILE OWNS THREE THINGS AND NO POLICY: resolving the
+ * engagement to a project, writing the log, and refusing when the database cannot
+ * support the question.
+ *
+ * ══ WHY THIS FUNCTION EXISTS AT ALL ══════════════════════════════════════════
+ * The broker and the ledger were built, tested and merged, and NOTHING CALLED THEM.
+ * `grep -rn askListingPipeline apps packages` returned the module, its own tests,
+ * and nothing else. A conflict control nobody can reach is not a control, and this
+ * programme has shipped unreachable capability twice already. This is the caller.
+ *
+ * ══ THE SYMBOL NEVER APPEARS IN THIS FILE, AND THAT IS DELIBERATE ════════════
+ * `askListingPipelineForProject` takes a PROJECT ID and resolves `ticker_norm`
+ * inside the access layer. So the asset symbol never enters this compartment's
+ * memory, never reaches this compartment's log, and cannot reach a GPS response.
+ * That is not fastidiousness: `routes/audit.ts` already withholds
+ * `marketing_asset_embargo.asset_symbol` from readers without the marketing
+ * compartment, having found that THE SYMBOL IN `entity_id` WAS ITSELF THE
+ * DISCLOSURE. Writing it into an audit row a GPS reader can read would reopen that
+ * exact hole from the other side. The audit row names the ENGAGEMENT and the
+ * PROJECT; an auditor with the marketing compartment resolves the rest there.
+ */
+
+/**
+ * The `audit_log.action` for a listing-perimeter read. One string, so "every time
+ * GPS asked the other ledger anything" is one filter and never a guess.
+ * `audit_log` is in the 0000 spine and applied on every database, so this needs no
+ * migration — the same standing fact `perimeterGuard.ts:118` relies on.
+ */
+export const GPS_LISTING_READ_ACTION = 'gps_conflict.listing_verdict_read';
+
+export const GPS_LISTING_CODES = {
+  /** The read happened and its log row could not be written. Fails CLOSED. */
+  READ_UNRECORDED: 'GPS_LISTING_READ_UNRECORDED',
+  /** No engagement with that id on this database. */
+  ENGAGEMENT_UNKNOWN: 'GPS_LISTING_ENGAGEMENT_UNKNOWN',
+  /** The engagement exists and is not linked to a tracked project. */
+  NO_PROJECT_LINK: 'GPS_LISTING_NO_PROJECT_LINK',
+  /** `gps_engagement` could not be read. Not-loaded, never empty. */
+  ENGAGEMENT_UNREADABLE: 'GPS_LISTING_ENGAGEMENT_UNREADABLE',
+  /** 0072 is not applied here, so the join's false-negative detector is absent. */
+  JOIN_DETECTOR_ABSENT: 'GPS_LISTING_JOIN_DETECTOR_ABSENT',
+  /** Whether the detector exists could not be determined. */
+  JOIN_DETECTOR_UNKNOWN: 'GPS_LISTING_JOIN_DETECTOR_UNKNOWN',
+} as const;
+
+export type GpsListingCode = (typeof GPS_LISTING_CODES)[keyof typeof GPS_LISTING_CODES];
+
+const RULE_LOGGED_OR_NOT_ANSWERED =
+  'The owner authorised this cross-compartment read ON CONDITION that every read is logged. A '
+  + 'read whose log row was not written did not happen as far as an auditor is concerned, so the '
+  + 'verdict is withheld from the caller rather than returned unrecorded. The same failure mode '
+  + 'and the same fix as PERIMETER_ADVISORY_UNRECORDED (gps/perimeterGuard.ts): a control whose '
+  + 'record is optional is a disabled control.';
+
+const RULE_UNKNOWN_REFUSES =
+  'House doctrine: absent data refuses under a stable code that names what is missing. It is '
+  + 'never 0, never a default, never an estimate, and on this path it is never "no conflict '
+  + 'found" — the three states not-loaded / withheld / genuinely-empty are kept apart all the '
+  + 'way to the caller.';
+
+const RULE_JOIN_MUST_BE_MEASURABLE =
+  '0072_verdict_broker.sql: projects.ticker_norm is documented as cleanTicker(ticker) and NOTHING '
+  + 'ENFORCES IT — there is no CHECK — while marketing_asset_embargo.asset_symbol is '
+  + 'CHECK-enforced to upper(btrim(...)) by 0060. A denormalised ticker_norm can therefore never '
+  + 'equal any asset_symbol, the join returns zero rows, and zero rows on a conflict check reads '
+  + 'as "this asset is clear". The read path refuses such a row for the project it was asked '
+  + 'about; the partial index idx_projects_ticker_norm_unjoinable is the only thing that can say '
+  + 'how many such rows exist at all. Without it the control is sound per row and unmeasurable in '
+  + 'aggregate, which is a control nobody can audit.';
+
+/**
+ * EVERY REFUSAL NAMES THE RULE IT APPLIES — the codes above are stable strings an
+ * alert keys off, and the rule is the sentence a human needs beside them. Exported
+ * as a total map so a surface renders the rule from the code it was handed rather
+ * than carrying its own copy of the reasoning, and so that adding a code without
+ * adding its rule is a compile error.
+ */
+export const GPS_LISTING_CODE_RULE: Record<GpsListingCode, string> = {
+  [GPS_LISTING_CODES.READ_UNRECORDED]: RULE_LOGGED_OR_NOT_ANSWERED,
+  [GPS_LISTING_CODES.ENGAGEMENT_UNKNOWN]: RULE_UNKNOWN_REFUSES,
+  [GPS_LISTING_CODES.NO_PROJECT_LINK]: RULE_UNKNOWN_REFUSES,
+  [GPS_LISTING_CODES.ENGAGEMENT_UNREADABLE]: RULE_UNKNOWN_REFUSES,
+  [GPS_LISTING_CODES.JOIN_DETECTOR_ABSENT]: RULE_JOIN_MUST_BE_MEASURABLE,
+  [GPS_LISTING_CODES.JOIN_DETECTOR_UNKNOWN]: RULE_JOIN_MUST_BE_MEASURABLE,
+};
+
+/**
+ * IS THE JOIN'S FALSE-NEGATIVE DETECTOR ON THIS DATABASE?
+ *
+ * `0072_verdict_broker.sql` creates `idx_projects_ticker_norm_unjoinable`, a partial
+ * index whose predicate is exactly the set `access/otherLedger.ts` refuses. Its
+ * COUNT is the only cheap answer to "how many projects would silently miss this
+ * join?", and a silent miss on this join is a conflict check reading clean about an
+ * embargoed asset — the EUR 700k personal-liability shape.
+ *
+ * 0072 IS NOT APPLIED TO PRODUCTION AS THIS SHIPS. So until it is, this path
+ * REFUSES with `GPS_LISTING_JOIN_DETECTOR_ABSENT` rather than answering. That is a
+ * real reason and not ceremony: `assetSymbolForProject` closes the false negative
+ * for the ONE project being asked about, but nothing without the index can say
+ * whether the book at large is joinable, and a control that is sound per-row and
+ * unmeasurable in aggregate is a control nobody can audit.
+ *
+ * CACHES ONLY THE POSITIVE, and logs the catch — the lesson `isPerimeterMigrated`
+ * above records in full: a `catch { cache = false }` poisons the process
+ * permanently on one connection reset, and migrations are deliberately not part of
+ * the deploy, so a cached true negative never self-heals either.
+ *
+ * Returns `null` when the question itself could not be answered, which is a third
+ * state and gets its own code.
+ */
+let listingJoinDetectorCache: boolean | null = null;
+
+export async function listingJoinDetectorPresent(pool: Pool): Promise<boolean | null> {
+  if (listingJoinDetectorCache === true) return true;
+  try {
+    const res = await pool.query(
+      `SELECT to_regclass('public.idx_projects_ticker_norm_unjoinable') IS NOT NULL AS ok`,
+    );
+    const ok = Boolean((res.rows as Array<{ ok: boolean | null }>)[0]?.ok);
+    if (ok) listingJoinDetectorCache = true;
+    return ok;
+  } catch (err) {
+    console.error('[gps] listing join detector probe failed; not caching the negative:', err);
+    return null;
+  }
+}
+
+/** Test-only: forget the probe. */
+export function _resetListingJoinDetector(): void {
+  listingJoinDetectorCache = null;
+}
+
+export interface ListingPerimeterInput {
+  engagementId: string;
+  /** The AUTHENTICATED session, never a body field. This is the "who asked". */
+  askedBy: string;
+  /** The asking principal's grants. `gps` at `view` is required; `marketing` is not. */
+  entitlements: EntitlementMap;
+  /** ISO instant, carried onto the log row and the answer. */
+  asOf: string;
+}
+
+/**
+ * What a GPS surface gets back. `finding` is ALWAYS present — there is no shape
+ * here that omits it, because a caller that has to check for its absence will
+ * eventually forget and render a blank as a pass.
+ */
+export interface ListingPerimeterCheck {
+  engagementId: string;
+  /** Null when the engagement is not linked to a tracked project. */
+  projectId: string | null;
+  askedBy: string;
+  asOf: string;
+  /** The reviewed engine's answer. Never `null`, and never a bare boolean. */
+  finding: ListingPerimeterFinding;
+  /** Whether the recorded conflict position survives it. */
+  contradiction: ListingContradiction;
+  /**
+   * True iff a row was written to `audit_log`. FALSE ONLY EVER APPEARS WITH A
+   * `not_loaded` finding carrying `GPS_LISTING_READ_UNRECORDED`: when the log write
+   * fails the verdict is discarded, not returned with a flag beside it.
+   */
+  logged: boolean;
+  /** The `audit_log.action` this read was written under, for the auditor's filter. */
+  logAction: string;
+}
+
+/**
+ * Write the record of a listing-perimeter read. Returns false if it could not be
+ * written, and the caller then refuses.
+ *
+ * WHAT IS IN THE ROW, AND WHAT IS DELIBERATELY NOT.
+ *  · WHO ASKED — the authenticated session, never a body field.
+ *  · ABOUT WHICH SUBJECT — the engagement id (as `entity_id`) and the project id.
+ *    NOT the ticker and NOT the asset symbol: see the section header.
+ *  · WHEN — `audit_log`'s own `created_at`, plus the caller's `asOf` so the log can
+ *    be reconciled against the answer the caller was shown.
+ *  · WHAT VERDICT CAME BACK — the finding's kind, its stable code, and the verdict
+ *    string when there is one. This is the field that makes the log worth keeping:
+ *    a log recording that a question was asked, without the answer, cannot show
+ *    that a desk was told an asset was restricted and proceeded anyway.
+ *  · The withheld COUNT, when there is one — it is already the lesser disclosure
+ *    the broker deliberately publishes, and omitting it from the record while
+ *    showing it on screen would make the record weaker than the screen.
+ *
+ * REFUSALS ARE LOGGED TOO. A refusal is a read attempt, and a register that shows
+ * only successful reads cannot answer "was this control switched off, and for how
+ * long?" — which is the first question anyone will ask about a default-deny flag.
+ */
+async function recordListingRead(
+  pool: Pool,
+  input: ListingPerimeterInput,
+  projectId: string | null,
+  finding: ListingPerimeterFinding,
+): Promise<boolean> {
+  try {
+    await pool.query(
+      `INSERT INTO audit_log (actor, action, entity, entity_id, meta)
+       VALUES ($1, $2, $3, $4, $5::jsonb)`,
+      [
+        input.askedBy,
+        GPS_LISTING_READ_ACTION,
+        'gps_engagement',
+        input.engagementId,
+        JSON.stringify({
+          askedBy: input.askedBy,
+          engagementId: input.engagementId,
+          projectId,
+          asOf: input.asOf,
+          findingKind: finding.kind,
+          findingCode: finding.code,
+          verdict: finding.kind === 'withheld' ? finding.verdict : null,
+          withheldCount: finding.kind === 'not_loaded' ? null : finding.withheldCount,
+          upstreamCode: finding.kind === 'not_loaded' ? finding.upstreamCode : null,
+          clearsListingConflict: finding.clearsListingConflict,
+          namingBlocked: finding.namingBlocked,
+          note:
+            'GPS read the listing pipeline VERDICT for this engagement. Verdict only: no embargo '
+            + 'row, no state, no event, no window, no asset symbol crossed the compartment '
+            + 'boundary, and none is in this row. The owner authorised the read on condition that '
+            + 'every one of them is recorded here.',
+        }),
+      ],
+    );
+    return true;
+  } catch (err) {
+    console.error('[gps] listing verdict read log write failed:', err);
+    return false;
+  }
+}
+
+/**
+ * The engine's generic not-loaded sentence says the perimeter was NOT READ. On the
+ * unrecorded-log path that sentence is FALSE — it was read, and the answer is being
+ * withheld because the record of the read could not be written. Saying the wrong
+ * true-shaped thing is how an operator ends up chasing the marketing desk about a
+ * Postgres write failure, so the two fields that carry the explanation are replaced
+ * and NOTHING ELSE IS: `clearsListingConflict`, `namingBlocked` and
+ * `requiresMarketingDesk` stay exactly as the reviewed engine set them.
+ *
+ * The guard is not defensive padding — it is what narrows the union so the spread is
+ * a `not_loaded` finding and not an object that has lost its discriminant.
+ */
+function unrecordedRead(f: ListingPerimeterFinding): ListingPerimeterFinding {
+  if (f.kind !== 'not_loaded') return f;
+  return {
+    ...f,
+    message:
+      'The listing perimeter WAS read and its answer is being withheld from you, because the audit '
+      + 'row recording the read could not be written. The owner authorised this cross-compartment '
+      + 'read on condition that every read is logged, so an unlogged answer is not an answer that '
+      + 'may be acted on. Retry once the audit log is writable; the underlying reason — which '
+      + 'belongs to the database and not to the marketing desk — is on the server logs.',
+    rule: RULE_LOGGED_OR_NOT_ANSWERED,
+  };
+}
+
+/**
+ * Read `gps_engagement.project_id`. Its own function so the ORDER of the gates is
+ * visible at the call site: this query does not run until `brokerGate` has passed.
+ */
+async function projectIdForEngagement(
+  pool: Pool,
+  engagementId: string,
+): Promise<
+  | { kind: 'project'; projectId: string }
+  | { kind: 'no_link' }
+  | { kind: 'unknown' }
+  | { kind: 'unreadable' }
+> {
+  try {
+    const res = await pool.query(
+      `SELECT project_id FROM gps_engagement WHERE id = $1`,
+      [engagementId],
+    );
+    const rows = res.rows as Array<{ project_id: string | null }>;
+    if (rows.length === 0) return { kind: 'unknown' };
+    const pid = rows[0]?.project_id ?? null;
+    return pid === null ? { kind: 'no_link' } : { kind: 'project', projectId: pid };
+  } catch (err) {
+    console.error('[gps] engagement project lookup failed:', err);
+    return { kind: 'unreadable' };
+  }
+}
+
+/**
+ * ASK THE LISTING PERIMETER ABOUT ONE ENGAGEMENT.
+ *
+ * THE ORDER IS THE ANSWER, and it is the order `verdictBroker.ts` documents:
+ *
+ *  1. `brokerGate` FIRST — the asker's own entitlement, then the owner's
+ *     authorisation flag — BEFORE ANY QUERY RUNS ANYWHERE, including before
+ *     `gps_engagement` is touched. So an unentitled principal cannot use this
+ *     endpoint as an oracle on whether an engagement exists or is linked to a
+ *     project. `otherLedger.ts` records having got this wrong once, in the same
+ *     shape, and the fix was the same call in the same position.
+ *  2. THE DATABASE MUST BE ABLE TO SUPPORT THE QUESTION — 0072's detector index.
+ *  3. THE ENGAGEMENT → PROJECT LINK, which may honestly be absent.
+ *  4. The brokered read, verdict only.
+ *  5. THE LOG. If it does not write, the verdict is discarded.
+ *
+ * EVERY ONE OF THOSE STEPS CAN REFUSE, AND EVERY REFUSAL IS A `not_loaded` FINDING
+ * WITH ITS OWN CODE. None of them is a clearance and none of them is a `0`.
+ */
+export async function listingPerimeterForEngagement(
+  pool: Pool,
+  input: ListingPerimeterInput,
+  recordedDecision: ConflictDecision | 'unresolved',
+): Promise<ListingPerimeterCheck> {
+  const shell = {
+    engagementId: input.engagementId,
+    askedBy: input.askedBy,
+    asOf: input.asOf,
+    logAction: GPS_LISTING_READ_ACTION,
+  };
+
+  /* The composed answer, the log write, and the fail-closed rule, in one place so
+   * that no branch below can return without passing through the log. */
+  const answer = async (
+    projectId: string | null,
+    finding: ListingPerimeterFinding,
+  ): Promise<ListingPerimeterCheck> => {
+    const logged = await recordListingRead(pool, input, projectId, finding);
+    /*
+     * THE VERDICT IS DISCARDED WHEN THE RECORD DOES NOT WRITE. Note what this can
+     * and cannot undo: the register was already read, and nothing here un-reads it.
+     * What it does is refuse to hand the answer to the caller, which is the whole
+     * of what is still in this process's gift — and it is the difference between a
+     * control with an auditable trail and a control with a trail that has holes in
+     * it exactly where the log was failing.
+     */
+    const shown: ListingPerimeterFinding = logged
+      ? finding
+      : unrecordedRead(
+          listingPerimeterFinding({
+            state: 'not_loaded',
+            reasonCode: GPS_LISTING_CODES.READ_UNRECORDED,
+          }),
+        );
+    return {
+      ...shell,
+      projectId,
+      finding: shown,
+      contradiction: listingContradiction(recordedDecision, shown),
+      logged,
+    };
+  };
+
+  const gated = brokerGate(LISTING_PIPELINE_QUESTION, input.entitlements);
+  if (gated) {
+    /* NOTHING HAS BEEN QUERIED AT THIS POINT — not the register, not `projects`, not
+     * even `gps_engagement`. The log row is still written: "the flag is off and
+     * somebody asked" is exactly the fact a default-deny control has to be able to
+     * produce later, and it is the fact an unlogged refusal destroys. */
+    return answer(
+      null,
+      listingPerimeterFinding({ state: 'not_loaded', reasonCode: gated.code }),
+    );
+  }
+
+  const detector = await listingJoinDetectorPresent(pool);
+  if (detector === null) {
+    return answer(
+      null,
+      listingPerimeterFinding({
+        state: 'not_loaded',
+        reasonCode: GPS_LISTING_CODES.JOIN_DETECTOR_UNKNOWN,
+      }),
+    );
+  }
+  if (!detector) {
+    return answer(
+      null,
+      listingPerimeterFinding({
+        state: 'not_loaded',
+        reasonCode: GPS_LISTING_CODES.JOIN_DETECTOR_ABSENT,
+      }),
+    );
+  }
+
+  const link = await projectIdForEngagement(pool, input.engagementId);
+  if (link.kind === 'unknown') {
+    return answer(
+      null,
+      listingPerimeterFinding({
+        state: 'not_loaded',
+        reasonCode: GPS_LISTING_CODES.ENGAGEMENT_UNKNOWN,
+      }),
+    );
+  }
+  if (link.kind === 'unreadable') {
+    return answer(
+      null,
+      listingPerimeterFinding({
+        state: 'not_loaded',
+        reasonCode: GPS_LISTING_CODES.ENGAGEMENT_UNREADABLE,
+      }),
+    );
+  }
+  if (link.kind === 'no_link') {
+    /*
+     * NOT A CLEARANCE, AND THIS IS THE MOST TEMPTING PLACE IN THE FILE TO MAKE IT
+     * ONE. 0047 is explicit that `project_id` is nullable because "a services client
+     * may not be a tracked project in the LCX listing pipeline, and most will not
+     * be" — so the overwhelmingly common case is an unlinked engagement, and an
+     * unlinked engagement returning "no conflict" would make this control read clean
+     * for almost every row on the wall while catching nothing.
+     *
+     * WHAT IS ACTUALLY TRUE: nobody has recorded whether this client and a tracked
+     * project are the same entity. That is an ABSENT HUMAN ASSERTION, not an
+     * observation, and 0050 already says of adjacency that "NOTHING INFERS IT". So
+     * it is NOT-LOADED, with a code that names the missing input.
+     */
+    return answer(
+      null,
+      listingPerimeterFinding({
+        state: 'not_loaded',
+        reasonCode: GPS_LISTING_CODES.NO_PROJECT_LINK,
+      }),
+    );
+  }
+
+  const asked = await askListingPipelineForProject(pool, {
+    entitlements: input.entitlements,
+    projectId: link.projectId,
+  });
+
+  if (asked.kind === 'no_ticker') {
+    return answer(
+      link.projectId,
+      listingPerimeterFinding({ state: 'not_loaded', reasonCode: asked.code }),
+    );
+  }
+  if (asked.kind === 'refused') {
+    return answer(
+      link.projectId,
+      listingPerimeterFinding({ state: 'not_loaded', reasonCode: asked.refusal.code }),
+    );
+  }
+
+  /*
+   * THE ONLY PLACE A BROKERED ANSWER IS TRANSLATED, and it copies exactly three
+   * values: the kind, the verdict and the count. Not the message, not the rule, not
+   * the observation frame, not `holderTable`. A spread of `answer.answer` here would
+   * be the leak — the broker's own header warns that a module which spreads a probe
+   * result eventually spreads a row — so each field is named.
+   */
+  const a = asked.answer;
+  const reading: ListingPerimeterReading =
+    a.kind === 'withheld'
+      ? { state: 'withheld', verdict: a.verdict, withheldCount: a.withheldCount }
+      : a.kind === 'empty'
+        ? { state: 'empty' }
+        : { state: 'not_loaded', reasonCode: a.code };
+
+  return answer(link.projectId, listingPerimeterFinding(reading));
 }
 
 /* ── Second-tier sessions: who came in on the shared passcode ─────────────────── */

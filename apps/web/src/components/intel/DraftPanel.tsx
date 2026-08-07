@@ -110,7 +110,7 @@ export function DraftPanel({ subjectId, onClose }: { subjectId: string; onClose:
                 <div className="text-micro font-bold uppercase tracking-wider text-grey">Subject</div>
                 <div className="mb-2 text-label font-semibold text-navy">{play.draft.subject}</div>
                 <div className="text-micro font-bold uppercase tracking-wider text-grey">Body</div>
-                <div className="mt-1"><AiProse text={play.draft.body} /></div>
+                <div className="mt-1"><AiProse text={play.draft.body} validIds={[]} /></div>
               </div>
             </div>
 
