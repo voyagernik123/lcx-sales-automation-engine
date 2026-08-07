@@ -1,6 +1,9 @@
 import { Hono } from 'hono';
+import { capAtLeast } from '@lcx/shared';
 import type { AuthVariables } from '../middleware/auth.js';
 import { requireOperator } from '../middleware/auth.js';
+import { getPool } from '../db/index.js';
+import { loadEntitlements } from '../access/entitlements.js';
 import { env } from '../lib/env.js';
 import { listTasks, createManualTask, setTaskStatus } from '../tasks/service.js';
 
@@ -10,10 +13,17 @@ const meta = () => ({ timestamp: new Date().toISOString(), version: env.version 
 taskRoutes.get('/', requireOperator, async (c) => {
   try {
     const qs = c.req.query();
+    /*
+     * Resolved per request from the live grant table, never cached on the principal: a
+     * revoke must take effect on the next read. Same shape as `notifications.ts:24`.
+     */
+    const operator = c.get('operator');
+    const ents = await loadEntitlements(getPool(), operator.id);
     const tasks = await listTasks({
       status: qs.status || undefined,
       projectId: qs.projectId || undefined,
       limit: qs.limit ? Number(qs.limit) : undefined,
+      mayReadSales: capAtLeast(ents.sales, 'view'),
     });
     return c.json({ data: tasks, meta: meta() });
   } catch (err) {

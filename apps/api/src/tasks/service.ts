@@ -73,11 +73,53 @@ export async function generateStalledDealTasks(pool: pg.Pool): Promise<number> {
   return rowCount ?? 0;
 }
 
-export async function listTasks(filters: { status?: string; projectId?: string; limit?: number }): Promise<OperatorTask[]> {
+/**
+ * THE DESK LIST WAS UNSCOPED, AND ITS ROWS NAME DEALS.
+ *
+ * `/v1/tasks` carried `requireOperator` — authentication — and nothing else, while its
+ * siblings in the same desk-level namespace all filter per reader: notifications by
+ * `scopesFor` (after `0067` leaked), search inside its own handler, the readout by
+ * `scopeList`, and `/v1/reviews` by compartment as of the fix above. Tasks was the one
+ * member of that list reading compartmented rows with no filter at all.
+ *
+ * The rows are not innocuous. `generateStalledDealTasks` (just above) writes
+ * `'Unstick deal: ' || p.name` with `'no movement for N days in stage ' || d.stage`, and
+ * the list joins `projects.name`. So an unscoped read hands any authenticated principal —
+ * including the machine `operator` key — a named list of live deals, their stage, and how
+ * badly each is stalling. That is the commercial pipeline.
+ *
+ * WHY NOT A `workspace` COLUMN, which is how notifications was fixed. That took a
+ * migration, and 0068-0074 are already written and unapplied to production; adding an
+ * eighth would grow a handoff that is already the largest outstanding item. The
+ * compartment is DERIVABLE from columns that exist: a task carrying a `project_id` or a
+ * `deal_id` is SALES, by the same map `routes/reviews.ts` uses to resolve a review's
+ * compartment (deal -> sales, project -> sales). A task carrying neither is a desk task
+ * and belongs to whoever can see the desk.
+ *
+ * `mayReadSales` is REQUIRED and has no default, deliberately, for the reason `notify`
+ * gives about its own `workspace`: omitting it becomes a compile error, which is the only
+ * reliable way to stop the next caller from reinstating the unscoped read.
+ */
+export async function listTasks(filters: {
+  status?: string;
+  projectId?: string;
+  limit?: number;
+  mayReadSales: boolean;
+}): Promise<OperatorTask[]> {
   const db = getDb();
   const status = filters.status ?? 'open';
   const conditions = [sql`t.status = ${status}`];
   if (filters.projectId) conditions.push(sql`t.project_id = ${filters.projectId}`);
+
+  if (!filters.mayReadSales) {
+    /*
+     * Both columns, not just `project_id`. `generateStalledDealTasks` writes BOTH, but a
+     * task attached to a deal whose `project_id` was later cleared would still name the
+     * deal — and a filter on one column is exactly the kind of near-miss this codebase
+     * has already paid for.
+     */
+    conditions.push(sql`t.project_id IS NULL AND t.deal_id IS NULL`);
+  }
 
   const result = await db.execute(sql`
     SELECT t.*, p.name AS project_name
