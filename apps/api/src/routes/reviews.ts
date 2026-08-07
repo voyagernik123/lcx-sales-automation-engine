@@ -250,6 +250,26 @@ reviewRoutes.post('/suggest', requireOperator, async (c) => {
   const body = await c.req.json<{ kind?: string; subjectType?: string; subjectId?: string }>().catch(() => ({} as { kind?: string; subjectType?: string; subjectId?: string }));
   const kind = body.kind as Kind;
   if (!KINDS.includes(kind)) return c.json({ error: 'Invalid kind', code: 'VALIDATION' }, 400);
+
+  /*
+   * THE FIFTH HANDLER. `ab4a995` gated four and missed this one, and the test written
+   * alongside it said "gates ALL FOUR handlers" — the enumeration was the blind spot, so
+   * the suite could not have caught the omission it was written to prevent. The ratchet
+   * now DISCOVERS every registration instead of listing them.
+   *
+   * Gated at `view`, and gated HERE — ahead of the `deals` lookup below and ahead of the
+   * `observations` read — because both are disclosure. This handler composes a brief over
+   * a subject's stored dossier and, with `?llm=true`, feeds that dossier to a model; an
+   * unentitled caller learning that a project id resolves is already a leak, and the brief
+   * itself is the whole sales read-out in prose.
+   *
+   * `subjectType` absent or unmapped DENIES (`REVIEW_SUBJECT_UNMAPPED`), which is the
+   * default-deny this file's docblock argues for. Nothing legitimate is refused: the only
+   * caller, `apps/web/src/lib/api/reviews.ts:30`, types it as a required argument.
+   */
+  const gate = await refuseUnlessHolds(c, body.subjectType, 'view');
+  if (gate) return gate;
+
   const wantLlm = c.req.query('llm') === 'true';
 
   // Resolve the project id (SATs on a deal ground against the deal's project).

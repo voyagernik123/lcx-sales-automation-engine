@@ -76,35 +76,84 @@ describe('/v1/reviews gates on the compartment that owns the subject', () => {
     expect(src).toContain('hasOwnProperty.call(SUBJECT_WORKSPACE');
   });
 
-  it('gates ALL FOUR handlers, and the three write paths at operate', async () => {
+  /**
+   * EVERY handler, DISCOVERED — not the four this test used to name.
+   *
+   * The first version of this test asserted "gates ALL FOUR handlers" and listed them by
+   * verb and path. There were FIVE. `POST /suggest` — a copilot that composes a brief over
+   * a subject's whole dossier and, with `?llm=true`, feeds that dossier to a model — was
+   * registered thirty lines below the four and carried only `requireOperator`, which is
+   * authentication and not authorisation. The suite written to prevent exactly that
+   * omission could not see it, because the enumeration WAS the blind spot: a hand-listed
+   * set cannot fail on a member nobody thought of.
+   *
+   * So this now parses the registrations out of the source and asserts over all of them.
+   * A sixth handler added tomorrow fails this test until it is gated.
+   */
+  it('gates EVERY registered handler — the list is discovered, never hand-written', async () => {
     const src = await reviewsSource();
     const lines = src.split('\n');
 
-    const handlerAt = (re: RegExp) => lines.findIndex((l) => re.test(l));
-    const gets = handlerAt(/reviewRoutes\.get\('\/'/);
-    const posts = handlerAt(/reviewRoutes\.post\('\/'/);
-    const patches = handlerAt(/reviewRoutes\.patch\('\/:id'/);
-    const deletes = handlerAt(/reviewRoutes\.delete\('\/:id'/);
-    for (const [name, i] of [['get', gets], ['post', posts], ['patch', patches], ['delete', deletes]] as const) {
-      expect(i, `${name} handler not found`).toBeGreaterThan(-1);
-    }
+    const REGISTRATION = /^reviewRoutes\.(get|post|patch|delete|put|all)\((['"`])([^'"`]*)\2/;
+    const handlers = lines
+      .map((line, i) => {
+        const m = REGISTRATION.exec(line);
+        return m ? { verb: m[1]!, path: m[3]!, line: i } : null;
+      })
+      .filter((h): h is { verb: string; path: string; line: number } => h !== null);
 
-    // Each handler's body runs until the next handler registration.
+    // Anti-vacuity: if the parse breaks, this test must fail loudly rather than assert
+    // over an empty set and pass forever.
+    expect(handlers.length, 'no handler registrations parsed — the regex is stale').toBeGreaterThanOrEqual(5);
+
+    // Each handler's body runs until the next registration.
+    const starts = handlers.map((h) => h.line);
     const bodyOf = (start: number) => {
-      const nexts = [gets, posts, patches, deletes, lines.length]
-        .filter((n) => n > start)
-        .sort((a, b) => a - b);
-      return lines.slice(start, nexts[0]).join('\n');
+      const next = starts.filter((n) => n > start).sort((a, b) => a - b)[0] ?? lines.length;
+      return lines.slice(start, next).join('\n');
     };
 
-    expect(bodyOf(gets), 'GET is ungated').toContain("refuseUnlessHolds(c, subjectType, 'view')");
-    expect(bodyOf(posts), 'POST is ungated').toContain("'operate'");
-    expect(bodyOf(patches), 'PATCH is ungated').toContain("'operate'");
-    expect(bodyOf(deletes), 'DELETE is ungated').toContain("'operate'");
+    /*
+     * READS gate at `view`, WRITES at `operate`. `/suggest` is a POST but it FILES NOTHING —
+     * the handler's own comment says "AI never files — this is only a richer prefill" — so
+     * it is a read of the dossier and gates at `view`. Requiring `operate` there would deny
+     * an analyst entitled to read the very dossier the brief is composed from.
+     */
+    const READS = new Set(['get /', 'post /suggest']);
 
-    // The two id-only handlers must resolve the compartment from the ROW.
-    expect(bodyOf(patches)).toContain('subjectTypeOf(');
-    expect(bodyOf(deletes)).toContain('subjectTypeOf(');
+    for (const h of handlers) {
+      const body = bodyOf(h.line);
+      const id = `${h.verb} ${h.path}`;
+      const need = READS.has(id) ? 'view' : 'operate';
+
+      expect(body, `${id} is UNGATED — only requireOperator, which is authentication`)
+        .toContain('refuseUnlessHolds(');
+      expect(body, `${id} must gate at '${need}'`).toContain(`'${need}'`);
+    }
+
+    // The two id-only handlers must resolve the compartment from the ROW, since the
+    // caller supplies no subject type on those paths.
+    for (const h of handlers.filter((x) => x.path.includes(':id'))) {
+      expect(bodyOf(h.line), `${h.verb} ${h.path} does not resolve the row's subject type`)
+        .toContain('subjectTypeOf(');
+    }
+  });
+
+  it('gates /suggest BEFORE it resolves a deal or reads observations', async () => {
+    const src = await reviewsSource();
+    const suggest = src.slice(src.indexOf("reviewRoutes.post('/suggest'"));
+    const gate = suggest.indexOf('refuseUnlessHolds');
+    const dealLookup = suggest.indexOf('FROM deals');
+    const obsRead = suggest.indexOf('FROM observations');
+
+    expect(gate, '/suggest has no gate at all').toBeGreaterThan(-1);
+    expect(dealLookup, 'the deals lookup moved — this ordering check is stale').toBeGreaterThan(-1);
+    expect(obsRead, 'the observations read moved — this ordering check is stale').toBeGreaterThan(-1);
+
+    // Both reads are disclosure: whether a deal id resolves to a project is itself a fact
+    // about a compartment the caller may not hold.
+    expect(gate, 'the deals lookup runs before the gate').toBeLessThan(dealLookup);
+    expect(gate, 'the observations read runs before the gate').toBeLessThan(obsRead);
   });
 
   it('gates the GET BEFORE it queries, so an unentitled caller cannot learn the row exists', async () => {
