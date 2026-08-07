@@ -5,6 +5,7 @@ import { PageTitle, Button, InspectorDrawer } from '@/components/ui';
 import { EmptyState, PageSkeleton } from '@/components/shared';
 import { PrintStyles } from '@/components/report/PrintStyles';
 import { useListNavigation } from '@/hooks/useListNavigation';
+import { safeHref } from '@/lib/safeHref';
 import {
   fetchOriginationQueue, fetchTargetBrief,
   provenanceLabel, BRIEF_SECTION_LABELS, BRIEF_SECTION_ORDER,
@@ -894,7 +895,7 @@ function Assertion({ a }: { a: BriefAssertion }) {
             <span className="rounded border border-line px-1 font-bold uppercase tracking-wider text-grey">sourced</span>
             <span className="text-navy">{provenanceLabel(a.provenance)}</span>
             {a.provenance.sourceUrl && (
-              <a href={a.provenance.sourceUrl} target="_blank" rel="noreferrer" className="text-cyan-700 underline dark:text-cyan-400">source</a>
+              <a href={safeHref(a.provenance.sourceUrl)} target="_blank" rel="noreferrer" className="text-cyan-700 underline dark:text-cyan-400">source</a>
             )}
             {a.provenance.stale && <span className="font-bold uppercase text-amber-600 dark:text-amber-400">stale — re-check</span>}
           </>

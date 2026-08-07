@@ -233,18 +233,80 @@ fn reveal_diagnostics() {
 
 /// The web layer's door into the same log.
 ///
-/// One command, not a logging framework. Two callers need somewhere durable:
-/// `ErrorBoundary`, which today catches a React error into a devtools console
-/// nobody has open, and the updater, whose launch-time failures are now silent on
-/// purpose (apps/web/src/lib/terminal.ts).
+/// One command, not a logging framework. The callers that need somewhere durable are
+/// `apps/web/src/lib/terminal.ts` — the updater, whose launch-time failures are
+/// otherwise silent on purpose — and `apps/web/src/lib/apiClient.ts`, which records a
+/// forced sign-in.
 ///
-/// Clipped at 2000 characters because a render loop can call this as fast as React
-/// can re-render, and an un-clipped React component stack is a meaningful fraction
-/// of a rotation. Embedded newlines are kept: a stack trace is worth more readable
-/// than greppable, and every record still starts with a timestamp.
+/// THIS DOCSTRING USED TO NAME `ErrorBoundary` AS A CALLER. It is not one:
+/// `apps/web/src/components/shared/ErrorBoundary.tsx:67` calls `console.error` and
+/// nothing else, so a caught React error still goes only to a devtools console nobody
+/// has open. Left as a stated absence rather than quietly deleted, because "the boundary
+/// writes to the shell log" is a thing an operator could reasonably believe from reading
+/// this comment, and it has never been true.
+///
+/// ── ONE RECORD PER PHYSICAL LINE, EACH WITH ITS OWN REAL TIMESTAMP ──────────
+///
+/// This used to be a single `log_line` on the whole clipped string, and `log_line`
+/// prefixes exactly ONE timestamp. Embedded newlines were kept deliberately (a stack
+/// trace is worth more readable than greppable) — but `append_line_to` does a single
+/// `write_all`, so every line after the first went into the file with NO prefix at all.
+/// The comment claimed "every record still starts with a timestamp"; the code did not
+/// do that, and the gap was a forgery primitive:
+///
+/// ```text
+/// logDiagnostic("ok\n2026-08-07T09:00:00Z [lcx-terminal] PANIC at src/lib.rs:1")
+/// ```
+///
+/// produced a second line in `~/Library/Logs/LCXOS/shell.log` that is byte-identical to
+/// something the native shell would have written — in the one file the operator is told
+/// to hand over, and with the panic hook's own shape.
+///
+/// Splitting keeps what the old comment wanted (a readable multi-line stack) and makes
+/// the claim true: every record now carries its own timestamp, produced here, and its
+/// own `[web]` attribution. `\r` is trimmed so a CRLF payload does not leave a stray
+/// carriage return sitting between the attribution and the text.
+///
+/// WHAT THIS DOES AND DOES NOT BUY. The PREFIX of every record is authentic. The
+/// remainder of a `[web]` record is still webview-authored text and must be read that
+/// way — a caller can put anything after the attribution, including a plausible-looking
+/// timestamp. What it can no longer do is produce a record that does not say `[web]`.
+///
+/// THE CLIP RUNS FIRST, then the split, so the 2000-character budget is over the WHOLE
+/// payload exactly as before. `MAX_WEB_RECORDS` is the new half of that: splitting
+/// multiplies a payload into records, each paying for its own ~40-byte prefix, so 2000
+/// newlines would have turned a 2KB call into ~80KB of a 1MB rotation. Beyond the cap
+/// the remainder is dropped and the drop is STATED — a truncation nobody is told about
+/// is the same defect as the one above, pointing the other way.
 #[tauri::command]
 fn diagnostics_append(line: String) {
-    log_line(&format!("[web] {}", clip_web_line(&line)));
+    for record in split_web_records(&clip_web_line(&line)) {
+        log_line(&record);
+    }
+}
+
+/// How many `[web]` records one `diagnostics_append` call may produce. See the note on
+/// the command: the cap bounds the prefix amplification that splitting introduces.
+const MAX_WEB_RECORDS: usize = 40;
+
+/// Split an already-clipped payload into the records that will be written, each carrying
+/// its own `[web]` attribution. Separate from the command so it is testable without
+/// touching the real desk log — the same reason `clip_web_line` is separate.
+fn split_web_records(clipped: &str) -> Vec<String> {
+    let lines: Vec<&str> = clipped.split('\n').map(|l| l.trim_end_matches('\r')).collect();
+    let mut out: Vec<String> = lines
+        .iter()
+        .take(MAX_WEB_RECORDS)
+        .map(|l| format!("[web] {l}"))
+        .collect();
+    if lines.len() > MAX_WEB_RECORDS {
+        out.push(format!(
+            "[web] …[{} more line(s) dropped: one call may write at most {} records]",
+            lines.len() - MAX_WEB_RECORDS,
+            MAX_WEB_RECORDS,
+        ));
+    }
+    out
 }
 
 /// Can an update actually be installed where this app is running from?
@@ -254,7 +316,9 @@ fn diagnostics_append(line: String) {
 /// image without dragging it to Applications — an entirely reasonable thing to do, since
 /// it runs perfectly — pressed Check for Updates, and got:
 ///
-///     Installing 0.1.1 failed (Cross-device link (os error 18))
+/// ```text
+/// Installing 0.1.1 failed (Cross-device link (os error 18))
+/// ```
 ///
 /// EXDEV. The macOS updater extracts the new bundle to a temp directory and renames it
 /// over the running one, and `rename(2)` cannot cross filesystems. A mounted DMG is a
@@ -786,6 +850,129 @@ mod tests {
         let emoji = "🧊".repeat(MAX_WEB_LINE_CHARS + 10);
         let clipped = clip_web_line(&emoji);
         assert_eq!(clipped.chars().filter(|c| *c == '🧊').count(), MAX_WEB_LINE_CHARS);
+    }
+
+    /// THE FORGERY. `diagnostics_append` wrote the whole payload through one
+    /// `log_line`, which prefixes exactly ONE timestamp, and `append_line_to` does a
+    /// single `write_all` — so every line after the first landed in the file bare.
+    /// A webview could therefore write a record indistinguishable from one the native
+    /// shell wrote, including a fabricated PANIC, into the file the operator is told to
+    /// hand over.
+    ///
+    /// Asserted on the RECORDS rather than on the file, because the records are what
+    /// `log_line` timestamps one-for-one; `the_diagnostics_records_each_carry_their_own_timestamp`
+    /// below closes the loop through the writer.
+    #[test]
+    fn a_webview_line_cannot_forge_a_native_shell_record() {
+        let payload = "React error\n2026-08-07T09:00:00Z [lcx-terminal] PANIC at src/lib.rs:1:1";
+        let records = split_web_records(&clip_web_line(payload));
+
+        assert_eq!(records.len(), 2, "one record per physical line");
+        for r in &records {
+            assert!(
+                r.starts_with("[web] "),
+                "every record must carry the webview attribution, got: {r}",
+            );
+        }
+        // The forged text survives — it is evidence, and dropping it would hide the
+        // attempt — but it can only appear AFTER the attribution.
+        assert_eq!(records[1], "[web] 2026-08-07T09:00:00Z [lcx-terminal] PANIC at src/lib.rs:1:1");
+        assert!(
+            !records[1].starts_with("2026-"),
+            "a record must never begin with caller-supplied text",
+        );
+    }
+
+    /// THE WIRING, not just the helper.
+    ///
+    /// Every other test in this module calls `split_web_records` directly, so the fix
+    /// could be undone at the ONE place that matters — reverting `diagnostics_append`
+    /// to its old single `log_line` call on the whole payload — and this module stayed
+    /// green. Measured, not supposed: with that one line reverted, 9 passed, 0 failed.
+    ///
+    /// A `#[tauri::command]` cannot be invoked from here without a Tauri runtime, and
+    /// its real body writes to the operator's own desk log, so the composition is
+    /// asserted at the source level instead. Same shape as the web-side ratchet in
+    /// `apps/web/src/lib/__tests__/hrefSinks.test.ts`, and the same reason: a property
+    /// nothing checks is a property that comes back.
+    #[test]
+    fn diagnostics_append_still_goes_through_the_splitter() {
+        const SIG: &str = "fn diagnostics_append(line: String) {";
+        let src = include_str!("lib.rs");
+        // nth(1) is the text after the FIRST occurrence — the real definition, which
+        // sits far above this test in the file. (The second occurrence is SIG itself.)
+        let after = src.split(SIG).nth(1).expect("diagnostics_append must exist");
+        let body = after.split("\n}").next().expect("the body must be brace-closed");
+        assert!(
+            body.contains("split_web_records("),
+            "diagnostics_append no longer splits its payload into one record per physical \
+             line. Every line after the first then reaches the log with no timestamp and no \
+             [web] attribution, which is the forgery primitive this module exists to close. \
+             Body was:{body}",
+        );
+        assert!(
+            body.contains("log_line("),
+            "diagnostics_append must still write each record through log_line — that is what \
+             puts a timestamp this process produced on the front of it. Body was:{body}",
+        );
+    }
+
+    /// The other half: what actually reaches the file. Every LINE in the log must begin
+    /// with a timestamp this process produced, which is the claim the old docstring made
+    /// and the code did not keep.
+    #[test]
+    fn the_diagnostics_records_each_carry_their_own_timestamp() {
+        let dir = std::env::temp_dir().join(format!("lcx-forge-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("shell.log");
+
+        // The write path `diagnostics_append` takes, minus the ambient log-file
+        // lookup (which would write to the operator's real desk log).
+        for record in split_web_records(&clip_web_line("first\nsecond\r\nthird")) {
+            append_line_to(&path, &format!("{} [lcx-terminal] {record}", now_iso8601()))
+                .expect("append must succeed");
+        }
+
+        let body = std::fs::read_to_string(&path).expect("readable");
+        let lines: Vec<&str> = body.lines().collect();
+        assert_eq!(lines.len(), 3, "three physical lines in, three records out");
+        for l in &lines {
+            // 2026-08-07T09:00:00Z — 20 chars, then the shell tag, then the attribution.
+            assert!(
+                l.len() > 20 && l.as_bytes()[4] == b'-' && l.as_bytes()[19] == b'Z',
+                "record does not start with an ISO-8601 timestamp: {l}",
+            );
+            assert!(l[20..].starts_with(" [lcx-terminal] [web] "), "bad prefix: {l}");
+        }
+        assert!(lines[1].ends_with("[web] second"), "the CR must not survive: {}", lines[1]);
+        assert!(lines[2].ends_with("[web] third"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Splitting multiplies one call into many records, and each record pays for its own
+    /// ~40-byte prefix. Without a cap a payload of newlines turns a 2KB call into ~80KB
+    /// of a 1MB rotation — which would have traded a forgery for a way to erase the log
+    /// by flooding it. The drop is stated, because a silent truncation is the same class
+    /// of defect as the one this fix closes.
+    #[test]
+    fn a_flood_of_newlines_is_capped_and_the_drop_is_stated() {
+        let payload = "x\n".repeat(500);
+        let records = split_web_records(&clip_web_line(&payload));
+
+        assert_eq!(
+            records.len(),
+            MAX_WEB_RECORDS + 1,
+            "at most {MAX_WEB_RECORDS} records plus the notice",
+        );
+        let last = records.last().expect("non-empty");
+        assert!(last.starts_with("[web] "), "the notice is attributed too: {last}");
+        assert!(last.contains("more line(s) dropped"), "the drop must announce itself: {last}");
+
+        // A single-line payload is still exactly one record — the cap must not change
+        // the ordinary case.
+        assert_eq!(split_web_records("just one line").len(), 1);
+        assert_eq!(split_web_records("just one line")[0], "[web] just one line");
     }
 }
 

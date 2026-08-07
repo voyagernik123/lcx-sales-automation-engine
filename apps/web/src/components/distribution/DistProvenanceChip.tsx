@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { BookMarked } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { DistSource } from '@/lib/api/distribution';
+import { safeHref } from '@/lib/safeHref';
 
 /**
  * Provenance chip for DISTRIBUTION (LCX ONE Phase 3). The research dossier's
@@ -37,7 +38,7 @@ export function DistProvenanceChip({ refs, sources }: { refs: readonly string[];
           ) : resolved.map((s) => (
             <span key={s.id} className="block py-0.5 text-micro">
               <span className={clsx('mr-1 rounded px-1 font-mono text-[9px] font-bold', TONE[s.grade])}>{s.grade}</span>
-              {s.url ? <a href={s.url} target="_blank" rel="noreferrer" className="text-cyan-700 hover:underline dark:text-cyan-300">{s.label}</a> : <span className="text-grey-dark">{s.label}</span>}
+              {s.url ? <a href={safeHref(s.url)} target="_blank" rel="noreferrer" className="text-cyan-700 hover:underline dark:text-cyan-300">{s.label}</a> : <span className="text-grey-dark">{s.label}</span>}
             </span>
           ))}
         </span>

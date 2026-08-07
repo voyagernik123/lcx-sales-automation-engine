@@ -4,6 +4,7 @@ import { Boxes } from 'lucide-react';
 import { fetchLead } from '@/lib/api/bd';
 import type { LeadPerson } from '@/types/bd';
 import { CardSkeleton, EmptyState } from '@/components/shared';
+import { safeHref } from '@/lib/safeHref';
 import { Button } from '@/components/ui';
 import { useInspectorStore } from '@/stores';
 import { RelationRail } from '../RelationRail';
@@ -77,7 +78,7 @@ export function ContactInspector({ id }: InspectorPayloadProps) {
           </div>
         )}
         {person.linkedin && (
-          <a className="block text-cyan-700 hover:underline" href={person.linkedin} target="_blank" rel="noreferrer">
+          <a className="block text-cyan-700 hover:underline" href={safeHref(person.linkedin)} target="_blank" rel="noreferrer">
             LinkedIn
           </a>
         )}

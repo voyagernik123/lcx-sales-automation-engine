@@ -7,6 +7,7 @@ import { fetchOps, triggerIntelJob, type OpsHealth } from '@/lib/api/intel';
 import { EmptyState, CardSkeleton, toast } from '@/components/shared';
 import { Button, PageTitle } from '@/components/ui';
 import { formatDate, formatDateTime } from '@/lib/format';
+import { safeHref } from '@/lib/safeHref';
 import { PirPanel } from '@/components/intel/PirPanel';
 import { SloPanel } from '@/components/ops/SloPanel';
 
@@ -245,7 +246,7 @@ export function Ops() {
                         <div className="flex items-center gap-1.5">
                           <span className="font-semibold text-navy">{c.label}</span>
                           {c.termsUrl && (
-                            <a href={c.termsUrl} target="_blank" rel="noreferrer" className="text-grey hover:text-cyan-700" title="Terms / API docs">
+                            <a href={safeHref(c.termsUrl)} target="_blank" rel="noreferrer" className="text-grey hover:text-cyan-700" title="Terms / API docs">
                               <ExternalLink size={11} />
                             </a>
                           )}

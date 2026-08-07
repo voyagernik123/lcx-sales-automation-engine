@@ -65,6 +65,62 @@ function safeEqual(a: string, b: string): boolean {
   return out === 0;
 }
 
+/* ══════════════════ WHAT MAY BE STORED IN AN href ══════════════════
+ *
+ * A LENGTH BOUND IS NOT A SCHEME CHECK, and `href: z.string().max(300)` was only
+ * ever the first. `notify` writes its `href` straight through to
+ * `notifications.href` (notifications/service.ts), so the value SURVIVES the
+ * request that carried it and is replayed, later, to every reader of the readout.
+ *
+ * The readout is rendered inside the LCXOS webview. A `javascript:` href there is
+ * not a phishing link — it is code executing in the app origin, next to six
+ * `#[tauri::command]`s, one of which reads the desk credential out of the
+ * Keychain. So the operator who clicks it is not the operator who stored it.
+ *
+ * THE CHECK BELONGS HERE, not only at the anchor, for one reason: there is exactly
+ * one write path for this value and there are many read paths. A renderer fixed
+ * today is a renderer someone adds tomorrow. Closing it server-side means the
+ * dangerous value never reaches the database at all, and the ratchet on the web
+ * side (apps/web/src/lib/__tests__/hrefSinks.test.ts) is the second layer rather
+ * than the only one.
+ *
+ * WHY CONTROL CHARACTERS ARE REFUSED OUTRIGHT rather than stripped: a browser
+ * removes ASCII whitespace and C0 controls BEFORE it reads the scheme, so
+ * `java\tscript:alert(1)` navigates exactly as `javascript:alert(1)` does. Any
+ * version of this that sanitises has to reproduce that stripping identically, and
+ * a near-miss is a bypass. Refusing the character is the only form that does not
+ * depend on getting someone else's parser right.
+ *
+ * A REFUSAL, not a coercion. The action fails with VALIDATION and the message
+ * names the rule; nothing is silently rewritten into something adjacent that the
+ * caller did not ask for.
+ */
+const NAVIGABLE_HREF_REFUSAL =
+  'must be a site-relative path (starting "/") or an absolute http(s) URL — a stored href is '
+  + 'replayed as a navigation inside the desktop webview, where any other scheme executes in '
+  + 'the app origin';
+
+export function isNavigableHref(raw: string): boolean {
+  // C0 controls, DEL, and every ASCII space: stripped by the URL parser before the
+  // scheme is read, so they are how `javascript:` gets past a naive prefix test.
+  if (/[\u0000-\u0020\u007f]/.test(raw)) return false;
+  if (raw.startsWith('//')) return false; // protocol-relative — that is someone else's origin
+  if (raw.startsWith('/')) return true; // site-relative path
+  return /^https?:\/\/[^/\\]/i.test(raw);
+}
+
+/**
+ * A length-bounded href that must also be navigable.
+ *
+ * `.refine` deliberately, not a `.regex`: `z.toJSONSchema` does not emit refinements
+ * (the same property `command_reopen_decision.reason` relies on, documented there), so
+ * `manifest.canonical.json` and its hash are BYTE-IDENTICAL after this change and the
+ * generated command grammar does not move. The server is simply stricter than the
+ * advisory client schema — which is the right way round.
+ */
+const navigableHref = (max: number) =>
+  z.string().max(max).refine(isNavigableHref, { message: NAVIGABLE_HREF_REFUSAL });
+
 /**
  * A missing table is a DEPLOY-ORDER FACT. Every other database error is a FAULT.
  *
@@ -133,7 +189,7 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
     description: 'Raise an in-app notification on the subject.',
     subjectTypes: ['*'],
     minRole: 'operator',
-    paramsSchema: z.object({ title: z.string().min(1).max(200), detail: z.string().max(500).optional(), href: z.string().max(300).optional() }),
+    paramsSchema: z.object({ title: z.string().min(1).max(200), detail: z.string().max(500).optional(), href: navigableHref(300).optional() }),
     execute: async ({ subjectType, subjectId, params }) => {
       // Monitor-fired alert. Scope from the surface it points at when that
       // resolves; otherwise the monitor feature's OWN compartment ('monitors' is
@@ -737,7 +793,18 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       status: z.enum(['not_started', 'submitted', 'live', 'ranked']),
       rankNote: z.string().max(200).optional(),
       usageNote: z.string().max(200).optional(),
-      url: z.string().max(300).optional(),
+      // The SECOND stored navigation in this registry, found by grepping this file
+      // for URL-shaped params rather than by fixing only the one that was reported.
+      // `dist_listings.url` is written here and served to the client by
+      // `GET /v1/distribution/listings` (routes/distribution.ts does `SELECT *`).
+      //
+      // STATED PRECISELY, because the difference matters: unlike `notify.href`, NO
+      // surface renders it as an anchor today — `DistributionPanels.tsx` reads the
+      // listing's status and surface, never its url. So this is not a live sink; it
+      // is a stored value one JSX line away from being one, in a column whose name
+      // tells the next person it is a link. It gets the same rule for that reason,
+      // not because a click path exists right now.
+      url: navigableHref(300).optional(),
     }),
     execute: async ({ pool, subjectId, params, actor }) => {
       const { rowCount } = await pool.query(

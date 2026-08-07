@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import { ArrowRight, Download } from 'lucide-react';
 import { LcxMark } from '@/components/brand/LcxMark';
+import { safeHref } from '@/lib/safeHref';
 
 /**
  * The public face of LCXOS — the page the shared link opens.
@@ -129,8 +130,13 @@ export function Launch() {
           * primary action, which is the exact defect the send-queue ratchet in this
           * repo exists to prevent. */}
         <div className="mt-9 flex flex-wrap items-center gap-x-6 gap-y-4">
+          {/* LCXOS_DOWNLOAD_URL is a module constant with a literal https value, so
+              safeHref here is an identity. Wrapped anyway, so the ratchet in
+              lib/__tests__/hrefSinks.test.ts needs ZERO exceptions: an allowlist entry
+              would be a standing promise that a human re-checks the constant every time
+              it is edited, and one function call does not depend on anyone remembering. */}
           <a
-            href={LCXOS_DOWNLOAD_URL}
+            href={safeHref(LCXOS_DOWNLOAD_URL)}
             className="inline-flex items-center gap-2.5 rounded-lg bg-navy px-5 py-3 text-[15px] font-semibold text-card transition-opacity hover:opacity-90"
           >
             <Download size={17} />

@@ -15,6 +15,7 @@ import { useLastSeen } from '@/lib/useLastSeen';
 import { PageTitle } from '@/components/ui';
 import { CardSkeleton, EmptyState, TableSkeleton } from '@/components/shared';
 import { EntityChip } from '@/components/entity';
+import { safeHref } from '@/lib/safeHref';
 import { HistoryStrip, type HistoryEntry } from '@/components/inspect/HistoryStrip';
 import { SlaChip } from '@/components/home/OvernightHandoffs';
 import { useInspect } from '@/stores';
@@ -193,7 +194,7 @@ export function ContactWorkspace() {
               )}
               {person.linkedin && (
                 <a
-                  href={person.linkedin}
+                  href={safeHref(person.linkedin)}
                   target="_blank"
                   rel="noreferrer"
                   className="block truncate text-cyan-700 hover:underline"

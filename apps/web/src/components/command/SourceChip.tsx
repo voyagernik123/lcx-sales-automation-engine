@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { BookMarked } from 'lucide-react';
 import type { CommandSource } from '@/lib/api/command';
+import { safeHref } from '@/lib/safeHref';
 import { clsx } from 'clsx';
 
 /**
@@ -39,7 +40,7 @@ export function SourceChip({ refs, sources, grade = 'C3' }: {
             <span key={s.id} className="block py-0.5 text-micro">
               <span className="font-mono font-bold text-grey">{s.id}</span>{' '}
               {s.url ? (
-                <a href={s.url} target="_blank" rel="noreferrer" className="text-cyan-700 hover:underline dark:text-cyan-400">{s.label}</a>
+                <a href={safeHref(s.url)} target="_blank" rel="noreferrer" className="text-cyan-700 hover:underline dark:text-cyan-400">{s.label}</a>
               ) : (
                 <span className="text-grey-dark">{s.label}</span>
               )}

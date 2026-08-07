@@ -22,6 +22,7 @@ import type { LeadDetail, LeadSignal, LeadPerson, DraftOutput, SavedDraft, Chann
 import { SEQUENCE_STATUS_COLORS, MESSAGE_STATUS_COLORS, LINKEDIN_STATUS_COLORS } from '@/types/bd';
 import type { ReasonTrail, ScoreBand } from '@lcx/shared';
 import { parseLink } from '@/lib/url';
+import { safeHref } from '@/lib/safeHref';
 
 
 const TIMELINE_KIND_STYLE: Record<string, string> = {
@@ -589,7 +590,7 @@ export function LeadDetail() {
           <Section icon={<Globe size={14} />} title="Identity">
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-label">
               <Field label="Website" value={lead.website}>
-                {websiteLink ? <a href={websiteLink.href} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-700 dark:text-cyan-400 hover:underline"><ExternalLink size={10} /> {websiteLink.host}</a> : lead.website ? <span className="text-grey" title="This website could not be parsed as a URL, so it is shown as plain text rather than a link.">{lead.website}</span> : null}
+                {websiteLink ? <a href={safeHref(websiteLink.href)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-700 dark:text-cyan-400 hover:underline"><ExternalLink size={10} /> {websiteLink.host}</a> : lead.website ? <span className="text-grey" title="This website could not be parsed as a URL, so it is shown as plain text rather than a link.">{lead.website}</span> : null}
               </Field>
               <Field label="Jurisdiction" value={lead.jurisdiction ?? '—'} />
               <Field label="Chain" value={lead.chain ?? '—'} />
@@ -600,7 +601,7 @@ export function LeadDetail() {
               <Field label="DTI" value={lead.dti ?? '—'} />
               <Field label="Listed on LCX" value={lead.listedOnLcx ? 'Yes' : 'No'} />
               <Field label="Whitepaper" value={lead.whitepaperUrl ? (
-                <a href={lead.whitepaperUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-700 dark:text-cyan-400 hover:underline">
+                <a href={safeHref(lead.whitepaperUrl)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-700 dark:text-cyan-400 hover:underline">
                   <FileText size={10} /> View Whitepaper
                 </a>
               ) : '—'} />
@@ -725,7 +726,7 @@ export function LeadDetail() {
                         <td className="py-1.5 px-2"><EmailStatusBadge status={person.emailStatus} /></td>
                         <td className="py-1.5 px-2">
                           {person.linkedin ? (
-                            <a href={person.linkedin} target="_blank" rel="noopener noreferrer" className="text-cyan-700 dark:text-cyan-400 hover:underline inline-flex items-center gap-1">
+                            <a href={safeHref(person.linkedin)} target="_blank" rel="noopener noreferrer" className="text-cyan-700 dark:text-cyan-400 hover:underline inline-flex items-center gap-1">
                               <ExternalLink size={9} /> Profile
                             </a>
                           ) : '—'}

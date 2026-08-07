@@ -8,6 +8,7 @@ import { toast } from '@/components/shared/Toast';
 import { CardSkeleton, EmptyState } from '@/components/shared';
 import { PageTitle, Button } from '@/components/ui';
 import { EntityChip } from '@/components/entity';
+import { safeHref } from '@/lib/safeHref';
 
 const CONNECT_NOTE_MAX = 300;
 
@@ -159,7 +160,7 @@ function QueueCard({ item, onDone }: { item: QueueItem; onDone: () => void }) {
       <div className="flex flex-wrap items-center gap-2">
         {openLink ? (
           <a
-            href={openLink}
+            href={safeHref(openLink)}
             target="_blank"
             rel="noreferrer"
             /* An anchor cannot be a <Button>, so it carries the secondary recipe by hand —

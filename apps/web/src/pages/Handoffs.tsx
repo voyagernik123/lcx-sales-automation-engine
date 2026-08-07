@@ -5,6 +5,7 @@ import { fetchHandoffs, claimHandoff, updateHandoffStatus, addHandoffNote, reEnr
 import { computeReplySla, SLA_CLS } from '@/lib/salesIntel';
 import { toast } from '@/components/shared/Toast';
 import { EntityChip } from '@/components/entity';
+import { safeHref } from '@/lib/safeHref';
 import { CardSkeleton, EmptyState } from '@/components/shared';
 import { SectionLabel, Button } from '@/components/ui';
 import { HANDOFF_STATUS_LABELS } from '@/types/bd';
@@ -333,7 +334,7 @@ function HandoffDetail({ handoff, onBack, onRefresh }: { handoff: HandoffRecord;
             {handoff.personEmail && <span className="text-grey">{handoff.personEmail}</span>}
           </div>
           {handoff.personLinkedin && (
-            <a href={handoff.personLinkedin} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-700 dark:text-cyan-400 hover:underline">
+            <a href={safeHref(handoff.personLinkedin)} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-cyan-700 dark:text-cyan-400 hover:underline">
               <ExternalLink size={9} /> LinkedIn Profile
             </a>
           )}

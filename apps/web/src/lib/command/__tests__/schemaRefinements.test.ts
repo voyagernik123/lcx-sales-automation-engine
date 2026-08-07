@@ -271,8 +271,16 @@ const LEDGER: Record<string, string> = {
     "z.object({ name: z.string().min(1).max(160), surfaceId: z.string().max(60).optional(), kind: z.enum(['quest', 'incentive', 'content', 'outreach']), tokenIncentivized: z.boolean().optional(), budgetLcx: z.number().nonnegative().optional(), detail: z.string().max(1000).optional(), })",
   dist_campaign_set_status:
     "z.object({ status: z.enum(['draft', 'compliance_review', 'approved', 'live', 'measured']), overrideGate: z.boolean().optional(), overrideReason: z.string().max(500).optional(), })",
+  /*
+   * `url` moved from `z.string().max(300)` to `navigableHref(300)` — a length bound
+   * plus a `.refine` that rejects any scheme the desk cannot navigate to. This is
+   * PRECISELY the class of change this ledger exists to make visible: the emitted
+   * JSON Schema is unchanged (`{ maxLength: 300, type: 'string' }`) and the manifest
+   * hash did not move, so the drift guard saw nothing. `dist_listings.url` is stored
+   * and rendered as an anchor, so an unchecked scheme here was a stored navigation.
+   */
   dist_listing_set_status:
-    "z.object({ status: z.enum(['not_started', 'submitted', 'live', 'ranked']), rankNote: z.string().max(200).optional(), usageNote: z.string().max(200).optional(), url: z.string().max(300).optional(), })",
+    "z.object({ status: z.enum(['not_started', 'submitted', 'live', 'ranked']), rankNote: z.string().max(200).optional(), usageNote: z.string().max(200).optional(), url: navigableHref(300).optional(), })",
   flag_review: 'z.object({ reason: z.string().max(300).optional() })',
   /*
    * The five GPS chains, ledgered from `apps/api/src/gps/actions.ts` rather than
@@ -326,8 +334,15 @@ const LEDGER: Record<string, string> = {
     "z.object({ eventRef: slug(SLUG_MAX, EVENT_REF_RE, 'eventRef'), })",
   marketing_holdings_declare:
     'z.object({ holds: z.boolean(), renewInDays: z.number().int().min(1).max(366), amendmentReason: z.enum( HOLDINGS_AMENDMENT_REASONS as unknown as [HoldingsAmendmentReason, ...HoldingsAmendmentReason[]], ).optional(), shortPosition: z.enum( SHORT_POSITION_ANSWERS as unknown as [ShortPositionAnswer, ...ShortPositionAnswer[]], ).optional(), })',
+  /*
+   * Same change as `dist_listing_set_status.url`, and the one that mattered: `href`
+   * is written straight into `notifications.href` and replayed to every later reader
+   * of the readout, inside a webview where a `javascript:` navigation executes in the
+   * app origin. It was `z.string().max(300)` — length-bounded and nothing else.
+   * Invisible to the manifest hash, which is why it is ledgered here.
+   */
   notify:
-    'z.object({ title: z.string().min(1).max(200), detail: z.string().max(500).optional(), href: z.string().max(300).optional() })',
+    'z.object({ title: z.string().min(1).max(200), detail: z.string().max(500).optional(), href: navigableHref(300).optional() })',
   revoke_entitlement:
     'z.object({ workspace: z.enum(WORKSPACE_IDS as unknown as [string, ...string[]]), justification: z.string().min(1).max(500), stepUpPasscode: z.string().min(1).max(200), })',
   set_member_profile: 'z.object({ unit: z.string().max(80).optional(), title: z.string().max(120).optional(), })',

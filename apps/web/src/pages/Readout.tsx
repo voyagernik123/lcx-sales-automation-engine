@@ -3,6 +3,7 @@ import { Sunrise } from 'lucide-react';
 import { Badge, Card, CardBody, CardHeader, PageTitle, Select } from '@/components/ui';
 import { PageSkeleton } from '@/components/shared';
 import { ApiError } from '@/lib/apiClient';
+import { safeHref } from '@/lib/safeHref';
 import {
   fetchReadout,
   type Readout as Brief,
@@ -205,7 +206,14 @@ function ItemRow({ item }: { item: ReadoutItem }) {
         {item.href !== null && (
           <>
             {' · '}
-            <a className="font-mono underline" href={item.href}>{item.href}</a>
+            {/* The href is SERVER-STORED (notifications.href) and this is the desktop
+                webview, so an unguarded anchor here is script execution in the app
+                origin, not a bad link. `safeHref` returning undefined renders the text
+                of the href without making it navigable — the reader still sees exactly
+                what was stored, which is what makes a hostile value legible instead of
+                silently dropped. The registry refuses these on write now too; this is
+                the second layer, for rows written before that landed. */}
+            <a className="font-mono underline" href={safeHref(item.href)}>{item.href}</a>
           </>
         )}
       </p>
