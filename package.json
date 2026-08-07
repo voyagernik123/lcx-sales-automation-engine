@@ -11,7 +11,7 @@
     "dev": "concurrently -n web,api -c cyan,magenta \"npm run dev -w @lcx/web\" \"npm run dev -w @lcx/api\"",
     "dev:web": "npm run dev -w @lcx/web",
     "dev:api": "npm run dev -w @lcx/api",
-    "build": "npm run build -w @lcx/shared && npm run build -w @lcx/web",
+    "build": "npm run build -w @lcx/shared && npm run build -w @lcx/api && npm run build -w @lcx/web",
     "build:web": "npm run build -w @lcx/web",
     "build:api": "npm run build -w @lcx/api",
     "build:shared": "npm run build -w @lcx/shared",
