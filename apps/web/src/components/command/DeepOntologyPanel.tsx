@@ -2,6 +2,14 @@ import { useEffect, useState } from 'react';
 import { Database, ChevronDown } from 'lucide-react';
 import { fetchCommandDeep, type CommandDeep } from '@/lib/api/command';
 import { SourceChip } from './SourceChip';
+/*
+ * IMPORTED FROM THE SIBLING PANEL rather than restated here, and the duplication it avoids is
+ * the point: two copies of a three-state read are two things that drift, and the state this one
+ * decides is which cells the LP surface next door draws as holes. One predicate, one answer.
+ * (A shared module would be the tidier home; this lane may create no new source file, and the
+ * two files sit in the same directory.)
+ */
+import { scorecardCellState } from './CockpitPanels';
 import { clsx } from 'clsx';
 
 /**
@@ -84,6 +92,87 @@ export function DeepOntologyPanel() {
   );
 }
 
+/**
+ * ONE SCORECARD CELL, WITH ITS FOUR STATES KEPT APART.
+ *
+ * ── WHAT WAS WRONG ────────────────────────────────────────────────────────────────
+ * The cell was `const v = r.scores[d.key]` rendered as
+ * `v >= 5 ? emerald : v >= 4 ? cyan : v >= 3 ? grey : red`. `scores` is typed
+ * `Record<string, number>` and `noUncheckedIndexedAccess` is off, so `v` types as `number`
+ * while at runtime it is whatever the JSON held. Every comparison against `undefined` is
+ * false, so a dimension NOBODY ASSESSED fell through to the last branch and rendered as an
+ * EMPTY RED BOX — visually a failing score. A `null` recorded as "there is no value here"
+ * rendered identically. That is precisely the absent-is-not-zero collapse that was taken out
+ * of the ranking engine this week (`commandEngines.ts:105`), still live on the table that
+ * displays the same rows.
+ *
+ * ── WHAT IT DOES NOW ──────────────────────────────────────────────────────────────
+ * Four states, four renderings, and none of them is a number:
+ *   scored    the value, bucketed exactly as before — no shipped cell changes appearance.
+ *   absent    an em-dash on the neutral ground. Nobody assessed it. It is not a low score.
+ *   withheld  a lock glyph. Somebody recorded that there is no value to show.
+ *   malformed a "?" in amber. Something is there and it is not a measurement.
+ * `data-cell-state` carries the decision so a test can assert it without reading colours,
+ * which is the only part of this jsdom can see.
+ */
+function ScoreCell({ scores, dimKey }: { scores: Readonly<Record<string, unknown>>; dimKey: string }) {
+  const state = scorecardCellState(scores, dimKey);
+  if (state !== 'scored') {
+    const { glyph, tone, title } = state === 'absent'
+      ? { glyph: '—', tone: 'text-grey/60', title: 'Not scored — nobody assessed this subject on this dimension. This is an absence, not a zero and not a low score.' }
+      : state === 'withheld'
+        ? { glyph: '⊘', tone: 'text-grey-dark', title: 'Withheld — recorded as having no value to show here. Measured or classified, but not displayable.' }
+        : { glyph: '?', tone: 'text-amber-600 dark:text-amber-400', title: 'Malformed — a value is present and it is not a finite number, so it is not a measurement.' };
+    return (
+      <span
+        data-cell-state={state}
+        title={title}
+        className={clsx('inline-block w-6 rounded border border-dashed border-line font-mono font-bold', tone)}
+      >
+        {glyph}
+      </span>
+    );
+  }
+  const v = (scores as Record<string, number>)[dimKey]!;
+  return (
+    <span
+      data-cell-state="scored"
+      className={clsx('inline-block w-6 rounded font-mono font-bold',
+        v >= 5 ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+        : v >= 4 ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-300'
+        : v >= 3 ? 'bg-ice-soft text-grey-dark dark:bg-ice-soft/10'
+        : 'bg-red-500/10 text-red-600 dark:text-red-400')}
+    >
+      {v}
+    </span>
+  );
+}
+
+/**
+ * NO SURFACE ON THIS PANEL, AND THAT IS A JUDGEMENT RATHER THAN AN OMISSION.
+ *
+ * The lane's brief invited the same treatment here and set the test: does the third dimension
+ * carry information the flat version loses? For these four tabs the answer is NO, and the reason
+ * is structural rather than a matter of taste.
+ *
+ * `LpOptimizerPanel`'s ranked list COLLAPSES the matrix — nine partners × ten dimensions reduced
+ * to one weighted average each — so ninety cells are genuinely not on the screen and a surface is
+ * the only way to put them there. This table collapses NOTHING. Every cell of every scorecard is
+ * already rendered, with its own value, in its own column. A surface over it would show the same
+ * numbers as heights: better SHAPE PERCEPTION, no additional information. That is the definition
+ * of decoration, and decoration on a decision surface reads as authority.
+ *
+ * The size test points the same way for three of the four. `lp` is 10×9, `channel` 6×12, `arch`
+ * 8×4 and `twoPath` 6×3 (dimensions × subjects, counted from the shipped seed). At three and four
+ * subjects, `twoPath` and `arch` are read whole at a glance — a surface over three rows is a
+ * ribbon. `channel` at 12 subjects is the one arguable case, and it loses on the first test.
+ *
+ * WHAT WAS FIXED HERE INSTEAD is the defect that actually cost a reader something: an unscored
+ * cell rendering as a failing one. `buildScorecardSurface` in `CockpitPanels.tsx` is already
+ * generic over `{ dimensions, rows }`, so if the owner disagrees with this judgement any tab
+ * becomes a surface in one JSX line and one `readsAs` sentence — the sentence being the part
+ * that has to be true.
+ */
 function ScorecardTable({ deep, kind }: { deep: CommandDeep; kind: 'lp' | 'channel' | 'arch' | 'twoPath' }) {
   const sc = deep.reference.scorecards[kind];
   return (
@@ -106,27 +195,22 @@ function ScorecardTable({ deep, kind }: { deep: CommandDeep; kind: 'lp' | 'chann
           {sc.rows.map((r) => (
             <tr key={r.subjectId} className="border-t border-line/50">
               <td className="max-w-44 truncate py-1 pr-2 font-medium text-navy" title={r.note ?? r.subjectLabel}>{r.subjectLabel}</td>
-              {sc.dimensions.map((d) => {
-                const v = r.scores[d.key];
-                return (
-                  <td key={d.key} className="px-1 py-1 text-center">
-                    <span className={clsx('inline-block w-6 rounded font-mono font-bold',
-                      v >= 5 ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
-                      : v >= 4 ? 'bg-cyan-500/10 text-cyan-700 dark:text-cyan-300'
-                      : v >= 3 ? 'bg-ice-soft text-grey-dark dark:bg-ice-soft/10'
-                      : 'bg-red-500/10 text-red-600 dark:text-red-400')}>
-                      {v}
-                    </span>
-                  </td>
-                );
-              })}
+              {sc.dimensions.map((d) => (
+                <td key={d.key} className="px-1 py-1 text-center">
+                  <ScoreCell scores={r.scores} dimKey={d.key} />
+                </td>
+              ))}
               <td className="px-1 py-1 text-center font-mono font-bold text-navy">{r.weighted ?? '—'}</td>
               <td className="max-w-20 truncate px-1 py-1 text-center text-grey-dark">{r.tier ?? '—'}</td>
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="mt-1 text-[10px] text-grey">Weights and scores exactly as authored in the strategy workbook (grade C3 · public research). Phase 2 makes the weights live-editable with sensitivity analysis.</p>
+      <p className="mt-1 text-[10px] text-grey">
+        Weights and scores exactly as authored in the strategy workbook (grade C3 · public research). Phase 2 makes the weights live-editable with sensitivity analysis.
+        {' '}A cell reading <span className="font-mono font-bold">—</span> was never scored, <span className="font-mono font-bold">⊘</span> is recorded as withheld,
+        {' '}and <span className="font-mono font-bold">?</span> holds something that is not a number. None of the three is a zero, and none is averaged into the weighted column.
+      </p>
     </div>
   );
 }

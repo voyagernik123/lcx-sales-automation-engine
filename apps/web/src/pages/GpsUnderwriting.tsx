@@ -405,7 +405,7 @@ export function GpsUnderwriting() {
       <PrintStyles />
       <PageTitle
         icon={<Calculator size={20} />}
-        subtitle="Type a price. The answer is a distribution of realised margin, the probability it loses money, and the reasons it runs over — not a number."
+        subtitle="Type a price. The answer is a distribution of realised margin, the probability it loses money, the reasons it runs over, and a margin surface over price × effort overrun — not a number."
         actions={
           /*
            * THE PRINT CONTROL MOVED ONTO THE ARTEFACT, and the `.dark`-stripping dance it
@@ -454,17 +454,18 @@ export function GpsUnderwriting() {
           <EmptyState
             variant="error"
             title="Underwriting unavailable"
-            description={`${error} — no distribution is shown, because a screen that fills in a band when the server did not answer is the failure this phase exists to correct.`}
+            description={`${error} — no distribution and no margin surface are shown, because a screen that fills in a band when the server did not answer is the failure this phase exists to correct.`}
           />
         ) : body == null ? (
           <EmptyState
             variant="default"
             title="Nothing to underwrite yet"
-            description="Enter a price and the partner who would deliver it. Both are required: the price is the thing being argued with, and the rate card the cost is drawn from is loaded server-side by partner id. Nothing is assumed for either."
+            description={`Enter a price and the partner who would deliver it. Both are required: the price is the thing being argued with, and the rate card the cost is drawn from is loaded server-side by partner id. Nothing is assumed for either. ${MARGIN_SURFACE_PROMISE}`}
           />
         ) : res == null ? (
           <p className="rounded-lg border border-line bg-card px-4 py-3 font-mono text-micro text-grey shadow-card">
-            Running {'…'} 4,000 seeded samples over partner effort and recorded-overrun ratios.
+            Running {'…'} 4,000 seeded samples over partner effort and recorded-overrun ratios, then
+            the margin surface over price × effort overrun.
           </p>
         ) : (
           /*
@@ -1293,11 +1294,88 @@ export function buildMarginSurface({
   });
 }
 
+/**
+ * THE SURFACE, NAMED BEFORE IT CAN BE DRAWN — because until this constant existed nobody
+ * could find out it existed.
+ *
+ * `MarginSurface` renders inside `Distribution`, which renders only after an operator picks
+ * an offer, picks a partner, types a price AND gets a non-refused verdict. Everything about
+ * that is correct and none of it is discoverable: a reader who browses to this screen sees a
+ * form and an empty state, concludes the platform has no three-dimensional figure anywhere,
+ * and is right about the evidence in front of him. A capability nobody can reach is not a
+ * capability, and one nobody can NAME is barely better.
+ *
+ * WHAT THIS IS NOT. It is not a surface, a preview, a skeleton or a placeholder box. Nothing
+ * is drawn before there is a quote, and the last sentence here says why in the reader's own
+ * terms: an empty box with axes on it reads as a MEASURED flat surface, which is the exact
+ * claim `SurfacePlot`'s refused branch exists to prevent it ever making. The promise is
+ * prose, and prose cannot be mistaken for a measurement.
+ *
+ * It names both floor axes on purpose. "There is a 3-D chart" is an advertisement; "median
+ * margin over price × effort overrun" is a description a reader can decide they do or do not
+ * need, which is the only version worth putting in an empty state.
+ *
+ * AND IT NAMES THE PRECONDITION, WHICH THE FIRST DRAFT DID NOT AND WHICH MAKES THE DIFFERENCE
+ * BETWEEN A DESCRIPTION AND A PROMISE THE PLATFORM CANNOT KEEP. "When a quote lands" is doing
+ * a great deal of unstated work: the figure lives inside `Distribution`, which renders only on
+ * a NON-REFUSED verdict, and today every path to a verdict runs through `loadRateCard`
+ * (`apps/api/src/gps/underwrite.ts:410`). With no `gps_rate_card` row for the partner-offer
+ * pair — the state of every environment while `PARTNER_BENCH` is empty by construction and no
+ * card has been recorded — that returns `placeholderRateCard`, whose `validUntil` is null, and
+ * `resolveCostBasis` refuses `refused_rate_card_no_validity_stated`. A refusal carries no
+ * distribution, so it carries no surface.
+ *
+ * So on the deployed product as it stands, a reader who acts on this sentence types a price,
+ * types an id, and gets a refusal — forever. An empty state that advertises a figure without
+ * saying what has to exist first has not made the figure findable; it has made the absence
+ * harder to explain. The condition is therefore part of the sentence, not a footnote under it.
+ */
+export const MARGIN_SURFACE_PROMISE =
+  'When a quote lands, the answer includes a margin surface: median margin over price × '
+  + 'effort overrun, in three dimensions. How much price buys back an overrun is a '
+  + 'relationship between two variables at once, and no table holding the price fixed has a '
+  + 'column for it. A quote only lands when a rate card for this partner and this offer is ON '
+  + 'RECORD: without one the answer is a refusal, a refusal carries no distribution, and no '
+  + 'distribution means no surface — so until a rate card has been recorded this figure cannot '
+  + 'be drawn at all, and that is the honest state of it rather than a loading problem. '
+  + 'Nothing is drawn until the quote exists — an empty box with axes on it '
+  + 'would read as a measured flat surface, which is the one thing that figure must never be.';
+
+/**
+ * THERE IS NO RIDGE ON THIS SHEET, AND THIS SENTENCE USED TO SAY THERE WAS.
+ *
+ * The previous wording read "the ridge between them is the answer the table beside this
+ * cannot give". A ridge is a crest — a line of local maxima with the surface falling away on
+ * both sides — and this surface has none and cannot have one. At a fixed simulated cost,
+ * `marginPct` rises with every price step, so the sheet climbs monotonically along the price
+ * axis; the overrun axis carries the server's own `sensitivity.monotone` check. Rendered at
+ * $25,000 against a $12,000 median cost the grid is 40.0/46.7/52.0/56.4/60.0 across price at
+ * baseline down to 10.0/20.0/28.0/34.5/40.0 at +50% — a warped but strictly climbing sheet
+ * with no crest anywhere in it. A reader who goes looking for the ridge the caption named
+ * finds nothing, and a caption that names a feature the figure does not contain is the same
+ * defect class as a fabricated number: it is a claim the drawing does not support.
+ *
+ * The real reading is the LEVEL SET. 40% occurs at (baseline, $20,000), (+25%, $25,000) and
+ * (+50%, $30,000) — a diagonal, which is exactly "how much price buys back an overrun" and
+ * exactly what a table holding the price fixed has no column for.
+ *
+ * AND THE LIMIT OF THE DRAWING IS STATED ON THE DRAWING. Nothing marks equal heights: the
+ * engine draws no iso-height contour and `zeroPlane` is null here because the vertical domain
+ * excludes zero, so a reader comparing two cells is comparing two projected y positions on a
+ * foreshortened sheet against three vertical ticks. That is enough to read the SHAPE and it is
+ * not enough to read a number, so the caption says so rather than letting the picture imply a
+ * precision it does not have.
+ */
 const MARGIN_SURFACE_READS_AS =
   'Height is the MEDIAN margin as a percent of price. The floor axes are the two things that '
   + 'move a services P&L against each other: what LCX charges, and how far the effort overruns. '
-  + 'The ridge between them is the answer the table beside this cannot give — how much price '
-  + 'buys back an overrun. Only ONE cell is a quote on the record, the quoted price at baseline '
+  + 'READ IT ALONG A LEVEL, NOT ALONG A CREST — there is no ridge and no peak on this sheet: at '
+  + 'a fixed simulated cost every price step raises margin per cent, so the cells at EQUAL '
+  + 'HEIGHT run diagonally, and that diagonal is the answer the table beside this cannot give — '
+  + 'how much price buys back an overrun. Nothing on the sheet marks equal heights, so that '
+  + 'diagonal is judged by eye against three vertical ticks: this figure states a SHAPE, the '
+  + 'off-quote cells are printed as numbers nowhere on this screen, and none of them may be '
+  + 'quoted as one. Only ONE cell is a quote on the record, the quoted price at baseline '
   + 'effort; every other cell is arithmetic on the same simulated median cost, at a price nobody '
   + 'has offered. Heights are medians, so half of the simulated outcomes fall below each one.';
 
