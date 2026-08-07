@@ -802,7 +802,7 @@ function AskProgramPanel() {
             </div>
           )}
           <p className="mt-1.5 text-[10px] text-grey">
-            Grounded in the command graph + deep ontology + planning simulation{res.usedLlm ? ' · AI-composed, source-cited' : ' · deterministic readout (no AI key set)'}
+            Grounded in the command graph + deep ontology + planning simulation{res.usedLlm ? ' · AI-composed, source-cited' : ' · deterministic readout (no AI answer; this engine does not report the cause)'}
           </p>
         </div>
       )}

@@ -146,7 +146,15 @@ export function PartnerDossier({ partner, onClose }: { partner: CommandPartner; 
               <Button size="xs" variant="secondary" disabled={!paste.trim() || extracting} onClick={() => {
                 setExtracting(true);
                 extractRfiText(paste).then((r) => {
-                  if (!r.usedLlm) { toast('error', 'No AI key — fill manually'); return; }
+                  /*
+                   * WAS: 'No AI key — fill manually'. `extractRfiText` returns only
+                   * `{ fields, usedLlm }`, so this screen genuinely does NOT know why no
+                   * model answered — a missing key, a rate limit, a refusal and a network
+                   * failure are one value here. Naming a key was an inference laundered
+                   * into a certainty. Until this engine carries the outcome the operator
+                   * engines now do, it says what it observed and no more.
+                   */
+                  if (!r.usedLlm) { toast('error', 'No AI extraction — fill manually (cause not reported by this engine)'); return; }
                   const n = Object.keys(r.fields).length;
                   setForm((f) => ({ ...f, ...r.fields }));
                   toast(n ? 'success' : 'info', n ? `Extracted ${n} fields — review, then Record RFI` : 'Nothing extractable found');

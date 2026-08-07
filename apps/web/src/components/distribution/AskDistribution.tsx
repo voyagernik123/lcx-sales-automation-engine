@@ -50,7 +50,7 @@ export function AskDistribution() {
               ))}
             </div>
           )}
-          {!ans.usedLlm && <p className="mt-1 text-[10px] text-grey">Deterministic answer — set an AI key for a synthesized, cited response.</p>}
+          {!ans.usedLlm && <p className="mt-1 text-[10px] text-grey">Deterministic answer — no AI answer was produced; this engine does not report the cause.</p>}
         </div>
       )}
     </section>

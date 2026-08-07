@@ -249,7 +249,7 @@ export function DraftingRoom({ reply, draft, onDraft, onApprove, busy }: {
               <AiProse text={stored} />
             </div>
             <p className="mt-1 font-mono text-[10px] leading-snug text-grey">
-              {draft.used_llm ? 'AI-drafted' : 'deterministic draft — no AI key set'} · {draft.status}
+              {draft.used_llm ? 'AI-drafted' : 'deterministic draft — no AI answer (cause not reported by this engine)'} · {draft.status}
               {draft.approved_by ? ` · approved by ${draft.approved_by}` : ''}
             </p>
             {draft.flagged && draft.flag_reason && (

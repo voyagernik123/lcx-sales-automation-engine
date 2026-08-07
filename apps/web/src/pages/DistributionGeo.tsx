@@ -73,7 +73,7 @@ export function DistributionGeo() {
               <div className="mt-2 rounded-lg border border-cyan-500/30 bg-cyan-500/5 p-3">
                 <div className="mb-1 font-mono text-[10px] font-bold uppercase tracking-wider text-grey">Draft for “{draft.query}”</div>
                 <AiProse text={draft.text} />
-                <p className="mt-1 text-[10px] text-grey">{draft.usedLlm ? 'AI-drafted — review, then publish through your content workflow. AI never publishes.' : 'Deterministic draft — set an AI key for a citable, GEO-optimized version.'}</p>
+                <p className="mt-1 text-[10px] text-grey">{draft.usedLlm ? 'AI-drafted — review, then publish through your content workflow. AI never publishes.' : 'Deterministic draft — no AI answer was produced; this engine does not report the cause.'}</p>
               </div>
             )}
             <p className="mt-2 text-micro text-grey">Per-engine (ChatGPT/Claude/Perplexity/Gemini) answer-share tracking lands as keys are provisioned.</p>

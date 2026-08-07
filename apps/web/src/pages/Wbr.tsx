@@ -120,7 +120,7 @@ export function Wbr() {
                     `**bold**` to whoever the WBR was printed for. */}
                 <AiProse text={aiNarr.text} />
                 {!aiNarr.usedLlm && (
-                  <p className="mt-1 text-micro text-grey">(deterministic — no AI key set)</p>
+                  <p className="mt-1 text-micro text-grey">(deterministic — no AI answer; cause not reported by this engine)</p>
                 )}
               </>
             ) : (

@@ -237,7 +237,14 @@ function MonitorActivity({ id, name, lastRunAt }: { id: string; name: string; la
               <div key={sid} className={`rounded border px-2 py-1 text-micro ${TRIAGE_TONE[r.classification] ?? TRIAGE_TONE.unclear}`}>
                 <span className="font-bold">{f?.name ?? sid.slice(0, 8)} — {r.classification.replace(/_/g, ' ')}</span>
                 {' '}· {r.rationale} <span className="opacity-70">→ {r.suggestedAction}</span>
-                {!r.usedLlm && <span className="opacity-70"> (no AI key — routed to human)</span>}
+                {/*
+                  * WAS: "(no AI key — routed to human)" for EVERY `usedLlm === false`.
+                  * That named one cause out of four — a rate-limited provider, a model that
+                  * declined, and a network failure all read as "nobody set a key". `triageSignal`
+                  * now returns the actual `status` with an operator-facing `detail`, so the
+                  * screen reports what happened instead of guessing why.
+                  */}
+                {!r.usedLlm && <span className="opacity-70"> ({r.detail} — routed to human)</span>}
               </div>
             );
           })}
