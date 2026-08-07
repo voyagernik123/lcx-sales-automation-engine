@@ -51,6 +51,7 @@ import { CHART_GRID, seriesVar } from '@/components/charts/palette';
  * reaching into it needs no server and cannot drift.
  */
 import {
+  LABEL_FONT_SIZE,
   type GeometryRefusal,
   type ProjectedPoint,
   type ProjectedTick,
@@ -197,7 +198,7 @@ function TickLabel({
       x={tick.at.sx + dx}
       y={tick.at.sy + dy}
       textAnchor={anchor}
-      fontSize={4}
+      fontSize={LABEL_FONT_SIZE}
       fill="currentColor"
       className="text-grey"
     >
@@ -307,8 +308,20 @@ function Figure({ g, title, readsAs, heightPx }: { g: SurfaceGeometry; title: st
             is strictly between 0° and 90°, so the NEAR plan edge is always the lower one on
             screen and "down" is always outward. It is written this way regardless so both axes
             take their direction from the same source rather than one of them from a habit. */}
+        {/* THE TWO TICK RUNS MEET AT ONE CORNER, AND THEIR LAST LABELS COLLIDED THERE.
+            On the live GPS margin surface `+50%` and `$300,000` overlapped into "+50%00,000".
+            Both anchors sit at the same near corner, so the separation has to come from the
+            OFFSETS: the x run is pushed a full line-height clear of the plan edge and the y run
+            sits nearly centred on its own tick, which puts the two families in different
+            horizontal bands. Expressed in LABEL_FONT_SIZE rather than as magic numbers, because
+            the thing that must hold is "further apart than the text is tall". */}
         {g.xTicks.map((t) => (
-          <TickLabel key={`x-${t.value}`} tick={t} anchor="middle" dy={g.xTickOutward.dy < 0 ? -2 : 5} />
+          <TickLabel
+            key={`x-${t.value}`}
+            tick={t}
+            anchor="middle"
+            dy={g.xTickOutward.dy < 0 ? -LABEL_FONT_SIZE * 1.6 : LABEL_FONT_SIZE * 2}
+          />
         ))}
         {g.yTicks.map((t) => (
           <TickLabel
@@ -316,7 +329,7 @@ function Figure({ g, title, readsAs, heightPx }: { g: SurfaceGeometry; title: st
             tick={t}
             anchor={g.yTickOutward.dx < 0 ? 'end' : 'start'}
             dx={g.yTickOutward.dx < 0 ? -2 : 2}
-            dy={3}
+            dy={LABEL_FONT_SIZE * 0.35}
           />
         ))}
       </svg>

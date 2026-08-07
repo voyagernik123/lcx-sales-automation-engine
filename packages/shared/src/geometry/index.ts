@@ -402,6 +402,34 @@ export interface BoxSpec {
 
 export const DEFAULT_BOX: BoxSpec = { width: 100, depth: 100, height: 62 };
 
+/* ══════════════════════════════════════════════════════════════════════════════ */
+/* LABEL METRICS — the one place this pure module assumes something about drawing  */
+/* ══════════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * The font size the renderer draws tick labels at, in the same user units as every
+ * coordinate here. This module cannot MEASURE text — it has no DOM and draws nothing — so
+ * the viewBox reserves room using the size the renderer is known to use.
+ *
+ * `apps/web/src/components/geometry/__tests__/surfacePlot.test.tsx` asserts `SurfacePlot`
+ * renders tick text at exactly this size. If someone changes the renderer's `fontSize` and
+ * not this constant, that test fails — which matters because the failure mode of a silent
+ * drift is labels clipped by the viewBox again, with every other test still green.
+ */
+export const LABEL_FONT_SIZE = 4;
+
+/**
+ * Mean glyph advance as a fraction of font size, for the UI's sans stack.
+ *
+ * Deliberately generous (a proportional sans averages nearer 0.5 for mixed case; digits and
+ * `$`/`,` in a money label run wider). Over-reserving costs a slightly smaller figure;
+ * under-reserving costs a clipped label, and only one of those is a legibility failure.
+ */
+export const LABEL_ADVANCE_EM = 0.62;
+
+/** Gap between a tick's anchor point and the near edge of its text box. */
+export const LABEL_GAP = 2;
+
 /** Every extent finite and positive. A zero extent projects the whole grid onto one place. */
 export function isUsableBox(box: BoxSpec): boolean {
   return [box.width, box.depth, box.height].every((v) => Number.isFinite(v) && v > 0);
@@ -695,9 +723,48 @@ export function valueAxisTicks(min: number, max: number, count = 4): readonly nu
   if (min > max) return [];
   const rawStep = (max - min) / Math.max(1, count);
   const exp = Math.floor(Math.log10(rawStep));
-  const f = rawStep / 10 ** exp;
-  const nf = f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10;
-  const step = nf * 10 ** exp;
+  if (!Number.isFinite(exp)) return [];
+
+  /*
+   * PICK THE STEP BY HOW MANY TICKS IT ACTUALLY PRODUCES, not by rounding the raw step up.
+   *
+   * This was `f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10`, which always rounds UP. On the live
+   * GPS margin surface the domain is -34..48 % and the target is 4 ticks, so the raw step is
+   * 20.5 and `f` is 2.05 — a hair over 2, rounded to 5, making the step 50. The only multiple
+   * of 50 between -34 and 48 is zero, so THE WHOLE VERTICAL AXIS CARRIED ONE TICK: a surface
+   * spanning 82 points of margin, drawn against a scale that says only "0%".
+   *
+   * Found by rendering the figure and looking at it. Every geometry test passed — they assert
+   * that ticks are ascending, distinct and inside the domain, and a single tick satisfies all
+   * three. "Ascending and distinct" is not the same claim as "you can read a height off this".
+   *
+   * Choosing among the 1/2/5/10 candidates by resulting COUNT is what the function's own
+   * comment already promised ("a real axis wants ~4 ticks"). Ties go to the DENSER axis: a
+   * reader can ignore a tick they do not need and cannot recover one that was never drawn.
+   */
+  const countFor = (s: number): number => {
+    if (!Number.isFinite(s) || s <= 0) return 0;
+    const first = Math.ceil(min / s - 1e-9) * s;
+    if (!Number.isFinite(first)) return 0;
+    return Math.max(0, Math.floor((max - first) / s + 1e-9) + 1);
+  };
+
+  let step = 0;
+  let best = Infinity;
+  for (const nf of [1, 2, 5, 10] as const) {
+    const cand = nf * 10 ** exp;
+    const n = countFor(cand);
+    // An axis with fewer than two ticks states no scale at all; never prefer one.
+    if (n < 2) continue;
+    const err = Math.abs(n - count);
+    if (err < best || (err === best && cand < step)) {
+      best = err;
+      step = cand;
+    }
+  }
+  // Every candidate produced under two ticks — a domain too narrow for a round step to land
+  // in twice. Fall back to the raw step so the axis still carries a scale.
+  if (step <= 0) step = rawStep;
   if (!Number.isFinite(step) || step <= 0) return [];
   const first = Math.ceil(min / step - 1e-9) * step;
   if (!Number.isFinite(first)) return [];
@@ -1271,7 +1338,64 @@ export function buildSurfaceMesh(input: SurfaceGridInput): SurfaceOutcome {
     ...zTicks.map((t) => t.at),
   ];
   for (const c of cells) all.push(...(c.kind === 'quad' ? c.corners : c.footprint));
-  const pad = 8;
+
+  /*
+   * ── THE VIEWBOX MUST RESERVE ROOM FOR TEXT, NOT FOR POINTS ──────────────────────
+   *
+   * This was a constant `pad = 8` around the projected POINTS. Tick labels are TEXT drawn
+   * AT those points and extending outward from them, so any label wider than 8 user units —
+   * which is four characters — was clipped by the viewBox.
+   *
+   * FOUND BY RENDERING THE FIGURE AND LOOKING AT IT, after twenty passing DOM tests did not.
+   * On the live GPS margin surface `baseline` rendered as "line" and `$200,000` as "$200,00C".
+   * A DOM test reads `textContent`, which is the full string whatever the viewBox does, so
+   * no amount of asserting on the tree could have caught it. That is the whole reason this
+   * repo's rule says a passing DOM test proves polygon ORDER, not legibility.
+   *
+   * Each tick now reserves a box the size of its own rendered text, centred just outside its
+   * anchor along the direction the renderer draws it — which the engine already computes as
+   * `xTickOutward`/`yTickOutward`. Vertical ticks sit to the left of the vertical axis.
+   *
+   * THE FONT METRICS ARE AN ASSUMPTION, AND THEY ARE NAMED. This module draws nothing, so it
+   * cannot measure text; it reserves space using the size the renderer is known to use.
+   * `apps/web/src/components/geometry/__tests__` asserts `SurfacePlot` still uses exactly
+   * `LABEL_FONT_SIZE`, so the two cannot drift apart silently — which is the failure mode
+   * that would bring the clipping back with every test still green.
+   */
+  const labelBoxCorners = (
+    ticks: readonly ProjectedTick[],
+    outward: { dx: number; dy: number },
+  ): ProjectedPoint[] => {
+    const out: ProjectedPoint[] = [];
+    const len = Math.hypot(outward.dx, outward.dy) || 1;
+    const ux = outward.dx / len;
+    const uy = outward.dy / len;
+    for (const t of ticks) {
+      const w = t.label.length * LABEL_FONT_SIZE * LABEL_ADVANCE_EM;
+      const h = LABEL_FONT_SIZE;
+      // Centre of the text box: just outside the anchor, far enough that the whole box clears.
+      const cx = t.at.sx + ux * (w / 2 + LABEL_GAP);
+      const cy = t.at.sy + uy * (h / 2 + LABEL_GAP);
+      for (const [sx, sy] of [
+        [cx - w / 2, cy - h],
+        [cx + w / 2, cy - h],
+        [cx - w / 2, cy + h],
+        [cx + w / 2, cy + h],
+      ] as const) {
+        out.push({ sx, sy, depth: t.at.depth });
+      }
+    }
+    return out;
+  };
+
+  all.push(
+    ...labelBoxCorners(xTicks, xTickOutward),
+    ...labelBoxCorners(yTicks, yTickOutward),
+    // The vertical axis is drawn at a floor corner and its labels sit to its left.
+    ...labelBoxCorners(zTicks, { dx: -1, dy: 0 }),
+  );
+
+  const pad = 4;
   const minX = Math.min(...all.map((p) => p.sx)) - pad;
   const maxX = Math.max(...all.map((p) => p.sx)) + pad;
   const minY = Math.min(...all.map((p) => p.sy)) - pad;

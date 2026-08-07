@@ -1128,3 +1128,53 @@ describe('the drawable output', () => {
     expect(ok(grid(FULL))).toEqual(ok(grid(FULL)));
   });
 });
+
+/**
+ * THE VERTICAL AXIS MUST CARRY A SCALE, NOT A SINGLE TICK.
+ *
+ * `valueAxisTicks` rounded its step UP always (`f <= 2 ? 2 : f <= 5 ? 5 : 10`). On the live
+ * GPS margin surface the domain is -34..48 % with a target of 4, so the raw step of 20.5 gave
+ * `f = 2.05`, rounded to 5, step 50 — and the only multiple of 50 in that range is zero. The
+ * whole vertical axis of a surface spanning 82 points of margin read "0%".
+ *
+ * Every existing tick test passed throughout: they assert ascending, distinct, and inside the
+ * domain, and ONE tick satisfies all three. This asserts the property those miss — that the
+ * axis says enough to read a height off.
+ */
+describe('valueAxisTicks produces an axis a reader can use', () => {
+  it('gives the live margin domain a real scale (regression: it gave [0])', () => {
+    expect(valueAxisTicks(-34, 48, 4)).toEqual([-20, 0, 20, 40]);
+  });
+
+  it('never returns fewer than two ticks for a domain with real width', () => {
+    // Swept rather than sampled: the old bug only appeared where the raw step landed just
+    // past a 1/2/5 boundary, which a handful of round fixtures walks straight past.
+    for (let lo = -100; lo <= 0; lo += 7) {
+      for (let width = 1; width <= 200; width += 3) {
+        const ticks = valueAxisTicks(lo, lo + width, 4);
+        expect(ticks.length, `domain ${lo}..${lo + width} produced ${JSON.stringify(ticks)}`)
+          .toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
+  it('still refuses what it always refused', () => {
+    expect(valueAxisTicks(10, -3, 4)).toEqual([]);
+    expect(valueAxisTicks(Number.NaN, 5, 4)).toEqual([]);
+    expect(valueAxisTicks(Infinity, 5, 4)).toEqual([]);
+    // A zero-width domain is one value, and one tick is the honest answer for it.
+    expect(valueAxisTicks(5, 5, 4)).toEqual([5]);
+  });
+
+  it('keeps ticks ascending, distinct and inside the domain', () => {
+    for (const [lo, hi] of [[-34, 48], [-8, 38], [0, 100], [-1, 1], [-0.004, 0.004]] as const) {
+      const t = valueAxisTicks(lo, hi, 4);
+      expect([...t].sort((a, b) => a - b)).toEqual([...t]);
+      expect(new Set(t).size).toBe(t.length);
+      for (const v of t) {
+        expect(v).toBeGreaterThanOrEqual(lo);
+        expect(v).toBeLessThanOrEqual(hi);
+      }
+    }
+  });
+});
