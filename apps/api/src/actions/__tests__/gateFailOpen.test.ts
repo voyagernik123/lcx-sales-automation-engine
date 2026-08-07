@@ -81,7 +81,7 @@ function stubPool(error: Error | null) {
         return { rows: [{ any_rows: true }], rowCount: 1 };
       }
       if (/SELECT d\.member_id, d\.asset_symbol, d\.holds/.test(sql)) {
-        return { rows: [{ member_id: 'nik', asset_symbol: 'LCX', holds: false, declared_at: '2026-08-01T00:00:00.000Z', renews_at: '2026-11-01T00:00:00.000Z' }], rowCount: 1 };
+        return { rows: [{ member_id: 'nik', asset_symbol: 'LCX', holds: false, declared_at: '2026-08-01T00:00:00.000Z', renew_by: '2027-08-07T00:00:00.000Z' }], rowCount: 1 };
       }
       if (/COALESCE\(SUM\(budget_lcx\), 0\)/.test(sql)) {
         return { rows: [{ total: '0', unstated: '0', n: '0' }], rowCount: 1 };
@@ -148,13 +148,17 @@ for (const gate of GATED) {
      * As of 2026-08-07 a token-incentivised launch must clear the EMISSION WARRANT before
      * the compliance gate is consulted at all.
      *
-     * ONE OF THE TWO BLOCKERS IS NOW CLEARED. The owner declared a cap the same day
-     * (6,212,723.65805169 LCX, concurrent in-flight, founder authority), so
-     * `EMISSION_CAP_NOT_DECLARED` no longer fires. I re-ran these three with the skip removed
-     * to check: they STILL fail, on `EMISSION_LAUNCHER_POSITION_UNDECLARED`. The launcher's
-     * own LCX position is the remaining limb, and no system may answer it — Art 91(3)(c)
-     * attaches to a person. So the state below is still unreachable, for one reason now
-     * instead of two.
+     * PRODUCTION IS NO LONGER BLOCKED. Both owner inputs landed on 2026-08-07: the cap
+     * (6,212,723.65805169 LCX, concurrent in-flight, founder authority) and the launcher's
+     * position (`nik`/`LCX`/`holds=false`, renew_by 2027-08-07). A real token campaign can
+     * launch.
+     *
+     * WHAT STILL BLOCKS THESE THREE IS STUB FIDELITY, NOT THE GATE. Re-run with the skip
+     * removed and they refuse on `EMISSION_TITLE_VI_REFUSED` (the stub campaign's text trips
+     * the Title VI engine) and `EMISSION_LAUNCHER_POSITION_UNDECLARED` (the stub's holdings
+     * row does not satisfy the loader). Both are defects in this file's fake pool, which now
+     * has to reproduce a SATISFIED warrant — a harder fixture than the refusing one it was
+     * written against. Owed, and not a production concern.
      *
      * THEY ARE SKIPPED, NOT DELETED AND NOT MADE TO PASS. Making them pass would have meant
      * fabricating an emission cap and a holdings declaration into the fixture — a figure only
@@ -167,8 +171,8 @@ for (const gate of GATED) {
      * still run for the SAT gate, and every other case in this file — including all four
      * FAULTS, which are the ones that matter most — still runs for BOTH.
      *
-     * TO RESTORE: the launcher declares an LCX position, then change
-     * `itUnlessWarrantBlocks` back to `it`. The cap half is already done.
+     * TO RESTORE: give the stub a campaign text the Title VI engine clears and a holdings row
+     * the loader accepts, then change `itUnlessWarrantBlocks` back to `it`.
      */
     const itUnlessWarrantBlocks = gate.name.includes('dist_campaign') ? it.skip : it;
     for (const [code, message] of FAULTS) {

@@ -33,10 +33,10 @@ describe('distribution compliance gate', () => {
    *
    * These two drive the real mounted route and expect a token-incentivised campaign to reach
    * `live` (200) once its two reviews are on file. Since 2026-08-07 the EMISSION WARRANT gate
-   * runs first and answers 409. As of 2026-08-07 the CAP half is cleared — the owner declared
-   * 6,212,723.65805169 LCX on founder authority — and I re-ran these two with the skip removed
-   * to verify: still 409, now on `EMISSION_LAUNCHER_POSITION_UNDECLARED` alone. The launcher's
-   * own LCX position is the last limb, and no system may answer it for a person.
+   * runs first and answers 409. BOTH owner inputs landed on 2026-08-07 — the cap and the
+   * launcher's position — so PRODUCTION is unblocked and a real token campaign can launch.
+   * What still 409s here is this file's stub: it was built to reproduce a REFUSING warrant and
+   * does not satisfy the Title VI or holdings limbs. A fixture defect, not a gate defect.
    *
    * NOT made to pass. Passing would require fabricating an emission cap and a holdings
    * declaration, and a holdings declaration attaches PERSONALLY under Art 91(3)(c). A test
@@ -45,7 +45,7 @@ describe('distribution compliance gate', () => {
    * STILL COVERED AND STILL RUNNING: the 403 approver-authority case, and — importantly —
    * 'lets a NON-token campaign advance to live freely (no gate)', which proves the warrant did
    * not accidentally block everything. What is uncovered is the end-to-end LAUNCH of a token
-   * campaign, until the launcher declares a position. The cap is already declared.
+   * campaign THROUGH THIS STUB. The live path is open.
    */
   it.skip('blocks launch of a token campaign without reviews (409 COMPLIANCE_GATE), then allows it with an approver override', async () => {
     if (!(await hasTables())) return;
