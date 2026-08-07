@@ -23,6 +23,7 @@ import { ReadinessDial, LpOptimizerPanel, FunnelSimPanel } from '@/components/co
 import { AnalyticReviews } from '@/components/intel/AnalyticReviews';
 import { PrintStyles } from '@/components/report/PrintStyles';
 import { PageTitle, Button } from '@/components/ui';
+import { safeHref } from '@/lib/safeHref';
 import { clsx } from 'clsx';
 
 /**
@@ -788,7 +789,11 @@ function AskProgramPanel() {
           {res.citations && res.citations.length > 0 && (
             <div className="mt-1.5 flex flex-wrap gap-1">
               {res.citations.map((s) => (
-                <a key={s.id} href={s.url ?? '#'} target="_blank" rel="noreferrer"
+                /* `?? '#'` used to stand in for a missing source URL, which made an
+                   uncited citation LOOK navigable and then go nowhere. An absent href
+                   renders the chip as plain text — not-navigable is the honest state,
+                   and safeHref returns that same undefined for a hostile scheme. */
+                <a key={s.id} href={safeHref(s.url)} target="_blank" rel="noreferrer"
                   className="rounded border border-cyan-500/40 bg-cyan-500/5 px-1.5 py-0.5 font-mono text-[10px] font-bold text-cyan-700 hover:bg-cyan-500/10 dark:text-cyan-300"
                   title={s.label}>
                   {s.id}

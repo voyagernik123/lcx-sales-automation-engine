@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui';
 import { askDistribution, type DistAskAnswer } from '@/lib/api/distribution';
+import { safeHref } from '@/lib/safeHref';
 
 /**
  * Ask-the-Distribution (LCX ONE Phase 7) — cited Q&A over the ontology. Runs
@@ -44,7 +45,7 @@ export function AskDistribution() {
             <div className="mt-1.5 flex flex-wrap gap-1">
               {ans.citations.map((c) => (
                 c.url
-                  ? <a key={c.id} href={c.url} target="_blank" rel="noreferrer" className="rounded border border-cyan-500/40 bg-cyan-500/10 px-1.5 py-px font-mono text-[10px] text-cyan-700 hover:underline dark:text-cyan-300">{c.label}</a>
+                  ? <a key={c.id} href={safeHref(c.url)} target="_blank" rel="noreferrer" className="rounded border border-cyan-500/40 bg-cyan-500/10 px-1.5 py-px font-mono text-[10px] text-cyan-700 hover:underline dark:text-cyan-300">{c.label}</a>
                   : <span key={c.id} className="rounded border border-line px-1.5 py-px font-mono text-[10px] text-grey">{c.label}</span>
               ))}
             </div>
