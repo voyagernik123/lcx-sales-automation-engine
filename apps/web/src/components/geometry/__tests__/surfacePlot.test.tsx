@@ -164,13 +164,20 @@ describe('SurfacePlot — absence', () => {
     expect(screen.getByTestId('surface-notices').textContent).toMatch(/HOLES_PRESENT/);
   });
 
-  it('draws a WITHHELD gap differently from a never-measured one, and counts it separately', () => {
+  it('draws a WITHHELD gap differently from a never-measured one, marks a MIXED cell as both, and counts them separately', () => {
     /*
      * Present-but-withheld is the third of the house's three states and it has to be visible AS
      * such: a reader looking at a gap must be able to tell "nobody measured this" from "this was
      * measured and you may not see it", because those are different questions to ask next. Both
      * would have rendered as one identical dashed cross while the frame reported them in one
      * "absent" number.
+     *
+     * AND A CELL CAN BE BOTH. This fixture has always contained one — cell (1,1) touches the
+     * withheld corner at grid point (1,2) and the never-measured corner at (2,2) — and the
+     * component collapsed it: `const withheld = h.withheldCorners.length > 0` chose the tight dash
+     * and SUPPRESSED the cross, so a gap containing a genuine absence was drawn as a pure
+     * permission decision. This test used to PIN that behaviour, asserting `lines.length === 0`
+     * over every hole carrying a withheld corner, the mixed one included.
      */
     const withheldRows: SurfaceGridInput['rows'] = [
       [1000, 3000, 6000, 9000],
@@ -180,19 +187,40 @@ describe('SurfacePlot — absence', () => {
     const g = mesh(input(withheldRows));
     const { container } = plot(g);
     const holes = [...container.querySelectorAll('[data-hole]')];
-    const withheldHoles = holes.filter((h) => h.getAttribute('data-withheld') === 'true');
-    const absentHoles = holes.filter((h) => h.getAttribute('data-withheld') === null);
-    expect(withheldHoles.length).toBeGreaterThan(0);
-    expect(absentHoles.length).toBeGreaterThan(0);
-    // Different dash, and only the never-measured gap carries the cross.
-    for (const h of withheldHoles) {
-      expect(h.querySelector('polygon')?.getAttribute('stroke-dasharray')).toBe('0.8 1.2');
-      expect(h.querySelectorAll('line').length).toBe(0);
-    }
-    for (const h of absentHoles) {
-      expect(h.querySelector('polygon')?.getAttribute('stroke-dasharray')).toBe('2 2');
-      expect(h.querySelectorAll('line').length).toBe(2);
-    }
+    const byCell = new Map(holes.map((h) => [h.getAttribute('data-cell') ?? '', h] as const));
+    expect([...byCell.keys()].sort()).toEqual(['0,1', '1,1', '2,1']);
+    const dash = (el: Element) => el.querySelector('polygon')?.getAttribute('stroke-dasharray');
+    const crossCount = (el: Element) => el.querySelectorAll('line').length;
+    const engineHole = (id: string) => g.holes.find((h) => `${h.col},${h.row}` === id);
+
+    // (0,1) — only the WITHHELD corner. Tight dash, no cross: something is known here.
+    expect(engineHole('0,1')?.withheldCorners.length).toBe(1);
+    expect(engineHole('0,1')?.absentCorners.length).toBe(0);
+    const withheldOnly = byCell.get('0,1') as Element;
+    expect(withheldOnly.getAttribute('data-withheld')).toBe('true');
+    expect(withheldOnly.getAttribute('data-absent')).toBeNull();
+    expect(dash(withheldOnly)).toBe('0.8 1.2');
+    expect(crossCount(withheldOnly)).toBe(0);
+
+    // (2,1) — only the never-measured corner. Sparse dash and the cross: nothing is known here.
+    expect(engineHole('2,1')?.absentCorners.length).toBe(1);
+    expect(engineHole('2,1')?.withheldCorners.length).toBe(0);
+    const absentOnly = byCell.get('2,1') as Element;
+    expect(absentOnly.getAttribute('data-absent')).toBe('true');
+    expect(absentOnly.getAttribute('data-withheld')).toBeNull();
+    expect(dash(absentOnly)).toBe('2 2');
+    expect(crossCount(absentOnly)).toBe(2);
+
+    // (1,1) — BOTH. The tight dash AND the cross, because both statements are true of it, and
+    // both states on the element rather than one of them swallowing the other.
+    expect(engineHole('1,1')?.absentCorners.length).toBe(1);
+    expect(engineHole('1,1')?.withheldCorners.length).toBe(1);
+    const mixed = byCell.get('1,1') as Element;
+    expect(mixed.getAttribute('data-withheld')).toBe('true');
+    expect(mixed.getAttribute('data-absent')).toBe('true');
+    expect(dash(mixed)).toBe('0.8 1.2');
+    expect(crossCount(mixed)).toBe(2);
+
     // Three counts on the frame, and two separate notices — never one merged "missing" number.
     expect(screen.getByTestId('surface-frame').textContent)
       .toMatch(/10 grid points observed, 1 never measured, 1 present but withheld/);
@@ -200,6 +228,15 @@ describe('SurfacePlot — absence', () => {
     expect(notices).toMatch(/HOLES_PRESENT/);
     expect(notices).toMatch(/CELLS_WITHHELD/);
     expect(notices).toMatch(/measured and are not shown here/);
+    // The mixed cell is counted under BOTH notices — 2 and 2 over 3 open cells — and the reader
+    // is told the counts overlap rather than left to subtract and get a wrong answer.
+    const holesNotice = container.querySelector('[data-notice="HOLES_PRESENT"]')?.textContent ?? '';
+    const withheldNotice = container.querySelector('[data-notice="CELLS_WITHHELD"]')?.textContent ?? '';
+    expect(holesNotice).toMatch(/2 of 6 cells are open because a corner was never measured/);
+    expect(withheldNotice).toMatch(/2 of 6 cells are open because a corner is PRESENT BUT WITHHELD/);
+    for (const n of [holesNotice, withheldNotice]) {
+      expect(n).toMatch(/Counts overlap: 1 of the 3 open cells has a never-measured corner AND a withheld one/);
+    }
   });
 
   it('refuses an all-withheld grid under a DIFFERENT code from an all-absent one', () => {
@@ -318,7 +355,7 @@ describe('SurfacePlot — the frame a picture needs more than a table does', () 
     for (const t of g.yTicks) expect(screen.getByText(t.label)).toBeInTheDocument();
   });
 
-  it('puts no RENDERED tick label on the sheet, at every azimuth the engine will draw', () => {
+  it('puts no RENDERED tick label on the sheet, at every azimuth the engine will draw AND under a caller domain the data escapes', () => {
     /*
      * THE ASSERTION THAT WAS MISSING, and the one that would have caught the shipped anchoring:
      * the engine hard-coded grid ticks to the (xLo, yLo) floor corner, which at the DEFAULT view
@@ -329,30 +366,79 @@ describe('SurfacePlot — the frame a picture needs more than a table does', () 
      *
      * This reads the label positions and the polygons back out of the RENDERED SVG, so it covers
      * the component's own dx/dy offsets as well as the engine's placement — the offsets are part
-     * of where a label actually lands, and they live here rather than in the engine.
+     * of where a label actually lands, and the MAGNITUDE of them lives here. (Their DIRECTION
+     * does not: the engine hands over `xTickOutward`/`yTickOutward`, because which way is out is
+     * a fact about the projection. See the azimuth band below.)
+     *
+     * AND IT NOW SUPPLIES A zDomain, which is the input that broke the claim it makes. The loop
+     * never did, so it could not see the second half of the same defect: with a caller-supplied
+     * domain the observed values escape, `mapTo` returns a NEGATIVE box height below `zLo`, and
+     * the sheet descends below the near floor edge the labels were anchored to — every plan tick
+     * then reads as an annotation sitting ON the surface. [4000, 8000] puts the sheet below the
+     * box (observed low is −800); [−10000, −5000] puts it entirely above, the direction that was
+     * already safe and is covered so the fix is not mistaken for a one-sided patch.
      */
-    for (const azimuthDeg of [10, 45, 100, 170, 200, 260, 350]) {
-      const view = { azimuthDeg, elevationDeg: 35.264389682754654, scale: 1 };
-      const { container, unmount } = plot(mesh(input(FULL, { view })));
-      const polys = [...container.querySelectorAll('[data-kind="quad"]')]
-        .map((el) => el.getAttribute('points') ?? '');
-      const labels = [...container.querySelectorAll('text')];
-      expect(labels.length).toBeGreaterThan(0);
-      expect(polys.length).toBeGreaterThan(0);
-      for (const label of labels) {
-        const px = Number(label.getAttribute('x'));
-        const py = Number(label.getAttribute('y'));
-        for (const points of polys) {
-          if (insideRenderedPolygon(px, py, points)) {
-            throw new Error(
-              `label "${label.textContent}" at (${px.toFixed(2)}, ${py.toFixed(2)}) is on the sheet `
-              + `at azimuth ${azimuthDeg}`,
-            );
+    const domains: readonly (readonly [number, number] | undefined)[] = [
+      undefined, [4000, 8000], [-10000, -5000],
+    ];
+    /*
+     * 91–98 AND 271 ARE NOT DECORATION ON THIS LIST — they are the band the seven sampled
+     * azimuths stepped over. The engine picks the near x edge from the view, and just past a
+     * right angle that choice flips while the renderer went on pushing the y labels LEFT; a
+     * sweep of every whole azimuth put "40h"/"60h"/"80h" inside a drawn quad at 91, 92, 93, 94,
+     * 95, 96, 97, 98 and 271, with the engine's own anchors clear at every one of them. A title
+     * saying "at every azimuth" over a list that misses the only failing band is how the second
+     * half of this defect survived the suite written to catch the first half.
+     */
+    for (const azimuthDeg of [10, 45, 91, 93, 95, 98, 100, 170, 200, 260, 271, 350]) {
+      for (const zDomain of domains) {
+        const view = { azimuthDeg, elevationDeg: 35.264389682754654, scale: 1 };
+        const { container, unmount } = plot(mesh(input(FULL, zDomain ? { view, zDomain } : { view })));
+        const polys = [...container.querySelectorAll('[data-kind="quad"]')]
+          .map((el) => el.getAttribute('points') ?? '');
+        const labels = [...container.querySelectorAll('text')];
+        expect(labels.length).toBeGreaterThan(0);
+        expect(polys.length).toBeGreaterThan(0);
+        for (const label of labels) {
+          const px = Number(label.getAttribute('x'));
+          const py = Number(label.getAttribute('y'));
+          for (const points of polys) {
+            if (insideRenderedPolygon(px, py, points)) {
+              throw new Error(
+                `label "${label.textContent}" at (${px.toFixed(2)}, ${py.toFixed(2)}) is on the sheet `
+                + `at azimuth ${azimuthDeg}, zDomain ${zDomain ? `${zDomain[0]}–${zDomain[1]}` : 'observed'}`,
+              );
+            }
           }
         }
+        unmount();
       }
-      unmount();
     }
+  });
+
+  it('marks a cell drawn through a face of the box, so clamped ink is not read as ceiling ink', () => {
+    /*
+     * The engine does not clamp the geometry but DOES clamp `shade`, so a cell beyond the box
+     * arrives at the maximum ink `fillOpacityFor` can produce — pixel-identical to a legitimate
+     * cell at the ceiling. Under this domain every cell of FULL (−800…9000) is outside 4000…8000
+     * on at least one corner, and the ones whose MEAN is outside also carry the clamp flag.
+     */
+    const g = mesh(input(FULL, { zDomain: [4000, 8000] }));
+    const { container } = plot(g);
+    const outside = [...container.querySelectorAll('[data-kind="quad"][data-outside-domain="true"]')];
+    expect(g.quads.filter((q) => q.outsideDomain).length).toBe(g.quads.length);
+    expect(outside.length).toBe(g.quads.length);
+    // The mark is drawn, not merely recorded in an attribute nobody sees.
+    expect(container.querySelectorAll('[data-outside-domain-mark="true"]').length).toBe(g.quads.length);
+    // The clamped subset is labelled separately, because a cell can be drawn through both faces
+    // while its mean sits inside the box and its ink is honest.
+    const clamped = g.quads.filter((q) => q.shadeClamped);
+    expect(clamped.length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('[data-shade-clamped="true"]').length).toBe(clamped.length);
+    // An in-domain surface carries neither flag: this is not decoration on every cell.
+    const plain = plot(mesh(input(FULL)));
+    expect(plain.container.querySelectorAll('[data-outside-domain="true"]').length).toBe(0);
+    expect(plain.container.querySelectorAll('[data-outside-domain-mark="true"]').length).toBe(0);
   });
 
   it('draws no zero plane when the margins never cross zero', () => {

@@ -87,20 +87,45 @@ function pointsAttr(pts: readonly ProjectedPoint[]): string {
   return pts.map((p) => `${p.sx},${p.sy}`).join(' ');
 }
 
-/** A drawable cell. Fill weight rises with height so a ridge reads without a colour ramp. */
+/**
+ * A drawable cell. Fill weight rises with height so a ridge reads without a colour ramp.
+ *
+ * AND A CELL DRAWN THROUGH A FACE OF THE BOX SAYS SO. Under a caller-supplied vertical domain the
+ * engine does not clamp the GEOMETRY (that would draw a height nobody measured) but it does clamp
+ * `shade`, so a cell beyond the box arrives here at the maximum ink this function can produce —
+ * pixel-identical to a legitimate cell sitting at the ceiling. The engine now labels both facts
+ * (`outsideDomain`, `shadeClamped`) and they are carried onto the element AND drawn: a stippled
+ * grey outline over the cell, in `currentColor` rather than the series colour so it cannot be read
+ * as more of the same ink. Nothing here is computed — the booleans arrive decided.
+ */
 function Quad({ q, dashed }: { q: SurfaceQuad; dashed: boolean }) {
   return (
-    <polygon
-      data-cell={`${q.col},${q.row}`}
-      data-kind="quad"
-      points={pointsAttr(q.corners)}
-      fill={seriesVar(1)}
-      fillOpacity={fillOpacityFor(q.shade)}
-      stroke={seriesVar(1)}
-      strokeOpacity={0.85}
-      strokeWidth={0.5}
-      strokeDasharray={dashed ? '2 1.5' : undefined}
-    />
+    <>
+      <polygon
+        data-cell={`${q.col},${q.row}`}
+        data-kind="quad"
+        data-outside-domain={q.outsideDomain ? 'true' : undefined}
+        data-shade-clamped={q.shadeClamped ? 'true' : undefined}
+        points={pointsAttr(q.corners)}
+        fill={seriesVar(1)}
+        fillOpacity={fillOpacityFor(q.shade)}
+        stroke={seriesVar(1)}
+        strokeOpacity={0.85}
+        strokeWidth={0.5}
+        strokeDasharray={dashed ? '2 1.5' : undefined}
+      />
+      {q.outsideDomain && (
+        <polygon
+          data-outside-domain-mark="true"
+          points={pointsAttr(q.corners)}
+          fill="none"
+          stroke="currentColor"
+          strokeOpacity={0.9}
+          strokeWidth={1}
+          strokeDasharray="0.6 0.9"
+        />
+      )}
+    </>
   );
 }
 
@@ -115,16 +140,28 @@ function Quad({ q, dashed }: { q: SurfaceQuad; dashed: boolean }) {
  * not shown). Collapsing them into one glyph would be the same collapse as writing `null` for a
  * withheld height. The cross is drawn between corners the engine supplied — this component
  * invents no midpoint, because a midpoint would be a height and no height is known here.
+ *
+ * THE TWO MARKS ARE DRIVEN INDEPENDENTLY, WHICH IS THE WHOLE POINT AND WAS NOT TRUE.
+ *
+ * A cell can hold BOTH a never-measured corner and a withheld one — the module's own fixture
+ * contains such a cell — and both statements are then true of it. `const withheld =
+ * h.withheldCorners.length > 0` selected the tight dash AND suppressed the cross on that cell, so
+ * a gap containing a genuine absence was drawn as a pure permission decision: exactly the collapse
+ * the paragraph above forbids, committed by the code the paragraph describes. The dash now comes
+ * from `withheldCorners` and the cross from `absentCorners`, so a mixed cell wears both, and the
+ * `data-` attributes report the two states separately for anyone reading the DOM.
  */
 function Hole({ h }: { h: SurfaceHole }) {
   const [a, b, c, d] = h.footprint;
-  const withheld = h.withheldCorners.length > 0;
+  const hasWithheld = h.withheldCorners.length > 0;
+  const hasAbsent = h.absentCorners.length > 0;
   return (
     <g
       data-cell={`${h.col},${h.row}`}
       data-kind="hole"
       data-hole="true"
-      data-withheld={withheld ? 'true' : undefined}
+      data-withheld={hasWithheld ? 'true' : undefined}
+      data-absent={hasAbsent ? 'true' : undefined}
     >
       <polygon
         points={pointsAttr(h.footprint)}
@@ -132,9 +169,9 @@ function Hole({ h }: { h: SurfaceHole }) {
         stroke="currentColor"
         strokeOpacity={0.55}
         strokeWidth={0.5}
-        strokeDasharray={withheld ? '0.8 1.2' : '2 2'}
+        strokeDasharray={hasWithheld ? '0.8 1.2' : '2 2'}
       />
-      {!withheld && (
+      {hasAbsent && (
         <>
           <line x1={a.sx} y1={a.sy} x2={c.sx} y2={c.sy} stroke="currentColor" strokeOpacity={0.35} strokeWidth={0.4} />
           <line x1={b.sx} y1={b.sy} x2={d.sx} y2={d.sy} stroke="currentColor" strokeOpacity={0.35} strokeWidth={0.4} />
@@ -256,12 +293,31 @@ function Figure({ g, title, readsAs, heightPx }: { g: SurfaceGeometry; title: st
         {/* Plan axes. The engine chose which floor edge is NEAR for this view and placed the
             ticks there; the only thing added here is the outward text offset, and the tests
             ray-cast every rendered label position against every drawn quad to prove no label
-            lands on the sheet. Positions are otherwise not adjusted. */}
+            lands on the sheet. Positions are otherwise not adjusted.
+
+            AND THE OFFSET'S DIRECTION COMES FROM THE ENGINE TOO. `dx={-2}` on the y labels was
+            outward only while the near x edge is the left one, which it stops being just past a
+            right angle: sweeping every whole azimuth put the rendered "40h"/"60h"/"80h" INSIDE a
+            drawn quad at 91–98 and 271, with the engine's anchors clear at all of them — the
+            renderer's own hard-coded push was the whole defect. Only the SIGN is taken, so the
+            offsets are unchanged at every azimuth that was already outward.
+
+            The x labels never needed the flip and their branch below is provably unreachable:
+            screen y for a plan point is `tan(elevation) × footprintDepth × scale` and elevation
+            is strictly between 0° and 90°, so the NEAR plan edge is always the lower one on
+            screen and "down" is always outward. It is written this way regardless so both axes
+            take their direction from the same source rather than one of them from a habit. */}
         {g.xTicks.map((t) => (
-          <TickLabel key={`x-${t.value}`} tick={t} anchor="middle" dy={5} />
+          <TickLabel key={`x-${t.value}`} tick={t} anchor="middle" dy={g.xTickOutward.dy < 0 ? -2 : 5} />
         ))}
         {g.yTicks.map((t) => (
-          <TickLabel key={`y-${t.value}`} tick={t} anchor="end" dx={-2} dy={3} />
+          <TickLabel
+            key={`y-${t.value}`}
+            tick={t}
+            anchor={g.yTickOutward.dx < 0 ? 'end' : 'start'}
+            dx={g.yTickOutward.dx < 0 ? -2 : 2}
+            dy={3}
+          />
         ))}
       </svg>
 

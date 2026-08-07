@@ -526,6 +526,69 @@ describe('absence', () => {
     expect(seen).toContain('CELLS_WITHHELD');
   });
 
+  it('counts a cell that is BOTH never-measured and withheld under BOTH notices, and says the counts overlap', () => {
+    /*
+     * THE COLLAPSE THE NOTICES THEMSELVES USED TO COMMIT. The partition ran on withheld-ness
+     * alone — `withheldCorners.length === 0` against `> 0` — so a cell holding one never-measured
+     * corner AND one withheld corner fell only into the withheld list. `HOLES_PRESENT` never
+     * counted it and `CELLS_WITHHELD` claimed it as purely withheld: a reader was told nobody
+     * measured anything in a cell that also held a measurement somebody had classified, and told
+     * nothing whatever about the absence. The three states are the module's whole subject and the
+     * sentences that report them were the place they got merged.
+     *
+     * The same fixture as the test above, whose holes are (0,1) withheld-only, (1,1) MIXED and
+     * (2,1) absent-only — computed by hand from the corner map, never by re-running the engine:
+     * cell (i,j) owns grid points (i,j) (i+1,j) (i+1,j+1) (i,j+1), row 2 is
+     * [120, WITHHELD, null, 420], so (1,1) touches the withheld point (1,2) AND the absent (2,2).
+     */
+    const mixedRows: readonly (readonly (number | null | typeof WITHHELD)[])[] = [
+      [100, 200, 300, 400],
+      [110, 210, 310, 410],
+      [120, WITHHELD, null, 420],
+    ];
+    const g = ok(grid(mixedRows, {
+      xAxis: {
+        label: 'Price', unit: 'USD',
+        ticks: [10000, 15000, 20000, 25000].map((v) => ({ value: v, label: `$${v}` })),
+      },
+    }));
+    const byIdx = new Map(g.holes.map((h) => [`${h.col},${h.row}`, h] as const));
+    expect(g.holes).toHaveLength(3);
+    expect(byIdx.get('1,1')?.absentCorners).toEqual([[2, 2]]);
+    expect(byIdx.get('1,1')?.withheldCorners).toEqual([[1, 2]]);
+
+    const holesNotice = g.notices.find((n) => n.code === 'HOLES_PRESENT');
+    const withheldNotice = g.notices.find((n) => n.code === 'CELLS_WITHHELD');
+    // TWO of the six cells hold a never-measured corner ((1,1) and (2,1)) and TWO hold a withheld
+    // one ((0,1) and (1,1)). Under the old partition the first number was 1: the mixed cell was
+    // missing from the absence count entirely.
+    expect(holesNotice?.sentence).toMatch(/^2 of 6 cells are open because a corner was never measured/);
+    expect(withheldNotice?.sentence).toMatch(/^2 of 6 cells are open because a corner is PRESENT BUT WITHHELD/);
+    // 2 + 2 = 4 against 3 open cells, so the overlap is stated rather than left to be discovered
+    // by a reader subtracting and getting a wrong answer.
+    for (const n of [holesNotice, withheldNotice]) {
+      expect(n?.sentence)
+        .toMatch(/Counts overlap: 1 of the 3 open cells has a never-measured corner AND a withheld one/);
+      expect(n?.sentence).toMatch(/do not sum to the number of open cells/);
+    }
+    /*
+     * With no mixed cell there is no overlap clause: the sentence does not warn about arithmetic
+     * that closes. A 4×4 grid, with the withheld point at (1,1) and the never-measured one at the
+     * far corner (3,3), so no cell touches both — (1,1) opens cells (0,0) (1,0) (0,1) (1,1) and
+     * (3,3) opens only (2,2), leaving four drawable quads.
+     */
+    const unmixed = ok(grid([
+      [100, 200, 300, 400],
+      [110, WITHHELD, 310, 410],
+      [120, 220, 320, 420],
+      [130, 230, 330, null],
+    ]));
+    expect(unmixed.holes.some((h) => h.absentCorners.length > 0 && h.withheldCorners.length > 0)).toBe(false);
+    expect(unmixed.notices.map((n) => n.code)).toContain('HOLES_PRESENT');
+    expect(unmixed.notices.map((n) => n.code)).toContain('CELLS_WITHHELD');
+    for (const n of unmixed.notices) expect(n.sentence).not.toMatch(/Counts overlap/);
+  });
+
   it('treats a NaN as a broken computation, not as an absence', () => {
     const broken = [
       [1000, 3000, 6000],
@@ -619,6 +682,64 @@ describe('the caller-supplied vertical domain is an input, and is checked like o
     // Inside the domain, no such notice.
     expect(ok(grid(FULL, { zDomain: [-10000, 10000] })).notices.map((x) => x.code))
       .not.toContain('OBSERVED_RANGE_OUTSIDE_DOMAIN');
+  });
+
+  it('counts the out-of-box cells on their CORNERS, so a cell that averages inside is not called compliant', () => {
+    /*
+     * THE FALSE COUNT. The notice counted `q.zMean < zLo || q.zMean > zHi` — a test of a number
+     * the drawing does not use. Geometry is per-CORNER and deliberately unclamped, so a quad whose
+     * corners straddle the box while AVERAGING inside it is drawn punching through BOTH faces and
+     * was reported as compliant: "0 of 1 drawn cells sit beyond the box" over a cell drawn 300
+     * units below the floor and 400 above the ceiling.
+     *
+     * Hand-computed, never re-run from the expression under test: corners −300, 400, 0, 0 give a
+     * mean of (−300 + 400 + 0 + 0)/4 = 25, which sits comfortably inside a 0–100 box, while zMin
+     * is −300 (300 below the floor) and zMax is 400 (300 above the ceiling).
+     */
+    const straddle = ok(grid([[-300, 400], [0, 0]], { zDomain: [0, 100] }));
+    expect(straddle.quads).toHaveLength(1);
+    const q = straddle.quads[0];
+    expect(q.zMean).toBe(25);
+    expect(q.zMin).toBe(-300);
+    expect(q.zMax).toBe(400);
+    // Drawn through both faces, and the shade is nevertheless honest — the mean IS inside the
+    // box, so 25/100 is a faithful encoding of the mean and a false impression of the corners.
+    // Two separate booleans because those are two separate facts.
+    expect(q.outsideDomain).toBe(true);
+    expect(q.shadeClamped).toBe(false);
+    expect(q.shade).toBeCloseTo(0.25, 12);
+
+    const n = straddle.notices.find((x) => x.code === 'OBSERVED_RANGE_OUTSIDE_DOMAIN');
+    expect(n?.sentence).toMatch(/1 of 1 drawn cells sit beyond the box on at least one CORNER/);
+    // The SIZE of the excursion is legible, because a count cannot tell one unit over the ceiling
+    // from thirty thousand and those are different pictures.
+    expect(n?.sentence).toMatch(/reaching -300 at the lowest corner and 400 at the highest/);
+    // The ink clause is tied to the MEAN and says nothing about the corners: here the shade is
+    // honest and the corners are not, and the sentence keeps those two facts apart.
+    expect(n?.sentence).toMatch(/No cell MEAN leaves the box, so every shading still encodes the height/);
+  });
+
+  it('flags the cells whose INK was clamped, so maximum ink is not read as a cell at the ceiling', () => {
+    /*
+     * `shade` is clamped into [0,1] while the geometry is not, so a cell far beyond the box
+     * arrives at the maximum fill opacity the renderer can produce — indistinguishable from a
+     * legitimate cell sitting at the ceiling. The clamp stays (an unclamped `shade` becomes an
+     * opacity of 372, which the renderer clamps anyway, moving the clamp somewhere undocumented)
+     * and is LABELLED instead. Every cell mean of FULL — 1625, 4000, 725, 2975, all hand-computed
+     * from the four corners — is above a 0–10 box.
+     */
+    const g = ok(grid(FULL, { zDomain: [0, 10] }));
+    expect(g.quads).toHaveLength(4);
+    expect(g.quads.every((x) => x.shadeClamped)).toBe(true);
+    expect(g.quads.every((x) => x.outsideDomain)).toBe(true);
+    expect(g.quads.every((x) => x.shade === 1)).toBe(true);
+    // A clamped shade always implies the cell is out of the box; the converse is the test above.
+    for (const x of g.quads) if (x.shadeClamped) expect(x.outsideDomain).toBe(true);
+    expect(g.notices.find((x) => x.code === 'OBSERVED_RANGE_OUTSIDE_DOMAIN')?.sentence)
+      .toMatch(/The SHADING of 4 of them is clamped, so for those cells the ink and the height disagree/);
+    // And an in-domain surface flags nothing: this is not a label every cell wears.
+    const plain = ok(grid(FULL));
+    expect(plain.quads.some((x) => x.shadeClamped || x.outsideDomain)).toBe(false);
   });
 });
 
@@ -735,6 +856,18 @@ describe('the frame and the notices', () => {
     expect(g.frame.interpolation).toBe(INTERPOLATION_POLICY);
     expect(g.frame.ruleSetVersion).toBe(GEOMETRY_RULESET_VERSION);
     expect(g.frame.valuesArePlaceholders).toBe(false);
+  });
+
+  it('stamps the CURRENT ruleset version, which is a contract and not a free variable', () => {
+    /*
+     * `frame.ruleSetVersion === GEOMETRY_RULESET_VERSION` above is a tautology: it holds against
+     * any value whatsoever and cannot notice a semantics change shipped under an unchanged
+     * number. A stamped version exists so a reader of an old figure can tell which rules produced
+     * it, which is worth nothing if the number does not move when the rules do. 3 is the bump for
+     * the notice partition, the corner-based out-of-box count and the tick anchor plane; changing
+     * it is meant to be a deliberate edit here as well as there.
+     */
+    expect(GEOMETRY_RULESET_VERSION).toBe(3);
   });
 
   it('states the projection on the geometry so a reader knows it is one view', () => {
@@ -861,23 +994,113 @@ describe('the drawable output', () => {
     expect(g.zAxis[1].sx).toBeCloseTo(g.zAxis[0].sx, 12);
   });
 
-  it('places no axis tick inside the sheet, at any legal azimuth', () => {
+  it('places no axis tick inside the sheet, at any legal azimuth AND under a domain the data escapes', () => {
     // The assertion the old tests never made: geometry:464 only checked that no two ticks
     // coincide, and the renderer's test only checked that the label text was in the DOM.
+    //
+    // The loop supplies a zDomain as well, because that is the input under which the placement
+    // argument fails: below `zLo` the box height goes NEGATIVE, the sheet descends under the near
+    // floor edge the ticks are anchored to, and the plan labels end up on the surface. Both
+    // directions are covered — [4000, 8000] drops the sheet below the box, [-10000, -5000] lifts
+    // it entirely above — so the fix is not mistaken for a one-sided patch.
+    const domains: readonly (readonly [number, number] | undefined)[] = [
+      undefined, [4000, 8000], [-10000, -5000],
+    ];
     for (const azimuthDeg of [10, 45, 100, 170, 200, 260, 350]) {
-      const g = ok(grid(FULL, { view: { ...DEFAULT_VIEW, azimuthDeg } }));
-      const sheet = g.quads.map((q) => q.corners);
-      for (const t of [...g.xTicks, ...g.yTicks, ...g.zTicks]) {
-        for (const poly of sheet) {
-          if (strictlyInside(t.at, poly)) {
-            throw new Error(
-              `tick "${t.label}" at (${t.at.sx.toFixed(2)}, ${t.at.sy.toFixed(2)}) `
-              + `falls inside a quad at azimuth ${azimuthDeg}`,
-            );
+      for (const zDomain of domains) {
+        const view = { ...DEFAULT_VIEW, azimuthDeg };
+        const g = ok(grid(FULL, zDomain ? { view, zDomain } : { view }));
+        const sheet = g.quads.map((q) => q.corners);
+        for (const t of [...g.xTicks, ...g.yTicks, ...g.zTicks]) {
+          for (const poly of sheet) {
+            if (strictlyInside(t.at, poly)) {
+              throw new Error(
+                `tick "${t.label}" at (${t.at.sx.toFixed(2)}, ${t.at.sy.toFixed(2)}) `
+                + `falls inside a quad at azimuth ${azimuthDeg}, `
+                + `zDomain ${zDomain ? `${zDomain[0]}–${zDomain[1]}` : 'observed'}`,
+              );
+            }
           }
         }
       }
     }
+  });
+
+  it('anchors the grid tick plane at the LOWEST DRAWN HEIGHT, not at a box floor the sheet has sunk below', () => {
+    /*
+     * Every number here is computed by hand rather than by re-running the engine.
+     *
+     * With no override the plane is the box floor and nothing moves: `bz(zLo) === 0`, and the
+     * test above already pins `xTicks[1]` to `project({x: 50, y: 100, z: 0})`.
+     *
+     * With `zDomain: [4000, 8000]` over FULL (observed −500 … 6000) the sheet leaves the box
+     * downward. `mapTo(-500, 4000, 8000, 62)` = (−4500 / 4000) × 62 = −69.75 — a NEGATIVE box
+     * height, below the floor — so a tick anchored at `bz(zLo) = 0` sits ABOVE the lowest drawn
+     * vertex, and since screen y grows downward the sheet covers the label positions the renderer
+     * offsets outward from the near edge. The plane therefore drops to −69.75.
+     */
+    const g = ok(grid(FULL, { zDomain: [4000, 8000] }));
+    expect(g.xTicks[1].at).toEqual(project({ x: 50, y: DEFAULT_BOX.depth, z: -69.75 }, DEFAULT_VIEW));
+    expect(g.yTicks[1].at).toEqual(project({ x: DEFAULT_BOX.width, y: 50, z: -69.75 }, DEFAULT_VIEW));
+    // Which is BELOW the floor on screen (SVG y grows downward), where the old anchor put it.
+    expect(g.xTicks[1].at.sy).toBeGreaterThan(project({ x: 50, y: DEFAULT_BOX.depth, z: 0 }, DEFAULT_VIEW).sy);
+
+    /*
+     * THE BOX DOES NOT MOVE WITH THE LABELS. The floor and the vertical axis report where the
+     * DOMAIN is, and dropping them to follow the data would misstate the domain the caller set.
+     * The z axis stands at the leftmost floor corner, which at azimuth 45° is (xHi, yLo):
+     * sx = (−x + y)/√2 gives 0, −70.71, 0, 70.71 for the four corners in box space.
+     */
+    expect(g.floor[0]).toEqual(project({ x: 0, y: 0, z: 0 }, DEFAULT_VIEW));
+    expect(g.zAxis[0]).toEqual(project({ x: DEFAULT_BOX.width, y: 0, z: 0 }, DEFAULT_VIEW));
+
+    // Where the observations stay inside the caller's domain the plane is the floor, unchanged.
+    const inside = ok(grid(FULL, { zDomain: [-10000, 10000] }));
+    expect(inside.xTicks[1].at).toEqual(project({ x: 50, y: DEFAULT_BOX.depth, z: 0 }, DEFAULT_VIEW));
+  });
+
+  it('hands the renderer WHICH WAY IS OUT, and the direction FLIPS with the azimuth', () => {
+    /*
+     * THE OTHER HALF OF "the label is clear of the sheet", and the half that was still the
+     * renderer's to guess. Choosing the near edge (above) only decides WHERE the anchor is; the
+     * text is then pushed off that edge, and `SurfacePlot` pushed the y labels LEFT with a
+     * hard-coded `dx={-2}`. That is outward only while the near x edge is the left one, and just
+     * past a right angle the engine's own choice flips: sweeping every whole azimuth with this
+     * file's ray cast puts the RENDERED y labels inside a drawn quad at 91–98 and 271, while
+     * every engine anchor stays clear. So the direction is a projection fact and is computed
+     * here, not guessed there.
+     *
+     * The claim is checked as a claim, not as a constant: for every legal azimuth the vector
+     * must agree with the screen direction from the far plan edge to the near one — re-derived
+     * below from `project` and `footprintDepth` rather than read back out of the engine.
+     */
+    for (let azimuthDeg = 1; azimuthDeg <= 359; azimuthDeg += 1) {
+      if (azimuthDeg % 90 === 0) continue;
+      const view = { ...DEFAULT_VIEW, azimuthDeg };
+      const g = ok(grid(FULL, { view }));
+      const [w, d] = [DEFAULT_BOX.width, DEFAULT_BOX.depth];
+      // Re-derived: near is the larger footprint depth, and the vector runs far → near.
+      const yNearIsHi = footprintDepth(w, d / 2, view) > footprintDepth(0, d / 2, view);
+      const near = project({ x: yNearIsHi ? w : 0, y: d / 2, z: 0 }, view);
+      const far = project({ x: yNearIsHi ? 0 : w, y: d / 2, z: 0 }, view);
+      const len = Math.hypot(near.sx - far.sx, near.sy - far.sy);
+      expect(g.yTickOutward.dx).toBeCloseTo((near.sx - far.sx) / len, 12);
+      expect(g.yTickOutward.dy).toBeCloseTo((near.sy - far.sy) / len, 12);
+      // A unit vector, because the renderer scales it.
+      expect(Math.hypot(g.yTickOutward.dx, g.yTickOutward.dy)).toBeCloseTo(1, 12);
+      expect(Math.hypot(g.xTickOutward.dx, g.xTickOutward.dy)).toBeCloseTo(1, 12);
+      // The x labels are pushed DOWN the screen, and always will be: screen y for a plan point
+      // is `tan(elevation) × footprintDepth × scale` with elevation strictly inside (0°, 90°),
+      // so the NEAR edge is the lower one at every legal view. That is why the renderer's fixed
+      // downward offset never produced a hit while its fixed leftward one did.
+      expect(g.xTickOutward.dy).toBeGreaterThan(0);
+    }
+    // And it genuinely flips: leftward at the default view, rightward inside the band that the
+    // renderer's fixed `dx={-2}` got wrong. A vector that never changed sign would be a constant
+    // dressed as a computation.
+    expect(ok(grid(FULL, { view: DEFAULT_VIEW })).yTickOutward.dx).toBeLessThan(0);
+    expect(ok(grid(FULL, { view: { ...DEFAULT_VIEW, azimuthDeg: 93 } })).yTickOutward.dx).toBeGreaterThan(0);
+    expect(ok(grid(FULL, { view: { ...DEFAULT_VIEW, azimuthDeg: 271 } })).yTickOutward.dx).toBeGreaterThan(0);
   });
 
   it('projects every axis tick with its own position and its supplied label', () => {

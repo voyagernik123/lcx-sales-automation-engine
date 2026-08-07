@@ -207,8 +207,20 @@ export const INTERPOLATION_POLICY =
  * 2 — `GEOMETRY_ALL_CELLS_WITHHELD` added; `zDomain` endpoints now checked for finiteness and
  * ordering; grid-axis coordinates now checked for finiteness and strict ascent; grid ticks
  * moved onto the view's NEAR floor edges; `flat` computed from observed values only.
+ *
+ * 3 — THE NOTICES STOPPED COLLAPSING THE STATES THEY REPORT, AND THE COUNTS STOPPED LYING.
+ * `HOLES_PRESENT` and `CELLS_WITHHELD` now partition on the ACTUAL corner states rather than on
+ * withheld-ness alone, so a cell holding a never-measured corner AND a withheld one counts under
+ * BOTH — the two counts overlap and the sentences say so. `OBSERVED_RANGE_OUTSIDE_DOMAIN` counts
+ * on CORNERS instead of the cell mean (a cell straddling the box while averaging inside it was
+ * reported as compliant) and quotes the extreme excursion. `SurfaceQuad` gained `outsideDomain`
+ * and `shadeClamped`, so clamped ink is distinguishable from real ceiling ink. Grid tick labels
+ * are anchored at `min(zLo, observedLo)` so the label plane is never above the lowest drawn
+ * vertex, which under a caller-supplied `zDomain` the data escapes it could be. And
+ * `xTickOutward`/`yTickOutward` are new: WHICH WAY IS OUT is a projection fact, and the renderer
+ * was guessing it with a hard-coded leftward push that is inward at azimuths 91–98 and 271.
  */
-export const GEOMETRY_RULESET_VERSION = 2;
+export const GEOMETRY_RULESET_VERSION = 3;
 
 /* ══════════════════════════════════════════════════════════════════════════════ */
 /* THE PROJECTION                                                                  */
@@ -478,6 +490,28 @@ export interface SurfaceQuad {
   readonly zMax: number;
   /** `zMean` normalised into `zDomain`, clamped to [0,1]. `0.5` on a flat surface. */
   readonly shade: number;
+  /**
+   * At least one CORNER of this cell is outside the drawn vertical domain, so the cell is
+   * physically drawn through a face of the box. Per-corner because the GEOMETRY is per-corner
+   * and deliberately unclamped: a cell whose corners straddle the box while AVERAGING inside it
+   * punches through both faces, and anything computed from `zMean` calls it compliant.
+   */
+  readonly outsideDomain: boolean;
+  /**
+   * `shade` WAS CLAMPED, so for this cell the ink no longer encodes the height — the cell mean
+   * itself fell outside the drawn domain and the normalised value was pulled back to 0 or 1.
+   *
+   * A SEPARATE FLAG FROM `outsideDomain`, because they are separate facts: a cell can be drawn
+   * through both faces of the box while its mean sits comfortably inside it, in which case the
+   * shade is a faithful encoding of the mean and a false impression of the corners. Implication
+   * runs one way only — a clamped shade always means the cell is outside the domain.
+   *
+   * WHY THE CLAMP STAYS. Unclamping would not fix anything: `shade` becomes a fill opacity, and
+   * an opacity of 372 (which is what a cell 6,000 units above a 10-unit box produces) is clamped
+   * by the renderer anyway — the clamp would merely move somewhere undocumented. So the clamp is
+   * kept and LABELLED, and the renderer marks the cell rather than pretending its ink is honest.
+   */
+  readonly shadeClamped: boolean;
 }
 
 /**
@@ -575,6 +609,19 @@ export interface SurfaceGeometry {
   readonly xTicks: readonly ProjectedTick[];
   readonly yTicks: readonly ProjectedTick[];
   readonly zTicks: readonly ProjectedTick[];
+  /**
+   * WHICH WAY IS *OUT* ON SCREEN, for the plan tick text. A unit vector in screen space pointing
+   * from the far plan edge to the NEAR one the ticks were anchored on.
+   *
+   * This exists because "outward" is a fact about the PROJECTION and a renderer offsetting its
+   * text by a hard-coded `dx` is only outward at some azimuths. The engine chooses the near edge
+   * from the view (see `xTickY`/`yTickX`); at azimuths where that choice flips, a fixed leftward
+   * offset points INTO the figure and the label lands on the sheet — measured, at azimuths 91–98
+   * and 271, with the engine's own anchors all correctly clear of every quad. The renderer scales
+   * these by its text offset and takes its text anchor from the sign; it invents no direction.
+   */
+  readonly xTickOutward: { readonly dx: number; readonly dy: number };
+  readonly yTickOutward: { readonly dx: number; readonly dy: number };
   /** The base rectangle, projected: 4 corners, drawn first. */
   readonly floor: readonly [ProjectedPoint, ProjectedPoint, ProjectedPoint, ProjectedPoint];
   /** The vertical axis, from the box base to its top at the far corner. */
@@ -1045,6 +1092,13 @@ export function buildSurfaceMesh(input: SurfaceGridInput): SurfaceOutcome {
 
       const z4 = zz as readonly number[];
       const zMean = (z4[0] + z4[1] + z4[2] + z4[3]) / 4;
+      const zMin = Math.min(...z4);
+      const zMax = Math.max(...z4);
+      // The raw normalised height is kept so the CLAMP is observable. `shade === rawShade` is the
+      // whole definition of "this ink means what it looks like"; recomputing the comparison in the
+      // renderer would need the domain, and the renderer computes nothing.
+      const rawShade = domainDegenerate ? 0.5 : (zMean - zLo) / zSpanForShade;
+      const shade = Math.min(1, Math.max(0, rawShade));
       cells.push({
         kind: 'quad',
         col: i,
@@ -1057,9 +1111,11 @@ export function buildSurfaceMesh(input: SurfaceGridInput): SurfaceOutcome {
         ],
         paintDepth,
         zMean,
-        zMin: Math.min(...z4),
-        zMax: Math.max(...z4),
-        shade: domainDegenerate ? 0.5 : Math.min(1, Math.max(0, (zMean - zLo) / zSpanForShade)),
+        zMin,
+        zMax,
+        shade,
+        outsideDomain: zMin < zLo || zMax > zHi,
+        shadeClamped: shade !== rawShade,
       });
     }
   }
@@ -1099,21 +1155,73 @@ export function buildSurfaceMesh(input: SurfaceGridInput): SurfaceOutcome {
    * viewer's up direction: at a plan point the sheet is at or above the floor on screen, so a
    * label offset outward from the NEAR floor edge is clear of every quad. Near is the larger
    * footprint depth. This is a projection fact, so the renderer is handed the answer.
+   *
+   * AND WHICH PLANE IT SITS ON IS DECIDED HERE TOO — `min(zLo, observedLo)`, NOT `zLo`.
+   *
+   * The paragraph above holds only while every drawn vertex is inside `[zLo, zHi]`, which is
+   * true of an observed domain and NOT true of a caller-supplied one the data escapes. `mapTo`
+   * returns a NEGATIVE box height for `z < zLo`, screen y grows downward, and the sheet then
+   * descends BELOW the near floor edge and covers the label positions the renderer offsets
+   * outward from it — so the plan tick labels read as annotations sitting ON the surface. The
+   * label plane therefore drops to the lowest DRAWN height whenever that is below the box floor.
+   *
+   * WHY LOWER THE PLANE RATHER THAN REFUSE THE DOMAIN. Refusing is idiomatic here (this module
+   * refuses degenerate and non-finite domains), but it would delete a capability the module
+   * deliberately has: `OBSERVED_RANGE_OUTSIDE_DOMAIN` exists precisely so two surfaces can be
+   * held on ONE comparable axis while one of them pokes out of it, with the disagreement between
+   * the true height and the clamped ink said out loud. Refusing would make the honest,
+   * annotated, out-of-box figure undrawable to protect a LABEL POSITION. And the z of a plan
+   * tick is not a claim: the tick's VALUE is a price or an effort, and its z is only where the
+   * text is put — moving it makes the figure state nothing new, whereas losing the labels under
+   * the sheet destroys the axis. The box itself (floor, hole footprints, z axis) does NOT move:
+   * those are box features and dropping them would misreport where the domain is.
    */
   const midX = box.width / 2;
   const midY = box.depth / 2;
   const xTickY = footprintDepth(midX, by(yLo), view) > footprintDepth(midX, by(yHi), view) ? yLo : yHi;
   const yTickX = footprintDepth(bx(xLo), midY, view) > footprintDepth(bx(xHi), midY, view) ? xLo : xHi;
+  // Equal to `zLo` whenever the observations are inside the domain, which is every surface with
+  // no override — so this changes no figure that was already correct.
+  const tickPlaneZ = Math.min(zLo, observedLo);
   const xTicks: ProjectedTick[] = xs.map((t) => ({
     value: t.value,
     label: t.label,
-    at: project({ x: bx(t.value), y: by(xTickY), z: bz(zLo) }, view),
+    at: project({ x: bx(t.value), y: by(xTickY), z: bz(tickPlaneZ) }, view),
   }));
   const yTicks: ProjectedTick[] = ys.map((t) => ({
     value: t.value,
     label: t.label,
-    at: project({ x: bx(yTickX), y: by(t.value), z: bz(zLo) }, view),
+    at: project({ x: bx(yTickX), y: by(t.value), z: bz(tickPlaneZ) }, view),
   }));
+  /*
+   * AND WHICH WAY IS *OUT* — also a projection fact, and also not the renderer's to guess.
+   *
+   * Choosing the near edge is only half of "the label is clear of the sheet": the text is then
+   * pushed off the edge, and the direction of that push has to be away from the figure. The
+   * renderer pushed y-tick text LEFT unconditionally, which is outward only while the near x
+   * edge is the left one. It is not, just past the right angles: sweeping every whole azimuth
+   * with the module's own ray cast puts the rendered "40h"/"60h"/"80h" labels INSIDE a drawn quad
+   * at 91–98 and 271, while these anchors — the engine's half — are clear at every one of them.
+   * So the direction is measured here, from the far edge midpoint to the near edge midpoint, and
+   * handed over as a unit screen vector.
+   */
+  const screenOutward = (near: ProjectedPoint, far: ProjectedPoint) => {
+    const dx = near.sx - far.sx;
+    const dy = near.sy - far.sy;
+    const len = Math.hypot(dx, dy);
+    // Unreachable on a drawable view — a degenerate azimuth is refused above and the two edge
+    // midpoints then differ — but a zero vector would silently pull every label onto the anchor,
+    // so it falls back to "down the screen", which is outward from a floor at every legal view.
+    return len === 0 ? { dx: 0, dy: 1 } : { dx: dx / len, dy: dy / len };
+  };
+  const xTickOutward = screenOutward(
+    project({ x: midX, y: by(xTickY), z: bz(tickPlaneZ) }, view),
+    project({ x: midX, y: by(xTickY === yLo ? yHi : yLo), z: bz(tickPlaneZ) }, view),
+  );
+  const yTickOutward = screenOutward(
+    project({ x: bx(yTickX), y: midY, z: bz(tickPlaneZ) }, view),
+    project({ x: bx(yTickX === xLo ? xHi : xLo), y: midY, z: bz(tickPlaneZ) }, view),
+  );
 
   /*
    * THE VERTICAL AXIS STANDS AT THE LEFTMOST FLOOR CORNER, also chosen from the view.
@@ -1172,22 +1280,46 @@ export function buildSurfaceMesh(input: SurfaceGridInput): SurfaceOutcome {
   /* ── Notices: true things that do not stop the drawing ─────────────────────── */
   const cellsTotal = (xs.length - 1) * (ys.length - 1);
   const notices: SurfaceNotice[] = [];
-  const holesAbsentOnly = holes.filter((h) => h.withheldCorners.length === 0);
-  const holesWithheld = holes.filter((h) => h.withheldCorners.length > 0);
-  if (holesAbsentOnly.length > 0) {
+  /*
+   * PARTITIONED ON THE ACTUAL CORNER STATES, AND THE TWO LISTS OVERLAP ON PURPOSE.
+   *
+   * The partition here used to be on withheld-ness ALONE — `withheldCorners.length === 0` against
+   * `> 0` — which is the three-state collapse this whole module exists to prevent, committed in
+   * the very sentences that report the states. A cell holding one never-measured corner AND one
+   * present-but-withheld corner fell only into the withheld list: `HOLES_PRESENT` never counted
+   * it, and `CELLS_WITHHELD` claimed it as purely withheld. A reader was told nobody had measured
+   * anything in a cell that also contained a measurement somebody classified, and told nothing at
+   * all about the absence.
+   *
+   * So each list holds every cell for which its fact is TRUE, and a mixed cell is in both. The
+   * consequence is that the two counts can sum PAST the number of open cells, which a reader
+   * would otherwise discover by subtracting and getting a wrong answer — so the sentences say so
+   * out loud instead of leaving the arithmetic to close by luck.
+   */
+  const holesWithAbsent = holes.filter((h) => h.absentCorners.length > 0);
+  const holesWithWithheld = holes.filter((h) => h.withheldCorners.length > 0);
+  const mixedCount = holes
+    .filter((h) => h.absentCorners.length > 0 && h.withheldCorners.length > 0).length;
+  const overlapClause = mixedCount === 0
+    ? ''
+    : ` Counts overlap: ${mixedCount} of the ${holes.length} open cells `
+      + `${mixedCount === 1 ? 'has' : 'have'} a never-measured corner AND a withheld one, so `
+      + `${mixedCount === 1 ? 'it is' : 'they are'} counted in this notice and in the other alike — `
+      + 'the two counts do not sum to the number of open cells.';
+  if (holesWithAbsent.length > 0) {
     notices.push({
       code: 'HOLES_PRESENT',
-      sentence: `${holesAbsentOnly.length} of ${cellsTotal} cells are open because a corner was never `
+      sentence: `${holesWithAbsent.length} of ${cellsTotal} cells are open because a corner was never `
         + 'measured, so the surface has a genuine gap there. The gap is the measurement, not a '
-        + 'rendering fault.',
+        + `rendering fault.${overlapClause}`,
     });
   }
-  if (holesWithheld.length > 0) {
+  if (holesWithWithheld.length > 0) {
     notices.push({
       code: 'CELLS_WITHHELD',
-      sentence: `${holesWithheld.length} of ${cellsTotal} cells are open because a corner is PRESENT BUT `
+      sentence: `${holesWithWithheld.length} of ${cellsTotal} cells are open because a corner is PRESENT BUT `
         + 'WITHHELD. Those heights were measured and are not shown here — a permission decision, not a '
-        + 'gap in the data, and a different fact from the cells nobody measured.',
+        + `gap in the data, and a different fact from the cells nobody measured.${overlapClause}`,
     });
   }
   if (flat) {
@@ -1209,17 +1341,53 @@ export function buildSurfaceMesh(input: SurfaceGridInput): SurfaceOutcome {
     });
   }
   if (input.zDomain && (observedLo < zLo || observedHi > zHi)) {
-    // The geometry is NOT clamped — clamping would move a cell to a height nobody measured —
-    // but `shade` is, so beyond the box the shading and the height stop agreeing. Said out loud
-    // rather than left for a reader to notice that a cell 30,000 units above the box is drawn at
-    // full ink like the one at the ceiling.
-    const outside = quads.filter((q) => q.zMean < zLo || q.zMean > zHi).length;
+    /*
+     * COUNTED ON THE CORNERS, NEVER ON THE CELL MEAN.
+     *
+     * The geometry is NOT clamped — clamping would move a cell to a height nobody measured — but
+     * `shade` is, so beyond the box the shading and the height stop agreeing. This count used to
+     * read `q.zMean < zLo || q.zMean > zHi`, which is a test of a number the drawing does not use:
+     * a quad whose corners straddle the box while AVERAGING inside it is drawn punching through
+     * BOTH faces and was counted as compliant. The sentence then said "0 of 1 drawn cells sit
+     * beyond the box" over a cell drawn 300 units below the floor and 400 above the ceiling.
+     *
+     * AND THE SIZE OF THE EXCURSION IS QUOTED, because a count cannot distinguish one unit over
+     * the ceiling from thirty thousand, and those are different pictures. The extremes are read
+     * off the offending CELLS rather than off `observedDomain`, which can be set by a point that
+     * belongs to no drawn cell at all (a hole corner).
+     */
+    const outsideQuads = quads.filter((q) => q.zMin < zLo || q.zMax > zHi);
+    let excursion = '';
+    if (outsideQuads.length > 0) {
+      let lo = outsideQuads[0].zMin;
+      let hi = outsideQuads[0].zMax;
+      for (const q of outsideQuads) {
+        if (q.zMin < lo) lo = q.zMin;
+        if (q.zMax > hi) hi = q.zMax;
+      }
+      excursion = `, reaching ${lo} at the lowest corner and ${hi} at the highest`;
+    }
+    /*
+     * TWO CLAUSES, TWO FACTS, EACH TIED TO ITS OWN COUNT. Where the cells are DRAWN is a fact
+     * about the corners; whether the INK still means anything is a fact about the mean, and the
+     * two do not have to agree. A single sentence asserting both from one number is how the
+     * corner-blind count survived: it read as a statement about the drawing while measuring
+     * something the drawing does not use.
+     */
+    const clamped = quads.filter((q) => q.shadeClamped).length;
+    const cornerClause = outsideQuads.length === 0
+      ? 'No DRAWN cell leaves the box: the excursion is at a grid point that belongs to no complete '
+        + 'cell, so it is in the counts and not in the sheet.'
+      : `${outsideQuads.length} of ${quads.length} drawn cells sit beyond the box on at least one `
+        + `CORNER${excursion}. Those heights are true and are never clamped, and the renderer marks them.`;
+    const inkClause = clamped === 0
+      ? ' No cell MEAN leaves the box, so every shading still encodes the height it is drawn at.'
+      : ` The SHADING of ${clamped} of them is clamped, so for those cells the ink and the height disagree.`;
     notices.push({
       code: 'OBSERVED_RANGE_OUTSIDE_DOMAIN',
       sentence: `The observed ${input.zAxis.label} runs ${observedLo}–${observedHi} ${input.zAxis.unit}, `
-        + `outside the caller's vertical domain of ${zLo}–${zHi}. ${outside} of ${quads.length} drawn `
-        + 'cells sit beyond the box: their heights are true and their SHADING is clamped, so for those '
-        + 'cells the ink and the height disagree. Widen the domain or drop the override.',
+        + `outside the caller's vertical domain of ${zLo}–${zHi}. ${cornerClause}${inkClause} `
+        + 'Widen the domain or drop the override.',
     });
   }
   if (!domainDegenerate && !spansZero) {
@@ -1273,6 +1441,8 @@ export function buildSurfaceMesh(input: SurfaceGridInput): SurfaceOutcome {
     xTicks,
     yTicks,
     zTicks,
+    xTickOutward,
+    yTickOutward,
     floor,
     zAxis,
     zDomain: [zLo, zHi],
