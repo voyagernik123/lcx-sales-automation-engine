@@ -11,6 +11,19 @@ export interface HealthResponse {
   version: string;
   env: string;
   db: DbStatus;
+  /**
+   * WHY the database is unreachable, when it is. Absent when `db` is not `down`.
+   *
+   * A probe that reports a dependency as down without saying why forces the next person to
+   * guess, and the guesses are expensive: a healthy Supabase instance and an API reporting
+   * `db: down` has at least four distinct causes (wrong credentials, wrong host, IPv6-only
+   * direct connection from an IPv4-only host, firewall) and they need opposite fixes.
+   *
+   * CONTAINS NO SECRET. The connection string, the password and the host are deliberately
+   * never included — only the driver's error CODE and a short sanitised message, which is
+   * enough to tell those four cases apart.
+   */
+  dbError?: { code: string; message: string } | null;
   timestamp: string;
 }
 

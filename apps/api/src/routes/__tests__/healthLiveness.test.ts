@@ -18,12 +18,13 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
  */
 
 const checkDb = vi.hoisted(() => vi.fn());
-vi.mock('../../db/index.js', () => ({ checkDb }));
+const getLastDbError = vi.hoisted(() => vi.fn(() => null));
+vi.mock('../../db/index.js', () => ({ checkDb, getLastDbError }));
 vi.mock('../../lib/env.js', () => ({ env: { version: 'test', nodeEnv: 'production' } }));
 
 const load = async () => (await import('../health.js')).healthRoutes;
 
-beforeEach(() => { vi.resetModules(); checkDb.mockReset(); });
+beforeEach(() => { vi.resetModules(); checkDb.mockReset(); getLastDbError.mockReset(); getLastDbError.mockReturnValue(null); });
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe('liveness stays up when the database is down', () => {
@@ -52,6 +53,24 @@ describe('liveness stays up when the database is down', () => {
     const res = await (await load()).request('/');
     expect(res.status).toBe(200);
     expect((await res.json()).ok).toBe(true);
+  });
+});
+
+describe('a down database says WHY, and leaks nothing', () => {
+  it('carries the driver code and a sanitised message', async () => {
+    checkDb.mockResolvedValue('down');
+    getLastDbError.mockReturnValue({ code: 'ETIMEDOUT', message: 'connect ETIMEDOUT <host>' });
+    const body = await (await (await load()).request('/')).json();
+    expect(body.dbError.code).toBe('ETIMEDOUT');
+    // A probe that says "down" without saying why forces the next person to guess, and the
+    // guesses need opposite fixes.
+    expect(body.dbError.message).toContain('ETIMEDOUT');
+  });
+
+  it('omits the field entirely when the database is fine', async () => {
+    checkDb.mockResolvedValue('up');
+    const body = await (await (await load()).request('/')).json();
+    expect(body.dbError).toBeUndefined();
   });
 });
 
@@ -98,10 +117,14 @@ describe('the probe answers in bounded time, whatever the database does', () => 
     expect(raced).toBe('hung');
   });
 
-  it('checkDb exports an explicit, short deadline', async () => {
+  /* LAST IN THE FILE ON PURPOSE. `vi.doUnmock` + `resetModules` changes the registry for
+     everything that follows in the same file, which silently broke two later tests when
+     this pattern sat in the middle of it. */
+  it('exports an explicit short deadline, and the real module exposes the reason', async () => {
     vi.doUnmock('../../db/index.js');
     vi.resetModules();
     const db = await import('../../db/index.js');
+    expect(typeof db.getLastDbError).toBe('function');
     expect(db.HEALTH_DB_TIMEOUT_MS).toBeLessThanOrEqual(5_000);
     expect(db.HEALTH_DB_TIMEOUT_MS).toBeGreaterThan(0);
   });

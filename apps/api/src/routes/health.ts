@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { HealthResponse } from '@lcx/shared';
-import { checkDb } from '../db/index.js';
+import { checkDb, getLastDbError } from '../db/index.js';
 import { env } from '../lib/env.js';
 
 /**
@@ -37,8 +37,10 @@ export const healthRoutes = new Hono();
 
 async function snapshot(): Promise<HealthResponse> {
   const db = await checkDb();
+  const dbError = db === 'down' ? getLastDbError() : null;
   return {
     ok: db === 'up' || db === 'skipped',
+    ...(dbError ? { dbError } : {}),
     service: 'lcx-sales-api',
     version: env.version,
     env: env.nodeEnv,
