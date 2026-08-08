@@ -52,3 +52,10 @@ docs/3d/p1/bundle.js
 
 # Derived: rebuild with `node docs/3d/s6/build.mjs`.
 docs/3d/s6/bundle.js
+
+# Derived: rebuild with the sibling build.mjs
+docs/3d/w0/sheet-*.html
+docs/3d/w0/.entry.tsx
+docs/3d/w1/bundle.js
+docs/3d/w1/compare.html
+docs/3d/w1/.svg-entry.tsx

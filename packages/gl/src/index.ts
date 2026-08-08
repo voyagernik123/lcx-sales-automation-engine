@@ -59,6 +59,13 @@ export type { BrandFidelityFailure } from './look/tonemap.js';
 export { createPipeline, PIPELINE_SOURCES } from './look/pipeline.js';
 export type { Pipeline, PipelineOptions } from './look/pipeline.js';
 
+/* ── L4 · flat ──────────────────────────────────────────────────────────────────────
+   2-D primitives on the SAME pipeline as the 3-D surfaces. PLATFORM_VFX_100X.md's thesis:
+   a chart with no third data axis still gets linear light, HDR accumulation, real edge
+   falloff and a contact shadow — none of which needs a z axis. */
+export { createBarBatch, plotMatrix, BARS_VERT, BARS_FRAG, CONTACT_VERT, CONTACT_FRAG } from './flat/bars.js';
+export type { BarBatch, BarDatum, BarStyle } from './flat/bars.js';
+
 /* ── L3 · motion ── */
 export {
   startMotion, browserMotionEnvironment, easeInOut, interpolateFraming,
