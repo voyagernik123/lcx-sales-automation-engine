@@ -65,6 +65,8 @@ export type { Pipeline, PipelineOptions } from './look/pipeline.js';
    falloff and a contact shadow — none of which needs a z axis. */
 export { createBarBatch, plotMatrix, BARS_VERT, BARS_FRAG, CONTACT_VERT, CONTACT_FRAG } from './flat/bars.js';
 export type { BarBatch, BarDatum, BarStyle } from './flat/bars.js';
+export { sharedRenderer, resetSharedRenderer } from './flat/shared.js';
+export type { SharedRenderer, SharedFrame } from './flat/shared.js';
 
 /* ── L3 · motion ── */
 export {

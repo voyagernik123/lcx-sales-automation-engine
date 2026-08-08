@@ -86,6 +86,12 @@ export interface StageOptions {
    * `primitives/points.ts`.
    */
   readonly antialias?: boolean;
+  /**
+   * Transparent drawing buffer. Required for a chart layer that sits OVER a card: with
+   * `alpha: false` the buffer is opaque and the canvas paints a black rectangle across
+   * whatever it overlays, however carefully the composite clears to zero.
+   */
+  readonly alpha?: boolean;
 }
 
 /* ══ STAGE ════════════════════════════════════════════════════════════════════════ */
@@ -128,7 +134,7 @@ export function isStage(o: StageOutcome): o is Stage {
 export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}): StageOutcome {
   const gl = canvas.getContext('webgl2', {
     antialias: opts.antialias ?? false,
-    alpha: false,
+    alpha: opts.alpha ?? false,
     premultipliedAlpha: false,
     // The capture harness screenshots after the frame is drawn, and on some drivers the
     // drawing buffer is cleared at composite. Preserving it costs nothing here and is

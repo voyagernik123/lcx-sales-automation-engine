@@ -45,9 +45,14 @@ uniform sampler2D uSource;
 uniform vec2 uThreshold;
 out vec4 frag;
 void main(){
-  vec3 c = texture(uSource, uv).rgb;
-  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  frag = vec4(c * smoothstep(uThreshold.x, uThreshold.y, l), 1.0);
+  vec4 t = texture(uSource, uv);
+  float l = dot(t.rgb, vec3(0.2126, 0.7152, 0.0722));
+  float k = smoothstep(uThreshold.x, uThreshold.y, l);
+  /* ALPHA IS CARRIED, NOT REPLACED. This wrote 1.0, which meant the bloom chain reported
+     full coverage over the entire frame — so a TRANSPARENT composite came out as a grey
+     wash across its whole rectangle instead of only where something was drawn. Opaque
+     frames never noticed, because they discard this alpha anyway. */
+  frag = vec4(t.rgb * k, t.a * k);
 }`;
 
 /** 9-tap gaussian, separable. Two passes at σ, then two at 2σ, is a cheap wide kernel. */
@@ -59,13 +64,16 @@ uniform vec2 uDirection;
 out vec4 frag;
 void main(){
   float w[5] = float[](0.2270, 0.1946, 0.1216, 0.0540, 0.0162);
-  vec3 c = texture(uSource, uv).rgb * w[0];
+  // Alpha is blurred with the colour for the same reason the bright pass carries it: the
+  // halo's COVERAGE has to spread with the halo, or a transparent composite gets a hard
+  // rectangular edge where the blur kernel ends.
+  vec4 c = texture(uSource, uv) * w[0];
   for (int i = 1; i < 5; i++) {
     vec2 o = uDirection * float(i);
-    c += texture(uSource, uv + o).rgb * w[i];
-    c += texture(uSource, uv - o).rgb * w[i];
+    c += texture(uSource, uv + o) * w[i];
+    c += texture(uSource, uv - o) * w[i];
   }
-  frag = vec4(c, 1.0);
+  frag = c;
 }`;
 
 const COMPOSITE_FRAG = `#version 300 es
@@ -74,13 +82,15 @@ in vec2 uv;
 uniform sampler2D uScene, uBloom;
 uniform vec3 uPlate;
 uniform vec2 uVignetteCentre;
-uniform float uVignetteDepth, uBloomGain;
+uniform float uVignetteDepth, uBloomGain, uTransparent;
 out vec4 frag;
 ${TONE_MAP_GLSL}
 ${SRGB_ENCODE_GLSL}
 void main(){
-  vec3 scene = texture(uScene, uv).rgb;
-  vec3 bloom = texture(uBloom, uv).rgb;
+  vec4 sceneT = texture(uScene, uv);
+  vec4 bloomT = texture(uBloom, uv);
+  vec3 scene = sceneT.rgb;
+  vec3 bloom = bloomT.rgb;
   // Background gradient in LINEAR space. A flat black plate reads as "unfinished", and
   // building the gradient in sRGB would band visibly across a large dark field.
   vec2 d = uv - uVignetteCentre;
@@ -88,8 +98,16 @@ void main(){
   vec3 lit = plate + scene + bloom * uBloomGain;
   // THE ONLY TONE MAP IN THE PIPELINE, and it is on the composite.
   lit = lcxToneMap(lit);
+  /* ALPHA. An opaque frame writes 1 and owns its whole rectangle. A TRANSPARENT frame — a
+     chart layer sitting over a card — must carry the coverage the primitives actually drew,
+     or the canvas paints a black rectangle over everything it overlays. The primitives
+     write their mask into the scene target's alpha, so the coverage is already measured;
+     this only has to stop discarding it. */
+  float a = uTransparent > 0.5
+    ? clamp(sceneT.a + bloomT.a * uBloomGain, 0.0, 1.0)
+    : 1.0;
   // THE ONLY sRGB ENCODE IN THE PIPELINE.
-  frag = vec4(lcxEncode(lit), 1.0);
+  frag = vec4(lcxEncode(lit), a);
 }`;
 
 export interface PipelineOptions {
@@ -101,6 +119,11 @@ export interface PipelineOptions {
   readonly plate?: Linear;
   readonly vignetteCentre?: readonly [number, number];
   readonly vignetteDepth?: number;
+  /**
+   * Emit the coverage the primitives drew as alpha, instead of a fully opaque frame. For a
+   * layer composited over existing DOM. Requires the stage's context to have `alpha: true`.
+   */
+  readonly transparent?: boolean;
 }
 
 export interface Pipeline {
@@ -168,6 +191,7 @@ export function createPipeline(stage: Stage): Pipeline | StageRefusal {
         gl.uniform2f(gl.getUniformLocation(p, 'uVignetteCentre'), vc[0], vc[1]);
         gl.uniform1f(gl.getUniformLocation(p, 'uVignetteDepth'), opts.vignetteDepth ?? 0.62);
         gl.uniform1f(gl.getUniformLocation(p, 'uBloomGain'), opts.bloomGain ?? 0.9);
+        gl.uniform1f(gl.getUniformLocation(p, 'uTransparent'), opts.transparent ? 1 : 0);
       });
     },
     dispose() {
