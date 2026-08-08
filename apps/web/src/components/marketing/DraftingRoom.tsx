@@ -125,8 +125,30 @@ export function DraftingRoom({ reply, draft, onDraft, onApprove, busy }: {
         ? ''
         : 'The engines have not answered for this text yet.';
     return {
-      claim_safety: `${notAsked} Nothing here has been checked for price predictions, return promises, solvency assertions, invented licences or any other regulated promise: POST /v1/marketing/claim-safety is not mounted on any router, and the engine behind it (packages/shared/src/marketing/claimSafety.ts checkClaimSafety) has no route caller anywhere in the API. This axis is unexamined, and it is the axis about regulated promises.`.trim(),
-      market_abuse: `${notAsked} POST /v1/marketing/abuse-check is likewise unmounted, and the embargo register and holdings declaration are joins against state rather than readings of the text. Art 90 and Art 91(3)(c) are invisible to a wording review, so this axis is unexamined rather than clear.`.trim(),
+      /*
+       * THIS STRING USED TO BE FALSE, ON A LIVE COMPLIANCE SCREEN.
+       *
+       * It told the operator that "POST /v1/marketing/claim-safety is not mounted on any
+       * router, and the engine behind it … has no route caller anywhere in the API". Both
+       * halves are wrong: the route is declared at `apps/api/src/routes/marketingGates.ts:526`,
+       * mounted at `apps/api/src/routes/marketing.ts:885`, covered by
+       * `routes/__tests__/marketingMount.test.ts:130`, and the engine is called on the
+       * outbound path via `marketing/outboundGate.ts`.
+       *
+       * Declaring an axis UNEXAMINED when it has in fact been examined is the exact inverse
+       * of the failure this programme exists to prevent, and it is the worse direction: a
+       * reader who believes the regulated-promise check is not running will either escalate
+       * work that was already done, or stop trusting the parts that are.
+       *
+       * What IS true is narrower and is what it now says: the engine ran, and THIS SCREEN
+       * has not received its answer for this text yet.
+       */
+      claim_safety: `${notAsked} Nothing on THIS SCREEN has yet been checked for price predictions, return promises, solvency assertions, invented licences or any other regulated promise. The engine (packages/shared/src/marketing/claimSafety.ts checkClaimSafety) is mounted at POST /v1/marketing/claim-safety and does run on the outbound path — so this axis is UNANSWERED HERE, not unexamined everywhere. Treat it as pending, not as clear.`.trim(),
+      /* Unlike claim-safety above, there IS no `/abuse-check` route — grep finds the string
+         nowhere in apps/api/src. So this half of the original sentence stood up, and only
+         the claim-safety half was false. The two were written as one claim and had to be
+         separated: correcting both would have been as wrong as correcting neither. */
+      market_abuse: `${notAsked} There is no POST /v1/marketing/abuse-check route in the API, and the embargo register and holdings declaration are joins against state rather than readings of the text. Art 90 and Art 91(3)(c) are invisible to a wording review, so this axis is unexamined rather than clear.`.trim(),
       regime: `${notAsked} Which law applies to this item, and therefore which mandatory elements it needs, has not been classified.`.trim(),
       length_budget: `${notAsked} The Art 7 arithmetic weighs characters the way X does, against the surface's real ceiling and over a mandated block this screen never sees. Without it, only this screen's own count against ${X_POST_MAX_CHARS} has run, and that is not the same measurement.`.trim(),
       adoption: `${notAsked} What a ${verb} would adopt from the target has not been assessed, and "we only retweeted it" is not an answer this screen can check on its own.`.trim(),

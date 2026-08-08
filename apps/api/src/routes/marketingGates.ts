@@ -150,6 +150,7 @@ import {
 import type {
   ClaimSafetyVerdict,
   ClearanceLatencyReading,
+  ContentSurface,
   CorroborationResult,
   CorroborationRow,
   CorroborationState,
@@ -387,7 +388,20 @@ const CHANNEL_FOR_SURFACE = {
   original_post: 'x_public',
   thread_in_progress: 'x_public',
   campaign_landing_copy: 'web_page',
-} as const satisfies Record<string, SafetyChannel>;
+  /*
+   * `Record<ContentSurface, …>`, NOT `Record<string, …>`.
+   *
+   * This was `Record<string, SafetyChannel>` while the docblock four lines up promised it
+   * "fails to compile both when a surface is added to the vocabulary and when a value is
+   * invented". Only the second half was true: `Record<string, …>` is satisfied by ANY set
+   * of keys, so adding a ninth ContentSurface upstream would have compiled cleanly here and
+   * silently fallen through to whatever the lookup does with an unknown key.
+   *
+   * The comment described the guarantee correctly. The type did not implement it. A stated
+   * invariant that is not enforced is worse than an unstated one, because it stops the next
+   * reader from checking.
+   */
+} as const satisfies Record<ContentSurface, SafetyChannel>;
 
 const SURFACES = Object.keys(CHANNEL_FOR_SURFACE) as (keyof typeof CHANNEL_FOR_SURFACE)[];
 
