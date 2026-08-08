@@ -1,4 +1,6 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { seriesVar, CHART_GRID } from './palette';
+import { useFlatBars, resolveColour } from './gl/FlatBars';
 import { formatNumber, niceTicks, roundedTopRect, truncate } from './utils';
 import { ChartTooltip, TipContent, useTooltip } from './tooltip';
 
@@ -24,6 +26,12 @@ const MT = 16; // room for value labels above the tallest cap
 const MB = 20; // x-axis label band (inside the height, never clipped)
 
 /** Vertical columns: ≤24px thick, 4px rounded caps, hairline grid, one axis. */
+/**
+ * W2 · re-backed. The SVG below is UNCHANGED except that its column `<path>` renders only
+ * when the GL layer is not drawing. Gridlines, y ticks, value labels, x labels, hit targets
+ * and the tooltip are all still SVG and still exactly what shipped — W0 found this primitive
+ * correct, and only its flat fill was wrong with it. No number, tick or label moved.
+ */
 export function ColumnChart({
   data,
   height = 180,
@@ -31,7 +39,11 @@ export function ColumnChart({
   showValues = 'max',
 }: ColumnChartProps) {
   const { tip, show, hide } = useTooltip();
-  if (data.length === 0) return null;
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  /* The colour token cannot resolve until the host is on the DOM — `var(--chart-1)` means
+     nothing off-document, and it differs between light and dark. */
+  const [ready, setReady] = useState(false);
+  useEffect(() => { if (hostRef.current) setReady(true); }, []);
 
   const VH = height;
   const plotW = VW - ML - MR;
@@ -47,11 +59,42 @@ export function ColumnChart({
   const maxIndex = data.reduce((best, d, i) => (d.value > data[best].value ? i : best), 0);
   const maxLabelChars = Math.max(3, Math.floor(band / 6));
 
+  /* Column rectangles in the SVG's own viewBox units, so the two layers cannot drift.
+     MEMOISED: a fresh array each render made `draw` a new function each render, which
+     re-ran the paint effect on every render. */
+  const rects = useMemo(
+    () => data
+      .map((d, i) => {
+        const colTop = y(d.value);
+        return {
+          x: ML + i * band + band / 2 - colW / 2,
+          y: colTop,
+          w: colW,
+          h: MT + plotH - colTop,
+          colour: hostRef.current ? resolveColour(d.color ?? seriesVar(1), hostRef.current) : '#2C6BFF',
+        };
+      })
+      .filter((r) => r.h > 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, top, band, colW, plotH, ready],
+  );
+
+  /* Vertical: the entrance grows each column UP FROM THE BASELINE, which is the only motion
+     that carries the data — the column arrives at its value rather than fading in at it. */
+  const { canvas: glCanvas, refused: glRefused } = useFlatBars({
+    rects, viewW: VW, viewH: VH, orientation: 'vertical',
+  });
+
+  /* AFTER every hook, deliberately: an empty→populated data prop must not change the hook
+     count between renders. */
+  if (data.length === 0) return null;
+
   return (
-    <div className="relative w-full">
+    <div className="relative w-full" ref={hostRef}>
+      {glCanvas}
       <svg
         viewBox={`0 0 ${VW} ${VH}`}
-        className="block w-full"
+        className="relative z-10 block w-full"
         style={{ height: 'auto' }}
         role="img"
       >
@@ -81,7 +124,8 @@ export function ColumnChart({
             showValues === 'all' || (showValues === 'max' && i === maxIndex && d.value > 0);
           return (
             <g key={i}>
-              {h > 0 && (
+              {/* THE FALLBACK: server render, print, no WebGL2, or first paint. */}
+              {h > 0 && glRefused && (
                 <path d={roundedTopRect(x, colTop, colW, h)} fill={d.color ?? seriesVar(1)} />
               )}
               {labeled && (

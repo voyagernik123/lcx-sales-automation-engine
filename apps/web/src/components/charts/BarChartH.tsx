@@ -39,7 +39,6 @@ export function BarChartH({ data, formatValue = formatNumber, maxBars }: BarChar
   const [ready, setReady] = useState(false);
   useEffect(() => { if (hostRef.current) setReady(true); }, []);
   const rows = maxBars !== undefined ? data.slice(0, Math.max(0, maxBars)) : data;
-  if (rows.length === 0) return null;
 
   const VH = rows.length * ROW_H;
   const plotW = VW - LABEL_W - VALUE_W;
@@ -66,6 +65,13 @@ export function BarChartH({ data, formatValue = formatNumber, maxBars }: BarChar
   const { canvas: glCanvas, refused: glRefused } = useFlatBars({
     rects, viewW: VW, viewH: VH, orientation: 'horizontal',
   });
+
+  /* THE EARLY RETURN SITS BELOW EVERY HOOK. It used to be above them, and three of the
+     parallel swap lanes independently refused to copy that: the first render where a
+     caller's data goes empty → populated changes the hook count and React throws
+     "Rendered more hooks than during the previous render". The arithmetic above is safe on
+     an empty array, so moving it costs nothing and removes a live crash. */
+  if (rows.length === 0) return null;
 
   return (
     <div className="relative w-full" ref={hostRef}>

@@ -1,4 +1,7 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CHART_GRID, seriesVar } from './palette';
+import { resolveColour } from './gl/FlatBars';
+import { useFlatBand, type FlatBandStroke } from './gl/FlatBand';
 import { formatNumber, niceTicks } from './utils';
 import { ChartTooltip, useTooltip } from './tooltip';
 
@@ -37,6 +40,65 @@ function runsOf<T>(data: readonly T[], read: (d: T) => boolean): number[][] {
   return runs;
 }
 
+type XY = readonly [number, number];
+
+/**
+ * The PAINTED intervals of an SVG dash pattern, measured along the path.
+ *
+ * `@lcx/gl` draws a continuous ribbon and has no dash, so the dash has to exist as
+ * geometry or not at all — and it is not decoration here. The centre line and the actual
+ * overlay are told apart by `solid vs dashed` as well as by hue, and this kit's own rule
+ * (see the legend below) is that identity is never colour-alone. Dropping the dash to get
+ * a lit line would trade an accessibility property for a finish, so the runs are split.
+ *
+ * `cap` is half the stroke width, added at BOTH ends of every dash, because the SVG's
+ * `stroke-linecap="round"` extends each dash by exactly that much: `5 3` at width 2 paints
+ * 7 and leaves 1, and reproducing the nominal 5/3 instead would visibly thin the series.
+ * The first and last caps are clamped to the path rather than extrapolated past its ends —
+ * a one-unit difference at two places, against inventing geometry beyond the data.
+ */
+function dashRuns(pts: readonly XY[], on: number, off: number, cap: number): Float32Array[] {
+  if (pts.length < 2) return [];
+  const cum: number[] = [0];
+  for (let i = 1; i < pts.length; i++) {
+    cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  }
+  const total = cum[cum.length - 1];
+  if (!(total > 0)) return [];
+
+  /** The point at arc length `s`, interpolated inside the segment that contains it. */
+  const at = (s: number): XY => {
+    const t = Math.min(total, Math.max(0, s));
+    let i = 1;
+    while (i < pts.length - 1 && cum[i] < t) i++;
+    const seg = cum[i] - cum[i - 1];
+    const u = seg > 0 ? (t - cum[i - 1]) / seg : 0;
+    return [
+      pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * u,
+      pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * u,
+    ];
+  };
+
+  const out: Float32Array[] = [];
+  const period = on + off;
+  for (let k = 0; k * period < total; k++) {
+    const a = Math.max(0, k * period - cap);
+    const b = Math.min(total, k * period + on + cap);
+    if (b - a < 1e-6) continue;
+    // Every ORIGINAL vertex strictly inside the dash is kept, so a dash that spans a corner
+    // turns the corner instead of cutting it.
+    const vs: XY[] = [at(a)];
+    for (let i = 0; i < pts.length; i++) {
+      if (cum[i] > a + 1e-6 && cum[i] < b - 1e-6) vs.push(pts[i]);
+    }
+    vs.push(at(b));
+    const f = new Float32Array(vs.length * 2);
+    vs.forEach((p, i) => { f[i * 2] = p[0]; f[i * 2 + 1] = p[1]; });
+    out.push(f);
+  }
+  return out;
+}
+
 export interface ControlBandProps {
   data: ControlBandPoint[];
   height?: number;
@@ -55,9 +117,46 @@ const MT = 10;
 const MB = 18;
 
 /**
+ * `halfWidth` is 1.3, not 1, for a 2-unit stroke. `createStrokeBatch` feathers a polyline
+ * across its WHOLE width and the additive pass squares that coverage, so a ribbon built at
+ * exactly half the SVG's stroke-width renders visibly thinner than the line it replaces.
+ * 1.3 puts the solid core back at ~2 units and spends the rest on the falloff.
+ */
+const HALF = 1.3;
+
+/**
  * Control-band time chart: a shaded lo..hi envelope with a center line and an
  * optional overlaid "actual" series (drawn only where readings exist — gaps
  * are not interpolated). Hairline grid, tooltips per x, legend below.
+ */
+/**
+ * W2 · re-backed, PARTIALLY and on purpose. Every coordinate, tick, label and null below is
+ * the one that shipped — W0 found this primitive correct. What changed: the centre line and
+ * the actual overlay render through `@lcx/gl` when a context exists, and the SVG's own
+ * `<polyline>`s draw whenever it does not.
+ *
+ * ── THE ENVELOPE STAYS SVG, ON BOTH PATHS ───────────────────────────────────────────
+ * It is not gated and it is not drawn in GL, for two independent reasons:
+ *
+ *  1. `createStrokeBatch.area` takes a single scalar `baselineY`. Its lower edge is a
+ *     horizontal line, and this band's lower edge is the `lo` SERIES. Rendering it there
+ *     would flatten a moving P10 to a constant — a change to a number, which this pass is
+ *     not allowed to make, in the one chart whose whole subject is that a number can be
+ *     absent.
+ *  2. The additive pass writes full coverage into the frame's alpha, so a 14 % wash is not
+ *     something it can express: on a light card the tint would land as a solid block of
+ *     hue. `Sparkline` declined its own 10 % wash for exactly this.
+ *
+ * The consequence is deliberate and worth naming: with the GL layer live the envelope is
+ * SVG ABOVE the canvas, so it tints the two lines by 14 % of `--chart-1` where they run
+ * inside it. On the centre line that is 14 % of its own hue and invisible; on the actual it
+ * is a slight shift toward the band's hue. Both series are treated identically, so nothing
+ * about their relative weight moves — which is the property this chart is read for.
+ *
+ * ── AND THE MARKS THAT CANNOT BE RIBBONS ────────────────────────────────────────────
+ * An isolated reading is a DOT and a single-day band is an ERROR BAR. A polyline batch has
+ * neither, and both are exactly the marks that say "one day, no neighbours" — so they stay
+ * SVG too, ungated, rather than disappearing when the renderer succeeds.
  */
 export function ControlBand({
   data,
@@ -69,8 +168,16 @@ export function ControlBand({
   actualLabel = 'Actual',
 }: ControlBandProps) {
   const { tip, show, hide } = useTooltip();
-  if (data.length === 0) return null;
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  /* The colour token cannot resolve until the host is on the DOM — `var(--chart-1)` means
+     nothing off-document, and it differs between light and dark. */
+  const [ready, setReady] = useState(false);
+  useEffect(() => { if (hostRef.current) setReady(true); }, []);
 
+  /* EVERY HOOK RUNS BEFORE THE EMPTY-DATA RETURN AT THE BOTTOM. Computing the geometry of an
+     empty series is harmless (every map produces an empty array); returning early from the
+     middle of the hook list is not, because a series that goes from empty to populated would
+     then change the number of hooks between renders. */
   const VH = height;
   const plotW = VW - ML - MR;
   const plotH = VH - MT - MB;
@@ -101,13 +208,54 @@ export function ControlBand({
       .map((i) => `${x(i)},${y(data[i].lo as number)}`)
       .join(' L')} Z`;
 
+  /* THE GL GEOMETRY IS BUILT FROM THE SAME RUNS THE SVG DRAWS, in the SVG's own viewBox
+     units, so the two layers cannot drift and a gap cannot close in one of them.
+     MEMOISED ON THE VALUES, not on the array identity: callers build `data` inline from an
+     API response, so a fresh array arrives every render and an identity-keyed memo would
+     repaint the GL layer on every render of the page around it. */
+  const dataKey = data.map((d) => `${d.x}|${d.lo}|${d.hi}|${d.mid}|${d.actual ?? ''}`).join(';');
+  const glStrokes = useMemo<FlatBandStroke[]>(() => {
+    const el = hostRef.current;
+    if (!el) return [];
+    const out: FlatBandStroke[] = [];
+    const mid = resolveColour(seriesVar(1), el);
+    const actual = resolveColour(seriesVar(2), el);
+    const pointsOf = (run: number[], read: (d: ControlBandPoint) => number): XY[] =>
+      run.map((i) => [x(i), y(read(data[i]))] as XY);
+
+    for (const run of midRuns) {
+      // A run of ONE is a dot in the SVG and stays one; see the header.
+      if (run.length < 2) continue;
+      const pts = pointsOf(run, (d) => d.mid as number);
+      const f = new Float32Array(pts.length * 2);
+      pts.forEach((p, i) => { f[i * 2] = p[0]; f[i * 2 + 1] = p[1]; });
+      out.push({ points: f, colour: mid, halfWidth: HALF });
+    }
+    for (const run of actualRuns) {
+      if (run.length < 2) continue;
+      // 5 on, 3 off, 1 of cap at each end — the SVG's `strokeDasharray="5 3"` at width 2.
+      for (const dash of dashRuns(pointsOf(run, (d) => d.actual as number), 5, 3, 1)) {
+        out.push({ points: dash, colour: actual, halfWidth: HALF });
+      }
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataKey, height, top, n, ready]);
+
+  const { canvas: glCanvas, refused: glRefused } = useFlatBand({
+    strokes: glStrokes, viewW: VW, viewH: VH,
+  });
+
+  if (data.length === 0) return null;
+
   // Sparse x labels: first, last, and the middle when there is room.
   const xLabelIdx = n <= 2 ? data.map((_, i) => i) : n <= 6 ? [0, n - 1] : [0, Math.floor((n - 1) / 2), n - 1];
 
   return (
     <div className="w-full">
-      <div className="relative w-full">
-        <svg viewBox={`0 0 ${VW} ${VH}`} className="block w-full" style={{ height: 'auto' }} role="img">
+      <div className="relative w-full" ref={hostRef}>
+        {glCanvas}
+        <svg viewBox={`0 0 ${VW} ${VH}`} className="relative z-10 block w-full" style={{ height: 'auto' }} role="img">
           {/* hairline gridlines + value ticks */}
           {ticks.map((t) => (
             <g key={t}>
@@ -118,7 +266,9 @@ export function ControlBand({
             </g>
           ))}
 
-          {/* band envelope: one closed path per run; an isolated day is an error bar */}
+          {/* band envelope: one closed path per run; an isolated day is an error bar.
+              NOT GATED, ON PURPOSE — see the header. The GL layer cannot draw a region
+              between two moving edges, and cannot draw a 14 % wash at all. */}
           {bandRuns.map((run, ri) =>
             run.length > 1 ? (
               <path key={`b-${ri}`} d={bandPathFor(run)} fill={seriesVar(1)} fillOpacity={0.14} stroke={seriesVar(1)} strokeOpacity={0.3} strokeWidth={1} />
@@ -132,14 +282,18 @@ export function ControlBand({
             )
           )}
 
-          {/* center line: runs only, isolated readings render as dots */}
+          {/* center line: runs only, isolated readings render as dots.
+              THE FALLBACK: server render, print, no WebGL2, or first paint. The dot is a
+              mark the ribbon batch has no shape for, so it is never gated. */}
           {midRuns.map((run, ri) =>
             run.length > 1 ? (
-              <polyline
-                key={`m-${ri}`}
-                points={run.map((i) => `${x(i)},${y(data[i].mid as number)}`).join(' ')}
-                fill="none" stroke={seriesVar(1)} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round"
-              />
+              glRefused && (
+                <polyline
+                  key={`m-${ri}`}
+                  points={run.map((i) => `${x(i)},${y(data[i].mid as number)}`).join(' ')}
+                  fill="none" stroke={seriesVar(1)} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round"
+                />
+              )
             ) : (
               <circle key={`m-${ri}`} cx={x(run[0])} cy={y(data[run[0]].mid as number)} r={3.5} fill={seriesVar(1)} />
             )
@@ -148,16 +302,18 @@ export function ControlBand({
           {/* actual overlay: runs only, isolated readings render as dots */}
           {actualRuns.map((run, ri) =>
             run.length > 1 ? (
-              <polyline
-                key={`a-${ri}`}
-                points={run.map((i) => `${x(i)},${y(data[i].actual as number)}`).join(' ')}
-                fill="none"
-                stroke={seriesVar(2)}
-                strokeWidth={2}
-                strokeDasharray="5 3"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
+              glRefused && (
+                <polyline
+                  key={`a-${ri}`}
+                  points={run.map((i) => `${x(i)},${y(data[i].actual as number)}`).join(' ')}
+                  fill="none"
+                  stroke={seriesVar(2)}
+                  strokeWidth={2}
+                  strokeDasharray="5 3"
+                  strokeLinejoin="round"
+                  strokeLinecap="round"
+                />
+              )
             ) : (
               <circle key={`a-${ri}`} cx={x(run[0])} cy={y(data[run[0]].actual as number)} r={3} fill={seriesVar(2)} />
             )

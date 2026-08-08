@@ -538,10 +538,23 @@ export function LpOptimizerPanel() {
             </div>
           ))}
           <p className="pt-1 text-[10px] text-grey">Weights renormalize to 1.0 — a pure what-if; the strategy's authored weights stay stored truth.</p>
+          <p className="pt-1 text-[10px] text-grey" data-testid="lp-live-order-note">
+            The ranking on the right is LIVE and re-sorts as you drag. The table below reads the
+            authored scorecard and does not move — that is the comparison, not a disagreement.
+          </p>
         </div>
         <div>
           <div className="space-y-1">
-            {res.rows.slice(0, 6).map((r) => (
+            {/*
+              EVERY RANKED PARTNER, NOT THE TOP SIX.
+              This list stopped at 6 and the flat table beside it reads the FROZEN seed, so
+              once a slider moved, the live weighted score for ranks 7-9 existed on NO SCREEN
+              in the product. Measured on this bench: 359 distinct rank orders are reachable
+              across the weight grid and three different partners can hold #1, so the tail is
+              not a stable, ignorable remainder — it is the part that moves.
+              Nine rows is not a scroll problem; six was an arbitrary cut.
+            */}
+            {res.rows.map((r) => (
               <div key={r.subjectId} className="flex items-center gap-2">
                 <span className="w-5 shrink-0 text-center font-mono text-micro font-bold text-grey">{r.rank}</span>
                 <span className="min-w-0 flex-1 truncate text-label font-medium text-navy">{r.subjectLabel}</span>

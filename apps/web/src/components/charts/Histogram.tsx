@@ -1,6 +1,8 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CHART_GRID, seriesVar } from './palette';
 import { formatNumber, niceTicks } from './utils';
 import { ChartTooltip, useTooltip } from './tooltip';
+import { resolveColour, useFlatBars, type FlatBarRect } from './gl/FlatBars';
 
 export interface HistogramSeries {
   label: string;
@@ -43,9 +45,44 @@ const MT = 18; // marker label band
 const MB = 18; // x-axis edge labels
 
 /**
+ * The GL layer needs a literal `#RRGGBB`: `hexToLinear` THROWS on anything else, and a throw
+ * inside the draw callback would leave a cleared canvas with `refused` already false — a
+ * chart in which the reader sees nothing at all. So every colour is normalised here, and
+ * anything that will not normalise returns null, which hands the GL layer an empty batch and
+ * leaves the SVG bins on screen exactly as they shipped.
+ */
+function toHex6(raw: string | null | undefined): string | null {
+  const v = (raw ?? '').trim();
+  if (/^#[0-9a-f]{6}$/i.test(v)) return v;
+  if (/^#[0-9a-f]{3}$/i.test(v)) return `#${v[1]}${v[1]}${v[2]}${v[2]}${v[3]}${v[3]}`;
+  const m = /^rgba?\(([^)]*)\)$/i.exec(v);
+  if (!m) return null;
+  const parts = (m[1] ?? '').split(/[\s,/]+/).filter(Boolean).map(Number).slice(0, 3);
+  if (parts.length < 3 || parts.some((n) => !Number.isFinite(n))) return null;
+  return `#${parts
+    .map((n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0'))
+    .join('')}`;
+}
+
+/**
  * Distribution histogram: shared-edge bins, ≤24px columns, hairline grid,
  * optional second series overlaid (translucent + outline) and vertical
  * percentile markers. Legend renders for ≥2 series.
+ *
+ * W2 · re-backed. The SVG below is UNCHANGED except that the BASELINE series' `<rect>` bins
+ * render only when the GL layer is not drawing them. Every gridline, count tick, x-axis
+ * label, hit target, tooltip and legend entry is still SVG — and so, deliberately, are the
+ * percentile markers, their dashed rules and their labels, which are the point of this chart
+ * and now sit above the lit columns rather than inside them.
+ *
+ * ── WHY ONLY THE BASELINE SERIES GOES TO GL ─────────────────────────────────────────
+ * The overlay series is not a second block of colour: it is a 0.35 fill with a 1px OUTLINE,
+ * and that outline is the whole reason a reader can tell scenario from baseline where the
+ * two distributions cross. `createBarBatch` draws filled rounded rects with no stroke, and
+ * the pass accumulates ADDITIVELY — so an overlay drawn there would lose its outline and
+ * BRIGHTEN the overlap instead of letting the reader see through it. Both would destroy the
+ * comparison the chart exists to make, so the overlay stays SVG at all times and only the
+ * baseline fill — the one mark that is a plain filled column — is re-backed.
  */
 export function Histogram({
   domain,
@@ -56,10 +93,30 @@ export function Histogram({
   formatCount = formatNumber,
 }: HistogramProps) {
   const { tip, show, hide } = useTooltip();
-  const drawn = series.filter((s) => s.counts.length > 0).slice(0, 2);
-  if (drawn.length === 0) return null;
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  /* The baseline series may paint through `currentColor` (the cyan simulation accent), which
+     no amount of arithmetic can resolve — it has to be read back off the very group that
+     carries the class. That group is in the SVG, so the ref points at it. */
+  const inkRef = useRef<SVGGElement | null>(null);
+  /* Neither a class nor `var(--chart-1)` means anything off-document, so the colour cannot be
+     sampled until mount — and it does not stay sampled either. COLOUR IS DATA: the SVG
+     re-themes for free because `var(--chart-1)` is re-resolved by the browser, but a hex
+     already uploaded to a vertex buffer is not, so a reader toggling dark mode would be left
+     comparing light-theme columns against a dark-theme legend swatch. This is the same
+     observer `components/competition/StrategicMatrix.tsx` uses, for the same reason. */
+  const [inkTick, setInkTick] = useState(0);
+  useEffect(() => {
+    const el = typeof document === 'undefined' ? null : document.documentElement;
+    setInkTick((n) => n + 1);
+    if (!el || typeof MutationObserver === 'undefined') return undefined;
+    const obs = new MutationObserver(() => setInkTick((n) => n + 1));
+    obs.observe(el, { attributes: true, attributeFilter: ['class'] });
+    return () => obs.disconnect();
+  }, []);
 
-  const binCount = Math.max(...drawn.map((s) => s.counts.length));
+  const drawn = series.filter((s) => s.counts.length > 0).slice(0, 2);
+
+  const binCount = drawn.length > 0 ? Math.max(...drawn.map((s) => s.counts.length)) : 1;
   const [x0, x1] = domain;
   const span = Math.max(1e-9, x1 - x0);
 
@@ -75,10 +132,48 @@ export function Histogram({
   const band = plotW / binCount;
   const colW = Math.max(1, Math.min(24, band - 1));
 
+  /* The baseline columns in the SVG's OWN viewBox units, so the two layers cannot drift.
+     MEMOISED against a signature rather than the array identity: `drawn` is a fresh array on
+     every render, and keying off it would repaint the canvas on renders that changed no bin. */
+  const primary = drawn[0];
+  const primarySig = primary
+    ? `${primary.counts.join(',')}|${primary.color ?? ''}|${primary.className ?? ''}`
+    : '';
+  const glBars = useMemo<FlatBarRect[]>(() => {
+    if (!primary) return [];
+    // `className` wins over `color` in the SVG below; the resolution order here matches it.
+    const colour = primary.className
+      ? toHex6(inkRef.current ? getComputedStyle(inkRef.current).color : null)
+      : toHex6(hostRef.current ? resolveColour(primary.color ?? seriesVar(1), hostRef.current) : null);
+    // No resolvable colour ⇒ draw NOTHING in GL. `glDrawing` then stays false and the SVG
+    // bins render, which is the same outcome as a refused renderer.
+    if (!colour) return [];
+    const out: FlatBarRect[] = [];
+    primary.counts.forEach((c, bi) => {
+      if (c <= 0) return;
+      const by = y(c);
+      const h = MT + plotH - by;
+      if (h <= 0) return;
+      out.push({ x: ML + bi * band + (band - colW) / 2, y: by, w: colW, h, colour });
+    });
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [primarySig, band, colW, plotH, top, inkTick]);
+
+  const { canvas: glCanvas, refused: glRefused } = useFlatBars({
+    rects: glBars, viewW: VW, viewH: VH, orientation: 'vertical',
+  });
+  /* THE GATE. Not `!glRefused` alone: a live renderer holding an EMPTY batch draws nothing,
+     and hiding the SVG bins against it would show the reader an empty plot. */
+  const glDrawing = !glRefused && glBars.length > 0;
+
+  if (drawn.length === 0) return null;
+
   return (
     <div className="w-full">
-      <div className="relative w-full">
-        <svg viewBox={`0 0 ${VW} ${VH}`} className="block w-full" style={{ height: 'auto' }} role="img">
+      <div className="relative w-full" ref={hostRef}>
+        {glCanvas}
+        <svg viewBox={`0 0 ${VW} ${VH}`} className="relative z-10 block w-full" style={{ height: 'auto' }} role="img">
           {/* hairline horizontal gridlines + count ticks */}
           {ticks.map((t) => (
             <g key={t}>
@@ -93,11 +188,16 @@ export function Histogram({
           {drawn.map((s, si) => (
             <g
               key={si}
+              /* The group renders even when its bins are on the canvas: it is what carries
+                 the class the GL colour is read from. */
+              ref={si === 0 ? inkRef : undefined}
               className={s.className}
               fill={s.className ? 'currentColor' : (s.color ?? seriesVar(si + 1))}
               stroke={s.className ? 'currentColor' : (s.color ?? seriesVar(si + 1))}
             >
-              {s.counts.map((c, bi) => {
+              {/* THE FALLBACK: server render, print, no WebGL2, first paint, an unresolvable
+                  colour — and always, for the outlined overlay series. */}
+              {(si !== 0 || !glDrawing) && s.counts.map((c, bi) => {
                 if (c <= 0) return null;
                 const bx = ML + bi * band + (band - colW) / 2;
                 const by = y(c);

@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Stage } from '@lcx/gl';
 import { useFlatChart } from './useFlatChart';
 
@@ -45,15 +45,43 @@ function resolveColour(token: string, el: Element): string {
   return v || '#2C6BFF';
 }
 
+type GlMod = typeof import('@lcx/gl');
+
 export function useFlatBars({ rects, viewW, viewH, orientation = 'horizontal' }: FlatBarsProps) {
+  /*
+   * THE MODULE IS LOADED BEFORE THE FRAME, NOT INSIDE IT — and three parallel lanes found
+   * this independently, which is how a defect earns a fix in the shared file.
+   *
+   * `sharedRenderer.render()` calls `draw(...)` and then IMMEDIATELY blits the shared buffer
+   * to the chart's canvas. An `async` draw returns at its first `await`, so every GL call
+   * ran in a microtask AFTER the blit had already copied. On one chart that only made the
+   * entrance a frame stale; on a dashboard, where one buffer serves every chart, a chart's
+   * blit copied whatever the PREVIOUS chart had left in it — one chart displaying another's
+   * image. The dynamic import is kept (the chunking is the point) but hoisted out of the
+   * frame, and the canvas is withheld until it has landed so `refused` stays true meanwhile.
+   */
+  const [mod, setMod] = useState<GlMod | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void import('@lcx/gl').then((m) => { if (alive) setMod(m); });
+    return () => { alive = false; };
+  }, []);
+
+  /* Batch and pipeline compile FIVE programs that the Stage only frees on dispose, so
+     building them per frame leaked five per animation frame per chart. Cached against the
+     stage that owns them. */
+  const cache = useRef<{ stage: Stage; bars: ReturnType<GlMod['createBarBatch']>; pipeline: ReturnType<GlMod['createPipeline']> } | null>(null);
+
   const draw = useCallback(
-    async (stage: Stage, { t }: { t: number }) => {
+    (stage: Stage, { t }: { t: number }) => {
+      if (!mod) return;
       const gl = stage.gl;
-      const mod = await import('@lcx/gl');
       const { createBarBatch, createPipeline, plotMatrix, beginAdditive, endPass, hexToLinear, exposure } = mod;
-      const bars = createBarBatch(stage);
+      if (cache.current?.stage !== stage) {
+        cache.current = { stage, bars: createBarBatch(stage), pipeline: createPipeline(stage) };
+      }
+      const { bars, pipeline } = cache.current;
       if ('kind' in bars) return;
-      const pipeline = createPipeline(stage);
       if ('kind' in pipeline) return;
 
       // y0 = viewH, y1 = 0 FLIPS the axis: SVG counts y downward and GL counts it up, and
@@ -90,14 +118,16 @@ export function useFlatBars({ rects, viewW, viewH, orientation = 'horizontal' }:
         vignetteDepth: 0,
         transparent: true,
       });
-      bars.dispose();
     },
-    [rects, viewW, viewH, orientation],
+    [mod, rects, viewW, viewH, orientation],
   );
 
   const { canvasRef, refused } = useFlatChart(draw as never, {
-    width: viewW, height: viewH, deps: [rects, viewW, viewH],
+    width: viewW, height: viewH, deps: [mod, rects, viewW, viewH],
   });
+  // Refused until the module has landed, so the SVG keeps drawing rather than the canvas
+  // showing an empty (or another chart's) frame.
+  const notReady = mod === null;
 
   const canvas = (
     <canvas
@@ -107,10 +137,10 @@ export function useFlatBars({ rects, viewW, viewH, orientation = 'horizontal' }:
          regardless of DOM order, so without an explicit z-index the canvas covered every
          label and value in the chart it was supposed to be enhancing. */
       className="pointer-events-none absolute inset-0 -z-0 h-full w-full"
-      style={{ display: refused ? 'none' : 'block' }}
+      style={{ display: refused || notReady ? 'none' : 'block' }}
     />
   );
-  return { canvas, refused };
+  return { canvas, refused: refused || notReady };
 }
 
 export { resolveColour };

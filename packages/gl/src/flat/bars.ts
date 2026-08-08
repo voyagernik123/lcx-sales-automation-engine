@@ -87,7 +87,7 @@ precision highp float;
 in vec2 vUV;
 in vec3 vTint;
 in vec2 vSize;
-uniform float uModelling, uEdge, uRadius, uHorizontal;
+uniform float uModelling, uEdge, uRadius, uHorizontal, uYSign;
 out vec4 frag;
 
 /** Signed distance to a rounded rectangle centred at the origin. */
@@ -114,14 +114,22 @@ void main(){
   float mask = 1.0 - smoothstep(-aa, aa, d);
   if (mask <= 0.001) discard;
 
-  // MODELLING: 0 at the lit edge, 1 at the far edge. Vertical bars are lit from the top,
-  // horizontal bars from the left — the direction a reader's eye already assumes.
-  float t = uHorizontal > 0.5 ? vUV.x : (1.0 - vUV.y);
+  /* MODELLING: 0 at the lit edge, 1 at the far edge. Vertical bars are lit from the TOP,
+     horizontal bars from the LEFT — the direction a reader's eye already assumes.
+
+     uYSign carries the projection's y direction, exactly as the contact shader already did.
+     This one hardcoded 1.0 - vUV.y, so a chart flipping y to match an SVG viewBox got its
+     columns lit from BELOW: gradient darkest at the top, lit edge on the baseline. It never
+     showed on horizontal bars, which read vUV.x, which is why the first swap did not catch
+     it — and every vertical chart inherits the same batch, so it belongs here rather than
+     forked into one lane. */
+  float vy = uYSign > 0.0 ? (1.0 - vUV.y) : vUV.y;
+  float t = uHorizontal > 0.5 ? vUV.x : vy;
   float shade = 1.0 - uModelling * t * t;
 
   // THE LIT EDGE. A thin band on the near side, in world units so it does not thicken
   // when the chart grows.
-  float edgeT = uHorizontal > 0.5 ? vUV.x : (1.0 - vUV.y);
+  float edgeT = t;
   float edge = smoothstep(0.10, 0.0, edgeT) * uEdge;
 
   // The tint is DATA and its ratios are untouched: shade and edge are scalars applied to
@@ -256,6 +264,7 @@ export function createBarBatch(stage: Stage): BarBatch | StageRefusal {
       gl.uniform1f(u(barsP, 'uEdge'), Math.pow(2, style.edgeStops ?? -1.4) - 0.5);
       gl.uniform1f(u(barsP, 'uRadius'), style.radius ?? 0.012);
       gl.uniform1f(u(barsP, 'uHorizontal'), horizontal ? 1 : 0);
+      gl.uniform1f(u(barsP, 'uYSign'), (mvp[5] ?? 1) >= 0 ? 1 : -1);
       gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, bars.length);
       gl.bindVertexArray(null);
     },

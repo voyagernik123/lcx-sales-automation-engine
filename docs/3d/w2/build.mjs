@@ -16,12 +16,12 @@ const r = await build({
 if (r.errors?.length) { for (const e of r.errors) console.error(e); process.exit(1); }
 writeFileSync(join(HERE,'live.html'), `<!doctype html><meta charset="utf-8"><title>W2</title>
 <style>${css}</style>
-<style>body{margin:0;padding:30px;background:#0b1120}#wrap{width:820px}
- h1{font:600 17px/1.2 system-ui;margin:0 0 4px;color:#f2f6fc}
- .sub{color:#7d8aa3;font-size:12.5px;margin:0 0 20px}
- .card{border:1px solid #1b2540;border-radius:10px;padding:18px 20px;background:#0e1628}</style>
-<div id="wrap"><h1>W2 · BarChartH, re-backed and mounted live</h1>
-<p class="sub">Same component, same props. The bar fill is the GL layer; every label, value, tooltip and hit target is the original SVG.</p>
-<div class="card"><div id="root"></div></div></div>
+<style>body{margin:0;padding:28px;background:#05070d}
+ #root{width:1500px;display:grid;gap:22px}
+ .cell{border:1px solid #1b2540;border-radius:10px;padding:16px 18px;background:#0e1628;position:relative}
+ .hd{display:flex;align-items:baseline;gap:12px;margin-bottom:12px}
+ .nm{font:600 12px/1 ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase;color:#7fb2ff}
+ .no{font:400 11.5px/1.5 system-ui,sans-serif;color:#7d8aa3}</style>
+<div id="root"></div>
 <script type="module" src="./bundle.js"></script>`);
 console.log('  wrote live.html');
