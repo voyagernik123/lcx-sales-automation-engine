@@ -54,6 +54,27 @@ export type ForecastWithCoverage = Omit<ForecastData, 'deals'> & {
   unrateable?: ForecastExclusionView;
   /** Set iff the API had nothing it could price. The card must not draw a curve then. */
   distributionRefusal?: { code: string; rule: string } | null;
+  /**
+   * WHICH DEAL DECIDES THE QUARTER, most decisive first.
+   *
+   * The engine has always computed this from the 10,000 paths it already walks; the API
+   * dropped it at the boundary until now, so this table could show probability, value and
+   * expectation and never the one thing a reader actually acts on.
+   *
+   * Optional for the same reason as the fields above: absent means an API build that
+   * predates it, which is distinguishable from "the figure was withheld".
+   */
+  decisiveness?: Array<{
+    id: string;
+    projectName: string | null;
+    p50SwingPct: number | null;
+    p50SwingStdErr: number | null;
+    p50SwingCode: string | null;
+    swing: number | null;
+    swingCode: string | null;
+    wonRuns: number;
+    lostRuns: number;
+  }>;
 };
 
 type ForecastDealView = ForecastWithCoverage['deals'][number];
@@ -374,6 +395,11 @@ export function ForecastDistribution({ forecast }: { forecast: ForecastWithCover
             </p>
           </div>
 
+          {/* THE HEADLINE, ALWAYS VISIBLE. The full ranking lives in "See the math" below
+              because it is a derived statistic with standard errors — but the single most
+              actionable sentence on this card should not require a click to find. */}
+          <DecisivenessHeadline rows={forecast.decisiveness} />
+
           {/* See the math — every number's "why" */}
           <div className="mt-3 border-t border-line pt-2">
             <button
@@ -508,11 +534,106 @@ export function ForecastDistribution({ forecast }: { forecast: ForecastWithCover
                     </tfoot>
                   </table>
                 </div>
+
+                <DecisivenessTable rows={forecast.decisiveness} scenarioActive={scnSim != null} />
               </div>
             )}
           </div>
         </div>
       )}
     </ChartCard>
+  );
+}
+
+/** The top row of the ranking, as one sentence, outside the disclosure. */
+function DecisivenessHeadline({ rows }: { rows?: ForecastWithCoverage['decisiveness'] }) {
+  const top = rows?.find((r) => r.p50SwingPct !== null);
+  if (!top) return null;
+  return (
+    <p className="mt-2 text-micro text-grey" data-testid="decisiveness-headline">
+      The quarter turns most on{' '}
+      <span className="font-medium text-fg">{top.projectName ?? top.id}</span> — landing it adds{' '}
+      <span className="num-tabular font-mono font-bold text-navy">
+        {top.p50SwingPct!.toFixed(1)} pp
+      </span>{' '}
+      to the chance the book clears its own median. Not the biggest deal; the one that moves
+      the odds.
+    </p>
+  );
+}
+
+/**
+ * WHICH DEAL DECIDES THE QUARTER — the answer the expected-value table above cannot give.
+ *
+ * `p·value` ranks deals by what they are worth. This ranks them by how much they MOVE THE
+ * ODDS that the book clears its own median, recovered from the same 10,000 paths. The two
+ * orderings disagree in a way that matters: a large near-certain deal barely moves the odds
+ * because it is already priced in, while a mid-sized genuine coin-flip decides everything.
+ *
+ * A WITHHELD row prints its refusal code, never a 0 and never a dash that looks like one.
+ * The engine withholds for two distinct reasons and they are different facts:
+ *   INSUFFICIENT_ARM     — too few simulated paths either way to have a mean worth quoting
+ *   SE_EXCEEDS_MAGNITUDE — the estimate is inside its own noise
+ * Both are ranked LAST rather than sorted as zero, because zero is a measurement.
+ */
+function DecisivenessTable(
+  { rows, scenarioActive }: { rows?: ForecastWithCoverage['decisiveness']; scenarioActive: boolean },
+) {
+  // Absent = this API build predates the field. That is not "no deals are decisive", so it
+  // renders nothing rather than an empty table implying a measurement was taken.
+  if (!rows || rows.length === 0) return null;
+  const measured = rows.filter((r) => r.p50SwingPct !== null);
+  const withheld = rows.filter((r) => r.p50SwingPct === null);
+
+  return (
+    <div className="mt-5" data-testid="forecast-decisiveness">
+      <div className="font-mono text-[9px] font-bold uppercase tracking-[0.18em] text-grey">
+        Which deal decides the quarter
+      </div>
+      <p className="mt-1.5 max-w-2xl text-micro leading-relaxed text-grey">
+        Percentage points added to the chance the book clears its own median when the deal
+        lands — measured across the same {'10,000'} simulated quarters, not derived from the
+        value column. A big, near-certain deal moves this very little; it is already priced in.
+      </p>
+      {measured.length === 0 ? (
+        <p className="mt-2 text-micro text-grey" data-testid="decisiveness-none-measured">
+          No deal&apos;s swing survived its own standard error at this run count. That is a
+          statement about the simulation&apos;s resolution, not a finding that every deal is
+          equally decisive.
+        </p>
+      ) : (
+        <ul className="mt-2 space-y-1">
+          {measured.slice(0, 6).map((r) => (
+            <li key={r.id} className="flex items-baseline gap-2 text-micro">
+              <span className="num-tabular w-16 shrink-0 text-right font-mono font-bold text-navy">
+                +{r.p50SwingPct!.toFixed(1)} pp
+              </span>
+              <span className="num-tabular w-16 shrink-0 text-right font-mono text-grey">
+                ± {r.p50SwingStdErr?.toFixed(2) ?? '—'}
+              </span>
+              <span className="truncate text-fg">{r.projectName ?? r.id}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {scenarioActive && (
+        /* THE SCENARIO DOES NOT REACH THIS TABLE. Everything else on this card re-simulates
+           client-side under the scenario dials; decisiveness comes from the server's run
+           over the REAL book. Sitting silently beside adjusted numbers, it would read as
+           adjusted too. */
+        <p className="mt-2 text-micro text-amber" data-testid="decisiveness-unscenarioed">
+          A scenario is active, and these swings are NOT adjusted for it — they are measured
+          on the real book as recorded. The figures above this line are the scenario&apos;s;
+          these are not.
+        </p>
+      )}
+      {withheld.length > 0 && (
+        <p className="mt-2 text-micro text-grey" data-testid="decisiveness-withheld">
+          {withheld.length} deal{withheld.length === 1 ? '' : 's'} withheld rather than ranked:{' '}
+          {[...new Set(withheld.map((r) => r.p50SwingCode ?? 'UNSPECIFIED'))].join(', ')}. A
+          withheld swing is not a swing of zero.
+        </p>
+      )}
+    </div>
   );
 }

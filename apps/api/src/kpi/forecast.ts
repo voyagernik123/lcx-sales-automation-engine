@@ -56,6 +56,44 @@ export interface ForecastSummary {
    */
   simulatedDealCount: number;
   deals: ForecastDealSummary[];
+  /**
+   * WHICH DEAL ACTUALLY DECIDES THE QUARTER, most decisive first.
+   *
+   * `monteCarloForecast` computes this on every call — it recovers, from the 10,000 paths
+   * it already walks, how much each deal moves P(book clears its own median). It returns it
+   * at `forecast/index.ts:393`. This interface omitted it, so the whole thing was computed
+   * and dropped at the boundary on every request, and the dashboard's "See the math" table
+   * shows probability, value and expectation — never which deal the quarter turns on.
+   *
+   * It is a `p·value` ranking's answer to a different question: a deal can be large and
+   * near-certain (it barely moves the odds, because it is already priced in) or mid-sized
+   * and genuinely 50/50 (it decides everything). Those two are adjacent in an expected-value
+   * list and opposite in this one.
+   *
+   * Rows whose figure is WITHHELD keep their refusal code and are APPENDED rather than
+   * ranked — the engine is explicit that mapping a refusal onto a sentinel would sort it
+   * above a measured row.
+   */
+  decisiveness: ForecastDecisiveness[];
+}
+
+/** One deal's contribution to whether the book clears its own median. */
+export interface ForecastDecisiveness {
+  id: string;
+  projectName: string | null;
+  /**
+   * Percentage points added to P(book ≥ its own p50) when this deal lands, or NULL when the
+   * estimate is inside its own noise. Never 0 for a withheld row: 0 is a measurement.
+   */
+  p50SwingPct: number | null;
+  p50SwingStdErr: number | null;
+  /** `INSUFFICIENT_ARM` (too few paths either way) or `SE_EXCEEDS_MAGNITUDE`. */
+  p50SwingCode: string | null;
+  /** Dollars the book moves on average when this deal lands, or null under the same guard. */
+  swing: number | null;
+  swingCode: string | null;
+  wonRuns: number;
+  lostRuns: number;
 }
 
 export async function computeForecast(): Promise<ForecastSummary> {
@@ -80,6 +118,8 @@ export async function computeForecast(): Promise<ForecastSummary> {
   }));
 
   const mc = monteCarloForecast(inputs, { runs: 10_000 });
+  // The engine is deliberately UI-free and carries ids, not names. The label lives here.
+  const nameById = new Map(inputs.map((d) => [d.id, d.projectName]));
   const dollars = (cents: number | null) => (cents === null ? null : cents / 100);
   const exclusion = (e: { code: string; rule: string; count: number; ids: string[] }) => ({
     code: e.code, rule: e.rule, count: e.count, ids: e.ids,
@@ -97,6 +137,22 @@ export async function computeForecast(): Promise<ForecastSummary> {
     unpriced: exclusion(mc.unpriced),
     unrateable: exclusion(mc.unrateable),
     simulatedDealCount: mc.deals.length,
+    // Order preserved from the engine — it ranks by threshold swing and appends the
+    // withheld rows. Re-sorting here would undo that on the way out.
+    decisiveness: mc.decisiveness.map((d) => ({
+      id: d.id,
+      projectName: nameById.get(d.id) ?? null,
+      p50SwingPct: d.p50SwingPct,
+      p50SwingStdErr: d.p50SwingStdErr,
+      p50SwingCode: d.p50SwingCode,
+      // Cents → dollars, and NULL stays null. `d.swingCents / 100` on a null yields 0 in
+      // JS, which is the exact mechanism that turned a refusal into a $0 band elsewhere in
+      // this file's neighbourhood.
+      swing: d.swingCents === null ? null : d.swingCents / 100,
+      swingCode: d.swingCode,
+      wonRuns: d.wonRuns,
+      lostRuns: d.lostRuns,
+    })),
     deals: inputs
       .map((d) => ({
         id: d.id,
