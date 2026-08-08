@@ -798,6 +798,118 @@ dealRoutes.post('/:id/proposal', requireOperator, async (c) => {
   }
 });
 
+/**
+ * GET /v1/deals/motion — every deal's recorded stage history, for the pipeline-motion
+ * surface (`3D_WORK_100X.md` §5 S6).
+ *
+ * WHY THIS ROUTE EXISTS AND `/:id/events` DOES NOT ANSWER IT. The per-deal handler below
+ * serves one deal's audit trail. The question this surface asks is about the BOOK — which
+ * deals are moving and which have stopped — and that is not answerable one deal at a time,
+ * because "stalled" is only meaningful relative to how long other deals took.
+ *
+ * ── WHY THE TIME AXIS IS REAL HERE, WHEN IT WAS NOT FOR THE FORECAST FAN ────────────
+ * `docs/3d/p2/README.md` refused S2 because `monteCarloForecast` has no time in it at all.
+ * This is the opposite case: every stage transition writes a `deal_events` row inside the
+ * SAME TRANSACTION as the deal update (see the transition handler above), so the timestamps
+ * are recorded facts rather than an ordering inferred from a list. Note that
+ * `listing_labels.stage_trail` is NOT this and must not be substituted — it is a sequence
+ * of stage names beside a single date, which gives order without time.
+ *
+ * ── THE TWO THINGS THIS REFUSES ─────────────────────────────────────────────────────
+ * A deal with no recorded transitions is NAMED in `withoutHistory`, never dropped: a deal
+ * missing from the figure and a deal that has not moved look identical on screen, and they
+ * are different facts. A deal with no `package_value` is NAMED in `unpriced` and carries
+ * `valueCents: null` — never 0, because the surface's depth axis is value and a zero would
+ * place an unpriced deal at the cheapest point on it.
+ */
+dealRoutes.get('/motion', requireOperator, async (c) => {
+  const db = getDb();
+  try {
+    const deals = await db.execute(sql`
+      SELECT d.id, d.stage, d.package_value, d.created_at,
+             p.name AS project_name, p.ticker AS project_ticker
+      FROM deals d
+      JOIN projects p ON p.id = d.project_id
+      ORDER BY d.created_at ASC
+    `);
+    const events = await db.execute(sql`
+      SELECT deal_id, old_stage, new_stage, created_at
+      FROM deal_events
+      WHERE event_type = 'stage_change' AND new_stage IS NOT NULL
+      ORDER BY created_at ASC
+    `);
+
+    const byDeal = new Map<string, { at: string; from: string | null; to: string }[]>();
+    for (const e of (events.rows ?? []) as Record<string, unknown>[]) {
+      const id = String(e.deal_id);
+      const list = byDeal.get(id) ?? [];
+      list.push({
+        at: new Date(String(e.created_at)).toISOString(),
+        from: e.old_stage == null ? null : String(e.old_stage),
+        to: String(e.new_stage),
+      });
+      byDeal.set(id, list);
+    }
+
+    const moving: unknown[] = [];
+    const withoutHistory: unknown[] = [];
+    const unpriced: unknown[] = [];
+    let from: string | null = null;
+    let to: string | null = null;
+
+    for (const r of (deals.rows ?? []) as Record<string, unknown>[]) {
+      const id = String(r.id);
+      const label = String(r.project_ticker ?? r.project_name ?? id.slice(0, 8));
+      const transitions = byDeal.get(id) ?? [];
+      // A null package_value is NOT a zero-value deal. It is a deal nobody has priced,
+      // and the depth axis has no position for it.
+      const valueCents = r.package_value == null ? null : Number(r.package_value);
+      if (valueCents == null) {
+        unpriced.push({
+          dealId: id, label,
+          reason: 'No package value recorded, so this deal has no position on the value axis. '
+            + 'It is listed here rather than drawn at zero, which would place it at the cheapest point on that axis.',
+        });
+      }
+      if (transitions.length === 0) {
+        withoutHistory.push({
+          dealId: id, label, currentStage: String(r.stage),
+          reason: 'No stage transitions are recorded for this deal, so it has no path to draw. '
+            + 'A deal that has never been moved and a deal missing from the figure look identical on screen; this names it as the former.',
+        });
+        continue;
+      }
+      for (const t of transitions) {
+        if (from === null || t.at < from) from = t.at;
+        if (to === null || t.at > to) to = t.at;
+      }
+      moving.push({
+        dealId: id, label, currentStage: String(r.stage), valueCents, transitions,
+      });
+    }
+
+    return c.json({
+      data: {
+        // The OBSERVED window, derived from the transitions actually present — never a
+        // requested range. A figure whose axis runs wider than its data implies readings
+        // at the edges that were never taken.
+        window: from && to ? { from, to } : null,
+        deals: moving,
+        withoutHistory,
+        unpriced,
+        observedAt: new Date().toISOString(),
+      },
+      meta: { timestamp: new Date().toISOString(), version: env.version },
+    });
+  } catch (err) {
+    if (isUndefinedColumn(err)) {
+      return c.json({ error: 'Deal event history is unavailable on this database', code: 'MOTION_UNAVAILABLE' }, 503);
+    }
+    console.error('[deals] motion error:', err);
+    return c.json({ error: 'Failed to load pipeline motion', code: 'MOTION_ERROR' }, 500);
+  }
+});
+
 dealRoutes.get('/:id/events', requireOperator, async (c) => {
   const db = getDb();
   const { id } = c.req.param();

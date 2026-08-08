@@ -17,6 +17,7 @@ import { WinLossModal } from '@/components/deals/WinLossModal';
 import { ScenarioValue, SimPill } from '@/components/deals/ScenarioControls';
 import { WARNING_SHORT_LABEL } from '@/components/deals/warningDisplay';
 import { useDismissible } from '@/hooks/useDismissible';
+import { PipelineMotion } from '@/surfaces/sales/PipelineMotion';
 
 /** Stage dot color for column headers (won/lost get icons instead). */
 const STAGE_DOT: Record<DealStage, string> = {
@@ -338,6 +339,12 @@ export function DealBoard() {
           })}
         </div>
       )}
+
+      {/* S6 · the question the board cannot answer. A column shows WHERE a deal is; it has
+          no time in it, so a card that arrived yesterday and one that has sat for seven
+          weeks are the same rectangle. Collapsed by default — the board is the primary
+          surface and this answers it rather than competing with it. */}
+      <PipelineMotion />
 
       {pendingClose && (
         <WinLossModal

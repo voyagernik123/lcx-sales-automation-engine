@@ -47,8 +47,26 @@ export interface StrokeStyle {
 }
 
 export interface LineBatch {
-  /** Axis-aligned rectangle in the z-plane: from (x0,y0) to (x1,y1), given a half-width. */
+  /** A stroke from (x0,y0) to (x1,y1) at z = 0, given a half-width. */
   rule(mvp: Mat4, x0: number, y0: number, x1: number, y1: number, halfWidth: number, s: StrokeStyle): void;
+  /**
+   * The same stroke at an arbitrary DEPTH.
+   *
+   * SPINE REQUEST from the S6 lane (`apps/web/src/surfaces/sales/`), which draws one path
+   * per deal at a depth set by that deal's value — so every stroke it needs is off the
+   * z = 0 plane that `rule` is pinned to.
+   *
+   * Both endpoints share a single `z` and that is deliberate rather than a shortcut: the
+   * extrusion is perpendicular in the XY plane, which is exact for a segment lying in a
+   * constant-depth plane and WRONG for one that slants through depth. A general 3-D stroke
+   * needs a billboard normal per vertex, which is a bigger change and a different
+   * primitive. Naming the limitation in the signature is better than shipping something
+   * that looks general and is quietly incorrect at some angles.
+   */
+  ruleAtDepth(
+    mvp: Mat4, x0: number, y0: number, x1: number, y1: number, z: number,
+    halfWidth: number, s: StrokeStyle,
+  ): void;
   /**
    * A polyline through `points` (flat xy pairs), extruded vertically by `halfWidth`.
    * Vertical extrusion is correct for a function-of-x curve — the case this exists for —
@@ -96,16 +114,27 @@ export function createLineBatch(stage: Stage): LineBatch | StageRefusal {
     gl.bindVertexArray(null);
   };
 
+  const strokeAt = (
+    mvp: Mat4, x0: number, y0: number, x1: number, y1: number, z: number,
+    halfWidth: number, s: StrokeStyle,
+  ) => {
+    // Perpendicular in the xy plane, so a rule keeps its width at any angle.
+    const dx = x1 - x0, dy = y1 - y0;
+    const l = Math.hypot(dx, dy) || 1;
+    const nx = (-dy / l) * halfWidth, ny = (dx / l) * halfWidth;
+    emit(mvp, new Float32Array([
+      x0 - nx, y0 - ny, z, x0 + nx, y0 + ny, z,
+      x1 - nx, y1 - ny, z, x1 + nx, y1 + ny, z,
+    ]), s);
+  };
+
   return {
     rule(mvp, x0, y0, x1, y1, halfWidth, s) {
-      // Perpendicular in the xy plane, so a rule keeps its width at any angle.
-      const dx = x1 - x0, dy = y1 - y0;
-      const l = Math.hypot(dx, dy) || 1;
-      const nx = (-dy / l) * halfWidth, ny = (dx / l) * halfWidth;
-      emit(mvp, new Float32Array([
-        x0 - nx, y0 - ny, 0, x0 + nx, y0 + ny, 0,
-        x1 - nx, y1 - ny, 0, x1 + nx, y1 + ny, 0,
-      ]), s);
+      strokeAt(mvp, x0, y0, x1, y1, 0, halfWidth, s);
+    },
+
+    ruleAtDepth(mvp, x0, y0, x1, y1, z, halfWidth, s) {
+      strokeAt(mvp, x0, y0, x1, y1, z, halfWidth, s);
     },
 
     curve(mvp, points, halfWidth, s) {
