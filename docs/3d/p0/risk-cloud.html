@@ -2,225 +2,399 @@
 <meta charset="utf-8">
 <title>P0 — the 9,997 samples you never see</title>
 <style>
-  html,body{margin:0;background:#080b14;color:#e6ebf5;
-    font:14px/1.5 -apple-system,BlinkMacSystemFont,"IBM Plex Sans",system-ui,sans-serif}
-  #wrap{width:1600px;padding:28px 32px}
-  h1{font-size:19px;font-weight:600;margin:0 0 2px;letter-spacing:-.01em}
-  .sub{color:#8b97ad;font-size:12.5px;margin:0 0 18px}
-  canvas{display:block;border-radius:10px;background:#0b1020}
-  #overlay{position:absolute;inset:0;pointer-events:none;z-index:2}
-  .tick{position:absolute;transform:translate(-50%,0);font:11px/1 "IBM Plex Mono",ui-monospace,monospace;color:#6b7a95;white-space:nowrap}
-  .ptick{position:absolute;transform:translate(-50%,-100%);font:10.5px/1 "IBM Plex Mono",ui-monospace,monospace;color:#ff8a3d;letter-spacing:.04em}
-  .legend{display:flex;gap:26px;margin-top:14px;font-size:12px;color:#8b97ad;align-items:center}
-  .sw{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:7px;vertical-align:-1px}
-  b{color:#e6ebf5;font-weight:600}
-  .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+  html,body{margin:0;background:#05070d;color:#eef2f9;
+    font:14px/1.55 "IBM Plex Sans",-apple-system,BlinkMacSystemFont,system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  #wrap{width:1600px;padding:34px 38px 30px}
+  .eyebrow{font:600 10.5px/1 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.16em;
+    text-transform:uppercase;color:#4d5f80;margin:0 0 9px}
+  h1{font-size:21px;font-weight:600;margin:0 0 3px;letter-spacing:-.018em;color:#f2f6fc}
+  .sub{color:#7d8aa3;font-size:13px;margin:0 0 20px;max-width:940px}
+  .stage{position:relative;border-radius:12px;overflow:hidden;
+    box-shadow:0 1px 0 rgba(255,255,255,.05) inset, 0 22px 60px -28px rgba(0,0,0,.95)}
+  canvas{display:block}
+  #overlay{position:absolute;inset:0;pointer-events:none}
+  .tick{position:absolute;transform:translate(-50%,0);
+    font:500 10.5px/1 "IBM Plex Mono",ui-monospace,monospace;color:#5c6c8a;
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  .ptick{position:absolute;transform:translate(-50%,-100%);text-align:center;white-space:nowrap;
+    padding-bottom:7px}
+  .ptick b{display:block;font:600 9.5px/1.4 "IBM Plex Mono",ui-monospace,monospace;
+    letter-spacing:.14em;color:#ffab6b;text-transform:uppercase}
+  .ptick i{display:block;font:600 12px/1.2 "IBM Plex Mono",ui-monospace,monospace;
+    font-style:normal;color:#f3f7fd;font-variant-numeric:tabular-nums}
+  /* Axis name lives top-left, not under the plate: the tick row owns the bottom
+     strip and the two were colliding. */
+  .axname{position:absolute;left:26px;top:22px;
+    font:500 10px/1 "IBM Plex Mono",ui-monospace,monospace;letter-spacing:.15em;
+    text-transform:uppercase;color:#425272}
+  /* Right-hand readout. The distribution is right-skewed, so the top-right of any
+     honest frame is empty. Filling it with the numbers that describe the tail is
+     better than cropping the tail away to make the picture look balanced. */
+  .readout{position:absolute;top:22px;right:26px;text-align:right;
+    font:500 11px/1.9 "IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
+  .readout div{color:#93a2bb}
+  .readout span{color:#4f5f7d;letter-spacing:.1em;text-transform:uppercase;font-size:9.5px;
+    margin-right:12px}
+  .readout hr{border:0;border-top:1px solid #1b2540;margin:9px 0 8px}
+  .legend{display:flex;gap:30px;margin-top:16px;font-size:12px;color:#7d8aa3;align-items:baseline}
+  .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:8px;vertical-align:0}
+  .swl{display:inline-block;width:14px;height:2px;border-radius:2px;margin-right:8px;
+    vertical-align:3px;background:#7FB2FF}
+  b.k{color:#eef2f9;font-weight:600}
+  .mono{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums}
 </style>
 <div id="wrap">
-  <h1>Quarterly forecast — 10,000 simulated outcomes</h1>
-  <p class="sub">Every point is one simulated quarter. The three planes are the only three numbers the product shows today.</p>
-  <div style="position:relative"><div id="overlay"></div><canvas id="c" width="3040" height="1560" style="width:1520px;height:780px"></canvas></div>
+  <p class="eyebrow">LCX · Intel · Quarterly forecast</p>
+  <h1>10,000 simulated quarters</h1>
+  <p class="sub">Every point is one simulated outcome of the open book. The three markers are
+    the only three numbers the product reports today.</p>
+  <div class="stage">
+    <div id="overlay"><div class="axname">Portfolio outcome</div>
+      <div class="readout" id="ro"></div></div>
+    <canvas id="c" width="3200" height="1480" style="width:1600px;height:740px"></canvas>
+  </div>
   <div class="legend">
-    <span><i class="sw" style="background:#2C6BFF"></i>simulated outcome <b class="mono" id="n"></b></span>
-    <span><i class="sw" style="background:#ff8a3d"></i>p10 / p50 / p90 — <b>what you see today</b></span>
-    <span id="stats" class="mono"></span>
+    <span><i class="sw" style="background:#2C6BFF"></i>simulated outcome <b class="k mono" id="n"></b></span>
+    <span><i class="swl"></i>density <span class="mono" style="color:#5f6f8d">gaussian kernel, h = 1.6% of range</span></span>
+    <span><i class="sw" style="background:#ff8a3d"></i>reported today <b class="k">p10 · p50 · p90</b></span>
+    <span class="mono" id="stats"></span>
   </div>
 </div>
 <script type="module">
 const DATA = window.__SAMPLES__;
-const gl = document.getElementById('c').getContext('webgl2', {
-  antialias: true, alpha: false, premultipliedAlpha: false,
-});
+const cv = document.getElementById('c');
+const gl = cv.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false });
 if (!gl) { document.body.innerHTML = '<h1 style="padding:40px">NO WEBGL2</h1>'; throw new Error('no webgl2'); }
+const F16 = gl.getExtension('EXT_color_buffer_float');   // HDR targets; graceful if absent
 
-/* ── L2 COLOUR: brand hex -> LINEAR working space. Shading happens in linear;
-      sRGB encode is the LAST thing the fragment shader does. Doing it the other
-      way round is the single biggest reason amateur WebGL looks muddy. ── */
-const srgbToLinear = (c) => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
-const hexLin = (h) => [1,3,5].map(i => srgbToLinear(parseInt(h.slice(i, i+2), 16) / 255));
-const BRAND = hexLin('#2C6BFF');   // the data colour — never tone-mapped
-const MARK  = hexLin('#ff8a3d');
+/* ══ L2 · COLOUR ═══════════════════════════════════════════════════════════════
+   Brand hex → LINEAR. Every blend, every accumulation, every blur happens in
+   linear light. sRGB encode happens ONCE, in the final composite. Doing bloom or
+   additive blending in sRGB is the single most common reason WebGL looks cheap:
+   the maths is wrong and the result goes grey and muddy at exactly the densities
+   you most want to read. `#2C6BFF` is DATA, so it is never tone-mapped. */
+const s2l = (c) => c <= 0.04045 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4);
+const hexLin = (h) => [1,3,5].map(i => s2l(parseInt(h.slice(i,i+2),16)/255));
+const BRAND = hexLin('#2C6BFF'), BRIGHT = hexLin('#7FB2FF'), MARK = hexLin('#FF8A3D');
 
-const VS = `#version 300 es
+const sh=(t,src)=>{const s=gl.createShader(t);gl.shaderSource(s,src);gl.compileShader(s);
+  if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(s));return s;};
+const prog=(v,f)=>{const p=gl.createProgram();gl.attachShader(p,sh(gl.VERTEX_SHADER,v));
+  gl.attachShader(p,sh(gl.FRAGMENT_SHADER,f));gl.linkProgram(p);
+  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));return p;};
+
+/* ══ THE DATA ═══════════════════════════════════════════════════════════════════
+   326 distinct outcomes across 10,000 draws — a portfolio total is a sum of subsets
+   of discrete deal values, so the support is genuinely discrete and lumpy. Equal
+   outcomes stack, and that stack height IS the probability mass.
+
+   Pass 1 rendered that as hard dot columns and it read as a glitch. The fix is NOT
+   to jitter x — that fabricates positions the simulation never produced. It is to
+   deposit each sample as a WIDE soft gaussian, so neighbouring columns merge into a
+   continuous field. Position stays exact; only the footprint of the ink changes. */
+const S=DATA.samples, N=S.length;
+const lo=S[0], hi=S[N-1], span=(hi-lo)||1;
+const counts=new Map(); for(const v of S) counts.set(v,(counts.get(v)??0)+1);
+const maxCount=Math.max(...counts.values());
+
+const X0=-1.52, X1=1.52, XW=X1-X0, FLOOR=-0.50, TOP=1.02;
+const centres=new Float32Array(N*3), attr=new Float32Array(N*2);
+const seen=new Map();
+/* Deterministic hash, NOT a golden-angle walk. A cosine sequence over k is regular,
+   and a regular sequence projected to a pixel grid produces the lattice/moiré that
+   made pass 3 read as a woven texture. This is the ONLY randomised quantity in the
+   frame and it lives on z, which carries no data: x is the exact simulated value,
+   y is the exact rank within its stack. Depth is presentation; value is not. */
+const hash=(n)=>{const x=Math.sin(n*127.1+311.7)*43758.5453; return x-Math.floor(x);};
+for(let i=0;i<N;i++){
+  const v=S[i], k=seen.get(v)??0; seen.set(v,k+1);
+  const c=counts.get(v), t=(v-lo)/span;
+  centres[i*3]  = X0 + t*XW;
+  centres[i*3+1]= FLOOR + (k/maxCount)*(TOP-FLOOR)*0.70;
+  centres[i*3+2]= (hash(i*1.37+k*0.61)*2.0-1.0)*0.34;
+  attr[i*2]   = Math.min(1, c/maxCount);
+  attr[i*2+1] = k/Math.max(1,(c-1)||1);
+}
+
+/* ══ DENSITY ENVELOPE ══════════════════════════════════════════════════════════
+   A kernel density estimate over the same samples. This is a MODELLING CHOICE —
+   the bandwidth is a decision the data does not make for you — so the bandwidth is
+   printed in the legend rather than hidden. It is drawn because the discrete stacks
+   alone leave the reader no way to see the law behind the lumps, and because the
+   three reported markers mean nothing without the shape they were drawn from. */
+const H_BW = 0.016*span, M = 420;
+const dens = new Float32Array(M+1);
+for(let j=0;j<=M;j++){
+  const x = lo + (j/M)*span; let s=0;
+  for(const [v,c] of counts){ const d=(x-v)/H_BW; if(d>-4.5&&d<4.5) s += c*Math.exp(-0.5*d*d); }
+  dens[j]=s;
+}
+const maxDens=Math.max(...dens);
+const densAt=(v)=>{const j=Math.max(0,Math.min(M,Math.round(((v-lo)/span)*M)));return dens[j]/maxDens;};
+/* 0.76, not 1.0: the top of the plate is a HEADER BAND reserved for the marker
+   labels. Letting the curve use the full height forced the p50 label to be clamped
+   down on top of its own cap. Reserving the band is the fix; clamping the label was
+   the symptom. */
+const envY=(u)=>FLOOR + u*(TOP-FLOOR)*0.76;
+
+const CLOUD_V=`#version 300 es
 precision highp float;
-layout(location=0) in vec2 quad;      // unit quad, instanced
-layout(location=1) in vec3 centre;    // per-point position
-layout(location=2) in float dens;     // local density 0..1
-uniform mat4 uMVP; uniform float uSize; uniform vec2 uAspect;
-out float vDens; out vec2 vQuad;
+layout(location=0) in vec2 quad;
+layout(location=1) in vec3 centre;
+layout(location=2) in vec2 a;             // x = column mass, y = height in column
+uniform mat4 uMVP; uniform float uSize; uniform vec2 uAspect; uniform float uWPN;
+out vec2 vQuad; out float vMass, vH, vFog, vWy;
 void main(){
-  vDens = dens; vQuad = quad;
-  vec4 clip = uMVP * vec4(centre, 1.0);
-  // Screen-space billboard so points stay round and DPI-crisp at any depth.
+  vQuad=quad; vMass=a.x; vH=a.y;
+  // World-space y of this corner of the deposit. The quad is expanded in CLIP space,
+  // so the world height it covers has to be reconstructed from the NDC-to-world
+  // scale measured at the floor (uWPN) — otherwise the fragment stage has no way to
+  // know where the baseline is and the cloud bleeds straight through the rule.
+  vWy = centre.y + quad.y * uSize * uWPN;
+  vec4 clip = uMVP * vec4(centre,1.0);
+  // AERIAL PERSPECTIVE. Depth is otherwise invisible in an additive cloud, and a
+  // cloud with no depth cue is what makes 3-D look like a flat smear.
+  vFog = clamp((centre.z + 0.38) / 0.76, 0.0, 1.0);
   clip.xy += quad * uSize * uAspect * clip.w;
   gl_Position = clip;
 }`;
 
-const FS = `#version 300 es
+const CLOUD_F=`#version 300 es
 precision highp float;
-in float vDens; in vec2 vQuad;
-uniform vec3 uColA; uniform vec3 uColB;
+in vec2 vQuad; in float vMass, vH, vFog, vWy;
+uniform vec3 uLo, uHi; uniform float uGain, uFloor;
 out vec4 frag;
-vec3 linearToSrgb(vec3 c){
-  return mix(c*12.92, 1.055*pow(max(c,1e-5), vec3(1.0/2.4)) - 0.055, step(0.0031308, c));
-}
 void main(){
-  float r = dot(vQuad, vQuad);
-  if (r > 1.0) discard;                       // round sprite
-  float edge = smoothstep(1.0, 0.55, r);      // soft edge = free AA
-  // Density -> value, in LINEAR space. Denser regions read brighter and warmer.
-  vec3 lin = mix(uColA, uColB, vDens) * (0.55 + 0.85 * vDens);
-  frag = vec4(linearToSrgb(lin), edge * (0.30 + 0.55 * vDens));
+  float r2 = dot(vQuad,vQuad);
+  if (r2 > 1.0) discard;
+  if (vWy < uFloor) discard;              // the cloud RESTS on the rule, never through it
+  // BROAD gaussian, deliberately wider than the column pitch. Overlapping deposits
+  // sum into a smooth field instead of reading as a stipple of separate dots.
+  float g = exp(-r2 * 1.75) - 0.174;      // -exp(-1.75) so the footprint ends at 0
+  g = max(g, 0.0);
+  vec3 lin = mix(uLo, uHi, vMass * (0.40 + 0.60*(1.0-vH)));
+  float near = mix(0.42, 1.0, vFog);      // far samples recede
+  frag = vec4(lin * g * near * uGain * (0.30 + 0.70*vMass), g * near * 0.55);
 }`;
 
-const sh = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s);
-  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
-const prog = gl.createProgram();
-gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
-gl.linkProgram(prog);
-if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+/* Flat coloured geometry: markers, baseline, ticks, envelope. Emissive, no shading —
+   these are references, not objects, and shading a reference is a lie about depth. */
+const FLAT_V=`#version 300 es
+precision highp float; layout(location=0) in vec3 p; uniform mat4 uMVP;
+out float vY; void main(){ vY=p.y; gl_Position=uMVP*vec4(p,1.0); }`;
+const FLAT_F=`#version 300 es
+precision highp float; in float vY; uniform vec3 uCol;
+uniform float uTop, uBot, uGain, uFade;
+out vec4 f;
+void main(){
+  float t = clamp((vY-uBot)/max(uTop-uBot,1e-4), 0.0, 1.0);
+  f = vec4(uCol * uGain * (1.0 - uFade*t), 1.0);
+}`;
 
-/* ── THE DATA. x = outcome value. The samples are SORTED and heavily repeated
-      (326 distinct values across 10,000 draws, because a portfolio total is a sum
-      of subsets of discrete deal values). That repetition IS the signal: equal
-      outcomes stack into a column whose height is the probability mass. A
-      histogram would choose a bin width and destroy exactly that. ── */
-const S = DATA.samples, N = S.length;
-const lo = S[0], hi = S[N-1], span = (hi - lo) || 1;
-const counts = new Map();
-for (const v of S) counts.set(v, (counts.get(v) ?? 0) + 1);
-const maxCount = Math.max(...counts.values());
+const cloudP=prog(CLOUD_V,CLOUD_F), flatP=prog(FLAT_V,FLAT_F);
 
-const centres = new Float32Array(N * 3);
-const dens = new Float32Array(N);
-const seen = new Map();
-for (let i = 0; i < N; i++) {
-  const v = S[i];
-  const k = (seen.get(v) ?? 0); seen.set(v, k + 1);
-  const c = counts.get(v);
-  const x = ((v - lo) / span) * 3.30 - 1.65;
-  // Stack identical outcomes upward; spread them slightly in depth so the column
-  // reads as a volume of samples rather than a solid bar.
-  const y = (k / maxCount) * 1.05 - 0.46;
-  const z = ((k * 2654435761 % 1000) / 1000 - 0.5) * 0.34;
-  centres[i*3] = x; centres[i*3+1] = y; centres[i*3+2] = z;
-  dens[i] = Math.min(1, c / maxCount);
-}
+/* ── geometry buffers ── */
+const vao=gl.createVertexArray(); gl.bindVertexArray(vao);
+const mk=(data,loc,size,div)=>{const b=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,b);
+  gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);gl.enableVertexAttribArray(loc);
+  gl.vertexAttribPointer(loc,size,gl.FLOAT,false,0,0);if(div)gl.vertexAttribDivisor(loc,div);return b;};
+mk(new Float32Array([-1,-1,1,-1,-1,1,1,1]),0,2,0);
+mk(centres,1,3,1); mk(attr,2,2,1);
 
-const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
-const quad = new Float32Array([-1,-1, 1,-1, -1,1, 1,1]);
-const bq = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bq);
-gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
-gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-const bc = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bc);
-gl.bufferData(gl.ARRAY_BUFFER, centres, gl.STATIC_DRAW);
-gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(1, 1);
-const bd = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bd);
-gl.bufferData(gl.ARRAY_BUFFER, dens, gl.STATIC_DRAW);
-gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(2, 1);
-
-/* ── mat4, hand-written. This is the entire maths dependency. ── */
-const mul = (a,b)=>{const o=new Float32Array(16);for(let i=0;i<4;i++)for(let j=0;j<4;j++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];o[i*4+j]=s;}return o;};
-const persp=(f,ar,n,fa)=>{const t=1/Math.tan(f/2);return new Float32Array([t/ar,0,0,0, 0,t,0,0, 0,0,(fa+n)/(n-fa),-1, 0,0,2*fa*n/(n-fa),0]);};
-function lookAt(e,c,u){const z=norm(sub(e,c)),x=norm(cross(u,z)),y=cross(z,x);
-  return new Float32Array([x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0, -dot(x,e),-dot(y,e),-dot(z,e),1]);}
+/* ── mat4 ── */
+const mul=(a,b)=>{const o=new Float32Array(16);for(let i=0;i<4;i++)for(let j=0;j<4;j++){let s=0;
+  for(let k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];o[i*4+j]=s;}return o;};
+const persp=(f,ar,n,fa)=>{const t=1/Math.tan(f/2);
+  return new Float32Array([t/ar,0,0,0,0,t,0,0,0,0,(fa+n)/(n-fa),-1,0,0,2*fa*n/(n-fa),0]);};
 const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]], dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
 const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
-const norm=(a)=>{const l=Math.hypot(...a)||1;return [a[0]/l,a[1]/l,a[2]/l];};
+const norm=(a)=>{const l=Math.hypot(...a)||1;return[a[0]/l,a[1]/l,a[2]/l];};
+const lookAt=(e,c,u)=>{const z=norm(sub(e,c)),x=norm(cross(u,z)),y=cross(z,x);
+  return new Float32Array([x[0],y[0],z[0],0,x[1],y[1],z[1],0,x[2],y[2],z[2],0,-dot(x,e),-dot(y,e),-dot(z,e),1]);};
 
-const W = gl.canvas.width, H = gl.canvas.height;
-gl.viewport(0,0,W,H);
-gl.clearColor(...hexLin('#0b1020'), 1);
-gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);   // additive: density accumulates
-gl.disable(gl.DEPTH_TEST);
-gl.clear(gl.COLOR_BUFFER_BIT);
+const W=cv.width, H=cv.height;
+/* Near-orthographic, and the eye sits at x = 0 ON PURPOSE. An off-axis eye tilts
+   every horizontal in screen space, which turned the tick row into a slope in the
+   last pass. Elevation alone gives the depth read; lateral offset only costs
+   alignment. */
+const view=lookAt([0.0,0.66,7.6],[0.0,0.17,0],[0,1,0]);
+const mvp=mul(persp(0.205,W/H,0.1,60),view);
 
-const view = lookAt([0.85, 1.05, 5.6], [0.0, 0.06, 0], [0,1,0]);
-// FOV 0.62 -> 0.26 rad. Weak perspective keeps the percentile planes parallel instead of
-// splaying into wedges, and stops depth from distorting the value axis.
-const mvp = mul(persp(0.26, W/H, 0.1, 60), view);
+/* ══ HDR TARGETS + BLOOM ═══════════════════════════════════════════════════════
+   The cloud accumulates far past 1.0 where mass is high. Clipping that at the
+   framebuffer throws away exactly the dynamic range that makes a dense core read as
+   dense. Render to float, bright-pass, blur separably at quarter res, composite
+   once. This is the step that separates "expensive" from "canvas demo". */
+const fmt = F16 ? gl.RGBA16F : gl.RGBA8, typ = F16 ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE;
+const target=(w,h)=>{const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);
+  gl.texImage2D(gl.TEXTURE_2D,0,fmt,w,h,0,gl.RGBA,typ,null);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+  const f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
+  return {t,f,w,h};};
+const scene=target(W,H), bw=W>>2, bh=H>>2, bA=target(bw,bh), bB=target(bw,bh);
 
-gl.useProgram(prog);
-gl.uniformMatrix4fv(gl.getUniformLocation(prog,'uMVP'), false, mvp);
-gl.uniform1f(gl.getUniformLocation(prog,'uSize'), 0.0058);
-gl.uniform2f(gl.getUniformLocation(prog,'uAspect'), H/W, 1);
-gl.uniform3fv(gl.getUniformLocation(prog,'uColA'), BRAND.map(c=>c*0.55));
-gl.uniform3fv(gl.getUniformLocation(prog,'uColB'), BRAND);
-gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, N);
+const FS_V=`#version 300 es
+precision highp float; layout(location=0) in vec2 q; out vec2 uv;
+void main(){ uv=q*0.5+0.5; gl_Position=vec4(q,0.0,1.0); }`;
+const BRIGHT_F=`#version 300 es
+precision highp float; in vec2 uv; uniform sampler2D uT; out vec4 f;
+void main(){ vec3 c=texture(uT,uv).rgb;
+  float l=dot(c,vec3(0.2126,0.7152,0.0722));
+  f=vec4(c*smoothstep(0.12,0.70,l),1.0); }`;
+const BLUR_F=`#version 300 es
+precision highp float; in vec2 uv; uniform sampler2D uT; uniform vec2 uDir; out vec4 f;
+void main(){
+  float w[5]=float[](0.2270,0.1946,0.1216,0.0540,0.0162);   // 9-tap gaussian, separable
+  vec3 c=texture(uT,uv).rgb*w[0];
+  for(int i=1;i<5;i++){ vec2 o=uDir*float(i);
+    c+=texture(uT,uv+o).rgb*w[i]; c+=texture(uT,uv-o).rgb*w[i]; }
+  f=vec4(c,1.0); }`;
+const COMP_F=`#version 300 es
+precision highp float; in vec2 uv; uniform sampler2D uScene, uBloom;
+uniform vec3 uBg; out vec4 f;
+vec3 lts(vec3 c){ return mix(c*12.92, 1.055*pow(max(c,1e-5),vec3(1.0/2.4))-0.055, step(0.0031308,c)); }
+void main(){
+  vec3 sc=texture(uScene,uv).rgb, bl=texture(uBloom,uv).rgb;
+  // Background gradient in LINEAR space — a flat black plate reads as "unfinished".
+  vec2 d=uv-vec2(0.40,0.34);
+  vec3 bg=uBg*(1.0 - 0.62*smoothstep(0.12,1.00,length(d*vec2(1.0,1.45))));
+  vec3 lin = bg + sc + bl*0.90;
+  // Reinhard on the COMPOSITE ONLY, so accumulated density rolls off instead of
+  // clipping to white. Applied after the data colour is placed, so it shapes LIGHT
+  // and never re-grades a brand hue.
+  lin = lin/(1.0+lin*0.40);
+  f=vec4(lts(lin),1.0); }`;
 
-/* ── The three numbers the product actually shows, as planes through the cloud. ── */
-const LVS=`#version 300 es
-precision highp float; layout(location=0) in vec3 p; uniform mat4 uMVP;
-void main(){ gl_Position = uMVP * vec4(p,1.0); }`;
-const LFS=`#version 300 es
-precision highp float; uniform vec3 uCol; out vec4 f;
-vec3 lts(vec3 c){return mix(c*12.92,1.055*pow(max(c,1e-5),vec3(1.0/2.4))-0.055,step(0.0031308,c));}
-void main(){ f = vec4(lts(uCol), 0.9); }`;
-const lp = gl.createProgram();
-gl.attachShader(lp, sh(gl.VERTEX_SHADER, LVS)); gl.attachShader(lp, sh(gl.FRAGMENT_SHADER, LFS));
-gl.linkProgram(lp); gl.useProgram(lp);
-gl.uniformMatrix4fv(gl.getUniformLocation(lp,'uMVP'), false, mvp);
-gl.uniform3fv(gl.getUniformLocation(lp,'uCol'), MARK);
-const lv = gl.createVertexArray(); gl.bindVertexArray(lv);
-const lb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, lb);
-gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
-for (const v of [DATA.p10, DATA.p50, DATA.p90]) {
-  const x = ((v - lo) / span) * 3.30 - 1.65;
-  const w = 0.004;   // a LINE, not a plane: the reference must not outweigh the data
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-    x-w,-0.50,0, x-w,0.74,0, x+w,-0.50,0, x+w,0.74,0,
-  ]), gl.STATIC_DRAW);
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+const brightP=prog(FS_V,BRIGHT_F), blurP=prog(FS_V,BLUR_F), compP=prog(FS_V,COMP_F);
+const qv=gl.createVertexArray(); gl.bindVertexArray(qv);
+mk(new Float32Array([-1,-1,3,-1,-1,3]),0,2,0);
+const blit=(p,set)=>{gl.useProgram(p);gl.bindVertexArray(qv);set&&set(p);gl.drawArrays(gl.TRIANGLES,0,3);};
+
+/* ── PASS 1 · the cloud, into HDR ── */
+gl.bindFramebuffer(gl.FRAMEBUFFER,scene.f); gl.viewport(0,0,W,H);
+gl.clearColor(0,0,0,1); gl.clear(gl.COLOR_BUFFER_BIT);
+gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA,gl.ONE); gl.disable(gl.DEPTH_TEST);
+gl.bindVertexArray(vao); gl.useProgram(cloudP);
+gl.uniformMatrix4fv(gl.getUniformLocation(cloudP,'uMVP'),false,mvp);
+gl.uniform1f(gl.getUniformLocation(cloudP,'uSize'),0.0205);
+gl.uniform1f(gl.getUniformLocation(cloudP,'uGain'),0.62);
+gl.uniform2f(gl.getUniformLocation(cloudP,'uAspect'),H/W,1);
+// Measured, not assumed: world units per NDC-y at the floor plane.
+const ndcY=(x,y,z)=>{const c=[1,3].map(r=>mvp[0*4+r]*x+mvp[1*4+r]*y+mvp[2*4+r]*z+mvp[3*4+r]);
+  return c[0]/c[1];};
+gl.uniform1f(gl.getUniformLocation(cloudP,'uWPN'),0.2/(ndcY(0,FLOOR+0.2,0)-ndcY(0,FLOOR,0)));
+gl.uniform1f(gl.getUniformLocation(cloudP,'uFloor'),FLOOR);
+gl.uniform3fv(gl.getUniformLocation(cloudP,'uLo'),BRAND.map(c=>c*0.42));
+gl.uniform3fv(gl.getUniformLocation(cloudP,'uHi'),BRIGHT.map(c=>c*1.35));
+gl.drawArraysInstanced(gl.TRIANGLE_STRIP,0,4,N);
+
+/* ── flat geometry, OWN VAO ──────────────────────────────────────────────────────
+   Reusing the fullscreen-triangle VAO here re-pointed its attribute 0 at this
+   buffer, so every post-process blit afterwards drew a degenerate triangle and the
+   composite never reached the canvas. Vertex array state is per-VAO and it fails
+   silently: the frame just goes black. */
+const fb=gl.createBuffer();
+const fvao=gl.createVertexArray(); gl.bindVertexArray(fvao);
+gl.useProgram(flatP);
+gl.bindBuffer(gl.ARRAY_BUFFER,fb); gl.enableVertexAttribArray(0);
+gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+const uF=(n)=>gl.getUniformLocation(flatP,n);
+gl.uniformMatrix4fv(uF('uMVP'),false,mvp);
+const strip=(arr,col,gain,fade,bot,top)=>{
+  gl.uniform3fv(uF('uCol'),col); gl.uniform1f(uF('uGain'),gain);
+  gl.uniform1f(uF('uFade'),fade); gl.uniform1f(uF('uBot'),bot); gl.uniform1f(uF('uTop'),top);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(arr),gl.STATIC_DRAW);
+  gl.drawArrays(gl.TRIANGLE_STRIP,0,arr.length/3);
+};
+
+/* baseline: a hairline, NOT a plane. The skewed floor slab in pass 1 read as broken
+   geometry and competed with the data for attention. */
+strip([X0,FLOOR-0.0020,0, X0,FLOOR+0.0020,0, X1,FLOOR-0.0020,0, X1,FLOOR+0.0020,0],
+      hexLin('#26355a'),1.0,0,FLOOR,FLOOR);
+const TICKS=8;
+for(let i=0;i<=TICKS;i++){
+  const x=X0+(i/TICKS)*XW;
+  strip([x-0.0016,FLOOR,0, x-0.0016,FLOOR-0.030,0, x+0.0016,FLOOR,0, x+0.0016,FLOOR-0.030,0],
+        hexLin('#26355a'),1.0,0,FLOOR,FLOOR);
 }
 
-/* ── THE FLOOR AND ITS TICKS. A figure you cannot read a value off is decoration.
-      Drawn dim so it frames the data instead of competing with it. ── */
-gl.uniform3fv(gl.getUniformLocation(lp,'uCol'), hexLin('#26314a'));
-const axY = -0.50;
-gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-  -1.68,axY,-0.20, -1.68,axY,0.20, 1.68,axY,-0.20, 1.68,axY,0.20,
-]), gl.STATIC_DRAW);
-gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+/* density envelope — drawn twice: a wide dim pass for the halo, a hairline for the
+   read. The bloom chain picks the hairline up and does the rest. */
+const envStrip=(w)=>{const a=[];for(let j=0;j<=M;j++){
+  const x=X0+(j/M)*XW, y=envY(dens[j]/maxDens);
+  a.push(x,y-w,0, x,y+w,0);} return a;};
+strip(envStrip(0.018), BRIGHT.map(c=>c*0.085),1.0,0,FLOOR,TOP);
+strip(envStrip(0.0024),BRIGHT.map(c=>c*1.55),1.0,0,FLOOR,TOP);
 
-const TICKS = 7;
-for (let i = 0; i <= TICKS; i++) {
-  const x = -1.65 + (i / TICKS) * 3.30;
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
-    x-0.0022,axY,-0.20, x-0.0022,axY-0.055,-0.20, x+0.0022,axY,-0.20, x+0.0022,axY-0.055,-0.20,
-  ]), gl.STATIC_DRAW);
-  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+/* the three markers. Each rises to the density at its own value, so the reference
+   MEETS the mass it refers to instead of slicing the whole frame. */
+const MARKS=[[DATA.p10,'p10'],[DATA.p50,'p50'],[DATA.p90,'p90']];
+const markTop=(v)=>envY(densAt(v))+0.115;
+for(const [v] of MARKS){
+  const x=X0+((v-lo)/span)*XW, w=0.0028, tp=markTop(v);
+  strip([x-w,FLOOR,0, x-w,tp,0, x+w,FLOOR,0, x+w,tp,0], MARK,1.45,0.55,FLOOR,tp);
+  strip([x-0.011,tp-0.006,0, x-0.011,tp,0, x+0.011,tp-0.006,0, x+0.011,tp,0], MARK,2.20,0,tp,tp);
 }
+gl.disable(gl.BLEND);
+
+/* ── PASS 2-5 · bright, blur ×4, composite ── */
+gl.bindFramebuffer(gl.FRAMEBUFFER,bA.f); gl.viewport(0,0,bw,bh);
+blit(brightP,p=>{gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,scene.t);
+  gl.uniform1i(gl.getUniformLocation(p,'uT'),0);});
+for(const [src,dst,dir] of [[bA,bB,[1/bw,0]],[bB,bA,[0,1/bh]],[bA,bB,[2/bw,0]],[bB,bA,[0,2/bh]]]){
+  gl.bindFramebuffer(gl.FRAMEBUFFER,dst.f); gl.viewport(0,0,bw,bh);
+  blit(blurP,p=>{gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,src.t);
+    gl.uniform1i(gl.getUniformLocation(p,'uT'),0);
+    gl.uniform2f(gl.getUniformLocation(p,'uDir'),dir[0],dir[1]);});
+}
+gl.bindFramebuffer(gl.FRAMEBUFFER,null); gl.viewport(0,0,W,H);
+blit(compP,p=>{
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,scene.t);
+  gl.uniform1i(gl.getUniformLocation(p,'uScene'),0);
+  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,bA.t);
+  gl.uniform1i(gl.getUniformLocation(p,'uBloom'),1);
+  gl.uniform3fv(gl.getUniformLocation(p,'uBg'),hexLin('#0e1628'));
+});
 gl.finish();
 
-/* Tick VALUES in DOM text, positioned by projecting the same coordinates. Screen-space type
-   stays crisp at any DPI; text baked into a GL texture is the classic amateur tell. */
-const proj = (x, y, z) => {
-  const cl = [0,1,2,3].map(r => mvp[0*4+r]*x + mvp[1*4+r]*y + mvp[2*4+r]*z + mvp[3*4+r]);
-  return { sx: (cl[0]/cl[3]*0.5+0.5) * gl.canvas.clientWidth,
-           sy: (1-(cl[1]/cl[3]*0.5+0.5)) * gl.canvas.clientHeight };
-};
-const host = document.getElementById('overlay');
-for (let i = 0; i <= TICKS; i++) {
-  const t = i / TICKS;
-  const p2 = proj(-1.65 + t*3.30, axY - 0.075, -0.20);
-  const el = document.createElement('div');
-  el.className = 'tick';
-  el.style.left = p2.sx + 'px'; el.style.top = p2.sy + 'px';
-  el.textContent = '$' + Math.round((lo + t*span)/100/1000) + 'k';
-  host.appendChild(el);
+/* ── SCREEN-SPACE TYPE. Projected from the same matrix, rendered as DOM so it is
+      device-pixel crisp. Text baked into a GL texture at 1× is a classic tell. ── */
+const cw=cv.clientWidth, ch=cv.clientHeight;
+const proj=(x,y,z)=>{const c=[0,1,2,3].map(r=>mvp[0*4+r]*x+mvp[1*4+r]*y+mvp[2*4+r]*z+mvp[3*4+r]);
+  return {sx:(c[0]/c[3]*0.5+0.5)*cw, sy:(1-(c[1]/c[3]*0.5+0.5))*ch};};
+const host=document.getElementById('overlay');
+const money=(c)=>{const k=c/100/1000;return k>=1000?'$'+(k/1000).toFixed(2)+'m':'$'+Math.round(k)+'k';};
+/* One shared y for the whole tick row, offset in SCREEN space from the projected
+   baseline rather than projected from a world-space offset. Projecting the offset
+   made the row's distance from the rule depend on the camera, and pass 3 pushed it
+   off the bottom of the plate entirely. Clamped so it can never leave again. */
+const tickY=Math.min(ch-19, proj(0,FLOOR,0).sy + 15);
+for(let i=0;i<=TICKS;i++){
+  const t=i/TICKS, p2=proj(X0+t*XW,FLOOR,0);
+  const el=document.createElement('div'); el.className='tick';
+  el.style.left=Math.min(cw-30,Math.max(30,p2.sx))+'px'; el.style.top=tickY+'px';
+  el.textContent=money(lo+t*span); host.appendChild(el);
 }
-for (const [v, lab] of [[DATA.p10,'p10'],[DATA.p50,'p50'],[DATA.p90,'p90']]) {
-  const p2 = proj(((v - lo)/span)*3.30 - 1.65, 0.78, 0);
-  const el = document.createElement('div');
-  el.className = 'ptick';
-  el.style.left = p2.sx + 'px'; el.style.top = p2.sy + 'px';
-  el.textContent = lab;
-  host.appendChild(el);
+for(const [v,lab] of MARKS){
+  const p2=proj(X0+((v-lo)/span)*XW, markTop(v), 0);
+  const el=document.createElement('div'); el.className='ptick';
+  el.style.left=Math.min(cw-46,Math.max(46,p2.sx))+'px';
+  el.style.top=Math.max(46,p2.sy)+'px';
+  el.innerHTML='<b>'+lab+'</b><i>'+money(v)+'</i>'; host.appendChild(el);
 }
-
-const fmt = (c)=>'$'+Math.round(c/100).toLocaleString();
-document.getElementById('n').textContent = N.toLocaleString();
-document.getElementById('stats').textContent =
-  `${counts.size} distinct outcomes · p10 ${fmt(DATA.p10)} · p50 ${fmt(DATA.p50)} · p90 ${fmt(DATA.p90)}`;
-document.title = 'READY';
+const mean=S.reduce((a,b)=>a+b,0)/N;
+const sd=Math.sqrt(S.reduce((a,b)=>a+(b-mean)*(b-mean),0)/N);
+const row=(k,v)=>'<div><span>'+k+'</span>'+v+'</div>';
+document.getElementById('ro').innerHTML =
+  row('runs',N.toLocaleString()) + row('distinct',counts.size.toLocaleString()) +
+  '<hr>' + row('mean',money(mean)) + row('sd',money(sd)) + row('max',money(hi));
+document.getElementById('n').textContent=N.toLocaleString();
+document.getElementById('stats').textContent=
+  counts.size+' distinct outcomes · '+(F16?'HDR float':'8-bit')+' · bloom · linear-light';
+document.title='READY';
 </script>
