@@ -43,9 +43,20 @@ export const BANDWIDTH_FRACTION = 0.016;
 const TICKS = 8;
 
 export interface RenderResult {
+  /* A DISCRIMINANT, because without one this union does not narrow. `StageRefusal` carries
+     `kind: 'refused'`, so a caller writing `if ('kind' in out && out.kind === 'refused')`
+     gets no narrowing in the ELSE branch — the negation of a compound condition is not a
+     type guard — and every field access on the success path was an error. Nothing caught
+     it until `tsconfig.json` was added here, because esbuild strips types rather than
+     checking them. */
+  readonly kind: 'rendered';
   readonly distinct: number;
   readonly hdr: boolean;
   readonly maxCount: number;
+  readonly samples: number;
+  /** Redraw the frame. Draw calls only — no geometry or density is recomputed. */
+  readonly redraw: () => void;
+  readonly dispose: () => void;
 }
 
 export function renderRiskCloud(
@@ -116,67 +127,87 @@ export function renderRiskCloud(
     lookAt([0, 0.66, 7.6], [0, 0.17, 0], [0, 1, 0]),
   );
 
-  /* ── PASS 1 · the cloud and its references, into HDR ── */
-  const { gl } = stage;
-  stage.bindTarget(stage.scene);
-  gl.clearColor(0, 0, 0, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  beginAdditive(gl);
+  const marks: readonly (readonly [number, string])[] =
+    [[data.p10, 'p10'], [data.p50, 'p50'], [data.p90, 'p90']];
+  const markTop = (v: number) => envY(densityAt(v)) + 0.115;
 
-  cloud.draw(mvp, {
-    size: 0.0205,
-    lo: exposure(BRAND.brand, -1.25),
-    hi: exposure(BRAND.brandBright, 0.43),
-    gain: 0.62,
-    floorY: FLOOR,
-    // Declared, not inherited. The depth ramp has to match the spread the geometry above
-    // actually uses (±0.34), and a surface that leaves it to the package default is
-    // shading against a range its samples never occupy.
-    depthRange: 0.34,
-  });
-
-  const rule = hexToLinear(BRAND_HEX.rule);
-  lines.rule(mvp, X0, FLOOR, X1, FLOOR, 0.0020, { colour: rule, gain: 1 });
-  for (let i = 0; i <= TICKS; i++) {
-    const x = X0 + (i / TICKS) * XW;
-    lines.rule(mvp, x, FLOOR, x, FLOOR - 0.030, 0.0016, { colour: rule, gain: 1 });
-  }
-
-  // The envelope twice: a wide dim pass for the halo, a hairline for the read. The bloom
-  // chain does the rest — which is why the hairline is pushed above 1.0 in exposure
-  // rather than being drawn thicker.
   const curve = new Float32Array((M + 1) * 2);
   for (let j = 0; j <= M; j++) {
     curve[j * 2] = X0 + (j / M) * XW;
     curve[j * 2 + 1] = envY(density[j]! / maxDensity);
   }
-  lines.curve(mvp, curve, 0.018, { colour: exposure(BRAND.brandBright, -3.55), gain: 1 });
-  lines.curve(mvp, curve, 0.0024, { colour: exposure(BRAND.brandBright, 0.63), gain: 1 });
+  const rule = hexToLinear(BRAND_HEX.rule);
+  const { gl } = stage;
 
-  /* Each marker rises to the density at its OWN value, so the reference meets the mass
-     it refers to instead of slicing the whole frame. */
-  const marks: readonly (readonly [number, string])[] =
-    [[data.p10, 'p10'], [data.p50, 'p50'], [data.p90, 'p90']];
-  const markTop = (v: number) => envY(densityAt(v)) + 0.115;
-  for (const [v] of marks) {
-    const x = X0 + ((v - lo) / span) * XW, top = markTop(v);
-    lines.rule(mvp, x, FLOOR, x, top, 0.0028,
-      { colour: BRAND.reference, gain: 1.45, fade: 0.55, fadeFrom: FLOOR, fadeTo: top });
-    lines.rule(mvp, x - 0.011, top - 0.003, x + 0.011, top - 0.003, 0.003,
-      { colour: BRAND.reference, gain: 2.2 });
-  }
-  endPass(gl);
+  /* ── THE FRAME ────────────────────────────────────────────────────────────────────
+     Separated from the setup above ON PURPOSE, and not only to be measurable. A surface
+     that can only draw once cannot respond to a data change, cannot resize, and cannot
+     be driven by L3 — so "can it redraw" is a design question before it is a performance
+     one. Everything expensive and one-time (the sample geometry, the kernel density
+     estimate, the GPU buffers) is built above; this function does draw calls only. */
+  const frame = () => {
+    stage.bindTarget(stage.scene);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    beginAdditive(gl);
 
-  /* ── PASS 2 · L2 resolves it ── */
-  pipeline.resolve({ plate: hexToLinear(BRAND_HEX.plate) });
+    cloud.draw(mvp, {
+      size: 0.0205,
+      lo: exposure(BRAND.brand, -1.25),
+      hi: exposure(BRAND.brandBright, 0.43),
+      gain: 0.62,
+      floorY: FLOOR,
+      // Declared, not inherited. The depth ramp has to match the spread the geometry
+      // above actually uses (±0.34), and a surface that leaves it to the package default
+      // is shading against a range its samples never occupy.
+      depthRange: 0.34,
+    });
+
+    lines.rule(mvp, X0, FLOOR, X1, FLOOR, 0.0020, { colour: rule, gain: 1 });
+    for (let i = 0; i <= TICKS; i++) {
+      const x = X0 + (i / TICKS) * XW;
+      lines.rule(mvp, x, FLOOR, x, FLOOR - 0.030, 0.0016, { colour: rule, gain: 1 });
+    }
+
+    // The envelope twice: a wide dim pass for the halo, a hairline for the read. The
+    // bloom chain does the rest — which is why the hairline is pushed above 1.0 in
+    // exposure rather than being drawn thicker.
+    lines.curve(mvp, curve, 0.018, { colour: exposure(BRAND.brandBright, -3.55), gain: 1 });
+    lines.curve(mvp, curve, 0.0024, { colour: exposure(BRAND.brandBright, 0.63), gain: 1 });
+
+    /* Each marker rises to the density at its OWN value, so the reference meets the mass
+       it refers to instead of slicing the whole frame. */
+    for (const [v] of marks) {
+      const x = X0 + ((v - lo) / span) * XW, top = markTop(v);
+      lines.rule(mvp, x, FLOOR, x, top, 0.0028,
+        { colour: BRAND.reference, gain: 1.45, fade: 0.55, fadeFrom: FLOOR, fadeTo: top });
+      lines.rule(mvp, x - 0.011, top - 0.003, x + 0.011, top - 0.003, 0.003,
+        { colour: BRAND.reference, gain: 2.2 });
+    }
+    endPass(gl);
+
+    /* L2 resolves it: bright pass → blur ×4 → composite → one sRGB encode. */
+    pipeline.resolve({ plate: hexToLinear(BRAND_HEX.plate) });
+  };
+
+  frame();
 
   /* ── SCREEN-SPACE TYPE, projected through the same matrix ───────────────────────
      DOM, not a GL texture: canvas text at 1× is a classic tell (§4). And positioned by
      `projectScreen` rather than by a hand-written copy of the projection, so a label
-     cannot drift from the geometry it names. */
+     cannot drift from the geometry it names. Laid out once — it does not move between
+     frames, so redrawing it every frame would be work with no output. */
   layOutType(stage, overlay, { lo, span, marks, markTop, mvp });
 
-  return { distinct: counts.size, hdr: stage.hdr, maxCount };
+  return {
+    kind: 'rendered',
+    distinct: counts.size,
+    hdr: stage.hdr,
+    maxCount,
+    samples: N,
+    redraw: frame,
+    dispose: () => { cloud.dispose(); lines.dispose(); stage.dispose(); },
+  };
 }
 
 function money(cents: number): string {

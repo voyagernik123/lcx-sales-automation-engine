@@ -1,0 +1,19 @@
+{
+  "//": "The P1 gate surface is the REFERENCE LANE that nine more surfaces get written against, and until this file existed it was checked by nothing: esbuild bundles TypeScript by stripping types, it does not verify them. A reference implementation that does not type-check is a reference implementation that teaches the wrong thing.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "paths": { "@lcx/gl": ["../../../packages/gl/src/index.ts"] }
+  },
+  "include": ["surface.ts", "entry.ts", "perf.ts"]
+}

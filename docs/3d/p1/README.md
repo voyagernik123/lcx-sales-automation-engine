@@ -24,6 +24,7 @@ rather than being noticed later.
 | gate | required | measured |
 |---|---|---|
 | Brand hex exact after tone mapping | `#2C6BFF` in, `#2C6BFF` out | **exact, whole palette** — `assertBrandFidelity()` returns `[]` |
+| **60 fps on M1** | ≤ 16.67 ms/frame | **4.41 ms/frame — 227 fps**, on an actual Apple M1 / 8 GB via ANGLE Metal. 3.8× headroom |
 | The spine reproduces P0 | no visible regression | **mean \|Δ\| 0.09/255, max 6/255, 0 channels over 8** of 13,789,500 |
 | L1 renderer | ≤ 45 KB raw | **10.4 KB** |
 | L2 look | ≤ 10 KB raw | **5.3 KB** |
@@ -78,6 +79,73 @@ runs a real driver and produces an image somebody reads.
 
 ---
 
+## Frame time — the half of the gate I first shipped without
+
+§7's P1 gate has two conditions: *"brand hex exact after tone mapping; 60fps on M1 proxy."*
+The first commit measured the colour half and reported it as though it were the gate. It
+was not. This is the other half.
+
+```bash
+node docs/3d/p1/serve.mjs        # then open http://127.0.0.1:5599/?perf=120
+```
+
+It is not a proxy: the host is an **Apple M1 / 8 GB**, which is the target device.
+
+| batch | ms / frame | frames / sec |
+|---:|---:|---:|
+| 100 | 0.066 | 15,151 |
+| 200 | 0.131 | 7,663 |
+| 400 | 3.583 | 279 |
+| 800 | 4.353 | 230 |
+| **1600** | **4.406** | **227** |
+
+**4.41 ms for a full frame** — 10,000 instanced gaussian deposits, ~30 reference strips, a
+bright pass, four separable blurs and a composite, at 3200 × 1480. 60 fps allows 16.67 ms,
+so there is **3.8× of headroom**. Setup (sample geometry, the kernel density estimate,
+buffer upload, shader compilation) is 26 ms and happens once.
+
+**The first two rows are the point, not noise.** 15,000 fps is not a measurement, it is the
+GPU being asked to do work and not yet having done it. Watching that collapse as the batch
+grows — and then *converge* between 800 and 1600 to within 1.2% — is the evidence that the
+trailing sync is genuinely being paid for. A single number with no convergence curve behind
+it would be worth nothing here, because:
+
+**The first version of this harness reported 5,000 fps and I nearly believed it.** It timed
+`redraw()` with `performance.now()` around a per-frame `gl.finish()`. Two things make that
+meaningless, and both are invisible in the output:
+
+1. Chromium runs WebGL in a **separate GPU process**. `gl.finish()` on the renderer side
+   returns once the command buffer is flushed, not once the GPU has finished. It times
+   bookkeeping.
+2. `performance.now()` is clamped to **100 µs**. A median of exactly 0.1 ms and a minimum
+   of exactly 0 are the clamp reporting itself.
+
+`EXT_disjoint_timer_query_webgl2` — the correct instrument — advertises itself as present
+and then never resolves a single query: all 120 came back disjoint or unresolved. That is
+reported as `UNAVAILABLE` with the reason, rather than quietly dropped or filled in.
+
+The harness also took two attempts to run at all. It first awaited `requestAnimationFrame`
+between polls and hung, because the browser pane reported `document.hidden === true` and a
+hidden tab fires no animation frames. Switching to `setTimeout(0)` hung for the same reason
+one level down — background timers are throttled to about one per second. Anything that
+must measure while a page is not foregrounded rules out every cooperative scheduler the
+platform offers, so the poll is a busy-wait with a wall-clock deadline.
+
+### The type-check hole this opened
+
+Making the surface measurable meant splitting `renderRiskCloud` into setup and a `redraw()`
+— which is better design anyway, since a surface that can only draw once cannot respond to
+a data change, resize, or be driven by L3. Adding `docs/3d/p1/tsconfig.json` to check that
+work found **three pre-existing type errors on the very first run**: `RenderResult` had no
+discriminant, so `if ('kind' in out && out.kind === 'refused')` never narrowed in its `else`
+branch and every field access on the success path was unchecked.
+
+`docs/3d/p1/*.ts` had been compiled only by esbuild, which **strips types rather than
+checking them**. The reference lane that nine more surfaces get written against had never
+been type-checked. It is now in `npm run type-check`.
+
+---
+
 ## Two captures, and the second is the one that mattered
 
 `capture.mjs` shoots **both** paths: WebGL2 present, and WebGL2 removed by stubbing
@@ -129,4 +197,7 @@ confident and both wrong, and only step 3 — profiling instead of theorising �
 | `build.mjs` | Bundles, and measures each layer against its §6.4 allocation. Exits non-zero on overrun |
 | `capture.mjs` | Both captures — rendered, and refused |
 | `compare.mjs` | The regression gate against P0 |
+| `perf.ts` | Frame-time harness. Two methods, and it reports when the better one is unavailable rather than filling in |
+| `serve.mjs` | Static server, so the page can run on a real GPU instead of SwiftShader |
+| `tsconfig.json` | Type-checks the reference lane. It found three errors the moment it existed |
 | `bundle.js` | Derived, gitignored. Rebuild with `build.mjs` |

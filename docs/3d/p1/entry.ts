@@ -8,19 +8,29 @@
  * in that case tells the reader their data is empty, which is a lie.
  */
 import { renderRiskCloud, money, BANDWIDTH_FRACTION, type Samples } from './surface.js';
+import { measureGpu, sweepThroughput, rendererString, isSoftware, type FrameStats } from './perf.js';
 import { describeToneMapping, MOTION_POLICY, DEPTH_POLICY } from '@lcx/gl';
 
 declare global {
-  interface Window { __SAMPLES__: Samples }
+  interface Window {
+    __SAMPLES__: Samples;
+    __PERF__?: FrameStats;
+  }
 }
 
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 const overlay = document.getElementById('overlay')!;
 const data = window.__SAMPLES__;
 
-const out = renderRiskCloud(canvas, overlay, data);
+// The renderer string is read BEFORE the stage takes the context, because it is the fact
+// that decides whether any timing below may be quoted at all.
+const renderer = rendererString(canvas);
 
-if ('kind' in out && out.kind === 'refused') {
+const setupT0 = performance.now();
+const out = renderRiskCloud(canvas, overlay, data);
+const setupMs = performance.now() - setupT0;
+
+if (out.kind === 'refused') {
   /*
    * THE CANVAS STAYS. Hiding it collapsed the plate to zero height — `.refusal` is
    * `position:absolute; inset:0` inside `.stage`, so the message rendered into nothing
@@ -68,4 +78,50 @@ if ('kind' in out && out.kind === 'refused') {
    surface can show them instead of paraphrasing them into something weaker. */
 document.getElementById('policy')!.textContent =
   [describeToneMapping(), DEPTH_POLICY, MOTION_POLICY].join(' ');
+
+/* ── FRAME TIME, on ?perf ─────────────────────────────────────────────────────────────
+   Off by default: it blocks on `gl.finish()` for a hundred-odd frames, which would make
+   an ordinary page load feel broken for a number nobody asked for. */
+const perfParam = new URLSearchParams(location.search).get('perf');
 if (document.title !== 'READY') document.title = 'READY';
+
+if (perfParam !== null && out.kind === 'rendered') {
+  // Title is already READY above, so the capture harness is never blocked on this. The
+  // measurement takes seconds and announces itself separately.
+  /* Deferred one turn so the page paints before the harness blocks the main thread —
+     it busy-waits, and a page that never painted looks broken while it runs. */
+  setTimeout(() => {
+    const gl = canvas.getContext('webgl2')!;
+    const policy = document.getElementById('policy')!;
+
+    const gpu = measureGpu(out.redraw, gl, Number(perfParam) || 120);
+    const throughput = sweepThroughput(out.redraw, gl);
+    // The LARGEST batch, not the best of them. Taking the max would be cherry-picking the
+    // run where the sync was cheapest; the largest batch is the one where it is amortised
+    // furthest and is the figure the convergence above is evidence for.
+    const sustainedFps = throughput[throughput.length - 1]!.framesPerSec;
+
+    const stats: FrameStats = {
+      renderer,
+      software: isSoftware(renderer),
+      canvas: `${canvas.width}×${canvas.height}`,
+      samples: out.samples,
+      setupMs,
+      gpu,
+      throughput,
+      sustainedFps,
+    };
+    window.__PERF__ = stats;
+
+    const head = `${stats.samples.toLocaleString()} deposits + 5 post passes at ${stats.canvas} · `;
+    const gpuLine = gpu.method === 'UNAVAILABLE'
+      ? `GPU timing unavailable (${gpu.reason})`
+      : `GPU median ${gpu.medianMs.toFixed(2)} ms · p95 ${gpu.p95Ms.toFixed(2)} ms ` +
+        `(${gpu.fpsAtP95.toFixed(0)} fps) · ${gpu.discarded} disjoint samples discarded`;
+    policy.textContent =
+      `${head}${gpuLine} · sustained ${sustainedFps.toFixed(0)} full frames/sec · ` +
+      `setup ${stats.setupMs.toFixed(0)} ms · ${stats.renderer}` +
+      (stats.software ? ' · SOFTWARE RASTERISER — these numbers say nothing about a GPU' : '');
+    document.title = 'PERF_DONE';
+  }, 0);
+}
