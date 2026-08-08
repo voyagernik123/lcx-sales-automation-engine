@@ -1,0 +1,172 @@
+# PLATFORM VFX 100X
+
+**The render layer is platform-wide. The last plan treated it as nine screens.**
+
+---
+
+## 0. WHAT I GOT WRONG, BECAUSE THE NEW PLAN ONLY MAKES SENSE IF I SAY IT
+
+`3D_WORK_100X.md` asked one question of every surface: *does the third dimension carry
+information the flat version loses?* That is the correct question **for a data figure**, and
+it was answered honestly — which is why six of nine surfaces refused. None of those refusals
+were wrong. S4's lattice really is 98.32% one constant. S8's cube really is 1 × 1 × 2.
+
+But you asked three times for **VFX and rendering**, and I kept auditing **dimensionality**.
+They are different axes and I conflated them:
+
+> A chart can have no third data axis whatsoever and still be rendered in linear light, with
+> HDR accumulation, real depth cues, material response and purposeful motion — or it can be
+> rendered as flat sRGB polygons with a 1px stroke. **That choice is independent of the
+> data.** It is the choice that decides "Bloomberg terminal" versus "school project", and
+> `3D_WORK_100X` never asked it.
+
+So the honest score after that plan: the **spine is excellent and proven** (12.8 KB, 4.41 ms
+on your M1, brand hex exact). It is being used by **one screen**.
+
+## 1. WHAT IS MEASURED (not assumed)
+
+| | measured |
+|---|---|
+| Pages | **79** |
+| Chart primitives, all flat SVG | **13** (`BarChartH`, `ColumnChart`, `ControlBand`, `DonutChart`, `FunnelChart`, `GaugeChart`, `Histogram`, `Sparkline`, `StackedBarH`, `StatCard`, `TrendDelta`, `CompareBars`, `ChartCard`) |
+| Bespoke `<svg>` renderers outside that kit | **29 files** |
+| Files touching canvas or WebGL | **1** — `surfaces/sales/renderMotion.ts`, shipped today |
+| Colour space | sRGB CSS custom properties (`charts/palette.ts` → `tokens.css`) |
+| Motion on any chart | **none** — `CountUp`, `Badge`, `Button` animate; no chart does |
+| Initial-JS headroom | **13 KB of 850** |
+| Spine cost | **17.5 KB** of its 63 KB allocation — **45 KB unspent** |
+
+**The arithmetic that makes this plan different from the last one:** 13 primitives × 79
+pages is a *multiplier*. Nine bespoke surfaces is an *addition*. The last plan spent its
+whole budget on the addition.
+
+## 2. THE THESIS
+
+**Upgrade the RENDER LAYER, not the screens.**
+
+Every honesty rule from `3D_WORK_100X` carries forward unchanged — absent refuses, brand
+chroma is data and is never graded, motion carries information or does not exist, a refusal
+is a state. Nothing here relaxes any of them. What changes is *where the work lands*.
+
+Three consequences fall straight out:
+
+1. **A flat chart gets the whole pipeline.** Linear working space, HDR accumulation, the
+   bright-pass/blur/composite chain, one sRGB encode — none of it needs a z axis. A bar
+   chart drawn in linear light with real edge falloff and a contact shadow is
+   *categorically* better-looking than the same bars in sRGB, and it is the same data.
+2. **The 45 KB of unspent spine budget is already paid for.** L1/L2/L3 came in at 28% of
+   allocation. The 2-D path reuses the identical pipeline.
+3. **Dimensionality becomes a separate, smaller question** — asked only where a third axis
+   is genuinely recorded. That list is now short and known: S5 and S6. Everything else gets
+   the render upgrade without the dishonesty.
+
+## 3. THE ONE TEST, RESTATED
+
+`3D_WORK_100X` §0 asked: *does the third dimension carry information the flat version
+loses?* That test stays, for anything claiming a third axis.
+
+This plan adds a second, and it is the one that governs most of the work:
+
+> **Put the before and after side by side at 2× and look at them. If a stranger cannot tell
+> which one is the instrument and which is the placeholder, the change is not worth its
+> bytes.**
+
+That is a LOOK gate, and it is not softer than the honesty gate — it is the gate the last
+plan never had, which is how a spike that "worked" shipped a black frame and a diagonal that
+destroyed its own claim.
+
+## 4. LAYERS
+
+```
+L0  DATA                     unchanged. Engines, refusals, observation frames.
+L1  @lcx/gl RENDERER         EXISTS. 10.4 KB. points · lines · ruleAtDepth · targets
+L2  @lcx/gl/look             EXISTS. 5.3 KB. linear light · tone policy · bloom · palette
+L3  @lcx/gl/motion           EXISTS. 1.7 KB. purposes · reduced-motion · refusals
+        ▼   ── everything below is NEW ──
+L4  @lcx/gl/flat             NEW ~14 KB. THE MULTIPLIER.
+      2-D primitives on the same pipeline: bars, columns, areas, arcs, ribbons,
+      stems, contact shadow, edge falloff. No z required. SVG-compatible geometry.
+L5  @lcx/chartkit            NEW ~10 KB. The 13 primitives, re-backed.
+      SAME PROPS. A page changes nothing. SVG stays as the fallback and the print path.
+L6  MOTION GRAMMAR           NEW ~6 KB. Enter, update, reveal — driven by L3's purposes.
+L7  SIGNATURE SURFACES       The few screens that should stop someone mid-scroll.
+```
+
+**L5 is the whole plan.** If `<BarChartH data={…}/>` keeps its exact props and gets a new
+renderer underneath, then 79 pages upgrade in one commit and no page author does anything.
+
+## 5. WHAT "VFX" CONCRETELY MEANS HERE
+
+Not decoration. Each of these is a specific, identifiable tell, and each has a fix that
+works on flat data:
+
+| the tell | the fix | needs 3-D? |
+|---|---|---|
+| Flat fills, dead edges | Linear-light shading with real edge falloff | no |
+| Everything on one plane | Contact shadow + a 2 px depth offset per layer | no |
+| Bars that just appear | Motion grammar: enter on data arrival, not on mount | no |
+| Blown highlights on dense data | HDR accumulation + composite tone map | no |
+| Muddy overlaps | Additive blending **in linear space** | no |
+| Aliased hairlines | Analytic edge AA in the fragment stage | no |
+| Dead negative space | Plate gradient + vignette in linear space | no |
+| Type baked at 1× | DOM overlays projected from the same matrix | no |
+| "Which series is which?" | Material differentiation, not hue-only | no |
+| Genuine depth | The existing L1 path | **yes — S5, S6 only** |
+
+Nine of ten need no third axis. **That is the finding.**
+
+## 6. WAVES
+
+| wave | what | gate |
+|---|---|---|
+| **W0 · LOOK AUDIT** | Capture all 13 primitives + the 29 bespoke SVGs at 2×, on real data. Rank by *frequency of appearance × visual grade*. One contact sheet. | A contact sheet I have LOOKED at, and a ranked list. **If the kit already looks good, this plan shrinks here.** |
+| **W1 · L4 FLAT** | 2-D primitives on the existing pipeline. Bars, columns, areas, arcs, stems, contact shadow, analytic AA. | Brand hex exact. One primitive rendered both ways, side by side, and the difference is obvious at a glance. |
+| **W2 · L5 CHARTKIT** | Re-back the 13 primitives. **Props unchanged.** SVG retained as fallback + print + no-WebGL. | Every existing chart test passes untouched. Perf budget green. Before/after for all 13. |
+| **W3 · MOTION** | Enter / update / reveal, driven by L3 purposes. Reduced-motion resolves to final state. | No idle animation anywhere. Reduced-motion capture proves it. |
+| **W4 · REAL DEPTH** | **S5 command bench** (56.64% interaction — measured), live rank order, ranks 7–9, azimuth. S6 already shipped. | The `3D_WORK_100X` §0 test, unchanged. |
+| **W5 · SIGNATURE** | 2–3 screens that should be spectacular. Command deck first. | A stranger stops scrolling. |
+
+**W0 can kill or shrink this plan, and that is the point.** `3D_WORK_100X`'s P0 was a real
+gate and it worked — it proved three.js was 40× too heavy before a line of it was written.
+W0 is the same instrument pointed at the thing that actually matters.
+
+## 7. WHAT COULD FAIL, HONESTLY
+
+1. **The chart kit may already be fine.** 13 primitives written by someone who cared. W0
+   exists to find that out *first*. If the contact sheet says they are good, this plan
+   collapses to W4 + W5 and I will say so.
+2. **WebGL for a sparkline is absurd.** A 40 px sparkline in a table cell must never take a
+   GL context. L5 needs a size/complexity threshold below which SVG is simply correct, and
+   that threshold has to be measured, not guessed.
+3. **Context loss is a real state at scale.** One canvas is fine. Sixty on a dashboard will
+   exhaust contexts on an 8 GB M1. **This needs one shared context with scissored viewports,
+   not a context per chart** — and that is a real L4 design constraint, not an afterthought.
+4. **The perf budget is 13 KB from failing.** Every wave measures. L4+L5+L6 ≈ 30 KB must
+   live in lazy chunks, exactly as `renderMotion` does today (12.3 KB, initial JS unmoved).
+5. **Print and export.** SVG is not legacy here — it is the print path. L5 keeps it.
+6. **I have now been wrong on this question twice**, in both directions: first calling all
+   3-D decoration, then auditing dimensionality when you asked about rendering. Both errors
+   are in this plan's gates rather than in its prose.
+
+## 8. WHAT ONLY YOU CAN DECIDE
+
+1. **Approve the thesis** — render layer platform-wide, versus more bespoke 3-D screens.
+   I recommend the render layer: 13 × 79 beats 9 × 1.
+2. **Appetite.** Restrained-instrument (Bloomberg: dense, quiet, fast) or
+   expressive-showpiece (Apple keynote: motion, depth, drama)? My default is **restrained
+   everywhere, expressive on the 2–3 signature screens**. This is taste and it is yours.
+3. **The byte raise.** L4+L5+L6 ≈ 30 KB fits the unspent spine budget. W5 may not. If it
+   needs `MAX_PASSTHROUGH_KB` raised, that is a deliberate decision with the number stated.
+4. **S9 stays blocked.** Its scores are still `3 + ((i * 2) % 3)`.
+
+## 9. THE FIRST THING I DO ON APPROVAL
+
+**W0, and it produces a contact sheet rather than an argument.**
+
+Every one of the 13 primitives and the 29 bespoke SVGs, captured at 2× on real data, on one
+page, ranked by how often an operator sees it. I look at it, you look at it, and we both find
+out whether the platform's visual grade is the problem I think it is — at the cheapest
+possible moment, before a byte of L4 exists.
+
+If that sheet shows a kit that already looks like an instrument, this plan shrinks to W4 and
+W5 and I will tell you so plainly.
