@@ -147,6 +147,12 @@ export interface MonteCarloResult {
   expectedCents: number | null;
   /** Set iff the percentiles above are null. Cites the rule it applies. */
   distributionRefusal: { code: 'ALL_OPEN_DEALS_UNPRICEABLE'; rule: string } | null;
+  /**
+   * The full sorted sample set, ASCENDING, in cents — present only when the caller passes
+   * `keepSamples`. `undefined` means "not asked for", which is a different fact from an empty
+   * array, and neither is a distribution of zero.
+   */
+  samples?: readonly number[];
   deals: { id: string; winProbability: number; valueCents: number }[];
   /**
    * Open deals with NO package value. They are EXCLUDED from the simulation and
@@ -190,7 +196,7 @@ const ALL_UNPRICEABLE_RULE =
 
 export function monteCarloForecast(
   deals: ForecastDealInput[],
-  opts: { runs?: number; seed?: number } = {},
+  opts: { runs?: number; seed?: number; keepSamples?: boolean } = {},
 ): MonteCarloResult {
   const runs = opts.runs ?? 10_000;
   const rand = mulberry32(opts.seed ?? 42);
@@ -237,6 +243,24 @@ export function monteCarloForecast(
     }
   }
   totals.sort((a, b) => a - b);
+
+  /*
+   * THE 9,997 SAMPLES THAT WERE COMPUTED AND THROWN AWAY.
+   *
+   * This function simulates `runs` (10,000 by default) portfolio outcomes and, until now,
+   * returned THREE of them: p10, p50 and p90. The other 9,997 were computed on every call and
+   * discarded, because the only renderer available was SVG and SVG dies at 1-2k elements.
+   *
+   * OPT-IN, and deliberately so: 10,000 numbers on every API response would be a real payload
+   * regression for the callers that only want the percentiles. `keepSamples` is for a renderer
+   * that can actually draw them.
+   *
+   * SORTED, and that is the ONLY post-processing. Not bucketed, not binned, not smoothed — a
+   * histogram is a choice of bin width, and a bin width is an editorial decision this engine has
+   * no business making on the caller's behalf. The distribution's shape, including whether it is
+   * bimodal, must survive the trip.
+   */
+  const samples = opts.keepSamples ? Object.freeze(totals.slice()) : undefined;
 
   const pct = (p: number) => totals[Math.min(runs - 1, Math.floor((p / 100) * runs))];
   const expected = scored.reduce((s, d) => s + d.winProbability * d.valueCents, 0);
@@ -344,6 +368,8 @@ export function monteCarloForecast(
 
   return {
     runs,
+    // Withheld on a refusal for the same reason the percentiles are: there is no distribution.
+    ...(samples && !allExcluded ? { samples } : {}),
     p10Cents: allExcluded ? null : pct(10),
     p50Cents: allExcluded ? null : pct(50),
     p90Cents: allExcluded ? null : pct(90),

@@ -1,0 +1,226 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>P0 — the 9,997 samples you never see</title>
+<style>
+  html,body{margin:0;background:#080b14;color:#e6ebf5;
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"IBM Plex Sans",system-ui,sans-serif}
+  #wrap{width:1600px;padding:28px 32px}
+  h1{font-size:19px;font-weight:600;margin:0 0 2px;letter-spacing:-.01em}
+  .sub{color:#8b97ad;font-size:12.5px;margin:0 0 18px}
+  canvas{display:block;border-radius:10px;background:#0b1020}
+  #overlay{position:absolute;inset:0;pointer-events:none;z-index:2}
+  .tick{position:absolute;transform:translate(-50%,0);font:11px/1 "IBM Plex Mono",ui-monospace,monospace;color:#6b7a95;white-space:nowrap}
+  .ptick{position:absolute;transform:translate(-50%,-100%);font:10.5px/1 "IBM Plex Mono",ui-monospace,monospace;color:#ff8a3d;letter-spacing:.04em}
+  .legend{display:flex;gap:26px;margin-top:14px;font-size:12px;color:#8b97ad;align-items:center}
+  .sw{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:7px;vertical-align:-1px}
+  b{color:#e6ebf5;font-weight:600}
+  .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+</style>
+<div id="wrap">
+  <h1>Quarterly forecast — 10,000 simulated outcomes</h1>
+  <p class="sub">Every point is one simulated quarter. The three planes are the only three numbers the product shows today.</p>
+  <div style="position:relative"><div id="overlay"></div><canvas id="c" width="3040" height="1560" style="width:1520px;height:780px"></canvas></div>
+  <div class="legend">
+    <span><i class="sw" style="background:#2C6BFF"></i>simulated outcome <b class="mono" id="n"></b></span>
+    <span><i class="sw" style="background:#ff8a3d"></i>p10 / p50 / p90 — <b>what you see today</b></span>
+    <span id="stats" class="mono"></span>
+  </div>
+</div>
+<script type="module">
+const DATA = window.__SAMPLES__;
+const gl = document.getElementById('c').getContext('webgl2', {
+  antialias: true, alpha: false, premultipliedAlpha: false,
+});
+if (!gl) { document.body.innerHTML = '<h1 style="padding:40px">NO WEBGL2</h1>'; throw new Error('no webgl2'); }
+
+/* ── L2 COLOUR: brand hex -> LINEAR working space. Shading happens in linear;
+      sRGB encode is the LAST thing the fragment shader does. Doing it the other
+      way round is the single biggest reason amateur WebGL looks muddy. ── */
+const srgbToLinear = (c) => c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+const hexLin = (h) => [1,3,5].map(i => srgbToLinear(parseInt(h.slice(i, i+2), 16) / 255));
+const BRAND = hexLin('#2C6BFF');   // the data colour — never tone-mapped
+const MARK  = hexLin('#ff8a3d');
+
+const VS = `#version 300 es
+precision highp float;
+layout(location=0) in vec2 quad;      // unit quad, instanced
+layout(location=1) in vec3 centre;    // per-point position
+layout(location=2) in float dens;     // local density 0..1
+uniform mat4 uMVP; uniform float uSize; uniform vec2 uAspect;
+out float vDens; out vec2 vQuad;
+void main(){
+  vDens = dens; vQuad = quad;
+  vec4 clip = uMVP * vec4(centre, 1.0);
+  // Screen-space billboard so points stay round and DPI-crisp at any depth.
+  clip.xy += quad * uSize * uAspect * clip.w;
+  gl_Position = clip;
+}`;
+
+const FS = `#version 300 es
+precision highp float;
+in float vDens; in vec2 vQuad;
+uniform vec3 uColA; uniform vec3 uColB;
+out vec4 frag;
+vec3 linearToSrgb(vec3 c){
+  return mix(c*12.92, 1.055*pow(max(c,1e-5), vec3(1.0/2.4)) - 0.055, step(0.0031308, c));
+}
+void main(){
+  float r = dot(vQuad, vQuad);
+  if (r > 1.0) discard;                       // round sprite
+  float edge = smoothstep(1.0, 0.55, r);      // soft edge = free AA
+  // Density -> value, in LINEAR space. Denser regions read brighter and warmer.
+  vec3 lin = mix(uColA, uColB, vDens) * (0.55 + 0.85 * vDens);
+  frag = vec4(linearToSrgb(lin), edge * (0.30 + 0.55 * vDens));
+}`;
+
+const sh = (t, src) => { const s = gl.createShader(t); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+const prog = gl.createProgram();
+gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
+gl.linkProgram(prog);
+if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+
+/* ── THE DATA. x = outcome value. The samples are SORTED and heavily repeated
+      (326 distinct values across 10,000 draws, because a portfolio total is a sum
+      of subsets of discrete deal values). That repetition IS the signal: equal
+      outcomes stack into a column whose height is the probability mass. A
+      histogram would choose a bin width and destroy exactly that. ── */
+const S = DATA.samples, N = S.length;
+const lo = S[0], hi = S[N-1], span = (hi - lo) || 1;
+const counts = new Map();
+for (const v of S) counts.set(v, (counts.get(v) ?? 0) + 1);
+const maxCount = Math.max(...counts.values());
+
+const centres = new Float32Array(N * 3);
+const dens = new Float32Array(N);
+const seen = new Map();
+for (let i = 0; i < N; i++) {
+  const v = S[i];
+  const k = (seen.get(v) ?? 0); seen.set(v, k + 1);
+  const c = counts.get(v);
+  const x = ((v - lo) / span) * 3.30 - 1.65;
+  // Stack identical outcomes upward; spread them slightly in depth so the column
+  // reads as a volume of samples rather than a solid bar.
+  const y = (k / maxCount) * 1.05 - 0.46;
+  const z = ((k * 2654435761 % 1000) / 1000 - 0.5) * 0.34;
+  centres[i*3] = x; centres[i*3+1] = y; centres[i*3+2] = z;
+  dens[i] = Math.min(1, c / maxCount);
+}
+
+const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+const quad = new Float32Array([-1,-1, 1,-1, -1,1, 1,1]);
+const bq = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bq);
+gl.bufferData(gl.ARRAY_BUFFER, quad, gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+const bc = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bc);
+gl.bufferData(gl.ARRAY_BUFFER, centres, gl.STATIC_DRAW);
+gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(1, 1);
+const bd = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, bd);
+gl.bufferData(gl.ARRAY_BUFFER, dens, gl.STATIC_DRAW);
+gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 0, 0); gl.vertexAttribDivisor(2, 1);
+
+/* ── mat4, hand-written. This is the entire maths dependency. ── */
+const mul = (a,b)=>{const o=new Float32Array(16);for(let i=0;i<4;i++)for(let j=0;j<4;j++){let s=0;for(let k=0;k<4;k++)s+=a[k*4+j]*b[i*4+k];o[i*4+j]=s;}return o;};
+const persp=(f,ar,n,fa)=>{const t=1/Math.tan(f/2);return new Float32Array([t/ar,0,0,0, 0,t,0,0, 0,0,(fa+n)/(n-fa),-1, 0,0,2*fa*n/(n-fa),0]);};
+function lookAt(e,c,u){const z=norm(sub(e,c)),x=norm(cross(u,z)),y=cross(z,x);
+  return new Float32Array([x[0],y[0],z[0],0, x[1],y[1],z[1],0, x[2],y[2],z[2],0, -dot(x,e),-dot(y,e),-dot(z,e),1]);}
+const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]], dot=(a,b)=>a[0]*b[0]+a[1]*b[1]+a[2]*b[2];
+const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const norm=(a)=>{const l=Math.hypot(...a)||1;return [a[0]/l,a[1]/l,a[2]/l];};
+
+const W = gl.canvas.width, H = gl.canvas.height;
+gl.viewport(0,0,W,H);
+gl.clearColor(...hexLin('#0b1020'), 1);
+gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE);   // additive: density accumulates
+gl.disable(gl.DEPTH_TEST);
+gl.clear(gl.COLOR_BUFFER_BIT);
+
+const view = lookAt([0.85, 1.05, 5.6], [0.0, 0.06, 0], [0,1,0]);
+// FOV 0.62 -> 0.26 rad. Weak perspective keeps the percentile planes parallel instead of
+// splaying into wedges, and stops depth from distorting the value axis.
+const mvp = mul(persp(0.26, W/H, 0.1, 60), view);
+
+gl.useProgram(prog);
+gl.uniformMatrix4fv(gl.getUniformLocation(prog,'uMVP'), false, mvp);
+gl.uniform1f(gl.getUniformLocation(prog,'uSize'), 0.0058);
+gl.uniform2f(gl.getUniformLocation(prog,'uAspect'), H/W, 1);
+gl.uniform3fv(gl.getUniformLocation(prog,'uColA'), BRAND.map(c=>c*0.55));
+gl.uniform3fv(gl.getUniformLocation(prog,'uColB'), BRAND);
+gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, N);
+
+/* ── The three numbers the product actually shows, as planes through the cloud. ── */
+const LVS=`#version 300 es
+precision highp float; layout(location=0) in vec3 p; uniform mat4 uMVP;
+void main(){ gl_Position = uMVP * vec4(p,1.0); }`;
+const LFS=`#version 300 es
+precision highp float; uniform vec3 uCol; out vec4 f;
+vec3 lts(vec3 c){return mix(c*12.92,1.055*pow(max(c,1e-5),vec3(1.0/2.4))-0.055,step(0.0031308,c));}
+void main(){ f = vec4(lts(uCol), 0.9); }`;
+const lp = gl.createProgram();
+gl.attachShader(lp, sh(gl.VERTEX_SHADER, LVS)); gl.attachShader(lp, sh(gl.FRAGMENT_SHADER, LFS));
+gl.linkProgram(lp); gl.useProgram(lp);
+gl.uniformMatrix4fv(gl.getUniformLocation(lp,'uMVP'), false, mvp);
+gl.uniform3fv(gl.getUniformLocation(lp,'uCol'), MARK);
+const lv = gl.createVertexArray(); gl.bindVertexArray(lv);
+const lb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, lb);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+for (const v of [DATA.p10, DATA.p50, DATA.p90]) {
+  const x = ((v - lo) / span) * 3.30 - 1.65;
+  const w = 0.004;   // a LINE, not a plane: the reference must not outweigh the data
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    x-w,-0.50,0, x-w,0.74,0, x+w,-0.50,0, x+w,0.74,0,
+  ]), gl.STATIC_DRAW);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+
+/* ── THE FLOOR AND ITS TICKS. A figure you cannot read a value off is decoration.
+      Drawn dim so it frames the data instead of competing with it. ── */
+gl.uniform3fv(gl.getUniformLocation(lp,'uCol'), hexLin('#26314a'));
+const axY = -0.50;
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+  -1.68,axY,-0.20, -1.68,axY,0.20, 1.68,axY,-0.20, 1.68,axY,0.20,
+]), gl.STATIC_DRAW);
+gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+const TICKS = 7;
+for (let i = 0; i <= TICKS; i++) {
+  const x = -1.65 + (i / TICKS) * 3.30;
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    x-0.0022,axY,-0.20, x-0.0022,axY-0.055,-0.20, x+0.0022,axY,-0.20, x+0.0022,axY-0.055,-0.20,
+  ]), gl.STATIC_DRAW);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+}
+gl.finish();
+
+/* Tick VALUES in DOM text, positioned by projecting the same coordinates. Screen-space type
+   stays crisp at any DPI; text baked into a GL texture is the classic amateur tell. */
+const proj = (x, y, z) => {
+  const cl = [0,1,2,3].map(r => mvp[0*4+r]*x + mvp[1*4+r]*y + mvp[2*4+r]*z + mvp[3*4+r]);
+  return { sx: (cl[0]/cl[3]*0.5+0.5) * gl.canvas.clientWidth,
+           sy: (1-(cl[1]/cl[3]*0.5+0.5)) * gl.canvas.clientHeight };
+};
+const host = document.getElementById('overlay');
+for (let i = 0; i <= TICKS; i++) {
+  const t = i / TICKS;
+  const p2 = proj(-1.65 + t*3.30, axY - 0.075, -0.20);
+  const el = document.createElement('div');
+  el.className = 'tick';
+  el.style.left = p2.sx + 'px'; el.style.top = p2.sy + 'px';
+  el.textContent = '$' + Math.round((lo + t*span)/100/1000) + 'k';
+  host.appendChild(el);
+}
+for (const [v, lab] of [[DATA.p10,'p10'],[DATA.p50,'p50'],[DATA.p90,'p90']]) {
+  const p2 = proj(((v - lo)/span)*3.30 - 1.65, 0.78, 0);
+  const el = document.createElement('div');
+  el.className = 'ptick';
+  el.style.left = p2.sx + 'px'; el.style.top = p2.sy + 'px';
+  el.textContent = lab;
+  host.appendChild(el);
+}
+
+const fmt = (c)=>'$'+Math.round(c/100).toLocaleString();
+document.getElementById('n').textContent = N.toLocaleString();
+document.getElementById('stats').textContent =
+  `${counts.size} distinct outcomes · p10 ${fmt(DATA.p10)} · p50 ${fmt(DATA.p50)} · p90 ${fmt(DATA.p90)}`;
+document.title = 'READY';
+</script>
