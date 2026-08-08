@@ -56,10 +56,19 @@ export async function fetchForecast(signal?: AbortSignal): Promise<ForecastData>
 export interface ForecastHistoryPoint {
   /** YYYY-MM-DD */
   date: string;
-  p10: number;
-  p50: number;
-  p90: number;
-  expected: number;
+  /**
+   * NULL on a day the simulation could not price anything — never 0.
+   *
+   * These were non-nullable, and the route coerced the stored null to 0 to satisfy that,
+   * which turned a refusal into a real $0 forecast on the chart. A `$0 quarter` and
+   * `we could not forecast` are different claims and this type now keeps them apart.
+   */
+  p10: number | null;
+  p50: number | null;
+  p90: number | null;
+  expected: number | null;
+  /** Set iff the percentiles are null. Cites the rule the engine applied. */
+  distributionRefusal: { code: string; rule: string } | null;
 }
 
 /**

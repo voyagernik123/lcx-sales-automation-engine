@@ -56,6 +56,12 @@ export function CalledVsLanded({ snapshots }: { snapshots: KpiSnapshot[] }) {
 
   const hasActual = points.some((p) => p.actual != null);
 
+  /* Days the simulation refused. They stay in `points` with null bands, so the chart
+     leaves a visible hole rather than dropping them and quietly compressing the axis —
+     but a hole with no caption reads as missing data, and this is not missing data. It is
+     a recorded refusal with a code, so it gets named. */
+  const refusedDays = (history ?? []).filter((h) => h.p50 == null);
+
   return (
     <ChartCard
       title="Called vs landed"
@@ -82,6 +88,16 @@ export function CalledVsLanded({ snapshots }: { snapshots: KpiSnapshot[] }) {
             midLabel="Expected (called)"
             actualLabel="Closed-won to date (landed)"
           />
+          {refusedDays.length > 0 && (
+            <p className="mt-1.5 text-micro text-amber" data-testid="forecast-history-refusals">
+              {refusedDays.length === 1 ? '1 day is' : `${refusedDays.length} days are`} missing from
+              the band because the simulation could not price the open book that day — not because
+              the quarter was forecast at nothing.{' '}
+              {refusedDays[0]?.distributionRefusal?.rule ??
+                refusedDays[0]?.distributionRefusal?.code ??
+                'The stored snapshot carries the refusal without a stated rule.'}
+            </p>
+          )}
           <p className="mt-1.5 text-micro text-grey">
             {hasActual
               ? 'Honest caveat: "landed" is cumulative lifetime closed-won revenue from the same daily snapshots — the forecast band covers open pipeline, so compare shapes, not levels.'

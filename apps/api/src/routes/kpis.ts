@@ -137,15 +137,34 @@ kpiRoutes.get('/forecast-history', requireOperator, async (c) => {
       ORDER BY snapshot_date ASC
     `);
 
-    const n = (v: unknown) => Number(v ?? 0);
+    /*
+     * NULL SURVIVES. This was `Number(v ?? 0)`, and that one `?? 0` undid the whole point
+     * of the column it was reading.
+     *
+     * `kpi/snapshot.ts:88-97` deliberately persists a day the simulation could not price
+     * as NULL percentiles beside a `distributionRefusal` code, and its comment states
+     * exactly why: "a zero is a data point and would draw a line down to it and back...
+     * a future reader can tell 'the quarter was forecast at nothing' from 'we could not
+     * forecast'". This route then coerced that null to 0 and dropped `distributionRefusal`
+     * from the response shape entirely, so the browser could not tell the two apart — and
+     * `CalledVsLanded` drew the refusal as a real $0 control band.
+     *
+     * The refusal was preserved in the database and destroyed on the way out. A number is
+     * only honest for as long as every layer above it keeps it that way.
+     */
+    const num = (v: unknown): number | null =>
+      v == null || v === '' ? null : Number.isFinite(Number(v)) ? Number(v) : null;
     const data = (result.rows ?? []).map((r: Record<string, unknown>) => {
       const f = (r.forecast ?? {}) as Record<string, unknown>;
       return {
         date: String(r.snapshot_date),
-        p10: n(f.p10),
-        p50: n(f.p50),
-        p90: n(f.p90),
-        expected: n(f.expected),
+        p10: num(f.p10),
+        p50: num(f.p50),
+        p90: num(f.p90),
+        expected: num(f.expected),
+        // Present iff the percentiles are null. The reader is told WHY, not just that a
+        // day is missing — an unexplained gap and a stated refusal are different facts.
+        distributionRefusal: (f.distributionRefusal ?? null) as { code: string; rule: string } | null,
       };
     });
 

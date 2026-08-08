@@ -5,14 +5,36 @@ import { ChartTooltip, useTooltip } from './tooltip';
 export interface ControlBandPoint {
   /** X label (e.g. an ISO date). Points render in array order, evenly spaced. */
   x: string;
-  /** Lower edge of the band (e.g. P10). */
-  lo: number;
-  /** Upper edge of the band (e.g. P90). */
-  hi: number;
-  /** The center line (e.g. expected / P50). */
-  mid: number;
+  /**
+   * Lower edge of the band (e.g. P10). NULL = no reading for this x — the band BREAKS
+   * here and is not interpolated across.
+   *
+   * These were `number` until a refusal was found rendering as a real $0 band. The
+   * forecast snapshot job deliberately persists a day it could not price as null
+   * percentiles beside a refusal code (`apps/api/src/kpi/snapshot.ts:88-97`, whose comment
+   * says a zero "would draw a line down to it and back"), and the route then coerced that
+   * null to 0 and this chart drew it. Nulls have to survive all the way to the renderer or
+   * the refusal is only preserved in the database.
+   */
+  lo: number | null;
+  /** Upper edge of the band (e.g. P90). Null = no reading; the band breaks. */
+  hi: number | null;
+  /** The center line (e.g. expected / P50). Null = no reading; the line breaks. */
+  mid: number | null;
   /** Optional overlaid actual (e.g. landed revenue). null/undefined = no reading. */
   actual?: number | null;
+}
+
+/** Contiguous runs of readable points. A gap ends a run; it is never bridged. */
+function runsOf<T>(data: readonly T[], read: (d: T) => boolean): number[][] {
+  const runs: number[][] = [];
+  let run: number[] = [];
+  data.forEach((d, i) => {
+    if (read(d)) run.push(i);
+    else if (run.length > 0) { runs.push(run); run = []; }
+  });
+  if (run.length > 0) runs.push(run);
+  return runs;
 }
 
 export interface ControlBandProps {
@@ -53,7 +75,9 @@ export function ControlBand({
   const plotW = VW - ML - MR;
   const plotH = VH - MT - MB;
 
-  const maxVal = Math.max(1e-9, ...data.flatMap((d) => [d.hi, d.mid, d.actual ?? 0]));
+  // Nulls are excluded from the domain: a day with no reading must not pull the axis.
+  const readings = data.flatMap((d) => [d.hi, d.mid, d.actual].filter((v): v is number => v != null));
+  const maxVal = Math.max(1e-9, ...readings);
   const ticks = niceTicks(maxVal, 3);
   const top = ticks[ticks.length - 1];
   const y = (v: number) => MT + plotH - (Math.max(0, v) / top) * plotH;
@@ -62,30 +86,20 @@ export function ControlBand({
 
   const hasActual = data.some((d) => d.actual != null);
 
-  // Actual series renders as contiguous runs; gaps (null readings) stay gaps.
-  const actualRuns: { i: number; v: number }[][] = [];
-  {
-    let run: { i: number; v: number }[] = [];
-    data.forEach((d, i) => {
-      if (d.actual != null) {
-        run.push({ i, v: d.actual });
-      } else if (run.length > 0) {
-        actualRuns.push(run);
-        run = [];
-      }
-    });
-    if (run.length > 0) actualRuns.push(run);
-  }
+  /* Every series renders as contiguous RUNS and gaps stay gaps. `actual` always worked
+     this way; the band and the centre line did not, which is how a refused day became a
+     line drawn down to $0 and back. The x positions are unchanged either side of a gap,
+     so a missing day leaves a visible hole rather than silently compressing the axis —
+     dropping the point entirely would be a second, quieter lie. */
+  const bandRuns = runsOf(data, (d) => d.lo != null && d.hi != null);
+  const midRuns = runsOf(data, (d) => d.mid != null);
+  const actualRuns = runsOf(data, (d) => d.actual != null);
 
-  const bandPath =
-    n > 1
-      ? `M${data.map((d, i) => `${x(i)},${y(d.hi)}`).join(' L')} L${[...data]
-          .reverse()
-          .map((d, ri) => `${x(n - 1 - ri)},${y(d.lo)}`)
-          .join(' L')} Z`
-      : null;
-
-  const midPoints = data.map((d, i) => `${x(i)},${y(d.mid)}`).join(' ');
+  const bandPathFor = (run: number[]) =>
+    `M${run.map((i) => `${x(i)},${y(data[i].hi as number)}`).join(' L')} L${[...run]
+      .reverse()
+      .map((i) => `${x(i)},${y(data[i].lo as number)}`)
+      .join(' L')} Z`;
 
   // Sparse x labels: first, last, and the middle when there is room.
   const xLabelIdx = n <= 2 ? data.map((_, i) => i) : n <= 6 ? [0, n - 1] : [0, Math.floor((n - 1) / 2), n - 1];
@@ -104,27 +118,39 @@ export function ControlBand({
             </g>
           ))}
 
-          {/* band envelope */}
-          {bandPath ? (
-            <path d={bandPath} fill={seriesVar(1)} fillOpacity={0.14} stroke={seriesVar(1)} strokeOpacity={0.3} strokeWidth={1} />
-          ) : (
-            /* single point: vertical lo..hi error bar */
-            <line x1={x(0)} x2={x(0)} y1={y(data[0].lo)} y2={y(data[0].hi)} stroke={seriesVar(1)} strokeOpacity={0.4} strokeWidth={4} strokeLinecap="round" />
+          {/* band envelope: one closed path per run; an isolated day is an error bar */}
+          {bandRuns.map((run, ri) =>
+            run.length > 1 ? (
+              <path key={`b-${ri}`} d={bandPathFor(run)} fill={seriesVar(1)} fillOpacity={0.14} stroke={seriesVar(1)} strokeOpacity={0.3} strokeWidth={1} />
+            ) : (
+              <line
+                key={`b-${ri}`}
+                x1={x(run[0])} x2={x(run[0])}
+                y1={y(data[run[0]].lo as number)} y2={y(data[run[0]].hi as number)}
+                stroke={seriesVar(1)} strokeOpacity={0.4} strokeWidth={4} strokeLinecap="round"
+              />
+            )
           )}
 
-          {/* center line */}
-          {n > 1 ? (
-            <polyline points={midPoints} fill="none" stroke={seriesVar(1)} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
-          ) : (
-            <circle cx={x(0)} cy={y(data[0].mid)} r={3.5} fill={seriesVar(1)} />
+          {/* center line: runs only, isolated readings render as dots */}
+          {midRuns.map((run, ri) =>
+            run.length > 1 ? (
+              <polyline
+                key={`m-${ri}`}
+                points={run.map((i) => `${x(i)},${y(data[i].mid as number)}`).join(' ')}
+                fill="none" stroke={seriesVar(1)} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round"
+              />
+            ) : (
+              <circle key={`m-${ri}`} cx={x(run[0])} cy={y(data[run[0]].mid as number)} r={3.5} fill={seriesVar(1)} />
+            )
           )}
 
           {/* actual overlay: runs only, isolated readings render as dots */}
           {actualRuns.map((run, ri) =>
             run.length > 1 ? (
               <polyline
-                key={ri}
-                points={run.map((p) => `${x(p.i)},${y(p.v)}`).join(' ')}
+                key={`a-${ri}`}
+                points={run.map((i) => `${x(i)},${y(data[i].actual as number)}`).join(' ')}
                 fill="none"
                 stroke={seriesVar(2)}
                 strokeWidth={2}
@@ -133,7 +159,7 @@ export function ControlBand({
                 strokeLinecap="round"
               />
             ) : (
-              <circle key={ri} cx={x(run[0].i)} cy={y(run[0].v)} r={3} fill={seriesVar(2)} />
+              <circle key={`a-${ri}`} cx={x(run[0])} cy={y(data[run[0]].actual as number)} r={3} fill={seriesVar(2)} />
             )
           )}
 
@@ -167,13 +193,32 @@ export function ControlBand({
                 onMouseEnter={() =>
                   show(
                     (x(i) / VW) * 100,
-                    (y(d.hi) / VH) * 100,
+                    (y(d.hi ?? d.mid ?? 0) / VH) * 100,
                     <span>
                       <span className="font-medium">{formatX(d.x)}</span>
-                      <span className="opacity-80"> · </span>
-                      {midLabel} {formatValue(d.mid)}
-                      <span className="opacity-80"> · </span>
-                      {bandLabel} {formatValue(d.lo)}–{formatValue(d.hi)}
+                      {/* A day with no reading says so. Printing "$0" here would restate
+                          the defect this file was changed to fix, one layer down. */}
+                      {d.mid == null && d.lo == null && d.hi == null ? (
+                        <>
+                          <span className="opacity-80"> · </span>
+                          no reading
+                        </>
+                      ) : (
+                        <>
+                          {d.mid != null && (
+                            <>
+                              <span className="opacity-80"> · </span>
+                              {midLabel} {formatValue(d.mid)}
+                            </>
+                          )}
+                          {d.lo != null && d.hi != null && (
+                            <>
+                              <span className="opacity-80"> · </span>
+                              {bandLabel} {formatValue(d.lo)}–{formatValue(d.hi)}
+                            </>
+                          )}
+                        </>
+                      )}
                       {d.actual != null && (
                         <>
                           <span className="opacity-80"> · </span>
