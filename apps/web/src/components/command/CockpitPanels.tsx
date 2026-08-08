@@ -4,7 +4,7 @@ import {
   fetchReadiness, lpRescore, runWaitlistSim, fetchCommandDeep,
   type Readiness, type LpRescoreResult, type WaitlistSimOut, type CommandDeep,
 } from '@/lib/api/command';
-import { buildSurfaceMesh, WITHHELD, type GridCellValue, type SurfaceOutcome } from '@lcx/shared';
+import { buildSurfaceMesh, ISOMETRIC_ELEVATION_DEG, WITHHELD, type GridCellValue, type SurfaceOutcome } from '@lcx/shared';
 import { SurfacePlot } from '@/components/geometry/SurfacePlot';
 import { apiConfig } from '@/lib/apiClient';
 import { ErrorNotice } from '@/components/shared';
@@ -227,6 +227,16 @@ export const SCORECARD_SCALE_MAX = 5;
  * a suite. The real call site satisfies it structurally, so nothing is adapted at the boundary.
  */
 export interface ScorecardSurfaceInput {
+  /**
+   * VIEWPOINT ONLY. Rotation about the vertical axis, degrees.
+   *
+   * This changes where the reader stands, never what is drawn: `buildSurfaceMesh` projects
+   * the same cells from a different angle, so every height stays exactly where it was and a
+   * cell that emerges as you drag was always there, occluded. That distinction is the whole
+   * reason a scrub is defensible here — a control that changed the numbers while pretending
+   * to change the camera would be the worst thing on this screen.
+   */
+  readonly azimuthDeg?: number;
   readonly dimensions: readonly { readonly key: string; readonly label: string }[];
   /**
    * Rows in the order they should stack. `ordinal` is the y COORDINATE, so it must be strictly
@@ -334,6 +344,9 @@ export function buildScorecardSurface(input: ScorecardSurfaceInput): SurfaceOutc
   const rows = [...input.rows].sort((a, b) => a.ordinal - b.ordinal);
 
   return buildSurfaceMesh({
+    ...(input.azimuthDeg === undefined
+      ? {}
+      : { view: { azimuthDeg: input.azimuthDeg, elevationDeg: ISOMETRIC_ELEVATION_DEG, scale: 1 } }),
     /*
      * Row-major, `rows[j][i]` = the score of subject j on dimension i — the engine's own order.
      * `rows: []` when there is nothing ranked, which the engine reports as GEOMETRY_GRID_EMPTY
@@ -411,7 +424,11 @@ const LP_SURFACE_READS_AS =
  * the bench cannot make it. The order is the same in both, because both are the live rank.
  */
 function LpScoreSurface({ res, observedAt }: { res: LpRescoreResult; observedAt: string }) {
+  /* 45° is the default isometric azimuth. The slider avoids the right angles the engine
+     refuses (a view along an axis collapses the box), so it stops short of 0 and 90. */
+  const [azimuthDeg, setAzimuthDeg] = useState(45);
   const input = useMemo<ScorecardSurfaceInput>(() => ({
+    azimuthDeg,
     dimensions: res.dimensions,
     rows: res.rows.map((r) => ({ subjectLabel: r.subjectLabel, ordinal: r.rank, scores: r.scores })),
     observedAt,
@@ -422,13 +439,53 @@ function LpScoreSurface({ res, observedAt }: { res: LpRescoreResult; observedAt:
       + 'meta and the web fetch layer returns only data, so no server instant reaches this figure.',
     yLabel: 'Partner, by live rank',
     yUnit: 'rank under the weights set above, #1 best',
-  }), [res.dimensions, res.rows, observedAt]);
+  }), [azimuthDeg, res.dimensions, res.rows, observedAt]);
 
   const surface = useMemo(() => buildScorecardSurface(input), [input]);
   const coverage = useMemo(() => scorecardCoverage(input), [input]);
 
   return (
     <div className="mt-4 border-t border-line/60 pt-3" data-testid="lp-score-surface">
+      {/*
+        THE SCRUB MOVES THE VIEWPOINT, NOT THE DATA — and it has to say so, because a slider
+        under a figure on a decision screen reads as a what-if by default. Every other
+        control on this panel changes the weighting and therefore the numbers; this one
+        changes only where the reader stands. A cell that emerges as you drag was always
+        there, occluded by the ridge in front of it, and every height stays exactly where it
+        was. That is what makes rotating a 10 × 9 sheet worth doing: 56.64% of the variation
+        about the grand mean is partner-by-dimension interaction, which no pair of bar charts
+        can state, and one azimuth only ever shows one face of it.
+
+        It is a native range input so the arrow keys, Home and End work with no code, and it
+        stops short of 0 and 90 because a view straight down an axis collapses the box and
+        the engine refuses it (GEOMETRY_PROJECTION_DEGENERATE — "that view collapses a
+        dimension, so the picture would look like a surface while carrying the information of
+        a flat chart") rather than drawing a meaningless projection.
+      */}
+      <div className="mb-2 flex items-center gap-3">
+        <label htmlFor="lp-azimuth" className="shrink-0 font-mono text-micro uppercase tracking-wider text-grey">
+          Viewpoint
+        </label>
+        <input
+          id="lp-azimuth"
+          type="range"
+          min={8}
+          max={82}
+          step={1}
+          value={azimuthDeg}
+          onChange={(e) => setAzimuthDeg(Number(e.target.value))}
+          className="h-1 flex-1 cursor-pointer accent-cyan-500"
+          data-testid="lp-azimuth"
+          aria-label="Rotate the viewpoint around the bench. Changes the camera only, never the scores."
+        />
+        <span className="num-tabular w-10 shrink-0 text-right font-mono text-micro text-grey">
+          {azimuthDeg}°
+        </span>
+      </div>
+      <p className="mb-2 text-micro text-grey" data-testid="lp-azimuth-note">
+        Rotates the camera, not the data. Every height stays where it is; a cell that appears
+        as you drag was always there, hidden behind the ridge in front of it.
+      </p>
       <SurfacePlot
         surface={surface}
         title={`LP bench · authored score, ${res.dimensions.length} dimensions × ${res.rows.length} ranked partners`}

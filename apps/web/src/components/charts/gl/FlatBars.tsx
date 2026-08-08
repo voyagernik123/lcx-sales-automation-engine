@@ -72,8 +72,12 @@ export function useFlatBars({ rects, viewW, viewH, orientation = 'horizontal' }:
      stage that owns them. */
   const cache = useRef<{ stage: Stage; bars: ReturnType<GlMod['createBarBatch']>; pipeline: ReturnType<GlMod['createPipeline']> } | null>(null);
 
+  /* THE GEOMETRY LAST DRAWN, so an update can interpolate FROM it. Kept in a ref rather
+     than state: it is written during a frame and must not schedule a React render. */
+  const prev = useRef<readonly FlatBarRect[] | null>(null);
+
   const draw = useCallback(
-    (stage: Stage, { t }: { t: number }) => {
+    (stage: Stage, { t, phase }: { t: number; phase: 'enter' | 'update' }) => {
       if (!mod) return;
       const gl = stage.gl;
       const { createBarBatch, createPipeline, plotMatrix, beginAdditive, endPass, hexToLinear, exposure } = mod;
@@ -94,14 +98,29 @@ export function useFlatBars({ rects, viewW, viewH, orientation = 'horizontal' }:
       beginAdditive(gl);
       bars.draw(
         mvp,
-        rects.map((r) => {
-          // THE ENTRANCE GROWS THE BAR FROM ITS BASELINE, which is the only motion that
-          // carries the data: the bar arrives at its value rather than fading in at it.
-          const w = orientation === 'horizontal' ? r.w * t : r.w;
-          const h = orientation === 'horizontal' ? r.h : r.h * t;
-          const y = orientation === 'horizontal' ? r.y : r.y + (r.h - h);
+        rects.map((r, i) => {
+          let w: number, h: number, y: number, x: number;
+          if (phase === 'update' && prev.current?.[i]) {
+            /* AN UPDATE SLIDES. A bar whose value moved from 14 to 11 shrinks to 11; it does
+               not collapse to zero and regrow, which is what replaying the entrance would
+               do and which reads as a page reload rather than as a number changing.
+               Indexed pairing is correct here because these charts are ranked lists of a
+               stable subject set; a genuinely different subject at index i simply slides
+               from wherever the old one was, which is honest — nothing is invented. */
+            const p = prev.current[i]!;
+            const lerp = (a: number, b: number) => a + (b - a) * t;
+            x = lerp(p.x, r.x); y = lerp(p.y, r.y);
+            w = lerp(p.w, r.w); h = lerp(p.h, r.h);
+          } else {
+            // THE ENTRANCE GROWS THE BAR FROM ITS BASELINE — the bar arrives AT its value
+            // rather than fading in at it.
+            x = r.x;
+            w = orientation === 'horizontal' ? r.w * t : r.w;
+            h = orientation === 'horizontal' ? r.h : r.h * t;
+            y = orientation === 'horizontal' ? r.y : r.y + (r.h - h);
+          }
           return {
-            x0: r.x, x1: r.x + w,
+            x0: x, x1: x + w,
             y0: y, y1: y + h,
             colour: exposure(hexToLinear(r.colour), 0.62),
           };
@@ -118,6 +137,9 @@ export function useFlatBars({ rects, viewW, viewH, orientation = 'horizontal' }:
         vignetteDepth: 0,
         transparent: true,
       });
+      // Recorded only once the transition has landed, so an interrupted update still
+      // interpolates from a real previous frame rather than from a half-way one.
+      if (t >= 1) prev.current = rects;
     },
     [mod, rects, viewW, viewH, orientation],
   );

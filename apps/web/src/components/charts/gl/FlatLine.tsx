@@ -66,8 +66,10 @@ export function useFlatLine({ lines = [], arcs = [], viewW, viewH }: FlatLinePro
     lines.every((l) => HEX.test(l.colour) && l.points.length >= 4) &&
     arcs.every((a) => HEX.test(a.colour));
 
+  const prev = useRef<{ lines: readonly LinePath[]; arcs: readonly RingArc[] } | null>(null);
+
   const draw = useCallback(
-    (stage: Stage, { t }: { t: number }) => {
+    (stage: Stage, { t, phase }: { t: number; phase: 'enter' | 'update' }) => {
       if (!mod) return;
       const { createStrokeBatch, createPipeline, plotMatrix, beginAlpha, endPass, hexToLinear, exposure } = mod;
       const gl = stage.gl;
@@ -85,25 +87,48 @@ export function useFlatLine({ lines = [], arcs = [], viewW, viewH }: FlatLinePro
       // SOURCE-OVER, not additive. See the header — this is the whole fix.
       beginAlpha(gl);
 
-      for (const l of lines) {
-        /* THE ENTRANCE IS A LEFT-TO-RIGHT REVEAL, which is the only motion a line carries:
-           it draws itself in the direction the data is read. A line cannot grow from a
-           baseline the way a bar does. */
-        const keep = Math.max(2, Math.ceil((l.points.length / 2) * t)) * 2;
-        strokes.polyline(mvp, l.points.subarray(0, keep), {
+      lines.forEach((l, i) => {
+        /* ENTER is a left-to-right REVEAL — the only motion a line carries, since it draws
+           itself in the direction the data is read and cannot grow from a baseline.
+           UPDATE morphs the shape instead: each vertex slides from where it was to where it
+           now is, so a series that shifted reads as the SAME line moving. Re-revealing it
+           would say "a new chart arrived" about a number that merely changed. */
+        const p = prev.current?.lines[i];
+        let pts = l.points;
+        if (phase === 'update' && p && p.points.length === l.points.length) {
+          pts = new Float32Array(l.points.length);
+          for (let k = 0; k < pts.length; k++) {
+            pts[k] = p.points[k]! + (l.points[k]! - p.points[k]!) * t;
+          }
+        } else {
+          const keep = Math.max(2, Math.ceil((l.points.length / 2) * t)) * 2;
+          pts = l.points.subarray(0, keep);
+        }
+        strokes.polyline(mvp, pts, {
           colour: exposure(hexToLinear(l.colour), 0.30),
           halfWidth: l.halfWidth,
           gain: 1,
           modelling: 0.35,
         });
-      }
-      for (const a of arcs) {
-        strokes.arc(mvp, a.cx, a.cy, a.rInner, a.rOuter, a.a0, a.a0 + (a.a1 - a.a0) * t, {
+      });
+      arcs.forEach((a, i) => {
+        const p = prev.current?.arcs[i];
+        /* An update sweeps each segment BOUNDARY from its old angle to its new one, so a
+           share that grew reads as the ring re-dividing rather than being redrawn. On enter
+           the whole ring sweeps out from its start angle. */
+        const a0 = phase === 'update' && p ? p.a0 + (a.a0 - p.a0) * t : a.a0;
+        const a1 = phase === 'update' && p
+          ? p.a1 + (a.a1 - p.a1) * t
+          : a.a0 + (a.a1 - a.a0) * t;
+        strokes.arc(mvp, a.cx, a.cy, a.rInner, a.rOuter, a0, a1, {
           colour: exposure(hexToLinear(a.colour), 0.30),
           gain: 1,
           modelling: 0.42,
         });
-      }
+      });
+      // Recorded only once the transition lands, so an interrupted update still
+      // interpolates from a real previous frame rather than a half-way one.
+      if (t >= 1) prev.current = { lines, arcs };
       endPass(gl);
 
       // BLOOM OFF. A hairline has no highlight to bloom; the glow was pure blowout.

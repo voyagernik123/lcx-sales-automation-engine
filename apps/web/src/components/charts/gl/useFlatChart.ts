@@ -33,8 +33,22 @@ import type { Stage } from '@lcx/gl';
  */
 
 export interface FlatChartFrame {
-  /** Progress of the entrance, 0→1. Always 1 immediately under reduced motion. */
+  /** Progress of the current transition, 0→1. Always 1 immediately under reduced motion. */
   readonly t: number;
+  /**
+   * WHICH transition `t` belongs to, and the two are drawn completely differently.
+   *
+   * `enter` — first paint. A bar grows from its baseline, a line reveals left to right.
+   * `update` — the data changed under a chart that is already on screen. The caller
+   *   interpolates from the geometry it last drew to the new geometry, so a value that
+   *   moved from 14 to 11 SLIDES; it does not collapse to zero and regrow.
+   *
+   * Replaying the entrance on every data change is the failure this distinction exists to
+   * prevent: on a dashboard that refreshes on a timer, it would leave every chart
+   * permanently in motion — the idle animation the motion policy forbids, arrived at from
+   * the other direction.
+   */
+  readonly phase: 'enter' | 'update';
   readonly width: number;
   readonly height: number;
 }
@@ -45,8 +59,10 @@ export interface UseFlatChartOptions {
   readonly height: number;
   /** Milliseconds for the entrance. Ignored entirely under reduced motion. */
   readonly entranceMs?: number;
-  /** Changing this re-renders WITHOUT replaying the entrance. */
+  /** Changing this runs an UPDATE transition — not a replayed entrance. */
   readonly deps?: readonly unknown[];
+  /** Milliseconds for an update. Shorter than the entrance: the reader is already looking. */
+  readonly updateMs?: number;
 }
 
 export interface UseFlatChart {
@@ -71,7 +87,7 @@ export function useFlatChart(
   const drawRef = useRef(draw);
   drawRef.current = draw;
 
-  const { width, height, entranceMs = 420 } = opts;
+  const { width, height, entranceMs = 420, updateMs = 260 } = opts;
   const deps = opts.deps ?? [];
 
   const paint = useCallback(async () => {
@@ -99,32 +115,37 @@ export function useFlatChart(
       // consent from a reader who never gave it.
       : true;
 
+    const phase: 'enter' | 'update' = entered.current ? 'update' : 'enter';
     const runFrame = (t: number) => {
       renderer.render(canvas, ({ width: fw, height: fh }) => {
-        drawRef.current(renderer.stage, { t, width: fw, height: fh });
+        drawRef.current(renderer.stage, { t, width: fw, height: fh, phase });
       });
       setRefused(false);
       setReason(null);
     };
 
-    if (entered.current || reduced || entranceMs <= 0) {
+    const ms = phase === 'enter' ? entranceMs : updateMs;
+    // Reduced motion resolves to the FINAL STATE on the first frame — for an update exactly
+    // as for an entrance. The reader sees the new numbers, without the movement.
+    if (reduced || ms <= 0) {
       entered.current = true;
       runFrame(1);
       return;
     }
 
+    if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     const t0 = performance.now();
     const step = () => {
-      const raw = Math.min(1, (performance.now() - t0) / entranceMs);
+      const raw = Math.min(1, (performance.now() - t0) / ms);
       // Cubic ease-in-out, matching @lcx/gl's motion layer: symmetric, because an
       // asymmetric ease implies a direction the data does not have.
       const t = raw < 0.5 ? 4 * raw ** 3 : 1 - (-2 * raw + 2) ** 3 / 2;
       runFrame(t);
       if (raw < 1) rafRef.current = requestAnimationFrame(step);
-      else entered.current = true;
+      else { rafRef.current = null; entered.current = true; }
     };
     rafRef.current = requestAnimationFrame(step);
-  }, [width, height, entranceMs]);
+  }, [width, height, entranceMs, updateMs]);
 
   useEffect(() => {
     void paint();
