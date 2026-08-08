@@ -45,3 +45,7 @@ updater.key*
 # Belt-and-braces: Rust build output (also ignored in apps/desktop/src-tauri).
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/schemas/
+
+# Derived: rebuild with `node docs/3d/p1/build.mjs`. Committing it would let the
+# gate page drift from the spine it is supposed to be testing.
+docs/3d/p1/bundle.js

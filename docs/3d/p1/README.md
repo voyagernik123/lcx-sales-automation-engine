@@ -1,0 +1,132 @@
+# P1 · SPINE — the gate result
+
+`3D_WORK_100X.md` §7 defines P1 as **L1 renderer + L2 look + L3 motion**, one sequential
+lane, with the gate: *"brand hex exact after tone mapping."*
+
+The spine is `packages/gl` (`@lcx/gl`). This directory is its proof: S1's risk cloud,
+rebuilt on the package with every line of hand-written WebGL removed, captured headlessly
+and compared against P0's plate pixel by pixel.
+
+```bash
+node docs/3d/p0/samples.mjs      # the real engine → samples.json
+node docs/3d/p1/build.mjs        # bundle + MEASURE each layer against §6.4
+node docs/3d/p1/capture.mjs      # → risk-cloud.png AND refusal.png
+node docs/3d/p1/compare.mjs      # → does the spine still reproduce P0?
+```
+
+`npm run gl-budget` is wired into `ci-check`, so a layer that overruns fails the build
+rather than being noticed later.
+
+---
+
+## The gate
+
+| gate | required | measured |
+|---|---|---|
+| Brand hex exact after tone mapping | `#2C6BFF` in, `#2C6BFF` out | **exact, whole palette** — `assertBrandFidelity()` returns `[]` |
+| The spine reproduces P0 | no visible regression | **mean \|Δ\| 0.09/255, max 6/255, 0 channels over 8** of 13,789,500 |
+| L1 renderer | ≤ 45 KB raw | **10.4 KB** |
+| L2 look | ≤ 10 KB raw | **5.3 KB** |
+| L3 motion | ≤ 8 KB raw | **1.7 KB** |
+| spine total | ≤ 63 KB raw | **17.5 KB** — 45.5 KB under, and 29× smaller than three.js |
+| No WebGL2 is a real state, not a crash | renders something honest | **`refusal.png`** |
+
+The spine came in at 28% of its allocation. §6.4 warned that a 63 KB overrun would eat a
+surface; instead there is 45 KB of unspent headroom, which is the budget for the SDF font
+atlas (30 KB) plus change.
+
+---
+
+## What is in the spine
+
+```
+L1  packages/gl/src/
+      stage.ts          context, HDR targets, programs, refusals, depth policy
+      math.ts           column-major mat4, projection, screen projection
+      primitives/
+        points.ts       10k–1M instanced gaussian deposits
+        lines.ts        rules, ticks, reference marks, curves
+L2  packages/gl/src/look/
+      colour.ts         linear working space, brand palette, the data-vs-light rule
+      tonemap.ts        Reinhard on the composite ONLY + the fidelity gate
+      pipeline.ts       bright pass → separable blur ×4 → composite → one sRGB encode
+L3  packages/gl/src/motion/
+      index.ts          purposes, reduced motion, and the refusals
+```
+
+53 unit tests, all pure. The GPU half cannot be unit tested — jsdom has no WebGL2, and a
+`jsdom` suite here would exercise the same refusal path as `node` while *implying* it had
+exercised a renderer. So the GPU half is verified by the capture in this directory, which
+runs a real driver and produces an image somebody reads.
+
+### The three rules the layers enforce in code rather than in review
+
+1. **A colour that means something is DATA, and data is never graded.** §4.1 measured
+   brand blue coming out of AgX as `#467ECF` — a shift of 48 in green, invisible without a
+   reference beside it. So the tone map is applied to the composite only, `look.test.ts`
+   asserts it appears in exactly one shader, and it asserts the **negative control**: that
+   tone-mapping a data colour genuinely does move it. An equality test between two things
+   that were never going to differ proves nothing.
+2. **Motion carries information or it does not exist.** `MotionPurpose` has four members
+   and none of them is "because it looks good". `startMotion` throws at *runtime*, not
+   just in the type system, because a purpose can arrive from configuration. Under
+   `prefers-reduced-motion` every transition resolves to its **final state** — not a
+   shorter animation — and an environment that cannot read the preference defaults to
+   reduced rather than inventing consent.
+3. **A refusal is a state, not an exception.** `createStage` returns a discriminated
+   union, so the fallback is unskippable rather than something to remember.
+
+---
+
+## Two captures, and the second is the one that mattered
+
+`capture.mjs` shoots **both** paths: WebGL2 present, and WebGL2 removed by stubbing
+`getContext('webgl2')` to `null` — the shape a locked-down enterprise browser, a
+fingerprint blocker, or a dead GPU process actually presents.
+
+**The refusal capture immediately caught a broken fallback.** The first version hid the
+canvas on refusal, which collapsed `.stage` to zero height; `.refusal` is `inset: 0` inside
+it, so the message rendered into nothing and the page showed a title above a blank gap. It
+was a fallback that had never been looked at, and it did not work. It also promised *"the
+flat view below shows the same measurements"* on a page that has no flat view — so the
+package's refusal text now states only what it knows (what happened, and that the data is
+unaffected), and the remedy is stated by the surface, which is the layer that knows whether
+one exists.
+
+---
+
+## Chasing a max of 248, and being wrong twice
+
+`compare.mjs` first reported **max |Δ| = 248** — a pixel going from near-black to
+near-white. That reads as a broken renderer, and it was not one. The sequence is recorded
+because two plausible explanations were checked and both were wrong:
+
+| step | hypothesis | result |
+|---|---|---|
+| 1 | *Capture noise.* | **Wrong.** `p0/capture.mjs` run twice is bit-identical: mean 0, max 0. The harness has no noise, so the difference was real. |
+| 2 | *My exposure-stop conversions were rounded* (`×0.42` written as `2^-1.25`). | **Wrong.** Substituting exact stops changed the number by 0.001. |
+| 3 | Profile *where* the differing pixels are. | 233 of 1450 plate rows contain any difference at all, concentrated in rows 1665–1673 — the tick-label row. Every GL row was untouched. |
+| 4 | Measure every DOM box in both pages. | Ticks, readout, axis name, stage and canvas: **identical to 0.01 px.** Nothing had moved. |
+| 5 | The P1 page is 192 px taller (it prints the L2/L3 policies). Hide that one paragraph. | **max 248 → 6, and zero channels over 8.** |
+
+A taller page rasterizes text on different compositor tiles, so antialiased glyph edges
+land differently. That is a fact about Chromium, not about the renderer. `compare.mjs`
+therefore hides that paragraph and compares like for like.
+
+The general lesson is the one this repo keeps relearning in new media: **a number is not a
+measurement until you have found what would make it different.** Steps 1 and 2 were both
+confident and both wrong, and only step 3 — profiling instead of theorising — moved it.
+
+---
+
+## Files
+
+| File | What it is |
+|---|---|
+| `surface.ts` | S1 rebuilt on `@lcx/gl`. The first L4 lane, written to the contract nine lanes will share: imports from `@lcx/gl` and nowhere else, touches no `WebGL*` symbol, makes no colour decision the palette has not made |
+| `entry.ts` | Browser entry — mounts it, prints the readout, renders the refusal |
+| `risk-cloud.html` | The page. Type is DOM, positioned by `projectScreen`, so a label cannot drift from the geometry it names |
+| `build.mjs` | Bundles, and measures each layer against its §6.4 allocation. Exits non-zero on overrun |
+| `capture.mjs` | Both captures — rendered, and refused |
+| `compare.mjs` | The regression gate against P0 |
+| `bundle.js` | Derived, gitignored. Rebuild with `build.mjs` |
