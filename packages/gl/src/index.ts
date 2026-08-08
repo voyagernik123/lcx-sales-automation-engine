@@ -21,7 +21,7 @@
 /* ── L1 · renderer ── */
 export {
   createStage, isStage, stageRefusal,
-  beginAdditive, beginOpaque, endPass,
+  beginAdditive, beginAlpha, beginOpaque, endPass,
   DEPTH_POLICY, STAGE_REFUSAL_CODES,
 } from './stage.js';
 export type {

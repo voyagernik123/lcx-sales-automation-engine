@@ -307,6 +307,25 @@ export function beginAdditive(gl: WebGL2RenderingContext): void {
   gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
 }
 
+/**
+ * SOURCE-OVER, for fine strokes.
+ *
+ * Additive is correct for a quantity that ACCUMULATES — a point cloud, a stack of bars —
+ * and wrong for a hairline. A polyline ribbon overlaps itself at every mitre join, and under
+ * additive blending those overlaps SUM: a 2 px sparkline came out as a thick, blown-out
+ * blob, and a donut's arcs summed into slabs. Both looked like geometry bugs and were a
+ * blend-mode error.
+ *
+ * The primitives already write premultiplied colour (`rgb * a, a`), so the correct factors
+ * are ONE / ONE_MINUS_SRC_ALPHA rather than SRC_ALPHA / ONE_MINUS_SRC_ALPHA — using the
+ * latter would multiply alpha in a second time and darken every edge.
+ */
+export function beginAlpha(gl: WebGL2RenderingContext): void {
+  gl.disable(gl.DEPTH_TEST);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+}
+
 export function beginOpaque(gl: WebGL2RenderingContext): void {
   gl.disable(gl.BLEND);
   gl.enable(gl.DEPTH_TEST);
