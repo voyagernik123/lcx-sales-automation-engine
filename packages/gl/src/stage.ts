@@ -120,6 +120,11 @@ export interface Stage {
   compile(vertexSrc: string, fragmentSrc: string): WebGLProgram | StageRefusal;
   /** Bind a target (or `null` for the canvas) and set the viewport to match it. */
   bindTarget(t: RenderTarget | null): void;
+  /**
+   * Resize the render region. Reallocates the targets only when the size actually changes,
+   * so a page of same-sized charts pays for one allocation.
+   */
+  setRegion(width: number, height: number): void;
   /** Draw a full-screen triangle with `program`. Owns its own VAO — see the note below. */
   blit(program: WebGLProgram, setUniforms?: (p: WebGLProgram) => void): void;
   dispose(): void;
@@ -167,12 +172,19 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
   };
 
   const shift = opts.bloomShift ?? 2;
-  const bw = Math.max(1, W >> shift), bh = Math.max(1, H >> shift);
-  const scene = makeTarget(W, H);
+  /* THE REGION. Targets are allocated to it and `bindTarget` sets the viewport from it.
+     Everything below used the CANVAS size instead, which was correct for a stage that owns
+     its whole canvas and silently wrong for the shared renderer, where one 1024×512 buffer
+     serves many charts: `bindTarget` re-set the viewport to 1024×512 AFTER the shared
+     renderer had scissored a 960×312 region, so the chart rendered at full-buffer scale and
+     the blit copied a window of it — every mark 1.64× too large and the bottom rows cropped
+     clean off. Nothing threw, and the chart merely looked wrong. */
+  let region = { w: W, h: H };
+  let scene = makeTarget(W, H);
   if ('kind' in scene) return scene;
-  const bloomA = makeTarget(bw, bh);
+  let bloomA = makeTarget(Math.max(1, W >> shift), Math.max(1, H >> shift));
   if ('kind' in bloomA) return bloomA;
-  const bloomB = makeTarget(bw, bh);
+  let bloomB = makeTarget(Math.max(1, W >> shift), Math.max(1, H >> shift));
   if ('kind' in bloomB) return bloomB;
 
   /* THE FULL-SCREEN TRIANGLE GETS ITS OWN VAO, AND NOTHING ELSE MAY BIND INTO IT.
@@ -196,14 +208,26 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
   const stage: Stage = {
     kind: 'stage',
     gl,
-    width: W,
-    height: H,
     cssWidth: canvas.clientWidth || W,
     cssHeight: canvas.clientHeight || H,
     hdr: Boolean(float),
-    scene,
-    bloomA,
-    bloomB,
+    get width() { return region.w; },
+    get height() { return region.h; },
+    get scene() { return scene as RenderTarget; },
+    get bloomA() { return bloomA as RenderTarget; },
+    get bloomB() { return bloomB as RenderTarget; },
+
+    setRegion(w: number, h: number) {
+      const nw = Math.max(1, Math.round(w)), nh = Math.max(1, Math.round(h));
+      if (nw === region.w && nh === region.h) return;   // repeated same-size charts are free
+      region = { w: nw, h: nh };
+      for (const t of [scene, bloomA, bloomB]) {
+        if (!('kind' in t)) { gl.deleteFramebuffer(t.framebuffer); gl.deleteTexture(t.texture); }
+      }
+      scene = makeTarget(nw, nh);
+      bloomA = makeTarget(Math.max(1, nw >> shift), Math.max(1, nh >> shift));
+      bloomB = makeTarget(Math.max(1, nw >> shift), Math.max(1, nh >> shift));
+    },
 
     compile(vertexSrc, fragmentSrc) {
       const build = (type: number, src: string): WebGLShader | StageRefusal => {
@@ -234,7 +258,8 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
 
     bindTarget(t) {
       gl.bindFramebuffer(gl.FRAMEBUFFER, t ? t.framebuffer : null);
-      gl.viewport(0, 0, t ? t.width : W, t ? t.height : H);
+      // The REGION, not the canvas. See the note where `region` is declared.
+      gl.viewport(0, 0, t ? t.width : region.w, t ? t.height : region.h);
     },
 
     blit(program, setUniforms) {
@@ -248,8 +273,7 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
     dispose() {
       for (const p of programs) gl.deleteProgram(p);
       for (const t of [scene, bloomA, bloomB]) {
-        gl.deleteFramebuffer(t.framebuffer);
-        gl.deleteTexture(t.texture);
+        if (!('kind' in t)) { gl.deleteFramebuffer(t.framebuffer); gl.deleteTexture(t.texture); }
       }
       gl.deleteBuffer(quadBuf);
       gl.deleteVertexArray(quadVao);

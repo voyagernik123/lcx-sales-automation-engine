@@ -101,8 +101,16 @@ void main(){
   vec2 p = (vUV - 0.5) * vSize;
   float r = min(uRadius, min(half_.x, half_.y));
   float d = sdRoundRect(p, half_, r);
-  // One-pixel feather from the exact boundary. Correct at any zoom.
-  float aa = fwidth(d);
+  /* THE FEATHER WIDTH COMES FROM POSITION, NOT FROM THE DISTANCE.
+     This was fwidth(d), which is the obvious form and is wrong: sdRoundRect contains
+     max(q, 0.0) and a length(), so its derivative is DISCONTINUOUS along the diagonal
+     running out of each corner. fwidth spikes on that seam, the smoothstep below fires
+     deep inside the shape, and a small dark speck appears on the diagonal — visible on
+     two of six bars and on nothing else, which is exactly the sort of artifact that gets
+     blamed on the data.
+     p is linear in vUV, so fwidth(p) is constant across the primitive and the feather is
+     one pixel everywhere including across that seam. */
+  float aa = max(fwidth(p.x), fwidth(p.y));
   float mask = 1.0 - smoothstep(-aa, aa, d);
   if (mask <= 0.001) discard;
 
@@ -127,18 +135,26 @@ export const CONTACT_VERT = `#version 300 es
 precision highp float;
 layout(location=0) in vec2 quad;
 layout(location=1) in vec4 rect;
-uniform mat4 uMVP; uniform float uDrop, uSpread, uHorizontal;
+uniform mat4 uMVP; uniform float uDrop, uSpread, uHorizontal, uYSign;
 out vec2 vUV;
 void main(){
   vUV = quad;
+  /* uYSign IS THE PROJECTION'S Y DIRECTION, not an assumption.
+     This shader was written for a y-up plot and hard-coded "below" as y minus drop. A chart
+     borrowing its host SVG's viewBox counts y DOWNWARD, so the shadow was cast ABOVE each
+     bar — mostly hidden behind it, and visible as a dark speck poking through the rounded
+     corner. A shadow that does not know which way is down is not a shadow. */
+  float base = uYSign > 0.0 ? rect.y : rect.w;          // the edge resting on the plate
+  float away = -uYSign;                                  // away from the light, onto the plate
   vec2 lo, hi;
+  float y0 = base + away * (uDrop + uSpread);
+  float y1 = base - away * (uSpread * 0.25);
   if (uHorizontal > 0.5) {
-    // Horizontal bars sit ON the plate; the shadow falls below the whole run.
-    lo = vec2(rect.x, rect.y - uDrop - uSpread);
-    hi = vec2(rect.z + uSpread * 0.5, rect.y + uSpread * 0.25);
+    lo = vec2(rect.x, min(y0, y1));
+    hi = vec2(rect.z + uSpread * 0.5, max(y0, y1));
   } else {
-    lo = vec2(rect.x - uSpread, rect.y - uDrop - uSpread);
-    hi = vec2(rect.z + uSpread, rect.y + uSpread * 0.25);
+    lo = vec2(rect.x - uSpread, min(y0, y1));
+    hi = vec2(rect.z + uSpread, max(y0, y1));
   }
   gl_Position = uMVP * vec4(mix(lo, hi, quad), 0.0, 1.0);
 }`;
@@ -148,10 +164,12 @@ precision highp float;
 in vec2 vUV;
 uniform vec3 uColour; uniform float uStrength;
 out vec4 frag;
+uniform float uContactEdge;
 void main(){
-  // Softest at the top and the edges, densest where the bar meets the plate — which is
-  // where a real contact shadow is densest, and the reason it reads as contact at all.
-  vec2 c = (vUV - vec2(0.5, 1.0));
+  // Softest at the far edge, densest where the bar meets the plate — which is where a real
+  // contact shadow is densest, and the reason it reads as contact at all. uContactEdge
+  // says which end of the quad that is, so the gradient flips with the axis too.
+  vec2 c = (vUV - vec2(0.5, uContactEdge));
   float f = exp(-dot(c * vec2(2.4, 1.6), c * vec2(2.4, 1.6)) * 3.2);
   frag = vec4(uColour * f * uStrength, f * uStrength);
 }`;
@@ -213,9 +231,20 @@ export function createBarBatch(stage: Stage): BarBatch | StageRefusal {
         // Shadow FIRST, so the bar lands on top of it rather than through it.
         gl.useProgram(contactP);
         gl.uniformMatrix4fv(u(contactP, 'uMVP'), false, mvp);
-        gl.uniform1f(u(contactP, 'uDrop'), 0.004);
-        gl.uniform1f(u(contactP, 'uSpread'), 0.030);
+        /* PROPORTIONAL TO THE BAR, not a fixed world constant. These were 0.004 and 0.030,
+           which is 0.2% of a 15-unit plot and 0.006% of a 480-unit one — so on a chart in
+           viewBox units the shadow quad collapsed to sub-pixel and aliased into a visible
+           speck at the corner of a bar. A shadow has to be sized in the same units as the
+           thing casting it. */
+        const bar = bars.reduce((m, b) => Math.max(m, horizontal ? b.y1 - b.y0 : b.x1 - b.x0), 0);
+        gl.uniform1f(u(contactP, 'uDrop'), bar * 0.06);
+        gl.uniform1f(u(contactP, 'uSpread'), bar * 0.42);
         gl.uniform1f(u(contactP, 'uHorizontal'), horizontal ? 1 : 0);
+        // Read off the matrix: element 5 is the y scale, negative when the caller flipped
+        // the axis to match an SVG viewBox.
+        const yUp = (mvp[5] ?? 1) >= 0;
+        gl.uniform1f(u(contactP, 'uYSign'), yUp ? 1 : -1);
+        gl.uniform1f(u(contactP, 'uContactEdge'), yUp ? 1 : 0);
         gl.uniform3f(u(contactP, 'uColour'), 0.02, 0.03, 0.06);
         gl.uniform1f(u(contactP, 'uStrength'), contact);
         gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, bars.length);

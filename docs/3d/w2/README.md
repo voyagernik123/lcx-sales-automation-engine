@@ -43,18 +43,32 @@ final state on frame one, and an environment that cannot read the preference ass
 All three are fixed and all three were invisible to every test — they only appear when a
 transparent layer is composited over real DOM.
 
-## NOT landed: the `BarChartH` swap
+## `BarChartH` is swapped, and the three bugs it took to get there
 
-The integration renders **four bars for six rows**, misaligned with their labels. I did not
-isolate it, so it is reverted rather than shipped.
+It first rendered **four bars for six rows**, stretched and misaligned. All three causes
+were in code I had written, and none was visible to any test.
 
-What is ruled out, measured in the live page: canvas backing 960 × 312, CSS 760 × 247, SVG
-`viewBox="0 0 480 156"`, all 12 text nodes present, GL layer drawing, zero SVG fallback
-paths. The geometry the two layers agree on is right. The standalone bars in `docs/3d/w1`
-render correctly from the same primitive with the same matrix, which narrows it to the
-integration — the memoised `rects`, the colour-token resolution pass, or the instance
-buffer — and not to `flat/bars.ts`.
+**1 · The viewport, and it was an architectural defect rather than a slip.** `bindTarget`
+set the viewport from the TARGET's size. That is correct for a stage owning its own canvas
+and silently wrong for the shared renderer, where one 1024 × 512 buffer serves many charts:
+`bindTarget` re-set the viewport to the full buffer AFTER the shared renderer had scissored
+the chart's 960 × 312 region, so every mark rendered 1.64× too large and the bottom rows fell
+outside the copied rect. The `Stage` now has a REGION — `setRegion(w, h)` resizes the targets
+and `bindTarget` reads the viewport from it, reallocating only when the size actually
+changes, so a page of same-sized charts pays for one allocation.
 
-**The layer is ready; one caller is not.** Shipping a chart that drops a third of its rows
-would be strictly worse than the flat SVG it replaced, and W0's finding was explicitly that
-these primitives are correct and must not be made worse.
+**2 · The contact shadow did not know which way was down.** It hard-coded "below" as
+decreasing y. A chart borrowing its host SVG's viewBox counts y DOWNWARD, so the shadow was
+cast above each bar. The direction is now read off the projection matrix.
+
+**3 · `fwidth(d)` — the antialiasing bug, and the best of the three.** `sdRoundRect`
+contains `max(q, 0.0)` and a `length()`, so its derivative is DISCONTINUOUS along the
+diagonal running out of each corner. `fwidth` spikes on that seam, the edge smoothstep fires
+deep inside the shape, and a small dark speck appears on the diagonal — on two bars of six,
+and on nothing else. Exactly the kind of artifact that gets blamed on the data. The feather
+now comes from `fwidth(p)`: `p` is linear in the quad's coordinates, so it is constant
+across the primitive and one pixel wide everywhere, including across that seam.
+
+The scale of bug 3 is worth noting: the whole visible symptom was two marks about six pixels
+across, and the cause was a real mathematical error in the primitive that would have appeared
+on every rounded shape the layer ever drew.

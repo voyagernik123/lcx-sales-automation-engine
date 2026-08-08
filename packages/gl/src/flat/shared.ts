@@ -100,6 +100,9 @@ function build(): SharedRenderer | StageRefusal {
         canvas.width = Math.max(canvas.width, w);
         canvas.height = Math.max(canvas.height, h);
       }
+      // The stage's targets and viewport must match THIS chart's region, or bindTarget
+      // will re-set the viewport to the shared buffer's full size behind our back.
+      stage.setRegion(w, h);
       const { gl } = stage;
       /* The chart's region is the BOTTOM-LEFT corner of the shared buffer, because GL's
          origin is bottom-left and that makes the blit below a straight copy with no flip
