@@ -96,6 +96,19 @@ export interface HealthResponse {
    * anyway.
    */
   uptimeSeconds: number;
+  /**
+   * WHETHER DATABASE TRAFFIC IS ENCRYPTED, AND WHETHER THE SERVER WAS AUTHENTICATED.
+   *
+   * The pool set no `ssl` at all, so every query, every row and the password itself crossed
+   * the public internet in cleartext between Oregon and Frankfurt. Nothing said so, which is
+   * how it survived a security pass — an absent setting reads as a default rather than a
+   * decision. Reported here so the state is observable instead of assumed.
+   *
+   * Three states, never collapsed into "secure": `verified` (TLS + pinned CA), `encrypted`
+   * (TLS, certificate unchecked — stops passive interception, not an active impersonator), and
+   * `off` (no TLS; correct for loopback and nowhere else).
+   */
+  dbTls: 'verified' | 'encrypted' | 'off';
   timestamp: string;
 }
 

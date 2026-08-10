@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { HealthResponse } from '@lcx/shared';
-import { checkDb, getLastDbError } from '../db/index.js';
+import { checkDb, getLastDbError, getDbTlsState } from '../db/index.js';
 import { describeConnectionTarget } from '../db/connectionTarget.js';
 import { env } from '../lib/env.js';
 
@@ -64,6 +64,9 @@ async function snapshot(): Promise<HealthResponse> {
      * "has my environment change actually deployed yet?" answerable from outside.
      */
     uptimeSeconds: Math.round(process.uptime()),
+    /* Read from the LIVE pool rather than re-derived from the URL: what was negotiated is the
+       only thing worth reporting, and re-deciding it here could disagree with reality. */
+    dbTls: getDbTlsState(),
     timestamp: new Date().toISOString(),
   };
 }

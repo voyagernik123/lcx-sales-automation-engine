@@ -9,10 +9,64 @@ const { Pool } = pg;
 let pool: pg.Pool | null = null;
 let dbInstance: ReturnType<typeof drizzle> | null = null;
 
+/**
+ * WHETHER THIS CONNECTION IS ENCRYPTED, AND WHETHER THE SERVER WAS AUTHENTICATED.
+ *
+ * Three states, never collapsed into "secure":
+ *   `verified`  TLS, and the server's certificate was checked against a pinned CA.
+ *   `encrypted` TLS, certificate NOT checked. Protects against passive interception on the
+ *               path; does NOT protect against an active attacker who can answer for the
+ *               host. Strictly better than cleartext and strictly worse than `verified`.
+ *   `off`       No TLS. Correct for a loopback socket, and nowhere else.
+ */
+export type DbTlsState = 'verified' | 'encrypted' | 'off';
+
+/**
+ * THE POOL SET NO `ssl`, SO DATABASE TRAFFIC CROSSED THE PUBLIC INTERNET IN CLEARTEXT.
+ *
+ * `pg` does not negotiate TLS unless it is asked to. The API runs in Oregon and the database
+ * is in Frankfurt, so every query, every row and the password itself travelled unprotected
+ * between two continents. Nothing in the code said so, which is why it survived a security
+ * pass: the absence of a setting looks like a default rather than a decision.
+ *
+ * ── WHY NOT SIMPLY `rejectUnauthorized: true` ───────────────────────────────────────
+ * Because it would fail closed against a managed provider whose CA chain we do not ship, and
+ * an outage is not an improvement in confidentiality. Supabase publishes a CA bundle for full
+ * verification; until it is provisioned, `DATABASE_CA_CERT` is the seam for it and setting
+ * that variable upgrades this to `verified` with no code change.
+ *
+ * ── WHY NOT UNCONDITIONALLY ─────────────────────────────────────────────────────────
+ * A loopback Postgres in Docker or CI has no TLS listener, so forcing it there breaks every
+ * local run and every test to protect a packet that never leaves the kernel. The decision is
+ * made from the HOST, and `sslmode` in the URL always wins — if an operator has said what they
+ * want, this must not silently override it.
+ */
+export function decideTls(url: string, caCert: string): { ssl: pg.PoolConfig['ssl']; state: DbTlsState } {
+  // The operator was explicit. `pg` already honours `sslmode`; do not fight it.
+  if (/[?&]sslmode=/i.test(url)) return { ssl: undefined, state: 'encrypted' };
+
+  let host = '';
+  try { host = new URL(url).hostname.replace(/^\[|\]$/g, ''); } catch { /* unparseable ⇒ treat as local */ }
+  const isLocal = host === '' || host === 'localhost' || host === '127.0.0.1' || host === '::1'
+    // Docker Compose service names and CI hostnames have no dots.
+    || !host.includes('.');
+  if (isLocal) return { ssl: undefined, state: 'off' };
+
+  if (caCert) return { ssl: { ca: caCert, rejectUnauthorized: true }, state: 'verified' };
+  return { ssl: { rejectUnauthorized: false }, state: 'encrypted' };
+}
+
+let tlsState: DbTlsState = 'off';
+/** What the live pool actually negotiated. Reported by `/health`, never inferred by a caller. */
+export function getDbTlsState(): DbTlsState { return tlsState; }
+
 export function getPool(): pg.Pool {
   if (!pool) {
+    const tls = decideTls(env.databaseUrl, env.databaseCaCert);
+    tlsState = tls.state;
     pool = new Pool({
       connectionString: env.databaseUrl,
+      ...(tls.ssl !== undefined ? { ssl: tls.ssl } : {}),
       max: 10,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,

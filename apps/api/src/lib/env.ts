@@ -37,6 +37,16 @@ export const env = {
   port: Number(process.env.PORT ?? 8787),
   host: process.env.HOST ?? '0.0.0.0',
   databaseUrl: process.env.DATABASE_URL ?? '',
+  /**
+   * PEM CA bundle for verifying the database server's certificate. Empty ⇒ the connection is
+   * encrypted but the server is NOT authenticated (see `decideTls` in `db/index.ts`).
+   *
+   * The seam exists so that closing the last gap is a dashboard change and not a deploy:
+   * paste Supabase's published CA bundle here and TLS moves from `encrypted` to `verified`.
+   * Deliberately NOT `required()` — failing the boot over a missing CA would trade a
+   * passive-interception risk for a total outage, which is not a trade worth making silently.
+   */
+  databaseCaCert: process.env.DATABASE_CA_CERT ?? '',
   allowDbSkip: bool('ALLOW_DB_SKIP', false),
   operatorApiKey: required('OPERATOR_API_KEY', 'dev-operator-key-change-me'),
   /**

@@ -19,7 +19,8 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 const checkDb = vi.hoisted(() => vi.fn());
 const getLastDbError = vi.hoisted(() => vi.fn(() => null));
-vi.mock('../../db/index.js', () => ({ checkDb, getLastDbError }));
+const getDbTlsState = vi.hoisted(() => vi.fn(() => 'encrypted'));
+vi.mock('../../db/index.js', () => ({ checkDb, getLastDbError, getDbTlsState }));
 /* The DIRECT Supabase host — the exact shape that was live in Render on 2026-08-10, with a
    same-shape stand-in for the project ref. The route derives its `dbHint` from this. */
 const DIRECT_URL = 'postgresql://postgres:sEcReT@db.aaaabbbbccccdddd.supabase.co:5432/postgres';
@@ -157,6 +158,35 @@ describe('uptime — "has my change deployed yet?" must be answerable from outsi
     const body = await (await (await load()).request('/')).json();
     expect(body.uptimeSeconds).toBe(4322);
     spy.mockRestore();
+  });
+});
+
+describe('TLS state is reported, because an absent setting reads as a default', () => {
+  /*
+   * The pool set no `ssl`, so database traffic crossed the public internet in cleartext between
+   * Oregon and Frankfurt. It survived a security pass precisely because there was nothing to
+   * see: no setting, no log line, no field. Reporting the state is what makes it auditable
+   * from outside instead of by reading the source.
+   */
+  it('carries the negotiated TLS state', async () => {
+    checkDb.mockResolvedValue('up');
+    getDbTlsState.mockReturnValue('encrypted');
+    const body = await (await (await load()).request('/')).json();
+    expect(body.dbTls).toBe('encrypted');
+  });
+
+  it('distinguishes verified from merely encrypted', async () => {
+    // Collapsing these two into "secure" would be the same class of lie as the silent
+    // cleartext it replaced.
+    checkDb.mockResolvedValue('up');
+    getDbTlsState.mockReturnValue('verified');
+    expect((await (await (await load()).request('/')).json()).dbTls).toBe('verified');
+  });
+
+  it('reports it even when the database is DOWN — that is when an operator is looking', async () => {
+    checkDb.mockResolvedValue('down');
+    getDbTlsState.mockReturnValue('off');
+    expect((await (await (await load()).request('/')).json()).dbTls).toBe('off');
   });
 });
 

@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
 import { closeDb } from './db/index.js';
 import { connectionTargetBootLine } from './db/connectionTarget.js';
+import { decideTls } from './db/index.js';
 import { env } from './lib/env.js';
 
 /*
@@ -17,6 +18,25 @@ import { env } from './lib/env.js';
  */
 const bootLine = connectionTargetBootLine(env.databaseUrl, env.nodeEnv);
 if (bootLine) console.error(bootLine);
+
+/*
+ * SAY IT OUT LOUD WHEN THE SERVER IS NOT AUTHENTICATED.
+ *
+ * `encrypted` in production means TLS without certificate verification: safe against passive
+ * interception, not against anything that can answer for the host. That is a deliberate
+ * trade — a pinned CA is not shipped, and failing the boot over it would swap a
+ * confidentiality risk for an outage — but a deliberate trade that nobody can see is
+ * indistinguishable from an oversight, and this one already survived one security pass by
+ * looking like a default.
+ */
+const tls = decideTls(env.databaseUrl, env.databaseCaCert);
+if (env.nodeEnv === 'production' && tls.state !== 'verified') {
+  console.error(
+    tls.state === 'off'
+      ? '[db] TLS IS OFF in production — database traffic is in CLEARTEXT. Check DATABASE_URL points at a remote host.'
+      : '[db] TLS is on but the server certificate is NOT verified. Set DATABASE_CA_CERT to the provider CA bundle to upgrade to verified.',
+  );
+}
 
 const app = createApp();
 
