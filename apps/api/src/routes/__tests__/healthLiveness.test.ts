@@ -126,6 +126,40 @@ describe('a down database also says WHAT TO CHANGE, not only what happened', () 
   });
 });
 
+describe('uptime — "has my change deployed yet?" must be answerable from outside', () => {
+  /*
+   * THE AMBIGUITY THIS REMOVES COST SIX MINUTES AND PRODUCED THE WRONG CONCLUSION.
+   *
+   * `dbHint` is derived from DATABASE_URL, which is read ONCE at boot. So a stale hint means
+   * either "the variable is still wrong" or "it was fixed and the old process is still
+   * serving" — opposite problems with opposite fixes, and nothing in the response
+   * distinguished them. The tooling polled for six minutes and then announced that Render's
+   * copy of the string must be wrong, having never established that the deploy had finished.
+   */
+  it('reports how long this process has been running', async () => {
+    checkDb.mockResolvedValue('up');
+    const body = await (await (await load()).request('/')).json();
+    expect(typeof body.uptimeSeconds).toBe('number');
+    expect(body.uptimeSeconds).toBeGreaterThanOrEqual(0);
+  });
+
+  it('is present even when the database is down — that is exactly when it is needed', async () => {
+    checkDb.mockResolvedValue('down');
+    const body = await (await (await load()).request('/')).json();
+    expect(typeof body.uptimeSeconds).toBe('number');
+  });
+
+  it('comes from the runtime, not a module-load timestamp', async () => {
+    /* A module-scoped `Date.now()` is reset by a re-import, which would make a re-imported
+       module look like a fresh process — the precise illusion this field exists to break. */
+    const spy = vi.spyOn(process, 'uptime').mockReturnValue(4321.6);
+    checkDb.mockResolvedValue('up');
+    const body = await (await (await load()).request('/')).json();
+    expect(body.uptimeSeconds).toBe(4322);
+    spy.mockRestore();
+  });
+});
+
 describe('readiness keeps the strict semantics, for whoever actually wants them', () => {
   it('GET /health/ready is 503 when the database is down', async () => {
     checkDb.mockResolvedValue('down');

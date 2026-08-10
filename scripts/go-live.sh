@@ -184,15 +184,46 @@ STEPS
   printf '\n  Press Enter once you have saved it (or Ctrl-C to stop here): '
   read -r _ || true
 
+  #
+  # WATCH FOR A RESTART, NOT JUST FOR SUCCESS.
+  #
+  # `dbHint` comes from DATABASE_URL, which is read once at boot, so a stale hint means either
+  # "the variable is still wrong" or "it was fixed and the old process is still serving" —
+  # opposite problems. The first version of this loop waited six minutes and then announced
+  # that Render's copy of the string must be wrong, having never established that the deploy
+  # had finished. `uptimeSeconds` settles it: if uptime keeps climbing past the moment the
+  # save was made, nothing has restarted.
+  #
+  # This is a DOCKER service on Render's free plan. A redeploy rebuilds the image, which takes
+  # far longer than a restart, so the window is 12 minutes rather than 6.
+  #
   bold "  waiting for Render to redeploy and reconnect"
-  for i in $(seq 1 24); do
-    S="$(health | health_field db)"
-    H="$(health | health_field dbHint.code)"
-    printf '  %s  db=%s %s\n' "$(date -u +%H:%M:%S)" "${S:-no-answer}" "${H:+· $H}"
+  START_UP="$(health | health_field uptimeSeconds)"
+  [ -n "$START_UP" ] && printf '  process uptime before the deploy: %ss\n' "$START_UP"
+  RESTARTED=0
+  for i in $(seq 1 48); do
+    H_JSON="$(health)"
+    S="$(printf '%s' "$H_JSON" | health_field db)"
+    HINT="$(printf '%s' "$H_JSON" | health_field dbHint.code)"
+    UP="$(printf '%s' "$H_JSON" | health_field uptimeSeconds)"
+    # Uptime going DOWN is a new process. That is the deploy landing, observed rather than assumed.
+    if [ -n "$UP" ] && [ -n "$START_UP" ] && [ "$UP" -lt "$START_UP" ] 2>/dev/null; then RESTARTED=1; fi
+    printf '  %s  db=%-5s uptime=%-7s %s\n' "$(date -u +%H:%M:%S)" "${S:-?}" "${UP:-?}s" "${HINT:+· $HINT}"
     if [ "$S" = "up" ]; then ok "DATABASE IS UP."; break; fi
-    if [ "$i" = 24 ]; then
-      warn "still not up after 6 minutes. The hint code above names what is wrong with"
-      warn "Render's copy of the string — the one on your clipboard connects from here."
+    if [ "$i" = 48 ]; then
+      printf '\n'
+      if [ "$RESTARTED" = 1 ]; then
+        bad "The service DID restart and still reports ${HINT:-a failure}."
+        bad "So the new process booted with the old value: the save did not change"
+        bad "DATABASE_URL on the service this URL points at. Check you edited"
+        bad "lcx-sales-api (not another service), and that Save Changes was clicked."
+      else
+        warn "The service has NOT restarted — uptime only ever climbed. So nothing has"
+        warn "deployed yet, and the stale hint says nothing about your new value."
+        warn "Either the save did not register, or the Docker rebuild is still running."
+        warn "Check Render → lcx-sales-api → Events for a deploy in progress."
+      fi
+      warn "Re-run with --db to re-verify the credential; nothing here is lost."
     fi
     sleep 15
   done

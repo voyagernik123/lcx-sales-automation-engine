@@ -58,6 +58,12 @@ async function snapshot(): Promise<HealthResponse> {
     version: env.version,
     env: env.nodeEnv,
     db,
+    /*
+     * `process.uptime()`, not a module-load timestamp: it is the real process age from the
+     * runtime, so it cannot be fooled by a module being re-imported. This is what makes
+     * "has my environment change actually deployed yet?" answerable from outside.
+     */
+    uptimeSeconds: Math.round(process.uptime()),
     timestamp: new Date().toISOString(),
   };
 }

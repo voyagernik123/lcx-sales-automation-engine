@@ -78,6 +78,24 @@ export interface HealthResponse {
    * address to anyone who curls `/health` is the leak, not the advice about it.
    */
   dbHint?: DbConfigVerdict | null;
+  /**
+   * HOW LONG THIS PROCESS HAS BEEN RUNNING — the field that distinguishes "the change has not
+   * deployed yet" from "the change deployed and is wrong", and their fixes are opposites.
+   *
+   * `dbHint` is derived from `DATABASE_URL`, which is read once at boot. So a stale hint has
+   * two possible meanings and no way to tell them apart: either the environment variable is
+   * still wrong, or it was corrected and the OLD process is still serving. On 2026-08-10 that
+   * ambiguity produced six minutes of polling followed by the wrong conclusion — the tooling
+   * announced that Render's copy of the string must be wrong, having never established that
+   * the deploy had finished.
+   *
+   * Large uptime + a stale hint ⇒ the process never restarted; the save did not take effect.
+   * Small uptime + a stale hint ⇒ the new process really did boot with the old value.
+   *
+   * Seconds, rounded. Reveals nothing: a restart is visible to anyone watching the service
+   * anyway.
+   */
+  uptimeSeconds: number;
   timestamp: string;
 }
 
