@@ -175,11 +175,19 @@ if [ "$WANT_DB" = 1 ]; then
   bold "  → now paste it into Render (one field, once)"
   cat <<'STEPS'
      1. Render → lcx-sales-api → Environment
-     2. DATABASE_URL → Edit → select all → paste (it is on your clipboard) → Save Changes
+     2. DATABASE_URL → Edit → SELECT ALL → paste → Save Changes
      3. Events tab should show a new deploy starting
 
-  The string on your clipboard is already PROVEN to connect, so if this still fails it is
-  Render's copy of it and not the credential.
+  ⚠ PASTE THE STRING THIS SCRIPT JUST PUT ON YOUR CLIPBOARD. Do NOT go back to Supabase
+    and copy one from there. The Connect panel DEFAULTS to "Direct connection", whose host
+    resolves to IPv6 only and is unreachable from Render's IPv4-only free tier — so that
+    string is valid, carries the right password, and can never work. Pasting it produced a
+    successful deploy that still reported SUPABASE_DIRECT_HOST_IS_IPV6_ONLY, which looked
+    exactly like the save having failed.
+
+    The clipboard string is the SESSION POOLER form and it has just been proven to connect
+    from this machine. If the clipboard has since been overwritten, re-run this with --db;
+    it regenerates and re-verifies in seconds.
 STEPS
   printf '\n  Press Enter once you have saved it (or Ctrl-C to stop here): '
   read -r _ || true
