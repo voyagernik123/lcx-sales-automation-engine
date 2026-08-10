@@ -72,7 +72,30 @@ if (!pw) {
  * distinction is exactly what three identical `28P01`s could not make.
  */
 const fp = createHash('sha256').update(pw).digest('hex').slice(0, 8);
+
+/*
+ * NAME THE PROJECT BEING TESTED, PROMINENTLY.
+ *
+ * The ref was taken from a dashboard screenshot and then never questioned, which makes it the
+ * one input nobody re-checks. If more than one Supabase project exists on the account, an
+ * operator can reset and copy the password for project A while this tests project B — and the
+ * result is a 28P01 that is genuinely "wrong password", correctly diagnosed, for a database
+ * nobody meant to connect to. Every other explanation gets explored before that one, because
+ * the ref looks like a constant rather than an assumption.
+ */
+console.log(`· project ref under test: ${REF}`);
+console.log('  ↳ this must be the SAME project you are copying the password from. It is the');
+console.log('    subdomain in your dashboard URL: supabase.com/dashboard/project/<THIS>');
+console.log(`    Different project? SUPABASE_PROJECT_REF=<ref> bash scripts/go-live.sh --clip`);
+console.log('');
 console.log(`· received ${pw.length} characters, fingerprint ${fp}`);
+if (pw.length < 20) {
+  /* Not a rule, a SIGNAL. Supabase's own reset generates a long random string, so a short
+     value usually means a remembered or self-chosen one — which is the likeliest thing to be
+     out of date after a rotation. */
+  console.log(`  · ${pw.length} characters is shorter than a Supabase-generated reset password.`);
+  console.log('    If this is one you remember rather than one you just reset, reset it.');
+}
 if (/^\s|\s$/.test(pw)) {
   console.log('  ⚠ it begins or ends with WHITESPACE — almost certainly a paste artefact.');
   console.log('    Both forms are tried below so this cannot silently cost you an attempt.');
@@ -173,10 +196,15 @@ if (!winner) {
     console.log('    every other cluster gave XX000           ⇒ this cluster is the right one');
     console.log('');
     console.log('  Those XX000s are CONTROLS. They are supposed to fail; their failure is the');
-    console.log('  evidence. Nothing above points at the host, the region, the port, the');
-    console.log('  username or the project ref.');
+    console.log('  evidence. Nothing above points at the host, the region, the port or the');
+    console.log('  username.');
     console.log('');
-    console.log('  Do this — Supabase → your project → Project Settings → Database →');
+    console.log(`  ONE THING IS STILL AN ASSUMPTION: that "${REF}" is the project whose`);
+    console.log('  password you are entering. If the account has more than one project, a');
+    console.log('  correct password for the wrong project produces exactly this result. Open');
+    console.log('  the dashboard and compare the ref in the URL before doing anything else.');
+    console.log('');
+    console.log('  Otherwise — Supabase → that project → Project Settings → Database →');
     console.log('  "Reset database password". COPY the value it shows you, then run:');
     console.log('');
     console.log('      bash /Users/nik/Downloads/usclaude-main/scripts/go-live.sh --clip');
