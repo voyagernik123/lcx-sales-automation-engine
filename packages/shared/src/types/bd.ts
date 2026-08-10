@@ -5,6 +5,44 @@
 
 export type DbStatus = 'up' | 'down' | 'skipped';
 
+/**
+ * WHAT IS WRONG WITH `DATABASE_URL` ITSELF — decided by reading the string, not by
+ * connecting, so the answer is available before a socket is opened and does not depend on
+ * the database being reachable enough to complain.
+ *
+ * These exist because a driver error code says what the NETWORK did and not what the
+ * OPERATOR should change. `ENETUNREACH` and `ETIMEDOUT` and `28P01` all mean "fix the
+ * connection string" and each needs a different edit; the codes below name the edit.
+ *
+ * Every one of these was reached in production on 2026-08-10 or is one keystroke from it:
+ *   SUPABASE_DIRECT_HOST_IS_IPV6_ONLY  the actual live outage — see the doc comment on it
+ *   POOLER_USER_MISSING_PROJECT_REF    the trap when moving off the direct host
+ *   PASSWORD_NEEDS_PERCENT_ENCODING    four characters that make `pg` throw before it dials
+ */
+export type DbConfigCode =
+  | 'DATABASE_URL_UNSET'
+  | 'DATABASE_URL_UNPARSEABLE'
+  | 'PASSWORD_NEEDS_PERCENT_ENCODING'
+  | 'HOST_IS_IPV6_LITERAL'
+  | 'SUPABASE_DIRECT_HOST_IS_IPV6_ONLY'
+  | 'POOLER_USER_MISSING_PROJECT_REF'
+  | 'DATABASE_NAME_MISSING'
+  | 'POOLER_IN_TRANSACTION_MODE'
+  | 'NO_DEFECT_FOUND';
+
+export interface DbConfigVerdict {
+  readonly code: DbConfigCode;
+  /**
+   * `blocking` — no connection is possible until this is changed.
+   * `warning`  — it will connect, and something else will go wrong later.
+   * `none`     — nothing detectable is wrong with the string. NOT a claim that the
+   *              credentials are correct: a password can only be judged by using it.
+   */
+  readonly severity: 'blocking' | 'warning' | 'none';
+  /** What to change, in one sentence. Contains no part of the connection string. */
+  readonly fix: string;
+}
+
 export interface HealthResponse {
   ok: boolean;
   service: 'lcx-sales-api';
@@ -24,6 +62,22 @@ export interface HealthResponse {
    * enough to tell those four cases apart.
    */
   dbError?: { code: string; message: string } | null;
+  /**
+   * WHAT TO CHANGE, when the reason the database is unreachable is the connection string
+   * itself. Absent when `db` is not `down`, and absent when nothing detectable is wrong.
+   *
+   * `dbError` above answers "what happened" and that turned out not to be enough. The live
+   * outage on 2026-08-10 reported `ENETUNREACH` to an IPv6 address for three hours across
+   * three separate attempts to fix it, because the driver code names the SYMPTOM and the
+   * operator needs the EDIT. This field is derived by reading `DATABASE_URL`, so it is
+   * available whether or not anything answers.
+   *
+   * CONTAINS NO SECRET AND NO HOST. Only a stable code and one sentence of instruction —
+   * see `DbConfigVerdict`. This endpoint is unauthenticated, which is also why the
+   * sanitiser upstream strips IPv6 literals as well as IPv4: publishing the database's
+   * address to anyone who curls `/health` is the leak, not the advice about it.
+   */
+  dbHint?: DbConfigVerdict | null;
   timestamp: string;
 }
 

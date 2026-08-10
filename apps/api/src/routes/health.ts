@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { HealthResponse } from '@lcx/shared';
 import { checkDb, getLastDbError } from '../db/index.js';
+import { describeConnectionTarget } from '../db/connectionTarget.js';
 import { env } from '../lib/env.js';
 
 /**
@@ -38,9 +39,21 @@ export const healthRoutes = new Hono();
 async function snapshot(): Promise<HealthResponse> {
   const db = await checkDb();
   const dbError = db === 'down' ? getLastDbError() : null;
+  /*
+   * THE EDIT, NOT JUST THE SYMPTOM. `dbError` names what the network did; this names what
+   * the operator should change. Derived by READING `DATABASE_URL`, so it is present even
+   * when nothing answers — which is the only case where anyone needs it.
+   *
+   * Only when `db` is down, and only when there is something to say: a defect-free string
+   * adds no field, so a healthy deployment publishes nothing extra. See `DbConfigVerdict`
+   * for why this carries no part of the URL.
+   */
+  const hint = db === 'down' ? describeConnectionTarget(env.databaseUrl) : null;
+  const dbHint = hint && hint.severity !== 'none' ? hint : null;
   return {
     ok: db === 'up' || db === 'skipped',
     ...(dbError ? { dbError } : {}),
+    ...(dbHint ? { dbHint } : {}),
     service: 'lcx-sales-api',
     version: env.version,
     env: env.nodeEnv,

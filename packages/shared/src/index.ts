@@ -1,5 +1,7 @@
 export type {
   DbStatus,
+  DbConfigCode,
+  DbConfigVerdict,
   HealthResponse,
   ApiErrorBody,
   ApiSuccessBody,

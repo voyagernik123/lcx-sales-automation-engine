@@ -20,7 +20,12 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 const checkDb = vi.hoisted(() => vi.fn());
 const getLastDbError = vi.hoisted(() => vi.fn(() => null));
 vi.mock('../../db/index.js', () => ({ checkDb, getLastDbError }));
-vi.mock('../../lib/env.js', () => ({ env: { version: 'test', nodeEnv: 'production' } }));
+/* The DIRECT Supabase host — the exact shape that was live in Render on 2026-08-10, with a
+   same-shape stand-in for the project ref. The route derives its `dbHint` from this. */
+const DIRECT_URL = 'postgresql://postgres:sEcReT@db.aaaabbbbccccdddd.supabase.co:5432/postgres';
+vi.mock('../../lib/env.js', () => ({
+  env: { version: 'test', nodeEnv: 'production', databaseUrl: DIRECT_URL },
+}));
 
 const load = async () => (await import('../health.js')).healthRoutes;
 
@@ -71,6 +76,53 @@ describe('a down database says WHY, and leaks nothing', () => {
     checkDb.mockResolvedValue('up');
     const body = await (await (await load()).request('/')).json();
     expect(body.dbError).toBeUndefined();
+  });
+});
+
+describe('a down database also says WHAT TO CHANGE, not only what happened', () => {
+  /*
+   * `dbError` alone was not enough, and this is the evidence. On 2026-08-10 the endpoint
+   * returned `ENETUNREACH` and an IPv6 address, unchanged, for three hours across three
+   * attempts to fix it — because a driver code names the SYMPTOM. The operator needs the
+   * EDIT, and the edit was derivable from `DATABASE_URL` the whole time.
+   */
+  it('names the defect in DATABASE_URL itself', async () => {
+    checkDb.mockResolvedValue('down');
+    getLastDbError.mockReturnValue({ code: 'ENETUNREACH', message: 'connect ENETUNREACH <addr>' });
+    const body = await (await (await load()).request('/')).json();
+    expect(body.dbHint.code).toBe('SUPABASE_DIRECT_HOST_IS_IPV6_ONLY');
+    expect(body.dbHint.severity).toBe('blocking');
+    expect(body.dbHint.fix).toContain('pooler.supabase.com');
+  });
+
+  it('carries BOTH — what happened and what to change', async () => {
+    // Neither replaces the other. The code tells you the network refused; the hint tells you
+    // which line to edit. Collapsing them back into one field is how this regresses.
+    checkDb.mockResolvedValue('down');
+    getLastDbError.mockReturnValue({ code: 'ENETUNREACH', message: 'connect ENETUNREACH <addr>' });
+    const body = await (await (await load()).request('/')).json();
+    expect(body.dbError.code).toBe('ENETUNREACH');
+    expect(body.dbHint.code).toBeTruthy();
+  });
+
+  it('says nothing when the database is up', async () => {
+    // A healthy deployment publishes no extra field, even though the string is still
+    // technically defective — nobody needs advice about a connection that is working.
+    checkDb.mockResolvedValue('up');
+    const body = await (await (await load()).request('/')).json();
+    expect(body.dbHint).toBeUndefined();
+  });
+
+  it('LEAKS NOTHING — the whole body is searched, not just the field that was added', async () => {
+    /* This endpoint is unauthenticated. Asserting on `dbHint` alone would miss a leak
+       anywhere else in the response, which is how the IPv6 address got published in the
+       first place. */
+    checkDb.mockResolvedValue('down');
+    getLastDbError.mockReturnValue({ code: 'ENETUNREACH', message: 'connect ENETUNREACH <addr>' });
+    const raw = await (await (await load()).request('/')).text();
+    expect(raw).not.toContain('sEcReT');
+    expect(raw).not.toContain('aaaabbbbccccdddd');
+    expect(raw).not.toContain('db.aaaabbbbccccdddd');
   });
 });
 

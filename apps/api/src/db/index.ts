@@ -87,15 +87,33 @@ export function getLastDbError(): { code: string; message: string } | null {
  *   28P01                  → password authentication failed
  *   3D000                  → database does not exist
  */
-function sanitiseDbError(err: unknown): { code: string; message: string } {
+export function sanitiseDbError(err: unknown): { code: string; message: string } {
   const e = err as { code?: unknown; message?: unknown } | null;
   const code = typeof e?.code === 'string' && e.code ? e.code : 'UNKNOWN';
   const raw = typeof e?.message === 'string' ? e.message : String(err);
+  /*
+   * ORDER IS LOAD-BEARING, and getting it wrong leaked half an address.
+   *
+   * The connection string goes first because it CONTAINS hosts and addresses, so stripping
+   * its parts individually would leave the rest of it intact. IPv4 must precede IPv6
+   * because an IPv4-mapped address (`::ffff:18.198.30.239`) matches the front of the IPv6
+   * pattern; stripping IPv6 first consumed `::ffff:` and left `.198.30.239`, which then no
+   * longer had four octets for the IPv4 rule to recognise.
+   */
   const message = raw
-    // Strip hostnames, IPs and anything after a colon that could be a port or credential.
+    .replace(/postgres(ql)?:\/\/\S+/gi, '<connection-string>')
     .replace(/[\w.-]+\.(supabase|render|amazonaws)\.(co|com)[^\s]*/gi, '<host>')
     .replace(/\b\d{1,3}(\.\d{1,3}){3}\b/g, '<ip>')
-    .replace(/postgres(ql)?:\/\/\S+/gi, '<connection-string>')
+    /*
+     * IPv6, AND THIS ENDPOINT WAS PUBLISHING ONE.
+     *
+     * The live `ENETUNREACH` message carried the database's full address —
+     * `2a05:d014:1e9b:b301:9751:5cd5:770f:9c5` — to anyone who curled `/health`
+     * unauthenticated, because the original rule only knew about dotted quads. Three or
+     * more colon-separated groups, so `HH:MM:SS` in a message is left alone; empty groups
+     * allowed, so the compressed `::` form is caught too.
+     */
+    .replace(/(?:[0-9a-f]{0,4}:){3,}[0-9a-f]{0,4}/gi, '<addr>')
     .slice(0, 160);
   return { code, message };
 }
