@@ -97,6 +97,22 @@ function classify(s) {
   if (embedded) return { kind: 'connection-string', url: embedded[0], offset: embedded.index };
   if (/^eyJ[A-Za-z0-9_-]{10,}\./.test(s)) return { kind: 'jwt' };
   if (/^sbp?_/.test(s)) return { kind: 'api-key' };
+  /*
+   * THE CLIPBOARD HELD THE COMMAND. Proven by fingerprint: three consecutive --clip runs
+   * tested the 65-character string
+   *
+   *     bash /Users/nik/Downloads/usclaude-main/scripts/go-live.sh --clip
+   *
+   * because it was copied out of the instructions in order to be run, and then `--clip` read
+   * it straight back. "Copy this command" and "I will read your clipboard" are mutually
+   * exclusive instructions, and each run reported a confident authentication failure about a
+   * shell command. Detected here, and the ordering is fixed in go-live.sh by reading the
+   * clipboard only AFTER the operator confirms they have copied the string.
+   */
+  if (/go-live\.sh|check-db-url/.test(s)) return { kind: 'own-command' };
+  if (/^(?:bash|sh|zsh|node|npm|npx|curl|export|cd)\s/.test(s) || /\/Users\/[^\s]+/.test(s)) {
+    return { kind: 'shell-command' };
+  }
   if (/\.supabase\.(co|com)/i.test(s)) return { kind: 'contains-host' };
   return { kind: 'password' };
 }
@@ -124,6 +140,26 @@ console.log(`· shape: ${describeShape(pw)}`);
 if (pw.split(/\r?\n/).length > 1) {
   console.log('  ⚠ MULTIPLE LINES. A multi-line paste is never a password — something extra came');
   console.log('    along with it. If a connection string is in there it will be found and used.');
+}
+
+if (shape.kind === 'own-command' || shape.kind === 'shell-command') {
+  console.log(shape.kind === 'own-command'
+    ? '✗ Your clipboard contains THIS SCRIPT\'S OWN COMMAND, not a credential.'
+    : '✗ Your clipboard contains a shell command or a file path, not a credential.');
+  console.log('');
+  console.log('  You copied the command in order to run it, so the clipboard holds the command —');
+  console.log('  and --clip then read it back. That is a flaw in the instructions, not in you.');
+  console.log('');
+  console.log('  Do this instead:');
+  console.log('    1. Supabase → your project → Connect → Session pooler → copy the string');
+  console.log('       and replace [YOUR-PASSWORD] with the real database password.');
+  console.log('    2. In this terminal press the UP ARROW to recall the command — do not copy');
+  console.log('       it again — then Enter. Your clipboard stays as the connection string.');
+  console.log('');
+  console.log('  Or drop --clip entirely and paste it at the prompt, which does not touch the');
+  console.log('  clipboard at all:');
+  console.log('       bash ~/Downloads/usclaude-main/scripts/go-live.sh --db');
+  process.exit(2);
 }
 
 if (shape.kind === 'jwt' || shape.kind === 'api-key') {

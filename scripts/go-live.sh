@@ -97,10 +97,31 @@ if [ "$WANT_DB" = 1 ]; then
   RC=1
 
   if [ "$FROM_CLIP" = 1 ]; then
-    printf '\n  Reading the password from your CLIPBOARD (--clip). Nothing to type.\n'
     if ! command -v pbpaste >/dev/null 2>&1; then
       bad "pbpaste not available — drop --clip and type it instead."
       exit 3
+    fi
+    #
+    # READ THE CLIPBOARD **AFTER** THE OPERATOR CONFIRMS, NOT AT LAUNCH.
+    #
+    # Reading it at launch guaranteed the bug it was meant to prevent: to run this command you
+    # copy this command, so the clipboard holds the command and --clip reads it straight back.
+    # Three runs tested the 65-character string
+    #     bash /Users/nik/Downloads/usclaude-main/scripts/go-live.sh --clip
+    # and each reported a confident authentication failure about it. Pausing here means the
+    # clipboard can hold the command when the script STARTS and the connection string when it
+    # is actually read.
+    #
+    printf '\n  --clip · the clipboard is read AFTER you press Enter, not now.\n\n'
+    printf '     1. Supabase → your project → Connect → Session pooler\n'
+    printf '     2. Copy that string, and replace [YOUR-PASSWORD] with the real one\n'
+    printf '     3. Come back here and press Enter\n'
+    if [ -t 0 ]; then
+      printf '\n  Copied it? Press Enter (Ctrl-C to abort): '
+      read -r _ || true
+      printf '\n'
+    else
+      warn "no terminal — reading the clipboard immediately."
     fi
     set +e
     pbpaste | node "$ROOT/scripts/check-db-url.mjs"
