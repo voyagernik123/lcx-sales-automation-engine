@@ -113,9 +113,15 @@ if [ "$WANT_DB" = 1 ]; then
       exit 3
     fi
 
-    printf '\n  Supabase → your project → Project Settings → Database → DATABASE password.\n'
-    printf '  Not your account login password, not the anon key, not service_role.\n'
-    printf '  It is not echoed, not saved, and not logged.\n'
+    # ASK FOR EITHER, because the dashboard's copy button gives you the whole string and
+    # three attempts were burned pasting that into a prompt that said "password".
+    printf '\n  Paste EITHER of these — the checker works out which it got:\n'
+    printf '    · the whole connection string from Supabase → Connect → Session pooler\n'
+    printf '      (starting postgresql:// — replace [YOUR-PASSWORD] with the real one first)\n'
+    printf '    · or just the DATABASE password on its own\n'
+    printf '\n  NOT the anon key, NOT service_role, NOT your account login password — it will\n'
+    printf '  say so if you paste one of those rather than guessing at the result.\n'
+    printf '  Nothing is echoed, saved or logged.\n'
     printf '\n  Easier: copy it in Supabase and re-run with --clip so you never retype it.\n'
 
     for try in 1 2 3; do

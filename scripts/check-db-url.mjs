@@ -71,7 +71,85 @@ if (!pw) {
  * the same intended password is an input problem, not a credential problem — and that
  * distinction is exactly what three identical `28P01`s could not make.
  */
-const fp = createHash('sha256').update(pw).digest('hex').slice(0, 8);
+/**
+ * WHAT DID THE OPERATOR ACTUALLY PASTE?
+ *
+ * Three runs were diagnosed as "wrong password" while the input was 16, then 101, then 65
+ * characters. A 101-character string containing `/` is not a password — it is the whole
+ * connection string, which is exactly what Supabase's copy button puts on the clipboard. The
+ * checker asked for "the password", was handed the thing the dashboard actually offers, and
+ * reported a confident `28P01` about a credential it had mangled.
+ *
+ * That is a design failure and not an operator error: if the natural thing to copy is the
+ * whole string, accept the whole string. So this classifies the input first and either uses
+ * it, or names precisely which of Supabase's four credentials it is and why it cannot work.
+ */
+function classify(s) {
+  if (/^postgres(ql)?:\/\//i.test(s)) return { kind: 'connection-string' };
+  // A Supabase anon / service_role key is a JWT: three base64url segments.
+  if (/^eyJ[A-Za-z0-9_-]{10,}\./.test(s)) return { kind: 'jwt' };
+  // Publishable / secret / personal access tokens.
+  if (/^sbp?_/.test(s)) return { kind: 'api-key' };
+  if (/\.supabase\.(co|com)/i.test(s)) return { kind: 'contains-host' };
+  return { kind: 'password' };
+}
+
+const shape = classify(pw);
+
+if (shape.kind === 'jwt' || shape.kind === 'api-key') {
+  console.log(`✗ That is a Supabase API ${shape.kind === 'jwt' ? 'key (a JWT — anon or service_role)' : 'key or access token'}, not the database password.`);
+  console.log('  Those authenticate against the REST/Auth API. Postgres has never heard of them.');
+  console.log('');
+  console.log('  The DATABASE password is a separate credential:');
+  console.log('    Supabase → your project → Project Settings → Database → Database password');
+  console.log('  Or paste the whole connection string from Connect → Session pooler — this');
+  console.log('  script now accepts that directly.');
+  process.exit(2);
+}
+
+if (shape.kind === 'contains-host') {
+  console.log('✗ That contains a Supabase hostname but is not a connection string, so it is');
+  console.log('  probably a fragment of one. Paste either the COMPLETE string (starting');
+  console.log('  postgresql://) or the password on its own.');
+  process.exit(2);
+}
+
+/*
+ * A WHOLE CONNECTION STRING IS THE MOST USEFUL THING TO BE GIVEN, so it is used as given
+ * before anything is varied — it may already be correct, and if it is not, its password is
+ * still what the matrix needs.
+ */
+let givenUrl = null;
+if (shape.kind === 'connection-string') {
+  if (/\[?YOUR[-_]PASSWORD\]?/i.test(pw)) {
+    console.log('✗ That connection string still has the PLACEHOLDER in it:');
+    console.log('      postgresql://postgres.<ref>:[YOUR-PASSWORD]@...');
+    console.log('  Supabase does not fill that in for you. Replace [YOUR-PASSWORD] with the');
+    console.log('  actual database password (Project Settings → Database), then paste it again.');
+    process.exit(2);
+  }
+  const at = pw.slice(pw.indexOf('://') + 3).lastIndexOf('@');
+  const creds = at >= 0 ? pw.slice(pw.indexOf('://') + 3, pw.indexOf('://') + 3 + at) : '';
+  const colon = creds.indexOf(':');
+  if (colon < 0) {
+    console.log('✗ That connection string carries no password (nothing between the username');
+    console.log('  and the @). Paste one that includes it, or paste the password alone.');
+    process.exit(2);
+  }
+  givenUrl = pw;
+  /* Everything downstream works on the PASSWORD, extracted from what was pasted. The decode
+     can throw on a malformed escape, and the raw form is the right fallback: it is what a
+     password containing a literal `%` looks like. */
+  const rawPw = creds.slice(colon + 1);
+  // eslint-disable-next-line no-var
+  try { var extracted = decodeURIComponent(rawPw); } catch { extracted = rawPw; }
+  console.log('· recognised a full PostgreSQL connection string — testing it AS GIVEN, and its');
+  console.log('  password against every other combination too.');
+}
+
+const effective = shape.kind === 'connection-string' ? extracted : pw;
+
+const fp = createHash('sha256').update(effective).digest('hex').slice(0, 8);
 
 /*
  * NAME THE PROJECT BEING TESTED, PROMINENTLY.
@@ -88,20 +166,20 @@ console.log('  ↳ this must be the SAME project you are copying the password fr
 console.log('    subdomain in your dashboard URL: supabase.com/dashboard/project/<THIS>');
 console.log(`    Different project? SUPABASE_PROJECT_REF=<ref> bash scripts/go-live.sh --clip`);
 console.log('');
-console.log(`· received ${pw.length} characters, fingerprint ${fp}`);
-if (pw.length < 20) {
+console.log(`· received ${effective.length} characters, fingerprint ${fp}`);
+if (effective.length < 20) {
   /* Not a rule, a SIGNAL. Supabase's own reset generates a long random string, so a short
      value usually means a remembered or self-chosen one — which is the likeliest thing to be
      out of date after a rotation. */
-  console.log(`  · ${pw.length} characters is shorter than a Supabase-generated reset password.`);
+  console.log(`  · ${effective.length} characters is shorter than a Supabase-generated reset password.`);
   console.log('    If this is one you remember rather than one you just reset, reset it.');
 }
-if (/^\s|\s$/.test(pw)) {
+if (/^\s|\s$/.test(effective)) {
   console.log('  ⚠ it begins or ends with WHITESPACE — almost certainly a paste artefact.');
   console.log('    Both forms are tried below so this cannot silently cost you an attempt.');
 }
-const encoded = encodePassword(pw);
-if (encoded !== pw) console.log('  · contains characters requiring percent-encoding — handled');
+const encoded = encodePassword(effective);
+if (encoded !== effective) console.log('  · contains characters requiring percent-encoding — handled');
 
 /*
  * THE MATRIX. Ordered cheapest-hypothesis-first so the common case still answers immediately.
@@ -119,14 +197,21 @@ const push = (host, port, user, pass, why, kind) => variants.push({
 
 const primary = `aws-0-${REGIONS[0]}.pooler.supabase.com`;
 
+/* WHAT WAS PASTED, UNTOUCHED, FIRST. If the operator handed over a complete connection string
+   it may simply be correct, and trying a rearranged version of it before the thing itself
+   would be perverse. */
+if (givenUrl) {
+  variants.push({ kind: 'given', label: 'the connection string you pasted, as-is', url: givenUrl });
+}
+
 /* THE CANONICAL COMBINATION — the one the verdict is read from. Everything else either offers
    an alternative worth trying or is a CONTROL whose failure is informative. */
 push(primary, 5432, `postgres.${REF}`, encoded, 'session — the expected one', 'canonical');
 push(primary, 6543, `postgres.${REF}`, encoded, 'transaction mode', 'alt');
 // The password EXACTLY as received, in case the encoder is the thing that is wrong.
-if (encoded !== pw) push(primary, 5432, `postgres.${REF}`, pw, 'unencoded password', 'alt');
+if (encoded !== effective) push(primary, 5432, `postgres.${REF}`, effective, 'unencoded password', 'alt');
 // And trimmed, in case the terminal added whitespace.
-const trimmed = encodePassword(pw.trim());
+const trimmed = encodePassword(effective.trim());
 if (trimmed !== encoded) push(primary, 5432, `postgres.${REF}`, trimmed, 'whitespace trimmed', 'alt');
 
 /*
@@ -213,7 +298,7 @@ if (!winner) {
     console.log('  never retyped into an invisible prompt. Nothing else uses this password, so');
     console.log('  resetting it breaks nothing.');
     console.log('');
-    console.log(`  Fingerprint of what was tested: ${fp} (${pw.length} chars). If two runs you`);
+    console.log(`  Fingerprint of what was tested: ${fp} (${effective.length} chars). If two runs you`);
     console.log('  believe were identical show DIFFERENT fingerprints, the problem is the input,');
     console.log('  not the credential.');
   } else if (canonicalCode === 'XX000') {
