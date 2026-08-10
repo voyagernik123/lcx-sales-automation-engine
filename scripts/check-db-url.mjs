@@ -36,7 +36,9 @@
 
 import { Pool } from 'pg';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { join, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 
 const REF = process.env.SUPABASE_PROJECT_REF || 'fynzwqhxjguggkjvkwmj';
@@ -85,16 +87,44 @@ if (!pw) {
  * it, or names precisely which of Supabase's four credentials it is and why it cannot work.
  */
 function classify(s) {
-  if (/^postgres(ql)?:\/\//i.test(s)) return { kind: 'connection-string' };
-  // A Supabase anon / service_role key is a JWT: three base64url segments.
+  /*
+   * SEARCH THE WHOLE INPUT, NOT JUST POSITION 0. A copy out of a docs page, a config block or
+   * the Connect panel brings surrounding text with it, and a connection string sitting on line
+   * 3 of a paste is still a connection string. Requiring it at the start classified a perfectly
+   * usable paste as "a password" and then reported an authentication failure about it.
+   */
+  const embedded = /postgres(?:ql)?:\/\/[^\s"'<>]+/i.exec(s);
+  if (embedded) return { kind: 'connection-string', url: embedded[0], offset: embedded.index };
   if (/^eyJ[A-Za-z0-9_-]{10,}\./.test(s)) return { kind: 'jwt' };
-  // Publishable / secret / personal access tokens.
   if (/^sbp?_/.test(s)) return { kind: 'api-key' };
   if (/\.supabase\.(co|com)/i.test(s)) return { kind: 'contains-host' };
   return { kind: 'password' };
 }
 
+/**
+ * A STRUCTURAL DESCRIPTION, so "what did I actually paste" stops being unanswerable.
+ *
+ * Reports only STRUCTURE — separators, line count, whitespace — never the characters of the
+ * secret itself. Three runs failed identically because nothing on screen distinguished a
+ * password from a URL from a key, and the one question that mattered ("what is this thing?")
+ * had no way to be asked.
+ */
+function describeShape(s) {
+  const lines = s.split(/\r?\n/).length;
+  const marks = [];
+  if (s.includes('://')) marks.push("'://'");
+  if (s.includes('@')) marks.push("'@'");
+  if (/\s/.test(s)) marks.push('whitespace');
+  if (lines > 1) marks.push(`${lines} LINES`);
+  return `${s.length} chars · ${marks.length ? `contains ${marks.join(', ')}` : 'no URL separators, single line — looks like a bare secret'}`;
+}
+
 const shape = classify(pw);
+console.log(`· shape: ${describeShape(pw)}`);
+if (pw.split(/\r?\n/).length > 1) {
+  console.log('  ⚠ MULTIPLE LINES. A multi-line paste is never a password — something extra came');
+  console.log('    along with it. If a connection string is in there it will be found and used.');
+}
 
 if (shape.kind === 'jwt' || shape.kind === 'api-key') {
   console.log(`✗ That is a Supabase API ${shape.kind === 'jwt' ? 'key (a JWT — anon or service_role)' : 'key or access token'}, not the database password.`);
@@ -121,22 +151,28 @@ if (shape.kind === 'contains-host') {
  */
 let givenUrl = null;
 if (shape.kind === 'connection-string') {
-  if (/\[?YOUR[-_]PASSWORD\]?/i.test(pw)) {
+  const url = shape.url;
+  if (shape.offset > 0) {
+    console.log(`· found a connection string inside the paste (at offset ${shape.offset}) — using`);
+    console.log('  that and ignoring the surrounding text.');
+  }
+  if (/\[?YOUR[-_]PASSWORD\]?/i.test(url)) {
     console.log('✗ That connection string still has the PLACEHOLDER in it:');
     console.log('      postgresql://postgres.<ref>:[YOUR-PASSWORD]@...');
     console.log('  Supabase does not fill that in for you. Replace [YOUR-PASSWORD] with the');
     console.log('  actual database password (Project Settings → Database), then paste it again.');
     process.exit(2);
   }
-  const at = pw.slice(pw.indexOf('://') + 3).lastIndexOf('@');
-  const creds = at >= 0 ? pw.slice(pw.indexOf('://') + 3, pw.indexOf('://') + 3 + at) : '';
+  const body = url.slice(url.indexOf('://') + 3);
+  const at = body.lastIndexOf('@');
+  const creds = at >= 0 ? body.slice(0, at) : '';
   const colon = creds.indexOf(':');
   if (colon < 0) {
     console.log('✗ That connection string carries no password (nothing between the username');
     console.log('  and the @). Paste one that includes it, or paste the password alone.');
     process.exit(2);
   }
-  givenUrl = pw;
+  givenUrl = url;
   /* Everything downstream works on the PASSWORD, extracted from what was pasted. The decode
      can throw on a malformed escape, and the raw form is the right fallback: it is what a
      password containing a literal `%` looks like. */
@@ -150,6 +186,25 @@ if (shape.kind === 'connection-string') {
 const effective = shape.kind === 'connection-string' ? extracted : pw;
 
 const fp = createHash('sha256').update(effective).digest('hex').slice(0, 8);
+
+/*
+ * DID THIS RUN TEST THE SAME THING AS THE LAST ONE?
+ *
+ * Two consecutive --clip runs produced the identical fingerprint, which meant the clipboard had
+ * never changed — the operator had done the work in the dashboard and the copy simply had not
+ * landed. The evidence was on screen both times and it took a human comparing two terminal
+ * scrollbacks to notice. That is exactly the comparison a machine should do.
+ *
+ * A truncated fingerprint is stored, never the secret, at 0600. It is 32 bits of a hash of a
+ * high-entropy string: not reversible, and the alternative is repeating this loop blind.
+ */
+const FP_FILE = join(homedir(), '.lcx-terminal', '.last-input-fp');
+let previousFp = null;
+try { previousFp = readFileSync(FP_FILE, 'utf8').trim() || null; } catch { /* first run */ }
+try {
+  mkdirSync(dirname(FP_FILE), { recursive: true });
+  writeFileSync(FP_FILE, fp, { mode: 0o600 });
+} catch { /* not being able to remember is not a reason to stop */ }
 
 /*
  * NAME THE PROJECT BEING TESTED, PROMINENTLY.
@@ -167,6 +222,14 @@ console.log('    subdomain in your dashboard URL: supabase.com/dashboard/project
 console.log(`    Different project? SUPABASE_PROJECT_REF=<ref> bash scripts/go-live.sh --clip`);
 console.log('');
 console.log(`· received ${effective.length} characters, fingerprint ${fp}`);
+if (previousFp === fp) {
+  console.log('');
+  console.log('  ⚠ THIS IS THE SAME INPUT AS THE PREVIOUS RUN — identical fingerprint.');
+  console.log('    Whatever you changed in Supabase did not reach the clipboard, so this run');
+  console.log('    would test the same thing and fail the same way. Copy it again and check:');
+  console.log('    paste into a text editor (never the terminal) and confirm it is what you');
+  console.log('    think it is before running this.');
+}
 if (effective.length < 20) {
   /* Not a rule, a SIGNAL. Supabase's own reset generates a long random string, so a short
      value usually means a remembered or self-chosen one — which is the likeliest thing to be
