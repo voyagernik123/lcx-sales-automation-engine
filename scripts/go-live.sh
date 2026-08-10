@@ -39,12 +39,21 @@ CHANNEL="https://github.com/voyagernik123/lcx-terminal-releases/releases/latest/
 
 WANT_DB=1
 WANT_DESKTOP=1
-case "${1:-}" in
-  --db)      WANT_DESKTOP=0 ;;
-  --desktop) WANT_DB=0 ;;
-  "")        ;;
-  *) echo "unknown flag: $1 (expected --db, --desktop, or nothing)"; exit 2 ;;
-esac
+FROM_CLIP=0
+for arg in "$@"; do
+  case "$arg" in
+    --db)      WANT_DESKTOP=0 ;;
+    --desktop) WANT_DB=0 ;;
+    # READ THE PASSWORD FROM THE CLIPBOARD INSTEAD OF ASKING FOR IT.
+    #
+    # Supabase generates ~30 characters of mixed case and symbols and shows them ONCE. Asking
+    # an operator to retype that into a prompt with echo off means a typo and a wrong
+    # credential are indistinguishable — which is exactly the confusion that burned three
+    # attempts here. Copy it in the dashboard, pass --clip, never type it.
+    --clip)    FROM_CLIP=1 ;;
+    *) echo "unknown flag: $arg (expected --db, --desktop, --clip, or nothing)"; exit 2 ;;
+  esac
+done
 
 bold() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 ok()   { printf '  \033[32m✓\033[0m %s\n' "$1"; }
@@ -83,42 +92,56 @@ if [ "$WANT_DB" = 1 ]; then
   HINT="$(health | health_field dbHint.code)"
   [ -n "$HINT" ] && printf '  the API names its own defect: %s\n' "$HINT"
 
-  if [ ! -t 0 ]; then
-    bad "no terminal attached. This phase reads a password with echo off and refuses to run"
-    bad "without a TTY — run it yourself in Terminal, not through a tool or a pipe."
-    exit 3
-  fi
-
-  printf '\n  Supabase → your project → Project Settings → Database → DATABASE password.\n'
-  printf '  Not your account login password, not the anon key, not service_role.\n'
-  printf '  (Use "Reset database password" there if you never stored it — nothing else uses it.)\n'
-  printf '  It is not echoed, not saved, and not logged.\n'
-
-  # THREE ATTEMPTS, BECAUSE THE FIRST ONE IS INVISIBLE. The password is typed with echo off,
-  # so a mistyped character, a stray paste, or the wrong credential entirely all look
-  # identical — and making the operator re-run the whole script (including the API probe)
-  # just to retype it is a pointless tax on the most likely outcome.
+  # NOTHING HERE IS RATIONED. There is no lockout at the pooler and no attempt budget
+  # anywhere — the loop below just saves re-running the script. Run this as often as needed.
   RC=1
-  for try in 1 2 3; do
-    printf '\n  Password (attempt %s of 3): ' "$try"
-    # -s: echo off. -r: backslashes are literal, which matters in a generated password.
-    read -rs PW
-    printf '\n\n'
-    if [ -z "$PW" ]; then bad "empty — nothing to test."; unset PW; continue; fi
 
-    # printf is a SHELL BUILTIN, so the value never becomes a process argument, and a pipe
-    # means it never touches a temp file the way a here-string would under bash.
+  if [ "$FROM_CLIP" = 1 ]; then
+    printf '\n  Reading the password from your CLIPBOARD (--clip). Nothing to type.\n'
+    if ! command -v pbpaste >/dev/null 2>&1; then
+      bad "pbpaste not available — drop --clip and type it instead."
+      exit 3
+    fi
     set +e
-    printf '%s' "$PW" | node "$ROOT/scripts/check-db-url.mjs"
+    pbpaste | node "$ROOT/scripts/check-db-url.mjs"
     RC=$?
     set -e
-    unset PW
-    [ "$RC" = 0 ] && break
-    [ "$try" != 3 ] && warn "trying again — nothing was sent to Render."
-  done
+  else
+    if [ ! -t 0 ]; then
+      bad "no terminal attached. This phase reads a password with echo off and refuses to run"
+      bad "without a TTY — run it yourself in Terminal, or use --clip."
+      exit 3
+    fi
+
+    printf '\n  Supabase → your project → Project Settings → Database → DATABASE password.\n'
+    printf '  Not your account login password, not the anon key, not service_role.\n'
+    printf '  It is not echoed, not saved, and not logged.\n'
+    printf '\n  Easier: copy it in Supabase and re-run with --clip so you never retype it.\n'
+
+    for try in 1 2 3; do
+      printf '\n  Password (try %s — not rationed, just a convenience loop): ' "$try"
+      # `IFS=` MATTERS. Without it `read` strips leading and trailing whitespace, so a paste
+      # that picked up a space silently becomes a different password and the resulting 28P01
+      # is unexplainable. Preserve exactly what arrived; the checker reports and tries both.
+      IFS= read -rs PW
+      printf '\n\n'
+      if [ -z "$PW" ]; then bad "empty — nothing to test."; unset PW; continue; fi
+
+      # printf is a SHELL BUILTIN, so the value never becomes a process argument, and a pipe
+      # means it never touches a temp file the way a here-string would under bash.
+      set +e
+      printf '%s' "$PW" | node "$ROOT/scripts/check-db-url.mjs"
+      RC=$?
+      set -e
+      unset PW
+      [ "$RC" = 0 ] && break
+      [ "$try" != 3 ] && warn "nothing was sent to Render. Try again, or Ctrl-C and use --clip."
+    done
+  fi
 
   if [ "$RC" != 0 ]; then
     bad "no working connection string found. Stopping BEFORE Render — nothing was changed."
+    bad "Re-running costs nothing: there is no lockout and no attempt limit."
     exit "$RC"
   fi
 
