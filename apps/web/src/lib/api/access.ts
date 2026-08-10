@@ -16,6 +16,17 @@ export interface AccessMe {
   memberId: string;
   role: 'operator' | 'approver';
   entitlements: EntitlementMap;
+  /**
+   * PRESENT WHEN THE GRANTS COULD NOT BE READ AT ALL — the third state, and the reason it
+   * exists is that `entitlements: {}` on its own is a definite claim ("you hold nothing")
+   * that the server is in no position to make when Postgres is unreachable.
+   *
+   * When this is set, `entitlements` is empty because it is UNKNOWN, not because it is
+   * empty. The shell must name the refusal rather than render an operator's workspace list
+   * as absent — see `useMyWorkspaces`, which used to return `[]` here and produced an empty
+   * launcher on 2026-08-10.
+   */
+  entitlementsUnavailable?: { code: string; reason: string } | null;
   profile: { unit: string | null; title: string | null } | null;
   workspaces: AccessWorkspaceMeta[];
   dbLive: boolean;

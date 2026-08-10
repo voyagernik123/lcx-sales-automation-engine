@@ -79,16 +79,40 @@ export function useEntitlements(): EntitlementMap {
   return useAccessStore((s) => s.me?.entitlements) ?? {};
 }
 
+/**
+ * TRUE when the server could not read the grants at all — so every answer below is a guess
+ * and the shell owes the operator a visible reason rather than a confident-looking picture.
+ */
+export function useAccessUnverified(): { code: string; reason: string } | null {
+  return useAccessStore((s) => s.me?.entitlementsUnavailable) ?? null;
+}
+
 export function useCan(ws: WorkspaceId | null, cap: Capability = 'view'): boolean {
   const me = useAccessStore((s) => s.me);
   const loaded = useAccessStore((s) => s.loaded);
   if (!ws) return true; // desk-level surfaces are always yours
   if (!loaded || !me) return true; // optimistic until first load; server still enforces
+  /*
+   * GRANTS UNKNOWN ⇒ STAY OPTIMISTIC, exactly as before the first load resolves, and for the
+   * same reason: this store "only shapes the shell" and the API is the enforcer. Reading an
+   * empty-because-unknown map strictly would lock an operator out of every compartment they
+   * actually hold, on a day when the only thing wrong is that a grants table cannot be
+   * reached. The route already refuses anything they may not do; a client-side lockout adds
+   * no security and removes the whole application.
+   */
+  if (me.entitlementsUnavailable) return true;
   return capAtLeast(me.entitlements[ws], cap);
 }
 
 export function useMyWorkspaces(): AccessWorkspaceMeta[] {
   const me = useAccessStore((s) => s.me);
   if (!me) return [];
+  /*
+   * THIS RETURNED `[]` AND THAT WAS THE EMPTY LAUNCHER. Filtering an unknown entitlement map
+   * says "you belong to no compartments", which is a definite and false statement — the
+   * operator's grants were unreadable, not absent. Show the constitution and let the server
+   * refuse; `useAccessUnverified()` is what the shell renders the reason from.
+   */
+  if (me.entitlementsUnavailable) return me.workspaces;
   return me.workspaces.filter((w) => capAtLeast(me.entitlements[w.id], 'view'));
 }

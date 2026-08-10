@@ -14,6 +14,7 @@ import { isTerminal } from '@/lib/container';
 import { beginInteraction, afterPaint, readTally, settleWhenQuiet } from '@/lib/perf';
 import { inFlightCount } from '@/lib/readCache';
 import { OfflineBanner } from './OfflineBanner';
+import { AccessUnverifiedBanner } from './AccessUnverifiedBanner';
 import { startConnectivityWatch } from '@/lib/online';
 import { useAccessStore } from '@/stores/useAccessStore';
 import { useGoGrammar } from '@/hooks/useGoGrammar';
@@ -232,6 +233,11 @@ export function AppLayout() {
     routeWorkspace !== null &&
     accessLoaded &&
     accessMe !== null &&
+    /* GRANTS UNKNOWN IS NOT "NOT ENTITLED". Without this clause an unreachable grants table
+       renders the request-access surface on every compartment route — the operator is told
+       they lack access to their own desk, which is a worse lie than the empty launcher this
+       replaced. `AccessUnverifiedBanner` names the state instead; the server still enforces. */
+    accessMe.entitlementsUnavailable == null &&
     !capAtLeast(accessMe.entitlements[routeWorkspace], 'view');
 
   return (
@@ -264,6 +270,7 @@ export function AppLayout() {
       </a>
       <TopNav onOpenSearch={() => setOpen(true)} />
       <OfflineBanner />
+      <AccessUnverifiedBanner />
       <div className="flex flex-1 overflow-hidden">
         <Sidebar />
         {/* `resetKey` is what stops one page's crash from following the operator

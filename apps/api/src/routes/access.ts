@@ -26,12 +26,52 @@ function isMissingTable(err: unknown): boolean {
   return (err as { code?: string }).code === '42P01';
 }
 
+/**
+ * THIS ROUTE IS THE LOGIN PATH, AND AN UNREACHABLE DATABASE USED TO 500 IT.
+ *
+ * `useAccessStore.load()` calls this and nothing else to establish who the operator is.
+ * `loadEntitlements` was awaited unguarded on line one, so on 2026-08-10 — database
+ * unreachable, `ENETUNREACH`, which is not the `42P01` the fallback below handles — it threw,
+ * this returned 500, `me` stayed null, and `useMyWorkspaces()` returned `[]`. The operator
+ * signed in successfully and landed on an EMPTY workspace launcher with every panel
+ * erroring. Reported as "login issue and api down"; it was one unguarded await.
+ *
+ * AUTHENTICATION NEVER TOUCHES THE DATABASE. The roster is `TEAM` in `@lcx/shared` and the
+ * passcode comparison is in `middleware/auth.ts`, so identity, role and the workspace
+ * constitution are all knowable with Postgres on fire. Only the GRANTS live in Postgres.
+ * Failing the whole response because one of four fields is unavailable is the liveness /
+ * readiness mistake from `routes/health.ts`, one layer up: a degraded answer turned into no
+ * answer at all.
+ *
+ * WHAT THIS MUST NOT DO IS INVENT A GRANT. `entitlements.ts` states the covenant — "a broken
+ * DB must not silently grant access" — and it still holds: the map degrades to EMPTY, never
+ * to legacy and never to full. The server remains the enforcer on every subsequent call.
+ *
+ * AND EMPTY IS NOT THE SAME AS NONE, so it is not reported as none. Three states, never
+ * collapsed: a grant, no grant, and NOT KNOWN. `entitlementsUnavailable` carries the third
+ * with a stable code, because `{}` alone would tell the operator they have access to nothing
+ * — a definite claim we are in no position to make.
+ */
 accessRoutes.get('/me', requireOperator, async (c) => {
   const operator = c.get('operator');
   const pool = getPool();
-  const entitlements = await loadEntitlements(pool, operator.id);
-  let profile: { unit: string | null; title: string | null } | null = null;
+
+  let entitlements: Awaited<ReturnType<typeof loadEntitlements>> = {};
+  let entitlementsUnavailable: { code: string; reason: string } | null = null;
   let dbLive = true;
+  try {
+    entitlements = await loadEntitlements(pool, operator.id);
+  } catch (err) {
+    dbLive = false;
+    entitlementsUnavailable = {
+      // The driver code is what distinguishes the causes, and it is already sanitised of
+      // hosts and credentials on the way out of the db module.
+      code: typeof (err as { code?: unknown }).code === 'string' ? (err as { code: string }).code : 'UNKNOWN',
+      reason: 'The access database is unreachable, so your grants could not be read. Nothing has been granted or revoked.',
+    };
+  }
+
+  let profile: { unit: string | null; title: string | null } | null = null;
   try {
     const { rows } = await pool.query<{ unit: string | null; title: string | null }>(
       `SELECT unit, title FROM member_profiles WHERE member_id=$1`,
@@ -39,14 +79,27 @@ accessRoutes.get('/me', requireOperator, async (c) => {
     );
     profile = rows[0] ?? null;
   } catch (err) {
-    if (!isMissingTable(err)) throw err;
+    /*
+     * `dbLive` USED TO MEAN "the 0042 tables exist", and it reported TRUE with the database
+     * unreachable, because only `42P01` set it false and anything else rethrew. Every client
+     * reading it as "is the database alive" — which is what it is called — was misled exactly
+     * when it mattered. Any failure here now means not live, and none of them 500 the route.
+     */
+    if (!isMissingTable(err)) {
+      entitlementsUnavailable ??= {
+        code: typeof (err as { code?: unknown }).code === 'string' ? (err as { code: string }).code : 'UNKNOWN',
+        reason: 'The access database is unreachable, so your profile could not be read.',
+      };
+    }
     dbLive = false;
   }
+
   return c.json({
     data: {
       memberId: operator.id,
       role: operator.role,
       entitlements,
+      ...(entitlementsUnavailable ? { entitlementsUnavailable } : {}),
       profile,
       workspaces: WORKSPACES.map((w) => ({
         id: w.id, name: w.name, mission: w.mission, icon: w.icon,
