@@ -89,25 +89,36 @@ if [ "$WANT_DB" = 1 ]; then
     exit 3
   fi
 
-  printf '\n  Supabase → Settings → Database → your database password.\n'
-  printf '  (Reset it there if you do not have it. It is not echoed, not saved, and not logged.)\n\n'
-  printf '  Password: '
-  # -s: echo off. -r: backslashes are literal, which matters in a generated password.
-  read -rs PW
-  printf '\n\n'
+  printf '\n  Supabase → your project → Project Settings → Database → DATABASE password.\n'
+  printf '  Not your account login password, not the anon key, not service_role.\n'
+  printf '  (Use "Reset database password" there if you never stored it — nothing else uses it.)\n'
+  printf '  It is not echoed, not saved, and not logged.\n'
 
-  if [ -z "$PW" ]; then bad "empty password — nothing to test."; exit 3; fi
+  # THREE ATTEMPTS, BECAUSE THE FIRST ONE IS INVISIBLE. The password is typed with echo off,
+  # so a mistyped character, a stray paste, or the wrong credential entirely all look
+  # identical — and making the operator re-run the whole script (including the API probe)
+  # just to retype it is a pointless tax on the most likely outcome.
+  RC=1
+  for try in 1 2 3; do
+    printf '\n  Password (attempt %s of 3): ' "$try"
+    # -s: echo off. -r: backslashes are literal, which matters in a generated password.
+    read -rs PW
+    printf '\n\n'
+    if [ -z "$PW" ]; then bad "empty — nothing to test."; unset PW; continue; fi
 
-  # printf is a SHELL BUILTIN, so the value never becomes a process argument, and a pipe
-  # means it never touches a temp file the way a here-string would under bash.
-  set +e
-  printf '%s' "$PW" | node "$ROOT/scripts/check-db-url.mjs"
-  RC=$?
-  set -e
-  unset PW
+    # printf is a SHELL BUILTIN, so the value never becomes a process argument, and a pipe
+    # means it never touches a temp file the way a here-string would under bash.
+    set +e
+    printf '%s' "$PW" | node "$ROOT/scripts/check-db-url.mjs"
+    RC=$?
+    set -e
+    unset PW
+    [ "$RC" = 0 ] && break
+    [ "$try" != 3 ] && warn "trying again — nothing was sent to Render."
+  done
 
   if [ "$RC" != 0 ]; then
-    bad "no working connection string found — see the codes above. Stopping before Render."
+    bad "no working connection string found. Stopping BEFORE Render — nothing was changed."
     exit "$RC"
   fi
 

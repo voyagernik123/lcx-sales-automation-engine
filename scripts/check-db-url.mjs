@@ -117,9 +117,24 @@ if (!winner) {
   const auth = tried.find((r) => r.code === '28P01');
   console.log('');
   if (auth) {
+    /*
+     * 28P01 vs XX000 IS THE WHOLE DIAGNOSIS, and it is worth spelling out because the two are
+     * one keystroke apart in cause and nothing in the message distinguishes them. A wrong
+     * project ref makes the pooler answer XX000 ("tenant or user not found"); a wrong password
+     * against a CORRECT ref answers 28P01. Getting 28P01 therefore proves the host, the ref and
+     * the username format are all right, and narrows it to the credential alone.
+     */
     console.log('✗ The host answered and REFUSED the password (28P01).');
-    console.log('  The routing is correct, so this is the credential itself.');
-    console.log('  Supabase → Settings → Database → Reset database password, then run this again.');
+    console.log('  This code PROVES the host, project ref and username are correct — a wrong ref');
+    console.log('  answers XX000 instead. So it is the password, and nothing else.');
+    console.log('');
+    console.log('  The most common cause: that was the Supabase ACCOUNT LOGIN password. The');
+    console.log('  DATABASE password is a different credential, shown separately:');
+    console.log('    Supabase → your project → Project Settings → Database → Database password');
+    console.log('  It is only displayed once, so if you never stored it, use "Reset database');
+    console.log('  password" there. Nothing else uses it right now, so a reset breaks nothing.');
+    console.log('');
+    console.log('  It is NOT the anon key, NOT the service_role key, and NOT your account password.');
   } else {
     console.log('✗ No pooler host answered. Codes above.');
     console.log('  ENOTFOUND ⇒ the project ref is wrong (pass SUPABASE_PROJECT_REF=... to override).');
