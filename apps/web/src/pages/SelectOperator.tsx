@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowRight } from 'lucide-react';
 import { normalizeEmail } from '@lcx/shared';
@@ -6,6 +6,13 @@ import { OPERATORS, useOperatorStore } from '@/stores';
 import { apiConfig, getHealth, getMe, setOperatorCredentials } from '@/lib/apiClient';
 import { classifyUnreachable, originBlockedMessage, type Reachability } from '@/lib/reachability';
 import { LcxMark } from '@/components/brand/LcxMark';
+import { ForgePlate } from '@/components/brand/ForgePlate';
+
+/* LAZY, and the number is the reason: imported statically into this eagerly-loaded route it pushed
+   index.js to 441 KB against a 440 KB ceiling and the perf budget refused the build. */
+const ForgeBackdrop = lazy(() =>
+  import('@/components/brand/ForgeBackdrop').then((m) => ({ default: m.ForgeBackdrop })),
+);
 
 /**
  * The front door — a hard email gate, and the first thing the app renders when
@@ -132,8 +139,17 @@ export function SelectOperator() {
   const utc = clock.toISOString().slice(11, 19);
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-page px-6 text-navy antialiased">
-      <div className="w-full max-w-sm">
+    /* `relative isolate` so E8's backdrop has a positioned ancestor to fill and its negative
+       z-index cannot escape behind the page background and vanish. */
+    <div className="relative isolate flex min-h-screen items-center justify-center bg-page px-6 text-navy antialiased">
+      {/* E8 · THE FORGE. The PLATE is eager — ten lines of CSS, painted on the first frame, so
+          there is no bare page and no shift when the renderer lands on top of it. The RENDERER is
+          lazy because importing it statically into this eagerly-loaded route pushed the shell
+          chunk past its ceiling and the perf budget refused the build. Nothing here is load-
+          bearing: the form above never depends on either. */}
+      <ForgePlate />
+      <Suspense fallback={null}><ForgeBackdrop /></Suspense>
+      <div className="relative w-full max-w-sm">
         {/* The signature. This replaced the letters `LCX` set in a monospace box —
           * a stand-in that was never artwork. The mark is now the approved symbol,
           * knocked out of an LCX Black tile with the book's clear space reserved
