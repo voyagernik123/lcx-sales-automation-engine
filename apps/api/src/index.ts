@@ -2,7 +2,7 @@ import { serve } from '@hono/node-server';
 import { createApp } from './app.js';
 import { closeDb } from './db/index.js';
 import { connectionTargetBootLine } from './db/connectionTarget.js';
-import { decideTls } from './db/index.js';
+import { decideTls, healDatabaseUrl } from './db/index.js';
 import { env } from './lib/env.js';
 
 /*
@@ -37,6 +37,22 @@ if (env.nodeEnv === 'production' && tls.state !== 'verified') {
       : '[db] TLS is on but the server certificate is NOT verified. Set DATABASE_CA_CERT to the provider CA bundle to upgrade to verified.',
   );
 }
+
+/*
+ * SELF-HEAL AN UNROUTABLE DATABASE URL — AND DO NOT BLOCK THE SERVER ON IT.
+ *
+ * Deliberately not awaited. The whole lesson of the liveness split is that this process must
+ * answer `/health` immediately whatever the database is doing, so the probe runs alongside the
+ * server and the pool is swapped the moment a candidate answers. The API is up in milliseconds
+ * and the database heals within seconds, rather than a human being the retry loop.
+ *
+ * A no-op for every URL except the one host that provably cannot work from an IPv4-only
+ * network. `.catch` because an unhandled rejection here would take down a process whose only
+ * problem is a misconfigured dependency.
+ */
+void healDatabaseUrl().catch((err: unknown) => {
+  console.error('[db] pooler fallback probe failed:', (err as Error)?.message ?? err);
+});
 
 const app = createApp();
 

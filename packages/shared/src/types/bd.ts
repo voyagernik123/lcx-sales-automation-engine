@@ -109,6 +109,18 @@ export interface HealthResponse {
    * `off` (no TLS; correct for loopback and nowhere else).
    */
   dbTls: 'verified' | 'encrypted' | 'off';
+  /**
+   * WHETHER THE DATABASE URL IN USE IS THE ONE THAT WAS CONFIGURED.
+   *
+   * `env` is normal. `pooler-fallback` means `DATABASE_URL` named the Supabase DIRECT host —
+   * which has no IPv4 address and therefore cannot be reached from an IPv4-only network at
+   * all — and the process adopted a working session-pooler form of it instead.
+   *
+   * Rewriting is allowed because the alternative is a certain, permanent failure; it is
+   * REPORTED because silent self-repair is worse than the bug it fixes. A system whose
+   * configuration does not describe its behaviour hands the next person a mystery.
+   */
+  dbUrlSource: 'env' | 'pooler-fallback';
   timestamp: string;
 }
 

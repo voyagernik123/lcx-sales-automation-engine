@@ -3,6 +3,7 @@ import pg from 'pg';
 import type { DbStatus } from '@lcx/shared';
 import * as schema from './schema.js';
 import { env } from '../lib/env.js';
+import { poolerCandidates } from './poolerFallback.js';
 
 const { Pool } = pg;
 
@@ -60,12 +61,74 @@ let tlsState: DbTlsState = 'off';
 /** What the live pool actually negotiated. Reported by `/health`, never inferred by a caller. */
 export function getDbTlsState(): DbTlsState { return tlsState; }
 
+/**
+ * THE URL ACTUALLY IN USE, WHEN IT IS NOT THE ONE THAT WAS CONFIGURED.
+ *
+ * `null` means the environment's value is being used verbatim, which is the normal case and
+ * the only case in which the configuration describes the behaviour. When this is set, an
+ * operator MUST be able to see that — see `getDbUrlSource`, reported by `/health`.
+ */
+let resolvedUrl: string | null = null;
+let urlSource: 'env' | 'pooler-fallback' = 'env';
+export function getDbUrlSource(): 'env' | 'pooler-fallback' { return urlSource; }
+/** For tests: forget any healed URL so each case starts from the configured value. */
+export function resetDbUrlOverride(): void { resolvedUrl = null; urlSource = 'env'; }
+
+/**
+ * PROBE THE POOLER FORMS OF AN UNROUTABLE DIRECT HOST AND ADOPT THE FIRST THAT CONNECTS.
+ *
+ * Called once at boot and deliberately NOT awaited by the server start: the process must
+ * answer `/health` immediately whatever the database is doing — that is the whole lesson of
+ * the liveness split. This runs alongside, and the pool is swapped the moment a candidate
+ * answers, so the API heals within seconds of booting rather than waiting for a human.
+ *
+ * Returns TRUE if a rewrite was adopted. A no-op (and FALSE) for every URL that is not the
+ * one host proven unable to work from an IPv4-only network.
+ */
+export async function healDatabaseUrl(): Promise<boolean> {
+  if (!env.supabasePoolerFallback) return false;
+  const candidates = poolerCandidates(env.databaseUrl);
+  if (candidates.length === 0) return false;
+
+  console.error(
+    '[db] DATABASE_URL names the Supabase DIRECT host, which has no IPv4 address and cannot '
+    + 'be reached from here. Probing the session-pooler forms.',
+  );
+
+  for (const c of candidates) {
+    /* A fresh single-connection pool per attempt, torn down either way. Short timeouts: a
+       wrong region answers XX000 almost immediately, so the sweep is fast in the common case. */
+    const probe = new Pool({
+      connectionString: c.url,
+      max: 1,
+      connectionTimeoutMillis: 4_000,
+      query_timeout: 4_000,
+      ...(() => { const t = decideTls(c.url, env.databaseCaCert); return t.ssl !== undefined ? { ssl: t.ssl } : {}; })(),
+    });
+    try {
+      await probe.query('SELECT 1');
+      resolvedUrl = c.url;
+      urlSource = 'pooler-fallback';
+      console.error(`[db] ADOPTED ${c.label} — the configured DATABASE_URL is NOT the one in use. Fix it in the dashboard to make configuration match behaviour.`);
+      await probe.end().catch(() => undefined);
+      // Drop the pool built from the unroutable URL so every new connection uses the healed one.
+      await closeDb();
+      return true;
+    } catch {
+      await probe.end().catch(() => undefined);
+    }
+  }
+  console.error('[db] no pooler form answered. DATABASE_URL must be corrected in the dashboard.');
+  return false;
+}
+
 export function getPool(): pg.Pool {
   if (!pool) {
-    const tls = decideTls(env.databaseUrl, env.databaseCaCert);
+    const url = resolvedUrl ?? env.databaseUrl;
+    const tls = decideTls(url, env.databaseCaCert);
     tlsState = tls.state;
     pool = new Pool({
-      connectionString: env.databaseUrl,
+      connectionString: url,
       ...(tls.ssl !== undefined ? { ssl: tls.ssl } : {}),
       max: 10,
       idleTimeoutMillis: 30_000,
@@ -173,7 +236,7 @@ export function sanitiseDbError(err: unknown): { code: string; message: string }
 }
 
 export async function checkDb(): Promise<DbStatus> {
-  if (!env.databaseUrl) {
+  if (!(resolvedUrl ?? env.databaseUrl)) {
     return env.nodeEnv === 'development' ? 'skipped' : 'down';
   }
 

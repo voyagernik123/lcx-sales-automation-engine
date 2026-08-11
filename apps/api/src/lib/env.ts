@@ -47,6 +47,12 @@ export const env = {
    * passive-interception risk for a total outage, which is not a trade worth making silently.
    */
   databaseCaCert: process.env.DATABASE_CA_CERT ?? '',
+  /**
+   * Self-heal an unroutable Supabase DIRECT `DATABASE_URL` by probing its session-pooler
+   * forms. ON by default because the direct host CANNOT work from an IPv4-only network, so
+   * the alternative to rewriting is a guaranteed outage. Set to 0 to disable.
+   */
+  supabasePoolerFallback: bool('SUPABASE_POOLER_FALLBACK', true),
   allowDbSkip: bool('ALLOW_DB_SKIP', false),
   operatorApiKey: required('OPERATOR_API_KEY', 'dev-operator-key-change-me'),
   /**

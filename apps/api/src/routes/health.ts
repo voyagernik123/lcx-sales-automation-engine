@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import type { HealthResponse } from '@lcx/shared';
-import { checkDb, getLastDbError, getDbTlsState } from '../db/index.js';
+import { checkDb, getLastDbError, getDbTlsState, getDbUrlSource } from '../db/index.js';
 import { describeConnectionTarget } from '../db/connectionTarget.js';
 import { env } from '../lib/env.js';
 
@@ -67,6 +67,9 @@ async function snapshot(): Promise<HealthResponse> {
     /* Read from the LIVE pool rather than re-derived from the URL: what was negotiated is the
        only thing worth reporting, and re-deciding it here could disagree with reality. */
     dbTls: getDbTlsState(),
+    /* 'pooler-fallback' means the CONFIGURED value is not the value in use. That divergence
+       must be visible or the next person inherits a system whose config does not describe it. */
+    dbUrlSource: getDbUrlSource(),
     timestamp: new Date().toISOString(),
   };
 }

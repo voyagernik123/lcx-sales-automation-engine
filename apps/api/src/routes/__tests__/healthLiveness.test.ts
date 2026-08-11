@@ -20,7 +20,8 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 const checkDb = vi.hoisted(() => vi.fn());
 const getLastDbError = vi.hoisted(() => vi.fn(() => null));
 const getDbTlsState = vi.hoisted(() => vi.fn(() => 'encrypted'));
-vi.mock('../../db/index.js', () => ({ checkDb, getLastDbError, getDbTlsState }));
+const getDbUrlSource = vi.hoisted(() => vi.fn(() => 'env'));
+vi.mock('../../db/index.js', () => ({ checkDb, getLastDbError, getDbTlsState, getDbUrlSource }));
 /* The DIRECT Supabase host — the exact shape that was live in Render on 2026-08-10, with a
    same-shape stand-in for the project ref. The route derives its `dbHint` from this. */
 const DIRECT_URL = 'postgresql://postgres:sEcReT@db.aaaabbbbccccdddd.supabase.co:5432/postgres';
@@ -187,6 +188,26 @@ describe('TLS state is reported, because an absent setting reads as a default', 
     checkDb.mockResolvedValue('down');
     getDbTlsState.mockReturnValue('off');
     expect((await (await (await load()).request('/')).json()).dbTls).toBe('off');
+  });
+});
+
+describe('a rewritten database URL is never silent about it', () => {
+  /*
+   * `DATABASE_URL` naming the Supabase DIRECT host is unroutable from an IPv4-only network, so
+   * the process adopts a working pooler form of it rather than failing forever. Rewriting is
+   * defensible; hiding it is not — a system whose configuration does not describe its behaviour
+   * hands the next person a mystery, and this one already cost a day.
+   */
+  it('reports when the URL in use is NOT the configured one', async () => {
+    checkDb.mockResolvedValue('up');
+    getDbUrlSource.mockReturnValue('pooler-fallback');
+    expect((await (await (await load()).request('/')).json()).dbUrlSource).toBe('pooler-fallback');
+  });
+
+  it('reports `env` when the configured value is being used verbatim', async () => {
+    checkDb.mockResolvedValue('up');
+    getDbUrlSource.mockReturnValue('env');
+    expect((await (await (await load()).request('/')).json()).dbUrlSource).toBe('env');
   });
 });
 
