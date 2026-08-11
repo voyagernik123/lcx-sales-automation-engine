@@ -312,5 +312,40 @@ if (probe !== '200') {
   die(`the updater endpoint returned HTTP ${probe} to an anonymous request. The app sends no credentials, so this is what it will get.`);
 }
 
+//
+// HTTP 200 IS NOT THE SAME AS "SERVING WHAT I JUST PUBLISHED", AND THAT GAP PRODUCED BOTH
+// A FALSE PASS AND A FALSE FAILURE IN ONE RUN.
+//
+// `/releases/latest/download/<name>` is a redirect resolved through a CDN. For a release that
+// is seconds old it still hands out the PREVIOUS version's asset. So on 0.2.6 this check saw
+// 200 and declared success while the endpoint was serving 0.2.4 — and the caller's own check,
+// running moments later, correctly read 0.2.4 and reported "the publish did not take" about a
+// publish that had worked perfectly. Two opposite wrong answers, one cause: asking whether the
+// endpoint RESPONDS instead of whether it serves THIS VERSION.
+//
+// So ask the question that matters, and give the CDN time to answer it. Retrying is not
+// papering over a flake: propagation delay is the documented behaviour of the thing being
+// checked, and a verification that cannot tolerate it is not a verification.
+//
+const PROPAGATE_MS = 120_000;
+const startedAt = Date.now();
+let served = null;
+let attempt = 0;
+while (Date.now() - startedAt < PROPAGATE_MS) {
+  attempt += 1;
+  try {
+    served = JSON.parse(execFileSync('curl', ['-sS', '-L', endpoint], { encoding: 'utf8' })).version;
+  } catch {
+    served = null;
+  }
+  if (served === version) break;
+  console.log(`  attempt ${attempt}: endpoint serves ${served ?? 'unparseable'}, waiting for it to repoint to ${version}`);
+  try { execFileSync('sleep', ['5']); } catch { /* interrupted — the deadline still bounds us */ }
+}
+if (served !== version) {
+  die(`the updater endpoint still serves ${served ?? 'nothing parseable'} after ${Math.round((Date.now() - startedAt) / 1000)}s.\n  The release exists, so this is propagation or a release that is not marked latest.\n  Check: gh release view ${tag} --repo ${RELEASES_REPO}`);
+}
+console.log(`  endpoint serves ${served}  ← the version just published, confirmed after ${attempt} attempt(s)`);
+
 console.log(`\n  ✓ published ${tag} → https://github.com/${RELEASES_REPO}/releases/tag/${tag}`);
 console.log(`  ✓ asset + latest.json verified present, endpoint reachable anonymously\n`);

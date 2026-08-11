@@ -306,14 +306,33 @@ if [ "$WANT_DESKTOP" = 1 ]; then
     bold "  publishing to the update channel"
     npm run release -w @lcx/desktop
 
+    #
+    # RETRY, BECAUSE `releases/latest/download/` IS EVENTUALLY CONSISTENT.
+    #
+    # This check ran once, seconds after the publish, read the CDN's still-cached 0.2.4 and
+    # announced "the publish did not take" — about a publish that had worked perfectly, with
+    # all five assets and a valid signature already on the release. A false failure costs the
+    # same as a false pass: it sent the operator back to re-run a release that was done.
+    #
+    # Propagation delay is the documented behaviour of the endpoint, not a flake, so tolerating
+    # it is part of asking the question correctly.
+    #
     bold "  verifying the channel actually moved"
-    NOW_V="$(curl -sL --max-time 25 "$CHANNEL" | node -e '
-      let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
-        try { console.log(JSON.parse(s).version) } catch { console.log("") } });')"
+    NOW_V=""
+    for try in $(seq 1 24); do
+      NOW_V="$(curl -sL --max-time 25 "$CHANNEL" | node -e '
+        let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{
+          try { console.log(JSON.parse(s).version) } catch { console.log("") } });')"
+      [ "$NOW_V" = "$REPO_V" ] && break
+      printf '  attempt %s: channel serves %s, waiting for it to repoint to %s\n' "$try" "${NOW_V:-unparseable}" "$REPO_V"
+      sleep 5
+    done
     if [ "$NOW_V" = "$REPO_V" ]; then
       ok "channel now serves $NOW_V. Installed desks will offer it on next launch."
     else
-      bad "channel still says ${NOW_V:-unknown}, expected $REPO_V. The publish did not take."
+      bad "channel still says ${NOW_V:-unknown} after 2 minutes, expected $REPO_V."
+      bad "The release itself may well exist — check before republishing:"
+      bad "  gh release view v$REPO_V --repo voyagernik123/lcx-terminal-releases"
       exit 6
     fi
   fi
