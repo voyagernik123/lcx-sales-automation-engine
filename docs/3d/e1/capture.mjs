@@ -37,6 +37,20 @@ for (const [name, q] of [['live', ''], ['no-dof', '&dof=0'], ['no-ao', '&ao=0']]
       + ` inShadow ${pn.inShadowPct}% screen ${pn.screen.join(',')} offFrame ${pn.offFrame}`
       + ` pixel ${pn.sample ? `${pn.sample.rgb.join('/')} at ${pn.sample.sx},${pn.sample.sy}` : 'NO UNOCCLUDED SAMPLE'}`);
   }
+  /* THE HYBRID'S OWN VERIFICATION, and the only number here the browser produced rather than the
+     harness: `rectError` is the gap in CSS pixels between where the COMPOSITOR put a projected
+     element and where the RENDERER said its surface is. Anything above a pixel means the DOM content
+     is not on the panel, however convincing the capture looks. */
+  for (const pr of rep.projections) {
+    console.log(`    ${pr.id} ${pr.shown ? 'SHOWN' : 'HIDDEN'}`
+      + (pr.refusal ? ` refusal ${pr.refusal}` : '')
+      + ` occludedCorners ${pr.occludedCorners} backFacing ${pr.backFacing}`
+      + ` shift ${pr.contentShift} scale ${pr.contentScale}`
+      + ` element ${pr.elementPx ? pr.elementPx.join('x') : '-'}`
+      + ` perspX(1e-3) ${pr.perspectiveX}`
+      + ` coc ${pr.cocPx}px domBlur ${pr.domBlurPx}px opacity ${pr.domOpacity}`
+      + ` rectError ${pr.rectError === null ? 'n/a' : pr.rectError + 'px'}`);
+  }
   const d = rep.deck;
   console.log(`    deck lit ${d.litRgb ? d.litRgb.join('/') : 'none'} (${d.litSamples} samples)`
     + ` · shadowed ${d.shadowedRgb ? d.shadowedRgb.join('/') : 'none'} (${d.shadowedSamples} samples)`);

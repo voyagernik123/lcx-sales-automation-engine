@@ -28,6 +28,7 @@
  */
 import {
   createStage, isStage, box, plane, uploadMesh, createLitRenderer, createTarget3D,
+  projectQuad, isQuadRefusal,
   createShadowMap, createSkyBackdrop, createAmbientOcclusion, createDepthOfField,
   viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre, triangleCount,
   hexToLinear, projectScreen, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
@@ -517,6 +518,284 @@ const deck = (() => {
   return { litSamples: acc.lit.n, litRgb: mean(acc.lit), shadowedSamples: acc.shade.n, shadowedRgb: mean(acc.shade) };
 })();
 
+/*
+ * ============================================================================================
+ * THE HYBRID. GL RENDERS THE SURFACES, THE BROWSER RENDERS THE TEXT.
+ * ============================================================================================
+ *
+ * This is what the README said was missing and it is the reason E1 exists at all: §6 rule 4 says
+ * text stays in the DOM, so a 3D environment that carries information has to make a rasteriser it
+ * does not control agree with a renderer it does. Everything above this line was a lighting study.
+ *
+ * WHY NOT DRAW THE TEXT IN GL. Because every one of these panels is a workstream an operator has to
+ * be able to select, search, translate, zoom, and hear read aloud. Baked glyphs are none of those
+ * things at any resolution, and an environment that costs the reader those four abilities to gain a
+ * third dimension has failed §7(b) before it has started.
+ *
+ * WHAT THE CONTENT IS. The 3D programme's own state, because it is the only dataset in reach that I
+ * can verify rather than invent. §6 rule 8 forbids placeholder numbers in a rendered environment for
+ * the same reason it forbids them anywhere: a plausible number in a beautiful frame is the most
+ * persuasive lie this codebase can tell. Every row below is checkable against this repository.
+ */
+const PANEL_CONTENT: Record<string, { tag: string; state: string; note: string }> = {
+  P1: { tag: 'E0 · HARNESS', state: 'SHIPPED', note: 'GGX + shadows + AO + DOF, 4.41 ms/frame measured on the M1' },
+  P2: { tag: 'E8 · THE FORGE', state: 'LIVE', note: 'on the sign-in route, verified in both themes against a pixel ratchet' },
+  P3: { tag: 'E1 · THIS ROOM', state: 'IN BUILD', note: 'real DOM content projected onto lit GL surfaces — the panel you are reading' },
+  P4: { tag: 'E2 · THE GLOBE', state: 'GATED', note: '7 corridors, lift monotonic with distance; §7(b) still unmeasured' },
+  P5: { tag: 'E3–E7', state: 'NOT STARTED', note: 'pipeline, orrery, surface, vault, storm' },
+};
+
+/*
+ * ONE SCALE FOR EVERY PANEL, so type size states DEPTH rather than importance.
+ *
+ * The tempting alternative — size each element to a fixed pixel width — is wrong in a way that is
+ * hard to unsee once noticed: it makes the far panels' text the same size on screen as the near
+ * one's, which contradicts the perspective the rest of the frame is at pains to establish. Fixing
+ * pixels-per-METRE instead lets the projection do the foreshortening, exactly as it does to the
+ * geometry. 250 px/m puts the 12 px body copy at about 4.8 cm of panel, which is a wall display read
+ * from three metres rather than a phone held at arm's length.
+ */
+const PX_PER_METRE = 250;
+/* Content sits inside the panel's own margin. Text to the very edge of a lit slab reads as a
+   texture applied to it; a margin reads as a display mounted in it. */
+const PAD_U = 0.11, PAD_V = 0.10;
+
+const overlay = document.createElement('div');
+/* The canvas is laid out by the document with body padding around it, so the overlay is anchored to
+   the CANVAS rather than to the page. Hard-coding the padding would silently break the alignment the
+   moment the harness page changes, and the failure would look like a projection bug. */
+overlay.style.cssText = 'position:absolute;inset:0;pointer-events:none';
+const wrap = document.createElement('div');
+wrap.style.cssText = 'position:relative;width:1200px;height:720px';
+canvas.parentNode?.insertBefore(wrap, canvas);
+wrap.appendChild(canvas);
+wrap.appendChild(overlay);
+
+/*
+ * PAINT ORDER, and the thing CSS cannot do for us.
+ *
+ * There is no depth buffer in the compositor. The GL canvas is ONE element, so every projected panel
+ * necessarily paints in front of ALL of the geometry — including the panels standing nearer to the
+ * camera. Sorting far-to-near fixes DOM-over-DOM, which is why it is done, but it cannot fix
+ * DOM-over-GL: a label on a far panel will still paint over the near panel occluding it.
+ *
+ * So occlusion is MEASURED per panel below and a covered panel refuses to show its content. Refusing
+ * is the honest move rather than the cautious one: content floating over the wrong surface does not
+ * look like a bug, it looks like content, and the reader attributes it to whatever it is lying on.
+ */
+const byDepth = [...placed].map((p, i) => ({ p, i })).sort((a, b) => b.p.eyeDistance - a.p.eyeDistance);
+
+/*
+ * WHERE ON THE PANEL THE CONTENT GOES — SEARCHED, NOT ASSUMED, and this is the second thing the
+ * measurements forced.
+ *
+ * Centred content put P1 and P5 straight into the refusal branch: two of each one's four corners
+ * landed behind the panel standing nearer, so both outer panels went dark and three of five
+ * workstreams carried no information. That is the §7(b) failure the README describes, arrived at
+ * from the other direction.
+ *
+ * The cheap fix would have been to loosen the occlusion test until they passed. That is a fix to the
+ * INSTRUMENT rather than to the frame, and it ships text lying across the wrong surface.
+ *
+ * So the placement is solved for instead. Each panel is occluded on ONE side — the side its nearer
+ * neighbour stands on — and the layout leaves margin on the other, so a shift away from the occluder
+ * recovers the whole content box without shrinking it. The search tries shifts before scales, and
+ * smaller shifts before larger, so a panel takes the least intervention that works and an
+ * unobstructed panel takes none at all. `contentShift 0` in the report is therefore meaningful: it
+ * says this panel needed nothing, rather than that the search was not run.
+ */
+const SHIFTS = [0, 0.06, -0.06, 0.12, -0.12, 0.18, -0.18, 0.24, -0.24, 0.30, -0.30, 0.36, -0.36];
+const SCALES = [1, 0.92, 0.84, 0.76, 0.68, 0.60];
+
+/* The circle of confusion the lens gives a panel, in CSS pixels — the same expression the panel
+   survey above reports, lifted out so the DOM and the report cannot drift apart. */
+const cocOf = (d: number): number =>
+  Math.min(0.014, Math.abs(1 / focusDistance - 1 / d) * 0.16) * (W / SCALE);
+const maxCoc = Math.max(...placed.map((q) => cocOf(q.eyeDistance)));
+/* Where text stops being text. Measured by reading it, not derived: at 2.4 px of blur an 11.5 px
+   note is still parseable on a lit panel, and at 3 px it is a grey smear. */
+const DOM_BLUR_CEILING = 2.4;
+
+const projections = byDepth.map(({ p, i }) => {
+  const content = PANEL_CONTENT[p.id]!;
+  const off = THICKNESS / 2 + 0.008;
+  const c = Math.cos(p.yaw), s = Math.sin(p.yaw);
+  const at = (u: number, v: number): [number, number, number] => [
+    p.x + c * u + s * off, v, p.z - s * u + c * off,
+  ];
+  const cornersFor = (cw: number, ch: number, shift: number) => ({
+    topLeft: at(shift - cw / 2, PAD_V + ch),
+    topRight: at(shift + cw / 2, PAD_V + ch),
+    bottomRight: at(shift + cw / 2, PAD_V),
+    bottomLeft: at(shift - cw / 2, PAD_V),
+  });
+  /* Occlusion at the content's own corners, against panels the MEASUREMENT says are nearer — not
+     against panels that merely appear earlier in the list. */
+  const occludedAt = (screen: readonly { x: number; y: number }[]): number => screen.filter((c2) => (
+    placed.some((o, j) => j !== i && o.eyeDistance < p.eyeDistance && inQuad(quads[j]!, c2.x * SCALE, c2.y * SCALE))
+  )).length;
+
+  let chosen: {
+    proj: Exclude<ReturnType<typeof projectQuad>, { refusal: unknown }>;
+    ew: number; eh: number; shift: number; scale: number; occluded: number;
+  } | null = null;
+  let lastRefusal: string | null = null;
+  let bestOccluded = 4;
+
+  outer: for (const scale of SCALES) {
+    const cw = Math.max(0.2, (p.w - 2 * PAD_U) * scale);
+    const ch = Math.max(0.2, (p.h - 2 * PAD_V) * scale);
+    const ew = Math.round(cw * PX_PER_METRE), eh = Math.round(ch * PX_PER_METRE);
+    for (const shift of SHIFTS) {
+      /* A shift that would push content off the panel's own edge is not a candidate: content
+         overhanging the slab it is mounted on is a worse artefact than content that is occluded. */
+      if (Math.abs(shift) + cw / 2 > p.w / 2 - PAD_U * 0.5) continue;
+      const proj = projectQuad(vpFinal, cornersFor(cw, ch, shift), W / SCALE, H / SCALE, ew, eh);
+      if (isQuadRefusal(proj)) { lastRefusal = proj.refusal; continue; }
+      const occluded = occludedAt(proj.screen);
+      bestOccluded = Math.min(bestOccluded, occluded);
+      if (occluded === 0 && proj.signedArea > 0) {
+        chosen = { proj, ew, eh, shift, scale, occluded };
+        break outer;
+      }
+    }
+  }
+
+  if (!chosen) {
+    /* REFUSES rather than showing it anyway. Reported with the best the search managed, so the
+       number says how close it came instead of only that it failed. */
+    return {
+      id: p.id, shown: false, refusal: lastRefusal ?? 'NO_UNOCCLUDED_PLACEMENT',
+      backFacing: false, occludedCorners: bestOccluded, contentShift: null, contentScale: null,
+      perspectiveX: null, elementPx: null, rectError: null,
+    };
+  }
+
+  const { proj, ew, eh } = chosen;
+
+  /*
+   * THE CONTENT IS TRANSPARENT, and getting this wrong the first time is the most instructive
+   * mistake in this file.
+   *
+   * The first version reused the harness page's `.cell` class, which carries an opaque background
+   * because it was written for a flat card. The capture is unambiguous: five dark cards with a blue
+   * rim, and NOTHING of the render visible. The GGX response, the cast shadows, the ambient occlusion
+   * in the join, the brand blue itself — every one of them hidden behind flat DOM, surviving only as
+   * the few millimetres of panel edge peeking out around the card.
+   *
+   * That is not a hybrid. That is a 2D layout with a 3D border, and it costs the frame everything the
+   * renderer was for while keeping all of its expense. The content must be GLYPHS AND NOTHING ELSE,
+   * so light that the panel is lit through it.
+   *
+   * Which forces the colours to come from the panel rather than from a stylesheet: #7fb2ff reads on
+   * navy and disappears into brand blue.
+   */
+  const onBlue = p.hex === '#2C6BFF';
+  const tagColour = onBlue ? 'rgba(255,255,255,0.78)' : '#7fb2ff';
+  const noteColour = onBlue ? 'rgba(255,255,255,0.80)' : 'rgba(198,212,236,0.78)';
+
+  /*
+   * THE LENS APPLIES TO THE TEXT TOO — up to a ceiling, and the ceiling is a decision rather than a
+   * tuning.
+   *
+   * Razor-sharp text on a panel the renderer has defocused by 14 px is the tell that gives the whole
+   * hybrid away: the eye reads the contradiction instantly even when it cannot name it. So the DOM
+   * gets a matching blur. But matched one-for-one, four of the five panels become unreadable and the
+   * environment fails §7(b) outright — the frame would look correct and inform nobody.
+   *
+   * So blur tracks the circle of confusion up to 2.4 px and beyond that the panel RECEDES by opacity
+   * instead. Blur says out-of-focus; dimming says further away; neither destroys the words. Both
+   * numbers are reported next to the CoC they came from, so the compromise is auditable rather than
+   * invisible — the alternative would be quietly rendering sharp text and calling the rack a success.
+   */
+  const cocPx = cocOf(p.eyeDistance);
+  /*
+   * NORMALISED AGAINST THE WORST PANEL IN THE SCENE, not against a constant — and the first version
+   * was the constant, which is why this comment exists.
+   *
+   * `min(2.4, coc * 0.45)` clamped at 2.4 for every unfocused panel: a 5.5 px circle of confusion and
+   * a 14 px one came out identically blurred, so the blur said only "not the subject" and the
+   * ordering it was supposed to convey was gone. The ceiling was doing all of the work, which is
+   * always the sign that a clamp has been put where a scale belongs.
+   *
+   * Scaling by the scene's own maximum reaches the legibility ceiling exactly once, on the panel
+   * that has earned it, and keeps every step below it distinct.
+   */
+  /* GATED ON THE LENS ACTUALLY BEING ON. Both of these are lens effects, and with `?dof=0` the GL
+     frame is sharp everywhere — so leaving them applied would put blurred text on crisp geometry,
+     which is the exact contradiction this block exists to remove, merely inverted. Caught by asking
+     what the control capture would look like rather than by looking at it. */
+  const domBlur = DOF_ON ? DOM_BLUR_CEILING * (cocPx / Math.max(1e-6, maxCoc)) : 0;
+  const domOpacity = DOF_ON ? 1 - 0.42 * (cocPx / Math.max(1e-6, maxCoc)) : 1;
+
+  const el = document.createElement('div');
+  el.style.cssText = [
+    'position:absolute', 'left:0', 'top:0',
+    `width:${ew}px`, `height:${eh}px`,
+    /* THE HOMOGRAPHY IS EXPRESSED FROM THE ELEMENT'S TOP-LEFT. Any other origin shears the result,
+       and CSS defaults to `50% 50%` — so omitting this line is a silent, plausible-looking error. */
+    'transform-origin:0 0',
+    `transform:${proj.transform}`,
+    'display:flex', 'flex-direction:column', 'justify-content:flex-end', 'gap:7px',
+    /* CLIPPED TO THE ELEMENT, which is clipped to the panel. Without this a note one word longer
+       than the box spills past the slab it is mounted on — and text hanging in mid-air beside a
+       panel is precisely the artefact the placement search above refuses to produce. */
+    'overflow:hidden',
+    `filter:blur(${domBlur.toFixed(2)}px)`,
+    `opacity:${domOpacity.toFixed(3)}`,
+    /* Sub-pixel text on a transformed surface: without this the glyphs snap to the device grid and
+       the type stops sitting on the plane it is drawn on. */
+    '-webkit-font-smoothing:antialiased',
+  ].join(';');
+  el.innerHTML =
+    `<div style="font:600 11px/1 ui-monospace,monospace;letter-spacing:.14em;color:${tagColour}">${content.tag}</div>`
+    + `<div style="font:700 27px/1.02 system-ui,sans-serif;color:#fff;letter-spacing:-0.01em">${content.state}</div>`
+    + `<div style="font:400 11.5px/1.45 system-ui,sans-serif;color:${noteColour}">${content.note}</div>`;
+  overlay.appendChild(el);
+
+  /*
+   * THE MEASUREMENT THAT MAKES THIS CLAIM CHECKABLE — and it is the browser's number, not mine.
+   *
+   * Every other figure in this file is my own arithmetic reported back to me. This one asks the
+   * COMPOSITOR where it actually put the element, and compares that against where the renderer said
+   * the surface is. A transposed coefficient, a wrong transform-origin, an exponent-notation token
+   * that made CSS reject the whole transform — all of them survive a reading of the code, and none
+   * of them survive a disagreement here. It is the same discipline as reading pixels back out of the
+   * framebuffer rather than trusting that the draw call happened.
+   */
+  let rectError: number | null = null;
+  {
+    const cr = canvas.getBoundingClientRect();
+    const er = el.getBoundingClientRect();
+    const xs = proj.screen.map((c2) => c2.x), ys = proj.screen.map((c2) => c2.y);
+    rectError = Number(Math.max(
+      Math.abs((er.left - cr.left) - Math.min(...xs)),
+      Math.abs((er.top - cr.top) - Math.min(...ys)),
+      Math.abs((er.right - cr.left) - Math.max(...xs)),
+      Math.abs((er.bottom - cr.top) - Math.max(...ys)),
+    ).toFixed(2));
+  }
+
+  return {
+    id: p.id, shown: true,
+    refusal: null as string | null,
+    backFacing: false,
+    occludedCorners: 0,
+    /* How much intervention the placement needed. 0 and 1 mean the panel was unobstructed. */
+    contentShift: Number(chosen.shift.toFixed(2)),
+    contentScale: chosen.scale,
+    /* The perspective coefficient, scaled back out of the element's pixel size so it is comparable
+       between panels. Zero everywhere would mean every transform is affine — labels as stickers —
+       which is the failure this whole file exists to avoid. */
+    perspectiveX: Number((proj.matrix[6]! * 1000).toFixed(3)),
+    elementPx: [ew, eh],
+    cocPx: Number(cocPx.toFixed(1)),
+    domBlurPx: Number(domBlur.toFixed(2)),
+    domOpacity: Number(domOpacity.toFixed(3)),
+    rectError,
+  };
+});
+
 const report = {
   dof: DOF_ON,
   ao: AO_ON,
@@ -525,6 +804,7 @@ const report = {
   focusPanel: subject.id,
   focusDistance: Number(focusDistance.toFixed(2)),
   panels: surveyed,
+  projections,
   deck,
   glError: gl.getError(),
   triangles: tris,

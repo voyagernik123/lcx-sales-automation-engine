@@ -83,6 +83,8 @@ export type { MotionSpec, MotionPurpose, MotionEnvironment, Tween, Framing } fro
    3-D camera. Everything here lands in a LAZY chunk; initial JS is untouched. */
 export { box, plane, sphere, cylinder, torus, arcTube, latLonToVec3, computeNormals, computeTangents, triangleCount } from './env/mesh.js';
 export type { Geometry } from './env/mesh.js';
+export { projectQuad, squareToQuad, uprightPanelCorners, isQuadRefusal } from './env/project.js';
+export type { QuadCorners, QuadProjection, QuadRefusal } from './env/project.js';
 export {
   eyeOf, viewProjection, lightViewProjection, boundsRadius, boundsCentre, ELEVATION_LIMIT,
 } from './env/camera.js';

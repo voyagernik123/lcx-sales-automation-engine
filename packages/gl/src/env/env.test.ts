@@ -3,6 +3,7 @@ import { box, plane, sphere, cylinder, torus, arcTube, latLonToVec3, computeNorm
 import {
   eyeOf, viewProjection, lightViewProjection, boundsRadius, boundsCentre, ELEVATION_LIMIT,
 } from './camera.js';
+import { squareToQuad, projectQuad, uprightPanelCorners, isQuadRefusal } from './project.js';
 
 /**
  * L1.5 / L1.6 — and the two failures these exist to make impossible.
@@ -404,5 +405,170 @@ describe('GREAT-CIRCLE ARCS — E2 payload, and the two endpoint pairs that sile
       if (Math.abs(d) < 1e-12) continue;
       expect(d, `arc triangle ${t / 3} is wound inwards`).toBeGreaterThan(0);
     }
+  });
+});
+
+/*
+ * PROJECTING DOM CONTENT ONTO A RENDERED SURFACE — the tests that make §6 rule 4 shippable.
+ *
+ * The whole point of `project.ts` is that GL renders the surface and the BROWSER renders the text,
+ * so there is no pixel of mine to inspect: the compositor either agrees with the renderer about
+ * where the panel is or it does not. That agreement is a matrix identity, and a matrix identity can
+ * be asserted exactly — which is a better position than any of the environments have been in, where
+ * the only check on the geometry was a captured frame I had to look at.
+ *
+ * So the load-bearing test here is the ROUND TRIP: feed the solver four corners, then push the unit
+ * square's own corners back through the homography it returned and demand the four points come back.
+ * A wrong sign, a transposed coefficient, or an axis swap all survive a plausibility read of the
+ * code and none of them survive that.
+ */
+function applyHomography(m: readonly number[], u: number, v: number): [number, number] {
+  const w = m[6]! * u + m[7]! * v + m[8]!;
+  return [
+    (m[0]! * u + m[1]! * v + m[2]!) / w,
+    (m[3]! * u + m[4]! * v + m[5]!) / w,
+  ];
+}
+
+describe('projectQuad — DOM content on a rendered surface', () => {
+  const CORNERS: [number, number][] = [[0, 0], [1, 0], [1, 1], [0, 1]];
+
+  it('round-trips an arbitrary perspective quad through its own homography', () => {
+    // Deliberately not a parallelogram and not axis-aligned, so this exercises the perspective
+    // branch and would catch an x/y swap that a symmetric quad hides.
+    const quad: [number, number][] = [[120, 60], [430, 95], [388, 340], [96, 268]];
+    const m = squareToQuad(quad[0]!, quad[1]!, quad[2]!, quad[3]!);
+    expect(m, 'a non-degenerate quad must solve').not.toBeNull();
+
+    CORNERS.forEach(([u, v], i) => {
+      const [x, y] = applyHomography(m!, u, v);
+      expect(x, `corner ${i} x`).toBeCloseTo(quad[i]![0], 6);
+      expect(y, `corner ${i} y`).toBeCloseTo(quad[i]![1], 6);
+    });
+  });
+
+  it('round-trips a parallelogram, which takes the affine branch', () => {
+    // px and py both vanish here, so the perspective formula would divide by a zero determinant.
+    const quad: [number, number][] = [[100, 100], [300, 140], [340, 300], [140, 260]];
+    const m = squareToQuad(quad[0]!, quad[1]!, quad[2]!, quad[3]!);
+    expect(m).not.toBeNull();
+    expect(m![6], 'an affine map has no perspective term in g').toBeCloseTo(0, 12);
+    expect(m![7], 'an affine map has no perspective term in h').toBeCloseTo(0, 12);
+    CORNERS.forEach(([u, v], i) => {
+      const [x, y] = applyHomography(m!, u, v);
+      expect(x, `corner ${i} x`).toBeCloseTo(quad[i]![0], 6);
+      expect(y, `corner ${i} y`).toBeCloseTo(quad[i]![1], 6);
+    });
+  });
+
+  it('refuses a quad collapsed onto a line — the edge-on panel', () => {
+    // A panel turned exactly side-on to the camera. The determinant vanishes; without the guard the
+    // coefficients are infinities and CSS silently drops the whole transform, so the label snaps
+    // back to the element's untransformed position rather than disappearing.
+    expect(squareToQuad([0, 0], [100, 50], [200, 100], [100, 50])).toBeNull();
+    expect(squareToQuad([10, 10], [10, 10], [10, 10], [10, 10])).toBeNull();
+  });
+
+  const VIEW = { target: [0, 1, 0] as [number, number, number], distance: 7, azimuthDeg: 0, elevationDeg: 12, fovDeg: 38 };
+  const W = 1200, H = 720;
+
+  it('lays a head-on panel down as a pure scale and translate', () => {
+    const vp = viewProjection(VIEW, W / H);
+    const corners = uprightPanelCorners(0, 0, 0, 2, 1.5, 0, 0.03);
+    const r = projectQuad(vp, corners, W, H, 400, 300);
+    expect(isQuadRefusal(r), 'a panel facing the camera must project').toBe(false);
+    if (isQuadRefusal(r)) return;
+
+    // Facing the camera square-on, the only foreshortening is the 12 degrees of elevation, which
+    // tilts the panel's top away and so DOES introduce a small vertical perspective term. What must
+    // be zero is the HORIZONTAL one: nothing about this arrangement is left-right asymmetric.
+    expect(Math.abs(r.matrix[6]!), 'no horizontal perspective on a symmetric head-on panel').toBeLessThan(1e-6);
+    expect(r.signedArea, 'a front-facing panel has positive signed area').toBeGreaterThan(0);
+  });
+
+  it('yaws into a real perspective transform, and reports a back-facing panel as negative area', () => {
+    const vp = viewProjection(VIEW, W / H);
+    const turned = projectQuad(vp, uprightPanelCorners(2.4, 0, 0, 2, 1.5, -0.7, 0.03), W, H, 400, 300);
+    expect(isQuadRefusal(turned)).toBe(false);
+    if (isQuadRefusal(turned)) return;
+    // The far vertical edge of a yawed panel is further from the eye, so its projected height is
+    // smaller: that difference IS the perspective term, and a zero here means the transform is
+    // affine and the label will float off the surface as it turns.
+    expect(Math.abs(turned.matrix[6]!), 'a yawed panel must carry horizontal perspective').toBeGreaterThan(1e-5);
+
+    // Spun to present its back. CSS has no back-face culling on a projected quad, so without this
+    // signal the caller renders mirror-imaged, perfectly legible-looking reversed text.
+    const behindFacing = projectQuad(vp, uprightPanelCorners(0, 0, 0, 2, 1.5, Math.PI, 0.03), W, H, 400, 300);
+    expect(isQuadRefusal(behindFacing)).toBe(false);
+    if (isQuadRefusal(behindFacing)) return;
+    expect(behindFacing.signedArea, 'a panel turned away must report negative area').toBeLessThan(0);
+  });
+
+  it('refuses rather than inverting when a corner passes behind the eye', () => {
+    const vp = viewProjection({ ...VIEW, distance: 2 }, W / H);
+    /*
+     * MY FIRST ATTEMPT AT THIS TEST WAS WRONG, and the way it was wrong is worth keeping: a very
+     * WIDE panel facing the camera is not behind it. Every corner still has positive w — they are
+     * merely far off-frame to the sides — so the guard correctly did not fire and the test failed
+     * for the right reason. Off-frame and behind-the-eye are different failures with different
+     * remedies, and conflating them is how a projection library ends up refusing valid panels.
+     *
+     * Turned side-on instead, so the panel's width runs ALONG the view axis and one corner is
+     * genuinely past the eye plane. `projectScreen` hands back finite-looking coordinates for that
+     * corner, so the homography solves cleanly and returns a confidently inverted transform — which
+     * is exactly why the check is on `behind` rather than on whether the maths produced numbers.
+     */
+    const r = projectQuad(vp, uprightPanelCorners(0, 0, 0, 40, 1.5, Math.PI / 2, 0), W, H, 400, 300);
+    expect(isQuadRefusal(r), 'a corner behind the eye must refuse').toBe(true);
+    if (isQuadRefusal(r)) expect(r.refusal).toBe('CORNER_BEHIND_CAMERA');
+  });
+
+  it('refuses an element with no box to map', () => {
+    const vp = viewProjection(VIEW, W / H);
+    const corners = uprightPanelCorners(0, 0, 0, 2, 1.5, 0, 0.03);
+    for (const [w, h] of [[0, 300], [400, 0], [-10, 300], [400, Number.NaN]]) {
+      const r = projectQuad(vp, corners, W, H, w!, h!);
+      expect(isQuadRefusal(r), `element ${w}x${h} must refuse`).toBe(true);
+      if (isQuadRefusal(r)) expect(r.refusal).toBe('EMPTY_ELEMENT_BOX');
+    }
+  });
+
+  it('emits a matrix3d whose column-major embedding agrees with the homography it came from', () => {
+    /*
+     * THE TEST THAT ACTUALLY PROTECTS THE FEATURE.
+     *
+     * Every other assertion here checks the homography, which is my maths. This one checks the
+     * handoff to CSS, which is a convention I can get wrong in a way that looks right: a matrix3d
+     * with the perspective terms in the fourth COLUMN instead of the fourth ROW renders correctly
+     * head-on and drifts as the surface turns. So parse the string back, run the element's own
+     * corners through it exactly as the compositor would, and demand the projected screen corners.
+     */
+    const vp = viewProjection(VIEW, W / H);
+    const EW = 400, EH = 300;
+    const r = projectQuad(vp, uprightPanelCorners(1.8, 0, 0, 2, 1.5, -0.55, 0.03), W, H, EW, EH);
+    expect(isQuadRefusal(r)).toBe(false);
+    if (isQuadRefusal(r)) return;
+
+    const nums = r.transform.replace('matrix3d(', '').replace(')', '').split(',').map(Number);
+    expect(nums, 'matrix3d takes exactly 16 numbers').toHaveLength(16);
+    expect(nums.some(Number.isNaN), 'no NaN may reach the compositor').toBe(false);
+
+    // Column-major: element (row, col) lives at nums[col * 4 + row].
+    const at = (row: number, col: number): number => nums[col * 4 + row]!;
+    // CSS transforms a homogeneous column vector [x, y, 0, 1] and divides by the resulting w, which
+    // the fourth ROW produces. Feed it the element's own pixel corners.
+    const push = (x: number, y: number): [number, number] => {
+      const w = at(3, 0) * x + at(3, 1) * y + at(3, 3);
+      return [
+        (at(0, 0) * x + at(0, 1) * y + at(0, 3)) / w,
+        (at(1, 0) * x + at(1, 1) * y + at(1, 3)) / w,
+      ];
+    };
+    const box: [number, number][] = [[0, 0], [EW, 0], [EW, EH], [0, EH]];
+    box.forEach(([x, y], i) => {
+      const [px, py] = push(x, y);
+      expect(px, `element corner ${i} lands on screen x`).toBeCloseTo(r.screen[i]!.x, 3);
+      expect(py, `element corner ${i} lands on screen y`).toBeCloseTo(r.screen[i]!.y, 3);
+    });
   });
 });
