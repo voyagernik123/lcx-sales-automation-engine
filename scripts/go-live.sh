@@ -267,6 +267,33 @@ if [ "$WANT_DESKTOP" = 1 ]; then
     fi
     ok "signing key present (not read by this script — tauri takes the path)"
 
+    #
+    # PUT CARGO ON PATH OURSELVES. A NON-INTERACTIVE BASH READS NO PROFILE AT ALL.
+    #
+    # `bash script.sh` from a zsh session sources neither .zshrc nor .bash_profile — a
+    # non-interactive bash reads only $BASH_ENV, which is normally unset. rustup installs to
+    # ~/.cargo/bin and puts it on PATH from a login shell's rc file, so cargo is present for
+    # the human and absent for the script. `tauri build` then dies with
+    #
+    #   failed to run 'cargo metadata' ... No such file or directory (os error 2)
+    #
+    # which reads like a broken Rust install rather than an environment difference, and sends
+    # the reader off reinstalling a toolchain that was never broken. Depending on the calling
+    # shell's PATH is the defect; this removes the dependency.
+    #
+    if ! command -v cargo >/dev/null 2>&1; then
+      # shellcheck disable=SC1091
+      [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
+      case ":$PATH:" in *":$HOME/.cargo/bin:"*) ;; *) PATH="$HOME/.cargo/bin:$PATH" ;; esac
+      export PATH
+    fi
+    if ! command -v cargo >/dev/null 2>&1; then
+      bad "cargo is not installed. Tauri compiles a Rust binary, so it cannot build without it."
+      bad "Install with:  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh"
+      exit 7
+    fi
+    ok "cargo on PATH ($(command -v cargo))"
+
     # VITE_API_URL is COMPILED IN. Without it the bundle talks to /api on its own origin and
     # every request fails, silently, on a desktop app that has no Vite proxy to save it.
     export VITE_API_URL="$API"
