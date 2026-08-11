@@ -63,8 +63,17 @@ export const LCXOS_VERSION = '0.2.6';
  * the page. `publish-release.mjs` now REFUSES TO PUBLISH if this number disagrees
  * with the DMG it is about to upload, so the next release cannot ship a stale figure
  * the way this one nearly did.
+ *
+ * 0.2.6: 4_070_285 bytes = 4.1 MB, measured from the artefact the publisher was holding
+ * — and the guard earned itself again by refusing the release over 4.0 vs 4.1. A tenth of
+ * a megabyte harms nobody, which is exactly why it would have sat on the page for months;
+ * a page casually wrong about something checkable is not trusted about anything else.
+ *
+ * DECIMAL MB, not MiB, because that is what `publish-release.mjs` divides by and what a
+ * download dialog shows. 4_070_285 / 1e6 = 4.1; the same bytes are 3.9 MiB, and picking
+ * the other unit here would make the guard fail forever with both sides "correct".
  */
-export const LCXOS_DMG_MB = 4.0;
+export const LCXOS_DMG_MB = 4.1;
 
 /**
  * The permanent download URL. `/releases/latest/download/<name>` is a GitHub
