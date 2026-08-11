@@ -214,7 +214,12 @@ export interface LitDraw {
 
 export interface LitRenderer {
   /** Depth-only pass into the shadow map. Call before `draw`. */
-  shadowPass(lightVP: Mat4, draws: readonly LitDraw[], shadow: ShadowMap): void;
+  /**
+   * Optional per-call probe. `getError()` reports the first error since the last call and
+   * CLEARS it, so a single check at the end of a pass identifies the pass and never the call.
+   * Passing this makes a GL_INVALID_VALUE name its own line instead of costing three guesses.
+   */
+  shadowPass(lightVP: Mat4, draws: readonly LitDraw[], shadow: ShadowMap, onStep?: (label: string) => void): void;
   draw(opts: {
     readonly viewProj: Mat4;
     readonly eye: readonly [number, number, number];
@@ -225,6 +230,7 @@ export interface LitRenderer {
     readonly shadow: ShadowMap | null;
     readonly shadowStrength?: number;
     readonly draws: readonly LitDraw[];
+    readonly onStep?: (label: string) => void;
   }): void;
   dispose(): void;
 }
@@ -239,8 +245,9 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
   const u = (p: WebGLProgram, n: string) => gl.getUniformLocation(p, n);
 
   return {
-    shadowPass(lightVP, draws, shadow) {
-      shadow.bind();
+    shadowPass(lightVP, draws, shadow, onStep) {
+      const step = onStep ?? (() => undefined);
+      shadow.bind(); step('shadow.bind');
       gl.clear(gl.DEPTH_BUFFER_BIT);
       gl.enable(gl.DEPTH_TEST);
       gl.depthFunc(gl.LEQUAL);
@@ -250,18 +257,19 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
          see it. Cheaper and more robust than tuning bias alone. */
       gl.enable(gl.CULL_FACE);
       gl.cullFace(gl.FRONT);
-      gl.useProgram(shadowProg);
-      gl.uniformMatrix4fv(u(shadowProg, 'uLightVP'), false, lightVP);
+      gl.useProgram(shadowProg); step('useProgram(shadow)');
+      gl.uniformMatrix4fv(u(shadowProg, 'uLightVP'), false, lightVP); step('uLightVP');
       for (const d of draws) {
-        gl.uniformMatrix4fv(u(shadowProg, 'uModel'), false, d.model);
-        gl.bindVertexArray(d.mesh.vao);
-        gl.drawElements(gl.TRIANGLES, d.mesh.indexCount, d.mesh.indexType, 0);
+        gl.uniformMatrix4fv(u(shadowProg, 'uModel'), false, d.model); step('shadow uModel');
+        gl.bindVertexArray(d.mesh.vao); step('shadow bindVAO');
+        gl.drawElements(gl.TRIANGLES, d.mesh.indexCount, d.mesh.indexType, 0); step('shadow drawElements');
       }
       gl.bindVertexArray(null);
       gl.cullFace(gl.BACK);
     },
 
     draw(o) {
+      const step = o.onStep ?? (() => undefined);
       gl.enable(gl.DEPTH_TEST);
       gl.depthFunc(gl.LEQUAL);
       gl.depthMask(true);
@@ -269,12 +277,12 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
       gl.enable(gl.CULL_FACE);
       gl.cullFace(gl.BACK);
       gl.useProgram(litProg);
-      gl.uniformMatrix4fv(u(litProg, 'uViewProj'), false, o.viewProj);
-      gl.uniform3fv(u(litProg, 'uEye'), o.eye as unknown as number[]);
-      gl.uniform3fv(u(litProg, 'uLightDir'), o.lightDir as unknown as number[]);
-      gl.uniform3fv(u(litProg, 'uLightColour'), o.lightColour as unknown as number[]);
-      gl.uniform3fv(u(litProg, 'uAmbient'), o.ambient as unknown as number[]);
-      gl.uniformMatrix4fv(u(litProg, 'uLightVP'), false, o.lightVP);
+      gl.uniformMatrix4fv(u(litProg, 'uViewProj'), false, o.viewProj); step('uViewProj');
+      gl.uniform3fv(u(litProg, 'uEye'), o.eye as unknown as number[]); step('uEye');
+      gl.uniform3fv(u(litProg, 'uLightDir'), o.lightDir as unknown as number[]); step('uLightDir');
+      gl.uniform3fv(u(litProg, 'uLightColour'), o.lightColour as unknown as number[]); step('uLightColour');
+      gl.uniform3fv(u(litProg, 'uAmbient'), o.ambient as unknown as number[]); step('uAmbient');
+      gl.uniformMatrix4fv(u(litProg, 'uLightVP'), false, o.lightVP); step('lit uLightVP');
 
       if (o.shadow) {
         gl.activeTexture(gl.TEXTURE0);
@@ -290,12 +298,12 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
 
       for (const d of o.draws) {
         gl.uniformMatrix4fv(u(litProg, 'uModel'), false, d.model);
-        gl.uniformMatrix3fv(u(litProg, 'uNormalMat'), false, d.normalMat);
-        gl.uniform3fv(u(litProg, 'uBaseColour'), d.material.baseColour as unknown as number[]);
+        gl.uniformMatrix3fv(u(litProg, 'uNormalMat'), false, d.normalMat); step('uNormalMat');
+        gl.uniform3fv(u(litProg, 'uBaseColour'), d.material.baseColour as unknown as number[]); step('uBaseColour');
         gl.uniform1f(u(litProg, 'uRoughness'), d.material.roughness);
         gl.uniform1f(u(litProg, 'uMetalness'), d.material.metalness);
-        gl.bindVertexArray(d.mesh.vao);
-        gl.drawElements(gl.TRIANGLES, d.mesh.indexCount, d.mesh.indexType, 0);
+        gl.bindVertexArray(d.mesh.vao); step('lit bindVAO');
+        gl.drawElements(gl.TRIANGLES, d.mesh.indexCount, d.mesh.indexType, 0); step('lit drawElements');
       }
       gl.bindVertexArray(null);
       gl.disable(gl.CULL_FACE);

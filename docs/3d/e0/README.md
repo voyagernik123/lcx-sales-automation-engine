@@ -1,66 +1,87 @@
-# E0 · THE SPIKE — status: **GATE NOT MET**
+# E0 · THE SPIKE — status: **GATE MET**
 
 `3D_VFX_1000X.md` §5 gives E0 one job: replace the estimated frame budget with a measured one
-before any product code exists, and it is allowed to kill the plan. It has not passed.
+on real hardware, before any product code exists. It was allowed to kill the plan. It did not.
 
-## What is built and proven
+## The measurement — real Apple M1, not SwiftShader
 
-| layer | file | state |
+```
+renderer   ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)
+scene      4,236 triangles · 1024² shadow map · 1280×800 · RGBA16F · tone-mapped blit
+```
+
+| scene passes / frame | triangles / frame | ms / frame |
 |---|---|---|
-| L1.5 mesh | `packages/gl/src/env/mesh.ts` | ✅ 16 unit tests |
-| L1.6 camera + light rig | `packages/gl/src/env/camera.ts` | ✅ NaN sweeps over every angle |
-| L1.5 depth target + shadow map | `packages/gl/src/env/target3d.ts` | ✅ allocates, framebuffer COMPLETE |
-| L2.5 GGX material + L2.6 PCF shadow | `packages/gl/src/env/lit.ts` | ✅ compiles on the driver |
+| 1 | 4,236 | **0.599** |
+| 20 | 84,720 | 1.139 |
+| 100 | 423,600 | 3.856 |
 
-The depth-attachment gap is real and was the first thing found: `stage.scene`, `bloomA` and
-`bloomB` carry colour only — grep `stage.ts` for `DEPTH_ATTACHMENT` and it returns nothing. The
-existing pipeline is physically unable to depth-test geometry, which is why `target3d.ts` exists
-and why it is additive rather than a change to `stage.ts`.
+**Fixed cost ≈ 0.57 ms** (shadow pass + fullscreen present). **Marginal cost ≈ 0.028–0.033 ms**
+per additional scene pass — about **110,000 triangles per millisecond**.
 
-## What is NOT working
+### Why the number is believed
 
-**The geometry pass raises `GL_INVALID_VALUE` (1281) and the render target reads back empty.**
+It **scales**. An earlier harness in this repo reported 5,000 fps because `gl.finish()` returns
+on flush and `performance.now()` is clamped to ~100 µs, so a figure that does not move when the
+work multiplies is measuring command submission rather than execution. Multiplying the geometry
+100× moved this one from 0.599 to 3.856 ms, linearly across two decades. That is a clock.
 
+### Against the estimate
+
+§3.2 estimated **10.9 ms** of the 16.6 ms budget. Measured base scene: **0.60 ms**. The estimate
+was **~18× pessimistic**, which means AO, DOF, volumetrics and particles all fit with room —
+and the §3.2 quality-ladder recommendation becomes a nicety rather than a necessity.
+
+**Headroom against 60 fps: 16.0 ms.**
+
+## The bug that made the first three attempts render nothing
+
+`IDENTITY` in `math.ts` is a **factory**, not a constant:
+
+```ts
+export const IDENTITY = (): Mat4 => new Float32Array([1,0,0,0, ...]);
 ```
-hdr           true
-eye           [3.73, 3.30, 5.53]      ← camera is correct
-boxTopNdc     [-0.245, 0.403]  w 7.497 ← geometry projects INSIDE the frame, in front of the eye
-glAfterDraw   1281   GL_INVALID_VALUE  ← attributed to the pass, errors drained before it
-glAfterRead   1282   GL_INVALID_OPERATION
-targetCentre  [0,0,0,0]
-```
 
-`live.png` is a uniform navy rectangle. That colour is exactly the clear colour in linear, so
-nothing drew at all — not the ground plane, not the box, not the sphere. Every program compiled,
-no refusal fired, the framebuffer reported COMPLETE, and 4,236 triangles were submitted.
+So `new Float32Array(IDENTITY)` passed a **function** to the constructor and produced a
+**zero-length array** rather than throwing. `uniformMatrix4fv` with 0 floats raises
+`GL_INVALID_VALUE`, every model matrix was empty, every vertex collapsed to the origin — and the
+frame came out as nothing but the clear colour, with **every program compiled, no refusal fired,
+and the framebuffer reporting COMPLETE**.
 
-**This is the silent-black-frame class the unit tests were written to prevent, and it happened
-anyway. `finite` is not `correct`.** The NaN sweeps proved the matrices are well-formed; they
-cannot prove a GL state error three layers down. Worth recording as the lesson: pure-function
-tests bound the maths and say nothing about the API calls.
+The 16 new unit tests could not catch it. They prove the matrices are finite and well-formed;
+this was a GL argument three layers beneath them. **`finite` is not `correct`, and a pure-function
+test bounds the maths without saying anything about the API call.**
 
-## The two leading hypotheses, untested
+What found it in one run, after three wrong guesses, was making the code name its own failure:
+`LitRenderer.shadowPass` and `draw` now take an optional `onStep` probe, because `getError()`
+reports the first error since the last call and clears it — so a single check at the end of a
+pass identifies the *pass* and never the *call*. That probe is permanent.
 
-1. **Depth-only framebuffer needs `gl.drawBuffers([gl.NONE])`.** The shadow map has no colour
-   attachment, but the default draw buffer is still `COLOR_ATTACHMENT0`. Several drivers error
-   on a draw in that state. Fits `1281` less well than `1282`, so it is second.
-2. **A `uniform*fv` receiving the wrong component count.** `GL_INVALID_VALUE` is exactly what
-   `uniform3fv` raises for an array whose length is not 3. `hexToLinear` and `eye` are the
-   candidates to instrument first — pass explicit `Float32Array`s of known length and see which
-   call clears the error.
+## What is visibly right, and what is not
 
-Next step is one experiment, not a guess: wrap every GL call in the two draw paths with a
-`getError()` check under a debug flag, and let it name the offending call.
+`live.png` (SwiftShader, for the repeatable capture) and the real-GPU screenshot both show:
 
-## The number that is NOT the answer
+- ✅ three cube faces at distinctly different luminance — flat normals are working
+- ✅ a cast shadow, soft-edged, correctly offset from the light direction
+- ✅ a smooth sphere terminator with no polar faceting — analytic normals
+- ✅ brand blue `#2C6BFF` recognisably itself through HDR + tone map
 
-`msPerFrame: 12.55` at 1280×800 with a 1024² shadow map — but the renderer string is
-`SwiftShader`, i.e. **software rasterisation**, and the frame is empty. That number measures
-nothing and must not be quoted as the frame budget. E0's gate requires a real GPU and a
-non-empty frame.
+- ❌ **the metallic sphere is far too dark.** At `metalness 0.92` there is almost no diffuse lobe,
+  so a metal reflects its environment — and there is no environment yet. This is not a bug in
+  `lit.ts`; it is the L6 gap, and it is the first thing E1b needs.
+- ❌ the sphere's contact shadow is weaker than the cube's. Suspect the shadow frustum `extent`
+  fit rather than the PCF.
 
 ## Reproduce
 
 ```bash
-node docs/3d/e0/build.mjs && node docs/3d/e0/capture.mjs
+node docs/3d/e0/build.mjs && node docs/3d/e0/capture.mjs     # capture (software GL)
+cd docs/3d/e0 && python3 -m http.server 8799                  # then open with a real GPU:
+# http://127.0.0.1:8799/live.html?frames=300&repeat=1   → window.E0 carries the report
+# ?repeat=20 / ?repeat=100                              → validates the clock by scaling work
 ```
+
+## Verdict
+
+**Proceed to E1a.** The frame budget is not the constraint anyone thought it was, the engine
+layers work, and the next gap is the environment (L6) rather than performance.

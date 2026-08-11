@@ -74,8 +74,18 @@ const meshes = [groundGeo, boxGeo, ballGeo].map((g) => {
   return m as Exclude<typeof m, { kind: 'refused' }>;
 });
 
+/*
+ * `IDENTITY` IS A FACTORY, NOT A CONSTANT — `export const IDENTITY = (): Mat4 => ...`.
+ *
+ * `new Float32Array(IDENTITY)` therefore passes a FUNCTION to the constructor, which yields a
+ * ZERO-LENGTH array rather than throwing. `uniformMatrix4fv` with 0 floats raises
+ * GL_INVALID_VALUE, every model matrix was empty, every vertex collapsed to the origin, and the
+ * frame came out as nothing but the clear colour — with every program compiled, no refusal, and
+ * a COMPLETE framebuffer. The unit tests could not catch it: they prove the MATHS is finite and
+ * this was a GL argument three layers below them.
+ */
 const translate = (x: number, y: number, z: number): Float32Array => {
-  const m = new Float32Array(IDENTITY);
+  const m = IDENTITY();
   m[12] = x; m[13] = y; m[14] = z;
   return m;
 };
@@ -102,6 +112,7 @@ const lightVP = lightViewProjection({ ...light, extent: radius * 0.8 }, centre, 
 
 const view: Viewpoint = { target: [0, 0.6, 0], distance: 7.2, azimuthDeg: 34, elevationDeg: 22, fovDeg: 36 };
 
+const REPEAT = Math.max(1, Number(new URLSearchParams(location.search).get('repeat') ?? 1));
 function frame() {
   const vp = viewProjection(view, W / H);
   const eye = eyeOf(view);
@@ -111,10 +122,12 @@ function frame() {
   target.bind();
   gl.clearColor(0.004, 0.007, 0.017, 1);
   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-  lit.draw({
-    viewProj: vp, eye, lightDir: light.direction, lightColour: light.colour,
-    ambient: [0.055, 0.07, 0.115], lightVP, shadow, shadowStrength: 0.92, draws,
-  });
+  for (let r = 0; r < REPEAT; r++) {
+    lit.draw({
+      viewProj: vp, eye, lightDir: light.direction, lightColour: light.colour,
+      ambient: [0.055, 0.07, 0.115], lightVP, shadow, shadowStrength: 0.92, draws,
+    });
+  }
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, W, H);
@@ -148,14 +161,19 @@ function measure(frames: number): number {
 const FRAMES = Number(new URLSearchParams(location.search).get('frames') ?? 600);
 const targetProbe = (() => {
   while (gl.getError() !== gl.NO_ERROR) { /* drain errors from setup so the pass is attributable */ }
-  lit.shadowPass(lightVP, draws, shadow);
-  target.bind();
+  const bad: string[] = [];
+  const probeStep = (label: string) => {
+    const e = gl.getError();
+    if (e !== gl.NO_ERROR) bad.push(`${label}=0x${e.toString(16)}`);
+  };
+  lit.shadowPass(lightVP, draws, shadow, probeStep);
+  target.bind(); probeStep('target.bind');
   gl.clearColor(0.004, 0.007, 0.017, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); probeStep('clear');
   lit.draw({
     viewProj: viewProjection(view, W / H), eye: eyeOf(view), lightDir: light.direction,
     lightColour: light.colour, ambient: [0.055, 0.07, 0.115], lightVP, shadow,
-    shadowStrength: 0.92, draws,
+    shadowStrength: 0.92, draws, onStep: probeStep,
   });
   const afterDraw = gl.getError();
   /* RGBA/UNSIGNED_BYTE, not FLOAT: readPixels from an RGBA16F attachment only guarantees the
@@ -164,7 +182,7 @@ const targetProbe = (() => {
   const buf = new Uint8Array(4);
   gl.readPixels(W >> 1, H >> 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
   const afterRead = gl.getError();
-  return { centre: Array.from(buf), afterDraw, afterRead };
+  return { centre: Array.from(buf), afterDraw, afterRead, bad };
 })();
 const tris = triangleCount(groundGeo) + triangleCount(boxGeo) + triangleCount(ballGeo);
 const msPerFrame = measure(Math.max(1, FRAMES));
@@ -184,12 +202,14 @@ const report = {
   boxTopNdc: probe.ndc,
   boxTopW: probe.w,
   targetCentre: targetProbe.centre,
+  failingCalls: targetProbe.bad,
   glAfterDraw: targetProbe.afterDraw,
   glAfterRead: targetProbe.afterRead,
   triangles: tris,
   shadowMap: shadow.size,
   resolution: `${W}x${H}`,
   frames: FRAMES,
+  repeat: REPEAT,
   msPerFrame: Number(msPerFrame.toFixed(3)),
   fps: Math.round(1000 / msPerFrame),
   budget60: 16.6,
