@@ -11,11 +11,11 @@ const s = createServer((q,r)=>{ const rel=normalize(decodeURIComponent(new URL(q
   r.writeHead(200,{'content-type':T[f.slice(f.lastIndexOf('.'))]??'application/octet-stream'}); r.end(readFileSync(f)); });
 await new Promise(r=>s.listen(0,'127.0.0.1',r));
 const b = await chromium.launch({ args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
-for (const [name, reduced] of [['live', false]]) {
+for (const [name, reduced, q] of [['live', false, ''], ['diag-mirror', false, '&diag=1']]) {
   const p = await b.newPage({ viewport:{width:1600,height:1200}, deviceScaleFactor:1,  // 13 panels at 2x exceeds Chromium's ~16384px capture limit
     reducedMotion: reduced ? 'reduce' : 'no-preference' });
   const errs=[]; p.on('pageerror',e=>errs.push(e.message));
-  await p.goto(`http://127.0.0.1:${s.address().port}/live.html?frames=4`);
+  await p.goto(`http://127.0.0.1:${s.address().port}/live.html?frames=4${q}`);
   await p.waitForFunction(()=>document.title==='READY',{timeout:30000});
   if(errs.length) throw new Error('page errors: '+errs.join(' | '));
   const state = await p.evaluate(() => {

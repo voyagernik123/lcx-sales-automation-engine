@@ -102,7 +102,7 @@ const draws: LitDraw[] = [
   { mesh: meshes[1]!, model: translate(-1.15, 0.7, 0), normalMat: NORMAL_MAT,
     material: { baseColour: hexToLinear('#2C6BFF'), roughness: 0.34, metalness: 0.05 } },
   { mesh: meshes[2]!, model: translate(1.15, 0.75, 0.3), normalMat: NORMAL_MAT,
-    material: { baseColour: hexToLinear('#C9D4E4'), roughness: 0.18, metalness: 0.92 } },
+    material: { baseColour: hexToLinear('#C9D4E4'), roughness: DIAG ? 0.045 : 0.18, metalness: 0.92 } },
 ];
 
 const light = { direction: [-0.45, -1, -0.35] as const, colour: [3.4, 3.3, 3.05] as const };
@@ -114,6 +114,12 @@ const lightVP = lightViewProjection({ ...light, extent: radius * 0.8 }, centre, 
 
 const view: Viewpoint = { target: [0, 0.6, 0], distance: 7.2, azimuthDeg: 34, elevationDeg: 22, fovDeg: 36 };
 
+const DIAG = new URLSearchParams(location.search).get('diag') === '1';
+/* RED above, GREEN below, BLUE at the horizon. If a mirror sphere shows red where it faces the
+   sky and green where it faces the floor, the sample direction is right. A grey gradient cannot
+   distinguish that from its own inverse, which is why the first look was inconclusive. */
+const DIAG_SKY = { zenith: [1.6, 0.05, 0.05] as const, horizon: [0.05, 0.08, 1.6] as const, ground: [0.05, 1.2, 0.05] as const };
+const SKY = DIAG ? DIAG_SKY : undefined;
 const REPEAT = Math.max(1, Number(new URLSearchParams(location.search).get('repeat') ?? 1));
 function frame() {
   const vp = viewProjection(view, W / H);
@@ -125,11 +131,11 @@ function frame() {
   gl.clear(gl.DEPTH_BUFFER_BIT);
   /* THE BACKDROP REPLACES THE FLAT CLEAR. A clear colour is a void; this is an environment, and
      it is the same function the material reflects — so a metal and its surroundings agree. */
-  skyBox.draw({ eye, target: view.target, fovDeg: view.fovDeg ?? 36, aspect: W / H });
+  skyBox.draw({ eye, target: view.target, fovDeg: view.fovDeg ?? 36, aspect: W / H, sky: SKY });
   for (let r = 0; r < REPEAT; r++) {
     lit.draw({
       viewProj: vp, eye, lightDir: light.direction, lightColour: light.colour,
-      ambientGain: 1, lightVP, shadow, shadowStrength: 0.92, draws,
+      ambientGain: 1, sky: SKY, lightVP, shadow, shadowStrength: 0.92, draws,
     });
   }
 
@@ -173,10 +179,10 @@ const targetProbe = (() => {
   lit.shadowPass(lightVP, draws, shadow, probeStep);
   target.bind(); probeStep('target.bind');
   gl.clear(gl.DEPTH_BUFFER_BIT); probeStep('clear');
-  skyBox.draw({ eye: eyeOf(view), target: view.target, fovDeg: view.fovDeg ?? 36, aspect: W / H }); probeStep('sky');
+  skyBox.draw({ eye: eyeOf(view), target: view.target, fovDeg: view.fovDeg ?? 36, aspect: W / H, sky: SKY }); probeStep('sky');
   lit.draw({
     viewProj: viewProjection(view, W / H), eye: eyeOf(view), lightDir: light.direction,
-    lightColour: light.colour, ambientGain: 1, lightVP, shadow,
+    lightColour: light.colour, ambientGain: 1, sky: SKY, lightVP, shadow,
     shadowStrength: 0.92, draws, onStep: probeStep,
   });
   const afterDraw = gl.getError();

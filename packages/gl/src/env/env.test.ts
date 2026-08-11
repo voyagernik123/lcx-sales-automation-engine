@@ -73,6 +73,56 @@ describe('box — flat-shaded means the corners are NOT shared', () => {
   });
 });
 
+describe('EVERY primitive winds outwards — the box test alone was not enough', () => {
+  /*
+   * THE GAP THAT SHIPPED AN INVERTED REFLECTION. Only the box had a winding test. The plane and
+   * the sphere use the same `a, c, b` index pattern, but their grids are parameterised
+   * differently (z-major vs phi/theta), so an identical pattern can produce OPPOSITE winding.
+   *
+   * A backwards-wound sphere is not invisible under `cullFace(BACK)` — it renders as a plausible
+   * disc, because you are seeing the INSIDE of its far hemisphere. Its interpolated normals then
+   * point the wrong way and every reflection is vertically mirrored: proven with an RGB
+   * diagnostic sky where a mirror sphere showed GROUND-green at its top and ZENITH-red at its
+   * bottom. Diffuse looked fine, which is why the first two captures did not catch it.
+   */
+  const outwardDot = (positions: Float32Array, indices: Uint16Array | Uint32Array, t: number) => {
+    const [a, b, c] = [indices[t]! * 3, indices[t + 1]! * 3, indices[t + 2]! * 3];
+    const e1 = [positions[b]! - positions[a]!, positions[b + 1]! - positions[a + 1]!, positions[b + 2]! - positions[a + 2]!];
+    const e2 = [positions[c]! - positions[a]!, positions[c + 1]! - positions[a + 1]!, positions[c + 2]! - positions[a + 2]!];
+    const n = [
+      e1[1]! * e2[2]! - e1[2]! * e2[1]!,
+      e1[2]! * e2[0]! - e1[0]! * e2[2]!,
+      e1[0]! * e2[1]! - e1[1]! * e2[0]!,
+    ];
+    // The vertex normal is the authority on which way is out; the face normal must agree with it.
+    return n[0]! * positions[a]! + n[1]! * positions[a + 1]! + n[2]! * positions[a + 2]!;
+  };
+
+  it('sphere: every face normal agrees with its outward position', () => {
+    const g = sphere(1, 12, 16);
+    let checked = 0;
+    for (let t = 0; t < g.indices.length; t += 3) {
+      const d = outwardDot(g.positions, g.indices, t);
+      // Degenerate triangles at the poles have a zero cross product and carry no orientation.
+      if (Math.abs(d) < 1e-9) continue;
+      checked++;
+      expect(d, `sphere triangle ${t / 3} is wound INWARDS — its reflections will be mirrored`).toBeGreaterThan(0);
+    }
+    expect(checked).toBeGreaterThan(100);
+  });
+
+  it('plane: faces point along +Y, matching the vertex normals', () => {
+    const g = plane(4, 3);
+    for (let t = 0; t < g.indices.length; t += 3) {
+      const [a, b, c] = [g.indices[t]! * 3, g.indices[t + 1]! * 3, g.indices[t + 2]! * 3];
+      const e1 = [g.positions[b]! - g.positions[a]!, 0, g.positions[b + 2]! - g.positions[a + 2]!];
+      const e2 = [g.positions[c]! - g.positions[a]!, 0, g.positions[c + 2]! - g.positions[a + 2]!];
+      const ny = e1[2]! * e2[0]! - e1[0]! * e2[2]!;
+      expect(ny, `plane triangle ${t / 3} faces downwards`).toBeGreaterThan(0);
+    }
+  });
+});
+
 describe('computeNormals is area-weighted, which is not the obvious implementation', () => {
   it('weights a large triangle more than a small one at a shared vertex', () => {
     /*

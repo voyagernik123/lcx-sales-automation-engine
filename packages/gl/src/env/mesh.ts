@@ -185,8 +185,19 @@ export function sphere(radius = 0.5, rings = 24, sectors = 32): Geometry {
   for (let r = 0; r < R; r++) {
     for (let s = 0; s < S; s++) {
       const a = r * (S + 1) + s, b = a + 1, c = a + (S + 1), d = c + 1;
-      indices[i++] = a; indices[i++] = c; indices[i++] = b;
-      indices[i++] = b; indices[i++] = c; indices[i++] = d;
+      /*
+       * WINDING: a, b, c — NOT a, c, b, which is what `plane` uses.
+       *
+       * The same index pattern gives OPPOSITE winding here, because the sphere's grid runs
+       * phi (downward from the north pole) × theta while the plane's runs x × z. Copying the
+       * plane's order produced an inward-facing sphere, and an inward sphere is NOT invisible
+       * under back-face culling — you see the inside of its far hemisphere as a perfectly
+       * plausible disc, with interpolated normals pointing the wrong way. Diffuse still looked
+       * right; every REFLECTION was vertically mirrored. Caught by an RGB diagnostic sky, then
+       * pinned by the winding test in env.test.ts.
+       */
+      indices[i++] = a; indices[i++] = b; indices[i++] = c;
+      indices[i++] = b; indices[i++] = d; indices[i++] = c;
     }
   }
   return finish(positions, uvs, indices, normals);
