@@ -25,6 +25,7 @@ import {
   type LitDraw, type Viewpoint,
 } from '@lcx/gl';
 
+const ANISO_ON = new URLSearchParams(location.search).get('aniso') !== '0';
 const SCALE = Math.max(1, Math.min(3, Number(new URLSearchParams(location.search).get('scale') ?? 1)));
 const W = 1200 * SCALE, H = 720 * SCALE;
 const canvas = document.getElementById('c') as HTMLCanvasElement;
@@ -96,10 +97,10 @@ const draws: LitDraw[] = [
     material: { baseColour: hexToLinear('#161D2E'), roughness: 0.52, metalness: 0.35 } },
   // BRUSHED, not mirror: roughness 0.30 keeps a broad travelling highlight instead of a hotspot.
   { mesh: meshes[0]!, model: at(0, DISC_Y, 0), normalMat: NM,
-    material: { baseColour: hexToLinear('#8FA3C4'), roughness: 0.30, metalness: 0.95 } },
+    material: { baseColour: hexToLinear('#8FA3C4'), roughness: 0.30, metalness: 0.95, anisotropy: ANISO_ON ? 0.86 : 0 } },
   // POLISHED ring, brand blue in the metal so the frame is not monochrome.
   { mesh: meshes[1]!, model: at(0, DISC_Y, 0), normalMat: NM,
-    material: { baseColour: hexToLinear('#2C6BFF'), roughness: 0.13, metalness: 0.92 } },
+    material: { baseColour: hexToLinear('#2C6BFF'), roughness: 0.13, metalness: 0.92, anisotropy: ANISO_ON ? 0.72 : 0 } },
 ];
 
 const view: Viewpoint = { target: [0, 0.34, 0], distance: 5.0, azimuthDeg: 22, elevationDeg: 24, fovDeg: 30 };
@@ -194,7 +195,7 @@ function measure(n: number): number {
 const FRAMES = Number(new URLSearchParams(location.search).get('frames') ?? 300);
 const ms = measure(Math.max(1, FRAMES));
 const report = {
-  triangles: tris, resolution: `${W}x${H}`, dprScale: SCALE, frames: FRAMES,
+  anisotropy: ANISO_ON, triangles: tris, resolution: `${W}x${H}`, dprScale: SCALE, frames: FRAMES,
   msPerFrame: Number(ms.toFixed(3)), fps: Math.round(1000 / ms),
   headroom: Number((16.6 - ms).toFixed(3)),
   renderer: (() => {

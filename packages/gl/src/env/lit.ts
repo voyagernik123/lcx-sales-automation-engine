@@ -69,11 +69,13 @@ const LIT_VERT = `#version 300 es
 precision highp float;
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNormal;
+layout(location=2) in vec3 aTangent;
 uniform mat4 uViewProj;
 uniform mat4 uModel;
 uniform mat3 uNormalMat;
 out vec3 vWorld;
 out vec3 vNormal;
+out vec3 vTangent;
 void main(){
   vec4 world = uModel * vec4(aPos, 1.0);
   vWorld = world.xyz;
@@ -81,6 +83,10 @@ void main(){
      normals off the surface and the lighting rotates as the object is squashed — the transpose
      of the inverse is the only transform that keeps them perpendicular. */
   vNormal = normalize(uNormalMat * aNormal);
+  /* The tangent transforms by the MODEL matrix, not the normal matrix: it is a direction lying IN
+     the surface, so it follows the geometry rather than staying perpendicular to it. Using the
+     normal matrix here is a common slip and rotates the brush direction under non-uniform scale. */
+  vTangent = normalize(mat3(uModel) * aTangent);
   gl_Position = uViewProj * world;
 }`;
 
@@ -88,6 +94,7 @@ const LIT_FRAG = `#version 300 es
 precision highp float;
 in vec3 vWorld;
 in vec3 vNormal;
+in vec3 vTangent;
 
 uniform vec3 uEye;
 uniform vec3 uLightDir;      // direction the light TRAVELS
@@ -96,6 +103,7 @@ uniform float uAmbientGain;  // scales the environment's contribution
 uniform vec3 uBaseColour;    // linear, brand-exact
 uniform float uRoughness;
 uniform float uMetalness;
+uniform float uAnisotropy;   // 0 = isotropic, ->1 = highlight stretched along the tangent
 
 uniform mat4 uLightVP;
 uniform sampler2D uShadowMap;
@@ -116,6 +124,25 @@ float distributionGGX(float NdotH, float rough) {
   float a2 = a * a;
   float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
   return a2 / max(1e-6, PI * d * d);
+}
+
+/*
+ * ANISOTROPIC GGX — the difference between machined metal and grey plastic.
+ *
+ * Isotropic GGX gives a round highlight. Real turned or brushed metal has microscopic grooves
+ * running one way, so the highlight STRETCHES perpendicular to nothing and elongates ALONG the
+ * grooves — which is why a brushed-steel dial shows a bar of light rather than a dot, and why §2
+ * asks for anisotropy specifically.
+ *
+ * Two roughnesses instead of one: at along the tangent, ab along the bitangent. The half-vector is
+ * measured in that frame, so the lobe becomes an ellipse. Same energy, different shape.
+ */
+float distributionGGXAniso(float NdotH, float TdotH, float BdotH, float at, float ab) {
+  float a2 = at * ab;
+  vec3 v = vec3(ab * TdotH, at * BdotH, a2 * NdotH);
+  float v2 = dot(v, v);
+  float w2 = a2 / max(1e-8, v2);
+  return a2 * w2 * w2 / PI;
 }
 
 float geometrySmith(float NdotV, float NdotL, float rough) {
@@ -169,7 +196,20 @@ void main(){
   vec3 f0 = mix(vec3(0.04), uBaseColour, uMetalness);
   float rough = clamp(uRoughness, 0.045, 1.0);
 
-  float D = distributionGGX(NdotH, rough);
+  /* The tangent frame, re-orthogonalised in the fragment. Interpolating a tangent across a
+     triangle leaves it slightly off-perpendicular to the interpolated normal, and an anisotropic
+     lobe built on a skewed frame twists visibly along a curved surface. */
+  vec3 T = normalize(vTangent - N * dot(N, vTangent));
+  vec3 B = cross(N, T);
+  float aniso = clamp(uAnisotropy, 0.0, 0.95);
+  // Preserve the average roughness while splitting it, so turning anisotropy up does not also
+  // change how rough the surface reads.
+  float at = max(0.002, rough * (1.0 + aniso));
+  float ab = max(0.002, rough * (1.0 - aniso));
+
+  float D = aniso > 0.001
+    ? distributionGGXAniso(NdotH, dot(T, H), dot(B, H), at, ab)
+    : distributionGGX(NdotH, rough);
   float G = geometrySmith(NdotV, NdotL, rough);
   vec3  F = fresnelSchlick(VdotH, f0);
 
@@ -227,8 +267,9 @@ export function uploadMesh(stage: Stage, g: Geometry): MeshBuffer | StageRefusal
   const vao = gl.createVertexArray();
   const pos = gl.createBuffer();
   const nrm = gl.createBuffer();
+  const tanBuf = gl.createBuffer();
   const idx = gl.createBuffer();
-  if (!vao || !pos || !nrm || !idx) {
+  if (!vao || !pos || !nrm || !tanBuf || !idx) {
     return { kind: 'refused', code: 'FRAMEBUFFER_INCOMPLETE', reason: 'The GPU refused a vertex buffer.' };
   }
   gl.bindVertexArray(vao);
@@ -240,6 +281,10 @@ export function uploadMesh(stage: Stage, g: Geometry): MeshBuffer | StageRefusal
   gl.bufferData(gl.ARRAY_BUFFER, g.normals, gl.STATIC_DRAW);
   gl.enableVertexAttribArray(1);
   gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, tanBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, g.tangents, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(2);
+  gl.vertexAttribPointer(2, 3, gl.FLOAT, false, 0, 0);
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idx);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, g.indices, gl.STATIC_DRAW);
   gl.bindVertexArray(null);
@@ -250,7 +295,7 @@ export function uploadMesh(stage: Stage, g: Geometry): MeshBuffer | StageRefusal
     indexType: g.indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT,
     dispose() {
       gl.deleteVertexArray(vao);
-      gl.deleteBuffer(pos); gl.deleteBuffer(nrm); gl.deleteBuffer(idx);
+      gl.deleteBuffer(pos); gl.deleteBuffer(nrm); gl.deleteBuffer(tanBuf); gl.deleteBuffer(idx);
     },
   };
 }
@@ -259,6 +304,11 @@ export interface Material {
   readonly baseColour: readonly [number, number, number];
   readonly roughness: number;
   readonly metalness: number;
+  /**
+   * 0 = isotropic (a round highlight). Toward 1 the highlight stretches ALONG the surface tangent,
+   * which is what makes turned or brushed metal show a bar of light instead of a dot.
+   */
+  readonly anisotropy?: number;
 }
 
 export interface LitDraw {
@@ -408,6 +458,7 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
         gl.uniform3fv(u(litProg, 'uBaseColour'), d.material.baseColour as unknown as number[]); step('uBaseColour');
         gl.uniform1f(u(litProg, 'uRoughness'), d.material.roughness);
         gl.uniform1f(u(litProg, 'uMetalness'), d.material.metalness);
+        gl.uniform1f(u(litProg, 'uAnisotropy'), d.material.anisotropy ?? 0);
         gl.bindVertexArray(d.mesh.vao); step('lit bindVAO');
         gl.drawElements(gl.TRIANGLES, d.mesh.indexCount, d.mesh.indexType, 0); step('lit drawElements');
       }

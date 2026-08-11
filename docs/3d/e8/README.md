@@ -37,20 +37,40 @@ too, because a point behind the eye projects to a plausible-looking pixel that i
 |---|---|
 | resolution | 2400 × 1440 (2× retina) |
 | triangles | 10,112 |
-| **ms/frame** | **10.743** |
-| fps | 93 |
-| headroom vs 16.6 ms | **5.86 ms** |
+| **ms/frame** | **10.123** (with anisotropy — 10.743 without) |
+| fps | 99 |
+| headroom vs 16.6 ms | **6.48 ms** |
 
 Full stack: shadow map → depth prepass → SSAO + 2 bilateral blurs → environment → GGX lit →
 depth of field → tone-mapped present.
+
+## Anisotropy — §2's actual ask, and it is free
+
+`no-aniso.png` is the control. Isotropic GGX gives a round highlight; real turned metal has
+grooves running one way, so the highlight elongates ALONG them and shows a **bar** of light rather
+than a dot. In `live.png` the disc face carries a broad swept bar and the ring shows fine
+circumferential striations.
+
+Two roughnesses instead of one — `at` along the tangent, `ab` along the bitangent — with the
+average preserved, so turning anisotropy up does not also change how rough the surface reads.
+
+The tangents are **analytic** for both lathe-turned primitives: circumferential on the cylinder
+wall AND its caps, along the ring on the torus. Deriving them from UVs gives a RADIAL tangent on a
+cap, and the highlight then runs across the brush instead of along it — scratched rather than
+turned. The frame is re-orthogonalised per fragment, because an interpolated tangent drifts
+off-perpendicular and an anisotropic lobe on a skewed frame twists visibly across a curve.
+
+The tangent transforms by the MODEL matrix, not the normal matrix: it lies IN the surface, so it
+follows the geometry rather than staying perpendicular to it.
+
+**Cost: 10.123 ms with anisotropy against 10.743 without.** It is not merely affordable, it is
+cheaper than the isotropic path here — the anisotropic branch replaces the isotropic one rather
+than adding to it.
 
 ## What is NOT done
 
 - **Not wired into the sign-in route yet.** This is the harness proving the environment; the
   React surface and its SVG/CSS fallback are the next step.
-- **No anisotropy.** §2 asks for *anisotropic* specular — a highlight stretched along a brush
-  direction. This is isotropic GGX, which reads as machined but not as brushed steel. Anisotropy
-  needs a tangent frame per vertex, which `mesh.ts` does not yet emit.
 - **Not notarized.** A cinematic first-launch that Gatekeeper quarantines undoes the impression
   this exists to create.
 

@@ -26,6 +26,13 @@ export interface Geometry {
   readonly normals: Float32Array;
   /** uv pairs, one per position. */
   readonly uvs: Float32Array;
+  /**
+   * Unit xyz per position — the direction "along the surface" that anisotropic specular stretches
+   * its highlight down. On a brushed disc this is the circumferential direction, because that is
+   * the way a lathe leaves its marks; get it wrong and the highlight runs across the brush
+   * instead of along it, which reads as scratched rather than machined.
+   */
+  readonly tangents: Float32Array;
   /** Triangle indices into the arrays above. */
   readonly indices: Uint16Array | Uint32Array;
   /** Axis-aligned bounds — needed for framing a camera and for shadow-map fitting. */
@@ -47,6 +54,60 @@ function bounds(positions: Float32Array): { min: [number, number, number]; max: 
   // downstream, so collapse to the origin and let the caller see a zero-size box.
   if (positions.length === 0) return { min: [0, 0, 0], max: [0, 0, 0] };
   return { min, max };
+}
+
+/**
+ * Derive per-vertex tangents from the UV parameterisation.
+ *
+ * The standard construction: for each triangle, solve the 2x2 UV system for the direction in
+ * which u increases, accumulate per vertex, then Gram-Schmidt against the normal so the frame is
+ * orthonormal. Accumulating BEFORE orthonormalising matters — doing it per face and averaging the
+ * results afterwards produces a frame that is not perpendicular to the smoothed normal, and the
+ * anisotropic highlight then wobbles across a smooth surface.
+ *
+ * A degenerate UV patch (zero area in texture space) has no defined tangent. Rather than emit NaN,
+ * fall back to any vector perpendicular to the normal: an arbitrary-but-valid frame makes the
+ * highlight point somewhere harmless, where a NaN makes the fragment black.
+ */
+export function computeTangents(
+  positions: Float32Array, normals: Float32Array, uvs: Float32Array, indices: Uint16Array | Uint32Array,
+): Float32Array {
+  const acc = new Float32Array(positions.length);
+  for (let i = 0; i < indices.length; i += 3) {
+    const a = indices[i]!, b = indices[i + 1]!, c = indices[i + 2]!;
+    const p0 = a * 3, p1 = b * 3, p2 = c * 3;
+    const t0 = a * 2, t1 = b * 2, t2 = c * 2;
+    const e1x = positions[p1]! - positions[p0]!, e1y = positions[p1 + 1]! - positions[p0 + 1]!, e1z = positions[p1 + 2]! - positions[p0 + 2]!;
+    const e2x = positions[p2]! - positions[p0]!, e2y = positions[p2 + 1]! - positions[p0 + 1]!, e2z = positions[p2 + 2]! - positions[p0 + 2]!;
+    const du1 = uvs[t1]! - uvs[t0]!, dv1 = uvs[t1 + 1]! - uvs[t0 + 1]!;
+    const du2 = uvs[t2]! - uvs[t0]!, dv2 = uvs[t2 + 1]! - uvs[t0 + 1]!;
+    const det = du1 * dv2 - du2 * dv1;
+    if (Math.abs(det) < 1e-12) continue;
+    const r = 1 / det;
+    const tx = (e1x * dv2 - e2x * dv1) * r;
+    const ty = (e1y * dv2 - e2y * dv1) * r;
+    const tz = (e1z * dv2 - e2z * dv1) * r;
+    for (const v of [p0, p1, p2]) {
+      acc[v] = acc[v]! + tx; acc[v + 1] = acc[v + 1]! + ty; acc[v + 2] = acc[v + 2]! + tz;
+    }
+  }
+
+  const out = new Float32Array(positions.length);
+  for (let i = 0; i < out.length; i += 3) {
+    const nx = normals[i]!, ny = normals[i + 1]!, nz = normals[i + 2]!;
+    let tx = acc[i]!, ty = acc[i + 1]!, tz = acc[i + 2]!;
+    // Gram-Schmidt: remove the component along the normal so the frame is orthonormal.
+    const d = tx * nx + ty * ny + tz * nz;
+    tx -= nx * d; ty -= ny * d; tz -= nz * d;
+    let l = Math.hypot(tx, ty, tz);
+    if (l < 1e-8) {
+      // No usable UV gradient. Any perpendicular is valid; pick the more stable of two axes.
+      if (Math.abs(nx) < 0.9) { tx = 0; ty = -nz; tz = ny; } else { tx = -nz; ty = 0; tz = nx; }
+      l = Math.hypot(tx, ty, tz) || 1;
+    }
+    out[i] = tx / l; out[i + 1] = ty / l; out[i + 2] = tz / l;
+  }
+  return out;
 }
 
 /**
@@ -88,9 +149,17 @@ export function computeNormals(positions: Float32Array, indices: Uint16Array | U
   return normals;
 }
 
-function finish(positions: Float32Array, uvs: Float32Array, indices: Uint16Array, normals?: Float32Array): Geometry {
+function finish(
+  positions: Float32Array, uvs: Float32Array, indices: Uint16Array,
+  normals?: Float32Array, tangents?: Float32Array,
+): Geometry {
   const { min, max } = bounds(positions);
-  return { positions, normals: normals ?? computeNormals(positions, indices), uvs, indices, min, max };
+  const n = normals ?? computeNormals(positions, indices);
+  return {
+    positions, normals: n, uvs, indices, min, max,
+    // Analytic where a primitive knows its own brush direction; derived from UVs otherwise.
+    tangents: tangents ?? computeTangents(positions, n, uvs, indices),
+  };
 }
 
 /** An axis-aligned box centred on the origin. Flat-shaded: 24 vertices, 6 independent faces. */
@@ -214,14 +283,18 @@ export function sphere(radius = 0.5, rings = 24, sectors = 32): Geometry {
 export function cylinder(radius = 0.5, height = 0.2, sectors = 64): Geometry {
   const S = Math.max(3, sectors);
   const hy = height / 2;
-  const pos: number[] = [], nrm: number[] = [], uv: number[] = [], idx: number[] = [];
+  const pos: number[] = [], nrm: number[] = [], uv: number[] = [], idx: number[] = [], tan: number[] = [];
 
   // Wall: two rings, smooth around the circumference so the highlight travels rather than facets.
   for (let s = 0; s <= S; s++) {
     const a = (s / S) * Math.PI * 2;
     const cx = Math.cos(a), cz = Math.sin(a);
-    pos.push(cx * radius, hy, cz * radius); nrm.push(cx, 0, cz); uv.push(s / S, 1);
-    pos.push(cx * radius, -hy, cz * radius); nrm.push(cx, 0, cz); uv.push(s / S, 0);
+    /* CIRCUMFERENTIAL TANGENT, analytic. A lathe leaves its marks AROUND the axis, so that is the
+       direction an anisotropic highlight must stretch along. Deriving it from UVs gives a RADIAL
+       tangent on the caps, and the highlight then runs across the brush instead of along it —
+       which reads as scratched metal rather than turned metal. */
+    pos.push(cx * radius, hy, cz * radius); nrm.push(cx, 0, cz); uv.push(s / S, 1); tan.push(-cz, 0, cx);
+    pos.push(cx * radius, -hy, cz * radius); nrm.push(cx, 0, cz); uv.push(s / S, 0); tan.push(-cz, 0, cx);
   }
   for (let s = 0; s < S; s++) {
     /* Triangle 0 was the WALL, not a cap — worth noting, because "the caps must be wrong" was the
@@ -234,12 +307,13 @@ export function cylinder(radius = 0.5, height = 0.2, sectors = 64): Geometry {
   // Caps: their own vertices, their own axial normals.
   for (const [sign, y] of [[1, hy], [-1, -hy]] as const) {
     const centre = pos.length / 3;
-    pos.push(0, y, 0); nrm.push(0, sign, 0); uv.push(0.5, 0.5);
+    pos.push(0, y, 0); nrm.push(0, sign, 0); uv.push(0.5, 0.5); tan.push(1, 0, 0);
     for (let s = 0; s <= S; s++) {
       const a = (s / S) * Math.PI * 2;
       const cx = Math.cos(a), cz = Math.sin(a);
       pos.push(cx * radius, y, cz * radius); nrm.push(0, sign, 0);
       uv.push(0.5 + cx * 0.5, 0.5 + cz * 0.5);
+      tan.push(-cz, 0, cx);
     }
     for (let s = 0; s < S; s++) {
       const r0 = centre + 1 + s, r1 = centre + 2 + s;
@@ -248,7 +322,7 @@ export function cylinder(radius = 0.5, height = 0.2, sectors = 64): Geometry {
     }
   }
 
-  return finish(new Float32Array(pos), new Float32Array(uv), new Uint16Array(idx), new Float32Array(nrm));
+  return finish(new Float32Array(pos), new Float32Array(uv), new Uint16Array(idx), new Float32Array(nrm), new Float32Array(tan));
 }
 
 /**
@@ -260,7 +334,7 @@ export function cylinder(radius = 0.5, height = 0.2, sectors = 64): Geometry {
  */
 export function torus(ringRadius = 0.5, tubeRadius = 0.08, ringSegs = 64, tubeSegs = 24): Geometry {
   const R = Math.max(3, ringSegs), T = Math.max(3, tubeSegs);
-  const pos: number[] = [], nrm: number[] = [], uv: number[] = [], idx: number[] = [];
+  const pos: number[] = [], nrm: number[] = [], uv: number[] = [], idx: number[] = [], tan: number[] = [];
   for (let i = 0; i <= R; i++) {
     const u = (i / R) * Math.PI * 2;
     const cu = Math.cos(u), su = Math.sin(u);
@@ -271,6 +345,8 @@ export function torus(ringRadius = 0.5, tubeRadius = 0.08, ringSegs = 64, tubeSe
       pos.push((ringRadius + tubeRadius * cv) * cu, tubeRadius * sv, (ringRadius + tubeRadius * cv) * su);
       nrm.push(cu * cv, sv, su * cv);
       uv.push(i / R, j / T);
+      // Along the RING, not around the tube: that is the direction a turned ring is brushed.
+      tan.push(-su, 0, cu);
     }
   }
   for (let i = 0; i < R; i++) {
@@ -281,7 +357,7 @@ export function torus(ringRadius = 0.5, tubeRadius = 0.08, ringSegs = 64, tubeSe
       idx.push(a, b, c, b, d, c);
     }
   }
-  return finish(new Float32Array(pos), new Float32Array(uv), new Uint16Array(idx), new Float32Array(nrm));
+  return finish(new Float32Array(pos), new Float32Array(uv), new Uint16Array(idx), new Float32Array(nrm), new Float32Array(tan));
 }
 
 /** Total triangles — the number a frame budget is actually spent on. */
