@@ -41,6 +41,30 @@ const SHADOW_FRAG = `#version 300 es
 precision highp float;
 void main(){}`;
 
+/*
+ * THE DEPTH PREPASS NEEDS ITS OWN SHADER, AND REUSING THE SHADOW ONE COST A DEBUGGING PASS.
+ *
+ * SHADOW_VERT computes `uLightVP * uModel * vec4(aPos, 1.0)`. GLSL multiplication is LEFT
+ * associative, so that multiplies the two MATRICES first and then applies the product to the
+ * vector. LIT_VERT applies `uModel` to the vector first and then the view-projection. Same
+ * result algebraically, DIFFERENT floating-point rounding — so the depth a prepass wrote and the
+ * depth the lit pass computes disagree in the last bits, `LEQUAL` rejects fragments it should
+ * pass, and the surface comes out stippled with nested stair-step blocks.
+ *
+ * That artefact was identical with AO on and off, which is what proved it was the prepass and
+ * not the occlusion. The fix is to make the two transforms BIT-IDENTICAL, not to loosen the
+ * depth test or add a polygon offset — both of those hide it and leave the disagreement in place.
+ */
+const DEPTH_VERT = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos;
+uniform mat4 uViewProj;
+uniform mat4 uModel;
+void main(){
+  vec4 world = uModel * vec4(aPos, 1.0);
+  gl_Position = uViewProj * world;
+}`;
+
 const LIT_VERT = `#version 300 es
 precision highp float;
 layout(location=0) in vec3 aPos;
@@ -77,6 +101,10 @@ uniform mat4 uLightVP;
 uniform sampler2D uShadowMap;
 uniform float uShadowTexel;  // 1.0 / shadowMapSize
 uniform float uShadowStrength;
+
+uniform sampler2D uAO;
+uniform vec2 uScreenSize;
+uniform float uAOEnabled;
 
 out vec4 frag;
 ${SKY_GLSL}
@@ -170,7 +198,17 @@ void main(){
   vec3 R = reflect(-V, N);
   vec3 envDiffuse = skyColour(N) * uBaseColour * (1.0 - uMetalness);
   vec3 envSpecular = skyColour(normalize(mix(R, N, rough * rough))) * fresnelSchlick(NdotV, f0);
-  vec3 ambient = (envDiffuse + envSpecular) * uAmbientGain;
+  /*
+   * AO MULTIPLIES THE ENVIRONMENT TERM ONLY, never the direct light.
+   *
+   * Ambient occlusion answers "how much of the sky can this point see", so it belongs on the
+   * sky's contribution and nowhere else. Applying it to the whole colour — which is what a
+   * post-process multiply would do — darkens the direct highlight as well, and a lit surface
+   * whose specular dims inside a crease reads as dirt rather than as shadow. The shadow MAP
+   * already handles the direct term.
+   */
+  float ao = uAOEnabled > 0.5 ? texture(uAO, gl_FragCoord.xy / uScreenSize).r : 1.0;
+  vec3 ambient = (envDiffuse + envSpecular) * uAmbientGain * ao;
 
   // NO TONE MAP. The composite owns the only one in the pipeline.
   frag = vec4(direct + ambient, 1.0);
@@ -239,6 +277,12 @@ export interface LitRenderer {
    * Passing this makes a GL_INVALID_VALUE name its own line instead of costing three guesses.
    */
   shadowPass(lightVP: Mat4, draws: readonly LitDraw[], shadow: ShadowMap, onStep?: (label: string) => void): void;
+  /**
+   * DEPTH-ONLY, from the camera. Breaks the AO circularity — AO needs depth, the lit pass needs
+   * AO — and is not a tax: the lit pass then rejects every occluded fragment before its GGX
+   * evaluation rather than after. Reuses the shadow program, which is already position-only.
+   */
+  depthPrepass(viewProj: Mat4, draws: readonly LitDraw[]): void;
   draw(opts: {
     readonly viewProj: Mat4;
     readonly eye: readonly [number, number, number];
@@ -251,6 +295,9 @@ export interface LitRenderer {
     readonly shadow: ShadowMap | null;
     readonly shadowStrength?: number;
     readonly draws: readonly LitDraw[];
+    /** Half-resolution occlusion from `createAmbientOcclusion`. Omit to disable. */
+    readonly ao?: WebGLTexture | null;
+    readonly screenSize?: readonly [number, number];
     readonly onStep?: (label: string) => void;
   }): void;
   dispose(): void;
@@ -262,6 +309,8 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
   if ('kind' in shadowProg) return shadowProg;
   const litProg = stage.compile(LIT_VERT, LIT_FRAG);
   if ('kind' in litProg) return litProg;
+  const depthProg = stage.compile(DEPTH_VERT, SHADOW_FRAG);
+  if ('kind' in depthProg) return depthProg;
 
   const u = (p: WebGLProgram, n: string) => gl.getUniformLocation(p, n);
 
@@ -289,10 +338,33 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
       gl.cullFace(gl.BACK);
     },
 
+    depthPrepass(viewProj, draws) {
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+      gl.enable(gl.CULL_FACE);
+      gl.cullFace(gl.BACK);
+      /* colorMask off: this pass exists for depth, and writing colour would overwrite the
+         environment backdrop that was drawn before it. */
+      gl.colorMask(false, false, false, false);
+      gl.useProgram(depthProg);
+      gl.uniformMatrix4fv(u(depthProg, 'uViewProj'), false, viewProj);
+      for (const d of draws) {
+        gl.uniformMatrix4fv(u(depthProg, 'uModel'), false, d.model);
+        gl.bindVertexArray(d.mesh.vao);
+        gl.drawElements(gl.TRIANGLES, d.mesh.indexCount, d.mesh.indexType, 0);
+      }
+      gl.bindVertexArray(null);
+      gl.colorMask(true, true, true, true);
+    },
+
     draw(o) {
       const step = o.onStep ?? (() => undefined);
       gl.enable(gl.DEPTH_TEST);
       gl.depthFunc(gl.LEQUAL);
+      /* depthMask STAYS ON. With a prepass the values are already correct so writing them again
+         is a no-op, and turning it off would break the no-prepass path that E0 also exercises. */
       gl.depthMask(true);
       gl.disable(gl.BLEND);
       gl.enable(gl.CULL_FACE);
@@ -304,6 +376,18 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
       gl.uniform3fv(u(litProg, 'uLightColour'), o.lightColour as unknown as number[]); step('uLightColour');
       gl.uniform1f(u(litProg, 'uAmbientGain'), o.ambientGain ?? 1); step('uAmbientGain');
       bindSky(gl, litProg, o.sky); step('bindSky');
+      if (o.ao && o.screenSize) {
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, o.ao);
+        gl.uniform1i(u(litProg, 'uAO'), 1);
+        gl.uniform2f(u(litProg, 'uScreenSize'), o.screenSize[0], o.screenSize[1]);
+        gl.uniform1f(u(litProg, 'uAOEnabled'), 1);
+      } else {
+        // NO AO TEXTURE MEANS UNOCCLUDED, never fully occluded: a missing resource must not
+        // black out the scene, which is indistinguishable from a broken shader.
+        gl.uniform1f(u(litProg, 'uAOEnabled'), 0);
+      }
+      step('bindAO');
       gl.uniformMatrix4fv(u(litProg, 'uLightVP'), false, o.lightVP); step('lit uLightVP');
 
       if (o.shadow) {
@@ -334,8 +418,9 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
     dispose() {
       gl.deleteProgram(shadowProg);
       gl.deleteProgram(litProg);
+      gl.deleteProgram(depthProg);
     },
   };
 }
 
-export { LIT_VERT, LIT_FRAG, SHADOW_VERT, SHADOW_FRAG };
+export { LIT_VERT, LIT_FRAG, SHADOW_VERT, SHADOW_FRAG, DEPTH_VERT };

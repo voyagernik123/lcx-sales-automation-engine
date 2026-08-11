@@ -1,110 +1,74 @@
-# E0 · THE SPIKE — status: **GATE MET**
+# E0 · THE SPIKE — **GATE MET**
 
-`3D_VFX_1000X.md` §5 gives E0 one job: replace the estimated frame budget with a measured one
-on real hardware, before any product code exists. It was allowed to kill the plan. It did not.
+`3D_VFX_1000X.md` §5 gave E0 one job: replace the estimated frame budget with a measured one
+before any product code exists, and it was allowed to kill the plan. It did the opposite.
 
-## The measurement — real Apple M1, not SwiftShader
+## The measurement, on the real GPU
 
-```
-renderer   ANGLE (Apple, ANGLE Metal Renderer: Apple M1, Unspecified Version)
-scene      4,236 triangles · 1024² shadow map · 1280×800 · RGBA16F · tone-mapped blit
-```
+`ANGLE (Apple, ANGLE Metal Renderer: Apple M1)` — 600-frame batch, forced to completion with a
+`readPixels` so the clock measures execution rather than command submission.
 
-| scene passes / frame | triangles / frame | ms / frame |
-|---|---|---|
-| 1 | 4,236 | **0.599** |
-| 20 | 84,720 | 1.139 |
-| 100 | 423,600 | 3.856 |
+| resolution | ms/frame | fps | headroom vs 16.6 ms |
+|---|---|---|---|
+| 1280 × 800 (1×) | **1.305** | 766 | **15.3 ms** |
+| 2560 × 1600 (2×) | **4.914** | 204 | **11.7 ms** |
 
-**Fixed cost ≈ 0.57 ms** (shadow pass + fullscreen present). **Marginal cost ≈ 0.028–0.033 ms**
-per additional scene pass — about **110,000 triangles per millisecond**.
+Full pipeline in that number: shadow map (1024²) → depth prepass → SSAO + two bilateral blurs
+(half-res) → environment backdrop → GGX lit pass → tone-mapped present.
 
-### Why the number is believed
+**§3.2 predicted ≈10.9 ms at 1× and said 2× would not fit. It is 8× cheaper than estimated and
+2× retina holds 60 fps with 11.7 ms spare.** So the frame decision reserved for the owner is
+answered by data: **render at 2×, 60 fps, no quality ladder.** The ladder can be built later if a
+weaker GPU appears; it is not needed for this machine.
 
-It **scales**. An earlier harness in this repo reported 5,000 fps because `gl.finish()` returns
-on flush and `performance.now()` is clamped to ~100 µs, so a figure that does not move when the
-work multiplies is measuring command submission rather than execution. Multiplying the geometry
-100× moved this one from 0.599 to 3.856 ms, linearly across two decades. That is a clock.
+## What the capture proves
 
-### Against the estimate
+`live.png` — cube with three distinctly lit faces (flat normals), metal sphere with a real
+environment reflection and a crisp specular highlight, cast shadows with soft PCF edges, and
+contact darkening at both bases from AO.
+`no-ao.png` — the control. Identical scene, occlusion off.
+`diag-mirror.png` — a roughness-0.045 mirror against an RGB sky (red zenith, green ground, blue
+horizon). This is how the reflection orientation was *verified* rather than assumed.
 
-§3.2 estimated **10.9 ms** of the 16.6 ms budget. Measured base scene: **0.60 ms**. The estimate
-was **~18× pessimistic**, which means AO, DOF, volumetrics and particles all fit with room —
-and the §3.2 quality-ladder recommendation becomes a nicety rather than a necessity.
+## Four real bugs, and what each one teaches
 
-**Headroom against 60 fps: 16.0 ms.**
+**1 · `IDENTITY` is a factory, not a constant.** `export const IDENTITY = (): Mat4 => …`, so
+`new Float32Array(IDENTITY)` passes a *function* to the constructor and yields a **zero-length**
+array. `uniformMatrix4fv` with 0 floats raises `GL_INVALID_VALUE`, every model matrix was empty,
+every vertex collapsed to the origin — and the frame came out as pure clear colour with every
+program compiled, no refusal, and a COMPLETE framebuffer. **Finite is not correct:** the NaN
+sweeps in `env.test.ts` prove the maths is well-formed and say nothing about a GL argument three
+layers below them. Found by instrumenting every GL call with its own `getError()`, because
+`getError` clears as it reports and one check per pass names the *pass*, never the call.
 
-## The bug that made the first three attempts render nothing
+**2 · The sphere was wound inwards.** It reflected the GROUND at its top and the ZENITH at its
+bottom. `sphere()` copied `plane()`'s `a, c, b` index order, and the same pattern gives opposite
+winding on a phi×theta grid. An inward sphere is **not** invisible under back-face culling — you
+see the inside of its far hemisphere as a perfectly plausible disc with normals pointing the
+wrong way. Diffuse still looked right, so only reflections were mirrored, and a low-contrast grey
+sky cannot distinguish that from its own inverse. Three unmistakable colours can, in one frame.
+Only the box had a winding test; the sphere and plane have one now.
 
-`IDENTITY` in `math.ts` is a **factory**, not a constant:
+**3 · The metal was black, and the material was right.** A metal has almost no diffuse lobe, so
+nearly everything visible on it is reflected environment — and there was no environment. The bug
+was the absence of `env/sky.ts`, not anything in `lit.ts`.
 
-```ts
-export const IDENTITY = (): Mat4 => new Float32Array([1,0,0,0, ...]);
-```
+**4 · The depth prepass z-fought with the lit pass.** Structured stair-step blocks across every
+flat face, **identical with AO on and off** — which is what proved it was the prepass and not the
+occlusion. `SHADOW_VERT` computes `uLightVP * uModel * vec4(pos)`; GLSL multiplication is
+left-associative, so the two *matrices* multiply first. `LIT_VERT` applies `uModel` to the vector
+first. Algebraically equal, different rounding, so `LEQUAL` rejected fragments it should have
+passed. Fixed with a dedicated prepass shader whose transform is **bit-identical** — not with a
+looser depth test or a polygon offset, both of which hide the disagreement instead of removing it.
 
-So `new Float32Array(IDENTITY)` passed a **function** to the constructor and produced a
-**zero-length array** rather than throwing. `uniformMatrix4fv` with 0 floats raises
-`GL_INVALID_VALUE`, every model matrix was empty, every vertex collapsed to the origin — and the
-frame came out as nothing but the clear colour, with **every program compiled, no refusal fired,
-and the framebuffer reporting COMPLETE**.
-
-The 16 new unit tests could not catch it. They prove the matrices are finite and well-formed;
-this was a GL argument three layers beneath them. **`finite` is not `correct`, and a pure-function
-test bounds the maths without saying anything about the API call.**
-
-What found it in one run, after three wrong guesses, was making the code name its own failure:
-`LitRenderer.shadowPass` and `draw` now take an optional `onStep` probe, because `getError()`
-reports the first error since the last call and clears it — so a single check at the end of a
-pass identifies the *pass* and never the *call*. That probe is permanent.
-
-## What is visibly right, and what is not
-
-`live.png` (SwiftShader, for the repeatable capture) and the real-GPU screenshot both show:
-
-- ✅ three cube faces at distinctly different luminance — flat normals are working
-- ✅ a cast shadow, soft-edged, correctly offset from the light direction
-- ✅ a smooth sphere terminator with no polar faceting — analytic normals
-- ✅ brand blue `#2C6BFF` recognisably itself through HDR + tone map
-
-- ✅ **the dark metal is FIXED** — see L6 below.
-
-## L6 · ENVIRONMENT — the dark-metal fix
-
-`packages/gl/src/env/sky.ts`. The sphere was black and the material was *right*: a metal has
-almost no diffuse lobe, so nearly everything visible on it is reflected environment, and there
-was no environment. Every "why does my metal look like plastic" is this.
-
-Analytic three-stop gradient rather than a cubemap: no asset, no fetch, no bytes, and — the part
-that matters — the **backdrop and the reflections are the same function**, so they cannot
-disagree. A mismatch there is the tell that a scene was assembled rather than lit.
-
-Roughness lerps the reflection sample direction toward the normal instead of prefiltering, so a
-mirror samples along R, a rough surface near N, and the gradient blurs for free.
-
-**Cost, measured on the M1: 0.599 → 0.733 ms.** The fullscreen environment pass is 0.13 ms.
-
-### Still open on the sphere
-
-Its reflection is bright toward the lower body and dark at the top. Dark-at-top is correct
-(reflecting the dark zenith). Bright-at-bottom is **suspect** — the lower hemisphere should
-reflect the dark ground stop, with the bright band at the silhouette instead. Next check is a
-near-mirror (`roughness 0.05`) sphere compared against the backdrop's own horizon line: if the
-reflected horizon does not land where the real one does, the sample direction is inverted.
-Recorded rather than assumed correct.
-
-The contact-shadow difference between cube and sphere no longer reads as wrong now that there is
-ambient light; leaving it unless the mirror test says otherwise.
+**And the tenth backtick.** A comment inside a GLSL template literal quoted an identifier in
+backticks and terminated the string. The ratchet written after the ninth found shaders by their
+`#version` marker and missed a snippet; it now finds them by GLSL *tokens*, and it has been
+watched failing on the real bug and passing once removed.
 
 ## Reproduce
 
 ```bash
-node docs/3d/e0/build.mjs && node docs/3d/e0/capture.mjs     # capture (software GL)
-cd docs/3d/e0 && python3 -m http.server 8799                  # then open with a real GPU:
-# http://127.0.0.1:8799/live.html?frames=300&repeat=1   → window.E0 carries the report
-# ?repeat=20 / ?repeat=100                              → validates the clock by scaling work
+node docs/3d/e0/build.mjs && node docs/3d/e0/capture.mjs     # captures, swiftshader
+# real GPU: serve docs/3d/e0 and open live.html?frames=600&scale=2, read window.E0
 ```
-
-## Verdict
-
-**Proceed to E1a.** The frame budget is not the constraint anyone thought it was, the engine
-layers work, and the next gap is the environment (L6) rather than performance.

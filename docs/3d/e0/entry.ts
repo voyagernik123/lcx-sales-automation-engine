@@ -11,12 +11,16 @@
  */
 import {
   createStage, isStage, box, plane, sphere, uploadMesh, createLitRenderer, createTarget3D,
-  createShadowMap, createSkyBackdrop, viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre,
+  createShadowMap, createSkyBackdrop, createAmbientOcclusion, viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre,
   triangleCount, hexToLinear, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint,
 } from '@lcx/gl';
 
-const W = 1280, H = 800;
+/* RESOLUTION IS A PARAMETER because §3.2 reserved a decision on it: 60 fps at 1x or 30 at 2x.
+   That is answerable by measurement rather than by preference, and only at the real resolution —
+   every pass here is fill-bound, so a 1x number says nothing about 2x. */
+const SCALE = Math.max(1, Math.min(3, Number(new URLSearchParams(location.search).get('scale') ?? 1)));
+const W = 1280 * SCALE, H = 800 * SCALE;
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 canvas.width = W; canvas.height = H;
 
@@ -55,6 +59,7 @@ const lit = createLitRenderer(stage);
 const target = createTarget3D(stage, W, H);
 const shadow = createShadowMap(stage, 1024);
 const skyBox = createSkyBackdrop(stage);
+const ao = createAmbientOcclusion(stage, W, H);
 
 const fail = (m: string) => { document.title = 'REFUSED'; document.getElementById('log')!.textContent = m; throw new Error(m); };
 /* `detail` carries the compiler's own words. Printing only `reason` cost one round trip to
@@ -65,6 +70,7 @@ if ('kind' in lit) fail(`lit: ${refusalText(lit)}`);
 if ('kind' in target) fail(`target: ${refusalText(target)}`);
 if ('kind' in shadow) fail(`shadow: ${refusalText(shadow)}`);
 if ('kind' in skyBox) fail(`sky: ${refusalText(skyBox)}`);
+if ('kind' in ao) fail(`ao: ${refusalText(ao)}`);
 
 const groundGeo = plane(14, 24);
 const boxGeo = box(1.4, 1.4, 1.4);
@@ -115,6 +121,9 @@ const lightVP = lightViewProjection({ ...light, extent: radius * 0.8 }, centre, 
 const view: Viewpoint = { target: [0, 0.6, 0], distance: 7.2, azimuthDeg: 34, elevationDeg: 22, fovDeg: 36 };
 
 const DIAG = new URLSearchParams(location.search).get('diag') === '1';
+/* AO off is a CONTROL, not a fallback: the capture has to show the difference it makes rather
+   than my asserting that it makes one. */
+const AO_ON = new URLSearchParams(location.search).get('ao') !== '0';
 /* RED above, GREEN below, BLUE at the horizon. If a mirror sphere shows red where it faces the
    sky and green where it faces the floor, the sample direction is right. A grey gradient cannot
    distinguish that from its own inverse, which is why the first look was inconclusive. */
@@ -132,10 +141,25 @@ function frame() {
   /* THE BACKDROP REPLACES THE FLAT CLEAR. A clear colour is a void; this is an environment, and
      it is the same function the material reflects — so a metal and its surroundings agree. */
   skyBox.draw({ eye, target: view.target, fovDeg: view.fovDeg ?? 36, aspect: W / H, sky: SKY });
+
+  /* DEPTH PREPASS -> AO -> LIT. The order is forced by the data: AO reads depth, and the lit
+     pass reads AO. The prepass is not a tax — it gives the lit pass early-z as well. */
+  const near = Math.max(0.01, view.distance / 100);
+  const far = Math.max(near + 1, view.distance * 8);
+  lit.depthPrepass(vp, draws);
+  if (AO_ON) {
+    ao.compute({
+      depthTexture: target.depthTexture, near, far,
+      fovDeg: view.fovDeg ?? 36, aspect: W / H, radius: 0.6, strength: 1.25,
+    });
+    // AO bound its own half-res framebuffer; the scene target has to be restored.
+    target.bind();
+  }
   for (let r = 0; r < REPEAT; r++) {
     lit.draw({
       viewProj: vp, eye, lightDir: light.direction, lightColour: light.colour,
       ambientGain: 1, sky: SKY, lightVP, shadow, shadowStrength: 0.92, draws,
+      ao: AO_ON ? ao.texture : null, screenSize: [W, H],
     });
   }
 
@@ -218,6 +242,8 @@ const report = {
   triangles: tris,
   shadowMap: shadow.size,
   resolution: `${W}x${H}`,
+  dprScale: SCALE,
+  aoEnabled: AO_ON,
   frames: FRAMES,
   repeat: REPEAT,
   msPerFrame: Number(msPerFrame.toFixed(3)),
