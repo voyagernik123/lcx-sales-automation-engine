@@ -18,6 +18,19 @@ import { goToDesk, takeSeat } from './seat';
 
 test.describe('front door', () => {
   test('renders the sign-in gate in light and dark', async ({ page }) => {
+    /*
+     * REDUCED MOTION, so this ratchet is DETERMINISTIC.
+     *
+     * The front door now carries E8 THE FORGE, whose key light sweeps one arc over five seconds.
+     * Screenshotting mid-sweep compares a different frame every run, which makes a pixel ratchet
+     * fail at random and then get muted — the worst outcome for a guard. Under reduced motion the
+     * renderer resolves to its FINAL frame immediately, which is both a fixed image and the state
+     * an operator who asked for less motion actually sees.
+     *
+     * Set on the page rather than in playwright.config.ts on purpose: config-wide it would change
+     * every other committed baseline in this suite at the same time.
+     */
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/select');
     await expect(page.getByRole('heading', { name: /sign in to the desk/i })).toBeVisible();
     await expect(page).toHaveScreenshot('front-door-light.png', { fullPage: true });

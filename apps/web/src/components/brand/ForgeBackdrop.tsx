@@ -23,6 +23,13 @@ import { useEffect, useRef, useState } from 'react';
  * This component is LAZY for a measured reason: imported statically into the eagerly-loaded
  * sign-in route it pushed the shell chunk to 441 KB against a 440 KB ceiling.
  *
+ * ── TWO LIGHTING ENVIRONMENTS, NOT ONE ─────────────────────────────────────────────
+ * The sign-in screen is a designed light/dark pair, and the first version of this rendered one
+ * near-black room regardless — which would have blacked out the light theme. Machined metal reads
+ * beautifully on a bright ground, so light mode gets a studio sky and a brighter key, dark mode
+ * keeps the room. The object is identical; only the light around it changes, which is exactly what
+ * a real product shot does.
+ *
  * ── ITS OWN CONTEXT, DELIBERATELY ───────────────────────────────────────────────────
  * The chart kit shares one context across thirteen primitives because a dashboard can hold sixty
  * canvases and an 8 GB M1 will exhaust contexts. This screen has exactly one, and it needs a DEPTH
@@ -73,6 +80,22 @@ export function ForgeBackdrop({ intensity = 1 }: ForgeBackdropProps) {
       const H = Math.round(cssH * dpr);
       canvas.width = W;
       canvas.height = H;
+
+      /*
+       * THE THEME IS READ PER FRAME, NOT ONCE AT MOUNT — and the e2e pixel ratchet is what caught
+       * that. The first version captured it in a `const` during setup, so toggling to dark left the
+       * canvas holding a stale WHITE STUDIO underneath dark-theme form controls: the heading came
+       * out white-on-white and unreadable. A one-line snapshot of mutable global state.
+       *
+       * Read from the DOM class rather than a media query, because the app has an explicit toggle
+       * and the media query would disagree with what is actually on screen.
+       */
+      const isDark = () => document.documentElement.classList.contains('dark');
+      // `skyStops`, not `sky` — `sky` is the backdrop RESOURCE below, and shadowing it compiles
+      // into a scene lit by a framebuffer object.
+      const skyStopsFor = (dark: boolean) => (dark
+        ? undefined                                    // the authored default room
+        : { zenith: [0.72, 0.78, 0.90] as const, horizon: [0.95, 0.96, 0.99] as const, ground: [0.42, 0.46, 0.55] as const });
 
       const outcome = gl3.createStage(canvas, { alpha: false });
       if (!gl3.isStage(outcome)) { setReason(outcome.reason); return; }
@@ -140,22 +163,38 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
       };
       const NM = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
       const DISC_Y = 0.30;
-      const draws = [
+      /* Rebuilt per frame from the live theme. Four small objects; the GEOMETRY is uploaded once
+         and shared, so this costs nothing measurable and cannot go stale. */
+      const buildDraws = (dark: boolean) => [
         { mesh: floorM!, model: at(0, 0, 0), normalMat: NM,
-          material: { baseColour: gl3.hexToLinear('#080C15'), roughness: 0.88, metalness: 0 } },
+          material: { baseColour: gl3.hexToLinear(dark ? '#080C15' : '#D7DEEA'), roughness: 0.88, metalness: 0 } },
         { mesh: plinthM!, model: at(0, 0.045, 0), normalMat: NM,
-          material: { baseColour: gl3.hexToLinear('#161D2E'), roughness: 0.52, metalness: 0.35 } },
+          material: { baseColour: gl3.hexToLinear(dark ? '#161D2E' : '#AEBACD'), roughness: 0.52, metalness: 0.35 } },
         { mesh: discM!, model: at(0, DISC_Y, 0), normalMat: NM,
-          material: { baseColour: gl3.hexToLinear('#8FA3C4'), roughness: 0.30, metalness: 0.95, anisotropy: 0.86 } },
+          /* GUNMETAL in light mode: #8FA3C4 against a white studio is white-on-white and the
+             object dissolves. Dark mode keeps the brighter alloy because it needs to lift off a
+             near-black room. Same object, different ground, different value. */
+          material: { baseColour: gl3.hexToLinear(dark ? '#8FA3C4' : '#5E6C85'), roughness: 0.30, metalness: 0.95, anisotropy: 0.86 } },
         { mesh: ringM!, model: at(0, DISC_Y, 0), normalMat: NM,
           material: { baseColour: gl3.hexToLinear('#2C6BFF'), roughness: 0.13, metalness: 0.92, anisotropy: 0.72 } },
       ];
 
-      /* OFF-CENTRE AND LOW. The sign-in card owns the middle of the screen, so the object sits
-         below and to the left of it — the frame is a backdrop, not a competitor. */
+      /*
+       * THE OBJECT SINKS BELOW THE FORM, and the first attempt got this wrong in a way only a
+       * screenshot could show: centred behind the card, the ring cut straight through the email
+       * field and the body copy sat on top of a specular highlight. A hero object directly behind
+       * a centred form is a conflict, not a backdrop.
+       *
+       * Raising the camera's look-at target pushes the object DOWN in frame, so it reads as a
+       * machined plinth the form floats above and is cropped by the bottom edge. Nothing the
+       * operator has to read sits over anything bright.
+       */
       const view = {
-        target: [0, 0.34, 0] as const, distance: 5.6,
-        azimuthDeg: 22, elevationDeg: 20, fovDeg: 32,
+        /* y 2.35 rather than 1.55: at 1.55 the disc's specular highlight sat directly under the
+           status footer and made "LOCAL / API DOWN / UTC" hard to read. Nothing an operator has to
+           read may sit over anything bright — the object is cropped by the bottom edge instead. */
+        target: [0, 2.35, 0] as const, distance: 6.2,
+        azimuthDeg: 22, elevationDeg: 14, fovDeg: 34,
       };
       const centre = gl3.boundsCentre([-2, 0, -2], [2, 0.55, 2]);
       const radius = gl3.boundsRadius([-2, 0, -2], [2, 0.55, 2]);
@@ -163,6 +202,9 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
       const far = Math.max(near + 1, view.distance * 8);
 
       const render = (t: number) => {
+        const dark = isDark();
+        const skyStops = skyStopsFor(dark);
+        const draws = buildDraws(dark);
         // t 0..1 across the sweep. One arc, easing to a stop rather than halting mid-travel.
         const eased = t < 1 ? 1 - (1 - t) * (1 - t) : 1;
         const a = -1.35 + eased * 1.5;
@@ -176,13 +218,16 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         R.shadowPass(lightVP, draws, S);
         T.bind();
         gl.clear(gl.DEPTH_BUFFER_BIT);
-        K.draw({ eye, target: view.target, fovDeg: view.fovDeg, aspect: W / H });
+        K.draw({ eye, target: view.target, fovDeg: view.fovDeg, aspect: W / H, sky: skyStops });
         R.depthPrepass(vp, draws);
         A.compute({ depthTexture: T.depthTexture, near, far, fovDeg: view.fovDeg, aspect: W / H, radius: 0.42, strength: 1.3 });
         T.bind();
+        /* A studio needs a stronger key and much more ambient, or the metal goes muddy against a
+           bright ground; a dark room needs the reverse or the highlight blows out. */
+        const keyGain = (dark ? 5.2 : 7.4) * intensity;
         R.draw({
-          viewProj: vp, eye, lightDir, lightColour: [5.2 * intensity, 5.0 * intensity, 4.6 * intensity],
-          ambientGain: 1.15, lightVP, shadow: S, shadowStrength: 0.9, draws,
+          viewProj: vp, eye, lightDir, lightColour: [keyGain, keyGain * 0.96, keyGain * 0.885],
+          ambientGain: dark ? 1.15 : 0.62, sky: skyStops, lightVP, shadow: S, shadowStrength: dark ? 0.9 : 0.62, draws,
           ao: A.texture, screenSize: [W, H],
         });
         const focus = Math.hypot(eye[0], eye[1] - DISC_Y, eye[2]);
@@ -205,16 +250,28 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         // consent from a reader who never gave it.
         : true;
 
-      disposeRef.current = () => {
+      const teardown = () => {
         if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
         D.dispose(); A.dispose(); K.dispose(); S.dispose(); T.dispose(); R.dispose();
         stage.dispose();
       };
+      disposeRef.current = teardown;
+
+      /*
+       * A THEME CHANGE AFTER THE SWEEP HAS FINISHED HAS NO FRAME LOOP TO PICK IT UP. The arc stops
+       * by design (§6 rule 2), so without this the canvas holds whichever theme was live when it
+       * stopped. One re-render of the final frame, not a replayed sweep — a theme toggle is not an
+       * event that warrants an animation.
+       */
+      const themeWatch = new MutationObserver(() => { if (rafRef.current == null) render(1); });
+      themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+      const stopWatch = () => themeWatch.disconnect();
 
       if (reduced) {
         render(1);
         setReady(true);
+        disposeRef.current = () => { stopWatch(); teardown(); };
         return;
       }
 
@@ -228,6 +285,7 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         else rafRef.current = null;
       };
       rafRef.current = requestAnimationFrame(step);
+      disposeRef.current = () => { stopWatch(); teardown(); };
     }
 
     return () => {
