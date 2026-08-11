@@ -14,7 +14,12 @@ const b = await chromium.launch({ args:['--use-gl=angle','--use-angle=swiftshade
 for (const [name, reduced, q] of [['live', false, ''], ['no-ao', false, '&ao=0'], ['no-dof', false, '&dof=0'], ['diag-mirror', false, '&diag=1']]) {
   const p = await b.newPage({ viewport:{width:1600,height:1200}, deviceScaleFactor:1,  // 13 panels at 2x exceeds Chromium's ~16384px capture limit
     reducedMotion: reduced ? 'reduce' : 'no-preference' });
-  const errs=[]; p.on('pageerror',e=>errs.push(e.message));
+    /* PRINTED THE MOMENT IT HAPPENS, not collected for after the wait. A page that throws never sets
+     its title, so the harness reports a 30-second TIMEOUT and the actual exception — which is one
+     line away — is never seen. That cost real time on E5 and it is the same shape of failure E0's
+     temporal-dead-zone bug had. */
+  const errs=[]; p.on('pageerror',e=>{ errs.push(e.message); console.error('    PAGE ERROR: '+e.message); });
+  p.on('console',m=>{ if(m.type()==='error') console.error('    CONSOLE ERROR: '+m.text()); });
   await p.goto(`http://127.0.0.1:${s.address().port}/live.html?frames=4${q}`);
   await p.waitForFunction(()=>document.title==='READY',{timeout:30000});
   if(errs.length) throw new Error('page errors: '+errs.join(' | '));

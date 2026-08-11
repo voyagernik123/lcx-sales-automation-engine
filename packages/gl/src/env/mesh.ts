@@ -481,3 +481,159 @@ export function arcTube(
 export function triangleCount(g: Geometry): number {
   return g.indices.length / 3;
 }
+
+/*
+ * A MEASURED SURFACE AS A MESH — and the whole difficulty is the cells nobody measured.
+ *
+ * The flat score surfaces this promotes (`SurfaceGeometry` in `@lcx/shared`) already get the hard
+ * part right: a grid point is OBSERVED, ABSENT, or WITHHELD, the three are never collapsed, and a
+ * cell with an unmeasured corner is drawn as a HOLE rather than interpolated across. A 3D promotion
+ * that quietly builds a watertight grid would throw that away and be a straight regression — the
+ * resulting surface would be smooth, handsome, and would assert values nobody ever took.
+ *
+ * So `null` from the sampler means no cell, and the hole survives into the mesh. Two consequences
+ * that are easy to miss and both of which are handled below:
+ *
+ *   · NORMALS AT A HOLE'S EDGE cannot use a central difference — one side of it does not exist. Fall
+ *     back to a one-sided difference, and where neither side exists, to straight up. Sampling
+ *     through a hole is how a rim ends up lit as though the surface continued flat across it, which
+ *     reads as a lighting bug rather than as the missing data it is.
+ *
+ *   · A VERTEX IS SHARED between up to four cells, and a vertex that no surviving cell references
+ *     must still occupy its slot in the arrays, because the indices are absolute. Compacting the
+ *     vertex list would be a memory optimisation paid for with an off-by-one in every index.
+ */
+export interface HeightfieldResult {
+  readonly geometry: Geometry;
+  /** Cells built. The n the surface is over. */
+  readonly cellsDrawn: number;
+  /** Cells omitted because at least one corner was unmeasured. Reported, never silently dropped. */
+  readonly cellsHoles: number;
+  /** Grid points the sampler refused. Distinct from `cellsHoles`: one absent point holes 4 cells. */
+  readonly pointsAbsent: number;
+  /** Observed vertical range, in the sampler's own units, or `null` if nothing was observed. */
+  readonly observedRange: readonly [number, number] | null;
+}
+
+/**
+ * Build a mesh from a `cols × rows` grid of samples.
+ *
+ * `sample(col, row)` returns the height in the caller's own units, or `null` for a point that was
+ * never measured. Heights are mapped onto `[0, heightWorld]` from the OBSERVED range, so the surface
+ * uses its full relief regardless of the units it arrived in.
+ *
+ * The grid lies in x/z with y up: `x` spans `[-widthWorld/2, +widthWorld/2]` across columns and `z`
+ * spans `[-depthWorld/2, +depthWorld/2]` across rows.
+ */
+export function heightfield(
+  cols: number,
+  rows: number,
+  sample: (col: number, row: number) => number | null,
+  widthWorld = 4,
+  depthWorld = 4,
+  heightWorld = 1,
+): HeightfieldResult {
+  const nx = Math.max(2, Math.floor(cols));
+  const nz = Math.max(2, Math.floor(rows));
+
+  const raw: (number | null)[] = new Array(nx * nz);
+  let lo = Infinity, hi = -Infinity, absent = 0;
+  for (let r = 0; r < nz; r++) {
+    for (let c = 0; c < nx; c++) {
+      const v = sample(c, r);
+      // Infinity and NaN are treated as unmeasured rather than propagated. A NaN height silently
+      // NaNs every normal that touches it and the surface goes black in a patch, which looks like a
+      // shader fault three layers away from the data that caused it.
+      const ok = v !== null && Number.isFinite(v);
+      raw[r * nx + c] = ok ? v : null;
+      if (ok) { if (v! < lo) lo = v!; if (v! > hi) hi = v!; } else absent++;
+    }
+  }
+
+  const observed = absent === nx * nz ? null : ([lo, hi] as const);
+  /* A genuinely FLAT surface has span 0, and dividing by it would give every point NaN. Flat is a
+     real measurement — the flat engine says so out loud rather than treating it as an error — so it
+     maps to the base of the height range and stays flat. */
+  const span = observed && hi > lo ? hi - lo : 0;
+  const yOf = (v: number): number => (span === 0 ? 0 : ((v - lo) / span) * heightWorld);
+
+  const positions = new Float32Array(nx * nz * 3);
+  const normals = new Float32Array(nx * nz * 3);
+  const uvs = new Float32Array(nx * nz * 2);
+  const tangents = new Float32Array(nx * nz * 3);
+
+  const at = (c: number, r: number): number | null =>
+    (c < 0 || c >= nx || r < 0 || r >= nz ? null : raw[r * nx + c]!);
+
+  const dx = widthWorld / (nx - 1), dz = depthWorld / (nz - 1);
+
+  for (let r = 0; r < nz; r++) {
+    for (let c = 0; c < nx; c++) {
+      const i = r * nx + c;
+      /* `?? null` rather than `raw[i]!`: under `noUncheckedIndexedAccess` an indexed read is
+         `number | null | undefined`, and the `undefined` arm flows straight into `yOf` three lines
+         down and again inside `grad`. Vitest strips types, so all 105 tests passed and only the real
+         `tsc` emit the gate runs found it — the same lesson as the api/web build order. */
+      const v = raw[i] ?? null;
+      const x = -widthWorld / 2 + c * dx;
+      const z = -depthWorld / 2 + r * dz;
+      positions[i * 3] = x;
+      positions[i * 3 + 1] = v === null ? 0 : yOf(v);
+      positions[i * 3 + 2] = z;
+      uvs[i * 2] = nx === 1 ? 0 : c / (nx - 1);
+      uvs[i * 2 + 1] = nz === 1 ? 0 : r / (nz - 1);
+
+      /*
+       * SLOPE FROM WHICHEVER NEIGHBOURS EXIST — central where both do, one-sided at an edge or a
+       * hole rim, and zero where neither does. Never a plain `(right - left) / 2dx`: at a rim that
+       * reads through the hole and tilts the edge as though the data continued.
+       */
+      const grad = (a: number | null, b: number | null, step: number): number => {
+        if (a !== null && b !== null) return (yOf(b) - yOf(a)) / (2 * step);
+        if (v === null) return 0;
+        if (b !== null) return (yOf(b) - yOf(v)) / step;
+        if (a !== null) return (yOf(v) - yOf(a)) / step;
+        return 0;
+      };
+      const sx = grad(at(c - 1, r), at(c + 1, r), dx);
+      const sz = grad(at(c, r - 1), at(c, r + 1), dz);
+      // The surface normal of y = f(x,z) is (-df/dx, 1, -df/dz), normalised.
+      const nl = Math.hypot(-sx, 1, -sz);
+      normals[i * 3] = -sx / nl;
+      normals[i * 3 + 1] = 1 / nl;
+      normals[i * 3 + 2] = -sz / nl;
+
+      /* Tangent along +x, projected onto the tangent plane so it is perpendicular to the normal.
+         Anisotropic specular stretches along it, which on a contoured surface should run with the
+         grid the values were sampled on rather than across it. */
+      const tn = normals[i * 3]!, tny = normals[i * 3 + 1]!, tnz = normals[i * 3 + 2]!;
+      let tx = 1 - tn * tn, ty = -tn * tny, tz = -tn * tnz;
+      const tl = Math.hypot(tx, ty, tz);
+      if (tl < 1e-6) { tx = 0; ty = 0; tz = 1; } else { tx /= tl; ty /= tl; tz /= tl; }
+      tangents[i * 3] = tx; tangents[i * 3 + 1] = ty; tangents[i * 3 + 2] = tz;
+    }
+  }
+
+  const idx: number[] = [];
+  let holes = 0;
+  for (let r = 0; r < nz - 1; r++) {
+    for (let c = 0; c < nx - 1; c++) {
+      const a = r * nx + c, b = a + 1, d = (r + 1) * nx + c, e = d + 1;
+      if (raw[a] === null || raw[b] === null || raw[d] === null || raw[e] === null) { holes++; continue; }
+      /* Wound counter-clockwise seen from ABOVE (+y), so the lit face is the top. Getting this
+         backwards gives a surface lit from underneath — dark where the key falls, bright in the
+         hollows — which is the same signature as a wrong light direction. */
+      idx.push(a, d, b, b, d, e);
+    }
+  }
+
+  const indices = nx * nz > 65535 ? new Uint32Array(idx) : new Uint16Array(idx);
+  const bb = bounds(positions);
+  return {
+    geometry: { positions, normals, uvs, tangents, indices, min: bb.min, max: bb.max },
+    cellsDrawn: (nx - 1) * (nz - 1) - holes,
+    cellsHoles: holes,
+    pointsAbsent: absent,
+    observedRange: observed,
+  };
+}

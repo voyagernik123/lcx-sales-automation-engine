@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { box, plane, sphere, cylinder, torus, arcTube, latLonToVec3, computeNormals, triangleCount } from './mesh.js';
+import { box, plane, sphere, cylinder, torus, arcTube, latLonToVec3, heightfield, computeNormals, triangleCount } from './mesh.js';
 import {
   eyeOf, viewProjection, lightViewProjection, boundsRadius, boundsCentre, ELEVATION_LIMIT,
 } from './camera.js';
@@ -570,5 +570,123 @@ describe('projectQuad — DOM content on a rendered surface', () => {
       expect(px, `element corner ${i} lands on screen x`).toBeCloseTo(r.screen[i]!.x, 3);
       expect(py, `element corner ${i} lands on screen y`).toBeCloseTo(r.screen[i]!.y, 3);
     });
+  });
+});
+
+/*
+ * THE HEIGHTFIELD, and the one property that distinguishes a promotion from a regression.
+ *
+ * The flat score surfaces already refuse to interpolate across a cell nobody measured — they draw a
+ * hole. A 3D version that builds a watertight grid instead would look better and say less, asserting
+ * values that were never taken. So the tests below are mostly about ABSENCE: that a hole survives
+ * into the index buffer, that a normal at a hole's rim does not read through it, and that a flat
+ * surface stays flat rather than dividing by a zero span.
+ */
+describe('heightfield — a measured surface, holes and all', () => {
+  it('builds every cell when every point is observed, wound to face up', () => {
+    const r = heightfield(5, 4, (c, z) => c + z, 4, 3, 1);
+    expect(r.cellsDrawn).toBe(4 * 3);
+    expect(r.cellsHoles).toBe(0);
+    expect(r.pointsAbsent).toBe(0);
+    expect(r.observedRange).toEqual([0, 7]);
+
+    // Every triangle's normal must have a positive y, or the surface is lit from underneath.
+    const { positions, indices } = r.geometry;
+    for (let t = 0; t < indices.length; t += 3) {
+      const p = [0, 1, 2].map((k) => {
+        const i = indices[t + k]!;
+        return [positions[i * 3]!, positions[i * 3 + 1]!, positions[i * 3 + 2]!] as const;
+      });
+      const u = [p[1]![0] - p[0]![0], p[1]![1] - p[0]![1], p[1]![2] - p[0]![2]] as const;
+      const w = [p[2]![0] - p[0]![0], p[2]![1] - p[0]![1], p[2]![2] - p[0]![2]] as const;
+      const ny = u[2]! * w[0]! - u[0]! * w[2]!;
+      expect(ny, `triangle ${t / 3} faces down`).toBeGreaterThan(0);
+    }
+  });
+
+  it('holes the four cells around one absent point, and keeps the vertex slot', () => {
+    // One absent point at (2,2) on a 6x6 grid touches exactly 4 cells.
+    const r = heightfield(6, 6, (c, z) => (c === 2 && z === 2 ? null : 1 + 0.1 * c * z));
+    expect(r.pointsAbsent).toBe(1);
+    expect(r.cellsHoles).toBe(4);
+    expect(r.cellsDrawn).toBe(25 - 4);
+    // The vertex array is NOT compacted: indices are absolute, so the unreferenced slot stays.
+    expect(r.geometry.positions.length).toBe(6 * 6 * 3);
+    // And nothing indexes the absent point.
+    expect([...r.geometry.indices].includes(2 * 6 + 2)).toBe(false);
+  });
+
+  it('refuses a range rather than reporting zero when nothing was measured', () => {
+    const r = heightfield(4, 4, () => null);
+    expect(r.observedRange, 'no observation must not report a range').toBeNull();
+    expect(r.cellsDrawn).toBe(0);
+    expect(r.geometry.indices.length).toBe(0);
+    expect(r.pointsAbsent).toBe(16);
+    // Every position finite: a null height must not leak NaN into the buffer.
+    expect([...r.geometry.positions].every(Number.isFinite)).toBe(true);
+    expect([...r.geometry.normals].every(Number.isFinite)).toBe(true);
+  });
+
+  it('treats NaN and Infinity as unmeasured instead of propagating them', () => {
+    // A single NaN height NaNs every normal that touches it, and the surface goes black in a patch
+    // that looks like a shader fault rather than like the data problem it is.
+    const r = heightfield(5, 5, (c, z) => (c === 1 && z === 1 ? Number.NaN : c === 3 && z === 3 ? Infinity : 2));
+    expect(r.pointsAbsent).toBe(2);
+    expect([...r.geometry.normals].every(Number.isFinite)).toBe(true);
+    expect([...r.geometry.positions].every(Number.isFinite)).toBe(true);
+  });
+
+  it('keeps a genuinely flat surface flat rather than dividing by a zero span', () => {
+    const r = heightfield(4, 4, () => 7);
+    expect(r.observedRange).toEqual([7, 7]);
+    for (let i = 1; i < r.geometry.positions.length; i += 3) {
+      expect(r.geometry.positions[i], 'a flat surface must not lift').toBe(0);
+    }
+    // And its normals must all be straight up, not NaN.
+    for (let i = 0; i < r.geometry.normals.length; i += 3) {
+      expect(r.geometry.normals[i + 1]).toBeCloseTo(1, 12);
+    }
+  });
+
+  it('does not let a normal at a hole rim read through the hole', () => {
+    /*
+     * THE TEST THAT JUSTIFIES THE ONE-SIDED DIFFERENCE.
+     *
+     * A ramp rising in x, with the whole right half absent. At the last observed column a central
+     * difference would sample the missing side — whose position sits at y=0 because it was never
+     * measured — and compute a slope that plunges downhill, tilting the rim as though the surface
+     * fell away. The one-sided difference must instead report the SAME slope as the interior.
+     */
+    const CUT = 4;
+    const r = heightfield(8, 3, (c) => (c > CUT ? null : c), 7, 2, 1);
+    const nx = 8;
+    const nAt = (c: number, row: number): number => r.geometry.normals[(row * nx + c) * 3]!;
+    const interior = nAt(2, 1);
+    const rim = nAt(CUT, 1);
+    expect(rim, 'the rim normal must match the interior slope it belongs to').toBeCloseTo(interior, 6);
+    // Sanity: the ramp really does tilt, so this is not passing on two zeroes.
+    expect(Math.abs(interior)).toBeGreaterThan(0.05);
+  });
+
+  it('emits unit normals and unit tangents perpendicular to them', () => {
+    const r = heightfield(9, 7, (c, z) => Math.sin(c * 0.6) * Math.cos(z * 0.5));
+    const { normals, tangents } = r.geometry;
+    for (let i = 0; i < normals.length; i += 3) {
+      const n: [number, number, number] = [normals[i]!, normals[i + 1]!, normals[i + 2]!];
+      const t: [number, number, number] = [tangents[i]!, tangents[i + 1]!, tangents[i + 2]!];
+      expect(Math.hypot(...n), `normal ${i / 3}`).toBeCloseTo(1, 6);
+      expect(Math.hypot(...t), `tangent ${i / 3}`).toBeCloseTo(1, 6);
+      // Anisotropic specular needs the tangent IN the surface; a tangent with a normal component
+      // stretches the highlight out of the plane and reads as a smear rather than as a brush.
+      expect(n[0] * t[0] + n[1] * t[1] + n[2] * t[2], `tangent ${i / 3} not in plane`).toBeCloseTo(0, 6);
+    }
+  });
+
+  it('switches to a 32-bit index buffer before 16 bits would wrap', () => {
+    // 260x260 = 67,600 vertices. A Uint16Array here wraps silently and the mesh folds in on itself.
+    const r = heightfield(260, 260, () => 1);
+    expect(r.geometry.indices).toBeInstanceOf(Uint32Array);
+    const small = heightfield(20, 20, () => 1);
+    expect(small.geometry.indices).toBeInstanceOf(Uint16Array);
   });
 });

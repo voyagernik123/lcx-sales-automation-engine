@@ -15,7 +15,12 @@ const b = await chromium.launch({ args:['--use-gl=angle','--use-angle=swiftshade
 // from the room. Same scene, same camera, focus off.
 for (const [name, q] of [['live', ''], ['no-dof', '&dof=0'], ['no-ao', '&ao=0']]) {
   const p = await b.newPage({ viewport:{width:1300,height:1000}, deviceScaleFactor:1 });
-  const errs=[]; p.on('pageerror',e=>errs.push(e.message));
+    /* PRINTED THE MOMENT IT HAPPENS, not collected for after the wait. A page that throws never sets
+     its title, so the harness reports a 30-second TIMEOUT and the actual exception — which is one
+     line away — is never seen. That cost real time on E5 and it is the same shape of failure E0's
+     temporal-dead-zone bug had. */
+  const errs=[]; p.on('pageerror',e=>{ errs.push(e.message); console.error('    PAGE ERROR: '+e.message); });
+  p.on('console',m=>{ if(m.type()==='error') console.error('    CONSOLE ERROR: '+m.text()); });
   // frames=4, not the page default of 300: under swiftshader a shadowed, AO'd, depth-of-field
   // frame takes seconds, and the batch sweep here only has to prove the frame draws at all.
   await p.goto(`http://127.0.0.1:${s.address().port}/live.html?frames=4${q}`);
