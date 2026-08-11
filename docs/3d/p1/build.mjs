@@ -44,6 +44,24 @@ const LAYERS = [
   { name: 'L1 renderer', budgetKb: 45, entry: ['stage.ts', 'math.ts', 'primitives/points.ts', 'primitives/lines.ts'] },
   { name: 'L2 look', budgetKb: 10, entry: ['look/colour.ts', 'look/tonemap.ts', 'look/pipeline.ts'] },
   { name: 'L3 motion', budgetKb: 8, entry: ['motion/index.ts'] },
+  /*
+   * L4 env — THE LANE THAT DID NOT EXIST WHILE THE WHOLE 3D PROGRAMME WAS BUILT IN IT.
+   *
+   * §6.3.3 makes "bytes measured and reported" the per-lane definition of done, and the environment
+   * layer — GGX, shadows, AO, DOF, fog, the sky, the meshes, the DOM projection — was measured by
+   * nothing. Noticed only because adding ~1.2 KB of fog GLSL to `env/lit.ts` left `L2 look` sitting at
+   * exactly 6.5 KB: a budget that does not move when you add code to what you believe it covers is a
+   * budget that is not watching. It reported green through five environments.
+   *
+   * 60 KB is not a guess. `three.js` costs 513 KB for the comparable surface (measured in P1, and the
+   * reason this package exists at all), so the ceiling is set at well under an eighth of it while
+   * leaving room for E3-E7's particles and volumetrics. If a future lane needs more than 60 KB the
+   * answer is to argue for the raise here, in the open, rather than to discover it in a bundle.
+   */
+  { name: 'L4 env', budgetKb: 60, entry: [
+    'env/mesh.ts', 'env/camera.ts', 'env/lit.ts', 'env/sky.ts',
+    'env/target3d.ts', 'env/ao.ts', 'env/dof.ts', 'env/project.ts',
+  ] },
 ];
 
 const tmp = mkdtempSync(join(tmpdir(), 'lcx-gl-measure-'));
