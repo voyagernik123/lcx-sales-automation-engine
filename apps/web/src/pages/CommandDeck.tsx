@@ -21,6 +21,7 @@ import { useOperatorStore } from '@/stores';
 import { DeepOntologyPanel } from '@/components/command/DeepOntologyPanel';
 import { ReadinessDial, LpOptimizerPanel, FunnelSimPanel } from '@/components/command/CockpitPanels';
 import { AnalyticReviews } from '@/components/intel/AnalyticReviews';
+import { SignatureBackdrop } from '@/components/command/SignatureBackdrop';
 import { PrintStyles } from '@/components/report/PrintStyles';
 import { PageTitle, Button } from '@/components/ui';
 import { safeHref } from '@/lib/safeHref';
@@ -82,7 +83,16 @@ export function CommandDeck() {
   };
 
   return (
-    <div className="br-page mx-auto max-w-[1400px] p-5">
+    /* `relative` so W5's backdrop has a positioned ancestor to fill, and `isolate` so its
+       negative z-index cannot escape behind this page's own container and vanish. */
+    <div className="br-page relative isolate mx-auto max-w-[1400px] p-5">
+      {/* W5 · SIGNATURE. The plate the whole deck sits on, built in linear light rather than
+          declared as a CSS gradient — see the component for why sRGB interpolation bands across
+          a large near-black field, and `docs/3d/w5/live.png` for the side-by-side that decided
+          it. `br-no-print`: the board pack prints on white, where a dark plate is nonsense. */}
+      <div className="br-no-print">
+        <SignatureBackdrop />
+      </div>
       <PrintStyles />
       <PageTitle
         icon={<Command size={20} />}
