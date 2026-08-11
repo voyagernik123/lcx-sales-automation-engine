@@ -33,7 +33,7 @@
  *          the frame's geography is a stated fact rather than a camera that happened to stop here.
  */
 import {
-  createStage, isStage, sphere, torus, uploadMesh, createLitRenderer, createTarget3D,
+  createStage, isStage, sphere, torus, arcTube, uploadMesh, createLitRenderer, createTarget3D,
   createShadowMap, createSkyBackdrop, createAmbientOcclusion, createDepthOfField,
   viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre, triangleCount,
   hexToLinear, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
@@ -156,6 +156,36 @@ const CITY_SITES: ReadonlyArray<{ readonly name: string; readonly lat: number; r
   { name: 'Lagos', lat: 6.52, lon: 3.38 },
   { name: 'Nairobi', lat: -1.29, lon: 36.82 },
   { name: 'Johannesburg', lat: -26.20, lon: 28.04 },
+  /*
+   * THE ORIGINAL EIGHT ALL SAT BETWEEN -0.13 AND 72.88 LONGITUDE, and with a sub-solar point at 95
+   * that put every single one on the day side: the harness reported citiesSunlit 8 and onNightSide
+   * empty, which makes the terminator a gradient rather than a reading. These four span the rest of
+   * the globe, so the line now separates desks that are awake from desks that are not — which is
+   * the whole reason a terminator is on a business globe at all.
+   */
+  { name: 'New York', lat: 40.71, lon: -74.01 },
+  { name: 'Chicago', lat: 41.88, lon: -87.63 },
+  { name: 'Singapore', lat: 1.35, lon: 103.82 },
+  { name: 'Tokyo', lat: 35.68, lon: 139.65 },
+];
+
+/*
+ * THE CORRIDORS — §2 E2's actual payload, and what its absence made the first capture decoration.
+ *
+ * A hub-and-spoke from Vaduz, which is where LCX actually is. Every arc is therefore a real claim
+ * about a route rather than a decorative curve, and the set reads as a reach map: the long
+ * transatlantic and Asian legs climb high, the intra-European hops stay low, because `arcTube`
+ * scales lift with angular distance.
+ */
+const HUB = { lat: 47.14, lon: 9.52 };
+const CORRIDORS: ReadonlyArray<{ readonly to: string; readonly lat: number; readonly lon: number }> = [
+  { to: 'London', lat: 51.51, lon: -0.13 },
+  { to: 'New York', lat: 40.71, lon: -74.01 },
+  { to: 'Chicago', lat: 41.88, lon: -87.63 },
+  { to: 'Dubai', lat: 25.20, lon: 55.27 },
+  { to: 'Singapore', lat: 1.35, lon: 103.82 },
+  { to: 'Tokyo', lat: 35.68, lon: 139.65 },
+  { to: 'Johannesburg', lat: -26.20, lon: 28.04 },
 ];
 
 /* THE SUN IS DECLARED AS A SUB-SOLAR POINT, not as a direction vector, because that is what a
@@ -164,8 +194,15 @@ const CITY_SITES: ReadonlyArray<{ readonly name: string; readonly lat: number; r
    lon 95 against a central meridian of 30 puts the terminator roughly half a disc-radius from the
    centre of the frame — near enough to read as a hard line, far enough that the lit side is still
    most of the globe. */
-const SUB_SOLAR = { lat: 18, lon: 95 };
-const CENTRAL_MERIDIAN = 30;
+/*
+ * SUB-SOLAR lon 60, CENTRAL MERIDIAN -15 — chosen so the terminator crosses the VISIBLE disc with
+ * corridors on both sides. At 95/30 the night side was centred near lon -120, just off the edge of
+ * what the camera sees, so `onNightSide` stayed empty no matter how many cities were added and the
+ * day/night line was a gradient rather than a reading. A terminator with nothing behind it is
+ * decoration; this is the pair of numbers that makes "which desks are awake" answerable.
+ */
+const SUB_SOLAR = { lat: 18, lon: 60 };
+const CENTRAL_MERIDIAN = -15;  // see SUB_SOLAR: this pair is what puts the terminator on-disc
 
 const SUN: [number, number, number] = geoToWorld(SUB_SOLAR.lat, SUB_SOLAR.lon, 1);
 // `lightDir` is the direction light TRAVELS, so it is the sun direction negated.
@@ -185,6 +222,11 @@ const earthMesh = need('earth mesh', uploadMesh(stage, earthGeo));
 const atmosMesh = need('atmosphere mesh', uploadMesh(stage, atmosGeo));
 const ringMesh = need('ring mesh', uploadMesh(stage, ringGeo));
 const cityMesh = need('city mesh', uploadMesh(stage, cityGeo));
+
+/* One tube per corridor. Each is its own geometry because the lift and the path differ per route —
+   there is nothing to instance. 96 segments keeps a transatlantic arc smooth at this camera. */
+const corridorGeos = CORRIDORS.map((c) => arcTube(HUB.lat, HUB.lon, c.lat, c.lon, EARTH_R, 0.016, 0.20, 128, 12));
+const corridorMeshes = corridorGeos.map((g, i) => need(`corridor ${CORRIDORS[i]!.to}`, uploadMesh(stage, g)));
 
 const at = (x: number, y: number, z: number): Float32Array => {
   const m = IDENTITY(); m[12] = x; m[13] = y; m[14] = z; return m;
@@ -259,6 +301,9 @@ const ATMOS_MAT = { baseColour: hexToLinear('#7FB2FF'), roughness: 0.86, metalne
    analytically, which is why the bar of light follows the tube instead of crossing it. */
 const RING_MAT = { baseColour: hexToLinear('#8FA3C4'), roughness: 0.14, metalness: 0.95, anisotropy: 0.8 };
 const CITY_MAT = { baseColour: hexToLinear('#2C6BFF'), roughness: 0.5, metalness: 0.0 };
+/* Anisotropy 0.85 with `arcTube`'s along-the-path tangent, so the highlight runs DOWN the corridor.
+   An isotropic tube bands into rings and reads as a ribbed hose rather than a lit route. */
+const CORRIDOR_MAT = { baseColour: hexToLinear('#4C86FF'), roughness: 0.22, metalness: 0.85, anisotropy: 0.85 };
 
 /* Markers are centred ON the surface, so half of each sphere is buried. A marker floated clear of
    the surface reads as a pin hovering over the planet and casts a detached shadow; half-buried, it
@@ -273,6 +318,9 @@ const earthDraw: LitDraw = { mesh: earthMesh, model: at(0, 0, 0), normalMat: NM,
 const atmosDraw: LitDraw = { mesh: atmosMesh, model: ATMOS_MODEL, normalMat: ATMOS_NM, material: ATMOS_MAT };
 const ringDraw: LitDraw = { mesh: ringMesh, model: at(0, 0, 0), normalMat: NM, material: RING_MAT };
 const cityDraws: LitDraw[] = cities.map((c) => c.draw);
+const corridorDraws: LitDraw[] = corridorMeshes.map((m) => ({
+  mesh: m, model: at(0, 0, 0), normalMat: NM, material: CORRIDOR_MAT,
+}));
 
 /* The body of the scene. Cities are held back for a second pass — see AMBIENT below. */
 const bodyDraws: LitDraw[] = ATMOS_ON ? [earthDraw, atmosDraw, ringDraw] : [earthDraw, ringDraw];
@@ -285,10 +333,10 @@ const bodyDraws: LitDraw[] = ATMOS_ON ? [earthDraw, atmosDraw, ringDraw] : [eart
  * full disc of depth in front of the earth and shadow the entire daylit face. An atmosphere does
  * not cast a hard shadow on its own planet either way.
  */
-const shadowCasters: LitDraw[] = [earthDraw, ringDraw, ...cityDraws];
+const shadowCasters: LitDraw[] = [earthDraw, ringDraw, ...cityDraws, ...corridorDraws];
 /* Everything that will be shaded must be in the prepass, or LEQUAL rejects it. `DEPTH_VERT` is
    bit-identical to `LIT_VERT`'s transform on purpose, so the two agree to the last bit. */
-const depthDraws: LitDraw[] = [...bodyDraws, ...cityDraws];
+const depthDraws: LitDraw[] = [...bodyDraws, ...cityDraws, ...corridorDraws];
 
 /*
  * NO GROUND PLANE, so what does the shadow map do?
@@ -375,6 +423,10 @@ function frame() {
     ao: ao.texture, screenSize: [W, H] as [number, number],
   };
   lit.draw({ ...common, ambientGain: BODY_AMBIENT, draws: bodyDraws });
+  /* Corridors get their OWN ambient, between the body's and the cities'. They are the payload, so
+     they must stay legible where they cross the night side — but lifting them as far as the city
+     markers would make the route louder than its endpoints, which inverts the reading. */
+  lit.draw({ ...common, ambientGain: (BODY_AMBIENT + CITY_AMBIENT) / 2, draws: corridorDraws });
   lit.draw({ ...common, ambientGain: CITY_AMBIENT, draws: cityDraws });
 
   /*
@@ -450,6 +502,17 @@ const report = {
   cities: seen.length,
   citiesFacing: seen.filter((c) => c.facing).length,
   citiesSunlit: seen.filter((c) => c.sunlit).length,
+  corridors: CORRIDORS.length,
+  corridorTriangles: corridorGeos.reduce((n, g) => n + triangleCount(g), 0),
+  /* Peak lift per corridor, so "does a long haul climb higher than a short hop" is a number in the
+     report rather than an impression from the picture. */
+  corridorPeakLift: corridorGeos.map((g, i) => {
+    let m = 0;
+    for (let k = 0; k < g.positions.length; k += 3) {
+      m = Math.max(m, Math.hypot(g.positions[k]!, g.positions[k + 1]!, g.positions[k + 2]!));
+    }
+    return { to: CORRIDORS[i]!.to, lift: Number((m - EARTH_R).toFixed(4)) };
+  }),
   behindLimb: seen.filter((c) => !c.facing).map((c) => c.name),
   onNightSide: seen.filter((c) => c.facing && !c.sunlit).map((c) => c.name),
   renderer: (() => {

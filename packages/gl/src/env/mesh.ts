@@ -360,6 +360,123 @@ export function torus(ringRadius = 0.5, tubeRadius = 0.08, ringSegs = 64, tubeSe
   return finish(new Float32Array(pos), new Float32Array(uv), new Uint16Array(idx), new Float32Array(nrm), new Float32Array(tan));
 }
 
+/** Latitude/longitude in DEGREES to a unit vector. y is north, so the poles sit on the y axis. */
+export function latLonToVec3(latDeg: number, lonDeg: number): [number, number, number] {
+  const la = (latDeg * Math.PI) / 180;
+  const lo = (lonDeg * Math.PI) / 180;
+  const c = Math.cos(la);
+  return [c * Math.cos(lo), Math.sin(la), c * Math.sin(lo)];
+}
+
+/**
+ * A GREAT-CIRCLE ARC as a swept tube — E2's actual payload.
+ *
+ * `3D_VFX_1000X.md` §2 E2 asks for "extruded arcs for every partner and listing corridor". Without
+ * them the globe is a handsome planet carrying no information, which fails §7(b) exactly as five
+ * blank panels do. The sphere is the frame; THIS is the data.
+ *
+ * ── WHY SLERP AND NOT A STRAIGHT LINE ───────────────────────────────────────────────
+ * The shortest path between two points on a sphere is a great circle, and a corridor drawn as a
+ * chord would cut THROUGH the planet — visibly wrong for any pair more than a quarter-turn apart,
+ * and subtly wrong for every pair. Spherical interpolation keeps every sample exactly on the
+ * surface radius before the lift is applied, so the arc reads as a route rather than as a wire.
+ *
+ * ── THE LIFT IS A SINE, NOT A CONSTANT ──────────────────────────────────────────────
+ * Height scales as `sin(pi t)`, so the arc leaves and meets the surface TANGENTIALLY at both ends
+ * and peaks in the middle. A constant offset would float the whole corridor above the planet with
+ * two visible steps at the endpoints, which is the tell that says "line drawn on a sphere".
+ *
+ * Peak height also scales with the arc's own angular length: a short hop should stay low and a
+ * transatlantic corridor should climb. A fixed lift makes short arcs look like tall croquet hoops.
+ *
+ * ── THE FRAME IS RADIAL, NOT FRENET ─────────────────────────────────────────────────
+ * A Frenet frame twists where the path's curvature flips and the tube visibly corkscrews. Using
+ * the OUTWARD RADIAL direction as the reference up removes that entirely: the tube's cross-section
+ * stays oriented relative to the planet, which is both stable and what a reader expects.
+ */
+export function arcTube(
+  fromLat: number, fromLon: number, toLat: number, toLon: number,
+  sphereRadius = 1, tubeRadius = 0.012, liftScale = 0.22, segs = 96, tubeSegs = 8,
+): Geometry {
+  const S = Math.max(8, segs), T = Math.max(3, tubeSegs);
+  const a = latLonToVec3(fromLat, fromLon);
+  const b = latLonToVec3(toLat, toLon);
+
+  const dot = Math.max(-1, Math.min(1, a[0] * b[0] + a[1] * b[1] + a[2] * b[2]));
+  const omega = Math.acos(dot);
+  /* ANTIPODAL AND COINCIDENT ARE BOTH DEGENERATE. At omega 0 there is no path; at omega pi there
+     are infinitely many and `sin(omega)` is zero, so slerp divides by zero and every vertex
+     becomes NaN — a whole corridor silently vanishing. Fall back to a fixed perpendicular. */
+  const degenerate = omega < 1e-4 || Math.abs(Math.PI - omega) < 1e-4;
+  const sinOmega = Math.sin(omega);
+  // Peak lift proportional to angular distance: a short hop stays low, a long one climbs.
+  const lift = liftScale * sphereRadius * (omega / Math.PI);
+
+  const pos: number[] = [], nrm: number[] = [], uv: number[] = [], tan: number[] = [], idx: number[] = [];
+
+  const pathAt = (t: number): [number, number, number] => {
+    if (degenerate) {
+      // No defined great circle. A straight blend keeps the geometry finite and visibly wrong
+      // rather than absent, which is the honest failure for a corridor nobody can route.
+      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    }
+    const w0 = Math.sin((1 - t) * omega) / sinOmega;
+    const w1 = Math.sin(t * omega) / sinOmega;
+    return [a[0] * w0 + b[0] * w1, a[1] * w0 + b[1] * w1, a[2] * w0 + b[2] * w1];
+  };
+
+  const sampleAt = (t: number): [number, number, number] => {
+    const p = pathAt(t);
+    const l = Math.hypot(p[0], p[1], p[2]) || 1;
+    const r = sphereRadius + lift * Math.sin(Math.PI * t);
+    return [(p[0] / l) * r, (p[1] / l) * r, (p[2] / l) * r];
+  };
+
+  for (let i = 0; i <= S; i++) {
+    const t = i / S;
+    const c = sampleAt(t);
+    // Central difference for the tangent, clamped at the ends. A forward difference biases the
+    // frame at the endpoints, which is exactly where the arc meets the surface and shows.
+    const fwd = sampleAt(Math.min(1, t + 1 / S));
+    const bwd = sampleAt(Math.max(0, t - 1 / S));
+    let tx = fwd[0] - bwd[0], ty = fwd[1] - bwd[1], tz = fwd[2] - bwd[2];
+    let tl = Math.hypot(tx, ty, tz) || 1;
+    tx /= tl; ty /= tl; tz /= tl;
+
+    // Radially outward, which is the stable reference the header explains.
+    const rl = Math.hypot(c[0], c[1], c[2]) || 1;
+    const ux = c[0] / rl, uy = c[1] / rl, uz = c[2] / rl;
+    let bx = ty * uz - tz * uy, by = tz * ux - tx * uz, bz = tx * uy - ty * ux;
+    const bl = Math.hypot(bx, by, bz) || 1;
+    bx /= bl; by /= bl; bz /= bl;
+    const nx2 = by * tz - bz * ty, ny2 = bz * tx - bx * tz, nz2 = bx * ty - by * tx;
+
+    for (let j = 0; j <= T; j++) {
+      const ang = (j / T) * Math.PI * 2;
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      const ox = bx * ca + nx2 * sa, oy = by * ca + ny2 * sa, oz = bz * ca + nz2 * sa;
+      pos.push(c[0] + ox * tubeRadius, c[1] + oy * tubeRadius, c[2] + oz * tubeRadius);
+      nrm.push(ox, oy, oz);
+      uv.push(t, j / T);
+      // ALONG the tube, so an anisotropic highlight runs down the corridor rather than banding it.
+      tan.push(tx, ty, tz);
+    }
+  }
+
+  for (let i = 0; i < S; i++) {
+    for (let j = 0; j < T; j++) {
+      const p0 = i * (T + 1) + j, p1 = p0 + 1, p2 = p0 + (T + 1), p3 = p2 + 1;
+      idx.push(p0, p2, p1, p1, p2, p3);
+    }
+  }
+
+  return finish(
+    new Float32Array(pos), new Float32Array(uv),
+    pos.length / 3 > 65535 ? new Uint32Array(idx) as unknown as Uint16Array : new Uint16Array(idx),
+    new Float32Array(nrm), new Float32Array(tan),
+  );
+}
+
 /** Total triangles — the number a frame budget is actually spent on. */
 export function triangleCount(g: Geometry): number {
   return g.indices.length / 3;

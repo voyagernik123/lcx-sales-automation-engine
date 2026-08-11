@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { box, plane, sphere, cylinder, torus, computeNormals, triangleCount } from './mesh.js';
+import { box, plane, sphere, cylinder, torus, arcTube, latLonToVec3, computeNormals, triangleCount } from './mesh.js';
 import {
   eyeOf, viewProjection, lightViewProjection, boundsRadius, boundsCentre, ELEVATION_LIMIT,
 } from './camera.js';
@@ -296,5 +296,113 @@ describe('THE LIGHT RIG HAS THE SAME TRAP, and straight down is the common case'
     // which projects everything to one texel and shadows nothing.
     const m = lightViewProjection({ direction: [0, -1, -1], colour: [1, 1, 1] }, [0, 0, 0], 0);
     expect(finite(m)).toBe(true);
+  });
+});
+
+
+describe('GREAT-CIRCLE ARCS — E2 payload, and the two endpoint pairs that silently delete one', () => {
+  const finiteGeo = (g: { positions: Float32Array; normals: Float32Array; tangents: Float32Array }) =>
+    [g.positions, g.normals, g.tangents].every((a) => Array.from(a).every((v) => Number.isFinite(v)));
+
+  it('lat/lon maps north to +y and the prime meridian to +x', () => {
+    // Fixing the convention in a test, because a silently transposed axis puts every corridor in
+    // the wrong hemisphere and the globe still looks plausible.
+    const north = latLonToVec3(90, 0);
+    expect(north[1]).toBeCloseTo(1, 6);
+    const greenwich = latLonToVec3(0, 0);
+    expect(greenwich[0]).toBeCloseTo(1, 6);
+    expect(greenwich[1]).toBeCloseTo(0, 6);
+  });
+
+  it('every sample stays ON or ABOVE the sphere, never inside it', () => {
+    /* A chord between two points more than a quarter-turn apart cuts THROUGH the planet. Slerp is
+       what keeps the corridor on the surface, and this is the assertion that proves it — a
+       straight-line implementation fails here immediately. */
+    const g = arcTube(51.5, -0.13, 40.7, -74.0, 1, 0.01, 0.22, 64, 6);
+    for (let i = 0; i < g.positions.length; i += 3) {
+      const r = Math.hypot(g.positions[i]!, g.positions[i + 1]!, g.positions[i + 2]!);
+      // 1 minus the tube radius: the underside of the tube dips just below the path centreline.
+      expect(r).toBeGreaterThan(0.985);
+    }
+  });
+
+  it('leaves and meets the surface tangentially — the lift is a sine, not an offset', () => {
+    /* A constant offset floats the whole corridor with a visible step at each end. With sin(pi t)
+       the first and last samples sit at the sphere radius and the middle is lifted. */
+    const g = arcTube(0, 0, 0, 90, 1, 0.0, 0.25, 32, 4);
+    const first = Math.hypot(g.positions[0]!, g.positions[1]!, g.positions[2]!);
+    const n = g.positions.length;
+    const last = Math.hypot(g.positions[n - 3]!, g.positions[n - 2]!, g.positions[n - 1]!);
+    expect(first).toBeCloseTo(1, 3);
+    expect(last).toBeCloseTo(1, 3);
+    // And the midpoint is genuinely higher.
+    const midIdx = Math.floor(n / 6) * 3;
+    expect(Math.hypot(g.positions[midIdx]!, g.positions[midIdx + 1]!, g.positions[midIdx + 2]!))
+      .toBeGreaterThan(1.02);
+  });
+
+  it('a LONG corridor lifts higher than a short hop', () => {
+    // A fixed lift makes short arcs look like tall croquet hoops. Height scales with angular span.
+    const peak = (g: { positions: Float32Array }) => {
+      let m = 0;
+      for (let i = 0; i < g.positions.length; i += 3) {
+        m = Math.max(m, Math.hypot(g.positions[i]!, g.positions[i + 1]!, g.positions[i + 2]!));
+      }
+      return m;
+    };
+    /* Compare the LIFT, not the radius. The first version of this compared peak radii, where the
+       sphere's own radius of 1 swamps a lift of 0.01 against 0.21 and the ratio looks like 1.2x
+       instead of 21x. Measuring the wrong quantity, not a wrong implementation. */
+    const shortHop = peak(arcTube(0, 0, 0, 8, 1, 0.005, 0.22, 32, 4)) - 1;
+    const longHaul = peak(arcTube(0, 0, 0, 170, 1, 0.005, 0.22, 32, 4)) - 1;
+    expect(longHaul).toBeGreaterThan(shortHop * 5);
+  });
+
+  it('ANTIPODAL endpoints do not produce NaN — sin(omega) is zero there', () => {
+    /* The degenerate case that deletes a corridor without a word: at omega = pi the slerp divisor
+       is zero, every vertex becomes NaN, every triangle is discarded, and gl.getError() reports
+       nothing. Finite-but-wrong is recoverable; NaN is invisible. */
+    const g = arcTube(0, 0, 0, 180, 1, 0.01, 0.22, 32, 6);
+    expect(finiteGeo(g)).toBe(true);
+  });
+
+  it('COINCIDENT endpoints do not produce NaN either', () => {
+    // A partner routed to itself is a data error, not a crash. It must render something finite.
+    expect(finiteGeo(arcTube(12, 34, 12, 34, 1, 0.01, 0.22, 16, 4))).toBe(true);
+  });
+
+  it('normals are unit length and point away from the tube centreline', () => {
+    const g = arcTube(35, 139, -33, 151, 1, 0.02, 0.2, 48, 8);
+    for (let i = 0; i < g.normals.length; i += 3) {
+      expect(Math.hypot(g.normals[i]!, g.normals[i + 1]!, g.normals[i + 2]!)).toBeCloseTo(1, 5);
+    }
+  });
+
+  it('tangents run ALONG the corridor, not around the tube', () => {
+    /* An anisotropic highlight has to travel down the route. A tangent around the tube would band
+       it into rings, which reads as a ribbed hose rather than a lit path. Checked by taking two
+       vertices in the SAME ring: their tangents must agree. */
+    const g = arcTube(0, 0, 0, 60, 1, 0.02, 0.2, 32, 8);
+    const t0 = [g.tangents[0]!, g.tangents[1]!, g.tangents[2]!];
+    const t1 = [g.tangents[9]!, g.tangents[10]!, g.tangents[11]!];
+    const d = t0[0]! * t1[0]! + t0[1]! * t1[1]! + t0[2]! * t1[2]!;
+    expect(d).toBeCloseTo(1, 4);
+  });
+
+  it('winds outwards, so back-face culling keeps the visible half', () => {
+    const g = arcTube(20, 10, -20, 100, 1, 0.03, 0.2, 24, 6);
+    for (let t = 0; t < g.indices.length; t += 3) {
+      const [a, b, c] = [g.indices[t]! * 3, g.indices[t + 1]! * 3, g.indices[t + 2]! * 3];
+      const e1 = [g.positions[b]! - g.positions[a]!, g.positions[b + 1]! - g.positions[a + 1]!, g.positions[b + 2]! - g.positions[a + 2]!];
+      const e2 = [g.positions[c]! - g.positions[a]!, g.positions[c + 1]! - g.positions[a + 1]!, g.positions[c + 2]! - g.positions[a + 2]!];
+      const f = [
+        e1[1]! * e2[2]! - e1[2]! * e2[1]!,
+        e1[2]! * e2[0]! - e1[0]! * e2[2]!,
+        e1[0]! * e2[1]! - e1[1]! * e2[0]!,
+      ];
+      const d = f[0]! * g.normals[a]! + f[1]! * g.normals[a + 1]! + f[2]! * g.normals[a + 2]!;
+      if (Math.abs(d) < 1e-12) continue;
+      expect(d, `arc triangle ${t / 3} is wound inwards`).toBeGreaterThan(0);
+    }
   });
 });
