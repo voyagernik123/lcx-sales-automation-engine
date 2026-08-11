@@ -11,7 +11,7 @@
  */
 import {
   createStage, isStage, box, plane, sphere, uploadMesh, createLitRenderer, createTarget3D,
-  createShadowMap, viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre,
+  createShadowMap, createSkyBackdrop, viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre,
   triangleCount, hexToLinear, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint,
 } from '@lcx/gl';
@@ -54,6 +54,7 @@ const present = stage.compile(PRESENT_VERT, PRESENT_FRAG);
 const lit = createLitRenderer(stage);
 const target = createTarget3D(stage, W, H);
 const shadow = createShadowMap(stage, 1024);
+const skyBox = createSkyBackdrop(stage);
 
 const fail = (m: string) => { document.title = 'REFUSED'; document.getElementById('log')!.textContent = m; throw new Error(m); };
 /* `detail` carries the compiler's own words. Printing only `reason` cost one round trip to
@@ -63,6 +64,7 @@ if ('kind' in present) fail(`present: ${refusalText(present)}`);
 if ('kind' in lit) fail(`lit: ${refusalText(lit)}`);
 if ('kind' in target) fail(`target: ${refusalText(target)}`);
 if ('kind' in shadow) fail(`shadow: ${refusalText(shadow)}`);
+if ('kind' in skyBox) fail(`sky: ${refusalText(skyBox)}`);
 
 const groundGeo = plane(14, 24);
 const boxGeo = box(1.4, 1.4, 1.4);
@@ -120,12 +122,14 @@ function frame() {
   lit.shadowPass(lightVP, draws, shadow);
 
   target.bind();
-  gl.clearColor(0.004, 0.007, 0.017, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  gl.clear(gl.DEPTH_BUFFER_BIT);
+  /* THE BACKDROP REPLACES THE FLAT CLEAR. A clear colour is a void; this is an environment, and
+     it is the same function the material reflects — so a metal and its surroundings agree. */
+  skyBox.draw({ eye, target: view.target, fovDeg: view.fovDeg ?? 36, aspect: W / H });
   for (let r = 0; r < REPEAT; r++) {
     lit.draw({
       viewProj: vp, eye, lightDir: light.direction, lightColour: light.colour,
-      ambient: [0.055, 0.07, 0.115], lightVP, shadow, shadowStrength: 0.92, draws,
+      ambientGain: 1, lightVP, shadow, shadowStrength: 0.92, draws,
     });
   }
 
@@ -168,11 +172,11 @@ const targetProbe = (() => {
   };
   lit.shadowPass(lightVP, draws, shadow, probeStep);
   target.bind(); probeStep('target.bind');
-  gl.clearColor(0.004, 0.007, 0.017, 1);
-  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT); probeStep('clear');
+  gl.clear(gl.DEPTH_BUFFER_BIT); probeStep('clear');
+  skyBox.draw({ eye: eyeOf(view), target: view.target, fovDeg: view.fovDeg ?? 36, aspect: W / H }); probeStep('sky');
   lit.draw({
     viewProj: viewProjection(view, W / H), eye: eyeOf(view), lightDir: light.direction,
-    lightColour: light.colour, ambient: [0.055, 0.07, 0.115], lightVP, shadow,
+    lightColour: light.colour, ambientGain: 1, lightVP, shadow,
     shadowStrength: 0.92, draws, onStep: probeStep,
   });
   const afterDraw = gl.getError();

@@ -93,3 +93,5 @@ export {
   createLitRenderer, uploadMesh, LIT_VERT, LIT_FRAG, SHADOW_VERT, SHADOW_FRAG,
 } from './env/lit.js';
 export type { LitRenderer, LitDraw, Material, MeshBuffer } from './env/lit.js';
+export { createSkyBackdrop, bindSky, skyIrradiance, SKY_GLSL, DEFAULT_SKY } from './env/sky.js';
+export type { SkyBackdrop, SkyOptions } from './env/sky.js';

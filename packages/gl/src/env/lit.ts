@@ -2,6 +2,7 @@ import type { Mat4 } from '../math.js';
 import type { Stage, StageRefusal } from '../stage.js';
 import type { Geometry } from './mesh.js';
 import type { ShadowMap } from './target3d.js';
+import { SKY_GLSL, bindSky, type SkyOptions } from './sky.js';
 
 /**
  * L2.5 · MATERIAL and L2.6 · SHADOW — the first surface in this codebase that is actually lit.
@@ -67,7 +68,7 @@ in vec3 vNormal;
 uniform vec3 uEye;
 uniform vec3 uLightDir;      // direction the light TRAVELS
 uniform vec3 uLightColour;   // linear radiance
-uniform vec3 uAmbient;       // linear, stands in for an IBL until L6 lands
+uniform float uAmbientGain;  // scales the environment's contribution
 uniform vec3 uBaseColour;    // linear, brand-exact
 uniform float uRoughness;
 uniform float uMetalness;
@@ -78,6 +79,7 @@ uniform float uShadowTexel;  // 1.0 / shadowMapSize
 uniform float uShadowStrength;
 
 out vec4 frag;
+${SKY_GLSL}
 
 const float PI = 3.14159265359;
 
@@ -151,7 +153,24 @@ void main(){
 
   float shadow = shadowFactor(vWorld, NdotL);
   vec3 direct = (diffuse + spec) * uLightColour * NdotL * shadow;
-  vec3 ambient = uBaseColour * uAmbient;
+
+  /*
+   * THE ENVIRONMENT TERM — and this is what stopped the metal being black.
+   *
+   * A metal has essentially no diffuse lobe, so almost everything visible on it is reflected
+   * environment. E0 rendered a metalness-0.92 sphere nearly black and the material was right:
+   * there was nothing to reflect.
+   *
+   * DIFFUSE irradiance is the sky sampled along the normal. SPECULAR is the sky sampled along
+   * the reflection, lerped toward the normal by roughness — with an analytic sky there is
+   * nothing to prefilter, so moving the sample direction lets the gradient do the blurring. A
+   * mirror samples R, a rough surface samples near N, and highlights stretch and soften
+   * together, which is the behaviour that reads as "material" rather than "shader".
+   */
+  vec3 R = reflect(-V, N);
+  vec3 envDiffuse = skyColour(N) * uBaseColour * (1.0 - uMetalness);
+  vec3 envSpecular = skyColour(normalize(mix(R, N, rough * rough))) * fresnelSchlick(NdotV, f0);
+  vec3 ambient = (envDiffuse + envSpecular) * uAmbientGain;
 
   // NO TONE MAP. The composite owns the only one in the pipeline.
   frag = vec4(direct + ambient, 1.0);
@@ -225,7 +244,9 @@ export interface LitRenderer {
     readonly eye: readonly [number, number, number];
     readonly lightDir: readonly [number, number, number];
     readonly lightColour: readonly [number, number, number];
-    readonly ambient: readonly [number, number, number];
+    /** Scales the environment contribution. 1 = the sky as authored. */
+    readonly ambientGain?: number;
+    readonly sky?: SkyOptions;
     readonly lightVP: Mat4;
     readonly shadow: ShadowMap | null;
     readonly shadowStrength?: number;
@@ -281,7 +302,8 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
       gl.uniform3fv(u(litProg, 'uEye'), o.eye as unknown as number[]); step('uEye');
       gl.uniform3fv(u(litProg, 'uLightDir'), o.lightDir as unknown as number[]); step('uLightDir');
       gl.uniform3fv(u(litProg, 'uLightColour'), o.lightColour as unknown as number[]); step('uLightColour');
-      gl.uniform3fv(u(litProg, 'uAmbient'), o.ambient as unknown as number[]); step('uAmbient');
+      gl.uniform1f(u(litProg, 'uAmbientGain'), o.ambientGain ?? 1); step('uAmbientGain');
+      bindSky(gl, litProg, o.sky); step('bindSky');
       gl.uniformMatrix4fv(u(litProg, 'uLightVP'), false, o.lightVP); step('lit uLightVP');
 
       if (o.shadow) {

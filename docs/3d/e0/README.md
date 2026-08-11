@@ -66,11 +66,34 @@ pass identifies the *pass* and never the *call*. That probe is permanent.
 - ✅ a smooth sphere terminator with no polar faceting — analytic normals
 - ✅ brand blue `#2C6BFF` recognisably itself through HDR + tone map
 
-- ❌ **the metallic sphere is far too dark.** At `metalness 0.92` there is almost no diffuse lobe,
-  so a metal reflects its environment — and there is no environment yet. This is not a bug in
-  `lit.ts`; it is the L6 gap, and it is the first thing E1b needs.
-- ❌ the sphere's contact shadow is weaker than the cube's. Suspect the shadow frustum `extent`
-  fit rather than the PCF.
+- ✅ **the dark metal is FIXED** — see L6 below.
+
+## L6 · ENVIRONMENT — the dark-metal fix
+
+`packages/gl/src/env/sky.ts`. The sphere was black and the material was *right*: a metal has
+almost no diffuse lobe, so nearly everything visible on it is reflected environment, and there
+was no environment. Every "why does my metal look like plastic" is this.
+
+Analytic three-stop gradient rather than a cubemap: no asset, no fetch, no bytes, and — the part
+that matters — the **backdrop and the reflections are the same function**, so they cannot
+disagree. A mismatch there is the tell that a scene was assembled rather than lit.
+
+Roughness lerps the reflection sample direction toward the normal instead of prefiltering, so a
+mirror samples along R, a rough surface near N, and the gradient blurs for free.
+
+**Cost, measured on the M1: 0.599 → 0.733 ms.** The fullscreen environment pass is 0.13 ms.
+
+### Still open on the sphere
+
+Its reflection is bright toward the lower body and dark at the top. Dark-at-top is correct
+(reflecting the dark zenith). Bright-at-bottom is **suspect** — the lower hemisphere should
+reflect the dark ground stop, with the bright band at the silhouette instead. Next check is a
+near-mirror (`roughness 0.05`) sphere compared against the backdrop's own horizon line: if the
+reflected horizon does not land where the real one does, the sample direction is inverted.
+Recorded rather than assumed correct.
+
+The contact-shadow difference between cube and sphere no longer reads as wrong now that there is
+ambient light; leaving it unless the mirror test says otherwise.
 
 ## Reproduce
 
