@@ -81,7 +81,7 @@ export type { MotionSpec, MotionPurpose, MotionEnvironment, Tween, Framing } fro
    3D_VFX_1000X.md §4. The mesh, camera, depth target, lit material and shadow map that
    `@lcx/gl` did not have — and whose absence is why exactly one file in the web app had a
    3-D camera. Everything here lands in a LAZY chunk; initial JS is untouched. */
-export { box, plane, sphere, computeNormals, triangleCount } from './env/mesh.js';
+export { box, plane, sphere, cylinder, torus, computeNormals, triangleCount } from './env/mesh.js';
 export type { Geometry } from './env/mesh.js';
 export {
   eyeOf, viewProjection, lightViewProjection, boundsRadius, boundsCentre, ELEVATION_LIMIT,

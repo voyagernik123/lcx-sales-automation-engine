@@ -203,6 +203,87 @@ export function sphere(radius = 0.5, rings = 24, sectors = 32): Geometry {
   return finish(positions, uvs, indices, normals);
 }
 
+/**
+ * A capped cylinder along Y. The body of E8's machined disc.
+ *
+ * THE CAPS DO NOT SHARE VERTICES WITH THE WALL, and that is the whole reason this is not four
+ * lines shorter. A cap normal points along Y and a wall normal points radially outward; sharing
+ * the rim would average them into a 45-degree bevel all the way round, which reads as a
+ * chamfered plastic puck rather than a machined edge. Flat where it should be flat.
+ */
+export function cylinder(radius = 0.5, height = 0.2, sectors = 64): Geometry {
+  const S = Math.max(3, sectors);
+  const hy = height / 2;
+  const pos: number[] = [], nrm: number[] = [], uv: number[] = [], idx: number[] = [];
+
+  // Wall: two rings, smooth around the circumference so the highlight travels rather than facets.
+  for (let s = 0; s <= S; s++) {
+    const a = (s / S) * Math.PI * 2;
+    const cx = Math.cos(a), cz = Math.sin(a);
+    pos.push(cx * radius, hy, cz * radius); nrm.push(cx, 0, cz); uv.push(s / S, 1);
+    pos.push(cx * radius, -hy, cz * radius); nrm.push(cx, 0, cz); uv.push(s / S, 0);
+  }
+  for (let s = 0; s < S; s++) {
+    /* Triangle 0 was the WALL, not a cap — worth noting, because "the caps must be wrong" was the
+       obvious guess and the test named the actual index instead. Vertices alternate top/bottom
+       around the ring, so a,c,b is the outward order here. */
+    const a = s * 2, b = a + 1, c = a + 2, d = a + 3;
+    idx.push(a, c, b, b, c, d);
+  }
+
+  // Caps: their own vertices, their own axial normals.
+  for (const [sign, y] of [[1, hy], [-1, -hy]] as const) {
+    const centre = pos.length / 3;
+    pos.push(0, y, 0); nrm.push(0, sign, 0); uv.push(0.5, 0.5);
+    for (let s = 0; s <= S; s++) {
+      const a = (s / S) * Math.PI * 2;
+      const cx = Math.cos(a), cz = Math.sin(a);
+      pos.push(cx * radius, y, cz * radius); nrm.push(0, sign, 0);
+      uv.push(0.5 + cx * 0.5, 0.5 + cz * 0.5);
+    }
+    for (let s = 0; s < S; s++) {
+      const r0 = centre + 1 + s, r1 = centre + 2 + s;
+      // Winding flips with the cap so both face outwards under back-face culling.
+      if (sign > 0) idx.push(centre, r1, r0); else idx.push(centre, r0, r1);
+    }
+  }
+
+  return finish(new Float32Array(pos), new Float32Array(uv), new Uint16Array(idx), new Float32Array(nrm));
+}
+
+/**
+ * A torus in the XZ plane — E8's machined ring.
+ *
+ * The normal is ANALYTIC: the vector from the tube's centre circle to the surface point. Deriving
+ * it from faces would facet visibly along the tube, which on a metal ring is the most obvious
+ * possible tell because the specular highlight follows the tube exactly.
+ */
+export function torus(ringRadius = 0.5, tubeRadius = 0.08, ringSegs = 64, tubeSegs = 24): Geometry {
+  const R = Math.max(3, ringSegs), T = Math.max(3, tubeSegs);
+  const pos: number[] = [], nrm: number[] = [], uv: number[] = [], idx: number[] = [];
+  for (let i = 0; i <= R; i++) {
+    const u = (i / R) * Math.PI * 2;
+    const cu = Math.cos(u), su = Math.sin(u);
+    for (let j = 0; j <= T; j++) {
+      const v = (j / T) * Math.PI * 2;
+      const cv = Math.cos(v), sv = Math.sin(v);
+      // Tube centre at (cu, 0, su) * ringRadius; the surface offsets from it by tubeRadius.
+      pos.push((ringRadius + tubeRadius * cv) * cu, tubeRadius * sv, (ringRadius + tubeRadius * cv) * su);
+      nrm.push(cu * cv, sv, su * cv);
+      uv.push(i / R, j / T);
+    }
+  }
+  for (let i = 0; i < R; i++) {
+    for (let j = 0; j < T; j++) {
+      const a = i * (T + 1) + j, b = a + 1, c = a + (T + 1), d = c + 1;
+      /* a,b,c — NOT a,c,b. Same lesson as the sphere: the correct order depends on how the grid
+         is parameterised, so it is asserted against the analytic normal rather than reasoned about. */
+      idx.push(a, b, c, b, d, c);
+    }
+  }
+  return finish(new Float32Array(pos), new Float32Array(uv), new Uint16Array(idx), new Float32Array(nrm));
+}
+
 /** Total triangles — the number a frame budget is actually spent on. */
 export function triangleCount(g: Geometry): number {
   return g.indices.length / 3;

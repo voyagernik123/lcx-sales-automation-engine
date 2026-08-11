@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { box, plane, sphere, computeNormals, triangleCount } from './mesh.js';
+import { box, plane, sphere, cylinder, torus, computeNormals, triangleCount } from './mesh.js';
 import {
   eyeOf, viewProjection, lightViewProjection, boundsRadius, boundsCentre, ELEVATION_LIMIT,
 } from './camera.js';
@@ -109,6 +109,61 @@ describe('EVERY primitive winds outwards — the box test alone was not enough',
       expect(d, `sphere triangle ${t / 3} is wound INWARDS — its reflections will be mirrored`).toBeGreaterThan(0);
     }
     expect(checked).toBeGreaterThan(100);
+  });
+
+  it('torus: every face normal agrees with its analytic vertex normal', () => {
+    /* A faceted torus is the most obvious possible tell on a metal ring, because the specular
+       highlight travels along the tube and shows every seam. Winding checked against the vertex
+       normal rather than against the origin — a torus surrounds the origin, so a position-based
+       test is meaningless for it. */
+    const g = torus(0.5, 0.1, 24, 12);
+    for (let t = 0; t < g.indices.length; t += 3) {
+      const [a, b, c] = [g.indices[t]! * 3, g.indices[t + 1]! * 3, g.indices[t + 2]! * 3];
+      const e1 = [g.positions[b]! - g.positions[a]!, g.positions[b + 1]! - g.positions[a + 1]!, g.positions[b + 2]! - g.positions[a + 2]!];
+      const e2 = [g.positions[c]! - g.positions[a]!, g.positions[c + 1]! - g.positions[a + 1]!, g.positions[c + 2]! - g.positions[a + 2]!];
+      const f = [
+        e1[1]! * e2[2]! - e1[2]! * e2[1]!,
+        e1[2]! * e2[0]! - e1[0]! * e2[2]!,
+        e1[0]! * e2[1]! - e1[1]! * e2[0]!,
+      ];
+      const d = f[0]! * g.normals[a]! + f[1]! * g.normals[a + 1]! + f[2]! * g.normals[a + 2]!;
+      if (Math.abs(d) < 1e-12) continue;
+      expect(d, `torus triangle ${t / 3} is wound inwards`).toBeGreaterThan(0);
+    }
+    for (let i = 0; i < g.normals.length; i += 3) {
+      expect(Math.hypot(g.normals[i]!, g.normals[i + 1]!, g.normals[i + 2]!)).toBeCloseTo(1, 5);
+    }
+  });
+
+  it('cylinder: the caps do NOT share the rim with the wall', () => {
+    /* Sharing the rim averages an axial cap normal with a radial wall normal into a 45-degree
+       bevel all the way round — a chamfered plastic puck instead of a machined edge. The count
+       proves they are separate: a shared-rim cylinder would have far fewer vertices. */
+    const g = cylinder(0.5, 0.2, 32);
+    const axial = [], radial = [];
+    for (let i = 0; i < g.normals.length; i += 3) {
+      if (Math.abs(g.normals[i + 1]!) > 0.99) axial.push(i);
+      else if (Math.abs(g.normals[i + 1]!) < 0.01) radial.push(i);
+    }
+    expect(axial.length, 'no purely axial cap normals — the rim was shared').toBeGreaterThan(30);
+    expect(radial.length, 'no purely radial wall normals').toBeGreaterThan(30);
+  });
+
+  it('cylinder: both caps wind outwards', () => {
+    const g = cylinder(0.5, 0.4, 24);
+    for (let t = 0; t < g.indices.length; t += 3) {
+      const [a, b, c] = [g.indices[t]! * 3, g.indices[t + 1]! * 3, g.indices[t + 2]! * 3];
+      const e1 = [g.positions[b]! - g.positions[a]!, g.positions[b + 1]! - g.positions[a + 1]!, g.positions[b + 2]! - g.positions[a + 2]!];
+      const e2 = [g.positions[c]! - g.positions[a]!, g.positions[c + 1]! - g.positions[a + 1]!, g.positions[c + 2]! - g.positions[a + 2]!];
+      const f = [
+        e1[1]! * e2[2]! - e1[2]! * e2[1]!,
+        e1[2]! * e2[0]! - e1[0]! * e2[2]!,
+        e1[0]! * e2[1]! - e1[1]! * e2[0]!,
+      ];
+      const d = f[0]! * g.normals[a]! + f[1]! * g.normals[a + 1]! + f[2]! * g.normals[a + 2]!;
+      if (Math.abs(d) < 1e-12) continue;
+      expect(d, `cylinder triangle ${t / 3} is wound inwards`).toBeGreaterThan(0);
+    }
   });
 
   it('plane: faces point along +Y, matching the vertex normals', () => {
