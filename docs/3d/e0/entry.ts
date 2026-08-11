@@ -11,7 +11,7 @@
  */
 import {
   createStage, isStage, box, plane, sphere, uploadMesh, createLitRenderer, createTarget3D,
-  createShadowMap, createSkyBackdrop, createAmbientOcclusion, viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre,
+  createShadowMap, createSkyBackdrop, createAmbientOcclusion, createDepthOfField, viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre,
   triangleCount, hexToLinear, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint,
 } from '@lcx/gl';
@@ -60,6 +60,7 @@ const target = createTarget3D(stage, W, H);
 const shadow = createShadowMap(stage, 1024);
 const skyBox = createSkyBackdrop(stage);
 const ao = createAmbientOcclusion(stage, W, H);
+const dof = createDepthOfField(stage, W, H);
 
 const fail = (m: string) => { document.title = 'REFUSED'; document.getElementById('log')!.textContent = m; throw new Error(m); };
 /* `detail` carries the compiler's own words. Printing only `reason` cost one round trip to
@@ -71,6 +72,7 @@ if ('kind' in target) fail(`target: ${refusalText(target)}`);
 if ('kind' in shadow) fail(`shadow: ${refusalText(shadow)}`);
 if ('kind' in skyBox) fail(`sky: ${refusalText(skyBox)}`);
 if ('kind' in ao) fail(`ao: ${refusalText(ao)}`);
+if ('kind' in dof) fail(`dof: ${refusalText(dof)}`);
 
 const groundGeo = plane(14, 24);
 const boxGeo = box(1.4, 1.4, 1.4);
@@ -124,6 +126,7 @@ const DIAG = new URLSearchParams(location.search).get('diag') === '1';
 /* AO off is a CONTROL, not a fallback: the capture has to show the difference it makes rather
    than my asserting that it makes one. */
 const AO_ON = new URLSearchParams(location.search).get('ao') !== '0';
+const DOF_ON = new URLSearchParams(location.search).get('dof') !== '0';
 /* RED above, GREEN below, BLUE at the horizon. If a mirror sphere shows red where it faces the
    sky and green where it faces the floor, the sample direction is right. A grey gradient cannot
    distinguish that from its own inverse, which is why the first look was inconclusive. */
@@ -163,11 +166,24 @@ function frame() {
     });
   }
 
+  /* FOCUS ON THE SUBJECT, not on a constant: the sphere is what the eye should land on, so the
+     focus distance is the distance to IT rather than to the camera target. */
+  let resolved = target.texture;
+  if (DOF_ON) {
+    const focus = Math.hypot(eye[0] - 1.15, eye[1] - 0.75, eye[2] - 0.3);
+    dof.apply({
+      scene: target.texture, depthTexture: target.depthTexture, near, far,
+      fovDeg: view.fovDeg ?? 36, aspect: W / H, focusDistance: focus,
+      aperture: 9, maxCoc: 0.010,
+    });
+    resolved = dof.texture;
+  }
+
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, W, H);
   gl.disable(gl.DEPTH_TEST);
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, target.texture);
+  gl.bindTexture(gl.TEXTURE_2D, resolved);
   stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
 }
 
@@ -244,6 +260,7 @@ const report = {
   resolution: `${W}x${H}`,
   dprScale: SCALE,
   aoEnabled: AO_ON,
+  dofEnabled: DOF_ON,
   frames: FRAMES,
   repeat: REPEAT,
   msPerFrame: Number(msPerFrame.toFixed(3)),

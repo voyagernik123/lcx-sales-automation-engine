@@ -12,6 +12,12 @@ before any product code exists, and it was allowed to kill the plan. It did the 
 |---|---|---|---|
 | 1280 × 800 (1×) | **1.305** | 766 | **15.3 ms** |
 | 2560 × 1600 (2×) | **4.914** | 204 | **11.7 ms** |
+| 2560 × 1600 (2×) **+ DOF** | **11.328** | 88 | **5.3 ms** |
+
+Depth of field is the expensive pass — 6.4 ms of that, at full resolution with 24 taps each
+doing two depth reads. It is full-res deliberately: the in-focus region passes through untouched,
+so halving it would soften exactly what is meant to be crisp. Even so, the COMPLETE pipeline
+holds 60 fps at full retina with 5.3 ms spare.
 
 Full pipeline in that number: shadow map (1024²) → depth prepass → SSAO + two bilateral blurs
 (half-res) → environment backdrop → GGX lit pass → tone-mapped present.

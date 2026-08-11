@@ -95,5 +95,7 @@ export {
 export type { LitRenderer, LitDraw, Material, MeshBuffer } from './env/lit.js';
 export { createSkyBackdrop, bindSky, skyIrradiance, SKY_GLSL, DEFAULT_SKY } from './env/sky.js';
 export { createAmbientOcclusion, DEPTH_RECONSTRUCT_GLSL } from './env/ao.js';
+export { createDepthOfField } from './env/dof.js';
+export type { DepthOfField } from './env/dof.js';
 export type { AmbientOcclusion } from './env/ao.js';
 export type { SkyBackdrop, SkyOptions } from './env/sky.js';

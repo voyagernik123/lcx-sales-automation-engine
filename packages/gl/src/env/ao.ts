@@ -283,6 +283,13 @@ export function createAmbientOcclusion(
         stage.blit(blurProg);
       }
 
+      /* Same hygiene as dof.ts: the depth texture sampled here is an attachment of the scene
+         target, so it must not stay bound into a pass that renders to it. */
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, null);
+
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.depthMask(true);
       gl.enable(gl.DEPTH_TEST);

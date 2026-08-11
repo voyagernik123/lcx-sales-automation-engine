@@ -11,7 +11,7 @@ const s = createServer((q,r)=>{ const rel=normalize(decodeURIComponent(new URL(q
   r.writeHead(200,{'content-type':T[f.slice(f.lastIndexOf('.'))]??'application/octet-stream'}); r.end(readFileSync(f)); });
 await new Promise(r=>s.listen(0,'127.0.0.1',r));
 const b = await chromium.launch({ args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
-for (const [name, reduced, q] of [['live', false, ''], ['no-ao', false, '&ao=0'], ['diag-mirror', false, '&diag=1']]) {
+for (const [name, reduced, q] of [['live', false, ''], ['no-ao', false, '&ao=0'], ['no-dof', false, '&dof=0'], ['diag-mirror', false, '&diag=1']]) {
   const p = await b.newPage({ viewport:{width:1600,height:1200}, deviceScaleFactor:1,  // 13 panels at 2x exceeds Chromium's ~16384px capture limit
     reducedMotion: reduced ? 'reduce' : 'no-preference' });
   const errs=[]; p.on('pageerror',e=>errs.push(e.message));
