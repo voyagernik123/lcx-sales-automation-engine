@@ -76,3 +76,20 @@ export {
   IdleMotionError, MOTION_POLICY,
 } from './motion/index.js';
 export type { MotionSpec, MotionPurpose, MotionEnvironment, Tween, Framing } from './motion/index.js';
+
+/* ── L1.5/L1.6/L2.5/L2.6 · ENVIRONMENT ──────────────────────────────────────────────
+   3D_VFX_1000X.md §4. The mesh, camera, depth target, lit material and shadow map that
+   `@lcx/gl` did not have — and whose absence is why exactly one file in the web app had a
+   3-D camera. Everything here lands in a LAZY chunk; initial JS is untouched. */
+export { box, plane, sphere, computeNormals, triangleCount } from './env/mesh.js';
+export type { Geometry } from './env/mesh.js';
+export {
+  eyeOf, viewProjection, lightViewProjection, boundsRadius, boundsCentre, ELEVATION_LIMIT,
+} from './env/camera.js';
+export type { Viewpoint, DirectionalLight } from './env/camera.js';
+export { createTarget3D, createShadowMap } from './env/target3d.js';
+export type { Target3D, ShadowMap } from './env/target3d.js';
+export {
+  createLitRenderer, uploadMesh, LIT_VERT, LIT_FRAG, SHADOW_VERT, SHADOW_FRAG,
+} from './env/lit.js';
+export type { LitRenderer, LitDraw, Material, MeshBuffer } from './env/lit.js';
