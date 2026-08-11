@@ -566,7 +566,12 @@ const overlay = document.createElement('div');
    moment the harness page changes, and the failure would look like a projection bug. */
 overlay.style.cssText = 'position:absolute;inset:0;pointer-events:none';
 const wrap = document.createElement('div');
-wrap.style.cssText = 'position:relative;width:1200px;height:720px';
+/* `overflow:hidden` IS NOT COSMETIC. A projected element is clipped to the canvas box or it
+   extends the PAGE box, and a surface seen nearly edge-on produces a homography whose
+   coefficients are enormous — the element's transformed bounding box then runs to millions of
+   pixels and Playwright's `fullPage` screenshot fails with "Unable to capture screenshot",
+   naming the screenshot rather than the transform three layers away that caused it. */
+wrap.style.cssText = 'position:relative;overflow:hidden;width:1200px;height:720px';
 canvas.parentNode?.insertBefore(wrap, canvas);
 wrap.appendChild(canvas);
 wrap.appendChild(overlay);

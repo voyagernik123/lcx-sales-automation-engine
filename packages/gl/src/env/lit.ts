@@ -113,6 +113,14 @@ uniform float uShadowStrength;
 uniform sampler2D uAO;
 uniform vec2 uScreenSize;
 uniform float uAOEnabled;
+/*
+ * EXPONENTIAL HEIGHT FOG — L2.9. Zero density is the default, so the five environments that shipped
+ * before this existed render byte-identically. Additive, not a rewrite.
+ */
+uniform float uFogDensity;   // 0 disables the whole term
+uniform float uFogHeight;    // e-folding height: fog thins upward over this many metres
+uniform vec3 uFogColour;     // linear; -1 in .r means "take it from the sky"
+uniform float uFogFloor;     // y at which density is uFogDensity
 
 out vec4 frag;
 ${SKY_GLSL}
@@ -250,8 +258,45 @@ void main(){
   float ao = uAOEnabled > 0.5 ? texture(uAO, gl_FragCoord.xy / uScreenSize).r : 1.0;
   vec3 ambient = (envDiffuse + envSpecular) * uAmbientGain * ao;
 
+  vec3 lit = direct + ambient;
+
+  /*
+   * FOG LAST, AND BEFORE THE TONE MAP — which is the whole reason it lives in this shader rather
+   * than in a post-process pass.
+   *
+   * A depth-based screen fade applied after tone mapping fades toward a DISPLAY colour, so the
+   * horizon washes to a grey that no light in the scene could produce and the frame looks hazed
+   * rather than deep. Mixing in linear radiance, before the curve, means distant surfaces converge
+   * on the same value the sky already has there — which is what atmosphere actually does.
+   *
+   * The integral is analytic. Density falls off exponentially with height, so the optical depth along
+   * a ray from the eye to the surface is the height-integrated density rather than the naive
+   * distance * density that a flat-fog shader uses. The difference is visible the moment the camera
+   * is not level: flat fog fogs the sky directly overhead exactly as much as the horizon.
+   */
+  if (uFogDensity > 0.0) {
+    vec3 toEye = uEye - vWorld;
+    float dist = length(toEye);
+    float dyRaw = uEye.y - vWorld.y;
+    float hEye = max(0.0, uEye.y - uFogFloor);
+    float hFrag = max(0.0, vWorld.y - uFogFloor);
+    float k = max(1e-4, uFogHeight);
+    float depth;
+    if (abs(dyRaw) < 1e-4) {
+      // A horizontal ray: height is constant, so the integral is the flat one at that height.
+      depth = uFogDensity * dist * exp(-hFrag / k);
+    } else {
+      /* integral of exp(-h/k) along the ray, in closed form. The dist/|dy| factor converts the
+         vertical integration variable back to arc length, which is what makes a near-horizontal ray
+         accumulate far more fog than a vertical one of the same length. */
+      depth = uFogDensity * k * (dist / abs(dyRaw)) * abs(exp(-hFrag / k) - exp(-hEye / k));
+    }
+    vec3 fogCol = uFogColour.r < 0.0 ? skyColour(normalize(-toEye)) : uFogColour;
+    lit = mix(lit, fogCol, 1.0 - exp(-depth));
+  }
+
   // NO TONE MAP. The composite owns the only one in the pipeline.
-  frag = vec4(direct + ambient, 1.0);
+  frag = vec4(lit, 1.0);
 }`;
 
 export interface MeshBuffer {
@@ -348,6 +393,21 @@ export interface LitRenderer {
     /** Half-resolution occlusion from `createAmbientOcclusion`. Omit to disable. */
     readonly ao?: WebGLTexture | null;
     readonly screenSize?: readonly [number, number];
+    /**
+     * Exponential height fog. Omit for none — the default is off so environments written before this
+     * existed are unaffected.
+     *
+     * `colour: 'sky'` takes the fog colour from the analytic sky along the view ray, which is the
+     * only choice that makes a distant surface and the sky behind it agree. A literal colour is for
+     * an enclosed space where there is no sky to agree with.
+     */
+    readonly fog?: {
+      readonly density: number;
+      /** e-folding height in metres: density falls by 1/e each `height` above `floor`. */
+      readonly height: number;
+      readonly floor?: number;
+      readonly colour: readonly [number, number, number] | 'sky';
+    } | null;
     readonly onStep?: (label: string) => void;
   }): void;
   dispose(): void;
@@ -425,6 +485,21 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
       gl.uniform3fv(u(litProg, 'uLightDir'), o.lightDir as unknown as number[]); step('uLightDir');
       gl.uniform3fv(u(litProg, 'uLightColour'), o.lightColour as unknown as number[]); step('uLightColour');
       gl.uniform1f(u(litProg, 'uAmbientGain'), o.ambientGain ?? 1); step('uAmbientGain');
+      /* Density 0 short-circuits the whole term in the shader, so an absent `fog` costs one uniform
+         write and nothing else. The sky sentinel is -1 in red rather than a separate boolean uniform:
+         one fewer uniform to forget to set, and a negative radiance is not a value any real colour
+         can take. */
+      if (o.fog && o.fog.density > 0) {
+        gl.uniform1f(u(litProg, 'uFogDensity'), o.fog.density);
+        gl.uniform1f(u(litProg, 'uFogHeight'), o.fog.height);
+        gl.uniform1f(u(litProg, 'uFogFloor'), o.fog.floor ?? 0);
+        const c = o.fog.colour;
+        if (c === 'sky') gl.uniform3f(u(litProg, 'uFogColour'), -1, -1, -1);
+        else gl.uniform3f(u(litProg, 'uFogColour'), c[0]!, c[1]!, c[2]!);
+        step('fog');
+      } else {
+        gl.uniform1f(u(litProg, 'uFogDensity'), 0);
+      }
       bindSky(gl, litProg, o.sky); step('bindSky');
       if (o.ao && o.screenSize) {
         gl.activeTexture(gl.TEXTURE1);

@@ -351,7 +351,12 @@ const vpFinal = viewProjection(view, W / H);
 const CSS_W = W / SCALE, CSS_H = H / SCALE;
 
 const wrap = document.createElement('div');
-wrap.style.cssText = `position:relative;width:${CSS_W}px;height:${CSS_H}px`;
+/* `overflow:hidden` IS NOT COSMETIC. A projected element is clipped to the canvas box or it
+   extends the PAGE box, and a surface seen nearly edge-on produces a homography whose
+   coefficients are enormous — the element's transformed bounding box then runs to millions of
+   pixels and Playwright's `fullPage` screenshot fails with "Unable to capture screenshot",
+   naming the screenshot rather than the transform three layers away that caused it. */
+wrap.style.cssText = `position:relative;overflow:hidden;width:${CSS_W}px;height:${CSS_H}px`;
 canvas.parentNode?.insertBefore(wrap, canvas);
 wrap.appendChild(canvas);
 const overlay = document.createElement('div');
