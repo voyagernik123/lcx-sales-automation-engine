@@ -25,13 +25,17 @@ vi.mock('../../db/index.js', () => ({ checkDb, getLastDbError, getDbTlsState, ge
 /* The DIRECT Supabase host — the exact shape that was live in Render on 2026-08-10, with a
    same-shape stand-in for the project ref. The route derives its `dbHint` from this. */
 const DIRECT_URL = 'postgresql://postgres:sEcReT@db.aaaabbbbccccdddd.supabase.co:5432/postgres';
-vi.mock('../../lib/env.js', () => ({
-  env: { version: 'test', nodeEnv: 'production', databaseUrl: DIRECT_URL },
+const envMock = vi.hoisted(() => ({
+  version: 'test', nodeEnv: 'production',
+  databaseUrl: 'postgresql://postgres:sEcReT@db.aaaabbbbccccdddd.supabase.co:5432/postgres',
+  deskPasscodeIsPublicDefault: true,
+  secondaryPasscode: '',
 }));
+vi.mock('../../lib/env.js', () => ({ env: envMock }));
 
 const load = async () => (await import('../health.js')).healthRoutes;
 
-beforeEach(() => { vi.resetModules(); checkDb.mockReset(); getLastDbError.mockReset(); getLastDbError.mockReturnValue(null); });
+beforeEach(() => { envMock.deskPasscodeIsPublicDefault = true; envMock.secondaryPasscode = ''; vi.resetModules(); checkDb.mockReset(); getLastDbError.mockReset(); getLastDbError.mockReturnValue(null); });
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe('liveness stays up when the database is down', () => {
@@ -208,6 +212,45 @@ describe('a rewritten database URL is never silent about it', () => {
     checkDb.mockResolvedValue('up');
     getDbUrlSource.mockReturnValue('env');
     expect((await (await (await load()).request('/')).json()).dbUrlSource).toBe('env');
+  });
+});
+
+describe('a refused sign-in is distinguishable from a wrong password', () => {
+  /*
+   * THE SYMPTOM THAT WASTED AN EVENING. `middleware/auth.ts` closes the email+passcode path
+   * entirely when DESK_PASSCODE is unset in production, because the fallback is a literal
+   * committed in this repository and the roster emails are committed beside it — accepting it
+   * would hand approver-tier to anyone with a checkout. Correct, and invisible: the form says
+   * "not authorized", which is the right answer for an attacker and useless for an operator
+   * holding a credential that is genuinely fine.
+   */
+  it('reports the desk passcode path as REFUSED while DESK_PASSCODE is unset', async () => {
+    checkDb.mockResolvedValue('up');
+    envMock.deskPasscodeIsPublicDefault = true;
+    const body = await (await (await load()).request('/')).json();
+    expect(body.authPaths.deskPasscode).toBe('refused-public-default');
+  });
+
+  it('reports it OPEN once DESK_PASSCODE is set', async () => {
+    checkDb.mockResolvedValue('up');
+    envMock.deskPasscodeIsPublicDefault = false;
+    const body = await (await (await load()).request('/')).json();
+    expect(body.authPaths.deskPasscode).toBe('open');
+  });
+
+  it('reports the second-tier path as disabled when SECONDARY_PASSCODE is empty', async () => {
+    checkDb.mockResolvedValue('up');
+    envMock.secondaryPasscode = '';
+    expect((await (await (await load()).request('/')).json()).authPaths.secondTier).toBe('disabled');
+  });
+
+  it('reports it open when set — and NEVER echoes the value', async () => {
+    checkDb.mockResolvedValue('up');
+    envMock.secondaryPasscode = 'a-real-secret-value';
+    const raw = await (await (await load()).request('/')).text();
+    expect(JSON.parse(raw).authPaths.secondTier).toBe('open');
+    // The whole body, not just the field: this endpoint is unauthenticated.
+    expect(raw).not.toContain('a-real-secret-value');
   });
 });
 

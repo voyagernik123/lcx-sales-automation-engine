@@ -121,6 +121,27 @@ export interface HealthResponse {
    * configuration does not describe its behaviour hands the next person a mystery.
    */
   dbUrlSource: 'env' | 'pooler-fallback';
+  /**
+   * WHICH SIGN-IN DOORS ARE ACTUALLY OPEN — because a refused sign-in looked identical to a
+   * wrong password, and one of them is fixed in a dashboard while the other is not.
+   *
+   * `middleware/auth.ts` CLOSES the email+passcode path entirely when `DESK_PASSCODE` is unset
+   * in production, because `env.deskPasscode` then falls back to a literal committed in the
+   * repository — and the roster emails are committed beside it, two at `approver`. Accepting it
+   * would hand deal sign-off to anyone with a checkout. Correct, and completely invisible: the
+   * form says "that email and passcode combination is not authorized", which is the right thing
+   * to tell an attacker and useless to the operator staring at a valid credential.
+   *
+   * CARRIES NO SECRET — only whether each door is configured. In the `refused-public-default`
+   * state there is nothing to exploit because the path is closed, and in the open state this
+   * says no more than the presence of a login form already does.
+   */
+  authPaths: {
+    /** `open` once DESK_PASSCODE is set; `refused-public-default` while it is not. */
+    readonly deskPasscode: 'open' | 'refused-public-default';
+    /** Any @lcx.com address plus SECONDARY_PASSCODE. `disabled` when that is unset. */
+    readonly secondTier: 'open' | 'disabled';
+  };
   timestamp: string;
 }
 

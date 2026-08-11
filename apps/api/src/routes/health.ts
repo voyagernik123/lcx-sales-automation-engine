@@ -70,6 +70,12 @@ async function snapshot(): Promise<HealthResponse> {
     /* 'pooler-fallback' means the CONFIGURED value is not the value in use. That divergence
        must be visible or the next person inherits a system whose config does not describe it. */
     dbUrlSource: getDbUrlSource(),
+    /* WHY A SIGN-IN IS BEING REFUSED, when the credential itself is fine. Read from env, so it
+       reflects the running process rather than what anyone believes is configured. */
+    authPaths: {
+      deskPasscode: env.deskPasscodeIsPublicDefault ? 'refused-public-default' : 'open',
+      secondTier: env.secondaryPasscode ? 'open' : 'disabled',
+    },
     timestamp: new Date().toISOString(),
   };
 }
