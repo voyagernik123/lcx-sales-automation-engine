@@ -128,9 +128,33 @@ the eye cannot see that face: `axisLabelsOffFrame: 3 of 3`, capture looked compl
 gate's throughput printed straight through the `ATLAS OTC` tag, because deal tags are inside the
 occlusion test with each other and a screen-space annotation is not in it at all. Fixes, in order of
 how much they generalise: gate labels alternate sides and are placed near-to-far with a **30 px
-crowding refusal** that names the gate whose number it suppressed; the axis moved outboard of the left
-wall at the TERMS gate (a ruler beside the space, not drawn across it); and the gate labels are anchored
-at y = 2.10, above the tallest tag the scene can produce rather than above the gate.
+crowding refusal** that names the gate whose number it suppressed; the axis moved outboard of the wall at
+the TERMS gate (a ruler beside the space, not drawn across it); and the gate labels are anchored at
+y = 2.10, above the tallest tag the scene can produce rather than above the gate.
+
+### 9b · The axis fix was not a fix, and this is the sharpest instance of the whole pattern
+
+Moving the axis outboard of the **left** wall took `axisLabelsOffFrame` from 3 to 0, and this file
+recorded it as fixed. It was not. The camera stands right of the centre line — azimuth 9° puts the eye at
+x = +1.24 — and the left wall is a solid slab from y 0 to 1.25, so **every ray from the eye to a
+left-outboard tick passes through it.** All three ticks were occluded. The labels floated with nothing to
+anchor them, and the count reported 0 because it only ever tested *frame bounds*.
+
+**The number changed and the visibility did not** — in the fix for a previous instance of exactly that
+failure. A count that cannot see occlusion is not a weaker check than the eye; on this evidence it is
+worse, because it produced a written claim the capture contradicted.
+
+The axis now sits on the side the eye is on, chosen from the sign of `eye[0]`. That makes occlusion by a
+channel wall impossible **by construction** — tick and eye are on the same side of both slabs at any
+azimuth — rather than unlikely by measurement, and the report states `axisSide` and `axisOnEyeSide`
+instead of a bounds count. A guarantee is the right answer here precisely because the measurement was the
+thing that lied.
+
+**Residual, and not fixed:** the capture now shows tick strokes at `0d` and `20d` and **none at
+`45d+`**. Two of three. The `45d+` tick sits at rail height where the floor slab passes outboard of the
+wall, and the honest reading is that it is occluded by the floor rather than by the wall — the same class
+of fault, one surface along. It is recorded rather than guessed at, because guessing is what produced
+9b.
 
 **10 · `$1,600` printed on the frame as `$2k`.** `Math.round(1600/1000)` — a formatter written for deal
 values, applied to the constant that *defines what one particle means*. A 25% error in the frame's own

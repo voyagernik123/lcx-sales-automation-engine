@@ -895,6 +895,30 @@ const LEADER_STROKE = { colour: hexToLinear('#7FB2FF'), gain: 0.45 } as const;
  * The 12 mm lift keeps the bottom tick off the floor plane: an additive stroke exactly coplanar with a
  * surface shimmers, and the shimmer is the tell rather than the z-fighting.
  */
+/*
+ * THE AXIS SITS ON THE SIDE THE EYE IS ON — and the previous version put it on the far side, which is
+ * the more instructive failure of the two this axis has now had.
+ *
+ * First it was drawn INSIDE the channel and ran through the tag of whichever deal shared that stage: a
+ * ruler drawn across the thing it measures. That was fixed by moving it outboard of the left wall, the
+ * count `axisLabelsOffFrame` went from 3 of 3 to 0, and the README recorded it as fixed.
+ *
+ * It was not fixed. The camera stands right of the centre line (azimuth 9 degrees puts the eye at
+ * x = +1.24) and the left wall is a solid slab from y 0 to 1.25, so every ray from the eye to a
+ * left-outboard tick passes through it. All three ticks were occluded, the labels floated with nothing
+ * to anchor them, and the count said 0 because it only ever tested FRAME BOUNDS. The number changed and
+ * the visibility did not — which is the precise failure this programme keeps finding, and finding it in
+ * the fix for a previous instance of itself is the sharpest version of it.
+ *
+ * Choosing the side by the sign of the eye's x makes occlusion by a wall impossible by CONSTRUCTION
+ * rather than unlikely by measurement: the tick and the eye are then on the same side of both slabs, so
+ * there is no wall between them at any azimuth. That is a stronger guarantee than any count, which is
+ * the point — the count was the thing that lied.
+ */
+const AXIS_SIDE = eye[0] >= 0 ? 1 : -1;
+const AXIS_X_INNER = AXIS_SIDE * (CHANNEL_HALF + 0.20);
+const AXIS_X_OUTER = AXIS_SIDE * (CHANNEL_HALF + 0.48);
+const AXIS_X_LABEL = AXIS_SIDE * (CHANNEL_HALF + 0.56);
 const AXIS_Z = gateZ(3);
 const AXIS_TICKS = [0, 20, STALL_DAYS].map((days) => ({
   days,
@@ -958,7 +982,7 @@ function frame() {
     strokes.ruleAtDepth(vp, CHANNEL_HALF, 0.02, CHANNEL_HALF, GATE_H, g.z, 0.010, GATE_STROKE);
   }
   for (const t of AXIS_TICKS) {
-    strokes.ruleAtDepth(vp, -(CHANNEL_HALF + 0.48), t.y, -(CHANNEL_HALF + 0.20), t.y, AXIS_Z, 0.006, AXIS_STROKE);
+    strokes.ruleAtDepth(vp, AXIS_X_OUTER, t.y, AXIS_X_INNER, t.y, AXIS_Z, 0.006, AXIS_STROKE);
   }
   for (const p of leaders) {
     const lx = p.x < 0 ? p.x - TAG_DX : p.x + TAG_DX;
@@ -1113,13 +1137,17 @@ const axisLabels = [
   { y: RAIL_LIFT + 0.15, label: 'DAYS SINCE UPDATE' },
   ...AXIS_TICKS,
 ].map((t) => {
-  const s = projectScreen(vpFinal, [-(CHANNEL_HALF + 0.56), t.y, AXIS_Z], CSS_W, CSS_H);
+  const s = projectScreen(vpFinal, [AXIS_X_LABEL, t.y, AXIS_Z], CSS_W, CSS_H);
   const onFrame = !s.behind && s.sx > 0 && s.sx < CSS_W && s.sy > 0 && s.sy < CSS_H;
   if (onFrame) {
     const el = document.createElement('div');
     el.style.cssText = `position:absolute;left:${s.sx.toFixed(1)}px;top:${s.sy.toFixed(1)}px;`
-      + `transform:translate(-100%,-50%);font:500 9.5px/1 ui-monospace,monospace;`
-      + `letter-spacing:.08em;color:rgba(196,212,240,0.78);white-space:nowrap;padding-right:5px`;
+      /* Anchored AWAY from the channel, which flips with the side. Left-aligned text on a
+         right-hand axis would run back over its own tick. */
+      + `transform:translate(${AXIS_SIDE > 0 ? '0' : '-100%'},-50%);`
+      + `text-align:${AXIS_SIDE > 0 ? 'left' : 'right'};font:500 9.5px/1 ui-monospace,monospace;`
+      + `letter-spacing:.08em;color:rgba(196,212,240,0.78);white-space:nowrap;`
+      + `${AXIS_SIDE > 0 ? 'padding-left' : 'padding-right'}:5px`;
     el.textContent = t.label;
     overlay.appendChild(el);
   }
@@ -1413,6 +1441,14 @@ const report = {
      alternative is two numbers printed on top of each other and neither readable. */
   gateLabelsCrowded: gateLabels.filter((g) => g.crowded).map((g) => g.stage),
   axisLabelsOffFrame: axisLabels.filter((a) => !a.onFrame).length,
+  /*
+   * THE FIELD THE OLD COUNT SHOULD HAVE BEEN. `axisLabelsOffFrame` tested frame bounds only and reported
+   * 0 while all three ticks sat behind a wall. Occlusion by a channel wall is now impossible by
+   * construction — the axis and the eye are on the same side of both slabs — and this states that
+   * rather than re-measuring it, because the measurement was what went wrong.
+   */
+  axisSide: AXIS_SIDE > 0 ? 'right' : 'left',
+  axisOnEyeSide: (AXIS_SIDE > 0) === (eye[0] >= 0),
   fogNearest: Math.min(...perDeal.map((d) => d.fog)),
   fogFurthest: Math.max(...perDeal.map((d) => d.fog)),
 
