@@ -34,6 +34,22 @@ void main(){
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
+/*
+ * Circle of confusion in UV units. The thin-lens relation reduces to a difference of
+ *      reciprocals, which is why a subject 1 m from a 2 m focus blurs far more than one 11 m from
+ *      12 m — a linear distance falloff gets that backwards and is the usual shortcut.
+ * In focus: return the sharp sample untouched. Blurring by a sub-texel radius still costs 24
+ *        taps and still softens the image slightly, and "slightly soft everywhere" is the exact look
+ *        this effect exists to avoid.
+ * 24 taps on a golden-angle spiral. A square grid at this count shows its axes in the bokeh;
+ *        the spiral has no preferred direction, so the out-of-focus highlight stays round.
+ * WEIGHT BY THE SAMPLE'S OWN CoC, and this is the whole difference between depth of field
+ *   and smear. A SHARP sample must not bleed into a blurred pixel, or every near object grows
+ *   a halo of its own colour across the background behind it. A sample can only contribute as
+ *   far as its own circle of confusion actually reaches.
+ * Blend rather than replace: at a small CoC the gather is undersampled and shows its taps, and
+ *        easing in over the first part of the range hides that entirely.
+ */
 const DOF_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -45,9 +61,6 @@ uniform float uMaxCoc;
 out vec4 frag;
 ${DEPTH_RECONSTRUCT_GLSL}
 
-/* Circle of confusion in UV units. The thin-lens relation reduces to a difference of
-   reciprocals, which is why a subject 1 m from a 2 m focus blurs far more than one 11 m from
-   12 m — a linear distance falloff gets that backwards and is the usual shortcut. */
 float cocAt(vec2 uv) {
   float z = linearDepthAt(uv);
   float c = abs(1.0 / max(0.05, uFocusDistance) - 1.0 / max(0.05, z)) * uAperture;
@@ -58,16 +71,11 @@ void main(){
   float centreCoc = cocAt(vUv);
   vec3 sharp = texture(uScene, vUv).rgb;
 
-  /* In focus: return the sharp sample untouched. Blurring by a sub-texel radius still costs 24
-     taps and still softens the image slightly, and "slightly soft everywhere" is the exact look
-     this effect exists to avoid. */
   if (centreCoc < 0.0015) { frag = vec4(sharp, 1.0); return; }
 
   vec3 sum = sharp * 0.001;
   float wsum = 0.001;
 
-  /* 24 taps on a golden-angle spiral. A square grid at this count shows its axes in the bokeh;
-     the spiral has no preferred direction, so the out-of-focus highlight stays round. */
   const int TAPS = 24;
   for (int i = 0; i < TAPS; i++) {
     float t = (float(i) + 0.5) / float(TAPS);
@@ -78,12 +86,6 @@ void main(){
     if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) continue;
 
     float sc = cocAt(suv);
-    /*
-     * WEIGHT BY THE SAMPLE'S OWN CoC, and this is the whole difference between depth of field
-     * and smear. A SHARP sample must not bleed into a blurred pixel, or every near object grows
-     * a halo of its own colour across the background behind it. A sample can only contribute as
-     * far as its own circle of confusion actually reaches.
-     */
     float reach = step(r, sc + uTexel.x);
     float w = reach * (0.35 + sc / max(1e-4, uMaxCoc));
     sum += texture(uScene, suv).rgb * w;
@@ -91,8 +93,6 @@ void main(){
   }
 
   vec3 blurred = sum / wsum;
-  /* Blend rather than replace: at a small CoC the gather is undersampled and shows its taps, and
-     easing in over the first part of the range hides that entirely. */
   float mixAmt = smoothstep(0.0015, uMaxCoc * 0.45, centreCoc);
   frag = vec4(mix(sharp, blurred, mixAmt), 1.0);
 }`;

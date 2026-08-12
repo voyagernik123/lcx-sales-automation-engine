@@ -130,19 +130,46 @@ void main(){
   vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
+/*
+ * The camera basis, passed in rather than inverted from the view-projection here. Inverting a matrix
+ *      in a fragment shader for every pixel is both expensive and the kind of code that is wrong in a way
+ *      only visible at extreme aspect ratios.
+ * OUTSIDE THE BOX IS ZERO, EXPLICITLY. CLAMP_TO_EDGE would instead smear the boundary slab across
+ *        all of space, so a shadow ray leaving the volume would keep accumulating the edge value and every
+ *        cloud would sit under a black bar extending to infinity.
+ * Single-scatter transmittance toward the light. Not a shadow map — a short march, because the volume
+ *      is the only thing shadowing itself and 6-8 steps is enough to give a cloud a lit top and a dark
+ *      underside, which is the entire cue that makes a volume read as having VOLUME.
+ * THE SCENE'S DEPTH CAPS THE MARCH. Without this the volume paints over geometry standing in front
+ *   of it and reads as fog on the lens rather than as something in the room.
+ *   
+ *   The depth buffer is non-linear, so it is converted back to a view-space distance and then to a
+ *   distance along THIS ray — dividing by dot(dir, forward) rather than using it directly, because the
+ *   depth buffer stores distance along the view AXIS and the ray is only parallel to it at the centre
+ *   of the frame. Skipping that cosine makes the volume clip in a bowl shape toward the edges.
+ * Colour ramps with the LOCAL value, not with accumulated depth. Ramping on the accumulation
+ *          would make a long thin ray through weak field look identical to a short ray through strong
+ *          field, which destroys exactly the distinction the volume exists to show.
+ * r = the measured quantity, normalised to 0..1 by the caller
+ * the scene's depth, so geometry occludes the volume
+ * direction the light TRAVELS
+ * 0 disables the shadow ray
+ * Ray through this pixel, from the camera basis.
+ * Emission floor: a fully self-shadowed core still glows a little, or the densest region of the
+ * field — the most important part of the reading — renders as a black hole.
+ * EARLY OUT. This is most of the performance of the layer, and it is only available because the
+ * accumulation is front-to-back.
+ */
 const FRAG = `#version 300 es
 precision highp float;
 precision highp sampler3D;
 in vec2 vUv;
 
-uniform sampler3D uDensity;     // r = the measured quantity, normalised to 0..1 by the caller
-uniform sampler2D uSceneDepth;  // the scene's depth, so geometry occludes the volume
+uniform sampler3D uDensity;
+uniform sampler2D uSceneDepth;
 uniform vec3 uBoxMin;
 uniform vec3 uBoxMax;
 uniform vec3 uEye;
-/* The camera basis, passed in rather than inverted from the view-projection here. Inverting a matrix
-   in a fragment shader for every pixel is both expensive and the kind of code that is wrong in a way
-   only visible at extreme aspect ratios. */
 uniform vec3 uForward;
 uniform vec3 uRight;
 uniform vec3 uUp;
@@ -155,8 +182,8 @@ uniform int uMaxSteps;
 uniform float uDensityScale;
 uniform vec3 uColourLow;
 uniform vec3 uColourHigh;
-uniform vec3 uLightDir;      // direction the light TRAVELS
-uniform float uLightSteps;   // 0 disables the shadow ray
+uniform vec3 uLightDir;
+uniform float uLightSteps;
 uniform float uEmission;
 
 out vec4 frag;
@@ -164,16 +191,10 @@ ${RAY_BOX_GLSL}
 
 float sampleDensity(vec3 p){
   vec3 uvw = (p - uBoxMin) / (uBoxMax - uBoxMin);
-  /* OUTSIDE THE BOX IS ZERO, EXPLICITLY. CLAMP_TO_EDGE would instead smear the boundary slab across
-     all of space, so a shadow ray leaving the volume would keep accumulating the edge value and every
-     cloud would sit under a black bar extending to infinity. */
   if (any(lessThan(uvw, vec3(0.0))) || any(greaterThan(uvw, vec3(1.0)))) return 0.0;
   return texture(uDensity, uvw).r * uDensityScale;
 }
 
-/* Single-scatter transmittance toward the light. Not a shadow map — a short march, because the volume
-   is the only thing shadowing itself and 6-8 steps is enough to give a cloud a lit top and a dark
-   underside, which is the entire cue that makes a volume read as having VOLUME. */
 float lightTransmittance(vec3 p){
   if (uLightSteps < 1.0) return 1.0;
   vec3 toLight = -normalize(uLightDir);
@@ -191,22 +212,13 @@ float lightTransmittance(vec3 p){
 }
 
 void main(){
-  // Ray through this pixel, from the camera basis.
+
   vec2 ndc = vUv * 2.0 - 1.0;
   vec3 dir = normalize(uForward + uRight * (ndc.x * uTanHalfFov * uAspect) + uUp * (ndc.y * uTanHalfFov));
 
   float tN, tF;
   if (!lcxRayBox(uEye, dir, uBoxMin, uBoxMax, tN, tF)) { frag = vec4(0.0); return; }
 
-  /*
-   * THE SCENE'S DEPTH CAPS THE MARCH. Without this the volume paints over geometry standing in front
-   * of it and reads as fog on the lens rather than as something in the room.
-   *
-   * The depth buffer is non-linear, so it is converted back to a view-space distance and then to a
-   * distance along THIS ray — dividing by dot(dir, forward) rather than using it directly, because the
-   * depth buffer stores distance along the view AXIS and the ray is only parallel to it at the centre
-   * of the frame. Skipping that cosine makes the volume clip in a bowl shape toward the edges.
-   */
   float dz = texture(uSceneDepth, vUv).r * 2.0 - 1.0;
   float viewZ = (2.0 * uNear * uFar) / (uFar + uNear - dz * (uFar - uNear));
   float cosA = max(1e-4, dot(dir, normalize(uForward)));
@@ -227,20 +239,15 @@ void main(){
     float d = sampleDensity(uEye + dir * t);
     if (d <= 0.0005) continue;
 
-    /* Colour ramps with the LOCAL value, not with accumulated depth. Ramping on the accumulation
-       would make a long thin ray through weak field look identical to a short ray through strong
-       field, which destroys exactly the distinction the volume exists to show. */
     vec3 col = mix(uColourLow, uColourHigh, clamp(d, 0.0, 1.0));
     float tr = lightTransmittance(uEye + dir * t);
-    // Emission floor: a fully self-shadowed core still glows a little, or the densest region of the
-    // field — the most important part of the reading — renders as a black hole.
+
     vec3 lit = col * (uEmission + (1.0 - uEmission) * tr);
 
     float a = 1.0 - exp(-d * dt);
     acc += lit * a * (1.0 - alpha);
     alpha += a * (1.0 - alpha);
-    // EARLY OUT. This is most of the performance of the layer, and it is only available because the
-    // accumulation is front-to-back.
+
     if (alpha > 0.995) break;
   }
 

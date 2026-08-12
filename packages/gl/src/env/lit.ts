@@ -65,6 +65,14 @@ void main(){
   gl_Position = uViewProj * world;
 }`;
 
+/*
+ * THE NORMAL MATRIX, not the model matrix. Under non-uniform scale the model matrix skews
+ *        normals off the surface and the lighting rotates as the object is squashed — the transpose
+ *        of the inverse is the only transform that keeps them perpendicular.
+ * The tangent transforms by the MODEL matrix, not the normal matrix: it is a direction lying IN
+ *        the surface, so it follows the geometry rather than staying perpendicular to it. Using the
+ *        normal matrix here is a common slip and rotates the brush direction under non-uniform scale.
+ */
 const LIT_VERT = `#version 300 es
 precision highp float;
 layout(location=0) in vec3 aPos;
@@ -79,17 +87,82 @@ out vec3 vTangent;
 void main(){
   vec4 world = uModel * vec4(aPos, 1.0);
   vWorld = world.xyz;
-  /* THE NORMAL MATRIX, not the model matrix. Under non-uniform scale the model matrix skews
-     normals off the surface and the lighting rotates as the object is squashed — the transpose
-     of the inverse is the only transform that keeps them perpendicular. */
   vNormal = normalize(uNormalMat * aNormal);
-  /* The tangent transforms by the MODEL matrix, not the normal matrix: it is a direction lying IN
-     the surface, so it follows the geometry rather than staying perpendicular to it. Using the
-     normal matrix here is a common slip and rotates the brush direction under non-uniform scale. */
   vTangent = normalize(mat3(uModel) * aTangent);
   gl_Position = uViewProj * world;
 }`;
 
+/*
+ * EXPONENTIAL HEIGHT FOG — L2.9. Zero density is the default, so the five environments that shipped
+ *   before this existed render byte-identically. Additive, not a rewrite.
+ * ANISOTROPIC GGX — the difference between machined metal and grey plastic.
+ *   
+ *   Isotropic GGX gives a round highlight. Real turned or brushed metal has microscopic grooves
+ *   running one way, so the highlight STRETCHES perpendicular to nothing and elongates ALONG the
+ *   grooves — which is why a brushed-steel dial shows a bar of light rather than a dot, and why §2
+ *   asks for anisotropy specifically.
+ *   
+ *   Two roughnesses instead of one: at along the tangent, ab along the bitangent. The half-vector is
+ *   measured in that frame, so the lobe becomes an ellipse. Same energy, different shape.
+ * OUTSIDE THE LIGHT FRUSTUM IS LIT, NOT SHADOWED. Returning 0 here would drop everything
+ *        beyond the shadow extent into darkness — a hard rectangular edge across the floor that
+ *        looks like a bug in the geometry rather than a shadow map that ran out of room.
+ * The tangent frame, re-orthogonalised in the fragment. Interpolating a tangent across a
+ *        triangle leaves it slightly off-perpendicular to the interpolated normal, and an anisotropic
+ *        lobe built on a skewed frame twists visibly along a curved surface.
+ * THE ENVIRONMENT TERM — and this is what stopped the metal being black.
+ *   
+ *   A metal has essentially no diffuse lobe, so almost everything visible on it is reflected
+ *   environment. E0 rendered a metalness-0.92 sphere nearly black and the material was right:
+ *   there was nothing to reflect.
+ *   
+ *   DIFFUSE irradiance is the sky sampled along the normal. SPECULAR is the sky sampled along
+ *   the reflection, lerped toward the normal by roughness — with an analytic sky there is
+ *   nothing to prefilter, so moving the sample direction lets the gradient do the blurring. A
+ *   mirror samples R, a rough surface samples near N, and highlights stretch and soften
+ *   together, which is the behaviour that reads as "material" rather than "shader".
+ * AO MULTIPLIES THE ENVIRONMENT TERM ONLY, never the direct light.
+ *   
+ *   Ambient occlusion answers "how much of the sky can this point see", so it belongs on the
+ *   sky's contribution and nowhere else. Applying it to the whole colour — which is what a
+ *   post-process multiply would do — darkens the direct highlight as well, and a lit surface
+ *   whose specular dims inside a crease reads as dirt rather than as shadow. The shadow MAP
+ *   already handles the direct term.
+ * FOG LAST, AND BEFORE THE TONE MAP — which is the whole reason it lives in this shader rather
+ *   than in a post-process pass.
+ *   
+ *   A depth-based screen fade applied after tone mapping fades toward a DISPLAY colour, so the
+ *   horizon washes to a grey that no light in the scene could produce and the frame looks hazed
+ *   rather than deep. Mixing in linear radiance, before the curve, means distant surfaces converge
+ *   on the same value the sky already has there — which is what atmosphere actually does.
+ *   
+ *   The integral is analytic. Density falls off exponentially with height, so the optical depth along
+ *   a ray from the eye to the surface is the height-integrated density rather than the naive
+ *   distance * density that a flat-fog shader uses. The difference is visible the moment the camera
+ *   is not level: flat fog fogs the sky directly overhead exactly as much as the horizon.
+ * integral of exp(-h/k) along the ray, in closed form. The dist/|dy| factor converts the
+ *            vertical integration variable back to arc length, which is what makes a near-horizontal ray
+ *            accumulate far more fog than a vertical one of the same length.
+ * direction the light TRAVELS
+ * linear radiance
+ * scales the environment's contribution
+ * linear, brand-exact
+ * 0 = isotropic, ->1 = highlight stretched along the tangent
+ * 1.0 / shadowMapSize
+ * 0 disables the whole term
+ * e-folding height: fog thins upward over this many metres
+ * linear; -1 in .r means "take it from the sky"
+ * y at which density is uFogDensity
+ * Schlick-GGX with the direct-lighting k. Using the IBL k here is a common copy-paste error
+ * that makes rough surfaces too dark at grazing angles.
+ * SLOPE-SCALED BIAS — see the header. Constant bias cannot fix acne and peter-panning at once.
+ * Preserve the average roughness while splitting it, so turning anisotropy up does not also
+ * change how rough the surface reads.
+ * Metals have no diffuse lobe — the energy went into the specular. Not cosmetic: a metallic
+ * surface with a diffuse term reads as painted plastic.
+ * A horizontal ray: height is constant, so the integral is the flat one at that height.
+ * NO TONE MAP. The composite owns the only one in the pipeline.
+ */
 const LIT_FRAG = `#version 300 es
 precision highp float;
 in vec3 vWorld;
@@ -97,30 +170,26 @@ in vec3 vNormal;
 in vec3 vTangent;
 
 uniform vec3 uEye;
-uniform vec3 uLightDir;      // direction the light TRAVELS
-uniform vec3 uLightColour;   // linear radiance
-uniform float uAmbientGain;  // scales the environment's contribution
-uniform vec3 uBaseColour;    // linear, brand-exact
+uniform vec3 uLightDir;
+uniform vec3 uLightColour;
+uniform float uAmbientGain;
+uniform vec3 uBaseColour;
 uniform float uRoughness;
 uniform float uMetalness;
-uniform float uAnisotropy;   // 0 = isotropic, ->1 = highlight stretched along the tangent
+uniform float uAnisotropy;
 
 uniform mat4 uLightVP;
 uniform sampler2D uShadowMap;
-uniform float uShadowTexel;  // 1.0 / shadowMapSize
+uniform float uShadowTexel;
 uniform float uShadowStrength;
 
 uniform sampler2D uAO;
 uniform vec2 uScreenSize;
 uniform float uAOEnabled;
-/*
- * EXPONENTIAL HEIGHT FOG — L2.9. Zero density is the default, so the five environments that shipped
- * before this existed render byte-identically. Additive, not a rewrite.
- */
-uniform float uFogDensity;   // 0 disables the whole term
-uniform float uFogHeight;    // e-folding height: fog thins upward over this many metres
-uniform vec3 uFogColour;     // linear; -1 in .r means "take it from the sky"
-uniform float uFogFloor;     // y at which density is uFogDensity
+uniform float uFogDensity;
+uniform float uFogHeight;
+uniform vec3 uFogColour;
+uniform float uFogFloor;
 
 out vec4 frag;
 ${SKY_GLSL}
@@ -134,17 +203,6 @@ float distributionGGX(float NdotH, float rough) {
   return a2 / max(1e-6, PI * d * d);
 }
 
-/*
- * ANISOTROPIC GGX — the difference between machined metal and grey plastic.
- *
- * Isotropic GGX gives a round highlight. Real turned or brushed metal has microscopic grooves
- * running one way, so the highlight STRETCHES perpendicular to nothing and elongates ALONG the
- * grooves — which is why a brushed-steel dial shows a bar of light rather than a dot, and why §2
- * asks for anisotropy specifically.
- *
- * Two roughnesses instead of one: at along the tangent, ab along the bitangent. The half-vector is
- * measured in that frame, so the lobe becomes an ellipse. Same energy, different shape.
- */
 float distributionGGXAniso(float NdotH, float TdotH, float BdotH, float at, float ab) {
   float a2 = at * ab;
   vec3 v = vec3(ab * TdotH, at * BdotH, a2 * NdotH);
@@ -154,8 +212,7 @@ float distributionGGXAniso(float NdotH, float TdotH, float BdotH, float at, floa
 }
 
 float geometrySmith(float NdotV, float NdotL, float rough) {
-  // Schlick-GGX with the direct-lighting k. Using the IBL k here is a common copy-paste error
-  // that makes rough surfaces too dark at grazing angles.
+
   float k = (rough + 1.0) * (rough + 1.0) / 8.0;
   float gv = NdotV / (NdotV * (1.0 - k) + k);
   float gl = NdotL / (NdotL * (1.0 - k) + k);
@@ -170,12 +227,8 @@ float shadowFactor(vec3 world, float NdotL) {
   vec4 lc = uLightVP * vec4(world, 1.0);
   vec3 p = lc.xyz / lc.w;
   p = p * 0.5 + 0.5;
-  /* OUTSIDE THE LIGHT FRUSTUM IS LIT, NOT SHADOWED. Returning 0 here would drop everything
-     beyond the shadow extent into darkness — a hard rectangular edge across the floor that
-     looks like a bug in the geometry rather than a shadow map that ran out of room. */
   if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 || p.z > 1.0) return 1.0;
 
-  // SLOPE-SCALED BIAS — see the header. Constant bias cannot fix acne and peter-panning at once.
   float bias = max(0.0009, 0.0045 * (1.0 - NdotL));
 
   float lit = 0.0;
@@ -204,14 +257,10 @@ void main(){
   vec3 f0 = mix(vec3(0.04), uBaseColour, uMetalness);
   float rough = clamp(uRoughness, 0.045, 1.0);
 
-  /* The tangent frame, re-orthogonalised in the fragment. Interpolating a tangent across a
-     triangle leaves it slightly off-perpendicular to the interpolated normal, and an anisotropic
-     lobe built on a skewed frame twists visibly along a curved surface. */
   vec3 T = normalize(vTangent - N * dot(N, vTangent));
   vec3 B = cross(N, T);
   float aniso = clamp(uAnisotropy, 0.0, 0.95);
-  // Preserve the average roughness while splitting it, so turning anisotropy up does not also
-  // change how rough the surface reads.
+
   float at = max(0.002, rough * (1.0 + aniso));
   float ab = max(0.002, rough * (1.0 - aniso));
 
@@ -222,58 +271,21 @@ void main(){
   vec3  F = fresnelSchlick(VdotH, f0);
 
   vec3 spec = (D * G * F) / max(1e-6, 4.0 * NdotV * NdotL + 1e-4);
-  // Metals have no diffuse lobe — the energy went into the specular. Not cosmetic: a metallic
-  // surface with a diffuse term reads as painted plastic.
+
   vec3 kd = (1.0 - F) * (1.0 - uMetalness);
   vec3 diffuse = kd * uBaseColour / PI;
 
   float shadow = shadowFactor(vWorld, NdotL);
   vec3 direct = (diffuse + spec) * uLightColour * NdotL * shadow;
 
-  /*
-   * THE ENVIRONMENT TERM — and this is what stopped the metal being black.
-   *
-   * A metal has essentially no diffuse lobe, so almost everything visible on it is reflected
-   * environment. E0 rendered a metalness-0.92 sphere nearly black and the material was right:
-   * there was nothing to reflect.
-   *
-   * DIFFUSE irradiance is the sky sampled along the normal. SPECULAR is the sky sampled along
-   * the reflection, lerped toward the normal by roughness — with an analytic sky there is
-   * nothing to prefilter, so moving the sample direction lets the gradient do the blurring. A
-   * mirror samples R, a rough surface samples near N, and highlights stretch and soften
-   * together, which is the behaviour that reads as "material" rather than "shader".
-   */
   vec3 R = reflect(-V, N);
   vec3 envDiffuse = skyColour(N) * uBaseColour * (1.0 - uMetalness);
   vec3 envSpecular = skyColour(normalize(mix(R, N, rough * rough))) * fresnelSchlick(NdotV, f0);
-  /*
-   * AO MULTIPLIES THE ENVIRONMENT TERM ONLY, never the direct light.
-   *
-   * Ambient occlusion answers "how much of the sky can this point see", so it belongs on the
-   * sky's contribution and nowhere else. Applying it to the whole colour — which is what a
-   * post-process multiply would do — darkens the direct highlight as well, and a lit surface
-   * whose specular dims inside a crease reads as dirt rather than as shadow. The shadow MAP
-   * already handles the direct term.
-   */
   float ao = uAOEnabled > 0.5 ? texture(uAO, gl_FragCoord.xy / uScreenSize).r : 1.0;
   vec3 ambient = (envDiffuse + envSpecular) * uAmbientGain * ao;
 
   vec3 lit = direct + ambient;
 
-  /*
-   * FOG LAST, AND BEFORE THE TONE MAP — which is the whole reason it lives in this shader rather
-   * than in a post-process pass.
-   *
-   * A depth-based screen fade applied after tone mapping fades toward a DISPLAY colour, so the
-   * horizon washes to a grey that no light in the scene could produce and the frame looks hazed
-   * rather than deep. Mixing in linear radiance, before the curve, means distant surfaces converge
-   * on the same value the sky already has there — which is what atmosphere actually does.
-   *
-   * The integral is analytic. Density falls off exponentially with height, so the optical depth along
-   * a ray from the eye to the surface is the height-integrated density rather than the naive
-   * distance * density that a flat-fog shader uses. The difference is visible the moment the camera
-   * is not level: flat fog fogs the sky directly overhead exactly as much as the horizon.
-   */
   if (uFogDensity > 0.0) {
     vec3 toEye = uEye - vWorld;
     float dist = length(toEye);
@@ -283,19 +295,15 @@ void main(){
     float k = max(1e-4, uFogHeight);
     float depth;
     if (abs(dyRaw) < 1e-4) {
-      // A horizontal ray: height is constant, so the integral is the flat one at that height.
+
       depth = uFogDensity * dist * exp(-hFrag / k);
     } else {
-      /* integral of exp(-h/k) along the ray, in closed form. The dist/|dy| factor converts the
-         vertical integration variable back to arc length, which is what makes a near-horizontal ray
-         accumulate far more fog than a vertical one of the same length. */
       depth = uFogDensity * k * (dist / abs(dyRaw)) * abs(exp(-hFrag / k) - exp(-hEye / k));
     }
     vec3 fogCol = uFogColour.r < 0.0 ? skyColour(normalize(-toEye)) : uFogColour;
     lit = mix(lit, fogCol, 1.0 - exp(-depth));
   }
 
-  // NO TONE MAP. The composite owns the only one in the pipeline.
   frag = vec4(lit, 1.0);
 }`;
 

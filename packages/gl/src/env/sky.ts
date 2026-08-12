@@ -29,13 +29,15 @@ import type { Stage, StageRefusal } from '../stage.js';
  */
 
 /** Shared by the material and the backdrop, so a reflection can never disagree with the sky. */
+/*
+ * A three-stop vertical gradient in LINEAR radiance. smoothstep rather than a linear ramp:
+ *      a linear blend across a large dark field bands visibly, and the horizon is where the eye is
+ *      most sensitive to it.
+ */
 export const SKY_GLSL = `
 uniform vec3 uSkyZenith;
 uniform vec3 uSkyHorizon;
 uniform vec3 uSkyGround;
-/* A three-stop vertical gradient in LINEAR radiance. smoothstep rather than a linear ramp:
-   a linear blend across a large dark field bands visibly, and the horizon is where the eye is
-   most sensitive to it. */
 vec3 skyColour(vec3 dir) {
   float h = clamp(dir.y, -1.0, 1.0);
   vec3 up = mix(uSkyHorizon, uSkyZenith, smoothstep(0.0, 0.85, h));

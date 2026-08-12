@@ -33,15 +33,17 @@ import { stageRefusal } from '../stage.js';
  */
 
 /** Reconstruct view-space position from a depth sample. Shared with any later depth-reading pass. */
+/*
+ * Hardware depth is nonlinear — most of its precision sits near the eye. Linearising it is the
+ *      difference between an AO radius that means the same thing everywhere and one that silently
+ *      shrinks with distance.
+ */
 export const DEPTH_RECONSTRUCT_GLSL = `
 uniform sampler2D uDepth;
 uniform vec2 uNearFar;
 uniform float uTanHalfFov;
 uniform float uAspect;
 
-/* Hardware depth is nonlinear — most of its precision sits near the eye. Linearising it is the
-   difference between an AO radius that means the same thing everywhere and one that silently
-   shrinks with distance. */
 float linearDepthAt(vec2 uv) {
   float d = texture(uDepth, uv).r * 2.0 - 1.0;
   float n = uNearFar.x, f = uNearFar.y;
@@ -63,6 +65,33 @@ void main(){
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 
+/*
+ * A cheap hash for per-pixel kernel rotation. Without it the same 12 directions are used at
+ *      every pixel and the occlusion shows as banding that follows the kernel's shape — the tell
+ *      that says "SSAO" rather than "shadow".
+ * THE FAR PLANE IS NOT OCCLUDED. Sky fragments have depth 1.0 and no geometry; sampling
+ *        around them produces a dark halo along every silhouette against the backdrop.
+ * A DEGENERATE DERIVATIVE PRODUCES A NaN NORMAL, AND ONE NaN NORMAL IS A BLOCK OF GARBAGE.
+ *   
+ *   The depth texture is full resolution and sampled NEAREST, while this pass runs at half. A
+ *   one-half-texel offset can therefore land on the SAME full-res texel, making dx or dy exactly
+ *   zero — and normalize of a zero-length cross product is NaN, which then fails every
+ *   comparison below and leaves structured stair-step blocks across flat faces. That is what the
+ *   first capture showed: not noise, but a pattern following the sampling grid.
+ *   
+ *   Two fixes together: step a FULL two texels so the samples cannot collide, and use a CENTRAL
+ *   difference, which is both twice the baseline and correct on a curved surface rather than
+ *   biased toward one side.
+ * Still degenerate — a silhouette where both neighbours straddle a depth cliff. Treat as
+ *        unoccluded rather than emitting NaN: a wrong-but-finite value is recoverable, a NaN is not.
+ * A spiral rather than a ring: a single-radius ring measures enclosure at exactly one
+ *          distance and misses both the tight crease and the broad corner.
+ * Screen-space step for a constant WORLD-space radius: divide by view depth and by the
+ *          frustum half-width at unit distance. The previous magic 0.5 over-reached at this FOV and
+ *          sampled across whole objects, which is what put occlusion where there was none.
+ * RANGE CHECK. Without it a distant object behind a silhouette counts as an occluder and
+ *          paints a dark outline around every foreground shape — the other classic SSAO artefact.
+ */
 const AO_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -73,40 +102,20 @@ uniform float uBias;
 out vec4 frag;
 ${DEPTH_RECONSTRUCT_GLSL}
 
-/* A cheap hash for per-pixel kernel rotation. Without it the same 12 directions are used at
-   every pixel and the occlusion shows as banding that follows the kernel's shape — the tell
-   that says "SSAO" rather than "shadow". */
 float hash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
 }
 
 void main(){
   float centreDepth = linearDepthAt(vUv);
-  /* THE FAR PLANE IS NOT OCCLUDED. Sky fragments have depth 1.0 and no geometry; sampling
-     around them produces a dark halo along every silhouette against the backdrop. */
   if (centreDepth >= uNearFar.y * 0.999) { frag = vec4(1.0); return; }
 
   vec3 p = viewPosAt(vUv);
-  /*
-   * A DEGENERATE DERIVATIVE PRODUCES A NaN NORMAL, AND ONE NaN NORMAL IS A BLOCK OF GARBAGE.
-   *
-   * The depth texture is full resolution and sampled NEAREST, while this pass runs at half. A
-   * one-half-texel offset can therefore land on the SAME full-res texel, making dx or dy exactly
-   * zero — and normalize of a zero-length cross product is NaN, which then fails every
-   * comparison below and leaves structured stair-step blocks across flat faces. That is what the
-   * first capture showed: not noise, but a pattern following the sampling grid.
-   *
-   * Two fixes together: step a FULL two texels so the samples cannot collide, and use a CENTRAL
-   * difference, which is both twice the baseline and correct on a curved surface rather than
-   * biased toward one side.
-   */
   vec2 e = uTexel * 2.0;
   vec3 dx = viewPosAt(vUv + vec2(e.x, 0.0)) - viewPosAt(vUv - vec2(e.x, 0.0));
   vec3 dy = viewPosAt(vUv + vec2(0.0, e.y)) - viewPosAt(vUv - vec2(0.0, e.y));
   vec3 nRaw = cross(dx, dy);
   float nLen = length(nRaw);
-  /* Still degenerate — a silhouette where both neighbours straddle a depth cliff. Treat as
-     unoccluded rather than emitting NaN: a wrong-but-finite value is recoverable, a NaN is not. */
   if (nLen < 1e-8) { frag = vec4(1.0); return; }
   vec3 n = nRaw / nLen;
 
@@ -117,14 +126,9 @@ void main(){
   const int SAMPLES = 12;
   for (int i = 0; i < SAMPLES; i++) {
     float t = (float(i) + 0.5) / float(SAMPLES);
-    /* A spiral rather than a ring: a single-radius ring measures enclosure at exactly one
-       distance and misses both the tight crease and the broad corner. */
     float r = uRadius * sqrt(t);
     float a = ang + t * 6.2831853 * 3.0;
     vec2 offDir = vec2(cos(a) * ca - sin(a) * sa, cos(a) * sa + sin(a) * ca);
-    /* Screen-space step for a constant WORLD-space radius: divide by view depth and by the
-       frustum half-width at unit distance. The previous magic 0.5 over-reached at this FOV and
-       sampled across whole objects, which is what put occlusion where there was none. */
     vec2 suv = vUv + offDir * (r / max(0.35, -p.z)) / (2.0 * uTanHalfFov);
     if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) continue;
 
@@ -133,8 +137,6 @@ void main(){
     float len = length(dir);
     if (len < 1e-4) continue;
     float cosine = max(0.0, dot(n, dir / len) - uBias);
-    /* RANGE CHECK. Without it a distant object behind a silhouette counts as an occluder and
-       paints a dark outline around every foreground shape — the other classic SSAO artefact. */
     float atten = uRadius / (uRadius + len);
     occlusion += cosine * atten;
   }
@@ -142,6 +144,13 @@ void main(){
   frag = vec4(occlusion, occlusion, occlusion, 1.0);
 }`;
 
+/*
+ * BILATERAL, not Gaussian. A plain blur bleeds occlusion across a silhouette, so a dark
+ *        crease behind an object smears onto the object in front of it. Weighting by depth
+ *        similarity keeps the blur inside a surface.
+ * Reject across a depth step. 8% of the centre depth is generous enough to survive a
+ * sloped surface and tight enough to stop a silhouette leaking.
+ */
 const BLUR_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -152,17 +161,13 @@ out vec4 frag;
 ${DEPTH_RECONSTRUCT_GLSL}
 
 void main(){
-  /* BILATERAL, not Gaussian. A plain blur bleeds occlusion across a silhouette, so a dark
-     crease behind an object smears onto the object in front of it. Weighting by depth
-     similarity keeps the blur inside a surface. */
   float centre = linearDepthAt(vUv);
   float sum = 0.0, wsum = 0.0;
   for (int i = -4; i <= 4; i++) {
     vec2 off = uDir * uTexel * float(i);
     float w = exp(-float(i * i) / 8.0);
     float d = linearDepthAt(vUv + off);
-    // Reject across a depth step. 8% of the centre depth is generous enough to survive a
-    // sloped surface and tight enough to stop a silhouette leaking.
+
     float dw = exp(-abs(d - centre) / max(0.05, centre * 0.08));
     sum += texture(uAO, vUv + off).r * w * dw;
     wsum += w * dw;
