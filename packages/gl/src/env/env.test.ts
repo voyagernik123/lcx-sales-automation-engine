@@ -8,6 +8,7 @@ import { particleLayout, emissionSchedule } from './particles.js';
 import { rayBoxSlab, marchPlan } from './volume.js';
 import {
   QUALITY_TIERS, qualitySettings, pickQualityTier, type QualitySettings,
+  shadowMapSizeFor,
 } from './quality.js';
 
 /**
@@ -1008,5 +1009,47 @@ describe('quality ladder — monotonic, and it refuses rather than guessing', ()
     // Internal consistency: whatever else the scaling does, it must be the identity at the probe.
     const r = pickQualityTier({ msAtProbeTier: 4.914, probeTier: 'reduced', budgetMs: 16.6 });
     expect(r.predictedMs.reduced).toBeCloseTo(4.914, 2);
+  });
+});
+
+describe('shadowMapSizeFor — the ladder scales a baseline, it does not replace it', () => {
+  it('returns the environment\'s OWN size at the full tier', () => {
+    /* Wiring the ladder naively used the tier's absolute size and silently enlarged three environments:
+       E0, E2 and E8 had each chosen 1024 and were handed 1536 — a 2.25x bigger map and three captures that
+       changed without anyone saying so. A ladder that alters the highest tier is a redesign. */
+    expect(shadowMapSizeFor('full', 1024)).toBe(1024);
+    expect(shadowMapSizeFor('full', 1536)).toBe(1536);
+  });
+
+  it('never exceeds the baseline at any tier', () => {
+    for (const base of [256, 512, 1024, 1536, 2048]) {
+      for (const tier of QUALITY_TIERS) {
+        expect(shadowMapSizeFor(tier, base), `${tier} of ${base}`).toBeLessThanOrEqual(base);
+      }
+    }
+  });
+
+  it('descends monotonically and stays a power of two', () => {
+    for (const base of [1024, 1536, 2048]) {
+      const [min, red, full] = QUALITY_TIERS.map((t) => shadowMapSizeFor(t, base));
+      expect(min!).toBeLessThanOrEqual(red!);
+      expect(red!).toBeLessThanOrEqual(full!);
+      for (const v of [min!, red!]) expect(Math.log2(v) % 1, `${v} is not a power of two`).toBe(0);
+    }
+  });
+
+  it('floors at 256 rather than shrinking past its own contact shadow', () => {
+    // Below 256 the map is coarser than the shadow it exists to draw, and a contact shadow that misses its
+    // own object is worse than a hard-edged one.
+    expect(shadowMapSizeFor('minimum', 256)).toBe(256);
+    expect(shadowMapSizeFor('minimum', 512)).toBeGreaterThanOrEqual(256);
+  });
+
+  it('falls back to a usable size rather than propagating a bad baseline', () => {
+    for (const bad of [0, -1, Number.NaN, Infinity]) {
+      const v = shadowMapSizeFor('full', bad);
+      expect(Number.isFinite(v), `baseline ${bad}`).toBe(true);
+      expect(v).toBeGreaterThanOrEqual(256);
+    }
   });
 });

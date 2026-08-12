@@ -47,7 +47,7 @@ import {
   hexToLinear, assertBrandFidelity, projectScreen, normalise, sub, cross,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint, type StageRefusal, type Vec3, type QuadCorners, type VolumeField,
-  QUALITY_TIERS, qualitySettings, type QualityTier,
+  QUALITY_TIERS, qualitySettings, shadowMapSizeFor, type QualityTier,
 } from '@lcx/gl';
 
 const params = new URLSearchParams(location.search);
@@ -408,7 +408,7 @@ const volTarget = required('volume target', createTarget3D(stage, W, H));
  * on an 8 GB machine for no information.
  */
 const farDepth = required('far depth', createTarget3D(stage, 4, 4));
-const shadow = required('shadow', createShadowMap(stage, Q.shadowMapSize));
+const shadow = required('shadow', createShadowMap(stage, shadowMapSizeFor(TIER, 1536)));
 const ao = required('ao', createAmbientOcclusion(stage, W, H));
 
 farDepth.bind();
@@ -1376,7 +1376,10 @@ const report = {
      A tier that cannot be reported is a tier that cannot be trusted. */
   tier: Q.tier,
   tierDprScale: Q.dprScale,
-  tierShadowMapSize: Q.shadowMapSize,
+  /* The tier SCALES this environment's own baseline (1536) rather than replacing it — the
+     ladder must not change what the frame looks like at its highest tier. */
+  tierShadowMapSize: shadowMapSizeFor(TIER, 1536),
+  shadowBaseline: 1536,
   /* Empty means every brand hex round-tripped exactly through this frame's own pipeline. */
   brandFidelity: brandFailures,
   volume: VOL_ON,

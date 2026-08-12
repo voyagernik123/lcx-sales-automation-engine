@@ -15,7 +15,7 @@ import {
   triangleCount, hexToLinear, assertBrandFidelity, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint,
   type StageRefusal,
-  QUALITY_TIERS, qualitySettings, type QualityTier,
+  QUALITY_TIERS, qualitySettings, shadowMapSizeFor, type QualityTier,
 } from '@lcx/gl';
 import { installFlatFallback } from '../_shared/flatFallback.js';
 
@@ -151,7 +151,7 @@ void main(){
 const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
 const lit = required('lit', createLitRenderer(stage));
 const target = required('target', createTarget3D(stage, W, H));
-const shadow = required('shadow', createShadowMap(stage, Q.shadowMapSize));
+const shadow = required('shadow', createShadowMap(stage, shadowMapSizeFor(TIER, 1024)));
 const skyBox = required('skyBox', createSkyBackdrop(stage));
 const ao = required('ao', createAmbientOcclusion(stage, W, H));
 const dof = required('dof', createDepthOfField(stage, W, H));
@@ -386,11 +386,18 @@ const RENDERER = (() => {
 const SOFTWARE = /swiftshader|llvmpipe|software/i.test(RENDERER);
 
 const report = {
+  /* Reported so E9's audit can state what the tier actually drives here, rather than
+     inferring it from which fields happen to exist. */
+  ao: AO_ON,
+  dof: DOF_ON,
   /* WHICH TIER THIS FRAME IS, so the numbers beside it describe a configuration a reader can reconstruct.
      A tier that cannot be reported is a tier that cannot be trusted. */
   tier: Q.tier,
   tierDprScale: Q.dprScale,
-  tierShadowMapSize: Q.shadowMapSize,
+  /* The tier SCALES this environment's own baseline (1024) rather than replacing it — the
+     ladder must not change what the frame looks like at its highest tier. */
+  tierShadowMapSize: shadowMapSizeFor(TIER, 1024),
+  shadowBaseline: 1024,
   /*
    * `gl.getError()` — AND THE AUDIT IS WHAT FOUND IT MISSING.
    *

@@ -24,7 +24,7 @@ import {
   hexToLinear, assertBrandFidelity, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY, projectScreen,
   type LitDraw, type Viewpoint,
   type StageRefusal,
-  QUALITY_TIERS, qualitySettings, type QualityTier,
+  QUALITY_TIERS, qualitySettings, shadowMapSizeFor, type QualityTier,
 } from '@lcx/gl';
 import { installFlatFallback } from '../_shared/flatFallback.js';
 
@@ -52,6 +52,13 @@ const TIER: QualityTier = (QUALITY_TIERS as readonly string[]).includes(params.g
   ? (params.get('tier') as QualityTier)
   : 'full';
 const Q = qualitySettings(TIER);
+
+/* THE TIER HAD NO REACH HERE. This harness ran ambient occlusion and depth of field unconditionally, so
+   `?tier=minimum` could only shrink the shadow map — the audit's `tier drives` column read "shadow" and its
+   saving was whatever a smaller depth texture happened to buy. Both passes are now gated, composed with the
+   tier by AND so a control can turn an effect off and never on. */
+const AO_ON = params.get('ao') !== '0' && Q.ao;
+const DOF_ON = params.get('dof') !== '0' && Q.dof;
 const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
 const W = 1200 * SCALE, H = 720 * SCALE;
 const canvas = document.getElementById('c') as HTMLCanvasElement;
@@ -160,7 +167,7 @@ const refusal = (r: { reason: string; detail?: string }) => `${r.reason} ${r.det
 const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
 const lit = required('lit', createLitRenderer(stage));
 const target = required('target', createTarget3D(stage, W, H));
-const shadow = required('shadow', createShadowMap(stage, Q.shadowMapSize));
+const shadow = required('shadow', createShadowMap(stage, shadowMapSizeFor(TIER, 1024)));
 const skyBox = required('skyBox', createSkyBackdrop(stage));
 const ao = required('ao', createAmbientOcclusion(stage, W, H));
 const dof = required('dof', createDepthOfField(stage, W, H));
@@ -228,26 +235,38 @@ function frame(tSec: number) {
   gl.clear(gl.DEPTH_BUFFER_BIT);
   skyBox.draw({ eye, target: view.target, fovDeg: view.fovDeg ?? 34, aspect: W / H });
   lit.depthPrepass(vp, draws);
-  ao.compute({ depthTexture: target.depthTexture, near, far, fovDeg: view.fovDeg ?? 34, aspect: W / H, radius: 0.42, strength: 1.3 });
+  if (AO_ON) {
+    ao.compute({ depthTexture: target.depthTexture, near, far, fovDeg: view.fovDeg ?? 34, aspect: W / H, radius: 0.42, strength: 1.3 });
+  }
+  /* Rebound unconditionally: AO binds its own half-res framebuffer, and the alternative — rebinding only
+     inside the gate — leaves the rest of the frame rendering into that half-res buffer when AO is off. */
   target.bind();
   lit.draw({
     viewProj: vp, eye, lightDir, lightColour: [5.2, 5.0, 4.6],
     ambientGain: 1.15, lightVP, shadow, shadowStrength: 0.9, draws,
-    ao: ao.texture, screenSize: [W, H],
+    /* NULL WHEN AO IS OFF. Passing the texture regardless would have the shader sample a buffer nothing
+       wrote this frame — stale occlusion from the last resize, or zeros, which reads as the whole disc
+       sitting in shadow. The renderer's `uAOEnabled` exists precisely for this. */
+    ao: AO_ON ? ao.texture : null, screenSize: [W, H],
   });
 
   // Focus on the disc face; the floor and the far plinth rim fall away.
   const focus = Math.hypot(eye[0], eye[1] - DISC_Y, eye[2]);
-  dof.apply({
-    scene: target.texture, depthTexture: target.depthTexture, near, far,
-    fovDeg: view.fovDeg ?? 34, aspect: W / H, focusDistance: focus, aperture: 7, maxCoc: 0.009,
-  });
+  /* GATED, and the PRESENTED TEXTURE follows the gate. Applying the lens unconditionally while the
+     report says `dof: false` would make the report lie about the frame beside it; presenting
+     `dof.texture` when nothing wrote it would show whatever the last resize left there. */
+  if (DOF_ON) {
+    dof.apply({
+      scene: target.texture, depthTexture: target.depthTexture, near, far,
+      fovDeg: view.fovDeg ?? 34, aspect: W / H, focusDistance: focus, aperture: 7, maxCoc: 0.009,
+    });
+  }
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, W, H);
   gl.disable(gl.DEPTH_TEST);
   gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, dof.texture);
+  gl.bindTexture(gl.TEXTURE_2D, DOF_ON ? dof.texture : target.texture);
   stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
 }
 
@@ -327,11 +346,18 @@ const RENDERER = (() => {
 const SOFTWARE = /swiftshader|llvmpipe|software/i.test(RENDERER);
 
 const report = {
+  /* Reported so E9's audit can state what the tier actually drives here, rather than
+     inferring it from which fields happen to exist. */
+  ao: AO_ON,
+  dof: DOF_ON,
   /* WHICH TIER THIS FRAME IS, so the numbers beside it describe a configuration a reader can reconstruct.
      A tier that cannot be reported is a tier that cannot be trusted. */
   tier: Q.tier,
   tierDprScale: Q.dprScale,
-  tierShadowMapSize: Q.shadowMapSize,
+  /* The tier SCALES this environment's own baseline (1024) rather than replacing it — the
+     ladder must not change what the frame looks like at its highest tier. */
+  tierShadowMapSize: shadowMapSizeFor(TIER, 1024),
+  shadowBaseline: 1024,
   /*
    * `gl.getError()` — AND THE AUDIT IS WHAT FOUND IT MISSING.
    *

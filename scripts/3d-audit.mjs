@@ -140,67 +140,78 @@ for (const dir of envs) {
     await p.close();
   }
 
-  // ── 1b · THE LADDER MUST ACTUALLY BE CHEAPER ───────────────────────────────────────
+  // ── 1b · THE LADDER, MEASURED BY ALTERNATING MEDIANS ───────────────────────────────
   {
     /*
-     * A ladder that does not reduce cost is a lie, and it is a lie that no unit test can catch: the tier
-     * table is monotonic by construction (asserted in env.test.ts), but whether dropping AO and shrinking
-     * the shadow map actually makes THIS scene faster is a fact about the scene. So both ends are rendered
-     * and compared. `minimum` slower than `full` would mean the ladder is at best decoration.
+     * ALTERNATING A/B/A/B, MEDIAN OF EACH — and the previous method is why.
+     *
+     * The first version measured `full` once, then `minimum` once, then `full` again and used the spread of
+     * the two `full` runs as a noise floor. It reported E8's minimum tier as 38% SLOWER, "beyond this run's
+     * own 2.1% noise". An alternating probe of the same build returned -3.6%.
+     *
+     * The flaw is that two consecutive same-tier loads share whatever the machine was doing at that moment,
+     * so their agreement measures short-term stability and not the variance BETWEEN the two things being
+     * compared. A noise floor estimated more tightly than the comparison it guards will call ordinary drift
+     * a defect — which is exactly what it did, and I nearly went looking for a shadow-path bug on the
+     * strength of it.
+     *
+     * Interleaving makes load order cancel instead of accumulate, and a median discards the one slow run a
+     * mean would carry. Six loads per environment rather than three. That is the price of a number that
+     * means something.
      */
-    const p = await browser.newPage({ viewport: { width: 1400, height: 1000 }, deviceScaleFactor: 1 });
-    await p.goto(`${base}?frames=6&tier=minimum`);
-    try { await p.waitForFunction(() => document.title === 'READY', { timeout: 90000 }); } catch { /* below */ }
-    const rep = await p.evaluate(() => {
-      const k = Object.keys(globalThis).find((n) => /^E\d+$/.test(n));
-      return k ? globalThis[k] : null;
-    });
-    row.tierFull = row.msPerFrame;
-    row.tierMinimum = rep?.msPerFrame ?? null;
-    row.tierReported = rep?.tier ?? null;
+    const median = (xs) => { const v = xs.filter((x) => typeof x === 'number').sort((x, y) => x - y);
+      return v.length ? v[Math.floor(v.length / 2)] : null; };
+    const measure = async (tier) => {
+      const p = await browser.newPage({ viewport: { width: 1400, height: 1000 }, deviceScaleFactor: 1 });
+      await p.goto(`${base}?frames=6&tier=${tier}`);
+      try { await p.waitForFunction(() => document.title === 'READY', { timeout: 90000 }); } catch { /* below */ }
+      const rep = await p.evaluate(() => {
+        const k = Object.keys(globalThis).find((n) => /^E\d+$/.test(n));
+        return k ? globalThis[k] : null;
+      });
+      await p.close();
+      return rep;
+    };
+
+    const fulls = [];
+    const mins = [];
+    let lastMin = null;
+    for (let i = 0; i < 3; i++) {
+      const f = await measure('full');
+      if (f?.msPerFrame) fulls.push(f.msPerFrame);
+      const m = await measure('minimum');
+      if (m?.msPerFrame) mins.push(m.msPerFrame);
+      lastMin = m ?? lastMin;
+    }
+
+    row.tierFull = median(fulls);
+    row.tierMinimum = median(mins);
+    row.tierReported = lastMin?.tier ?? null;
+    /* Spread of the `full` runs across the WHOLE interleaved sequence — the same span the comparison is
+       drawn over, which is what makes it a fair floor. */
+    row.noisePct = (fulls.length > 1 && row.tierFull)
+      ? Number((100 * (Math.max(...fulls) - Math.min(...fulls)) / row.tierFull).toFixed(1)) : null;
     row.tierSaving = (row.tierFull && row.tierMinimum)
       ? Number((100 * (1 - row.tierMinimum / row.tierFull)).toFixed(1)) : null;
-    /* Which knobs the tier can actually move in THIS scene, so a small saving is explained rather than
-       suspicious. E2 has no ambient occlusion and no depth of field, so `minimum` changes only its shadow
-       map — and a near-zero saving there is the correct result, not a broken ladder. */
+
+    /*
+     * WHAT THE TIER CAN ACTUALLY TOUCH IN THIS SCENE. E0, E2 and E8 never reported `ao`/`dof`, so for them
+     * the tier drives only the shadow map — and a near-zero saving there is the correct result, not a
+     * broken ladder. Reported so a small number is explained rather than suspicious.
+     */
     row.tierAffects = [
-      rep?.ao !== undefined ? 'ao' : null,
-      rep?.dof !== undefined ? 'dof' : null,
-      rep?.tierShadowMapSize !== undefined ? 'shadow' : null,
-    ].filter(Boolean).join('+') || 'none';
+      lastMin?.ao !== undefined ? 'ao' : null,
+      lastMin?.dof !== undefined ? 'dof' : null,
+      lastMin?.tierShadowMapSize !== undefined ? 'shadow' : null,
+    ].filter(Boolean).join('+') || 'shadow only';
+
     if (row.tierReported !== 'minimum') {
       row.problems.push(`?tier=minimum reported tier "${t(row.tierReported)}" — the tier is not wired`);
     }
-    await p.close();
-  }
-
-  // ── 1c · WHAT THE INSTRUMENT'S OWN NOISE IS ────────────────────────────────────────
-  {
-    /*
-     * MEASURE THE NOISE BEFORE JUDGING A DIFFERENCE. The first version of the ladder check flagged E2 for
-     * being 4.5% slower at `minimum` — and E3's own notes record 39.2 to 54.4 ms across NINE runs of one
-     * unchanged build under SwiftShader on a busy machine. That is roughly 30% spread. A threshold of "any
-     * regression at all" is stricter than the instrument it is reading, so it reports noise as a defect.
-     *
-     * So `full` is rendered a second time and the spread between the two identical runs becomes the floor.
-     * Only a regression LARGER than the instrument's own disagreement with itself is a finding. This costs
-     * one extra page load per environment and it is the difference between a check and a coin toss.
-     */
-    const p = await browser.newPage({ viewport: { width: 1400, height: 1000 }, deviceScaleFactor: 1 });
-    await p.goto(`${base}?frames=6`);
-    try { await p.waitForFunction(() => document.title === 'READY', { timeout: 90000 }); } catch { /* below */ }
-    const rep = await p.evaluate(() => {
-      const k = Object.keys(globalThis).find((n) => /^E\d+$/.test(n));
-      return k ? globalThis[k] : null;
-    });
-    row.tierFullRepeat = rep?.msPerFrame ?? null;
-    row.noisePct = (row.tierFull && row.tierFullRepeat)
-      ? Number((100 * Math.abs(row.tierFullRepeat - row.tierFull) / row.tierFull).toFixed(1)) : null;
     if (row.tierSaving !== null && row.noisePct !== null && row.tierSaving < -row.noisePct) {
-      row.problems.push(`the minimum tier is slower than full by ${-row.tierSaving}%, beyond this run's `
-        + `own ${row.noisePct}% noise — the ladder may be decoration for this scene`);
+      row.problems.push(`minimum is ${-row.tierSaving}% slower than full, beyond the ${row.noisePct}% spread `
+        + 'of the interleaved full runs');
     }
-    await p.close();
   }
 
   // ── 2 · PRINT ──────────────────────────────────────────────────────────────────────
@@ -328,9 +339,9 @@ obstruction.
 
 ## Audit 4 · The quality ladder — measured, not assumed
 
-| env | tier reported | tier drives | full | full again | noise | minimum | saving |
-|---|---|---|---|---|---|---|---|
-${rows.map((r) => `| **${r.id}** | ${t(r.tierReported)} | ${t(r.tierAffects)} | ${t(r.tierFull)} ms | ${t(r.tierFullRepeat)} ms | ±${t(r.noisePct)}% | ${t(r.tierMinimum)} ms | ${r.tierSaving === null ? '\u2014' : r.tierSaving + '%'} |`).join('\n')}
+| env | tier reported | tier drives | full (median of 3) | spread | minimum (median of 3) | saving |
+|---|---|---|---|---|---|---|
+${rows.map((r) => `| **${r.id}** | ${t(r.tierReported)} | ${t(r.tierAffects)} | ${t(r.tierFull)} ms | ±${t(r.noisePct)}% | ${t(r.tierMinimum)} ms | ${r.tierSaving === null ? '\u2014' : r.tierSaving + '%'} |`).join('\n')}
 
 The tier table is monotonic by construction — \`env.test.ts\` asserts every axis descends together, because a
 ladder with one axis going the wrong way makes a lower tier *slower* on some machines, so the fallback for a
@@ -338,11 +349,15 @@ slow machine is the thing that breaks it. But whether dropping ambient occlusion
 actually makes a given scene faster is a fact about that scene, not about the table. So both ends are rendered
 and compared above.
 
-**The noise column is not decoration either.** \`full\` is rendered TWICE and the spread between two identical
-runs is the floor a regression has to clear before it counts. The first version of this check flagged E2 for
-being 4.5% slower at \`minimum\` — while E3's notes record 39.2 to 54.4 ms across nine runs of one unchanged
-build, roughly 30% spread. A threshold of "any regression at all" is stricter than the instrument reading it,
-and reports noise as a defect. The \`tier drives\` column exists for the same reason: E2 has no ambient
+**The method matters more than the numbers.** Each tier is rendered THREE times, ALTERNATING full/minimum,
+and each column is a median. The first version measured full once, minimum once, full again, and used the two
+full runs as a noise floor — it reported E8's minimum tier as **38% slower "beyond this run's own 2.1%
+noise"**, and an alternating probe of the same build returned **-3.6%**. Two consecutive same-tier loads share
+whatever the machine was doing at that moment, so their agreement measures short-term stability rather than the
+variance between the two things being compared; a floor estimated more tightly than the comparison it guards
+will call ordinary drift a defect. It did, and I nearly went looking for a shadow-path bug on the strength of
+it. Interleaving makes load order cancel instead of accumulate, and a median discards the one slow run a mean
+would carry. The \`tier drives\` column exists for the same reason: E2 has no ambient
 occlusion and no depth of field, so \`minimum\` changes only its shadow map, and a near-zero saving there is
 the correct result rather than a broken ladder.
 

@@ -42,7 +42,7 @@ import {
   viewProjection, eyeOf, nearFarOf, lightViewProjection, boundsRadius, boundsCentre, triangleCount,
   hexToLinear, assertBrandFidelity, projectScreen, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint, type StageRefusal,
-  QUALITY_TIERS, qualitySettings, type QualityTier,
+  QUALITY_TIERS, qualitySettings, shadowMapSizeFor, type QualityTier,
 } from '@lcx/gl';
 import {
   buildSurfaceMesh, isProjectedSurface, WITHHELD,
@@ -227,7 +227,7 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
 const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
 const lit = required('lit', createLitRenderer(stage));
 const target = required('target', createTarget3D(stage, W, H));
-const shadow = required('shadow', createShadowMap(stage, Q.shadowMapSize));
+const shadow = required('shadow', createShadowMap(stage, shadowMapSizeFor(TIER, 1536)));
 const skyBox = required('sky', createSkyBackdrop(stage));
 const ao = required('ao', createAmbientOcclusion(stage, W, H));
 
@@ -668,7 +668,10 @@ const report = {
      A tier that cannot be reported is a tier that cannot be trusted. */
   tier: Q.tier,
   tierDprScale: Q.dprScale,
-  tierShadowMapSize: Q.shadowMapSize,
+  /* The tier SCALES this environment's own baseline (1536) rather than replacing it — the
+     ladder must not change what the frame looks like at its highest tier. */
+  tierShadowMapSize: shadowMapSizeFor(TIER, 1536),
+  shadowBaseline: 1536,
   /* Empty means every brand hex round-tripped exactly through this frame's own pipeline. */
   brandFidelity: brandFailures,
   ao: AO_ON,

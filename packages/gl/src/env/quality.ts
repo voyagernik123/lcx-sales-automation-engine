@@ -85,6 +85,31 @@ const LADDER: Record<QualityTier, Omit<QualitySettings, 'tier'>> = {
   },
 };
 
+/**
+ * Scale an environment's OWN shadow-map size by tier, rather than replacing it.
+ *
+ * Wiring the ladder in naively used the tier's absolute `shadowMapSize`, which silently ENLARGED three
+ * environments: E0, E2 and E8 had each chosen 1024 and were handed 1536 at the default tier — a 2.25x bigger
+ * map, and three captures that changed without anyone saying so. A quality ladder that alters what an
+ * environment looks like at its highest tier is not a ladder, it is a redesign.
+ *
+ * So the tier is a MULTIPLIER on a baseline the environment picked for its own scene. E1's 1536 was chosen
+ * because its shadow tails cross a 15 m deck; E8's 1024 because its subject is one disc. Both are right, and
+ * neither is the ladder's business.
+ *
+ * Snapped to a power of two, since the baselines are and a non-power-of-two depth texture is a needless
+ * driver risk for no benefit.
+ */
+export function shadowMapSizeFor(tier: QualityTier, baseline: number): number {
+  const base = Number.isFinite(baseline) && baseline > 0 ? baseline : 1024;
+  const factor = tier === 'full' ? 1 : tier === 'reduced' ? 0.5 : 0.25;
+  const wanted = base * factor;
+  const pot = 2 ** Math.round(Math.log2(wanted));
+  /* 256 is the floor: below that the map is coarser than the contact shadow it exists to draw, and a
+     contact shadow that misses its own object is worse than a hard-edged one. */
+  return Math.max(256, Math.min(base, pot));
+}
+
 export function qualitySettings(tier: QualityTier): QualitySettings {
   return { tier, ...LADDER[tier] };
 }

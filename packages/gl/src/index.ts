@@ -89,7 +89,7 @@ export { createParticleField, particleLayout, emissionSchedule, CURL_NOISE_GLSL 
 export type { ParticleField, ParticleSource } from './env/particles.js';
 export { createVolumeField, rayBoxSlab, marchPlan, RAY_BOX_GLSL } from './env/volume.js';
 export type { VolumeField } from './env/volume.js';
-export { QUALITY_TIERS, qualitySettings, pickQualityTier, prefersReducedMotion } from './env/quality.js';
+export { QUALITY_TIERS, qualitySettings, pickQualityTier, prefersReducedMotion, shadowMapSizeFor } from './env/quality.js';
 export type { QualityTier, QualitySettings } from './env/quality.js';
 export type { QuadCorners, QuadProjection, QuadRefusal } from './env/project.js';
 export {

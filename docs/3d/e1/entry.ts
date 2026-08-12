@@ -33,7 +33,7 @@ import {
   viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre, triangleCount,
   hexToLinear, assertBrandFidelity, projectScreen, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint, type StageRefusal,
-  QUALITY_TIERS, qualitySettings, type QualityTier,
+  QUALITY_TIERS, qualitySettings, shadowMapSizeFor, type QualityTier,
 } from '@lcx/gl';
 import { installFlatFallback } from '../_shared/flatFallback.js';
 
@@ -180,7 +180,7 @@ const target = required('target', createTarget3D(stage, W, H));
 /* 1536, not E0's and E8's 1024. Those scenes fit one object in a ~5 m frustum; this one has to
    cover the deck the shadow tails cross, which is 15 m wide — at 1024 a texel is 15 mm and the
    panel-on-panel shadows, the strongest depth cue after the rack, arrive visibly stepped. */
-const shadow = required('shadow', createShadowMap(stage, Q.shadowMapSize));
+const shadow = required('shadow', createShadowMap(stage, shadowMapSizeFor(TIER, 1536)));
 const skyBox = required('sky', createSkyBackdrop(stage));
 const ao = required('ao', createAmbientOcclusion(stage, W, H));
 const dof = required('dof', createDepthOfField(stage, W, H));
@@ -984,7 +984,10 @@ const report = {
      A tier that cannot be reported is a tier that cannot be trusted. */
   tier: Q.tier,
   tierDprScale: Q.dprScale,
-  tierShadowMapSize: Q.shadowMapSize,
+  /* The tier SCALES this environment's own baseline (1536) rather than replacing it — the
+     ladder must not change what the frame looks like at its highest tier. */
+  tierShadowMapSize: shadowMapSizeFor(TIER, 1536),
+  shadowBaseline: 1536,
   /* Empty means every brand hex round-tripped exactly through this frame's own pipeline. */
   brandFidelity: brandFailures,
   dof: DOF_ON,
