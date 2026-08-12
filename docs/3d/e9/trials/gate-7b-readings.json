@@ -1,0 +1,74 @@
+[
+  {
+    "label": "",
+    "choice": "$1000k",
+    "readOff": "Nothing at 180 days is actually readable. The 180-day line is the lower-right plan edge (labels 2500/1000/500/250/100 run up it), and no surface geometry is drawn above that edge in this view \u2014 the figure's own caption says this is one azimuth of two and the far face needs another. The only legible fact bearing on it is the right-hand silhouette: the surface peaks near the (14 d, $100k) corner (~0.6) and descends monotonically into the right corner, (180 d, $100k), which sits at the floor of the 0.14-0.74 domain \u2014 so $100k is the LOWEST at 180 days, not the highest. I picked $1000k by inferring a diagonal ridge (larger tickets peaking at longer cycles) from that fall-off, not by reading a height. The right-side ticket ticks also overprint each other into an illegible cluster, and the caption declares the heights placeholders with 2 holes and 4 withheld cells.",
+    "confident": false
+  },
+  {
+    "label": "",
+    "choice": "Concentrated in one period",
+    "readOff": "Every orange/red (BLOCKED) slab sits in the same narrow depth band, and the three legible red labels read \"BLOCKED \u00b7 2.0d ago\" (export.bulk, j.kohler, left corridor), \"BLOCKED \u00b7 1.9d ago\" (export.bulk, j.kohler, right corridor) and \"BLOCKED \u00b7 1.8d ago\" (compartment.read, j.kohler, right corridor) \u2014 a spread of about 0.2 of a day. Since depth is time (12 h per metre, per the header), the red geometry all clusters just behind the 1d tick and in front of/near the 3d tick, while the blue ALLOWED cards are strung out across 3h, 9h, 1.3d and deeper. Nothing red appears in the near foreground (last ~1 day) or out toward the 7d/14d ticks. Caveat: the legend counts BLOCKED \u00b7 6 but only about four red slabs are separable, so one or two could be lost in the fog past the stated 4.0d readable limit.",
+    "confident": true
+  },
+  {
+    "label": "",
+    "choice": "$500k",
+    "readOff": "Inferred, not read: the only labelled value is the callout \"PEAK 74% \u2014 $500k \u00b7 30 d\", and the labelled contour ladder (20%\u219270%) climbs along the back silhouette toward that same ridge, implying the crest sits at the $500k ticket column for every days value. The measured front-left edge (the days=180 row, per the 25\u21922500 left-edge and 7\u2192180 right-edge label runs) does gain height monotonically up to about the $500k column \u2014 but it is then interrupted by a notch of bare plinth, consistent with the panel's HOLES_PRESENT / CELLS_WITHHELD and n=24/30 CELLS, plus the three orange withheld blocks sitting in that high-ticket/long-days region. There is no vertical axis, no z ticks (Z_DOMAIN_EXCLUDES_ZERO), and not one labelled contour on the near-facing slope, so no per-band win rate at 180 days can actually be read off the picture.",
+    "confident": false
+  },
+  {
+    "label": "",
+    "choice": "Concentrated in one period",
+    "readOff": "All rust/orange (BLOCKED) panels sit in one narrow depth band of the depth-is-time corridor, and the three legible ones read \"BLOCKED \u00b7 2.0d ago export.bulk\", \"BLOCKED \u00b7 1.9d ago export.bulk\" and \"BLOCKED \u00b7 1.8d ago compartment.read\" \u2014 all j.kohler, all inside a ~0.2-day window near the 3d tick \u2014 while the blue ALLOWED cards spread from 3h out past 7d. Legend confirms BLOCKED \u00b7 6, and the remaining small rust panels are clustered at the same distance.",
+    "confident": true
+  },
+  {
+    "label": "",
+    "choice": "Concentrated in one period",
+    "readOff": "The three legible red cards all carry near-identical timestamps \u2014 BLOCKED \u00b7 2.0d ago (export.bulk, j.kohler) on the left rail, BLOCKED \u00b7 1.9d ago (export.bulk, j.kohler) and BLOCKED \u00b7 1.8d ago (compartment.read, j.kohler) on the right rail \u2014 a ~5-hour band against floor depth ticks of 1d/3d/7d/14d, while the nearest cards (ALLOWED \u00b7 3h, 9h, 1.3d) are all blue. Caveat: the legend says BLOCKED \u00b7 6 and only 3 are readable; enlarging the far corridor shows at least one red slab past the ~4d rfi.extract card and a fainter red sliver deeper still, both unlabelled, matching the header's own 'READABLE TO 4.0 d' of a 19.3 d window.",
+    "confident": false
+  },
+  {
+    "label": "",
+    "choice": "Concentrated in one period",
+    "readOff": "I read the \"When\"/\"Verdict\" columns of the flat table row by row. Six BLOCKED rows are visible, and four of them are consecutive rows in a tight band: 1.8 d ago (compartment.read), 1.9 d ago (compartment.read), 1.9 d ago (export.bulk), 2.0 d ago (export.bulk) \u2014 all by j.kohler, i.e. a burst inside a roughly 5-hour span about two days back. The only other BLOCKED entries are isolated singletons far away (5.3 d ago sat.gate, 15.3 d ago compartment.read), so the blocked activity is dominated by one short cluster rather than being distributed across the 19-day window. Caveat: the clustering is not visible as a shape \u2014 it has to be reconstructed by reading 24 individual timestamps and doing arithmetic \u2014 and the table is cut off at the bottom edge (last visible row 19.3 d ago), so any further BLOCKED rows below the crop are unaccounted for.",
+    "confident": true
+  },
+  {
+    "label": "",
+    "choice": "Concentrated in one period",
+    "readOff": "Scanning the \"When\"/\"Verdict\" columns row by row: four BLOCKED rows sit adjacent at 1.8 d, 1.9 d, 1.9 d and 2.0 d ago (compartment.read \u00d72, export.bulk \u00d72, all actor j.kohler) \u2014 four of the six visible blocks packed into a ~0.2-day span. The only other BLOCKED rows are isolated singletons at 5.3 d ago (sat.gate, svc.operator) and 15.3 d ago (compartment.read, j.kohler). Nothing in the picture displays that clustering as a shape; I had to read the timestamps serially and do the arithmetic myself, and the table is clipped at the bottom edge of the image (last visible row 19.3 d ago), so any further-back rows are unseen.",
+    "confident": false
+  },
+  {
+    "label": "",
+    "choice": "Concentrated in one period",
+    "readOff": "I read the \"When\" and \"Verdict\" columns row by row. Six BLOCKED rows are visible, and four of them sit inside a ~0.2-day window: 1.8 d ago (compartment.read), 1.9 d ago (compartment.read), 1.9 d ago (export.bulk), 2.0 d ago (export.bulk) \u2014 all by the same actor, j.kohler. The only other BLOCKED rows are isolated singletons at 5.3 d ago (sat.gate, svc.operator) and 15.3 d ago (compartment.read, j.kohler). So the blocked activity is a burst around the 1.8\u20132.0 day mark rather than an even spread. Caveat: I had to derive this by mentally binning 24 rows of text \u2014 the flat table shows no distribution at all \u2014 and the table is cropped at the bottom of the image (last visible row is 19.3 d ago), so rows below the fold could carry blocked actions I cannot see.",
+    "confident": true
+  },
+  {
+    "label": "",
+    "choice": "$500k",
+    "readOff": "180 days is the front-left edge of the surface (the edge along which the ticket-size ticks 25\u20262500 run). Along that near edge the sheet's height above the base plate rises monotonically left to right (~39px above the plate near \"50\", ~50px at \"100\", ~84px at \"250\", ~122px at \"500\", still rising after perspective correction), and then the sheet simply ends just past the \"500\" label \u2014 beyond it is bare plate (floor colour), which is exactly where the three gold WITHHELD pads and the ABSENT hole-pin sit, so $1000k has no value at 180 days. The \"PEAK 74% \u00b7 $500k \u00b7 30 d\" callout corroborates that the ridge sits in the $500k band.",
+    "confident": false
+  },
+  {
+    "label": "",
+    "choice": "$1000k",
+    "readOff": "The front-right edge of the plan diamond is the 180-day row (near corner = 180 d / $2500k, right corner = smallest ticket). Tracing the mesh boundary above that edge, height rises monotonically with ticket size (~0.20 at $100k, ~0.24 at $250k, ~0.29 at $500k, ~0.39 at $1000k, peaking off-option at $2500k), so the largest offered band is highest. This only came out of a pixel-level reconstruction of the axonometric mapping: the ticket axis is linear in dollars, so $100k/$250k/$500k occupy the last ~10% of the edge with their tick labels overprinted into an unreadable blob, the mesh's vertical scale does not reconcile with the z-axis ticks (24 px per 0.1 = 240 px/unit on the axis vs ~450-560 px/unit needed for the mesh to fit the stated 0.14-0.74 domain), and the 180-day edge is broken by an open cell near the 60-day boundary. Nothing in that corner is separable by eye.",
+    "confident": false
+  },
+  {
+    "label": "",
+    "choice": "$1000k",
+    "readOff": "Axis labels put 180 days at the near/bottom corner and 2500k there too, with 100k at the right corner, so the 180-day slice is the near-right edge. Measured against the z-axis (0.2 at y=583, 0.7 at y=464, floor 0.14 at y=597), the surface's right tip touches the right corner at y=594 (~0.15) \u2014 so 100k at 180 days is the LOWEST cell \u2014 while the peak (~0.6-0.74) sits above the opposite far corner (14 days, smallest ticket). That diagonal ridge (fast+small, slow+large) implies the largest band wins at 180 days, and since 2500k is not an option the inference lands on 1000k. Critically, the cells that would actually show this are not drawn: the whole near half of the footprint, including the (180 d, 2500k) corner, is bare background (sampled RGB 4,6,11), the mesh is a ribbon hugging only the two far edges, and each screen column carries two plan points so heights along the 180-day row are ambiguous \u2014 the caption itself says the far face needs another azimuth.",
+    "confident": false
+  },
+  {
+    "label": "",
+    "choice": "$500k",
+    "readOff": "The 180-day row is the plate's front-left edge (the 25..2500 ticket ticks sit along it). The surface's front-left silhouette climbs monotonically left-to-right \u2014 from hugging the floor to a sharp corner where it stops \u2014 so win rate rises with ticket size at 180 days, and the highest DRAWN node on that edge is $500k. But that read is not available by eye: I got it by extracting the surface mask and fitting a projective map from the tick labels plus the peak drop-pole's base. Validation: the 3 gold WITHHELD blocks land exactly on nodes ($1000k/90d, $2500k/90d, $1000k/180d) with a consistent 23px marker offset; pixel-height x perspective weight at the peak node returns 74.0% vs the printed \"74% $500k 30d\"; and the 6 cells killed by 3 withheld + 2 absent points reproduce the printed \"OBSERVED 24 cells\" of 30. That calibration gives, along days=180: ~6% at $50k, ~26% at $100k, ~49% at $250k, ~68% at $500k, and the edge terminates there because $1000k/180d is the withheld block. So $1000k \u2014 the only option that could beat it \u2014 is a value the chart deliberately does not show.",
+    "confident": false
+  }
+]

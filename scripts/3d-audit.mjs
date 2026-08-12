@@ -531,6 +531,43 @@ So the sheet does not measure (a). It makes the judgement cheap and even-handed,
 The output is tagged \`JUDGEMENT_NOT_MEASUREMENT\` and carries a judge count. That distinction is the point, and
 it should survive being quoted.
 
+## Audit 5c · §7(b) — a machine-reader trial was RUN, and it INVALIDATED ITSELF
+
+Twelve naive agents, one image and one question each, counterbalanced, answer key computed from the datasets
+rather than authored. Raw readings in \`docs/3d/e9/trials/gate-7b-readings.json\`.
+
+**Headline: relief 6/6 correct, flat 0/3.** That is the result I wanted, and **it is not a valid reading of
+§7(b).** It is recorded here in full because a flattering number with a broken instrument behind it is the
+specific failure this programme has already committed twice.
+
+Four defects, all of them mine, in the trial design:
+
+**1 · The relief frame printed the answer.** E5's HUD carries \`PEAK 74% · $500k · 30 d\`. The question asked
+about the 180-day band, but the answer is the same ticket band, so the callout gave it away. One reader said so
+outright — *"Inferred, not read: the only labelled value is the callout"*.
+
+**2 · Every relief reader said the answer was NOT legible.** Two reconstructed it by pixel arithmetic — *"that
+read is not available by eye: I got it by extracting the surface mask and fitting a projective map"* — and the
+third called it *"inferred, not read … no per-band win rate at 180 days can actually be read off the picture"*.
+A 3/3 obtained that way measures the reader's patience with a PNG, not the surface's legibility.
+
+**3 · The flat panel could not answer the question at all.** All three flat readers independently reported that
+the 180-day row is on the far side and undrawn at that azimuth — and the shipping component takes an
+\`azimuthDeg\` an operator can rotate, which the static capture I handed them could not. So flat scored 0 for a
+structural reason I created, not for anything about flat figures.
+
+**4 · An LLM is the wrong instrument, and this one is not fixable.** Given an image, a model does projective
+reconstruction; a human glancing at a chart does not. Even with the first three defects repaired, the thing
+being measured would not be human reading.
+
+**What survives is one genuine finding, and it is worth the whole exercise:** three readers who had never seen
+this codebase independently discovered that a single-azimuth capture of the flat surface cannot answer a
+question about its far face. The figure's own caption says a second azimuth is needed; nobody had checked what
+that costs a reader who only has the one.
+
+**§7(b) therefore remains UNMEASURED on all nine environments**, and this trial is now the evidence that a
+machine reader cannot stand in for the human one. \`task.html\` still needs a person.
+
 ## Audit 5 · §7(b) — the instrument exists; the reading does not
 
 \`docs/3d/e9/task.html\`. The gate's second clause is *"an operator still gets their answer at least as fast as

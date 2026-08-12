@@ -56,6 +56,43 @@ import {
   checkClaimSafety,
 } from '../../../../packages/shared/src/marketing/claimSafety';
 import { namedAssets } from '@/components/marketing/preChecks';
+/*
+ * E7 THE STORM, PROMOTED — AND MOUNTED ON AN ABSENCE, WHICH IS THE HONEST STATE OF IT.
+ *
+ * `3D_VFX_1000X.md` §2 lists E7 as replacing a "`MarketingCrisis` heatmap". There is no heatmap on this
+ * page and there never was: it is clocks, statements, clearance lanes and gates, with no day axis, no
+ * `<svg>` and no per-day series anywhere in its 2,126 lines. Nor is there a forward risk feed to build one
+ * from — nothing in `apps/api/src/marketing` or `packages/shared/src/marketing` produces risk by day,
+ * channel and severity band.
+ *
+ * So the promotion mounts the pair (`StormRelief` → flat `RiskCalendar` by default, volumetric behind a
+ * toggle that defaults off per §7) against a NAMED absence rather than against invented numbers. Two
+ * things were refused on the way here and both are worth recording:
+ *
+ *   · Authoring `docs/3d/e7`'s 39 synthetic flagged items onto this page, even declared in amber. This is
+ *     a compliance instrument used during a live incident and its sheets get printed and filed; synthetic
+ *     risk figures on it would eventually be read as the desk's own forward view.
+ *   · Rendering nothing until a feed exists. A panel that disappears when its feed is missing is
+ *     indistinguishable from a quiet fortnight, which is the one reading this whole component refuses.
+ *
+ * The moment a feed lands, `buildRiskField` takes it and both views work with no change here.
+ */
+import { StormRelief } from '@/components/risk/StormRelief';
+import { riskFieldUnavailable } from '@/components/risk/riskField';
+
+/**
+ * WHY THERE IS NO CALENDAR, in the reader's words and naming whose input is missing.
+ *
+ * Module-level and constant, so it is not rebuilt per render and cannot become a different absence
+ * between two paints.
+ */
+const FORWARD_RISK = riskFieldUnavailable(
+  'No forward risk feed reaches this desk. Marketing risk by day, channel and severity band is not '
+  + 'produced anywhere in this system today — not by the crisis engine, which is pure text and gates, and '
+  + 'not by the record compartment, which looks backwards at what was published. So there is nothing to '
+  + 'draw and nothing to accumulate. This is NOT an all-clear for the days ahead: it is the absence of an '
+  + 'instrument, and closing it is an owner decision about what the monitor reports, not a rendering one.',
+);
 
 /**
  * THE CRISIS ROOM — LCX MARKETING M5.
@@ -1188,6 +1225,28 @@ export function MarketingCrisis() {
           ))}
         </ol>
       )}
+
+      {/* ══ §7 THE DAYS AHEAD ══ */}
+      <SectionHead
+        n="§7"
+        title="The days ahead"
+        note={
+          <>
+            Everything above is about an incident that has already started. This is the other half — the
+            risk already scheduled to land, by day, channel and severity — and the desk has no feed for it.
+            The panel says so rather than showing a calm fortnight.
+          </>
+        }
+      />
+      <StormRelief
+        field={FORWARD_RISK}
+        title="Marketing risk by day, channel and severity"
+        readsAs={
+          'Each cell is one channel on one day; the strip underneath is the total risk between now and '
+          + 'that day, and it refuses rather than continuing across a day nobody measured.'
+        }
+        heightPx={240}
+      />
 
       <ClosingStatement
         printedAt={printedAt}

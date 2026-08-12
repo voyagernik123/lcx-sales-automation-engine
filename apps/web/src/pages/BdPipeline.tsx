@@ -12,7 +12,7 @@ import {
   type QueueLead,
   type SnoozeOpts,
 } from '@/lib/api/queue';
-import { LeadTable } from '@/components/bd';
+import { PipelineRelief } from '@/components/geometry/PipelineRelief';
 import { DisqualifyDialog, SavedScreens, SessionMode, SnoozeMenu, SplitTabs, TriageBar } from '@/components/queue';
 import {
   SPLIT_HINTS,
@@ -830,7 +830,23 @@ export function BdPipeline() {
 
             {!loading && !error && (
               <>
-                <LeadTable
+                {/*
+                  E3 THE PIPELINE, LIVE — and opt-in, which §7 requires rather than permits.
+
+                  `PipelineRelief` renders this exact table by default and offers a channel reading one click
+                  away, derived from the SAME rows: one dataset, two drawings, which is what makes them
+                  comparable at all. The channel is what a sorted table cannot be — market cap as an object's
+                  size, band as its position down a lit channel, days-since-`updatedAt` as its HEIGHT, so value
+                  that has cleared the warm gate and then stopped moving is a shape rather than two sorts and
+                  some arithmetic.
+
+                  It defaults OFF because §7's clause (b) — "an operator still gets their answer at least as
+                  fast as the flat version" — is UNMEASURED on every environment in the programme. Not failed;
+                  unmeasured. §7 says exactly what to do about that: ship behind a toggle that defaults off and
+                  say so rather than shipping quietly. The button carries the reason, and on this surface it
+                  carries a second one — the triage grammar below acts on rows, and a canvas has none.
+                */}
+                <PipelineRelief
                   leads={workingVisible}
                   filters={currentFilters}
                   clarityEnacted={clarityEnacted}
@@ -871,7 +887,10 @@ export function BdPipeline() {
             description={EMPTY_SPLIT_COPY[activeSplit].description}
           />
         ) : (
-          <LeadTable
+          /* The three counted splits get the same drop-in. Only one of the two mounts is ever rendered, so
+             there is exactly one channel toggle on the page at a time, and each split's channel is derived
+             from the rows that split actually shows. */
+          <PipelineRelief
             leads={visibleRows}
             filters={currentFilters}
             clarityEnacted={clarityEnacted}

@@ -120,7 +120,9 @@ export type RiskFieldRefusalCode =
   | 'NON_OBSERVED_DAY_CARRIES_VALUES'
   | 'NEGATIVE_RISK'
   | 'NO_OBSERVED_DAY'
-  | 'NO_RISK_OBSERVED';
+  | 'NO_RISK_OBSERVED'
+  /** No feed reaches this surface at all. Not "no risk ahead" — see `riskFieldUnavailable`. */
+  | 'NO_FORWARD_RISK_FEED';
 
 export interface RiskFieldRefusal {
   readonly kind: 'refused';
@@ -140,6 +142,21 @@ const refuse = (code: RiskFieldRefusalCode, reason: string): RiskFieldRefusal =>
 );
 
 const round3 = (v: number): number => Math.round(v * 1000) / 1000;
+
+/**
+ * A surface that has no feed to build a field from, said out loud.
+ *
+ * The failure to design against is not a blank page — it is a page that renders the absence of a feed as
+ * a calm fortnight. This exists so a caller with nothing to plot can hand the figure a NAMED absence and
+ * have it printed, which is the same posture `ClaimExpiryLedger` takes with `usable: false` rather than
+ * reporting "0 claims past due".
+ *
+ * `reason` must say what is missing and whose it is to supply. A refusal that does not name its owner is
+ * a shrug.
+ */
+export function riskFieldUnavailable(reason: string): RiskFieldRefusal {
+  return { kind: 'refused', code: 'NO_FORWARD_RISK_FEED', reason };
+}
 
 /**
  * Build the field, or refuse it. Never returns a field that is partly true.

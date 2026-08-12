@@ -6,6 +6,7 @@ import type { AuditEntry } from '@/lib/api/audit';
 import { Button } from '@/components/ui';
 import { EmptyState, TableSkeleton } from '@/components/shared';
 import { EntityChip } from '@/components/entity';
+import { VaultRelief } from '@/components/geometry/VaultRelief';
 import type { ObjectType } from '@/lib/objectRegistry';
 import { useInspect } from '@/stores';
 import type { InspectorEntityType } from '@/stores';
@@ -221,7 +222,19 @@ export function AuditLog() {
           <EmptyState variant="search" title="No audit events found" description="No events match the current filters." />
         )}
 
+        {/*
+          E6 THE VAULT, LIVE — and opt-in, which §7 of `3D_VFX_1000X.md` requires rather than permits.
+
+          This page has no flat component to swap: the table below is inline JSX. So `VaultRelief` wraps it and
+          renders it UNCHANGED as its default child rather than the page being restructured to suit the 3-D view.
+          The corridor draws the SAME `entries` array the table draws — one page of the audit spine, two drawings.
+
+          It defaults to the table because §7's clause (b) — "an operator still gets their answer at least as fast
+          as the flat version" — is UNMEASURED on every environment in the programme. Not failed; unmeasured. The
+          button carries the reason, next to the button, in the reader's words.
+        */}
         {!loading && !error && entries.length > 0 && (
+          <VaultRelief entries={entries}>
           <table className="w-full text-xs">
             <thead>
               <tr className="border-b border-line sticky top-0 bg-card">
@@ -278,6 +291,7 @@ export function AuditLog() {
               })}
             </tbody>
           </table>
+          </VaultRelief>
         )}
       </div>
 

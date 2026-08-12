@@ -1,0 +1,205 @@
+/**
+ * The BD lead queue, with an OPT-IN three-dimensional reading. A drop-in replacement for `LeadTable`.
+ *
+ * ── WHY IT DEFAULTS TO THE TABLE, AND WILL UNTIL SOMEBODY TIMES IT ───────────────────
+ * §7 of `3D_VFX_1000X.md` gates every environment on two clauses together: *(a) a stranger stops scrolling*
+ * and *(b) an operator still gets their answer at least as fast as the flat version*. It then says exactly
+ * what to do when (b) is not established: *"it ships behind a toggle that defaults off, and I tell you rather
+ * than quietly shipping it."*
+ *
+ * (b) is not established. It is not FAILED either — it is UNMEASURED, on all nine environments. The instrument
+ * exists (`docs/3d/e9/task.html`: counterbalanced, matched question pairs, a clock that starts when the surface
+ * appears, refusing to report a time when accuracy differs) and no operator has run it, because it cannot be
+ * run by whoever built the surfaces — the file is its own answer key.
+ *
+ * So the table is what loads, the channel is one click away, and the button says why. An unmeasured claim
+ * shipped as a default is the same defect as a number published without an instrument.
+ *
+ * ── AND ON THIS SURFACE THE TABLE IS NOT A CONSOLATION PRIZE ─────────────────────────
+ * E3 replaces a lead table, which makes this an unusually honest fallback: the flat view is the incumbent, with
+ * every field the environment uses and — unlike the channel — the triage grammar. `s`, `d`, `e`, `j`/`k` and
+ * Space act on table rows; a canvas has no rows. What the table cannot do is the JOINT reading: market cap,
+ * stage and movement are three columns you sort one at a time, and the quantity an operator wants is the
+ * product of all three. That is the trade, and it is stated beside the button rather than discovered.
+ *
+ * ── THE GL IS LAZY, AND THAT IS A BUDGET FACT NOT A PREFERENCE ───────────────────────
+ * `PipelineReliefGl` and all of `@lcx/gl`'s environment layer arrive in a separate chunk. The perf budget
+ * measures RAW pre-gzip initial JS against 850 KB with roughly 11 KB of headroom for the entire application,
+ * and the env layer alone is 35.7 KB. An eager import would blow the budget on a view most readers never open.
+ *
+ * ── EVERY REFUSAL LANDS BACK ON THE TABLE ────────────────────────────────────────────
+ * §6 rule 1. No WebGL2, a failed shader, a refused float target, a missing extension, a brand-fidelity
+ * failure, a dataset the derivation would not accept, or a lost context all resolve here — to the same rows,
+ * with the refusal named to the reader rather than swallowed. The derivation runs EAGERLY and cheaply, so a
+ * refused dataset never pays for the chunk that would have told it so.
+ */
+import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import { LeadTable, type LeadTableProps } from '@/components/bd/LeadTable';
+import {
+  buildChannel, formatUsd, DEEP_GATE_LABEL, GATE_LABELS, MAX_PER_GATE, STALL_DAYS, STALL_ONSET,
+} from '@/components/geometry/pipelineChannel';
+
+const PipelineReliefGl = lazy(() => import('@/components/geometry/PipelineReliefGl'));
+
+export interface PipelineReliefProps extends LeadTableProps {
+  /** Canvas height when the relief is showing. The table's own height is unaffected. */
+  readonly reliefHeightPx?: number;
+}
+
+export function PipelineRelief({ reliefHeightPx = 460, ...table }: PipelineReliefProps) {
+  const [wantRelief, setWantRelief] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
+
+  /*
+   * ONE CLOCK READING FOR THE WHOLE MOUNT.
+   *
+   * Days-since-update is measured against a `now` that is captured once, not per render: a `Date.now()` inside
+   * the derivation would make every re-render a new dataset, which would tear the GL context down and rebuild
+   * it — a fresh WebGL context per keystroke elsewhere on the page, which is exactly what §6 rule 7 exists to
+   * prevent. It also means the caption and the frame are measured from the same instant.
+   */
+  const [nowMs] = useState(() => Date.now());
+
+  /*
+   * CHEAP, EAGER, AND NOT BEHIND THE CHUNK. `buildChannel` imports no GL. Running it here means the toggle can
+   * be honestly disabled on a dataset the channel would refuse, and the reason can be named without fetching
+   * 35.7 KB to be told the same thing.
+   */
+  const channel = useMemo(() => buildChannel(table.leads, nowMs), [table.leads, nowMs]);
+
+  /*
+   * STABLE, because `PipelineReliefGl` lists it in an effect's dependencies. A fresh function each render would
+   * tear the renderer down and rebuild it on every parent render — see the note on `nowMs` above.
+   */
+  const onRefused = useCallback((code: string) => {
+    setRefusal(code);
+    /* Back to the table immediately. A canvas that failed keeps its last frame — or nothing — on screen, and a
+       stale picture presented as live data is worse than no picture. */
+    setWantRelief(false);
+  }, []);
+
+  const offerable = channel.refusal === null && channel.deals.length > 0;
+  const blocked = refusal !== null || !offerable;
+  const showRelief = wantRelief && !blocked;
+
+  const headline = ((): string => {
+    if (channel.deepStalledUsd === null) {
+      return `No readable market cap in this set — ${channel.valueAbsent} of ${channel.drawn} drawn leads `
+        + 'carry none, so no share is computable.';
+    }
+    const share = channel.deepStalledShare === null
+      ? 'share not computable'
+      : `${(channel.deepStalledShare * 100).toFixed(0)}% of the readable book`;
+    return `${formatUsd(channel.deepStalledUsd)} sits past the ${DEEP_GATE_LABEL} gate and has stopped `
+      + `moving — ${share}. ${channel.stalledCount} of ${channel.drawn} drawn leads are stalled `
+      + `(${STALL_ONSET} days or more since their last touch).`;
+  })();
+
+  return (
+    <div>
+      {showRelief ? (
+        <div className="px-3 py-2">
+          <Suspense fallback={<LeadTable {...table} />}>
+            <PipelineReliefGl channel={channel} heightPx={reliefHeightPx} onRefused={onRefused} />
+          </Suspense>
+          {/*
+            THE CAPTION IS PART OF THE FIGURE, and it is the DOM half of §6 rule 4.
+            The channel carries no per-object labels — the table one click away carries every name, cap and
+            date — so what the frame needs in text is the axis, the gate order, and the one number the shape is
+            there to show. Every figure here comes from the same `buildChannel` result the geometry is built
+            from, so the picture and the print cannot drift.
+          */}
+          <div
+            className="mt-2 space-y-1 text-micro leading-snug text-grey"
+            data-testid="pipeline-relief-caption"
+          >
+            <p className="font-bold text-navy">{headline}</p>
+            <p>
+              Far end → near end: {GATE_LABELS.join(' · ')}. Size is market cap by VOLUME, so the edge is a
+              cube root — the small end is honestly weak, and the table carries the number. Height is movement:
+              at the top rail a lead was touched today, on the deck it has not been touched for{' '}
+              {STALL_DAYS} days or more. The three marks on the near wall are 0, 20 and {STALL_DAYS}+ days.
+            </p>
+            {(channel.valueAbsent > 0 || channel.movementAbsent > 0) && (
+              <p>
+                {channel.valueAbsent > 0 && (
+                  <>
+                    {channel.valueAbsent} drawn lead{channel.valueAbsent === 1 ? '' : 's'} record no market
+                    cap and {channel.valueAbsent === 1 ? 'is' : 'are'} drawn as an amber ring — a hole where
+                    the mass should be, at a reference size that encodes nothing. Never a zero-mass object.{' '}
+                  </>
+                )}
+                {channel.movementAbsent > 0 && (
+                  <>
+                    {channel.movementAbsent} {channel.movementAbsent === 1 ? 'floats' : 'float'} clear ABOVE
+                    the top rail, off the movement axis, because a lead with no readable last touch has no
+                    position on it and the rail would assert the freshest possible reading.{' '}
+                  </>
+                )}
+                Both are excluded from the figure above rather than estimated.
+              </p>
+            )}
+            <p>
+              Drawn: {channel.drawn} of {channel.considered} leads in the channel
+              {channel.undrawn > 0 && (
+                <>
+                  {' '}— the {MAX_PER_GATE} largest in each gate. {channel.undrawn} smaller
+                  {channel.undrawnUsd !== null ? ` (${formatUsd(channel.undrawnUsd)} between them)` : ''} are
+                  not drawn and are not in the figure above
+                </>
+              )}
+              {channel.archived > 0 && (
+                <>. {channel.archived} archived lead{channel.archived === 1 ? '' : 's'} excluded: an archived
+                  lead has been declined, not stalled in a gate</>
+              )}
+              {channel.futureDated > 0 && (
+                <>. {channel.futureDated} carry a last touch in the future and were clamped to today</>
+              )}
+              .
+            </p>
+          </div>
+        </div>
+      ) : (
+        <LeadTable {...table} />
+      )}
+
+      <div className="flex flex-wrap items-center gap-2.5 border-t border-line/50 px-3 py-2">
+        <button
+          type="button"
+          onClick={() => { setWantRelief((v) => !v); }}
+          /* Disabled once refused, or when the derivation would refuse: offering a toggle that cannot work is
+             worse than not offering one. */
+          disabled={blocked}
+          className="border border-line px-2.5 py-1.5 font-mono text-micro font-bold uppercase tracking-wider text-cyan-700 hover:bg-ice-soft disabled:cursor-not-allowed disabled:text-grey disabled:hover:bg-transparent dark:text-cyan-400"
+          aria-pressed={showRelief}
+        >
+          {showRelief ? 'Table view' : 'Channel view'}
+        </button>
+
+        {refusal !== null ? (
+          <span role="alert" className="text-micro leading-snug text-amber-700 dark:text-amber-400">
+            Channel unavailable — <code>{refusal}</code>. Every row above is unaffected.
+          </span>
+        ) : !offerable ? (
+          <span role="alert" className="text-micro leading-snug text-amber-700 dark:text-amber-400">
+            Channel unavailable —{' '}
+            <code>{channel.refusal ?? 'NO_DRAWABLE_LEADS'}</code>
+            {channel.faults.length > 0 && `: ${channel.faults[0]}`}. Every row above is unaffected.
+          </span>
+        ) : (
+          /*
+           * THE REASON IS ON THE BUTTON, not in a tooltip and not in a commit message. A reader deciding
+           * whether to trust a 3-D reading is entitled to know that nobody has timed it against the table, and
+           * that the table is where the triage keys work.
+           */
+          <span className="text-micro leading-snug text-grey">
+            Channel view is opt-in: nobody has yet timed whether it answers faster than this table. It is a
+            reading, not a workspace — triage keys act on the rows.
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default PipelineRelief;

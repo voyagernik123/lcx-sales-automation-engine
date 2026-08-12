@@ -12,7 +12,8 @@ import { ScoreBadge, BandBadge } from './ScoreBadge';
 import { MarketTag } from './MarketTag';
 import { useListNavigation } from '@/hooks/useListNavigation';
 
-interface LeadTableProps {
+/** Exported so `PipelineRelief` can be a drop-in wrapper without restating the contract. */
+export interface LeadTableProps {
   leads: BdLead[];
   filters: BdFilters;
   clarityEnacted: boolean;
