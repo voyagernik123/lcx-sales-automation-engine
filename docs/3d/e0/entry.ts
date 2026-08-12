@@ -15,16 +15,37 @@ import {
   triangleCount, hexToLinear, assertBrandFidelity, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint,
   type StageRefusal,
+  QUALITY_TIERS, qualitySettings, type QualityTier,
 } from '@lcx/gl';
 import { installFlatFallback } from '../_shared/flatFallback.js';
 
 /* RESOLUTION IS A PARAMETER because §3.2 reserved a decision on it: 60 fps at 1x or 30 at 2x.
    That is answerable by measurement rather than by preference, and only at the real resolution —
    every pass here is fill-bound, so a 1x number says nothing about 2x. */
-const SCALE = Math.max(1, Math.min(3, Number(new URLSearchParams(location.search).get('scale') ?? 1)));
+const params = new URLSearchParams(location.search);
+/*
+ * THE QUALITY LADDER, WIRED. E9's `qualitySettings` is authoritative for the EFFECTS this frame runs:
+ * ambient occlusion, depth of field, shadow-map size, and (where present) particle capacity and raymarch
+ * depth. `?tier=full|reduced|minimum`, defaulting to full.
+ *
+ * `dprScale` is the one field the tier does NOT drive here, and that is a stated exception rather than an
+ * oversight: every capture in this programme is 1200x720 so the sweep compares like with like, and letting
+ * a tier change the pixel count would make two rows of the perf table incomparable. The tier's
+ * recommendation is reported as `tierDprScale` beside the resolution actually used, so the difference is
+ * visible rather than silent.
+ *
+ * The existing `?ao=0` / `?dof=0` switches still work and now compose with the tier by AND: a control can
+ * turn an effect off, never on. A flag that could re-enable what the tier dropped would let a capture claim
+ * a tier it is not rendering.
+ */
+const TIER: QualityTier = (QUALITY_TIERS as readonly string[]).includes(params.get('tier') ?? '')
+  ? (params.get('tier') as QualityTier)
+  : 'full';
+const Q = qualitySettings(TIER);
+const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
 const W = 1280 * SCALE, H = 800 * SCALE;
-const DIAG_FLAG = new URLSearchParams(location.search).get('diag') === '1';
-const REFUSE_FLAG = new URLSearchParams(location.search).get('refuse') === '1';
+const DIAG_FLAG = params.get('diag') === '1';
+const REFUSE_FLAG = params.get('refuse') === '1';
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 canvas.width = W; canvas.height = H;
 
@@ -130,7 +151,7 @@ void main(){
 const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
 const lit = required('lit', createLitRenderer(stage));
 const target = required('target', createTarget3D(stage, W, H));
-const shadow = required('shadow', createShadowMap(stage, 1024));
+const shadow = required('shadow', createShadowMap(stage, Q.shadowMapSize));
 const skyBox = required('skyBox', createSkyBackdrop(stage));
 const ao = required('ao', createAmbientOcclusion(stage, W, H));
 const dof = required('dof', createDepthOfField(stage, W, H));
@@ -205,14 +226,14 @@ const view: Viewpoint = { target: [0, 0.6, 0], distance: 7.2, azimuthDeg: 34, el
  */
 /* AO off is a CONTROL, not a fallback: the capture has to show the difference it makes rather
    than my asserting that it makes one. */
-const AO_ON = new URLSearchParams(location.search).get('ao') !== '0';
-const DOF_ON = new URLSearchParams(location.search).get('dof') !== '0';
+const AO_ON = params.get('ao') !== '0' && Q.ao;
+const DOF_ON = params.get('dof') !== '0' && Q.dof;
 /* RED above, GREEN below, BLUE at the horizon. If a mirror sphere shows red where it faces the
    sky and green where it faces the floor, the sample direction is right. A grey gradient cannot
    distinguish that from its own inverse, which is why the first look was inconclusive. */
 const DIAG_SKY = { zenith: [1.6, 0.05, 0.05] as const, horizon: [0.05, 0.08, 1.6] as const, ground: [0.05, 1.2, 0.05] as const };
 const SKY = DIAG_FLAG ? DIAG_SKY : undefined;
-const REPEAT = Math.max(1, Number(new URLSearchParams(location.search).get('repeat') ?? 1));
+const REPEAT = Math.max(1, Number(params.get('repeat') ?? 1));
 function frame() {
   const vp = viewProjection(view, W / H);
   const eye = eyeOf(view);
@@ -288,7 +309,7 @@ function measure(frames: number): number {
    shadowed scene takes minutes — so it asks for a handful, just enough to prove the frame is
    drawn. The real measurement runs on the actual GPU and asks for the full sweep. A number
    hardcoded for one of those is useless for the other. */
-const FRAMES = Number(new URLSearchParams(location.search).get('frames') ?? 600);
+const FRAMES = Number(params.get('frames') ?? 600);
 const targetProbe = (() => {
   while (gl.getError() !== gl.NO_ERROR) { /* drain errors from setup so the pass is attributable */ }
   const bad: string[] = [];
@@ -365,6 +386,11 @@ const RENDERER = (() => {
 const SOFTWARE = /swiftshader|llvmpipe|software/i.test(RENDERER);
 
 const report = {
+  /* WHICH TIER THIS FRAME IS, so the numbers beside it describe a configuration a reader can reconstruct.
+     A tier that cannot be reported is a tier that cannot be trusted. */
+  tier: Q.tier,
+  tierDprScale: Q.dprScale,
+  tierShadowMapSize: Q.shadowMapSize,
   /*
    * `gl.getError()` — AND THE AUDIT IS WHAT FOUND IT MISSING.
    *

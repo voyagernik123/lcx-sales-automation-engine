@@ -40,6 +40,7 @@ import {
   hexToLinear, mixLinear, assertBrandFidelity, projectScreen,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint, type StageRefusal, type ParticleSource, type Linear,
+  QUALITY_TIERS, qualitySettings, type QualityTier,
 } from '@lcx/gl';
 import { installFlatFallback } from '../_shared/flatFallback.js';
 
@@ -52,6 +53,25 @@ const params = new URLSearchParams(location.search);
  */
 const SETTLE_ON = params.get('settle') !== '0';
 const PARTICLES_ON = params.get('particles') !== '0';
+/*
+ * THE QUALITY LADDER, WIRED. E9's `qualitySettings` is authoritative for the EFFECTS this frame runs:
+ * ambient occlusion, depth of field, shadow-map size, and (where present) particle capacity and raymarch
+ * depth. `?tier=full|reduced|minimum`, defaulting to full.
+ *
+ * `dprScale` is the one field the tier does NOT drive here, and that is a stated exception rather than an
+ * oversight: every capture in this programme is 1200x720 so the sweep compares like with like, and letting
+ * a tier change the pixel count would make two rows of the perf table incomparable. The tier's
+ * recommendation is reported as `tierDprScale` beside the resolution actually used, so the difference is
+ * visible rather than silent.
+ *
+ * The existing `?ao=0` / `?dof=0` switches still work and now compose with the tier by AND: a control can
+ * turn an effect off, never on. A flag that could re-enable what the tier dropped would let a capture claim
+ * a tier it is not rendering.
+ */
+const TIER: QualityTier = (QUALITY_TIERS as readonly string[]).includes(params.get('tier') ?? '')
+  ? (params.get('tier') as QualityTier)
+  : 'full';
+const Q = qualitySettings(TIER);
 const FOG_ON = params.get('fog') !== '0';
 const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
 const FRAMES = Number(params.get('frames') ?? 300);
@@ -224,7 +244,7 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
 const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
 const lit = required('lit', createLitRenderer(stage));
 const target = required('target', createTarget3D(stage, W, H));
-const shadow = required('shadow', createShadowMap(stage, 1536));
+const shadow = required('shadow', createShadowMap(stage, Q.shadowMapSize));
 const ao = required('ao', createAmbientOcclusion(stage, W, H));
 /* The gate outlines, the movement axis and the tag leaders are additive strokes, not meshes.
    `ruleAtDepth` is exact for a segment lying in a constant-depth plane and the primitive says so in
@@ -1347,6 +1367,11 @@ const perDeal = decided.map((d) => ({
 }));
 
 const report = {
+  /* WHICH TIER THIS FRAME IS, so the numbers beside it describe a configuration a reader can reconstruct.
+     A tier that cannot be reported is a tier that cannot be trusted. */
+  tier: Q.tier,
+  tierDprScale: Q.dprScale,
+  tierShadowMapSize: Q.shadowMapSize,
   settleAxis: SETTLE_ON,
   particlesRequested: PARTICLES_ON,
   fog: FOG_ON,

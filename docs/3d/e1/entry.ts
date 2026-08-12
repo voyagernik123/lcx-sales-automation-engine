@@ -33,6 +33,7 @@ import {
   viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre, triangleCount,
   hexToLinear, assertBrandFidelity, projectScreen, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint, type StageRefusal,
+  QUALITY_TIERS, qualitySettings, type QualityTier,
 } from '@lcx/gl';
 import { installFlatFallback } from '../_shared/flatFallback.js';
 
@@ -43,8 +44,27 @@ import { installFlatFallback } from '../_shared/flatFallback.js';
 const params = new URLSearchParams(location.search);
 /* THE RACK OFF IS A CONTROL, not a fallback. The claim being made is that depth of field
    separates the addressed panel from the room, and that claim needs the same frame without it. */
-const DOF_ON = params.get('dof') !== '0';
-const AO_ON = params.get('ao') !== '0';
+/*
+ * THE QUALITY LADDER, WIRED. E9's `qualitySettings` is authoritative for the EFFECTS this frame runs:
+ * ambient occlusion, depth of field, shadow-map size, and (where present) particle capacity and raymarch
+ * depth. `?tier=full|reduced|minimum`, defaulting to full.
+ *
+ * `dprScale` is the one field the tier does NOT drive here, and that is a stated exception rather than an
+ * oversight: every capture in this programme is 1200x720 so the sweep compares like with like, and letting
+ * a tier change the pixel count would make two rows of the perf table incomparable. The tier's
+ * recommendation is reported as `tierDprScale` beside the resolution actually used, so the difference is
+ * visible rather than silent.
+ *
+ * The existing `?ao=0` / `?dof=0` switches still work and now compose with the tier by AND: a control can
+ * turn an effect off, never on. A flag that could re-enable what the tier dropped would let a capture claim
+ * a tier it is not rendering.
+ */
+const TIER: QualityTier = (QUALITY_TIERS as readonly string[]).includes(params.get('tier') ?? '')
+  ? (params.get('tier') as QualityTier)
+  : 'full';
+const Q = qualitySettings(TIER);
+const DOF_ON = params.get('dof') !== '0' && Q.dof;
+const AO_ON = params.get('ao') !== '0' && Q.ao;
 const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
 const FRAMES = Number(params.get('frames') ?? 300);
 
@@ -160,7 +180,7 @@ const target = required('target', createTarget3D(stage, W, H));
 /* 1536, not E0's and E8's 1024. Those scenes fit one object in a ~5 m frustum; this one has to
    cover the deck the shadow tails cross, which is 15 m wide — at 1024 a texel is 15 mm and the
    panel-on-panel shadows, the strongest depth cue after the rack, arrive visibly stepped. */
-const shadow = required('shadow', createShadowMap(stage, 1536));
+const shadow = required('shadow', createShadowMap(stage, Q.shadowMapSize));
 const skyBox = required('sky', createSkyBackdrop(stage));
 const ao = required('ao', createAmbientOcclusion(stage, W, H));
 const dof = required('dof', createDepthOfField(stage, W, H));
@@ -960,6 +980,11 @@ if (brandFailures.length > 0) {
 }
 
 const report = {
+  /* WHICH TIER THIS FRAME IS, so the numbers beside it describe a configuration a reader can reconstruct.
+     A tier that cannot be reported is a tier that cannot be trusted. */
+  tier: Q.tier,
+  tierDprScale: Q.dprScale,
+  tierShadowMapSize: Q.shadowMapSize,
   /* Empty means every brand hex round-tripped exactly through this frame's own pipeline. */
   brandFidelity: brandFailures,
   dof: DOF_ON,

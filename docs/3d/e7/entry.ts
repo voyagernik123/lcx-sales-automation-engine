@@ -47,6 +47,7 @@ import {
   hexToLinear, assertBrandFidelity, projectScreen, normalise, sub, cross,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint, type StageRefusal, type Vec3, type QuadCorners, type VolumeField,
+  QUALITY_TIERS, qualitySettings, type QualityTier,
 } from '@lcx/gl';
 
 const params = new URLSearchParams(location.search);
@@ -58,7 +59,26 @@ const VOL_ON = params.get('vol') !== '0';
    over the gate, the lids and the floor. `env/volume.ts` calls that "fog on the lens"; this is the
    capture that shows what it looks like, and `glOcclusionPixels` is how many pixels differ. */
 const DEPTH_ON = params.get('depth') !== '0';
-const AO_ON = params.get('ao') !== '0';
+/*
+ * THE QUALITY LADDER, WIRED. E9's `qualitySettings` is authoritative for the EFFECTS this frame runs:
+ * ambient occlusion, depth of field, shadow-map size, and (where present) particle capacity and raymarch
+ * depth. `?tier=full|reduced|minimum`, defaulting to full.
+ *
+ * `dprScale` is the one field the tier does NOT drive here, and that is a stated exception rather than an
+ * oversight: every capture in this programme is 1200x720 so the sweep compares like with like, and letting
+ * a tier change the pixel count would make two rows of the perf table incomparable. The tier's
+ * recommendation is reported as `tierDprScale` beside the resolution actually used, so the difference is
+ * visible rather than silent.
+ *
+ * The existing `?ao=0` / `?dof=0` switches still work and now compose with the tier by AND: a control can
+ * turn an effect off, never on. A flag that could re-enable what the tier dropped would let a capture claim
+ * a tier it is not rendering.
+ */
+const TIER: QualityTier = (QUALITY_TIERS as readonly string[]).includes(params.get('tier') ?? '')
+  ? (params.get('tier') as QualityTier)
+  : 'full';
+const Q = qualitySettings(TIER);
+const AO_ON = params.get('ao') !== '0' && Q.ao;
 const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
 const FRAMES = Number(params.get('frames') ?? 300);
 
@@ -388,7 +408,7 @@ const volTarget = required('volume target', createTarget3D(stage, W, H));
  * on an 8 GB machine for no information.
  */
 const farDepth = required('far depth', createTarget3D(stage, 4, 4));
-const shadow = required('shadow', createShadowMap(stage, 1536));
+const shadow = required('shadow', createShadowMap(stage, Q.shadowMapSize));
 const ao = required('ao', createAmbientOcclusion(stage, W, H));
 
 farDepth.bind();
@@ -1352,6 +1372,11 @@ const offAxisDeg = (world: Vec3): number => {
 };
 
 const report = {
+  /* WHICH TIER THIS FRAME IS, so the numbers beside it describe a configuration a reader can reconstruct.
+     A tier that cannot be reported is a tier that cannot be trusted. */
+  tier: Q.tier,
+  tierDprScale: Q.dprScale,
+  tierShadowMapSize: Q.shadowMapSize,
   /* Empty means every brand hex round-tripped exactly through this frame's own pipeline. */
   brandFidelity: brandFailures,
   volume: VOL_ON,

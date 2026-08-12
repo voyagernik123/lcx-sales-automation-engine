@@ -81,6 +81,7 @@ const readFallback = () => {
   };
 };
 
+const t = (v, s = '—') => (v === null || v === undefined ? s : String(v));
 const rows = [];
 const browser = await chromium.launch({
   args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
@@ -139,6 +140,69 @@ for (const dir of envs) {
     await p.close();
   }
 
+  // ── 1b · THE LADDER MUST ACTUALLY BE CHEAPER ───────────────────────────────────────
+  {
+    /*
+     * A ladder that does not reduce cost is a lie, and it is a lie that no unit test can catch: the tier
+     * table is monotonic by construction (asserted in env.test.ts), but whether dropping AO and shrinking
+     * the shadow map actually makes THIS scene faster is a fact about the scene. So both ends are rendered
+     * and compared. `minimum` slower than `full` would mean the ladder is at best decoration.
+     */
+    const p = await browser.newPage({ viewport: { width: 1400, height: 1000 }, deviceScaleFactor: 1 });
+    await p.goto(`${base}?frames=6&tier=minimum`);
+    try { await p.waitForFunction(() => document.title === 'READY', { timeout: 90000 }); } catch { /* below */ }
+    const rep = await p.evaluate(() => {
+      const k = Object.keys(globalThis).find((n) => /^E\d+$/.test(n));
+      return k ? globalThis[k] : null;
+    });
+    row.tierFull = row.msPerFrame;
+    row.tierMinimum = rep?.msPerFrame ?? null;
+    row.tierReported = rep?.tier ?? null;
+    row.tierSaving = (row.tierFull && row.tierMinimum)
+      ? Number((100 * (1 - row.tierMinimum / row.tierFull)).toFixed(1)) : null;
+    /* Which knobs the tier can actually move in THIS scene, so a small saving is explained rather than
+       suspicious. E2 has no ambient occlusion and no depth of field, so `minimum` changes only its shadow
+       map — and a near-zero saving there is the correct result, not a broken ladder. */
+    row.tierAffects = [
+      rep?.ao !== undefined ? 'ao' : null,
+      rep?.dof !== undefined ? 'dof' : null,
+      rep?.tierShadowMapSize !== undefined ? 'shadow' : null,
+    ].filter(Boolean).join('+') || 'none';
+    if (row.tierReported !== 'minimum') {
+      row.problems.push(`?tier=minimum reported tier "${t(row.tierReported)}" — the tier is not wired`);
+    }
+    await p.close();
+  }
+
+  // ── 1c · WHAT THE INSTRUMENT'S OWN NOISE IS ────────────────────────────────────────
+  {
+    /*
+     * MEASURE THE NOISE BEFORE JUDGING A DIFFERENCE. The first version of the ladder check flagged E2 for
+     * being 4.5% slower at `minimum` — and E3's own notes record 39.2 to 54.4 ms across NINE runs of one
+     * unchanged build under SwiftShader on a busy machine. That is roughly 30% spread. A threshold of "any
+     * regression at all" is stricter than the instrument it is reading, so it reports noise as a defect.
+     *
+     * So `full` is rendered a second time and the spread between the two identical runs becomes the floor.
+     * Only a regression LARGER than the instrument's own disagreement with itself is a finding. This costs
+     * one extra page load per environment and it is the difference between a check and a coin toss.
+     */
+    const p = await browser.newPage({ viewport: { width: 1400, height: 1000 }, deviceScaleFactor: 1 });
+    await p.goto(`${base}?frames=6`);
+    try { await p.waitForFunction(() => document.title === 'READY', { timeout: 90000 }); } catch { /* below */ }
+    const rep = await p.evaluate(() => {
+      const k = Object.keys(globalThis).find((n) => /^E\d+$/.test(n));
+      return k ? globalThis[k] : null;
+    });
+    row.tierFullRepeat = rep?.msPerFrame ?? null;
+    row.noisePct = (row.tierFull && row.tierFullRepeat)
+      ? Number((100 * Math.abs(row.tierFullRepeat - row.tierFull) / row.tierFull).toFixed(1)) : null;
+    if (row.tierSaving !== null && row.noisePct !== null && row.tierSaving < -row.noisePct) {
+      row.problems.push(`the minimum tier is slower than full by ${-row.tierSaving}%, beyond this run's `
+        + `own ${row.noisePct}% noise — the ladder may be decoration for this scene`);
+    }
+    await p.close();
+  }
+
   // ── 2 · PRINT ──────────────────────────────────────────────────────────────────────
   {
     const p = await browser.newPage({ viewport: { width: 1400, height: 1000 }, deviceScaleFactor: 1 });
@@ -190,7 +254,6 @@ await browser.close();
 // ── The generated report ─────────────────────────────────────────────────────────────
 const stamp = process.env.AUDIT_DATE ?? new Date().toISOString().slice(0, 10);
 const failing = rows.filter((r) => r.problems.length > 0);
-const t = (v, s = '—') => (v === null || v === undefined ? s : String(v));
 
 mkdirSync(join(DOCS, 'e9'), { recursive: true });
 writeFileSync(join(DOCS, 'e9', 'README.md'), `# E9 · THE AUDIT — status: **${failing.length === 0
@@ -263,7 +326,25 @@ correctly present *and* correctly visible while the reader still saw 720 px of b
 viewport with the data below the fold. A canvas that will never be drawn into is not a placeholder, it is an
 obstruction.
 
-## Audit 4 · The quality ladder
+## Audit 4 · The quality ladder — measured, not assumed
+
+| env | tier reported | tier drives | full | full again | noise | minimum | saving |
+|---|---|---|---|---|---|---|---|
+${rows.map((r) => `| **${r.id}** | ${t(r.tierReported)} | ${t(r.tierAffects)} | ${t(r.tierFull)} ms | ${t(r.tierFullRepeat)} ms | ±${t(r.noisePct)}% | ${t(r.tierMinimum)} ms | ${r.tierSaving === null ? '\u2014' : r.tierSaving + '%'} |`).join('\n')}
+
+The tier table is monotonic by construction — \`env.test.ts\` asserts every axis descends together, because a
+ladder with one axis going the wrong way makes a lower tier *slower* on some machines, so the fallback for a
+slow machine is the thing that breaks it. But whether dropping ambient occlusion and shrinking the shadow map
+actually makes a given scene faster is a fact about that scene, not about the table. So both ends are rendered
+and compared above.
+
+**The noise column is not decoration either.** \`full\` is rendered TWICE and the spread between two identical
+runs is the floor a regression has to clear before it counts. The first version of this check flagged E2 for
+being 4.5% slower at \`minimum\` — while E3's notes record 39.2 to 54.4 ms across nine runs of one unchanged
+build, roughly 30% spread. A threshold of "any regression at all" is stricter than the instrument reading it,
+and reports noise as a defect. The \`tier drives\` column exists for the same reason: E2 has no ambient
+occlusion and no depth of field, so \`minimum\` changes only its shadow map, and a near-zero saving there is
+the correct result rather than a broken ladder.
 
 \`packages/gl/src/env/quality.ts\`. §8 hedged that the ladder "becomes mandatory rather than optional" if the
 AO and DOF estimates were 2× out. **E0 measured, and it is mandatory:** 11.328 ms at 2× with depth of field
@@ -301,7 +382,17 @@ strongest — is a *reason to expect* a good result. That is not a result.
 
 **Real-hardware frame times.** Every number above is SwiftShader.
 
-${failing.length === 0 ? '' : `## Findings\n\n${failing.map((r) => `**${r.id}**\n${r.problems.map((p) => `- ${p}`).join('\n')}`).join('\n\n')}\n`}
+${failing.length === 0 ? '' : `## Findings — open, not explained away
+
+A finding here is a measurement that survived the instrument's own noise floor. None of them has been
+diagnosed; the threshold has deliberately NOT been loosened to make this section empty, because a check tuned
+until it passes is not a check.
+
+The largest is worth stating plainly: **E8's minimum tier measures ~38% SLOWER than full, against 2.1% noise
+on the same run.** For E2 and E8 the tier drives only the shadow-map size (neither harness has an \`?ao=\` or
+\`?dof=\` switch for the ladder to compose with), so a 512-texel map is somehow costing more than a 1024-texel
+one under SwiftShader. That is not a mechanism I can account for, and saying so is more useful than a
+plausible guess.\n\n${failing.map((r) => `**${r.id}**\n${r.problems.map((p) => `- ${p}`).join('\n')}`).join('\n\n')}\n`}
 ## Reproduce
 
 \`\`\`bash

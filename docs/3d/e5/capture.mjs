@@ -29,7 +29,7 @@ await new Promise(r=>s.listen(0,'127.0.0.1',r));
 const b = await chromium.launch({ args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
 // `flat-only` is the CONTROL: the plinth and every annotation, with no surface on it. A broken
 // heightfield produces the same picture, so the pair is what proves the mesh carries the reading.
-for (const [name, q] of [['live', ''], ['flat-only', '&mesh=0'], ['no-ao', '&ao=0'], ['refused', '&refuse=1']]) {
+for (const [name, q] of [['live', ''], ['flat-only', '&mesh=0'], ['no-ao', '&ao=0'], ['refused', '&refuse=1'], ['tier-minimum', '&tier=minimum']]) {
   const p = await b.newPage({ viewport:{width:1300,height:1000}, deviceScaleFactor:1 });
     /* PRINTED THE MOMENT IT HAPPENS, not collected for after the wait. A page that throws never sets
      its title, so the harness reports a 30-second TIMEOUT and the actual exception — which is one
