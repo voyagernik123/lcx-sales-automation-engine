@@ -253,7 +253,20 @@ const MAX_TIERS = 4;
 
 const CORRIDOR_LEN = 44;
 const CORRIDOR_MID = -CORRIDOR_LEN / 2 + 3;
-const floorGeo = plane(6, CORRIDOR_LEN);
+/*
+ * A BOX, NOT A PLANE — and the plane was wrong in two ways at once.
+ *
+ * `plane(size, segments)` is SQUARE, so `plane(6, CORRIDOR_LEN)` asked for a 6 m x 44 m corridor floor
+ * and produced a 6 m x 6 m patch with 44 segments per side. The corridor had a floor for three metres of
+ * its length and void for the rest — which, under fog and this palette, reads as a dark corridor rather
+ * than as a missing one. Nothing in the report would have said so; it took reading `plane`'s signature.
+ *
+ * And the segments bought nothing even when the size was right: the surface is flat, the lighting is
+ * per-fragment, and every interior vertex carries the same normal. 3,872 triangles were being rasterised
+ * three times a frame (shadow, prepass, lit) to describe a rectangle. A box is 12, and it gains a lit
+ * edge where the floor meets the wall.
+ */
+const floorGeo = box(6, 0.12, CORRIDOR_LEN);
 const wallGeo = box(0.22, 3.0, CORRIDOR_LEN);
 const ceilGeo = box(2 * CORRIDOR_HALF + 0.44, 0.18, CORRIDOR_LEN);
 /* THE FAR END IS CAPPED. Without it the analytic sky shows straight through the corridor's mouth and
@@ -268,6 +281,28 @@ const endMesh = required('end wall', uploadMesh(stage, endGeo));
 const recMesh = required('record', uploadMesh(stage, recGeo));
 
 const N3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
+
+/*
+ * THE NORMAL MATRIX FOR A YAWED MESH — and 25 records were being lit with the identity.
+ *
+ * The walls, floor, ceiling and end cap only translate, so the identity is correct for them. The record
+ * slabs are YAWED, and handing the identity to a rotated mesh lights every one of them as though it
+ * faced straight down the corridor: the angled signage that this environment's whole readability
+ * depends on was shaded as if it were not angled. It does not look like a bug, it looks like a light in
+ * the wrong place — which is why nothing in the report caught it and E1's file carries a long comment
+ * about exactly this hazard that E6 then ignored.
+ *
+ * The model's own 3x3 is copied in the IDENTICAL storage order rather than reconstructed, because
+ * `LitDraw.normalMat` is documented row-major but uploaded with transpose=false. For a pure rotation —
+ * orthogonal, so the inverse-transpose IS the rotation — that is the correct normal matrix by
+ * construction. It stops being correct the moment a scale appears, which is why every record is its own
+ * geometry rather than one box scaled.
+ */
+const normalOf = (m: Float32Array): Float32Array => new Float32Array([
+  m[0]!, m[1]!, m[2]!,
+  m[4]!, m[5]!, m[6]!,
+  m[8]!, m[9]!, m[10]!,
+]);
 const modelOf = (x: number, y: number, z: number, yaw = 0): Float32Array => {
   /* `IDENTITY` IS A FACTORY. `new Float32Array(IDENTITY)` is length 0 and every vertex collapses to
      the origin with a complete framebuffer and no refusal anywhere. It cost E0 a day. */
@@ -380,7 +415,7 @@ type Record2 = Record3<Verdict, { hex: string; roughness: number; metalness: num
 type Record3<K extends string, V> = { [P in K]: V };
 
 const draws: LitDraw[] = [
-  { mesh: floorMesh, model: modelOf(0, FLOOR_Y, CORRIDOR_MID), normalMat: N3,
+  { mesh: floorMesh, model: modelOf(0, FLOOR_Y - 0.06, CORRIDOR_MID), normalMat: N3,
     material: { baseColour: hexToLinear('#080C15'), roughness: 0.84, metalness: 0 } },
   { mesh: wallMesh, model: modelOf(-CORRIDOR_HALF, 1.5, CORRIDOR_MID), normalMat: N3,
     material: { baseColour: hexToLinear('#141F35'), roughness: 0.62, metalness: 0.03 } },
@@ -393,7 +428,7 @@ const draws: LitDraw[] = [
   ...placed.map((p): LitDraw => {
     const m = VERDICT_MATERIAL[p.verdict];
     return {
-      mesh: recMesh, model: modelOf(p.x, p.y, p.z, p.yaw), normalMat: N3,
+      mesh: recMesh, model: modelOf(p.x, p.y, p.z, p.yaw), normalMat: normalOf(modelOf(p.x, p.y, p.z, p.yaw)),
       material: { baseColour: hexToLinear(m.hex), roughness: m.roughness, metalness: m.metalness },
     };
   }),

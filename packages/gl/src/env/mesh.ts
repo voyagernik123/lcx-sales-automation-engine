@@ -199,6 +199,21 @@ export function box(w = 1, h = 1, d = 1): Geometry {
  * interpolation degenerate at grazing angles — the acne this file's `segments` default is
  * chosen to avoid.
  */
+/**
+ * A SQUARE plane in x/z, `size` on both axes. NOT `plane(width, depth)`.
+ *
+ * Named explicitly because the mistake is silent and was made twice. E6 wrote
+ * `plane(6, CORRIDOR_LEN)` intending a 6 m x 44 m corridor floor and got a 6 m x 6 m patch with 44
+ * segments per side — the corridor had no floor beyond three metres of its length, which under fog and
+ * a dark palette looks like a dark corridor rather than a missing one. E3 wrote `plane(2.9, 96)` and
+ * got 18,432 triangles of flat deck, rasterised three times a frame (shadow, prepass, lit) for zero
+ * extra shading detail.
+ *
+ * Both halves of that are worth stating: `segments` on a FLAT lit surface buys nothing at all, because
+ * the lighting is evaluated per fragment and every interior vertex carries the same normal. Segments
+ * matter only if something displaces them. For a rectangular floor use `box(width, thickness, depth)` —
+ * 12 triangles, and it gains a lit edge.
+ */
 export function plane(size = 10, segments = 24): Geometry {
   const n = Math.max(1, Math.floor(segments));
   const verts = (n + 1) * (n + 1);

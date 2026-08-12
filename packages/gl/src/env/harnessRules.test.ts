@@ -62,6 +62,33 @@ describe('§6 rules, ratcheted across every docs/3d/e* environment', () => {
     }
   });
 
+  it('rule 1 — every environment installs a flat fallback and captures its refusal', () => {
+    /*
+     * The rule is "every environment has a flat fallback that is NOT a downgrade in INFORMATION", and
+     * all six were failing it: a refusal resolved to a title and one log line. Three things are checked,
+     * because the first two are satisfiable without the fallback ever being seen:
+     *
+     *   · it is INSTALLED — and before the stage, since a shader compile failure happens during module
+     *     evaluation and anything built afterwards never runs on the failure it exists for;
+     *   · it is REVEALED only after a frame exists, via markRendered, so success leaves it in the
+     *     accessibility tree and the print path rather than deleting it;
+     *   · there is a CAPTURE of the refusal. Rule 8 admits no exceptions, and this was the one claim in
+     *     the programme that had never been photographed — because you cannot switch off WebGL from
+     *     inside the page, which is what `?refuse=1` exists for.
+     */
+    for (const { id, src } of environments) {
+      expect(src, `${id} installs no flat fallback (§6 rule 1)`).toContain('installFlatFallback');
+      expect(src, `${id} never reveals or hides its fallback — markRendered is missing`)
+        .toContain('markRendered');
+      const install = src.indexOf('installFlatFallback(');
+      const stage = src.indexOf('createStage(');
+      expect(install >= 0 && stage >= 0 && install < stage,
+        `${id} installs its fallback AFTER createStage, so a shader failure never builds it`).toBe(true);
+      expect(existsSync(join(DOCS, id, 'refused.png')),
+        `${id} has no refused.png — rule 1's claim is uncaptured, and rule 8 admits no exceptions`).toBe(true);
+    }
+  });
+
   it('rule 2 — no environment schedules idle animation', () => {
     for (const { id, src } of environments) {
       for (const banned of ['requestAnimationFrame', 'setInterval']) {

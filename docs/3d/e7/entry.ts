@@ -38,6 +38,7 @@
  * §2 also says "rotation". There is no rotational term, because there is no measured rotational
  * quantity, and a curl-noise swirl over a compliance calendar is weather. The README names it.
  */
+import { installFlatFallback } from '../_shared/flatFallback.js';
 import {
   createStage, isStage, box, uploadMesh, createLitRenderer, createTarget3D,
   createShadowMap, createAmbientOcclusion, createVolumeField, rayBoxSlab, marchPlan,
@@ -66,72 +67,22 @@ const canvas = document.getElementById('c') as HTMLCanvasElement;
 canvas.width = W; canvas.height = H;
 const log = document.getElementById('log')!;
 
-function die(m: string): never { document.title = 'REFUSED'; log.textContent = m; throw new Error(m); }
+function die(m: string): never {
+  document.title = 'REFUSED';
+  log.textContent = m;
+  /* THE REFUSAL GOES ABOVE THE TABLE, NOT INSTEAD OF IT. A reader who cannot be shown the field is
+     still entitled to every cell of it, and to be told which of the two is missing. */
+  const [code, ...rest] = m.split(':');
+  fallbackRef?.showRefusal(code?.trim() ?? 'REFUSED', rest.join(':').trim() || m);
+  throw new Error(m);
+}
+/* Assigned once `installFlatFallback` has run. `die` is declared FIRST because a `function` declaration
+   returning `never` is what gives the compiler its control-flow narrowing — a const arrow does not. */
+let fallbackRef: ReturnType<typeof installFlatFallback> | null = null;
 function required<T extends object>(what: string, v: T | StageRefusal): T {
   if ('kind' in v) die(`${what}: ${v.code} — ${v.reason} ${v.detail ?? ''}`);
   return v;
 }
-
-const out = createStage(canvas, { alpha: false });
-if (!isStage(out)) die(`stage: ${out.code} — ${out.reason}`);
-const stage = out;
-const gl = stage.gl;
-
-const PRESENT_VERT = `#version 300 es
-precision highp float;
-out vec2 vUv;
-void main(){
-  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
-const PRESENT_FRAG = `#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uScene;
-out vec4 frag;
-${TONE_MAP_GLSL}
-${SRGB_ENCODE_GLSL}
-void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
-
-/*
- * THE VOLUME IS DRAWN INTO ITS OWN TARGET AND COMPOSITED, AND THAT IS NOT AN OPTIMISATION.
- *
- * The march samples the scene's DEPTH texture. That texture is the depth attachment of the scene
- * framebuffer, so drawing the volume straight into the scene target while sampling its own depth is a
- * feedback loop — which WebGL2 does not leave undefined, it raises INVALID_OPERATION and draws
- * nothing. The gate for this whole programme is `glError 0`, so the loop would have failed it loudly
- * rather than quietly; a separate target is the honest fix rather than detaching the attachment and
- * hoping.
- *
- * The composite carries premultiplied colour and coverage, so it blends ONE / ONE_MINUS_SRC_ALPHA and
- * does NOT tone map. The present pass owns the only tone map in the pipeline.
- */
-const COMPOSITE_FRAG = `#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uVolume;
-out vec4 frag;
-void main(){ frag = texture(uVolume, vUv); }`;
-
-const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
-const composite = required('composite', stage.compile(PRESENT_VERT, COMPOSITE_FRAG));
-const lit = required('lit', createLitRenderer(stage));
-const target = required('target', createTarget3D(stage, W, H));
-const volTarget = required('volume target', createTarget3D(stage, W, H));
-/*
- * A 4×4 TARGET WHOSE DEPTH IS CLEARED TO THE FAR PLANE — the `?depth=0` control, and the reference the
- * occlusion measurement differences against. Four texels is enough because every sample of an all-far
- * depth map returns the same number; allocating it at full size to make that point would cost 3.4 MB
- * on an 8 GB machine for no information.
- */
-const farDepth = required('far depth', createTarget3D(stage, 4, 4));
-const shadow = required('shadow', createShadowMap(stage, 1536));
-const ao = required('ao', createAmbientOcclusion(stage, W, H));
-
-farDepth.bind();
-gl.clearDepth(1);
-gl.clear(gl.DEPTH_BUFFER_BIT);
-gl.bindFramebuffer(gl.FRAMEBUFFER, null);
 
 /*
  * ══════════════════════════════════════════════════════════════════════════════════════
@@ -219,7 +170,18 @@ const FLAGGED: readonly Flagged[] = [
  *           worse than either choice.
  */
 type DayState = 'OBSERVED' | 'ABSENT' | 'WITHHELD';
-const ABSENT_DAYS = [17, 18, 19];
+/*
+ * THE OUTAGE SITS ON THE FRONT, AND THAT IS THE POINT.
+ *
+ * It was on days 17-19 first, which is late, deep in the frame, past everything, and cost nothing: the
+ * hole was almost invisible and no flagged item fell into it, so `flaggedLostToNonObservedDays` read 0
+ * and the whole apparatus for reporting swallowed signal was untested by its own data.
+ *
+ * Days 13-15 is where a monitoring outage actually hurts — mid-advance, with nine already-scheduled
+ * flagged items landing inside it. Their weight is in no cell of the table and cannot be, and the frame
+ * says so with a count rather than by leaving three days looking calm.
+ */
+const ABSENT_DAYS = [13, 14, 15];
 const WITHHELD_DAYS = [22, 23];
 const dayState = (d: number): DayState =>
   ABSENT_DAYS.includes(d) ? 'ABSENT' : WITHHELD_DAYS.includes(d) ? 'WITHHELD' : 'OBSERVED';
@@ -245,6 +207,197 @@ let MAX_CELL = 0;
 for (const ch of table) for (const day of ch) for (const v of day) MAX_CELL = Math.max(MAX_CELL, v);
 
 /*
+ * THE FRONT, AS A NUMBER AND THEN AS A GATE.
+ *
+ * `REVIEW_THRESHOLD` is a stated escalation trigger in risk units, and `frontDay` is the first day at
+ * which the accumulated risk across every channel and band reaches it. That is a derived quantity with
+ * one input, so the gate stands where the data puts it — and if the outage arrives before the
+ * threshold does, `frontDay` REFUSES rather than reporting the last integrable day as though the
+ * crossing had been observed there.
+ */
+const REVIEW_THRESHOLD = 8.0;
+let cumulative = 0;
+let frontDay = -1;
+let frontRefusal: string | null = null;
+const cumulativeByDay: number[] = [];
+for (let d = 0; d < DAYS; d++) {
+  if (dayState(d) !== 'OBSERVED') {
+    cumulativeByDay.push(cumulative);
+    if (frontDay < 0 && frontRefusal === null) {
+      frontRefusal = dayState(d) === 'ABSENT'
+        ? 'THRESHOLD_NOT_REACHED_BEFORE_UNMEASURED_DAY' : 'THRESHOLD_NOT_REACHED_BEFORE_WITHHELD_DAY';
+    }
+    continue;
+  }
+  for (let c = 0; c < CHANNELS.length; c++) for (let b = 0; b < BANDS.length; b++) cumulative += table[c]![d]![b]!;
+  cumulativeByDay.push(cumulative);
+  if (frontDay < 0 && cumulative >= REVIEW_THRESHOLD) { frontDay = d; frontRefusal = null; }
+}
+
+/*
+ * THE READING STATE OF EVERY DAY — the part that makes absence cost something.
+ *
+ * A day's own state is not the whole story. "Total risk between you and day 25" requires every day in
+ * between, so a day BEYOND an unmeasured one carries no accumulated reading at all. Two refusal codes,
+ * never merged, because an operator does something different about each: an outage is a vendor
+ * problem, a compartment is a clearance problem.
+ */
+type Reading = 'INTEGRABLE' | 'DAY_NOT_MEASURED' | 'DAY_WITHHELD'
+  | 'INTEGRAL_CROSSES_UNMEASURED_DAY' | 'INTEGRAL_CROSSES_WITHHELD_DAY';
+const firstAbsent = Math.min(...ABSENT_DAYS);
+const firstWithheld = Math.min(...WITHHELD_DAYS);
+const readingOf = (d: number): Reading => {
+  const st = dayState(d);
+  if (st === 'ABSENT') return 'DAY_NOT_MEASURED';
+  if (st === 'WITHHELD') return 'DAY_WITHHELD';
+  if (d > firstAbsent) return 'INTEGRAL_CROSSES_UNMEASURED_DAY';
+  if (d > firstWithheld) return 'INTEGRAL_CROSSES_WITHHELD_DAY';
+  return 'INTEGRABLE';
+};
+const integrableToDay = Math.max(...Array.from({ length: DAYS }, (_, d) => d)
+  .filter((d) => readingOf(d) === 'INTEGRABLE'));
+
+
+/*
+ * THE FLAT FALLBACK IS INSTALLED BEFORE THE STAGE EXISTS — §6 rule 1.
+ *
+ * Above `createStage` on purpose: a shader compile failure happens during module evaluation, so
+ * anything built after the renderer is constructed is code that never runs on the failure it exists
+ * for. Print and the accessibility tree are not errors either, and there is nothing to catch for those.
+ *
+ * THE TABLE IS THE FIELD'S OWN CELLS, and one column the 3-D view has no way to show as a number: the
+ * running cumulative. That is deliberate. The rendered view is better at the accumulation as a SHAPE —
+ * where the front is, how it spreads across channels, how much stands between you and a given day —
+ * and worse at the exact figure. So the fallback is not a consolation prize with fewer fields; it is
+ * the same data with the arithmetic done for you and the shape thrown away.
+ *
+ * ABSENT AND WITHHELD BOTH CARRY `null`, which the fallback renders as a named "absent" rather than a
+ * blank or a zero, and the STATE column keeps them apart. A flat view that collapsed them would break
+ * rule 6 in the very thing meant to satisfy rule 1.
+ */
+const fallback = installFlatFallback({
+  title: 'E7 · The Storm — marketing risk by day, channel and severity',
+  readsAs: 'Depth is days ahead in the rendered view, and the opacity along any line of sight is the '
+    + 'total risk between the viewer and that day — an accumulation a per-cell table cannot show. The '
+    + 'front advancing across channels, the three-day hole where the monitor was down, and the two days '
+    + 'that are measured but withheld are all shapes there and rows here. This table carries every '
+    + 'cell; what it cannot carry is what lies between you and a day.',
+  notices: [
+    `SYNTHETIC RISK DATA — ${FLAGGED.length} hand-authored flagged items over ${DAYS} days. `
+    + 'The shape is deliberate; the values are not measurements.',
+    `D${Math.min(...ABSENT_DAYS)}-D${Math.max(...ABSENT_DAYS)} were NOT MEASURED, and `
+    + `${flaggedOnNonObserved.length} already-scheduled flagged items landed inside them: their weight `
+    + 'is in no cell below and is not zero. Every cumulative figure past that day is REFUSED.',
+  ],
+  columns: [
+    { key: 'day', label: 'Day' },
+    { key: 'state', label: 'State' },
+    { key: 'reading', label: 'Cumulative reading' },
+    { key: 'advisory', label: 'Advisory', numeric: true },
+    { key: 'elevated', label: 'Elevated', numeric: true },
+    { key: 'severe', label: 'Severe', numeric: true },
+    { key: 'total', label: 'Day total', numeric: true },
+    { key: 'cumulative', label: 'Cumulative', numeric: true },
+  ],
+  rows: Array.from({ length: DAYS }, (_, d) => {
+    const st = dayState(d);
+    const obs = st === 'OBSERVED';
+    const reading = readingOf(d);
+    const band = (b: number): number | null => (
+      obs ? Number(CHANNELS.reduce((n, _c, c) => n + table[c]![d]![b]!, 0).toFixed(3)) : null
+    );
+    const total = obs
+      ? Number(BANDS.reduce((n, _b, b) => n + CHANNELS.reduce((m, _c, c) => m + table[c]![d]![b]!, 0), 0).toFixed(3))
+      : null;
+    return {
+      day: `D${d}`,
+      state: st,
+      /* The cumulative is REFUSED past the hole rather than continued. Continuing it would be the
+         table's version of writing zero into the density. */
+      reading: reading === 'INTEGRABLE' ? 'integrable' : reading,
+      advisory: band(0), elevated: band(1), severe: band(2), total,
+      cumulative: reading === 'INTEGRABLE' ? Number(cumulativeByDay[d]!.toFixed(2)) : null,
+    };
+  }),
+});
+fallbackRef = fallback;
+
+/*
+ * A SYNTHETIC REFUSAL, SO THE FALLBACK CAN BE CAPTURED. Rule 8 is "every claim gets a capture", and
+ * rule 1's claim — that a refusal resolves to the flat surface without losing information — cannot be
+ * photographed any other way, because a page cannot switch off its own WebGL.
+ *
+ * `?refuse=1` is not a mock: it calls the same `die` a failed shader compile calls.
+ */
+if (params.get('refuse') === '1') {
+  die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
+    + 'The volumetric field is not being drawn.');
+}
+
+
+const out = createStage(canvas, { alpha: false });
+if (!isStage(out)) die(`stage: ${out.code} — ${out.reason}`);
+const stage = out;
+const gl = stage.gl;
+
+const PRESENT_VERT = `#version 300 es
+precision highp float;
+out vec2 vUv;
+void main(){
+  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const PRESENT_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uScene;
+out vec4 frag;
+${TONE_MAP_GLSL}
+${SRGB_ENCODE_GLSL}
+void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
+
+/*
+ * THE VOLUME IS DRAWN INTO ITS OWN TARGET AND COMPOSITED, AND THAT IS NOT AN OPTIMISATION.
+ *
+ * The march samples the scene's DEPTH texture. That texture is the depth attachment of the scene
+ * framebuffer, so drawing the volume straight into the scene target while sampling its own depth is a
+ * feedback loop — which WebGL2 does not leave undefined, it raises INVALID_OPERATION and draws
+ * nothing. The gate for this whole programme is `glError 0`, so the loop would have failed it loudly
+ * rather than quietly; a separate target is the honest fix rather than detaching the attachment and
+ * hoping.
+ *
+ * The composite carries premultiplied colour and coverage, so it blends ONE / ONE_MINUS_SRC_ALPHA and
+ * does NOT tone map. The present pass owns the only tone map in the pipeline.
+ */
+const COMPOSITE_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uVolume;
+out vec4 frag;
+void main(){ frag = texture(uVolume, vUv); }`;
+
+const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
+const composite = required('composite', stage.compile(PRESENT_VERT, COMPOSITE_FRAG));
+const lit = required('lit', createLitRenderer(stage));
+const target = required('target', createTarget3D(stage, W, H));
+const volTarget = required('volume target', createTarget3D(stage, W, H));
+/*
+ * A 4×4 TARGET WHOSE DEPTH IS CLEARED TO THE FAR PLANE — the `?depth=0` control, and the reference the
+ * occlusion measurement differences against. Four texels is enough because every sample of an all-far
+ * depth map returns the same number; allocating it at full size to make that point would cost 3.4 MB
+ * on an 8 GB machine for no information.
+ */
+const farDepth = required('far depth', createTarget3D(stage, 4, 4));
+const shadow = required('shadow', createShadowMap(stage, 1536));
+const ao = required('ao', createAmbientOcclusion(stage, W, H));
+
+farDepth.bind();
+gl.clearDepth(1);
+gl.clear(gl.DEPTH_BUFFER_BIT);
+gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+
+/*
  * ══════════════════════════════════════════════════════════════════════════════════════
  * THE CALENDAR, IN METRES. Every number here is a unit conversion, not a taste.
  * ══════════════════════════════════════════════════════════════════════════════════════
@@ -252,7 +405,17 @@ for (const ch of table) for (const day of ch) for (const v of day) MAX_CELL = Ma
 const DAY_M = 0.5;
 const NOW_OFFSET = 2.6;
 const CAL_LEN = DAYS * DAY_M;
-const LANE_PITCH = 0.62, LANE_W = 0.46, TILE_T = 0.06, TILE_D = DAY_M * 0.84;
+/*
+ * A 2.5 cm PLATE, NOT A 6 cm SLAB — and the thickness is what decides whether a day gridline exists.
+ *
+ * With 6 cm tiles the day gaps did not read at all, and the reason is geometry rather than contrast: at
+ * 21° of elevation a line of sight entering an 11 cm gap has to run 15.6 cm to clear a 6 cm edge, so no
+ * ray through the gap ever reached the void behind the floor. Every gap showed the LIT +z face of the
+ * next tile instead, at very nearly the brightness of the tile tops, and the calendar rendered as seven
+ * smooth strips. Thinning the plate to 2.5 cm needs only 6.5 cm of run, so the gap shows the clear
+ * colour and the gridline is the absence it is supposed to be.
+ */
+const LANE_PITCH = 0.62, LANE_W = 0.46, TILE_T = 0.025, TILE_D = DAY_M * 0.78;
 const GUTTER_W = 0.56;
 const FLOOR_TOP = TILE_T / 2;
 const laneX = (c: number): number => (c - (CHANNELS.length - 1) / 2) * LANE_PITCH;
@@ -429,11 +592,20 @@ const ASPECT = W / H;
  */
 const tileGeo = box(LANE_W, TILE_T, TILE_D);
 const gutterGeo = box(GUTTER_W, TILE_T, TILE_D);
-const lidGeo = box(2 * LANE_HALF, 0.30, TILE_D);
+const lidGeo = box(2 * LANE_HALF, 0.42, TILE_D);
 const railGeo = box(2 * LANE_HALF + GUTTER_W + 0.06, 0.10, 0.05);
 const weekGeo = box(2 * LANE_HALF, 0.07, 0.05);
-const gateGeo = box(2 * LANE_HALF, 0.52, 0.05);
-const postGeo = box(0.07, 1.30, 0.07);
+/*
+ * THE GATE IS A FENCE, NOT A WALL — and the wall version was 56 px of solid blue across the frame.
+ *
+ * A 0.52 m slab at day 7 stands 11 m from the eye, which is a band a fifteenth of the frame's height
+ * spanning its whole width, and everything in the lower severity band beyond it was gone. The
+ * threshold is a line in time, so it renders as a line of posts on the lane boundaries plus a low
+ * sill: it still occludes — that is measured, and `glOcclusionPixels` is how — but it occludes eight
+ * thin vertical strips rather than the lower half of three weeks.
+ */
+const gateGeo = box(2 * LANE_HALF, 0.11, 0.05);
+const postGeo = box(0.075, 1.05, 0.075);
 
 const tileMesh = required('tile', uploadMesh(stage, tileGeo));
 const gutterMesh = required('gutter', uploadMesh(stage, gutterGeo));
@@ -453,8 +625,15 @@ const modelOf = (x: number, y: number, z: number): Float32Array => {
 };
 
 const MAT = {
-  tile: { baseColour: hexToLinear('#101B2F'), roughness: 0.78, metalness: 0.02 },
-  gutter: { baseColour: hexToLinear('#0C1424'), roughness: 0.86, metalness: 0 },
+  /*
+   * LIFTED FROM #101B2F, and the day gridlines are the reason. A day gap shows the void behind the
+   * floor, which clears to #070B14 — and against a #101B2F tile the two are within 0.02 of linear
+   * radiance of each other, so the gaps vanished and seven lanes rendered as seven smooth strips. §2
+   * asks for day gridlines; a gridline nobody can see is not one. The gap also widened from 16% of a
+   * day to 22%.
+   */
+  tile: { baseColour: hexToLinear('#22315A'), roughness: 0.74, metalness: 0.03 },
+  gutter: { baseColour: hexToLinear('#131E36'), roughness: 0.84, metalness: 0 },
   withheldTile: { baseColour: hexToLinear('#1B2540'), roughness: 0.55, metalness: 0.10 },
   /* Steel, and the same reasoning E6's WITHHELD slab uses: a withheld day is neither calm nor bad, it
      is the ABSENCE OF A READING, and giving it a colour from the risk ramp would assert a finding
@@ -499,78 +678,60 @@ for (let d = 0; d < DAYS; d++) {
   }
   tilesDrawn += CHANNELS.length + 1;
   if (st === 'WITHHELD') {
-    addBox(0, FLOOR_TOP + 0.15, z, 2 * LANE_HALF, 0.30, TILE_D, lidMesh, MAT.lid);
+    addBox(0, FLOOR_TOP + 0.21, z, 2 * LANE_HALF, 0.42, TILE_D, lidMesh, MAT.lid);
   }
 }
-/* The gap's two edges, so a hole reads as a bounded absence rather than as the floor having ended. */
+/*
+ * THE HOLE IS FENCED AT BOTH ENDS, and the low rail on its own was not enough — twice over.
+ *
+ * Read at 16 m the two 10 cm rails were a pair of faint lines, and the three-day gap they bounded read
+ * as the calendar simply being darker there. An outage is the most important thing on this frame and it
+ * was the least visible. So each edge now carries a row of posts on the lane boundaries, the same
+ * height as the review gate's and in the refusal grey rather than the brand blue.
+ *
+ * It also fixed a measurement. `glOcclusionPixels` had fallen to 3,943 — under the capture script's
+ * floor — because raising the field clear of the floor left almost no geometry standing INSIDE the
+ * volume for the depth cap to bite on. Sixteen posts inside the field is both the honest marker and the
+ * thing that gives the occlusion claim something to be true about.
+ */
 const absentRailZ = [
   zNearOfDay(Math.min(...ABSENT_DAYS)) + 0.02,
   zNearOfDay(Math.max(...ABSENT_DAYS) + 1) - 0.02,
 ];
 for (const z of absentRailZ) {
   addBox(SCENE_X, FLOOR_TOP + 0.05, z, 2 * LANE_HALF + GUTTER_W + 0.06, 0.10, 0.05, railMesh, MAT.rail);
+  for (let c = 0; c <= CHANNELS.length; c++) {
+    addBox(laneX(0) - LANE_PITCH / 2 + c * LANE_PITCH, FLOOR_TOP + 0.525, z,
+      0.075, 1.05, 0.075, postMesh, MAT.rail);
+  }
 }
+/*
+ * A WEEK GRIDLINE IS SUPPRESSED WHERE IT WOULD BRIDGE THE HOLE, and the first version did not.
+ *
+ * The week 2 boundary falls between day 13 and day 14 — inside the outage — so the bar was drawn as a
+ * solid full-width rib straight across the middle of the three-day gap, filling in a third of the one
+ * piece of geometry whose entire job is to be missing. It is the same class of error as writing zero
+ * into the density: a structural element continuing across an unmeasured region asserts that the region
+ * is there. Suppressed, and counted, because a suppressed gridline is itself a thing a reader should be
+ * told about rather than left to wonder at.
+ */
 const WEEK_DAYS = [7, 14, 21, 28];
-for (const d of WEEK_DAYS) {
+const weekBarDrawn = WEEK_DAYS.filter((d) => (
+  dayState(d - 1) !== 'ABSENT' && dayState(Math.min(d, DAYS - 1)) !== 'ABSENT'
+));
+for (const d of weekBarDrawn) {
   addBox(0, FLOOR_TOP + 0.035, zNearOfDay(d), 2 * LANE_HALF, 0.07, 0.05, weekMesh, MAT.week);
 }
 
-/*
- * THE FRONT, AS A NUMBER AND THEN AS A GATE.
- *
- * `REVIEW_THRESHOLD` is a stated escalation trigger in risk units, and `frontDay` is the first day at
- * which the accumulated risk across every channel and band reaches it. That is a derived quantity with
- * one input, so the gate stands where the data puts it — and if the outage arrives before the
- * threshold does, `frontDay` REFUSES rather than reporting the last integrable day as though the
- * crossing had been observed there.
- */
-const REVIEW_THRESHOLD = 10.0;
-let cumulative = 0;
-let frontDay = -1;
-let frontRefusal: string | null = null;
-const cumulativeByDay: number[] = [];
-for (let d = 0; d < DAYS; d++) {
-  if (dayState(d) !== 'OBSERVED') {
-    cumulativeByDay.push(cumulative);
-    if (frontDay < 0 && frontRefusal === null) {
-      frontRefusal = dayState(d) === 'ABSENT'
-        ? 'THRESHOLD_NOT_REACHED_BEFORE_UNMEASURED_DAY' : 'THRESHOLD_NOT_REACHED_BEFORE_WITHHELD_DAY';
-    }
-    continue;
-  }
-  for (let c = 0; c < CHANNELS.length; c++) for (let b = 0; b < BANDS.length; b++) cumulative += table[c]![d]![b]!;
-  cumulativeByDay.push(cumulative);
-  if (frontDay < 0 && cumulative >= REVIEW_THRESHOLD) { frontDay = d; frontRefusal = null; }
-}
 if (frontDay >= 0) {
-  addBox(0, FLOOR_TOP + 0.26, zNearOfDay(frontDay), 2 * LANE_HALF, 0.52, 0.05, gateMesh, MAT.gate);
-  for (const sx of [-LANE_HALF, LANE_HALF]) {
-    addBox(sx, FLOOR_TOP + 0.65, zNearOfDay(frontDay), 0.07, 1.30, 0.07, postMesh, MAT.gate);
+  const gz = zNearOfDay(frontDay);
+  addBox(0, FLOOR_TOP + 0.055, gz, 2 * LANE_HALF, 0.11, 0.05, gateMesh, MAT.gate);
+  for (let c = 0; c <= CHANNELS.length; c++) {
+    addBox(laneX(0) - LANE_PITCH / 2 + c * LANE_PITCH, FLOOR_TOP + 0.525, gz,
+      0.075, 1.05, 0.075, postMesh, MAT.gate);
   }
 }
 
-/*
- * THE READING STATE OF EVERY DAY — the part that makes absence cost something.
- *
- * A day's own state is not the whole story. "Total risk between you and day 25" requires every day in
- * between, so a day BEYOND an unmeasured one carries no accumulated reading at all. Two refusal codes,
- * never merged, because an operator does something different about each: an outage is a vendor
- * problem, a compartment is a clearance problem.
- */
-type Reading = 'INTEGRABLE' | 'DAY_NOT_MEASURED' | 'DAY_WITHHELD'
-  | 'INTEGRAL_CROSSES_UNMEASURED_DAY' | 'INTEGRAL_CROSSES_WITHHELD_DAY';
-const firstAbsent = Math.min(...ABSENT_DAYS);
-const firstWithheld = Math.min(...WITHHELD_DAYS);
-const readingOf = (d: number): Reading => {
-  const st = dayState(d);
-  if (st === 'ABSENT') return 'DAY_NOT_MEASURED';
-  if (st === 'WITHHELD') return 'DAY_WITHHELD';
-  if (d > firstAbsent) return 'INTEGRAL_CROSSES_UNMEASURED_DAY';
-  if (d > firstWithheld) return 'INTEGRAL_CROSSES_WITHHELD_DAY';
-  return 'INTEGRABLE';
-};
-const integrableToDay = Math.max(...Array.from({ length: DAYS }, (_, d) => d)
-  .filter((d) => readingOf(d) === 'INTEGRABLE'));
 
 const lightDir: [number, number, number] = [0.44, -0.66, -0.61];
 const sceneMin: [number, number, number] = [FLOOR_MIN_X - 0.2, 0, zNearOfDay(DAYS) - 0.3];
@@ -599,10 +760,38 @@ const SKY = {
   horizon: [0.030, 0.044, 0.080] as Vec3,
   ground: [0.006, 0.007, 0.012] as Vec3,
 };
+/*
+ * THE LOW END OF THE RAMP WAS 4× TOO BRIGHT, AND IT ERASED THE CALENDAR.
+ *
+ * At 2.2× the brand blue, the baseline advisory haze — which covers every observed day of every channel
+ * and therefore the whole floor — contributed about 0.24 of linear radiance against a floor tile whose
+ * own colour is 0.03. Eight times brighter. The capture came back with seven smooth purple lanes and NO
+ * DAY GRIDLINES ANYWHERE, and the coverage was only 18%: the field was not hiding the calendar by being
+ * opaque, it was hiding it by being brighter than it. §2 asks for a front advancing ON a calendar
+ * floor, and a floor nobody can see is not a calendar.
+ *
+ * Low end down to 0.55×, so the background tints the floor instead of replacing it. The high end went
+ * the other way for the same reason: at 2.6× the front's core clipped to a flat white-orange blob with
+ * no internal structure at all, so nine days of escalating severity rendered as one cylinder. 1.45×
+ * keeps the core hot and lets consecutive days differ. Same data, same integral, four times the reading.
+ */
 const RAMP_LOW = hexToLinear('#2C6BFF');
 const RAMP_HIGH = hexToLinear('#FF8A3D');
-const COL_LOW: [number, number, number] = [RAMP_LOW[0] * 2.2, RAMP_LOW[1] * 2.2, RAMP_LOW[2] * 2.2];
-const COL_HIGH: [number, number, number] = [RAMP_HIGH[0] * 3.4, RAMP_HIGH[1] * 3.4, RAMP_HIGH[2] * 3.4];
+const COL_LOW: [number, number, number] = [RAMP_LOW[0] * 0.55, RAMP_LOW[1] * 0.55, RAMP_LOW[2] * 0.55];
+const COL_HIGH: [number, number, number] = [RAMP_HIGH[0] * 1.45, RAMP_HIGH[1] * 1.45, RAMP_HIGH[2] * 1.45];
+/*
+ * WHERE THE COLOUR RAMP STOPS SAYING ANYTHING, stated as a risk figure rather than left to be noticed.
+ *
+ * The layer mixes low to high on `clamp(density, 0, 1)`, and density is fixed by the integral
+ * calibration — so the ramp saturates at exactly one risk value and every cell above it renders the
+ * same colour. Severity is still carried, by HEIGHT, and magnitude is still carried, by opacity; but a
+ * reader told "colour is risk" would over-read the top of the ramp, so the saturation point and the
+ * number of cells past it are in the report.
+ */
+const RAMP_SATURATION_RISK = DAY_M / RISK_TO_TAU;
+const cellsAboveRampSaturation = table.reduce((n, ch) => (
+  n + ch.reduce((m, day) => m + day.filter((v) => v > RAMP_SATURATION_RISK).length, 0)
+), 0);
 
 function frame(depthOn = DEPTH_ON) {
   const vp = viewProjection(view, ASPECT);
@@ -619,8 +808,8 @@ function frame(depthOn = DEPTH_ON) {
     target.bind();
   }
   lit.draw({
-    viewProj: vp, eye, lightDir, lightColour: [2.6, 2.55, 2.45],
-    ambientGain: 0.55, sky: SKY, lightVP, shadow, shadowStrength: 0.92, draws,
+    viewProj: vp, eye, lightDir, lightColour: [2.05, 2.0, 1.92],
+    ambientGain: 0.62, sky: SKY, lightVP, shadow, shadowStrength: 0.92, draws,
     ao: AO_ON ? ao.texture : null, screenSize: [W, H],
   });
   if (volume) {
@@ -634,7 +823,7 @@ function frame(depthOn = DEPTH_ON) {
       boxMin: BOX_MIN, boxMax: BOX_MAX,
       worldStep: WORLD_STEP, maxSteps: MAX_STEPS, densityScale: DENSITY_SCALE,
       colourLow: COL_LOW, colourHigh: COL_HIGH,
-      lightDir, lightSteps: 5, emission: 0.34,
+      lightDir, lightSteps: 6, emission: 0.26,
     });
     target.bind();
     gl.enable(gl.BLEND);
@@ -681,19 +870,29 @@ const ms = measure(Math.max(1, FRAMES));
  * depth cap is decorative — that nothing in the scene ever stands in front of the field — and the
  * capture script throws on it rather than shipping a volume that only appears to be in the room.
  */
-function occlusionDelta(): { pixels: number; pct: number } {
-  if (!volume) return { pixels: 0, pct: 0 };
+function occlusionDelta(): { pixels: number; pct: number; meanDelta: number; maxDelta: number } {
+  if (!volume) return { pixels: 0, pct: 0, meanDelta: 0, maxDelta: 0 };
   const a = new Uint8Array(W * H * 4);
   const b = new Uint8Array(W * H * 4);
   frame(true);
   gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, a);
   frame(false);
   gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, b);
-  let n = 0;
+  let n = 0, sum = 0, max = 0;
   for (let i = 0; i < a.length; i += 4) {
-    if (Math.abs(a[i]! - b[i]!) > 2 || Math.abs(a[i + 1]! - b[i + 1]!) > 2 || Math.abs(a[i + 2]! - b[i + 2]!) > 2) n++;
+    const d = Math.max(
+      Math.abs(a[i]! - b[i]!), Math.abs(a[i + 1]! - b[i + 1]!), Math.abs(a[i + 2]! - b[i + 2]!),
+    );
+    /* A COUNT ALONE IS NOT ENOUGH. Dimming the ramp's low end cut the count almost in half without
+       changing what the depth cap does, because most of the affected pixels moved by one or two levels
+       rather than none. The magnitude is reported next to the count so a threshold effect cannot be
+       mistaken for the effect disappearing. */
+    if (d > 2) { n++; sum += d; if (d > max) max = d; }
   }
-  return { pixels: n, pct: Number(((100 * n) / (W * H)).toFixed(2)) };
+  return {
+    pixels: n, pct: Number(((100 * n) / (W * H)).toFixed(2)),
+    meanDelta: Number((sum / Math.max(1, n)).toFixed(1)), maxDelta: max,
+  };
 }
 const occlusion = occlusionDelta();
 
@@ -1051,7 +1250,11 @@ const weekTicks = WEEK_DAYS.map((d) => {
   const onFrame = !p.behind && p.sx > -40 && p.sx < CSS_W && p.sy > 0 && p.sy < CSS_H;
   if (onFrame) {
     const el = document.createElement('div');
-    el.style.cssText = `position:absolute;left:${Math.max(4, p.sx).toFixed(1)}px;`
+    /* PINNED TO THE LEFT MARGIN, y ONLY FROM THE PROJECTION. Following the floor's own left edge in x
+       walked the ruler inward with depth — by D28 it sat 420 px in, on top of the front's brightest
+       mass, which is where a scale is least readable and most in the way. x is the margin, y is the
+       measurement. */
+    el.style.cssText = `position:absolute;left:16px;`
       + `top:${p.sy.toFixed(1)}px;transform:translate(0,-50%);`
       + `font:500 10px/1.35 ui-monospace,monospace;letter-spacing:.07em;white-space:nowrap;`
       + `color:${readable ? 'rgba(196,212,240,0.85)' : '#E0A94A'}`;
@@ -1069,6 +1272,12 @@ hud.innerHTML =
   + `<div style="font:400 10.5px/1.55 ui-monospace,monospace;color:rgba(196,212,240,0.86)">`
   + `THE DEPTH OF COLOUR IS THE TOTAL RISK BETWEEN YOU AND THAT DAY<br>`
   + `${DAY_M} m PER DAY &nbsp;·&nbsp; ${RISK_TO_TAU} OPTICAL DEPTH PER RISK UNIT<br>`
+  /* THE MIXING IS ON THE FRAME, not only in the report. The integral is exactly the risk along the line
+     of sight, which is what the line above claims — but that line invites the reader to attribute it to
+     one channel and one band, and a perspective ray does not stay in either. Printing the measured span
+     is what stops the correct sentence being read as a stronger one. */
+  + `A PIXEL INTEGRATES ~${perRay(daysSum).toFixed(0)} DAYS AND `
+  + `~${perRay(bandsSum).toFixed(1)} BANDS — ONE CHANNEL ONLY DOWN THE AXIS<br>`
   + `INTEGRABLE TO D${integrableToDay} &nbsp;·&nbsp; CALENDAR VISIBLE TO D${DAYS - 1}`
   + `${volume ? '' : ' &nbsp;·&nbsp; FIELD NOT RENDERED'}</div>`
   + `<div style="font:500 10px/1.45 ui-monospace,monospace;color:#E0A94A">SYNTHETIC RISK DATA`
@@ -1158,6 +1367,7 @@ const report = {
   integrableToDay,
   visibleToDay: DAYS - 1,
   metresPerDay: DAY_M,
+  calendarLengthM: CAL_LEN,
   riskToTau: RISK_TO_TAU,
   reviewThreshold: REVIEW_THRESHOLD,
   frontDay,
@@ -1193,6 +1403,9 @@ const report = {
   fieldOccupancyPct: Number(((100 * fNonZero) / grid.length).toFixed(2)),
   densityScale: Number(DENSITY_SCALE.toFixed(4)),
   maxCell: Number(MAX_CELL.toFixed(3)),
+  /* Colour saturates here. Above it the ramp says nothing more; height and opacity still do. */
+  rampSaturatesAtRiskUnits: Number(RAMP_SATURATION_RISK.toFixed(3)),
+  cellsAboveRampSaturation,
 
   /* ── THE MARCH. §2 asks for worldStep, maxSteps and whether any ray truncated. */
   worldStep: WORLD_STEP,
@@ -1237,6 +1450,8 @@ const report = {
   /* ── IS SCENE DEPTH LOAD-BEARING? Measured against a far-plane depth texture. */
   glOcclusionPixels: occlusion.pixels,
   glOcclusionPct: occlusion.pct,
+  glOcclusionMeanDelta: occlusion.meanDelta,
+  glOcclusionMaxDelta: occlusion.maxDelta,
 
   /* ── FRAMING, checked rather than eyeballed. Both must be inside the half-FOV. */
   halfFovDeg: Number((((view.fovDeg ?? 36) / 2)).toFixed(2)),
@@ -1247,6 +1462,8 @@ const report = {
   channelLabels: { shown: channelDecisions.filter((d) => d.shown).length, refusedBy: groupBy(channelDecisions) },
   dateLabels: { shown: dateDecisions.filter((d) => d.shown).length, refusedBy: groupBy(dateDecisions) },
   weekTicksOffFrame: weekTicks.filter((t) => !t.onFrame).length,
+  /* Week gridlines that would have crossed the hole. Never drawn, always counted. */
+  weekBarsSuppressedForAbsence: WEEK_DAYS.length - weekBarDrawn.length,
   weekTicksRefusingIntegral: weekTicks.filter((t) => !t.readable).length,
   markersOnFrame: {
     absent: absentMarker.onFrame, withheld: withheldMarker.onFrame, gate: gateMarker.onFrame,
@@ -1299,4 +1516,7 @@ log.textContent = JSON.stringify(summary, null, 2)
     + ` measured ${String(r.measured).padStart(7)} err ${String(r.errorPct).padStart(5)}%`
   )).join('\n');
 frame();
+/* THE FALLBACK IS HIDDEN ONLY NOW, and only by CSS. A frame exists, so the table is redundant on
+   screen — and it stays in the accessibility tree and the print path, where the canvas is opaque. */
+fallback.markRendered();
 document.title = 'READY';

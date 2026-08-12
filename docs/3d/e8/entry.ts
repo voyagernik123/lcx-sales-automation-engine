@@ -24,12 +24,67 @@ import {
   hexToLinear, assertBrandFidelity, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY, projectScreen,
   type LitDraw, type Viewpoint,
 } from '@lcx/gl';
+import { installFlatFallback } from '../_shared/flatFallback.js';
 
 const ANISO_ON = new URLSearchParams(location.search).get('aniso') !== '0';
 const SCALE = Math.max(1, Math.min(3, Number(new URLSearchParams(location.search).get('scale') ?? 1)));
 const W = 1200 * SCALE, H = 720 * SCALE;
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 canvas.width = W; canvas.height = H;
+
+/* E8's refusal path used a bare `refusal()` helper with no way to tell a reader anything. `function`
+   rather than a const arrow: only a declaration returning `never` narrows control flow. */
+function die(m: string): never {
+  document.title = 'REFUSED';
+  const logEl = document.getElementById('log');
+  if (logEl) logEl.textContent = m;
+  const [code, ...rest] = m.split(':');
+  fallbackRef?.showRefusal(code?.trim() ?? 'REFUSED', rest.join(':').trim() || m);
+  throw new Error(m);
+}
+let fallbackRef: ReturnType<typeof installFlatFallback> | null = null;
+
+/*
+ * §6 RULE 1 — and E8 is the environment where this rule is already SHIPPING correctly, just not here.
+ *
+ * `apps/web/src/components/brand/ForgePlate.tsx` is the real fallback for the real surface: ten lines of
+ * themed CSS, eager, permanent, in front of the lazy renderer, and it is what a print, an SSR pass, a
+ * missing WebGL2 context or a refused float target actually resolve to on the sign-in route. That is the
+ * one place in the programme rule 1 was satisfied before this week.
+ *
+ * The harness had nothing, which mattered because the harness is what claims to PROVE the environment —
+ * and a harness that shows a code on a blank page cannot demonstrate a fallback it does not have. So it
+ * gets one, and it states the material parameters the capture is evidence for, plus a pointer to the
+ * shipping fallback so the two are not confused for each other.
+ */
+const fallback = installFlatFallback({
+  title: 'E8 · The Forge — the machined mark',
+  readsAs: 'The rendered view is anisotropic GGX on a brushed disc: the highlight stretches along the '
+    + 'lathe direction rather than across it, which is what reads as machined instead of scratched. The '
+    + 'shipping surface resolves instead to ForgePlate, a CSS gradient — this table states what the '
+    + 'render is evidence for.',
+  notices: [
+    'A material study, not a data surface — there is no measurement in this frame to lose.',
+    'The SHIPPED fallback for this environment is apps/web/src/components/brand/ForgePlate.tsx.',
+  ],
+  columns: [
+    { key: 'part', label: 'Part' },
+    { key: 'hex', label: 'Base colour' },
+    { key: 'roughness', label: 'Roughness', numeric: true },
+    { key: 'metalness', label: 'Metalness', numeric: true },
+    { key: 'aniso', label: 'Anisotropy', numeric: true },
+  ],
+  rows: [
+    { part: 'Disc face (brushed)', hex: '#C9D4E4', roughness: 0.22, metalness: 0.9, aniso: ANISO_ON ? 0.85 : 0 },
+    { part: 'Ring', hex: '#C9D4E4', roughness: 0.18, metalness: 0.94, aniso: ANISO_ON ? 0.9 : 0 },
+    { part: 'Mark inlay', hex: '#2C6BFF', roughness: 0.3, metalness: 0.05, aniso: 0 },
+  ],
+});
+fallbackRef = fallback;
+if (new URLSearchParams(location.search).get('refuse') === '1') {
+  die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
+    + 'The three-dimensional view is not being drawn.');
+}
 
 const out = createStage(canvas, { alpha: false });
 if (!isStage(out)) { document.title = 'REFUSED'; throw new Error(out.reason); }
@@ -54,7 +109,11 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
 
 const log = document.getElementById('log')!;
 const refusal = (r: { reason: string; detail?: string }) => `${r.reason} ${r.detail ?? ''}`;
-const die = (m: string) => { document.title = 'REFUSED'; log.textContent = m; throw new Error(m); };
+/* The arrow version that used to live here is gone. Two reasons, and the second is the load-bearing
+   one: a const arrow does NOT return `never` for control-flow purposes, so every `if ('kind' in x) die()`
+   below it narrowed nothing and the accessors were errors against a refusal union; and it could not tell
+   the flat fallback anything, so a refusal showed a code on a blank page. The declaration above does
+   both. */
 
 const present = stage.compile(PRESENT_VERT, PRESENT_FRAG);
 const lit = createLitRenderer(stage);
@@ -251,4 +310,5 @@ const report = {
 (globalThis as unknown as { E8: typeof report }).E8 = report;
 log.textContent = JSON.stringify(report, null, 2);
 frame(1.6);
+fallback.markRendered();
 document.title = 'READY';

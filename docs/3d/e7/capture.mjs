@@ -14,7 +14,7 @@ const b = await chromium.launch({ args:['--use-gl=angle','--use-angle=swiftshade
 // `no-volume` is the FLAT CONTROL: the calendar, the day grid and all three states with no
 // accumulation — everything a heatmap can already say. `no-depth` is the ENGINEERING control: the
 // same field with the depth cap removed, which is what "fog on the lens" actually looks like.
-for (const [name, q] of [['live', ''], ['no-depth', '&depth=0'], ['no-volume', '&vol=0']]) {
+for (const [name, q] of [['live', ''], ['no-depth', '&depth=0'], ['no-volume', '&vol=0'], ['refused', '&refuse=1']]) {
   const p = await b.newPage({ viewport:{width:1300,height:1120}, deviceScaleFactor:1 });
   /* PRINTED THE MOMENT IT HAPPENS, not collected for after the wait. A page that throws never sets
      its title, so the harness reports a timeout and the actual exception — one line away — is never
@@ -22,12 +22,16 @@ for (const [name, q] of [['live', ''], ['no-depth', '&depth=0'], ['no-volume', '
      had. */
   const errs=[]; p.on('pageerror',e=>{ errs.push(e.message); console.error('    PAGE ERROR: '+e.message); });
   p.on('console',m=>{ if(m.type()==='error') console.error('    CONSOLE ERROR: '+m.text()); });
-  // frames=1, not the page default of 300: a 112-step raymarch at 1200x720 under a CPU rasteriser
-  // costs seconds per frame, and the sweep here only has to prove the frame draws at all. The
-  // timeout is 5 minutes for the same reason.
-  await p.goto(`http://127.0.0.1:${s.address().port}/live.html?frames=1${q}`);
-  await p.waitForFunction(()=>document.title==='READY',{timeout:300000});
-  if(errs.length) throw new Error('page errors: '+errs.join(' | '));
+  // frames=4, not the page default of 300: a 128-step raymarch at 1200x720 under a CPU rasteriser
+  // costs hundreds of milliseconds per frame. One frame was not enough — the same build timed at 193
+  // and 438 ms on consecutive runs — so four is the smallest batch whose mean is worth printing.
+  await p.goto(`http://127.0.0.1:${s.address().port}/live.html?frames=4${q}`);
+  const wantRefusal = name === 'refused';
+  await p.waitForFunction((r)=>document.title===(r?'REFUSED':'READY'), wantRefusal, {timeout:300000});
+  /* The forced-refusal variant throws on purpose, so its own message is expected. Any OTHER page error
+     still fails the capture. */
+  const unexpected = wantRefusal ? errs.filter(e=>!/FORCED_REFUSAL/.test(e)) : errs;
+  if(unexpected.length) throw new Error('page errors: '+unexpected.join(' | '));
   const state = await p.evaluate(() => {
     const cs = [...document.querySelectorAll('canvas')];
     return { canvases: cs.length, drawing: cs.filter((c) => getComputedStyle(c).display !== 'none').length };
@@ -36,6 +40,29 @@ for (const [name, q] of [['live', ''], ['no-depth', '&depth=0'], ['no-volume', '
   // fullPage: the report under the canvas is part of the evidence, and an element shot would crop it.
   await p.screenshot({ path: resolve(HERE, `${name}.png`), fullPage: true });
   console.log(`  ${name}.png — canvases: ${state.canvases}, drawing: ${state.drawing}`);
+  /* RULE 1 IS CHECKED HERE, not asserted in a README. The fallback table must exist, must carry every
+     day, must name absent rather than blank it, and must be HIDDEN when a frame was drawn and VISIBLE
+     when it was not. A fallback that is present but always hidden is the same as no fallback. */
+  const fb = await p.evaluate(() => {
+    const el = document.getElementById('lcx-fallback');
+    if (!el) return null;
+    return {
+      rows: el.querySelectorAll('tbody tr').length,
+      absentCells: el.querySelectorAll('td.absent').length,
+      hidden: getComputedStyle(el).display === 'none',
+      refusal: el.querySelector('.refusal')?.textContent?.slice(0, 60) ?? null,
+    };
+  });
+  if (!fb) throw new Error('§6 rule 1: no flat fallback in the DOM');
+  console.log(`    fallback rows ${fb.rows} · absent cells ${fb.absentCells}`
+    + ` · hidden ${fb.hidden} · refusal ${fb.refusal ? JSON.stringify(fb.refusal) : 'none'}`);
+  if (wantRefusal) {
+    if (fb.hidden) throw new Error('§6 rule 1: the fallback stayed hidden through a refusal');
+    if (!fb.refusal) throw new Error('§6 rule 1: a refusal was not named to the reader');
+    await p.close();
+    continue;
+  }
+  if (!fb.hidden) throw new Error('the fallback is still visible although a frame was drawn');
   // The numbers are the part this process can actually check. A capture it cannot see proves nothing.
   const rep = await p.evaluate(() => globalThis.E7);
   console.log(`    ms/frame ${rep.msPerFrame} · ${rep.renderer} · glError ${rep.glError} · ${rep.rendererClass}`
@@ -49,9 +76,12 @@ for (const [name, q] of [['live', ''], ['no-depth', '&depth=0'], ['no-volume', '
     + ` ${rep.boxDiagonalM} m · truncated ${rep.eyeRays.truncated}/${rep.eyeRays.hitBox}`
     + ` · geometryCapped ${rep.eyeRays.geometryCapped} · tau ${rep.eyeRays.tauMin}..${rep.eyeRays.tauMax}`);
   console.log(`    axialCheck ${rep.axialCheck.rays} rays · maxErr ${rep.axialCheck.maxErrorPct}%`
-    + ` mean ${rep.axialCheck.meanErrorPct}% · laneDrift centre ${rep.centreRayLaneDrift}`
-    + ` edge ${rep.edgeRayLaneDrift} lanes`);
+    + ` mean ${rep.axialCheck.meanErrorPct}%`);
+  console.log(`    per eye ray: laneDrift max ${rep.eyeRayLaneDriftMax} mean ${rep.eyeRayLaneDriftMean} lanes`
+    + ` · daysSpanned max ${rep.eyeRayDaysSpannedMax} mean ${rep.eyeRayDaysSpannedMean}`
+    + ` · bandsSpanned max ${rep.eyeRayBandsSpannedMax} mean ${rep.eyeRayBandsSpannedMean}`);
   console.log(`    occlusion ${rep.glOcclusionPixels} px (${rep.glOcclusionPct}%)`
+    + ` delta mean ${rep.glOcclusionMeanDelta} max ${rep.glOcclusionMaxDelta}`
     + ` · dateLabels ${rep.dateLabels.shown} shown ${JSON.stringify(rep.dateLabels.refusedBy)}`
     + ` · channelLabels ${rep.channelLabels.shown} ${JSON.stringify(rep.channelLabels.refusedBy)}`);
   console.log(`    readingStates ${JSON.stringify(rep.readingStates)}`

@@ -15,14 +15,71 @@ import {
   triangleCount, hexToLinear, assertBrandFidelity, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint,
 } from '@lcx/gl';
+import { installFlatFallback } from '../_shared/flatFallback.js';
 
 /* RESOLUTION IS A PARAMETER because §3.2 reserved a decision on it: 60 fps at 1x or 30 at 2x.
    That is answerable by measurement rather than by preference, and only at the real resolution —
    every pass here is fill-bound, so a 1x number says nothing about 2x. */
 const SCALE = Math.max(1, Math.min(3, Number(new URLSearchParams(location.search).get('scale') ?? 1)));
 const W = 1280 * SCALE, H = 800 * SCALE;
+const DIAG_FLAG = new URLSearchParams(location.search).get('diag') === '1';
+const REFUSE_FLAG = new URLSearchParams(location.search).get('refuse') === '1';
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 canvas.width = W; canvas.height = H;
+
+/* E0's own refusal path was an inline ladder with no shared helper. One is needed now, because the
+   fallback has to be told. `function` rather than a const arrow: only a declaration returning `never`
+   participates in the compiler's control-flow narrowing. */
+function die(m: string): never {
+  document.title = 'REFUSED';
+  const logEl = document.getElementById('log');
+  if (logEl) logEl.textContent = m;
+  const [code, ...rest] = m.split(':');
+  fallbackRef?.showRefusal(code?.trim() ?? 'REFUSED', rest.join(':').trim() || m);
+  throw new Error(m);
+}
+let fallbackRef: ReturnType<typeof installFlatFallback> | null = null;
+
+/*
+ * §6 RULE 1, FOR A STUDY RATHER THAN A DATA SURFACE.
+ *
+ * E0 carries no dataset — it is the spike that replaced an estimated frame budget with a measured one.
+ * That is a reason to treat it differently and not a reason to skip it: its INFORMATION is the material
+ * parameters it renders and the cost of rendering them, and both survive perfectly well as a table.
+ *
+ * So the fallback states what each object in the frame is set to. A reader who cannot see the render
+ * still learns which materials were tested and at what roughness and metalness, which is what the
+ * capture is evidence FOR. Frame time is not listed here because it is measured after this point and
+ * printed in the report — putting a stale number in the fallback would be the same defect the audit
+ * found in E1's panels.
+ */
+const fallback = installFlatFallback({
+  title: 'E0 · The Spike — material study',
+  readsAs: 'The rendered view is the evidence: GGX with a Smith visibility term, a shadow map, ambient '
+    + 'occlusion and a gathered depth of field, at a measured cost. The table below states what each '
+    + 'surface in that frame is set to, which is what the capture is evidence for.',
+  notices: ['A study, not a data surface — there is no measurement in this frame to lose.'],
+  columns: [
+    { key: 'object', label: 'Object' },
+    { key: 'hex', label: 'Base colour' },
+    { key: 'roughness', label: 'Roughness', numeric: true },
+    { key: 'metalness', label: 'Metalness', numeric: true },
+  ],
+  rows: [
+    { object: 'Deck plate', hex: '#0E1628', roughness: 0.82, metalness: 0.0 },
+    { object: 'Brand-blue dielectric sphere', hex: '#2C6BFF', roughness: 0.34, metalness: 0.05 },
+    /* Read from the URL directly rather than from `DIAG`, which is declared 130 lines below this point.
+       A forward reference to a const is a temporal-dead-zone throw at module evaluation, and a page that
+       throws there never sets its title — so the harness reports a 30-second timeout instead of the
+       actual fault. That is the same defect this file's own header comment warns about. */
+    { object: 'Metal sphere', hex: '#C9D4E4', roughness: DIAG_FLAG ? 0.045 : 0.18, metalness: 0.92 },
+  ],
+});
+fallbackRef = fallback;
+if (REFUSE_FLAG) {
+  die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
+    + 'The three-dimensional view is not being drawn.');
+}
 
 const outcome = createStage(canvas, { alpha: false });
 if (!isStage(outcome)) {
@@ -122,7 +179,9 @@ const lightVP = lightViewProjection({ ...light, extent: radius * 0.8 }, centre, 
 
 const view: Viewpoint = { target: [0, 0.6, 0], distance: 7.2, azimuthDeg: 34, elevationDeg: 22, fovDeg: 36 };
 
-const DIAG = new URLSearchParams(location.search).get('diag') === '1';
+/* One source of truth: the flag is read once, above, so the fallback and the render cannot
+   disagree about which variant is being shown. */
+const DIAG = DIAG_FLAG;
 /* AO off is a CONTROL, not a fallback: the capture has to show the difference it makes rather
    than my asserting that it makes one. */
 const AO_ON = new URLSearchParams(location.search).get('ao') !== '0';
@@ -319,4 +378,7 @@ const report = {
 (globalThis as unknown as { E0: typeof report }).E0 = report;
 document.getElementById('log')!.textContent = JSON.stringify(report, null, 2);
 frame();
+/* AFTER the frame exists. The failure mode of this ordering is a visible table under a working canvas —
+   loud and self-announcing, which is the right direction for a fallback to fail in. */
+fallback.markRendered();
 document.title = 'READY';

@@ -37,9 +37,11 @@ import {
   createShadowMap, createAmbientOcclusion, createLineBatch, createParticleField,
   projectQuad, isQuadRefusal, uprightPanelCorners,
   viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre, triangleCount,
-  hexToLinear, mixLinear, projectScreen, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
+  hexToLinear, mixLinear, assertBrandFidelity, projectScreen,
+  TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint, type StageRefusal, type ParticleSource, type Linear,
 } from '@lcx/gl';
+import { installFlatFallback } from '../_shared/flatFallback.js';
 
 const params = new URLSearchParams(location.search);
 /*
@@ -59,44 +61,22 @@ const canvas = document.getElementById('c') as HTMLCanvasElement;
 canvas.width = W; canvas.height = H;
 const log = document.getElementById('log')!;
 
-function die(m: string): never { document.title = 'REFUSED'; log.textContent = m; throw new Error(m); }
+function die(m: string): never {
+  document.title = 'REFUSED';
+  log.textContent = m;
+  /* THE REFUSAL GOES ABOVE THE TABLE, NOT INSTEAD OF IT. A reader who cannot be shown the channel is
+     still entitled to every row of it, and to be told which of the two is missing. */
+  const [code, ...rest] = m.split(':');
+  fallbackRef?.showRefusal(code?.trim() ?? 'REFUSED', rest.join(':').trim() || m);
+  throw new Error(m);
+}
+/* Assigned once `installFlatFallback` has run. `die` is declared FIRST because a `function` declaration
+   returning `never` is what gives the compiler its control-flow narrowing — a const arrow does not. */
+let fallbackRef: ReturnType<typeof installFlatFallback> | null = null;
 function required<T extends object>(what: string, v: T | StageRefusal): T {
   if ('kind' in v) die(`${what}: ${v.code} — ${v.reason} ${v.detail ?? ''}`);
   return v;
 }
-
-const out = createStage(canvas, { alpha: false });
-if (!isStage(out)) die(`stage: ${out.code} — ${out.reason}`);
-const stage = out;
-const gl = stage.gl;
-
-const PRESENT_VERT = `#version 300 es
-precision highp float;
-out vec2 vUv;
-void main(){
-  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
-const PRESENT_FRAG = `#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uScene;
-out vec4 frag;
-${TONE_MAP_GLSL}
-${SRGB_ENCODE_GLSL}
-void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
-
-const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
-const lit = required('lit', createLitRenderer(stage));
-const target = required('target', createTarget3D(stage, W, H));
-const shadow = required('shadow', createShadowMap(stage, 1536));
-const ao = required('ao', createAmbientOcclusion(stage, W, H));
-/* The gate outlines, the movement axis and the tag leaders are additive strokes, not meshes.
-   `ruleAtDepth` is exact for a segment lying in a constant-depth plane and the primitive says so in
-   its own signature — every stroke here is a gate frame, an axis tick or a vertical leader at one z,
-   so every one of them qualifies. The wake a moving object wants runs ALONG the channel and therefore
-   slants through depth, which this primitive explicitly refuses to fake. It is not drawn. */
-const strokes = required('strokes', createLineBatch(stage));
 
 /*
  * ══════════════════════════════════════════════════════════════════════════════════════
@@ -142,16 +122,123 @@ const DEALS: readonly Deal[] = [
   { name: 'ATLAS OTC', stage: 'SIGNED', valueUsd: 4_200_000, daysSinceUpdate: 3, known: 'OBSERVED' },
 ];
 
-/*
- * ══════════════════════════════════════════════════════════════════════════════════════
- * THE CALIBRATION. Every number is fixed by a reading requirement, and the report re-checks them.
- * ══════════════════════════════════════════════════════════════════════════════════════
- */
 /* 45 DAYS IS THE FLOOR OF THE MOVEMENT AXIS, and it is a policy number rather than a taste one: the
    point past which a deal is treated as dead rather than slow. Beyond it the axis CLAMPS instead of
    extending, so a 63-day deal and a 90-day deal both rest on the floor — the axis does not pretend to
    resolve a difference nobody acts on. `settleClamped` counts how many are on the clamp. */
 const STALL_DAYS = 45;
+
+/*
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * §6 RULE 1 — THE FLAT FALLBACK, INSTALLED BEFORE ANY GL EXISTS.
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ *
+ * Not in a catch block, and not after the stage: a shader that fails to compile fails during module
+ * evaluation, so anything built afterwards never runs on the failure it exists for. Print and the
+ * accessibility tree are not errors at all, and a canvas is opaque to both whether or not it drew.
+ *
+ * THE TABLE IS THE THING E3 REPLACES, WHICH MAKES THIS AN UNUSUALLY HONEST FALLBACK: `BdPipeline` is a
+ * lead table, so the flat view here is not a consolation with fewer fields — it is the incumbent, with
+ * every field the environment uses. What it cannot carry is the joint reading: value, stage and movement
+ * are three columns you can sort one at a time, and the figure an operator wants is the product of all
+ * three. Naming that in `readsAs` is the point; a fallback that pretends to lose nothing is worse than
+ * one that says what it costs.
+ *
+ * ABSENT AND WITHHELD BOTH CARRY `null` HERE, which the fallback renders as a named "absent" rather than
+ * a blank or a zero, and the STATE column keeps them apart. A flat view that collapsed them would break
+ * rule 6 inside the very thing meant to satisfy rule 1.
+ */
+const fallback = installFlatFallback({
+  title: 'E3 · The Pipeline — deals by stage, package value and days since update',
+  readsAs: 'In the rendered view a deal is an object: its size is package value, its position along the '
+    + 'channel is the gates it has cleared, and its HEIGHT is movement — a deal untouched for '
+    + `${STALL_DAYS} days rests on the floor of the channel. That is what this table cannot do. Every `
+    + 'figure below is here, and sorting by any one column hides the other two, which is why the '
+    + 'quantity that matters — value that has cleared diligence and then stopped — takes two sorts and '
+    + 'arithmetic here and one look there.',
+  notices: [
+    `SYNTHETIC DEALS — ${DEALS.length} hand-authored records. The shape is deliberate (a funnel, value `
+    + 'skewed to two names, the two largest late-stage deals stalled); the values are not measurements.',
+    'One deal was never priced and one is in a compartment that may not be read. Both are ABSENT below '
+    + 'rather than blank or zero, the STATE column separates them, and every aggregate in the rendered '
+    + 'view excludes both rather than estimating them.',
+  ],
+  columns: [
+    { key: 'name', label: 'Deal' },
+    { key: 'stage', label: 'Stage' },
+    { key: 'state', label: 'State' },
+    { key: 'value', label: 'Package value (USD)', numeric: true },
+    { key: 'days', label: 'Days since update', numeric: true },
+    { key: 'movement', label: 'Movement' },
+  ],
+  rows: DEALS.map((d) => ({
+    name: d.known === 'WITHHELD' ? 'withheld' : d.name,
+    stage: d.stage,
+    state: d.known,
+    value: d.valueUsd,
+    days: d.daysSinceUpdate,
+    /* The one derived column, and it REFUSES rather than guessing: a deal whose last touch may not be
+       read has no position on the movement scale, which is exactly what the rendered view says by
+       floating it off the top of the axis. */
+    movement: d.daysSinceUpdate === null ? null
+      : d.daysSinceUpdate >= STALL_DAYS ? 'stalled — on the floor'
+        : d.daysSinceUpdate >= 0.6 * STALL_DAYS ? 'stalled'
+          : 'moving',
+  })),
+});
+fallbackRef = fallback;
+
+/*
+ * A FORCED REFUSAL, SO THE FALLBACK CAN BE CAPTURED. Rule 8 is "every claim gets a capture", and rule
+ * 1's claim — that a refusal resolves to the flat surface without losing information — cannot be
+ * photographed any other way, because a page cannot switch off its own WebGL.
+ *
+ * `?refuse=1` is not a mock: it calls the same `die` a failed shader compile calls.
+ */
+if (params.get('refuse') === '1') {
+  die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
+    + 'The channel is not being drawn.');
+}
+
+const out = createStage(canvas, { alpha: false });
+if (!isStage(out)) die(`stage: ${out.code} — ${out.reason}`);
+const stage = out;
+const gl = stage.gl;
+
+const PRESENT_VERT = `#version 300 es
+precision highp float;
+out vec2 vUv;
+void main(){
+  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const PRESENT_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uScene;
+out vec4 frag;
+${TONE_MAP_GLSL}
+${SRGB_ENCODE_GLSL}
+void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
+
+const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
+const lit = required('lit', createLitRenderer(stage));
+const target = required('target', createTarget3D(stage, W, H));
+const shadow = required('shadow', createShadowMap(stage, 1536));
+const ao = required('ao', createAmbientOcclusion(stage, W, H));
+/* The gate outlines, the movement axis and the tag leaders are additive strokes, not meshes.
+   `ruleAtDepth` is exact for a segment lying in a constant-depth plane and the primitive says so in
+   its own signature — every stroke here is a gate frame, an axis tick or a vertical leader at one z,
+   so every one of them qualifies. The wake a moving object wants runs ALONG the channel and therefore
+   slants through depth, which this primitive explicitly refuses to fake. It is not drawn. */
+const strokes = required('strokes', createLineBatch(stage));
+
+
+/*
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * THE CALIBRATION. Every number is fixed by a reading requirement, and the report re-checks them.
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ */
 /* How far a fresh deal rides above the channel floor. A settled deal's underside is AT the floor, so
    "settled" is contact rather than a low number — the only version of this a still frame can state
    without a legend. */
@@ -170,10 +257,27 @@ const edgeOf = (v: number): number => EDGE_MAX * Math.cbrt(v / VALUE_MAX);
 const REF_SIZE = 0.11;
 
 const CHANNEL_HALF = 1.45;
-const STAGE_LEN = 2.8;
-const Z_GATE0 = -13.0;
+/*
+ * 2.2 m PER STAGE, DOWN FROM 2.8, and the reason is a collision between two calibrated numbers.
+ *
+ * The eye has to stand about 3 m back from the SIGNED deal for it to be inside the frame at all, and
+ * `LEGIBLE_M` says a tag stops being a word past 13.5 m. Five stages at 2.8 m put the intake deals
+ * 15.4 m out, so the first camera that framed the near end correctly silently dropped the label off
+ * every deal in SOURCED — four of twelve — and the capture looked composed. The channel is now short
+ * enough that both ends fit inside one lens and one legibility limit.
+ */
+const STAGE_LEN = 2.2;
+const Z_GATE0 = -10.6;
 const CHANNEL_Z_FAR = Z_GATE0 - 2.6;
-const CHANNEL_Z_NEAR = 0.4;
+/*
+ * THE CHANNEL RUNS PAST THE EYE, at 1.7 rather than 0.4.
+ *
+ * Ending it at 0.4 stopped the floor 2.4 m short of the camera, so the bottom quarter of the frame was
+ * empty clear colour and the viewer was standing outside a channel looking in. Running the geometry
+ * behind the eye plane costs nothing — those faces are culled — and it is the difference between
+ * looking at the pipeline and standing in it.
+ */
+const CHANNEL_Z_NEAR = 1.7;
 const CHANNEL_LEN = CHANNEL_Z_NEAR - CHANNEL_Z_FAR;
 const CHANNEL_MID = (CHANNEL_Z_NEAR + CHANNEL_Z_FAR) / 2;
 const GATE_H = 1.15;
@@ -191,9 +295,31 @@ const gateZ = (i: number): number => Z_GATE0 + i * STAGE_LEN;
  * cannot remove it, which is why the primary proof below is each deal's displacement from its OWN rail
  * position — a measure with no depth term in it at all.
  */
-const SLOT_Z0 = 0.62, SLOT_DZ = 0.40, LANE_X = 0.60;
+const SLOT_Z0 = 0.58, SLOT_DZ = 0.38, LANE_X = 0.60;
 
 const TAG_W = 0.66, TAG_H = 0.30, TAG_GAP = 0.16;
+/*
+ * TAGS IN ONE STAGE STAGGER IN HEIGHT, because adjacent slots are 0.38 m apart and a tag is 0.66 m
+ * wide — so two neighbours' tags overlap by construction and the occlusion test then correctly refuses
+ * one of them. Four of twelve tags were being dropped that way, which is a real loss caused by the
+ * layout rather than by the camera. Alternate slots ride a tag-height higher: the leader gets longer,
+ * which is what a leader is for.
+ */
+const tagGapOf = (slot: number): number => (slot % 2 === 0 ? TAG_GAP : TAG_GAP + TAG_H + 0.06);
+/*
+ * AND THE TAG SITS OUTBOARD OF ITS DEAL, toward the nearer wall, by 0.45 m.
+ *
+ * Height stagger alone was not enough — it separated slots 0 and 1 and then put slot 1's tag into the
+ * band belonging to the stage in front, so the occlusion refusals went UP rather than down. Offsetting
+ * each tag toward its own side of the channel gives the two lanes disjoint horizontal bands: a tag at
+ * x = -1.05 spans -1.38 to -0.72 and one at +1.05 spans +0.72 to +1.38, so lane-to-lane collision at a
+ * shared depth becomes impossible rather than unlikely.
+ *
+ * The leader is then a diagonal from the object's top corner to the tag's bottom edge — still inside one
+ * constant-z plane, which is exactly the case `ruleAtDepth` is specified for and the reason it can draw
+ * it exactly rather than approximately.
+ */
+const TAG_DX = 0.45;
 const PX_PER_METRE = 190;
 /*
  * 13.5 m, DERIVED FROM THE TYPE rather than chosen. A tag is 0.30 m tall and its element is 57 px, so
@@ -203,11 +329,23 @@ const PX_PER_METRE = 190;
  * counterparty's name, which is worse than an unlabelled object.
  */
 const LEGIBLE_M = 13.5;
-/* Solved rather than dialled: 1 - exp(-density * 17.5) = 0.90, where 17.5 m is the eye-to-intake
-   distance measured below, so the intake end fades toward the clear colour instead of stopping at a
-   hard edge. If the camera moves this has to move with it. */
-const FOG_DENSITY = FOG_ON ? Math.log(10) / 17.5 : 0;
-const FOG_HEX = '#080D18';
+/*
+ * THE FOG REACHES HALF AT EXACTLY THE DISTANCE THE LABELS STOP, which is the second calibration and
+ * the only one with an anchor worth having.
+ *
+ * The first solved 1 - exp(-density * 15.5) = 0.90 — fog 90% converged at the intake wall — on the
+ * reasoning that the far end should fade rather than stop at a hard edge. It does, and it took the
+ * architecture with it: at that density the NEAREST deal was already 50% fogged and the floor and walls,
+ * whose albedo is close to the fog colour to begin with, converged to indistinguishable black across the
+ * whole frame. The capture was five luminous gates and six cubes floating in a void, with no channel.
+ * Fog that erases the space it is supposed to give depth to is not atmosphere, it is an exposure bug.
+ *
+ * `ln(2) / LEGIBLE_M` puts the half-way point of the haze at the distance where a tag stops being a
+ * word, so the visual limit and the reading limit are ONE distance rather than two — and the report
+ * prints the fog at the nearest and furthest deal so "the fog is doing nothing" stays a number.
+ */
+const FOG_DENSITY = FOG_ON ? Math.log(2) / LEGIBLE_M : 0;
+const FOG_HEX = '#0C1322';
 
 /* Value cleared per day, and the window it is measured over. A rate needs a window and a window needs
    stating: quoting "$/day" off twelve open deals with no period is a number with no units. */
@@ -215,9 +353,9 @@ const WINDOW_DAYS = 90;
 /* ONE PARTICLE IS $1,600 OF PACKAGE VALUE CROSSING THIS GATE, and one second of simulation is one day
    of pipeline. Both halves are needed for `rate` (particles per SECOND) to mean anything — a rate
    derived from a dollar figure with no time compression is a number that happens to look busy. */
-const USD_PER_PARTICLE = 1_600;
+const USD_PER_PARTICLE = 800;
 const PARTICLE_SPEED = 1.4;
-const PARTICLE_CAPACITY = 1024;
+const PARTICLE_CAPACITY = 2048;
 /* Enough steps at 1/60 s to exceed the longest particle life, so the field the capture photographs is
    at STEADY STATE. Photographing a filling field would make the density — the whole reading — a
    function of how many frames the harness happened to run. */
@@ -235,7 +373,6 @@ const WITHHELD_HEX = '#5C6880';
 const floorGeo = plane(2 * CHANNEL_HALF, 40);
 const wallGeo = box(0.18, 1.25, CHANNEL_LEN);
 const postGeo = box(0.10, GATE_H, 0.10);
-const lintelGeo = box(2 * CHANNEL_HALF + 0.20, 0.10, 0.10);
 const sillGeo = box(2 * CHANNEL_HALF, 0.05, 0.13);
 /*
  * ONE UNIT CUBE, SCALED PER DEAL, rather than twelve box geometries.
@@ -252,7 +389,6 @@ const withheldGeo = sphere(REF_SIZE, 20, 28);
 const floorMesh = required('floor', uploadMesh(stage, floorGeo));
 const wallMesh = required('wall', uploadMesh(stage, wallGeo));
 const postMesh = required('post', uploadMesh(stage, postGeo));
-const lintelMesh = required('lintel', uploadMesh(stage, lintelGeo));
 const sillMesh = required('sill', uploadMesh(stage, sillGeo));
 const dealMesh = required('deal', uploadMesh(stage, dealGeo));
 const absentMesh = required('absent', uploadMesh(stage, absentGeo));
@@ -282,26 +418,39 @@ const modelRingAt = (x: number, y: number, z: number): Float32Array => {
 };
 
 /*
- * 35 DEGREES AND STANDING IN THE CHANNEL'S MOUTH.
+ * 35 DEGREES, AND THREE THINGS THE FIRST FRAMING GOT WRONG.
  *
  * A wide lens cannot render a channel: at 46° the side walls leave the frame within two metres of the
  * eye, so the architecture arrives as two dark wedges instead of as a space, and the depth it
  * exaggerates shrinks the intake end past reading. E6 measured the same thing and landed on 33°.
  *
- * The elevation is 12.5° rather than level, and that is load-bearing rather than pretty: the movement
- * axis is VERTICAL, so an eye at deck height sees a settled deal and a fresh one at the same screen
- * row and the environment's only claim disappears. `minSeparationPx` below is the number that says
- * whether the chosen elevation actually separates them; it is measured, not assumed.
+ * 1 · AZIMUTH 19° PUT THE EYE OUTSIDE THE CHANNEL. `sin 19° x cos 12.5° x 8.0` is 2.54 m from the
+ *     centre line and the wall stands at 1.54 m, so the whole frame was shot over the right wall from
+ *     the outside — and the SIGNED deal, the largest object in the scene, sat 58° off the view axis,
+ *     completely off frame. `projectQuad` accepted its tag: every corner was in front of the camera
+ *     and front-facing, which is all that function claims to check. Nothing counted it, because
+ *     nothing was counting FRAMED. `objectsOffFrame` now does, and it is fatal in the capture.
  *
- * NEAR AND FAR ARE PINNED rather than defaulted, because the AO pass is given the same two numbers to
- * linearise the depth buffer with. `viewProjection` defaults them from the orbit distance, so a
- * hand-written pair in the AO call is a pair that silently disagrees with the projection — the
- * occlusion radius then means a different number of metres than it says. (E6 and E5 both pass
- * near/far to AO that their own camera does not use.)
+ * 2 · THE ELEVATION IS BOUNDED FROM BOTH SIDES, and it took three values to find that out. The horizon
+ *     sits at tan(elevation)/tan(fov/2) in NDC, which is arithmetic rather than taste: at 10° that is
+ *     0.56, so a quarter of the frame is empty space above a channel that has no sky and no ceiling to
+ *     put there. Tilting down fills the frame — and every degree of tilt also maps DEPTH more strongly
+ *     into screen y, which is precisely the confound that cancels the settling when two deals in one
+ *     stage sit at different slots. So the ceiling on the elevation is not aesthetic: it is
+ *     `minSeparationPx`, and 14° is where that measurement still passes.
+ *
+ * 3 · NEAR AND FAR ARE PINNED rather than defaulted, because the AO pass is given the same two numbers
+ *     to linearise the depth buffer with. `viewProjection` defaults them from the orbit distance, so a
+ *     hand-written pair in the AO call is a pair that silently disagrees with the projection and the
+ *     occlusion radius then means a different number of metres than it says. (E5 and E6 both pass
+ *     near/far to AO that their own cameras do not use.)
+ *
+ * The elevation is not zero, and that is load-bearing rather than pretty: some downward tilt is what
+ * makes a settled deal read as ON the floor rather than merely low against it.
  */
-const NEAR = 0.1, FAR = 44;
+const NEAR = 0.1, FAR = 40;
 const view: Viewpoint = {
-  target: [0, 0.85, -6.6], distance: 8.0, azimuthDeg: 19, elevationDeg: 12.5,
+  target: [0, 0.70, -5.2], distance: 8.2, azimuthDeg: 9, elevationDeg: 14,
   fovDeg: 35, near: NEAR, far: FAR,
 };
 const eye = eyeOf(view);
@@ -405,14 +554,16 @@ const gates = STAGE_ORDER.map((label, i) => {
   };
 });
 
-const PARTICLE_COLOUR: Linear = [0.055, 0.16, 0.62];
+const PARTICLE_COLOUR: Linear = [0.10, 0.30, 1.15];
 const sources: readonly ParticleSource[] = gates.map((g) => ({
-  at: [0, 0.52, g.z + 0.06] as const,
+  at: [0, 0.34, g.z + 0.06] as const,
   rate: g.ratePerSec,
   velocity: [0, 0, PARTICLE_SPEED] as const,
-  /* The aperture is the gate, so the stream is as wide as the channel rather than a laser down its
-     middle. 0.44 keeps the jitter box clear of the walls; the bounds check confirms it. */
-  spread: 0.44,
+  /* The aperture is a slot in the gate, not the whole gate. At 0.44 with the flow field turned up the
+     five streams diffused into one even haze over the channel and the density difference the gates
+     exist to show — 2.7x between the first gate and the last — stopped being visible at all. Narrow
+     enough to stay a stream; the bounds check confirms it stays inside the walls. */
+  spread: 0.26,
   colour: PARTICLE_COLOUR,
   life: g.life,
 }));
@@ -433,15 +584,26 @@ const emissionPerSec = gates.reduce((s, g) => s + g.ratePerSec, 0);
    pipeline one. Reported so that failure is a number rather than a subtlety in a screenshot. */
 const slotRecycleSeconds = emissionPerSec > 0 ? (field?.slots ?? PARTICLE_CAPACITY) / emissionPerSec : Infinity;
 const maxLifeSeconds = Math.max(...gates.map((g) => g.life));
-const stepOpts = { sources, dtSeconds: 1 / 60, noiseScale: 0.55, noiseStrength: 0.22, drag: 0.5 };
+const stepOpts = { sources, dtSeconds: 1 / 60, noiseScale: 0.55, noiseStrength: 0.12, drag: 0.5 };
 
 /*
  * ══════════════════════════════════════════════════════════════════════════════════════
  * THE DRAW LIST.
  * ══════════════════════════════════════════════════════════════════════════════════════
  */
-const CHANNEL_MAT = { baseColour: hexToLinear('#131D31'), roughness: 0.60, metalness: 0.03 };
-const GATE_MAT = { baseColour: hexToLinear('#2C6BFF'), roughness: 0.28, metalness: 0.18 };
+const CHANNEL_MAT = { baseColour: hexToLinear('#1E2A42'), roughness: 0.60, metalness: 0.03 };
+/*
+ * SLATE, NOT BRAND BLUE — twice corrected, and the second correction is the interesting one.
+ *
+ * At full #2C6BFF the gate frames were the brightest objects in the frame by a wide margin: five
+ * saturated bars that read as the subject with the deals as decoration between them. The gate is the
+ * RULER and the deals are the reading, so the rails came down to a dark blue. That was still wrong,
+ * because a dark blue rail and a brand-blue cube are the same hue and a glance cannot tell the
+ * structure from the data. Brand blue is now reserved for a DEAL, and the architecture is neutral
+ * slate. The additive outline supplies the luminosity §2 asks for, and it reads better over a dark
+ * rail than over a bright one.
+ */
+const GATE_MAT = { baseColour: hexToLinear('#31415C'), roughness: 0.36, metalness: 0.20 };
 
 /*
  * THE FLOOR IS STRETCHED BY ITS MODEL MATRIX, WHICH `plane` DOES NOT DO FOR YOU.
@@ -457,7 +619,7 @@ floorModel[10] = CHANNEL_LEN / (2 * CHANNEL_HALF);
 
 const draws: LitDraw[] = [
   { mesh: floorMesh, model: floorModel, normalMat: N3,
-    material: { baseColour: hexToLinear('#080D17'), roughness: 0.82, metalness: 0 } },
+    material: { baseColour: hexToLinear('#22304A'), roughness: 0.82, metalness: 0 } },
   { mesh: wallMesh, model: modelAt(-(CHANNEL_HALF + 0.09), 0.625, CHANNEL_MID), normalMat: N3, material: CHANNEL_MAT },
   { mesh: wallMesh, model: modelAt(CHANNEL_HALF + 0.09, 0.625, CHANNEL_MID), normalMat: N3, material: CHANNEL_MAT },
 ];
@@ -470,16 +632,20 @@ const draws: LitDraw[] = [
  * first gate is visible at all, which destroys the depth the environment is built on. Translucency
  * would compound five times over and wash the intake end out.
  *
- * So the membrane is its EDGE: two posts, a lintel, a floor sill as real lit geometry that casts
- * shadow, and an additive outline traced on the same rectangle. The luminous part of "luminous
- * membrane" then comes from the outline and from the particle stream crossing it, and the aperture
- * stays open.
+ * So the membrane is its EDGE: two posts and a floor sill as real lit geometry that casts shadow, plus
+ * an additive outline traced on the full rectangle. The luminous part of "luminous membrane" then comes
+ * from the outline and from the particle stream crossing it, and the aperture stays open.
+ *
+ * THE SOLID LINTEL IS GONE TOO, for the same reason one step further in. A 10 cm bar across the top of
+ * the aperture blocks nothing at the gate's own depth — and five of them, seen from a camera tilted 14°
+ * down, lay as five dark bands across the deals BEHIND them, because a lintel 2 m nearer than a deal
+ * projects lower than its own height. The capture read as scaffolding with cubes between the beams. The
+ * top edge is now only the additive stroke, which is 2 cm of luminous line and occludes nothing.
  */
 for (const g of gates) {
   draws.push(
     { mesh: postMesh, model: modelAt(-(CHANNEL_HALF + 0.05), GATE_H / 2, g.z), normalMat: N3, material: GATE_MAT },
     { mesh: postMesh, model: modelAt(CHANNEL_HALF + 0.05, GATE_H / 2, g.z), normalMat: N3, material: GATE_MAT },
-    { mesh: lintelMesh, model: modelAt(0, GATE_H, g.z), normalMat: N3, material: GATE_MAT },
     { mesh: sillMesh, model: modelAt(0, 0.025, g.z), normalMat: N3, material: GATE_MAT },
   );
 }
@@ -490,7 +656,10 @@ for (const p of placed) {
       mesh: withheldMesh, model: modelAt(p.x, p.centreY, p.z), normalMat: N3,
       /* Steel, following E6: neither the fresh colour nor the stalled one, because both would assert a
          movement reading about the one deal whose movement may not be read. */
-      material: { baseColour: hexToLinear(WITHHELD_HEX), roughness: 0.28, metalness: 0.58 },
+      /* Roughness 0.55 and metalness 0.25, NOT 0.28/0.58. Polished steel under a sky environment put a
+         hard specular highlight on the one object in the scene that is meant to say "there is nothing
+         here for you to read" — it was the brightest thing in the frame and drew the eye first. */
+      material: { baseColour: hexToLinear(WITHHELD_HEX), roughness: 0.55, metalness: 0.25 },
     });
   } else if (p.edge === null) {
     draws.push({
@@ -509,10 +678,27 @@ for (const p of placed) {
   }
 }
 
-/* Down the channel and across it, so a deal's side and its top take light differently and the contact
-   shadow of a settled deal lands where a reader can see it. A light along the axis would flatten every
-   object against the floor and delete the shadow that reinforces the settling. */
-const lightDir: [number, number, number] = [0.42, -0.66, -0.62];
+/*
+ * GRAZING, NOT OVERHEAD — and the first version was overhead.
+ *
+ * At (0.42, -0.66, -0.62) two thirds of the key light's direction pointed straight down, so the floor
+ * received 0.66 x 3.1 of irradiance against a wall's small fraction of it: an almost black floor
+ * albedo rendered as the palest thing in the frame, and every object read as a dark shape ON a bright
+ * plane rather than as a lit object in a dark channel. The fix is the direction, not the albedo — a
+ * darker floor under an overhead light is just a slightly less bright floor.
+ *
+ * Still across the channel as well as down it, so a deal's side and its top take light differently and
+ * the contact shadow of a settled deal lands where a reader can see it. A light along the axis would
+ * flatten every object against the floor and delete the shadow that reinforces the settling.
+ *
+ * IT CROSSES FROM THE SIDE THE CAMERA IS ON, and the first grazing version crossed from the other one.
+ * `lightDir` is the direction light TRAVELS, so an x of +0.56 means it arrives from the left and lights
+ * every face whose normal points left. The eye stands right of the centre line, so every surface it can
+ * see — the left wall's inner face, the deals' right-hand faces — was the surface facing away from the
+ * source: the channel rendered as five luminous gates floating in an unlit void, correctly. Negating x
+ * lights the half of the room that is actually in shot.
+ */
+const lightDir: [number, number, number] = [-0.62, -0.38, -0.69];
 const sceneMin: [number, number, number] = [-2.0, 0, CHANNEL_Z_FAR];
 const sceneMax: [number, number, number] = [2.0, 1.9, CHANNEL_Z_NEAR];
 const lightVP = lightViewProjection(
@@ -521,7 +707,7 @@ const lightVP = lightViewProjection(
 );
 
 const tris = triangleCount(floorGeo) + 2 * triangleCount(wallGeo)
-  + gates.length * (2 * triangleCount(postGeo) + triangleCount(lintelGeo) + triangleCount(sillGeo))
+  + gates.length * (2 * triangleCount(postGeo) + triangleCount(sillGeo))
   + placed.filter((p) => p.d.known === 'OBSERVED').length * triangleCount(dealGeo)
   + placed.filter((p) => p.d.known === 'VALUE_ABSENT').length * triangleCount(absentGeo)
   + placed.filter((p) => p.d.known === 'WITHHELD').length * triangleCount(withheldGeo);
@@ -544,7 +730,14 @@ const CSS_W = W / SCALE, CSS_H = H / SCALE;
 /* The fog fraction at a distance, from the SAME constants the shader is given, so the report's
    legibility claims and the render's appearance cannot drift. */
 const fogAt = (dist: number): number => (FOG_DENSITY <= 0 ? 0 : 1 - Math.exp(-FOG_DENSITY * dist));
-const fmtUsd = (v: number): string => (v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : `$${Math.round(v / 1e3)}k`);
+/* The sub-10k branch is not tidiness: `Math.round(1600/1000)` is 2, so the frame printed
+   "1 PARTICLE = $2k/d CLEARED" against a constant of $1,600 — a 25% error in the one number that
+   defines what a particle MEANS, produced by a rounding rule written for deal values. */
+const fmtUsd = (v: number): string => (
+  v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M`
+    : v >= 1e4 ? `$${Math.round(v / 1e3)}k`
+      : `$${(v / 1e3).toFixed(1)}k`
+);
 
 /*
  * SCREEN-SPACE OCCLUSION. There is no depth buffer in the compositor, so a tag whose content is
@@ -574,6 +767,28 @@ const projectedHeightPx = (p: Placed): number => {
   const b = projectScreen(vpFinal, [p.x, p.topY, p.z], CSS_W, CSS_H);
   return a.behind || b.behind ? 0 : Math.abs(a.sy - b.sy);
 };
+/*
+ * IS THE OBJECT ITSELF IN THE PICTURE?
+ *
+ * `projectQuad` refuses on depth and on degeneracy and nothing else — a quad 58° off the view axis is
+ * in front of the camera, front-facing and perfectly well conditioned, and it is also not on the
+ * screen. The first framing here put the SIGNED deal, the single largest object in the scene, entirely
+ * outside the frame with its tag reported as SHOWN; `overflow:hidden` then quietly clipped a label for
+ * an object nobody could see. Every other count agreed with the code.
+ *
+ * So framing is its own measurement, taken on the OBJECT rather than on its tag, because a deal whose
+ * label is merely off frame is a labelling problem and a deal that is itself off frame is not in the
+ * environment at all. Measured with the object's own projected half-height as the margin, so an object
+ * grazing the edge counts as out.
+ */
+const objectOnFrame = (p: Placed): boolean => {
+  const c = projectScreen(vpFinal, [p.x, p.centreY, p.z], CSS_W, CSS_H);
+  if (c.behind) return false;
+  const top = projectScreen(vpFinal, [p.x, p.topY, p.z], CSS_W, CSS_H);
+  const m = Math.max(6, Math.abs(c.sy - top.sy));
+  return c.sx > m && c.sx < CSS_W - m && c.sy > m && c.sy < CSS_H - m;
+};
+
 /** Screen y of an object's centre — what the settling actually has to separate. */
 const centreScreenY = (p: Placed): number | null => {
   const s = projectScreen(vpFinal, [p.x, p.centreY, p.z], CSS_W, CSS_H);
@@ -622,8 +837,9 @@ const decided = [...placed].sort((a, b) => a.distance - b.distance).map((p) => {
      the sign by hand and put nineteen of twenty-five slabs face-first into their own walls;
      `signedArea` caught it and nothing else would have. A tag that aims at the eye cannot be wrong at
      any azimuth, and it is also the most legible orientation there is. */
-  const yaw = Math.atan2(eye[0] - p.x, eye[2] - p.z);
-  const corners = uprightPanelCorners(p.x, p.z, p.topY + TAG_GAP, TAG_W, TAG_H, yaw, 0);
+  const tagX = p.x < 0 ? p.x - TAG_DX : p.x + TAG_DX;
+  const yaw = Math.atan2(eye[0] - tagX, eye[2] - p.z);
+  const corners = uprightPanelCorners(tagX, p.z, p.topY + tagGapOf(p.slot), TAG_W, TAG_H, yaw, 0);
   const proj = projectQuad(vpFinal, corners, CSS_W, CSS_H, ew, eh);
 
   const refusal = isQuadRefusal(proj) ? proj.refusal : null;
@@ -637,6 +853,11 @@ const decided = [...placed].sort((a, b) => a.distance - b.distance).map((p) => {
   /* 26 px, the floor E5 and E6 landed on independently. Below it the element is a smear claiming to be
      a word, and its homography's coefficients are large enough to threaten the page box. */
   const edgeOn = widthPx < 26;
+  /* A tag entirely outside the canvas box is not a tag. `overflow:hidden` makes it invisible either
+     way, so without this it is counted as SHOWN and the shown-tag total is a fiction. */
+  const offFrame = isQuadRefusal(proj) ? false : proj.screen.every(
+    (c) => c.x < 0 || c.x > CSS_W || c.y < 0 || c.y > CSS_H,
+  );
   const coveredCorners = isQuadRefusal(proj) ? 0 : (
     proj.screen.filter((c) => shownQuads.some((q) => inQuad(q, c.x, c.y))).length
     + shownQuads.reduce((n, q) => n + q.filter((c) => inQuad(
@@ -644,23 +865,37 @@ const decided = [...placed].sort((a, b) => a.distance - b.distance).map((p) => {
     )).length, 0)
   );
   const occluded = coveredCorners >= 2;
-  const shown = !refusal && !backFacing && !withheld && !tooFar && !edgeOn && !occluded;
+  const shown = !refusal && !backFacing && !withheld && !tooFar && !edgeOn && !offFrame && !occluded;
   if (shown && !isQuadRefusal(proj)) shownQuads.push(proj.screen.map((c) => ({ x: c.x, y: c.y })));
-  return { p, proj, shown, ew, eh, refusal, backFacing, withheld, tooFar, edgeOn, occluded, widthPx, coveredCorners };
+  return {
+    p, proj, shown, ew, eh, refusal, backFacing, withheld, tooFar, edgeOn, offFrame, occluded,
+    widthPx, coveredCorners,
+  };
 });
 
 /* A leader is drawn only where a tag survived, so the frame never carries a line pointing at nothing. */
 const leaders = decided.filter((d) => d.shown).map((d) => d.p);
 
-const GATE_STROKE = { colour: hexToLinear('#4E8CFF'), gain: 2.4 } as const;
+const GATE_STROKE = { colour: hexToLinear('#4E8CFF'), gain: 1.5 } as const;
 const AXIS_STROKE = { colour: hexToLinear('#7FB2FF'), gain: 1.1 } as const;
-const LEADER_STROKE = { colour: hexToLinear('#7FB2FF'), gain: 0.85 } as const;
-/* The movement axis, MARKED. Ticks on the inside of the near wall at three known day counts, so the
-   vertical scale is an axis rather than an assertion. At the nearest gate's z only: it is the least
-   fogged and largest on screen, and three ticks at every gate would be fifteen marks competing with
-   the objects they exist to measure. The 12 mm lift keeps the bottom tick off the floor plane, because
-   an additive stroke exactly coplanar with a surface shimmers. */
-const AXIS_Z = gateZ(gates.length - 1);
+/* Dimmer and wider than the first attempt: at gain 0.85 and 5 mm the leaders aliased into dotted lines
+   brighter than the objects they pointed at, so the frame read as a diagram of lines with cubes
+   attached. A leader should be the least interesting mark on the frame. */
+const LEADER_STROKE = { colour: hexToLinear('#7FB2FF'), gain: 0.45 } as const;
+/*
+ * The movement axis, MARKED, so the vertical scale is an axis rather than an assertion.
+ *
+ * ON THE LEFT WALL, AT THE TERMS GATE — and the first version was on the right wall at the nearest
+ * gate, which put all three ticks off frame. The eye sits to the RIGHT of the centre line, so the right
+ * wall's inner face is the one turned away from it; and the nearest gate is nearly beside the viewer.
+ * `axisLabelsOffFrame` reported 3 of 3 while the capture looked complete, which is the whole reason
+ * that count exists. Three ticks at every gate would be fifteen marks competing with the objects they
+ * exist to measure, so it stays at one gate — just a visible one.
+ *
+ * The 12 mm lift keeps the bottom tick off the floor plane: an additive stroke exactly coplanar with a
+ * surface shimmers, and the shimmer is the tell rather than the z-fighting.
+ */
+const AXIS_Z = gateZ(3);
 const AXIS_TICKS = [0, 20, STALL_DAYS].map((days) => ({
   days,
   y: (1 - Math.min(1, days / STALL_DAYS)) * RAIL_LIFT + 0.012,
@@ -695,8 +930,8 @@ function frame() {
   });
   target.bind();
   lit.draw({
-    viewProj: vp, eye, lightDir, lightColour: [3.1, 3.02, 2.9],
-    ambientGain: 0.42, lightVP, shadow, shadowStrength: 0.92, draws,
+    viewProj: vp, eye, lightDir, lightColour: [3.4, 3.3, 3.14],
+    ambientGain: 0.44, lightVP, shadow, shadowStrength: 0.92, draws,
     ao: ao.texture, screenSize: [W, H],
     fog: FOG_DENSITY > 0
       ? { density: FOG_DENSITY, height: 5.0, floor: 0, colour: hexToLinear(FOG_HEX) }
@@ -723,15 +958,25 @@ function frame() {
     strokes.ruleAtDepth(vp, CHANNEL_HALF, 0.02, CHANNEL_HALF, GATE_H, g.z, 0.010, GATE_STROKE);
   }
   for (const t of AXIS_TICKS) {
-    strokes.ruleAtDepth(vp, CHANNEL_HALF - 0.30, t.y, CHANNEL_HALF - 0.02, t.y, AXIS_Z, 0.006, AXIS_STROKE);
+    strokes.ruleAtDepth(vp, -(CHANNEL_HALF + 0.48), t.y, -(CHANNEL_HALF + 0.20), t.y, AXIS_Z, 0.006, AXIS_STROKE);
   }
   for (const p of leaders) {
-    strokes.ruleAtDepth(vp, p.x, p.topY, p.x, p.topY + TAG_GAP, p.z, 0.005, LEADER_STROKE);
+    const lx = p.x < 0 ? p.x - TAG_DX : p.x + TAG_DX;
+    strokes.ruleAtDepth(vp, p.x, p.topY, lx, p.topY + tagGapOf(p.slot), p.z, 0.008, LEADER_STROKE);
   }
   gl.depthMask(true);
   gl.disable(gl.BLEND);
 
-  if (field) field.draw({ viewProj: vp, sources, pointScale: 22 });
+  /*
+   * 18 px AT ONE WORLD UNIT, and this number is a compromise the report has to admit rather than hide.
+   *
+   * Point size divides by w, so at 30 the stream crossing the SIGNED gate — a metre from the eye — was
+   * 15 px blobs scattered across the near third of the frame and read as dust rather than as flow,
+   * while at 8 the intake stream falls under a pixel and its density stops being visible at all. There
+   * is no value that makes SCREEN density proportional to linear density at both ends of a perspective
+   * channel; that is why the throughput is also printed as a number at every gate.
+   */
+  if (field) field.draw({ viewProj: vp, sources, pointScale: 18 });
 
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
   gl.viewport(0, 0, W, H);
@@ -811,15 +1056,45 @@ for (const d of [...decided].sort((a, b) => b.p.distance - a.p.distance)) {
    of it. A gate's throughput is a fact about the gate, not writing on it, so it is a screen-space tag
    above the lintel. Off-frame labels are counted, because an axis missing its outermost mark is worse
    than no axis and the capture looks fine either way. */
-const gateLabels = gates.map((g) => {
-  const s = projectScreen(vpFinal, [0, GATE_H + 0.30, g.z], CSS_W, CSS_H);
+/*
+ * ALTERNATING SIDES, AND A CROWDING REFUSAL — because "on frame" is not "readable".
+ *
+ * All five labels first went above the channel's centre line at one height. The gates converge toward
+ * the vanishing point, so the three deepest labels landed within a few pixels of each other and printed
+ * as one illegible stack — while `gateLabelsOffFrame` reported 0, which was true and useless. That is
+ * the same failure shape as the axis ticks and as E6's occlusion test: a count that agrees with the
+ * code and disagrees with the picture.
+ *
+ * Two fixes, and the second is the one that generalises. Labels alternate to the outside of the left
+ * and right posts, which spreads them horizontally as well as by depth. And they are placed NEAR TO
+ * FAR with a 30 px minimum separation, so a label that would land on an already-placed one is REFUSED
+ * and counted rather than drawn on top of it. A refused gate label is a real loss — that gate's
+ * throughput number is then unreadable — so it is reported by name.
+ */
+const placedLabels: { x: number; y: number }[] = [];
+const gateLabels = [...gates].reverse().map((g) => {
+  const left = g.index % 2 === 0;
+  /*
+   * ANCHORED AT y = 2.10, which is above the tallest possible tag rather than above the gate.
+   *
+   * At 1.45 the SIGNED gate's throughput label printed straight through the ATLAS OTC tag: the deal
+   * tags are inside the occlusion test with each other and a screen-space annotation is not in it at
+   * all, so the clearance has to be geometric. The tallest tag in the scene tops out at 1.84
+   * (a fresh deal, biggest odd-slot gap, its own edge), so 2.10 clears it with margin — and the extra
+   * height spreads the five labels further apart, which the crowding check below then has less to do.
+   */
+  const s = projectScreen(
+    vpFinal, [left ? -(CHANNEL_HALF + 0.14) : CHANNEL_HALF + 0.14, 2.10, g.z], CSS_W, CSS_H,
+  );
   const haze = fogAt(Math.hypot(eye[0], eye[1] - GATE_H, eye[2] - g.z));
   const onFrame = !s.behind && s.sx > 30 && s.sx < CSS_W - 30 && s.sy > 8 && s.sy < CSS_H - 8;
-  if (onFrame) {
+  const crowded = onFrame && placedLabels.some((q) => Math.hypot(q.x - s.sx, q.y - s.sy) < 30);
+  if (onFrame && !crowded) {
+    placedLabels.push({ x: s.sx, y: s.sy });
     const el = document.createElement('div');
     el.style.cssText = `position:absolute;left:${s.sx.toFixed(1)}px;top:${s.sy.toFixed(1)}px;`
-      + `transform:translate(-50%,-100%);text-align:center;white-space:nowrap;`
-      + `opacity:${(1 - 0.72 * haze).toFixed(3)}`;
+      + `transform:translate(${left ? '-100%' : '0'},-100%);text-align:${left ? 'right' : 'left'};`
+      + `white-space:nowrap;opacity:${(1 - 0.72 * haze).toFixed(3)}`;
     el.innerHTML =
       `<div style="font:600 10px/1.25 ui-monospace,monospace;letter-spacing:.16em;color:#9CC2FF">`
       + `${g.label}</div>`
@@ -827,18 +1102,24 @@ const gateLabels = gates.map((g) => {
       + `${fmtUsd(g.usdPerDay)}/d</div>`;
     overlay.appendChild(el);
   }
-  return { stage: g.label, sx: Math.round(s.sx), sy: Math.round(s.sy), onFrame };
+  return { stage: g.label, sx: Math.round(s.sx), sy: Math.round(s.sy), onFrame, crowded };
 });
 
-/* ── The movement axis' own labels, against the ticks drawn in GL ─────────────────────── */
-const axisLabels = AXIS_TICKS.map((t) => {
-  const s = projectScreen(vpFinal, [CHANNEL_HALF + 0.06, t.y, AXIS_Z], CSS_W, CSS_H);
+/* ── The movement axis' own labels, against the ticks drawn in GL ───────────────────────
+   OUTBOARD OF THE WALL, not on it. Inside the channel the ticks ran straight through the tag of
+   whichever deal shared that stage — a ruler drawn across the thing it is measuring. A scale beside the
+   space is E5's rule again: content on a surface, annotation in front of it. */
+const axisLabels = [
+  { y: RAIL_LIFT + 0.15, label: 'DAYS SINCE UPDATE' },
+  ...AXIS_TICKS,
+].map((t) => {
+  const s = projectScreen(vpFinal, [-(CHANNEL_HALF + 0.56), t.y, AXIS_Z], CSS_W, CSS_H);
   const onFrame = !s.behind && s.sx > 0 && s.sx < CSS_W && s.sy > 0 && s.sy < CSS_H;
   if (onFrame) {
     const el = document.createElement('div');
     el.style.cssText = `position:absolute;left:${s.sx.toFixed(1)}px;top:${s.sy.toFixed(1)}px;`
-      + `transform:translate(2px,-50%);font:500 9.5px/1 ui-monospace,monospace;`
-      + `letter-spacing:.08em;color:rgba(196,212,240,0.78);white-space:nowrap`;
+      + `transform:translate(-100%,-50%);font:500 9.5px/1 ui-monospace,monospace;`
+      + `letter-spacing:.08em;color:rgba(196,212,240,0.78);white-space:nowrap;padding-right:5px`;
     el.textContent = t.label;
     overlay.appendChild(el);
   }
@@ -947,7 +1228,7 @@ hud.innerHTML =
   `<div style="font:600 11px/1 ui-monospace,monospace;letter-spacing:.16em;color:#8FB7FF">`
   + `PIPELINE · SIZE IS VALUE, HEIGHT IS MOVEMENT</div>`
   + `<div style="font:400 10.5px/1.55 ui-monospace,monospace;color:rgba(196,212,240,0.86)">`
-  + `<b style="color:#FF9B76">${fmtUsd(deepStalledUsd)}</b> PAST DILIGENCE AND SETTLED`
+  + `<b style="color:#FF9B76">${fmtUsd(deepStalledUsd)}</b> PAST DILIGENCE AND STALLED`
   + ` &nbsp;·&nbsp; ${Math.round(100 * deepStalledUsd / Math.max(1, totalObservedUsd))}% OF THE READABLE BOOK<br>`
   + `${STALL_DAYS} d = ON THE FLOOR &nbsp;·&nbsp; 1 PARTICLE = ${fmtUsd(USD_PER_PARTICLE)}/d CLEARED<br>`
   + `${SETTLE_ON ? 'MOVEMENT AXIS ON' : 'MOVEMENT AXIS OFF — every deal pinned to the rail'}`
@@ -961,7 +1242,7 @@ legend.style.cssText = 'position:absolute;right:18px;bottom:16px;display:flex;fl
   + 'gap:6px;align-items:flex-end;font:500 10.5px/1 ui-monospace,monospace';
 legend.innerHTML = ([
   [FRESH_HEX, 'UPDATED · rides the rail'],
-  [STALLED_HEX, `SETTLED · ${stalled.length} of ${counts.OBSERVED} on the floor`],
+  [STALLED_HEX, `STALLED · ${stalled.length} of ${counts.OBSERVED} at ${Math.round(STALLED_AT * STALL_DAYS)} d+`],
   [ABSENT_HEX, `VALUE ABSENT · ${counts.VALUE_ABSENT} (ring: no mass to give)`],
   [WITHHELD_HEX, `WITHHELD · ${counts.WITHHELD} (off the movement axis)`],
 ] as const).map(([c, t]) => (
@@ -997,6 +1278,24 @@ const RENDERER = (() => {
    software wrongly called hardware publishes a fictional budget. */
 const SOFTWARE = /swiftshader|llvmpipe|software/i.test(RENDERER);
 
+/*
+ * §6 RULE 5 — BRAND HEX EXACT, AND IT DIES RATHER THAN WARNS.
+ *
+ * A frame that has silently moved the brand blue is worse than no frame, because it will be
+ * screenshotted into a deck. E3 has a specific reason to run the check rather than trust a unit test:
+ * it is the first environment to mix a LIT surface colour with an ADDITIVE pass over the same HDR
+ * target, and the deal colour is an interpolation between two hexes rather than a hex — both are the
+ * kind of change that quietly introduces a second tone map.
+ */
+const brandFailures = assertBrandFidelity();
+if (brandFailures.length > 0) {
+  const msg = 'BRAND FIDELITY FAILED — '
+    + brandFailures.map((f) => `${f.key}: expected ${f.expected}, got ${f.actual}`).join('; ');
+  document.title = 'REFUSED';
+  log.textContent = msg;
+  throw new Error(msg);
+}
+
 const perDeal = decided.map((d) => ({
   name: d.p.d.name, stage: d.p.d.stage, known: d.p.d.known,
   valueUsd: d.p.d.valueUsd, days: d.p.d.daysSinceUpdate,
@@ -1014,8 +1313,9 @@ const perDeal = decided.map((d) => ({
   settleRefusal: d.p.settleRefusal,
   /* NAMED, NOT COUNTED. Four reasons, four names, never summed. */
   hiddenBecause: d.shown ? null : d.withheld ? 'WITHHELD' : d.refusal ? d.refusal
-    : d.backFacing ? 'BACK_FACING' : d.edgeOn ? 'EDGE_ON'
+    : d.backFacing ? 'BACK_FACING' : d.offFrame ? 'OFF_FRAME' : d.edgeOn ? 'EDGE_ON'
       : d.tooFar ? 'BEYOND_LEGIBLE_RANGE' : 'OCCLUDED',
+  objectOnFrame: objectOnFrame(d.p),
 }));
 
 const report = {
@@ -1105,11 +1405,18 @@ const report = {
      will be longer, and `overflow:hidden` serving a truncated counterparty is worse than no tag. */
   nameOverflow: placed.filter((p) => p.d.known !== 'WITHHELD'
     && p.d.name.length * 6.6 > TAG_W * PX_PER_METRE - 10).map((p) => p.d.name),
+  /* THE OBJECTS, not their labels. A deal that is not in the picture is not in the environment, whatever
+     the report says about its tag. Fatal in the capture. */
+  objectsOffFrame: placed.filter((p) => !objectOnFrame(p)).map((p) => p.d.name),
   gateLabelsOffFrame: gateLabels.filter((g) => !g.onFrame).map((g) => g.stage),
+  /* A gate whose throughput number was suppressed to keep it off another one. Named, because the
+     alternative is two numbers printed on top of each other and neither readable. */
+  gateLabelsCrowded: gateLabels.filter((g) => g.crowded).map((g) => g.stage),
   axisLabelsOffFrame: axisLabels.filter((a) => !a.onFrame).length,
   fogNearest: Math.min(...perDeal.map((d) => d.fog)),
   fogFurthest: Math.max(...perDeal.map((d) => d.fog)),
 
+  brandFidelity: brandFailures,
   glError: gl.getError(),
   triangles: tris,
   shadowMap: shadow.size,
@@ -1176,4 +1483,7 @@ log.textContent = JSON.stringify(summary, null, 2)
   )).join('\n');
 
 frame();
+/* THE FALLBACK IS HIDDEN ONLY NOW, and only by CSS. A frame exists, so the table is redundant on
+   screen — and it stays in the accessibility tree and the print path, where the canvas is opaque. */
+fallback.markRendered();
 document.title = 'READY';

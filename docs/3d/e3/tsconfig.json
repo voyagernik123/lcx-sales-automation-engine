@@ -1,0 +1,19 @@
+{
+  "//": "esbuild bundles TypeScript by STRIPPING types; it does not verify them, so `build.mjs` going green says nothing about whether this file is sound. The repo's `type-check:3d` script points at docs/3d/p1 only, so e0/e1/e2/e5/e6/e8 are checked by nothing at all and e3/e7 are checked only if you run their own config. This exists so E3 is, under the same strict settings p1 uses: npx tsc -p docs/3d/e3/tsconfig.json",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "paths": { "@lcx/gl": ["../../../packages/gl/src/index.ts"] }
+  },
+  "include": ["entry.ts"]
+}

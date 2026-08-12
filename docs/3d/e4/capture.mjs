@@ -16,18 +16,20 @@ const b = await chromium.launch({ args:['--use-gl=angle','--use-angle=swiftshade
 // crossing count is what the orrery's ambiguous count is measured against.
 // `no-shadow` is the second control: a body's gap from its own shadow on the plate IS its height
 // above the plane, so without it the third axis is present in the geometry and absent to the reader.
-for (const [name, q] of [['live', ''], ['flat', '&flat=1'], ['no-ao', '&ao=0'], ['no-shadow', '&shadow=0']]) {
+for (const [name, q] of [['live', ''], ['flat', '&flat=1'], ['no-ao', '&ao=0'], ['no-shadow', '&shadow=0'], ['refused', '&refuse=1']]) {
   const p = await b.newPage({ viewport:{width:1300,height:1000}, deviceScaleFactor:1 });
   /* PRINTED THE MOMENT IT HAPPENS, not collected for after the wait. A page that throws never sets
      its title, so the harness reports a 60-second TIMEOUT and the actual exception — which is one
      line away — is never seen. */
   const errs=[]; p.on('pageerror',e=>{ errs.push(e.message); console.error('    PAGE ERROR: '+e.message); });
   p.on('console',m=>{ if(m.type()==='error') console.error('    CONSOLE ERROR: '+m.text()); });
-  // frames=4, not the page default of 300: under swiftshader a shadowed, AO'd frame takes tens of
+  // frames=10, not the page default of 300: under swiftshader a shadowed, AO'd frame takes tens of
   // milliseconds, and the batch sweep here only has to prove the frame draws at all.
-  await p.goto(`http://127.0.0.1:${s.address().port}/live.html?frames=4${q}`);
-  await p.waitForFunction(()=>document.title==='READY',{timeout:90000});
-  if(errs.length) throw new Error('page errors: '+errs.join(' | '));
+  await p.goto(`http://127.0.0.1:${s.address().port}/live.html?frames=10${q}`);
+  const wantRefusal = name === 'refused';
+  await p.waitForFunction((r)=>document.title===(r?'REFUSED':'READY'), wantRefusal, {timeout:60000});
+  const unexpected = wantRefusal ? errs.filter(e=>!/FORCED_REFUSAL/.test(e)) : errs;
+  if(unexpected.length) throw new Error('page errors: '+unexpected.join(' | '));
   const state = await p.evaluate(() => {
     const cs = [...document.querySelectorAll('canvas')];
     return { canvases: cs.length, drawing: cs.filter((c) => getComputedStyle(c).display !== 'none').length };
@@ -36,6 +38,28 @@ for (const [name, q] of [['live', ''], ['flat', '&flat=1'], ['no-ao', '&ao=0'], 
   // fullPage: the report under the canvas is part of the evidence, and an element shot would crop it.
   await p.screenshot({ path: resolve(HERE, `${name}.png`), fullPage: true });
   console.log(`  ${name}.png — canvases: ${state.canvases}, drawing: ${state.drawing}`);
+  /* §6 RULE 1, CHECKED not asserted. */
+  const fb = await p.evaluate(() => {
+    const el = document.getElementById('lcx-fallback');
+    if (!el) return null;
+    return {
+      rows: el.querySelectorAll('tbody tr').length,
+      absent: el.querySelectorAll('td.absent').length,
+      hidden: getComputedStyle(el).display === 'none',
+      refusal: el.querySelector('.refusal')?.textContent?.slice(0, 40) ?? null,
+    };
+  });
+  if (!fb) throw new Error('§6 rule 1: no flat fallback in the DOM');
+  console.log(`    fallback rows ${fb.rows} · absent ${fb.absent} · hidden ${fb.hidden}`
+    + ` · refusal ${fb.refusal ? JSON.stringify(fb.refusal) : 'none'}`);
+  if (fb.rows === 0) throw new Error('§6 rule 1: the fallback carries no rows');
+  if (wantRefusal) {
+    if (fb.hidden) throw new Error('§6 rule 1: the fallback stayed hidden through a refusal');
+    if (!fb.refusal) throw new Error('§6 rule 1: a refusal was not named to the reader');
+    await p.close();
+    continue;
+  }
+  if (!fb.hidden) throw new Error('the fallback is still visible although a frame was drawn');
   // The numbers are the part this process can actually check. A capture it cannot see proves nothing.
   const rep = await p.evaluate(() => globalThis.E4);
   const c = rep.crossings;
@@ -51,9 +75,16 @@ for (const [name, q] of [['live', ''], ['flat', '&flat=1'], ['no-ao', '&ao=0'], 
   console.log(`    linkPx ${rep.linkPx.thinnest}..${rep.linkPx.thickest} legible ${rep.strengthLegible}`
     + ` · labels ${rep.labelsShown}/${rep.entities} hiddenBy ${JSON.stringify(rep.labelsHiddenBy)}`
     + ` · plate ${rep.plate.mode}${rep.plate.reason ? ' ' + rep.plate.reason : ''} ${rep.plate.widthPx}x${rep.plate.heightPx}`);
+  console.log(`    bodyOverlaps ${rep.bodyOverlapsOnScreen.pairs} ${JSON.stringify(rep.bodyOverlapsOnScreen.detail)} · cleanAzimuths ${JSON.stringify(rep.cleanAzimuths)}`);
+  console.log(`    aoEffect maxDelta ${rep.aoEffect.maxDelta}/765 · changed ${rep.aoEffect.changed} px `
+    + `(${(rep.aoEffect.fraction * 100).toFixed(2)}% of ${rep.aoEffect.sampled}) · mean ${rep.aoEffect.meanWith} vs ${rep.aoEffect.meanWithout}`
+    + ` · glErrorInProbe ${rep.aoEffect.glErrorInProbe}${rep.aoEffect.refusal ? ' · ' + rep.aoEffect.refusal : ''}`);
   console.log(`    ticks offFrame: plane ${rep.planeTicksOffFrame}, hop ${rep.hopTicksOffFrame} · unreachable ${JSON.stringify(rep.unreachableEntities)}`);
 
   if (rep.glError !== 0) throw new Error(`glError ${rep.glError}`);
+  /* The AO probe renders the frame twice. If that raises a GL error the probe is measuring the driver's
+     complaint rather than the pass, and the delta it reports is not attributable to occlusion. */
+  if (rep.aoEffect.glErrorInProbe !== 0) throw new Error(`AO probe raised glError ${rep.aoEffect.glErrorInProbe}`);
   if (rep.unreachableEntities.length) throw new Error(`entity with no relationship distance: ${rep.unreachableEntities}`);
   /* A thickness encoding whose thinnest tube is sub-pixel is a claim the reader cannot see, whatever
      the radius says. */

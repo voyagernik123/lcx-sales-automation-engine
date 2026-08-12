@@ -15,7 +15,9 @@ const b = await chromium.launch({ args:['--use-gl=angle','--use-angle=swiftshade
    — value and stage, movement demoted to a column. `no-particles` is the second control: the channel
    with no throughput, which is what a machine missing EXT_color_buffer_float actually gets. */
 const reports = {};
-for (const [name, q] of [['live', ''], ['flat-settle', '&settle=0'], ['no-particles', '&particles=0']]) {
+for (const [name, q] of [
+  ['live', ''], ['flat-settle', '&settle=0'], ['no-particles', '&particles=0'], ['refused', '&refuse=1'],
+]) {
   const p = await b.newPage({ viewport:{width:1300,height:1100}, deviceScaleFactor:1 });
   /* PRINTED THE MOMENT IT HAPPENS, not collected for after the wait. A page that throws never sets its
      title, so the harness reports a 30-second TIMEOUT and the actual exception — which is one line
@@ -23,12 +25,16 @@ for (const [name, q] of [['live', ''], ['flat-settle', '&settle=0'], ['no-partic
      temporal-dead-zone bug. */
   const errs=[]; p.on('pageerror',e=>{ errs.push(e.message); console.error('    PAGE ERROR: '+e.message); });
   p.on('console',m=>{ if(m.type()==='error') console.error('    CONSOLE ERROR: '+m.text()); });
-  // frames=4, not the page default of 300: under swiftshader a shadowed, AO'd frame with a particle
+  // frames=24, not the page default of 300: under swiftshader a shadowed, AO'd frame with a particle
   // step takes seconds, and the batch sweep only has to prove the frame draws at all. The particle
   // field is primed to steady state independently of this, so the density does not depend on it.
-  await p.goto(`http://127.0.0.1:${s.address().port}/live.html?frames=4${q}`);
-  await p.waitForFunction(()=>document.title==='READY',{timeout:120000});
-  if(errs.length) throw new Error('page errors: '+errs.join(' | '));
+  await p.goto(`http://127.0.0.1:${s.address().port}/live.html?frames=24${q}`);
+  const wantRefusal = name === 'refused';
+  await p.waitForFunction((r)=>document.title===(r?'REFUSED':'READY'), wantRefusal, {timeout:120000});
+  /* The forced-refusal variant throws on purpose, so its own message is expected. Any OTHER page error
+     still fails the capture. */
+  const unexpected = wantRefusal ? errs.filter(e=>!/FORCED_REFUSAL/.test(e)) : errs;
+  if(unexpected.length) throw new Error('page errors: '+unexpected.join(' | '));
   const state = await p.evaluate(() => {
     const cs = [...document.querySelectorAll('canvas')];
     return { canvases: cs.length, drawing: cs.filter((c) => getComputedStyle(c).display !== 'none').length };
@@ -37,14 +43,46 @@ for (const [name, q] of [['live', ''], ['flat-settle', '&settle=0'], ['no-partic
   // fullPage: the report under the canvas is part of the evidence, and an element shot would crop it.
   await p.screenshot({ path: resolve(HERE, `${name}.png`), fullPage: true });
   console.log(`  ${name}.png — canvases: ${state.canvases}, drawing: ${state.drawing}`);
+  /* RULE 1 IS CHECKED HERE, not asserted in a README. The fallback table must exist, must carry every
+     deal, must name absent rather than blank it, and must be HIDDEN when a frame was drawn and VISIBLE
+     when it was not. A fallback that is present but always hidden is the same as no fallback. */
+  const fb = await p.evaluate(() => {
+    const el = document.getElementById('lcx-fallback');
+    if (!el) return null;
+    return {
+      rows: el.querySelectorAll('tbody tr').length,
+      absentCells: el.querySelectorAll('td.absent').length,
+      hidden: getComputedStyle(el).display === 'none',
+      refusal: el.querySelector('.refusal')?.textContent?.slice(0, 60) ?? null,
+    };
+  });
+  if (!fb) throw new Error('§6 rule 1: no flat fallback in the DOM');
+  console.log(`    fallback rows ${fb.rows} · absent cells ${fb.absentCells}`
+    + ` · hidden ${fb.hidden} · refusal ${fb.refusal ? JSON.stringify(fb.refusal) : 'none'}`);
+  if (fb.rows !== 12) throw new Error(`§6 rule 1: the flat view carries ${fb.rows} of 12 deals`);
+  /* FOUR absent cells, counted rather than guessed — the unpriced deal's value (its days ARE known, so
+     it contributes one and not two), and the withheld deal's value, days and movement. An absent cell
+     that turned into a blank or a zero would be rule 6 broken inside rule 1's own fix. */
+  if (fb.absentCells < 4) throw new Error(`§6 rule 1: only ${fb.absentCells} absent cells named`);
+  if (wantRefusal) {
+    if (fb.hidden) throw new Error('§6 rule 1: the fallback stayed hidden through a refusal');
+    if (!fb.refusal) throw new Error('§6 rule 1: a refusal was not named to the reader');
+    if (state.drawing !== 0) throw new Error('a canvas that will never be drawn into is left on screen');
+    await p.close();
+    continue;
+  }
+  if (!fb.hidden) throw new Error('the fallback is still visible although a frame was drawn');
   const rep = await p.evaluate(() => globalThis.E3);
   reports[name] = rep;
   // The numbers are the part this process can actually check. A capture it cannot see proves nothing.
   console.log(`    ms/frame ${rep.msPerFrame} · ${rep.renderer} · glError ${rep.glError} · hdr ${rep.hdr}`
     + ` · ${rep.rendererClass} · headroom ${rep.headroom === null ? rep.headroomRefusal : rep.headroom + ' ms'}`);
   console.log(`    deals ${rep.deals} ${JSON.stringify(rep.counts)} · tags ${rep.tagsShown}`
-    + ` · hiddenBy ${JSON.stringify(rep.hiddenBy)} · nameOverflow ${rep.nameOverflow.length}`
-    + ` · gateLabelsOffFrame ${JSON.stringify(rep.gateLabelsOffFrame)}`);
+    + ` · hiddenBy ${JSON.stringify(rep.hiddenBy)} · nameOverflow ${rep.nameOverflow.length}`);
+  console.log(`    objectsOffFrame ${JSON.stringify(rep.objectsOffFrame)}`
+    + ` · gateLabelsOffFrame ${JSON.stringify(rep.gateLabelsOffFrame)}`
+    + ` · gateLabelsCrowded ${JSON.stringify(rep.gateLabelsCrowded)}`
+    + ` · axisLabelsOffFrame ${rep.axisLabelsOffFrame}`);
   console.log(`    settled ${rep.stalledCount} · deepStalled $${rep.deepStalledUsd} (${Math.round(100*rep.deepStalledShare)}%)`
     + ` · fallen ${rep.minStalledDisplacementPx}..${rep.maxDisplacementPx} px`
     + ` · same-stage pair separation min ${rep.minSeparationPx} px (depth-confounded)`
@@ -58,14 +96,26 @@ for (const [name, q] of [['live', ''], ['flat-settle', '&settle=0'], ['no-partic
   console.log(`    rateMonotoneDown ${rep.rateMonotoneDown} · first/last ${rep.rateRatioFirstLast}x`
     + ` · fog ${rep.fogNearest}..${rep.fogFurthest}`);
 
+  if (rep.brandFidelity.length) throw new Error(`§6 rule 5: brand hex moved: ${JSON.stringify(rep.brandFidelity)}`);
   if (rep.glError !== 0) throw new Error(`glError ${rep.glError}`);
   if (rep.outOfSegment.length) throw new Error(`deals drawn outside their own stage segment: ${rep.outOfSegment}`);
   if (rep.nameOverflow.length) throw new Error(`names too long for their tag: ${rep.nameOverflow}`);
   if (!rep.rateMonotoneDown) throw new Error('gate rates are not monotone down the funnel');
+  /* A deal outside the frame is not in the environment, whatever its tag reports. This is the check the
+     first framing did not have, and the first framing lost the largest object in the scene. */
+  if (rep.objectsOffFrame.length) throw new Error(`deals off frame: ${rep.objectsOffFrame.join(', ')}`);
+  /* An axis with no visible ticks is an assertion. Fatal, because the capture looks complete either way. */
+  if (rep.axisLabelsOffFrame) throw new Error(`${rep.axisLabelsOffFrame} movement-axis labels off frame`);
+  if (rep.gateLabelsOffFrame.length) throw new Error(`gate labels off frame: ${rep.gateLabelsOffFrame}`);
   /* An inverted pair says a stalled deal sits ABOVE a fresher one in its own stage, which is worse
      than showing nothing. Fatal in every variant, including the flat control where every deal is at
      one height and no pair can invert. */
   if (rep.settleInversions.length) throw new Error(`settling reads backwards: ${rep.settleInversions.join('; ')}`);
+  /* Fog that does not vary with distance is fog that is doing nothing, whatever the density says — and a
+     screenshot cannot tell that apart from subtlety. */
+  if (rep.fog && rep.fogFurthest - rep.fogNearest < 0.2) {
+    throw new Error(`FOG IS NOT SEPARATING DEPTHS: ${rep.fogNearest}..${rep.fogFurthest}`);
+  }
   if (name !== 'no-particles') {
     if (f.refusal) console.error(`    NOTE: particles refused — ${f.refusal}`);
     else {
@@ -88,6 +138,6 @@ if (live.minStalledDisplacementPx < 20) throw new Error(`the least-fallen stalle
 if (live.deepStalledUsd <= 0) throw new Error('no stalled value past diligence — the headline reading is empty');
 console.log(`\n  PROOF: every stalled deal has visibly fallen from its own rail position by at least`
   + ` ${live.minStalledDisplacementPx} px (max ${live.maxDisplacementPx}); the flat control falls ${flat.maxDisplacementPx} px`);
-console.log(`  PROOF: $${live.deepStalledUsd} (${Math.round(100*live.deepStalledShare)}%) past diligence and settled,`
+console.log(`  PROOF: $${live.deepStalledUsd} (${Math.round(100*live.deepStalledShare)}%) past diligence and stalled,`
   + ` visible as ${live.stalledCount} objects on the floor`);
 await b.close(); s.close();
