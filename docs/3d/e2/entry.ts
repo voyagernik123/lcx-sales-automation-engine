@@ -78,6 +78,17 @@ const CORRIDORS: ReadonlyArray<{ readonly to: string; readonly lat: number; read
  * What the flat view cannot carry is the whole point of the globe: that a corridor's arc height rises
  * with distance, that three endpoints are behind the limb, and that two desks are on the night side.
  */
+/*
+ * DECLARED BEFORE IT IS ASSIGNED. `fallbackRef = fallback` sits above the stage on purpose, and the `let`
+ * was 44 lines BELOW it — a temporal-dead-zone throw at module evaluation that the captures did not catch
+ * because esbuild's output happened to survive it. Found only once `type-check:3d` began covering this
+ * harness at all; six of the nine were checked by nothing.
+ *
+ * `die` itself can stay where it is: a `function` declaration hoists, and only a declaration returning
+ * `never` gives the compiler the control-flow narrowing the resource handoffs depend on.
+ */
+let fallbackRef: ReturnType<typeof installFlatFallback> | null = null;
+
 const fallback = installFlatFallback({
   title: 'E2 · The Globe — corridors from Vaduz',
   readsAs: 'The rendered view states reach as arc height and time-of-day as a terminator, so which '
@@ -142,9 +153,7 @@ function die(m: string): never {
   fallbackRef?.showRefusal(code?.trim() ?? 'REFUSED', rest.join(':').trim() || m);
   throw new Error(m);
 }
-/* Assigned once the fallback is installed. `die` stays a declaration: a `function` returning `never` is
-   what gives the compiler its control-flow narrowing, and a const arrow does not. */
-let fallbackRef: ReturnType<typeof installFlatFallback> | null = null;
+
 
 /*
  * UNWRAP AT CREATION, NOT AT A GUARD FURTHER DOWN.

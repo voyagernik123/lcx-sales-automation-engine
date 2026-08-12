@@ -23,7 +23,7 @@
     "verify-ci": "node scripts/verify-ci.mjs",
     "ci-mirror": "node scripts/ci-mirror.mjs",
     "type-check": "npm run type-check -w @lcx/shared && npm run type-check -w @lcx/gl && npm run type-check:3d && npm run type-check -w @lcx/api && npm run type-check -w @lcx/web",
-    "type-check:3d": "tsc -p docs/3d/p1/tsconfig.json",
+    "type-check:3d": "node scripts/type-check-3d.mjs",
     "test": "npm run test -w @lcx/shared && npm run test -w @lcx/gl && npm run test -w @lcx/api && npm run test -w @lcx/web",
     "test:web": "npm run test -w @lcx/web",
     "test:api": "npm run test -w @lcx/api",

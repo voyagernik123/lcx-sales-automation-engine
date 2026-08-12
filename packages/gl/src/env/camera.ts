@@ -65,6 +65,27 @@ export function eyeOf(v: Viewpoint): Vec3 {
  * pulled-back camera or wastes most of the depth buffer's precision on empty space in front
  * of a close one, and shadow acne is a depth-precision symptom before it is a bias problem.
  */
+/**
+ * The near and far planes `viewProjection` will actually use for this viewpoint.
+ *
+ * Exists because every consumer of the DEPTH BUFFER has to linearise it, and linearising with different
+ * constants from the ones the projection was built with is silently wrong. E5 passed ambient occlusion
+ * `near 0.1, far 60` while its own projection resolved to `0.085` and `68` — so the reconstructed
+ * view-space depth was off, and therefore the world-space radius the occlusion was gathered over was off
+ * too. Nothing errors. The AO simply describes a slightly different scene from the one on screen, and it
+ * reads as the strength being mistuned.
+ *
+ * E6 had it, E7's volumetric depth cap needs it, and each of them had hand-written a different pair. One
+ * function, so they agree by CONSTRUCTION rather than by everyone remembering the same two numbers.
+ */
+export function nearFarOf(v: Viewpoint): { near: number; far: number } {
+  /* Deliberately the identical expressions used below. If one changes, this must change with it — which
+     is why they sit adjacent rather than in separate files. */
+  const near = v.near ?? Math.max(0.01, v.distance / 100);
+  const far = v.far ?? Math.max(near + 1, v.distance * 8);
+  return { near, far };
+}
+
 export function viewProjection(v: Viewpoint, aspect: number): Mat4 {
   const eye = eyeOf(v);
   const near = v.near ?? Math.max(0.01, v.distance / 100);

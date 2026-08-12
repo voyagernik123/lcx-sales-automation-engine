@@ -4,10 +4,26 @@ import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join, normalize } from 'node:path';
 const HERE = dirname(fileURLToPath(import.meta.url));
-const T = { '.html':'text/html', '.js':'text/javascript' };
+/*
+ * THE FONTS ARE SERVED, and until now they were not.
+ *
+ * `build.mjs` inlines apps/web's built CSS, which declares @font-face with `url(/fonts/InterVariable.woff2)`
+ * and four JetBrains Mono weights. This server only ever served the harness directory, so every one of
+ * those requests 404'd and EVERY CAPTURE IN THIS PROGRAMME was shot with substituted system fonts.
+ *
+ * That is not cosmetic. Rule 4 keeps text in the DOM precisely so it is real type, and the legibility
+ * thresholds this programme has been tuning are metric-dependent: E5 and E6 both settled on a 26 px
+ * minimum projected width, E1 on a 2.4 px blur ceiling, E6 sized a record box against "16 characters at
+ * 6.6 px". All of those were measured against the wrong typeface. The numbers may well survive; they were
+ * not measured against what ships.
+ */
+const T = { '.html':'text/html', '.js':'text/javascript', '.woff2':'font/woff2', '.css':'text/css', '.png':'image/png', '.svg':'image/svg+xml' };
+const FONTS = resolve(HERE, '../../../apps/web/public/fonts');
 const s = createServer((q,r)=>{ const rel=normalize(decodeURIComponent(new URL(q.url,'http://x').pathname)).replace(/^(\.\.[/\\])+/,'');
-  const f=join(HERE, rel==='/'?'live.html':rel);
-  if(!f.startsWith(HERE)||!existsSync(f)){r.writeHead(404).end();return;}
+  const f = rel.startsWith('/fonts/')
+    ? join(FONTS, rel.slice('/fonts/'.length))
+    : join(HERE, rel==='/'?'live.html':rel);
+  if((!f.startsWith(HERE) && !f.startsWith(FONTS))||!existsSync(f)){r.writeHead(404).end();return;}
   r.writeHead(200,{'content-type':T[f.slice(f.lastIndexOf('.'))]??'application/octet-stream'}); r.end(readFileSync(f)); });
 await new Promise(r=>s.listen(0,'127.0.0.1',r));
 const b = await chromium.launch({ args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
@@ -68,6 +84,31 @@ for (const [name, q] of [['live', ''], ['no-fog', '&fog=0'], ['no-ao', '&ao=0'],
     throw new Error('the fallback is still visible although a frame was drawn');
   }
   if (wantRefusal) { await p.close(); continue; }
+
+  /*
+     TEXT OVERFLOW, MEASURED BY THE BROWSER rather than estimated in the harness.
+     The harness's own `actionOverflow` multiplies character count by 6.6 px, which was a guess about
+     JetBrains Mono's advance width — and until this run the fonts 404'd, so every capture used substituted
+     system metrics and that guess was never once checked against the typeface it describes. scrollWidth
+     against clientWidth is what the compositor actually did.
+  */
+  const clipped = await p.evaluate(() => {
+    const out = [];
+    for (const el of Array.from(document.querySelectorAll('#lcx-fallback ~ div div, div[style*="matrix3d"] div'))) {
+      const e = el;
+      if (e.scrollWidth > e.clientWidth + 1 && e.textContent && e.textContent.trim().length > 0) {
+        out.push({ text: e.textContent.trim().slice(0, 24), scroll: e.scrollWidth, client: e.clientWidth });
+      }
+    }
+    return out;
+  });
+  console.log(`    text clipped by its own box: ${clipped.length}`
+    + (clipped.length ? ' — ' + clipped.map((c) => `${JSON.stringify(c.text)} ${c.scroll}>${c.client}`).join(', ') : ''));
+  if (clipped.length > 0) {
+    throw new Error('a record\'s text is truncated by its own box: '
+      + clipped.map((c) => c.text).join(', ')
+      + ' — a truncated identifier in an audit record is worse than no record');
+  }
 
   const rep = await p.evaluate(() => globalThis.E6);
   console.log(`    ms/frame ${rep.msPerFrame} · ${rep.renderer} · glError ${rep.glError} · ${rep.rendererClass} · headroom ${rep.headroom === null ? rep.headroomRefusal : rep.headroom + ' ms'}`);

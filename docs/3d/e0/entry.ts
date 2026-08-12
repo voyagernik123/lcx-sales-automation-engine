@@ -14,6 +14,7 @@ import {
   createShadowMap, createSkyBackdrop, createAmbientOcclusion, createDepthOfField, viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre,
   triangleCount, hexToLinear, assertBrandFidelity, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint,
+  type StageRefusal,
 } from '@lcx/gl';
 import { installFlatFallback } from '../_shared/flatFallback.js';
 
@@ -39,6 +40,21 @@ function die(m: string): never {
   throw new Error(m);
 }
 let fallbackRef: ReturnType<typeof installFlatFallback> | null = null;
+
+/*
+ * ONE CHECKED HANDOFF PER RESOURCE, replacing seven consecutive `if ('kind' in x) fail(...)` lines.
+ *
+ * Not tidiness. Those checks establish a control-flow narrowing at MODULE level, and a narrowing does not
+ * follow a const into a function body — only its DECLARED type does. That is why all fourteen accessors
+ * inside `frame()` were errors against a `StageRefusal | T` union while the module-level code looked
+ * clean. Routing each outcome through a function whose return type is `T` puts the narrowing in the
+ * declaration, where a closure can see it. E1 worked this out and wrote it down; E0 and E8 never got the
+ * fix because neither was ever type-checked.
+ */
+function required<T extends object>(what: string, v: T | StageRefusal): T {
+  if ('kind' in v) die(`${what}: ${v.code} — ${v.reason} ${v.detail ?? ''}`);
+  return v;
+}
 
 /*
  * §6 RULE 1, FOR A STUDY RATHER THAN A DATA SURFACE.
@@ -68,7 +84,7 @@ const fallback = installFlatFallback({
   rows: [
     { object: 'Deck plate', hex: '#0E1628', roughness: 0.82, metalness: 0.0 },
     { object: 'Brand-blue dielectric sphere', hex: '#2C6BFF', roughness: 0.34, metalness: 0.05 },
-    /* Read from the URL directly rather than from `DIAG`, which is declared 130 lines below this point.
+    /* Read from the URL directly rather than from `DIAG_FLAG`, which is declared 130 lines below this point.
        A forward reference to a const is a temporal-dead-zone throw at module evaluation, and a page that
        throws there never sets its title — so the harness reports a 30-second timeout instead of the
        actual fault. That is the same defect this file's own header comment warns about. */
@@ -111,35 +127,32 @@ void main(){
   frag = vec4(lcxEncode(lcxToneMap(c)), 1.0);
 }`;
 
-const present = stage.compile(PRESENT_VERT, PRESENT_FRAG);
-const lit = createLitRenderer(stage);
-const target = createTarget3D(stage, W, H);
-const shadow = createShadowMap(stage, 1024);
-const skyBox = createSkyBackdrop(stage);
-const ao = createAmbientOcclusion(stage, W, H);
-const dof = createDepthOfField(stage, W, H);
+const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
+const lit = required('lit', createLitRenderer(stage));
+const target = required('target', createTarget3D(stage, W, H));
+const shadow = required('shadow', createShadowMap(stage, 1024));
+const skyBox = required('skyBox', createSkyBackdrop(stage));
+const ao = required('ao', createAmbientOcclusion(stage, W, H));
+const dof = required('dof', createDepthOfField(stage, W, H));
 
-const fail = (m: string) => { document.title = 'REFUSED'; document.getElementById('log')!.textContent = m; throw new Error(m); };
-/* `detail` carries the compiler's own words. Printing only `reason` cost one round trip to
-   learn that a function name was wrong — the driver had already said so. */
-const refusalText = (r: { reason: string; detail?: string }) => `${r.reason}\n${r.detail ?? ''}`;
-if ('kind' in present) fail(`present: ${refusalText(present)}`);
-if ('kind' in lit) fail(`lit: ${refusalText(lit)}`);
-if ('kind' in target) fail(`target: ${refusalText(target)}`);
-if ('kind' in shadow) fail(`shadow: ${refusalText(shadow)}`);
-if ('kind' in skyBox) fail(`sky: ${refusalText(skyBox)}`);
-if ('kind' in ao) fail(`ao: ${refusalText(ao)}`);
-if ('kind' in dof) fail(`dof: ${refusalText(dof)}`);
+/*
+ * `fail` AND `refusalText` ARE GONE, and `fail` is the more interesting loss.
+ *
+ * It was a const arrow, so it did NOT return `never` for control-flow purposes: every
+ * `if ('kind' in x) fail(...)` above narrowed nothing, which is why fourteen accessors in `frame()` were
+ * errors. It also could not tell the flat fallback anything, so a refusal showed a code on a blank page.
+ * `die` and `required` above do both, and `required` prints `code`, `reason` and `detail` itself — so the
+ * driver's own words still reach the reader through one formatter instead of two.
+ */
 
 const groundGeo = plane(14, 24);
 const boxGeo = box(1.4, 1.4, 1.4);
 const ballGeo = sphere(0.75, 32, 48);
 
-const meshes = [groundGeo, boxGeo, ballGeo].map((g) => {
-  const m = uploadMesh(stage, g);
-  if ('kind' in m) fail(`mesh: ${m.reason}`);
-  return m as Exclude<typeof m, { kind: 'refused' }>;
-});
+/* Through `required` too, which removes the CAST. `as Exclude<typeof m, {kind:'refused'}>` asserted the
+   very thing the line above had just established — and an assertion is not a narrowing: it would have gone
+   on compiling if that check were deleted. */
+const meshes = [groundGeo, boxGeo, ballGeo].map((g, i) => required(`mesh ${i}`, uploadMesh(stage, g)));
 
 /*
  * `IDENTITY` IS A FACTORY, NOT A CONSTANT — `export const IDENTITY = (): Mat4 => ...`.
@@ -167,7 +180,7 @@ const draws: LitDraw[] = [
   { mesh: meshes[1]!, model: translate(-1.15, 0.7, 0), normalMat: NORMAL_MAT,
     material: { baseColour: hexToLinear('#2C6BFF'), roughness: 0.34, metalness: 0.05 } },
   { mesh: meshes[2]!, model: translate(1.15, 0.75, 0.3), normalMat: NORMAL_MAT,
-    material: { baseColour: hexToLinear('#C9D4E4'), roughness: DIAG ? 0.045 : 0.18, metalness: 0.92 } },
+    material: { baseColour: hexToLinear('#C9D4E4'), roughness: DIAG_FLAG ? 0.045 : 0.18, metalness: 0.92 } },
 ];
 
 const light = { direction: [-0.45, -1, -0.35] as const, colour: [3.4, 3.3, 3.05] as const };
@@ -179,9 +192,17 @@ const lightVP = lightViewProjection({ ...light, extent: radius * 0.8 }, centre, 
 
 const view: Viewpoint = { target: [0, 0.6, 0], distance: 7.2, azimuthDeg: 34, elevationDeg: 22, fovDeg: 36 };
 
-/* One source of truth: the flag is read once, above, so the fallback and the render cannot
-   disagree about which variant is being shown. */
-const DIAG = DIAG_FLAG;
+/*
+ * `DIAG_FLAG` IS GONE — `DIAG_FLAG` at the top of the file is now the only name for it.
+ *
+ * The alias sat here at line 184 while the draw list read it at line 170: a temporal-dead-zone throw at
+ * module evaluation. E1's header comment DOCUMENTS this bug in this file — "reads its DIAG_FLAG flag from
+ * inside the draw list twelve lines above the const that declares it" — and it was never fixed, because
+ * `docs/3d` was in no tsconfig and esbuild strips types without checking them. Minification then hid it:
+ * esbuild inlines a const initialised from another const, so the bundle ran and the source was wrong.
+ *
+ * That is the entire argument for `type-check:3d` globbing every harness rather than pointing at p1.
+ */
 /* AO off is a CONTROL, not a fallback: the capture has to show the difference it makes rather
    than my asserting that it makes one. */
 const AO_ON = new URLSearchParams(location.search).get('ao') !== '0';
@@ -190,7 +211,7 @@ const DOF_ON = new URLSearchParams(location.search).get('dof') !== '0';
    sky and green where it faces the floor, the sample direction is right. A grey gradient cannot
    distinguish that from its own inverse, which is why the first look was inconclusive. */
 const DIAG_SKY = { zenith: [1.6, 0.05, 0.05] as const, horizon: [0.05, 0.08, 1.6] as const, ground: [0.05, 1.2, 0.05] as const };
-const SKY = DIAG ? DIAG_SKY : undefined;
+const SKY = DIAG_FLAG ? DIAG_SKY : undefined;
 const REPEAT = Math.max(1, Number(new URLSearchParams(location.search).get('repeat') ?? 1));
 function frame() {
   const vp = viewProjection(view, W / H);

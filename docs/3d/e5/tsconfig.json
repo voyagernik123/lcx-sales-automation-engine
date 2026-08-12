@@ -1,0 +1,35 @@
+{
+  "//": "E5's flat fallback renders the SHIPPING SurfacePlot component via renderToStaticMarkup, so this config needs jsx. That is the point of rule 1 here: the refusal resolves to the real surface rather than to a second implementation of it that could drift.",
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noUncheckedIndexedAccess": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "paths": {
+      "@lcx/gl": [
+        "../../../packages/gl/src/index.ts"
+      ],
+      "@lcx/shared": [
+        "../../../packages/shared/src/index.ts"
+      ],
+      "@/*": [
+        "../../../apps/web/src/*"
+      ]
+    },
+    "jsx": "react-jsx"
+  },
+  "include": [
+    "entry.ts"
+  ]
+}

@@ -23,6 +23,7 @@ import {
   viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre, triangleCount,
   hexToLinear, assertBrandFidelity, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY, projectScreen,
   type LitDraw, type Viewpoint,
+  type StageRefusal,
 } from '@lcx/gl';
 import { installFlatFallback } from '../_shared/flatFallback.js';
 
@@ -43,6 +44,23 @@ function die(m: string): never {
   throw new Error(m);
 }
 let fallbackRef: ReturnType<typeof installFlatFallback> | null = null;
+
+/*
+ * ONE CHECKED HANDOFF PER RESOURCE, replacing seven consecutive `if ('kind' in x) die(...)` lines.
+ *
+ * Replacing the arrow `die` with a declaration returning `never` was necessary and not sufficient: a
+ * narrowing established at MODULE level does not follow a const into a function body, only its DECLARED
+ * type does. So all thirteen accessors inside `frame()` stayed errors against a `StageRefusal | T` union
+ * even after `die` was correct. Routing each outcome through a function whose return type is `T` puts the
+ * narrowing in the declaration, where a closure can see it.
+ *
+ * E1 diagnosed this and wrote it down; E8 kept the bug for weeks because `docs/3d` was in no tsconfig and
+ * esbuild strips types without checking them.
+ */
+function required<T extends object>(what: string, v: T | StageRefusal): T {
+  if ('kind' in v) die(`${what}: ${v.code} — ${v.reason} ${v.detail ?? ''}`);
+  return v;
+}
 
 /*
  * §6 RULE 1 — and E8 is the environment where this rule is already SHIPPING correctly, just not here.
@@ -115,20 +133,13 @@ const refusal = (r: { reason: string; detail?: string }) => `${r.reason} ${r.det
    the flat fallback anything, so a refusal showed a code on a blank page. The declaration above does
    both. */
 
-const present = stage.compile(PRESENT_VERT, PRESENT_FRAG);
-const lit = createLitRenderer(stage);
-const target = createTarget3D(stage, W, H);
-const shadow = createShadowMap(stage, 1024);
-const skyBox = createSkyBackdrop(stage);
-const ao = createAmbientOcclusion(stage, W, H);
-const dof = createDepthOfField(stage, W, H);
-if ('kind' in present) die(`present: ${refusal(present)}`);
-if ('kind' in lit) die(`lit: ${refusal(lit)}`);
-if ('kind' in target) die(`target: ${refusal(target)}`);
-if ('kind' in shadow) die(`shadow: ${refusal(shadow)}`);
-if ('kind' in skyBox) die(`sky: ${refusal(skyBox)}`);
-if ('kind' in ao) die(`ao: ${refusal(ao)}`);
-if ('kind' in dof) die(`dof: ${refusal(dof)}`);
+const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
+const lit = required('lit', createLitRenderer(stage));
+const target = required('target', createTarget3D(stage, W, H));
+const shadow = required('shadow', createShadowMap(stage, 1024));
+const skyBox = required('skyBox', createSkyBackdrop(stage));
+const ao = required('ao', createAmbientOcclusion(stage, W, H));
+const dof = required('dof', createDepthOfField(stage, W, H));
 
 /* THE OBJECT. A brushed disc, a polished ring around it, and a dark plinth it sits on. Three
    materials so the frame has a metal hierarchy rather than one grey. */

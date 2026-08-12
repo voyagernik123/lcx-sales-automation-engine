@@ -92,6 +92,7 @@ export type { VolumeField } from './env/volume.js';
 export type { QuadCorners, QuadProjection, QuadRefusal } from './env/project.js';
 export {
   eyeOf, viewProjection, lightViewProjection, boundsRadius, boundsCentre, ELEVATION_LIMIT,
+  nearFarOf,
 } from './env/camera.js';
 export type { Viewpoint, DirectionalLight } from './env/camera.js';
 export { createTarget3D, createShadowMap } from './env/target3d.js';

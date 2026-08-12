@@ -39,7 +39,7 @@ import {
   createStage, isStage, box, plane, uploadMesh, createLitRenderer, createTarget3D,
   createShadowMap, createSkyBackdrop, createAmbientOcclusion,
   heightfield, projectQuad, isQuadRefusal,
-  viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre, triangleCount,
+  viewProjection, eyeOf, nearFarOf, lightViewProjection, boundsRadius, boundsCentre, triangleCount,
   hexToLinear, assertBrandFidelity, projectScreen, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint, type StageRefusal,
 } from '@lcx/gl';
@@ -356,7 +356,15 @@ const tris = draws.reduce((n, _d, i) => n + (i === 0 ? triangleCount(deckGeo) : 
   + withheldAt.length * triangleCount(markerGeo)
   + (MESH_ON && probeMesh ? triangleCount(probeGeo) : 0);
 
-const near = 0.1, far = 60;
+/*
+ * FROM THE VIEWPOINT, NOT HAND-WRITTEN. These constants are used to LINEARISE the depth buffer for
+ * ambient occlusion, and linearising with different planes from the ones the projection was built with
+ * is silently wrong: 0.1 and 60 against this view's actual 0.085 and 68. The reconstructed view-space
+ * depth was off, so the world-space radius the occlusion gathered over was off with it. Nothing errors —
+ * the AO just describes a slightly different scene from the one on screen, and it reads as the strength
+ * being mistuned, which is what sends you tuning `strength` instead of fixing the planes.
+ */
+const { near, far } = nearFarOf(view);
 
 function frame() {
   const vp = viewProjection(view, W / H);

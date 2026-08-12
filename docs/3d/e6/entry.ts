@@ -31,10 +31,10 @@
  * the frame would then promise a record it cannot deliver.
  */
 import {
-  createStage, isStage, box, plane, uploadMesh, createLitRenderer, createTarget3D,
-  createShadowMap, createSkyBackdrop, createAmbientOcclusion,
+  createStage, isStage, box, uploadMesh, createLitRenderer, createTarget3D,
+  createShadowMap, createAmbientOcclusion,
   projectQuad, isQuadRefusal, uprightPanelCorners,
-  viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre, triangleCount,
+  viewProjection, eyeOf, nearFarOf, lightViewProjection, boundsRadius, boundsCentre, triangleCount,
   hexToLinear, assertBrandFidelity, projectScreen, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint, type StageRefusal,
 } from '@lcx/gl';
@@ -197,7 +197,10 @@ const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
 const lit = required('lit', createLitRenderer(stage));
 const target = required('target', createTarget3D(stage, W, H));
 const shadow = required('shadow', createShadowMap(stage, 1536));
-const skyBox = required('sky', createSkyBackdrop(stage));
+/* `createSkyBackdrop` IS NOT ALLOCATED HERE ANY MORE. It was constructed and never drawn: the sky
+   backdrop was removed when this vault stopped being lit like a daylight scene, and the allocation stayed
+   behind — a compiled program and its buffers, for nothing. Caught by `noUnusedLocals` the first time this
+   harness was ever type-checked. */
 const ao = required('ao', createAmbientOcclusion(stage, W, H));
 
 
@@ -446,7 +449,15 @@ const lightVP = lightViewProjection(
 
 const tris = triangleCount(floorGeo) + 2 * triangleCount(wallGeo) + triangleCount(ceilGeo) + triangleCount(endGeo)
   + placed.length * triangleCount(recGeo);
-const near = 0.1, far = 60;
+/*
+ * FROM THE VIEWPOINT, NOT HAND-WRITTEN. These constants are used to LINEARISE the depth buffer for
+ * ambient occlusion, and linearising with different planes from the ones the projection was built with
+ * is silently wrong: 0.1 and 60 against this view's actual 0.085 and 68. The reconstructed view-space
+ * depth was off, so the world-space radius the occlusion gathered over was off with it. Nothing errors —
+ * the AO just describes a slightly different scene from the one on screen, and it reads as the strength
+ * being mistuned, which is what sends you tuning `strength` instead of fixing the planes.
+ */
+const { near, far } = nearFarOf(view);
 
 function frame() {
   const vp = viewProjection(view, W / H);
@@ -682,7 +693,10 @@ for (const d of [...decided].sort((a, b) => b.p.distance - a.p.distance)) {
   }
 }
 
-const projected = decided.map(({ p, shown, refusal, backFacing, withheld, tooFar, edgeOn, occluded, widthPx, coveredCorners }) => {
+/* `occluded` is deliberately not destructured: `hiddenBecause` below derives the reason from the same
+   predicates in priority order, so binding it here only created a second, silently-unused copy of a fact
+   that already has one owner. Caught by noUnusedLocals on this harness's first ever type-check. */
+const projected = decided.map(({ p, shown, refusal, backFacing, withheld, tooFar, edgeOn, widthPx, coveredCorners }) => {
   return {
     i: p.i, verdict: p.verdict, hoursAgo: p.hoursAgo,
     distance: Number(p.distance.toFixed(2)),
