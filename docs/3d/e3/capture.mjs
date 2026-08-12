@@ -99,6 +99,8 @@ for (const [name, q] of [
     + ` · gateLabelsOffFrame ${JSON.stringify(rep.gateLabelsOffFrame)}`
     + ` · gateLabelsCrowded ${JSON.stringify(rep.gateLabelsCrowded)}`
     + ` · axisLabelsOffFrame ${rep.axisLabelsOffFrame}`);
+  /* A tick whose stroke is not on the glass is a defect the old bounds count could not see. */
+  console.log('    axisTicksDrawn ' + rep.axisTicksDrawn.map((t) => `${t.label}:${t.drawn ? 'yes' : 'NO'} (${t.lum ?? '-'} vs ${t.background ?? '-'})`).join('  '));
   console.log(`    settled ${rep.stalledCount} · deepStalled $${rep.deepStalledUsd} (${Math.round(100*rep.deepStalledShare)}%)`
     + ` · fallen ${rep.minStalledDisplacementPx}..${rep.maxDisplacementPx} px`
     + ` · same-stage pair separation min ${rep.minSeparationPx} px (depth-confounded)`

@@ -940,9 +940,22 @@ const AXIS_X_INNER = AXIS_SIDE * (CHANNEL_HALF + 0.20);
 const AXIS_X_OUTER = AXIS_SIDE * (CHANNEL_HALF + 0.48);
 const AXIS_X_LABEL = AXIS_SIDE * (CHANNEL_HALF + 0.56);
 const AXIS_Z = gateZ(3);
+/*
+ * THE FLOOR TICK NEEDS REAL CLEARANCE, NOT AN EPSILON — and this is the third thing wrong with this axis.
+ *
+ * A fully stalled deal sits ON the deck, so the 45d+ tick belongs at deck height, and it was placed 12 mm
+ * above it. That is not enough: viewed from eye height 2.68 m at a shallow angle, a hairline 12 mm above a
+ * plane projects into the SAME PIXELS as the plane, and the depth test ties. The tick was not occluded and
+ * it was not missing — it was coincident, which looks identical to both and is neither.
+ *
+ * 5.5 cm is measured against the geometry rather than nudged until it appeared: it is a third of a rail
+ * slot's pitch, so the lowest tick is unambiguously below every rail position and unambiguously above the
+ * deck. The label keeps saying 45d+ because the QUANTITY has not moved; only the mark drawing it has.
+ */
+const TICK_FLOOR_CLEARANCE = 0.055;
 const AXIS_TICKS = [0, 20, STALL_DAYS].map((days) => ({
   days,
-  y: (1 - Math.min(1, days / STALL_DAYS)) * RAIL_LIFT + 0.012,
+  y: (1 - Math.min(1, days / STALL_DAYS)) * RAIL_LIFT + TICK_FLOOR_CLEARANCE,
   label: days >= STALL_DAYS ? `${days}d+` : `${days}d`,
 }));
 
@@ -1469,6 +1482,46 @@ const report = {
      alternative is two numbers printed on top of each other and neither readable. */
   gateLabelsCrowded: gateLabels.filter((g) => g.crowded).map((g) => g.stage),
   axisLabelsOffFrame: axisLabels.filter((a) => !a.onFrame).length,
+  /*
+   * WHETHER EACH TICK STROKE IS ACTUALLY ON THE GLASS — read back from the framebuffer, not inferred.
+   *
+   * `axisLabelsOffFrame` counts frame bounds and has now been wrong about this axis twice: once when all
+   * three ticks sat behind a wall, and again now, when the 45d+ stroke is absent while its label is not. Two
+   * fixes have failed to bring it back (moving the axis to the eye's side, and giving the floor tick 55 mm of
+   * clearance instead of 12), and I do not have a mechanism. What I can do is stop the harness being ABLE to
+   * hide it: each stroke's midpoint is sampled against a point just above it, and a tick that does not raise
+   * the local luminance is reported as not drawn.
+   *
+   * This is the pattern that has worked all session — a pixel read beats looking — and it means the next
+   * person to touch this axis is told by the report rather than by a paragraph.
+   */
+  axisTicksDrawn: AXIS_TICKS.map((tk) => {
+    const mid = projectScreen(vpFinal, [(AXIS_X_INNER + AXIS_X_OUTER) / 2, tk.y, AXIS_Z], W, H);
+    if (mid.behind || mid.sx < 2 || mid.sx > W - 2 || mid.sy < 4 || mid.sy > H - 4) {
+      return { label: tk.label, drawn: false, why: 'OFF_FRAME' };
+    }
+    /*
+     * A BAND, NOT A PIXEL. The strokes are hairlines about a pixel wide, and a single-texel read at the
+     * projected midpoint misses one by a rounding — the first version of this probe reported 20d as absent
+     * while the capture plainly showed it. A probe less sensitive than the thing it measures produces false
+     * defects, which is the same error as a noise floor drawn tighter than its comparison.
+     */
+    const band = (dyFrom: number, dyTo: number): number => {
+      const h = dyTo - dyFrom + 1;
+      const px = new Uint8Array(4 * h);
+      // GL reads bottom-up; projectScreen returns top-down.
+      gl.readPixels(Math.round(mid.sx), Math.round(H - mid.sy) + dyFrom, 1, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      let best = 0;
+      for (let i = 0; i < h; i++) best = Math.max(best, px[i * 4]! + px[i * 4 + 1]! + px[i * 4 + 2]!);
+      return best;
+    };
+    const onStroke = band(-2, 2);
+    /* Compared against a band clear of the stroke rather than against a fixed threshold: the background is a
+       fogged wall whose brightness varies down the frame, so an absolute cutoff would pass at the top of the
+       axis and fail at the bottom for reasons unrelated to the stroke. */
+    const nearby = band(8, 12);
+    return { label: tk.label, drawn: onStroke > nearby + 12, lum: onStroke, background: nearby };
+  }),
   /*
    * THE FIELD THE OLD COUNT SHOULD HAVE BEEN. `axisLabelsOffFrame` tested frame bounds only and reported
    * 0 while all three ticks sat behind a wall. Occlusion by a channel wall is now impossible by

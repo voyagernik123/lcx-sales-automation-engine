@@ -150,11 +150,32 @@ azimuth — rather than unlikely by measurement, and the report states `axisSide
 instead of a bounds count. A guarantee is the right answer here precisely because the measurement was the
 thing that lied.
 
-**Residual, and not fixed:** the capture now shows tick strokes at `0d` and `20d` and **none at
-`45d+`**. Two of three. The `45d+` tick sits at rail height where the floor slab passes outboard of the
-wall, and the honest reading is that it is occluded by the floor rather than by the wall — the same class
-of fault, one surface along. It is recorded rather than guessed at, because guessing is what produced
-9b.
+**Residual, MEASURED and NOT FIXED — and I have stopped guessing at it.**
+
+The harness now reads the framebuffer at each tick's projected midpoint (a ±2 px band, because the strokes
+are hairlines and a single-texel probe missed one that the capture plainly showed — a probe less sensitive
+than the thing it measures manufactures false defects). It reports:
+
+```
+axisTicksDrawn  0d:yes (527 vs 65)   20d:NO (96 vs 96)   45d+:NO (92 vs 93)
+```
+
+One of three strokes is on the glass. The two lower ones are not merely dim — their luminance is identical to
+the background beside them, so nothing is drawn there at all.
+
+Three hypotheses were tried and none holds:
+
+1. **Occlusion by the wall on the far side.** Fixed by moving the axis to the eye's side — that is §9b above,
+   and it brought `0d` back and nothing else.
+2. **Coincidence with the deck.** The `45d+` tick sits at deck height and had 12 mm of clearance; raised to
+   55 mm, a third of a rail slot's pitch. No change, and it never explained `20d` at all.
+3. **Occlusion by the near wall.** Arithmetically ruled out: from the eye at (1.24, 2.68) a ray to the `20d`
+   tick at y = 0.555 passes the wall's inner face at y ≈ 2.22, well above its 1.25 top.
+
+So the cause is unknown. What has changed is that **the harness can no longer hide it**: `axisTicksDrawn` is a
+pixel read, not a bounds count, and the next person to open this file is told by the report rather than by this
+paragraph. That is the same substitution that caught §9b — and §9b is the reason a fourth guess is not being
+written down here as a fix.
 
 **10 · `$1,600` printed on the frame as `$2k`.** `Math.round(1600/1000)` — a formatter written for deal
 values, applied to the constant that *defines what one particle means*. A 25% error in the frame's own
