@@ -43,6 +43,17 @@ export const ELEVATION_DEG = 21.3;
 export const MARCH_REACH_M = WORLD_STEP * MAX_STEPS;
 
 /**
+ * WHERE COLOUR STOPS SAYING ANYTHING, as a risk figure rather than something to be noticed.
+ *
+ * The layer mixes low to high on `clamp(density, 0, 1)`, and the calibration fixes density at
+ * `cell × RISK_TO_TAU / DAY_M` — so the ramp saturates at exactly one cell value, independent of the
+ * field's maximum, and every cell above it renders the same colour. Severity is still carried by HEIGHT
+ * and magnitude still by OPACITY, but a reader told "colour is risk" would over-read the top of the ramp.
+ * So the number is printed, along with how many cells are past it.
+ */
+export const RAMP_SATURATION_RISK = DAY_M / RISK_TO_TAU;
+
+/**
  * The geometric ceiling on how many days one pixel can integrate: a ray at `ELEVATION_DEG` loses
  * `tan(elev)` metres of height per metre travelled down the day axis, so it crosses a field
  * `bands × BAND_H` tall in that many days.
@@ -64,10 +75,12 @@ export const E7_MEASURED_SPAN = {
 } as const;
 
 /** One sentence an operator is owed, with the calibration in it. */
-export function calibrationSentence(bands: number): string {
+export function calibrationSentence(bands: number, cellsAboveRampSaturation = 0): string {
   return `${DAY_M} m per day · ${RISK_TO_TAU} optical depth per risk unit · `
     + `${WORLD_STEP} m × ${MAX_STEPS} steps = ${MARCH_REACH_M.toFixed(1)} m of reach · `
     + `one pixel integrates up to ${daysPerRayDescent(bands).toFixed(1)} days and up to ${bands} band(s) `
     + `(measured mean over ${E7_MEASURED_SPAN.raysMeasured} rays: ${E7_MEASURED_SPAN.daysSpannedMean} days, `
-    + `${E7_MEASURED_SPAN.bandsSpannedMean} bands).`;
+    + `${E7_MEASURED_SPAN.bandsSpannedMean} bands) · colour saturates at `
+    + `${RAMP_SATURATION_RISK.toFixed(3)} risk units and ${cellsAboveRampSaturation} cell(s) are past it, `
+    + 'where height still carries severity and opacity still carries magnitude but colour does not.';
 }

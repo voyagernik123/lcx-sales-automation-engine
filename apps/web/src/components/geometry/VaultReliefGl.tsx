@@ -162,8 +162,13 @@ const LINE_SPEC: readonly {
     style: { font: '400 9.5px/1.2 ui-monospace, monospace', color: '#fff' },
     /* THREE STATES, THREE STRINGS. A withheld subject exists and may not be shown; an unrecorded one never
        existed. Collapsing them into one blank is the table's failure, and it is the reading this view exists
-       to keep. */
-    text: (r) => r.subject ?? (r.verdict === 'WITHHELD' ? 'SUBJECT WITHHELD' : 'NO SUBJECT RECORDED'),
+       to keep.
+
+       KEYED ON `subjectWithheld`, NOT ON THE VERDICT. A WITHHELD row does not necessarily have a withheld
+       SUBJECT: `audit.ts` redacts `meta` alone on a GPS row and keeps the engagement id readable on purpose,
+       so keying this off the verdict printed SUBJECT WITHHELD over a subject the table beside it was showing.
+       See `vaultRecords.subjectOf`. */
+    text: (r) => r.subject ?? (r.subjectWithheld ? 'SUBJECT WITHHELD' : 'NO SUBJECT RECORDED'),
   },
 ];
 

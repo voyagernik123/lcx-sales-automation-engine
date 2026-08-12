@@ -171,6 +171,25 @@ describe('PipelineRelief — §7 says an unproven environment defaults off and s
     /* And the context-loss handler, without which a dropped context leaves a stale frame on screen for ever. */
     expect(src).toContain('webglcontextlost');
     expect(src).toContain('CONTEXT_LOST');
+
+    /*
+     * EVERY UPLOADED MESH REGISTERS ITS OWN DISPOSER, IN ITS OWN BLOCK. Uploading all seven and registering the
+     * disposers afterwards is correct on the happy path and leaks on the only path that matters: a refusal on
+     * the seventh upload calls `refuse` while six meshes are on the GPU with no disposer recorded, and `Stage`
+     * owns programs and targets — it knows nothing about a VAO. The sibling environment shipped with no
+     * registration at all, which is why this is a check rather than a comment.
+     */
+    const calls = [...src.matchAll(/uploadMesh\(/g)];
+    expect(calls.length, 'a file that uploads no mesh cannot pass this vacuously').toBeGreaterThan(0);
+    for (const m of calls) {
+      expect(
+        /disposers\.push\(/.test(src.slice(m.index, m.index + 300)),
+        'every uploadMesh must register its disposer in its own block, before the next upload is attempted',
+      ).toBe(true);
+    }
+    /* Reverse, and the stage LAST — it owns the context, so releasing it first leaves every other delete*
+       call operating on a dead one: silent rather than fatal, and it leaks on every remount. */
+    expect(src).toMatch(/for \(const d of disposers\.reverse\(\)\) d\(\);\s*(\/\*[\s\S]*?\*\/\s*)?stage\.dispose\(\);/);
   });
 });
 

@@ -92,6 +92,38 @@ describe('VaultRelief — §7 says an unproven environment defaults off and says
     ).toBe(false);
   });
 
+  it('frees every GPU resource it allocated, and the stage last', async () => {
+    /*
+     * CHECKED RATHER THAN REVIEWED, because the sibling environment shipped without it. `StormReliefGl`
+     * uploaded seven meshes and registered a disposer for none of them: `uploadMesh` creates a VAO and four
+     * buffers and hands back the only thing that frees them, and `Stage` tracks its programs and its own
+     * targets and knows nothing about a mesh. Nothing errors, nothing is visible and the frame is correct —
+     * the context simply grows by thirty-five objects every time a reader toggles the view, until the browser
+     * drops it and `webglcontextlost` reports the wrong cause.
+     */
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const file = path.resolve(process.cwd(), 'src/components/geometry/VaultReliefGl.tsx');
+    expect(fs.existsSync(file), `cannot find ${file} — this check would otherwise pass vacuously`).toBe(true);
+    const src = fs.readFileSync(file, 'utf8');
+
+    const calls = [...src.matchAll(/uploadMesh\(/g)];
+    expect(calls.length, 'a file that uploads no mesh cannot pass this vacuously').toBeGreaterThan(0);
+    for (const m of calls) {
+      expect(
+        /disposers\.push\(/.test(src.slice(m.index, m.index + 300)),
+        'every uploadMesh must register its disposer in its own block, before the next upload is attempted',
+      ).toBe(true);
+    }
+    /* Reverse, and the stage LAST — it owns the context, so releasing it first leaves every other delete*
+       call operating on a dead one: silent rather than fatal, and it leaks on every remount. */
+    expect(src).toMatch(/for \(const d of disposers\.reverse\(\)\) d\(\);\s*(\/\*[\s\S]*?\*\/\s*)?stage\.dispose\(\);/);
+    /* And the context-loss handler, without which a dropped context leaves a stale frame of an audit log on
+       screen for ever while the GPU has moved on. */
+    expect(src).toContain('webglcontextlost');
+    expect(src).toContain('CONTEXT_LOST');
+  });
+
   it('mounts where the flat table is rendered, wrapping it rather than replacing it', async () => {
     const fs = await import('node:fs');
     const path = await import('node:path');
@@ -125,16 +157,38 @@ describe('the three states of an audit record stay three states', () => {
 
   it('keeps a withheld SUBJECT distinct from a subject that was never recorded', () => {
     const { records } = buildVaultRecords([
-      entry({ id: 'withheld', meta: { withheld: true }, entity: 'gps_engagement' }),
+      entry({ id: 'marketing', entityId: '[withheld:marketing]', entity: 'marketing_asset', projectName: null }),
       entry({ id: 'nosubject', entity: null, entityId: null, projectName: null }),
     ], NOW);
     const byId = new Map(records.map((r) => [r.id, r]));
     /* Both are `null` here and the renderer prints two different strings for them — SUBJECT WITHHELD versus NO
        SUBJECT RECORDED. The table shows one empty cell for both, which is the reading this view exists to keep. */
-    expect(byId.get('withheld')!.subject).toBeNull();
-    expect(byId.get('withheld')!.verdict).toBe('WITHHELD');
+    expect(byId.get('marketing')!.subject).toBeNull();
+    expect(byId.get('marketing')!.subjectWithheld).toBe(true);
+    expect(byId.get('marketing')!.verdict).toBe('WITHHELD');
     expect(byId.get('nosubject')!.subject).toBeNull();
+    expect(byId.get('nosubject')!.subjectWithheld).toBe(false);
     expect(byId.get('nosubject')!.verdict).toBe('ALLOWED');
+  });
+
+  it('does NOT blank a GPS subject the API deliberately still serves', () => {
+    /*
+     * A WITHHELD ROW IS NOT A WITHHELD SUBJECT, and reading one off the other was a claim the API contradicts.
+     * `apps/api/src/routes/audit.ts` replaces `meta` on a GPS row and nothing else — "the row itself is not
+     * hidden: the actor, the action, the engagement id and the timestamp are above" — because an unattributable
+     * governed action is the worse failure. The flat table prints that engagement id in its Entity cell, so a
+     * slab printing SUBJECT WITHHELD over it would be the corridor and the table disagreeing about one record.
+     */
+    const { records } = buildVaultRecords([
+      entry({
+        id: 'gps', meta: { withheld: true, reason: 'compartment' },
+        entity: 'gps_engagement', entityId: '9f3c17ab-2d4e-4ce6-94c2-5ff3d18047f4', projectName: null,
+      }),
+    ], NOW);
+    const r = records[0]!;
+    expect(r.verdict, 'the row is still withheld').toBe('WITHHELD');
+    expect(r.subjectWithheld, 'but its SUBJECT is not').toBe(false);
+    expect(r.subject).toBe('gps_engagement·9f3c17ab');
   });
 
   it('REFUSES a position to a record with no usable timestamp instead of drawing it at hour zero', () => {

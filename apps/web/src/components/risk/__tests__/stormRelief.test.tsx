@@ -184,6 +184,25 @@ describe('StormRelief — §7 says an unproven environment defaults off and says
     /* A CALL, not a mention — the file says in prose that it schedules nothing, and a bare substring
        search would be failed by that sentence. */
     expect(/(requestAnimationFrame|setInterval|setTimeout)\s*\(/.test(src)).toBe(false);
+    /*
+     * AND EVERY UPLOADED MESH IS REGISTERED FOR DISPOSAL. This file shipped with seven `uploadMesh` calls and
+     * no disposer for any of them, which no test and no capture could see: `uploadMesh` creates a VAO and four
+     * buffers and hands back the only thing that frees them, and `Stage` tracks programs and its own targets
+     * and knows nothing about a mesh. Nothing errors, the frame is correct, and the context grows by
+     * thirty-five objects every time a reader toggles back to the calendar — so the symptom finally arrives as
+     * a lost context blaming the driver.
+     */
+    const calls = [...src.matchAll(/uploadMesh\(/g)];
+    expect(calls.length, 'a file that uploads no mesh cannot pass this vacuously').toBeGreaterThan(0);
+    for (const m of calls) {
+      expect(
+        /disposers\.push\(/.test(src.slice(m.index, m.index + 300)),
+        'every uploadMesh must register its disposer in its own block, before the next upload is attempted',
+      ).toBe(true);
+    }
+    /* Reverse, and the stage LAST — it owns the context, so releasing it first leaves every other delete*
+       call operating on a dead one: silent rather than fatal, and it leaks on every remount. */
+    expect(src).toMatch(/for \(const d of disposers\.reverse\(\)\) d\(\);\s*(\/\*[\s\S]*?\*\/\s*)?stage\.dispose\(\);/);
     /* And the two refusals that are easiest to forget and worst to omit. */
     expect(src).toMatch(/webglcontextlost/);
     expect(src).toMatch(/assertBrandFidelity/);

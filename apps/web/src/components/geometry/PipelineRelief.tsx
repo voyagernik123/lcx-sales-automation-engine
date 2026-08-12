@@ -124,8 +124,8 @@ export function PipelineRelief({ reliefHeightPx = 460, ...table }: PipelineRelie
               <p>
                 {channel.valueAbsent > 0 && (
                   <>
-                    {channel.valueAbsent} drawn lead{channel.valueAbsent === 1 ? '' : 's'} record no market
-                    cap and {channel.valueAbsent === 1 ? 'is' : 'are'} drawn as an amber ring — a hole where
+                    {channel.valueAbsent} drawn lead{channel.valueAbsent === 1 ? ' records' : 's record'} no
+                    market cap and {channel.valueAbsent === 1 ? 'is' : 'are'} drawn as an amber ring — a hole where
                     the mass should be, at a reference size that encodes nothing. Never a zero-mass object.{' '}
                   </>
                 )}

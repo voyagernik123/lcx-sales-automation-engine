@@ -42,7 +42,7 @@ import {
   viewProjection, eyeOf, lightViewProjection, boundsCentre, boundsRadius,
   hexToLinear, mixLinear, assertBrandFidelity, IDENTITY,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
-  type LitDraw, type Viewpoint,
+  type LitDraw, type MeshBuffer, type Viewpoint,
 } from '@lcx/gl';
 import {
   GATE_BANDS, STALL_DAYS, MAX_PER_GATE, type Channel, type ChannelDeal,
@@ -253,15 +253,22 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
     const absentGeo = torus(REF_SIZE * 1.25, REF_SIZE * 0.34, 40, 14);
     const withheldGeo = sphere(REF_SIZE, 20, 28);
 
-    const uploads = [floorGeo, wallGeo, postGeo, sillGeo, dealGeo, absentGeo, withheldGeo]
-      .map((g) => uploadMesh(stage, g));
-    for (const m of uploads) {
+    /*
+     * UPLOADED ONE AT A TIME, EACH REGISTERED BEFORE THE NEXT IS ATTEMPTED. Uploading all seven and then
+     * registering the disposers afterwards is correct on the happy path and leaks on the only path that
+     * matters: a refusal on the seventh upload calls `refuse` while the first six are on the GPU with no
+     * disposer recorded, and `Stage` owns programs and targets — it knows nothing about a VAO. So the six
+     * vertex arrays and twenty-four buffers are stranded on exactly the branch that is hardest to reach and
+     * most likely to repeat, because this component remounts every time a reader toggles the view.
+     */
+    const uploaded: MeshBuffer[] = [];
+    for (const g of [floorGeo, wallGeo, postGeo, sillGeo, dealGeo, absentGeo, withheldGeo]) {
+      const m = uploadMesh(stage, g);
       if ('kind' in m) { refuse(m.code); return; }
+      uploaded.push(m);
+      disposers.push(() => m.dispose());
     }
-    type Uploaded = Exclude<typeof uploads[number], { kind: 'refused' }>;
-    const [floorMesh, wallMesh, postMesh, sillMesh, dealMesh, absentMesh, withheldMesh] =
-      uploads as Uploaded[];
-    for (const m of uploads as Uploaded[]) disposers.push(() => m.dispose());
+    const [floorMesh, wallMesh, postMesh, sillMesh, dealMesh, absentMesh, withheldMesh] = uploaded;
 
     const N3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
     /* The ring stands UPRIGHT so its hole faces down the channel and reads as a hole rather than as a thin

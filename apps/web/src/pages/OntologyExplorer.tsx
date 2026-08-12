@@ -5,6 +5,7 @@ import 'reactflow/dist/style.css';
 import { useGraph } from '@/hooks/useGraph';
 import { Badge, InspectorDrawer, CustomOntologyNode } from '@/components/ui';
 import { OntologyMiniMap } from '@/components/ui/OntologyMiniMap';
+import { OntologyOrrery } from '@/components/geometry/OntologyOrrery';
 import { toBadgeStatus } from '@/lib/status';
 import { NODE_LAYOUT } from '@/lib/constants';
 import { RegulatoryNode } from '@/types/ontology';
@@ -176,6 +177,65 @@ export function OntologyExplorer() {
     if (rfInstance) rfInstance.setCenter(n.position.x + 90, n.position.y + 36, { zoom: 0.9, duration: 500 });
   };
 
+  /*
+   * THE ORRERY'S INPUT, DERIVED FROM WHAT THE DIAGRAM IS ALREADY DRAWING — AND KEYED ON ITS CONTENT, NOT ON
+   * THE IDENTITY OF `useGraph`'s ARRAYS.
+   *
+   * `useGraph` builds `nodes` and `edges` with a bare `.map()` outside any `useMemo`, so both come back as
+   * FRESH ARRAYS on every render of this page, whether or not the graph changed. Keying these three memos on
+   * `[rawNodes]` and `[edges]` therefore memoised nothing: `OntologyOrrery` wraps them in one more `useMemo`
+   * and `OntologyOrreryGl` lists that object in an effect's dependencies, so every render of this component
+   * tore down a WebGL2 context, built a new one, and re-ran the ≤400 ms viewpoint search.
+   *
+   * That is not a hover cost, it is the cost of TYPING: `searchQuery` lives here and does not feed `useGraph`
+   * at all, so each keystroke in the search box produced a whole new context for an identical graph. §6 rule 7
+   * — one shared GL context, because sixty will exhaust an 8 GB M1 — and the renderer's own header says
+   * precisely this must not happen.
+   *
+   * So the dependency is a SIGNATURE over everything downstream actually reads: identity, kind, the label the
+   * diagram drew, the laid-out position the flat crossing count is measured from, and the two record fields
+   * `magnitudeOf` reads to tell observed from absent from withheld. Cheap — ~74 entities of string work — and
+   * it changes exactly when the picture would change, which array identity did not.
+   *
+   * `rawNodes` carries the node the diagram actually drew — status overrides applied, `[PREEMPTED]` prefixes
+   * included — so the two readings cannot disagree about an entity. `position` is the node box's top-left, so
+   * the centre the crossing count is measured from adds half the layout size back.
+   */
+  const orrerySignature = rawNodes.map(n => {
+    const rn = (n.data as { node: RegulatoryNode }).node;
+    const rec = (rn.data ?? {}) as { confidence?: unknown; restricted?: unknown };
+    return `${rn.id}|${rn.type}|${rn.label}|${Math.round(n.position.x)}|${Math.round(n.position.y)}`
+      + `|${String(rec.confidence ?? '')}|${String(rec.restricted ?? '')}`;
+  }).join('~') + '#' + edges.map(
+    (e: { id: string; source: string; target: string; label?: unknown }) =>
+      `${e.id}|${e.source}|${e.target}|${String(e.label ?? '')}`,
+  ).join('~');
+
+  /* eslint-disable react-hooks/exhaustive-deps -- keyed on `orrerySignature` deliberately: see above. The
+     arrays these read are rebuilt by `useGraph` on every render, so listing them defeats the memo entirely. */
+  const orreryEntities = useMemo(
+    () => rawNodes.map(n => {
+      const rn = (n.data as { node: RegulatoryNode }).node;
+      return { id: rn.id, label: rn.label, kind: rn.type, record: rn.data };
+    }),
+    [orrerySignature],
+  );
+  const orreryCouplings = useMemo(
+    () => edges.map((e: { id: string; source: string; target: string; label?: unknown }) => ({
+      id: e.id, source: e.source, target: e.target, kind: String(e.label ?? ''),
+    })),
+    [orrerySignature],
+  );
+  const orreryFlatCentres = useMemo(
+    () => rawNodes.map(n => ({
+      id: n.id,
+      x: n.position.x + NODE_LAYOUT.WIDTH / 2,
+      y: n.position.y + NODE_LAYOUT.HEIGHT / 2,
+    })),
+    [orrerySignature],
+  );
+  /* eslint-enable react-hooks/exhaustive-deps */
+
   const selectedStateObj = useMemo(() => selectedNode?.type === 'state' ? states.find(s => s.id === selectedNode.id) ?? null : null, [selectedNode]);
   const selectedProductObj = useMemo(() => selectedNode?.type === 'product' ? products.find(p => p.id === selectedNode.id) ?? null : null, [selectedNode]);
   const selectedReqObj = useMemo(() => selectedNode?.type === 'requirement' ? requirements.find(r => r.id === selectedNode.id) ?? null : null, [selectedNode]);
@@ -240,30 +300,53 @@ export function OntologyExplorer() {
             </div>
           )}
 
-          <ReactFlow
-            nodes={displayedNodes}
-            edges={displayedEdges}
-            nodeTypes={nodeTypes}
-            onInit={setRfInstance}
-            onMove={handleMove}
-            onNodeClick={(_, node) => {
-              const rawNode = (node.data as any).node as RegulatoryNode;
-              setSelectedNode(rawNode);
-              setSelectedNodeId(rawNode.id);
-            }}
-            onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
-            onNodeMouseLeave={() => setHoveredNodeId(null)}
-            fitView
-            fitViewOptions={{ padding: 0.3 }}
-            proOptions={{ hideAttribution: true }}
-            minZoom={0.1}
-            maxZoom={2}
+          {/*
+            * E4 · THE ORRERY, behind a toggle that defaults OFF.
+            *
+            * The diagram below is what loads, every time. §7 of `3D_VFX_1000X.md` gates an environment on an
+            * operator getting their answer at least as fast as the flat version, that clause is UNMEASURED, and
+            * §7 says an unmeasured environment ships opt-in and says so — which the wrapper does, next to its
+            * own button. It also carries the crossing count for both readings, measured on whatever graph the
+            * filters above have produced rather than copied from the harness.
+            *
+            * The wrapper unmounts this subtree when the reader opts in, so the orrery does not sit on top of a
+            * live force simulation, and remounts it on the way back (which re-runs `fitView`). The timeline card
+            * and the loading overlay are deliberately OUTSIDE it: scrubbing the timeline is how the reader
+            * changes the graph, and it has to keep working in both readings.
+            */}
+          <OntologyOrrery
+            entities={orreryEntities}
+            couplings={orreryCouplings}
+            allCouplings={ontologyGraph.edges}
+            flatCentres={orreryFlatCentres}
+            flatHalfWidth={NODE_LAYOUT.WIDTH / 2}
+            selectedId={selectedNodeId}
           >
-            <Background gap={20} color="var(--line)" className="opacity-40" />
-            <Controls className="!bg-card !border-line !shadow-sm dark:!bg-navy" />
-          </ReactFlow>
+            <ReactFlow
+              nodes={displayedNodes}
+              edges={displayedEdges}
+              nodeTypes={nodeTypes}
+              onInit={setRfInstance}
+              onMove={handleMove}
+              onNodeClick={(_, node) => {
+                const rawNode = (node.data as any).node as RegulatoryNode;
+                setSelectedNode(rawNode);
+                setSelectedNodeId(rawNode.id);
+              }}
+              onNodeMouseEnter={(_, node) => setHoveredNodeId(node.id)}
+              onNodeMouseLeave={() => setHoveredNodeId(null)}
+              fitView
+              fitViewOptions={{ padding: 0.3 }}
+              proOptions={{ hideAttribution: true }}
+              minZoom={0.1}
+              maxZoom={2}
+            >
+              <Background gap={20} color="var(--line)" className="opacity-40" />
+              <Controls className="!bg-card !border-line !shadow-sm dark:!bg-navy" />
+            </ReactFlow>
 
-          <OntologyMiniMap rawNodes={rawNodes} rfInstance={rfInstance} />
+            <OntologyMiniMap rawNodes={rawNodes} rfInstance={rfInstance} />
+          </OntologyOrrery>
 
           <div className="absolute bottom-3 right-3 w-60 bg-card/95 backdrop-blur border border-line rounded-lg shadow-md p-2 space-y-1">
             <div className="flex items-center justify-between">

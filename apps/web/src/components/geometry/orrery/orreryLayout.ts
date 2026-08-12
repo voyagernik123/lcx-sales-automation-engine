@@ -11,11 +11,13 @@
  * at the same depth, so two relationships become four possible relationships. Inclination is the third axis
  * and it is spent on exactly that.
  *
- * The claim is NOT "fewer lines cross". From most viewpoints more of them cross here, and the numbers below
- * say so. The claim is that a crossing is not AMBIGUOUS, and it is proven without reference to a camera: two
- * tubes can only fuse into an unreadable X if their minimum separation in 3-D is less than the sum of their
- * radii, and that quantity does not depend on where the camera is. So the number is computable, testable, and
- * belongs in a file a unit test can import — which a WebGL2 component under jsdom is not.
+ * The claim is NOT "fewer lines cross". From most viewpoints MORE of them cross here — the fifty-state view
+ * measures 284 on screen against 182 in the plane — and the claim is about how many of them a reader cannot
+ * RESOLVE: 7 against 182. The bound behind that is camera-independent: two tubes can only fuse into an
+ * unreadable X if their minimum separation in 3-D is less than the sum of their radii, and that quantity does
+ * not depend on where the camera is. It is not always zero on this ontology, so it is measured and published
+ * rather than asserted — which is why it belongs in a file a unit test can import, and a WebGL2 component under
+ * jsdom is not one.
  *
  * ── EVERY NUMBER HERE COMES FROM THE ONTOLOGY BEING DRAWN ────────────────────────────
  * Nothing is carried over from the harness. Hops are a breadth-first search over the same couplings that are
@@ -340,9 +342,12 @@ export interface OrreryCrossings {
   readonly flatControlGrazing: number;
   /** The SHIPPING node-link diagram, measured from its own coordinates. `null` if they were not supplied. */
   readonly shippingDiagram: number | null;
-  /** Links that pass through a body they are not attached to. A hidden entity, counted in both layouts. */
+  /** Links whose tube touches a body they are not attached to. Counted in both layouts; depth resolves it. */
   readonly throughBodies3D: number;
   readonly throughBodiesFlat: number;
+  /** Links whose AXIS is inside such a body. Nothing resolves that, so this one is the gate. */
+  readonly piercedBodies3D: number;
+  readonly piercedBodiesFlat: number;
 }
 
 export interface OrreryLayout {
@@ -386,6 +391,22 @@ export interface OrreryLayout {
 export type OrreryOutcome = OrreryLayout | OrreryRefusal;
 
 const refuse = (code: OrreryRefusalCode, reason: string): OrreryRefusal => ({ kind: 'refused', code, reason });
+
+/**
+ * THE GATE E4 PUT ON ITSELF, as a function so it can be proven rather than described.
+ *
+ * E4's own words: "if a reordering could get the flat diagram to zero crossings then inclination would be
+ * buying nothing and this environment would not be entitled to exist." The orbital layout is compared against
+ * the SAME graph flattened. If it leaves as many crossings a reader cannot resolve as the plane does, it has
+ * spent a dimension and bought nothing, and the honest move is to keep the reader on the diagram they had.
+ *
+ * The `> 0` guard is the whole subtlety: a small system where BOTH readings are clean is a win for neither, and
+ * a bare `>=` would refuse the easiest case there is. Extracted because it is the one refusal here that no
+ * input in the shipped ontology triggers, and a refusal with no test is a silent default waiting to happen.
+ */
+export function thirdAxisBuysNothing(ambiguous: number, flatControlInPlane: number): boolean {
+  return ambiguous > 0 && ambiguous >= flatControlInPlane;
+}
 
 /**
  * Build the whole system, or refuse it.
@@ -443,6 +464,19 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
     .map((e) => [e.id, adjacency.get(e.id)?.length ?? 0] as const)
     .sort((a, b) => (b[1] - a[1]) || (a[0] < b[0] ? -1 : 1))[0]?.[0] ?? entities[0]!.id;
   const coreId = selected ?? computedCore;
+
+  /*
+   * A CORE WITH NOTHING ORBITING IT IS NOT A SYSTEM, and this is reachable by one click: the reader selects
+   * Montana — which requires no state licence and therefore has no couplings at all — and asks for the orbital
+   * view. Every other entity would then have no path to the core, the whole graph would land on the off-system
+   * rail, and radius would be encoding nothing while still looking like an encoding.
+   */
+  if ((adjacency.get(coreId)?.length ?? 0) === 0) {
+    return refuse('NOTHING_TO_ORBIT',
+      (selected === coreId ? 'the selected entity, ' : 'the most-coupled entity in view, ')
+      + coreId + ', has no couplings in this view, so there is no relationship distance to measure from it'
+      + (selected === coreId ? '. Select a coupled entity, or clear the selection.' : '.'));
+  }
 
   const hops = new Map<string, number>([[coreId, 0]]);
   for (let frontier = [coreId]; frontier.length > 0;) {
@@ -598,35 +632,44 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
       }];
     });
 
-    const discsAt = (v: Viewpoint): { cx: number; cy: number; r: number; behind: boolean }[] => {
-      const e = eyeOf(v) as V3;
-      const vp = viewProjection(v, aspect);
-      return bodies.map((b) => {
-        const q = projectScreen(vp, b.pos, cssWidth, cssHeight);
-        const d = Math.hypot(b.pos[0] - e[0], b.pos[1] - e[1], b.pos[2] - e[2]);
-        return { cx: q.sx, cy: q.sy, r: b.radius * pxPerMetreAt(d), behind: q.behind };
-      });
-    };
     /*
-     * TWO BODIES WHOSE PROJECTED DISCS MERGE, which depth does NOT resolve.
+     * DOES ANY PAIR OF BODIES MERGE ON SCREEN AT THIS VIEWPOINT? Depth does NOT resolve that one.
      *
      * Depth resolves an ambiguous link crossing, because one tube visibly passes in front of the other. It does
      * not resolve two spheres whose silhouettes overlap: the nearer eats the further one's outline and the pair
      * reads as one body with a lump on it. Size is an encoding here, so a merged silhouette is a misread
      * coupling count, and it is the one failure of this layout that is purely a function of where the camera
-     * is. So the camera is CHOSEN by this count rather than composed, and when no viewpoint is clean the view
+     * is. So the camera is CHOSEN by this test rather than composed, and when no viewpoint passes it the view
      * refuses rather than shipping a frame with a hidden entity in it.
+     *
+     * It answers CLEAN or NOT rather than counting the overlaps, and that is what makes searching 144
+     * viewpoints at three spacings affordable inside a click: a dirty viewpoint exits at its first overlapping
+     * pair, which is usually within a few comparisons, while only a clean one pays the full n². Counting them
+     * all instead cost 400 ms on the 74-entity system and truncated its own search — a number about the budget
+     * masquerading as a number about the layout. Squared distances, no `hypot`, and flat arrays, because this
+     * is the innermost loop in the module.
      */
-    const mergedAt = (v: Viewpoint): number => {
-      const ds = discsAt(v).filter((d) => !d.behind);
-      let n = 0;
-      for (let i = 0; i < ds.length; i++) {
-        for (let j = i + 1; j < ds.length; j++) {
-          const a = ds[i]!, b = ds[j]!;
-          if (Math.hypot(a.cx - b.cx, a.cy - b.cy) < a.r + b.r) n++;
+    const isCleanAt = (v: Viewpoint): boolean => {
+      const e = eyeOf(v) as V3;
+      const vp = viewProjection(v, aspect);
+      const n = bodies.length;
+      const cx = new Float64Array(n), cy = new Float64Array(n), rr = new Float64Array(n);
+      let m = 0;
+      for (const b of bodies) {
+        const q = projectScreen(vp, b.pos, cssWidth, cssHeight);
+        if (q.behind) continue;
+        const dx = b.pos[0] - e[0], dy = b.pos[1] - e[1], dz = b.pos[2] - e[2];
+        cx[m] = q.sx; cy[m] = q.sy;
+        rr[m] = b.radius * pxPerMetreAt(Math.sqrt(dx * dx + dy * dy + dz * dz));
+        m++;
+      }
+      for (let i = 0; i < m; i++) {
+        for (let j = i + 1; j < m; j++) {
+          const ddx = cx[i]! - cx[j]!, ddy = cy[i]! - cy[j]!, sum = rr[i]! + rr[j]!;
+          if (ddx * ddx + ddy * ddy < sum * sum) return false;
         }
       }
-      return n;
+      return true;
     };
 
     /*
@@ -653,21 +696,18 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
      * and `search.truncated` says when it did.
      */
     let tried = 0, clean = 0, truncated = false;
-    let bestMerged = Infinity;
     let chosen: Viewpoint | null = null;
     for (const v of candidates) {
       if (tried > 0 && performance.now() > deadline) { truncated = true; break; }
       tried++;
-      const merged = mergedAt(v);
-      if (merged < bestMerged) bestMerged = merged;
-      if (merged === 0) { clean++; if (chosen === null) chosen = v; }
+      if (isCleanAt(v)) { clean++; if (chosen === null) chosen = v; }
     }
     if (chosen === null) {
       return refuse('BODIES_MERGE_AT_EVERY_VIEWPOINT',
         'at ' + (truncated ? 'each of the first ' : 'every one of the ') + tried + ' viewpoints'
-        + (truncated ? ' the search had time for' : ' tried') + ', at least ' + bestMerged
-        + ' pair of entities overlaps on screen. Size encodes the coupling count here, so a merged pair is a '
-        + 'misread number and a hidden entity. Turn off a layer and this system will fit.');
+        + (truncated ? ' the search had time for' : ' tried') + ', at least two entities overlap on screen. '
+        + 'Size encodes the coupling count here, so a merged pair is a misread number and a hidden entity. '
+        + 'Turn off a layer and this system will fit.');
     }
     const view = chosen;
     const eye = eyeOf(view) as V3;
@@ -775,14 +815,28 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
       return n;
     };
 
-    /** A link passing through a body it is not attached to hides that body, in either layout. */
-    const throughBodies = (segs: readonly Seg[], flat: boolean): number => {
+    /**
+     * A link passing through a body it is not attached to hides that body, in either layout — and there are two
+     * degrees of it, which E4 did not separate and which matter differently here.
+     *
+     * GRAZES: the tube's surface touches the body's silhouette (`dist < r_body + r_tube`). That is E4's test and
+     * it is reported, because at up to a hundred entities it is common and it does cost the reader something.
+     * But depth still resolves it: the tube visibly passes in front of, or behind, a body whose outline is
+     * otherwise intact.
+     *
+     * PIERCES: the tube's axis is INSIDE the body (`dist < 0.8 · r_body`). Nothing resolves that — the entity is
+     * behind a tube through its middle — so it is the gate, and grazes are not. Gating on grazes was tried and
+     * refused a six-entity system where the flat control happened to have none: a threshold that fails the
+     * easiest case is measuring the wrong thing.
+     */
+    const throughBodies = (segs: readonly Seg[], flat: boolean, pierce: boolean): number => {
       let n = 0;
       for (const s of segs) {
         for (const b of bodies) {
           if (b.id === s.aId || b.id === s.bId) continue;
           const p = flat ? b.flatPos : b.pos;
-          if (segSeg(s.a, s.b, p, p).dist < b.radius + s.r) n++;
+          const limit = pierce ? b.radius * 0.8 : b.radius + s.r;
+          if (segSeg(s.a, s.b, p, p).dist < limit) n++;
         }
       }
       return n;
@@ -825,8 +879,10 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
     const graze3D = grazing(segs3D);
     const grazeFlat = grazing(segsFlat);
     const flatControlInPlane = inPlane(segsFlat);
-    const through3D = throughBodies(segs3D, false);
-    const throughFlat = throughBodies(segsFlat, true);
+    const through3D = throughBodies(segs3D, false, false);
+    const throughFlat = throughBodies(segsFlat, true, false);
+    const pierced3D = throughBodies(segs3D, false, true);
+    const piercedFlat = throughBodies(segsFlat, true, true);
 
     /*
      * THE GATE E4 PUT ON ITSELF: "if a reordering could get the flat diagram to zero crossings then inclination
@@ -838,19 +894,21 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
      * `> 0` guards matter: a small system where both layouts are clean is a WIN for neither, and refusing it
      * would refuse the easiest case there is.
      */
-    if (ambiguous > 0 && ambiguous >= flatControlInPlane) {
+    if (thirdAxisBuysNothing(ambiguous, flatControlInPlane)) {
       return refuse('THIRD_AXIS_BUYS_NOTHING',
         'the orbital layout leaves ' + ambiguous + ' crossing(s) a reader cannot resolve, against '
         + flatControlInPlane + ' in the same layout flattened. Inclination is supposed to buy that number '
         + 'down; here it does not, so the diagram is the better reading and this view will not pretend '
         + 'otherwise.');
     }
-    if (through3D > 0 && through3D >= throughFlat) {
-      return refuse('THIRD_AXIS_BUYS_NOTHING',
-        through3D + ' link(s) pass through an entity they are not attached to, against ' + throughFlat
-        + ' in the same layout flattened. A link through a body hides the body, and a hidden entity is the '
-        + 'failure this layout exists to avoid.');
-    }
+    /*
+     * A PIERCED BODY IS A REPORTED COST, NOT A REFUSAL, and the difference is where E4 landed too: its harness
+     * counted `linksThroughBodies` and fixed it by MOVING an entity by hand, rather than declining to draw.
+     * Nothing here can move an entity — the angles are derived from the data so that the same graph always
+     * produces the same frame — so the spacing ladder is what tries, and the count is what is published when it
+     * fails. Gating on it refused a six-entity system over one grazing link while the diagram beside it had
+     * crossing edges everywhere, which is a threshold measuring its own strictness.
+     */
 
     const counts = {
       observed: bodies.filter((b) => b.magnitude.state === 'observed').length,
@@ -884,6 +942,8 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
         shippingDiagram,
         throughBodies3D: through3D,
         throughBodiesFlat: throughFlat,
+        piercedBodies3D: pierced3D,
+        piercedBodiesFlat: piercedFlat,
       },
       counts,
       px: {
@@ -900,16 +960,26 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
     };
   };
 
+  /*
+   * THE LADDER. Tightest spacing first, because tight keeps the camera close and the bodies large, and a wider
+   * one is only better if the tighter one actually failed a measurement. Stops at the first spacing that both
+   * draws AND hides nothing behind a link; if none manages that, the fewest-hidden result is drawn and the count
+   * goes on the frame. Ties go to the tightest, which is the first.
+   */
   let last: OrreryRefusal = refuse('BODIES_MERGE_AT_EVERY_VIEWPOINT', 'no spacing was tried');
+  let best: OrreryLayout | null = null;
   for (const crowd of SPACING_LADDER) {
     const out = attempt(crowd);
-    if (!isOrreryRefusal(out)) return out;
-    last = out;
-    /* A refusal that is not about crowding will not be cured by more room, so the ladder stops. Retrying a
-       kind with no plane at a wider spacing would just spend the budget three times to print the same
-       sentence. */
-    if (out.code !== 'BODIES_MERGE_AT_EVERY_VIEWPOINT' && out.code !== 'THIRD_AXIS_BUYS_NOTHING') break;
+    if (isOrreryRefusal(out)) {
+      last = out;
+      /* A refusal that is not about crowding will not be cured by more room, so the ladder stops: retrying a
+         kind with no plane at a wider spacing spends the budget three times to print the same sentence. */
+      if (out.code !== 'BODIES_MERGE_AT_EVERY_VIEWPOINT' && out.code !== 'THIRD_AXIS_BUYS_NOTHING') break;
+    } else {
+      if (out.crossings.piercedBodies3D === 0) return out;
+      if (best === null || out.crossings.piercedBodies3D < best.crossings.piercedBodies3D) best = out;
+    }
     if (performance.now() > deadline) break;
   }
-  return last;
+  return best ?? last;
 }

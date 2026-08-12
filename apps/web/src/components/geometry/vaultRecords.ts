@@ -67,11 +67,19 @@ export interface VaultRecord {
   /** The action identifier, WHOLE. `null` when the record carries none — never an empty string. */
   readonly action: string | null;
   readonly actor: string | null;
-  /**
-   * What the action was done to. `null` means DIFFERENT THINGS by verdict and the renderer must say which:
-   * on a WITHHELD row the subject exists and may not be shown; on any other row it was never recorded.
-   */
+  /** What the action was done to. `null` = not readable, and `subjectWithheld` says which kind. */
   readonly subject: string | null;
+  /**
+   * True only when the SUBJECT ITSELF is withheld, which is NOT the same as the row being WITHHELD.
+   *
+   * `apps/api/src/routes/audit.ts` withholds different fields per compartment and says so at length: a GPS
+   * row loses `meta` ONLY — "the actor, the action, the engagement id and the timestamp are above" — while a
+   * marketing row loses `entity_id` too, because there the asset symbol is itself the inside information.
+   * So on a GPS row the subject is served, the flat table shows it, and a slab printing SUBJECT WITHHELD
+   * over it would be the corridor and the table disagreeing about one record. Only the marketing case is a
+   * withheld subject, and `WITHHELD_ENTITY_ID` is how the API says so.
+   */
+  readonly subjectWithheld: boolean;
 }
 
 export type UnplacedReason = 'NO_TIMESTAMP' | 'TIMESTAMP_AHEAD_OF_NOW';
@@ -97,16 +105,35 @@ function textOrNull(v: string | null | undefined): string | null {
   return t;
 }
 
-function subjectOf(entry: AuditEntry, verdict: AuditVerdict): string | null {
-  if (verdict === 'WITHHELD') return null;
+/**
+ * The subject, and whether its absence is a withholding.
+ *
+ * ── THE FIRST VERSION BLANKED EVERY WITHHELD ROW, AND THAT WAS A CLAIM THE API CONTRADICTS ──
+ * It returned `null` for the whole `WITHHELD` verdict, so the renderer printed SUBJECT WITHHELD on every one
+ * of them. For a marketing row that is exactly right. For a GPS row it is a false statement about the record:
+ * `audit.ts` withholds `meta` and nothing else there, deliberately — "the row itself is not hidden: the
+ * actor, the action, the engagement id and the timestamp are above" — and the flat table one click away
+ * prints that engagement id in its Entity cell. Two drawings of one dataset disagreeing about whether a
+ * reader is allowed to know the subject is worse than either drawing alone, and it fails in the direction
+ * that makes the governed action less attributable, which is the specific harm the API's comment is about.
+ *
+ * So the withholding is read from the FIELD the API redacts rather than from the row's verdict, and the two
+ * absences stay apart: `[withheld:marketing]` means the subject is being kept from this reader; no entity and
+ * no name at all means nobody recorded one.
+ */
+function subjectOf(entry: AuditEntry): { subject: string | null; subjectWithheld: boolean } {
+  const rawId = textOrNull(entry.entityId);
+  /* The API's constant, not a heuristic: a stable digest was deliberately rejected there because it would
+     still let a reader correlate rows and count embargoes per asset. */
+  if (rawId === WITHHELD_ENTITY_ID) return { subject: null, subjectWithheld: true };
+
   const entity = textOrNull(entry.entity);
   const name = textOrNull(entry.projectName);
-  if (entity === null) return name;
+  if (entity === null) return { subject: name, subjectWithheld: false };
   /* The project name when the join found one, otherwise the id's first 8 — the same choice the flat table
      makes, so the two drawings name the same subject. */
-  if (name !== null) return `${entity}·${name}`;
-  const id = textOrNull(entry.entityId);
-  return id === null ? entity : `${entity}·${id.slice(0, 8)}`;
+  if (name !== null) return { subject: `${entity}·${name}`, subjectWithheld: false };
+  return { subject: rawId === null ? entity : `${entity}·${rawId.slice(0, 8)}`, subjectWithheld: false };
 }
 
 export function buildVaultRecords(entries: readonly AuditEntry[], nowMs: number): VaultRecordSet {
@@ -121,13 +148,15 @@ export function buildVaultRecords(entries: readonly AuditEntry[], nowMs: number)
        would drop the newest row on the page — the one an operator opened this surface to see. */
     if (hoursAgo < -1 / 60) { unplaced.push({ id: e.id, reason: 'TIMESTAMP_AHEAD_OF_NOW' }); continue; }
     const verdict = auditVerdict(e);
+    const { subject, subjectWithheld } = subjectOf(e);
     records.push({
       id: e.id,
       hoursAgo: Math.max(0, hoursAgo),
       verdict,
       action: textOrNull(e.action),
       actor: textOrNull(e.actor),
-      subject: subjectOf(e, verdict),
+      subject,
+      subjectWithheld,
     });
   }
 

@@ -46,7 +46,7 @@ import {
   createVolumeField, viewProjection, eyeOf, lightViewProjection, boundsCentre, boundsRadius,
   hexToLinear, assertBrandFidelity, IDENTITY, sub, cross, normalise,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
-  type LitDraw, type Viewpoint, type Vec3,
+  type LitDraw, type MeshBuffer, type Viewpoint, type Vec3,
 } from '@lcx/gl';
 import type { RiskField } from './riskField';
 import { BAND_H, DAY_M, MAX_STEPS, RISK_TO_TAU, WORLD_STEP, ELEVATION_DEG } from './stormCalibration';
@@ -272,11 +272,31 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
     const gateGeo = box(2 * LANE_HALF, 0.11, 0.05);
     const postGeo = box(0.075, 1.05, 0.075);
 
-    const uploads = [tileGeo, gutterGeo, lidGeo, railGeo, weekGeo, gateGeo, postGeo]
-      .map((g) => uploadMesh(stage, g));
-    for (const m of uploads) if ('kind' in m) { refuse(m.code); return; }
-    const [tileMesh, gutterMesh, lidMesh, railMesh, weekMesh, gateMesh, postMesh] =
-      uploads as Exclude<typeof uploads[number], { kind: 'refused' }>[];
+    /*
+     * UPLOADED ONE AT A TIME, EACH REGISTERED FOR DISPOSAL BEFORE THE NEXT IS ATTEMPTED — and this file
+     * shipped without the registration at all, which is the reason the loop is written this way now rather
+     * than as a `.map()` with the check afterwards.
+     *
+     * `uploadMesh` creates a VAO and four buffers and hands back the ONLY thing that frees them; `Stage`
+     * tracks its programs and its own targets and knows nothing about a mesh. Seven meshes therefore meant
+     * seven vertex arrays and twenty-eight buffers stranded on the GPU on every unmount — and this component
+     * unmounts every time a reader toggles back to the calendar, so the leak was per toggle rather than per
+     * session. Nothing errors, nothing is visible, and the frame is correct: the only symptom is a context
+     * that grows until the browser drops it, at which point `webglcontextlost` fires and the refusal names
+     * the wrong cause.
+     *
+     * Mapping first and checking after has a second failure on top of the first: a refusal on the seventh
+     * upload leaves the six that succeeded with no disposer recorded, so even a correct cleanup could not
+     * reach them.
+     */
+    const uploaded: MeshBuffer[] = [];
+    for (const g of [tileGeo, gutterGeo, lidGeo, railGeo, weekGeo, gateGeo, postGeo]) {
+      const m = uploadMesh(stage, g);
+      if ('kind' in m) { refuse(m.code); return; }
+      uploaded.push(m);
+      disposers.push(() => m.dispose());
+    }
+    const [tileMesh, gutterMesh, lidMesh, railMesh, weekMesh, gateMesh, postMesh] = uploaded;
 
     const N3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
     const modelOf = (x: number, y: number, z: number): Float32Array => {
