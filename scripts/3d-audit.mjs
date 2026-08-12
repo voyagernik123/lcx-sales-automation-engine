@@ -387,13 +387,48 @@ Three decisions worth defending:
 **Not wired into the environments.** The ladder is built, tested and budgeted; every harness still renders at
 a fixed configuration with its own \`?ao=0\`/\`?dof=0\` switches. Naming that rather than implying otherwise.
 
+## Audit 5 · §7(b) — the instrument exists; the reading does not
+
+\`docs/3d/e9/task.html\`. The gate's second clause is *"an operator still gets their answer at least as fast as
+the flat version"*, and the plan says how to settle it: a task, a stopwatch, both surfaces. **Nothing in this
+programme has measured it.** Every §7(b) claim made so far — including E4's measured crossing count and E7's
+stated integration limit, the two strongest — is a reason to *expect* a good result, which is not a result.
+
+So the instrument is built. Four things would each invalidate it, and each is handled rather than hoped about:
+
+- **Both surfaces show the same data, by construction.** Each pair is the SAME harness page: \`live.html\`
+  renders the environment, \`live.html?refuse=1\` takes the real refusal path and renders that environment's
+  flat fallback from the identical dataset. Not a re-implementation that could drift — one branch apart.
+- **Order is counterbalanced**, or the second surface benefits from having just seen the question and the
+  result measures learning rather than legibility.
+- **Each question is asked once per operator.** Every environment carries a matched PAIR, and which member
+  goes to which surface flips with the counterbalance, so nobody answers the same question twice.
+- **The clock starts when the surface actually appears**, not when the trial begins. A harness takes a second
+  or two to compile shaders; charging that to reading time would make the environment look slower by exactly
+  the time it takes to exist — and \`?refuse=1\` settles almost immediately, so the bias would be
+  one-directional. A trial whose startup could not be confirmed is flagged and excluded.
+
+And it **refuses rather than reporting a meaningless comparison**: too few trials, unequal accuracy, or no
+correct answers on a surface each produce a coded refusal instead of a time. A faster WRONG reading is a worse
+surface, so a time advantage is only reported when accuracy is at least equal.
+
+Verified mechanically — 8 trials, counterbalance alternating, zero duplicate questions, every trial timed,
+startup excluded in all 8 — by clicking through it with deliberately wrong answers, which correctly produced
+\`REFUSED · NO_CORRECT_ANSWERS_ON_ONE_SURFACE\`. An instrument that declines to draw a conclusion from garbage
+is the only kind worth having.
+
+**It cannot be run by whoever built these surfaces.** The file is its own answer key, and a self-administered
+result would be worse than none. §7(b) is therefore still open, and now it is open in the way a measurement is
+open rather than in the way an argument is.
+
 ## What this audit does NOT establish
 
-**§7(b) is untimed on all ${rows.length} environments.** The gate is "(a) a stranger stops scrolling; (b) an
-operator still gets their answer at least as fast as the flat version", and (b) is measured with a task, a
-stopwatch and both surfaces side by side. Nobody has been put in front of either. Every §7(b) argument in
-this programme — including E4's measured crossing count and E7's stated integration limit, which are the two
-strongest — is a *reason to expect* a good result. That is not a result.
+**§7(b) is untimed on all ${rows.length} environments.** The instrument is now built and verified (Audit 5) and
+no operator has run it. Until one does, every §7(b) claim here remains a reason to expect a good result.
+
+**And it never will establish (a).** "A stranger stops scrolling" is not measurable at a desk with two people,
+and dressing it up with a Likert scale would be the same category error as reporting a 60 Hz headroom measured
+under SwiftShader.
 
 **Real-hardware frame times.** Every number above is SwiftShader.
 

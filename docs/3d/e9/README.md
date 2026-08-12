@@ -13,15 +13,15 @@ a live sweep. If it disagrees with the code, run it again rather than editing it
 
 | env | ms/frame | renderer | 60 Hz headroom | triangles | glError | brand | flat fallback | hidden on success |
 |---|---|---|---|---|---|---|---|---|
-| **E0** | 161.667 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 4236 | 0 | exact | 3 rows | yes |
-| **E1** | 124.65 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 1212 | 0 | exact | 10 rows | yes |
-| **E2** | 138.017 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 35136 | 0 | exact | 7 rows | yes |
-| **E3** | 53.867 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 5764 | 0 | exact | 12 rows | yes |
-| **E4** | 58.483 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 39456 | 0 | exact | 24 rows | yes |
-| **E5** | 57.75 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 1076 | 0 | exact | 1 svg | yes |
-| **E6** | 59.75 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 360 | 0 | exact | 25 rows | yes |
-| **E7** | 159.3 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 2784 | 0 | exact | 28 rows | yes |
-| **E8** | 149.383 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 10112 | 0 | exact | 3 rows | yes |
+| **E0** | 162.333 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 4236 | 0 | exact | 3 rows | yes |
+| **E1** | 124.283 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 1212 | 0 | exact | 10 rows | yes |
+| **E2** | 153.667 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 35136 | 0 | exact | 7 rows | yes |
+| **E3** | 62.717 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 5764 | 0 | exact | 12 rows | yes |
+| **E4** | 63.533 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 39456 | 0 | exact | 24 rows | yes |
+| **E5** | 65.833 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 1076 | 0 | exact | 1 svg | yes |
+| **E6** | 65.183 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 360 | 0 | exact | 25 rows | yes |
+| **E7** | 183.95 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 2784 | 0 | exact | 28 rows | yes |
+| **E8** | 173.5 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 10112 | 0 | exact | 3 rows | yes |
 
 Every frame time here is measured under **SwiftShader**, a CPU rasteriser, by the trailing-`readPixels`
 instrument. The 60 Hz headroom column **refuses** rather than reporting a figure, because the ratio between a
@@ -99,15 +99,15 @@ obstruction.
 
 | env | tier reported | tier drives | full (median of 3) | spread | minimum (median of 3) | saving |
 |---|---|---|---|---|---|---|
-| **E0** | minimum | ao+dof+shadow | 165.783 ms | ±4.3% | 27.183 ms | 83.6% |
-| **E1** | minimum | ao+dof+shadow | 124.417 ms | ±9.8% | 21.75 ms | 82.5% |
-| **E2** | minimum | ao+dof+shadow | 141.883 ms | ±10.4% | 36.467 ms | 74.3% |
-| **E3** | minimum | shadow | 48.217 ms | ±2.1% | 48.833 ms | -1.3% |
-| **E4** | minimum | ao+shadow | 60.25 ms | ±4.6% | 38.55 ms | 36% |
-| **E5** | minimum | ao+shadow | 56.717 ms | ±13.5% | 36.517 ms | 35.6% |
-| **E6** | minimum | ao+shadow | 59.9 ms | ±5.8% | 40.433 ms | 32.5% |
-| **E7** | minimum | ao+shadow | 157.85 ms | ±3.4% | 140.667 ms | 10.9% |
-| **E8** | minimum | ao+dof+shadow | 147.35 ms | ±2.8% | 36.367 ms | 75.3% |
+| **E0** | minimum | ao+dof+shadow | 166.267 ms | ±2.5% | 27.433 ms | 83.5% |
+| **E1** | minimum | ao+dof+shadow | 137.583 ms | ±37.4% | 22.65 ms | 83.5% |
+| **E2** | minimum | ao+dof+shadow | 151.983 ms | ±20% | 42.667 ms | 71.9% |
+| **E3** | minimum | shadow | 51.7 ms | ±8.2% | 51.167 ms | 1% |
+| **E4** | minimum | ao+shadow | 122.9 ms | ±14.4% | 61.517 ms | 49.9% |
+| **E5** | minimum | ao+shadow | 71.783 ms | ±53.1% | 42.9 ms | 40.2% |
+| **E6** | minimum | ao+shadow | 66.25 ms | ±6.4% | 41.05 ms | 38% |
+| **E7** | minimum | ao+shadow | 177.933 ms | ±0.3% | 162.733 ms | 8.5% |
+| **E8** | minimum | ao+dof+shadow | 191.817 ms | ±12.3% | 41.85 ms | 78.2% |
 
 The tier table is monotonic by construction — `env.test.ts` asserts every axis descends together, because a
 ladder with one axis going the wrong way makes a lower tier *slower* on some machines, so the fallback for a
@@ -153,13 +153,48 @@ Three decisions worth defending:
 **Not wired into the environments.** The ladder is built, tested and budgeted; every harness still renders at
 a fixed configuration with its own `?ao=0`/`?dof=0` switches. Naming that rather than implying otherwise.
 
+## Audit 5 · §7(b) — the instrument exists; the reading does not
+
+`docs/3d/e9/task.html`. The gate's second clause is *"an operator still gets their answer at least as fast as
+the flat version"*, and the plan says how to settle it: a task, a stopwatch, both surfaces. **Nothing in this
+programme has measured it.** Every §7(b) claim made so far — including E4's measured crossing count and E7's
+stated integration limit, the two strongest — is a reason to *expect* a good result, which is not a result.
+
+So the instrument is built. Four things would each invalidate it, and each is handled rather than hoped about:
+
+- **Both surfaces show the same data, by construction.** Each pair is the SAME harness page: `live.html`
+  renders the environment, `live.html?refuse=1` takes the real refusal path and renders that environment's
+  flat fallback from the identical dataset. Not a re-implementation that could drift — one branch apart.
+- **Order is counterbalanced**, or the second surface benefits from having just seen the question and the
+  result measures learning rather than legibility.
+- **Each question is asked once per operator.** Every environment carries a matched PAIR, and which member
+  goes to which surface flips with the counterbalance, so nobody answers the same question twice.
+- **The clock starts when the surface actually appears**, not when the trial begins. A harness takes a second
+  or two to compile shaders; charging that to reading time would make the environment look slower by exactly
+  the time it takes to exist — and `?refuse=1` settles almost immediately, so the bias would be
+  one-directional. A trial whose startup could not be confirmed is flagged and excluded.
+
+And it **refuses rather than reporting a meaningless comparison**: too few trials, unequal accuracy, or no
+correct answers on a surface each produce a coded refusal instead of a time. A faster WRONG reading is a worse
+surface, so a time advantage is only reported when accuracy is at least equal.
+
+Verified mechanically — 8 trials, counterbalance alternating, zero duplicate questions, every trial timed,
+startup excluded in all 8 — by clicking through it with deliberately wrong answers, which correctly produced
+`REFUSED · NO_CORRECT_ANSWERS_ON_ONE_SURFACE`. An instrument that declines to draw a conclusion from garbage
+is the only kind worth having.
+
+**It cannot be run by whoever built these surfaces.** The file is its own answer key, and a self-administered
+result would be worse than none. §7(b) is therefore still open, and now it is open in the way a measurement is
+open rather than in the way an argument is.
+
 ## What this audit does NOT establish
 
-**§7(b) is untimed on all 9 environments.** The gate is "(a) a stranger stops scrolling; (b) an
-operator still gets their answer at least as fast as the flat version", and (b) is measured with a task, a
-stopwatch and both surfaces side by side. Nobody has been put in front of either. Every §7(b) argument in
-this programme — including E4's measured crossing count and E7's stated integration limit, which are the two
-strongest — is a *reason to expect* a good result. That is not a result.
+**§7(b) is untimed on all 9 environments.** The instrument is now built and verified (Audit 5) and
+no operator has run it. Until one does, every §7(b) claim here remains a reason to expect a good result.
+
+**And it never will establish (a).** "A stranger stops scrolling" is not measurable at a desk with two people,
+and dressing it up with a Likert scale would be the same category error as reporting a 60 Hz headroom measured
+under SwiftShader.
 
 **Real-hardware frame times.** Every number above is SwiftShader.
 

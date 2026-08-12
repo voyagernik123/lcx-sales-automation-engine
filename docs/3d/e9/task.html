@@ -1,0 +1,297 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>§7(b) — the stopwatch</title>
+<!--
+  §7 THE GATE, CLAUSE (b): "an operator still gets their answer at least as fast as the flat version."
+  The plan says how: "a task, a stopwatch, the flat surface and the environment side by side."
+
+  Every §7(b) claim in this programme has been an ARGUMENT — E4's measured crossing count and E7's stated
+  integration limit are the two strongest, and both are reasons to expect a good result rather than a result.
+  This page is the instrument that would produce one. It cannot be run by the machine that built it: it needs
+  a person who does not already know the answers.
+
+  ── WHY THIS DESIGN, AND NOT A SIMPLER ONE ──────────────────────────────────────────────────────────────
+  Four things would each invalidate the measurement, and each one is handled rather than hoped about:
+
+  1 · THE TWO SURFACES MUST SHOW THE SAME DATA. They do, by construction: each pair is the SAME harness page.
+      `live.html` renders the environment; `live.html?refuse=1` takes the real refusal path and renders that
+      environment's flat fallback from the identical dataset. Not a re-implementation that could drift — the
+      same module, one branch apart.
+
+  2 · ORDER IS COUNTERBALANCED, or the second surface benefits from having already seen the question and the
+      result measures LEARNING rather than legibility. Half the trials show 3-D first.
+
+  3 · A QUESTION IS ASKED ONCE PER OPERATOR. Answering the same question on the second surface would measure
+      recall. So each environment carries a PAIR of questions of matched form, and which of the pair goes to
+      which surface flips with the counterbalance.
+
+  4 · A WRONG ANSWER FAST IS NOT A WIN. Time is recorded WITH correctness, and the summary refuses to report
+      a mean time for a surface whose accuracy is lower — a faster wrong reading is a worse surface, and
+      averaging over both hides it.
+
+  ── WHAT IT WILL NOT DO ─────────────────────────────────────────────────────────────────────────────────
+  It will not tell you (a). "A stranger stops scrolling" is not measurable at a desk with two people, and
+  pretending otherwise with a Likert scale would be the same category error as reporting a 60 Hz headroom
+  measured under SwiftShader.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #04060b; color: #C4D4F0;
+         font: 400 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  main { max-width: 1320px; margin: 0 auto; padding: 22px 24px 60px; }
+  h1 { font: 600 13px/1.2 ui-monospace, monospace; letter-spacing: .16em; text-transform: uppercase;
+       color: #8FB7FF; margin: 0 0 6px; }
+  .lede { color: rgba(196,212,240,.74); max-width: 84ch; margin: 0 0 18px; }
+  .warn { color: #E0A94A; }
+  button { font: 600 12px/1 ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase;
+           background: #12326E; color: #E9F0FF; border: 1px solid #2C6BFF; padding: 10px 16px;
+           cursor: pointer; }
+  button:hover { background: #2C6BFF; }
+  button.ghost { background: transparent; border-color: #26355A; color: #8FB7FF; }
+  #stage { display: none; }
+  iframe { width: 100%; height: 760px; border: 1px solid #26355A; background: #04060b; display: block; }
+  .q { margin: 14px 0 10px; font: 600 15px/1.4 ui-monospace, monospace; color: #E9F0FF; }
+  .opts { display: flex; flex-wrap: wrap; gap: 8px; }
+  table { border-collapse: collapse; margin: 16px 0; }
+  th, td { text-align: left; padding: 4px 14px 4px 0; border-bottom: 1px solid #26355A; white-space: nowrap; }
+  th { color: #8FB7FF; font-weight: 600; }
+  .n { text-align: right; }
+  pre { background: #0B1220; border: 1px solid #26355A; padding: 12px; overflow: auto; max-height: 320px;
+        color: #A8C0E8; }
+  .refuse { border: 1px solid #6B7A99; padding: 10px 12px; color: #E9F0FF; margin: 12px 0; }
+</style>
+
+<main>
+  <h1>§7(b) · the stopwatch</h1>
+  <p class="lede">
+    The gate's second clause is <em>“an operator still gets their answer at least as fast as the flat
+    version.”</em> Nothing in this programme has measured it. This page does — with a real person, a real
+    task and a real clock. Each pair below is the <strong>same harness page</strong>: the environment, and
+    that environment’s own flat fallback rendered from the identical dataset one branch apart. Order is
+    counterbalanced and each question is asked once, so the result cannot be learning or recall.
+  </p>
+  <p class="lede warn" id="who">
+    Do not run this if you already know the answers. The person who built these surfaces cannot produce a
+    valid reading from them, and a self-administered result would be worse than none.
+  </p>
+
+  <div id="intro">
+    <button id="start">Begin — 8 trials</button>
+    <button id="dry" class="ghost">Show the trial order without timing</button>
+  </div>
+
+  <div id="stage">
+    <div id="frameWrap"></div>
+    <div class="q" id="question"></div>
+    <div class="opts" id="opts"></div>
+  </div>
+
+  <div id="done" style="display:none">
+    <h1 style="margin-top:22px">Result</h1>
+    <div id="summary"></div>
+    <p class="lede">Paste this into the environment’s README under <code>§7(b)</code>. It is the only
+      §7(b) evidence that exists.</p>
+    <pre id="json"></pre>
+  </div>
+</main>
+
+<script type="module">
+/*
+ * THE TASK SET.
+ *
+ * Each entry is a PAIR of questions of matched form over the same environment, so one can be asked on the
+ * 3-D surface and the other on the flat one without any operator answering the same question twice. The
+ * pairs are deliberately about the reading each environment CLAIMS to add — if a question can be answered
+ * from a legend alone, it measures nothing about the geometry.
+ *
+ * Answers are recorded here, which is why the warning above matters: this file is the answer key.
+ */
+const TASKS = [
+  {
+    env: 'e5',
+    claim: 'relief makes the ridge and the cliff readable at a glance',
+    pair: [
+      { q: 'At 30 days to close, which ticket-size band has the HIGHEST win rate?',
+        opts: ['$100k', '$250k', '$500k', '$1000k'], answer: '$500k' },
+      { q: 'At 180 days to close, which ticket-size band has the HIGHEST win rate?',
+        opts: ['$100k', '$250k', '$500k', '$1000k'], answer: '$500k' },
+    ],
+  },
+  {
+    env: 'e6',
+    claim: 'depth is time, so a cluster of blocked actions reads as a stack at one depth',
+    pair: [
+      { q: 'Were the BLOCKED actions spread evenly through the window, or concentrated in one period?',
+        opts: ['Spread evenly', 'Concentrated', 'There are none'], answer: 'Concentrated' },
+      { q: 'Is the OLDEST record in the window an allow, a block, or withheld?',
+        opts: ['Allowed', 'Blocked', 'Withheld'], answer: 'Allowed' },
+    ],
+  },
+  {
+    env: 'e4',
+    claim: 'a 3-D layout separates coupling strength from grouping without crossing lines',
+    pair: [
+      { q: 'Which entity has the STRONGEST coupling to the core?',
+        opts: ['PARTNER', 'LISTING', 'CAMPAIGN', 'COMPARTMENT'], answer: 'PARTNER' },
+      { q: 'Which entity’s record count is NOT KNOWN?',
+        opts: ['PERSON', 'COUNTERPARTY', 'TOKEN', 'QUEST'], answer: 'COUNTERPARTY' },
+    ],
+  },
+  {
+    env: 'e7',
+    claim: 'the depth of colour is the total risk between you and that day',
+    pair: [
+      { q: 'Which channel carries the most risk overall?',
+        opts: ['PAID_SEARCH', 'PAID_SOCIAL', 'EMAIL', 'COMMUNITY'], answer: 'PAID_SOCIAL' },
+      { q: 'Which day range was NOT MEASURED (as distinct from withheld)?',
+        opts: ['D1–D3', 'D13–D15', 'D22–D23', 'D26–D27'], answer: 'D13–D15' },
+    ],
+  },
+];
+
+const $ = (id) => document.getElementById(id);
+
+/*
+ * COUNTERBALANCED ORDER. Trial index parity decides which surface comes first for each environment, and
+ * which member of the question pair goes with it. Without this the second surface always benefits from the
+ * operator having just thought about the same shape of question, and the measurement becomes one of
+ * learning rather than of legibility.
+ */
+function buildTrials() {
+  const out = [];
+  TASKS.forEach((task, i) => {
+    const threeDFirst = i % 2 === 0;
+    const order = threeDFirst ? ['3d', 'flat'] : ['flat', '3d'];
+    order.forEach((surface, j) => {
+      out.push({
+        env: task.env,
+        claim: task.claim,
+        surface,
+        /* The pair member follows the SURFACE, not the position, so across the four environments each
+           surface is asked both the first and the second question of a pair an equal number of times. */
+        ...task.pair[surface === '3d' ? (threeDFirst ? 0 : 1) : (threeDFirst ? 1 : 0)],
+        threeDFirst,
+        position: j,
+      });
+    });
+  });
+  return out;
+}
+
+const trials = buildTrials();
+let at = 0;
+const results = [];
+
+function renderOrder() {
+  $('intro').insertAdjacentHTML('afterend',
+    '<table><thead><tr><th>#</th><th>env</th><th>surface</th><th>question</th></tr></thead><tbody>'
+    + trials.map((t, i) => `<tr><td class="n">${i + 1}</td><td>${t.env.toUpperCase()}</td>`
+      + `<td>${t.surface === '3d' ? 'environment' : 'flat'}</td><td>${t.q}</td></tr>`).join('')
+    + '</tbody></table>');
+}
+
+let shownAt = 0;
+
+function showTrial() {
+  if (at >= trials.length) return finish();
+  const t = trials[at];
+  const src = `../${t.env}/live.html?frames=6${t.surface === 'flat' ? '&refuse=1' : ''}`;
+  $('frameWrap').innerHTML = `<iframe src="${src}" title="${t.env} ${t.surface}"></iframe>`;
+  $('question').textContent = `${at + 1} / ${trials.length} · ${t.env.toUpperCase()} · `
+    + `${t.surface === '3d' ? 'ENVIRONMENT' : 'FLAT'} — ${t.q}`;
+  $('opts').innerHTML = t.opts.map((o) => `<button data-o="${o}">${o}</button>`).join('')
+    + '<button class="ghost" data-o="__unsure">Cannot tell from this surface</button>';
+  /*
+   * THE CLOCK STARTS WHEN THE SURFACE IS ACTUALLY THERE, not when the trial begins. A harness takes a
+   * second or two to compile shaders and render, and charging that to the operator's reading time would
+   * make the 3-D surface look slower by exactly the amount it takes to appear — measuring startup, not
+   * legibility. `?refuse=1` reaches its title almost immediately, so the bias would be one-directional.
+   */
+  const iframe = $('frameWrap').querySelector('iframe');
+  const begin = () => { shownAt = performance.now(); };
+  let started = false;
+  const poll = setInterval(() => {
+    let title = '';
+    try { title = iframe.contentDocument?.title ?? ''; } catch { title = ''; }
+    if (!started && (title === 'READY' || title === 'REFUSED')) {
+      started = true; clearInterval(poll); begin();
+    }
+  }, 60);
+  /* If the poll never fires — a cross-document read blocked, a harness that never settles — the clock
+     starts at a stated cap rather than never, and the trial is FLAGGED so the summary can exclude it. */
+  setTimeout(() => {
+    if (!started) { started = true; clearInterval(poll); shownAt = performance.now(); t.startupUnconfirmed = true; }
+  }, 20000);
+
+  $('opts').onclick = (e) => {
+    const o = e.target.closest('button')?.dataset.o;
+    if (!o) return;
+    if (!shownAt) return;                       // the surface has not appeared yet
+    const ms = Math.round(performance.now() - shownAt);
+    results.push({
+      env: t.env, surface: t.surface, question: t.q, given: o, expected: t.answer,
+      correct: o === t.answer, unsure: o === '__unsure', ms,
+      threeDFirst: t.threeDFirst, position: t.position,
+      startupUnconfirmed: !!t.startupUnconfirmed,
+    });
+    shownAt = 0;
+    at += 1;
+    showTrial();
+  };
+}
+
+function finish() {
+  $('stage').style.display = 'none';
+  $('done').style.display = 'block';
+
+  const bySurface = (s) => results.filter((r) => r.surface === s && !r.startupUnconfirmed);
+  const stat = (s) => {
+    const rs = bySurface(s);
+    const right = rs.filter((r) => r.correct);
+    const median = (xs) => { const v = xs.map((r) => r.ms).sort((a, b) => a - b);
+      return v.length ? v[Math.floor(v.length / 2)] : null; };
+    return { n: rs.length, correct: right.length, unsure: rs.filter((r) => r.unsure).length,
+      medianCorrectMs: median(right) };
+  };
+  const three = stat('3d');
+  const flat = stat('flat');
+
+  /*
+   * THE VERDICT REFUSES WHEN A COMPARISON WOULD BE MEANINGLESS, and there are three ways it can be:
+   * too few trials, unequal accuracy, or no correct answers on a surface. A faster WRONG reading is a
+   * worse surface, so a time advantage is only reported when accuracy is at least equal — otherwise the
+   * honest output is a refusal with a code, exactly as everywhere else in this codebase.
+   */
+  let verdict, code = null;
+  if (three.n < 2 || flat.n < 2) {
+    verdict = 'REFUSED'; code = 'TOO_FEW_TRIALS';
+  } else if (three.medianCorrectMs === null || flat.medianCorrectMs === null) {
+    verdict = 'REFUSED'; code = 'NO_CORRECT_ANSWERS_ON_ONE_SURFACE';
+  } else if (three.correct < flat.correct) {
+    verdict = 'FAILS (b)'; code = 'ENVIRONMENT_LESS_ACCURATE_THAN_FLAT';
+  } else {
+    verdict = three.medianCorrectMs <= flat.medianCorrectMs ? 'MEETS (b)' : 'FAILS (b)';
+    code = three.medianCorrectMs <= flat.medianCorrectMs ? null : 'ENVIRONMENT_SLOWER_THAN_FLAT';
+  }
+
+  $('summary').innerHTML =
+    `<div class="${code ? 'refuse' : ''}"><strong>${verdict}</strong>${code ? ` — <code>${code}</code>` : ''}`
+    + ` · one operator, ${results.length} trials. §7(b) needs more than one operator to be more than an anecdote.</div>`
+    + '<table><thead><tr><th>surface</th><th class="n">trials</th><th class="n">correct</th>'
+    + '<th class="n">cannot tell</th><th class="n">median time when correct</th></tr></thead><tbody>'
+    + [['environment', three], ['flat', flat]].map(([n, s]) =>
+      `<tr><td>${n}</td><td class="n">${s.n}</td><td class="n">${s.correct}</td>`
+      + `<td class="n">${s.unsure}</td><td class="n">${s.medianCorrectMs ?? '—'} ms</td></tr>`).join('')
+    + '</tbody></table>';
+
+  $('json').textContent = JSON.stringify({
+    gate: '7b', verdict, code,
+    operators: 1,
+    note: 'One operator is an anecdote. This is the instrument, not a finding.',
+    environment: three, flat, trials: results,
+  }, null, 2);
+}
+
+$('start').onclick = () => { $('intro').style.display = 'none'; $('stage').style.display = 'block'; showTrial(); };
+$('dry').onclick = () => { $('dry').disabled = true; renderOrder(); };
+</script>
