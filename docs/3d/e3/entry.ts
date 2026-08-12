@@ -1002,29 +1002,38 @@ const LEADER_STROKE = { colour: hexToLinear('#7FB2FF'), gain: 0.45 } as const;
  * surface shimmers, and the shimmer is the tell rather than the z-fighting.
  */
 /*
- * THE AXIS SITS ON THE SIDE THE EYE IS ON — and the previous version put it on the far side, which is
- * the more instructive failure of the two this axis has now had.
+ * THE AXIS IS INSIDE THE CHANNEL, and it took four attempts and two decisive experiments to get here.
  *
- * First it was drawn INSIDE the channel and ran through the tag of whichever deal shared that stage: a
- * ruler drawn across the thing it measures. That was fixed by moving it outboard of the left wall, the
- * count `axisLabelsOffFrame` went from 3 of 3 to 0, and the README recorded it as fixed.
+ * The history matters because three of the four were fixes that did not fix:
  *
- * It was not fixed. The camera stands right of the centre line (azimuth 9 degrees puts the eye at
- * x = +1.24) and the left wall is a solid slab from y 0 to 1.25, so every ray from the eye to a
- * left-outboard tick passes through it. All three ticks were occluded, the labels floated with nothing
- * to anchor them, and the count said 0 because it only ever tested FRAME BOUNDS. The number changed and
- * the visibility did not — which is the precise failure this programme keeps finding, and finding it in
- * the fix for a previous instance of itself is the sharpest version of it.
+ *   1 · Originally drawn inside the channel, where the ticks ran through the tag of whichever deal shared that
+ *       stage — a ruler drawn across the thing it measures.
+ *   2 · Moved outboard of the LEFT wall. `axisLabelsOffFrame` went 3 -> 0 and the README recorded it fixed. It
+ *       was not: the camera stands right of the centre line, so the left wall was between the eye and every
+ *       tick. All three occluded, count reporting 0 because it only tested frame bounds.
+ *   3 · Moved outboard of the RIGHT wall, the side the eye is on. `0d` came back and the two lower ticks did
+ *       not. A framebuffer probe replaced the bounds count, which is what finally made the defect visible:
+ *       `0d:yes (527 vs 65)  20d:NO (96 vs 96)  45d+:NO (92 vs 93)`.
  *
- * Choosing the side by the sign of the eye's x makes occlusion by a wall impossible by CONSTRUCTION
- * rather than unlikely by measurement: the tick and the eye are then on the same side of both slabs, so
- * there is no wall between them at any azimuth. That is a stronger guarantee than any count, which is
- * the point — the count was the thing that lied.
+ * Then two experiments settled it, neither of which was a guess:
+ *
+ *   · WIDTH x5 (0.006 -> 0.030) changed nothing, and `0d`'s luminance stayed byte-identical at 527. So the
+ *     strokes were not sub-pixel, and whatever `0d` was reading was reading the same thing either way.
+ *   · MOVING THE AXIS INSIDE the channel made all three read 527. So the strokes were always emitted, the two
+ *     lower ones were OCCLUDED, and `0d` had genuinely been drawing all along — it sits high enough to clear
+ *     what the others do not.
+ *
+ * Inside is therefore the only position where the axis is fully visible, which means the real trade is against
+ * failure 1 rather than against visibility. It is resolved by depth rather than by lateral offset: the axis
+ * stands at one gate's z, inboard of the wall and outboard of the rails, so it shares a plane with no deal tag.
+ * The tag-occlusion test that already guards the deal labels covers the rest, and it is fatal in the capture.
  */
 const AXIS_SIDE = eye[0] >= 0 ? 1 : -1;
-const AXIS_X_INNER = AXIS_SIDE * (CHANNEL_HALF + 0.20);
-const AXIS_X_OUTER = AXIS_SIDE * (CHANNEL_HALF + 0.48);
-const AXIS_X_LABEL = AXIS_SIDE * (CHANNEL_HALF + 0.56);
+const AXIS_X_INNER = AXIS_SIDE * (CHANNEL_HALF - 0.42);
+const AXIS_X_OUTER = AXIS_SIDE * (CHANNEL_HALF - 0.12);
+/* The label sits OUTBOARD of its own tick — outside the channel, where it has the wall behind it
+   rather than a deal. Only the strokes need to be inside; text does not occlude geometry. */
+const AXIS_X_LABEL = AXIS_SIDE * (CHANNEL_HALF + 0.20);
 const AXIS_Z = gateZ(3);
 /*
  * THE FLOOR TICK NEEDS REAL CLEARANCE, NOT AN EPSILON — and this is the third thing wrong with this axis.

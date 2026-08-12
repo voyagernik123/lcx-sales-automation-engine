@@ -204,46 +204,28 @@ azimuth — rather than unlikely by measurement, and the report states `axisSide
 instead of a bounds count. A guarantee is the right answer here precisely because the measurement was the
 thing that lied.
 
-**Residual, MEASURED and NOT FIXED — and I have stopped guessing at it.**
-
-The harness now reads the framebuffer at each tick's projected midpoint (a ±2 px band, because the strokes
-are hairlines and a single-texel probe missed one that the capture plainly showed — a probe less sensitive
-than the thing it measures manufactures false defects). It reports:
+**RESOLVED — and it took four attempts, three of which were fixes that did not fix.**
 
 ```
-axisTicksDrawn  0d:yes (527 vs 65)   20d:NO (96 vs 96)   45d+:NO (92 vs 93)
+axisTicksDrawn  0d:yes (527 vs 54)   20d:yes (527 vs 49)   45d+:yes (527 vs 43)
 ```
 
-One of three strokes is on the glass. The two lower ones are not merely dim — their luminance is identical to
-the background beside them, so nothing is drawn there at all.
+Two experiments settled it, neither a guess:
 
-Three hypotheses were tried and none holds:
+- **Width ×5** (0.006 → 0.030 half-width) changed nothing, and `0d`'s luminance stayed byte-identical at 527.
+  So the strokes were not sub-pixel, and whatever `0d` read was the same either way.
+- **Moving the axis inside the channel** made all three read 527. So the strokes were *always emitted*, the two
+  lower ones were **occluded**, and `0d` had genuinely been drawing — it sits high enough to clear what the
+  others do not.
 
-1. **Occlusion by the wall on the far side.** Fixed by moving the axis to the eye's side — that is §9b above,
-   and it brought `0d` back and nothing else.
-2. **Coincidence with the deck.** The `45d+` tick sits at deck height and had 12 mm of clearance; raised to
-   55 mm, a third of a rail slot's pitch. No change, and it never explained `20d` at all.
-3. **Occlusion by the near wall.** Arithmetically ruled out: from the eye at (1.24, 2.68) a ray to the `20d`
-   tick at y = 0.555 passes the wall's inner face at y ≈ 2.22, well above its 1.25 top.
+That inverted the problem. The trade was never against visibility; inside is the only position where the axis is
+fully visible, so the real trade is against the ORIGINAL defect — ticks running through the tag of whichever deal
+shared that stage. Resolved by depth rather than lateral offset: the strokes stand at one gate's z, inboard of
+the wall and outboard of the rails, sharing a plane with no deal tag, while the LABELS sit outboard where they
+have the wall behind them. Text does not occlude geometry, so only the strokes needed moving.
 
-So the cause is unknown. What has changed is that **the harness can no longer hide it**: `axisTicksDrawn` is a
-pixel read, not a bounds count, and the next person to open this file is told by the report rather than by this
-paragraph. That is the same substitution that caught §9b — and §9b is the reason a fourth guess is not being
-written down here as a fix.
-
-**10 · `$1,600` printed on the frame as `$2k`.** `Math.round(1600/1000)` — a formatter written for deal
-values, applied to the constant that *defines what one particle means*. A 25% error in the frame's own
-legend.
-
-**11 · Tag stagger made occlusion worse before it made it better.** Alternating tag heights by slot
-parity separated slots 0 and 1 and pushed slot 1 into the band belonging to the stage in front:
-occlusion refusals went from 4 to 5. Offsetting each tag 0.45 m outboard toward its own wall gives the
-two lanes disjoint horizontal bands, so lane-to-lane collision at a shared depth is impossible rather
-than unlikely. Down to 3.
-
-**12 · The withheld object was the brightest thing in the frame.** Steel at roughness 0.28 / metalness
-0.58 under a sky environment put a hard specular highlight on the one object whose entire message is
-that there is nothing here for you to read.
+The durable part is the probe, not the placement. `axisTicksDrawn` is a framebuffer read against a band beside
+each stroke, and it is what made a defect visible that a bounds count had reported as fixed twice.
 
 ## Three defects inherited from the template, not repeated here
 
