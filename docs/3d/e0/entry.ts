@@ -12,7 +12,7 @@
 import {
   createStage, isStage, box, plane, sphere, uploadMesh, createLitRenderer, createTarget3D,
   createShadowMap, createSkyBackdrop, createAmbientOcclusion, createDepthOfField, viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre,
-  triangleCount, hexToLinear, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
+  triangleCount, hexToLinear, assertBrandFidelity, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint,
 } from '@lcx/gl';
 
@@ -246,7 +246,47 @@ const probe = (() => {
   const cw = vp[3]! * px + vp[7]! * py + vp[11]! * pz + vp[15]!;
   return { ndc: [Number((cx / cw).toFixed(3)), Number((cy / cw).toFixed(3))], w: Number(cw.toFixed(3)) };
 })();
+/*
+ * §6 RULE 5 — "Brand hex exact. `assertBrandFidelity` runs on every new material."
+ *
+ * It ran on NO material. An audit found the call absent from all six environments, so every claim any
+ * of them made about brand-exactness rested on the palette having been correct at some point in the
+ * past, in a different file.
+ *
+ * What it checks is the round trip: each `BRAND_HEX` entry, taken to linear and back through this
+ * pipeline's single tone map and sRGB encode, must return its own hex. That is worth running per
+ * harness rather than once in a unit test, because a harness is where a SECOND tone map gets
+ * introduced — the composite in this file encodes once, and any environment that added another would
+ * shift every brand colour by a fraction too small to see and too large to be exact.
+ *
+ * It DIES rather than warns. A frame that has silently moved the brand blue is worse than no frame,
+ * because it will be screenshotted into a deck.
+ */
+const brandFailures = assertBrandFidelity();
+if (brandFailures.length > 0) {
+  const msg = 'BRAND FIDELITY FAILED — '
+    + brandFailures.map((f) => `${f.key}: expected ${f.expected}, got ${f.actual}`).join('; ');
+  document.title = 'REFUSED';
+  const logEl = document.getElementById('log');
+  if (logEl) logEl.textContent = msg;
+  throw new Error(msg);
+}
+
+/* Read ONCE, before the report, because two call sites for the same string is two chances for the
+   refusal below to key off something different from what is printed. */
+const RENDERER = (() => {
+  const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+  return dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : 'unknown';
+})();
+/* SwiftShader and llvmpipe are the two software rasterisers a headless capture actually lands on.
+   Anything else is treated as hardware, which is the safe direction to be wrong in: a hardware machine
+   wrongly called software loses a number, whereas software wrongly called hardware publishes a
+   fictional frame budget — which is exactly what E5 and E6 did. */
+const SOFTWARE = /swiftshader|llvmpipe|software/i.test(RENDERER);
+
 const report = {
+  /* Empty means every brand hex round-tripped exactly through this frame's own pipeline. */
+  brandFidelity: brandFailures,
   hdr: stage.hdr,
   eye: eyeOf(view).map((v) => Number(v.toFixed(2))),
   boxTopNdc: probe.ndc,
@@ -265,12 +305,16 @@ const report = {
   repeat: REPEAT,
   msPerFrame: Number(msPerFrame.toFixed(3)),
   fps: Math.round(1000 / msPerFrame),
-  budget60: 16.6,
-  headroom: Number((16.6 - msPerFrame).toFixed(3)),
-  renderer: (() => {
-    const dbg = gl.getExtension('WEBGL_debug_renderer_info');
-    return dbg ? String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL)) : 'unknown';
-  })(),
+  /*
+   * HEADROOM REFUSES ON A SOFTWARE RASTERISER. Comparing a CPU rasteriser to a 60 Hz budget measures a
+   * machine nobody ships on, and the ratio to real hardware is not a constant — E0 measured 1.305 ms on
+   * an M1 for a scene SwiftShader labours over. Refused with a code rather than computed, exactly as
+   * absent data refuses everywhere else in this codebase.
+   */
+  renderer: RENDERER,
+  rendererClass: SOFTWARE ? 'software' : 'hardware',
+  headroom: SOFTWARE ? null : Number((16.6 - msPerFrame).toFixed(3)),
+  headroomRefusal: SOFTWARE ? 'SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET' : null,
 };
 (globalThis as unknown as { E0: typeof report }).E0 = report;
 document.getElementById('log')!.textContent = JSON.stringify(report, null, 2);

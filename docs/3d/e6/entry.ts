@@ -35,7 +35,7 @@ import {
   createShadowMap, createSkyBackdrop, createAmbientOcclusion,
   projectQuad, isQuadRefusal, uprightPanelCorners,
   viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre, triangleCount,
-  hexToLinear, projectScreen, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
+  hexToLinear, assertBrandFidelity, projectScreen, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint, type StageRefusal,
 } from '@lcx/gl';
 
@@ -655,7 +655,35 @@ const RENDERER = (() => {
    software wrongly called hardware publishes a fictional budget. */
 const SOFTWARE = /swiftshader|llvmpipe|software/i.test(RENDERER);
 
+/*
+ * §6 RULE 5 — "Brand hex exact. `assertBrandFidelity` runs on every new material."
+ *
+ * It ran on NO material. An audit found the call absent from all six environments, so every claim any
+ * of them made about brand-exactness rested on the palette having been correct at some point in the
+ * past, in a different file.
+ *
+ * What it checks is the round trip: each `BRAND_HEX` entry, taken to linear and back through this
+ * pipeline's single tone map and sRGB encode, must return its own hex. That is worth running per
+ * harness rather than once in a unit test, because a harness is where a SECOND tone map gets
+ * introduced — the composite in this file encodes once, and any environment that added another would
+ * shift every brand colour by a fraction too small to see and too large to be exact.
+ *
+ * It DIES rather than warns. A frame that has silently moved the brand blue is worse than no frame,
+ * because it will be screenshotted into a deck.
+ */
+const brandFailures = assertBrandFidelity();
+if (brandFailures.length > 0) {
+  const msg = 'BRAND FIDELITY FAILED — '
+    + brandFailures.map((f) => `${f.key}: expected ${f.expected}, got ${f.actual}`).join('; ');
+  document.title = 'REFUSED';
+  const logEl = document.getElementById('log');
+  if (logEl) logEl.textContent = msg;
+  throw new Error(msg);
+}
+
 const report = {
+  /* Empty means every brand hex round-tripped exactly through this frame's own pipeline. */
+  brandFidelity: brandFailures,
   ao: AO_ON,
   fog: FOG_ON,
   fogDensity: Number(FOG_DENSITY.toFixed(4)),
