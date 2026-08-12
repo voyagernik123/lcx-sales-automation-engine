@@ -136,11 +136,30 @@ describe('the LP score surface is REACHABLE, not merely built', () => {
     expect(PANEL_SRC).toMatch(/function LpScoreSurface\(\{ res, observedAt \}/);
   });
 
-  it('renders through SurfacePlot, so a refusal reaches the screen as a refusal', () => {
-    // `SurfacePlot` draws a refused outcome as a refusal. A panel that drew the mesh itself
-    // would turn a refusal into a blank region — a missing answer that looks like an answer.
-    expect(PANEL_SRC).toContain("from '@/components/geometry/SurfacePlot'");
-    expect(PANEL_SRC).toContain('<SurfacePlot');
+  it('renders through the flat surface component, so a refusal reaches the screen as a refusal', () => {
+    /*
+     * `SurfacePlot` draws a refused outcome AS a refusal. A panel that drew the mesh itself would turn a
+     * refusal into a blank region — a missing answer that looks like an answer, which is the property this
+     * test has always guarded.
+     *
+     * The panel now mounts `SurfaceRelief`, which is that component plus an opt-in 3-D reading and which
+     * renders `SurfacePlot` on every path except an explicit click: as the default, as the Suspense fallback
+     * while the GL chunk loads, and again on any GL refusal. So the guarantee is unchanged and the NAME
+     * changed — which is why this assertion moved rather than being deleted. Deleting it would have been the
+     * easy read of a red test, and would have retired the only check that the refusal path is reachable.
+     *
+     * `SurfaceRelief`'s own suite (components/geometry/__tests__/surfaceRelief.test.tsx) is what proves the
+     * flat figure is the default and that a refusal returns to it.
+     */
+    expect(PANEL_SRC).toContain("from '@/components/geometry/SurfaceRelief'");
+    expect(PANEL_SRC).toContain('<SurfaceRelief');
+    /* And the wrapper must in fact be a wrapper: if it ever stopped rendering the flat component, this panel
+       would silently lose its refusal path with nothing here to notice. */
+    const RELIEF_SRC = readFileSync(
+      resolve(process.cwd(), 'src/components/geometry/SurfaceRelief.tsx'), 'utf8',
+    );
+    expect(RELIEF_SRC).toContain("from '@/components/geometry/SurfacePlot'");
+    expect(RELIEF_SRC).toContain('<SurfacePlot');
   });
 
   it('sits beside the ranked list rather than replacing it', () => {

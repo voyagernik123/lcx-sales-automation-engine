@@ -5,7 +5,7 @@ import {
   type Readiness, type LpRescoreResult, type WaitlistSimOut, type CommandDeep,
 } from '@/lib/api/command';
 import { buildSurfaceMesh, ISOMETRIC_ELEVATION_DEG, WITHHELD, type GridCellValue, type SurfaceOutcome } from '@lcx/shared';
-import { SurfacePlot } from '@/components/geometry/SurfacePlot';
+import { SurfaceRelief } from '@/components/geometry/SurfaceRelief';
 import { apiConfig } from '@/lib/apiClient';
 import { ErrorNotice } from '@/components/shared';
 import { clsx } from 'clsx';
@@ -486,11 +486,26 @@ function LpScoreSurface({ res, observedAt }: { res: LpRescoreResult; observedAt:
         Rotates the camera, not the data. Every height stays where it is; a cell that appears
         as you drag was always there, hidden behind the ridge in front of it.
       </p>
-      <SurfacePlot
+      {/*
+        E5 THE SURFACE, LIVE — and opt-in, which §7 requires rather than permits.
+
+        `SurfaceRelief` renders this exact figure by default and offers a relief reading one click away, from the
+        SAME `SurfaceGeometry` object: one dataset, two drawings, which is what makes them comparable and is why
+        E5 was the first environment worth promoting out of `docs/3d`.
+
+        It defaults OFF because §7's clause (b) — "an operator still gets their answer at least as fast as the
+        flat version" — is UNMEASURED on every environment in the programme. Not failed; unmeasured. §7 says
+        exactly what to do about that: ship behind a toggle that defaults off and say so rather than shipping
+        quietly. The button carries the reason.
+      */}
+      <SurfaceRelief
         surface={surface}
         title={`LP bench · authored score, ${res.dimensions.length} dimensions × ${res.rows.length} ranked partners`}
         readsAs={LP_SURFACE_READS_AS}
         heightPx={400}
+        /* Round numbers in the score's own units. A reader asks about 60, never about "the fourth of five equal
+           steps between the observed extremes". A level outside the observed range is reported, not drawn. */
+        contourLevels={[20, 40, 60, 80]}
       />
       {/*
         THE LEGEND IS PART OF THE FIGURE, not a nicety: the axes carry tokens precisely so that

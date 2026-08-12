@@ -23,12 +23,34 @@ function Boom({ fail }: { fail: boolean }) {
 }
 
 describe('ErrorBoundary resets when the route changes', () => {
+  /*
+   * THE DELIBERATE THROW MUST NOT ESCAPE THIS FILE, and it was escaping.
+   *
+   * React DOM re-dispatches an error a boundary already caught as an `error` event on `window`, so jsdom
+   * surfaces it as an uncaught error even though the boundary handled it correctly. Vitest attributes an
+   * uncaught error to whichever test file its worker happens to be running — which is not necessarily this
+   * one. The symptom was `cheatCard.test.tsx` failing with `"https://reppo foundation" cannot be parsed as a
+   * URL`, a string that appears nowhere but here.
+   *
+   * That made it a LATENT race rather than a bug in either file: it only fires when the worker split puts the
+   * two together, so it appeared when an unrelated test file was added elsewhere in the repo and would have
+   * appeared eventually anyway. Silencing `console.error` was never enough — that is a different channel.
+   *
+   * `preventDefault` on a capturing window listener stops the re-dispatch being treated as unhandled, and is
+   * removed afterwards rather than left as a global that would mask a REAL uncaught error in another file.
+   */
+  const swallowReDispatch = (e: Event): void => { e.preventDefault(); };
+
   beforeEach(() => {
     // React logs caught errors to console.error; silence it so the suite output
     // stays readable, and restore afterwards rather than leaking a global stub.
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    window.addEventListener('error', swallowReDispatch, true);
   });
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => {
+    window.removeEventListener('error', swallowReDispatch, true);
+    vi.restoreAllMocks();
+  });
 
   it('shows the fallback when a child throws', () => {
     render(
