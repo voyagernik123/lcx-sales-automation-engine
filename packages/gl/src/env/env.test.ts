@@ -6,6 +6,9 @@ import {
 import { squareToQuad, projectQuad, uprightPanelCorners, isQuadRefusal } from './project.js';
 import { particleLayout, emissionSchedule } from './particles.js';
 import { rayBoxSlab, marchPlan } from './volume.js';
+import {
+  QUALITY_TIERS, qualitySettings, pickQualityTier, type QualitySettings,
+} from './quality.js';
 
 /**
  * L1.5 / L1.6 — and the two failures these exist to make impossible.
@@ -906,5 +909,104 @@ describe('marchPlan — a fixed WORLD step, so density does not depend on the ra
   it('always takes at least one step for a real segment, however short', () => {
     const p = marchPlan(0.001, 0.05, 128);
     expect(p.steps).toBe(1);
+  });
+});
+
+/*
+ * E9 · THE QUALITY LADDER. §8 hedged that the ladder might be optional; E0's measurement settled it —
+ * 11.328 ms at 2× with depth of field against a 16.6 ms budget is 5.3 ms of headroom on the fastest machine
+ * this will ever run on. The tests below are about the two things a ladder gets wrong silently: picking a
+ * tier from a number that means nothing, and picking one nobody can reconstruct from the capture.
+ */
+describe('quality ladder — monotonic, and it refuses rather than guessing', () => {
+  it('is monotonically cheaper as it descends, on every axis at once', () => {
+    /* A ladder with one axis going the wrong way is worse than no ladder: it makes a lower tier slower on
+       some machines, so the fallback for a slow machine is the thing that breaks it. */
+    const [min, red, full] = QUALITY_TIERS.map(qualitySettings) as [
+      QualitySettings, QualitySettings, QualitySettings,
+    ];
+    expect(min.dprScale).toBeLessThanOrEqual(red.dprScale);
+    expect(red.dprScale).toBeLessThanOrEqual(full.dprScale);
+    expect(min.shadowMapSize).toBeLessThan(red.shadowMapSize);
+    expect(red.shadowMapSize).toBeLessThan(full.shadowMapSize);
+    expect(min.shadowTaps).toBeLessThanOrEqual(red.shadowTaps);
+    expect(min.particleCapacity).toBeLessThan(red.particleCapacity);
+    expect(red.particleCapacity).toBeLessThan(full.particleCapacity);
+    expect(min.volumeMaxSteps).toBeLessThan(red.volumeMaxSteps);
+    expect(red.volumeMaxSteps).toBeLessThan(full.volumeMaxSteps);
+    expect(min.volumeLightSteps).toBeLessThanOrEqual(red.volumeLightSteps);
+    // Effects may only be turned OFF going down, never on.
+    expect(Number(min.ao)).toBeLessThanOrEqual(Number(red.ao));
+    expect(Number(min.dof)).toBeLessThanOrEqual(Number(red.dof));
+    expect(Number(red.dof)).toBeLessThanOrEqual(Number(full.dof));
+  });
+
+  it('keeps a shadow at the minimum tier', () => {
+    /* Not an optimisation left on the table. A scene with no shadow loses contact between object and
+       ground, and an object that does not sit on a surface reads as a MISTAKE rather than as a cheaper
+       render — worse than a hard-edged shadow by a wide margin. */
+    const min = qualitySettings('minimum');
+    expect(min.shadowMapSize).toBeGreaterThan(0);
+    expect(min.shadowTaps).toBeGreaterThanOrEqual(1);
+  });
+
+  it('drops depth of field before resolution, which is the opposite of the instinct', () => {
+    // Type and edges live in the resolution; E1 measured the lens as costing four of five readable panels.
+    const red = qualitySettings('reduced');
+    expect(red.dof, 'DOF must be the first thing to go').toBe(false);
+    expect(red.dprScale, 'resolution must survive one tier longer than the lens').toBe(2);
+  });
+
+  it('picks the highest tier that fits the budget', () => {
+    // A fast machine: probe at minimum costs 0.4 ms, so full is predicted at ~3.5 ms.
+    const r = pickQualityTier({ msAtProbeTier: 0.4, probeTier: 'minimum', budgetMs: 16.6 });
+    expect(r.tier).toBe('full');
+    expect(r.predictedMs.full).toBeLessThan(16.6);
+  });
+
+  it('steps down when full will not fit', () => {
+    // Probe at minimum costs 2 ms → full ~17.4 ms, over budget; reduced ~7.5 ms, under.
+    const r = pickQualityTier({ msAtProbeTier: 2, probeTier: 'minimum', budgetMs: 16.6 });
+    expect(r.tier).toBe('reduced');
+    expect(r.predictedMs.full).toBeGreaterThan(16.6);
+  });
+
+  it('never exceeds what the caller requested, even on a fast machine', () => {
+    /* A request may be about LEGIBILITY rather than speed — E1's depth-of-field finding is exactly that
+       case — so the ladder is a ceiling the machine lowers, never one it raises. */
+    const r = pickQualityTier({ msAtProbeTier: 0.2, probeTier: 'minimum', budgetMs: 16.6, requested: 'reduced' });
+    expect(r.tier).toBe('reduced');
+  });
+
+  it('returns minimum AND says the budget is unreachable rather than inventing a lower tier', () => {
+    const r = pickQualityTier({ msAtProbeTier: 40, probeTier: 'minimum', budgetMs: 16.6 });
+    expect(r.tier).toBe('minimum');
+    expect(r.reason).toContain('BUDGET_UNREACHABLE');
+    // And it points at the remedy that already exists rather than at a tier that does not.
+    expect(r.reason).toContain('flat fallback');
+  });
+
+  it('REFUSES to choose from a software rasteriser', () => {
+    /* The ratio between SwiftShader and real hardware is not a constant, so a tier picked from it is a
+       guess wearing a number. This is the same refusal every harness now makes about headroom. */
+    const r = pickQualityTier({ msAtProbeTier: 60, probeTier: 'full', budgetMs: 16.6, software: true, requested: 'full' });
+    expect(r.tier).toBe('full');
+    expect(r.reason).toContain('SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET');
+    expect(Number.isNaN(r.predictedMs.full)).toBe(true);
+  });
+
+  it('REFUSES on an unusable probe instead of treating zero as instant', () => {
+    // 0 ms would otherwise imply an infinitely fast machine and select `full` on a machine that hung.
+    for (const ms of [0, -1, Number.NaN, Infinity]) {
+      const r = pickQualityTier({ msAtProbeTier: ms, probeTier: 'full', budgetMs: 16.6, requested: 'reduced' });
+      expect(r.reason, `probe ${ms}`).toContain('NO_USABLE_PROBE');
+      expect(r.tier, `probe ${ms}`).toBe('reduced');
+    }
+  });
+
+  it('predicts the probe tier back as its own measurement', () => {
+    // Internal consistency: whatever else the scaling does, it must be the identity at the probe.
+    const r = pickQualityTier({ msAtProbeTier: 4.914, probeTier: 'reduced', budgetMs: 16.6 });
+    expect(r.predictedMs.reduced).toBeCloseTo(4.914, 2);
   });
 });

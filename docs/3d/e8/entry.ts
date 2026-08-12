@@ -303,6 +303,19 @@ const RENDERER = (() => {
 const SOFTWARE = /swiftshader|llvmpipe|software/i.test(RENDERER);
 
 const report = {
+  /*
+   * `gl.getError()` — AND THE AUDIT IS WHAT FOUND IT MISSING.
+   *
+   * E0, E2 and E8 reported no GL error at all, so any of them could have been raising INVALID_OPERATION on
+   * every frame and nothing would have said so. GL does not throw: an invalid call is dropped, the draw
+   * silently does less than it was asked to, and the frame still completes. E0 lost a day to exactly that
+   * (GL_INVALID_VALUE from a zero-length matrix, complete framebuffer, no refusal anywhere) and then never
+   * added the check that would have caught it in one frame.
+   *
+   * It is read ONCE, here, because getError CLEARS the flag — a second read anywhere would return 0 and
+   * make this field a lie about a state it had itself consumed.
+   */
+  glError: gl.getError(),
   /* Empty means every brand hex round-tripped exactly through this frame's own pipeline. */
   brandFidelity: brandFailures,
   anisotropy: ANISO_ON, triangles: tris, resolution: `${W}x${H}`, dprScale: SCALE, frames: FRAMES,
