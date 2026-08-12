@@ -38,7 +38,7 @@
 import {
   createStage, isStage, box, plane, uploadMesh, createLitRenderer, createTarget3D,
   createShadowMap, createSkyBackdrop, createAmbientOcclusion,
-  heightfield, projectQuad, isQuadRefusal,
+  heightfield, projectQuad, isQuadRefusal, contourSegments,
   viewProjection, eyeOf, nearFarOf, lightViewProjection, boundsRadius, boundsCentre, triangleCount,
   hexToLinear, assertBrandFidelity, projectScreen, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint, type StageRefusal,
@@ -100,6 +100,9 @@ const AO_ON = params.get('ao') !== '0' && Q.ao;
    which is what a broken heightfield would also produce — so the two captures together are what
    prove the mesh is the thing carrying the reading rather than the frame around it. */
 const MESH_ON = params.get('mesh') !== '0';
+/* The contour control exists so the ribbons can be shown to CARRY the reading rather than asserted to: the
+   `no-contours` capture is the same surface with the iso-lines off. */
+const CONTOURS_ON = params.get('contours') !== '0';
 /* A deliberate refusal, so rule 1's claim can be CAPTURED — you cannot switch off WebGL from inside the
    page, which is why this claim had never been photographed anywhere in the programme. Not a mock: it
    calls the same `die` a failed shader compile calls. */
@@ -374,9 +377,30 @@ const yOfValue = (v: number): number => (
 /* The probe: a slim column from the plinth to the peak, plus a DOM label. Vertical, because the
    quantity it reads is vertical — a marker floating beside the peak would leave the reader to guess
    which cell it belongs to, which is the one thing a probe exists to remove. */
-const PROBE_H = peak ? Math.max(0.02, yOfValue(peak.v) - SURF_Y) : 0;
-const probeGeo = box(0.045, PROBE_H + 0.30, 0.045);
+/*
+ * THE PROBE IS MOVABLE, and making it so meant changing how it is built.
+ *
+ * It used to be a column sized to the peak: `box(0.045, PROBE_H + 0.30, 0.045)` with the height baked into the
+ * geometry. §2 asks for "a probe you drag across it", and a probe whose LENGTH encodes the value cannot move
+ * without new geometry every frame — or a non-uniform scale, which stops the normal matrix being a rotation and
+ * tilts the lighting off the surface as the probe travels.
+ *
+ * So the column is a FIXED length and slides in y until its top sits at the probed value. The part below the
+ * plinth is hidden by the plinth, so the visible length above it still reads as the quantity — the encoding is
+ * unchanged and the geometry is now constant. One upload, one translate per frame.
+ */
+const PROBE_COL = SURF_H + PLINTH_H + 0.60;
+const probeGeo = box(0.045, PROBE_COL, 0.045);
 const probeMesh = peak ? required('probe', uploadMesh(stage, probeGeo)) : null;
+
+/* Which cell the probe is reading. Starts on the measured peak — the same default as before, so a capture with
+   no interaction is unchanged — and moves on a pointer event. */
+let probeCell: { c: number; r: number } = peak ? { c: peak.c, r: peak.r } : { c: 0, r: 0 };
+let probeMoves = 0;
+const probeValueAt = (c: number, r: number): number | null => {
+  const v = cellAt(c, r);
+  return typeof v === 'number' ? v : null;
+};
 
 /* 8.5 m, not 7.6. At 7.6 the outermost tick on each axis fell off the bottom and right edges — the
    harness reported `ticksOffFrame: 2` and the capture showed the x axis ending at 1000 and the y axis
@@ -384,6 +408,88 @@ const probeMesh = peak ? required('probe', uploadMesh(stage, probeGeo)) : null;
    range that stops short of the data. Caught by the count, not by looking. */
 const view: Viewpoint = { target: [0, 0.52, 0.05], distance: 8.5, azimuthDeg: 38, elevationDeg: 26, fovDeg: 34 };
 const eye = eyeOf(view);
+
+/*
+ * CONTOUR RIBBONS — §2 asks for them and §5 named them outstanding. They are not decoration.
+ *
+ * Smooth shading tells a reader the surface RISES and nothing more. A contour tells them WHERE a specific
+ * value is, which is the question actually asked of a score surface: "which bands clear 60%" is answered by
+ * looking at one ribbon and is not answerable from a gradient at all.
+ *
+ * The levels are round numbers in the DATA's units, not evenly spaced across the observed range. A reader
+ * asks about 60%, never about "the fourth of five equal steps between 0.14 and 0.74" — and a level that falls
+ * outside the observed range is REPORTED as empty rather than dropped, because a legend naming a contour that
+ * was never drawn is a legend that lies.
+ */
+const CONTOUR_LEVELS = [0.2, 0.3, 0.4, 0.5, 0.6, 0.7];
+const contours = contourSegments(NX, NZ, (c, r) => {
+  const v = cellAt(c, r);
+  /* Withheld and absent are BOTH unmeasured as far as an iso-line is concerned — you cannot interpolate a
+     crossing through a value you were not shown any more than through one nobody took. The two states stay
+     distinct everywhere else; here they agree, and that agreement is the honest one. */
+  return typeof v === 'number' ? v : null;
+}, CONTOUR_LEVELS);
+
+/* Grid coordinates to world, on the surface. Shares `worldAt`'s mapping so a ribbon cannot drift from the
+   mesh it lies on; the height comes from bilinear interpolation of the same cells the mesh was built from. */
+const surfaceAt = (gc: number, gr: number): [number, number, number] => {
+  const c0 = Math.floor(gc), r0 = Math.floor(gr);
+  const c1 = Math.min(NX - 1, c0 + 1), r1 = Math.min(NZ - 1, r0 + 1);
+  const fc = gc - c0, fr = gr - r0;
+  const val = (c: number, r: number): number => {
+    const v = cellAt(c, r);
+    return typeof v === 'number' ? v : (range ? range[0] : 0);
+  };
+  const v = val(c0, r0) * (1 - fc) * (1 - fr) + val(c1, r0) * fc * (1 - fr)
+    + val(c0, r1) * (1 - fc) * fr + val(c1, r1) * fc * fr;
+  return [
+    -SURF_W / 2 + (gc / (NX - 1)) * SURF_W,
+    yOfValue(v) + 0.006,
+    -SURF_D / 2 + (gr / (NZ - 1)) * SURF_D,
+  ];
+};
+
+/*
+ * One thin quad per segment, in the surface plane. 1.8 cm, not the 1.1 cm I first used: measured off the
+ * capture rather than chosen, where 1.1 cm came out at barely a pixel and the ribbons read as scratches in the
+ * material instead of as lines drawn on it. Still narrow enough that six of them do not become the surface.
+ */
+const RIBBON_W = 0.018;
+const ribbonGeo = (() => {
+  const pos: number[] = [], nrm: number[] = [], uv: number[] = [], tan: number[] = [], idx: number[] = [];
+  for (const seg of contours.segments) {
+    const a = surfaceAt(seg.from[0], seg.from[1]);
+    const b = surfaceAt(seg.to[0], seg.to[1]);
+    const dx = b[0] - a[0], dz = b[2] - a[2];
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-9) continue;
+    /* Perpendicular in the XZ plane. Offsetting in 3-D along the surface normal would make a ribbon on a
+       steep face wider on screen than one on a flat face, so the width would encode slope by accident. */
+    const px = (-dz / len) * (RIBBON_W / 2), pz = (dx / len) * (RIBBON_W / 2);
+    const base = pos.length / 3;
+    for (const [x, y, z] of [
+      [a[0] - px, a[1], a[2] - pz], [a[0] + px, a[1], a[2] + pz],
+      [b[0] + px, b[1], b[2] + pz], [b[0] - px, b[1], b[2] - pz],
+    ] as [number, number, number][]) {
+      pos.push(x, y, z); nrm.push(0, 1, 0); uv.push(0, 0); tan.push(1, 0, 0);
+    }
+    idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+  if (idx.length === 0) return null;
+  const positions = new Float32Array(pos);
+  let minX = Infinity, minY = Infinity, minZ = Infinity, maxX = -Infinity, maxY = -Infinity, maxZ = -Infinity;
+  for (let i = 0; i < positions.length; i += 3) {
+    minX = Math.min(minX, positions[i]!); maxX = Math.max(maxX, positions[i]!);
+    minY = Math.min(minY, positions[i + 1]!); maxY = Math.max(maxY, positions[i + 1]!);
+    minZ = Math.min(minZ, positions[i + 2]!); maxZ = Math.max(maxZ, positions[i + 2]!);
+  }
+  return {
+    positions, normals: new Float32Array(nrm), uvs: new Float32Array(uv), tangents: new Float32Array(tan),
+    indices: idx.length > 65535 ? new Uint32Array(idx) : new Uint16Array(idx),
+    min: [minX, minY, minZ] as const, max: [maxX, maxY, maxZ] as const,
+  };
+})();
+const ribbonMesh = CONTOURS_ON && ribbonGeo ? required('contours', uploadMesh(stage, ribbonGeo)) : null;
 
 const draws: LitDraw[] = [
   { mesh: deckMesh, model: translate(0, 0, 0), normalMat: N3,
@@ -408,6 +514,16 @@ if (MESH_ON && surfMesh) {
   });
 }
 
+if (ribbonMesh) {
+  draws.push({
+    mesh: ribbonMesh, model: translate(0, SURF_Y, 0), normalMat: N3,
+    /* BRAND-BRIGHT, dielectric, and matte. A specular ribbon would catch the key light and read as a raised
+       wire rather than as a line drawn ON the surface — the highlight would say "object" where the geometry
+       is meant to say "value". */
+    material: { baseColour: hexToLinear('#7FB2FF'), roughness: 0.72, metalness: 0.0 },
+  });
+}
+
 /* WITHHELD MARKERS, in a colour that is neither the surface nor the plinth. Brand blue would read as
    data and the plinth hex would read as absence; amber reads as "there is something here you are not
    being shown", which is the actual state. */
@@ -419,13 +535,28 @@ for (const [c, r] of withheldAt) {
   });
 }
 
+/* Pushed LAST and rebuilt per frame, because the probe moves. Its index is kept so `frame()` can rewrite the
+   model matrix without reconstructing the whole draw list on every pointer event. */
+let probeDrawIndex = -1;
 if (MESH_ON && probeMesh && peak) {
-  const [px, , pz] = worldAt(peak.c, peak.r);
+  probeDrawIndex = draws.length;
   draws.push({
-    mesh: probeMesh, model: translate(px, SURF_Y + (PROBE_H + 0.30) / 2, pz), normalMat: N3,
+    mesh: probeMesh, model: IDENTITY(), normalMat: N3,
     material: { baseColour: hexToLinear('#E8EEF9'), roughness: 0.22, metalness: 0.75, anisotropy: 0.3 },
   });
 }
+
+/*
+ * Where the probe column sits for a given cell: top of the column at the cell's value, so the visible length
+ * above the plinth is the reading. A cell with no measurement REFUSES to move the probe rather than parking it
+ * at zero — zero is a win rate, and absent is not.
+ */
+const probeModel = (): Float32Array => {
+  const v = probeValueAt(probeCell.c, probeCell.r);
+  const [x, , z] = worldAt(probeCell.c, probeCell.r);
+  const topY = v === null ? SURF_Y : yOfValue(v);
+  return translate(x, topY - PROBE_COL / 2, z);
+};
 
 const lightDir: [number, number, number] = [0.48, -0.62, -0.62];
 const sceneMin: [number, number, number] = [-3.6, 0, -2.8];
@@ -452,6 +583,11 @@ const tris = draws.reduce((n, _d, i) => n + (i === 0 ? triangleCount(deckGeo) : 
 const { near, far } = nearFarOf(view);
 
 function frame() {
+  /* The probe's matrix is refreshed here rather than at the pointer event, so a re-render for any reason —
+     a resize, a tier change, the timing sweep — cannot leave the column somewhere the readout is not. */
+  if (probeDrawIndex >= 0) {
+    (draws[probeDrawIndex] as { model: Float32Array }).model = probeModel();
+  }
   const vp = viewProjection(view, W / H);
   lit.shadowPass(lightVP, draws, shadow);
   target.bind();
@@ -568,19 +704,154 @@ const yTickLabels = Y_TICKS.map((v, r) => {
 /* The probe's readout, at the top of its column. The value is printed from the SAME cell the probe's
    height was computed from, so the number and the geometry cannot disagree. */
 let probeLabel: { sx: number; sy: number } | null = null;
-if (MESH_ON && peak) {
-  const [px, , pz] = worldAt(peak.c, peak.r);
-  const p = projectScreen(vpFinal, [px, SURF_Y + PROBE_H + 0.34, pz], CSS_W, CSS_H);
-  if (!p.behind) {
-    label(p.sx, p.sy,
-      `<div style="font:600 9.5px/1 ui-monospace,monospace;letter-spacing:.16em;color:#8FB7FF">PEAK</div>`
-      + `<div style="font:700 19px/1.1 system-ui,sans-serif;color:#fff">${(peak.v * 100).toFixed(0)}%</div>`
-      + `<div style="font:400 10px/1.3 system-ui,sans-serif;color:rgba(214,226,246,0.8)">`
-      + `$${X_TICKS[peak.c]}k · ${Y_TICKS[peak.r]} d</div>`,
-      'text-align:center');
-    probeLabel = { sx: Math.round(p.sx), sy: Math.round(p.sy) };
+let probeReadout: HTMLElement | null = null;
+
+/*
+ * THE READOUT FOLLOWS THE PROBE, not the peak. It used to be built once at the peak's position with the peak's
+ * value; now that the column moves, a fixed readout would have the number and the geometry disagree the moment
+ * a reader dragged it — which is the one thing this probe exists to prevent.
+ *
+ * Rebuilt on demand and positioned from the SAME cell the column's height came from.
+ */
+const paintProbe = (): void => {
+  if (!MESH_ON || !peak) return;
+  const v = probeValueAt(probeCell.c, probeCell.r);
+  const [px, , pz] = worldAt(probeCell.c, probeCell.r);
+  const topY = v === null ? SURF_Y : yOfValue(v);
+  const pr = projectScreen(vpFinal, [px, topY + 0.34, pz], CSS_W, CSS_H);
+  if (!probeReadout) {
+    probeReadout = document.createElement('div');
+    probeReadout.style.cssText = 'position:absolute;transform:translate(-50%,-50%);text-align:center;'
+      + 'white-space:nowrap;pointer-events:none';
+    overlay.appendChild(probeReadout);
   }
+  if (pr.behind) { probeReadout.style.display = 'none'; probeLabel = null; return; }
+  probeReadout.style.display = 'block';
+  probeReadout.style.left = `${pr.sx.toFixed(1)}px`;
+  probeReadout.style.top = `${pr.sy.toFixed(1)}px`;
+  /* An unmeasured cell REFUSES a number rather than printing 0%. Zero is a win rate; absent is not, and the
+     whole surface is built on keeping those apart. */
+  const head = probeMoves === 0 ? 'PEAK' : 'PROBE';
+  const value = v === null
+    ? '<span style="font:700 15px/1.1 system-ui,sans-serif;color:#6B7A99">NOT MEASURED</span>'
+    : `<span style="font:700 19px/1.1 system-ui,sans-serif;color:#fff">${(v * 100).toFixed(0)}%</span>`;
+  probeReadout.innerHTML =
+    `<div style="font:600 9.5px/1 ui-monospace,monospace;letter-spacing:.16em;color:#8FB7FF">${head}</div>`
+    + `<div>${value}</div>`
+    + `<div style="font:400 10px/1.3 system-ui,sans-serif;color:rgba(214,226,246,0.8)">`
+    + `$${X_TICKS[probeCell.c]}k · ${Y_TICKS[probeCell.r]} d</div>`;
+  probeLabel = { sx: Math.round(pr.sx), sy: Math.round(pr.sy) };
+};
+paintProbe();
+
+/*
+ * DRAGGING IT — §2 asks for "a probe you drag across it", and this is the first interaction in the whole
+ * programme. Two constraints made it what it is:
+ *
+ *   1 · §6 RULE 2 FORBIDS IDLE ANIMATION, not interaction. So there is no rAF loop: a pointer event renders
+ *       exactly one frame and stops. The page is as still after a drag as before it, which is also what makes
+ *       the reduced-motion case need no special path — there is no motion to reduce, only a new still frame.
+ *   2 · THE NEAREST CELL IS FOUND BY PROJECTING, not by unprojecting. Casting a ray through the surface would
+ *       need an intersection test against 24 quads with holes in them, and would answer "which triangle" when
+ *       the question is "which measured cell". Projecting all 42 grid points and taking the closest in screen
+ *       space is exact for the question asked, cheap at this size, and cannot pick a cell that is not there.
+ */
+if (MESH_ON && peak) {
+  const pick = (clientX: number, clientY: number): { c: number; r: number } | null => {
+    const box = canvas.getBoundingClientRect();
+    const sx = ((clientX - box.left) / box.width) * CSS_W;
+    const sy = ((clientY - box.top) / box.height) * CSS_H;
+    let best: { c: number; r: number; d: number } | null = null;
+    for (let r = 0; r < NZ; r++) {
+      for (let c = 0; c < NX; c++) {
+        const v = probeValueAt(c, r);
+        const [x, , z] = worldAt(c, r);
+        const pr = projectScreen(vpFinal, [x, v === null ? SURF_Y : yOfValue(v), z], CSS_W, CSS_H);
+        if (pr.behind) continue;
+        const d = Math.hypot(pr.sx - sx, pr.sy - sy);
+        if (!best || d < best.d) best = { c, r, d };
+      }
+    }
+    /* A pick further than 90 px from every grid point is a click on the deck, not on the surface. Moving the
+       probe to the nearest cell anyway would teleport it across the sheet for a click that missed. */
+    return best && best.d <= 90 ? { c: best.c, r: best.r } : null;
+  };
+
+  const moveTo = (clientX: number, clientY: number): void => {
+    const hit = pick(clientX, clientY);
+    if (!hit || (hit.c === probeCell.c && hit.r === probeCell.r)) return;
+    probeCell = hit;
+    probeMoves += 1;
+    frame();
+    paintProbe();
+  };
+
+  canvas.style.cursor = 'crosshair';
+  canvas.addEventListener('pointerdown', (e) => {
+    canvas.setPointerCapture(e.pointerId);
+    moveTo(e.clientX, e.clientY);
+  });
+  canvas.addEventListener('pointermove', (e) => {
+    /* Only while a button is held. A probe that followed the bare cursor would change the reading every time
+       the pointer crossed the frame on its way somewhere else. */
+    if (e.buttons === 0) return;
+    moveTo(e.clientX, e.clientY);
+  });
+  /* Keyboard equivalent, because a drag that is the only way to move the probe makes the reading unavailable
+     to anyone not using a mouse — and rule 4 keeps text in the DOM for exactly that reader. */
+  canvas.tabIndex = 0;
+  canvas.setAttribute('aria-label', 'Win-rate surface. Arrow keys move the probe between measured cells.');
+  canvas.addEventListener('keydown', (e) => {
+    const step: Record<string, [number, number]> = {
+      ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1],
+    };
+    const d = step[e.key];
+    if (!d) return;
+    e.preventDefault();
+    const c = Math.max(0, Math.min(NX - 1, probeCell.c + d[0]));
+    const r = Math.max(0, Math.min(NZ - 1, probeCell.r + d[1]));
+    if (c === probeCell.c && r === probeCell.r) return;
+    probeCell = { c, r };
+    probeMoves += 1;
+    frame();
+    paintProbe();
+  });
 }
+
+/*
+ * EVERY RIBBON CARRIES ITS VALUE — and without this the contours were the weaker half of the feature.
+ *
+ * The first capture drew six iso-lines and named none of them. A contour with no value is a line: it says the
+ * surface changes here, which the shading already said. §2's justification for ribbons is that they answer
+ * "which bands clear 60%", and that question needs the 60 printed on the line. Six pale curves are a texture.
+ *
+ * One label per drawn level, on the segment whose midpoint sits highest up-frame — the far side of the ridge,
+ * where a label has surface behind it rather than sky, so it reads without a plate behind it. Screen-parallel
+ * via `projectScreen` rather than laid on the surface with `projectQuad`: this annotates the surface, it is not
+ * content on it, which is the distinction the title plate settled a hundred lines below.
+ */
+const contourLabels = contours.levelsDrawn.map((level) => {
+  const mine = contours.segments.filter((sg) => sg.level === level);
+  let best: { sx: number; sy: number } | null = null;
+  for (const sg of mine) {
+    const mid = surfaceAt((sg.from[0] + sg.to[0]) / 2, (sg.from[1] + sg.to[1]) / 2);
+    const pr = projectScreen(vpFinal, [mid[0], mid[1] + SURF_Y + 0.012, mid[2]], CSS_W, CSS_H);
+    if (pr.behind || pr.sx < 24 || pr.sx > CSS_W - 24 || pr.sy < 16 || pr.sy > CSS_H - 16) continue;
+    /* Highest up-frame = smallest sy. That is the far side of the surface, which is where a label has the
+       sheet behind it instead of the sky. */
+    if (!best || pr.sy < best.sy) best = { sx: pr.sx, sy: pr.sy };
+  }
+  if (!best) return { level, drawn: false };
+  const el = document.createElement('div');
+  el.style.cssText = `position:absolute;left:${best.sx.toFixed(1)}px;top:${best.sy.toFixed(1)}px;`
+    + 'transform:translate(-50%,-50%);font:600 10px/1 ui-monospace,monospace;letter-spacing:.06em;'
+    + 'color:#DCE9FF;text-shadow:0 0 3px rgba(4,6,11,0.95),0 0 6px rgba(4,6,11,0.8);white-space:nowrap';
+  /* The unit, not the raw fraction. `0.6` on a win-rate surface is a number the reader has to convert; 60%
+     is the number they asked about. */
+  el.textContent = `${Math.round(level * 100)}%`;
+  overlay.appendChild(el);
+  return { level, drawn: true, sx: Math.round(best.sx), sy: Math.round(best.sy) };
+});
 
 /*
  * THE TITLE — PROJECTED ONLY IF IT WOULD BE LEGIBLE, and it is NOT legible here.
@@ -743,6 +1014,18 @@ if (brandFailures.length > 0) {
 }
 
 const report = {
+  /* WHAT THE RIBBONS ACTUALLY DREW. `levelsEmpty` is the honest half: a level outside the observed range is
+     named rather than dropped, because a legend listing a contour nobody drew is a legend that lies. */
+  contours: CONTOURS_ON,
+  contourLevels: CONTOUR_LEVELS,
+  contourLevelsDrawn: contours.levelsDrawn,
+  contourLevelsEmpty: contours.levelsEmpty,
+  contourSegments: contours.segments.length,
+  contourCellsSkippedAbsent: contours.cellsSkippedAbsent,
+  /* A ribbon whose label could not be placed is REPORTED. An unlabelled contour is a line, not a reading, so
+     an unplaceable label is a partial loss of the feature rather than a cosmetic miss. */
+  contourLabels,
+  contourLabelsUnplaced: contourLabels.filter((l) => !l.drawn).map((l) => l.level),
   /* A clamped parameter is REPORTED, so the resolution in this report cannot silently disagree
      with what the reader asked for. */
   paramClamps,
@@ -764,7 +1047,32 @@ const report = {
   agreesWithFlat,
   agreement,
   observedRange: range ? range.map((v) => Number(v.toFixed(3))) : null,
-  peak: peak ? { value: peak.v, ticket: X_TICKS[peak.c], days: Y_TICKS[peak.r], probeHeight: Number(PROBE_H.toFixed(3)) } : null,
+  peak: peak ? { value: peak.v, ticket: X_TICKS[peak.c], days: Y_TICKS[peak.r] } : null,
+  /* THE PROBE IS INTERACTIVE, and the report says so with the state to prove it: which cell it is on, how many
+     times it has moved, and whether that cell has a measurement at all. */
+  /*
+   * A GETTER, NOT A SNAPSHOT — and this is the bug the drag capture caught.
+   *
+   * Every other field in this report describes a frame that has already been drawn and will not change, so a
+   * plain value is right for them. The probe is the first thing in this programme that MOVES after the report
+   * exists, and a snapshot of it is frozen at module evaluation: the drag worked, the readout on the frame
+   * updated, and `globalThis.E5.probe.moves` stayed 0 for ever. The capture asserted on the report and
+   * therefore reported that dragging did nothing, while the picture showed it working.
+   *
+   * A static report cannot describe an interactive surface. `JSON.stringify` invokes getters, so the printed
+   * log and a live read both see current state.
+   */
+  get probe() {
+    return {
+      interactive: MESH_ON && !!peak,
+      cell: [probeCell.c, probeCell.r],
+      ticket: X_TICKS[probeCell.c] ?? null,
+      days: Y_TICKS[probeCell.r] ?? null,
+      value: probeValueAt(probeCell.c, probeCell.r),
+      moves: probeMoves,
+      keyboard: true,
+    };
+  },
   probeLabel,
   /* Ticks are only useful if they are ON the frame. A tick behind the eye projects to a perfectly
      plausible pixel, so `behind` is reported rather than assumed false. */

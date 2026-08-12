@@ -652,3 +652,146 @@ export function heightfield(
     observedRange: observed,
   };
 }
+
+/*
+ * CONTOUR RIBBONS — iso-lines on a measured surface, raised into geometry.
+ *
+ * §2 asks E5 for "contour ribbons" and §5 names them as one of two outstanding phase deliverables. They earn
+ * their place rather than decorating: smooth shading tells a reader the surface RISES, and nothing more. A
+ * contour tells them WHERE a specific value is, which is the question actually asked of a score surface —
+ * "which bands clear 60%" is answered by looking at one ribbon and is not answerable from a gradient at all.
+ *
+ * ── MARCHING SQUARES, AND THE ONE RULE THAT MATTERS HERE ─────────────────────────────
+ * Per cell, the four corners are classified above/below the level and the crossing points are interpolated
+ * along the edges. Standard. What is NOT standard is the absent-data rule:
+ *
+ *   A CELL WITH ANY UNMEASURED CORNER EMITS NOTHING.
+ *
+ * You cannot interpolate an iso-line through a value nobody took. Treating an absent corner as zero would
+ * draw a contour that appears to trace measured ground and does not — a fabricated line, which is worse than
+ * a gap because it is indistinguishable from a real one. This is the same rule `heightfield` applies to cells,
+ * and the two must agree or the contours will float over holes.
+ *
+ * ── WHY THE SADDLE CASE IS RESOLVED BY THE CELL MEAN ─────────────────────────────────
+ * Cases 5 and 10 (opposite corners above, the other two below) are genuinely ambiguous: the level can be cut
+ * two ways and both are consistent with the four samples. Resolved by the cell's mean, which is the standard
+ * disambiguation and, more to the point, the only one that uses the data rather than the index — picking
+ * arbitrarily would make the drawing depend on a lookup table's row order.
+ */
+
+/** One iso-line segment in grid coordinates, ready to be lifted onto a surface. */
+export interface ContourSegment {
+  readonly level: number;
+  /** Fractional grid coordinates: col in [0, cols-1], row in [0, rows-1]. */
+  readonly from: readonly [number, number];
+  readonly to: readonly [number, number];
+}
+
+export interface ContourResult {
+  readonly segments: readonly ContourSegment[];
+  /** Levels that produced at least one segment. A level entirely outside the data is REPORTED, not silently
+   *  dropped — a legend listing a contour that was never drawn is a legend that lies. */
+  readonly levelsDrawn: readonly number[];
+  readonly levelsEmpty: readonly number[];
+  /** Cells skipped because a corner was unmeasured. Distinct from cells the level simply misses. */
+  readonly cellsSkippedAbsent: number;
+}
+
+/**
+ * Iso-line segments through a `cols × rows` grid, by marching squares.
+ *
+ * `sample(col, row)` returns the measured value or `null` for unmeasured — the identical contract
+ * `heightfield` takes, deliberately, so a caller cannot feed the two different views of the same grid.
+ */
+export function contourSegments(
+  cols: number,
+  rows: number,
+  sample: (col: number, row: number) => number | null,
+  levels: readonly number[],
+): ContourResult {
+  const nx = Math.max(2, Math.floor(cols));
+  const nz = Math.max(2, Math.floor(rows));
+
+  const grid: (number | null)[] = new Array(nx * nz);
+  for (let r = 0; r < nz; r++) {
+    for (let c = 0; c < nx; c++) {
+      const v = sample(c, r);
+      // NaN and Infinity are unmeasured, not values — the same guard heightfield applies, for the same
+      // reason: a NaN corner would put a NaN crossing point into the geometry and delete the ribbon.
+      grid[r * nx + c] = v !== null && Number.isFinite(v) ? v : null;
+    }
+  }
+
+  const segments: ContourSegment[] = [];
+  const levelsDrawn: number[] = [];
+  const levelsEmpty: number[] = [];
+  let cellsSkippedAbsent = 0;
+  let countedSkips = false;
+
+  for (const level of levels) {
+    if (!Number.isFinite(level)) { levelsEmpty.push(level); continue; }
+    const before = segments.length;
+
+    for (let r = 0; r < nz - 1; r++) {
+      for (let c = 0; c < nx - 1; c++) {
+        /* Corner order is bottom-left, bottom-right, top-right, top-left in grid space, so the edge
+           indices below read the same way round as the classic case table. */
+        const v0 = grid[r * nx + c]!;             // (c,   r)
+        const v1 = grid[r * nx + c + 1]!;         // (c+1, r)
+        const v2 = grid[(r + 1) * nx + c + 1]!;   // (c+1, r+1)
+        const v3 = grid[(r + 1) * nx + c]!;       // (c,   r+1)
+        if (v0 === null || v1 === null || v2 === null || v3 === null) {
+          if (!countedSkips) cellsSkippedAbsent++;
+          continue;
+        }
+
+        const b0 = v0 >= level ? 1 : 0;
+        const b1 = v1 >= level ? 1 : 0;
+        const b2 = v2 >= level ? 1 : 0;
+        const b3 = v3 >= level ? 1 : 0;
+        const code = b0 | (b1 << 1) | (b2 << 2) | (b3 << 3);
+        if (code === 0 || code === 15) continue;
+
+        /* Crossing point on each edge, by linear interpolation. Guarded against a zero denominator: two
+           equal corners straddling nothing would divide by zero and emit a NaN vertex. */
+        const lerp = (a: number, b: number): number => (Math.abs(b - a) < 1e-12 ? 0.5 : (level - a) / (b - a));
+        const eBottom = (): [number, number] => [c + lerp(v0, v1), r];
+        const eRight = (): [number, number] => [c + 1, r + lerp(v1, v2)];
+        const eTop = (): [number, number] => [c + lerp(v3, v2), r + 1];
+        const eLeft = (): [number, number] => [c, r + lerp(v0, v3)];
+
+        const push = (a: [number, number], b: [number, number]): void => {
+          segments.push({ level, from: a, to: b });
+        };
+
+        switch (code) {
+          case 1: case 14: push(eLeft(), eBottom()); break;
+          case 2: case 13: push(eBottom(), eRight()); break;
+          case 3: case 12: push(eLeft(), eRight()); break;
+          case 4: case 11: push(eRight(), eTop()); break;
+          case 6: case 9: push(eBottom(), eTop()); break;
+          case 7: case 8: push(eLeft(), eTop()); break;
+          /* SADDLES, resolved by the cell mean — the only disambiguation that uses the data rather than the
+             case index. Picking arbitrarily would make the drawing depend on a table's row order. */
+          case 5: {
+            const mean = (v0 + v1 + v2 + v3) / 4;
+            if (mean >= level) { push(eLeft(), eTop()); push(eBottom(), eRight()); }
+            else { push(eLeft(), eBottom()); push(eRight(), eTop()); }
+            break;
+          }
+          case 10: {
+            const mean = (v0 + v1 + v2 + v3) / 4;
+            if (mean >= level) { push(eLeft(), eBottom()); push(eRight(), eTop()); }
+            else { push(eLeft(), eTop()); push(eBottom(), eRight()); }
+            break;
+          }
+          default: break;
+        }
+      }
+    }
+    countedSkips = true;   // absent cells are a property of the grid, not of each level
+    if (segments.length > before) levelsDrawn.push(level); else levelsEmpty.push(level);
+  }
+
+  return { segments, levelsDrawn, levelsEmpty, cellsSkippedAbsent };
+}

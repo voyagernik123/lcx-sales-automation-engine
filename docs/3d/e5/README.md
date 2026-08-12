@@ -1,4 +1,4 @@
-# E5 · THE SURFACE — status: **AGREES WITH THE SHIPPING ENGINE. §2's ribbons and drag are not built.**
+# E5 · THE SURFACE — status: **AGREES WITH THE SHIPPING ENGINE. §2's ribbons and drag are now built.**
 
 `live.png` is the gate. `flat-only.png` (`?mesh=0`) is the control: the plinth, the axes and every
 annotation with no surface on it — which is also what a broken heightfield produces, so the pair is
@@ -86,17 +86,75 @@ square — while the canvas kept its blue cells and amber marker plates. The swa
 `forced-color-adjust: none` (a swatch samples a colour the renderer produces; the label text beside it
 keeps its forced colours). Measured after: both hues survive in both modes.
 
-## What §2 asked for and is not here
+## §2's two outstanding deliverables, now built
 
-- **No contour ribbons.** Iso-level ribbons would give the surface a readable quantisation the smooth
-  shading does not. Not built.
-- **The probe does not drag.** There is a probe, it is placed on the measured peak rather than a
-  hard-coded cell, and it prints the value from the same cell its height came from — so the number and
-  the geometry cannot disagree. But it is static, and §2 says *"a probe you drag across it"*.
-- **§7(b) is not timed.** The precondition is settled — both surfaces demonstrably show the same data
-  — but no operator has been put in front of both with a task and a stopwatch.
+§5 listed "draggable probe, contour ribbons" as the only named phase deliverables still outstanding in the whole
+plan. Both are in, and both are checked by the capture rather than asserted here.
 
-Also: the peak's `$500k · 30 d` sub-label sits on the ridge behind it and is low-contrast there.
+### Contour ribbons
+
+Six iso-lines at **round numbers in the data's units** — 20/30/40/50/60/70% — not evenly spaced across the
+observed range. A reader asks about 60%, never about "the fourth of five equal steps between 0.14 and 0.74".
+Every one carries its value as projected DOM text, because an unlabelled iso-line says only *the surface
+changes here*, which the shading already said. `contourLabelsUnplaced` is fatal in the capture: a ribbon drawn
+without its number is a partial loss of the feature, not a cosmetic miss.
+
+```
+contours true · levels drawn [0.2,0.3,0.4,0.5,0.6,0.7] · empty [] · 53 segments
+             · 6 cells skipped as unmeasured · labels unplaced []
+```
+
+**6 cells skipped as unmeasured, which is exactly the mesh's 6 holes.** Marching squares refuses to interpolate
+a crossing through a corner nobody measured — treating it as zero would draw a line that appears to trace
+measured ground and does not, and a fabricated contour is worse than a gap because it is indistinguishable from
+a real one. Withheld and absent both count as unmeasured *here*, and only here: you cannot interpolate through a
+value you were not shown any more than through one nobody took.
+
+Saddle cells are resolved by the cell mean — the only disambiguation that uses the data rather than the case
+index. `env.test.ts` proves it by feeding two grids with the same case code and different means and requiring
+the connectivity to differ; if it did not, a lookup table's row order would be deciding the drawing.
+
+Two numbers were measured off the capture rather than chosen: the ribbon width went 1.1 cm → **1.8 cm** because
+at 1.1 it came out barely a pixel and read as scratches in the material rather than lines drawn on it.
+
+### The draggable probe
+
+Pointer-dragged, and keyboard-operable with the arrow keys — because a drag that is the only way to move the
+probe makes the reading unavailable to anyone not using a mouse, and rule 4 keeps text in the DOM for exactly
+that reader.
+
+The capture PERFORMS the drag: `probe-dragged.png` moved it from the peak `[4,2]` ($500k/30d, 74%) to `[1,4]`,
+and the report and the frame agree — **21% at $50k/90 d, sitting beside the 20% ribbon.** Two independently
+built features cross-checking each other. The capture throws if the drag does not move it, if the cell does not
+change, or if the readout does not show the new cell's value.
+
+An unmeasured cell **refuses a number** rather than printing 0%: zero is a win rate and absent is not, which is
+the distinction this whole surface is built on.
+
+Three things this cost:
+
+**1 · The probe had to stop encoding its value in its geometry.** It was `box(0.045, PROBE_H + 0.30, 0.045)`
+with the height baked in, which cannot move without new geometry every frame — or a non-uniform scale, which
+stops the normal matrix being a rotation and tilts the lighting off the surface as the probe travels. It is now
+a fixed-length column that slides until its top sits at the value; the part below the plinth is hidden by the
+plinth, so the visible length still reads as the quantity.
+
+**2 · Nearest-cell picking projects rather than unprojects.** Casting a ray at the surface would need an
+intersection test against 24 quads with holes in them, and would answer "which triangle" when the question is
+"which measured cell". Projecting all 42 grid points and taking the closest is exact for the question asked and
+cannot pick a cell that is not there. A pick further than 90 px from every point is a click on the deck and
+moves nothing.
+
+**3 · A STATIC REPORT CANNOT DESCRIBE AN INTERACTIVE SURFACE**, and the capture caught me. `probe` was a plain
+object built at module evaluation, so it froze at `moves: 0`. The drag worked, the readout on the frame updated,
+and the capture read the report and concluded that dragging did nothing — a check disagreeing with the picture,
+in the direction that would have had me debugging a working feature. It is a getter now. Every other field in
+the report describes a frame that has already been drawn and will not change; the probe is the first thing in
+this programme that moves after the report exists.
+
+**No idle animation.** §6 rule 2 forbids a page that moves on its own, not interaction: a pointer event renders
+exactly one frame and stops. That is also why the reduced-motion case needs no special path — there is no
+motion to reduce, only a new still frame.
 
 ## Cost — and a number I published that was fiction
 

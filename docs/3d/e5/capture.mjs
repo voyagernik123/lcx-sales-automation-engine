@@ -29,7 +29,7 @@ await new Promise(r=>s.listen(0,'127.0.0.1',r));
 const b = await chromium.launch({ args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
 // `flat-only` is the CONTROL: the plinth and every annotation, with no surface on it. A broken
 // heightfield produces the same picture, so the pair is what proves the mesh carries the reading.
-for (const [name, q] of [['live', ''], ['flat-only', '&mesh=0'], ['no-ao', '&ao=0'], ['refused', '&refuse=1'], ['tier-minimum', '&tier=minimum']]) {
+for (const [name, q] of [['live', ''], ['flat-only', '&mesh=0'], ['no-ao', '&ao=0'], ['refused', '&refuse=1'], ['tier-minimum', '&tier=minimum'], ['no-contours', '&contours=0'], ['probe-dragged', '&drag=1']]) {
   const p = await b.newPage({ viewport:{width:1300,height:1000}, deviceScaleFactor:1 });
     /* PRINTED THE MOMENT IT HAPPENS, not collected for after the wait. A page that throws never sets
      its title, so the harness reports a 30-second TIMEOUT and the actual exception — which is one
@@ -59,6 +59,45 @@ for (const [name, q] of [['live', ''], ['flat-only', '&mesh=0'], ['no-ao', '&ao=
      contain that component's own SVG, with the same number of cell polygons the mesh drew — and it must
      be hidden when a frame was drawn and visible when it was not.
   */
+  /*
+     §2 ASKS FOR "A PROBE YOU DRAG ACROSS IT", so the drag is PERFORMED rather than claimed. A real pointer
+     sequence is dispatched at a different cell and the report is read back: the cell must change, the move
+     count must rise, and the printed value must be the value of the NEW cell. An interactive feature nobody
+     interacts with in a capture is an interactive feature nobody has tested.
+  */
+  if (name === 'probe-dragged') {
+    const before = await p.evaluate(() => globalThis.E5.probe.cell.join(','));
+    const box = await p.locator('canvas').boundingBox();
+    // Left of centre and up-frame: the low-ticket, mid-days corner, well away from the peak.
+    await p.mouse.move(box.x + box.width * 0.30, box.y + box.height * 0.52);
+    await p.mouse.down();
+    await p.mouse.move(box.x + box.width * 0.32, box.y + box.height * 0.54, { steps: 4 });
+    await p.mouse.up();
+    await p.waitForTimeout(250);
+    const pr = await p.evaluate(() => {
+      const el = document.querySelector('#lcx-fallback');
+      void el;
+      return { probe: globalThis.E5.probe, readout: (() => {
+        const nodes = Array.from(document.querySelectorAll('div'));
+        const hit = nodes.find((n) => /PROBE|PEAK/.test(n.textContent ?? '') && n.children.length >= 2);
+        return hit ? (hit.textContent ?? '').replace(/\s+/g, ' ').trim().slice(0, 60) : null;
+      })() };
+    });
+    console.log(`    probe cell ${before} -> ${pr.probe.cell.join(',')} · moves ${pr.probe.moves}`
+      + ` · value ${pr.probe.value} · readout ${JSON.stringify(pr.readout)}`);
+    if (pr.probe.moves === 0) throw new Error('a pointer drag did not move the probe — §2 asks for a probe you drag');
+    if (pr.probe.cell.join(',') === before) throw new Error('the probe reports a move but is on the same cell');
+    /* The readout must agree with the cell the column is standing on, or the number and the geometry have
+       parted company — the one failure a probe exists to prevent. */
+    const shown = pr.probe.value === null ? 'NOT MEASURED' : `${Math.round(pr.probe.value * 100)}%`;
+    if (pr.readout && !pr.readout.includes(shown)) {
+      throw new Error(`readout ${JSON.stringify(pr.readout)} does not show ${shown} for cell ${pr.probe.cell}`);
+    }
+    await p.screenshot({ path: resolve(HERE, 'probe-dragged.png'), fullPage: true });
+    await p.close();
+    continue;
+  }
+
   const fb = await p.evaluate(() => {
     const el = document.getElementById('lcx-fallback');
     if (!el) return null;
@@ -97,6 +136,16 @@ for (const [name, q] of [['live', ''], ['flat-only', '&mesh=0'], ['no-ao', '&ao=
     + ` · cells ${rep.agreement.cellsDrawn.join('/')} drawn, ${rep.agreement.cellsHoles.join('/')} holes`
     + ` · absent ${rep.agreement.pointsAbsent.join('/')} · withheld ${rep.agreement.pointsWithheld.join('/')}`
     + `  (flat/mesh)`);
+  console.log(`    contours ${rep.contours} · levels drawn ${JSON.stringify(rep.contourLevelsDrawn)}`
+    + ` · empty ${JSON.stringify(rep.contourLevelsEmpty)} · ${rep.contourSegments} segments`
+    + ` · ${rep.contourCellsSkippedAbsent} cells skipped as unmeasured`
+    + ` · labels unplaced ${JSON.stringify(rep.contourLabelsUnplaced)}`);
+  if (rep.contours && rep.contourLabelsUnplaced.length > 0) {
+    throw new Error(`contours drawn without values: ${rep.contourLabelsUnplaced.join(', ')} — an unlabelled `
+      + 'iso-line says the surface changes here, which the shading already said');
+  }
+  /* A level the legend names and the surface never drew would be a lie the capture can catch. */
+  if (rep.contours && rep.contourSegments === 0) throw new Error('contours on but nothing drawn');
   console.log(`    range ${rep.observedRange ? rep.observedRange.join('..') : 'NONE'}`
     + ` · peak ${rep.peak ? `${(rep.peak.value*100).toFixed(0)}% at $${rep.peak.ticket}k/${rep.peak.days}d` : 'NONE'}`
     + ` · surfaceTris ${rep.surfaceTriangles} · ticksOffFrame ${rep.ticksOffFrame}`);

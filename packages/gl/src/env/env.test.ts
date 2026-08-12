@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { box, plane, sphere, cylinder, torus, arcTube, latLonToVec3, heightfield, computeNormals, triangleCount } from './mesh.js';
+import {
+  box, plane, sphere, cylinder, torus, arcTube, latLonToVec3, heightfield, computeNormals, triangleCount,
+  contourSegments,
+} from './mesh.js';
 import {
   eyeOf, viewProjection, lightViewProjection, boundsRadius, boundsCentre, ELEVATION_LIMIT,
 } from './camera.js';
@@ -1092,6 +1095,110 @@ describe('shadowMapSizeFor — the ladder scales a baseline, it does not replace
       const v = shadowMapSizeFor('full', bad);
       expect(Number.isFinite(v), `baseline ${bad}`).toBe(true);
       expect(v).toBeGreaterThanOrEqual(256);
+    }
+  });
+});
+
+/*
+ * CONTOUR RIBBONS. §5 names them as an outstanding E5 deliverable, and the tests below are about the two
+ * things a contour gets wrong silently: tracing a line through data nobody measured, and a saddle resolved by
+ * a lookup table's row order rather than by the data.
+ */
+describe('contourSegments — an iso-line may not cross unmeasured ground', () => {
+  /* A plane rising in x: value == col. Every iso-line is therefore a straight vertical line at x = level. */
+  const ramp = (c: number): number => c;
+
+  it('puts a level exactly where the data says, on a known ramp', () => {
+    const r = contourSegments(5, 4, ramp, [2.5]);
+    expect(r.segments.length).toBeGreaterThan(0);
+    for (const s of r.segments) {
+      expect(s.from[0], 'crossing must sit at x = 2.5').toBeCloseTo(2.5, 9);
+      expect(s.to[0]).toBeCloseTo(2.5, 9);
+    }
+    expect(r.levelsDrawn).toEqual([2.5]);
+    expect(r.levelsEmpty).toEqual([]);
+  });
+
+  it('REPORTS a level that lies outside the data instead of dropping it', () => {
+    /* A legend listing a contour that was never drawn is a legend that lies. */
+    const r = contourSegments(5, 4, ramp, [-3, 2.5, 99]);
+    expect(r.levelsDrawn).toEqual([2.5]);
+    expect(r.levelsEmpty).toEqual([-3, 99]);
+  });
+
+  it('emits NOTHING through a cell with an unmeasured corner, and counts it', () => {
+    /*
+     * THE RULE THAT MATTERS. Treating an absent corner as zero would draw a contour that appears to trace
+     * measured ground and does not — a fabricated line, which is worse than a gap because it is
+     * indistinguishable from a real one.
+     */
+    const holed = (c: number, r: number): number | null => (c === 2 && r === 1 ? null : c);
+    const res = contourSegments(5, 4, holed, [2.5]);
+    expect(res.cellsSkippedAbsent, 'one absent corner touches four cells').toBe(4);
+    // No segment may lie inside any cell that touched the hole: cols 1..2, rows 0..1.
+    for (const s of res.segments) {
+      const inHoleCell = (p: readonly [number, number]): boolean =>
+        p[0] >= 1 && p[0] <= 3 && p[1] >= 0 && p[1] <= 2;
+      expect(inHoleCell(s.from) && inHoleCell(s.to), 'a segment crosses a holed cell').toBe(false);
+    }
+  });
+
+  it('treats NaN and Infinity as unmeasured rather than as a crossing', () => {
+    const bad = (c: number, r: number): number => (c === 2 && r === 1 ? Number.NaN : c === 3 && r === 2 ? Infinity : c);
+    const res = contourSegments(6, 5, bad, [2.5, 3.5]);
+    for (const s of res.segments) {
+      expect(Number.isFinite(s.from[0]) && Number.isFinite(s.from[1])).toBe(true);
+      expect(Number.isFinite(s.to[0]) && Number.isFinite(s.to[1])).toBe(true);
+    }
+    expect(res.cellsSkippedAbsent).toBeGreaterThan(0);
+  });
+
+  it('resolves a saddle from the cell mean, not from the case index', () => {
+    /*
+     * Opposite corners above the level, the other two below. Both cuts are consistent with the four samples,
+     * so the tie must be broken by the DATA. Two grids with the same case code but different means must
+     * produce different connectivity — if they do not, the table's row order is deciding the drawing.
+     */
+    const saddle = (hi: number, lo: number) => (c: number, r: number): number =>
+      (c === r ? hi : lo);
+    const highMean = contourSegments(2, 2, saddle(10, 4), [5]);
+    const lowMean = contourSegments(2, 2, saddle(10, -20), [5]);
+    expect(highMean.segments.length, 'a saddle emits two segments').toBe(2);
+    expect(lowMean.segments.length).toBe(2);
+    const key = (r: typeof highMean): string => r.segments
+      .map((s) => `${s.from[0].toFixed(3)},${s.from[1].toFixed(3)}->${s.to[0].toFixed(3)},${s.to[1].toFixed(3)}`)
+      .sort().join(' | ');
+    expect(key(highMean), 'the mean must change the connectivity').not.toBe(key(lowMean));
+  });
+
+  it('never divides by zero when two corners straddle nothing', () => {
+    // Every corner exactly on the level: the interpolation denominator is zero.
+    const flat = (): number => 5;
+    const r = contourSegments(4, 4, flat, [5]);
+    for (const s of r.segments) {
+      expect(Number.isFinite(s.from[0]) && Number.isFinite(s.to[0])).toBe(true);
+    }
+  });
+
+  it('returns nothing, without throwing, for a grid that was never measured', () => {
+    const r = contourSegments(4, 4, () => null, [1, 2]);
+    expect(r.segments).toEqual([]);
+    expect(r.levelsDrawn).toEqual([]);
+    expect(r.levelsEmpty).toEqual([1, 2]);
+    expect(r.cellsSkippedAbsent).toBe(9);
+  });
+
+  it('keeps every crossing inside the grid', () => {
+    const wavy = (c: number, r: number): number => Math.sin(c * 0.7) + Math.cos(r * 0.5);
+    const res = contourSegments(9, 7, wavy, [-0.5, 0, 0.5]);
+    expect(res.segments.length).toBeGreaterThan(10);
+    for (const s of res.segments) {
+      for (const p of [s.from, s.to]) {
+        expect(p[0]).toBeGreaterThanOrEqual(0);
+        expect(p[0]).toBeLessThanOrEqual(8);
+        expect(p[1]).toBeGreaterThanOrEqual(0);
+        expect(p[1]).toBeLessThanOrEqual(6);
+      }
     }
   });
 });
