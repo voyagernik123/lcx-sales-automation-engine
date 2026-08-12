@@ -47,6 +47,9 @@ import {
   buildSurfaceMesh, isProjectedSurface, WITHHELD,
   type GridCellValue, type SurfaceGridInput,
 } from '@lcx/shared';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { SurfacePlot } from '@/components/geometry/SurfacePlot';
+import { installFlatFallback } from '../_shared/flatFallback.js';
 
 const params = new URLSearchParams(location.search);
 const AO_ON = params.get('ao') !== '0';
@@ -54,6 +57,10 @@ const AO_ON = params.get('ao') !== '0';
    which is what a broken heightfield would also produce — so the two captures together are what
    prove the mesh is the thing carrying the reading rather than the frame around it. */
 const MESH_ON = params.get('mesh') !== '0';
+/* A deliberate refusal, so rule 1's claim can be CAPTURED — you cannot switch off WebGL from inside the
+   page, which is why this claim had never been photographed anywhere in the programme. Not a mock: it
+   calls the same `die` a failed shader compile calls. */
+const FORCE_REFUSE = params.get('refuse') === '1';
 const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
 const FRAMES = Number(params.get('frames') ?? 300);
 
@@ -62,39 +69,21 @@ const canvas = document.getElementById('c') as HTMLCanvasElement;
 canvas.width = W; canvas.height = H;
 const log = document.getElementById('log')!;
 
-function die(m: string): never { document.title = 'REFUSED'; log.textContent = m; throw new Error(m); }
+function die(m: string): never {
+  document.title = 'REFUSED';
+  log.textContent = m;
+  /* The refusal goes ABOVE the flat surface, not instead of it. */
+  const [code, ...rest] = m.split(':');
+  fallbackRef?.showRefusal(code?.trim() ?? 'REFUSED', rest.join(':').trim() || m);
+  throw new Error(m);
+}
+/* Assigned once the fallback is installed. `die` is declared first because a `function` declaration
+   returning `never` is what gives the compiler its control-flow narrowing; a const arrow does not. */
+let fallbackRef: ReturnType<typeof installFlatFallback> | null = null;
 function required<T extends object>(what: string, v: T | StageRefusal): T {
   if ('kind' in v) die(`${what}: ${v.code} — ${v.reason} ${v.detail ?? ''}`);
   return v;
 }
-
-const out = createStage(canvas, { alpha: false });
-if (!isStage(out)) die(`stage: ${out.code} — ${out.reason}`);
-const stage = out;
-const gl = stage.gl;
-
-const PRESENT_VERT = `#version 300 es
-precision highp float;
-out vec2 vUv;
-void main(){
-  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
-const PRESENT_FRAG = `#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uScene;
-out vec4 frag;
-${TONE_MAP_GLSL}
-${SRGB_ENCODE_GLSL}
-void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
-
-const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
-const lit = required('lit', createLitRenderer(stage));
-const target = required('target', createTarget3D(stage, W, H));
-const shadow = required('shadow', createShadowMap(stage, 1536));
-const skyBox = required('sky', createSkyBackdrop(stage));
-const ao = required('ao', createAmbientOcclusion(stage, W, H));
 
 /*
  * ══════════════════════════════════════════════════════════════════════════════════════
@@ -148,6 +137,76 @@ if (!isProjectedSurface(flatOutcome)) {
   die(`the flat engine REFUSED this input, so the mesh must too: ${flatOutcome.refusals.map((r) => r.code).join(', ')}`);
 }
 const flat = flatOutcome;
+
+/*
+ * §6 RULE 1, SATISFIED LITERALLY. "SSR, print, no-WebGL and reduced-motion all resolve to THE EXISTING
+ * SURFACE" — and E5 is the one environment in the programme that has an existing surface to resolve to.
+ *
+ * So the fallback is not a table that re-states the same fields. It is `SurfacePlot`, the component the
+ * app actually ships, rendered from the SAME `SurfaceGeometry` object the mesh above was built from.
+ * A second implementation of the flat view could drift from the real one; this cannot, because it IS
+ * the real one.
+ *
+ * Installed before `createStage`, because a shader compile failure happens during module evaluation and
+ * anything built after the renderer is constructed never runs on the failure it exists for. Print and
+ * the accessibility tree are not errors at all, so for those there is nothing to catch.
+ */
+const fallback = installFlatFallback({
+  title: 'E5 · The Surface — win rate by ticket size and days to close',
+  readsAs: 'The rendered view adds relief, a shadow and ambient occlusion, so the ridge and the cliff '
+    + 'are read at a glance rather than decoded from shading. The flat figure below is the shipping '
+    + 'SurfacePlot component, built from the identical grid — it carries every cell, every hole and '
+    + 'every withheld marker, and the cell counts are asserted equal to the mesh.',
+  notices: [
+    'VALUES ARE PLACEHOLDERS — declared by the engine, not by this harness.',
+    'Absent and withheld cells are drawn differently here, exactly as in the mesh.',
+  ],
+  columns: [], rows: [],
+  html: renderToStaticMarkup(
+    SurfacePlot({
+      surface: flatOutcome,
+      title: 'Win rate · ticket size × days to close',
+      readsAs: 'Higher is better. Holes are cells never measured; hatched cells are withheld.',
+      heightPx: 380,
+    }),
+  ),
+});
+
+fallbackRef = fallback;
+if (FORCE_REFUSE) {
+  die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
+    + 'The three-dimensional view is not being drawn.');
+}
+
+const out = createStage(canvas, { alpha: false });
+if (!isStage(out)) die(`stage: ${out.code} — ${out.reason}`);
+const stage = out;
+const gl = stage.gl;
+
+const PRESENT_VERT = `#version 300 es
+precision highp float;
+out vec2 vUv;
+void main(){
+  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const PRESENT_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uScene;
+out vec4 frag;
+${TONE_MAP_GLSL}
+${SRGB_ENCODE_GLSL}
+void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
+
+const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
+const lit = required('lit', createLitRenderer(stage));
+const target = required('target', createTarget3D(stage, W, H));
+const shadow = required('shadow', createShadowMap(stage, 1536));
+const skyBox = required('sky', createSkyBackdrop(stage));
+const ao = required('ao', createAmbientOcclusion(stage, W, H));
+
+
 
 /*
  * ══════════════════════════════════════════════════════════════════════════════════════
@@ -632,4 +691,7 @@ const report = {
 (globalThis as unknown as { E5: typeof report }).E5 = report;
 log.textContent = JSON.stringify(report, null, 2);
 frame();
+/* AFTER the final frame. The failure mode of this ordering is a visible flat surface under a working
+   canvas, which is loud and self-announcing — the right direction for a fallback to fail in. */
+fallback.markRendered();
 document.title = 'READY';

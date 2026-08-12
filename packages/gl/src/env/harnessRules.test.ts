@@ -20,18 +20,35 @@ import { join, resolve } from 'node:path';
  */
 const DOCS = resolve(__dirname, '../../../../docs/3d');
 
-const environments = existsSync(DOCS)
+/*
+ * AN ENVIRONMENT IS CHECKED ONCE IT HAS MADE A CLAIM, and a capture is what makes one.
+ *
+ * A directory mid-construction has an `entry.ts` and nothing else; holding it to the finished rules
+ * fails the gate for work that has not asserted anything yet. But the moment a `live.png` exists, the
+ * environment has published a picture — §6 rule 8 makes a capture the unit of a claim — and everything
+ * §6 requires applies to it.
+ *
+ * The converse is asserted separately below: a capture without a README is a claim with no verdict, and
+ * that is a failure rather than an exemption.
+ */
+const ALL = existsSync(DOCS)
   ? readdirSync(DOCS)
       .filter((d) => /^e\d+$/.test(d) && existsSync(join(DOCS, d, 'entry.ts')))
       .sort()
-      .map((d) => ({ id: d, src: readFileSync(join(DOCS, d, 'entry.ts'), 'utf8') }))
+      .map((d) => ({
+        id: d,
+        src: readFileSync(join(DOCS, d, 'entry.ts'), 'utf8'),
+        captured: existsSync(join(DOCS, d, 'live.png')),
+        hasReadme: existsSync(join(DOCS, d, 'README.md')),
+      }))
   : [];
+const environments = ALL.filter((e) => e.captured);
 
 describe('§6 rules, ratcheted across every docs/3d/e* environment', () => {
   it('finds environments to check at all', () => {
     /* A glob that silently matches nothing is a green test that checks nothing — the failure mode this
        whole file exists to prevent, reproduced inside the file itself. */
-    expect(environments.length, `no environments found under ${DOCS}`).toBeGreaterThanOrEqual(6);
+    expect(environments.length, `no captured environments found under ${DOCS}`).toBeGreaterThanOrEqual(6);
   });
 
   it('rule 5 — every environment runs assertBrandFidelity and acts on the result', () => {
@@ -108,6 +125,16 @@ describe('§6 rules, ratcheted across every docs/3d/e* environment', () => {
         0,
       );
       expect(bytes, `${id} ships ${bytes} bytes of GLSL comment inside a template literal`).toBe(0);
+    }
+  });
+
+  it('a capture without a README is a claim with no verdict', () => {
+    /* The converse of the skip above. An environment that has published a picture has made a claim, and
+       a claim needs a verdict a reader can find. E1 also DERIVES its rendered panel content from these
+       first lines, so an unparseable one puts a refusal on another environment's frame. */
+    for (const e of ALL) {
+      if (!e.captured) continue;
+      expect(e.hasReadme, `${e.id} has a capture but no README`).toBe(true);
     }
   });
 

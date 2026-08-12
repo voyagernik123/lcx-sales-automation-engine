@@ -38,6 +38,7 @@ import {
   hexToLinear, assertBrandFidelity, projectScreen, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint, type StageRefusal,
 } from '@lcx/gl';
+import { installFlatFallback } from '../_shared/flatFallback.js';
 
 const params = new URLSearchParams(location.search);
 const AO_ON = params.get('ao') !== '0';
@@ -54,39 +55,22 @@ const canvas = document.getElementById('c') as HTMLCanvasElement;
 canvas.width = W; canvas.height = H;
 const log = document.getElementById('log')!;
 
-function die(m: string): never { document.title = 'REFUSED'; log.textContent = m; throw new Error(m); }
+function die(m: string): never {
+  document.title = 'REFUSED';
+  log.textContent = m;
+  /* The refusal goes ABOVE the table, not instead of it. A reader who cannot be shown the corridor is
+     still entitled to the records, and to be told which of the two is missing. */
+  const [code, ...rest] = m.split(':');
+  fallbackRef?.showRefusal(code?.trim() ?? 'REFUSED', rest.join(':').trim() || m);
+  throw new Error(m);
+}
+/* Assigned once `installFlatFallback` has run. `die` is declared first because a `function` declaration
+   returning `never` is what gives the compiler its control-flow narrowing — a const arrow does not. */
+let fallbackRef: ReturnType<typeof installFlatFallback> | null = null;
 function required<T extends object>(what: string, v: T | StageRefusal): T {
   if ('kind' in v) die(`${what}: ${v.code} — ${v.reason} ${v.detail ?? ''}`);
   return v;
 }
-
-const out = createStage(canvas, { alpha: false });
-if (!isStage(out)) die(`stage: ${out.code} — ${out.reason}`);
-const stage = out;
-const gl = stage.gl;
-
-const PRESENT_VERT = `#version 300 es
-precision highp float;
-out vec2 vUv;
-void main(){
-  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
-const PRESENT_FRAG = `#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uScene;
-out vec4 frag;
-${TONE_MAP_GLSL}
-${SRGB_ENCODE_GLSL}
-void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
-
-const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
-const lit = required('lit', createLitRenderer(stage));
-const target = required('target', createTarget3D(stage, W, H));
-const shadow = required('shadow', createShadowMap(stage, 1536));
-const skyBox = required('sky', createSkyBackdrop(stage));
-const ao = required('ao', createAmbientOcclusion(stage, W, H));
 
 /*
  * ══════════════════════════════════════════════════════════════════════════════════════
@@ -130,6 +114,87 @@ const RECORDS: readonly Record[] = [
   { hoursAgo: 410, actor: 'a.reiter', action: 'listing.approve', verdict: 'ALLOWED' },
   { hoursAgo: 462, actor: 'n.sharma', action: 'campaign.publish', verdict: 'ALLOWED' },
 ];
+
+/*
+ * THE FLAT FALLBACK IS INSTALLED BEFORE THE STAGE EXISTS — §6 rule 1.
+ *
+ * Deliberately above `createStage`, because a shader compile failure happens during module evaluation:
+ * anything built after the renderer is constructed is code that never runs on the failure it exists
+ * for. Print and the accessibility tree are not errors either, so there is nothing to catch for those
+ * cases at all.
+ *
+ * The table is not a consolation prize. It carries every field the 3-D view carries, with absent named
+ * rather than blank, so a reader who cannot see the corridor loses the SHAPE of the history — the
+ * cluster, the reach, the horizon — and none of the records. That is what "not a downgrade in
+ * INFORMATION" has to mean.
+ */
+const fallback = installFlatFallback({
+  title: 'E6 · The Vault — governed actions',
+  readsAs: 'Depth is time in the rendered view: the corridor states how far back the record is readable '
+    + 'at all, a cluster of blocked actions in one afternoon reads as a stack at one depth, and a '
+    + 'withheld record is visibly present without being readable. This table carries every record and '
+    + 'every verdict; what it cannot carry is the shape.',
+  notices: ['SYNTHETIC RECORDS — the shape is deliberate, the values are not measurements.'],
+  columns: [
+    { key: 'when', label: 'When', numeric: true },
+    { key: 'verdict', label: 'Verdict' },
+    { key: 'action', label: 'Action' },
+    { key: 'actor', label: 'Actor' },
+  ],
+  /* WITHHELD rows carry `null`, which the fallback renders as a named "absent" rather than as a blank
+     or an em dash — the flat view has to keep the three states apart or rule 1 is broken by the very
+     thing meant to satisfy it. */
+  rows: RECORDS.map((r) => ({
+    when: r.hoursAgo < 24 ? `${r.hoursAgo} h ago` : `${(r.hoursAgo / 24).toFixed(1)} d ago`,
+    verdict: r.verdict,
+    action: r.verdict === 'WITHHELD' ? null : r.action,
+    actor: r.verdict === 'WITHHELD' ? null : r.actor,
+  })),
+});
+fallbackRef = fallback;
+
+/*
+ * A SYNTHETIC REFUSAL, SO THE FALLBACK CAN BE CAPTURED. §6 rule 8 is "every claim gets a capture", and
+ * rule 1's claim — that a refusal resolves to the flat surface without losing information — is the one
+ * claim in this programme that had never been photographed, because you cannot switch off WebGL from
+ * inside the page.
+ *
+ * `?refuse=1` takes the refusal branch deliberately. It is not a mock: it calls the same `die` a failed
+ * shader compile calls, so what the capture shows is the real path.
+ */
+if (params.get('refuse') === '1') {
+  die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
+    + 'The three-dimensional view is not being drawn.');
+}
+
+const out = createStage(canvas, { alpha: false });
+if (!isStage(out)) die(`stage: ${out.code} — ${out.reason}`);
+const stage = out;
+const gl = stage.gl;
+
+const PRESENT_VERT = `#version 300 es
+precision highp float;
+out vec2 vUv;
+void main(){
+  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const PRESENT_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uScene;
+out vec4 frag;
+${TONE_MAP_GLSL}
+${SRGB_ENCODE_GLSL}
+void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
+
+const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
+const lit = required('lit', createLitRenderer(stage));
+const target = required('target', createTarget3D(stage, W, H));
+const shadow = required('shadow', createShadowMap(stage, 1536));
+const skyBox = required('sky', createSkyBackdrop(stage));
+const ao = required('ao', createAmbientOcclusion(stage, W, H));
+
 
 /*
  * THE CALIBRATION. Every number below is fixed by a legibility requirement rather than by taste, and
@@ -766,4 +831,8 @@ log.textContent = JSON.stringify(summary, null, 2)
     + ` ${r.shown ? 'SHOWN' : `hidden: ${r.hiddenBecause}`}`
   )).join('\n');
 frame();
+/* AFTER the final frame, never before: the table is hidden only once a frame demonstrably exists. The
+   failure mode of this ordering is a visible table under a working canvas, which is loud and
+   self-announcing — the right direction for a fallback to fail in. */
+fallback.markRendered();
 document.title = 'READY';

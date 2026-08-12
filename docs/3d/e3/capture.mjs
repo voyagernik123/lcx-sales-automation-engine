@@ -1,0 +1,85 @@
+import { chromium } from '@playwright/test';
+import { existsSync, readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve, join, normalize } from 'node:path';
+const HERE = dirname(fileURLToPath(import.meta.url));
+const T = { '.html':'text/html', '.js':'text/javascript' };
+const s = createServer((q,r)=>{ const rel=normalize(decodeURIComponent(new URL(q.url,'http://x').pathname)).replace(/^(\.\.[/\\])+/,'');
+  const f=join(HERE, rel==='/'?'live.html':rel);
+  if(!f.startsWith(HERE)||!existsSync(f)){r.writeHead(404).end();return;}
+  r.writeHead(200,{'content-type':T[f.slice(f.lastIndexOf('.'))]??'application/octet-stream'}); r.end(readFileSync(f)); });
+await new Promise(r=>s.listen(0,'127.0.0.1',r));
+const b = await chromium.launch({ args:['--use-gl=angle','--use-angle=swiftshader','--enable-unsafe-swiftshader'] });
+/* `flat-settle` is THE CONTROL: every deal pinned to the rail, which is exactly what a bar list shows
+   — value and stage, movement demoted to a column. `no-particles` is the second control: the channel
+   with no throughput, which is what a machine missing EXT_color_buffer_float actually gets. */
+const reports = {};
+for (const [name, q] of [['live', ''], ['flat-settle', '&settle=0'], ['no-particles', '&particles=0']]) {
+  const p = await b.newPage({ viewport:{width:1300,height:1100}, deviceScaleFactor:1 });
+  /* PRINTED THE MOMENT IT HAPPENS, not collected for after the wait. A page that throws never sets its
+     title, so the harness reports a 30-second TIMEOUT and the actual exception — which is one line
+     away — is never seen. That cost real time on E5 and it is the same shape of failure as E0's
+     temporal-dead-zone bug. */
+  const errs=[]; p.on('pageerror',e=>{ errs.push(e.message); console.error('    PAGE ERROR: '+e.message); });
+  p.on('console',m=>{ if(m.type()==='error') console.error('    CONSOLE ERROR: '+m.text()); });
+  // frames=4, not the page default of 300: under swiftshader a shadowed, AO'd frame with a particle
+  // step takes seconds, and the batch sweep only has to prove the frame draws at all. The particle
+  // field is primed to steady state independently of this, so the density does not depend on it.
+  await p.goto(`http://127.0.0.1:${s.address().port}/live.html?frames=4${q}`);
+  await p.waitForFunction(()=>document.title==='READY',{timeout:120000});
+  if(errs.length) throw new Error('page errors: '+errs.join(' | '));
+  const state = await p.evaluate(() => {
+    const cs = [...document.querySelectorAll('canvas')];
+    return { canvases: cs.length, drawing: cs.filter((c) => getComputedStyle(c).display !== 'none').length };
+  });
+  await p.waitForTimeout(1200);
+  // fullPage: the report under the canvas is part of the evidence, and an element shot would crop it.
+  await p.screenshot({ path: resolve(HERE, `${name}.png`), fullPage: true });
+  console.log(`  ${name}.png — canvases: ${state.canvases}, drawing: ${state.drawing}`);
+  const rep = await p.evaluate(() => globalThis.E3);
+  reports[name] = rep;
+  // The numbers are the part this process can actually check. A capture it cannot see proves nothing.
+  console.log(`    ms/frame ${rep.msPerFrame} · ${rep.renderer} · glError ${rep.glError} · hdr ${rep.hdr}`
+    + ` · ${rep.rendererClass} · headroom ${rep.headroom === null ? rep.headroomRefusal : rep.headroom + ' ms'}`);
+  console.log(`    deals ${rep.deals} ${JSON.stringify(rep.counts)} · tags ${rep.tagsShown}`
+    + ` · hiddenBy ${JSON.stringify(rep.hiddenBy)} · nameOverflow ${rep.nameOverflow.length}`
+    + ` · gateLabelsOffFrame ${JSON.stringify(rep.gateLabelsOffFrame)}`);
+  console.log(`    settled ${rep.stalledCount} · deepStalled $${rep.deepStalledUsd} (${Math.round(100*rep.deepStalledShare)}%)`
+    + ` · minSeparation ${rep.minSeparationPx} px · massAmbiguous ${rep.massAmbiguousPairs}`
+    + ` (within-stage ${rep.massAmbiguousWithinStage}) · outOfSegment ${rep.outOfSegment.length}`);
+  const f = rep.particleField;
+  console.log(`    particles ${f.refusal ?? 'ok'} · alive ${f.aliveActual}/${f.slots} (expected ${f.aliveExpected})`
+    + ` · outOfChannel ${f.outOfChannel} · z ${JSON.stringify(f.zRange)} of ${JSON.stringify(f.channelZ)}`
+    + ` · recycleSafe ${f.recycleSafe} (${f.slotRecycleSeconds}s vs life ${f.maxLifeSeconds}s)`);
+  console.log(`    rateMonotoneDown ${rep.rateMonotoneDown} · first/last ${rep.rateRatioFirstLast}x`
+    + ` · fog ${rep.fogNearest}..${rep.fogFurthest}`);
+
+  if (rep.glError !== 0) throw new Error(`glError ${rep.glError}`);
+  if (rep.outOfSegment.length) throw new Error(`deals drawn outside their own stage segment: ${rep.outOfSegment}`);
+  if (rep.nameOverflow.length) throw new Error(`names too long for their tag: ${rep.nameOverflow}`);
+  if (!rep.rateMonotoneDown) throw new Error('gate rates are not monotone down the funnel');
+  if (name !== 'no-particles') {
+    if (f.refusal) console.error(`    NOTE: particles refused — ${f.refusal}`);
+    else {
+      /* A field that never fills, or one that leaks out of the channel, is a density that is not a
+         reading. Both are numbers, so both are assertions rather than impressions. */
+      if (f.aliveActual < 0.6 * f.aliveExpected) throw new Error(`particle field underfilled: ${f.aliveActual} vs ${f.aliveExpected}`);
+      if (f.outOfChannel > 0.02 * f.aliveActual) throw new Error(`${f.outOfChannel} particles outside the channel`);
+      if (!f.recycleSafe) throw new Error('slots recycle faster than a particle lives');
+    }
+  }
+}
+
+/* THE CROSS-VARIANT ASSERTION, which is the only one that proves the third axis carries anything.
+   `settle=0` is the flat reading: value and stage, no movement. If the live frame does not separate a
+   stalled deal from a fresh one by real pixels while the control separates them by none, then the
+   settling is decoration and this environment has no business existing. */
+const live = reports['live'], flat = reports['flat-settle'];
+if (flat.minSeparationPx !== 0) throw new Error(`control still separates by ${flat.minSeparationPx} px — settle=0 is not flat`);
+if (live.minSeparationPx < 20) throw new Error(`live separates stalled from fresh by only ${live.minSeparationPx} px`);
+if (live.deepStalledUsd <= 0) throw new Error('no stalled value past diligence — the headline reading is empty');
+console.log(`\n  PROOF: same stage, most vs least settled — live ${live.minSeparationPx} px, settle=0 ${flat.minSeparationPx} px`);
+console.log(`  PROOF: $${live.deepStalledUsd} (${Math.round(100*live.deepStalledShare)}%) past diligence and settled,`
+  + ` visible as ${live.stalledCount} objects on the floor`);
+await b.close(); s.close();
