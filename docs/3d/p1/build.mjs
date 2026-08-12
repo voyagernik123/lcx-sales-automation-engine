@@ -62,6 +62,40 @@ const LAYERS = [
     'env/mesh.ts', 'env/camera.ts', 'env/lit.ts', 'env/sky.ts',
     'env/target3d.ts', 'env/ao.ts', 'env/dof.ts', 'env/project.ts',
   ] },
+  /*
+   * L3.5 AND L4.5 GET THEIR OWN LANES, at the figures §6.3.3 of the plan set for them — 9 KB and
+   * 13 KB — rather than being folded into L4 env.
+   *
+   * Folding them in is what produced the overrun that led here: L4 was set at 60 KB when the layer
+   * measured 45, and I claimed the 15 KB of headroom left "room for E3-E7's particles and
+   * volumetrics" while the plan itself had costed those two at 22 KB. That was my arithmetic error,
+   * not an overrun — 15 was never going to hold 22 — and merging the lanes would have hidden which
+   * of the two was responsible.
+   *
+   * Separate lanes also match how a surface actually pays: E3 wants particles and no volumetrics,
+   * E7 wants both, and E5 wants neither. A merged lane charges all three for all of it.
+   */
+  /*
+   * 11 KB, RAISED FROM THE PLAN'S 9 — and this is the argument, made here rather than discovered in a
+   * bundle, which is what the L4 note above demanded of whoever came next.
+   *
+   * Measured 12.4 KB on arrival. 2.4 KB of that was GLSL COMMENTS INSIDE TEMPLATE LITERALS, which are
+   * shipped bytes a minifier cannot touch: it cannot see inside a string. Moving them into TS comments
+   * immediately above each shader — where a reader is already looking, and where they cost nothing —
+   * brought it to 10.0 KB.
+   *
+   * The remaining 1 KB over the estimate is real. §6.3.3's 9 KB was set before the layer existed, and
+   * what it costs is a ping-pong float-texture simulation, curl noise with six central-differenced
+   * noise evaluations, per-source emission ranges with wrap splitting, a fractional-carry scheduler,
+   * and a readback path — the last of which exists so the harnesses can ASSERT on particle state
+   * instead of appealing to a screenshot. I would rather pay 1 KB than lose that.
+   *
+   * 11 not 10: one kilobyte of genuine margin, so the next honest addition does not need a second
+   * argument. The same comment-relocation is still available across the rest of the layer — measured
+   * at ~11 KB in ao/dof/lit/sky/volume — and is named as open work rather than done here.
+   */
+  { name: 'L3.5 particles', budgetKb: 11, entry: ['env/particles.ts'] },
+  { name: 'L4.5 field', budgetKb: 13, entry: ['env/volume.ts'] },
 ];
 
 const tmp = mkdtempSync(join(tmpdir(), 'lcx-gl-measure-'));

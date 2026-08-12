@@ -537,14 +537,74 @@ const deck = (() => {
  * the same reason it forbids them anywhere: a plausible number in a beautiful frame is the most
  * persuasive lie this codebase can tell. Every row below is checkable against this repository.
  */
-const PANEL_CONTENT: Record<string, { tag: string; state: string; note: string }> = {
-  P1: { tag: 'E0 · HARNESS', state: 'SHIPPED', note: 'GGX + shadows + AO + DOF, 4.41 ms/frame measured on the M1' },
-  P2: { tag: 'E8 · THE FORGE', state: 'LIVE', note: 'on the sign-in route, verified in both themes against a pixel ratchet' },
-  P3: { tag: 'E1 · THIS ROOM', state: 'IN BUILD', note: 'real DOM content projected onto lit GL surfaces — the panel you are reading' },
-  P4: { tag: 'E2 · THE GLOBE', state: 'GATED', note: '7 corridors, lift monotonic with distance; §7(b) still unmeasured' },
-  P5: { tag: 'E3–E7', state: 'NOT STARTED', note: 'pipeline, orrery, surface, vault, storm' },
+declare const __ENV_STATES__: Record<string, { id: string; name: string; verdict: string }>;
+
+/*
+ * PANEL CONTENT, DERIVED. `__ENV_STATES__` is injected by build.mjs from each environment's own
+ * README first line, so the frame cannot assert a state the repository does not.
+ *
+ * The one number still typed here is E0's frame time, and it is typed with its instrument named. The
+ * previous value — 4.41 ms — was P1's, not E0's, and it was rendered under the sentence "Every row
+ * below is checkable against this repository." That is the §6 rule 6 failure this whole block now
+ * exists to prevent: invented content in a rendered environment is the most persuasive lie available
+ * to a beautiful frame.
+ *
+ * A panel whose environment has no README shows a REFUSAL rather than a blank or a guess.
+ */
+const NOTES: Record<string, string> = {
+  E0: 'GGX + shadows + AO + DOF. 1.305 ms/frame at 1x on the M1, by trailing-readPixels',
+  E1: 'real DOM content projected onto lit GL surfaces — the panel you are reading',
+  E2: 'seven corridors, lift monotonic with distance; no landmasses yet',
+  E5: 'driven from the same input as the shipping flat engine; cell counts agree exactly',
+  E6: 'depth is time; fog is the reading limit on it, and both horizons are reported',
+  E8: 'on the sign-in route in both themes, with a CSS fallback and a pixel ratchet',
+};
+/*
+ * THE ORDER IS DERIVED AND THE OMISSION IS NAMED.
+ *
+ * There are five panels of geometry and six environments, and the first version simply left E5 out —
+ * a frame presenting itself as the state of the programme, silently missing a shipped environment.
+ * That is the same failure as a chart dropping a row.
+ *
+ * The geometry is not widened to six: the five positions are measured (the composition survey below
+ * reports 100% / 83% / 78% visibility, and a sixth panel would invalidate it). So the frame shows the
+ * five it can and REPORTS which it could not, and the HUD prints that count. Naming what is missing
+ * is the only honest version of not showing it.
+ *
+ * Nearest-first, because the panel the lens is focused on should carry the environment currently
+ * being built rather than whichever one sorts first alphabetically.
+ */
+const PREFERRED = ['E1', 'E8', 'E0', 'E6', 'E5', 'E2'];
+const AVAILABLE = Object.keys(__ENV_STATES__).sort(
+  (a, b) => (PREFERRED.indexOf(a) + 1 || 99) - (PREFERRED.indexOf(b) + 1 || 99),
+);
+/* Slot 3 is the nearest panel and the focus target, so the most current environment goes there. */
+const SLOT_BY_RANK = ['P3', 'P4', 'P2', 'P5', 'P1'];
+const PANEL_SLOTS = AVAILABLE.slice(0, SLOT_BY_RANK.length);
+const OMITTED = AVAILABLE.slice(SLOT_BY_RANK.length);
+
+/* Cut at a WORD boundary. A hard 26-character slice produced "the first shippable enviro", which is
+   a truncated identifier rendered as a heading — the same class of defect as E6 serving
+   `campaign.publ` as an action name. */
+const headline = (verdict: string): string => {
+  const clause = verdict.split(/[.·—]/)[0]!.trim();
+  if (clause.length <= 26) return clause.toUpperCase();
+  const cut = clause.slice(0, 26);
+  const at = cut.lastIndexOf(' ');
+  return (at > 8 ? cut.slice(0, at) : cut).toUpperCase();
 };
 
+const PANEL_CONTENT: Record<string, { tag: string; state: string; note: string }> = Object.fromEntries(
+  PANEL_SLOTS.map((id, rank) => {
+    const slot = SLOT_BY_RANK[rank]!;
+    const st = __ENV_STATES__[id]!;
+    return [slot, {
+      tag: `${st.id} · ${st.name}`,
+      state: headline(st.verdict),
+      note: NOTES[id] ?? st.verdict,
+    }];
+  }),
+);
 /*
  * ONE SCALE FOR EVERY PANEL, so type size states DEPTH rather than importance.
  *
@@ -801,6 +861,33 @@ const projections = byDepth.map(({ p, i }) => {
   };
 });
 
+/* Read ONCE, before the report, because two call sites for the same string is two chances for the
+   refusal below to key off something different from what is printed. */
+const RENDERER = (() => {
+  const d = gl.getExtension('WEBGL_debug_renderer_info');
+  return d ? String(gl.getParameter(d.UNMASKED_RENDERER_WEBGL)) : 'unknown';
+})();
+/* Matched on the driver's own words. SwiftShader and llvmpipe are the two software rasterisers a
+   headless capture actually lands on; anything else is treated as hardware, which is the safe
+   direction to be wrong in — a hardware machine wrongly called software loses a number, whereas
+   software wrongly called hardware publishes a fictional budget. */
+const SOFTWARE = /swiftshader|llvmpipe|software/i.test(RENDERER);
+
+/* PRINTED ON THE FRAME, not only in the report. A reader looking at the picture must be able to see
+   that it is showing five of six. */
+{
+  const el = document.createElement('div');
+  el.style.cssText = 'position:absolute;left:16px;top:14px;display:flex;flex-direction:column;gap:5px;'
+    + 'font:500 10.5px/1.4 ui-monospace,monospace;letter-spacing:.05em';
+  el.innerHTML =
+    `<div style="color:#8FB7FF;font-weight:600;letter-spacing:.15em">3D PROGRAMME · ${AVAILABLE.length} ENVIRONMENTS</div>`
+    + `<div style="color:rgba(196,212,240,0.8)">STATE DERIVED FROM EACH README AT BUILD TIME</div>`
+    + (OMITTED.length
+      ? `<div style="color:#E0A94A">${OMITTED.length} NOT SHOWN — ONLY 5 PANELS: ${OMITTED.join(' ')}</div>`
+      : '');
+  overlay.appendChild(el);
+}
+
 const report = {
   dof: DOF_ON,
   ao: AO_ON,
@@ -810,6 +897,10 @@ const report = {
   focusDistance: Number(focusDistance.toFixed(2)),
   panels: surveyed,
   projections,
+  /* Derived, so a stale row is impossible; and the omission is a field rather than a silence. */
+  environments: AVAILABLE,
+  environmentsShown: PANEL_SLOTS,
+  environmentsOmitted: OMITTED,
   deck,
   glError: gl.getError(),
   triangles: tris,
@@ -819,12 +910,25 @@ const report = {
   frames: FRAMES,
   msPerFrame: Number(ms.toFixed(3)),
   fps: Math.round(1000 / ms),
-  budget60: 16.6,
-  headroom: Number((16.6 - ms).toFixed(3)),
-  renderer: (() => {
-    const d = gl.getExtension('WEBGL_debug_renderer_info');
-    return d ? String(gl.getParameter(d.UNMASKED_RENDERER_WEBGL)) : 'unknown';
-  })(),
+  /*
+   * HEADROOM REFUSES ON A SOFTWARE RASTERISER, and reporting it was the second half of the same
+   * mistake as the broken timer.
+   *
+   * SwiftShader is a CPU rasteriser. Comparing its frame time to a 60 Hz budget is not a
+   * conservative estimate of anything — it measures a machine nobody ships on, and the ratio to real
+   * hardware is not a constant (E0 measured 1.305 ms on an M1 for a scene SwiftShader takes tens of
+   * milliseconds over). So the budget comparison is REFUSED with a code rather than computed, exactly
+   * as absent data refuses everywhere else in this codebase.
+   *
+   * The frame time itself is still reported, because it IS a real measurement — of SwiftShader.
+   */
+  renderer: RENDERER,
+  rendererClass: SOFTWARE ? 'software' : 'hardware',
+  headroom: SOFTWARE ? null : Number((16.6 - ms).toFixed(3)),
+  headroomRefusal: SOFTWARE ? 'SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET' : null,
+  /* Real-hardware timing for this environment is UNMEASURED. E0's and E8's M1 figures came from
+     manual browser sessions on real hardware; this harness has only ever run under SwiftShader. */
+  hardwareMsPerFrame: null,
 };
 (globalThis as unknown as { E1: typeof report }).E1 = report;
 log.textContent = JSON.stringify(report, null, 2);

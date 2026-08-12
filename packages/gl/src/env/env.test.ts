@@ -4,6 +4,8 @@ import {
   eyeOf, viewProjection, lightViewProjection, boundsRadius, boundsCentre, ELEVATION_LIMIT,
 } from './camera.js';
 import { squareToQuad, projectQuad, uprightPanelCorners, isQuadRefusal } from './project.js';
+import { particleLayout, emissionSchedule } from './particles.js';
+import { rayBoxSlab, marchPlan } from './volume.js';
 
 /**
  * L1.5 / L1.6 — and the two failures these exist to make impossible.
@@ -688,5 +690,221 @@ describe('heightfield — a measured surface, holes and all', () => {
     expect(r.geometry.indices).toBeInstanceOf(Uint32Array);
     const small = heightfield(20, 20, () => 1);
     expect(small.geometry.indices).toBeInstanceOf(Uint16Array);
+  });
+});
+
+/*
+ * L3.5 PARTICLES — the two pure parts, which are where the silent failures live.
+ *
+ * The simulation itself is GPU state and is verified by `readState()` in the harnesses, which is the
+ * whole reason this layer uses float textures instead of transform feedback. What CAN be tested here
+ * is the arithmetic around it, and both functions below exist because their obvious implementations
+ * are wrong in ways that produce a working-looking system.
+ */
+describe('particleLayout — the last row must exist', () => {
+  it('covers the requested capacity with power-of-two dimensions', () => {
+    for (const cap of [1, 2, 3, 17, 100, 1000, 4096, 5000, 65536]) {
+      const l = particleLayout(cap);
+      expect(l.slots, `capacity ${cap} must fit`).toBeGreaterThanOrEqual(cap);
+      expect(l.width * l.height, `slots must equal w*h for ${cap}`).toBe(l.slots);
+      // Power of two on both axes: the update pass indexes by integer texel, and a POT width keeps
+      // `slot = y * width + x` exact at every size.
+      expect(Math.log2(l.width) % 1, `width ${l.width} not POT`).toBe(0);
+      expect(Math.log2(l.height) % 1, `height ${l.height} not POT`).toBe(0);
+    }
+  });
+
+  it('never returns a zero dimension, whatever it is handed', () => {
+    // A zero-width texture is a silently incomplete framebuffer: every write does nothing and the
+    // particles sit frozen wherever they were seeded.
+    for (const cap of [0, -5, 0.4, Number.NaN]) {
+      const l = particleLayout(cap);
+      expect(l.width, `width for ${cap}`).toBeGreaterThanOrEqual(1);
+      expect(l.height, `height for ${cap}`).toBeGreaterThanOrEqual(1);
+      expect(l.slots).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('does not waste more than a factor of two on a bad fit', () => {
+    // 4097 must not become 128x128. A layout that over-allocates by 4x costs a full curl evaluation
+    // per wasted slot per frame, which is invisible in a capture and expensive in a profile.
+    const l = particleLayout(4097);
+    expect(l.slots).toBeLessThan(4097 * 2.2);
+  });
+});
+
+describe('emissionSchedule — a rate below one per frame must not vanish', () => {
+  const src = (rate: number): Parameters<typeof emissionSchedule>[0][number] => ({
+    at: [0, 0, 0], rate, velocity: [0, 1, 0], colour: [1, 1, 1], life: 2,
+  });
+
+  it('carries the fraction, so 30/s at 60fps emits 30 in a second and not zero', () => {
+    /*
+     * THE BUG THIS EXISTS TO PREVENT. `floor(30 * (1/60))` is `floor(0.5)` is 0 — for ever, with
+     * every uniform correctly set and no error anywhere. Any rate under one particle per frame
+     * silently produces nothing, and the emitter looks broken in a way that leads you to the shader.
+     */
+    let carry: number[] = [];
+    let total = 0;
+    for (let f = 0; f < 60; f++) {
+      const r = emissionSchedule([src(30)], 1 / 60, carry);
+      total += r.counts[0]!;
+      carry = r.carry;
+    }
+    expect(total, 'a second of 30/s must emit 30').toBe(30);
+  });
+
+  it('is exact in the long run for an awkward rate', () => {
+    let carry: number[] = [];
+    let total = 0;
+    for (let f = 0; f < 600; f++) {
+      const r = emissionSchedule([src(7)], 1 / 60, carry);
+      total += r.counts[0]!;
+      carry = r.carry;
+    }
+    // 10 seconds at 7/s. Allow one particle of rounding at the boundary, no more.
+    expect(total).toBeGreaterThanOrEqual(69);
+    expect(total).toBeLessThanOrEqual(70);
+  });
+
+  it('clamps a backgrounded tab so it does not dump a minute of emission into one frame', () => {
+    // A tab returning from the background hands over a multi-second dt. Unclamped, `rate * dt` emits
+    // the whole gap at once — a flash that reads as a blending bug rather than as a timing one.
+    const r = emissionSchedule([src(1000)], 12, []);
+    expect(r.counts[0], '12 s must be clamped to 100 ms of emission').toBe(100);
+  });
+
+  it('emits nothing for a zero or negative rate, and keeps no carry', () => {
+    const r = emissionSchedule([src(0), src(-50)], 1 / 60, [0, 0]);
+    expect(r.counts).toEqual([0, 0]);
+    expect(r.carry).toEqual([0, 0]);
+  });
+
+  it('tracks each source independently', () => {
+    let carry: number[] = [];
+    const totals = [0, 0];
+    for (let f = 0; f < 120; f++) {
+      const r = emissionSchedule([src(6), src(90)], 1 / 60, carry);
+      totals[0]! += r.counts[0]!;
+      totals[1]! += r.counts[1]!;
+      carry = r.carry;
+    }
+    // 2 s at 6/s and 90/s. A shared carry would smear one source's remainder into the other.
+    expect(totals[0]).toBeGreaterThanOrEqual(11);
+    expect(totals[0]).toBeLessThanOrEqual(12);
+    expect(totals[1]).toBeGreaterThanOrEqual(179);
+    expect(totals[1]).toBeLessThanOrEqual(180);
+  });
+});
+
+/*
+ * L4.5 VOLUME — the intersection, which is where a volumetric goes wrong invisibly.
+ *
+ * Get `rayBoxSlab` slightly wrong and the volume still RENDERS — clipped, or inside out, or starting
+ * behind the camera — and every one of those reads as a density problem rather than an intersection
+ * one. `RAY_BOX_GLSL` mirrors this function line for line, so a tested reference is the only thing
+ * that makes a divergence between the two findable at all.
+ */
+describe('rayBoxSlab — the intersection nobody can see is wrong', () => {
+  const MIN: [number, number, number] = [-1, -1, -1];
+  const MAX: [number, number, number] = [1, 1, 1];
+
+  it('hits a box straight ahead with the right entry and exit', () => {
+    const r = rayBoxSlab([0, 0, -5], [0, 0, 1], MIN, MAX);
+    expect(r).not.toBeNull();
+    expect(r!.tNear).toBeCloseTo(4, 12);
+    expect(r!.tFar).toBeCloseTo(6, 12);
+  });
+
+  it('misses a box beside the ray', () => {
+    expect(rayBoxSlab([5, 0, -5], [0, 0, 1], MIN, MAX)).toBeNull();
+  });
+
+  it('returns null for a box entirely behind the eye, not a negative march', () => {
+    /* tFar < 0. Without this check the march runs backwards from the camera and the volume appears
+       mirrored behind the viewer — which, on a symmetric field, looks exactly like a correct render. */
+    expect(rayBoxSlab([0, 0, 5], [0, 0, 1], MIN, MAX)).toBeNull();
+  });
+
+  it('clamps tNear to zero when the camera is INSIDE the box', () => {
+    // Otherwise the march starts at a negative distance, i.e. behind the eye, and the near half of
+    // the volume is integrated twice while the far half is missed.
+    const r = rayBoxSlab([0, 0, 0], [0, 0, 1], MIN, MAX);
+    expect(r).not.toBeNull();
+    expect(r!.tNear).toBe(0);
+    expect(r!.tFar).toBeCloseTo(1, 12);
+  });
+
+  it('handles a ray exactly parallel to a slab, inside and outside', () => {
+    /*
+     * THE CASE THAT PRODUCES NaN. A parallel ray divides by zero; the slab method survives ±Infinity,
+     * but a ray whose origin sits exactly ON a face gives `0 * Infinity` = NaN, and NaN fails every
+     * comparison — so `tNear > tFar` is false and the miss is reported as a HIT with garbage bounds.
+     */
+    const inside = rayBoxSlab([0, 0.5, -5], [0, 0, 1], MIN, MAX);
+    expect(inside, 'parallel and within the slab must hit').not.toBeNull();
+    expect(inside!.tNear).toBeCloseTo(4, 12);
+
+    const outside = rayBoxSlab([0, 9, -5], [0, 0, 1], MIN, MAX);
+    expect(outside, 'parallel and outside the slab must miss').toBeNull();
+
+    // Origin exactly on the face — the NaN case.
+    const onFace = rayBoxSlab([0, 1, -5], [0, 0, 1], MIN, MAX);
+    expect(onFace, 'a ray on the boundary must not produce NaN bounds').not.toBeNull();
+    expect(Number.isFinite(onFace!.tNear)).toBe(true);
+    expect(Number.isFinite(onFace!.tFar)).toBe(true);
+  });
+
+  it('is correct for a diagonal ray, where an axis-at-a-time error would not show', () => {
+    const inv = 1 / Math.sqrt(3);
+    const r = rayBoxSlab([-3, -3, -3], [inv, inv, inv], MIN, MAX);
+    expect(r).not.toBeNull();
+    // Enters at (-1,-1,-1): distance from (-3,-3,-3) is 2*sqrt(3).
+    expect(r!.tNear).toBeCloseTo(2 * Math.sqrt(3), 10);
+    expect(r!.tFar).toBeCloseTo(4 * Math.sqrt(3), 10);
+  });
+
+  it('handles an off-centre box, so the origin is not doing the work', () => {
+    const r = rayBoxSlab([0, 0, 0], [1, 0, 0], [3, -1, -1], [5, 1, 1]);
+    expect(r).not.toBeNull();
+    expect(r!.tNear).toBeCloseTo(3, 12);
+    expect(r!.tFar).toBeCloseTo(5, 12);
+  });
+});
+
+describe('marchPlan — a fixed WORLD step, so density does not depend on the ray', () => {
+  it('keeps sample spacing constant regardless of segment length', () => {
+    /*
+     * `len / steps` would make a corner-to-corner ray sample the SAME field more coarsely than a
+     * face-to-face one, so the volume looks denser at its edges than in its middle — an artefact that
+     * reads as data. The step is the world step, always.
+     */
+    const short = marchPlan(1, 0.05, 128);
+    const long = marchPlan(6, 0.05, 128);
+    expect(short.step).toBe(0.05);
+    expect(long.step).toBe(0.05);
+    expect(short.steps).toBe(20);
+  });
+
+  it('reports truncation instead of silently ending the volume early', () => {
+    // 10 units at 0.05 wants 200 steps against a budget of 128. The far side of the volume simply is
+    // not integrated, which looks like the data stopping rather than the march stopping.
+    const p = marchPlan(10, 0.05, 128);
+    expect(p.steps).toBe(128);
+    expect(p.truncated).toBe(true);
+    expect(marchPlan(1, 0.05, 128).truncated).toBe(false);
+  });
+
+  it('returns no steps for a degenerate segment rather than dividing by zero', () => {
+    for (const [len, step] of [[0, 0.05], [-1, 0.05], [1, 0], [1, -0.05], [Number.NaN, 0.05]]) {
+      const p = marchPlan(len!, step!, 128);
+      expect(p.steps, `segment ${len} step ${step}`).toBe(0);
+      expect(Number.isFinite(p.step)).toBe(true);
+    }
+  });
+
+  it('always takes at least one step for a real segment, however short', () => {
+    const p = marchPlan(0.001, 0.05, 128);
+    expect(p.steps).toBe(1);
   });
 });

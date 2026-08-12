@@ -61,8 +61,13 @@ plane's normal points straight at its zenith. At `ambientGain: 0.86` the floor a
 glowing wedges brighter than the key light, open sky showed through the corridor's far end, and the fog
 — the entire point of the environment — was invisible against it. It read as a bright tunnel. Now: no
 sky backdrop, clear to the fog colour so every surface converges on a value the frame already has, the
-far end capped, ambient at 0.46, and the sky kept only as the specular environment for the records'
-sheen, which is the part of it that was doing real work.
+far end capped, and ambient cut from 0.86 to 0.46.
+
+*Correction:* an earlier draft of this paragraph said the sky was "kept only as the specular
+environment … at a third strength". That was not what the code did. No `sky` option is passed, so
+`bindSky` binds the full `DEFAULT_SKY`; the only reduction is the global `ambientGain`, and 0.46 from
+0.86 is 0.53× rather than a third. The sky still lights the diffuse term as well as the specular one.
+Two wrong numbers in one clause, describing a change I had made myself.
 
 **6 · A 46° lens cannot make a "deep architectural space".** Three framings were measured. Close and
 wide clipped the newest record's own text; far and wide made every record too small. Neither was a
@@ -109,9 +114,21 @@ actionable.
   blocks, blocks in clusters, some compartmented — because a uniform sprinkle would exercise none of
   the code that matters.
 
-## Cost
+## Cost — corrected
 
-0.425 ms/frame at 1200×720 under SwiftShader; 16.18 ms of headroom against the 60 Hz budget.
+**This previously read "0.425 ms/frame … 16.18 ms of headroom".** Both were wrong, for the same two
+reasons set out in [E5's README](../e5/README.md#cost--and-a-number-i-published-that-was-fiction): a
+`gl.finish()` timer that measures command-buffer flush rather than GPU completion, and a 60 Hz budget
+comparison that is meaningless on a software rasteriser.
+
+| | |
+|---|---|
+| frame time | **60.3 ms** at 1200×720 |
+| renderer | SwiftShader (software) |
+| 60 Hz headroom | **REFUSED** — `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` |
+| real-hardware time | **UNMEASURED** |
+
+60.3 against a published 0.425 is a factor of 142.
 
 ## Reproduce
 

@@ -36,7 +36,7 @@ for (const [name, q] of [['live', ''], ['flat-only', '&mesh=0'], ['no-ao', '&ao=
   console.log(`  ${name}.png — canvases: ${state.canvases}, drawing: ${state.drawing}`);
   // The numbers are the part this process can actually check. A capture it cannot see proves nothing.
   const rep = await p.evaluate(() => globalThis.E5);
-  console.log(`    ms/frame ${rep.msPerFrame} · ${rep.renderer} · glError ${rep.glError} · headroom ${rep.headroom} ms`);
+  console.log(`    ms/frame ${rep.msPerFrame} · ${rep.renderer} · glError ${rep.glError} · ${rep.rendererClass} · headroom ${rep.headroom === null ? rep.headroomRefusal : rep.headroom + ' ms'}`);
   console.log(`    agreesWithFlat ${rep.agreesWithFlat}`
     + ` · cells ${rep.agreement.cellsDrawn.join('/')} drawn, ${rep.agreement.cellsHoles.join('/')} holes`
     + ` · absent ${rep.agreement.pointsAbsent.join('/')} · withheld ${rep.agreement.pointsWithheld.join('/')}`

@@ -36,7 +36,7 @@ for (const [name, q] of [['live', ''], ['no-fog', '&fog=0'], ['no-ao', '&ao=0']]
   console.log(`  ${name}.png — canvases: ${state.canvases}, drawing: ${state.drawing}`);
   // The numbers are the part this process can actually check. A capture it cannot see proves nothing.
   const rep = await p.evaluate(() => globalThis.E6);
-  console.log(`    ms/frame ${rep.msPerFrame} · ${rep.renderer} · glError ${rep.glError} · headroom ${rep.headroom} ms`);
+  console.log(`    ms/frame ${rep.msPerFrame} · ${rep.renderer} · glError ${rep.glError} · ${rep.rendererClass} · headroom ${rep.headroom === null ? rep.headroomRefusal : rep.headroom + ' ms'}`);
   console.log(`    readableTo ${rep.readableToDays}d · visibleTo ${rep.visibleToDays}d`
     + ` · ${rep.hoursPerMetre} h/m · fogDensity ${rep.fogDensity}`
     + ` · fog ${rep.fogNearest}..${rep.fogFurthest} (nearest..furthest)`);

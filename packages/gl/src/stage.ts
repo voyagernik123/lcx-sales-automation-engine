@@ -23,6 +23,12 @@ export const STAGE_REFUSAL_CODES = [
   'SHADER_COMPILE_FAILED',
   'PROGRAM_LINK_FAILED',
   'FRAMEBUFFER_INCOMPLETE',
+  /* L3.5 particles and L4.5 volumetrics each need one WebGL2 EXTENSION that is not core, and whose
+     absence DEGRADES SILENTLY rather than failing: without EXT_color_buffer_float the particle state
+     textures never update and the field renders frozen; without OES_texture_float_linear a float
+     sampler3D falls back to NEAREST and the volume renders as voxel blocks that look like a
+     deliberate aesthetic. Neither raises a GL error, so this is the only place either can be caught. */
+  'MISSING_EXTENSION',
 ] as const;
 export type StageRefusalCode = (typeof STAGE_REFUSAL_CODES)[number];
 
@@ -56,6 +62,9 @@ const REFUSAL_REASON: Record<StageRefusalCode, string> = {
   FRAMEBUFFER_INCOMPLETE:
     'This driver would not allocate the render targets this view needs. The data is unaffected; ' +
     'only the three-dimensional presentation of it is unavailable.',
+  MISSING_EXTENSION:
+    'This driver is missing a graphics capability this view needs, so it is not being drawn rather ' +
+    'than drawn wrongly. The data is unaffected.',
 };
 
 export function stageRefusal(code: StageRefusalCode, detail?: string): StageRefusal {

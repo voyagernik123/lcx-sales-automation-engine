@@ -85,6 +85,10 @@ export { box, plane, sphere, cylinder, torus, arcTube, latLonToVec3, heightfield
 export type { HeightfieldResult } from './env/mesh.js';
 export type { Geometry } from './env/mesh.js';
 export { projectQuad, squareToQuad, uprightPanelCorners, isQuadRefusal } from './env/project.js';
+export { createParticleField, particleLayout, emissionSchedule, CURL_NOISE_GLSL } from './env/particles.js';
+export type { ParticleField, ParticleSource } from './env/particles.js';
+export { createVolumeField, rayBoxSlab, marchPlan, RAY_BOX_GLSL } from './env/volume.js';
+export type { VolumeField } from './env/volume.js';
 export type { QuadCorners, QuadProjection, QuadRefusal } from './env/project.js';
 export {
   eyeOf, viewProjection, lightViewProjection, boundsRadius, boundsCentre, ELEVATION_LIMIT,

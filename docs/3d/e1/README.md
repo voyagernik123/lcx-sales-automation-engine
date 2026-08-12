@@ -79,6 +79,23 @@ caught by asking what the control capture *would* look like rather than by looki
 The honest product reading: the wide aperture is a hero frame, not an operator surface. A shipping
 version racks focus on interaction and sits at `dof=0` at rest.
 
+## Two corrections
+
+**The panel content is now DERIVED, because two of its five rows were wrong.** The frame prints "Every
+row below is checkable against this repository", and it was rendering E0's frame time as *4.41 ms* —
+that is P1's number; E0 measured 1.305 at 1× — and *"E3–E7 NOT STARTED"* after E5 and E6 had shipped.
+Invented content in a rendered environment is exactly what §6 rule 6 exists to stop, and a claim of
+checkability the reader has to take on trust is worse than no claim. Each panel's state is now read
+from that environment's own README first line at build time, so it cannot go stale without the README
+going stale with it, and an unparseable README renders a visible refusal rather than a stale row.
+
+**The frame now states its own coverage.** There are five panels of geometry and six environments, and
+the first derived version silently dropped one — a frame presenting itself as the state of the
+programme with a shipped environment missing. The geometry is not widened to six (the five positions
+are measured: 100% / 83% / 78% visibility, which a sixth panel would invalidate), so the HUD prints
+`6 ENVIRONMENTS · 1 NOT SHOWN — ONLY 5 PANELS: E2` and the report carries
+`environmentsOmitted`. Naming what is missing is the only honest version of not showing it.
+
 ## What is still not done
 
 - **No room.** No walls, no ceiling, no volumetric haze — still boxes on a plane, so (a) is
@@ -95,8 +112,10 @@ version racks focus on interaction and sits at `dof=0` at rest.
 `packages/gl/src/env/project.ts` is the piece E3–E7 all need: `projectQuad` returns a CSS
 `matrix3d` or a **named refusal** (`CORNER_BEHIND_CAMERA`, `DEGENERATE_ON_SCREEN`,
 `EMPTY_ELEMENT_BOX`) rather than a wrong transform, plus `signedArea` so a caller can tell a
-back-facing surface from a front-facing one before rendering mirror-imaged text. Ten tests, including
-the round trip and the `matrix3d` column-major check.
+back-facing surface from a front-facing one before rendering mirror-imaged text. **Eight** tests,
+including the round trip and the `matrix3d` column-major check. (This said "ten". There are eight —
+`packages/gl/src/env/env.test.ts`. A test count is the cheapest possible claim to check and I did not
+check it.)
 
 ## Reproduce
 

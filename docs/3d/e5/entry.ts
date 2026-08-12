@@ -326,13 +326,30 @@ function frame() {
   stage.blit(present, (prog) => gl.uniform1i(gl.getUniformLocation(prog, 'uScene'), 0));
 }
 
-let ms = 0;
-{
+/*
+ * THE INSTRUMENT, CORRECTED. The first version was `gl.finish()` over a 4-frame batch with no
+ * warm-up, and it reported 0.45 ms for a shadow-mapped, AO'd 1200x720 frame under a CPU rasteriser —
+ * a number that is not physically plausible and that I published in a README and a commit message
+ * as fact.
+ *
+ * `gl.finish()` returns once the command buffer is FLUSHED, not once the GPU has finished; this repo
+ * had already written that down twice (docs/3d/p1/README.md and E1's own comment) and E0, E1, E2 and
+ * E8 all use the trailing-readPixels form. E5 and E6 did not. A pixel read cannot be satisfied until
+ * the frame it reads actually exists, which is what makes the clock mean something.
+ *
+ * The warm-up frame matters too: the first frame pays shader upload and texture allocation, and
+ * averaged over a 4-frame batch that alone can dominate the result.
+ */
+function measure(n: number): number {
+  frame();
+  const px = new Uint8Array(4);
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
   const t0 = performance.now();
-  for (let i = 0; i < FRAMES; i++) frame();
-  gl.finish();
-  ms = (performance.now() - t0) / FRAMES;
+  for (let i = 0; i < n; i++) frame();
+  gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  return (performance.now() - t0) / n;
 }
+const ms = measure(Math.max(1, FRAMES));
 
 /*
  * ══════════════════════════════════════════════════════════════════════════════════════
@@ -516,6 +533,18 @@ const agreement = {
 };
 const agreesWithFlat = Object.values(agreement).every(([a, b]) => a === b);
 
+/* Read ONCE, before the report, because two call sites for the same string is two chances for the
+   refusal below to key off something different from what is printed. */
+const RENDERER = (() => {
+  const d = gl.getExtension('WEBGL_debug_renderer_info');
+  return d ? String(gl.getParameter(d.UNMASKED_RENDERER_WEBGL)) : 'unknown';
+})();
+/* Matched on the driver's own words. SwiftShader and llvmpipe are the two software rasterisers a
+   headless capture actually lands on; anything else is treated as hardware, which is the safe
+   direction to be wrong in — a hardware machine wrongly called software loses a number, whereas
+   software wrongly called hardware publishes a fictional budget. */
+const SOFTWARE = /swiftshader|llvmpipe|software/i.test(RENDERER);
+
 const report = {
   ao: AO_ON,
   mesh: MESH_ON,
@@ -552,11 +581,25 @@ const report = {
   frames: FRAMES,
   msPerFrame: Number(ms.toFixed(3)),
   fps: Math.round(1000 / ms),
-  headroom: Number((16.6 - ms).toFixed(3)),
-  renderer: (() => {
-    const d = gl.getExtension('WEBGL_debug_renderer_info');
-    return d ? String(gl.getParameter(d.UNMASKED_RENDERER_WEBGL)) : 'unknown';
-  })(),
+  /*
+   * HEADROOM REFUSES ON A SOFTWARE RASTERISER, and reporting it was the second half of the same
+   * mistake as the broken timer.
+   *
+   * SwiftShader is a CPU rasteriser. Comparing its frame time to a 60 Hz budget is not a
+   * conservative estimate of anything — it measures a machine nobody ships on, and the ratio to real
+   * hardware is not a constant (E0 measured 1.305 ms on an M1 for a scene SwiftShader takes tens of
+   * milliseconds over). So the budget comparison is REFUSED with a code rather than computed, exactly
+   * as absent data refuses everywhere else in this codebase.
+   *
+   * The frame time itself is still reported, because it IS a real measurement — of SwiftShader.
+   */
+  renderer: RENDERER,
+  rendererClass: SOFTWARE ? 'software' : 'hardware',
+  headroom: SOFTWARE ? null : Number((16.6 - ms).toFixed(3)),
+  headroomRefusal: SOFTWARE ? 'SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET' : null,
+  /* Real-hardware timing for this environment is UNMEASURED. E0's and E8's M1 figures came from
+     manual browser sessions on real hardware; this harness has only ever run under SwiftShader. */
+  hardwareMsPerFrame: null,
 };
 (globalThis as unknown as { E5: typeof report }).E5 = report;
 log.textContent = JSON.stringify(report, null, 2);

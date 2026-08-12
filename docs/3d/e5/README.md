@@ -79,10 +79,35 @@ capture looked fine.
 
 Also: the peak's `$500k · 30 d` sub-label sits on the ridge behind it and is low-contrast there.
 
-## Cost
+## Cost — and a number I published that was fiction
 
-0.45 ms/frame at 1200×720 under SwiftShader, 16.15 ms of headroom against the 60 Hz budget. The
-surface is 48 triangles; the expense is the shadow map and AO, not the mesh.
+**This section previously read "0.45 ms/frame … 16.15 ms of headroom against the 60 Hz budget". Both
+figures were wrong and the second was meaningless.** Corrected:
+
+| | |
+|---|---|
+| frame time | **63.7 ms** at 1200×720 |
+| renderer | SwiftShader (software) |
+| 60 Hz headroom | **REFUSED** — `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` |
+| real-hardware time | **UNMEASURED** |
+
+Two separate defects, and the second is the worse one.
+
+**1 · The timer was invalid.** It was `gl.finish()` over a 4-frame batch with no warm-up. `gl.finish()`
+returns once the command buffer is **flushed**, not once the GPU has finished — a fact this repository
+had already written down twice, and which E0, E1, E2 and E8 all handle with a trailing `readPixels`
+that cannot be satisfied until the frame exists. E5 and E6 did not. The corrected instrument reports
+**63.7 ms, not 0.45** — a factor of 140. A sub-millisecond shadow-mapped, AO'd frame on a CPU
+rasteriser was never plausible, and I should have disbelieved it on sight rather than publishing it.
+
+**2 · "Headroom against the 60 Hz budget" was meaningless whatever the timer said.** SwiftShader is a
+CPU rasteriser; comparing it to a frame budget measures a machine nobody ships on, and the ratio to
+real hardware is not a constant — E0 measured 1.305 ms on an M1 for a scene SwiftShader labours over.
+The budget comparison now **refuses with a code** rather than being computed, exactly as absent data
+refuses everywhere else here. Real-hardware timing for E5 is unmeasured: E0's and E8's M1 figures came
+from manual browser sessions, and this harness has only ever run headless.
+
+The surface is 48 triangles. The expense is the shadow map and AO, not the mesh.
 
 ## Reproduce
 

@@ -46,6 +46,8 @@ for (const [name, q] of [['live', ''], ['no-dof', '&dof=0'], ['no-ao', '&ao=0']]
      harness: `rectError` is the gap in CSS pixels between where the COMPOSITOR put a projected
      element and where the RENDERER said its surface is. Anything above a pixel means the DOM content
      is not on the panel, however convincing the capture looks. */
+  console.log(`    environments ${rep.environments.join(' ')} · shown ${rep.environmentsShown.join(' ')}`
+    + (rep.environmentsOmitted.length ? ` · OMITTED ${rep.environmentsOmitted.join(' ')}` : ' · none omitted'));
   for (const pr of rep.projections) {
     console.log(`    ${pr.id} ${pr.shown ? 'SHOWN' : 'HIDDEN'}`
       + (pr.refusal ? ` refusal ${pr.refusal}` : '')

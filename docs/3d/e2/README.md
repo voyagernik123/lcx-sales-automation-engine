@@ -47,25 +47,39 @@ over the horizon and disappear.
 carries a reach map and a which-desks-are-awake reading, so it is arguable; arguable is not measured,
 and the plan requires a task and a stopwatch against the flat surface.
 
-And the sphere still has no landmasses, so a corridor endpoint is a position rather than a place. A
-reader cannot yet name where an arc lands without the marker's tooltip. Coastline polylines through
-the existing `createLineBatch` would fix it with no asset pipeline, and that is the next step here —
-before any more corridors, because more unlabelled endpoints add no reading.
+**No landmass reference, so an endpoint is a position rather than a place.** A reader cannot name
+where an arc lands. Coastline polylines through the existing `createLineBatch` would fix it with no
+asset pipeline, and that is the next step here — before any more corridors, because more unlabelled
+endpoints add no reading. §3.3 deferred the texture decision deliberately; the polyline route does not
+need it.
 
-The twilight band is also abrupt rather than soft. A real terminator has a gradient a few degrees
-wide; this one is the raw N·L falloff.
+**No DOM text at all, which is a §6 rule 4 violation and was not previously recorded here.** `build.mjs`
+chose to have no DOM overlay, so eight sited cities and seven corridors carry no labels: nothing enters
+the accessibility tree, nothing is selectable or translatable, and nothing survives printing. Every
+other environment in the programme now projects real DOM content onto its geometry
+(`projectQuad` / `projectScreen` in `packages/gl/src/env/project.ts`), and E2 is the one that does not.
+This is why E1's derived panel set omits E2 rather than one of the others: it is the least complete.
 
-Lesser: the sphere has no landmasses, so it cannot say WHERE anything is. A continent texture is an
-asset, which §3.3 deliberately deferred — so an arc's endpoints currently mean nothing to a reader
-even once the arcs exist. That ordering matters: arcs before texture is backwards.
+**The twilight band is abrupt.** A real terminator has a gradient a few degrees wide; this one is the
+raw N·L falloff.
+
+**Frame time is not reported.** The harness computes `msPerFrame` but `capture.mjs` never reads it, so
+no number for this environment has ever been written down. Unlike E5 and E6 it did not publish a wrong
+figure — it published none.
 
 ## What it actually needs, in order
 
-1. **Great-circle arcs** between partner lat/longs, extruded and lit. The payload.
-2. **A landmass reference** so the endpoints mean something — texture, or coastline polylines
-   through the existing `createLineBatch`, which needs no asset pipeline.
-3. A sub-solar point that puts some corridors in darkness, so the terminator carries the
-   "which desks are awake" reading it exists for.
+1. **City and corridor labels in the DOM**, projected — the rule 4 fix, and the thing that turns eight
+   sited points into eight named ones.
+2. **A landmass reference** so the endpoints mean something — coastline polylines through
+   `createLineBatch`, which needs no asset pipeline.
+3. **A softer terminator**, a few degrees of gradient rather than raw N·L.
+4. **A reported frame time**, by the trailing-`readPixels` instrument the other harnesses use.
+
+*This section previously listed "great-circle arcs" and "a sub-solar point that puts some corridors in
+darkness" as outstanding, and repeated the landmass point twice — both of those had already been
+built and are documented as fixed at the top of this file. A to-do list that re-requests finished work
+is a to-do list nobody re-read.*
 
 ## Reproduce
 
