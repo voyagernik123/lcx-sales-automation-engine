@@ -1,6 +1,7 @@
 import type { Mat4, Vec3 } from '../math.js';
 import { normalise, sub, cross } from '../math.js';
 import type { Stage, StageRefusal } from '../stage.js';
+import { savePassState, restorePassState } from './passState.js';
 
 /**
  * L6 · ENVIRONMENT — and it is the fix for a defect E0 found rather than a decoration.
@@ -138,6 +139,7 @@ export function createSkyBackdrop(stage: Stage): SkyBackdrop | StageRefusal {
       const right = normalise(cross(forward, worldUp));
       const up = normalise(cross(right, forward));
 
+      const prev = savePassState(gl);
       gl.disable(gl.DEPTH_TEST);
       gl.depthMask(false);
       gl.disable(gl.BLEND);
@@ -149,8 +151,10 @@ export function createSkyBackdrop(stage: Stage): SkyBackdrop | StageRefusal {
       gl.uniform1f(gl.getUniformLocation(program, 'uAspect'), Math.max(1e-3, o.aspect));
       bindSky(gl, program, o.sky);
       stage.blit(program);
-      gl.depthMask(true);
-      gl.enable(gl.DEPTH_TEST);
+      /* RESTORED, not re-enabled. The pair here was `depthMask(true); enable(DEPTH_TEST)`, which puts
+         back the values a caller usually has rather than the ones it actually had — the same shape of
+         mistake as ao.ts's and dof.ts's, and the reason passState.ts exists. */
+      restorePassState(gl, prev);
     },
     dispose() { gl.deleteProgram(program); },
   };

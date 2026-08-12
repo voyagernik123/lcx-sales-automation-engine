@@ -38,10 +38,14 @@ import { Pool } from 'pg';
 import { spawnSync } from 'node:child_process';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createHash } from 'node:crypto';
 
-const REF = process.env.SUPABASE_PROJECT_REF || 'fynzwqhxjguggkjvkwmj';
+/* This script's own checkout, so the commands it prints are runnable wherever it is cloned. */
+const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
+const REF =process.env.SUPABASE_PROJECT_REF || 'fynzwqhxjguggkjvkwmj';
 const REGIONS = (process.env.SUPABASE_REGIONS || 'eu-central-1,eu-central-2').split(',');
 const CONNECT_MS = 8_000;
 
@@ -391,7 +395,11 @@ if (!winner) {
     console.log('  Otherwise — Supabase → that project → Project Settings → Database →');
     console.log('  "Reset database password". COPY the value it shows you, then run:');
     console.log('');
-    console.log('      bash /Users/nik/Downloads/usclaude-main/scripts/go-live.sh --clip');
+    /* DERIVED, NOT TYPED. This printed one machine's absolute home path as the next command to run, so on
+       any other checkout the instruction pointed at a file that does not exist. The historical quote in the
+       comment above `classify` keeps its literal path deliberately — that one is a record of what a
+       clipboard contained on a particular run, not an instruction to follow. */
+    console.log(`      bash ${join(REPO_ROOT, 'scripts/go-live.sh')} --clip`);
     console.log('');
     console.log('  --clip reads it from the clipboard, so a 30-character generated password is');
     console.log('  never retyped into an invisible prompt. Nothing else uses this password, so');

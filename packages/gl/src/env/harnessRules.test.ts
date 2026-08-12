@@ -40,6 +40,16 @@ const ALL = existsSync(DOCS)
         src: readFileSync(join(DOCS, d, 'entry.ts'), 'utf8'),
         captured: existsSync(join(DOCS, d, 'live.png')),
         hasReadme: existsSync(join(DOCS, d, 'README.md')),
+        readme: existsSync(join(DOCS, d, 'README.md'))
+          ? readFileSync(join(DOCS, d, 'README.md'), 'utf8') : '',
+        /*
+         * THE BUILT BUNDLE, because rule 2 was being checked against the wrong bytes. Grepping
+         * `entry.ts` for `requestAnimationFrame` cannot see a scheduler inside an imported module, and
+         * two environments import one: E5 pulls in `@/components/geometry/SurfacePlot` and
+         * `react-dom/server`. What actually ships is the bundle, so that is what is read.
+         */
+        bundle: existsSync(join(DOCS, d, 'bundle.js'))
+          ? readFileSync(join(DOCS, d, 'bundle.js'), 'utf8') : null,
       }))
   : [];
 const environments = ALL.filter((e) => e.captured);
@@ -48,7 +58,13 @@ describe('§6 rules, ratcheted across every docs/3d/e* environment', () => {
   it('finds environments to check at all', () => {
     /* A glob that silently matches nothing is a green test that checks nothing — the failure mode this
        whole file exists to prevent, reproduced inside the file itself. */
-    expect(environments.length, `no captured environments found under ${DOCS}`).toBeGreaterThanOrEqual(6);
+    /*
+     * NINE, NOT SIX. The floor was set when six existed and was never raised, so three environments'
+     * captures could have been deleted with the suite still green — a ratchet that stops ratcheting is
+     * a ratchet nobody notices has stopped. It is a FLOOR rather than an equality so that adding E9's
+     * successor does not fail the gate for existing.
+     */
+    expect(environments.length, `no captured environments found under ${DOCS}`).toBeGreaterThanOrEqual(9);
   });
 
   it('rule 5 — every environment runs assertBrandFidelity and acts on the result', () => {
@@ -89,11 +105,66 @@ describe('§6 rules, ratcheted across every docs/3d/e* environment', () => {
     }
   });
 
-  it('rule 2 — no environment schedules idle animation', () => {
-    for (const { id, src } of environments) {
+  it('rule 2 — no environment schedules idle animation, in its source OR its bundle', () => {
+    for (const { id, src, bundle } of environments) {
       for (const banned of ['requestAnimationFrame', 'setInterval']) {
         expect(src.includes(banned), `${id} uses ${banned}: §6 rule 2 forbids idle animation`).toBe(false);
+        /* An imported module's scheduler ships just as surely as a written one. Verified to be zero in
+           all nine bundles today, so this is a ratchet rather than a discovery. */
+        if (bundle !== null) {
+          expect(bundle.includes(banned),
+            `${id}'s BUNDLE contains ${banned} — something it imports schedules idle animation`).toBe(false);
+        }
       }
+    }
+  });
+
+  it('rule 7 — one shared GL context per environment', () => {
+    /*
+     * §6 rule 7: "Sixty contexts will exhaust an 8 GB M1." The rule was enforced for `flat/shared.ts`
+     * and asserted nowhere for the environments, which each construct their own stage. One canvas and
+     * one `createStage` per harness is what makes "one context" true, and both are cheap to check.
+     */
+    for (const { id, src } of environments) {
+      const stages = [...src.matchAll(/createStage\(/g)].length;
+      expect(stages, `${id} calls createStage ${stages} times — §6 rule 7 allows one context`).toBe(1);
+      const canvases = [...src.matchAll(/createElement\((?:'|")canvas(?:'|")\)/g)].length;
+      expect(canvases, `${id} creates ${canvases} canvases in script as well as the one in its page`)
+        .toBe(0);
+    }
+  });
+
+  it('rule 4 — an environment with no projected DOM content is a recorded debt, and the debt cannot grow', () => {
+    /*
+     * §6 rule 4 — "text stays in the DOM, projected from the same matrix" — had no check at all, and it
+     * is the rule with a LIVE violation: `docs/3d/e2/README.md` records "No DOM text at all, which is a
+     * §6 rule 4 violation", and E2's eight corridors and twelve cities therefore enter no accessibility
+     * tree and survive no print.
+     *
+     * WHY THIS IS A CEILING AND NOT AN ASSERTION THAT EVERY ENVIRONMENT PROJECTS. Two do not: E2, which
+     * has labels it should be projecting, and E0, which is the frame-budget spike and has no text to
+     * project in the first place. Those are different situations and only the first is a defect, which
+     * no grep can tell apart. Asserting "everyone projects" would fail the gate for E0 having nothing to
+     * say, and asserting "everyone who does not projects has a waiver" would fail it for E0's README not
+     * carrying a sentence about text it does not have.
+     *
+     * So the check is the one thing that is unambiguously true: the number of environments carrying no
+     * projected DOM content may not GROW. A tenth environment that bakes its labels fails here, and the
+     * two that exist are named in the message rather than hidden in a threshold.
+     */
+    const withoutProjection = environments
+      .filter((e) => !/projectQuad|projectScreen/.test(e.src))
+      .map((e) => e.id);
+    expect(withoutProjection.sort().join(','),
+      'the set of environments with no projected DOM content changed — a NEW one is a §6 rule 4 '
+      + 'regression, and a removal means this ratchet should be tightened')
+      .toBe('e0,e2');
+    /* And E2's is recorded where a reader will find it, which is the only part of the debt that is
+       currently discharged. */
+    const e2 = environments.find((e) => e.id === 'e2');
+    if (e2) {
+      expect(e2.readme, 'e2 projects nothing and no longer records that as a rule 4 violation')
+        .toMatch(/rule 4/);
     }
   });
 

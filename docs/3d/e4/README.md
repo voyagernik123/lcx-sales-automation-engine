@@ -208,6 +208,30 @@ marks on paper (now 26 m, with all four of its own edges visible, reading as an 
 flat control cast eleven detached shadow discs that read as eleven more entities — a shadow is a depth
 cue and a diagram in one plane has no depth to cue, so `?flat=1` has no key light shadow.
 
+**13 · The entity id and its meta line went into `innerHTML`.** Both are strings a real ontology supplies
+rather than this file, and `innerHTML` parses its argument: an `&` in an id corrupts the label silently and
+a `<` starts an element, on the surface a reader trusts most. The same values already go through `escText`
+in the flat table, so the frame and the fallback would have disagreed about the same entity by
+construction. They are `textContent` now, per line, and the two plane/hop tick dots are elements rather
+than a span of markup — a constructor that takes text cannot be got wrong by the next interpolation, which
+is what an escape helper cannot promise. Nothing here has a live ingress yet (`grep -rn 'JSON.parse\|fetch('
+docs/3d --include=*.ts` is empty), so this is a fix ahead of the dataset rather than after an incident.
+
+**14 · The labels could not be reached with a pointer.** `project.ts` justifies its own existence on the
+grounds that GL text is "unselectable, unsearchable, invisible to a screen reader", and every label sat
+inside a `pointer-events:none` overlay: `document.elementFromPoint` at the centre of each one returned the
+canvas, and a mouse drag selected the empty string. The container still ignores the pointer — it must not
+swallow a gesture aimed at the canvas — and the leaves no longer do. Measured after: a drag inside the HUD
+selects `ONTOLOGY AS ORBITS · RADIUS = HOPS · SIZE = RECORDS · TUBE = STRENGTH`.
+
+**15 · `?scale=abc` was reported as a driver fault.** `Math.max(1, Math.min(3, Number('abc')))` is NaN —
+neither clamp rejects NaN — so the canvas came out 0x0, `createStage` refused with
+`FRAMEBUFFER_INCOMPLETE`, and the reader was told "this driver would not allocate the render targets this
+view needs" about a driver that was fine. Numeric parameters now refuse as `BAD_PARAM` by name; `frames`
+reports the count MEASURED rather than requested (`frames=0` and `frames=-5` published a one-frame time as
+a 0- and -5-frame sweep); and the sweep stops on a 20-second wall clock, because `?frames=1e9` locked the
+renderer process hard enough that Playwright could not evaluate an expression against the page.
+
 ## The occlusion order, and why there is only one of them here
 
 E6 needed two opposite orders — decide near-to-far, paint far-to-near — and getting them the same way

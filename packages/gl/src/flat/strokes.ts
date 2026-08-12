@@ -164,6 +164,8 @@ export function createStrokeBatch(stage: Stage): StrokeBatch | StageRefusal {
     dispose() {
       gl.deleteBuffer(posBuf);
       gl.deleteVertexArray(vao);
+      /* See lines.ts: the program is this object's, so its lifetime is this object's. */
+      gl.deleteProgram(program);
     },
   };
 }

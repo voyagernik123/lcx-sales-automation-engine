@@ -1,6 +1,7 @@
 import type { Stage, StageRefusal } from '../stage.js';
 import { stageRefusal } from '../stage.js';
-import { DEPTH_RECONSTRUCT_GLSL } from './ao.js';
+import { LINEAR_DEPTH_GLSL } from './ao.js';
+import { savePassState, restorePassState, releaseTextureUnits } from './passState.js';
 
 /**
  * L2.8 · DEPTH OF FIELD — the pass that makes a frame read as photographed.
@@ -59,7 +60,7 @@ uniform float uFocusDistance;
 uniform float uAperture;
 uniform float uMaxCoc;
 out vec4 frag;
-${DEPTH_RECONSTRUCT_GLSL}
+${LINEAR_DEPTH_GLSL}
 
 float cocAt(vec2 uv) {
   float z = linearDepthAt(uv);
@@ -105,8 +106,17 @@ export interface DepthOfField {
     readonly depthTexture: WebGLTexture;
     readonly near: number;
     readonly far: number;
-    readonly fovDeg: number;
-    readonly aspect: number;
+    /**
+     * ACCEPTED AND UNUSED, and now optional so that is sayable in the type.
+     *
+     * The gather needs a DISTANCE per pixel, not a view-space position, so the shader calls
+     * `linearDepthAt` and never `viewPosAt` — which means the compiler drops `uTanHalfFov` and
+     * `uAspect` from this program entirely. Setting them was two `uniform1f` calls against a null
+     * location every frame, which WebGL performs as a silent no-op. They stay in the signature because
+     * every environment passes them and their call sites are not this package's to edit.
+     */
+    readonly fovDeg?: number;
+    readonly aspect?: number;
     /** World-space distance that stays sharp. Usually the distance to the subject. */
     readonly focusDistance: number;
     /** Higher = shallower. 0 disables the effect without changing the pass structure. */
@@ -162,6 +172,7 @@ export function createDepthOfField(
   return {
     texture,
     apply(o) {
+      const prev = savePassState(gl);
       gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
       gl.viewport(0, 0, w, h);
       gl.disable(gl.DEPTH_TEST);
@@ -178,8 +189,7 @@ export function createDepthOfField(
       gl.uniform1i(gl.getUniformLocation(prog, 'uDepth'), 1);
 
       gl.uniform2f(gl.getUniformLocation(prog, 'uNearFar'), o.near, o.far);
-      gl.uniform1f(gl.getUniformLocation(prog, 'uTanHalfFov'), Math.tan((o.fovDeg * Math.PI) / 360));
-      gl.uniform1f(gl.getUniformLocation(prog, 'uAspect'), o.aspect);
+      /* `uTanHalfFov` and `uAspect` are NOT set here any more. See the note on those two options. */
       gl.uniform2f(gl.getUniformLocation(prog, 'uTexel'), 1 / w, 1 / h);
       gl.uniform1f(gl.getUniformLocation(prog, 'uFocusDistance'), o.focusDistance);
       gl.uniform1f(gl.getUniformLocation(prog, 'uAperture'), o.aperture ?? 12);
@@ -193,14 +203,11 @@ export function createDepthOfField(
        * undefined behaviour, and it reported as GL_INVALID_OPERATION on the LIT draw, three
        * passes away from the pass that actually caused it.
        */
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, null);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, null);
-
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.depthMask(true);
-      gl.enable(gl.DEPTH_TEST);
+      releaseTextureUnits(gl, 2);
+      /* And the enable-state, which was previously RE-ENABLED rather than restored: this ended with an
+         unconditional `enable(DEPTH_TEST)`, so a caller that had it off got it back on, and CULL_FACE
+         — disabled above — was never put back at all. */
+      restorePassState(gl, prev);
     },
     resize(nw, nh) {
       const rw = Math.max(1, Math.floor(nw)), rh = Math.max(1, Math.floor(nh));

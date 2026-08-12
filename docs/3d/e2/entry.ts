@@ -13,12 +13,12 @@
  * see the list below, which is the input to that byte decision rather than a workaround for it.
  *
  * ── WHAT IS REAL HERE AND WHAT IS NOT ───────────────────────────────────────────────
- *   REAL   sphere earth, a shell that brightens at the limb, eight sited cities, an orbital ring
+ *   REAL   sphere earth, a shell that brightens at the limb, twelve sited cities, an orbital ring
  *          in polished metal, one key light producing a genuine day/night terminator, shadow map,
  *          depth prepass, SSAO, environment reflections, depth of field.
  *   ABSENT  continents, and this is the largest gap. `LIT_FRAG` has no texture sampler and
  *          `Material` carries no map of any kind, so the earth is a plain blue ball. Without an
- *          albedo the eight sited markers cannot be READ as geography by anyone looking at them —
+ *          albedo the twelve sited markers cannot be READ as geography by anyone looking at them —
  *          the siting is correct and it is not yet legible.
  *   ABSENT  the corridor arcs. Extruded great-circle arcs need a tube-along-a-path generator that
  *          `env/mesh.ts` does not have, and faking them with straight cylinders between two cities
@@ -77,12 +77,60 @@ const Q = qualitySettings(TIER);
    tier by AND so a control can turn an effect off and never on. */
 const AO_ON = params.get('ao') !== '0' && Q.ao;
 const DOF_ON = params.get('dof') !== '0' && Q.dof;
-const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
+/*
+ * A MISTYPED URL USED TO BE REPORTED AS A HARDWARE FAULT, and the clamp is what hid it.
+ *
+ * `Math.max(1, Math.min(3, Number('abc')))` is NaN — NEITHER clamp rejects NaN, because every comparison
+ * against NaN is false and both functions then return it. So `?scale=abc` gave W = NaN, `canvas.width`
+ * coerced that to 0, `createStage` correctly refused a 0x0 canvas with FRAMEBUFFER_INCOMPLETE, and
+ * `stage.ts` printed its words to the reader: "This driver would not allocate the render targets this
+ * view needs." The driver was fine. The URL was wrong, and the page blamed the machine.
+ *
+ * `frames` had the same shape with a quieter symptom: `for (let i = 0; i < NaN; i++)` runs ZERO times, so
+ * `msPerFrame` came out NaN and serialised to null — indistinguishable from this programme's refusal
+ * convention, on a page still titled READY.
+ *
+ * So every numeric parameter goes through one parser that refuses a non-number BY NAME and records a
+ * clamp instead of applying it silently. The refusal is taken after the flat fallback is installed, so
+ * the reader is told which parameter they mistyped.
+ */
+const badParams: string[] = [];
+const paramClamps: string[] = [];
+function numParam(name: string, dflt: number, lo: number, hi: number): number {
+  const raw = params.get(name);
+  if (raw === null) return dflt;
+  const v = Number(raw);
+  if (!Number.isFinite(v)) { badParams.push(`${name}=${raw}`); return dflt; }
+  const clamped = Math.max(lo, Math.min(hi, v));
+  if (clamped !== v) paramClamps.push(`${name}=${raw} used as ${clamped}`);
+  return clamped;
+}
+const SCALE = numParam('scale', 1, 1, 3);
+/* BOUNDED AT BOTH ENDS. The lower bound stops `frames=0` and `frames=-5` publishing a one-frame time as
+   an n-frame sweep; the upper bound stops the count being absurd. Neither is what makes `?frames=1e9`
+   survivable — the wall clock in `measure` is. */
+const FRAMES = Math.trunc(numParam('frames', 300, 1, 20000));
 const W = 1200 * SCALE, H = 720 * SCALE;
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 canvas.width = W; canvas.height = H;
 
 const HUB = { lat: 47.14, lon: 9.52 };
+
+/*
+ * ANGULAR SEPARATION FROM THE HUB, hoisted out of the fallback's row builder so ONE expression serves
+ * both the table and the report.
+ *
+ * It is in the report because the README's corridor claim is "lift scales with angular distance", and
+ * until now the report carried only the lift — so the capture could confirm half a claim. A `function`
+ * declaration rather than a const arrow: it is called from the fallback spec above its own position in
+ * the file, and only a declaration hoists.
+ */
+function separationDeg(latDeg: number, lonDeg: number): number {
+  const toRad = (d: number): number => (d * Math.PI) / 180;
+  const cosw = Math.sin(toRad(HUB.lat)) * Math.sin(toRad(latDeg))
+    + Math.cos(toRad(HUB.lat)) * Math.cos(toRad(latDeg)) * Math.cos(toRad(lonDeg - HUB.lon));
+  return (Math.acos(Math.min(1, Math.max(-1, cosw))) * 180) / Math.PI;
+}
 const CORRIDORS: ReadonlyArray<{ readonly to: string; readonly lat: number; readonly lon: number }> = [
   { to: 'London', lat: 51.51, lon: -0.13 },
   { to: 'New York', lat: 40.71, lon: -74.01 },
@@ -97,7 +145,7 @@ const CORRIDORS: ReadonlyArray<{ readonly to: string; readonly lat: number; read
 /*
  * §6 RULE 1 — and for E2 this is also a partial answer to its rule 4 violation.
  *
- * E2 renders no DOM text at all: eight sited cities and seven corridors carry no labels, so nothing
+ * E2 renders no DOM text at all: twelve sited cities and seven corridors carry no labels, so nothing
  * enters the accessibility tree and nothing survives printing. That is still a violation and is named in
  * the README. But the flat fallback is always in the DOM, so the names, coordinates and corridor
  * distances are now reachable by a screen reader and present in the print path — which they were not.
@@ -128,24 +176,39 @@ const fallback = installFlatFallback({
     { key: 'lon', label: 'Lon', numeric: true },
     { key: 'sep', label: 'Great-circle separation', numeric: true },
   ],
-  rows: CORRIDORS.map((c) => {
-    /* The angular separation the arc's lift is derived from, so the table states the quantity the
-       geometry encodes rather than merely the endpoints. */
-    const toRad = (d: number): number => (d * Math.PI) / 180;
-    const cosw = Math.sin(toRad(HUB.lat)) * Math.sin(toRad(c.lat))
-      + Math.cos(toRad(HUB.lat)) * Math.cos(toRad(c.lat)) * Math.cos(toRad(c.lon - HUB.lon));
-    const deg = (Math.acos(Math.min(1, Math.max(-1, cosw))) * 180) / Math.PI;
-    return { to: c.to, lat: c.lat.toFixed(2), lon: c.lon.toFixed(2), sep: `${deg.toFixed(1)}°` };
-  }),
+  rows: CORRIDORS.map((c) => ({
+    to: c.to, lat: c.lat.toFixed(2), lon: c.lon.toFixed(2),
+    sep: `${separationDeg(c.lat, c.lon).toFixed(1)}°`,
+  })),
 });
 fallbackRef = fallback;
+/* Refused HERE rather than where the parameter is parsed, because the fallback has to exist first —
+   see `numParam`. A bad parameter is named to the reader instead of being reported as a driver fault. */
+if (badParams.length > 0) {
+  die(`BAD_PARAM: ${badParams.join(', ')} — not a number, so the view was refused rather than drawn `
+    + 'from a nonsensical value. Nothing about the coordinates below has changed; correct the URL '
+    + 'and reload.');
+}
 if (params.get('refuse') === '1') {
   die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
     + 'The three-dimensional view is not being drawn.');
 }
 
 const out = createStage(canvas, { alpha: false });
-if (!isStage(out)) { document.title = 'REFUSED'; throw new Error(out.reason); }
+/*
+ * THROUGH `die`, NOT `document.title = 'REFUSED'; throw`, AND THAT IS THE ONLY PATH A REAL READER TAKES.
+ *
+ * The old two-statement ladder set the title and threw. It never called `showRefusal`, which is the ONLY
+ * code that names a refusal in the flat table and the only code that HIDES the dead canvas. Measured in a
+ * browser with WebGL2 genuinely unavailable: title REFUSED, a 1200x720 `display:block` canvas above the
+ * data, `#lcx-fallback .refusal` = null, and `#log` an EMPTY STRING — because the old ladder wrote to a
+ * `log` const declared twenty lines further down and threw before it existed. The reader got seven rows of
+ * unexplained table under a dead rectangle.
+ *
+ * `?refuse=1` could never catch it: that switch is handled five lines above, so the audit's "no WebGL"
+ * pass never reaches this branch at all.
+ */
+if (!isStage(out)) die(`stage: ${out.code} — ${out.reason}`);
 const stage = out;
 const gl = stage.gl;
 
@@ -240,13 +303,13 @@ function geoToWorld(latDeg: number, lonDeg: number, r: number): [number, number,
 /**
  * THESE ARE PLACEHOLDER SITES, AND THAT MATTERS.
  *
- * The coordinates are real city coordinates; the claim that these eight are LCX's partner and
+ * The coordinates are real city coordinates; the claim that these twelve are LCX's partner and
  * listing corridor is NOT — no such list is an input to this harness, and inventing one and
  * presenting it as geography would be the exact failure this repo refuses elsewhere. What is being
  * proven here is the SITING MECHANISM: swapping in the real corridor is an edit to this array and
  * nothing else. Vaduz is the one entry that is not a placeholder.
  *
- * A single fixed camera sees one hemisphere, so the eight are drawn from a span the frame can
+ * A single fixed camera sees one hemisphere, so the twelve are drawn from a span the frame can
  * actually show. The report states how many are front-facing rather than assuming it.
  */
 const CITY_SITES: ReadonlyArray<{ readonly name: string; readonly lat: number; readonly lon: number }> = [
@@ -465,7 +528,7 @@ const far = Math.max(near + 1, view.distance * 8);
  * `Material` has baseColour, roughness, metalness and anisotropy. It has no emission channel, and
  * `uAmbientGain` is set once per `lit.draw`. So the only way to make a marker read as a light
  * source with the renderer as it stands is to draw the markers in their own pass at a much higher
- * gain. Depth is already resolved by the prepass, so the second pass costs eight small spheres of
+ * gain. Depth is already resolved by the prepass, so the second pass costs twelve small spheres of
  * fill and nothing else.
  *
  * 140 IS NOT A TUNED NUMBER, it is a ratio, and it is worth stating what it is a ratio of. A
@@ -474,11 +537,11 @@ const far = Math.max(near + 1, view.distance * 8);
  * that encodes at the top of the blue channel therefore costs a factor of 140. The size of that
  * number IS the missing emission channel, and it has a second symptom: because the glow is a
  * reflection, a marker's brightness varies slightly with the sky gradient at its own latitude, so
- * eight identical cities are not quite identically bright. Filed as a spine request.
+ * twelve identical cities are not quite identically bright. Filed as a spine request.
  *
  * BODY_AMBIENT stays low. A brighter one would lift the night hemisphere, and the night side of a
  * planet IS dark — what makes it read in real imagery is city lights, which is a texture channel
- * this renderer does not have either. The eight markers are the stand-in for it.
+ * this renderer does not have either. The twelve markers are the stand-in for it.
  */
 const BODY_AMBIENT = 1.6;
 const CITY_AMBIENT = 140;
@@ -563,7 +626,7 @@ frame();
 /*
  * WHAT THE CAPTURE ACTUALLY SHOWS, MEASURED RATHER THAN ASSUMED.
  *
- * Eight markers are placed; a fixed camera sees one hemisphere and a fixed sun lights one. Both
+ * Twelve markers are placed; a fixed camera sees one hemisphere and a fixed sun lights one. Both
  * counts below are geometry, so they are computed rather than described:
  *
  *   VISIBLE   a point on a sphere of radius r seen from distance d is on the visible cap when
@@ -582,20 +645,56 @@ const seen = cities.map((c) => ({
   sunlit: dot3(c.normal, SUN) > 0,
 }));
 
-function measure(n: number): number {
-  frame();
+/*
+ * THE SWEEP HAS A WALL-CLOCK CEILING, AND A FRAME CEILING IS NOT ONE.
+ *
+ * This loop is synchronous, so an unbounded count is an unbounded main-thread block: `?frames=1e9` left
+ * the renderer process unable to service a Playwright evaluation at all — the harness reported a timeout,
+ * which names the waiter rather than the loop, and E9's task page polls the same title through an iframe.
+ * Clamping the COUNT alone does not fix it: 20000 frames of a scene like this under SwiftShader is over an
+ * hour. So the sweep also stops on the clock and reports how many frames it actually timed, because a
+ * truncated sweep that says so is a measurement and one that does not is a lie about n.
+ */
+/*
+ * 4 SECONDS, AND THE BUDGET IS SPENT AGAINST A MEASURED FRAME COST RATHER THAN AGAINST THE CLOCK INSIDE
+ * THE LOOP — because a clock inside the loop measures the wrong thing, and this cost a real measurement.
+ *
+ * The first version checked `performance.now() - t0 > SWEEP_BUDGET_MS` per iteration and looked correct.
+ * Measured on `?frames=1e9`: it stopped after 833 frames and the page took **160 seconds**, reporting
+ * `msPerFrame: 191.7`. The reason is the same one the trailing `readPixels` exists for — the driver QUEUES
+ * work, so 833 frames of SwiftShader were submitted in 4 s of CPU time and the sync at the end then blocked
+ * for the 156 s of GPU work behind them. An in-loop clock bounds SUBMISSION, not execution.
+ *
+ * So the warm-up frame — which is already followed by a `readPixels` sync, and is the most expensive frame
+ * because it pays shader upload — is TIMED, and the loop count is capped at what fits the budget at that
+ * cost. Conservative in the right direction: the estimate is high, so the sweep finishes early rather than
+ * late. The in-loop clock stays as a second bound for the case where frames get slower mid-sweep.
+ */
+const SWEEP_BUDGET_MS = 4000;
+function measure(n: number): { msPerFrame: number; measured: number } {
   const px = new Uint8Array(4);
+  /* The warm-up, TIMED. `readPixels` cannot be satisfied until the frame exists, so this measures execution
+     rather than submission — which is the whole reason it is the number the cap is computed from. */
+  const warm0 = performance.now();
+  frame();
   gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const pilotMs = Math.max(0.01, performance.now() - warm0);
+  const cap = Math.min(n, Math.max(1, Math.floor(SWEEP_BUDGET_MS / pilotMs)));
   const t0 = performance.now();
-  for (let i = 0; i < n; i++) frame();
+  let measured = 0;
+  for (let i = 0; i < cap; i++) {
+    frame();
+    measured++;
+    if (performance.now() - t0 > SWEEP_BUDGET_MS) break;
+  }
   // Read back once at the end: the driver queues work, and timing without a sync measures the
   // queue rather than the frame.
   gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-  return (performance.now() - t0) / n;
+  return { msPerFrame: (performance.now() - t0) / measured, measured };
 }
 
-const FRAMES = Number(params.get('frames') ?? 300);
-const ms = measure(Math.max(1, FRAMES));
+const sweep = measure(FRAMES);
+const ms = sweep.msPerFrame;
 /*
  * §6 RULE 5 — "Brand hex exact. `assertBrandFidelity` runs on every new material."
  *
@@ -663,7 +762,14 @@ const report = {
   /* Empty means every brand hex round-tripped exactly through this frame's own pipeline. */
   brandFidelity: brandFailures,
   atmosphere: ATMOS_ON, shadow: SHADOW_ON,
-  triangles: tris, resolution: `${W}x${H}`, dprScale: SCALE, frames: FRAMES,
+  triangles: tris, resolution: `${W}x${H}`, dprScale: SCALE,
+  /* THE VALUE MEASURED, NOT THE VALUE ASKED FOR. `frames` used to report the raw parameter while the loop
+     ran `Math.max(1, FRAMES)`, so `frames=0` and `frames=-5` published a single-frame time — noise, by the
+     comment on `measure` — as a 0-frame and a -5-frame sweep. */
+  frames: sweep.measured,
+  framesRequested: FRAMES,
+  sweepTruncated: sweep.measured < FRAMES,
+  paramClamps,
   msPerFrame: Number(ms.toFixed(3)), fps: Math.round(1000 / ms),
   centralMeridian: CENTRAL_MERIDIAN, subSolar: `${SUB_SOLAR.lat}N ${SUB_SOLAR.lon}E`,
   cities: seen.length,
@@ -678,7 +784,13 @@ const report = {
     for (let k = 0; k < g.positions.length; k += 3) {
       m = Math.max(m, Math.hypot(g.positions[k]!, g.positions[k + 1]!, g.positions[k + 2]!));
     }
-    return { to: CORRIDORS[i]!.to, lift: Number((m - EARTH_R).toFixed(4)) };
+    return {
+      to: CORRIDORS[i]!.to,
+      lift: Number((m - EARTH_R).toFixed(4)),
+      /* The quantity the lift is supposed to scale with. Reported beside it so "monotonic with distance"
+         is a check the capture performs rather than a sentence in the README. */
+      separationDeg: Number(separationDeg(CORRIDORS[i]!.lat, CORRIDORS[i]!.lon).toFixed(1)),
+    };
   }),
   behindLimb: seen.filter((c) => !c.facing).map((c) => c.name),
   onNightSide: seen.filter((c) => c.facing && !c.sunlit).map((c) => c.name),

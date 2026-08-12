@@ -53,6 +53,29 @@ import { SurfacePlot } from '@/components/geometry/SurfacePlot';
 import { installFlatFallback } from '../_shared/flatFallback.js';
 
 const params = new URLSearchParams(location.search);
+
+/*
+ * A NUMERIC URL PARAMETER, VALIDATED — and a non-numeric one REFUSES rather than falling back silently.
+ *
+ * `Number('abc')` is NaN, and `Math.max(1, Math.min(3, NaN))` is NaN, not the default: Math.max propagates
+ * NaN rather than rejecting it. So `?scale=abc` produced a NaN canvas size, and a NaN size is a canvas of
+ * zero area — a blank frame with every program compiled and no error anywhere. E0 through E4 were given this
+ * treatment by the pen-test; E5 through E8 were not, so they still had it.
+ *
+ * A CLAMP IS RECORDED, NOT SILENT. `?scale=99` is a request the harness cannot honour, and honouring 3
+ * without saying so means the report's resolution disagrees with what the reader asked for.
+ */
+const badParams: string[] = [];
+const paramClamps: string[] = [];
+function numParam(name: string, dflt: number, lo: number, hi: number): number {
+  const raw = params.get(name);
+  if (raw === null) return dflt;
+  const v = Number(raw);
+  if (!Number.isFinite(v)) { badParams.push(`${name}=${raw}`); return dflt; }
+  const clamped = Math.max(lo, Math.min(hi, v));
+  if (clamped !== v) paramClamps.push(`${name}=${raw} used as ${clamped}`);
+  return clamped;
+}
 /*
  * THE QUALITY LADDER, WIRED. E9's `qualitySettings` is authoritative for the EFFECTS this frame runs:
  * ambient occlusion, depth of field, shadow-map size, and (where present) particle capacity and raymarch
@@ -81,8 +104,10 @@ const MESH_ON = params.get('mesh') !== '0';
    page, which is why this claim had never been photographed anywhere in the programme. Not a mock: it
    calls the same `die` a failed shader compile calls. */
 const FORCE_REFUSE = params.get('refuse') === '1';
-const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
-const FRAMES = Number(params.get('frames') ?? 300);
+const SCALE = numParam('scale', 1, 1, 3);
+/* Bounded at both ends: frames=0 or -5 would publish a one-frame time as an n-frame
+   sweep, and Math.trunc because a fractional loop bound is a fractional divisor two lines later. */
+const FRAMES = Math.trunc(numParam('frames', 300, 1, 20000));
 
 const W = 1200 * SCALE, H = 720 * SCALE;
 const canvas = document.getElementById('c') as HTMLCanvasElement;
@@ -154,6 +179,38 @@ const INPUT: SurfaceGridInput = {
   },
 };
 
+/*
+ * THE DOMAIN OF A RATE, ASSERTED — because "finite" is not "possible".
+ *
+ * WHAT WENT WRONG: validation was delegated entirely to `buildSurfaceMesh`, which refuses a non-finite
+ * cell (`GEOMETRY_Z_NOT_FINITE`) and accepts ANY finite number. `zAxis` here is declared as a win rate
+ * and every probe label is formatted as a percentage, so a cell of 12.5 rendered the on-frame headline
+ * `PEAK 1250%` with no notice and no refusal, and -0.9 was accepted as a win rate of -90%. Measured on a
+ * copy of this harness: `title READY`, frame text `PEAK / 1250% / $2500k · 180 d`. The control — the same
+ * grid with one `NaN` — refused correctly, which is what made the gap look like coverage.
+ *
+ * WHY IT IS ASSERTED HERE: the ENGINE cannot know the domain, because `SurfaceGridInput` has no field
+ * for it — `zAxis` carries a label and a unit and nothing about range. The declaring surface is the only
+ * place that knows this quantity is a fraction of deals won, so it is the place that owns the bound. The
+ * engine-level fix is an optional `zAxis.domain` on `SurfaceGridInput` refused the same way non-finite is;
+ * until that exists, a rate surface must not be ABLE to plot 1250%, and this refuses rather than clamps:
+ * a clamped 12.5 is a plausible 100% and that is the lie this environment's disclaimer exists to prevent.
+ *
+ * It sits here, ahead of the flat fallback's installation, for the same reason the engine-refusal below it
+ * does: this environment's fallback IS the flat surface built from these cells, so there is nothing honest
+ * to fall back TO when the cells are impossible. Verified on a copy — `title REFUSED`, and the log names
+ * both offending cells with their coordinates rather than just the code.
+ */
+const Z_DOMAIN: readonly [number, number] = [0, 1];
+const outOfDomain = ROWS.flatMap((row, r) => row.flatMap((v, c) => (
+  typeof v === 'number' && Number.isFinite(v) && (v < Z_DOMAIN[0] || v > Z_DOMAIN[1])
+    ? [`${X_TICKS[c]}k/${Y_TICKS[r]}d=${v}`] : []
+)));
+if (outOfDomain.length > 0) {
+  die(`Z_OUT_OF_DOMAIN: ${INPUT.zAxis.label} is a rate and must lie in`
+    + ` [${Z_DOMAIN[0]}, ${Z_DOMAIN[1]}] — ${outOfDomain.join(', ')}`);
+}
+
 /* THE FLAT SURFACE, BUILT FROM THE SAME INPUT. Not to draw — to CHECK against. If it refuses, the
    3D version has no business rendering: it would be showing a surface the shipping engine declined
    to show, which is the worst possible direction for a disagreement to run. */
@@ -198,6 +255,14 @@ const fallback = installFlatFallback({
 });
 
 fallbackRef = fallback;
+
+/* A NONSENSICAL PARAMETER REFUSES, and it refuses AFTER the flat fallback exists so the reader still gets
+   the data. Drawn at a NaN size the canvas has zero area: a blank frame, every program compiled, no error. */
+if (badParams.length > 0) {
+  die(`BAD_PARAM: ${badParams.join(', ')} — not a number, so the view was not drawn rather than `
+    + 'drawn at a nonsensical size. Nothing about the underlying measurements has changed; correct '
+    + 'the URL and reload.');
+}
 if (FORCE_REFUSE) {
   die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
     + 'The three-dimensional view is not being drawn.');
@@ -598,11 +663,25 @@ legend.innerHTML = [
   ['#2C6BFF', `OBSERVED · ${field.cellsDrawn} cells`],
   ['#C98A2B', `WITHHELD · ${withheldPoints} points`],
   ['transparent', `ABSENT · ${absentPoints} points (holed)`],
+/*
+ * `forced-color-adjust:none` ON THE SWATCHES ONLY, measured rather than assumed.
+ *
+ * WHAT WENT WRONG: under `forced-colors: active` the browser replaces every author colour. Measured with
+ * `newPage({forcedColors:'active'})`, OBSERVED `#2C6BFF` and WITHHELD `#C98A2B` BOTH computed to
+ * `rgb(255,255,255)` — two states, one white square, and the ABSENT swatch went transparent-white with
+ * them. The canvas is a bitmap and is untouched, so the surface kept its blue cells and its amber marker
+ * plates while the key that maps those colours to states became indistinguishable.
+ *
+ * WHY ONLY HERE: a swatch is a SAMPLE of a colour the renderer actually produces, which is one of the
+ * narrow cases where the author's colour has to win over the forced palette. The label text beside it
+ * keeps its forced colours, and every state is still named in words, so nothing depends on hue alone.
+ */
 ].map(([c, t]) => (
   `<div style="display:flex;align-items:center;gap:7px;color:rgba(196,212,240,0.85)">`
   + `<span>${t}</span>`
   + `<span style="width:11px;height:11px;background:${c};`
-  + `${c === 'transparent' ? 'border:1px dashed rgba(196,212,240,0.55)' : ''};display:inline-block"></span></div>`
+  + `${c === 'transparent' ? 'border:1px dashed rgba(196,212,240,0.55)' : ''};display:inline-block;`
+  + `forced-color-adjust:none"></span></div>`
 )).join('');
 overlay.appendChild(legend);
 
@@ -664,6 +743,9 @@ if (brandFailures.length > 0) {
 }
 
 const report = {
+  /* A clamped parameter is REPORTED, so the resolution in this report cannot silently disagree
+     with what the reader asked for. */
+  paramClamps,
   /* WHICH TIER THIS FRAME IS, so the numbers beside it describe a configuration a reader can reconstruct.
      A tier that cannot be reported is a tier that cannot be trusted. */
   tier: Q.tier,

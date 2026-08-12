@@ -15,7 +15,7 @@ gets. `refused.png` is §6 rule 1's own claim, photographed.
 | the same measure with `?settle=0` | **0 px** |
 | gate throughput, intake → close | $125,278/d → $46,667/d · **2.68×** attrition |
 | stream density, intake → close | 111.9 → 41.7 particles per metre |
-| particles alive vs analytic steady state | **954 vs 956** · 0 outside the channel |
+| particles alive vs analytic steady state | **952–955 vs 956** · 0 outside the channel |
 
 `$4.35M` is the number this environment exists for. It is two objects — `MERIDIAN PAY` at 41 days and
 `HELIOS EXCHANGE` at 52 — lying on the floor of the near half of the channel, large because they are
@@ -39,6 +39,50 @@ Two states that a blank cell destroys are shaped differently rather than coloure
 Both are excluded from every throughput figure, with the code `AGGREGATE_EXCLUDES_UNREADABLE_VALUE`, so
 the streams are honestly light by whatever those two are worth rather than silently estimated.
 
+### Excluding everything used to print 0%, and 0% is a measurement
+
+Every share was `deepStalledUsd / Math.max(1, totalObservedUsd)`. That guard stops a divide-by-zero and
+in doing so manufactures a reading: on a book where every deal is withheld, `totalObservedUsd` is 0
+because there is nothing to sum, not because the pipeline is empty. Measured on a scratch copy fed five
+WITHHELD records, this harness reached READY and rendered, in the largest type on the frame:
+
+```
+$0.0k PAST DILIGENCE AND STALLED  ·  0% OF THE READABLE BOOK
+SIGNED $0.0k/d · TERMS $0.0k/d · DILIGENCE $0.0k/d · QUALIFIED $0.0k/d · SOURCED $0.0k/d
+```
+
+with `stalledShare: 0`, `deepStalledShare: 0`, `minSeparationPx: 0`, `minStalledDisplacementPx: 0` and
+`rateMonotoneDown: true` — the boolean this file calls the assertion that catches "the density describing
+something else", passing vacuously between five zeroes. Two fields in the same report already refused
+correctly on that input (`edgeMinM`, `particleField.zRange`), which is the shape the rest should have had.
+
+Now: one `share()` does every division and returns **null** when there is no readable denominator,
+`bookRefusal: NO_READABLE_VALUE_IN_THE_BOOK` names why, each gate's `clearedUsd`/`usdPerDay`/`ratePerSec`
+goes null, `rateMonotoneDown` goes null rather than true, and the frame prints
+`NO READABLE VALUE IN THE BOOK — 5 withheld, 0 never priced, so no share is computable` with
+`THROUGHPUT ABSENT` at every gate. `minSeparationPx` and the displacements return null instead of 0,
+because 0 is what the `?settle=0` control legitimately reports and the two must not be the same value.
+
+### Absence was defended; validity was not
+
+`valueUsd` is documented as "`null` = never measured. Never 0, never inferred", and the null case is
+checked in five places. Nothing asked whether a PRESENT number was a number. Fed `-500_000`, `NaN` and
+`Infinity` as OBSERVED values, the harness reached READY with `glError: 0`, `brandFidelity: []` and
+nothing in `hiddenBy`, and printed `NEGATIVE VALUE $-500.0k`, `DILIGENCE $InfinityM/d`,
+`QUALIFIED $NaNk/d` and `NaN% OF THE READABLE BOOK` onto the frame. A negative value also produces a
+negative cube root at `edgeOf`, so the box edge goes negative in silence.
+
+One pass over the dataset now runs before `placed` exists: a present field must be a finite non-negative
+number, and `known` must agree with which fields are present. On the input above the page refuses with
+`INVALID_DEAL_DATA`, names all four faults, hides the canvas and shows the flat table — E5 gets the same
+guarantee for free by handing its input to the shipping flat engine and refusing what that refuses
+(`GEOMETRY_Z_NOT_FINITE`); E3 owns its geometry, so it owns the check.
+
+`?scale=abc` and `?frames=abc` were the same class of hole from the URL side: `Math.max(1, Math.min(3,
+NaN))` is NaN, so the canvas came out 0x0 and the reader was told "this driver would not allocate the
+render targets this view needs" about a driver that was fine. Numeric parameters now refuse as
+`BAD_PARAM` and any clamp is reported in `paramClamps`.
+
 ## Two defects in `@lcx/gl`'s particle layer, found by a subtraction
 
 `readState()` exists so a claim about particles is a number. It returned **812 alive against an
@@ -57,7 +101,17 @@ that happened to emit on that frame. Every source here has a rate under one part
 is the normal case for a rate derived from a real quantity — so most frames left the array without the
 entry and every particle belonging to that source fell back to a hard-coded `life = 1.0`. Lifetimes
 were a function of emission jitter. Lives are now their own uniform, uploaded for all eight sources
-every step. After both fixes: 954 against 956.
+every step. After both fixes: **952–955 against 956**, and 0 outside the channel.
+
+*This paragraph published a bare **954** for the whole of its life, and a single exact figure is the wrong
+shape for this measurement. Observed: 952 on three consecutive `frames=4` probes, 955 on three consecutive
+`frames=24` probes, and 954 and 952 on the two `frames=24` capture variants in the run behind these PNGs.
+The count depends on how many frames were stepped and on emission jitter, so it is a BAND around the
+analytic steady state, not a constant. It was also the one number here nothing defended — `capture.mjs`
+only threw below `0.6 × aliveExpected`, so anything from 574 up passed. It now requires the count within
+**2%** of 956, which every observed value clears by an order of magnitude and which either of the engine
+bugs above (a resurrected corpse, a lifetime falling back to 1.0) breaks immediately: both moved this count
+by tens of percent.*
 
 The layer's rule is *a particle is a unit of something*. Here one particle is **$800 of package value
 crossing that gate**, at one second of simulation per day of pipeline, and velocity is held CONSTANT

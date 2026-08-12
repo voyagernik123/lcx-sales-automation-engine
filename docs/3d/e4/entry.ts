@@ -90,8 +90,39 @@ const FLAT = params.get('flat') === '1';
  * between a clear error and a silent one.
  */
 const SHADOW_ON = params.get('shadow') !== '0' && !FLAT;
-const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
-const FRAMES = Number(params.get('frames') ?? 300);
+/*
+ * A MISTYPED URL USED TO BE REPORTED AS A HARDWARE FAULT, and the clamp is what hid it.
+ *
+ * `Math.max(1, Math.min(3, Number('abc')))` is NaN — NEITHER clamp rejects NaN, because every comparison
+ * against NaN is false and both functions then return it. So `?scale=abc` gave W = NaN, `canvas.width`
+ * coerced that to 0, `createStage` correctly refused a 0x0 canvas with FRAMEBUFFER_INCOMPLETE, and
+ * `stage.ts` printed its words to the reader: "This driver would not allocate the render targets this
+ * view needs." The driver was fine. The URL was wrong, and the page blamed the machine.
+ *
+ * `frames` had the same shape with a quieter symptom: `for (let i = 0; i < NaN; i++)` runs ZERO times, so
+ * `msPerFrame` came out NaN and serialised to null — indistinguishable from this codebase's refusal
+ * convention, on a page still titled READY.
+ *
+ * So every numeric parameter goes through one parser that refuses a non-number BY NAME and records a
+ * clamp instead of applying it silently. The refusal is taken after the flat fallback is installed, so
+ * the reader keeps every row of the table and is told which parameter they mistyped.
+ */
+const badParams: string[] = [];
+const paramClamps: string[] = [];
+function numParam(name: string, dflt: number, lo: number, hi: number): number {
+  const raw = params.get(name);
+  if (raw === null) return dflt;
+  const v = Number(raw);
+  if (!Number.isFinite(v)) { badParams.push(`${name}=${raw}`); return dflt; }
+  const clamped = Math.max(lo, Math.min(hi, v));
+  if (clamped !== v) paramClamps.push(`${name}=${raw} used as ${clamped}`);
+  return clamped;
+}
+const SCALE = numParam('scale', 1, 1, 3);
+/* BOUNDED AT BOTH ENDS. The lower bound stops `frames=0` and `frames=-5` publishing a one-frame time as
+   an n-frame sweep; the upper bound stops the count being absurd. Neither is what makes `?frames=1e9`
+   survivable — the wall clock in `measure` is. */
+const FRAMES = Math.trunc(numParam('frames', 300, 1, 20000));
 
 const W = 1200 * SCALE, H = 720 * SCALE;
 const canvas = document.getElementById('c') as HTMLCanvasElement;
@@ -216,6 +247,12 @@ const fallback = installFlatFallback({
   ],
 });
 fallbackRef = fallback;
+/* Refused HERE rather than where the parameter is parsed, because the fallback has to exist first —
+   see `numParam`. A bad parameter is named to the reader instead of being reported as a driver fault. */
+if (badParams.length > 0) {
+  die(`BAD_PARAM: ${badParams.join(', ')} — not a number, so the system was refused rather than drawn `
+    + 'from a nonsensical value. Every entity below is unaffected; correct the URL and reload.');
+}
 if (new URLSearchParams(location.search).get('refuse') === '1') {
   die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
     + 'The three-dimensional view is not being drawn.');
@@ -1039,16 +1076,54 @@ function frame() {
  * trailing `readPixels` cannot be satisfied until the frame it reads actually exists. The warm-up
  * frame matters too: the first frame pays shader upload and texture allocation.
  */
-function measure(n: number): number {
-  frame();
+/*
+ * AND IT HAS A WALL-CLOCK CEILING, because a frame ceiling is not one. This loop is synchronous, so an
+ * unbounded count is an unbounded main-thread block: `?frames=1e9` left the renderer process unable to
+ * service a Playwright evaluation at all — the harness reported a timeout, which names the waiter rather
+ * than the loop, and E9's task page polls the same title through an iframe. Clamping the COUNT alone does
+ * not fix it: 20000 frames of this system under SwiftShader is over an hour. The sweep therefore stops on
+ * the clock and reports how many frames it actually timed, because a truncated sweep that says so is a
+ * measurement and one that does not is a lie about n.
+ */
+/*
+ * 4 SECONDS, AND THE BUDGET IS SPENT AGAINST A MEASURED FRAME COST RATHER THAN AGAINST THE CLOCK INSIDE
+ * THE LOOP — because a clock inside the loop measures the wrong thing, and this cost a real measurement.
+ *
+ * The first version checked `performance.now() - t0 > SWEEP_BUDGET_MS` per iteration and looked correct.
+ * Measured on `?frames=1e9`: it stopped after 833 frames and the page took **160 seconds**, reporting
+ * `msPerFrame: 191.7`. The reason is the same one the trailing `readPixels` exists for — the driver QUEUES
+ * work, so 833 frames of SwiftShader were submitted in 4 s of CPU time and the sync at the end then blocked
+ * for the 156 s of GPU work behind them. An in-loop clock bounds SUBMISSION, not execution.
+ *
+ * So the warm-up frame — which is already followed by a `readPixels` sync, and is the most expensive frame
+ * because it pays shader upload — is TIMED, and the loop count is capped at what fits the budget at that
+ * cost. Conservative in the right direction: the estimate is high, so the sweep finishes early rather than
+ * late. The in-loop clock stays as a second bound for the case where frames get slower mid-sweep.
+ */
+const SWEEP_BUDGET_MS = 4000;
+function measure(n: number): { msPerFrame: number; measured: number } {
   const px = new Uint8Array(4);
+  /* The warm-up, TIMED. `readPixels` cannot be satisfied until the frame exists, so this measures execution
+     rather than submission — which is the whole reason it is the number the cap is computed from. */
+  const warm0 = performance.now();
+  frame();
   gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const pilotMs = Math.max(0.01, performance.now() - warm0);
+  const cap = Math.min(n, Math.max(1, Math.floor(SWEEP_BUDGET_MS / pilotMs)));
   const t0 = performance.now();
-  for (let i = 0; i < n; i++) frame();
+  let measured = 0;
+  for (let i = 0; i < cap; i++) {
+    frame();
+    measured++;
+    if (performance.now() - t0 > SWEEP_BUDGET_MS) break;
+  }
   gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-  return (performance.now() - t0) / n;
+  return { msPerFrame: (performance.now() - t0) / measured, measured };
 }
-const ms = measure(Math.max(1, FRAMES));
+/* `timing`, not `sweep`: this file already has a `sweep` — the 36-azimuth crossing survey above — and two
+   different sweeps under one name is the kind of collision a minifier resolves silently. */
+const timing = measure(FRAMES);
+const ms = timing.msPerFrame;
 
 /*
  * ══════════════════════════════════════════════════════════════════════════════════════
@@ -1145,8 +1220,54 @@ wrap.style.cssText = `position:relative;overflow:hidden;width:${CSS_W}px;height:
 canvas.parentNode?.insertBefore(wrap, canvas);
 wrap.appendChild(canvas);
 const overlay = document.createElement('div');
+/*
+ * THE CONTAINER IGNORES THE POINTER; THE CONTENT DOES NOT — and until now neither did.
+ *
+ * `project.ts` justifies its own existence on the grounds that "GL text is unselectable, unsearchable,
+ * invisible to a screen reader" and that the homography makes "the browser rasterise real selectable
+ * text". Measured across the six environments that project: `document.elementFromPoint` at the centre of
+ * every label returned the canvas, and a real mouse drag across the frame selected the empty string.
+ * Cmd/Ctrl+A still reached the words, so the text was IN the document and unreachable with a pointer — a
+ * reader could not point at an entity's record count and copy it.
+ *
+ * `pointer-events:none` stays on the container, which must not swallow a gesture aimed at the canvas; each
+ * label re-enables it and asks for `user-select:text`. Nothing here is interactive, so the only cost is a
+ * drag that STARTS inside a label.
+ */
 overlay.style.cssText = 'position:absolute;inset:0;pointer-events:none';
 wrap.appendChild(overlay);
+/* Appended to every label below. One string so the label kinds cannot drift apart. */
+const SELECTABLE = 'pointer-events:auto;user-select:text;-webkit-user-select:text';
+
+/**
+ * One styled line of TEXT, built as an element rather than as a string of markup.
+ *
+ * An entity id and its meta line were interpolated into `innerHTML`. Both are strings a real ontology
+ * supplies rather than this file, and `innerHTML` PARSES its argument: `&` in an id corrupts the label
+ * silently and `<` starts an element, on the surface a reader trusts most. The same values go through
+ * `escText` in the flat table, so the frame and the fallback would have disagreed about the same entity.
+ *
+ * Deliberately a text constructor rather than an escaping helper: an escape has to be remembered at every
+ * future interpolation, and `textContent` does not parse at all.
+ */
+const textLine = (css: string, text: string): HTMLDivElement => {
+  const d = document.createElement('div');
+  d.style.cssText = css;
+  d.textContent = text;
+  return d;
+};
+/** The same, for the inline `<span>` the ticks use beside their anchor dot. */
+const textSpan = (text: string): HTMLSpanElement => {
+  const sp = document.createElement('span');
+  sp.textContent = text;
+  return sp;
+};
+/** The anchor dot the ticks put before their text. Markup-free, so it cannot carry a value at all. */
+const anchorDot = (background: string): HTMLSpanElement => {
+  const sp = document.createElement('span');
+  sp.style.cssText = `width:5px;height:5px;border-radius:50%;background:${background};flex:0 0 auto`;
+  return sp;
+};
 
 /*
  * ENTITY LABELS ARE SCREEN-SPACE, AND THE 26 px SURFACE FLOOR DOES NOT TRANSFER HERE.
@@ -1217,7 +1338,8 @@ const counts = {
 };
 
 const hud = document.createElement('div');
-hud.style.cssText = 'position:absolute;left:18px;top:16px;display:flex;flex-direction:column;gap:7px';
+hud.style.cssText = 'position:absolute;left:18px;top:16px;display:flex;flex-direction:column;gap:7px;'
+  + SELECTABLE;
 hud.innerHTML =
   `<div style="font:600 11px/1 ui-monospace,monospace;letter-spacing:.16em;color:#8FB7FF">`
   + `ONTOLOGY AS ORBITS · ${FLAT ? 'FLAT CONTROL — INCLINATIONS ZEROED' : 'RADIUS = HOPS · SIZE = RECORDS · TUBE = STRENGTH'}</div>`
@@ -1237,7 +1359,8 @@ const centreDist = distFromEye([0, 0, 0]);
 const ppmCentre = pxPerMetreAt(centreDist);
 const legend = document.createElement('div');
 legend.style.cssText = 'position:absolute;right:18px;bottom:16px;display:flex;flex-direction:column;'
-  + 'gap:7px;align-items:flex-end;font:500 10px/1 ui-monospace,monospace;color:rgba(196,212,240,0.85)';
+  + 'gap:7px;align-items:flex-end;font:500 10px/1 ui-monospace,monospace;color:rgba(196,212,240,0.85);'
+  + SELECTABLE;
 const bar = (s: number): string => {
   const px = Math.max(1, 2 * linkRadius(s) * ppmCentre);
   return `<div style="display:flex;align-items:center;gap:8px"><span>STRENGTH ${s.toFixed(2)}</span>`
@@ -1407,12 +1530,12 @@ const planeTicks = ORBITED_KINDS.map((kind) => {
   const el = document.createElement('div');
   el.style.cssText = 'position:absolute;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;'
     + 'font:600 9.5px/1.25 ui-monospace,monospace;letter-spacing:.14em;'
-    + 'color:rgba(127,178,255,0.82);text-shadow:0 1px 3px rgba(0,0,0,0.95)';
+    + 'color:rgba(127,178,255,0.82);text-shadow:0 1px 3px rgba(0,0,0,0.95);' + SELECTABLE;
   /* AN ANCHOR DOT, because a floating word is not a tick. Centred on the projected point with the text
      running off to its right, so the reader can see WHICH ellipse the plane name belongs to — without
      it the four plane names sat in open space and named nothing in particular. */
-  el.innerHTML = `<span style="width:5px;height:5px;border-radius:50%;background:rgba(127,178,255,0.9);`
-    + `flex:0 0 auto"></span><span>${kind} ${FLAT ? 0 : pl.incDeg}°</span>`;
+  el.appendChild(anchorDot('rgba(127,178,255,0.9)'));
+  el.appendChild(textSpan(`${kind} ${FLAT ? 0 : pl.incDeg}°`));
   const box = measured(el);
   for (const a of TICK_ANGLES) {
     const p = orbitPoint(r, a, FLAT ? 0 : pl.incDeg, FLAT ? 0 : pl.nodeDeg);
@@ -1435,9 +1558,9 @@ const hopTicks = [1, 2, 3].map((h) => {
   const el = document.createElement('div');
   el.style.cssText = 'position:absolute;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;'
     + 'font:500 9.5px/1.25 ui-monospace,monospace;letter-spacing:.1em;'
-    + 'color:rgba(196,212,240,0.70);text-shadow:0 1px 3px rgba(0,0,0,0.95)';
-  el.innerHTML = `<span style="width:5px;height:5px;border-radius:50%;background:rgba(196,212,240,0.8);`
-    + `flex:0 0 auto"></span><span>${h} HOP${h > 1 ? 'S' : ''}</span>`;
+    + 'color:rgba(196,212,240,0.70);text-shadow:0 1px 3px rgba(0,0,0,0.95);' + SELECTABLE;
+  el.appendChild(anchorDot('rgba(196,212,240,0.8)'));
+  el.appendChild(textSpan(`${h} HOP${h > 1 ? 'S' : ''}`));
   const box = measured(el);
   for (const a of HOP_ANGLES) {
     const p = orbitPoint(shellRadius(h), a, 0, 0);
@@ -1530,11 +1653,14 @@ const decided = [...labelSubjects].sort((a, b) => a.dist - b.dist).map((s) => {
   const el = document.createElement('div');
   el.style.cssText = 'position:absolute;display:inline-flex;flex-direction:column;gap:2px;'
     + 'align-items:center;text-align:center;white-space:nowrap;'
-    + 'text-shadow:0 1px 3px rgba(0,0,0,0.95);-webkit-font-smoothing:antialiased';
+    + 'text-shadow:0 1px 3px rgba(0,0,0,0.95);-webkit-font-smoothing:antialiased;' + SELECTABLE;
   const metaColour = s.b.def.count.state === 'absent' ? ABSENT_HEX : 'rgba(196,212,240,0.80)';
-  el.innerHTML =
-    `<div style="font:700 11px/1.1 ui-monospace,monospace;color:#fff;letter-spacing:.02em">${s.b.def.id}</div>`
-    + `<div style="font:500 9.5px/1.15 ui-monospace,monospace;letter-spacing:.08em;color:${metaColour}">${s.meta}</div>`;
+  /* textContent per line — see `textLine`. The id and the meta string are the two values here a dataset
+     supplies, and they were the two being parsed as markup. */
+  el.appendChild(textLine('font:700 11px/1.1 ui-monospace,monospace;color:#fff;letter-spacing:.02em', s.b.def.id));
+  el.appendChild(textLine(
+    `font:500 9.5px/1.15 ui-monospace,monospace;letter-spacing:.08em;color:${metaColour}`, s.meta,
+  ));
   const box = measured(el);
   const gap = 6, side = 9;
   const candidates: [string, Rect][] = [
@@ -1752,7 +1878,13 @@ const report = {
   shadowMap: shadow.size,
   resolution: `${W}x${H}`,
   dprScale: SCALE,
-  frames: FRAMES,
+  /* THE VALUE MEASURED, NOT THE VALUE ASKED FOR. `frames` used to report the raw parameter while the loop
+     ran `Math.max(1, FRAMES)`, so `frames=0` and `frames=-5` published a single-frame time as a 0-frame
+     and a -5-frame sweep. */
+  frames: timing.measured,
+  framesRequested: FRAMES,
+  sweepTruncated: timing.measured < FRAMES,
+  paramClamps,
   msPerFrame: Number(ms.toFixed(3)),
   fps: Math.round(1000 / ms),
   renderer: '',

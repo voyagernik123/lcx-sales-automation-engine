@@ -26,6 +26,7 @@
 
 import { stageRefusal } from '../stage';
 import type { Stage, StageRefusal } from '../stage';
+import { savePassState, restorePassState, releaseTextureUnits, depthAttachmentIs } from './passState';
 
 /**
  * Ray-versus-axis-aligned-box, by the slab method — the TS reference that `RAY_BOX_GLSL` below
@@ -261,7 +262,21 @@ export interface VolumeField {
    * time, which keeps the DATA and the LOOK separable.
    */
   upload(data: Float32Array): void;
-  /** Draw into the bound framebuffer, blended over what is there. Reads scene depth; writes no depth. */
+  /**
+   * Draw into the bound framebuffer, blended over what is there. Reads scene depth; writes no depth.
+   *
+   * THE BOUND FRAMEBUFFER MUST NOT BE THE ONE THAT OWNS `sceneDepth`, and this used to be documented
+   * the other way round. Sampling an attachment of your own render target is a feedback loop: the
+   * measured result is GL_INVALID_OPERATION, ANGLE logging "Feedback loop formed between Framebuffer
+   * and active Texture", and ZERO lit pixels — the draw is dropped whole, so the volume is simply
+   * absent and looks like a density problem. The control, drawing into a second target of the same
+   * size, gave 13,456 lit pixels and glError 0 with everything else identical.
+   *
+   * So the volume goes into its own target and is composited afterwards, which is what E7 does. That
+   * is now a stated requirement rather than an accident of one call site, and it is CHECKED: this
+   * returns a `FEEDBACK_LOOP` refusal instead of issuing a draw the driver will silently discard.
+   * Returns nothing when it drew.
+   */
   draw(opts: {
     readonly eye: readonly [number, number, number];
     readonly forward: readonly [number, number, number];
@@ -285,7 +300,7 @@ export interface VolumeField {
     readonly lightSteps?: number;
     /** Floor on self-illumination, 0..1, so the densest core is not a black hole. */
     readonly emission?: number;
-  }): void;
+  }): StageRefusal | undefined;
   readonly size: readonly [number, number, number];
   dispose(): void;
 }
@@ -348,6 +363,17 @@ export function createVolumeField(
     },
 
     draw(o) {
+      /*
+       * ASKED BEFORE ANYTHING IS BOUND, because after the draw there is nothing to ask: a feedback
+       * loop does not throw, it discards. See the note on `draw` in the interface above for the
+       * measurement. This is the whole reason the volume gets its own target.
+       */
+      if (depthAttachmentIs(gl, o.sceneDepth)) {
+        return stageRefusal('FEEDBACK_LOOP',
+          'the volumetric field was asked to march against the depth attachment of the very framebuffer '
+          + 'it is drawing into — draw it into a separate target and composite that, as E7 does');
+      }
+      const prev = savePassState(gl);
       gl.useProgram(prog);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_3D, tex);
       gl.uniform1i(u('uDensity'), 0);
@@ -382,8 +408,13 @@ export function createVolumeField(
        * cloud brighten whatever is behind it instead of hiding it, so the densest region — the most
        * important part of the reading — would be the most transparent.
        *
-       * Depth test ON so geometry in front still wins even where the depth cap is imprecise; depth
-       * write OFF because a full-screen pass has no single depth to write.
+       * DEPTH TEST OFF, AND THE COMMENT HERE USED TO CLAIM THE OPPOSITE. It said "depth test ON so
+       * geometry in front still wins even where the depth cap is imprecise" directly above a
+       * `gl.disable(gl.DEPTH_TEST)` — measured `getParameter(DEPTH_TEST) === false` on return. Off is
+       * the correct half of that contradiction: the occlusion is done by `uSceneDepth` inside the
+       * march, per ray, at the right distance. A depth test could only test the full-screen
+       * triangle's own single depth, which is a fact about the triangle and not about the volume.
+       * Depth WRITE off for the same reason, and that part was always right.
        */
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
@@ -392,11 +423,11 @@ export function createVolumeField(
       gl.bindVertexArray(vao);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       gl.bindVertexArray(null);
-      gl.depthMask(true);
-      gl.disable(gl.BLEND);
-      /* Units released — E0 lost three passes to a feedback loop from a texture left bound. */
-      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
-      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_3D, null);
+      /* Units released — E0 lost three passes to a feedback loop from a texture left bound — and the
+         enable-state put back, which it was not: the disabled depth test leaked out of this pass. */
+      releaseTextureUnits(gl, 2);
+      restorePassState(gl, prev);
+      return undefined;
     },
 
     dispose() {

@@ -61,7 +61,16 @@ for (const [name, q] of [['live', ''], ['flat', '&flat=1'], ['no-ao', '&ao=0'], 
     return {
       rows: el.querySelectorAll('tbody tr').length,
       absent: el.querySelectorAll('td.absent').length,
-      hidden: getComputedStyle(el).display === 'none',
+      /* VISUALLY hidden, not `display:none`. `_shared/flatFallback.ts` stopped using `display:none` on the
+         success path because it PRUNED the table out of the accessibility tree; success now clips it to a
+         1x1 out-of-flow box instead. A `display` test therefore reported a clipped, invisible table as
+         still visible and failed the capture. What rule 1 needs asserted is that the table takes no space
+         on screen when a frame drew, and takes space when one did not — so that is what is measured. */
+      hidden: (() => {
+        const cs = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        return cs.display === 'none' || cs.visibility === 'hidden' || (r.width <= 1 && r.height <= 1);
+      })(),
       refusal: el.querySelector('.refusal')?.textContent?.slice(0, 40) ?? null,
     };
   });

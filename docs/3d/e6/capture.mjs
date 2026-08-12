@@ -70,7 +70,17 @@ for (const [name, q] of [['live', ''], ['no-fog', '&fog=0'], ['no-ao', '&ao=0'],
     return {
       rows: el.querySelectorAll('tbody tr').length,
       absentCells: el.querySelectorAll('td.absent').length,
-      hidden: getComputedStyle(el).display === 'none',
+      /*
+       * MEASURED OFF THE LAYOUT, NOT OFF `display`, and the old check would now FAIL A WORKING PAGE.
+       * The shared fallback hid itself with `display: none` until that was found to prune the table out
+       * of the accessibility tree on every success path — the exact reason it is built unconditionally —
+       * so success now CLIPS it to a 1x1 box instead. `display` is `block` in both states, so a test for
+       * `none` reports a correctly hidden fallback as still visible.
+       * Both halves are asserted: the flag the stylesheet keys off, and the box a reader actually sees.
+       * Neither a `markRendered()` that never ran nor a stylesheet that stopped clipping can pass.
+       */
+      hidden: el.getAttribute('data-rendered') === '1'
+        && el.getBoundingClientRect().width <= 1 && el.getBoundingClientRect().height <= 1,
       refusal: el.querySelector('.refusal')?.textContent?.slice(0, 60) ?? null,
     };
   });
@@ -112,16 +122,40 @@ for (const [name, q] of [['live', ''], ['no-fog', '&fog=0'], ['no-ao', '&ao=0'],
 
   const rep = await p.evaluate(() => globalThis.E6);
   console.log(`    ms/frame ${rep.msPerFrame} · ${rep.renderer} · glError ${rep.glError} · ${rep.rendererClass} · headroom ${rep.headroom === null ? rep.headroomRefusal : rep.headroom + ' ms'}`);
-  console.log(`    readableTo ${rep.readableToDays}d · visibleTo ${rep.visibleToDays}d`
+  console.log(`    readableTo ${rep.readableToDays}d (at ${rep.readableThreshold}:1)`
+    + ` · inRangeTo ${rep.inRangeToDays}d · visibleTo ${rep.visibleToDays}d`
     + ` · ${rep.hoursPerMetre} h/m · fogDensity ${rep.fogDensity}`
     + ` · fog ${rep.fogNearest}..${rep.fogFurthest} (nearest..furthest)`);
   console.log(`    records ${rep.records} · shown ${rep.shown}`
     + ` · counts ${JSON.stringify(rep.counts)} · hiddenBy ${JSON.stringify(rep.hiddenBy)}`
-    + ` · rulerOffFrame ${rep.rulerOffFrame}`);
+    + ` · rulerOffFrame ${rep.rulerOffFrame}`
+    + ` · rulerRatios ${JSON.stringify(rep.rulerTicks.map((t) => [t.days, t.ratio]))}`);
   /* Fog that does not vary with distance is fog that is doing nothing, whatever the density says —
      and a screenshot cannot tell that apart from subtlety. */
   if (rep.fog && rep.fogFurthest - rep.fogNearest < 0.25) {
     throw new Error(`FOG IS NOT SEPARATING DEPTHS: ${rep.fogNearest}..${rep.fogFurthest}`);
+  }
+  /*
+   * THE DEPTH RULER IS AN AXIS OR IT IS NOTHING, AND `rulerOffFrame` COULD NOT TELL THE DIFFERENCE.
+   *
+   * All four ticks were reported on-frame while three of them measured 3.38:1, 1.25:1 and 1.04:1 against
+   * their own background — the 14d label differed from the backplate by 5/255, which no reader can see.
+   * Frame bounds are not legibility, so this asserts on the harness's own pixel read instead. Fatal:
+   * "depth is time" is printed on the frame as a marked axis, and an axis whose marks are invisible makes
+   * that sentence an assertion again.
+   */
+  if (rep.rulerTicksUnreadable.length > 0) {
+    throw new Error('depth-ruler ticks below AA against their own background: '
+      + JSON.stringify(rep.rulerTicksUnreadable));
+  }
+  /*
+   * AND THE HEADLINE MUST BE BACKED BY THE PIXELS. `READABLE TO n d` used to come from a metres test,
+   * and the record that set it carried body copy at 2.56:1. Every record the frame SHOWS is now measured,
+   * so if the worst one is below the threshold the word on the frame is not earned.
+   */
+  if (rep.worstShownTextRatio !== null && rep.worstShownTextRatio < rep.readableThreshold) {
+    throw new Error(`the frame claims READABLE TO ${rep.readableToDays}d but its worst shown record`
+      + ` measures ${rep.worstShownTextRatio}:1 against ${rep.readableThreshold}:1`);
   }
   await p.close();
 }

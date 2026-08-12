@@ -67,6 +67,25 @@ at 1000 and the y axis at 90. An axis missing its outermost tick is worse than n
 reader scales the surface against a range that stops short of the data. Caught by the count; the
 capture looked fine.
 
+## Two more the pen-test caught: a rate with no domain, and a key that went white
+
+**3 · "Finite" is not "possible", so the surface would plot `PEAK 1250%`.** Validation was delegated
+entirely to `buildSurfaceMesh`, which refuses a non-finite cell (`GEOMETRY_Z_NOT_FINITE`) and accepts any
+finite number. `zAxis` is declared as a win rate and every probe label is formatted as a percentage, so a
+cell of `12.5` rendered the headline **`PEAK 1250%`** with no notice and no refusal, and `-0.90` was
+accepted as a win rate of −90%. Measured on a copy of this harness: `title READY`, frame text
+`PEAK / 1250% / $2500k · 180 d`. The control — the same grid with one `NaN` — refused correctly, which is
+exactly what made the gap look like coverage. The domain is now asserted here, in the surface that knows
+the quantity is a fraction of deals won, and it **refuses** rather than clamping: a clamped 12.5 is a
+plausible 100%. `SurfaceGridInput` has no field for a range, so the engine could not have known;
+`zAxis.domain` refused the way non-finite already is remains the right engine-level fix.
+
+**4 · `forced-colors: active` collapsed the state key.** Measured with `newPage({forcedColors:'active'})`,
+OBSERVED `#2C6BFF` and WITHHELD `#C98A2B` **both** computed to `rgb(255,255,255)` — two states, one white
+square — while the canvas kept its blue cells and amber marker plates. The swatches now carry
+`forced-color-adjust: none` (a swatch samples a colour the renderer produces; the label text beside it
+keeps its forced colours). Measured after: both hues survive in both modes.
+
 ## What §2 asked for and is not here
 
 - **No contour ribbons.** Iso-level ribbons would give the surface a readable quantisation the smooth

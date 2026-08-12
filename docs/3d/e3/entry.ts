@@ -73,8 +73,39 @@ const TIER: QualityTier = (QUALITY_TIERS as readonly string[]).includes(params.g
   : 'full';
 const Q = qualitySettings(TIER);
 const FOG_ON = params.get('fog') !== '0';
-const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
-const FRAMES = Number(params.get('frames') ?? 300);
+/*
+ * A MISTYPED URL USED TO BE REPORTED AS A HARDWARE FAULT, and the clamp is what hid it.
+ *
+ * `Math.max(1, Math.min(3, Number('abc')))` is NaN — NEITHER clamp rejects NaN, because every comparison
+ * against NaN is false and both functions then return it. So `?scale=abc` gave W = NaN, `canvas.width`
+ * coerced that to 0, `createStage` correctly refused a 0x0 canvas with FRAMEBUFFER_INCOMPLETE, and
+ * `stage.ts` printed its words to the reader: "This driver would not allocate the render targets this
+ * view needs." The driver was fine. The URL was wrong, and the page blamed the machine.
+ *
+ * `frames` had the same shape with a quieter symptom: `for (let i = 0; i < NaN; i++)` runs ZERO times, so
+ * `msPerFrame` came out NaN and serialised to null — indistinguishable from this file's own refusal
+ * convention, on a page still titled READY.
+ *
+ * So every numeric parameter goes through one parser that refuses a non-number BY NAME and records a
+ * clamp instead of applying it silently. The refusal is taken after the flat fallback is installed, so
+ * the reader keeps every row of the table and is told which parameter they mistyped.
+ */
+const badParams: string[] = [];
+const paramClamps: string[] = [];
+function numParam(name: string, dflt: number, lo: number, hi: number): number {
+  const raw = params.get(name);
+  if (raw === null) return dflt;
+  const v = Number(raw);
+  if (!Number.isFinite(v)) { badParams.push(`${name}=${raw}`); return dflt; }
+  const clamped = Math.max(lo, Math.min(hi, v));
+  if (clamped !== v) paramClamps.push(`${name}=${raw} used as ${clamped}`);
+  return clamped;
+}
+const SCALE = numParam('scale', 1, 1, 3);
+/* BOUNDED AT BOTH ENDS. The lower bound stops `frames=0` and `frames=-5` publishing a one-frame time as
+   an n-frame sweep; the upper bound stops the count being absurd. Neither is what makes `?frames=1e9`
+   survivable — the wall clock in `measure` is. */
+const FRAMES = Math.trunc(numParam('frames', 300, 1, 20000));
 
 const W = 1200 * SCALE, H = 720 * SCALE;
 const canvas = document.getElementById('c') as HTMLCanvasElement;
@@ -142,6 +173,48 @@ const DEALS: readonly Deal[] = [
   { name: 'ATLAS OTC', stage: 'SIGNED', valueUsd: 4_200_000, daysSinceUpdate: 3, known: 'OBSERVED' },
 ];
 
+/*
+ * ABSENCE WAS DEFENDED EVERYWHERE AND VALIDITY NOWHERE, and the frame published the difference.
+ *
+ * `valueUsd: number | null` is documented above as "`null` = never measured. Never 0, never inferred",
+ * and the null case is checked in five places — `massRefusal`, `settleRefusal`, `edge === null`, the
+ * fallback's absent cells, every aggregate. Nothing anywhere asked whether a PRESENT number was a
+ * number. Fed `Number.NaN`, `Number.POSITIVE_INFINITY` and `-500_000` as OBSERVED values, this harness
+ * reached `document.title = 'READY'` with `glError: 0`, `brandFidelity: []`, nothing in `hiddenBy`, and
+ * printed onto the frame: `NEGATIVE VALUE $-500.0k`, `DILIGENCE $InfinityM/d`, `QUALIFIED $NaNk/d`, and
+ * `NaN% OF THE READABLE BOOK`. A negative value also produces a negative cube root at `edgeOf`, so the
+ * box edge goes negative silently.
+ *
+ * E5 does not have this hole because it hands its input to the shipping flat engine and refuses whatever
+ * that refuses (`GEOMETRY_Z_NOT_FINITE`). E3 owns its geometry, so it owns the check: one pass over the
+ * dataset, before `placed` exists, refusing any present field that is not a finite non-negative number —
+ * and any `known` state that disagrees with which fields are present, because the two axes read those
+ * independently and a disagreement makes one of them lie.
+ *
+ * It is COLLECTED here and refused below, after the flat fallback is installed: a bad dataset is exactly
+ * the case where the reader is still entitled to the table and to be told what is wrong with it.
+ */
+const dataFaults: string[] = DEALS.flatMap((d) => {
+  const out: string[] = [];
+  const check = (field: string, v: number | null): void => {
+    if (v === null) return;  // absence is a state this file renders; it is not a fault
+    if (!Number.isFinite(v)) out.push(`${d.name}: ${field} is ${v}`);
+    else if (v < 0) out.push(`${d.name}: ${field} is negative (${v})`);
+  };
+  check('valueUsd', d.valueUsd);
+  check('daysSinceUpdate', d.daysSinceUpdate);
+  if (d.known === 'OBSERVED' && (d.valueUsd === null || d.daysSinceUpdate === null)) {
+    out.push(`${d.name}: state is OBSERVED but a field is absent`);
+  }
+  if (d.known === 'WITHHELD' && (d.valueUsd !== null || d.daysSinceUpdate !== null)) {
+    out.push(`${d.name}: state is WITHHELD but a field carries a value`);
+  }
+  if (d.known === 'VALUE_ABSENT' && d.valueUsd !== null) {
+    out.push(`${d.name}: state is VALUE_ABSENT but a value is present`);
+  }
+  return out;
+});
+
 /* 45 DAYS IS THE FLOOR OF THE MOVEMENT AXIS, and it is a policy number rather than a taste one: the
    point past which a deal is treated as dead rather than slow. Beyond it the axis CLAMPS instead of
    extending, so a 63-day deal and a 90-day deal both rest on the floor — the axis does not pretend to
@@ -207,6 +280,19 @@ const fallback = installFlatFallback({
   })),
 });
 fallbackRef = fallback;
+
+/* Refused HERE rather than where they are detected, because the fallback has to exist first — a reader
+   handed a broken dataset or a mistyped URL is still entitled to every row of the table and to be told
+   which of the two went wrong. See `dataFaults` and `numParam` for what each one caught. */
+if (dataFaults.length > 0) {
+  die(`INVALID_DEAL_DATA: ${dataFaults.join('; ')} — a value that is present must be a finite `
+    + 'non-negative number, and the state column must agree with which fields are present. The channel '
+    + 'was not drawn rather than drawn from a value that cannot be a package value.');
+}
+if (badParams.length > 0) {
+  die(`BAD_PARAM: ${badParams.join(', ')} — not a number, so the channel was refused rather than drawn `
+    + 'from a nonsensical value. Every deal below is unaffected; correct the URL and reload.');
+}
 
 /*
  * A FORCED REFUSAL, SO THE FALLBACK CAN BE CAPTURED. Rule 8 is "every claim gets a capture", and rule
@@ -1050,26 +1136,82 @@ function frame() {
  * something. The warm-up frame matters too: the first frame pays shader upload and texture allocation,
  * and over a short batch that alone dominates the result.
  */
-function measure(n: number): number {
-  frame();
+/*
+ * AND IT HAS A WALL-CLOCK CEILING, because a frame ceiling is not one. This loop is synchronous, so an
+ * unbounded count is an unbounded main-thread block: `?frames=1e9` left the renderer process unable to
+ * service a Playwright evaluation at all — the harness reported a timeout, which names the waiter rather
+ * than the loop, and E9's task page polls the same title through an iframe. Clamping the COUNT alone does
+ * not fix it: 20000 frames of this channel under SwiftShader is over an hour. The sweep therefore stops on
+ * the clock and reports how many frames it actually timed, because a truncated sweep that says so is a
+ * measurement and one that does not is a lie about n.
+ */
+/*
+ * 4 SECONDS, AND THE BUDGET IS SPENT AGAINST A MEASURED FRAME COST RATHER THAN AGAINST THE CLOCK INSIDE
+ * THE LOOP — because a clock inside the loop measures the wrong thing, and this cost a real measurement.
+ *
+ * The first version checked `performance.now() - t0 > SWEEP_BUDGET_MS` per iteration and looked correct.
+ * Measured on `?frames=1e9`: it stopped after 833 frames and the page took **160 seconds**, reporting
+ * `msPerFrame: 191.7`. The reason is the same one the trailing `readPixels` exists for — the driver QUEUES
+ * work, so 833 frames of SwiftShader were submitted in 4 s of CPU time and the sync at the end then blocked
+ * for the 156 s of GPU work behind them. An in-loop clock bounds SUBMISSION, not execution.
+ *
+ * So the warm-up frame — which is already followed by a `readPixels` sync, and is the most expensive frame
+ * because it pays shader upload — is TIMED, and the loop count is capped at what fits the budget at that
+ * cost. Conservative in the right direction: the estimate is high, so the sweep finishes early rather than
+ * late. The in-loop clock stays as a second bound for the case where frames get slower mid-sweep.
+ */
+const SWEEP_BUDGET_MS = 4000;
+function measure(n: number): { msPerFrame: number; measured: number } {
   const px = new Uint8Array(4);
+  /* The warm-up, TIMED. `readPixels` cannot be satisfied until the frame exists, so this measures execution
+     rather than submission — which is the whole reason it is the number the cap is computed from. */
+  const warm0 = performance.now();
+  frame();
   gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const pilotMs = Math.max(0.01, performance.now() - warm0);
+  const cap = Math.min(n, Math.max(1, Math.floor(SWEEP_BUDGET_MS / pilotMs)));
   const t0 = performance.now();
-  for (let i = 0; i < n; i++) frame();
+  let measured = 0;
+  for (let i = 0; i < cap; i++) {
+    frame();
+    measured++;
+    if (performance.now() - t0 > SWEEP_BUDGET_MS) break;
+  }
   gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-  return (performance.now() - t0) / n;
+  return { msPerFrame: (performance.now() - t0) / measured, measured };
 }
 
 /* Primed to steady state BEFORE the clock starts, so the measurement is of a full field and the
    capture is of a field whose density is the rate rather than the frame count. */
 if (field) for (let i = 0; i < PRIME_STEPS; i++) field.step(stepOpts);
-const ms = measure(Math.max(1, FRAMES));
+const sweep = measure(FRAMES);
+const ms = sweep.msPerFrame;
 
 /*
  * ══════════════════════════════════════════════════════════════════════════════════════
  * THE DOM LAYER.
  * ══════════════════════════════════════════════════════════════════════════════════════
  */
+/**
+ * One styled line of TEXT, built as an element rather than as a string of markup.
+ *
+ * Every projected label in this file was a template literal assigned to `innerHTML` with a deal name, a
+ * stage id or a gate label interpolated into it. Those three are the strings a real dataset supplies, and
+ * `innerHTML` PARSES its argument: `&` corrupts the label silently and `<` starts an element. The flat
+ * table escapes the same values (`escText` in `_shared/flatFallback.ts`), so the rendered frame and the
+ * fallback would have disagreed about the same record — inside the one file whose subject is that the two
+ * cannot disagree.
+ *
+ * `textContent` does not parse. This is deliberately not an escaping helper: an escape has to be
+ * remembered at every future interpolation, and a constructor that takes text cannot be got wrong.
+ */
+const textLine = (css: string, text: string): HTMLDivElement => {
+  const d = document.createElement('div');
+  d.style.cssText = css;
+  d.textContent = text;
+  return d;
+};
+
 const wrap = document.createElement('div');
 /* `overflow:hidden` IS NOT COSMETIC. A projected element is clipped to the canvas box or it extends
    the PAGE box, and a surface seen nearly edge-on produces a homography whose coefficients are
@@ -1080,8 +1222,24 @@ wrap.style.cssText = `position:relative;overflow:hidden;width:${CSS_W}px;height:
 canvas.parentNode?.insertBefore(wrap, canvas);
 wrap.appendChild(canvas);
 const overlay = document.createElement('div');
+/*
+ * THE CONTAINER IGNORES THE POINTER; THE CONTENT DOES NOT — and until now neither did.
+ *
+ * `project.ts` justifies its own existence on the grounds that "GL text is unselectable, unsearchable,
+ * invisible to a screen reader" and that the homography makes "the browser rasterise real selectable
+ * text". Measured: `document.elementFromPoint` at the centre of every projected tag returned `CANVAS#c`,
+ * and a real mouse drag across the middle of the canvas selected the empty string. Cmd/Ctrl+A still
+ * reached the words, so the text was IN the document and unreachable with a pointer — a reader could not
+ * point at a deal's value and copy it.
+ *
+ * `pointer-events:none` stays on the container, which must not swallow a gesture aimed at the canvas; each
+ * projected leaf re-enables it and asks for `user-select:text`. Nothing here is interactive, so the only
+ * cost is a drag that STARTS inside a tag.
+ */
 overlay.style.cssText = 'position:absolute;inset:0;pointer-events:none';
 wrap.appendChild(overlay);
+/* Applied to every projected leaf below. One string so the two label kinds cannot drift apart. */
+const SELECTABLE = 'pointer-events:auto;user-select:text;-webkit-user-select:text';
 
 /* PAINTED FAR TO NEAR, so a nearer element covers a further one — the opposite order to the decision
    pass above, and for the opposite reason. Conflating the two is what made the first occlusion test in
@@ -1093,18 +1251,33 @@ for (const d of [...decided].sort((a, b) => b.p.distance - a.p.distance)) {
   const el = document.createElement('div');
   el.style.cssText = `position:absolute;left:0;top:0;width:${ew}px;height:${eh}px;`
     + `transform-origin:0 0;transform:${proj.transform};display:flex;flex-direction:column;`
-    + `justify-content:center;gap:3px;padding:0 5px;overflow:hidden;`
+    + `justify-content:center;gap:3px;padding:0 5px;overflow:hidden;${SELECTABLE};`
     + `opacity:${(1 - 0.7 * haze).toFixed(3)};-webkit-font-smoothing:antialiased`;
-  const value = p.d.valueUsd === null
-    ? `<span style="color:${ABSENT_HEX}">VALUE ABSENT</span>`
-    : fmtUsd(p.d.valueUsd);
   const days = p.d.daysSinceUpdate === null ? '—' : `${p.d.daysSinceUpdate} d`;
-  el.innerHTML =
-    `<div style="font:700 11px/1.05 ui-monospace,monospace;color:#fff">${p.d.name}</div>`
-    + `<div style="font:400 10.5px/1.2 ui-monospace,monospace;color:rgba(255,255,255,0.80)">`
-    + `${value} · ${days}</div>`
-    + `<div style="font:600 9px/1 ui-monospace,monospace;letter-spacing:.14em;`
-    + `color:rgba(255,255,255,0.60)">${p.d.stage}</div>`;
+  /*
+   * textContent PER LINE, NOT ONE innerHTML — and the deal NAME is the reason.
+   *
+   * `${p.d.name}` was interpolated straight into markup. A counterparty name is the one string here that
+   * a real dataset supplies rather than this file, so the moment `DEALS` stops being literals, a name
+   * containing `<` or `&` is parsed as markup on the surface a reader trusts most: an ampersand corrupts
+   * the name silently, and a tag executes. The same values already go through `escText` in the flat
+   * table, so the rendered tag and the fallback disagreed about the same record by construction.
+   *
+   * `textLine` sets `textContent`, which does not parse its argument at all — the fix that cannot be
+   * got wrong later, as opposed to an escape that the next interpolation forgets.
+   */
+  el.appendChild(textLine('font:700 11px/1.05 ui-monospace,monospace;color:#fff', p.d.name));
+  const valueLine = textLine(
+    'font:400 10.5px/1.2 ui-monospace,monospace;color:rgba(255,255,255,0.80)',
+    p.d.valueUsd === null ? `VALUE ABSENT · ${days}` : `${fmtUsd(p.d.valueUsd)} · ${days}`,
+  );
+  /* The absent colour applies to the whole line rather than to a nested span: the line IS the absence
+     when there is no value to print, and one element is one fewer place for markup to appear. */
+  if (p.d.valueUsd === null) valueLine.style.color = ABSENT_HEX;
+  el.appendChild(valueLine);
+  el.appendChild(textLine(
+    'font:600 9px/1 ui-monospace,monospace;letter-spacing:.14em;color:rgba(255,255,255,0.60)', p.d.stage,
+  ));
   overlay.appendChild(el);
 }
 
@@ -1151,12 +1324,24 @@ const gateLabels = [...gates].reverse().map((g) => {
     const el = document.createElement('div');
     el.style.cssText = `position:absolute;left:${s.sx.toFixed(1)}px;top:${s.sy.toFixed(1)}px;`
       + `transform:translate(${left ? '-100%' : '0'},-100%);text-align:${left ? 'right' : 'left'};`
-      + `white-space:nowrap;opacity:${(1 - 0.72 * haze).toFixed(3)}`;
-    el.innerHTML =
-      `<div style="font:600 10px/1.25 ui-monospace,monospace;letter-spacing:.16em;color:#9CC2FF">`
-      + `${g.label}</div>`
-      + `<div style="font:400 9.5px/1.25 ui-monospace,monospace;color:rgba(196,212,240,0.72)">`
-      + `${fmtUsd(g.usdPerDay)}/d</div>`;
+      + `white-space:nowrap;opacity:${(1 - 0.72 * haze).toFixed(3)};${SELECTABLE}`;
+    /*
+     * textContent, NOT innerHTML, and the stage label is why. `g.label` is a StageId today and every
+     * other interpolation here is a number, so nothing in this string is currently hostile — but this is
+     * the tag that will carry a stage name the moment the dataset stops being literals in this file, and
+     * a `<` in it would be parsed as markup at exactly the position a reader trusts most. Two styled
+     * lines of one string each is what `textLine` is for; there is no markup left to get wrong.
+     *
+     * The throughput REFUSES with the book: with nothing readable, `fmtUsd(0)` printed "$0.0k/d" on the
+     * frame, which asserts a measured throughput of zero where the truth is that none was readable.
+     */
+    el.appendChild(textLine(
+      'font:600 10px/1.25 ui-monospace,monospace;letter-spacing:.16em;color:#9CC2FF', g.label,
+    ));
+    el.appendChild(textLine(
+      'font:400 9.5px/1.25 ui-monospace,monospace;color:rgba(196,212,240,0.72)',
+      READABLE_BOOK ? `${fmtUsd(g.usdPerDay)}/d` : 'THROUGHPUT ABSENT',
+    ));
     overlay.appendChild(el);
   }
   return { stage: g.label, sx: Math.round(s.sx), sy: Math.round(s.sy), onFrame, crowded };
@@ -1180,7 +1365,7 @@ const axisLabels = [
       + `transform:translate(${AXIS_SIDE > 0 ? '0' : '-100%'},-50%);`
       + `text-align:${AXIS_SIDE > 0 ? 'left' : 'right'};font:500 9.5px/1 ui-monospace,monospace;`
       + `letter-spacing:.08em;color:rgba(196,212,240,0.78);white-space:nowrap;`
-      + `${AXIS_SIDE > 0 ? 'padding-left' : 'padding-right'}:5px`;
+      + `${AXIS_SIDE > 0 ? 'padding-left' : 'padding-right'}:5px;${SELECTABLE}`;
     el.textContent = t.label;
     overlay.appendChild(el);
   }
@@ -1214,7 +1399,10 @@ const perStageSeparation = STAGE_ORDER.map((label, i) => {
   };
 });
 const measurable = perStageSeparation.map((s) => s.separationPx).filter((v): v is number => v !== null);
-const minSeparationPx = measurable.length > 0 ? Math.min(...measurable) : 0;
+/* NULL WHEN NOTHING WAS MEASURABLE, not 0. Zero is the value the flat control legitimately reports — every
+   deal pinned to the rail — so returning it for "there was no pair to measure" makes the one number that
+   distinguishes the environment from the bar list mean two opposite things. */
+const minSeparationPx: number | null = measurable.length > 0 ? Math.min(...measurable) : null;
 
 /*
  * AND DOES A SETTLED DEAL EVER PROJECT HIGHER THAN A FRESHER ONE IN ITS OWN STAGE?
@@ -1263,6 +1451,24 @@ for (const a of observed) {
    lying on the floor in the near half of the channel. */
 const STALLED_AT = 0.6;
 const totalObservedUsd = observed.reduce((s, p) => s + (p.d.valueUsd ?? 0), 0);
+/*
+ * ABSENT IS NOT ZERO, AND `Math.max(1, totalObservedUsd)` MADE IT ZERO ON THE FRAME.
+ *
+ * Every share below was `deepStalledUsd / Math.max(1, totalObservedUsd)`. That guard stops a
+ * divide-by-zero and in doing so MANUFACTURES a reading: with every deal withheld, `totalObservedUsd` is
+ * 0 because there is nothing to sum, not because the book is empty — and the frame printed
+ * `$0.0k PAST DILIGENCE AND STALLED · 0% OF THE READABLE BOOK` under a title of READY, with
+ * `rateMonotoneDown: true` passing vacuously. Measured on a scratch copy fed twelve WITHHELD records.
+ *
+ * §6 rule 6 says absent data refuses, and this file already does it correctly twice — `edgeMinM` and
+ * `particleField.zRange` come back null on the same input. So the shares refuse the same way, the gate
+ * throughputs go null rather than 0, and the HUD prints the refusal instead of a percentage. `share` is
+ * the ONE place the division happens, so there is nowhere left for a 1 to be substituted for a book.
+ */
+const READABLE_BOOK = observed.length > 0 && totalObservedUsd > 0;
+const bookRefusal = READABLE_BOOK ? null : 'NO_READABLE_VALUE_IN_THE_BOOK';
+const share = (v: number): number | null =>
+  READABLE_BOOK ? Number((v / totalObservedUsd).toFixed(3)) : null;
 const stalled = observed.filter((p) => (p.settle ?? 0) >= STALLED_AT);
 const stalledUsd = stalled.reduce((s, p) => s + (p.d.valueUsd ?? 0), 0);
 const deepStalled = stalled.filter((p) => p.stageIndex >= STAGE_ORDER.indexOf('DILIGENCE'));
@@ -1272,10 +1478,13 @@ const deepStalledUsd = deepStalled.reduce((s, p) => s + (p.d.valueUsd ?? 0), 0);
 const stalledDisplacements = stalled
   .map((p) => settleDisplacementPx(p))
   .filter((v): v is number => v !== null);
-const minStalledDisplacementPx = stalledDisplacements.length > 0
-  ? Math.round(Math.min(...stalledDisplacements)) : 0;
-const maxDisplacementPx = Math.round(Math.max(0, ...placed
-  .map((p) => settleDisplacementPx(p)).filter((v): v is number => v !== null)));
+/* NULL, NOT 0, WHEN THERE WAS NOTHING TO MEASURE — see `minSeparationPx`. 0 is what the flat control
+   reports and it is also what "no stalled deal is on screen" used to report. */
+const minStalledDisplacementPx: number | null = stalledDisplacements.length > 0
+  ? Math.round(Math.min(...stalledDisplacements)) : null;
+const allDisplacements = placed.map((p) => settleDisplacementPx(p)).filter((v): v is number => v !== null);
+const maxDisplacementPx: number | null = allDisplacements.length > 0
+  ? Math.round(Math.max(...allDisplacements)) : null;
 
 const counts = {
   OBSERVED: placed.filter((p) => p.d.known === 'OBSERVED').length,
@@ -1284,23 +1493,60 @@ const counts = {
 };
 
 const hud = document.createElement('div');
-hud.style.cssText = 'position:absolute;left:18px;top:16px;display:flex;flex-direction:column;gap:7px';
-hud.innerHTML =
-  `<div style="font:600 11px/1 ui-monospace,monospace;letter-spacing:.16em;color:#8FB7FF">`
-  + `PIPELINE · SIZE IS VALUE, HEIGHT IS MOVEMENT</div>`
-  + `<div style="font:400 10.5px/1.55 ui-monospace,monospace;color:rgba(196,212,240,0.86)">`
-  + `<b style="color:#FF9B76">${fmtUsd(deepStalledUsd)}</b> PAST DILIGENCE AND STALLED`
-  + ` &nbsp;·&nbsp; ${Math.round(100 * deepStalledUsd / Math.max(1, totalObservedUsd))}% OF THE READABLE BOOK<br>`
-  + `${STALL_DAYS} d = ON THE FLOOR &nbsp;·&nbsp; 1 PARTICLE = ${fmtUsd(USD_PER_PARTICLE)}/d CLEARED<br>`
-  + `${SETTLE_ON ? 'MOVEMENT AXIS ON' : 'MOVEMENT AXIS OFF — every deal pinned to the rail'}`
-  + ` &nbsp;·&nbsp; ${particleRefusal === null ? 'THROUGHPUT ON' : `THROUGHPUT OFF — ${particleRefusal.split(' — ')[0]}`}`
-  + `</div>`
-  + `<div style="font:500 10px/1.4 ui-monospace,monospace;color:${ABSENT_HEX}">SYNTHETIC DEALS</div>`;
+hud.style.cssText = 'position:absolute;left:18px;top:16px;display:flex;flex-direction:column;gap:7px;'
+  + SELECTABLE;
+/*
+ * THE HEADLINE REFUSES WHEN THERE IS NOTHING TO HEAD, and it used to print a measurement instead.
+ *
+ * The share was `Math.round(100 * deepStalledUsd / Math.max(1, totalObservedUsd))`. On a book where every
+ * value is withheld or unpriced, `totalObservedUsd` is 0 — because there is nothing to sum, not because
+ * the pipeline is empty — and that expression rendered `$0.0k PAST DILIGENCE AND STALLED · 0% OF THE
+ * READABLE BOOK` onto the frame under a READY title. Two false statements about a pipeline nobody was
+ * allowed to read, in the largest type on the picture.
+ *
+ * `share()` is now the only divider and it returns null instead of borrowing a 1, so the frame says what
+ * the report says. The line is assembled from text nodes rather than one `innerHTML` string for the reason
+ * given at `textLine`.
+ */
+hud.appendChild(textLine(
+  'font:600 11px/1 ui-monospace,monospace;letter-spacing:.16em;color:#8FB7FF',
+  'PIPELINE · SIZE IS VALUE, HEIGHT IS MOVEMENT',
+));
+{
+  const body = document.createElement('div');
+  body.style.cssText = 'font:400 10.5px/1.55 ui-monospace,monospace;color:rgba(196,212,240,0.86)';
+  const headline = document.createElement('div');
+  if (READABLE_BOOK) {
+    const amount = document.createElement('b');
+    amount.style.color = '#FF9B76';
+    amount.textContent = fmtUsd(deepStalledUsd);
+    headline.appendChild(amount);
+    headline.appendChild(document.createTextNode(
+      ` PAST DILIGENCE AND STALLED  ·  ${Math.round(100 * (share(deepStalledUsd) ?? 0))}% OF THE READABLE BOOK`,
+    ));
+  } else {
+    const refused = document.createElement('b');
+    refused.style.color = ABSENT_HEX;
+    refused.textContent = 'NO READABLE VALUE IN THE BOOK';
+    headline.appendChild(refused);
+    headline.appendChild(document.createTextNode(
+      ` — ${counts.WITHHELD} withheld, ${counts.VALUE_ABSENT} never priced, so no share is computable`,
+    ));
+  }
+  body.appendChild(headline);
+  body.appendChild(textLine('', `${STALL_DAYS} d = ON THE FLOOR  ·  1 PARTICLE = ${fmtUsd(USD_PER_PARTICLE)}/d CLEARED`));
+  body.appendChild(textLine('', `${SETTLE_ON ? 'MOVEMENT AXIS ON' : 'MOVEMENT AXIS OFF — every deal pinned to the rail'}`
+    + `  ·  ${particleRefusal === null ? 'THROUGHPUT ON' : `THROUGHPUT OFF — ${particleRefusal.split(' — ')[0]}`}`));
+  hud.appendChild(body);
+}
+hud.appendChild(textLine(
+  `font:500 10px/1.4 ui-monospace,monospace;color:${ABSENT_HEX}`, 'SYNTHETIC DEALS',
+));
 overlay.appendChild(hud);
 
 const legend = document.createElement('div');
 legend.style.cssText = 'position:absolute;right:18px;bottom:16px;display:flex;flex-direction:column;'
-  + 'gap:6px;align-items:flex-end;font:500 10.5px/1 ui-monospace,monospace';
+  + 'gap:6px;align-items:flex-end;font:500 10.5px/1 ui-monospace,monospace;' + SELECTABLE;
 legend.innerHTML = ([
   [FRESH_HEX, 'UPDATED · rides the rail'],
   [STALLED_HEX, `STALLED · ${stalled.length} of ${counts.OBSERVED} at ${Math.round(STALLED_AT * STALL_DAYS)} d+`],
@@ -1411,9 +1657,12 @@ const report = {
   stalledFrom: STALLED_AT,
   stalledCount: stalled.length,
   stalledUsd,
-  stalledShare: Number((stalledUsd / Math.max(1, totalObservedUsd)).toFixed(3)),
+  stalledShare: share(stalledUsd),
   deepStalledUsd,
-  deepStalledShare: Number((deepStalledUsd / Math.max(1, totalObservedUsd)).toFixed(3)),
+  deepStalledShare: share(deepStalledUsd),
+  /* Null shares are not a gap in the report — they are the report saying the denominator was unreadable.
+     Named, so the reason travels with the absence. */
+  bookRefusal,
   settleClamped: placed.filter((p) => p.settleClamped).length,
 
   /* ── DOES THE PICTURE ACTUALLY SHOW IT ──
@@ -1441,8 +1690,15 @@ const report = {
   particleSpeed: PARTICLE_SPEED,
   /* Attrition down the funnel is the reading the stream density carries, so it is asserted rather than
      left to the eye: if this is ever false the density is describing something else. */
-  rateMonotoneDown: gates.every((g, i) => i === 0 || g.ratePerSec <= gates[i - 1]!.ratePerSec + 1e-9),
-  rateRatioFirstLast: Number((gates[0]!.ratePerSec / Math.max(1e-9, gates[gates.length - 1]!.ratePerSec)).toFixed(2)),
+  /* REFUSES ALONGSIDE THE BOOK. With nothing readable every gate rate is 0, so `<=` held between five
+     zeroes and this boolean — described two lines below as the assertion that catches the density
+     describing something else — passed vacuously on the one input where it is meaningless. */
+  rateMonotoneDown: READABLE_BOOK
+    ? gates.every((g, i) => i === 0 || g.ratePerSec <= gates[i - 1]!.ratePerSec + 1e-9)
+    : null,
+  rateRatioFirstLast: READABLE_BOOK
+    ? Number((gates[0]!.ratePerSec / Math.max(1e-9, gates[gates.length - 1]!.ratePerSec)).toFixed(2))
+    : null,
   particleField: {
     refusal: particleRefusal,
     capacity: PARTICLE_CAPACITY,
@@ -1539,7 +1795,13 @@ const report = {
   shadowMap: shadow.size,
   resolution: `${W}x${H}`,
   dprScale: SCALE,
-  frames: FRAMES,
+  /* THE VALUE MEASURED, NOT THE VALUE ASKED FOR. `frames` used to report the raw parameter while the loop
+     ran `Math.max(1, FRAMES)`, so `frames=0` and `frames=-5` published a single-frame time as a 0-frame
+     and a -5-frame sweep. */
+  frames: sweep.measured,
+  framesRequested: FRAMES,
+  sweepTruncated: sweep.measured < FRAMES,
+  paramClamps,
   msPerFrame: Number(ms.toFixed(3)),
   fps: Math.round(1000 / ms),
   /*
@@ -1557,12 +1819,15 @@ const report = {
      browser sessions on real hardware; this harness has only ever run under SwiftShader. */
   hardwareMsPerFrame: null,
 
+  /* THROUGHPUT REFUSES WITH THE BOOK. `clearedUsd` of 0 means "no readable value has crossed this gate",
+     which is a different statement from "no value has crossed it" — and the second is what a 0 in a
+     dollars-per-day column reads as. */
   gates: gates.map((g) => ({
     stage: g.label, z: g.z,
-    clearedUsd: g.clearedUsd,
-    usdPerDay: Math.round(g.usdPerDay),
-    ratePerSec: Number(g.ratePerSec.toFixed(2)),
-    perMetre: Number(g.linearDensityPerMetre.toFixed(2)),
+    clearedUsd: READABLE_BOOK ? g.clearedUsd : null,
+    usdPerDay: READABLE_BOOK ? Math.round(g.usdPerDay) : null,
+    ratePerSec: READABLE_BOOK ? Number(g.ratePerSec.toFixed(2)) : null,
+    perMetre: READABLE_BOOK ? Number(g.linearDensityPerMetre.toFixed(2)) : null,
     lifeSeconds: Number(g.life.toFixed(2)),
   })),
   perStageSeparation,
@@ -1580,9 +1845,11 @@ const report = {
 const { perDeal: rows, gates: gateRows, perStageSeparation: seps, ...summary } = report;
 log.textContent = JSON.stringify(summary, null, 2)
   + `\n\ngates (${gateRows.length}):\n`
+  /* `absent` rather than `null` in the printed diagnostic: these fields refuse when the book has no
+     readable value, and a printed `$null/d` reads as a bug in the formatter rather than as a refusal. */
   + gateRows.map((g) => (
-    `  ${g.stage.padEnd(10)} $${String(g.usdPerDay).padStart(7)}/d`
-    + ` ${String(g.ratePerSec).padStart(7)} p/s ${String(g.perMetre).padStart(7)} p/m`
+    `  ${g.stage.padEnd(10)} ${(g.usdPerDay === null ? 'absent' : `$${g.usdPerDay}`).padStart(8)}/d`
+    + ` ${String(g.ratePerSec ?? 'absent').padStart(7)} p/s ${String(g.perMetre ?? 'absent').padStart(7)} p/m`
     + ` life ${g.lifeSeconds}s`
   )).join('\n')
   + `\n\nsettle separation on screen:\n`

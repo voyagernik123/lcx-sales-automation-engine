@@ -151,6 +151,11 @@ export function createLineBatch(stage: Stage): LineBatch | StageRefusal {
     dispose() {
       gl.deleteBuffer(buf);
       gl.deleteVertexArray(vao);
+      /* THE PROGRAM TOO. `stage.dispose()` also deletes it — deleting twice is a documented no-op —
+         but a caller that creates and drops batches without tearing the stage down was accumulating
+         one program plus its two shaders per cycle, and "the stage will get it eventually" is not a
+         lifetime for something a single surface can churn. */
+      gl.deleteProgram(program);
     },
   };
 }

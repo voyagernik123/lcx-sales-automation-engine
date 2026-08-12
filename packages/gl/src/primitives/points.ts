@@ -179,6 +179,9 @@ export function createPointCloud(
     dispose() {
       for (const b of buffers) gl.deleteBuffer(b);
       gl.deleteVertexArray(vao);
+      /* See lines.ts: without this a create/dispose cycle leaks a program and its two shaders until
+         the stage dies, and the stage may outlive many clouds. */
+      gl.deleteProgram(program);
     },
   };
 }

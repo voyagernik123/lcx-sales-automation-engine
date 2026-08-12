@@ -67,10 +67,31 @@ follows the geometry rather than staying perpendicular to it.
 cheaper than the isotropic path here — the anisotropic branch replaces the isotropic one rather
 than adding to it.
 
+## It IS wired into the sign-in route — this line used to say the opposite
+
+**Correction.** This section read *"Not wired into the sign-in route yet. This is the harness proving
+the environment; the React surface and its SVG/CSS fallback are the next step"* — and it went on
+saying it for weeks after the work shipped. It is wired:
+
+- `apps/web/src/pages/SelectOperator.tsx:13-14` lazy-imports `@/components/brand/ForgeBackdrop`,
+  and line 151 renders it inside `<Suspense fallback={null}>`. That page IS the sign-in screen —
+  email plus desk passcode, both verified server-side.
+- The CSS half is `ForgePlate`, imported eagerly so the plate paints on the first frame with no bare
+  page and no shift when the renderer lands on top of it. It is also the permanent fallback for
+  server render, print, no-WebGL2 and a refused float target.
+- `components/brand/__tests__/forgeBackdrop.test.tsx` asserts the MOUNT, not just the component
+  ("built it, forgot to wire it" — which had already happened to W5), and `e2e/smoke.spec.ts:20-41`
+  screenshots the sign-in gate in both themes.
+
+E9's generated audit records this claim as a past defect, and E1's panel already renders the true
+version onto E8's tile. This file was the last place the false one was still live. The lesson is the
+one E9 exists for: a README sentence that was true when typed goes on being read as current.
+
 ## What is NOT done
 
-- **Not wired into the sign-in route yet.** This is the harness proving the environment; the
-  React surface and its SVG/CSS fallback are the next step.
+- **§7(b) is not timed.** No operator has been put in front of the sign-in screen with and without
+  the renderer and a stopwatch. The environment is scenery on a form rather than a data surface, so
+  the clause bites differently here — but "differently" is not "not at all".
 - **Not notarized.** A cinematic first-launch that Gatekeeper quarantines undoes the impression
   this exists to create.
 

@@ -72,6 +72,44 @@ backticks and terminated the string. The ratchet written after the ninth found s
 `#version` marker and missed a snippet; it now finds them by GLSL *tokens*, and it has been
 watched failing on the real bug and passing once removed.
 
+## Three more, and all three were in the instrument rather than the frame
+
+**5 · The target probe's own `readPixels` was failing, and reported black.** `targetProbe` exists to
+prove the frame reached the HDR target; it read with `gl.RGBA, gl.UNSIGNED_BYTE` on the reasoning that
+"asking for FLOAT is itself an error on some drivers". On ANGLE/SwiftShader with an RGBA16F attachment it
+is UNSIGNED_BYTE that is the error: every capture in this repository reported `glAfterRead: 1282`
+(`GL_INVALID_OPERATION`) with `targetCentre: [0,0,0,0]` — the probe failed, returned black, and neither
+the page nor `capture.mjs` said a word, because `capture.mjs` read no report fields at all. WebGL2 answers
+the question directly: `IMPLEMENTATION_COLOR_READ_FORMAT`/`_TYPE` for the bound framebuffer, here
+`RGBA/HALF_FLOAT`, decoded to linear radiance. `targetCentre` now reads `[0.0173, 0.0206, 0.0329, 1]` —
+and `capture.mjs` throws on a non-zero `glAfterRead`, a non-empty `failingCalls`, or an all-zero centre.
+
+**6 · `glError` was blind to setup, and its comment claimed the opposite.** The field carried "It is read
+ONCE, here, because getError CLEARS the flag" while this file reads the flag four times above it,
+including a deliberate drain that exists so the probe can attribute an error to a call. So a real
+`GL_INVALID_VALUE` raised during context creation or mesh upload — exactly bug 1 above — read as 0.
+Demonstrated by raising `GL_INVALID_VALUE` with `gl.viewport(0, 0, -1, -1)` and replaying E0's sequence:
+all three fields reported clean. The drain now reports what it swallowed as `glDuringSetup`, and the
+comment describes the window each field actually covers. *`scripts/3d-audit.mjs` feeds `glError` straight
+into the audit's error column; that column is still labelled as an unqualified `glError` and should read
+`glDuringSetup` too — that file is outside this harness.*
+
+**7 · `?scale=abc` was reported as a driver fault.** `Math.max(1, Math.min(3, Number('abc')))` is NaN —
+neither clamp rejects NaN — so `canvas.width` coerced to 0, `createStage` refused a 0x0 canvas with
+`FRAMEBUFFER_INCOMPLETE`, and the page told the reader "this driver would not allocate the render targets
+this view needs" about a driver that was fine. `?frames=abc` was quieter: the timing loop ran zero times
+and `msPerFrame` serialised to `null`, which is this codebase's refusal convention, on a page titled
+READY. Numeric parameters now refuse as `BAD_PARAM` by name, `frames` reports the count MEASURED rather
+than the count requested (`frames=0` and `frames=-5` published a one-frame time as a 0- and -5-frame
+sweep), and the sweep stops on a 20-second wall clock — `?frames=1e9` used to lock the renderer process
+hard enough that Playwright could not evaluate an expression against the page, and clamping the count
+alone does not fix that: 20000 frames of this scene under SwiftShader is over an hour.
+
+The same refusal path had a second hole: `createStage` refusing was handled by an inline
+`document.title='REFUSED'; log.textContent=…; throw` that never called `showRefusal`, so on a browser
+with WebGL2 genuinely unavailable the reader got a 1280x800 dead canvas above the material table with no
+message in the flat view at all. It goes through `die` now, like the other six.
+
 ## Reproduce
 
 ```bash

@@ -1,5 +1,6 @@
 import type { Stage, StageRefusal } from '../stage.js';
 import { stageRefusal } from '../stage.js';
+import { savePassState, restorePassState, releaseTextureUnits } from './passState.js';
 
 /**
  * L2.7 · AMBIENT OCCLUSION — the pass that makes objects sit ON things.
@@ -32,29 +33,54 @@ import { stageRefusal } from '../stage.js';
  * itself.
  */
 
-/** Reconstruct view-space position from a depth sample. Shared with any later depth-reading pass. */
 /*
  * Hardware depth is nonlinear — most of its precision sits near the eye. Linearising it is the
  *      difference between an AO radius that means the same thing everywhere and one that silently
  *      shrinks with distance.
  */
-export const DEPTH_RECONSTRUCT_GLSL = `
+/**
+ * Linear depth from the depth attachment. The half of the reconstruction that a pass which only wants
+ * DISTANCES needs — the bilateral blur below and `dof.ts` are both in that category.
+ */
+export const LINEAR_DEPTH_GLSL = `
 uniform sampler2D uDepth;
 uniform vec2 uNearFar;
-uniform float uTanHalfFov;
-uniform float uAspect;
 
 float linearDepthAt(vec2 uv) {
   float d = texture(uDepth, uv).r * 2.0 - 1.0;
   float n = uNearFar.x, f = uNearFar.y;
   return (2.0 * n * f) / (f + n - d * (f - n));
-}
+}`;
+
+/*
+ * SPLIT IN TWO BECAUSE THE COMBINED BLOCK WAS SHIPPING TWO PERMANENTLY DEAD UNIFORMS.
+ *
+ * `uTanHalfFov` and `uAspect` are used only by `viewPosAt`. The AO blur and the DOF gather include the
+ * reconstruction block but call only `linearDepthAt`, so the compiler dropped both uniforms from those
+ * two programs — and `bindDepthUniforms` went on setting them anyway. Measured by wrapping
+ * `getUniformLocation`: exactly four names across all ten engine programs came back null, and all four
+ * were these two in those two programs. WebGL treats `uniform1f(null, x)` as a silent no-op, so
+ * nothing failed and nothing could.
+ *
+ * That is harmless here — neither shader reads them — and it is the exact mechanism by which a
+ * MISSPELLED uniform that a shader DOES read becomes a silent zero. Removing the four dead calls
+ * removes the noise that would hide the real one.
+ */
+export const VIEW_POS_GLSL = `
+uniform float uTanHalfFov;
+uniform float uAspect;
 
 vec3 viewPosAt(vec2 uv) {
   float z = linearDepthAt(uv);
   vec2 ndc = uv * 2.0 - 1.0;
   return vec3(ndc.x * uTanHalfFov * uAspect * z, ndc.y * uTanHalfFov * z, -z);
 }`;
+
+/**
+ * Both halves, for a pass that reconstructs POSITIONS. Kept under its original name because it is a
+ * published export of the package.
+ */
+export const DEPTH_RECONSTRUCT_GLSL = LINEAR_DEPTH_GLSL + VIEW_POS_GLSL;
 
 const AO_VERT = `#version 300 es
 precision highp float;
@@ -158,7 +184,7 @@ uniform sampler2D uAO;
 uniform vec2 uTexel;
 uniform vec2 uDir;
 out vec4 frag;
-${DEPTH_RECONSTRUCT_GLSL}
+${LINEAR_DEPTH_GLSL}
 
 void main(){
   float centre = linearDepthAt(vUv);
@@ -241,13 +267,21 @@ export function createAmbientOcclusion(
     return stageRefusal('FRAMEBUFFER_INCOMPLETE', `The AO buffer is incomplete (0x${status.toString(16)}).`);
   }
 
-  const bindDepthUniforms = (
-    p: WebGLProgram, depth: WebGLTexture, near: number, far: number, fovDeg: number, aspect: number, unit: number,
-  ) => {
+  /*
+   * TWO BINDERS, NOT ONE, because the two programs do not declare the same uniforms — see the note on
+   * VIEW_POS_GLSL above. The single binder set `uTanHalfFov` and `uAspect` on the blur program, where
+   * both had been optimised out, and WebGL swallowed the write.
+   */
+  const bindLinearDepth = (p: WebGLProgram, depth: WebGLTexture, near: number, far: number, unit: number) => {
     gl.activeTexture(gl.TEXTURE0 + unit);
     gl.bindTexture(gl.TEXTURE_2D, depth);
     gl.uniform1i(gl.getUniformLocation(p, 'uDepth'), unit);
     gl.uniform2f(gl.getUniformLocation(p, 'uNearFar'), near, far);
+  };
+  const bindDepthUniforms = (
+    p: WebGLProgram, depth: WebGLTexture, near: number, far: number, fovDeg: number, aspect: number, unit: number,
+  ) => {
+    bindLinearDepth(p, depth, near, far, unit);
     gl.uniform1f(gl.getUniformLocation(p, 'uTanHalfFov'), Math.tan((fovDeg * Math.PI) / 360));
     gl.uniform1f(gl.getUniformLocation(p, 'uAspect'), aspect);
   };
@@ -258,6 +292,11 @@ export function createAmbientOcclusion(
     get height() { return h; },
 
     compute(o) {
+      /* The viewport this pass sets is HALF the caller's, and it used to be left that way — measured
+         "0,0,640,400 -> 0,0,320,200" on return, with CULL_FACE left disabled too. Every environment
+         happens to call `target.bind()` immediately afterwards, which is the only reason it never
+         showed. See passState.ts. */
+      const prev = savePassState(gl);
       gl.disable(gl.DEPTH_TEST);
       gl.depthMask(false);
       gl.disable(gl.BLEND);
@@ -279,7 +318,7 @@ export function createAmbientOcclusion(
         gl.bindFramebuffer(gl.FRAMEBUFFER, dst.fb);
         gl.viewport(0, 0, w, h);
         gl.useProgram(blurProg);
-        bindDepthUniforms(blurProg, o.depthTexture, o.near, o.far, o.fovDeg, o.aspect, 0);
+        bindLinearDepth(blurProg, o.depthTexture, o.near, o.far, 0);
         gl.activeTexture(gl.TEXTURE1);
         gl.bindTexture(gl.TEXTURE_2D, src.tex);
         gl.uniform1i(gl.getUniformLocation(blurProg, 'uAO'), 1);
@@ -290,14 +329,8 @@ export function createAmbientOcclusion(
 
       /* Same hygiene as dof.ts: the depth texture sampled here is an attachment of the scene
          target, so it must not stay bound into a pass that renders to it. */
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, null);
-      gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, null);
-
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-      gl.depthMask(true);
-      gl.enable(gl.DEPTH_TEST);
+      releaseTextureUnits(gl, 2);
+      restorePassState(gl, prev);
     },
 
     resize(nw, nh) {

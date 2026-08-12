@@ -65,8 +65,39 @@ const TIER: QualityTier = (QUALITY_TIERS as readonly string[]).includes(params.g
 const Q = qualitySettings(TIER);
 const DOF_ON = params.get('dof') !== '0' && Q.dof;
 const AO_ON = params.get('ao') !== '0' && Q.ao;
-const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
-const FRAMES = Number(params.get('frames') ?? 300);
+/*
+ * A MISTYPED URL USED TO BE REPORTED AS A HARDWARE FAULT, and the clamp is what hid it.
+ *
+ * `Math.max(1, Math.min(3, Number('abc')))` is NaN — NEITHER clamp rejects NaN, because every comparison
+ * against NaN is false and both functions then return it. So `?scale=abc` gave W = NaN, `canvas.width`
+ * coerced that to 0, `createStage` correctly refused a 0x0 canvas with FRAMEBUFFER_INCOMPLETE, and
+ * `stage.ts` printed its words to the reader: "This driver would not allocate the render targets this
+ * view needs." The driver was fine. The URL was wrong, and the page blamed the machine.
+ *
+ * `frames` had the same shape with a quieter symptom: `for (let i = 0; i < NaN; i++)` runs ZERO times, so
+ * `msPerFrame` came out NaN and serialised to null — indistinguishable from this codebase's refusal
+ * convention, on a page still titled READY.
+ *
+ * So every numeric parameter goes through one parser that refuses a non-number BY NAME and records a
+ * clamp instead of applying it silently. The refusal is taken after the flat fallback is installed, so the
+ * reader keeps every row of the table and is told which parameter they mistyped.
+ */
+const badParams: string[] = [];
+const paramClamps: string[] = [];
+function numParam(name: string, dflt: number, lo: number, hi: number): number {
+  const raw = params.get(name);
+  if (raw === null) return dflt;
+  const v = Number(raw);
+  if (!Number.isFinite(v)) { badParams.push(`${name}=${raw}`); return dflt; }
+  const clamped = Math.max(lo, Math.min(hi, v));
+  if (clamped !== v) paramClamps.push(`${name}=${raw} used as ${clamped}`);
+  return clamped;
+}
+const SCALE = numParam('scale', 1, 1, 3);
+/* BOUNDED AT BOTH ENDS. The lower bound stops `frames=0` and `frames=-5` publishing a one-frame time as an
+   n-frame sweep; the upper bound stops the count being absurd. Neither is what makes `?frames=1e9`
+   survivable — the wall clock in `measure` is. */
+const FRAMES = Math.trunc(numParam('frames', 300, 1, 20000));
 
 const W = 1200 * SCALE, H = 720 * SCALE;
 const canvas = document.getElementById('c') as HTMLCanvasElement;
@@ -127,15 +158,22 @@ declare const __ENV_STATES__: Record<string, { id: string; name: string; verdict
  * evaluation, and print and the accessibility tree are not errors there is anything to catch for.
  *
  * E1's subject IS the state of the programme, and that state is a build-time define read from each
- * environment's own README. So the flat view is not a reduction of the frame: it carries all SIX
+ * environment's own README. So the flat view is not a reduction of the frame: it carries all NINE
  * environments where the geometry has room for five, which makes it the one place a reader can see the
- * whole programme at once. The 3-D view adds the focus rack and the depth ordering; it subtracts a row.
+ * whole programme at once. The 3-D view adds the focus rack and the depth ordering; it subtracts four rows.
+ *
+ * NINE, NOT SIX AND NOT TEN. This comment said six while the harness harvested every README under a
+ * `docs/3d/eN` directory and found ten — and a glob written literally here would END this comment, which
+ * is the same class of trap as a backtick inside a template literal, so it is spelled out instead.
+ * `docs/3d/e9` is the AUDIT, and its README's first line parsed, so it was injected as an
+ * environment and both the frame and this table listed `E9 · THE AUDIT` as one. `build.mjs` now requires an
+ * `entry.ts`, which is what an environment is in this tree.
  */
 const fallback = installFlatFallback({
   title: 'E1 · The Theatre — 3D programme state',
   readsAs: 'The rendered view puts five of these on lit panels at graded depths and racks focus to the '
     + 'one being built, which states where to look in a way a list cannot. This table has no such '
-    + 'emphasis and no depth — and it carries every environment, including the one the five panels '
+    + 'emphasis and no depth — and it carries every environment, including the four the five panels '
     + 'cannot show.',
   notices: ['Each verdict is read from that environment\'s own README first line at build time, not typed here.'],
   columns: [
@@ -146,6 +184,12 @@ const fallback = installFlatFallback({
   rows: Object.values(__ENV_STATES__).map((e) => ({ id: e.id, name: e.name, verdict: e.verdict })),
 });
 fallbackRef = fallback;
+/* Refused HERE rather than where the parameter is parsed, because the fallback has to exist first —
+   see `numParam`. A bad parameter is named to the reader instead of being reported as a driver fault. */
+if (badParams.length > 0) {
+  die(`BAD_PARAM: ${badParams.join(', ')} — not a number, so the theatre was refused rather than drawn `
+    + 'from a nonsensical value. Every row below is unaffected; correct the URL and reload.');
+}
 if (params.get('refuse') === '1') {
   die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
     + 'The three-dimensional view is not being drawn.');
@@ -431,16 +475,48 @@ frame();
 /* A batch sweep, not a per-frame timer: `performance.now()` is clamped to ~100 µs and
    `gl.finish()` returns on flush rather than on completion, so one frame is noise. The trailing
    `readPixels` forces the GPU to finish before the clock is read. */
-function measure(n: number): number {
-  frame();
+/* AND IT HAS A WALL-CLOCK CEILING, because a frame ceiling is not one. The loop is synchronous, so an
+   unbounded count is an unbounded main-thread block: `?frames=1e9` left the renderer process unable to
+   service a Playwright evaluation at all, and the harness reported a timeout — which names the waiter
+   rather than the loop. Clamping the count alone does not fix it: 20000 frames of this room under
+   SwiftShader is over an hour. The frames actually timed are reported, so a truncated sweep says so. */
+/*
+ * 4 SECONDS, AND THE BUDGET IS SPENT AGAINST A MEASURED FRAME COST RATHER THAN AGAINST THE CLOCK INSIDE
+ * THE LOOP — because a clock inside the loop measures the wrong thing, and this cost a real measurement.
+ *
+ * The first version checked `performance.now() - t0 > SWEEP_BUDGET_MS` per iteration and looked correct.
+ * Measured on `?frames=1e9`: it stopped after 833 frames and the page took **160 seconds**, reporting
+ * `msPerFrame: 191.7`. The reason is the same one the trailing `readPixels` exists for — the driver QUEUES
+ * work, so 833 frames of SwiftShader were submitted in 4 s of CPU time and the sync at the end then blocked
+ * for the 156 s of GPU work behind them. An in-loop clock bounds SUBMISSION, not execution.
+ *
+ * So the warm-up frame — which is already followed by a `readPixels` sync, and is the most expensive frame
+ * because it pays shader upload — is TIMED, and the loop count is capped at what fits the budget at that
+ * cost. Conservative in the right direction: the estimate is high, so the sweep finishes early rather than
+ * late. The in-loop clock stays as a second bound for the case where frames get slower mid-sweep.
+ */
+const SWEEP_BUDGET_MS = 4000;
+function measure(n: number): { msPerFrame: number; measured: number } {
   const px = new Uint8Array(4);
+  /* The warm-up, TIMED. `readPixels` cannot be satisfied until the frame exists, so this measures execution
+     rather than submission — which is the whole reason it is the number the cap is computed from. */
+  const warm0 = performance.now();
+  frame();
   gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const pilotMs = Math.max(0.01, performance.now() - warm0);
+  const cap = Math.min(n, Math.max(1, Math.floor(SWEEP_BUDGET_MS / pilotMs)));
   const t0 = performance.now();
-  for (let i = 0; i < n; i++) frame();
+  let measured = 0;
+  for (let i = 0; i < cap; i++) {
+    frame();
+    measured++;
+    if (performance.now() - t0 > SWEEP_BUDGET_MS) break;
+  }
   gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-  return (performance.now() - t0) / n;
+  return { msPerFrame: (performance.now() - t0) / measured, measured };
 }
-const ms = measure(Math.max(1, FRAMES));
+const timing = measure(FRAMES);
+const ms = timing.msPerFrame;
 
 /*
  * THE REPORT EXISTS BECAUSE THE PROCESS THAT MAKES A CAPTURE CANNOT READ IT.
@@ -627,14 +703,21 @@ const NOTES: Record<string, string> = {
 /*
  * THE ORDER IS DERIVED AND THE OMISSION IS NAMED.
  *
- * There are five panels of geometry and six environments, and the first version simply left E5 out —
- * a frame presenting itself as the state of the programme, silently missing a shipped environment.
- * That is the same failure as a chart dropping a row.
+ * There are five panels of geometry and NINE environments, and the first version simply left E5 out — a
+ * frame presenting itself as the state of the programme, silently missing a shipped environment. That is
+ * the same failure as a chart dropping a row.
  *
- * The geometry is not widened to six: the five positions are measured (the composition survey below
- * reports 100% / 83% / 78% visibility, and a sixth panel would invalidate it). So the frame shows the
- * five it can and REPORTS which it could not, and the HUD prints that count. Naming what is missing
- * is the only honest version of not showing it.
+ * The count in this block used to say six, and quoted a HUD string — `6 ENVIRONMENTS · 1 NOT SHOWN — ONLY
+ * 5 PANELS: E2` — that appears in no capture in this repository: `grep -rn '6 ENVIRONMENTS' docs/3d` found
+ * it only in the prose. The committed PNG at the time printed 9, the build printed 10, and neither was
+ * six. Hard-coding a count in a comment beside code that derives it is the same defect as hard-coding a
+ * row, so the number is stated once here as a fact about the tree (e0..e8) and everything else reads
+ * `AVAILABLE` and `OMITTED`.
+ *
+ * The geometry is not widened: the five positions are measured (the composition survey below reports
+ * 100% / 83% / 78% visibility, and a sixth panel would invalidate it). So the frame shows the five it can
+ * and REPORTS which four it could not, and the HUD prints that count. Naming what is missing is the only
+ * honest version of not showing it.
  *
  * Nearest-first, because the panel the lens is focused on should carry the environment currently
  * being built rather than whichever one sorts first alphabetically.
@@ -685,10 +768,49 @@ const PX_PER_METRE = 250;
    texture applied to it; a margin reads as a display mounted in it. */
 const PAD_U = 0.11, PAD_V = 0.10;
 
+/**
+ * One styled line of TEXT, built as an element rather than as a string of markup.
+ *
+ * The three panel lines were interpolated into `innerHTML`, and all three come from a FILE: `build.mjs`
+ * reads each environment's README first line and injects `{id, name, verdict}`. Run that same regex against
+ * a first line reading `# E5 · THE SURFACE <img src=x onerror=alert(1)> — status: **AGREES & "SHIPS"**` and
+ * it yields `name: 'THE SURFACE <img src=x onerror=alert(1)>'` — the markup survives the parse verbatim,
+ * and so do the `&` and the `"`. `headline()`'s `toUpperCase()` does not help: HTML tag names are
+ * case-insensitive, so `<IMG SRC=X ONERROR=…>` is still an element.
+ *
+ * The same values also go into `rows:` for the flat table, where `escText` escapes them — so a README
+ * containing a bare `&` made E1's rendered panel and E1's own flat table disagree about the state of the
+ * programme, inside the file whose whole claim is that they cannot ("It cannot go stale without the README
+ * going stale with it").
+ *
+ * `textContent` does not parse. A constructor that takes text is the fix an escape is not: an escape has to
+ * be remembered at the next interpolation.
+ */
+const textLine = (css: string, text: string): HTMLDivElement => {
+  const d = document.createElement('div');
+  d.style.cssText = css;
+  d.textContent = text;
+  return d;
+};
+
 const overlay = document.createElement('div');
 /* The canvas is laid out by the document with body padding around it, so the overlay is anchored to
    the CANVAS rather than to the page. Hard-coding the padding would silently break the alignment the
    moment the harness page changes, and the failure would look like a projection bug. */
+/*
+ * THE CONTAINER IGNORES THE POINTER; THE CONTENT DOES NOT — and until now neither did.
+ *
+ * `project.ts` justifies its own existence on the grounds that "GL text is unselectable, unsearchable,
+ * invisible to a screen reader" and that the homography makes "the browser rasterise real selectable
+ * text". Measured: `document.elementFromPoint` at the centre of all five projected panels returned
+ * `CANVAS#c`, and a mouse drag across the frame selected the empty string. Cmd/Ctrl+A reached 5,674
+ * characters, so the text was IN the document and unreachable with a pointer — a reader could not point at
+ * a panel and copy it, which is four of the five abilities this file says the hybrid exists to keep.
+ *
+ * `pointer-events:none` stays on the container, which must not swallow a gesture aimed at the canvas; each
+ * projected panel re-enables it. Nothing here is interactive, so the only cost is a drag that STARTS on a
+ * panel.
+ */
 overlay.style.cssText = 'position:absolute;inset:0;pointer-events:none';
 const wrap = document.createElement('div');
 /* `overflow:hidden` IS NOT COSMETIC. A projected element is clipped to the canvas box or it
@@ -714,6 +836,20 @@ wrap.appendChild(overlay);
  * look like a bug, it looks like content, and the reader attributes it to whatever it is lying on.
  */
 const byDepth = [...placed].map((p, i) => ({ p, i })).sort((a, b) => b.p.eyeDistance - a.p.eyeDistance);
+/* Farthest is rank 0, so a nearer panel gets the higher `z-index` and paints over the one behind it —
+   the same stacking the append order used to produce, expressed where it does not also dictate the
+   reading order. */
+const depthRankOf = new Map(byDepth.map(({ p }, rank) => [p.id, rank]));
+/*
+ * AND THE ELEMENTS ARE APPENDED IN READING ORDER, which is the order the report and the table use.
+ *
+ * `SLOT_BY_RANK` is nearest-panel-first, so this is exactly `environmentsShown` — E1, E8, E0, E6, E5. It
+ * also drops any panel with no environment to show instead of dereferencing a missing `PANEL_CONTENT`
+ * entry, which the depth-ordered version would have done had `AVAILABLE` ever fallen below five.
+ */
+const inReadingOrder = SLOT_BY_RANK.slice(0, PANEL_SLOTS.length)
+  .map((slot) => byDepth.find((d) => d.p.id === slot))
+  .filter((d): d is { p: (typeof placed)[number]; i: number } => d !== undefined);
 
 /*
  * WHERE ON THE PANEL THE CONTENT GOES — SEARCHED, NOT ASSUMED, and this is the second thing the
@@ -742,12 +878,38 @@ const SCALES = [1, 0.92, 0.84, 0.76, 0.68, 0.60];
 const cocOf = (d: number): number =>
   Math.min(0.014, Math.abs(1 / focusDistance - 1 / d) * 0.16) * (W / SCALE);
 const maxCoc = Math.max(...placed.map((q) => cocOf(q.eyeDistance)));
-/* Where text stops being text. Measured by reading it, not derived: at 2.4 px of blur an 11.5 px
-   note is still parseable on a lit panel, and at 3 px it is a grey smear. */
-const DOM_BLUR_CEILING = 2.4;
+/*
+ * WHERE TEXT STOPS BEING TEXT — AND IT IS NOW A CONTRAST MEASUREMENT RATHER THAN A READING.
+ *
+ * This was 2.4 px "measured by reading it": at 2.4 px an 11.5 px note is still parseable on a lit panel.
+ * Parseable by me, at 100% zoom, knowing what it says. Measured properly — screenshot the frame, screenshot
+ * it again with every text leaf hidden to get the true background, keep the pixels that differ and take the
+ * strongest 15% as glyph core — the 2.4 px / 0.58-opacity panel came out at **1.47:1** and 11 of 18 text
+ * runs on this frame failed WCAG AA's 4.5:1. Legibility had been tuned against an intuition and the
+ * intuition was wrong by a factor of three.
+ *
+ * The two levers are capped TOGETHER now, because they multiply: blur removes glyph core and opacity
+ * removes the contrast of what is left. The pair below is the largest one whose MEASURED core contrast
+ * still clears 4.5:1 on all eighteen text runs in this frame, found by bisection against the measurement
+ * rather than by choosing it — 1.2/0.86 left 5 failures and 0.6/0.90 left 1, both on 11 px type.
+ *
+ * WHAT THAT COSTS, STATED: at 11 px, ANY perceptible blur takes the glyph core below AA on a dark panel
+ * whatever colour the type is, so the DOM blur is now small enough to be nearly invisible and the rack is
+ * carried by the GL frame — the panel SURFACES are still defocused by 5 to 14 px, which is the lens doing
+ * its work on everything except the words. This file worried about the opposite failure ("razor-sharp text
+ * on a panel the renderer has defocused by 14 px is the tell"), and that worry is real; it is also worth
+ * less than the words. Recession is still ordered and still visible in the opacity ramp and in the
+ * geometry. `capture.mjs` re-measures every run and fails the build below 4.5:1, so this is a floor rather
+ * than a preference.
+ */
+const DOM_BLUR_CEILING = 0.45;
+/* The recession dim, matched to the blur ceiling. 0.42 put the far panel at 0.58 opacity, and that panel's
+   note measured 1.47:1. */
+const DOM_DIM_MAX = 0.10;
 
-const projections = byDepth.map(({ p, i }) => {
+const projections = inReadingOrder.map(({ p, i }) => {
   const content = PANEL_CONTENT[p.id]!;
+  const depthRank = depthRankOf.get(p.id) ?? 0;
   const off = THICKNESS / 2 + 0.008;
   const c = Math.cos(p.yaw), s = Math.sin(p.yaw);
   const at = (u: number, v: number): [number, number, number] => [
@@ -821,8 +983,18 @@ const projections = byDepth.map(({ p, i }) => {
    * navy and disappears into brand blue.
    */
   const onBlue = p.hex === '#2C6BFF';
-  const tagColour = onBlue ? 'rgba(255,255,255,0.78)' : '#7fb2ff';
-  const noteColour = onBlue ? 'rgba(255,255,255,0.80)' : 'rgba(198,212,236,0.78)';
+  /*
+   * SOLID, NOT SEMI-TRANSPARENT — because the lens is already a dimmer and two dimmers stacked is how
+   * the words went.
+   *
+   * These were `rgba(255,255,255,0.78)` and `rgba(198,212,236,0.78)`. Multiplied by the recession opacity
+   * below, an 11.5 px note on the furthest panel arrived at an effective alpha of 0.45 and measured
+   * **1.47:1** against the surface behind it — a 4.5:1 requirement, and 11 of 18 runs on this frame failed
+   * it. The alpha was buying nothing the recession opacity was not already buying, and it was spending the
+   * whole contrast budget before the lens got any. The hexes are the same colours at full strength.
+   */
+  const tagColour = onBlue ? '#EAF1FF' : '#7fb2ff';
+  const noteColour = onBlue ? '#FFFFFF' : '#C6D4EC';
 
   /*
    * THE LENS APPLIES TO THE TEXT TOO — up to a ceiling, and the ceiling is a decision rather than a
@@ -856,12 +1028,27 @@ const projections = byDepth.map(({ p, i }) => {
      which is the exact contradiction this block exists to remove, merely inverted. Caught by asking
      what the control capture would look like rather than by looking at it. */
   const domBlur = DOF_ON ? DOM_BLUR_CEILING * (cocPx / Math.max(1e-6, maxCoc)) : 0;
-  const domOpacity = DOF_ON ? 1 - 0.42 * (cocPx / Math.max(1e-6, maxCoc)) : 1;
+  const domOpacity = DOF_ON ? 1 - DOM_DIM_MAX * (cocPx / Math.max(1e-6, maxCoc)) : 1;
 
   const el = document.createElement('div');
   el.style.cssText = [
     'position:absolute', 'left:0', 'top:0',
     `width:${ew}px`, `height:${eh}px`,
+    /* SELECTABLE CONTENT ON A NON-INTERACTIVE OVERLAY — see the note where the overlay is created. */
+    'pointer-events:auto', 'user-select:text', '-webkit-user-select:text',
+    /*
+     * PAINT ORDER IS A z-index, NOT AN APPEND ORDER, and that is an accessibility fix rather than a
+     * refactor.
+     *
+     * The panels are sorted far-to-near for the compositor (see `byDepth`) and were appended in that
+     * order, so DOM order became CAMERA order: the measured AX tree read E6, E5, E0, E8, E1 while the
+     * report lists `environmentsShown` as E1, E8, E0, E6, E5 and the flat table lists E0..E8 in index
+     * order — three representations of the same rows disagreeing about sequence, and the announced order
+     * changing if the camera moves. `z-index` gives the compositor the same stacking while the elements
+     * are appended in the logical order below, so a screen reader hears the programme in the order the
+     * report and the table use.
+     */
+    `z-index:${depthRank}`,
     /* THE HOMOGRAPHY IS EXPRESSED FROM THE ELEMENT'S TOP-LEFT. Any other origin shears the result,
        and CSS defaults to `50% 50%` — so omitting this line is a silent, plausible-looking error. */
     'transform-origin:0 0',
@@ -877,10 +1064,17 @@ const projections = byDepth.map(({ p, i }) => {
        the type stops sitting on the plane it is drawn on. */
     '-webkit-font-smoothing:antialiased',
   ].join(';');
-  el.innerHTML =
-    `<div style="font:600 11px/1 ui-monospace,monospace;letter-spacing:.14em;color:${tagColour}">${content.tag}</div>`
-    + `<div style="font:700 27px/1.02 system-ui,sans-serif;color:#fff;letter-spacing:-0.01em">${content.state}</div>`
-    + `<div style="font:400 11.5px/1.45 system-ui,sans-serif;color:${noteColour}">${content.note}</div>`;
+  /* Three lines of text, three fixed styles, no markup — see `textLine` for what was wrong with the
+     template literal these replace. */
+  el.appendChild(textLine(
+    `font:600 11px/1 ui-monospace,monospace;letter-spacing:.14em;color:${tagColour}`, content.tag,
+  ));
+  el.appendChild(textLine(
+    'font:700 27px/1.02 system-ui,sans-serif;color:#fff;letter-spacing:-0.01em', content.state,
+  ));
+  el.appendChild(textLine(
+    `font:400 11.5px/1.45 system-ui,sans-serif;color:${noteColour}`, content.note,
+  ));
   overlay.appendChild(el);
 
   /*
@@ -939,17 +1133,40 @@ const RENDERER = (() => {
 const SOFTWARE = /swiftshader|llvmpipe|software/i.test(RENDERER);
 
 /* PRINTED ON THE FRAME, not only in the report. A reader looking at the picture must be able to see
-   that it is showing five of six. */
+   that it is showing five of nine. */
 {
   const el = document.createElement('div');
+  /*
+   * ON A PLATE, AND THE PLATE IS A CONTRAST FIX RATHER THAN A STYLING ONE.
+   *
+   * These three lines are UNBLURRED and at full opacity, and all three still failed WCAG AA: measured
+   * against the rendered sky behind them, `3D PROGRAMME · 9 ENVIRONMENTS` came out at 3.82:1, `STATE
+   * DERIVED FROM EACH README AT BUILD TIME` at 3.98:1, and the amber `4 NOT SHOWN` line — the one thing
+   * on the picture stopping it from over-claiming, and the line the comment above calls the reason a
+   * reader can see it is showing five of nine — at 3.60:1, against a 4.5:1 requirement. The cause is not
+   * the colours: it is that they sit on a mid-slate gradient. `rgba(4,6,11,0.82)` under them, the same
+   * device E7's HUD already uses, takes all three over 4.5:1 without moving a single hex.
+   *
+   * `pointer-events:auto` for the same reason as the panels: this is text a reader should be able to copy.
+   */
   el.style.cssText = 'position:absolute;left:16px;top:14px;display:flex;flex-direction:column;gap:5px;'
-    + 'font:500 10.5px/1.4 ui-monospace,monospace;letter-spacing:.05em';
-  el.innerHTML =
-    `<div style="color:#8FB7FF;font-weight:600;letter-spacing:.15em">3D PROGRAMME · ${AVAILABLE.length} ENVIRONMENTS</div>`
-    + `<div style="color:rgba(196,212,240,0.8)">STATE DERIVED FROM EACH README AT BUILD TIME</div>`
-    + (OMITTED.length
-      ? `<div style="color:#E0A94A">${OMITTED.length} NOT SHOWN — ONLY 5 PANELS: ${OMITTED.join(' ')}</div>`
-      : '');
+    + 'font:500 10.5px/1.4 ui-monospace,monospace;letter-spacing:.05em;'
+    + 'background:rgba(4,6,11,0.82);padding:9px 11px;border-radius:5px;'
+    + 'pointer-events:auto;user-select:text;-webkit-user-select:text';
+  /* textContent per line — `AVAILABLE`, `OMITTED` and their counts are derived from files, so the same
+     argument as the panels applies: see `textLine`. */
+  el.appendChild(textLine(
+    'color:#8FB7FF;font-weight:600;letter-spacing:.15em',
+    `3D PROGRAMME · ${AVAILABLE.length} ENVIRONMENTS`,
+  ));
+  el.appendChild(textLine(
+    'color:rgba(196,212,240,0.8)', 'STATE DERIVED FROM EACH README AT BUILD TIME',
+  ));
+  if (OMITTED.length) {
+    el.appendChild(textLine(
+      'color:#E0A94A', `${OMITTED.length} NOT SHOWN — ONLY 5 PANELS: ${OMITTED.join(' ')}`,
+    ));
+  }
   overlay.appendChild(el);
 }
 
@@ -1008,7 +1225,13 @@ const report = {
   shadowMap: shadow.size,
   resolution: `${W}x${H}`,
   dprScale: SCALE,
-  frames: FRAMES,
+  /* THE VALUE MEASURED, NOT THE VALUE ASKED FOR. `frames` used to report the raw parameter while the loop
+     ran `Math.max(1, FRAMES)`, so `frames=0` and `frames=-5` published a single-frame time as a 0-frame
+     and a -5-frame sweep. */
+  frames: timing.measured,
+  framesRequested: FRAMES,
+  sweepTruncated: timing.measured < FRAMES,
+  paramClamps,
   msPerFrame: Number(ms.toFixed(3)),
   fps: Math.round(1000 / ms),
   /*

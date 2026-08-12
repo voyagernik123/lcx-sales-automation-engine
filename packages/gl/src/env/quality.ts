@@ -207,3 +207,41 @@ export function prefersReducedMotion(): boolean {
     return true;
   }
 }
+
+/**
+ * Has the reader asked their OS for more contrast?
+ *
+ * THIS EXISTED NOWHERE, and it was the only user preference the engine did not read: `prefers-contrast`
+ * appears in no file under `docs/3d` or `packages/gl`. Measured with Playwright's `contrast: 'more'` on
+ * E6 and E7 — `mq.more = true`, and every computed colour, every swatch and the canvas filter byte-for-
+ * byte identical to the normal run. A reader who has explicitly asked for more contrast was still being
+ * handed E6's 1.25:1 tick and its 1.47:1 panel note.
+ *
+ * Both signals, because they mean the same thing to a renderer and only one of them is widely
+ * implemented: `forced-colors: active` is Windows High Contrast, which also replaces the palette
+ * outright, and `prefers-contrast: more` is the explicit request on macOS and Android.
+ *
+ * ── WHY THIS DEFAULTS TO FALSE, WHERE REDUCED MOTION DEFAULTS TO TRUE ────────────────
+ * The asymmetry is deliberate and is the whole reason this is a separate function rather than a copy.
+ * An unasked-for STILL frame costs a reader nothing, so an unreadable motion preference resolves to
+ * "no motion". An unasked-for high-contrast treatment changes the design for everyone whose browser
+ * does not implement the query — including every capture this programme is gated on. Absence of a
+ * request is not a request, so it resolves to false.
+ *
+ * WHAT A CALLER IS EXPECTED TO DO WITH IT: raise projected DOM content to full opacity, drop the blur
+ * on it to zero, floor any fog-driven attenuation of label colour, and put a solid plate behind
+ * overlay text. All four are decisions the SURFACE owns — this package renders no DOM — so this
+ * function is the hook and not the fix.
+ */
+export function prefersMoreContrast(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  for (const q of ['(forced-colors: active)', '(prefers-contrast: more)']) {
+    try {
+      if (window.matchMedia(q).matches) return true;
+    } catch {
+      /* Same webviews as above: an unrecognised media feature throws rather than returning false. One
+         unreadable query must not hide the other, so this continues instead of returning. */
+    }
+  }
+  return false;
+}

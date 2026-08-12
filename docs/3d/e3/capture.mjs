@@ -68,7 +68,16 @@ for (const [name, q] of [
     return {
       rows: el.querySelectorAll('tbody tr').length,
       absentCells: el.querySelectorAll('td.absent').length,
-      hidden: getComputedStyle(el).display === 'none',
+      /* VISUALLY hidden, not `display:none`. `_shared/flatFallback.ts` stopped using `display:none` on the
+         success path because it PRUNED the table out of the accessibility tree; success now clips it to a
+         1x1 out-of-flow box instead. A `display` test therefore reported a clipped, invisible table as
+         still visible and failed the capture. What rule 1 needs asserted is that the table takes no space
+         on screen when a frame drew, and takes space when one did not — so that is what is measured. */
+      hidden: (() => {
+        const cs = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        return cs.display === 'none' || cs.visibility === 'hidden' || (r.width <= 1 && r.height <= 1);
+      })(),
       refusal: el.querySelector('.refusal')?.textContent?.slice(0, 60) ?? null,
     };
   });
@@ -101,9 +110,15 @@ for (const [name, q] of [
     + ` · axisLabelsOffFrame ${rep.axisLabelsOffFrame}`);
   /* A tick whose stroke is not on the glass is a defect the old bounds count could not see. */
   console.log('    axisTicksDrawn ' + rep.axisTicksDrawn.map((t) => `${t.label}:${t.drawn ? 'yes' : 'NO'} (${t.lum ?? '-'} vs ${t.background ?? '-'})`).join('  '));
-  console.log(`    settled ${rep.stalledCount} · deepStalled $${rep.deepStalledUsd} (${Math.round(100*rep.deepStalledShare)}%)`
-    + ` · fallen ${rep.minStalledDisplacementPx}..${rep.maxDisplacementPx} px`
-    + ` · same-stage pair separation min ${rep.minSeparationPx} px (depth-confounded)`
+  /* THE SHARES CAN NOW BE null, AND THAT IS THE POINT: with no readable value in the book they refuse
+     rather than printing 0%, so this line has to say "refused" instead of formatting a null as a number.
+     `Math.round(100 * null)` is 0, which is exactly the false reading the harness fix removed. */
+  const pct = (v) => (v === null ? 'REFUSED' : `${Math.round(100 * v)}%`);
+  const px = (v) => (v === null ? 'n/a' : `${v} px`);
+  console.log(`    settled ${rep.stalledCount} · deepStalled $${rep.deepStalledUsd} (${pct(rep.deepStalledShare)})`
+    + ` · book ${rep.bookRefusal ?? 'readable'}`
+    + ` · fallen ${px(rep.minStalledDisplacementPx)}..${px(rep.maxDisplacementPx)}`
+    + ` · same-stage pair separation min ${px(rep.minSeparationPx)} (depth-confounded)`
     + ` · inversions ${rep.settleInversions.length}`);
   console.log(`    massAmbiguous ${rep.massAmbiguousPairs} (within-stage ${rep.massAmbiguousWithinStage})`
     + ` · outOfSegment ${rep.outOfSegment.length}`);
@@ -118,7 +133,12 @@ for (const [name, q] of [
   if (rep.glError !== 0) throw new Error(`glError ${rep.glError}`);
   if (rep.outOfSegment.length) throw new Error(`deals drawn outside their own stage segment: ${rep.outOfSegment}`);
   if (rep.nameOverflow.length) throw new Error(`names too long for their tag: ${rep.nameOverflow}`);
-  if (!rep.rateMonotoneDown) throw new Error('gate rates are not monotone down the funnel');
+  /* `null` means the book had no readable value, so monotonicity is not a claim this run can make —
+     which is a refusal to be reported, not a failure. `false` is a real defect. */
+  if (rep.rateMonotoneDown === false) throw new Error('gate rates are not monotone down the funnel');
+  if (rep.rateMonotoneDown === null && !rep.bookRefusal) {
+    throw new Error('rateMonotoneDown refused without a bookRefusal to explain it');
+  }
   /* A deal outside the frame is not in the environment, whatever its tag reports. This is the check the
      first framing did not have, and the first framing lost the largest object in the scene. */
   if (rep.objectsOffFrame.length) throw new Error(`deals off frame: ${rep.objectsOffFrame.join(', ')}`);
@@ -139,7 +159,21 @@ for (const [name, q] of [
     else {
       /* A field that never fills, or one that leaks out of the channel, is a density that is not a
          reading. Both are numbers, so both are assertions rather than impressions. */
-      if (f.aliveActual < 0.6 * f.aliveExpected) throw new Error(`particle field underfilled: ${f.aliveActual} vs ${f.aliveExpected}`);
+      /*
+       * A BAND AROUND THE ANALYTIC STEADY STATE, not a floor at 60% of it.
+       *
+       * `< 0.6 * aliveExpected` passed anything from 574 upward against an expectation of 956, which is
+       * why the README could publish 954 for months while the harness deterministically reported 952 —
+       * the number this environment cites as the OUTCOME of two engine fixes was the one number nothing
+       * defended. 2% is wide enough for the emission jitter a rate under one particle per frame produces
+       * and narrow enough that either engine bug (a resurrected corpse, a lifetime falling back to 1.0)
+       * moves it straight out of range: both defects moved this count by tens of percent.
+       */
+      const drift = Math.abs(f.aliveActual - f.aliveExpected) / f.aliveExpected;
+      if (drift > 0.02) {
+        throw new Error(`particle count ${f.aliveActual} is ${(100 * drift).toFixed(1)}% off the analytic`
+          + ` steady state ${f.aliveExpected} — outside the 2% band`);
+      }
       if (f.outOfChannel > 0.02 * f.aliveActual) throw new Error(`${f.outOfChannel} particles outside the channel`);
       if (!f.recycleSafe) throw new Error('slots recycle faster than a particle lives');
     }
@@ -151,11 +185,16 @@ for (const [name, q] of [
    stalled deal from a fresh one by real pixels while the control separates them by none, then the
    settling is decoration and this environment has no business existing. */
 const live = reports['live'], flat = reports['flat-settle'];
+/* `null` and `0` are now different answers from these fields — null is "nothing was measurable", 0 is the
+   control legitimately reporting no fall. Distinguished here, because a null silently comparing as 0
+   would let an environment that measured nothing pass as the flat control. */
+if (flat.maxDisplacementPx === null) throw new Error('the control measured no displacement at all');
 if (flat.maxDisplacementPx !== 0) throw new Error(`control still falls by ${flat.maxDisplacementPx} px — settle=0 is not flat`);
+if (live.minStalledDisplacementPx === null) throw new Error('no stalled deal had a measurable displacement');
 if (live.minStalledDisplacementPx < 20) throw new Error(`the least-fallen stalled deal moves only ${live.minStalledDisplacementPx} px`);
 if (live.deepStalledUsd <= 0) throw new Error('no stalled value past diligence — the headline reading is empty');
 console.log(`\n  PROOF: every stalled deal has visibly fallen from its own rail position by at least`
   + ` ${live.minStalledDisplacementPx} px (max ${live.maxDisplacementPx}); the flat control falls ${flat.maxDisplacementPx} px`);
-console.log(`  PROOF: $${live.deepStalledUsd} (${Math.round(100*live.deepStalledShare)}%) past diligence and stalled,`
+console.log(`  PROOF: $${live.deepStalledUsd} (${live.deepStalledShare === null ? 'share REFUSED' : Math.round(100*live.deepStalledShare) + '%'}) past diligence and stalled,`
   + ` visible as ${live.stalledCount} objects on the floor`);
 await b.close(); s.close();

@@ -7,7 +7,8 @@ import { squareToQuad, projectQuad, uprightPanelCorners, isQuadRefusal } from '.
 import { particleLayout, emissionSchedule } from './particles.js';
 import { rayBoxSlab, marchPlan } from './volume.js';
 import {
-  QUALITY_TIERS, qualitySettings, pickQualityTier, type QualitySettings,
+  QUALITY_TIERS, qualitySettings, pickQualityTier, prefersMoreContrast, prefersReducedMotion,
+  type QualitySettings,
   shadowMapSizeFor,
 } from './quality.js';
 
@@ -994,6 +995,47 @@ describe('quality ladder — monotonic, and it refuses rather than guessing', ()
     expect(r.tier).toBe('full');
     expect(r.reason).toContain('SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET');
     expect(Number.isNaN(r.predictedMs.full)).toBe(true);
+  });
+
+  it('reads prefers-contrast, and absence of a request is not a request', () => {
+    /*
+     * The engine read `prefers-reduced-motion` and NOTHING else. Measured with Playwright's
+     * `contrast: 'more'` on E6 and E7: the query matched and every computed colour was byte-identical
+     * to the normal run, so a reader who had asked their OS for more contrast still got E6's 1.25:1
+     * tick. This asserts the hook, including the default that the captures depend on.
+     */
+    const w = globalThis as { window?: unknown };
+    const had = 'window' in w;
+    const original = w.window;
+    const stub = (matcher: (q: string) => boolean) => {
+      w.window = { matchMedia: (q: string) => ({ matches: matcher(q) }) };
+    };
+    try {
+      stub(() => false);
+      expect(prefersMoreContrast(), 'no preference must not opt a reader in').toBe(false);
+      stub((q) => q.includes('prefers-contrast: more'));
+      expect(prefersMoreContrast()).toBe(true);
+      /* Windows High Contrast means the same thing to a renderer and is the query that is actually
+         implemented in more places. */
+      stub((q) => q.includes('forced-colors: active'));
+      expect(prefersMoreContrast()).toBe(true);
+      /* An embedded webview that THROWS on one unrecognised feature must not hide the other. */
+      w.window = {
+        matchMedia: (q: string) => {
+          if (q.includes('forced-colors')) throw new Error('unrecognised media feature');
+          return { matches: q.includes('prefers-contrast: more') };
+        },
+      };
+      expect(prefersMoreContrast()).toBe(true);
+      /* And with no window at all — SSR — it is false, where reduced motion is TRUE. The asymmetry is
+         the point: an unwanted still frame costs nothing, an unwanted repaint of the design costs
+         every reader who never asked. */
+      delete w.window;
+      expect(prefersMoreContrast()).toBe(false);
+      expect(prefersReducedMotion()).toBe(true);
+    } finally {
+      if (had) w.window = original; else delete w.window;
+    }
   });
 
   it('REFUSES on an unusable probe instead of treating zero as instant', () => {

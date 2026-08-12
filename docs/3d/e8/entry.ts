@@ -32,6 +32,29 @@ import { installFlatFallback } from '../_shared/flatFallback.js';
    between them was a temporal-dead-zone throw at module evaluation — the same fault E0 carried for weeks. */
 const params = new URLSearchParams(location.search);
 
+/*
+ * A NUMERIC URL PARAMETER, VALIDATED — and a non-numeric one REFUSES rather than falling back silently.
+ *
+ * `Number('abc')` is NaN, and `Math.max(1, Math.min(3, NaN))` is NaN, not the default: Math.max propagates
+ * NaN rather than rejecting it. So `?scale=abc` produced a NaN canvas size, and a NaN size is a canvas of
+ * zero area — a blank frame with every program compiled and no error anywhere. E0 through E4 were given this
+ * treatment by the pen-test; E5 through E8 were not, so they still had it.
+ *
+ * A CLAMP IS RECORDED, NOT SILENT. `?scale=99` is a request the harness cannot honour, and honouring 3
+ * without saying so means the report's resolution disagrees with what the reader asked for.
+ */
+const badParams: string[] = [];
+const paramClamps: string[] = [];
+function numParam(name: string, dflt: number, lo: number, hi: number): number {
+  const raw = params.get(name);
+  if (raw === null) return dflt;
+  const v = Number(raw);
+  if (!Number.isFinite(v)) { badParams.push(`${name}=${raw}`); return dflt; }
+  const clamped = Math.max(lo, Math.min(hi, v));
+  if (clamped !== v) paramClamps.push(`${name}=${raw} used as ${clamped}`);
+  return clamped;
+}
+
 const ANISO_ON = params.get('aniso') !== '0';
 /*
  * THE QUALITY LADDER, WIRED. E9's `qualitySettings` is authoritative for the EFFECTS this frame runs:
@@ -59,7 +82,7 @@ const Q = qualitySettings(TIER);
    tier by AND so a control can turn an effect off and never on. */
 const AO_ON = params.get('ao') !== '0' && Q.ao;
 const DOF_ON = params.get('dof') !== '0' && Q.dof;
-const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
+const SCALE = numParam('scale', 1, 1, 3);
 const W = 1200 * SCALE, H = 720 * SCALE;
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 canvas.width = W; canvas.height = H;
@@ -130,6 +153,14 @@ const fallback = installFlatFallback({
   ],
 });
 fallbackRef = fallback;
+
+/* A NONSENSICAL PARAMETER REFUSES, and it refuses AFTER the flat fallback exists so the reader still gets
+   the data. Drawn at a NaN size the canvas has zero area: a blank frame, every program compiled, no error. */
+if (badParams.length > 0) {
+  die(`BAD_PARAM: ${badParams.join(', ')} — not a number, so the view was not drawn rather than `
+    + 'drawn at a nonsensical size. Nothing about the underlying measurements has changed; correct '
+    + 'the URL and reload.');
+}
 if (params.get('refuse') === '1') {
   die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
     + 'The three-dimensional view is not being drawn.');
@@ -305,7 +336,9 @@ function measure(n: number): number {
   return (performance.now() - t0) / n;
 }
 
-const FRAMES = Number(params.get('frames') ?? 300);
+/* Bounded at both ends: frames=0 or -5 would publish a one-frame time as an n-frame
+   sweep, and Math.trunc because a fractional loop bound is a fractional divisor two lines later. */
+const FRAMES = Math.trunc(numParam('frames', 300, 1, 20000));
 const ms = measure(Math.max(1, FRAMES));
 /*
  * §6 RULE 5 — "Brand hex exact. `assertBrandFidelity` runs on every new material."
@@ -346,6 +379,9 @@ const RENDERER = (() => {
 const SOFTWARE = /swiftshader|llvmpipe|software/i.test(RENDERER);
 
 const report = {
+  /* A clamped parameter is REPORTED, so the resolution in this report cannot silently disagree
+     with what the reader asked for. */
+  paramClamps,
   /* Reported so E9's audit can state what the tier actually drives here, rather than
      inferring it from which fields happen to exist. */
   ao: AO_ON,

@@ -51,6 +51,29 @@ import {
 } from '@lcx/gl';
 
 const params = new URLSearchParams(location.search);
+
+/*
+ * A NUMERIC URL PARAMETER, VALIDATED — and a non-numeric one REFUSES rather than falling back silently.
+ *
+ * `Number('abc')` is NaN, and `Math.max(1, Math.min(3, NaN))` is NaN, not the default: Math.max propagates
+ * NaN rather than rejecting it. So `?scale=abc` produced a NaN canvas size, and a NaN size is a canvas of
+ * zero area — a blank frame with every program compiled and no error anywhere. E0 through E4 were given this
+ * treatment by the pen-test; E5 through E8 were not, so they still had it.
+ *
+ * A CLAMP IS RECORDED, NOT SILENT. `?scale=99` is a request the harness cannot honour, and honouring 3
+ * without saying so means the report's resolution disagrees with what the reader asked for.
+ */
+const badParams: string[] = [];
+const paramClamps: string[] = [];
+function numParam(name: string, dflt: number, lo: number, hi: number): number {
+  const raw = params.get(name);
+  if (raw === null) return dflt;
+  const v = Number(raw);
+  if (!Number.isFinite(v)) { badParams.push(`${name}=${raw}`); return dflt; }
+  const clamped = Math.max(lo, Math.min(hi, v));
+  if (clamped !== v) paramClamps.push(`${name}=${raw} used as ${clamped}`);
+  return clamped;
+}
 /* THE CONTROL THAT MATTERS HERE. `?vol=0` is the flat surface's information: the calendar, the day
    grid, the states — everything except the accumulation, which is the only thing a heatmap cannot do. */
 const VOL_ON = params.get('vol') !== '0';
@@ -79,8 +102,10 @@ const TIER: QualityTier = (QUALITY_TIERS as readonly string[]).includes(params.g
   : 'full';
 const Q = qualitySettings(TIER);
 const AO_ON = params.get('ao') !== '0' && Q.ao;
-const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
-const FRAMES = Number(params.get('frames') ?? 300);
+const SCALE = numParam('scale', 1, 1, 3);
+/* Bounded at both ends: frames=0 or -5 would publish a one-frame time as an n-frame
+   sweep, and Math.trunc because a fractional loop bound is a fractional divisor two lines later. */
+const FRAMES = Math.trunc(numParam('frames', 300, 1, 20000));
 
 const W = 1200 * SCALE, H = 720 * SCALE;
 const canvas = document.getElementById('c') as HTMLCanvasElement;
@@ -341,6 +366,14 @@ const fallback = installFlatFallback({
   }),
 });
 fallbackRef = fallback;
+
+/* A NONSENSICAL PARAMETER REFUSES, and it refuses AFTER the flat fallback exists so the reader still gets
+   the data. Drawn at a NaN size the canvas has zero area: a blank frame, every program compiled, no error. */
+if (badParams.length > 0) {
+  die(`BAD_PARAM: ${badParams.join(', ')} — not a number, so the view was not drawn rather than `
+    + 'drawn at a nonsensical size. Nothing about the underlying measurements has changed; correct '
+    + 'the URL and reload.');
+}
 
 /*
  * A SYNTHETIC REFUSAL, SO THE FALLBACK CAN BE CAPTURED. Rule 8 is "every claim gets a capture", and
@@ -1200,8 +1233,21 @@ for (const d of [...channelDecisions].sort((a, b) => b.distance - a.distance)) {
   el.style.cssText = `position:absolute;left:0;top:0;width:${d.ew}px;height:${d.eh}px;`
     + `transform-origin:0 0;transform:${d.proj.transform};display:flex;align-items:center;`
     + `justify-content:center;overflow:hidden;-webkit-font-smoothing:antialiased`;
-  el.innerHTML = `<div style="font:600 9.5px/1 ui-monospace,monospace;letter-spacing:.08em;`
-    + `color:rgba(220,232,255,0.92);white-space:nowrap">${d.name}</div>`;
+  /*
+   * `textContent` ON AN ELEMENT, NOT A VALUE INTERPOLATED INTO HTML — and the reason is E6's, measured.
+   *
+   * The same shape of line there wrote a record's `action` and `actor` into an HTML string. With a
+   * realistic value (`a<b>c`, `O'Brien & Sons <ops>`) the unclosed tag was reparented across the sibling
+   * boundary: one field read `ac`, the next lost `<ops>` and inherited the styling that MEANS "this is
+   * the action name", and the flat table in the same DOM showed the truth because it escapes its cells.
+   * `CHANNELS` is a literal today, so this is not a live defect here — it is the sink closed before a
+   * channel list arrives from anywhere else, because the failure is silent and looks like data.
+   */
+  const label = document.createElement('div');
+  label.style.cssText = 'font:600 9.5px/1 ui-monospace,monospace;letter-spacing:.08em;'
+    + 'color:rgba(220,232,255,0.92);white-space:nowrap';
+  label.textContent = d.name;
+  el.appendChild(label);
   overlay.appendChild(el);
 }
 for (const d of [...dateDecisions].sort((a, b) => b.distance - a.distance)) {
@@ -1212,8 +1258,12 @@ for (const d of [...dateDecisions].sort((a, b) => b.distance - a.distance)) {
     + `justify-content:center;overflow:hidden;-webkit-font-smoothing:antialiased`;
   const tag = d.state === 'WITHHELD' ? 'WITHHELD' : `D${d.day}`;
   const colour = d.state === 'WITHHELD' ? '#B7C2D8' : 'rgba(200,216,244,0.88)';
-  el.innerHTML = `<div style="font:600 10px/1 ui-monospace,monospace;letter-spacing:.06em;`
-    + `color:${colour};white-space:nowrap">${tag}</div>`;
+  /* Elements and `textContent`, for the reason given on the channel labels above. */
+  const label = document.createElement('div');
+  label.style.cssText = 'font:600 10px/1 ui-monospace,monospace;letter-spacing:.06em;'
+    + `color:${colour};white-space:nowrap`;
+  label.textContent = tag;
+  el.appendChild(label);
   overlay.appendChild(el);
 }
 
@@ -1278,7 +1328,16 @@ const weekTicks = WEEK_DAYS.map((d) => {
       + `top:${p.sy.toFixed(1)}px;transform:translate(0,-50%);`
       + `font:500 10px/1.35 ui-monospace,monospace;letter-spacing:.07em;white-space:nowrap;`
       + `color:${readable ? 'rgba(196,212,240,0.85)' : '#E0A94A'}`;
-    el.innerHTML = readable ? `D${d}` : `D${d}<br>NO INTEGRAL`;
+    /* Two child divs rather than a `<br>` in an HTML string: the only markup this label wanted was a line
+       break, which a block element already gives, and that leaves no raw-HTML sink on the ruler at all. */
+    const day = document.createElement('div');
+    day.textContent = `D${d}`;
+    el.appendChild(day);
+    if (!readable) {
+      const why = document.createElement('div');
+      why.textContent = 'NO INTEGRAL';
+      el.appendChild(why);
+    }
     overlay.appendChild(el);
   }
   return { day: d, readable, onFrame, sx: Math.round(p.sx), sy: Math.round(p.sy) };
@@ -1327,6 +1386,19 @@ legend.innerHTML =
   + `</div>`
   + `<div style="color:rgba(196,212,240,0.85);text-align:right">SEVERITY IS HEIGHT<br>`
   + `<span style="opacity:.8">${[...BANDS].reverse().join(' / ')}</span></div>`
+  /*
+   * `forced-color-adjust:none` ON THE SWATCHES ONLY, measured rather than assumed.
+   *
+   * WHAT WENT WRONG: under `forced-colors: active` the browser replaces every author colour. Measured
+   * with `newPage({forcedColors:'active'})`, OBSERVED `#101B2F` and WITHHELD `#6B7A99` BOTH computed to
+   * `rgb(255,255,255)` — two states, one white square. The canvas is a bitmap and is untouched, so the
+   * floor kept its dark tiles and its steel lids while the key that names them became identical.
+   *
+   * WHY ONLY HERE: a swatch is a SAMPLE of a colour the renderer actually produces, which is one of the
+   * narrow cases where the author's colour has to win over the forced palette. The label text beside it
+   * keeps its forced colours — that is what high contrast is for — and every state is still named in
+   * words, so nothing depends on hue alone.
+   */
   + ([
     ['#101B2F', `OBSERVED · ${dayCounts.OBSERVED} days`],
     ['transparent', `NOT MEASURED · ${dayCounts.ABSENT} days — hole in the floor`],
@@ -1334,7 +1406,8 @@ legend.innerHTML =
   ] as const).map(([c, t]) => (
     `<div style="display:flex;align-items:center;gap:7px;color:rgba(196,212,240,0.85)">`
     + `<span>${t}</span><span style="width:11px;height:11px;background:${c};`
-    + `border:1px solid rgba(196,212,240,0.45);display:inline-block"></span></div>`
+    + `border:1px solid rgba(196,212,240,0.45);display:inline-block;`
+    + `forced-color-adjust:none"></span></div>`
   )).join('');
 overlay.appendChild(legend);
 
@@ -1372,6 +1445,9 @@ const offAxisDeg = (world: Vec3): number => {
 };
 
 const report = {
+  /* A clamped parameter is REPORTED, so the resolution in this report cannot silently disagree
+     with what the reader asked for. */
+  paramClamps,
   /* WHICH TIER THIS FRAME IS, so the numbers beside it describe a configuration a reader can reconstruct.
      A tier that cannot be reported is a tier that cannot be trusted. */
   tier: Q.tier,

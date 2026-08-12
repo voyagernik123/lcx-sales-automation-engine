@@ -171,6 +171,24 @@ middle of the ramp**, a colour the renderer never produces, now a gradient bar w
 ramp was dimmed without the depth cap doing anything different — the mean and max delta are reported
 next to it so a threshold effect cannot be mistaken for the effect disappearing.
 
+## The state key collapsed under forced colours, and the labels were raw HTML
+
+Two defects found by pen-test, both measured:
+
+**`forced-colors: active` deleted the key.** Measured with `newPage({forcedColors:'active'})`, the
+OBSERVED swatch `#101B2F` and the WITHHELD swatch `#6B7A99` **both** computed to `rgb(255,255,255)` —
+two states, one white square — while the canvas, being a bitmap, kept its dark tiles and its steel lids.
+The swatches now carry `forced-color-adjust: none`, because a swatch is a *sample* of a colour the
+renderer produces rather than decoration; the label text beside each keeps its forced colours, which is
+what the mode exists for. Measured after: both hues survive in both modes.
+
+**The channel and date labels went through `innerHTML`.** `CHANNELS` is a literal today, so nothing was
+being corrupted — but E6's identical line, with `action` and `actor` interpolated the same way, turned
+`a<b>c` into `ac` and reparented an unclosed tag across a sibling boundary while every assertion in that
+harness passed. The three label sites here (channel name, date tag, week-ruler tick) are now elements
+with `textContent`, and the ruler's `<br>` is a second block element instead of markup. That leaves no
+raw-HTML sink on this frame for a channel list from anywhere else to arrive at.
+
 One trap avoided by design rather than found: **the volume cannot be drawn into the scene target it
 samples depth from.** That is a feedback loop, and WebGL2 does not leave it undefined — it raises
 INVALID_OPERATION and draws nothing. The volume renders into its own target and is composited with a

@@ -57,7 +57,16 @@ for (const [name, reduced, q] of [['live', false, ''], ['no-ao', false, '&ao=0']
     if (!el) return null;
     return {
       rows: el.querySelectorAll('tbody tr').length,
-      hidden: getComputedStyle(el).display === 'none',
+      /* VISUALLY hidden, not `display:none`. `_shared/flatFallback.ts` stopped using `display:none` on the
+         success path because it PRUNED the table out of the accessibility tree; success now clips it to a
+         1x1 out-of-flow box instead. A `display` test therefore reported a clipped, invisible table as
+         still visible and failed the capture. What rule 1 needs asserted is that the table takes no space
+         on screen when a frame drew, and takes space when one did not — so that is what is measured. */
+      hidden: (() => {
+        const cs = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        return cs.display === 'none' || cs.visibility === 'hidden' || (r.width <= 1 && r.height <= 1);
+      })(),
       refusal: el.querySelector('.refusal')?.textContent?.slice(0, 40) ?? null,
     };
   });
@@ -71,6 +80,29 @@ for (const [name, reduced, q] of [['live', false, ''], ['no-ao', false, '&ao=0']
     continue;
   }
   if (!fb.hidden) throw new Error('the fallback is still visible although a frame was drawn');
+  /*
+   * THE REPORT IS READ, AND UNTIL NOW IT WAS NOT — this script checked canvases and the fallback and
+   * nothing else. E0's own target probe was coming back `glAfterRead: 1282` (GL_INVALID_OPERATION) with
+   * `targetCentre: [0,0,0,0]` on every capture in the repository: the probe that proves the frame reached
+   * the HDR target had failed, returned black, and neither the page nor this script said a word. A number
+   * nothing asserts on is a number that can be anything.
+   */
+  const rep = await p.evaluate(() => globalThis.E0);
+  console.log(`    ms/frame ${rep.msPerFrame} · ${rep.rendererClass} · frames ${rep.frames}`
+    + ` · glError ${rep.glError} · setup ${rep.glDuringSetup} · afterDraw ${rep.glAfterDraw} · afterRead ${rep.glAfterRead}`);
+  console.log(`    targetCentre ${JSON.stringify(rep.targetCentre)} read as ${rep.targetReadFormat}/${rep.targetReadType}`
+    + ` · failingCalls ${JSON.stringify(rep.failingCalls)} · clamps ${JSON.stringify(rep.paramClamps)}`);
+  if (rep.brandFidelity.length) throw new Error(`§6 rule 5: brand hex moved: ${JSON.stringify(rep.brandFidelity)}`);
+  if (rep.glError !== 0) throw new Error(`glError ${rep.glError}`);
+  if (rep.glDuringSetup !== 0) throw new Error(`a GL error was raised during setup: 0x${rep.glDuringSetup.toString(16)}`);
+  if (rep.glAfterDraw !== 0) throw new Error(`glAfterDraw 0x${rep.glAfterDraw.toString(16)}`);
+  if (rep.glAfterRead !== 0) throw new Error(`glAfterRead 0x${rep.glAfterRead.toString(16)} — the target probe's own read failed`);
+  if (rep.failingCalls.length) throw new Error(`GL errors during the probe frame: ${rep.failingCalls.join(', ')}`);
+  /* All four channels zero is what an undrawn target reads as, and it is indistinguishable from a
+     working scene by any other field in this report. Fatal, not noted. */
+  if (rep.targetCentre.every((v) => v === 0)) {
+    throw new Error('targetCentre is [0,0,0,0]: nothing reached the HDR target at the probe point');
+  }
   await p.close();
 }
 await b.close(); s.close();

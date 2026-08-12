@@ -58,7 +58,16 @@ for (const [name, reduced, q] of [['live', false, ''], ['no-atmos', false, '&atm
     if (!el) return null;
     return {
       rows: el.querySelectorAll('tbody tr').length,
-      hidden: getComputedStyle(el).display === 'none',
+      /* VISUALLY hidden, not `display:none`. `_shared/flatFallback.ts` stopped using `display:none` on the
+         success path because it PRUNED the table out of the accessibility tree; success now clips it to a
+         1x1 out-of-flow box instead. A `display` test therefore reported a clipped, invisible table as
+         still visible and failed the capture. What rule 1 needs asserted is that the table takes no space
+         on screen when a frame drew, and takes space when one did not — so that is what is measured. */
+      hidden: (() => {
+        const cs = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        return cs.display === 'none' || cs.visibility === 'hidden' || (r.width <= 1 && r.height <= 1);
+      })(),
       refusal: el.querySelector('.refusal')?.textContent?.slice(0, 44) ?? null,
     };
   });
@@ -72,6 +81,45 @@ for (const [name, reduced, q] of [['live', false, ''], ['no-atmos', false, '&atm
     continue;
   }
   if (!fb.hidden) throw new Error('the fallback is still visible although a frame was drawn');
+  /*
+   * THE REPORT IS READ, AND UNTIL NOW IT WAS NOT — and that is how E2's README came to publish two
+   * numbers the harness contradicts.
+   *
+   * This script printed canvases and the fallback and never touched `globalThis.E2`, so `cities`,
+   * `triangles`, `corridorPeakLift`, `behindLimb` and `onNightSide` — every headline claim in that
+   * README — were unbacked by the process that makes the picture. The README said "eight city markers"
+   * and "32,896 triangles" against a harness reporting 12 and 35136, and nothing could notice.
+   *
+   * The counts are ASSERTED against the arrays they come from rather than against literals typed here: a
+   * literal would be the same defect one file further along.
+   */
+  const rep = await p.evaluate(() => globalThis.E2);
+  console.log(`    ms/frame ${rep.msPerFrame} (${rep.frames} frames) · ${rep.rendererClass}`
+    + ` · glError ${rep.glError} · clamps ${JSON.stringify(rep.paramClamps)}`);
+  console.log(`    cities ${rep.cities} (facing ${rep.citiesFacing}, sunlit ${rep.citiesSunlit})`
+    + ` · corridors ${rep.corridors} · triangles ${rep.triangles}`
+    + ` · meridian ${rep.centralMeridian} · subSolar ${rep.subSolar}`);
+  console.log(`    behindLimb ${JSON.stringify(rep.behindLimb)} · onNightSide ${JSON.stringify(rep.onNightSide)}`);
+  console.log('    corridorPeakLift ' + rep.corridorPeakLift.map((c) => `${c.to}:${c.lift}@${c.separationDeg}°`).join(' '));
+  if (rep.brandFidelity.length) throw new Error(`§6 rule 5: brand hex moved: ${JSON.stringify(rep.brandFidelity)}`);
+  if (rep.glError !== 0) throw new Error(`glError ${rep.glError}`);
+  /* A marker the camera cannot see is not a reading, and a terminator with nothing behind it is
+     decoration — both are what the README claims are fixed, so both are checked here. */
+  if (rep.citiesFacing < 1) throw new Error('no city marker is on the visible cap');
+  if (rep.onNightSide.length === 0) throw new Error('the terminator separates nothing: onNightSide is empty');
+  if (rep.behindLimb.length === 0) throw new Error('no endpoint is behind the limb: the occlusion test proves nothing');
+  /* LIFT MONOTONIC WITH ANGULAR DISTANCE is the corridor claim, and it is now checked rather than
+     asserted: sort by separation and every step must be non-decreasing in lift. A fixed lift would make
+     the London hop a tall croquet hoop, and nothing here could previously have told the difference. */
+  const byDist = [...rep.corridorPeakLift].sort((x, y) => x.separationDeg - y.separationDeg);
+  if (byDist.some((c) => !(c.lift > 0))) throw new Error(`a corridor has no lift: ${JSON.stringify(byDist)}`);
+  for (let i = 1; i < byDist.length; i++) {
+    if (byDist[i].lift < byDist[i - 1].lift) {
+      throw new Error(`corridor lift is not monotonic with distance: ${byDist[i - 1].to}`
+        + ` (${byDist[i - 1].separationDeg}° → ${byDist[i - 1].lift}) then ${byDist[i].to}`
+        + ` (${byDist[i].separationDeg}° → ${byDist[i].lift})`);
+    }
+  }
   await p.close();
 }
 await b.close(); s.close();

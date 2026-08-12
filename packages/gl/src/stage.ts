@@ -29,6 +29,12 @@ export const STAGE_REFUSAL_CODES = [
      sampler3D falls back to NEAREST and the volume renders as voxel blocks that look like a
      deliberate aesthetic. Neither raises a GL error, so this is the only place either can be caught. */
   'MISSING_EXTENSION',
+  /* A PASS ASKED TO SAMPLE A TEXTURE THAT IS AN ATTACHMENT OF THE FRAMEBUFFER IT IS DRAWING INTO.
+     The driver's answer is to drop the draw whole — measured as GL_INVALID_OPERATION with ANGLE
+     logging "Feedback loop formed between Framebuffer and active Texture", and ZERO pixels written.
+     Nothing appears, nothing is reported to the page, and the effect looks like a density or a
+     parameter problem rather than a binding one. Named here so a caller is told which it was. */
+  'FEEDBACK_LOOP',
 ] as const;
 export type StageRefusalCode = (typeof STAGE_REFUSAL_CODES)[number];
 
@@ -65,6 +71,9 @@ const REFUSAL_REASON: Record<StageRefusalCode, string> = {
   MISSING_EXTENSION:
     'This driver is missing a graphics capability this view needs, so it is not being drawn rather ' +
     'than drawn wrongly. The data is unaffected.',
+  FEEDBACK_LOOP:
+    'A layer of this view was asked to read the surface it draws into, which every driver refuses, so ' +
+    'the layer is not being drawn. This is a defect in the renderer, not in the data.',
 };
 
 export function stageRefusal(code: StageRefusalCode, detail?: string): StageRefusal {
@@ -238,6 +247,25 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
       bloomB = makeTarget(Math.max(1, nw >> shift), Math.max(1, nh >> shift));
     },
 
+    /*
+     * EVERY SHADER OBJECT IS DELETED HERE, AND `dispose()` COULD NEVER HAVE DONE IT.
+     *
+     * The version before this one created two shaders per program and deleted none, on any path.
+     * Measured on the full engine — sky, three lit programs, two AO, DOF, two particle, volume — that
+     * was 20 shader objects created and 0 deleted, still 20 after `dispose()` on every object AND
+     * `stage.dispose()`, with `gl.isShader` true for all twenty. `stage.dispose()` cannot fix it:
+     * deleting a program does not free a shader that was never FLAGGED for deletion, so the shaders
+     * outlive the program they were attached to and there is no handle left to reach them by.
+     *
+     * `deleteShader` on a linked program's shader is not premature. It flags the object; the driver
+     * frees it when the last attachment goes, and the program keeps its linked binary either way.
+     * Detaching first is what makes that "last attachment" happen now rather than at program delete.
+     *
+     * The three early returns leaked as well, and the link failure was the worst of the three: it
+     * leaked the WebGLProgram too, because `programs.push(p)` below only runs on success, so
+     * `stage.dispose()` never saw it. Measured 5 shaders and 1 program still valid after the stage
+     * was disposed. Each branch now deletes exactly what it had made.
+     */
     compile(vertexSrc, fragmentSrc) {
       const build = (type: number, src: string): WebGLShader | StageRefusal => {
         const s = gl.createShader(type)!;
@@ -246,21 +274,34 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
         if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
           // The driver's log verbatim. Paraphrasing it loses the line number, which is
           // the only part that makes a shader error actionable.
-          return stageRefusal('SHADER_COMPILE_FAILED', gl.getShaderInfoLog(s) ?? '(no log)');
+          const log = gl.getShaderInfoLog(s) ?? '(no log)';
+          gl.deleteShader(s);
+          return stageRefusal('SHADER_COMPILE_FAILED', log);
         }
         return s;
       };
       const vs = build(gl.VERTEX_SHADER, vertexSrc);
       if (typeof vs === 'object' && 'kind' in vs) return vs;
       const fs = build(gl.FRAGMENT_SHADER, fragmentSrc);
-      if (typeof fs === 'object' && 'kind' in fs) return fs;
+      if (typeof fs === 'object' && 'kind' in fs) {
+        gl.deleteShader(vs as WebGLShader);
+        return fs;
+      }
       const p = gl.createProgram()!;
       gl.attachShader(p, vs as WebGLShader);
       gl.attachShader(p, fs as WebGLShader);
       gl.linkProgram(p);
       if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-        return stageRefusal('PROGRAM_LINK_FAILED', gl.getProgramInfoLog(p) ?? '(no log)');
+        const log = gl.getProgramInfoLog(p) ?? '(no log)';
+        gl.deleteShader(vs as WebGLShader);
+        gl.deleteShader(fs as WebGLShader);
+        gl.deleteProgram(p);
+        return stageRefusal('PROGRAM_LINK_FAILED', log);
       }
+      gl.detachShader(p, vs as WebGLShader);
+      gl.detachShader(p, fs as WebGLShader);
+      gl.deleteShader(vs as WebGLShader);
+      gl.deleteShader(fs as WebGLShader);
       programs.push(p);
       return p;
     },

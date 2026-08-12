@@ -1,0 +1,34 @@
+{
+  "note": "Written by capture.mjs. If bundleSha256 does not match docs/3d/e1/bundle.js, the PNGs are stale.",
+  "bundleSha256": "8c94467651fd255c32a2c0d526ff86b14b0589f702f2c429f13c99208970878c",
+  "bundleBytes": 54747,
+  "environments": [
+    "E1",
+    "E8",
+    "E0",
+    "E6",
+    "E5",
+    "E2",
+    "E3",
+    "E4",
+    "E7"
+  ],
+  "environmentsShown": [
+    "E1",
+    "E8",
+    "E0",
+    "E6",
+    "E5"
+  ],
+  "environmentsOmitted": [
+    "E2",
+    "E3",
+    "E4",
+    "E7"
+  ],
+  "hud": [
+    "3D PROGRAMME · 9 ENVIRONMENTS",
+    "STATE DERIVED FROM EACH README AT BUILD TIME",
+    "4 NOT SHOWN — ONLY 5 PANELS: E2 E3 E4 E7"
+  ]
+}

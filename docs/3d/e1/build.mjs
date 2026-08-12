@@ -21,15 +21,46 @@ const css = readdirSync(dist).filter(f => f.endsWith('.css')).map(f => readFileS
  * that quietly keeps asserting last month's state.
  */
 const envStates = {};
+/*
+ * AN ENVIRONMENT IS A DIRECTORY WITH AN `entry.ts`, NOT A DIRECTORY WITH A README.
+ *
+ * `docs/3d/e9` is the AUDIT. It has a README whose first line parses perfectly — `# E9 · THE AUDIT —
+ * status: **all 9 environments degrade to a readable flat surface**` — so it was harvested as a tenth
+ * environment, and the frame then rendered `3D PROGRAMME · 10 ENVIRONMENTS` and `5 NOT SHOWN` beside a
+ * panel titled `E9 · THE AUDIT`. There are nine environments, e0..e8; E9's own first line says so. The
+ * flat fallback carried the same wrong set, under a sentence promising it "carries every environment".
+ *
+ * `entry.ts` is the predicate because it is what an environment IS in this tree — a harness that renders.
+ * `harnessRules.test.ts:36` already uses exactly this test to exclude E9 from the harness ratchet, so the
+ * two now agree about what the programme consists of.
+ */
+const skipped = [];
 for (const dir of readdirSync(join(ROOT, 'docs/3d')).sort()) {
-  const rd = join(ROOT, 'docs/3d', dir, 'README.md');
-  if (!/^e\d+$/.test(dir) || !existsSync(rd)) continue;
+  if (!/^e\d+$/.test(dir)) continue;
+  const here = join(ROOT, 'docs/3d', dir);
+  if (!existsSync(join(here, 'entry.ts'))) continue;  // a document, not an environment
+  const rd = join(here, 'README.md');
+  /*
+   * AND A SKIP IS NOW LOUD, which the comment above has claimed since it was written: "a missing README
+   * becomes a visible refusal rather than a row that quietly keeps asserting last month's state". Both
+   * skips were silent `continue`s, so an environment whose README was deleted or whose first line stopped
+   * parsing simply VANISHED from a frame that prints "Every row below is checkable against this
+   * repository" — the §6 rule 6 shape this block exists to prevent, arrived at by subtraction. Replayed
+   * over a fixture tree with e1's README removed: `derived 2 environment states: E0 E2`, no refusal, and
+   * E1 absent from the panel data.
+   */
+  if (!existsSync(rd)) { skipped.push(`${dir} (no README.md)`); continue; }
   const first = readFileSync(rd, 'utf8').split('\n')[0];
   // `# E5 · THE SURFACE — status: **AGREES ...**`  and E0/E8's older bare-bold form.
   const m = first.match(/^#\s*(E\d+)\s*·\s*([^—]+?)\s*—\s*(?:status:\s*)?(.*)$/);
-  if (!m) continue;
+  if (!m) { skipped.push(`${dir} (first line does not parse)`); continue; }
   const verdict = (m[3].match(/\*\*(.+?)\*\*/)?.[1] ?? m[3]).trim();
   envStates[m[1]] = { id: m[1], name: m[2].trim(), verdict };
+}
+if (skipped.length) {
+  console.error(`  REFUSED: ${skipped.join(', ')} — the panel set would silently omit ${skipped.length}`
+    + ' environment(s) from a frame that asserts every row is checkable');
+  process.exit(1);
 }
 if (Object.keys(envStates).length === 0) {
   console.error('  REFUSED: no docs/3d/e*/README.md could be parsed, so no panel content is derivable');

@@ -8,15 +8,45 @@ though it were available.
 
 | | |
 |---|---|
-| readable to | **4.0 d** |
+| readable to | **4.0 d** — *measured*, every run of type at or above 4.5:1 |
+| in geometric range to | **4.6 d** — the 13 m distance cut, which is what "readable" used to mean |
 | visible to | **19.3 d** |
 | scale | 12 h per metre |
 | fog | 0.33 at the nearest record → 0.99 at the furthest |
+| depth-ruler ticks | 1d 9.4:1 · 3d 8.9:1 · 7d 8.7:1 · 14d 9.0:1 |
 
-Those are two **different horizons** and the frame reports both. A table says "25 rows"; the vault says
-*you can read four days back, you can see shapes for nineteen, and past that there is nothing.* That
-distinction is the environment's whole justification, and reporting only one of the two numbers would
+Those are **different horizons** and the frame reports all of them. A table says "25 rows"; the vault
+says *you can read four days back, you can see shapes for nineteen, and past that there is nothing.*
+That distinction is the environment's whole justification, and reporting only one of the numbers would
 claim either more reach or less than it has.
+
+**"Readable" is now a pixel read, and for one commit it was a lie.** This table said `readable to 4.0 d`
+and the frame printed `READABLE TO 4.0 d`, both taken from `distance > LEGIBLE_M` — a **metres** test.
+Measured against the frame's own pixels, the record that SET that horizon carried its header at 2.65:1
+and its actor at 2.56:1: below WCAG AA's 4.5:1 and below even the 3:1 large-text floor, in a frame
+reporting zero clipping and zero errors. Two things were wrong and both are fixed:
+
+- The horizon is derived from a **measured** WCAG ratio per line of type, composited from the fog-driven
+  opacity over the background actually in the framebuffer — the technique 5bcb99a gave E3's axis ticks.
+  `BELOW_READABLE_CONTRAST` is now one of the named reasons a record shows no text, and `readableToDays`
+  cannot exceed what the pixels support. The capture fails if it does.
+- The three lines of a record no longer dim each other. The header sat at 0.66 alpha and the actor at
+  0.74 to rank them, on top of the fog's own `1 - 0.75 × haze` — so a line starting at 0.66 crossed AA at
+  **nine hours** while the action name beside it was still at 8.6:1 four days back. The type already
+  ranks itself by size and weight; fog is now the only thing that dims a record, which is what this
+  environment claims fog is for. Records shown: 8 of 25, unchanged, and the same four reasons hide the
+  rest.
+
+**The depth ruler was three-quarters invisible and reported as fine.** `rulerOffFrame: 0` was a
+frame-BOUNDS count, and the tick colour was `rgba(196,212,240, 0.85 × (1 - haze))`. Measured off the
+framebuffer at each tick's own box, that law gave **3.54:1 at 1d, 2.18:1 at 3d, 1.32:1 at 7d and 1.04:1 at
+14d** — the last differing from its own background by a maximum of **5/255**, which is nothing a reader
+can see. One of four was even close to legible, none reached AA, and the 3d tick sat inside the reading
+horizon the same frame was advertising. (An independent pen-test measurement by screenshot differencing
+got 3.38 / 1.84 / 1.25 / 1.04 and the same 5/255 — two methods, same verdict.) The ruler is screen space because it annotates the corridor rather than living in it, so
+it now takes a constant alpha — fog is a property of the corridor, and fogging an axis label about the
+corridor deletes the axis. `rulerTicksUnreadable` reports the ratios and the capture is fatal on any tick
+below AA.
 
 Two more things depth-as-time gives that the table destroys:
 
@@ -100,7 +130,42 @@ useful kind of wrong: a test that agrees with the code and disagrees with the pi
 
 `hiddenBy: {OCCLUDED: 4, EDGE_ON: 7, WITHHELD: 3, BEYOND_LEGIBLE_RANGE: 3}` — four reasons, never
 summed, because an operator does something different about each. "17 hidden" is useless; that line is
-actionable.
+actionable. Two further names exist and are empty in this frame: `BELOW_READABLE_CONTRAST`, and
+`CONTRAST_UNMEASURABLE` for a record whose sample box lands off frame — that one refuses rather than
+clamping the read to the frame edge, because an invented ratio is worse than a named absence.
+
+## The two fields this environment exists to show went through `innerHTML`
+
+`action` and `actor` were interpolated raw into an HTML string. With a realistic value — action
+`a<b>c`, actor `O'Brien & Sons <ops>` — the unclosed tag was reparented **across the sibling div
+boundary**: the action read `ac`, the actor lost `<ops>` silently, and the actor inherited the
+700-weight styling that on this frame *means* "this is the action name". Every assertion this harness
+owns passed while that was on screen — 25 fallback rows, zero clipped text, no page errors, 8 of 25
+shown — and the flat table in the same DOM showed the truth, because it escapes its cells. A frame
+disagreeing with its own fallback about what a governed action was is the worst thing this file can do,
+and the header comment two lines above the defect argued at length that `campaign.publ` was
+unacceptable because "a truncated identifier in an audit record is worse than no record".
+
+The three lines are now elements with `textContent`. Verified on a copy of this harness with those two
+values: the panel's own `textContent` is `ALLOWED · 3h ago` / `a<b>c` / `O'Brien & Sons <ops>`, its
+`innerHTML` carries `a&lt;b&gt;c` and `O'Brien &amp; Sons &lt;ops&gt;`, and the same fields sent through
+as `<img src=x onerror=…>` produced **zero** `<img>` elements anywhere in the page and ran nothing. That
+is structural rather than an escape call someone has to remember: a sibling cannot be reparented by an
+unbalanced tag in the one before it.
+
+## The verdict key survived `forced-colors: active`; it did not
+
+Under forced colours the browser replaces every author colour and the canvas — a bitmap — keeps its own.
+Measured with `newPage({forcedColors:'active'})`, the three legend swatches all computed to
+`rgb(255,255,255)`: **three hues, one white square**, while the slabs behind them stayed blue, red and
+steel. Colour is the only channel carrying verdict on this frame. The swatches now set
+`forced-color-adjust: none` — they are samples of colours the renderer actually produces, which is one of
+the narrow cases where the author's colour must win — and the label text beside each one keeps its forced
+colours, because that is what the mode is for. Measured after: three distinct hues in both modes.
+
+The same mode used to defeat the fog on DOM text, because recession was expressed in colour alpha, which
+forced colours overrides, rather than in `opacity`, which it does not. Every dimming in this file is now
+`opacity`, so the reading limit the frame claims survives the mode that a low-vision reader is in.
 
 ## What is not done
 

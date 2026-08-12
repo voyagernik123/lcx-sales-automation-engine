@@ -271,6 +271,9 @@ export function createBarBatch(stage: Stage): BarBatch | StageRefusal {
     dispose() {
       gl.deleteBuffer(quadBuf); gl.deleteBuffer(rectBuf); gl.deleteBuffer(tintBuf);
       gl.deleteVertexArray(vao);
+      /* BOTH programs. See lines.ts: the bar batch is the one thing here a page can create per chart,
+         so deferring two programs and four shaders to stage teardown is the worst case of the leak. */
+      gl.deleteProgram(barsP); gl.deleteProgram(contactP);
     },
   };
 }

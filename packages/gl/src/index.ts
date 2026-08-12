@@ -89,7 +89,9 @@ export { createParticleField, particleLayout, emissionSchedule, CURL_NOISE_GLSL 
 export type { ParticleField, ParticleSource } from './env/particles.js';
 export { createVolumeField, rayBoxSlab, marchPlan, RAY_BOX_GLSL } from './env/volume.js';
 export type { VolumeField } from './env/volume.js';
-export { QUALITY_TIERS, qualitySettings, pickQualityTier, prefersReducedMotion, shadowMapSizeFor } from './env/quality.js';
+export {
+  QUALITY_TIERS, qualitySettings, pickQualityTier, prefersReducedMotion, prefersMoreContrast, shadowMapSizeFor,
+} from './env/quality.js';
 export type { QualityTier, QualitySettings } from './env/quality.js';
 export type { QuadCorners, QuadProjection, QuadRefusal } from './env/project.js';
 export {
@@ -104,7 +106,9 @@ export {
 } from './env/lit.js';
 export type { LitRenderer, LitDraw, Material, MeshBuffer } from './env/lit.js';
 export { createSkyBackdrop, bindSky, skyIrradiance, SKY_GLSL, DEFAULT_SKY } from './env/sky.js';
-export { createAmbientOcclusion, DEPTH_RECONSTRUCT_GLSL } from './env/ao.js';
+export {
+  createAmbientOcclusion, DEPTH_RECONSTRUCT_GLSL, LINEAR_DEPTH_GLSL, VIEW_POS_GLSL,
+} from './env/ao.js';
 export { createDepthOfField } from './env/dof.js';
 export type { DepthOfField } from './env/dof.js';
 export type { AmbientOcclusion } from './env/ao.js';

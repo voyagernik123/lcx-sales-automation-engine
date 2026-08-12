@@ -42,8 +42,49 @@ const TIER: QualityTier = (QUALITY_TIERS as readonly string[]).includes(params.g
   ? (params.get('tier') as QualityTier)
   : 'full';
 const Q = qualitySettings(TIER);
-const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
+/*
+ * A MISTYPED URL USED TO BE REPORTED AS A HARDWARE FAULT, and the clamp is what hid it.
+ *
+ * `Math.max(1, Math.min(3, Number('abc')))` is NaN — NEITHER clamp rejects NaN, because both comparisons
+ * against NaN are false and both functions then return it. So `?scale=abc` gave W = NaN, `canvas.width`
+ * coerced that to 0, `createStage` correctly refused a 0x0 canvas with FRAMEBUFFER_INCOMPLETE, and
+ * `stage.ts` printed its words to the reader: "This driver would not allocate the render targets this
+ * view needs." The driver was fine. The URL was wrong, and the page blamed the machine.
+ *
+ * `frames` and `repeat` had the same shape with a quieter symptom: `for (let i = 0; i < NaN; i++)` runs
+ * ZERO times, so `msPerFrame` came out NaN and serialised to null — indistinguishable from this
+ * programme's refusal convention, on a page still titled READY.
+ *
+ * So every numeric parameter goes through one parser that (a) refuses a non-number BY NAME rather than
+ * propagating it, and (b) records a clamp instead of applying it silently. The refusal is taken after
+ * the flat fallback is installed, so the reader is told which parameter they mistyped.
+ */
+const badParams: string[] = [];
+const paramClamps: string[] = [];
+function numParam(name: string, dflt: number, lo: number, hi: number): number {
+  const raw = params.get(name);
+  if (raw === null) return dflt;
+  const v = Number(raw);
+  if (!Number.isFinite(v)) { badParams.push(`${name}=${raw}`); return dflt; }
+  const clamped = Math.max(lo, Math.min(hi, v));
+  if (clamped !== v) paramClamps.push(`${name}=${raw} used as ${clamped}`);
+  return clamped;
+}
+const SCALE = numParam('scale', 1, 1, 3);
 const W = 1280 * SCALE, H = 800 * SCALE;
+/* FRAME COUNT IS A PARAMETER, because the two things this page is for need different values.
+   The capture harness runs under swiftshader (software rasterisation) where 600 frames of a
+   shadowed scene takes minutes — so it asks for a handful, just enough to prove the frame is
+   drawn. The real measurement runs on the actual GPU and asks for the full sweep. A number
+   hardcoded for one of those is useless for the other.
+
+   BOUNDED AT BOTH ENDS. The lower bound stops `frames=0` and `frames=-5` from publishing a one-frame
+   time as an n-frame sweep; the upper bound stops the count itself being absurd. Neither is what makes
+   `?frames=1e9` survivable — 20000 frames of this scene under SwiftShader was still measured at over two
+   minutes — so the real ceiling is the wall clock in `measure`. `Math.trunc` after the clamp because a
+   fractional loop bound is a fractional divisor two lines later. */
+const FRAMES = Math.trunc(numParam('frames', 600, 1, 20000));
+const REPEAT = Math.trunc(numParam('repeat', 1, 1, 64));
 const DIAG_FLAG = params.get('diag') === '1';
 const REFUSE_FLAG = params.get('refuse') === '1';
 const canvas = document.getElementById('c') as HTMLCanvasElement;
@@ -113,17 +154,32 @@ const fallback = installFlatFallback({
   ],
 });
 fallbackRef = fallback;
+/* Refused HERE rather than where the parameter is parsed, because the fallback has to exist first —
+   see `numParam`. A bad parameter is named to the reader instead of being reported as a driver fault. */
+if (badParams.length > 0) {
+  die(`BAD_PARAM: ${badParams.join(', ')} — not a number, so the view was not drawn rather than `
+    + 'drawn at a nonsensical size. Nothing about the underlying measurements has changed; correct '
+    + 'the URL and reload.');
+}
 if (REFUSE_FLAG) {
   die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
     + 'The three-dimensional view is not being drawn.');
 }
 
 const outcome = createStage(canvas, { alpha: false });
-if (!isStage(outcome)) {
-  document.title = 'REFUSED';
-  document.getElementById('log')!.textContent = `refused: ${outcome.code} — ${outcome.reason}`;
-  throw new Error(outcome.reason);
-}
+/*
+ * THROUGH `die`, NOT THROUGH AN INLINE LADDER, AND THAT IS THE ONLY PATH A REAL READER TAKES.
+ *
+ * This was `document.title='REFUSED'; log.textContent=...; throw`. It set the title and printed a line
+ * the harness's print CSS hides, and it never called `showRefusal` — which is the ONLY code that names
+ * the refusal in the flat table and the only code that HIDES the dead canvas. Measured in a browser
+ * with WebGL2 genuinely unavailable: title REFUSED, a 1280x800 `display:block` canvas sitting above the
+ * data, and `#lcx-fallback .refusal` = null. The reader got an unexplained table under a dead rectangle.
+ *
+ * `?refuse=1` could never catch it: that switch is handled five lines above, so the audit's "no WebGL"
+ * pass never reaches this branch at all.
+ */
+if (!isStage(outcome)) die(`stage: ${outcome.code} — ${outcome.reason}`);
 const stage = outcome;
 const gl = stage.gl;
 
@@ -233,7 +289,6 @@ const DOF_ON = params.get('dof') !== '0' && Q.dof;
    distinguish that from its own inverse, which is why the first look was inconclusive. */
 const DIAG_SKY = { zenith: [1.6, 0.05, 0.05] as const, horizon: [0.05, 0.08, 1.6] as const, ground: [0.05, 1.2, 0.05] as const };
 const SKY = DIAG_FLAG ? DIAG_SKY : undefined;
-const REPEAT = Math.max(1, Number(params.get('repeat') ?? 1));
 function frame() {
   const vp = viewProjection(view, W / H);
   const eye = eyeOf(view);
@@ -294,24 +349,65 @@ frame();
    ~100 microseconds and `gl.finish()` returns on flush rather than on completion, so a
    single-frame number is noise. 600 frames back to back, then divide — and a `readPixels`
    at the end to force the GPU to actually finish the work before the clock is read. */
-function measure(frames: number): number {
-  frame();
+/*
+ * THE SWEEP HAS A WALL-CLOCK CEILING, AND A FRAME CEILING IS NOT ONE.
+ *
+ * This loop is synchronous, so an unbounded count is an unbounded main-thread block: `?frames=1e9` left
+ * the renderer process unable to service a Playwright evaluation at all — the harness reported a
+ * timeout, which names the waiter rather than the loop, and E9's task page polls the same title through
+ * an iframe. Clamping the COUNT alone does not fix it: 20000 frames of this scene under SwiftShader is
+ * over an hour. So the sweep also stops on the clock and reports how many frames it actually timed,
+ * because a truncated sweep that says so is a measurement and one that does not is a lie about n.
+ */
+/*
+ * 4 SECONDS, AND THE BUDGET IS SPENT AGAINST A MEASURED FRAME COST RATHER THAN AGAINST THE CLOCK INSIDE
+ * THE LOOP — because a clock inside the loop measures the wrong thing, and this cost a real measurement.
+ *
+ * The first version checked `performance.now() - t0 > SWEEP_BUDGET_MS` per iteration and looked correct.
+ * Measured on `?frames=1e9`: it stopped after 833 frames and the page took **160 seconds**, reporting
+ * `msPerFrame: 191.7`. The reason is the same one the trailing `readPixels` exists for — the driver QUEUES
+ * work, so 833 frames of SwiftShader were submitted in 4 s of CPU time and the sync at the end then blocked
+ * for the 156 s of GPU work behind them. An in-loop clock bounds SUBMISSION, not execution.
+ *
+ * So the warm-up frame — which is already followed by a `readPixels` sync, and is the most expensive frame
+ * because it pays shader upload — is TIMED, and the loop count is capped at what fits the budget at that
+ * cost. Conservative in the right direction: the estimate is high, so the sweep finishes early rather than
+ * late. The in-loop clock stays as a second bound for the case where frames get slower mid-sweep.
+ */
+const SWEEP_BUDGET_MS = 4000;
+function measure(frames: number): { msPerFrame: number; measured: number } {
   const px = new Uint8Array(4);
+  /* The warm-up, TIMED. `readPixels` cannot be satisfied until the frame exists, so this measures execution
+     rather than submission — which is the whole reason it is the number the cap is computed from. */
+  const warm0 = performance.now();
+  frame();
   gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  const pilotMs = Math.max(0.01, performance.now() - warm0);
+  const cap = Math.min(frames, Math.max(1, Math.floor(SWEEP_BUDGET_MS / pilotMs)));
   const t0 = performance.now();
-  for (let i = 0; i < frames; i++) frame();
+  let measured = 0;
+  for (let i = 0; i < cap; i++) {
+    frame();
+    measured++;
+    if (performance.now() - t0 > SWEEP_BUDGET_MS) break;
+  }
   gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
-  return (performance.now() - t0) / frames;
+  return { msPerFrame: (performance.now() - t0) / measured, measured };
 }
 
-/* FRAME COUNT IS A PARAMETER, because the two things this page is for need different values.
-   The capture harness runs under swiftshader (software rasterisation) where 600 frames of a
-   shadowed scene takes minutes — so it asks for a handful, just enough to prove the frame is
-   drawn. The real measurement runs on the actual GPU and asks for the full sweep. A number
-   hardcoded for one of those is useless for the other. */
-const FRAMES = Number(params.get('frames') ?? 600);
 const targetProbe = (() => {
-  while (gl.getError() !== gl.NO_ERROR) { /* drain errors from setup so the pass is attributable */ }
+  /*
+   * WHAT THE DRAIN SWALLOWS IS NOW REPORTED, because it was swallowing the field's whole purpose.
+   *
+   * The drain is right: `probeStep` attributes an error to the call that raised it, so it has to start
+   * from a clean flag. But `getError` CLEARS, so everything raised during context creation, renderer
+   * construction and mesh upload used to vanish here — and the report's `glError` field, sampled after
+   * all of this, carried a comment claiming it "is read ONCE" while this file read it four times above.
+   * A GL_INVALID_VALUE from a zero-length matrix cost E0 a day, and it is exactly a setup-class error
+   * this drain would have eaten. So the last code drained is kept and reported as `glDuringSetup`.
+   */
+  let drained = 0;
+  for (let e = gl.getError(); e !== gl.NO_ERROR; e = gl.getError()) drained = e;
   const bad: string[] = [];
   const probeStep = (label: string) => {
     const e = gl.getError();
@@ -327,16 +423,49 @@ const targetProbe = (() => {
     shadowStrength: 0.92, draws, onStep: probeStep,
   });
   const afterDraw = gl.getError();
-  /* RGBA/UNSIGNED_BYTE, not FLOAT: readPixels from an RGBA16F attachment only guarantees the
-     implementation's own colour-read type, and asking for FLOAT is itself an error on some
-     drivers — which would mask the error being hunted. */
-  const buf = new Uint8Array(4);
-  gl.readPixels(W >> 1, H >> 2, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, buf);
+  /*
+   * THE FORMAT IS ASKED FOR, NOT GUESSED — and the guess was wrong on the driver this repo captures on.
+   *
+   * This read was `gl.RGBA, gl.UNSIGNED_BYTE`, chosen by the comment that used to sit here on the
+   * grounds that "asking for FLOAT is itself an error on some drivers". On ANGLE/SwiftShader with an
+   * RGBA16F attachment it is UNSIGNED_BYTE that is the error: measured `glAfterRead: 1282`
+   * (GL_INVALID_OPERATION) with `targetCentre: [0,0,0,0]`. So the probe that exists to prove the frame
+   * reached the target failed, returned black, and said nothing — while the report's separate `glError`
+   * field printed 0, because it is sampled after this failure has already been consumed.
+   *
+   * WebGL2 answers the question directly: IMPLEMENTATION_COLOR_READ_FORMAT/TYPE for the CURRENTLY BOUND
+   * framebuffer is always an accepted pair. Here it is RGBA/HALF_FLOAT. Half floats have no typed array,
+   * so they are read into a Uint16Array and decoded — the values are LINEAR radiance out of the HDR
+   * target, before the tone map, which is what a probe of that target should report.
+   */
+  const readFormat = gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_FORMAT) as number;
+  const readType = gl.getParameter(gl.IMPLEMENTATION_COLOR_READ_TYPE) as number;
+  const halfToFloat = (h: number): number => {
+    const s = (h & 0x8000) ? -1 : 1, e = (h >> 10) & 0x1f, f = h & 0x3ff;
+    if (e === 0) return s * f * 2 ** -24;
+    if (e === 31) return f === 0 ? s * Infinity : NaN;
+    return s * (1 + f / 1024) * 2 ** (e - 15);
+  };
+  let centre: number[];
+  if (readType === gl.HALF_FLOAT) {
+    const buf = new Uint16Array(4);
+    gl.readPixels(W >> 1, H >> 2, 1, 1, readFormat, readType, buf);
+    centre = Array.from(buf, (h) => Number(halfToFloat(h).toFixed(4)));
+  } else if (readType === gl.FLOAT) {
+    const buf = new Float32Array(4);
+    gl.readPixels(W >> 1, H >> 2, 1, 1, readFormat, readType, buf);
+    centre = Array.from(buf, (v) => Number(v.toFixed(4)));
+  } else {
+    const buf = new Uint8Array(4);
+    gl.readPixels(W >> 1, H >> 2, 1, 1, readFormat, readType, buf);
+    centre = Array.from(buf);
+  }
   const afterRead = gl.getError();
-  return { centre: Array.from(buf), afterDraw, afterRead, bad };
+  return { centre, afterDraw, afterRead, bad, drained, readFormat, readType };
 })();
 const tris = triangleCount(groundGeo) + triangleCount(boxGeo) + triangleCount(ballGeo);
-const msPerFrame = measure(Math.max(1, FRAMES));
+const sweep = measure(FRAMES);
+const msPerFrame = sweep.msPerFrame;
 const probe = (() => {
   const vp = viewProjection(view, W / H);
   // Where does the top of the box land in NDC? Off-screen or behind the eye both look identical
@@ -407,17 +536,32 @@ const report = {
    * (GL_INVALID_VALUE from a zero-length matrix, complete framebuffer, no refusal anywhere) and then never
    * added the check that would have caught it in one frame.
    *
-   * It is read ONCE, here, because getError CLEARS the flag — a second read anywhere would return 0 and
-   * make this field a lie about a state it had itself consumed.
+   * IT IS THE POST-SETUP WINDOW ONLY, and the comment here used to claim otherwise: "read ONCE, here,
+   * because getError CLEARS the flag". This file reads the flag four times ABOVE this line — the
+   * deliberate drain in `targetProbe`, then `probeStep`, `afterDraw` and `afterRead` — so this field can
+   * only ever see errors raised between that last read and this one. A real GL_INVALID_VALUE raised
+   * during context creation or mesh upload reads as 0 here, which is what made the claim false.
+   *
+   * The window each field covers is now stated rather than implied: `glDuringSetup` is what the drain
+   * swallowed, `failingCalls`/`glAfterDraw`/`glAfterRead` cover the probe frame, and this covers
+   * everything after it. E2 and E8 carry the same comment block and genuinely do read once.
    */
   glError: gl.getError(),
+  /* What the probe's drain consumed — 0 means context creation, renderer construction and every mesh
+     upload raised nothing. Non-zero is a setup fault that `glError` above is structurally blind to. */
+  glDuringSetup: targetProbe.drained,
   /* Empty means every brand hex round-tripped exactly through this frame's own pipeline. */
   brandFidelity: brandFailures,
   hdr: stage.hdr,
   eye: eyeOf(view).map((v) => Number(v.toFixed(2))),
   boxTopNdc: probe.ndc,
   boxTopW: probe.w,
+  /* LINEAR radiance out of the HDR target at (W/2, H/4), before the tone map — see the read in
+     `targetProbe`. All four channels zero means the frame never reached the target, which is the one
+     thing this probe exists to distinguish from a frame that did. */
   targetCentre: targetProbe.centre,
+  targetReadFormat: `0x${targetProbe.readFormat.toString(16)}`,
+  targetReadType: `0x${targetProbe.readType.toString(16)}`,
   failingCalls: targetProbe.bad,
   glAfterDraw: targetProbe.afterDraw,
   glAfterRead: targetProbe.afterRead,
@@ -427,8 +571,16 @@ const report = {
   dprScale: SCALE,
   aoEnabled: AO_ON,
   dofEnabled: DOF_ON,
-  frames: FRAMES,
+  /* THE VALUE MEASURED, NOT THE VALUE ASKED FOR. `frames` used to report the raw parameter while the
+     loop ran `Math.max(1, FRAMES)`, so `frames=0` and `frames=-5` published a single-frame time — which
+     the comment on `measure` calls noise — as a 0-frame and a -5-frame sweep. `numParam` clamps once,
+     and anything it had to clamp is named in `paramClamps` rather than absorbed. */
+  frames: sweep.measured,
+  framesRequested: FRAMES,
+  /* True when the wall-clock ceiling in `measure` cut the sweep short — see it there. */
+  sweepTruncated: sweep.measured < FRAMES,
   repeat: REPEAT,
+  paramClamps,
   msPerFrame: Number(msPerFrame.toFixed(3)),
   fps: Math.round(1000 / msPerFrame),
   /*

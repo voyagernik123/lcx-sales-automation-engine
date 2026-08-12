@@ -30,6 +30,7 @@
 import type { Mat4 } from '../math';
 import { stageRefusal } from '../stage';
 import type { Stage, StageRefusal } from '../stage';
+import { savePassState, restorePassState, releaseTextureUnits } from './passState';
 
 /**
  * Texture dimensions for a given capacity.
@@ -422,6 +423,17 @@ export function createParticleField(
     slots, width, height,
 
     step(o) {
+      /*
+       * SAVED FIRST, RESTORED ON EVERY EXIT — including the `bindOut` failure below, which had already
+       * bound this field's framebuffer before deciding to give up.
+       *
+       * What this pass used to leave behind, measured for a 1024-slot field: VIEWPORT
+       * "0,0,640,400 -> 0,0,32,32", DEPTH_TEST "true -> false", ACTIVE_TEXTURE "0 -> 1". A caller that
+       * stepped after binding its scene target then drew the whole rest of the frame into a 32x32
+       * corner with no GL error and no refusal. E3 avoids it by stepping first and says so in a
+       * comment — but a comment in one harness is not an enforcement for the next one.
+       */
+      const prev = savePassState(gl);
       const sources = o.sources.slice(0, 8);
       const sched = emissionSchedule(sources, o.dtSeconds, carry);
       carry = sched.carry;
@@ -451,7 +463,7 @@ export function createParticleField(
         }
       }
 
-      if (!bindOut(stateB, velB)) return;
+      if (!bindOut(stateB, velB)) { restorePassState(gl, prev); return; }
       gl.viewport(0, 0, width, height);
       gl.disable(gl.DEPTH_TEST);
       gl.disable(gl.BLEND);
@@ -491,10 +503,14 @@ export function createParticleField(
       // positions against last frame's velocities, which is a stable-looking half-speed drift.
       const ts = stateA; stateA = stateB; stateB = ts;
       const tv = velA; velA = velB; velB = tv;
-      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      /* Both state textures released and the caller's framebuffer, viewport and enable-state put back.
+         `draw` below already did the units; `step` did neither. */
+      releaseTextureUnits(gl, 2);
+      restorePassState(gl, prev);
     },
 
     draw(o) {
+      const prev = savePassState(gl);
       const sources = o.sources.slice(0, 8);
       gl.useProgram(drawProg);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, stateA);
@@ -530,12 +546,13 @@ export function createParticleField(
       gl.bindVertexArray(vao);
       gl.drawArrays(gl.POINTS, 0, slots);
       gl.bindVertexArray(null);
-      gl.depthMask(true);
-      gl.disable(gl.BLEND);
       /* Texture units RELEASED. E0 lost three passes to a feedback loop because AO left the scene
-         depth bound and the next pass wrote to the texture it was still reading. */
-      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, null);
-      gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, null);
+         depth bound and the next pass wrote to the texture it was still reading.
+         The enable-state is RESTORED rather than assumed: this used to end with `depthMask(true)` and
+         `disable(BLEND)`, which is a restore only for a caller whose state was already that, while the
+         depth test it enabled was left on regardless. */
+      releaseTextureUnits(gl, 2);
+      restorePassState(gl, prev);
     },
 
     readState() {

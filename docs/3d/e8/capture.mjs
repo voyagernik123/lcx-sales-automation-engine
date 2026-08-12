@@ -57,7 +57,17 @@ for (const [name, reduced, q] of [['live', false, ''], ['no-aniso', false, '&ani
     if (!el) return null;
     return {
       rows: el.querySelectorAll('tbody tr').length,
-      hidden: getComputedStyle(el).display === 'none',
+      /*
+       * MEASURED OFF THE LAYOUT, NOT OFF `display`, and the old check would now FAIL A WORKING PAGE.
+       * The shared fallback hid itself with `display: none` until that was found to prune the table out
+       * of the accessibility tree on every success path — the exact reason it is built unconditionally —
+       * so success now CLIPS it to a 1x1 box instead. `display` is `block` in both states, so a test for
+       * `none` reports a correctly hidden fallback as still visible.
+       * Both halves are asserted: the flag the stylesheet keys off, and the box a reader actually sees.
+       * Neither a `markRendered()` that never ran nor a stylesheet that stopped clipping can pass.
+       */
+      hidden: el.getAttribute('data-rendered') === '1'
+        && el.getBoundingClientRect().width <= 1 && el.getBoundingClientRect().height <= 1,
       refusal: el.querySelector('.refusal')?.textContent?.slice(0, 40) ?? null,
     };
   });

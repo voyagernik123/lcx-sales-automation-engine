@@ -25,10 +25,17 @@
  *
  * ── THE FOG IS LOAD-BEARING, NOT ATMOSPHERE ──────────────────────────────────────────
  * If depth is the time axis then fog is the reading limit on that axis, so its density is a claim
- * about legibility and is calibrated against one: `DAYS_PER_METRE` and the fog's e-folding height are
- * chosen so the distance at which fog reaches 95% lands where DOM text has become unreadable anyway.
- * A fog tuned by eye would put the visual horizon and the legibility horizon in different places, and
- * the frame would then promise a record it cannot deliver.
+ * about legibility. A fog tuned by eye would put the visual horizon and the legibility horizon in
+ * different places, and the frame would then promise a record it cannot deliver.
+ *
+ * THIS PARAGRAPH USED TO CLAIM THE TWO WERE CO-LOCATED — "the distance at which fog reaches 95% lands
+ * where DOM text has become unreadable anyway" — and that was never measured. It is wrong: 95% fog is
+ * at 26 m by construction (see `FOG_DENSITY`), while the measured AA limit on this type falls between
+ * 11.0 m and 12.2 m. What IS true, and is the number that matters, is that the geometric cut at
+ * `LEGIBLE_M` = 13 m sits just PAST the measured contrast limit rather than short of it — so the
+ * distance test never showed text the contrast test would refuse. The reading limit is now taken from
+ * the contrast measurement rather than from either of those distances; the visual horizon is the one
+ * the corridor's length wanted, and the two are separate claims because they are separate facts.
  */
 import {
   createStage, isStage, box, uploadMesh, createLitRenderer, createTarget3D,
@@ -42,6 +49,29 @@ import {
 import { installFlatFallback } from '../_shared/flatFallback.js';
 
 const params = new URLSearchParams(location.search);
+
+/*
+ * A NUMERIC URL PARAMETER, VALIDATED — and a non-numeric one REFUSES rather than falling back silently.
+ *
+ * `Number('abc')` is NaN, and `Math.max(1, Math.min(3, NaN))` is NaN, not the default: Math.max propagates
+ * NaN rather than rejecting it. So `?scale=abc` produced a NaN canvas size, and a NaN size is a canvas of
+ * zero area — a blank frame with every program compiled and no error anywhere. E0 through E4 were given this
+ * treatment by the pen-test; E5 through E8 were not, so they still had it.
+ *
+ * A CLAMP IS RECORDED, NOT SILENT. `?scale=99` is a request the harness cannot honour, and honouring 3
+ * without saying so means the report's resolution disagrees with what the reader asked for.
+ */
+const badParams: string[] = [];
+const paramClamps: string[] = [];
+function numParam(name: string, dflt: number, lo: number, hi: number): number {
+  const raw = params.get(name);
+  if (raw === null) return dflt;
+  const v = Number(raw);
+  if (!Number.isFinite(v)) { badParams.push(`${name}=${raw}`); return dflt; }
+  const clamped = Math.max(lo, Math.min(hi, v));
+  if (clamped !== v) paramClamps.push(`${name}=${raw} used as ${clamped}`);
+  return clamped;
+}
 /*
  * THE QUALITY LADDER, WIRED. E9's `qualitySettings` is authoritative for the EFFECTS this frame runs:
  * ambient occlusion, depth of field, shadow-map size, and (where present) particle capacity and raymarch
@@ -67,8 +97,10 @@ const AO_ON = params.get('ao') !== '0' && Q.ao;
    available. That is the frame lying about its own reading limit, which is exactly what the fog is
    for, so `?fog=0` is the capture that shows what the honesty costs. */
 const FOG_ON = params.get('fog') !== '0';
-const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
-const FRAMES = Number(params.get('frames') ?? 300);
+const SCALE = numParam('scale', 1, 1, 3);
+/* Bounded at both ends: frames=0 or -5 would publish a one-frame time as an n-frame
+   sweep, and Math.trunc because a fractional loop bound is a fractional divisor two lines later. */
+const FRAMES = Math.trunc(numParam('frames', 300, 1, 20000));
 
 const W = 1200 * SCALE, H = 720 * SCALE;
 const canvas = document.getElementById('c') as HTMLCanvasElement;
@@ -177,6 +209,14 @@ const fallback = installFlatFallback({
   })),
 });
 fallbackRef = fallback;
+
+/* A NONSENSICAL PARAMETER REFUSES, and it refuses AFTER the flat fallback exists so the reader still gets
+   the data. Drawn at a NaN size the canvas has zero area: a blank frame, every program compiled, no error. */
+if (badParams.length > 0) {
+  die(`BAD_PARAM: ${badParams.join(', ')} — not a number, so the view was not drawn rather than `
+    + 'drawn at a nonsensical size. Nothing about the underlying measurements has changed; correct '
+    + 'the URL and reload.');
+}
 
 /*
  * A SYNTHETIC REFUSAL, SO THE FALLBACK CAN BE CAPTURED. §6 rule 8 is "every claim gets a capture", and
@@ -579,6 +619,78 @@ wrap.appendChild(overlay);
    the instrumentation would let the numbers stay true while the picture stopped being. */
 const fogAt = (dist: number): number => (FOG_DENSITY <= 0 ? 0 : 1 - Math.exp(-FOG_DENSITY * dist));
 
+/*
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * READABILITY, MEASURED OFF THE FRAME — because "readable" was a metres test wearing the word.
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ *
+ * WHAT WENT WRONG: the frame printed `READABLE TO 4.0 d` and the README repeated it, while the record
+ * that SET that horizon carried its actor at 2.56:1 and its header at 2.65:1 against its own slab —
+ * below the 4.5:1 WCAG AA floor and below even the 3:1 large-text allowance. The horizon came from
+ * `distance > LEGIBLE_M`, which is a distance test: it measures how many screen pixels a glyph gets and
+ * then answers a question about contrast. Nothing anywhere in the environment looked at how dark the
+ * type had become, so the fog — which this file deliberately lets eat the text — could take a record
+ * past legibility while the geometry still called it in range, and the frame asserted a reading limit
+ * it did not reach.
+ *
+ * WHY THIS IS RIGHT: the background beneath every record is already in the default framebuffer once
+ * `measure()` has run, and the type's effective alpha is exactly `line opacity x element opacity`, both
+ * of which this file owns. So the composited glyph colour is computable rather than guessable, and the
+ * comparison is the same WCAG ratio a reader's own checker would compute. It is E3's pattern after
+ * 5bcb99a: a pixel read beats looking, and it also beats reasoning about distance.
+ *
+ * Best-possible, not average: these ratios are for a FULLY covered glyph pixel. An antialiased edge is
+ * worse than this. A run that fails here fails for certain.
+ */
+const relLum = (r: number, g: number, b: number): number => {
+  const f = (v: number): number => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+};
+const ratioOf = (a: number, b: number): number => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+/*
+ * THE BRIGHTEST BACKGROUND PIXEL IN THE BOX, not the mean. All the type here is light, so a light
+ * background is the worst case; a mean would let a bright patch under a word average away against the
+ * dark slab beside it and report a contrast no glyph actually has. The box is in CSS pixels, which is
+ * what the overlay is laid out in — `readPixels` wants device pixels and counts rows from the bottom,
+ * which is what `SCALE` and the `H - 1 -` are doing.
+ */
+const brightestBehind = (
+  cx: number, cy: number, halfX: number, halfY: number,
+): [number, number, number] => {
+  const x0 = Math.max(0, Math.min(W - 1, Math.round((cx - halfX) * SCALE)));
+  const x1 = Math.max(x0, Math.min(W - 1, Math.round((cx + halfX) * SCALE)));
+  const t0 = Math.max(0, Math.min(H - 1, Math.round((cy - halfY) * SCALE)));
+  const t1 = Math.max(t0, Math.min(H - 1, Math.round((cy + halfY) * SCALE)));
+  const w = x1 - x0 + 1, h = t1 - t0 + 1;
+  const px = new Uint8Array(4 * w * h);
+  gl.readPixels(x0, H - 1 - t1, w, h, gl.RGBA, gl.UNSIGNED_BYTE, px);
+  let best: [number, number, number] = [0, 0, 0], bestL = -1;
+  for (let i = 0; i < w * h; i++) {
+    const r = px[i * 4]!, g = px[i * 4 + 1]!, b = px[i * 4 + 2]!;
+    const l = relLum(r, g, b);
+    if (l > bestL) { bestL = l; best = [r, g, b]; }
+  }
+  return best;
+};
+/* Source-over in sRGB space, which is what the compositor does when it lays a DOM text layer over a
+   canvas — the alpha is applied to the ENCODED bytes, not to linear light, so this composite has to
+   happen before `relLum` and not after it. */
+const overBg = (
+  bg: readonly [number, number, number], fg: readonly [number, number, number], a: number,
+): number => relLum(
+  bg[0] + a * (fg[0] - bg[0]), bg[1] + a * (fg[1] - bg[1]), bg[2] + a * (fg[2] - bg[2]),
+);
+/*
+ * 4.5:1 — WCAG 2.1 AA for body text, and deliberately NOT the 3:1 large-text allowance: the largest run
+ * in a record is 11 px and "large" starts at 18.66 px bold or 24 px, so nothing on this frame qualifies.
+ * Stated once, here, so that "readable" means the same thing on the frame, in the report and in the
+ * README rather than three slightly different things.
+ */
+const AA_RATIO = 4.5;
+
 const PX_PER_METRE = 190;
 /*
  * SCREEN-SPACE OCCLUSION, because per-wall depth spacing is not enough.
@@ -606,6 +718,59 @@ const inQuad = (q: { x: number; y: number }[], x: number, y: number): boolean =>
   }
   return true;
 };
+
+type Placed = (typeof placed)[number];
+const whenOf = (hrs: number): string => (
+  hrs < 24 ? `${hrs}h ago` : `${(hrs / 24).toFixed(hrs < 72 ? 1 : 0)}d ago`
+);
+const TEXT_WHITE: readonly [number, number, number] = [255, 255, 255];
+/*
+ * THE THREE LINES OF A RECORD, AS DATA — and there are two separate reasons the style could not stay
+ * inside a template string.
+ *
+ * ONE: the readability measurement above and the paint pass below have to be describing the same
+ * pixels. While the per-line alpha existed only inside a style string, only the paint pass could see
+ * it, and the report was free to publish a reading limit for type it had never looked at.
+ *
+ * TWO: the dimming is `opacity` rather than a colour alpha. Under `forced-colors: active` the browser
+ * replaces every colour and keeps opacity, so a hierarchy expressed in alpha disappears in that mode
+ * while one expressed in opacity survives — and with it the fog recession this environment's honesty
+ * claim rests on. For a text-only leaf element the two render identically.
+ *
+ * AND ALL THREE ARE NOW FULLY OPAQUE, which is the second half of the "READABLE TO 4.0 d" fix.
+ *
+ * The header sat at 0.66 and the actor at 0.74 to rank the three lines by importance. Measured, that
+ * ranking was costing the frame its reach: the fog already multiplies every line by `1 - 0.75 x haze`,
+ * so a line starting at 0.66 crossed AA at NINE HOURS while the action name beside it was still at
+ * 8.6:1 four days back. Two runs of type were being spent on a hierarchy the type already carries —
+ * 9 px/600 letterspaced caps, 11 px/700, 10.5 px/400 are three visibly different things at equal
+ * opacity. So the fog is now the ONLY thing that dims a record, which is what this environment claims
+ * fog is for, and a record's three lines pass or fail together: an audit record whose action you can
+ * read and whose actor you cannot is the truncation failure in a different costume.
+ */
+const RECORD_LINES: readonly { css: string; opacity: number; text: (p: Placed) => string }[] = [
+  {
+    css: 'font:600 9px/1 ui-monospace,monospace;letter-spacing:.15em',
+    opacity: 1,
+    text: (p) => `${p.verdict} · ${whenOf(p.hoursAgo)}`,
+  },
+  {
+    /* 11 px, not 14. `campaign.publish` is 16 characters, and at 14 px monospace that is 134 px in a
+       118 px box — `overflow:hidden` then silently served `campaign.publ` as though it were the
+       action's name. A truncated identifier in an audit record is worse than no record, so this is
+       sized against the LONGEST action present (16 chars) with the padding cut to 5 px: 16 x 6.6 px
+       is 106 px inside a 108 px box. `actionOverflow` in the report re-checks it, because the next
+       action name someone adds will be longer than this one. */
+    css: 'font:700 11px/1.05 ui-monospace,monospace',
+    opacity: 1,
+    text: (p) => p.action,
+  },
+  {
+    css: 'font:400 10.5px/1.2 ui-monospace,monospace',
+    opacity: 1,
+    text: (p) => p.actor,
+  },
+];
 
 const decided = [...placed].sort((a, b) => a.distance - b.distance).map((p) => {
   /*
@@ -675,40 +840,87 @@ const decided = [...placed].sort((a, b) => a.distance - b.distance).map((p) => {
     )).length, 0)
   );
   const occluded = coveredCorners >= 2;
-  const shown = !refusal && !backFacing && !withheld && !tooFar && !edgeOn && !occluded;
+  /*
+   * A FIFTH REASON, AND IT IS THE ONE THE FRAME WAS LYING ABOUT: the type is too faint to read.
+   *
+   * `tooFar` above is a metres test. It cannot see contrast, and contrast is what the fog actually
+   * takes away — at 11 m the element is only 46% opaque, so the actor line composited to 2.56:1 while
+   * `BEYOND_LEGIBLE_RANGE` still said this record was in range and the HUD published it as the reading
+   * limit. Measured here against the frame's own pixels, per line, so a record only counts as readable
+   * when every run of type it carries clears AA.
+   *
+   * Element opacity is computed HERE and carried to the paint pass, because two call sites for the same
+   * fog law is two chances for the measurement to describe something the reader is not being shown.
+   *
+   * An off-frame sample box REFUSES rather than clamping to the frame edge: a clamped read measures a
+   * background that is not behind the text, and inventing a ratio is worse than naming the absence —
+   * §6 rule 6 applied to the instrument rather than to the data.
+   */
+  const opacity = 1 - 0.75 * fogAt(p.distance);
+  const sampleBox = isQuadRefusal(proj) ? null : (() => {
+    const xs = proj.screen.map((c) => c.x), ys = proj.screen.map((c) => c.y);
+    const [x0, x1] = [Math.min(...xs), Math.max(...xs)];
+    const [y0, y1] = [Math.min(...ys), Math.max(...ys)];
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+    if (cx < 0 || cx > CSS_W || cy < 0 || cy > CSS_H) return null;
+    return { cx, cy, hx: Math.max(1, (x1 - x0) / 4), hy: Math.max(1, (y1 - y0) / 4) };
+  })();
+  const bg = sampleBox ? brightestBehind(sampleBox.cx, sampleBox.cy, sampleBox.hx, sampleBox.hy) : null;
+  const textRatios = bg
+    ? RECORD_LINES.map((ln) => Number(
+      ratioOf(overBg(bg, TEXT_WHITE, ln.opacity * opacity), relLum(bg[0], bg[1], bg[2])).toFixed(2),
+    ))
+    : null;
+  const minTextRatio = textRatios ? Math.min(...textRatios) : null;
+  const tooFaint = minTextRatio === null || minTextRatio < AA_RATIO;
+  const shown = !refusal && !backFacing && !withheld && !tooFar && !edgeOn && !tooFaint && !occluded;
   if (shown && !isQuadRefusal(proj)) shownQuads.push(proj.screen.map((c) => ({ x: c.x, y: c.y })));
 
   /* `ew`/`eh` travel with the decision, because the paint pass below is a separate loop and the
      element size is computed here. */
-  return { p, proj, shown, ew, eh, refusal, backFacing, withheld, tooFar, edgeOn, occluded, widthPx, coveredCorners };
+  return {
+    p, proj, shown, ew, eh, opacity, refusal, backFacing, withheld, tooFar, edgeOn, occluded,
+    widthPx, coveredCorners, textRatios, minTextRatio,
+  };
 });
 
 /* PAINTED FAR TO NEAR, so a nearer element covers a further one — the opposite order to the decision
    pass above, and for the opposite reason. */
 for (const d of [...decided].sort((a, b) => b.p.distance - a.p.distance)) {
-  const { p, proj, shown, ew, eh } = d;
+  const { p, proj, shown, ew, eh, opacity } = d;
   if (shown && !isQuadRefusal(proj)) {
-    /* Contrast tracks the fog, so a record two-thirds hazed does not present crisp black-on-white
-       text over a wall that has visibly faded. The text obeys the same atmosphere as the slab. */
-    const haze = fogAt(p.distance);
     const el = document.createElement('div');
+    /* Contrast tracks the fog, so a record two-thirds hazed does not present crisp text over a wall
+       that has visibly faded. The text obeys the same atmosphere as the slab, and `opacity` is the ONE
+       owner of that law — computed in the decision pass so the measured ratios above describe exactly
+       these pixels. */
     el.style.cssText = `position:absolute;left:0;top:0;width:${ew}px;height:${eh}px;`
       + `transform-origin:0 0;transform:${proj.transform};display:flex;flex-direction:column;`
       + `justify-content:center;gap:5px;padding:0 5px;overflow:hidden;`
-      + `opacity:${(1 - 0.75 * haze).toFixed(3)};-webkit-font-smoothing:antialiased`;
-    const hrs = p.hoursAgo;
-    const when = hrs < 24 ? `${hrs}h ago` : `${(hrs / 24).toFixed(hrs < 72 ? 1 : 0)}d ago`;
-    el.innerHTML =
-      `<div style="font:600 9px/1 ui-monospace,monospace;letter-spacing:.15em;color:rgba(255,255,255,0.66)">`
-      + `${p.verdict} · ${when}</div>`
-      /* 12 px, not 14. `campaign.publish` is 16 characters, and at 14 px monospace that is 134 px in a
-         118 px box — `overflow:hidden` then silently served `campaign.publ` as though it were the
-         action's name. A truncated identifier in an audit record is worse than no record, so this is
-         sized against the LONGEST action present (16 chars) with the padding cut to 5 px: 16 x 6.6 px
-         is 106 px inside a 108 px box. `actionOverflow` in the report re-checks it, because the next
-         action name someone adds will be longer than this one. */
-      + `<div style="font:700 11px/1.05 ui-monospace,monospace;color:#fff">${p.action}</div>`
-      + `<div style="font:400 10.5px/1.2 ui-monospace,monospace;color:rgba(255,255,255,0.74)">${p.actor}</div>`;
+      + `opacity:${opacity.toFixed(3)};-webkit-font-smoothing:antialiased`;
+    /*
+     * ELEMENTS AND `textContent`, NEVER `innerHTML` — and it is the two fields this environment exists
+     * to show that were interpolated raw.
+     *
+     * WHAT WENT WRONG: with `action` and `actor` written into an HTML string, a value containing a tag
+     * was parsed as markup. Measured with `action: 'a<b>c'` and `actor: "O'Brien & Sons <ops>"`, the
+     * unclosed `<b>` was reparented ACROSS the sibling div boundary: the action read `ac`, the actor
+     * lost `<ops>` entirely, and the actor inherited the 700-weight styling that on this frame MEANS
+     * "this is the action name". Every assertion the harness owns passed while that was on screen —
+     * zero clipped text, no page errors, 8 of 25 shown — and the flat table beside it, which escapes
+     * its cells, showed the truth. That is a frame disagreeing with its own fallback about what a
+     * governed action was, which is the worst thing this file can do.
+     *
+     * WHY THIS IS RIGHT: these lines are pure text with a per-line style. Markup buys nothing here, and
+     * `textContent` closes the cross-field leak structurally — a sibling can no longer be reparented by
+     * an unbalanced tag in the one before it, so no escaping function has to be remembered later.
+     */
+    for (const line of RECORD_LINES) {
+      const row = document.createElement('div');
+      row.style.cssText = `${line.css};color:#fff;opacity:${line.opacity}`;
+      row.textContent = line.text(p);
+      el.appendChild(row);
+    }
     overlay.appendChild(el);
   }
 }
@@ -716,25 +928,50 @@ for (const d of [...decided].sort((a, b) => b.p.distance - a.p.distance)) {
 /* `occluded` is deliberately not destructured: `hiddenBecause` below derives the reason from the same
    predicates in priority order, so binding it here only created a second, silently-unused copy of a fact
    that already has one owner. Caught by noUnusedLocals on this harness's first ever type-check. */
-const projected = decided.map(({ p, shown, refusal, backFacing, withheld, tooFar, edgeOn, widthPx, coveredCorners }) => {
+const projected = decided.map(({
+  p, shown, refusal, backFacing, withheld, tooFar, edgeOn, widthPx, coveredCorners,
+  textRatios, minTextRatio,
+}) => {
   return {
     i: p.i, verdict: p.verdict, hoursAgo: p.hoursAgo,
     distance: Number(p.distance.toFixed(2)),
     fog: Number(fogAt(p.distance).toFixed(3)),
     widthPx: Math.round(widthPx),
     coveredCorners,
+    /* The measured WCAG ratio of each of the three runs of type, in `RECORD_LINES` order, against the
+       frame's own pixels behind them. `null` means the sample box was off frame and the harness declines
+       to guess — see the refusal in the decision pass. */
+    textRatios,
+    minTextRatio,
     shown,
-    /* NAMED, NOT COUNTED. Three states, three fields, never summed. */
+    /* NAMED, NOT COUNTED. Six states, six names, never summed — an operator does something different
+       about each, and `BELOW_READABLE_CONTRAST` is the one the HUD used to absorb into its headline. */
     hiddenBecause: shown ? null : withheld ? 'WITHHELD' : refusal ? refusal
-      : backFacing ? 'BACK_FACING' : edgeOn ? 'EDGE_ON' : tooFar ? 'BEYOND_LEGIBLE_RANGE' : 'OCCLUDED',
+      : backFacing ? 'BACK_FACING' : edgeOn ? 'EDGE_ON' : tooFar ? 'BEYOND_LEGIBLE_RANGE'
+        : minTextRatio === null ? 'CONTRAST_UNMEASURABLE'
+          : minTextRatio < AA_RATIO ? 'BELOW_READABLE_CONTRAST' : 'OCCLUDED',
   };
 });
 
 /*
  * THE HORIZON, PRINTED ON THE FRAME. This is the reading a table cannot give: not "here are 25 rows"
  * but "this is how far back you can see, and this is where it stops".
+ *
+ * THREE horizons now, and the third exists because the first was not what its own label said. `READABLE`
+ * is the oldest record whose every run of type MEASURES at or above AA on this frame; `IN RANGE` is the
+ * oldest the geometry would allow, which is what this line used to print under the word "readable"; and
+ * `VISIBLE` is the oldest slab that is lit at all. Printing the geometric figure as the reading limit
+ * over-claimed the frame's reach by days.
  */
 const legibleHours = Math.max(0, ...projected.filter((p) => p.shown).map((p) => p.hoursAgo));
+/*
+ * TAKEN FROM THE PREDICATE, NOT FROM `hiddenBecause`. The first version of this line filtered out the
+ * records NAMED `BEYOND_LEGIBLE_RANGE`, which is not the same set: `hiddenBecause` reports ONE reason in
+ * priority order, so a record that is both edge-on and 41 m away is named `EDGE_ON` and slipped through —
+ * the figure came back 19.25 d, identical to `visibleToDays`, and a horizon that equals the one below it
+ * is a horizon carrying no information. `tooFar` is the distance test itself.
+ */
+const inRangeHours = Math.max(0, ...decided.filter((d) => !d.tooFar).map((d) => d.p.hoursAgo));
 const visibleHours = Math.max(...placed.map((p) => p.hoursAgo));
 const hud = document.createElement('div');
 hud.style.cssText = 'position:absolute;left:18px;top:16px;display:flex;flex-direction:column;gap:7px';
@@ -742,7 +979,9 @@ hud.innerHTML =
   `<div style="font:600 11px/1 ui-monospace,monospace;letter-spacing:.16em;color:#8FB7FF">`
   + `GOVERNED ACTIONS · DEPTH IS TIME</div>`
   + `<div style="font:400 10.5px/1.5 ui-monospace,monospace;color:rgba(196,212,240,0.84)">`
-  + `READABLE TO ${(legibleHours / 24).toFixed(1)} d &nbsp;·&nbsp; VISIBLE TO ${(visibleHours / 24).toFixed(1)} d<br>`
+  + `READABLE TO ${(legibleHours / 24).toFixed(1)} d — MEASURED AT ${AA_RATIO}:1<br>`
+  + `IN RANGE TO ${(inRangeHours / 24).toFixed(1)} d (GEOMETRY) &nbsp;·&nbsp; `
+  + `VISIBLE TO ${(visibleHours / 24).toFixed(1)} d<br>`
   + `${HOURS_PER_METRE} h PER METRE &nbsp;·&nbsp; ${FOG_ON ? 'FOG ON' : 'FOG OFF — reading limit NOT shown'}</div>`
   + `<div style="font:500 10px/1.4 ui-monospace,monospace;color:#E0A94A">SYNTHETIC RECORDS</div>`;
 overlay.appendChild(hud);
@@ -755,31 +994,78 @@ const counts = {
 const legend = document.createElement('div');
 legend.style.cssText = 'position:absolute;right:18px;bottom:16px;display:flex;flex-direction:column;'
   + 'gap:6px;align-items:flex-end;font:500 10.5px/1 ui-monospace,monospace';
+/*
+ * `forced-color-adjust:none` ON THE SWATCHES ONLY, and the measurement is the argument.
+ *
+ * WHAT WENT WRONG: under `forced-colors: active` — Windows High Contrast, and the mode a reader with low
+ * vision is most likely to be in — the browser replaces every author colour. Measured with
+ * `newPage({forcedColors:'active'})`, all three of these swatches computed to `rgb(255,255,255)`: three
+ * distinct hues became ONE white square. The canvas is a bitmap and is untouched, so the slabs stayed
+ * blue, red and steel while the key that maps colour to verdict became three identical boxes. Colour is
+ * the only channel carrying verdict on this frame, so that is the legend being deleted and the render
+ * left behind.
+ *
+ * WHY THIS IS RIGHT, AND WHY ONLY HERE: the swatch is not decoration, it is a sample of a colour the
+ * renderer actually produces, so it is one of the narrow cases where the author's colour must win over
+ * the forced palette. The surrounding TEXT keeps its forced colours — that is the part high contrast
+ * exists to fix — and every entry is still named in words, so the mapping never depends on hue alone.
+ */
 legend.innerHTML = ([
   ['#2C6BFF', `ALLOWED · ${counts.ALLOWED}`],
   ['#C9552B', `BLOCKED · ${counts.BLOCKED}`],
   ['#5C6880', `WITHHELD · ${counts.WITHHELD} (present, unreadable)`],
 ] as const).map(([c, t]) => (
   `<div style="display:flex;align-items:center;gap:7px;color:rgba(196,212,240,0.85)">`
-  + `<span>${t}</span><span style="width:11px;height:11px;background:${c};display:inline-block"></span></div>`
+  + `<span>${t}</span><span style="width:11px;height:11px;background:${c};display:inline-block;`
+  + `forced-color-adjust:none"></span></div>`
 )).join('');
 overlay.appendChild(legend);
 
 /* A depth ruler down the floor, so "depth is time" is a marked axis rather than an assertion. Screen
    space, because it annotates the corridor rather than sitting on a surface in it. */
+const RULER_RGB: readonly [number, number, number] = [196, 212, 240];
+/*
+ * A CONSTANT ALPHA, AND `rulerTicksUnreadable` TO PROVE IT — two defects in one law.
+ *
+ * WHAT WENT WRONG: the tick colour was `rgba(196,212,240,0.85 * (1 - haze))`, and `onFrame` — a
+ * frame-BOUNDS test — was the only thing reported about it, so `rulerOffFrame: 0` was published while
+ * three of the four ticks were effectively not on the glass. Measured at the old law: 1d at alpha 0.463
+ * reached 3.38:1, 3d 1.84:1, 7d 1.25:1, and 14d 0.024 alpha — a maximum difference of 5/255 from its own
+ * background, which is nothing a reader can see. Exactly the defect 5bcb99a fixed for E3's axis one
+ * commit ago, in the environment that then went on counting frame bounds. Worse, the 3d tick sat INSIDE
+ * the reading horizon the same frame was claiming.
+ *
+ * WHY A CONSTANT ALPHA IS THE RIGHT LAW HERE: the comment above states that the ruler annotates the
+ * corridor rather than sitting on a surface in it. Fog is a property of the corridor; an annotation
+ * ABOUT the corridor has no business being attenuated by it, and fogging a screen-space axis label
+ * deletes the axis while leaving the assertion "depth is time" on the frame. The fog at each tick is
+ * still REPORTED, so the depth cue the old law was reaching for is available as a number instead of as
+ * a vanished label. It also survives `forced-colors: active`, where the old alpha did not.
+ */
+const RULER_ALPHA = 0.85;
 const rulerTicks = [1, 3, 7, 14].map((days) => {
   const z = zOf(days * 24);
   const p = projectScreen(vpFinal, [-CORRIDOR_HALF + 0.30, 0.035, z], CSS_W, CSS_H);
   const haze = fogAt(Math.hypot(eye[0] + CORRIDOR_HALF - 0.30, eye[1] - 0.035, eye[2] - z));
-  if (!p.behind && p.sx > 0 && p.sx < CSS_W && p.sy > 0 && p.sy < CSS_H) {
+  const onFrame = !p.behind && p.sx > 0 && p.sx < CSS_W && p.sy > 0 && p.sy < CSS_H;
+  /* Read against the frame's own pixels, at the label's own box: the same instrument the records use, so
+     a tick and a record cannot disagree about what "readable" is. */
+  const bg = onFrame ? brightestBehind(p.sx, p.sy, 13, 7) : null;
+  const ratio = bg
+    ? Number(ratioOf(overBg(bg, RULER_RGB, RULER_ALPHA), relLum(bg[0], bg[1], bg[2])).toFixed(2))
+    : null;
+  if (onFrame) {
     const el = document.createElement('div');
     el.style.cssText = `position:absolute;left:${p.sx.toFixed(1)}px;top:${p.sy.toFixed(1)}px;`
       + `transform:translate(-50%,-50%);font:500 10px/1 ui-monospace,monospace;letter-spacing:.08em;`
-      + `color:rgba(196,212,240,${(0.85 * (1 - haze)).toFixed(3)});white-space:nowrap`;
+      + `color:rgba(${RULER_RGB[0]},${RULER_RGB[1]},${RULER_RGB[2]},${RULER_ALPHA});white-space:nowrap`;
     el.textContent = `${days}d`;
     overlay.appendChild(el);
   }
-  return { days, sx: Math.round(p.sx), sy: Math.round(p.sy), fog: Number(haze.toFixed(3)), onFrame: !p.behind && p.sx > 0 && p.sx < CSS_W };
+  return {
+    days, sx: Math.round(p.sx), sy: Math.round(p.sy), fog: Number(haze.toFixed(3)), onFrame,
+    ratio, readable: ratio !== null && ratio >= AA_RATIO,
+  };
 });
 
 /* Read ONCE, before the report, because two call sites for the same string is two chances for the
@@ -821,6 +1107,9 @@ if (brandFailures.length > 0) {
 }
 
 const report = {
+  /* A clamped parameter is REPORTED, so the resolution in this report cannot silently disagree
+     with what the reader asked for. */
+  paramClamps,
   /* WHICH TIER THIS FRAME IS, so the numbers beside it describe a configuration a reader can reconstruct.
      A tier that cannot be reported is a tier that cannot be trusted. */
   tier: Q.tier,
@@ -838,10 +1127,21 @@ const report = {
   legibleMetres: LEGIBLE_M,
   hdr: stage.hdr,
   eye: eye.map((v) => Number(v.toFixed(2))),
-  /* THE HEADLINE PAIR. Readable-to and visible-to are DIFFERENT horizons, and a frame that reported
-     only one of them would be claiming either more or less reach than it has. */
+  /* THE HEADLINE TRIPLE. Readable-to, in-range-to and visible-to are THREE different horizons, and this
+     used to report the middle one under the name of the first: `readableToDays` was the oldest record the
+     GEOMETRY allowed, computed from `distance > LEGIBLE_M`, while the record that set it carried type at
+     2.56:1. It is now the oldest record whose every run of type MEASURES at or above AA on this frame. */
   readableToDays: Number((legibleHours / 24).toFixed(2)),
+  readableThreshold: AA_RATIO,
+  inRangeToDays: Number((inRangeHours / 24).toFixed(2)),
   visibleToDays: Number((visibleHours / 24).toFixed(2)),
+  /* THE CHECK ON THE HEADLINE, so the printed claim is falsifiable from the report alone: every record
+     the frame shows, and the worst measured ratio among them. If this is ever below `readableThreshold`
+     the word READABLE on the frame is not earned. */
+  worstShownTextRatio: (() => {
+    const rs = projected.filter((p) => p.shown).map((p) => p.minTextRatio ?? 0);
+    return rs.length > 0 ? Math.min(...rs) : null;
+  })(),
   records: placed.length,
   /* A record whose action name will not fit its own box. Zero today; the check exists because the
      next action added will be longer, and a silently truncated identifier is worse than none. */
@@ -864,6 +1164,10 @@ const report = {
   fogFurthest: Math.max(...projected.map((p) => p.fog)),
   rulerTicks,
   rulerOffFrame: rulerTicks.filter((t) => !t.onFrame).length,
+  /* THE FIELD `rulerOffFrame` SHOULD HAVE BEEN. Frame bounds said all four ticks were fine while three of
+     them were 3.4:1, 1.25:1 and 1.04:1 against their own background — a label present in the DOM and
+     absent from the picture. Named by day, and fatal in the capture. */
+  rulerTicksUnreadable: rulerTicks.filter((t) => !t.readable).map((t) => ({ days: t.days, ratio: t.ratio })),
   perRecord: projected,
   glError: gl.getError(),
   triangles: tris,

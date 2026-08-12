@@ -1,5 +1,6 @@
 import type { Mat4 } from '../math.js';
 import type { Stage, StageRefusal } from '../stage.js';
+import { savePassState, restorePassState, releaseTextureUnits } from './passState.js';
 import type { Geometry } from './mesh.js';
 import type { ShadowMap } from './target3d.js';
 import { SKY_GLSL, bindSky, type SkyOptions } from './sky.js';
@@ -434,6 +435,10 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
 
   return {
     shadowPass(lightVP, draws, shadow, onStep) {
+      /* The shadow map's own framebuffer and viewport are bound below and were previously left bound
+         for the caller to notice. Every environment happens to call `target.bind()` next; passState.ts
+         says why "happens to" is not good enough. */
+      const prev = savePassState(gl);
       const step = onStep ?? (() => undefined);
       shadow.bind(); step('shadow.bind');
       gl.clear(gl.DEPTH_BUFFER_BIT);
@@ -454,9 +459,11 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
       }
       gl.bindVertexArray(null);
       gl.cullFace(gl.BACK);
+      restorePassState(gl, prev);
     },
 
     depthPrepass(viewProj, draws) {
+      const prev = savePassState(gl);
       gl.enable(gl.DEPTH_TEST);
       gl.depthFunc(gl.LEQUAL);
       gl.depthMask(true);
@@ -475,9 +482,11 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
       }
       gl.bindVertexArray(null);
       gl.colorMask(true, true, true, true);
+      restorePassState(gl, prev);
     },
 
     draw(o) {
+      const prev = savePassState(gl);
       const step = o.onStep ?? (() => undefined);
       gl.enable(gl.DEPTH_TEST);
       gl.depthFunc(gl.LEQUAL);
@@ -546,7 +555,12 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
         gl.drawElements(gl.TRIANGLES, d.mesh.indexCount, d.mesh.indexType, 0); step('lit drawElements');
       }
       gl.bindVertexArray(null);
-      gl.disable(gl.CULL_FACE);
+      /* THE SHADOW MAP AND THE AO TEXTURE ARE RELEASED, and they were not: this pass left the scene
+         target's own shadow depth on unit 0 and the AO result on unit 1, which is the same feedback
+         hazard dof.ts's note describes and which reported itself three passes later when it bit.
+         `disable(CULL_FACE)` used to stand in for a restore — it is only one if culling was off. */
+      releaseTextureUnits(gl, 2);
+      restorePassState(gl, prev);
     },
 
     dispose() {
