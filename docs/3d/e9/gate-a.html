@@ -1,0 +1,165 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>§7(a) — the decision sheet</title>
+<!--
+  §7 GATES EVERY ENVIRONMENT ON TWO CLAUSES TOGETHER:
+      (a) a stranger stops scrolling
+      (b) an operator still gets their answer at least as fast as the flat version
+
+  (b) has an instrument (task.html) and a machine-reader accuracy trial. (a) HAS NEITHER, AND CANNOT.
+  "A stranger stops scrolling" is a fact about attention in the wild. It is not measurable at a desk by two
+  people who built the thing, and a five-point scale would not make it one — it would make it a number with no
+  instrument behind it, which is the specific failure this programme has already committed twice (a 0.45 ms
+  frame time and a 60 Hz headroom, both measured with something that could not measure them).
+
+  So this page does not measure (a). It makes the JUDGEMENT cheap and even-handed, which is the honest maximum:
+
+    · Both panels are the SAME DATA. The relief panel is the environment; the flat panel is that environment's
+      own fallback, reached through its real refusal path. Not a mock-up and not a different dataset.
+    · Both are at the SURFACE'S REAL PROPORTIONS — 1200x720 — because §5 says a capture at the wrong aspect
+      ratio is as misleading as no capture.
+    · The environment's OWN VERDICT is printed beside it, read from its README's first line at build time, so
+      a decision cannot be made against a claim the environment does not make.
+    · WHICH PANEL IS WHICH IS HIDDEN UNTIL YOU CHOOSE. The relief and flat panels are shuffled per row and the
+      labels only appear after a decision is recorded. Knowing which one cost three weeks is exactly the bias a
+      decision sheet should not carry.
+
+  The output is a judgement with a name on it, not a measurement. That distinction is the point.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #04060b; color: #C4D4F0;
+         font: 400 13px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  main { max-width: 1560px; margin: 0 auto; padding: 24px 24px 80px; }
+  h1 { font: 600 13px/1.2 ui-monospace, monospace; letter-spacing: .16em; text-transform: uppercase;
+       color: #8FB7FF; margin: 0 0 8px; }
+  .lede { color: rgba(196,212,240,.76); max-width: 92ch; margin: 0 0 6px; }
+  .warn { color: #E0A94A; }
+  section.row { border-top: 1px solid #26355A; padding: 22px 0 4px; }
+  .head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+  .env { font: 600 12px/1 ui-monospace, monospace; letter-spacing: .14em; color: #8FB7FF; }
+  .verdict { color: rgba(196,212,240,.7); font-size: 12px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  figure { margin: 0; }
+  figure img { width: 100%; border: 1px solid #26355A; display: block; background: #04060b; }
+  figcaption { font: 500 10.5px/1.4 ui-monospace, monospace; letter-spacing: .08em; color: #6B7A99;
+               margin-top: 5px; text-transform: uppercase; }
+  figcaption.shown { color: #8FB7FF; }
+  .choose { display: flex; gap: 8px; margin: 12px 0 4px; flex-wrap: wrap; align-items: center; }
+  button { font: 600 10.5px/1 ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase;
+           background: transparent; border: 1px solid #26355A; color: #8FB7FF; padding: 8px 12px;
+           cursor: pointer; }
+  button:hover { border-color: #2C6BFF; color: #E9F0FF; }
+  button[aria-pressed="true"] { background: #12326E; border-color: #2C6BFF; color: #E9F0FF; }
+  pre { background: #0B1220; border: 1px solid #26355A; padding: 12px; overflow: auto; max-height: 340px;
+        color: #A8C0E8; }
+  .done { color: #7FB2FF; }
+</style>
+
+<main>
+  <h1>§7(a) · the decision sheet</h1>
+  <p class="lede">
+    §7 gates every environment on <strong>(a) a stranger stops scrolling</strong> and
+    <strong>(b) an operator still gets their answer at least as fast as the flat version</strong>, together.
+    Clause (b) has an instrument. <strong>Clause (a) does not, and cannot</strong> — attention in the wild is
+    not measurable at a desk by the people who built the thing, and a five-point scale would only be a number
+    with no instrument behind it.
+  </p>
+  <p class="lede">
+    So this sheet does not measure (a). It makes the judgement cheap and even-handed: the same data drawn both
+    ways, at the surface's real proportions, with the environment's own verdict beside it — and
+    <strong>which panel is which stays hidden until you choose</strong>, because knowing which one cost three
+    weeks is exactly the bias a decision sheet should not carry.
+  </p>
+  <p class="lede warn" id="count">Loading…</p>
+
+  <div id="rows"></div>
+
+  <section class="row" id="out" style="display:none">
+    <h1>Recorded</h1>
+    <p class="lede">A judgement with a name on it, not a measurement. Paste it into <code>§10.3</code>.</p>
+    <pre id="json"></pre>
+  </section>
+</main>
+
+<script type="module">
+const res = await fetch('./gate-a.json');
+const rows = await res.json();
+const decisions = new Map();
+
+const $rows = document.getElementById('rows');
+const $count = document.getElementById('count');
+
+/*
+ * Shuffled PER ROW, not once for the whole sheet. A single global order lets a reader learn after two rows
+ * that the left panel is always the environment, and every judgement after that is made knowing the answer.
+ */
+const coin = rows.map(() => Math.random() < 0.5);
+
+rows.forEach((r, i) => {
+  const reliefLeft = coin[i];
+  const left = reliefLeft ? r.relief : r.flat;
+  const right = reliefLeft ? r.flat : r.relief;
+  const sec = document.createElement('section');
+  sec.className = 'row';
+  sec.innerHTML =
+    `<div class="head"><span class="env">${r.id} · ${r.name}</span>`
+    + `<span class="verdict">${r.verdict}</span></div>`
+    + `<div class="pair">`
+    + `<figure><img src="${left}" alt="${r.id} panel A"><figcaption data-side="A">Panel A</figcaption></figure>`
+    + `<figure><img src="${right}" alt="${r.id} panel B"><figcaption data-side="B">Panel B</figcaption></figure>`
+    + `</div>`
+    + `<div class="choose">`
+    + `<span style="color:rgba(196,212,240,.7)">Which would make a stranger stop scrolling?</span>`
+    + `<button data-pick="A">Panel A</button>`
+    + `<button data-pick="B">Panel B</button>`
+    + `<button data-pick="neither">Neither</button>`
+    + `<span class="done" data-done></span>`
+    + `</div>`;
+  $rows.appendChild(sec);
+
+  sec.querySelector('.choose').addEventListener('click', (e) => {
+    const pick = e.target.closest('button')?.dataset.pick;
+    if (!pick) return;
+    for (const b of sec.querySelectorAll('.choose button')) {
+      b.setAttribute('aria-pressed', String(b.dataset.pick === pick));
+    }
+    /* Translated from the panel the reader saw to the surface it actually was, which is the only reason the
+       shuffle is safe: the record says "relief" or "flat", never "A" or "B". */
+    const chose = pick === 'neither' ? 'neither' : ((pick === 'A') === reliefLeft ? 'relief' : 'flat');
+    decisions.set(r.id, { id: r.id, name: r.name, chose, panelShown: pick, reliefWasLeft: reliefLeft });
+
+    /* The labels appear only AFTER a decision, so the next row is still blind. */
+    const caps = sec.querySelectorAll('figcaption');
+    caps[0].textContent = reliefLeft ? 'Panel A — RELIEF (the environment)' : 'Panel A — FLAT (its own fallback)';
+    caps[1].textContent = reliefLeft ? 'Panel B — FLAT (its own fallback)' : 'Panel B — RELIEF (the environment)';
+    for (const c of caps) c.classList.add('shown');
+    sec.querySelector('[data-done]').textContent = `recorded: ${chose}`;
+    render();
+  });
+});
+
+function render() {
+  const n = decisions.size;
+  $count.textContent = n === rows.length
+    ? `All ${rows.length} recorded. This is a judgement, not a measurement — say so wherever it is quoted.`
+    : `${n} of ${rows.length} recorded. Do not skip: an environment with no judgement is not the same as one judged "neither".`;
+  const out = document.getElementById('out');
+  if (n === rows.length) {
+    out.style.display = 'block';
+    const list = [...decisions.values()];
+    document.getElementById('json').textContent = JSON.stringify({
+      gate: '7a',
+      kind: 'JUDGEMENT_NOT_MEASUREMENT',
+      note: 'Attention in the wild is not measurable at a desk. This records one person\'s call on the same '
+        + 'data drawn both ways, panels blind until chosen.',
+      judges: 1,
+      relief: list.filter((d) => d.chose === 'relief').map((d) => d.id),
+      flat: list.filter((d) => d.chose === 'flat').map((d) => d.id),
+      neither: list.filter((d) => d.chose === 'neither').map((d) => d.id),
+      decisions: list,
+    }, null, 2);
+  }
+}
+render();
+</script>

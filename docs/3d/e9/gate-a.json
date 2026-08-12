@@ -1,0 +1,65 @@
+[
+  {
+    "id": "E0",
+    "name": "THE SPIKE",
+    "verdict": "GATE MET",
+    "relief": "trials/e0-a-relief.png",
+    "flat": "trials/e0-a-flat.png"
+  },
+  {
+    "id": "E1",
+    "name": "THE THEATRE",
+    "verdict": "THE HYBRID WORKS. \u00a77(b) is now a real tension, not a gap.",
+    "relief": "trials/e1-a-relief.png",
+    "flat": "trials/e1-a-flat.png"
+  },
+  {
+    "id": "E2",
+    "name": "THE GLOBE",
+    "verdict": "CARRIES INFORMATION. \u00a77(b) still unproven.",
+    "relief": "trials/e2-a-relief.png",
+    "flat": "trials/e2-a-flat.png"
+  },
+  {
+    "id": "E3",
+    "name": "THE PIPELINE",
+    "verdict": "READS, and it cost two engine bugs, a lost object and a fog that erased the room.",
+    "relief": "trials/e3-a-relief.png",
+    "flat": "trials/e3-a-flat.png"
+  },
+  {
+    "id": "E4",
+    "name": "THE ORRERY",
+    "verdict": "THE CROSSING CLAIM HOLDS AND IS CAMERA-INDEPENDENT. \u00a72's \"compartment you fly into\" is not built, and \u00a77(b) is not timed.",
+    "relief": "trials/e4-a-relief.png",
+    "flat": "trials/e4-a-flat.png"
+  },
+  {
+    "id": "E5",
+    "name": "THE SURFACE",
+    "verdict": "AGREES WITH THE SHIPPING ENGINE. \u00a72's ribbons and drag are now built.",
+    "relief": "trials/e5-a-relief.png",
+    "flat": "trials/e5-a-flat.png"
+  },
+  {
+    "id": "E6",
+    "name": "THE VAULT",
+    "verdict": "READS. Six framing errors, every one caught by a count.",
+    "relief": "trials/e6-a-relief.png",
+    "flat": "trials/e6-a-flat.png"
+  },
+  {
+    "id": "E7",
+    "name": "THE STORM",
+    "verdict": "THE INTEGRAL IS THE DATA \u2014 verified to 0.00% against the table, but a pixel mixes six days and \u00a72's rotation is not built.",
+    "relief": "trials/e7-a-relief.png",
+    "flat": "trials/e7-a-flat.png"
+  },
+  {
+    "id": "E8",
+    "name": "THE FORGE",
+    "verdict": "the first shippable environment",
+    "relief": "trials/e8-a-relief.png",
+    "flat": "trials/e8-a-flat.png"
+  }
+]

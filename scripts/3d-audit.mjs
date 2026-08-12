@@ -508,6 +508,29 @@ ${(() => {
     + `${not.length === 1 ? 'renders' : 'render'} at a fixed configuration.`;
 })()}
 
+## Audit 5b · §7(a) — a decision sheet, because it is not measurable
+
+\`docs/3d/e9/gate-a.html\`. Clause (a) is *"a stranger stops scrolling"*, and it **has no instrument and cannot
+have one**: attention in the wild is not measurable at a desk by the people who built the thing, and a five-point
+scale would only be a number with nothing behind it — which is the exact failure this programme has already
+committed twice, with a 0.45 ms frame time and a 60 Hz headroom both produced by instruments that could not
+measure them.
+
+So the sheet does not measure (a). It makes the judgement cheap and even-handed, which is the honest maximum:
+
+- **Both panels are the same data.** The relief panel is the environment; the flat panel is that environment's
+  own fallback, reached through its real refusal path. Not a mock-up, not a different dataset.
+- **Both at the surface's real proportions**, because §5 says a capture at the wrong aspect ratio is as
+  misleading as no capture.
+- **The environment's own verdict** is printed beside it, read from its README's first line, so a decision
+  cannot be made against a claim the environment does not make.
+- **Which panel is which is hidden until you choose**, shuffled *per row* rather than once — a single global
+  order lets a reader learn by the second row that the left panel is always the environment, and every
+  judgement after that is made knowing the answer. Labels reveal only for the row just decided.
+
+The output is tagged \`JUDGEMENT_NOT_MEASUREMENT\` and carries a judge count. That distinction is the point, and
+it should survive being quoted.
+
 ## Audit 5 · §7(b) — the instrument exists; the reading does not
 
 \`docs/3d/e9/task.html\`. The gate's second clause is *"an operator still gets their answer at least as fast as
