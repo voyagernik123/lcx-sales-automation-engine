@@ -39,6 +39,7 @@ import {
   hexToLinear, assertBrandFidelity, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint, type StageRefusal,
 } from '@lcx/gl';
+import { installFlatFallback } from '../_shared/flatFallback.js';
 
 const params = new URLSearchParams(location.search);
 /* The atmosphere shell is the one element whose contribution is impossible to judge from the lit
@@ -53,6 +54,57 @@ const SCALE = Math.max(1, Math.min(3, Number(params.get('scale') ?? 1)));
 const W = 1200 * SCALE, H = 720 * SCALE;
 const canvas = document.getElementById('c') as HTMLCanvasElement;
 canvas.width = W; canvas.height = H;
+
+const HUB = { lat: 47.14, lon: 9.52 };
+const CORRIDORS: ReadonlyArray<{ readonly to: string; readonly lat: number; readonly lon: number }> = [
+  { to: 'London', lat: 51.51, lon: -0.13 },
+  { to: 'New York', lat: 40.71, lon: -74.01 },
+  { to: 'Chicago', lat: 41.88, lon: -87.63 },
+  { to: 'Dubai', lat: 25.20, lon: 55.27 },
+  { to: 'Singapore', lat: 1.35, lon: 103.82 },
+  { to: 'Tokyo', lat: 35.68, lon: 139.65 },
+  { to: 'Johannesburg', lat: -26.20, lon: 28.04 },
+];
+
+
+/*
+ * §6 RULE 1 — and for E2 this is also a partial answer to its rule 4 violation.
+ *
+ * E2 renders no DOM text at all: eight sited cities and seven corridors carry no labels, so nothing
+ * enters the accessibility tree and nothing survives printing. That is still a violation and is named in
+ * the README. But the flat fallback is always in the DOM, so the names, coordinates and corridor
+ * distances are now reachable by a screen reader and present in the print path — which they were not.
+ *
+ * What the flat view cannot carry is the whole point of the globe: that a corridor's arc height rises
+ * with distance, that three endpoints are behind the limb, and that two desks are on the night side.
+ */
+const fallback = installFlatFallback({
+  title: 'E2 · The Globe — corridors from Vaduz',
+  readsAs: 'The rendered view states reach as arc height and time-of-day as a terminator, so which '
+    + 'desks are awake and how far each corridor travels are read from the geometry. This table gives '
+    + 'the same endpoints as numbers, and no reach and no daylight.',
+  notices: ['Coordinates are real. Corridor set is illustrative.'],
+  columns: [
+    { key: 'to', label: 'Corridor to' },
+    { key: 'lat', label: 'Lat', numeric: true },
+    { key: 'lon', label: 'Lon', numeric: true },
+    { key: 'sep', label: 'Great-circle separation', numeric: true },
+  ],
+  rows: CORRIDORS.map((c) => {
+    /* The angular separation the arc's lift is derived from, so the table states the quantity the
+       geometry encodes rather than merely the endpoints. */
+    const toRad = (d: number): number => (d * Math.PI) / 180;
+    const cosw = Math.sin(toRad(HUB.lat)) * Math.sin(toRad(c.lat))
+      + Math.cos(toRad(HUB.lat)) * Math.cos(toRad(c.lat)) * Math.cos(toRad(c.lon - HUB.lon));
+    const deg = (Math.acos(Math.min(1, Math.max(-1, cosw))) * 180) / Math.PI;
+    return { to: c.to, lat: c.lat.toFixed(2), lon: c.lon.toFixed(2), sep: `${deg.toFixed(1)}°` };
+  }),
+});
+fallbackRef = fallback;
+if (params.get('refuse') === '1') {
+  die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
+    + 'The three-dimensional view is not being drawn.');
+}
 
 const out = createStage(canvas, { alpha: false });
 if (!isStage(out)) { document.title = 'REFUSED'; throw new Error(out.reason); }
@@ -78,7 +130,21 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
 const log = document.getElementById('log')!;
 const refusal = (r: { reason: string; detail?: string }) => `${r.reason} ${r.detail ?? ''}`;
 /* Declared `never` — a function, not E8's arrow — so control flow provably stops here. */
-function die(m: string): never { document.title = 'REFUSED'; log.textContent = m; throw new Error(m); }
+function die(m: string): never {
+  document.title = 'REFUSED';
+  /* Resolved here rather than closed over. `die` is now reachable BEFORE the harness's own `const log`
+     is initialised — the flat fallback and its forced-refusal switch both sit above the stage on
+     purpose — and a closure over an uninitialised const fails with "Cannot set properties of
+     undefined", which reads as a DOM problem rather than an ordering one. */
+  const logEl = document.getElementById('log');
+  if (logEl) logEl.textContent = m;
+  const [code, ...rest] = m.split(':');
+  fallbackRef?.showRefusal(code?.trim() ?? 'REFUSED', rest.join(':').trim() || m);
+  throw new Error(m);
+}
+/* Assigned once the fallback is installed. `die` stays a declaration: a `function` returning `never` is
+   what gives the compiler its control-flow narrowing, and a const arrow does not. */
+let fallbackRef: ReturnType<typeof installFlatFallback> | null = null;
 
 /*
  * UNWRAP AT CREATION, NOT AT A GUARD FURTHER DOWN.
@@ -177,16 +243,6 @@ const CITY_SITES: ReadonlyArray<{ readonly name: string; readonly lat: number; r
  * transatlantic and Asian legs climb high, the intra-European hops stay low, because `arcTube`
  * scales lift with angular distance.
  */
-const HUB = { lat: 47.14, lon: 9.52 };
-const CORRIDORS: ReadonlyArray<{ readonly to: string; readonly lat: number; readonly lon: number }> = [
-  { to: 'London', lat: 51.51, lon: -0.13 },
-  { to: 'New York', lat: 40.71, lon: -74.01 },
-  { to: 'Chicago', lat: 41.88, lon: -87.63 },
-  { to: 'Dubai', lat: 25.20, lon: 55.27 },
-  { to: 'Singapore', lat: 1.35, lon: 103.82 },
-  { to: 'Tokyo', lat: 35.68, lon: 139.65 },
-  { to: 'Johannesburg', lat: -26.20, lon: 28.04 },
-];
 
 /* THE SUN IS DECLARED AS A SUB-SOLAR POINT, not as a direction vector, because that is what a
    terminator actually is: the great circle 90 degrees from the point the sun is overhead. Stating
@@ -568,4 +624,5 @@ const report = {
 (globalThis as unknown as { E2: typeof report }).E2 = report;
 log.textContent = JSON.stringify(report, null, 2);
 frame();
+fallback.markRendered();
 document.title = 'READY';

@@ -34,6 +34,7 @@ import {
   hexToLinear, assertBrandFidelity, projectScreen, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint, type StageRefusal,
 } from '@lcx/gl';
+import { installFlatFallback } from '../_shared/flatFallback.js';
 
 /* EVERY PARAMETER IS READ FIRST, before any of them is used. `docs/3d/e0/entry.ts` reads its
    `DIAG` flag from inside the draw list twelve lines above the `const` that declares it, which is
@@ -66,7 +67,21 @@ const log = document.getElementById('log')!;
  * analysis only where the compiler sees the return type at the declaration site, and a const
  * initialised with an annotated arrow is not that — the const itself carries no annotation.
  */
-function die(m: string): never { document.title = 'REFUSED'; log.textContent = m; throw new Error(m); }
+function die(m: string): never {
+  document.title = 'REFUSED';
+  /* Resolved here rather than closed over. `die` is now reachable BEFORE the harness's own `const log`
+     is initialised — the flat fallback and its forced-refusal switch both sit above the stage on
+     purpose — and a closure over an uninitialised const fails with "Cannot set properties of
+     undefined", which reads as a DOM problem rather than an ordering one. */
+  const logEl = document.getElementById('log');
+  if (logEl) logEl.textContent = m;
+  const [code, ...rest] = m.split(':');
+  fallbackRef?.showRefusal(code?.trim() ?? 'REFUSED', rest.join(':').trim() || m);
+  throw new Error(m);
+}
+/* Assigned once the fallback is installed. `die` stays a declaration: a `function` returning `never` is
+   what gives the compiler its control-flow narrowing, and a const arrow does not. */
+let fallbackRef: ReturnType<typeof installFlatFallback> | null = null;
 
 /*
  * ONE CHECKED HANDOFF PER RESOURCE, rather than E8's line of seven `if ('kind' in x) die(...)`.
@@ -83,6 +98,37 @@ function die(m: string): never { document.title = 'REFUSED'; log.textContent = m
 function required<T extends object>(what: string, v: T | StageRefusal): T {
   if ('kind' in v) die(`${what}: ${v.code} — ${v.reason} ${v.detail ?? ''}`);
   return v;
+}
+
+declare const __ENV_STATES__: Record<string, { id: string; name: string; verdict: string }>;
+
+/*
+ * §6 RULE 1. The fallback goes in before the stage — a shader compile failure happens during module
+ * evaluation, and print and the accessibility tree are not errors there is anything to catch for.
+ *
+ * E1's subject IS the state of the programme, and that state is a build-time define read from each
+ * environment's own README. So the flat view is not a reduction of the frame: it carries all SIX
+ * environments where the geometry has room for five, which makes it the one place a reader can see the
+ * whole programme at once. The 3-D view adds the focus rack and the depth ordering; it subtracts a row.
+ */
+const fallback = installFlatFallback({
+  title: 'E1 · The Theatre — 3D programme state',
+  readsAs: 'The rendered view puts five of these on lit panels at graded depths and racks focus to the '
+    + 'one being built, which states where to look in a way a list cannot. This table has no such '
+    + 'emphasis and no depth — and it carries every environment, including the one the five panels '
+    + 'cannot show.',
+  notices: ['Each verdict is read from that environment\'s own README first line at build time, not typed here.'],
+  columns: [
+    { key: 'id', label: 'Env' },
+    { key: 'name', label: 'Name' },
+    { key: 'verdict', label: 'Verdict (from its README)' },
+  ],
+  rows: Object.values(__ENV_STATES__).map((e) => ({ id: e.id, name: e.name, verdict: e.verdict })),
+});
+fallbackRef = fallback;
+if (params.get('refuse') === '1') {
+  die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
+    + 'The three-dimensional view is not being drawn.');
 }
 
 const out = createStage(canvas, { alpha: false });
@@ -537,7 +583,6 @@ const deck = (() => {
  * the same reason it forbids them anywhere: a plausible number in a beautiful frame is the most
  * persuasive lie this codebase can tell. Every row below is checkable against this repository.
  */
-declare const __ENV_STATES__: Record<string, { id: string; name: string; verdict: string }>;
 
 /*
  * PANEL CONTENT, DERIVED. `__ENV_STATES__` is injected by build.mjs from each environment's own
@@ -961,4 +1006,5 @@ const report = {
 (globalThis as unknown as { E1: typeof report }).E1 = report;
 log.textContent = JSON.stringify(report, null, 2);
 frame();
+fallback.markRendered();
 document.title = 'READY';

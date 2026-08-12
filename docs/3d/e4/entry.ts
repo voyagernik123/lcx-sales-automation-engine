@@ -107,7 +107,10 @@ const ao = required('ao', createAmbientOcclusion(stage, W, H));
  * and `PERSON`, `SETTLEMENT` reaches `COUNTERPARTY` — is what produces crossings at all. A star
  * would have none and would prove nothing.
  */
-type Kind = 'PARTY' | 'INSTRUMENT' | 'EVENT' | 'CONTROL';
+/* CORE is a kind with no plane. The root entity sits at the origin and has no orbit, so giving it
+   one of the four kinds would put a fifth body on a plane it does not belong to and would print a
+   kind on its label that is not true of it. */
+type Kind = 'CORE' | 'PARTY' | 'INSTRUMENT' | 'EVENT' | 'CONTROL';
 /* Three states, one union, so a call site cannot read `records` off a count nobody took. */
 type Count =
   | { readonly state: 'observed'; readonly records: number }
@@ -118,7 +121,7 @@ interface EntityDef { readonly id: string; readonly kind: Kind; readonly thetaDe
 
 const CORE = 'PROGRAMME';
 const ENTITIES: readonly EntityDef[] = [
-  { id: CORE, kind: 'PARTY', thetaDeg: 0, count: { state: 'observed', records: 9 } },
+  { id: CORE, kind: 'CORE', thetaDeg: 0, count: { state: 'observed', records: 9 } },
   { id: 'PARTNER', kind: 'PARTY', thetaDeg: 18, count: { state: 'observed', records: 412 } },
   { id: 'PERSON', kind: 'PARTY', thetaDeg: 128, count: { state: 'observed', records: 1940 } },
   /* NEVER MEASURED. The counterparty table is federated and this deployment has no read on it. */
@@ -204,6 +207,7 @@ const shellRadius = (h: number): number => 1.0 + h * 2.1;
  *   all cross the same diameter and every body near that diameter piles up there.
  */
 const PLANE: Readonly<Record<Kind, { incDeg: number; nodeDeg: number }>> = {
+  CORE: { incDeg: 0, nodeDeg: 0 },
   PARTY: { incDeg: 0, nodeDeg: 0 },
   INSTRUMENT: { incDeg: 34, nodeDeg: 64 },
   EVENT: { incDeg: -29, nodeDeg: -58 },
@@ -275,6 +279,11 @@ const bodies: Body[] = ENTITIES.filter((e) => hops.has(e.id)).map((def) => {
   };
 });
 const byId = new Map(bodies.map((b) => [b.def.id, b]));
+/* Kinds that actually have an orbit. Driven off the data so a kind added to `PLANE` without an
+   entity does not get a ring and a plane label claiming a population of zero. */
+const ORBITED_KINDS = (Object.keys(PLANE) as Kind[]).filter(
+  (k) => bodies.some((b) => b.def.kind === k && b.def.id !== CORE),
+);
 
 /* Strength → tube radius, over the OBSERVED strengths only. An absent strength has no place on a
    scale derived from measurements. */
@@ -543,8 +552,21 @@ const sweepTotals = [Math.min(...sweep.map((s) => s.total)), Math.max(...sweep.m
  * GEOMETRY AND THE DRAW LIST.
  * ══════════════════════════════════════════════════════════════════════════════════════
  */
-const DECK_Y = -3.6;
-const deckGeo = plane(64, 64);
+/*
+ * THE PLATE HAS EDGES, AND THE FIRST ONE DID NOT.
+ *
+ * A 64 m deck fills the entire frame, and a frame that is 85% mid-grey plate reads as dark scribbles
+ * on paper: the bodies stop being lit objects in space and become marks on a surface. A 26 m plate
+ * shows all four of its own edges inside the frame, so it reads as an INSTRUMENT the system stands
+ * on, with dark space around it doing the framing.
+ *
+ * It also rose from -3.6 to -2.6, and that is about attribution rather than composition. A body's gap
+ * from its own shadow IS its height above the plane; at 3.6 m of drop, with the camera at 26 degrees,
+ * the shadows landed in a heap at the bottom of the frame where no reader could match one to its
+ * body, and an unattributable shadow is a depth cue that does not cue anything.
+ */
+const DECK_Y = -2.6;
+const deckGeo = plane(26, 52);
 /* ONE UNIT SPHERE, SCALED PER BODY. A uniform scale leaves a normal's DIRECTION unchanged, so the
    identity normal matrix is correct here — the shader normalises what it is handed. */
 const unitSphereGeo = sphere(1, 22, 30);
@@ -554,7 +576,17 @@ const withheldGeo = cylinder(0.26, 0.36, 40);
 /* A UNIT CYLINDER along Y, radius 1, height 1, so the link's model matrix carries the thickness in
    two columns and the length in the third and nothing has to be re-uploaded per link. */
 const linkGeo = cylinder(1, 1, 16);
-const ringGeos = [1, 2, 3].map((h) => torus(shellRadius(h), 0.014, 96, 8));
+/*
+ * THE RING TUBE IS 3.2 cm BECAUSE 1.4 cm WAS SUB-PIXEL, and I chose the first number by eye.
+ *
+ * At this camera the system centre is 190 px per metre in the vertical sense but only ~44 px per
+ * metre at 25 m of distance, so a 1.4 cm tube is a 1.2 px line: anti-aliased to a smear, and the
+ * orbit structure the whole layout rests on was almost absent from the frame. It read as "the rings
+ * are a dark colour" and it was not a colour problem at all. 3.2 cm is 2.8 px, which `ringPx` in the
+ * report states so the next camera move cannot quietly lose them again.
+ */
+const RING_TUBE = 0.032;
+const ringGeos = [1, 2, 3].map((h) => torus(shellRadius(h), RING_TUBE, 96, 8));
 
 const deckMesh = required('deck', uploadMesh(stage, deckGeo));
 const sphereMesh = required('sphere', uploadMesh(stage, unitSphereGeo));
@@ -620,16 +652,31 @@ const OBSERVED_HEX = '#2C6BFF';
 const LINK_HEX = '#7FB2FF';
 const ABSENT_HEX = '#FF8A3D';
 const WITHHELD_HEX = '#6B7A99';
-const RING_HEX = '#26355A';
-const DECK_HEX = '#0E1628';
+const RING_HEX = '#33497A';
+/* Darker than the palette's `plate` (#0E1628), and deliberately: a horizontal plane takes the key
+   light at nearly N·L = 1, so the plate's own albedo is the only thing holding it below the bodies
+   in value. At #0E1628 it came back a mid grey that the brand blue had to fight. */
+const DECK_HEX = '#090F1C';
 const CLEAR_HEX = '#05070E';
 
 const posOf = (b: Body): V3 => (FLAT ? b.flatPos : b.pos);
 
 const draws: LitDraw[] = [
   { mesh: deckMesh, model: scaledAt([0, DECK_Y, 0], 1), normalMat: N3,
-    material: { baseColour: hexToLinear(DECK_HEX), roughness: 0.88, metalness: 0 } },
+    material: { baseColour: hexToLinear(DECK_HEX), roughness: 0.90, metalness: 0 } },
 ];
+/*
+ * STRUCTURE DOES NOT CAST. The orbit rings are reference geometry — the axis, not the data — and in
+ * the first capture nine of them dropped nine concentric shadow ellipses onto the plate. The result
+ * was a plate covered in rings that looked exactly like more orbits, sitting where the BODIES'
+ * shadows are the only thing a reader is meant to be reading. The lie is subtle and total: a shadow
+ * of an axis is indistinguishable from an axis, so the frame appeared to have twice as many orbits
+ * as the ontology has shells.
+ *
+ * So the shadow pass gets its own list. Bodies and relationships cast; the rings and the plate do
+ * not. That is a statement about what the shadows are FOR, not an optimisation.
+ */
+const casters: LitDraw[] = [];
 
 /*
  * One ring per (kind, shell) that is actually occupied. A ring drawn where no entity sits would be
@@ -642,7 +689,7 @@ const draws: LitDraw[] = [
  */
 const ringsDrawn: { kind: Kind; hops: number }[] = [];
 let ringsCollapsed = 0;
-for (const kind of Object.keys(PLANE) as Kind[]) {
+for (const kind of ORBITED_KINDS) {
   for (const h of [1, 2, 3]) {
     if (!bodies.some((b) => b.def.kind === kind && b.hops === h && b.def.id !== CORE)) continue;
     if (FLAT && ringsDrawn.some((r) => r.hops === h)) { ringsCollapsed++; continue; }
@@ -681,29 +728,30 @@ const linkDraws = (FLAT ? segsFlat : segs3D).flatMap((s): LitDraw[] => {
   }];
 });
 draws.push(...linkDraws);
+casters.push(...linkDraws);
 
 for (const b of bodies) {
   const p = posOf(b);
-  if (b.def.count.state === 'absent') {
-    draws.push({
+  const d: LitDraw = b.def.count.state === 'absent'
+    ? {
       mesh: absentMesh, model: scaledAt(p, 1), normalMat: N3,
       material: { baseColour: hexToLinear(ABSENT_HEX), roughness: 0.38, metalness: 0.15 },
-    });
-  } else if (b.def.count.state === 'withheld') {
-    draws.push({
-      mesh: withheldMesh, model: scaledAt(p, 1), normalMat: N3,
-      material: { baseColour: hexToLinear(WITHHELD_HEX), roughness: 0.28, metalness: 0.58 },
-    });
-  } else {
-    draws.push({
-      mesh: sphereMesh, model: scaledAt(p, b.radius), normalMat: N3,
-      material: {
-        baseColour: hexToLinear(OBSERVED_HEX),
-        roughness: b.def.id === CORE ? 0.22 : 0.34,
-        metalness: b.def.id === CORE ? 0.36 : 0.08,
-      },
-    });
-  }
+    }
+    : b.def.count.state === 'withheld'
+      ? {
+        mesh: withheldMesh, model: scaledAt(p, 1), normalMat: N3,
+        material: { baseColour: hexToLinear(WITHHELD_HEX), roughness: 0.28, metalness: 0.58 },
+      }
+      : {
+        mesh: sphereMesh, model: scaledAt(p, b.radius), normalMat: N3,
+        material: {
+          baseColour: hexToLinear(OBSERVED_HEX),
+          roughness: b.def.id === CORE ? 0.22 : 0.34,
+          metalness: b.def.id === CORE ? 0.36 : 0.08,
+        },
+      };
+  draws.push(d);
+  casters.push(d);
 }
 
 /*
@@ -715,7 +763,11 @@ for (const b of bodies) {
  * the height, and `?shadow=0` is the control that shows the layout losing its third axis while
  * every other pass still runs.
  */
-const lightDir: [number, number, number] = [0.26, -0.90, -0.35];
+/* Nearly vertical, at 0.14 / 0.20 off plumb. A more oblique key throws each shadow a metre and a
+   half sideways, and at that offset the reader cannot tell whether the gap between a body and a
+   shadow is the body's HEIGHT or the light's ANGLE — which is the one thing the shadow is here to
+   say. Steep enough to attribute, tilted enough that the spheres keep a terminator. */
+const lightDir: [number, number, number] = [0.14, -0.966, -0.22];
 const sceneMin: [number, number, number] = [-8.2, DECK_Y, -8.2];
 const sceneMax: [number, number, number] = [8.2, 5.0, 8.2];
 const lightVP = lightViewProjection(
@@ -732,7 +784,7 @@ const tris = triangleCount(deckGeo)
 
 function frame() {
   const vp = viewProjection(view, W / H);
-  if (SHADOW_ON) lit.shadowPass(lightVP, draws, shadow);
+  if (SHADOW_ON) lit.shadowPass(lightVP, casters, shadow);
   target.bind();
   /*
    * NO SKY BACKDROP. `skyColour` is an environment, not a background, and the orrery is a system on

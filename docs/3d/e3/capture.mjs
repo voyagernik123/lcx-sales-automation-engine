@@ -46,8 +46,11 @@ for (const [name, q] of [['live', ''], ['flat-settle', '&settle=0'], ['no-partic
     + ` · hiddenBy ${JSON.stringify(rep.hiddenBy)} · nameOverflow ${rep.nameOverflow.length}`
     + ` · gateLabelsOffFrame ${JSON.stringify(rep.gateLabelsOffFrame)}`);
   console.log(`    settled ${rep.stalledCount} · deepStalled $${rep.deepStalledUsd} (${Math.round(100*rep.deepStalledShare)}%)`
-    + ` · minSeparation ${rep.minSeparationPx} px · massAmbiguous ${rep.massAmbiguousPairs}`
-    + ` (within-stage ${rep.massAmbiguousWithinStage}) · outOfSegment ${rep.outOfSegment.length}`);
+    + ` · fallen ${rep.minStalledDisplacementPx}..${rep.maxDisplacementPx} px`
+    + ` · same-stage pair separation min ${rep.minSeparationPx} px (depth-confounded)`
+    + ` · inversions ${rep.settleInversions.length}`);
+  console.log(`    massAmbiguous ${rep.massAmbiguousPairs} (within-stage ${rep.massAmbiguousWithinStage})`
+    + ` · outOfSegment ${rep.outOfSegment.length}`);
   const f = rep.particleField;
   console.log(`    particles ${f.refusal ?? 'ok'} · alive ${f.aliveActual}/${f.slots} (expected ${f.aliveExpected})`
     + ` · outOfChannel ${f.outOfChannel} · z ${JSON.stringify(f.zRange)} of ${JSON.stringify(f.channelZ)}`
@@ -59,6 +62,10 @@ for (const [name, q] of [['live', ''], ['flat-settle', '&settle=0'], ['no-partic
   if (rep.outOfSegment.length) throw new Error(`deals drawn outside their own stage segment: ${rep.outOfSegment}`);
   if (rep.nameOverflow.length) throw new Error(`names too long for their tag: ${rep.nameOverflow}`);
   if (!rep.rateMonotoneDown) throw new Error('gate rates are not monotone down the funnel');
+  /* An inverted pair says a stalled deal sits ABOVE a fresher one in its own stage, which is worse
+     than showing nothing. Fatal in every variant, including the flat control where every deal is at
+     one height and no pair can invert. */
+  if (rep.settleInversions.length) throw new Error(`settling reads backwards: ${rep.settleInversions.join('; ')}`);
   if (name !== 'no-particles') {
     if (f.refusal) console.error(`    NOTE: particles refused — ${f.refusal}`);
     else {
@@ -76,10 +83,11 @@ for (const [name, q] of [['live', ''], ['flat-settle', '&settle=0'], ['no-partic
    stalled deal from a fresh one by real pixels while the control separates them by none, then the
    settling is decoration and this environment has no business existing. */
 const live = reports['live'], flat = reports['flat-settle'];
-if (flat.minSeparationPx !== 0) throw new Error(`control still separates by ${flat.minSeparationPx} px — settle=0 is not flat`);
-if (live.minSeparationPx < 20) throw new Error(`live separates stalled from fresh by only ${live.minSeparationPx} px`);
+if (flat.maxDisplacementPx !== 0) throw new Error(`control still falls by ${flat.maxDisplacementPx} px — settle=0 is not flat`);
+if (live.minStalledDisplacementPx < 20) throw new Error(`the least-fallen stalled deal moves only ${live.minStalledDisplacementPx} px`);
 if (live.deepStalledUsd <= 0) throw new Error('no stalled value past diligence — the headline reading is empty');
-console.log(`\n  PROOF: same stage, most vs least settled — live ${live.minSeparationPx} px, settle=0 ${flat.minSeparationPx} px`);
+console.log(`\n  PROOF: every stalled deal has visibly fallen from its own rail position by at least`
+  + ` ${live.minStalledDisplacementPx} px (max ${live.maxDisplacementPx}); the flat control falls ${flat.maxDisplacementPx} px`);
 console.log(`  PROOF: $${live.deepStalledUsd} (${Math.round(100*live.deepStalledShare)}%) past diligence and settled,`
   + ` visible as ${live.stalledCount} objects on the floor`);
 await b.close(); s.close();

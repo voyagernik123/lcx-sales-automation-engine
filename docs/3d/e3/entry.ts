@@ -179,10 +179,19 @@ const CHANNEL_MID = (CHANNEL_Z_NEAR + CHANNEL_Z_FAR) / 2;
 const GATE_H = 1.15;
 const gateZ = (i: number): number => Z_GATE0 + i * STAGE_LEN;
 
-/* Deals occupy SLOTS inside their stage's segment, alternating lanes so two neighbours do not sit on
-   one sight line. The slot index is a PACKING position, not a datum: what is data is which gates the
-   deal is past. That every slot stays inside its own segment is checked below rather than trusted. */
-const SLOT_Z0 = 0.62, SLOT_DZ = 0.58, LANE_X = 0.60;
+/*
+ * Deals occupy SLOTS inside their stage's segment, alternating lanes so two neighbours do not sit on
+ * one sight line. The slot index is a PACKING position, not a datum: what is data is which gates the
+ * deal is past. That every slot stays inside its own segment is checked below rather than trusted.
+ *
+ * `SLOT_DZ` WAS 0.58 AND IS NOW 0.40, because depth and height are both mapped to screen y by a camera
+ * that looks slightly down, so two deals in one stage at different depths have their settling partly
+ * cancelled by their spacing. The first measurement put the SOURCED pair 13 px apart when their
+ * world-space heights differ by half a metre. Tightening the slot pitch shrinks the cancellation but
+ * cannot remove it, which is why the primary proof below is each deal's displacement from its OWN rail
+ * position — a measure with no depth term in it at all.
+ */
+const SLOT_Z0 = 0.62, SLOT_DZ = 0.40, LANE_X = 0.60;
 
 const TAG_W = 0.66, TAG_H = 0.30, TAG_GAP = 0.16;
 const PX_PER_METRE = 190;
@@ -219,7 +228,11 @@ const STALLED_HEX = '#C9552B';
 const ABSENT_HEX = '#E0A94A';
 const WITHHELD_HEX = '#5C6880';
 
-const floorGeo = plane(2 * CHANNEL_HALF, 96);
+/* 40 segments, not 96. The subdivision exists so shadow-map depth interpolation does not go
+   degenerate across one enormous quad at a grazing angle; 96 was 18,432 triangles of flat floor
+   rasterised three times a frame (shadow, prepass, lit) for no additional shading detail, and it was
+   worth 40 ms of the frame under SwiftShader. */
+const floorGeo = plane(2 * CHANNEL_HALF, 40);
 const wallGeo = box(0.18, 1.25, CHANNEL_LEN);
 const postGeo = box(0.10, GATE_H, 0.10);
 const lintelGeo = box(2 * CHANNEL_HALF + 0.20, 0.10, 0.10);
@@ -566,6 +579,24 @@ const centreScreenY = (p: Placed): number | null => {
   const s = projectScreen(vpFinal, [p.x, p.centreY, p.z], CSS_W, CSS_H);
   return s.behind ? null : s.sy;
 };
+/*
+ * HOW FAR THIS DEAL HAS VISIBLY FALLEN, in CSS pixels — the same object at its own x and z, at its
+ * actual height and at the rail.
+ *
+ * This is the measure the environment should be judged on, and comparing two DIFFERENT deals is not.
+ * A camera that looks down maps depth to screen y as well as height, so a far settled deal and a near
+ * fresh one can project to the same row while every world coordinate is correct: the first
+ * measurement here returned 13 px for a pair whose heights differ by 0.51 m. Holding x and z fixed
+ * removes the depth term entirely, so what is left is the settling and nothing else — and `?settle=0`
+ * drives every one of these to zero, which is what makes it a proof rather than a statistic.
+ */
+const settleDisplacementPx = (p: Placed): number | null => {
+  if (p.settle === null) return null;
+  const half = p.edge !== null ? p.edge / 2 : REF_SIZE;
+  const now = projectScreen(vpFinal, [p.x, p.baseY + half, p.z], CSS_W, CSS_H);
+  const rail = projectScreen(vpFinal, [p.x, RAIL_LIFT + half, p.z], CSS_W, CSS_H);
+  return now.behind || rail.behind ? null : Math.abs(now.sy - rail.sy);
+};
 
 /*
  * FOUR REASONS NOT TO SHOW A TAG, AND THEY ARE DIFFERENT REASONS.
@@ -844,6 +875,25 @@ const measurable = perStageSeparation.map((s) => s.separationPx).filter((v): v i
 const minSeparationPx = measurable.length > 0 ? Math.min(...measurable) : 0;
 
 /*
+ * AND DOES A SETTLED DEAL EVER PROJECT HIGHER THAN A FRESHER ONE IN ITS OWN STAGE?
+ *
+ * The depth confound above does not merely weaken the reading; if the slot pitch is large enough it
+ * INVERTS it, and an inverted reading is worse than a missing one. Screen y grows downward, so a more
+ * settled deal must have the larger sy. Any pair that fails is counted and named, because "the picture
+ * looks right" is exactly the evidence that cannot see this.
+ */
+const settleInversions: string[] = [];
+for (const a of placed) {
+  for (const b of placed) {
+    if (a.i >= b.i || a.stageIndex !== b.stageIndex) continue;
+    if (a.settle === null || b.settle === null) continue;
+    const [low, high] = (a.settle > b.settle) ? [a, b] : [b, a];
+    const ys = centreScreenY(low), yf = centreScreenY(high);
+    if (ys !== null && yf !== null && ys < yf) settleInversions.push(`${low.d.name} above ${high.d.name}`);
+  }
+}
+
+/*
  * PERSPECTIVE CONFOUNDS THE MASS ENCODING ACROSS DEPTHS, AND HERE IS THE COUNT.
  *
  * Size means value and distance also means size, so a near small deal can project larger than a far
@@ -875,6 +925,15 @@ const stalled = observed.filter((p) => (p.settle ?? 0) >= STALLED_AT);
 const stalledUsd = stalled.reduce((s, p) => s + (p.d.valueUsd ?? 0), 0);
 const deepStalled = stalled.filter((p) => p.stageIndex >= STAGE_ORDER.indexOf('DILIGENCE'));
 const deepStalledUsd = deepStalled.reduce((s, p) => s + (p.d.valueUsd ?? 0), 0);
+
+/* The un-confounded proof, over the deals that are supposed to have visibly fallen. */
+const stalledDisplacements = stalled
+  .map((p) => settleDisplacementPx(p))
+  .filter((v): v is number => v !== null);
+const minStalledDisplacementPx = stalledDisplacements.length > 0
+  ? Math.round(Math.min(...stalledDisplacements)) : 0;
+const maxDisplacementPx = Math.round(Math.max(0, ...placed
+  .map((p) => settleDisplacementPx(p)).filter((v): v is number => v !== null)));
 
 const counts = {
   OBSERVED: placed.filter((p) => p.d.known === 'OBSERVED').length,
@@ -947,6 +1006,7 @@ const perDeal = decided.map((d) => ({
   baseY: Number(d.p.baseY.toFixed(3)),
   distance: Number(d.p.distance.toFixed(2)),
   screenHeightPx: Math.round(projectedHeightPx(d.p)),
+  fallenPx: (() => { const v = settleDisplacementPx(d.p); return v === null ? null : Math.round(v); })(),
   fog: Number(fogAt(d.p.distance).toFixed(3)),
   tagWidthPx: Math.round(d.widthPx),
   tagShown: d.shown,
@@ -987,8 +1047,15 @@ const report = {
   deepStalledShare: Number((deepStalledUsd / Math.max(1, totalObservedUsd)).toFixed(3)),
   settleClamped: placed.filter((p) => p.settleClamped).length,
 
-  /* ── DOES THE PICTURE ACTUALLY SHOW IT ── */
+  /* ── DOES THE PICTURE ACTUALLY SHOW IT ──
+     `minStalledDisplacementPx` is the primary: the smallest visible fall among the deals that are
+     supposed to have fallen, with no depth term in it. `minSeparationPx` is the reading a viewer
+     actually performs — one deal against another in the same stage — and it is DEPTH-CONFOUNDED, which
+     is why both are here and why the smaller of the two is the honest one to quote. */
+  minStalledDisplacementPx,
+  maxDisplacementPx,
   minSeparationPx,
+  settleInversions,
   railLiftM: RAIL_LIFT,
 
   /* ── THE MASS AXIS, AND WHAT IT CANNOT DO ── */
@@ -1103,8 +1170,8 @@ log.textContent = JSON.stringify(summary, null, 2)
     `  ${r.name.padEnd(16)} ${r.stage.padEnd(10)}`
     + ` ${(r.valueUsd === null ? 'ABSENT' : fmtUsd(r.valueUsd)).padStart(7)}`
     + ` ${(r.days === null ? '—' : `${r.days}d`).padStart(4)}`
-    + ` base ${r.baseY.toFixed(2)} ${String(r.distance).padStart(5)}m`
-    + ` ${String(r.screenHeightPx).padStart(3)}px`
+    + ` base ${r.baseY.toFixed(2)} fallen ${String(r.fallenPx ?? '—').padStart(3)}px`
+    + ` ${String(r.distance).padStart(5)}m ${String(r.screenHeightPx).padStart(3)}px`
     + ` ${r.tagShown ? 'TAG' : `no tag: ${r.hiddenBecause}`}`
   )).join('\n');
 

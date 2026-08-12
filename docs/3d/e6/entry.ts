@@ -57,7 +57,12 @@ const log = document.getElementById('log')!;
 
 function die(m: string): never {
   document.title = 'REFUSED';
-  log.textContent = m;
+  /* Resolved here rather than closed over. `die` is now reachable BEFORE the harness's own `const log`
+     is initialised — the flat fallback and its forced-refusal switch both sit above the stage on
+     purpose — and a closure over an uninitialised const fails with "Cannot set properties of
+     undefined", which reads as a DOM problem rather than an ordering one. */
+  const logEl = document.getElementById('log');
+  if (logEl) logEl.textContent = m;
   /* The refusal goes ABOVE the table, not instead of it. A reader who cannot be shown the corridor is
      still entitled to the records, and to be told which of the two is missing. */
   const [code, ...rest] = m.split(':');

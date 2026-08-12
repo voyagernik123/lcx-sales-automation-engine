@@ -265,7 +265,16 @@ const SCENE_X = (FLOOR_MIN_X + LANE_HALF) / 2;
 const zNearOfDay = (d: number): number => -NOW_OFFSET - d * DAY_M;
 const zMidOfDay = (d: number): number => zNearOfDay(d) - DAY_M / 2;
 
-const BAND_H = 0.42;
+/*
+ * 0.60 m PER BAND, NOT 0.42 — and the field's height is a function of the CAMERA, which is not obvious.
+ *
+ * A view ray descends. At 21° elevation it loses 0.39 m of height per metre travelled down the day
+ * axis, so a 1.26 m field is crossed top to bottom in 3.2 m — six days — and no ray can accumulate
+ * more than six days of anything however honest the integral is. Raising the bands to 0.60 m takes that
+ * to 4.6 m, about nine days, which is what `eyeRayDaysSpanned` in the report now measures rather than
+ * assumes. The field's height is not a look; it is the length of the reading.
+ */
+const BAND_H = 0.60;
 const FIELD_Y0 = FLOOR_TOP + 0.02;
 const FIELD_Y1 = FIELD_Y0 + BANDS.length * BAND_H;
 const bandCentreY = (b: number): number => FIELD_Y0 + (b + 0.5) * BAND_H;
@@ -311,17 +320,31 @@ const bandOfY = (y: number): number => {
  *   z — piecewise constant per day. The field STEPS AT MIDNIGHT because a day is a measurement
  *       bucket; a volume that flowed smoothly across the boundary would assert intra-day structure
  *       nobody measured.
- *   y — a tent peaking at the band's centre and reaching zero at its edges. This is a rendering of
- *       the band's extent, nothing more, and it is why `axialCheck` verifies along BAND-CENTRE rays:
- *       there the tent is exactly 1 and the integral is exactly the sum of the table.
+ *   y — a PLATEAU across the middle 62% of the band, tapering to zero at its edges.
+ *
+ * ── THE y PROFILE WAS A TENT, AND `axialCheck` REJECTED IT AT 8.07% ──────────────────
+ * The first version peaked at the band's centre and fell linearly to its edges, which sounds like a
+ * plume and reads as one. The verification refused it, and the reason is a discretisation nobody would
+ * find by looking: the band's centre falls exactly BETWEEN two voxel centres, so the highest value the
+ * grid ever holds is the tent evaluated half a voxel off its peak — 0.9286 instead of 1 — and the
+ * marched integral came back 7.1% light on every one of the 21 rays. A uniform 7% under-report of
+ * accumulated risk, systematic and invisible.
+ *
+ * The plateau fixes it and is the better statement anyway: within a severity band there IS no
+ * gradation — ELEVATED is ELEVATED — so a profile that peaks in the middle of a band was asserting a
+ * continuum the data does not have. Now every voxel near the band centre holds exactly the cell value,
+ * the reading is exact over a 0.37 m thick slice rather than along an infinitesimal line, and the
+ * residual error is the Riemann sum alone.
  */
+const BAND_PLATEAU = 0.62;
 const fieldAt = (x: number, y: number, z: number): number => {
   const c = laneOfX(x); if (c < 0) return 0;
   const d = dayOfZ(z); if (d < 0) return 0;
   if (dayState(d) !== 'OBSERVED') return 0;
   const b = bandOfY(y); if (b < 0) return 0;
-  const tent = 1 - Math.abs(y - bandCentreY(b)) / (BAND_H / 2);
-  return tent <= 0 ? 0 : (table[c]![d]![b]! * tent) / MAX_CELL;
+  const s = Math.abs(y - bandCentreY(b)) / (BAND_H / 2);
+  const profile = Math.max(0, Math.min(1, (1 - s) / (1 - BAND_PLATEAU)));
+  return profile <= 0 ? 0 : (table[c]![d]![b]! * profile) / MAX_CELL;
 };
 
 const grid = new Float32Array(GRID_X * GRID_Y * GRID_Z);
@@ -358,25 +381,39 @@ const volumeRefusal = volumeOut && 'kind' in volumeOut
 const volume: VolumeField | null = volumeOut && !('kind' in volumeOut) ? volumeOut : null;
 if (volume) volume.upload(grid);
 
-const WORLD_STEP = 0.15;
-const MAX_STEPS = 112;
+/* One voxel per step, and enough steps to cross the box corner to corner. `marchReachM` against
+   `boxDiagonalM` is in the report because a reach shorter than the diagonal truncates the far side of
+   the field, and a truncated march looks exactly like the data ending. */
+const WORLD_STEP = 0.125;
+const MAX_STEPS = 128;
 
 /*
  * ══════════════════════════════════════════════════════════════════════════════════════
- * THE CAMERA. 36°, and a wide lens is the one choice that cannot render a calendar this deep.
+ * THE CAMERA — and the first one put five sixths of the calendar in the top eighth of the frame.
  * ══════════════════════════════════════════════════════════════════════════════════════
  *
- * The elevation is the load-bearing number, not the distance: too low and the far weeks compress into
- * a line so the accumulation has nothing to accumulate ACROSS; too high and the ray stops travelling
- * along the day axis, at which point the integral is no longer "risk between you and that day" but a
- * diagonal through the field that means nothing. 15.3° puts the near edge of day 0 and the far edge of
- * day 27 within ±8.9° of the view axis, which is inside the half-FOV with margin at both ends —
- * checked as `nearEdgeOffAxisDeg`/`farEdgeOffAxisDeg` in the report rather than eyeballed.
+ * The first framing was 15.3° of elevation with the eye 4.8 m from day 0. That is a low, dramatic angle
+ * down a 14 m calendar and it produced a capture in which day 0 filled the bottom half of the frame,
+ * days 10 to 27 were compressed into about a hundred pixels at the top, the three state markers piled
+ * on top of one another because there was nowhere for them to be, and the bottom quarter of the frame
+ * was empty floor. The numbers said it fitted — the far edge was 8.7° off axis, inside the half-FOV —
+ * and it did fit. It fitted the way a corridor fits when you stand on its centre line: everything
+ * present, nothing readable.
+ *
+ * 21.3° with the eye 6.5 m back is the framing that puts the near edge of day 0 and the far edge of
+ * day 27 SYMMETRICALLY about the view axis, ±10.3°, so the calendar occupies 61% of the frame's height
+ * centred rather than 15% of it wedged at the top. Both numbers are checked in the report as
+ * `nearEdgeOffAxisDeg`/`farEdgeOffAxisDeg` against `halfFovDeg`, because "it fits" was exactly the
+ * thing that was true and useless last time.
+ *
+ * 33°, not 36: a longer lens compresses depth less, so the far weeks hold their size, and the
+ * horizontal room lost is room the calendar never needed — the widest part of it subtends 63% of the
+ * frame at the near edge.
  */
-const NEAR = 1.0, FAR = 30;
+const NEAR = 2.5, FAR = 32;
 const view: Viewpoint = {
-  target: [SCENE_X, 0.04, zMidOfDay(5.8)], distance: 8.0,
-  azimuthDeg: 0, elevationDeg: 15.3, fovDeg: 36, near: NEAR, far: FAR,
+  target: [SCENE_X, 0.366, zMidOfDay(5.13)], distance: 10.0,
+  azimuthDeg: 0, elevationDeg: 21.3, fovDeg: 33, near: NEAR, far: FAR,
 };
 const eye = eyeOf(view);
 const forward = normalise(sub(view.target as Vec3, eye));
@@ -418,14 +455,17 @@ const modelOf = (x: number, y: number, z: number): Float32Array => {
 const MAT = {
   tile: { baseColour: hexToLinear('#101B2F'), roughness: 0.78, metalness: 0.02 },
   gutter: { baseColour: hexToLinear('#0C1424'), roughness: 0.86, metalness: 0 },
-  withheldTile: { baseColour: hexToLinear('#26355A'), roughness: 0.52, metalness: 0.12 },
+  withheldTile: { baseColour: hexToLinear('#1B2540'), roughness: 0.55, metalness: 0.10 },
   /* Steel, and the same reasoning E6's WITHHELD slab uses: a withheld day is neither calm nor bad, it
      is the ABSENCE OF A READING, and giving it a colour from the risk ramp would assert a finding
-     nobody is entitled to. */
-  lid: { baseColour: hexToLinear('#6B7A99'), roughness: 0.28, metalness: 0.58 },
-  rail: { baseColour: hexToLinear('#6B7A99'), roughness: 0.40, metalness: 0.30 },
+     nobody is entitled to.
+     ROUGH, not polished. At roughness 0.28 against a key light of 2.6 the lid and the gate came back as
+     two pale bars brighter than any part of the field, so the two objects whose whole job is to mark a
+     REFUSAL were the loudest things in the frame. */
+  lid: { baseColour: hexToLinear('#6B7A99'), roughness: 0.62, metalness: 0.35 },
+  rail: { baseColour: hexToLinear('#6B7A99'), roughness: 0.58, metalness: 0.25 },
   week: { baseColour: hexToLinear('#26355A'), roughness: 0.60, metalness: 0.05 },
-  gate: { baseColour: hexToLinear('#7FB2FF'), roughness: 0.34, metalness: 0.20 },
+  gate: { baseColour: hexToLinear('#2C6BFF'), roughness: 0.52, metalness: 0.06 },
 } as const;
 
 interface Solid { min: [number, number, number]; max: [number, number, number] }
@@ -689,15 +729,19 @@ const sampleGrid = (x: number, y: number, z: number): number => {
   return acc * DENSITY_SCALE;
 };
 
-interface MarchResult { tau: number; truncated: boolean; capped: boolean; hit: boolean }
+interface MarchResult {
+  tau: number; truncated: boolean; capped: boolean; hit: boolean; tStart: number; tEnd: number;
+}
 const marchRay = (
   o: readonly [number, number, number], dir: readonly [number, number, number], tCap: number,
 ): MarchResult => {
   const box3 = rayBoxSlab(o, dir, BOX_MIN, BOX_MAX);
-  if (!box3) return { tau: 0, truncated: false, capped: false, hit: false };
+  if (!box3) return { tau: 0, truncated: false, capped: false, hit: false, tStart: 0, tEnd: 0 };
   const tFar = Math.min(box3.tFar, tCap);
   const capped = tCap < box3.tFar;
-  if (tFar <= box3.tNear) return { tau: 0, truncated: false, capped, hit: true };
+  if (tFar <= box3.tNear) {
+    return { tau: 0, truncated: false, capped, hit: true, tStart: box3.tNear, tEnd: box3.tNear };
+  }
   const plan = marchPlan(tFar - box3.tNear, WORLD_STEP, MAX_STEPS);
   let tau = 0;
   for (let i = 0; i < plan.steps; i++) {
@@ -707,7 +751,7 @@ const marchRay = (
     if (d <= 0.0005) continue;
     tau += d * plan.step;
   }
-  return { tau, truncated: plan.truncated, capped, hit: true };
+  return { tau, truncated: plan.truncated, capped, hit: true, tStart: box3.tNear, tEnd: tFar };
 };
 
 /*
@@ -747,8 +791,26 @@ const nearestSolid = (dir: readonly [number, number, number]): number => {
   }
   return t;
 };
+/*
+ * WHERE THE EXACT READING STOPS BEING EXACT, MEASURED ON THE RAYS THAT EXIST.
+ *
+ * Two things spoil the clean form of the reading and both are properties of a perspective camera:
+ *
+ *   · LANE DRIFT. A ray fans out, so one entering the near face inside INFLUENCER can leave the far
+ *     face inside EMAIL, and its accumulation is then a mixture of two channels rather than one
+ *     channel's total.
+ *   · BAND CROSSING. A ray descends, so it also slides down through the severity bands.
+ *
+ * The exact instrument for "total risk between you and that day, in this channel and this band" is an
+ * orthographic camera down the day axis — which is a heatmap. Perspective buys presence and costs this,
+ * and the cost is a number rather than a caveat. The first version measured drift on the two rays at
+ * the frame's horizontal edges and reported 0.00 lanes, which was arithmetically right and completely
+ * misleading: those rays leave the field's x range before they ever reach its near face, so they miss
+ * the box entirely and there was no drift to measure. Measured over the rays that actually hit.
+ */
 const SWEEP_X = 61, SWEEP_Y = 37;
 let hitBox = 0, capped = 0, truncatedRays = 0, tauMin = Infinity, tauMax = 0, tauSum = 0;
+let driftMax = 0, driftSum = 0, daysMax = 0, daysSum = 0, bandsMax = 0, bandsSum = 0;
 for (let py = 0; py < SWEEP_Y; py++) {
   for (let px = 0; px < SWEEP_X; px++) {
     const nx = (2 * (px + 0.5)) / SWEEP_X - 1;
@@ -766,32 +828,17 @@ for (let py = 0; py < SWEEP_Y; py++) {
     tauMin = Math.min(tauMin, r.tau);
     tauMax = Math.max(tauMax, r.tau);
     tauSum += r.tau;
+    const at = (t: number, a: number): number => eye[a]! + dir[a]! * t;
+    const drift = Math.abs(at(r.tEnd, 0) - at(r.tStart, 0)) / LANE_PITCH;
+    const days = Math.abs(at(r.tEnd, 2) - at(r.tStart, 2)) / DAY_M;
+    const bands = Math.abs(at(r.tEnd, 1) - at(r.tStart, 1)) / BAND_H;
+    driftMax = Math.max(driftMax, drift); driftSum += drift;
+    daysMax = Math.max(daysMax, days); daysSum += days;
+    bandsMax = Math.max(bandsMax, bands); bandsSum += bands;
   }
 }
 if (!Number.isFinite(tauMin)) tauMin = 0;
-
-/*
- * WHERE THE EXACT READING STOPS BEING EXACT, MEASURED.
- *
- * A perspective ray fans out, so a ray entering the near face inside one lane can leave the far face
- * inside another — and over that ray the accumulated reading is a mixture of two channels rather than
- * one channel's total. The exact instrument for "risk between you and that day" is an orthographic
- * camera down the day axis, which is a heatmap; perspective buys presence and costs this. The cost is
- * a number, so it is printed rather than glossed.
- */
-const laneDriftOf = (nx: number): number => {
-  const dir = normalise([
-    forward[0] + camRight[0] * nx * TAN_HALF * ASPECT,
-    forward[1] + camRight[1] * nx * TAN_HALF * ASPECT,
-    forward[2] + camRight[2] * nx * TAN_HALF * ASPECT,
-  ]);
-  const h = rayBoxSlab(eye, dir, BOX_MIN, BOX_MAX);
-  if (!h) return 0;
-  const xIn = eye[0] + dir[0] * h.tNear, xOut = eye[0] + dir[0] * h.tFar;
-  return Math.abs(xOut - xIn) / LANE_PITCH;
-};
-const edgeRayLaneDrift = Number(Math.max(laneDriftOf(-1), laneDriftOf(1)).toFixed(2));
-const centreRayLaneDrift = Number(laneDriftOf(0).toFixed(3));
+const perRay = (v: number): number => Number((v / Math.max(1, hitBox)).toFixed(2));
 
 /*
  * ══════════════════════════════════════════════════════════════════════════════════════
@@ -970,18 +1017,23 @@ const pill = (
   return { onFrame, sx: Math.round(p.sx), sy: Math.round(p.sy) };
 };
 
+/* ANCHORED OFF THE RIGHT EDGE OF THE CALENDAR, not over its centre line. Centred, the three of them
+   projected within forty pixels of each other and of the field's densest region, so the markers
+   obscured exactly the thing they were annotating and each other. The week ruler owns the left margin,
+   the state markers own the right. */
+const MARK_X = LANE_HALF + 0.34;
 const absentMarker = pill(
-  [SCENE_X, FLOOR_TOP + 0.30, zMidOfDay((Math.min(...ABSENT_DAYS) + Math.max(...ABSENT_DAYS)) / 2)],
-  `D${Math.min(...ABSENT_DAYS)}–D${Math.max(...ABSENT_DAYS)} NOT MEASURED`,
+  [MARK_X, FLOOR_TOP + 0.22, zMidOfDay((Math.min(...ABSENT_DAYS) + Math.max(...ABSENT_DAYS)) / 2)],
+  `D${Math.min(...ABSENT_DAYS)}-D${Math.max(...ABSENT_DAYS)} NOT MEASURED`,
   '#E0A94A', 'rgba(224,169,74,0.55)',
 );
 const withheldMarker = pill(
-  [SCENE_X, FLOOR_TOP + 0.42, zMidOfDay(firstWithheld + 0.5)],
-  `D${firstWithheld}–D${Math.max(...WITHHELD_DAYS)} WITHHELD`,
+  [MARK_X, FLOOR_TOP + 0.22, zMidOfDay(firstWithheld + 0.5)],
+  `D${firstWithheld}-D${Math.max(...WITHHELD_DAYS)} WITHHELD`,
   '#B7C2D8', 'rgba(183,194,216,0.5)',
 );
 const gateMarker = frontDay >= 0
-  ? pill([SCENE_X, FLOOR_TOP + 0.78, zNearOfDay(frontDay)],
+  ? pill([MARK_X, FLOOR_TOP + 0.22, zNearOfDay(frontDay)],
     `REVIEW THRESHOLD ${REVIEW_THRESHOLD} · D${frontDay}`, '#9EC4FF', 'rgba(158,196,255,0.5)')
   : { onFrame: false, sx: 0, sy: 0 };
 
@@ -1033,18 +1085,28 @@ const dayCounts = {
 const legend = document.createElement('div');
 legend.style.cssText = 'position:absolute;right:18px;bottom:16px;display:flex;flex-direction:column;'
   + 'gap:6px;align-items:flex-end;font:500 10.5px/1 ui-monospace,monospace';
-legend.innerHTML = ([
-  ['#2C6BFF', 'ADVISORY — low band'],
-  ['#8E86C4', 'ELEVATED — mid band'],
-  ['#FF8A3D', 'SEVERE — high band'],
-  ['#101B2F', `OBSERVED · ${dayCounts.OBSERVED} days`],
-  ['transparent', `NOT MEASURED · ${dayCounts.ABSENT} days (hole in the floor)`],
-  ['#6B7A99', `WITHHELD · ${dayCounts.WITHHELD} days (lid, measured, not shown)`],
-] as const).map(([c, t]) => (
-  `<div style="display:flex;align-items:center;gap:7px;color:rgba(196,212,240,0.85)">`
-  + `<span>${t}</span><span style="width:11px;height:11px;background:${c};`
-  + `border:1px solid rgba(196,212,240,0.45);display:inline-block"></span></div>`
-)).join('');
+/* NO SWATCH FOR THE MIDDLE OF THE RAMP. An earlier draft printed a hand-picked mauve for ELEVATED,
+   which is a colour the renderer never produces — the ramp is a two-stop mix and its midpoint is
+   whatever the shader computes. A gradient bar states the mapping without inventing a stop, and the
+   bands are labelled by HEIGHT, because height is what encodes severity here and colour does not. */
+legend.innerHTML =
+  `<div style="display:flex;flex-direction:column;gap:4px;align-items:flex-end;`
+  + `color:rgba(196,212,240,0.85)">`
+  + `<span>RISK IN THAT CELL — LOW TO HIGH</span>`
+  + `<span style="width:132px;height:9px;display:inline-block;`
+  + `background:linear-gradient(90deg,#2C6BFF,#FF8A3D);border:1px solid rgba(196,212,240,0.4)"></span>`
+  + `</div>`
+  + `<div style="color:rgba(196,212,240,0.85);text-align:right">SEVERITY IS HEIGHT<br>`
+  + `<span style="opacity:.8">${[...BANDS].reverse().join(' / ')}</span></div>`
+  + ([
+    ['#101B2F', `OBSERVED · ${dayCounts.OBSERVED} days`],
+    ['transparent', `NOT MEASURED · ${dayCounts.ABSENT} days — hole in the floor`],
+    ['#6B7A99', `WITHHELD · ${dayCounts.WITHHELD} days — lid, measured, not shown`],
+  ] as const).map(([c, t]) => (
+    `<div style="display:flex;align-items:center;gap:7px;color:rgba(196,212,240,0.85)">`
+    + `<span>${t}</span><span style="width:11px;height:11px;background:${c};`
+    + `border:1px solid rgba(196,212,240,0.45);display:inline-block"></span></div>`
+  )).join('');
 overlay.appendChild(legend);
 
 /* Read ONCE, before the report, because two call sites for the same string is two chances for the
@@ -1163,10 +1225,14 @@ const report = {
     meanErrorPct: axialMeanErrorPct,
     truncated: axialRays.filter((r) => r.truncated).length,
   },
-  /* Where the exact reading degrades: a perspective ray fans across lanes and an edge ray's
-     accumulation is a mixture. Exact instrument = orthographic = a heatmap. */
-  centreRayLaneDrift,
-  edgeRayLaneDrift,
+  /* Where the exact reading degrades. Exact instrument = orthographic = a heatmap; these are what
+     perspective costs, per ray that actually crosses the field. */
+  eyeRayLaneDriftMax: Number(driftMax.toFixed(2)),
+  eyeRayLaneDriftMean: perRay(driftSum),
+  eyeRayDaysSpannedMax: Number(daysMax.toFixed(2)),
+  eyeRayDaysSpannedMean: perRay(daysSum),
+  eyeRayBandsSpannedMax: Number(bandsMax.toFixed(2)),
+  eyeRayBandsSpannedMean: perRay(bandsSum),
 
   /* ── IS SCENE DEPTH LOAD-BEARING? Measured against a far-plane depth texture. */
   glOcclusionPixels: occlusion.pixels,

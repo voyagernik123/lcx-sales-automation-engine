@@ -183,6 +183,25 @@ void main(){
  *     invisible particles each still costing a full curl evaluation.
  *   · THE FLOW SAMPLE is offset by time on +y, so the field itself evolves rather than being a fixed
  *     pattern the particles merely traverse.
+ *
+ * ── TWO DEFECTS E3 FOUND BY READING THE FIELD BACK, 2026-08-12 ────────────────────────
+ * Both were caught by `readState` counting live particles and comparing the total against
+ * sum(rate x life) — the analytic steady state. It came back 812 against an expected 592, which is
+ * the kind of disagreement no screenshot of a particle cloud can show.
+ *
+ *   1 · THE SENTINEL DID NOT PARK ANYTHING. The paragraph above was false. A dead particle got
+ *       `age = -1`, and the NEXT frame recomputed `age = st.w + uDt` from that sentinel, found
+ *       `-0.983 > life` false, and fell through to the integrate path — so the corpse kept drifting
+ *       with age climbing back toward zero and RESURRECTED about a second later, wherever the flow
+ *       had carried it by then. That is why 220 of E3's particles were outside their channel: they
+ *       were the resurrected ones. The park is now explicit and happens before integration.
+ *
+ *   2 · LIFE WAS READ OUT OF THIS FRAME'S EMISSION RANGES, so it only existed for sources that
+ *       happened to emit on that frame. Any source with a rate under one particle per frame — which
+ *       is every source E3 has — leaves the array without its entry most frames, and every particle
+ *       belonging to it silently fell back to the hard-coded `life = 1.0`. Lifetimes therefore
+ *       depended on emission jitter rather than on the caller's number. Lives are now their own
+ *       uniform, uploaded for all eight sources every step.
  */
 const UPDATE_FRAG = `#version 300 es
 precision highp float;
@@ -199,6 +218,7 @@ uniform int uEmitCount;
 uniform vec4 uEmitRange[8];   // x = first slot, y = last slot, z = source index, w = life
 uniform vec4 uEmitPos[8];     // xyz = position, w = spread
 uniform vec4 uEmitVel[8];     // xyz = velocity, w unused
+uniform float uLifes[8];      // seconds, per SOURCE, uploaded every step
 layout(location = 0) out vec4 outState;
 layout(location = 1) out vec4 outVel;
 ${CURL_NOISE_GLSL}
@@ -222,11 +242,10 @@ void main(){
     }
   }
 
-  float life = 1.0;
-  for (int i = 0; i < 8; i++) {
-    if (i >= uEmitCount) break;
-    if (abs(vl.w - uEmitRange[i].z) < 0.5) life = uEmitRange[i].w;
-  }
+  if (!reborn && st.w < 0.0) { outState = st; outVel = vl; return; }
+
+  int src = clamp(int(vl.w + 0.5), 0, 7);
+  float life = max(0.0001, uLifes[src]);
 
   vec3 flow = lcxCurl(st.xyz * uNoiseScale + vec3(0.0, uTime * 0.15, 0.0), 0.35) * uNoiseStrength;
   vec3 vel = vl.xyz + (flow + uGravity) * uDt;
@@ -457,6 +476,13 @@ export function createParticleField(
         gl.uniform4fv(u(updateProg, 'uEmitPos'), new Float32Array(positions));
         gl.uniform4fv(u(updateProg, 'uEmitVel'), new Float32Array(velocities));
       }
+      /* EVERY FRAME, FOR EVERY SOURCE, whether it emitted or not — see defect 2 in the header. A
+         source emitting less than one particle per frame is the normal case for a rate derived from a
+         real quantity, and reading its life out of this frame's emission ranges made the lifetime a
+         function of emission jitter. */
+      const lifes = new Float32Array(8);
+      for (let i = 0; i < 8; i++) lifes[i] = sources[i]?.life ?? 1;
+      gl.uniform1fv(u(updateProg, 'uLifes'), lifes);
       gl.bindVertexArray(vao);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       gl.bindVertexArray(null);
