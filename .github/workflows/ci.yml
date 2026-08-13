@@ -64,8 +64,8 @@ jobs:
       DATABASE_URL: postgresql://lcx:lcx_ci@localhost:5432/lcx_sales_ci
 
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
@@ -98,8 +98,8 @@ jobs:
     # renders. Giving this job a working backend would delete that coverage, and it is the
     # coverage that matches how the desk actually fails.
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
@@ -134,7 +134,7 @@ jobs:
       # the platform whose baselines are committed. Generating Linux baselines in CI
       # would mean trusting a machine nobody has looked at to define "correct".
       - run: npm run e2e -w @lcx/web -- --ignore-snapshots
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: failure()
         with:
           name: playwright-report
