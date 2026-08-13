@@ -164,6 +164,75 @@ void main(){
  * A horizontal ray: height is constant, so the integral is the flat one at that height.
  * NO TONE MAP. The composite owns the only one in the pipeline.
  */
+/*
+ * ── TWO DEFECTS FIXED IN THIS SHADER, BOTH RECORDED HERE BECAUSE THE GLSL CANNOT AFFORD THE PROSE ──
+ *
+ * A comment inside a template literal is shipped bytes that no minifier can reach, so the reasoning
+ * lives out here and the shader carries one line pointing at it.
+ *
+ * ── 1 · uShadowTaps, which quality.ts declared and nothing read ─────────────────────────────────────
+ * The ladder in env/quality.ts has said shadowTaps: 1 for the minimum tier since it was wired. The PCF
+ * loop was hard-coded to 3x3 and divided by a literal 9.0, so the tier that exists for machines which
+ * cannot afford the full frame was paying nine texture fetches per lit fragment to get a result it had
+ * explicitly asked to do without. A config field nobody reads is worse than no field, because it reads
+ * as a guarantee — env.test.ts even asserted the tiers were monotonic in a number with no effect.
+ *
+ * It is TWO STATIC BRANCHES, not a dynamic loop bound. uShadowTaps is uniform across the draw, so the
+ * branch is coherent for every fragment and both bodies unroll; a loop bounded by the uniform would
+ * defeat unrolling on exactly the weak hardware the minimum tier is for. Anything below 9 snaps to 1
+ * at the call site, so a stray 4 cannot reach a branch nobody wrote.
+ *
+ * And one tap is not "9 taps, cheaper" — it is a hard shadow edge. That is the correct thing for the
+ * tier to buy, and it is why this is a look change as well as a perf change.
+ *
+ * ── 4 · THE ISOTROPIC BRANCH HAD THE SAME DEFECT, AND IT WAS LIVE ON THE SIGN-IN SCREEN ────────────
+ * distributionGGX guarded with max(1e-6, PI*d*d). At NdotH = 1, d reduces to a2, so the denominator's
+ * true floor is PI*a2^2 -- 5.3e-11 at the roughness clamp, which is FIVE ORDERS OF MAGNITUDE below the
+ * guard. So for any material smoother than roughness 0.154 the guard replaced the real denominator
+ * inside NdotH > 0.9997, i.e. exactly the core of the specular highlight.
+ *
+ * This was not theoretical. Three materials sit in the affected range, and two of them are the LCX mark:
+ *   ForgeBackdrop.tsx roughness 0.13  -- the live sign-in screen
+ *   docs/3d/e8/entry.ts roughness 0.13 -- the same mark in its harness
+ *   docs/3d/e2/entry.ts roughness 0.14 -- E2's globe
+ * At roughness 0.13 the peak came back 3.9x too dim. At the 0.045 clamp it is 18,930x too dim.
+ *
+ * EXPECT A LOOK CHANGE, and it is the point rather than a side effect: the highlight core on those three
+ * materials gets its real intensity, so it reads as a tight bright specular instead of a dull flat one.
+ * Combined with defect 2 -- which widened the same lobe -- E8's mark had both a blurred and a clipped
+ * highlight, which is most of the difference between "machined metal" and "grey plastic".
+ *
+ * ── 3 · and the anisotropic epsilon was clipping the specular peak of smooth materials ─────────────
+ * Found by the convergence test written for defect 2, which is the reason that test exists rather than
+ * a source-level string match.
+ *
+ * distributionGGXAniso guarded its divide with max(1e-8, v2). But v2 has a legitimate floor of a2^2 --
+ * at NdotH = 1 the tangential terms vanish and v2 is exactly (at*ab)^2. With at = ab at the 0.002
+ * clamp, that floor is 1.6e-11, which is a THOUSAND times below the old guard. So for the smoothest
+ * materials near the specular peak the guard replaced the real denominator with 1e-8 and returned
+ * roughly two thirds of the correct intensity: at roughness 0.045 and NdotH 0.999, D came back 0.219
+ * against a true 0.326.
+ *
+ * A divide guard must sit below every value the expression can legitimately take, or it stops being a
+ * guard and becomes a silent clamp on the output. 1e-16 is comfortably under the 1.6e-11 floor and
+ * nowhere near float32's limits, and v2 cannot actually reach zero anyway because at and ab are clamped
+ * away from it -- so this epsilon is paranoia that no longer costs anything.
+ *
+ * ── 2 · the anisotropic branch disagreed with the isotropic one about alpha ─────────────────────────
+ * distributionGGX takes PERCEPTUAL roughness and squares it internally (a = rough*rough, the
+ * Disney/Burley remap). distributionGGXAniso takes ALPHAS. The old code fed it rough*(1 +/- aniso) —
+ * perceptual roughness wearing an alpha's name.
+ *
+ * The algebra that makes this a defect rather than a preference: with at = ab = a the anisotropic form
+ * reduces to a2/(PI*(NdotH^2*(a2-1)+1)^2), which is exactly the isotropic form. So the branches agree
+ * if and only if at and ab converge on the isotropic ALPHA. They did not — crossing the aniso > 0.001
+ * threshold jumped alpha from rough^2 to rough (at rough 0.3, from 0.09 to 0.3), so the highlight
+ * bloomed visibly rougher the instant anisotropy was switched on, in the direction that looks like a
+ * lower-quality render. E8's mark uses this path, and E8 is the sign-in screen every visitor sees.
+ *
+ * The 0.002 floor is kept and is now consistent rather than coincidental: rough is clamped to 0.045
+ * above, so the isotropic alpha floor is 0.045^2 = 0.002025 — the number this clamp already enforced.
+ */
 const LIT_FRAG = `#version 300 es
 precision highp float;
 in vec3 vWorld;
@@ -183,6 +252,7 @@ uniform mat4 uLightVP;
 uniform sampler2D uShadowMap;
 uniform float uShadowTexel;
 uniform float uShadowStrength;
+uniform int uShadowTaps;
 
 uniform sampler2D uAO;
 uniform vec2 uScreenSize;
@@ -201,14 +271,14 @@ float distributionGGX(float NdotH, float rough) {
   float a = rough * rough;
   float a2 = a * a;
   float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
-  return a2 / max(1e-6, PI * d * d);
+  return a2 / max(1e-16, PI * d * d);
 }
 
 float distributionGGXAniso(float NdotH, float TdotH, float BdotH, float at, float ab) {
   float a2 = at * ab;
   vec3 v = vec3(ab * TdotH, at * BdotH, a2 * NdotH);
   float v2 = dot(v, v);
-  float w2 = a2 / max(1e-8, v2);
+  float w2 = a2 / max(1e-16, v2);
   return a2 * w2 * w2 / PI;
 }
 
@@ -231,13 +301,21 @@ float shadowFactor(vec3 world, float NdotL) {
   if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 || p.z > 1.0) return 1.0;
 
   float bias = max(0.0009, 0.0045 * (1.0 - NdotL));
+  float ref = p.z - bias;
+
+  // One tap is a HARD EDGE, not a cheaper nine. Two static branches: uShadowTaps is uniform across
+  // the draw, so both bodies still unroll. See the note above LIT_FRAG.
+  if (uShadowTaps < 9) {
+    float d = texture(uShadowMap, p.xy).r;
+    return mix(1.0, ref <= d ? 1.0 : 0.0, uShadowStrength);
+  }
 
   float lit = 0.0;
   for (int y = -1; y <= 1; y++) {
     for (int x = -1; x <= 1; x++) {
       vec2 off = vec2(float(x), float(y)) * uShadowTexel;
       float d = texture(uShadowMap, p.xy + off).r;
-      lit += (p.z - bias) <= d ? 1.0 : 0.0;
+      lit += ref <= d ? 1.0 : 0.0;
     }
   }
   lit /= 9.0;
@@ -262,8 +340,11 @@ void main(){
   vec3 B = cross(N, T);
   float aniso = clamp(uAnisotropy, 0.0, 0.95);
 
-  float at = max(0.002, rough * (1.0 + aniso));
-  float ab = max(0.002, rough * (1.0 - aniso));
+  // at/ab are ALPHAS and must be derived from alpha, or the two D branches disagree about what the
+  // number means and the highlight jumps at aniso = 0. See the note above LIT_FRAG.
+  float alpha = rough * rough;
+  float at = max(0.002, alpha * (1.0 + aniso));
+  float ab = max(0.002, alpha * (1.0 - aniso));
 
   float D = aniso > 0.001
     ? distributionGGXAniso(NdotH, dot(T, H), dot(B, H), at, ab)
@@ -398,6 +479,11 @@ export interface LitRenderer {
     readonly lightVP: Mat4;
     readonly shadow: ShadowMap | null;
     readonly shadowStrength?: number;
+    /**
+     * PCF taps: 9 (3x3) or 1 (hard edge). Defaults to 9, so every caller written before the quality
+     * ladder existed keeps the filtering it was captured with. Pass `qualitySettings(tier).shadowTaps`.
+     */
+    readonly shadowTaps?: number;
     readonly draws: readonly LitDraw[];
     /** Half-resolution occlusion from `createAmbientOcclusion`. Omit to disable. */
     readonly ao?: WebGLTexture | null;
@@ -538,6 +624,9 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
         gl.uniform1i(u(litProg, 'uShadowMap'), 0);
         gl.uniform1f(u(litProg, 'uShadowTexel'), 1 / o.shadow.size);
         gl.uniform1f(u(litProg, 'uShadowStrength'), o.shadowStrength ?? 1);
+        /* Anything below 9 is the hard edge. Snapped rather than trusted, so a stray 4 cannot land the
+           shader in a state neither branch was written for. */
+        gl.uniform1i(u(litProg, 'uShadowTaps'), (o.shadowTaps ?? 9) >= 9 ? 9 : 1);
       } else {
         // NO SHADOW MAP IS "FULLY LIT", never "fully shadowed". A missing resource must not
         // black out the scene — that is indistinguishable from a broken shader.

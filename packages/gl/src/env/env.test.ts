@@ -9,6 +9,7 @@ import {
 import { squareToQuad, projectQuad, uprightPanelCorners, isQuadRefusal } from './project.js';
 import { particleLayout, emissionSchedule } from './particles.js';
 import { rayBoxSlab, marchPlan } from './volume.js';
+import { LIT_FRAG } from './lit.js';
 import {
   QUALITY_TIERS, qualitySettings, pickQualityTier, prefersMoreContrast, prefersReducedMotion,
   type QualitySettings,
@@ -1200,5 +1201,170 @@ describe('contourSegments — an iso-line may not cross unmeasured ground', () =
         expect(p[1]).toBeLessThanOrEqual(6);
       }
     }
+  });
+});
+
+
+/*
+ * ══════════════════════════════════════════════════════════════════════════════════════════════════
+ *  THE TWO SHADER DEFECTS THE BLUEPRINT AUDIT FOUND — pinned so neither can come back.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════════
+ *  Both live in GLSL, which no unit test can execute. So each is pinned twice: the ALGEBRA is mirrored
+ *  in TypeScript and checked numerically, and the SOURCE is checked to still contain the form the
+ *  algebra assumes. Either alone would be a test that passes while the shader is wrong — the mirror
+ *  because it is not the shipped code, the source pin because matching a string proves nothing about
+ *  what the maths does.
+ */
+
+/** Mirror of `distributionGGX` in LIT_FRAG. Takes PERCEPTUAL roughness and squares it internally. */
+function dGGXIso(NdotH: number, rough: number): number {
+  const a = rough * rough;
+  const a2 = a * a;
+  const d = NdotH * NdotH * (a2 - 1) + 1;
+  return a2 / Math.max(1e-16, Math.PI * d * d); // tracks LIT_FRAG — see the epsilon tests
+}
+
+/** Mirror of `distributionGGXAniso` in LIT_FRAG. Takes ALPHAS — this is the whole point. */
+function dGGXAniso(NdotH: number, TdotH: number, BdotH: number, at: number, ab: number): number {
+  const a2 = at * ab;
+  const v: [number, number, number] = [ab * TdotH, at * BdotH, a2 * NdotH];
+  const v2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+  const w2 = a2 / Math.max(1e-16, v2); // must track LIT_FRAG exactly — see the epsilon test below
+  return (a2 * w2 * w2) / Math.PI;
+}
+
+describe('the anisotropic and isotropic GGX branches must agree where they meet', () => {
+  /* A half-vector on the tangent plane at a given NdotH, so TdotH^2 + BdotH^2 = 1 - NdotH^2 holds —
+     the identity the reduction depends on. Picking TdotH arbitrarily would test nothing. */
+  const tangentSplit = (NdotH: number, share: number) => {
+    const rest = Math.max(0, 1 - NdotH * NdotH);
+    return { TdotH: Math.sqrt(rest * share), BdotH: Math.sqrt(rest * (1 - share)) };
+  };
+
+  it('reduces EXACTLY to the isotropic form when anisotropy is zero', () => {
+    for (const rough of [0.045, 0.1, 0.3, 0.5, 0.8, 1.0]) {
+      const alpha = rough * rough;
+      /* 1.0 included deliberately: at the peak the tangential terms vanish and v2 hits its true
+         floor of (at*ab)^2, which is where the old 1e-8 divide guard silently clamped the result. */
+      for (const NdotH of [0.05, 0.3, 0.6, 0.9, 0.999, 1.0]) {
+        for (const share of [0, 0.25, 0.5, 1]) {
+          const { TdotH, BdotH } = tangentSplit(NdotH, share);
+          const iso = dGGXIso(NdotH, rough);
+          const aniso = dGGXAniso(NdotH, TdotH, BdotH, alpha, alpha);
+          /* Relative, because D spans many orders of magnitude across this sweep — an absolute
+             tolerance would be vacuous at rough 1.0 and impossible at rough 0.045. */
+          expect(Math.abs(aniso - iso) / iso).toBeLessThan(1e-9);
+        }
+      }
+    }
+  });
+
+  it('AND THE OLD DERIVATION FAILS THAT, which is why this test exists', () => {
+    /*
+     * The shipped code used to pass `rough * (1 +/- aniso)` — perceptual roughness where an alpha was
+     * expected. At aniso -> 0 that hands the anisotropic form `rough`, not `rough^2`.
+     *
+     * Without this case the test above could be satisfied by a shader that never calls the anisotropic
+     * branch at all. This pins the SIZE of the bug that was fixed.
+     */
+    const rough = 0.3;
+    const NdotH = 0.9;
+    const { TdotH, BdotH } = tangentSplit(NdotH, 0.5);
+    const correct = dGGXAniso(NdotH, TdotH, BdotH, rough * rough, rough * rough);
+    const old = dGGXAniso(NdotH, TdotH, BdotH, rough, rough);
+    expect(Math.abs(old - correct) / correct).toBeGreaterThan(0.5);
+
+    /*
+     * AND IN A SPECIFIC DIRECTION, which is what made it visible: treating perceptual roughness as an
+     * alpha WIDENS the lobe. The same energy spreads out, so the peak dims and the tail brightens.
+     * Both halves are asserted, because "it changed" is a weaker claim than "it blurred" and only the
+     * second one explains what an operator would have seen on E8's mark.
+     */
+    const peak = 0.999;
+    const tail = 0.9;
+    const at = (n: number, a: number) => {
+      const sp = tangentSplit(n, 0.5);
+      return dGGXAniso(n, sp.TdotH, sp.BdotH, a, a);
+    };
+    expect(at(peak, rough)).toBeLessThan(at(peak, rough * rough));
+    expect(at(tail, rough)).toBeGreaterThan(at(tail, rough * rough));
+  });
+
+  it('still varies with anisotropy — the fix must not have flattened the feature', () => {
+    const rough = 0.4;
+    const alpha = rough * rough;
+    const NdotH = 0.85;
+    const { TdotH, BdotH } = tangentSplit(NdotH, 0.8);
+    const round = dGGXAniso(NdotH, TdotH, BdotH, alpha, alpha);
+    const stretched = dGGXAniso(NdotH, TdotH, BdotH, alpha * 1.6, alpha * 0.4);
+    expect(stretched).not.toBeCloseTo(round, 6);
+  });
+
+  it('guards the divide BELOW the smallest value the denominator can really take', () => {
+    /* v2's true floor is (at*ab)^2 = 1.6e-11 at the 0.002 clamp. A guard at 1e-8 sits ABOVE that and
+       clamps real output instead of preventing a real divide by zero. */
+    expect(LIT_FRAG).toContain('max(1e-16, v2)');
+    expect(LIT_FRAG).not.toContain('max(1e-8, v2)');
+    /* The isotropic branch had the same defect and it was live on the sign-in screen: its denominator's
+       floor is PI*a2^2 = 5.3e-11 at the roughness clamp, five orders below the old 1e-6 guard. */
+    expect(LIT_FRAG).toContain('max(1e-16, PI * d * d)');
+    expect(LIT_FRAG).not.toContain('max(1e-6, PI * d * d)');
+  });
+
+  it('returns the TRUE specular peak for the three materials that were being clipped', () => {
+    /*
+     * ForgeBackdrop (0.13), e8 (0.13) and e2 (0.14) are the shipped materials below the 0.154 threshold
+     * where the old guard fired. Pinned as a number so nobody reinstates a guard above the real floor.
+     */
+    /* Measured, not guessed: 0.13 -> 3.90x, 0.14 -> 2.16x. Thresholds sit just under those. */
+    for (const [rough, minFactor] of [[0.13, 3.85], [0.14, 2.1]] as const) {
+      const a2 = (rough * rough) ** 2;
+      const truePeak = 1 / (Math.PI * a2);
+      const oldClamped = a2 / 1e-6;
+      expect(truePeak / oldClamped).toBeGreaterThan(minFactor);
+      /* And the fixed mirror must now produce that true peak rather than the clamped one. */
+      expect(dGGXIso(1, rough)).toBeCloseTo(truePeak, 5);
+    }
+  });
+
+  it('the shader derives at/ab from alpha, not from perceptual roughness', () => {
+    /* The mirror above is only meaningful if the shipped source still feeds it alphas. */
+    expect(LIT_FRAG).toContain('float alpha = rough * rough;');
+    expect(LIT_FRAG).toMatch(/float at = max\(0\.002, alpha \* \(1\.0 \+ aniso\)\)/);
+    expect(LIT_FRAG).toMatch(/float ab = max\(0\.002, alpha \* \(1\.0 - aniso\)\)/);
+    /* The exact form that was wrong, banned by shape so a revert cannot pass. */
+    expect(LIT_FRAG).not.toMatch(/at = max\([^)]*, rough \* \(1\.0 \+ aniso\)\)/);
+  });
+});
+
+describe('the PCF tap count is wired, so the minimum tier gets what it asks for', () => {
+  it('declares the uniform and branches on it', () => {
+    expect(LIT_FRAG).toContain('uniform int uShadowTaps;');
+    expect(LIT_FRAG).toContain('if (uShadowTaps < 9)');
+  });
+
+  it('takes ONE texture fetch on the cheap path, not nine', () => {
+    /* The whole point is the fetches, so count them per branch rather than trusting the comment. */
+    const fn = LIT_FRAG.slice(LIT_FRAG.indexOf('float shadowFactor'), LIT_FRAG.indexOf('void main('));
+    const cheap = fn.slice(fn.indexOf('if (uShadowTaps < 9)'), fn.indexOf('float lit = 0.0;'));
+    expect(cheap.match(/texture\(uShadowMap/g) ?? []).toHaveLength(1);
+    /* And it must return, not fall through into the 3x3 loop — a missing return here would make the
+       cheap path cost TEN fetches, which is the opposite of the fix. */
+    expect(cheap).toContain('return mix(1.0,');
+  });
+
+  it('still filters 3x3 on the full path', () => {
+    const fn = LIT_FRAG.slice(LIT_FRAG.indexOf('float shadowFactor'), LIT_FRAG.indexOf('void main('));
+    expect(fn).toContain('lit /= 9.0;');
+    expect(fn).toMatch(/for \(int y = -1; y <= 1; y\+\+\)/);
+  });
+
+  it('applies the bias ONCE, to both paths', () => {
+    /* The refactor split one comparison into two. If the cheap path had been written without the bias
+       it would shadow-acne on every surface at the tier least able to hide it. */
+    const fn = LIT_FRAG.slice(LIT_FRAG.indexOf('float shadowFactor'), LIT_FRAG.indexOf('void main('));
+    expect(fn.match(/float bias = /g) ?? []).toHaveLength(1);
+    expect(fn.match(/float ref = p\.z - bias;/g) ?? []).toHaveLength(1);
+    expect(fn.match(/ref <= d/g) ?? []).toHaveLength(2);
   });
 });

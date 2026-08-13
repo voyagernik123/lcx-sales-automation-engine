@@ -274,7 +274,7 @@ function frame(tSec: number) {
   target.bind();
   lit.draw({
     viewProj: vp, eye, lightDir, lightColour: [5.2, 5.0, 4.6],
-    ambientGain: 1.15, lightVP, shadow, shadowStrength: 0.9, draws,
+    ambientGain: 1.15, lightVP, shadow, shadowStrength: 0.9, shadowTaps: Q.shadowTaps, draws,
     /* NULL WHEN AO IS OFF. Passing the texture regardless would have the shader sample a buffer nothing
        wrote this frame — stale occlusion from the last resize, or zeros, which reads as the whole disc
        sitting in shadow. The renderer's `uAOEnabled` exists precisely for this. */

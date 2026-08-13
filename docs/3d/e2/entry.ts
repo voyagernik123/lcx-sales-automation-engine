@@ -580,7 +580,7 @@ function frame() {
     sky: SKY,
     /* A null shadow map is FULLY LIT in `lit.ts`, never fully shadowed, so the control is a
        genuine no-shadow render rather than a black frame. */
-    lightVP, shadow: SHADOW_ON ? shadow : null, shadowStrength: 0.92,
+    lightVP, shadow: SHADOW_ON ? shadow : null, shadowStrength: 0.92, shadowTaps: Q.shadowTaps,
     ao: ao.texture, screenSize: [W, H] as [number, number],
   };
   lit.draw({ ...common, ambientGain: BODY_AMBIENT, draws: bodyDraws });

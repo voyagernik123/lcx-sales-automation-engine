@@ -862,7 +862,7 @@ function frame(depthOn = DEPTH_ON) {
   }
   lit.draw({
     viewProj: vp, eye, lightDir, lightColour: [2.05, 2.0, 1.92],
-    ambientGain: 0.62, sky: SKY, lightVP, shadow, shadowStrength: 0.92, draws,
+    ambientGain: 0.62, sky: SKY, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, draws,
     ao: AO_ON ? ao.texture : null, screenSize: [W, H],
   });
   if (volume) {

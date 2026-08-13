@@ -603,7 +603,7 @@ function frame() {
   }
   lit.draw({
     viewProj: vp, eye, lightDir, lightColour: [3.4, 3.35, 3.2],
-    ambientGain: 1.0, lightVP, shadow, shadowStrength: 0.9, draws,
+    ambientGain: 1.0, lightVP, shadow, shadowStrength: 0.9, shadowTaps: Q.shadowTaps, draws,
     ao: AO_ON ? ao.texture : null, screenSize: [W, H],
   });
   /* `blit(program, setUniforms?)` — the second argument is a CALLBACK, not a texture, and the

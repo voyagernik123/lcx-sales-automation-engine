@@ -548,7 +548,7 @@ function frame() {
   }
   lit.draw({
     viewProj: vp, eye, lightDir, lightColour: [3.0, 2.95, 2.85],
-    ambientGain: 0.46, lightVP, shadow, shadowStrength: 0.94, draws,
+    ambientGain: 0.46, lightVP, shadow, shadowStrength: 0.94, shadowTaps: Q.shadowTaps, draws,
     ao: AO_ON ? ao.texture : null, screenSize: [W, H],
     /*
      * A LITERAL COLOUR, NOT 'sky'. The vault is enclosed — there is no sky for a distant surface to

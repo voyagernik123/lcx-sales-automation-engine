@@ -1083,7 +1083,7 @@ function frame() {
   target.bind();
   lit.draw({
     viewProj: vp, eye, lightDir, lightColour: [3.4, 3.3, 3.14],
-    ambientGain: 0.44, lightVP, shadow, shadowStrength: 0.92, draws,
+    ambientGain: 0.44, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, draws,
     ao: ao.texture, screenSize: [W, H],
     fog: FOG_DENSITY > 0
       ? { density: FOG_DENSITY, height: 5.0, floor: 0, colour: hexToLinear(FOG_HEX) }
