@@ -190,8 +190,24 @@ gets worse rather than better.** §4.1 is therefore the first item, ahead of eve
 
 One more omission, in the opposite direction: the blueprint states DOM typography as a satisfied invariant. The
 repo is more honest — `harnessRules.test.ts:158-161` pins the set of environments with no projected DOM text at
-exactly `'e0,e2'`, i.e. **E2 currently bakes label text into a texture**, tracked as debt with a ratchet so it
-cannot grow. Adopting the blueprint's wording verbatim would silently mark a known violation as resolved.
+exactly `'e0,e2'` — an honest ratchet that stops the violation growing while recording that it exists.
+Adopting the blueprint's wording verbatim would silently mark a tracked violation as resolved.
+
+> **CORRECTION, 2026-08-13, and it is mine.** I wrote here and in §7.4 that E2 "bakes label text into a
+> texture". **It does not, and could not.** `LIT_FRAG` has no texture sampler and `Material` carries no map
+> of any kind — the same absence that leaves E2's earth a plain blue ball. E2 rendered **no text at all**,
+> and `docs/3d/e2/build.mjs:19-23` records why as a deliberate decision rather than an oversight: eight of
+> its city labels sit within eight degrees of each other, which at that camera is ~23 px apart — closer than
+> the labels are wide — and *"projected text without a collision policy is text that reads as broken."*
+>
+> So the violation was real but the mechanism was the opposite of what I described: there was nothing to
+> unbake, there was a layer to write. It has now been written (projection from the same matrix, hard hide by
+> the report's own limb dot product, fade normalised on the same quantity, a radial fallback with leader
+> lines for labels that cannot sit beside their dot, and every unlabelled site stated in DOM prose with its
+> coordinates and the reason). The ratchet is flipped to `'e0'`.
+>
+> Worth keeping as an entry in this document's own error log: I asserted a mechanism I had not checked,
+> from a test assertion that only ever said "no projected DOM text" and never said why.
 
 ---
 
@@ -302,8 +318,10 @@ Seven questions. Five are one-liners; two are real.
    appears that WebGL2 genuinely cannot carry.
 3. **`shadowTaps` — wire it in, or delete the field?** Recommend **wire it in**: the minimum tier exists for
    weak machines and is currently paying full price.
-4. **E2's baked label text (rule 4) — fix, or accept as permanent documented debt?** Recommend **fix**, because
-   rule 4 is the accessibility and print path, not a stylistic preference.
+4. **E2's missing label layer (rule 4) — build it, or accept as permanent documented debt?** Recommend
+   **build**, because rule 4 is the accessibility and print path, not a stylistic preference. *(Corrected:
+   this said "baked label text". E2 baked nothing — see the correction in §2. The work was to write a
+   collision-and-occlusion policy, which is why it had been deferred rather than botched.)* **DONE.**
 5. **God rays in E7 — yes on the information argument, or no?** Recommend **no for now**; it is the only item
    here that would exist to look expensive, and it can wait behind §7(b).
 6. **E8's mark — procedural forever, or spend the Blender time and ~40 KB loader?** *(Standing since

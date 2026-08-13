@@ -16,6 +16,10 @@
  *   REAL   sphere earth, a shell that brightens at the limb, twelve sited cities, an orbital ring
  *          in polished metal, one key light producing a genuine day/night terminator, shadow map,
  *          depth prepass, SSAO, environment reflections, depth of field.
+ *   REAL   DOM labels projected from the frame's own matrix and occluded against the globe: at this camera
+ *          seven of the twelve sites are labelled and the other five are stated in prose under the frame,
+ *          because a label over the near hemisphere pointing at a city on the far side is worse than no
+ *          label. §6 rule 4, which this harness was the last environment to break — see THE DOM LAYER.
  *   ABSENT  continents, and this is the largest gap. `LIT_FRAG` has no texture sampler and
  *          `Material` carries no map of any kind, so the earth is a plain blue ball. Without an
  *          albedo the twelve sited markers cannot be READ as geography by anyone looking at them —
@@ -36,7 +40,7 @@ import {
   createStage, isStage, sphere, torus, arcTube, uploadMesh, createLitRenderer, createTarget3D,
   createShadowMap, createSkyBackdrop, createAmbientOcclusion, createDepthOfField,
   viewProjection, eyeOf, lightViewProjection, boundsRadius, boundsCentre, triangleCount,
-  hexToLinear, assertBrandFidelity, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
+  hexToLinear, assertBrandFidelity, projectScreen, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, IDENTITY,
   type LitDraw, type Viewpoint, type StageRefusal,
   QUALITY_TIERS, qualitySettings, shadowMapSizeFor, type QualityTier,
 } from '@lcx/gl';
@@ -143,12 +147,13 @@ const CORRIDORS: ReadonlyArray<{ readonly to: string; readonly lat: number; read
 
 
 /*
- * §6 RULE 1 — and for E2 this is also a partial answer to its rule 4 violation.
+ * §6 RULE 1 — the flat fallback, which is a DIFFERENT job from rule 4 and was once doing rule 4's.
  *
- * E2 renders no DOM text at all: twelve sited cities and seven corridors carry no labels, so nothing
- * enters the accessibility tree and nothing survives printing. That is still a violation and is named in
- * the README. But the flat fallback is always in the DOM, so the names, coordinates and corridor
- * distances are now reachable by a screen reader and present in the print path — which they were not.
+ * While this harness projected no labels the fallback table was the only place the city names,
+ * coordinates and corridor distances existed at all, and that was named here as a partial answer to the
+ * rule 4 violation. It is not one any more: THE DOM LAYER below projects real labels from the frame's own
+ * matrix, so rule 4 is satisfied on the frame and this table is back to being what rule 1 asks for — the
+ * surface a reader gets when there is no frame.
  *
  * What the flat view cannot carry is the whole point of the globe: that a corridor's arc height rises
  * with distance, that three endpoints are behind the limb, and that two desks are on the night side.
@@ -721,6 +726,506 @@ if (brandFailures.length > 0) {
   throw new Error(msg);
 }
 
+/*
+ * Peak lift per corridor, so "does a long haul climb higher than a short hop" is a number in the
+ * report rather than an impression from the picture.
+ *
+ * HOISTED OUT OF THE REPORT because the projected label for a corridor endpoint prints the same lift.
+ * Computed twice, the frame and the report could disagree about the same arc — the defect this file
+ * already fixed once for `separationDeg`, which serves both the fallback table and the report from one
+ * expression.
+ */
+const corridorPeakLift = corridorGeos.map((g, i) => {
+  let m = 0;
+  for (let k = 0; k < g.positions.length; k += 3) {
+    m = Math.max(m, Math.hypot(g.positions[k]!, g.positions[k + 1]!, g.positions[k + 2]!));
+  }
+  return {
+    to: CORRIDORS[i]!.to,
+    lift: Number((m - EARTH_R).toFixed(4)),
+    /* The quantity the lift is supposed to scale with. Reported beside it so "monotonic with distance"
+       is a check the capture performs rather than a sentence in the README. */
+    separationDeg: Number(separationDeg(CORRIDORS[i]!.lat, CORRIDORS[i]!.lon).toFixed(1)),
+  };
+});
+
+/*
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ * THE DOM LAYER — §6 RULE 4, WHICH THIS HARNESS WAS THE LAST ENVIRONMENT TO BREAK.
+ * ══════════════════════════════════════════════════════════════════════════════════════
+ *
+ * WHAT WAS WRONG WAS NOT BAKED TEXT. IT WAS NO TEXT, and the distinction decides the fix.
+ *
+ * The standing description of this violation was that E2 bakes its labels into a texture. It does not and
+ * it could not: `LIT_FRAG` has no texture sampler and `Material` carries no map of any kind, which is the
+ * same absence that leaves the earth a plain blue ball. `build.mjs` simply emitted no overlay, so twelve
+ * sited cities and seven corridors carried no words at all — nothing in the accessibility tree, nothing
+ * selectable, nothing translatable, nothing in a print. There was no texture to unbake; there was a layer
+ * to write.
+ *
+ * `build.mjs`'s stated reason for the absence is real and is ANSWERED here rather than dismissed: "three
+ * of these sites are within eight degrees of each other — at this camera that is ~23 px apart, closer
+ * than the labels are wide. Projected text without a collision policy is text that reads as broken, and
+ * this harness cannot check its own legibility." So there is a collision policy below, every label that
+ * loses a contest is named in the DOM with the reason it lost, and the counts are in the report — which
+ * is the part that makes the legibility claim checkable instead of asserted.
+ *
+ * ── THE HARD PART: A LABEL ON THE FAR SIDE OF A PLANET ──────────────────────────────
+ *
+ * `project.ts` says it under "WHAT THIS DELIBERATELY DOES NOT DO": CSS has no depth buffer, so a
+ * projected element cannot be hidden by GL geometry in front of it. On a globe that is not a nicety.
+ * Tokyo is on the far face at this camera — the report already proves it, `behindLimb` is
+ * ["Mumbai", "Singapore", "Tokyo"] — and an unguarded projection puts TOKYO in the middle of the
+ * Atlantic, over the near hemisphere, pointing at nothing. That is WORSE than the missing label it
+ * replaces, because a label that lands on the wrong ocean reads as an address.
+ *
+ * The guard is one dot product, and it is deliberately THE SAME ONE the report publishes rather than a
+ * second opinion about the same geometry. For a sphere of radius R seen from distance L, a surface point
+ * with normal n is on the visible cap when n·ê > R/L: `HORIZON` above is that quotient, `seen[].facing`
+ * is that comparison, and both are reused here. A label therefore cannot contradict the `behindLimb`
+ * list printed beside it.
+ *
+ * ── AND A BOOLEAN IS NOT ENOUGH AT THE LIMB ─────────────────────────────────────────
+ *
+ * The same quantity, normalised, is the cosine of the angle between the surface normal and the direction
+ * to the eye: cosFace = (L·(n·ê) − R) / |eye − p|. It is exactly 0 at the limb — the view ray is tangent
+ * there — and 1 at the sub-view point, so ONE number carries both the hide test and how much to trust the
+ * anchor. Two things go wrong as it approaches zero, and both are measurable rather than aesthetic:
+ *
+ *   1 · THE MARKER FORESHORTENS. Its radial extent on screen is cosFace × its head-on diameter, and a
+ *       marker two pixels wide is not an object a label can point at — E4 settled the same argument with
+ *       MIN_BODY_PX, on spheres that were merely small rather than edge-on.
+ *   2 · SCREEN POSITION COMPRESSES. Near the limb, degrees of latitude move a site by a fraction of a
+ *       pixel, so distinct sites pile into the same pixels and an anchor stops identifying which city it
+ *       belongs to. A label with an ambiguous anchor is a label on the wrong city.
+ *
+ * So the threshold is DERIVED from a pixel floor rather than typed in as a dot product. `ANCHOR_FLOOR_PX`
+ * is the width below which the marker stops being a thing to point at; the hide threshold is that floor
+ * divided by the marker's head-on width at this camera, and full opacity is reached at twice it. Computed
+ * for the shipped camera: cosHide 0.2955 and cosFull 0.5911, which are 95.4% and 80.2% of the projected
+ * disc radius. Labels are therefore full strength over the inner four-fifths of the disc, fade across the
+ * next fifth, and are refused in the outer 5% — and at that boundary the marker is 5.0 px wide, which is
+ * the floor, arrived at rather than assumed.
+ *
+ * The shipped globe (`apps/web/src/components/market/GlobeReliefGl.tsx`) does the same job with
+ * `LIMB_DOT = 1 / CAMERA_DISTANCE + 0.05`. The 0.05 is that same margin, chosen by eye; this is the
+ * number it was standing in for, and it is reported so a capture can check it.
+ *
+ * ── WHAT DOES NOT MOVE INTO THE FRAME ───────────────────────────────────────────────
+ *
+ * Day and night are stated in WORDS on every label, not by tinting it. A colour-coded label loses its
+ * meaning in the print path and in greyscale — which is exactly the path rule 4 exists to protect.
+ */
+const CSS_W = W / SCALE, CSS_H = H / SCALE;
+/* THE MATRIX THE FRAME ACTUALLY DRAWS WITH. `view` is a module const and `frame()` recomputes
+   `viewProjection(view, W / H)` from it on every call, so this is that expression on those inputs — not a
+   camera that merely resembles the renderer's. Positioning DOM content from an approximation of the
+   render camera is the failure `project.ts` was written to remove. */
+const vpFinal = viewProjection(view, W / H);
+
+/* `overflow:hidden` IS NOT COSMETIC. A projected element is clipped to the canvas box or it extends the
+   PAGE box, and Playwright then fails with "Unable to capture screenshot" — naming the screenshot rather
+   than the transform that caused it. E1, E4 and E7 all carry this wrapper for the same reason. */
+const wrap = document.createElement('div');
+wrap.style.cssText = `position:relative;overflow:hidden;width:${CSS_W}px;height:${CSS_H}px`;
+canvas.parentNode?.insertBefore(wrap, canvas);
+wrap.appendChild(canvas);
+const overlay = document.createElement('div');
+/* The CONTAINER ignores the pointer so it cannot swallow a gesture aimed at the canvas; each label
+   re-enables it and asks for selectable text. An audit of the six projecting environments found
+   `elementFromPoint` at the centre of every label returning the canvas and a drag selecting the empty
+   string — the words were in the document and unreachable with a mouse, which defeats half of why they
+   are in the DOM. */
+overlay.style.cssText = 'position:absolute;inset:0;pointer-events:none';
+wrap.appendChild(overlay);
+const SELECTABLE = 'pointer-events:auto;user-select:text;-webkit-user-select:text';
+
+/* Built as elements with `textContent` rather than interpolated into `innerHTML`. City names are data
+   here and will be real partner data later; `innerHTML` PARSES its argument, so one `&` or `<` in a place
+   name corrupts the label silently on the surface a reader trusts most. */
+const textLine = (css: string, text: string): HTMLDivElement => {
+  const d = document.createElement('div');
+  d.style.cssText = css;
+  d.textContent = text;
+  return d;
+};
+
+/* PIXELS PER WORLD UNIT AT THE GLOBE'S CENTRE, from the camera rather than off a screenshot: the frame
+   spans `fovDeg` vertically at `distance`, so half its height is tan(fov/2)·distance world units. */
+const PX_PER_WORLD = (CSS_H / 2) / (Math.tan(((view.fovDeg ?? 34) * RAD) / 2) * view.distance);
+/* The marker's head-on projected diameter — what the foreshortening below is a fraction OF. */
+const MARKER_PX = 2 * CITY_R * PX_PER_WORLD;
+/* Five pixels. A marker narrower than this is a leaning sliver, and a label attached to it names a
+   smudge rather than a place. It is the one judgement call in this section; everything else is derived
+   from it, and it is reported so the judgement is visible rather than buried in a dot product. */
+const ANCHOR_FLOOR_PX = 5;
+const COS_HIDE = ANCHOR_FLOOR_PX / MARKER_PX;
+const COS_FULL = Math.min(1, 2 * COS_HIDE);
+/*
+ * THE FADE BOTTOMS OUT AT 0.55, NOT AT 0, and the reason is that a 10%-opacity label is not a gentler
+ * label — it is an unreadable one that still occupies its pixels and still blocks a competing label from
+ * being placed there. Below `COS_HIDE` a label is REFUSED and its text moves into the words under the
+ * frame. There is no band in between where the reader is expected to squint.
+ */
+const LABEL_MIN_OPACITY = 0.55;
+/* Clear of the marker's own disc plus four pixels, so the box reads as attached to the marker rather
+   than as sitting on it. Derived from the marker's measured width for the same reason as above. */
+const GAP_PX = MARKER_PX / 2 + 4;
+
+type Rect = { x: number; y: number; w: number; h: number };
+const overlapArea = (a: Rect, b: Rect): number =>
+  Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x))
+  * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+
+/*
+ * EVERY BOX IS MEASURED BY THE BROWSER, NOT ESTIMATED FROM A CHARACTER WIDTH. E4 computed label widths
+ * as `chars × 6.6`, which is wrong for 9.5 px monospace carrying letter-spacing: the under-estimate made
+ * the boxes narrow, a line wrapped, and — worse — the collision test was then certifying an arrangement
+ * that did not exist on screen. There is a browser here and it knows the width.
+ */
+function measured(el: HTMLElement): Rect {
+  el.style.left = '-99999px';
+  el.style.top = '0px';
+  el.style.visibility = 'hidden';
+  overlay.appendChild(el);
+  const r = el.getBoundingClientRect();
+  return { x: 0, y: 0, w: Math.ceil(r.width), h: Math.ceil(r.height) };
+}
+
+const lonText = (lon: number): string => (lon >= 0 ? `${lon.toFixed(2)} E` : `${(-lon).toFixed(2)} W`);
+const latText = (lat: number): string => (lat >= 0 ? `${lat.toFixed(2)} N` : `${(-lat).toFixed(2)} S`);
+
+/*
+ * THE HUB'S NAME IS RESOLVED FROM THE SITE LIST, NOT TYPED A SECOND TIME.
+ *
+ * `HUB` is the coordinate every corridor starts from and `CITY_SITES` is what gets labelled. They are two
+ * declarations of the same place, and if they drift the hub label would silently stop saying "hub" while
+ * seven arcs still radiated from that dot — a frame that has lost the one endpoint they all share, with
+ * nothing to report it. Refused by name instead.
+ */
+const hubSite = CITY_SITES.find((c) => c.lat === HUB.lat && c.lon === HUB.lon);
+if (hubSite === undefined) {
+  die(`HUB_NOT_SITED: no entry in CITY_SITES sits at the hub's ${HUB.lat}/${HUB.lon}, so the origin of `
+    + 'all seven corridors would be an unnamed dot. The two declarations of Vaduz have drifted.');
+}
+const HUB_NAME = hubSite.name;
+
+/*
+ * WHAT A LABEL SAYS, and the corridor line is why the lift computation above was hoisted.
+ *
+ * A corridor's payload is its ENDPOINT, so the arc's peak lift and its angular separation are printed at
+ * the place the arc lands rather than at the apex. An apex is not a place: a label floating over the
+ * middle of the ocean names no city, and it would compete for pixels with the two labels that do. The hub
+ * says how many corridors leave it, which is the one thing it knows that the spokes do not.
+ */
+const liftByCity = new Map(corridorPeakLift.map((c) => [c.to, c] as const));
+const linesFor = (c: { name: string; lat: number; lon: number }, sunlit: boolean): string[] => {
+  const lines = [`${latText(c.lat)}  ${lonText(c.lon)}`, sunlit ? 'daylight' : 'night'];
+  const corridor = liftByCity.get(c.name);
+  if (corridor) lines.push(`corridor from ${HUB_NAME} · ${corridor.separationDeg}° · lift ${corridor.lift}`);
+  if (c.name === HUB_NAME) lines.push(`hub · ${CORRIDORS.length} corridors leave here`);
+  return lines;
+};
+
+/*
+ * THE ANCHOR IS THE MARKER'S OUTER CAP, at EARTH_R + CITY_R along the normal, so a label sits beside the
+ * lit dot rather than beside the point where the dot is buried. The FACING TEST is taken on the surface
+ * point at EARTH_R instead, because that is what `seen[].facing` and `behindLimb` are computed from — a
+ * cap peeking a third of a marker-radius over the limb would otherwise be labelled while the report says
+ * it is behind it.
+ */
+const labelPlan = cities.map((c) => {
+  const n = c.normal;
+  const surface: [number, number, number] = [n[0] * EARTH_R, n[1] * EARTH_R, n[2] * EARTH_R];
+  const toEye: [number, number, number] = [eye[0] - surface[0], eye[1] - surface[1], eye[2] - surface[2]];
+  const toEyeLen = Math.hypot(toEye[0], toEye[1], toEye[2]) || 1;
+  const anchorR = EARTH_R + CITY_R;
+  /* ONE evaluation, used by both the label's own words and the fade below. The report's `citiesSunlit`
+     comes from `seen`, which is this same `dot3(n, SUN) > 0` on the same normal — so the label and the
+     count cannot disagree about whether a desk is awake. */
+  const sunlit = dot3(n, SUN) > 0;
+  return {
+    name: c.name,
+    facing: dot3(n, eyeDir) > HORIZON,
+    /* Zero exactly at the limb, one at the sub-view point. Both the hide test and the fade read it. */
+    cosFace: dot3(n, toEye) / toEyeLen,
+    lines: linesFor(c, sunlit),
+    at: projectScreen(vpFinal, [n[0] * anchorR, n[1] * anchorR, n[2] * anchorR], CSS_W, CSS_H),
+  };
+});
+
+/*
+ * MARKER DISCS ARE OBSTACLES, and a label may not cover one at all.
+ *
+ * A marker IS the datum here — twelve of them are the whole reading — and at 16.9 px across there is no
+ * "slight" overlap worth allowing. E4 tolerated 12% of a 30–60 px sphere; a tenth of a marker this size
+ * is a pixel and a half, so tolerating it buys nothing and costs the reader a dot. The test is a
+ * rectangle intersection, which is symmetric by construction: E6's occlusion bug was a
+ * corner-containment test that missed a large box covering the MIDDLE of a small one.
+ *
+ * EVERY DISC IS SIZED HEAD-ON, which OVERSTATES a foreshortened one — Dubai's is 4.3 px wide on screen and
+ * is avoided as though it were 16.9. Deliberately conservative: overstating costs a label a place it could
+ * have had, understating costs the reader a marker, and only one of those is recoverable.
+ *
+ * AND THE SET INCLUDES THE MARKERS THIS LAYER REFUSED TO LABEL. Dubai and Chicago get no label because
+ * they are too edge-on to point at, but they are still DRAWN, so they are still data another label may
+ * not sit on.
+ */
+const markerDiscs = labelPlan.filter((l) => l.facing && !l.at.behind).map((l) => ({
+  name: l.name,
+  box: {
+    x: l.at.sx - MARKER_PX / 2, y: l.at.sy - MARKER_PX / 2, w: MARKER_PX, h: MARKER_PX,
+  } as Rect,
+}));
+
+const placedBoxes: Rect[] = [];
+const onFrame = (r: Rect): boolean =>
+  r.x >= 2 && r.y >= 2 && r.x + r.w <= CSS_W - 2 && r.y + r.h <= CSS_H - 2;
+
+/*
+ * THE DECLARATION MOVES ONTO THE FRAME BECAUSE THE NAMES DID.
+ *
+ * `CITY_SITES` says it plainly: the coordinates are real city coordinates, and the claim that these twelve
+ * are LCX's partner and listing corridor is NOT — no such list is an input here. While the frame carried
+ * no words that declaration was safe in the fallback's notices, because the picture asserted nothing a
+ * reader could quote. It now prints twelve real place names, and twelve real place names on a globe read
+ * as somebody's actual network. So the qualification goes where the claim is.
+ *
+ * AMBER, matching E4's `SYNTHETIC ONTOLOGY`, and pushed into the obstacle set BEFORE any label is placed:
+ * a label that covered the sentence qualifying it would leave the strongest possible version of the claim
+ * on screen. Bottom-left, in the band between the globe's silhouette and the frame edge.
+ *
+ * MEASURED AGAINST THE WRAPPER rather than assumed from the CSS — `bottom: 12px` is not a number this code
+ * knows the top edge of, which is the mistake E4 records for exactly this rectangle.
+ */
+const declaration = document.createElement('div');
+declaration.style.cssText = 'position:absolute;left:14px;bottom:12px;white-space:nowrap;'
+  + 'font:600 10px/1.5 ui-monospace,monospace;letter-spacing:.12em;color:#E0A94A;' + SELECTABLE;
+declaration.textContent = `PLACEHOLDER SITES · ${HUB_NAME.toUpperCase()} IS THE HUB`
+  + ' · COORDINATES REAL, CORRIDOR SET ILLUSTRATIVE';
+overlay.appendChild(declaration);
+placedBoxes.push((() => {
+  const a = declaration.getBoundingClientRect(), b = wrap.getBoundingClientRect();
+  return { x: a.left - b.left, y: a.top - b.top, w: a.width, h: a.height };
+})());
+const freeAt = (r: Rect, ownName: string): boolean =>
+  onFrame(r)
+  && !placedBoxes.some((p) => overlapArea(p, r) > 0)
+  && !markerDiscs.some((d) => d.name !== ownName && overlapArea(d.box, r) > 0);
+
+/* Four sides. Right first, then left, because a box on the same visual row as its dot is the easiest to
+   attribute at a glance; above and below after. That order is a PREFERENCE and not a measurement — what
+   makes it reviewable rather than a guess is that the side each label actually took is in the report. */
+const SIDES = ['right', 'left', 'above', 'below'] as const;
+const boxOn = (side: typeof SIDES[number], sx: number, sy: number, box: Rect): Rect => {
+  if (side === 'right') return { x: sx + GAP_PX, y: sy - box.h / 2, w: box.w, h: box.h };
+  if (side === 'left') return { x: sx - GAP_PX - box.w, y: sy - box.h / 2, w: box.w, h: box.h };
+  if (side === 'above') return { x: sx - box.w / 2, y: sy - GAP_PX - box.h, w: box.w, h: box.h };
+  return { x: sx - box.w / 2, y: sy + GAP_PX, w: box.w, h: box.h };
+};
+
+/*
+ * THE RADIAL FALLBACK, AND IT EXISTS BECAUSE THE FIRST VERSION LOST THE HUB.
+ *
+ * Four sides at the marker is not enough on a globe, and the failure was not subtle: simulated against
+ * this camera, VADUZ — the origin of all seven corridors, placed FIRST precisely so it could not lose —
+ * was refused on all four sides. Its 160×52 box could not avoid London's marker 23 px away on one side or
+ * Istanbul's on the other, which is exactly the collision `build.mjs` predicted when it declined to build
+ * this layer at all. Six of twelve sites were labelled and the one that mattered most was in the prose.
+ *
+ * The way out is the empty half of the frame. Every marker is on the globe, the globe's silhouette is
+ * 253 px across a 1200×720 frame, so ANY box whose inner edge is outside that silhouette cannot cover a
+ * marker at all — there are none out there. So a label that cannot sit beside its dot is pushed radially
+ * outward past the limb and connected back by a leader.
+ *
+ * OUTWARD FROM THE PROJECTED CENTRE, which is the one direction that is guaranteed to leave the planet.
+ * The silhouette circle is centred on the eye-to-centre axis, so it projects concentric with the globe's
+ * own centre and a ray from that centre through the anchor exits the disc without crossing it again.
+ */
+const discCentre = projectScreen(vpFinal, view.target, CSS_W, CSS_H);
+/*
+ * THE SILHOUETTE IS NOT `EARTH_R * PX_PER_WORLD`, and using that would put a label ON the limb.
+ *
+ * A sphere's silhouette is the circle where n·ê = R/L. That circle has world radius R·√(1−R²/L²) and it
+ * lies R²/L NEARER the eye than the centre does, so it is projected at a larger pixels-per-world than the
+ * centre is. At this camera the naive figure is 249 px and the true one 253 px — four pixels, which is
+ * most of a marker radius, in the direction that matters.
+ */
+const SILHOUETTE_PX = (EARTH_R * Math.sqrt(Math.max(0, 1 - (EARTH_R * EARTH_R) / (eyeLen * eyeLen))))
+  * ((CSS_H / 2) / (Math.tan(((view.fovDeg ?? 34) * RAD) / 2) * (eyeLen - (EARTH_R * EARTH_R) / eyeLen)));
+/*
+ * Six rings of 24 px. Six reaches 385 px from the projected centre, which is already past the frame's
+ * vertical edge (half-height 360) and still well inside its horizontal one — so the bound is not
+ * geometric. It is a legibility bound: a label 400 px away from a 253 px globe is nearer the frame edge
+ * than the dot it names, and a leader that long stops being attributable at a glance. Past six, the
+ * honest answer is the prose under the frame rather than a longer line.
+ */
+const RADIAL_STEPS = 6;
+const RADIAL_STEP_PX = 24;
+const radialBox = (step: number, sx: number, sy: number, box: Rect): Rect => {
+  const dx = sx - discCentre.sx, dy = sy - discCentre.sy;
+  const len = Math.hypot(dx, dy);
+  /* A site at the exact sub-view point projects onto the centre and has no outward direction. Pushed
+     right by convention rather than dividing by zero — which would place the box at NaN and, per
+     `project.ts`'s note on CSS number syntax, silently drop the style rather than throw. */
+  const ux = len < 1e-6 ? 1 : dx / len, uy = len < 1e-6 ? 0 : dy / len;
+  const r = SILHOUETTE_PX + GAP_PX + step * RADIAL_STEP_PX;
+  const tx = discCentre.sx + ux * r, ty = discCentre.sy + uy * r;
+  return { x: ux >= 0 ? tx : tx - box.w, y: ty - box.h / 2, w: box.w, h: box.h };
+};
+/*
+ * THE LEADER CARRIES THE ONE THING THE OFFSET COSTS: which dot this label is about.
+ *
+ * A label beside its marker needs no leader; a label 200 px out at the rim is unattached without one, and
+ * an unattached label on a figure with twelve markers is a guess. One pixel and semi-transparent because
+ * it crosses the globe's own surface on its way out — it is a pointer, not a corridor, and it must not
+ * read as one of the seven arcs that ARE data.
+ */
+function drawLeader(sx: number, sy: number, box: Rect): number {
+  /* THE NEAREST POINT ON THE BOX, by clamping the anchor into the box's own range. The first version
+     picked the left or right edge from `sx >= discCentre.sx` — the same condition `radialBox` uses to
+     decide which way the box extends, written a second time. Two copies of one decision is one edit away
+     from a leader that crosses the label it is attached to; a clamp cannot disagree with anything. */
+  const tx = Math.min(Math.max(sx, box.x), box.x + box.w);
+  const ty = Math.min(Math.max(sy, box.y), box.y + box.h);
+  const len = Math.hypot(tx - sx, ty - sy);
+  const line = document.createElement('div');
+  line.style.cssText = `position:absolute;left:${sx.toFixed(1)}px;top:${sy.toFixed(1)}px;`
+    + `width:${len.toFixed(1)}px;height:1px;background:rgba(143,178,255,0.5);`
+    + `transform-origin:0 50%;transform:rotate(${Math.atan2(ty - sy, tx - sx).toFixed(5)}rad)`;
+  overlay.appendChild(line);
+  return Math.round(len);
+}
+
+/*
+ * DECIDED HUB FIRST, THEN MOST HEAD-ON FIRST, and the order is an editorial decision rather than a
+ * convenience.
+ *
+ * Vaduz wins every contest because it is the origin of all seven corridors: a reach map whose hub is
+ * unnamed has lost the one endpoint every arc shares. After that, the site with the highest `cosFace`
+ * wins, because that is the site whose anchor is least ambiguous — when two labels want the same pixels,
+ * they go to the one that can be certain which marker it belongs to. E4 sorted near-to-far for the same
+ * reason; on a sphere, "most head-on" is the version of that which survives foreshortening.
+ */
+const HUB_LABEL_FIRST = (a: { name: string; cosFace: number }, b: { name: string; cosFace: number }): number =>
+  (a.name === HUB_NAME ? -1 : b.name === HUB_NAME ? 1 : b.cosFace - a.cosFace);
+
+type LabelOutcome = {
+  name: string; state: string; side: string | null;
+  sx: number | null; sy: number | null; opacity: number | null; cosFace: number;
+  /* 0 for a label sitting beside its own marker, a length for one pushed out to the rim. Reported
+     because "how many labels had to leave their dot" is the legibility cost of this camera, and it is a
+     number a capture can watch rather than a thing a reader has to notice. */
+  leaderPx: number | null;
+};
+const outcomes: LabelOutcome[] = [];
+/* The full datum for every site that is NOT labelled on the frame, so a refusal costs the reader a
+   position and never a number. */
+const inWords: string[] = [];
+
+for (const l of [...labelPlan].sort(HUB_LABEL_FIRST)) {
+  const cos = Number(l.cosFace.toFixed(3));
+  const detail = `${l.name} — ${l.lines.join(' · ')}`;
+  const refuse = (state: string, why: string): void => {
+    inWords.push(`${detail}. ${why}`);
+    outcomes.push({
+      name: l.name, state, side: null, sx: null, sy: null, opacity: null, cosFace: cos, leaderPx: null,
+    });
+  };
+  if (!l.facing) {
+    refuse('BEHIND_LIMB', 'Behind the limb on this face, so it is not labelled on the frame.');
+    continue;
+  }
+  if (l.at.behind) {
+    /* Unreachable at this camera and checked anyway: `projectScreen` reports `behind` on w <= 0, where the
+       projection is inverted rather than merely inaccurate, and a facing site could reach it at a distance
+       inside the near plane. A refusal by name beats a label at enormous size off-frame. */
+    refuse('BEHIND_CAMERA', 'Projected behind the camera plane, so it is not labelled on the frame.');
+    continue;
+  }
+  if (l.cosFace <= COS_HIDE) {
+    refuse('EDGE_ON', `The marker is ${(MARKER_PX * l.cosFace).toFixed(1)} px wide there — inside the `
+      + `${ANCHOR_FLOOR_PX} px floor, so it is too edge-on for a label to point at.`);
+    continue;
+  }
+
+  const fade = Math.min(1, Math.max(0, (l.cosFace - COS_HIDE) / (COS_FULL - COS_HIDE)));
+  const opacity = LABEL_MIN_OPACITY + (1 - LABEL_MIN_OPACITY) * fade;
+  const el = document.createElement('div');
+  el.style.cssText = 'position:absolute;display:flex;flex-direction:column;gap:1px;white-space:nowrap;'
+    + 'font:400 9.5px/1.35 ui-monospace,monospace;text-shadow:0 1px 3px rgba(0,0,0,0.95);'
+    + `opacity:${opacity.toFixed(3)};` + SELECTABLE;
+  el.appendChild(textLine('font:700 9.5px/1.2 ui-monospace,monospace;letter-spacing:.14em;color:#CFE0FF',
+    l.name.toUpperCase()));
+  for (const line of l.lines) {
+    el.appendChild(textLine('color:rgba(196,212,240,0.86)', line));
+  }
+  const box = measured(el);
+  /* Beside the dot first — a label that needs no leader is the one a reader cannot misattribute. Only
+     then out to the rim, nearest ring first, so a pushed label travels as little as it has to. */
+  const side = SIDES.find((s) => freeAt(boxOn(s, l.at.sx, l.at.sy, box), l.name));
+  let at: Rect | null = side === undefined ? null : boxOn(side, l.at.sx, l.at.sy, box);
+  let ring: number | null = null;
+  for (let step = 0; at === null && step < RADIAL_STEPS; step++) {
+    const candidate = radialBox(step, l.at.sx, l.at.sy, box);
+    if (freeAt(candidate, l.name)) { at = candidate; ring = step; }
+  }
+  if (at === null) {
+    el.remove();
+    refuse('NO_FREE_PLACEMENT', `No free placement at this camera: four sides at the marker and `
+      + `${RADIAL_STEPS} rings out to the rim were all blocked by another marker, an already-placed `
+      + 'label, or the frame edge.');
+    continue;
+  }
+  const leaderPx = ring === null ? 0 : drawLeader(l.at.sx, l.at.sy, at);
+  el.style.left = `${at.x.toFixed(1)}px`;
+  el.style.top = `${at.y.toFixed(1)}px`;
+  el.style.visibility = 'visible';
+  placedBoxes.push(at);
+  outcomes.push({
+    name: l.name, state: 'PROJECTED', side: side ?? `radial+${ring}`,
+    sx: Math.round(l.at.sx), sy: Math.round(l.at.sy),
+    opacity: Number(opacity.toFixed(3)), cosFace: cos, leaderPx,
+  });
+}
+
+/*
+ * THE UNLABELLED SITES GO INTO WORDS UNDER THE FRAME, and every part of that placement is forced.
+ *
+ * INTO WORDS, because these are the sites the geometry cannot show. A label over the near hemisphere
+ * pointing at a city on the far side is the exact failure the limb test exists to prevent, so the reading
+ * moves into prose rather than being drawn somewhere it would be wrong — the shipped globe resolves it the
+ * same way, with the same distinction between a label and a sentence.
+ *
+ * NOT INSIDE THE OVERLAY, because the wrapper is `overflow:hidden` — the rule that stops a runaway
+ * transform breaking the screenshot would crop this block for the same reason.
+ *
+ * AND NOT INSIDE `#stage` EITHER. `build.mjs` writes that host with an inline `height:720px`, so a block
+ * appended into it does not push the page down: it overflows a fixed box and paints on top of the `#log`
+ * diagnostic below, which is the element `capture.mjs` reads the report from. Inserted as a SIBLING, just
+ * above the log, so the document order is frame → the sites it could not label → the numbers.
+ */
+const unlabelled = document.createElement('div');
+unlabelled.id = 'e2-unlabelled';
+unlabelled.style.cssText = `max-width:${CSS_W}px;padding:12px 0 0;`
+  + 'font:400 11px/1.65 ui-monospace,monospace;color:rgba(196,212,240,0.82)';
+unlabelled.appendChild(textLine(
+  'font:700 10px/1.4 ui-monospace,monospace;letter-spacing:.14em;color:#8FB7FF;padding-bottom:4px',
+  inWords.length === 0
+    ? 'EVERY SITE IS LABELLED ON THE FRAME'
+    : `NOT LABELLED ON THIS FACE — ${inWords.length} OF ${labelPlan.length} SITES, WITH THE REASON`,
+));
+for (const line of inWords) unlabelled.appendChild(textLine('', line));
+/* NOT `?.` HERE. An optional call would drop the whole block if the page's shape ever changed, and the
+   symptom would be five sites quietly ceasing to exist for a screen reader while the frame still looked
+   finished — the class of silent loss rule 4 is about. Refused by name instead. */
+const wordsHost = log.parentNode;
+if (wordsHost === null) {
+  die('NO_WORDS_HOST: #log has no parent, so the sites that could not be labelled have nowhere to be '
+    + 'stated. The frame would look complete while five readings had silently left the document.');
+}
+wordsHost.insertBefore(unlabelled, log);
+
 /* Read ONCE, before the report, because two call sites for the same string is two chances for the
    refusal below to key off something different from what is printed. */
 const RENDERER = (() => {
@@ -777,21 +1282,35 @@ const report = {
   citiesSunlit: seen.filter((c) => c.sunlit).length,
   corridors: CORRIDORS.length,
   corridorTriangles: corridorGeos.reduce((n, g) => n + triangleCount(g), 0),
-  /* Peak lift per corridor, so "does a long haul climb higher than a short hop" is a number in the
-     report rather than an impression from the picture. */
-  corridorPeakLift: corridorGeos.map((g, i) => {
-    let m = 0;
-    for (let k = 0; k < g.positions.length; k += 3) {
-      m = Math.max(m, Math.hypot(g.positions[k]!, g.positions[k + 1]!, g.positions[k + 2]!));
-    }
-    return {
-      to: CORRIDORS[i]!.to,
-      lift: Number((m - EARTH_R).toFixed(4)),
-      /* The quantity the lift is supposed to scale with. Reported beside it so "monotonic with distance"
-         is a check the capture performs rather than a sentence in the README. */
-      separationDeg: Number(separationDeg(CORRIDORS[i]!.lat, CORRIDORS[i]!.lon).toFixed(1)),
-    };
-  }),
+  corridorPeakLift,
+  /*
+   * §6 RULE 4, REPORTED SO IT CAN BE ASSERTED RATHER THAN LOOKED AT.
+   *
+   * `projected + inWords` must equal `cities`: every site is either labelled on the frame or named
+   * underneath it, and a site in neither is a datum this harness lost. The thresholds are published
+   * beside the counts because they are derived from `anchorFloorPx` at this camera — a reader who
+   * disagrees with the five-pixel floor can see exactly what it bought.
+   */
+  labels: {
+    projected: outcomes.filter((o) => o.state === 'PROJECTED').length,
+    inWords: inWords.length,
+    faded: outcomes.filter((o) => o.opacity !== null && o.opacity < 1).length,
+    /* How many labels could not sit beside their own dot. It rises the moment sites cluster, and it is
+       the number that says whether this camera can carry the set it is being asked to label. */
+    pushedToRim: outcomes.filter((o) => o.leaderPx !== null && o.leaderPx > 0).length,
+    markerPx: Number(MARKER_PX.toFixed(2)),
+    silhouettePx: Number(SILHOUETTE_PX.toFixed(1)),
+    anchorFloorPx: ANCHOR_FLOOR_PX,
+    cosHide: Number(COS_HIDE.toFixed(4)),
+    cosFull: Number(COS_FULL.toFixed(4)),
+    horizonDot: Number(HORIZON.toFixed(4)),
+    /* One entry per reason a site went into words, so a change in the mix is visible without diffing
+       twelve rows. */
+    refusedBy: ['BEHIND_LIMB', 'BEHIND_CAMERA', 'EDGE_ON', 'NO_FREE_PLACEMENT'].map((state) => ({
+      state, count: outcomes.filter((o) => o.state === state).length,
+    })),
+  },
+  domLabels: outcomes,
   behindLimb: seen.filter((c) => !c.facing).map((c) => c.name),
   onNightSide: seen.filter((c) => c.facing && !c.sunlit).map((c) => c.name),
   /*
@@ -806,7 +1325,25 @@ const report = {
   headroomRefusal: SOFTWARE ? 'SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET' : null,
 };
 (globalThis as unknown as { E2: typeof report }).E2 = report;
-log.textContent = JSON.stringify(report, null, 2);
+/*
+ * THE PRINTED REPORT IS SUMMARISED; THE FULL ONE STAYS ON `globalThis`, WHICH IS WHERE `capture.mjs`
+ * READS IT ANYWAY.
+ *
+ * `fullPage: true` screenshots the log along with the frame, and a pretty-printed per-city table is
+ * twelve objects deep — E6 pushed past Chrome's capture height exactly this way and
+ * `Page.captureScreenshot` then fails, naming the screenshot rather than the report that grew. E7 solved
+ * it by destructuring the long arrays out and printing them as one line each; the same trick here keeps
+ * every label's placement visible.
+ */
+const { domLabels: _dl, corridorPeakLift: _cpl, ...summary } = report;
+log.textContent = JSON.stringify(summary, null, 2)
+  + `\n\ncorridorPeakLift — ${corridorPeakLift.length} arcs:\n`
+  + corridorPeakLift.map((c) => `  ${c.to.padEnd(13)} ${String(c.separationDeg).padStart(5)}°  lift ${c.lift}`).join('\n')
+  + `\n\ndomLabels — §6 rule 4, ${outcomes.length} sites, full detail on globalThis.E2:\n`
+  + outcomes.map((o) => (
+    `  ${o.name.padEnd(13)} ${o.state.padEnd(18)} cosFace ${String(o.cosFace).padStart(6)}`
+    + (o.state === 'PROJECTED' ? `  ${o.side} at ${o.sx},${o.sy} opacity ${o.opacity}` : '')
+  )).join('\n');
 frame();
 fallback.markRendered();
 document.title = 'READY';

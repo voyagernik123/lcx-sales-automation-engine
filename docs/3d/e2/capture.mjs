@@ -108,6 +108,33 @@ for (const [name, reduced, q] of [['live', false, ''], ['no-atmos', false, '&atm
   if (rep.citiesFacing < 1) throw new Error('no city marker is on the visible cap');
   if (rep.onNightSide.length === 0) throw new Error('the terminator separates nothing: onNightSide is empty');
   if (rep.behindLimb.length === 0) throw new Error('no endpoint is behind the limb: the occlusion test proves nothing');
+
+  /*
+   * THE DOM LABEL LAYER — §6 RULE 4, AND THE ONE THING IT MUST NOT DO IS LOSE A SITE.
+   *
+   * E2 was the last environment with no projected DOM text, deliberately: three of its sites sit ~23 px
+   * apart at this camera and projected text without a collision policy reads as broken. The policy now
+   * exists, and a policy that DROPS a site is worse than no labels — a reader counts twelve markers and
+   * finds seven names, and the five missing ones are indistinguishable from five that do not exist.
+   *
+   * So the invariant is conservation, not coverage: every city is either LABELLED on the frame or STATED
+   * in DOM prose beneath it. Reported counts were printed and unchecked, which is how E6 came to serve
+   * `campaign.publ` as the name of a governed action.
+   */
+  const lab = rep.labels;
+  if (!lab || typeof lab.projected !== 'number' || typeof lab.inWords !== 'number') {
+    throw new Error('§6 rule 4: globalThis.E2.labels is missing — the DOM label layer did not report, so '
+      + 'nothing here can tell whether it ran at all');
+  }
+  console.log(`    labels ${lab.projected} projected + ${lab.inWords} in words = ${lab.projected + lab.inWords}`
+    + ` of ${rep.cities} cities${lab.pushedToRim !== undefined ? ` · ${lab.pushedToRim} pushed to the rim` : ''}`);
+  if (lab.projected + lab.inWords !== rep.cities) {
+    throw new Error(`§6 rule 4: ${lab.projected} labelled + ${lab.inWords} in words != ${rep.cities} cities — `
+      + 'a site was dropped, and a dropped site reads as a site that does not exist');
+  }
+  /* And at least one must actually be ON the frame, or "the labels are in the DOM" is satisfied by a
+     paragraph of prose and no projection — which is not what rule 4 asks for. */
+  if (lab.projected < 1) throw new Error('§6 rule 4: no label is projected onto the frame at all');
   /* LIFT MONOTONIC WITH ANGULAR DISTANCE is the corridor claim, and it is now checked rather than
      asserted: sort by separation and every step must be non-decreasing in lift. A fixed lift would make
      the London hop a tall croquet hoop, and nothing here could previously have told the difference. */

@@ -6,7 +6,9 @@
 
 A globe with an atmospheric rim at the limb, a visible day/night terminator, twelve city markers
 placed from latitude/longitude by a documented formula rather than by hand, and a polished orbital
-ring whose anisotropic highlight travels along the tube. 35,136 triangles, `glError: 0`.
+ring whose anisotropic highlight travels along the tube. 35,136 triangles, `glError: 0`. Since the rule 4
+fix below, the markers also carry projected DOM labels — occluded against the sphere, so a city on the far
+side is stated in words instead of floating over the wrong ocean.
 
 *Both of those numbers were wrong here until the capture started reading the report. This file said
 "eight city markers" and "32,896 triangles" while the harness reported `cities: 12` and
@@ -49,6 +51,65 @@ off the edge of what the camera sees, so NO number of extra cities would have po
 `behindLimb: ["Mumbai", "Singapore", "Tokyo"]` confirms the occlusion test is real: those arcs curve
 over the horizon and disappear.
 
+## 3 · §6 RULE 4 IS CLOSED, and it was never the violation it was described as
+
+E2 was the last environment in the programme breaking rule 4 — "text stays in the DOM, projected from the
+same matrix, never baked into a texture" — and `harnessRules.test.ts` pinned the set of environments
+projecting nothing at `'e0,e2'` as a ratchet so it could not grow. **That assertion now reads `'e0'`.**
+
+**What was wrong was not baked text. It was NO text**, and the distinction decided the fix. There was
+nothing to unbake: `LIT_FRAG` has no texture sampler and `Material` carries no map, which is the same
+absence that leaves the earth a plain blue ball. `build.mjs` simply emitted no overlay, and its reason was
+a real one rather than an oversight — three sites sit within eight degrees of each other, ~23 px apart at
+this camera, "closer than the labels are wide", and it declined to ship text without a collision policy.
+
+So there is a collision policy, and the occlusion problem a globe has and a deck does not:
+
+- **Hidden behind the limb.** CSS has no depth buffer, so a projected label cannot be occluded by the
+  sphere in front of it. A site is labelled only where `n·ê > R/L` — **the same dot product the report
+  already publishes as `behindLimb`**, reused rather than re-derived, so a label cannot contradict the list
+  printed beside it. Tokyo, Singapore and Mumbai therefore get no label; an unguarded projection would put
+  TOKYO in the middle of the Atlantic, over the near hemisphere, pointing at nothing.
+- **Faded near the limb, and refused at it.** The same quantity normalised is `cosFace`, the cosine between
+  the surface normal and the direction to the eye: exactly 0 at the limb, 1 at the sub-view point. The
+  thresholds are **derived from a pixel floor rather than typed in as a dot product** — a marker narrower
+  than 5 px is not a thing a label can point at, and the marker is 16.9 px head-on at this camera, so
+  `cosHide = 5/16.9 = 0.2955` and full opacity at twice that, `0.5911`. Those are **95.4% and 80.2% of the
+  projected disc radius**: full strength over the inner four-fifths of the disc, fading across the next
+  fifth, refused in the outer 5%. The shipped globe uses `1/CAMERA_DISTANCE + 0.05` for the same job; the
+  0.05 was chosen by eye, and this is the number it was standing in for.
+- **Nothing is lost to a refusal.** Every site not labelled on the frame is stated in DOM prose under it,
+  with its coordinates, its day/night reading, its corridor, and the reason it is not labelled. `projected
+  + inWords` must equal `cities`, and both are in the report.
+- **Pushed to the rim when the dot is crowded.** Four sides at the marker was not enough, and the first
+  version's failure was not subtle: **Vaduz — the hub, placed first precisely so it could not lose — was
+  refused on all four sides**, boxed in by London 23 px away and Istanbul on the other side. Six of twelve
+  labelled, and the one that mattered most in the prose. A label that cannot sit beside its dot is now
+  pushed radially outward past the silhouette, where no marker can be covered because every marker is on
+  the globe, and connected back by a 1 px leader.
+
+Measured in Chromium against the real projection and the real font stack: **7 of 12 sites labelled, 5 in
+words (3 behind the limb, 2 too edge-on), 2 pushed to the rim** with 67 px and 111 px leaders, no label
+overlapping another and none covering a marker. The frame also now carries the **placeholder declaration in
+amber**, because twelve real place names on a globe read as somebody's actual network and `CITY_SITES` says
+plainly that they are not one — while the frame carried no words, the fallback's notice was enough.
+
+*Those figures are from the algorithm running in a browser against the harness's own camera; the numbers
+`live.png` publishes come from `globalThis.E2.labels` once `build.mjs` and `capture.mjs` have been re-run.
+`build.mjs` still carries the comment explaining why there is no DOM overlay, and `capture.mjs` does not yet
+assert `labels.projected + labels.inWords === cities` — both are outside this fix and both are stale.*
+
+E2 is also promoted into the web app (`apps/web/src/components/market/GlobeRelief.tsx` +
+`GlobeReliefGl.tsx`, mounted on `MarketMap`, opt-in and defaulting to the scatter), and that component has
+projected DOM labels all along — region names, project and listing counts, market cap, solar time, the hub,
+the sub-solar reading and every absence. Until now the harness was behind its own shipped surface. Two
+things the promotion could not carry over, and they are data limits rather than rendering ones:
+`MarketMap`'s `MapPoint` has **no coordinates at all** — only a coarse `region` string — so the shipped
+globe places REGIONS at published geographic centres (EU-27 near Gadheim; contiguous US near Lebanon,
+Kansas) and says so on the frame, while this harness's twelve city sites remain placeholders. And the
+shipped terminator is computed from the reader's own clock rather than from a fixed sub-solar point, which
+is what turns "which desks are awake" into a reading instead of a lighting choice.
+
 ## A refusal is now named to the reader, and was not
 
 `createStage` refusing was handled by `document.title = 'REFUSED'; throw` — two statements that never
@@ -76,34 +137,16 @@ had to apply.
 carries a reach map and a which-desks-are-awake reading, so it is arguable; arguable is not measured,
 and the plan requires a task and a stopwatch against the flat surface.
 
-**No landmass reference, so an endpoint is a position rather than a place.** A reader cannot name
-where an arc lands. Coastline polylines through the existing `createLineBatch` would fix it with no
-asset pipeline, and that is the next step here — before any more corridors, because more unlabelled
-endpoints add no reading. §3.3 deferred the texture decision deliberately; the polyline route does not
-need it.
+**No landmass reference, so an endpoint is a NAMED position rather than a recognised place.** The
+projected labels now say which city an arc lands on, which is what the rule 4 fix bought; what a reader
+still cannot do is recognise the geography without reading the words, or place the five sites that are only
+in the prose. Coastline polylines through the existing `createLineBatch` would fix it with no asset
+pipeline, and it is the next step here. §3.3 deferred the texture decision deliberately; the polyline route
+does not need it.
 
-**No DOM text at all, which is a §6 rule 4 violation and was not previously recorded here — STILL TRUE OF THIS
-HARNESS, and NOT true of the shipped surface.** E2 is now promoted into the web app
-(`apps/web/src/components/market/GlobeRelief.tsx` + `GlobeReliefGl.tsx`, mounted on `MarketMap`, opt-in and
-defaulting to the scatter), and the product component projects real DOM labels through `projectScreen` — region
-names, project and listing counts, market cap, solar time, the hub, the sub-solar reading, and every absence.
-So the accessibility tree and the print path are covered where a reader actually meets E2. This file's own
-`entry.ts` still renders no DOM text, so the harness violation stands as written below; nobody should read the
-promotion as having fixed it here.
-
-Two things the promotion could NOT carry over, and they are data limits rather than rendering ones:
-`MarketMap`'s `MapPoint` has **no coordinates at all** — only a coarse `region` string — so the shipped globe
-places REGIONS at published geographic centres (EU-27 near Gadheim; contiguous US near Lebanon, Kansas) and
-says so on the frame, while this harness's twelve city sites remain placeholders. And the shipped terminator is
-computed from the reader's own clock rather than from a fixed sub-solar point, which is what turns "which desks
-are awake" into a reading instead of a lighting choice.
-
-`build.mjs`
-chose to have no DOM overlay, so twelve sited cities and seven corridors carry no labels: nothing enters
-the accessibility tree, nothing is selectable or translatable, and nothing survives printing. Every
-other environment in the programme now projects real DOM content onto its geometry
-(`projectQuad` / `projectScreen` in `packages/gl/src/env/project.ts`), and E2 is the one that does not.
-This is why E1's derived panel set omits E2 rather than one of the others: it is the least complete.
+*This paragraph used to say "a reader cannot name where an arc lands" and that the labels were the blocker
+for more corridors. The labels exist now, so the claim has been narrowed to what is still true rather than
+left standing as written.*
 
 **The twilight band is abrupt.** A real terminator has a gradient a few degrees wide; this one is the
 raw N·L falloff.
@@ -116,13 +159,22 @@ for E2 exists yet.
 
 ## What it actually needs, in order
 
-1. **City and corridor labels in the DOM**, projected — the rule 4 fix, and the thing that turns twelve
-   sited points into twelve named ones.
-2. **A landmass reference** so the endpoints mean something — coastline polylines through
+1. **A rebuilt bundle and a fresh capture.** The label layer is in `entry.ts` and is NOT in `bundle.js`,
+   `live.png` or the report figures published above, because both are generated. Until
+   `node docs/3d/e2/build.mjs && node docs/3d/e2/capture.mjs` runs, this file describes a layer no capture
+   has photographed — which is §6 rule 8 outstanding, not satisfied.
+2. **`build.mjs`'s "NO DOM OVERLAY" comment and `capture.mjs`'s missing label assertion.** The first states
+   a decision that has been reversed; the second means `labels.projected + labels.inWords === cities` is
+   reported and unchecked. Both are one edit each, in files this change did not touch.
+3. **A landmass reference** so the endpoints are recognised as well as named — coastline polylines through
    `createLineBatch`, which needs no asset pipeline.
-3. **A softer terminator**, a few degrees of gradient rather than raw N·L.
-4. **A real-hardware frame time.** The SwiftShader figure is now captured; the M1 number is not, because
+4. **A softer terminator**, a few degrees of gradient rather than raw N·L.
+5. **A real-hardware frame time.** The SwiftShader figure is now captured; the M1 number is not, because
    this harness has only ever run headless.
+
+*"City and corridor labels in the DOM, projected" was item 1 of this list and is done — see §6 RULE 4 above.
+Corridor text lands on the ENDPOINT label rather than at the arc's apex: an apex is not a place, so a label
+there would name no city while competing for pixels with the two that do.*
 
 *This section previously listed "great-circle arcs" and "a sub-solar point that puts some corridors in
 darkness" as outstanding, and repeated the landmass point twice — both of those had already been

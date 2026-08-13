@@ -10,10 +10,23 @@
  * (ESM, minified, tree-shaken, no gzip — the perf budget measures RAW bytes), and exits
  * non-zero if any layer is over. A budget that is only checked by hand is not a budget.
  *
- * Usage:  node docs/3d/p1/build.mjs
+ * THIS SCRIPT IS ALSO THE ONLY PLACE THE PUBLISHED FIGURES COME FROM. It used not to be,
+ * and here is what that cost (2026-08-13 audit, `3D_VFX_FINAL_PLAN.md` §4.5):
+ * `docs/3d/p1/README.md` published L1 10.4 / L2 5.3 / L3 1.7 / spine 17.5 KB and "45.5 KB
+ * under, 29x smaller than three.js" — figures typed in by hand when the spine was three
+ * lanes. Three more lanes were added (L4 env, L3.5 particles, L4.5 field), the real spine
+ * became 77.2 KB of 147 allocated, and every one of those five numbers was wrong in a
+ * document that reads as a measurement. `docs/3d/w1/README.md` carried a sixth (17.6 KB)
+ * and `PLATFORM_VFX_100X.md` a seventh ("45 KB unspent"). Nothing caught them because
+ * nothing was checking prose against the bundler.
+ *
+ * Usage:
+ *   node docs/3d/p1/build.mjs           measure, bundle, and CHECK the published tables
+ *   node docs/3d/p1/build.mjs --write   measure, bundle, and REWRITE the published tables
+ *   node docs/3d/p1/build.mjs --json    measure only; emit the machine-readable block
  */
 import { build } from 'esbuild';
-import { writeFileSync, mkdtempSync } from 'node:fs';
+import { writeFileSync, readFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve, join } from 'node:path';
@@ -41,6 +54,17 @@ const COMMON = {
  * layer for all of them and hide which one overran.
  */
 const LAYERS = [
+  /*
+   * 45 HERE IS L1'S LANE BUDGET AND NOTHING ELSE. The token "45" acquired three meanings in this
+   * repo and they were being read as one another (`3D_VFX_FINAL_PLAN.md` §1.7):
+   *   (a) this — L1 renderer's lane allocation, `3D_WORK_100X.md` §6.4 line 313. Live.
+   *   (b) "~30-45 KB raw" — the ORIGINAL WHOLE-ENGINE estimate, `3D_WORK_100X.md`:80/:85, made
+   *       before L4/L3.5/L4.5 existed. Superseded: six lanes now allocate 147 KB.
+   *   (c) "45 KB unspent" / "45.5 KB under" — the SPINE'S HEADROOM when the spine was three
+   *       lanes. Stale, and never a budget at all. Now generated, so it cannot be typed wrong.
+   * Read as (b), invariant 4's "<45 KB total" cap would require deleting L4 env, L3.5 particles
+   * and L4.5 field — i.e. GGX, shadows, AO, DoF, sky, particles and volumetrics.
+   */
   { name: 'L1 renderer', budgetKb: 45, entry: ['stage.ts', 'math.ts', 'primitives/points.ts', 'primitives/lines.ts'] },
   { name: 'L2 look', budgetKb: 10, entry: ['look/colour.ts', 'look/tonemap.ts', 'look/pipeline.ts'] },
   { name: 'L3 motion', budgetKb: 8, entry: ['motion/index.ts'] },
@@ -110,27 +134,57 @@ async function measure(files) {
   return r.outputFiles[0].contents.byteLength;
 }
 
+/*
+ * three.js measured at P0 on these exact settings — the comparison that decided the
+ * architecture. Held as BYTES, not as the rounded "513.3 KB", because the ratio printed
+ * below used to be derived from the rounded figure and published as "29×". The byte count
+ * is the one in docs/3d/p0/README.md:22.
+ */
+const THREEJS_BYTES = 525_595;
+
+const lanes = [];
 let over = false;
 let spineTotal = 0;
-console.log('\n  layer          raw KB   budget   ');
-console.log('  ─────────────────────────────────');
 for (const layer of LAYERS) {
   const bytes = await measure(layer.entry);
   spineTotal += bytes;
-  const size = kb(bytes);
-  const ok = size <= layer.budgetKb;
+  const ok = kb(bytes) <= layer.budgetKb;
   if (!ok) over = true;
-  console.log(
-    `  ${layer.name.padEnd(13)} ${size.toFixed(1).padStart(6)}   ${String(layer.budgetKb).padStart(6)}   ${ok ? '✓' : '✗ OVER'}`,
-  );
+  lanes.push({ name: layer.name, budgetKb: layer.budgetKb, bytes, kb: kb(bytes), ok });
 }
 const SPINE_BUDGET = LAYERS.reduce((a, l) => a + l.budgetKb, 0);
-console.log('  ─────────────────────────────────');
-console.log(`  ${'spine'.padEnd(13)} ${kb(spineTotal).toFixed(1).padStart(6)}   ${String(SPINE_BUDGET).padStart(6)}`);
 
-/* three.js, measured at P0 on the same settings, for the comparison that decided the
-   architecture. Not re-derived here — the number lives in docs/3d/p0/README.md. */
-console.log(`\n  three.js (P0, same settings)  513.3 KB  — ${(513.3 / kb(spineTotal)).toFixed(0)}× the spine\n`);
+/* Under --json, stdout is somebody's `JSON.parse` — the human table would corrupt it. */
+const JSON_MODE = process.argv.includes('--json');
+const say = JSON_MODE ? () => {} : (s) => console.log(s);
+
+say('\n  layer          raw KB   budget   ');
+say('  ─────────────────────────────────');
+for (const l of lanes) {
+  say(
+    `  ${l.name.padEnd(13)} ${l.kb.toFixed(1).padStart(6)}   ${String(l.budgetKb).padStart(6)}   ${l.ok ? '✓' : '✗ OVER'}`,
+  );
+}
+say('  ─────────────────────────────────');
+say(`  ${'spine'.padEnd(13)} ${kb(spineTotal).toFixed(1).padStart(6)}   ${String(SPINE_BUDGET).padStart(6)}`);
+say(
+  `\n  three.js (P0, same settings)  ${kb(THREEJS_BYTES).toFixed(1)} KB` +
+    `  — ${(THREEJS_BYTES / spineTotal).toFixed(1)}× the spine\n`,
+);
+
+const gateBytes = (await build({ ...COMMON, entryPoints: [resolve(HERE, 'entry.ts')] }))
+  .outputFiles[0].contents.byteLength;
+
+/*
+ * --json emits before the bundle is WRITTEN, but after the gate bundle is measured: every
+ * field is a real number, because a JSON block with `gateBundleBytes: null` in it is exactly
+ * the sort of thing that gets transcribed into a document as if it meant something. Skipping
+ * the write also means a tool reading the numbers cannot race the gate for p1/bundle.js.
+ */
+if (JSON_MODE) {
+  console.log(JSON.stringify(measurementJson(gateBytes), null, 2));
+  process.exit(over ? 1 : 0);
+}
 
 /* Now the actual gate bundle. */
 const out = await build({
@@ -143,8 +197,6 @@ if (out.errors?.length) {
   for (const e of out.errors) console.error(e);
   process.exit(1);
 }
-const gateBytes = (await build({ ...COMMON, entryPoints: [resolve(HERE, 'entry.ts')] }))
-  .outputFiles[0].contents.byteLength;
 /* The gate bundle can come in AT OR UNDER the layer sum, and that is not a contradiction:
    each layer above is measured with everything in it retained, whereas the gate is
    tree-shaken against one surface's actual imports. The layer numbers are the ceiling a
@@ -152,6 +204,107 @@ const gateBytes = (await build({ ...COMMON, entryPoints: [resolve(HERE, 'entry.t
    in bytes so neither can be rounded into agreeing. */
 console.log(`  gate bundle (spine + surface)  ${kb(gateBytes).toFixed(1)} KB  (${gateBytes} B)`);
 console.log(`  layer sum, nothing shaken      ${kb(spineTotal).toFixed(1)} KB  (${spineTotal} B)\n`);
+
+/* ────────────────────────────────────────────────────────────────────────────────────────
+ * THE PUBLISHED FIGURES.
+ *
+ * Everything below turns the measurement above into the exact markdown that ships in the
+ * READMEs, and then either writes it (--write) or fails if what is committed differs.
+ * The fenced regions are the only place in docs/3d that may state a gl byte count.
+ * ──────────────────────────────────────────────────────────────────────────────────────── */
+
+function measurementJson(gate) {
+  return {
+    /* Not a timestamp: a timestamp changes on every run and would make --check fail on a
+       clean tree. Nothing here may vary unless the bundled bytes vary. */
+    generatedBy: 'docs/3d/p1/build.mjs',
+    lanes: lanes.map(({ name, budgetKb, bytes, ok }) => ({ name, budgetKb, bytes, ok })),
+    spine: { bytes: spineTotal, allocatedKb: SPINE_BUDGET },
+    gateBundleBytes: gate,
+    threejsBytes: THREEJS_BYTES,
+  };
+}
+
+/** One decimal, the precision every published figure uses. */
+const k1 = (bytes) => kb(bytes).toFixed(1);
+
+/**
+ * The lane table for docs/3d/p1/README.md.
+ *
+ * KB TO ONE DECIMAL, NOT RAW BYTES, and that is a deliberate loosening. --check compares
+ * this rendered text, so the gate trips when a PUBLISHED figure would change (~50 B per
+ * lane) rather than when any byte moves. Comparing raw bytes would redden CI on a minifier
+ * wobble that changes nothing a reader can see — and a check that cries wolf gets deleted,
+ * which is how the 17.5 KB figure survived three added lanes in the first place.
+ */
+function renderLaneTable(gate) {
+  const rows = lanes.map(
+    (l) => `| ${l.name} | ≤ ${l.budgetKb} KB raw | **${k1(l.bytes)} KB** | ${l.ok ? '✓' : '✗ **OVER**'} |`,
+  );
+  const unspent = SPINE_BUDGET - kb(spineTotal);
+  return [
+    '| lane | allocated | measured | |',
+    '|---|---|---|---|',
+    ...rows,
+    `| **spine total** (all six lanes) | ≤ ${SPINE_BUDGET} KB raw | **${k1(spineTotal)} KB** ` +
+      `| ${unspent.toFixed(1)} KB of the allocation unspent |`,
+    `| gate bundle — spine + this surface, tree-shaken | — | **${k1(gate)} KB** (${gate} B) ` +
+      '| what this lane actually ships |',
+    `| three.js, same job, same settings (P0) | — | ${k1(THREEJS_BYTES)} KB ` +
+      `| **${(THREEJS_BYTES / spineTotal).toFixed(1)}× the spine** |`,
+  ].join('\n');
+}
+
+/** The one-line spine figure W1 quotes. W1 is about L4 FLAT, so it states the spine only. */
+function renderSpineLine() {
+  return (
+    `Layer budget (§6.4): the spine measures **${k1(spineTotal)} KB** of the ${SPINE_BUDGET} KB ` +
+    'its six lanes allocate.'
+  );
+}
+
+const REGIONS = [
+  { file: resolve(ROOT, 'docs/3d/p1/README.md'), id: 'lanes', render: renderLaneTable },
+  { file: resolve(ROOT, 'docs/3d/w1/README.md'), id: 'spine', render: renderSpineLine },
+];
+
+const fence = (id) => ({
+  begin: `<!-- gl-budget:begin ${id} -->`,
+  end: `<!-- gl-budget:end ${id} -->`,
+});
+
+let drift = false;
+for (const region of REGIONS) {
+  const { begin, end } = fence(region.id);
+  const src = readFileSync(region.file, 'utf8');
+  const from = src.indexOf(begin);
+  const to = src.indexOf(end);
+  /* A missing fence is a failure, not a skip. Silently skipping is how a rewrite that
+     removed the marker would leave hand-typed numbers behind and still report green. */
+  if (from === -1 || to === -1 || to < from) {
+    console.error(`  ✗ ${region.file}: no "${begin}" … "${end}" region. The published figures cannot be generated.\n`);
+    process.exit(1);
+  }
+  const fresh = `${begin}\n${region.render(gateBytes)}\n${end}`;
+  const committed = src.slice(from, to + end.length);
+  if (fresh === committed) continue;
+  if (process.argv.includes('--write')) {
+    writeFileSync(region.file, src.slice(0, from) + fresh + src.slice(to + end.length));
+    console.log(`  ↻ rewrote ${region.id} in ${region.file}`);
+  } else {
+    drift = true;
+    console.error(`  ✗ ${region.file} (${region.id}) does not match a fresh measurement.`);
+  }
+}
+
+if (drift) {
+  console.error(
+    '\n  A published byte figure is stale. This is the §4.5 defect, live:\n' +
+      '  the bundle moved and the document did not.\n' +
+      '  Fix:  node docs/3d/p1/build.mjs --write     (then commit the README diff)\n',
+  );
+  process.exit(1);
+}
 
 if (over) {
   console.error('  A layer is over budget. §6.4: a lane that overruns REPORTS IT AND STOPS.\n');

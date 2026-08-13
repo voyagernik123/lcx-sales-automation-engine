@@ -16,8 +16,24 @@ between the two panels — the left is the real `BarChartH` from the app, render
 |---|---|
 | Brand hex exact through the pipeline | **EXACT across the whole palette** — `#2C6BFF → #2c6bff` |
 | A stranger can tell which is the instrument | **yes**, at the third attempt |
-| L4 cost | **~5 KB** — spine + L4 + this gate bundles to 13.7 KB total |
-| Layer budget (§6.4) | spine 17.6 KB of 63 |
+| L4 cost | **measured, not stated here** — `node docs/3d/w1/build.mjs` prints the spine + L4 bars + gate total |
+
+<!-- gl-budget:begin spine -->
+Layer budget (§6.4): the spine measures **78.2 KB** of the 147 KB its six lanes allocate.
+<!-- gl-budget:end spine -->
+
+**Corrected 2026-08-13** (`3D_VFX_FINAL_PLAN.md` §4.5). Both byte figures here were hand-typed
+and both had gone stale:
+
+- *"L4 cost **~5 KB** — spine + L4 + this gate bundles to 13.7 KB total"*. Re-running
+  `docs/3d/w1/build.mjs` on the day of the audit printed **17.9 KB**, so the total was 4.2 KB out
+  and the ~5 KB derived from it no longer follows from anything. The figure is now deleted rather
+  than refreshed: nothing but `w1/build.mjs` measures this bundle, so a number typed here has no
+  mechanism keeping it true, and a refreshed one would simply rot again on the next shader edit.
+- *"Layer budget (§6.4) | spine 17.6 KB of 63"*. The spine had grown from three lanes to six
+  (L4 env, L3.5 particles, L4.5 field) and the allocation from 63 KB to 147 KB. That line is now
+  **generated** by `docs/3d/p1/build.mjs`, and `npm run gl-budget` fails if this file disagrees
+  with the bundler. Regenerate with `node docs/3d/p1/build.mjs --write`.
 
 ## What L4 adds, and why none of it needs a third axis
 

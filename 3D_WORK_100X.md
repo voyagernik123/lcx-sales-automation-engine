@@ -80,10 +80,27 @@ strongest 3D case in the platform and it is a real one.
 **Build `@lcx/gl` — a hand-written WebGL2 renderer, ~30–45 KB raw, dynamically imported.**
 No three.js. No new npm dependency.
 
+> **2026-08-13 — which 45 this is, and how it turned out.** The "~30–45 KB" here is the ORIGINAL
+> WHOLE-ENGINE ESTIMATE. It is not the 45 KB in §6.4's table below, which is L1 renderer's lane
+> budget, and it is not the "45 KB unspent" in `PLATFORM_VFX_100X.md:37`, which was the spine's
+> leftover headroom. Three different 45s, and reading any one as another is what let invariant 4's
+> "<45 KB total" cap be quoted as if the engine had breached it (`3D_VFX_FINAL_PLAN.md` §1.7).
+> **The estimate was superseded by three lanes that did not exist when it was made** — L4 env,
+> L3.5 particles, L4.5 field. Six lanes now allocate **147 KB**, and the engine measures several
+> times this "~30–45 KB" while still coming in at a fraction of three.js's 513.3 KB for the same job,
+> which is all point 1 below ever needed.
+>
+> **The measured total is deliberately absent from this note.** Restating it in a second document is
+> the defect §4.5 exists to close. It is generated into `docs/3d/p1/README.md` by
+> `node docs/3d/p1/build.mjs --write`, and `npm run gl-budget` fails if that file disagrees with the
+> bundler.
+
 **Why this and not three.js:**
 
 1. **It fits and three.js does not** (§1.1). 45 KB against 304 KB of passthrough headroom leaves
-   room for nine surfaces; 500 KB leaves none.
+   room for nine surfaces; 500 KB leaves none. *(2026-08-13: the 45 here is the whole-engine
+   estimate of the note above, and the conclusion survived the engine outgrowing it — `@lcx/gl`
+   contributes zero bytes to initial JS, being dynamically imported in every case.)*
 2. **The maths is already done and it is pure.** `packages/shared/src/geometry/` already projects,
    builds meshes, and refuses dishonestly-shaped input, with 20 refusal codes and a ruleset
    version. A GPU path is a *renderer*, not an engine. three.js's scene graph solves a problem we
@@ -310,7 +327,7 @@ an agent that reads the image and describes what it sees. **No surface ships un-
 
 | | raw KB |
 |---|---|
-| L1 renderer | 45 |
+| L1 renderer | 45 &nbsp;← *this 45 is L1's LANE budget; it is still live and still enforced* |
 | L2 look | 10 |
 | L3 motion | 8 |
 | SDF font atlas | 30 |
@@ -319,7 +336,17 @@ an agent that reads the image and describes what it sees. **No surface ships un-
 | **headroom left** | **121** |
 
 If the spine overruns 63 KB it eats a surface. **A lane that overruns reports it and stops**; it
-does not silently take the budget. If the total genuinely needs to exceed 304 KB, that is a
+does not silently take the budget.
+
+> **2026-08-13 — this table grew three lanes and the docs did not follow, which is the whole of
+> `3D_VFX_FINAL_PLAN.md` §4.5.** L4 env (60), L3.5 particles (11) and L4.5 field (13) were added to
+> `docs/3d/p1/build.mjs` after this was written, so the spine is now six lanes allocating **147 KB**,
+> not the 63 KB above — and for months `docs/3d/p1/README.md` still published 17.5 KB measured
+> against 63 KB allocated, both wrong.
+>
+> **The allocations are here; the measurement is nowhere but the generator's output.** The lane list
+> in `docs/3d/p1/build.mjs` is the only authority on allocations, and `npm run gl-budget` regenerates
+> and verifies every published figure, so a fourth stale copy cannot be created by hand. If the total genuinely needs to exceed 304 KB, that is a
 deliberate raise of `MAX_PASSTHROUGH_KB` with the number stated and re-measured — which is exactly
 what the script's own header demands.
 

@@ -9,13 +9,15 @@ and compared against P0's plate pixel by pixel.
 
 ```bash
 node docs/3d/p0/samples.mjs      # the real engine → samples.json
-node docs/3d/p1/build.mjs        # bundle + MEASURE each layer against §6.4
+node docs/3d/p1/build.mjs        # bundle + MEASURE each layer against §6.4, and check the tables below
 node docs/3d/p1/capture.mjs      # → risk-cloud.png AND refusal.png
 node docs/3d/p1/compare.mjs      # → does the spine still reproduce P0?
 ```
 
 `npm run gl-budget` is wired into `ci-check`, so a layer that overruns fails the build
-rather than being noticed later.
+rather than being noticed later. It **also fails when a byte figure published in this file
+or in `docs/3d/w1/README.md` disagrees with a fresh measurement** — because for months a
+layer that *did not overrun* still made every published figure wrong, and nothing noticed.
 
 ---
 
@@ -26,15 +28,48 @@ rather than being noticed later.
 | Brand hex exact after tone mapping | `#2C6BFF` in, `#2C6BFF` out | **exact, whole palette** — `assertBrandFidelity()` returns `[]` |
 | **60 fps on M1** | ≤ 16.67 ms/frame | **4.41 ms/frame — 227 fps**, on an actual Apple M1 / 8 GB via ANGLE Metal. 3.8× headroom |
 | The spine reproduces P0 | no visible regression | **mean \|Δ\| 0.09/255, max 6/255, 0 channels over 8** of 13,789,500 |
-| L1 renderer | ≤ 45 KB raw | **10.4 KB** |
-| L2 look | ≤ 10 KB raw | **5.3 KB** |
-| L3 motion | ≤ 8 KB raw | **1.7 KB** |
-| spine total | ≤ 63 KB raw | **17.5 KB** — 45.5 KB under, and 29× smaller than three.js |
+| Every lane inside its §6.4 allocation | no lane over | **all six ✓** — the table below is generated, not stated |
 | No WebGL2 is a real state, not a crash | renders something honest | **`refusal.png`** |
 
-The spine came in at 28% of its allocation. §6.4 warned that a 63 KB overrun would eat a
-surface; instead there is 45 KB of unspent headroom, which is the budget for the SDF font
-atlas (30 KB) plus change.
+## The bytes
+
+**Nothing in this table is typed by a human.** It is emitted by `docs/3d/p1/build.mjs` from
+the bundler, and `npm run gl-budget` fails if what is committed here disagrees with a fresh
+measurement. Regenerate with `node docs/3d/p1/build.mjs --write`; get the same numbers as
+JSON with `--json`.
+
+<!-- gl-budget:begin lanes -->
+| lane | allocated | measured | |
+|---|---|---|---|
+| L1 renderer | ≤ 45 KB raw | **11.7 KB** | ✓ |
+| L2 look | ≤ 10 KB raw | **6.5 KB** | ✓ |
+| L3 motion | ≤ 8 KB raw | **1.7 KB** | ✓ |
+| L4 env | ≤ 60 KB raw | **39.0 KB** | ✓ |
+| L3.5 particles | ≤ 11 KB raw | **10.8 KB** | ✓ |
+| L4.5 field | ≤ 13 KB raw | **8.6 KB** | ✓ |
+| **spine total** (all six lanes) | ≤ 147 KB raw | **78.2 KB** | 68.8 KB of the allocation unspent |
+| gate bundle — spine + this surface, tree-shaken | — | **22.7 KB** (23234 B) | what this lane actually ships |
+| three.js, same job, same settings (P0) | — | 513.3 KB | **6.6× the spine** |
+<!-- gl-budget:end lanes -->
+
+That is what the audit of 2026-08-13 fixed. This table previously read **L1 10.4 / L2 5.3 /
+L3 1.7 / spine 17.5 KB, "45.5 KB under, and 29× smaller than three.js"** — hand-transcribed
+when the spine was *three* lanes. Three more shipped (L4 env, L3.5 particles, L4.5 field)
+and every one of those five figures silently became wrong, in a table headed "measured".
+
+### "45 KB" means three different things, so this document never says it unqualified
+
+| the number | what it is | status |
+|---|---|---|
+| **45 KB** | **L1 renderer's lane allocation** (`3D_WORK_100X.md` §6.4) | live — it is the `L1 renderer` row above |
+| **30–45 KB** | the **original whole-engine estimate**, made before L4 / L3.5 / L4.5 existed (`3D_WORK_100X.md:80`) | superseded — six lanes allocate 147 KB |
+| **"45 KB unspent"** | the **spine's leftover headroom** back when the spine was L1+L2+L3 against 63 KB | stale, and never a budget — the live figure is the "unspent" cell above |
+
+Invariant 4's "**<45 KB total**" cap is the second reading, and it is unsatisfiable: honouring
+it means deleting L4 env, L3.5 particles and L4.5 field — GGX lighting, shadows, AO, DoF, sky,
+particles and volumetrics. The two budgets that are real are the per-lane table above and the
+initial-JS ceiling enforced by `npm run perf-budget`; `@lcx/gl` contributes **zero** bytes to
+initial JS, being dynamically imported in every case.
 
 ---
 
@@ -194,7 +229,7 @@ confident and both wrong, and only step 3 — profiling instead of theorising �
 | `surface.ts` | S1 rebuilt on `@lcx/gl`. The first L4 lane, written to the contract nine lanes will share: imports from `@lcx/gl` and nowhere else, touches no `WebGL*` symbol, makes no colour decision the palette has not made |
 | `entry.ts` | Browser entry — mounts it, prints the readout, renders the refusal |
 | `risk-cloud.html` | The page. Type is DOM, positioned by `projectScreen`, so a label cannot drift from the geometry it names |
-| `build.mjs` | Bundles, and measures each layer against its §6.4 allocation. Exits non-zero on overrun |
+| `build.mjs` | Bundles, and measures each layer against its §6.4 allocation. Exits non-zero on overrun, and on any published byte figure disagreeing with the measurement. `--write` regenerates them; `--json` emits them machine-readably |
 | `capture.mjs` | Both captures — rendered, and refused |
 | `compare.mjs` | The regression gate against P0 |
 | `perf.ts` | Frame-time harness. Two methods, and it reports when the better one is unavailable rather than filling in |

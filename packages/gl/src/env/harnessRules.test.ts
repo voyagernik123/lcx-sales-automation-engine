@@ -134,38 +134,47 @@ describe('§6 rules, ratcheted across every docs/3d/e* environment', () => {
     }
   });
 
-  it('rule 4 — an environment with no projected DOM content is a recorded debt, and the debt cannot grow', () => {
+  it('rule 4 — the only environment with no projected DOM content is the one with nothing to say', () => {
     /*
      * §6 rule 4 — "text stays in the DOM, projected from the same matrix" — had no check at all, and it
-     * is the rule with a LIVE violation: `docs/3d/e2/README.md` records "No DOM text at all, which is a
-     * §6 rule 4 violation", and E2's eight corridors and twelve cities therefore enter no accessibility
-     * tree and survive no print.
+     * was the rule with a LIVE violation. This assertion read `'e0,e2'` for as long as that was true.
      *
-     * WHY THIS IS A CEILING AND NOT AN ASSERTION THAT EVERY ENVIRONMENT PROJECTS. Two do not: E2, which
-     * has labels it should be projecting, and E0, which is the frame-budget spike and has no text to
-     * project in the first place. Those are different situations and only the first is a defect, which
-     * no grep can tell apart. Asserting "everyone projects" would fail the gate for E0 having nothing to
-     * say, and asserting "everyone who does not projects has a waiver" would fail it for E0's README not
+     * E2's IS NOW FIXED, so the ratchet is tightened to `'e0'`. What was wrong was never baked text: E2's
+     * `LIT_FRAG` has no texture sampler at all, so there was nothing to unbake — `docs/3d/e2/build.mjs`
+     * emitted no overlay, and twelve sited cities and seven corridors therefore carried no words in any
+     * accessibility tree, print or selection. `docs/3d/e2/entry.ts` now projects them through
+     * `projectScreen` from the frame's own matrix, hides the ones behind the limb, fades the ones near it,
+     * and names every site it does not label in DOM prose under the frame.
+     *
+     * WHY THIS IS STILL A CEILING AND NOT "EVERY ENVIRONMENT PROJECTS". E0 does not, and that is not a
+     * defect: it is the frame-budget spike and has no text to project in the first place. No grep can tell
+     * "has nothing to say" apart from "should be saying it", so asserting universal projection would fail
+     * the gate for E0 having nothing to say, and asserting a README waiver would fail it for E0 not
      * carrying a sentence about text it does not have.
      *
-     * So the check is the one thing that is unambiguously true: the number of environments carrying no
-     * projected DOM content may not GROW. A tenth environment that bakes its labels fails here, and the
-     * two that exist are named in the message rather than hidden in a threshold.
+     * A tenth environment that bakes its labels fails here, and so does a regression in E2 — this is the
+     * assertion that would catch either.
      */
     const withoutProjection = environments
       .filter((e) => !/projectQuad|projectScreen/.test(e.src))
       .map((e) => e.id);
     expect(withoutProjection.sort().join(','),
       'the set of environments with no projected DOM content changed — a NEW one is a §6 rule 4 '
-      + 'regression, and a removal means this ratchet should be tightened')
-      .toBe('e0,e2');
-    /* And E2's is recorded where a reader will find it, which is the only part of the debt that is
-       currently discharged. */
+      + 'regression, and E2 reappearing here means its DOM label layer was removed')
+      .toBe('e0');
+    /*
+     * E2 IS NAMED SEPARATELY, because it is the one environment whose violation was recorded as debt and
+     * therefore the one whose fix a reader will come looking for. `find` is asserted to have found it
+     * rather than guarded with an `if`: a guard would make both assertions below vanish silently the day
+     * e2's capture is deleted, which is the shape of the empty-loop failure this file exists to prevent.
+     */
     const e2 = environments.find((e) => e.id === 'e2');
-    if (e2) {
-      expect(e2.readme, 'e2 projects nothing and no longer records that as a rule 4 violation')
-        .toMatch(/rule 4/);
-    }
+    expect(e2, 'e2 is not among the captured environments, so the two assertions below check nothing')
+      .toBeDefined();
+    expect(e2!.src, 'e2 no longer projects DOM labels — the rule 4 violation the ratchet above recorded '
+      + 'has come back').toMatch(/projectScreen|projectQuad/);
+    expect(e2!.readme, 'e2 no longer records what its rule 4 violation was or how it was closed')
+      .toMatch(/rule 4/);
   });
 
   it('times itself with the trailing-readPixels instrument, never bare gl.finish()', () => {
