@@ -65,7 +65,7 @@ changes where they are addressed and nothing about what the components render.
 | surface | reaches a frame under `reduce` | draw calls on this surface's own context, 600 ms after it drew | page-wide `rAF` in the same window (context only) |
 |---|---|---|---|
 | **E8** | yes | **0** | 0 |
-| **E4** | yes | **0** | 37 |
+| **E4** | yes | **0** | 36 |
 | **E3** | yes | **0** | 36 |
 | **E2** | yes | **0** | 36 |
 | **E6** | yes | **0** | 36 |
@@ -88,7 +88,7 @@ must not:
 
 | **E8 ForgeBackdrop**, no motion preference | draw calls per 600 ms |
 |---|---|
-| during its 5000 ms arc | **72** |
+| during its 5000 ms arc | **54** |
 | after the arc has finished | **0** |
 
 The counter sees draws when draws exist, so the zeros above are measurements rather than silence. And it stops: zero idle motion, measured on the live page rather than read off the source.
@@ -101,7 +101,7 @@ settled here. Measured under emulated print media, with the relief on:
 | surface | designed print output | canvases shown on screen → in print | `[data-relief-live]` marked → still shown | `[data-relief-print-flat]` present → revealed | readable figures, relief off → on | toggle prints |
 |---|---|---|---|---|---|---|
 | **E8** | NO | 1 → 1 | 0 → 0 | 0 → 0 | 0 → 0 | 0 |
-| **E4** | NO | 1 → 1 | 0 → 0 | 0 → 0 | 2 → 0 **(lost)** | **1** |
+| **E4** | NO | 1 → 1 | 0 → 0 | 0 → 0 | 1 → 0 **(lost)** | **1** |
 | **E3** | NO | 1 → 1 | 0 → 0 | 0 → 0 | 1 → 0 **(lost)** | **1** |
 | **E2** | NO | 1 → 1 | 0 → 0 | 0 → 0 | 1 → 0 **(lost)** | **1** |
 | **E6** | NO | 1 → 1 | 0 → 0 | 0 → 0 | 1 → 0 **(lost)** | **1** |
@@ -137,13 +137,13 @@ and until now nobody had produced the file:
 
 | surface | PDF bytes | carries an image |
 |---|---|---|
-| **E8** | 228,214 | yes |
-| **E4** | 548,151 | yes |
-| **E3** | 354,193 | yes |
-| **E2** | 532,368 | yes |
-| **E6** | 258,397 | yes |
-| **E1** | 681,180 | yes |
-| **E5** | 681,189 | yes |
+| **E8** | 227,203 | yes |
+| **E4** | 548,169 | yes |
+| **E3** | 352,801 | yes |
+| **E2** | 532,180 | yes |
+| **E6** | 258,482 | yes |
+| **E1** | 681,185 | yes |
+| **E5** | 680,989 | yes |
 | **E7** | — | — |
 
 An `/Image` XObject in the file is the canvas reaching paper. What it does **not** establish is that the image
@@ -158,7 +158,7 @@ run in any test, because jsdom has no WebGL context to lose.
 
 | surface | loss provoked | refusal named to the reader | toggle still pressed | its OWN canvas still shown | other canvases on the page | flat surface behind it | canvas PNG, before → after |
 |---|---|---|---|---|---|---|---|
-| **E8** | yes | **no listener** | no | **1** | 0 | NONE | 128,172 → 315,100 B |
+| **E8** | yes | **no listener** | no | **1** | 0 | NONE | 128,063 → 315,157 B |
 | **E4** | yes | yes | no | 0 | 0 | 2 elements | — |
 | **E3** | yes | yes | no | 0 | 0 | 1 element | — |
 | **E2** | yes | yes | no | 0 | 0 | 1 element | — |
@@ -197,28 +197,45 @@ the reader the object went away — and nothing needs to, because it carries no 
 `apps/web/src/components/__tests__/glContextBudget.test.ts` pins the worst route at **3 live contexts** by
 walking the static and dynamic import graph from all 78 routes, and names `pages/CommandDeck.tsx` as the route
 at the cap: the shared 2-D context behind the deck, plus `DeckReliefGl`, plus `SurfaceReliefGl`, the last two
-independent opt-ins with no coordination between them. A count of real contexts in a real browser is strictly
-stronger than a count of import edges, and this is the one place the two can be compared.
+independent opt-ins with no coordination between them. Counting real contexts in a real browser answers a
+question the import graph can only bound, and this is the one place the two can be compared.
 
-| surface | route | contexts created | not reporting `isContextLost()` | canvas in the document | offscreen | created by this toggle |
-|---|---|---|---|---|---|---|
-| **E8** | `/select` | 1 | 1 | 1 | 0 | 1 |
-| **E4** | `/ontology` | 1 | 1 | 1 | 0 | 1 |
-| **E3** | `/bd-pipeline` | 2 | 2 | 2 | 0 | 2 |
-| **E2** | `/market-map` | 2 | 2 | 2 | 0 | 2 |
-| **E6** | `/audit-log` | 2 | 2 | 2 | 0 | 2 |
-| **E1** | `/command-deck` | 3 | 3 | 2 | 1 | 2 |
-| **E5** | `/command-deck` | 3 | 3 | 2 | 1 | 2 |
+| surface | route | contexts created | not lost | canvas in the document | offscreen | created by this toggle | `getContext` calls | not lost after the toggle goes OFF |
+|---|---|---|---|---|---|---|---|---|
+| **E8** | `/select` | 1 | 1 | 1 | 0 | 1 | 1 | n/a — no toggle |
+| **E4** | `/ontology` | 1 | 1 | 1 | 0 | 1 | 1 | 1 → **0** |
+| **E3** | `/bd-pipeline` | 1 | 1 | 1 | 0 | 1 | 2 | 1 → **0** |
+| **E2** | `/market-map` | 1 | 1 | 1 | 0 | 1 | 2 | 1 → **0** |
+| **E6** | `/audit-log` | 1 | 1 | 1 | 0 | 1 | 2 | 1 → **0** |
+| **E1** | `/command-deck` | 2 | 2 | 1 | 1 | 1 | 3 | 2 → **1** |
+| **E5** | `/command-deck` | 2 | 2 | 1 | 1 | 1 | 3 | 2 → **1** |
+
+Every row above engages ONE toggle, so every row above is a LOWER BOUND for
+its route. The pin of 3 is a route with both of its independent opt-ins on together, which is a different
+configuration — so that configuration is loaded as well:
+
+| route | opt-ins engaged together | contexts created | not lost | in the document | offscreen |
+|---|---|---|---|---|---|
+| `/command-deck` | E1 + E5 | 3 | **3** | 2 | 1 |
+
+Measured worst case on this sweep: **3 contexts** on `/command-deck` with E1 + E5 on at once, against the static pin of 3 and a browser cap of 8-16. The static census and the browser agree, which is worth recording as a negative result: the import graph was not over- or under-counting.
 
 The offscreen column is the shared 2-D renderer: its canvas is never in the document, which is how it is told
 apart from a relief's own without naming either. `glContextBudget.test.ts` counts the same split — owners plus
 the shared context — so the two numbers are comparable rather than merely both being three.
 
-Read the "not lost" column precisely: it is **created and not lost**, not "live". `stage.dispose()` does not call
-`WEBGL_lose_context.loseContext()` (`packages/gl/src/stage.ts:322-330`), so a context React has already
-released still answers `false` — which is the hazard `3D_VFX_FINAL_PLAN.md` §10.4 raises and nothing
-measures. This sweep toggles each surface on once and never off, so on these runs the two coincide; a sweep
-that toggled repeatedly would not, and that is the measurement §10.4 is asking for.
+**A context is counted once, however many times it is asked for**, which the `getContext` column makes visible.
+`getContext('webgl2')` returns the SAME object every time it is called on a given canvas
+(`packages/gl/src/stage.ts:336`), and every relief here rebuilds IN PLACE when its size step or its tier
+changes — so counting calls reported two contexts for one toggle on one canvas, contradicting the canvas count
+in the reach table above. That would have read as a leak. Calls above contexts are rebuilds, not leaks.
+
+**The last column is the measurement `3D_VFX_FINAL_PLAN.md` §10.4 asked for.** It recorded, as newly-found and
+unmeasured, that `stage.dispose()` never called `WEBGL_lose_context.loseContext()` — so toggling a relief off
+and on could hold more contexts than there are mounted components, against a cap where exceeding it kills the
+OLDEST, which on a chart route is the shared one every chart draws through. `stage.ts:322-360` now loses the
+context, gated on the canvas being detached, and this column is that fix observed rather than read: the relief is
+switched back off and the census retaken. On this run every one of the 6 toggled surfaces released a context on the way out.
 
 ## What this sweep does NOT establish
 
@@ -227,7 +244,6 @@ that toggled repeatedly would not, and that is the measurement §10.4 is asking 
 - **Real-hardware anything.** SwiftShader only.
 - **That the printed image is the right image.** Axis 2 establishes that a canvas reaches the PDF, not that it
   is legible on paper at print resolution.
-- **Contexts held after a toggle is switched off.** See Axis 4.
 - **§7(b), the operator timing.** Unmeasured on every environment, harness or app.
 
 ## Findings — open, not explained away

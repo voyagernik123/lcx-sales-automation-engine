@@ -218,6 +218,8 @@ const COMMAND_STUBS = [
 const SURFACES = [
   {
     id: 'E8', name: 'ForgeBackdrop', file: 'src/components/brand/ForgeBackdrop.tsx',
+    /* E8 has no separate renderer module: the wrapper IS the renderer. */
+    glFile: 'src/components/brand/ForgeBackdrop.tsx',
     route: '/select', page: 'src/pages/SelectOperator.tsx',
     /* The ONE surface that needs no seat: the sign-in screen is outside `AppLayout`, so it is what an
        unauthenticated stranger sees. It is also the only one that is not opt-in — no toggle, it mounts and
@@ -228,6 +230,7 @@ const SURFACES = [
   },
   {
     id: 'E4', name: 'OntologyOrrery', file: 'src/components/geometry/OntologyOrrery.tsx',
+    glFile: 'src/components/geometry/OntologyOrreryGl.tsx',
     route: '/ontology', page: 'src/pages/OntologyExplorer.tsx',
     /* Its data is static (`OntologyExplorer.tsx:12` imports the graph from `@/data`), so this is the only
        opt-in surface reachable with the network entirely dead. */
@@ -236,6 +239,7 @@ const SURFACES = [
   },
   {
     id: 'E3', name: 'PipelineRelief', file: 'src/components/geometry/PipelineRelief.tsx',
+    glFile: 'src/components/geometry/PipelineReliefGl.tsx',
     route: '/bd-pipeline', page: 'src/pages/BdPipeline.tsx',
     seat: true, toggle: /channel view/i, printSheet: false,
     stubs: [['**/v1/projects?*', () => envelope(
@@ -246,6 +250,7 @@ const SURFACES = [
   },
   {
     id: 'E2', name: 'GlobeRelief', file: 'src/components/market/GlobeRelief.tsx',
+    glFile: 'src/components/market/GlobeReliefGl.tsx',
     route: '/market-map', page: 'src/pages/MarketMap.tsx',
     seat: true, toggle: /globe view/i, printSheet: false,
     stubs: [['**/v1/analytics/map*', () => envelope(Array.from({ length: 24 }, (_, i) => mapPoint(i)))]],
@@ -253,6 +258,7 @@ const SURFACES = [
   },
   {
     id: 'E6', name: 'VaultRelief', file: 'src/components/geometry/VaultRelief.tsx',
+    glFile: 'src/components/geometry/VaultReliefGl.tsx',
     route: '/audit-log', page: 'src/pages/AuditLog.tsx',
     seat: true, toggle: /vault view/i, printSheet: false,
     stubs: [['**/v1/audit*', () => envelope(
@@ -279,12 +285,14 @@ const SURFACES = [
   },
   {
     id: 'E1', name: 'DeckRelief', file: 'src/components/geometry/DeckRelief.tsx',
+    glFile: 'src/components/geometry/DeckReliefGl.tsx',
     route: '/command-deck', page: 'src/pages/CommandDeck.tsx',
     seat: true, toggle: /theatre view/i, stubs: COMMAND_STUBS, printSheet: true,
     note: 'six stubbed command endpoints; the page mounts the house print sheet',
   },
   {
     id: 'E5', name: 'SurfaceRelief', file: 'src/components/geometry/SurfaceRelief.tsx',
+    glFile: 'src/components/geometry/SurfaceReliefGl.tsx',
     route: '/command-deck', page: 'src/pages/CommandDeck.tsx',
     /* It reaches the deck inside `CockpitPanels`' LpOptimizerPanel, which fetches the ranking itself — so the
        six command endpoints are not enough and the POST engine has to answer too. */
@@ -293,6 +301,7 @@ const SURFACES = [
   },
   {
     id: 'E7', name: 'StormRelief', file: 'src/components/risk/StormRelief.tsx',
+    glFile: 'src/components/risk/StormReliefGl.tsx',
     route: '/marketing/crisis', page: 'src/pages/MarketingCrisis.tsx',
     seat: true, toggle: /storm view/i, stubs: [], printSheet: true,
     /*
@@ -788,8 +797,18 @@ async function sweep(browser, surface, open) {
       row.tierStamped = canvases.filter((c) => c.tier !== null).length;
       row.tierValues = [...new Set(canvases.map((c) => c.tier).filter(Boolean))];
       if (row.tierStamped === 0) {
-        row.problems.push('no canvas on this route stamps `data-quality-tier`, so the tier this surface '
-          + 'rendered at cannot be read back (useQualityTier.ts:98 says the components stamp it)');
+        /*
+         * The claim is at `shared/useQualityTier.ts:94-99`: "The app has no capture harness, so the components
+         * stamp `data-quality-tier` on their canvas and this is where a debug surface reads the rest." Six of
+         * the eight do, at one line each. Named against the RENDERER file rather than the wrapper, because the
+         * stamp belongs beside the draw that finished.
+         */
+        row.problems.push(`${surface.glFile} never sets \`canvas.dataset.qualityTier\`, so the tier this `
+          + 'surface rendered at cannot be read back off the live page. `shared/useQualityTier.ts:94-99` '
+          + 'states that the components stamp it, and six of the eight do — DeckReliefGl.tsx:608, '
+          + 'SurfaceReliefGl.tsx:336, OntologyOrreryGl.tsx:516, PipelineReliefGl.tsx:535, '
+          + 'VaultReliefGl.tsx:522, StormReliefGl.tsx:559. `env/quality.ts` is the reason it matters: a tier '
+          + 'that cannot be reported cannot be trusted');
       }
     } else if (surface.expectUnreachable && got.state === surface.expectUnreachable) {
       /* Not a problem: the surface refused for the documented reason, and this is the confirmation. */
@@ -825,6 +844,23 @@ async function sweep(browser, surface, open) {
        * `rafAfterDrawn` is page-wide and reported as CONTEXT ONLY — on these routes the shell, ReactFlow and
        * the entrance transitions all schedule frames, so it is a fact about the page and not about the relief.
        */
+      /*
+       * ── THE PER-SURFACE FLOOR, BECAUSE THE CONTROL RUN ONLY PROVES ONE CONTEXT ─────────
+       *
+       * E8's control run proves the counter works on E8's context. It does not prove the wrapper caught the
+       * draw calls THIS surface makes: a renderer reaching the screen through a call this probe does not wrap
+       * would report 0 for ever, and 0 is the passing value. So the cumulative count is read BEFORE the window
+       * is reset — the frame the reader is looking at has already been drawn, so it must be non-zero.
+       */
+      const drawsSoFar = await guarded(page, () => page.evaluate(
+        (from) => globalThis.__lcxAudit.contexts.slice(from).reduce((n, c) => n + c.draws, 0),
+        got.preClick ?? 0,
+      ));
+      if (drawsSoFar === 0) {
+        row.problems.push('the draw counter recorded ZERO draws on this surface\'s own context even though a '
+          + 'frame is on screen, so it does not see this renderer\'s draw path and the zero below is not a '
+          + 'measurement');
+      }
       const win = await cleanWindow(page, () => page.evaluate((from) => new Promise((ok) => {
         const a = globalThis.__lcxAudit;
         a.raf = 0;
@@ -841,7 +877,8 @@ async function sweep(browser, surface, open) {
           + 'prefers-reduced-motion: reduce — this axis is UNMEASURED here, NOT passing');
       } else {
         row.axes.reducedMotion = {
-          reached: true, rafAfterDrawn: win.raf, drawsAfterDrawn: win.draws, drawsAllContexts: win.drawsAll,
+          reached: true, drawsBeforeWindow: drawsSoFar,
+          rafAfterDrawn: win.raf, drawsAfterDrawn: win.draws, drawsAllContexts: win.drawsAll,
         };
         if (win.draws > 0) {
           row.problems.push(`kept drawing after its first frame under prefers-reduced-motion: reduce — `
@@ -1232,6 +1269,7 @@ if (SURFACES.length === 0) {
 
 const { child, log } = startDevServer();
 const rows = [];
+const worstRoutes = [];
 let browser;
 try {
   await waitForServer(log);
@@ -1249,6 +1287,44 @@ try {
       + `tier ${row.tierStamped ?? '—'}  ctx ${row.contextsNotLost ?? '—'}`
       + (bad ? `  — ${bad} problem${bad > 1 ? 's' : ''}` : ''));
     for (const p of row.problems) console.log(`      · ${p}`);
+  }
+  /*
+   * ── THE WORST ROUTE, WITH EVERY OPT-IN ON AT ONCE ───────────────────────────────────
+   *
+   * `glContextBudget.test.ts` pins the worst case at 3 and derives it from the import graph: the shared
+   * context plus BOTH of `/command-deck`'s independent toggles, which are separate `useState(false)` in
+   * separate wrappers with no coordination, so both can be on together. Every pass above engages ONE toggle,
+   * so every number above is a lower bound on that route and comparing it to the pin would be comparing two
+   * different configurations. This engages every toggle a route has.
+   *
+   * Derived from the surface table rather than hardcoded to `/command-deck`: a second relief added to any
+   * route tomorrow is measured tomorrow.
+   */
+  const byRoute = new Map();
+  for (const r of rows.filter((x) => x.reach === 'DRAWN' && x.toggle !== null)) {
+    byRoute.set(r.route, [...(byRoute.get(r.route) ?? []), r]);
+  }
+  for (const [route, group] of byRoute) {
+    if (group.length < 2) continue;
+    const page = await newSeatedPage(browser, { ...group[0], stubs: group.flatMap((g) => g.stubs) });
+    try {
+      const got = await reach(page, group[0]);
+      if (got.state !== 'DRAWN') continue;
+      const engaged = [group[0].id];
+      for (const other of group.slice(1)) {
+        const btn = page.getByRole('button', { name: other.toggle });
+        if (await btn.count() === 0) continue;
+        await btn.first().scrollIntoViewIfNeeded();
+        await btn.first().click();
+        if (await waitForDrawn(page, 60_000)) engaged.push(other.id);
+      }
+      const census = await page.evaluate(readAudit);
+      worstRoutes.push({ route, engaged, created: census.created, notLost: census.notLost,
+        inDocument: census.inDocument, offscreen: census.offscreen });
+      console.log(`  · ${route} with ${engaged.join(' + ')} on together: ${census.notLost} contexts not lost`);
+    } finally {
+      await page.close().catch(() => {});
+    }
   }
 } finally {
   await browser?.close();
@@ -1332,13 +1408,14 @@ ${unreachable.map((r) => `- **${r.id} ${r.name}** (\`${r.route}\`) — \`${r.rea
 `}
 ## Axis 1 · Reduced motion — measured as draw calls, not as scheduled frames
 
-| surface | reaches a frame under \`reduce\` | draw calls on this surface's own context, 600 ms after it drew | page-wide \`rAF\` in the same window (context only) |
-|---|---|---|---|
+| surface | reaches a frame under \`reduce\` | draws already recorded on its own context | draw calls in the 600 ms after it drew | page-wide \`rAF\` in the same window (context only) |
+|---|---|---|---|---|
 ${rows.map((r) => {
   const a = r.axes.reducedMotion;
-  if (!a) return `| **${r.id}** | — | — | — |`;
-  if (!a.reached) return `| **${r.id}** | NO | — | — |`;
-  return `| **${r.id}** | yes | ${a.drawsAfterDrawn === 0 ? '**0**' : `**${a.drawsAfterDrawn}**`} | ${a.rafAfterDrawn} |`;
+  if (!a) return `| **${r.id}** | — | — | — | — |`;
+  if (!a.reached) return `| **${r.id}** | NO | — | — | — |`;
+  if (a.unmeasured) return `| **${r.id}** | yes | ${t(a.drawsBeforeWindow)} | **unmeasured** | — |`;
+  return `| **${r.id}** | yes | ${a.drawsBeforeWindow === 0 ? '**0 — see findings**' : a.drawsBeforeWindow} | ${a.drawsAfterDrawn === 0 ? '**0**' : `**${a.drawsAfterDrawn}**`} | ${a.rafAfterDrawn} |`;
 }).join('\n')}
 
 **The third column is not a verdict and the second one is.** The first version of this sweep counted
@@ -1347,7 +1424,13 @@ one file with nothing else in it. In the app that counted the SHELL: 36 frames o
 runs its own loop, and 10 then 36 on two consecutive passes over the same surface. A number that moves like that
 is a fact about the page. Draw calls on the contexts the toggle itself created cannot belong to anything else.
 
-A zero is the passing value, which means a broken counter passes every surface. \`docs/3d/e9/README.md\` reports
+**The third column is the per-surface floor.** The control run below proves the counter works on ONE context; it
+does not prove the wrapper caught the draw path THIS renderer uses, and a renderer reaching the screen through an
+unwrapped call would report 0 for ever. So the cumulative count is read before the window is reset: the frame is
+already on screen, so it must be non-zero, and a zero there is reported as an instrument failure rather than as a
+still surface.
+
+A zero in the fourth column is the passing value, which means a broken counter passes every surface. \`docs/3d/e9/README.md\` reports
 its own version of this check as **VACUOUS** for exactly that reason: no harness animates, so nothing could ever
 make the number non-zero. **In the app it is not vacuous, and one surface is why.** \`ForgeBackdrop\` runs a
 five-second arc on the sign-in route by design (\`SWEEP_MS = 5000\`), so it is also loaded with **no motion
@@ -1475,8 +1558,8 @@ the reader the object went away — and nothing needs to, because it carries no 
 \`apps/web/src/components/__tests__/glContextBudget.test.ts\` pins the worst route at **3 live contexts** by
 walking the static and dynamic import graph from all 78 routes, and names \`pages/CommandDeck.tsx\` as the route
 at the cap: the shared 2-D context behind the deck, plus \`DeckReliefGl\`, plus \`SurfaceReliefGl\`, the last two
-independent opt-ins with no coordination between them. A count of real contexts in a real browser is strictly
-stronger than a count of import edges, and this is the one place the two can be compared.
+independent opt-ins with no coordination between them. Counting real contexts in a real browser answers a
+question the import graph can only bound, and this is the one place the two can be compared.
 
 | surface | route | contexts created | not lost | canvas in the document | offscreen | created by this toggle | \`getContext\` calls | not lost after the toggle goes OFF |
 |---|---|---|---|---|---|---|---|---|
@@ -1485,6 +1568,22 @@ ${rows.filter((r) => r.reach === 'DRAWN').map((r) => {
   return `| **${r.id}** | \`${r.route}\` | ${t(r.contextsCreated)} | ${t(r.contextsNotLost)} | ${t(r.contextsInDocument)} | ${t(r.contextsOffscreen)} | ${t(r.contextsByToggle)} | ${t(r.getContextCalls)} | ${rel?.reached ? `${rel.notLostWithReliefOn} → **${rel.notLostAfterToggleOff}**` : 'n/a — no toggle'} |`;
 }).join('\n')}
 
+${worstRoutes.length === 0 ? '' : `Every row above engages ONE toggle, so every row above is a LOWER BOUND for
+its route. The pin of 3 is a route with both of its independent opt-ins on together, which is a different
+configuration — so that configuration is loaded as well:
+
+| route | opt-ins engaged together | contexts created | not lost | in the document | offscreen |
+|---|---|---|---|---|---|
+${worstRoutes.map((w) => `| \`${w.route}\` | ${w.engaged.join(' + ')} | ${w.created} | **${w.notLost}** | ${w.inDocument} | ${w.offscreen} |`).join('\n')}
+
+${(() => {
+  const worst = worstRoutes.reduce((a, b) => (b.notLost > a.notLost ? b : a));
+  return `Measured worst case on this sweep: **${worst.notLost} contexts** on \`${worst.route}\` with `
+    + `${worst.engaged.join(' + ')} on at once, against the static pin of 3 and a browser cap of 8-16. The `
+    + 'static census and the browser agree, which is worth recording as a negative result: the import graph '
+    + 'was not over- or under-counting.';
+})()}
+`}
 The offscreen column is the shared 2-D renderer: its canvas is never in the document, which is how it is told
 apart from a relief's own without naming either. \`glContextBudget.test.ts\` counts the same split — owners plus
 the shared context — so the two numbers are comparable rather than merely both being three.
