@@ -13,15 +13,15 @@ a live sweep. If it disagrees with the code, run it again rather than editing it
 
 | env | ms/frame | renderer | 60 Hz headroom | triangles | glError | brand | flat fallback | hidden on success |
 |---|---|---|---|---|---|---|---|---|
-| **E0** | 163.2 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 4236 | 0 | exact | 3 rows | yes |
-| **E1** | 120.92 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 1212 | 0 | exact | 9 rows | yes |
-| **E2** | 136.62 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 35136 | 0 | exact | 7 rows | yes |
-| **E3** | 62.02 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 5764 | 0 | exact | 12 rows | yes |
-| **E4** | 60.35 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 39456 | 0 | exact | 24 rows | yes |
-| **E5** | 57.383 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 1076 | 0 | exact | 1 svg | yes |
-| **E6** | 59.55 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 360 | 0 | exact | 25 rows | yes |
-| **E7** | 154.4 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 2784 | 0 | exact | 28 rows | yes |
-| **E8** | 153.55 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 10112 | 0 | exact | 3 rows | yes |
+| **E0** | 204.367 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 4236 | 0 | exact | 3 rows | yes |
+| **E1** | 163.4 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 1212 | 0 | exact | 9 rows | yes |
+| **E2** | 226.5 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 35136 | 0 | exact | 7 rows | yes |
+| **E3** | 65.06 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 5764 | 0 | exact | 12 rows | yes |
+| **E4** | 67.517 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 39456 | 0 | exact | 24 rows | yes |
+| **E5** | 81.75 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 1076 | 0 | exact | 1 svg | yes |
+| **E6** | 129.533 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 360 | 0 | exact | 25 rows | yes |
+| **E7** | 340.817 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 2784 | 0 | exact | 28 rows | yes |
+| **E8** | 331.867 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 10112 | 0 | exact | 3 rows | yes |
 
 Every frame time here is measured under **SwiftShader**, a CPU rasteriser, by the trailing-`readPixels`
 instrument. The 60 Hz headroom column **refuses** rather than reporting a figure, because the ratio between a
@@ -99,15 +99,15 @@ obstruction.
 
 | env | tier reported | tier drives | full (median of 3) | spread | minimum (median of 3) | saving |
 |---|---|---|---|---|---|---|
-| **E0** | minimum | ao+dof+shadow | 166.333 ms | ±21.3% | 30.7 ms | 81.5% |
-| **E1** | minimum | ao+dof+shadow | 124.84 ms | ±6.9% | 22.067 ms | 82.3% |
-| **E2** | minimum | ao+dof+shadow | 139.2 ms | ±26.6% | 37.517 ms | 73% |
-| **E3** | minimum | shadow | 53.933 ms | ±24.7% | 48.917 ms | 9.3% |
-| **E4** | minimum | ao+shadow | 59.9 ms | ±1.9% | 44.783 ms | 25.2% |
-| **E5** | minimum | ao+shadow | 56.267 ms | ±25.8% | 36.933 ms | 34.4% |
-| **E6** | minimum | ao+shadow | 59.683 ms | ±14.5% | 37.333 ms | 37.4% |
-| **E7** | minimum | ao+shadow | 155.183 ms | ±2.6% | 147.333 ms | 5.1% |
-| **E8** | minimum | ao+dof+shadow | 148.75 ms | ±1.9% | 36.617 ms | 75.4% |
+| **E0** | minimum | ao+dof+shadow | 259.117 ms | ±20.8% | 48.217 ms | 81.4% |
+| **E1** | minimum | ao+dof+shadow | 196.033 ms | ±16.6% | 30.8 ms | 84.3% |
+| **E2** | minimum | ao+dof+shadow | 242.867 ms | ±19.7% | 45.15 ms | 81.4% |
+| **E3** | minimum | shadow | 59.167 ms | ±56.9% | 81.46 ms | -37.7% |
+| **E4** | minimum | ao+shadow | 111.5 ms | ±38.2% | 49.467 ms | 55.6% |
+| **E5** | minimum | ao+shadow | 80.5 ms | ±1.5% | 40.767 ms | 49.4% |
+| **E6** | minimum | ao+shadow | 103.217 ms | ±31.1% | 64.233 ms | 37.8% |
+| **E7** | minimum | ao+shadow | 343.1 ms | ±34.3% | 270.883 ms | 21% |
+| **E8** | minimum | ao+dof+shadow | 297.8 ms | ±33.8% | 44.067 ms | 85.2% |
 
 The tier table is monotonic by construction — `env.test.ts` asserts every axis descends together, because a
 ladder with one axis going the wrong way makes a lower tier *slower* on some machines, so the fallback for a
