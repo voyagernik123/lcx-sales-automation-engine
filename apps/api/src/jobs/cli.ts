@@ -16,6 +16,8 @@
  * Env: DATABASE_URL (required for remote), COINGECKO_API_KEY, COINGECKO_KEY_TYPE
  */
 import pg from 'pg';
+import { openReachablePool } from '../db/poolerFallback.js';
+import { decideTls } from '../db/index.js';
 import { withJobRun } from './withJobRun.js';
 import { syncUniverse, discoverNewTokens } from '../connectors/universe.js';
 import { refreshMarketData } from '../enrich/refresh.js';
@@ -29,14 +31,42 @@ import { refreshAnomalies } from '../analytics/anomaly.js';
 async function main() {
   const job = process.argv[2];
   const dbUrl = process.env.DATABASE_URL ?? 'postgresql://lcx:lcx_dev_password@localhost:5432/lcx_sales';
-  const pool = new pg.Pool({ connectionString: dbUrl, max: 4 });
+
+  /*
+   * THE SAME HEALING THE API DOES, WHICH THIS LANE HAS BEEN MISSING.
+   *
+   * Every scheduled run was failing with `connect ENETUNREACH 2a05:d014:...:5432` against
+   * `db.<ref>.supabase.co`. Supabase's direct host is AAAA-only and a GitHub Actions runner is IPv4-only —
+   * exactly the outage Render had, which the API server was taught to survive by probing the session-pooler
+   * forms. This CLI built its own pool straight from the environment variable and so never learned.
+   *
+   * The probe loop lives in `poolerFallback.ts` beside the candidate generator, so the tricky part — the
+   * username rewrite the session pooler requires (`postgres.<ref>`) and the region sweep — exists once.
+   *
+   * TLS is decided by the same function the server uses, so a job cannot end up on a weaker connection than
+   * the API for the same database.
+   */
+  const tls = decideTls(dbUrl, process.env.DATABASE_CA_CERT ?? '');
+  const opened = await openReachablePool(
+    dbUrl,
+    (connectionString) => new pg.Pool({
+      connectionString,
+      max: 4,
+      connectionTimeoutMillis: 8_000,
+      ...(tls.ssl !== undefined ? { ssl: tls.ssl } : {}),
+    }),
+    (m) => { console.error(m); },
+  );
+  const pool = opened.pool as pg.Pool;
 
   const cgOpts = {
     coingeckoApiKey: process.env.COINGECKO_API_KEY,
     coingeckoKeyType: (process.env.COINGECKO_KEY_TYPE === 'pro' ? 'pro' : 'demo') as 'demo' | 'pro',
   };
 
-  console.log(`\n[jobs] ${job} — ${dbUrl.replace(/\/\/.*@/, '//***@')}\n`);
+  /* The ADOPTED url, not the requested one. Printing the env var while running against a healed pooler URL is
+     how a log stops describing the run — and this lane's whole failure was invisible in exactly that way. */
+  console.log(`\n[jobs] ${job} — ${opened.url.replace(/\/\/.*@/, '//***@')} (source: ${opened.source}, tls: ${tls.state})\n`);
 
   try {
     switch (job) {

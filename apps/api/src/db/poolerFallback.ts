@@ -101,3 +101,79 @@ export function poolerCandidates(raw: string, regions: readonly string[] = CONFI
 export function isUnroutableDirectHost(raw: string): boolean {
   return poolerCandidates(raw, ['x']).length > 0;
 }
+
+
+/*
+ * OPEN A POOL THAT CAN ACTUALLY REACH THE DATABASE — for callers that are not the API server.
+ *
+ * The API heals its own connection at boot (`healDatabaseUrl` in ./index.ts). The SCHEDULED JOBS did not, and
+ * they have been failing on every cron tick with the identical error the API was fixed for:
+ *
+ *   Error: connect ENETUNREACH 2a05:d014:...:5432
+ *   [jobs] daily_rules — postgresql://***@db.<ref>.supabase.co:5432/postgres
+ *
+ * Supabase's DIRECT host is AAAA-only. A GitHub Actions runner is IPv4-only, exactly like Render's free tier,
+ * so `db.<ref>.supabase.co` is unreachable from both. The API learned that and the jobs CLI never did, because
+ * it builds its own `new pg.Pool({ connectionString })` from the raw environment variable.
+ *
+ * Fixing it in the CLI by copying the probe loop would put the tricky part — the username rewrite that the
+ * session pooler requires, `postgres.<ref>`, and the region sweep — in two places. So the loop lives here,
+ * beside the candidate generator it depends on, and both callers share it.
+ *
+ * IT TRIES THE GIVEN URL FIRST and only falls back when that URL is the one host proven unroutable. Every other
+ * failure is the caller's to see: a wrong password must surface as a wrong password, not be buried under a
+ * sweep of pooler regions that will all reject it the same way.
+ */
+export async function openReachablePool(
+  rawUrl: string,
+  make: (connectionString: string) => { query(sql: string): Promise<unknown>; end(): Promise<void> },
+  log: (msg: string) => void = () => {},
+): Promise<{ pool: ReturnType<typeof make>; url: string; source: 'env' | 'pooler-fallback' }> {
+  const direct = make(rawUrl);
+  try {
+    await direct.query('SELECT 1');
+    return { pool: direct, url: rawUrl, source: 'env' };
+  } catch (err) {
+    await direct.end().catch(() => {});
+    /* Only the unroutable-direct-host case earns a sweep. `isUnroutableDirectHost` is the same predicate the
+       API uses, so the two cannot disagree about when a fallback is legitimate. */
+    if (!isUnroutableDirectHost(rawUrl)) throw err;
+    const code = (err as { code?: string }).code ?? '';
+    log(`[db] direct host failed (${code || 'unknown'}); it has no IPv4 address. Probing session-pooler forms.`);
+  }
+
+  const candidates = poolerCandidates(rawUrl);
+  if (candidates.length === 0) {
+    throw new Error(
+      'DATABASE_URL names the Supabase direct host, which has no IPv4 address, and no pooler candidate could '
+      + 'be derived from it. Set DATABASE_URL to the session pooler '
+      + '(aws-N-<region>.pooler.supabase.com:5432 with the project ref in the USERNAME as postgres.<ref>).',
+    );
+  }
+
+  const tried: string[] = [];
+  for (const c of candidates) {
+    const probe = make(c.url);
+    try {
+      await probe.query('SELECT 1');
+      log(`[db] reached the database via ${c.label}.`);
+      return { pool: probe, url: c.url, source: 'pooler-fallback' };
+    } catch (err) {
+      await probe.end().catch(() => {});
+      /* The code distinguishes the two failures that look alike: 28P01 is a wrong password (so the HOST was
+         right and sweeping further is pointless), XX000 is the pooler rejecting a tenant it does not own. */
+      const code = (err as { code?: string }).code ?? '';
+      tried.push(`${c.label}${code ? ` (${code})` : ''}`);
+      if (code === '28P01') {
+        throw new Error(
+          `${c.label} accepted the connection and REJECTED THE CREDENTIAL (28P01). The host is right and the `
+          + 'password is wrong, so no other region will help. Fix the password in DATABASE_URL.',
+        );
+      }
+    }
+  }
+  throw new Error(
+    `Could not reach the database. Direct host is IPv6-only and every pooler candidate failed: ${tried.join(', ')}. `
+    + 'Set SUPABASE_POOLER_REGIONS if the project is outside the default sweep.',
+  );
+}

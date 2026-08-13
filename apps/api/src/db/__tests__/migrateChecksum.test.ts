@@ -31,6 +31,19 @@ let poolEnded = false;
 
 vi.mock('pg', () => {
   class FakePool {
+    /*
+     * POOL-LEVEL `query`, which a real `pg.Pool` has and this fake did not.
+     *
+     * The runner now opens its connection through `openReachablePool`, which probes with `SELECT 1` on the POOL
+     * before handing it back — that is how it heals Supabase's IPv6-only direct host, the failure that took the
+     * scheduled jobs down. A fake missing a method the real class has does not test a smaller surface; it tests a
+     * different object, and it fails on contact with any code that uses the real one properly.
+     */
+    async query(sql: string, params?: unknown[]) {
+      recorded.push({ sql, params });
+      return { rows: [] };
+    }
+
     async connect() {
       return {
         query: async (sql: string, params?: unknown[]) => {
@@ -141,5 +154,20 @@ describe('the checksum ratchet', () => {
     expect(recorded.some((r) => /INSERT INTO _migrations/.test(r.sql))).toBe(false);
     // The only statements left are the two bootstrap DDLs and the one SELECT.
     expect(recorded.filter((r) => /_migrations/.test(r.sql))).toHaveLength(3);
+  });
+});
+
+describe('the runner reaches the database the same way the server and the cron do', () => {
+  it('probes the connection before migrating, and adopts the URL it was given when that works', async () => {
+    appliedRows = allAppliedExcept({});
+    await migrate();
+    /* The probe is a POOL-level statement, not a client one, and it must come before any migration work: a
+       runner that starts applying DDL and only then discovers it cannot reach the database has already made
+       whatever partial mess a non-transactional runner can make. */
+    expect(recorded[0]?.sql).toBe('SELECT 1');
+    /* And it did not sweep. `openReachablePool` only falls back for the one host proven unroutable, so a healthy
+       URL costs exactly one extra round trip. */
+    expect(recorded.filter((r) => r.sql === 'SELECT 1')).toHaveLength(1);
+    expect(poolEnded).toBe(true);
   });
 });

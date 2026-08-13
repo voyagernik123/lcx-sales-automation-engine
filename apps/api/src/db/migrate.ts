@@ -1,4 +1,6 @@
 import pg from 'pg';
+import { openReachablePool } from './poolerFallback.js';
+import { decideTls } from './index.js';
 import { createHash } from 'node:crypto';
 import { readFileSync, readdirSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -36,7 +38,31 @@ export function migrationChecksum(sql: string): string {
 export async function migrate(): Promise<void> {
   const databaseUrl = process.env.DATABASE_URL ?? 'postgresql://lcx:lcx_dev_password@localhost:5432/lcx_sales';
 
-  const pool = new pg.Pool({ connectionString: databaseUrl });
+  /*
+   * THE SAME HEALING THE SERVER AND THE CRON DO.
+   *
+   * Supabase's direct host is AAAA-only, so `db.<ref>.supabase.co` is unreachable from any IPv4-only network —
+   * which is what took the scheduled jobs down for a day and Render down before that. A migration runner is the
+   * worst place to discover it: the operator is mid-deploy, holding a schema change, reading `ENETUNREACH`.
+   *
+   * The other pools in `seed/`, `enrich/`, `score/` and `labels/` are deliberately NOT wired to this. They are
+   * run by hand against a database the operator chose, and a visible connection error in front of a human who
+   * can retype the URL is a fine outcome. This one and the cron are the unattended production paths.
+   */
+  const tls = decideTls(databaseUrl, process.env.DATABASE_CA_CERT ?? '');
+  const opened = await openReachablePool(
+    databaseUrl,
+    (connectionString) => new pg.Pool({
+      connectionString,
+      connectionTimeoutMillis: 8_000,
+      ...(tls.ssl !== undefined ? { ssl: tls.ssl } : {}),
+    }),
+    (m) => { console.error(m); },
+  );
+  const pool = opened.pool as pg.Pool;
+  /* The ADOPTED url. A migration log that names a host the run did not use is a log that cannot be trusted to
+     answer "which database did we change?" — the one question it exists to answer. */
+  console.log(`[migrate] ${opened.url.replace(/\/\/.*@/, '//***@')} (source: ${opened.source}, tls: ${tls.state})`);
   const client = await pool.connect();
 
   try {

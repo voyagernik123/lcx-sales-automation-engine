@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { poolerCandidates, isUnroutableDirectHost } from '../poolerFallback.js';
+import { poolerCandidates, isUnroutableDirectHost, openReachablePool } from '../poolerFallback.js';
 
 /**
  * THE HOST THAT CANNOT WORK, AND THE ONE THAT CAN.
@@ -112,5 +112,97 @@ describe('labels are safe to log — they end up in production logs', () => {
       // The ref is a form placeholder in the label, not the literal value.
       expect(c.label).toContain('user=postgres.<ref>');
     }
+  });
+});
+
+/*
+ * THE PROBE LOOP ITSELF, which is the part that was missing from the scheduled-jobs lane and failed every cron
+ * tick for a day. `openReachablePool` takes the pool FACTORY as an argument for exactly this reason: the
+ * decisions it makes — when to sweep, when to stop, what to say — are all testable with no database anywhere.
+ */
+type FakePool = { query(sql: string): Promise<unknown>; end(): Promise<void> };
+
+/** A factory whose behaviour per-URL is declared up front. `null` means the connection succeeds. */
+function fakePools(outcomes: Record<string, { code: string } | null>, log: string[]) {
+  const ended: string[] = [];
+  const tried: string[] = [];
+  const make = (connectionString: string): FakePool => ({
+    query: async () => {
+      tried.push(connectionString);
+      const outcome = outcomes[connectionString];
+      if (outcome === undefined) throw Object.assign(new Error('ENETUNREACH'), { code: 'ENETUNREACH' });
+      if (outcome !== null) throw Object.assign(new Error(outcome.code), { code: outcome.code });
+      return { rows: [] };
+    },
+    end: async () => { ended.push(connectionString); },
+  });
+  return { make, ended, tried, log };
+}
+
+const DIRECT_IPV6 = 'postgresql://postgres:pw@db.abcdefghijklmnop.supabase.co:5432/postgres';
+
+describe('the given URL is tried first, and a working one ends it there', () => {
+  it('adopts the environment URL without probing anything else', async () => {
+    const f = fakePools({ [DIRECT_IPV6]: null }, []);
+    const got = await openReachablePool(DIRECT_IPV6, f.make, (m) => f.log.push(m));
+    expect(got.source).toBe('env');
+    expect(got.url).toBe(DIRECT_IPV6);
+    /* Exactly one connection attempt. A sweep that runs even when the given URL works would multiply every
+       job's startup by the number of regions, and would do it invisibly. */
+    expect(f.tried).toEqual([DIRECT_IPV6]);
+    expect(f.log).toEqual([]);
+  });
+});
+
+describe('only the unroutable direct host earns a sweep', () => {
+  it('rethrows a failure on a host that is NOT the known-unroutable one', async () => {
+    const url = 'postgresql://lcx:pw@localhost:5432/lcx_sales';
+    const f = fakePools({ [url]: { code: '28P01' } }, []);
+    /* A wrong password on localhost must surface as a wrong password. Sweeping pooler regions here would bury
+       the real cause under five rejections that all look the same. */
+    await expect(openReachablePool(url, f.make, (m) => f.log.push(m))).rejects.toThrow('28P01');
+    expect(f.tried).toEqual([url]);
+  });
+
+  it('closes the pool it opened before giving up, on both paths', async () => {
+    const url = 'postgresql://lcx:pw@localhost:5432/lcx_sales';
+    const f = fakePools({ [url]: { code: 'ECONNREFUSED' } }, []);
+    await expect(openReachablePool(url, f.make, () => {})).rejects.toThrow();
+    /* A leaked pool in a CLI keeps the process alive past its work — the job then looks hung rather than failed. */
+    expect(f.ended).toEqual([url]);
+  });
+});
+
+describe('the sweep heals the IPv6-only direct host, which is the whole point', () => {
+  it('adopts the first pooler candidate that answers and says which one', async () => {
+    const candidates = poolerCandidates(DIRECT_IPV6);
+    expect(candidates.length).toBeGreaterThan(1);
+    const second = candidates[1]!;
+    const f = fakePools({ [second.url]: null }, []);
+    const got = await openReachablePool(DIRECT_IPV6, f.make, (m) => f.log.push(m));
+    expect(got.source).toBe('pooler-fallback');
+    expect(got.url).toBe(second.url);
+    /* It tried the env URL, then candidate 0, then candidate 1 — in order, stopping at the first success. */
+    expect(f.tried).toEqual([DIRECT_IPV6, candidates[0]!.url, second.url]);
+    /* And it SAID so. The cron failure was invisible for a day because the log printed the requested URL; a
+       healed connection that does not name itself is the same defect wearing a success message. */
+    expect(f.log.join(' ')).toContain('no IPv4 address');
+    expect(f.log.join(' ')).toContain(second.label);
+  });
+
+  it('stops on a rejected credential instead of asking every region the same question', async () => {
+    const candidates = poolerCandidates(DIRECT_IPV6);
+    const f = fakePools({ [candidates[0]!.url]: { code: '28P01' } }, []);
+    /* 28P01 means the host was RIGHT and the password was wrong. No other region can fix that, and sweeping on
+       would report "could not reach the database" for what is actually a one-line secret fix. */
+    await expect(openReachablePool(DIRECT_IPV6, f.make, () => {})).rejects.toThrow(/REJECTED THE CREDENTIAL/);
+    expect(f.tried).toEqual([DIRECT_IPV6, candidates[0]!.url]);
+  });
+
+  it('names every candidate it tried when none of them answer', async () => {
+    const f = fakePools({}, []);
+    await expect(openReachablePool(DIRECT_IPV6, f.make, () => {})).rejects.toThrow(/IPv6-only and every pooler candidate failed/);
+    /* Every opened pool closed, including all the failures — the CLI must be able to exit. */
+    expect(f.ended.length).toBe(poolerCandidates(DIRECT_IPV6).length + 1);
   });
 });
