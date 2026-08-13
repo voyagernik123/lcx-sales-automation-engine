@@ -128,10 +128,11 @@ pass through the render pipeline. It is right, and the repo already agrees:
 | Chart primitive | GL-backed today |
 |---|---|
 | BarChartH, ColumnChart, CompareBars, ControlBand, DonutChart, FunnelChart, GaugeChart, Histogram, **Sparkline**, StackedBarH | **yes** — via `FlatBars`/`FlatLine`/`FlatBand`/`FlatDial`/`FlatTrack` |
-| TrendDelta | **no** |
+| TrendDelta | **no — and correctly so.** 100% text, no SVG mark, 661 px² against the smallest GL surface's 1,920. Refused on measurement; see §4.4 |
 | ChartCard, StatCard, tooltip | n/a — containers, not primitives |
 
-**10 of 11.** SDF with `fwidth` subpixel AA is implemented, and `flat/bars.ts:105-113` records a fixed bug worth
+**10 of 10 that have a mark**, plus one documented exclusion. I first wrote "10 of 11", which counted
+TrendDelta as a primitive because of where it lives rather than what it draws. SDF with `fwidth` subpixel AA is implemented, and `flat/bars.ts:105-113` records a fixed bug worth
 knowing: the obvious `fwidth(d)` form is wrong because `sdRoundRect` has a gradient seam at the corner arcs, so
 the feather must be taken on `p`, which is linear in `vUV`.
 
@@ -240,6 +241,16 @@ weeks of work. One trial converts eight hedges into eight verdicts, in either di
 it advertises, on exactly the machines that cannot afford it. Either wire it in or delete the field; a config
 value nobody reads is worse than no config value, because it reads as a guarantee. **Owner call in §7.3.**
 
+> **DONE, and this section is now stale in a useful way.** `lit.ts` reads `uShadowTaps` as two static
+> branches and all nine harnesses pass `Q.shadowTaps`.
+>
+> **The defect class is wider than this one field.** Wiring the ladder into the app turned up three more
+> settings that **nothing anywhere reads** — not the app, not even the harnesses: `particleCapacity`,
+> `volumeMaxSteps` (E7 passes its own `MAX_STEPS`, not `Q.volumeMaxSteps`) and `aoScale` (AO hard-codes
+> `fullWidth >> 1`, which merely happens to equal 0.5). Three more numbers that read as guarantees. Listed
+> here rather than fixed silently, because each is a real behaviour change to a shipped surface and two of
+> them are on the tier nobody has measured.
+
 ### 4.3 · Fix the anisotropic roughness discontinuity
 
 `env/lit.ts:265-266` derives `at`/`ab` from **perceptual** roughness (`rough*(1±aniso)`) and passes them as
@@ -247,10 +258,41 @@ value nobody reads is worse than no config value, because it reads as a guarante
 not converge on the isotropic result — there is a visible step. E8's mark uses the anisotropic path. Latent
 today; a Layer 3 rewrite would either fix it or entrench it.
 
-### 4.4 · GL-back `TrendDelta`, closing Layer 5 at 11 of 11
+### 4.4 · ~~GL-back `TrendDelta`, closing Layer 5 at 11 of 11~~ — **REFUSED on measurement**
 
-The only chart primitive still outside the pipeline. Small, and it makes the blueprint's best claim literally
-true rather than nearly true.
+**Outcome: TrendDelta stays outside the GL path, as a recorded hand exclusion. Layer 5 closes at 10 of 10
+primitives that have a mark, plus one documented exclusion — not 11 of 11.** I had this wrong: I counted
+TrendDelta as a chart primitive because it lives in the charts directory.
+
+**It has no mark to re-back.** It is a `<span>` with a font glyph (`▲`/`▼`, `aria-hidden`) and a number.
+There is no `<svg>` in the file — no path, rect, polyline, arc or circle. Measured at its real classes,
+**100% of the ink is text**, and the box has no stable size: 41.34 / 53.72 / 39.17 CSS px for 4.2% / 124.7% /
+0.1%. Every one of the ten GL-backed primitives hands the renderer a geometric fill it already drew in SVG,
+in viewBox units. There is nothing here to hand over.
+
+Three further reasons, each already on the record:
+
+1. The only candidate mark — a good/bad tint plate — was settled at `gl/FlatBand.tsx:16-20`: an additive
+   pass writes full coverage into alpha, so a tint "would land on the card as a solid block of hue rather
+   than a wash". `Sparkline` declined its own area wash for the same reason.
+2. The other candidate is baking text, and **the ratchet is now at zero** — `'e0'` since E2 was fixed this
+   session. An SDF triangle here would be the surface that reopened it.
+3. **The threshold `PLATFORM_VFX_100X.md` §7.2 says was never built, measured at last.** The smallest thing
+   GL backs is the StatCard `Sparkline` at 80×24 = 1,920 px². The chip is **661 px², 2.90× smaller.** And
+   `stage.setRegion` short-circuits *only* on an identical size, so with three different chip widths at
+   dpr 2 (83 / 107 / 78 device px) **no two consecutive chips hit the fast path** — a full target-set
+   reallocation, three framebuffers and three textures deleted and six allocated, per chip per frame, for
+   zero marks. Chips are the most numerous primitive in the product: 16 across three routes.
+
+`docs/3d/w0/README.md:43-45`, the audit that ranked these eleven, reached the same verdict from the other
+side: TrendDelta's one filed finding is "**not** fixed by a new renderer".
+
+**And refusing it found a real defect that shipping GL would have papered over.** `Math.abs()` strips the
+sign and the glyph is `aria-hidden`, so **+4.2% and −4.2% produced the identical accessible name, "4.2%"** —
+lost to every screen reader, to text extraction and to copy-paste. Colour was not a second cue: simulating
+deuteranopia on the real tokens collapses their separation from **ΔE76 121.3 to 13.5** at a contrast ratio of
+**1.16:1**. Fixed with an `sr-only` direction word, at a cost of +16 B gzip, and the dpr-2 screenshot is
+byte-identical by SHA-256 so no Playwright snapshot moves.
 
 ### 4.5 · Retire the three stale spine figures and the three meanings of "45"
 
@@ -405,3 +447,82 @@ all 12 surfaces serving 200. `docs/3d/serve.mjs` and the `3d-trial` launch confi
 Also fixed while there: the Begin button read **"Begin — 8 trials"** as a literal. True for the four
 environments the set started with, wrong the moment two more were added — the same class of defect as E1
 rendering E0's frame time under a printed checkability claim. It is now derived.
+
+### 10.4 · The blit claim does not survive measurement — and it was load-bearing
+
+`flat/shared.ts:18-21` justified choosing the offscreen-plus-blit architecture over the blueprint's
+page-mounted scissored canvas partly on cost: the `drawImage` blit "costs one texture copy per chart per
+redraw, which is a rounding error against a frame that already runs five post-process passes." That sentence
+is repeated in `docs/3d/w2`'s README and in a commit body, and **nothing had ever measured it.**
+
+Measured now, on a real M1 through ANGLE Metal at dpr 2, two runs, with a warm-up frame and a trailing
+`readPixels` (the only reliable sync — `gl.finish()` returns on command-buffer flush):
+
+| arm | run 1 / run 2 |
+|---|---|
+| chart frame **without** the blit | 0.518 / 0.503 ms |
+| chart frame **with** the blit | 1.162 / 0.970 ms |
+| **the blit alone** | **0.643 / 0.467 ms — 0.9× to 1.2× the whole rest of the frame** |
+| blit at buffer 1024×512 / 2400×920 / 3200×1600, chart fixed at 480×160 | 0.643 / 1.373 / **2.368** ms |
+| 60 charts, blit total | 31.65 / 28.59 ms — flat at ~0.5 ms per chart |
+
+**"A rounding error" is false by roughly a factor of a thousand in framing:** the copy costs about what the
+five post-process passes plus the geometry cost. And worse, **it is sized by the offscreen buffer, not by the
+chart.** The buffer is grow-only, so a 40 px sparkline on a page that also holds one large chart pays
+**2.368 ms per redraw** to copy a region it does not use. That is precisely the hazard
+`docs/3d/w2/README.md:314` raised and could not settle.
+
+**What survives, and what this does and does not change.** The half of the claim that held is per-chart
+flatness — 60 charts cost 60× one chart, not worse. And **the architectural decision still stands**, because
+its two real reasons were never about cost: a page-mounted canvas cannot track scroll containers and modals
+(both of which this app has), and it cannot be simultaneously above an opaque card fill and below the chart's
+own SVG, where the text and the accessibility tree live. Those are unaffected by a millisecond figure.
+
+So this is not a reversal. It is a false supporting argument removed, plus a real and previously invisible
+performance defect: **the grow-only buffer taxes every small chart on any page containing a large one.**
+Named here as newly-found work rather than fixed in passing, because the fix is a measured design change —
+size-bucketed buffers, or a readback path for small regions — and this programme's rule is that a change to
+a shipped surface starts from a measurement, not from an intuition about what is cheap.
+
+Two further findings from the same measurement, both new:
+
+- **`stage.setRegion` reallocates on any size change**, and it costs *more than the blit itself*: four charts
+  alternating two sizes over three redraws allocated **39 textures against 6**, adding 2.8–5.8 ms per redraw.
+  It happens per animation frame during `useFlatChart`'s 420 ms entrance.
+- **`stage.dispose()` never calls `WEBGL_lose_context.loseContext()`**, so a context is reclaimed only when
+  its canvas is garbage-collected. Toggling a relief off and on can hold more live contexts than there are
+  mounted components — against a cap where exceeding it kills the *oldest*, which on a chart route is the one
+  shared context every chart depends on.
+
+### 10.5 · The interface colours failed WCAG on the default theme, and the ratchet could not see them
+
+The eight relief wrappers were painted for a dark deck. **The app defaults to light** — `index.html:11-19`
+adds `.dark` only from stored preference, and `CommandDeck.tsx:81-83` strips it deliberately for printing.
+Worse, **`--brand` and `--rule` are not defined anywhere** in `apps/web/src/styles/`, so every
+`var(--brand, #7FB2FF)` in those files was a literal wearing a token's clothes.
+
+Measured against the real surfaces (WCAG 2.x relative luminance, `rgba()` composited as the browser does):
+
+| shipped colour | light card | needs |
+|---|---|---|
+| refusal alert `#E0A94A` — the message rule 1 exists to deliver | **2.11** | 4.5 |
+| opt-in reason `rgba(196,212,240,.66)` | **1.30** | 4.5 |
+| E4's crossing count `#BFD6FF` — the number that environment lives on | **1.47** | 4.5 |
+| "unavailable" label `#6B7A99` | 4.31 | 4.5 — fails on all four surfaces |
+
+All three also *printed* at those ratios, because printing forces light. The existing ratchet at
+`lib/__tests__/contrast.test.ts` could not have caught any of it: it parses `tokens.css`, and these were
+literals in a `style` prop. Fixed to existing tokens, and the source is now scanned for interface hex.
+
+Four accessibility defects came with them, all fixed. The sharpest: **`disabled` was being set on the
+focused button.** `onRefused` fires one tick after the reader pressed Enter, and disabling a focused element
+blurs it — `document.activeElement` becomes `<body>` and the next Tab restarts from the top of the document.
+On `PipelineRelief` that also drops the reader out of the table its triage keys act on. Now `aria-disabled`
+with a guarded handler. Also: `aria-pressed` contradicted the accessible name, so
+`<button aria-pressed="true">Flat deck</button>` announced *"Flat deck, pressed"* — the name asserting one
+surface and the state bit the other.
+
+**Colour-vision safety came back clean**, which is worth recording as a negative result: Machado–Oliveira–
+Fernandes at severity 1.0 in linear RGB, then CIEDE2000, over every data pair. One encoding was colour-alone
+(the toggle's enabled-vs-unavailable state) and now carries `border-dashed` as well. Every *data* encoding is
+redundant with position, shape, a ring, or a DOM caption. No brand hex was touched.

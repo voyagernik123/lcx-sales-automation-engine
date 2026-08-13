@@ -110,6 +110,15 @@ The measurement is now a pass in `capture.mjs`: it decodes both screenshots insi
 run's ratio, and **throws below 4.5:1** — and throws if a text run changed no pixels at all. A ratio
 regression now fails the build the way `rectError` does.
 
+*Capture provenance, 2026-08-13. Every ratio in that table is a read off the framebuffer, so it is a
+function of how bright the GL panels rendered — and `bundle.js` here predates `38c01b1`, which changed the
+specular in `env/lit.ts` (the committed bundle still carries the pre-fix `max(1e-6, PI * d * d)`).
+**The ratios are nevertheless not invalidated, for a checkable reason rather than by assumption:** that
+defect fired only below roughness 0.154, E1's five panels are 0.42–0.52 and the deck is 0.86, and no
+material here sets `anisotropy`, so neither repaired branch is reachable from this scene. The claim that
+needs re-taking after a rebuild is not a ratio, it is `bundleSha256` in `rendered.json` — which does still
+match the committed `bundle.js`, so the PNGs and the bundle agree with each other today.*
+
 ## Projected text is reachable with a pointer again
 
 `project.ts` justifies its own existence on the grounds that GL text is "unselectable, unsearchable,
@@ -199,8 +208,18 @@ this repository". Either skip now fails the build by name.
   element, so a projected panel necessarily paints in front of *all* geometry. Handled by refusing to
   show occluded content, which is correct but is avoidance rather than a solution. `clip-path` driven
   by the inverse homography would be the real fix.
-- **§7(b) is argued, not timed.** No operator has been put in front of both surfaces with a task and
-  a stopwatch. Everything above is a reason to expect a good result, which is not a result.
+- **§7(b) is argued, not timed** — and as of 2026-08-13 it is **DEFERRED here with a reason, which is
+  not the same as outstanding work nobody has got to.** F0 built the instrument (`docs/3d/e9/task.html`)
+  and it covers six environments: E2, E3, E4, E5, E6, E7. E1 is excluded because the panel text is
+  injected from the other environments' READMEs at **build time** (`__ENV_STATES__` in `entry.ts`), so an
+  answer key written against it would rot on the next rebuild — and a stale key does not fail loudly, it
+  marks correct answers wrong and reports a legible surface as illegible, which is worse than no reading.
+  E1 needs a question whose answer is a property of the **geometry**; the obvious candidate, "which panel
+  is being addressed", has no answer either because there is no interactive addressing here.
+  `docs/3d/e9/RUNNING_THE_TRIAL.md` carries this as the standing record. §7(b) is also still unmeasured on
+  the six the instrument *does* cover — a machine-reader trial was run and invalidated itself on four
+  defects — so E1 is not the only one waiting. It is the only one waiting on a question rather than on a
+  person.
 
 ## The reusable part
 

@@ -58,8 +58,10 @@ import {
   lightViewProjection, boundsCentre, boundsRadius, projectScreen, triangleCount,
   hexToLinear, assertBrandFidelity, IDENTITY,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
+  qualitySettings, shadowMapSizeFor,
   type LitDraw, type Viewpoint, type MeshBuffer,
 } from '@lcx/gl';
+import { useResolvedQualityTier } from '../shared/useQualityTier';
 import type { MapPoint } from '@/lib/api/bd';
 import { formatMoney } from '@/lib/format';
 import {
@@ -156,9 +158,30 @@ interface Plan {
   readonly placedNote: string;
 }
 
+/**
+ * THIS SCENE'S OWN SHADOW BASELINE, which the tier SCALES rather than replaces.
+ *
+ * `env/quality.ts:91` records why: wiring the ladder in with the tier's ABSOLUTE `shadowMapSize` silently
+ * enlarged three environments — E0, E2 and E8 had each chosen 1024 and were handed 1536 at the default tier, a
+ * 2.25x bigger map and three captures that changed without anyone saying so. E2 was one of the three.
+ */
+const SHADOW_BASELINE = 1024;
+
 export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReliefGlProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
+  /*
+   * THE TIER IS CONSUMED HERE, NOT MEASURED HERE — and this is the one relief that deliberately takes no
+   * probe.
+   *
+   * Its own `msFrame` is a documented COLD single sample: the clock spans the shadow pass, AO, the lit passes
+   * and the present of the FIRST frame, and it is printed under the figure as "one sample". A ladder probe
+   * needs the opposite — a discarded warm-up frame, because the first frame pays shader upload and charging
+   * that to the GPU downgrades every machine. Inserting warm-up frames here would silently change what the
+   * number under the figure means, from "what this frame cost" to "what a warm frame costs". So the five other
+   * reliefs probe and this one reads the answer.
+   */
+  const tier = useResolvedQualityTier();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -183,9 +206,11 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
      */
     if (assertBrandFidelity().length > 0) { onRefused('BRAND_FIDELITY_FAILED'); return; }
 
-    /* DPR CAPPED AT 2. This frame is fill-bound — a sky, an atmosphere annulus, AO and a lit pass — so a
-       3× display would triple the cost of a figure whose whole justification is a faster answer. */
-    const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    /* DPR CAPPED BY THE TIER. This frame is fill-bound — a sky, an atmosphere annulus, AO and a lit pass — so
+       a 3× display would triple the cost of a figure whose whole justification is a faster answer. The cap WAS
+       a literal 2; `Q.dprScale` is 2 at `full` and `reduced` and 1 at `minimum`. */
+    const Q = qualitySettings(tier);
+    const dpr = Math.min(Q.dprScale, Math.max(1, window.devicePixelRatio || 1));
     const cssW = canvas.clientWidth || 640;
     const cssH = heightPx;
     const W = Math.max(1, Math.round(cssW * dpr)), H = Math.max(1, Math.round(cssH * dpr));
@@ -211,7 +236,7 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
     const target = createTarget3D(stage, W, H);
     if ('kind' in target) { refuse(target.code); return; }
     disposers.push(() => target.dispose());
-    const shadow = createShadowMap(stage, 1024);
+    const shadow = createShadowMap(stage, shadowMapSizeFor(tier, SHADOW_BASELINE));
     if ('kind' in shadow) { refuse(shadow.code); return; }
     disposers.push(() => shadow.dispose());
     const skyBox = createSkyBackdrop(stage);
@@ -229,9 +254,16 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
      * and is TOLD so under the frame, which is a better answer than sending a reader back to the scatter
      * over a look pass.
      */
-    const aoOut = createAmbientOcclusion(stage, W, H);
-    const ao = 'kind' in aoOut ? null : aoOut;
-    const aoRefusal = 'kind' in aoOut ? aoOut.code : null;
+    /*
+     * AND THE QUALITY LADDER CAN DECLINE IT TOO, which is a different thing from a driver declining it — so
+     * the reason the reader is given says which. `aoNote` below prints the code, and printing a driver
+     * refusal for a tier decision would blame the machine for something the ladder chose.
+     */
+    const aoOut = Q.ao ? createAmbientOcclusion(stage, W, H) : null;
+    const ao = aoOut === null || 'kind' in aoOut ? null : aoOut;
+    const aoRefusal = aoOut === null
+      ? `QUALITY_TIER_${tier.toUpperCase()}`
+      : 'kind' in aoOut ? aoOut.code : null;
     if (ao) disposers.push(() => ao.dispose());
 
     /* ── THE SUN, FROM THE READER'S CLOCK ── */
@@ -466,7 +498,7 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
          an exposure difference rather than as sunlight. */
       lightColour: [6.6, 6.2, 5.5] as [number, number, number],
       sky: SKY,
-      lightVP, shadow, shadowStrength: 0.92,
+      lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps,
       ao: ao ? ao.texture : null,
       screenSize: [W, H] as [number, number],
     };
@@ -612,7 +644,12 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
       }),
       costNote: `${triangles.toLocaleString()} triangles · ${msFrame.toFixed(2)} ms for this frame, one sample, GPU flushed before the clock was read.`,
       aoNote: aoRefusal === null ? null
-        : `Ambient occlusion unavailable on this driver (${aoRefusal}) — the contact shading is missing and every number above is unaffected.`,
+        : Q.ao
+          ? `Ambient occlusion unavailable on this driver (${aoRefusal}) — the contact shading is missing and every number above is unaffected.`
+          /* NOT "unavailable on this driver". The ladder dropped it on a measured frame time, and telling a
+             reader their driver refused something the software chose to skip is a false statement about their
+             machine. */
+          : `Ambient occlusion off at the ${tier} quality tier, chosen from a measured frame time on this machine — the contact shading is missing and every number above is unaffected.`,
       placedNote: `${book.placedProjects} of ${book.considered} visible projects sit in a region this figure can place, across ${book.sites.length} ${regionWord}.`,
     });
 
@@ -633,7 +670,8 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
          This component remounts whenever a reader toggles the view or changes a filter. */
       stage.dispose();
     };
-  }, [points, heightPx, onRefused]);
+    /* `tier` IS A DEPENDENCY: a tier resolved by another surface rebuilds this one at it. */
+  }, [points, heightPx, onRefused, tier]);
 
   const mono = (colour: string, size = 10.5): CSSProperties => ({
     font: `400 ${size}px/1.45 ui-monospace, monospace`, color: colour, whiteSpace: 'pre-wrap',

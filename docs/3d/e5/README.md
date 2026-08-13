@@ -23,6 +23,17 @@ than admired separately:
 not, and it does not matter in the slightest which one is prettier. The capture script **throws** on
 disagreement rather than printing it.
 
+*Capture provenance, 2026-08-13 — and this is the one environment other than E8 where the shading actually
+moved. `bundle.js` here predates `38c01b1` (it still carries the pre-fix `max(1e-6, PI * d * d)` and no
+`uShadowTaps` uniform), and **E5 is one of only three environments that sets `anisotropy`**: the surface
+mesh at `entry.ts:513` is roughness 0.34 with `anisotropy: 0.55`, the probe column at `:545` is 0.22 with
+0.3. Defect 2 of that commit fed the anisotropic distribution **perceptual roughness where it wanted an
+alpha**, so the surface's lobe was computed at alpha 0.34 instead of 0.34² = 0.1156 and the probe's at 0.22
+instead of 0.0484 — a materially wider, duller sheen than the material asks for. **Every claim in this file
+about cells, holes, contours, ticks, probe position and agreement with the flat engine is geometric or
+count-based and is unaffected. What the four PNGs show of the surface's SHEEN is pre-fix and has not been
+retaken.** No number in this file is stated in terms of it, which is why nothing above needed correcting.*
+
 ## The three states survive the promotion — which is the whole point
 
 The flat engine is careful in a way that is easy to throw away: a grid point is OBSERVED, ABSENT
@@ -185,6 +196,14 @@ refuses everywhere else here. Real-hardware timing for E5 is unmeasured: E0's an
 from manual browser sessions, and this harness has only ever run headless.
 
 The surface is 48 triangles. The expense is the shadow map and AO, not the mesh.
+
+**A single figure is still the wrong shape for this, and this file already knows why — noted 2026-08-13.**
+The section above corrects 0.45 to 63.7 and then publishes 63.7 bare. Two later readings of the *same
+committed bundle* exist in this repo: `7d3438c`'s tier comparison measured `full` at **67.7 ms**, and E9's
+generated sweep reports **57.383 ms** with a `full` median of 56.267 and a **±25.8% spread** across three
+alternating loads. So the honest statement is a band of roughly **56–68 ms** on this machine, and the ±25.8%
+is the reason: E3's README argues that quoting one SwiftShader figure is quoting the run that happened to be
+quietest, and that argument applies here. The instrument is right now; the presentation is not.
 
 ## Reproduce
 

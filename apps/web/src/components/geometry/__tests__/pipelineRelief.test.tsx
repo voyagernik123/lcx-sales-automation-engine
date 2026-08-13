@@ -112,7 +112,17 @@ describe('PipelineRelief — §7 says an unproven environment defaults off and s
        fetched to be told the data is bad. */
     const { container } = mount({ leads: [lead({ marketCapUsd: Number.NaN })] });
     const btn = screen.getByRole('button', { name: /channel view/i });
-    expect(btn.hasAttribute('disabled')).toBe(true);
+    /*
+     * aria-disabled, NOT disabled — and the difference is the whole point of the change this pins.
+     *
+     * `onRefused` fires from the renderer's mount effect, one tick after the reader pressed Enter on this
+     * very button. Setting `disabled` on a FOCUSED element blurs it: `document.activeElement` becomes
+     * `<body>` and the next Tab restarts from the top of the document — on PipelineRelief that also means
+     * leaving the table the triage keys act on. `aria-disabled` with a guarded onClick keeps the control
+     * in the tab ring and keeps focus where the reader put it.
+     */
+    expect(btn.getAttribute('aria-disabled')).toBe('true');
+    expect(btn.hasAttribute('disabled'), 'a disabled control drops focus to <body>').toBe(false);
     expect(screen.getByRole('alert').textContent).toContain('INVALID_LEAD_DATA');
     expect(container.querySelector('canvas')).toBeNull();
     expect(container.querySelector('table'), 'the rows are unaffected').not.toBeNull();
@@ -120,7 +130,7 @@ describe('PipelineRelief — §7 says an unproven environment defaults off and s
 
   it('will not offer a channel with nothing in it', () => {
     mount({ leads: [] });
-    expect(screen.getByRole('button', { name: /channel view/i }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: /channel view/i }).getAttribute('aria-disabled')).toBe('true');
     expect(screen.getByRole('alert').textContent).toContain('NO_LEADS_IN_THE_CHANNEL');
   });
 

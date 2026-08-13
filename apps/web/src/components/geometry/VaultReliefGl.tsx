@@ -46,8 +46,12 @@ import {
   createAmbientOcclusion, projectQuad, isQuadRefusal, uprightPanelCorners, projectScreen,
   viewProjection, eyeOf, nearFarOf, lightViewProjection, boundsCentre, boundsRadius,
   hexToLinear, assertBrandFidelity, IDENTITY, TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
+  qualitySettings, shadowMapSizeFor, pickQualityTier,
   type LitDraw, type Viewpoint, type MeshBuffer,
 } from '@lcx/gl';
+import {
+  useResolvedQualityTier, needsQualityProbe, measureFrameMs, recordQualityProbe,
+} from '../shared/useQualityTier';
 import type { AuditEntry } from '@/lib/api/audit';
 import { buildVaultRecords, whenOf, type AuditVerdict, type VaultRecord, type VaultUnplaced } from './vaultRecords';
 
@@ -217,9 +221,21 @@ const overBg = (bg: readonly [number, number, number], a: number): number => rel
   bg[0] + a * (255 - bg[0]), bg[1] + a * (255 - bg[1]), bg[2] + a * (255 - bg[2]),
 );
 
+/**
+ * THIS SCENE'S OWN SHADOW BASELINE, which the tier SCALES rather than replaces.
+ *
+ * `env/quality.ts:91` records why the distinction matters: wiring the ladder in with the tier's ABSOLUTE
+ * `shadowMapSize` silently enlarged three environments — E0, E2 and E8 had each chosen 1024 and were handed
+ * 1536 at the default tier, a 2.25x bigger map and three captures that changed without anyone saying so.
+ */
+const SHADOW_BASELINE = 1024;
+
 export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultReliefGlProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
+  /* Subscribed rather than read once: this surface renders one frame into an offscreen target and only then
+     blits it, so a resolved lower tier can rebuild the scene before anything has been painted. */
+  const tier = useResolvedQualityTier();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -270,9 +286,11 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
     const hoursPerMetre = Math.max(0.05, spanHours / DEPTH_M);
     const zOf = (hoursAgo: number): number => -(hoursAgo / hoursPerMetre) - NOW_OFFSET_M;
 
-    /* DPR CAPPED AT 2. Everything here is fill-bound; a 3× display would triple the cost of a surface whose
-       whole justification is that an operator reads it faster. */
-    const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    /* DPR CAPPED BY THE TIER. Everything here is fill-bound; a 3× display would triple the cost of a surface
+       whose whole justification is that an operator reads it faster. The cap WAS a literal 2; `Q.dprScale` is 2
+       at `full` and `reduced` and 1 at `minimum`, and resolution multiplies every fill-bound pass. */
+    const Q = qualitySettings(tier);
+    const dpr = Math.min(Q.dprScale, Math.max(1, window.devicePixelRatio || 1));
     const cssW = Math.max(320, canvas.clientWidth || 640);
     const cssH = heightPx;
     const W = Math.round(cssW * dpr), H = Math.round(cssH * dpr);
@@ -300,12 +318,14 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
     const target = createTarget3D(stage, W, H);
     if ('kind' in target) { refuse(target.code); return; }
     disposers.push(() => target.dispose());
-    const shadow = createShadowMap(stage, 1024);
+    const shadow = createShadowMap(stage, shadowMapSizeFor(tier, SHADOW_BASELINE));
     if ('kind' in shadow) { refuse(shadow.code); return; }
     disposers.push(() => shadow.dispose());
-    const ao = createAmbientOcclusion(stage, W, H);
-    if ('kind' in ao) { refuse(ao.code); return; }
-    disposers.push(() => ao.dispose());
+    /* AO IS THE TIER'S SECOND DROP, after depth of field. Not allocated at all when the tier says no: a
+       half-res R8 ping-pong pair plus two programs is not free to hold. */
+    const ao = Q.ao ? createAmbientOcclusion(stage, W, H) : null;
+    if (ao && 'kind' in ao) { refuse(ao.code); return; }
+    if (ao) disposers.push(() => ao.dispose());
     /* `createSkyBackdrop` IS DELIBERATELY NOT ALLOCATED. A vault has no sky; see the header. */
 
     /*
@@ -440,25 +460,57 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
      * ONE FRAME, THEN NOTHING. §6 rule 2 forbids idle animation, and this is why the reduced-motion case needs
      * no branch: a still frame is already the final frame. No requestAnimationFrame, no setInterval.
      */
-    lit.shadowPass(lightVP, draws, shadow);
-    target.bind();
     const fc = hexToLinear(FOG_HEX);
-    gl.clearColor(fc[0], fc[1], fc[2], 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    lit.depthPrepass(vp, draws);
-    ao.compute({
-      depthTexture: target.depthTexture, near, far, fovDeg: view.fovDeg ?? 33,
-      aspect: W / H, radius: 0.42, strength: 1.35,
-    });
-    target.bind();
-    lit.draw({
-      viewProj: vp, eye, lightDir, lightColour: [3.0, 2.95, 2.85],
-      /* 0.46, not 0.86. At the higher gain the floor and ceiling — whose normals point at the analytic sky's
-         bright zenith — became two glowing wedges brighter than the key light. */
-      ambientGain: 0.46, lightVP, shadow, shadowStrength: 0.94, draws,
-      ao: ao.texture, screenSize: [W, H],
-      fog: { density: FOG_DENSITY, height: 6.0, floor: 0, colour: fc },
-    });
+    /* A FUNCTION NOW, SO IT CAN BE MEASURED — and it ends with `target` bound, which is what `probeSync`
+       requires: a `readPixels` only guarantees completion of work affecting the framebuffer it reads. */
+    const renderScene = (): void => {
+      lit.shadowPass(lightVP, draws, shadow);
+      target.bind();
+      gl.clearColor(fc[0], fc[1], fc[2], 1);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      lit.depthPrepass(vp, draws);
+      if (ao) {
+        ao.compute({
+          depthTexture: target.depthTexture, near, far, fovDeg: view.fovDeg ?? 33,
+          aspect: W / H, radius: 0.42, strength: 1.35,
+        });
+        target.bind();
+      }
+      lit.draw({
+        viewProj: vp, eye, lightDir, lightColour: [3.0, 2.95, 2.85],
+        /* 0.46, not 0.86. At the higher gain the floor and ceiling — whose normals point at the analytic sky's
+           bright zenith — became two glowing wedges brighter than the key light. */
+        ambientGain: 0.46, lightVP, shadow, shadowStrength: 0.94, shadowTaps: Q.shadowTaps, draws,
+        ao: ao ? ao.texture : null, screenSize: [W, H],
+        fog: { density: FOG_DENSITY, height: 6.0, floor: 0, colour: fc },
+      });
+    };
+
+    /*
+     * THE PROBE, TAKEN BEFORE ANYTHING IS PRESENTED. `pickQualityTier` exists to choose a tier from one
+     * measured frame and had no caller in this repo; this is one. A discarded warm-up frame first — the first
+     * frame pays shader upload, and charging that to the GPU would downgrade every machine — then two
+     * sync-bounded samples of which the cheaper is used, because one sample can catch a GC pause and a single
+     * unlucky 40 ms would drop a fast machine for the rest of the page load.
+     *
+     * IT MUST SIT ABOVE THE PRESENT AND ABOVE THE CONTRAST READ BELOW. Those measure the frame that is on
+     * screen; if the tier turns out to be stale there is no frame on screen to measure, and a WCAG ratio taken
+     * off a frame nobody will see is a number about nothing.
+     */
+    if (needsQualityProbe()) {
+      const ms = measureFrameMs(gl, renderScene);
+      const r = recordQualityProbe({
+        pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'VaultReliefGl',
+      });
+      if (r.tier !== tier) {
+        return () => {
+          for (const d of disposers.reverse()) d();
+          stage.dispose();
+        };
+      }
+    }
+
+    renderScene();
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, W, H);
     gl.disable(gl.DEPTH_TEST);
@@ -466,6 +518,8 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
     gl.bindTexture(gl.TEXTURE_2D, target.texture);
     /* `blit` takes a CALLBACK, not a texture: the uniform is set against the program it has just bound. */
     stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+    /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
+    canvas.dataset.qualityTier = tier;
 
     const err = gl.getError();
     if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return; }
@@ -691,7 +745,9 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
          remounts every time a reader toggles the view. */
       stage.dispose();
     };
-  }, [entries, heightPx, onRefused]);
+    /* `tier` IS A DEPENDENCY, and that is the rebuild mechanism: a resolved lower tier tears this context down
+       and builds the corridor again at it. */
+  }, [entries, heightPx, onRefused, tier]);
 
   const label = (t: string): CSSProperties => ({
     font: '400 10.5px/1.5 ui-monospace, monospace', color: t, whiteSpace: 'pre-wrap',

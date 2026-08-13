@@ -24,8 +24,24 @@ Full pipeline in that number: shadow map (1024²) → depth prepass → SSAO + t
 
 **§3.2 predicted ≈10.9 ms at 1× and said 2× would not fit. It is 8× cheaper than estimated and
 2× retina holds 60 fps with 11.7 ms spare.** So the frame decision reserved for the owner is
-answered by data: **render at 2×, 60 fps, no quality ladder.** The ladder can be built later if a
-weaker GPU appears; it is not needed for this machine.
+answered by data: **render at 2×, 60 fps.**
+
+*Corrected 2026-08-13. This paragraph ended "**no quality ladder.** The ladder can be built later if a
+weaker GPU appears; it is not needed for this machine" — and it went on saying that after the ladder was
+built, wired into this harness, and argued mandatory **out of E0's own third row**.
+`packages/gl/src/env/quality.ts`'s header reasons from the 11.328 ms figure above: 5.3 ms of headroom at
+2× with depth of field, on the fastest machine this will ever run on, leaves no reading of "optional".
+This file reads that ladder at four sites — `entry.ts` sizes its shadow map through
+`shadowMapSizeFor(TIER, 1024)` and reports `tierShadowMapSize` from the same call, and passes
+`shadowTaps: Q.shadowTaps` at **both** of its `lit.draw` call sites — and E9's generated sweep measures E0
+at **166.3 ms full against 30.7 ms minimum, an 81.5% saving**, the largest of the nine. The recommendation
+this file made was overturned by the evidence this file produced. (Cited by symbol rather than by line:
+`entry.ts` is being edited in another lane as this is written, and a line number is the one kind of
+citation that goes stale without the claim changing.)*
+
+**The tier changes what the captures below show, so they are tier-`full` captures.** At `?tier=minimum`
+the shadow is **one tap — a hard edge, not a softer nine** (`env/lit.ts` branches on `uShadowTaps`), AO
+and depth of field are off, and the render is 1×. "Soft PCF edges" below is a claim about `full` only.
 
 ## What the capture proves
 
@@ -35,6 +51,17 @@ contact darkening at both bases from AO.
 `no-ao.png` — the control. Identical scene, occlusion off.
 `diag-mirror.png` — a roughness-0.045 mirror against an RGB sky (red zenith, green ground, blue
 horizon). This is how the reflection orientation was *verified* rather than assumed.
+
+*Capture provenance, 2026-08-13. All three PNGs and `bundle.js` predate `38c01b1`, which fixed four
+defects in `env/lit.ts` — `bundle.js` still carries the pre-fix `max(1e-6, PI * d * d)` and no
+`uShadowTaps` uniform at all, so it is checkable rather than assumed. **Two of E0's three claims here are
+unaffected, and for a stated reason:** defect 4 fired only below roughness 0.154, and the deck (0.82),
+the dielectric sphere (0.34) and `live.png`'s metal sphere (0.18) are all above it; and the environment
+reflection does not go through the repaired function at all — `envSpecular` samples `skyColour` along a
+roughness-blended reflect vector, so the orientation check in `diag-mirror.png` stands.
+**What is NOT re-verified: the `?diag` mirror is roughness 0.045, the exact clamp where defect 4 replaced
+the true denominator and returned a peak 18,930× too dim.** Its key-light highlight in that capture is
+therefore wrong, and the capture has not been retaken.*
 
 ## Four real bugs, and what each one teaches
 

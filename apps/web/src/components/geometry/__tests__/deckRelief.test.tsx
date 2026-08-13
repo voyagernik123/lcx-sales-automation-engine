@@ -53,7 +53,17 @@ describe('DeckRelief — the theatre is opt-in and the grid is the default', () 
        empty stage that looks like a broken canvas. */
     render(<DeckRelief panels={[PANELS[0]!]}><Flat /></DeckRelief>);
     const btn = screen.getByRole('button', { name: /theatre view/i });
-    expect(btn.hasAttribute('disabled')).toBe(true);
+    /*
+     * aria-disabled, NOT disabled — and the difference is the whole point of the change this pins.
+     *
+     * `onRefused` fires from the renderer's mount effect, one tick after the reader pressed Enter on this
+     * very button. Setting `disabled` on a FOCUSED element blurs it: `document.activeElement` becomes
+     * `<body>` and the next Tab restarts from the top of the document — on PipelineRelief that also means
+     * leaving the table the triage keys act on. `aria-disabled` with a guarded onClick keeps the control
+     * in the tab ring and keeps focus where the reader put it.
+     */
+    expect(btn.getAttribute('aria-disabled')).toBe('true');
+    expect(btn.hasAttribute('disabled'), 'a disabled control drops focus to <body>').toBe(false);
     expect(screen.getByText(/at least two panels/i).textContent).toContain('this deck has 1');
   });
 

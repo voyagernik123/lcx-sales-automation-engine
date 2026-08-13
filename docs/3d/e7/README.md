@@ -189,6 +189,16 @@ harness passed. The three label sites here (channel name, date tag, week-ruler t
 with `textContent`, and the ruler's `<br>` is a second block element instead of markup. That leaves no
 raw-HTML sink on this frame for a channel list from anywhere else to arrive at.
 
+*Capture provenance, 2026-08-13. `bundle.js` here predates `38c01b1`, which repaired four defects in
+`env/lit.ts` — the committed bundle still carries the pre-fix `max(1e-6, PI * d * d)` and no `uShadowTaps`
+uniform. **None of E7's readings move on that, and the reason is structural rather than lucky:** the axial
+check, the τ sweep, the lane-drift and days-spanned spans and the depth-cap pixel delta are all properties
+of the volume integrator, which does not go through the lit shader at all; and of the lit geometry, the
+repaired isotropic guard fired only below roughness 0.154 while this scene's materials run 0.52 to 0.84,
+with no `anisotropy` anywhere. The one claim that would need re-taking on a rebuild is `glOcclusionPixels`
+and its mean/max deltas, because those are framebuffer reads over lit geometry — 3,943 was already under
+the capture script's own floor once.*
+
 One trap avoided by design rather than found: **the volume cannot be drawn into the scene target it
 samples depth from.** That is a feedback loop, and WebGL2 does not leave it undefined — it raises
 INVALID_OPERATION and draws nothing. The volume renders into its own target and is composited with a
@@ -223,10 +233,19 @@ in the pipeline.
   accumulation removed, so the two can be compared on the same data rather than admired separately.
 - **The data is synthetic**, declared in amber on the frame and in the fallback's notices. 39
   hand-authored flagged items plus a per-channel background rate; no generator, no noise.
-- **Real-hardware timing is unmeasured**, and **the repo's `type-check:3d` script points at `docs/3d/p1`
-  only** — e0, e1, e2, e5, e6 and e8 entry files are type-checked by nothing at all, since esbuild strips
-  types rather than verifying them. E7 ships its own `tsconfig.json` and passes it clean under p1's strict
-  settings; the other six are somebody's next job.
+- **Real-hardware timing is unmeasured.** E7 ships its own `tsconfig.json` and passes it clean under p1's
+  strict settings.
+
+  *The rest of this bullet was STALE and is corrected 2026-08-13. It read: "**the repo's `type-check:3d`
+  script points at `docs/3d/p1` only** — e0, e1, e2, e5, e6 and e8 entry files are type-checked by nothing
+  at all, since esbuild strips types rather than verifying them … the other six are somebody's next job."
+  Somebody did it, at `5843108`. `scripts/type-check-3d.mjs` **globs** `docs/3d/*/entry.ts` rather than
+  naming one, and an `entry.ts` with no `tsconfig.json` is a hard failure — because silently skipping is
+  what let six environments go unverified. It found real bugs on its first run, including two
+  temporal-dead-zone throws and an allocated-but-never-drawn sky backdrop in E6. Measured here: **12/12
+  harnesses clean**, which is more than the nine environments, because globbing also picked up `s6` and
+  `w1`. That is the argument for globbing over listing, and it is why this bullet could go stale in the
+  first place: it was a hand-written list of who was uncovered.*
 
 ## Cost
 

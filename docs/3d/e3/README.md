@@ -227,23 +227,32 @@ have the wall behind them. Text does not occlude geometry, so only the strokes n
 The durable part is the probe, not the placement. `axisTicksDrawn` is a framebuffer read against a band beside
 each stroke, and it is what made a defect visible that a bounds count had reported as fixed twice.
 
-## Three defects inherited from the template, not repeated here
+## Three defects inherited from the template — **all three now FIXED IN E6**
 
-Reading E6's `entry.ts` closely enough to copy its structure surfaced three things it gets wrong. None
-of them is visible in a capture.
+Reading E6's `entry.ts` closely enough to copy its structure surfaced three things it got wrong. None of
+them is visible in a capture. **All three sentences below were in the present tense until 2026-08-13, and
+they were the sharpest instance in this programme of a to-do list re-asserting finished work** — E9's
+generated audit opens by naming four of these, and this is a fifth. What E3 does differently is still
+worth recording; what E6 *does* is not what this section said.
 
-- **`plane(size, segments)` is SQUARE.** E6 calls `plane(6, CORRIDOR_LEN)` and gets a 6 × 6 floor with
-  44 subdivisions under a 44 m corridor — its fog and its darkness hide the shortfall. E3 builds the
-  plane at the channel's width and stretches z in the model matrix, which is safe here only because the
-  plane's single normal is +y.
-- **`normalMat: N3` on a rotated mesh is wrong.** E6 hands the identity 3 × 3 to twenty-five *yawed*
-  record slabs, so their normals are lit as though they had never been rotated. E3's boxes are
+- **`plane(size, segments)` is SQUARE.** E6 called `plane(6, CORRIDOR_LEN)` and got a 6 × 6 floor with 44
+  subdivisions under a 44 m corridor — its fog and its darkness hid the shortfall. E3 builds the plane at
+  the channel's width and stretches z in the model matrix, which is safe here only because the plane's
+  single normal is +y. **Fixed in E6 at `37c90df` — the same commit that added this file.** It is a
+  `box(6, 0.12, CORRIDOR_LEN)` now, 12 triangles rather than 3,872, and it gains a lit edge at the wall.
+- **`normalMat: N3` on a rotated mesh is wrong.** E6 handed the identity 3 × 3 to twenty-five *yawed*
+  record slabs, so their normals were lit as though they had never been rotated. E3's boxes are
   axis-aligned, and the one rotated mesh — the absent-value ring — gets the rotation as its normal
-  matrix, which for a pure rotation is its own inverse-transpose.
+  matrix, which for a pure rotation is its own inverse-transpose. **Fixed in E6 at `37c90df`, again the
+  commit that added this file**: `e6/entry.ts` passes `normalMat: normalOf(modelOf(…, p.yaw))`.
 - **AO's `near`/`far` disagree with the projection.** `viewProjection` defaults them from the orbit
-  distance, so E5 and E6 both hand the AO pass a hand-written pair their own cameras do not use, and the
-  occlusion radius then means a different number of metres than it says. E3 pins `near`/`far` in the
-  `Viewpoint` and passes the same two constants to AO.
+  distance, so E5 and E6 each handed the AO pass a hand-written pair their own cameras did not use, and
+  the occlusion radius then meant a different number of metres than it said. E3 pins `near`/`far` in the
+  `Viewpoint` and passes the same two constants to AO. **Fixed in both at `5843108`**, which added
+  `nearFarOf(view)` in `camera.ts` next to the expressions it mirrors — `e5/entry.ts:583` and
+  `e6/entry.ts:520` call it, so every depth-buffer consumer agrees by construction rather than by
+  transcription. That commit also recorded the real numbers: the hand-written `near 0.1, far 60` sat
+  against projections resolving to 0.085 and 68.
 
 The §6 ratchet in `packages/gl/src/env/harnessRules.test.ts` — added by another lane while this was
 being built — also caught that E3 had no flat fallback and never called `assertBrandFidelity`. Both are
@@ -275,8 +284,13 @@ now in, and `refused.png` photographs the first.
 - **Real-hardware timing is UNMEASURED,** and the software number is noisy: the same build measured
   **39.2 to 54.4 ms** across nine runs under SwiftShader on a machine doing other work. Quoting a single
   figure would be quoting the run that happened to be quietest.
-- **`type-check:3d` does not cover this directory.** It points at `docs/3d/p1` only, so `entry.ts` is
-  checked only by `npx tsc -p docs/3d/e3/tsconfig.json`, which is a gate nothing runs for you.
+- ~~**`type-check:3d` does not cover this directory.**~~ **STALE — fixed at `5843108`, corrected here
+  2026-08-13.** It said "It points at `docs/3d/p1` only, so `entry.ts` is checked only by `npx tsc -p
+  docs/3d/e3/tsconfig.json`, which is a gate nothing runs for you." `scripts/type-check-3d.mjs` now
+  **globs** every `docs/3d/*/entry.ts`, and a directory with an `entry.ts` and no `tsconfig.json` is a hard
+  failure rather than a silent skip — the listing is what let nine environments go unchecked. Run here:
+  **12/12 harnesses clean, `e3` among them.** The `npx tsc` line under *Reproduce* is now a convenience,
+  not the only thing standing between this file and an unchecked type.
 - **The deals are synthetic**, said on the frame in amber and in the flat table's notices. The shape is
   deliberate — a funnel, value skewed to two names, the two largest late-stage deals stalled — because a
   uniform spread would make the headline figure true by construction rather than by measurement.
@@ -290,6 +304,15 @@ now in, and `refused.png` photographs the first.
 | 60 Hz headroom | **REFUSED** — `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` |
 | real-hardware time | **UNMEASURED** |
 | triangles | 5,764 · shadow map 1536² · 2,048 particle slots |
+
+*The published band is a reading of one machine's load, not a property of the build — noted 2026-08-13.
+E9's generated sweep (`npm run audit-3d`) measures this same committed bundle at **62.02 ms**, which is
+**outside the 39.2–54.4 band above**, and its tier probe reports `full` at 53.9 ms with a **±24.7% spread**
+across three alternating loads. The two are not the same measurement — the audit uses `?frames=6` where
+this table uses 60-frame batches — so neither number replaces the other, and the honest reading is that
+under SwiftShader on a machine doing other work this scene lands somewhere around 40–62 ms. The band above
+should be regenerated rather than defended; the argument in this section for quoting a spread instead of a
+single figure is the part that has held up.*
 
 The first working build measured **952 ms/frame**. Two things: a `plane(2.9, 96)` floor is 18,432
 triangles of flat deck rasterised three times a frame for no additional shading detail (40 segments now,

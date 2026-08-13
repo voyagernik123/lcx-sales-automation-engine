@@ -407,7 +407,19 @@ const targetProbe = (() => {
    * this drain would have eaten. So the last code drained is kept and reported as `glDuringSetup`.
    */
   let drained = 0;
-  for (let e = gl.getError(); e !== gl.NO_ERROR; e = gl.getError()) drained = e;
+  /*
+   * BOUNDED, AND THE BOUND IS NOT DEFENSIVE PADDING — this loop can hang.
+   *
+   * `getError` is specified to return NO_ERROR once the queue is empty, so an unbounded drain terminates
+   * against a conforming implementation. It does not terminate against a context that never empties: a
+   * lost context, or a stub whose getError always answers with a code. Wiring the same pattern into
+   * `apps/web/src/components/shared/useQualityTier.ts` HUNG A VITEST PROCESS on exactly that, and it had
+   * to be killed rather than failing — a hang is worse than a failure because it reports nothing.
+   *
+   * 32 is well past any real queue depth, so a conforming context still drains fully and `drained` still
+   * carries the last real code. The only behaviour that changes is the pathological one.
+   */
+  for (let i = 0, e = gl.getError(); i < 32 && e !== gl.NO_ERROR; i++, e = gl.getError()) drained = e;
   const bad: string[] = [];
   const probeStep = (label: string) => {
     const e = gl.getError();

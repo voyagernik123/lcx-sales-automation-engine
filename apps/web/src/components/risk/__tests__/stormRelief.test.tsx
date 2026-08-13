@@ -141,7 +141,7 @@ describe('StormRelief — §7 says an unproven environment defaults off and says
     const { container } = render(<StormRelief {...props} field={refused} />);
     expect(container.querySelector('canvas')).toBeNull();
     expect(screen.getByTestId('risk-calendar-refused')).toBeTruthy();
-    expect(screen.getByRole('button', { name: /storm view/i }).hasAttribute('disabled')).toBe(true);
+    expect(screen.getByRole('button', { name: /storm view/i }).getAttribute('aria-disabled')).toBe('true');
   });
 
   it('does not import the GL layer until the reader asks', async () => {

@@ -44,12 +44,16 @@ import {
   projectQuad, isQuadRefusal, uprightPanelCorners, projectScreen,
   viewProjection, eyeOf, nearFarOf, lightViewProjection, boundsCentre, boundsRadius,
   hexToLinear, assertBrandFidelity, IDENTITY, TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
+  qualitySettings, shadowMapSizeFor, pickQualityTier,
   type LitDraw, type Viewpoint, type MeshBuffer,
 } from '@lcx/gl';
 import {
   slotsFor, rankSlots, addressOrder, fitPanelText, MAX_PANELS, MIN_PANELS,
   type DeckPanelDatum, type PanelLine,
 } from './deckSlots';
+import {
+  useResolvedQualityTier, needsQualityProbe, measureFrameMs, recordQualityProbe,
+} from '../shared/useQualityTier';
 
 export interface DeckReliefGlProps {
   readonly panels: readonly DeckPanelDatum[];
@@ -175,6 +179,8 @@ interface Plan {
   readonly withheld: readonly { readonly title: string; readonly reason: string }[];
   readonly notesDropped: number;
   readonly lensOn: boolean;
+  /** The tier that turned the lens off, or null when the lens is off simply because nothing is addressed. */
+  readonly lensOffReason: string | null;
   readonly maxCocPx: number;
 }
 
@@ -205,6 +211,11 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
    * it. The overlay is React state because it is DOM, and it is the only thing a click changes up here.
    */
   const drawRef = useRef<((addressed: number | null) => void) | null>(null);
+  /*
+   * THE TIER. Subscribed rather than read once: every frame here goes into an offscreen target and is blitted
+   * only at the end, so a resolved lower tier can rebuild the deck before anything has been painted.
+   */
+  const tier = useResolvedQualityTier();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -233,7 +244,8 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
     const cssH = heightPx;
     /* DPR CAPPED AT 2. Everything in this frame is fill-bound — shadow map, prepass, AO, lit, DOF, present — so a
        3× display would triple the cost of a surface whose justification is that an operator reads it faster. */
-    const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    const Q = qualitySettings(tier);
+    const dpr = Math.min(Q.dprScale, Math.max(1, window.devicePixelRatio || 1));
     const W = Math.round(cssW * dpr), H = Math.round(cssH * dpr);
     canvas.width = W; canvas.height = H;
 
@@ -266,18 +278,30 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
     const target = createTarget3D(stage, W, H);
     if ('kind' in target) { refuse(target.code); return; }
     disposers.push(() => target.dispose());
-    const shadow = createShadowMap(stage, SHADOW_SIZE);
+    /* `shadowMapSizeFor`, NOT the tier's absolute `shadowMapSize`. `env/quality.ts:91` records what the
+       absolute value did: E0, E2 and E8 had each chosen 1024 and were handed 1536 at the default tier, so three
+       captures changed without anyone saying so. SHADOW_SIZE is this deck's own choice and the tier scales it. */
+    const shadow = createShadowMap(stage, shadowMapSizeFor(tier, SHADOW_SIZE));
     if ('kind' in shadow) { refuse(shadow.code); return; }
     disposers.push(() => shadow.dispose());
     const skyBox = createSkyBackdrop(stage);
     if ('kind' in skyBox) { refuse(skyBox.code); return; }
     disposers.push(() => skyBox.dispose());
-    const ao = createAmbientOcclusion(stage, W, H);
-    if ('kind' in ao) { refuse(ao.code); return; }
-    disposers.push(() => ao.dispose());
-    const dof = createDepthOfField(stage, W, H);
-    if ('kind' in dof) { refuse(dof.code); return; }
-    disposers.push(() => dof.dispose());
+    /* AO IS THE TIER'S SECOND DROP; DOF IS ITS FIRST. Neither is allocated when the tier declines it — a
+       full-resolution HDR DOF buffer plus a half-res AO pair is the largest thing this component holds after
+       the scene target. */
+    const ao = Q.ao ? createAmbientOcclusion(stage, W, H) : null;
+    if (ao && 'kind' in ao) { refuse(ao.code); return; }
+    if (ao) disposers.push(() => ao.dispose());
+    /*
+     * DOF GOES FIRST AND THAT IS THE LADDER AGREEING WITH E1's OWN MEASUREMENT, not a coincidence: the lens is
+     * the most expensive single pass (E0 measured ~6.4 ms of an 11.328 ms frame) AND E1 measured a wide aperture
+     * costing an operator four of five readable panels. The most expensive pass is the one whose loss costs the
+     * reader least.
+     */
+    const dof = Q.dof ? createDepthOfField(stage, W, H) : null;
+    if (dof && 'kind' in dof) { refuse(dof.code); return; }
+    if (dof) disposers.push(() => dof.dispose());
 
     /*
      * THE CAMERA IS FRAMED ON THE SLOTS ACTUALLY USED, and only on their x centroid.
@@ -499,34 +523,72 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
         })),
       ];
 
-      lit.shadowPass(lightVP, draws, shadow);
-      target.bind();
-      gl.clear(gl.DEPTH_BUFFER_BIT);
-      /* The backdrop replaces a flat clear, and it is the same function the materials reflect — so a panel's sheen
-         and the room behind it agree about what the room looks like. */
-      skyBox.draw({ eye, target: view.target, fovDeg: FOV, aspect: W / H });
-      /* PREPASS → AO → LIT, forced by the data: AO reads depth and the lit pass reads AO. */
-      lit.depthPrepass(vp, draws);
-      ao.compute({
-        depthTexture: target.depthTexture, near, far, fovDeg: FOV, aspect: W / H,
-        // 0.5 m, about a third of a panel height. Larger and the occlusion stops describing the join between panel
-        // and deck and starts dimming whole panels that face each other.
-        radius: 0.5, strength: 1.3,
-      });
-      target.bind(); // AO bound its own half-res framebuffer.
-      lit.draw({
-        /* The sky fill stays at full strength: it is the only light inside a shadow, and the cheaper alternative
-           was measured — 0.72 with the key raised to compensate drained the shadow interiors by about a fifth. */
-        viewProj: vp, eye, lightDir, lightColour: [3.5, 3.45, 3.3],
-        ambientGain: 1.05, lightVP, shadow, shadowStrength: 0.92, draws,
-        ao: ao.texture, screenSize: [W, H],
-      });
+      /* A FUNCTION, SO IT CAN BE MEASURED — and it ends with `target` bound, which is what `probeSync` needs: a
+         `readPixels` only guarantees completion of work affecting the framebuffer it reads. */
+      const renderScene = (): void => {
+        lit.shadowPass(lightVP, draws, shadow);
+        target.bind();
+        gl.clear(gl.DEPTH_BUFFER_BIT);
+        /* The backdrop replaces a flat clear, and it is the same function the materials reflect — so a panel's
+           sheen and the room behind it agree about what the room looks like. */
+        skyBox.draw({ eye, target: view.target, fovDeg: FOV, aspect: W / H });
+        /* PREPASS → AO → LIT, forced by the data: AO reads depth and the lit pass reads AO. */
+        lit.depthPrepass(vp, draws);
+        if (ao) {
+          ao.compute({
+            depthTexture: target.depthTexture, near, far, fovDeg: FOV, aspect: W / H,
+            // 0.5 m, about a third of a panel height. Larger and the occlusion stops describing the join between
+            // panel and deck and starts dimming whole panels that face each other.
+            radius: 0.5, strength: 1.3,
+          });
+          /* AO bound its own half-res framebuffer, so the rebind is INSIDE the gate. Outside it, a tier with AO
+             off would render the rest of the frame at half resolution. */
+          target.bind();
+        }
+        lit.draw({
+          /* The sky fill stays at full strength: it is the only light inside a shadow, and the cheaper
+             alternative was measured — 0.72 with the key raised to compensate drained the shadow interiors by
+             about a fifth. */
+          viewProj: vp, eye, lightDir, lightColour: [3.5, 3.45, 3.3],
+          ambientGain: 1.05, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, draws,
+          ao: ao ? ao.texture : null, screenSize: [W, H],
+        });
+      };
+
+      /*
+       * THE PROBE, ON THE FIRST FRAME THIS DECK DRAWS. `pickQualityTier` exists to choose a tier from a measured
+       * frame and had no caller anywhere in the repo; this is one. A discarded warm-up frame first — the first
+       * frame pays shader upload, and charging that to the GPU would downgrade every machine — then two
+       * sync-bounded samples of which the cheaper is used, because one sample can catch a GC pause and a single
+       * unlucky 40 ms would drop a fast machine for the rest of the page load.
+       *
+       * A LOWER TIER MEANS THIS BUILD IS STALE, so this returns without presenting and WITHOUT calling `setPlan`.
+       * The projected DOM overlay must never describe a frame the reader will not see — the transforms in it are
+       * a homography of THIS build's projection. The effect re-runs on the resolved tier and publishes then.
+       */
+      if (needsQualityProbe()) {
+        const ms = measureFrameMs(gl, renderScene);
+        const r = recordQualityProbe({
+          pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'DeckReliefGl',
+        });
+        if (r.tier !== tier) return;
+      }
+
+      renderScene();
 
       let resolved = target.texture;
-      /* THE LENS IS OFF AT REST. `docs/3d/e1/README.md`: the wide-aperture frame is a hero frame, and its own
-         no-dof capture is the operator configuration. Racking with nothing addressed would defocus panels to say
-         something the frame is not saying. */
-      if (addressedSlot !== null) {
+      /*
+       * THE LENS IS OFF AT REST, AND NOW ALSO OFF BELOW THE TOP TIER. `docs/3d/e1/README.md`: the wide-aperture
+       * frame is a hero frame, and its own no-dof capture is the operator configuration. Racking with nothing
+       * addressed would defocus panels to say something the frame is not saying.
+       *
+       * `lensOn` is ONE expression rather than three tests, because the GL lens, the DOM blur normalisation and
+       * the sentence under the frame all have to agree. They did not have to before: the DOM blur was gated on
+       * `addressedSlot` alone, so a tier with DOF off would have blurred real text over sharp geometry — the
+       * contradiction the comment on `norm` warns about, inverted.
+       */
+      const lensOn = dof !== null && addressedSlot !== null;
+      if (lensOn && dof) {
         dof.apply({
           scene: target.texture, depthTexture: target.depthTexture, near, far, fovDeg: FOV,
           aspect: W / H, focusDistance: focus, aperture: APERTURE, maxCoc: MAX_COC,
@@ -541,6 +603,9 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
       gl.bindTexture(gl.TEXTURE_2D, resolved);
       /* `blit` takes a CALLBACK, not a texture: the uniform is set against the program it has just bound. */
       stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+
+      /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
+      canvas.dataset.qualityTier = tier;
 
       const err = gl.getError();
       if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return; }
@@ -585,7 +650,7 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
          * being on: with nothing addressed the GL frame is sharp everywhere, and blurred text on crisp geometry is
          * the same contradiction inverted.
          */
-        const norm = addressedSlot === null ? 0 : cocPx / Math.max(1e-6, maxCocPx);
+        const norm = lensOn ? cocPx / Math.max(1e-6, maxCocPx) : 0;
         const kind: ('tag' | 'head' | 'note')[] = ['tag', 'head', 'note'];
         overlay.push({
           key: datum.id,
@@ -611,8 +676,11 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
         panels: overlay,
         withheld,
         notesDropped,
-        lensOn: addressedSlot !== null,
-        maxCocPx: Number(maxCocPx.toFixed(1)),
+        lensOn,
+        /* Reported as 0 when the lens is off, so the sentence under the frame cannot quote a defocus the frame
+           does not have. */
+        maxCocPx: lensOn ? Number(maxCocPx.toFixed(1)) : 0,
+        lensOffReason: dof === null ? tier : null,
       });
     };
 
@@ -638,7 +706,9 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
       for (const d of disposers.reverse()) d();
       stage.dispose();
     };
-  }, [panels, heightPx, onRefused]);
+    /* `tier` IS A DEPENDENCY, and that is the rebuild mechanism: a resolved lower tier tears this context down
+       and builds the deck again at it. */
+  }, [panels, heightPx, onRefused, tier]);
 
   const address = (panelIndex: number): void => {
     const fn = drawRef.current;
@@ -762,7 +832,14 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
           <div>
             {plan.lensOn
               ? `Lens on: the unaddressed panels are defocused by up to ${plan.maxCocPx} px of circle of confusion.`
-              : 'Lens off at rest, so nothing is defocused until you address a panel.'}{' '}
+              /* THE TWO REASONS THE LENS IS OFF ARE DIFFERENT FACTS and are said differently. "Off at rest" is a
+                 design decision the reader can undo by addressing a panel; off at a tier is a measurement about
+                 their machine that addressing a panel will not change, and telling them to click would be a lie
+                 about what the click does. */
+              : plan.lensOffReason !== null
+                ? `Lens off at the ${plan.lensOffReason} quality tier, chosen from a measured frame time on this `
+                  + 'machine. Addressing a panel still brings it forward and colours it; it will not defocus the others.'
+                : 'Lens off at rest, so nothing is defocused until you address a panel.'}{' '}
             The DOM blur ceiling ({DOM_BLUR_CEILING} px) and dim ({DOM_DIM_MAX}) are carried from E1&#39;s measured
             contrast bisection on the same hexes and type sizes; they have NOT been re-measured on this page.
           </div>

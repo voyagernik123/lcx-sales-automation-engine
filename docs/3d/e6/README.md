@@ -48,6 +48,14 @@ it now takes a constant alpha — fog is a property of the corridor, and fogging
 corridor deletes the axis. `rulerTicksUnreadable` reports the ratios and the capture is fatal on any tick
 below AA.
 
+*Capture provenance, 2026-08-13. Every ratio in this section is composited over what the renderer actually
+put in the framebuffer, and `bundle.js` here predates `38c01b1` — it still carries the pre-fix
+`max(1e-6, PI * d * d)` and no `uShadowTaps` uniform. **The ratios survive that, checkably rather than
+hopefully:** the repaired isotropic guard fired only below roughness 0.154 and this scene's materials run
+0.30 to 0.86, and no material here sets `anisotropy`, so neither repaired branch is reachable from the
+vault. The claim that would move on a rebuild is not a contrast ratio — it is anything about shadow
+softness, since `?tier=minimum` now resolves to one tap and a hard edge. This file makes none.*
+
 Two more things depth-as-time gives that the table destroys:
 
 - **A withheld record is visibly present.** In a table a row you may not read either shows or is
@@ -98,6 +106,13 @@ environment … at a third strength". That was not what the code did. No `sky` o
 `bindSky` binds the full `DEFAULT_SKY`; the only reduction is the global `ambientGain`, and 0.46 from
 0.86 is 0.53× rather than a third. The sky still lights the diffuse term as well as the specular one.
 Two wrong numbers in one clause, describing a change I had made myself.
+
+*And the retracted wording is still live in the source — found 2026-08-13, not fixed here.* `entry.ts:538`
+reads "sky is still the specular environment for the records' sheen, at a third strength", which is the
+sentence above, in the file this README is describing. Correcting the document and leaving the comment is
+how the claim comes back: the next person reads the code. `entry.ts` is outside this sweep's remit; the
+required change is to that comment, to say that `bindSky` binds the full `DEFAULT_SKY` and that
+`ambientGain` 0.86 → 0.46 is 0.53×, affecting the diffuse term as well as the specular one.
 
 **6 · A 46° lens cannot make a "deep architectural space".** Three framings were measured. Close and
 wide clipped the newest record's own text; far and wide made every record too small. Neither was a
@@ -167,9 +182,33 @@ The same mode used to defeat the fog on DOM text, because recession was expresse
 forced colours overrides, rather than in `opacity`, which it does not. Every dimming in this file is now
 `opacity`, so the reading limit the frame claims survives the mode that a low-vision reader is in.
 
+## Three defects E3's README named against this file, and all three are fixed here
+
+Added 2026-08-13 during a sweep for claims that were true when typed. `docs/3d/e3/README.md` carried a
+section titled *"Three defects inherited from the template, not repeated here"* in the present tense, and
+every one of them had been repaired in this file — two of them **by the commit that added that section**.
+Recorded here so the fix has a home in the file that owns the code, rather than only a retraction in the
+file that reported it:
+
+- **The corridor floor.** `plane(size, segments)` is square, so `plane(6, CORRIDOR_LEN)` produced a 6 × 6
+  patch with 44 subdivisions under a 44 m corridor — a floor for three metres and void for the rest, which
+  under this fog and palette reads as a dark corridor rather than a missing one. It is
+  `box(6, 0.12, CORRIDOR_LEN)` since `37c90df`: 12 triangles instead of 3,872 rasterised three times a
+  frame to describe a rectangle, and it gains a lit edge where the floor meets the wall.
+- **The normal matrix on the yawed records.** Twenty-five slabs were handed the identity 3 × 3 and lit as
+  though they faced straight down the corridor — the angled signage this environment's readability depends
+  on, shaded as if it were not angled. `normalOf(modelOf(…, p.yaw))` since `37c90df`.
+- **AO's `near`/`far`.** This file passed a hand-written `near 0.1, far 60` while its own projection
+  resolved to 0.085 and 68, so the depth linearisation and the world-space gather radius were both
+  describing a slightly different scene — which reads as the strength being mistuned and sends you tuning
+  strength. `nearFarOf(view)` since `5843108`, at `entry.ts:520`.
+
 ## What is not done
 
-- **§7(b) is not timed.** No operator has been put in front of the vault and the table with a task.
+- **§7(b) is not timed.** No operator has been put in front of the vault and the table with a task. The
+  instrument now exists and **covers E6**: `docs/3d/e9/task.html` carries two trials for this environment,
+  counterbalanced flat-first. It has never been run by an operator, and a machine-reader attempt was run
+  and invalidated itself on four defects, so this remains unmeasured rather than merely unscheduled.
 - **7 records are still edge-on** and 3 are beyond legible range, so 8 of 25 carry text. The corridor
   wants either more length per hour or records that turn to face the reader as they approach.
 - **The architecture is thin.** Walls, floor, ceiling and an end cap — no volumetric shafts, no

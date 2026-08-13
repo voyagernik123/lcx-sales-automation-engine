@@ -33,7 +33,7 @@
  * with the refusal named to the reader rather than swallowed. The derivation runs EAGERLY and cheaply, so a
  * refused dataset never pays for the chunk that would have told it so.
  */
-import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useId, useMemo, useState } from 'react';
 import { LeadTable, type LeadTableProps } from '@/components/bd/LeadTable';
 import {
   buildChannel, formatUsd, DEEP_GATE_LABEL, GATE_LABELS, MAX_PER_GATE, STALL_DAYS, STALL_ONSET,
@@ -49,6 +49,9 @@ export interface PipelineReliefProps extends LeadTableProps {
 export function PipelineRelief({ reliefHeightPx = 460, ...table }: PipelineReliefProps) {
   const [wantRelief, setWantRelief] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
+  /* The reason lives in a sibling <span>, which a screen reader reaches only in browse mode and only if it goes
+     looking. `aria-describedby` puts it on the control it explains. */
+  const noteId = useId();
 
   /*
    * ONE CLOCK READING FOR THE WHOLE MOUNT.
@@ -166,33 +169,72 @@ export function PipelineRelief({ reliefHeightPx = 460, ...table }: PipelineRelie
       <div className="flex flex-wrap items-center gap-2.5 border-t border-line/50 px-3 py-2">
         <button
           type="button"
-          onClick={() => { setWantRelief((v) => !v); }}
-          /* Disabled once refused, or when the derivation would refuse: offering a toggle that cannot work is
+          /* Unavailable once refused, or when the derivation would refuse: offering a toggle that cannot work is
              worse than not offering one. */
-          disabled={blocked}
-          className="border border-line px-2.5 py-1.5 font-mono text-micro font-bold uppercase tracking-wider text-cyan-700 hover:bg-ice-soft disabled:cursor-not-allowed disabled:text-grey disabled:hover:bg-transparent dark:text-cyan-400"
+          onClick={() => { if (blocked) return; setWantRelief((v) => !v); }}
+          /*
+           * `aria-disabled` RATHER THAN `disabled`, AND IT IS A FOCUS BUG, NOT A PREFERENCE.
+           *
+           * `onRefused` fires from the renderer's mount effect — moments after the reader pressed Enter on THIS
+           * button, while it still holds focus. Setting `disabled` on the focused element makes the browser blur
+           * it, so `document.activeElement` becomes `<body>` and the next Tab restarts from the top of the
+           * document — which on this page also means leaving the lead table the triage keys act on. It also drops
+           * the control out of the tab ring, the only route from the control to the reason beside it.
+           */
+          aria-disabled={blocked || undefined}
           aria-pressed={showRelief}
+          aria-describedby={noteId}
+          /*
+           * `border-grey`, not `border-line`: as a control boundary WCAG 1.4.11 wants 3:1, and `--line` measures
+           * 1.72 on the light card and 1.30 on the dark one. `--grey` is 6.13 / 6.71 and is an existing token.
+           * `border-dashed` when unavailable states that state in SHAPE — it was `text-grey` alone plus a
+           * mouse-only `cursor-not-allowed`.
+           */
+          className={
+            'border px-2.5 py-1.5 font-mono text-micro font-bold uppercase tracking-wider '
+            + (blocked
+              ? 'cursor-not-allowed border-dashed border-grey text-grey'
+              : 'cursor-pointer border-grey text-cyan-700 hover:bg-ice-soft dark:text-cyan-400')
+          }
         >
-          {showRelief ? 'Table view' : 'Channel view'}
+          {/*
+            THE NAME AGREES WITH `aria-pressed`, WHICH IT DID NOT. This read `Table view` while the channel was
+            on, so a screen reader announced "Table view, toggle button, PRESSED" — the label names one surface and
+            the state bit asserts the other. Naming the surface once and stating on/off keeps them consistent and
+            keeps the accessible name equal to the visible text (WCAG 2.5.3).
+          */}
+          Channel view: {showRelief ? 'on' : 'off'}
         </button>
 
+        {/*
+          `text-status-conditional` rather than `text-amber-700 dark:text-amber-400`. The Tailwind-scale pair does
+          pass — 5.02 on the light card but 4.64 on the page canvas, clearing 4.5 by 0.14 — and it is invisible to
+          the ratchet in `lib/__tests__/contrast.test.ts`, which parses tokens.css and cannot see a utility class.
+          `--amber` measures 5.65 / 5.22 / 4.98 on card / canvas / wash and is covered by that ratchet.
+        */}
         {refusal !== null ? (
-          <span role="alert" className="text-micro leading-snug text-amber-700 dark:text-amber-400">
+          <span id={noteId} role="alert" className="font-mono text-micro leading-snug text-status-conditional">
             Channel unavailable — <code>{refusal}</code>. Every row above is unaffected.
           </span>
         ) : !offerable ? (
-          <span role="alert" className="text-micro leading-snug text-amber-700 dark:text-amber-400">
+          /* KEEPS `role="alert"`, and the reason is that this is not only a first-paint state: the reader filters
+             this queue, so a set that WAS drawable can become undrawable in response to their own keystroke, and
+             an explanation that appears silently beside a control that just went dead is a control that broke for
+             no stated reason. `aria-describedby` is the on-demand route to the same node; the alert is the
+             interruption. (Present-at-mount live regions are not announced by real screen readers anyway, so this
+             costs nothing on page load.) */
+          <span id={noteId} role="alert" className="font-mono text-micro leading-snug text-status-conditional">
             Channel unavailable —{' '}
             <code>{channel.refusal ?? 'NO_DRAWABLE_LEADS'}</code>
             {channel.faults.length > 0 && `: ${channel.faults[0]}`}. Every row above is unaffected.
           </span>
         ) : (
           /*
-           * THE REASON IS ON THE BUTTON, not in a tooltip and not in a commit message. A reader deciding
-           * whether to trust a 3-D reading is entitled to know that nobody has timed it against the table, and
-           * that the table is where the triage keys work.
+           * THE REASON IS ON THE BUTTON, not in a tooltip and not in a commit message — and now literally on it,
+           * via `aria-describedby`. A reader deciding whether to trust a 3-D reading is entitled to know that
+           * nobody has timed it against the table, and that the table is where the triage keys work.
            */
-          <span className="text-micro leading-snug text-grey">
+          <span id={noteId} className="text-micro leading-snug text-grey-dark">
             Channel view is opt-in: nobody has yet timed whether it answers faster than this table. It is a
             reading, not a workspace — triage keys act on the rows.
           </span>

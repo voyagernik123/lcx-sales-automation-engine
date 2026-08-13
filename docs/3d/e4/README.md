@@ -272,7 +272,11 @@ is applied where it belongs — the one element that is content on a surface.
   *introduces*, and it is the one measured respect in which the flat version is safer.
 - **AO is on the frame and doing 0.44% of it.** Named above. The layer is assigned, not earned.
 - **`@lcx/gl` breaks when the shadow map and the AO texture are both absent.** Found here, not fixed
-  here. Named above; `packages/gl/src/env/lit.ts`.
+  here. Named above; `packages/gl/src/env/lit.ts`. **Re-verified at HEAD on 2026-08-13 and STILL NOT
+  FIXED** — this is recorded because `38c01b1` landed four fixes in that exact file, and "the shader was
+  worked on" is the reading someone will make. It did not touch this: `lit.draw`'s `else` branches still
+  set `uAOEnabled` to 0 and `uShadowStrength` to 0 without binding anything to `uAO` or `uShadowMap`, so
+  with both absent the samplers still point at whatever the last pass left on those units.
 - **Nothing outside the shadow frustum casts.** `extent: 10.5` covers the outermost shell at 7.3 m; a
   body placed further out would silently lose its shadow, and its height would silently stop being
   readable. Not guarded.
@@ -297,6 +301,14 @@ is applied where it belongs — the one element that is content on a surface.
 | 60 Hz headroom | **REFUSED** — `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` |
 | real-hardware time | **UNMEASURED** |
 
+*The 2.5 ms spread is this machine's stability over four consecutive loads, not the reproducibility of the
+figure — noted 2026-08-13. E9's generated sweep measures the same committed bundle at **60.35 ms**, 19%
+above the 50.9 published here and well outside ±2.5 ms; its alternating tier probe reports `full` at 59.9
+ms with a ±1.9% spread. Both spreads are honest and both are narrow, which is exactly the trap `7d3438c`
+recorded: two same-tier loads share whatever the machine was doing at that moment, so their agreement
+measures short-term stability rather than the variance between separate sittings. The number needs a
+re-take, and the spread beside it should be measured across sittings rather than within one.*
+
 Measured with the trailing `readPixels` and a warm-up frame. `gl.finish()` returns once the command
 buffer is **flushed**, not once the GPU has finished, and that error published two frame times in this
 programme that were 140× wrong. The 60 Hz comparison **refuses** rather than being computed: SwiftShader
@@ -307,12 +319,20 @@ ever run headless.
 **The two variant timings are not publishable and here is why.** `?ao=0` measured 41.0, 59.8 and 56.1 ms
 over three runs — an 18.8 ms spread on a 50 ms frame, so "AO costs *x*" is a number I do not have.
 And `?shadow=0` is reproducibly **slower** than the full frame: 68.1, 69.0, 73.0 ms. Part of that is now
-explained by defect 11 above — with the shadow map null the lit shader still runs its 9-tap PCF loop
-(only `uShadowStrength` goes to zero) and it runs it against whatever texture is bound to unit 0, which
+explained by defect 11 above — with the shadow map null the lit shader still runs its PCF loop (only
+`uShadowStrength` goes to zero) and it runs it against whatever texture is bound to unit 0, which
 after the blit is a 1200×720 RGBA16F target rather than a 1536² depth texture. Nine float-target taps
 per fragment is a plausible reason for a *slower* frame, but I have not isolated it and I am not going
-to publish it as the cause. The control exists to show what the shadows do for the **reading**, and on
-that it delivers: compare `no-shadow.png` and see that the bodies have no height.
+to publish it as the cause.
+
+*That sentence read "**its 9-tap PCF loop**" until 2026-08-13, and the tap count stopped being a constant
+at `38c01b1`: `shadowFactor` branches on a `uShadowTaps` uniform and takes **one** fetch below 9. Nine is
+still what this measurement saw — E4 passes `shadowTaps: Q.shadowTaps` and the timings above are tier
+`full` — but at `?tier=minimum` the same path is one float-target tap, so the mechanism named here does not
+transfer to that tier. The wrong-texture binding does; only its cost changes.*
+
+The control exists to show what the shadows do for the **reading**, and on that it delivers: compare
+`no-shadow.png` and see that the bodies have no height.
 
 ## Reproduce
 
@@ -326,6 +346,11 @@ ambiguous crossing, if the flat baseline has no crossings to avoid, if a reorder
 to zero, if the thinnest link tube goes sub-pixel, if an entity has no relationship distance, if the AO
 probe raises a GL error, or if `glError` is not 0.
 
-`entry.ts` is not covered by the repo's `type-check:3d`, which points at `docs/3d/p1` only — so
-`tsconfig.json` here is E7's workaround, under the same strict settings including `noUnusedLocals` and
+`tsconfig.json` here started as E7's workaround, under strict settings including `noUnusedLocals` and
 `noUncheckedIndexedAccess`. **esbuild strips types; a green `build.mjs` says nothing about soundness.**
+
+*Corrected 2026-08-13. This paragraph opened "`entry.ts` is not covered by the repo's `type-check:3d`,
+which points at `docs/3d/p1` only" — true when typed, false since `5843108`. `scripts/type-check-3d.mjs`
+globs every `docs/3d/*/entry.ts` and treats an `entry.ts` with no `tsconfig.json` as a hard failure, so
+this directory's config is now what the repo gate runs rather than a workaround nothing invokes. Measured
+here: **12/12 harnesses clean, `e4` among them.***

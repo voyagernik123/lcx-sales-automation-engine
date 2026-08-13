@@ -42,8 +42,12 @@ import {
   viewProjection, eyeOf, lightViewProjection, boundsCentre, boundsRadius,
   hexToLinear, mixLinear, assertBrandFidelity, IDENTITY,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
+  qualitySettings, shadowMapSizeFor, pickQualityTier,
   type LitDraw, type MeshBuffer, type Viewpoint,
 } from '@lcx/gl';
+import {
+  useResolvedQualityTier, needsQualityProbe, measureFrameMs, recordQualityProbe,
+} from '../shared/useQualityTier';
 import {
   GATE_BANDS, STALL_DAYS, MAX_PER_GATE, type Channel, type ChannelDeal,
 } from '@/components/geometry/pipelineChannel';
@@ -180,9 +184,20 @@ const CHANNEL_MAT = { baseColour: hexToLinear('#1E2A42'), roughness: 0.60, metal
  */
 const TICK_FLOOR_CLEARANCE = 0.055;
 const AXIS_TICK_DAYS = [0, 20, STALL_DAYS] as const;
+/**
+ * THIS SCENE'S OWN SHADOW BASELINE, which the tier SCALES rather than replaces.
+ *
+ * `env/quality.ts:91` records why that distinction matters: wiring the ladder in with the tier's ABSOLUTE
+ * `shadowMapSize` silently enlarged three environments — E0, E2 and E8 had each chosen 1024 and were handed
+ * 1536 at the default tier, a 2.25x bigger map and three captures that changed without anyone saying so.
+ */
+const SHADOW_BASELINE = 1024;
 
 export default function PipelineReliefGl({ channel, heightPx, onRefused }: PipelineReliefGlProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  /* Subscribed rather than read once: this surface renders one frame into an offscreen target and only then
+     blits it, so a resolved lower tier can rebuild the scene before anything has been painted. */
+  const tier = useResolvedQualityTier();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -200,9 +215,12 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
      */
     if (assertBrandFidelity().length > 0) { onRefused('BRAND_FIDELITY_FAILED'); return; }
 
-    /* DPR CAPPED AT 2. This frame is fill-bound — AO, shadow, fog, a full-screen composite — so a 3× display
-       would triple the cost of a view whose whole justification is that it answers faster. */
-    const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    /* DPR CAPPED BY THE TIER. This frame is fill-bound — AO, shadow, fog, a full-screen composite — so a 3×
+       display would triple the cost of a view whose whole justification is that it answers faster. The cap WAS
+       a literal 2; `Q.dprScale` is 2 at `full` and `reduced` and 1 at `minimum`, and resolution multiplies
+       every fill-bound pass, which is all of them. */
+    const Q = qualitySettings(tier);
+    const dpr = Math.min(Q.dprScale, Math.max(1, window.devicePixelRatio || 1));
     const cssW = canvas.clientWidth || 960;
     const W = Math.round(cssW * dpr), H = Math.round(heightPx * dpr);
     canvas.width = W; canvas.height = H;
@@ -227,12 +245,15 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
     const target = createTarget3D(stage, W, H);
     if ('kind' in target) { refuse(target.code); return; }
     disposers.push(() => target.dispose());
-    const shadow = createShadowMap(stage, 1024);
+    const shadow = createShadowMap(stage, shadowMapSizeFor(tier, SHADOW_BASELINE));
     if ('kind' in shadow) { refuse(shadow.code); return; }
     disposers.push(() => shadow.dispose());
-    const ao = createAmbientOcclusion(stage, W, H);
-    if ('kind' in ao) { refuse(ao.code); return; }
-    disposers.push(() => ao.dispose());
+    /* AO IS THE TIER'S SECOND DROP, after depth of field. Not allocated at all when the tier says no — a
+       half-res R8 pair plus two programs is not free to hold, and the `null` below is the same path the lit
+       renderer already takes for the environments that never had AO. */
+    const ao = Q.ao ? createAmbientOcclusion(stage, W, H) : null;
+    if (ao && 'kind' in ao) { refuse(ao.code); return; }
+    if (ao) disposers.push(() => ao.dispose());
     const strokes = createLineBatch(stage);
     if ('kind' in strokes) { refuse(strokes.code); return; }
     disposers.push(() => strokes.dispose());
@@ -426,58 +447,92 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
      * computed between the prepass and the lit pass because it needs depth and the lit pass needs it — and the
      * prepass is not a tax, it lets the lit pass reject occluded fragments before their GGX evaluation.
      */
-    lit.shadowPass(lightVP, draws, shadow);
-    target.bind();
-    /* NO SKY BACKDROP, AND THE CLEAR IS THE FOG COLOUR. The channel is open-topped, so the sky stays as the
-       irradiance environment; what it must not get is the sky DRAWN, which would make the most fogged part of
-       the frame its brightest — the exact inverse of the reading. Clearing to the fog colour means every
-       distant surface converges on a value the frame already has. */
-    const fc = hexToLinear(FOG_HEX);
-    gl.clearColor(fc[0], fc[1], fc[2], 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    lit.depthPrepass(vp, draws);
-    ao.compute({
-      depthTexture: target.depthTexture, near: NEAR, far: FAR, fovDeg: VIEW.fovDeg ?? 35,
-      aspect: W / H, radius: 0.36, strength: 1.25,
-    });
-    target.bind();
-    lit.draw({
-      viewProj: vp, eye, lightDir: LIGHT_DIR, lightColour: [3.4, 3.3, 3.14],
-      ambientGain: 0.44, lightVP, shadow, shadowStrength: 0.92, draws,
-      ao: ao.texture, screenSize: [W, H],
-      fog: { density: FOG_DENSITY, height: 5.0, floor: 0, colour: fc },
-    });
+    const renderScene = (): void => {
+      lit.shadowPass(lightVP, draws, shadow);
+      target.bind();
+      /* NO SKY BACKDROP, AND THE CLEAR IS THE FOG COLOUR. The channel is open-topped, so the sky stays as the
+         irradiance environment; what it must not get is the sky DRAWN, which would make the most fogged part of
+         the frame its brightest — the exact inverse of the reading. Clearing to the fog colour means every
+         distant surface converges on a value the frame already has. */
+      const fc = hexToLinear(FOG_HEX);
+      gl.clearColor(fc[0], fc[1], fc[2], 1);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      lit.depthPrepass(vp, draws);
+      if (ao) {
+        ao.compute({
+          depthTexture: target.depthTexture, near: NEAR, far: FAR, fovDeg: VIEW.fovDeg ?? 35,
+          aspect: W / H, radius: 0.36, strength: 1.25,
+        });
+        target.bind();
+      }
+      lit.draw({
+        viewProj: vp, eye, lightDir: LIGHT_DIR, lightColour: [3.4, 3.3, 3.14],
+        ambientGain: 0.44, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, draws,
+        ao: ao ? ao.texture : null, screenSize: [W, H],
+        fog: { density: FOG_DENSITY, height: 5.0, floor: 0, colour: fc },
+      });
+
+      /*
+       * ADDITIVE, DEPTH-TESTED, NOT DEPTH-WRITING — set by hand rather than with a helper that disables the
+       * depth test. An untested outline draws over the objects in front of it, so every gate would appear nearer
+       * than every lead that has already cleared it: the one thing this geometry exists to state, inverted.
+       * Testing keeps the ordering; not writing keeps two crossing strokes from fighting over which is nearer.
+       */
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE);
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthMask(false);
+      for (let i = 0; i < GATE_BANDS.length; i++) {
+        const z = gateZ(i);
+        strokes.ruleAtDepth(vp, -CHANNEL_HALF, 0.02, CHANNEL_HALF, 0.02, z, 0.012, GATE_STROKE);
+        strokes.ruleAtDepth(vp, -CHANNEL_HALF, GATE_H, CHANNEL_HALF, GATE_H, z, 0.010, GATE_STROKE);
+        strokes.ruleAtDepth(vp, -CHANNEL_HALF, 0.02, -CHANNEL_HALF, GATE_H, z, 0.010, GATE_STROKE);
+        strokes.ruleAtDepth(vp, CHANNEL_HALF, 0.02, CHANNEL_HALF, GATE_H, z, 0.010, GATE_STROKE);
+      }
+      for (const days of AXIS_TICK_DAYS) {
+        const y = (1 - Math.min(1, days / STALL_DAYS)) * RAIL_LIFT + TICK_FLOOR_CLEARANCE;
+        strokes.ruleAtDepth(vp, axisXOuter, y, axisXInner, y, axisZ, 0.006, AXIS_STROKE);
+      }
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+      /* ENDS WITH `target` BOUND, which is what `probeSync` needs: a `readPixels` only guarantees completion of
+         work affecting the framebuffer it reads, and this whole frame lands in the offscreen HDR target. */
+    };
+    const presentFrame = (): void => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, W, H);
+      gl.disable(gl.DEPTH_TEST);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, target.texture);
+      stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+    };
 
     /*
-     * ADDITIVE, DEPTH-TESTED, NOT DEPTH-WRITING — set by hand rather than with a helper that disables the
-     * depth test. An untested outline draws over the objects in front of it, so every gate would appear nearer
-     * than every lead that has already cleared it: the one thing this geometry exists to state, inverted.
-     * Testing keeps the ordering; not writing keeps two crossing strokes from fighting over which is nearer.
+     * THE PROBE. `pickQualityTier` exists to choose a tier from a measured frame and had no caller in the
+     * repo; this is one. A discarded warm-up frame first, because the first frame pays shader upload and
+     * charging that to the GPU would downgrade every machine, then two sync-bounded samples of which the
+     * cheaper is used. All of it before the first blit, so it costs latency and not the picture. At most one
+     * mount per page load takes it.
      */
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE);
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthMask(false);
-    for (let i = 0; i < GATE_BANDS.length; i++) {
-      const z = gateZ(i);
-      strokes.ruleAtDepth(vp, -CHANNEL_HALF, 0.02, CHANNEL_HALF, 0.02, z, 0.012, GATE_STROKE);
-      strokes.ruleAtDepth(vp, -CHANNEL_HALF, GATE_H, CHANNEL_HALF, GATE_H, z, 0.010, GATE_STROKE);
-      strokes.ruleAtDepth(vp, -CHANNEL_HALF, 0.02, -CHANNEL_HALF, GATE_H, z, 0.010, GATE_STROKE);
-      strokes.ruleAtDepth(vp, CHANNEL_HALF, 0.02, CHANNEL_HALF, GATE_H, z, 0.010, GATE_STROKE);
+    if (needsQualityProbe()) {
+      const ms = measureFrameMs(gl, renderScene);
+      const r = recordQualityProbe({
+        pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'PipelineReliefGl',
+      });
+      /* A LOWER TIER MEANS THIS BUILD IS STALE. Nothing is presented, the effect re-runs on the new tier, and
+         the first thing the reader sees is the resolved tier — not a full frame that then changes. */
+      if (r.tier !== tier) {
+        return () => {
+          for (const d of disposers.reverse()) d();
+          stage.dispose();
+        };
+      }
     }
-    for (const days of AXIS_TICK_DAYS) {
-      const y = (1 - Math.min(1, days / STALL_DAYS)) * RAIL_LIFT + TICK_FLOOR_CLEARANCE;
-      strokes.ruleAtDepth(vp, axisXOuter, y, axisXInner, y, axisZ, 0.006, AXIS_STROKE);
-    }
-    gl.depthMask(true);
-    gl.disable(gl.BLEND);
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, W, H);
-    gl.disable(gl.DEPTH_TEST);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, target.texture);
-    stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+    renderScene();
+    presentFrame();
+    /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
+    canvas.dataset.qualityTier = tier;
 
     const err = gl.getError();
     if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return; }
@@ -498,7 +553,9 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
          remount — and this component remounts whenever a reader toggles it. */
       stage.dispose();
     };
-  }, [channel, heightPx, onRefused]);
+    /* `tier` IS A DEPENDENCY, and that is the rebuild mechanism: a resolved lower tier tears this context
+       down and builds the scene again at it. */
+  }, [channel, heightPx, onRefused, tier]);
 
   return (
     <canvas

@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+/* The tier only; no `@lcx/gl` runtime import comes with it — see that module's header on why it takes
+   `pickQualityTier` as an argument rather than importing it. Static-importing the package here once pushed the
+   shell chunk to 441 KB against a 440 KB ceiling. */
+import { resolveQualityTier } from '../shared/useQualityTier';
 
 /**
  * E8 · THE FORGE, on the sign-in screen.
@@ -39,6 +43,15 @@ import { useEffect, useRef, useState } from 'react';
 
 type GlMod = typeof import('@lcx/gl');
 
+/**
+ * THE MARK'S OWN SHADOW BASELINE, which the tier SCALES rather than replaces.
+ *
+ * 1024 because the subject is one disc on one plinth. `env/quality.ts:91` records the alternative and what it
+ * cost: handing over the tier's absolute `shadowMapSize` gave E0, E2 and E8 a 1536 map where each had chosen
+ * 1024 — a 2.25x bigger map and three captures that changed without anyone saying so.
+ */
+const SHADOW_BASELINE = 1024;
+
 /** How long the key light takes to travel its arc. Then it stops. */
 const SWEEP_MS = 5000;
 
@@ -73,7 +86,29 @@ export function ForgeBackdrop({ intensity = 1 }: ForgeBackdropProps) {
       const host = hostRef.current;
       if (!canvas || !host) return;
 
-      const dpr = Math.min(2, Math.max(1, globalThis.devicePixelRatio || 1));
+      /*
+       * THE QUALITY TIER, READ ONCE AND NOT SUBSCRIBED TO — and this is the one surface where that is the whole
+       * point.
+       *
+       * `3D_VFX_1000X.md:316` records the ladder as the decided answer to §3.2 and says it is "wired into all
+       * nine" harnesses. It was wired into none of the eight shipping components: this file hard-coded a 1024
+       * shadow map, ran AO and DOF unconditionally and never passed `shadowTaps`, so a weak machine got the full
+       * frame with nothing to drop — through a FIVE-SECOND ANIMATION, on the one screen every visitor passes.
+       *
+       * It reads `resolveQualityTier()` instead of `useResolvedQualityTier()` because a resolution arriving
+       * mid-sweep must NOT restart the arc. `env/quality.ts` bans a tier that changes while the reader looks at
+       * it — "ambient occlusion appearing three seconds in is not a graceful degradation, it is the frame
+       * contradicting itself" — and an arc that jumps back to its start so the lens can switch off is exactly
+       * that. So this mount lives with the tier it began at, and picks up a resolved one the next time it mounts.
+       *
+       * IT ALSO TAKES NO PROBE. `render` blits straight to the default framebuffer, so the discarded warm-up
+       * frame a measurement needs would be a PRESENTED frame; and on the reduced-motion path there is only one
+       * frame, which is also its warm-up. The five reliefs that render into an offscreen target take the probe.
+       */
+      const tier = resolveQualityTier();
+      const Q = gl3.qualitySettings(tier);
+      /* CAPPED BY THE TIER, where it was a literal 2. Every pass here is fill-bound. */
+      const dpr = Math.min(Q.dprScale, Math.max(1, globalThis.devicePixelRatio || 1));
       const cssW = Math.max(1, host.clientWidth);
       const cssH = Math.max(1, host.clientHeight);
       const W = Math.round(cssW * dpr);
@@ -121,10 +156,16 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
       const present = stage.compile(PRESENT_VERT, PRESENT_FRAG);
       const lit = gl3.createLitRenderer(stage);
       const target = gl3.createTarget3D(stage, W, H);
-      const shadow = gl3.createShadowMap(stage, 1024);
+      /* `shadowMapSizeFor`, NOT the tier's absolute `shadowMapSize`. `env/quality.ts:91` records what the
+         absolute value did: E8 — this same mark, in its harness — had chosen 1024 and was handed 1536 at the
+         default tier, so its capture changed without anyone saying so. 1024 is the mark's own choice because its
+         subject is one disc; the tier scales it. */
+      const shadow = gl3.createShadowMap(stage, gl3.shadowMapSizeFor(tier, SHADOW_BASELINE));
       const sky = gl3.createSkyBackdrop(stage);
-      const ao = gl3.createAmbientOcclusion(stage, W, H);
-      const dof = gl3.createDepthOfField(stage, W, H);
+      /* NOT ALLOCATED AT ALL when the tier declines them. DOF is the ladder's first drop and AO its second, in
+         E0's measured cost order: the lens is ~6.4 ms of an 11.328 ms frame. */
+      const ao = Q.ao ? gl3.createAmbientOcclusion(stage, W, H) : null;
+      const dof = Q.dof ? gl3.createDepthOfField(stage, W, H) : null;
 
       /*
        * EVERY RESOURCE IS NARROWED INDIVIDUALLY, not checked in a loop.
@@ -140,8 +181,8 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
       if ('kind' in target) return bail(target.reason);
       if ('kind' in shadow) return bail(shadow.reason);
       if ('kind' in sky) return bail(sky.reason);
-      if ('kind' in ao) return bail(ao.reason);
-      if ('kind' in dof) return bail(dof.reason);
+      if (ao && 'kind' in ao) return bail(ao.reason);
+      if (dof && 'kind' in dof) return bail(dof.reason);
       const P = present, R = lit, T = target, S = shadow, K = sky, A = ao, D = dof;
 
       const discGeo = gl3.cylinder(0.92, 0.16, 96);
@@ -220,27 +261,38 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         gl.clear(gl.DEPTH_BUFFER_BIT);
         K.draw({ eye, target: view.target, fovDeg: view.fovDeg, aspect: W / H, sky: skyStops });
         R.depthPrepass(vp, draws);
-        A.compute({ depthTexture: T.depthTexture, near, far, fovDeg: view.fovDeg, aspect: W / H, radius: 0.42, strength: 1.3 });
-        T.bind();
+        if (A) {
+          A.compute({ depthTexture: T.depthTexture, near, far, fovDeg: view.fovDeg, aspect: W / H, radius: 0.42, strength: 1.3 });
+          /* AO binds its OWN half-res framebuffer, so the rebind stays INSIDE the gate. Outside it, a tier with
+             AO off would render the rest of the frame at half resolution. */
+          T.bind();
+        }
         /* A studio needs a stronger key and much more ambient, or the metal goes muddy against a
            bright ground; a dark room needs the reverse or the highlight blows out. */
         const keyGain = (dark ? 5.2 : 7.4) * intensity;
         R.draw({
           viewProj: vp, eye, lightDir, lightColour: [keyGain, keyGain * 0.96, keyGain * 0.885],
           ambientGain: dark ? 1.15 : 0.62, sky: skyStops, lightVP, shadow: S, shadowStrength: dark ? 0.9 : 0.62, draws,
-          ao: A.texture, screenSize: [W, H],
+          ao: A ? A.texture : null, screenSize: [W, H], shadowTaps: Q.shadowTaps,
         });
-        const focus = Math.hypot(eye[0], eye[1] - DISC_Y, eye[2]);
-        D.apply({
-          scene: T.texture, depthTexture: T.depthTexture, near, far,
-          fovDeg: view.fovDeg, aspect: W / H, focusDistance: focus, aperture: 7, maxCoc: 0.009,
-        });
+        /* WHAT THE PRESENT READS FROM depends on whether the lens ran. Reading `D.texture` with the DOF pass
+           skipped would present whatever that buffer last held, which on the first frame is uninitialised —
+           a black or garbage screen behind the sign-in form. */
+        let resolved = T.texture;
+        if (D) {
+          const focus = Math.hypot(eye[0], eye[1] - DISC_Y, eye[2]);
+          D.apply({
+            scene: T.texture, depthTexture: T.depthTexture, near, far,
+            fovDeg: view.fovDeg, aspect: W / H, focusDistance: focus, aperture: 7, maxCoc: 0.009,
+          });
+          resolved = D.texture;
+        }
 
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, W, H);
         gl.disable(gl.DEPTH_TEST);
         gl.activeTexture(gl.TEXTURE0);
-        gl.bindTexture(gl.TEXTURE_2D, D.texture);
+        gl.bindTexture(gl.TEXTURE_2D, resolved);
         stage.blit(P, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
       };
 
@@ -253,7 +305,7 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
       const teardown = () => {
         if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
         rafRef.current = null;
-        D.dispose(); A.dispose(); K.dispose(); S.dispose(); T.dispose(); R.dispose();
+        D?.dispose(); A?.dispose(); K.dispose(); S.dispose(); T.dispose(); R.dispose();
         stage.dispose();
       };
       disposeRef.current = teardown;

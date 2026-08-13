@@ -22,9 +22,13 @@ import {
   createSkyBackdrop, heightfield, contourSegments, viewProjection, eyeOf, lightViewProjection,
   boundsCentre, boundsRadius, hexToLinear, assertBrandFidelity, IDENTITY,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
+  qualitySettings, shadowMapSizeFor, pickQualityTier,
   type LitDraw, type Viewpoint,
 } from '@lcx/gl';
 import { isProjectedSurface, type SurfaceOutcome } from '@lcx/shared';
+import {
+  useResolvedQualityTier, needsQualityProbe, measureFrameMs, recordQualityProbe,
+} from '../shared/useQualityTier';
 
 export interface SurfaceReliefGlProps {
   readonly surface: SurfaceOutcome;
@@ -54,10 +58,29 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
 
 const SURF_W = 4.6, SURF_D = 3.4, SURF_H = 1.15, PLINTH_H = 0.16;
 
+/**
+ * THIS SCENE'S OWN SHADOW BASELINE, which the tier SCALES rather than replaces.
+ *
+ * The surface and its plinth sit inside 5 m, so 1024 puts a texel at about 5 mm. `env/quality.ts:91` records
+ * what happens if the tier's absolute `shadowMapSize` is used instead: E0, E2 and E8 had each chosen 1024 and
+ * were handed 1536 at the default tier — a 2.25x bigger map and three captures that changed without anyone
+ * saying so. A ladder that alters the look at its HIGHEST tier is not a ladder, it is a redesign.
+ */
+const SHADOW_BASELINE = 1024;
+
 export default function SurfaceReliefGl({
   surface, heightPx, onRefused, contourLevels = [],
 }: SurfaceReliefGlProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  /*
+   * THE TIER, AND WHY THIS ONE SUBSCRIBES TO CHANGES.
+   *
+   * This surface renders one frame into an offscreen target and only then blits it to the canvas, so if the
+   * probe below resolves a lower tier the scene can be rebuilt before ANYTHING has been painted — the reader
+   * never sees a frame change under them, which is the property `env/quality.ts` bans a feedback loop for
+   * failing to have.
+   */
+  const tier = useResolvedQualityTier();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -71,9 +94,12 @@ export default function SurfaceReliefGl({
      */
     if (assertBrandFidelity().length > 0) { onRefused('BRAND_FIDELITY_FAILED'); return; }
 
-    /* DPR CAPPED AT 2. Everything in this frame is fill-bound, so a 3× display would triple the cost of a
-       surface whose whole justification is that an operator reads it faster. */
-    const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    /* DPR CAPPED BY THE TIER. Everything in this frame is fill-bound, so a 3× display would triple the cost
+       of a surface whose whole justification is that an operator reads it faster. The cap WAS a literal 2;
+       it is now `Q.dprScale`, which is 2 at `full` and `reduced` and 1 at `minimum` — resolution multiplies
+       every fill-bound pass, which is all of them, so it is the largest single thing the ladder can drop. */
+    const Q = qualitySettings(tier);
+    const dpr = Math.min(Q.dprScale, Math.max(1, window.devicePixelRatio || 1));
     const cssW = canvas.clientWidth || 640;
     const W = Math.round(cssW * dpr), H = Math.round(heightPx * dpr);
     canvas.width = W; canvas.height = H;
@@ -98,7 +124,7 @@ export default function SurfaceReliefGl({
     const target = createTarget3D(stage, W, H);
     if ('kind' in target) { refuse(target.code); return; }
     disposers.push(() => target.dispose());
-    const shadow = createShadowMap(stage, 1024);
+    const shadow = createShadowMap(stage, shadowMapSizeFor(tier, SHADOW_BASELINE));
     if ('kind' in shadow) { refuse(shadow.code); return; }
     disposers.push(() => shadow.dispose());
     const skyBox = createSkyBackdrop(stage);
@@ -224,22 +250,71 @@ export default function SurfaceReliefGl({
      * a still frame is already the final frame.
      */
     const vp = viewProjection(view, W / H);
-    lit.shadowPass(lightVP, draws, shadow);
-    target.bind();
-    gl.clear(gl.DEPTH_BUFFER_BIT);
-    skyBox.draw({ eye, target: view.target, fovDeg: view.fovDeg ?? 34, aspect: W / H });
-    lit.depthPrepass(vp, draws);
-    lit.draw({
-      viewProj: vp, eye, lightDir, lightColour: [3.4, 3.35, 3.2],
-      ambientGain: 1.0, lightVP, shadow, shadowStrength: 0.9, draws,
-      ao: null, screenSize: [W, H],
-    });
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, W, H);
-    gl.disable(gl.DEPTH_TEST);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, target.texture);
-    stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+    /*
+     * THE SCENE IS A FUNCTION NOW, SO IT CAN BE MEASURED. It ends with `target` still bound, which is what
+     * `probeSync` requires: a `readPixels` only guarantees completion of work affecting the framebuffer it
+     * reads, and this frame lands in an offscreen HDR target rather than in the default one.
+     */
+    const renderScene = (): void => {
+      lit.shadowPass(lightVP, draws, shadow);
+      target.bind();
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+      skyBox.draw({ eye, target: view.target, fovDeg: view.fovDeg ?? 34, aspect: W / H });
+      lit.depthPrepass(vp, draws);
+      lit.draw({
+        viewProj: vp, eye, lightDir, lightColour: [3.4, 3.35, 3.2],
+        ambientGain: 1.0, lightVP, shadow, shadowStrength: 0.9, shadowTaps: Q.shadowTaps, draws,
+        ao: null, screenSize: [W, H],
+      });
+    };
+    const presentFrame = (): void => {
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, W, H);
+      gl.disable(gl.DEPTH_TEST);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, target.texture);
+      stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+    };
+
+    /*
+     * THE PROBE, AND WHY THIS SURFACE IS ALLOWED TO TAKE IT.
+     *
+     * `pickQualityTier` needs a frame time from a KNOWN tier and had no caller anywhere in the repo. This is
+     * one: the scene is rendered a discarded warm-up frame first (the first frame pays shader upload, and
+     * charging that to the GPU would downgrade every machine), then two sync-bounded samples are taken and
+     * the cheaper is used. All of it happens BEFORE the first blit, so the extra frames cost the reader a few
+     * milliseconds of latency and cost the picture nothing.
+     *
+     * It runs on at most one mount per page load — `needsQualityProbe` is false the moment a tier resolves —
+     * so no reader ever pays for this twice.
+     */
+    if (needsQualityProbe()) {
+      const ms = measureFrameMs(gl, renderScene);
+      const r = recordQualityProbe({
+        pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'SurfaceReliefGl',
+      });
+      /*
+       * A LOWER TIER MEANS THIS BUILD IS STALE, so nothing is presented. `useResolvedQualityTier` has already
+       * been notified, the effect re-runs with the new tier, and the FIRST thing the reader sees is the
+       * resolved tier rather than a full-tier frame that then changes. The cleanup below still runs, so the
+       * context and every resource on it are released on the way out.
+       */
+      if (r.tier !== tier) {
+        /* No context-lost listener on this path: there is no picture on screen to go stale, and `onRefused`
+           must not fire — the scene is about to be rebuilt, not refused. */
+        return () => {
+          ribbonMeshRef?.dispose?.();
+          for (const d of disposers.reverse()) d();
+          stage.dispose();
+        };
+      }
+    }
+
+    renderScene();
+    presentFrame();
+    /* STAMPED ON THE CANVAS. `env/quality.ts` is explicit that a tier which cannot be reported cannot be
+       trusted; the harnesses print it in their report and this is the app's equivalent. */
+    canvas.dataset.qualityTier = tier;
 
     const err = gl.getError();
     if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return; }
@@ -261,7 +336,9 @@ export default function SurfaceReliefGl({
          remount — and this component remounts whenever a reader toggles it. */
       stage.dispose();
     };
-  }, [surface, heightPx, onRefused, contourLevels]);
+    /* `tier` IS A DEPENDENCY, and that is the whole rebuild mechanism: when the probe resolves something
+       lower, this effect tears the context down and builds the scene again at the resolved tier. */
+  }, [surface, heightPx, onRefused, contourLevels, tier]);
 
   return (
     <canvas

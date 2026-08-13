@@ -46,8 +46,12 @@ import {
   createVolumeField, viewProjection, eyeOf, lightViewProjection, boundsCentre, boundsRadius,
   hexToLinear, assertBrandFidelity, IDENTITY, sub, cross, normalise,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
+  qualitySettings, shadowMapSizeFor, pickQualityTier,
   type LitDraw, type MeshBuffer, type Viewpoint, type Vec3,
 } from '@lcx/gl';
+import {
+  useResolvedQualityTier, needsQualityProbe, measureFrameMs, recordQualityProbe,
+} from '../shared/useQualityTier';
 import type { RiskField } from './riskField';
 import { BAND_H, DAY_M, MAX_STEPS, RISK_TO_TAU, WORLD_STEP, ELEVATION_DEG } from './stormCalibration';
 
@@ -115,9 +119,20 @@ const VOX_X_PITCH = 0.055;
    on. 2 M voxels is 8 MB as R32F — E7's own field is 357,504. */
 const MAX_VOXELS = 2_000_000;
 const BAND_PLATEAU = 0.62;
+/**
+ * THIS SCENE'S OWN SHADOW BASELINE, which the tier SCALES rather than replaces.
+ *
+ * `env/quality.ts:91` records why: wiring the ladder in with the tier's ABSOLUTE `shadowMapSize` silently
+ * enlarged three environments — E0, E2 and E8 had each chosen 1024 and were handed 1536 at the default tier, a
+ * 2.25x bigger map and three captures that changed without anyone saying so.
+ */
+const SHADOW_BASELINE = 1024;
 
 export default function StormReliefGl({ field, heightPx, onRefused }: StormReliefGlProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  /* Subscribed rather than read once: this surface renders one frame into an offscreen target and only then
+     blits it, so a resolved lower tier can rebuild the scene before anything has been painted. */
+  const tier = useResolvedQualityTier();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -158,7 +173,11 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
     const GRID_Z = Math.max(2, days * VOX_PER_DAY);
     if (GRID_X * GRID_Y * GRID_Z > MAX_VOXELS) { onRefused('FIELD_TOO_LARGE_FOR_EXACT_INTEGRAL'); return; }
 
-    const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    /* DPR CAPPED BY THE TIER, where it was a literal 2. Two full-resolution HDR targets and a raymarch are
+       all fill-bound, so resolution is the largest single thing the ladder can drop here: `Q.dprScale` is 2 at
+       `full` and `reduced` and 1 at `minimum`. */
+    const Q = qualitySettings(tier);
+    const dpr = Math.min(Q.dprScale, Math.max(1, window.devicePixelRatio || 1));
     const cssW = canvas.clientWidth || 640;
     const W = Math.round(cssW * dpr), H = Math.round(heightPx * dpr);
     canvas.width = W; canvas.height = H;
@@ -190,7 +209,7 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
     const volTarget = createTarget3D(stage, W, H);
     if ('kind' in volTarget) { refuse(volTarget.code); return; }
     disposers.push(() => volTarget.dispose());
-    const shadow = createShadowMap(stage, 1024);
+    const shadow = createShadowMap(stage, shadowMapSizeFor(tier, SHADOW_BASELINE));
     if ('kind' in shadow) { refuse(shadow.code); return; }
     disposers.push(() => shadow.dispose());
 
@@ -436,42 +455,95 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
      * frame is already the final frame.
      */
     const vp = viewProjection(view, ASPECT);
-    lit.shadowPass(lightVP, draws, shadow);
-    target.bind();
-    gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    lit.depthPrepass(vp, draws);
-    lit.draw({
-      viewProj: vp, eye, lightDir, lightColour: [2.05, 2.0, 1.92],
-      ambientGain: 0.62, sky: SKY, lightVP, shadow, shadowStrength: 0.92, draws,
-      ao: null, screenSize: [W, H],
-    });
+    /*
+     * A FUNCTION NOW, SO IT CAN BE MEASURED. It ends with `target` bound, which is what `probeSync` requires —
+     * a `readPixels` only guarantees completion of work affecting the framebuffer it reads, and both halves of
+     * this frame land in offscreen HDR targets.
+     */
+    const renderScene = (): { code: string } | undefined => {
+      lit.shadowPass(lightVP, draws, shadow);
+      target.bind();
+      gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      lit.depthPrepass(vp, draws);
+      lit.draw({
+        viewProj: vp, eye, lightDir, lightColour: [2.05, 2.0, 1.92],
+        ambientGain: 0.62, sky: SKY, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, draws,
+        ao: null, screenSize: [W, H],
+      });
 
-    volTarget.bind();
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    const marched = volume.draw({
-      eye, forward, right: camRight, up: camUp,
-      fovDeg: view.fovDeg ?? 33, aspect: ASPECT, near: NEAR, far: FAR,
-      /* The SCENE's depth, from a DIFFERENT framebuffer than the one being drawn into. Marching only as
-         far as the depth buffer says the ray is unoccluded is the difference between a volume that is IN
-         the scene and a wash over the lens. */
-      sceneDepth: target.depthTexture,
-      boxMin: BOX_MIN, boxMax: BOX_MAX,
-      worldStep: WORLD_STEP, maxSteps: MAX_STEPS, densityScale: DENSITY_SCALE,
-      colourLow: COL_LOW, colourHigh: COL_HIGH,
-      lightDir, lightSteps: 6, emission: 0.26,
-    });
+      volTarget.bind();
+      gl.clearColor(0, 0, 0, 0);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      const failed = volume.draw({
+        eye, forward, right: camRight, up: camUp,
+        fovDeg: view.fovDeg ?? 33, aspect: ASPECT, near: NEAR, far: FAR,
+        /* The SCENE's depth, from a DIFFERENT framebuffer than the one being drawn into. Marching only as
+           far as the depth buffer says the ray is unoccluded is the difference between a volume that is IN
+           the scene and a wash over the lens. */
+        sceneDepth: target.depthTexture,
+        boxMin: BOX_MIN, boxMax: BOX_MAX,
+        /*
+         * `maxSteps` IS NOT A QUALITY KNOB HERE, AND THE TIER IS DELIBERATELY NOT ALLOWED TO TOUCH IT.
+         *
+         * `env/quality.ts` offers `volumeMaxSteps` (128/96/48), and applying it would look like a saving and
+         * be a data change. `volume.ts:230` caps the view-ray march at `uMaxSteps`, so the step count fixes
+         * `MARCH_REACH_M = WORLD_STEP * MAX_STEPS` = 16.0 m — and `stormCalibration.ts` PRINTS that reach to
+         * the operator in `calibrationSentence`. At 48 steps the reach is 6.0 m, the far side of the field is
+         * truncated, and distant days show less risk than they have while the sentence under the frame still
+         * claims 16.0 m. That is the "gaps never zeros" rule with the sign flipped.
+         *
+         * `lightSteps` IS a look knob and does follow the tier: `volume.ts:200-210` feeds it only to
+         * `lightTransmittance`, which modulates accumulated RADIANCE. `alpha` — the channel this reading
+         * assigns to magnitude — never sees it, so dropping the self-shadow march costs depth in the cloud
+         * and costs the reading nothing.
+         */
+        worldStep: WORLD_STEP, maxSteps: MAX_STEPS, densityScale: DENSITY_SCALE,
+        colourLow: COL_LOW, colourHigh: COL_HIGH,
+        lightDir, lightSteps: Math.min(6, Q.volumeLightSteps), emission: 0.26,
+      });
+      if (failed !== undefined) return failed;
+
+      target.bind();
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+      gl.disable(gl.DEPTH_TEST);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, volTarget.texture);
+      stage.blit(composite, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uVolume'), 0));
+      gl.disable(gl.BLEND);
+      return undefined;
+    };
+
+    /* THE REFUSAL CHECK RUNS ON A REAL FRAME, BEFORE THE PROBE. A march that refused produces a frame that is
+       not this scene, and timing it would resolve the page load's tier from a broken picture. */
+    const marched = renderScene();
     if (marched !== undefined) { refuse(marched.code); return; }
 
-    target.bind();
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.disable(gl.DEPTH_TEST);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, volTarget.texture);
-    stage.blit(composite, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uVolume'), 0));
-    gl.disable(gl.BLEND);
+    /*
+     * THE PROBE. `pickQualityTier` exists to choose a tier from a measured frame and had no caller in the repo;
+     * this is one. It takes its own discarded warm-up frame — the first frame pays shader upload and charging
+     * that to the GPU would downgrade every machine — then two sync-bounded samples of which the cheaper is
+     * used, because one sample can catch a GC pause and a single unlucky 40 ms would drop a fast machine for
+     * the rest of the page load. At most one mount per page load pays for it.
+     */
+    if (needsQualityProbe()) {
+      const ms = measureFrameMs(gl, renderScene);
+      const r = recordQualityProbe({
+        pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'StormReliefGl',
+      });
+      /* A LOWER TIER MEANS THIS BUILD IS STALE. Nothing is presented; the effect re-runs on the new tier and
+         the first thing the reader sees is the resolved tier rather than a frame that then changes. */
+      if (r.tier !== tier) {
+        return () => {
+          for (const d of disposers.reverse()) d();
+          stage.dispose();
+        };
+      }
+      /* NO REDRAW HERE. The probe's last timed sample left a complete frame in `target`, and nothing in this
+         scene depends on the clock, so the frame about to be presented is byte-identical to one that a fifth
+         render would produce. A fifth render would only make the probe's cost visible. */
+    }
 
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, W, H);
@@ -479,6 +551,8 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, target.texture);
     stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+    /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
+    canvas.dataset.qualityTier = tier;
 
     const err = gl.getError();
     if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return; }
@@ -498,7 +572,9 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
       /* THE STAGE LAST — it owns the context, and this component remounts whenever a reader toggles it. */
       stage.dispose();
     };
-  }, [field, heightPx, onRefused]);
+    /* `tier` IS A DEPENDENCY, and that is the rebuild mechanism: a resolved lower tier tears this context down
+       and builds the storm again at it. */
+  }, [field, heightPx, onRefused, tier]);
 
   return (
     <canvas

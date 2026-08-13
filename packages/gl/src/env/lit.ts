@@ -23,6 +23,35 @@ import { SKY_GLSL, bindSky, type SkyOptions } from './sky.js';
  * a grazing floor is large enough to detach the shadow from a vertical wall (peter-panning).
  * Scaling by `1 - dot(N, L)` costs one instruction and removes both.
  *
+ * ── CONTACT HARDENING IS REFUSED, AND THIS IS THE ARGUMENT ──────────────────────────────────────
+ * A penumbra that is sharp where an object meets the floor and softens with distance (PCSS) was
+ * proposed alongside the split-sum and multiscatter fixes below. Those two are corrections — the
+ * shader was returning energy it did not receive. This one is a look, and it fails on four counts:
+ *
+ * 1 · IT INVERTS THE FIX DIRECTLY ABOVE IT. Contact hardening needs a BLOCKER SEARCH before the
+ *     filter — a first loop that finds the average occluder depth, then a second, variably-sized
+ *     PCF. The cheap form is 16 + 16 taps. `shadowTaps` was just wired so the minimum tier pays 1
+ *     tap instead of 9, on the machines that cannot afford 9; contact hardening would make the
+ *     floor 17. The tier would have to refuse the feature, and then it is a look that only exists
+ *     on hardware that never needed the help.
+ * 2 · THE PENUMBRA WIDTH IS A TUNED CONSTANT PER ENVIRONMENT, NOT A SHADER PARAMETER. The light is
+ *     ORTHOGRAPHIC (`camera.ts:126`), so there is no real light size to derive a penumbra from —
+ *     the width would be an authored number, and with eight environments at eight different world
+ *     scales that is eight look decisions wearing one function's name.
+ * 3 · IT CARRIES NO INFORMATION ABOUT ANY DATASET. This is the same test god rays failed
+ *     (`3D_VFX_1000X.md:330`). A softening penumbra encodes height-above-floor, which every one of
+ *     these surfaces already encodes in the thing casting it — the bar's own length, the marker's
+ *     own lift. The reading it would add is one the geometry already states literally.
+ * 4 · IT ARGUABLY MAKES §7(b) WORSE, NOT NEUTRAL. The gate is "an operator still gets their answer
+ *     at least as fast as the flat version". A shadow edge is how you read WHICH cell a floating
+ *     marker sits over; deliberately blurring that edge everywhere except the contact point removes
+ *     the cue at exactly the distances where the marker is lifted furthest and hardest to place.
+ *     A sharp uniform edge is not a cheaper approximation of the soft one here — it is the more
+ *     legible choice, and the current 3x3 PCF is already softer than that.
+ *
+ * If it is ever revisited it needs a sentence about the data first, the way E7's shaft has one.
+ * Refused on 2026-08-13 against `3D_VFX_FINAL_PLAN.md` §1.3, not deferred.
+ *
  * ── LINEAR IN, LINEAR OUT ───────────────────────────────────────────────────────────
  * Every colour here is LINEAR radiance and nothing is tone mapped. The composite owns the tone
  * curve — `look/tonemap.ts` states it is the only tone map in the pipeline — so a material that
@@ -233,6 +262,133 @@ void main(){
  * The 0.002 floor is kept and is now consistent rather than coincidental: rough is clamped to 0.045
  * above, so the isotropic alpha floor is 0.045^2 = 0.002025 — the number this clamp already enforced.
  */
+/*
+ * ── THE AMBIENT TERM WAS RETURNING MORE ENERGY THAN IT RECEIVED, IN THREE SEPARATE PLACES ──────────
+ *
+ * Same rule as above: this reasoning is out here because a comment inside the template literal is
+ * shipped bytes no minifier can reach. The shader carries one line pointing at this note.
+ *
+ * All three are the SAME defect seen from three angles — the ambient term had no accounting for how
+ * much of the incoming sky a surface actually reflects, so it invented energy at both ends of the
+ * roughness range. The direct term has always had that accounting (`kd = (1-F)*(1-metalness)`);
+ * the environment term did not.
+ *
+ * ── A · kd WAS MISSING FROM THE ENVIRONMENT DIFFUSE ────────────────────────────────────────────────
+ * `envDiffuse` was `skyColour(N) * uBaseColour * (1.0 - uMetalness)`. The `(1 - F)` factor that the
+ * direct path applies four lines earlier was simply absent, so every dielectric returned its full
+ * Lambertian response PLUS its full specular response to the same incoming sky.
+ *
+ * Measured against a uniform sky — the case where both terms sample the same radiance, so the two
+ * weights can legitimately be summed — a white dielectric's ambient weights summed to 1.9998 at
+ * grazing incidence: it returned twice the energy that arrived. The fixed form is capped at 1.0030
+ * over the whole (roughness, NdotV) grid, and the 0.0030 is the deliberately-omitted multiscatter
+ * coupling described below, not slack.
+ *
+ * ── B · THE ENVIRONMENT SPECULAR HAD NO BRDF INTEGRATION TERM ──────────────────────────────────────
+ * It was `prefilteredSky * fresnelSchlick(NdotV, f0)` — a Fresnel with no D and no G, i.e. the
+ * REFLECTANCE of the surface standing in for the INTEGRAL of the BRDF over the hemisphere. Those
+ * differ by a factor that falls from 1.0 to 0.45 as roughness goes 0 to 1, so rough metals came back
+ * up to 2.2x too bright and the grazing falloff had the wrong shape.
+ *
+ * The split-sum approximation (Karis, SIGGRAPH 2013 course notes) factors that integral into
+ * prefiltered radiance times a two-term BRDF weight `f0 * A + B`, where A and B depend only on
+ * NdotV and roughness. The usual delivery is a 2D lookup texture. This uses the ANALYTIC fit from
+ * Karis, "Physically Based Shading on Mobile" (Epic Games, 2014) — `EnvBRDFApprox` — for two
+ * reasons that are specific to this repo rather than general:
+ *   · a LUT is an asset. `sky.ts` already refused a cubemap on exactly this ground: bytes, a fetch
+ *     and an asset pipeline that `3D_VFX_1000X.md` §3.3 deferred. The fit is seven ALU operations
+ *     counted at source level, and no fetch at all.
+ *   · it would take a third texture unit in a pass that already binds the shadow map on 0 and AO on
+ *     1, and `lit.ts` has already had one feedback-hazard bug from unit bookkeeping (see
+ *     `releaseTextureUnits` below). A unit not taken cannot leak.
+ *
+ * AND THE FRESNEL IS ALREADY INSIDE A AND B, which is the trap in this change. The obvious edit is
+ * `fresnelSchlick(NdotV, f0) * dfg.x + dfg.y`, keeping the call that was there. That applies Schlick
+ * TWICE: the fit was made against the Fresnel-weighted integral.
+ *
+ * The evidence that it is in there, measured rather than asserted: at the smoothest legal roughness
+ * a dielectric's `f0*A + B` rises 20.6x from normal incidence to NdotV 0.01, against Schlick's own
+ * 23.8x rise over the same range, and the two never differ by more than 0.085 in absolute terms. A
+ * fit with no Fresnel in it would be FLAT in NdotV. The double-counted form is 1.7x the correct
+ * weight at an ordinary 70-degree view and 5.2x at a grazing one, which is a rim of invented light
+ * on every dielectric — the exact artefact this change is supposed to remove. `env.test.ts` pins
+ * both halves numerically, so reinstating the multiply fails on arithmetic, not on a string match.
+ *
+ * ── C · SINGLE-SCATTERING GGX LOSES ENERGY, AND THE LOSS IS LARGE AT THE ROUGHNESS THIS APP USES ───
+ * A microfacet BRDF with one bounce drops every ray that hits a second facet. The white-furnace
+ * albedo of this fit is exactly `A + B = 1 - 0.55*rough` (the NdotV-dependent halves cancel), so the
+ * loss is 7.15% at roughness 0.13 and 48.4% at 0.88 — and this app's shipped materials run 0.13 to
+ * 0.9, i.e. the whole range where it matters. What that looks like is the thing worth naming: a rough
+ * metal goes grey and chalky instead of staying bright, because the missing energy is the coloured
+ * part (it is the light that bounced off f0 twice).
+ *
+ * The compensation is Fdez-Agüera's / Filament's: multiply the specular by `1 + f0*(1/Ess - 1)`,
+ * which restores exactly the lost fraction and is exact by construction in the white-furnace case
+ * (f0 = 1 gives `Ess * 1/Ess = 1`). Measured gains on shipped materials, per channel:
+ *   the LCX mark  #2C6BFF rough 0.13 metal 0.92 -> +7.1% blue, +0.2% red  (so it also re-saturates)
+ *   E2 corridors  #4C86FF rough 0.22 metal 0.85 -> +11.8% blue
+ *   brushed ring  #8FA3C4 rough 0.30 metal 0.95 -> +10.4% blue, +5.2% red
+ *   StormRelief lid #6B7A99 rough 0.62 metal 0.35 -> +7.1% blue
+ * A dielectric floor at rough 0.88 gains 3.8%, uniformly, because its f0 is 0.04 in all channels.
+ *
+ * APPLIED TO THE ENVIRONMENT SPECULAR ONLY, and Filament applies it to the direct specular too. The
+ * reason for the difference is that the factor is derived from the HEMISPHERICAL directional albedo:
+ * putting the recovered energy back into a narrow direct lobe places it in a direction it did not
+ * actually scatter to, whereas the environment term is an integral over the hemisphere, which is
+ * what the factor describes. The direct specular therefore still carries the single-scatter loss —
+ * that is a known, bounded approximation and not an oversight.
+ *
+ * ── WHY kd IS `1 - specWeight` AND NOT `1 - F` ─────────────────────────────────────────────────────
+ * Once B lands, `F(NdotV)` is no longer what the specular takes — `f0*A + B` is. Subtracting `1 - F`
+ * would remove energy the specular never took: at rough 1.0 and NdotV 0.1 a dielectric's real
+ * specular weight is 0.016, while `1 - F` there is 0.393. That is a 24x over-subtraction, and it is
+ * the bug that makes rough dielectrics go black at their silhouette in engines that ship the
+ * simpler form. `1 - specWeight` costs nothing extra because specWeight is already computed.
+ *
+ * It does NOT subtract the multiscatter gain from kd, which the fully-coupled form (Fdez-Agüera
+ * 2019) does. Measured, the omission mis-states kd by at most 0.003 over the whole (rough, NdotV)
+ * grid, because the gain scales with f0 while kd scales with (1 - metalness) and the only case where
+ * both are non-zero is a dielectric, whose f0 is 0.04. Stated rather than silently dropped.
+ *
+ * ── THE THREE CLAMPS, AND WHICH TWO ARE NOT THERE ──────────────────────────────────────────────────
+ * The lesson from defects 3 and 4 above is that a guard sitting above a value the expression can
+ * legitimately take is not a guard, it is a silent clamp on the output. So each of these was checked
+ * against a measured floor rather than picked:
+ *   · `max(vec3(0.0), f0*A + B)` IS REACHABLE and stays. B falls to -0.0024 at roughness 1, so a
+ *     metal at #101010 or darker produces a negative specular weight (-5.6e-5 at exactly #101010,
+ *     +1.4e-4 at #111111 — the threshold is that sharp). A negative radiance in a pipeline that
+ *     accumulates in HDR and tone maps once at the end darkens the whole composite rather than
+ *     clipping locally, which is the same failure mode the file header warns about for specular.
+ *   · kd needs NO clamp, and that is provable rather than lucky. `rough` is clamped to 0.045 first,
+ *     which caps a004 at r.x^3 + r.y and so keeps A >= 0.065 for every legal roughness. With A
+ *     positive, `1 - (f0*A + B)` is smallest at f0 = 1, where it is `1 - Ess >= 0.0248`. A dielectric
+ *     never goes below 0.0877. Both are swept in `env.test.ts` down to NdotV 1e-5.
+ *   · `max(1e-3, Ess)` is unreachable paranoia and costs one instruction. Ess is exactly
+ *     `1 - 0.55*rough`, so its floor is 0.45 — 450x above the guard, which is the direction the
+ *     doctrine requires.
+ *
+ * ── VERIFIED ON THE GPU, NOT ONLY IN THE MIRROR ────────────────────────────────────────────────────
+ * `env.test.ts` mirrors this algebra in TypeScript because vitest cannot execute GLSL, and a mirror
+ * is not the shipped code. That gap was closed once by measurement rather than left open: the envDFG
+ * bytes were SLICED OUT OF LIT_FRAG (not retyped), compiled in headless Chromium on the M1 through
+ * ANGLE Metal, evaluated into an RGBA32F target over a 64x64 grid of (NdotV, roughness) spanning the
+ * whole legal roughness range, and read back.
+ *   · GPU vs mirror: worst disagreement 1.8e-7 across all 4096 samples — float32 rounding.
+ *   · The energy identity A + B = 1 - 0.55*rough holds ON THE GPU to 1.1e-7, so the conservation
+ *     claim is not an artefact of doing the arithmetic in float64 in a test.
+ *   · All three programs (lit, shadow, depth) compile and link with empty info logs; the lit program
+ *     reports 26 active uniforms, and gl.getError() is 0.
+ * The check is not automated, because it needs a browser and this package's unit tests run in node
+ * with no GL context at all. Re-run it by hand if these coefficients are ever touched.
+ *
+ * ── EXPECT A LOOK CHANGE, AND WHERE ────────────────────────────────────────────────────────────────
+ * Darker: the ambient diffuse of every dielectric, most at grazing angles — the floors and plinths
+ * in E3/E5/E7 and ForgeBackdrop's backplate lose their silhouette lift. Also every rough metal's
+ * ambient specular, which was up to 2.2x too bright.
+ * Brighter and more saturated: the specular on the metals listed above, by the measured percentages.
+ * Net on the sign-in screen: the mark's blue reflection strengthens while the plate behind it dims
+ * at the edges, which is contrast the previous frame was spending on invented energy.
+ */
 const LIT_FRAG = `#version 300 es
 precision highp float;
 in vec3 vWorld;
@@ -292,6 +448,15 @@ float geometrySmith(float NdotV, float NdotL, float rough) {
 
 vec3 fresnelSchlick(float cosTheta, vec3 f0) {
   return f0 + (1.0 - f0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// Split-sum BRDF integral, analytic (Karis 2014) rather than a LUT. See the note above LIT_FRAG.
+vec2 envDFG(float NdotV, float rough) {
+  const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);
+  const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);
+  vec4 r = rough * c0 + c1;
+  float a004 = min(r.x * r.x, exp2(-9.28 * NdotV)) * r.x + r.y;
+  return vec2(-1.04, 1.04) * a004 + r.zw;
 }
 
 float shadowFactor(vec3 world, float NdotL) {
@@ -361,8 +526,13 @@ void main(){
   vec3 direct = (diffuse + spec) * uLightColour * NdotL * shadow;
 
   vec3 R = reflect(-V, N);
-  vec3 envDiffuse = skyColour(N) * uBaseColour * (1.0 - uMetalness);
-  vec3 envSpecular = skyColour(normalize(mix(R, N, rough * rough))) * fresnelSchlick(NdotV, f0);
+  // ENERGY-ACCOUNTED AMBIENT: split-sum weight, multiscatter gain, kd. See the note above LIT_FRAG.
+  vec2 dfg = envDFG(NdotV, rough);
+  float Ess = dfg.x + dfg.y;
+  vec3 specWeight = max(vec3(0.0), f0 * dfg.x + dfg.y);
+  vec3 msComp = 1.0 + f0 * (1.0 / max(1e-3, Ess) - 1.0);
+  vec3 envDiffuse = skyColour(N) * uBaseColour * (1.0 - specWeight) * (1.0 - uMetalness);
+  vec3 envSpecular = skyColour(normalize(mix(R, N, rough * rough))) * specWeight * msComp;
   float ao = uAOEnabled > 0.5 ? texture(uAO, gl_FragCoord.xy / uScreenSize).r : 1.0;
   vec3 ambient = (envDiffuse + envSpecular) * uAmbientGain * ao;
 
