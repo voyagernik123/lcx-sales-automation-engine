@@ -602,3 +602,36 @@ wired `shadowTaps: Q.shadowTaps` into all of them — verified at `ForgeBackdrop
 in the same direction — overstating live impact. The tests I wrote were sound about the *maths* and silent
 about *reachability*, which is exactly the gap an adversarial pass exists to find. Reachability is now part of
 what a shader claim has to establish before it goes in a commit message.
+
+
+### 10.7 · The buffer tax is fixed; the `setRegion` thrash needs a `stage.ts` change nobody has costed
+
+The grow-only blit buffer (§10.4) is fixed and measured: quantised to a 256 px grid with a 1024×512 floor,
+growing immediately and shrinking only after two quiet frames. **The defect case — a 480×160 chart on a page
+whose largest is 3200×1600 — went 1.92 ms to 0.49 ms, 3.9×.**
+
+The cause turned out to be worth stating precisely, because it is the opposite of the intuition: `drawImage`
+from a WebGL canvas **cannot sample the drawing buffer in place.** The browser resolves the whole buffer into
+a snapshot a 2-D context can read, then applies the source rect to the snapshot. So cost is affine in
+**canvas area** (~0.45 ms fixed + ~0.38 ms/Mpx) and **independent of the rect**: an 8×8 copy and a 1600×800
+copy off the same 3200×1600 canvas both cost ~2.5 ms — twenty thousand times the pixels for the same money.
+It is also one resolve per *modification*, not per copy, and it is not `preserveDrawingBuffer`.
+
+Per-render bucketing was built first and **regressed** — 16.51 ms against 9.07 — because two live bucket
+sizes meant four drawing-buffer reallocations per frame at ~1.45 ms each. At eight charts it was a wash, so
+there is no chart count at which per-render bucketing is right. That is why the shrink is frame-conditional,
+and it is the measurement that forced the design rather than a preference.
+
+**Still open, and it needs a file the fix could not touch.** The other half of §10.4 — `setRegion`
+reallocating three framebuffers and three textures whenever consecutive charts differ in size (39 textures
+against 6) — cannot be fixed from `flat/shared.ts`. Passing the bucket to `setRegion` would hit its fast path
+and delete the thrash, and it is **wrong**: `stage.bindTarget` derives the viewport from the target's own
+size, so a bucket-sized `scene` renders a 480×40 chart at 1024×512 scale and the blit copies a window of it —
+1.64× too large, bottom rows cropped, nothing thrown. `sharedBuffer.test.ts` pins `setRegion` receiving the
+exact chart size for exactly this reason.
+
+The change `stage.ts` would need: **separate the allocation size from the logical region.** `setRegion(w,h)`
+keeps `region = {w,h}` so `bindTarget` still sets the exact viewport, while allocating `scene`/`bloomA`/
+`bloomB` at a quantised size that only grows — and `bindTarget` then derives the viewport from the region
+rather than from the target's dimensions. Named here as an uncosted change to a shared renderer, which is the
+kind this programme does not make without measuring first.

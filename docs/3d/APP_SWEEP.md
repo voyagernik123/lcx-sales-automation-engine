@@ -52,12 +52,18 @@ before a request existed — nothing appears in a network panel and the page ren
 that happens on `/audit-log` the relief is not mounted at all, so there is no toggle to press, and the sweep
 recovers by changing the entity filter: a different canonical URL, a fresh controller, one subscriber.
 
-**A zero in that column is NOT evidence of absence, and the next column is why it is reported separately.** The
-trigger is a race between React's dev double-mount and the first `await` inside the read, so the same route
-produces a dead read on some runs and not others — this sweep has recorded both on consecutive passes. The
-recovery is therefore attempted only when the toggle is genuinely missing, and whether it was needed is stated
-rather than assumed: an unconditional nudge would have made the sweep carry a note about a defect it had not
-observed. The mechanism is in the findings section whenever a run observes one.
+**That column exists because this sweep found two, and it is now a ratchet.** `/bd-pipeline` and
+`/audit-log` each dispatched a read dead: `apiClient` built the coalesced fetch as
+`() => networkRequest(path, opts, method)` and `opts` carried the FIRST caller's `AbortSignal`, so that
+caller unmounting killed the request every other subscriber was waiting on — the exact opposite of the contract
+`readCache.ts:375-379` states. It is fixed at `apiClient.ts`'s `withoutCallerSignal`, and the column stays
+so a return shows up here rather than as an empty page.
+
+**Read a zero as "not on this run", not as "cannot happen".** Two concurrent identical GETs where one aborts is
+the trigger, and whether a route produces that pair depends on mount timing. The filter recovery is therefore
+attempted only when the toggle is genuinely missing, and whether it was needed is stated in the last column
+rather than assumed — an unconditional nudge would have had the sweep carrying a note about a defect it did not
+observe.
 
 **The dev server is started by this script with `VITE_API_URL=''`.** `apps/web/.env.local` points the API at
 another origin, which makes every call cross-origin; a preflight that escapes the request router reaches a port
@@ -73,7 +79,7 @@ changes where they are addressed and nothing about what the components render.
 | surface | reaches a frame under `reduce` | draws already recorded on its own context | draw calls in the 600 ms after it drew | page-wide `rAF` in the same window (context only) |
 |---|---|---|---|---|
 | **E8** | yes | 18 | **0** | 0 |
-| **E4** | yes | 1537 | **0** | 37 |
+| **E4** | yes | 1537 | **0** | 36 |
 | **E3** | yes | 492 | **0** | 36 |
 | **E2** | yes | 38 | **0** | 36 |
 | **E6** | yes | 362 | **0** | 36 |
@@ -102,7 +108,7 @@ must not:
 
 | **E8 ForgeBackdrop**, no motion preference | draw calls per 600 ms |
 |---|---|
-| during its 5000 ms arc | **54** |
+| during its 5000 ms arc | **72** |
 | after the arc has finished | **0** |
 
 The counter sees draws when draws exist, so the zeros above are measurements rather than silence. And it stops: zero idle motion, measured on the live page rather than read off the source.
@@ -151,13 +157,13 @@ and until now nobody had produced the file:
 
 | surface | PDF bytes | carries an image |
 |---|---|---|
-| **E8** | 227,977 | yes |
-| **E4** | 548,140 | yes |
-| **E3** | 354,095 | yes |
-| **E2** | 532,755 | yes |
-| **E6** | 258,917 | yes |
-| **E1** | 568,185 | yes |
-| **E5** | 681,179 | yes |
+| **E8** | 228,448 | yes |
+| **E4** | 548,148 | yes |
+| **E3** | 354,194 | yes |
+| **E2** | 532,652 | yes |
+| **E6** | 258,819 | yes |
+| **E1** | 681,180 | yes |
+| **E5** | 681,173 | yes |
 | **E7** | — | — |
 
 An `/Image` XObject in the file is the canvas reaching paper. What it does **not** establish is that the image
@@ -172,7 +178,7 @@ run in any test, because jsdom has no WebGL context to lose.
 
 | surface | loss provoked | refusal named to the reader | toggle still pressed | its OWN canvas still shown | other canvases on the page | flat surface behind it | canvas PNG, before → after |
 |---|---|---|---|---|---|---|---|
-| **E8** | yes | **no listener** | no | **1** | 0 | NONE | 128,200 → 315,132 B |
+| **E8** | yes | **no listener** | no | **1** | 0 | NONE | 128,171 → 315,138 B |
 | **E4** | yes | yes | no | 0 | 0 | 2 elements | — |
 | **E3** | yes | yes | no | 0 | 0 | 1 element | — |
 | **E2** | yes | yes | no | 0 | 0 | 1 element | — |

@@ -158,6 +158,10 @@ Read the columns precisely, because they are not additive:
 **Withdrawn.** The `blit alone` column above reads 0.001 ms at every cell size, and I published
 that as vindication of `flat/shared.ts:18-21`, which justifies the whole blit-instead-of-page-canvas
 architecture by asserting the copy is "a rounding error against a frame that already runs five
+
+> **The grow-only tax this section describes as live is FIXED as of 2026-08-13** — buffer quantised to a
+> 256 px grid with a 1024x512 floor, shrinking after two quiet frames. The defect case went 1.92 -> 0.49 ms.
+> The cost half of the refutation stands; the "every redraw pays for the largest chart" half no longer does.
 post-process passes."
 
 `docs/3d/blit-cost.mjs` — a sibling instrument written concurrently, pointed at exactly this

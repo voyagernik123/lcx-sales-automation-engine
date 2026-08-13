@@ -17,6 +17,22 @@ scroll, stacking context, overflow clipping and modals — all of which this app
 breaks the moment a chart sits inside a scroll container. One texture copy per chart is a
 rounding error against a frame that already runs five post-process passes.
 
+> **SUPERSEDED 2026-08-13, twice over.** The cost sentence quoted here was never measured and is false: the
+> blit cost **0.643 ms against 0.518 ms for the entire rest of the frame**. The cause is that `drawImage` from
+> a WebGL canvas cannot sample the drawing buffer in place — the browser resolves the WHOLE buffer into a
+> snapshot and applies the source rect afterwards, so cost is affine in CANVAS area (~0.45 ms + ~0.38 ms/Mpx)
+> and **independent of the rect**: 20,000x the pixels copies for the same money.
+>
+> The grow-only buffer that made this a tax is **fixed** — quantised to a 256 px grid with a 1024x512 floor,
+> growing immediately and shrinking only after two quiet frames. The defect case (a 480x160 chart on a page
+> whose largest is 3200x1600) went **1.92 ms -> 0.49 ms, 3.9x**. Per-render bucketing was built first and
+> REGRESSED (16.51 ms against 9.07): two live bucket sizes meant four drawing-buffer reallocations per frame
+> at ~1.45 ms each, which is why the shrink is frame-conditional.
+>
+> The architectural decision this sentence was wrongly supporting still stands, on the two reasons that were
+> never about cost: a page-mounted canvas cannot track scroll containers and modals, and cannot sit both above
+> an opaque card fill and below the SVG that carries the text and the accessibility tree.
+
 **The hook** (`apps/web/src/components/charts/gl/useFlatChart.ts`) — owns device-pixel
 sizing, the refusal fallback and the entrance. `refused` starts TRUE and only clears once a
 frame has actually been drawn, so the SVG is what renders on the server, in print, without

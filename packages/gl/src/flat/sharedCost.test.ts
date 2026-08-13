@@ -34,6 +34,12 @@ import { sharedRenderer, resetSharedRenderer } from './shared.js';
  *     frame WITH the blit      0.970 / 1.162 ms
  *     the blit                 0.467 / 0.643 ms   =  0.9x to 1.2x the whole rest of the frame
  *
+ * NOTE 2026-08-13: the GROW-ONLY behaviour this file's prose describes as live has since been fixed — the
+ * buffer is quantised to a 256 px grid with a 1024x512 floor and shrinks after two quiet frames, so a
+ * sparkline no longer "pays for that size on every redraw". EVERY ASSERTION BELOW STILL PASSES UNTOUCHED,
+ * and the 1024x512 floor is what preserved the `resizes` expectation. The structural claims this file pins
+ * (one context, one canvas, one drawImage per chart per redraw, O(1) in chart count) are unchanged.
+ *
  * "A rounding error against a frame that already runs five post-process passes" is not what a
  * cost roughly EQUAL to those five passes plus the geometry is. And the copy turned out to be
  * sized by the OFFSCREEN BUFFER, not by the chart: with the chart held at 480x160 and only the
