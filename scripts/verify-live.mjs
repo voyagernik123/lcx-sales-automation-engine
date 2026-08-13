@@ -119,9 +119,20 @@ const base = new URL('.', new URL(entry ?? '/', url)).href;
  *    fine, so name matching would call that healthy. A chunk carrying GLSL source is a GL chunk — a fact about
  *    the bytes, which keeps covering environments nobody has named yet. There are 15.
  *
- * 2. LOCAL HASHES ARE NOT LIVE HASHES. Cloudflare's minifier names variables differently, so a byte-identical
- *    chunk gets a different content hash; probing local names against production reported three of seven
- *    renderers missing when all seven were there. Names must be read from the DEPLOYED graph.
+ * 2. LOCAL HASHES ARE NOT LIVE HASHES *UNLESS THE BUILD INPUTS MATCH*. A plain `npm run build -w @lcx/web`
+ *    disagreed with production on the entry chunk and on exactly three renderers — GlobeReliefGl,
+ *    PipelineReliefGl, StormReliefGl — which reported them missing when all three were there.
+ *
+ *    The cause is not toolchain nondeterminism, which is what it looks like and what I first wrote down. It is
+ *    `VITE_API_URL`: Pages bakes the production API origin into every chunk that calls the API, and those three
+ *    renderers fetch data while the other four do not. Rebuilding with the desktop app's own command —
+ *    `VITE_API_URL=https://lcx-sales-api.onrender.com npm run build -w @lcx/web` — reproduces the deployed
+ *    hashes EXACTLY, all 15 of 15, entry chunk included.
+ *
+ *    That is worth stating precisely, because the wrong reason would retire a usable tool: hash comparison
+ *    against production is valid, as long as the build inputs are the deployed ones. This check still reads
+ *    names from the DEPLOYED graph rather than relying on that, so it cannot be broken by an env var nobody
+ *    remembered to set.
  *
  * 3. A 200 PROVES NOTHING. Pages answers 200 with index.html for any absent asset — that is what makes SPA
  *    deep links work. Measured on this site: a bogus chunk name returns 200, 1755 bytes, text/html.
