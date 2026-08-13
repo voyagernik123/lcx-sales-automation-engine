@@ -270,18 +270,18 @@ const SURFACES = [
      * first mount even with a healthy endpoint, so `entries.length > 0` is false and `AuditLog.tsx:237` never
      * mounts `VaultRelief` at all — there is no toggle to click.
      *
-     * MEASURED CAUSE, not a guess: the page's only `/v1/audit` fetch is dispatched with a signal that is
-     * ALREADY `aborted === true` and rejects with `AbortError: signal is aborted without reason`. See the
-     * FINDINGS section of the generated report; it is a defect in the read layer, not in this page, and it is
-     * NOT this file's to fix.
+     * MEASURED CAUSE, not a guess: the page's only `/v1/audit` fetch was dispatched with a signal that was
+     * ALREADY `aborted === true`, rejecting with `AbortError: signal is aborted without reason`. The cause was
+     * in the read layer rather than in this page — the coalesced fetch carried the first caller's signal — and
+     * it is fixed at `apiClient.ts`'s `withoutCallerSignal`. The recovery below is kept because the sweep must
+     * still reach the surface if it ever returns, and it now fires only when the toggle is actually missing.
      *
      * Changing the entity filter issues a DIFFERENT canonical URL with a fresh controller and one subscriber,
      * which lands. So the sweep changes the filter and says so, rather than reporting E6 unreachable — an
      * unreachable verdict caused by the sweep's own choice of route state would be a false negative.
      */
     nudge: async (page) => { await page.selectOption('select', 'projects'); },
-    note: 'stubbed audit page PLUS a filter change, because the page\'s first audit read is dispatched dead — '
-      + 'see the dead-read column',
+    note: 'one stubbed audit page; a filter change held in reserve for when the first read is dispatched dead',
   },
   {
     id: 'E1', name: 'DeckRelief', file: 'src/components/geometry/DeckRelief.tsx',
@@ -580,10 +580,6 @@ async function reach(page, surface) {
   try { await anchor.waitFor({ state: 'visible', timeout: 30_000 }); }
   catch { return { state: 'SHELL_NEVER_MOUNTED' }; }
 
-  if (surface.nudge) {
-    await page.waitForTimeout(2500);
-    try { await surface.nudge(page); } catch (e) { return { state: 'NUDGE_FAILED', detail: String(e).slice(0, 90) }; }
-  }
 
   if (surface.toggle === null) {
     /* E8 only: nothing to press, so readiness is the canvas appearing at all. Its "before" state is the page
@@ -594,8 +590,24 @@ async function reach(page, surface) {
   }
 
   const btn = page.getByRole('button', { name: surface.toggle });
+  let nudged = false;
   try { await btn.first().waitFor({ state: 'attached', timeout: 25_000 }); }
-  catch { return { state: 'TOGGLE_ABSENT', detail: await pageHeadline(page) }; }
+  catch {
+    /*
+     * NUDGED ONLY WHEN IT IS NEEDED, AND THE RESULT IS REPORTED EITHER WAY.
+     *
+     * `/audit-log` sometimes renders "0 events · No audit events found" on first mount with a healthy
+     * endpoint, because its only `/v1/audit` read is dispatched with an already-aborted signal — and
+     * SOMETIMES it does not, because the trigger is a race between React's dev double-mount and the first
+     * await inside the read. An unconditional nudge would hide which of the two happened, and the sweep would
+     * carry a note about a defect it had not observed on that run. So the nudge is a recovery, not a step.
+     */
+    if (!surface.nudge) return { state: 'TOGGLE_ABSENT', detail: await pageHeadline(page) };
+    try { await surface.nudge(page); } catch (e) { return { state: 'NUDGE_FAILED', detail: String(e).slice(0, 90) }; }
+    nudged = true;
+    try { await btn.first().waitFor({ state: 'attached', timeout: 25_000 }); }
+    catch { return { state: 'TOGGLE_ABSENT_AFTER_NUDGE', detail: await pageHeadline(page) }; }
+  }
 
   if (await btn.first().getAttribute('aria-disabled') === 'true') {
     return { state: 'TOGGLE_DISABLED', detail: (await reasonBeside(page)) ?? null };
@@ -630,11 +642,11 @@ async function reach(page, surface) {
       new RegExp(surface.toggle.source, surface.toggle.flags),
       { timeout: 10_000 },
     );
-  } catch { return { state: 'TOGGLE_DID_NOT_ENGAGE', preClick, flatBefore }; }
+  } catch { return { state: 'TOGGLE_DID_NOT_ENGAGE', preClick, flatBefore, nudged }; }
 
-  if (await waitForDrawn(page, 60_000)) return { state: 'DRAWN', preClick, flatBefore };
+  if (await waitForDrawn(page, 60_000)) return { state: 'DRAWN', preClick, flatBefore, nudged };
   const alert = await reasonBeside(page);
-  return { state: alert ? 'RENDERER_REFUSED' : 'NEVER_DREW', detail: alert, preClick, flatBefore };
+  return { state: alert ? 'RENDERER_REFUSED' : 'NEVER_DREW', detail: alert, preClick, flatBefore, nudged };
 }
 
 /**
@@ -774,26 +786,27 @@ async function sweep(browser, surface, open) {
       row.contextsByToggle = census.created - (got.preClick ?? 0);
       row.getContextCalls = census.getContextCalls;
       row.deadReads = census.deadReads;
+      row.nudged = got.nudged === true;
       if (census.deadReads.length > 0) {
         /*
          * NOT A 3-D FINDING, AND REPORTED ANYWAY, because it is what decides whether a surface is reachable at
-         * all — and because it is invisible from the network panel.
+         * all — and because it is invisible from the network panel: a fetch with a pre-aborted signal never
+         * becomes a request, so there is nothing to look at and the page just renders empty.
          *
-         * `readCache.ts:375-379` states the opposite of what `readCache.ts:380-389` does: "The coalescer owns
-         * its own fetch and deliberately ignores any caller's abort signal ... A caller's signal DETACHES that
-         * subscriber, it does not kill the request." The coalescer runs `() => networkRequest(path, opts, ...)`
-         * with the FIRST caller's `opts`, so the one shared fetch is bound to the first subscriber's signal and
-         * every later subscriber dies with it. The trigger on `/audit-log` is React's dev double-mount, which
-         * does not happen in a production build — so the SYMPTOM measured here is dev-only for this page, and
-         * the DEFECT is in shipped code with a comment asserting the reverse. Ten modules under `lib/api` pass
-         * a signal, so any page with two concurrent identical reads and one abort can reach it.
+         * This is how it was found. `apiClient` built the coalesced fetch as
+         * `() => networkRequest(path, opts, method)`, and `opts` carries the caller's `AbortSignal` — so the
+         * ONE shared request ran on the FIRST subscriber's signal and that caller unmounting killed it for
+         * everyone, which is the exact reverse of the contract `readCache.ts:375-379` states. Fixed at
+         * `apiClient.ts`'s `withoutCallerSignal`. The check stays as a ratchet: ten modules under `lib/api`
+         * pass a signal, so a call site that reintroduces it has a lot of surfaces to break.
          */
         row.problems.push(`${census.deadReads.length} read(s) on this route were dispatched with an `
           + `ALREADY-ABORTED signal and never became a request: ${census.deadReads.join(', ')}. `
-          + 'The page renders as empty with no error and nothing appears in the network panel. '
-          + 'readCache.ts:375-379 claims a caller\'s signal "detaches that subscriber, it does not kill the '
-          + 'request", but readCache.ts:380-389 runs the shared fetch with the FIRST caller\'s opts — so it '
-          + 'does kill it. Reachable in production wherever two concurrent identical GETs exist and one aborts');
+          + 'The page renders EMPTY with no error and nothing appears in the network panel — a shape '
+          + 'indistinguishable from "there is no data". This is the defect `apiClient.ts` fixed with '
+          + '`withoutCallerSignal`: the coalesced fetch must not carry any one caller\'s signal, which is what '
+          + '`readCache.ts:375-379` promises ("a caller\'s signal detaches that subscriber, it does not kill '
+          + 'the request"). Seeing it again means a call site is passing `opts` through to the shared fetch');
       }
       /* The relief canvas is the one the toggle just added. Where a route has several (CommandDeck carries
          the shared 2-D context behind the deck as well), the tier stamp is read off ALL of them and reported
@@ -1379,11 +1392,12 @@ this file; \`docs/3d/e9/README.md\` gives the argument at length.
 
 ## Reach — what a headless sweep can actually get to
 
-| surface | route | reached | how | tier stamped | reads dispatched dead |
-|---|---|---|---|---|---|
-${rows.map((r) => `| **${r.id}** ${r.name} | \`${r.route}\` | ${r.reach === 'DRAWN' ? 'yes' : `**${r.reach}**`} | ${r.note} | ${r.reach === 'DRAWN' ? `${r.tierStamped} of ${r.canvases.length} canvases${r.tierValues.length ? ` (\`${r.tierValues.join('`, `')}\`)` : ''}` : '—'} | ${r.deadReads === undefined ? '—' : (r.deadReads.length === 0 ? '0' : `**${r.deadReads.length}**`)} |`).join('\n')}
+| surface | route | reached | how | tier stamped | reads dispatched dead | needed a filter nudge |
+|---|---|---|---|---|---|---|
+${rows.map((r) => `| **${r.id}** ${r.name} | \`${r.route}\` | ${r.reach === 'DRAWN' ? 'yes' : `**${r.reach}**`} | ${r.note} | ${r.reach === 'DRAWN' ? `${r.tierStamped} of ${r.canvases.length} canvases${r.tierValues.length ? ` (\`${r.tierValues.join('`, `')}\`)` : ''}` : '—'} | ${r.deadReads === undefined ? '—' : (r.deadReads.length === 0 ? '0' : `**${r.deadReads.length}**`)} | ${r.nudged === undefined ? '—' : (r.nudged ? '**yes**' : 'no')} |`).join('\n')}
 
-Four things about that table are worth stating rather than leaving to be inferred.
+Points worth stating rather than leaving to be inferred — the count is deliberately not given, because a
+count in prose beside a list is one edit away from being wrong.
 
 **The seat is seeded, not typed.** Sign-in is an email plus a desk passcode verified server-side, so a sweep
 cannot perform it without a database. The persisted session is written before the app's first script runs, the
@@ -1397,9 +1411,22 @@ drawable** — and no number in this report is read off one. \`/ontology\` needs
 
 **"Reads dispatched dead" is not about 3-D, and it is here because it decides reachability.** A count above zero
 means the route issued a \`/v1/**\` fetch whose \`AbortSignal\` was ALREADY aborted, so the browser rejected it
-before a request existed — nothing appears in a network panel and the page renders as empty with no error. That
-is why one surface above needs a filter change before its data arrives. The findings section carries the
-mechanism.
+before a request existed — nothing appears in a network panel and the page renders as empty with no error. When
+that happens on \`/audit-log\` the relief is not mounted at all, so there is no toggle to press, and the sweep
+recovers by changing the entity filter: a different canonical URL, a fresh controller, one subscriber.
+
+**That column exists because this sweep found two, and it is now a ratchet.** \`/bd-pipeline\` and
+\`/audit-log\` each dispatched a read dead: \`apiClient\` built the coalesced fetch as
+\`() => networkRequest(path, opts, method)\` and \`opts\` carried the FIRST caller's \`AbortSignal\`, so that
+caller unmounting killed the request every other subscriber was waiting on — the exact opposite of the contract
+\`readCache.ts:375-379\` states. It is fixed at \`apiClient.ts\`'s \`withoutCallerSignal\`, and the column stays
+so a return shows up here rather than as an empty page.
+
+**Read a zero as "not on this run", not as "cannot happen".** Two concurrent identical GETs where one aborts is
+the trigger, and whether a route produces that pair depends on mount timing. The filter recovery is therefore
+attempted only when the toggle is genuinely missing, and whether it was needed is stated in the last column
+rather than assumed — an unconditional nudge would have had the sweep carrying a note about a defect it did not
+observe.
 
 **The dev server is started by this script with \`VITE_API_URL=''\`.** \`apps/web/.env.local\` points the API at
 another origin, which makes every call cross-origin; a preflight that escapes the request router reaches a port

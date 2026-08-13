@@ -191,9 +191,19 @@ describe('what is about to expire is said before it expires', () => {
     const soon = new Date(Date.now() + 5 * 86_400_000).toISOString();
     chain = { ...CHAIN, rows: [row({ renewBy: soon })] };
     render(<MarketingHoldings />);
-    await waitFor(() => expect(screen.getByTestId('holdings-renewals')).toBeTruthy());
+    /*
+     * WAITS FOR THE CONTENT, NOT FOR THE ELEMENT — and that distinction is why CI failed while every local
+     * run passed. The renewals panel renders its "nothing you have declared expires" default on the first
+     * paint, before the chain rows arrive, so waiting only for the element to EXIST resolves against the
+     * intermediate state and the assertion then reads it. Locally the rows land inside the same tick and it
+     * never showed; on a loaded CI runner it did, once two unrelated test files shifted worker allocation.
+     *
+     * A `waitFor` whose condition is weaker than the assertion after it is a race with a timeout attached.
+     */
+    await waitFor(() => {
+      expect(screen.getByTestId('holdings-renewals').textContent ?? '').toMatch(/SOL expires/);
+    });
     const text = screen.getByTestId('holdings-renewals').textContent ?? '';
-    expect(text).toMatch(/SOL expires/);
     expect(text).toMatch(/still live until then/);
   });
 
@@ -201,7 +211,10 @@ describe('what is about to expire is said before it expires', () => {
     const past = new Date(Date.now() - 86_400_000).toISOString();
     chain = { ...CHAIN, rows: [row({ renewBy: past })] };
     render(<MarketingHoldings />);
-    await waitFor(() => expect(screen.getByTestId('holdings-renewals')).toBeTruthy());
+    /* Same race as above: the default text is on screen before the rows are. */
+    await waitFor(() => {
+      expect(screen.getByTestId('holdings-renewals').textContent ?? '').toMatch(/SOL EXPIRED/);
+    });
     expect(screen.getByTestId('holdings-renewals').textContent)
       .toMatch(/SOL EXPIRED.*treated as NOT DECLARED and refuses/s);
   });
@@ -209,6 +222,16 @@ describe('what is about to expire is said before it expires', () => {
   it('does not warn when nothing is near its renewal date', async () => {
     chain = { ...CHAIN, rows: [row()] };
     render(<MarketingHoldings />);
+    /*
+     * LEFT WAITING ON THE ELEMENT, deliberately, unlike the two above.
+     *
+     * This case asserts the DEFAULT text, so the race that broke those two cannot make this one fail — only
+     * pass for a slightly weaker reason (reading the default before the row has arrived to be judged). I
+     * tried strengthening it to wait for the row first and picked the wrong anchor; the row this fixture
+     * renders carries no 'Long position' label, so the "improvement" turned a sound test into a failing one.
+     * Weakening a passing test to accommodate a guess is worse than the guess, so it stays as it was, with
+     * the limit written down rather than papered over.
+     */
     await waitFor(() => expect(screen.getByTestId('holdings-renewals')).toBeTruthy());
     expect(screen.getByTestId('holdings-renewals').textContent).toMatch(/Nothing you have declared expires/);
   });
