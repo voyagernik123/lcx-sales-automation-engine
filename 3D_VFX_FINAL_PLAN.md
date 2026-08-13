@@ -526,3 +526,69 @@ surface and the state bit the other.
 Fernandes at severity 1.0 in linear RGB, then CIEDE2000, over every data pair. One encoding was colour-alone
 (the toggle's enabled-vs-unavailable state) and now carries `border-dashed` as well. Every *data* encoding is
 redundant with position, shape, a ring, or a DOM caption. No brand hex was touched.
+
+### 10.6 · THE RED TEAM REFUTED MY HEADLINE CLAIM, AND IT WAS RIGHT
+
+I ran an adversarial pass over the four shader fixes precisely because two of the four were found by accident
+while testing the other two — which is the situation where a fifth is likely still sitting there. It came back
+with one refutation, one regression I had caused, and two corrections. All four are recorded here rather than
+quietly patched, because the commit message for `38c01b1` is now partly wrong and that matters more than the
+code.
+
+**REFUTED — "defect 4 was live on the sign-in screen" is false.** I claimed the isotropic guard
+`max(1e-6, PI*d*d)` was clipping the LCX mark's highlight 3.9× too dim on `ForgeBackdrop`, `e8` and `e2`.
+Those three materials carry `anisotropy` 0.72, 0.72 and 0.8, and `lit.ts:514` routes anything above 0.001 to
+`distributionGGXAniso`. **They never call `distributionGGX` at all.** The isotropic guard could not have
+touched the sign-in screen, and I asserted a code path without checking which branch the material took — the
+same error as the E2 texture claim in §2, twice in one day.
+
+The arithmetic *around* the claim was right (threshold `rough < 0.154119`, factors 3.902× at 0.13 and 18,930×
+at the clamp, and the guard reached 1.53× the lobe half-width so it flattened the whole core, not an edge).
+The fix is still correct and still worth having. But the only material in the repo that actually reaches the
+isotropic branch below 0.154 is `docs/3d/e0/entry.ts:260` at roughness 0.045, under `?diag=1`. **A latent fix,
+not a live one.**
+
+**CORRECTED — defect 3 also had no live effect.** The smallest `v2` floor across all eight lit materials is
+1.892e-8, above the old `1e-8` guard. And my derivation was one case short: `(at·ab)²` is not automatically
+the floor, because `at` reaches 1.95 at roughness 1 with anisotropy 0.95, so `S_min = 1/at² < 1`. The number
+(1.681e-11) survives; the proof did not. Correct latent fix, zero live effect, which the commit does not say.
+
+**A REGRESSION I CAUSED — defect 2's fix silently redesigned eight surfaces.** The algebra is confirmed
+(worst float64 disagreement 1.5e-12). But every anisotropic material in the repo was *authored against the
+buggy convention*, so correcting it made all eleven of them sharper:
+
+| material | roughness | lobe half-width | peak D |
+|---|---|---|---|
+| e8 + ForgeBackdrop **disc** | 0.30 | **3.33× narrower** | 13.6 → 150.9 |
+| e8 + ForgeBackdrop **ring** | 0.13 | **7.9× along, 7.7× across** | 39.1 → 2314.1 |
+| e2 `RING_MAT` | 0.14 | 7.1× | 45.1 → 2301.6 |
+| e2 `CORRIDOR_MAT` | 0.22 | 4.6× | 23.7 → 489.7 |
+
+`docs/3d/e8/README.md` states the intent in as many words: *"THE HIGHLIGHT HAS TO TRAVEL. That is the whole
+effect"*, the disc is *"brushed, not mirror — a broad travelling highlight instead of a hotspot"*, and it
+*"shows a bar of light rather than a dot."* A lobe 3.3–7.9× narrower works against that. So my commit's
+framing — that the old code was "most of the difference between machined metal and grey plastic" — is right
+for the ring and **backwards for the disc**, whose breadth was the authored intent.
+
+The correct remedy is to fix the *convention* without changing the *design*: re-author each anisotropic
+roughness as `sqrt(rough)` so the effective alpha is unchanged (0.30 → 0.5477, 0.13 → 0.3606, and so on
+across all eleven), regenerate the captures, and update the README material tables. In progress.
+
+**AN UNADDRESSED RISK — the shadow bias is not scaled by texel size.** `shadowMapSizeFor('minimum', 1024)`
+returns **256**, not the `shadowMapSize: 512` the tier declares — the multiplier path wins and the absolute
+field is unread, which is the same defect class as `shadowTaps` itself. The bias constants are not scaled by
+`uShadowTexel`, so at 256 the required bias is ~4× what it is at 1024. Under 3×3 PCF the residual acne was
+averaged into a dither; **at one tap there is no averaging and it becomes hard binary speckle** — on exactly
+the tier that just took the 1-tap path, on the machines least able to hide it. And there is **no capture at
+the minimum tier anywhere in the repo**: `git show 38c01b1 --stat` contains no `.png` at all, against F1's own
+gate wording and rule 8. Being fixed with a capture.
+
+**One risk it raised that was already closed:** the shadowTaps saving reached no shipping surface at
+`38c01b1`, because the three React call sites fell through to `?? 9`. The quality-ladder work in `ff3d007`
+wired `shadowTaps: Q.shadowTaps` into all of them — verified at `ForgeBackdrop.tsx:276`,
+`DeckReliefGl.tsx:553`, `OntologyOrreryGl.tsx:457`.
+
+**What I take from this.** Two of my four claims were about code paths I had not traced, and both were wrong
+in the same direction — overstating live impact. The tests I wrote were sound about the *maths* and silent
+about *reachability*, which is exactly the gap an adversarial pass exists to find. Reachability is now part of
+what a shader claim has to establish before it goes in a commit message.
