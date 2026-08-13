@@ -234,6 +234,29 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
       setSize((prev) => (prev !== null && prev.w === w && prev.h === h ? prev : { w, h }));
     };
     measure();
+    /*
+     * MEASURE FIRST, OBSERVE ONLY IF THE OBSERVER EXISTS — copied deliberately from
+     * `market/GlobeRelief.tsx:135-142`, which guards the identical call for the identical reason.
+     *
+     * Unguarded, `new ResizeObserver` throws when the API is absent, and it throws INSIDE an effect, which
+     * React escalates to unmounting the WHOLE SUBTREE. Measured both ways, `<OntologyOrrery>` rendered with
+     * `ResizeObserver` deleted from the global and the relief toggled on:
+     *
+     *   unguarded: `container.innerHTML.length` = 0. The flat diagram was GONE, no refusal was announced
+     *              (`[role="alert"]` null), and an uncaught `ReferenceError: ResizeObserver is not defined`
+     *              escaped as an unhandled error that any other test file in the run could inherit.
+     *   guarded:   1,047 bytes of DOM, the flat diagram present, and the refusal announced as
+     *              `NO_WEBGL2` with its reason — E4's fallback, doing its job.
+     *
+     * So the failure of the relief was DESTROYING the surface §6 rule 1 exists to preserve: not a downgrade
+     * in information, the loss of all of it, and silently.
+     *
+     * Honestly: every browser since Safari 13.1 (March 2020) has `ResizeObserver`, so this line fixes
+     * nothing a reader will hit. Its real value is that the refusal path is now REACHABLE FROM A TEST at
+     * all — an environment without the API can exercise E4's fallback instead of taking the suite with it.
+     * Without the observer the orrery simply keeps the size it was first measured at.
+     */
+    if (typeof ResizeObserver === 'undefined') return;
     const ro = new ResizeObserver(measure);
     ro.observe(host);
     return () => ro.disconnect();

@@ -87,7 +87,15 @@ export interface QualitySettings {
    * which reads THIS field to derive its multiplier so there is one statement of the rung and not two.
    */
   readonly shadowMapSize: number;
-  /** Shadow taps per fragment. 1 is a hard edge; the engine's PCF default is 9. */
+  /**
+   * Shadow taps per fragment, and only TWO VALUES OF THIS FIELD EXIST.
+   *
+   * `lit.ts` is two static branches, not a dynamic loop bound — 3x3 PCF or one hard-edged tap — and it
+   * snaps whatever it is handed: `(o.shadowTaps ?? 9) >= 9 ? 9 : 1`. So a rung declaring 4 would render
+   * at 1 and read in this file as 4. That is a smaller version of the defect this whole block records,
+   * so it is written down here and ratcheted in `env.test.ts`: the ladder may declare 1 or 9, and a
+   * third value fails the suite rather than quietly becoming a hard edge.
+   */
   readonly shadowTaps: number;
   /**
    * Shadow-ray steps inside a volumetric, 0..16. 0 makes `lightTransmittance` return 1 for every

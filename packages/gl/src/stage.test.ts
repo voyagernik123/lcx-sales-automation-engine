@@ -78,6 +78,162 @@ describe('the VAO discipline that cost P0 a whole pass', () => {
   });
 });
 
+/* ── DISPOSAL RELEASES THE CONTEXT, NOT ONLY THE OBJECTS IN IT ────────────────────── */
+
+/**
+ * A CONTEXT-LIFETIME MODEL, and it models exactly two rules from the WebGL spec.
+ *
+ * (1) `canvas.getContext('webgl2')` returns the SAME context object for the life of the canvas — a
+ * canvas never hands out a second one. (2) Once a context is lost, `create*` returns null and
+ * `checkFramebufferStatus` never reports COMPLETE, so nothing can be built on it again.
+ *
+ * Those two together are what make `dispose()`'s guard load-bearing rather than decorative, and they are
+ * quoted from the spec rather than measured here: this package's tests run in `node`, where there is no
+ * WebGL2 at all (see `vitest.config.ts`). What is verified below is the CALL SEQUENCE and the branch —
+ * the pixels and the real driver's context table stay in `docs/3d/p0`'s headless capture.
+ */
+interface FakeGl {
+  readonly canvas: { isConnected: boolean; width: number; height: number; getContext: () => unknown };
+  readonly log: string[];
+  readonly deleted: () => number;
+  readonly isLost: () => boolean;
+  /** What `getExtension('WEBGL_lose_context')` hands back. */
+  extension: 'real' | 'absent' | 'empty-object';
+}
+
+function fakeGl(opts: { connected: boolean; extension?: FakeGl['extension'] } = { connected: false }): FakeGl {
+  const log: string[] = [];
+  let lost = false;
+  let deleted = 0;
+  const state = {
+    canvas: { isConnected: opts.connected, width: 64, height: 64, getContext: () => proxy },
+    log,
+    deleted: () => deleted,
+    isLost: () => lost,
+    extension: opts.extension ?? 'real',
+  };
+
+  const api: Record<string, (...a: never[]) => unknown> = {
+    getExtension: ((name: string) => {
+      log.push(`getExtension:${name}`);
+      /* A LOST CONTEXT RETURNS NULL FROM `getExtension`, which is what makes a second `dispose()` safe
+         rather than an error. Modelled, because it is the only thing standing between this fix and a
+         throw on a double teardown. */
+      if (lost) return null;
+      if (name !== 'WEBGL_lose_context') return name === 'EXT_color_buffer_float' ? {} : null;
+      if (state.extension === 'absent') return null;
+      if (state.extension === 'empty-object') return {};
+      return { loseContext: () => { log.push('loseContext'); lost = true; } };
+    }) as never,
+    checkFramebufferStatus: () => (lost ? 0 : 0x8CD5),
+    createTexture: () => (lost ? null : { tag: 'texture' }),
+    createFramebuffer: () => (lost ? null : { tag: 'framebuffer' }),
+    createBuffer: () => (lost ? null : { tag: 'buffer' }),
+    createVertexArray: () => (lost ? null : { tag: 'vao' }),
+    getError: () => 0,
+  };
+  for (const name of ['deleteTexture', 'deleteFramebuffer', 'deleteBuffer', 'deleteVertexArray', 'deleteProgram']) {
+    api[name] = (() => { deleted += 1; log.push(name); }) as never;
+  }
+
+  const proxy = new Proxy({}, {
+    get(_t, prop: string) {
+      if (prop === 'canvas') return state.canvas;
+      if (prop in api) return api[prop];
+      /* FRAMEBUFFER_COMPLETE has to be the value `checkFramebufferStatus` returns above, and the rest only
+         have to be distinct — the stage does arithmetic on none of them. */
+      if (prop === 'FRAMEBUFFER_COMPLETE') return 0x8CD5;
+      if (/^[A-Z][A-Z0-9_]*$/.test(prop)) return 0x1000 + prop.length;
+      return (...a: unknown[]) => { log.push(prop); return a.length; };
+    },
+  }) as unknown as WebGL2RenderingContext;
+
+  return state as FakeGl;
+}
+
+const stageOn = (f: FakeGl) => createStage(f.canvas as unknown as HTMLCanvasElement, { alpha: true });
+
+describe('dispose releases the CONTEXT SLOT, which deleting objects does not', () => {
+  it('loses the context on a canvas that has left the document, AFTER freeing its objects', () => {
+    /*
+     * THE DEFECT: `dispose()` deleted programs, targets, the buffer and the VAO and never called
+     * `WEBGL_lose_context.loseContext()`, so the context itself survived until its canvas was
+     * garbage-collected — a moment the engine chooses. Toggling a relief off and on could therefore hold
+     * more live contexts than there are mounted components, and past the browser cap (commonly 8-16) the
+     * OLDEST context is killed silently. On any chart route the oldest is `flat/shared.ts`'s single shared
+     * context, so the first casualty is every chart on the page at once.
+     *
+     * ORDER MATTERS AS MUCH AS THE CALL: on a lost context every `delete*` is a silent no-op, so losing
+     * first would leak exactly what this function exists to free. Asserted as an index comparison rather
+     * than "loseContext was called", because a future tidy-up moving one line up is invisible otherwise.
+     */
+    const f = fakeGl({ connected: false });
+    const out = stageOn(f);
+    if (!isStage(out)) expect.unreachable(`the fake context should have produced a stage: ${out.code}`);
+    out.dispose();
+
+    expect(f.log.filter((l) => l === 'loseContext').length, 'the context was never released').toBe(1);
+    expect(f.deleted(), 'nothing was deleted, so this test is not watching a real dispose').toBeGreaterThan(4);
+    expect(f.log.lastIndexOf('deleteVertexArray'), 'the VAO delete landed on an already-lost context')
+      .toBeLessThan(f.log.indexOf('loseContext'));
+    expect(f.isLost(), 'the context slot is still held').toBe(true);
+  });
+
+  it('does NOT lose the context while the canvas is still mounted, so an in-place rebuild still works', () => {
+    /*
+     * THE REGRESSION THIS GUARD EXISTS TO PREVENT, and it would be worse than the leak it fixes.
+     *
+     * Every relief in `apps/web` rebuilds IN PLACE when its size step or its resolved quality tier changes:
+     * the effect's cleanup disposes and the effect re-runs on the SAME canvas element. Because a canvas only
+     * ever hands out one context, an unconditional `loseContext()` would give that rebuild a permanently
+     * lost context back — `createTexture` null, framebuffer never COMPLETE — and the surface would refuse to
+     * flat for the rest of the page's life after one window resize.
+     *
+     * Removing the `canvas.isConnected` guard fails this test with FRAMEBUFFER_INCOMPLETE, which is the
+     * exact refusal a reader would have met.
+     */
+    const f = fakeGl({ connected: true });
+    const first = stageOn(f);
+    if (!isStage(first)) expect.unreachable(`first build refused: ${first.code}`);
+    first.dispose();
+
+    const second = stageOn(f);
+    expect(
+      isStage(second) ? 'stage' : second.code,
+      'the in-place rebuild got a dead context back: this is what an unguarded loseContext() costs',
+    ).toBe('stage');
+    expect(f.log.includes('loseContext'), 'a mounted canvas had its context killed under it').toBe(false);
+    expect(f.isLost()).toBe(false);
+  });
+
+  it('a driver without the extension, and a context already lost, both dispose without throwing', () => {
+    /*
+     * `WEBGL_lose_context` is optional, and `getExtension` returns null on a context that is ALREADY lost —
+     * which is the state a second `dispose()` finds. Both paths must be no-ops rather than a TypeError on
+     * `undefined.loseContext`, because a throw here happens inside a React effect cleanup, where it takes
+     * the whole subtree down and destroys the flat surface the relief was supposed to fall back to.
+     *
+     * The `empty-object` case is not hypothetical: the fake context in `env/glState.test.ts` answers every
+     * `getExtension` with `{}`, so an unguarded `lose.loseContext()` would fail that suite too.
+     */
+    for (const extension of ['absent', 'empty-object'] as const) {
+      const f = fakeGl({ connected: false, extension });
+      const out = stageOn(f);
+      if (!isStage(out)) expect.unreachable(`${extension}: build refused ${out.code}`);
+      expect(() => out.dispose(), `${extension} threw out of dispose`).not.toThrow();
+      expect(f.log.includes('loseContext'), `${extension} somehow lost the context`).toBe(false);
+      expect(f.deleted(), `${extension}: nothing was freed`).toBeGreaterThan(4);
+    }
+
+    const twice = fakeGl({ connected: false });
+    const out = stageOn(twice);
+    if (!isStage(out)) expect.unreachable('build refused');
+    out.dispose();
+    expect(() => out.dispose(), 'a second dispose threw on an already-lost context').not.toThrow();
+    expect(twice.log.filter((l) => l === 'loseContext').length, 'the context was lost twice').toBe(1);
+  });
+});
+
 describe('the depth policy is stated, not implied', () => {
   it('says WHY additive fields skip the depth test', () => {
     // Depth-test-off looks like an oversight unless the reason is written down. The

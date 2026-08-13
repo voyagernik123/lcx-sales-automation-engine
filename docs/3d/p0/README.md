@@ -11,16 +11,33 @@ This directory is that gate, and everything in it is reproducible:
 npm run build -w @lcx/shared
 node docs/3d/p0/samples.mjs      # runs the real engine → samples.json
 node docs/3d/p0/capture.mjs      # headless WebGL2 → risk-cloud.png
+node docs/3d/p0/measure.mjs      # the byte figures below; exits non-zero if they drift
 ```
 
 ---
 
 ## Verdict: hand-written WebGL2. The plan does not change.
 
+The two byte rows are **generated** — `node docs/3d/p0/measure.mjs --write`. They used to be
+hand-typed, and the three.js figure had become load-bearing: `docs/3d/p1/build.mjs` carries the
+same byte count and derives its published "× the spine" ratio from it, so the two copies could
+disagree with nothing checking. Regenerating also corrected the prototype figure, which had been
+measured on a different recipe from the library it was being compared against — see
+`measure.mjs`'s header for the three numbers that moved and why.
+
+**This check is not in CI yet, and saying so is the point of a check.** `npm run gl-budget` runs
+`docs/3d/p1/build.mjs` only, so it guards p1's lane table and w1's spine line and *not* this
+table. Wiring it is one line in the root `package.json` —
+`"gl-budget": "node docs/3d/p1/build.mjs && node docs/3d/p0/measure.mjs && node docs/3d/w1/build.mjs"`
+— which is not this track's file. Until that lands, run `node docs/3d/p0/measure.mjs` by hand
+after any change to `risk-cloud.html` or to `THREEJS_BYTES`.
+
 | Question | Measured | Consequence |
 |---|---|---|
-| three.js, tree-shaken to what S1 actually needs | **513 KB raw** (525,595 B, esbuild, minified, no gzip) | **Breaches two budgets at once.** `MAX_CHUNK_KB` is 440; initial JS has 13 KB of headroom against 850; passthrough has 304 KB free of 1024. There is no configuration of the budget that admits it. |
-| The hand-written renderer that produced the PNG | **12.8 KB** of JS, comments stripped (18.4 KB with them) | 40× smaller than the library it replaces, and it fits inside the existing headroom without touching the budget. |
+<!-- gl-budget:begin p0-verdict -->
+| three.js, tree-shaken to what S1 actually needs | **513.3 KB raw** (525,595 B, esbuild, minified, no gzip) — a **pinned** measurement from the P0 gate, held in `docs/3d/p1/build.mjs` and read from there; `three` is not a dependency, so it cannot be re-measured here | **Breaches two budgets at once.** `MAX_CHUNK_KB` is 440; it is 513.3 KB against an initial-JS ceiling of 850; passthrough allows 1024. There is no configuration of the budget that admits it. |
+| The hand-written renderer that produced the PNG | **11.1 KB** minified (11410 B; 18.7 KB / 19115 B of source, comments and all) | **46.1× smaller** than the library it replaces, on the same esbuild settings, and it fits inside the existing headroom without touching the budget. |
+<!-- gl-budget:end p0-verdict -->
 | Headless capture, 10,000 instanced quads + 5 post passes, SwiftShader (no GPU) | **1.9–2.4 s** end to end, cold browser launch included | Fast enough to run per-commit if we choose to. On a real GPU the frame cost is a small fraction of this; the wall-clock here is dominated by Chromium start-up. |
 | Does the picture hold up? | See `risk-cloud.png` | Yes — after five passes. The first four did not. See below. |
 
@@ -98,6 +115,7 @@ the calls happened, not that the image exists. Render it and open it.
 |---|---|
 | `samples.mjs` | Seeded 26-deal book → real `monteCarloForecast` → `samples.json`. Exists so the PNG is reproducible; a capture fed from a loose JSON blob proves nothing a screenshot doesn't |
 | `capture.mjs` | Headless Chromium on SwiftShader (no GPU) → `risk-cloud.png` |
+| `measure.mjs` | The only place the verdict table's byte figures come from. Measures the prototype live; reads the pinned three.js byte count out of `docs/3d/p1/build.mjs` rather than keeping a second copy of it, and fails if `three` ever becomes installable, because then the pin should be a measurement |
 | `risk-cloud.html` | The spike. Becomes the reference implementation that `@lcx/gl` (P1 · L1) is extracted from |
 | `risk-cloud.png` | The gate artefact |
 | `samples.json` | Generated; regenerate rather than edit |

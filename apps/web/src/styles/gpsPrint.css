@@ -85,6 +85,9 @@
     --ice: 202 220 252;
     --ice-soft: 234 241 254;
     --grey-light: 185 198 224;
+    /* Added with the token. See the note in PrintStyles.tsx: unpinned, the dark control border
+       prints on white paper. */
+    --control-border: 119 128 147;
     --navy-deep: 20 26 69;
   }
 

@@ -575,7 +575,36 @@ describe('preparation', () => {
  */
 
 /** The tokens `components/report/PrintStyles.tsx` already pins for paper. */
-const PINNED_BY_PRINTSTYLES = ['--card', '--navy', '--grey', '--grey-dark', '--line', '--page-bg'];
+/*
+ * PARSED FROM PrintStyles.tsx, not hand-listed — and it used to be hand-listed.
+ *
+ * The literal ['--card', '--navy', '--grey', '--grey-dark', '--line', '--page-bg'] was correct when written
+ * and silently wrong the moment a token was added. That happened on 2026-08-13: `--control-border` was
+ * introduced because `--line` measured 1.30:1 against a dark card as a control boundary against WCAG
+ * 1.4.11's 3.0 floor, it was duly pinned in PrintStyles.tsx — and this test still failed, because the list
+ * describing PrintStyles could not see PrintStyles.
+ *
+ * A hand-list cannot fail on an entry nobody thought of, which is the whole reason the guard exists. Reading
+ * the source means adding a pin to the sheet is enough, and REMOVING one still fails here.
+ */
+const printStylesSource = () =>
+  readFileSync(join(__dirname, '..', '..', 'components', 'report', 'PrintStyles.tsx'), 'utf8');
+
+const PINNED_BY_PRINTSTYLES = (() => {
+  const src = printStylesSource();
+  /*
+   * Sliced to the block's OWN closing brace, not to the next landmark selector. The first attempt ended the
+   * slice at '[data-relief-live]', which appears in the file's PROSE HEADER 2.3 KB before the CSS — so the
+   * slice ran backwards and came back empty, and an empty pin list makes this guard report every token as
+   * unpinned. There are no nested braces in the block, so the first '}' after the selector closes it.
+   */
+  const start = src.indexOf(':root, :root.dark {');
+  const block = start < 0 ? '' : src.slice(start, src.indexOf('}', start));
+  const names = [...new Set([...block.matchAll(/(--[a-z-]+)\s*:/g)].map((m) => m[1]!))];
+  /* Anti-vacuity: an empty list would make the assertion below pass by covering nothing. */
+  if (names.length < 5) throw new Error(`PrintStyles pin block did not parse (${names.length} tokens)`);
+  return names;
+})();
 
 describe('the printed artefact', () => {
   const printCss = () => screen.getByTestId('crisis-print-styles').textContent ?? '';

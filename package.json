@@ -16,7 +16,7 @@
     "build:api": "npm run build -w @lcx/api",
     "build:shared": "npm run build -w @lcx/shared",
     "build:gl": "npm run build -w @lcx/gl",
-    "gl-budget": "node docs/3d/p1/build.mjs",
+    "gl-budget": "node docs/3d/p1/build.mjs && node docs/3d/p0/measure.mjs && node docs/3d/w1/build.mjs",
     "preview": "npm run preview -w @lcx/web",
     "lint": "npm run lint -w @lcx/web",
     "doctrine-lint": "node scripts/doctrine-lint.mjs",

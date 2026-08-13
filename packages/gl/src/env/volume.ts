@@ -99,6 +99,54 @@ export function marchPlan(
   return { steps, step: worldStep, truncated: wanted > steps };
 }
 
+/**
+ * Transmittance toward the light along one shadow ray — the TS reference that `lightTransmittance` in
+ * `FRAG` below mirrors line for line.
+ *
+ * `densityAt(distance)` stands in for `sampleDensity(p + toLight * distance)`; `segmentLength` is
+ * `tF - tN` from the ray-box test toward the light, and returning 1 for a non-positive length mirrors
+ * the shader's `if (!lcxRayBox(...)) return 1.0`.
+ *
+ * ── WHY THIS EXISTS, WHEN `rayBoxSlab` ALREADY MADE THE POINT ─────────────────────────
+ * `volumeLightSteps` was the LAST field of the quality ladder with no observable test. Every other one
+ * has behaviour attached to it that a test can hold: `shadowMapSize` through `shadowMapSizeFor`,
+ * `shadowTaps` through the two branches of `LIT_FRAG`, `dprScale`/`ao`/`dof` through a source match on
+ * the eight components. This one existed only inside a shader string, so the only thing asserting it
+ * was a ratchet that finds the NAME — and that ratchet's own comment says it is a name ratchet and not
+ * proof that a tier's value reaches a uniform. §4.2's whole finding was that a field which reads as a
+ * guarantee and is not one is worse than no field; a field wired to a uniform no test can see is the
+ * same defect one step further along.
+ *
+ * And this is the shape of self-shadow that fails invisibly. At 0 steps the volume still renders — it
+ * is merely flat, which reads as a density problem rather than as a lighting one, and that exact
+ * mistake shipped: the minimum rung declared `volumeLightSteps: 0` while the field's own doc said 0
+ * gives a volumeless wash.
+ *
+ * FAITHFUL, NOT DEFENSIVE, in two places where the difference matters:
+ *   · `Math.trunc`, because the shader takes `int n = int(uLightSteps)` — so 4.9 marches 4 steps, and
+ *     anything under 1.0 (0.5 included) takes the `return 1.0` branch and gets the flat wash. A caller
+ *     who reads this as a continuous knob gets no shadow at all rather than half of one.
+ *   · the clamp to 0..16 is the one `draw` applies to the uniform, and 16 is ALSO the shader loop's
+ *     bound. Those two 16s must agree: raise the clamp alone and `dl` is sized for n steps while only
+ *     16 are taken, so the integral is short by a factor of n/16 and the volume silently brightens.
+ *   · no clamp on the sampled density, because the shader has none. A grid uploaded with negative
+ *     values gives tau < 0 and `exp(-tau) > 1`, i.e. amplification rather than attenuation. Stated
+ *     rather than fixed, since the interface asks the caller for 0..1 and no caller here breaks it.
+ */
+export function lightTransmittanceAlong(
+  densityAt: (distance: number) => number,
+  segmentLength: number,
+  lightSteps: number,
+): number {
+  const n = Math.trunc(Math.min(16, Math.max(0, Number.isFinite(lightSteps) ? lightSteps : 0)));
+  if (n < 1) return 1;
+  if (!(segmentLength > 0)) return 1;
+  const dl = segmentLength / n;
+  let tau = 0;
+  for (let i = 0; i < n; i++) tau += densityAt((i + 0.5) * dl) * dl;
+  return Math.exp(-tau);
+}
+
 export const RAY_BOX_GLSL = `
 /* Mirrors rayBoxSlab() in volume.ts line for line. If one changes, change both. */
 bool lcxRayBox(vec3 o, vec3 d, vec3 bmin, vec3 bmax, out float tNear, out float tFar){
@@ -141,6 +189,9 @@ void main(){
  * Single-scatter transmittance toward the light. Not a shadow map — a short march, because the volume
  *      is the only thing shadowing itself and 6-8 steps is enough to give a cloud a lit top and a dark
  *      underside, which is the entire cue that makes a volume read as having VOLUME.
+ *      `lightTransmittance` MIRRORS `lightTransmittanceAlong` above, line for line — the `< 1.0` guard,
+ *      the `int()` truncation, `dl = len / n`, the midpoint offset and the 16-iteration bound. If one
+ *      changes, change both; the tests hold this pair together and pin this source for the form.
  * THE SCENE'S DEPTH CAPS THE MARCH. Without this the volume paints over geometry standing in front
  *   of it and reads as fog on the lens rather than as something in the room.
  *   

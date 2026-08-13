@@ -11,13 +11,18 @@ import {
 } from './camera.js';
 import { squareToQuad, projectQuad, uprightPanelCorners, isQuadRefusal } from './project.js';
 import { particleLayout, emissionSchedule } from './particles.js';
-import { rayBoxSlab, marchPlan } from './volume.js';
+import { rayBoxSlab, marchPlan, lightTransmittanceAlong } from './volume.js';
 import { LIT_FRAG } from './lit.js';
 import {
   QUALITY_TIERS, qualitySettings, pickQualityTier, prefersMoreContrast, prefersReducedMotion,
-  type QualitySettings,
+  type QualitySettings, type QualityTier,
   shadowMapSizeFor,
 } from './quality.js';
+
+/* `volume.ts`'s own text. The self-shadow march is pinned against the TS mirror of it, the same pairing
+   `LIT_SOURCE` further down uses: a mirror alone can drift from the shader it claims to mirror, and a
+   source match alone proves a string is present and nothing about what it computes. */
+const VOLUME_SOURCE = readFileSync(resolve(process.cwd(), 'src/env/volume.ts'), 'utf8');
 
 /**
  * L1.5 / L1.6 — and the two failures these exist to make impossible.
@@ -969,6 +974,149 @@ describe('quality ladder — monotonic, and it refuses rather than guessing', ()
      * volume. A volume with no self-shadow is fog on the lens, not a cheaper volume.
      */
     expect(qualitySettings('minimum').volumeLightSteps).toBeGreaterThanOrEqual(1);
+  });
+
+  it('turns volumeLightSteps into a DIFFERENT PICTURE and a DIFFERENT COST at every tier', () => {
+    /*
+     * THE LAST FIELD IN THE LADDER WITH NO OBSERVABLE TEST, and the assertion above is why that was not
+     * good enough: it holds a number, not a consequence. `volumeLightSteps` lives only inside a shader
+     * string, so the only thing that had ever asserted it was the ratchet below — which finds the NAME
+     * and says so in its own comment. §4.2's finding was that a field reading as a guarantee without
+     * being one is worse than no field; a field wired to a uniform no test can see is one step along
+     * from that, not a different thing.
+     *
+     * `lightTransmittanceAlong` in `volume.ts` mirrors `lightTransmittance` in its FRAG line for line,
+     * and the source is pinned for that form further down, because either half alone is a test that
+     * passes while the shader is wrong.
+     *
+     * The profile is density(t) = t², so the exact optical depth over [0, L] is L³/3 and the midpoint
+     * rule converges on it as the step count rises. A LINEAR profile would have been the obvious choice
+     * and would have proved nothing: midpoint is EXACT on a linear integrand at every n, so all three
+     * tiers would have returned the identical number and this test would have passed while measuring
+     * that the ladder does nothing.
+     */
+    const L = 2;
+    let samples = 0;
+    const density = (t: number) => { samples++; return t * t; };
+    const exact = Math.exp(-(L ** 3) / 3);
+
+    expect(QUALITY_TIERS.length, 'no tiers to compare').toBe(3);
+    const seen = new Map<QualityTier, { t: number; samples: number }>();
+    for (const tier of QUALITY_TIERS) {
+      samples = 0;
+      const t = lightTransmittanceAlong(density, L, qualitySettings(tier).volumeLightSteps);
+      seen.set(tier, { t, samples });
+    }
+    expect(seen.size, 'the sweep recorded nothing').toBe(3);
+
+    for (const [tier, r] of seen) {
+      /* A LIT TOP AND A DARK UNDERSIDE, AT EVERY RUNG. This is the assertion that fails if the minimum
+         rung goes back to 0: transmittance is then exactly 1 for every sample, the cloud takes no
+         self-shadow anywhere, and what is left is fog on the lens. Verified by reverting the rung. */
+      expect(r.t, `${tier} returns full transmittance — the volumeless wash`).toBeLessThan(1);
+      expect(r.samples, `${tier} takes no density sample at all`).toBeGreaterThanOrEqual(1);
+    }
+
+    /* THE COST REALLY DROPS, counted rather than asserted from the declared number: one fetch and one
+       exp() per march sample at minimum against six at full. This is the saving §4.2 went looking for,
+       and E7 was passing a literal 6 at every tier before this field was wired. */
+    expect(seen.get('minimum')!.samples).toBe(1);
+    expect(seen.get('reduced')!.samples).toBe(4);
+    expect(seen.get('full')!.samples).toBe(6);
+
+    /* AND THE THREE ARE THREE DIFFERENT PICTURES. Distinctness is what makes the field a tier control
+       rather than a number nobody can see the effect of. */
+    expect(new Set([...seen.values()].map((r) => r.t)).size, 'two tiers render identically').toBe(3);
+
+    /* Descending the ladder must lose ACCURACY, not gain it — otherwise `full` is paying six samples to
+       be further from the truth, and the ladder's direction is the wrong way round. */
+    const err = (tier: QualityTier) => Math.abs(seen.get(tier)!.t - exact);
+    expect(err('full')).toBeLessThan(err('reduced'));
+    expect(err('reduced')).toBeLessThan(err('minimum'));
+  });
+
+  it('treats a fractional step count as ZERO, which is the trap in reading it as a dial', () => {
+    /* The shader takes `int n = int(uLightSteps)`, so 0.5 does not buy half a shadow — it takes the
+       `uLightSteps < 1.0` branch and returns full transmittance, the same volumeless wash the minimum
+       rung was just moved off. Encoded here so the ladder can never reach it by interpolation. */
+    const density = () => 1;
+    expect(lightTransmittanceAlong(density, 2, 0)).toBe(1);
+    expect(lightTransmittanceAlong(density, 2, 0.5)).toBe(1);
+    expect(lightTransmittanceAlong(density, 2, 0.999)).toBe(1);
+    expect(lightTransmittanceAlong(density, 2, 1)).toBeLessThan(1);
+    /* 4.9 marches FOUR steps, not five and not 4.9 — the truncation, not a rounding. */
+    let n = 0;
+    lightTransmittanceAlong(() => { n++; return 1; }, 2, 4.9);
+    expect(n).toBe(4);
+    /* A ray that missed the box, or a camera exactly on a face, is full transmittance and not a
+       divide-by-zero: `dl = len / n` with len 0 would make every sample land on the same point. */
+    for (const bad of [0, -1, Number.NaN]) {
+      expect(lightTransmittanceAlong(density, bad, 6), `segment ${bad}`).toBe(1);
+    }
+  });
+
+  it('keeps the uniform clamp and the shader loop bound at the SAME 16', () => {
+    /*
+     * A COUPLING THAT WOULD BRIGHTEN THE VOLUME SILENTLY. `draw` clamps `uLightSteps` to 16 and the
+     * march is written `for (int i = 0; i < 16; i++) if (i >= n) break;`. Raise the clamp on its own and
+     * `dl` is sized for n steps while only 16 are taken, so the optical depth comes out short by n/16
+     * and the cloud gets BRIGHTER the more self-shadow steps it was asked for. Nothing about that looks
+     * like a bug in a step count.
+     */
+    expect(VOLUME_SOURCE).toContain("gl.uniform1f(u('uLightSteps'), Math.min(16, Math.max(0, o.lightSteps ?? 6)))");
+    expect(VOLUME_SOURCE).toContain('for (int i = 0; i < 16; i++) {');
+    expect(VOLUME_SOURCE).toContain('if (i >= n) break;');
+    /* The guard and the arithmetic the mirror above assumes, pinned in the shipped shader text. */
+    expect(VOLUME_SOURCE).toContain('if (uLightSteps < 1.0) return 1.0;');
+    expect(VOLUME_SOURCE).toContain('int n = int(uLightSteps);');
+    expect(VOLUME_SOURCE).toContain('float dl = len / float(n);');
+    expect(VOLUME_SOURCE).toContain('tau += sampleDensity(p + toLight * (float(i) + 0.5) * dl) * dl;');
+  });
+
+  it('proves volumeLightSteps is the SAFE knob: alpha never sees the self-shadow', () => {
+    /*
+     * THE WHOLE REASON THIS FIELD SURVIVED THE CULL AND `volumeMaxSteps` DID NOT. A volumetric reading
+     * assigns MAGNITUDE to alpha — in E7, accumulated risk between the operator and a given day — so a
+     * tier may vary anything that feeds radiance and nothing that feeds alpha. `maxSteps` fed alpha by
+     * truncating the march, which is why 48 steps would have shown distant days as less risky than they
+     * are; `lightSteps` feeds only the colour term.
+     *
+     * Asserted on the two statements themselves rather than on a comment, because the failure mode is
+     * one edit: multiplying `a` or the alpha accumulation by `tr` would make a shadowed core read as
+     * LOWER risk, and the tier would then be changing the data.
+     */
+    const march = VOLUME_SOURCE.slice(VOLUME_SOURCE.indexOf('vec3 acc = vec3(0.0);'));
+    const body = march.slice(0, march.indexOf('frag = vec4(acc, alpha);'));
+    expect(body.length, 'the march body was not found — the slice matched nothing').toBeGreaterThan(200);
+    const alphaLines = body.split('\n').filter((l) => /\balpha\b\s*(\+?=)/.test(l));
+    expect(alphaLines.length, 'no alpha assignments found to check').toBe(2);
+    for (const line of alphaLines) {
+      expect(line, `alpha must not depend on the self-shadow: ${line.trim()}`).not.toMatch(/\btr\b/);
+    }
+    /* And `tr` must still reach the radiance term, or the field is inert in the other direction. */
+    expect(body).toContain('vec3 lit = col * (uEmission + (1.0 - uEmission) * tr);');
+    expect(body).toContain('float a = 1.0 - exp(-d * dt);');
+  });
+
+  it('declares only tap counts the renderer can actually take — 1 or 9, nothing between', () => {
+    /*
+     * `shadowTaps` READS AS A COUNT AND IS A SWITCH. `lit.ts` is two static branches (`if (uShadowTaps
+     * < 9)`) and snaps the uniform with `(o.shadowTaps ?? 9) >= 9 ? 9 : 1`, so a rung declaring 4 taps
+     * would render one and be reported as four — the §4.2 defect in miniature, a declared number that is
+     * not the guarantee it reads as. The snap in `lit.ts` is right; what was missing is anything stopping
+     * the ladder from declaring a value the snap has to rewrite.
+     *
+     * Fails on a rung set to any third value. Verified by setting `reduced` to 4.
+     */
+    const declared = QUALITY_TIERS.map((t) => qualitySettings(t).shadowTaps);
+    expect(declared.length, 'no tiers to check').toBe(3);
+    for (const [i, taps] of declared.entries()) {
+      expect([1, 9], `${QUALITY_TIERS[i]} declares ${taps}, which lit.ts would snap to ${taps >= 9 ? 9 : 1}`)
+        .toContain(taps);
+    }
+    /* And the snap itself, pinned — if it ever became a dynamic loop bound this ratchet is the thing
+       that should be deleted, not worked around. */
+    expect(LIT_FRAG).toContain('if (uShadowTaps < 9)');
   });
 
   it('drops depth of field before resolution, which is the opposite of the instinct', () => {

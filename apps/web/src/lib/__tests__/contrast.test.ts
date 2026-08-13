@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -106,6 +106,99 @@ function hexPalettes(): { light: Palette; dark: Palette } {
 
 /** The surfaces this app actually places body text on. */
 const SURFACES = ['card', 'page-bg', 'ice-soft'] as const;
+
+/**
+ * The surfaces a BORDERED CONTROL actually sits on, per theme, and they are not the
+ * same list as SURFACES — which is why extending the text test would have missed the
+ * two that matter most in dark.
+ *
+ * Derived by scanning every JSX tag that carries `border-line` and collecting the
+ * `bg-*` classes on the same element (the counts are occurrences, 2026-08-13):
+ *
+ *   bg-card 78 · bg-ice-soft 70 · bg-ice-soft/10 58 · dark:bg-navy-deep 36 ·
+ *   (no bg, inherits) 27 · bg-ice-soft/50 26 · bg-page 11 · dark:bg-ice 5 · …
+ *
+ * The fractional-alpha washes composite to within a hair of whatever is underneath, so
+ * card / page-bg / ice-soft cover them. `dark:bg-navy-deep` and `dark:bg-ice` do not
+ * reduce to anything already in the list and are dark-only, hence the split. --ice is
+ * the LIGHTEST dark surface and therefore the binding constraint in that theme; in
+ * light it is the primary-button fill and carries no bordered controls, so including it
+ * there would fail a pair that is never rendered.
+ */
+const CONTROL_SURFACES = {
+  light: ['card', 'page-bg', 'ice-soft'],
+  dark: ['card', 'page-bg', 'ice-soft', 'ice', 'navy-deep'],
+} as const;
+
+/** SC 1.4.11: 3:1 for the visual boundary of a user interface component. */
+const NON_TEXT_MINIMUM = 3;
+
+/**
+ * Every `.ts`/`.tsx` under src, excluding tests — the same exclusion
+ * `tailwind.config.js`'s content scan uses, and for a related reason: a class name
+ * written inside a test is not a rendered class name, and counting it here would let a
+ * test file inflate or deflate the ratchet below.
+ */
+function sourceFiles(dir = SRC, acc: string[] = []): string[] {
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name !== '__tests__' && entry.name !== 'node_modules') sourceFiles(full, acc);
+    } else if (/\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name)) {
+      acc.push(full);
+    }
+  }
+  return acc;
+}
+
+/**
+ * Every JSX opening tag in `src`, as { tag, attrs }.
+ *
+ * Hand-rolled rather than regex-per-line because the attribute list of a control in this
+ * codebase routinely spans lines and contains `{clsx(...)}` with nested braces, quotes
+ * and template literals — a naive `<(input|select)[^>]*>` stops at the first `>` inside
+ * an arrow function and silently under-counts. Measured: the naive version found 27
+ * control sites where the real number is 223, so it would have reported the defect as
+ * an eighth of its actual size.
+ */
+function jsxTags(src: string): { tag: string; attrs: string }[] {
+  const out: { tag: string; attrs: string }[] = [];
+  for (let i = 0; i < src.length; i++) {
+    if (src[i] !== '<') continue;
+    const head = /^<([A-Za-z][A-Za-z0-9.]*)/.exec(src.slice(i, i + 64));
+    if (!head) continue;
+    let j = i + head[0].length;
+    let depth = 0;
+    let quote: string | null = null;
+    for (; j < src.length; j++) {
+      const c = src[j];
+      if (quote) {
+        if (c === quote && src[j - 1] !== '\\') quote = null;
+        continue;
+      }
+      if (c === '"' || c === "'" || c === '`') {
+        quote = c;
+        continue;
+      }
+      if (c === '{' || c === '(' || c === '[') depth++;
+      else if (c === '}' || c === ')' || c === ']') depth--;
+      else if (c === '>' && depth === 0) break;
+      // An unbracketed '<' before the closing '>' means this was not a tag at all
+      // (a comparison, a generic). Abandon it rather than swallowing the next tag.
+      else if (c === '<' && depth === 0) {
+        j = -1;
+        break;
+      }
+    }
+    if (j <= 0 || j >= src.length) continue;
+    out.push({ tag: head[1], attrs: src.slice(i + head[0].length, j) });
+    i = j;
+  }
+  return out;
+}
+
+/** Tags whose bordered edge is a CONTROL boundary under SC 1.4.11, not a decorative rule. */
+const CONTROL_TAGS = new Set(['input', 'select', 'textarea', 'button', 'a', 'label']);
 
 /** The text roles, as the Tailwind config maps them (see tailwind.config.js). */
 const TEXT_ROLES = ['navy', 'grey-dark', 'grey', 'green', 'amber', 'red', 'indigo'] as const;
@@ -379,27 +472,257 @@ describe('WCAG text contrast, computed from the tokens', () => {
     }
   });
 
-  it('the hairline token is documented as decorative, because it cannot pass 3:1', () => {
+  it('the hairline token is decorative-only, and is measured so nobody assumes otherwise', () => {
     /*
-     * `--line` measures 1.72:1 light / 1.30:1 dark against the card. That is far
-     * below the 3:1 in SC 1.4.11, and it is NOT automatically a defect: 1.4.11
-     * covers visual information "required to identify user interface components
-     * and states", which exempts a purely decorative table-row rule — and that is
-     * most of the 411 `border border-line` uses.
+     * `--line` is far below the 3:1 in SC 1.4.11 on every surface, in both themes.
+     * That is NOT automatically a defect: 1.4.11 covers visual information "required
+     * to identify user interface components and states", which exempts a purely
+     * decorative table-row rule — and ~808 of the 1,115 `border-line` occurrences are
+     * exactly that.
      *
-     * It IS a defect wherever the hairline is the only thing marking the boundary
-     * of a CONTROL (14 inputs use `border border-line`). This test does not fail
-     * on it, because raising the token would redraw every table in the app and
-     * that is a design decision. It exists to stop the value drifting DOWN, and
-     * to make sure the next reader meets the number rather than assuming a border
-     * token must already be compliant.
+     * WHAT CHANGED. The previous version of this test asserted only the two card
+     * ratios and said raising the token "would redraw every table in the app and that
+     * is a design decision", leaving the control case uncovered. That reasoning was
+     * right and the conclusion was incomplete: the answer is not to raise --line, it
+     * is that a token serving both a decorative rule and a control boundary has two
+     * different floors and only one token. So --control-border now exists, --line
+     * stays decorative, and the two are measured separately.
+     *
+     * This test is now the FULL grid rather than two cells, because "--line fails as a
+     * control border" was being asserted on card alone while dark's binding surface is
+     * --ice, where it measures 1.03:1 — nearly invisible, and unmeasured.
      */
-    const lightLine = round(contrast(light['line'], light['card']));
-    const darkLine = round(contrast(dark['line'], dark['card']));
-    expect(lightLine).toBeLessThan(3);
-    expect(darkLine).toBeLessThan(3);
-    // Guard the direction of travel: these may only improve.
-    expect(lightLine).toBeGreaterThanOrEqual(1.72 - 0.05);
-    expect(darkLine).toBeGreaterThanOrEqual(1.3 - 0.05);
+    const measured: Record<string, number> = {};
+    for (const [themeName, palette] of themes) {
+      for (const surface of CONTROL_SURFACES[themeName]) {
+        measured[`${themeName} line on ${surface}`] = round(contrast(palette['line'], palette[surface]));
+      }
+    }
+    // Recorded 2026-08-13. Every one is below 3:1 by construction — the point of pinning
+    // them is that they may only ever move UP, and that a reader meets the numbers.
+    const RECORDED: Record<string, number> = {
+      'light line on card': 1.72,
+      'light line on page-bg': 1.59,
+      'light line on ice-soft': 1.52,
+      'dark line on card': 1.3,
+      'dark line on page-bg': 1.42,
+      'dark line on ice-soft': 1.16,
+      'dark line on ice': 1.03,
+      'dark line on navy-deep': 1.45,
+    };
+    expect(Object.keys(measured).sort()).toEqual(Object.keys(RECORDED).sort());
+    for (const [key, ratio] of Object.entries(measured)) {
+      expect(ratio, `${key} is ${ratio}:1, was recorded at ${RECORDED[key]}:1`).toBeGreaterThanOrEqual(
+        RECORDED[key] - 0.05,
+      );
+      expect(
+        ratio,
+        `${key} now measures ${ratio}:1, at or over the 3:1 control-boundary floor. If --line ` +
+          'was deliberately promoted, --control-border is redundant and this test and that ' +
+          'token both need revisiting.',
+      ).toBeLessThan(NON_TEXT_MINIMUM);
+    }
+  });
+
+  it('--control-border clears the 3:1 control-boundary floor on every surface a control sits on', () => {
+    /*
+     * SC 1.4.11's actual requirement for the thing this token exists to be: 3:1 for the
+     * visual boundary of a user interface component. Eight pairs — three light surfaces,
+     * five dark — and all eight are asserted, not sampled.
+     *
+     * THIS TEST FAILS AGAINST THE UNFIXED TOKENS. Before --control-border existed the
+     * lookup below is undefined and the first expect trips; setting the token to --line's
+     * value instead gives 1.72 / 1.59 / 1.52 / 1.30 / 1.42 / 1.16 / 1.03 / 1.45 and all
+     * eight ratio assertions trip. Verified both ways rather than assumed.
+     */
+    const failures: string[] = [];
+    let pairs = 0;
+    for (const [themeName, palette] of themes) {
+      const border = palette['control-border'];
+      expect(
+        border,
+        `--control-border missing from the ${themeName} palette. Every bordered control in ` +
+          'the app depends on it clearing 3:1; a missing token would make the loop below ' +
+          'empty and pass.',
+      ).toBeDefined();
+      for (const surface of CONTROL_SURFACES[themeName]) {
+        expect(palette[surface], `--${surface} missing from the ${themeName} palette`).toBeDefined();
+        pairs++;
+        const ratio = round(contrast(border, palette[surface]));
+        if (ratio < NON_TEXT_MINIMUM) {
+          failures.push(`${themeName} --control-border on --${surface} — ${ratio}:1 (needs 3:1)`);
+        }
+      }
+    }
+    // Assert the collection is non-empty BEFORE trusting a loop over it. Both surface
+    // lists could be emptied by a refactor and every assertion above would still pass.
+    expect(pairs, 'measured no control-border pairs at all').toBe(8);
+    expect(
+      failures,
+      `control boundaries below the 3:1 floor:\n${failures.join('\n')}`,
+    ).toEqual([]);
+
+    /*
+     * A CEILING TOO, because the lazy fix is to point control borders at --grey and the
+     * count says that is the wrong answer: --grey is the SECONDARY TEXT colour, 5.41-7.30
+     * across these surfaces, so a border wearing it has the visual weight of body copy on
+     * all 251 controls. 1.4.11 asks for 3:1. This asserts the token stays clear of the
+     * floor without becoming text-weight, i.e. that it is still a hairline.
+     */
+    for (const [themeName, palette] of themes) {
+      const worstControl = Math.min(
+        ...CONTROL_SURFACES[themeName].map((s) => contrast(palette['control-border'], palette[s])),
+      );
+      const worstGrey = Math.min(
+        ...CONTROL_SURFACES[themeName].map((s) => contrast(palette['grey'], palette[s])),
+      );
+      expect(
+        round(worstControl),
+        `${themeName} --control-border is ${round(worstControl)}:1 at worst, against --grey's ` +
+          `${round(worstGrey)}:1. It has become a text-weight border. If that is wanted, argue ` +
+          'for it here — the design intent recorded in tokens.css is 3:1 plus margin, not 6:1.',
+      ).toBeLessThan(round(worstGrey));
+    }
+  });
+
+  it('no control still takes its boundary from --line, and the count can only shrink', () => {
+    /*
+     * The assertion above proves the TOKEN is compliant. It says nothing about whether any
+     * control uses it — and today none does, because `border-control` needs one line in
+     * tailwind.config.js, which this track does not own. So this is the ratchet that keeps
+     * the outstanding work visible and bounded instead of trusting a note.
+     *
+     * Measured 2026-08-13 by the scanner below: 1,115 `border-line` occurrences in
+     * apps/web/src, of which 223 are on a native control tag. That 223 is the number of
+     * control boundaries currently sitting at 1.03-1.72:1.
+     *
+     * SHRINK-ONLY, and deliberately not pinned to equality: a sibling track removing a
+     * control must not fail this, and a sweep migrating them to `border-control` should
+     * drive it to 0 one file at a time. Adding a NEW bordered control on --line does fail
+     * it, which is the regression this exists to stop.
+     *
+     * NOT COUNTED, and worth knowing: 28 further occurrences sit on interactive
+     * non-control elements (a `<div onClick>`, `role="button"`, a `ChartCard` with a
+     * handler). Whether each of those is a "user interface component" under 1.4.11 is a
+     * judgement per site, and a test cannot make it — so they are excluded from the
+     * number rather than folded in to make it look worse.
+     */
+    const files = sourceFiles();
+    expect(files.length, 'scanned no source files — SRC or the walk is wrong').toBeGreaterThan(100);
+
+    let occurrences = 0;
+    let onControls = 0;
+    const sites: string[] = [];
+    for (const file of files) {
+      const src = readFileSync(file, 'utf8');
+      occurrences += (src.match(/border-line/g) ?? []).length;
+      for (const { tag, attrs } of jsxTags(src)) {
+        const n = (attrs.match(/border-line/g) ?? []).length;
+        if (n === 0 || !CONTROL_TAGS.has(tag)) continue;
+        onControls += n;
+        sites.push(`${file.slice(SRC.length + 1)} <${tag}>`);
+      }
+    }
+
+    /*
+     * ANTI-VACUITY. Both numbers below are counts over a discovered set, and a count over
+     * nothing is 0, which satisfies "shrink-only" forever while measuring nothing. If the
+     * utility is renamed, or the tag scanner stops recognising JSX, this test must fail
+     * rather than report a clean sweep it did not verify.
+     */
+    expect(
+      occurrences,
+      'found no `border-line` anywhere in src. Either the sweep is genuinely complete — in ' +
+        'which case delete this test and the token comment that references it — or the ' +
+        'utility was renamed and this test is now measuring nothing.',
+    ).toBeGreaterThan(0);
+    expect(
+      onControls + sites.length,
+      'the tag scanner found `border-line` occurrences but attributed none to any tag, ' +
+        'which means it stopped parsing JSX rather than that the defect is fixed.',
+    ).toBeGreaterThan(0);
+
+    const RECORDED_CONTROL_SITES = 223;
+    expect(
+      onControls,
+      `${onControls} control borders now take their colour from --line (was ` +
+        `${RECORDED_CONTROL_SITES} on 2026-08-13). Every one measures 1.03-1.72:1 against its ` +
+        'surface, against the 3:1 in WCAG 2.2 SC 1.4.11. Use `border-control` ' +
+        '(--control-border) on a control boundary; --line is for decorative rules only.\n' +
+        `First few: ${sites.slice(0, 5).join(', ')}`,
+    ).toBeLessThanOrEqual(RECORDED_CONTROL_SITES);
+  });
+
+  it('the inset focus ring against the border it sits inside — the one number --control-border makes worse', () => {
+    /*
+     * FOUND WHILE CHECKING THE CLAIM THAT --grey WAS THE ONLY QUALIFYING TOKEN. It is not
+     * (eight clear 3:1 — see tokens.css), and one of the eight is `--focus`. Measuring the
+     * new token against it turned up the only respect in which --control-border is worse
+     * than --line, so it is recorded here rather than left for the sweep to discover.
+     *
+     * WHY ADJACENCY MATTERS FOR EXACTLY ONE OF THE TWO FOCUS TREATMENTS. `:focus-visible`
+     * in globals.css draws `outline: 2px` at `outline-offset: 2px`, so two pixels of
+     * BACKGROUND separate the ring from the control's border and the ring's contrast is a
+     * ring-vs-surface question (already asserted elsewhere: --focus is 3.25:1 light /
+     * 7.74:1 dark on its worst control surface). `.focus-ring-inset` does not: it draws
+     * `box-shadow: inset 0 0 0 2px` INSIDE the border box, flush against the border. Four
+     * of its five sites in src are the two segmented view toggles, whose buttons sit inside
+     * a `border border-line rounded-lg overflow-hidden` container
+     * (`productIntel/ProductGrid.tsx:311`, `competition/CompetitorGrid.tsx:523`), so the
+     * ring paints directly against that rule.
+     *
+     * THE MEASUREMENT, and the reason this is a recorded number and not a 3:1 assertion:
+     * light --focus is #0891B2 and light --control-border is #778093, which differ in hue
+     * and chroma but are within 1.08:1 of each other in LUMINANCE. Against today's --line
+     * the same pair is 2.14:1 — already under the floor, so migrating those containers to
+     * `border-control` would take a failing figure from 2.14 to 1.08 and make the state
+     * change effectively colour-alone at that edge, which is the failure mode §10.5 of
+     * `3D_VFX_FINAL_PLAN.md` already caught once in this programme (a pair that separated
+     * by ΔE76 121.3 for normal vision collapsed to 13.5 simulated).
+     *
+     * So the recommendation on the record is: leave those two CONTAINERS on --line (they
+     * are decorative group edges, not the control boundary — the buttons inside them are
+     * the controls, and they are unbordered), or give the inset ring an outer keyline. This
+     * test does not decide that. It pins all four ratios so the decision cannot be lost,
+     * and so tuning either token silently past this point fails.
+     */
+    const RECORDED: Record<string, number> = {
+      'light focus vs control-border': 1.08,
+      'light focus vs line': 2.14,
+      'dark focus vs control-border': 2.26,
+      'dark focus vs line': 7.52,
+    };
+    const measured: Record<string, number> = {};
+    for (const [themeName, palette] of themes) {
+      expect(palette['focus'], `--focus missing from the ${themeName} palette`).toBeDefined();
+      for (const role of ['control-border', 'line'] as const) {
+        expect(palette[role], `--${role} missing from the ${themeName} palette`).toBeDefined();
+        measured[`${themeName} focus vs ${role}`] = round(contrast(palette['focus'], palette[role]));
+      }
+    }
+    // Assert the key SET first: a renamed token would leave `measured` short and every
+    // per-key comparison below would read `undefined` and be skipped by `toBeCloseTo`.
+    expect(Object.keys(measured).sort()).toEqual(Object.keys(RECORDED).sort());
+    for (const [key, ratio] of Object.entries(measured)) {
+      expect(
+        ratio,
+        `${key} now measures ${ratio}:1, recorded at ${RECORDED[key]}:1 on 2026-08-13. If a ` +
+          'token moved deliberately, re-measure and update this record — and re-read whether ' +
+          'the inset focus ring is still visible against the border it paints inside.',
+      ).toBeCloseTo(RECORDED[key], 1);
+    }
+
+    /* The four-of-five claim above is a count over a discovered set, so it is checked
+       rather than asserted in prose: if the utility is renamed or the toggles are
+       rewritten, the comment stops describing the app and must fail here. */
+    let insetSites = 0;
+    for (const file of sourceFiles()) {
+      insetSites += (readFileSync(file, 'utf8').match(/focus-ring-inset/g) ?? []).length;
+    }
+    expect(
+      insetSites,
+      `${insetSites} \`focus-ring-inset\` occurrences in src, recorded at 5. This test's ` +
+        'adjacency argument is about those sites; a different number means it needs re-reading.',
+    ).toBe(5);
   });
 });

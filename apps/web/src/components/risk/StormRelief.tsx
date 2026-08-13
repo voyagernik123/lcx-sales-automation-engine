@@ -26,11 +26,19 @@
  * aesthetic), a brand-fidelity failure, a field with no observed day, and a lost context all resolve
  * here — to the same figure, carrying the same measurements, with the refusal named to the reader.
  *
- * ── IT IS THEMED, BECAUSE IT DOES NOT SHIP ON THE DARK DECK ──────────────────────────
- * `SurfaceRelief` styles its control with `var(--rule, #26355A)` and `#7FB2FF`, which is correct where it
- * is mounted — the command deck. This pair mounts on `MarketingCrisis`, a LIGHT surface, and the first
- * draft of both files inherited E7's frame colours: a pale blue control and near-white body text on white.
- * Every interface colour here now goes through the app's tokens and re-themes with the page.
+ * ── IT IS THEMED, AND THE REASON THIS COMMENT USED TO GIVE WAS WRONG ─────────────────
+ * This said `SurfaceRelief`'s `var(--rule, #26355A)` and `#7FB2FF` were "correct where it is mounted — the
+ * command deck", and that only this pair needed tokens because `MarketingCrisis` is light. Both halves were
+ * false. Neither `--brand` nor `--rule` is defined anywhere in `apps/web/src/styles/*.css`, so those `var()`
+ * calls always took the dark-deck literal; and the command deck is not dark either — it follows the theme,
+ * and the app DEFAULTS TO LIGHT (`index.html` adds `.dark` only when localStorage says so, and
+ * `CommandDeck`'s print handler strips it). So the four wrappers on "the dark deck" were rendering
+ * #7FB2FF at 2.16:1 and their opt-in note at 1.30:1 on the default theme. All seven now use tokens.
+ *
+ * This file's own control was still short of two floors, both measured: `border-line` is 1.72:1 on the light
+ * card and 1.30:1 on the dark one, under the 3:1 WCAG 1.4.11 minimum for a control boundary — so
+ * `border-grey` (6.13 / 6.71). And `text-navy` on `hover:bg-ice-soft` is fine for contrast but made the
+ * ONLY difference between available and unavailable a text colour; `border-dashed` now says it in shape.
  *
  * ── AND THE CLAIM IS BOUNDED ON THE PAGE ─────────────────────────────────────────────
  * The sentence the volume earns is *the depth of colour here is the total risk between you and that day*.
@@ -38,7 +46,7 @@
  * integration limit are printed next to the view rather than left to be discovered. A picture that
  * over-claims by one clause is worse than a table.
  */
-import { lazy, Suspense, useCallback, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useId, useMemo, useState } from 'react';
 import { RiskCalendar, type RiskCalendarProps } from './RiskCalendar';
 import { isRiskField } from './riskField';
 import { RAMP_SATURATION_RISK, calibrationSentence } from './stormCalibration';
@@ -54,6 +62,9 @@ export type StormReliefProps = RiskCalendarProps;
 export function StormRelief({ heightPx = 260, ...rest }: StormReliefProps) {
   const [wantStorm, setWantStorm] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
+  /* The reason lives in a sibling <span>, which a screen reader reaches only in browse mode and only if it
+     goes looking. `aria-describedby` puts it on the control it explains. */
+  const noteId = useId();
 
   /*
    * STABLE, because `StormReliefGl` lists it in an effect's dependency array. A fresh function each
@@ -95,41 +106,90 @@ export function StormRelief({ heightPx = 260, ...rest }: StormReliefProps) {
     <div>
       {showStorm ? (
         <Suspense fallback={<RiskCalendar heightPx={heightPx} {...rest} />}>
-          <StormReliefGl field={field} heightPx={heightPx} onRefused={onRefused} />
+          {/*
+            THE CALENDAR IS WHAT PRINTS, EVEN WITH THE STORM OPEN — and this page is why the fix started
+            here. `MarketingCrisis` mounts `PrintStyles` and is a COMPLIANCE RECORD somebody keeps: a ⌘P
+            taken while the storm was open used to put a CANVAS on that record where the risk figures
+            belong. §6 rule 1 says print resolves to the existing surface; rule 4 says the DOM text is the
+            print path. Both name the calendar.
+
+            IT IS RENDERED, NOT DUPLICATED. This copy and the fallback above are two arms of ONE Suspense
+            boundary, so exactly one of them is ever mounted: while the chunk loads the reader keeps the
+            visible calendar, and once the storm is drawn the calendar stays in the document as the print
+            form. That is what keeps `getByTestId('risk-calendar-…')` unambiguous, which a hidden sibling
+            copy alongside a visible one would not.
+
+            `display: none` INLINE, not a class: it must be hidden on screen even where `PrintStyles` is
+            not mounted. `PrintStyles`' `[data-relief-print-flat]` rule carries the `!important` that
+            beats it on paper, and explains why.
+          */}
+          <div data-relief-print-flat="" style={{ display: 'none' }} aria-hidden="true">
+            <RiskCalendar heightPx={heightPx} {...rest} />
+          </div>
+          {/* Removed from the printed sheet whole — see `PrintStyles`: hiding the canvas alone would leave
+              a relief's projected DOM text floating on white paper over the flat figure. */}
+          <div data-relief-live="">
+            <StormReliefGl field={field} heightPx={heightPx} onRefused={onRefused} />
+          </div>
         </Suspense>
       ) : (
         <RiskCalendar heightPx={heightPx} {...rest} />
       )}
 
-      {/*
-        THE CONTROL AND ITS REASON WEAR THE APP'S TOKENS, NOT E7's FRAME COLOURS. `SurfaceRelief` gets away
-        with `var(--rule, #26355A)` and `#7FB2FF` because it is mounted on the dark command deck; this pair
-        goes on a LIGHT page, and a hardcoded pale blue on white is a control nobody can find.
-      */}
+      {/* THE CONTROL AND ITS REASON WEAR THE APP'S TOKENS, NOT E7's FRAME COLOURS — see the header for the
+          measured ratios, and for why "SurfaceRelief gets away with it on the dark deck" was false. */}
       <div className="br-no-print mt-1.5 flex flex-wrap items-center gap-2.5">
         <button
           type="button"
-          onClick={() => { setWantStorm((v) => !v); }}
-          /* Disabled once refused, and while the field itself refuses: offering a toggle that cannot work
+          /* Unavailable once refused, and while the field itself refuses: offering a toggle that cannot work
              is worse than not offering one. */
-          disabled={blocked}
-          className={
-            'border px-2.5 py-1.5 font-mono text-[10px] font-bold uppercase tracking-wider '
-            + (blocked
-              ? 'cursor-not-allowed border-line text-grey'
-              : 'cursor-pointer border-line text-navy hover:bg-ice-soft')
-          }
+          onClick={() => { if (blocked) return; setWantStorm((v) => !v); }}
+          /*
+           * `aria-disabled` RATHER THAN `disabled`, AND IT IS A FOCUS BUG, NOT A PREFERENCE.
+           *
+           * `onRefused` fires from the renderer's mount effect — moments after the reader pressed Enter on
+           * THIS button, while it still holds focus. Setting `disabled` on the focused element makes the
+           * browser blur it, so `document.activeElement` becomes `<body>` and the next Tab restarts from the
+           * top of the document. It also drops the control out of the tab ring, the only route from the
+           * control to the reason beside it.
+           */
+          aria-disabled={blocked || undefined}
           aria-pressed={showStorm}
+          aria-describedby={noteId}
+          /*
+           * `border-grey`, not `border-line`: as a control boundary WCAG 1.4.11 wants 3:1, and `--line`
+           * measures 1.72 on the light card and 1.30 on the dark one — this control's only boundary was
+           * below the non-text floor in both themes. `--grey` is 6.13 / 6.71. `text-micro` (11px) rather
+           * than `text-[10px]`: 11px is the app's declared minimum in `tailwind.config.js`.
+           * `border-dashed` when unavailable states that state in SHAPE, not only in text colour.
+           */
+          className={
+            'border px-2.5 py-1.5 font-mono text-micro font-bold uppercase tracking-wider '
+            + (blocked
+              ? 'cursor-not-allowed border-dashed border-grey text-grey'
+              : 'cursor-pointer border-grey text-cyan-700 hover:bg-ice-soft dark:text-cyan-400')
+          }
         >
-          {showStorm ? 'Flat calendar' : 'Storm view'}
+          {/*
+            THE NAME AGREES WITH `aria-pressed`, WHICH IT DID NOT. This read `Flat calendar` while the storm
+            was on, so a screen reader announced "Flat calendar, toggle button, PRESSED" — the label names one
+            surface and the state bit asserts the other. Naming the surface once and stating on/off keeps them
+            consistent and keeps the accessible name equal to the visible text (WCAG 2.5.3).
+          */}
+          Storm view: {showStorm ? 'on' : 'off'}
         </button>
 
         {refusal !== null ? (
-          <span role="alert" className="font-mono text-micro leading-relaxed text-status-conditional">
+          <span id={noteId} role="alert" className="font-mono text-micro leading-relaxed text-status-conditional">
             Storm unavailable — <code>{refusal}</code>. The calendar above is unaffected.
           </span>
         ) : !drawable ? (
-          <span className="font-mono text-micro leading-relaxed text-grey-dark">
+          /* `role="alert"`, WHICH IT DID NOT HAVE. Only the renderer's refusal was announced; a field that goes
+             from readable to refused — a feed dropping out under a rebuilt calendar — silently greyed the control
+             and put its reason in a sibling nobody was told about. `aria-describedby` is the on-demand route to
+             the same node; the alert is the interruption. (Present-at-mount live regions are not announced by
+             real screen readers, so this costs nothing on first paint.) */
+          <span id={noteId} role="alert" className="font-mono text-micro leading-relaxed text-grey-dark">
             No field to march: the calendar refused, so the volumetric reading refuses with it.
           </span>
         ) : (
@@ -138,14 +198,25 @@ export function StormRelief({ heightPx = 260, ...rest }: StormReliefProps) {
            * deciding whether to trust a volumetric reading is entitled to know nobody has timed it
            * against the table.
            */
-          <span className="font-mono text-micro leading-relaxed text-grey-dark">
+          <span id={noteId} className="font-mono text-micro leading-relaxed text-grey-dark">
             Storm view is opt-in: nobody has yet timed whether it answers faster than this calendar.
           </span>
         )}
       </div>
 
+      {/*
+        THE CALIBRATION SENTENCE IS THE VOLUME'S CAPTION, SO IT LEAVES WITH THE VOLUME.
+        It is `data-relief-live` rather than `br-no-print` for a reason worth keeping: `br-no-print` would
+        also delete it from a sheet printed with the storm ON SCREEN in a browser that ignored the rest,
+        while this ties it to exactly the block it describes. On paper the storm is replaced by the
+        calendar, and this sentence's first clause — "depth of colour is the total risk BETWEEN YOU AND
+        that day" — is a claim about accumulation along a ray that the calendar does not make: its colour
+        is one day's own risk. A caption for a figure that is not on the sheet is how E1's harness came to
+        print E0's frame time under a claim that every row was checkable.
+      */}
       {showStorm && (
         <p
+          data-relief-live=""
           data-testid="storm-calibration"
           className="mt-1 font-mono text-[10px] leading-relaxed text-grey-dark"
         >

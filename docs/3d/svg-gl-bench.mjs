@@ -593,7 +593,18 @@ const HARNESS = [
   "       instrument rather than a cost that scales with the thing being measured.",
   "",
   "       So the copy is timed ALONE: the shared canvas already holds a rendered frame, and this",
-  "       does nothing but the two 2-D calls `render` ends with. No GL work, no regime to match. */",
+  "       does nothing but the two 2-D calls `render` ends with. No GL work, no regime to match.",
+  "",
+  "       AND THIS IS STILL WRONG. IT REPORTS ~0.001 ms AND THE COPY COSTS ~0.5 ms.",
+  "       `drawImage` into a 2-D canvas is LAZILY EXECUTED, and nothing here forces the",
+  "       destination to realise it: `gl.finish()` drains the WebGL command queue, which is a",
+  "       different queue. So this times the ISSUING of the call. `docs/3d/blit-cost.mjs` does it",
+  "       correctly — it ends each batch with a 1-pixel `getImageData` on the DESTINATION, which",
+  "       cannot return until pending copies have applied, and pays it in both arms so the call",
+  "       overhead cancels — and measures 0.467 / 0.643 ms on this machine, plus the finding that",
+  "       the copy is sized by the SHARED BUFFER and not by the chart rect. Use that number. This",
+  "       one is kept, and kept labelled, because the failure it demonstrates is the whole reason",
+  "       a forcing function has to be part of any timing whose subject is asynchronous. */",
   "    const blitOnly = time(() => {",
   "      const ctx = target.getContext('2d');",
   "      ctx.clearRect(0, 0, dw, dh);",
@@ -815,8 +826,9 @@ for (const r of result.cells) {
     + `${rpad(f2(r.blurMs), 7)} ${rpad(f2(r.reallocMs), 8)} ${rpad(f2(r.svgSyncMs), 6)} ${rpad(r.svgNodes, 6)}`,
   );
 }
-say('  "blit" is the 2-D clearRect + drawImage timed ALONE. "realloc" is one setRegion at a');
-say('  size it has not just seen. Both are per chart per frame.');
+say('  "blit" is UNRELIABLE — it times the ISSUING of drawImage, not the copy landing. The');
+say('  real figure is 0.467-0.643 ms from docs/3d/blit-cost.mjs, which forces the destination.');
+say('  "realloc" is one setRegion at a size it has not just seen, and is per chart per frame.');
 say('');
 say('  rAF interval (includes raster + compositing; floored by the display refresh)');
 for (const r of result.cells) {

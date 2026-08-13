@@ -3,6 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { PrintStyles } from '@/components/report/PrintStyles';
 import { DeckRelief } from '@/components/geometry/DeckRelief';
 import { SurfaceRelief } from '@/components/geometry/SurfaceRelief';
 import { PipelineRelief } from '@/components/geometry/PipelineRelief';
@@ -34,18 +35,32 @@ import type { BdFilters, BdLead } from '@/types/bd';
  * figure BEFORE any print job could see it. The harness had to make a refusal legible on paper; the app
  * never leaves one there. That is the fact this file pins, on all seven.
  *
- * ── WHAT IS NOT VERIFIED HERE, STATED PLAINLY ────────────────────────────────────────
- * jsdom applies no `@media print` and rasterises nothing, so nothing below is a measurement of ink. Two
- * things consequently remain unverified by any test in this repo, and neither is this file's to fix:
+ * ── THE HALF THAT USED TO BE MISSING, AND IS NOW ASSERTED RATHER THAN DOCUMENTED ──────
+ * This header used to carry the gap as unverified item 2: *"Whether the flat figure should come back under
+ * `@media print` when the relief is ON. It does not today: every wrapper SWAPS rather than layers, so with
+ * the relief open the flat surface is not in the document at all and there is no print rule anywhere in
+ * `apps/web` that puts it back."* That was true, and it was worst exactly where it mattered most — a ⌘P on
+ * `MarketingCrisis` with the storm open put a canvas on a COMPLIANCE RECORD where the risk figures belong.
+ *
+ * Fixed for the three surfaces that reach paper (E1, E5, E7 — the same three the print-reachable census
+ * below pins) and asserted in `a relief that is OPEN when ⌘P happens prints its flat form`. The other four
+ * are on pages with no print sheet and are deliberately untouched: a print rule on a page that never
+ * mounts `PrintStyles` is a rule that cannot fire.
+ *
+ * ── WHAT IS STILL NOT VERIFIED HERE, STATED PLAINLY ──────────────────────────────────
+ * jsdom EVALUATES NO `@media print` and rasterises nothing, so nothing below is a measurement of ink. What
+ * the CSSOM test does instead is stronger than a string match and weaker than a PDF: it parses the real
+ * stylesheet, matches each rule's real `selectorText` against the real elements, and reads the real
+ * declarations — so a typo'd selector or a dropped `!important` fails here. Whether a printer then honours
+ * it is unmeasured. Two things therefore remain unverified by any test in this repo:
  *
  *   1 · What a SUCCESSFULLY DRAWN relief canvas does on paper. `createStage` sets
- *       `preserveDrawingBuffer: true` (`packages/gl/src/stage.ts:161`) so the buffer survives compositing
- *       and should print, but nobody has produced the PDF. The harnesses were captured; the app was not.
- *   2 · Whether the flat figure should come back under `@media print` when the relief is ON. It does not
- *       today: every wrapper SWAPS rather than layers, so with the relief open the flat surface is not in
- *       the document at all and there is no print rule anywhere in `apps/web` that puts it back.
- *       `components/report/PrintStyles.tsx` carries no `canvas` rule, and `StormRelief.tsx:120` holds the
- *       only print-aware line in all fifteen relief files.
+ *       `preserveDrawingBuffer: true` so the buffer survives compositing and should print, but nobody has
+ *       produced the PDF. The harnesses were captured; the app was not. It matters less now that the flat
+ *       form is what the sheet is designed around, and it is still the one honest way to close this axis:
+ *       open a relief on `CommandDeck`, ⌘P to PDF, and look at the page.
+ *   2 · The four unprintable surfaces, if one of their pages ever gains `PrintStyles`. The census below
+ *       fails on that day and says which.
  */
 
 /* ── FIXTURES ─────────────────────────────────────────────────────────────────────── */
@@ -211,6 +226,54 @@ function read(rel: string): string {
   return src;
 }
 
+/* ── THE ONE OBSERVATION THAT IS ONLY AVAILABLE ONCE PER FILE ─────────────────────── */
+
+/**
+ * THIS DESCRIBE MUST STAY FIRST, and the reason is a property of `React.lazy` rather than a preference.
+ *
+ * `lazy()` caches its module: after the first successful resolve it renders SYNCHRONOUSLY and never
+ * suspends again. Vitest gives each test FILE its own module registry, so the loading state of E1's
+ * renderer is observable exactly once in this file — on the first mount — and any test declared above this
+ * one that clicks the theatre toggle spends it. Moved below the refusal suite, the assertion below still
+ * passes and no longer looks at the state it names: it would be measuring the drawn state twice.
+ */
+describe('the print copy never doubles the flat figure, in the state where doubling would show', () => {
+  it('has exactly ONE flat deck in the document while the chunk loads AND once it is drawn', async () => {
+    /*
+     * THE HAZARD THIS SHAPE EXISTS TO AVOID. The obvious fix — a hidden print copy rendered ALONGSIDE the
+     * visible figure — puts two of everything in the document, and several suites query the flat figure with
+     * `getByTestId`/`getByText`, which THROW on multiple matches: `deckRelief.test.tsx:48` does exactly that
+     * immediately after clicking this toggle, and `reliefAccessibility.test.tsx` finds its toggle by
+     * filtering all buttons to exactly one match.
+     *
+     * So the print copy is the second arm of the SAME Suspense boundary the renderer is in. React mounts one
+     * arm at a time: the fallback while the chunk loads, the copy plus the canvas once it is drawn. Never
+     * both. A copy placed OUTSIDE the boundary fails this test in the loading state with 2 — which is what
+     * the first draft of this fix did.
+     */
+    stubbed.drawn = true;
+    try {
+      const { container } = render(<DeckRelief panels={PANELS}>{FLAT}</DeckRelief>);
+      expect(container.querySelectorAll('[data-testid="flat"]').length, 'default state').toBe(1);
+
+      fireEvent.click(screen.getByRole('button', { name: /theatre view/i }));
+      /* Still loading: nothing has resolved inside this synchronous turn, which is exactly why this test has
+         to be first — see the note above the describe. */
+      expect(container.querySelector('[data-testid="stub-canvas"]'),
+        'the renderer resolved synchronously, so the loading state was never observed and this test is'
+        + ' no longer watching anything — check that no earlier test mounts DeckReliefGl').toBeNull();
+      expect(container.querySelectorAll('[data-testid="flat"]').length, 'while the chunk loads').toBe(1);
+
+      await waitFor(() => {
+        expect(container.querySelector('[data-testid="stub-canvas"]')).not.toBeNull();
+      });
+      expect(container.querySelectorAll('[data-testid="flat"]').length, 'once the relief is drawn').toBe(1);
+    } finally {
+      stubbed.drawn = false;
+    }
+  });
+});
+
 /* ── WHAT AN UNATTENDED ⌘P ACTUALLY PRINTS ───────────────────────────────────────── */
 
 describe('the default state is the printed state, on every one of the seven', () => {
@@ -318,19 +381,203 @@ describe('which relief surfaces can reach paper at all', () => {
   });
 });
 
-describe('E7 is the only relief that says anything about print, and it says the right thing', () => {
-  it('keeps its control off the paper and its calibration sentence on it', () => {
+/* ── WHAT A ⌘P WITH THE RELIEF OPEN PRINTS, WHICH IS THE HALF THAT WAS MISSING ────── */
+
+/**
+ * THE ONLY THREE SURFACES THAT REACH PAPER, and the whole of what was wrong.
+ *
+ * `showRelief ? <Gl/> : <Flat/>` meant that with a relief OPEN the flat figure was not in the document,
+ * and nothing anywhere in `apps/web` put it back for print — this file's own header said so, and
+ * `PrintStyles.tsx` contained zero occurrences of `canvas`. So a ⌘P taken with the relief open printed a
+ * canvas: on `CommandDeck` into a board pack, and on `MarketingCrisis` into a COMPLIANCE RECORD.
+ *
+ * Each wrapper now renders the flat figure as the SECOND ARM OF THE SAME SUSPENSE BOUNDARY the renderer
+ * is in — hidden on screen by an inline `display: none`, revealed on paper by `PrintStyles` — with the
+ * live block wrapped so that print removes the canvas AND the DOM text projected over it.
+ *
+ * ── HOW THE RELIEF IS HELD OPEN AT ALL, WHICH NO OTHER TEST IN THE REPO DOES ─────────
+ * jsdom has no WebGL2, so every real renderer refuses on mount and each wrapper sends itself straight
+ * back to flat. That is why every other test in this file, and all of `reliefFallback.test.tsx`, observes
+ * the REFUSED state — and it is why the print question could only ever be *documented* here before now.
+ *
+ * So E1, E5 and E7's GL modules are stubbed for this file. The stub REFUSES BY DEFAULT, exactly as the
+ * real renderer does in jsdom, and draws a canvas only while `stubbed.drawn` is set — so the refusal
+ * tests above still exercise the wrapper's swap-back, and only the three tests that need a live canvas
+ * get one. Two honest limits: those three refusals now come from a stub rather than from `createStage`
+ * (the real-renderer refusal, with its real `NO_WEBGL2` code, is `reliefFallback.test.tsx`'s job and it
+ * covers all seven), and jsdom EVALUATES NO `@media print` — see the closing note in this file's header.
+ * Everything else here is shipping code: the wrappers, their Suspense arms, the real flat figures, and
+ * the real `PrintStyles` stylesheet parsed through the real CSSOM.
+ */
+const stubbed = vi.hoisted(() => ({ drawn: false }));
+
+/**
+ * One stub for all three, built inside the factory because a `vi.mock` factory is hoisted above this
+ * file's own imports — `react` has to be imported by the factory itself rather than closed over.
+ */
+async function stubRenderer() {
+  const react = await import('react');
+  const StubGl = (props: { onRefused: (code: string, reason: string) => void }) => {
+    /* From an EFFECT, and one tick late, because that is when the real renderers refuse — and the whole
+       `aria-disabled`-not-`disabled` design of these toggles exists because of that timing. A stub that
+       refused during render would test a wrapper nobody ships. */
+    react.useEffect(() => {
+      if (!stubbed.drawn) props.onRefused('STUB_REFUSAL', 'the stub renderer refuses the way jsdom does');
+    }, [props.onRefused]);
+    return stubbed.drawn
+      ? react.createElement('canvas', { 'data-testid': 'stub-canvas', 'aria-hidden': 'true' })
+      : null;
+  };
+  return { default: StubGl };
+}
+vi.mock('@/components/geometry/DeckReliefGl', () => stubRenderer());
+vi.mock('@/components/geometry/SurfaceReliefGl', () => stubRenderer());
+vi.mock('@/components/risk/StormReliefGl', () => stubRenderer());
+
+interface OpenSurface {
+  readonly env: string;
+  readonly name: string;
+  readonly toggle: RegExp;
+  readonly mount: () => { container: HTMLElement };
+  /** Something only the FLAT figure ever renders. */
+  readonly flatMark: (root: ParentNode) => Element | null;
+}
+
+const PRINT_SURFACES: readonly OpenSurface[] = [
+  {
+    env: 'E1', name: 'DeckRelief', toggle: /theatre view/i,
+    mount: () => render(<DeckRelief panels={PANELS}>{FLAT}</DeckRelief>),
+    flatMark: (r) => r.querySelector('[data-testid="flat"]'),
+  },
+  {
+    env: 'E5', name: 'SurfaceRelief', toggle: /relief view/i,
+    mount: () => render(<SurfaceRelief surface={SURFACE} title="Win rate" readsAs="Higher is better." heightPx={300} />),
+    flatMark: (r) => r.querySelector('svg'),
+  },
+  {
+    env: 'E7', name: 'StormRelief', toggle: /storm view/i,
+    mount: () => render(<StormRelief field={FIELD} title="Marketing risk" readsAs="Colour is a total." heightPx={240} />),
+    flatMark: (r) => r.querySelector('svg'),
+  },
+];
+
+/** Every `@media print` rule the house sheet declares, read out of the real CSSOM. */
+function printRules(): CSSStyleRule[] {
+  const { container } = render(<PrintStyles />);
+  const style = container.querySelector('style');
+  expect(style, 'PrintStyles rendered no <style> element').not.toBeNull();
+  const sheet = style!.sheet;
+  expect(sheet, 'jsdom did not attach a CSSStyleSheet — nothing below could be read').not.toBeNull();
+  const out: CSSStyleRule[] = [];
+  for (const rule of Array.from(sheet!.cssRules)) {
+    if (!(rule instanceof CSSMediaRule) || rule.conditionText !== 'print') continue;
+    for (const inner of Array.from(rule.cssRules)) if (inner instanceof CSSStyleRule) out.push(inner);
+  }
+  expect(out.length, 'no rules parsed out of the @media print block').toBeGreaterThan(5);
+  return out;
+}
+
+describe('a relief that is OPEN when ⌘P happens prints its flat form', () => {
+  /* The stub refuses by default so that the refusal tests above keep working; these four ask for a frame.
+     Reset in `afterEach` rather than at the end of each test, or one failure leaks a live canvas into the
+     refusal suite and the failure that follows names the wrong defect. */
+  beforeEach(() => { stubbed.drawn = true; });
+  afterEach(() => { stubbed.drawn = false; });
+
+  it.each(PRINT_SURFACES.map((s) => [s.env, s.name, s] as const))(
+    '%s %s keeps the flat figure IN the document while the canvas is live',
+    async (_env, name, s) => {
+      /*
+       * The failure this replaces: with the relief open, `container.querySelector('svg')` (E5, E7) and
+       * `[data-testid="flat"]` (E1) were both null and a canvas was the only figure in the document. That
+       * is what a board pack and a compliance record were printing.
+       */
+      const { container } = s.mount();
+      fireEvent.click(screen.getByRole('button', { name: s.toggle }));
+      await waitFor(() => {
+        expect(container.querySelector('[data-testid="stub-canvas"]'), `${name} never reached the drawn state`)
+          .not.toBeNull();
+      });
+
+      const printCopy = container.querySelector('[data-relief-print-flat]');
+      expect(printCopy, `${name} has no flat form in the document while the relief is open`).not.toBeNull();
+      expect(s.flatMark(printCopy!), `${name}'s print copy does not contain the flat figure itself`).not.toBeNull();
+
+      /* HIDDEN ON SCREEN BY THE ELEMENT ITSELF, not by a class — so a page that never mounts `PrintStyles`
+         shows one figure rather than two. This is the assertion that stops the fix from becoming a
+         visible-duplicate bug on the four pages with no print sheet. */
+      expect((printCopy as HTMLElement).style.display, `${name} shows its print copy on screen`).toBe('none');
+
+      /* And the canvas is inside a block print deletes WHOLE. Hiding the bitmap alone would leave
+         `DeckReliefGl`'s projected panel text and HUD plate printing over the flat deck. */
+      const live = container.querySelector('[data-relief-live]');
+      expect(live, `${name} has no print-removable wrapper around its live relief`).not.toBeNull();
+      expect(live!.querySelector('[data-testid="stub-canvas"]'), `${name}'s canvas is outside the live block`)
+        .not.toBeNull();
+    },
+  );
+
+  it('the house sheet actually contains rules that MATCH those two elements, at !important', () => {
     /*
-     * `StormRelief.tsx:120` is the single print-aware line in all fifteen relief files, and it is on the
-     * surface that needs it most: `MarketingCrisis` is a record page that mounts `PrintStyles`, so its
-     * output is an artefact somebody keeps. `.br-no-print` is deleted from the printed sheet by
-     * `PrintStyles.tsx:55`, and the row it is on holds the toggle and the refusal notice — a button on a
-     * printed compliance record is chrome, and the notice explains a control that is not there.
+     * NOT A STRING MATCH ON THE CSS. The stylesheet is parsed by jsdom's CSSOM and each rule's real
+     * `selectorText` is tested against the real elements with `Element.matches`, and the declarations are
+     * read through `CSSStyleDeclaration` — so a typo'd selector, a mis-nested brace or a dropped
+     * `!important` fails here rather than in a PDF nobody generates.
      *
-     * What must NOT be on that row is the calibration sentence, which bounds what the volume is entitled
-     * to claim. `data-testid="storm-calibration"` renders only over a drawn frame, so it cannot be
-     * asserted from jsdom; its placement OUTSIDE the non-printing row can be, and that is the half a
-     * future edit would break by tidying the two into one container.
+     * `!important` is load-bearing and not tidy-up: the print copy's `display: none` is INLINE, and an
+     * inline declaration outranks every selector. Without it the flat figure would stay hidden on paper
+     * and print would show a blank space where the canvas used to be — the same defect, fewer pixels.
+     */
+    const rules = printRules();
+    const { container } = render(<StormRelief field={FIELD} title="Marketing risk" readsAs="Colour." heightPx={240} />);
+    fireEvent.click(screen.getByRole('button', { name: /storm view/i }));
+    const printCopy = container.querySelector('[data-relief-print-flat]');
+    const live = container.querySelector('[data-relief-live]');
+    expect(printCopy, 'nothing to match the reveal rule against').not.toBeNull();
+    expect(live, 'nothing to match the hide rule against').not.toBeNull();
+
+    const matching = (el: Element) => rules.filter((r) => el.matches(r.selectorText));
+    const reveal = matching(printCopy!);
+    expect(reveal.length, 'no @media print rule matches the flat print copy').toBeGreaterThan(0);
+    expect(reveal.some((r) => r.style.display === 'block' && r.style.getPropertyPriority('display') === 'important'),
+      'the flat copy is never revealed on paper, so print shows a gap where the canvas was').toBe(true);
+
+    const hide = matching(live!);
+    expect(hide.length, 'no @media print rule matches the live relief block').toBeGreaterThan(0);
+    expect(hide.some((r) => r.style.display === 'none' && r.style.getPropertyPriority('display') === 'important'),
+      'the live canvas and its projected text still print').toBe(true);
+  });
+
+  it('and the default state gains nothing to hide — neither attribute exists with relief off', () => {
+    /* The scoping claim, checked rather than argued: with relief off (the state every print job in this
+       app's life has been in) the two selectors match nothing at all, so this fix cannot have changed what
+       any existing print surface prints. */
+    for (const s of PRINT_SURFACES) {
+      const { container } = s.mount();
+      expect(container.querySelector('[data-relief-print-flat]'), `${s.name} default state`).toBeNull();
+      expect(container.querySelector('[data-relief-live]'), `${s.name} default state`).toBeNull();
+      expect(s.flatMark(container), `${s.name} lost its flat figure in the default state`).not.toBeNull();
+    }
+  });
+});
+
+describe('E7 says the right thing about print, and E1 and E5 now say it too', () => {
+  it('keeps its control off the paper and its calibration sentence with the volume it describes', () => {
+    /*
+     * `MarketingCrisis` is a record page that mounts `PrintStyles`, so its output is an artefact somebody
+     * keeps. `.br-no-print` is deleted from the printed sheet by `PrintStyles`, and the row it is on holds
+     * the toggle and the refusal notice — a button on a printed compliance record is chrome, and the notice
+     * explains a control that is not there.
+     *
+     * THE CALIBRATION SENTENCE MOVED, AND THIS ASSERTION MOVED WITH IT. It used to have to sit OUTSIDE the
+     * non-printing row so that it printed; that was right while the printed figure was the storm, and it is
+     * wrong now that the printed figure is the CALENDAR. Its first clause — "depth of colour is the total
+     * risk BETWEEN YOU AND that day" — is a claim about accumulation along a ray, which the calendar does
+     * not make: a calendar cell is one day's own risk. So it now carries `data-relief-live`, leaving the
+     * sheet with the figure it describes while staying on screen whenever the storm is up.
+     *
+     * Both halves still matter: it must NOT be in the `br-no-print` row (which would delete it from a
+     * printed sheet even where the rest of this fix had not applied), and it must be inside the live block.
      */
     const src = read('src/components/risk/StormRelief.tsx');
     const noPrint = src.indexOf('br-no-print');
@@ -339,39 +586,80 @@ describe('E7 is the only relief that says anything about print, and it says the 
     expect(calibration, 'the calibration sentence must still exist to be placed').toBeGreaterThan(0);
     expect(
       calibration,
-      'the calibration sentence moved into the non-printing row, so the printed figure lost the clause that bounds it',
+      'the calibration sentence moved into the non-printing row, so it now vanishes from screen as well as paper',
     ).toBeGreaterThan(noPrint);
 
-    render(<StormRelief field={FIELD} title="Marketing risk" readsAs="Colour is a total." heightPx={240} />);
-    const btn = screen.getByRole('button', { name: /storm view/i });
-    expect(btn.closest('.br-no-print'), 'a toggle printed on a compliance record is chrome').not.toBeNull();
+    stubbed.drawn = true;
+    try {
+      const { container } = render(
+        <StormRelief field={FIELD} title="Marketing risk" readsAs="Colour is a total." heightPx={240} />,
+      );
+      const btn = screen.getByRole('button', { name: /storm view/i });
+      expect(btn.closest('.br-no-print'), 'a toggle printed on a compliance record is chrome').not.toBeNull();
+
+      fireEvent.click(btn);
+      const p = container.querySelector('[data-testid="storm-calibration"]');
+      expect(p, 'the calibration sentence must be on screen while the storm is').not.toBeNull();
+      expect(p!.closest('[data-relief-live]'),
+        'the volume\'s caption prints on a sheet whose figure is the calendar').not.toBeNull();
+      expect(p!.closest('.br-no-print'), 'the caption is now hidden on screen too').toBeNull();
+    } finally {
+      stubbed.drawn = false;
+    }
   });
 
-  it('and the other six carry no print rule, which is the gap this file documents rather than asserts', () => {
+  it('all three printable surfaces now carry a print rule, and the four unprintable ones still do not', () => {
     /*
-     * DELIBERATELY A COUNT, NOT A BAN. Six of the seven have no `@media print` and no print class, so on
-     * `CommandDeck` — which mounts `PrintStyles` — E1's and E5's toggles and their "nobody has yet timed
-     * whether it answers faster" sentences print onto a board deck as UI furniture. `GpsPrint.tsx:94`
-     * records the same class of defect in the same words ("a button printed on a client proposal").
+     * WAS A COUNT OF ONE, AND THE COUNT WAS THE DEFECT. This asserted `['risk/StormRelief.tsx']` — E7 was
+     * the only relief file that said anything about print at all, which is why E1's and E5's toggles and
+     * their "nobody has yet timed whether it answers faster" sentences printed onto a board deck as UI
+     * furniture. `GpsPrint.tsx:94` records the same class of defect in the same words ("a button printed on
+     * a client proposal").
      *
-     * This is reported to the owner of those components, not fixed here, so what is asserted is only that
-     * E7 remains the ONE exception. If a second surface gains a print rule this fails, and the right
-     * response is to update the count — not to delete the rule.
+     * The list is still a LIST rather than a ban in either direction: the four surfaces on pages with no
+     * print sheet have nothing to say about print, and adding a rule to one of them without adding
+     * `PrintStyles` to its page would be a rule that never fires. If that changes, this fails and says so.
      */
-    const files: readonly string[] = [
+    const printable: readonly string[] = [
       'src/components/geometry/DeckRelief.tsx',
       'src/components/geometry/SurfaceRelief.tsx',
+      'src/components/risk/StormRelief.tsx',
+    ];
+    const unprintable: readonly string[] = [
       'src/components/geometry/PipelineRelief.tsx',
       'src/components/geometry/VaultRelief.tsx',
       'src/components/geometry/OntologyOrrery.tsx',
       'src/components/market/GlobeRelief.tsx',
-      'src/components/risk/StormRelief.tsx',
     ];
-    expect(files.length, 'an empty list would make this pass without reading a file').toBe(7);
-    const withPrintRule = files.filter((f) => {
+    expect(printable.length + unprintable.length, 'an empty list would make this pass without reading a file').toBe(7);
+
+    const hasRule = (f: string) => {
       const src = read(f);
-      return src.includes('br-no-print') || src.includes('@media print') || src.includes('print-only');
-    });
-    expect(withPrintRule).toEqual(['src/components/risk/StormRelief.tsx']);
+      return src.includes('br-no-print') || src.includes('@media print')
+        || src.includes('data-relief-print-flat') || src.includes('data-relief-live');
+    };
+    expect(printable.filter((f) => !hasRule(f)),
+      'a surface that reaches paper has nothing to say about what it prints').toEqual([]);
+    expect(unprintable.filter(hasRule),
+      'a surface on a page with no print sheet gained a print rule that can never fire').toEqual([]);
+  });
+
+  it('and the two print attributes are declared by the wrappers and the sheet, with no third owner', () => {
+    /*
+     * THE PAIR HAS TO STAY A PAIR. `[data-relief-live]` without `[data-relief-print-flat]` is a printed gap
+     * where the figure was — "hiding the canvas and printing nothing is the same defect with fewer pixels".
+     * A wrapper that sets one and not the other, or a sheet that styles one and not the other, is exactly
+     * how that would arrive, and neither is visible from the other file.
+     */
+    const sheet = read('src/components/report/PrintStyles.tsx');
+    for (const attr of ['[data-relief-live]', '[data-relief-print-flat]']) {
+      expect(sheet.includes(attr), `PrintStyles no longer styles ${attr} for paper`).toBe(true);
+    }
+    for (const f of ['src/components/geometry/DeckRelief.tsx', 'src/components/geometry/SurfaceRelief.tsx',
+      'src/components/risk/StormRelief.tsx']) {
+      const src = read(f);
+      expect(src.includes('data-relief-print-flat'), `${f} stopped rendering a flat form for print`).toBe(true);
+      expect(src.includes('data-relief-live'), `${f} stopped marking its live block print-removable`).toBe(true);
+    }
   });
 });

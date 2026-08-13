@@ -32,6 +32,28 @@ import { stageRefusal } from '../stage';
 import type { Stage, StageRefusal } from '../stage';
 import { savePassState, restorePassState, releaseTextureUnits } from './passState';
 
+/*
+ * ── CAPACITY IS NOT A QUALITY TIER, AND THE ARITHMETIC BELOW IS WHY ──────────────────
+ * `env/quality.ts` declared `particleCapacity: 4096 / 2048 / 512` per tier, read by nothing — the
+ * §4.2 defect class. It is deleted rather than wired, and the argument belongs HERE because this is
+ * the file that holds the number it would have overwritten.
+ *
+ * `slots` is not a look, it is the ceiling on how many particles can be ALIVE AT ONCE, and a caller
+ * does not get to choose it freely: with recycling, a slot is reused after `slots / emissionPerSec`
+ * seconds, so any capacity where that falls below the longest `life` kills particles the emitter
+ * still expects to be alive. Capacity is therefore FIXED by the emitter's own rates — a quantity
+ * only the environment knows.
+ *
+ * E3, the one caller, measures **952-955 particles alive against an analytic steady state of 956**
+ * and its capture gate fails outside 2% of that, at `PARTICLE_CAPACITY = 2048`. The minimum tier's
+ * 512 slots cannot hold 956, so descending the ladder would have capped the live count at 54% — and
+ * here one particle is $800/day of package value, so that is the READING changing, not the cost.
+ * At the other end 4096 would have doubled E3's own choice at the tier every capture is taken at,
+ * which is the silent-enlargement defect `shadowMapSizeFor` exists to prevent.
+ *
+ * A tier may drop what a frame COSTS. It may not drop how many units of the thing there are.
+ */
+
 /**
  * Texture dimensions for a given capacity.
  *

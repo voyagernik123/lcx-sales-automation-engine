@@ -320,6 +320,44 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
       gl.bindVertexArray(null);
     },
 
+    /*
+     * DELETING THE OBJECTS IS NOT RELEASING THE CONTEXT, AND THE CONTEXT IS THE SCARCE THING.
+     *
+     * Every `delete*` below frees GPU memory. None of them frees the CONTEXT SLOT: a WebGL context lives
+     * until its canvas is garbage-collected, which is a decision the JS engine makes whenever it likes. So
+     * a reader toggling a relief off and on could hold more live contexts than there are mounted
+     * components. Browsers cap live contexts at commonly 8-16 and past the cap kill the OLDEST one
+     * SILENTLY — and on any chart route the oldest is `flat/shared.ts`'s ONE shared context, which every
+     * chart on the page draws through. The whole page of charts blanks at once and it reads as a data bug,
+     * not a graphics one. `apps/web/src/components/__tests__/glContextBudget.test.ts` named this hazard and
+     * could not close it, because closing it meant editing this file.
+     *
+     * ── WHY THIS IS GATED ON THE CANVAS BEING DETACHED, WHICH IS NOT A HEURISTIC ─────────
+     * `getContext('webgl2')` returns the SAME context object every time it is called on a given canvas. Two
+     * consequences follow, and together they make `isConnected` exactly the right condition rather than an
+     * approximation of one:
+     *
+     *  · A canvas still IN the document can be handed to `createStage` again — every relief in this repo
+     *    rebuilds in place when its size step or its quality tier changes, on the same canvas element. Had
+     *    we lost the context there, the rebuild would get the same, now-permanently-lost context back:
+     *    `createTexture` returns null, `checkFramebufferStatus` never reports COMPLETE, and the surface
+     *    refuses to the flat view for the rest of the page's life after a window resize. That would be a
+     *    worse defect than the leak.
+     *  · A DETACHED canvas can never be drawn to again — nobody holds it and no `getContext` call can reach
+     *    it — so losing its context is always safe, and it is exactly the case that leaks: a relief toggled
+     *    off unmounts its canvas.
+     *
+     * It also settles the second hazard. `loseContext()` fires `webglcontextlost`, and seven components
+     * plus `docs/3d/_shared/flatFallback.ts` listen for it to say "the GPU dropped this view" — a legitimate
+     * teardown must not be reported to a reader as a crash. On a detached canvas the event cannot reach the
+     * document-level capture listener at all, and all seven React teardowns remove their own canvas listener
+     * BEFORE calling dispose (verified in each of the seven). If a caller ever disposes while the canvas is
+     * still mounted, this line does nothing and the behaviour is exactly what it was before — the guard
+     * fails towards the old leak rather than towards a false refusal.
+     *
+     * LAST, after the deletes: on a lost context every `delete*` is a silent no-op, so losing first would
+     * leak the objects this function exists to free.
+     */
     dispose() {
       for (const p of programs) gl.deleteProgram(p);
       for (const t of [scene, bloomA, bloomB]) {
@@ -327,6 +365,12 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
       }
       gl.deleteBuffer(quadBuf);
       gl.deleteVertexArray(quadVao);
+      if (canvas.isConnected) return;
+      /* The extension is optional and a fake context in a test returns an object with nothing on it, so
+         both the extension and the method are checked. `getExtension` also returns null once a context is
+         already lost, which is what makes a second `dispose()` a no-op rather than an error. */
+      const lose = gl.getExtension('WEBGL_lose_context');
+      if (lose !== null && typeof lose.loseContext === 'function') lose.loseContext();
     },
   };
   return stage;

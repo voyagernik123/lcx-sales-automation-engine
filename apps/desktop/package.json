@@ -7,6 +7,7 @@
     "dev": "tauri dev",
     "build": "tauri build",
     "build:dmg": "tauri build --bundles app,dmg",
+    "build-gate": "node scripts/build-gate.mjs",
     "tauri": "tauri",
     "release": "node scripts/publish-release.mjs",
     "release:dry": "node scripts/publish-release.mjs --dry-run"

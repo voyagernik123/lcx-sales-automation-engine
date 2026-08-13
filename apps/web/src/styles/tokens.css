@@ -7,6 +7,63 @@
   --grey-light: 185 198 224;  /* #b9c6e0 */
   --grey-dark: 51 57 72;      /* #333948 */
   --line: 185 198 224;        /* #b9c6e0 */
+
+  /* THE CONTROL BOUNDARY. A SECOND BORDER ROLE, because --line has two floors and can
+   * only satisfy one of them.
+   *
+   * WCAG 2.2 SC 1.4.11 requires 3:1 for visual information "required to identify user
+   * interface components and states". A decorative table-row rule is exempt; the hairline
+   * that is the ONLY thing marking the edge of an input is not. --line measures
+   * 1.72 / 1.59 / 1.52 light and 1.30 / 1.42 / 1.16 / 1.03 / 1.45 dark against card /
+   * canvas / raised wash (/ inverse-surface / navy-deep, which are dark-only control
+   * surfaces), so every bordered control in the app is 1.75× to 2.91× short of the
+   * floor. That is not a rounding failure, it is the whole distance.
+   *
+   * --line WAS NOT PROMOTED, and the count is the argument: `border-line` appears 1,115
+   * times in apps/web/src. 223 of those are on a native control (input / select /
+   * textarea / button / a / label) and 28 more on an interactive non-control element;
+   * 808 are on elements with no handler at all — table rules, card edges, dividers —
+   * where 1.4.11 does not apply and where a hairline measuring 3:1 against white is no
+   * longer a hairline but a heavy rule, redrawing every table in the app. (The remaining
+   * 56 are occurrences the scanner in contrast.test.ts could not attribute to a tag.) A
+   * contrast audit cannot make that design decision, and it does not have to: the two
+   * uses have two different floors, so they get two tokens. The name also carries the
+   * constraint, which `border-grey` would not.
+   *
+   * WHY NOT AN EXISTING TOKEN. The a11y track that found this defect reported --grey as
+   * "the only existing token clearing 3:1 as a control boundary in both themes", at
+   * 5.41-7.30. Re-measured over all eight control surfaces rather than the three light
+   * ones, BOTH HALVES OF THAT ARE WRONG: --grey's real range is 5.31-7.45 (its worst case
+   * is dark on --ice, which that list did not contain), and it is one of EIGHT existing
+   * tokens clearing 3:1 on every one of the eight — worst-case light/dark: --navy
+   * 12.19/11.48, --grey-dark 10.17/9.01, --red 6.58/4.37, --indigo 5.54/4.69, --grey
+   * 5.41/5.31, --amber 4.98/6.28, --green 4.70/5.31, --focus 3.25/7.74.
+   *
+   * The conclusion survives the correction, and is stronger for being stated properly:
+   * every one of the eight is already spoken for. Three are text roles, so a border
+   * wearing one has the visual weight of body copy (--grey is the SECONDARY text colour;
+   * at 6.13:1 on white it reads as a rule, not a hairline). Four are status hues, and a
+   * neutral border must not carry semantic colour — a red-ish edge on every input says
+   * "error". And --focus IS the focus indicator, which must stay distinguishable from the
+   * resting border (see the focus-adjacency measurement in contrast.test.ts; it is the one
+   * place this new token makes an existing number worse). 1.4.11 asks for 3:1, so this is
+   * set at ~3.5:1 on its worst surface — clear of the floor with real margin, still a
+   * hairline.
+   *
+   * DERIVATION, so the next reader can re-derive rather than trust: both values sit on
+   * the ramp the palette already has between its border role and its text-secondary role
+   * (light --grey-light → --grey at t=0.70; dark --grey-light → --grey at t=0.60), picked
+   * so each theme's WORST control surface lands at ~3.5:1 rather than so the two share a
+   * t. Measured — light 3.97 / 3.67 / 3.50 on card / canvas / wash; dark 4.33 / 4.71 /
+   * 3.86 / 3.43 / 4.81 on card / canvas / wash / inverse-surface / navy-deep. Every one
+   * is asserted in lib/__tests__/contrast.test.ts, which fails if any drops below 3.
+   *
+   * NOT YET WIRED. No component reads this token: `border-control` needs one line in
+   * tailwind.config.js, which is another track's file. Until then all 223 native-control
+   * borders are still on --line and the app is still below the floor — contrast.test.ts
+   * records that 223 as a shrink-only count so it cannot silently grow. */
+  --control-border: 119 128 147;  /* #778093 */
+
   --card: 255 255 255;        /* #ffffff */
   --page-bg: 244 246 251;     /* #f4f6fb */
 
@@ -50,6 +107,15 @@
   --grey-light: 60 74 106;    /* border emphasis role #3C4A6A */
   --grey-dark: 198 208 226;   /* text emphasized #C6D0E2 */
   --line: 33 45 76;           /* hairline #212D4C */
+  /* See the light-theme note. Dark is the harder theme for this: controls sit on FIVE
+   * surfaces here, not three (`dark:bg-navy-deep` on 36 sites and `dark:bg-ice` on 5, on
+   * top of card / canvas / wash), and the binding one is the inverse-surface --ice
+   * (#202B48) because it is the lightest. Dark --line measures 1.03:1 against it — very
+   * nearly invisible. This value measures 3.43:1 there, its worst case, and 4.33-4.81
+   * against the other four. --grey-light, whose comment above calls it the "border
+   * emphasis role", is not a candidate: 1.59-2.23, below the floor on every one of the
+   * five. */
+  --control-border: 113 126 152;  /* #717e98 */
   --card: 16 24 43;           /* surface #10182B */
   --page-bg: 9 14 27;         /* canvas #090E1B */
 

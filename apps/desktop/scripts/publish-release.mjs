@@ -17,7 +17,11 @@
  *      from that one field, so they cannot disagree.
  *   2. Finds the updater artifacts `tauri build` produced (`.app.tar.gz` + `.sig`).
  *   3. Writes `latest.json` in the shape tauri-plugin-updater v2 expects.
- *   4. Publishes tag + assets to the RELEASES repo — a separate PUBLIC repo, not the
+ *   4. Writes a BUILD RECORD of the web bundle it is about to publish — commit, dirty
+ *      flag, entry fingerprint, a sha256 per emitted file, and the count of chunks
+ *      carrying shader source — and publishes it as an asset. `apps/web/dist` is
+ *      gitignored, so without this the tag says nothing about the bytes on the desk.
+ *   5. Publishes tag + assets to the RELEASES repo — a separate PUBLIC repo, not the
  *      code repo.
  *
  * WHY A SEPARATE PUBLIC REPO. The updater sends no credentials, and GitHub rejects
@@ -40,7 +44,8 @@
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, copyFileSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { resolve, dirname, join } from 'node:path';
+import { createHash } from 'node:crypto';
+import { resolve, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -216,6 +221,166 @@ if (dmg) {
   console.log(`  page claims ${claimed} MB  ← matches the DMG (${actual} MB)`);
 }
 
+// ── 2c · THE RECORD OF WHAT SHIPPED, BECAUSE THE TAG CANNOT ANSWER IT ─────────────
+//
+// `apps/web/dist` is gitignored (`.gitignore:2`). The bundle inside a published .app is
+// therefore in NO commit, and the tag identifies the Rust shell and nothing about the web
+// bytes it carries. That gap is not hypothetical — it is why "does the installed 0.2.6
+// contain the eight relief views?" had to be answered by comparing commit timestamps
+// against the channel's `pub_date` instead of by looking, and why the only byte-level
+// answer available afterwards was `strings` on the installed binary's embedded asset keys.
+//
+// So a release now writes down what it packaged, and publishes it beside the artefact:
+//   · the source commit AND whether the tree was dirty when the bundle was built,
+//   · the entry fingerprint — read exactly the way scripts/verify-live.mjs:98-99 reads it
+//     off a DEPLOYED document, so a desk build and a deploy are directly comparable,
+//   · a sha256 per emitted file, which identifies the bundle even when the commit cannot,
+//   · the count of chunks carrying shader source, which is the "did this release actually
+//     carry the 3-D layer?" question, and
+//   · sha256 of the artefacts that leave this machine.
+//
+// WHY A DIRTY TREE IS RECORDED AND NOT REFUSED. A commit SHA taken from a dirty tree is a
+// lie of precision, so it is labelled. Refusing to publish would have blocked 0.2.6, which
+// was a correct release; and it is not needed, because the per-file hashes identify the
+// bundle regardless of git state. What must not happen is a release that says nothing.
+const sha256 = (buf) => createHash('sha256').update(buf).digest('hex');
+const git = (args) => {
+  try {
+    return execFileSync('git', args, { cwd: DESKTOP, encoding: 'utf8' }).trim();
+  } catch {
+    return null; /* a release cut from an export, not a checkout — recorded as null, not as a guess */
+  }
+};
+
+const distRoot = resolve(DESKTOP, '../web/dist');
+/* Recursive, not `dist/assets` only. `public/` is copied to the dist ROOT, which is exactly
+   where apps/web/scripts/check-bundle.mjs records a 40 MB payload being able to hide — a
+   record that read only `assets/` would omit every font and every image that shipped. */
+const walkDist = (dir) => {
+  const out = [];
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const p = join(dir, e.name);
+    if (e.isDirectory()) out.push(...walkDist(p));
+    else if (e.isFile()) out.push(p);
+  }
+  return out;
+};
+const distFiles = walkDist(distRoot).sort();
+
+const distIndex = join(distRoot, 'index.html');
+if (!existsSync(distIndex)) die(`no ${distIndex} — there is no bundle to record, and Tauri packaged whatever was there`);
+const indexHtmlSrc = readFileSync(distIndex, 'utf8');
+/* WHAT THE DOCUMENT PULLS IN BEFORE PAINT: the entry <script>, every modulepreload, every
+   stylesheet and every preloaded font — the same four things verify-live.mjs reads off a
+   DEPLOYED document, so the record's `eager` list can be diffed against a live check's
+   without translation.
+   ATTRIBUTES ARE MATCHED ORDER-INDEPENDENTLY, and the first version of this was not:
+   `rel="preload"[^>]+as="font"[^>]+href=` requires that attribute order, and Vite emits
+   `rel="preload" href="…" as="font"`. Measured on the real dist/index.html — it found the
+   entry, two modulepreloads and two stylesheets, and MISSED both font preloads. That is
+   434 KB, the single largest item in first load per apps/web/scripts/check-bundle.mjs,
+   absent from a record whose whole purpose is to say what shipped. */
+const tagAttrs = (tag) => {
+  const at = {};
+  for (const m of tag.matchAll(/([a-zA-Z-]+)="([^"]*)"/g)) at[m[1].toLowerCase()] = m[2];
+  return at;
+};
+const eagerHrefs = [];
+for (const m of indexHtmlSrc.matchAll(/<script\b[^>]*>/g)) {
+  const at = tagAttrs(m[0]);
+  if (at.src) eagerHrefs.push(at.src);
+}
+for (const m of indexHtmlSrc.matchAll(/<link\b[^>]*>/g)) {
+  const at = tagAttrs(m[0]);
+  const rel = (at.rel ?? '').toLowerCase();
+  if (!at.href) continue;
+  if (rel === 'modulepreload' || rel === 'stylesheet') eagerHrefs.push(at.href);
+  else if (rel === 'preload' && (at.as ?? '').toLowerCase() === 'font') eagerHrefs.push(at.href);
+}
+const eager = [...new Set(eagerHrefs)].filter((s) => !/^https?:/i.test(s));
+const entryHref = eager.find((s) => /index-[A-Za-z0-9_-]+\.js$/.test(s)) ?? null;
+if (!entryHref) {
+  // An index.html with no `index-<hash>.js` is not a bundle this app can boot, and it is
+  // also unrecordable — there would be no fingerprint to compare against a later release.
+  die(`no index-<hash>.js entry script in ${distIndex}.\n  The bundle is malformed, and there is no fingerprint to record.`);
+}
+const fingerprint = entryHref.match(/index-([A-Za-z0-9_-]+)\.js/)?.[1] ?? entryHref;
+
+/* THE SAME MARKER verify-live.mjs:122 USES, and for the same reason: a chunk carrying GLSL
+   is a GL chunk, which is a fact about the bytes. Name matching missed E8 (it ships as
+   `ForgeBackdrop`) and all seven shared chunks. Deliberately NOT a floor here — 0.2.6
+   legitimately carried no relief surfaces, so a "must be > 0" guard would have refused a
+   correct release. It is recorded and printed so the answer exists at all. */
+const SHADER_MARKER = /precision\s+(?:highp|mediump|lowp)|createStage/;
+const files = {};
+let glChunks = [];
+let totalBytes = 0;
+for (const p of distFiles) {
+  const buf = readFileSync(p);
+  const rel = relative(distRoot, p);
+  files[rel] = { bytes: buf.length, sha256: sha256(buf) };
+  totalBytes += buf.length;
+  if (rel.endsWith('.js') && SHADER_MARKER.test(buf.toString('utf8'))) glChunks.push(rel);
+}
+glChunks = glChunks.sort();
+const glSurfaces = glChunks.filter((n) => /Relief|Orrery|Forge/i.test(n));
+
+const artefactHash = (p) => (p ? { name: p.split('/').pop(), bytes: statSync(p).size, sha256: sha256(readFileSync(p)) } : null);
+
+const record = {
+  record_version: 1,
+  version,
+  tag,
+  recorded_at: new Date().toISOString(),
+  source: {
+    commit: git(['rev-parse', 'HEAD']),
+    committed_at: git(['log', '-1', '--format=%cI']),
+    branch: git(['rev-parse', '--abbrev-ref', 'HEAD']),
+    /* The whole point of the label. `--porcelain` covers tracked modifications AND
+       untracked files, both of which change what vite emits. */
+    dirty: (git(['status', '--porcelain']) ?? '') !== '',
+    dirty_paths: (git(['status', '--porcelain']) ?? '').split('\n').filter(Boolean).slice(0, 200),
+  },
+  toolchain: {
+    node: process.version,
+    tauri_cli: (() => {
+      try {
+        return JSON.parse(readFileSync(resolve(DESKTOP, '../../node_modules/@tauri-apps/cli/package.json'), 'utf8')).version;
+      } catch { return null; }
+    })(),
+  },
+  bundle: {
+    api_origin: PROD_API_ORIGIN,
+    entry: entryHref,
+    fingerprint,
+    eager,
+    file_count: distFiles.length,
+    total_bytes: totalBytes,
+    gl_chunk_count: glChunks.length,
+    gl_surface_count: glSurfaces.length,
+    gl_chunks: glChunks,
+    files,
+  },
+  artifacts: {
+    app_tar_gz: { ...artefactHash(tarball), publish_as: tarballName },
+    dmg: artefactHash(dmg),
+    signature_sha256: sha256(readFileSync(sigPath)),
+  },
+};
+
+const recordName = `LCXOS_${version}_build-record.json`;
+const stagedRecord = join(stage, recordName);
+writeFileSync(stagedRecord, `${JSON.stringify(record, null, 2)}\n`);
+
+console.log(`\n  build record`);
+console.log(`    commit     ${record.source.commit ?? '(not a git checkout)'}${record.source.dirty ? '  ⚠ DIRTY TREE — the commit does not identify these bytes; the hashes below do' : ''}`);
+console.log(`    bundle     ${distFiles.length} files, ${(totalBytes / 1_000_000).toFixed(2)} MB, entry fingerprint ${fingerprint}`);
+console.log(`    gl chunks  ${glChunks.length} carrying shader source (${glSurfaces.length} renderer surfaces + ${glChunks.length - glSurfaces.length} shared)`);
+if (glChunks.length === 0) {
+  console.log('               ← this release carries NO 3-D layer. That was true of 0.2.6 and nothing said so.');
+}
+console.log(`    written    ${stagedRecord}`);
+
 const assetUrl = `https://github.com/${RELEASES_REPO}/releases/download/${tag}/${tarballName}`;
 // `darwin-aarch64` only, deliberately and stated rather than left as an accident: the
 // only installed target is Apple Silicon. An Intel Mac would find no matching platform
@@ -264,7 +429,12 @@ if (exists) {
   die(`${tag} already exists in ${RELEASES_REPO}.\n  Bump \`version\` in tauri.conf.json and rebuild. Overwriting a published version would ship two different binaries under one version number.`);
 }
 
-const assets = [latestPath, stagedTarball, stagedSig, ...(stagedDmg ? [stagedDmg] : []), ...(stagedDmgLatest ? [stagedDmgLatest] : [])];
+// The record ships WITH the release, not into this repo. It describes a directory that is
+// gitignored, so committing it here would put a fact about untracked bytes into the code
+// repo while the bytes themselves stayed unreachable; published as an asset it sits beside
+// the exact tarball it describes, and "which build is on this desk?" is answered by
+// downloading the record for that version.
+const assets = [latestPath, stagedTarball, stagedSig, stagedRecord, ...(stagedDmg ? [stagedDmg] : []), ...(stagedDmgLatest ? [stagedDmgLatest] : [])];
 gh([
   'release', 'create', tag,
   '--repo', RELEASES_REPO,
@@ -285,6 +455,13 @@ if (!names.includes(tarballName)) {
 }
 if (!names.includes('latest.json')) {
   die(`published, but there is no latest.json asset — the endpoint would 404.\n  actual: ${names.join(', ')}`);
+}
+// A release without its record is a release nobody can identify later, which is the exact
+// hole this closes. Asserted the same way as the two above rather than assumed, because
+// `gh release create` uploading five of six assets fails silently in the only direction
+// that matters — the tarball is there, so nothing looks wrong.
+if (!names.includes(recordName)) {
+  die(`published, but the build record did not upload.\n  expected: ${recordName}\n  actual  : ${names.join(', ')}\n  apps/web/dist is gitignored, so without this asset there is no record of which web bundle\n  this tag shipped. Upload it: gh release upload ${tag} --repo ${RELEASES_REPO} ${stagedRecord}`);
 }
 
 if (dmg && !names.includes(LATEST_DMG_NAME)) {

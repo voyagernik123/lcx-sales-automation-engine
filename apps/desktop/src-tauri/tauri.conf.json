@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "npm run dev -w @lcx/web",
     "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "VITE_API_URL=https://lcx-sales-api.onrender.com npm run build -w @lcx/web",
+    "beforeBuildCommand": "npm run build-gate -w @lcx/desktop",
     "frontendDist": "../../web/dist"
   },
   "app": {
