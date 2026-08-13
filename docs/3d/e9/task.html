@@ -42,12 +42,78 @@
   so there is no answer to time. E8 is gated on clause (a) alone. This is a category difference, not a gap,
   and recording it as "unmeasured" would have implied work outstanding that does not exist.
 
-  DEFERRED WITH A REASON (1): E1 THE THEATRE. Its panel text is injected from the environments' own READMEs
-  at BUILD TIME (see `__ENV_STATES__` in ../e1/entry.ts), so any answer key written here would silently rot
-  the next time a README changes — and a stale answer key does not fail, it marks correct answers wrong and
-  reports the surface as illegible. E1 needs a question whose answer is stable under a rebuild: a property
-  of the geometry rather than of the panel copy. It has no interactive addressing today, so the obvious
-  candidate ("which panel is being addressed") has no answer either. Named as outstanding work, not skipped.
+  REFUSED, ON A REASON THAT WAS MEASURED (1): E1 THE THEATRE.
+  Code: SURFACES_DO_NOT_CARRY_THE_SAME_DATA.
+
+  This entry used to read "DEFERRED", and the reason given was that E1's panel text is injected from the
+  environments' own READMEs at build time, so an answer key would rot on the next rebuild. THAT REASON IS
+  NOW SETTLED, AND SETTLED IN E1'S FAVOUR. A pair whose answers are stable exists, is written out below,
+  and is derived; E1 is not blocked on finding a question. It is blocked on something else, which the
+  attempt exposed and which is structural rather than editorial.
+
+  THE PAIR THAT IS READY, AND WHY ITS ANSWERS CANNOT ROT.
+
+    { env: 'e1', claim: 'depth states which panel is being addressed',
+      pair: [
+        { q: 'Which environment is this view ADDRESSING — nearest you, the one the lens holds sharp?',
+          opts: ['E0', 'E1', 'E5', 'E8'], answer: 'E1' },
+        { q: 'Which environment stands IMMEDIATELY BEHIND the one being addressed?',
+          opts: ['E0', 'E5', 'E6', 'E8'], answer: 'E8' },
+      ] }
+
+  Derived, not read off the render. The camera is `eyeOf({target:[0,0.62,0.1], distance:8.4,
+  azimuth 1.5 deg, elevation 7.2 deg})` = (0.218, 1.673, 8.431). Face-centre distances from that eye to
+  the five hard-coded panels: P3 6.13, P4 7.44, P2 7.92, P1 10.41, P5 11.09 metres — so the nearest is P3
+  and the second-nearest P4. Slot content comes from AVAILABLE[rank] through SLOT_BY_RANK, giving P3 <- E1
+  and P4 <- E8. The harness's own report agrees on every figure: focusPanel "P3", focusDistance 6.13, and
+  panels[].eyeDistance 10.41 / 7.92 / 6.13 / 7.44 / 11.09. Corroborated by colour: P3 and P4 are the two
+  #2C6BFF panels, and entry.ts states colour and focus are meant to agree about what is addressed.
+
+  Nothing in that derivation is panel copy. PANELS, the viewpoint, SLOT_BY_RANK and PREFERRED are all
+  hard-coded literals in ../e1/entry.ts; the only build-time input used is the first two KEYS of
+  __ENV_STATES__, and a README edit changes an environment's `name` and `verdict`, never its key.
+  A TENTH ENVIRONMENT DOES NOT MOVE IT EITHER, which was the obvious way for this to rot: a key absent
+  from PREFERRED sorts with weight `indexOf + 1 || 99` = 99, i.e. behind all six named ones, so it lands
+  in OMITTED. Replayed over the sort with e9 added, with e10 added, and with both: PANEL_SLOTS stayed
+  E1 E8 E0 E6 E5 in all three cases. And a README that is deleted or stops parsing does not move the key
+  silently — ../e1/build.mjs exits 1 on it. The one residual is named rather than hidden: build.mjs keys
+  on the ID in the README's FIRST LINE, not on the directory name, so a first line that renamed E8 would
+  move the second answer. That is a rename of an environment, not a status update.
+
+  SO WHY IS IT STILL NOT RUN. Because of rule 1 at the top of this file — the two surfaces must show the
+  same data — and E1 is the one environment where they do not. Measured on both surfaces: the flat view
+  carries NINE rows of Env / Name / Verdict and no arrangement at all (its own readsAs says so: "This
+  table has no such emphasis and no depth"), while the rendered view carries FIVE panels plus the
+  arrangement and names the other four only in the HUD. The two information sets differ in both
+  directions, and the difference is exactly the thing the pair asks about. So the pair above has no flat
+  answer — not an expensive one, none. That is not the E2 situation, where the fallback table gives
+  latitude and longitude and answering flat means doing spherical geometry in your head; there the data is
+  present and dear. Here it is absent, and since this page pools accuracy across environments before
+  comparing medians, adding a question the flat surface cannot answer at any price takes one correct
+  answer off the flat column and hands the comparison to the environment. That is a fix to the
+  INSTRUMENT, which is the move this programme refuses everywhere else.
+
+  WHAT WOULD LIFT IT — stated as the exact change, in a file this page does not own:
+
+    1 · ../e1/entry.ts, the installFlatFallback call: give the table a front-to-back ordinal column, so
+        the flat view carries the arrangement it currently only describes in prose, with `null` for the
+        four not shown (flatFallback's `cell()` renders that as "absent", which keeps absent and blank
+        distinct). This is not a one-field addition. installFlatFallback is called at entry.ts:172 and must
+        stay above the stage; AVAILABLE / SLOT_BY_RANK / PANEL_SLOTS are ~550 lines below it at 726, and the
+        ordinal that (2) requires also needs `view` / `eyeOf` / PANELS from 236 and 265. All of those are
+        pure — __ENV_STATES__ is a build define and the distances are arithmetic, no GL object is touched —
+        so they can be hoisted above the call, but it is a move of four declarations across the boundary
+        that §6 rule 1 puts there, not an added field.
+    2 · The ordinal in (1) must come from measured eyeDistance, NOT from PANEL_SLOTS order, because those
+        two disagree. SLOT_BY_RANK is ['P3','P4','P2','P5','P1'] and entry.ts calls it "nearest-panel-
+        first" twice, but P1 stands at 10.41 m and P5 at 11.09 m (z -1.25 against -2.10), so front-to-back
+        is P3 P4 P2 P1 P5 and the last two entries are swapped. The frame therefore reads E1 E8 E0 E5 E6
+        near-to-far while the report, the DOM order and the flat table's reading order all say
+        E1 E8 E0 E6 E5. Ranks 4 and 5 have two defensible answers until that is settled, which is why the
+        pair above only asks about ranks 1 and 2.
+
+  Until (1) and (2) land, E1 stays out of the set and this is a refusal with a reason rather than a gap.
+  MEASURED therefore remains 6, not 7.
 
   ── WHAT IT WILL NOT DO ─────────────────────────────────────────────────────────────────────────────────
   It will not tell you (a). "A stranger stops scrolling" is not measurable at a desk with two people, and
@@ -264,6 +330,48 @@ function renderOrder() {
 
 let shownAt = 0;
 
+/*
+ * THE HARNESS PRINTS THE ANSWER UNDER THE FRAME, AND THE OPERATOR CAN SCROLL TO IT.
+ *
+ * Found while tracing E1's two surfaces, and it is not an E1 problem — it is live on the pair this page
+ * holds up as its best-derived one. Every harness ends with `log.textContent = JSON.stringify(report)`
+ * into a visible `<pre id="log">` that sits directly below the 720 px canvas. Measured at this trial's own
+ * geometry — the 760 px iframe, a 1240x780 window, real hardware (ANGLE Metal, Apple M1, headroom 11.8):
+ *
+ *   E2 prints `"to": "London" … "separationDeg": 7.6` through `"Singapore" … 91.9` for all seven
+ *   corridors — the SAME seven great-circle separations the comment above says were computed to derive
+ *   E2's key, and they answer BOTH members of its pair. Located with a Range rather than by counting
+ *   lines: the block runs y 1096 to 1521 in a 1771 px document, so the first city row sits 361 px below
+ *   the 760 px fold.
+ *   E1 prints `"focusPanel": "P3"` at y 935 and `"environmentsShown": ["E1","E8","E0","E6","E5"]` at
+ *   y 3835, in a 4425 px document.
+ *
+ * AND IT IS ONE-DIRECTIONAL, which is what makes it a defect rather than noise. On `?refuse=1` the same
+ * element holds 128 characters — the FORCED_REFUSAL sentence — because `die()` runs before any report
+ * exists. The channel is open only on the 3-D surface, in the direction that would make this page report
+ * MEETS (b) for nothing.
+ *
+ * The operator does not have to go looking. Every flat surface puts its table BELOW the hidden canvas, so
+ * flat trials require scrolling; having learnt that, scrolling a 3-D trial is the same gesture.
+ *
+ * So the diagnostic is removed from both surfaces before the clock starts. It is not part of either
+ * surface under test — it is machine output, already `aria-hidden="true"`, and already hidden from print
+ * by `_shared/flatFallback.ts` on this same argument ("for a machine and wastes pages"). Nothing is lost
+ * on the flat path: `showRefusal` puts the same code and reason in the bordered box inside the fallback.
+ *
+ * Returns whether it actually happened, because a cross-document read can be blocked and a trial run with
+ * the answer printed on screen is not a measurement. The summary excludes those, exactly as it excludes a
+ * trial whose startup could not be confirmed.
+ */
+function hideDiagnostic(iframe) {
+  try {
+    const log = iframe.contentDocument?.getElementById('log');
+    if (!log) return false;
+    log.style.display = 'none';
+    return true;
+  } catch { return false; }
+}
+
 function showTrial() {
   if (at >= trials.length) return finish();
   const t = trials[at];
@@ -280,7 +388,9 @@ function showTrial() {
    * legibility. `?refuse=1` reaches its title almost immediately, so the bias would be one-directional.
    */
   const iframe = $('frameWrap').querySelector('iframe');
-  const begin = () => { shownAt = performance.now(); };
+  /* Hidden BEFORE the clock, so removing it cannot be charged to the operator's reading time — and before
+     the frame is on screen to be read, so the answer is never visible for even one trial. */
+  const begin = () => { t.diagnosticHidden = hideDiagnostic(iframe); shownAt = performance.now(); };
   let started = false;
   const poll = setInterval(() => {
     let title = '';
@@ -292,7 +402,12 @@ function showTrial() {
   /* If the poll never fires — a cross-document read blocked, a harness that never settles — the clock
      starts at a stated cap rather than never, and the trial is FLAGGED so the summary can exclude it. */
   setTimeout(() => {
-    if (!started) { started = true; clearInterval(poll); shownAt = performance.now(); t.startupUnconfirmed = true; }
+    if (!started) {
+      started = true; clearInterval(poll); shownAt = performance.now(); t.startupUnconfirmed = true;
+      /* Still attempted on the timeout path. If the read was what timed out this fails too, and the trial
+         carries both flags rather than pretending the answer channel was closed. */
+      t.diagnosticHidden = hideDiagnostic(iframe);
+    }
   }, 20000);
 
   $('opts').onclick = (e) => {
@@ -305,6 +420,7 @@ function showTrial() {
       correct: o === t.answer, unsure: o === '__unsure', ms,
       threeDFirst: t.threeDFirst, position: t.position,
       startupUnconfirmed: !!t.startupUnconfirmed,
+      diagnosticHidden: !!t.diagnosticHidden,
     });
     shownAt = 0;
     at += 1;
@@ -316,7 +432,11 @@ function finish() {
   $('stage').style.display = 'none';
   $('done').style.display = 'block';
 
-  const bySurface = (s) => results.filter((r) => r.surface === s && !r.startupUnconfirmed);
+  /* EXCLUDED, not silently averaged in — a trial whose harness printed the answer under the frame measures
+     a text scan, and a trial whose startup could not be confirmed measures shader compilation. Both
+     counts are reported below so an exclusion is visible rather than absorbed. */
+  const excluded = results.filter((r) => r.startupUnconfirmed || !r.diagnosticHidden);
+  const bySurface = (s) => results.filter((r) => r.surface === s && !r.startupUnconfirmed && r.diagnosticHidden);
   const stat = (s) => {
     const rs = bySurface(s);
     const right = rs.filter((r) => r.correct);
@@ -349,6 +469,15 @@ function finish() {
   $('summary').innerHTML =
     `<div class="${code ? 'refuse' : ''}"><strong>${verdict}</strong>${code ? ` — <code>${code}</code>` : ''}`
     + ` · one operator, ${results.length} trials. §7(b) needs more than one operator to be more than an anecdote.</div>`
+    /* NAMED, because an exclusion that only shows up as a smaller `trials` count is indistinguishable from
+       a shorter trial set — and the reason matters: one of the two means the answer was on screen. */
+    + (excluded.length
+      ? `<p class="lede warn">${excluded.length} of ${results.length} trials EXCLUDED — `
+        + `${excluded.filter((r) => !r.diagnosticHidden).length} where the harness's printed report could `
+        + `not be hidden (the answer was reachable by scrolling the frame), `
+        + `${excluded.filter((r) => r.startupUnconfirmed).length} where startup could not be confirmed. `
+        + `Excluded trials are in the JSON below, not averaged in.</p>`
+      : '')
     + '<table><thead><tr><th>surface</th><th class="n">trials</th><th class="n">correct</th>'
     + '<th class="n">cannot tell</th><th class="n">median time when correct</th></tr></thead><tbody>'
     + [['environment', three], ['flat', flat]].map(([n, s]) =>
@@ -360,6 +489,8 @@ function finish() {
     gate: '7b', verdict, code,
     operators: 1,
     note: 'One operator is an anecdote. This is the instrument, not a finding.',
+    coverage: { measured: TASKS.length, notApplicable: ['e8'], refused: { e1: 'SURFACES_DO_NOT_CARRY_THE_SAME_DATA' } },
+    excludedTrials: excluded.length,
     environment: three, flat, trials: results,
   }, null, 2);
 }

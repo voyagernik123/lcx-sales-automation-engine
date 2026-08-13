@@ -10,9 +10,9 @@ import { CHART_BAD, CHART_GOOD } from './palette';
  * reasons, each measured or already on the record here.
  *
  * ── 1 · THERE IS NO MARK TO RE-BACK ─────────────────────────────────────────────────
- * Every one of the ten GL-backed primitives hands the renderer a GEOMETRIC FILL it was
+ * Every one of the GL-backed primitives hands the renderer a GEOMETRIC FILL it was
  * already drawing in SVG: a bar rect (`useFlatBars`), a stacked track (`useFlatTrack`), a
- * polyline (`useFlatLine`/`useFlatBand`), a dial arc (`useFlatDial`). This file contains no
+ * dial arc (`useFlatDial`). This file contains no
  * `<svg>` at all — no path, rect, polyline or circle. Its two children are a font glyph and a
  * number, and both are TEXT. Measured with the app's real font stack at its real classes
  * (`text-xs` = 12px/16px, `font-medium`, Inter): the chip lays out at 41.34 × 16 CSS px for
@@ -24,10 +24,18 @@ import { CHART_BAD, CHART_GOOD } from './palette';
  * metrics of the value, so it changes per instance (41.34 / 53.72 / 39.17 CSS px measured for
  * 4.2 % / 124.7 % / 0.1 %).
  *
+ * ── UPDATED 2026-08-13, AND THE COUNT MOVED THE OTHER WAY ───────────────────────────
+ * This file said "the ten GL-backed primitives". It is now EIGHT, and the two that left did so for the
+ * same reason this file refuses: a measured threshold. `Sparkline` was delivering 53-57 % of the ink of
+ * the `strokeWidth={2}` polyline it replaced (rasterised on ANGLE Metal and again on SwiftShader, which
+ * agree — so the deficit is not driver-dependent), and `ControlBand` issued 55 draw calls regardless of
+ * series length. `gl/FlatBand.tsx` was deleted with `ControlBand`, its only consumer, so the citation
+ * below is to a file in git history rather than in the tree. The argument it recorded still stands.
+ *
  * ── 2 · THE ONE MARK GL *COULD* ADD IS ALREADY RECORDED AS NOT DRAWABLE ─────────────
- * The only candidate is a good/bad tint plate behind the text. `gl/FlatBand.tsx:16-20` already
- * settled that: an additive pass writes full coverage into the frame's alpha, so a tint "would
- * land on the card as a solid block of hue rather than a wash" — which is why `Sparkline`
+ * The only candidate is a good/bad tint plate behind the text. `gl/FlatBand.tsx` already settled
+ * that before it was deleted: an additive pass writes full coverage into the frame's alpha, so a
+ * tint "would land on the card as a solid block of hue rather than a wash" — which is why `Sparkline`
  * declined its own 10 % area wash. Same mark, same pipeline, same answer.
  *
  * ── 3 · THE OTHER CANDIDATE IS BAKING TEXT, WHICH RULE 4 FORBIDS AND RATCHETS ───────

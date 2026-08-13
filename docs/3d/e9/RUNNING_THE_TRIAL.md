@@ -54,6 +54,10 @@ exist. The instrument **refuses to report** rather than mislead when:
 
 A refusal is a real outcome and should be recorded as one.
 
+Trials are also **excluded and named** — never quietly averaged in — when the harness's printed diagnostic
+could not be hidden, or when the surface's startup could not be confirmed. The first of those matters: see
+the finding below.
+
 ---
 
 ## What it covers, and what it cannot
@@ -71,12 +75,29 @@ machined disc, a ring and a plinth on the sign-in screen; it carries no dataset 
 there is no answer to time. E8 is gated on clause (a) alone. This is a category difference, not an omission
 — recording it as "unmeasured" would imply outstanding work that does not exist.
 
-**Deferred with a reason — E1 THE THEATRE.** Its panel text is injected from the other environments' READMEs
-at *build time* (`__ENV_STATES__` in `../e1/entry.ts`), so an answer key written here would silently rot the
-next time a README changed. A stale answer key does not fail loudly: it marks correct answers wrong and
-reports a legible surface as illegible. E1 needs a question whose answer is a property of the *geometry*
-rather than of the panel copy, and it has no interactive addressing today, so the obvious candidate — "which
-panel is being addressed" — has no answer either. Outstanding, and named rather than skipped.
+**Refused with a measured reason — E1 THE THEATRE.** Code `SURFACES_DO_NOT_CARRY_THE_SAME_DATA`.
+
+This entry used to read *deferred*, and the reason was that E1's panel text is injected from the other
+environments' READMEs at build time, so an answer key would rot on the next rebuild. **That reason is
+settled.** A pair whose answers cannot rot exists and is written out in `task.html`: which environment the
+view is *addressing* (nearest, held sharp) and which stands immediately behind it — `E1` then `E8`, derived
+from the camera and the five hard-coded panel positions (face-centre eye distances 6.13, 7.44, 7.92, 10.41,
+11.09 m; the harness's own report agrees on all five). No part of that touches panel copy, and a tenth
+environment does not move it — a key absent from `PREFERRED` sorts behind all six named ones and lands in
+`OMITTED`, verified by replaying the sort with `e9`, with `e10`, and with both.
+
+What blocks E1 is **rule 1 of the trial** — the two surfaces must show the same data — and E1 is the one
+environment where they do not. Its flat view carries nine rows of Env / Name / Verdict and no arrangement at
+all; its rendered view carries five panels *plus* the arrangement and names the other four only in the HUD.
+The pair above therefore has **no flat answer at any price**, which is not E2's situation (there the table
+gives latitude and longitude and answering flat means spherical geometry in your head — dear, but possible).
+Since the summary pools accuracy across environments before comparing medians, adding a question the flat
+surface cannot answer hands the comparison to the environment for free. That is a fix to the instrument.
+
+`task.html` states the exact change to `../e1/entry.ts` that would lift it — a front-to-back ordinal column
+on the flat table, and the `SLOT_BY_RANK` defect that has to be settled first (it is called
+"nearest-panel-first" twice and its last two entries are the wrong way round: P1 stands at 10.41 m, P5 at
+11.09 m). **Measured stays at 6, not 7.**
 
 ## What it will not tell you
 
@@ -88,14 +109,44 @@ decision sheet at `/e9/gate-a.html`; its output is explicitly tagged `JUDGEMENT_
 
 ---
 
+## The harness printed the answer under the frame — found 2026-08-13, fixed in `task.html`
+
+Found while tracing E1's two surfaces, and it was **live on the pair this page holds up as its best-derived
+one.** Every harness ends with `log.textContent = JSON.stringify(report)` into a visible `<pre id="log">`
+directly below the 720 px canvas. Measured at the trial's own geometry — the 760 px iframe, a 1240×780
+window, real hardware (ANGLE Metal, Apple M1, headroom 11.8 ms) — with offsets located by a `Range` over the
+text node rather than counted against an assumed line height:
+
+| environment | what the printed report gives away | where |
+|---|---|---|
+| **E2** | `"to": "London" … "separationDeg": 7.6` through `"Singapore" … 91.9`, all seven corridors — **the answer to both members of its pair**, already listed | y 1096–1521 in a 1771 px document; the first city row is **361 px below the fold** |
+| **E1** | `"focusPanel": "P3"`, then `"environmentsShown": ["E1","E8","E0","E6","E5"]` | y 935 and y 3835 in a 4425 px document |
+
+It is **one-directional**: on `?refuse=1` that element holds 128 characters (the `FORCED_REFUSAL` sentence),
+because `die()` runs before any report exists. So the channel was open only on the 3-D surface — the
+direction that would have made this page report `MEETS (b)` for nothing. And the operator did not have to go
+looking: every flat surface puts its table *below* the hidden canvas, so flat trials require scrolling, and
+having learnt that, scrolling a 3-D trial is the same gesture.
+
+`task.html` now hides that element in both surfaces **before the clock starts**, and records whether it
+succeeded; trials where it did not are excluded and counted in the summary. Nothing is lost on the flat path
+— verified on E5's refusal: the rendered surface is still there, the refusal notice still carries the same
+code and reason, and the document shrinks by 36 px.
+
 ## Verified ready, 2026-08-13
 
-- 12 trials build across 6 environments; exactly 2 per environment.
+- 12 trials build across 6 environments; exactly 2 per environment, one per surface.
 - Counterbalance is even: E5/E4/E3 show the environment first, E6/E2/E7 the flat surface first.
-- 0 duplicate questions across the 12 trials.
+- 0 duplicate questions across the 12 trials — and the two members of every pair differ, so no operator
+  answers the same question twice.
+- Verified by **extracting and running `task.html`'s own `TASKS` and `buildTrials`**, not a copy of them; and
+  independently through the page's dry-run button in a browser, which listed the same 12 rows.
+- The printed-diagnostic fix confirmed running: on trial 1 (E5, environment) the 2,352-character report is
+  `display: none` and the frame's document is 776 px, so there is nothing left to scroll to.
 - Every answer in the key is one of its own question's options — a question that cannot be answered
   correctly would silently depress the accuracy of whichever surface carried it.
-- All 12 surfaces and 6 bundles serve 200 through `serve.mjs`; path traversal returns 404.
+- All 12 surfaces and 6 bundles serve 200 through `serve.mjs`; `/../../package.json` and its percent-encoded
+  form both return 404. Re-checked today, not carried over.
 - The trial count on the button is **derived** from the task set. It used to read "Begin — 8 trials" as a
   literal, which was true for the four environments the set started with and wrong the moment two more were
   added — the same class of defect as E1 rendering E0's frame time under a printed checkability claim.

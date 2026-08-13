@@ -1,7 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
 import { CARD_FILL, CHART_BAD, CHART_GOOD, seriesVar } from './palette';
-import { resolveColour } from './gl/FlatBars';
-import { useFlatLine } from './gl/FlatLine';
 
 export interface SparklineProps {
   data: number[];
@@ -18,7 +15,33 @@ export interface SparklineProps {
   area?: boolean;
 }
 
-/** Tiny trend line: 2px round-capped stroke, ringed end-dot, no axes, no grid. */
+/**
+ * Tiny trend line: 2px round-capped stroke, ringed end-dot, no axes, no grid.
+ *
+ * ── THIS IS SVG, AND THE GL LAYER WAS REMOVED FROM IT. THE NUMBERS: ─────────────────────
+ * It was GL-backed at `38c01b1` and is not any more, because the measured SVG/GL threshold
+ * (`docs/3d/w2/SVG_GL_THRESHOLD.md`) rejects it on both halves of its value gate, and the
+ * second half is a legibility REGRESSION rather than a neutral cost:
+ *
+ *  1. L = 4.6 DEVICE PX. The lit edge is the first 10 % of a mark's lit axis, and for a ribbon
+ *     that axis is `2 · halfWidth` — 2.3 units, 4.6 device px at dpr 2. Ten per cent of that
+ *     is under half a pixel. The stroke shader has no lit-edge term at all (`flat/strokes.ts`
+ *     carries only the feather and `shade = 1 − uModelling · vAcross²`), so what the layer
+ *     could contribute here was already just a feather — and SVG's rasteriser supplies exactly
+ *     the same one-pixel feather for free. `FlatLine` also resolves with `bloomGain: 0`, so
+ *     the one remaining differentiator was deliberately switched off.
+ *  2. IT DELIVERED 56.8 % OF THE INK. `polyline` is emitted with `uSoft = 1`, so
+ *     `edge = smoothstep(1.0, 0.0, |vAcross|)` spans the whole ribbon and there is no opaque
+ *     core; `∫₋₁¹ smoothstep(1,0,|x|) dx = 1.0` in `across` units makes the effective ink
+ *     width exactly `halfWidth`. At `halfWidth: 1.15` against this `strokeWidth={2}` that is
+ *     57.5 % on paper — and rasterising both arms on an M1 measured **56.8 %** (2.314 device
+ *     px of cross-section against 4.000). The GL sparkline was LIGHTER than this polyline, on
+ *     the most numerous chart surface in the product.
+ *
+ * `apps/web/src/components/charts/__tests__/glThreshold.test.ts` is what keeps it that way:
+ * it fails if any chart is wired to the GL path with a ribbon below the floor, or with a
+ * `halfWidth` under the `strokeWidth` it stands in for.
+ */
 export function Sparkline({
   data,
   width = 96,
@@ -28,9 +51,7 @@ export function Sparkline({
   area = false,
 }: SparklineProps) {
   const n = data.length;
-  const hostRef = useRef<HTMLSpanElement | null>(null);
-  const [ready, setReady] = useState(false);
-  useEffect(() => { if (hostRef.current) setReady(true); }, []);
+  if (n === 0) return null;
 
   // 5px padding keeps the r=4 end-dot + 2px surface ring inside the viewBox.
   const pad = 5;
@@ -47,41 +68,12 @@ export function Sparkline({
   const points = xs.map((x, i) => `${x},${ys[i]}`).join(' ');
   const endColor = good === undefined ? stroke : good ? CHART_GOOD : CHART_BAD;
 
-  /* The GL line, in the SVG's own viewBox units so the two layers cannot drift.
-     The status TAIL is a second path rather than an overdraw — under source-over an
-     overdraw would be fine, but a separate run also keeps the tail's own colour exact
-     rather than blended with the base beneath it. */
-  const glLines = useMemo(() => {
-    if (n < 2) return [];
-    const el = hostRef.current;
-    const base = el ? resolveColour(stroke, el) : '';
-    const tail = el ? resolveColour(endColor, el) : '';
-    const xy = (from: number, to: number) => {
-      const f = new Float32Array((to - from + 1) * 2);
-      for (let i = from; i <= to; i++) { f[(i - from) * 2] = xs[i]!; f[(i - from) * 2 + 1] = ys[i]!; }
-      return f;
-    };
-    const last = good === undefined ? n - 1 : n - 2;
-    const out = [{ points: xy(0, last), colour: base, halfWidth: 1.15 }];
-    if (good !== undefined) out.push({ points: xy(n - 2, n - 1), colour: tail, halfWidth: 1.15 });
-    return out;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.join(','), stroke, endColor, good, width, height, ready]);
-
-  const { canvas: glCanvas, refused: glRefused } = useFlatLine({
-    lines: glLines, viewW: width, viewH: height,
-  });
-
-  if (n === 0) return null;
-
   return (
-    <span ref={hostRef} className="relative inline-block shrink-0" style={{ width, height }}>
-    {glCanvas}
     <svg
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      className="relative z-10 block"
+      className="shrink-0"
       aria-hidden="true"
       focusable="false"
     >
@@ -92,8 +84,7 @@ export function Sparkline({
           opacity={0.1}
         />
       )}
-      {/* FALLBACK: server render, print, no WebGL2, first paint. */}
-      {n > 1 && glRefused && (
+      {n > 1 && (
         <polyline
           points={points}
           fill="none"
@@ -103,7 +94,7 @@ export function Sparkline({
           strokeLinecap="round"
         />
       )}
-      {n > 1 && good !== undefined && glRefused && (
+      {n > 1 && good !== undefined && (
         <line
           x1={xs[n - 2]}
           y1={ys[n - 2]}
@@ -115,11 +106,7 @@ export function Sparkline({
         />
       )}
       {/* End-dot: r=4 with a 2px ring in the surface color so it stays legible. */}
-      {/* THE END-DOT STAYS SVG ON BOTH PATHS. Its legibility comes from a 2px ring in the
-          card colour OCCLUDING the line behind it, and an additive-or-alpha layer over a
-          transparent canvas has no surface colour to occlude with. */}
       <circle cx={xs[n - 1]} cy={ys[n - 1]} r={4} fill={endColor} stroke={CARD_FILL} strokeWidth={2} />
     </svg>
-    </span>
   );
 }

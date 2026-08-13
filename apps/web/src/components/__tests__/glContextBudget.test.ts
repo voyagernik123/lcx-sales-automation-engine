@@ -143,7 +143,28 @@ function reachable(entry: string): Set<string> {
 /** Modules that build their OWN context. One live context each, while mounted. */
 const OWNERS = FILES.filter((f) => /createStage\s*\(/.test(SOURCE.get(f)!));
 /** Modules that draw through the ONE offscreen context, however many of them a page mounts. */
-const SHARED_USERS = FILES.filter((f) => /sharedRenderer\s*\(/.test(SOURCE.get(f)!));
+/*
+ * COMMENTS STRIPPED, AND THE FLOOR IS 1 — this census was satisfied by DOCUMENTATION.
+ *
+ * It used to test the raw source for `sharedRenderer(` and require at least four matching files. Four did
+ * match. Exactly ONE of them contained a call: `charts/gl/useFlatChart.ts`. The other three matched header
+ * PROSE — `FlatDial.tsx`, `FlatTrack.tsx` and `FlatBand.tsx` each explain the shared renderer in a comment.
+ *
+ * It surfaced when `FlatBand.tsx` was deleted (ControlBand failed the GL threshold, so its only consumer
+ * went away) and the count fell 4 -> 3, failing a guard that had never been measuring what it claimed.
+ *
+ * The floor of 4 also asserted an architecture the code deliberately does not have: there is exactly ONE
+ * shared-renderer call site by design, because `useFlatChart` owns it and every chart goes through that hook.
+ * A guard that demands four would be satisfied by three more files duplicating the thing the design
+ * centralises.
+ *
+ * The per-route budget below never rested on the prose, because `useFlatChart.ts` is in every chart route's
+ * import closure — so only this one floor was wrong, and its 31 sibling assertions were unaffected.
+ */
+const withoutComments = (src: string): string =>
+  src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
+const SHARED_USERS = FILES.filter((f) => /sharedRenderer\s*\(/.test(withoutComments(SOURCE.get(f)!)));
 
 /**
  * The component names whose JSX brings each owner in — derived from the module that imports it
@@ -190,7 +211,17 @@ const BUDGETS: RouteBudget[] = ROUTES.map((route) => {
       for (const file of files) {
         const src = SOURCE.get(file);
         if (src === undefined) continue;
-        n += [...src.matchAll(new RegExp(`<${name}[\\s/>]`, 'g'))].length;
+        /*
+         * COMMENTS STRIPPED HERE TOO, and for the same reason the SHARED_USERS census above needed it:
+         * prose about a component counts as a mount of it.
+         *
+         * `OntologyOrreryGl.tsx` explains the ResizeObserver guard with the sentence "Measured both ways,
+         * `<OntologyOrrery>` rendered with ...". That backticked tag matched `<Name[\s/>]`, so
+         * OntologyExplorer read as TWO Orrery mount sites and the route looked like it held a context the
+         * budget did not know about. A false positive here is worse than a false negative: it sends the
+         * next reader to EXCLUSIVE_MOUNTS to justify a second mount that does not exist.
+         */
+        n += [...withoutComments(src).matchAll(new RegExp(`<${name}[\\s/>]`, 'g'))].length;
       }
     }
     sites.set(id(owner), n);
@@ -207,7 +238,13 @@ describe('§6 rule 7 — the live GL context budget of the shipping app', () => 
     expect(ROUTES.length, 'no routes parsed out of router.tsx').toBeGreaterThanOrEqual(70);
     expect(OWNERS.length, 'no createStage call sites found in apps/web/src').toBeGreaterThanOrEqual(9);
     expect(SHARED_USERS.length, 'no sharedRenderer call sites found — the flat chart path vanished')
-      .toBeGreaterThanOrEqual(4);
+      .toBeGreaterThanOrEqual(1);
+    /* And it must be the hook that owns it. A second caller would mean a chart bypassing useFlatChart,
+       which is how the one-context guarantee gets quietly broken — the floor above cannot catch that, so
+       this does. */
+    expect(SHARED_USERS.map(id).some((p) => p.endsWith('useFlatChart.ts')),
+      `the shared-renderer call must live in useFlatChart; found ${SHARED_USERS.map(id).join(', ')}`)
+      .toBe(true);
     /* Every owner must be reachable from at least one route, or the census is measuring a
        module nobody can navigate to and the cap it produces is not the app's cap. */
     for (const owner of OWNERS) {
