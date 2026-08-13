@@ -296,7 +296,20 @@ export interface VolumeField {
     readonly colourLow: readonly [number, number, number];
     readonly colourHigh: readonly [number, number, number];
     readonly lightDir: readonly [number, number, number];
-    /** Shadow-ray steps, 0..16. 0 gives a flat, volumeless wash. */
+    /**
+     * Shadow-ray steps, 0..16.
+     *
+     * 0 IS LEGAL AND IS NOT A QUALITY SETTING. `lightTransmittance` returns 1.0 for every sample below
+     * one step, so the cloud loses its lit top and dark underside — the cue the note above calls the
+     * whole reason a volume reads as having volume — and what is left reads as fog on the lens. It is
+     * kept as an explicit caller choice because a caller with a single-band field has nothing to
+     * self-shadow, but `quality.ts` floors its minimum tier at 1 for exactly this reason: 1 step is one
+     * fetch and one exp() per sample and still darkens an underside, where 0 is a different picture
+     * rather than a cheaper one.
+     *
+     * This does NOT touch `alpha`. A reading that assigns magnitude to opacity is unaffected at any
+     * value here, which is what makes this the safe knob and `maxSteps` the unsafe one.
+     */
     readonly lightSteps?: number;
     /** Floor on self-illumination, 0..1, so the densest core is not a black hole. */
     readonly emission?: number;

@@ -510,7 +510,26 @@ if (MESH_ON && surfMesh) {
      * direction — so the highlight travels WITH the axis the samples were taken on rather than
      * across it, and a ridge reads as a ridge instead of as a scratch.
      */
-    material: { baseColour: hexToLinear('#2C6BFF'), roughness: 0.34, metalness: 0.05, anisotropy: 0.55 },
+    /*
+     * ── WHY THE ANISOTROPIC ROUGHNESS VALUES LOOK ODD: THEY ARE sqrt() OF WHAT THEY WERE ────────────────
+     * Re-authored 2026-08-13. The RENDERED RESULT IS INTENDED TO BE UNCHANGED; only the units moved.
+     *
+     * `distributionGGXAniso` used to receive at/ab derived from PERCEPTUAL roughness, so its effective alpha
+     * was ~rough, while the isotropic branch has always used alpha = rough^2. Commit 38c01b1 made the two
+     * branches agree — correct, and verified symbolically. But every anisotropic material in this repo had been
+     * AUTHORED against the old convention, so correcting it made all eleven of them sharper: the E8 disc's lobe
+     * half-width by 3.33x, the ring's by 7.9x along the highlight and 7.7x across.
+     *
+     * That is a redesign, not a fix. `docs/3d/e8/README.md` states the intent in as many words — the highlight
+     * "has to TRAVEL", the disc is "brushed, not mirror — a broad travelling highlight instead of a hotspot",
+     * and it "shows a BAR of light rather than a dot". A lobe 3.3x narrower works against that.
+     *
+     * So each value is now sqrt() of the authored one, which restores the effective alpha exactly
+     * (sqrt(r)^2 == r) while the number finally means what the type says it means. Isotropic materials are
+     * untouched: they always used rough^2, so they were never affected.
+     * Pinned by `packages/gl/src/env/anisoPreserved.test.ts`.
+     */
+    material: { baseColour: hexToLinear('#2C6BFF'), roughness: 0.5831, metalness: 0.05, anisotropy: 0.55 },
   });
 }
 
@@ -542,7 +561,7 @@ if (MESH_ON && probeMesh && peak) {
   probeDrawIndex = draws.length;
   draws.push({
     mesh: probeMesh, model: IDENTITY(), normalMat: N3,
-    material: { baseColour: hexToLinear('#E8EEF9'), roughness: 0.22, metalness: 0.75, anisotropy: 0.3 },
+    material: { baseColour: hexToLinear('#E8EEF9'), roughness: 0.469, metalness: 0.75, anisotropy: 0.3 },
   });
 }
 
@@ -603,7 +622,7 @@ function frame() {
   }
   lit.draw({
     viewProj: vp, eye, lightDir, lightColour: [3.4, 3.35, 3.2],
-    ambientGain: 1.0, lightVP, shadow, shadowStrength: 0.9, shadowTaps: Q.shadowTaps, draws,
+    ambientGain: 1.0, lightVP, shadow, shadowStrength: 0.9, shadowTaps: Q.shadowTaps, shadowBaseline: 1536, draws,
     ao: AO_ON ? ao.texture : null, screenSize: [W, H],
   });
   /* `blit(program, setUniforms?)` — the second argument is a CALLBACK, not a texture, and the

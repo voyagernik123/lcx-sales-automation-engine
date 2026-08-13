@@ -8,20 +8,28 @@ export type VerificationStatus = 'Verified' | 'Inferred' | 'Uncertain';
 
 export type Tier = 'Tier 1 - Maximum friction' | 'Tier 2 - High friction' | 'Tier 3 - Medium friction' | 'Tier 4 - Lower friction' | 'Unresearched';
 
+/**
+ * THE STRUCTURED FIELDS ONLY. `notes`, `primaryPainPoint` and `sandboxNotes` were here until
+ * 2026-08-13; they are prose, they are read by three panels, and because `states.ts` is shared
+ * across six-plus dynamic chunks Rollup hoisted all 31.7KB of them into the ENTRY chunk that
+ * every operator waits for. They now live in `data/stateNarrative.json` behind a dynamic
+ * import — the type for them is `StateNarrative` in `data/stateNarrative.tsx`.
+ *
+ * Adding a prose field back here puts it in the entry chunk again. `stateNarrative.test.tsx`
+ * fails the build if one appears.
+ */
 export interface State {
   id: string; name: string; abbreviation: string;
   regimeType: 'Money transmitter' | 'Virtual currency' | 'Hybrid' | 'No general MTL' | 'Special purpose' | 'Unknown';
   status: Status; phase: Phase; priority: 'Critical' | 'High' | 'Medium' | 'Low' | 'Unassessed';
   tier: Tier;
-  primaryPainPoint?: string;
   estCost?: string;
   estTimeline?: string;
   regulator?: string;
-  notes: string; sourceAuthority: SourceAuthority; confidence: Confidence;
+  sourceAuthority: SourceAuthority; confidence: Confidence;
   minNetWorth?: string;
   suretyBond?: string;
   sandboxAvailable: boolean;
-  sandboxNotes?: string;
   nmlsRequired: boolean;
 }
 export interface License {

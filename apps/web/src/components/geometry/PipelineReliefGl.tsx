@@ -467,7 +467,7 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
       }
       lit.draw({
         viewProj: vp, eye, lightDir: LIGHT_DIR, lightColour: [3.4, 3.3, 3.14],
-        ambientGain: 0.44, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, draws,
+        ambientGain: 0.44, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
         ao: ao ? ao.texture : null, screenSize: [W, H],
         fog: { density: FOG_DENSITY, height: 5.0, floor: 0, colour: fc },
       });

@@ -1,5 +1,10 @@
 import { useState, useMemo, useEffect } from 'react';
 import { states, products, requirements, redFlags } from '@/data';
+import {
+  NarrativeGap,
+  useStateNarrativeTable,
+  type StateNarrativeTableRead,
+} from '@/data/stateNarrative';
 import { useAuditStore } from '@/stores/useAuditStore';
 import { useFilterStore } from '@/stores/useFilterStore';
 import { FileText, Printer, Sliders, CheckSquare, ShieldAlert, Award, FileCode, Check } from 'lucide-react';
@@ -88,9 +93,24 @@ interface LedgerRefusal {
   sources: string[];
 }
 
+/**
+ * FOUR OUTCOMES IN ONE TABLE CELL, and the three that are not the note itself are different
+ * sentences. The one this exists to prevent is the cheapest: printing `NOT RECORDED` — a
+ * statement about the dataset — because a network fetch had not finished. `NOT RECORDED` is a
+ * true claim for 5 of the 50 jurisdictions and a false one for the other 45.
+ */
+function sandboxCell(read: StateNarrativeTableRead, abbreviation: string): string {
+  if (read.state !== 'ready') return 'NOT LOADED';
+  const entry = read.table[abbreviation];
+  if (entry === undefined) return 'NARRATIVE MISSING FOR THIS JURISDICTION';
+  return entry.sandboxNotes || 'NOT RECORDED';
+}
+
 export function BriefGenerator() {
   const { committedArchitecture, addAuditLog, auditLogs } = useAuditStore();
   const { clarityEnacted, spdiEquivalence } = useFilterStore();
+  /* The memo's exemption column is prose and no longer rides in the entry chunk. */
+  const narrativeTable = useStateNarrativeTable();
 
   // Control Panel Options
   const [selectedTemplate, setSelectedTemplate] = useState<'exec' | 'state' | 'sec'>('exec');
@@ -878,6 +898,13 @@ export function BriefGenerator() {
                     <h3 className="text-sm font-bold text-slate-950 border-b border-slate-300 pb-1">
                       2. State Regulatory Sandbox &amp; Exemptions Overview
                     </h3>
+                    {/* THIS IS A MEMO THAT GETS PRINTED, so the refusal has to sit in the memo
+                        body and not only in the cells. The exemption details are prose and now
+                        arrive with `stateNarrative.json`; a printed page whose last column is
+                        blank or dashed is read by a regulator as "no exemption applies". */}
+                    {narrativeTable.state !== 'ready' && (
+                      <NarrativeGap read={narrativeTable} subject="The exemption details for every jurisdiction in this memo" />
+                    )}
                     <div className="overflow-x-auto border border-slate-200 rounded">
                       <table className="w-full text-left border-collapse text-micro">
                         <thead>
@@ -908,9 +935,12 @@ export function BriefGenerator() {
                               </td>
                               {/* Was a sentence asserting that no sandbox exists and
                                   that a standard MTL is required — a legal claim
-                                  manufactured out of an empty field. */}
-                              <td className="p-2 text-slate-500 italic max-w-[200px] truncate" title={s.sandboxNotes || 'NOT RECORDED'}>
-                                {s.sandboxNotes || 'NOT RECORDED'}
+                                  manufactured out of an empty field. `NOT LOADED` and
+                                  `NOT RECORDED` are kept apart for the same reason: one
+                                  says the asset never arrived, the other says this
+                                  jurisdiction genuinely has no note (5 of 50 do not). */}
+                              <td className="p-2 text-slate-500 italic max-w-[200px] truncate" title={sandboxCell(narrativeTable, s.abbreviation)}>
+                                {sandboxCell(narrativeTable, s.abbreviation)}
                               </td>
                             </tr>
                           ))}

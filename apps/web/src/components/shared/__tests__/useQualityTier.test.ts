@@ -389,6 +389,13 @@ describe('every shipping component derives its tier rather than hard-coding the 
      */
     const src = readFileSync(path.join(ROOT, 'components/risk/StormReliefGl.tsx'), 'utf8');
     expect(src).toMatch(/maxSteps:\s*MAX_STEPS/);
+    /*
+     * NOW UNFALSIFIABLE BY CONSTRUCTION, and kept deliberately. `volumeMaxSteps` was DELETED from
+     * QualitySettings on 2026-08-13, so this pattern cannot appear whatever anyone writes — the refusal it
+     * guarded is enforced by the type rather than by this assertion. Left in place because a future author
+     * re-adding the field would reach for exactly this line, and finding the argument attached to it is
+     * cheaper than rediscovering that steps are reach rather than quality.
+     */
     expect(src).not.toMatch(/maxSteps:\s*Q\.volumeMaxSteps/);
     /* The light march IS a look knob — it feeds `lightTransmittance`, which modulates radiance and never
        touches alpha, and alpha is the channel this reading assigns to magnitude. */

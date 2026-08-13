@@ -231,6 +231,16 @@ export function createAmbientOcclusion(
   const blurProg = stage.compile(AO_VERT, BLUR_FRAG);
   if ('kind' in blurProg) return blurProg;
 
+  /*
+   * HALF RESOLUTION IS FIXED, AND `quality.ts` NO LONGER PRETENDS OTHERWISE.
+   *
+   * The ladder used to declare an `aoScale` field, which read as "the tier controls this". It did not:
+   * the value was 0.5 in all three tiers — so it could not vary anything even in principle — and nothing
+   * anywhere read it, while this shift was the number that actually decided the buffer size. Deleted
+   * there rather than wired here, because the argument at the top of this file is that half resolution is
+   * CORRECT and not a compromise: quarter-res would also double the silhouette error in the
+   * depth-derivative normal, since the central difference below steps two AO texels, not two screen ones.
+   */
   let w = Math.max(1, fullWidth >> 1);
   let h = Math.max(1, fullHeight >> 1);
 

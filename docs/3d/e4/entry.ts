@@ -1058,7 +1058,7 @@ function frame() {
   }
   lit.draw({
     viewProj: vp, eye, lightDir, lightColour: [3.1, 3.05, 2.95],
-    ambientGain: 0.52, lightVP, shadow: SHADOW_ON ? shadow : null, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, draws,
+    ambientGain: 0.52, lightVP, shadow: SHADOW_ON ? shadow : null, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: 1536, draws,
     ao: aoEnabled ? ao.texture : null, screenSize: [W, H],
     fog: null,
   });

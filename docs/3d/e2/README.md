@@ -186,3 +186,14 @@ is a to-do list nobody re-read.*
 ```bash
 node docs/3d/e2/build.mjs && node docs/3d/e2/capture.mjs
 ```
+
+
+## The anisotropic roughness values are sqrt() of the authored ones
+
+Added 2026-08-13. `RING_MAT` (authored 0.14, `anisotropy: 0.8`) and `CORRIDOR_MAT` (authored 0.22,
+`anisotropy: 0.85`) carry `0.3742` and `0.469` in source. `distributionGGXAniso` used to take `at`/`ab` from
+*perceptual* roughness while the isotropic branch used `alpha = rough²`; correcting that in `38c01b1` made
+this ring's lobe 7.1× narrower and the corridors' 4.6×, so the values were re-authored as square roots to
+restore the effective alpha exactly. The corridor claim this harness actually tests — that lift rises with
+angular distance — is unaffected: it is geometry, not shading. Pinned by
+`packages/gl/src/env/anisoPreserved.test.ts`.

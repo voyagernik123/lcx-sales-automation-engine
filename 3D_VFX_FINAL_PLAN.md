@@ -244,12 +244,22 @@ value nobody reads is worse than no config value, because it reads as a guarante
 > **DONE, and this section is now stale in a useful way.** `lit.ts` reads `uShadowTaps` as two static
 > branches and all nine harnesses pass `Q.shadowTaps`.
 >
-> **The defect class is wider than this one field.** Wiring the ladder into the app turned up three more
-> settings that **nothing anywhere reads** — not the app, not even the harnesses: `particleCapacity`,
-> `volumeMaxSteps` (E7 passes its own `MAX_STEPS`, not `Q.volumeMaxSteps`) and `aoScale` (AO hard-codes
-> `fullWidth >> 1`, which merely happens to equal 0.5). Three more numbers that read as guarantees. Listed
-> here rather than fixed silently, because each is a real behaviour change to a shipped surface and two of
-> them are on the tier nobody has measured.
+> **The defect class was wider than this one field, and is now CLOSED.** Wiring the ladder into the app
+> turned up four more settings nothing read — and one of them was worse than unread.
+>
+> | field | verdict | why |
+> |---|---|---|
+> | `shadowMapSize` | **wired** | **Two ladders, disagreeing, neither aware of the other.** `shadowMapSizeFor` hard-coded factors 1 / 0.5 / 0.25 while the ladder declared 1536 / 1024 / 512 = 1 / 0.667 / 0.333. A test asserted the declared one; every shipped shadow map came from the other. I never flagged this one. |
+> | `volumeLightSteps` | **wired in E7, and floored at 1** | E7 passed a literal 6. And the minimum rung declared **0**, which `volume.ts` returns full transmittance for — losing the lit top and dark underside that its own comment calls "the entire cue that makes a volume read as having VOLUME". The ladder shipped the one value that rung may not take. |
+> | `particleCapacity` | **deleted** | E3 needs **956 particles simultaneously alive**; minimum's 512 slots cap the live count at 53.6% — a data change, not a saving. And capacity is fixed by the emitter's arithmetic (`slots / emissionPerSec` must exceed the longest life), which a tier cannot know. |
+> | `volumeMaxSteps` | **deleted** | At a fixed world step, steps are **reach**, not quality. E7's box is 14.00 m in z and it prints `marchReachM` 16.0; 96 steps reach 12.0 m and 48 reach 6.0 m. Both truncate while the printed sentence still claims 16.0, so distant days would read as lower risk than they are. |
+> | `aoScale` | **deleted** | 0.5 in all three tiers — it could not vary anything even in principle, and AO is off entirely at minimum. It was never a tier field. |
+>
+> `gl-budget` delta: **0 bytes.** And the 230-byte particles margin turned out not to be the argument against
+> wiring `particleCapacity` — the 956-particle reading was; `quality.ts` is in no lane at all.
+>
+> The new ratchet enumerates fields from `Object.keys(qualitySettings('full'))` rather than a hand-list,
+> because a hand-list cannot fail on a field nobody thought of — which is how all five got in.
 
 ### 4.3 · Fix the anisotropic roughness discontinuity
 

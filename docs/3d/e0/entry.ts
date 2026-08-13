@@ -317,7 +317,7 @@ function frame() {
   for (let r = 0; r < REPEAT; r++) {
     lit.draw({
       viewProj: vp, eye, lightDir: light.direction, lightColour: light.colour,
-      ambientGain: 1, sky: SKY, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, draws,
+      ambientGain: 1, sky: SKY, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: 1024, draws,
       ao: AO_ON ? ao.texture : null, screenSize: [W, H],
     });
   }
@@ -432,7 +432,7 @@ const targetProbe = (() => {
   lit.draw({
     viewProj: viewProjection(view, W / H), eye: eyeOf(view), lightDir: light.direction,
     lightColour: light.colour, ambientGain: 1, sky: SKY, lightVP, shadow,
-    shadowStrength: 0.92, shadowTaps: Q.shadowTaps, draws, onStep: probeStep,
+    shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: 1024, draws, onStep: probeStep,
   });
   const afterDraw = gl.getError();
   /*

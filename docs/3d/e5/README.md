@@ -26,7 +26,7 @@ disagreement rather than printing it.
 *Capture provenance, 2026-08-13 — and this is the one environment other than E8 where the shading actually
 moved. `bundle.js` here predates `38c01b1` (it still carries the pre-fix `max(1e-6, PI * d * d)` and no
 `uShadowTaps` uniform), and **E5 is one of only three environments that sets `anisotropy`**: the surface
-mesh at `entry.ts:513` is roughness 0.34 with `anisotropy: 0.55`, the probe column at `:545` is 0.22 with
+mesh at `entry.ts:513` is authored roughness 0.34 with `anisotropy: 0.55`, the probe column at `:545` is 0.22 with
 0.3. Defect 2 of that commit fed the anisotropic distribution **perceptual roughness where it wanted an
 alpha**, so the surface's lobe was computed at alpha 0.34 instead of 0.34² = 0.1156 and the probe's at 0.22
 instead of 0.0484 — a materially wider, duller sheen than the material asks for. **Every claim in this file
@@ -210,3 +210,13 @@ quietest, and that argument applies here. The instrument is right now; the prese
 ```bash
 node docs/3d/e5/build.mjs && node docs/3d/e5/capture.mjs
 ```
+
+
+## The anisotropic roughness values are sqrt() of the authored ones
+
+Added 2026-08-13. `distributionGGXAniso` used to take `at`/`ab` derived from *perceptual* roughness while the
+isotropic branch used `alpha = rough²`; correcting that in `38c01b1` narrowed every anisotropic lobe in the
+programme. E5's surface (authored 0.34, `anisotropy: 0.55`) and probe column (authored 0.22, `anisotropy: 0.3`)
+therefore carry `0.5831` and `0.469` in source — the square roots — which restores the effective alpha exactly.
+The authored numbers above are the design intent and are what to reason about; the source values are a unit
+conversion. Pinned by `packages/gl/src/env/anisoPreserved.test.ts`.

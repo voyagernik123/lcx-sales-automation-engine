@@ -862,7 +862,7 @@ function frame(depthOn = DEPTH_ON) {
   }
   lit.draw({
     viewProj: vp, eye, lightDir, lightColour: [2.05, 2.0, 1.92],
-    ambientGain: 0.62, sky: SKY, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, draws,
+    ambientGain: 0.62, sky: SKY, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: 1536, draws,
     ao: AO_ON ? ao.texture : null, screenSize: [W, H],
   });
   if (volume) {
@@ -874,9 +874,25 @@ function frame(depthOn = DEPTH_ON) {
       fovDeg: view.fovDeg ?? 36, aspect: ASPECT, near: NEAR, far: FAR,
       sceneDepth: depthOn ? target.depthTexture : farDepth.depthTexture,
       boxMin: BOX_MIN, boxMax: BOX_MAX,
+      /*
+       * `maxSteps` IS THIS ENVIRONMENT'S OWN NUMBER AND THE TIER MAY NOT TOUCH IT.
+       *
+       * `quality.ts` used to declare `volumeMaxSteps` (128/96/48). It is deleted, and the reason is
+       * visible from here: at a fixed `WORLD_STEP` the step count fixes the REACH, which this report
+       * prints as `marchReachM` (0.125 × 128 = 16.0 m) beside `boxDiagonalM`. The box is 14.00 m in z
+       * alone, so 96 steps reach 12.0 m and 48 reach 6.0 m — both truncate the far weeks while the
+       * printed reach still claims 16.0, and a truncated march looks exactly like the data ending.
+       */
       worldStep: WORLD_STEP, maxSteps: MAX_STEPS, densityScale: DENSITY_SCALE,
       colourLow: COL_LOW, colourHigh: COL_HIGH,
-      lightDir, lightSteps: 6, emission: 0.26,
+      /*
+       * `lightSteps` IS the tier's business, and this was a literal 6 — so the minimum tier paid the
+       * full six-sample self-shadow march per accumulated sample it had asked to drop. Safe to vary
+       * because `lightTransmittance` feeds only the RADIANCE term: `alpha`, which is the channel this
+       * environment assigns to accumulated risk, never sees it. `full` is 6, so this frame is
+       * byte-identical to the capture behind the README.
+       */
+      lightDir, lightSteps: Q.volumeLightSteps, emission: 0.26,
     });
     target.bind();
     gl.enable(gl.BLEND);
@@ -1452,6 +1468,10 @@ const report = {
      A tier that cannot be reported is a tier that cannot be trusted. */
   tier: Q.tier,
   tierDprScale: Q.dprScale,
+  /* REPORTED because it is now the one tier field that changes this frame's pixels: the self-shadow
+     march inside the volume. A tier that alters the render and is not in the report is a configuration
+     nobody can reconstruct from the capture. */
+  tierVolumeLightSteps: Q.volumeLightSteps,
   /* The tier SCALES this environment's own baseline (1536) rather than replacing it — the
      ladder must not change what the frame looks like at its highest tier. */
   tierShadowMapSize: shadowMapSizeFor(TIER, 1536),

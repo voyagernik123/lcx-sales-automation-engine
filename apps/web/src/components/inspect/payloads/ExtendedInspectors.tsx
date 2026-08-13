@@ -8,6 +8,7 @@ import type { PostListingTrigger } from '@/types/kpi';
 import type { DealEvent } from '@/types/bd';
 import { TRIGGER_DAY_LABELS, TRIGGER_TYPE_LABELS } from '@/types/kpi';
 import { states } from '@/data';
+import { NarrativeGap, useStateNarrative } from '@/data/stateNarrative';
 import { formatDate, formatMoney } from '@/lib/format';
 import { CardSkeleton, EmptyState, TableSkeleton } from '@/components/shared';
 import { Button } from '@/components/ui';
@@ -293,6 +294,32 @@ export function DecisionInspector({ id, seed }: InspectorPayloadProps) {
 
 /* ─────────────────────────── Jurisdiction ─────────────────────────── */
 
+/**
+ * A SEPARATE COMPONENT so the hook is only mounted when a US jurisdiction was actually found.
+ * `JurisdictionInspector` early-returns for non-US market codes (LI, DE, SG…), so a hook called
+ * after that branch would change the hook count between two renders of the same component and
+ * React would throw "rendered fewer hooks than expected" the first time an operator opened a
+ * non-US code after a state.
+ *
+ * `primaryPainPoint` is absent for no jurisdiction today, but it is typed optional, so an entry
+ * that loaded WITHOUT one is a real (if currently empty) case and says so in words. That is not
+ * the same as the fetch having failed, and the two must not print the same thing.
+ */
+function JurisdictionNarrative({ abbreviation, name }: { abbreviation: string; name: string }) {
+  const read = useStateNarrative(abbreviation);
+  if (read.state !== 'ready') {
+    return <NarrativeGap read={read} subject={`${name}'s primary pain point`} />;
+  }
+  if (!read.narrative.primaryPainPoint) {
+    return (
+      <p className="font-mono text-[10px] uppercase tracking-wider text-grey">
+        No primary pain point recorded
+      </p>
+    );
+  }
+  return <p className="text-label text-grey">{read.narrative.primaryPainPoint}</p>;
+}
+
 export function JurisdictionInspector({ id }: InspectorPayloadProps) {
   const navigate = useNavigate();
   const close = useInspectorStore(st => st.close);
@@ -327,7 +354,10 @@ export function JurisdictionInspector({ id }: InspectorPayloadProps) {
         {state.regulator && <Fact label="Regulator" value={state.regulator} />}
         {state.estTimeline && <Fact label="Est. timeline" value={state.estTimeline} />}
       </div>
-      {state.primaryPainPoint && <p className="text-label text-grey">{state.primaryPainPoint}</p>}
+      {/* THE ONE PROSE FIELD ON THIS PANEL, AND THE ONLY THING ON IT THAT WAITS. This component
+          is in the EAGER shell chunk, which is why the pain point moved out of `states.ts`: the
+          facts above come from a synchronous `states.find`, and the paragraph arrives after. */}
+      <JurisdictionNarrative abbreviation={state.abbreviation} name={state.name} />
       <Button size="sm" variant="secondary" onClick={() => { close(); navigate('/states'); }}>
         Open on the state map →
       </Button>

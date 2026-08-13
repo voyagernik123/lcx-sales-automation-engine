@@ -180,7 +180,26 @@ export default function SurfaceReliefGl({
       { mesh: surfMesh!, model: translate(0, PLINTH_H, 0), normalMat: N3,
         /* Dielectric, so §6 rule 5's hex survives: a metal has no diffuse lobe and #2C6BFF would arrive only
            through the specular F0 as a blue-tinted mirror of the sky. */
-        material: { baseColour: hexToLinear('#2C6BFF'), roughness: 0.34, metalness: 0.05, anisotropy: 0.55 } },
+        /*
+         * ── WHY THE ANISOTROPIC ROUGHNESS VALUES LOOK ODD: THEY ARE sqrt() OF WHAT THEY WERE ────────────────
+         * Re-authored 2026-08-13. The RENDERED RESULT IS INTENDED TO BE UNCHANGED; only the units moved.
+         *
+         * `distributionGGXAniso` used to receive at/ab derived from PERCEPTUAL roughness, so its effective alpha
+         * was ~rough, while the isotropic branch has always used alpha = rough^2. Commit 38c01b1 made the two
+         * branches agree — correct, and verified symbolically. But every anisotropic material in this repo had been
+         * AUTHORED against the old convention, so correcting it made all eleven of them sharper: the E8 disc's lobe
+         * half-width by 3.33x, the ring's by 7.9x along the highlight and 7.7x across.
+         *
+         * That is a redesign, not a fix. `docs/3d/e8/README.md` states the intent in as many words — the highlight
+         * "has to TRAVEL", the disc is "brushed, not mirror — a broad travelling highlight instead of a hotspot",
+         * and it "shows a BAR of light rather than a dot". A lobe 3.3x narrower works against that.
+         *
+         * So each value is now sqrt() of the authored one, which restores the effective alpha exactly
+         * (sqrt(r)^2 == r) while the number finally means what the type says it means. Isotropic materials are
+         * untouched: they always used rough^2, so they were never affected.
+         * Pinned by `packages/gl/src/env/anisoPreserved.test.ts`.
+         */
+        material: { baseColour: hexToLinear('#2C6BFF'), roughness: 0.5831, metalness: 0.05, anisotropy: 0.55 } },
     ];
 
     /* Contour ribbons, if the caller asked for levels. Built exactly as E5 builds them, including the rule that
@@ -263,7 +282,7 @@ export default function SurfaceReliefGl({
       lit.depthPrepass(vp, draws);
       lit.draw({
         viewProj: vp, eye, lightDir, lightColour: [3.4, 3.35, 3.2],
-        ambientGain: 1.0, lightVP, shadow, shadowStrength: 0.9, shadowTaps: Q.shadowTaps, draws,
+        ambientGain: 1.0, lightVP, shadow, shadowStrength: 0.9, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
         ao: null, screenSize: [W, H],
       });
     };

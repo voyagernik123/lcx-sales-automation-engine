@@ -459,11 +459,30 @@ const ATMOS_MAT = { baseColour: hexToLinear('#7FB2FF'), roughness: 0.86, metalne
    ring to read as a different MATERIAL rather than as a brighter version of the same one.
    Anisotropy 0.8 stretches the highlight along the ring — `torus()` supplies that tangent
    analytically, which is why the bar of light follows the tube instead of crossing it. */
-const RING_MAT = { baseColour: hexToLinear('#8FA3C4'), roughness: 0.14, metalness: 0.95, anisotropy: 0.8 };
+/*
+ * ── WHY THE ANISOTROPIC ROUGHNESS VALUES LOOK ODD: THEY ARE sqrt() OF WHAT THEY WERE ────────────────
+ * Re-authored 2026-08-13. The RENDERED RESULT IS INTENDED TO BE UNCHANGED; only the units moved.
+ *
+ * `distributionGGXAniso` used to receive at/ab derived from PERCEPTUAL roughness, so its effective alpha
+ * was ~rough, while the isotropic branch has always used alpha = rough^2. Commit 38c01b1 made the two
+ * branches agree — correct, and verified symbolically. But every anisotropic material in this repo had been
+ * AUTHORED against the old convention, so correcting it made all eleven of them sharper: the E8 disc's lobe
+ * half-width by 3.33x, the ring's by 7.9x along the highlight and 7.7x across.
+ *
+ * That is a redesign, not a fix. `docs/3d/e8/README.md` states the intent in as many words — the highlight
+ * "has to TRAVEL", the disc is "brushed, not mirror — a broad travelling highlight instead of a hotspot",
+ * and it "shows a BAR of light rather than a dot". A lobe 3.3x narrower works against that.
+ *
+ * So each value is now sqrt() of the authored one, which restores the effective alpha exactly
+ * (sqrt(r)^2 == r) while the number finally means what the type says it means. Isotropic materials are
+ * untouched: they always used rough^2, so they were never affected.
+ * Pinned by `packages/gl/src/env/anisoPreserved.test.ts`.
+ */
+const RING_MAT = { baseColour: hexToLinear('#8FA3C4'), roughness: 0.3742, metalness: 0.95, anisotropy: 0.8 };
 const CITY_MAT = { baseColour: hexToLinear('#2C6BFF'), roughness: 0.5, metalness: 0.0 };
 /* Anisotropy 0.85 with `arcTube`'s along-the-path tangent, so the highlight runs DOWN the corridor.
    An isotropic tube bands into rings and reads as a ribbed hose rather than a lit route. */
-const CORRIDOR_MAT = { baseColour: hexToLinear('#4C86FF'), roughness: 0.22, metalness: 0.85, anisotropy: 0.85 };
+const CORRIDOR_MAT = { baseColour: hexToLinear('#4C86FF'), roughness: 0.469, metalness: 0.85, anisotropy: 0.85 };
 
 /* Markers are centred ON the surface, so half of each sphere is buried. A marker floated clear of
    the surface reads as a pin hovering over the planet and casts a detached shadow; half-buried, it
@@ -585,7 +604,7 @@ function frame() {
     sky: SKY,
     /* A null shadow map is FULLY LIT in `lit.ts`, never fully shadowed, so the control is a
        genuine no-shadow render rather than a black frame. */
-    lightVP, shadow: SHADOW_ON ? shadow : null, shadowStrength: 0.92, shadowTaps: Q.shadowTaps,
+    lightVP, shadow: SHADOW_ON ? shadow : null, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: 1024,
     ao: ao.texture, screenSize: [W, H] as [number, number],
   };
   lit.draw({ ...common, ambientGain: BODY_AMBIENT, draws: bodyDraws });

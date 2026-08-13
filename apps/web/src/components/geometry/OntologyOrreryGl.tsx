@@ -30,8 +30,12 @@ import {
   createShadowMap, viewProjection, lightViewProjection, boundsCentre, boundsRadius, projectScreen,
   hexToLinear, assertBrandFidelity, IDENTITY,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
+  qualitySettings, shadowMapSizeFor, pickQualityTier,
   type LitDraw, type Geometry,
 } from '@lcx/gl';
+import {
+  useResolvedQualityTier, needsQualityProbe, measureFrameMs, recordQualityProbe,
+} from '../shared/useQualityTier';
 import {
   buildOrrery, isOrreryRefusal, ORRERY_PLANES, ABSENT_GEOM, WITHHELD_R, WITHHELD_H, DECK_Y,
   type OrreryInput, type OrreryLayout, type V3,
@@ -194,9 +198,22 @@ function orbitBasis(incDeg: number, nodeDeg: number): { model: Float32Array; nor
   return { model: m, normal: r9 };
 }
 
+/**
+ * THIS SCENE'S OWN SHADOW BASELINE, which the tier SCALES rather than replaces.
+ *
+ * `env/quality.ts:91` records why: wiring the ladder in with the tier's ABSOLUTE `shadowMapSize` silently
+ * enlarged three environments — E0, E2 and E8 had each chosen 1024 and were handed 1536 at the default tier, a
+ * 2.25x bigger map and three captures that changed without anyone saying so. The shadows here are load-bearing
+ * (the gap between a body and its shadow IS the height), so this baseline is a reading decision, not a budget.
+ */
+const SHADOW_BASELINE = 1024;
+
 export default function OntologyOrreryGl({ input, onRefused, onReading }: OntologyOrreryGlProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  /* Subscribed rather than read once: this surface renders one frame into an offscreen target and only then
+     blits it, so a resolved lower tier can rebuild the scene before anything has been painted. */
+  const tier = useResolvedQualityTier();
   /*
    * THE SIZE IS MEASURED, AND IT IS ROUNDED TO A STEP ON PURPOSE.
    *
@@ -243,9 +260,11 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
     if (isOrreryRefusal(outcome)) { onRefused(outcome.code, outcome.reason); return; }
     const L = outcome;
 
-    /* DPR CAPPED AT 2. Everything in this frame is fill-bound, so a 3× display would triple the cost of a
-       reading whose whole justification is that an operator gets an answer faster. */
-    const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    /* DPR CAPPED BY THE TIER. Everything in this frame is fill-bound, so a 3× display would triple the cost of
+       a reading whose whole justification is that an operator gets an answer faster. The cap WAS a literal 2;
+       `Q.dprScale` is 2 at `full` and `reduced` and 1 at `minimum`. */
+    const Q = qualitySettings(tier);
+    const dpr = Math.min(Q.dprScale, Math.max(1, window.devicePixelRatio || 1));
     const W = Math.round(size.w * dpr), H = Math.round(size.h * dpr);
     canvas.width = W; canvas.height = H;
 
@@ -283,7 +302,7 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
      * a missing shadow map and a missing AO texture together leave two samplers bound to the float scene
      * target; the shadow map is present here, so that pairing cannot arise.
      */
-    const shadow = createShadowMap(stage, 1024);
+    const shadow = createShadowMap(stage, shadowMapSizeFor(tier, SHADOW_BASELINE));
     if ('kind' in shadow) { refuse(shadow.code, shadow.reason); return; }
     disposers.push(() => shadow.dispose());
 
@@ -422,23 +441,56 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
 
     /* ONE FRAME, then nothing. See the file header: §6 rule 2, and the reason reduced motion needs no branch. */
     const vp = viewProjection(L.view, W / H);
-    lit.shadowPass(lightVP, casters, shadow);
-    target.bind();
     const cc = hexToLinear(CLEAR_HEX);
-    gl.clearColor(cc[0], cc[1], cc[2], 1);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    lit.depthPrepass(vp, draws);
-    lit.draw({
-      viewProj: vp, eye: L.eye, lightDir, lightColour: [3.1, 3.05, 2.95],
-      ambientGain: 0.52, lightVP, shadow, shadowStrength: 0.92, draws,
-      ao: null, screenSize: [W, H], fog: null,
-    });
+    /* A FUNCTION NOW, SO IT CAN BE MEASURED — and it ends with `target` bound, which is what `probeSync`
+       requires: a `readPixels` only guarantees completion of work affecting the framebuffer it reads. */
+    const renderScene = (): void => {
+      lit.shadowPass(lightVP, casters, shadow);
+      target.bind();
+      gl.clearColor(cc[0], cc[1], cc[2], 1);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      lit.depthPrepass(vp, draws);
+      lit.draw({
+        viewProj: vp, eye: L.eye, lightDir, lightColour: [3.1, 3.05, 2.95],
+        /* AO stays `null` at every tier: it was measured in E4's harness at 0.44% of the frame, so there is
+           nothing here for the ladder to drop. See the allocation comment above. */
+        ambientGain: 0.52, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
+        ao: null, screenSize: [W, H], fog: null,
+      });
+    };
+
+    /*
+     * THE PROBE, TAKEN BEFORE ANYTHING IS PRESENTED. `pickQualityTier` exists to choose a tier from one
+     * measured frame and had no caller in this repo; this is one. A discarded warm-up frame first — the first
+     * frame pays shader upload, and charging that to the GPU would downgrade every machine — then two
+     * sync-bounded samples of which the cheaper is used, because one sample can catch a GC pause and a single
+     * unlucky 40 ms would drop a fast machine for the rest of the page load.
+     */
+    if (needsQualityProbe()) {
+      const ms = measureFrameMs(gl, renderScene);
+      const r = recordQualityProbe({
+        pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'OntologyOrreryGl',
+      });
+      /* A LOWER TIER MEANS THIS BUILD IS STALE. Nothing is presented and `onReading` is NOT called — a reading
+         published off a frame the reader will never see is a number about nothing. The effect re-runs on the
+         new tier and publishes then. */
+      if (r.tier !== tier) {
+        return () => {
+          for (const d of disposers.reverse()) d();
+          stage.dispose();
+        };
+      }
+    }
+
+    renderScene();
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
     gl.viewport(0, 0, W, H);
     gl.disable(gl.DEPTH_TEST);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, target.texture);
     stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+    /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
+    canvas.dataset.qualityTier = tier;
 
     const err = gl.getError();
     if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW', 'the driver reported error ' + err + ' after the frame'); return; }
@@ -495,7 +547,9 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
       for (const d of disposers.reverse()) d();
       stage.dispose();
     };
-  }, [input, size, onRefused, onReading]);
+    /* `tier` IS A DEPENDENCY, and that is the rebuild mechanism: a resolved lower tier tears this context down
+       and builds the orrery again at it. */
+  }, [input, size, onRefused, onReading, tier]);
 
   return (
     <div ref={hostRef} className="absolute inset-0">

@@ -480,7 +480,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
         viewProj: vp, eye, lightDir, lightColour: [3.0, 2.95, 2.85],
         /* 0.46, not 0.86. At the higher gain the floor and ceiling — whose normals point at the analytic sky's
            bright zenith — became two glowing wedges brighter than the key light. */
-        ambientGain: 0.46, lightVP, shadow, shadowStrength: 0.94, shadowTaps: Q.shadowTaps, draws,
+        ambientGain: 0.46, lightVP, shadow, shadowStrength: 0.94, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
         ao: ao ? ao.texture : null, screenSize: [W, H],
         fog: { density: FOG_DENSITY, height: 6.0, floor: 0, colour: fc },
       });

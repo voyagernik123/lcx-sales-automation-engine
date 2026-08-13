@@ -439,7 +439,7 @@ function frame() {
        alternative was measured — 0.72 with the key raised to compensate drained the shadow
        interiors by about a fifth and bought nothing anywhere else. */
     viewProj: vp, eye, lightDir, lightColour: [3.5, 3.45, 3.3],
-    ambientGain: 1.05, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, draws,
+    ambientGain: 1.05, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: 1536, draws,
     ao: AO_ON ? ao.texture : null, screenSize: [W, H],
   });
 

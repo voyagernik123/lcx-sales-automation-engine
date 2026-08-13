@@ -214,6 +214,29 @@ void main(){
  * And one tap is not "9 taps, cheaper" — it is a hard shadow edge. That is the correct thing for the
  * tier to buy, and it is why this is a look change as well as a perf change.
  *
+ * ── 5 · THE BIAS WAS TUNED FOR ONE MAP SIZE AND THE QUALITY LADDER CHANGES THE MAP SIZE ────────────
+ * Found by an adversarial pass over fix 1, and it is fix 1's own consequence rather than a pre-existing
+ * defect — which is why it is here and not in the list above.
+ *
+ * Depth error from a shadow map scales with TEXEL SIZE. The constants 0.0009 and 0.0045 were tuned against
+ * the map an environment actually renders, and every environment picks its own baseline (1024 for all seven
+ * shipping components and for e0/e2/e8; 1536 for e4 and e6). The ladder then multiplies that baseline down:
+ * shadowMapSizeFor('minimum', 1024) is 256, a quarter of the linear resolution, where the bias needed to
+ * clear self-shadowing is about FOUR TIMES what it is at 1024.
+ *
+ * That was survivable while every fragment took nine taps, because residual acne averaged into a 3-level
+ * dither and read as softness. Fix 1 gave the minimum tier ONE tap. One tap does not average, so the same
+ * residual becomes hard binary speckle — on precisely the tier that exists for machines least able to hide
+ * it, and on which no capture had ever been taken.
+ *
+ * SCALED AGAINST THE ENVIRONMENT'S OWN BASELINE, not against a global constant. That distinction is the
+ * whole design: at the full tier actual == baseline, so the scale is exactly 1.0 and every approved capture
+ * is unchanged BY CONSTRUCTION, including e4's and e6's 1536 maps. Only the rungs that shrink the map pay
+ * more bias. Scaling against a global 1024 would have been simpler and would have silently altered the two
+ * 1536 environments' full-tier shadows — trading one regression for another.
+ *
+ * The default is 1.0, so a caller that does not pass a baseline gets exactly today's behaviour.
+ *
  * ── 4 · THE ISOTROPIC BRANCH HAD THE SAME DEFECT, AND IT WAS LIVE ON THE SIGN-IN SCREEN ────────────
  * distributionGGX guarded with max(1e-6, PI*d*d). At NdotH = 1, d reduces to a2, so the denominator's
  * true floor is PI*a2^2 -- 5.3e-11 at the roughness clamp, which is FIVE ORDERS OF MAGNITUDE below the
@@ -409,6 +432,7 @@ uniform sampler2D uShadowMap;
 uniform float uShadowTexel;
 uniform float uShadowStrength;
 uniform int uShadowTaps;
+uniform float uShadowBiasScale;
 
 uniform sampler2D uAO;
 uniform vec2 uScreenSize;
@@ -465,7 +489,7 @@ float shadowFactor(vec3 world, float NdotL) {
   p = p * 0.5 + 0.5;
   if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0 || p.z > 1.0) return 1.0;
 
-  float bias = max(0.0009, 0.0045 * (1.0 - NdotL));
+  float bias = max(0.0009, 0.0045 * (1.0 - NdotL)) * uShadowBiasScale;
   float ref = p.z - bias;
 
   // One tap is a HARD EDGE, not a cheaper nine. Two static branches: uShadowTaps is uniform across
@@ -654,6 +678,15 @@ export interface LitRenderer {
      * ladder existed keeps the filtering it was captured with. Pass `qualitySettings(tier).shadowTaps`.
      */
     readonly shadowTaps?: number;
+    /**
+     * The shadow-map size this scene's bias was tuned at — i.e. the baseline you hand
+     * `shadowMapSizeFor`, NOT the size the tier resolved to. The bias scales by `baseline / actual`, so
+     * a tier that shrinks the map gets proportionally more bias and the full tier gets exactly 1.0.
+     *
+     * Omit it and the scale is 1.0, which is today's behaviour — the tier then renders a coarser map with
+     * a bias tuned for a finer one, which is hard speckle at one tap.
+     */
+    readonly shadowBaseline?: number;
     readonly draws: readonly LitDraw[];
     /** Half-resolution occlusion from `createAmbientOcclusion`. Omit to disable. */
     readonly ao?: WebGLTexture | null;
@@ -797,6 +830,11 @@ export function createLitRenderer(stage: Stage): LitRenderer | StageRefusal {
         /* Anything below 9 is the hard edge. Snapped rather than trusted, so a stray 4 cannot land the
            shader in a state neither branch was written for. */
         gl.uniform1i(u(litProg, 'uShadowTaps'), (o.shadowTaps ?? 9) >= 9 ? 9 : 1);
+        /* baseline / actual. Guarded so a zero or absent size cannot produce Infinity or NaN — a NaN bias
+           makes every depth comparison false, which renders the scene fully shadowed, i.e. black. */
+        const base = o.shadowBaseline;
+        const scale = base && base > 0 && o.shadow.size > 0 ? base / o.shadow.size : 1;
+        gl.uniform1f(u(litProg, 'uShadowBiasScale'), Number.isFinite(scale) && scale > 0 ? scale : 1);
       } else {
         // NO SHADOW MAP IS "FULLY LIT", never "fully shadowed". A missing resource must not
         // black out the scene — that is indistinguishable from a broken shader.

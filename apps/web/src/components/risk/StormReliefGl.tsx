@@ -468,7 +468,7 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
       lit.depthPrepass(vp, draws);
       lit.draw({
         viewProj: vp, eye, lightDir, lightColour: [2.05, 2.0, 1.92],
-        ambientGain: 0.62, sky: SKY, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, draws,
+        ambientGain: 0.62, sky: SKY, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
         ao: null, screenSize: [W, H],
       });
 
@@ -486,7 +486,7 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
         /*
          * `maxSteps` IS NOT A QUALITY KNOB HERE, AND THE TIER IS DELIBERATELY NOT ALLOWED TO TOUCH IT.
          *
-         * `env/quality.ts` offers `volumeMaxSteps` (128/96/48), and applying it would look like a saving and
+         * `env/quality.ts` USED TO OFFER `volumeMaxSteps` (128/96/48), and applying it would have looked like a saving and
          * be a data change. `volume.ts:230` caps the view-ray march at `uMaxSteps`, so the step count fixes
          * `MARCH_REACH_M = WORLD_STEP * MAX_STEPS` = 16.0 m — and `stormCalibration.ts` PRINTS that reach to
          * the operator in `calibrationSentence`. At 48 steps the reach is 6.0 m, the far side of the field is
@@ -497,6 +497,10 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
          * `lightTransmittance`, which modulates accumulated RADIANCE. `alpha` — the channel this reading
          * assigns to magnitude — never sees it, so dropping the self-shadow march costs depth in the cloud
          * and costs the reading nothing.
+         * THE FIELD IS NOW DELETED (2026-08-13), so this refusal is structural rather than a promise in a
+         * comment: steps are REACH at a fixed world step, not quality. E7's box is 14.00 m in z and the
+         * printed `marchReachM` claims 16.0; 96 steps reach 12.0 m and 48 reach 6.0 m, so both truncate
+         * while the sentence still says 16.0. Distant days would read as lower risk than they are.
          */
         worldStep: WORLD_STEP, maxSteps: MAX_STEPS, densityScale: DENSITY_SCALE,
         colourLow: COL_LOW, colourHigh: COL_HIGH,

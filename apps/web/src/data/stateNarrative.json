@@ -1,0 +1,247 @@
+{
+ "AL": {
+  "primaryPainPoint": "Standard MTL required via NMLS — no crypto-specific statute, but AL Securities Commission actively monitors for unlicensed money transmission",
+  "notes": "Standard NMLS money transmitter license. No crypto-specific statutory overlay or enforcement actions published. AL Securities Commission actively monitors for unlicensed money transmission activity. 5M population with limited crypto enforcement history. Broker-intermediary model targeted for Phase 2.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "AK": {
+  "primaryPainPoint": "Standard MTL via NMLS required. Alaska's small population (0.7M) means limited enforcement resources but full compliance still required.",
+  "notes": "Standard NMLS money transmitter license. No crypto-specific guidance, interpretive letters, or enforcement actions published. Alaska's remote geography and small population mean crypto enforcement is not a regulatory priority. Broker-intermediary model targeted for Phase 2. Limited market size reduces competitive urgency but compliance costs are standard.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "AZ": {
+  "primaryPainPoint": "Standard MTL via NMLS required but AZ hosts the first US FinTech Regulatory Sandbox (2018) — allowing crypto businesses to test for up to 2 years without full MTL. Blockchain signatures legally recognized under HB 2417.",
+  "notes": "Standard NMLS MTL regulated by AZ DIFI, but Arizona's FinTech Regulatory Sandbox (2018, AZ Attorney General's office) is the first and most significant state sandbox in the US — crypto businesses can test products for up to 2 years without full MTL. HB 2417 (2018) recognized blockchain signatures and smart contracts as legally valid under state law. 7.4M population. Major exchange routing target. Arizona is a high-value Phase 2 state because the sandbox provides a lower-friction initial entry path while full MTL is pending.",
+  "sandboxNotes": "AZ FinTech Regulatory Sandbox — 2-year testing window without full MTL requirement. AG-administered. First US state sandbox of its kind (2018)."
+ },
+ "AR": {
+  "primaryPainPoint": "Standard MTL via NMLS — no crypto-specific guidance or enforcement actions. Bond scales with transaction volume.",
+  "notes": "Standard NMLS money transmitter license regulated by the Arkansas Securities Department. No crypto-specific guidance, interpretive letters, or enforcement actions published. Bond amount scales with transaction volume at the Department's discretion. 3M population, limited crypto market. Broker-intermediary model targeted for Phase 2.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "CA": {
+  "primaryPainPoint": "New DFAL regime (effective July 1, 2026) is untested and expected to mirror NY-level rigor",
+  "notes": "Digital Financial Assets Law (DFAL, CA Fin Code §22100) covers any digital financial asset business activity with CA residents. DFPI enforcement posture is aggressive; a $500K consent order set an early tone. Avoid until DFAL clarity matures.",
+  "sandboxNotes": "No sandbox active under DFAL"
+ },
+ "CO": {
+  "primaryPainPoint": "Generally permissive with no adverse guidance, but only limited crypto-specific monitoring (Division of Banking)",
+  "notes": "No active crypto enforcement observed. Wallet-only, third-party custody broker-intermediary model targeted for Phase 1.",
+  "sandboxNotes": "No general state money transmitter licensing required for non-custodial digital currency services"
+ },
+ "CT": {
+  "primaryPainPoint": "Broad interpretation of money transmission + dual oversight from Dept. of Banking and Secretary of State securities division; bond ceiling at $500K for high-volume transmitters",
+  "notes": "Standard MTL via NMLS but with elevated friction: CT has historically interpreted money transmission broadly and maintains dual oversight between the Department of Banking and the Secretary of State's securities division. Bond requirement scales to $500K for large-volume transmitters. 3.6M population. Custodial exchange with segregated accounts targeted for Phase 3 due to securities overlay and elevated bond requirements.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "DE": {
+  "primaryPainPoint": "Standard MTL via NMLS — Delaware is America's corporate capital (67% of Fortune 500 incorporated here), adding strategic importance beyond its 1M population",
+  "notes": "Standard NMLS money transmitter license regulated by the Office of the State Bank Commissioner. Delaware is arguably the most strategically important state for corporate law — 67% of Fortune 500 companies are incorporated here. LCX USA's Delaware entity formation is a prerequisite for all other state MTL applications. Limited crypto enforcement history. Fiat ramp via partner bank targeted for Phase 2. DE's corporate significance elevates it from Low to Medium priority despite its small population.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "FL": {
+  "primaryPainPoint": "HB 505 (2026) adds kiosk-specific licensing; proposed amendment requires MTL even for exchange-only activity",
+  "notes": "MTL + HB 505 (2026) kiosk operator requirements effective July 1, 2026. OFR actively enforces against crypto kiosk operators. Full exchange plus stablecoin payments targeted for Phase 3 once kiosk rules resolve."
+ },
+ "GA": {
+  "primaryPainPoint": "$500K surety bond ceiling for high-volume transmitters; GA DBF actively enforces against unlicensed crypto operators; 11M population with growing Atlanta fintech hub",
+  "notes": "Standard MTL via NMLS but with elevated friction: GA DBF has demonstrated active enforcement posture against unlicensed crypto activity. $500K surety bond applies to large-volume transmitters. Georgia's 11M population and Atlanta's status as a fintech hub (FIS, Global Payments, NCR) make this a strategically important market despite the elevated bond requirement. No crypto-specific statute but the DBF has published guidance treating virtual currency as money transmission. Full exchange with segregated custody targeted for Phase 3.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "HI": {
+  "primaryPainPoint": "Regulatory framework in active transition — DCIL sandbox ended 2024, permanent framework not yet finalized. Historical double-reserve hostility still colors institutional memory.",
+  "notes": "Hawaii's regulatory history with crypto is the most volatile of any US state. Pre-2020, the DFI enforced a 'double reserve' requirement — crypto exchanges had to hold fiat reserves equal to ALL crypto held for customers — functionally banning exchanges. In 2020, HI launched the Digital Currency Innovation Lab (DCIL), a first-of-its-kind multi-year regulatory sandbox operated jointly by DFI and the Hawaii Technology Development Corporation. Coinbase, Gemini, Kraken, Robinhood, and 11 other platforms participated under a no-action letter framework. DCIL concluded in 2024 and HI is now transitioning toward a permanent regulatory framework. Tier 1 classification reflects active regulatory uncertainty, not bespoke licensing costs. Full exchange with segregated custody targeted for Phase 3, post-framework stabilization. Monitor legislative outcomes before committing resources.",
+  "sandboxNotes": "Digital Currency Innovation Lab (DCIL, 2020-2024) — concluded multi-year sandbox. Permanent regulatory framework in development. Exchanges operated under no-action letter during pilot."
+ },
+ "ID": {
+  "primaryPainPoint": "Standard MTL via NMLS — no crypto-specific guidance. Idaho's small population (2M) makes it a low-priority secondary market.",
+  "notes": "Standard NMLS money transmitter license regulated by the Idaho Department of Finance. No crypto-specific guidance, interpretive letters, or enforcement actions published. 2M population with limited crypto market activity. Broker-intermediary model targeted for Phase 2 as a secondary expansion state. Low regulatory friction and low market size make this a low-priority but straightforward licensing target.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "IL": {
+  "primaryPainPoint": "Detailed crypto compliance expectations; requires cybersecurity and AML programs",
+  "notes": "MTL plus Blockchain Task Force guidance; a 2024 DFPI-style interpretive letter shows a nuanced approach. Fiat ramp via partner bank targeted for Phase 2 (favorable guidance, low enforcement via NMLS)."
+ },
+ "IN": {
+  "primaryPainPoint": "Standard MTL via NMLS — 6.8M population. No crypto-specific guidance but standard enforcement posture.",
+  "notes": "Standard NMLS money transmitter license regulated by the Indiana Department of Financial Institutions. No crypto-specific guidance, interpretive letters, or enforcement actions published. 6.8M population — a mid-tier market comparable to TN and MO. Fiat ramp via partner bank targeted for Phase 2. Indiana's central Midwest location and reasonable regulatory posture make it a solid Phase 2 candidate.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "IA": {
+  "primaryPainPoint": "Standard MTL via NMLS — 3.2M population. No crypto-specific guidance; straightforward licensing but limited crypto market.",
+  "notes": "Standard NMLS money transmitter license regulated by the Iowa Division of Banking. No crypto-specific guidance, interpretive letters, or enforcement actions published. 3.2M population. Broker-intermediary model targeted for Phase 2. Iowa's regulatory posture is straightforward with no crypto-specific friction points.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "KS": {
+  "primaryPainPoint": "Standard MTL via NMLS — 2.9M population. No crypto-specific guidance; limited market.",
+  "notes": "Standard NMLS money transmitter license regulated by the Kansas Office of the State Bank Commissioner. No crypto-specific guidance, interpretive letters, or enforcement actions published. 2.9M population — limited crypto market. Broker-intermediary model targeted for Phase 2. Straightforward licensing with no crypto-specific friction.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "KY": {
+  "primaryPainPoint": "Standard MTL via NMLS — 4.5M population. No crypto-specific guidance; moderate enforcement posture.",
+  "notes": "Standard NMLS money transmitter license regulated by the Kentucky Department of Financial Institutions. No crypto-specific guidance, interpretive letters, or enforcement actions. 4.5M population. Fiat ramp via partner bank targeted for Phase 2. Kentucky's moderate market size and standard regulatory posture make it a mid-priority Phase 2 candidate.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "LA": {
+  "primaryPainPoint": "Standard MTL via NMLS — 4.6M population. Louisiana's unique civil law system adds minor regulatory complexity.",
+  "notes": "Standard NMLS money transmitter license regulated by the Louisiana Office of Financial Institutions. No crypto-specific guidance or enforcement actions published. Louisiana's civil law legal system (unique among US states) adds minor complexity to regulatory interpretation but does not materially alter MTL requirements. 4.6M population. Broker-intermediary model targeted for Phase 2.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "ME": {
+  "primaryPainPoint": "Bureau of Consumer Credit Protection has not classified virtual currency as money transmission — de facto no-MTL for crypto-only activity. Counsel opinion recommended to confirm.",
+  "notes": "Maine's Bureau of Consumer Credit Protection has not issued explicit guidance classifying virtual currency as money transmission under the Maine Consumer Credit Code. Industry consensus treats ME as a 'gray zone' — non-custodial crypto activity may operate without MTL, but custodial or fiat-ramp models would likely trigger licensing. No sandbox program. No crypto enforcement actions on record. Non-custodial wallet-only model targeted for Phase 1 alongside MT and NH. Counsel opinion recommended to confirm no-MTL position before launch. ME joins MT, NH, NM, SC, and SD as states where non-custodial crypto activity is exempt from state money transmitter licensing.",
+  "sandboxNotes": "No explicit MTL requirement for non-custodial crypto activity"
+ },
+ "MD": {
+  "primaryPainPoint": "Elevated $150K-$500K bond with crypto-specific guidance from the Commissioner; 6.2M population with active enforcement posture",
+  "notes": "Standard NMLS money transmitter license but with elevated friction: Maryland's Commissioner of Financial Regulation has published crypto-specific guidance and the state maintains an active enforcement posture. $500K bond ceiling applies to high-volume transmitters. 6.2M population adjacent to DC — strategic for Mid-Atlantic coverage. Full exchange with segregated custody targeted for Phase 3. MD's crypto guidance and enforcement posture push it to Tier 2 despite the standard MTL framework.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "MA": {
+  "primaryPainPoint": "Broad interpretation of money transmission plus dual oversight from Division of Banks and Secretary of State securities division",
+  "notes": "Requires MTL plus a securities overlay; dual regulatory coordination needed. Segregated-custody full exchange planned for Phase 3."
+ },
+ "MI": {
+  "primaryPainPoint": "DIFS 2022 guidance explicitly classifies crypto exchange and custody as MTL-triggering — one of the clearest state-level crypto-as-money-transmission positions in the US. No sandbox relief available.",
+  "notes": "Standard NMLS MTL regulated by DIFS, but Michigan distinguishes itself through a 2022 regulatory guidance statement that explicitly classifies virtual currency exchange and custodial activity as money transmission requiring a state MTL. DIFS actively monitors crypto activity and has indicated willingness to enforce. No sandbox program. 10M population with a major financial center (Detroit). Fiat ramp via partner bank targeted for Phase 2 — DIFS guidance provides regulatory clarity (if not accommodation) that reduces compliance uncertainty.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "MN": {
+  "primaryPainPoint": "Standard MTL via NMLS — 5.7M population. No crypto-specific guidance but MN Department of Commerce maintains active oversight of money transmitters.",
+  "notes": "Standard NMLS money transmitter license regulated by the Minnesota Department of Commerce. No crypto-specific guidance or enforcement actions published, but the Department maintains active oversight of money transmitter licensees. 5.7M population with a growing fintech presence in the Twin Cities. Fiat ramp via partner bank targeted for Phase 2. Minnesota's moderate market size and active but fair regulatory oversight make it a solid Phase 2 candidate.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "MS": {
+  "primaryPainPoint": "Standard MTL via NMLS — 2.9M population. No crypto-specific guidance; low enforcement priority. Modest bond requirements.",
+  "notes": "Standard NMLS money transmitter license regulated by the Mississippi Department of Banking and Consumer Finance. No crypto-specific guidance, interpretive letters, or enforcement actions published. 2.9M population — limited crypto market. Broker-intermediary model targeted for Phase 2. Mississippi's low enforcement priority and modest bond requirements make it a straightforward licensing target.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "MO": {
+  "primaryPainPoint": "Standard MTL via NMLS — 6.2M population. No crypto-specific guidance; moderate enforcement posture.",
+  "notes": "Standard NMLS money transmitter license regulated by the Missouri Division of Finance. No crypto-specific guidance, interpretive letters, or enforcement actions. 6.2M population — the largest market in Batch A. Despite its size, MO's regulatory posture is standard with moderate bonds. Fiat ramp via partner bank targeted for Phase 2. Missouri's population and economic diversity (St. Louis, Kansas City) make it a higher-value Phase 2 target than its Tier 3 classification suggests.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "MT": {
+  "primaryPainPoint": "Only state with no general MTL for crypto activity, but federal BSA/MSB obligations still fully apply",
+  "notes": "No general money transmitter law and no VC-specific statute (SB-178, 2024, referenced). Exact triggers for VC activity are unclear and unverified — must not be treated as a complete licensing solution. Considered as a possible anchor state for non-custodial Phase 1 launch, pending counsel confirmation.",
+  "sandboxNotes": "No money transmission licensing required"
+ },
+ "NE": {
+  "primaryPainPoint": "Standard MTL via NMLS — 2M population. Nebraska has a growing interest in blockchain through the Nebraska Financial Innovation Act but no active crypto MTL guidance.",
+  "notes": "Standard NMLS money transmitter license regulated by the Nebraska Department of Banking and Finance. Nebraska has shown interest in blockchain innovation through the Nebraska Financial Innovation Act (2021) which created a state-chartered digital asset depository framework — but this does not replace standard MTL requirements for money transmission. No crypto-specific MTL guidance has been published. 2M population. Broker-intermediary model targeted for Phase 2.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "NV": {
+  "primaryPainPoint": "FinTech sandbox available with clear crypto guidance, but sandbox status may conflict with standard licensing later",
+  "notes": "MTL plus FinTech sandbox track; post-CLARITY changes may simplify this path. Flagged as a state to revisit once non-custodial model is confirmed viable.",
+  "sandboxNotes": "Regulatory sandbox available with simplified requirements"
+ },
+ "NH": {
+  "primaryPainPoint": "Federal floor applies; no state-specific crypto law, but Division of Banking has treated crypto as money transmission under a narrow interpretation in the past",
+  "notes": "No crypto-specific MTL requirement identified. Non-custodial software, wallet-only model targeted for Phase 1, subject to the narrow-interpretation caveat.",
+  "sandboxNotes": "Exempt from money transmitter licensing for digital currency"
+ },
+ "NJ": {
+  "primaryPainPoint": "Most aggressive crypto enforcement outside NY — DOBI and NJ AG issued C&D orders to BlockFi (2021), Voyager Digital (2022), and Celsius (2021). Dedicated fintech enforcement team. MTL must be fully secured before any NJ-facing activity.",
+  "notes": "While New Jersey's MTL framework is technically standard (NMLS registration, DOBI oversight), the state's enforcement posture makes it one of the highest-risk jurisdictions for crypto operations. The NJ AG and DOBI have been national leaders in crypto consumer protection enforcement: cease & desist orders against BlockFi (2021 — leading to $100M multi-state settlement), Celsius (2021), and Voyager Digital (2022) all originated from NJ's proactive investigative unit. DOBI maintains a dedicated fintech enforcement team that monitors crypto platforms for unlicensed activity. 9.3M population adjacent to NY and PA makes NJ commercially unavoidable. Full exchange with custodian partner targeted for Phase 3 after securing MTL. NJ's proximity to NY also means NYDFS may coordinate with DOBI on investigations, amplifying regulatory risk. Marketing and disclosure programs must be counsel-reviewed before launch.",
+  "sandboxNotes": "No crypto sandbox — DOBI maintains active enforcement posture against unlicensed crypto operators"
+ },
+ "NM": {
+  "primaryPainPoint": "UMSA does not explicitly include virtual currency in its definition of money transmission — statutory gap creates favorable ambiguity for non-custodial models.",
+  "notes": "New Mexico's Uniform Money Services Act does not explicitly include virtual currency in its statutory definition of money transmission. The NM Financial Institutions Division has published no crypto-specific guidance, interpretive letters, or enforcement actions. This regulatory gap is generally interpreted by industry as favorable to crypto-only, non-custodial models — the absence of explicit coverage means the statute does not clearly apply. Non-custodial wallet model targeted for Phase 1. Unlike MT which has an explicit no-MTL position, NM's exemption is by statutory omission — less certain but functionally equivalent for crypto-only activity. Counsel opinion recommended.",
+  "sandboxNotes": "Statutory gap — UMSA does not explicitly cover virtual currency; no regulator guidance published"
+ },
+ "NY": {
+  "primaryPainPoint": "NYDFS oversight is granular; custody, exchange, and transmission all require a separate BitLicense",
+  "notes": "BitLicense (23 NYCRR Part 200) required for any virtual currency custody, exchange, or transmission. Needs 24/7 surveillance, dedicated CCO/COO, $100K+ capital, quarterly reporting. Treated as last-resort, Phase 3 market.",
+  "sandboxNotes": "Direct NYDFS BitLicense application required, NMLS not used"
+ },
+ "NC": {
+  "primaryPainPoint": "2016 NCCOB Interpretive Letter is the landmark early crypto state guidance — distinguishes custodial vs non-custodial models and clarifies MTL applicability. Highly influential nationally. Custodial crypto = MTL required.",
+  "notes": "Standard NMLS MTL but North Carolina's significance to crypto regulation far exceeds its market size (11M population). The NC Commissioner of Banks (NCCOB) issued one of the earliest and most influential state crypto guidance documents in the US — a 2016 Interpretive Letter that distinguished custodial from non-custodial models and clarified when virtual currency activity triggers MTL. This guidance has been cited by industry and other state regulators as a model of regulatory clarity. Standard MTL via NMLS. Charlotte is a major banking hub (Bank of America, Truist HQ). Fiat ramp + custody via partner bank targeted for Phase 2. NC's regulatory clarity and its influence on other states' frameworks make it a high-priority Phase 2 target.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "ND": {
+  "primaryPainPoint": "Standard MTL via NMLS — 0.8M population (third-smallest US state). Limited crypto market; no crypto-specific guidance.",
+  "notes": "Standard NMLS money transmitter license regulated by the North Dakota Department of Financial Institutions. No crypto-specific guidance, interpretive letters, or enforcement actions published. 0.8M population — one of the smallest US state markets. Broker-intermediary model targeted for Phase 2. North Dakota's small market size means low competitive urgency but also low regulatory friction. Fastest timeline among Batch A states (3-6 months).",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "OH": {
+  "primaryPainPoint": "First US state to accept Bitcoin for tax payments (2018-2019, via BitPay). Experiment suspended but signals foundational crypto comfort at state level. Standard MTL via NMLS applies.",
+  "notes": "Standard NMLS MTL regulated by the Ohio Division of Financial Institutions (under the Department of Commerce). Ohio was the first US state to accept Bitcoin for tax payments (2018-2019 via BitPay) — a pioneering experiment that, while later suspended, demonstrated state-level regulatory openness to crypto payment infrastructure. The Ohio Venture Capital Authority has actively supported blockchain startups. 12M population, major economic center (Columbus, Cleveland, Cincinnati). Fiat ramp via partner bank targeted for Phase 2. Ohio's demonstrated regulatory comfort with crypto and robust banking infrastructure make it a priority Phase 2 state despite the lack of a current sandbox or crypto-specific MTL exemption.",
+  "sandboxNotes": "No active crypto sandbox — Bitcoin tax payment experiment (2018-2019) was pioneering but later suspended"
+ },
+ "OK": {
+  "primaryPainPoint": "HB 1237 (2019) recognized blockchain signatures and smart contracts as legally valid — a crypto-friendly signal. Standard MTL via NMLS applies with no crypto-specific MTL overlay.",
+  "notes": "Standard NMLS MTL regulated by the Oklahoma State Banking Department. Oklahoma HB 1237 (2019) recognized blockchain signatures and smart contracts as legally valid under state law — a quiet but meaningful crypto-friendly signal. No crypto-specific MTL guidance has been issued beyond standard treatment. 4M population with limited crypto enforcement history. Broker-intermediary model targeted for Phase 2. Oklahoma's low-regulatory-friction profile and blockchain-friendly legislative signals make it an attractive secondary state for early expansion.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "OR": {
+  "primaryPainPoint": "2019 DFR guidance clarified crypto = money transmission, but enforcement posture is reasonable and constructive. No sandbox but innovation-friendly regulatory climate.",
+  "notes": "Oregon's Division of Financial Regulation (under DCBS) issued guidance in 2019 clarifying that virtual currency exchange and custody activity constitutes money transmission requiring an MTL. The guidance was notable for being commercially reasonable rather than punitive — OR DFR has not pursued aggressive crypto enforcement actions and maintains a constructive dialogue with the fintech sector. DCBS has an innovation program focused on regulatory modernization. 4.2M population. Fiat ramp via partner bank targeted for Phase 2. Oregon's balanced approach — clear rules, reasonable enforcement — makes it one of the more attractive Tier 3 states for Phase 2 expansion.",
+  "sandboxNotes": "No crypto sandbox — DFR issued crypto guidance (2019) clarifying MTL applicability"
+ },
+ "PA": {
+  "primaryPainPoint": "Generally favorable and permissive, but requires clear separation of customer funds",
+  "notes": "MTL with permissive crypto guidance. 2024 DoBS guidance exempts certain peer-to-peer transfers. Broker-intermediary (no custody) model targeted for Phase 2."
+ },
+ "RI": {
+  "primaryPainPoint": "Standard MTL via NMLS — 1.1M population. No crypto-specific guidance; limited enforcement resources. Smallest US state by area.",
+  "notes": "Rhode Island's DBR Division of Banking regulates money transmitters under a standard NMLS framework. No crypto-specific guidance, interpretive letters, or enforcement actions have been published. RI's small size (1.1M population, smallest state by area) means enforcement resources are limited and crypto is not a regulatory priority. Standard MTL via NMLS with moderate bond requirements. Broker-intermediary model targeted for Phase 2. The state's regulatory silence and small market make it a low-priority but low-risk entry.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "SC": {
+  "primaryPainPoint": "SC Attorney General opinion suggested certain virtual currency exchange models may not constitute money transmission — one of the most crypto-permissive AG opinions in the US. Future AG could reverse.",
+  "notes": "The South Carolina Attorney General's office issued an influential opinion indicating that certain virtual currency exchange models do not fall within the state's definition of money transmission under the SC Money Services Act. This is one of the most crypto-permissive AG opinions in the United States. The SC Money Services Division has not pursued enforcement against crypto-only businesses. No sandbox program. Non-custodial wallet + BTC/ETH listing targeted for Phase 1. SC's explicit regulatory forbearance distinguishes it from 'gray zone' states — there is an actual regulatory statement supporting the no-MTL position. However, the opinion is not codified in statute and could be reversed by a future AG.",
+  "sandboxNotes": "AG opinion suggests crypto exchange may not be money transmission; not codified in statute"
+ },
+ "SD": {
+  "primaryPainPoint": "Narrowest MTL statute among US states with minimal crypto enforcement history. Effectively no-MTL for crypto-only activity.",
+  "notes": "South Dakota's money transmitter statute is narrower than most states and has not been applied by the Division of Banking to virtual currency activities. Zero crypto enforcement history. No crypto-specific guidance, interpretive letters, or sandbox program. 0.9M population — smallest market in the US. Effectively a no-MTL jurisdiction for crypto-only activity given the Division's complete non-enforcement posture. Non-custodial wallet targeted for Phase 1. SD's small market size and regulatory disinterest make it a low-priority but zero-friction launch candidate.",
+  "sandboxNotes": "Narrow money transmitter statute — no crypto enforcement history; Division of Banking has shown no interest in virtual currency regulation"
+ },
+ "TN": {
+  "primaryPainPoint": "Standard MTL via NMLS — 7.1M population. Growing Nashville fintech scene. No crypto-specific guidance but 2018 bill recognized smart contracts.",
+  "notes": "The Tennessee Department of Financial Institutions regulates money transmitters under a standard NMLS framework with moderate bond requirements. Tennessee has not published crypto-specific MTL guidance or enforcement actions. The legislature has shown interest in blockchain technology — a 2018 bill recognized smart contracts and blockchain signatures — without enacting a comprehensive crypto regulatory framework. 7.1M population with a growing fintech and healthcare-tech presence in Nashville. Fiat ramp via partner bank targeted for Phase 2. The state's economic growth and moderate regulatory posture make it a meaningful Phase 2 target despite the lack of crypto-specific regulatory accommodations.",
+  "sandboxNotes": "No crypto sandbox — 2018 blockchain bill recognized smart contracts without establishing regulatory framework"
+ },
+ "TX": {
+  "primaryPainPoint": "Supervisory Memorandum 1037 treats stablecoins as \"money\" and requires a detailed crypto compliance program",
+  "notes": "MTL + SM 1037 (2021) compliance. TX-DOB brought a consent order against Bitstop Futures (Mar 2026) showing active enforcement. Full exchange with segregated custody targeted for Phase 3.",
+  "sandboxNotes": "Stablecoins require standard money transmitter licensing"
+ },
+ "UT": {
+  "primaryPainPoint": "Streamlined, blockchain-friendly process with no crypto-specific barriers",
+  "notes": "MTMA adoption plus a blockchain-friendly climate; Morgan Stanley / Goldman Sachs precedent cited. Sandbox availability noted. Non-custodial software plus wallet-only (with sandbox where available) targeted for Phase 1.",
+  "sandboxNotes": "Regulatory sandbox available with simplified requirements"
+ },
+ "VT": {
+  "primaryPainPoint": "Innovative blockchain LLC legislation (2018-2019) signals crypto-friendly posture, but legislative experiments yielded no permanent framework. MTL on the books with minimal enforcement.",
+  "notes": "Vermont has been a small-state crypto pioneer in legislative experimentation. In 2018-2019, VT introduced blockchain-based LLC legislation — 'Blockchain-Based Limited Liability Companies' (BBLLCs) — attempting to position itself as a Delaware-style corporate law innovator for the crypto sector. The initiative was experimental and did not gain the traction of Wyoming's SPDI charter, but it signaled VT's openness to crypto innovation. DFR has a generally accommodating posture. Standard MTL framework exists but enforcement is minimal. 0.6M population — one of the smallest US state markets. VT's regulatory friendliness and small market size make it an attractive Phase 1 candidate alongside MT and NH for non-custodial wallet deployment. MTL would be needed for custodial products, but DFR's accommodating posture means the licensing process should be smoother than Tier 3 peers.",
+  "sandboxNotes": "No crypto sandbox — BBLLC legislative experiment (2018-2019) was pioneering but not codified"
+ },
+ "VA": {
+  "primaryPainPoint": "Crypto-friendly legislative posture via 2022 Blockchain and Cryptocurrency Commission. Standard MTL required pending legislative codification of sandbox or innovation framework.",
+  "notes": "Virginia has emerged as one of the more crypto-friendly legislative environments in the US. The 2022 establishment of the Virginia Blockchain and Cryptocurrency Commission signaled a proactive approach to understanding and regulating the sector. The Commission's mandate includes studying regulatory sandbox models and recommending crypto-friendly legislation. Northern Virginia (Arlington, Tysons Corner) has a growing fintech corridor with proximity to DC federal regulators. 8.7M population. Standard MTL via NMLS through the Bureau of Financial Institutions (SCC). Full exchange with custodian targeted for Phase 2 once MTL secured. VA's political climate and crypto-positive legislative signals make it a priority over similarly-sized Tier 3 states.",
+  "sandboxNotes": "No active sandbox — 2022 Blockchain Commission studying sandbox models for potential legislative adoption"
+ },
+ "WA": {
+  "primaryPainPoint": "Requires either an MTL or SPDI-type charter; DFI actively monitors and enforces against unlicensed exchanges",
+  "notes": "Uniform Money Services Act (MTMA) adoption plus DFI crypto guidance; strict consumer protection. Fiat ramp + crypto exchange with third-party custody targeted for Phase 2."
+ },
+ "WV": {
+  "primaryPainPoint": "Standard MTL via NMLS on the books but zero crypto enforcement history creates practical permissiveness. Modest bond requirements.",
+  "notes": "West Virginia's Division of Financial Institutions regulates money transmitters under a standard NMLS framework but has not issued crypto-specific guidance and has zero crypto enforcement history. The MTL statute exists ($50K-$100K bond) and likely covers custodial and fiat-ramp crypto activity, but non-custodial models are not clearly addressed. Unlike ME/NM/SC/SD where crypto is effectively exempt, WV has a conventional MTL that likely covers crypto — the state just hasn't enforced it. Institutional custody targeted for Phase 2 once MTL is secured. WV's non-enforcement posture creates practical permissiveness but does not eliminate the statutory MTL requirement.",
+  "sandboxNotes": "No crypto sandbox program available"
+ },
+ "WI": {
+  "primaryPainPoint": "Regulatory silence on crypto — no guidance, no enforcement, no sandbox. Standard MTL treatment by default. Neither hostile nor accommodating.",
+  "notes": "Standard NMLS MTL regulated by the Wisconsin Department of Financial Institutions. Wisconsin has been notably silent on crypto regulation — no specific guidance, no interpretive letters, no enforcement actions published, and no sandbox program. The DFI treats virtual currency under existing money transmitter law without special carve-outs or restrictions. This creates compliance certainty through standard application rather than targeted regulation — a double-edged sword but functionally low-friction. 6M population. Broker-intermediary model targeted for Phase 2. Counsel opinion recommended given the regulatory silence.",
+  "sandboxNotes": "No crypto sandbox program available — DFI has remained silent on crypto-specific regulation"
+ },
+ "WY": {
+  "primaryPainPoint": "SPDI charter is a full bank charter — crypto-native but no FDIC insurance, requires Federal Reserve master account access",
+  "notes": "Special Purpose Depository Institution (SPDI) trust charter, WY Stat § 13-12-101. Kraken Financial precedent exists. Institutional credibility upside; SPDI charter path considered if qualified custody is needed.",
+  "sandboxNotes": "Wyoming SPDI charter requires custom trust bank application"
+ }
+}

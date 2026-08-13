@@ -98,6 +98,45 @@ import { fileURLToPath } from 'node:url';
  * leave `states.ts` holding the small structured fields the shell actually looks up
  * (`JurisdictionInspector` does exactly one `states.find` on `abbreviation`). That is a
  * content-medium problem wearing a packaging problem's clothes.
+ *
+ * ── 4. THE FOURTH ATTEMPT WAS THE ONE ABOVE, AND IT WORKED. 2026-08-13 ──────────────
+ *
+ * `notes`, `primaryPainPoint` and `sandboxNotes` left `src/data/states.ts` for
+ * `src/data/stateNarrative.json`, behind a DYNAMIC `import()` in `src/data/stateNarrative.tsx`.
+ * Measured on a real `vite build`, exact bytes:
+ *
+ *   initial JS        859,446 → 827,750 B    839 → 808KB   (headroom 11 → 42KB)
+ *   index chunk       447,059 → 415,363 B    437 → 406KB
+ *   largest chunk     the index chunk both times
+ *   new lazy chunk    stateNarrative-<hash>.js, 35,269 B, and index.html does NOT
+ *                     modulepreload it — that absence is the whole difference from
+ *                     attempt 3, which was a static import and therefore initial.
+ *   lazy page chunks  192 → 193
+ *
+ * WHY THIS ONE MOVED 31KB WHERE ATTEMPT 2 MOVED 5KB: attempt 2 severed the two EAGER
+ * references and the prose stayed, because eagerness was never what placed it there. Rollup
+ * hoists a module shared across dynamic chunks into the entry no matter who else imports it.
+ * A dynamic import is a different chunk by construction, so the prose cannot be hoisted into
+ * anything. The lever is the module boundary, not the reference graph and not the chunk config.
+ *
+ * WHAT IS LEFT — AND THE "≈80KB OF src/data PROSE" ABOVE WAS TOO HIGH, SO DO NOT PLAN ON IT.
+ * Measured after the split by scanning each `src/data/*.ts` for string literals ≥120 chars and
+ * probing the entry chunk for each module's longest literal verbatim (minification does not
+ * alter string contents):
+ *
+ *   in the entry chunk    redFlags 2,304 B · requirements 1,711 · products 1,636 ·
+ *                         licenses 1,119 · phases 847 · domains 396  =  8,013 B total
+ *   NOT in it             productCatalog 28,509 B · competitors 25,482 · readiness 1,448
+ *
+ * So `states.ts` was very nearly all of the prose the shell was actually carrying: 31.7KB of
+ * it, against 7.8KB spread over six modules with no single win left in them. The 80KB figure
+ * counted `productCatalog` and `competitors`, which the same note correctly records as ABSENT
+ * from the shell. There is no second 30KB here. The next real cut is elsewhere.
+ *
+ * WHAT THE 42KB IS FOR: it is headroom for Track B, not a licence to add prose back.
+ * `src/data/__tests__/stateNarrative.test.tsx` fails if a prose field returns to `states.ts`,
+ * and the four narrative states (loading / fault / no-entry / present-but-empty) are asserted
+ * there because a panel that blanks on a failed fetch is the rule-6 failure this trade bought.
  */
 const MAX_CHUNK_KB = 440;
 const MAX_INITIAL_KB = 850;
@@ -305,9 +344,11 @@ if (headroom >= 0 && headroom < INITIAL_HEADROOM_WARN_KB) {
   console.warn(
     `  ! initial JS has ${headroom.toFixed(0)}KB of headroom left (${initialJsKb.toFixed(0)}KB ` +
       `of ${MAX_INITIAL_KB}). The next page added to the shell fails this build.\n` +
-      `    Roughly 80KB of it is \`src/data/*\` regulatory PROSE, not code. Do NOT reach for a ` +
-      `manualChunks rule — that was measured at ~902KB, WORSE. See the note above ` +
-      `MAX_CHUNK_KB for the three fixes that failed and the one that has not been tried.`,
+      `    Do NOT reach for a manualChunks rule — that was measured at ~902KB, WORSE. What ` +
+      `worked (2026-08-13, 31KB) was moving PROSE out of a shared data module and behind a ` +
+      `dynamic import: \`states.ts\` → \`stateNarrative.json\`. Do not expect a repeat: only ` +
+      `8KB of \`src/data/*\` prose is still in the shell, measured. See the note above ` +
+      `MAX_CHUNK_KB for all four attempts and where the bytes actually are.`,
   );
 }
 

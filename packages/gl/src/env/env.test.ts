@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { hexToLinear } from '../look/colour.js';
 import {
   box, plane, sphere, cylinder, torus, arcTube, latLonToVec3, heightfield, computeNormals, triangleCount,
   contourSegments,
@@ -936,11 +939,12 @@ describe('quality ladder — monotonic, and it refuses rather than guessing', ()
     expect(min.shadowMapSize).toBeLessThan(red.shadowMapSize);
     expect(red.shadowMapSize).toBeLessThan(full.shadowMapSize);
     expect(min.shadowTaps).toBeLessThanOrEqual(red.shadowTaps);
-    expect(min.particleCapacity).toBeLessThan(red.particleCapacity);
-    expect(red.particleCapacity).toBeLessThan(full.particleCapacity);
-    expect(min.volumeMaxSteps).toBeLessThan(red.volumeMaxSteps);
-    expect(red.volumeMaxSteps).toBeLessThan(full.volumeMaxSteps);
+    /* `particleCapacity` and `volumeMaxSteps` WERE ASSERTED HERE, which is how three inert numbers came
+       to read as load-bearing: this test made the ladder look monotonic in fields nothing read. Both are
+       deleted — see the note above `QualitySettings` for why neither could have been wired without
+       changing a reading rather than a cost. Their absence is asserted below, not here. */
     expect(min.volumeLightSteps).toBeLessThanOrEqual(red.volumeLightSteps);
+    expect(red.volumeLightSteps).toBeLessThanOrEqual(full.volumeLightSteps);
     // Effects may only be turned OFF going down, never on.
     expect(Number(min.ao)).toBeLessThanOrEqual(Number(red.ao));
     expect(Number(min.dof)).toBeLessThanOrEqual(Number(red.dof));
@@ -954,6 +958,17 @@ describe('quality ladder — monotonic, and it refuses rather than guessing', ()
     const min = qualitySettings('minimum');
     expect(min.shadowMapSize).toBeGreaterThan(0);
     expect(min.shadowTaps).toBeGreaterThanOrEqual(1);
+  });
+
+  it('keeps a self-shadow inside a volumetric at the minimum tier, for the same reason', () => {
+    /*
+     * `volumeLightSteps` WAS 0 AT THIS TIER and the field's own doc said 0 gives "a flat, volumeless
+     * wash" — the identical mistake the shadow-map rule above forbids, shipped one field along.
+     * `volume.ts` returns transmittance 1.0 for every sample below one step, so the cloud loses its lit
+     * top and dark underside, which that file calls the entire cue that makes a volume read as having
+     * volume. A volume with no self-shadow is fog on the lens, not a cheaper volume.
+     */
+    expect(qualitySettings('minimum').volumeLightSteps).toBeGreaterThanOrEqual(1);
   });
 
   it('drops depth of field before resolution, which is the opposite of the instinct', () => {
@@ -1056,6 +1071,67 @@ describe('quality ladder — monotonic, and it refuses rather than guessing', ()
     const r = pickQualityTier({ msAtProbeTier: 4.914, probeTier: 'reduced', budgetMs: 16.6 });
     expect(r.predictedMs.reduced).toBeCloseTo(4.914, 2);
   });
+
+  it('declares NO field that nothing reads — the defect §4.2 found four times', () => {
+    /*
+     * THE RATCHET, AND THE REASON IT PARSES INSTEAD OF LISTING NAMES.
+     *
+     * `shadowTaps` was declared per tier and read by nothing: the minimum tier paid 9 texture fetches per
+     * lit fragment for the 1-tap result it had asked for. Wiring it turned up three more of exactly the
+     * same shape — `aoScale`, `particleCapacity`, `volumeMaxSteps` — none of which any of the nine
+     * harnesses or eight components touched either, while the monotonicity test above asserted two of
+     * them and so made them read as guarantees. Four for four, and every one survived because the check
+     * was a reviewer's attention.
+     *
+     * So the fields are enumerated from the OBJECT rather than hand-listed — a hand-list cannot fail on a
+     * field nobody thought of, which is how the first four got in — and each one must appear as a
+     * PROPERTY ACCESS somewhere that is not a test. Adding an inert field to the ladder now fails here.
+     *
+     * WHAT THIS DOES NOT PROVE, stated so nobody reads more into a green: the access it finds may be an
+     * unrelated property of the same name — `lit.ts` has its own `o.ao` and `o.shadowTaps` options — so
+     * this is a name ratchet, not proof that the TIER's value reaches a uniform. That proof is per-field
+     * and lives beside the field: `useQualityTier.test.ts` for the eight components, the harness type
+     * check for the nine entries. What this catches, which nothing did, is a field with no reader at all.
+     */
+    const walk = (dir: string, out: string[] = []): string[] => {
+      for (const e of readdirSync(dir, { withFileTypes: true })) {
+        if (e.name === 'node_modules' || e.name === 'dist' || e.name === '__tests__') continue;
+        const p = join(dir, e.name);
+        if (e.isDirectory()) walk(p, out);
+        else if (/\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name)) out.push(p);
+      }
+      return out;
+    };
+    const ROOT = resolve(__dirname, '../../../..');
+    const corpus = [
+      resolve(ROOT, 'packages/gl/src'),
+      resolve(ROOT, 'docs/3d'),
+      resolve(ROOT, 'apps/web/src/components'),
+    ].flatMap((d) => (existsSync(d) ? walk(d) : []))
+      .map((f) => ({ file: f.slice(ROOT.length + 1), src: readFileSync(f, 'utf8') }));
+
+    /* NON-EMPTY FIRST. Every assertion below loops over this, so a walk that matched nothing would pass
+       the whole test while checking not one field — the exact shape of green this file keeps catching. */
+    expect(corpus.length, 'the source walk found no files to check').toBeGreaterThan(100);
+
+    const fields = Object.keys(qualitySettings('full'));
+    expect(fields.length, 'the settings object has no fields to check').toBeGreaterThan(3);
+    for (const field of fields) {
+      /* A property ACCESS, not the word: `quality.ts` writes every field name twice as a declaration and
+         as a ladder rung, and neither is a read. `\b` after the name keeps `.ao` off `.aoScale`. */
+      const access = new RegExp(`\\.\\s*${field}\\b`);
+      const readers = corpus.filter((f) => access.test(f.src)).map((f) => f.file);
+      expect(readers.length, `\`${field}\` is declared per tier and read by NOTHING — wire it or delete it`)
+        .toBeGreaterThan(0);
+    }
+
+    /* And the three that were deleted are GONE, not merely unasserted. A future edit that puts one back
+       fails on the loop above; this names them so the failure explains itself. */
+    for (const gone of ['aoScale', 'particleCapacity', 'volumeMaxSteps']) {
+      expect(fields, `\`${gone}\` was deleted as a fiction — see the note above QualitySettings`)
+        .not.toContain(gone);
+    }
+  });
 });
 
 describe('shadowMapSizeFor — the ladder scales a baseline, it does not replace it', () => {
@@ -1089,6 +1165,31 @@ describe('shadowMapSizeFor — the ladder scales a baseline, it does not replace
     // own object is worse than a hard-edged one.
     expect(shadowMapSizeFor('minimum', 256)).toBe(256);
     expect(shadowMapSizeFor('minimum', 512)).toBeGreaterThanOrEqual(256);
+  });
+
+  it('takes its multiplier FROM the declared ladder, which used to be a second disagreeing copy', () => {
+    /*
+     * TWO LADDERS, DISAGREEING, NEITHER AWARE OF THE OTHER. This function hard-coded `1 / 0.5 / 0.25`
+     * while the ladder declared `1536 / 1024 / 512`, i.e. `1 / 0.667 / 0.333`. The monotonicity test
+     * asserted the declared numbers; every shadow map ever allocated came from the hard-coded ones. Same
+     * defect class as `shadowTaps` — the declared field read as the guarantee and was not it.
+     *
+     * Asserted at 1280 because that is where the two disagree. Under the hard-coded factors: `reduced`
+     * returned 512 (0.5 × 1280 = 640, snapped down) and `minimum` 256 — a 2.5× and a 5× reduction where
+     * the ladder declares 1.5× and 3×. Every power-of-two baseline from 1 to 16384 and the 1536/3072/6144
+     * family produce the IDENTICAL size under both, and the only baselines in this repo are 1024 and
+     * 1536, so nothing shipping moved.
+     */
+    const declared = QUALITY_TIERS.map((t) => qualitySettings(t).shadowMapSize);
+    expect(declared, 'the rung this function derives from').toEqual([512, 1024, 1536]);
+    expect(shadowMapSizeFor('reduced', 1280), '0.667 x 1280 = 853, nearest POT 1024').toBe(1024);
+    expect(shadowMapSizeFor('minimum', 1280), '0.333 x 1280 = 427, nearest POT 512').toBe(512);
+    /* And the identity that makes the derivation checkable at all: handed the ladder's OWN full-tier
+       size, this must reproduce the ladder's own numbers at every rung. */
+    for (const t of QUALITY_TIERS) {
+      expect(shadowMapSizeFor(t, qualitySettings('full').shadowMapSize), `${t} of its own rung`)
+        .toBe(qualitySettings(t).shadowMapSize);
+    }
   });
 
   it('falls back to a usable size rather than propagating a bad baseline', () => {
@@ -1366,5 +1467,393 @@ describe('the PCF tap count is wired, so the minimum tier gets what it asks for'
     expect(fn.match(/float bias = /g) ?? []).toHaveLength(1);
     expect(fn.match(/float ref = p\.z - bias;/g) ?? []).toHaveLength(1);
     expect(fn.match(/ref <= d/g) ?? []).toHaveLength(2);
+  });
+});
+
+
+/*
+ * ══════════════════════════════════════════════════════════════════════════════════════════════════
+ *  THE AMBIENT TERM RETURNED MORE ENERGY THAN IT RECEIVED — split-sum DFG, multiscatter, and kd.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════════
+ *  Pinned the same way as the GGX fixes above, and for the same reason: the ALGEBRA is mirrored here
+ *  and swept numerically, and the SOURCE is pinned to still contain the form the mirror assumes.
+ *  Either alone is a test that passes while the shader is wrong.
+ *
+ *  Everything below is a sweep, and every sweep counts its own iterations and asserts the count. This
+ *  file has been bitten by a loop over an empty collection before, and an energy-conservation test
+ *  that silently checked nothing is worse than no test, because the claim it makes is total.
+ */
+
+/** Mirror of `envDFG` in LIT_FRAG — Karis's `EnvBRDFApprox`. Returns [A, B]; spec weight is f0*A + B. */
+function envDFG(NdotV: number, rough: number): [number, number] {
+  const c0 = [-1, -0.0275, -0.572, 0.022];
+  const c1 = [1, 0.0425, 1.04, -0.04];
+  const r = [
+    rough * c0[0]! + c1[0]!, rough * c0[1]! + c1[1]!, rough * c0[2]! + c1[2]!, rough * c0[3]! + c1[3]!,
+  ];
+  const a004 = Math.min(r[0]! * r[0]!, Math.pow(2, -9.28 * NdotV)) * r[0]! + r[1]!;
+  return [-1.04 * a004 + r[2]!, 1.04 * a004 + r[3]!];
+}
+
+/** Mirror of `fresnelSchlick` in LIT_FRAG, one channel. */
+function schlick(cosTheta: number, f0: number): number {
+  return f0 + (1 - f0) * Math.pow(Math.max(0, Math.min(1, 1 - cosTheta)), 5);
+}
+
+/** What the shader now hands the environment specular, per channel: clamped, single-scattering. */
+const specWeight = (NdotV: number, rough: number, f0: number) => {
+  const [A, B] = envDFG(NdotV, rough);
+  return Math.max(0, f0 * A + B);
+};
+/**
+ * Mirror of `msComp`. Ess is A + B, the white-furnace albedo of the fit.
+ *
+ * Evaluated at NdotV = 1 while the shader evaluates it at the fragment's own NdotV. That is faithful
+ * rather than convenient: A + B is INDEPENDENT of NdotV — the a004 halves cancel — and the sweep in
+ * the DFG block proves that to 1e-12 rather than assuming it.
+ */
+const msComp = (rough: number, f0: number) => {
+  const [A, B] = envDFG(1, rough);
+  return 1 + f0 * (1 / Math.max(1e-3, A + B) - 1);
+};
+
+/* The clamp the shader applies to roughness BEFORE any of this. Two of the floors proved below
+   depend on it, so it is pinned here rather than assumed from the other describe block. */
+const ROUGH_MIN = 0.045;
+
+/* lit.ts's own source. The contact-hardening REFUSAL is a TypeScript comment — it is deliberately
+   not in the shipped shader bytes — so the only way to check it survives is to read the file, which
+   `stage.test.ts:56` already does for the same kind of claim. */
+const LIT_SOURCE = readFileSync(resolve(process.cwd(), 'src/env/lit.ts'), 'utf8');
+
+describe('SPLIT-SUM DFG — the environment specular had no BRDF integration term at all', () => {
+  it('the shader computes the weight from f0, NOT from a second Fresnel — the double-count trap', () => {
+    /* `fresnelSchlick(NdotV, f0) * dfg.x + dfg.y` is the natural-looking edit and it applies Schlick
+       twice, because the fit was made against the Fresnel-weighted integral. Banned by shape. */
+    expect(LIT_FRAG).toContain('vec3 specWeight = max(vec3(0.0), f0 * dfg.x + dfg.y);');
+    expect(LIT_FRAG).not.toMatch(/fresnelSchlick\(NdotV, f0\)\s*\*\s*dfg/);
+    /* And the old bare-Fresnel environment specular must be gone, not merely supplemented. */
+    expect(LIT_FRAG).not.toContain('skyColour(normalize(mix(R, N, rough * rough))) * fresnelSchlick(NdotV, f0)');
+    /* PERCEPTUAL roughness, not alpha. The fit is defined on `Roughness` in UE4's terms; feeding it
+       rough*rough is the same class of mistake as defect 2 above and reads as too-sharp reflections. */
+    expect(LIT_FRAG).toContain('vec2 dfg = envDFG(NdotV, rough);');
+  });
+
+  it('the mirror below carries the SHADER coefficients, digit for digit', () => {
+    /*
+     * Without this the two halves can drift silently: every numeric claim in this block is made
+     * against the mirror, so a shader whose coefficients were retyped would keep passing all of them.
+     * Four numbers, and every energy figure in the note above LIT_FRAG depends on the third
+     * (-0.572 and 0.022 are what make Ess exactly 1 - 0.55*rough).
+     */
+    expect(LIT_FRAG).toContain('const vec4 c0 = vec4(-1.0, -0.0275, -0.572, 0.022);');
+    expect(LIT_FRAG).toContain('const vec4 c1 = vec4(1.0, 0.0425, 1.04, -0.04);');
+    expect(LIT_FRAG).toContain('float a004 = min(r.x * r.x, exp2(-9.28 * NdotV)) * r.x + r.y;');
+    expect(LIT_FRAG).toContain('return vec2(-1.04, 1.04) * a004 + r.zw;');
+    /* And the mirror agrees with those bytes at the one point where they can be evaluated by hand:
+       rough 0, NdotV 0, where exp2(0) = 1 and r.x = 1, so a004 = 1 + 0.0425 exactly. */
+    const [A, B] = envDFG(0, 0);
+    expect(A).toBeCloseTo(1.04 - 1.04 * 1.0425, 12);
+    expect(B).toBeCloseTo(1.04 * 1.0425 - 0.04, 12);
+  });
+
+  it('carries Schlick INSIDE the fit — a fit without it would be flat in NdotV', () => {
+    /*
+     * This is the numeric half of the test above, and the reason a source match alone was not enough.
+     * At the smoothest legal roughness a dielectric's weight rises 20.6x from normal incidence to
+     * NdotV 0.01; Schlick's own rise over the same range is 23.8x. Flat in NdotV would be ~1.0x.
+     */
+    const w = (n: number) => specWeight(n, ROUGH_MIN, 0.04);
+    const rise = w(0.01) / w(1);
+    expect(rise).toBeGreaterThan(15);
+    expect(rise).toBeCloseTo(20.6, 1);
+    expect(schlick(0.01, 0.04) / schlick(1, 0.04)).toBeCloseTo(23.8, 1);
+
+    /* And it tracks Schlick in absolute terms across every angle and every f0 the shader can hold —
+       0.085 is the worst case, at NdotV 0.0005 where a dielectric reflects almost everything. */
+    let worst = 0;
+    let checked = 0;
+    for (let ni = 1; ni <= 2000; ni++) {
+      for (const f0 of [0.04, 0.2, 0.5, 1.0]) {
+        const NdotV = ni / 2000;
+        worst = Math.max(worst, Math.abs(specWeight(NdotV, ROUGH_MIN, f0) - schlick(NdotV, f0)));
+        checked++;
+      }
+    }
+    expect(checked).toBe(8000);
+    expect(worst).toBeLessThan(0.09);
+  });
+
+  it('AND THE DOUBLE-COUNTED FORM FAILS THAT, which is why the numeric half exists', () => {
+    /* The size of the bug that would be reintroduced: a rim of invented light on every dielectric. */
+    const doubled = (n: number, r: number, f0: number) => {
+      const [A, B] = envDFG(n, r);
+      return schlick(n, f0) * A + B;
+    };
+    expect(doubled(0.35, ROUGH_MIN, 0.04) / specWeight(0.35, ROUGH_MIN, 0.04)).toBeCloseTo(1.675, 2);
+    expect(doubled(0.1, 0.62, 0.04) / specWeight(0.1, 0.62, 0.04)).toBeCloseTo(5.199, 2);
+  });
+
+  it('is ENERGY-CONSERVING at both roughness limits and for metal and dielectric alike', () => {
+    /*
+     * The one claim that matters: the white-furnace albedo A + B must never exceed 1, or the surface
+     * emits. It is exactly 1 - 0.55*rough — the NdotV-dependent halves of A and B cancel, which is
+     * why no lookup texture is needed to state this. Swept in NdotV as well, because that
+     * cancellation is the property being checked and not an assumption.
+     */
+    let checked = 0;
+    let maxEss = -1;
+    let worstDrift = 0;
+    for (let ri = 0; ri <= 1000; ri++) {
+      for (let ni = 1; ni <= 200; ni++) {
+        const rough = ri / 1000;
+        const [A, B] = envDFG(ni / 200, rough);
+        /* Accumulated and asserted once, not asserted 200,200 times: the same coverage, and the
+           failure message names the worst case instead of the first. */
+        worstDrift = Math.max(worstDrift, Math.abs(A + B - (1 - 0.55 * rough)));
+        maxEss = Math.max(maxEss, A + B);
+        checked++;
+      }
+    }
+    expect(checked).toBe(200_200);
+    expect(worstDrift).toBeLessThan(1e-12);
+    /* rough = 0 is below the shader's clamp and is included on purpose: it is where the fit is
+       tightest against 1, so if the coefficients are ever retyped this is where it breaks first. */
+    expect(maxEss).toBeLessThanOrEqual(1);
+    expect(maxEss).toBeCloseTo(1, 12);
+    /* And the floor, which the msComp divide relies on: 0.45 at rough 1, 450x above its 1e-3 guard. */
+    expect(envDFG(1, 1)[0] + envDFG(1, 1)[1]).toBeCloseTo(0.45, 12);
+  });
+
+  it('replaces a form that was up to 2.222x too bright on a rough metal', () => {
+    /* The old code multiplied the prefiltered sky by fresnelSchlick alone, which for a metal
+       (f0 -> 1) is 1.0 at every angle and roughness. The integral it stood in for is not. */
+    const tooBright = (rough: number) => schlick(1, 1) / (envDFG(1, rough)[0] + envDFG(1, rough)[1]);
+    expect(tooBright(0.13)).toBeCloseTo(1.077, 3);   // the LCX mark
+    expect(tooBright(0.62)).toBeCloseTo(1.517, 3);   // StormRelief's lid
+    expect(tooBright(1.0)).toBeCloseTo(2.222, 3);
+  });
+
+  it('takes no texture unit, which is the reason the analytic fit was chosen over a LUT', () => {
+    /* lit.ts binds the shadow map on unit 0 and AO on unit 1 and has already had one feedback-hazard
+       bug from that bookkeeping. A DFG LUT would be a third. Pinned so nobody adds one quietly. */
+    expect(LIT_FRAG.match(/uniform sampler2D/g) ?? []).toHaveLength(2);
+    expect(LIT_FRAG).toContain('uniform sampler2D uShadowMap;');
+    expect(LIT_FRAG).toContain('uniform sampler2D uAO;');
+    expect(LIT_FRAG).not.toMatch(/uniform sampler2D u\w*(DFG|Brdf|BRDF|Lut|LUT)/);
+  });
+});
+
+describe('kd ON ENVIRONMENT DIFFUSE — the missing factor, and why it is 1-specWeight not 1-F', () => {
+  it('the shader applies it, and derives it from what the specular actually took', () => {
+    expect(LIT_FRAG).toContain(
+      'vec3 envDiffuse = skyColour(N) * uBaseColour * (1.0 - specWeight) * (1.0 - uMetalness);',
+    );
+    /* The exact line that was shipping, banned by shape so a revert cannot pass. */
+    expect(LIT_FRAG).not.toContain('vec3 envDiffuse = skyColour(N) * uBaseColour * (1.0 - uMetalness);');
+    /* And the roughness clamp both floors below depend on. */
+    expect(LIT_FRAG).toContain('float rough = clamp(uRoughness, 0.045, 1.0);');
+  });
+
+  it('the OLD form returned twice the energy it received, and the new one is capped at 1.0030', () => {
+    /*
+     * Summed against a UNIFORM sky, which is the case where the diffuse (sampled along N) and the
+     * specular (sampled along the roughness-lerped reflection) see the same radiance and their
+     * weights can legitimately be added. Albedo 1 is the worst case and is the bound being stated.
+     */
+    let checked = 0;
+    let worstOld = 0;
+    let worstNew = 0;
+    for (let ri = ROUGH_MIN * 1000; ri <= 1000; ri++) {
+      for (let ni = 1; ni <= 2000; ni++) {
+        const rough = ri / 1000;
+        const NdotV = ni / 2000;
+        const f0 = 0.04;
+        const w = specWeight(NdotV, rough, f0);
+        /* OLD: diffuse weight was a flat 1.0 for a dielectric, plus a bare Schlick specular. */
+        worstOld = Math.max(worstOld, 1 + schlick(NdotV, f0));
+        worstNew = Math.max(worstNew, (1 - w) + w * msComp(rough, f0));
+        checked++;
+      }
+    }
+    expect(checked).toBe(1_912_000);
+    expect(worstOld).toBeGreaterThan(1.99);
+    /* 1.0030 is not slack: it is the multiscatter coupling deliberately left out of kd, and it is
+       bounded by f0 = 0.04 because kd is zero wherever f0 is large (a metal has no diffuse lobe). */
+    expect(worstNew).toBeLessThan(1.0031);
+    expect(worstNew - 1).toBeCloseTo(0.003, 3);
+  });
+
+  it('needs NO clamp, and that is provable from the roughness clamp rather than lucky', () => {
+    /*
+     * `1 - (f0*A + B)` could in principle go negative — at rough exactly 0 and grazing incidence B
+     * reaches 1.044. It cannot here: clamping rough to 0.045 first caps a004, which keeps A >= 0.065,
+     * and with A positive the smallest kd is at f0 = 1 where it is 1 - Ess. Swept to NdotV 1e-5,
+     * five times finer than the shader's own 1e-4 NdotV floor.
+     */
+    let checked = 0;
+    let minKd = 9;
+    let minA = 9;
+    for (let ri = ROUGH_MIN * 1000; ri <= 1000; ri++) {
+      for (let ni = 1; ni <= 500; ni++) {
+        const rough = ri / 1000;
+        /* ni = 1 is spent on 1e-5 rather than 0.002, because the floor is approached as NdotV -> 0
+           and the shader's own floor is 1e-4. Testing only down to 0.002 would miss it entirely. */
+        const NdotV = ni === 1 ? 1e-5 : ni / 500;
+        minA = Math.min(minA, envDFG(NdotV, rough)[0]);
+        for (const f0 of [0.04, 0.2, 0.5, 1.0]) {
+          minKd = Math.min(minKd, 1 - specWeight(NdotV, rough, f0));
+          checked++;
+        }
+      }
+    }
+    expect(checked).toBe(1_912_000);
+    expect(minA).toBeGreaterThan(0.065);
+    expect(minKd).toBeGreaterThan(0);
+    expect(minKd).toBeCloseTo(0.0248, 4);
+    /* A dielectric never gets close to that floor — 0.0877 is its worst case. */
+    expect(1 - specWeight(1e-5, ROUGH_MIN, 0.04)).toBeCloseTo(0.0877, 4);
+  });
+
+  it('AND 1-F WOULD HAVE OVER-SUBTRACTED BY 24x, which is why it is not 1-F', () => {
+    /*
+     * The literal reading of the direct path's `kd = (1-F)*(1-metalness)`. Once the specular takes
+     * `f0*A + B`, F is no longer what it took: at rough 1 and NdotV 0.1 a dielectric's real specular
+     * weight is 0.0157 while 1-F removes 0.607. That is the bug that makes rough dielectrics go black
+     * at their silhouette. Both are asserted, because "different" is weaker than "24x too much".
+     */
+    const w = specWeight(0.1, 1.0, 0.04);
+    const removedByF = schlick(0.1, 0.04);
+    expect(w).toBeCloseTo(0.0157, 4);
+    expect(removedByF).toBeCloseTo(0.607, 3);
+    expect(removedByF / w).toBeGreaterThan(24);
+    /* And the two agree where the old form was defensible — a smooth surface at normal incidence,
+       where A -> 1 and B -> 0. Stated as an absolute gap because both values are ~0.04, and a
+       relative tolerance on a number that small says nothing. */
+    expect(Math.abs(specWeight(1, ROUGH_MIN, 0.04) - schlick(1, 0.04))).toBeLessThan(0.005);
+  });
+
+  it('is zero for a metal, so the fix cannot have re-introduced a diffuse lobe on one', () => {
+    /* Not a tautology of the shader line: it pins that `(1 - uMetalness)` still gates the whole term,
+       which is the factor that keeps a metal from reading as painted plastic (see the header). */
+    const kdFull = (NdotV: number, rough: number, f0: number, metalness: number) =>
+      (1 - specWeight(NdotV, rough, f0)) * (1 - metalness);
+    expect(kdFull(0.5, 0.3, 0.9, 1)).toBe(0);
+    expect(kdFull(0.5, 0.3, 0.04, 0)).toBeGreaterThan(0.5);
+  });
+});
+
+describe('MULTISCATTER COMPENSATION — the loss is real at the roughness this app actually ships', () => {
+  it('restores exactly the lost energy in the white-furnace case', () => {
+    /* f0 = 1 must come back to 1.0 at every roughness: Ess * (1/Ess) = 1. This is the whole
+       justification for the form, so it is swept rather than spot-checked. */
+    let checked = 0;
+    for (let ri = ROUGH_MIN * 1000; ri <= 1000; ri++) {
+      const rough = ri / 1000;
+      expect(specWeight(1, rough, 1) * msComp(rough, 1)).toBeCloseTo(1, 12);
+      checked++;
+    }
+    expect(checked).toBe(956);
+    /* And it only ever ADDS: a compensation below 1 would be a second energy bug wearing the name of
+       the fix. Nothing here may darken the specular. */
+    for (const rough of [ROUGH_MIN, 0.13, 0.5, 1.0]) {
+      for (const f0 of [0, 0.04, 0.5, 1]) expect(msComp(rough, f0)).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('corrects a loss between 7.15% and 49.5% ACROSS THE SHIPPED ROUGHNESS RANGE', () => {
+    /*
+     * The values are grepped from apps/web/src and docs/3d, not invented: 0.13 is ForgeBackdrop's and
+     * e8's LCX mark on the sign-in screen, 0.88/0.90 are the darkest floors. If the range this test
+     * asserts ever stops matching the app, the justification for carrying this code has changed.
+     */
+    const shipped = [0.13, 0.14, 0.18, 0.22, 0.30, 0.34, 0.42, 0.52, 0.62, 0.74, 0.88, 0.90];
+    expect(shipped.length).toBeGreaterThan(0);
+    for (const rough of shipped) {
+      const loss = 1 - (envDFG(1, rough)[0] + envDFG(1, rough)[1]);
+      expect(loss).toBeGreaterThan(0.07);
+    }
+    expect(1 - (envDFG(1, 0.13)[0] + envDFG(1, 0.13)[1])).toBeCloseTo(0.0715, 4);
+    expect(1 - (envDFG(1, 0.90)[0] + envDFG(1, 0.90)[1])).toBeCloseTo(0.4950, 4);
+  });
+
+  it('measures the per-channel gain on four shipped materials, including the sign-in screen', () => {
+    /*
+     * The gain scales with f0, so on a coloured metal it is a SATURATION change as well as a
+     * brightness one — the LCX mark's blue gains 7.1% and its red 0.2%. That asymmetry is the visible
+     * consequence, and it is the reason this is asserted per channel rather than as a scalar.
+     */
+    /* Measured, to 2 decimals, with a 0.05-point tolerance below. Not rounded to the numbers in the
+       note above LIT_FRAG — the note rounds these, so pinning the note's figures would let a 0.4%
+       drift through. */
+    const materials = [
+      { name: 'LCX mark (ForgeBackdrop, e8)', hex: '#2C6BFF', rough: 0.13, metalness: 0.92, blue: 7.11, red: 0.20 },
+      { name: 'E2 / GlobeRelief corridors', hex: '#4C86FF', rough: 0.22, metalness: 0.85, blue: 11.78, red: 0.93 },
+      { name: 'ForgeBackdrop brushed ring', hex: '#8FA3C4', rough: 0.30, metalness: 0.95, blue: 10.40, red: 5.20 },
+      { name: 'StormRelief lid', hex: '#6B7A99', rough: 0.62, metalness: 0.35, blue: 7.11, red: 4.01 },
+    ];
+    expect(materials.length).toBe(4);
+    for (const m of materials) {
+      const base = hexToLinear(m.hex);
+      /* f0 = mix(vec3(0.04), uBaseColour, uMetalness), the shader's own line. */
+      const f0 = (i: number) => 0.04 + m.metalness * (base[i]! - 0.04);
+      const gain = (i: number) => (msComp(m.rough, f0(i)) - 1) * 100;
+      expect(Math.abs(gain(2) - m.blue), `${m.name} blue`).toBeLessThan(0.05);
+      expect(Math.abs(gain(0) - m.red), `${m.name} red`).toBeLessThan(0.05);
+      /* The blue channel gains strictly more than the red on all four, which is the saturation claim. */
+      expect(gain(2), m.name).toBeGreaterThan(gain(0));
+    }
+  });
+
+  it('the shader applies it to the environment specular ONLY, not to the direct lobe', () => {
+    /* Deliberate and argued in the note above LIT_FRAG: the factor is a hemispherical directional
+       albedo, and Filament's choice to apply it to the direct lobe puts the recovered energy in a
+       direction it did not scatter to. If that is ever revisited it should be by argument, so the
+       absence is pinned rather than left to be read as an oversight. */
+    expect(LIT_FRAG).toContain('* specWeight * msComp;');
+    const direct = LIT_FRAG.slice(LIT_FRAG.indexOf('vec3 spec = '), LIT_FRAG.indexOf('vec3 R = reflect'));
+    expect(direct.length).toBeGreaterThan(0);
+    expect(direct).not.toContain('msComp');
+  });
+
+  it('the clamp on specWeight is REACHABLE, which is why it is a guard and not decoration', () => {
+    /* B is -0.0024 at roughness 1, so a metal dark enough drives f0*A + B negative — and a negative
+       radiance in this pipeline darkens the whole composite instead of clipping locally. The
+       threshold is sharp enough to be worth pinning on both sides. */
+    const raw = (hex: string) => {
+      const [A, B] = envDFG(1, 1);
+      return hexToLinear(hex)[0]! * A + B;
+    };
+    expect(raw('#101010')).toBeLessThan(0);
+    expect(raw('#111111')).toBeGreaterThan(0);
+    expect(specWeight(1, 1, hexToLinear('#101010')[0]!)).toBe(0);
+    expect(LIT_FRAG).toContain('max(vec3(0.0), f0 * dfg.x + dfg.y)');
+  });
+});
+
+describe('CONTACT HARDENING IS REFUSED — the argument is in the source, so it is checkable', () => {
+  /*
+   * §1.3 of `3D_VFX_FINAL_PLAN.md` named four missing Layer 3 items. Three were energy defects and
+   * are fixed above. The fourth is a look, and it was refused in writing — the register
+   * `3D_VFX_1000X.md:330` uses for god rays. This test exists so the refusal cannot be quietly
+   * reversed by someone who does not know it was ever made, and so the shader's cost claims stay
+   * true: contact hardening needs a blocker-search loop, which is a SECOND set of taps.
+   */
+  it('no blocker search reached the shader, and the tap count is still 1 or 9', () => {
+    const fn = LIT_FRAG.slice(LIT_FRAG.indexOf('float shadowFactor'), LIT_FRAG.indexOf('void main('));
+    expect(fn.length).toBeGreaterThan(0);
+    /* Exactly two fetches in the source: one per branch. A blocker search would add a third. */
+    expect(fn.match(/texture\(uShadowMap/g) ?? []).toHaveLength(2);
+    expect(fn.match(/for \(int/g) ?? []).toHaveLength(2);   // the 3x3 y and x loops, nothing else
+    expect(fn).not.toMatch(/blocker|penumbra|pcss/i);
+  });
+
+  it('and the refusal is recorded where the code would have gone', () => {
+    /* A refusal that lives only in a plan document is a refusal the next reader never sees. */
+    expect(LIT_FRAG).not.toMatch(/CONTACT HARDENING/i);   // not in the shipped bytes, and not needed
+    expect(LIT_SOURCE).toMatch(/CONTACT HARDENING IS REFUSED/);
+    /* The refusal has to carry its precedent and its four counts, or it is an opinion. */
+    expect(LIT_SOURCE).toContain('3D_VFX_1000X.md:330');
+    expect(LIT_SOURCE).toContain('BLOCKER SEARCH');
   });
 });

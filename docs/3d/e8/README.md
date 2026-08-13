@@ -14,6 +14,16 @@ A machined disc on a plinth, inside a polished ring, lit by a single key light o
 | plinth | roughness 0.52, metalness 0.35 | semi-matte, so it grounds the object instead of competing with it |
 | floor | roughness 0.88, metalness 0 | dielectric; it exists to catch the shadow |
 
+> **The anisotropic roughness numbers moved on 2026-08-13, and the render did not.** `distributionGGXAniso`
+> used to receive `at`/`ab` derived from *perceptual* roughness, while the isotropic branch has always used
+> `alpha = rough²`. Correcting that (commit `38c01b1`) made every anisotropic material in the repo sharper —
+> this disc's lobe half-width by 3.33×, the ring's by 7.9×, which is directly against the intent stated in
+> the table above. So each anisotropic value is now `sqrt()` of the authored one, restoring the effective
+> alpha exactly while the number finally means what its type says. The values in the table are the AUTHORED
+> ones and remain the design intent; the source carries their square roots. Pinned by
+> `packages/gl/src/env/anisoPreserved.test.ts`. Isotropic materials (plinth, floor) were never affected and
+> are unchanged.
+
 **The highlight has to TRAVEL.** That is the whole effect and it is why the object is a cylinder
 and a torus rather than a plane: both curve continuously, so one moving light sweeps a highlight
 *along* them. A flat face gives a stationary blob and the object reads as a grey circle. In the
@@ -131,7 +141,7 @@ saying it for weeks after the work shipped. It is wired:
   screenshots the sign-in gate in both themes.
 
 **Those two e2e baselines are the shipping consequence of the shader fix above.**
-`ForgeBackdrop.tsx` carries the same two materials as this harness — its disc is roughness 0.30 with
+`ForgeBackdrop.tsx` carries the same two materials as this harness — its disc is authored roughness 0.30 (0.5477 in source, see the note above) with
 `anisotropy: 0.86` and its ring is 0.13 with 0.72 — so the live sign-in screen is where defect 4 was
 *actually running*, on the one screen every operator and every stranger passes through. (Cited by material
 rather than by line: that file is being edited in another lane, and the two lines have already moved once
