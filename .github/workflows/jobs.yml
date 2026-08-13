@@ -88,9 +88,39 @@ jobs:
           fi
 
       - name: Run ${{ steps.pick.outputs.job }}
+        id: run
         if: steps.creds.outputs.present == 'true'
         working-directory: apps/api
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
-        run: npx tsx src/jobs/cli.ts "${{ steps.pick.outputs.job }}"
+        run: |
+          set -o pipefail
+          npx tsx src/jobs/cli.ts "${{ steps.pick.outputs.job }}" 2>&1 | tee /tmp/job.log
+
+      # ── PUT THE DIAGNOSIS IN THE SUMMARY, NOT ONLY IN THE LOG ───────────────
+      #
+      # These jobs failed silently for a day. The cause was Supabase's direct host
+      # being IPv6-only while runners are IPv4-only, and finding that meant opening
+      # a run, expanding a step and reading a stack trace. The runner now heals that
+      # itself — but the NEXT connection failure will be a credential or a region,
+      # and nobody should have to dig for it twice.
+      #
+      # So the two failures that are ACTIONABLE BY THE OWNER AND ONLY BY THE OWNER
+      # get lifted to an annotation on the run itself, each naming the one fix.
+      # Everything else stays as it is: this must not turn arbitrary job failures
+      # into reassuring summaries.
+      - name: Why did it fail?
+        if: failure() && steps.run.outcome == 'failure'
+        run: |
+          if grep -q 'REJECTED THE CREDENTIAL' /tmp/job.log 2>/dev/null; then
+            REGION=$(grep -o 'aws-[0-9]*-[a-z0-9-]*\.pooler\.supabase\.com:[0-9]*' /tmp/job.log | head -1)
+            echo "::error title=scheduled-jobs — WRONG PASSWORD IN THE DATABASE_URL SECRET::The runner reached ${REGION} and it rejected the credential (28P01). The HOST is right, so no other region will help and this is not the IPv6 problem. The DATABASE_URL repo secret holds a password this project does not accept — note the API on Render connects fine through the same pooler logic, so the two secrets differ. Fix: Settings → Secrets and variables → Actions → DATABASE_URL. Percent-encode # / ? % in the password (# is %23), or the URL truncates it silently."
+          elif grep -q 'MALFORMED URL' /tmp/job.log 2>/dev/null; then
+            echo "::error title=scheduled-jobs — THE DATABASE_URL SECRET DOES NOT PARSE::It names the Supabase direct host but does not parse as a URL that reaches it, which means an unencoded # / ? or % in the password. Everything after it is read as a fragment, path or query and the password is silently truncated. Percent-encode it (# → %23, / → %2F, ? → %3F, % → %25)."
+          elif grep -q 'every pooler candidate failed' /tmp/job.log 2>/dev/null; then
+            echo "::error title=scheduled-jobs — NO REACHABLE DATABASE HOST::The direct host is IPv6-only (runners are IPv4-only) and every pooler region in the sweep refused. If this project lives outside the default region list, set the SUPABASE_POOLER_REGIONS repo variable to its region."
+          else
+            echo "::error title=scheduled-jobs — ${{ steps.pick.outputs.job }} FAILED::Not a connection problem the runner recognises. Open the 'Run ${{ steps.pick.outputs.job }}' step; the error is at the end."
+          fi
+          exit 1

@@ -135,6 +135,23 @@ export async function openReachablePool(
     return { pool: direct, url: rawUrl, source: 'env' };
   } catch (err) {
     await direct.end().catch(() => {});
+    /*
+     * ONE FAILURE THAT LOOKS LIKE A NETWORK PROBLEM AND IS NOT, CAUGHT BEFORE IT COSTS ANOTHER AFTERNOON.
+     *
+     * If the raw string plainly CONTAINS the Supabase direct host but `isUnroutableDirectHost` cannot see it, the
+     * URL did not parse the way it reads. The cause is always an unencoded character in the password: a raw `#`
+     * makes the remainder a URL fragment, `/` reads as a path and `?` as a query, so the host this code inspects
+     * is not the host in the secret. Rethrowing here would report ENETUNREACH — a network error for a punctuation
+     * problem, which is precisely the wrong place to send someone.
+     */
+    if (/@db\.[a-z0-9]+\.supabase\.co/i.test(rawUrl) && !isUnroutableDirectHost(rawUrl)) {
+      throw new Error(
+        'DATABASE_URL contains the Supabase direct host but does not parse as a URL that reaches it. A password '
+        + 'containing # / ? or % must be percent-encoded (# → %23, / → %2F, ? → %3F, % → %25); unencoded, '
+        + 'everything after it is read as a fragment, path or query and the password is silently truncated. '
+        + 'This is a MALFORMED URL, not an unreachable host and not a wrong password.',
+      );
+    }
     /* Only the unroutable-direct-host case earns a sweep. `isUnroutableDirectHost` is the same predicate the
        API uses, so the two cannot disagree about when a fallback is legitimate. */
     if (!isUnroutableDirectHost(rawUrl)) throw err;

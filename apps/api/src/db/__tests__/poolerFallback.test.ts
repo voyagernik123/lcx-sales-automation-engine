@@ -206,3 +206,56 @@ describe('the sweep heals the IPv6-only direct host, which is the whole point', 
     expect(f.ended.length).toBe(poolerCandidates(DIRECT_IPV6).length + 1);
   });
 });
+
+/*
+ * THE PASSWORD MUST SURVIVE THE REWRITE, and this is the check that was missing when the healed cron came back
+ * with 28P01 from the FIRST candidate — the same eu-central-1 pooler the API server reaches successfully.
+ *
+ * The direct attempt hands `pg` the raw string. Every candidate hands it a string REBUILT from a parsed URL. Those
+ * two paths can disagree, and this project has already measured that `#`, `/` and `?` in a password break the
+ * PARSE rather than the auth: a raw `#` makes everything after it a URL fragment, so the password silently
+ * truncates and the server rejects a credential nobody mistyped. A rebuild that loses one character produces a
+ * failure that reads exactly like a wrong secret, which is the most expensive kind of wrong error message.
+ */
+describe('the credential survives the username rewrite, character for character', () => {
+  const AWKWARD = [
+    'plain123',
+    'has#hash',      // makes the rest a fragment if not encoded
+    'has/slash',     // reads as a path
+    'has?query',     // reads as a search string
+    'has%pct',       // a lone % is not a valid escape
+    'has:colon',     // ambiguous with the user:pass separator
+    'p@ssword',      // ambiguous with the userinfo@host separator
+    'sp ace',
+    'quote\'s',
+  ];
+
+  for (const pw of AWKWARD) {
+    it(`carries ${JSON.stringify(pw)} through unchanged`, () => {
+      const raw = `postgresql://postgres:${encodeURIComponent(pw)}@db.abcdefghijklmnop.supabase.co:5432/postgres`;
+      const candidates = poolerCandidates(raw);
+      expect(candidates.length).toBeGreaterThan(0);
+      for (const c of candidates) {
+        /* Decoded, because what matters is the byte sequence `pg` will send — not how it was spelled in transit. */
+        expect(decodeURIComponent(new URL(c.url).password)).toBe(pw);
+      }
+    });
+  }
+
+  it('reports a RAW unencoded password as a malformed URL, not as a network or credential failure', async () => {
+    /*
+     * The hazardous case: a secret pasted straight from a dashboard, `#` and all. `new URL` reads everything after
+     * the `#` as a fragment, so the host stops looking like Supabase and the password truncates to `abc`.
+     *
+     * The first version of this test asserted inside a `for` over the candidate list — which is EMPTY here, so it
+     * passed while checking nothing. What it now pins is the diagnosis: an unencoded character must be reported as
+     * a malformed URL, because ENETUNREACH sends the operator to the network and 28P01 sends them to the password,
+     * and both of those cost an afternoon before anyone suspects punctuation.
+     */
+    const raw = 'postgresql://postgres:abc#def@db.abcdefghijklmnop.supabase.co:5432/postgres';
+    expect(poolerCandidates(raw)).toHaveLength(0);
+    const f = fakePools({}, []);
+    await expect(openReachablePool(raw, f.make, () => {})).rejects.toThrow(/MALFORMED URL/);
+    await expect(openReachablePool(raw, f.make, () => {})).rejects.toThrow(/%23/);
+  });
+});
