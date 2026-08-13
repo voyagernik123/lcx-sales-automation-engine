@@ -82,7 +82,23 @@ asset pipeline, and that is the next step here — before any more corridors, be
 endpoints add no reading. §3.3 deferred the texture decision deliberately; the polyline route does not
 need it.
 
-**No DOM text at all, which is a §6 rule 4 violation and was not previously recorded here.** `build.mjs`
+**No DOM text at all, which is a §6 rule 4 violation and was not previously recorded here — STILL TRUE OF THIS
+HARNESS, and NOT true of the shipped surface.** E2 is now promoted into the web app
+(`apps/web/src/components/market/GlobeRelief.tsx` + `GlobeReliefGl.tsx`, mounted on `MarketMap`, opt-in and
+defaulting to the scatter), and the product component projects real DOM labels through `projectScreen` — region
+names, project and listing counts, market cap, solar time, the hub, the sub-solar reading, and every absence.
+So the accessibility tree and the print path are covered where a reader actually meets E2. This file's own
+`entry.ts` still renders no DOM text, so the harness violation stands as written below; nobody should read the
+promotion as having fixed it here.
+
+Two things the promotion could NOT carry over, and they are data limits rather than rendering ones:
+`MarketMap`'s `MapPoint` has **no coordinates at all** — only a coarse `region` string — so the shipped globe
+places REGIONS at published geographic centres (EU-27 near Gadheim; contiguous US near Lebanon, Kansas) and
+says so on the frame, while this harness's twelve city sites remain placeholders. And the shipped terminator is
+computed from the reader's own clock rather than from a fixed sub-solar point, which is what turns "which desks
+are awake" into a reading instead of a lighting choice.
+
+`build.mjs`
 chose to have no DOM overlay, so twelve sited cities and seven corridors carry no labels: nothing enters
 the accessibility tree, nothing is selectable or translatable, and nothing survives printing. Every
 other environment in the programme now projects real DOM content onto its geometry

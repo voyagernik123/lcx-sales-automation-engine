@@ -7,6 +7,7 @@ import { EntityChip } from '@/components/entity';
 import { useInspect } from '@/stores';
 import { formatMoney } from '@/lib/format';
 import { MarketScatter } from '@/components/market/MarketScatter';
+import { GlobeRelief } from '@/components/market/GlobeRelief';
 import {
   LENSES,
   SIZE_MODES,
@@ -265,7 +266,12 @@ export function MarketMap() {
                 />
               )
             ) : (
-              <MarketScatter points={visible} lens={lens} colorFor={colorFor} sizeValue={sizeValue} selectedIds={selected} onSelect={onSelect} onOpen={(p) => inspect('project', p.id)} />
+              /* E2 THE GLOBE, opt-in. The scatter below is the DEFAULT and is rendered unchanged; the globe
+                 places regions at published reference points and says so, because this dataset has no
+                 per-project coordinates. See `GlobeRelief` for both reasons it defaults off. */
+              <GlobeRelief points={visible}>
+                <MarketScatter points={visible} lens={lens} colorFor={colorFor} sizeValue={sizeValue} selectedIds={selected} onSelect={onSelect} onOpen={(p) => inspect('project', p.id)} />
+              </GlobeRelief>
             )}
           </div>
 

@@ -19,6 +19,7 @@ import { invoke } from '@/components/command/invoke';
 import { useAccessStore } from '@/stores/useAccessStore';
 import { useOperatorStore } from '@/stores';
 import { DeepOntologyPanel } from '@/components/command/DeepOntologyPanel';
+import { DeckRelief } from '@/components/geometry/DeckRelief';
 import { ReadinessDial, LpOptimizerPanel, FunnelSimPanel } from '@/components/command/CockpitPanels';
 import { AnalyticReviews } from '@/components/intel/AnalyticReviews';
 import { SignatureBackdrop } from '@/components/command/SignatureBackdrop';
@@ -146,6 +147,51 @@ function Loaded({ deck, onChange }: { deck: Deck; onChange: () => void }) {
         <Stat label="Risks" value={o.counts.risks} tone={o.topRisks.some((r) => r.impact === 'Critical') ? 'bad' : undefined} />
       </div>
 
+      {/*
+        E1 THE THEATRE, LIVE — and opt-in, which §7 requires rather than permits.
+
+        The headlines below are strings this page ALREADY formats and already shows: the gating fraction from the
+        progress bar, the workstream count from the Stat row, the partner count from the panel's own title, the
+        risk count from the Stat row. Nothing here computes a new number, and a measure the page does not have
+        arrives as `null` and renders as a named absence rather than a zero.
+
+        That is not fussiness about this one component. E1's harness rendered E0's frame time as a number
+        belonging to a different programme, under a printed claim that every row was checkable — so of the nine
+        environments, this is the one with a false-number-on-a-lit-panel already on its record.
+      */}
+      <DeckRelief
+        heightPx={460}
+        panels={[
+          {
+            id: 'gating',
+            title: 'Launch readiness — gating chain',
+            /* The page shows this as a fraction beside a bar. A gating chain with no gates has no fraction, and
+               0/0 would read as "nothing done" rather than as "nothing to do". */
+            headline: o.launch.gatingTotal > 0 ? `${o.launch.gatingDone}/${o.launch.gatingTotal} gates` : null,
+            note: o.launch.gatingTotal > 0 ? null : 'No gating chain recorded for this launch',
+          },
+          {
+            id: 'workstreams',
+            title: 'Workstreams',
+            headline: `${o.counts.workstreams} workstreams`,
+            note: `${o.counts.tasks} tasks across them`,
+          },
+          {
+            id: 'partners',
+            title: 'Partner pipeline',
+            headline: `${o.counts.partners} partners`,
+            note: o.partnersByType.length > 0 ? `${o.partnersByType.length} types` : null,
+          },
+          {
+            id: 'risks',
+            title: 'Risk heatmap',
+            headline: `${o.counts.risks} risks`,
+            /* Named only when one exists. "0 critical" and "none recorded" are different statements and this
+               page cannot tell them apart, so it says the one it can support. */
+            note: o.topRisks.some((r) => r.impact === 'Critical') ? 'Critical risks present' : null,
+          },
+        ]}
+      >
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Launch readiness */}
         <Panel icon={<Rocket size={13} />} title="Launch readiness — gating chain">
@@ -228,6 +274,7 @@ function Loaded({ deck, onChange }: { deck: Deck; onChange: () => void }) {
           </div>
         </Panel>
       </div>
+      </DeckRelief>
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Launch Monte Carlo (Wave 2) */}
