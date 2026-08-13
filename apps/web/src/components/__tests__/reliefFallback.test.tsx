@@ -398,6 +398,60 @@ function codeOf(rel: string): string {
     .replace(/(^|[^:'"`\\])\/\/.*$/gm, '$1');
 }
 
+describe('rule 1 INVERTED · a missing browser API must not take the flat surface down with it', () => {
+  /*
+   * THE SHARPEST VERSION OF A RULE-1 FAILURE: not "the relief did not draw" but "the relief's failure
+   * DESTROYED the surface rule 1 exists to preserve."
+   *
+   * `OntologyOrreryGl` called `new ResizeObserver(...)` unguarded. With the API absent the throw happened
+   * inside an effect, and React escalates that to unmounting the WHOLE SUBTREE — so `container.innerHTML`
+   * came back as the empty string, the flat diagram was gone, and the ReferenceError escaped as an
+   * unhandled error into other test files. Measured both ways on this exact mount: 0 characters unguarded
+   * against 1047 guarded.
+   *
+   * `GlobeRelief` had guarded the identical call for exactly this reason. This is the ratchet that was
+   * missing, and its absence is WHY the defect survived: with the subtree gone there was nothing for a
+   * fallback test to assert against, so E4's refusal path had never been reachable from a test at all.
+   *
+   * Every browser since Safari 13.1 has the API, so this is not live on a target browser. The value is
+   * that the failure mode is now pinned rather than rediscovered.
+   */
+  const ORRERY_SURFACE = SURFACES.find((s) => s.name === 'OntologyOrrery');
+
+  it('has a surface to test — the roster must still carry E4', () => {
+    expect(ORRERY_SURFACE, 'OntologyOrrery left the roster; this suite would silently test nothing')
+      .toBeDefined();
+  });
+
+  it('E4 keeps its flat diagram when ResizeObserver does not exist', async () => {
+    const holder = globalThis as { ResizeObserver?: unknown };
+    const saved = holder.ResizeObserver;
+    delete holder.ResizeObserver;
+    try {
+      const s = ORRERY_SURFACE!;
+      const { container } = s.mount();
+      fireEvent.click(screen.getByRole('button', { name: s.toggle }));
+      /* The lazy chunk has to resolve and its effect has to run before the throw can happen, so this must
+         await the announcement rather than assert immediately — the same `refusalNotice` helper the roster
+         suite above uses, for the same reason. */
+      await refusalNotice(container);
+      /*
+       * THE CONTAINER FIRST, and the order matters: an empty container makes every assertion after it
+       * vacuously true, which is how a suite reports green over a deleted subtree.
+       */
+      expect(container.innerHTML.length,
+        'the subtree was unmounted — the relief failing took the flat diagram with it').toBeGreaterThan(0);
+      expect(s.flatIsShowing(container), 'the flat view did not come back').toBe(true);
+      /* And the reader must be TOLD, not just quietly returned to flat. */
+      expect(container.querySelector('[role="alert"]'),
+        'the refusal was not announced to assistive technology').not.toBeNull();
+    } finally {
+      if (saved === undefined) delete holder.ResizeObserver;
+      else holder.ResizeObserver = saved;
+    }
+  });
+});
+
 describe('rule 3 · reduced motion resolves to the final frame, not to a faster animation', () => {
   it.each(GL_ENTRY_POINTS)(
     '%s schedules no frame after the first, so the frame it draws IS the final frame',

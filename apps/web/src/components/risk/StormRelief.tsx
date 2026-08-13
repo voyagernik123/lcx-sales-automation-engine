@@ -206,13 +206,16 @@ export function StormRelief({ heightPx = 260, ...rest }: StormReliefProps) {
 
       {/*
         THE CALIBRATION SENTENCE IS THE VOLUME'S CAPTION, SO IT LEAVES WITH THE VOLUME.
-        It is `data-relief-live` rather than `br-no-print` for a reason worth keeping: `br-no-print` would
-        also delete it from a sheet printed with the storm ON SCREEN in a browser that ignored the rest,
-        while this ties it to exactly the block it describes. On paper the storm is replaced by the
-        calendar, and this sentence's first clause — "depth of colour is the total risk BETWEEN YOU AND
-        that day" — is a claim about accumulation along a ray that the calendar does not make: its colour
-        is one day's own risk. A caption for a figure that is not on the sheet is how E1's harness came to
-        print E0's frame time under a claim that every row was checkable.
+        On paper the storm is now replaced by the calendar, and this sentence's first clause — "depth of
+        colour is the total risk BETWEEN YOU AND that day" — is a claim about accumulation along a ray
+        that the calendar does not make: a calendar cell is one day's own risk. A caption for a figure
+        that is not on the sheet is how E1's harness came to print E0's frame time under a claim that
+        every row was checkable.
+
+        `data-relief-live` rather than `br-no-print`, and the difference is not the print result — both
+        are deleted by the same sheet. It is that this attribute names the BLOCK the sentence describes,
+        so the caption cannot drift away from the figure: anything that changes how the live relief
+        prints changes its caption in the same edit. It stays fully visible on screen either way.
       */}
       {showStorm && (
         <p
