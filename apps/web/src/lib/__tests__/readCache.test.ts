@@ -6,6 +6,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
   canonicalPath,
   lookup,
@@ -236,5 +238,75 @@ describe('bounds', () => {
     store('/v1/projects', { data: [1] });
     expect(peek('/v1/projects')).not.toBeNull();
     expect(peek('/v1/audit')).toBeNull();
+  });
+});
+
+
+/*
+ * ══════════════════════════════════════════════════════════════════════════════════════════════════
+ *  A CALLER'S ABORT MUST NOT KILL THE SHARED REQUEST — the claim `coalesce`'s own comment makes, and
+ *  which apiClient was breaking.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════════
+ *  readCache says: "one component unmounting must not cancel a response three other mounted components
+ *  are waiting on. A caller's signal detaches that subscriber, it does not kill the request." That is
+ *  true of `coalesce` and was false of its caller: `apiClient` built the coalesced thunk as
+ *  `() => networkRequest(path, opts, method)`, and `opts` carries the first caller's AbortSignal.
+ *
+ *  Measured consequence, found by driving real routes in a real browser rather than by any unit test:
+ *  on /bd-pipeline and /audit-log a read went out on an ALREADY-ABORTED signal and never became a
+ *  request. The page rendered EMPTY, with no error and nothing in the network panel — indistinguishable
+ *  from "there is no data".
+ *
+ *  These tests work at the `coalesce` boundary, which is where the guarantee lives. They deliberately do
+ *  NOT reach into apiClient's fetch plumbing: what matters is that a thunk which ignores its caller's
+ *  signal is the thing being cached, and that two callers share one run.
+ */
+describe('coalescing does not let one caller cancel everyone', () => {
+  it('runs the thunk ONCE for concurrent callers and resolves both', async () => {
+    let runs = 0;
+    const run = async () => { runs++; await Promise.resolve(); return 'body'; };
+    const a = coalesce('shared-key', run);
+    const b = coalesce('shared-key', run);
+    /* Same promise identity is the whole mechanism — a second run would mean no coalescing at all. */
+    expect(a).toBe(b);
+    await expect(a).resolves.toBe('body');
+    await expect(b).resolves.toBe('body');
+    expect(runs, 'the shared request ran more than once').toBe(1);
+  });
+
+  it('an ALREADY-ABORTED signal on one caller does not stop the shared run', async () => {
+    /*
+     * The exact production shape. The first caller arrives with a signal that is already aborted (a
+     * remount whose previous effect cleaned up), and a second caller wants the same path.
+     */
+    const dead = new AbortController();
+    dead.abort();
+    let sawSignal: AbortSignal | undefined;
+    /* Stands in for `withoutCallerSignal(opts)`: the thunk the coalescer caches must not consult the
+       caller's signal at all. */
+    const run = async () => { sawSignal = undefined; await Promise.resolve(); return 'body'; };
+
+    const first = coalesce('aborted-key', run);
+    const second = coalesce('aborted-key', run);
+    await expect(first).resolves.toBe('body');
+    await expect(second).resolves.toBe('body');
+    expect(sawSignal, 'the shared run must not carry any caller signal').toBeUndefined();
+    expect(dead.signal.aborted, 'the caller really was aborted, or this test proves nothing').toBe(true);
+  });
+
+  it('and the source no longer hands opts straight into the coalesced thunk', () => {
+    /*
+     * The behavioural tests above pass against the BROKEN apiClient too, because the bug is in which
+     * closure gets cached and jsdom's fetch is stubbed. So the fix itself is pinned at the source — this
+     * is the assertion that would have caught it.
+     */
+    const src = readFileSync(resolve(process.cwd(), 'src/lib/apiClient.ts'), 'utf8');
+    const calls = [...src.matchAll(/coalesce\(canonical, \(\) => networkRequest<T>\(path, ([^,]+),/g)]
+      .map((m) => m[1]!.trim());
+    expect(calls.length, 'no coalesced networkRequest call sites found — this guard has stopped guarding')
+      .toBe(2);
+    for (const arg of calls) {
+      expect(arg, 'the shared fetch is bound to one caller\'s signal again').toBe('withoutCallerSignal(opts)');
+    }
   });
 });

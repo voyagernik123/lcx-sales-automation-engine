@@ -567,6 +567,33 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
     }
   }
 
+/*
+ * THE COALESCED FETCH MUST NOT CARRY ANY ONE CALLER'S SIGNAL, which is what `coalesce` already promises and
+ * what this file was quietly breaking.
+ *
+ * `readCache.ts` says of the coalescer: "one component unmounting must not cancel a response three other
+ * mounted components are waiting on. A caller's signal detaches that subscriber, it does not kill the
+ * request." True of `coalesce` itself — it takes a thunk and never touches a signal. False here, because the
+ * thunk closed over `opts`, so the SHARED request ran on the FIRST caller's AbortSignal.
+ *
+ * The failure this produced was found by driving real routes in a real browser, not by any unit test:
+ * on /bd-pipeline and /audit-log a read was dispatched with an ALREADY-ABORTED signal and never became a
+ * request at all. THE PAGE RENDERED EMPTY, with no error and nothing in the network panel — a shape
+ * indistinguishable from "there is no data", which is the worst form a failure can take on a surface whose
+ * whole job is to say what is and is not known.
+ *
+ * Ordinary in production rather than exotic: React 18 double-invokes effects in development and any remount
+ * produces two concurrent identical GETs, one of which aborts.
+ *
+ * A caller's own timeout/cancellation still works — it is applied by the caller awaiting (or not awaiting)
+ * the shared promise. What it can no longer do is cancel the request out from under everyone else.
+ */
+const withoutCallerSignal = (opts: RequestOpts): RequestOpts => {
+  if (opts.signal === undefined) return opts;
+  const { signal: _discarded, ...rest } = opts;
+  return rest;
+};
+
   const canonical = canonicalPath(path);
   const hit = await lookup<T>(canonical);
 
@@ -584,7 +611,7 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
       // caller above already has the OLD one and nothing hands them the new one.
       // Marking the path live here would erase the age badge off a number the
       // operator is still looking at — the precise dishonesty this pass removes.
-      void coalesce(canonical, () => networkRequest<T>(path, opts, method))
+      void coalesce(canonical, () => networkRequest<T>(path, withoutCallerSignal(opts), method))
         .then((fresh) => store(canonical, fresh, { noStore: noStoreFlag }))
         .catch((err) => {
           if (isNetworkError(err)) noteTransport(false);
@@ -595,7 +622,7 @@ export async function request<T>(path: string, opts: RequestOpts = {}): Promise<
 
   noteRead(false);
   try {
-    const fresh = await coalesce(canonical, () => networkRequest<T>(path, opts, method));
+    const fresh = await coalesce(canonical, () => networkRequest<T>(path, withoutCallerSignal(opts), method));
     store(canonical, fresh, { noStore: noStoreFlag });
     // Live. Recorded rather than merely left absent, so a surface that was on a
     // cached body a moment ago stops claiming an age the instant it is refreshed.

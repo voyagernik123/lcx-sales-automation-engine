@@ -693,7 +693,11 @@ const reasonBeside = (page) => page.evaluate(() => {
   /* The FIRST live region only, and cut at a sentence. A page can hold several — `/marketing/crisis` has the
      refusal code and its full explanation in two of them — and concatenating them produced a run-on truncated
      mid-word in the generated report, which is the sort of thing a reader stops trusting the file over. */
-  const text = document.querySelector('[role="alert"]')?.textContent?.trim().replace(/\s+/g, ' ') ?? null;
+  /* `innerText`, not `textContent`: `/marketing/crisis` puts a refusal code and its explanation in adjacent
+     children with no whitespace between them, and `textContent` ran them into "NO_FORWARD_RISK_FEEDNo forward
+     risk feed…" in the generated report. `innerText` is layout-aware and separates them. */
+  const el = document.querySelector('[role="alert"]');
+  const text = el === null ? null : (el.innerText ?? el.textContent ?? '').trim().replace(/\s+/g, ' ');
   if (text === null) return null;
   const stop = text.indexOf('. ');
   return (stop > 20 && stop < 200 ? text.slice(0, stop + 1) : text.slice(0, 180)).trim();
@@ -1418,19 +1422,19 @@ ${rows.map((r) => {
   return `| **${r.id}** | yes | ${a.drawsBeforeWindow === 0 ? '**0 — see findings**' : a.drawsBeforeWindow} | ${a.drawsAfterDrawn === 0 ? '**0**' : `**${a.drawsAfterDrawn}**`} | ${a.rafAfterDrawn} |`;
 }).join('\n')}
 
-**The third column is not a verdict and the second one is.** The first version of this sweep counted
+**The last column is not a verdict; "draw calls in the 600 ms after it drew" is.** The first version of this sweep counted
 \`requestAnimationFrame\` page-wide, which is what \`3d-audit.mjs\` does — correctly, because a harness page is
 one file with nothing else in it. In the app that counted the SHELL: 36 frames on \`/ontology\`, where ReactFlow
 runs its own loop, and 10 then 36 on two consecutive passes over the same surface. A number that moves like that
 is a fact about the page. Draw calls on the contexts the toggle itself created cannot belong to anything else.
 
-**The third column is the per-surface floor.** The control run below proves the counter works on ONE context; it
+**"Draws already recorded on its own context" is the per-surface floor.** The control run below proves the counter works on ONE context; it
 does not prove the wrapper caught the draw path THIS renderer uses, and a renderer reaching the screen through an
 unwrapped call would report 0 for ever. So the cumulative count is read before the window is reset: the frame is
 already on screen, so it must be non-zero, and a zero there is reported as an instrument failure rather than as a
 still surface.
 
-A zero in the fourth column is the passing value, which means a broken counter passes every surface. \`docs/3d/e9/README.md\` reports
+A zero in the verdict column is the passing value, which means a broken counter passes every surface. \`docs/3d/e9/README.md\` reports
 its own version of this check as **VACUOUS** for exactly that reason: no harness animates, so nothing could ever
 make the number non-zero. **In the app it is not vacuous, and one surface is why.** \`ForgeBackdrop\` runs a
 five-second arc on the sign-in route by design (\`SWEEP_MS = 5000\`), so it is also loaded with **no motion

@@ -62,16 +62,16 @@ changes where they are addressed and nothing about what the components render.
 
 ## Axis 1 · Reduced motion — measured as draw calls, not as scheduled frames
 
-| surface | reaches a frame under `reduce` | draw calls on this surface's own context, 600 ms after it drew | page-wide `rAF` in the same window (context only) |
-|---|---|---|---|
-| **E8** | yes | **0** | 0 |
-| **E4** | yes | **0** | 36 |
-| **E3** | yes | **0** | 36 |
-| **E2** | yes | **0** | 36 |
-| **E6** | yes | **0** | 36 |
-| **E1** | yes | **0** | 36 |
-| **E5** | yes | **0** | 36 |
-| **E7** | — | — | — |
+| surface | reaches a frame under `reduce` | draws already recorded on its own context | draw calls in the 600 ms after it drew | page-wide `rAF` in the same window (context only) |
+|---|---|---|---|---|
+| **E8** | yes | 18 | **0** | 0 |
+| **E4** | yes | 1537 | **0** | 36 |
+| **E3** | yes | 492 | **0** | 36 |
+| **E2** | yes | 38 | **0** | 36 |
+| **E6** | yes | 362 | **0** | 37 |
+| **E1** | yes | 97 | **0** | 36 |
+| **E5** | yes | 52 | **0** | 36 |
+| **E7** | — | — | — | — |
 
 **The third column is not a verdict and the second one is.** The first version of this sweep counted
 `requestAnimationFrame` page-wide, which is what `3d-audit.mjs` does — correctly, because a harness page is
@@ -79,7 +79,13 @@ one file with nothing else in it. In the app that counted the SHELL: 36 frames o
 runs its own loop, and 10 then 36 on two consecutive passes over the same surface. A number that moves like that
 is a fact about the page. Draw calls on the contexts the toggle itself created cannot belong to anything else.
 
-A zero is the passing value, which means a broken counter passes every surface. `docs/3d/e9/README.md` reports
+**The third column is the per-surface floor.** The control run below proves the counter works on ONE context; it
+does not prove the wrapper caught the draw path THIS renderer uses, and a renderer reaching the screen through an
+unwrapped call would report 0 for ever. So the cumulative count is read before the window is reset: the frame is
+already on screen, so it must be non-zero, and a zero there is reported as an instrument failure rather than as a
+still surface.
+
+A zero in the fourth column is the passing value, which means a broken counter passes every surface. `docs/3d/e9/README.md` reports
 its own version of this check as **VACUOUS** for exactly that reason: no harness animates, so nothing could ever
 make the number non-zero. **In the app it is not vacuous, and one surface is why.** `ForgeBackdrop` runs a
 five-second arc on the sign-in route by design (`SWEEP_MS = 5000`), so it is also loaded with **no motion
@@ -88,7 +94,7 @@ must not:
 
 | **E8 ForgeBackdrop**, no motion preference | draw calls per 600 ms |
 |---|---|
-| during its 5000 ms arc | **54** |
+| during its 5000 ms arc | **72** |
 | after the arc has finished | **0** |
 
 The counter sees draws when draws exist, so the zeros above are measurements rather than silence. And it stops: zero idle motion, measured on the live page rather than read off the source.
@@ -137,13 +143,13 @@ and until now nobody had produced the file:
 
 | surface | PDF bytes | carries an image |
 |---|---|---|
-| **E8** | 227,203 | yes |
-| **E4** | 548,169 | yes |
-| **E3** | 352,801 | yes |
-| **E2** | 532,180 | yes |
-| **E6** | 258,482 | yes |
-| **E1** | 681,185 | yes |
-| **E5** | 680,989 | yes |
+| **E8** | 228,104 | yes |
+| **E4** | 546,915 | yes |
+| **E3** | 354,327 | yes |
+| **E2** | 532,058 | yes |
+| **E6** | 258,664 | yes |
+| **E1** | 680,155 | yes |
+| **E5** | 680,150 | yes |
 | **E7** | — | — |
 
 An `/Image` XObject in the file is the canvas reaching paper. What it does **not** establish is that the image
@@ -158,7 +164,7 @@ run in any test, because jsdom has no WebGL context to lose.
 
 | surface | loss provoked | refusal named to the reader | toggle still pressed | its OWN canvas still shown | other canvases on the page | flat surface behind it | canvas PNG, before → after |
 |---|---|---|---|---|---|---|---|
-| **E8** | yes | **no listener** | no | **1** | 0 | NONE | 128,063 → 315,157 B |
+| **E8** | yes | **no listener** | no | **1** | 0 | NONE | 128,013 → 315,046 B |
 | **E4** | yes | yes | no | 0 | 0 | 2 elements | — |
 | **E3** | yes | yes | no | 0 | 0 | 1 element | — |
 | **E2** | yes | yes | no | 0 | 0 | 1 element | — |
@@ -252,13 +258,13 @@ None of these has been diagnosed and no threshold was loosened to make this sect
 owned elsewhere; this file reports.
 
 **E8 ForgeBackdrop** — `src/components/brand/ForgeBackdrop.tsx`, on `/select`
-- no canvas on this route stamps `data-quality-tier`, so the tier this surface rendered at cannot be read back (useQualityTier.ts:98 says the components stamp it)
+- src/components/brand/ForgeBackdrop.tsx never sets `canvas.dataset.qualityTier`, so the tier this surface rendered at cannot be read back off the live page. `shared/useQualityTier.ts:94-99` states that the components stamp it, and six of the eight do — DeckReliefGl.tsx:608, SurfaceReliefGl.tsx:336, OntologyOrreryGl.tsx:516, PipelineReliefGl.tsx:535, VaultReliefGl.tsx:522, StormReliefGl.tsx:559. `env/quality.ts` is the reason it matters: a tier that cannot be reported cannot be trusted
 
 **E3 PipelineRelief** — `src/components/geometry/PipelineRelief.tsx`, on `/bd-pipeline`
 - 1 read(s) on this route were dispatched with an ALREADY-ABORTED signal and never became a request: /api/v1/projects?tier=tracked&sort=priority&order=desc&limit=50. The page renders as empty with no error and nothing appears in the network panel. readCache.ts:375-379 claims a caller's signal "detaches that subscriber, it does not kill the request", but readCache.ts:380-389 runs the shared fetch with the FIRST caller's opts — so it does kill it. Reachable in production wherever two concurrent identical GETs exist and one aborts
 
 **E2 GlobeRelief** — `src/components/market/GlobeRelief.tsx`, on `/market-map`
-- no canvas on this route stamps `data-quality-tier`, so the tier this surface rendered at cannot be read back (useQualityTier.ts:98 says the components stamp it)
+- src/components/market/GlobeReliefGl.tsx never sets `canvas.dataset.qualityTier`, so the tier this surface rendered at cannot be read back off the live page. `shared/useQualityTier.ts:94-99` states that the components stamp it, and six of the eight do — DeckReliefGl.tsx:608, SurfaceReliefGl.tsx:336, OntologyOrreryGl.tsx:516, PipelineReliefGl.tsx:535, VaultReliefGl.tsx:522, StormReliefGl.tsx:559. `env/quality.ts` is the reason it matters: a tier that cannot be reported cannot be trusted
 
 **E6 VaultRelief** — `src/components/geometry/VaultRelief.tsx`, on `/audit-log`
 - 1 read(s) on this route were dispatched with an ALREADY-ABORTED signal and never became a request: /api/v1/audit?page=1. The page renders as empty with no error and nothing appears in the network panel. readCache.ts:375-379 claims a caller's signal "detaches that subscriber, it does not kill the request", but readCache.ts:380-389 runs the shared fetch with the FIRST caller's opts — so it does kill it. Reachable in production wherever two concurrent identical GETs exist and one aborts
