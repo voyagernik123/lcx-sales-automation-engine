@@ -41,7 +41,8 @@
     "ci-check": "npm run doctrine-lint && npm run type-check && npm run test && npm run build && npm run gl-budget && npm run perf-budget -w @lcx/web",
     "gen:actions": "tsx apps/api/scripts/gen-action-manifest.ts",
     "gate": "npm run lint && npm run ci-check && npm run audit-3d && npm run perf-budget -w @lcx/web && npm run e2e -w @lcx/web",
-    "audit-3d": "node scripts/3d-audit.mjs"
+    "audit-3d": "node scripts/3d-audit.mjs",
+    "verify-live": "node scripts/verify-live.mjs"
   },
   "engines": {
     "node": ">=20"
