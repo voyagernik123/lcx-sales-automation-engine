@@ -29,6 +29,26 @@
       a mean time for a surface whose accuracy is lower — a faster wrong reading is a worse surface, and
       averaging over both hides it.
 
+  ── WHICH ENVIRONMENTS THIS COVERS, AND WHY NOT ALL EIGHT ───────────────────────────────────────────────
+  Stated here because a trial that silently covers half the programme reads as a trial of the programme.
+
+  MEASURED (6): E2, E3, E4, E5, E6, E7. Each has a dataset, and each has a pair of matched questions below
+  whose answers were derived from that dataset rather than recalled — the E2 pair, for instance, comes from
+  computing the seven great-circle distances from Vaduz (Singapore 91.93 deg farthest, London 7.65 deg
+  nearest), not from looking at the render.
+
+  NOT APPLICABLE (1): E8 THE FORGE. Clause (b) asks whether an operator gets THEIR ANSWER faster. E8 is a
+  machined disc, a ring and a plinth on the sign-in screen; it carries no dataset and answers no question,
+  so there is no answer to time. E8 is gated on clause (a) alone. This is a category difference, not a gap,
+  and recording it as "unmeasured" would have implied work outstanding that does not exist.
+
+  DEFERRED WITH A REASON (1): E1 THE THEATRE. Its panel text is injected from the environments' own READMEs
+  at BUILD TIME (see `__ENV_STATES__` in ../e1/entry.ts), so any answer key written here would silently rot
+  the next time a README changes — and a stale answer key does not fail, it marks correct answers wrong and
+  reports the surface as illegible. E1 needs a question whose answer is stable under a rebuild: a property
+  of the geometry rather than of the panel copy. It has no interactive addressing today, so the obvious
+  candidate ("which panel is being addressed") has no answer either. Named as outstanding work, not skipped.
+
   ── WHAT IT WILL NOT DO ─────────────────────────────────────────────────────────────────────────────────
   It will not tell you (a). "A stranger stops scrolling" is not measurable at a desk with two people, and
   pretending otherwise with a Likert scale would be the same category error as reporting a 60 Hz headroom
@@ -76,7 +96,7 @@
   </p>
 
   <div id="intro">
-    <button id="start">Begin — 8 trials</button>
+    <button id="start">Begin</button>
     <button id="dry" class="ghost">Show the trial order without timing</button>
   </div>
 
@@ -138,6 +158,43 @@ const TASKS = [
     ],
   },
   {
+    env: 'e2',
+    claim: 'arc height is angular distance, so the longest corridor is the tallest arc',
+    /*
+     * ANSWERS COMPUTED, NOT READ OFF THE RENDER. Great-circle distance from the Vaduz hub (47.14, 9.52)
+     * to each of the seven corridor endpoints: Singapore 91.93, Tokyo 85.90, Johannesburg 75.22,
+     * Chicago 64.77, New York 57.57, Dubai 42.13, London 7.65 degrees. Deriving the key from the picture
+     * would make the instrument agree with whatever the picture happens to show, which is the one thing
+     * it must not do.
+     *
+     * This is the pair that most directly tests a claim the flat view CANNOT carry: the fallback table
+     * gives latitude and longitude, so answering it flat means doing spherical geometry in your head.
+     */
+    pair: [
+      { q: 'Which corridor from Vaduz travels the FARTHEST?',
+        opts: ['London', 'Dubai', 'Singapore', 'Johannesburg'], answer: 'Singapore' },
+      { q: 'Which corridor from Vaduz travels the SHORTEST distance?',
+        opts: ['London', 'Dubai', 'Chicago', 'Tokyo'], answer: 'London' },
+    ],
+  },
+  {
+    env: 'e3',
+    claim: 'mass is package value, so the heaviest object is the largest deal',
+    /*
+     * From the DEALS table in ../e3/entry.ts: ATLAS OTC 4.2M is SIGNED and the largest; MERIDIAN PAY 2.6M
+     * is TERMS and second. The absence question distinguishes the two kinds E3 encodes separately and the
+     * flat table collapses into one column: PRAXIS DESK is VALUE_ABSENT (never priced) in SOURCED, while
+     * the WITHHELD row sits in QUALIFIED. An operator who answers QUALIFIED has read "withheld" as
+     * "missing", which is the confusion rule 6 exists to prevent.
+     */
+    pair: [
+      { q: 'Which stage holds the single LARGEST deal by value?',
+        opts: ['SOURCED', 'QUALIFIED', 'DILIGENCE', 'TERMS', 'SIGNED'], answer: 'SIGNED' },
+      { q: 'Which stage holds a deal whose value was NEVER MEASURED (as distinct from withheld)?',
+        opts: ['SOURCED', 'QUALIFIED', 'DILIGENCE', 'TERMS', 'SIGNED'], answer: 'SOURCED' },
+    ],
+  },
+  {
     env: 'e7',
     claim: 'the depth of colour is the total risk between you and that day',
     pair: [
@@ -150,6 +207,17 @@ const TASKS = [
 ];
 
 const $ = (id) => document.getElementById(id);
+
+/*
+ * THE TRIAL COUNT IS DERIVED, because it had been typed.
+ *
+ * The button read "Begin — 8 trials" as a literal. That was true for the four environments the set
+ * started with, and became false the moment two more were added — a number on the button that the code
+ * does not compute is the same defect as E1 rendering E0's frame time under a printed checkability claim.
+ */
+function labelStart() {
+  $('start').textContent = `Begin — ${TASKS.length * 2} trials across ${TASKS.length} environments`;
+}
 
 /*
  * COUNTERBALANCED ORDER. Trial index parity decides which surface comes first for each environment, and
@@ -183,11 +251,15 @@ let at = 0;
 const results = [];
 
 function renderOrder() {
+  /* SCROLLS IN ITS OWN BOX. The question column is a full sentence, so the bare table pushed the document
+     to 902px against a 410px viewport and the whole page scrolled sideways — on the one view whose job is
+     to let someone check the trial order before running it. */
   $('intro').insertAdjacentHTML('afterend',
-    '<table><thead><tr><th>#</th><th>env</th><th>surface</th><th>question</th></tr></thead><tbody>'
+    '<div style="overflow-x:auto;max-width:100%">'
+    + '<table><thead><tr><th>#</th><th>env</th><th>surface</th><th>question</th></tr></thead><tbody>'
     + trials.map((t, i) => `<tr><td class="n">${i + 1}</td><td>${t.env.toUpperCase()}</td>`
       + `<td>${t.surface === '3d' ? 'environment' : 'flat'}</td><td>${t.q}</td></tr>`).join('')
-    + '</tbody></table>');
+    + '</tbody></table></div>');
 }
 
 let shownAt = 0;
@@ -292,6 +364,7 @@ function finish() {
   }, null, 2);
 }
 
+labelStart();
 $('start').onclick = () => { $('intro').style.display = 'none'; $('stage').style.display = 'block'; showTrial(); };
 $('dry').onclick = () => { $('dry').disabled = true; renderOrder(); };
 </script>

@@ -2,8 +2,13 @@
 
 > **Supersedes as a planning document:** `PLATFORM_VFX_100X.md`, `3D_WORK_100X.md`, `3D_VFX_1000X.md`,
 > `3D_VFX_100X_HANDOVER_BLUEPRINT.md`. Those stay in the repo as the record of what was decided and why.
-> **Status:** awaiting your answers to §7. Nothing in here has been started.
+> **Status:** **APPROVED END TO END and executing.** All seven §7 decisions taken — recorded in
+> `3D_VFX_1000X.md` §11.1. One item (F0, the §7(b) trial) is built, verified and **blocked on a person**:
+> the instrument is its own answer key, so whoever built the surfaces cannot be the operator. See
+> `docs/3d/e9/RUNNING_THE_TRIAL.md`.
 > **Written:** 2026-08-13, after auditing the handover blueprint line by line against the shipped code.
+> **§10 below records what execution actually found**, including four shader defects the blueprint never
+> mentioned and one structural gap larger than the item this plan had named.
 
 ---
 
@@ -329,3 +334,56 @@ If §7.1 is no: I start at §4.2, and the eight toggles keep their honest label 
 - **Not implementing the blueprint's shadow bias or bare D·F BRDF.** Both are worse than what ships (§1.3).
 - **Not treating the blueprint's three invariants as the invariant set.** Eight rules and a two-clause gate, or
   the anti-showreel protection goes with it (§2).
+
+
+---
+
+## 10 · WHAT EXECUTION FOUND — appended as it happened
+
+The plan's value turned out to be less in the items it listed than in what looking at them properly exposed.
+
+### 10.1 · Four defects in the lit shader; the blueprint named none of them
+
+Two were §4.2 and §4.3. **The other two were found by the test written to prove the second one** — which is
+the argument for mirroring shader algebra in TypeScript rather than pinning the source with a string match.
+
+| # | defect | consequence | status |
+|---|---|---|---|
+| 1 | `shadowTaps` declared in `quality.ts`, read by nothing | the minimum tier paid 9 texture fetches per lit fragment for a 1-tap result it had asked for | fixed; all nine harnesses pass `Q.shadowTaps` |
+| 2 | `at`/`ab` derived from perceptual roughness and passed as alphas | crossing `aniso > 0.001` jumped alpha `rough²`→`rough`, widening the lobe; E8's mark uses this path | fixed |
+| 3 | anisotropic guard `max(1e-8, v2)` above `v2`'s real floor of `1.6e-11` | smooth materials near the peak returned ~⅔ of correct intensity | fixed |
+| 4 | isotropic guard `max(1e-6, PI*d*d)` above a real floor of `5.3e-11` — five orders out | **live on the sign-in screen.** Fired for roughness < 0.154 inside `NdotH > 0.9997`. `ForgeBackdrop` 0.13, `e8` 0.13, `e2` 0.14 → peak **3.9× too dim**; 18,930× at the clamp | fixed |
+
+Defects 2 and 4 compounded on the same material. E8's mark had both a **blurred and a clipped** highlight —
+most of the difference between machined metal and grey plastic.
+
+### 10.2 · The quality ladder is in all nine harnesses and none of the shipping app
+
+Larger than §4.2, which is what led to it. `3D_VFX_1000X.md` §10.1 records the ladder as the decided answer,
+"wired into all nine" — true of the nine harnesses, **false of the eight shipping components**, every one of
+which hard-codes `createShadowMap(stage, 1024)` and full-quality AO and DOF. A weak machine gets the full
+frame with no degradation available. The ladder was never carried across the promotion into the app.
+
+And the harnesses do not adapt either: each reads the tier from a URL parameter defaulting to `full`, and
+`pickQualityTier` — which needs a *measured* frame time and refuses to guess — is called by nothing. So
+"wired into all nine" has always meant **parameterisable, not adaptive.**
+
+### 10.3 · §7(b) covers six environments, not eight, and that is correct
+
+The plan said "measure §7(b) on all eight". Building it out showed that was wrong in two places, both
+category errors rather than gaps:
+
+- **E8 THE FORGE is NOT APPLICABLE.** Clause (b) asks whether an operator gets *their answer* faster. E8 is a
+  machined disc, a ring and a plinth; it carries no dataset and answers no question. Gated on (a) alone.
+- **E1 THE THEATRE is DEFERRED with a reason.** Its panel text is injected from other environments' READMEs
+  at *build time*, so an answer key would rot on the next rebuild — and a stale key does not fail loudly, it
+  marks correct answers wrong and reports a legible surface as illegible.
+
+The instrument was **extended from 4 environments to 6** (E2 and E3 added; answers derived from the datasets,
+not read off the render — E2's from computing seven great-circle distances from Vaduz). Verified: 12 trials,
+2 per environment, counterbalance even at 3/3, **0 duplicate questions**, every answer among its own options,
+all 12 surfaces serving 200. `docs/3d/serve.mjs` and the `3d-trial` launch config make it one command.
+
+Also fixed while there: the Begin button read **"Begin — 8 trials"** as a literal. True for the four
+environments the set started with, wrong the moment two more were added — the same class of defect as E1
+rendering E0's frame time under a printed checkability claim. It is now derived.

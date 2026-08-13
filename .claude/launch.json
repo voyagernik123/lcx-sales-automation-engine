@@ -4,20 +4,38 @@
     {
       "name": "web",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:web"],
+      "runtimeArgs": [
+        "run",
+        "dev:web"
+      ],
       "port": 5173
     },
     {
       "name": "api",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:api"],
+      "runtimeArgs": [
+        "run",
+        "dev:api"
+      ],
       "port": 8787
     },
     {
       "name": "p1-gate",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["docs/3d/p1/serve.mjs", "5599"],
+      "runtimeArgs": [
+        "docs/3d/p1/serve.mjs",
+        "5599"
+      ],
       "port": 5599
+    },
+    {
+      "name": "3d-trial",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "docs/3d/serve.mjs",
+        "5600"
+      ],
+      "port": 5600
     }
   ]
 }
