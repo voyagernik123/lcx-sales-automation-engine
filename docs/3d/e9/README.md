@@ -25,15 +25,15 @@ a live sweep. If it disagrees with the code, run it again rather than editing it
 
 | env | ms/frame | renderer | 60 Hz headroom | triangles | glError | brand | flat fallback | hidden on success |
 |---|---|---|---|---|---|---|---|---|
-| **E0** | 190.017 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 4236 | 0 | exact | 3 rows | yes |
-| **E1** | 135.46 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 1212 | 0 | exact | 9 rows | yes |
-| **E2** | 152.92 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 35136 | 0 | exact | 7 rows | yes |
-| **E3** | 54.1 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 5764 | 0 | exact | 12 rows | yes |
-| **E4** | 60.183 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 39456 | 0 | exact | 24 rows | yes |
-| **E5** | 61.15 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 1076 | 0 | exact | 1 svg | yes |
-| **E6** | 61.85 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 360 | 0 | exact | 25 rows | yes |
-| **E7** | 166.4 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 2784 | 0 | exact | 28 rows | yes |
-| **E8** | 182.783 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 10112 | 0 | exact | 3 rows | yes |
+| **E0** | 171.283 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 4236 | 0 | exact | 3 rows | yes |
+| **E1** | 130.68 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 1212 | 0 | exact | 9 rows | yes |
+| **E2** | 148.2 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 35136 | 0 | exact | 7 rows | yes |
+| **E3** | 54.683 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 5764 | 0 | exact | 12 rows | yes |
+| **E4** | 67.3 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 39456 | 0 | exact | 24 rows | yes |
+| **E5** | 60.017 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 1076 | 0 | exact | 1 svg | yes |
+| **E6** | 62.983 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 360 | 0 | exact | 25 rows | yes |
+| **E7** | 166.733 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 2784 | 0 | exact | 28 rows | yes |
+| **E8** | 163.283 | software | refused · `SOFTWARE_RASTERISER_HAS_NO_FRAME_BUDGET` | 10112 | 0 | exact | 3 rows | yes |
 
 Every frame time here is measured under **SwiftShader**, a CPU rasteriser, by the trailing-`readPixels`
 instrument. The 60 Hz headroom column **refuses** rather than reporting a figure, because the ratio between a
@@ -111,15 +111,15 @@ obstruction.
 
 | env | tier reported | tier drives | full (median of 3) | spread | minimum (median of 3) | saving |
 |---|---|---|---|---|---|---|
-| **E0** | minimum | ao+dof+shadow | 196.883 ms | ±14.8% | 29 ms | 85.3% |
-| **E1** | minimum | ao+dof+shadow | 135.06 ms | ±8.5% | 22.017 ms | 83.7% |
-| **E2** | minimum | ao+dof+shadow | 159.68 ms | ±12% | 36.767 ms | 77% |
-| **E3** | minimum | shadow | 49.767 ms | ±5.3% | 47.433 ms | 4.7% |
-| **E4** | minimum | ao+shadow | 61.483 ms | ±13.9% | 36.717 ms | 40.3% |
-| **E5** | minimum | ao+shadow | 62.65 ms | ±2.3% | 32.317 ms | 48.4% |
-| **E6** | minimum | ao+shadow | 62.85 ms | ±4.2% | 33.883 ms | 46.1% |
-| **E7** | minimum | ao+shadow | 189.233 ms | ±14.2% | 152.9 ms | 19.2% |
-| **E8** | minimum | ao+dof+shadow | 206.45 ms | ±21.9% | 34.7 ms | 83.2% |
+| **E0** | minimum | ao+dof+shadow | 175.133 ms | ±5.2% | 27.25 ms | 84.4% |
+| **E1** | minimum | ao+dof+shadow | 137.1 ms | ±23.8% | 18.75 ms | 86.3% |
+| **E2** | minimum | ao+dof+shadow | 151.82 ms | ±2.5% | 34.567 ms | 77.2% |
+| **E3** | minimum | shadow | 49.683 ms | ±5.5% | 47.233 ms | 4.9% |
+| **E4** | minimum | ao+shadow | 66.433 ms | ±10.4% | 36.4 ms | 45.2% |
+| **E5** | minimum | ao+shadow | 60.933 ms | ±5.3% | 33.1 ms | 45.7% |
+| **E6** | minimum | ao+shadow | 62.617 ms | ±6.1% | 32.35 ms | 48.3% |
+| **E7** | minimum | ao+shadow | 171.983 ms | ±7.2% | 124.817 ms | 27.4% |
+| **E8** | minimum | ao+dof+shadow | 163.017 ms | ±2.4% | 31.767 ms | 80.5% |
 
 The tier table is monotonic by construction — `env.test.ts` asserts every axis descends together, because a
 ladder with one axis going the wrong way makes a lower tier *slower* on some machines, so the fallback for a
@@ -219,8 +219,10 @@ this codebase independently discovered that a single-azimuth capture of the flat
 question about its far face. The figure's own caption says a second azimuth is needed; nobody had checked what
 that costs a reader who only has the one.
 
-**§7(b) therefore remains UNMEASURED on all nine environments**, and this trial is now the evidence that a
-machine reader cannot stand in for the human one. `task.html` still needs a person.
+**§7(b) therefore remains UNMEASURED on the 7 environments clause (b) applies to (E1, E2, E3, E4, E5, E6 and
+E7)**, and this trial is now the evidence that a machine reader cannot stand in for the human one. E8
+carries no dataset and answers no question, so clause (b) is NOT APPLICABLE there rather than outstanding —
+recording it as unmeasured would imply work that does not exist. `task.html` still needs a person.
 
 ## Audit 5 · §7(b) — the instrument exists; the reading does not
 
@@ -247,10 +249,24 @@ And it **refuses rather than reporting a meaningless comparison**: too few trial
 correct answers on a surface each produce a coded refusal instead of a time. A faster WRONG reading is a worse
 surface, so a time advantage is only reported when accuracy is at least equal.
 
-Verified mechanically — 8 trials, counterbalance alternating, zero duplicate questions, every trial timed,
-startup excluded in all 8 — by clicking through it with deliberately wrong answers, which correctly produced
-`REFUSED · NO_CORRECT_ANSWERS_ON_ONE_SURFACE`. An instrument that declines to draw a conclusion from garbage
-is the only kind worth having.
+Verified mechanically — 14 trials across 7 environments (E1, E2, E3, E4, E5, E6 and E7), counterbalance 4-3,
+zero duplicate questions among all 14, every trial timed, startup excluded in all 14 — by clicking through
+it with deliberately wrong answers, which correctly produced `REFUSED · NO_CORRECT_ANSWERS_ON_ONE_SURFACE`.
+An instrument that declines to draw a conclusion from garbage is the only kind worth having.
+
+The counterbalance is 4-3 rather than even because 7 environments cannot split evenly, and the residual is
+stated rather than rounded off. `buildTrials` assigns the first surface by index parity, so the flat surface
+holds the SECOND position 4 times out of 7 — and second position is the one that benefits from the operator
+having just thought about that shape of question. The bias therefore runs AGAINST reporting MEETS (b), which
+is the direction an instrument guarding against a showreel should err in.
+
+Every count in the sentence above is computed by this generator from `task.html`'s own `TASKS` array: the
+literal is bracket-matched out of the file, evaluated, and checked to hold a unique environment and exactly
+two distinct questions per entry. It used to read "8 trials" — true of the four-environment set it was typed
+against, false from the day a fifth was added, and printed one file away from the identical defect the
+instrument had already fixed on its own Begin button by computing `TASKS.length * 2`. If the array cannot be
+parsed, or fails those checks, `npm run audit-3d` prints a refusal and writes nothing rather than publishing
+a count it could not derive.
 
 **It cannot be run by whoever built these surfaces.** The file is its own answer key, and a self-administered
 result would be worse than none. §7(b) is therefore still open, and now it is open in the way a measurement is
@@ -284,8 +300,12 @@ listener fails this audit** — rebuild the harness before diagnosing it.
 
 ## What this audit does NOT establish
 
-**§7(b) is untimed on all 9 environments.** The instrument is now built and verified (Audit 5) and
-no operator has run it. Until one does, every §7(b) claim here remains a reason to expect a good result.
+**§7(b) is untimed on the 7 environments clause (b) applies to (E1, E2, E3, E4, E5, E6 and E7).** The
+instrument is now built and verified (Audit 5) and no operator has run it. Until one does, every §7(b) claim
+here remains a reason to expect a good result. E8 carries no dataset and answers no question, so clause (b)
+is NOT APPLICABLE there rather than outstanding — recording it as unmeasured would imply work that does not
+exist. And the 9 harnesses swept above are not that count: clause (b) is about the environments a reader
+asks a question of, not about the pages this file loads.
 
 **And it never will establish (a).** "A stranger stops scrolling" is not measurable at a desk with two people,
 and dressing it up with a Likert scale would be the same category error as reporting a 60 Hz headroom measured

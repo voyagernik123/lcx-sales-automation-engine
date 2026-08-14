@@ -1,6 +1,40 @@
 /**
  * The forward risk calendar, with an OPT-IN volumetric reading. A drop-in replacement for `RiskCalendar`.
  *
+ * ── E7 IS BUILT AND GATED ON DATA, WHICH IS NOT THE SAME AS "SHIPPING" ───────────────
+ * On the only route that mounts this component the storm cannot be turned on — not by anybody, on any
+ * machine, today. That is the rule working, not a defect, and it is written down here because "all eight
+ * environments ship" is true of the CODE and false of what a reader can OPEN: seven reliefs draw on some
+ * route of the app, and this one draws only in its harness (`docs/3d/e7/live.html`, whose data is synthetic
+ * and declared in amber — 39 flagged items, `docs/3d/e7/README.md:247`).
+ *
+ * The chain, so it is re-checkable rather than believed:
+ *   `router.tsx:276` routes `marketing/crisis` → `MarketingCrisis.tsx:1241` mounts this with
+ *   `field={FORWARD_RISK}` → `MarketingCrisis.tsx:89` builds that constant from `riskFieldUnavailable(...)`,
+ *   module-level, code `NO_FORWARD_RISK_FEED` → `isRiskField` (`riskField.ts:136`) is false for EVERY
+ *   refusal → `drawable` is false, `blocked` is true, and the button below is permanently `aria-disabled`.
+ * That call site is the only one in `apps/web/src` outside tests, so there is no second route where the
+ * field is a live one.
+ *
+ * AND NOTHING IN THIS SYSTEM CAN PRODUCE THE FIELD. `buildRiskField` needs a day axis whose every day
+ * states what the monitor did, a channel axis and severity bands. `apps/api/src/marketing` and
+ * `packages/shared/src/marketing` produce clocks, gates, statements and backward-looking records; the only
+ * table of planned marketing activity, `dist_campaigns`, carries no future date at all — `created_at` and
+ * `updated_at` and nothing else (`apps/api/src/db/migrations/0043_distribution.sql:34-48`). There is no day
+ * axis anywhere in the system to hang a forward risk field on.
+ *
+ * SO DO NOT LIGHT THIS TOGGLE WITH A FIXTURE. §6 rule 6 is that absent data refuses; a volume marched over
+ * invented numbers, on a page that mounts `PrintStyles` and whose sheets get filed, would put a synthetic
+ * forward view of marketing risk onto a compliance record — the exact reading the field's three day states
+ * (`observed` / `not_measured` / `withheld`) exist to make impossible. A greyed-out control is the cheaper
+ * failure by a wide margin.
+ *
+ * WHAT WOULD MAKE IT REACHABLE, so this is a data item and not a mystery: one feed reporting risk by day ×
+ * channel × severity band, each day carrying its coverage state explicitly rather than inferred, with a
+ * `source` and an `observedAt`. `buildRiskField` takes it and both views work with no change to this file
+ * or to the page. Whether that monitor exists and what it reports is an owner decision. Until it lands, the
+ * honest status of E7 is BUILT AND GATED ON DATA — not "shipping".
+ *
  * ── WHY IT DEFAULTS TO FLAT, AND WILL UNTIL SOMEBODY TIMES IT ────────────────────────
  * §7 of `3D_VFX_1000X.md` gates every environment on two clauses together: *(a) a stranger stops scrolling*
  * and *(b) an operator still gets their answer at least as fast as the flat version*. It then says exactly

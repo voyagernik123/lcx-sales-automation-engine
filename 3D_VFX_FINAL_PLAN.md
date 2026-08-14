@@ -9,6 +9,11 @@
 > **Written:** 2026-08-13, after auditing the handover blueprint line by line against the shipped code.
 > **§10 below records what execution actually found**, including four shader defects the blueprint never
 > mentioned and one structural gap larger than the item this plan had named.
+> **Corrected 2026-08-14** against an adversarial read-only sweep of every claim in this file. Seven were
+> stale and are annotated where they stand, with the date and the wrong value: the Layer 5 count (§1.5,
+> §4.4), a ratio derived from it (§4.4), the spine's byte figure (§1.7, §4.5), the anisotropy constants
+> inside §10.6's own red-team correction, every `lit.ts` line citation (note under §0's table), "nobody has
+> costed it" (§1.1, §4.6), and one referent in §10.9. Nothing was rewritten silently.
 
 ---
 
@@ -29,19 +34,34 @@ result progress. So this plan starts by saying exactly what is already true.
 | L2 · single tone-map composite pass | **built** — `toneMapComposite` | `look/tonemap.ts` |
 | L2 · bloom accumulated in linear | **built** | `stage.ts` (`bloomA`/`bloomB`), `look/pipeline.ts` |
 | L2 · brand hex invariant `assertBrandFidelity` | **built**, plus `brandUnderIllegalToneMap`, `dataRoundTrip` | `look/colour.ts` |
-| L3 · GGX specular + Schlick Fresnel | **built, and goes further** — Smith G, anisotropic, analytic-sky IBL | `env/lit.ts:201-274` |
-| L3 · PCF shadows with slope-scaled bias | **built** | `env/lit.ts:233-243` |
+| L3 · GGX specular + Schlick Fresnel | **built, and goes further** — Smith G, anisotropic, analytic-sky IBL | `env/lit.ts` — `distributionGGX`, `distributionGGXAniso`, `geometrySmith`, `fresnelSchlick`, `envDFG` |
+| L3 · PCF shadows with slope-scaled bias | **built** | `env/lit.ts` — `shadowFactor` |
 | L4 · GPU-side simulation, 10k+ points | **built** in WebGL2, not WebGPU | `env/particles.ts`, `env/volume.ts` |
 | L5 · SDF primitives with `fwidth` subpixel AA | **built** | `flat/bars.ts:113`, `flat/strokes.ts` |
-| L5 · "re-back the 13 core 2D chart primitives" | **10 of 11 done**, incl. the 40px `Sparkline` | see §1.5 |
+| L5 · "re-back the 13 core 2D chart primitives" | **8 of 8 mark-bearing primitives**, all above the measured floor — *corrected 2026-08-14; this row published "10 of 11 done, incl. the 40px `Sparkline`"* | see §1.5 |
 | L6 · analytic height fog | **built**, analytic along the ray | `env/lit.ts` |
 | L6 · half-res CoC gather DoF | **built**, per-sample CoC weighting | `env/dof.ts` |
 | L6 · zero idle motion, reduced-motion snap | **built AND enforced by test** | `env/harnessRules.test.ts:110` |
-| §3 · all eight environments E1–E8 | **all eight live** | commit `175709c`; verified deployed today |
+| §3 · all eight environments E1–E8 | **all eight ship; SEVEN are reachable.** E7 is built and *gated on data* — its toggle is permanently disabled and correctly so | commit `175709c`; see §10.10 |
 | Phase 0 · 10k instanced points at 60 fps on Apple Silicon | **measured 4.406 ms/frame, 227 fps** | `docs/3d/p1/README.md:27` |
 
 Verified independently an hour before writing this: **15 of 15 GL chunks reachable on the deployed site**, each
 carrying its shaders, zero GL bytes in the eager set.
+
+> **CITATION CORRECTION, 2026-08-14 — every `lit.ts` line number in this document pointed at prose.**
+> `lit.ts` went from **574 lines at `175709c`** — the commit this table was audited against — **to 873
+> today** (+299, across `ff3d007`, `830d8e6`, `bd4f1c2`). Every citation was right when it was typed:
+> `:233` *was* the `bias` line, `:265-266` *were* `at`/`ab`, `:514` *was* the `aniso > 0.001` branch. Each
+> now lands on a comment or on an unrelated statement — `:265-266` is the comment explaining `at`/`ab`,
+> `:514` is a bounds check — so a reader who follows one is told the claim is unsupported by the very
+> line offered as proof. They are replaced throughout by **symbol names**, which moved with the code:
+> `shadowFactor`, `distributionGGX`, `distributionGGXAniso`, and `main`'s `float alpha = rough * rough`.
+>
+> The lesson is narrower than "line numbers are bad". `flat/bars.ts:105-113` and `docs/3d/e0/entry.ts:260`
+> were both re-checked today and both still land exactly where this document says — the drift is a
+> property of a file under active churn, so a citation into `packages/gl/src/env/` gets a symbol and a
+> citation into a settled file may keep its line. `env/quality.ts:83` had drifted the same way and is
+> corrected in §4.2.
 
 **What is genuinely unbuilt is small, specific, and listed in §4.** The largest single item in this plan is not
 a feature at all — it is a measurement nobody has taken (§4.1).
@@ -77,8 +97,20 @@ both defaulting off. **Worst-case live context count is 3, against a cap of 8–
 **The one real seam the blueprint did find** is buried in this layer: it asserts the 3-D views should join the
 same unified pass. As built they cannot — the shared stage carries `scene`/`bloomA`/`bloomB` with `alpha:true`
 and *no depth buffer* (`stage.ts:135-137`, `:158-166`), while the reliefs need depth, a shadow map, AO and DoF
-targets. Unifying is possible but is a **Stage redesign, not a canvas change**, and nobody has costed it. See
-§4.6.
+targets. Unifying is possible but is a **Stage redesign, not a canvas change**. See §4.6.
+
+> **CORRECTED, 2026-08-14.** This paragraph ended "and nobody has costed it." **It was costed**, and by
+> the time that sentence was still standing here the costing had a recommendation and reopening conditions
+> in it. `docs/3d/w2/README.md` carries the whole of it: **§3** bytes (a unified stage measures 23.95 KB
+> against L1's 45 KB lane budget, but moves +12,598 B / +47.8 % into the lane every sparkline pays),
+> **§4** memory as arithmetic from the `texImage2D` formats, **§6** the nine pass-restore contracts each
+> with its own test, **§7** the 21 `createStage` call sites and 51 captures that would need
+> re-establishing, **§8** the decisive question — worst-case live context count 3 against a cap of 8–16 —
+> and **§9** an explicit *"Do not unify"* with **three named reopening conditions**: a measured live
+> context count of 6 on one route, a surface needing a chart mark depth-occluded by relief geometry in
+> one frame, or `flat/shared.ts`'s per-region reallocation becoming the measured bottleneck. §4.6 asked
+> for a costing and got one; leaving "nobody has costed it" in the audit told the next reader to spend
+> the week again.
 
 ### 1.2 · Layer 2 — built; two named absences
 
@@ -91,20 +123,36 @@ no dataset in this programme calls for it. Recommend dropping it from scope rath
 
 Three of the blueprint's specifics are wrong against the implementation, and **the code is right in all three**:
 
-1. **It enumerates only D and F.** The implemented BRDF is `D*G*F / (4·NdotV·NdotL)` (`lit.ts:215-221`, `:274`).
+1. **It enumerates only D and F.** The implemented BRDF is `D*G*F / (4·NdotV·NdotL)` (`lit.ts` —
+   `geometrySmith`, and the `spec` divide in `main`).
    D·F alone is not a BRDF and cannot conserve energy — without Smith G and the normalisation the specular
    diverges at grazing angles. The blueprint says "energy-conserving" while omitting the two terms that make it so.
-2. **Its `a` is undefined.** The code binds `alpha = roughness²` (`lit.ts:201`), the Disney/Burley perceptual
+2. **Its `a` is undefined.** The code binds `alpha = roughness²` (`lit.ts` — `float alpha = rough * rough` in
+   `main`, and the same remap inside `distributionGGX`), the Disney/Burley perceptual
    remap. Both readings satisfy the blueprint's literal text; implementing the wrong one makes every material
    read far glossier. **This must be pinned before anyone writes code from that formula.**
 3. **Its shadow bias is ~an order of magnitude too large.** Blueprint `max(0.05·(1-NdotL), 0.005)` versus
-   implemented `max(0.0009, 0.0045·(1-NdotL))` (`lit.ts:233`) — 11.1× and 5.6× smaller. The light projection is
+   implemented `max(0.0009, 0.0045·(1-NdotL))` (`lit.ts` — the `bias` line in `shadowFactor`) — 11.1× and
+   5.6× smaller. The light projection is
    **orthographic and therefore linear in depth** (`camera.ts:126`), so the blueprint's figure — a
    perspective-projection rule of thumb — would introduce visible peter-panning.
 
 What Layer 3 does *not* mention is the four things actually missing: **split-sum DFG, multiscatter
 compensation, `kd` on environment diffuse, and contact hardening.** If Layer 3 is kept at all, that is its
 content.
+
+> **RESOLVED, 2026-08-14 — three built, one refused, and the refusal is the one that keeps getting
+> recorded as built.** `ff3d007` built split-sum DFG (`envDFG`), multiscatter compensation (`msComp`) and
+> `kd` on environment diffuse. **Contact hardening was refused in writing against this section**, on
+> 2026-08-13, and the argument lives where the code would have gone: `packages/gl/src/env/lit.ts` under
+> the heading *"CONTACT HARDENING IS REFUSED"* gives four counts, the load-bearing one being that PCSS
+> needs a blocker search before the filter — 16 + 16 taps in the cheap form — which would put the minimum
+> tier's floor at **17 taps immediately after §4.2 cut it to 1**, so the tier would have to refuse the
+> feature and it becomes a look that exists only on hardware that never needed the help.
+> `packages/gl/src/env/env.test.ts` pins both the refusal text and the absence of a third
+> `texture(uShadowMap` fetch, so it cannot be reversed by someone who does not know it was made.
+> `3D_VFX_1000X.md` §10.2 recorded its L2.6 row as flatly "built" while §4 of that same document specs
+> contact hardening on that row; it now carries the exception, which is the one partial §10.2 had dropped.
 
 ### 1.4 · Layer 4 — the only wholly-unbuilt architecture in the blueprint
 
@@ -127,14 +175,30 @@ pass through the render pipeline. It is right, and the repo already agrees:
 
 | Chart primitive | GL-backed today |
 |---|---|
-| BarChartH, ColumnChart, CompareBars, ControlBand, DonutChart, FunnelChart, GaugeChart, Histogram, **Sparkline**, StackedBarH | **yes** — via `FlatBars`/`FlatLine`/`FlatBand`/`FlatDial`/`FlatTrack` |
-| TrendDelta | **no — and correctly so.** 100% text, no SVG mark, 661 px² against the smallest GL surface's 1,920. Refused on measurement; see §4.4 |
+| the GL-wired set — **eight files** as of 2026-08-14 | **yes**, and all eight clear the measured floor. **Do not read the names out of this table.** `apps/web/src/components/charts/__tests__/glThreshold.test.ts` derives the set by matching `use(FlatBars\|FlatTrack\|FlatDial\|FlatLine\|FlatBand)(` over every `.tsx` in the directory, with comments stripped so prose cannot register, and fails **both ways** — a GL-wired chart with no declared lit-axis extent, and a declared extent that is no longer GL-wired |
+| `Sparkline`, `ControlBand` | **no — the GL path was removed in `1e79f53`** on the measured threshold: L = 4.6 and 5.2 device px against a floor of 20, and `ControlBand` at 55 draw calls *invariant to the data*. `charts/gl/FlatBand.tsx` was deleted with them |
+| `TrendDelta` | **no, and it never could be.** 100 % text, no SVG mark of any kind, so it has no lit axis to measure. See §4.4 |
 | ChartCard, StatCard, tooltip | n/a — containers, not primitives |
 
-**10 of 10 that have a mark**, plus one documented exclusion. I first wrote "10 of 11", which counted
-TrendDelta as a primitive because of where it lives rather than what it draws. SDF with `fwidth` subpixel AA is implemented, and `flat/bars.ts:105-113` records a fixed bug worth
+**8 of 8 that have a mark**, plus two deliberately in SVG and one that has no marks at all. SDF with `fwidth`
+subpixel AA is implemented, and `flat/bars.ts:105-113` records a fixed bug worth
 knowing: the obvious `fwidth(d)` form is wrong because `sdRoundRect` has a gradient seam at the corner arcs, so
 the feather must be taken on `p`, which is linear in `vUV`.
+
+> **CORRECTED, 2026-08-14, and this is the third count this section has published.** It said **10 of 10
+> that have a mark** and the table listed the ten by hand, `Sparkline` in bold as the proof that "even a
+> 40px sparkline passes through the pipeline". `1e79f53` had already taken `Sparkline` and `ControlBand`
+> out of the GL path — measured, not preferred: `docs/3d/w2/SVG_GL_THRESHOLD.md` §9 records the sparkline
+> ribbon delivering **56.8 %** of the ink of the `strokeWidth={2}` polyline it replaced, on the most
+> numerous GL surface in the product, and `ControlBand`'s 55 draw calls being the plot's arc length over
+> the dash period rather than anything about the data. **`FlatBand.tsx` no longer exists**, so the
+> renderer list in the old row named a file the repo does not have. The sub-document was updated at
+> `SVG_GL_THRESHOLD.md:24-26` and **this governing plan was not** — which is the failure mode this
+> programme treats as a defect, because the plan is what the next agent reads first.
+>
+> The hand-written list is *why* it went stale, so it is gone. The census is now the enforcement test's
+> directory scan, which fails on a chart nobody thought of in either direction — the same reason §4.2's
+> ladder ratchet enumerates from `Object.keys(qualitySettings('full'))`.
 
 Phase 1 of the blueprint is therefore **one component** (§4.4), not thirteen.
 
@@ -151,14 +215,17 @@ a shaft attenuated by the risk field reads as *where the field is dense enough t
 
 ### 1.7 · Invariant 4 — the "<45 KB" cap cannot mean what it says
 
-**45 KB is the budget for one lane (L1 renderer), not the engine** (`docs/3d/p1/build.mjs:44`). The engine has
-six budgeted lanes allocating 147 KB and measuring **76.6 KB (78,416 B)**. Against three.js at **513.3 KB** for
-the same job.
+**45 KB is the budget for one lane (L1 renderer), not the engine** (`docs/3d/p1/build.mjs`). The engine has
+six budgeted lanes allocating **147 KB**, and it measures **whatever `npm run gl-budget` prints** — that
+figure moves on every commit to `packages/gl` and is deliberately not restated here. Against three.js at
+**513.3 KB** for the same job, which `build.mjs` *pins* rather than re-measures, and which is therefore safe
+to quote.
 
 The invariant is unsatisfiable in one reading and vacuous in the other:
 
-- As an **engine cap** it is 1.7× breached, and enforcing it literally means deleting L4 env (37.4 KB), L3.5
-  particles (10.8 KB) and L4.5 field (8.6 KB) — that is GGX lighting, shadows, AO, DoF, sky, particles and
+- As an **engine cap** it is breached by the better part of a factor of two, and enforcing it literally means
+  deleting the **L4 env**, **L3.5 particles** and **L4.5 field** lanes — run `gl-budget` for what each costs
+  today — that is GGX lighting, shadows, AO, DoF, sky, particles and
   volumetrics. It would delete Layers 3, 4 and 6 to satisfy Layer 4's own budget line.
 - As an **initial-JS cap** it is trivially true: `@lcx/gl` contributes **zero bytes** to initial JS. The
   deployed document declares exactly three JS resources and none is a GL chunk — verified live today.
@@ -170,6 +237,17 @@ by `npm run perf-budget`). Both already fail the build when breached.
 While auditing this, a repo-internal problem surfaced that this plan should fix: **three documents carry three
 stale spine figures** (17.5 KB, 17.6 KB, "45 KB unspent"), and the number "45" now means three different things
 — L1's lane budget, the original whole-engine estimate, and the spine's unspent headroom. See §4.5.
+
+> **AND THEN THIS DOCUMENT DID THE SAME THING, 2026-08-14.** §1.7 and §4.5 published the spine as
+> **76.6 KB (78,416 B)** while `3D_VFX_1000X.md` §10.1 and §10.2 published **72.9 KB** for the identical
+> quantity, and `npm run gl-budget` — the only thing that can be right — printed neither. So the two
+> documents whose subject is a number that came to mean three things gave a *second* number two more
+> meanings, in the same week, one section below the catalogue. The transcription is the defect, not the
+> arithmetic: both are now replaced by a pointer to the generator, and the only byte figures either
+> document still states are the ones `build.mjs` **pins** (three.js at 513.3 KB) or **allocates** (the
+> 147 KB of lane budget) rather than measures. `3D_VFX_1000X.md:318` carried a third instance —
+> "our 12.8 KB for the comparable surface" — which `docs/3d/p0/measure.mjs` had already retired as an
+> esbuild-recipe artefact; corrected there.
 
 ---
 
@@ -236,7 +314,9 @@ weeks of work. One trial converts eight hedges into eight verdicts, in either di
 
 ### 4.2 · Fix `shadowTaps`: the quality ladder promises perf it does not deliver
 
-`env/quality.ts:83` declares `shadowMapSize: 512, shadowTaps: 1` for the minimum tier. **No code path reads
+`env/quality.ts`'s `minimum` rung of `qualitySettings` declares `shadowMapSize: 512, shadowTaps: 1`
+*(citation was `:83`; the declaration is at `:142` today — same drift as the `lit.ts` numbers, see the note
+under §0's table)*. **No code path reads
 `shadowTaps`** — the PCF loop in `LIT_FRAG` is hard-coded to 9 taps. So the minimum tier pays 9× the shadow cost
 it advertises, on exactly the machines that cannot afford it. Either wire it in or delete the field; a config
 value nobody reads is worse than no config value, because it reads as a guarantee. **Owner call in §7.3.**
@@ -263,36 +343,66 @@ value nobody reads is worse than no config value, because it reads as a guarante
 
 ### 4.3 · Fix the anisotropic roughness discontinuity
 
-`env/lit.ts:265-266` derives `at`/`ab` from **perceptual** roughness (`rough*(1±aniso)`) and passes them as
+`env/lit.ts` derives `at`/`ab` in `main` from **perceptual** roughness (`rough*(1±aniso)`) and passes them as
 **alphas**, while the isotropic branch applies `alpha = rough²` internally. So as `aniso → 0⁺` the material does
 not converge on the isotropic result — there is a visible step. E8's mark uses the anisotropic path. Latent
 today; a Layer 3 rewrite would either fix it or entrench it.
 
 ### 4.4 · ~~GL-back `TrendDelta`, closing Layer 5 at 11 of 11~~ — **REFUSED on measurement**
 
-**Outcome: TrendDelta stays outside the GL path, as a recorded hand exclusion. Layer 5 closes at 10 of 10
-primitives that have a mark, plus one documented exclusion — not 11 of 11.** I had this wrong: I counted
-TrendDelta as a chart primitive because it lives in the charts directory.
+**Outcome: TrendDelta stays outside the GL path, as a recorded hand exclusion. Layer 5 closes at 8 of 8
+primitives that have a mark, plus two deliberately in SVG and one with no marks — not 11 of 11.** I had this
+wrong twice: first I counted TrendDelta as a chart primitive because it lives in the charts directory, then I
+wrote "10 of 10" after `1e79f53` had already taken `Sparkline` and `ControlBand` out. See §1.5's dated note.
 
 **It has no mark to re-back.** It is a `<span>` with a font glyph (`▲`/`▼`, `aria-hidden`) and a number.
 There is no `<svg>` in the file — no path, rect, polyline, arc or circle. Measured at its real classes,
 **100% of the ink is text**, and the box has no stable size: 41.34 / 53.72 / 39.17 CSS px for 4.2% / 124.7% /
-0.1%. Every one of the ten GL-backed primitives hands the renderer a geometric fill it already drew in SVG,
+0.1%. Every one of the eight GL-backed primitives hands the renderer a geometric fill it already drew in SVG,
 in viewBox units. There is nothing here to hand over.
 
 Three further reasons, each already on the record:
 
 1. The only candidate mark — a good/bad tint plate — was settled at `gl/FlatBand.tsx:16-20`: an additive
    pass writes full coverage into alpha, so a tint "would land on the card as a solid block of hue rather
-   than a wash". `Sparkline` declined its own area wash for the same reason.
+   than a wash". `Sparkline` declined its own area wash for the same reason. *(That file was deleted in
+   `1e79f53` along with `ControlBand`'s GL path; the argument is preserved in
+   `docs/3d/w2/SVG_GL_THRESHOLD.md` §1, which quotes both reasons and states it verified each against the
+   source. Read it there — the citation above now points at nothing.)*
 2. The other candidate is baking text, and **the ratchet is now at zero** — `'e0'` since E2 was fixed this
    session. An SDF triangle here would be the surface that reopened it.
-3. **The threshold `PLATFORM_VFX_100X.md` §7.2 says was never built, measured at last.** The smallest thing
-   GL backs is the StatCard `Sparkline` at 80×24 = 1,920 px². The chip is **661 px², 2.90× smaller.** And
-   `stage.setRegion` short-circuits *only* on an identical size, so with three different chip widths at
-   dpr 2 (83 / 107 / 78 device px) **no two consecutive chips hit the fast path** — a full target-set
-   reallocation, three framebuffers and three textures deleted and six allocated, per chip per frame, for
-   zero marks. Chips are the most numerous primitive in the product: 16 across three routes.
+3. **The threshold `PLATFORM_VFX_100X.md` §7.2 says was never built, measured at last — and it is not the
+   threshold §7.2 asked for.** §7.2 reasons from *size*: a 40 px sparkline must never take a GL context.
+   `docs/3d/w2/SVG_GL_THRESHOLD.md` §4 measured it and found **size is the wrong variable**, because cost
+   tracks draw calls and not pixels. What the threshold actually is: **Gate A**, the mark's lit-axis extent
+   in device pixels, ≥ 20 — from `smoothstep(0.10, 0.0, edgeT)` (`flat/bars.ts:133`) needing two pixels of
+   gradient to read as an edge rather than one lighter pixel row; **Gate B**, draw-call order O(1), or O(n)
+   with n bounded by legibility rather than by a rendering detail; **Gate C**, ≤ 12 GL-backed charts per
+   page, all at one device-pixel size. **TrendDelta has no L at all** — no path, rect, polyline, arc or
+   circle to take an extent along — so it fails Gate A as a category, not as a narrow miss. That is the
+   same gate, differently applied, that put `Sparkline` (L = 4.6) and `ControlBand` (L = 5.2, and 55 draw
+   calls) back into SVG.
+
+   > **CORRECTED, 2026-08-14 — the 2.90× in this item had no referent, and neither does its second half.**
+   >
+   > This item read: *"The smallest thing GL backs is the StatCard `Sparkline` at 80×24 = 1,920 px². The
+   > chip is 661 px², 2.90× smaller."* `Sparkline` stopped being GL-backed in `1e79f53` **the day before
+   > this was written**, so the denominator was a surface that no longer takes a GL context and the ratio
+   > compared the chip against nothing. Recomputed against the smallest surface that actually is GL-backed:
+   > `StackedBarH`, a `480 × 20` viewBox at `w-full`, so **9,600 CSS px²** — which agrees with
+   > `SVG_GL_THRESHOLD.md` §3's measured table, where its 38,400 device px at dpr 2 is the smallest of the
+   > eight GL cells. Against that the chip's 661 px² is **14.5× smaller, not 2.90×.** The refusal does not
+   > rest on the ratio and never should have: an area comparison is not the threshold, per the paragraph
+   > above, and Gate A is the ground.
+   >
+   > **The `setRegion` half is spent too.** It argued that three chip widths at dpr 2 (83 / 107 / 78 device
+   > px) meant "no two consecutive chips hit the fast path — a full target-set reallocation … per chip per
+   > frame". `setRegion` no longer behaves that way: §10.9's fix keeps target sets in an LRU keyed by
+   > **exact** size, `TARGET_CACHE_SPARES = 3` (`packages/gl/src/stage.ts`), so three chip sizes are
+   > allocated once and then hit. What survives is smaller and still real — three more live sizes on a route
+   > that already holds several chart sizes pushes the working set past active-plus-three into the
+   > round-robin case `stage.ts` says outright it has "nothing to say for", where "that page reallocates
+   > exactly as it did before". Chips are the most numerous primitive in the product: 16 across three routes.
 
 `docs/3d/w0/README.md:43-45`, the audit that ranked these eleven, reached the same verdict from the other
 side: TrendDelta's one filed finding is "**not** fixed by a new renderer".
@@ -306,8 +416,10 @@ byte-identical by SHA-256 so no Playwright snapshot moves.
 
 ### 4.5 · Retire the three stale spine figures and the three meanings of "45"
 
-`docs/3d/p1/README.md:29-32` publishes L1 10.4 / L2 5.3 / L3 1.7 / spine 17.5 KB and "45.5 KB under". Current
-measurement is 76.6 KB. Two other documents carry 17.6 KB and "45 KB unspent". Fix by generating those tables
+`docs/3d/p1/README.md:29-32` publishes L1 10.4 / L2 5.3 / L3 1.7 / spine 17.5 KB and "45.5 KB under". The
+current measurement is whatever `npm run gl-budget` prints — not restated here, for the reason in §1.7's dated
+note, which is that this section had itself been carrying a stale 76.6 KB while `3D_VFX_1000X.md` carried a
+stale 72.9 KB. Two other documents carry 17.6 KB and "45 KB unspent". Fix by generating those tables
 from `gl-budget` output rather than transcribing them — the same fix that stopped E1 printing E0's frame time.
 
 ### 4.6 · Cost the unified-stage question, and only then decide it
@@ -315,6 +427,17 @@ from `gl-budget` output rather than transcribing them — the same fix that stop
 The blueprint's one genuine architectural find (§1.1). Deliverable is **a costing, not an implementation**: what
 a depth-and-target-set-carrying shared Stage would cost in bytes, in refactor risk to five post-process passes,
 and whether any environment actually benefits. If nothing benefits, that is the answer and it gets written down.
+
+> **DELIVERED — `docs/3d/w2/README.md` §§3–9, and this section is closed.** *(Dated note, 2026-08-14: §1.1
+> was still telling readers "nobody has costed it" after this landed.)* Bytes, memory, frame time bounded
+> honestly, refactor risk across nine pass-restore contracts, 21 `createStage` call sites, 51 captures, and
+> §8's decisive question — **does any environment benefit? No.** Recommendation: **do not unify**, and it
+> turns on §8 rather than on §3, because a cost is only a reason when something is being bought and nothing
+> is: the constraint that would justify one stage, running out of GL contexts, sits at 3 of 8–16 in the
+> worst case and **1 in the steady state on every route**. Its own §6 correction is worth carrying up here
+> — the plan said "five post-process passes" and there are **two pass sets, not one**, the flat six-blit
+> chain and the nine environment passes. Three named conditions reopen it; they are listed in §1.1's
+> correction so a reader meeting the seam for the first time does not have to find them.
 
 ### 4.7 · Optional, with a reason: god rays in E7 only
 
@@ -480,7 +603,9 @@ Measured now, on a real M1 through ANGLE Metal at dpr 2, two runs, with a warm-u
 five post-process passes plus the geometry cost. And worse, **it is sized by the offscreen buffer, not by the
 chart.** The buffer is grow-only, so a 40 px sparkline on a page that also holds one large chart pays
 **2.368 ms per redraw** to copy a region it does not use. That is precisely the hazard
-`docs/3d/w2/README.md:314` raised and could not settle.
+`docs/3d/w2/README.md:314` raised and could not settle. *(The millisecond figures are as measured. The
+example is not: `Sparkline` left the GL path in `1e79f53`, so read it as any small chart — `StackedBarH` is
+the shallowest one that remains. §10.9 carries the same correction where it mattered more.)*
 
 **What survives, and what this does and does not change.** The half of the claim that held is per-chart
 flatness — 60 charts cost 60× one chart, not worse. And **the architectural decision still stands**, because
@@ -547,10 +672,27 @@ code.
 
 **REFUTED — "defect 4 was live on the sign-in screen" is false.** I claimed the isotropic guard
 `max(1e-6, PI*d*d)` was clipping the LCX mark's highlight 3.9× too dim on `ForgeBackdrop`, `e8` and `e2`.
-Those three materials carry `anisotropy` 0.72, 0.72 and 0.8, and `lit.ts:514` routes anything above 0.001 to
+**Every lit material on those three surfaces carries anisotropy** — `ForgeBackdrop` **0.86** (disc) and
+**0.72** (ring), `e8` the same two, `e2` **0.8** (`RING_MAT`) and **0.85** (`CORRIDOR_MAT`) — and `lit.ts`'s
+`float D = aniso > 0.001 ? …` in `main` routes every one of them to
 `distributionGGXAniso`. **They never call `distributionGGX` at all.** The isotropic guard could not have
 touched the sign-in screen, and I asserted a code path without checking which branch the material took — the
 same error as the E2 texture claim in §2, twice in one day.
+
+> **CORRECTED, 2026-08-14 — and the correction had the same defect as the claim it corrected.** This
+> paragraph published *"anisotropy 0.72, 0.72 and 0.8"*: one value per surface, where each surface has
+> **two** anisotropic materials, and the value given was the wrong one for two of the three. The real
+> constants are above, and they were these values **when the sentence was typed** — every `anisotropy:`
+> literal has been unchanged since `dbc3e6d`, and `830d8e6` re-authored the *roughnesses* to `sqrt(rough)`
+> and touched no anisotropy at all. So this was not drift; the constants were never opened.
+>
+> **The refutation is untouched and if anything broader:** all six values are above 0.001, so all six take
+> the anisotropic branch, and the isotropic guard reaches none of them. But §10.6 exists to record that a
+> shader claim must trace the code, and its own replacement sentence copied three numbers without opening
+> the two files that hold them — `apps/web/src/components/brand/ForgeBackdrop.tsx`, `docs/3d/e8/entry.ts`
+> and `docs/3d/e2/entry.ts`. The `lit.ts:514` citation went the same way and is now a symbol; §0's table
+> carries the general note. *(§10.1's defect-4 row quotes roughness 0.13 / 0.13 / 0.14 — those are the
+> pre-`830d8e6` values the refuted claim was computed on, and they stay as the historical record of it.)*
 
 The arithmetic *around* the claim was right (threshold `rough < 0.154119`, factors 3.902× at 0.13 and 18,930×
 at the clamp, and the guard reached 1.53× the lobe half-width so it flattened the whole core, not an edge).
@@ -689,8 +831,17 @@ M1, hashing every destination and counting covered pixels:
 | 320×320 | ink 776 | ink 127 |
 | **480×40** | ink 2259 | **ink 0 — renders completely blank, 0 of 19,200 px, nothing thrown** |
 
-The 480×40 case is the sparkline: **the most numerous GL surface in the product**, silently empty. Forty
+The 480×40 case is the shape a wide, shallow chart takes, and it comes out silently empty. Forty
 pixels squeezed into 8% of their own rectangle is sub-pixel.
+
+> **CORRECTED, 2026-08-14 — its named referent is stale, its measurement is not.** This paragraph said
+> "the 480×40 case is the sparkline: **the most numerous GL surface in the product**". `Sparkline` left the
+> GL path in `1e79f53`, the day before this section was written, so the surface named as the victim could
+> not have been one. The measured row stands as measured. The **live** GL surface in this shape is
+> `StackedBarH` — a `480 × 20` viewBox at `w-full`, i.e. *shallower on the axis that failed*, and the
+> smallest GL-backed region in the kit (§4.4). I have not re-run the harness at 480×20 and so claim no ink
+> figure for it; what the 480×40 row establishes is that the §10.7 spec fails catastrophically as the region
+> gets shallow, and the shipping kit still contains a shallower one.
 
 **What shipped instead**, entirely inside `stage.ts`: target sets kept in an LRU keyed by *exact* size, so the
 region stays exact and no sampling assumption moves. Spares are capped two ways because the failure modes
@@ -701,3 +852,45 @@ against the 46 MB a single active set costs at 3200×1600.
 ("the change stage.ts would need") on one agent's say-so, then quoted it to the next agent as the thing to
 build. A design nobody has executed is a hypothesis; writing it in the voice of a decision is how a plausible
 idea acquires authority it has not earned. §10.7 now carries this correction inline.
+
+
+### 10.10 · E7 SHIPS AS CODE AND IS UNREACHABLE AS A SURFACE, WHICH IS THE RULE WORKING
+
+The plan said "all eight live" from the day the eighth landed, and I repeated it in every summary since. It is
+true of the code and **false of what a reader can open.** An adversarial sweep raised it; tracing it settled it.
+
+**The chain, and every link is re-checkable:**
+
+| step | evidence |
+|---|---|
+| one route mounts E7 | `router.tsx:276` → `MarketingCrisis` |
+| one call site | `MarketingCrisis.tsx:1241` — `<StormRelief field={FORWARD_RISK} …>` |
+| the field is a module-level constant | `MarketingCrisis.tsx:89` — `const FORWARD_RISK = riskFieldUnavailable('No forward risk feed reaches this desk…')` |
+| which is a refusal, not a field | `riskField.ts:157-159` returns `{ kind: 'refused', code: 'NO_FORWARD_RISK_FEED' }` |
+| and the gate demands a field | `isRiskField` is `o.kind === 'field'`, so `StormRelief.tsx:101` `drawable = false` and `:156` sets `aria-disabled` permanently |
+
+It is the only mount of `StormRelief` outside tests, and no state, prop or effect can replace a module-level
+`const`. **E7 cannot be turned on by anybody, on any machine, today.**
+
+**Nor could the system supply the data.** `buildRiskField` needs a day axis where each day declares
+`observed` / `not_measured` / `withheld`, a channel axis and severity bands. There is no per-day series
+anywhere in `apps/api/src/marketing` or `packages/shared/src/marketing`, and the one table of planned
+marketing activity — `dist_campaigns`, migration `0043_distribution.sql:34-48` — has **no future date column
+at all**.
+
+**And the refusal is correct, which is the point.** `MarketingCrisis` mounts `PrintStyles`; its sheets are a
+filed compliance record. A volume marched over invented numbers would put a synthetic forward view of
+marketing risk onto that record — exactly the reading `riskField.ts`'s three day-states exist to make
+impossible (§6 rule 6). The page had already refused both alternatives in writing: authoring synthetic items,
+and rendering nothing (a panel that vanishes is indistinguishable from a calm fortnight). The scene itself is
+proven to render — `docs/3d/e7/live.png`, on amber-declared synthetic data in its harness.
+
+**So the honest status is BUILT AND GATED ON DATA.** Seven surfaces a reader can open on a route; one that
+renders only in its harness. Closing it needs a feed reporting risk by day × channel × severity band, each day
+stating its coverage state explicitly with a `source` and an `observedAt` — after which both views work with no
+change to the component or the page. **That is an owner decision about what the monitor reports, not a
+rendering one, and I did not write a fixture to make the toggle light up.** Doing so would have been the exact
+failure rule 6 exists to prevent, on the one page whose output gets filed.
+
+`StormRelief.tsx` now carries this chain in its header, including an explicit instruction not to light the
+toggle with a fixture, so the next reader finds the argument before the temptation.

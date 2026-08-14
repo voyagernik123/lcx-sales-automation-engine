@@ -550,7 +550,14 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
              alternative was measured — 0.72 with the key raised to compensate drained the shadow interiors by
              about a fifth. */
           viewProj: vp, eye, lightDir, lightColour: [3.5, 3.45, 3.3],
-          ambientGain: 1.05, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, draws,
+          ambientGain: 1.05, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps,
+          /* THE BIGGEST SHADOW MAP IN THE APP, and the one the bias fix originally missed. Without a
+             baseline the scale is 1.0, so the minimum tier renders a 512 map (shadowMapSizeFor of 1536)
+             with a bias tuned for 1536 — a third of the bias it needs, which at one tap is hard
+             speckle. It was missed because the eight components were enumerated BY HAND and this file
+             names its constant SHADOW_SIZE rather than SHADOW_BASELINE; the census test added beside
+             this now derives the set from the source instead. */
+          shadowBaseline: SHADOW_SIZE, draws,
           ao: ao ? ao.texture : null, screenSize: [W, H],
         });
       };

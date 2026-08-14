@@ -206,8 +206,13 @@ export function DeckRelief({ children, panels, heightPx = 460 }: DeckReliefProps
           </span>
         ) : (
           /*
-           * E1's OWN REASON, not the generic one. The other eight say nobody has timed whether relief answers
-           * faster. E1's harness went further and measured the cost: at a wide aperture only the focused panel is
+           * E1's OWN REASON, not the generic one. The other SIX toggles say nobody has timed whether relief
+           * answers faster — six, not eight: grepping the shipping components for that sentence finds seven
+           * toggles including this one, and E8's `ForgeBackdrop` has no toggle at all because it is a sign-in
+           * backdrop with no flat alternative to switch to. "The other eight" counted a set of eight surfaces
+           * as if all of them offered the choice.
+           *
+           * E1's harness went further and measured the cost: at a wide aperture only the focused panel is
            * comfortably readable, so the emphasis it adds is paid for in the legibility of everything else. A
            * reader deciding whether to switch is owed that specific trade, not a general disclaimer.
            */

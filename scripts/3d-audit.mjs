@@ -47,7 +47,7 @@
  * other's report down, and two generators writing one file makes its contents depend on run order.
  */
 import { chromium } from '@playwright/test';
-import { readdirSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readdirSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { serveHarness } from '../docs/3d/_shared/serve.mjs';
@@ -63,6 +63,144 @@ const envs = readdirSync(DOCS)
 if (envs.length === 0) {
   console.error('  REFUSED: no built environments found. Run each build.mjs first.');
   console.error('  An audit that finds nothing to audit must not report success.');
+  process.exit(1);
+}
+
+/*
+ * ── THE §7(b) TRIAL COUNT IS READ OUT OF THE INSTRUMENT, BECAUSE IT HAD BEEN TYPED HERE ───────────────
+ *
+ * Audit 5 below used to publish `8 trials … startup excluded in all 8` as literals. `task.html` had four
+ * environments when that sentence was written and now has seven, so this generator was publishing 8 where
+ * the instrument builds 14 — inside a file whose own header says it is generated BECAUSE hand-written
+ * READMEs go stale, and one file away from the identical defect task.html already fixed on its own Begin
+ * button (which reads `TASKS.length * 2` and no longer says "8 trials").
+ *
+ * So the count is computed from task.html's own TASKS array: the literal is extracted by bracket matching
+ * and evaluated, which makes this the same arithmetic the browser does rather than a copy of its answer.
+ * Typing 14 here would be the same defect with a newer digit.
+ *
+ * WHEN THE ARRAY CANNOT BE FOUND, PARSED OR VALIDATED THIS SCRIPT PRINTS A REFUSAL AND EXITS 1 BEFORE THE
+ * SWEEP STARTS, leaving the previous README untouched. There is deliberately NO fallback number: a
+ * fallback is exactly how the 8 got here.
+ */
+const TASK_HTML = join(DOCS, 'e9', 'task.html');
+
+/*
+ * Extracts one `[ … ]` literal starting at `decl` (which must end in the opening bracket), matching
+ * brackets while skipping comments and strings. Written rather than regexed because TASKS contains both
+ * nested `opts: [...]` arrays and long block comments carrying apostrophes ("the harness's own report") —
+ * a naive scanner treats one of those as an opening quote and swallows the rest of the file.
+ */
+function extractBracketLiteral(src, decl, where) {
+  const at = src.indexOf(decl);
+  if (at < 0) throw new Error(`${where}: could not find \`${decl}\` — §7(b)'s counts have no source`);
+  const start = src.indexOf('[', at);
+  let depth = 0;
+  for (let i = start; i < src.length; i++) {
+    const two = src.slice(i, i + 2);
+    if (two === '/*') {
+      const end = src.indexOf('*/', i + 2);
+      if (end < 0) throw new Error(`${where}: unterminated block comment inside \`${decl}\``);
+      i = end + 1;
+      continue;
+    }
+    if (two === '//') {
+      const end = src.indexOf('\n', i);
+      if (end < 0) throw new Error(`${where}: unterminated line comment inside \`${decl}\``);
+      i = end;
+      continue;
+    }
+    const c = src[i];
+    if (c === '`') {
+      /* Refused rather than half-handled. A backtick before the closing bracket means either a template
+         literal in the array — whose `${}` can contain brackets of its own, so a guessing scanner returns a
+         truncated array and a plausible wrong count — or an array that never closed and a scan that has run
+         off into the script below. Indistinguishable from here, so both are named. */
+      throw new Error(`${where}: hit a backtick before \`${decl}\` closed — either the array holds a template `
+        + 'literal (which this parser will not count through) or it is unterminated');
+    }
+    if (c === '\'' || c === '"') {
+      i++;
+      while (i < src.length && src[i] !== c) i += src[i] === '\\' ? 2 : 1;
+      if (i >= src.length) throw new Error(`${where}: unterminated string inside \`${decl}\``);
+      continue;
+    }
+    if (c === '[') depth++;
+    else if (c === ']' && --depth === 0) return src.slice(start, i + 1);
+  }
+  throw new Error(`${where}: \`${decl}\` never closes`);
+}
+
+function evalLiteral(literal, decl, where) {
+  try {
+    return new Function(`return ${literal};`)();
+  } catch (e) {
+    throw new Error(`${where}: \`${decl}\` did not evaluate as a plain literal — ${e.message}`);
+  }
+}
+
+function readTaskSet() {
+  const src = readFileSync(TASK_HTML, 'utf8');
+  const where = 'docs/3d/e9/task.html';
+  const tasks = evalLiteral(extractBracketLiteral(src, 'const TASKS = [', where), 'TASKS', where);
+  if (!Array.isArray(tasks) || tasks.length === 0) {
+    throw new Error(`${where}: TASKS is not a non-empty array`);
+  }
+  const questions = [];
+  const envIds = new Set();
+  tasks.forEach((task, i) => {
+    if (typeof task?.env !== 'string' || !task.env) {
+      throw new Error(`${where}: TASKS[${i}] carries no env id`);
+    }
+    if (envIds.has(task.env)) {
+      throw new Error(`${where}: ${task.env} appears twice in TASKS — one operator would answer it twice`);
+    }
+    envIds.add(task.env);
+    /* The instrument's Begin button and buildTrials both multiply by two. A pair that is not a pair makes
+       that multiplication a lie, so it is checked here instead of being assumed. */
+    if (!Array.isArray(task.pair) || task.pair.length !== 2) {
+      throw new Error(`${where}: ${task.env} carries ${task.pair?.length ?? 'no'} questions, not a pair — `
+        + 'the trial count cannot be TASKS.length * 2');
+    }
+    for (const member of task.pair) {
+      if (typeof member?.q !== 'string' || !member.q) {
+        throw new Error(`${where}: ${task.env} has a pair member with no question text`);
+      }
+      questions.push(member.q);
+    }
+  });
+  /* "Zero duplicate questions" is a claim the generated file makes, so it is derived here rather than
+     asserted from a past click-through: two environments sharing a question means somebody answers it
+     twice and the second reading measures recall. */
+  if (new Set(questions).size !== questions.length) {
+    throw new Error(`${where}: ${questions.length - new Set(questions).size} question text(s) appear more than once`);
+  }
+  const notApplicable = evalLiteral(
+    extractBracketLiteral(src, 'notApplicable: [', where), 'coverage.notApplicable', where);
+  if (!Array.isArray(notApplicable) || notApplicable.some((id) => typeof id !== 'string' || !id)) {
+    throw new Error(`${where}: coverage.notApplicable is not a list of environment ids`);
+  }
+  /* Mirrors buildTrials' rule `threeDFirst = i % 2 === 0` in task.html. An odd-length set cannot split
+     evenly, and which way the remainder falls decides which surface more often holds the SECOND position —
+     the one that benefits from having just thought about that shape of question. */
+  const threeDFirst = tasks.filter((_, i) => i % 2 === 0).length;
+  return {
+    environments: tasks.length,
+    trials: tasks.length * 2,
+    threeDFirst,
+    flatFirst: tasks.length - threeDFirst,
+    measuredIds: tasks.map((t) => t.env.toUpperCase()).sort(),
+    notApplicableIds: notApplicable.map((id) => id.toUpperCase()).sort(),
+  };
+}
+
+let taskSet;
+try {
+  taskSet = readTaskSet();
+} catch (e) {
+  console.error(`  REFUSED: ${e.message}`);
+  console.error('  Audit 5 states the §7(b) trial count. It is derived from the instrument or not stated at all;');
+  console.error('  a hard-coded count is the defect this derivation exists to remove. Nothing was written.');
   process.exit(1);
 }
 
@@ -355,6 +493,67 @@ await browser.close();
 const stamp = process.env.AUDIT_DATE ?? new Date().toISOString().slice(0, 10);
 const failing = rows.filter((r) => r.problems.length > 0);
 
+/*
+ * §7(b)'S THREE STALE PHRASES, ALL NOW DERIVED FROM `taskSet` (see readTaskSet above).
+ *
+ * "8 trials" was the count of a four-environment set. "counterbalance alternating" implied an even split
+ * that seven environments cannot have. "all nine environments" counted the nine HARNESSES swept here, not
+ * the environments clause (b) applies to: E8 carries no dataset and answers no question, so it is NOT
+ * APPLICABLE, and calling it unmeasured implies outstanding work that does not exist.
+ */
+const listIds = (ids) => (ids.length <= 1
+  ? (ids[0] ?? 'none')
+  : `${ids.slice(0, -1).join(', ')} and ${ids.at(-1)}`);
+
+/* Interpolating a derived clause into fixed prose produced one 340-column line in the generated file, which
+   makes every future regeneration a whole-paragraph diff. Wrapped to the width the hand-written paragraphs
+   around it already use. */
+const wrap = (text, width = 108) => text.split(/\s+/).filter(Boolean).reduce((lines, word) => {
+  const last = lines[lines.length - 1];
+  if (last && `${last} ${word}`.length <= width) lines[lines.length - 1] = `${last} ${word}`;
+  else lines.push(word);
+  return lines;
+}, []).join('\n');
+
+const secondPositionHolder = taskSet.threeDFirst >= taskSet.flatFirst ? 'flat surface' : 'environment';
+const counterbalanceWhy = taskSet.threeDFirst === taskSet.flatFirst ? '' : wrap(
+  `The counterbalance is ${taskSet.threeDFirst}-${taskSet.flatFirst} rather than even because `
+  + `${taskSet.environments} environments cannot split evenly, and the residual is stated rather than rounded `
+  + `off. \`buildTrials\` assigns the first surface by index parity, so the ${secondPositionHolder} holds the `
+  + `SECOND position ${Math.max(taskSet.threeDFirst, taskSet.flatFirst)} times out of ${taskSet.environments} `
+  + '— and second position is the one that benefits from the operator having just thought about that shape of '
+  + 'question. The bias therefore runs '
+  + (secondPositionHolder === 'flat surface'
+    ? 'AGAINST reporting MEETS (b), which is the direction an instrument guarding against a showreel should '
+      + 'err in.'
+    : 'TOWARD reporting MEETS (b). That is the wrong direction for this instrument and should be corrected '
+      + 'before an operator runs it.'));
+const clauseBApplies = `the ${taskSet.environments} environments clause (b) applies to `
+  + `(${listIds(taskSet.measuredIds)})`;
+const notApplicableNote = taskSet.notApplicableIds.length === 0 ? '' : `${listIds(taskSet.notApplicableIds)} `
+  + `carr${taskSet.notApplicableIds.length === 1 ? 'ies' : 'y'} no dataset and answer`
+  + `${taskSet.notApplicableIds.length === 1 ? 's' : ''} no question, so clause (b) is NOT APPLICABLE there `
+  + 'rather than outstanding — recording it as unmeasured would imply work that does not exist.';
+
+/* Assembled HERE rather than inline in the README template below, because both paragraphs quote identifiers
+   in markdown code spans and the template is delimited by backticks — the trap that has terminated it once.
+   Outside the template a backtick needs no escaping and cannot end anything. */
+const trialVerification = wrap(
+  `Verified mechanically — ${taskSet.trials} trials across ${taskSet.environments} environments `
+  + `(${listIds(taskSet.measuredIds)}), counterbalance ${taskSet.threeDFirst}-${taskSet.flatFirst}, zero `
+  + `duplicate questions among all ${taskSet.trials}, every trial timed, startup excluded in all `
+  + `${taskSet.trials} — by clicking through it with deliberately wrong answers, which correctly produced `
+  + '`REFUSED · NO_CORRECT_ANSWERS_ON_ONE_SURFACE`. An instrument that declines to draw a conclusion from '
+  + 'garbage is the only kind worth having.');
+const trialCountIsDerived = wrap(
+  'Every count in the sentence above is computed by this generator from `task.html`\'s own `TASKS` array: the '
+  + 'literal is bracket-matched out of the file, evaluated, and checked to hold a unique environment and '
+  + 'exactly two distinct questions per entry. It used to read "8 trials" — true of the four-environment set '
+  + 'it was typed against, false from the day a fifth was added, and printed one file away from the identical '
+  + 'defect the instrument had already fixed on its own Begin button by computing `TASKS.length * 2`. If the '
+  + 'array cannot be parsed, or fails those checks, `npm run audit-3d` prints a refusal and writes nothing '
+  + 'rather than publishing a count it could not derive.');
+
 mkdirSync(join(DOCS, 'e9'), { recursive: true });
 /* The headline NAMES ITS SCOPE. "All N degrade to a readable flat surface" was being asserted by a sweep that
    covered three configurations, and the one it left out — a context loss on a page that had already drawn —
@@ -589,8 +788,8 @@ this codebase independently discovered that a single-azimuth capture of the flat
 question about its far face. The figure's own caption says a second azimuth is needed; nobody had checked what
 that costs a reader who only has the one.
 
-**§7(b) therefore remains UNMEASURED on all nine environments**, and this trial is now the evidence that a
-machine reader cannot stand in for the human one. \`task.html\` still needs a person.
+${wrap(`**§7(b) therefore remains UNMEASURED on ${clauseBApplies}**, and this trial is now the evidence that a `
+  + `machine reader cannot stand in for the human one. ${notApplicableNote} \`task.html\` still needs a person.`)}
 
 ## Audit 5 · §7(b) — the instrument exists; the reading does not
 
@@ -617,10 +816,11 @@ And it **refuses rather than reporting a meaningless comparison**: too few trial
 correct answers on a surface each produce a coded refusal instead of a time. A faster WRONG reading is a worse
 surface, so a time advantage is only reported when accuracy is at least equal.
 
-Verified mechanically — 8 trials, counterbalance alternating, zero duplicate questions, every trial timed,
-startup excluded in all 8 — by clicking through it with deliberately wrong answers, which correctly produced
-\`REFUSED · NO_CORRECT_ANSWERS_ON_ONE_SURFACE\`. An instrument that declines to draw a conclusion from garbage
-is the only kind worth having.
+${trialVerification}
+
+${counterbalanceWhy}
+
+${trialCountIsDerived}
 
 **It cannot be run by whoever built these surfaces.** The file is its own answer key, and a self-administered
 result would be worse than none. §7(b) is therefore still open, and now it is open in the way a measurement is
@@ -646,8 +846,10 @@ listener fails this audit** — rebuild the harness before diagnosing it.
 
 ## What this audit does NOT establish
 
-**§7(b) is untimed on all ${rows.length} environments.** The instrument is now built and verified (Audit 5) and
-no operator has run it. Until one does, every §7(b) claim here remains a reason to expect a good result.
+${wrap(`**§7(b) is untimed on ${clauseBApplies}.** The instrument is now built and verified (Audit 5) and no `
+  + 'operator has run it. Until one does, every §7(b) claim here remains a reason to expect a good result. '
+  + `${notApplicableNote} And the ${rows.length} harnesses swept above are not that count: clause (b) is about `
+  + 'the environments a reader asks a question of, not about the pages this file loads.')}
 
 **And it never will establish (a).** "A stranger stops scrolling" is not measurable at a desk with two people,
 and dressing it up with a Likert scale would be the same category error as reporting a 60 Hz headroom measured

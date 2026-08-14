@@ -13,10 +13,17 @@
  * when (b) is not established: *"it ships behind a toggle that defaults off, and I tell you rather than quietly
  * shipping it."*
  *
- * (b) is not established. It is not FAILED either — it is UNMEASURED, on all nine environments. The instrument
- * exists (`docs/3d/e9/task.html`: counterbalanced, matched question pairs, a clock that starts when the surface
- * appears, refusing to report a time when accuracy differs) and no operator has run it, because it cannot be run
- * by whoever built the surfaces — the file is its own answer key.
+ * (b) is not established. It is not FAILED either — it is UNMEASURED on the seven environments the clause reaches,
+ * and NOT APPLICABLE on the eighth. `3D_VFX_1000X.md` §11.4 settles that split: E8 THE FORGE carries no dataset
+ * and answers no question, so recording it as unmeasured "would imply outstanding work that does not exist", and
+ * E1's deferral was lifted when its flat table gained a front-to-back ordinal column. All seven are instrumented
+ * in `docs/3d/e9/task.html`, which states its own coverage (counterbalanced, matched question pairs, a clock that
+ * starts when the surface appears, refusing to report a time when accuracy differs) — and no operator has run it,
+ * because it cannot be run by whoever built the surfaces: the file is its own answer key.
+ *
+ * This paragraph read "UNMEASURED, on all nine environments" until it was checked against that record. Nine is the
+ * count of e0–e8 HARNESSES the E9 sweep loads, not of shipping environments: the app ships eight, E1–E8, and
+ * clause (b) reaches seven of them.
  *
  * So the table is what loads, the corridor is one click away, and the button says why in the reader's own words
  * rather than in a tooltip or a commit message.
