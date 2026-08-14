@@ -2,9 +2,11 @@
 
 > **What this is.** `3D_VFX_FINAL_PLAN.md` and every document it supersedes describe one delivery
 > target: the deployed web build. There is a second one — the installed Mac app — and no plan
-> document mentions it. This maps it. It is a **mapping exercise**: nothing here was changed, and
-> two of its most important questions are answered "not established", with the procedure that
-> would establish them.
+> document mentions it. This maps it. **As first written it was a pure mapping exercise** — nothing
+> changed, and its two most important questions were answered "not established", with the procedure
+> that would establish them. Both of those questions are now answered (§4.2.4, §1.1), the gate and the
+> record in §9 were added rather than merely described, and §10–§11 make the release runnable. What
+> remains open is listed in §6 and is genuinely open.
 >
 > **Written:** 2026-08-13, against `38c01b1`. Every claim below is either a file:line, a git
 > object, or a single read-only HTTP GET that is named as such.
@@ -21,6 +23,21 @@
 >
 > HEAD has moved past `38c01b1` several times while this was written, so every claim below is pinned to
 > its own git object or file, not to "the current tree".
+>
+> **Revised again: 2026-08-14, against `536b703`.** Three things changed, and the first is the one this
+> document existed to leave open:
+>
+> - **§4.2 is CLOSED and the answer is yes.** WKWebView gives WebGL2 a context, both float extensions
+>   and a readable renderer string — *measured*, not inferred, against the same
+>   `/System/Library/Frameworks/WebKit.framework` binary the installed app links. The measurement is a
+>   checked-in program, `scripts/webview-gl-probe.swift`, so it can be re-run per machine rather than
+>   believed. §4.2.4 carries the numbers and the two things it still does not establish.
+> - **§9.1's gate has now been watched failing**, in five separate ways, and `tauri build` has been
+>   watched aborting on it. §9.4 records exactly what was run and what came back. Before this pass the
+>   gate's central claim — *"it fails, it does not warn"* — rested on one stub test.
+> - **§10 is new: the release as one copy-pasteable sequence**, and §11 states the version the next
+>   release should carry without bumping anything. Step 7 of §3 (every operator clicks Install) was
+>   written down but the other eight steps were spread across a table, a README and two script headers.
 
 ---
 
@@ -47,11 +64,18 @@ asset table in `/Applications/LCXOS.app/Contents/MacOS/lcx-terminal` contains
 `createStage` → `canvas.getContext('webgl2')` in WKWebView, and `~/Library/Logs/LCXOS/shell.log`
 records 0.2.6 launching as recently as **2026-08-13T07:57:39Z**.
 
-**What is still unknown is the only thing that was ever unknown: what that call returned.** Nothing
+**What was unknown was the only thing that was ever unknown: what that call returned.** Nothing
 records it. `diagnostics_append` (`src-tauri/src/lib.rs:281`) has exactly one caller on the web side —
 `apps/web/src/lib/terminal.ts:157` — and no GL path calls it, so the absence of any WebGL line in
 that log is guaranteed by the absence of a logging call and is **not evidence about the WebView**.
-The flat charts refuse to SVG silently, so a reader cannot tell either. §4.2 carries the rest.
+The flat charts refuse to SVG silently, so a reader cannot tell either.
+
+**That is now answered by measurement rather than by the log that could never hold it.** The call
+returns a context: WebGL 2.0, GLSL ES 3.00, `Apple GPU`, with `EXT_color_buffer_float` and
+`OES_texture_float_linear` both present, on the same WebKit binary the installed app links. §4.2.4 is
+the measurement and §4.2.2's fleet-wide logging change is still the thing that would answer it for
+*every* desk rather than for the ones somebody probes. The rest of §4.2 is kept as written because it
+is the record of what was and was not knowable from the repo alone.
 
 The rest of the original paragraph stands: the web app carries at least ten WKWebView-specific notes
 about focus rings, `inert`, Escape handling and JS dialogs — the WebView is plainly on this team's
@@ -237,11 +261,15 @@ release.**
 
 Order matters; each step is from `apps/desktop/README.md:31-131` and `scripts/publish-release.mjs`.
 
+> **This table is the map. §10 is the runnable version** — every command copy-pasteable and checked
+> against the script it invokes, including the ordering trap in step 2 below, which this table records
+> only as a parenthesis.
+
 | # | Step | Command / place | Owner-only? |
 |---|---|---|---|
-| 0 | **Look at it in the real WebView first** | `npm run dev -w @lcx/desktop`, then §4.6 | **no** — and it is the only step that can still make the rest pointless |
+| 0 | **Look at it in the real WebView first** | `scripts/webview-gl-probe.swift` for the capability (§4.2.4), then `npm run dev -w @lcx/desktop` for the look (§4.6) | **no** — and it is the only step that can still make the rest pointless |
 | 1 | Version bump in **both** places | `tauri.conf.json:4` + `apps/web/package.json:3` (+ `LCXOS_VERSION`, `Launch.tsx:56`) | no |
-| 2 | Update `LCXOS_DMG_MB` to the real DMG size | `Launch.tsx:76` | no — but only measurable after step 4 |
+| 2 | Update `LCXOS_DMG_MB` to the real DMG size | `Launch.tsx:76` | no — but only measurable after step 4, **and it then needs a rebuild**: §10 step 4 |
 | 3 | Export the signing key path | `TAURI_SIGNING_PRIVATE_KEY=$HOME/.lcx-terminal/updater.key`, `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | **YES — the key** |
 | 4 | Build both bundle targets — **this now runs the gate** (§9.1) and fails if `ci-check` fails | `npm run build:dmg -w @lcx/desktop` | **YES — needs the key from 3** |
 | 5 | Dry run every guard — **this now also writes the build record** (§9.2) | `npm run release:dry -w @lcx/desktop` | no |
@@ -346,8 +374,9 @@ operator must click Install.** Until they do, they are on 0.2.6 and there is no 
 
 ## 4 · WOULD THE EIGHT RELIEFS WORK IN WKWEBVIEW?
 
-**Honest headline: unknown, and knowable in about ten minutes.** What follows separates what the
-repo establishes from what it does not.
+**Honest headline: the container supports them — measured (§4.2.4) — and whether they *look* right
+there is still unobserved.** What follows separates what the repo establishes from what it does not,
+and §4.2 is the part that moved.
 
 ### 4.1 · The eight, as they stand
 
@@ -372,10 +401,17 @@ builds its own context, a 1024 shadow map, AO and DoF (`ForgeBackdrop.tsx:100` o
 one that is not the sole subject of a §7 toggle decision.** If exactly one thing gets verified in
 the WebView, it is this one.
 
-### 4.2 · Does WKWebView support WebGL2? — STILL OPEN, and here is exactly what closes it
+### 4.2 · Does WKWebView support WebGL2? — **ANSWERED: yes, and measured**
 
-**The verdict has not changed and I am not upgrading it. What changed is that the question is now
-posed against established facts instead of guesses, and one of those facts moves it.**
+**The answer is in §4.2.4 and it is a measurement, not an upgrade of a guess:
+`getContext('webgl2')` returns a context in Apple's system WKWebView, both float extensions are
+present, `WEBGL_debug_renderer_info` is readable, a `#version 300 es` program compiles and links, and
+the drawn pixel reads back. The RGBA16F framebuffer the HDR path allocates is `FRAMEBUFFER_COMPLETE`.**
+
+§4.2.0 through §4.2.3 are **kept exactly as they were written**, because they are the record of what
+the repo could and could not establish on its own, and because §4.2.2 — the one-call change that
+answers this for the whole fleet instead of for one machine — is still not done and is still the
+right thing to do. Read them as the road to the answer, not as the answer.
 
 #### 4.2.0 · What the second pass established
 
@@ -423,6 +459,12 @@ file operators are already told to hand over (`lib.rs:55`) — and it also close
 Until something like it exists, "does WebGL2 work on the fleet?" is unanswerable by construction, and
 §4.6 answers it for one machine at a time.
 
+> **Still true, and still worth doing — read it against §4.2.4.** The measurement closed the question
+> for one WebKit; it did not build the mechanism that answers it for a desk nobody visits, and this
+> paragraph is that mechanism. What has changed is only the cheap per-machine route: not §4.6's
+> inspector, but `scripts/webview-gl-probe.swift`, which needs no dev server and works against a
+> release build.
+
 #### 4.2.3 · The original evidence, unchanged
 
 There is still no evidence either way *about the outcome* in the repo, and I will not manufacture it:
@@ -458,6 +500,68 @@ it would not settle this even if it were installed: Playwright's WebKit is Playw
 Apple's system framework, and it is the system framework that the shipped app binds
 (`objc2-web-kit`). Naming it here so nobody spends an afternoon producing a number about the wrong
 engine.
+
+#### 4.2.4 · THE MEASUREMENT THAT CLOSED IT
+
+§4.2.3 says the only settling routes are `tauri dev` by eye or a fleet-wide log line. **That was
+wrong by omission, and the thing it missed is that WKWebView is a public class anyone can
+instantiate.** The shipped app's WebView is not special: it is `WKWebView` from the operator's own
+`WebKit.framework`. So the capability question can be asked directly, by a 200-line program, without
+Tauri, without a build, without the key, and without a release.
+
+That program is now checked in at **`apps/desktop/scripts/webview-gl-probe.swift`**, so this is
+re-runnable per machine rather than a number in prose:
+
+```bash
+swiftc -O -o /tmp/webview-gl-probe apps/desktop/scripts/webview-gl-probe.swift \
+  -framework Cocoa -framework WebKit && /tmp/webview-gl-probe
+```
+
+**Result on this desk — macOS 27.0 (`26A5378j`), WebKit 22625.1.22.11.4, run three times identically:**
+
+```json
+{"ok":true,"webgl2":true,"version":"WebGL 2.0","glsl":"WebGL GLSL ES 3.00",
+ "vendor":"WebKit","renderer":"WebKit WebGL","debug_renderer_info":true,
+ "unmasked_renderer":"Apple GPU","unmasked_vendor":"Apple Inc.",
+ "EXT_color_buffer_float":true,"OES_texture_float_linear":true,"EXT_float_blend":true,
+ "EXT_texture_filter_anisotropic":true,"KHR_parallel_shader_compile":true,
+ "MAX_TEXTURE_SIZE":16384,"MAX_SAMPLES":4,"MAX_3D_TEXTURE_SIZE":2048,"extension_count":36,
+ "vs_compiled":true,"fs_compiled":true,"linked":true,
+ "pixel":[0,255,0,255],"drew_green":true,"rgba16f_framebuffer_complete":true,"gl_error":0}
+```
+
+**Why this is a statement about the shipping container and not about a lookalike.** Three checks, each
+run rather than assumed:
+
+| | |
+|---|---|
+| **Same engine binary** | `otool -L` on the probe and on `/Applications/LCXOS.app/Contents/MacOS/lcx-terminal` both print `/System/Library/Frameworks/WebKit.framework/Versions/A/WebKit`, **current version 625.1.22** — the same file, the same version. Not Playwright's WebKit (§4.2.3's named trap), not a bundled engine. |
+| **Same configuration** | The probe uses a stock `WKWebViewConfiguration()`. wry 0.55.1 sets six things on the config and preferences — `allowsPictureInPictureMediaPlayback`, `fullScreenEnabled`, `tabFocusesLinks`, `developerExtrasEnabled`, `drawsBackground`, `allowsInlineMediaPlayback` — and **grepping `~/.cargo/registry/src/*/wry-0.55.1/src/wkwebview/mod.rs` finds no WebGL-related key at all.** §4.2.0 already established that `src-tauri` adds nothing. So there is no repo-side or wry-side switch that could make the app's answer differ. |
+| **A context is not a frame** | Capability queries can all pass on a stack that then fails to compile GLSL ES 3.00 or never reaches the GPU process. The probe compiles a real `#version 300 es` pair, links, draws one point and `readPixels` it back: `[0,255,0,255]`. The GPU path works, not just the constructor. |
+
+**The probe was falsified before its result was believed**, because a probe that can only print `true`
+is not evidence:
+
+| Induced fault | Reported |
+|---|---|
+| `getContext('webgl2')` → `getContext('webgl9')` (a context name that cannot exist) | `{"ok":true,"webgl2":false}` — a refusal is reported as a refusal, cleanly, with no throw and no hang |
+| fragment shader emits red instead of green | `pixel=[255,0,0,255]`, `drew_green=false` — the draw assertion is live, not decorative |
+
+**What this does NOT establish, and the second row is the one that matters:**
+
+1. **That the eight reliefs look right.** The probe compiles two lines of GLSL, not `lit.ts`. Shadow
+   bias, tone mapping, the anisotropic look and frame time are all untouched. **§4.6 still owns that
+   question and is still a step worth taking before a release** — its role has changed from *"is there
+   a context"* to *"does the object render correctly"*, which is the harder half and the one an
+   inspector query was never going to answer.
+2. **The fleet.** This is one WebKit — 22625, on macOS 27. `tauri.conf.json:51` sets a macOS **11**
+   floor, and the engine is the operator's, not shipped with the app. As background and explicitly not
+   as measurement: WebGL2 has been on by default in WebKit since Safari 15, so a Big Sur desk that
+   never updated Safari past 14 is the one plausible shape of a `false` here. **That is exactly the
+   population §4.2.2's one `logDiagnostic` call would cover**, and this measurement does not remove the
+   reason to make it — it removes the reason to *fear* it. Run the probe on the machine in question,
+   or land that call.
+3. **Frame time.** Unmeasured in WKWebView at any tier, on any machine. §6.4 stands unchanged.
 
 ### 4.3 · If WebGL2 is absent, does the refusal path hold? — YES, and it is traceable
 
@@ -503,12 +607,20 @@ Three failure modes that do not refuse, ranked by how invisible they are.
    reliefs reports it.** This is the one I would fix regardless of what the WebView turns out to
    support, because "the front door looks subtly worse on some machines and nothing says so" is
    precisely the class of defect this programme spends its time deleting.
+   **Measured on this desk (§4.2.4): `EXT_color_buffer_float` is PRESENT, and the RGBA16F
+   framebuffer `target3d.ts` allocates comes back `FRAMEBUFFER_COMPLETE`.** So the front door renders
+   in HDR here. That narrows the risk to machines nobody has probed and **does not close it** — the
+   defect was never "it will be 8-bit", it was "if it is 8-bit, nothing says so", and that is still
+   true on every desk. The fix is unchanged and still worth making.
 2. **`OES_texture_float_linear` missing → E7 refuses cleanly.** `env/volume.ts:325-327` returns
    `MISSING_EXTENSION` with a reason naming trilinear sampling of the density grid, because without
    it a float `sampler3D` falls back to `NEAREST` and the field renders as voxel blocks *that look
    like a deliberate aesthetic*. Correct handling, and the only one of the two float extensions that
    gets it. (`env/particles.ts:373-375` does the same for `EXT_color_buffer_float`, but no relief
    uses the particle path — it lives in the `docs/3d` harnesses.)
+   **Measured (§4.2.4): `OES_texture_float_linear` is PRESENT, so E7 does not refuse on this WebKit.**
+   Its `R32F` `TEXTURE_3D` (`volume.ts:399`) also fits: `MAX_3D_TEXTURE_SIZE` is 2048 and the grid is
+   built from `nx/ny/nz` floored at 2 (`:379-381`), orders of magnitude below the cap.
 3. **The quality ladder fails safe upward, which on an unknown WebView is the wrong direction.**
    `useQualityTier.ts:123-135` — `isSoftwareRasteriser` returns **true** when
    `WEBGL_debug_renderer_info` is unreadable, and the file's header explains the asymmetry: an
@@ -519,6 +631,15 @@ Three failure modes that do not refuse, ranked by how invisible they are.
    uncommitted when §4.4 was written (it is not in `38c01b1`) but it landed in `ff3d007`, and
    `isSoftwareRasteriser` is still at `:123`. So it *is* in the current tree and would be in the next
    release — it is still in no *published* release, since 0.2.6 has no `useQualityTier` chunk (§1.1).
+   **And the premise it worried about does not hold here (§4.2.4): `WEBGL_debug_renderer_info` IS
+   readable in WKWebView and returns `Apple GPU` / `Apple Inc.`** `isSoftwareRasteriser`
+   (`useQualityTier.ts:123-135`) tests `/swiftshader|llvmpipe|software/i`, which `Apple GPU` does not
+   match, so it returns **false** — the machine is characterised as hardware on evidence rather than
+   defaulted to `full` on an unreadable string. Worth knowing anyway: `Apple GPU` is far coarser than
+   Chrome's `ANGLE (Apple, Apple M1, …)`, so **the WebView cannot tell an M1 from an M4**. Nothing in
+   that file matches on a model — the tier is picked from a measured frame, not from the string — so
+   this costs nothing today, and would cost a great deal to anything that later tried to shortcut the
+   measurement by reading the model out of the renderer name.
 
 ### 4.5 · Context cap, and browser APIs
 
@@ -564,7 +685,14 @@ packaging — and if a chunk did fail to load, `ForgeBackdrop`'s dynamic `import
 `.catch` that sets a reason and leaves the plate (`:67-68`), and each relief's `lazy()` sits inside a
 `Suspense`.
 
-### 4.6 · How to actually answer §4.2 — no release required
+### 4.6 · Seeing them render — no release required
+
+> **Retitled, because §4.2 is answered.** This section was *"how to actually answer §4.2"*, and
+> §4.2.4 answered the capability half in 25 seconds without any of the machinery below. What is left
+> is the harder half and the reason this step still belongs in front of a release: **a context is not
+> a picture.** Step 2's inspector queries are now redundant (run `scripts/webview-gl-probe.swift`
+> instead — it needs no dev server and works against a release build too). **Steps 1 and 3 are not**,
+> and they are the ones that were always the point.
 
 The dev path already runs the real WebView against a live web build:
 
@@ -585,18 +713,20 @@ rebuilding. The dev window is where the inspector exists.
 
 In that window:
 
-1. The sign-in screen is E8. Does the machined disc appear, or only the gradient plate? That single
-   look answers "is there a WebGL2 context in the shipping container".
-2. In the inspector: `document.createElement('canvas').getContext('webgl2')` — null or not; then
-   `gl.getExtension('EXT_color_buffer_float')` and `gl.getExtension('OES_texture_float_linear')`,
-   which decide §4.4.1 and §4.4.2; then `gl.getParameter(gl.getExtension('WEBGL_debug_renderer_info')?.UNMASKED_RENDERER_WEBGL)`,
-   which decides whether the quality ladder can characterise this machine at all.
+1. The sign-in screen is E8. **Does the machined disc appear, and does it look like the approved
+   look?** The key-light arc, the shadow, the tone map. A context is guaranteed (§4.2.4); a *correct
+   picture* is not, and this is the only place that gets checked.
+2. ~~In the inspector: `getContext('webgl2')`, then the two float extensions, then
+   `WEBGL_debug_renderer_info`.~~ **Superseded by `scripts/webview-gl-probe.swift`**, which asks all
+   of it in 25 seconds, needs no dev server, prints JSON you can paste, and — unlike the inspector —
+   works against a release build, where Tauri's `devtools` feature is absent (§4.2.0).
 3. Then open the seven toggles, one route at a time, and look.
 
-That is a ten-minute pass that converts this entire section from "not established" to a set of
-facts, and it can be done by anyone with the repo — it is **not** an owner-only step. It should
-happen **before** any release is cut, because the alternative is discovering it on an operator's
-machine, on the sign-in screen, in front of a Gatekeeper dialog (§5).
+That is a ten-minute pass, and after §4.2.4 it is aimed at the harder question: not *"is the
+capability there"* but *"is the picture right, in a GL implementation nothing in this programme has
+ever measured a frame on"*. It can be done by anyone with the repo — it is **not** an owner-only
+step. It should happen **before** any release is cut, because the alternative is discovering it on an
+operator's machine, on the sign-in screen, in front of a Gatekeeper dialog (§5).
 
 ---
 
@@ -649,29 +779,49 @@ questions:
 Stated plainly, because an honest gap is worth more than a confident guess about a WebView I cannot
 run.
 
-1. **Whether the shipping WKWebView provides a WebGL2 context.** STILL OPEN, and §4.2.0 narrowed it
-   without closing it. Established: the engine is the operator's *system* WKWebView (`Cargo.lock`
-   `wry 0.55.1` + `objc2-web-kit 0.3.2`); **nothing in this repo enables or disables WebGL** — no
-   `WebviewWindowBuilder`, no `additional_browser_args`, features are `["macos-private-api",
-   "tray-icon"]` only — so the answer is purely a property of the operator's macOS; the floor is
-   macOS 11 (`tauri.conf.json:51`); this desk runs macOS 27.0 / Safari 27.0 / WebKit 22625; and the
-   `@lcx/gl` code path **already executes there** and has since before 0.2.6 (§0). Not established:
-   what `getContext('webgl2')` returned, because `stage.ts` returns `NO_WEBGL2` as a value and no GL
-   path calls `diagnostics_append`, so no log anywhere holds the answer (§4.2.1). Background knowledge
-   says a context should be available on macOS 11+ with a current WebKit; **I did not run it and this
-   environment cannot run WKWebView.** Two things settle it: §4.6 for one machine (and note per §4.2.0
-   that only a `tauri dev` build has an inspector — the release build omits Tauri's `devtools`
-   feature), or the one-call change in §4.2.2 for the whole fleet.
-2. **Whether `EXT_color_buffer_float` and `OES_texture_float_linear` are present there.** These
-   decide, respectively, whether the front door renders in HDR or silently in 8-bit, and whether E7
-   works at all. Both are a one-line inspector query away (§4.6).
+1. ~~**Whether the shipping WKWebView provides a WebGL2 context.**~~ **CLOSED — see §4.2.4.** It
+   does: WebGL 2.0 / GLSL ES 3.00 / `Apple GPU`, a `#version 300 es` program compiles, links, draws
+   and reads back, measured against the same `WebKit.framework` binary (625.1.22) the installed app
+   links, with a stock configuration matching wry's. **The residual is scope, not doubt:** one
+   WebKit (22625) against a macOS 11 floor. §4.2.2's one `logDiagnostic` call is still the only thing
+   that answers it for desks nobody probes, and `scripts/webview-gl-probe.swift` answers it for any
+   desk in two minutes. The paragraph below is the state *before* that measurement, kept because it
+   is the honest record of what the repo alone could support:
+
+   > Established: the engine is the operator's *system* WKWebView (`Cargo.lock` `wry 0.55.1` +
+   > `objc2-web-kit 0.3.2`); **nothing in this repo enables or disables WebGL** — no
+   > `WebviewWindowBuilder`, no `additional_browser_args`, features are `["macos-private-api",
+   > "tray-icon"]` only — so the answer is purely a property of the operator's macOS; the floor is
+   > macOS 11 (`tauri.conf.json:51`); this desk runs macOS 27.0 / Safari 27.0 / WebKit 22625; and the
+   > `@lcx/gl` code path **already executes there** and has since before 0.2.6 (§0). Not established:
+   > what `getContext('webgl2')` returned, because `stage.ts` returns `NO_WEBGL2` as a value and no GL
+   > path calls `diagnostics_append`, so no log anywhere holds the answer (§4.2.1). Background
+   > knowledge says a context should be available on macOS 11+ with a current WebKit; **I did not run
+   > it and this environment cannot run WKWebView.** Two things settle it: §4.6 for one machine (and
+   > note per §4.2.0 that only a `tauri dev` build has an inspector — the release build omits Tauri's
+   > `devtools` feature), or the one-call change in §4.2.2 for the whole fleet.
+
+   **The sentence that was wrong is the last one.** "This environment cannot run WKWebView" was
+   assumed, not tested. `WKWebView` is a public class, `swiftc` is on the machine, and the framework
+   is the same one the app links — so the environment could run it all along, and a 25-second program
+   answered in one go what two documents had deferred to a future session. **The lesson is not about
+   WebGL:** a capability was declared unavailable without the one command that would have checked.
+2. ~~**Whether `EXT_color_buffer_float` and `OES_texture_float_linear` are present there.**~~
+   **CLOSED — see §4.2.4. Both present**, plus `EXT_float_blend`,
+   `EXT_texture_filter_anisotropic`, `KHR_parallel_shader_compile` and a readable
+   `WEBGL_debug_renderer_info` (36 extensions total). So on this WebKit the front door renders in HDR
+   and E7 does not refuse. Same scope caveat as item 1: one WebKit, not the fleet — and §4.4.1's real
+   defect (**nothing reports an 8-bit fallback to anyone**) is untouched by a machine where the
+   fallback does not happen.
 3. **WKWebView's per-process WebGL context limit.** Not in the repo. The repo's worst case is 3, and
    loss is handled by 7 of 8 components, so I expect degradation rather than breakage — but "expect"
    is the right verb and I am not upgrading it.
 4. **Frame time in WKWebView, at any tier, on any machine.** Every number in this programme is
    Chrome/ANGLE-Metal on an M1 (and `3D_VFX_FINAL_PLAN.md` §6.6 already notes M2/M3 have never been
-   measured either). A different GL implementation is a different measurement, and the quality
-   ladder currently resolves to `full` when it cannot characterise a machine (§4.4.3).
+   measured either). A different GL implementation is a different measurement. **The one part of this
+   that has moved: the ladder is no longer flying blind here** — `WEBGL_debug_renderer_info` is
+   readable in WKWebView and returns `Apple GPU`, so `isSoftwareRasteriser` answers on evidence rather
+   than falling back to "assume fast" (§4.4.3). It still has no frame time from that engine.
 5. **What the compositor shows for a lost context under `ForgeBackdrop`'s opaque canvas.** The
    absence of a `webglcontextlost` handler is certain; the visual outcome is not.
 6. ~~**The exact contents of the shipped 0.2.6 web bundle.**~~ **CLOSED — see §1.1.** The chunk
@@ -693,7 +843,7 @@ run.
 
 ## 7 · WHAT THIS ADDS TO THE PLAN'S OPEN QUESTIONS
 
-Not new work items — the plan is a closing plan and this does not reopen it. Four things it should
+Not new work items — the plan is a closing plan and this does not reopen it. Five things it should
 know:
 
 1. **§4.1's §7(b) trial measures the deployed web build.** Whatever verdict it returns describes
@@ -708,7 +858,14 @@ know:
    the one of the three whose blast radius is the front door.
 4. **The ten-minute WebView pass (§4.6) should gate the first release that carries any relief.**
    Cutting a release is the expensive, owner-only, irreversible-tag operation; looking at
-   `npm run dev -w @lcx/desktop` first costs nothing and is not owner-only.
+   `npm run dev -w @lcx/desktop` first costs nothing and is not owner-only. It is now step 0b of §10,
+   with the *capability* half of it split out as step 0a — a 25-second program (§4.2.4) rather than a
+   thing to remember to type into an inspector.
+5. **The programme's WebKit risk register is one item shorter and the remaining items are sharper.**
+   WebGL2, both float extensions, anisotropic filtering and a readable renderer string are all
+   present in the shipping container (§4.2.4). What is left is frame time in that engine, the
+   per-process context cap, and `ForgeBackdrop`'s missing `webglcontextlost` handler — three specific
+   things, rather than one large "does any of this work on a Mac app".
 
 ---
 
@@ -720,12 +877,13 @@ bundles a copy of the web build rather than fetching it. Getting them onto a des
 versions, build with the **minisign private key that only the owner has**, publish with `gh` to the
 separate releases repo, and then have **each operator click "Install and relaunch"** — the app never
 installs an update unattended. If the reliefs get there, the refusal path is sound: no WebGL2 means
-the flat views and a usable sign-in screen, traceably, and that is tested. What nobody has checked
-is whether they *render* — the shipping container is WKWebView, the e2e suite is Chromium-only, every
-frame time in the programme is Chrome/ANGLE, and the two float extensions the HDR path depends on
-degrade **silently** to 8-bit with nothing reported to the reader. That is answerable in ten minutes
-with `npm run dev -w @lcx/desktop`, which needs no key and no release, and it should happen before
-the release rather than after. And whatever it says, the first thing a new installer sees is still
+the flat views and a usable sign-in screen, traceably, and that is tested — **and it will not be
+needed on a current Mac, because WKWebView does give WebGL2 a context**: measured, on the same
+`WebKit.framework` the installed app links, with both float extensions present and an RGBA16F target
+complete (§4.2.4, re-runnable via `scripts/webview-gl-probe.swift`). What nobody has checked is
+whether the eight *look* right there — the e2e suite is Chromium-only and every frame time in the
+programme is Chrome/ANGLE — which is ten minutes with `npm run dev -w @lcx/desktop`, needs no key and
+no release, and should happen before the release rather than after. And whatever it says, the first thing a new installer sees is still
 an unsigned-binary warning, because notarization is a standing owner decision that has been
 deferred — which means E8's five-second key-light arc is currently the *second* impression, after a
 malware dialog. Two things about that release are no longer true as of §9: **it cannot be cut from a
@@ -764,7 +922,8 @@ Four things worth knowing:
   decision, not a discovery.
 - **It fails, it does not warn.** A non-zero `ci-check` exits with *that* code (verified: a stub
   exiting 7 makes the gate exit 7, not 1), which aborts `tauri build` before `cargo build` and before
-  the bundler — so no `.app`, no `.dmg` and no `.sig` exist to be published.
+  the bundler — so no `.app`, no `.dmg` and no `.sig` exist to be published. **Both halves of that
+  sentence have now been watched happening rather than reasoned about — §9.4.**
 - **`VITE_API_URL` moved out of `tauri.conf.json` and into the script.** The config no longer shows the
   origin, which is a small legibility cost paid for a real reason: it now sits next to the account of
   why it exists, and `publish-release.mjs:152-163` still asserts the *result* in the emitted JS, so a
@@ -831,3 +990,298 @@ Attributes are now parsed order-independently.
   outside this app that would materially help is written out in full in §4.2.2 — a single
   `logDiagnostic` call on the first `NO_WEBGL2` refusal and on `stage.hdr === false` — and it is
   reported there rather than made, because those files belong to another track this session.
+
+### 9.4 · The gate, watched failing — because a gate nobody has seen fail is a gate nobody has tested
+
+§9.1 claimed three failure paths were "demonstrated against the real script". They were re-run from
+scratch, all five paths this time, plus the link that actually matters and that no script test can
+cover: **whether `tauri build` stops.**
+
+**The script's own paths.** Run against a throwaway repo root (a `package.json`, a copy of
+`build-gate.mjs` at the same relative depth, an `apps/web/` to write into), so the real tree was never
+touched. The stub `ci-check` writes a sentinel file recording its cwd and environment, which is what
+makes "it ran" and "it ran *there*" separable claims:
+
+| # | Induced state | Observed |
+|---|---|---|
+| A | root `package.json` has no `ci-check` script | **exit 1**, message names the release artefact and points at `GATE_SCRIPT`, not at a missing npm script |
+| B | `ci-check` exits 7 | **exit 7** — *the code is propagated, not flattened to 1.* Sentinel confirms it ran, `cwd` = the repo root, `VITE_API_URL=https://lcx-sales-api.onrender.com`, and `npm_config_workspace=undefined` (the hazard the script's §132-144 comment reproduced on a minimal workspace — still absent under this npm) |
+| C | `ci-check` exits 0 but `apps/web/dist/index.html` is absent | **exit 1** — the stale/empty-bundle guard, the one that catches the root `build` composition drifting away from `npm run build -w @lcx/web` |
+| D | `ci-check` exits 0, `dist/index.html` present with an entry script | **exit 0**, prints `gated bundle /assets/index-<hash>.js` |
+| E | `--explain` | **exit 0**, prints `GATE NOT RUN`, **and the sentinel file was not created** — so it is a diagnostic, not a bypass, by observation rather than by intent |
+
+**The link that matters: does a failing hook actually stop the build?** Run against the real app, with
+the hook replaced *for that one invocation only* via the documented config merge — nothing in the repo
+was edited:
+
+```bash
+cd apps/desktop
+npx tauri build --no-bundle -c '{"build":{"beforeBuildCommand":"exit 7"}}'
+```
+
+```
+Running beforeBuildCommand `exit 7`
+beforeBuildCommand `exit 7` failed with exit code 7
+       Error beforeBuildCommand `exit 7` failed with exit code 7
+```
+
+`tauri build` **exited 1**, and — the part worth checking rather than assuming — the output contains
+**zero** lines matching `Compiling`, `Finished` or `Bundling`, and no new artefact appeared under
+`src-tauri/target/release/bundle` (its newest contents are still 0.2.6's, dated 2026-08-11 14:26).
+So the abort is genuinely *before* `cargo build --release` and before the bundler, which is the
+property §9.1 asserted.
+
+Also confirmed in the same pass, against CLI **2.11.4**: `tauri build --help` lists `--no-bundle`,
+`-b/--bundles`, `-c/--config`, `-d/--debug`, `-t/--target` and eleven others, and **none of them skips
+`beforeBuildCommand`** — the help text says outright that `tauri build` *"also runs your
+`build.beforeBuildCommand`"*. `-c` remains the one deliberate bypass, and it is the mechanism used
+above: powerful enough to disable the gate, which is exactly why it is named in §9.1 as a decision
+rather than left as a discovery.
+
+**What this still does not prove.** That `ci-check` itself passes on the current tree — it was not run
+end to end here (it is the long one: doctrine-lint, three type-check passes, four test suites, four
+builds, two budgets), and it is the parent gate's job. The five rows above prove the gate *transmits*
+that verdict. Whether the verdict is green on any given day is §10 step 4's problem, and it will be
+loudly obvious.
+
+---
+
+## 10 · THE RELEASE, AS ONE SEQUENCE
+
+> **Why this section exists when §3 already has a table.** §3 is a *map* of what a release requires —
+> what is owner-only and why. It is not runnable: two of its cells say "see §4.6" and "see §3.3", the
+> commands live in three other places (this document, `README.md:95-131`, and two script headers), and
+> the ordering constraint that actually bites (step 4 below) is recorded in §3 as a parenthesis. This
+> is the runnable version. **Every command was checked against the script it invokes, not described
+> from memory**, and the two that need a credential are marked in the only way that matters — they
+> will not work without it.
+>
+> Run from the **repo root** unless a line says otherwise. Paths are repo-relative.
+
+### Step 0 · Preflight — no key, no tag, nothing irreversible
+
+```bash
+# 0a · does the WebView on THIS machine still give WebGL2 a context?  (~25 s)
+swiftc -O -o /tmp/webview-gl-probe apps/desktop/scripts/webview-gl-probe.swift \
+  -framework Cocoa -framework WebKit && /tmp/webview-gl-probe
+
+# 0b · do the eight reliefs LOOK right in WKWebView?  (§4.6 — the half 0a cannot answer)
+npm run dev -w @lcx/desktop        # ⌘Q when done
+
+# 0c · the one CI job the build gate deliberately does NOT run  (§9.1)
+npm run e2e -w @lcx/web            # needs `npx playwright install chromium` once per machine
+```
+
+`0a` should print `"webgl2":true` and `"drew_green":true`. If it prints `"webgl2":false`, **stop and
+read §4.3 before deciding anything**: the app will not break, it will show the flat views and a
+gradient sign-in screen, but the entire content of this release becomes invisible on that machine and
+the release is worth less than it looks.
+
+`0c` is skipped by the gate on purpose (§9.1: `-chromium-darwin` baselines would fail a release build
+for a font difference), which is exactly why it belongs here instead.
+
+### Step 1 · Version — five files, and only two of them are enforced
+
+§11 recommends the number. **This document does not set it.** When you do:
+
+| File | Line | Enforced by |
+|---|---|---|
+| `apps/desktop/src-tauri/tauri.conf.json` | `4` | the source of truth: stamps `CFBundleShortVersionString`, names the tag, fills `latest.json` |
+| `apps/web/package.json` | `3` | `publish-release.mjs:80-83` **refuses to publish** on a mismatch — this is the version an operator can *see*, via `__APP_VERSION__` |
+| `apps/web/src/pages/Launch.tsx` (`LCXOS_VERSION`) | `56` | `launch.test.tsx:37-43` reads `tauri.conf.json` and asserts equality — so this one fails **step 3's gate**, before anything is signed |
+| `apps/desktop/package.json` | `3` | **nothing.** Sync by hand. |
+| `apps/desktop/src-tauri/Cargo.toml` | `3` | **nothing** — `tauri.conf.json`'s `version` is what stamps the bundle, so this one is hygiene, not function. `cargo` rewrites `Cargo.lock` itself on the next build. |
+
+The two unenforced rows are the ones to get wrong, and neither is load-bearing — which is precisely
+why nobody would notice them drifting for six versions.
+
+### Step 2 · The signing key — **OWNER ONLY, and the only step no agent can do**
+
+```bash
+export TAURI_SIGNING_PRIVATE_KEY="$HOME/.lcx-terminal/updater.key"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+```
+
+Exactly as `README.md:39-40`. `TAURI_SIGNING_PRIVATE_KEY` is a **path**, not key material — the file
+at that path is the secret and it is deliberately outside the repo (§3.1). This key has no passphrase,
+hence the empty second variable; that is a fact about this key, not a recommendation. **Must be the
+same shell as step 3** — signing happens inside `tauri build`, not in the publisher
+(`publish-release.mjs:36-38`).
+
+Skip this and step 3 still produces a DMG that installs. What it will not produce is a `.sig`, and
+`publish-release.mjs:107-109` then refuses with that diagnosis — the correct failure, hit early.
+
+### Step 3 · Build — this is where the gate runs
+
+```bash
+npm run build:dmg -w @lcx/desktop
+```
+
+`tauri build --bundles app,dmg`. The chain is §2's: `beforeBuildCommand` → `build-gate.mjs` →
+`npm run ci-check` at the root (doctrine-lint → type-check → test → build → gl-budget → perf-budget,
+with `VITE_API_URL` pinned to production) → `cargo build --release` → bundle. Long: the full test
+matrix plus a release Rust build.
+
+**If the gate fails, nothing is packaged** — no `.app`, no `.dmg`, no `.sig` (§9.4 watched this).
+Fix the failure; do not reach for `-c` to route around it.
+
+### Step 4 · The DMG size — the one field that cannot be set before the build
+
+```bash
+node -e "const fs=require('fs'),d='apps/desktop/src-tauri/target/release/bundle/dmg';\
+for(const f of fs.readdirSync(d))if(f.endsWith('.dmg'))\
+console.log(f, (fs.statSync(d+'/'+f).size/1e6).toFixed(1)+' MB')"
+```
+
+That arithmetic is `publish-release.mjs:214`'s, character for character — bytes ÷ 1,000,000, one
+decimal — so it prints the exact string the publisher will compare against `LCXOS_DMG_MB`
+(`Launch.tsx:76`).
+
+**If it differs, update `Launch.tsx:76` and then RUN STEP 3 AGAIN.** This is the ordering trap, and
+it is a real one: the publisher compares the *source constant* against the DMG on disk, so editing
+`Launch.tsx` after the build makes the guard pass while the bundle you are about to ship still renders
+the old figure. Rebuilding costs another gate run and shifts the DMG by a few KB — which the rounding
+to 0.1 MB absorbs. If the number already matches, skip both.
+
+For scale: 0.2.6's DMG is 4,070,367 B → `4.1 MB`, and `LCXOS_DMG_MB` is `4.1`, so 0.2.6 needed no
+edit. **The next release will**: it adds the eight relief surfaces and six shared GL chunks (§1.1).
+
+### Step 5 · Dry run — every guard, plus the build record
+
+```bash
+npm run release:dry -w @lcx/desktop
+```
+
+Runs all eight refusal paths of §3.2 and writes `LCXOS_<version>_build-record.json` **without
+publishing anything**. Read three lines of its output before continuing:
+
+- `api origin … ← verified present in the built bundle` — the defect that shipped three times (§2.3).
+- `commit …` with `⚠ DIRTY TREE` if the tree is dirty. Not a refusal (§9.2), but it decides whether
+  the tag identifies these bytes or whether only the hashes do.
+- `gl chunks N carrying shader source (M renderer surfaces + …)`. **This is the line that answers
+  "does this release actually carry the 3-D layer?"** — 0.2.6's answer was 0 and nothing said so.
+  Expect roughly 15 / 8 (§9.2 measured 15 of which 8 surfaces on the working-tree build). If it prints
+  `← this release carries NO 3-D layer`, step 3 packaged the wrong `dist` and publishing is pointless.
+
+### Step 6 · Publish — **needs `gh` credentials for the releases repo**
+
+```bash
+gh auth status                      # must cover voyagernik123/lcx-terminal-releases
+npm run release -w @lcx/desktop
+```
+
+Creates the tag, uploads six assets (`latest.json`, the versioned tarball, its `.sig`, the build
+record, the versioned DMG and the fixed `LCXOS-macOS-arm64.dmg` alias), then verifies the asset names,
+an **anonymous** HTTP 200 on the public download button and on the updater endpoint, and finally that
+the endpoint serves *this* version — retrying for up to 120 s, because the CDN serves the previous
+release for a while and asking "does it respond" instead of "does it serve this version" produced both
+a false pass and a false failure on the 0.2.6 publish (`:492-525`).
+
+An existing tag is refused, not overwritten (`:421-430`). If you need to redo a published version, the
+answer is a new version number, not `--force`.
+
+### Step 7 · The public page — it is a *web* deploy, not part of the release
+
+`LCXOS_VERSION` and `LCXOS_DMG_MB` render on `/lcxos` from the **deployed site**, not from anything
+step 6 uploaded. Until the step-1 commit reaches the site, the download button hands out the new DMG
+under the old version number and the old size. Push it, then:
+
+```bash
+node scripts/verify-live.mjs https://lcx-sales-automation-engine.pages.dev --expect-gl-chunks 15
+# add --expect-changed-from <the fingerprint step 5 printed> to prove the deploy actually moved
+```
+
+**Pass the URL explicitly even though the script has a default, and this is not style.** Its argument
+parser is `args.find((a) => !a.startsWith('--'))` (`scripts/verify-live.mjs:30`), so the first
+non-flag token wins — and in `--expect-gl-chunks 15` that token is **`15`**. Run without a URL, it
+tries to fetch `15`. Measured, not reasoned:
+
+```
+$ node scripts/verify-live.mjs --expect-gl-chunks 15
+  INCONCLUSIVE: could not reach 15 (Failed to parse URL from 15). This says nothing about the deploy.
+```
+
+It fails safe — INCONCLUSIVE (exit 2), not a false pass — which is the whole point of that script
+having three exit codes rather than two. **Exit 2 is not a pass.** Reported rather than fixed:
+`scripts/verify-live.mjs` belongs to another track.
+
+### Step 8 · **Each operator clicks "Install and relaunch"** — and this is where releases die
+
+Publishing is not delivering (§3.3). The app **never** installs unattended, by a decision recorded at
+`apps/web/src/lib/terminal.ts:219-226`: the installer `remove_dir_all`s the running bundle, so an
+unattended install means an unexplained admin prompt seconds after launch and a desk relaunched
+mid-governed-write.
+
+So, per desk, tell them:
+
+- The toast appears **once per launch**, with an **"Install and relaunch"** button.
+- If they miss it, the menu item is **"Check for Updates…"** (`src-tauri/src/lib.rs:551`).
+- **A failed check says nothing at all** (`terminal.ts:227-241`) — it goes to
+  `~/Library/Logs/LCXOS/shell.log` only. A desk that has quietly stopped updating looks exactly like a
+  desk that is current. That file is the one to ask for when a desk seems stuck.
+
+Until an operator presses that button they are on 0.2.6, and on 0.2.6 there is no 3-D anything (§1.1).
+There is no telemetry (§6.7), so **nobody can tell you who has installed it** — if it matters, ask.
+
+### Step 9 · First-time installers only
+
+An unsigned download is quarantined (§5). Right-click → **Open** → **Open**, or:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/LCXOS.app"
+```
+
+Once per Mac. This is the standing owner decision not to spend $99 on notarization, and it means E8's
+five-second key-light arc is the *second* impression, after a malware dialog.
+
+### The whole thing, if the versions are already bumped and the size is unchanged
+
+```bash
+swiftc -O -o /tmp/webview-gl-probe apps/desktop/scripts/webview-gl-probe.swift -framework Cocoa -framework WebKit && /tmp/webview-gl-probe
+export TAURI_SIGNING_PRIVATE_KEY="$HOME/.lcx-terminal/updater.key"
+export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+npm run build:dmg   -w @lcx/desktop
+npm run release:dry -w @lcx/desktop
+npm run release     -w @lcx/desktop
+```
+
+Five commands, one of which needs the key and one of which needs `gh`. **It is still not one command,
+and it should not be**: step 4 cannot be known before step 3, and step 5 exists so that a human reads
+the GL chunk count before a tag becomes permanent.
+
+---
+
+## 11 · THE VERSION THE NEXT RELEASE SHOULD CARRY — stated, not made
+
+**Recommendation: `0.3.0`.** Nothing in this pass touched a version field, and nothing should have —
+the bump is the owner's, and it is step 1 of §10.
+
+**Why a minor bump rather than `0.2.7`.** The question is not how much work happened; it is what an
+operator receives. Between installed 0.2.6 and the current tree, read off the byte-level diff in §1.1
+rather than off the commit log:
+
+| | |
+|---|---|
+| **Eight new relief surfaces** | `DeckReliefGl`, `GlobeReliefGl`, `PipelineReliefGl`, `OntologyOrreryGl`, `SurfaceReliefGl`, `VaultReliefGl`, `StormReliefGl`, `ForgeBackdrop` — all absent from 0.2.6's asset table |
+| **Six new shared GL chunks** | `ao`, `dof`, `lines`, `lit`, `tonemap`, `volume` |
+| **Three more** | `project`, `stateNarrative`, `useQualityTier` |
+| **A changed front door** | E8 mounts **unconditionally** on the sign-in screen (`SelectOperator.tsx:150-151`). This is not an opt-in feature behind a toggle like the other seven: every operator's first screen changes appearance on install. |
+| **New capability surface, not a fix** | Nine environments now exist where 0.2.6 had none. `0.2.7` would describe this as a patch. |
+
+The last two rows are the argument. Seven reliefs are `useState(false)` and nothing persists them, so
+they are invisible until someone clicks — but **E8 is the front door and it is not optional**, which
+makes this the first release since 0.2.6 that changes what an operator sees before they have done
+anything. A patch number would say the opposite.
+
+`0.3.0` also leaves `0.2.x` meaning what it has meant: the pre-3-D shell, of which `0.2.0` → `0.2.6`
+are seven published releases sitting in `bundle/publish/`.
+
+**Not `1.0.0`**, and it is worth saying why so it is a decision rather than a default: notarization is
+not done (§5), so first install still shows a malware dialog; the WebView's *frame time* is unmeasured
+at any tier (§6.4); §7 of `3D_VFX_FINAL_PLAN.md` has open toggle-default decisions on the seven
+opt-in reliefs; and `ForgeBackdrop` has no `webglcontextlost` handler (§4.5). None of those blocks a
+`0.3.0`. All of them argue against a `1.0.0`.
+
+**What the owner has to do with this number:** the five files in §10 step 1. Two of them are enforced
+and will stop the build or the publish; three are not, and `apps/desktop/package.json` plus
+`Cargo.toml` will silently disagree forever if missed.

@@ -387,7 +387,48 @@ for (const n of [1, 4, 16, 60]) {
   const mixed = [realTarget(480, 160), realTarget(320, 320), realTarget(480, 160), realTarget(320, 320)];
   const two = run('D two sizes x4', () => { for (const t of mixed) r2.render(t, (f) => d2(r2.stage, f.width, f.height)); }, 10, r2.stage, scratchCtx);
   results.push(one, two);
-  notes.push(diff('D · 4 charts, one size vs two alternating sizes (target reallocation, 6 allocs vs 39)', two, one));
+  notes.push(diff('D · 4 charts, one size vs two alternating sizes (target reallocation)', two, one));
+}
+
+/* ── D2 · THE ALLOCATION COUNT, WHICH IS THE QUANTITY ARM D IS A CONSEQUENCE OF ───────
+ *
+ * Arm D times the thrash. It cannot say how many allocations caused it, and a timing that
+ * moves without a count to explain it is how a driver's scheduling gets published as a fix.
+ * This counts \`texImage2D\` on the real context through the real \`sharedRenderer\`, for the
+ * same twelve renders arm D times.
+ *
+ * A COUNT IS NOT A TIMING, and this is the one line in the file that a software rasteriser
+ * cannot corrupt: how many textures the renderer asks for is decided by JS before any driver
+ * sees it. So this arm is reportable from a \`--headless\` run, and the refusal above still
+ * applies to every millisecond around it.
+ *
+ * \`packages/gl/src/flat/sharedCost.test.ts\` asserts the same quantity against a FAKE context.
+ * The point of measuring it here as well is that the fake one can drift from the real one:
+ * this arm counts whatever the shipping primitives and pipeline also allocate, which no fake
+ * harness models.
+ */
+{
+  const proto = WebGL2RenderingContext.prototype;
+  const realTexImage2D = proto.texImage2D;
+  let allocs = 0;
+  proto.texImage2D = function (...a) { allocs += 1; return realTexImage2D.apply(this, a); };
+  const countAllocs = (targets) => {
+    const r = fresh(); const c = {}; const d = makeDraw(c);
+    allocs = 0;
+    for (let pass = 0; pass < 3; pass++) {
+      for (const t of targets) r.render(t, (f) => d(r.stage, f.width, f.height));
+    }
+    return allocs;
+  };
+  const oneSize = countAllocs([realTarget(480, 160), realTarget(480, 160), realTarget(480, 160), realTarget(480, 160)]);
+  const twoSizes = countAllocs([realTarget(480, 160), realTarget(320, 320), realTarget(480, 160), realTarget(320, 320)]);
+  proto.texImage2D = realTexImage2D;
+  notes.push({
+    label: 'D2', delta: twoSizes - oneSize, noise: 0, resolved: true,
+    text: 'D2 · texture allocations for those same twelve renders: ' + oneSize + ' at one size, '
+      + twoSizes + ' at two alternating sizes. A COUNT, not a timing — valid under a software '
+      + 'rasteriser as well.',
+  });
 }
 
 /* ══ E · THE CAUSE, MEASURED WITH \`shared.ts\` OUT OF THE WAY ══════════════════════════════

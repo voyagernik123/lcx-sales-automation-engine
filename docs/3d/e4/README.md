@@ -5,6 +5,14 @@ eleven entities, the same shells, the same strengths, every inclination set to *
 straight down — which is the node-link diagram this replaces. `no-shadow.png` and `no-ao.png` are the
 two passes that carry the depth reading.
 
+*Captures retaken 2026-08-14 against Layer 3 (`kd` on environment diffuse, split-sum DFG, multiscatter,
+and the map-scaled shadow bias). **Every crossing number in the table below is unchanged** — they are
+geometry, read from positions and radii, and no shading term enters them. What moved is brightness: the
+canvas lost **2.84%** of its mean relative luminance, the bodies about **8%** (the PARTNER sphere −8.01%,
+the SETTLEMENT strength tube −8.96%), and the reference plate **3.02%**. The one measured claim that had
+to be rewritten is the AO probe — see §10, where the pass's effect halved. Full tier, so the shadow bias
+scale is 1.0 and the shadow is unchanged by construction; checked rather than trusted below.*
+
 ## The number this is entitled to exist on
 
 A drawing in a plane has two axes and must spend both on layout, so once it also encodes relationship
@@ -167,16 +175,23 @@ twice, with and without, and compares it pixel for pixel:
 
 | | |
 |---|---|
-| largest change to any pixel | **21** of a possible 765 (three 8-bit channels) |
-| pixels changed by more than 6 | **3,765** — **0.44%** of the frame |
-| mean pixel value, with / without | 28.05 / 28.10 |
+| largest change to any pixel | **15** of a possible 765 (three 8-bit channels) |
+| pixels changed by more than 6 | **1,436** — **0.17%** of the frame |
+| mean pixel value, with / without | 27.35 / 27.38 |
+
+*This table read **21**, **3,765 — 0.44%** and **28.05 / 28.10** until 2026-08-14. Those were the correct
+figures for the shader that shipped before Layer 3, and they were re-measured on a control build to be
+sure of that before the row was changed. What halved them is `kd` on environment diffuse: **AO modulates
+the ambient term and nothing else**, so cutting the ambient double-count cuts the only quantity the pass
+has to act on. The conclusion below does not soften — it hardens. The 0.44% that was already "the layer is
+assigned, not earned" is now **0.17%**.*
 
 That is the pass at its shipping settings (`radius: 0.9, strength: 2.0`, up from 0.5/1.2 after this
 measurement). It is not broken: pushing the ambient gain to 1.8 with radius 1.2 and strength 3.0 takes
 the largest change to 52 over 2.0% of the frame. **The ceiling is structural.** AO modulates the
 *ambient* term only; the ambient here is a dark instrument sky at gain 0.52, and a system of separated
 spheres in open space has almost no concavities to occlude. **L2.7 does not earn its place in an
-orrery**, and `no-ao.png` is a control that shows a 0.44% difference — which is the honest version of
+orrery**, and `no-ao.png` is a control that shows a 0.17% difference — which is the honest version of
 what it shows. Raising the ambient until the pass mattered would be tuning the picture to justify a
 layer.
 
@@ -270,7 +285,8 @@ is applied where it belongs — the one element that is content on a surface.
   ones and picks from them, but a free camera would need a live count. **The flat layout is clean at all
   36** — it has no depth for a body to hide behind — so a merged silhouette is a cost the third axis
   *introduces*, and it is the one measured respect in which the flat version is safer.
-- **AO is on the frame and doing 0.44% of it.** Named above. The layer is assigned, not earned.
+- **AO is on the frame and doing 0.17% of it.** Named above — 0.44% until Layer 3's `kd` term removed the
+  ambient the pass modulates. The layer is assigned, not earned.
 - **`@lcx/gl` breaks when the shadow map and the AO texture are both absent.** Found here, not fixed
   here. Named above; `packages/gl/src/env/lit.ts`. **Re-verified at HEAD on 2026-08-13 and STILL NOT
   FIXED** — this is recorded because `38c01b1` landed four fixes in that exact file, and "the shader was
@@ -333,6 +349,22 @@ transfer to that tier. The wrong-texture binding does; only its cost changes.*
 
 The control exists to show what the shadows do for the **reading**, and on that it delivers: compare
 `no-shadow.png` and see that the bodies have no height.
+
+*The control also earns a second job as of 2026-08-14. `830d8e6` made the shadow bias scale by
+`baseline / actual`, and the load-bearing part of that design is the claim that at the full tier
+`actual == baseline` so the factor is exactly 1.0 and approved captures are unchanged **by construction**.
+E4 is one of the two 1536 environments, i.e. the case where scaling against a global 1024 would have been
+wrong, so it is the right place to check the claim rather than repeat it. Two ways, both done:
+`shadowMapSizeFor('full', 1536)` returns 1536 — `2 ** Math.round(Math.log2(1536))` is 2048 and the
+`Math.min(base, pot)` clamps it back — so `scale` is `1536/1536`, and the shader's
+`bias = max(0.0009, 0.0045*(1-NdotL)) * uShadowBiasScale` is a multiply by 1.0, which IEEE-754 leaves
+bit-identical. Empirically, `live.png` XOR `no-shadow.png` recovers the shadowed pixel set, and comparing
+that set between the pre-Layer-3 build and this one gives a symmetric difference of **872 px of 9,319 at a
+threshold of 8/255, and 1,878 of 6,544 at 32/255** — the set **shrinks** at the low threshold and **grows**
+at the high one. A bias change translates a shadow and moves every threshold the same way; a sign that
+flips with the threshold is a soft PCF edge being re-contrasted by the ambient change underneath it.
+So: the shadow did not move, and the reason the difference is not exactly zero is stated rather than
+rounded away.*
 
 ## Reproduce
 

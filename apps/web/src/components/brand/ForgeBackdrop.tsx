@@ -313,6 +313,14 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         gl.activeTexture(gl.TEXTURE0);
         gl.bindTexture(gl.TEXTURE_2D, resolved);
         stage.blit(P, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+        /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted.
+           This file was one of the two that never did it, so the app sweep could reach `/select`, watch this
+           surface draw, and still report "0 of 1 canvases" for the tier it drew at.
+           It is a DOM write and not a GL call, so it does not disturb the reason above at :104 that this
+           surface takes NO frame probe — nothing here is presented that was not going to be presented. The
+           write repeats on each of the arc's frames and is idempotent: `tier` is read once at :108 and, by
+           that same paragraph, deliberately does not change while this mount lives. */
+        canvas.dataset.qualityTier = tier;
       };
 
       const reduced = typeof globalThis.matchMedia === 'function'

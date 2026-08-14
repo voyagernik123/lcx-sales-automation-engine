@@ -220,7 +220,9 @@ void main(){
  *
  * Depth error from a shadow map scales with TEXEL SIZE. The constants 0.0009 and 0.0045 were tuned against
  * the map an environment actually renders, and every environment picks its own baseline (1024 for all seven
- * shipping components and for e0/e2/e8; 1536 for e4 and e6). The ladder then multiplies that baseline down:
+ * shipping components and for e0/e2/e8; 1536 for e1, e3, e4, e5, e6 and e7 -- SIX, not two: corrected 2026-08-13, and it
+ * matters because it means scaling against a global 1024 would have silently altered six environments'
+ * full-tier shadows rather than two). The ladder then multiplies that baseline down:
  * shadowMapSizeFor('minimum', 1024) is 256, a quarter of the linear resolution, where the bias needed to
  * clear self-shadowing is about FOUR TIMES what it is at 1024.
  *

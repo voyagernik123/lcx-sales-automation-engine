@@ -160,6 +160,14 @@ was five luminous gates and six cubes in a void, with no channel. It is now `ln(
 haze reaches half exactly where a tag stops being a word: **one** distance rather than two. Fog runs
 0.21 at the nearest deal to 0.49 at the furthest, and the capture throws if that spread closes.
 
+*Re-checked 2026-08-14, because this is the paragraph a darkening change threatens. Layer 3's `kd` term
+took the channel walls down 15.47% and the whole 1200×720 canvas down 3.24% (both measured with
+`?particles=0`, so a particle that moved between runs cannot enter the figure), which moves this frame back toward the
+failure described above — floor and walls whose albedo is close to the fog colour going indistinguishable.
+It has not got there: the fog spread is unchanged at **0.21 → 0.489**, the wall/floor seam and both gate
+rails still read, and the day ticks read better than before (see the axis probe above). But the margin on
+defect 6 is thinner than it was, and the number to watch is the wall, not the mean.*
+
 **7 · The key light lit the half of the room that was not in shot.** First it was overhead —
 `(0.42, -0.66, -0.62)` puts two thirds of the direction straight down, so an almost-black floor
 rendered as the palest thing in the frame and every object read as a dark shape on a bright plane. Then
@@ -207,8 +215,19 @@ thing that lied.
 **RESOLVED — and it took four attempts, three of which were fixes that did not fix.**
 
 ```
-axisTicksDrawn  0d:yes (527 vs 54)   20d:yes (527 vs 49)   45d+:yes (527 vs 43)
+axisTicksDrawn  0d:yes (527 vs 41)   20d:yes (527 vs 39)   45d+:yes (527 vs 37)
 ```
+
+*That block read `(527 vs 54) / (527 vs 49) / (527 vs 43)` until 2026-08-14, and those were the true
+figures for the shader that shipped before Layer 3 — re-measured on a control build before this line was
+touched, so the change is attributed rather than guessed. The stroke luminance is **byte-identical at 527**;
+what fell is the background band beside each tick, because the channel wall the ticks are read against is
+the most grazing surface in this frame and `kd` on environment diffuse takes the most off exactly there.
+Measured on the `?particles=0` variant, so a moving particle cannot be mistaken for a shading change: the
+right-hand wall **−15.47%** mean relative luminance against the ATLAS OTC deal body, which faces the
+camera, at **−0.97%** — a factor of sixteen. The probe therefore reports MORE contrast than it did, and
+all three ticks still pass. Recorded because the direction is the opposite of the intuition: the frame got
+darker and the axis got easier to see.*
 
 Two experiments settled it, neither a guess:
 

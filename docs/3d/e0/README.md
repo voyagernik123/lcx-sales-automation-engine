@@ -63,6 +63,21 @@ roughness-blended reflect vector, so the orientation check in `diag-mirror.png` 
 the true denominator and returned a peak 18,930× too dim.** Its key-light highlight in that capture is
 therefore wrong, and the capture has not been retaken.*
 
+*RETAKEN 2026-08-14, and the paragraph above is now history rather than status. All five PNGs are rebuilt
+against `830d8e6`, so they carry the repaired guards, `uShadowTaps`, `uShadowBiasScale`, and Layer 3's
+three new terms (`kd` on environment diffuse, split-sum DFG, multiscatter). The prediction held for the
+two claims it was made about and the `?diag` orientation check still reads red-up/green-down, so the
+winding verdict stands. **What the rebuild cost, measured over the 1280×800 canvas against the same frame
+rendered with the pre-Layer-3 `env/lit.ts` and an otherwise identical `entry.ts`:** the canvas lost
+**2.81%** of its mean relative luminance and **4.16%** of its mean saturation, and the loss sits in the
+ambient term exactly as `kd` predicts — the metal sphere −4.01%, the near-camera floor band −3.06%, the
+blue dielectric cube −3.33%. No pixel anywhere in the canvas moved by more than **12 of 255**. Nothing
+gained brightness; nothing clipped (938 fully-clipped pixels before and after — the highlight core,
+unchanged, which is what says split-sum did not eat the specular peak). **The `?diag` frame moved far more and only in red:** its RGB sky
+puts 1.6 of red at the zenith, so the double-counted ambient was mostly red, and removing it took the
+probe's red channel down **47.2%** against 7.9% green and 5.8% blue. That is the energy bug being
+visible, not a regression.*
+
 ## Four real bugs, and what each one teaches
 
 **1 · `IDENTITY` is a factory, not a constant.** `export const IDENTITY = (): Mat4 => …`, so
@@ -108,8 +123,16 @@ is UNSIGNED_BYTE that is the error: every capture in this repository reported `g
 (`GL_INVALID_OPERATION`) with `targetCentre: [0,0,0,0]` — the probe failed, returned black, and neither
 the page nor `capture.mjs` said a word, because `capture.mjs` read no report fields at all. WebGL2 answers
 the question directly: `IMPLEMENTATION_COLOR_READ_FORMAT`/`_TYPE` for the bound framebuffer, here
-`RGBA/HALF_FLOAT`, decoded to linear radiance. `targetCentre` now reads `[0.0173, 0.0206, 0.0329, 1]` —
+`RGBA/HALF_FLOAT`, decoded to linear radiance. `targetCentre` now reads `[0.0169, 0.0199, 0.0309, 1]` —
 and `capture.mjs` throws on a non-zero `glAfterRead`, a non-empty `failingCalls`, or an all-zero centre.
+
+*That triple read `[0.0173, 0.0206, 0.0329, 1]` until 2026-08-14, and it was correct when written: it is
+what the pre-Layer-3 shader put at the probe point, reproduced exactly on a control build before this line
+was touched. Layer 3's `kd` term took it to `[0.0169, 0.0199, 0.0309, 1]` — **R −2.31%, G −3.40%,
+B −6.08%**. Blue falls hardest because the ambient sky this deck sits under is blue, so the energy the
+old `envDiffuse` was double-counting was mostly blue. The number is published here because it is the one
+scalar in this harness that is asserted on, and a probe value nobody re-reads is the defect §5 above is
+about.*
 
 **6 · `glError` was blind to setup, and its comment claimed the opposite.** The field carried "It is read
 ONCE, here, because getError CLEARS the flag" while this file reads the flag four times above it,

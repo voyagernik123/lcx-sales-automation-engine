@@ -276,7 +276,13 @@ describe('the blit claim — the half that is testable without a GPU', () => {
      */
     expect(one, 'a single chart no longer allocates 6 targets — the buffer contract changed').toBe(6);
     expect(sixty, 'target allocation now scales with chart count on a same-size page').toBe(6);
-    expect(h60.counts.deleteTexture ?? 0, 'the three replaced targets were not freed').toBe(3);
+    /*
+     * ZERO NOW, WAS 3 — and the change is the fix, which this file predicted. `setRegion` keeps replaced
+     * target sets in an LRU keyed by exact size instead of deleting them, so the first size change parks
+     * three targets rather than freeing them. They are freed on eviction (3 spares / 2.4M texels) and by
+     * `dispose()`. The allocation contract above is unchanged at 6.
+     */
+    expect(h60.counts.deleteTexture ?? 0, 'a replaced target set is cached, not deleted').toBe(0);
 
     /* GROW ONLY, and only when a chart is bigger than the buffer. 480x160 fits inside the
        initial 1024x512, so the drawing buffer is never resized at all here — a resize
@@ -300,19 +306,29 @@ describe('the blit claim — the half that is testable without a GPU', () => {
 
     const allocs = h.counts.texImage2D ?? 0;
     /*
-     * 39 = 3 at build + 3 per render x 12 renders. The same twelve renders at ONE size cost
-     * 6 (the case above), so mixed sizes cost 6.5x the allocations and the multiplier grows
-     * with the page. During an entrance this repeats per animation frame: `useFlatChart`
-     * runs a 420 ms rAF tween per chart, so two differently-sized charts at 60 Hz allocate
-     * roughly 3 x 2 x 25 = 150 textures over the entrance.
+     * NINE NOW, WAS THIRTY-NINE — AND THIS IS THE FIX THE OLD NOTE PREDICTED.
      *
-     * This is pinned rather than fixed because `flat/shared.ts` is not this file's to
-     * change. If a future change makes the renderer size-stable, this number DROPS and the
-     * test fails — read that as the fix landing, not as a regression.
+     * What it used to say, kept because being right about the shape of a future fix is worth recording:
+     * "39 = 3 at build + 3 per render x 12 renders ... pinned rather than fixed because flat/shared.ts is
+     * not this file's to change. If a future change makes the renderer size-stable, this number DROPS and
+     * the test fails — READ THAT AS THE FIX LANDING, NOT AS A REGRESSION."
+     *
+     * It landed, and not where that note expected. `flat/shared.ts` was not the lever: quantising its
+     * buffer was measured and REFUSED, because the post-process chain reads `uv` across the whole texture
+     * while writing a smaller viewport, and a 480x40 sparkline came out completely blank with nothing
+     * thrown. The fix went into `stage.setRegion` instead — target sets kept in an LRU keyed by EXACT size,
+     * so the region never stops being exact and no sampling assumption moves.
+     *
+     * 9 = 3 at build + 3 for the first 480x160 + 3 for the first 320x320. Every later render of either size
+     * is a cache hit. So mixed sizes now cost 1.5x a single-size page rather than 6.5x, and the multiplier
+     * no longer grows with the page — it is bounded by the number of DISTINCT sizes, not by renders.
+     *
+     * The entrance case the old note worked out is what this removes: two differently-sized charts running
+     * useFlatChart's 420 ms rAF tween at 60 Hz allocated roughly 3 x 2 x 25 = 150 textures. It is now 6.
      */
-    expect(allocs, 'mixed-size target reallocation changed — see the note above before editing')
-      .toBe(39);
-    expect(h.counts.deleteTexture ?? 0).toBe(36);
+    expect(allocs, 'mixed-size target allocation changed — read the note above before editing').toBe(9);
+    /* Nothing is deleted during the run: the two sets are both live in the cache, under the 3-spare cap. */
+    expect(h.counts.deleteTexture ?? 0, 'a cached target set was freed early').toBe(0);
     /* And it is still exactly one blit per chart per redraw: the extra cost is NOT in the
        copy the claim talks about, which is why the sentence can be true and still incomplete. */
     expect(h.blits.length).toBe(12);

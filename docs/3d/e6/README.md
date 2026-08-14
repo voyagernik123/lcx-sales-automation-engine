@@ -13,7 +13,7 @@ though it were available.
 | visible to | **19.3 d** |
 | scale | 12 h per metre |
 | fog | 0.33 at the nearest record → 0.99 at the furthest |
-| depth-ruler ticks | 1d 9.4:1 · 3d 8.9:1 · 7d 8.7:1 · 14d 9.0:1 |
+| depth-ruler ticks | 1d 9.6:1 · 3d 9.1:1 · 7d 9.2:1 · 14d 9.2:1 |
 
 Those are **different horizons** and the frame reports all of them. A table says "25 rows"; the vault
 says *you can read four days back, you can see shapes for nineteen, and past that there is nothing.*
@@ -55,6 +55,29 @@ hopefully:** the repaired isotropic guard fired only below roughness 0.154 and t
 0.30 to 0.86, and no material here sets `anisotropy`, so neither repaired branch is reachable from the
 vault. The claim that would move on a rebuild is not a contrast ratio — it is anything about shadow
 softness, since `?tier=minimum` now resolves to one tap and a hard edge. This file makes none.*
+
+*REBUILT 2026-08-14, and the paragraph above was right about `38c01b1` and wrong about what would move.
+The four repaired branches were indeed unreachable from this scene. **Layer 3, which landed after that note
+was written, moved the ratios anyway — upward — and E6 took the largest change of the five environments
+rebuilt in this pass.** The corridor is a tube seen end-on, so most of its surface faces the camera at a
+grazing angle, and grazing incidence is exactly where the old `envDiffuse` was double-counting (ambient
+weights summed to 1.9998 there against 1.0030 now). Measured against the same frame rendered with the
+pre-Layer-3 `env/lit.ts` and an otherwise identical `entry.ts`:*
+
+| *region of the 1200×720 canvas* | *mean relative luminance* | |
+|---|---|---|
+| *corridor floor, nearest the camera — the most grazing surface in the frame* | *−28.79%* | *saturation +4.25%* |
+| *left corridor wall* | *−25.65%* | *saturation +17.46%* |
+| *nearest ALLOWED record slab — a data surface, near face-on* | *−2.45%* | *saturation +2.85%* |
+| *whole canvas* | *−24.61%* | *saturation +15.61%* |
+
+***The reading improved, and that is a separate claim from "more correct".*** *The surround lost ten times
+what the data surfaces lost — 25–29% against 2.45% — so figure/ground separation went up, not down; the depth ruler is screen-space
+at constant alpha, so a darker corridor behind it raised all four tick ratios — **9.39 → 9.59, 8.91 → 9.12,
+8.71 → 9.18, 8.99 → 9.22**, which is the row in the table above and the reason it was edited. `readableTo`
+is unchanged at **3.96 d** and `visibleTo` at 19.25 d, so no record moved across a legibility horizon in
+either direction. The one thing to watch on any future ambient change is the far end of the corridor: it is
+now dark enough that the wall/floor seam carries the vanishing point almost alone.*
 
 Two more things depth-as-time gives that the table destroys:
 

@@ -536,6 +536,15 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
     gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, flush);
     const msFrame = performance.now() - t0;
 
+    /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted.
+       This file was one of the two that never did it, so the app sweep could reach `/market-map`, watch this
+       surface draw, and still report "0 of 1 canvases" for the tier it drew at.
+       AFTER the clock is read, not beside the blit where the other six put it, because the number this
+       surface publishes at :664 is a documented COLD single sample (see :177) — a DOM write inside `t0`'s
+       span would be charged to the frame it is describing. Stamping is not probing: nothing extra is
+       drawn, so the reason at :177 for taking no warm-up frame is untouched. */
+    canvas.dataset.qualityTier = tier;
+
     /*
      * READ ONCE, because `getError` CLEARS the flag — a second read anywhere returns 0 and would make this
      * check a lie about a state it had itself consumed. GL does not throw: an invalid call is dropped, the

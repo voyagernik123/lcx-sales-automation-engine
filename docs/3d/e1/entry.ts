@@ -154,80 +154,28 @@ function required<T extends object>(what: string, v: T | StageRefusal): T {
 declare const __ENV_STATES__: Record<string, { id: string; name: string; verdict: string }>;
 
 /*
- * §6 RULE 1. The fallback goes in before the stage — a shader compile failure happens during module
- * evaluation, and print and the accessibility tree are not errors there is anything to catch for.
+ * ════════════════════════════════════════════════════════════════════════════════════════════
+ * THE ARRANGEMENT, HOISTED ABOVE THE STAGE — because the FLAT view has to carry it too.
+ * ════════════════════════════════════════════════════════════════════════════════════════════
  *
- * E1's subject IS the state of the programme, and that state is a build-time define read from each
- * environment's own README. So the flat view is not a reduction of the frame: it carries all NINE
- * environments where the geometry has room for five, which makes it the one place a reader can see the
- * whole programme at once. The 3-D view adds the focus rack and the depth ordering; it subtracts four rows.
+ * Everything from here to `installFlatFallback` used to live 60 to 550 lines further down, next to the
+ * GL objects that consume it. It is up here now for one reason, and it is a §7(b) reason rather than a
+ * tidiness one.
  *
- * NINE, NOT SIX AND NOT TEN. This comment said six while the harness harvested every README under a
- * `docs/3d/eN` directory and found ten — and a glob written literally here would END this comment, which
- * is the same class of trap as a backtick inside a template literal, so it is spelled out instead.
- * `docs/3d/e9` is the AUDIT, and its README's first line parsed, so it was injected as an
- * environment and both the frame and this table listed `E9 · THE AUDIT` as one. `build.mjs` now requires an
- * `entry.ts`, which is what an environment is in this tree.
+ * The §7(b) trial (`docs/3d/e9/task.html`) REFUSED E1 with `SURFACES_DO_NOT_CARRY_THE_SAME_DATA`. Its
+ * rule 1 is that the two surfaces must show the same data, and E1's did not: the rendered view carries
+ * five panels PLUS the front-to-back arrangement, while this file's flat table carried nine rows of
+ * Env / Name / Verdict and no arrangement at all. The pair the trial wanted to ask — which environment
+ * the view is addressing, and which stands immediately behind it — therefore had no flat answer at any
+ * price, and since the trial pools accuracy across environments before comparing medians, asking it
+ * would have handed the comparison to the 3-D surface for free.
+ *
+ * So the flat table now carries a front-to-back ordinal, and the ordinal is `SLOT_BY_RANK` itself
+ * rather than a second list beside it. `installFlatFallback` must stay above the stage (a shader
+ * compile failure happens during module evaluation), so the arithmetic it needs has to be above the
+ * stage as well. All of it is pure: `__ENV_STATES__` is a build-time define and the distances are
+ * trigonometry. No GL object is touched here.
  */
-const fallback = installFlatFallback({
-  title: 'E1 · The Theatre — 3D programme state',
-  readsAs: 'The rendered view puts five of these on lit panels at graded depths and racks focus to the '
-    + 'one being built, which states where to look in a way a list cannot. This table has no such '
-    + 'emphasis and no depth — and it carries every environment, including the four the five panels '
-    + 'cannot show.',
-  notices: ['Each verdict is read from that environment\'s own README first line at build time, not typed here.'],
-  columns: [
-    { key: 'id', label: 'Env' },
-    { key: 'name', label: 'Name' },
-    { key: 'verdict', label: 'Verdict (from its README)' },
-  ],
-  rows: Object.values(__ENV_STATES__).map((e) => ({ id: e.id, name: e.name, verdict: e.verdict })),
-});
-fallbackRef = fallback;
-/* Refused HERE rather than where the parameter is parsed, because the fallback has to exist first —
-   see `numParam`. A bad parameter is named to the reader instead of being reported as a driver fault. */
-if (badParams.length > 0) {
-  die(`BAD_PARAM: ${badParams.join(', ')} — not a number, so the theatre was refused rather than drawn `
-    + 'from a nonsensical value. Every row below is unaffected; correct the URL and reload.');
-}
-if (params.get('refuse') === '1') {
-  die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
-    + 'The three-dimensional view is not being drawn.');
-}
-
-const out = createStage(canvas, { alpha: false });
-if (!isStage(out)) die(`stage: ${out.code} — ${out.reason}`);
-const stage = out;
-const gl = stage.gl;
-
-/* Present through the pipeline's OWN tone curve. A second tone map here would fork the one thing
-   in this renderer whose output is verified brand-exact. */
-const PRESENT_VERT = `#version 300 es
-precision highp float;
-out vec2 vUv;
-void main(){
-  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
-const PRESENT_FRAG = `#version 300 es
-precision highp float;
-in vec2 vUv;
-uniform sampler2D uScene;
-out vec4 frag;
-${TONE_MAP_GLSL}
-${SRGB_ENCODE_GLSL}
-void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
-
-const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
-const lit = required('lit', createLitRenderer(stage));
-const target = required('target', createTarget3D(stage, W, H));
-/* 1536, not E0's and E8's 1024. Those scenes fit one object in a ~5 m frustum; this one has to
-   cover the deck the shadow tails cross, which is 15 m wide — at 1024 a texel is 15 mm and the
-   panel-on-panel shadows, the strongest depth cue after the rack, arrive visibly stepped. */
-const shadow = required('shadow', createShadowMap(stage, shadowMapSizeFor(TIER, 1536)));
-const skyBox = required('sky', createSkyBackdrop(stage));
-const ao = required('ao', createAmbientOcclusion(stage, W, H));
-const dof = required('dof', createDepthOfField(stage, W, H));
 
 /*
  * THE CAMERA IS DECLARED BEFORE THE PANELS, because the panels are aimed at it.
@@ -280,6 +228,173 @@ const PANELS = [
  */
 const FACE_FRACTION = 0.72;
 
+/*
+ * THE ONE PLACE THE DEPTH ORDER IS COMPUTED. Everything downstream reads it: the GL panels, the focus
+ * target, the DOM reading order, the slot assignment, and the flat table's ordinal column.
+ *
+ * `yaw` is here rather than in `placed` because the face centre depends on it — a panel turned toward
+ * the camera pushes its lit face out along its own normal, not along world +z — and a second copy of
+ * that expression is a second thing to keep in step with the first.
+ */
+const PANEL_DEPTHS = PANELS.map((p) => {
+  const yaw = Math.atan2(eye[0] - p.x, eye[2] - p.z) * FACE_FRACTION;
+  const c = Math.cos(yaw), s = Math.sin(yaw);
+  // The centre of the LIT FACE — half the slab's thickness out from the mid-plane. The same point
+  // `facePoint(0, h/2)` produces below, and the point the focus distance is taken to.
+  const centre: [number, number, number] = [
+    p.x + s * (THICKNESS / 2), p.h / 2, p.z + c * (THICKNESS / 2),
+  ];
+  return {
+    id: p.id, yaw,
+    eyeDistance: Math.hypot(eye[0] - centre[0], eye[1] - centre[1], eye[2] - centre[2]),
+  };
+});
+
+/*
+ * THE ORDER IS DERIVED AND THE OMISSION IS NAMED.
+ *
+ * There are five panels of geometry and NINE environments, and the first version simply left E5 out — a
+ * frame presenting itself as the state of the programme, silently missing a shipped environment. That is
+ * the same failure as a chart dropping a row.
+ *
+ * The count in this block used to say six, and quoted a HUD string — `6 ENVIRONMENTS · 1 NOT SHOWN — ONLY
+ * 5 PANELS: E2` — that appears in no capture in this repository: `grep -rn '6 ENVIRONMENTS' docs/3d` found
+ * it only in the prose. The committed PNG at the time printed 9, the build printed 10, and neither was
+ * six. Hard-coding a count in a comment beside code that derives it is the same defect as hard-coding a
+ * row, so the number is stated once here as a fact about the tree (e0..e8) and everything else reads
+ * `AVAILABLE` and `OMITTED`.
+ *
+ * The geometry is not widened: the five positions are measured (the composition survey below reports
+ * 100% / 83% / 78% visibility, and a sixth panel would invalidate it). So the frame shows the five it can
+ * and REPORTS which four it could not, and the HUD prints that count. Naming what is missing is the only
+ * honest version of not showing it.
+ *
+ * Nearest-first, because the panel the lens is focused on should carry the environment currently
+ * being built rather than whichever one sorts first alphabetically.
+ */
+const PREFERRED = ['E1', 'E8', 'E0', 'E6', 'E5', 'E2'];
+const AVAILABLE = Object.keys(__ENV_STATES__).sort(
+  (a, b) => (PREFERRED.indexOf(a) + 1 || 99) - (PREFERRED.indexOf(b) + 1 || 99),
+);
+/*
+ * SORTED, NOT TYPED — and the typed version was WRONG for as long as it existed.
+ *
+ * This was the literal `['P3','P4','P2','P5','P1']` under a comment calling it "nearest-panel-first",
+ * and a second comment 120 lines below repeated the claim. It is not nearest-panel-first: the measured
+ * face-centre eye distances are P3 6.13, P4 7.44, P2 7.92, P1 10.41, P5 11.09 m, so ranks 4 and 5 were
+ * the wrong way round. What that actually did was put E6 on the panel at 11.09 m and E5 on the one at
+ * 10.41 m — the two most recessed workstreams swapped, in a frame whose entire claim is that depth
+ * states priority. `docs/3d/e9/task.html` had to restrict its E1 question pair to ranks 1 and 2 because
+ * of it: ranks 4 and 5 had two defensible answers.
+ *
+ * A hand-written order beside code that computes the distances is the same defect as a hand-written
+ * count beside code that derives it, twelve lines up. So it is the sort, and the sort cannot disagree
+ * with the geometry it sorts.
+ */
+const SLOT_BY_RANK = [...PANEL_DEPTHS].sort((a, b) => a.eyeDistance - b.eyeDistance).map((d) => d.id);
+const PANEL_SLOTS = AVAILABLE.slice(0, SLOT_BY_RANK.length);
+const OMITTED = AVAILABLE.slice(SLOT_BY_RANK.length);
+/*
+ * THE ARRANGEMENT, AS A NUMBER THE FLAT TABLE CAN CARRY. 1 is the panel nearest the eye.
+ *
+ * `null` for the four environments with no panel: `flatFallback`'s `cell()` renders that as "absent",
+ * which keeps absent distinct from blank and from zero — the distinction §6 rule 6 exists for. An
+ * environment that is not in the room has no position in it, and printing a 6 there would invent one.
+ */
+const ORDINAL_BY_ENV = new Map(PANEL_SLOTS.map((env, rank) => [env, rank + 1]));
+
+/*
+ * §6 RULE 1. The fallback goes in before the stage — a shader compile failure happens during module
+ * evaluation, and print and the accessibility tree are not errors there is anything to catch for.
+ *
+ * E1's subject IS the state of the programme, and that state is a build-time define read from each
+ * environment's own README. So the flat view is not a reduction of the frame: it carries all NINE
+ * environments where the geometry has room for five, which makes it the one place a reader can see the
+ * whole programme at once. The 3-D view adds the focus rack and the depth ordering; it subtracts four rows.
+ *
+ * NINE, NOT SIX AND NOT TEN. This comment said six while the harness harvested every README under a
+ * `docs/3d/eN` directory and found ten — and a glob written literally here would END this comment, which
+ * is the same class of trap as a backtick inside a template literal, so it is spelled out instead.
+ * `docs/3d/e9` is the AUDIT, and its README's first line parsed, so it was injected as an
+ * environment and both the frame and this table listed `E9 · THE AUDIT` as one. `build.mjs` now requires an
+ * `entry.ts`, which is what an environment is in this tree.
+ */
+const fallback = installFlatFallback({
+  title: 'E1 · The Theatre — 3D programme state',
+  readsAs: 'The rendered view puts five of these on lit panels at graded depths and racks focus to the '
+    + 'one being addressed, which states where to look at a glance. This table carries the same '
+    + 'arrangement as a column of ordinals you have to read down, and no emphasis at all — and it '
+    + 'carries every environment, including the four the five panels cannot show.',
+  notices: [
+    'Each verdict is read from that environment\'s own README first line at build time, not typed here.',
+    'Front-to-back is the rendered arrangement itself, not a description of it: it is the rank of the '
+      + 'panel that environment occupies, by camera-to-face-centre distance, 1 nearest. "absent" means '
+      + 'no panel — only five of nine are in the room.',
+  ],
+  columns: [
+    { key: 'id', label: 'Env' },
+    /*
+     * THE COLUMN THAT LIFTED THE §7(b) REFUSAL. See the hoisted block above: without it this table
+     * carried no arrangement, so the trial's E1 pair had no flat answer and asking it would have
+     * scored the 3-D surface a free point. The reading is deliberately EXPENSIVE and not impossible
+     * — scan a column of nine for the 1 and the 2 — which is E2's situation (its table gives
+     * latitude and longitude, so answering flat means spherical geometry in your head).
+     */
+    { key: 'depth', label: 'Front-to-back (1 = nearest)', numeric: true },
+    { key: 'name', label: 'Name' },
+    { key: 'verdict', label: 'Verdict (from its README)' },
+  ],
+  rows: Object.values(__ENV_STATES__).map((e) => ({
+    id: e.id, name: e.name, verdict: e.verdict,
+    depth: ORDINAL_BY_ENV.get(e.id) ?? null,
+  })),
+});
+fallbackRef = fallback;
+/* Refused HERE rather than where the parameter is parsed, because the fallback has to exist first —
+   see `numParam`. A bad parameter is named to the reader instead of being reported as a driver fault. */
+if (badParams.length > 0) {
+  die(`BAD_PARAM: ${badParams.join(', ')} — not a number, so the theatre was refused rather than drawn `
+    + 'from a nonsensical value. Every row below is unaffected; correct the URL and reload.');
+}
+if (params.get('refuse') === '1') {
+  die('FORCED_REFUSAL: a deliberate refusal, taken so the flat fallback can be captured. '
+    + 'The three-dimensional view is not being drawn.');
+}
+
+const out = createStage(canvas, { alpha: false });
+if (!isStage(out)) die(`stage: ${out.code} — ${out.reason}`);
+const stage = out;
+const gl = stage.gl;
+
+/* Present through the pipeline's OWN tone curve. A second tone map here would fork the one thing
+   in this renderer whose output is verified brand-exact. */
+const PRESENT_VERT = `#version 300 es
+precision highp float;
+out vec2 vUv;
+void main(){
+  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  vUv = p; gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const PRESENT_FRAG = `#version 300 es
+precision highp float;
+in vec2 vUv;
+uniform sampler2D uScene;
+out vec4 frag;
+${TONE_MAP_GLSL}
+${SRGB_ENCODE_GLSL}
+void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
+
+const present = required('present', stage.compile(PRESENT_VERT, PRESENT_FRAG));
+const lit = required('lit', createLitRenderer(stage));
+const target = required('target', createTarget3D(stage, W, H));
+/* 1536, not E0's and E8's 1024. Those scenes fit one object in a ~5 m frustum; this one has to
+   cover the deck the shadow tails cross, which is 15 m wide — at 1024 a texel is 15 mm and the
+   panel-on-panel shadows, the strongest depth cue after the rack, arrive visibly stepped. */
+const shadow = required('shadow', createShadowMap(stage, shadowMapSizeFor(TIER, 1536)));
+const skyBox = required('sky', createSkyBackdrop(stage));
+const ao = required('ao', createAmbientOcclusion(stage, W, H));
+const dof = required('dof', createDepthOfField(stage, W, H));
+
 const deckGeo = plane(30, 24);
 const panelGeo = PANELS.map((p) => box(p.w, p.h, THICKNESS));
 
@@ -325,7 +440,10 @@ const normalOf = (m: Float32Array): Float32Array => new Float32Array([
 ]);
 
 const placed = PANELS.map((p, i) => {
-  const yaw = Math.atan2(eye[0] - p.x, eye[2] - p.z) * FACE_FRACTION;
+  /* Yaw and eye distance come from `PANEL_DEPTHS` rather than being recomputed here. The flat table's
+     ordinal column is that same array sorted, and two copies of this trigonometry is two things that
+     can disagree — which is exactly how `SLOT_BY_RANK` came to claim an order the geometry denied. */
+  const { yaw, eyeDistance } = PANEL_DEPTHS[i]!;
   const c = Math.cos(yaw), s = Math.sin(yaw);
   // Bases ON the deck. Floating panels would have no contact shadow and no AO in the join, and
   // those two cues are most of what makes a rendered object sit on a surface rather than hover.
@@ -336,12 +454,11 @@ const placed = PANELS.map((p, i) => {
   const facePoint = (u: number, v: number): [number, number, number] => [
     p.x + c * u + s * (THICKNESS / 2), v, p.z - s * u + c * (THICKNESS / 2),
   ];
-  const centre = facePoint(0, p.h / 2);
   return {
     ...p, yaw, model, facePoint,
     mesh: panelMesh[i]!,
     normalMat: normalOf(model),
-    eyeDistance: Math.hypot(eye[0] - centre[0], eye[1] - centre[1], eye[2] - centre[2]),
+    eyeDistance,
   };
 });
 
@@ -700,36 +817,9 @@ const NOTES: Record<string, string> = {
   E6: 'depth is time; fog is the reading limit on it, and both horizons are reported',
   E8: 'on the sign-in route in both themes, with a CSS fallback and a pixel ratchet',
 };
-/*
- * THE ORDER IS DERIVED AND THE OMISSION IS NAMED.
- *
- * There are five panels of geometry and NINE environments, and the first version simply left E5 out — a
- * frame presenting itself as the state of the programme, silently missing a shipped environment. That is
- * the same failure as a chart dropping a row.
- *
- * The count in this block used to say six, and quoted a HUD string — `6 ENVIRONMENTS · 1 NOT SHOWN — ONLY
- * 5 PANELS: E2` — that appears in no capture in this repository: `grep -rn '6 ENVIRONMENTS' docs/3d` found
- * it only in the prose. The committed PNG at the time printed 9, the build printed 10, and neither was
- * six. Hard-coding a count in a comment beside code that derives it is the same defect as hard-coding a
- * row, so the number is stated once here as a fact about the tree (e0..e8) and everything else reads
- * `AVAILABLE` and `OMITTED`.
- *
- * The geometry is not widened: the five positions are measured (the composition survey below reports
- * 100% / 83% / 78% visibility, and a sixth panel would invalidate it). So the frame shows the five it can
- * and REPORTS which four it could not, and the HUD prints that count. Naming what is missing is the only
- * honest version of not showing it.
- *
- * Nearest-first, because the panel the lens is focused on should carry the environment currently
- * being built rather than whichever one sorts first alphabetically.
- */
-const PREFERRED = ['E1', 'E8', 'E0', 'E6', 'E5', 'E2'];
-const AVAILABLE = Object.keys(__ENV_STATES__).sort(
-  (a, b) => (PREFERRED.indexOf(a) + 1 || 99) - (PREFERRED.indexOf(b) + 1 || 99),
-);
-/* Slot 3 is the nearest panel and the focus target, so the most current environment goes there. */
-const SLOT_BY_RANK = ['P3', 'P4', 'P2', 'P5', 'P1'];
-const PANEL_SLOTS = AVAILABLE.slice(0, SLOT_BY_RANK.length);
-const OMITTED = AVAILABLE.slice(SLOT_BY_RANK.length);
+/* `PREFERRED`, `AVAILABLE`, `SLOT_BY_RANK`, `PANEL_SLOTS` and `OMITTED` are declared with the camera and
+   the panels, above `installFlatFallback` — the flat table's front-to-back column needs them, and that
+   table must exist before the stage. The reasoning for each is there. */
 
 /* Cut at a WORD boundary. A hard 26-character slice produced "the first shippable enviro", which is
    a truncated identifier rendered as a heading — the same class of defect as E6 serving
@@ -843,9 +933,12 @@ const depthRankOf = new Map(byDepth.map(({ p }, rank) => [p.id, rank]));
 /*
  * AND THE ELEMENTS ARE APPENDED IN READING ORDER, which is the order the report and the table use.
  *
- * `SLOT_BY_RANK` is nearest-panel-first, so this is exactly `environmentsShown` — E1, E8, E0, E6, E5. It
- * also drops any panel with no environment to show instead of dereferencing a missing `PANEL_CONTENT`
- * entry, which the depth-ordered version would have done had `AVAILABLE` ever fallen below five.
+ * `SLOT_BY_RANK` is nearest-panel-first — it is now the sorted `PANEL_DEPTHS` rather than a literal, and
+ * as a literal it was NOT: P5 (11.09 m) was written ahead of P1 (10.41 m). Because slot content is
+ * `AVAILABLE[rank]`, this is `environmentsShown` — E1, E8, E0, E6, E5 — under either order, which is why
+ * the swap did not show up in the report; what it moved was which PANEL E6 and E5 stood on. It also drops
+ * any panel with no environment to show instead of dereferencing a missing `PANEL_CONTENT` entry, which
+ * the depth-ordered version would have done had `AVAILABLE` ever fallen below five.
  */
 const inReadingOrder = SLOT_BY_RANK.slice(0, PANEL_SLOTS.length)
   .map((slot) => byDepth.find((d) => d.p.id === slot))
@@ -889,9 +982,22 @@ const maxCoc = Math.max(...placed.map((q) => cocOf(q.eyeDistance)));
  * intuition was wrong by a factor of three.
  *
  * The two levers are capped TOGETHER now, because they multiply: blur removes glyph core and opacity
- * removes the contrast of what is left. The pair below is the largest one whose MEASURED core contrast
- * still clears 4.5:1 on all eighteen text runs in this frame, found by bisection against the measurement
- * rather than by choosing it — 1.2/0.86 left 5 failures and 0.6/0.90 left 1, both on 11 px type.
+ * removes the contrast of what is left. The pair below clears 4.5:1 on all eighteen text runs in this
+ * frame, found by bisection against the measurement rather than by choosing it — 1.2/0.86 left 5 failures
+ * and 0.6/0.90 left 1, both on 11 px type.
+ *
+ * AND IT IS NO LONGER THE LARGEST SUCH PAIR, WHICH IS THE POINT. It was: 0.45/0.10, chosen as the most
+ * recession that still cleared AA, with the binding run at 4.73:1. Then `SLOT_BY_RANK` was fixed — E5 and
+ * E6 had been on each other's panels — and `E5 · THE SURFACE` landed on the 11.09 m panel where
+ * `E6 · THE VAULT` had been. Same 11 px, same blur, same opacity, DIFFERENT GLYPHS: 4.39:1, and
+ * `capture.mjs` failed the build. A threshold chosen at its own limit is one that a change of five
+ * characters can break, and this one broke on exactly that.
+ *
+ * So the pair is now chosen for MARGIN rather than for maximum: measured over seven candidates on this
+ * frame, 0.45/0.06 clears at 4.62 and 0.38/0.10 at 4.58 — both still within 0.12 of the floor — while
+ * 0.34/0.06 clears at 4.92. 0.34 is also where blur stops costing anything: at dim 0.06 the binding run
+ * measures 4.92:1 at BOTH 0.30 and 0.34 of blur and falls to 4.62 by 0.45, so this is the largest blur
+ * that is free rather than the largest blur that fits.
  *
  * WHAT THAT COSTS, STATED: at 11 px, ANY perceptible blur takes the glyph core below AA on a dark panel
  * whatever colour the type is, so the DOM blur is now small enough to be nearly invisible and the rack is
@@ -902,10 +1008,10 @@ const maxCoc = Math.max(...placed.map((q) => cocOf(q.eyeDistance)));
  * geometry. `capture.mjs` re-measures every run and fails the build below 4.5:1, so this is a floor rather
  * than a preference.
  */
-const DOM_BLUR_CEILING = 0.45;
+const DOM_BLUR_CEILING = 0.34;
 /* The recession dim, matched to the blur ceiling. 0.42 put the far panel at 0.58 opacity, and that panel's
-   note measured 1.47:1. */
-const DOM_DIM_MAX = 0.10;
+   note measured 1.47:1; 0.10 left the furthest panel's tag at 4.39:1 once E5 moved onto it. */
+const DOM_DIM_MAX = 0.06;
 
 const projections = inReadingOrder.map(({ p, i }) => {
   const content = PANEL_CONTENT[p.id]!;

@@ -199,6 +199,19 @@ with no `anisotropy` anywhere. The one claim that would need re-taking on a rebu
 and its mean/max deltas, because those are framebuffer reads over lit geometry — 3,943 was already under
 the capture script's own floor once.*
 
+*RETAKEN 2026-08-14, and the prediction above is the one in this programme that survived a rebuild intact.
+All three PNGs are now built against `830d8e6`, so they carry Layer 3 as well as the four repaired guards.
+**E7 changed less than any of the five environments retaken in this pass:** the whole canvas moved
+**−0.69%** in mean relative luminance and **+0.10%** in saturation, and the near-camera floor band —
+which is volume composite with no lit geometry behind it — is **byte-identical, 0 pixels changed**. That is
+the structural argument being confirmed rather than restated: an environment whose frame is mostly volume
+integration barely notices a change to the lit BRDF. The claim this note flagged for re-taking has been
+re-taken and it did move, by very little: `glOcclusionPixels` **8,083 → 8,172 px (0.94% → 0.95%)**, delta
+mean **10.0 → 10.2**, max **120 → 121**, and 8,172 is comfortably clear of the floor that 3,943 once fell
+under. Every other field printed by the report — `integrableTo D12`, `visibleTo D27`, `totalRisk 24.465`,
+occupancy 24.81%, `truncated 0/884`, the axial check at 0% error, the lane-drift and days-spanned spans —
+is unchanged to the last published digit.*
+
 One trap avoided by design rather than found: **the volume cannot be drawn into the scene target it
 samples depth from.** That is a feedback loop, and WebGL2 does not leave it undefined — it raises
 INVALID_OPERATION and draws nothing. The volume renders into its own target and is composited with a

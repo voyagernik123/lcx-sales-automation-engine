@@ -630,8 +630,74 @@ size, so a bucket-sized `scene` renders a 480×40 chart at 1024×512 scale and t
 1.64× too large, bottom rows cropped, nothing thrown. `sharedBuffer.test.ts` pins `setRegion` receiving the
 exact chart size for exactly this reason.
 
+> **REFUTED BY MEASUREMENT — see §10.9.** Quantising the allocation makes the post-process chain read
+> `uv` across the whole texture while writing a smaller viewport, and a 480×40 sparkline comes out
+> **completely blank with nothing thrown**. The thrash was closed a different way: an LRU of target
+> sets keyed by exact size. The paragraph below is kept as the record of a hypothesis that did not
+> survive contact.
+
 The change `stage.ts` would need: **separate the allocation size from the logical region.** `setRegion(w,h)`
 keeps `region = {w,h}` so `bindTarget` still sets the exact viewport, while allocating `scene`/`bloomA`/
 `bloomB` at a quantised size that only grows — and `bindTarget` then derives the viewport from the region
 rather than from the target's dimensions. Named here as an uncosted change to a shared renderer, which is the
 kind this programme does not make without measuring first.
+
+
+### 10.8 · A THIRD INSTRUMENT THAT CANNOT MEASURE THE THING — and it nearly produced a false headline
+
+Trying to verify E8 on the DEPLOYED sign-in screen, I found its canvas at `display: none` with **zero lit
+pixels** and was one step from reporting that the LCX mark — the one surface every visitor passes through —
+was not rendering in production.
+
+It is. The reveal is gated on `setReady(true)`, which runs inside a `requestAnimationFrame` callback
+(`ForgeBackdrop.tsx:361`). **The editor's Browser pane holds its tab `hidden`**, and a hidden tab does not
+fire rAF: measured, `visibilityState: "hidden"`, and **0 of 3 requested frames fired in 2500 ms**. So the pane
+cannot observe any rAF-gated reveal, and a blank canvas there means nothing at all.
+
+The evidence that settles it comes from an instrument that *can* see it — the app sweep printed each surface
+to PDF, and **E8 produced 228,448 bytes carrying an image**. The "0 of 1 canvases" in its reach table is the
+*tier-stamped* column, not a render count.
+
+This is the same failure this programme has now committed or nearly committed **four times**: a 0.45 ms frame
+time measured with `gl.finish()`, a 60 Hz headroom measured under SwiftShader, a shader claim about a branch
+shipped materials never take, and now a liveness claim from a tab that cannot animate. The pattern is always
+the same shape — an instrument that returns a number, and a number that is about the instrument.
+
+**The rule that follows:** before reporting that a surface does not render, establish that the observer can
+see a surface that does. A negative result from an unvalidated instrument is not a finding.
+
+
+### 10.9 · §10.7's SPECIFIED FIX WAS WRONG, and I had passed it on as authoritative
+
+§10.7 recorded the change `stage.ts` "would need" to kill the `setRegion` thrash: keep `region = {w,h}` so
+`bindTarget` sets the exact viewport, allocate the targets at a quantised size that only grows, and derive the
+viewport from the region. I wrote that down from the agent that fixed the sibling half, and handed it to the
+next agent as the spec.
+
+**It is refuted by measurement, and the failure is silent.** `FS_VERT` sets `uv = q*0.5+0.5`, normalised to
+the **viewport**, while `texture(uSource, uv)` is normalised to the **whole texture**. Those agree only while
+a target's texture *is* the region. Quantise the allocation and every post-process pass reads `uv` across the
+full 1024×512 while writing into a 480×40 viewport — and twenty-four `stage.blit` call sites make that same
+assumption.
+
+Rendered the real frame (bar batch → bright pass → four blurs → composite) at four non-quantised sizes on the
+M1, hashing every destination and counting covered pixels:
+
+| size | fixed code | under the §10.7 spec |
+|---|---|---|
+| 480×160 | ink 2280 | ink 208 |
+| 320×320 | ink 776 | ink 127 |
+| **480×40** | ink 2259 | **ink 0 — renders completely blank, 0 of 19,200 px, nothing thrown** |
+
+The 480×40 case is the sparkline: **the most numerous GL surface in the product**, silently empty. Forty
+pixels squeezed into 8% of their own rectangle is sub-pixel.
+
+**What shipped instead**, entirely inside `stage.ts`: target sets kept in an LRU keyed by *exact* size, so the
+region stays exact and no sampling assumption moves. Spares are capped two ways because the failure modes
+differ — 3 sets, and 2.4M texels (≈22 MB by arithmetic from RGBA16F at 8 B/texel × 1.125 for the bloom pair),
+against the 46 MB a single active set costs at 3200×1600.
+
+**The lesson is about me, not the spec.** I recorded a proposed change in a plan document in the imperative
+("the change stage.ts would need") on one agent's say-so, then quoted it to the next agent as the thing to
+build. A design nobody has executed is a hypothesis; writing it in the voice of a decision is how a plausible
+idea acquires authority it has not earned. §10.7 now carries this correction inline.

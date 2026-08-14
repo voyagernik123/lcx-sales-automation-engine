@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
-  createStage, isStage, stageRefusal, STAGE_REFUSAL_CODES, DEPTH_POLICY,
+  createStage, isStage, stageRefusal, STAGE_REFUSAL_CODES, DEPTH_POLICY, type Stage,
 } from './stage.js';
 
 /**
@@ -126,7 +126,10 @@ function fakeGl(opts: { connected: boolean; extension?: FakeGl['extension'] } = 
       return { loseContext: () => { log.push('loseContext'); lost = true; } };
     }) as never,
     checkFramebufferStatus: () => (lost ? 0 : 0x8CD5),
-    createTexture: () => (lost ? null : { tag: 'texture' }),
+    /* LOGGED, and each call returns a DISTINCT object: the target-cache tests below count these
+       and compare identity to tell a reused set from a rebuilt one, which a shared sentinel
+       object would make indistinguishable. */
+    createTexture: () => { log.push('createTexture'); return lost ? null : { tag: 'texture' }; },
     createFramebuffer: () => (lost ? null : { tag: 'framebuffer' }),
     createBuffer: () => (lost ? null : { tag: 'buffer' }),
     createVertexArray: () => (lost ? null : { tag: 'vao' }),
@@ -231,6 +234,116 @@ describe('dispose releases the CONTEXT SLOT, which deleting objects does not', (
     out.dispose();
     expect(() => out.dispose(), 'a second dispose threw on an already-lost context').not.toThrow();
     expect(twice.log.filter((l) => l === 'loseContext').length, 'the context was lost twice').toBe(1);
+  });
+});
+
+/* ── THE TARGET CACHE ─────────────────────────────────────────────────────────────── */
+
+const tally = (f: FakeGl, call: string) => f.log.filter((l) => l === call).length;
+
+/** A stage on a fresh fake context, with the build set's three allocations already counted. */
+function cached(): { f: FakeGl; s: Stage; built: number } {
+  const f = fakeGl({ connected: false });
+  const s = stageOn(f);
+  if (!isStage(s)) throw new Error(`the fake context should have produced a stage: ${s.code}`);
+  const built = tally(f, 'createTexture');
+  if (built !== 3) throw new Error(`the build set is no longer three targets but ${built}`);
+  return { f, s, built };
+}
+
+describe('setRegion keeps a set per size instead of rebuilding on every change', () => {
+  it('allocates once per DISTINCT size, not once per size CHANGE', () => {
+    /*
+     * THE DEFECT AND ITS NUMBER. `setRegion` short-circuited only on an identical size, so a page
+     * whose charts differ deleted three framebuffers and three textures and allocated six on every
+     * single render: 39 texture allocations against 6 for four charts alternating two sizes over
+     * three redraws (`flat/sharedCost.test.ts`), repeated per animation frame through
+     * `useFlatChart`'s 420 ms entrance. Against the pre-cache code the counts below are 18 and 18.
+     */
+    const { f, s, built } = cached();
+    for (let pass = 0; pass < 3; pass++) { s.setRegion(480, 160); s.setRegion(320, 320); }
+    expect(tally(f, 'createTexture') - built,
+      'a size the page is still alternating with was rebuilt rather than kept').toBe(6);
+    expect(tally(f, 'deleteTexture'),
+      'a set still in the rotation was freed, so the next render must rebuild it').toBe(0);
+  });
+
+  it('hands back the SAME textures when a size comes round again', () => {
+    /* Counting allocations cannot tell "kept" from "rebuilt into a new object that happens to
+       cost the same". Identity can, and identity is what the GPU pays for. */
+    const { s } = cached();
+    s.setRegion(480, 160);
+    const scene = s.scene.texture, bloom = s.bloomA.texture;
+    s.setRegion(320, 320);
+    expect(s.scene.texture, 'a different size somehow reused the same texture').not.toBe(scene);
+    s.setRegion(480, 160);
+    expect(s.scene.texture, 'the scene target was rebuilt for a size already held').toBe(scene);
+    expect(s.bloomA.texture, 'the bloom target was rebuilt for a size already held').toBe(bloom);
+  });
+
+  it('allocates the scene at the region EXACTLY — the quantisation trap in §10.7', () => {
+    /*
+     * A GUARD AGAINST THE NEXT FIX, not a regression test: the pre-cache code passes it too.
+     *
+     * `3D_VFX_FINAL_PLAN.md` §10.7 proposes closing the same thrash by allocating the targets on a
+     * 256 px grid while keeping the region exact. It is wrong one layer below the viewport hazard
+     * it was written around: `look/pipeline.ts` draws every pass as a full-screen triangle whose
+     * `uv` is normalised to the VIEWPORT and samples its sources with that same `uv`, normalised to
+     * the whole TEXTURE. Allocate this 480x40 chart's scene at 1024x512 and the composite reads
+     * `uv` 0 to 1 across all 1024x512 while writing a 480x40 viewport, so the chart lands in the
+     * bottom-left 47% x 8% of its own rectangle with the previous chart's pixels around it, and
+     * nothing throws. Twenty-four `stage.blit` call sites make the same assumption.
+     */
+    const { s } = cached();
+    s.setRegion(480, 40);
+    expect([s.scene.width, s.scene.height], 'the scene target is no longer the region itself')
+      .toEqual([480, 40]);
+    expect([s.bloomA.width, s.bloomA.height], 'the bloom chain is no longer region >> 2')
+      .toEqual([120, 10]);
+    expect([s.width, s.height], 'the region stopped being the size the caller asked for')
+      .toEqual([480, 40]);
+  });
+
+  it('bounds what it keeps by AREA, because area is what GPU memory is', () => {
+    /*
+     * The spares are capped at `TARGET_CACHE_TEXELS` scene texels. Sizes chosen so the cap is what
+     * decides, not the count: 1.60 Mpx then 1.20 Mpx are both held (2.60 Mpx of spares would be
+     * over, so the 64x64 build set goes first, and 2.80 is still over so the 1600x1000 goes too).
+     * Without the area cap the third size would keep both and the assertion below reads 0 deletes.
+     */
+    const { f, s } = cached();
+    s.setRegion(1600, 1000);
+    s.setRegion(1200, 1000);
+    expect(tally(f, 'deleteTexture'), 'a spare was freed while the budget still had room').toBe(0);
+    s.setRegion(900, 900);
+    expect(tally(f, 'deleteTexture'), 'the spare budget did not evict anything').toBe(6);
+
+    const before = tally(f, 'createTexture');
+    s.setRegion(1200, 1000);
+    expect(tally(f, 'createTexture'), 'the most recent spare was evicted before the oldest')
+      .toBe(before);
+    s.setRegion(1600, 1000);
+    expect(tally(f, 'createTexture') - before, 'an evicted size came back without being rebuilt')
+      .toBe(3);
+  });
+
+  it('dispose frees every cached set, not only the one in use', () => {
+    /*
+     * A LEAK GUARD ON THE CACHE ITSELF. The pre-cache code passes this trivially — it only ever
+     * held one set — which is exactly why it needs writing down now: the spares are reachable
+     * from nothing but the map, so a `dispose()` that freed `active` alone would strand up to
+     * `TARGET_CACHE_TEXELS` of colour attachments on a context nobody can reach again. Deleting
+     * the loop over the map in `dispose()` fails this with 6 against 12.
+     */
+    const { f, s } = cached();
+    s.setRegion(480, 160);
+    s.setRegion(320, 320);
+    s.setRegion(200, 100);
+    const created = tally(f, 'createTexture');
+    expect(created, 'the sets under test were never built').toBe(12);
+    s.dispose();
+    expect(tally(f, 'deleteTexture'), 'a cached spare outlived the stage that owned it')
+      .toBe(created);
   });
 });
 

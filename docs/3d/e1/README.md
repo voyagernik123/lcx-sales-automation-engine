@@ -25,17 +25,21 @@ Every other figure in this harness is my arithmetic reported back to me. `rectEr
 the **compositor** where it actually put each element and compares that to where the **renderer** says
 the surface is.
 
-| panel | shift | scale | element | perspX (×10⁻³) | CoC | DOM blur | rectError |
-|---|---|---|---|---|---|---|---|
-| P3 · nearest | 0 | 1.00 | 305×290 | −4.3 | 0.0 px | 0.00 px | **0 px** |
-| P4 | 0 | 1.00 | 245×335 | −21.8 | 5.5 px | 0.18 px | **0 px** |
-| P2 | 0 | 1.00 | 270×355 | +20.2 | 7.1 px | 0.23 px | **0 px** |
-| P1 | −0.12 | 0.84 | 315×231 | +31.2 | 12.9 px | 0.41 px | **0 px** |
-| P5 | +0.18 | 0.76 | 296×186 | −27.8 | 14.0 px | 0.45 px | **0 px** |
+| panel | env | eye distance | shift | scale | element | perspX (×10⁻³) | CoC | DOM blur | rectError |
+|---|---|---|---|---|---|---|---|---|---|
+| P3 · nearest | E1 | 6.13 m | 0 | 1.00 | 305×290 | −4.3 | 0.0 px | 0.00 px | **0 px** |
+| P4 | E8 | 7.44 m | 0 | 1.00 | 245×335 | −21.8 | 5.5 px | 0.13 px | **0 px** |
+| P2 | E0 | 7.92 m | 0 | 1.00 | 270×355 | +20.2 | 7.1 px | 0.17 px | **0 px** |
+| P1 | E6 | 10.41 m | −0.12 | 0.84 | 315×231 | +31.2 | 12.9 px | 0.31 px | **0 px** |
+| P5 | E5 | 11.09 m | +0.18 | 0.76 | 296×186 | −27.8 | 14.0 px | 0.34 px | **0 px** |
 
-*The DOM blur column used to read 0.94 / 1.21 / 2.21 / 2.40 px. It was reduced by a contrast
-measurement — see "The blur ceiling was a reading, not a measurement" below. The CoC column is the GL
-lens and has not moved: the panel surfaces are still defocused by up to 14 px.*
+*The DOM blur column used to read 0.94 / 1.21 / 2.21 / 2.40 px, then 0.18 / 0.23 / 0.41 / 0.45. Both
+reductions came from a contrast measurement — see "The blur ceiling was a reading, not a measurement" and
+"`SLOT_BY_RANK` was reversed" below. The CoC column is the GL lens and has not moved: the panel surfaces
+are still defocused by up to 14 px.*
+
+*The **env** column is new here, and it is the column that was wrong. Until 2026-08-14 P1 carried E5 and
+P5 carried E6 — see below.*
 
 `perspX` is non-zero on every panel and **signed by which side of frame centre the panel sits on**
 (+31 on the left, −28 on the right, −4 near the middle). Zero everywhere would have meant the
@@ -81,21 +85,25 @@ take the strongest 15% as glyph core — that note came out at **1.47:1** agains
 
 | run | before | after |
 |---|---|---|
-| `depth is time; fog is the reading limit on it,` 11.5 px, blur 2.4 px, opacity 0.58 | **1.47:1** | 6.35:1 |
-| `E6 · THE VAULT` 11 px | 1.86:1 | 4.73:1 |
-| `E5 · THE SURFACE` 11 px | 1.74:1 | 5.45:1 |
-| `driven from the same input as the shipping flat engine` 11.5 px | 1.72:1 | 6.39:1 |
+| `depth is time; fog is the reading limit on it,` 11.5 px, blur 2.4 px, opacity 0.58 | **1.47:1** | 8.18:1 |
+| `E6 · THE VAULT` 11 px | 1.86:1 | 5.38:1 |
+| `E5 · THE SURFACE` 11 px | 1.74:1 | 4.92:1 |
+| `driven from the same input as the shipping flat engine` 11.5 px | 1.72:1 | 7.06:1 |
 | `3D PROGRAMME · 9 ENVIRONMENTS` — unblurred, full opacity | 3.82:1 | 9.12:1 |
 | `4 NOT SHOWN — ONLY 5 PANELS: …` — the frame's own caveat | 3.60:1 | 8.73:1 |
 | total failing | **11 / 18** | **0 / 18** |
+
+*The "after" column is today's re-measurement at 0.34 px / 0.06, not the 2026-08-13 one at 0.45 / 0.10.
+The four panel runs moved because the panels they sit on moved — E6 and E5 swapped — as well as because
+the pair changed; the two HUD runs are unaffected by both and did not move.*
 
 Three separate causes, three separate fixes:
 
 1. **The text colours carried their own alpha** (`rgba(198,212,236,0.78)`) which multiplied with the
    recession opacity. Two dimmers stacked put an effective alpha of 0.45 on the furthest note. The hexes
    are now solid; the lens is the only dimmer.
-2. **Blur and opacity were capped independently** when they multiply. The pair is now the largest one
-   whose measured core still clears 4.5:1 everywhere — **0.45 px and 0.90** — found by bisection against
+2. **Blur and opacity were capped independently** when they multiply. The pair is now **0.34 px and 0.94**
+   (it was 0.45 / 0.90 until the `SLOT_BY_RANK` fix below), found by bisection against
    the measurement (1.2/0.86 left five failures, 0.6/0.90 left one). At 11 px, *any* perceptible blur takes
    the glyph core below AA on a dark panel whatever colour the type is, so the DOM blur is now nearly
    invisible and the rack is carried by the GL frame, where the panel surfaces are still defocused by 5 to
@@ -110,14 +118,13 @@ The measurement is now a pass in `capture.mjs`: it decodes both screenshots insi
 run's ratio, and **throws below 4.5:1** — and throws if a text run changed no pixels at all. A ratio
 regression now fails the build the way `rectError` does.
 
-*Capture provenance, 2026-08-13. Every ratio in that table is a read off the framebuffer, so it is a
-function of how bright the GL panels rendered — and `bundle.js` here predates `38c01b1`, which changed the
-specular in `env/lit.ts` (the committed bundle still carries the pre-fix `max(1e-6, PI * d * d)`).
-**The ratios are nevertheless not invalidated, for a checkable reason rather than by assumption:** that
-defect fired only below roughness 0.154, E1's five panels are 0.42–0.52 and the deck is 0.86, and no
-material here sets `anisotropy`, so neither repaired branch is reachable from this scene. The claim that
-needs re-taking after a rebuild is not a ratio, it is `bundleSha256` in `rendered.json` — which does still
-match the committed `bundle.js`, so the PNGs and the bundle agree with each other today.*
+*Capture provenance, 2026-08-14. Every ratio in that table is a read off the framebuffer, so it is a
+function of how bright the GL panels rendered. The bundle was **rebuilt today** against current
+`packages/gl` — so the note that used to sit here, about the committed bundle predating `38c01b1`'s
+specular fix and that fix being unreachable above roughness 0.154, no longer applies to anything: the
+ratios above and the four PNGs come from the same post-`38c01b1` build. `rendered.json` records
+`bundleSha256` `338d40c0…` for a 57,097-byte `bundle.js`, which is what is committed here, so the PNGs and
+the bundle agree with each other today.*
 
 ## Projected text is reachable with a pointer again
 
@@ -136,6 +143,63 @@ E1, E8, E0, E6, E5 and the flat table lists E0…E8 in index order. Three repres
 disagreeing about sequence, and the announced order changing if the camera moved. Paint order is now a
 `z-index` (4, 3, 2, 1, 0 by depth) and the elements are appended in reading order; the AX tree and the
 report now agree.
+
+## `SLOT_BY_RANK` was reversed, and it was called "nearest-panel-first" twice
+
+The array deciding which environment stands on which panel was the literal `['P3','P4','P2','P5','P1']`,
+described in `entry.ts` as nearest-panel-first in two separate comments. It was not. The measured
+face-centre eye distances are **P3 6.13, P4 7.44, P2 7.92, P1 10.41, P5 11.09 m** — recomputed here
+independently of the harness, from `eyeOf` and the five hard-coded positions, and agreeing with the
+report's own `panels[].eyeDistance` — so the last two entries were the wrong way round and **E6 stood on
+the 11.09 m panel while E5 stood on the 10.41 m one**, in a frame whose whole argument is that depth
+states priority.
+
+**The committed captures were taken under the reversed order.** Verified by serving HEAD's own
+`bundle.js` and `live.html` unmodified and matching each panel's DOM content against that same report's
+`panels[].screen`: rank 4 was **E5 on P1 at 10.41 m** and rank 5 **E6 on P5 at 11.09 m**, while the report
+printed `environmentsShown: E1 E8 E0 E6 E5`. That field is the DOM and reading order, and it was correct as
+that; what was false is `entry.ts`'s claim that the two orders were the same thing. So the frame read
+E1 E8 E0 **E5 E6** front-to-back while the report and the accessibility tree read E1 E8 E0 **E6 E5**. All
+four PNGs and `rendered.json` have been re-taken.
+
+**What it did not touch**, checked rather than assumed: focus (`subject` is `placed.reduce` over measured
+`eyeDistance`, so it was always P3), addressing and the second-nearest panel — which is why
+`docs/3d/e9/task.html` could derive its E1 pair safely even while this was broken — the HUD counts, and
+`environmentsOmitted`.
+
+**What it did touch, and this is the part a code reading would have missed:** the contrast gate. Rebuilding
+under the corrected order failed `capture.mjs` — `E5 · THE SURFACE` moved onto the 11.09 m panel and
+measured **4.39:1** against the 4.5:1 floor, where `E6 · THE VAULT` had measured 4.73:1 on that same panel
+with the same blur and the same opacity. Different glyphs, five characters apart. The blur/opacity pair had
+been chosen as the *largest* one that cleared AA, i.e. at its own limit, so a change this small broke it.
+The pair is now **0.34 px / 0.06** with the binding run at 4.92:1, chosen for margin instead: measured over
+seven candidates on this frame, 0.45/0.06 clears at 4.62 and 0.38/0.10 at 4.58, and 0.34 is where blur
+stops costing anything (at dim 0.06 the binding run measures 4.92:1 at both 0.30 and 0.34 of blur, and
+falls to 4.62 by 0.45).
+
+The fix is a **sort**, not a corrected literal — `SLOT_BY_RANK` is now `PANEL_DEPTHS` ordered by
+`eyeDistance` — so it cannot disagree with the geometry a second time. `live.png`, `no-dof.png`,
+`no-ao.png`, `refused.png` and `rendered.json` were all re-taken under it.
+
+## The flat table now carries the arrangement, and that is what let §7(b) measure this environment
+
+`installFlatFallback` has a fourth column: **`Front-to-back (1 = nearest)`**, `absent` on the four
+environments with no panel. Read off the built surface at `live.html?refuse=1` —
+`E0 3 | E1 1 | E2 absent | E3 absent | E4 absent | E5 5 | E6 4 | E7 absent | E8 2`.
+
+It is the *same* sort the rendered view uses, not a second list beside it: `SLOT_BY_RANK` and the ordinals
+are both `PANEL_DEPTHS` sorted. That forced the camera, `PANELS`, `FACE_FRACTION`, the depth computation
+and the slot assignment to move **above** the `installFlatFallback` call, since §6 rule 1 requires that
+call to happen before the stage. All of it is pure arithmetic over a build-time define, so nothing GL
+crossed the boundary; `placed` now reads `PANEL_DEPTHS` rather than recomputing the same trigonometry.
+
+Why bother: `docs/3d/e9/task.html` had **refused** E1 with `SURFACES_DO_NOT_CARRY_THE_SAME_DATA`. Its rule
+1 is that both surfaces must show the same data, and this table carried nine rows and no arrangement while
+the frame carried five panels *plus* the arrangement — so the trial's E1 pair had no flat answer at any
+price, and asking it would have handed the environment a free point in a comparison that pools accuracy
+across environments. The column makes the answer readable flat, slowly, by reading down a column of nine.
+That is the same shape of help E2's flat table already gives (its `Great-circle separation` column answers
+both members of E2's pair outright), so E1 is not being treated more generously than the set already was.
 
 ## §7(b): a real tension, stated rather than hidden
 
@@ -203,23 +267,22 @@ this repository". Either skip now fails the build by name.
 ## What is still not done
 
 - **No room.** No walls, no ceiling, no volumetric haze — still boxes on a plane, so (a) is
-  under-delivered even though (b) now has an answer. This is the remaining work here.
+  under-delivered. This is the remaining work here. (This bullet used to add "even though (b) now has an
+  answer". (b) has an *instrument* and a pair of questions in it; it has no answer, because nobody has run
+  it.)
 - **DOM cannot be occluded by GL.** There is no depth buffer in the compositor and the canvas is one
   element, so a projected panel necessarily paints in front of *all* geometry. Handled by refusing to
   show occluded content, which is correct but is avoidance rather than a solution. `clip-path` driven
   by the inverse homography would be the real fix.
-- **§7(b) is argued, not timed** — and as of 2026-08-13 it is **DEFERRED here with a reason, which is
-  not the same as outstanding work nobody has got to.** F0 built the instrument (`docs/3d/e9/task.html`)
-  and it covers six environments: E2, E3, E4, E5, E6, E7. E1 is excluded because the panel text is
-  injected from the other environments' READMEs at **build time** (`__ENV_STATES__` in `entry.ts`), so an
-  answer key written against it would rot on the next rebuild — and a stale key does not fail loudly, it
-  marks correct answers wrong and reports a legible surface as illegible, which is worse than no reading.
-  E1 needs a question whose answer is a property of the **geometry**; the obvious candidate, "which panel
-  is being addressed", has no answer either because there is no interactive addressing here.
-  `docs/3d/e9/RUNNING_THE_TRIAL.md` carries this as the standing record. §7(b) is also still unmeasured on
-  the six the instrument *does* cover — a machine-reader trial was run and invalidated itself on four
-  defects — so E1 is not the only one waiting. It is the only one waiting on a question rather than on a
-  person.
+- **§7(b) is argued, not timed — but E1 is no longer excluded from the instrument that would time it.**
+  As of 2026-08-14 `docs/3d/e9/task.html` covers **seven** environments (E1, E2, E3, E4, E5, E6, E7), and
+  E1's pair is the one derived from the geometry rather than from panel copy: which environment the view
+  is addressing, and which stands immediately behind it — `E1` then `E8`, from the camera and the five
+  hard-coded panel positions. Its answers cannot rot on a rebuild, which was the original reason for
+  deferring, and the flat table now carries the arrangement, which was the reason the refusal replaced the
+  deferral. What is still outstanding is the same thing outstanding for the other six: **a person.** The
+  trial has never been run, and it cannot be run by whoever built these surfaces, because `task.html` is
+  its own answer key. `docs/3d/e9/RUNNING_THE_TRIAL.md` is the standing record.
 
 ## The reusable part
 

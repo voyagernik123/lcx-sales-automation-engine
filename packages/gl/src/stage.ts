@@ -91,6 +91,64 @@ export interface RenderTarget {
   readonly height: number;
 }
 
+/* ══ THE TARGET CACHE ═════════════════════════════════════════════════════════════
+ *
+ * WHAT IT COST TO NOT HAVE ONE. `setRegion` short-circuited only on an IDENTICAL size and
+ * otherwise deleted three framebuffers and three textures and allocated six. Four charts
+ * alternating two sizes over three redraws made 39 texture allocations against 6 for the same
+ * twelve renders at one size (`flat/sharedCost.test.ts`), and `useFlatChart` runs a 420 ms rAF
+ * tween per chart, so a dashboard column holding two differently-sized charts paid that per
+ * animation frame — O(charts × redraws) on every page load. Timed end to end on a real M1
+ * through ANGLE Metal at dpr 2, `docs/3d/blit-cost.mjs` arm D put four mixed-size charts at
+ * 1.90 and 2.11 ms per frame above the same four at one size: about 0.5 ms per chart per
+ * redraw, which is the same order as the whole `drawImage` blit those runs also measured.
+ *
+ * So sets are kept, keyed by size. A page that alternates two sizes allocates two sets once
+ * and then never again; the region stays EXACT, so nothing about how anything is sampled moves.
+ *
+ * ── WHY NOT THE QUANTISED-ALLOCATION FIX `3D_VFX_FINAL_PLAN.md` §10.7 SPECIFIES ──────────
+ * That fix keeps `region = {w,h}` while allocating the targets on a 256 px grid, and has
+ * `bindTarget` take the viewport from the region. It closes the same thrash and it is WRONG
+ * here, for a reason one layer below the viewport hazard it was designed around.
+ *
+ * `look/pipeline.ts` draws its five passes as a full-screen triangle whose `uv` is
+ * `q * 0.5 + 0.5` — normalised to the VIEWPORT — and samples its sources with that same `uv`,
+ * which is normalised to the WHOLE TEXTURE. The two agree only while a target's texture and the
+ * region are the same rectangle. Allocate a 480×40 chart's scene at 1024×512 and the composite
+ * reads `uv` 0→1 across the full 1024×512 while writing a 480×40 viewport, so the chart lands
+ * in the bottom-left 47% × 8% of its own rectangle and the rest of the frame is whatever the
+ * previous chart left in that texture. Nothing throws. Twenty-four `stage.blit` call sites
+ * across `env/`, `apps/web` and `docs/3d` make exactly the same assumption, and every one of
+ * them would need a source-size uniform threaded through its shader — files this change does
+ * not own, and a silent mis-scale in each of them if one is missed.
+ *
+ * ── WHAT IS KEPT, AND THE BOUND ON WHAT THAT COSTS ──────────────────────────────────────
+ * Spares are capped two ways because the two failure modes are different: a count, so a page of
+ * many small charts cannot accumulate sets without limit, and an AREA, because that is what
+ * GPU memory is. The area figures below are arithmetic from the format, not measurements —
+ * RGBA16F is 8 bytes a texel and the two bloom targets add 1/16 each, so a set costs
+ * `w × h × 9` bytes. At the cap that is about 22 MB of spares, against the 46 MB the active
+ * set alone costs on a page whose largest chart is 3200×1600. It also decides which charts are
+ * worth keeping: the 2400×920 dashboard chart (2.21 Mpx) is retained, a 3200×1600 one
+ * (5.12 Mpx) is not, and every sparkline and card is far under either.
+ *
+ * Eviction is least-recently-used, which is right for the alternation this exists to fix and
+ * has nothing to say for a round-robin over more sizes than it holds — that page reallocates
+ * exactly as it did before, which is the direction to degrade in.
+ */
+interface TargetSet {
+  readonly scene: RenderTarget | StageRefusal;
+  readonly bloomA: RenderTarget | StageRefusal;
+  readonly bloomB: RenderTarget | StageRefusal;
+  /** Scene texels. The eviction budget is in these because GPU bytes are area × format. */
+  readonly texels: number;
+}
+
+/** Sets kept beyond the active one. Two alternating sizes is the measured case; three has slack. */
+export const TARGET_CACHE_SPARES = 3;
+/** Total scene texels across the spares. See the byte arithmetic above. */
+export const TARGET_CACHE_TEXELS = 2_400_000;
+
 export interface StageOptions {
   /**
    * Resolution of the bloom chain relative to the scene, as a right-shift. 2 → quarter
@@ -139,8 +197,9 @@ export interface Stage {
   /** Bind a target (or `null` for the canvas) and set the viewport to match it. */
   bindTarget(t: RenderTarget | null): void;
   /**
-   * Resize the render region. Reallocates the targets only when the size actually changes,
-   * so a page of same-sized charts pays for one allocation.
+   * Resize the render region. Targets are allocated once per DISTINCT size and kept, so a
+   * page whose charts alternate between two sizes pays for two sets and not for one set per
+   * render — see `TARGET_CACHE_SPARES` for what is kept and what is thrown away.
    */
   setRegion(width: number, height: number): void;
   /** Draw a full-screen triangle with `program`. Owns its own VAO — see the note below. */
@@ -198,12 +257,46 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
      the blit copied a window of it — every mark 1.64× too large and the bottom rows cropped
      clean off. Nothing threw, and the chart merely looked wrong. */
   let region = { w: W, h: H };
-  let scene = makeTarget(W, H);
-  if ('kind' in scene) return scene;
-  let bloomA = makeTarget(Math.max(1, W >> shift), Math.max(1, H >> shift));
-  if ('kind' in bloomA) return bloomA;
-  let bloomB = makeTarget(Math.max(1, W >> shift), Math.max(1, H >> shift));
-  if ('kind' in bloomB) return bloomB;
+
+  const makeSet = (w: number, h: number): TargetSet => ({
+    scene: makeTarget(w, h),
+    bloomA: makeTarget(Math.max(1, w >> shift), Math.max(1, h >> shift)),
+    bloomB: makeTarget(Math.max(1, w >> shift), Math.max(1, h >> shift)),
+    texels: w * h,
+  });
+
+  const freeSet = (s: TargetSet) => {
+    for (const t of [s.scene, s.bloomA, s.bloomB]) {
+      if (!('kind' in t)) { gl.deleteFramebuffer(t.framebuffer); gl.deleteTexture(t.texture); }
+    }
+  };
+
+  /* Insertion order IS the LRU order: a hit re-inserts, and `evictSpares` walks oldest-first. */
+  const sets = new Map<string, TargetSet>();
+  let activeKey = `${W}x${H}`;
+  let active = makeSet(W, H);
+  for (const t of [active.scene, active.bloomA, active.bloomB]) {
+    /* Free the two that succeeded before handing back the refusal. The version before the cache
+       returned on the first failure with the earlier targets still allocated, and on a driver that
+       refuses the bloom size that leaked a full-size colour texture on a context nobody can reach
+       again — `dispose()` cannot help, because no Stage was ever returned to call it on. */
+    if ('kind' in t) { freeSet(active); return t; }
+  }
+  sets.set(activeKey, active);
+
+  const evictSpares = () => {
+    let spares = sets.size - 1;
+    let texels = 0;
+    for (const [k, s] of sets) if (k !== activeKey) texels += s.texels;
+    for (const [k, s] of sets) {
+      if (spares <= TARGET_CACHE_SPARES && texels <= TARGET_CACHE_TEXELS) return;
+      if (k === activeKey) continue;
+      sets.delete(k);
+      freeSet(s);
+      spares -= 1;
+      texels -= s.texels;
+    }
+  };
 
   /* THE FULL-SCREEN TRIANGLE GETS ITS OWN VAO, AND NOTHING ELSE MAY BIND INTO IT.
      In P0 pass 2 a geometry pass reused this VAO and re-pointed attribute 0 at its own
@@ -231,20 +324,27 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
     hdr: Boolean(float),
     get width() { return region.w; },
     get height() { return region.h; },
-    get scene() { return scene as RenderTarget; },
-    get bloomA() { return bloomA as RenderTarget; },
-    get bloomB() { return bloomB as RenderTarget; },
+    get scene() { return active.scene as RenderTarget; },
+    get bloomA() { return active.bloomA as RenderTarget; },
+    get bloomB() { return active.bloomB as RenderTarget; },
 
     setRegion(w: number, h: number) {
       const nw = Math.max(1, Math.round(w)), nh = Math.max(1, Math.round(h));
       if (nw === region.w && nh === region.h) return;   // repeated same-size charts are free
       region = { w: nw, h: nh };
-      for (const t of [scene, bloomA, bloomB]) {
-        if (!('kind' in t)) { gl.deleteFramebuffer(t.framebuffer); gl.deleteTexture(t.texture); }
+      const key = `${nw}x${nh}`;
+      const hit = sets.get(key);
+      if (hit) {
+        sets.delete(key);        // re-insert, so Map order stays LRU order for `evictSpares`
+        sets.set(key, hit);
+        active = hit;
+        activeKey = key;
+        return;
       }
-      scene = makeTarget(nw, nh);
-      bloomA = makeTarget(Math.max(1, nw >> shift), Math.max(1, nh >> shift));
-      bloomB = makeTarget(Math.max(1, nw >> shift), Math.max(1, nh >> shift));
+      active = makeSet(nw, nh);
+      activeKey = key;
+      sets.set(key, active);
+      evictSpares();
     },
 
     /*
@@ -360,9 +460,12 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
      */
     dispose() {
       for (const p of programs) gl.deleteProgram(p);
-      for (const t of [scene, bloomA, bloomB]) {
-        if (!('kind' in t)) { gl.deleteFramebuffer(t.framebuffer); gl.deleteTexture(t.texture); }
-      }
+      /* EVERY CACHED SET, not only the active one. The cache is what stops a two-size page
+         reallocating per render, and it is also the only handle anything has on the spares:
+         a `dispose()` that freed `active` alone would leak up to `TARGET_CACHE_TEXELS` of
+         colour attachments per stage, which is the leak class this function exists to close. */
+      for (const s of sets.values()) freeSet(s);
+      sets.clear();
       gl.deleteBuffer(quadBuf);
       gl.deleteVertexArray(quadVao);
       if (canvas.isConnected) return;

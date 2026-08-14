@@ -32,34 +32,57 @@
   ── WHICH ENVIRONMENTS THIS COVERS, AND WHY NOT ALL EIGHT ───────────────────────────────────────────────
   Stated here because a trial that silently covers half the programme reads as a trial of the programme.
 
-  MEASURED (6): E2, E3, E4, E5, E6, E7. Each has a dataset, and each has a pair of matched questions below
-  whose answers were derived from that dataset rather than recalled — the E2 pair, for instance, comes from
-  computing the seven great-circle distances from Vaduz (Singapore 91.93 deg farthest, London 7.65 deg
-  nearest), not from looking at the render.
+  MEASURED (7): E1, E2, E3, E4, E5, E6, E7. Each has a dataset, and each has a pair of matched questions
+  below whose answers were derived from that dataset rather than recalled — the E2 pair, for instance,
+  comes from computing the seven great-circle distances from Vaduz (Singapore 91.93 deg farthest, London
+  7.65 deg nearest), not from looking at the render.
 
   NOT APPLICABLE (1): E8 THE FORGE. Clause (b) asks whether an operator gets THEIR ANSWER faster. E8 is a
   machined disc, a ring and a plinth on the sign-in screen; it carries no dataset and answers no question,
   so there is no answer to time. E8 is gated on clause (a) alone. This is a category difference, not a gap,
   and recording it as "unmeasured" would have implied work outstanding that does not exist.
 
-  REFUSED, ON A REASON THAT WAS MEASURED (1): E1 THE THEATRE.
-  Code: SURFACES_DO_NOT_CARRY_THE_SAME_DATA.
+  ── E1 WAS REFUSED HERE UNTIL 2026-08-14, AND WHAT LIFTED IT WAS A CHANGE TO E1 ─────────────────────────
+  Kept because the refusal is the reason the fix is shaped the way it is, and because the shape is the
+  only thing standing between this page and a rigged comparison.
 
-  This entry used to read "DEFERRED", and the reason given was that E1's panel text is injected from the
-  environments' own READMEs at build time, so an answer key would rot on the next rebuild. THAT REASON IS
-  NOW SETTLED, AND SETTLED IN E1'S FAVOUR. A pair whose answers are stable exists, is written out below,
-  and is derived; E1 is not blocked on finding a question. It is blocked on something else, which the
-  attempt exposed and which is structural rather than editorial.
+  The refusal code was SURFACES_DO_NOT_CARRY_THE_SAME_DATA — rule 1 at the top of this file. Measured on
+  both surfaces at the time: E1's flat view carried NINE rows of Env / Name / Verdict and no arrangement
+  at all (its own readsAs said so: "This table has no such emphasis and no depth"), while the rendered
+  view carried FIVE panels PLUS the arrangement and named the other four only in the HUD. The pair below
+  asks about the arrangement, so on the flat surface it had no answer — not an expensive one, NONE. Since
+  this page pools accuracy across environments before comparing medians, asking it would have taken one
+  correct answer off the flat column and handed the comparison to the environment for free.
 
-  THE PAIR THAT IS READY, AND WHY ITS ANSWERS CANNOT ROT.
+  The fix was NOT to soften the question. ../e1/entry.ts's flat table now carries a front-to-back ordinal
+  column — "Front-to-back (1 = nearest)", with "absent" on the four environments that have no panel — so
+  the arrangement is readable flat, slowly, by reading down a column of nine for the 1 and the 2. Which is
+  what makes a comparison fair rather than rigged.
 
-    { env: 'e1', claim: 'depth states which panel is being addressed',
-      pair: [
-        { q: 'Which environment is this view ADDRESSING — nearest you, the one the lens holds sharp?',
-          opts: ['E0', 'E1', 'E5', 'E8'], answer: 'E1' },
-        { q: 'Which environment stands IMMEDIATELY BEHIND the one being addressed?',
-          opts: ['E0', 'E5', 'E6', 'E8'], answer: 'E8' },
-      ] }
+  AND IT IS NOT MORE GENEROUS TO THE FLAT SURFACE THAN THIS SET ALREADY WAS — checked, because the
+  sentence that used to sit here was wrong. It said the addition matched "E2's situation: its fallback
+  gives latitude and longitude, so answering flat means spherical geometry in your head. Dear, and
+  possible." Read off the built surface at ../e2/live.html?refuse=1, E2's fallback columns are
+  "Corridor to | Lat | Lon | Great-circle separation", and the separation column is populated — London
+  7.6 deg through Singapore 91.9 deg. Answering E2's pair flat is therefore a max and a min over ONE
+  column of seven, no geometry required, and it has been that way for as long as E2 has been in the set.
+  E1's ordinal column is the same shape of help and slightly dearer to read (a scan of nine for a
+  specific value, rather than an extremum). The claim about E2 was inherited from its `readsAs`, which
+  still says the table gives "no reach"; that is a defect in ../e2/entry.ts, not here, and it is reported
+  rather than repeated.
+
+  Verified on the built surface rather than in the source: `live.html?refuse=1` renders
+  E0 3 | E1 1 | E2 absent | E3 absent | E4 absent | E5 5 | E6 4 | E7 absent | E8 2.
+
+  AND THE ORDINAL IS THE RENDERED ARRANGEMENT, NOT A SECOND COPY OF IT. entry.ts's SLOT_BY_RANK — the
+  array that decides which environment stands on which panel — is now that same sort. It used to be a
+  typed literal ['P3','P4','P2','P5','P1'] under a comment calling it "nearest-panel-first", and it was
+  not: P1 stands at 10.41 m and P5 at 11.09 m, so its last two entries were reversed and E6 and E5 were
+  each on the other's panel. That is why the pair below asks only about ranks 1 and 2 — ranks 4 and 5 had
+  two defensible answers. It is fixed, at the root (a sort, not a corrected literal), and E1 was rebuilt
+  and re-captured under the corrected order.
+
+  THE PAIR, AND WHY ITS ANSWERS CANNOT ROT.
 
   Derived, not read off the render. The camera is `eyeOf({target:[0,0.62,0.1], distance:8.4,
   azimuth 1.5 deg, elevation 7.2 deg})` = (0.218, 1.673, 8.431). Face-centre distances from that eye to
@@ -69,51 +92,32 @@
   panels[].eyeDistance 10.41 / 7.92 / 6.13 / 7.44 / 11.09. Corroborated by colour: P3 and P4 are the two
   #2C6BFF panels, and entry.ts states colour and focus are meant to agree about what is addressed.
 
-  Nothing in that derivation is panel copy. PANELS, the viewpoint, SLOT_BY_RANK and PREFERRED are all
-  hard-coded literals in ../e1/entry.ts; the only build-time input used is the first two KEYS of
-  __ENV_STATES__, and a README edit changes an environment's `name` and `verdict`, never its key.
-  A TENTH ENVIRONMENT DOES NOT MOVE IT EITHER, which was the obvious way for this to rot: a key absent
-  from PREFERRED sorts with weight `indexOf + 1 || 99` = 99, i.e. behind all six named ones, so it lands
-  in OMITTED. Replayed over the sort with e9 added, with e10 added, and with both: PANEL_SLOTS stayed
-  E1 E8 E0 E6 E5 in all three cases. And a README that is deleted or stops parsing does not move the key
-  silently — ../e1/build.mjs exits 1 on it. The one residual is named rather than hidden: build.mjs keys
-  on the ID in the README's FIRST LINE, not on the directory name, so a first line that renamed E8 would
-  move the second answer. That is a rename of an environment, not a status update.
+  Nothing in that derivation is panel copy. PANELS, the viewpoint and PREFERRED are hard-coded literals in
+  ../e1/entry.ts and SLOT_BY_RANK is computed from PANELS and the camera; the only build-time input used
+  is the first two KEYS of __ENV_STATES__, and a README edit changes an environment's `name` and
+  `verdict`, never its key. A TENTH ENVIRONMENT DOES NOT MOVE IT EITHER, which was the obvious way for
+  this to rot: a key absent from PREFERRED sorts with weight `indexOf + 1 || 99` = 99, i.e. behind all six
+  named ones, so it lands in OMITTED. Replayed over the sort with e9 added, with e10 added, and with both:
+  PANEL_SLOTS stayed E1 E8 E0 E6 E5 in all three cases. And a README that is deleted or stops parsing does
+  not move the key silently — ../e1/build.mjs exits 1 on it. The one residual is named rather than hidden:
+  build.mjs keys on the ID in the README's FIRST LINE, not on the directory name, so a first line that
+  renamed E8 would move the second answer. That is a rename of an environment, not a status update.
 
-  SO WHY IS IT STILL NOT RUN. Because of rule 1 at the top of this file — the two surfaces must show the
-  same data — and E1 is the one environment where they do not. Measured on both surfaces: the flat view
-  carries NINE rows of Env / Name / Verdict and no arrangement at all (its own readsAs says so: "This
-  table has no such emphasis and no depth"), while the rendered view carries FIVE panels plus the
-  arrangement and names the other four only in the HUD. The two information sets differ in both
-  directions, and the difference is exactly the thing the pair asks about. So the pair above has no flat
-  answer — not an expensive one, none. That is not the E2 situation, where the fallback table gives
-  latitude and longitude and answering flat means doing spherical geometry in your head; there the data is
-  present and dear. Here it is absent, and since this page pools accuracy across environments before
-  comparing medians, adding a question the flat surface cannot answer at any price takes one correct
-  answer off the flat column and hands the comparison to the environment. That is a fix to the
-  INSTRUMENT, which is the move this programme refuses everywhere else.
+  ONE WORD OF THE PAIR CHANGED WHEN IT WAS PUT INTO THE SET, AND IT IS THE KIND OF WORD THAT DECIDES A
+  RESULT. The draft asked for the environment "nearest you, the one THE LENS HOLDS SHARP". There is no
+  lens on the flat surface, so that clause invites a flat operator to press "Cannot tell from this
+  surface" on a question their table can in fact answer — which is the same free point, arrived at
+  through wording instead of through data. Every other question in this set is surface-neutral
+  ("Which corridor from Vaduz travels the FARTHEST?"), and this one now is too. The derivation and both
+  answers are untouched.
 
-  WHAT WOULD LIFT IT — stated as the exact change, in a file this page does not own:
-
-    1 · ../e1/entry.ts, the installFlatFallback call: give the table a front-to-back ordinal column, so
-        the flat view carries the arrangement it currently only describes in prose, with `null` for the
-        four not shown (flatFallback's `cell()` renders that as "absent", which keeps absent and blank
-        distinct). This is not a one-field addition. installFlatFallback is called at entry.ts:172 and must
-        stay above the stage; AVAILABLE / SLOT_BY_RANK / PANEL_SLOTS are ~550 lines below it at 726, and the
-        ordinal that (2) requires also needs `view` / `eyeOf` / PANELS from 236 and 265. All of those are
-        pure — __ENV_STATES__ is a build define and the distances are arithmetic, no GL object is touched —
-        so they can be hoisted above the call, but it is a move of four declarations across the boundary
-        that §6 rule 1 puts there, not an added field.
-    2 · The ordinal in (1) must come from measured eyeDistance, NOT from PANEL_SLOTS order, because those
-        two disagree. SLOT_BY_RANK is ['P3','P4','P2','P5','P1'] and entry.ts calls it "nearest-panel-
-        first" twice, but P1 stands at 10.41 m and P5 at 11.09 m (z -1.25 against -2.10), so front-to-back
-        is P3 P4 P2 P1 P5 and the last two entries are swapped. The frame therefore reads E1 E8 E0 E5 E6
-        near-to-far while the report, the DOM order and the flat table's reading order all say
-        E1 E8 E0 E6 E5. Ranks 4 and 5 have two defensible answers until that is settled, which is why the
-        pair above only asks about ranks 1 and 2.
-
-  Until (1) and (2) land, E1 stays out of the set and this is a refusal with a reason rather than a gap.
-  MEASURED therefore remains 6, not 7.
+  ── THE COUNTERBALANCE IS 4-3, NOT 3-3, AND THE RESIDUAL FAVOURS THE FLAT SURFACE ───────────────────────
+  Seven environments cannot split evenly. `buildTrials` assigns first-surface by index parity, so four
+  environments show the environment first (E5, E4, E3, E1) and three show the flat surface first
+  (E6, E2, E7). The trial that comes SECOND for an environment is the one that benefits from the operator
+  having just thought about that shape of question — so the flat surface holds the second position four
+  times and the environment three. The residual therefore biases AGAINST reporting MEETS (b), which is
+  the direction an instrument guarding against a showreel should err in. Stated rather than rounded off.
 
   ── WHAT IT WILL NOT DO ─────────────────────────────────────────────────────────────────────────────────
   It will not tell you (a). "A stranger stops scrolling" is not measurable at a desk with two people, and
@@ -233,8 +237,14 @@ const TASKS = [
      * would make the instrument agree with whatever the picture happens to show, which is the one thing
      * it must not do.
      *
-     * This is the pair that most directly tests a claim the flat view CANNOT carry: the fallback table
-     * gives latitude and longitude, so answering it flat means doing spherical geometry in your head.
+     * THIS COMMENT USED TO CALL E2 "the pair that most directly tests a claim the flat view CANNOT
+     * carry: the fallback table gives latitude and longitude, so answering it flat means doing spherical
+     * geometry in your head." Measured on the built surface (../e2/live.html?refuse=1) rather than taken
+     * from ../e2/entry.ts's `readsAs`: the columns are "Corridor to | Lat | Lon | Great-circle
+     * separation" and the last one is populated — London 7.6 deg, Singapore 91.9 deg. Both members of
+     * this pair are therefore an extremum over one column of seven on the flat surface. E2 still tests
+     * something real (arc height against a number, and the flat read costs a seven-row scan), but it is
+     * NOT a claim the flat view cannot carry, and the derivation above is unaffected either way.
      */
     pair: [
       { q: 'Which corridor from Vaduz travels the FARTHEST?',
@@ -268,6 +278,27 @@ const TASKS = [
         opts: ['PAID_SEARCH', 'PAID_SOCIAL', 'EMAIL', 'COMMUNITY'], answer: 'PAID_SOCIAL' },
       { q: 'Which day range was NOT MEASURED (as distinct from withheld)?',
         opts: ['D1–D3', 'D13–D15', 'D22–D23', 'D26–D27'], answer: 'D13–D15' },
+    ],
+  },
+  {
+    /*
+     * LAST, WHICH MAKES THE COUNTERBALANCE 4-3. See the header block: index parity decides the first
+     * surface, seven environments cannot split evenly, and at index 6 E1 shows the environment first —
+     * so the flat surface holds the harder second position four times out of seven. That biases against
+     * MEETS (b), which is the safe direction for a page whose job is to catch a showreel.
+     *
+     * Both answers are derived from the camera and the five hard-coded panel positions in
+     * ../e1/entry.ts, and are checkable against that harness's own report (focusPanel "P3" at 6.13 m,
+     * P4 at 7.44 m, slots E1 and E8). The full derivation, and the flat-table column that makes this
+     * answerable on BOTH surfaces, are in the header block above.
+     */
+    env: 'e1',
+    claim: 'depth states which environment the view is addressing, and what stands behind it',
+    pair: [
+      { q: 'Which environment is the view ADDRESSING — the one nearest the camera?',
+        opts: ['E0', 'E1', 'E5', 'E8'], answer: 'E1' },
+      { q: 'Which environment stands IMMEDIATELY BEHIND the one nearest the camera?',
+        opts: ['E0', 'E5', 'E6', 'E8'], answer: 'E8' },
     ],
   },
 ];
@@ -362,6 +393,35 @@ let shownAt = 0;
  * Returns whether it actually happened, because a cross-document read can be blocked and a trial run with
  * the answer printed on screen is not a measurement. The summary excludes those, exactly as it excludes a
  * trial whose startup could not be confirmed.
+ *
+ * RE-VERIFIED ON E1'S PAIR WHEN E1 JOINED THE SET, 2026-08-14, because that pair is the one this channel
+ * answered outright and a fix verified on E5 is not a fix verified here. Re-measured by extracting THIS
+ * function from this file and running it against both e1 surfaces at the trial's own geometry — the
+ * `src` string showTrial builds, a 760 px iframe, a 1240x780 window:
+ *
+ *   e1 ENVIRONMENT · before: #log holds 5,052 characters running y 760 to 4,530 in a 4,570 px document —
+ *   it BEGINS at the fold — and contains `focusPanel`, `environmentsShown` and `"P3"`. After: display
+ *   none, a 0x0 box, and the document collapses to 776 px, so there is nothing left to scroll to. Zero
+ *   of the three fields appear anywhere in the frame's visible text. Returned true, so the trial counts.
+ *   e1 FLAT · #log holds 128 characters (the FORCED_REFUSAL sentence) and none of the three fields, which
+ *   is the one-directionality above confirmed on this pair rather than assumed from E5's.
+ *
+ * NOTHING IN showTrial OR finish IS PER-ENVIRONMENT, which is the other half of the claim: the src is
+ * `../${t.env}/live.html?frames=6...` for every trial, `t.diagnosticHidden = hideDiagnostic(iframe)` runs
+ * on every trial including the 20 s timeout path, and finish's exclusion is
+ * `results.filter((r) => r.startupUnconfirmed || !r.diagnosticHidden)` with no environment in it. E1 gets
+ * the guard because every trial gets the guard.
+ *
+ * ONE RESIDUAL CHANNEL, NAMED RATHER THAN CLOSED, and it is older than E1's entry. `_shared/
+ * flatFallback.ts` deliberately CLIPS the rule-1 table to 1x1 on the success path instead of removing it,
+ * so that it survives in the accessibility tree — which means every 3-D surface carries its own flat
+ * table, painting zero pixels, inside `getSelection()`. Measured: on e1 a select-all reaches 2,270
+ * characters including the ordinal header; on e2 it reaches 1,911 including the great-circle separations
+ * that answer both members of ITS pair; on e5, 2,564. So this is a property of all seven environments and
+ * of the design of rule 1, not something E1 introduced, and unlike #log it is not below the fold — it
+ * cannot be reached by scrolling, only by select-all and paste, which is not a gesture this trial teaches.
+ * It is left open because closing it means hiding the surface under test: on the flat path that table IS
+ * the surface, and on the 3-D path it is that surface's §6 rule 1 deliverable.
  */
 function hideDiagnostic(iframe) {
   try {
@@ -489,7 +549,10 @@ function finish() {
     gate: '7b', verdict, code,
     operators: 1,
     note: 'One operator is an anecdote. This is the instrument, not a finding.',
-    coverage: { measured: TASKS.length, notApplicable: ['e8'], refused: { e1: 'SURFACES_DO_NOT_CARRY_THE_SAME_DATA' } },
+    /* `refused` is gone rather than emptied: e1 carried the only entry, and it was lifted on 2026-08-14
+       when ../e1/entry.ts's flat table gained the front-to-back ordinal column. An empty object here
+       would read as "nothing refused yet" instead of "nothing is refused". */
+    coverage: { measured: TASKS.length, notApplicable: ['e8'] },
     excludedTrials: excluded.length,
     environment: three, flat, trials: results,
   }, null, 2);
