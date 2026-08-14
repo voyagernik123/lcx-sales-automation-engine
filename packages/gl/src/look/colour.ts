@@ -18,8 +18,26 @@
  *   Filmic              #2F75CE
  *
  * Reaching for ACES or AgX because it "looks filmic" would silently shift every LCX
- * blue on every chart, and nobody would notice for months. That is why the tone map in
- * `tonemap.ts` is applied to the COMPOSITE only, after data colour is already placed.
+ * blue on every chart, and nobody would notice for months.
+ *
+ * ── AND THAT IS WHAT HAPPENED HERE, WITH OUR OWN CURVE. MEASURED 2026-08-14 ─────────────
+ *
+ * The sentence that used to end this paragraph — "that is why the tone map in `tonemap.ts`
+ * is applied to the COMPOSITE only, after data colour is already placed" — states where the
+ * map runs and was read as a reason the data survives it. It is not one. The composite maps
+ * `plate + scene + bloom`, and the data colour is inside `scene`. Rendered through the real
+ * shaders on a real driver and read back off the framebuffer (`docs/3d/brand-fidelity.mjs`),
+ * the table above gains a row it did not have:
+ *
+ *   Standard             #2C6BFF  ← exact          ΔE76  0.0
+ *   Khronos PBR Neutral  #2563EF                   ΔE76  4.9
+ *   LCX composite        #2C68DC  ← WHAT WE SHIP   ΔE76 18.3
+ *   Filmic               #2F75CE                   ΔE76 36.0
+ *   AgX                  #467ECF  ← "badly wrong"  ΔE76 41.1
+ *
+ * "Nobody would notice for months" was accurate, and the months have passed. What is true
+ * of our curve and not of AgX is that it is MONOTONE per channel, so the density ramp still
+ * reads in the right order — see `TONE_POLICY`, which now says so instead of promising a hex.
  *
  * The second rule, which is arithmetic rather than taste: every blend, accumulation and
  * blur happens in LINEAR light, and sRGB is encoded exactly once at output. Additive

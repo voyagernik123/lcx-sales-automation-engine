@@ -1,0 +1,274 @@
+{
+  "measuredAt": "2026-08-14",
+  "driver": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+  "hdr": true,
+  "sourceHash": "5858a9d80b9b32d7",
+  "rows": {
+    "brand": {
+      "compositeOnly": {
+        "pixel": "#2c68dc",
+        "delta": [
+          0,
+          -3,
+          -35
+        ],
+        "deltaE": 18.31
+      },
+      "asShipped": {
+        "pixel": "#306cdf",
+        "delta": [
+          4,
+          1,
+          -32
+        ],
+        "deltaE": 19.2
+      },
+      "litMarker": {
+        "pixel": "#447fff",
+        "delta": [
+          24,
+          20,
+          0
+        ],
+        "deltaE": 15.16
+      },
+      "litCentre": {
+        "pixel": "#c8ebff",
+        "delta": [
+          156,
+          128,
+          0
+        ],
+        "deltaE": 87.58
+      }
+    },
+    "brandBright": {
+      "compositeOnly": {
+        "pixel": "#7aa5dc",
+        "delta": [
+          -5,
+          -13,
+          -35
+        ],
+        "deltaE": 12.74
+      },
+      "asShipped": {
+        "pixel": "#92c1f9",
+        "delta": [
+          19,
+          15,
+          -6
+        ],
+        "deltaE": 12.96
+      },
+      "litMarker": {
+        "pixel": "#83b1fd",
+        "delta": [
+          4,
+          -1,
+          -2
+        ],
+        "deltaE": 1.25
+      },
+      "litCentre": {
+        "pixel": "#f4ffff",
+        "delta": [
+          117,
+          77,
+          0
+        ],
+        "deltaE": 50.66
+      }
+    },
+    "brandDeep": {
+      "compositeOnly": {
+        "pixel": "#12326b",
+        "delta": [
+          0,
+          0,
+          -3
+        ],
+        "deltaE": 2.03
+      },
+      "asShipped": {
+        "pixel": "#1a3771",
+        "delta": [
+          8,
+          5,
+          3
+        ],
+        "deltaE": 2.83
+      },
+      "litMarker": {
+        "pixel": "#2a4c97",
+        "delta": [
+          24,
+          26,
+          41
+        ],
+        "deltaE": 13.57
+      },
+      "litCentre": {
+        "pixel": "#c2cafd",
+        "delta": [
+          176,
+          152,
+          143
+        ],
+        "deltaE": 61.62
+      }
+    },
+    "reference": {
+      "compositeOnly": {
+        "pixel": "#dc843c",
+        "delta": [
+          -35,
+          -6,
+          -1
+        ],
+        "deltaE": 14.35
+      },
+      "asShipped": {
+        "pixel": "#f49a51",
+        "delta": [
+          -11,
+          16,
+          20
+        ],
+        "deltaE": 13.99
+      },
+      "litMarker": {
+        "pixel": "#ffa865",
+        "delta": [
+          0,
+          30,
+          40
+        ],
+        "deltaE": 18.88
+      },
+      "litCentre": {
+        "pixel": "#ffffd8",
+        "delta": [
+          0,
+          117,
+          155
+        ],
+        "deltaE": 67.44
+      }
+    },
+    "refusal": {
+      "compositeOnly": {
+        "pixel": "#687691",
+        "delta": [
+          -3,
+          -4,
+          -8
+        ],
+        "deltaE": 2.79
+      },
+      "asShipped": {
+        "pixel": "#6b7a97",
+        "delta": [
+          0,
+          0,
+          -2
+        ],
+        "deltaE": 1.18
+      },
+      "litMarker": {
+        "pixel": "#7a8ebd",
+        "delta": [
+          15,
+          20,
+          36
+        ],
+        "deltaE": 11.78
+      },
+      "litCentre": {
+        "pixel": "#e8f5ff",
+        "delta": [
+          125,
+          123,
+          102
+        ],
+        "deltaE": 46.63
+      }
+    },
+    "rule": {
+      "compositeOnly": {
+        "pixel": "#263558",
+        "delta": [
+          0,
+          0,
+          -2
+        ],
+        "deltaE": 1.36
+      },
+      "asShipped": {
+        "pixel": "#2a3a60",
+        "delta": [
+          4,
+          5,
+          6
+        ],
+        "deltaE": 2.25
+      },
+      "litMarker": {
+        "pixel": "#3b4f84",
+        "delta": [
+          21,
+          26,
+          42
+        ],
+        "deltaE": 14.45
+      },
+      "litCentre": {
+        "pixel": "#c6ccee",
+        "delta": [
+          160,
+          151,
+          148
+        ],
+        "deltaE": 60.32
+      }
+    },
+    "plate": {
+      "compositeOnly": {
+        "pixel": "#0e1628",
+        "delta": [
+          0,
+          0,
+          0
+        ],
+        "deltaE": 0
+      },
+      "asShipped": {
+        "pixel": "#172138",
+        "delta": [
+          9,
+          11,
+          16
+        ],
+        "deltaE": 6.28
+      },
+      "litMarker": {
+        "pixel": "#253150",
+        "delta": [
+          23,
+          27,
+          40
+        ],
+        "deltaE": 15.23
+      },
+      "litCentre": {
+        "pixel": "#c1c1cc",
+        "delta": [
+          179,
+          171,
+          164
+        ],
+        "deltaE": 71.4
+      }
+    }
+  }
+}

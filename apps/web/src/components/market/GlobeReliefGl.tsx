@@ -71,6 +71,17 @@ import {
   type GlobeBook, type RegionBook,
 } from '@/components/market/globeSites';
 
+/**
+ * The refusals that belong to the DATASET rather than to the GPU, in one place because two callers make the
+ * judgement: the setup effect, so a universe with nothing placeable never costs a WebGL context, and every
+ * redraw, so the second filter is judged as strictly as the first.
+ */
+const bookRefusal = (points: readonly MapPoint[]): string | null => {
+  if (points.length === 0) return 'NO_MAP_POINTS';
+  if (buildGlobeBook(points).sites.length === 0) return 'NO_PLACEABLE_REGION';
+  return null;
+};
+
 export interface GlobeReliefGlProps {
   /** The same visible universe the scatter is drawing. */
   readonly points: readonly MapPoint[];
@@ -183,21 +194,49 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
    */
   const tier = useResolvedQualityTier();
 
+  /**
+   * THE REDRAW LIVES IN A REF, AND THAT IS WHAT KEEPS ONE GL CONTEXT ACROSS A DATA CHANGE.
+   *
+   * `points` used to be in the setup effect's dependency list, and this surface sits under a filter bar — so
+   * every market filter disposed the stage and built a new one. Measured with a counting WebGL2 context, one
+   * change to `points` cost **1 context, 7 programs, 14 shaders, 7 vertex arrays, 25 bufferData calls, 8
+   * textures, 7 framebuffers and 489,432 bytes** of re-upload, and **425,712 of those bytes are the EARTH** —
+   * `sphere(EARTH_R, 56, 84)`, which is not data and has never been data. That is §6 rule 7's hazard on every
+   * filter change; `DeckReliefGl.tsx:205-213` already ships the fix for its own click path.
+   *
+   * WHAT IS ACTUALLY DATA HERE is the pins (one cylinder per placed region, its height the project count) and
+   * the corridors (one `arcTube` per region LCX lists from). Those are rebuilt; the planet is not.
+   */
+  const drawRef = useRef<((p: readonly MapPoint[]) => void) | null>(null);
+  /* THE LATEST UNIVERSE, so a TIER change can redraw it: the setup effect re-runs on a resolved tier while the
+     draw effect below does not, and a rebuilt context with no draw is a blank canvas under a live caption. */
+  const pointsRef = useRef<readonly MapPoint[]>(points);
+
+  /* THE DRAW EFFECT IS DECLARED FIRST, AND THE ORDER IS LOAD-BEARING. React runs effects in declaration order,
+     so on MOUNT this one records the universe and returns (nothing is published yet) and the setup effect draws
+     it. On a DATA CHANGE only this one re-runs, and the context is untouched. */
+  useEffect(() => {
+    pointsRef.current = points;
+    drawRef.current?.(points);
+  }, [points]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    drawRef.current = null;
     /* Any earlier overlay is dropped before a new frame exists. A projected label from the previous filter
        sitting over a freshly drawn globe is a stale picture presented as live data. */
     setPlan(null);
 
-    if (points.length === 0) { onRefused('NO_MAP_POINTS'); return; }
-
     /*
      * THE BOOK BEFORE THE CONTEXT. Constructing a GL context and then discovering there is nothing to put
      * on the sphere costs the reader a context and gains nothing, and it is the cheaper of the two checks.
+     *
+     * READ THROUGH THE REF, NOT THE PROP: this is a check on the data, but it must not put the data back in the
+     * dependency list below. `draw` makes the identical judgement on every later universe, at `bookRefusal`.
      */
-    const book = buildGlobeBook(points);
-    if (book.sites.length === 0) { onRefused('NO_PLACEABLE_REGION'); return; }
+    const firstRefusal = bookRefusal(pointsRef.current);
+    if (firstRefusal !== null) { onRefused(firstRefusal); return; }
 
     /*
      * §6 RULE 5 BEFORE ANYTHING IS DRAWN. If the palette does not round-trip through this pipeline's tone
@@ -222,9 +261,31 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
     const gl = stage.gl;
 
     const disposers: (() => void)[] = [];
+    /*
+     * TWO DISPOSAL LISTS, BECAUSE TWO LIFETIMES. `disposers` holds what the SIZE and the TIER own — the context,
+     * the programs, the targets, and the three spheres that ARE the planet — and is released once, on unmount.
+     * `dataDisposers` holds the pins and the corridors, whose count and whose vertices are the dataset.
+     * `MeshBuffer` (`packages/gl/src/env/lit.ts:596`) hands back `STATIC_DRAW` buffers with no way to rewrite a
+     * range, so those genuinely must be reallocated; the 425,712-byte earth must not.
+     */
+    const data: { disposers: (() => void)[] } = { disposers: [] };
+    const releaseData = (): void => {
+      for (const d of data.disposers.reverse()) d();
+      data.disposers = [];
+    };
+    /* Set by whichever of `refuse` and the cleanup runs first. A redraw can refuse now, so both are reachable in
+       one mount, and `disposers.reverse()` MUTATES — running it twice disposes forwards. */
+    let dead = false;
     const refuse = (code: string): void => {
-      for (const d of disposers.reverse()) d();
-      stage.dispose();
+      drawRef.current = null;
+      if (!dead) {
+        dead = true;
+        releaseData();
+        for (const d of disposers.reverse()) d();
+        /* THE STAGE LAST. It owns the context; releasing it before the resources built on it leaves every
+           `delete*` operating on a dead context — silent rather than fatal, and it leaks on every remount. */
+        stage.dispose();
+      }
       onRefused(code);
     };
 
@@ -266,79 +327,28 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
       : 'kind' in aoOut ? aoOut.code : null;
     if (ao) disposers.push(() => ao.dispose());
 
-    /* ── THE SUN, FROM THE READER'S CLOCK ── */
-    const now = Date.now();
-    const sub = subSolarPoint(now);
-    const sunUnit = geoUnit(sub.lat, sub.lon);
-    /* `lightDir` is the direction light TRAVELS, so it is the sub-solar direction negated. */
-    const lightDir: [number, number, number] = [-sunUnit[0], -sunUnit[1], -sunUnit[2]];
-
-    /* ── THE CAMERA, AIMED BY THE DATA ── */
-    const meridian = centralMeridian([HUB.lon, ...book.sites.map((s) => s.lon)]);
-    const meridianRefused = meridian === null;
     /*
-     * A refusal here is antipodal sites, where no single face shows both and any choice is arbitrary. The
-     * hub's own meridian is then the honest default — it is the one position that is an address — and every
-     * site that falls behind the limb is named in words under the frame instead of being labelled over the
-     * wrong hemisphere.
+     * ── THE PLANET. NOT DATA, AND THIS IS THE 425,712 BYTES THE OLD DEPENDENCY LIST RE-UPLOADED ──
+     *
+     * `sphere(EARTH_R, 56, 84)` is the same 4,845 vertices whatever the market filter says. It is uploaded once
+     * per context and survives every redraw.
      */
-    const centre = meridian ?? HUB.lon;
-    /* ELEVATION FOLLOWS THE LATITUDES THAT CARRY A BOOK, damped, rather than sitting on the equator: a
-       camera level with the equator looks at 40 N obliquely and foreshortens exactly the pins being read. */
-    const meanLat = [HUB.lat, ...book.sites.map((s) => s.lat)].reduce((a, b) => a + b, 0) / (book.sites.length + 1);
-    const view: Viewpoint = {
-      target: [0, 0, 0],
-      distance: CAMERA_DISTANCE,
-      azimuthDeg: 90 - centre,
-      elevationDeg: Math.max(-45, Math.min(45, meanLat)) * 0.55,
-      fovDeg: FOV_DEG,
-    };
-    const eye = eyeOf(view);
-    const eyeLen = Math.hypot(eye[0], eye[1], eye[2]) || 1;
-    const eyeUnit: [number, number, number] = [eye[0] / eyeLen, eye[1] / eyeLen, eye[2] / eyeLen];
-    /*
-     * THE LIMB, EXACTLY. For a unit sphere seen from distance d the horizon is the circle where
-     * n · eyeUnit = 1/d. A site at or beyond it is on the far side, and a DOM label there would float over
-     * the near hemisphere pointing at nothing. The margin keeps a site that is technically a degree inside
-     * the limb — where the surface is edge-on and a pin is a single leaning pixel — out of the labelled set
-     * and into the words underneath.
-     */
-    const LIMB_DOT = 1 / CAMERA_DISTANCE + 0.05;
-
-    /* ── GEOMETRY ── */
     const earthGeo = sphere(EARTH_R, 56, 84);
     /* Built AT 1.06 rather than scaled from the earth: a scale in the model matrix would also scale the
        tangents the anisotropic terms read, for no saving. */
     const atmosGeo = sphere(ATMOS_R, 48, 72);
     const hubGeo = sphere(HUB_RADIUS, 14, 20);
 
-    const maxProjects = Math.max(...book.sites.map((s) => s.projects));
-    const pinGeos = book.sites.map((s) => cylinder(PIN_RADIUS, Math.max(1e-4, pinHeight(s.projects, maxProjects)), 20));
-
-    /*
-     * ONE ARC PER REGION THAT LCX ACTUALLY LISTS FROM. A region with zero listings gets NO corridor and the
-     * absence is stated in words under the frame — an OBSERVED zero, which is a different statement from an
-     * absence and is never drawn as a hairline.
-     *
-     * The tube radius is FIXED and does not encode the listing count. A tube's apparent thickness on screen
-     * varies with its lift and its distance from the camera, so two corridors of different radius cannot be
-     * compared by eye on a sphere; encoding a number in it would be a quantity nobody can read back. The
-     * count is in the label instead.
-     */
-    const corridorSites = book.sites.filter((s) => s.listed > 0);
-    const corridorGeos = corridorSites.map((s) => arcTube(HUB.lat, HUB.lon, s.lat, s.lon, EARTH_R, CORRIDOR_TUBE, 0.20, 128, 10));
-
-    const meshes: (MeshBuffer | { kind: 'refused'; code: string })[] = [
+    const bodyMeshOut: (MeshBuffer | { kind: 'refused'; code: string })[] = [
       uploadMesh(stage, earthGeo), uploadMesh(stage, atmosGeo), uploadMesh(stage, hubGeo),
-      ...pinGeos.map((g) => uploadMesh(stage, g)),
-      ...corridorGeos.map((g) => uploadMesh(stage, g)),
     ];
-    for (const m of meshes) if ('kind' in m) { refuse(m.code); return; }
-    const ok = meshes as MeshBuffer[];
-    for (const m of ok) disposers.push(() => m.dispose());
-    const earthMesh = ok[0]!, atmosMesh = ok[1]!, hubMesh = ok[2]!;
-    const pinMeshes = ok.slice(3, 3 + pinGeos.length);
-    const corridorMeshes = ok.slice(3 + pinGeos.length);
+    for (const m of bodyMeshOut) if ('kind' in m) { refuse(m.code); return; }
+    const bodyMeshes = bodyMeshOut as MeshBuffer[];
+    for (const m of bodyMeshes) disposers.push(() => m.dispose());
+    const earthMesh = bodyMeshes[0]!, atmosMesh = bodyMeshes[1]!, hubMesh = bodyMeshes[2]!;
+    /* The planet's own triangle count, which the caption prints. Fixed with the geometry, so it is summed once
+       and the per-dataset pins and corridors are added to it in `draw`. */
+    const bodyTriangles = triangleCount(earthGeo) + triangleCount(atmosGeo) + triangleCount(hubGeo);
 
     const NM = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
     const at = (x: number, y: number, z: number): Float32Array => {
@@ -425,28 +435,7 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
       normalMat: NM, material: HUB_MAT,
     };
 
-    const pinDraws: LitDraw[] = book.sites.map((s, i) => {
-      const n = geoUnit(s.lat, s.lon);
-      const h = Math.max(1e-4, pinHeight(s.projects, maxProjects));
-      const { model, normalMat } = standOnNormal(n, EARTH_R + h / 2);
-      return { mesh: pinMeshes[i]!, model, normalMat, material: PIN_MAT };
-    });
-
-    const corridorDraws: LitDraw[] = corridorMeshes.map((m) => ({
-      mesh: m, model: at(0, 0, 0), normalMat: NM, material: CORRIDOR_MAT,
-    }));
-
     const bodyDraws: LitDraw[] = [earthDraw, atmosDraw];
-    /*
-     * THE SHELL IS NOT A SHADOW CASTER, and that is a correctness fix rather than a saving. `shadowPass`
-     * culls FRONT faces to push depth to the far side of each object; applied to the mirrored shell that
-     * inverts back to the hemisphere FACING the light, so it would write a full disc of depth in front of
-     * the earth and shadow the entire daylit face. An atmosphere does not cast a hard shadow on its planet
-     * either way.
-     */
-    const shadowCasters: LitDraw[] = [earthDraw, hubDraw, ...pinDraws, ...corridorDraws];
-    /* Everything that will be shaded must be in the prepass or LEQUAL rejects it. */
-    const depthDraws: LitDraw[] = [...bodyDraws, hubDraw, ...pinDraws, ...corridorDraws];
 
     const SCENE_EXTENT = ATMOS_R + PIN_MAX;
     const sceneMin: [number, number, number] = [-SCENE_EXTENT, -SCENE_EXTENT, -SCENE_EXTENT];
@@ -456,9 +445,6 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
        light's stand-off distance and wrong for the shadow frustum, where wasted extent is wasted texels. */
     const standOff = boundsRadius(sceneMin, sceneMax);
     const SHADOW_EXTENT = SCENE_EXTENT * 1.05;
-
-    const vp = viewProjection(view, W / H);
-    const { near, far } = nearFarOf(view);
 
     /*
      * AMBIENT IS A PER-PASS UNIFORM, WHICH IS WHY THE PINS AND CORRIDORS ARE SEPARATE DRAW CALLS.
@@ -478,208 +464,325 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
     const CORRIDOR_AMBIENT = (BODY_AMBIENT + MARKER_AMBIENT) / 2;
 
     /*
-     * ONE FRAME, MEASURED. `docs/3d/e2/README.md` records that no real-hardware frame time for E2 exists —
-     * its harness has only ever run headless under SwiftShader, where `headroom` correctly refuses. This
-     * runs on an operator's actual GPU, so the number below is the first real-hardware E2 figure that will
-     * ever exist, and it is measured rather than asserted: the clock spans the shadow pass, AO, the lit
-     * passes and the present, and a single-pixel `readPixels` forces the driver to FINISH before the clock
-     * is read. Without that read the driver has merely QUEUED the work and the figure is submission cost —
-     * the mistake that made the harness report 191.7 ms for one thing and microseconds for another.
+     * ONE REDRAW, WHICH IS THE WHOLE RESPONSE TO A NEW FILTER — no context, no program, no target, no earth.
      *
-     * ONE SAMPLE. It is labelled as one sample on the frame; a sweep would be a loop, and §6 rule 2 does
-     * not have an exception for measurement.
+     * The camera is INSIDE this function because it is aimed by the data: `centralMeridian` over the placed
+     * regions decides the face, and the mean latitude decides the elevation. So a filter that moves the book
+     * moves the globe, which is the reading; what it must not move is the planet's 425,712 bytes.
      */
-    const t0 = performance.now();
+    const draw = (universe: readonly MapPoint[]): void => {
+      /* Any earlier overlay is dropped before the new frame exists, and before any refusal: a projected label
+         from the previous filter sitting over a freshly drawn globe is a stale picture presented as live. */
+      setPlan(null);
+      const refusal = bookRefusal(universe);
+      if (refusal !== null) { refuse(refusal); return; }
+      const book = buildGlobeBook(universe);
 
-    const lightVP = lightViewProjection(
-      { direction: lightDir, colour: [1, 1, 1], extent: SHADOW_EXTENT }, sceneCentre, standOff,
-    );
-    lit.shadowPass(lightVP, shadowCasters, shadow);
+      /* ── THE SUN, FROM THE READER'S CLOCK ── */
+      const now = Date.now();
+      const sub = subSolarPoint(now);
+      const sunUnit = geoUnit(sub.lat, sub.lon);
+      /* `lightDir` is the direction light TRAVELS, so it is the sub-solar direction negated. */
+      const lightDir: [number, number, number] = [-sunUnit[0], -sunUnit[1], -sunUnit[2]];
 
-    target.bind();
-    gl.clear(gl.DEPTH_BUFFER_BIT);
-    skyBox.draw({ eye, target: view.target, fovDeg: FOV_DEG, aspect: W / H, sky: SKY });
-    lit.depthPrepass(vp, depthDraws);
-    if (ao) {
-      ao.compute({
-        depthTexture: target.depthTexture, near, far, fovDeg: FOV_DEG, aspect: W / H,
-        radius: 0.3, strength: 1.0,
-      });
-      /* AO binds its OWN half-res framebuffer, so the scene target must be rebound INSIDE the gate.
-         Leaving this outside and skipping the compute would render the rest of the frame at half res. */
-      target.bind();
-    }
+      /* ── THE CAMERA, AIMED BY THE DATA ── */
+      const meridian = centralMeridian([HUB.lon, ...book.sites.map((s) => s.lon)]);
+      const meridianRefused = meridian === null;
+      /*
+       * A refusal here is antipodal sites, where no single face shows both and any choice is arbitrary. The
+       * hub's own meridian is then the honest default — it is the one position that is an address — and every
+       * site that falls behind the limb is named in words under the frame instead of being labelled over the
+       * wrong hemisphere.
+       */
+      const centre = meridian ?? HUB.lon;
+      /* ELEVATION FOLLOWS THE LATITUDES THAT CARRY A BOOK, damped, rather than sitting on the equator: a
+         camera level with the equator looks at 40 N obliquely and foreshortens exactly the pins being read. */
+      const meanLat = [HUB.lat, ...book.sites.map((s) => s.lat)].reduce((a, b) => a + b, 0) / (book.sites.length + 1);
+      const view: Viewpoint = {
+        target: [0, 0, 0],
+        distance: CAMERA_DISTANCE,
+        azimuthDeg: 90 - centre,
+        elevationDeg: Math.max(-45, Math.min(45, meanLat)) * 0.55,
+        fovDeg: FOV_DEG,
+      };
+      const eye = eyeOf(view);
+      const eyeLen = Math.hypot(eye[0], eye[1], eye[2]) || 1;
+      const eyeUnit: [number, number, number] = [eye[0] / eyeLen, eye[1] / eyeLen, eye[2] / eyeLen];
+      /*
+       * THE LIMB, EXACTLY. For a unit sphere seen from distance d the horizon is the circle where
+       * n · eyeUnit = 1/d. A site at or beyond it is on the far side, and a DOM label there would float over
+       * the near hemisphere pointing at nothing. The margin keeps a site that is technically a degree inside
+       * the limb — where the surface is edge-on and a pin is a single leaning pixel — out of the labelled set
+       * and into the words underneath.
+       */
+      const LIMB_DOT = 1 / CAMERA_DISTANCE + 0.05;
 
-    const common = {
-      viewProj: vp, eye, lightDir,
-      /* Warm sun against the cool sky. The colour separation is doing real work: it is what distinguishes
-         the daylit hemisphere from the ambient-lit one, and a neutral key against a blue ambient reads as
-         an exposure difference rather than as sunlight. */
-      lightColour: [6.6, 6.2, 5.5] as [number, number, number],
-      sky: SKY,
-      lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE,
-      ao: ao ? ao.texture : null,
-      screenSize: [W, H] as [number, number],
-    };
-    lit.draw({ ...common, ambientGain: BODY_AMBIENT, draws: bodyDraws });
-    if (corridorDraws.length > 0) lit.draw({ ...common, ambientGain: CORRIDOR_AMBIENT, draws: corridorDraws });
-    lit.draw({ ...common, ambientGain: MARKER_AMBIENT, draws: [hubDraw, ...pinDraws] });
+      /* ── THE GEOMETRY THAT IS ACTUALLY DATA. The previous filter's is released FIRST: building the new pins
+         before disposing the old holds two books on the GPU at once, and `Stage` knows nothing about a VAO, so
+         forgetting the release would strand one vertex array and four buffers per pin per filter change. ── */
+      releaseData();
+      const maxProjects = Math.max(...book.sites.map((s) => s.projects));
+      const pinGeos = book.sites.map((s) => cylinder(PIN_RADIUS, Math.max(1e-4, pinHeight(s.projects, maxProjects)), 20));
 
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, W, H);
-    gl.disable(gl.DEPTH_TEST);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, target.texture);
-    stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+      /*
+       * ONE ARC PER REGION THAT LCX ACTUALLY LISTS FROM. A region with zero listings gets NO corridor and the
+       * absence is stated in words under the frame — an OBSERVED zero, which is a different statement from an
+       * absence and is never drawn as a hairline.
+       *
+       * The tube radius is FIXED and does not encode the listing count. A tube's apparent thickness on screen
+       * varies with its lift and its distance from the camera, so two corridors of different radius cannot be
+       * compared by eye on a sphere; encoding a number in it would be a quantity nobody can read back. The
+       * count is in the label instead.
+       */
+      const corridorSites = book.sites.filter((s) => s.listed > 0);
+      const corridorGeos = corridorSites.map((s) => arcTube(HUB.lat, HUB.lon, s.lat, s.lon, EARTH_R, CORRIDOR_TUBE, 0.20, 128, 10));
 
-    const flush = new Uint8Array(4);
-    gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, flush);
-    const msFrame = performance.now() - t0;
-
-    /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted.
-       This file was one of the two that never did it, so the app sweep could reach `/market-map`, watch this
-       surface draw, and still report "0 of 1 canvases" for the tier it drew at.
-       AFTER the clock is read, not beside the blit where the other six put it, because the number this
-       surface publishes at :664 is a documented COLD single sample (see :177) — a DOM write inside `t0`'s
-       span would be charged to the frame it is describing. Stamping is not probing: nothing extra is
-       drawn, so the reason at :177 for taking no warm-up frame is untouched. */
-    canvas.dataset.qualityTier = tier;
-
-    /*
-     * READ ONCE, because `getError` CLEARS the flag — a second read anywhere returns 0 and would make this
-     * check a lie about a state it had itself consumed. GL does not throw: an invalid call is dropped, the
-     * draw silently does less than it was asked to, and the frame still completes. E0 lost a day to exactly
-     * that, with a complete framebuffer and no refusal anywhere.
-     */
-    const err = gl.getError();
-    if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return; }
-
-    /* ── THE DOM LAYER: §6 RULE 4, AND E2's OUTSTANDING VIOLATION ── */
-    const worldPerPixel = (2 * Math.tan((FOV_DEG * Math.PI) / 360) * CAMERA_DISTANCE) / Math.max(1, cssH);
-    const labels: ScreenLabel[] = [];
-    const offFace: OffFace[] = [];
-
-    /** dot(a, b) for two unit vectors. Written out because a `reduce` over a tuple hides the sign error. */
-    const dot3 = (a: readonly [number, number, number], b: readonly [number, number, number]): number =>
-      a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-
-    /*
-     * THE FOUR LINES EVERY REGION GETS, and the second one is the one with a scar in it.
-     *
-     * "No readable market cap" is NOT "$0". A region whose every member carried a broken figure has an
-     * unknown total, and printing zero would be a measurement nobody took — the same defect E3 fixed on
-     * `BdLead`. The unreadable count rides along so the reader can see the difference between a thin region
-     * and a broken column.
-     *
-     * The last line is the provenance of the POSITION, on every label, because the position is the one thing
-     * on this figure a reader could otherwise mistake for an address.
-     */
-    const describe = (s: RegionBook): string[] => {
-      const hour = solarHourAt(s.lon, now);
-      const sunlit = dot3(geoUnit(s.lat, s.lon), sunUnit) > 0;
-      const projectWord = s.projects === 1 ? 'project' : 'projects';
-      const unreadableSuffix = s.mcapUnreadable > 0 ? ` · ${s.mcapUnreadable} unreadable` : '';
-      const mcapLine = s.mcapUsd === null
-        ? `No readable market cap in this region${unreadableSuffix}`
-        : `${formatMoney(s.mcapUsd)} market cap${unreadableSuffix}`;
-      return [
-        `${s.projects} ${projectWord} · ${s.listed} on LCX`,
-        mcapLine,
-        `${formatSolarHour(hour)} solar · ${sunlit ? 'daylight' : 'night'}`,
-        s.provenance,
+      const markerMeshOut: (MeshBuffer | { kind: 'refused'; code: string })[] = [
+        ...pinGeos.map((g) => uploadMesh(stage, g)),
+        ...corridorGeos.map((g) => uploadMesh(stage, g)),
       ];
-    };
+      for (const m of markerMeshOut) if ('kind' in m) { refuse(m.code); return; }
+      const markerMeshes = markerMeshOut as MeshBuffer[];
+      for (const m of markerMeshes) data.disposers.push(() => m.dispose());
+      const pinMeshes = markerMeshes.slice(0, pinGeos.length);
+      const corridorMeshes = markerMeshes.slice(pinGeos.length);
 
-    const hubDot = dot3(hubUnit, eyeUnit);
-    if (hubDot > LIMB_DOT) {
-      const p = projectScreen(vp, [hubUnit[0] * (EARTH_R + HUB_RADIUS), hubUnit[1] * (EARTH_R + HUB_RADIUS), hubUnit[2] * (EARTH_R + HUB_RADIUS)], cssW, cssH);
-      if (!p.behind) {
+      const pinDraws: LitDraw[] = book.sites.map((s, i) => {
+        const n = geoUnit(s.lat, s.lon);
+        const h = Math.max(1e-4, pinHeight(s.projects, maxProjects));
+        const { model, normalMat } = standOnNormal(n, EARTH_R + h / 2);
+        return { mesh: pinMeshes[i]!, model, normalMat, material: PIN_MAT };
+      });
+
+      const corridorDraws: LitDraw[] = corridorMeshes.map((m) => ({
+        mesh: m, model: at(0, 0, 0), normalMat: NM, material: CORRIDOR_MAT,
+      }));
+
+      /*
+       * THE SHELL IS NOT A SHADOW CASTER, and that is a correctness fix rather than a saving. `shadowPass`
+       * culls FRONT faces to push depth to the far side of each object; applied to the mirrored shell that
+       * inverts back to the hemisphere FACING the light, so it would write a full disc of depth in front of
+       * the earth and shadow the entire daylit face. An atmosphere does not cast a hard shadow on its planet
+       * either way.
+       */
+      const shadowCasters: LitDraw[] = [earthDraw, hubDraw, ...pinDraws, ...corridorDraws];
+      /* Everything that will be shaded must be in the prepass or LEQUAL rejects it. */
+      const depthDraws: LitDraw[] = [...bodyDraws, hubDraw, ...pinDraws, ...corridorDraws];
+
+      const vp = viewProjection(view, W / H);
+      const { near, far } = nearFarOf(view);
+
+      /*
+       * ONE FRAME, MEASURED. `docs/3d/e2/README.md` records that no real-hardware frame time for E2 exists —
+       * its harness has only ever run headless under SwiftShader, where `headroom` correctly refuses. This
+       * runs on an operator's actual GPU, so the number below is the first real-hardware E2 figure that will
+       * ever exist, and it is measured rather than asserted: the clock spans the shadow pass, AO, the lit
+       * passes and the present, and a single-pixel `readPixels` forces the driver to FINISH before the clock
+       * is read. Without that read the driver has merely QUEUED the work and the figure is submission cost —
+       * the mistake that made the harness report 191.7 ms for one thing and microseconds for another.
+       *
+       * ONE SAMPLE. It is labelled as one sample on the frame; a sweep would be a loop, and §6 rule 2 does
+       * not have an exception for measurement.
+       */
+      const t0 = performance.now();
+
+      const lightVP = lightViewProjection(
+        { direction: lightDir, colour: [1, 1, 1], extent: SHADOW_EXTENT }, sceneCentre, standOff,
+      );
+      lit.shadowPass(lightVP, shadowCasters, shadow);
+
+      target.bind();
+      gl.clear(gl.DEPTH_BUFFER_BIT);
+      skyBox.draw({ eye, target: view.target, fovDeg: FOV_DEG, aspect: W / H, sky: SKY });
+      lit.depthPrepass(vp, depthDraws);
+      if (ao) {
+        ao.compute({
+          depthTexture: target.depthTexture, near, far, fovDeg: FOV_DEG, aspect: W / H,
+          radius: 0.3, strength: 1.0,
+        });
+        /* AO binds its OWN half-res framebuffer, so the scene target must be rebound INSIDE the gate.
+           Leaving this outside and skipping the compute would render the rest of the frame at half res. */
+        target.bind();
+      }
+
+      const common = {
+        viewProj: vp, eye, lightDir,
+        /* Warm sun against the cool sky. The colour separation is doing real work: it is what distinguishes
+           the daylit hemisphere from the ambient-lit one, and a neutral key against a blue ambient reads as
+           an exposure difference rather than as sunlight. */
+        lightColour: [6.6, 6.2, 5.5] as [number, number, number],
+        sky: SKY,
+        lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE,
+        ao: ao ? ao.texture : null,
+        screenSize: [W, H] as [number, number],
+      };
+      lit.draw({ ...common, ambientGain: BODY_AMBIENT, draws: bodyDraws });
+      if (corridorDraws.length > 0) lit.draw({ ...common, ambientGain: CORRIDOR_AMBIENT, draws: corridorDraws });
+      lit.draw({ ...common, ambientGain: MARKER_AMBIENT, draws: [hubDraw, ...pinDraws] });
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, W, H);
+      gl.disable(gl.DEPTH_TEST);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, target.texture);
+      stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+
+      const flush = new Uint8Array(4);
+      gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, flush);
+      const msFrame = performance.now() - t0;
+
+      /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted.
+         This file was one of the two that never did it, so the app sweep could reach `/market-map`, watch this
+         surface draw, and still report "0 of 1 canvases" for the tier it drew at.
+         AFTER the clock is read, not beside the blit where the other six put it, because the number this
+         surface publishes at :664 is a documented COLD single sample (see :177) — a DOM write inside `t0`'s
+         span would be charged to the frame it is describing. Stamping is not probing: nothing extra is
+         drawn, so the reason at :177 for taking no warm-up frame is untouched. */
+      canvas.dataset.qualityTier = tier;
+
+      /*
+       * READ ONCE, because `getError` CLEARS the flag — a second read anywhere returns 0 and would make this
+       * check a lie about a state it had itself consumed. GL does not throw: an invalid call is dropped, the
+       * draw silently does less than it was asked to, and the frame still completes. E0 lost a day to exactly
+       * that, with a complete framebuffer and no refusal anywhere.
+       */
+      const err = gl.getError();
+      if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return; }
+
+        /* ── THE DOM LAYER: §6 RULE 4, AND E2's OUTSTANDING VIOLATION ── */
+      const worldPerPixel = (2 * Math.tan((FOV_DEG * Math.PI) / 360) * CAMERA_DISTANCE) / Math.max(1, cssH);
+      const labels: ScreenLabel[] = [];
+      const offFace: OffFace[] = [];
+
+      /** dot(a, b) for two unit vectors. Written out because a `reduce` over a tuple hides the sign error. */
+      const dot3 = (a: readonly [number, number, number], b: readonly [number, number, number]): number =>
+        a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+
+      /*
+       * THE FOUR LINES EVERY REGION GETS, and the second one is the one with a scar in it.
+       *
+       * "No readable market cap" is NOT "$0". A region whose every member carried a broken figure has an
+       * unknown total, and printing zero would be a measurement nobody took — the same defect E3 fixed on
+       * `BdLead`. The unreadable count rides along so the reader can see the difference between a thin region
+       * and a broken column.
+       *
+       * The last line is the provenance of the POSITION, on every label, because the position is the one thing
+       * on this figure a reader could otherwise mistake for an address.
+       */
+      const describe = (s: RegionBook): string[] => {
+        const hour = solarHourAt(s.lon, now);
+        const sunlit = dot3(geoUnit(s.lat, s.lon), sunUnit) > 0;
+        const projectWord = s.projects === 1 ? 'project' : 'projects';
+        const unreadableSuffix = s.mcapUnreadable > 0 ? ` · ${s.mcapUnreadable} unreadable` : '';
+        const mcapLine = s.mcapUsd === null
+          ? `No readable market cap in this region${unreadableSuffix}`
+          : `${formatMoney(s.mcapUsd)} market cap${unreadableSuffix}`;
+        return [
+          `${s.projects} ${projectWord} · ${s.listed} on LCX`,
+          mcapLine,
+          `${formatSolarHour(hour)} solar · ${sunlit ? 'daylight' : 'night'}`,
+          s.provenance,
+        ];
+      };
+
+      const hubDot = dot3(hubUnit, eyeUnit);
+      if (hubDot > LIMB_DOT) {
+        const p = projectScreen(vp, [hubUnit[0] * (EARTH_R + HUB_RADIUS), hubUnit[1] * (EARTH_R + HUB_RADIUS), hubUnit[2] * (EARTH_R + HUB_RADIUS)], cssW, cssH);
+        if (!p.behind) {
+          labels.push({
+            key: 'hub', sx: p.sx, sy: p.sy, title: `${HUB.label} · hub`,
+            lines: [HUB.provenance], sunlit: null,
+            flip: p.sx > cssW - LABEL_MAX_PX,
+          });
+        }
+      } else {
+        offFace.push({ key: 'hub', text: `${HUB.label} (the hub) is on the far side of this face.` });
+      }
+
+      for (const s of book.sites) {
+        const n = geoUnit(s.lat, s.lon);
+        const dotEye = dot3(n, eyeUnit);
+        const lines = describe(s);
+        if (dotEye <= LIMB_DOT) {
+          /* NOT LABELLED, BUT NOT LOST. CSS has no depth buffer, so a label here would float over the near
+             hemisphere pointing at a pin nobody can see. The numbers move into the words under the frame. */
+          offFace.push({ key: s.key, text: `${s.label} is behind the limb on this face — ${lines[0]!}, ${lines[1]!}, ${lines[2]!}.` });
+          continue;
+        }
+        const h = pinHeight(s.projects, maxProjects);
+        const topR = EARTH_R + h;
+        const p = projectScreen(vp, [n[0] * topR, n[1] * topR, n[2] * topR], cssW, cssH);
+        if (p.behind) {
+          offFace.push({ key: s.key, text: `${s.label} projected behind the camera and is not labelled — ${lines[0]!}, ${lines[1]!}.` });
+          continue;
+        }
+        const sunlit = dot3(n, sunUnit) > 0;
         labels.push({
-          key: 'hub', sx: p.sx, sy: p.sy, title: `${HUB.label} · hub`,
-          lines: [HUB.provenance], sunlit: null,
+          key: s.key, sx: p.sx, sy: p.sy, title: s.label, lines, sunlit,
           flip: p.sx > cssW - LABEL_MAX_PX,
         });
       }
-    } else {
-      offFace.push({ key: 'hub', text: `${HUB.label} (the hub) is on the far side of this face.` });
-    }
 
-    for (const s of book.sites) {
-      const n = geoUnit(s.lat, s.lon);
-      const dotEye = dot3(n, eyeUnit);
-      const lines = describe(s);
-      if (dotEye <= LIMB_DOT) {
-        /* NOT LABELLED, BUT NOT LOST. CSS has no depth buffer, so a label here would float over the near
-           hemisphere pointing at a pin nobody can see. The numbers move into the words under the frame. */
-        offFace.push({ key: s.key, text: `${s.label} is behind the limb on this face — ${lines[0]!}, ${lines[1]!}, ${lines[2]!}.` });
-        continue;
-      }
-      const h = pinHeight(s.projects, maxProjects);
-      const topR = EARTH_R + h;
-      const p = projectScreen(vp, [n[0] * topR, n[1] * topR, n[2] * topR], cssW, cssH);
-      if (p.behind) {
-        offFace.push({ key: s.key, text: `${s.label} projected behind the camera and is not labelled — ${lines[0]!}, ${lines[1]!}.` });
-        continue;
-      }
-      const sunlit = dot3(n, sunUnit) > 0;
-      labels.push({
-        key: s.key, sx: p.sx, sy: p.sy, title: s.label, lines, sunlit,
-        flip: p.sx > cssW - LABEL_MAX_PX,
+      const shortestPinPx = book.sites.length === 0 ? 0
+        : Math.min(...book.sites.map((s) => pinHeight(s.projects, maxProjects))) / worldPerPixel;
+
+      const triangles = bodyTriangles
+        + pinGeos.reduce((n, g) => n + triangleCount(g), 0)
+        + corridorGeos.reduce((n, g) => n + triangleCount(g), 0);
+
+      const latText = sub.lat >= 0 ? `${sub.lat.toFixed(1)} N` : `${(-sub.lat).toFixed(1)} S`;
+      const lonText = sub.lon >= 0 ? `${sub.lon.toFixed(1)} E` : `${(-sub.lon).toFixed(1)} W`;
+      const subSolar = `${latText} ${lonText}`;
+      const clockLine = `${new Date(now).toISOString().replace('T', ' ').slice(0, 16)} UTC`;
+      const pinPx = Number(shortestPinPx.toFixed(1));
+      const shortestLine = pinPx < 2
+        ? `Shortest pin is ${pinPx} px at this camera — read it from its label, not its height.`
+        : `Shortest pin is ${pinPx} px at this camera.`;
+      const regionWord = book.sites.length === 1 ? 'region' : 'regions';
+
+      setPlan({
+        cssW, cssH, labels, offFace,
+        subSolar,
+        clockLine,
+        corridors: corridorSites.map((s) => `${HUB.label} → ${s.label}: ${s.listed} listed, ${separationDeg(HUB.lat, HUB.lon, s.lat, s.lon).toFixed(1)}° away`),
+        noCorridor: book.sites.filter((s) => s.listed === 0).map((s) => `${s.label}: 0 of ${s.projects} on LCX, so no corridor is drawn`),
+        book,
+        triangles,
+        msFrame: Number(msFrame.toFixed(2)),
+        shortestPinPx: pinPx,
+        aoRefusal,
+        meridianRefused,
+        headerNote: 'Every marker is a published reference point for a REGION. This dataset carries no per-project\n'
+          + `coordinates, so no project is placed anywhere. Sunlit hemisphere from your clock at ${clockLine};\n`
+          + `sub-solar point ${subSolar}, accurate to about 4° of longitude (no equation of time).`,
+        pinNote: 'Pin height ∝ projects in that region, proportional with no floor.\n'
+          + `${shortestLine}\n`
+          + 'Arc lift rises with distance from the hub — that is geometry, not data.',
+        unplacedNotes: book.unplaced.map((u) => {
+          const n = u.projects;
+          const word = n === 1 ? 'project' : 'projects';
+          if (u.reason === 'NO_REGION_RECORDED') return `${n} ${word} with no region recorded at all — not placed.`;
+          if (u.reason === 'NOT_A_PLACE') return `${n} ${word} in region "${u.region}", which is a category rather than a place — not placed.`;
+          return `${n} ${word} in region "${u.region}", which has no published reference point in this figure's table — not placed.`;
+        }),
+        costNote: `${triangles.toLocaleString()} triangles · ${msFrame.toFixed(2)} ms for this frame, one sample, GPU flushed before the clock was read.`,
+        aoNote: aoRefusal === null ? null
+          : Q.ao
+            ? `Ambient occlusion unavailable on this driver (${aoRefusal}) — the contact shading is missing and every number above is unaffected.`
+            /* NOT "unavailable on this driver". The ladder dropped it on a measured frame time, and telling a
+               reader their driver refused something the software chose to skip is a false statement about their
+               machine. */
+            : `Ambient occlusion off at the ${tier} quality tier, chosen from a measured frame time on this machine — the contact shading is missing and every number above is unaffected.`,
+        placedNote: `${book.placedProjects} of ${book.considered} visible projects sit in a region this figure can place, across ${book.sites.length} ${regionWord}.`,
       });
-    }
+    };
 
-    const shortestPinPx = book.sites.length === 0 ? 0
-      : Math.min(...book.sites.map((s) => pinHeight(s.projects, maxProjects))) / worldPerPixel;
-
-    const triangles = triangleCount(earthGeo) + triangleCount(atmosGeo) + triangleCount(hubGeo)
-      + pinGeos.reduce((n, g) => n + triangleCount(g), 0)
-      + corridorGeos.reduce((n, g) => n + triangleCount(g), 0);
-
-    const latText = sub.lat >= 0 ? `${sub.lat.toFixed(1)} N` : `${(-sub.lat).toFixed(1)} S`;
-    const lonText = sub.lon >= 0 ? `${sub.lon.toFixed(1)} E` : `${(-sub.lon).toFixed(1)} W`;
-    const subSolar = `${latText} ${lonText}`;
-    const clockLine = `${new Date(now).toISOString().replace('T', ' ').slice(0, 16)} UTC`;
-    const pinPx = Number(shortestPinPx.toFixed(1));
-    const shortestLine = pinPx < 2
-      ? `Shortest pin is ${pinPx} px at this camera — read it from its label, not its height.`
-      : `Shortest pin is ${pinPx} px at this camera.`;
-    const regionWord = book.sites.length === 1 ? 'region' : 'regions';
-
-    setPlan({
-      cssW, cssH, labels, offFace,
-      subSolar,
-      clockLine,
-      corridors: corridorSites.map((s) => `${HUB.label} → ${s.label}: ${s.listed} listed, ${separationDeg(HUB.lat, HUB.lon, s.lat, s.lon).toFixed(1)}° away`),
-      noCorridor: book.sites.filter((s) => s.listed === 0).map((s) => `${s.label}: 0 of ${s.projects} on LCX, so no corridor is drawn`),
-      book,
-      triangles,
-      msFrame: Number(msFrame.toFixed(2)),
-      shortestPinPx: pinPx,
-      aoRefusal,
-      meridianRefused,
-      headerNote: 'Every marker is a published reference point for a REGION. This dataset carries no per-project\n'
-        + `coordinates, so no project is placed anywhere. Sunlit hemisphere from your clock at ${clockLine};\n`
-        + `sub-solar point ${subSolar}, accurate to about 4° of longitude (no equation of time).`,
-      pinNote: 'Pin height ∝ projects in that region, proportional with no floor.\n'
-        + `${shortestLine}\n`
-        + 'Arc lift rises with distance from the hub — that is geometry, not data.',
-      unplacedNotes: book.unplaced.map((u) => {
-        const n = u.projects;
-        const word = n === 1 ? 'project' : 'projects';
-        if (u.reason === 'NO_REGION_RECORDED') return `${n} ${word} with no region recorded at all — not placed.`;
-        if (u.reason === 'NOT_A_PLACE') return `${n} ${word} in region "${u.region}", which is a category rather than a place — not placed.`;
-        return `${n} ${word} in region "${u.region}", which has no published reference point in this figure's table — not placed.`;
-      }),
-      costNote: `${triangles.toLocaleString()} triangles · ${msFrame.toFixed(2)} ms for this frame, one sample, GPU flushed before the clock was read.`,
-      aoNote: aoRefusal === null ? null
-        : Q.ao
-          ? `Ambient occlusion unavailable on this driver (${aoRefusal}) — the contact shading is missing and every number above is unaffected.`
-          /* NOT "unavailable on this driver". The ladder dropped it on a measured frame time, and telling a
-             reader their driver refused something the software chose to skip is a false statement about their
-             machine. */
-          : `Ambient occlusion off at the ${tier} quality tier, chosen from a measured frame time on this machine — the contact shading is missing and every number above is unaffected.`,
-      placedNote: `${book.placedProjects} of ${book.considered} visible projects sit in a region this figure can place, across ${book.sites.length} ${regionWord}.`,
-    });
+    /* THE FIRST FRAME COMES FROM THE SETUP, NOT FROM THE DRAW EFFECT ABOVE. On a tier rebuild that effect does
+       not re-run — its dependency did not change — so a rebuilt context with no draw would leave a blank canvas
+       under a caption naming a sub-solar point. */
+    draw(pointsRef.current);
+    if (dead) return;
+    drawRef.current = draw;
 
     /*
      * CONTEXT LOSS RESOLVES TO THE SCATTER. Without this the canvas keeps its last frame for ever while the
@@ -690,16 +793,22 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
     const onLost = (e: Event): void => { e.preventDefault(); onRefused('CONTEXT_LOST'); };
     canvas.addEventListener('webglcontextlost', onLost);
 
+    /* THE ORDER IS SPELLED OUT HERE RATHER THAN DELEGATED, and that is deliberate:
+       `market/__tests__/globeRelief.test.tsx:139` reads this file and asserts that `disposers.reverse()`
+       precedes `stage.dispose()` INSIDE the cleanup closure. A one-line call to a helper would keep the
+       invariant and blind the guard that checks it. */
     return () => {
       canvas.removeEventListener('webglcontextlost', onLost);
+      drawRef.current = null;
+      if (dead) return;
+      dead = true;
+      releaseData();
       for (const d of disposers.reverse()) d();
-      /* THE STAGE LAST. It owns the context; releasing it before the resources built on it leaves every
-         `delete*` operating on a dead context — silent rather than fatal, and it leaks on every remount.
-         This component remounts whenever a reader toggles the view or changes a filter. */
       stage.dispose();
     };
-    /* `tier` IS A DEPENDENCY: a tier resolved by another surface rebuilds this one at it. */
-  }, [points, heightPx, onRefused, tier]);
+    /* `tier` IS A DEPENDENCY: a tier resolved by another surface rebuilds this one at it. `points` IS NOT, and
+       that is the fix this file exists to carry — a market filter is a redraw, not a new planet. */
+  }, [heightPx, onRefused, tier]);
 
   const mono = (colour: string, size = 10.5): CSSProperties => ({
     font: `400 ${size}px/1.45 ui-monospace, monospace`, color: colour, whiteSpace: 'pre-wrap',

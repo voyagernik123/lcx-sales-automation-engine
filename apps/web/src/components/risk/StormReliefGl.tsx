@@ -47,7 +47,7 @@ import {
   hexToLinear, assertBrandFidelity, IDENTITY, sub, cross, normalise,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
   qualitySettings, shadowMapSizeFor, pickQualityTier,
-  type LitDraw, type MeshBuffer, type Viewpoint, type Vec3,
+  type LitDraw, type MeshBuffer, type Viewpoint, type VolumeField, type Vec3,
 } from '@lcx/gl';
 import {
   useResolvedQualityTier, needsQualityProbe, measureFrameMs, recordQualityProbe,
@@ -128,21 +128,70 @@ const BAND_PLATEAU = 0.62;
  */
 const SHADOW_BASELINE = 1024;
 
+/**
+ * The refusals that belong to the FIELD rather than to the GPU, in one place because two callers make the
+ * judgement: the setup effect, so a field with nothing in it never costs a WebGL context or a 3-D texture, and
+ * every redraw, so the second field is judged as strictly as the first.
+ *
+ * `FIELD_TOO_LARGE_FOR_EXACT_INTEGRAL` is here rather than beside the allocation because the voxel count is a
+ * property of the field's SHAPE: it is knowable before a context exists, and discovering it afterwards would
+ * cost a reader a context and a 3-D texture to be told the answer was refused.
+ */
+const fieldRefusal = (f: RiskField): string | null => {
+  const lanes = f.lanes.length, bands = f.bands.length, days = f.days.length;
+  if (lanes === 0 || bands === 0 || days === 0) return 'EMPTY_FIELD';
+  if (f.observedDays === 0) return 'NO_OBSERVED_DAYS';
+  const gx = Math.max(2, Math.round((2 * (LANE_PITCH * (lanes - 1) / 2 + LANE_W / 2)) / VOX_X_PITCH));
+  const gy = Math.max(2, bands * VOX_PER_BAND);
+  const gz = Math.max(2, days * VOX_PER_DAY);
+  if (gx * gy * gz > MAX_VOXELS) return 'FIELD_TOO_LARGE_FOR_EXACT_INTEGRAL';
+  return null;
+};
+
 export default function StormReliefGl({ field, heightPx, onRefused }: StormReliefGlProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   /* Subscribed rather than read once: this surface renders one frame into an offscreen target and only then
      blits it, so a resolved lower tier can rebuild the scene before anything has been painted. */
   const tier = useResolvedQualityTier();
 
+  /**
+   * THE REDRAW LIVES IN A REF, AND THAT IS WHAT KEEPS ONE GL CONTEXT ACROSS A DATA CHANGE.
+   *
+   * `field` used to be in the setup effect's dependency list, so a new forward-risk reading disposed the stage
+   * and built another one. Measured with a counting WebGL2 context, one change to `field` cost **1 context, 6
+   * programs, 12 shaders, 9 vertex arrays, 29 bufferData calls, 9 textures, 6 framebuffers, a fresh 3-D volume
+   * texture and 60,336 bytes** — that is §6 rule 7's hazard on every data update, and `DeckReliefGl.tsx:205-213`
+   * already ships the fix for its own click path.
+   *
+   * THE SPLIT HERE IS THREE-WAY, NOT TWO, BECAUSE THE VOLUME'S SIZE IS THE FIELD'S SHAPE. `createVolumeField`
+   * allocates GRID_X x GRID_Y x GRID_Z texels, and those come from the lane, band and day COUNTS. So the
+   * redraw keeps a shape key: a field whose VALUES changed re-uploads the grid and nothing else, and only a
+   * field whose lane/band/day counts changed reallocates the texture and the lane-width geometry.
+   */
+  const drawRef = useRef<((f: RiskField) => 'STALE_TIER' | undefined) | null>(null);
+  /* THE LATEST FIELD, so a TIER change can redraw it: the setup effect re-runs on a resolved tier while the
+     draw effect below does not, and a rebuilt context with no draw is a blank canvas under a calibration
+     sentence claiming a 16.0 m integration reach. */
+  const fieldRef = useRef<RiskField>(field);
+
+  /* THE DRAW EFFECT IS DECLARED FIRST, AND THE ORDER IS LOAD-BEARING. React runs effects in declaration order,
+     so on MOUNT this one records the field and returns (nothing is published yet) and the setup effect draws
+     it. On a DATA CHANGE only this one re-runs, and the context is untouched. */
+  useEffect(() => {
+    fieldRef.current = field;
+    drawRef.current?.(field);
+  }, [field]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    drawRef.current = null;
 
-    const lanes = field.lanes.length;
-    const bands = field.bands.length;
-    const days = field.days.length;
-    if (lanes === 0 || bands === 0 || days === 0) { onRefused('EMPTY_FIELD'); return; }
-    if (field.observedDays === 0) { onRefused('NO_OBSERVED_DAYS'); return; }
+    /* THE FIELD'S OWN REFUSALS STILL COME BEFORE THE RENDERER. Read through the ref rather than the prop, so
+       this does not put the data back in the dependency list below; `draw` makes the identical judgement on
+       every later field. */
+    const firstRefusal = fieldRefusal(fieldRef.current);
+    if (firstRefusal !== null) { onRefused(firstRefusal); return; }
 
     /*
      * §6 RULE 5 BEFORE ANYTHING IS DRAWN. If the palette does not round-trip through this pipeline's tone
@@ -150,28 +199,6 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
      * large to be exact, and it would be screenshotted into a deck.
      */
     if (assertBrandFidelity().length > 0) { onRefused('BRAND_FIDELITY_FAILED'); return; }
-
-    const laneX = (c: number): number => (c - (lanes - 1) / 2) * LANE_PITCH;
-    const LANE_HALF = laneX(lanes - 1) + LANE_W / 2;
-    const GUTTER_X = laneX(0) - LANE_W / 2 - 0.03 - GUTTER_W / 2;
-    const FLOOR_MIN_X = GUTTER_X - GUTTER_W / 2;
-    /* The camera is offset so the floor INCLUDING its date gutter is centred; centring on the lanes alone
-       pushed the gutter into the left margin. */
-    const SCENE_X = (FLOOR_MIN_X + LANE_HALF) / 2;
-    const zNearOfDay = (d: number): number => -NOW_OFFSET - d * DAY_M;
-    const zMidOfDay = (d: number): number => zNearOfDay(d) - DAY_M / 2;
-
-    const FIELD_Y0 = FLOOR_TOP + 0.02;
-    const FIELD_Y1 = FIELD_Y0 + bands * BAND_H;
-    const bandCentreY = (b: number): number => FIELD_Y0 + (b + 0.5) * BAND_H;
-
-    const BOX_MIN: [number, number, number] = [-LANE_HALF, FIELD_Y0, zNearOfDay(days)];
-    const BOX_MAX: [number, number, number] = [LANE_HALF, FIELD_Y1, zNearOfDay(0)];
-
-    const GRID_X = Math.max(2, Math.round((2 * LANE_HALF) / VOX_X_PITCH));
-    const GRID_Y = Math.max(2, bands * VOX_PER_BAND);
-    const GRID_Z = Math.max(2, days * VOX_PER_DAY);
-    if (GRID_X * GRID_Y * GRID_Z > MAX_VOXELS) { onRefused('FIELD_TOO_LARGE_FOR_EXACT_INTEGRAL'); return; }
 
     /* DPR CAPPED BY THE TIER, where it was a literal 2. Two full-resolution HDR targets and a raymarch are
        all fill-bound, so resolution is the largest single thing the ladder can drop here: `Q.dprScale` is 2 at
@@ -188,11 +215,34 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
     const gl = stage.gl;
 
     const disposers: (() => void)[] = [];
-    const refuse = (code: string): void => {
+    /*
+     * THREE LIFETIMES, TWO LISTS. `disposers` holds what the SIZE and the TIER own — the context, the four
+     * programs, both HDR targets and the shadow map — and is released once, on unmount. `shapeDisposers` holds
+     * what the field's SHAPE owns: the seven floor and fence meshes, whose widths are set by the lane count,
+     * and the 3-D volume texture, whose extent is the lane x band x day counts. A field whose VALUES change
+     * touches neither list — it re-uploads the grid into the texture that is already there.
+     */
+    const shape: { key: string | null; disposers: (() => void)[] } = { key: null, disposers: [] };
+    const releaseShape = (): void => {
+      for (const d of shape.disposers.reverse()) d();
+      shape.disposers = [];
+      shape.key = null;
+    };
+    /* Set by whichever of `refuse` and the cleanup runs first. A redraw can refuse now, so both are reachable
+       in one mount, and `disposers.reverse()` MUTATES — running it twice disposes forwards. */
+    let dead = false;
+    const releaseAll = (): void => {
+      if (dead) return;
+      dead = true;
+      releaseShape();
       /* REVERSE, AND THE STAGE LAST. It owns the context; releasing it first leaves every other delete*
          operating on a dead context — silent rather than fatal, and it leaks on every remount. */
       for (const d of disposers.reverse()) d();
       stage.dispose();
+    };
+    const refuse = (code: string): void => {
+      drawRef.current = null;
+      releaseAll();
       onRefused(code);
     };
 
@@ -212,110 +262,6 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
     const shadow = createShadowMap(stage, shadowMapSizeFor(tier, SHADOW_BASELINE));
     if ('kind' in shadow) { refuse(shadow.code); return; }
     disposers.push(() => shadow.dispose());
-
-    /* The one refusal peculiar to this environment, and it is fatal here on purpose — see the header. */
-    const volume = createVolumeField(stage, GRID_X, GRID_Y, GRID_Z);
-    if ('kind' in volume) { refuse(volume.code); return; }
-    disposers.push(() => volume.dispose());
-
-    /*
-     * ── THE FIELD, EVALUATED PER VOXEL FROM THE CELLS. Three resampling rules, each stated because each
-     * one is a place a lie could hide:
-     *
-     *   x — piecewise constant per lane, HARD ZERO in the gaps. Channels are categories; interpolating
-     *       risk across the gap between two of them would invent a channel that does not exist.
-     *   z — piecewise constant per day. The field STEPS AT MIDNIGHT, because a day is a measurement
-     *       bucket and a volume flowing smoothly across the boundary would assert intra-day structure
-     *       nobody measured.
-     *   y — a PLATEAU across the middle 62% of the band, tapering to zero at its edges. A tent peaking at
-     *       the band centre under-reported every axial ray by 7.1% in E7 — the centre falls exactly
-     *       between two voxel centres — and it was also the wrong statement: within a severity band there
-     *       IS no gradation.
-     */
-    const laneOfX = (x: number): number => {
-      for (let c = 0; c < lanes; c++) if (Math.abs(x - laneX(c)) <= LANE_W / 2) return c;
-      return -1;
-    };
-    const dayOfZ = (z: number): number => {
-      const d = Math.floor((-z - NOW_OFFSET) / DAY_M);
-      return d >= 0 && d < days ? d : -1;
-    };
-    const bandOfY = (y: number): number => {
-      const b = Math.floor((y - FIELD_Y0) / BAND_H);
-      return b >= 0 && b < bands ? b : -1;
-    };
-    const maxCell = field.maxCell;
-    const fieldAt = (x: number, y: number, z: number): number => {
-      const c = laneOfX(x); if (c < 0) return 0;
-      const d = dayOfZ(z); if (d < 0) return 0;
-      /* NOT ZERO BECAUSE IT IS CALM — zero because there is no value that means "we did not look", and
-         the floor carries that refusal instead. */
-      if (field.days[d]!.state !== 'observed') return 0;
-      const b = bandOfY(y); if (b < 0) return 0;
-      const cell = field.cell(c, d, b);
-      if (cell === null || cell <= 0) return 0;
-      const s = Math.abs(y - bandCentreY(b)) / (BAND_H / 2);
-      const profile = Math.max(0, Math.min(1, (1 - s) / (1 - BAND_PLATEAU)));
-      return profile <= 0 ? 0 : (cell * profile) / maxCell;
-    };
-
-    const grid = new Float32Array(GRID_X * GRID_Y * GRID_Z);
-    for (let iz = 0; iz < GRID_Z; iz++) {
-      const z = BOX_MIN[2] + ((iz + 0.5) / GRID_Z) * (BOX_MAX[2] - BOX_MIN[2]);
-      for (let iy = 0; iy < GRID_Y; iy++) {
-        const y = BOX_MIN[1] + ((iy + 0.5) / GRID_Y) * (BOX_MAX[1] - BOX_MIN[1]);
-        for (let ix = 0; ix < GRID_X; ix++) {
-          const x = BOX_MIN[0] + ((ix + 0.5) / GRID_X) * (BOX_MAX[0] - BOX_MIN[0]);
-          grid[ix + GRID_X * (iy + GRID_Y * iz)] = fieldAt(x, y, z);
-        }
-      }
-    }
-    let nonZero = 0;
-    for (const v of grid) if (v > 0) nonZero++;
-    /* AN EMPTY GRID IS A REFUSAL, not a clear frame. It means every observed cell resampled to nothing,
-       and a transparent volume over a calendar reads as "no risk ahead". */
-    if (nonZero === 0) { refuse('FIELD_RESAMPLED_TO_EMPTY'); return; }
-    volume.upload(grid);
-
-    /* density × DAY_M must equal cell × RISK_TO_TAU. This is the whole calibration. */
-    const DENSITY_SCALE = (maxCell * RISK_TO_TAU) / DAY_M;
-
-    /* ── The floor, and the three states made physical. ── */
-    const tileGeo = box(LANE_W, TILE_T, TILE_D);
-    const gutterGeo = box(GUTTER_W, TILE_T, TILE_D);
-    const lidGeo = box(2 * LANE_HALF, 0.42, TILE_D);
-    const railGeo = box(2 * LANE_HALF + GUTTER_W + 0.06, 0.1, 0.05);
-    const weekGeo = box(2 * LANE_HALF, 0.07, 0.05);
-    /* THE GATE IS A FENCE, NOT A WALL. A slab across the calendar removed everything in the lower band
-       beyond it; posts on the lane boundaries occlude eight thin strips instead. */
-    const gateGeo = box(2 * LANE_HALF, 0.11, 0.05);
-    const postGeo = box(0.075, 1.05, 0.075);
-
-    /*
-     * UPLOADED ONE AT A TIME, EACH REGISTERED FOR DISPOSAL BEFORE THE NEXT IS ATTEMPTED — and this file
-     * shipped without the registration at all, which is the reason the loop is written this way now rather
-     * than as a `.map()` with the check afterwards.
-     *
-     * `uploadMesh` creates a VAO and four buffers and hands back the ONLY thing that frees them; `Stage`
-     * tracks its programs and its own targets and knows nothing about a mesh. Seven meshes therefore meant
-     * seven vertex arrays and twenty-eight buffers stranded on the GPU on every unmount — and this component
-     * unmounts every time a reader toggles back to the calendar, so the leak was per toggle rather than per
-     * session. Nothing errors, nothing is visible, and the frame is correct: the only symptom is a context
-     * that grows until the browser drops it, at which point `webglcontextlost` fires and the refusal names
-     * the wrong cause.
-     *
-     * Mapping first and checking after has a second failure on top of the first: a refusal on the seventh
-     * upload leaves the six that succeeded with no disposer recorded, so even a correct cleanup could not
-     * reach them.
-     */
-    const uploaded: MeshBuffer[] = [];
-    for (const g of [tileGeo, gutterGeo, lidGeo, railGeo, weekGeo, gateGeo, postGeo]) {
-      const m = uploadMesh(stage, g);
-      if ('kind' in m) { refuse(m.code); return; }
-      uploaded.push(m);
-      disposers.push(() => m.dispose());
-    }
-    const [tileMesh, gutterMesh, lidMesh, railMesh, weekMesh, gateMesh, postMesh] = uploaded;
 
     const N3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
     const modelOf = (x: number, y: number, z: number): Float32Array => {
@@ -342,93 +288,6 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
       gate: { baseColour: hexToLinear('#2C6BFF'), roughness: 0.52, metalness: 0.06 },
     } as const;
 
-    const draws: LitDraw[] = [];
-    const add = (mesh: typeof tileMesh, x: number, y: number, z: number, material: LitDraw['material']): void => {
-      draws.push({ mesh: mesh!, model: modelOf(x, y, z), normalMat: N3, material });
-    };
-
-    for (let d = 0; d < days; d++) {
-      const st = field.days[d]!.state;
-      const z = zMidOfDay(d);
-      if (st === 'not_measured') {
-        /* NO TILE. The hole IS the refusal, and it runs the full width of the calendar so it cannot be
-           read as one channel going quiet. */
-        continue;
-      }
-      add(gutterMesh, GUTTER_X, 0, z, MAT.gutter);
-      for (let c = 0; c < lanes; c++) {
-        add(tileMesh, laneX(c), 0, z, st === 'withheld' ? MAT.withheldTile : MAT.tile);
-      }
-      if (st === 'withheld') add(lidMesh, 0, FLOOR_TOP + 0.21, z, MAT.lid);
-    }
-
-    /*
-     * EVERY HOLE IS FENCED AT BOTH ENDS, and a low rail alone was not enough: read at 16 m two 10 cm
-     * rails were a pair of faint lines and the gap read as the calendar simply being darker there. The
-     * posts are also what give the depth cap some geometry to bite on inside the volume.
-     */
-    for (let d = 0; d < days; d++) {
-      if (field.days[d]!.state !== 'not_measured') continue;
-      const startsRun = d === 0 || field.days[d - 1]!.state !== 'not_measured';
-      const endsRun = d === days - 1 || field.days[d + 1]!.state !== 'not_measured';
-      const edges: number[] = [];
-      if (startsRun) edges.push(zNearOfDay(d) + 0.02);
-      if (endsRun) edges.push(zNearOfDay(d + 1) - 0.02);
-      for (const z of edges) {
-        add(railMesh, SCENE_X, FLOOR_TOP + 0.05, z, MAT.rail);
-        for (let c = 0; c <= lanes; c++) {
-          add(postMesh, laneX(0) - LANE_PITCH / 2 + c * LANE_PITCH, FLOOR_TOP + 0.525, z, MAT.rail);
-        }
-      }
-    }
-
-    /*
-     * A WEEK GRIDLINE IS SUPPRESSED WHERE IT WOULD BRIDGE A HOLE. A solid rib across an unmeasured gap
-     * fills in the one piece of geometry whose entire job is to be missing — the same class of error as
-     * writing zero into the density.
-     */
-    for (let d = 7; d < days; d += 7) {
-      const before = field.days[d - 1]!.state;
-      const after = field.days[d]!.state;
-      if (before === 'not_measured' || after === 'not_measured') continue;
-      add(weekMesh, 0, FLOOR_TOP + 0.035, zNearOfDay(d), MAT.week);
-    }
-
-    if (field.frontDay !== null) {
-      const gz = zNearOfDay(field.frontDay);
-      add(gateMesh, 0, FLOOR_TOP + 0.055, gz, MAT.gate);
-      for (let c = 0; c <= lanes; c++) {
-        add(postMesh, laneX(0) - LANE_PITCH / 2 + c * LANE_PITCH, FLOOR_TOP + 0.525, gz, MAT.gate);
-      }
-    }
-
-    /*
-     * THE CAMERA. 21.3° with the eye far enough back to put the near edge of day 0 and the far edge of
-     * the last day SYMMETRICALLY about the view axis. E7's first framing was 15.3° and it fitted — the
-     * way a corridor fits when you stand on its centre line: everything present, nothing readable.
-     * 33° rather than 36 because a longer lens compresses depth less, so the far weeks hold their size.
-     */
-    const CAL_LEN = days * DAY_M;
-    const NEAR = 2.5, FAR = Math.max(24, CAL_LEN * 2.3);
-    const view: Viewpoint = {
-      target: [SCENE_X, FIELD_Y0 + bands * BAND_H * 0.2, zMidOfDay(days * 0.183)],
-      distance: Math.max(6, Math.min(20, CAL_LEN * 0.715)),
-      azimuthDeg: 0, elevationDeg: ELEVATION_DEG, fovDeg: 33, near: NEAR, far: FAR,
-    };
-    const eye = eyeOf(view);
-    const forward = normalise(sub(view.target as Vec3, eye));
-    const camRight = normalise(cross(forward, [0, 1, 0]));
-    const camUp = normalise(cross(camRight, forward));
-    const ASPECT = W / H;
-
-    const lightDir: [number, number, number] = [0.44, -0.66, -0.61];
-    const sceneMin: [number, number, number] = [FLOOR_MIN_X - 0.2, 0, zNearOfDay(days) - 0.3];
-    const sceneMax: [number, number, number] = [LANE_HALF + 0.2, FIELD_Y1, -NOW_OFFSET + 0.3];
-    const lightVP = lightViewProjection(
-      { direction: lightDir, colour: [1, 1, 1], extent: Math.max(6, CAL_LEN * 0.68) },
-      boundsCentre(sceneMin, sceneMax), boundsRadius(sceneMin, sceneMax),
-    );
-
     const CLEAR = hexToLinear('#070B14');
     /* Darker than the default sky on every stop. A volumetric composited over a lifted floor reads as
        haze over daylight rather than as accumulated risk, so the environment is dimmed rather than the
@@ -450,116 +309,368 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
     const COL_HIGH: [number, number, number] = [HIGH[0] * 1.45, HIGH[1] * 1.45, HIGH[2] * 1.45];
 
     /*
-     * ONE FRAME, THEN NOTHING. §6 rule 2 forbids idle animation — there is no `requestAnimationFrame` and
-     * no `setInterval` here at all, which is also why the reduced-motion case needs no branch: a still
-     * frame is already the final frame.
+     * ONE REDRAW, WHICH IS THE WHOLE RESPONSE TO A NEW FIELD — no context, no program, no HDR target, and no
+     * new 3-D texture unless the field changed SHAPE.
      */
-    const vp = viewProjection(view, ASPECT);
-    /*
-     * A FUNCTION NOW, SO IT CAN BE MEASURED. It ends with `target` bound, which is what `probeSync` requires —
-     * a `readPixels` only guarantees completion of work affecting the framebuffer it reads, and both halves of
-     * this frame land in offscreen HDR targets.
-     */
-    const renderScene = (): { code: string } | undefined => {
-      lit.shadowPass(lightVP, draws, shadow);
-      target.bind();
-      gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      lit.depthPrepass(vp, draws);
-      lit.draw({
-        viewProj: vp, eye, lightDir, lightColour: [2.05, 2.0, 1.92],
-        ambientGain: 0.62, sky: SKY, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
-        ao: null, screenSize: [W, H],
-      });
+    let shaped: { meshes: MeshBuffer[]; volume: VolumeField } | null = null;
+    const draw = (f: RiskField): 'STALE_TIER' | undefined => {
+      const refusal = fieldRefusal(f);
+      if (refusal !== null) { refuse(refusal); return undefined; }
 
-      volTarget.bind();
-      gl.clearColor(0, 0, 0, 0);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      const failed = volume.draw({
-        eye, forward, right: camRight, up: camUp,
-        fovDeg: view.fovDeg ?? 33, aspect: ASPECT, near: NEAR, far: FAR,
-        /* The SCENE's depth, from a DIFFERENT framebuffer than the one being drawn into. Marching only as
-           far as the depth buffer says the ray is unoccluded is the difference between a volume that is IN
-           the scene and a wash over the lens. */
-        sceneDepth: target.depthTexture,
-        boxMin: BOX_MIN, boxMax: BOX_MAX,
+      /*
+       * THE LANE, BAND AND DAY GEOMETRY, DERIVED FROM THE FIELD ON EVERY DRAW. Cheap arithmetic, no GPU: what
+       * it feeds is the shape key below, which decides whether anything has to be reallocated at all.
+       */
+      const lanes = f.lanes.length;
+      const bands = f.bands.length;
+      const days = f.days.length;
+      const laneX = (c: number): number => (c - (lanes - 1) / 2) * LANE_PITCH;
+      const LANE_HALF = laneX(lanes - 1) + LANE_W / 2;
+      const GUTTER_X = laneX(0) - LANE_W / 2 - 0.03 - GUTTER_W / 2;
+      const FLOOR_MIN_X = GUTTER_X - GUTTER_W / 2;
+      /* The camera is offset so the floor INCLUDING its date gutter is centred; centring on the lanes alone
+         pushed the gutter into the left margin. */
+      const SCENE_X = (FLOOR_MIN_X + LANE_HALF) / 2;
+      const zNearOfDay = (d: number): number => -NOW_OFFSET - d * DAY_M;
+      const zMidOfDay = (d: number): number => zNearOfDay(d) - DAY_M / 2;
+
+      const FIELD_Y0 = FLOOR_TOP + 0.02;
+      const FIELD_Y1 = FIELD_Y0 + bands * BAND_H;
+      const bandCentreY = (b: number): number => FIELD_Y0 + (b + 0.5) * BAND_H;
+
+      const BOX_MIN: [number, number, number] = [-LANE_HALF, FIELD_Y0, zNearOfDay(days)];
+      const BOX_MAX: [number, number, number] = [LANE_HALF, FIELD_Y1, zNearOfDay(0)];
+
+      const GRID_X = Math.max(2, Math.round((2 * LANE_HALF) / VOX_X_PITCH));
+      const GRID_Y = Math.max(2, bands * VOX_PER_BAND);
+      const GRID_Z = Math.max(2, days * VOX_PER_DAY);
+
+      /*
+       * ── THE SHAPE CACHE. This is the whole reason a value change costs nothing on the GPU. ──
+       *
+       * The seven meshes are sized by the LANE COUNT and the volume texture by all three counts, so they are
+       * rebuilt only when one of those counts moves. A forward-risk feed that reports the same channels over
+       * the same horizon with new severities — which is what an update normally is — reuses every one of them
+       * and re-uploads only the grid, into a texture whose extent has not changed.
+       */
+      const key = `${lanes}x${bands}x${days}`;
+      if (key !== shape.key) {
+        releaseShape();
+        /* ── The floor, and the three states made physical. ── */
+        const tileGeo = box(LANE_W, TILE_T, TILE_D);
+        const gutterGeo = box(GUTTER_W, TILE_T, TILE_D);
+        const lidGeo = box(2 * LANE_HALF, 0.42, TILE_D);
+        const railGeo = box(2 * LANE_HALF + GUTTER_W + 0.06, 0.1, 0.05);
+        const weekGeo = box(2 * LANE_HALF, 0.07, 0.05);
+        /* THE GATE IS A FENCE, NOT A WALL. A slab across the calendar removed everything in the lower band
+           beyond it; posts on the lane boundaries occlude eight thin strips instead. */
+        const gateGeo = box(2 * LANE_HALF, 0.11, 0.05);
+        const postGeo = box(0.075, 1.05, 0.075);
+
         /*
-         * `maxSteps` IS NOT A QUALITY KNOB HERE, AND THE TIER IS DELIBERATELY NOT ALLOWED TO TOUCH IT.
+         * UPLOADED ONE AT A TIME, EACH REGISTERED FOR DISPOSAL BEFORE THE NEXT IS ATTEMPTED — and this file
+         * shipped without the registration at all, which is the reason the loop is written this way now rather
+         * than as a `.map()` with the check afterwards.
          *
-         * `env/quality.ts` USED TO OFFER `volumeMaxSteps` (128/96/48), and applying it would have looked like a saving and
-         * be a data change. `volume.ts:230` caps the view-ray march at `uMaxSteps`, so the step count fixes
-         * `MARCH_REACH_M = WORLD_STEP * MAX_STEPS` = 16.0 m — and `stormCalibration.ts` PRINTS that reach to
-         * the operator in `calibrationSentence`. At 48 steps the reach is 6.0 m, the far side of the field is
-         * truncated, and distant days show less risk than they have while the sentence under the frame still
-         * claims 16.0 m. That is the "gaps never zeros" rule with the sign flipped.
+         * `uploadMesh` creates a VAO and four buffers and hands back the ONLY thing that frees them; `Stage`
+         * tracks its programs and its own targets and knows nothing about a mesh. Seven meshes therefore meant
+         * seven vertex arrays and twenty-eight buffers stranded on the GPU on every unmount — and this component
+         * unmounts every time a reader toggles back to the calendar, so the leak was per toggle rather than per
+         * session. Nothing errors, nothing is visible, and the frame is correct: the only symptom is a context
+         * that grows until the browser drops it, at which point `webglcontextlost` fires and the refusal names
+         * the wrong cause.
          *
-         * `lightSteps` IS a look knob and does follow the tier: `volume.ts:200-210` feeds it only to
-         * `lightTransmittance`, which modulates accumulated RADIANCE. `alpha` — the channel this reading
-         * assigns to magnitude — never sees it, so dropping the self-shadow march costs depth in the cloud
-         * and costs the reading nothing.
-         * THE FIELD IS NOW DELETED (2026-08-13), so this refusal is structural rather than a promise in a
-         * comment: steps are REACH at a fixed world step, not quality. E7's box is 14.00 m in z and the
-         * printed `marchReachM` claims 16.0; 96 steps reach 12.0 m and 48 reach 6.0 m, so both truncate
-         * while the sentence still says 16.0. Distant days would read as lower risk than they are.
+         * Mapping first and checking after has a second failure on top of the first: a refusal on the seventh
+         * upload leaves the six that succeeded with no disposer recorded, so even a correct cleanup could not
+         * reach them.
          */
-        worldStep: WORLD_STEP, maxSteps: MAX_STEPS, densityScale: DENSITY_SCALE,
-        colourLow: COL_LOW, colourHigh: COL_HIGH,
-        lightDir, lightSteps: Math.min(6, Q.volumeLightSteps), emission: 0.26,
-      });
-      if (failed !== undefined) return failed;
+        const uploaded: MeshBuffer[] = [];
+        for (const g of [tileGeo, gutterGeo, lidGeo, railGeo, weekGeo, gateGeo, postGeo]) {
+          const m = uploadMesh(stage, g);
+          if ('kind' in m) { refuse(m.code); return undefined; }
+          uploaded.push(m);
+          shape.disposers.push(() => m.dispose());
+        }
 
-      target.bind();
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        /* The one refusal peculiar to this environment, and it is fatal here on purpose — see the header. */
+        const vol = createVolumeField(stage, GRID_X, GRID_Y, GRID_Z);
+        if ('kind' in vol) { refuse(vol.code); return undefined; }
+        shape.disposers.push(() => vol.dispose());
+        shape.key = key;
+        shaped = { meshes: uploaded, volume: vol };
+      }
+      const { meshes: shapeMeshes, volume } = shaped!;
+      const [tileMesh, gutterMesh, lidMesh, railMesh, weekMesh, gateMesh, postMesh] = shapeMeshes;
+
+      /*
+       * ── THE FIELD, EVALUATED PER VOXEL FROM THE CELLS. Three resampling rules, each stated because each
+       * one is a place a lie could hide:
+       *
+       *   x — piecewise constant per lane, HARD ZERO in the gaps. Channels are categories; interpolating
+       *       risk across the gap between two of them would invent a channel that does not exist.
+       *   z — piecewise constant per day. The field STEPS AT MIDNIGHT, because a day is a measurement
+       *       bucket and a volume flowing smoothly across the boundary would assert intra-day structure
+       *       nobody measured.
+       *   y — a PLATEAU across the middle 62% of the band, tapering to zero at its edges. A tent peaking at
+       *       the band centre under-reported every axial ray by 7.1% in E7 — the centre falls exactly
+       *       between two voxel centres — and it was also the wrong statement: within a severity band there
+       *       IS no gradation.
+       */
+      const laneOfX = (x: number): number => {
+        for (let c = 0; c < lanes; c++) if (Math.abs(x - laneX(c)) <= LANE_W / 2) return c;
+        return -1;
+      };
+      const dayOfZ = (z: number): number => {
+        const d = Math.floor((-z - NOW_OFFSET) / DAY_M);
+        return d >= 0 && d < days ? d : -1;
+      };
+      const bandOfY = (y: number): number => {
+        const b = Math.floor((y - FIELD_Y0) / BAND_H);
+        return b >= 0 && b < bands ? b : -1;
+      };
+      const maxCell = f.maxCell;
+      const fieldAt = (x: number, y: number, z: number): number => {
+        const c = laneOfX(x); if (c < 0) return 0;
+        const d = dayOfZ(z); if (d < 0) return 0;
+        /* NOT ZERO BECAUSE IT IS CALM — zero because there is no value that means "we did not look", and
+           the floor carries that refusal instead. */
+        if (f.days[d]!.state !== 'observed') return 0;
+        const b = bandOfY(y); if (b < 0) return 0;
+        const cell = f.cell(c, d, b);
+        if (cell === null || cell <= 0) return 0;
+        const s = Math.abs(y - bandCentreY(b)) / (BAND_H / 2);
+        const profile = Math.max(0, Math.min(1, (1 - s) / (1 - BAND_PLATEAU)));
+        return profile <= 0 ? 0 : (cell * profile) / maxCell;
+      };
+
+      const grid = new Float32Array(GRID_X * GRID_Y * GRID_Z);
+      for (let iz = 0; iz < GRID_Z; iz++) {
+        const z = BOX_MIN[2] + ((iz + 0.5) / GRID_Z) * (BOX_MAX[2] - BOX_MIN[2]);
+        for (let iy = 0; iy < GRID_Y; iy++) {
+          const y = BOX_MIN[1] + ((iy + 0.5) / GRID_Y) * (BOX_MAX[1] - BOX_MIN[1]);
+          for (let ix = 0; ix < GRID_X; ix++) {
+            const x = BOX_MIN[0] + ((ix + 0.5) / GRID_X) * (BOX_MAX[0] - BOX_MIN[0]);
+            grid[ix + GRID_X * (iy + GRID_Y * iz)] = fieldAt(x, y, z);
+          }
+        }
+      }
+      let nonZero = 0;
+      for (const v of grid) if (v > 0) nonZero++;
+      /* AN EMPTY GRID IS A REFUSAL, not a clear frame. It means every observed cell resampled to nothing,
+         and a transparent volume over a calendar reads as "no risk ahead". */
+      if (nonZero === 0) { refuse('FIELD_RESAMPLED_TO_EMPTY'); return undefined; }
+      volume.upload(grid);
+
+      /* density × DAY_M must equal cell × RISK_TO_TAU. This is the whole calibration. */
+      const DENSITY_SCALE = (maxCell * RISK_TO_TAU) / DAY_M;
+
+      const draws: LitDraw[] = [];
+      const add = (mesh: typeof tileMesh, x: number, y: number, z: number, material: LitDraw['material']): void => {
+        draws.push({ mesh: mesh!, model: modelOf(x, y, z), normalMat: N3, material });
+      };
+
+      for (let d = 0; d < days; d++) {
+        const st = f.days[d]!.state;
+        const z = zMidOfDay(d);
+        if (st === 'not_measured') {
+          /* NO TILE. The hole IS the refusal, and it runs the full width of the calendar so it cannot be
+             read as one channel going quiet. */
+          continue;
+        }
+        add(gutterMesh, GUTTER_X, 0, z, MAT.gutter);
+        for (let c = 0; c < lanes; c++) {
+          add(tileMesh, laneX(c), 0, z, st === 'withheld' ? MAT.withheldTile : MAT.tile);
+        }
+        if (st === 'withheld') add(lidMesh, 0, FLOOR_TOP + 0.21, z, MAT.lid);
+      }
+
+      /*
+       * EVERY HOLE IS FENCED AT BOTH ENDS, and a low rail alone was not enough: read at 16 m two 10 cm
+       * rails were a pair of faint lines and the gap read as the calendar simply being darker there. The
+       * posts are also what give the depth cap some geometry to bite on inside the volume.
+       */
+      for (let d = 0; d < days; d++) {
+        if (f.days[d]!.state !== 'not_measured') continue;
+        const startsRun = d === 0 || f.days[d - 1]!.state !== 'not_measured';
+        const endsRun = d === days - 1 || f.days[d + 1]!.state !== 'not_measured';
+        const edges: number[] = [];
+        if (startsRun) edges.push(zNearOfDay(d) + 0.02);
+        if (endsRun) edges.push(zNearOfDay(d + 1) - 0.02);
+        for (const z of edges) {
+          add(railMesh, SCENE_X, FLOOR_TOP + 0.05, z, MAT.rail);
+          for (let c = 0; c <= lanes; c++) {
+            add(postMesh, laneX(0) - LANE_PITCH / 2 + c * LANE_PITCH, FLOOR_TOP + 0.525, z, MAT.rail);
+          }
+        }
+      }
+
+      /*
+       * A WEEK GRIDLINE IS SUPPRESSED WHERE IT WOULD BRIDGE A HOLE. A solid rib across an unmeasured gap
+       * fills in the one piece of geometry whose entire job is to be missing — the same class of error as
+       * writing zero into the density.
+       */
+      for (let d = 7; d < days; d += 7) {
+        const before = f.days[d - 1]!.state;
+        const after = f.days[d]!.state;
+        if (before === 'not_measured' || after === 'not_measured') continue;
+        add(weekMesh, 0, FLOOR_TOP + 0.035, zNearOfDay(d), MAT.week);
+      }
+
+      if (f.frontDay !== null) {
+        const gz = zNearOfDay(f.frontDay);
+        add(gateMesh, 0, FLOOR_TOP + 0.055, gz, MAT.gate);
+        for (let c = 0; c <= lanes; c++) {
+          add(postMesh, laneX(0) - LANE_PITCH / 2 + c * LANE_PITCH, FLOOR_TOP + 0.525, gz, MAT.gate);
+        }
+      }
+
+      /*
+       * THE CAMERA. 21.3° with the eye far enough back to put the near edge of day 0 and the far edge of
+       * the last day SYMMETRICALLY about the view axis. E7's first framing was 15.3° and it fitted — the
+       * way a corridor fits when you stand on its centre line: everything present, nothing readable.
+       * 33° rather than 36 because a longer lens compresses depth less, so the far weeks hold their size.
+       */
+      const CAL_LEN = days * DAY_M;
+      const NEAR = 2.5, FAR = Math.max(24, CAL_LEN * 2.3);
+      const view: Viewpoint = {
+        target: [SCENE_X, FIELD_Y0 + bands * BAND_H * 0.2, zMidOfDay(days * 0.183)],
+        distance: Math.max(6, Math.min(20, CAL_LEN * 0.715)),
+        azimuthDeg: 0, elevationDeg: ELEVATION_DEG, fovDeg: 33, near: NEAR, far: FAR,
+      };
+      const eye = eyeOf(view);
+      const forward = normalise(sub(view.target as Vec3, eye));
+      const camRight = normalise(cross(forward, [0, 1, 0]));
+      const camUp = normalise(cross(camRight, forward));
+      const ASPECT = W / H;
+
+      const lightDir: [number, number, number] = [0.44, -0.66, -0.61];
+      const sceneMin: [number, number, number] = [FLOOR_MIN_X - 0.2, 0, zNearOfDay(days) - 0.3];
+      const sceneMax: [number, number, number] = [LANE_HALF + 0.2, FIELD_Y1, -NOW_OFFSET + 0.3];
+      const lightVP = lightViewProjection(
+        { direction: lightDir, colour: [1, 1, 1], extent: Math.max(6, CAL_LEN * 0.68) },
+        boundsCentre(sceneMin, sceneMax), boundsRadius(sceneMin, sceneMax),
+      );
+
+      /*
+       * ONE FRAME, THEN NOTHING. §6 rule 2 forbids idle animation — there is no `requestAnimationFrame` and
+       * no `setInterval` here at all, which is also why the reduced-motion case needs no branch: a still
+       * frame is already the final frame.
+       */
+      const vp = viewProjection(view, ASPECT);
+      /*
+       * A FUNCTION NOW, SO IT CAN BE MEASURED. It ends with `target` bound, which is what `probeSync` requires —
+       * a `readPixels` only guarantees completion of work affecting the framebuffer it reads, and both halves of
+       * this frame land in offscreen HDR targets.
+       */
+      const renderScene = (): { code: string } | undefined => {
+        lit.shadowPass(lightVP, draws, shadow);
+        target.bind();
+        gl.clearColor(CLEAR[0], CLEAR[1], CLEAR[2], 1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        lit.depthPrepass(vp, draws);
+        lit.draw({
+          viewProj: vp, eye, lightDir, lightColour: [2.05, 2.0, 1.92],
+          ambientGain: 0.62, sky: SKY, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
+          ao: null, screenSize: [W, H],
+        });
+
+        volTarget.bind();
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        const failed = volume.draw({
+          eye, forward, right: camRight, up: camUp,
+          fovDeg: view.fovDeg ?? 33, aspect: ASPECT, near: NEAR, far: FAR,
+          /* The SCENE's depth, from a DIFFERENT framebuffer than the one being drawn into. Marching only as
+             far as the depth buffer says the ray is unoccluded is the difference between a volume that is IN
+             the scene and a wash over the lens. */
+          sceneDepth: target.depthTexture,
+          boxMin: BOX_MIN, boxMax: BOX_MAX,
+          /*
+           * `maxSteps` IS NOT A QUALITY KNOB HERE, AND THE TIER IS DELIBERATELY NOT ALLOWED TO TOUCH IT.
+           *
+           * `env/quality.ts` USED TO OFFER `volumeMaxSteps` (128/96/48), and applying it would have looked like a saving and
+           * be a data change. `volume.ts:230` caps the view-ray march at `uMaxSteps`, so the step count fixes
+           * `MARCH_REACH_M = WORLD_STEP * MAX_STEPS` = 16.0 m — and `stormCalibration.ts` PRINTS that reach to
+           * the operator in `calibrationSentence`. At 48 steps the reach is 6.0 m, the far side of the field is
+           * truncated, and distant days show less risk than they have while the sentence under the frame still
+           * claims 16.0 m. That is the "gaps never zeros" rule with the sign flipped.
+           *
+           * `lightSteps` IS a look knob and does follow the tier: `volume.ts:200-210` feeds it only to
+           * `lightTransmittance`, which modulates accumulated RADIANCE. `alpha` — the channel this reading
+           * assigns to magnitude — never sees it, so dropping the self-shadow march costs depth in the cloud
+           * and costs the reading nothing.
+           * THE FIELD IS NOW DELETED (2026-08-13), so this refusal is structural rather than a promise in a
+           * comment: steps are REACH at a fixed world step, not quality. E7's box is 14.00 m in z and the
+           * printed `marchReachM` claims 16.0; 96 steps reach 12.0 m and 48 reach 6.0 m, so both truncate
+           * while the sentence still says 16.0. Distant days would read as lower risk than they are.
+           */
+          worldStep: WORLD_STEP, maxSteps: MAX_STEPS, densityScale: DENSITY_SCALE,
+          colourLow: COL_LOW, colourHigh: COL_HIGH,
+          lightDir, lightSteps: Math.min(6, Q.volumeLightSteps), emission: 0.26,
+        });
+        if (failed !== undefined) return failed;
+
+        target.bind();
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        gl.disable(gl.DEPTH_TEST);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, volTarget.texture);
+        stage.blit(composite, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uVolume'), 0));
+        gl.disable(gl.BLEND);
+        return undefined;
+      };
+
+      /* THE REFUSAL CHECK RUNS ON A REAL FRAME, BEFORE THE PROBE. A march that refused produces a frame that is
+         not this scene, and timing it would resolve the page load's tier from a broken picture. */
+      const marched = renderScene();
+      if (marched !== undefined) { refuse(marched.code); return undefined; }
+
+      /*
+       * THE PROBE. `pickQualityTier` exists to choose a tier from a measured frame and had no caller in the repo;
+       * this is one. It takes its own discarded warm-up frame — the first frame pays shader upload and charging
+       * that to the GPU would downgrade every machine — then two sync-bounded samples of which the cheaper is
+       * used, because one sample can catch a GC pause and a single unlucky 40 ms would drop a fast machine for
+       * the rest of the page load. At most one mount per page load pays for it.
+       */
+      if (needsQualityProbe()) {
+        const ms = measureFrameMs(gl, renderScene);
+        const r = recordQualityProbe({
+          pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'StormReliefGl',
+        });
+        /* A LOWER TIER MEANS THIS BUILD IS STALE. Nothing is presented; the effect re-runs on the new tier and
+           the first thing the reader sees is the resolved tier rather than a frame that then changes. */
+        if (r.tier !== tier) return 'STALE_TIER';
+        /* NO REDRAW HERE. The probe's last timed sample left a complete frame in `target`, and nothing in this
+           scene depends on the clock, so the frame about to be presented is byte-identical to one that a fifth
+           render would produce. A fifth render would only make the probe's cost visible. */
+      }
+
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, W, H);
       gl.disable(gl.DEPTH_TEST);
       gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, volTarget.texture);
-      stage.blit(composite, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uVolume'), 0));
-      gl.disable(gl.BLEND);
+      gl.bindTexture(gl.TEXTURE_2D, target.texture);
+      stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+      /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
+      canvas.dataset.qualityTier = tier;
+
+      const err = gl.getError();
+      if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return undefined; }
       return undefined;
     };
 
-    /* THE REFUSAL CHECK RUNS ON A REAL FRAME, BEFORE THE PROBE. A march that refused produces a frame that is
-       not this scene, and timing it would resolve the page load's tier from a broken picture. */
-    const marched = renderScene();
-    if (marched !== undefined) { refuse(marched.code); return; }
 
-    /*
-     * THE PROBE. `pickQualityTier` exists to choose a tier from a measured frame and had no caller in the repo;
-     * this is one. It takes its own discarded warm-up frame — the first frame pays shader upload and charging
-     * that to the GPU would downgrade every machine — then two sync-bounded samples of which the cheaper is
-     * used, because one sample can catch a GC pause and a single unlucky 40 ms would drop a fast machine for
-     * the rest of the page load. At most one mount per page load pays for it.
-     */
-    if (needsQualityProbe()) {
-      const ms = measureFrameMs(gl, renderScene);
-      const r = recordQualityProbe({
-        pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'StormReliefGl',
-      });
-      /* A LOWER TIER MEANS THIS BUILD IS STALE. Nothing is presented; the effect re-runs on the new tier and
-         the first thing the reader sees is the resolved tier rather than a frame that then changes. */
-      if (r.tier !== tier) {
-        return () => {
-          for (const d of disposers.reverse()) d();
-          stage.dispose();
-        };
-      }
-      /* NO REDRAW HERE. The probe's last timed sample left a complete frame in `target`, and nothing in this
-         scene depends on the clock, so the frame about to be presented is byte-identical to one that a fifth
-         render would produce. A fifth render would only make the probe's cost visible. */
+    /* THE FIRST FRAME COMES FROM THE SETUP, NOT FROM THE DRAW EFFECT ABOVE. On a tier rebuild that effect does
+       not re-run — its dependency did not change — so a rebuilt context with no draw would leave a blank canvas
+       under a sentence claiming a 16.0 m integration reach. */
+    if (draw(fieldRef.current) === 'STALE_TIER') {
+      /* No context-lost listener on this path: nothing is on screen to go stale, and `onRefused` must not fire
+         — the storm is about to be rebuilt at the resolved tier, not refused. */
+      return releaseAll;
     }
-
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, W, H);
-    gl.disable(gl.DEPTH_TEST);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, target.texture);
-    stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
-    /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
-    canvas.dataset.qualityTier = tier;
-
-    const err = gl.getError();
-    if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return; }
+    if (dead) return;
+    drawRef.current = draw;
 
     /*
      * CONTEXT LOSS RESOLVES TO THE CALENDAR. Without this the canvas keeps its last frame on screen for
@@ -572,13 +683,13 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
 
     return () => {
       canvas.removeEventListener('webglcontextlost', onLost);
-      for (const d of disposers.reverse()) d();
+      drawRef.current = null;
       /* THE STAGE LAST — it owns the context, and this component remounts whenever a reader toggles it. */
-      stage.dispose();
+      releaseAll();
     };
     /* `tier` IS A DEPENDENCY, and that is the rebuild mechanism: a resolved lower tier tears this context down
-       and builds the storm again at it. */
-  }, [field, heightPx, onRefused, tier]);
+       and builds the storm again at it. `field` IS NOT, and that is the fix this file exists to carry. */
+  }, [heightPx, onRefused, tier]);
 
   return (
     <canvas

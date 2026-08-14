@@ -52,6 +52,17 @@ import {
   GATE_BANDS, STALL_DAYS, MAX_PER_GATE, type Channel, type ChannelDeal,
 } from '@/components/geometry/pipelineChannel';
 
+/**
+ * The refusals that belong to the DATASET rather than to the GPU, in one place because two callers make the
+ * judgement: the setup effect, so a refused channel never costs a WebGL context, and every redraw, so the
+ * second channel is judged as strictly as the first.
+ */
+const channelRefusal = (c: Channel): string | null => {
+  if (c.refusal !== null) return c.refusal;
+  if (c.deals.length === 0) return 'NO_DRAWABLE_LEADS';
+  return null;
+};
+
 export interface PipelineReliefGlProps {
   /** Already derived and already validated by `buildChannel`. */
   readonly channel: Channel;
@@ -199,14 +210,53 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
      blits it, so a resolved lower tier can rebuild the scene before anything has been painted. */
   const tier = useResolvedQualityTier();
 
+  /**
+   * THE REDRAW LIVES IN A REF, AND THAT IS WHAT KEEPS ONE GL CONTEXT ACROSS A DATA CHANGE.
+   *
+   * `channel` used to be in the setup effect's dependency list, so filtering the lead table disposed the stage
+   * and built a new one: measured with a counting WebGL2 context, one change to `channel` cost **1 context, 7
+   * programs, 14 shaders, 9 vertex arrays, 52 bufferData calls, 8 textures, 7 framebuffers and 142,092 bytes**
+   * of re-upload — all of it identical to what was already on the GPU. That is §6 rule 7's hazard happening on
+   * every data update, and `DeckReliefGl.tsx:205-213` already ships the fix for its own click path.
+   *
+   * NOT ONE BYTE OF THIS SCENE'S GEOMETRY IS DATA. Every lead is the SAME unit cube, ring or sphere placed by a
+   * model matrix (see the "ONE UNIT CUBE, SCALED PER LEAD" note below), so a new channel changes a JavaScript
+   * array of draw descriptors and nothing else. After the split a data change uploads nothing at all.
+   */
+  const drawRef = useRef<((c: Channel) => 'STALE_TIER' | undefined) | null>(null);
+  /*
+   * THE LATEST CHANNEL, so a TIER change can redraw it. The setup effect re-runs when the probe resolves a
+   * lower tier, and at that moment the draw effect below does NOT re-run — its dependency did not change — so
+   * without this the rebuilt context would have nothing to put on the canvas and the reader would be left with
+   * a blank one under a caption describing a channel.
+   */
+  const channelRef = useRef<Channel>(channel);
+
+  /*
+   * THE DRAW EFFECT IS DECLARED FIRST, AND THE ORDER IS LOAD-BEARING. React runs effects in declaration order,
+   * so on MOUNT this one runs before the setup below has published a draw function: it records the channel and
+   * returns, and the setup effect draws it. On a DATA CHANGE only this one re-runs, and the context is untouched.
+   */
+  useEffect(() => {
+    channelRef.current = channel;
+    drawRef.current?.(channel);
+  }, [channel]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    drawRef.current = null;
 
-    /* The derivation refuses before the renderer exists. A channel the caption declined to describe must not
-       be handed to a mesh builder — that is the worst possible direction for a disagreement to run. */
-    if (channel.refusal !== null) { onRefused(channel.refusal); return; }
-    if (channel.deals.length === 0) { onRefused('NO_DRAWABLE_LEADS'); return; }
+    /*
+     * THE DERIVATION STILL REFUSES BEFORE THE RENDERER EXISTS. A channel the caption declined to describe must
+     * not be handed to a mesh builder — that is the worst possible direction for a disagreement to run — and
+     * discovering it after `createStage` would cost a context to be told so.
+     *
+     * READ THROUGH THE REF, NOT THE PROP: this is a check on the data, but it must not put the data back in the
+     * dependency list below. `draw` makes the identical judgement on every later channel, at `channelRefusal`.
+     */
+    const firstRefusal = channelRefusal(channelRef.current);
+    if (firstRefusal !== null) { onRefused(firstRefusal); return; }
 
     /*
      * §6 RULE 5 BEFORE ANYTHING IS DRAWN. If the palette does not round-trip through this pipeline's tone map
@@ -231,9 +281,16 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
     const gl = stage.gl;
 
     const disposers: (() => void)[] = [];
+    /* Set by whichever of `refuse` and the cleanup runs first. A redraw can refuse now, so the two paths can
+       both be reached in one mount and `disposers.reverse()` mutates — running it twice disposes forwards. */
+    let dead = false;
     const refuse = (code: string): void => {
-      for (const d of disposers.reverse()) d();
-      stage.dispose();
+      drawRef.current = null;
+      if (!dead) {
+        dead = true;
+        for (const d of disposers.reverse()) d();
+        stage.dispose();
+      }
       onRefused(code);
     };
 
@@ -320,7 +377,9 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
     const floorModel = modelAt(0, 0, CHANNEL_MID, 1);
     floorModel[10] = CHANNEL_LEN / (2 * CHANNEL_HALF);
 
-    const draws: LitDraw[] = [
+    /* THE ARCHITECTURE, which is the same for every dataset this channel can hold. Built once and reused by
+       every redraw; only the leads below it are rebuilt when the data changes. */
+    const staticDraws: LitDraw[] = [
       { mesh: floorMesh!, model: floorModel, normalMat: N3,
         material: { baseColour: hexToLinear('#22304A'), roughness: 0.82, metalness: 0 } },
       { mesh: wallMesh!, model: modelAt(-(CHANNEL_HALF + 0.09), 0.625, CHANNEL_MID), normalMat: N3,
@@ -340,7 +399,7 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
      */
     for (let i = 0; i < GATE_BANDS.length; i++) {
       const z = gateZ(i);
-      draws.push(
+      staticDraws.push(
         { mesh: postMesh!, model: modelAt(-(CHANNEL_HALF + 0.05), GATE_H / 2, z), normalMat: N3, material: GATE_MAT },
         { mesh: postMesh!, model: modelAt(CHANNEL_HALF + 0.05, GATE_H / 2, z), normalMat: N3, material: GATE_MAT },
         { mesh: sillMesh!, model: modelAt(0, 0.025, z), normalMat: N3, material: GATE_MAT },
@@ -359,68 +418,72 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
      *   the one record nobody can check — the exact inversion of what the absence means;
      * · a lead missing BOTH is a dull steel SPHERE, off both scales, neither fresh-coloured nor stalled-
      *   coloured because either would assert a movement reading it does not have.
+     *
+     * ALL THREE ARE SHARED, UNIT-SIZED MESHES. That is what makes this function cheap enough to be the whole
+     * response to a data change: it allocates nothing on the GPU, it only decides where the shapes go.
      */
-    const values = channel.deals.map((d) => d.valueUsd).filter((v): v is number => v !== null);
-    const valueMax = values.length > 0 ? Math.max(...values) : 0;
-    const edgeOf = (v: number): number =>
-      valueMax <= 0 ? REF_SIZE : EDGE_MAX * Math.cbrt(v / valueMax);
+    const leadDraws = (c: Channel): LitDraw[] | { refusal: string } => {
+      const values = c.deals.map((d) => d.valueUsd).filter((v): v is number => v !== null);
+      const valueMax = values.length > 0 ? Math.max(...values) : 0;
+      const edgeOf = (v: number): number =>
+        valueMax <= 0 ? REF_SIZE : EDGE_MAX * Math.cbrt(v / valueMax);
 
-    const settleOf = (d: ChannelDeal): number | null =>
-      d.daysSinceUpdate === null ? null : Math.min(1, d.daysSinceUpdate / STALL_DAYS);
+      const settleOf = (d: ChannelDeal): number | null =>
+        d.daysSinceUpdate === null ? null : Math.min(1, d.daysSinceUpdate / STALL_DAYS);
 
-    const placed = channel.deals.map((d) => {
-      const row = Math.floor(d.slot / LANES.length);
-      const lane = d.slot % LANES.length;
-      const x = LANES[lane] ?? 0;
-      const z = gateZ(d.gateIndex) + SLOT_Z0 + row * ROW_DZ;
-      const edge = d.valueUsd === null ? null : edgeOf(d.valueUsd);
-      const settle = settleOf(d);
-      const half = edge !== null ? edge / 2 : REF_SIZE;
-      const baseY = settle === null ? RAIL_LIFT + 0.30 : (1 - settle) * RAIL_LIFT;
-      return { d, x, z, edge, settle, centreY: baseY + half };
-    });
+      const placed = c.deals.map((d) => {
+        const row = Math.floor(d.slot / LANES.length);
+        const lane = d.slot % LANES.length;
+        const x = LANES[lane] ?? 0;
+        const z = gateZ(d.gateIndex) + SLOT_Z0 + row * ROW_DZ;
+        const edge = d.valueUsd === null ? null : edgeOf(d.valueUsd);
+        const settle = settleOf(d);
+        const half = edge !== null ? edge / 2 : REF_SIZE;
+        const baseY = settle === null ? RAIL_LIFT + 0.30 : (1 - settle) * RAIL_LIFT;
+        return { d, x, z, edge, settle, centreY: baseY + half };
+      });
 
-    /* Does every slot stay inside its own gate's segment? A lead drawn past its next gate has, by this
-       environment's own rule, cleared a gate it has not cleared — a data error the picture presents as a fact.
-       Checked rather than trusted, because the slot pitch, the cap and the stage length are three constants a
-       future edit will change one of. */
-    const escaped = placed.filter((p) => {
-      const half = p.edge !== null ? p.edge / 2 : REF_SIZE;
-      const rel = p.z - gateZ(p.d.gateIndex);
-      return rel - half < 0.05 || rel + half > STAGE_LEN - 0.05;
-    });
-    if (escaped.length > 0 || MAX_PER_GATE > LANES.length * 2) {
-      refuse('SLOT_ESCAPED_ITS_GATE');
-      return;
-    }
+      /* Does every slot stay inside its own gate's segment? A lead drawn past its next gate has, by this
+         environment's own rule, cleared a gate it has not cleared — a data error the picture presents as a fact.
+         Checked rather than trusted, because the slot pitch, the cap and the stage length are three constants a
+         future edit will change one of. */
+      const escaped = placed.filter((p) => {
+        const half = p.edge !== null ? p.edge / 2 : REF_SIZE;
+        const rel = p.z - gateZ(p.d.gateIndex);
+        return rel - half < 0.05 || rel + half > STAGE_LEN - 0.05;
+      });
+      if (escaped.length > 0 || MAX_PER_GATE > LANES.length * 2) return { refusal: 'SLOT_ESCAPED_ITS_GATE' };
 
-    for (const p of placed) {
-      if (p.d.known === 'BOTH_ABSENT') {
-        draws.push({
-          mesh: withheldMesh!, model: modelAt(p.x, p.centreY, p.z), normalMat: N3,
-          /* Roughness 0.55 and metalness 0.25, not a polish: under a sky environment a mirror finish put the
-             hardest specular in the frame on the one object that says "there is nothing here to read", and it
-             drew the eye first. */
-          material: { baseColour: hexToLinear(WITHHELD_HEX), roughness: 0.55, metalness: 0.25 },
-        });
-      } else if (p.edge === null) {
-        draws.push({
-          mesh: absentMesh!, model: modelRingAt(p.x, p.centreY, p.z), normalMat: N3_ROT_X90,
-          material: { baseColour: hexToLinear(ABSENT_HEX), roughness: 0.44, metalness: 0.10 },
-        });
-      } else {
-        /* Colour REPEATS the height, deliberately. A single-channel encoding of the thing this environment
-           exists to show fails for anyone reading at a glance or in greyscale, and the redundancy costs a
-           channel that has nothing else to carry. */
-        const c = mixLinear(hexToLinear(FRESH_HEX), hexToLinear(STALLED_HEX), p.settle ?? 0);
-        draws.push({
-          mesh: dealMesh!, model: modelAt(p.x, p.centreY, p.z, p.edge), normalMat: N3,
-          /* Dielectric, so §6 rule 5's hex survives: a metal has no diffuse lobe and the brand blue would
-             arrive only through the specular F0, as a blue-tinted mirror of the sky. */
-          material: { baseColour: c, roughness: 0.34 + 0.16 * (p.settle ?? 0), metalness: 0.06 },
-        });
+      const out: LitDraw[] = [];
+      for (const p of placed) {
+        if (p.d.known === 'BOTH_ABSENT') {
+          out.push({
+            mesh: withheldMesh!, model: modelAt(p.x, p.centreY, p.z), normalMat: N3,
+            /* Roughness 0.55 and metalness 0.25, not a polish: under a sky environment a mirror finish put the
+               hardest specular in the frame on the one object that says "there is nothing here to read", and it
+               drew the eye first. */
+            material: { baseColour: hexToLinear(WITHHELD_HEX), roughness: 0.55, metalness: 0.25 },
+          });
+        } else if (p.edge === null) {
+          out.push({
+            mesh: absentMesh!, model: modelRingAt(p.x, p.centreY, p.z), normalMat: N3_ROT_X90,
+            material: { baseColour: hexToLinear(ABSENT_HEX), roughness: 0.44, metalness: 0.10 },
+          });
+        } else {
+          /* Colour REPEATS the height, deliberately. A single-channel encoding of the thing this environment
+             exists to show fails for anyone reading at a glance or in greyscale, and the redundancy costs a
+             channel that has nothing else to carry. */
+          const col = mixLinear(hexToLinear(FRESH_HEX), hexToLinear(STALLED_HEX), p.settle ?? 0);
+          out.push({
+            mesh: dealMesh!, model: modelAt(p.x, p.centreY, p.z, p.edge), normalMat: N3,
+            /* Dielectric, so §6 rule 5's hex survives: a metal has no diffuse lobe and the brand blue would
+               arrive only through the specular F0, as a blue-tinted mirror of the sky. */
+            material: { baseColour: col, roughness: 0.34 + 0.16 * (p.settle ?? 0), metalness: 0.06 },
+          });
+        }
       }
-    }
+      return out;
+    };
 
     const eye = eyeOf(VIEW);
     const lightVP = lightViewProjection(
@@ -447,7 +510,7 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
      * computed between the prepass and the lit pass because it needs depth and the lit pass needs it — and the
      * prepass is not a tax, it lets the lit pass reject occluded fragments before their GGX evaluation.
      */
-    const renderScene = (): void => {
+    const renderScene = (draws: readonly LitDraw[]): void => {
       lit.shadowPass(lightVP, draws, shadow);
       target.bind();
       /* NO SKY BACKDROP, AND THE CLEAR IS THE FOG COLOUR. The channel is open-topped, so the sky stays as the
@@ -508,34 +571,65 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
     };
 
     /*
-     * THE PROBE. `pickQualityTier` exists to choose a tier from a measured frame and had no caller in the
-     * repo; this is one. A discarded warm-up frame first, because the first frame pays shader upload and
-     * charging that to the GPU would downgrade every machine, then two sync-bounded samples of which the
-     * cheaper is used. All of it before the first blit, so it costs latency and not the picture. At most one
-     * mount per page load takes it.
+     * ONE REDRAW, WHICH IS THE WHOLE RESPONSE TO A NEW CHANNEL — no context, no program, no buffer.
+     *
+     * The derivation's own refusals live here rather than above the stage because they are properties of the
+     * DATA: a channel the caption declined to describe must not be handed to a mesh builder, and that judgement
+     * has to be made again on the second dataset as well as on the first.
      */
-    if (needsQualityProbe()) {
-      const ms = measureFrameMs(gl, renderScene);
-      const r = recordQualityProbe({
-        pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'PipelineReliefGl',
-      });
-      /* A LOWER TIER MEANS THIS BUILD IS STALE. Nothing is presented, the effect re-runs on the new tier, and
-         the first thing the reader sees is the resolved tier — not a full frame that then changes. */
-      if (r.tier !== tier) {
-        return () => {
-          for (const d of disposers.reverse()) d();
-          stage.dispose();
-        };
+    const draw = (c: Channel): 'STALE_TIER' | undefined => {
+      const refusal = channelRefusal(c);
+      if (refusal !== null) { refuse(refusal); return undefined; }
+      const leads = leadDraws(c);
+      if ('refusal' in leads) { refuse(leads.refusal); return undefined; }
+      const draws = [...staticDraws, ...leads];
+
+      /*
+       * THE PROBE. `pickQualityTier` exists to choose a tier from a measured frame and had no caller in the
+       * repo; this is one. A discarded warm-up frame first, because the first frame pays shader upload and
+       * charging that to the GPU would downgrade every machine, then two sync-bounded samples of which the
+       * cheaper is used. All of it before the first blit, so it costs latency and not the picture. At most one
+       * mount per page load takes it, and `needsQualityProbe()` is false for every LATER redraw — a data
+       * update must never re-time the machine, or the ladder would follow the dataset instead of the GPU.
+       */
+      if (needsQualityProbe()) {
+        const ms = measureFrameMs(gl, () => renderScene(draws));
+        const r = recordQualityProbe({
+          pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'PipelineReliefGl',
+        });
+        /* A LOWER TIER MEANS THIS BUILD IS STALE. Nothing is presented, the effect re-runs on the new tier, and
+           the first thing the reader sees is the resolved tier — not a full frame that then changes. */
+        if (r.tier !== tier) return 'STALE_TIER';
       }
+
+      renderScene(draws);
+      presentFrame();
+      /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
+      canvas.dataset.qualityTier = tier;
+
+      const err = gl.getError();
+      if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return undefined; }
+      return undefined;
+    };
+
+    /* THE FIRST FRAME COMES FROM THE SETUP, NOT FROM THE DRAW EFFECT ABOVE. On a tier rebuild that effect does
+       not re-run — its dependency did not change — so a rebuilt context with no draw would leave a blank canvas
+       under a caption describing a channel. */
+    if (draw(channelRef.current) === 'STALE_TIER') {
+      /* No context-lost listener on this path: there is no picture on screen to go stale, and `onRefused` must
+         not fire — the scene is about to be rebuilt at the resolved tier, not refused. */
+      return () => {
+        if (dead) return;
+        dead = true;
+        for (const d of disposers.reverse()) d();
+        stage.dispose();
+      };
     }
-
-    renderScene();
-    presentFrame();
-    /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
-    canvas.dataset.qualityTier = tier;
-
-    const err = gl.getError();
-    if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return; }
+    /* A REFUSAL ON THE FIRST DRAW HAS ALREADY DISPOSED EVERYTHING, so there is nothing left to arm a redraw
+       against and nothing left to clean up. Publishing `draw` here would leave a closure over a dead stage
+       that a later data change would call — silently, because GL does not throw on a disposed context. */
+    if (dead) return;
+    drawRef.current = draw;
 
     /*
      * CONTEXT LOSS RESOLVES TO THE TABLE. Without this the canvas keeps its last frame on screen for ever
@@ -547,6 +641,12 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
 
     return () => {
       canvas.removeEventListener('webglcontextlost', onLost);
+      drawRef.current = null;
+      /* ALREADY RELEASED ON THE REFUSAL PATH, and `disposers.reverse()` MUTATES — running it twice would
+         restore the original order and dispose forwards, with the stage killed before the resources built on
+         it. `refuse` can now fire from a REDRAW as well as from the build, so this guard is reachable. */
+      if (dead) return;
+      dead = true;
       for (const d of disposers.reverse()) d();
       /* THE STAGE LAST. It owns the context; releasing it before the resources built on it leaves every
          `delete*` call operating on a dead context, which is silent rather than fatal and leaks on every
@@ -554,8 +654,8 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
       stage.dispose();
     };
     /* `tier` IS A DEPENDENCY, and that is the rebuild mechanism: a resolved lower tier tears this context
-       down and builds the scene again at it. */
-  }, [channel, heightPx, onRefused, tier]);
+       down and builds the scene again at it. `channel` IS NOT, and that is the fix this file exists to carry. */
+  }, [heightPx, onRefused, tier]);
 
   return (
     <canvas

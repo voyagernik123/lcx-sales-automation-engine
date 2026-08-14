@@ -230,6 +230,61 @@ const overBg = (bg: readonly [number, number, number], a: number): number => rel
  */
 const SHADOW_BASELINE = 1024;
 
+/** What the corridor is built from on any one draw: the page of the spine, already sliced and measured. */
+interface VaultBuild {
+  readonly records: readonly VaultRecord[];
+  readonly unplaced: ReturnType<typeof buildVaultRecords>['unplaced'];
+  readonly cappedFrom: number | null;
+  readonly spanHours: number;
+  readonly recPx: number;
+  readonly recW: number;
+  readonly tierH: number;
+  readonly hoursPerMetre: number;
+  readonly lineWidthOf: (r: VaultRecord) => number;
+}
+
+/**
+ * THE SLAB IS SIZED AGAINST THE LONGEST LINE ACTUALLY PRESENT, not against a guess. `workspace.access_refused`
+ * is 24 characters; at 11 px monospace that is 161 px, and in the harness's 118 px box `overflow: hidden` would
+ * have served `workspace.access_ref` as though it were the name of a governed action.
+ */
+const lineWidthOf = (r: VaultRecord): number => Math.max(
+  ...LINE_SPEC.map((ln) => ln.text(r).length * ln.charPx),
+);
+
+/**
+ * Everything about a page of the spine that the corridor's geometry depends on, in one place because two
+ * callers need it: the setup effect, so a page with nothing to draw never costs a WebGL context, and every
+ * redraw, so the second page is measured as carefully as the first.
+ *
+ * ABSENT TIME REFUSES A POSITION, it does not get hour zero. `buildVaultRecords` excludes and counts; the count
+ * is printed under the frame. Depth is the time axis, so hour zero is the "now" wall — the single most
+ * misleading place in this frame to put a record whose age nobody knows.
+ */
+function buildVault(entries: readonly AuditEntry[]): VaultBuild | { refusal: string } {
+  if (entries.length === 0) return { refusal: 'NO_OBSERVED_RECORDS' };
+  const built = buildVaultRecords(entries, Date.now());
+  if (built.records.length === 0) return { refusal: 'NO_RECORD_CARRIES_A_USABLE_TIMESTAMP' };
+  const cappedFrom = built.records.length > MAX_RECORDS ? built.records.length : null;
+  const records = built.records.slice(0, MAX_RECORDS);
+  const spanHours = records[records.length - 1]!.hoursAgo;
+  const widest = Math.max(...records.map(lineWidthOf));
+  const recPx = Math.max(118, Math.min(209, Math.ceil(widest + 12)));
+  return {
+    records, unplaced: built.unplaced, cappedFrom, spanHours,
+    recPx, recW: recPx / PX_PER_METRE, tierH: REC_H + 0.10,
+    /*
+     * HOURS PER METRE, FROM THE DATA. Depth stays strictly linear in time — that is the environment's premise —
+     * so the only free parameter is the scale, and it is set so the oldest record on the page lands at
+     * `DEPTH_M`. A floor of 0.05 h/m keeps a page that spans two minutes from being drawn at a resolution the
+     * geometry cannot express; when that floor binds, the corridor is simply short, which is the truth about
+     * the page.
+     */
+    hoursPerMetre: Math.max(0.05, spanHours / DEPTH_M),
+    lineWidthOf,
+  };
+}
+
 export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultReliefGlProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
@@ -237,14 +292,42 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
      blits it, so a resolved lower tier can rebuild the scene before anything has been painted. */
   const tier = useResolvedQualityTier();
 
+  /**
+   * THE REDRAW LIVES IN A REF, AND THAT IS WHAT KEEPS ONE GL CONTEXT ACROSS A DATA CHANGE.
+   *
+   * `entries` used to be in the setup effect's dependency list, so paging the audit log disposed the stage and
+   * built another one. Measured with a counting WebGL2 context, one change to `entries` cost **1 context, 6
+   * programs, 12 shaders, 6 vertex arrays, 21 bufferData calls, 8 textures and 7 framebuffers** — and the only
+   * thing in that list which is actually data is ONE record slab, whose width is set by the longest line on the
+   * page. That is §6 rule 7's hazard on every data update; `DeckReliefGl.tsx:205-213` already ships the fix for
+   * its own click path.
+   */
+  const drawRef = useRef<((e: readonly AuditEntry[]) => 'STALE_TIER' | undefined) | null>(null);
+  /* THE LATEST PAGE, so a TIER change can redraw it: the setup effect re-runs on a resolved tier while the draw
+     effect below does not, and a rebuilt context with no draw is a blank canvas under a live caption. */
+  const entriesRef = useRef<readonly AuditEntry[]>(entries);
+
+  /* THE DRAW EFFECT IS DECLARED FIRST, AND THE ORDER IS LOAD-BEARING. React runs effects in declaration order,
+     so on MOUNT this one records the page and returns (nothing is published yet) and the setup effect draws it.
+     On a DATA CHANGE only this one re-runs, and the context is untouched. */
+  useEffect(() => {
+    entriesRef.current = entries;
+    drawRef.current?.(entries);
+  }, [entries]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+    drawRef.current = null;
     /* Any earlier overlay is dropped before a new frame exists. A projected label from the previous page of the
        spine sitting over a freshly drawn corridor is a stale picture presented as live data. */
     setPlan(null);
 
-    if (entries.length === 0) { onRefused('NO_OBSERVED_RECORDS'); return; }
+    /* THE PAGE'S OWN REFUSALS STILL COME BEFORE THE RENDERER, so a page with no usable timestamp never costs a
+       WebGL context to be told so. Read through the ref rather than the prop, so this does not put the data back
+       in the dependency list below; `draw` makes the identical judgement on every later page. */
+    const first = buildVault(entriesRef.current);
+    if ('refusal' in first) { onRefused(first.refusal); return; }
 
     /*
      * §6 RULE 5 BEFORE ANYTHING IS DRAWN. If the palette does not round-trip through this pipeline's tone map
@@ -252,39 +335,6 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
      * be exact, and it would be screenshotted into a deck.
      */
     if (assertBrandFidelity().length > 0) { onRefused('BRAND_FIDELITY_FAILED'); return; }
-
-    /*
-     * ABSENT TIME REFUSES A POSITION, it does not get hour zero. `buildVaultRecords` excludes and counts; the
-     * count is printed under the frame. Depth is the time axis, so hour zero is the "now" wall — the single most
-     * misleading place in this frame to put a record whose age nobody knows.
-     */
-    const built = buildVaultRecords(entries, Date.now());
-    if (built.records.length === 0) { onRefused('NO_RECORD_CARRIES_A_USABLE_TIMESTAMP'); return; }
-    const cappedFrom = built.records.length > MAX_RECORDS ? built.records.length : null;
-    const records = built.records.slice(0, MAX_RECORDS);
-    const spanHours = records[records.length - 1]!.hoursAgo;
-
-    /*
-     * THE SLAB IS SIZED AGAINST THE LONGEST LINE ACTUALLY PRESENT, not against a guess. `workspace.access_refused`
-     * is 24 characters; at 11 px monospace that is 161 px, and in the harness's 118 px box `overflow: hidden`
-     * would have served `workspace.access_ref` as though it were the name of a governed action.
-     */
-    const lineWidthOf = (r: VaultRecord): number => Math.max(
-      ...LINE_SPEC.map((ln) => ln.text(r).length * ln.charPx),
-    );
-    const widest = Math.max(...records.map(lineWidthOf));
-    const REC_PX = Math.max(118, Math.min(209, Math.ceil(widest + 12)));
-    const REC_W = REC_PX / PX_PER_METRE;
-    const TIER_H = REC_H + 0.10;
-
-    /*
-     * HOURS PER METRE, FROM THE DATA. Depth stays strictly linear in time — that is the environment's premise —
-     * so the only free parameter is the scale, and it is set so the oldest record on the page lands at `DEPTH_M`.
-     * A floor of 0.05 h/m keeps a page that spans two minutes from being drawn at a resolution the geometry
-     * cannot express; when that floor binds, the corridor is simply short, which is the truth about the page.
-     */
-    const hoursPerMetre = Math.max(0.05, spanHours / DEPTH_M);
-    const zOf = (hoursAgo: number): number => -(hoursAgo / hoursPerMetre) - NOW_OFFSET_M;
 
     /* DPR CAPPED BY THE TIER. Everything here is fill-bound; a 3× display would triple the cost of a surface
        whose whole justification is that an operator reads it faster. The cap WAS a literal 2; `Q.dprScale` is 2
@@ -302,11 +352,33 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
     const gl = stage.gl;
 
     const disposers: (() => void)[] = [];
-    const refuse = (code: string): void => {
+    /*
+     * TWO DISPOSAL LISTS, BECAUSE TWO LIFETIMES. `disposers` holds what the SIZE and the TIER own — the context,
+     * the programs, the targets, the corridor shell — and is released once, on unmount. `dataDisposers` holds
+     * the ONE mesh whose dimensions are the data: the record slab, sized to the longest line on the page. Its
+     * width changes with the page, and `MeshBuffer` (`packages/gl/src/env/lit.ts:596`) exposes no way to rewrite
+     * a `STATIC_DRAW` buffer in place, so that one really must be reallocated. The other four must not.
+     */
+    const data: { disposers: (() => void)[] } = { disposers: [] };
+    const releaseData = (): void => {
+      for (const d of data.disposers.reverse()) d();
+      data.disposers = [];
+    };
+    /* Set by whichever of `refuse` and the cleanup runs first. A redraw can refuse now, so both are reachable in
+       one mount, and `disposers.reverse()` MUTATES — running it twice disposes forwards. */
+    let dead = false;
+    const releaseAll = (): void => {
+      if (dead) return;
+      dead = true;
+      releaseData();
       for (const d of disposers.reverse()) d();
       /* THE STAGE LAST, even on the refusal path: it owns the context, and releasing it first leaves every
          other delete* operating on a dead context — silent, and it leaks on every remount. */
       stage.dispose();
+    };
+    const refuse = (code: string): void => {
+      drawRef.current = null;
+      releaseAll();
       onRefused(code);
     };
 
@@ -339,20 +411,21 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
     const ceilGeo = box(2 * CORRIDOR_HALF + 0.44, 0.18, CORRIDOR_LEN);
     /* THE FAR END IS CAPPED. Without it the deepest, most fogged part of the frame is its brightest. */
     const endGeo = box(2 * CORRIDOR_HALF + 0.44, 3.0, 0.2);
-    const recGeo = box(REC_W, REC_H, REC_T);
 
-    /* UPLOADED ONE AT A TIME, EACH REGISTERED FOR DISPOSAL BEFORE THE NEXT IS ATTEMPTED. Uploading all five and
-       then checking them means a failure on the fifth refuses while the first four are still on the GPU with no
-       disposer recorded — a leak on exactly the path that is hardest to reach and most likely to repeat, because
-       this component remounts every time a reader toggles the view. */
+    /* UPLOADED ONE AT A TIME, EACH REGISTERED FOR DISPOSAL BEFORE THE NEXT IS ATTEMPTED. Uploading all four and
+       then checking them means a failure on the fourth refuses while the first three are still on the GPU with
+       no disposer recorded — a leak on exactly the path that is hardest to reach and most likely to repeat,
+       because this component remounts every time a reader toggles the view.
+       THE RECORD SLAB USED TO BE THE FIFTH ENTRY HERE. It is the only one whose size is data, so it moved into
+       the redraw; the corridor shell is the same for every page of the spine. */
     const uploaded: MeshBuffer[] = [];
-    for (const g of [floorGeo, wallGeo, ceilGeo, endGeo, recGeo]) {
+    for (const g of [floorGeo, wallGeo, ceilGeo, endGeo]) {
       const m = uploadMesh(stage, g);
       if ('kind' in m) { refuse(m.code); return; }
       uploaded.push(m);
       disposers.push(() => m.dispose());
     }
-    const [floorMesh, wallMesh, ceilMesh, endMesh, recMesh] = uploaded;
+    const [floorMesh, wallMesh, ceilMesh, endMesh] = uploaded;
 
     const N3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
     const modelOf = (x: number, y: number, z: number, yaw = 0): Float32Array => {
@@ -388,39 +461,9 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
     const eye = eyeOf(view);
     const SIDE_X = CORRIDOR_HALF - 0.20;
 
-    /*
-     * RECORDS ARE ANGLED SIGNAGE, NOT WALL PLAQUES. Mounted flat, a record's normal points across the corridor
-     * at the centre line — where the reader stands — so it is seen almost along its own plane. Turned toward the
-     * axis at 0.42 of a right angle, which is how signage in a real corridor is hung. The facing is AIMED AT THE
-     * MEASURED EYE rather than derived from a winding convention: reasoning the sign out got it backwards once
-     * and put 19 records face-first into their own walls.
-     *
-     * Records alternate walls, so two actions minutes apart do not occlude each other, and a record within one
-     * record-width of the last one on its wall goes UP A TIER instead of overlapping it — the density reading.
-     */
-    const lastOnWall = [{ z: Infinity, tier: -1 }, { z: Infinity, tier: -1 }];
-    const placed = records.map((r, i) => {
-      const left = i % 2 === 0;
-      const wall = left ? 0 : 1;
-      const x = left ? -SIDE_X : SIDE_X;
-      const z = zOf(r.hoursAgo);
-      const toEye = Math.atan2(eye[0] - x, eye[2] - z);
-      const yaw = toEye * RECORD_FACE + (left ? 1 : -1) * (Math.PI / 2) * (1 - RECORD_FACE);
-      const prev = lastOnWall[wall]!;
-      const crowded = Math.abs(z - prev.z) < REC_W * 1.05;
-      /* Tiers WRAP rather than climbing into the ceiling: a record 2 m up is a record nobody reads. A wrapped
-         stack loses one behind another, so it is counted as a hidden record with its own reason. */
-      const tier = crowded ? (prev.tier + 1) % MAX_TIERS : 0;
-      const wrapped = crowded && prev.tier + 1 >= MAX_TIERS;
-      lastOnWall[wall] = { z, tier };
-      const y = REC_Y + tier * TIER_H;
-      return {
-        r, x, y, z, yaw, wrapped,
-        distance: Math.hypot(x - eye[0], y - eye[1], z - eye[2]),
-      };
-    });
-
-    const draws: LitDraw[] = [
+    /* THE CORRIDOR ITSELF, which is the same for every page of the spine. Built once; only the records inside
+       it are rebuilt when the page changes. */
+    const staticDraws: LitDraw[] = [
       { mesh: floorMesh, model: modelOf(0, -0.06, CORRIDOR_MID), normalMat: N3,
         material: { baseColour: hexToLinear('#080C15'), roughness: 0.84, metalness: 0 } },
       { mesh: wallMesh, model: modelOf(-CORRIDOR_HALF, 1.5, CORRIDOR_MID), normalMat: N3,
@@ -431,14 +474,6 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
         material: { baseColour: hexToLinear('#0A101C'), roughness: 0.80, metalness: 0 } },
       { mesh: endMesh, model: modelOf(0, 1.5, CORRIDOR_MID - CORRIDOR_LEN / 2), normalMat: N3,
         material: { baseColour: hexToLinear('#0B1220'), roughness: 0.86, metalness: 0 } },
-      ...placed.map((p): LitDraw => {
-        const model = modelOf(p.x, p.y, p.z, p.yaw);
-        const mat = VERDICT_MATERIAL[p.r.verdict];
-        return {
-          mesh: recMesh, model, normalMat: normalOf(model),
-          material: { baseColour: hexToLinear(VERDICT_HEX[p.r.verdict]), ...mat },
-        };
-      }),
     ];
 
     /* Down the corridor and slightly to one side, so records on both walls take light at a grazing angle and
@@ -463,7 +498,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
     const fc = hexToLinear(FOG_HEX);
     /* A FUNCTION NOW, SO IT CAN BE MEASURED — and it ends with `target` bound, which is what `probeSync`
        requires: a `readPixels` only guarantees completion of work affecting the framebuffer it reads. */
-    const renderScene = (): void => {
+    const renderScene = (draws: readonly LitDraw[]): void => {
       lit.shadowPass(lightVP, draws, shadow);
       target.bind();
       gl.clearColor(fc[0], fc[1], fc[2], 1);
@@ -487,247 +522,329 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
     };
 
     /*
-     * THE PROBE, TAKEN BEFORE ANYTHING IS PRESENTED. `pickQualityTier` exists to choose a tier from one
-     * measured frame and had no caller in this repo; this is one. A discarded warm-up frame first — the first
-     * frame pays shader upload, and charging that to the GPU would downgrade every machine — then two
-     * sync-bounded samples of which the cheaper is used, because one sample can catch a GC pause and a single
-     * unlucky 40 ms would drop a fast machine for the rest of the page load.
+     * ONE REDRAW, WHICH IS THE WHOLE RESPONSE TO A NEW PAGE OF THE SPINE — no context, no program, no target.
      *
-     * IT MUST SIT ABOVE THE PRESENT AND ABOVE THE CONTRAST READ BELOW. Those measure the frame that is on
-     * screen; if the tier turns out to be stale there is no frame on screen to measure, and a WCAG ratio taken
-     * off a frame nobody will see is a number about nothing.
+     * The previous page's slab is released FIRST: building the new one before disposing the old would hold two
+     * on the GPU at once, and forgetting the release is silent — `Stage` owns programs and its own targets and
+     * knows nothing about a VAO, so it would be one vertex array and four buffers stranded per page turn.
      */
-    if (needsQualityProbe()) {
-      const ms = measureFrameMs(gl, renderScene);
-      const r = recordQualityProbe({
-        pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'VaultReliefGl',
-      });
-      if (r.tier !== tier) {
-        return () => {
-          for (const d of disposers.reverse()) d();
-          stage.dispose();
+    const draw = (entryPage: readonly AuditEntry[]): 'STALE_TIER' | undefined => {
+      /* The previous page's projected labels are dropped BEFORE the new frame exists, and before any refusal:
+         a record from the page the reader has navigated away from, sitting over a freshly drawn corridor, is a
+         stale picture of a governed action presented as live. */
+      setPlan(null);
+      const b = buildVault(entryPage);
+      if ('refusal' in b) { refuse(b.refusal); return undefined; }
+      const { records, cappedFrom, spanHours, recPx, recW, tierH, hoursPerMetre } = b;
+      const REC_W = recW, REC_PX = recPx, TIER_H = tierH;
+      const zOf = (hoursAgo: number): number => -(hoursAgo / hoursPerMetre) - NOW_OFFSET_M;
+
+      releaseData();
+      const recMeshOut = uploadMesh(stage, box(REC_W, REC_H, REC_T));
+      if ('kind' in recMeshOut) { refuse(recMeshOut.code); return undefined; }
+      const recMesh = recMeshOut;
+      data.disposers.push(() => recMesh.dispose());
+
+      /*
+       * RECORDS ARE ANGLED SIGNAGE, NOT WALL PLAQUES. Mounted flat, a record's normal points across the corridor
+       * at the centre line — where the reader stands — so it is seen almost along its own plane. Turned toward
+       * the axis at 0.42 of a right angle, which is how signage in a real corridor is hung. The facing is AIMED
+       * AT THE MEASURED EYE rather than derived from a winding convention: reasoning the sign out got it
+       * backwards once and put 19 records face-first into their own walls.
+       *
+       * Records alternate walls, so two actions minutes apart do not occlude each other, and a record within one
+       * record-width of the last one on its wall goes UP A TIER instead of overlapping it — the density reading.
+       */
+      const lastOnWall = [{ z: Infinity, tier: -1 }, { z: Infinity, tier: -1 }];
+      const placed = records.map((r, i) => {
+        const left = i % 2 === 0;
+        const wall = left ? 0 : 1;
+        const x = left ? -SIDE_X : SIDE_X;
+        const z = zOf(r.hoursAgo);
+        const toEye = Math.atan2(eye[0] - x, eye[2] - z);
+        const yaw = toEye * RECORD_FACE + (left ? 1 : -1) * (Math.PI / 2) * (1 - RECORD_FACE);
+        const prev = lastOnWall[wall]!;
+        const crowded = Math.abs(z - prev.z) < REC_W * 1.05;
+        /* Tiers WRAP rather than climbing into the ceiling: a record 2 m up is a record nobody reads. A wrapped
+           stack loses one behind another, so it is counted as a hidden record with its own reason. */
+        const stackTier = crowded ? (prev.tier + 1) % MAX_TIERS : 0;
+        const wrapped = crowded && prev.tier + 1 >= MAX_TIERS;
+        lastOnWall[wall] = { z, tier: stackTier };
+        const y = REC_Y + stackTier * TIER_H;
+        return {
+          r, x, y, z, yaw, wrapped,
+          distance: Math.hypot(x - eye[0], y - eye[1], z - eye[2]),
         };
+      });
+
+      const draws: LitDraw[] = [
+        ...staticDraws,
+        ...placed.map((p): LitDraw => {
+          const model = modelOf(p.x, p.y, p.z, p.yaw);
+          const mat = VERDICT_MATERIAL[p.r.verdict];
+          return {
+            mesh: recMesh, model, normalMat: normalOf(model),
+            material: { baseColour: hexToLinear(VERDICT_HEX[p.r.verdict]), ...mat },
+          };
+        }),
+      ];
+
+      /*
+       * THE PROBE, TAKEN BEFORE ANYTHING IS PRESENTED. `pickQualityTier` exists to choose a tier from one
+       * measured frame and had no caller in this repo; this is one. A discarded warm-up frame first — the first
+       * frame pays shader upload, and charging that to the GPU would downgrade every machine — then two
+       * sync-bounded samples of which the cheaper is used, because one sample can catch a GC pause and a single
+       * unlucky 40 ms would drop a fast machine for the rest of the page load.
+       *
+       * IT MUST SIT ABOVE THE PRESENT AND ABOVE THE CONTRAST READ BELOW. Those measure the frame that is on
+       * screen; if the tier turns out to be stale there is no frame on screen to measure, and a WCAG ratio taken
+       * off a frame nobody will see is a number about nothing.
+       *
+       * AND IT NEVER RUNS ON A REDRAW: `needsQualityProbe()` is false the moment a tier resolves, so a page turn
+       * cannot re-time the machine and make the quality ladder follow the dataset instead of the GPU.
+       */
+      if (needsQualityProbe()) {
+        const ms = measureFrameMs(gl, () => renderScene(draws));
+        const r = recordQualityProbe({
+          pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'VaultReliefGl',
+        });
+        if (r.tier !== tier) return 'STALE_TIER';
       }
-    }
 
-    renderScene();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, W, H);
-    gl.disable(gl.DEPTH_TEST);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, target.texture);
-    /* `blit` takes a CALLBACK, not a texture: the uniform is set against the program it has just bound. */
-    stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
-    /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
-    canvas.dataset.qualityTier = tier;
+      renderScene(draws);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, W, H);
+      gl.disable(gl.DEPTH_TEST);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, target.texture);
+      /* `blit` takes a CALLBACK, not a texture: the uniform is set against the program it has just bound. */
+      stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+      /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
+      canvas.dataset.qualityTier = tier;
 
-    const err = gl.getError();
-    if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return; }
+      const err = gl.getError();
+      if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return undefined; }
 
-    /*
-     * ══════════════════════════════════════════════════════════════════════════════════
-     * READABILITY, MEASURED OFF THE FRAME — because "readable" was a metres test wearing the word.
-     * ══════════════════════════════════════════════════════════════════════════════════
-     *
-     * The background beneath every record is now in the default framebuffer, and the type's effective alpha is
-     * exactly `line opacity × element opacity`, both of which this file owns. So the composited glyph colour is
-     * computable rather than guessable, and the comparison is the same WCAG ratio a reader's own checker would
-     * run. Read ONCE, whole, into a CPU buffer: fifty small `readPixels` calls are fifty pipeline stalls, and
-     * they would all be reading the same finished frame anyway.
-     *
-     * Best-possible, not average: these ratios are for a FULLY covered glyph pixel, so an antialiased edge is
-     * worse than this and a run that fails here fails for certain.
-     */
-    const pixels = new Uint8Array(W * H * 4);
-    gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
-    /* THE BRIGHTEST PIXEL IN THE BOX, not the mean. All the type here is light, so a light background is the
-       worst case; a mean would let a bright patch under a word average away against the dark slab beside it and
-       report a contrast no glyph actually has. `readPixels` counts rows from the bottom, hence `H - 1 -`. */
-    const brightestBehind = (
-      cx: number, cy: number, hx: number, hy: number,
-    ): [number, number, number] | null => {
-      const x0 = Math.round((cx - hx) * dpr), x1 = Math.round((cx + hx) * dpr);
-      const y0 = Math.round((cy - hy) * dpr), y1 = Math.round((cy + hy) * dpr);
-      /* AN OFF-FRAME SAMPLE BOX REFUSES rather than clamping to the frame edge: a clamped read measures a
-         background that is not behind the text, and an invented ratio is worse than a named absence. */
-      if (x1 < 0 || y1 < 0 || x0 > W - 1 || y0 > H - 1) return null;
-      let best: [number, number, number] = [0, 0, 0], bestL = -1;
-      for (let y = Math.max(0, y0); y <= Math.min(H - 1, y1); y++) {
-        const row = (H - 1 - y) * W;
-        for (let x = Math.max(0, x0); x <= Math.min(W - 1, x1); x++) {
-          const i = (row + x) * 4;
-          const l = relLum(pixels[i]!, pixels[i + 1]!, pixels[i + 2]!);
-          if (l > bestL) { bestL = l; best = [pixels[i]!, pixels[i + 1]!, pixels[i + 2]!]; }
+      /*
+       * ══════════════════════════════════════════════════════════════════════════════════
+       * READABILITY, MEASURED OFF THE FRAME — because "readable" was a metres test wearing the word.
+       * ══════════════════════════════════════════════════════════════════════════════════
+       *
+       * The background beneath every record is now in the default framebuffer, and the type's effective alpha is
+       * exactly `line opacity × element opacity`, both of which this file owns. So the composited glyph colour is
+       * computable rather than guessable, and the comparison is the same WCAG ratio a reader's own checker would
+       * run. Read ONCE, whole, into a CPU buffer: fifty small `readPixels` calls are fifty pipeline stalls, and
+       * they would all be reading the same finished frame anyway.
+       *
+       * Best-possible, not average: these ratios are for a FULLY covered glyph pixel, so an antialiased edge is
+       * worse than this and a run that fails here fails for certain.
+       */
+      const pixels = new Uint8Array(W * H * 4);
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      /* THE BRIGHTEST PIXEL IN THE BOX, not the mean. All the type here is light, so a light background is the
+         worst case; a mean would let a bright patch under a word average away against the dark slab beside it and
+         report a contrast no glyph actually has. `readPixels` counts rows from the bottom, hence `H - 1 -`. */
+      const brightestBehind = (
+        cx: number, cy: number, hx: number, hy: number,
+      ): [number, number, number] | null => {
+        const x0 = Math.round((cx - hx) * dpr), x1 = Math.round((cx + hx) * dpr);
+        const y0 = Math.round((cy - hy) * dpr), y1 = Math.round((cy + hy) * dpr);
+        /* AN OFF-FRAME SAMPLE BOX REFUSES rather than clamping to the frame edge: a clamped read measures a
+           background that is not behind the text, and an invented ratio is worse than a named absence. */
+        if (x1 < 0 || y1 < 0 || x0 > W - 1 || y0 > H - 1) return null;
+        let best: [number, number, number] = [0, 0, 0], bestL = -1;
+        for (let y = Math.max(0, y0); y <= Math.min(H - 1, y1); y++) {
+          const row = (H - 1 - y) * W;
+          for (let x = Math.max(0, x0); x <= Math.min(W - 1, x1); x++) {
+            const i = (row + x) * 4;
+            const l = relLum(pixels[i]!, pixels[i + 1]!, pixels[i + 2]!);
+            if (l > bestL) { bestL = l; best = [pixels[i]!, pixels[i + 1]!, pixels[i + 2]!]; }
+          }
         }
+        return bestL < 0 ? null : best;
+      };
+
+      const fogAt = (dist: number): number => 1 - Math.exp(-FOG_DENSITY * dist);
+      const inQuad = (q: readonly { x: number; y: number }[], x: number, y: number): boolean => {
+        let sign = 0;
+        for (let i = 0; i < 4; i++) {
+          const a = q[i]!, b = q[(i + 1) % 4]!;
+          const cross = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
+          if (Math.abs(cross) < 1e-9) continue;
+          const sg = cross > 0 ? 1 : -1;
+          if (sign === 0) sign = sg;
+          else if (sg !== sign) return false;
+        }
+        return true;
+      };
+
+      /*
+       * DECIDED NEAR TO FAR, PAINTED FAR TO NEAR — two orders, for opposite reasons. Sorting far-to-near is right
+       * for painting, because a later element covers an earlier one; it is exactly wrong for DECIDING occlusion,
+       * because the already-accepted quads are then the ones behind the record being tested. That version reported
+       * zero occlusions against a capture that visibly had them.
+       */
+      const shownQuads: { x: number; y: number }[][] = [];
+      const decided = [...placed].sort((a, b) => a.distance - b.distance).map((p) => {
+        const ew = REC_PX, eh = Math.round(REC_H * PX_PER_METRE);
+        const corners = uprightPanelCorners(p.x, p.z, p.y - REC_H / 2, REC_W, REC_H, p.yaw, REC_T / 2 + 0.004);
+        const proj = projectQuad(vp, corners, cssW, cssH, ew, eh);
+        const refusal = isQuadRefusal(proj) ? proj.refusal : null;
+        const backFacing = !isQuadRefusal(proj) && proj.signedArea <= 0;
+        const widthPx = isQuadRefusal(proj) ? 0 : Math.max(
+          Math.hypot(proj.screen[0]!.x - proj.screen[1]!.x, proj.screen[0]!.y - proj.screen[1]!.y),
+          Math.hypot(proj.screen[3]!.x - proj.screen[2]!.x, proj.screen[3]!.y - proj.screen[2]!.y),
+        );
+        const edgeOn = widthPx < MIN_PROJECTED_PX;
+        const tooFar = p.distance > LEGIBLE_M;
+        /* A LINE THAT WILL NOT FIT REFUSES, because `overflow: hidden` would otherwise serve a truncated
+           identifier as though it were the name of a governed action. */
+        const tooLong = lineWidthOf(p.r) > REC_PX - 10;
+        /*
+         * SYMMETRIC OCCLUSION. Testing only "is a corner of the far record inside a nearer quad" misses the
+         * commonest case, where a large near record covers the MIDDLE of a smaller far one and neither quad's
+         * corners land inside the other. Checking both directions is still four cheap point-in-quad tests a pair.
+         * Two corners is the threshold: one clipped corner still leaves the action and the actor legible.
+         */
+        const screen = isQuadRefusal(proj) ? [] : proj.screen.map((c) => ({ x: c.x, y: c.y }));
+        const coveredCorners = screen.length === 0 ? 0 : (
+          screen.filter((c) => shownQuads.some((q) => inQuad(q, c.x, c.y))).length
+          + shownQuads.reduce((n, q) => n + q.filter((c) => inQuad(screen, c.x, c.y)).length, 0)
+        );
+        const occluded = coveredCorners >= 2;
+        const opacity = 1 - 0.75 * fogAt(p.distance);
+        const sample = screen.length === 0 ? null : (() => {
+          const xs = screen.map((c) => c.x), ys = screen.map((c) => c.y);
+          const [x0, x1] = [Math.min(...xs), Math.max(...xs)];
+          const [y0, y1] = [Math.min(...ys), Math.max(...ys)];
+          const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+          if (cx < 0 || cx > cssW || cy < 0 || cy > cssH) return null;
+          return { cx, cy, hx: Math.max(1, (x1 - x0) / 4), hy: Math.max(1, (y1 - y0) / 4) };
+        })();
+        const bg = sample ? brightestBehind(sample.cx, sample.cy, sample.hx, sample.hy) : null;
+        const bgLum = bg ? relLum(bg[0], bg[1], bg[2]) : null;
+        /*
+         * ONE RATIO COVERS ALL FOUR LINES, and that is a consequence of the fix rather than a shortcut: every
+         * entry in `LINE_SPEC` is fully opaque white, so the composited colour is identical for all of them and
+         * the element's own fog opacity is the only alpha in play. The harness measured per line because it USED
+         * to rank the lines by alpha, and that ranking was what cost it its reach. If a per-line alpha is ever
+         * reintroduced this must go back to a per-line minimum, because a record whose action you can read and
+         * whose actor you cannot is the truncation failure in a different costume.
+         */
+        const minRatio = bg && bgLum !== null ? ratioOf(overBg(bg, opacity), bgLum) : null;
+        const tooFaint = minRatio === null || minRatio < AA_RATIO;
+        const shown = !refusal && !backFacing && !edgeOn && !tooFar && !tooLong && !tooFaint
+          && !occluded && !p.wrapped;
+        if (shown) shownQuads.push(screen);
+        /* NAMED, NOT COUNTED, and in priority order. "17 hidden" is useless; an operator does something different
+           about a record they are too far from than about one that is covered. */
+        const hiddenBecause = shown ? null
+          : refusal ?? (p.wrapped ? 'STACK_WRAPPED'
+            : backFacing ? 'BACK_FACING'
+              : edgeOn ? 'EDGE_ON'
+                : tooFar ? 'BEYOND_LEGIBLE_RANGE'
+                  : tooLong ? 'LINE_TOO_LONG_TO_SHOW'
+                    : minRatio === null ? 'CONTRAST_UNMEASURABLE'
+                      : minRatio < AA_RATIO ? 'BELOW_READABLE_CONTRAST' : 'OCCLUDED');
+        return { p, proj, shown, hiddenBecause, ew, eh, opacity, minRatio, tooFar };
+      });
+
+      const overlay: OverlayRecord[] = [];
+      for (const d of [...decided].sort((a, b) => b.p.distance - a.p.distance)) {
+        if (!d.shown || isQuadRefusal(d.proj)) continue;
+        overlay.push({
+          key: d.p.r.id,
+          transform: d.proj.transform,
+          ew: d.ew, eh: d.eh,
+          /* The text obeys the same atmosphere as the slab, and this is the ONE owner of that law — computed in
+             the decision pass so the measured ratios above describe exactly these pixels. */
+          opacity: d.opacity,
+          lines: LINE_SPEC.map((ln) => ({ text: ln.text(d.p.r), style: ln.style })),
+        });
       }
-      return bestL < 0 ? null : best;
+
+      /*
+       * THE DEPTH RULER, so "depth is time" is a marked axis rather than an assertion. Screen space, because it
+       * annotates the corridor rather than living in it — which is also why it takes a CONSTANT alpha: fog is a
+       * property of the corridor, and fogging an axis label about the corridor deletes the axis while leaving the
+       * claim on the frame. Three of the harness's four ticks were at 1.04:1 to 3.4:1 under the old fogged law and
+       * `rulerOffFrame: 0` reported them as fine, because that was a frame-BOUNDS count.
+       *
+       * A tick that does not measure at AA is NOT DRAWN and is counted, for the same reason a record is not.
+       */
+      const RULER_ALPHA = 0.85;
+      const spanDays = spanHours / 24;
+      const CANDIDATES = [1 / 24, 3 / 24, 6 / 24, 0.5, 1, 2, 3, 7, 14, 30, 60, 90, 180, 365];
+      const inSpan = CANDIDATES.filter((d) => d <= spanDays);
+      const picks = inSpan.length <= 4 ? inSpan
+        : [0, 1, 2, 3].map((k) => inSpan[Math.round((k * (inSpan.length - 1)) / 3)]!);
+      let rulerUnreadable = 0;
+      const ruler: { label: string; sx: number; sy: number }[] = [];
+      for (const days of picks) {
+        const z = zOf(days * 24);
+        const s = projectScreen(vp, [-CORRIDOR_HALF + 0.30, 0.035, z], cssW, cssH);
+        const onFrame = !s.behind && s.sx > 0 && s.sx < cssW && s.sy > 0 && s.sy < cssH;
+        const bg = onFrame ? brightestBehind(s.sx, s.sy, 13, 7) : null;
+        const ratio = bg ? ratioOf(overBg(bg, RULER_ALPHA), relLum(bg[0], bg[1], bg[2])) : null;
+        if (!onFrame || ratio === null || ratio < AA_RATIO) { rulerUnreadable++; continue; }
+        ruler.push({
+          label: days < 1 ? `${Math.round(days * 24)}h` : `${days}d`,
+          sx: s.sx, sy: s.sy,
+        });
+      }
+
+      const shownRecords = decided.filter((d) => d.shown);
+      const legibleHours = shownRecords.length === 0
+        ? null : Math.max(...shownRecords.map((d) => d.p.r.hoursAgo));
+      /* TAKEN FROM THE PREDICATE, NOT FROM `hiddenBecause`, which reports ONE reason in priority order — so a
+         record both edge-on and 41 m away is named EDGE_ON and would slip through a name-based filter, making this
+         horizon equal the one below it and carry no information. */
+      const inRangeHours = Math.max(0, ...decided.filter((d) => !d.tooFar).map((d) => d.p.r.hoursAgo));
+
+      setPlan({
+        cssW, cssH,
+        records: overlay,
+        ruler,
+        rulerUnreadable,
+        readableToDays: legibleHours === null ? null : Number((legibleHours / 24).toFixed(2)),
+        inRangeToDays: Number((inRangeHours / 24).toFixed(2)),
+        visibleToDays: Number((spanHours / 24).toFixed(2)),
+        hoursPerMetre: Number(hoursPerMetre.toFixed(2)),
+        shown: shownRecords.length,
+        placed: placed.length,
+        hiddenBy: decided.filter((d) => !d.shown).reduce<Record<string, number>>((acc, d) => {
+          const k = d.hiddenBecause ?? 'UNKNOWN';
+          acc[k] = (acc[k] ?? 0) + 1;
+          return acc;
+        }, {}),
+        counts: {
+          ALLOWED: placed.filter((p) => p.r.verdict === 'ALLOWED').length,
+          BLOCKED: placed.filter((p) => p.r.verdict === 'BLOCKED').length,
+          WITHHELD: placed.filter((p) => p.r.verdict === 'WITHHELD').length,
+        },
+        unplaced: b.unplaced,
+        cappedFrom,
+        /* THE CHECK ON THE HEADLINE, so the printed claim is falsifiable: the worst measured ratio among the
+           records the frame actually shows. Below `AA_RATIO` and the word READABLE is not earned. */
+        worstShownRatio: shownRecords.length === 0
+          ? null : Number(Math.min(...shownRecords.map((d) => d.minRatio ?? 0)).toFixed(2)),
+      });
+      return undefined;
     };
 
-    const fogAt = (dist: number): number => 1 - Math.exp(-FOG_DENSITY * dist);
-    const inQuad = (q: readonly { x: number; y: number }[], x: number, y: number): boolean => {
-      let sign = 0;
-      for (let i = 0; i < 4; i++) {
-        const a = q[i]!, b = q[(i + 1) % 4]!;
-        const cross = (b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x);
-        if (Math.abs(cross) < 1e-9) continue;
-        const sg = cross > 0 ? 1 : -1;
-        if (sign === 0) sign = sg;
-        else if (sg !== sign) return false;
-      }
-      return true;
-    };
-
-    /*
-     * DECIDED NEAR TO FAR, PAINTED FAR TO NEAR — two orders, for opposite reasons. Sorting far-to-near is right
-     * for painting, because a later element covers an earlier one; it is exactly wrong for DECIDING occlusion,
-     * because the already-accepted quads are then the ones behind the record being tested. That version reported
-     * zero occlusions against a capture that visibly had them.
-     */
-    const shownQuads: { x: number; y: number }[][] = [];
-    const decided = [...placed].sort((a, b) => a.distance - b.distance).map((p) => {
-      const ew = REC_PX, eh = Math.round(REC_H * PX_PER_METRE);
-      const corners = uprightPanelCorners(p.x, p.z, p.y - REC_H / 2, REC_W, REC_H, p.yaw, REC_T / 2 + 0.004);
-      const proj = projectQuad(vp, corners, cssW, cssH, ew, eh);
-      const refusal = isQuadRefusal(proj) ? proj.refusal : null;
-      const backFacing = !isQuadRefusal(proj) && proj.signedArea <= 0;
-      const widthPx = isQuadRefusal(proj) ? 0 : Math.max(
-        Math.hypot(proj.screen[0]!.x - proj.screen[1]!.x, proj.screen[0]!.y - proj.screen[1]!.y),
-        Math.hypot(proj.screen[3]!.x - proj.screen[2]!.x, proj.screen[3]!.y - proj.screen[2]!.y),
-      );
-      const edgeOn = widthPx < MIN_PROJECTED_PX;
-      const tooFar = p.distance > LEGIBLE_M;
-      /* A LINE THAT WILL NOT FIT REFUSES, because `overflow: hidden` would otherwise serve a truncated
-         identifier as though it were the name of a governed action. */
-      const tooLong = lineWidthOf(p.r) > REC_PX - 10;
-      /*
-       * SYMMETRIC OCCLUSION. Testing only "is a corner of the far record inside a nearer quad" misses the
-       * commonest case, where a large near record covers the MIDDLE of a smaller far one and neither quad's
-       * corners land inside the other. Checking both directions is still four cheap point-in-quad tests a pair.
-       * Two corners is the threshold: one clipped corner still leaves the action and the actor legible.
-       */
-      const screen = isQuadRefusal(proj) ? [] : proj.screen.map((c) => ({ x: c.x, y: c.y }));
-      const coveredCorners = screen.length === 0 ? 0 : (
-        screen.filter((c) => shownQuads.some((q) => inQuad(q, c.x, c.y))).length
-        + shownQuads.reduce((n, q) => n + q.filter((c) => inQuad(screen, c.x, c.y)).length, 0)
-      );
-      const occluded = coveredCorners >= 2;
-      const opacity = 1 - 0.75 * fogAt(p.distance);
-      const sample = screen.length === 0 ? null : (() => {
-        const xs = screen.map((c) => c.x), ys = screen.map((c) => c.y);
-        const [x0, x1] = [Math.min(...xs), Math.max(...xs)];
-        const [y0, y1] = [Math.min(...ys), Math.max(...ys)];
-        const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-        if (cx < 0 || cx > cssW || cy < 0 || cy > cssH) return null;
-        return { cx, cy, hx: Math.max(1, (x1 - x0) / 4), hy: Math.max(1, (y1 - y0) / 4) };
-      })();
-      const bg = sample ? brightestBehind(sample.cx, sample.cy, sample.hx, sample.hy) : null;
-      const bgLum = bg ? relLum(bg[0], bg[1], bg[2]) : null;
-      /*
-       * ONE RATIO COVERS ALL FOUR LINES, and that is a consequence of the fix rather than a shortcut: every
-       * entry in `LINE_SPEC` is fully opaque white, so the composited colour is identical for all of them and
-       * the element's own fog opacity is the only alpha in play. The harness measured per line because it USED
-       * to rank the lines by alpha, and that ranking was what cost it its reach. If a per-line alpha is ever
-       * reintroduced this must go back to a per-line minimum, because a record whose action you can read and
-       * whose actor you cannot is the truncation failure in a different costume.
-       */
-      const minRatio = bg && bgLum !== null ? ratioOf(overBg(bg, opacity), bgLum) : null;
-      const tooFaint = minRatio === null || minRatio < AA_RATIO;
-      const shown = !refusal && !backFacing && !edgeOn && !tooFar && !tooLong && !tooFaint
-        && !occluded && !p.wrapped;
-      if (shown) shownQuads.push(screen);
-      /* NAMED, NOT COUNTED, and in priority order. "17 hidden" is useless; an operator does something different
-         about a record they are too far from than about one that is covered. */
-      const hiddenBecause = shown ? null
-        : refusal ?? (p.wrapped ? 'STACK_WRAPPED'
-          : backFacing ? 'BACK_FACING'
-            : edgeOn ? 'EDGE_ON'
-              : tooFar ? 'BEYOND_LEGIBLE_RANGE'
-                : tooLong ? 'LINE_TOO_LONG_TO_SHOW'
-                  : minRatio === null ? 'CONTRAST_UNMEASURABLE'
-                    : minRatio < AA_RATIO ? 'BELOW_READABLE_CONTRAST' : 'OCCLUDED');
-      return { p, proj, shown, hiddenBecause, ew, eh, opacity, minRatio, tooFar };
-    });
-
-    const overlay: OverlayRecord[] = [];
-    for (const d of [...decided].sort((a, b) => b.p.distance - a.p.distance)) {
-      if (!d.shown || isQuadRefusal(d.proj)) continue;
-      overlay.push({
-        key: d.p.r.id,
-        transform: d.proj.transform,
-        ew: d.ew, eh: d.eh,
-        /* The text obeys the same atmosphere as the slab, and this is the ONE owner of that law — computed in
-           the decision pass so the measured ratios above describe exactly these pixels. */
-        opacity: d.opacity,
-        lines: LINE_SPEC.map((ln) => ({ text: ln.text(d.p.r), style: ln.style })),
-      });
+    /* THE FIRST FRAME COMES FROM THE SETUP, NOT FROM THE DRAW EFFECT ABOVE. On a tier rebuild that effect does
+       not re-run — its dependency did not change — so a rebuilt context with no draw would leave a blank canvas
+       where a page of governed actions was. */
+    if (draw(entriesRef.current) === 'STALE_TIER') {
+      /* No context-lost listener on this path: nothing is on screen to go stale, and `onRefused` must not fire —
+         the corridor is about to be rebuilt at the resolved tier, not refused. */
+      return releaseAll;
     }
-
-    /*
-     * THE DEPTH RULER, so "depth is time" is a marked axis rather than an assertion. Screen space, because it
-     * annotates the corridor rather than living in it — which is also why it takes a CONSTANT alpha: fog is a
-     * property of the corridor, and fogging an axis label about the corridor deletes the axis while leaving the
-     * claim on the frame. Three of the harness's four ticks were at 1.04:1 to 3.4:1 under the old fogged law and
-     * `rulerOffFrame: 0` reported them as fine, because that was a frame-BOUNDS count.
-     *
-     * A tick that does not measure at AA is NOT DRAWN and is counted, for the same reason a record is not.
-     */
-    const RULER_ALPHA = 0.85;
-    const spanDays = spanHours / 24;
-    const CANDIDATES = [1 / 24, 3 / 24, 6 / 24, 0.5, 1, 2, 3, 7, 14, 30, 60, 90, 180, 365];
-    const inSpan = CANDIDATES.filter((d) => d <= spanDays);
-    const picks = inSpan.length <= 4 ? inSpan
-      : [0, 1, 2, 3].map((k) => inSpan[Math.round((k * (inSpan.length - 1)) / 3)]!);
-    let rulerUnreadable = 0;
-    const ruler: { label: string; sx: number; sy: number }[] = [];
-    for (const days of picks) {
-      const z = zOf(days * 24);
-      const s = projectScreen(vp, [-CORRIDOR_HALF + 0.30, 0.035, z], cssW, cssH);
-      const onFrame = !s.behind && s.sx > 0 && s.sx < cssW && s.sy > 0 && s.sy < cssH;
-      const bg = onFrame ? brightestBehind(s.sx, s.sy, 13, 7) : null;
-      const ratio = bg ? ratioOf(overBg(bg, RULER_ALPHA), relLum(bg[0], bg[1], bg[2])) : null;
-      if (!onFrame || ratio === null || ratio < AA_RATIO) { rulerUnreadable++; continue; }
-      ruler.push({
-        label: days < 1 ? `${Math.round(days * 24)}h` : `${days}d`,
-        sx: s.sx, sy: s.sy,
-      });
-    }
-
-    const shownRecords = decided.filter((d) => d.shown);
-    const legibleHours = shownRecords.length === 0
-      ? null : Math.max(...shownRecords.map((d) => d.p.r.hoursAgo));
-    /* TAKEN FROM THE PREDICATE, NOT FROM `hiddenBecause`, which reports ONE reason in priority order — so a
-       record both edge-on and 41 m away is named EDGE_ON and would slip through a name-based filter, making this
-       horizon equal the one below it and carry no information. */
-    const inRangeHours = Math.max(0, ...decided.filter((d) => !d.tooFar).map((d) => d.p.r.hoursAgo));
-
-    setPlan({
-      cssW, cssH,
-      records: overlay,
-      ruler,
-      rulerUnreadable,
-      readableToDays: legibleHours === null ? null : Number((legibleHours / 24).toFixed(2)),
-      inRangeToDays: Number((inRangeHours / 24).toFixed(2)),
-      visibleToDays: Number((spanHours / 24).toFixed(2)),
-      hoursPerMetre: Number(hoursPerMetre.toFixed(2)),
-      shown: shownRecords.length,
-      placed: placed.length,
-      hiddenBy: decided.filter((d) => !d.shown).reduce<Record<string, number>>((acc, d) => {
-        const k = d.hiddenBecause ?? 'UNKNOWN';
-        acc[k] = (acc[k] ?? 0) + 1;
-        return acc;
-      }, {}),
-      counts: {
-        ALLOWED: placed.filter((p) => p.r.verdict === 'ALLOWED').length,
-        BLOCKED: placed.filter((p) => p.r.verdict === 'BLOCKED').length,
-        WITHHELD: placed.filter((p) => p.r.verdict === 'WITHHELD').length,
-      },
-      unplaced: built.unplaced,
-      cappedFrom,
-      /* THE CHECK ON THE HEADLINE, so the printed claim is falsifiable: the worst measured ratio among the
-         records the frame actually shows. Below `AA_RATIO` and the word READABLE is not earned. */
-      worstShownRatio: shownRecords.length === 0
-        ? null : Number(Math.min(...shownRecords.map((d) => d.minRatio ?? 0)).toFixed(2)),
-    });
+    /* A REFUSAL ON THE FIRST DRAW HAS ALREADY DISPOSED EVERYTHING, so there is nothing left to arm a redraw
+       against and nothing left to clean up. Publishing `draw` here would leave a closure over a dead stage
+       that a later data change would call — silently, because GL does not throw on a disposed context. */
+    if (dead) return;
+    drawRef.current = draw;
 
     /*
      * CONTEXT LOSS RESOLVES TO THE TABLE. Without this the canvas keeps its last frame for ever while the GPU
@@ -739,15 +856,12 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
 
     return () => {
       canvas.removeEventListener('webglcontextlost', onLost);
-      for (const d of disposers.reverse()) d();
-      /* THE STAGE LAST. It owns the context; releasing it before the resources built on it leaves each delete*
-         operating on a dead context — silent rather than fatal, and it leaks on every remount. This component
-         remounts every time a reader toggles the view. */
-      stage.dispose();
+      drawRef.current = null;
+      releaseAll();
     };
     /* `tier` IS A DEPENDENCY, and that is the rebuild mechanism: a resolved lower tier tears this context down
-       and builds the corridor again at it. */
-  }, [entries, heightPx, onRefused, tier]);
+       and builds the corridor again at it. `entries` IS NOT, and that is the fix this file exists to carry. */
+  }, [heightPx, onRefused, tier]);
 
   const label = (t: string): CSSProperties => ({
     font: '400 10.5px/1.5 ui-monospace, monospace', color: t, whiteSpace: 'pre-wrap',

@@ -24,11 +24,26 @@ import { PIPELINE_SOURCES } from './pipeline.js';
  * So this file does not merely assert the good case. It asserts the BAD case too — that
  * tone mapping a data colour genuinely moves it — because an equality test between two
  * things that were never going to differ proves nothing at all.
+ *
+ * ── AND THE "GOOD CASE" IN THIS FILE IS EXACTLY THAT EQUALITY TEST. MEASURED 2026-08-14 ──
+ *
+ * `assertBrandFidelity()` compares `linearToHex(hexToLinear(BRAND_HEX[k]))` with
+ * `BRAND_HEX[k]`. Nothing in the pipeline is on that path, so no pipeline change can move
+ * it. Proof: setting `TONE_SHOULDER` to 0.45 — a real change to the curve every surface
+ * runs — leaves all 15 tests in this file passing, while `brandPixel.test.ts` fails two.
+ *
+ * The negative control below is therefore not a control at all. It computes what the
+ * SHIPPED composite does to brand blue, and the answer, confirmed against bytes read off a
+ * framebuffer in `docs/3d/brand-fidelity.json`, is `#2c68dc` — a 35/255 drop in blue on
+ * every surface in the system. Read `brandPixel.test.ts` alongside this file; the claims
+ * about rendered colour live there, because only there is anything rendered.
  */
 
 describe('the data path preserves brand chroma exactly', () => {
   it('every palette colour round-trips to its own hex', () => {
-    // THE P1 GATE from §7: "brand hex exact after tone mapping".
+    /* NOT the P1 gate, though it was labelled one here for months. This catches a mistyped
+       hex in BRAND_HEX and nothing else — the tone map is not on this path. "Brand hex exact
+       after tone mapping" is measured in `brandPixel.test.ts`, and it is false. */
     expect(assertBrandFidelity()).toEqual([]);
   });
 
@@ -37,17 +52,20 @@ describe('the data path preserves brand chroma exactly', () => {
     expect(linearToHex(BRAND.brand).toLowerCase()).toBe('#2c6bff');
   });
 
-  it('THE NEGATIVE CONTROL — tone mapping a data colour DOES move it', () => {
+  it('THE SIZE OF THE SHIFT THE COMPOSITE APPLIES — not a control, the shipped behaviour', () => {
     /*
-     * Without this, the assertion above is satisfied by a pipeline that does nothing at
-     * all. This pins the size of the error the policy prevents.
+     * This was called "THE NEGATIVE CONTROL" and described as pinning "the size of the error
+     * the policy prevents". The policy prevents nothing: `pipeline.ts:100` runs exactly this
+     * function's GLSL twin over `plate + scene + bloom`, and the data colour is inside
+     * `scene`. So what this pins is the size of the error the composite CAUSES — 35/255 in
+     * blue — and `brandPixel.test.ts` checks the same number against a real framebuffer.
      */
     const wrong = brandUnderIllegalToneMap().toLowerCase();
     expect(wrong).not.toBe('#2c6bff');
 
     const [r, g, b] = [1, 3, 5].map((i) => parseInt(wrong.slice(i, i + 2), 16));
     const [R, G, B] = [0x2c, 0x6b, 0xff];
-    // Not a rounding wobble — a visible, brand-breaking shift.
+    // Not a rounding wobble — a visible, brand-breaking shift, and it is what ships.
     expect(Math.abs(b! - B)).toBeGreaterThan(20);
     expect(r).toBeLessThanOrEqual(R!);
     expect(g).toBeLessThanOrEqual(G!);

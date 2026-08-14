@@ -225,6 +225,34 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
    */
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
 
+  /**
+   * THE REDRAW LIVES IN A REF, AND THAT IS WHAT KEEPS ONE GL CONTEXT ACROSS A DATA CHANGE.
+   *
+   * `input` used to be in the render effect's dependency list at :575, so every filter AND every SELECTION —
+   * `selectedId` is a member of the memoised `input` — disposed the stage and built a new one. Measured with a
+   * counting WebGL2 context, one change to `input` cost **1 context, 4 programs, 8 shaders, 10 vertex arrays,
+   * 37 bufferData calls, 6 textures, 5 framebuffers and 399,612 bytes**. Clicking an entity is not a new scene.
+   *
+   * (The `[]` at the end of the ResizeObserver effect below is that observer's dependency list, not this one.
+   * An earlier reading of this file mistook the two and recorded E4 as already inert.)
+   *
+   * WHAT IS ACTUALLY DATA HERE is the deck plane, whose size is `L.deckSize`, and one ring torus per shell
+   * radius. The unit sphere, the absent ring, the withheld cylinder and the unit link cylinder are shared by
+   * every body in every ontology and are uploaded once.
+   */
+  const drawRef = useRef<((i: OntologyOrreryGlProps['input']) => 'STALE_TIER' | undefined) | null>(null);
+  /* THE LATEST GRAPH, so a TIER or SIZE change can redraw it: the setup effect re-runs on those while the draw
+     effect below does not, and a rebuilt context with no draw is a blank canvas over the flat diagram. */
+  const inputRef = useRef<OntologyOrreryGlProps['input']>(input);
+
+  /* THE DRAW EFFECT IS DECLARED FIRST, AND THE ORDER IS LOAD-BEARING. React runs effects in declaration order,
+     so on MOUNT this one records the graph and returns (nothing is published yet) and the setup effect draws
+     it. On a DATA CHANGE only this one re-runs, and the context is untouched. */
+  useEffect(() => {
+    inputRef.current = input;
+    drawRef.current?.(input);
+  }, [input]);
+
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -265,6 +293,7 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || size === null) return;
+    drawRef.current = null;
 
     /*
      * §6 RULE 5 BEFORE ANYTHING IS DRAWN. If the palette does not round-trip through this pipeline's tone map
@@ -278,10 +307,11 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
 
     /* THE LAYOUT AND ITS REFUSALS COME FIRST, before a context is created. A geometry refusal — an entity kind
        with no plane, a system that merges at every viewpoint — is not the GPU's fault and must not cost a
-       WebGL context to discover. */
-    const outcome = buildOrrery({ ...input, cssWidth: size.w, cssHeight: size.h });
-    if (isOrreryRefusal(outcome)) { onRefused(outcome.code, outcome.reason); return; }
-    const L = outcome;
+       WebGL context to discover.
+       READ THROUGH THE REF, NOT THE PROP: this is a check on the data, but it must not put the data back in the
+       dependency list below; `draw` runs the same layout on every later graph. */
+    const firstOutcome = buildOrrery({ ...inputRef.current, cssWidth: size.w, cssHeight: size.h });
+    if (isOrreryRefusal(firstOutcome)) { onRefused(firstOutcome.code, firstOutcome.reason); return; }
 
     /* DPR CAPPED BY THE TIER. Everything in this frame is fill-bound, so a 3× display would triple the cost of
        a reading whose whole justification is that an operator gets an answer faster. The cap WAS a literal 2;
@@ -297,9 +327,33 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
     const gl = stage.gl;
 
     const disposers: (() => void)[] = [];
-    const refuse = (code: string, reason: string): void => {
+    /*
+     * TWO DISPOSAL LISTS, BECAUSE TWO LIFETIMES. `disposers` holds what the SIZE and the TIER own — the context,
+     * the programs, the target, the shadow map and the four shared body meshes. `shapeDisposers` holds the deck
+     * plane and the ring tori, whose dimensions are `L.deckSize` and `L.shells` and therefore the ontology. A
+     * graph that keeps the same deck size and shell radii — which is every SELECTION change — reuses both.
+     */
+    const shape: { key: string | null; disposers: (() => void)[] } = { key: null, disposers: [] };
+    const releaseShape = (): void => {
+      for (const d of shape.disposers.reverse()) d();
+      shape.disposers = [];
+      shape.key = null;
+    };
+    /* Set by whichever of `refuse` and the cleanup runs first. A redraw can refuse now, so both are reachable in
+       one mount, and `disposers.reverse()` MUTATES — running it twice disposes forwards. */
+    let dead = false;
+    const releaseAll = (): void => {
+      if (dead) return;
+      dead = true;
+      releaseShape();
+      /* DISPOSE IN REVERSE, AND THE STAGE LAST. It owns the context; releasing it first leaves every other
+         delete* call operating on a dead context — silent rather than fatal, and it leaks on every remount. */
       for (const d of disposers.reverse()) d();
       stage.dispose();
+    };
+    const refuse = (code: string, reason: string): void => {
+      drawRef.current = null;
+      releaseAll();
       onRefused(code, reason);
     };
 
@@ -329,26 +383,22 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
     if ('kind' in shadow) { refuse(shadow.code, shadow.reason); return; }
     disposers.push(() => shadow.dispose());
 
-    /* ── MESHES. One unit sphere scaled per body: a uniform scale leaves a normal's DIRECTION unchanged, so
-       the identity normal matrix is correct and the shader normalises what it is handed. ── */
-    const deckGeo = plane(L.deckSize, 48);
+    /* ── THE SHARED MESHES. One unit sphere scaled per body: a uniform scale leaves a normal's DIRECTION
+       unchanged, so the identity normal matrix is correct and the shader normalises what it is handed. These
+       four are the same for every ontology, so they are uploaded once and survive every redraw. ── */
     const sphereGeo = sphere(1, 20, 28);
     const absentGeo = torus(ABSENT_GEOM.ringRadius, ABSENT_GEOM.tubeRadius, 44, 14);
     const withheldGeo = cylinder(WITHHELD_R, WITHHELD_H, 36);
     /* A UNIT CYLINDER along Y, radius 1, height 1, so a link's model matrix carries its thickness in two
        columns and its length in the third and nothing is re-uploaded per link. */
     const linkGeo = cylinder(1, 1, 14);
-    /* One ring geometry per shell radius. Each is used twice: inclined above the plate for a (kind, shell)
-       that is occupied, and flat on the plate as the collapsed control. */
-    const ringGeos = L.shells.map((r) => torus(r, L.ringTube, 128, 8));
 
-    const named: readonly (readonly [string, Geometry])[] = [
-      ['deck', deckGeo], ['sphere', sphereGeo], ['absent', absentGeo],
-      ['withheld', withheldGeo], ['link', linkGeo],
-      ...ringGeos.map((g, i) => ['ring' + i, g] as const),
+    type Mesh = { vao: WebGLVertexArrayObject; indexCount: number; indexType: number; dispose(): void };
+    const meshes = new Map<string, Mesh>();
+    const shared: readonly (readonly [string, Geometry])[] = [
+      ['sphere', sphereGeo], ['absent', absentGeo], ['withheld', withheldGeo], ['link', linkGeo],
     ];
-    const meshes = new Map<string, { vao: WebGLVertexArrayObject; indexCount: number; indexType: number; dispose(): void }>();
-    for (const [k, g] of named) {
+    for (const [k, g] of shared) {
       const m = uploadMesh(stage, g);
       if ('kind' in m) { refuse(m.code, m.reason); return; }
       meshes.set(k, m);
@@ -356,200 +406,242 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
     }
     const meshOf = (k: string) => meshes.get(k)!;
 
-    const draws: LitDraw[] = [
-      {
-        mesh: meshOf('deck'), model: scaledAt([0, DECK_Y, 0], 1), normalMat: N3,
-        material: { baseColour: hexToLinear(DECK_HEX), roughness: 0.9, metalness: 0 },
-      },
-    ];
     /*
-     * STRUCTURE DOES NOT CAST. In E4's first capture the orbit rings dropped concentric shadow ellipses onto
-     * the plate, and a shadow of an axis is indistinguishable from an axis: the frame appeared to have twice as
-     * many shells as the ontology has. The links came out too — their shadows were near-vertical black stripes,
-     * and a dark stripe on a plate covered in tubes reads as another tube. The shadow says how high each BODY
-     * sits above the reference plane; anything else it says is noise on top of that.
-     */
-    const casters: LitDraw[] = [];
-
-    /*
-     * THE FLAT ALTERNATIVE IS IN THE SAME FRAME, AS THE REFERENCE PLANE.
+     * ONE REDRAW, WHICH IS THE WHOLE RESPONSE TO A NEW GRAPH — no context, no program, no target, no shadow map.
      *
-     * One faint ring per SHELL is drawn flat on the plate, against one ring per (kind, shell) inclined above
-     * it. That is the collapse the third axis undoes, drawn rather than argued: flattened, a licence's one-hop
-     * ring and a requirement's one-hop ring are the same circle. `flatRingsCollapsed` is the count.
+     * The DECK and the RINGS are the only geometry the ontology sizes: the plate is `L.deckSize` across and
+     * there is one torus per shell radius. They are keyed, so a change that leaves the deck and the shells where
+     * they were — which is every SELECTION change, the commonest interaction on this surface — reuses them too.
      */
-    L.shells.forEach((_, i) => {
-      draws.push({
-        mesh: meshOf('ring' + i), model: scaledAt([0, DECK_Y + 0.02, 0], 1), normalMat: N3,
-        material: { baseColour: hexToLinear(FLAT_RING_HEX), roughness: 0.7, metalness: 0.1 },
-      });
-    });
+    const draw = (graph: OntologyOrreryGlProps['input']): 'STALE_TIER' | undefined => {
+      const outcome = buildOrrery({ ...graph, cssWidth: size.w, cssHeight: size.h });
+      if (isOrreryRefusal(outcome)) { refuse(outcome.code, outcome.reason); return undefined; }
+      const L = outcome;
 
-    /* One inclined ring per (kind, shell) that is actually occupied. A ring drawn where no entity sits would
-       be a structure claiming a population it does not have. */
-    const ringKeys = new Set<string>();
-    for (const b of L.bodies) {
-      if (b.offSystem || b.isCore || b.hops === null) continue;
-      const key = b.kind + '@' + String(b.hops);
-      if (ringKeys.has(key)) continue;
-      ringKeys.add(key);
-      const shellIndex = L.shells.indexOf(b.shell);
-      if (shellIndex < 0) continue;
-      /* THE SAME PLANE TABLE THE POSITIONS CAME FROM. Two copies of these angles is how a ring ends up drawn
-         through bodies that are not on it — the layout would be right and the axis it is read off would be a
-         few degrees wrong, which is invisible and total. */
-      const pl = ORRERY_PLANES[b.kind] ?? { incDeg: 0, nodeDeg: 0 };
-      const basis = orbitBasis(pl.incDeg, pl.nodeDeg);
-      draws.push({
-        mesh: meshOf('ring' + shellIndex), model: basis.model, normalMat: basis.normal,
-        material: { baseColour: hexToLinear(RING_HEX), roughness: 0.55, metalness: 0.2 },
-      });
-    }
-
-    for (const l of L.links) {
-      const tf = linkTransform(l.a, l.b, l.r);
-      if (!tf) continue;
-      draws.push({
-        mesh: meshOf('link'), model: tf.model, normalMat: tf.normal,
-        material: { baseColour: hexToLinear(LINK_HEX), roughness: 0.34, metalness: 0.12 },
-      });
-    }
-
-    for (const b of L.bodies) {
-      const d: LitDraw = b.magnitude.state === 'absent'
-        ? ((): LitDraw => {
-          const f = facingBasis(b.pos, L.eye);
-          return {
-            mesh: meshOf('absent'), model: f.model, normalMat: f.normal,
-            /* Roughness up and metalness down: once the ring faces the reader its normals point at the reader
-               and the key light comes from above, so the diffuse term along the top of the tube is all there
-               is. A metal here reflects a dark interior sky and comes back nearly black. */
-            material: { baseColour: hexToLinear(ABSENT_HEX), roughness: 0.52, metalness: 0.04 },
-          };
-        })()
-        : b.magnitude.state === 'withheld'
-          ? {
-            mesh: meshOf('withheld'), model: scaledAt(b.pos, 1), normalMat: N3,
-            /* METALNESS 0.15, NOT 0.58, and that was a material error rather than a taste one: a metal has no
-               diffuse term, it shows its environment, and this environment is a dark instrument interior. The
-               one body whose job is to be seen and not read was the hardest thing on the frame to find. */
-            material: { baseColour: hexToLinear(WITHHELD_HEX), roughness: 0.42, metalness: 0.15 },
-          }
-          : {
-            mesh: meshOf('sphere'), model: scaledAt(b.pos, b.radius), normalMat: N3,
-            material: {
-              baseColour: hexToLinear(b.isCore ? CORE_HEX : OBSERVED_HEX),
-              roughness: b.isCore ? 0.22 : 0.34,
-              metalness: b.isCore ? 0.36 : 0.08,
-            },
-          };
-      draws.push(d);
-      casters.push(d);
-    }
-
-    /*
-     * THE LIGHT IS NEARLY OVERHEAD, at 0.14 / 0.22 off plumb, and that is about attribution. A more oblique
-     * key throws each shadow a metre and a half sideways, and at that offset the reader cannot tell whether the
-     * gap between a body and a shadow is the body's HEIGHT or the light's ANGLE — which is the one thing the
-     * shadow is here to say. Steep enough to attribute, tilted enough that the spheres keep a terminator.
-     */
-    const lightDir: [number, number, number] = [0.14, -0.966, -0.22];
-    const span = L.outerRadius + 3;
-    const sceneMin: [number, number, number] = [-span, DECK_Y, -span];
-    const sceneMax: [number, number, number] = [span, span * 0.6, span];
-    const lightVP = lightViewProjection(
-      { direction: lightDir, colour: [1, 1, 1], extent: span * 1.5 },
-      boundsCentre(sceneMin, sceneMax), boundsRadius(sceneMin, sceneMax),
-    );
-
-    /* ONE FRAME, then nothing. See the file header: §6 rule 2, and the reason reduced motion needs no branch. */
-    const vp = viewProjection(L.view, W / H);
-    const cc = hexToLinear(CLEAR_HEX);
-    /* A FUNCTION NOW, SO IT CAN BE MEASURED — and it ends with `target` bound, which is what `probeSync`
-       requires: a `readPixels` only guarantees completion of work affecting the framebuffer it reads. */
-    const renderScene = (): void => {
-      lit.shadowPass(lightVP, casters, shadow);
-      target.bind();
-      gl.clearColor(cc[0], cc[1], cc[2], 1);
-      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      lit.depthPrepass(vp, draws);
-      lit.draw({
-        viewProj: vp, eye: L.eye, lightDir, lightColour: [3.1, 3.05, 2.95],
-        /* AO stays `null` at every tier: it was measured in E4's harness at 0.44% of the frame, so there is
-           nothing here for the ladder to drop. See the allocation comment above. */
-        ambientGain: 0.52, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
-        ao: null, screenSize: [W, H], fog: null,
-      });
-    };
-
-    /*
-     * THE PROBE, TAKEN BEFORE ANYTHING IS PRESENTED. `pickQualityTier` exists to choose a tier from one
-     * measured frame and had no caller in this repo; this is one. A discarded warm-up frame first — the first
-     * frame pays shader upload, and charging that to the GPU would downgrade every machine — then two
-     * sync-bounded samples of which the cheaper is used, because one sample can catch a GC pause and a single
-     * unlucky 40 ms would drop a fast machine for the rest of the page load.
-     */
-    if (needsQualityProbe()) {
-      const ms = measureFrameMs(gl, renderScene);
-      const r = recordQualityProbe({
-        pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'OntologyOrreryGl',
-      });
-      /* A LOWER TIER MEANS THIS BUILD IS STALE. Nothing is presented and `onReading` is NOT called — a reading
-         published off a frame the reader will never see is a number about nothing. The effect re-runs on the
-         new tier and publishes then. */
-      if (r.tier !== tier) {
-        return () => {
-          for (const d of disposers.reverse()) d();
-          stage.dispose();
-        };
+      const key = `${L.deckSize}:${L.ringTube}:${L.shells.join(',')}`;
+      if (key !== shape.key) {
+        releaseShape();
+        /* One ring geometry per shell radius. Each is used twice: inclined above the plate for a (kind, shell)
+           that is occupied, and flat on the plate as the collapsed control. */
+        const shaped: readonly (readonly [string, Geometry])[] = [
+          ['deck', plane(L.deckSize, 48)],
+          ...L.shells.map((r, i) => ['ring' + i, torus(r, L.ringTube, 128, 8)] as const),
+        ];
+        for (const [k, g] of shaped) {
+          const m = uploadMesh(stage, g);
+          if ('kind' in m) { refuse(m.code, m.reason); return undefined; }
+          const prev = meshes.get(k);
+          if (prev) prev.dispose();
+          meshes.set(k, m);
+          shape.disposers.push(() => m.dispose());
+        }
+        shape.key = key;
       }
-    }
 
-    renderScene();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, W, H);
-    gl.disable(gl.DEPTH_TEST);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, target.texture);
-    stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
-    /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
-    canvas.dataset.qualityTier = tier;
+      const draws: LitDraw[] = [
+        {
+          mesh: meshOf('deck'), model: scaledAt([0, DECK_Y, 0], 1), normalMat: N3,
+          material: { baseColour: hexToLinear(DECK_HEX), roughness: 0.9, metalness: 0 },
+        },
+      ];
+      /*
+       * STRUCTURE DOES NOT CAST. In E4's first capture the orbit rings dropped concentric shadow ellipses onto
+       * the plate, and a shadow of an axis is indistinguishable from an axis: the frame appeared to have twice as
+       * many shells as the ontology has. The links came out too — their shadows were near-vertical black stripes,
+       * and a dark stripe on a plate covered in tubes reads as another tube. The shadow says how high each BODY
+       * sits above the reference plane; anything else it says is noise on top of that.
+       */
+      const casters: LitDraw[] = [];
 
-    const err = gl.getError();
-    if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW', 'the driver reported error ' + err + ' after the frame'); return; }
-
-    /*
-     * TWO LABELS, IN THE DOM, PROJECTED FROM THE SAME MATRIX THE FRAME USED. §6 rule 4: text is the
-     * accessibility tree and the print path, so it is never baked into a texture.
-     *
-     * Only two: the core, because "distance from the core" says nothing without naming it, and the reader's
-     * selection, because that is the entity they asked about. Labelling all of them needs the harness's
-     * obstacle system — one obstacle set filled in priority order with four candidate placements each — and at
-     * up to a hundred entities that system does not have room to succeed. The absence is a real cost and it is
-     * stated next to the toggle rather than discovered: naming a specific entity is what the diagram is for.
-     */
-    const labels: { id: string; label: string; xPct: number; yPct: number; role: 'core' | 'selected' }[] = [];
-    const pushLabel = (id: string, role: 'core' | 'selected'): void => {
-      const b = L.bodies.find((x) => x.id === id);
-      if (!b) return;
-      const q = projectScreen(vp, b.pos, size.w, size.h);
-      if (q.behind) return;
-      labels.push({
-        id: b.id, label: b.label, role,
-        xPct: (q.sx / size.w) * 100, yPct: (q.sy / size.h) * 100,
+      /*
+       * THE FLAT ALTERNATIVE IS IN THE SAME FRAME, AS THE REFERENCE PLANE.
+       *
+       * One faint ring per SHELL is drawn flat on the plate, against one ring per (kind, shell) inclined above
+       * it. That is the collapse the third axis undoes, drawn rather than argued: flattened, a licence's one-hop
+       * ring and a requirement's one-hop ring are the same circle. `flatRingsCollapsed` is the count.
+       */
+      L.shells.forEach((_, i) => {
+        draws.push({
+          mesh: meshOf('ring' + i), model: scaledAt([0, DECK_Y + 0.02, 0], 1), normalMat: N3,
+          material: { baseColour: hexToLinear(FLAT_RING_HEX), roughness: 0.7, metalness: 0.1 },
+        });
       });
-    };
-    pushLabel(L.core.id, 'core');
-    if (input.selectedId !== null && input.selectedId !== L.core.id) pushLabel(input.selectedId, 'selected');
 
-    onReading({
-      layout: L,
-      labels,
-      /* Counted from the geometry that was uploaded rather than estimated: `draws.length` and this number are
-         the two costs a frame is entitled to state about itself. */
-      triangles: draws.reduce((n, d) => n + Math.floor(d.mesh.indexCount / 3), 0),
-      drawCalls: draws.length,
-    });
+      /* One inclined ring per (kind, shell) that is actually occupied. A ring drawn where no entity sits would
+         be a structure claiming a population it does not have. */
+      const ringKeys = new Set<string>();
+      for (const b of L.bodies) {
+        if (b.offSystem || b.isCore || b.hops === null) continue;
+        const key = b.kind + '@' + String(b.hops);
+        if (ringKeys.has(key)) continue;
+        ringKeys.add(key);
+        const shellIndex = L.shells.indexOf(b.shell);
+        if (shellIndex < 0) continue;
+        /* THE SAME PLANE TABLE THE POSITIONS CAME FROM. Two copies of these angles is how a ring ends up drawn
+           through bodies that are not on it — the layout would be right and the axis it is read off would be a
+           few degrees wrong, which is invisible and total. */
+        const pl = ORRERY_PLANES[b.kind] ?? { incDeg: 0, nodeDeg: 0 };
+        const basis = orbitBasis(pl.incDeg, pl.nodeDeg);
+        draws.push({
+          mesh: meshOf('ring' + shellIndex), model: basis.model, normalMat: basis.normal,
+          material: { baseColour: hexToLinear(RING_HEX), roughness: 0.55, metalness: 0.2 },
+        });
+      }
+
+      for (const l of L.links) {
+        const tf = linkTransform(l.a, l.b, l.r);
+        if (!tf) continue;
+        draws.push({
+          mesh: meshOf('link'), model: tf.model, normalMat: tf.normal,
+          material: { baseColour: hexToLinear(LINK_HEX), roughness: 0.34, metalness: 0.12 },
+        });
+      }
+
+      for (const b of L.bodies) {
+        const d: LitDraw = b.magnitude.state === 'absent'
+          ? ((): LitDraw => {
+            const f = facingBasis(b.pos, L.eye);
+            return {
+              mesh: meshOf('absent'), model: f.model, normalMat: f.normal,
+              /* Roughness up and metalness down: once the ring faces the reader its normals point at the reader
+                 and the key light comes from above, so the diffuse term along the top of the tube is all there
+                 is. A metal here reflects a dark interior sky and comes back nearly black. */
+              material: { baseColour: hexToLinear(ABSENT_HEX), roughness: 0.52, metalness: 0.04 },
+            };
+          })()
+          : b.magnitude.state === 'withheld'
+            ? {
+              mesh: meshOf('withheld'), model: scaledAt(b.pos, 1), normalMat: N3,
+              /* METALNESS 0.15, NOT 0.58, and that was a material error rather than a taste one: a metal has no
+                 diffuse term, it shows its environment, and this environment is a dark instrument interior. The
+                 one body whose job is to be seen and not read was the hardest thing on the frame to find. */
+              material: { baseColour: hexToLinear(WITHHELD_HEX), roughness: 0.42, metalness: 0.15 },
+            }
+            : {
+              mesh: meshOf('sphere'), model: scaledAt(b.pos, b.radius), normalMat: N3,
+              material: {
+                baseColour: hexToLinear(b.isCore ? CORE_HEX : OBSERVED_HEX),
+                roughness: b.isCore ? 0.22 : 0.34,
+                metalness: b.isCore ? 0.36 : 0.08,
+              },
+            };
+        draws.push(d);
+        casters.push(d);
+      }
+
+      /*
+       * THE LIGHT IS NEARLY OVERHEAD, at 0.14 / 0.22 off plumb, and that is about attribution. A more oblique
+       * key throws each shadow a metre and a half sideways, and at that offset the reader cannot tell whether the
+       * gap between a body and a shadow is the body's HEIGHT or the light's ANGLE — which is the one thing the
+       * shadow is here to say. Steep enough to attribute, tilted enough that the spheres keep a terminator.
+       */
+      const lightDir: [number, number, number] = [0.14, -0.966, -0.22];
+      const span = L.outerRadius + 3;
+      const sceneMin: [number, number, number] = [-span, DECK_Y, -span];
+      const sceneMax: [number, number, number] = [span, span * 0.6, span];
+      const lightVP = lightViewProjection(
+        { direction: lightDir, colour: [1, 1, 1], extent: span * 1.5 },
+        boundsCentre(sceneMin, sceneMax), boundsRadius(sceneMin, sceneMax),
+      );
+
+      /* ONE FRAME, then nothing. See the file header: §6 rule 2, and the reason reduced motion needs no branch. */
+      const vp = viewProjection(L.view, W / H);
+      const cc = hexToLinear(CLEAR_HEX);
+      /* A FUNCTION NOW, SO IT CAN BE MEASURED — and it ends with `target` bound, which is what `probeSync`
+         requires: a `readPixels` only guarantees completion of work affecting the framebuffer it reads. */
+      const renderScene = (): void => {
+        lit.shadowPass(lightVP, casters, shadow);
+        target.bind();
+        gl.clearColor(cc[0], cc[1], cc[2], 1);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        lit.depthPrepass(vp, draws);
+        lit.draw({
+          viewProj: vp, eye: L.eye, lightDir, lightColour: [3.1, 3.05, 2.95],
+          /* AO stays `null` at every tier: it was measured in E4's harness at 0.44% of the frame, so there is
+             nothing here for the ladder to drop. See the allocation comment above. */
+          ambientGain: 0.52, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
+          ao: null, screenSize: [W, H], fog: null,
+        });
+      };
+
+      /*
+       * THE PROBE, TAKEN BEFORE ANYTHING IS PRESENTED. `pickQualityTier` exists to choose a tier from one
+       * measured frame and had no caller in this repo; this is one. A discarded warm-up frame first — the first
+       * frame pays shader upload, and charging that to the GPU would downgrade every machine — then two
+       * sync-bounded samples of which the cheaper is used, because one sample can catch a GC pause and a single
+       * unlucky 40 ms would drop a fast machine for the rest of the page load.
+       */
+      if (needsQualityProbe()) {
+        const ms = measureFrameMs(gl, renderScene);
+        const r = recordQualityProbe({
+          pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'OntologyOrreryGl',
+        });
+        /* A LOWER TIER MEANS THIS BUILD IS STALE. Nothing is presented and `onReading` is NOT called — a reading
+           published off a frame the reader will never see is a number about nothing. The effect re-runs on the
+           new tier and publishes then.
+           AND IT NEVER RUNS ON A REDRAW: `needsQualityProbe()` is false the moment a tier resolves, so selecting
+           an entity cannot re-time the machine and make the ladder follow the graph instead of the GPU. */
+        if (r.tier !== tier) return 'STALE_TIER';
+      }
+
+      renderScene();
+      gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+      gl.viewport(0, 0, W, H);
+      gl.disable(gl.DEPTH_TEST);
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, target.texture);
+      stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+      /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
+      canvas.dataset.qualityTier = tier;
+
+      const err = gl.getError();
+      if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW', 'the driver reported error ' + err + ' after the frame'); return undefined; }
+
+      /*
+       * TWO LABELS, IN THE DOM, PROJECTED FROM THE SAME MATRIX THE FRAME USED. §6 rule 4: text is the
+       * accessibility tree and the print path, so it is never baked into a texture.
+       *
+       * Only two: the core, because "distance from the core" says nothing without naming it, and the reader's
+       * selection, because that is the entity they asked about. Labelling all of them needs the harness's
+       * obstacle system — one obstacle set filled in priority order with four candidate placements each — and at
+       * up to a hundred entities that system does not have room to succeed. The absence is a real cost and it is
+       * stated next to the toggle rather than discovered: naming a specific entity is what the diagram is for.
+       */
+      const labels: { id: string; label: string; xPct: number; yPct: number; role: 'core' | 'selected' }[] = [];
+      const pushLabel = (id: string, role: 'core' | 'selected'): void => {
+        const b = L.bodies.find((x) => x.id === id);
+        if (!b) return;
+        const q = projectScreen(vp, b.pos, size.w, size.h);
+        if (q.behind) return;
+        labels.push({
+          id: b.id, label: b.label, role,
+          xPct: (q.sx / size.w) * 100, yPct: (q.sy / size.h) * 100,
+        });
+      };
+      pushLabel(L.core.id, 'core');
+      if (graph.selectedId !== null && graph.selectedId !== L.core.id) pushLabel(graph.selectedId, 'selected');
+
+      onReading({
+        layout: L,
+        labels,
+        /* Counted from the geometry that was uploaded rather than estimated: `draws.length` and this number are
+           the two costs a frame is entitled to state about itself. */
+        triangles: draws.reduce((n, d) => n + Math.floor(d.mesh.indexCount / 3), 0),
+        drawCalls: draws.length,
+      });
+      return undefined;
+    };
+
+    /* THE FIRST FRAME COMES FROM THE SETUP, NOT FROM THE DRAW EFFECT ABOVE. On a tier or size rebuild that
+       effect does not re-run — its dependency did not change — so a rebuilt context with no draw would leave a
+       blank canvas over the flat diagram, with the HUD still printing the previous reading. */
+    if (draw(inputRef.current) === 'STALE_TIER') {
+      /* No context-lost listener on this path: nothing is on screen to go stale, and `onRefused` must not fire —
+         the orrery is about to be rebuilt at the resolved tier, not refused. */
+      return releaseAll;
+    }
+    if (dead) return;
+    drawRef.current = draw;
 
     /*
      * CONTEXT LOSS RESOLVES TO THE FLAT DIAGRAM. Without this the canvas keeps its last frame on screen for
@@ -564,15 +656,13 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
 
     return () => {
       canvas.removeEventListener('webglcontextlost', onLost);
-      /* DISPOSE IN REVERSE, AND THE STAGE LAST. It owns the context; releasing it first leaves every other
-         delete* call operating on a dead context — silent rather than fatal, and it leaks on every remount.
-         This component remounts whenever a reader toggles the view or the window crosses a size step. */
-      for (const d of disposers.reverse()) d();
-      stage.dispose();
+      drawRef.current = null;
+      releaseAll();
     };
-    /* `tier` IS A DEPENDENCY, and that is the rebuild mechanism: a resolved lower tier tears this context down
-       and builds the orrery again at it. */
-  }, [input, size, onRefused, onReading, tier]);
+    /* `tier` AND `size` ARE DEPENDENCIES, and that is the rebuild mechanism: a resolved lower tier or a window
+       drag across a 32-pixel step tears this context down and builds the orrery again at it. `input` IS NOT,
+       and that is the fix this file exists to carry — selecting an entity is a redraw, not a new context. */
+  }, [size, onRefused, onReading, tier]);
 
   return (
     <div ref={hostRef} className="absolute inset-0">

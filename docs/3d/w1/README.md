@@ -21,7 +21,7 @@ between the two panels — the left is the real `BarChartH` from the app, render
 <!-- gl-budget:end w1-bundle -->
 
 <!-- gl-budget:begin spine -->
-Layer budget (§6.4): the spine measures **78.7 KB** of the 147 KB its six lanes allocate.
+Layer budget (§6.4): the spine measures **78.8 KB** of the 147 KB its six lanes allocate.
 <!-- gl-budget:end spine -->
 
 **Corrected 2026-08-13** (`3D_VFX_FINAL_PLAN.md` §4.5). Both byte figures here were hand-typed

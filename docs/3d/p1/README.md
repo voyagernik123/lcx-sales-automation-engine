@@ -42,13 +42,13 @@ JSON with `--json`.
 | lane | allocated | measured | |
 |---|---|---|---|
 | L1 renderer | ≤ 45 KB raw | **12.1 KB** | ✓ |
-| L2 look | ≤ 10 KB raw | **6.5 KB** | ✓ |
+| L2 look | ≤ 10 KB raw | **6.7 KB** | ✓ |
 | L3 motion | ≤ 8 KB raw | **1.7 KB** | ✓ |
 | L4 env | ≤ 60 KB raw | **38.8 KB** | ✓ |
 | L3.5 particles | ≤ 11 KB raw | **10.8 KB** | ✓ |
 | L4.5 field | ≤ 13 KB raw | **8.8 KB** | ✓ |
-| **spine total** (all six lanes) | ≤ 147 KB raw | **78.7 KB** | 68.3 KB of the allocation unspent |
-| gate bundle — spine + this surface, tree-shaken | — | **23.1 KB** (23605 B) | what this lane actually ships |
+| **spine total** (all six lanes) | ≤ 147 KB raw | **78.8 KB** | 68.2 KB of the allocation unspent |
+| gate bundle — spine + this surface, tree-shaken | — | **23.2 KB** (23799 B) | what this lane actually ships |
 | three.js, same job, same settings (P0) | — | 513.3 KB | **6.5× the spine** |
 <!-- gl-budget:end lanes -->
 

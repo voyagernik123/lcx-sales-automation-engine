@@ -5,11 +5,23 @@
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "//exports": "WHY THE SUBPATH WILDCARDS EXIST — measured, in docs/3d/w2/SUBPATH_COST.md. Every consumer reached this package through the root barrel, and Rollup places a module in the chunk of the LOWEST COMMON ANCESTOR of the entries that reach it: a chart route and a relief route both resolving to src/index.ts put the raymarcher, the lit renderer, AO and DoF in one shared chunk. Measured on apps/web/dist at the commit that added this: a route rendering one flat chart downloaded index-b9cOYKUz.js plus its 8 static dependency chunks = 89,793 B (87.7 KiB), against 14,110 B (13.8 KiB) of code it can execute. Destructuring at the import site does NOT fix it — measured 68.9 KiB, because the union of both lanes still lands in the shared chunk. Separate SPECIFIERS are what separate the graphs. The two patterns are wildcards, not a lane list, because a hand-written list of entry points cannot fail on a module nobody thought of, and this package gains modules. './*.js' must stay: this package's own source imports with explicit .js extensions ('../stage.js'), so a consumer copying that idiom resolves rather than erroring. The root '.' is unchanged and every existing import keeps working.",
   "exports": {
     ".": {
       "types": "./src/index.ts",
       "import": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./package.json": "./package.json",
+    "./*.js": {
+      "types": "./src/*.ts",
+      "import": "./src/*.ts",
+      "default": "./src/*.ts"
+    },
+    "./*": {
+      "types": "./src/*.ts",
+      "import": "./src/*.ts",
+      "default": "./src/*.ts"
     }
   },
   "files": [
