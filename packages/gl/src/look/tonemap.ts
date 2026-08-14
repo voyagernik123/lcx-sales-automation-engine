@@ -39,6 +39,22 @@
  * chosen because it is monotonic, hue-preserving per channel at low values, and rolls
  * accumulated density off instead of clipping it to white — which is the actual problem
  * we have. It is not chosen because it "looks filmic". Nothing here is chosen for that.
+ *
+ * ── AND THE 2026-08-14 CONCLUSION WENT ONE STEP TOO FAR. CORRECTED 2026-08-15 ──────────
+ *
+ * This file, and `3D_VFX_100X_LIVE.md` §5 with it, recorded that a data-preserving CURVE
+ * cannot exist — brand blue's blue channel is linear 1.0, so a curve pinned there is the
+ * identity at 1.0 and has no headroom above — and then concluded that no data-preserving fix
+ * exists. THE PREMISE IS RIGHT AND THE CONCLUSION DOES NOT FOLLOW, because the fix is not a
+ * curve. Being monotonic, this map is injective on [0, 2.5) and has an exact inverse there.
+ * Write `inverseToneMap(target)` into the scene target and the LIVE, UNMODIFIED curve
+ * delivers `target`. Measured on a real driver, all seven palette entries land ΔE 0.00.
+ *
+ * That is narrow, and `look/precompensate.ts` holds the perimeter, the three measured costs
+ * and the refusals that enforce them: it is exact for a FIXED-DENSITY unlit mark over a zero
+ * plate with no bloom reaching it, and it consumes the ENTIRE highlight range of an
+ * ACCUMULATING field — brand blue goes from 6 resolvable density steps to 3 over the same
+ * sweep, because the mark starts at the 1.6667 clip point rather than below it.
  */
 
 import type { Linear } from './colour.js';
@@ -61,10 +77,12 @@ export const TONE_SHOULDER = 0.4;
  */
 export const TONE_POLICY =
   'Tone mapping runs once, on the composite — and it maps the WHOLE frame, data-encoding ' +
-  'colours included. Measured off rendered pixels, #2C6BFF leaves the pipeline as #2C68DC ' +
-  '(ΔE76 18). The curve is monotone per channel, so ORDER survives: a denser mark never ' +
-  'renders lighter than a sparser one. The exact hex does not survive, and no surface ' +
-  'should claim it does — docs/3d/brand-fidelity.json carries the shift for every colour.';
+  'colours included. Measured off rendered pixels, a mark WRITTEN AT #2C6BFF leaves the ' +
+  'pipeline as #2C68DC (ΔE76 18). The curve is monotone per channel, so ORDER survives: a ' +
+  'denser mark never renders lighter than a sparser one. A mark written at ' +
+  'inverseToneMap(#2C6BFF) instead leaves it as #2C6BFF, ΔE 0 — exact, and valid only where ' +
+  'look/precompensate.ts says so. Every surface that does NOT pre-compensate ships the ' +
+  'shift; docs/3d/brand-fidelity.json carries it for every colour.';
 
 /** For printing under a surface. Callers print this; they do not paraphrase it. */
 export function describeToneMapping(): string {
@@ -161,18 +179,17 @@ export function assertBrandFidelity(): readonly BrandFidelityFailure[] {
 }
 
 /**
- * THE NAME IS WRONG AND IT IS LOAD-BEARING. There is nothing hypothetical or illegal here:
- * this is what the shipped composite does to brand blue, and `docs/3d/brand-fidelity.json`
- * records the same `#2c68dc` read off a real framebuffer to within a channel.
+ * WHAT THE SHIPPED COMPOSITE DOES TO BRAND BLUE. `#2c68dc`, matching
+ * `docs/3d/brand-fidelity.json`'s framebuffer read to within a channel.
  *
- * It was written as "what happens IF you tone map a data colour", and read for months as
- * evidence the pipeline avoided doing so. It is the opposite: a CPU model of the shipped
- * transform, which is why `brandPixel.test.ts` can check it against the GPU.
- *
- * Renaming it to `brandThroughComposite` needs `packages/gl/src/index.ts:53` and
- * `packages/gl/src/look/look.test.ts` — see the report; this file cannot reach the barrel.
+ * RENAMED 2026-08-15 from `brandUnderIllegalToneMap`, and the old name is the whole reason a
+ * false claim survived. "Illegal" said the curve was hypothetical — something the pipeline
+ * guarded against — so the function's result was read all session as evidence the hex SURVIVED,
+ * when what it computes is the 35/255 drop in blue that every surface actually ships. Nothing
+ * here is hypothetical and nothing is illegal: this is a CPU model of `pipeline.ts`'s own
+ * composite, which is why `brandPixel.test.ts` can check it against real GPU bytes.
  */
-export function brandUnderIllegalToneMap(): string {
+export function brandThroughComposite(): string {
   return linearToHex(toneMapComposite(BRAND.brand));
 }
 

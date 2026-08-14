@@ -52,6 +52,12 @@
  *     node docs/3d/blit-cost.mjs --headless      smoke the instrument under SwiftShader. Runs
  *                                                the arms, prints them, and refuses to call
  *                                                them an answer.
+ *     node docs/3d/blit-cost.mjs --headless --gpu
+ *                                                the same, with ANGLE pointed at Metal so
+ *                                                headless Chromium gets the real GPU. The
+ *                                                refusal still reads the RENDERER STRING, not
+ *                                                the flag, so a machine with no GPU still
+ *                                                exits 2. See the note on the launcher.
  *     node docs/3d/blit-cost.mjs --port 5610     another port (5599 is p1, 5600 is the trial).
  *
  * ── WHAT IT MEASURES, AND WHY EACH ARM EXISTS ───────────────────────────────────────────
@@ -76,6 +82,11 @@
  *                                            order of the two axis assignments matters
  *   G · one large chart + k sparklines       the defect end to end, with the buffer sizes the
  *                                            shipping renderer actually settled on printed beneath
+ *   H · one relief-shaped rebuild, 3 ways    what a `stage.ts` program cache can recover from a
+ *                                            size-step or tier rebuild, and what it cannot because
+ *                                            thirteen lines outside that file delete the programs
+ *                                            themselves. Carries the frame hash that proves a
+ *                                            cached program renders the same pixels
  *
  * ── WHAT THE RUNS RETURNED, so the next reader can tell drift from noise ────────────────
  * Chrome, ANGLE Metal Renderer: Apple M1, dpr 2, 2026-08-13. Two runs against the grow-only
@@ -149,6 +160,33 @@
  * directions: 1024x512 for a sparkline on a page whose largest chart is 3200x1600, and 2560x1024
  * held throughout a burst in which the 2400x920 chart redraws every frame.
  *
+ * THE REBUILD (arm H). Same machine, `--headless --gpu`, 2026-08-15, seven runs. Arm H is a whole
+ * rebuild rather than a frame and is the most load-sensitive thing this file measures — H-a ran
+ * between 23.2 and 71.8 ms across the seven — so the four quietest are given and the RATIO is what
+ * held. Ordered by H-a, quietest first:
+ *
+ *     H-a  every program recompiled (today)     23.2 / 25.0 / 26.4 / 27.6 ms
+ *     H-b  every program kept                    6.1 /  6.8 /  7.4 /  6.6 ms
+ *     H-c  only the stage-owned ones kept       18.7 / 20.7 / 25.4 / 21.7 ms
+ *     H2   compileShader calls per rebuild      24.0 / 0.0 / 16.0    a COUNT, exact, load-free
+ *     H3   30 frames across the three arms      ONE hash, ink 4419 px
+ *
+ * H-b IS THE RESULT: 3.6 to 4.7x across all seven runs, resolved above the spread in every one of
+ * them, and it takes the rebuild from over one 60 Hz frame to well under.
+ *
+ * H-c IS NOT A RESULT, AND THIS FILE'S OWN RULE IS WHAT SAYS SO. Its saving came in between 1.0 and
+ * 6.2 ms and cleared the run's spread in ONE of the seven. The honest report is the bound, not the
+ * subtraction. What is not noise is H2: 16 shader compilations against 24 is decided by JS before
+ * any driver sees it, and it comes back identical from a `--headless` SwiftShader run.
+ *
+ * WHAT SEPARATES H-b FROM H-c IS NOT IN `stage.ts` AT ALL. Thirteen call sites delete the programs
+ * the stage compiled for them: `env/lit.ts:883-885`, `env/ao.ts:354`, `env/sky.ts:159`,
+ * `env/dof.ts:219`, `env/volume.ts:500`, `env/particles.ts:596-597`, `primitives/points.ts`,
+ * `primitives/lines.ts`, `flat/bars.ts:276`, `flat/strokes.ts:168` — ten modules, counted from a
+ * search by `packages/gl/src/stage.test.ts` rather than listed. `look/pipeline.ts:197` is
+ * the one that already leaves them to the stage, and its three programs plus the component's own
+ * `present` are exactly the eight shaders H-c recovers. H-b is what those thirteen lines are worth.
+ *
  * Runs on one machine are not a characterisation — no M2, M3 or non-Apple GPU has ever been
  * measured in this programme — which is why this file exists as a script anyone can re-run rather
  * than as a number in a README.
@@ -184,6 +222,8 @@ const PAGE_JS = /* js */ `
 import {
   sharedRenderer, resetSharedRenderer, createBarBatch, createPipeline, plotMatrix,
   beginAdditive, endPass, hexToLinear, exposure,
+  createStage, isStage, createLitRenderer, createSkyBackdrop, createAmbientOcclusion,
+  createShadowMap, createTarget3D, uploadMesh, box,
 } from ${JSON.stringify(GL_INDEX)};
 
 const out = (msg) => { const p = document.createElement('pre'); p.textContent = msg; document.body.appendChild(p); };
@@ -674,6 +714,232 @@ for (const k of [1, 8]) {
   bufferAtBlit.push('G k=' + k + ' large chart stopped        -> buffer ' + gl0.canvas.width + 'x' + gl0.canvas.height);
 }
 
+/* ══ H · THE REBUILD, AND WHAT A PROGRAM CACHE IN \`stage.ts\` CAN ACTUALLY RECOVER ═════
+ *
+ * THE OPERATION. Every relief keys its setup effect on \`[heightPx, onRefused, tier]\`
+ * (\`SurfaceReliefGl.tsx:633\` and six like it), and \`GlobeRelief.tsx:99\` quantises the measured
+ * height to 24 px BECAUSE each distinct value tears the stage down. So a window drag walks
+ * through one full rebuild per 24 px of height, and a quality-tier probe adds one more per page
+ * load. \`fd7fa0d\` removed the data-change rebuilds; these two are what is left.
+ *
+ * WHY THERE ARE THREE ARMS AND NOT TWO. A program is DOUBLE-OWNED in this package: the stage
+ * compiled it, and the renderer that asked for it deletes it in its own \`dispose()\` —
+ * \`env/lit.ts:883-885\`, \`env/ao.ts:354\`, \`env/sky.ts:159\` and ten more. \`look/pipeline.ts:197\`
+ * is the only one that does not ("Programs are owned and freed by the Stage"). A cache confined
+ * to \`stage.ts\` therefore cannot keep the programs those thirteen lines delete, however it is
+ * written. So the question is not "cache or no cache" but "what does each of the two possible
+ * caches buy", and that needs three measurements of the same rebuild:
+ *
+ *   H-a  every program recompiled            what ships today
+ *   H-b  every program kept                  the ceiling, if those thirteen lines stopped deleting
+ *   H-c  only stage-owned programs kept      what a change confined to \`stage.ts\` can deliver
+ *
+ * H-b is produced by neutralising \`deleteProgram\` on the prototype for the duration of that arm.
+ * That is not a fake result: it is exactly the state those thirteen lines would leave the context
+ * in if they adopted \`pipeline.ts\`'s model, and it changes nothing else about the rebuild.
+ * H-a is produced by deleting the stage-owned program from the harness, which is precisely what
+ * \`stage.dispose()\` did before this change.
+ *
+ * WHAT IS BUILT. A relief-shaped program set — present, lit (3), sky, AO (2) — plus the shadow
+ * map, the offscreen target and a mesh, which are the parts of a rebuild that are NOT compilation.
+ * lit, sky and AO are built and not drawn: their cost here is the compile, which is the quantity
+ * under test, and rigging a full scene would add camera work to both arms equally without
+ * changing the difference. The frame that IS drawn goes through the bar batch and the five-pass
+ * pipeline, because \`pipeline.ts\`'s three programs are the stage-owned ones the confined cache
+ * keeps — so the hash below is a hash of pixels drawn THROUGH a cached program, which is the
+ * only version of that proof worth having.
+ *
+ * THE CANVAS IS ATTACHED TO THE DOCUMENT, and that is load-bearing rather than incidental:
+ * \`dispose()\` keeps the cache exactly when \`canvas.isConnected\`, which is the in-place rebuild a
+ * mounted relief performs. A detached canvas is the unmount path and frees everything.
+ */
+{
+  const H_PRESENT_VERT = \`#version 300 es
+precision highp float;
+layout(location=0) in vec2 q;
+out vec2 uv;
+void main(){ uv = q * 0.5 + 0.5; gl_Position = vec4(q, 0.0, 1.0); }\`;
+  const H_PRESENT_FRAG = \`#version 300 es
+precision highp float;
+in vec2 uv;
+uniform sampler2D uSource;
+out vec4 fragColour;
+void main(){ fragColour = texture(uSource, uv); }\`;
+
+  const HW = 640, HH = 400;
+  const proto = WebGL2RenderingContext.prototype;
+  const realDeleteProgram = proto.deleteProgram;
+  const realCompileShader = proto.compileShader;
+  const realLinkProgram = proto.linkProgram;
+  let compiles = 0;
+  const linked = [];
+  proto.compileShader = function (...a) { compiles += 1; return realCompileShader.apply(this, a); };
+  proto.linkProgram = function (p, ...a) { linked.push(p); return realLinkProgram.call(this, p, ...a); };
+
+  /* A FRESH ATTACHED CANVAS PER ARM, so one arm's cache cannot serve another's: the cache is keyed
+     on the CONTEXT, and a canvas hands out exactly one context for its whole life. */
+  const hCanvas = () => {
+    const c = document.createElement('canvas');
+    c.width = HW; c.height = HH;
+    c.style.width = c.style.height = '1px';
+    c.style.position = 'absolute'; c.style.left = '-9999px';
+    document.body.appendChild(c);
+    return c;
+  };
+
+  /* FNV-1a over the whole frame. A hash of every byte, not a spot check: a cache that returned a
+     program linked from different sources, or one carrying a stale uniform, moves pixels somewhere
+     and a sampled probe is exactly how that gets missed. */
+  const frameHash = (gl) => {
+    const px = new Uint8Array(HW * HH * 4);
+    gl.readPixels(0, 0, HW, HH, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    let h = 0x811c9dc5;
+    for (let i = 0; i < px.length; i++) { h ^= px[i]; h = Math.imul(h, 0x01000193) >>> 0; }
+    /* LIT PIXELS, NOT OPAQUE ONES. The stage is built \`alpha: false\`, so every byte in the alpha
+       channel reads 255 whatever was drawn — counting those reported a full frame for a canvas
+       that could have been entirely black. RGB is what carries the drawing. */
+    let ink = 0;
+    for (let i = 0; i < px.length; i += 4) if (px[i] !== 0 || px[i + 1] !== 0 || px[i + 2] !== 0) ink += 1;
+    return { hash: h.toString(16).padStart(8, '0'), ink };
+  };
+
+  /**
+   * ONE REBUILD, END TO END: the stage, the relief-shaped program set, the targets, a mesh, one
+   * rendered frame, then the teardown a React effect cleanup performs.
+   *
+   * \`killStageOwned\` is the H-a arm: before this change \`stage.dispose()\` deleted every program it
+   * had compiled, so the arm that models today has to do the same to the ones no renderer owns.
+   */
+  const rebuild = (canvas, killStageOwned) => {
+    const out = createStage(canvas, { alpha: false });
+    if (!isStage(out)) throw new Error('H: stage refused ' + out.code);
+    const stage = out;
+    const gl = stage.gl;
+    stage.setRegion(HW, HH);
+
+    const present = stage.compile(H_PRESENT_VERT, H_PRESENT_FRAG);
+    if ('kind' in present) throw new Error('H: present refused ' + present.code);
+    const lit = createLitRenderer(stage);
+    if ('kind' in lit) throw new Error('H: lit refused ' + lit.code);
+    const sky = createSkyBackdrop(stage);
+    if ('kind' in sky) throw new Error('H: sky refused ' + sky.code);
+    const ao = createAmbientOcclusion(stage, HW, HH);
+    if ('kind' in ao) throw new Error('H: ao refused ' + ao.code);
+    const bars = createBarBatch(stage);
+    if ('kind' in bars) throw new Error('H: bars refused ' + bars.code);
+    const pipeline = createPipeline(stage);
+    if ('kind' in pipeline) throw new Error('H: pipeline refused ' + pipeline.code);
+    const shadow = createShadowMap(stage, 1024);
+    if ('kind' in shadow) throw new Error('H: shadow refused ' + shadow.code);
+    const target = createTarget3D(stage, HW, HH);
+    if ('kind' in target) throw new Error('H: target refused ' + target.code);
+    const mesh = uploadMesh(stage, box(1, 1, 1));
+    if ('kind' in mesh) throw new Error('H: mesh refused ' + mesh.code);
+
+    const mvp = plotMatrix(0, HW, HH, 0);
+    stage.bindTarget(stage.scene);
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    beginAdditive(gl);
+    const step = HW / BARS.length;
+    bars.draw(mvp, BARS.map((b, i) => ({
+      x0: i * step + 2, x1: (i + 1) * step - 2,
+      y0: HH, y1: HH - b.v * HH,
+      colour: exposure(hexToLinear('#2C6BFF'), 0.62),
+    })), { orientation: 'vertical', modelling: 0.52, edgeStops: -0.2, contact: 0.7, radius: 3 });
+    endPass(gl);
+    /* \`resolve\` binds the DEFAULT framebuffer itself and composites onto it, so the hash below is
+       taken from the drawing buffer a reader would see. The four bloom passes before it and the
+       composite are three of \`pipeline.ts\`'s programs — the stage-owned ones — so these are pixels
+       drawn THROUGH the cache whenever the cache is live. \`present\` is compiled and not drawn: it
+       stands for the one program each relief component compiles for itself
+       (\`GlobeReliefGl.tsx:335\` and six like it), and what it contributes here is its compile. */
+    pipeline.resolve({ plate: [0, 0, 0], bloomGain: 0.3, threshold: [0.3, 1.1], vignetteDepth: 0, transparent: false });
+    void present;
+    const shot = frameHash(gl);
+
+    for (const o of [mesh, target, shadow, pipeline, bars, ao, sky, lit]) o.dispose();
+    /* THE H-a ARM, AND IT HAS TO BE EXACT. Before this change \`stage.dispose()\` ran
+       \`for (const p of programs) gl.deleteProgram(p)\` over every program it had linked — including
+       the ones no renderer owns, which is why deleting \`present\` alone was not the old behaviour
+       and measured 17 compiles a rebuild rather than 24. \`linkProgram\` is patched during the arm
+       so this list is derived from what the rebuild actually linked, not from a list of names. */
+    if (killStageOwned) for (const p of linked) gl.deleteProgram(p);
+    linked.length = 0;
+    stage.dispose();
+    return shot;
+  };
+
+  const hArm = (label, killStageOwned, keepEveryProgram) => {
+    const canvas = hCanvas();
+    if (keepEveryProgram) proto.deleteProgram = function () { /* the thirteen lines, fixed */ };
+    /* WARM FIRST, OUTSIDE THE CLOCK. The first rebuild on a fresh context pays context creation and
+       the driver's own first-sight-of-this-shader cost, which no cache can remove and which would
+       otherwise dominate a short run. Every arm pays it identically and none of them reports it. */
+    const first = rebuild(canvas, killStageOwned);
+    const shots = [first];
+    const ms = [];
+    compiles = 0;
+    const REBUILDS = 9;
+    for (let i = 0; i < REBUILDS; i++) {
+      const t0 = performance.now();
+      shots.push(rebuild(canvas, killStageOwned));
+      ms.push(performance.now() - t0);
+    }
+    const compilesPerRebuild = compiles / REBUILDS;
+    proto.deleteProgram = realDeleteProgram;
+    return { label, per: median(ms), lo: Math.min(...ms), hi: Math.max(...ms), compilesPerRebuild, shots };
+  };
+
+  const a = hArm('H-a every program recompiled', true, false);
+  const b = hArm('H-b every program kept', false, true);
+  const c = hArm('H-c stage-owned kept only', false, false);
+  proto.compileShader = realCompileShader;
+  proto.linkProgram = realLinkProgram;
+
+  for (const arm of [a, b, c]) {
+    results.push({ label: arm.label, frames: 1, per: arm.per, lo: arm.lo, hi: arm.hi });
+  }
+  notes.push(diff('H · one relief-shaped rebuild: every program kept vs every one recompiled', b, a));
+  notes.push(diff('H · one relief-shaped rebuild: stage-owned kept vs every one recompiled', c, a));
+
+  /*
+   * THE COUNT, WHICH IS THE QUANTITY THE TIMINGS ARE A CONSEQUENCE OF — and, like arm D2, it is
+   * decided by JS before any driver sees it, so it is reportable from a \`--headless\` run under a
+   * software rasteriser as well.
+   */
+  notes.push({
+    label: 'H2', delta: 0, noise: 0, resolved: true,
+    text: 'H2 · compileShader calls per rebuild: ' + a.compilesPerRebuild.toFixed(1) + ' recompiling all, '
+      + b.compilesPerRebuild.toFixed(1) + ' keeping all, ' + c.compilesPerRebuild.toFixed(1)
+      + ' keeping only the stage-owned ones. A COUNT, not a timing.',
+  });
+
+  /*
+   * AND THE PROOF THAT NOTHING RENDERS DIFFERENTLY. Every frame from every arm — 21 of them,
+   * across three contexts, with the pipeline's three programs recompiled in one arm and served
+   * from the cache in the other two — must hash identically. A cache that returned a program
+   * linked from different sources, or one carrying a uniform another stage left behind, would
+   * move pixels and this is what would catch it. The ink count is printed beside it because a
+   * frame that renders NOTHING also hashes consistently, and §10.9 is this programme's record of
+   * a change that produced exactly that: 0 of 19,200 pixels, nothing thrown.
+   */
+  const shots = [...a.shots, ...b.shots, ...c.shots];
+  const hashes = new Set(shots.map((s) => s.hash));
+  const perArm = [a, b, c].map((arm) => arm.label.slice(0, 3) + ' '
+    + arm.shots.map((s) => s.hash).join(',')).join('\\n     ');
+  notes.push({
+    label: 'H3', delta: 0, noise: 0, resolved: true,
+    text: 'H3 · ' + shots.length + ' rendered frames across the three arms: '
+      + hashes.size + ' distinct hash' + (hashes.size === 1 ? '' : 'es')
+      + ', ink ' + shots[0].ink + '/' + (HW * HH) + ' px. '
+      + (hashes.size === 1 && shots[0].ink > 0
+        ? 'The cached programs render the same frame, and it is not a blank one.'
+        : 'FAILED — ' + (shots[0].ink === 0 ? 'the frame is BLANK.' : 'the frames diverge.'))
+      + '\\n     ' + perArm,
+  });
+}
+
 /**
  * A DIFFERENCE, OR A BOUND — never a difference presented as if it were resolved.
  *
@@ -755,7 +1021,22 @@ if (!HEADLESS) {
 } else {
   const { chromium } = await import('@playwright/test');
   await new Promise((r) => server.listen(PORT, '127.0.0.1', r));
-  const browser = await chromium.launch();
+  /*
+   * `--gpu` ASKS FOR THE REAL DRIVER; IT DOES NOT MAKE THE ANSWER ACCEPTABLE.
+   *
+   * Headless Chromium defaults to SwiftShader, which is why this file has always refused to report
+   * its timings. It does not have to: with ANGLE pointed at Metal it reports "ANGLE Metal Renderer:
+   * Apple M1" — measured, against "SwiftShader Device (LLVM 10.0.0)" from the same binary seconds
+   * earlier — and that string cannot be produced without a Metal device behind it.
+   *
+   * The refusal below is UNCHANGED and still keyed on the renderer the page measured, never on
+   * which flags were passed. So a `--gpu` run on a machine that has no GPU to give still exits 2,
+   * and a run that reports numbers has a hardware renderer string printed next to them. The flag
+   * is a request, not an assertion.
+   */
+  const browser = await chromium.launch(argv.includes('--gpu')
+    ? { args: ['--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'] }
+    : {});
   const page = await browser.newPage();
   const errors = [];
   page.on('pageerror', (e) => errors.push(String(e)));

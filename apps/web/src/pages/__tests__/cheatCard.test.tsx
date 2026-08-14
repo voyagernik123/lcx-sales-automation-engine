@@ -348,6 +348,22 @@ const CLAIMS: Record<Binding, (press: Press) => boolean> = {
 
 const claims = (press: Press): boolean => CLAIMS[press.from](press);
 
+/*
+ * CSS COMMENTS STRIPPED BEFORE ANY BRACE IS COUNTED — and this is not hygiene, it is the defect that
+ * broke three suites at once.
+ *
+ * tokens.css gained a comment documenting a control-border sweep, and that comment quotes JSX:
+ * "footer={<>...</>} was attributed to the enclosing <Modal>". That string contains a literal closing
+ * BRACE inside a comment. Every parser here sliced `:root {` to the first `}`, so the block ended at the
+ * comment and every token declared after it — --card, --red, the whole status palette — became invisible.
+ * The failure read "--card is pinned for print but is not a :root token", which points at the print sheet
+ * rather than at the parser, and would have sent the next reader to unpin a token that was fine.
+ *
+ * It is the same shape as the two censuses that matched PROSE about a symbol instead of a use of it. A
+ * source scanner that does not strip comments is measuring the documentation.
+ */
+const withoutCssComments = (src: string): string => src.replace(/\/\*[\s\S]*?\*\//g, ' ');
+
 describe('the printable cheat card', () => {
   /**
    * THE ANTI-STALENESS ASSERTION. Adding a seventh workspace to DESTINATIONS must fail
@@ -539,7 +555,8 @@ describe('the printable cheat card', () => {
     // `@media print`; copied values rot, so they are checked against the source here.
     const card = readFileSync(join(SRC, 'pages', 'CheatCard.tsx'), 'utf8');
     const tokens = readFileSync(join(SRC, 'styles', 'tokens.css'), 'utf8');
-    const lightBlock = tokens.slice(tokens.indexOf(':root {'), tokens.indexOf('}', tokens.indexOf(':root {')));
+    const clean = withoutCssComments(tokens);
+    const lightBlock = clean.slice(clean.indexOf(':root {'), clean.indexOf('}', clean.indexOf(':root {')));
 
     const printBlock = card.slice(card.indexOf('@media print'));
     const pinned = [...printBlock.matchAll(/(--[a-z-]+):\s*([\d\s]+);/g)];

@@ -67,15 +67,117 @@ describe('§6 rules, ratcheted across every docs/3d/e* environment', () => {
     expect(environments.length, `no captured environments found under ${DOCS}`).toBeGreaterThanOrEqual(9);
   });
 
-  it('rule 5 — every environment runs assertBrandFidelity and acts on the result', () => {
+  /*
+   * ── RULE 5 IS TWO TESTS NOW, BECAUSE THE OLD ONE ENFORCED A CHECK THAT CANNOT FAIL ────────────
+   *
+   * This block was a single test titled "every environment runs assertBrandFidelity and acts on the
+   * result", written against §6 rule 5's original wording: "Brand hex exact. `assertBrandFidelity`
+   * runs on every new material." Measured 2026-08-14, that rule was false AND unfalsifiable.
+   * `assertBrandFidelity` compares `linearToHex(hexToLinear(BRAND_HEX[k]))` with `BRAND_HEX[k]` — a
+   * frozen table round-tripping through two pure functions — so no edit to the composite, the tone
+   * curve, TONE_SHOULDER, the sRGB encode or any shader can move its result. Perturbing
+   * TONE_SHOULDER from 0.4 to 0.45 leaves all 15 assertions in `look/look.test.ts` green while
+   * `look/brandPixel.test.ts` fails on real GPU bytes. This ratchet was demanding that nine
+   * harnesses each install a guard that could not fire, and reporting that as rule 5 enforced.
+   *
+   * So the requirement is SPLIT rather than dropped, because the two halves catch different things:
+   *
+   *   · the CALL is still required (below). It is a consistency check on the constants table and a
+   *     mistyped hex in `BRAND_HEX` is a real defect. Narrow, but real, and cheap to keep.
+   *   · and a second test forbids what actually went wrong — nine harnesses PUBLISHING a guarantee
+   *     nothing established. A guard that cannot fail is survivable. A guard that cannot fail while a
+   *     document beside it claims the guarantee is how "brand hex exact" was believed for months.
+   */
+  it('rule 5 — every environment still runs assertBrandFidelity and branches on it', () => {
+    /* NON-EMPTY BEFORE THE LOOP. `environments` is a filtered glob; an empty one makes every
+       assertion below vaporise and the test green, which is the failure this whole file exists to
+       prevent. The floor test above checks the same thing; this is local so a reordering cannot
+       silently separate them. */
+    expect(environments.length, 'no captured environments — the loop below checks nothing')
+      .toBeGreaterThan(0);
     for (const { id, src } of environments) {
       expect(src, `${id} does not import assertBrandFidelity`).toContain('assertBrandFidelity');
       expect(src, `${id} imports assertBrandFidelity but never calls it`).toMatch(/assertBrandFidelity\(\)/);
       /* Calling it and ignoring the result is the same as not calling it. The harness must branch on
-         the failure list, not merely put it in a report a reader may not open. */
+         the failure list, not merely put it in a report a reader may not open. What this can catch is
+         narrow and stated: a corrupted `BRAND_HEX` table. Not a pipeline change. */
       expect(src, `${id} calls assertBrandFidelity but never branches on the failures`)
         .toMatch(/brandFailures\.length\s*>\s*0/);
     }
+  });
+
+  it('rule 5 — no environment asserts hex exactness without the measurement that refutes it', () => {
+    /*
+     * DERIVED, NOT ENUMERATED. A hand-list of the seventeen sentences that were wrong could not fail
+     * on the eighteenth, which is exactly how they accumulated. So the shape of the claim is what is
+     * matched: a BRAND token within one clause of an EXACTNESS token, in the source or the README —
+     * the two places an environment speaks to a maintainer and to a reader.
+     *
+     * The rule is not "never mention it". Refuting the old claim REQUIRES quoting it, and the
+     * historical record is house style. The rule is that a hex-exactness sentence must sit next to
+     * the measurement: `docs/3d/brand-fidelity.json`, the measured pixel `#2c68dc`, a ΔE figure, or
+     * `brandPixel.test.ts`. An uncited claim is precisely the defect — every one of the seventeen
+     * original sites had zero measurement anywhere near it.
+     *
+     * WINDOW: 1600 characters either side of the match, which is about one comment block in these
+     * files. A fixed number rather than a parse, because splitting TypeScript into comment blocks and
+     * string literals correctly is a bigger machine than the check deserves, and being generous here
+     * only ever lets a claim through — it never invents a failure.
+     */
+    const BRAND = /brand|hex|palette|#2c6bff/i;
+    const EXACT = /\bexact\b|\bexactly\b|\bexactness\b|\bsurvives?\b|\bunchanged\b|\bpreserv/i;
+    const CITED = /brand-fidelity\.json|#2c68dc|ΔE|brandPixel\.test/i;
+    /* Both orders, because "brand hex exact" and "exact, whole palette" both shipped. The clause is
+       bounded by sentence punctuation so a claim cannot be paired with an exactness word four
+       sentences away and counted as a match. */
+    const CLAIM = new RegExp(
+      `(?:${BRAND.source})[^.;\\n]{0,160}?(?:${EXACT.source})`
+      + `|(?:${EXACT.source})[^.;\\n]{0,160}?(?:${BRAND.source})`,
+      'gi',
+    );
+
+    let claimsSeen = 0;
+    const offenders = new Set<string>();
+    for (const { id, src, readme } of environments) {
+      for (const text of [src, readme]) {
+        for (const m of text.matchAll(CLAIM)) {
+          claimsSeen++;
+          const at = m.index;
+          const window = text.slice(Math.max(0, at - 1600), at + m[0].length + 1600);
+          if (!CITED.test(window)) offenders.add(id);
+        }
+      }
+    }
+    /* THE PATTERN MUST BITE. If a future refactor renames the palette or rewords every block, this
+       loop finds nothing and the assertion below passes on an empty set — green, and checking
+       nothing. 31 claim sites were found across nine environments when this was written. */
+    expect(claimsSeen, 'the claim pattern matched nothing in any environment — it has stopped '
+      + 'describing how this repo writes about brand fidelity, and is no longer a check')
+      .toBeGreaterThan(10);
+
+    /*
+     * THE RECORDED SET, in the idiom the rule 4 ratchet above already uses: a NEW offender fails, and
+     * so does fixing one of these without updating the string, which is what forces the record to
+     * stay true.
+     *
+     * E3 and E7 are open, deliberately. `docs/3d/e3/entry.ts:1598` still heads its guard "§6 RULE 5 —
+     * BRAND HEX EXACT, AND IT DIES RATHER THAN WARNS", and `docs/3d/e7/entry.ts:1443` reads "§6 rule
+     * 5 — brand hex exact"; e7:1479 additionally documented its report field as "every brand hex
+     * round-tripped exactly through this frame's own pipeline". Both files were owned by another track
+     * when this test was written — recording them as a failing-by-name set rather than quietly widening
+     * the pattern was the only version of this that stayed honest.
+     *
+     * CLOSED TO EMPTY, 2026-08-15. Both now carry the measured refutation beside the claim, and
+     * scripts/3d-audit.mjs no longer reports the palette-table check as a fidelity verdict. Empty here
+     * is the GOAL STATE rather than an inert test: the anti-vacuity guard above proves the pattern still
+     * matches how this repo writes about brand fidelity — 31 claim sites today — so empty means clean,
+     * not blind. A new name appearing is a fresh unenforceable claim.
+     */
+    expect([...offenders].sort().join(','),
+      'the set of environments claiming hex exactness with no measurement beside it changed. A NEW '
+      + 'name here is a fresh unenforceable claim; a MISSING name means one was fixed and this '
+      + 'record needs updating')
+      .toBe('');
   });
 
   it('rule 1 — every environment installs a flat fallback and captures its refusal', () => {

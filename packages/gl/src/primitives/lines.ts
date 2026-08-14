@@ -9,14 +9,48 @@
  *
  * These are REFERENCES, and references are emissive — no shading, no lighting model.
  * Shading a reference is a lie about depth: it implies the axis is an object in the
- * scene rather than an annotation on it. The only modulation allowed is a fade along
- * the run, which exists so a reference does not compete with the data it refers to.
+ * scene rather than an annotation on it.
+ *
+ * ── TWO SENTENCES THAT USED TO FOLLOW, AND WHAT MEASURING THEM FOUND (2026-08-15) ────
+ *
+ * "These are REFERENCES" and "the only modulation allowed is a fade along the run" were
+ * both false, and the second one is why a colour finding went to the wrong file.
+ *
+ *   · NOT ONLY REFERENCES. `apps/web/src/surfaces/sales/renderMotion.ts` draws every DATA
+ *     mark in the S6 figure through this batch — the dwells, the risers, the terminals. It
+ *     is the only data primitive that surface has. So a `StrokeStyle.colour` is sometimes
+ *     structure and sometimes an encoded value, and the file cannot assume which.
+ *   · THE FADE IS NOT THE ONLY MODULATION, and at the shipping call sites it is not a
+ *     modulation at all: `fade` is passed at exactly one call site in the repo
+ *     (`docs/3d/p1/surface.ts:183`) and at NEITHER `apps/web` one. `gain` is passed at all
+ *     of them, ranging 0.5 to 2.5. Whatever this primitive does to a data colour, it does
+ *     through `gain`.
+ *
+ * ── WHAT THIS PRIMITIVE DOES TO A DATA COLOUR, MEASURED ─────────────────────────────
+ *
+ * `docs/3d/flat-fidelity.mjs` renders a `rule` covering the whole frame through the shaders
+ * below on a real driver and reads the bytes back (`docs/3d/flat-fidelity.json`):
+ *
+ *   · AT GAIN 1 THIS PRIMITIVE IS COLOUR-TRANSPARENT. All seven palette entries land on the
+ *     exact byte triple `brand-fidelity.json` records for a mark written straight into the
+ *     scene target with no primitive involved — `#2c68dc` for brand blue, `#dc843c` for
+ *     reference, and so on for the other five. The shift is the composite's, entirely. The
+ *     finding that sent this file its brief said the primitives "break the hex independently
+ *     of the tone map"; at unit gain they add nothing to break it with.
+ *   · THE TWO NAMED CAUSES ARE ONE SCALAR. `LINES_FRAG`'s only colour statement is
+ *     `uColour * uGain * (1 - uFade*t)` — the line the finding cites as `lines.ts:36` — so
+ *     at any one pixel the gain and the fade are a single multiply. Measured: `fade 0.55`
+ *     sampled where t = 0.50195 and `gain 0.72393` with no fade produce the SAME BYTE on
+ *     all seven colours. Reporting them as separate causes would report one number twice.
+ *   · AND THE SCALAR HAS A CLIFF. See `STROKE_CLIP_LINEAR` below — this is the part that
+ *     matters, and it breaks the invariant that REPLACED brand-hex-exact, not that one.
  */
 
 import type { Mat4 } from '../math.js';
 import type { Stage } from '../stage.js';
 import type { StageRefusal } from '../stage.js';
 import type { Linear } from '../look/colour.js';
+import { TONE_SHOULDER } from '../look/tonemap.js';
 
 export const LINES_VERT = `#version 300 es
 precision highp float;
@@ -36,8 +70,91 @@ void main(){
   frag = vec4(uColour * uGain * (1.0 - uFade * t), 1.0);
 }`;
 
+/**
+ * THE LARGEST LINEAR VALUE THAT SURVIVES THE COMPOSITE AS A DISTINGUISHABLE BYTE.
+ *
+ * `lcxToneMap` is `c/(1+c·s)`, so it reaches 1.0 — the most the sRGB encode can put in a
+ * byte — at `c = 1/(1-s)` = 1.6667. Above that the channel is PINNED AT 255 and two
+ * different linear values are the same pixel.
+ *
+ * ── WHY THIS IS THE SERIOUS FINDING AND THE HEX SHIFT IS NOT ────────────────────────
+ *
+ * §6 rule 5's "brand hex exact" was retired on 2026-08-14 and replaced by ORDER SURVIVES:
+ * the curve is monotone per channel, so a denser mark never renders lighter than a sparser
+ * one. That replacement is what a reader of a chart actually depends on — and `gain` breaks
+ * it, which the retired rule's own arithmetic could not have caught.
+ *
+ * Measured, sweeping each palette entry at multiples of its OWN ceiling
+ * (`docs/3d/flat-fidelity.json`, SwiftShader, RGBA16F scene target):
+ *
+ *     multiple of ceiling   0.25   0.5   0.75   0.9   0.98   1.0   1.02   1.1   1.5   2.0
+ *     byte on the pinned channel  161   207    235   248    254   255    255   255   255   255
+ *
+ * Identical down every one of the seven colours, because `colour[max] · (m · ceiling)` is
+ * `1.6667 · m` by construction — which is the formula being exactly right on seven colours
+ * rather than a defect in the table. From 1.0× upward the byte does not move again: a
+ * stroke at 2× its ceiling and a stroke at 1× render the same, so a reader comparing them
+ * is comparing nothing. Order does not merely compress there; it stops.
+ *
+ * The hue goes with it. Brand blue at 2× ceiling lands `#51abff`, **ΔE76 48.9** from
+ * `#2C6BFF` — past the 41.1 of the view transform `look/colour.ts` calls "the fashionable
+ * default, and badly wrong" in its own table. The composite alone costs 18.3, so the scalar
+ * does more damage than the whole tone curve.
+ *
+ * (That transform is named in `look/colour.ts` and deliberately not here.
+ * `look/look.test.ts:122` asserts the token appears in no shader in this package, and it
+ * greps the WHOLE of `points.ts` and `lines.ts` rather than their fragment strings — so
+ * writing the name in prose fails a test about GLSL. Reported rather than worked around
+ * silently, because the next person to document the comparison will hit it too.)
+ *
+ * ── WHAT SHIPS ABOVE IT ─────────────────────────────────────────────────────────────
+ *
+ * `brand`, `brandBright` and `reference` all have a linear-1.0 channel, so their ceiling is
+ * 1.6667 — and three shipped call sites drive past it:
+ * `apps/web/src/surfaces/sales/renderMotion.ts:100` reaches gain 2.54 on the stall mix
+ * (1.69× that colour's ceiling), `:108` uses 2.0 on a `brandBright` terminal (1.20×), and
+ * `docs/3d/p1/surface.ts:185` uses 2.2 on `reference` (1.32×).
+ *
+ * The S6 stall ramp is the one that costs a reader something. Its gain is DATA — it rises
+ * with `stallT` — and the figure's whole claim is that a longer stall reads warmer and
+ * brighter. Solving `max(mix(FAST,STALL,s)) · gain(s) = 1.6667` against that call site: a
+ * CLOSED dwell pins its red channel above `stallT` 0.895, and an OPEN one above 0.672. The
+ * top third of the ramp on the bar the file itself calls "the only bar the reader can still
+ * do something about" is flat.
+ *
+ * Those are not this file's to change — they are named so the arithmetic has somewhere to
+ * land. What this file owes them is the number, derived from the live shoulder rather than
+ * written out, so it cannot drift when the shoulder moves.
+ */
+export const STROKE_CLIP_LINEAR = 1 / (1 - TONE_SHOULDER);
+
+/**
+ * A stroke's brightest linear channel as a multiple of `STROKE_CLIP_LINEAR`.
+ *
+ * `≤ 1` — every channel survives the composite as a byte that still moves with the data.
+ * `> 1` — at least one channel is pinned at 255 and no longer encodes anything.
+ *
+ * `fade` is ignored deliberately: it only ever multiplies by `1 - fade·t` with `t` in [0,1]
+ * and `fade` documented as 0–1, so it can only make a stroke dimmer. The worst case over the
+ * whole run is at `t = 0`, which is `gain` alone.
+ */
+export function strokeClipRatio(s: StrokeStyle): number {
+  return (Math.max(s.colour[0], s.colour[1], s.colour[2]) * s.gain) / STROKE_CLIP_LINEAR;
+}
+
 export interface StrokeStyle {
+  /**
+   * The mark's colour in LINEAR light. Sometimes structure, sometimes an encoded data value
+   * — see the header. Nothing here grades it; the composite does, by 12-18 ΔE76 depending
+   * on the entry, and `docs/3d/flat-fidelity.json` carries the figure for each.
+   */
   readonly colour: Linear;
+  /**
+   * Scalar exposure on `colour`. NOT free: `colour[brightest] · gain` above
+   * `STROKE_CLIP_LINEAR` pins that channel at 255 and the mark stops encoding. Check with
+   * `strokeClipRatio` before choosing a gain from data — a gain that varies with a value is
+   * an encoding channel, and an encoding channel that saturates is a broken axis.
+   */
   readonly gain: number;
   /** Fraction of brightness lost across the run, 0–1. A reference that fades recedes. */
   readonly fade?: number;

@@ -29,6 +29,46 @@ import type { Linear } from '../look/colour.js';
  * exactly zero at r=1 instead of ending on a visible step. Tighter than ~2.5 and the
  * deposits stop merging (stipple returns); looser than ~1.2 and the field turns to fog
  * and individual mass stops reading.
+ *
+ * ── THE FOOTPRINT THAT SHIPS IS 3.5, NOT 1.75. MEASURED 2026-08-15 ──────────────────
+ *
+ * The paragraph above sets a band and names its two failure modes, and the value that
+ * reaches the framebuffer is outside it — past the stipple end, by a factor of two.
+ *
+ * Line 111 puts `g` into the RGB it writes AND into the alpha it writes. Under the blend
+ * this primitive is designed for — `beginAdditive`, `SRC_ALPHA/ONE`, the only blend either
+ * caller uses — the driver multiplies that RGB by that alpha, so the gaussian is applied
+ * TWICE: `exp(-r²·1.75)² = exp(-r²·3.5)`.
+ *
+ * Measured through this exact shader on a real driver, one deposit with `lo == hi` so the
+ * ramp cannot move the colour (`docs/3d/flat-fidelity.mjs`, recorded in
+ * `docs/3d/flat-fidelity.json`), on a 64-px-wide deposit:
+ *
+ *     RGB factor at the core    0.584   (model: g(0)·near = 0.8262 × 0.71 = 0.5866)
+ *     alpha at the core         0.321   (model: 0.5866 × 0.55 = 0.3226)
+ *     delivered at the core     18.8%   of the data colour  (model 18.9%)
+ *     half-max radius           18 px unblended → 13 px as shipped
+ *
+ * 13/18 = 0.72, and squaring a gaussian narrows its half-max radius by 1/√2 = 0.707. The
+ * model and the pixels agree to three figures, so this is not a driver artefact.
+ *
+ * ── AND IT IS NOT BEING CHANGED HERE, ON PURPOSE ────────────────────────────────────
+ *
+ * The one-line change is real and is `frag = vec4(lin * near * uGain * (0.30 + 0.70*vMass),
+ * g * near * 0.55)` — coverage in the alpha only, which is the correct premultiplication for
+ * an additive accumulation. It makes every deposit ~1.7× brighter at the core and restores
+ * the documented width, so `size` and the `lo`/`hi` ramp both need re-tuning against it.
+ *
+ * Two facts say a colour-fidelity pass is the wrong place to spend that:
+ *   · REACHABILITY. `createPointCloud` has ONE caller in the whole repo —
+ *     `docs/3d/p1/surface.ts:118`, a documentation harness. No `apps/web` surface draws a
+ *     point cloud, so nothing a reader of the product sees changes either way.
+ *   · §6 rule 8 — every claim gets a capture. Re-tuning a density field is a judgement made
+ *     by looking at the P1 cloud at several values, which is how 1.75 was chosen in the
+ *     first place, and this pass has no capture of that surface to make it against.
+ *
+ * So the number is recorded rather than acted on. What is NOT acceptable is the state this
+ * replaces, where the constant documented a band and the render sat outside it silently.
  */
 export const FALLOFF = 1.75;
 
@@ -56,7 +96,23 @@ export interface PointCloudStyle {
   readonly lo: Linear;
   /** High end, linear. Usually above 1.0 so dense regions reach the bloom threshold. */
   readonly hi: Linear;
-  /** Overall exposure. Scales light, not hue. */
+  /**
+   * Overall exposure on the density ramp.
+   *
+   * IT USED TO SAY "Scales light, not hue", borrowed from `look/colour.ts`'s `exposure()`,
+   * which says a scalar on all three channels "cannot shift a hue". That is true in LINEAR
+   * space and false at the framebuffer, and this is the same shape of claim §6 rule 5 was
+   * retired for: the composite's Reinhard is per channel and non-linear, so scaling before
+   * it moves the RATIO between channels, which is the hue. Measured through `lines.ts`'s
+   * identical `uColour * uGain` on a real driver (`docs/3d/flat-fidelity.json`), brand blue
+   * at gain 0.42 lands `#1a45a1` (ΔE76 33.2) and at gain 3.33 lands `#51abff` (ΔE76 48.9),
+   * against 18.3 for the composite alone. A scalar is an exposure decision and it is also a
+   * hue decision; whoever picks one is making both.
+   *
+   * And it has a ceiling — `lines.ts`'s `STROKE_CLIP_LINEAR`, 1/(1-TONE_SHOULDER) = 1.6667.
+   * A cloud whose `hi` × `gain` passes it stops encoding density at the top of its ramp,
+   * which for a density field is the end that carries the finding.
+   */
   readonly gain: number;
   /**
    * World-space y below which fragments are DISCARDED, so the cloud rests on its

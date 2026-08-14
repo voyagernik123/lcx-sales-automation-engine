@@ -22,7 +22,6 @@ import { DeepOntologyPanel } from '@/components/command/DeepOntologyPanel';
 import { DeckRelief } from '@/components/geometry/DeckRelief';
 import { ReadinessDial, LpOptimizerPanel, FunnelSimPanel } from '@/components/command/CockpitPanels';
 import { AnalyticReviews } from '@/components/intel/AnalyticReviews';
-import { SignatureBackdrop } from '@/components/command/SignatureBackdrop';
 import { PrintStyles } from '@/components/report/PrintStyles';
 import { PageTitle, Button } from '@/components/ui';
 import { safeHref } from '@/lib/safeHref';
@@ -87,13 +86,14 @@ export function CommandDeck() {
     /* `relative` so W5's backdrop has a positioned ancestor to fill, and `isolate` so its
        negative z-index cannot escape behind this page's own container and vanish. */
     <div className="br-page relative isolate mx-auto max-w-[1400px] p-5">
-      {/* W5 · SIGNATURE. The plate the whole deck sits on, built in linear light rather than
-          declared as a CSS gradient — see the component for why sRGB interpolation bands across
-          a large near-black field, and `docs/3d/w5/live.png` for the side-by-side that decided
-          it. `br-no-print`: the board pack prints on white, where a dark plate is nonsense. */}
-      <div className="br-no-print">
-        <SignatureBackdrop />
-      </div>
+      {/* W5 · SIGNATURE MOVED TO THE SHELL, 2026-08-15, and the mount that used to be here is gone.
+          `AppLayout` now carries one backdrop for all 77 routes under it. Two of them do not stack —
+          they SEAM: the page-scoped copy is opaque and spans only this 1400 px container, so the two
+          falloffs disagree at its edge and a visibly darker rectangle appears with a hard line down
+          the left of the content area. `SignatureBackdrop` refuses a second mount structurally
+          (first-claim-wins), so this was already inert; removing it deletes the dead code rather
+          than the behaviour. The linear-light argument for the plate is unchanged and now lives in
+          the component. */}
       <PrintStyles />
       <PageTitle
         icon={<Command size={20} />}

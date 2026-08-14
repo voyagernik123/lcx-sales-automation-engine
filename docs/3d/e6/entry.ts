@@ -1081,20 +1081,31 @@ const RENDERER = (() => {
 const SOFTWARE = /swiftshader|llvmpipe|software/i.test(RENDERER);
 
 /*
- * §6 RULE 5 — "Brand hex exact. `assertBrandFidelity` runs on every new material."
+ * §6 RULE 5 — "ORDER SURVIVES THE PIPELINE." Amended 2026-08-14. It used to read "Brand hex exact.
+ * `assertBrandFidelity` runs on every new material", and the whole of that was false.
  *
- * It ran on NO material. An audit found the call absent from all six environments, so every claim any
- * of them made about brand-exactness rested on the palette having been correct at some point in the
- * past, in a different file.
+ * WHAT THIS CALL DOES: `assertBrandFidelity` compares `linearToHex(hexToLinear(BRAND_HEX[k]))` with
+ * `BRAND_HEX[k]` — a frozen constants table round-tripping through two pure functions. It never sees
+ * a material, a light, a tone map, a shader or a pixel. No edit to the composite below, to
+ * TONE_SHOULDER, to the sRGB encode or to any shader in this file can make it fail, so the refusal
+ * beneath it cannot fire on a pipeline change. This comment used to say it checked the round trip
+ * "through this pipeline's single tone map and sRGB encode" and would catch a SECOND tone map added
+ * by a harness. It would not: the tone map is not on its path at all.
  *
- * What it checks is the round trip: each `BRAND_HEX` entry, taken to linear and back through this
- * pipeline's single tone map and sRGB encode, must return its own hex. That is worth running per
- * harness rather than once in a unit test, because a harness is where a SECOND tone map gets
- * introduced — the composite in this file encodes once, and any environment that added another would
- * shift every brand colour by a fraction too small to see and too large to be exact.
+ * WHAT THE PIPELINE ACTUALLY DOES TO A DATA COLOUR, read off a framebuffer and recorded in
+ * `docs/3d/brand-fidelity.json`: in the most favourable case that can exist — flat mark at the exact
+ * palette linear, plate 0, bloom 0 — `#2c6bff` arrives `#2c68dc`, blue 35/255 low, ΔE76 18.3.
+ * `#ff8a3d` arrives `#dc843c`, ΔE 14.4. On the lit path every palette colour lands 46–88 ΔE from its
+ * hex, and that is correct rather than broken: a lit material's radiance is base colour ×
+ * illumination, so "hex exact" over a shaded mesh was a category error, not a bug.
  *
- * It DIES rather than warns. A frame that has silently moved the brand blue is worse than no frame,
- * because it will be screenshotted into a deck.
+ * SO THE INVARIANT THIS ENVIRONMENT MAY CITE IS ORDER, NOT HEX: the curve is monotone per channel,
+ * so a denser mark never renders lighter than a sparser one. That is enforced against real GPU
+ * pixels in `packages/gl/src/look/brandPixel.test.ts`, not here.
+ *
+ * THE CALL STAYS, AND IT STILL DIES RATHER THAN WARNS. A mistyped hex in `BRAND_HEX` is a real
+ * defect with a narrow guard, and a frame drawn from a corrupt palette will be screenshotted into a
+ * deck. What it must never again be cited as is evidence that a mark kept its colour.
  */
 const brandFailures = assertBrandFidelity();
 if (brandFailures.length > 0) {
@@ -1118,7 +1129,11 @@ const report = {
      ladder must not change what the frame looks like at its highest tier. */
   tierShadowMapSize: shadowMapSizeFor(TIER, 1536),
   shadowBaseline: 1536,
-  /* Empty means every brand hex round-tripped exactly through this frame's own pipeline. */
+  /* Empty means the palette CONSTANTS table is self-consistent: every BRAND_HEX entry survives
+     hexToLinear -> linearToHex. It says NOTHING about what this frame's composite did to a
+     rendered mark — that is measured in docs/3d/brand-fidelity.json, where #2c6bff arrives
+     #2c68dc. The field was documented as "round-tripped exactly through this frame's own
+     pipeline", which is the claim scripts/3d-audit.mjs then read as a fidelity verdict. */
   brandFidelity: brandFailures,
   ao: AO_ON,
   fog: FOG_ON,

@@ -1595,13 +1595,21 @@ const RENDERER = (() => {
 const SOFTWARE = /swiftshader|llvmpipe|software/i.test(RENDERER);
 
 /*
- * §6 RULE 5 — BRAND HEX EXACT, AND IT DIES RATHER THAN WARNS.
+ * §6 RULE 5 — "ORDER SURVIVES THE PIPELINE." Amended 2026-08-14; it used to read "Brand hex exact."
  *
- * A frame that has silently moved the brand blue is worse than no frame, because it will be
- * screenshotted into a deck. E3 has a specific reason to run the check rather than trust a unit test:
- * it is the first environment to mix a LIT surface colour with an ADDITIVE pass over the same HDR
- * target, and the deal colour is an interpolation between two hexes rather than a hex — both are the
- * kind of change that quietly introduces a second tone map.
+ * THE OLD RULE WAS NOT MERELY UNENFORCED — IT WAS UNENFORCEABLE, and this block used to say the
+ * opposite. `assertBrandFidelity` compares `linearToHex(BRAND[k])` with `BRAND_HEX[k]`, and `BRAND[k]`
+ * is DEFINED as `hexToLinear(BRAND_HEX[k])`. It is a self-round-trip of a frozen table through two pure
+ * functions: the tone map is not on that path at all, so no shader edit can make this refusal fire.
+ *
+ * Measured through the real composite: `#2c6bff` lands `#2c68dc` (ΔE76 18.3); on the LIT path every
+ * brand colour lands 46-88 ΔE from its hex. And that is a CATEGORY ERROR rather than a bug — a lit
+ * material's radiance is base colour x illumination, so "hex exact" over a shaded mesh is not a
+ * coherent thing to ask for. See `docs/3d/brand-fidelity.json` and `packages/gl/src/look/brandPixel.test.ts`.
+ *
+ * WHAT MAY BE CITED IS ORDER: monotone per channel, so a denser mark never renders lighter than a
+ * sparser one. The call below is KEPT because it still catches one real thing — a corrupted `BRAND_HEX`
+ * constant — but it must not be described as proving anything about a rendered frame.
  */
 const brandFailures = assertBrandFidelity();
 if (brandFailures.length > 0) {

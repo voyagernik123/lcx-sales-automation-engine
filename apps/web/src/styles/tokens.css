@@ -58,10 +58,23 @@
    * 3.86 / 3.43 / 4.81 on card / canvas / wash / inverse-surface / navy-deep. Every one
    * is asserted in lib/__tests__/contrast.test.ts, which fails if any drops below 3.
    *
-   * NOT YET WIRED. No component reads this token: `border-control` needs one line in
-   * tailwind.config.js, which is another track's file. Until then all 223 native-control
-   * borders are still on --line and the app is still below the floor — contrast.test.ts
-   * records that 223 as a shrink-only count so it cannot silently grow. */
+   * WIRED, as of the sweep that followed. `theme.extend.colors.control` in
+   * tailwind.config.js maps this token to `border-control`, and contrast.test.ts imports
+   * that config rather than grepping it, so deleting the entry fails the build.
+   *
+   * THE COUNT THIS COMMENT USED TO GIVE WAS SHORT BY ELEVEN. It said 223 native-control
+   * borders remained on --line; the real figure was 234. The scanner that produced 223
+   * lost nine controls inside JSX passed as a prop (`footer={<>…</>}` was attributed to
+   * the enclosing <Modal>) and one behind a comment containing `<`, and it could never
+   * have seen an eleventh: `ui/Button.tsx` keeps its border in a variant TABLE, not on a
+   * tag, which is how the most-reused control in the app stayed off every list. Six are
+   * now on this token — Input, Select, Button(secondary), ConfirmDialog, StateCohortGrid,
+   * Toast — and 228 remain, tracked shrink-only in lib/__tests__/contrast.test.ts.
+   *
+   * The remaining ~816 --line occurrences are NOT pending work. They are table rules,
+   * card edges and dividers, which 1.4.11 does not cover; moving them here would clear no
+   * criterion and would redraw every table in the app as a heavy rule. The test asserts
+   * that direction too: a `border-control` on a non-control fails. */
   --control-border: 119 128 147;  /* #778093 */
 
   --card: 255 255 255;        /* #ffffff */

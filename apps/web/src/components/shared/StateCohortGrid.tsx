@@ -31,7 +31,13 @@ export function StateCohortGrid({ selected, onToggle, auditLabel }: StateCohortG
               'px-1.5 py-1 rounded text-[10px] font-mono border text-center font-bold t-hover',
               active
                 ? 'bg-navy border-navy text-white dark:bg-ice dark:border-ice dark:text-navy'
-                : 'border-line bg-card text-grey-dark hover:bg-ice-soft dark:hover:bg-ice-soft/10'
+                /* `border-control` on the UNSELECTED state. SC 1.4.11 covers component
+                 * boundaries AND states, and the unselected chip is the one that needs the
+                 * border: the selected chip is identified by its bg-navy fill, while this
+                 * one is bg-card on a card and so has no fill signal at all. On --line the
+                 * edge measured 1.72:1 light / 1.30:1 dark against the 3:1 floor;
+                 * --control-border measures 3.97 / 4.33. */
+                : 'border-control bg-card text-grey-dark hover:bg-ice-soft dark:hover:bg-ice-soft/10'
             )}
           >
             {s.abbreviation}

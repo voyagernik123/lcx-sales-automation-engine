@@ -102,7 +102,11 @@ export function ToastContainer() {
                   t.action?.onAction();
                   removeToast(t.id);
                 }}
-                className="shrink-0 self-center rounded-md border border-line bg-card px-2 py-1 text-micro font-bold text-navy transition-colors hover:border-cyan-500/60 hover:text-cyan-700 dark:hover:text-cyan-400"
+                /* `border-control`: the toast's action button is the only operable thing in
+                 * a transient surface that disappears on a timer, so its boundary carries
+                 * the whole affordance. On --line it measured 1.72:1 light / 1.30:1 dark
+                 * against SC 1.4.11's 3:1; --control-border measures 3.97 / 4.33. */
+                className="shrink-0 self-center rounded-md border border-control bg-card px-2 py-1 text-micro font-bold text-navy transition-colors hover:border-cyan-500/60 hover:text-cyan-700 dark:hover:text-cyan-400"
               >
                 {t.action.label}
               </button>

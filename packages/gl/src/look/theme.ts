@@ -9,9 +9,19 @@
  * reader gets, is a lit interior authored against a near-black ground painted onto a white card.
  *
  * ── THE LINE THIS FILE DRAWS, AND WHY IT IS THE WHOLE DESIGN ────────────────────────
- * §6 rule 5 fixes the brand hex exactly: a data-encoding colour is DATA, and `assertBrandFidelity`
- * proves it survives the pipeline. So a theme may NOT tint a mark to suit its background — that
- * would be editing the measurement to flatter the page.
+ * A data-encoding colour is DATA: the palette fixes it, and a theme may NOT tint a mark to suit its
+ * background, because that would be editing the measurement to flatter the page. Two marks whose
+ * relative weight changes with the page's background are two marks a reader cannot compare.
+ *
+ * What holds that up is NOT `assertBrandFidelity`. This header said it "proves it survives the
+ * pipeline"; it proves `linearToHex(hexToLinear(BRAND_HEX[k])) === BRAND_HEX[k]` — a frozen table
+ * round-tripping through two pure functions, which no pipeline change can move. Measured off a
+ * framebuffer (`docs/3d/brand-fidelity.json`), the composite lands `#2c6bff` at `#2c68dc`, blue
+ * 35/255 low, ΔE76 18.3. §6 rule 5 was amended 2026-08-14: what the pipeline guarantees is that the
+ * curve is MONOTONE PER CHANNEL, so ORDER survives and a denser mark never renders lighter than a
+ * sparser one — pinned in `look/brandPixel.test.ts`. A theme that moved a data colour would break
+ * that ordering across themes, which is a stronger reason for the taxonomy below than hex exactness
+ * ever was.
  *
  * But not every colour in a scene is data. `BRAND_HEX` already says so in its own comments: `rule`
  * is "structure — axes, ticks. RECEDES", and `plate` is "plate background". Those are ROLES, and a

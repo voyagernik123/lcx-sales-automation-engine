@@ -149,6 +149,70 @@ export const TARGET_CACHE_SPARES = 3;
 /** Total scene texels across the spares. See the byte arithmetic above. */
 export const TARGET_CACHE_TEXELS = 2_400_000;
 
+/* ══ THE PROGRAM CACHE ════════════════════════════════════════════════════════════
+ *
+ * WHY IT EXISTS. Every relief rebuilds IN PLACE when its size step or its resolved quality tier
+ * changes — `SurfaceReliefGl.tsx:633` and the six like it key their setup effect on
+ * `[heightPx, onRefused, tier]`, and `GlobeRelief.tsx:99` quantises the height to 24 px precisely
+ * because each distinct value tears the stage down. A window drag therefore walks through a
+ * rebuild every 24 px. Shader compilation is essentially the whole of that rebuild.
+ *
+ * WHAT IS KEYED, AND WHY IT CANNOT BE THE SOURCE ALONE. A `WebGLProgram` belongs to a CONTEXT.
+ * `getContext('webgl2')` hands back the same context for a canvas's whole life — the note on
+ * `dispose()` below depends on that same fact — so a cache keyed on source alone would hand a
+ * program from one canvas's context to another's, which is a use-after-free the moment the first
+ * canvas is disposed and its context released. The outer key is therefore the CONTEXT ITSELF, held
+ * weakly, so an entry cannot outlive the context it describes and nothing has to remember to
+ * unregister anything. Inside that, the two sources index a nested map rather than a concatenated
+ * key, so no new string is allocated per lookup: the values ARE the module-level source constants
+ * every call site passes.
+ *
+ * WHY THE SOURCE PAIR IS A SUFFICIENT KEY, and this is derived rather than assumed. `compile()`
+ * below is the ONLY place in the package that calls `createProgram` or `linkProgram`, and it sets
+ * no pre-link state — no `bindAttribLocation`, no `transformFeedbackVaryings`. So the linked
+ * program is a pure function of (context, vertexSrc, fragmentSrc) and there is no third input a
+ * cache could miss. `stage.test.ts` pins that by searching the package rather than by listing the
+ * call sites, because a list cannot fail on the one nobody thought of.
+ *
+ * UNIFORM LOCATIONS ARE RE-QUERIED, NOT CACHED, and that is the existing behaviour rather than a
+ * new rule. A `WebGLUniformLocation` is invalidated only by RE-LINKING, and a cached program is
+ * never re-linked, so a location would in fact stay valid across stages. Nothing relies on that:
+ * every call site in the package reaches locations through a `const u = (n) => gl.getUniformLocation(p, n)`
+ * closure that queries on each call. Uniform VALUES do persist with the program — and they already
+ * did, across every draw within one stage, which is why every branch that skips a uniform writes a
+ * disabling one instead (`lit.ts:825` writes `uFogDensity` 0, `:837` `uAOEnabled` 0, `:860`
+ * `uShadowStrength` 0). Reuse across stages is that same relation, not a new one.
+ *
+ * OWNERSHIP IS THE CONTEXT'S, AND THERE IS NO REFERENCE COUNT. A program cannot outlive its
+ * context, so "free when the context goes" is both the earliest safe moment and a bound that needs
+ * no bookkeeping: `dispose()` deletes the cached programs exactly when it is also releasing the
+ * context, i.e. when the canvas has left the document. A `dispose()` on a canvas that is still
+ * mounted keeps them, because an in-place rebuild is the only thing that ever follows one and is
+ * the whole reason this cache exists. What that can strand is bounded by construction — the number
+ * of DISTINCT source pairs in the program, which is fixed at build time — and it dies with the
+ * context regardless. Reference counting would have bought nothing and could have deleted a
+ * program a second live stage on the same context still held.
+ *
+ * AND THE VALIDITY CHECK IS NOT PARANOIA — IT IS LOAD-BEARING TODAY. Thirteen call sites outside
+ * this file delete programs the stage also owns: `env/lit.ts:883-885`, `env/ao.ts:354`,
+ * `env/sky.ts:159`, `env/dof.ts:219`, `env/volume.ts:500`, `env/particles.ts:596-597`,
+ * `primitives/points.ts`, `primitives/lines.ts`, `flat/bars.ts`, `flat/strokes.ts` — ten modules,
+ * counted from a search by `stage.test.ts` so the list cannot rot. `look/pipeline.ts:197` is the
+ * one that gets it right — "Programs are owned and freed by the
+ * Stage". So a cached program can be deleted under the cache by its other owner, and the next
+ * lookup would hand back a dead name: every draw issued, nothing rendered, nothing thrown.
+ *
+ * THE EVICTION IS PER KEY, AND THE OBVIOUS ALTERNATIVE WAS MEASURED AND IS WRONG. The first
+ * version dropped the WHOLE context entry on one dead program, reasoning that a program only dies
+ * when its context does. That reasoning is false here — those thirteen lines delete SELECTIVELY,
+ * which is the normal case rather than the exceptional one — and it cost the entire benefit:
+ * `blit-cost.mjs` arm H measured 23.7 `compileShader` calls per rebuild against 24.0 with no cache
+ * at all, because the first dead lit program threw away the pipeline's live ones on every rebuild.
+ * Per-key is no weaker: `gl.isProgram` runs on EVERY hit, so each key validates itself and a truly
+ * lost context simply misses on all of them.
+ */
+const PROGRAM_CACHE = new WeakMap<WebGL2RenderingContext, Map<string, Map<string, WebGLProgram>>>();
+
 export interface StageOptions {
   /**
    * Resolution of the bloom chain relative to the scene, as a right-shift. 2 → quarter
@@ -314,8 +378,6 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
   gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
   gl.bindVertexArray(null);
 
-  const programs: WebGLProgram[] = [];
-
   const stage: Stage = {
     kind: 'stage',
     gl,
@@ -362,11 +424,28 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
      * Detaching first is what makes that "last attachment" happen now rather than at program delete.
      *
      * The three early returns leaked as well, and the link failure was the worst of the three: it
-     * leaked the WebGLProgram too, because `programs.push(p)` below only runs on success, so
+     * leaked the WebGLProgram too, because the cache insert below only runs on success, so
      * `stage.dispose()` never saw it. Measured 5 shaders and 1 program still valid after the stage
      * was disposed. Each branch now deletes exactly what it had made.
      */
     compile(vertexSrc, fragmentSrc) {
+      /* THE CACHE IS CONSULTED BEFORE ANY GL OBJECT IS MADE, and a hit is verified TWICE rather
+         than trusted, because the two failures are different and only one of them is obvious.
+         Another owner may have deleted it (see the note above `PROGRAM_CACHE`) — `isProgram`
+         catches that. And `deleteProgram` on the program that happens to be CURRENT does not
+         delete it: the spec only FLAGS it, and it dies later, when something else is bound. Such
+         a program passes `isProgram`, so the first check alone hands it out and it then dies
+         mid-frame at the next `useProgram` — measured, in `blit-cost.mjs` arm H, as a rebuild
+         whose composite pass silently drew with the wrong program and produced a second, different
+         frame hash on every other iteration. `DELETE_STATUS` is the query that separates them.
+         A refusal is deliberately NOT cached — it carries the driver's log for one compile, and a
+         driver that refuses once will refuse again for the same money. */
+      const cached = PROGRAM_CACHE.get(gl)?.get(vertexSrc);
+      const hit = cached?.get(fragmentSrc);
+      if (cached !== undefined && hit !== undefined) {
+        if (gl.isProgram(hit) && gl.getProgramParameter(hit, gl.DELETE_STATUS) === false) return hit;
+        cached.delete(fragmentSrc);
+      }
       const build = (type: number, src: string): WebGLShader | StageRefusal => {
         const s = gl.createShader(type)!;
         gl.shaderSource(s, src);
@@ -402,7 +481,11 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
       gl.detachShader(p, fs as WebGLShader);
       gl.deleteShader(vs as WebGLShader);
       gl.deleteShader(fs as WebGLShader);
-      programs.push(p);
+      let byVert = PROGRAM_CACHE.get(gl);
+      if (byVert === undefined) { byVert = new Map(); PROGRAM_CACHE.set(gl, byVert); }
+      let byFrag = byVert.get(vertexSrc);
+      if (byFrag === undefined) { byFrag = new Map(); byVert.set(vertexSrc, byFrag); }
+      byFrag.set(fragmentSrc, p);
       return p;
     },
 
@@ -459,7 +542,6 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
      * leak the objects this function exists to free.
      */
     dispose() {
-      for (const p of programs) gl.deleteProgram(p);
       /* EVERY CACHED SET, not only the active one. The cache is what stops a two-size page
          reallocating per render, and it is also the only handle anything has on the spares:
          a `dispose()` that freed `active` alone would leak up to `TARGET_CACHE_TEXELS` of
@@ -468,7 +550,15 @@ export function createStage(canvas: HTMLCanvasElement, opts: StageOptions = {}):
       sets.clear();
       gl.deleteBuffer(quadBuf);
       gl.deleteVertexArray(quadVao);
+      /* THE PROGRAMS ARE KEPT WHILE THE CANVAS IS MOUNTED, and freed on the same condition that
+         releases the context — see `PROGRAM_CACHE`. This return is therefore where the cache
+         survives a rebuild, and everything below it is the teardown that ends its life. */
       if (canvas.isConnected) return;
+      const byVert = PROGRAM_CACHE.get(gl);
+      if (byVert !== undefined) {
+        for (const byFrag of byVert.values()) for (const p of byFrag.values()) gl.deleteProgram(p);
+        PROGRAM_CACHE.delete(gl);
+      }
       /* The extension is optional and a fake context in a test returns an object with nothing on it, so
          both the extension and the method are checked. `getExtension` also returns null once a context is
          already lost, which is what makes a second `dispose()` a no-op rather than an error. */

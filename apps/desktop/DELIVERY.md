@@ -38,6 +38,24 @@
 > - **§10 is new: the release as one copy-pasteable sequence**, and §11 states the version the next
 >   release should carry without bumping anything. Step 7 of §3 (every operator clicks Install) was
 >   written down but the other eight steps were spread across a table, a README and two script headers.
+>
+> **Revised again: 2026-08-15, against `fd7fa0d`.** Everything above was re-verified rather than
+> inherited, and two things are new — one of them a defect nobody had looked for:
+>
+> - **§12 is new, and it is the claim this document had never actually made:** the web bundle a
+>   desktop build would package **carries the 3-D programme** — 15 GL chunks, 174,422 B, identified by
+>   shader bytes rather than by filename, **every one of them lazy**, measured on a real
+>   `npm run build -w @lcx/web`. Until now the only route to that number was a completed, signed
+>   release build; §12.3 adds `scripts/inspect-frontend-dist.mjs`, which answers it with no key and no
+>   bundler, and refuses on the one thing nothing checked before.
+> - **§13 is new and nobody had asked the question: what theme does a fresh desk start in?** The
+>   answer is **light, always, and there is no input that can change it** — because `index.html:12`
+>   reads a localStorage key that **no code in this repo has written since 2026-07-25**. Proven by
+>   executing the packaged bootstrap, not by reading it. This is a defect in `apps/web`, which belongs
+>   to another track; §13.4 states the one-line fix with its file:line rather than making it.
+> - **Re-verified, not assumed:** the command chain and `tauri build --help` against CLI 2.11.4
+>   (§2.4), all five of the gate's failure paths (§9.4 re-run), and the WKWebView GL probe, which
+>   reproduced §4.2.4's JSON byte for byte on a second date (§4.2.5).
 
 ---
 
@@ -254,6 +272,46 @@ Three consequences worth stating, because each is a way this goes wrong quietly:
 **The plain-language version: the eight relief views are in the repo and on the deployed site. They
 are not in the app on anyone's Mac, and they cannot get there by any route other than a new
 release.**
+
+### 2.4 · The chain, re-verified against the CLI rather than against this document
+
+Re-run 2026-08-15 at `fd7fa0d`, because a chain described once and then quoted three times is a
+chain nobody has checked twice. Every link read out of the file or the tool, not out of §2:
+
+| Link | Read from | Value |
+|---|---|---|
+| `npm run build -w @lcx/desktop` | `apps/desktop/package.json:8` | `tauri build` |
+| `npm run build:dmg -w @lcx/desktop` | `apps/desktop/package.json:9` | `tauri build --bundles app,dmg` |
+| the hook | `tauri.conf.json:9` | `npm run build-gate -w @lcx/desktop` |
+| the gate | `apps/desktop/package.json:10` | `node scripts/build-gate.mjs` |
+| what it runs | `build-gate.mjs:92` + root `package.json` | `npm run ci-check` at the repo root |
+| `ci-check` | root `package.json:ci-check` | `doctrine-lint → type-check → test → build → gl-budget → perf-budget -w @lcx/web` |
+| where the web build sits inside it | root `package.json:build` | `… && npm run build -w @lcx/web`, which is `vite build` (`apps/web/package.json:8`) |
+| what gets copied | `tauri.conf.json:10` | `../../web/dist` → `apps/web/dist` |
+
+**Does the gate run BEFORE anything is packaged, and does a failure STOP the build?** Yes to both,
+and neither is inferred:
+
+- `npx tauri build --help` (**CLI 2.11.4**, run 2026-08-15) opens with *"It also runs your
+  `build.beforeBuildCommand`"*, and its full option list — `--runner`, `--verbose`, `--debug`,
+  `--target`, `--features`, `--bundles`, `--no-bundle`, `--config`, `--ci`, `--skip-stapling`,
+  `--ignore-version-mismatches`, `--no-sign`, `--help`, `--version` — contains **no flag that skips
+  it**. `--no-bundle` skips the *bundler*, not the hook. `-c/--config` remains the one deliberate
+  bypass (§9.1).
+- The gate **fails, it does not warn**: `build-gate.mjs:157-167` propagates `ci-check`'s exit code,
+  and `tauri build` treats a non-zero `beforeBuildCommand` as a fatal error before `cargo build`
+  (watched, §9.4). All five of the script's own paths were re-exercised on 2026-08-15 against a
+  throwaway repo root, and all five reproduced: **A** missing `ci-check` → exit 1 naming the release
+  artefact; **B** `ci-check` exits 7 → **exit 7, not flattened to 1**, with the sentinel confirming it
+  ran at the repo root with `VITE_API_URL=https://lcx-sales-api.onrender.com` and
+  `npm_config_workspace=undefined`; **C** `ci-check` green but no `dist/index.html` → exit 1;
+  **D** all well → exit 0, printing `gated bundle /assets/index-ABC12345.js`; **E** `--explain` →
+  exit 0 **and the sentinel was never written**, so it is a diagnostic and not a bypass.
+
+**One consequence of the ordering that is easy to get backwards, and matters for §12:** the gate
+proves the bundle is *checked*, and `build-gate.mjs:179-186` proves an `index.html` *exists*. Neither
+of them looks inside the bundle. Nothing in the desktop path had ever asked whether the thing being
+packaged contains the 3-D layer at all — that is §12.
 
 ---
 
@@ -563,6 +621,33 @@ is not evidence:
    or land that call.
 3. **Frame time.** Unmeasured in WKWebView at any tier, on any machine. §6.4 stands unchanged.
 
+#### 4.2.5 · Re-run on a second date, because a single run is an anecdote
+
+`swiftc -O … && /tmp/webview-gl-probe`, run again **2026-08-15** at `fd7fa0d`, on the same desk. The
+JSON is **identical to §4.2.4's, field for field** — `webgl2:true`, `WebGL 2.0`, `WebGL GLSL ES 3.00`,
+`unmasked_renderer:"Apple GPU"`, `EXT_color_buffer_float:true`, `OES_texture_float_linear:true`,
+`EXT_float_blend`, `EXT_texture_filter_anisotropic`, `KHR_parallel_shader_compile`,
+`MAX_TEXTURE_SIZE:16384`, `MAX_SAMPLES:4`, `MAX_3D_TEXTURE_SIZE:2048`, `extension_count:36`,
+`vs_compiled`/`fs_compiled`/`linked` all true with **empty compile and link logs**,
+`pixel:[0,255,0,255]`, `rgba16f_framebuffer_complete:true`, `gl_error:0`.
+
+**So the WebGL2 question does not need a new experiment and this document does not invent one.** The
+answer is a measurement, it is checked in as a program rather than as a number, and it reproduces. The
+residual is exactly what §4.2.4 said it was — **scope, not doubt**: one WebKit (22625) against a macOS
+11 floor, and the two ways to widen it are unchanged and both cheap:
+
+| To answer for | Do this | Cost |
+|---|---|---|
+| **any one desk** | `swiftc -O -o /tmp/webview-gl-probe apps/desktop/scripts/webview-gl-probe.swift -framework Cocoa -framework WebKit && /tmp/webview-gl-probe` | ~25 s, no key, no build, no release, no repo checkout beyond that one file |
+| **every desk, forever** | the one `logDiagnostic` call in §4.2.2 — first `NO_WEBGL2` refusal per launch, and `stage.hdr === false` | one call in `apps/web/src/lib/terminal.ts`, still not made, still belongs to another track |
+
+And the thing worth restating in front of a release decision, because it changes what "bad" means:
+**the refusal path holds (§4.3).** If a desk somewhere returns `webgl2:false`, that desk shows the
+**flat views and a working gradient sign-in screen** — not blank canvases, not a crash. The risk being
+managed is *"the reliefs are invisible on that desk"*, and it is the whole content of the next release
+becoming invisible there, which is expensive. It is not *"the app breaks"*, and treating it as the
+latter would buy insurance against the wrong failure.
+
 ### 4.3 · If WebGL2 is absent, does the refusal path hold? — YES, and it is traceable
 
 This part **is** established, and it is the reason the risk here is "worse-looking" rather than
@@ -839,12 +924,30 @@ run.
    `0.1.0` (2026-07-26T06:56:03Z) to `0.2.6` (2026-08-13T07:57:39Z). That is one desk, by hand, and it
    is not a fleet answer.
 
+**Two entries were retired on 2026-08-15, and one of them was never on this list because nobody had
+asked the question:**
+
+8. ~~**Whether the bundle a desktop build packages carries the 3-D programme.**~~ **CLOSED — §12.** It
+   does: 15 GL chunks, 174,422 B, 8 renderer surfaces + 7 shared, found by shader bytes, and **none of
+   them in the eager set**. Re-takeable in five seconds with
+   `node apps/desktop/scripts/inspect-frontend-dist.mjs`, where before it cost a signed build. What
+   this does **not** say is that they render — §4.6 still owns that.
+9. ~~**What theme a fresh desk starts in.**~~ **ANSWERED, and the answer is a defect — §13.** Light,
+   always, for every operator, because `apps/web/index.html:12` reads `lcx-os:ui:v1` while
+   `persistence.ts:38` has written `lcx-os:<scope>:ui:v1` since `241ef55` (2026-07-25). Proven by
+   executing the packaged bootstrap against a negative control that fires. The preference itself
+   **does** survive relaunches — `tauri://localhost` has a real on-disk `localstorage.sqlite3`
+   (§13.2) — it is simply never read before paint, and `/select` is a sibling of `AppLayout`, so
+   nothing else applies it at the front door either. The one-line fix is in `apps/web` and is stated
+   at §13.4 rather than made. **What remains genuinely open there is the product half**: whether a
+   returning operator's theme *should* be honoured on a shared desk's sign-in screen at all (§13.4).
+
 ---
 
 ## 7 · WHAT THIS ADDS TO THE PLAN'S OPEN QUESTIONS
 
-Not new work items — the plan is a closing plan and this does not reopen it. Five things it should
-know:
+Not new work items — the plan is a closing plan and this does not reopen it. Six things it should
+know, and the sixth is new on 2026-08-15:
 
 1. **§4.1's §7(b) trial measures the deployed web build.** Whatever verdict it returns describes
    Chrome. The desktop channel is a second population running a different GL stack, and the trial
@@ -866,6 +969,13 @@ know:
    present in the shipping container (§4.2.4). What is left is frame time in that engine, the
    per-process context cap, and `ForgeBackdrop`'s missing `webglcontextlost` handler — three specific
    things, rather than one large "does any of this work on a Mac app".
+6. **The light branch of `theme.ts` is the ONLY branch the front door will ever execute (§13), and
+   the theme work happening right now does not know it.** `ForgeBackdrop.tsx:128` reads
+   `document.documentElement.classList.contains('dark')` on the one route where that class is never
+   set on a cold launch, so E8's dark variant is unreachable on a fresh desk in either channel. Two
+   consequences for a track designing against it right now: light is the case to get right *first* for
+   that surface, and the dark variant **cannot be checked by looking at the running app** until
+   §13.4's one line lands. Cheapest item here, and the only one with a deadline.
 
 ---
 
@@ -890,7 +1000,12 @@ malware dialog. Two things about that release are no longer true as of §9: **it
 tree that fails CI** (`tauri build` now runs `ci-check` and aborts before packaging), and **it writes
 down what it packaged** — commit, dirty flag, entry fingerprint, a sha256 per emitted file and the GL
 chunk count — published beside the tarball, because `apps/web/dist` is in no commit and until now the
-tag said nothing about the bytes on the desk.
+tag said nothing about the bytes on the desk. **And two more, as of §12 and §13:** the bundle a desktop
+build would copy **does** carry the whole 3-D programme — 15 GL chunks, 174,422 B, all lazy, none of
+it fetched before first paint — verified by shader bytes on a real build and re-checkable in five
+seconds without the key; while the front door it would ship **always starts in light**, for every
+operator, because the pre-hydration theme read has been pointed at a key nothing writes since
+2026-07-25, and the sign-in screen is the one route the shell's theme effect never reaches.
 
 ---
 
@@ -990,6 +1105,13 @@ Attributes are now parsed order-independently.
   outside this app that would materially help is written out in full in §4.2.2 — a single
   `logDiagnostic` call on the first `NO_WEBGL2` refusal and on `stage.hdr === false` — and it is
   reported there rather than made, because those files belong to another track this session.
+- **On 2026-08-15, the same again, and it now includes a defect this pass found rather than
+  inherited.** `apps/web/index.html:12`'s dead theme key (§13.4) is a one-line fix in `apps/web`; it
+  is stated with its file:line and left. `apps/desktop/package.json` was not touched either — it
+  carries a `version` field this pass is forbidden to change, so the one line it wants
+  (`"inspect-dist": "node scripts/inspect-frontend-dist.mjs"`) is written out in §12.3 and not
+  applied. **The only file added is `apps/desktop/scripts/inspect-frontend-dist.mjs`**, which reads a
+  directory and writes nothing.
 
 ### 9.4 · The gate, watched failing — because a gate nobody has seen fail is a gate nobody has tested
 
@@ -1070,6 +1192,10 @@ npm run dev -w @lcx/desktop        # ⌘Q when done
 
 # 0c · the one CI job the build gate deliberately does NOT run  (§9.1)
 npm run e2e -w @lcx/web            # needs `npx playwright install chromium` once per machine
+
+# 0d · does the bundle tauri would COPY actually carry the 3-D layer?  (§12 — ~5 s)
+npm run build -w @lcx/web          # only if you have not built since your last edit
+node apps/desktop/scripts/inspect-frontend-dist.mjs
 ```
 
 `0a` should print `"webgl2":true` and `"drew_green":true`. If it prints `"webgl2":false`, **stop and
@@ -1079,6 +1205,15 @@ the release is worth less than it looks.
 
 `0c` is skipped by the gate on purpose (§9.1: `-chromium-darwin` baselines would fail a release build
 for a font difference), which is exactly why it belongs here instead.
+
+`0d` should end in `✓ the bundle is intact and every GL chunk is lazy` and list **15 chunks — 8
+renderer surfaces + 7 shared, ~174 KB** (§12.2). It is here, at step 0, rather than left to step 5,
+because the same number out of `release:dry` costs a full **signed** build first — `publish-release.mjs`
+dies at `:96`, `:102`, `:108` and `:132` long before it walks the dist, and `:108` needs the owner's
+key. Reading `(none) ← this build carries NO 3-D layer` *here* costs five seconds; reading it at step 5
+costs the build, and reading it after step 6 costs a version number. Add
+`-- --expect-gl-chunks 15` if you want it to fail rather than inform. Note the count is legitimately
+allowed to move (§12.4).
 
 ### Step 1 · Version — five files, and only two of them are enforced
 
@@ -1238,6 +1373,7 @@ five-second key-light arc is the *second* impression, after a malware dialog.
 
 ```bash
 swiftc -O -o /tmp/webview-gl-probe apps/desktop/scripts/webview-gl-probe.swift -framework Cocoa -framework WebKit && /tmp/webview-gl-probe
+npm run build -w @lcx/web && node apps/desktop/scripts/inspect-frontend-dist.mjs
 export TAURI_SIGNING_PRIVATE_KEY="$HOME/.lcx-terminal/updater.key"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
 npm run build:dmg   -w @lcx/desktop
@@ -1245,9 +1381,18 @@ npm run release:dry -w @lcx/desktop
 npm run release     -w @lcx/desktop
 ```
 
-Five commands, one of which needs the key and one of which needs `gh`. **It is still not one command,
-and it should not be**: step 4 cannot be known before step 3, and step 5 exists so that a human reads
-the GL chunk count before a tag becomes permanent.
+Six commands, one of which needs the key and one of which needs `gh`; **the first two need neither and
+are the two that can save the other four.** It is still not one command, and it should not be: step 4
+cannot be known before step 3, and step 5 exists so that a human reads the GL chunk count before a tag
+becomes permanent. The second line is the same question step 5 answers, asked before anything has been
+built or signed — if it says `NO 3-D layer`, stop there rather than ten minutes and one credential
+later.
+
+**Every command in §10 was executed or resolved against the script it invokes on 2026-08-15**, not
+described from memory: `dev`/`build`/`build:dmg`/`release`/`release:dry` read out of
+`apps/desktop/package.json:7-13`, `e2e` out of `apps/web/package.json:15`, the probe and the inspector
+both actually run (§4.2.5, §12.2). The two that were **not** run are the two that cannot be:
+`build:dmg` needs the owner's key, and `release` creates a permanent tag.
 
 ---
 
@@ -1285,3 +1430,285 @@ opt-in reliefs; and `ForgeBackdrop` has no `webglcontextlost` handler (§4.5). N
 **What the owner has to do with this number:** the five files in §10 step 1. Two of them are enforced
 and will stop the build or the publish; three are not, and `apps/desktop/package.json` plus
 `Cargo.toml` will silently disagree forever if missed.
+
+---
+
+## 12 · THE BUNDLE THE DESKTOP WOULD PACKAGE — measured, not asserted
+
+> **Why this is a section and not a sentence in §2.** §2 proves the *plumbing*: `beforeBuildCommand`
+> rebuilds the web bundle, so a desktop build picks up current web code. That is a claim about a
+> mechanism. **Nobody had ever looked at the output of it.** §1.1 measured the *installed* 0.2.6 app
+> and measured *a* working-tree build in passing, twice, with two different markers, and then wrote
+> down — correctly — that a fixed number typed into prose goes stale. This section takes the
+> measurement properly and, more usefully, leaves behind the command that retakes it.
+
+### 12.1 · What was run
+
+```bash
+VITE_API_URL=https://lcx-sales-api.onrender.com npm run build -w @lcx/web   # exit 0, 6.36 s
+node apps/desktop/scripts/inspect-frontend-dist.mjs
+```
+
+That is the same command and the same `VITE_API_URL` the gate hands to `vite build`
+(`build-gate.mjs:91`, `:148`), so the directory inspected is the directory Tauri would copy — not a
+lookalike built with different environment. `frontendDist` is read out of `tauri.conf.json` by the
+inspector rather than hardcoded, so it resolves the same path the bundler does: `apps/web/dist`.
+
+**Run at `fd7fa0d` with a dirty tree** — five relief renderers and `packages/gl` are being edited by
+other tracks in the same session, which is the normal state here (§9.2's `dirty` field exists for
+exactly this) and is why the fingerprint below is a fact about a moment, not about a commit.
+
+### 12.2 · The result — 15 GL chunks, 174,422 B, all of them lazy
+
+```
+files          209, 4,000,621 B total
+entry          /assets/index-DKDuj6bH.js          fingerprint DKDuj6bH
+
+eager set (7) — fetched before first paint:
+  /assets/index-DKDuj6bH.js        /assets/react-vendor-CQviXG0h.js   /assets/vendor-BnQvR7HC.js
+  /assets/vendor-Fd0xVSp_.css      /assets/index-DKw9bXJx.css
+  /fonts/InterVariable.woff2       /fonts/JetBrainsMono-Regular.woff2
+```
+
+| GL chunk | bytes | eager? |
+|---|---:|---|
+| `assets/DeckReliefGl-DDGpt9fZ.js` — E1 | 14,996 | lazy |
+| `assets/GlobeReliefGl-B5DCkCJo.js` — E2 | 15,450 | lazy |
+| `assets/PipelineReliefGl-CBQT-5FB.js` — E3 | 8,184 | lazy |
+| `assets/OntologyOrreryGl-Boj1EBDJ.js` — E4 | 19,971 | lazy |
+| `assets/SurfaceReliefGl-DVSe5yJ4.js` — E5 | 6,400 | lazy |
+| `assets/VaultReliefGl-Dax6TLNd.js` — E6 | 16,282 | lazy |
+| `assets/StormReliefGl-ClVlguFb.js` — E7 | 8,216 | lazy |
+| `assets/ForgeBackdrop-CMz2Nb7m.js` — **E8, the front door** | 5,608 | lazy |
+| `assets/index-B0ETvld5.js` — the `@lcx/gl` barrel | 28,593 | lazy |
+| `assets/lit-BnO01UHw.js` | 28,873 | lazy |
+| `assets/volume-CCGbbHj-.js` | 6,639 | lazy |
+| `assets/ao-DWeUly1N.js` | 5,622 | lazy |
+| `assets/pipeline-PE27Ky0P.js` | 4,221 | lazy |
+| `assets/dof-DiVKLD_L.js` | 3,566 | lazy |
+| `assets/lines-2mdvi6qE.js` | 1,801 | lazy |
+| **15 chunks — 8 renderer surfaces + 7 shared** | **174,422** | **0 eager** |
+
+**All eight environments are present, and E8 among them** — which is the one that matters most,
+because it is the only one that mounts without a click (§4.1). Every one is non-empty; the smallest is
+`lines` at 1,801 B, and the *shortest string the marker can match* is 14 bytes, so "matched the marker"
+is itself the non-emptiness proof rather than a second check bolted on beside it.
+
+**They are found by shader bytes, not by name, and that is not pedantry here.** Vite content-hashes
+every filename in that table, so a name match proves nothing about contents; and the *set* of names is
+not derivable by hand either — `*ReliefGl` misses E8 (it ships as `ForgeBackdrop`) and misses all seven
+shared chunks, and a missing shared chunk breaks every toggle depending on it while the relief chunk
+loads perfectly. The marker is `verify-live.mjs:122`'s, character for character:
+`precision\s+(?:highp|mediump|lowp)|createStage`. A desk build and a deployed site are therefore judged
+by one rule, not by two that can drift.
+
+**None of the 15 is in the eager set, and that is the load-bearing half.** The seven things this
+document fetches before first paint are the entry chunk, two vendor chunks, two stylesheets and two
+font preloads. The entire 3-D programme — 174 KB — is behind `import()`, so a desk that never opens a
+toggle and never signs in **never downloads a byte of it**, and the sign-in screen pays for E8's
+5,608 B only after the rest of the page is up.
+
+### 12.3 · The command that retakes this, and what it refuses on
+
+`apps/desktop/scripts/inspect-frontend-dist.mjs` is new. The GL chunk count was *already* computed —
+by `publish-release.mjs:314-326`, for the build record — but it arrived far too late to be useful,
+and the ordering is the whole point:
+
+```
+publish-release.mjs:96   no bundle at src-tauri/target/release/bundle   → needs a completed tauri build
+                  :102   expected exactly 1 .app.tar.gz                 → needs the bundler
+                  :108   no signature at <tarball>.sig                  → NEEDS THE OWNER'S MINISIGN KEY
+                  :132   STALE BUILD — Info.plist disagrees             → needs cargo build --release
+                  :255+  …only now is the dist walked and gl_chunks computed
+```
+
+So "does this build carry the 3-D layer?" was gated behind the one credential no agent has and a
+ten-minute release build. It is now a five-second question that anyone with the repo can ask, which is
+what puts it in §10 as step **0d** — *before* the version bump, not after the tag.
+
+**It refuses on exactly one thing, and it is the thing nothing checked before: a GL chunk in the eager
+set.** The build record lists `eager` and lists `gl_chunks` and never intersects them. One static
+import of a relief from a routed module moves its whole subgraph into the entry chunk — the sign-in
+screen would then pay for `lit` and the volumetric raymarcher before it paints, on the one route whose
+§7(b) case is *"a stranger stops scrolling"* — and a bundle-size budget need not catch it, because the
+bytes did not appear from nowhere, **they moved**.
+
+**It deliberately does NOT refuse on a zero GL chunk count**, which is `publish-release.mjs:379`'s
+decision repeated rather than re-litigated: **0.2.6 carried no relief surfaces and was a correct
+release**, so a `> 0` floor would have blocked it. Zero prints loudly and passes. `--expect-gl-chunks N`
+exists for a caller who does have an expectation.
+
+**Proven able to fail, in seven ways, against a mock tree** — because a check that only ever prints ✓
+is not a check:
+
+| Induced state | Result |
+|---|---|
+| a shader-carrying chunk moved into the eager set via `modulepreload` | **exit 1**, naming the chunk, its bytes, and that the sign-in screen now pays before first paint |
+| the same, with `--json` | **exit 1** with `ok:false` and the chunk in `gl_chunks_eager` — the machine-readable path fails too, rather than reporting success |
+| `--expect-gl-chunks 15` against a dist with 1 | **exit 1**, `expected 15 GL chunks, found 1` |
+| `index.html` naming no `index-<hash>.js` entry | **exit 1** — malformed, and no fingerprint to record |
+| `frontendDist` pointing at a directory that does not exist | **exit 1**, telling the caller to run the web build, since this reads a bundle and never creates one |
+| `tauri.conf.json` with no `frontendDist` at all | **exit 1** — it cannot say what would be packaged, so it does not guess |
+| `--expect-gl-chunks abc` | **exit 1** — an unparseable expectation is not silently dropped, which would turn the assertion into a no-op |
+| control: the real `apps/web/dist`, unmodified | **exit 0**, the table above |
+
+**One change it needs that is NOT in this app's files and was therefore not made.** The npm script
+line, so §10 can say `npm run …` like every other step:
+
+```
+apps/desktop/package.json:10  after  "build-gate": "node scripts/build-gate.mjs",
+                              add    "inspect-dist": "node scripts/inspect-frontend-dist.mjs",
+```
+
+`apps/desktop/package.json` carries a `version` field this pass is forbidden to touch, so it was left
+alone entirely rather than edited around. Until that line exists, the invocation in §10 step 0d is the
+direct `node apps/desktop/scripts/inspect-frontend-dist.mjs`, which works today and needs nothing.
+
+### 12.4 · What §12 does not establish
+
+- **That these chunks RENDER.** They are present, non-empty, lazily reachable and they carry GLSL.
+  Whether the picture is right in WKWebView is §4.6, unchanged and still the thing to do before a
+  release.
+- **That this exact bundle is what a release would ship.** The tree was dirty; another `vite build`
+  five minutes later produces different hashes and, while other tracks are mid-edit, possibly
+  different bytes. That is what §9.2's per-file `sha256` record is for, and it is why the number to
+  trust is the one **step 0d prints on the day**, not the one in this table.
+- **That the count is stable.** It is 15 today and it was 15 when §9.2 measured it independently, but
+  a new environment or a new shared module changes it legitimately. `--expect-gl-chunks` is an
+  assertion the caller opts into, not a ratchet this document sets.
+
+---
+
+## 13 · THE THEME QUESTION — a fresh desk starts LIGHT, and nothing can change that
+
+> **Nobody had asked this.** It became load-bearing on 2026-08-15, when another track began making the
+> 3-D surfaces theme-correct: `packages/gl/src/look/theme.ts` gives light mode a *stronger key, weaker
+> ambient, weaker shadows*, and each renderer branches on `th.name === 'dark'`. Which branch a fresh
+> desk executes is therefore a question about the product, not about CSS. The answer turned out to be
+> a defect.
+
+### 13.1 · How the theme is meant to work
+
+Three mechanisms, and only three:
+
+| # | Where | What it does |
+|---|---|---|
+| 1 | `apps/web/index.html:12` + `:16` | a **pre-hydration** inline script: read `localStorage`, and if the stored state says `darkMode`, `document.documentElement.classList.add('dark')` before React exists. Its stated purpose is that *"dark-mode users never see a white flash"* |
+| 2 | `apps/web/src/components/layout/AppLayout.tsx:118` | `useEffect` → `classList.toggle('dark', darkMode)` — the authoritative one, after hydration |
+| 3 | `apps/web/src/stores/useUIStore.ts:30` | `toggleDarkMode` flips the class and the persisted flag together |
+
+The preference is persisted by `zustand/persist` through `lib/persistence`, under
+`STORAGE_KEYS.UI = 'ui'` (`lib/storage.ts`).
+
+### 13.2 · Does the preference survive a relaunch of the packaged app? — **YES, and it is on disk**
+
+Established from bytes on this machine, not from documentation about WKWebView:
+
+```
+~/Library/WebKit/com.lcx.terminal/WebsiteData/Default/<origin-hash>/<origin-hash>/
+   origin                      →  tauri  localhost      (i.e. the origin is tauri://localhost)
+   LocalStorage/localstorage.sqlite3       24,576 B, last written 2026-08-13 20:34
+                localstorage.sqlite3-wal   16,512 B, last written 2026-08-13 20:35
+```
+
+Three things follow, each of which had to be true and none of which was checked before:
+
+1. **The data store is persistent, not ephemeral.** wry uses the default `WKWebsiteDataStore`; a
+   non-persistent one would leave nothing on disk. The directory was created **2026-07-25** and was
+   still being written **2026-08-13** — across the `0.1.0 → 0.2.6` span `shell.log` records (§6.7).
+2. **The origin is stable across launches.** `tauri://localhost`, written into the store's own
+   `origin` file. This is the fact that could have gone the other way: a custom URL scheme that
+   WebKit treated as opaque would give every launch a fresh, unique origin and localStorage would
+   appear to work perfectly *within* a session and be empty on the next one — the exact shape of bug
+   that survives every test and is only ever seen by an operator.
+3. So `localStorage` in the packaged app behaves like `localStorage` in a browser profile. **Whatever
+   the app writes, it will read back on the next launch.**
+
+*The contents of that database were deliberately not read.* It is one operator's persisted state on
+their own desk; the file's existence, its origin and its mtimes answer the question, and the values
+inside it would not add anything the code does not already say.
+
+### 13.3 · What a FIRST launch shows — **light, and no stored preference can change it**
+
+**The pre-hydration script is dead. It reads a key that nothing has written since 2026-07-25.**
+
+```
+apps/web/index.html:12       localStorage.getItem('lcx-os:ui:v1')
+apps/web/src/lib/persistence.ts:38   const mk = (k) => `${PREFIX}${scope()}:${k}:${VERSION}`
+                                     →  lcx-os:anon:ui:v1        before sign-in
+                                     →  lcx-os:<email>:ui:v1     after sign-in
+```
+
+`241ef55` (*"scope local persistence per operator; make sign-out actually sign out"*, 2026-07-25)
+put the operator into every key, for a real reason it documents at length — on a shared Mac the next
+person inherited the previous person's workspace. It even anticipated the migration cost: *"this
+changes key names, so pre-existing local UI preferences are not carried over."* **It accounted for the
+stored data and not for the one reader that lives outside the module** — the inline script in
+`index.html`, written 2026-07-09 in `1de80f0`, sixteen days earlier. Grepped across the whole tree:
+`lcx-os:ui:v1` appears in exactly one place, and that place is the read.
+
+**Measured rather than reasoned**, by cutting the bootstrap out of the **built** `apps/web/dist/index.html`
+— the bytes that would ship — and executing it against each key shape:
+
+```
+stored under lcx-os:anon:ui:v1          → .dark added?  false
+stored under lcx-os:nik@lcx.com:ui:v1   → .dark added?  false
+stored under lcx-os:ui:v1               → .dark added?  true    ← negative control
+```
+
+The control fires, so the harness is live and the two `false`s are the finding rather than a broken
+test. **And the script ships verbatim in the packaged bundle** — confirmed present in
+`apps/web/dist/index.html` after the §12.1 build, so this is the desktop app's behaviour and not just
+the dev server's.
+
+**The second half is structural, and it is why nothing downstream repairs it.** `/select` — the
+sign-in screen, and E8 THE FORGE — is a **sibling of `AppLayout`, not a child**
+(`router.tsx:207` beside `router.tsx:210`, and the file says so itself at `:128-129`: *"`/select` is a
+SIBLING of `AppLayout`, not a child, so nothing inside `AppLayout` runs while the desk is signed
+out"*). So mechanism 2, the authoritative one, **is not mounted on the front door**. On a cold launch
+the class list starts empty, mechanism 1 cannot add `dark`, and mechanism 2 is not there.
+
+| Moment | `.dark` present? | Why |
+|---|---|---|
+| **cold launch → sign-in screen (E8)** | **never** | bootstrap reads a dead key; `AppLayout` not mounted |
+| after sign-in, anywhere in the shell | **yes, if the operator's stored preference says so** | `AppLayout.tsx:118` runs on mount |
+| sign out → back at `/select`, same session | yes — stale | the class is on `documentElement` and nothing removes it |
+| relaunch | back to **light** | a new process starts with an empty class list |
+
+**So: E8 THE FORGE renders in the LIGHT branch on every launch, for every operator, on desktop and in
+the browser alike, no matter what they have chosen.** A dark-mode operator additionally gets the white
+flash the bootstrap was written to prevent, on every route, every launch — the shell only goes dark
+once `AppLayout` mounts and its effect runs.
+
+One more fact worth having, since the desktop shell is the thing that could in principle disagree:
+`tauri.conf.json:30` sets `"theme": null`, so the **native window chrome** follows macOS. Nothing in
+`apps/web` reads `prefers-color-scheme` — grepped, zero hits — so the **content** does not. On a Mac
+in Dark Mode the title bar is dark and the app inside it is light, and that is the designed behaviour
+of a product with its own theme switch, not a bug. It is simply not a route by which a fresh desk
+could come up dark.
+
+### 13.4 · The fix, stated and not made — it is in `apps/web`
+
+One line, in a file this pass must not touch:
+
+> `apps/web/index.html:12` — replace the literal `'lcx-os:ui:v1'` with a read that matches
+> `persistence.ts`'s `mk('ui')`. The bootstrap runs before any module, so it cannot import
+> `scopedKey`; it must inline the same construction — read `lcx_operator_email` (the constant at
+> `persistence.ts:25`, which must match `EMAIL_KEY` in `lib/apiClient.ts`), lowercase and trim it,
+> fall back to `anon`, and read `` `lcx-os:${scope}:ui:v1` ``.
+
+**And a second decision, which is a product question and not a bug fix:** even with that key
+corrected, the **sign-in screen still starts light on a cold launch**, because the scope before
+sign-in is `anon` and a signed-in operator's preference is stored under their email. Making E8 honour
+a returning operator's theme means the bootstrap would have to read the *last* operator's preference
+before knowing who is at the desk — which is precisely the inheritance `241ef55` removed on purpose.
+**A shared desk is the stated deployment.** So the honest options are: leave the front door light by
+design and say so, or persist a single unscoped `theme` key that is deliberately *not* operator data.
+That is an owner call; this document records it rather than making it.
+
+**Why this belongs in a desktop delivery document at all.** In a browser tab, a stale theme on one
+screen is a flicker between navigations. In the packaged app **every launch is a cold launch** — there
+is no back button to a warm tab, no second tab already dark, and the front door is the first and often
+the only unauthenticated screen an operator sees. And it is the screen carrying the one relief that
+mounts without a click. If the light branch of `theme.ts` is not right, **the desktop channel is where
+it will be seen first and most often.**

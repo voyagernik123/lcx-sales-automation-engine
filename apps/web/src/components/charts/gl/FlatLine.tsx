@@ -75,7 +75,46 @@ export function useFlatLine({ arcs = [], viewW, viewH }: FlatLineProps) {
   const draw = useCallback(
     (stage: Stage, { t, phase }: { t: number; phase: 'enter' | 'update' }) => {
       if (!mod) return;
-      const { createStrokeBatch, createPipeline, plotMatrix, beginAlpha, endPass, hexToLinear, exposure } = mod;
+      const { createStrokeBatch, createPipeline, plotMatrix, beginAlpha, endPass, hexToLinear, exposure,
+        precompensate, isPrecompRefusal } = mod;
+
+      /*
+       * ── THE ONE SURFACE IN THE APP WHERE A DATA COLOUR CAN LAND ON ITS EXACT HEX ─────────
+       * The tone map is not optional and not removable: the whole frame goes through
+       * `c/(1+0.4c)`, so a mark authored at #2C6BFF resolves to #2c68dc — blue 35 levels low,
+       * measured off a real framebuffer in `docs/3d/brand-fidelity.json`. §6 rule 5 was amended
+       * to ORDER PRESERVATION because of exactly that measurement.
+       *
+       * Feeding the curve its own inverse cancels it, and here it is exact. Three conditions
+       * have to hold at once and all three are properties of THIS draw, not of the palette:
+       * the blend is source-over (`beginAlpha` above), so a mark's value is bounded by its own
+       * colour instead of summing with whatever it overlaps; the plate resolves to 0, so nothing
+       * is added under it; and bloom is off, so nothing is added over it. Measured 7/7 exact on
+       * this configuration. Every other GL surface in the app fails at least one — the six
+       * additive ones structurally, since an accumulating field has no single value to aim at.
+       *
+       * THE COST, stated because it is real: pre-compensation spends the entire highlight range.
+       * A pre-compensated mark at 1.0 density is already at the clip, so it cannot render
+       * brighter, and a density sweep that gave six distinguishable steps plain gives three here.
+       * That is the right trade for a ring whose arcs are fixed-density category marks and the
+       * WRONG one for any surface where brightness is the encoding — which is why this is a call
+       * site decision and not a pipeline default.
+       *
+       * On a refusal it returns the plain colour. A refusal is a measurement saying the identity
+       * does not hold at this site; rendering slightly-off beats rendering a value the compositor
+       * will clip somewhere unpredictable.
+       */
+      const arcColour = (hex: string) => {
+        const lit = exposure(hexToLinear(hex), 0.30);
+        const pre = precompensate(lit, {
+          dstFactor: 'one-minus-src-alpha',
+          plate: [0, 0, 0],
+          bloomGain: 0,
+          threshold: [4, 5],
+          shaderScale: 1,
+        });
+        return isPrecompRefusal(pre) ? lit : pre;
+      };
       const gl = stage.gl;
       if (cache.current?.stage !== stage) {
         cache.current = { stage, strokes: createStrokeBatch(stage), pipeline: createPipeline(stage) };
@@ -101,7 +140,7 @@ export function useFlatLine({ arcs = [], viewW, viewH }: FlatLineProps) {
           ? p.a1 + (a.a1 - p.a1) * t
           : a.a0 + (a.a1 - a.a0) * t;
         strokes.arc(mvp, a.cx, a.cy, a.rInner, a.rOuter, a0, a1, {
-          colour: exposure(hexToLinear(a.colour), 0.30),
+          colour: arcColour(a.colour),
           gain: 1,
           modelling: 0.42,
         });

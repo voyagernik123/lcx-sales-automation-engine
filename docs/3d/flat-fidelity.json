@@ -1,0 +1,898 @@
+{
+  "measuredAt": "2026-08-14",
+  "driver": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)",
+  "hdr": true,
+  "sourceHash": "cd99c599ff5ea03f",
+  "toneShoulder": 0.4,
+  "clipLinear": 1.6666666666666667,
+  "falloff": 1.75,
+  "fadeEquivGain": 0.72392578125,
+  "rows": {
+    "brand": {
+      "linesUnit": {
+        "pixel": "#2c68dc",
+        "delta": [
+          0,
+          -3,
+          -35
+        ],
+        "deltaE": 18.31
+      },
+      "linesFade": {
+        "pixel": "#255ac5",
+        "delta": [
+          -7,
+          -17,
+          -58
+        ],
+        "deltaE": 23.3
+      },
+      "linesGainEquiv": {
+        "pixel": "#255ac5",
+        "delta": [
+          -7,
+          -17,
+          -58
+        ],
+        "deltaE": 23.3
+      },
+      "linesShipped": {
+        "pixel": "#306cdf",
+        "delta": [
+          4,
+          1,
+          -32
+        ],
+        "deltaE": 19.2
+      }
+    },
+    "brandBright": {
+      "linesUnit": {
+        "pixel": "#7aa5dc",
+        "delta": [
+          -5,
+          -13,
+          -35
+        ],
+        "deltaE": 12.74
+      },
+      "linesFade": {
+        "pixel": "#6a92c5",
+        "delta": [
+          -21,
+          -32,
+          -58
+        ],
+        "deltaE": 18.08
+      },
+      "linesGainEquiv": {
+        "pixel": "#6a92c5",
+        "delta": [
+          -21,
+          -32,
+          -58
+        ],
+        "deltaE": 18.08
+      },
+      "linesShipped": {
+        "pixel": "#92c1f9",
+        "delta": [
+          19,
+          15,
+          -6
+        ],
+        "deltaE": 12.96
+      }
+    },
+    "brandDeep": {
+      "linesUnit": {
+        "pixel": "#12326b",
+        "delta": [
+          0,
+          0,
+          -3
+        ],
+        "deltaE": 2.03
+      },
+      "linesFade": {
+        "pixel": "#0e2a5c",
+        "delta": [
+          -4,
+          -8,
+          -18
+        ],
+        "deltaE": 7.01
+      },
+      "linesGainEquiv": {
+        "pixel": "#0e2a5c",
+        "delta": [
+          -4,
+          -8,
+          -18
+        ],
+        "deltaE": 7.01
+      },
+      "linesShipped": {
+        "pixel": "#1a3871",
+        "delta": [
+          8,
+          6,
+          3
+        ],
+        "deltaE": 3.66
+      }
+    },
+    "reference": {
+      "linesUnit": {
+        "pixel": "#dc843c",
+        "delta": [
+          -35,
+          -6,
+          -1
+        ],
+        "deltaE": 14.35
+      },
+      "linesFade": {
+        "pixel": "#c57333",
+        "delta": [
+          -58,
+          -23,
+          -10
+        ],
+        "deltaE": 20.66
+      },
+      "linesGainEquiv": {
+        "pixel": "#c57333",
+        "delta": [
+          -58,
+          -23,
+          -10
+        ],
+        "deltaE": 20.66
+      },
+      "linesShipped": {
+        "pixel": "#f49a52",
+        "delta": [
+          -11,
+          16,
+          21
+        ],
+        "deltaE": 14.19
+      }
+    },
+    "refusal": {
+      "linesUnit": {
+        "pixel": "#687691",
+        "delta": [
+          -3,
+          -4,
+          -8
+        ],
+        "deltaE": 2.79
+      },
+      "linesFade": {
+        "pixel": "#5a667f",
+        "delta": [
+          -17,
+          -20,
+          -26
+        ],
+        "deltaE": 8.6
+      },
+      "linesGainEquiv": {
+        "pixel": "#5a667f",
+        "delta": [
+          -17,
+          -20,
+          -26
+        ],
+        "deltaE": 8.6
+      },
+      "linesShipped": {
+        "pixel": "#6b7a97",
+        "delta": [
+          0,
+          0,
+          -2
+        ],
+        "deltaE": 1.18
+      }
+    },
+    "rule": {
+      "linesUnit": {
+        "pixel": "#263558",
+        "delta": [
+          0,
+          0,
+          -2
+        ],
+        "deltaE": 1.36
+      },
+      "linesFade": {
+        "pixel": "#1f2c4c",
+        "delta": [
+          -7,
+          -9,
+          -14
+        ],
+        "deltaE": 5.02
+      },
+      "linesGainEquiv": {
+        "pixel": "#1f2c4c",
+        "delta": [
+          -7,
+          -9,
+          -14
+        ],
+        "deltaE": 5.02
+      },
+      "linesShipped": {
+        "pixel": "#2a3a60",
+        "delta": [
+          4,
+          5,
+          6
+        ],
+        "deltaE": 2.25
+      }
+    },
+    "plate": {
+      "linesUnit": {
+        "pixel": "#0e1628",
+        "delta": [
+          0,
+          0,
+          0
+        ],
+        "deltaE": 0
+      },
+      "linesFade": {
+        "pixel": "#0a1121",
+        "delta": [
+          -4,
+          -5,
+          -7
+        ],
+        "deltaE": 2.98
+      },
+      "linesGainEquiv": {
+        "pixel": "#0a1121",
+        "delta": [
+          -4,
+          -5,
+          -7
+        ],
+        "deltaE": 2.98
+      },
+      "linesShipped": {
+        "pixel": "#172239",
+        "delta": [
+          9,
+          12,
+          17
+        ],
+        "deltaE": 6.65
+      }
+    }
+  },
+  "ceiling": {
+    "brand": {
+      "ceiling": 1.6667,
+      "channel": 2,
+      "rungs": [
+        {
+          "m": 0.25,
+          "gain": 0.4167,
+          "pixel": "#1a45a1",
+          "byte": 161,
+          "deltaE": 33.21
+        },
+        {
+          "m": 0.5,
+          "gain": 0.8333,
+          "pixel": "#2860cf",
+          "byte": 207,
+          "deltaE": 20.93
+        },
+        {
+          "m": 0.75,
+          "gain": 1.25,
+          "pixel": "#3173eb",
+          "byte": 235,
+          "deltaE": 17.27
+        },
+        {
+          "m": 0.9,
+          "gain": 1.5,
+          "pixel": "#367cf8",
+          "byte": 248,
+          "deltaE": 16.86
+        },
+        {
+          "m": 0.98,
+          "gain": 1.6333,
+          "pixel": "#3981fe",
+          "byte": 254,
+          "deltaE": 17.6
+        },
+        {
+          "m": 1,
+          "gain": 1.6667,
+          "pixel": "#3982ff",
+          "byte": 255,
+          "deltaE": 17.89
+        },
+        {
+          "m": 1.02,
+          "gain": 1.7,
+          "pixel": "#3a83ff",
+          "byte": 255,
+          "deltaE": 18.64
+        },
+        {
+          "m": 1.1,
+          "gain": 1.8333,
+          "pixel": "#3c87ff",
+          "byte": 255,
+          "deltaE": 21.75
+        },
+        {
+          "m": 1.5,
+          "gain": 2.5,
+          "pixel": "#4699ff",
+          "byte": 255,
+          "deltaE": 35.51
+        },
+        {
+          "m": 2,
+          "gain": 3.3333,
+          "pixel": "#51abff",
+          "byte": 255,
+          "deltaE": 48.86
+        }
+      ]
+    },
+    "brandBright": {
+      "ceiling": 1.6667,
+      "channel": 2,
+      "rungs": [
+        {
+          "m": 0.25,
+          "gain": 0.4167,
+          "pixel": "#5273a1",
+          "byte": 161,
+          "deltaE": 28.47
+        },
+        {
+          "m": 0.5,
+          "gain": 0.8333,
+          "pixel": "#719acf",
+          "byte": 207,
+          "deltaE": 15.47
+        },
+        {
+          "m": 0.75,
+          "gain": 1.25,
+          "pixel": "#86b4eb",
+          "byte": 235,
+          "deltaE": 12.15
+        },
+        {
+          "m": 0.9,
+          "gain": 1.5,
+          "pixel": "#91c0f8",
+          "byte": 248,
+          "deltaE": 12.8
+        },
+        {
+          "m": 0.98,
+          "gain": 1.6333,
+          "pixel": "#96c6fe",
+          "byte": 254,
+          "deltaE": 13.87
+        },
+        {
+          "m": 1,
+          "gain": 1.6667,
+          "pixel": "#97c7ff",
+          "byte": 255,
+          "deltaE": 14.07
+        },
+        {
+          "m": 1.02,
+          "gain": 1.7,
+          "pixel": "#98c9ff",
+          "byte": 255,
+          "deltaE": 15.4
+        },
+        {
+          "m": 1.1,
+          "gain": 1.8333,
+          "pixel": "#9dceff",
+          "byte": 255,
+          "deltaE": 18.67
+        },
+        {
+          "m": 1.5,
+          "gain": 2.5,
+          "pixel": "#b1e3ff",
+          "byte": 255,
+          "deltaE": 32.16
+        },
+        {
+          "m": 2,
+          "gain": 3.3333,
+          "pixel": "#c4f7ff",
+          "byte": 255,
+          "deltaE": 44.62
+        }
+      ]
+    },
+    "brandDeep": {
+      "ceiling": 10.6888,
+      "channel": 2,
+      "rungs": [
+        {
+          "m": 0.25,
+          "gain": 2.6722,
+          "pixel": "#2251a1",
+          "byte": 161,
+          "deltaE": 16.72
+        },
+        {
+          "m": 0.5,
+          "gain": 5.3444,
+          "pixel": "#326fcf",
+          "byte": 207,
+          "deltaE": 30.86
+        },
+        {
+          "m": 0.75,
+          "gain": 8.0166,
+          "pixel": "#3e84eb",
+          "byte": 235,
+          "deltaE": 39.16
+        },
+        {
+          "m": 0.9,
+          "gain": 9.6199,
+          "pixel": "#438ff8",
+          "byte": 248,
+          "deltaE": 43.03
+        },
+        {
+          "m": 0.98,
+          "gain": 10.475,
+          "pixel": "#4694fe",
+          "byte": 254,
+          "deltaE": 44.82
+        },
+        {
+          "m": 1,
+          "gain": 10.6888,
+          "pixel": "#4795ff",
+          "byte": 255,
+          "deltaE": 45.13
+        },
+        {
+          "m": 1.02,
+          "gain": 10.9026,
+          "pixel": "#4896ff",
+          "byte": 255,
+          "deltaE": 45.19
+        },
+        {
+          "m": 1.1,
+          "gain": 11.7577,
+          "pixel": "#4a9bff",
+          "byte": 255,
+          "deltaE": 45.7
+        },
+        {
+          "m": 1.5,
+          "gain": 16.0332,
+          "pixel": "#56aeff",
+          "byte": 255,
+          "deltaE": 50.11
+        },
+        {
+          "m": 2,
+          "gain": 21.3776,
+          "pixel": "#62c1ff",
+          "byte": 255,
+          "deltaE": 57.44
+        }
+      ]
+    },
+    "reference": {
+      "ceiling": 1.6667,
+      "channel": 0,
+      "rungs": [
+        {
+          "m": 0.25,
+          "gain": 0.4167,
+          "pixel": "#a15a26",
+          "byte": 161,
+          "deltaE": 32.56
+        },
+        {
+          "m": 0.5,
+          "gain": 0.8333,
+          "pixel": "#cf7a37",
+          "byte": 207,
+          "deltaE": 17.72
+        },
+        {
+          "m": 0.75,
+          "gain": 1.25,
+          "pixel": "#eb9144",
+          "byte": 235,
+          "deltaE": 12.44
+        },
+        {
+          "m": 0.9,
+          "gain": 1.5,
+          "pixel": "#f89c4a",
+          "byte": 248,
+          "deltaE": 12.26
+        },
+        {
+          "m": 0.98,
+          "gain": 1.6333,
+          "pixel": "#fea14d",
+          "byte": 254,
+          "deltaE": 12.71
+        },
+        {
+          "m": 1,
+          "gain": 1.6667,
+          "pixel": "#ffa24e",
+          "byte": 255,
+          "deltaE": 12.91
+        },
+        {
+          "m": 1.02,
+          "gain": 1.7,
+          "pixel": "#ffa34e",
+          "byte": 255,
+          "deltaE": 13.44
+        },
+        {
+          "m": 1.1,
+          "gain": 1.8333,
+          "pixel": "#ffa851",
+          "byte": 255,
+          "deltaE": 16.14
+        },
+        {
+          "m": 1.5,
+          "gain": 2.5,
+          "pixel": "#ffbd5e",
+          "byte": 255,
+          "deltaE": 27.5
+        },
+        {
+          "m": 2,
+          "gain": 3.3333,
+          "pixel": "#ffd06b",
+          "byte": 255,
+          "deltaE": 37.65
+        }
+      ]
+    },
+    "refusal": {
+      "ceiling": 5.2321,
+      "channel": 2,
+      "rungs": [
+        {
+          "m": 0.25,
+          "gain": 1.308,
+          "pixel": "#7584a1",
+          "byte": 161,
+          "deltaE": 4.09
+        },
+        {
+          "m": 0.5,
+          "gain": 2.616,
+          "pixel": "#9caecf",
+          "byte": 207,
+          "deltaE": 19.7
+        },
+        {
+          "m": 0.75,
+          "gain": 3.9241,
+          "pixel": "#b6c9eb",
+          "byte": 235,
+          "deltaE": 29.52
+        },
+        {
+          "m": 0.9,
+          "gain": 4.7089,
+          "pixel": "#c2d6f8",
+          "byte": 248,
+          "deltaE": 34.12
+        },
+        {
+          "m": 0.98,
+          "gain": 5.1275,
+          "pixel": "#c8dcfe",
+          "byte": 254,
+          "deltaE": 36.25
+        },
+        {
+          "m": 1,
+          "gain": 5.2321,
+          "pixel": "#caddff",
+          "byte": 255,
+          "deltaE": 36.66
+        },
+        {
+          "m": 1.02,
+          "gain": 5.3367,
+          "pixel": "#cbdeff",
+          "byte": 255,
+          "deltaE": 36.99
+        },
+        {
+          "m": 1.1,
+          "gain": 5.7553,
+          "pixel": "#d0e4ff",
+          "byte": 255,
+          "deltaE": 39.08
+        },
+        {
+          "m": 1.5,
+          "gain": 7.8481,
+          "pixel": "#e6f9ff",
+          "byte": 255,
+          "deltaE": 48.12
+        },
+        {
+          "m": 2,
+          "gain": 10.4642,
+          "pixel": "#faffff",
+          "byte": 255,
+          "deltaE": 51.88
+        }
+      ]
+    },
+    "rule": {
+      "ceiling": 16.3012,
+      "channel": 2,
+      "rungs": [
+        {
+          "m": 0.25,
+          "gain": 4.0753,
+          "pixel": "#4e68a1",
+          "byte": 161,
+          "deltaE": 23.79
+        },
+        {
+          "m": 0.5,
+          "gain": 8.1506,
+          "pixel": "#6c8bcf",
+          "byte": 207,
+          "deltaE": 38.35
+        },
+        {
+          "m": 0.75,
+          "gain": 12.2259,
+          "pixel": "#80a4eb",
+          "byte": 235,
+          "deltaE": 47.31
+        },
+        {
+          "m": 0.9,
+          "gain": 14.6711,
+          "pixel": "#8ab0f8",
+          "byte": 248,
+          "deltaE": 51.51
+        },
+        {
+          "m": 0.98,
+          "gain": 15.9752,
+          "pixel": "#8fb5fe",
+          "byte": 254,
+          "deltaE": 53.38
+        },
+        {
+          "m": 1,
+          "gain": 16.3012,
+          "pixel": "#90b7ff",
+          "byte": 255,
+          "deltaE": 53.86
+        },
+        {
+          "m": 1.02,
+          "gain": 16.6273,
+          "pixel": "#92b8ff",
+          "byte": 255,
+          "deltaE": 54.05
+        },
+        {
+          "m": 1.1,
+          "gain": 17.9314,
+          "pixel": "#96bdff",
+          "byte": 255,
+          "deltaE": 55.01
+        },
+        {
+          "m": 1.5,
+          "gain": 24.4519,
+          "pixel": "#a9d2ff",
+          "byte": 255,
+          "deltaE": 60.87
+        },
+        {
+          "m": 2,
+          "gain": 32.6025,
+          "pixel": "#bce6ff",
+          "byte": 255,
+          "deltaE": 68.45
+        }
+      ]
+    },
+    "plate": {
+      "ceiling": 78.5459,
+      "channel": 2,
+      "rungs": [
+        {
+          "m": 0.25,
+          "gain": 19.6365,
+          "pixel": "#526ba1",
+          "byte": 161,
+          "deltaE": 42.49
+        },
+        {
+          "m": 0.5,
+          "gain": 39.273,
+          "pixel": "#7090cf",
+          "byte": 207,
+          "deltaE": 57.07
+        },
+        {
+          "m": 0.75,
+          "gain": 58.9094,
+          "pixel": "#85a9eb",
+          "byte": 235,
+          "deltaE": 65.96
+        },
+        {
+          "m": 0.9,
+          "gain": 70.6913,
+          "pixel": "#8fb5f8",
+          "byte": 248,
+          "deltaE": 70.1
+        },
+        {
+          "m": 0.98,
+          "gain": 76.975,
+          "pixel": "#94bbfe",
+          "byte": 254,
+          "deltaE": 72.06
+        },
+        {
+          "m": 1,
+          "gain": 78.5459,
+          "pixel": "#96bcff",
+          "byte": 255,
+          "deltaE": 72.42
+        },
+        {
+          "m": 1.02,
+          "gain": 80.1168,
+          "pixel": "#97bdff",
+          "byte": 255,
+          "deltaE": 72.56
+        },
+        {
+          "m": 1.1,
+          "gain": 86.4005,
+          "pixel": "#9bc3ff",
+          "byte": 255,
+          "deltaE": 73.47
+        },
+        {
+          "m": 1.5,
+          "gain": 117.8189,
+          "pixel": "#afd8ff",
+          "byte": 255,
+          "deltaE": 78.29
+        },
+        {
+          "m": 2,
+          "gain": 157.0918,
+          "pixel": "#c2ecff",
+          "byte": 255,
+          "deltaE": 84.59
+        }
+      ]
+    }
+  },
+  "points": {
+    "brand": {
+      "noBlend": "#2051b7",
+      "additive": "#0f2e74",
+      "channel": 2,
+      "rgbFactorAtCore": 0.5842,
+      "alphaAtCore": 0.3214,
+      "deliveredFraction": 0.1878,
+      "halfMaxPx": {
+        "noBlend": 18,
+        "additive": 13
+      }
+    },
+    "brandBright": {
+      "noBlend": "#6185b7",
+      "additive": "#385174",
+      "channel": 2,
+      "rgbFactorAtCore": 0.5842,
+      "alphaAtCore": 0.3214,
+      "deliveredFraction": 0.1878,
+      "halfMaxPx": {
+        "noBlend": 18,
+        "additive": 13
+      }
+    },
+    "brandDeep": {
+      "noBlend": "#0c2554",
+      "additive": "#041230",
+      "channel": 2,
+      "rgbFactorAtCore": 0.5895,
+      "alphaAtCore": 0.3254,
+      "deliveredFraction": 0.1918,
+      "halfMaxPx": {
+        "noBlend": 18,
+        "additive": 13
+      }
+    },
+    "reference": {
+      "noBlend": "#b7692e",
+      "additive": "#743d17",
+      "channel": 0,
+      "rgbFactorAtCore": 0.5842,
+      "alphaAtCore": 0.3214,
+      "deliveredFraction": 0.1878,
+      "halfMaxPx": {
+        "noBlend": 18,
+        "additive": 13
+      }
+    },
+    "refusal": {
+      "noBlend": "#515d74",
+      "additive": "#2e3545",
+      "channel": 2,
+      "rgbFactorAtCore": 0.5894,
+      "alphaAtCore": 0.3247,
+      "deliveredFraction": 0.1914,
+      "halfMaxPx": {
+        "noBlend": 18,
+        "additive": 13
+      }
+    },
+    "rule": {
+      "noBlend": "#1c2744",
+      "additive": "#0c1326",
+      "channel": 2,
+      "rgbFactorAtCore": 0.5788,
+      "alphaAtCore": 0.3301,
+      "deliveredFraction": 0.1911,
+      "halfMaxPx": {
+        "noBlend": 18,
+        "additive": 12
+      }
+    },
+    "plate": {
+      "noBlend": "#080f1d",
+      "additive": "#03050d",
+      "channel": 2,
+      "rgbFactorAtCore": 0.5819,
+      "alphaAtCore": 0.3265,
+      "deliveredFraction": 0.19,
+      "halfMaxPx": {
+        "noBlend": 18,
+        "additive": 13
+      }
+    }
+  }
+}

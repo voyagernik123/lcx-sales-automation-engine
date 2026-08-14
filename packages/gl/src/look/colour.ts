@@ -29,11 +29,32 @@
  * shaders on a real driver and read back off the framebuffer (`docs/3d/brand-fidelity.mjs`),
  * the table above gains a row it did not have:
  *
- *   Standard             #2C6BFF  ← exact          ΔE76  0.0
- *   Khronos PBR Neutral  #2563EF                   ΔE76  4.9
- *   LCX composite        #2C68DC  ← WHAT WE SHIP   ΔE76 18.3
- *   Filmic               #2F75CE                   ΔE76 36.0
- *   AgX                  #467ECF  ← "badly wrong"  ΔE76 41.1
+ *                                                  ΔE76    ΔE2000
+ *   Standard             #2C6BFF  ← exact           0.00     0.00
+ *   Khronos PBR Neutral  #2563EF                    4.95     3.49
+ *   LCX composite        #2C68DC  ← WHAT WE SHIP   18.31     4.64
+ *   Filmic               #2F75CE                   36.04     7.33
+ *   AgX                  #467ECF  ← "badly wrong"  41.14     8.04
+ *
+ * ── THE SECOND COLUMN IS NEW, AND IT IS THE ONE TO READ. CORRECTED 2026-08-15 ───────────
+ *
+ * Every ΔE in this repo was CIE76 until today, including the 18.3 quoted in the commit that
+ * introduced this table. CIE76 is Euclidean distance in Lab with no weighting, and it is
+ * known to OVERSTATE in the blue region — which is exactly where the brand anchor sits. So
+ * the two conclusions that were drawn off it both move:
+ *
+ *   · "45% of AgX, 3.7× Khronos" was arithmetic on the wrong metric. Under CIEDE2000 the
+ *     shipped composite is 58% of AgX (4.64/8.04) and 1.33× Khronos (4.64/3.49).
+ *   · THE RANKING INVERTS. Across the seven palette entries in the composite-only
+ *     configuration, CIE76 makes `brand` the worst-hit colour (18.31, against `reference`
+ *     14.35); CIEDE2000 makes `reference` the worst (6.70, against `brand` 4.64 — third,
+ *     behind `brandBright` 4.74). `brand-fidelity.mjs` reports the deltas alongside ΔE
+ *     "because the remedy is chosen on visibility", and under the visibility-correct metric
+ *     a remedy would be aimed at the ORANGE, not at the blue.
+ *
+ * Both metrics are now recorded per row in `docs/3d/brand-fidelity.json` and both are
+ * printed by the instrument. Quote ΔE2000 when the question is "can a reader see it";
+ * ΔE76 is kept only so the older numbers in the history remain checkable.
  *
  * "Nobody would notice for months" was accurate, and the months have passed. What is true
  * of our curve and not of AgX is that it is MONOTONE per channel, so the density ramp still
@@ -49,7 +70,23 @@
 /** A colour in linear working space. Components are unbounded above 1 — that is the point. */
 export type Linear = readonly [number, number, number];
 
-/** sRGB electro-optical transfer function, exact — not the 2.2 gamma approximation. */
+/**
+ * sRGB electro-optical transfer function, exact — not the 2.2 gamma approximation.
+ *
+ * ON THE SHIPPED PATH, which a claim made 2026-08-14 got wrong. The commit said
+ * `assertBrandFidelity` "can never fire from a pipeline change"; this function is a pipeline
+ * change waiting to happen, because `hexToLinear` calls it and `hexToLinear` authors the
+ * `baseColour` of 26 of the 44 materials uploaded to the GPU (GlobeReliefGl.tsx:451-453,
+ * ForgeBackdrop.tsx:239, and 23 more). Replacing the body with `Math.pow(c, 2.2)` and
+ * running `look.test.ts` makes `assertBrandFidelity()` report 7 failures of 7 keys —
+ * reproduced, not reasoned about.
+ *
+ * The failure it CANNOT see is the matched pair: replace this with `pow(c, 2.2)` AND
+ * `linearToSrgb` with `pow(c, 1/2.2)` and the round trip is still the identity, so
+ * `assertBrandFidelity()` returns 0 failures while every uploaded linear value is wrong by
+ * up to 61.6% (measured on `plate`). That is why `look.test.ts` pins each half against the
+ * SPECIFIED curve and not against the other half.
+ */
 export function srgbToLinear(c: number): number {
   return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
 }
@@ -107,10 +144,22 @@ export const BRAND_HEX = {
 
 export type BrandKey = keyof typeof BRAND_HEX;
 
-/** The palette in linear working space. Computed once. */
+/**
+ * The palette in linear working space. Computed once.
+ *
+ * BOTH LEVELS ARE FROZEN, and the inner one was not until 2026-08-15. `Object.freeze` on the
+ * record alone stops `BRAND.brand = …`; it does nothing to `BRAND.brand[2] = 0`, because the
+ * member was a plain array — `Object.isFrozen(BRAND.brand)` returned FALSE while the type
+ * said `readonly [number, number, number]`, so TypeScript refused the write at compile time
+ * and the runtime allowed it. That gap matters here specifically: `assertBrandFidelity` is a
+ * self-round-trip and cannot fire from a pipeline change, but it CAN fire from a runtime
+ * write into this table or a NaN reaching it, and those are precisely the defects a shared
+ * mutable palette produces. Freezing the members removes the failure rather than reporting
+ * it — the throw (strict mode) now names the line that tried to write.
+ */
 export const BRAND: Readonly<Record<BrandKey, Linear>> = Object.freeze(
   Object.fromEntries(
-    (Object.keys(BRAND_HEX) as BrandKey[]).map((k) => [k, hexToLinear(BRAND_HEX[k])]),
+    (Object.keys(BRAND_HEX) as BrandKey[]).map((k) => [k, Object.freeze(hexToLinear(BRAND_HEX[k]))]),
   ),
 ) as Readonly<Record<BrandKey, Linear>>;
 

@@ -39,6 +39,46 @@
  * WHOLE rather than drawing a calendar floor with no accumulation on it. A storm view with the
  * accumulation removed is strictly worse than the calendar it replaced, and the calendar is one state
  * change away.
+ *
+ * ══ THIS IS THE ONE SURFACE OF THE SEVEN THAT IS NOT THEMED, AND THE REASON IS ARITHMETIC ══
+ *
+ * Six of the seven now swap their scenery with `packages/gl/src/look/theme.ts` and redraw on a theme change.
+ * This one deliberately does not, and the argument is not "it looks better dark" — it is that the reading
+ * cannot survive a light ground. Every number below is measured through this pipeline's own tone map and
+ * sRGB encode, the same way `brandPixel.test.ts` measures.
+ *
+ * THE VOLUME IS COMPOSITED `ONE, ONE_MINUS_SRC_ALPHA` over the floor, so the frame is
+ * `colour·α + (1−α)·floor`. On a DARK floor, more accumulation means a brighter pixel and higher severity
+ * means a brighter colour, so luminance rises with both — the redundancy this environment is built on. On a
+ * LIGHT floor the first of those inverts: more accumulation must mean a DARKER pixel. The second cannot
+ * follow it, because the severity ramp runs brand blue → reference orange and those two hues are not free:
+ *
+ *   linear luminance   brand #2C6BFF 0.18271   reference #FF8A3D 0.39774   —  orange is 2.177x blue
+ *   shipped exposures  low ×0.55 → 0.10049     high ×1.45 → 0.57672        —  a 5.74x span on dark
+ *
+ * Keeping those exposures and putting the same volume over the light theme's floor measures, against the
+ * floor itself, at α = 0.2 / 0.5 / 0.8:
+ *
+ *                       low end                 high end
+ *   dark tile #22315A   1.14 / 1.37 / 1.58      2.21 / 3.74 / 5.06
+ *   light ground        1.14 / 1.52 / 2.50      1.05 / 1.14 / 1.28
+ *
+ * The SEVERE half of the ramp is the half that disappears — 5.06:1 becomes 1.28:1 — while the calm half
+ * stays visible. That is not a dimmer picture, it is the reading inverted.
+ *
+ * AND IT CANNOT BE RE-EXPOSED AWAY. `exposure()` is allowed on data (it is a statement about exposure, not
+ * hue), so the obvious fix is new scalars. For the high end to render darker than the low end on a light
+ * ground it must satisfy s_hi < (L_blue / L_orange)·s_lo = 0.4594·s_lo. At the shipped s_lo = 0.55 that caps
+ * s_hi at 0.2527, where the two ends are equal by construction; at s_hi = 0.25 the whole ramp spans 1.0% of
+ * its low end's luminance, against 5.74x on dark. A ramp with no luminance range is a ramp that carries its
+ * severity in hue alone — and this file's own comment on the density says the redundancy exists precisely so
+ * the reading survives "anyone reading at a glance or in greyscale".
+ *
+ * So the field stays a depicted NIGHT field on either page, which is honest — it is a storm over a calendar,
+ * not a plate pretending to be the page — and the alternative is a light frame whose worst days are its
+ * faintest. The refutation is recorded rather than the compromise shipped. What would change the answer is a
+ * severity ramp whose ends are ordered in luminance the same way on both grounds; that is a palette decision
+ * for `BRAND_HEX`, not something this file may make.
  */
 import { useEffect, useRef } from 'react';
 import {
@@ -288,6 +328,9 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
       gate: { baseColour: hexToLinear('#2C6BFF'), roughness: 0.52, metalness: 0.06 },
     } as const;
 
+    /* NOT `sceneTheme(...).ground`, and the header says why at length: this frame is refused a light theme
+       because the severity ramp cannot preserve its luminance ordering over a bright floor. So every value
+       from here down is the dark calibration, in both page themes, on purpose. */
     const CLEAR = hexToLinear('#070B14');
     /* Darker than the default sky on every stop. A volumetric composited over a lifted floor reads as
        haze over daylight rather than as accumulated risk, so the environment is dimmed rather than the

@@ -881,8 +881,14 @@ function facingBasis(p: V3, towards: V3): { model: Float32Array; normal: Float32
  *
  * Kind is already encoded by inclination, which is the axis this environment exists to spend. Using
  * colour for it as well would leave nothing for the distinction the honesty rules actually require:
- * observed versus absent versus withheld. So every observed body is the same brand blue and the
- * palette stays exact under `assertBrandFidelity`; four invented kind hues would not have.
+ * observed versus absent versus withheld. So every observed body is the same brand blue, and the four
+ * hues below are the four the palette already defines rather than four invented for kind.
+ *
+ * This used to end "the palette stays exact under `assertBrandFidelity`", which is not a property that
+ * function has: it round-trips a frozen constants table and never sees a rendered pixel, and the
+ * composite moves `#2c6bff` to `#2c68dc` (ΔE76 18.3, `docs/3d/brand-fidelity.json`). The real argument
+ * is unchanged and does not need it — an invented hue is an unmeasured hue, and §6 rule 5 as amended
+ * only guarantees ORDER through the pipeline, which a reader cannot use to tell four kinds apart.
  */
 const OBSERVED_HEX = '#2C6BFF';
 const LINK_HEX = '#7FB2FF';
@@ -1723,15 +1729,32 @@ const perEntity = decided.map(({ s, shown, placement, reason, blocked }) => ({
 }));
 
 /*
- * §6 RULE 5 — "Brand hex exact. `assertBrandFidelity` runs on every new material."
+ * §6 RULE 5 — "ORDER SURVIVES THE PIPELINE." Amended 2026-08-14. It used to read "Brand hex exact.
+ * `assertBrandFidelity` runs on every new material", and the whole of that was false.
  *
- * E4 mentioned this function in a comment ("the palette stays exact under `assertBrandFidelity`") and
- * never imported or called it. The ratchet caught it because it checks for the CALL and not merely the
- * name — a citation is not a check, and a comment claiming a property is the weakest possible evidence
- * for it.
+ * E4's own history is the sharper version of why. This file once cited the function in a comment ("the
+ * palette stays exact under `assertBrandFidelity`") without importing it; the ratchet caught that,
+ * because a citation is not a check. Adding the call did not make the claim true either — the claim
+ * was unenforceable, not merely unenforced.
  *
- * It dies rather than warns: a frame that has silently moved the brand blue will be screenshotted into
- * a deck.
+ * WHAT THIS CALL DOES: it compares `linearToHex(hexToLinear(BRAND_HEX[k]))` with `BRAND_HEX[k]` — a
+ * frozen constants table round-tripping through two pure functions. It never sees a material, a light,
+ * a tone map, a shader or a pixel, so no edit to the composite below, to TONE_SHOULDER or to the sRGB
+ * encode can make the refusal beneath it fire.
+ *
+ * WHAT THE PIPELINE ACTUALLY DOES TO A DATA COLOUR, read off a framebuffer and recorded in
+ * `docs/3d/brand-fidelity.json`: in the most favourable case that can exist — flat mark at the exact
+ * palette linear, plate 0, bloom 0 — `#2c6bff` arrives `#2c68dc`, blue 35/255 low, ΔE76 18.3.
+ * `#ff8a3d` arrives `#dc843c`, ΔE 14.4. On the lit path every palette colour lands 46–88 ΔE from its
+ * hex, and that is correct rather than broken: a lit material's radiance is base colour ×
+ * illumination, so "hex exact" over a shaded mesh was a category error, not a bug.
+ *
+ * SO THE INVARIANT THIS ENVIRONMENT MAY CITE IS ORDER, NOT HEX: the curve is monotone per channel, so
+ * a denser mark never renders lighter than a sparser one. It is enforced against real GPU pixels in
+ * `packages/gl/src/look/brandPixel.test.ts`, not here.
+ *
+ * THE CALL STAYS, AND IT STILL DIES RATHER THAN WARNS. A mistyped hex in `BRAND_HEX` is a real defect
+ * with a narrow guard, and a frame drawn from a corrupt palette will be screenshotted into a deck.
  */
 const brandFailures = assertBrandFidelity();
 if (brandFailures.length > 0) {
@@ -1752,7 +1775,11 @@ const report = {
      ladder must not change what the frame looks like at its highest tier. */
   tierShadowMapSize: shadowMapSizeFor(TIER, 1536),
   shadowBaseline: 1536,
-  /* Empty means every brand hex round-tripped exactly through this frame's own pipeline. */
+  /* Empty means the palette CONSTANTS table is self-consistent: every BRAND_HEX entry survives
+     hexToLinear -> linearToHex. It says NOTHING about what this frame's composite did to a
+     rendered mark — that is measured in docs/3d/brand-fidelity.json, where #2c6bff arrives
+     #2c68dc. The field was documented as "round-tripped exactly through this frame's own
+     pipeline", which is the claim scripts/3d-audit.mjs then read as a fidelity verdict. */
   brandFidelity: brandFailures,
   layout: FLAT ? 'flat' : 'orrery',
   ao: AO_ON,

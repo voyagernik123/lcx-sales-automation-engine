@@ -28,11 +28,13 @@ import { useEffect, useRef, useState } from 'react';
 import {
   createStage, isStage, plane, sphere, cylinder, torus, uploadMesh, createLitRenderer, createTarget3D,
   createShadowMap, viewProjection, lightViewProjection, boundsCentre, boundsRadius, projectScreen,
-  hexToLinear, assertBrandFidelity, IDENTITY,
+  hexToLinear, mixLinear, assertBrandFidelity, IDENTITY,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
   qualitySettings, shadowMapSizeFor, pickQualityTier,
-  type LitDraw, type Geometry,
+  type LitDraw, type Geometry, type Linear,
 } from '@lcx/gl';
+/* A SUB-PATH IMPORT, NOT THE BARREL — `docs/3d/w2/SUBPATH_COST.md`; `SurfaceReliefGl.tsx` carries the reason. */
+import { sceneTheme, liveTheme, type SceneTheme, type ThemeName } from '@lcx/gl/look/theme.js';
 import {
   useResolvedQualityTier, needsQualityProbe, measureFrameMs, recordQualityProbe,
 } from '../shared/useQualityTier';
@@ -89,14 +91,49 @@ const CORE_HEX = '#7FB2FF';
 const LINK_HEX = '#7FB2FF';
 const ABSENT_HEX = '#FF8A3D';
 const WITHHELD_HEX = '#6B7A99';
-/* The rings are the AXIS and the tubes are the DATA, so the rings must lose on value: same thickness, lower
-   value, structure recedes. The collapsed rings on the plate are the flat control and lose again. */
+/**
+ * ══ THE SCENERY, AND THE THREE-WAY ORDERING THAT IS THE READING ═════════════════════════════════════
+ *
+ * The rings are the AXIS and the tubes are the DATA, so the rings must lose on value: same thickness, lower
+ * value, structure recedes. The collapsed rings on the plate are the flat control and lose again. The deck is
+ * darker than the palette's plate (#0E1628) deliberately: a horizontal plane takes the key light at nearly
+ * N·L = 1, so its own albedo is the only thing holding it below the bodies in value.
+ *
+ * ── WHY THE LIGHT VALUES ARE SOLVED RATHER THAN PICKED ───────────────────────────────
+ * `theme.ts` has two role colours in the right family — `ground` and `rule` — but three surfaces need places on
+ * that ramp, and the ORDER between them is the whole point. Measured WCAG luminance of the three dark albedos:
+ * deck #090F1C 0.0048, flat ring #141F38 0.0141, inclined ring #22355E 0.0369. The flat ring sits at
+ * (0.0141 − 0.0048) / (0.0369 − 0.0048) = 0.2898 of the way from the deck to the inclined ring, so the light
+ * value is that same fraction of the way from `ground` to `rule` — 0.29 is a solved number, not a taste.
+ *
+ * The result carries the relationship the dark frame was authored with. Inclined ring against the deck measures
+ * 1.586:1 on dark and 1.463:1 on light — 0.12 apart, which `reliefTheme.test.tsx` pins with a 0.15 bound — and
+ * the flat control lands between the deck and the ring on both. (An earlier draft of this note said 1.55 for the
+ * light pair; that was arithmetic done by eye, and the test that computes it is what caught it.)
+ *
+ * CLEAR is the void the deck floats in, and on dark it is BELOW the deck (#05070E under #090F1C). On light
+ * "below" inverts, so it takes `plate` (#FFFFFF, luminance 1.0) — above `ground` (0.8438) and therefore above
+ * the deck, which is the same statement mirrored. `structure` is not used here: at 0.6113 it would land between
+ * `rule` and `ground` and put the void on the wrong side of the deck.
+ */
 const RING_HEX = '#22355E';
 const FLAT_RING_HEX = '#141F38';
-/* Darker than the palette's plate (#0E1628), deliberately: a horizontal plane takes the key light at nearly
-   N·L = 1, so its own albedo is the only thing holding it below the bodies in value. */
 const DECK_HEX = '#090F1C';
 const CLEAR_HEX = '#05070E';
+/** Solved from the dark albedo luminances above. Anything else here would be a value nobody derived. */
+const FLAT_RING_T = 0.2898;
+
+const scenery = (th: SceneTheme, darkHex: string, light: Linear): Linear =>
+  (th.name === 'dark' ? hexToLinear(darkHex) : light);
+
+/** The dark theme's record, held only as the denominator of the light rig's ratio — see `SurfaceReliefGl.tsx`,
+    THE LIGHT RIG MOVES BY RATIO. Nothing reads a colour out of it. */
+const TH_DARK = sceneTheme('dark');
+const rigFor = (th: SceneTheme) => ({
+  key: th.keyGain / TH_DARK.keyGain,
+  ambient: th.ambientGain / TH_DARK.ambientGain,
+  shadow: th.shadowStrength / TH_DARK.shadowStrength,
+});
 
 const N3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
 
@@ -413,7 +450,18 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
      * there is one torus per shell radius. They are keyed, so a change that leaves the deck and the shells where
      * they were — which is every SELECTION change, the commonest interaction on this surface — reuses them too.
      */
+    /* Which theme the frame on screen was drawn at — see `SurfaceReliefGl.tsx`, A THEME CHANGE IS A REDRAW. */
+    let drawnTheme: ThemeName | null = null;
+
     const draw = (graph: OntologyOrreryGlProps['input']): 'STALE_TIER' | undefined => {
+      /* READ PER FRAME, NOT CAPTURED AT SETUP — `ForgeBackdrop.tsx:120-127` records what the snapshot cost. */
+      const th = sceneTheme(liveTheme());
+      const rig = rigFor(th);
+      /* NO SKY BACKDROP IS DRAWN HERE, so the sky is purely the irradiance environment and has no backdrop to
+         stay in step with. `undefined` on dark so that frame takes the path it shipped on. */
+      const sky = th.name === 'dark' ? undefined : {
+        zenith: th.skyZenith, horizon: th.skyHorizon, ground: th.ground,
+      };
       const outcome = buildOrrery({ ...graph, cssWidth: size.w, cssHeight: size.h });
       if (isOrreryRefusal(outcome)) { refuse(outcome.code, outcome.reason); return undefined; }
       const L = outcome;
@@ -441,7 +489,7 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
       const draws: LitDraw[] = [
         {
           mesh: meshOf('deck'), model: scaledAt([0, DECK_Y, 0], 1), normalMat: N3,
-          material: { baseColour: hexToLinear(DECK_HEX), roughness: 0.9, metalness: 0 },
+          material: { baseColour: scenery(th, DECK_HEX, th.ground), roughness: 0.9, metalness: 0 },
         },
       ];
       /*
@@ -463,7 +511,10 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
       L.shells.forEach((_, i) => {
         draws.push({
           mesh: meshOf('ring' + i), model: scaledAt([0, DECK_Y + 0.02, 0], 1), normalMat: N3,
-          material: { baseColour: hexToLinear(FLAT_RING_HEX), roughness: 0.7, metalness: 0.1 },
+          material: {
+            baseColour: scenery(th, FLAT_RING_HEX, mixLinear(th.ground, th.rule, FLAT_RING_T)),
+            roughness: 0.7, metalness: 0.1,
+          },
         });
       });
 
@@ -484,7 +535,7 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
         const basis = orbitBasis(pl.incDeg, pl.nodeDeg);
         draws.push({
           mesh: meshOf('ring' + shellIndex), model: basis.model, normalMat: basis.normal,
-          material: { baseColour: hexToLinear(RING_HEX), roughness: 0.55, metalness: 0.2 },
+          material: { baseColour: scenery(th, RING_HEX, th.rule), roughness: 0.55, metalness: 0.2 },
         });
       }
 
@@ -546,7 +597,7 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
 
       /* ONE FRAME, then nothing. See the file header: §6 rule 2, and the reason reduced motion needs no branch. */
       const vp = viewProjection(L.view, W / H);
-      const cc = hexToLinear(CLEAR_HEX);
+      const cc = scenery(th, CLEAR_HEX, th.plate);
       /* A FUNCTION NOW, SO IT CAN BE MEASURED — and it ends with `target` bound, which is what `probeSync`
          requires: a `readPixels` only guarantees completion of work affecting the framebuffer it reads. */
       const renderScene = (): void => {
@@ -556,10 +607,13 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         lit.depthPrepass(vp, draws);
         lit.draw({
-          viewProj: vp, eye: L.eye, lightDir, lightColour: [3.1, 3.05, 2.95],
+          viewProj: vp, eye: L.eye, lightDir,
+          lightColour: [3.1 * rig.key, 3.05 * rig.key, 2.95 * rig.key], sky,
           /* AO stays `null` at every tier: it was measured in E4's harness at 0.44% of the frame, so there is
              nothing here for the ladder to drop. See the allocation comment above. */
-          ambientGain: 0.52, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
+          ambientGain: 0.52 * rig.ambient, lightVP, shadow,
+          shadowStrength: 0.92 * rig.shadow,
+          shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
           ao: null, screenSize: [W, H], fog: null,
         });
       };
@@ -591,6 +645,9 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
       gl.activeTexture(gl.TEXTURE0);
       gl.bindTexture(gl.TEXTURE_2D, target.texture);
       stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+      /* RECORDED ONLY ONCE THE FRAME IS PRESENTED, so a STALE_TIER return cannot leave the observer believing a
+         theme is on screen that never reached it. */
+      drawnTheme = th.name;
       /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
       canvas.dataset.qualityTier = tier;
 
@@ -654,8 +711,21 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
     };
     canvas.addEventListener('webglcontextlost', onLost);
 
+    /* A THEME CHANGE IS A REDRAW, NOT A REBUILD — the full reasoning, including why `beforeprint` is needed for
+       `BoardReport.tsx:105-109` specifically and why the `drawnTheme` guard is what makes the other three print
+       handlers free, is in `SurfaceReliefGl.tsx` under that heading. */
+    const redrawForTheme = (): void => {
+      if (liveTheme() === drawnTheme) return;
+      drawRef.current?.(inputRef.current);
+    };
+    const themeWatch = new MutationObserver(redrawForTheme);
+    themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    window.addEventListener('beforeprint', redrawForTheme);
+
     return () => {
       canvas.removeEventListener('webglcontextlost', onLost);
+      themeWatch.disconnect();
+      window.removeEventListener('beforeprint', redrawForTheme);
       drawRef.current = null;
       releaseAll();
     };

@@ -45,8 +45,10 @@ import {
   viewProjection, eyeOf, nearFarOf, lightViewProjection, boundsCentre, boundsRadius,
   hexToLinear, assertBrandFidelity, IDENTITY, TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
   qualitySettings, shadowMapSizeFor, pickQualityTier,
-  type LitDraw, type Viewpoint, type MeshBuffer,
+  type LitDraw, type Viewpoint, type MeshBuffer, type Linear,
 } from '@lcx/gl';
+/* A SUB-PATH IMPORT, NOT THE BARREL — `docs/3d/w2/SUBPATH_COST.md`; `SurfaceReliefGl.tsx` carries the reason. */
+import { sceneTheme, liveTheme, type SceneTheme, type ThemeName } from '@lcx/gl/look/theme.js';
 import {
   slotsFor, rankSlots, addressOrder, fitPanelText, MAX_PANELS, MIN_PANELS,
   type DeckPanelDatum, type PanelLine,
@@ -104,16 +106,20 @@ const PAD_U = 0.11, PAD_V = 0.10;
 const APERTURE = 0.11;
 const MAX_COC = 0.010;
 /**
- * THE DOM LENS CEILING, CARRIED FROM A CONTRAST MEASUREMENT — AND NOT RE-MEASURED HERE.
+ * THE DOM LENS CEILING, BISECTED IN THE HARNESS — AND NOW CHECKED ON THIS FRAME RATHER THAN ASSUMED.
  *
  * The harness set 2.4 px "by reading it", then measured the glyph core against the frame's own pixels and found
  * 1.47:1 on an 11.5 px note against a 4.5:1 requirement, with 11 of 18 text runs failing WCAG AA. Bisected against
  * that measurement, the largest pair that held every run above 4.5:1 was 0.45 px of blur and 0.90 opacity. Those
  * are the numbers below.
  *
- * WHAT IS HONEST TO SAY ABOUT THEM HERE: the panel hexes, the type colours and the sizes are the same, so the
- * carry-over is defensible — but this page has no capture harness, so nobody has re-run the measurement on THIS
- * frame. The frame says that under itself rather than implying a measurement it does not have.
+ * WHAT CHANGED: this file used to end with a sentence admitting the pair had never been re-measured on this page,
+ * and adding a second lighting environment made that admission untenable — a carried number is a number about a
+ * frame that no longer exists. The frame now READS ITS OWN PIXELS after the blit and picks the type colour per
+ * panel from what is actually behind it, the way `VaultReliefGl` already does, and prints the worst ratio it
+ * measured. The BLUR is still not modelled by that read: an alpha composite is exact and a Gaussian over glyph
+ * strokes is not, so the number below stays the bisected ceiling and the printed ratio is stated as being for
+ * the unblurred glyph core — which is the best case, so a run that fails there fails for certain.
  */
 const DOM_BLUR_CEILING = 0.45;
 const DOM_DIM_MAX = 0.10;
@@ -142,18 +148,113 @@ const HEAD_CHAR_PX = 16.1, HEAD_LINE_PX = 27.6;
 const NOTE_CHAR_PX = 7.13, NOTE_LINE_PX = 16.7;
 const LINE_GAP_PX = 7;
 
-const styleFor = (kind: 'tag' | 'head' | 'note', onBlue: boolean): CSSProperties => {
+/**
+ * ══ TWO TYPE FAMILIES, AND THE FRAME PICKS BETWEEN THEM BY MEASUREMENT ══════════════════════════════
+ *
+ * The panel a run of type sits on is either brand blue — data, which does not move — or the deck's structure,
+ * which does. On dark that structure is #16203A and light type is the only thing that works; on light it is
+ * #C3CEE0 and light type is the only thing that does not. Measured at the albedo, which is what these colours
+ * ARE before the key light touches them:
+ *
+ *                    #FFFFFF   #EAF1FF   #7FB2FF   #C6D4EC   #1E2761   #333948   #0B1220
+ *   dark  #16203A     16.13     14.23      7.46     10.78      1.17      1.40      1.16
+ *   light #C3CEE0      1.59      1.40      1.36      1.06      8.71      7.27     11.79
+ *   brand #2C6BFF      4.51      3.98      2.09      3.01      3.07      2.56      4.15
+ *
+ * Every run on a light panel fails and every run on a dark one passes, which is the whole defect this work is
+ * about — and note the third row: on brand blue the LIGHT family is still the right one, so the choice cannot be
+ * made per theme. It is made per panel, off the pixels, at `familyScore` below.
+ *
+ * THE TAG KEEPS ITS OWN VALUE WITHIN A FAMILY. It is the panel's label rather than its heading and it recedes;
+ * flattening all three runs onto one colour to make the ratio simpler would delete that. What keeps the printed
+ * ratio honest instead is that the score is the MINIMUM over the three runs, so the family is chosen on its
+ * weakest line and the number reported is that line's.
+ */
+type TextFamily = 'light' | 'ink';
+const familyColours = (f: TextFamily, onBlue: boolean): { tag: string; head: string; note: string } => (
+  f === 'light'
+    ? { tag: onBlue ? '#EAF1FF' : '#7FB2FF', head: '#FFFFFF', note: onBlue ? '#FFFFFF' : '#C6D4EC' }
+    /* #1E2761 is the platform's `--navy`, #333948 its `--grey-dark`; #0B1220 is the deepest value in the scene's
+       own palette and is used for the heading because that is the run with the most weight to spend. */
+    : { tag: '#1E2761', head: '#0B1220', note: '#333948' }
+);
+
+const styleFor = (
+  kind: 'tag' | 'head' | 'note', colours: { tag: string; head: string; note: string },
+): CSSProperties => {
   if (kind === 'tag') {
     return {
-      font: '600 11px/1.35 ui-monospace, monospace', letterSpacing: '.12em',
-      color: onBlue ? '#EAF1FF' : '#7FB2FF',
+      font: '600 11px/1.35 ui-monospace, monospace', letterSpacing: '.12em', color: colours.tag,
     };
   }
   if (kind === 'head') {
-    return { font: '700 26px/1.06 system-ui, sans-serif', letterSpacing: '-0.01em', color: '#FFFFFF' };
+    return { font: '700 26px/1.06 system-ui, sans-serif', letterSpacing: '-0.01em', color: colours.head };
   }
-  return { font: '400 11.5px/1.45 system-ui, sans-serif', color: onBlue ? '#FFFFFF' : '#C6D4EC' };
+  return { font: '400 11.5px/1.45 system-ui, sans-serif', color: colours.note };
 };
+
+/*
+ * WCAG relative luminance and a ratio, kept local so the number this frame prints is the number a reader's own
+ * checker would compute. `VaultReliefGl.tsx` carries an identical pair for the identical reason; both should move
+ * to one module the moment a third surface needs them, which is a file neither of them owns.
+ */
+const relLum = (r: number, g: number, b: number): number => {
+  const f = (v: number): number => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+};
+const ratioOf = (a: number, b: number): number => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+const hexBytes = (hex: string): [number, number, number] => [1, 3, 5].map(
+  (i) => parseInt(hex.slice(i, i + 2), 16),
+) as [number, number, number];
+/* Source-over in sRGB BYTES: the compositor applies the element's alpha to the ENCODED values, so the composite
+   happens before `relLum`, not after. */
+const overBg = (
+  bg: readonly [number, number, number], a: number, fg: readonly [number, number, number],
+): number => relLum(
+  bg[0] + a * (fg[0] - bg[0]), bg[1] + a * (fg[1] - bg[1]), bg[2] + a * (fg[2] - bg[2]),
+);
+
+const scenery = (th: SceneTheme, darkHex: string, light: Linear): Linear =>
+  (th.name === 'dark' ? hexToLinear(darkHex) : light);
+
+/** The dark theme's record, held only as the denominator of the light rig's ratio — see `SurfaceReliefGl.tsx`,
+    THE LIGHT RIG MOVES BY RATIO. Nothing reads a colour out of it. */
+const TH_DARK = sceneTheme('dark');
+const rigFor = (th: SceneTheme) => ({
+  key: th.keyGain / TH_DARK.keyGain,
+  ambient: th.ambientGain / TH_DARK.ambientGain,
+  shadow: th.shadowStrength / TH_DARK.shadowStrength,
+});
+
+/**
+ * THE HUD KEEPS ITS DARK PLATE IN BOTH THEMES, AND THAT IS A MEASUREMENT REFUTING THE OBVIOUS MOVE.
+ *
+ * `rgba(4,6,11,0.82)` was added as a contrast fix — the three HUD lines measured 3.6–4.0:1 on the bare sky — and
+ * the instinct on a light theme is to flip it to a white chip with dark type. Measured over the two extreme
+ * backgrounds a renderer can produce, which brackets every real one:
+ *
+ *   dark plate  over black  10.09 / 13.63 /  9.66      over white  6.27 / 8.47 / 6.00
+ *   white plate over black  10.52 /  8.78 /  4.30      over white 13.83 / 11.54 / 5.65
+ *
+ * At 0.82 the plate dominates its background, so the DARK chip never drops below 6.00:1 on any frame either
+ * theme can draw, while the white chip's amber line falls to 4.30:1 over a dark scene. Keeping it is the
+ * measured-better option and it is also one fewer thing to keep in step. The chip is a self-contained surface,
+ * like the globe's label boxes; only type with nothing under it has to follow the page.
+ */
+const HUD_PLATE = 'rgba(4,6,11,0.82)';
+
+/**
+ * THE CAPTION UNDER THE FRAME, WHICH SITS ON THE PAGE AND WAS ALREADY FAILING FOR THE DEFAULT READER.
+ *
+ * `rgba(196,212,240,.62)` composites against `--card`, and the platform defaults to LIGHT: measured 5.25:1 on
+ * the dark card #10182B and **1.28:1 on the light card #FFFFFF**. The sentence naming which panels carry no
+ * text — the §7(b) disclosure this frame exists to make — has been below the floor on the default theme since
+ * it shipped. #5A6272 is the platform's own `--grey` and measures 6.13:1 on white.
+ */
+const CAPTION = { dark: 'rgba(196,212,240,.62)', light: '#5A6272' } as const;
 
 interface OverlayPanel {
   readonly key: string;
@@ -171,6 +272,12 @@ interface OverlayPanel {
 interface Plan {
   readonly cssW: number;
   readonly cssH: number;
+  /* THE THEME THE FRAME UNDER THIS OVERLAY WAS DRAWN AT. Carried rather than re-read in the render: the class
+     can change between the draw and React's commit, and a disagreement there is light type on a light panel. */
+  readonly theme: ThemeName;
+  /** The worst measured ratio among the runs this frame actually shows, or null when nothing could be sampled.
+   *  For the UNBLURRED glyph core, which is the best case — see `DOM_BLUR_CEILING`. */
+  readonly worstTextRatio: number | null;
   readonly addressedIndex: number | null;
   readonly addressedTitle: string | null;
   readonly panels: readonly OverlayPanel[];
@@ -211,6 +318,10 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
    * it. The overlay is React state because it is DOM, and it is the only thing a click changes up here.
    */
   const drawRef = useRef<((addressed: number | null) => void) | null>(null);
+  /* WHICH PANEL IS ADDRESSED, IN A REF AS WELL AS IN `plan`. The theme observer below is a closure created once
+     per setup and cannot see React state, and it must redraw at the panel the reader has open rather than at
+     rest — a theme toggle is not an interaction and must not undo one. */
+  const addressedRef = useRef<number | null>(null);
   /*
    * THE TIER. Subscribed rather than read once: every frame here goes into an offscreen target and is blitted
    * only at the end, so a resolved lower tier can rebuild the deck before anything has been painted.
@@ -354,6 +465,10 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
     const deckMesh = meshes[0]!;
     const panelMesh = meshes.slice(1);
 
+    /* See THE FRAME READS ITS OWN PIXELS in `draw`: sized by W and H, which do not change for this context, so
+       one allocation serves every click rather than 6.45 MB of garbage per click. */
+    const pixels = new Uint8Array(W * H * 4);
+
     const N3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
     const modelOf = (x: number, y: number, z: number, yaw: number): Float32Array => {
       /* `IDENTITY` IS A FACTORY. `new Float32Array(IDENTITY)` is length 0: every vertex collapses to the origin,
@@ -420,7 +535,11 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
     const quads = placed.map(faceQuad);
 
     const layout = placed.map((p, i) => {
-      let chosen: { transform: string; ew: number; eh: number } | null = null;
+      /* THE PROJECTED CORNERS ARE KEPT, not just the homography string: the contrast read below needs a screen
+         BOX to sample the frame inside, and re-deriving one from the CSS transform would be a second expression
+         of the same projection — which is how a measurement ends up describing pixels the paint pass never
+         touched. */
+      let chosen: { transform: string; ew: number; eh: number; screen: { x: number; y: number }[] } | null = null;
       let lastRefusal: string | null = null;
       outer: for (const scale of SCALES) {
         const cw = Math.max(0.2, (p.w - 2 * PAD_U) * scale);
@@ -441,7 +560,10 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
             (o, j) => j !== i && o.distance < p.distance && inQuad(quads[j]!, c.x, c.y),
           )).length;
           if (covered === 0 && proj.signedArea > 0) {
-            chosen = { transform: proj.transform, ew, eh };
+            chosen = {
+              transform: proj.transform, ew, eh,
+              screen: proj.screen.map((c) => ({ x: c.x, y: c.y })),
+            };
             break outer;
           }
           if (proj.signedArea <= 0) lastRefusal = 'BACK_FACING';
@@ -489,8 +611,21 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
      * case needs no branch: a still frame is already the final frame, and addressing a panel is a state change
      * rather than a transition.
      */
+    /* Which theme the frame on screen was drawn at — see `SurfaceReliefGl.tsx`, A THEME CHANGE IS A REDRAW. */
+    let drawnTheme: ThemeName | null = null;
+
     const draw = (addressed: number | null): void => {
       if (dead) return;
+      /* READ PER FRAME, NOT CAPTURED AT SETUP — `ForgeBackdrop.tsx:120-127` records what the snapshot cost. */
+      const th = sceneTheme(liveTheme());
+      const rig = rigFor(th);
+      /* ONE OBJECT TO THE BACKDROP AND TO THE LIT PASS: `sky.ts` is the same function for the drawn sky and for
+         every reflection, so handing a themed sky to one and the default to the other makes a panel's sheen
+         disagree with the room behind it. `undefined` on dark keeps that frame on the path it shipped on. */
+      const sky = th.name === 'dark' ? undefined : {
+        zenith: th.skyZenith, horizon: th.skyHorizon, ground: th.ground,
+      };
+      addressedRef.current = addressed;
       const order = addressOrder(panels.length, addressed);
       /* Content index per depth rank: rank 0 (nearest) gets the addressed panel, then the deck's own order. */
       const panelAtSlot = new Map<number, number>();
@@ -508,7 +643,11 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
          * Which is what a photograph of this room would do: dark panels as silhouettes against a lit floor.
          */
         { mesh: deckMesh, model: modelOf(0, 0, 0, 0), normalMat: N3,
-          material: { baseColour: hexToLinear('#070B14'), roughness: 0.86, metalness: 0 } },
+          /* SCENERY. The deck is the ground and the unaddressed panels are the structure standing on it, and at
+             the ALBEDO the deck is the darker of the two (#070B14 under #16203A) — the rendered deck is brighter
+             only because a floor under a key 33° up has N·L = 0.54, which is the note below. The light theme
+             mirrors the albedo order: `ground` 0.8438 over `structure` 0.6113. */
+          material: { baseColour: scenery(th, '#070B14', th.ground), roughness: 0.86, metalness: 0 } },
         ...placed.map((p, i): LitDraw => ({
           mesh: p.mesh, model: p.model, normalMat: p.normalMat,
           /*
@@ -518,8 +657,9 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
            * #2C6BFF would become a blue-tinted mirror of the sky rather than the brand hex (§6 rule 5).
            */
           material: i === addressedSlot
+            /* DATA, in both themes. Which panel is addressed is the reading, and brand blue is how it is said. */
             ? { baseColour: hexToLinear('#2C6BFF'), roughness: 0.42, metalness: 0.06 }
-            : { baseColour: hexToLinear('#16203A'), roughness: 0.48, metalness: 0.06 },
+            : { baseColour: scenery(th, '#16203A', th.structure), roughness: 0.48, metalness: 0.06 },
         })),
       ];
 
@@ -531,7 +671,7 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
         gl.clear(gl.DEPTH_BUFFER_BIT);
         /* The backdrop replaces a flat clear, and it is the same function the materials reflect — so a panel's
            sheen and the room behind it agree about what the room looks like. */
-        skyBox.draw({ eye, target: view.target, fovDeg: FOV, aspect: W / H });
+        skyBox.draw({ eye, target: view.target, fovDeg: FOV, aspect: W / H, sky });
         /* PREPASS → AO → LIT, forced by the data: AO reads depth and the lit pass reads AO. */
         lit.depthPrepass(vp, draws);
         if (ao) {
@@ -549,8 +689,10 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
           /* The sky fill stays at full strength: it is the only light inside a shadow, and the cheaper
              alternative was measured — 0.72 with the key raised to compensate drained the shadow interiors by
              about a fifth. */
-          viewProj: vp, eye, lightDir, lightColour: [3.5, 3.45, 3.3],
-          ambientGain: 1.05, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps,
+          viewProj: vp, eye, lightDir,
+          lightColour: [3.5 * rig.key, 3.45 * rig.key, 3.3 * rig.key],
+          ambientGain: 1.05 * rig.ambient, sky, lightVP, shadow,
+          shadowStrength: 0.92 * rig.shadow, shadowTaps: Q.shadowTaps,
           /* THE BIGGEST SHADOW MAP IN THE APP, and the one the bias fix originally missed. Without a
              baseline the scale is 1.0, so the minimum tier renders a 512 map (shadowMapSizeFor of 1536)
              with a bias tuned for 1536 — a third of the bias it needs, which at one tap is hard
@@ -617,9 +759,58 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
       const err = gl.getError();
       if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return; }
 
+      /*
+       * ══ THE FRAME READS ITS OWN PIXELS, WHICH IS WHAT LETS THE TYPE COLOUR BE MEASURED ══════════════
+       *
+       * The frame is in the default framebuffer at this point, so the background under every projected run is
+       * readable and the composited glyph colour is computable rather than guessable. Read ONCE, whole, into a
+       * CPU buffer: five small `readPixels` calls are five pipeline stalls reading one finished frame.
+       * `VaultReliefGl.tsx` does exactly this on up to 120 records and has shipped it; five panels is cheaper.
+       *
+       * A failed read is a NAMED ABSENCE, not a fallback to the old assumption: `worstTextRatio` goes null and
+       * the sentence under the frame says the type colour was chosen without a measurement.
+       *
+       * THE BUFFER IS ALLOCATED ONCE PER MOUNT, NOT PER FRAME, and that is the difference between this and
+       * `VaultReliefGl`'s version: a vault redraws on a page turn, this deck redraws on every CLICK, and at
+       * dpr 2 on a 960 px canvas `new Uint8Array(W * H * 4)` is 6.45 MB of garbage per click. Its size is set
+       * by W and H, which are fixed for the life of this context, so it belongs beside them.
+       */
+      gl.readPixels(0, 0, W, H, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
+      /* THE BRIGHTEST PIXEL IN THE BOX, not the mean — a mean lets a bright patch under a word average away
+         against the darker slab beside it and reports a contrast no glyph has. It is the worst case for LIGHT
+         type; `darkestBehind` is its mirror and is the worst case for ink, and both are needed because the two
+         families are being compared. `readPixels` counts rows from the bottom, hence `H - 1 -`. */
+      const extremesBehind = (
+        box: readonly { x: number; y: number }[],
+      ): { bright: [number, number, number]; dark: [number, number, number] } | null => {
+        const xs = box.map((c) => c.x), ys = box.map((c) => c.y);
+        const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+        const hx = Math.max(1, (Math.max(...xs) - Math.min(...xs)) / 4);
+        const hy = Math.max(1, (Math.max(...ys) - Math.min(...ys)) / 4);
+        const x0 = Math.round((cx - hx) * dpr), x1 = Math.round((cx + hx) * dpr);
+        const y0 = Math.round((cy - hy) * dpr), y1 = Math.round((cy + hy) * dpr);
+        /* AN OFF-FRAME SAMPLE BOX REFUSES rather than clamping to the frame edge: a clamped read measures a
+           background that is not behind the text, and an invented ratio is worse than a named absence. */
+        if (x1 < 0 || y1 < 0 || x0 > W - 1 || y0 > H - 1) return null;
+        let bright: [number, number, number] = [0, 0, 0], hi = -1;
+        let dark: [number, number, number] = [0, 0, 0], lo = Infinity;
+        for (let y = Math.max(0, y0); y <= Math.min(H - 1, y1); y++) {
+          const row = (H - 1 - y) * W;
+          for (let x = Math.max(0, x0); x <= Math.min(W - 1, x1); x++) {
+            const i = (row + x) * 4;
+            const px: [number, number, number] = [pixels[i]!, pixels[i + 1]!, pixels[i + 2]!];
+            const l = relLum(px[0], px[1], px[2]);
+            if (l > hi) { hi = l; bright = px; }
+            if (l < lo) { lo = l; dark = px; }
+          }
+        }
+        return hi < 0 ? null : { bright, dark };
+      };
+
       const maxCocPx = Math.max(...placed.map((p) => cocOf(p.distance, focus)));
       const overlay: OverlayPanel[] = [];
       const withheld: { title: string; reason: string }[] = [];
+      const measured: number[] = [];
       let notesDropped = 0;
 
       for (const panelIdx of order) {
@@ -658,7 +849,39 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
          * the same contradiction inverted.
          */
         const norm = lensOn ? cocPx / Math.max(1e-6, maxCocPx) : 0;
+        const opacity = 1 - DOM_DIM_MAX * norm;
+
+        /*
+         * THE FAMILY IS CHOSEN ON ITS WEAKEST RUN, AGAINST ITS OWN WORST-CASE BACKGROUND.
+         *
+         * Light type is worst against the BRIGHTEST pixel behind the box and ink type against the DARKEST, so
+         * each family is scored against the extreme that hurts it rather than both against one. Scoring both
+         * against the brightest would flatter ink on a panel that has a dark corner in the sample box, which is
+         * every panel with a cast shadow across it.
+         *
+         * The `opacity` in the composite is the element's own dim, which is the only alpha in play — every one
+         * of the three runs is a solid hex, for the reason recorded at the top of this file.
+         */
+        const ext = extremesBehind(lay.chosen.screen);
+        const familyScore = (f: TextFamily): number | null => {
+          if (!ext) return null;
+          const bg = f === 'light' ? ext.bright : ext.dark;
+          const bgLum = relLum(bg[0], bg[1], bg[2]);
+          const c = familyColours(f, onBlue);
+          return Math.min(...[c.tag, c.head, c.note].map(
+            (h) => ratioOf(overBg(bg, opacity, hexBytes(h)), bgLum),
+          ));
+        };
+        const lightScore = familyScore('light'), inkScore = familyScore('ink');
+        /* NO MEASUREMENT ⇒ THE LIGHT FAMILY, which is what this file shipped with, and the frame says the choice
+           was unmeasured rather than quietly presenting it as one. */
+        const family: TextFamily = lightScore === null || inkScore === null
+          ? 'light' : (inkScore > lightScore ? 'ink' : 'light');
+        const score = family === 'ink' ? inkScore : lightScore;
+        if (score !== null) measured.push(score);
+
         const kind: ('tag' | 'head' | 'note')[] = ['tag', 'head', 'note'];
+        const colours = familyColours(family, onBlue);
         overlay.push({
           key: datum.id,
           panelIndex: panelIdx,
@@ -666,15 +889,20 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
           depthRank: depthRankOf.get(slotIdx) ?? 0,
           transform, ew, eh,
           blurPx: DOM_BLUR_CEILING * norm,
-          opacity: 1 - DOM_DIM_MAX * norm,
+          opacity,
           lines: lines
-            .map((ln, k) => ({ text: ln.text, style: styleFor(kind[k]!, onBlue) }))
+            .map((ln, k) => ({ text: ln.text, style: styleFor(kind[k]!, colours) }))
             .filter((_, k) => fit.keep[k]),
         });
       }
 
+      /* RECORDED ONLY ONCE THE FRAME IS PRESENTED, so a probe that returned early cannot leave the observer
+         believing a theme is on screen that never reached it. */
+      drawnTheme = th.name;
       setPlan({
         cssW, cssH,
+        theme: th.name,
+        worstTextRatio: measured.length === 0 ? null : Number(Math.min(...measured).toFixed(2)),
         addressedIndex: addressed,
         addressedTitle: addressed === null ? null : (panels[addressed]?.title ?? null),
         /* APPENDED IN READING ORDER — addressed first, then the deck's own sequence — which is the order the
@@ -703,8 +931,27 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
     const onLost = (e: Event): void => { e.preventDefault(); onRefused('CONTEXT_LOST'); };
     canvas.addEventListener('webglcontextlost', onLost);
 
+    /*
+     * A THEME CHANGE IS A REDRAW, NOT A REBUILD — the full reasoning, including why `beforeprint` is needed for
+     * `BoardReport.tsx:105-109` specifically and why the `drawnTheme` guard is what makes the other three print
+     * handlers free, is in `SurfaceReliefGl.tsx` under that heading.
+     *
+     * THIS SURFACE REDRAWS AT ITS CURRENT ADDRESSED PANEL rather than at rest. A theme change is not an
+     * interaction and must not undo one: dropping the reader back to `draw(null)` would close the panel they had
+     * open, and on the print path — where the class comes off and goes back on — it would do it twice.
+     */
+    const redrawForTheme = (): void => {
+      if (liveTheme() === drawnTheme) return;
+      drawRef.current?.(addressedRef.current);
+    };
+    const themeWatch = new MutationObserver(redrawForTheme);
+    themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    window.addEventListener('beforeprint', redrawForTheme);
+
     return () => {
       canvas.removeEventListener('webglcontextlost', onLost);
+      themeWatch.disconnect();
+      window.removeEventListener('beforeprint', redrawForTheme);
       drawRef.current = null;
       /* Already released on the refusal path, and `disposers.reverse()` MUTATES — running it twice would restore
          the original order and dispose forwards, with the stage killed before the resources built on it. */
@@ -790,7 +1037,7 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
             <div style={{
               position: 'absolute', left: 14, top: 12, display: 'flex', flexDirection: 'column', gap: 4,
               font: '500 10.5px/1.45 ui-monospace, monospace', letterSpacing: '.05em',
-              background: 'rgba(4,6,11,0.82)', padding: '8px 10px', borderRadius: 5, maxWidth: '62%',
+              background: HUD_PLATE, padding: '8px 10px', borderRadius: 5, maxWidth: '62%',
               pointerEvents: 'auto', userSelect: 'text',
             }}>
               <div style={{ color: '#8FB7FF', fontWeight: 600, letterSpacing: '.15em' }}>
@@ -817,7 +1064,7 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
       */}
       {plan && (
         <div style={{
-          font: '400 10px/1.5 ui-monospace, monospace', color: 'rgba(196,212,240,.62)', marginTop: 6,
+          font: '400 10px/1.5 ui-monospace, monospace', color: CAPTION[plan.theme], marginTop: 6,
         }}>
           <div>
             Click a panel to address it — it comes to the front and the lens racks to it. Click it again, or press
@@ -847,8 +1094,17 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
                 ? `Lens off at the ${plan.lensOffReason} quality tier, chosen from a measured frame time on this `
                   + 'machine. Addressing a panel still brings it forward and colours it; it will not defocus the others.'
                 : 'Lens off at rest, so nothing is defocused until you address a panel.'}{' '}
-            The DOM blur ceiling ({DOM_BLUR_CEILING} px) and dim ({DOM_DIM_MAX}) are carried from E1&#39;s measured
-            contrast bisection on the same hexes and type sizes; they have NOT been re-measured on this page.
+            The DOM blur ceiling ({DOM_BLUR_CEILING} px) and dim ({DOM_DIM_MAX}) are E1&#39;s bisected pair.
+          </div>
+          {/* THE READABILITY CLAIM IS NOW A MEASUREMENT OR A NAMED ABSENCE, never an implication. The ratio is
+              for the unblurred glyph core against this frame&#39;s own pixels — the best case, so a run that
+              fails here fails for certain — and the blur above is the one term it does not model. */}
+          <div>
+            {plan.worstTextRatio === null
+              ? 'The type colour on each panel was chosen WITHOUT a measurement — the frame could not sample its '
+                + 'own pixels behind the projected boxes, so no contrast ratio is claimed for this frame.'
+              : `Type colour chosen per panel from this frame's own pixels; worst measured contrast `
+                + `${plan.worstTextRatio}:1 against a 4.5:1 floor, for the unblurred glyph core.`}
           </div>
         </div>
       )}

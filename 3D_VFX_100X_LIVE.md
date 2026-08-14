@@ -171,11 +171,12 @@ live composite, tone map, encode and palette so the record cannot drift from the
 For scale: AgX, which `colour.ts` itself calls "badly wrong", is ΔE 41.1. Ours is **45% of that** and 3.7×
 Khronos PBR Neutral. The blue channel is **35/255 low** on the anchor in the *best* case available.
 
-### Why the fix was not to remove the shift
+### Why the fix was not to remove the shift *by changing the curve*
 
 - **A fixed-point curve is refuted by arithmetic.** Brand blue's blue channel is linear **1.0**. Pinning it
   makes the curve identity at 1.0, leaving zero headroom above — every value greater than 1 clips, which
-  deletes the one reason this pipeline has a tone map.
+  deletes the one reason this pipeline has a tone map. *This bullet is sound and stands. The conclusion drawn
+  from it — that no data-preserving fix exists — does not follow, and is corrected in §5.1.*
 - **Excluding marks from the composite assumes a split that does not exist here.** In these surfaces the
   deck, the globe, the pins *are* the data. Geometry composited after the tone map is unlit geometry — a
   sticker, not a surface.
@@ -198,6 +199,78 @@ repo; `look.test.ts` only ever string-matched `"0.40"`.
 Also corrected: `brandUnderIllegalToneMap` is renamed `brandThroughComposite`. The old name called the curve
 illegal; the measurement shows it *is the shipped curve* and the function is a CPU model of it. A name that
 misdescribes what a function tests is how its result came to be read backwards for an entire session.
+
+---
+
+## 5.1 · T1 AMENDED — the shift **can** be removed, for a bounded class of marks
+
+*Added 2026-08-15, after adversarial review refuted the conclusion above.*
+
+§5's three refutations are each correct about the thing they refute. Together they were read as
+"**no** data-preserving fix exists", and that is false. The first refutation is about a **curve**; the fix is
+not a curve.
+
+`c/(1+0.4c)` is strictly increasing, so it is injective on `[0, 2.5)` and has an exact inverse `y/(1-0.4y)`
+there. **Write `inverseToneMap(target)` into the scene target and the live, unmodified curve delivers
+`target`.** The shoulder does not move. The composite does not move. Nothing about the tone map's headroom
+*above the mark* changes except for the mark itself.
+
+Measured on ANGLE/SwiftShader, RGBA16F scene target, plate 0, bloom 0 — the same instrument shape as
+`brand-fidelity.mjs`, and its plain-write control reproduces `brand-fidelity.json`'s `compositeOnly` **byte
+for byte on all seven entries**, so the two instruments agree:
+
+| colour | written plain | written pre-compensated |
+|---|---|---|
+| `brand` #2c6bff | `#2c68dc` · ΔE **18.31** | **`#2c6bff` · ΔE 0.00** |
+| `reference` #ff8a3d | `#dc843c` · ΔE 14.35 | **`#ff8a3d` · ΔE 0.00** |
+| `brandBright` #7fb2ff | `#7aa5dc` · ΔE 12.74 | **`#7fb2ff` · ΔE 0.00** |
+
+Seven of seven exact. The largest value this puts in the scene target is **1.6667** against RGBA16F's 65504 —
+the buffer was never the constraint.
+
+### The three costs, all measured, all enforced by a refusal
+
+1. **It consumes the entire highlight range of a saturated mark.** `1/(1-0.4)` = **1.6667** is where the
+   composite's output reaches 1.0 and the framebuffer pins the channel at 255 — the same number
+   `primitives/lines.ts` already exports as `STROKE_CLIP_LINEAR`. A colour with a linear-1.0 channel
+   pre-compensates to *exactly* that value, so its remaining headroom is **1.0×**: it starts at the clip
+   point. Measured over 0.5/0.75/1.0/1.25/1.5/2.0× on the brightest channel — `brand`, `brandBright` and
+   `reference` fall from **6 distinct bytes to 3**; `brandDeep`, `refusal`, `rule` and `plate` lose nothing.
+   That split is not a list: it is exactly the entries whose brightest channel is linear 1.0.
+
+2. **The plate is still added.** With the default plate (`pipeline.ts:188`) brand lands `#306dff` (ΔE 1.51),
+   reference `#ff8b48` (ΔE 4.73). Subtracting the plate is arithmetically exact and is **refused anyway**,
+   because `pipeline.ts:97` scales the plate by a **vignette** that varies per pixel from 0.38 to 1.0 — a
+   single `Linear` cannot cancel it, and compensating for the full plate measures ΔE 0.00 at vignette 1.0 and
+   up to ΔE 8.01 at 0.38. An error that moves across the frame is worse than a constant one.
+
+3. **The bloom is added too, and this one the review did not name.** At `bloomGain: 0.3` — shipped by
+   `FlatBars`, `FlatDial` and `FlatTrack` — `brandBright` lands `#8cc1ff`, **ΔE 10.20**, larger than either
+   other cost. But `brandDeep`, `rule` and `plate` measured **ΔE 0.00** under the same bloom, and the
+   predicate that separates them with no exceptions is `luminance(pre) < threshold[0]`: the bright pass ramps
+   on Rec.709 luminance (`pipeline.ts:49-50`) and those three fall below its floor.
+
+### Where it is safe, and the rule that decides
+
+**The taxonomy is the blend's `dstFactor`, not what the mark looks like.** `ONE` (`stage.ts:593`
+`beginAdditive`; `env/particles.ts:565`) makes overlap **sum** and is unbounded. `ONE_MINUS_SRC_ALPHA`
+(`stage.ts:612` `beginAlpha`; `env/volume.ts:484`) is a convex combination bounded by its larger contributor,
+so overlap **replaces**. Blend disabled (`stage.ts:616`, `env/lit.ts:755`, `env/sky.ts:145`) likewise. The
+same primitive with the same colour is fixed-density under one and accumulating under the other.
+
+`packages/gl/src/look/precompensate.ts` takes the composite configuration as a **required** argument — no
+defaults, because a default here would be a second copy of `PipelineOptions`' inline literals and the failure
+it produces is a function returning "exact" for a configuration it never saw — and refuses with the offending
+number on `ACCUMULATES`, `PLATE_NOT_ZERO`, `BLOOM_REACHES_MARK`, `TARGET_ABOVE_POLE` or `SCALE_NOT_POSITIVE`.
+
+### The narrow statement that replaces "no data-preserving fix exists"
+
+> **Pre-compensation is exact for fixed-density unlit marks, and consumes the entire highlight range for
+> accumulating fields.**
+
+`ORDER SURVIVES` remains the invariant every mark has, precisely because the accumulating case is refused.
+§5's other two refutations are untouched: a **lit** fragment's radiance is base colour × illumination, so
+there is no value to pre-compensate toward, and pre-compensation does not put geometry after the tone map.
 
 ## 6 · X2 RESOLVED — and the stated cause was wrong
 

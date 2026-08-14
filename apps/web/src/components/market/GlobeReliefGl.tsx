@@ -58,9 +58,11 @@ import {
   lightViewProjection, boundsCentre, boundsRadius, projectScreen, triangleCount,
   hexToLinear, assertBrandFidelity, IDENTITY,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
-  qualitySettings, shadowMapSizeFor,
+  qualitySettings, shadowMapSizeFor, skyIrradiance, luminance,
   type LitDraw, type Viewpoint, type MeshBuffer,
 } from '@lcx/gl';
+/* A SUB-PATH IMPORT, NOT THE BARREL — `docs/3d/w2/SUBPATH_COST.md`; `SurfaceReliefGl.tsx` carries the reason. */
+import { sceneTheme, liveTheme, type SceneTheme, type ThemeName } from '@lcx/gl/look/theme.js';
 import { useResolvedQualityTier } from '../shared/useQualityTier';
 import type { MapPoint } from '@/lib/api/bd';
 import { formatMoney } from '@/lib/format';
@@ -119,6 +121,42 @@ const FOV_DEG = 30;
 /** Widest a label box is allowed to get, and the number the edge-flip below is measured against. */
 const LABEL_MAX_PX = 260;
 
+/** The dark theme's record, held as the reference the light sky's irradiance is divided against. */
+const TH_DARK = sceneTheme('dark');
+
+/**
+ * THE TWO RUNS OF TYPE THAT SIT ON THE RENDERED SKY WITH NO PLATE UNDER THEM, AND THEREFORE MUST THEME.
+ *
+ * Every other word on this figure is either inside a label box — which carries its own opaque `LABEL_BG` and is
+ * legible on any background because it brings its own — or below the canvas on the page. These two are not: the
+ * headline and the pin note are painted straight onto whatever the renderer drew. On the dark sky #8FB7FF and
+ * `LABEL_DIM_FG` are fine; over the light theme's white studio they are a pale run on a pale ground.
+ *
+ * `globeSites.ts` owns `LABEL_FG` / `LABEL_BG` / `LABEL_DIM_FG` and is NOT changed: those three are correct
+ * exactly where they are used, on the label plate. Only the plate-less pair moves.
+ */
+const SKY_TEXT = {
+  dark: { head: '#8FB7FF', body: '#A9BEE4' },
+  /* #1E2761 is the platform's own `--navy` and #333948 its `--grey-dark`. Measured on #FFFFFF, which is the
+     light theme's plate and therefore the brightest the sky behind these runs can be: 13.83:1 and 11.54:1. The
+     sky is drawn at `plate x 1.6` near the horizon and tone-maps to a shade below white, so #FFFFFF is the
+     worst case rather than a representative one. */
+  light: { head: '#1E2761', body: '#333948' },
+} as const;
+
+/**
+ * THE CAPTION UNDER THE FRAME, WHICH WAS ALREADY UNREADABLE FOR THE DEFAULT READER BEFORE ANY OF THIS.
+ *
+ * It is `rgba(196,212,240,.66)` and it sits on the PAGE, not on the canvas — so it has always composited
+ * against `--card`, and the platform defaults to LIGHT. Measured: 5.79:1 on the dark card #10182B and
+ * **1.30:1 on the light card #FFFFFF**. That is not a theme regression this work introduced, it is a defect
+ * this work found: the list of everything the map could not place — the one thing this component is arranged
+ * around not losing — has been below the WCAG floor on the default theme since it shipped.
+ *
+ * #5A6272 is the platform's own `--grey`, its secondary text role, and measures 6.13:1 on white.
+ */
+const CAPTION = { dark: 'rgba(196,212,240,.66)', light: '#5A6272' } as const;
+
 interface ScreenLabel {
   readonly key: string;
   readonly sx: number;
@@ -142,6 +180,11 @@ interface OffFace {
 interface Plan {
   readonly cssW: number;
   readonly cssH: number;
+  /* THE THEME THE FRAME UNDER THIS OVERLAY WAS DRAWN AT, carried in the plan rather than read again in the
+     render. A second `liveTheme()` call in the JSX could disagree with the canvas — the class can change between
+     the draw and React's commit — and the failure would be light type on a light sky, which is the exact defect
+     this field exists to prevent. */
+  readonly theme: ThemeName;
   readonly labels: readonly ScreenLabel[];
   readonly offFace: readonly OffFace[];
   readonly subSolar: string;
@@ -389,9 +432,18 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
      * ONE OBJECT, PASSED TO BOTH the backdrop and the lit pass. Handing a custom sky to one and the default
      * to the other is how a reflection ends up disagreeing with the sky it is reflecting.
      */
-    const PLATE = hexToLinear('#0E1628');
-    const fromPlate = (k: number): [number, number, number] => [PLATE[0] * k, PLATE[1] * k, PLATE[2] * k];
-    const SKY = { zenith: fromPlate(0.55), horizon: fromPlate(1.6), ground: fromPlate(0.35) };
+    /*
+     * THE PLATE COMES FROM THE THEME NOW, AND IT IS THE ONLY SCENERY ON THIS FRAME.
+     *
+     * `sceneTheme('dark').plate` IS #0E1628 — the literal this file already had — so the dark sky is unchanged
+     * byte for byte and the light sky becomes the page's own #FFFFFF card. That single substitution is the whole
+     * theme swap here, because a globe has no floor, no plinth and no walls: the sky IS the background.
+     */
+    const skyFor = (th: SceneTheme) => {
+      const k = (m: number): [number, number, number] =>
+        [th.plate[0] * m, th.plate[1] * m, th.plate[2] * m];
+      return { zenith: k(0.55), horizon: k(1.6), ground: k(0.35) };
+    };
 
     /* Roughness 0.58 rather than 0.42: at 0.42 the key leaves a broad bright blob on the daylit hemisphere
        and the earth reads as a shiny plastic ball. An ocean does glint, but a planet-wide glint is wide and
@@ -462,6 +514,42 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
     const BODY_AMBIENT = 1.6;
     const MARKER_AMBIENT = 120;
     const CORRIDOR_AMBIENT = (BODY_AMBIENT + MARKER_AMBIENT) / 2;
+    /**
+     * ══ THE THREE AMBIENT GAINS ARE CALIBRATED AGAINST THE SKY'S IRRADIANCE, SO THE SWAP MUST DIVIDE ═══
+     *
+     * This is the one place in the seven surfaces where the theme's own key/ambient/shadow ratios are the WRONG
+     * instrument, and applying them would have destroyed the frame. The three numbers above are not a light rig,
+     * they are a missing emission channel: `Material` has none and `uAmbientGain` is per pass, so the only way to
+     * make a pin read across the night side is to draw it in its own pass at a gain that puts brand blue near
+     * the top of its channel. That gain is meaningless without the irradiance it multiplies.
+     *
+     * Measured with the engine's own `skyIrradiance` at the up normal, for the sky built above:
+     *   dark  plate #0E1628 → [0.00242, 0.00441, 0.01167]   luminance 0.004512
+     *   light plate #FFFFFF → [0.55000, 0.55000, 0.55000]   luminance 0.550000     — 122x brighter
+     *
+     * So MARKER_AMBIENT 120 carried across unchanged gives the pins 120 x 0.55 of blue radiance: every marker,
+     * every corridor and the hub clip to flat white and the brand hue is gone. Dividing by the same 122x holds
+     * each pass's ambient RADIANCE invariant, which is exactly what the three constants were chosen to fix:
+     *   dark   gain 120     → radiance [0.007, 0.078, 1.400] → #157BF3 shown
+     *   light  gain 0.984   → radiance [0.014, 0.080, 0.541] → #1F4EB2 shown, 3.6:1 against the white sky
+     *
+     * AND IT IS WHY THE PLANET, THE LIMB, THE HUB AND THE PINS KEEP THEIR OWN COLOURS. Once the ambient radiance
+     * is invariant, the lit sphere is identical in both themes and only the background moves — a dark navy earth
+     * against a white studio is a strong silhouette, so nothing dissolves and there is nothing for a swap to fix.
+     * `ForgeBackdrop` moves its disc from #8FA3C4 to #5E6C85 precisely because that object WOULD dissolve into
+     * its bright studio; the test is whether the subject disappears, not whether the page changed. The one real
+     * cost is the atmosphere shell, which is a grazing-angle Fresnel and reads less against white — and this
+     * file's own header already records that the shell "carries no data" and is there so the globe does not read
+     * as a billiard ball.
+     */
+    const ambientScaleFor = (th: SceneTheme): number => {
+      const up: readonly [number, number, number] = [0, 1, 0];
+      /* AT THE UP NORMAL, because that is where the marker geometry meets the sky's brightest stop and therefore
+         where the clipping the constants guard against actually happens. A whole-sphere average would understate
+         it and let the top of the frame blow out anyway. */
+      return luminance(skyIrradiance(up, skyFor(TH_DARK)) as never)
+        / luminance(skyIrradiance(up, skyFor(th)) as never);
+    };
 
     /*
      * ONE REDRAW, WHICH IS THE WHOLE RESPONSE TO A NEW FILTER — no context, no program, no target, no earth.
@@ -470,7 +558,14 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
      * regions decides the face, and the mean latitude decides the elevation. So a filter that moves the book
      * moves the globe, which is the reading; what it must not move is the planet's 425,712 bytes.
      */
+    /* Which theme the frame on screen was drawn at — see `SurfaceReliefGl.tsx`, A THEME CHANGE IS A REDRAW. */
+    let drawnTheme: ThemeName | null = null;
+
     const draw = (universe: readonly MapPoint[]): void => {
+      /* READ PER FRAME, NOT CAPTURED AT SETUP — `ForgeBackdrop.tsx:120-127` records what the snapshot cost. */
+      const th = sceneTheme(liveTheme());
+      const sky = skyFor(th);
+      const ambientK = ambientScaleFor(th);
       /* Any earlier overlay is dropped before the new frame exists, and before any refusal: a projected label
          from the previous filter sitting over a freshly drawn globe is a stale picture presented as live. */
       setPlan(null);
@@ -593,7 +688,7 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
 
       target.bind();
       gl.clear(gl.DEPTH_BUFFER_BIT);
-      skyBox.draw({ eye, target: view.target, fovDeg: FOV_DEG, aspect: W / H, sky: SKY });
+      skyBox.draw({ eye, target: view.target, fovDeg: FOV_DEG, aspect: W / H, sky });
       lit.depthPrepass(vp, depthDraws);
       if (ao) {
         ao.compute({
@@ -611,14 +706,18 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
            the daylit hemisphere from the ambient-lit one, and a neutral key against a blue ambient reads as
            an exposure difference rather than as sunlight. */
         lightColour: [6.6, 6.2, 5.5] as [number, number, number],
-        sky: SKY,
+        sky,
+        /* THE KEY AND THE SHADOW ARE NOT RATIO-SCALED HERE, unlike the other five themed surfaces. The theme's
+           ratios exist for a scene lit partly by bounce off a ground, and this one has no ground — the terminator
+           is the reading, and moving the sun against an ambient that is already held invariant would shift the
+           day/night balance the frame exists to state. */
         lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE,
         ao: ao ? ao.texture : null,
         screenSize: [W, H] as [number, number],
       };
-      lit.draw({ ...common, ambientGain: BODY_AMBIENT, draws: bodyDraws });
-      if (corridorDraws.length > 0) lit.draw({ ...common, ambientGain: CORRIDOR_AMBIENT, draws: corridorDraws });
-      lit.draw({ ...common, ambientGain: MARKER_AMBIENT, draws: [hubDraw, ...pinDraws] });
+      lit.draw({ ...common, ambientGain: BODY_AMBIENT * ambientK, draws: bodyDraws });
+      if (corridorDraws.length > 0) lit.draw({ ...common, ambientGain: CORRIDOR_AMBIENT * ambientK, draws: corridorDraws });
+      lit.draw({ ...common, ambientGain: MARKER_AMBIENT * ambientK, draws: [hubDraw, ...pinDraws] });
 
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, W, H);
@@ -740,8 +839,11 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
         : `Shortest pin is ${pinPx} px at this camera.`;
       const regionWord = book.sites.length === 1 ? 'region' : 'regions';
 
+      /* RECORDED ONLY ONCE THE FRAME IS PRESENTED. */
+      drawnTheme = th.name;
       setPlan({
-        cssW, cssH, labels, offFace,
+        cssW, cssH,
+        theme: th.name, labels, offFace,
         subSolar,
         clockLine,
         corridors: corridorSites.map((s) => `${HUB.label} → ${s.label}: ${s.listed} listed, ${separationDeg(HUB.lat, HUB.lon, s.lat, s.lon).toFixed(1)}° away`),
@@ -793,12 +895,25 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
     const onLost = (e: Event): void => { e.preventDefault(); onRefused('CONTEXT_LOST'); };
     canvas.addEventListener('webglcontextlost', onLost);
 
+    /* A THEME CHANGE IS A REDRAW, NOT A REBUILD — the full reasoning, including why `beforeprint` is needed for
+       `BoardReport.tsx:105-109` specifically and why the `drawnTheme` guard is what makes the other three print
+       handlers free, is in `SurfaceReliefGl.tsx` under that heading. */
+    const redrawForTheme = (): void => {
+      if (liveTheme() === drawnTheme) return;
+      drawRef.current?.(pointsRef.current);
+    };
+    const themeWatch = new MutationObserver(redrawForTheme);
+    themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    window.addEventListener('beforeprint', redrawForTheme);
+
     /* THE ORDER IS SPELLED OUT HERE RATHER THAN DELEGATED, and that is deliberate:
        `market/__tests__/globeRelief.test.tsx:139` reads this file and asserts that `disposers.reverse()`
        precedes `stage.dispose()` INSIDE the cleanup closure. A one-line call to a helper would keep the
        invariant and blind the guard that checks it. */
     return () => {
       canvas.removeEventListener('webglcontextlost', onLost);
+      themeWatch.disconnect();
+      window.removeEventListener('beforeprint', redrawForTheme);
       drawRef.current = null;
       if (dead) return;
       dead = true;
@@ -836,10 +951,13 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
               before they read a single position.
             */}
             <div style={{ position: 'absolute', left: 14, top: 12, maxWidth: '62%' }}>
-              <div style={{ font: '600 11px/1.3 ui-monospace, monospace', letterSpacing: '.14em', color: '#8FB7FF' }}>
+              <div style={{
+                font: '600 11px/1.3 ui-monospace, monospace', letterSpacing: '.14em',
+                color: SKY_TEXT[plan.theme].head,
+              }}>
                 LISTING GEOGRAPHY · REGION CENTROIDS, NOT ORGANISATIONS
               </div>
-              <div style={{ ...mono(LABEL_DIM_FG, 10), marginTop: 5 }}>{plan.headerNote}</div>
+              <div style={{ ...mono(SKY_TEXT[plan.theme].body, 10), marginTop: 5 }}>{plan.headerNote}</div>
             </div>
 
             {plan.labels.map((l) => (
@@ -869,7 +987,7 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
             {/* THE PIN'S UNIT, ON THE FRAME. A height that encodes a count is only a reading if the reader is
                 told what the tallest one is, and told when the shortest is too short to see. */}
             <div style={{ position: 'absolute', right: 14, bottom: 12, textAlign: 'right' }}>
-              <div style={mono(LABEL_DIM_FG, 10)}>{plan.pinNote}</div>
+              <div style={mono(SKY_TEXT[plan.theme].body, 10)}>{plan.pinNote}</div>
             </div>
           </div>
         )}
@@ -882,7 +1000,7 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
       */}
       {plan && (
         <div style={{
-          ...mono('rgba(196,212,240,.66)', 10), marginTop: 6,
+          ...mono(CAPTION[plan.theme], 10), marginTop: 6,
           display: 'flex', flexDirection: 'column', gap: 3,
           /* SCROLLS RATHER THAN CLIPS. A universe with many unrecognised region strings produces a long list,
              and the list of what a map left out is the last thing that may be silently cut off. */

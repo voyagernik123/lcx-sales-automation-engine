@@ -12,7 +12,8 @@
           -3,
           -35
         ],
-        "deltaE": 18.31
+        "deltaE": 18.31,
+        "deltaE2000": 4.64
       },
       "asShipped": {
         "pixel": "#306cdf",
@@ -21,7 +22,8 @@
           1,
           -32
         ],
-        "deltaE": 19.2
+        "deltaE": 19.2,
+        "deltaE2000": 4.04
       },
       "litMarker": {
         "pixel": "#447fff",
@@ -30,7 +32,8 @@
           20,
           0
         ],
-        "deltaE": 15.16
+        "deltaE": 15.16,
+        "deltaE2000": 6.6
       },
       "litCentre": {
         "pixel": "#c8ebff",
@@ -39,7 +42,8 @@
           128,
           0
         ],
-        "deltaE": 87.58
+        "deltaE": 87.58,
+        "deltaE2000": 34.22
       }
     },
     "brandBright": {
@@ -50,7 +54,8 @@
           -13,
           -35
         ],
-        "deltaE": 12.74
+        "deltaE": 12.74,
+        "deltaE2000": 4.74
       },
       "asShipped": {
         "pixel": "#92c1f9",
@@ -59,7 +64,8 @@
           15,
           -6
         ],
-        "deltaE": 12.96
+        "deltaE": 12.96,
+        "deltaE2000": 4.19
       },
       "litMarker": {
         "pixel": "#83b1fd",
@@ -68,7 +74,8 @@
           -1,
           -2
         ],
-        "deltaE": 1.25
+        "deltaE": 1.25,
+        "deltaE2000": 0.96
       },
       "litCentre": {
         "pixel": "#f4ffff",
@@ -77,7 +84,8 @@
           77,
           0
         ],
-        "deltaE": 50.66
+        "deltaE": 50.66,
+        "deltaE2000": 27.82
       }
     },
     "brandDeep": {
@@ -88,7 +96,8 @@
           0,
           -3
         ],
-        "deltaE": 2.03
+        "deltaE": 2.03,
+        "deltaE2000": 0.53
       },
       "asShipped": {
         "pixel": "#1a3771",
@@ -97,7 +106,8 @@
           5,
           3
         ],
-        "deltaE": 2.83
+        "deltaE": 2.83,
+        "deltaE2000": 1.56
       },
       "litMarker": {
         "pixel": "#2a4c97",
@@ -106,7 +116,8 @@
           26,
           41
         ],
-        "deltaE": 13.57
+        "deltaE": 13.57,
+        "deltaE2000": 9.2
       },
       "litCentre": {
         "pixel": "#c2cafd",
@@ -115,7 +126,8 @@
           152,
           143
         ],
-        "deltaE": 61.62
+        "deltaE": 61.62,
+        "deltaE2000": 59.55
       }
     },
     "reference": {
@@ -126,7 +138,8 @@
           -6,
           -1
         ],
-        "deltaE": 14.35
+        "deltaE": 14.35,
+        "deltaE2000": 6.7
       },
       "asShipped": {
         "pixel": "#f49a51",
@@ -135,7 +148,8 @@
           16,
           20
         ],
-        "deltaE": 13.99
+        "deltaE": 13.99,
+        "deltaE2000": 5.31
       },
       "litMarker": {
         "pixel": "#ffa865",
@@ -144,7 +158,8 @@
           30,
           40
         ],
-        "deltaE": 18.88
+        "deltaE": 18.88,
+        "deltaE2000": 7.62
       },
       "litCentre": {
         "pixel": "#ffffd8",
@@ -153,7 +168,8 @@
           117,
           155
         ],
-        "deltaE": 67.44
+        "deltaE": 67.44,
+        "deltaE2000": 35.08
       }
     },
     "refusal": {
@@ -164,7 +180,8 @@
           -4,
           -8
         ],
-        "deltaE": 2.79
+        "deltaE": 2.79,
+        "deltaE2000": 2.07
       },
       "asShipped": {
         "pixel": "#6b7a97",
@@ -173,7 +190,8 @@
           0,
           -2
         ],
-        "deltaE": 1.18
+        "deltaE": 1.18,
+        "deltaE2000": 0.69
       },
       "litMarker": {
         "pixel": "#7a8ebd",
@@ -182,7 +200,8 @@
           20,
           36
         ],
-        "deltaE": 11.78
+        "deltaE": 11.78,
+        "deltaE2000": 8.47
       },
       "litCentre": {
         "pixel": "#e8f5ff",
@@ -191,7 +210,8 @@
           123,
           102
         ],
-        "deltaE": 46.63
+        "deltaE": 46.63,
+        "deltaE2000": 34.54
       }
     },
     "rule": {
@@ -202,7 +222,8 @@
           0,
           -2
         ],
-        "deltaE": 1.36
+        "deltaE": 1.36,
+        "deltaE2000": 0.56
       },
       "asShipped": {
         "pixel": "#2a3a60",
@@ -211,7 +232,8 @@
           5,
           6
         ],
-        "deltaE": 2.25
+        "deltaE": 2.25,
+        "deltaE2000": 1.64
       },
       "litMarker": {
         "pixel": "#3b4f84",
@@ -220,7 +242,8 @@
           26,
           42
         ],
-        "deltaE": 14.45
+        "deltaE": 14.45,
+        "deltaE2000": 9.54
       },
       "litCentre": {
         "pixel": "#c6ccee",
@@ -229,7 +252,8 @@
           151,
           148
         ],
-        "deltaE": 60.32
+        "deltaE": 60.32,
+        "deltaE2000": 58.89
       }
     },
     "plate": {
@@ -240,7 +264,8 @@
           0,
           0
         ],
-        "deltaE": 0
+        "deltaE": 0,
+        "deltaE2000": 0
       },
       "asShipped": {
         "pixel": "#172138",
@@ -249,7 +274,8 @@
           11,
           16
         ],
-        "deltaE": 6.28
+        "deltaE": 6.28,
+        "deltaE2000": 3.91
       },
       "litMarker": {
         "pixel": "#253150",
@@ -258,7 +284,8 @@
           27,
           40
         ],
-        "deltaE": 15.23
+        "deltaE": 15.23,
+        "deltaE2000": 9.61
       },
       "litCentre": {
         "pixel": "#c1c1cc",
@@ -267,7 +294,8 @@
           171,
           164
         ],
-        "deltaE": 71.4
+        "deltaE": 71.4,
+        "deltaE2000": 65.33
       }
     }
   }

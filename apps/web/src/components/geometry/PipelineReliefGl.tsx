@@ -43,8 +43,10 @@ import {
   hexToLinear, mixLinear, assertBrandFidelity, IDENTITY,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
   qualitySettings, shadowMapSizeFor, pickQualityTier,
-  type LitDraw, type MeshBuffer, type Viewpoint,
+  type LitDraw, type MeshBuffer, type Viewpoint, type Linear,
 } from '@lcx/gl';
+/* A SUB-PATH IMPORT, NOT THE BARREL — `docs/3d/w2/SUBPATH_COST.md`; `SurfaceReliefGl.tsx` carries the reason. */
+import { sceneTheme, liveTheme, type SceneTheme, type ThemeName } from '@lcx/gl/look/theme.js';
 import {
   useResolvedQualityTier, needsQualityProbe, measureFrameMs, recordQualityProbe,
 } from '../shared/useQualityTier';
@@ -177,13 +179,83 @@ const LIGHT_DIR: [number, number, number] = [-0.62, -0.38, -0.69];
 const SCENE_MIN: [number, number, number] = [-2.0, 0, CHANNEL_Z_FAR];
 const SCENE_MAX: [number, number, number] = [2.0, 1.9, CHANNEL_Z_NEAR];
 
-const GATE_STROKE = { colour: hexToLinear('#4E8CFF'), gain: 1.5 } as const;
-const AXIS_STROKE = { colour: hexToLinear('#7FB2FF'), gain: 1.1 } as const;
+/**
+ * ══ THE STROKES ARE THE ONE THING IN THESE SEVEN SURFACES A THEME SWAP ALONE CANNOT FIX ═════════════
+ *
+ * The gate is a PORTAL, and its membrane exists only as the additive outline traced below — the posts and the
+ * sill are its edge. So the outline is not decoration on this frame; it is the object a lead's position is read
+ * against. `lines.ts` writes `uColour * uGain` with alpha hard-coded to 1.0 and the calls below blend
+ * `ONE, ONE`, which can only ADD light. On a bright ground that is arithmetically hopeless, and it measures
+ * exactly as badly as it sounds. Contrast of the stroke against the fog it is drawn over, through this
+ * pipeline's own tone map and sRGB encode:
+ *
+ *                              DARK, additive        LIGHT fog, additive kept
+ *   gate  #4E8CFF gain 1.5     6.89:1                1.28:1
+ *   axis  #7FB2FF gain 1.1     7.89:1                1.36:1
+ *
+ * 1.28:1 is not a weak line, it is no line: the gates and the movement axis disappear and the frame becomes
+ * cubes floating in a white box with nothing to read them against.
+ *
+ * ── THE FIX IS THE BLEND STATE, NOT A NEW PASS ───────────────────────────────────────
+ * A reference is emissive because on a dark ground light is how a mark is made. On a light ground INK is how a
+ * mark is made, and `lines.ts` already writes alpha 1.0 — so with blending simply OFF the same call writes an
+ * opaque rule at its own depth, still depth-tested, still not depth-writing. One ink colour serves both strokes
+ * and the SHIPPED GAINS are kept, which is what preserves their ordering: the gate's larger gain makes it the
+ * lighter, more recessive of the two on light exactly as the axis is the brighter of the two on dark. Measured
+ * against the same light fog:
+ *
+ *   gate  #26355A gain 1.5     6.17:1        (dark was 6.89:1)
+ *   axis  #26355A gain 1.1     7.18:1        (dark was 7.89:1)
+ *
+ * Both within 0.72 of the dark theme's own numbers, both far above the 3:1 WCAG 1.4.11 floor for a graphical
+ * object that carries information, and in the same order. `#26355A` is `BRAND_HEX.rule`, whose own comment reads
+ * "Structure — axes, rules, ticks. Recedes" — the role these strokes have.
+ */
+const STROKE_INK_HEX = '#26355A';
+const strokesFor = (th: SceneTheme) => {
+  const light = th.name !== 'dark';
+  const colour = light ? hexToLinear(STROKE_INK_HEX) : null;
+  return {
+    /* `additive` drives the blend state at the call site, so there is ONE owner of the light/dark decision and
+       the colour and the blend cannot end up disagreeing — an ink drawn additively is invisible, and a luminous
+       stroke drawn opaquely paints a bright rectangle over the geometry behind it. */
+    additive: !light,
+    gate: { colour: colour ?? hexToLinear('#4E8CFF'), gain: 1.5 },
+    axis: { colour: colour ?? hexToLinear('#7FB2FF'), gain: 1.1 },
+  };
+};
 
-/** Slate, not brand blue. Brand blue is reserved for a LEAD; the architecture is the ruler, not the reading,
-    and a dark blue rail beside a brand-blue cube is one hue doing two jobs. */
-const GATE_MAT = { baseColour: hexToLinear('#31415C'), roughness: 0.36, metalness: 0.20 };
-const CHANNEL_MAT = { baseColour: hexToLinear('#1E2A42'), roughness: 0.60, metalness: 0.03 };
+/**
+ * THE ARCHITECTURE'S ALBEDOS, AND THE ORDERING THAT HAD TO BE PRESERVED RATHER THAN GUESSED.
+ *
+ * Slate, not brand blue: brand blue is reserved for a LEAD; the architecture is the ruler, not the reading, and
+ * a dark blue rail beside a brand-blue cube is one hue doing two jobs.
+ *
+ * Measured WCAG luminance of the three dark albedos: wall #1E2A42 0.0233 < floor #22304A 0.0295 < gate #31415C
+ * 0.0521. The wall RECEDES below the floor and the gate STANDS OUT above it, and that ordering is the reading.
+ * On a light ground "recede" and "stand out" both invert, so the light values have to run the other way, and the
+ * theme's roles happen to be ordered to take them: gate `rule` 0.5608 < floor `ground` 0.8438 < wall `plate`
+ * 1.0000. Same three-way ordering, mirrored — derived from the measurement rather than assigned by eye.
+ *
+ * `structure` is deliberately NOT used here even though "wall" sounds like it: at 0.6113 it sits between `rule`
+ * and `ground` and would put the wall on the wrong side of the floor, collapsing the gate and the wall together.
+ * A role name is not a substitute for checking which way the numbers go in THIS scene.
+ */
+const scenery = (th: SceneTheme, darkHex: string, light: Linear): Linear =>
+  (th.name === 'dark' ? hexToLinear(darkHex) : light);
+const gateMatFor = (th: SceneTheme) => (
+  { baseColour: scenery(th, '#31415C', th.rule), roughness: 0.36, metalness: 0.20 });
+const channelMatFor = (th: SceneTheme) => (
+  { baseColour: scenery(th, '#1E2A42', th.plate), roughness: 0.60, metalness: 0.03 });
+
+/** The dark theme's record, held only as the denominator of the light rig's ratio — see `SurfaceReliefGl.tsx`,
+    THE LIGHT RIG MOVES BY RATIO. Nothing reads a colour out of it. */
+const TH_DARK = sceneTheme('dark');
+const rigFor = (th: SceneTheme) => ({
+  key: th.keyGain / TH_DARK.keyGain,
+  ambient: th.ambientGain / TH_DARK.ambientGain,
+  shadow: th.shadowStrength / TH_DARK.shadowStrength,
+});
 
 /**
  * The three marks on the movement axis. `0d` is the rail, `45d+` is deck height.
@@ -377,34 +449,41 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
     const floorModel = modelAt(0, 0, CHANNEL_MID, 1);
     floorModel[10] = CHANNEL_LEN / (2 * CHANNEL_HALF);
 
-    /* THE ARCHITECTURE, which is the same for every dataset this channel can hold. Built once and reused by
-       every redraw; only the leads below it are rebuilt when the data changes. */
-    const staticDraws: LitDraw[] = [
-      { mesh: floorMesh!, model: floorModel, normalMat: N3,
-        material: { baseColour: hexToLinear('#22304A'), roughness: 0.82, metalness: 0 } },
-      { mesh: wallMesh!, model: modelAt(-(CHANNEL_HALF + 0.09), 0.625, CHANNEL_MID), normalMat: N3,
-        material: CHANNEL_MAT },
-      { mesh: wallMesh!, model: modelAt(CHANNEL_HALF + 0.09, 0.625, CHANNEL_MID), normalMat: N3,
-        material: CHANNEL_MAT },
-    ];
+    /* THE ARCHITECTURE, which is the same for every dataset this channel can hold — so it carries no geometry
+       cost per redraw. It is rebuilt as a JavaScript array per frame rather than held as one, because its
+       ALBEDOS follow the theme and a `const` array would be the stale-theme snapshot `ForgeBackdrop.tsx:120-127`
+       records the cost of. Eighteen draw descriptors — floor, two walls and three per gate across the five
+       `GATE_BANDS` — over shared, already-uploaded meshes, so the whole rebuild is a JavaScript array. */
+    const staticDrawsFor = (th: SceneTheme): LitDraw[] => {
+      const gate = gateMatFor(th), channel = channelMatFor(th);
+      const out: LitDraw[] = [
+        { mesh: floorMesh!, model: floorModel, normalMat: N3,
+          material: { baseColour: scenery(th, '#22304A', th.ground), roughness: 0.82, metalness: 0 } },
+        { mesh: wallMesh!, model: modelAt(-(CHANNEL_HALF + 0.09), 0.625, CHANNEL_MID), normalMat: N3,
+          material: channel },
+        { mesh: wallMesh!, model: modelAt(CHANNEL_HALF + 0.09, 0.625, CHANNEL_MID), normalMat: N3,
+          material: channel },
+      ];
 
-    /*
-     * A GATE IS A PORTAL, NOT A PANE.
-     *
-     * §2 asks for a luminous membrane across the channel. A thin box spanning the aperture is exactly that and
-     * it is OPAQUE, so five in a row make the channel a wall and nothing past the first gate exists — which
-     * destroys the depth the whole environment is built on. So the membrane is its EDGE: two posts and a deck
-     * sill as lit geometry that casts shadow, plus an additive outline traced on the full rectangle below. The
-     * luminous half of "luminous membrane" comes from the outline, and the aperture stays open.
-     */
-    for (let i = 0; i < GATE_BANDS.length; i++) {
-      const z = gateZ(i);
-      staticDraws.push(
-        { mesh: postMesh!, model: modelAt(-(CHANNEL_HALF + 0.05), GATE_H / 2, z), normalMat: N3, material: GATE_MAT },
-        { mesh: postMesh!, model: modelAt(CHANNEL_HALF + 0.05, GATE_H / 2, z), normalMat: N3, material: GATE_MAT },
-        { mesh: sillMesh!, model: modelAt(0, 0.025, z), normalMat: N3, material: GATE_MAT },
-      );
-    }
+      /*
+       * A GATE IS A PORTAL, NOT A PANE.
+       *
+       * §2 asks for a luminous membrane across the channel. A thin box spanning the aperture is exactly that and
+       * it is OPAQUE, so five in a row make the channel a wall and nothing past the first gate exists — which
+       * destroys the depth the whole environment is built on. So the membrane is its EDGE: two posts and a deck
+       * sill as lit geometry that casts shadow, plus an outline traced on the full rectangle below — additive on
+       * dark, opaque ink on light, for the measured reason at `strokesFor`. The aperture stays open either way.
+       */
+      for (let i = 0; i < GATE_BANDS.length; i++) {
+        const z = gateZ(i);
+        out.push(
+          { mesh: postMesh!, model: modelAt(-(CHANNEL_HALF + 0.05), GATE_H / 2, z), normalMat: N3, material: gate },
+          { mesh: postMesh!, model: modelAt(CHANNEL_HALF + 0.05, GATE_H / 2, z), normalMat: N3, material: gate },
+          { mesh: sillMesh!, model: modelAt(0, 0.025, z), normalMat: N3, material: gate },
+        );
+      }
+      return out;
+    };
 
     /*
      * MASS FROM VALUE, HEIGHT FROM MOVEMENT — and three shapes, because two absences that a blank cell
@@ -510,14 +589,19 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
      * computed between the prepass and the lit pass because it needs depth and the lit pass needs it — and the
      * prepass is not a tax, it lets the lit pass reject occluded fragments before their GGX evaluation.
      */
-    const renderScene = (draws: readonly LitDraw[]): void => {
+    const renderScene = (th: SceneTheme, draws: readonly LitDraw[]): void => {
+      const rig = rigFor(th);
+      const stroke = strokesFor(th);
       lit.shadowPass(lightVP, draws, shadow);
       target.bind();
       /* NO SKY BACKDROP, AND THE CLEAR IS THE FOG COLOUR. The channel is open-topped, so the sky stays as the
          irradiance environment; what it must not get is the sky DRAWN, which would make the most fogged part of
          the frame its brightest — the exact inverse of the reading. Clearing to the fog colour means every
-         distant surface converges on a value the frame already has. */
-      const fc = hexToLinear(FOG_HEX);
+         distant surface converges on a value the frame already has.
+         THE FOG IS SCENERY and takes the theme: `theme.ts` derives `fog` from the sky rather than declaring it,
+         because a fog colour that does not match what is behind it produces a seam exactly where the scene is
+         meant to dissolve. Dark keeps this file's own #0C1322; light takes #DCE5F3. */
+      const fc = scenery(th, FOG_HEX, th.fog);
       gl.clearColor(fc[0], fc[1], fc[2], 1);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
       lit.depthPrepass(vp, draws);
@@ -528,33 +612,51 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
         });
         target.bind();
       }
+      /* THE SKY IS AN IRRADIANCE ENVIRONMENT HERE AND NOTHING ELSE — it is never drawn — so it takes the theme's
+         stops without any backdrop to keep in step. `undefined` on dark so the dark frame goes down the same path
+         it shipped on rather than one that recomputes the same numbers. */
+      const sky = th.name === 'dark' ? undefined : {
+        zenith: th.skyZenith, horizon: th.skyHorizon, ground: th.ground,
+      };
       lit.draw({
-        viewProj: vp, eye, lightDir: LIGHT_DIR, lightColour: [3.4, 3.3, 3.14],
-        ambientGain: 0.44, lightVP, shadow, shadowStrength: 0.92, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
+        viewProj: vp, eye, lightDir: LIGHT_DIR,
+        lightColour: [3.4 * rig.key, 3.3 * rig.key, 3.14 * rig.key],
+        ambientGain: 0.44 * rig.ambient, sky, lightVP, shadow,
+        shadowStrength: 0.92 * rig.shadow,
+        shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
         ao: ao ? ao.texture : null, screenSize: [W, H],
         fog: { density: FOG_DENSITY, height: 5.0, floor: 0, colour: fc },
       });
 
       /*
-       * ADDITIVE, DEPTH-TESTED, NOT DEPTH-WRITING — set by hand rather than with a helper that disables the
-       * depth test. An untested outline draws over the objects in front of it, so every gate would appear nearer
-       * than every lead that has already cleared it: the one thing this geometry exists to state, inverted.
-       * Testing keeps the ordering; not writing keeps two crossing strokes from fighting over which is nearer.
+       * DEPTH-TESTED, NOT DEPTH-WRITING — set by hand rather than with a helper that disables the depth test. An
+       * untested outline draws over the objects in front of it, so every gate would appear nearer than every lead
+       * that has already cleared it: the one thing this geometry exists to state, inverted. Testing keeps the
+       * ordering; not writing keeps two crossing strokes from fighting over which is nearer.
+       *
+       * THE BLEND IS THE THEME'S, and `strokesFor` carries the measurement. Additive on dark: a reference is
+       * emissive because on a dark ground light is how a mark is made. OFF on light: `lines.ts` writes alpha 1.0,
+       * so with no blend the same call lays an opaque ink rule — which is how a mark is made on a bright ground.
+       * The depth state is identical either way, so the ordering above is unaffected by which branch runs.
        */
-      gl.enable(gl.BLEND);
-      gl.blendFunc(gl.ONE, gl.ONE);
+      if (stroke.additive) {
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.ONE, gl.ONE);
+      } else {
+        gl.disable(gl.BLEND);
+      }
       gl.enable(gl.DEPTH_TEST);
       gl.depthMask(false);
       for (let i = 0; i < GATE_BANDS.length; i++) {
         const z = gateZ(i);
-        strokes.ruleAtDepth(vp, -CHANNEL_HALF, 0.02, CHANNEL_HALF, 0.02, z, 0.012, GATE_STROKE);
-        strokes.ruleAtDepth(vp, -CHANNEL_HALF, GATE_H, CHANNEL_HALF, GATE_H, z, 0.010, GATE_STROKE);
-        strokes.ruleAtDepth(vp, -CHANNEL_HALF, 0.02, -CHANNEL_HALF, GATE_H, z, 0.010, GATE_STROKE);
-        strokes.ruleAtDepth(vp, CHANNEL_HALF, 0.02, CHANNEL_HALF, GATE_H, z, 0.010, GATE_STROKE);
+        strokes.ruleAtDepth(vp, -CHANNEL_HALF, 0.02, CHANNEL_HALF, 0.02, z, 0.012, stroke.gate);
+        strokes.ruleAtDepth(vp, -CHANNEL_HALF, GATE_H, CHANNEL_HALF, GATE_H, z, 0.010, stroke.gate);
+        strokes.ruleAtDepth(vp, -CHANNEL_HALF, 0.02, -CHANNEL_HALF, GATE_H, z, 0.010, stroke.gate);
+        strokes.ruleAtDepth(vp, CHANNEL_HALF, 0.02, CHANNEL_HALF, GATE_H, z, 0.010, stroke.gate);
       }
       for (const days of AXIS_TICK_DAYS) {
         const y = (1 - Math.min(1, days / STALL_DAYS)) * RAIL_LIFT + TICK_FLOOR_CLEARANCE;
-        strokes.ruleAtDepth(vp, axisXOuter, y, axisXInner, y, axisZ, 0.006, AXIS_STROKE);
+        strokes.ruleAtDepth(vp, axisXOuter, y, axisXInner, y, axisZ, 0.006, stroke.axis);
       }
       gl.depthMask(true);
       gl.disable(gl.BLEND);
@@ -577,12 +679,17 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
      * DATA: a channel the caption declined to describe must not be handed to a mesh builder, and that judgement
      * has to be made again on the second dataset as well as on the first.
      */
+    /* Which theme the frame on screen was drawn at — see `SurfaceReliefGl.tsx`, A THEME CHANGE IS A REDRAW. */
+    let drawnTheme: ThemeName | null = null;
+
     const draw = (c: Channel): 'STALE_TIER' | undefined => {
+      /* READ PER FRAME, NOT CAPTURED AT SETUP — `ForgeBackdrop.tsx:120-127` records what the snapshot cost. */
+      const th = sceneTheme(liveTheme());
       const refusal = channelRefusal(c);
       if (refusal !== null) { refuse(refusal); return undefined; }
       const leads = leadDraws(c);
       if ('refusal' in leads) { refuse(leads.refusal); return undefined; }
-      const draws = [...staticDraws, ...leads];
+      const draws = [...staticDrawsFor(th), ...leads];
 
       /*
        * THE PROBE. `pickQualityTier` exists to choose a tier from a measured frame and had no caller in the
@@ -593,7 +700,7 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
        * update must never re-time the machine, or the ladder would follow the dataset instead of the GPU.
        */
       if (needsQualityProbe()) {
-        const ms = measureFrameMs(gl, () => renderScene(draws));
+        const ms = measureFrameMs(gl, () => renderScene(th, draws));
         const r = recordQualityProbe({
           pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'PipelineReliefGl',
         });
@@ -602,8 +709,11 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
         if (r.tier !== tier) return 'STALE_TIER';
       }
 
-      renderScene(draws);
+      renderScene(th, draws);
       presentFrame();
+      /* RECORDED ONLY ONCE THE FRAME IS PRESENTED, so a STALE_TIER return cannot leave the observer believing a
+         theme is on screen that never reached it. */
+      drawnTheme = th.name;
       /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
       canvas.dataset.qualityTier = tier;
 
@@ -639,8 +749,21 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
     const onLost = (e: Event): void => { e.preventDefault(); onRefused('CONTEXT_LOST'); };
     canvas.addEventListener('webglcontextlost', onLost);
 
+    /* A THEME CHANGE IS A REDRAW, NOT A REBUILD — the full reasoning, including why `beforeprint` is needed for
+       `BoardReport.tsx:105-109` specifically and why the `drawnTheme` guard is what makes the other three print
+       handlers free, is in `SurfaceReliefGl.tsx` under that heading. */
+    const redrawForTheme = (): void => {
+      if (liveTheme() === drawnTheme) return;
+      drawRef.current?.(channelRef.current);
+    };
+    const themeWatch = new MutationObserver(redrawForTheme);
+    themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    window.addEventListener('beforeprint', redrawForTheme);
+
     return () => {
       canvas.removeEventListener('webglcontextlost', onLost);
+      themeWatch.disconnect();
+      window.removeEventListener('beforeprint', redrawForTheme);
       drawRef.current = null;
       /* ALREADY RELEASED ON THE REFUSAL PATH, and `disposers.reverse()` MUTATES — running it twice would
          restore the original order and dispose forwards, with the stage killed before the resources built on

@@ -3,8 +3,12 @@ import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { BRAND, BRAND_HEX, linearToHex, srgbToLinear, type BrandKey } from './colour.js';
+import { BRAND, BRAND_HEX, linearToHex, luminance, srgbToLinear, type BrandKey } from './colour.js';
 import { toneMapComposite, TONE_POLICY, TONE_MAP_GLSL, SRGB_ENCODE_GLSL } from './tonemap.js';
+import {
+  inverseToneMap, precompensate, precompHeadroom, isPrecompRefusal,
+  PRECOMP_CLIP, PRECOMP_POLE, PRECOMP_RULE, type CompositeSite,
+} from './precompensate.js';
 import { PIPELINE_SOURCES } from './pipeline.js';
 
 /**
@@ -176,11 +180,17 @@ describe('§6 rule 5 is false in this pipeline, and here is the pixel that says 
 describe('what IS true of the pipeline, and what a surface may rely on instead', () => {
   it('order survives: the curve is monotone, so the density ramp still reads correctly', () => {
     /*
-     * THE REPLACEMENT INVARIANT. The exact hex does not survive the composite and cannot be
-     * made to (a curve that fixes brand blue's linear-1.0 blue channel has no headroom left
-     * above 1.0, which deletes the only reason this pipeline has a tone map at all). What
-     * survives, and what a reader of a chart actually depends on, is that a denser mark
-     * never renders lighter than a sparser one.
+     * THE REPLACEMENT INVARIANT. The exact hex does not survive the composite FOR A MARK
+     * WRITTEN AT ITS PALETTE VALUE, and no curve can change that — one pinned at brand blue's
+     * linear-1.0 blue channel has no headroom left above 1.0, which deletes the only reason
+     * this pipeline has a tone map at all. What survives, and what a reader of a chart
+     * actually depends on, is that a denser mark never renders lighter than a sparser one.
+     *
+     * That sentence used to read "and cannot be made to", which was wrong and is corrected in
+     * the PRE-COMPENSATION block at the foot of this file: writing `inverseToneMap(target)`
+     * instead lands all seven entries at ΔE 0.00 through this same curve. ORDER SURVIVES is
+     * still the invariant every mark has, because pre-compensation is refused for the
+     * accumulating case — this test therefore stays exactly as it is.
      *
      * Checked over EVERY ordered pair and EVERY channel, off the measured bytes — not over
      * the three-step brand ramp somebody would otherwise hand-list.
@@ -227,5 +237,334 @@ describe('what IS true of the pipeline, and what a surface may rely on instead',
         `${k}: the lit centre fragment matched its flat hex, which no shading model does`,
       ).toBeGreaterThan(20);
     }
+  });
+});
+
+/* ══ PRE-COMPENSATION ═══════════════════════════════════════════════════════════════════
+ *
+ * The block above is correct that "brand hex exact" was never enforced and that a
+ * data-preserving CURVE cannot exist. It also concluded no data-preserving fix exists, and
+ * that does not follow: the fix is not a curve. Writing `inverseToneMap(BRAND[k])` into the
+ * scene target makes the LIVE, UNMODIFIED curve deliver `BRAND_HEX[k]` exactly.
+ *
+ * These bytes were read off a framebuffer by the same instrument shape `docs/3d/
+ * brand-fidelity.mjs` uses — bundled `@lcx/gl`, headless Chromium on ANGLE/SwiftShader,
+ * RGBA16F scene target, centre pixel of a 128x128 frame. They are recorded HERE rather than in
+ * `docs/3d/brand-fidelity.json` because that record is another lane's and re-running its
+ * instrument would rewrite it; the pin below makes this block go stale on exactly the same
+ * edits that stale the JSON.
+ *
+ * A PLAIN write at each palette entry was measured in the same run as a control, and it
+ * reproduces `brand-fidelity.json`'s `compositeOnly` byte for byte on all seven entries —
+ * asserted below, so "my instrument agrees with the shipped one" is a test rather than a
+ * claim. That control is `sweepPlain[k][2]`, the 1.0x multiple.
+ */
+const PRECOMP = {
+  measuredAt: '2026-08-15',
+  driver: 'ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)',
+  hdr: true,
+  /* Recomputed live below from the SAME four inputs `sourceHash` above uses. An independent
+     literal, not a read of `record.sourceHash`: re-running brand-fidelity.mjs updates that
+     field, and a shared pin would let this block pass against a pipeline it never saw. */
+  sourceHash: '5858a9d80b9b32d7',
+  /** `pipeline.resolve({ plate: [0,0,0], bloomGain: 0 })` — nothing but the curve and the encode. */
+  precompOnly: {
+    brand: '#2c6bff', brandBright: '#7fb2ff', brandDeep: '#12326e', reference: '#ff8a3d',
+    refusal: '#6b7a99', rule: '#26355a', plate: '#0e1628',
+  },
+  /** `FlatLine.tsx:116` exactly: plate 0, bloomGain 0, threshold [4,5], vignetteDepth 0, transparent. */
+  precompFlatLine: {
+    brand: '#2c6bff', brandBright: '#7fb2ff', brandDeep: '#12326e', reference: '#ff8a3d',
+    refusal: '#6b7a99', rule: '#26355a', plate: '#0e1628',
+  },
+  /** COST 2 — `pipeline.resolve({ bloomGain: 0 })`, so the DEFAULT plate at `pipeline.ts:188`. */
+  precompDefaultPlate: {
+    brand: '#306dff', brandBright: '#80b3ff', brandDeep: '#1a3873', reference: '#ff8b48',
+    refusal: '#6c7c9c', rule: '#2a3a61', plate: '#172139',
+  },
+  /** COST 3 — plate 0, `bloomGain: 0.3`, the value FlatBars/FlatDial/FlatTrack all ship. */
+  precompBloom03: {
+    brand: '#2d6dff', brandBright: '#8cc1ff', brandDeep: '#12326e', reference: '#ff9744',
+    refusal: '#6c7b9a', rule: '#26355a', plate: '#0e1628',
+  },
+  /** COST 1 — the same mark scaled by each multiple, plate 0, bloom 0. Full RGB per shot. */
+  multiples: [0.5, 0.75, 1, 1.25, 1.5, 2],
+  sweepPlain: {
+    brand: [[29,76,173], [37,91,200], [44,104,220], [49,115,235], [54,124,248], [63,140,255]],
+    brandBright: [[90,125,173], [108,148,200], [122,165,220], [134,180,235], [145,192,248], [162,212,255]],
+    brandDeep: [[10,34,78], [14,43,94], [18,50,107], [21,56,118], [24,61,127], [29,71,144]],
+    reference: [[173,98,42], [200,117,52], [220,132,60], [235,145,68], [248,156,74], [255,174,85]],
+    refusal: [[76,86,108], [91,104,129], [104,118,145], [115,130,158], [124,140,170], [140,157,189]],
+    rule: [[25,36,63], [32,45,77], [38,53,88], [43,59,98], [47,65,106], [55,74,120]],
+    plate: [[7,13,26], [11,18,34], [14,22,40], [17,25,45], [19,29,50], [23,34,58]],
+  },
+  sweepPrecomp: {
+    brand: [[30,78,207], [38,94,235], [44,107,255], [50,118,255], [55,128,255], [63,144,255]],
+    brandBright: [[94,136,207], [112,160,235], [127,178,255], [139,193,255], [150,205,255], [168,225,255]],
+    brandDeep: [[10,34,80], [14,43,97], [18,50,110], [21,56,121], [24,62,131], [29,71,147]],
+    reference: [[207,102,42], [235,122,53], [255,138,61], [255,151,68], [255,162,74], [255,181,85]],
+    refusal: [[78,90,115], [94,108,136], [107,122,153], [118,134,167], [128,145,179], [144,162,198]],
+    rule: [[25,36,65], [32,46,79], [38,53,90], [43,59,100], [47,65,108], [55,75,123]],
+    plate: [[7,13,27], [11,18,34], [14,22,40], [17,26,45], [19,29,50], [23,34,58]],
+  },
+} as const;
+
+type Sweep = readonly (readonly [number, number, number])[];
+const sweepPlain = PRECOMP.sweepPlain as unknown as Record<BrandKey, Sweep>;
+const sweepPrecomp = PRECOMP.sweepPrecomp as unknown as Record<BrandKey, Sweep>;
+const cfg = (name: 'precompOnly' | 'precompFlatLine' | 'precompDefaultPlate' | 'precompBloom03') =>
+  PRECOMP[name] as unknown as Record<BrandKey, string>;
+
+/** The index of the channel the palette entry is brightest in — the one that clips first. */
+const pinnedChannel = (k: BrandKey): number => {
+  const t = bytesOf(BRAND_HEX[k]);
+  return [0, 1, 2].reduce((a, i) => (t[i]! > t[a]! ? i : a), 0);
+};
+
+/**
+ * How many DISTINCT bytes a density sweep can produce on a channel whose scene value at 1.0x
+ * is `peak`. Every multiple at or above the clip collapses to 255, so the count is the number
+ * of multiples below the clip plus one for the collapsed group.
+ *
+ * ONE formula, applied to both the plain and the pre-compensated column, because the cost of
+ * pre-compensation IS the change in `peak` and nothing else. Writing the two expected counts
+ * out by hand would pass against any `peak` at all.
+ */
+const distinctBytes = (peak: number): number => {
+  const below = PRECOMP.multiples.filter((m) => m * peak < PRECOMP_CLIP).length;
+  return below + (below < PRECOMP.multiples.length ? 1 : 0);
+};
+
+const FLOOR_SITE: CompositeSite = {
+  dstFactor: 'one-minus-src-alpha', plate: [0, 0, 0], bloomGain: 0,
+  threshold: [0.12, 0.7], shaderScale: 1,
+};
+
+describe('pre-compensation: the curve delivers the exact hex, and the record says so', () => {
+  it('the instrument agrees with docs/3d/brand-fidelity.json — same driver, same bytes', () => {
+    /*
+     * THE CROSS-CHECK THAT MAKES THE REST OF THIS BLOCK USABLE. A second instrument reporting
+     * a flattering number is the failure mode a fidelity record exists to stop, so the run
+     * that produced these bytes also measured a PLAIN write, and it must reproduce the record
+     * the P1 lane already publishes. Derived over the palette, not spot-checked on brand.
+     */
+    for (const k of KEYS) {
+      const plainAtUnity = sweepPlain[k][2]!;
+      expect(
+        `#${plainAtUnity.map((v) => v.toString(16).padStart(2, '0')).join('')}`,
+        `${k}: this file's instrument disagrees with brand-fidelity.json's compositeOnly`,
+      ).toBe(record.rows[k].compositeOnly!.pixel);
+    }
+  });
+
+  it('the shader sources have not changed since these pixels were read', () => {
+    const live = createHash('sha256')
+      .update([PIPELINE_SOURCES.composite, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, JSON.stringify(BRAND_HEX)].join(' | '))
+      .digest('hex').slice(0, 16);
+    expect(live, `pipeline changed since ${PRECOMP.measuredAt} — the pre-compensation record is stale`)
+      .toBe(PRECOMP.sourceHash);
+  });
+
+  it('every palette entry comes back EXACT — measured, not derived from the algebra', () => {
+    /*
+     * The claim the commit of 2026-08-14 said could not exist. `#2c68dc` (ΔE 18.31) becomes
+     * `#2c6bff` (ΔE 0.00) with the curve, the shoulder and the composite all untouched — the
+     * only change is WHAT IS WRITTEN INTO THE SCENE TARGET.
+     *
+     * Walks BRAND_HEX so a palette entry added later is covered without anyone remembering.
+     */
+    for (const k of KEYS) {
+      expect(cfg('precompOnly')[k], `${k} did not land exact under pre-compensation`)
+        .toBe(BRAND_HEX[k].toLowerCase());
+      expect(cfg('precompFlatLine')[k], `${k} is not exact under FlatLine.tsx:116's own options`)
+        .toBe(BRAND_HEX[k].toLowerCase());
+    }
+  });
+
+  it('the live precompensate() reproduces those GPU bytes through the live tone map', () => {
+    /*
+     * CPU-vs-GPU, the same discipline the block above applies to a plain write. Without this
+     * the exactness assertion is a comparison of two frozen strings and cannot fail on a
+     * change to `inverseToneMap` — which is the one function the whole result rests on.
+     *
+     * ±1/255 for the same reason: RGBA16F, read back through a half-float texture fetch.
+     */
+    for (const k of KEYS) {
+      const pre = precompensate(BRAND[k], FLOOR_SITE);
+      expect(isPrecompRefusal(pre), `${k}: refused on a zero plate with no bloom`).toBe(false);
+      const predicted = bytesOf(linearToHex(toneMapComposite(pre as typeof BRAND.brand)));
+      const measured = bytesOf(cfg('precompOnly')[k]!);
+      for (let c = 0; c < 3; c++) {
+        expect(
+          Math.abs(predicted[c]! - measured[c]!),
+          `${k} channel ${c}: CPU says ${predicted[c]}, the GPU wrote ${measured[c]}`,
+        ).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it('the scene values stay far inside RGBA16F — the format was never the constraint', () => {
+    /* 1.6667 against 65504. Recorded because "the buffer cannot hold it" is the objection
+       this approach attracts, and it is four orders of magnitude wrong. */
+    const peak = Math.max(...KEYS.flatMap((k) => [...inverseToneMap(BRAND[k])]));
+    expect(peak).toBeLessThanOrEqual(PRECOMP_CLIP);
+    expect(peak).toBeLessThan(65504);
+  });
+});
+
+describe('COST 1 — pre-compensation consumes the highlight range of a saturated mark', () => {
+  it('a linear-1.0 channel is left EXACTLY 1.0x of headroom, and that is derived', () => {
+    /*
+     * `precompHeadroom` is `(1-s·m)/(m·(1-s))`, which is 1.0 at m = 1 for any shoulder. The
+     * three entries with a linear-1.0 channel are found by that property, not listed: adding a
+     * fourth saturated colour to the palette must be covered automatically.
+     */
+    const saturated = KEYS.filter((k) => Math.max(...BRAND[k]) >= 1);
+    expect(saturated.length, 'no palette entry has a saturated channel to test the ceiling on')
+      .toBeGreaterThan(0);
+    for (const k of saturated) {
+      expect(precompHeadroom(BRAND[k]), `${k} should have no headroom left`).toBeCloseTo(1, 10);
+      expect(PRECOMP_CLIP / Math.max(...BRAND[k]), `${k} plain headroom`).toBeCloseTo(PRECOMP_CLIP, 10);
+    }
+    for (const k of KEYS.filter((k) => Math.max(...BRAND[k]) < 1)) {
+      expect(precompHeadroom(BRAND[k]), `${k} is unsaturated and should keep headroom`)
+        .toBeGreaterThan(1);
+    }
+  });
+
+  it('and the measured sweep loses exactly the steps that arithmetic predicts', () => {
+    /*
+     * THE COST, IN PIXELS. Brand blue resolves 6 distinct bytes over 0.5-2.0x plain and 3
+     * pre-compensated; brandDeep, refusal, rule and plate lose nothing. `distinctBytes` is one
+     * formula applied to both columns, so this fails if the shoulder moves, if a palette entry
+     * changes saturation, or if the recorded bytes are edited by hand.
+     *
+     * A collision between two sub-clip multiples would also fail it, and correctly: it would
+     * mean the sweep no longer resolves the steps it is being used to count.
+     */
+    let lost = 0;
+    for (const k of KEYS) {
+      const c = pinnedChannel(k);
+      const plainSeen = new Set(sweepPlain[k]!.map((p) => p[c]!));
+      const preSeen = new Set(sweepPrecomp[k]!.map((p) => p[c]!));
+      expect(plainSeen.size, `${k}: plain sweep on channel ${'rgb'[c]}`)
+        .toBe(distinctBytes(Math.max(...BRAND[k])));
+      expect(preSeen.size, `${k}: pre-compensated sweep on channel ${'rgb'[c]}`)
+        .toBe(distinctBytes(Math.max(...inverseToneMap(BRAND[k]))));
+      lost += plainSeen.size - preSeen.size;
+    }
+    expect(lost, 'pre-compensation cost nothing anywhere, which would make COST 1 fiction')
+      .toBeGreaterThan(0);
+  });
+
+  it('so an accumulating field is REFUSED, decided by the blend dstFactor and nothing else', () => {
+    /*
+     * The taxonomy is not "does this look like a rule or a cloud". `dstFactor: 'one'` — the
+     * SRC_ALPHA/ONE of `stage.ts:593` and the ONE/ONE of `env/particles.ts:565` — makes
+     * overlap SUM and is unbounded. `'one-minus-src-alpha'` (`stage.ts:612`) is a convex
+     * combination bounded by its larger contributor, so overlap replaces and cannot
+     * accumulate. Same primitive, same colour, opposite answer.
+     */
+    const additive = precompensate(BRAND.brand, { ...FLOOR_SITE, dstFactor: 'one' });
+    expect(isPrecompRefusal(additive)).toBe(true);
+    expect((additive as { code: string }).code).toBe('ACCUMULATES');
+    expect((additive as { detail: string }).detail).toContain('1.0000x');
+    for (const d of ['one-minus-src-alpha', 'none'] as const) {
+      expect(isPrecompRefusal(precompensate(BRAND.brand, { ...FLOOR_SITE, dstFactor: d })))
+        .toBe(false);
+    }
+  });
+
+  it('a target above the pole is refused rather than returned as a negative colour', () => {
+    /* `exposure(BRAND.brand, 2)` is a 4x scale and 4 > 2.5, so the inverse is −6.6667 in blue
+       — a BLACK mark, returned with no error. This is the one refusal that catches a caller
+       composing pre-compensation with an exposure decision. */
+    const over: readonly [number, number, number] = [0.1, 0.1, PRECOMP_POLE + 0.5];
+    expect(inverseToneMap(over)[2]).toBeLessThan(0);
+    const r = precompensate(over, FLOOR_SITE);
+    expect(isPrecompRefusal(r)).toBe(true);
+    expect((r as { code: string }).code).toBe('TARGET_ABOVE_POLE');
+  });
+});
+
+describe('COST 2 and COST 3 — what the plate and the bloom do to it, measured', () => {
+  it('the default plate breaks exactness, so a non-zero plate is refused', () => {
+    /*
+     * The composite adds `uPlate` before the curve, so pre-compensating `scene` alone misses:
+     * brand lands #306dff rather than #2c6bff. The refusal names the vignette because that is
+     * why subtracting the plate is not the fix — `pipeline.ts:97` scales it per pixel from
+     * 0.38 to 1.0, so the residual would move across the frame instead of being constant.
+     */
+    const withPlate = cfg('precompDefaultPlate');
+    for (const k of KEYS) {
+      expect(withPlate[k], `${k} survived the default plate, which would mean it is not added`)
+        .not.toBe(BRAND_HEX[k].toLowerCase());
+    }
+    expect(withPlate.brand).toBe('#306dff');
+    const r = precompensate(BRAND.brand, { ...FLOOR_SITE, plate: [0.0045, 0.0075, 0.0205] });
+    expect(isPrecompRefusal(r)).toBe(true);
+    expect((r as { code: string }).code).toBe('PLATE_NOT_ZERO');
+    expect((r as { detail: string }).detail).toContain('vignette');
+  });
+
+  it('bloom is decided by LUMINANCE against the bright-pass floor, not by the colour', () => {
+    /*
+     * THE PREDICATE, AND THE MEASUREMENT IT WAS DERIVED FROM. At bloomGain 0.3 — what
+     * FlatBars.tsx:135, FlatDial.tsx:172 and FlatTrack.tsx:150 all ship — three entries stayed
+     * EXACT and four shifted, up to ΔE 10.20 on brandBright. The three that stayed exact are
+     * exactly the three whose pre-compensated luminance falls below `threshold[0]`, where the
+     * bright pass contributes nothing (`pipeline.ts:49-50`).
+     *
+     * So the split is asserted BOTH WAYS off one predicate. A rule that only checked the
+     * shifted rows would pass if the predicate were "always true".
+     */
+    const floor = 0.12;
+    const bloomed = cfg('precompBloom03');
+    let below = 0, above = 0;
+    for (const k of KEYS) {
+      const lum = luminance(inverseToneMap(BRAND[k]));
+      const site: CompositeSite = { ...FLOOR_SITE, bloomGain: 0.3, threshold: [floor, 0.7] };
+      const exact = bloomed[k] === BRAND_HEX[k].toLowerCase();
+      if (lum < floor) {
+        below++;
+        expect(exact, `${k}: luminance ${lum.toFixed(4)} is under the floor but the pixel moved`).toBe(true);
+        expect(isPrecompRefusal(precompensate(BRAND[k], site)), `${k} was refused under a bloom that cannot reach it`).toBe(false);
+      } else {
+        above++;
+        expect(exact, `${k}: luminance ${lum.toFixed(4)} is over the floor but the pixel held`).toBe(false);
+        const r = precompensate(BRAND[k], site);
+        expect(isPrecompRefusal(r), `${k} was allowed under a bloom that reaches it`).toBe(true);
+        expect((r as { code: string }).code).toBe('BLOOM_REACHES_MARK');
+      }
+    }
+    expect(below, 'no entry fell under the bright-pass floor').toBeGreaterThan(0);
+    expect(above, 'no entry rose over the bright-pass floor').toBeGreaterThan(0);
+  });
+
+  it('a known constant shader scalar is divided out, so the shader delivers the inverse', () => {
+    /* `lines.ts:70` writes `uColour * uGain`. Passing the pre-compensated colour straight in at
+       gain 2 would double it past the clip; dividing by the gain is what makes the value AT
+       THE FRAMEBUFFER the inverse. The header of `precompensate.ts` records why this may not
+       be used on `renderMotion.ts:100`, whose gain is driven by data. */
+    const scaled = precompensate(BRAND.brand, { ...FLOOR_SITE, shaderScale: 2 });
+    expect(isPrecompRefusal(scaled)).toBe(false);
+    const wanted = inverseToneMap(BRAND.brand);
+    for (let c = 0; c < 3; c++) {
+      expect((scaled as readonly number[])[c]! * 2).toBeCloseTo(wanted[c]!, 12);
+    }
+    expect(isPrecompRefusal(precompensate(BRAND.brand, { ...FLOOR_SITE, shaderScale: 0 }))).toBe(true);
+  });
+
+  it('PRECOMP_RULE quotes the measured numbers, so the sentence cannot drift from them', () => {
+    /*
+     * Same discipline as TONE_POLICY above, and for the same reason: this string is the claim
+     * a reader is shown, and the last two universal claims made in this area — "brand hex
+     * exact" and "no data-preserving fix exists" — were both false.
+     */
+    expect(PRECOMP_RULE).toContain(String(record.rows.brand.compositeOnly!.deltaE));
+    expect(PRECOMP_RULE).toContain(PRECOMP_CLIP.toFixed(4));
+    const c = pinnedChannel('brand');
+    expect(PRECOMP_RULE).toContain(`${new Set(sweepPlain.brand!.map((p) => p[c]!)).size} resolvable density steps`);
+    expect(PRECOMP_RULE).toContain(`to ${new Set(sweepPrecomp.brand!.map((p) => p[c]!)).size}`);
   });
 });

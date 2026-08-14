@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   createStage, isStage, stageRefusal, STAGE_REFUSAL_CODES, DEPTH_POLICY, type Stage,
@@ -97,19 +97,54 @@ interface FakeGl {
   readonly log: string[];
   readonly deleted: () => number;
   readonly isLost: () => boolean;
+  /** Programs the context still considers valid. The program cache's whole subject. */
+  readonly liveProgrammes: () => number;
+  /** Bind something, so a `deleteProgram` on what WAS bound takes effect. See `useProgram` below. */
+  readonly bind: (p: unknown) => void;
+  /** Injects a link failure at the status query, as `env/glState.test.ts:305` does. */
+  failLink: boolean;
   /** What `getExtension('WEBGL_lose_context')` hands back. */
   extension: 'real' | 'absent' | 'empty-object';
 }
+
+/**
+ * The proxy answers any `SCREAMING_CASE` property with `0x1000 + name.length`, which is enough for
+ * a stage that does arithmetic on none of them. The cache queries two of those enums and must tell
+ * them apart, so they are named here rather than left as an incidental collision — `LINK_STATUS`
+ * and `DELETE_STATUS` differ in length, and a rename that made them equal would otherwise turn
+ * "is this program flagged for deletion" into "did it link" with nothing to notice it.
+ */
+const ENUM = (name: string): number => 0x1000 + name.length;
 
 function fakeGl(opts: { connected: boolean; extension?: FakeGl['extension'] } = { connected: false }): FakeGl {
   const log: string[] = [];
   let lost = false;
   let deleted = 0;
+  /*
+   * PROGRAM LIFETIME, MODELLED FROM THE SPEC RATHER THAN SIMPLIFIED, because the two states this
+   * models are exactly what the program cache has to distinguish and a boolean `alive` could not.
+   *
+   * `deleteProgram` on the program that is CURRENTLY BOUND does not delete it — it FLAGS it, and
+   * the driver frees it when something else is bound. A flagged program is still a program to
+   * `isProgram`, which is why the cache also asks `DELETE_STATUS`, and why this fake has to have a
+   * notion of "current" at all.
+   */
+  const programState = new Map<unknown, { flagged: boolean; gone: boolean }>();
+  let current: unknown = null;
+  const unbindCurrent = (next: unknown): void => {
+    const s = programState.get(current);
+    if (current !== next && s !== undefined && s.flagged) s.gone = true;
+    current = next;
+  };
+
   const state = {
     canvas: { isConnected: opts.connected, width: 64, height: 64, getContext: () => proxy },
     log,
     deleted: () => deleted,
     isLost: () => lost,
+    liveProgrammes: () => [...programState.values()].filter((s) => !s.gone).length,
+    bind: (p: unknown) => unbindCurrent(p),
+    failLink: false,
     extension: opts.extension ?? 'real',
   };
 
@@ -134,8 +169,34 @@ function fakeGl(opts: { connected: boolean; extension?: FakeGl['extension'] } = 
     createBuffer: () => (lost ? null : { tag: 'buffer' }),
     createVertexArray: () => (lost ? null : { tag: 'vao' }),
     getError: () => 0,
+    createProgram: () => {
+      log.push('createProgram');
+      if (lost) return null;
+      const p = { tag: 'program', n: programState.size };
+      programState.set(p, { flagged: false, gone: false });
+      return p;
+    },
+    useProgram: ((p: unknown) => { log.push('useProgram'); unbindCurrent(p); }) as never,
+    isProgram: ((p: unknown) => {
+      const s = programState.get(p);
+      return s !== undefined && !s.gone;
+    }) as never,
+    getProgramParameter: ((p: unknown, pname: number) => {
+      if (pname !== ENUM('DELETE_STATUS')) return !state.failLink;   // LINK_STATUS and anything else
+      const s = programState.get(p);
+      /* A DELETED name is not a program, and the real driver raises INVALID_OPERATION and returns
+         null here. Modelled, because `null` is falsy and the cache must treat it as a miss. */
+      return s === undefined || s.gone ? null : s.flagged;
+    }) as never,
+    deleteProgram: ((p: unknown) => {
+      deleted += 1;
+      log.push('deleteProgram');
+      const s = programState.get(p);
+      if (s === undefined) return;
+      if (current === p) s.flagged = true; else s.gone = true;
+    }) as never,
   };
-  for (const name of ['deleteTexture', 'deleteFramebuffer', 'deleteBuffer', 'deleteVertexArray', 'deleteProgram']) {
+  for (const name of ['deleteTexture', 'deleteFramebuffer', 'deleteBuffer', 'deleteVertexArray']) {
     api[name] = (() => { deleted += 1; log.push(name); }) as never;
   }
 
@@ -146,7 +207,7 @@ function fakeGl(opts: { connected: boolean; extension?: FakeGl['extension'] } = 
       /* FRAMEBUFFER_COMPLETE has to be the value `checkFramebufferStatus` returns above, and the rest only
          have to be distinct — the stage does arithmetic on none of them. */
       if (prop === 'FRAMEBUFFER_COMPLETE') return 0x8CD5;
-      if (/^[A-Z][A-Z0-9_]*$/.test(prop)) return 0x1000 + prop.length;
+      if (/^[A-Z][A-Z0-9_]*$/.test(prop)) return ENUM(prop);
       return (...a: unknown[]) => { log.push(prop); return a.length; };
     },
   }) as unknown as WebGL2RenderingContext;
@@ -344,6 +405,262 @@ describe('setRegion keeps a set per size instead of rebuilding on every change',
     s.dispose();
     expect(tally(f, 'deleteTexture'), 'a cached spare outlived the stage that owned it')
       .toBe(created);
+  });
+});
+
+/* ── THE PROGRAM CACHE ────────────────────────────────────────────────────────────── */
+
+/**
+ * WHAT IT IS FOR, AND THE NUMBER. A relief rebuilds IN PLACE on a size step or a tier resolution —
+ * every one of the seven keys its setup effect on `[heightPx, onRefused, tier]`, and
+ * `GlobeRelief.tsx:99` quantises the measured height to 24 px BECAUSE each distinct value tears the
+ * stage down, so a window drag walks through one rebuild per 24 px. Measured on the real M1 through
+ * ANGLE Metal by `docs/3d/blit-cost.mjs` arm H over seven runs, a relief-shaped rebuild costs
+ * **23.2 to 27.6 ms** with every program recompiled and **6.1 to 7.4 ms** with every program kept —
+ * **3.6 to 4.7x**, and resolved above the run's own spread every time. Compilation is essentially
+ * the whole of a rebuild.
+ *
+ * WHAT THIS FILE'S CACHE ACTUALLY RECOVERS IS FAR LESS THAN THAT, and the tests below are written
+ * against the MECHANISM rather than the headline for exactly that reason. Thirteen call sites
+ * outside `stage.ts` delete the programs the stage compiled for them — `env/lit.ts:883-885`,
+ * `env/ao.ts:354`, `env/sky.ts:159`, `env/dof.ts:219`, `env/volume.ts:500`,
+ * `env/particles.ts:596-597`, `primitives/points.ts`, `primitives/lines.ts`, `flat/bars.ts:276`,
+ * `flat/strokes.ts:168` — ten modules, counted by the ratchet below rather than listed, so nothing
+ * written here can keep those programs. `look/pipeline.ts:197` already leaves them to the stage.
+ *
+ * SO THE TIME THIS CACHE SAVES ON ITS OWN IS NOT REPORTABLE: 1.0 to 6.2 ms, clearing the run's
+ * spread in one of seven. The quantity that IS exact is the count, and it is what these tests pin:
+ * **24 shader compilations per rebuild today, 16 with this cache, 0 with those thirteen lines also
+ * fixed.** The cache has to land first — removing those thirteen deletes without somewhere for the
+ * programs to live is a straight leak — which is why it ships ahead of the number that justifies it.
+ */
+const compilesIn = (f: FakeGl): number => f.log.filter((l) => l === 'createProgram').length;
+
+describe('the program cache keeps a linked program across a rebuild on the same canvas', () => {
+  it('a rebuild in place recompiles nothing, and gets the SAME program object back', () => {
+    /*
+     * THE OPERATION UNDER TEST, exactly: a mounted canvas, disposed and built again. That is what a
+     * React effect cleanup and re-run do on a size step, and `canvas.isConnected` is what tells the
+     * two apart. Against the pre-cache code this reads 2 programs and two different objects.
+     */
+    const f = fakeGl({ connected: true });
+    const first = stageOn(f);
+    if (!isStage(first)) expect.unreachable(`first build refused: ${first.code}`);
+    const p1 = first.compile('VS', 'FS');
+    expect(compilesIn(f), 'the first build did not compile anything, so nothing is under test').toBe(1);
+    first.dispose();
+
+    const second = stageOn(f);
+    if (!isStage(second)) expect.unreachable(`rebuild refused: ${second.code}`);
+    const p2 = second.compile('VS', 'FS');
+    expect(compilesIn(f), 'the rebuild recompiled a program the context still holds').toBe(1);
+    expect(p2, 'the rebuild got a different program object, so nothing was reused').toBe(p1);
+  });
+
+  it('BOTH sources are the key — a shared vertex shader does not collapse two programs', () => {
+    /*
+     * `env/ao.ts:229-231` compiles AO_VERT with AO_FRAG and AO_VERT with BLUR_FRAG, and
+     * `env/lit.ts:735-739` reuses SHADOW_FRAG under two different vertex shaders. A cache keyed on
+     * either source alone returns the wrong program for one of each pair, and the frame that
+     * results is wrong rather than absent — the exact failure mode §10.9 records.
+     */
+    const f = fakeGl({ connected: true });
+    const s = stageOn(f);
+    if (!isStage(s)) expect.unreachable(`refused: ${s.code}`);
+    const a = s.compile('VS', 'FRAG_A');
+    const b = s.compile('VS', 'FRAG_B');
+    const c = s.compile('VS_OTHER', 'FRAG_A');
+    expect(new Set([a, b, c]).size, 'two source pairs collapsed onto one program').toBe(3);
+    expect(compilesIn(f)).toBe(3);
+    expect(s.compile('VS', 'FRAG_B'), 'the second lookup of a held pair missed').toBe(b);
+    expect(compilesIn(f), 'a pair already held was recompiled').toBe(3);
+  });
+
+  it('never hands a program from one context to another, which would be a use-after-free', () => {
+    /*
+     * A `WebGLProgram` belongs to its CONTEXT. Keyed on source alone, the second canvas below would
+     * receive the first canvas's program — and the moment the first canvas is disposed and its
+     * context released, the second would be drawing with a name that no longer exists. Nothing
+     * throws; the surface simply stops drawing that pass.
+     */
+    const one = fakeGl({ connected: true });
+    const two = fakeGl({ connected: true });
+    const s1 = stageOn(one), s2 = stageOn(two);
+    if (!isStage(s1) || !isStage(s2)) expect.unreachable('a build refused');
+    const p1 = s1.compile('VS', 'FS');
+    const p2 = s2.compile('VS', 'FS');
+    expect(p2, 'a program crossed contexts').not.toBe(p1);
+    expect(compilesIn(one), 'the first context compiled the wrong number').toBe(1);
+    expect(compilesIn(two), 'the second context reused rather than compiled').toBe(1);
+  });
+
+  it('frees every cached program when — and only when — it releases the context', () => {
+    /*
+     * OWNERSHIP, AND WHY THERE IS NO REFERENCE COUNT. A program cannot outlive its context, so the
+     * context's own release is both the earliest safe moment to free them and a bound that needs no
+     * bookkeeping. A mounted canvas keeps them because an in-place rebuild is the only thing that
+     * ever follows that dispose; a detached one can never be drawn to again, so nothing is left to
+     * use them. Deleting the `canvas.isConnected` guard makes the first half read 1 and 0.
+     */
+    const mounted = fakeGl({ connected: true });
+    const live = stageOn(mounted);
+    if (!isStage(live)) expect.unreachable('refused');
+    live.compile('VS', 'FS');
+    live.dispose();
+    expect(mounted.liveProgrammes(), 'a rebuild that is about to happen lost its programs').toBe(1);
+    expect(mounted.log.includes('deleteProgram'), 'a mounted canvas had its programs deleted').toBe(false);
+
+    const detached = fakeGl({ connected: false });
+    const gone = stageOn(detached);
+    if (!isStage(gone)) expect.unreachable('refused');
+    gone.compile('VS', 'FS');
+    gone.compile('VS2', 'FS2');
+    gone.dispose();
+    expect(detached.liveProgrammes(), 'a released context leaked its programs').toBe(0);
+    expect(detached.log.lastIndexOf('deleteProgram'), 'a program was deleted on an already-lost context')
+      .toBeLessThan(detached.log.indexOf('loseContext'));
+  });
+
+  it('does not hand back a program another owner deleted', () => {
+    /*
+     * THE HAZARD THIS CACHE INHERITED RATHER THAN CREATED. Thirteen call sites listed at the top of
+     * this block delete programs the stage also holds; `look/pipeline.ts:197` is the only one that
+     * leaves them to the stage. So a cached entry can be freed under the cache at any time, and a
+     * deleted program draws NOTHING and reports nothing. Removing the `gl.isProgram` check makes
+     * this pass the dead program straight back: 1 program compiled, not 2.
+     */
+    const f = fakeGl({ connected: true });
+    const s = stageOn(f);
+    if (!isStage(s)) expect.unreachable('refused');
+    const p = s.compile('VS', 'FS');
+    (f.canvas.getContext() as WebGL2RenderingContext).deleteProgram(p as WebGLProgram);
+    expect(f.liveProgrammes(), 'the fake did not actually delete it, so this test watches nothing').toBe(0);
+
+    const again = s.compile('VS', 'FS');
+    expect(compilesIn(f), 'the cache handed back a deleted program').toBe(2);
+    expect(again, 'the dead program came back').not.toBe(p);
+  });
+
+  it('does not hand back a program that is FLAGGED for deletion, which is still a program', () => {
+    /*
+     * THE ONE THE OBVIOUS GUARD MISSES, and it was found by measurement rather than by reading.
+     * `deleteProgram` on the program that is CURRENTLY BOUND does not delete it — the spec only
+     * FLAGS it, and the driver frees it when something else is bound. Such a program answers
+     * `isProgram` with true, so a cache that checks only that hands it out and it then dies
+     * mid-frame at the next `useProgram`.
+     *
+     * MEASURED, not hypothesised: `blit-cost.mjs` arm H rendered 30 frames through three rebuild
+     * arms and produced TWO distinct frame hashes, alternating — every other rebuild composited
+     * with a program that had died between being handed out and being used. With the
+     * `DELETE_STATUS` query in place the same 30 frames produce one hash. Delete that query and
+     * this test reports 1 compile instead of 2.
+     */
+    const f = fakeGl({ connected: true });
+    const s = stageOn(f);
+    if (!isStage(s)) expect.unreachable('refused');
+    const p = s.compile('VS', 'FS');
+    const gl = f.canvas.getContext() as WebGL2RenderingContext;
+    gl.useProgram(p as WebGLProgram);          // as `blit` does on the last pass of a frame
+    gl.deleteProgram(p as WebGLProgram);       // as a renderer's own dispose() does, straight after
+    expect(gl.isProgram(p as WebGLProgram), 'the fake deleted it outright, so the flag is untested')
+      .toBe(true);
+
+    const again = s.compile('VS', 'FS');
+    expect(compilesIn(f), 'the cache handed back a program flagged for deletion').toBe(2);
+    expect(again).not.toBe(p);
+  });
+
+  it('caches successes only — a refusal is not remembered as one', () => {
+    /*
+     * A cached refusal would return the FIRST driver log for every later compile of that pair, and
+     * the log's line number is the only part of a shader error that is actionable. It would also
+     * make a link failure permanent for the life of the context.
+     */
+    const f = fakeGl({ connected: true });
+    const s = stageOn(f);
+    if (!isStage(s)) expect.unreachable('refused');
+    /* Injected at the status query rather than in the GLSL: the shape of the refusal is what is
+       under test, not a driver's opinion of a shader. `env/glState.test.ts:305` does the same. */
+    f.failLink = true;
+    const refused = s.compile('VS', 'FS');
+    expect(refused, 'the link failure was not injected').toMatchObject({ code: 'PROGRAM_LINK_FAILED' });
+    f.failLink = false;
+    const ok = s.compile('VS', 'FS');
+    expect('kind' in (ok as object), 'the refusal was cached and returned again').toBe(false);
+    expect(compilesIn(f), 'the retry did not reach the driver').toBe(2);
+  });
+});
+
+describe('the source pair is a SUFFICIENT key, and that is derived rather than asserted', () => {
+  /*
+   * THE PREMISE THE WHOLE CACHE RESTS ON. A linked program is a pure function of
+   * (context, vertexSrc, fragmentSrc) only while nothing else contributes to the link — no
+   * `bindAttribLocation`, no `transformFeedbackVaryings`, and no second place that links at all.
+   * If any of those appeared outside `compile()`, two programs with identical sources could differ
+   * and the cache would hand back the wrong one, silently.
+   *
+   * SEARCHED, NOT LISTED. Every recurring defect in this package has been a hand-list that could
+   * not fail on the item nobody thought of, so this walks the source tree and would fail on a
+   * module written tomorrow.
+   */
+  const SRC = resolve(process.cwd(), 'src');
+  const sources = readdirSync(SRC, { recursive: true, encoding: 'utf8' })
+    .filter((p) => p.endsWith('.ts') && !p.endsWith('.test.ts'))
+    .map((p) => ({ path: p, text: readFileSync(resolve(SRC, p), 'utf8') }));
+
+  it('found the package to search, so the assertions below are not vacuous', () => {
+    expect(sources.length, 'the source walk found nothing').toBeGreaterThan(15);
+    expect(sources.map((s) => s.path)).toContain('stage.ts');
+  });
+
+  /**
+   * THE RATCHET ON THE OTHER HALF OF THIS CHANGE, and it is a count from a search rather than the
+   * list of file:line references that would rot the moment anyone reformats one of them.
+   *
+   * Every module here deletes a program `stage.compile()` also holds, which is why the cache has to
+   * verify each hit and why it recovers 16 shader compilations a rebuild instead of 24
+   * (`blit-cost.mjs` arm H). `look/pipeline.ts` is deliberately NOT among them — "Programs are
+   * owned and freed by the Stage" — and its three programs are most of what the cache does keep.
+   *
+   * This number is expected to go DOWN, to zero, and this test failing is the signal that it has:
+   * arm H measured that change at 3.6 to 4.7x on a rebuild. It also fails if a NEW module starts
+   * deleting programs, which is the case a hand-written list could never have caught — that
+   * module's programs would silently stop being cacheable and nothing else would say so.
+   */
+  it('counts the modules that delete a program the stage also holds', () => {
+    const owners = sources
+      .filter((s) => s.path !== 'stage.ts' && /\bgl\.deleteProgram\s*\(/.test(s.text))
+      .map((s) => s.path)
+      .sort();
+    expect(owners, 'the search found none, so it is matching nothing').not.toEqual([]);
+    expect(
+      owners.length,
+      'the set of modules that free their own programs changed. DOWN means the second half of the '
+      + 'program-cache work has landed and this cache can now keep everything — re-run '
+      + '`node docs/3d/blit-cost.mjs --headless --gpu` arm H and update the figures in stage.ts. '
+      + `UP means a new module opted out of the cache without saying so. Current set: ${owners.join(', ')}`,
+    ).toBe(10);
+  });
+
+  it('nothing but compile() creates a program, links one, or sets pre-link state', () => {
+    const offenders = sources
+      .filter((s) => s.path !== 'stage.ts')
+      .filter((s) => /\b(createProgram|linkProgram|bindAttribLocation|transformFeedbackVaryings)\s*\(/.test(s.text))
+      .map((s) => s.path);
+    expect(
+      offenders,
+      'a program is being built outside stage.compile(), so the source pair no longer determines it '
+      + 'and the cache can return a program linked under different state',
+    ).toEqual([]);
+  });
+
+  it('and compile() itself sets nothing between createProgram and linkProgram but the two shaders', () => {
+    const src = readFileSync(resolve(SRC, 'stage.ts'), 'utf8');
+    const between = src.slice(src.indexOf('gl.createProgram()'), src.indexOf('gl.linkProgram(p)'));
+    expect(between.length, 'the createProgram/linkProgram pair moved and this slice is empty')
+      .toBeGreaterThan(20);
+    expect(between.match(/gl\.\w+\(/g) ?? [], 'compile() gained pre-link state the cache key cannot see')
+      .toEqual(['gl.createProgram(', 'gl.attachShader(', 'gl.attachShader(']);
   });
 });
 

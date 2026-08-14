@@ -12,7 +12,15 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantStyles: Record<ButtonVariant, string> = {
   primary: 'bg-navy text-card hover:bg-navy-deep',
-  secondary: 'bg-ice-soft text-navy border border-line hover:bg-ice',
+  /* `secondary` is the only variant with a border, and that border is the whole of its
+   * affordance — it has no fill contrast to fall back on (bg-ice-soft against a card is
+   * a wash). On --line it measured 1.52:1 against --ice-soft light and 1.16:1 dark,
+   * against the 3:1 WCAG 2.2 SC 1.4.11 requires for a control boundary; --control-border
+   * measures 3.50 / 3.86 there. NOTE for anyone auditing by grep: this string lives in a
+   * variant table rather than on the button tag, so a scanner that reads JSX attributes
+   * cannot see it — that is exactly how this site, the most-reused button in the app,
+   * stayed outside the original 223-site count. */
+  secondary: 'bg-ice-soft text-navy border border-control hover:bg-ice',
   ghost: 'bg-transparent text-navy hover:bg-ice-soft',
   danger: 'bg-status-blocked text-white hover:bg-red-dark',
 };

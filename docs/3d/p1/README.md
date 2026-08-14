@@ -1,7 +1,10 @@
 # P1 · SPINE — the gate result
 
 `3D_WORK_100X.md` §7 defines P1 as **L1 renderer + L2 look + L3 motion**, one sequential
-lane, with the gate: *"brand hex exact after tone mapping."*
+lane, with the gate: *"brand hex exact after tone mapping."* **That half of the gate was measured on
+2026-08-14 and it fails — the pipeline moves `#2C6BFF` to `#2c68dc`, ΔE76 18.3. It was also incoherent
+as written; see "The first row, retracted" below.** §6 rule 5 was amended to the invariant that does
+hold, and this document reports both.
 
 The spine is `packages/gl` (`@lcx/gl`). This directory is its proof: S1's risk cloud,
 rebuilt on the package with every line of hand-written WebGL removed, captured headlessly
@@ -25,11 +28,44 @@ layer that *did not overrun* still made every published figure wrong, and nothin
 
 | gate | required | measured |
 |---|---|---|
-| Brand hex exact after tone mapping | `#2C6BFF` in, `#2C6BFF` out | **exact, whole palette** — `assertBrandFidelity()` returns `[]` |
+| ~~Brand hex exact after tone mapping~~ | `#2C6BFF` in, `#2C6BFF` out | **FAILS, and the gate was wrong to ask** — measured `#2c68dc`, blue 35/255 low, ΔE76 **18.3**. See below |
+| Order survives the tone map (§6 rule 5, amended 2026-08-14) | monotone per channel, so a denser mark never renders lighter | **holds** — pinned over every ordered channel pair against framebuffer bytes in `packages/gl/src/look/brandPixel.test.ts` |
 | **60 fps on M1** | ≤ 16.67 ms/frame | **4.41 ms/frame — 227 fps**, on an actual Apple M1 / 8 GB via ANGLE Metal. 3.8× headroom |
 | The spine reproduces P0 | no visible regression | **mean \|Δ\| 0.09/255, max 6/255, 0 channels over 8** of 13,789,500 |
 | Every lane inside its §6.4 allocation | no lane over | **all six ✓** — the table below is generated, not stated |
 | No WebGL2 is a real state, not a crash | renders something honest | **`refusal.png`** |
+
+### The first row, retracted 2026-08-14
+
+This row read **"exact, whole palette — `assertBrandFidelity()` returns `[]`"**, and it was published
+here from the first commit. It was not a measurement of anything the gate asked about.
+`assertBrandFidelity()` compares `linearToHex(hexToLinear(BRAND_HEX[k]))` with `BRAND_HEX[k]` — a frozen
+constants table round-tripping through two pure functions. It never sees a material, a light, a tone map
+or a pixel, so no change to the composite could ever have made it non-empty. Proof it could not fail:
+moving `TONE_SHOULDER` from 0.4 to 0.45 — a real change to the curve every surface runs — leaves all 15
+assertions in `look.test.ts` green while `brandPixel.test.ts` fails with *"CPU says 216, the GPU wrote
+220"*.
+
+What the pipeline does, rendered on a driver and read back (`docs/3d/brand-fidelity.mjs`, recorded in
+`docs/3d/brand-fidelity.json`):
+
+| colour | in | out, most favourable case | ΔE76 |
+|---|---|---|---|
+| `brand` | `#2C6BFF` | `#2c68dc` (blue −35/255) | **18.3** |
+| `reference` | `#FF8A3D` | `#dc843c` (red −35/255) | 14.4 |
+| `brandBright` | `#7FB2FF` | `#7aa5dc` | 12.7 |
+
+"Most favourable case" means a flat mark at exactly the palette linear value, plate 0, bloom 0 — nothing
+between the constant and the framebuffer but the tone map and the sRGB encode. For scale, AgX, which
+`packages/gl/src/look/colour.ts` calls badly wrong, is ΔE 41.1. On the lit path every colour lands 46–88
+ΔE from its hex, and that is not a defect: a lit material's radiance is base colour × illumination, so
+**"hex exact" over a shaded mesh was a category error, not a bug.** The fix that looks obvious is refuted
+by arithmetic — brand blue's blue channel is linear 1.0, so a curve pinned there is the identity at 1.0
+and leaves zero headroom above it, clipping everything brighter to white.
+
+So §6 rule 5 was amended rather than the pipeline, and the surviving invariant is the row above it.
+`assertBrandFidelity()` still runs in every environment and still refuses on a corrupt palette table;
+that is the only thing it ever checked.
 
 ## The bytes
 
@@ -41,14 +77,14 @@ JSON with `--json`.
 <!-- gl-budget:begin lanes -->
 | lane | allocated | measured | |
 |---|---|---|---|
-| L1 renderer | ≤ 45 KB raw | **12.1 KB** | ✓ |
-| L2 look | ≤ 10 KB raw | **6.7 KB** | ✓ |
+| L1 renderer | ≤ 45 KB raw | **12.6 KB** | ✓ |
+| L2 look | ≤ 10 KB raw | **6.9 KB** | ✓ |
 | L3 motion | ≤ 8 KB raw | **1.7 KB** | ✓ |
 | L4 env | ≤ 60 KB raw | **38.8 KB** | ✓ |
 | L3.5 particles | ≤ 11 KB raw | **10.8 KB** | ✓ |
 | L4.5 field | ≤ 13 KB raw | **8.8 KB** | ✓ |
-| **spine total** (all six lanes) | ≤ 147 KB raw | **78.8 KB** | 68.2 KB of the allocation unspent |
-| gate bundle — spine + this surface, tree-shaken | — | **23.2 KB** (23799 B) | what this lane actually ships |
+| **spine total** (all six lanes) | ≤ 147 KB raw | **79.5 KB** | 67.5 KB of the allocation unspent |
+| gate bundle — spine + this surface, tree-shaken | — | **23.7 KB** (24300 B) | what this lane actually ships |
 | three.js, same job, same settings (P0) | — | 513.3 KB | **6.5× the spine** |
 <!-- gl-budget:end lanes -->
 
@@ -119,6 +155,11 @@ runs a real driver and produces an image somebody reads.
 §7's P1 gate has two conditions: *"brand hex exact after tone mapping; 60fps on M1 proxy."*
 The first commit measured the colour half and reported it as though it were the gate. It
 was not. This is the other half.
+
+And the colour half was not measured either — it reported `assertBrandFidelity()` returning `[]`, which
+is a constants-table round trip with no pixel in it. The real measurement came on 2026-08-14 and the
+condition fails; see "The first row, retracted" above. This row is the only one of the two that was ever
+measured against the thing it names.
 
 ```bash
 node docs/3d/p1/serve.mjs        # then open http://127.0.0.1:5599/?perf=120

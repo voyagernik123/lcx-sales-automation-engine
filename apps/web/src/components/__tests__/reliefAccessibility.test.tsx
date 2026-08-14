@@ -360,14 +360,24 @@ describe("a renderer's refusal is announced, and does not cost the reader their 
      * button. DeckRelief stands in for the shared shape — it is the only one whose refusal path can
      * be driven without also standing up a flat chart, a table or a force layout.
      */
-    vi.doMock('@/components/geometry/DeckReliefGl', () => ({
-      default: ({ onRefused }: { onRefused: (code: string) => void }) => {
-        /* In an effect, not in render: `onRefused` sets state on the parent. */
+    /*
+     * NAMED, and uppercase, because an anonymous arrow assigned to `default:` is not a component
+     * as far as the hooks rule is concerned — it reads the binding name, sees "default", and
+     * rejects the `useEffect` inside it. The lint error is pedantic here and also correct in
+     * general: a lowercase-named function holding a hook is a real bug everywhere except a mock.
+     */
+    vi.doMock('@/components/geometry/DeckReliefGl', () => {
+      function RefusingDeckRelief({ onRefused }: { onRefused: (code: string) => void }) {
+        /* In an effect, not in render: `onRefused` sets state on the parent. Required from
+           INSIDE the factory rather than imported at the top of the file: `vi.resetModules()`
+           below rebuilds the graph, and a hook taken from this file's own React binding would
+           be a different dispatcher than the freshly-imported DeckRelief renders under. */
         const React = require('react') as typeof import('react');
         React.useEffect(() => { onRefused('FLOAT_TARGET_REFUSED'); }, [onRefused]);
         return null;
-      },
-    }));
+      }
+      return { default: RefusingDeckRelief };
+    });
     vi.resetModules();
     const { DeckRelief: Fresh } = await import('@/components/geometry/DeckRelief');
 

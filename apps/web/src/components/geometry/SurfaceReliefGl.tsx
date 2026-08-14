@@ -15,6 +15,13 @@
  * Every resource here is checked. On any refusal this renders NOTHING and calls `onRefused` with the code, and
  * the parent falls back to `SurfacePlot` — §6 rule 1, and the reason the parent owns the fallback rather than
  * this file: a component that cannot construct its renderer cannot be trusted to draw its own escape hatch.
+ *
+ * ── THIS FILE IS THE REFERENCE FOR THE THEME MECHANISM THE OTHER SIX FOLLOW ──────────
+ * It is the smallest of the seven, so the three rules are written out here in full and the rest point at
+ * this file by name rather than repeating them: `SCENERY TAKES THE THEME, DATA DOES NOT` below,
+ * `THE LIGHT RIG MOVES BY RATIO, SO DARK IS ARITHMETIC IDENTITY` beside the light, and
+ * `A THEME CHANGE IS A REDRAW, NOT A REBUILD` at the observer. `packages/gl/src/look/theme.ts` owns the
+ * taxonomy those rules are expressed in and the argument for it.
  */
 import { useEffect, useRef } from 'react';
 import {
@@ -23,8 +30,13 @@ import {
   boundsCentre, boundsRadius, hexToLinear, assertBrandFidelity, IDENTITY,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
   qualitySettings, shadowMapSizeFor, pickQualityTier,
-  type LitDraw, type Viewpoint,
+  type LitDraw, type Viewpoint, type Linear,
 } from '@lcx/gl';
+/* A SUB-PATH IMPORT, NOT THE BARREL, and that is `docs/3d/w2/SUBPATH_COST.md`'s measured rule: Rollup places a
+   module in the chunk of the lowest common ancestor of the entries that reach it, so pulling the theme through
+   `@lcx/gl` would put it in the same shared chunk a flat-chart route already downloads. Separate specifiers are
+   what separate the graphs. `theme.ts` is not in the barrel at all, so this is also the only way in. */
+import { sceneTheme, liveTheme, type SceneTheme, type ThemeName } from '@lcx/gl/look/theme.js';
 import { isProjectedSurface, type SurfaceOutcome } from '@lcx/shared';
 import {
   useResolvedQualityTier, needsQualityProbe, measureFrameMs, recordQualityProbe,
@@ -67,6 +79,14 @@ const SURF_W = 4.6, SURF_D = 3.4, SURF_H = 1.15, PLINTH_H = 0.16;
  * saying so. A ladder that alters the look at its HIGHEST tier is not a ladder, it is a redesign.
  */
 const SHADOW_BASELINE = 1024;
+
+/**
+ * THE DARK THEME'S OWN RECORD, HELD SO THE LIGHT RIG CAN BE EXPRESSED AS A RATIO AGAINST IT.
+ *
+ * Read once at module scope because `THEMES` is frozen — see `sceneTheme`. Its only use is the denominator
+ * below; nothing here reads a COLOUR out of it, for the reason recorded at `scenery`.
+ */
+const TH_DARK = sceneTheme('dark');
 
 /** The dataset this renderer draws: the mesh, plus the iso-levels the caller asked for. */
 interface SurfaceInput {
@@ -224,12 +244,56 @@ export default function SurfaceReliefGl({
       return m;
     };
 
-    const staticDraws: LitDraw[] = [
+    /**
+     * ══ SCENERY TAKES THE THEME, DATA DOES NOT ═══════════════════════════════════════════════════════
+     *
+     * `packages/gl/src/look/theme.ts` draws the line and argues it: a colour that ENCODES something is data and
+     * may not be tinted to suit a background, because that is editing the measurement to flatter the page. A
+     * colour that is a ROLE — the floor a reading sits on, the plinth holding it up — must move, because a value
+     * chosen to recede against #070B14 does not recede against #E8EDF6; it reads as near-black ink.
+     *
+     * In THIS surface the split is:
+     *   SCENERY  deck #070B14 (ground) · plinth #101A31 (structure) · the analytic sky
+     *   DATA     the heightfield #2C6BFF and the contour ribbons #7FB2FF — untouched below, in either theme
+     *
+     * ── WHY THE DARK HEX IS KEPT RATHER THAN TAKEN FROM `TH_DARK` ────────────────────────
+     * Only the LIGHT half comes from the theme. The dark half stays the literal this scene was calibrated with,
+     * so switching to dark is byte-identical to what shipped. It matters because these numbers are not
+     * interchangeable with the theme's: this plinth is #101A31 and `TH_DARK.structure` is #141F35, and taking
+     * the theme's value would have changed the dark frame — a look change with no capture behind it, which is
+     * the failure `env/quality.ts:91` records for three environments that were silently handed a 1536 shadow
+     * map. `reliefTheme.test.tsx` asserts the dark frame is unchanged for all seven surfaces.
+     */
+    const scenery = (th: SceneTheme, darkHex: string, light: Linear): Linear =>
+      (th.name === 'dark' ? hexToLinear(darkHex) : light);
+
+    const staticDrawsFor = (th: SceneTheme): LitDraw[] => [
       { mesh: deckMesh!, model: translate(0, 0, 0), normalMat: N3,
-        material: { baseColour: hexToLinear('#070B14'), roughness: 0.88, metalness: 0 } },
+        material: { baseColour: scenery(th, '#070B14', th.ground), roughness: 0.88, metalness: 0 } },
       { mesh: plinthMesh!, model: translate(0, PLINTH_H / 2, 0), normalMat: N3,
-        material: { baseColour: hexToLinear('#101A31'), roughness: 0.62, metalness: 0.04 } },
+        material: { baseColour: scenery(th, '#101A31', th.structure), roughness: 0.62, metalness: 0.04 } },
     ];
+    /*
+     * ROUGHNESS AND METALNESS ARE NOT THEMED, on any surface here. `ForgeBackdrop` holds every one of its
+     * material terms across the swap and only moves albedo and the light rig, and the reason is physical: a
+     * roughness is a property of the SURFACE, not of the room it is in, so moving it with the page's colour
+     * scheme would make the same object a different material in light mode.
+     */
+
+    /**
+     * THE SKY, WHICH THIS SURFACE WAS DRAWING AS THE ENGINE DEFAULT AND THEREFORE ALWAYS DARK.
+     *
+     * `DEFAULT_SKY` is a dark instrument interior, and it is BOTH the backdrop and the irradiance environment —
+     * `sky.ts` is one function for both, which is why the same object goes to `skyBox.draw` and to `lit.draw`
+     * below. Handing a themed sky to one and the default to the other is how a reflection ends up disagreeing
+     * with the sky it is reflecting; `ForgeBackdrop.tsx:131` has the same note.
+     *
+     * `undefined` on dark rather than the dark stops, so the dark frame goes down the identical code path it
+     * shipped on instead of one that happens to compute the same numbers.
+     */
+    const skyFor = (th: SceneTheme) => (th.name === 'dark' ? undefined : {
+      zenith: th.skyZenith, horizon: th.skyHorizon, ground: th.ground,
+    });
 
     /* Dielectric, so §6 rule 5's hex survives: a metal has no diffuse lobe and #2C6BFF would arrive only
        through the specular F0 as a blue-tinted mirror of the sky. */
@@ -377,15 +441,44 @@ export default function SurfaceReliefGl({
      * `probeSync` requires: a `readPixels` only guarantees completion of work affecting the framebuffer it
      * reads, and this frame lands in an offscreen HDR target rather than in the default one.
      */
-    const renderScene = (draws: readonly LitDraw[]): void => {
+    /**
+     * ══ THE LIGHT RIG MOVES BY RATIO, SO DARK IS ARITHMETIC IDENTITY ═════════════════════════════════
+     *
+     * `theme.ts` records the direction and it is not the intuition: the LIGHT theme takes a STRONGER key and a
+     * WEAKER ambient and WEAKER shadows, because a bright ground already fills the scene so ambient adds haze
+     * rather than form, and a hard shadow on a white plate reads as dirt.
+     *
+     * What is NOT usable is the theme's ABSOLUTE values. `TH_DARK.keyGain` is 5.2 — `ForgeBackdrop`'s number for
+     * one machined disc on one plinth. This scene's key is [3.4, 3.35, 3.2] and was settled against ITS geometry.
+     * Assigning the theme's absolutes here would re-light every one of the seven surfaces in dark mode as well,
+     * which is a redesign of seven captured frames dressed up as a theme fix.
+     *
+     * So each surface keeps its own calibration and the theme supplies only the RATIO. On dark every ratio is
+     * exactly 1 — same numerator and denominator, the same frozen record — so the dark frame is unchanged by
+     * construction rather than by inspection. On light they are the measured triple:
+     *   key ×1.4231   ambient ×0.5391   shadow ×0.6889
+     * `reliefTheme.test.tsx` asserts all three are 1 on dark and that these are the light values.
+     */
+    const rigFor = (th: SceneTheme) => ({
+      key: th.keyGain / TH_DARK.keyGain,
+      ambient: th.ambientGain / TH_DARK.ambientGain,
+      shadow: th.shadowStrength / TH_DARK.shadowStrength,
+    });
+
+    const renderScene = (th: SceneTheme, draws: readonly LitDraw[]): void => {
+      const rig = rigFor(th);
+      const sky = skyFor(th);
       lit.shadowPass(lightVP, draws, shadow);
       target.bind();
       gl.clear(gl.DEPTH_BUFFER_BIT);
-      skyBox.draw({ eye, target: view.target, fovDeg: view.fovDeg ?? 34, aspect: W / H });
+      skyBox.draw({ eye, target: view.target, fovDeg: view.fovDeg ?? 34, aspect: W / H, sky });
       lit.depthPrepass(vp, draws);
       lit.draw({
-        viewProj: vp, eye, lightDir, lightColour: [3.4, 3.35, 3.2],
-        ambientGain: 1.0, lightVP, shadow, shadowStrength: 0.9, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
+        viewProj: vp, eye, lightDir,
+        lightColour: [3.4 * rig.key, 3.35 * rig.key, 3.2 * rig.key],
+        ambientGain: 1.0 * rig.ambient, sky, lightVP, shadow,
+        shadowStrength: 0.9 * rig.shadow,
+        shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
         ao: null, screenSize: [W, H],
       });
     };
@@ -406,11 +499,21 @@ export default function SurfaceReliefGl({
      * `Stage` owns programs and its own targets and knows nothing about a VAO, so an undisposed mesh is one
      * vertex array and four buffers stranded per data change — and this surface changes on every filter.
      */
+    /*
+     * WHICH THEME THE FRAME ON SCREEN WAS DRAWN AT. Written by `draw`, read by the observer below, which is what
+     * makes a class mutation that is NOT a theme change cost nothing.
+     */
+    let drawnTheme: ThemeName | null = null;
+
     const draw = (input: SurfaceInput): 'STALE_TIER' | undefined => {
+      /* READ PER FRAME, NOT CAPTURED AT SETUP, and `ForgeBackdrop.tsx:120-127` records what the snapshot version
+         cost: the theme was held in a `const` during setup, so toggling to dark left the canvas holding a stale
+         white studio under dark-theme controls. A one-line snapshot of mutable global state. */
+      const th = sceneTheme(liveTheme());
       releaseData();
       const data = dataDraws(input);
       if ('refusal' in data) { refuse(data.refusal); return undefined; }
-      const draws = [...staticDraws, ...data];
+      const draws = [...staticDrawsFor(th), ...data];
 
       /*
        * THE PROBE, AND WHY THIS SURFACE IS ALLOWED TO TAKE IT.
@@ -426,7 +529,7 @@ export default function SurfaceReliefGl({
        * machine would make the quality ladder follow the dataset instead of the GPU.
        */
       if (needsQualityProbe()) {
-        const ms = measureFrameMs(gl, () => renderScene(draws));
+        const ms = measureFrameMs(gl, () => renderScene(th, draws));
         const r = recordQualityProbe({
           pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'SurfaceReliefGl',
         });
@@ -438,8 +541,11 @@ export default function SurfaceReliefGl({
         if (r.tier !== tier) return 'STALE_TIER';
       }
 
-      renderScene(draws);
+      renderScene(th, draws);
       presentFrame();
+      /* RECORDED ONLY ONCE THE FRAME IS PRESENTED, so a redraw that returned STALE_TIER above cannot leave the
+         observer believing a theme is on screen that never reached it. */
+      drawnTheme = th.name;
       /* STAMPED ON THE CANVAS. `env/quality.ts` is explicit that a tier which cannot be reported cannot be
          trusted; the harnesses print it in their report and this is the app's equivalent. */
       canvas.dataset.qualityTier = tier;
@@ -471,8 +577,53 @@ export default function SurfaceReliefGl({
     const onLost = (e: Event): void => { e.preventDefault(); onRefused('CONTEXT_LOST'); };
     canvas.addEventListener('webglcontextlost', onLost);
 
+    /**
+     * ══ A THEME CHANGE IS A REDRAW, NOT A REBUILD ════════════════════════════════════════════════════
+     *
+     * Generalised from `ForgeBackdrop.tsx:340-348`, which watches the same attribute for the same reason: the
+     * sweep stops by design, so without an observer the canvas holds whichever theme was live when it stopped.
+     * Here there is no sweep at all — one frame, then nothing — so EVERY theme change needs this or the canvas
+     * keeps the theme it mounted with for the life of the page.
+     *
+     * IT CALLS THE REDRAW AND NOTHING ELSE. If the theme were a dependency of the setup effect it would dispose
+     * the stage, the programs, the meshes, the shadow map and every target on a toggle — §6 rule 7's hazard, and
+     * the exact defect `reliefRedrawRatchet.test.ts` was written to stop on the data axis. One redraw resolves to
+     * the final frame with no animation, which is §6 rule 3 with nothing to resolve: a redraw's final frame is
+     * its only frame.
+     *
+     * ── THE DOUBLE FIRE INSIDE A PRINT HANDLER, AND WHY THE GUARD IS THE POINT ───────────
+     * Four pages strip `.dark` and put it back 60 ms later — `CommandDeck.tsx:82-83`, `GpsOrigination.tsx:111-112`,
+     * `GpsBook.tsx:182-183`, `BoardReport.tsx:105-109` — so a naive observer redraws twice per print job, and
+     * `<html>` also carries classes that have nothing to do with the theme. `drawnTheme` makes both free: the
+     * redraw is skipped unless the theme actually differs from the frame that is on screen.
+     *
+     * ── `beforeprint` IS NOT BELT-AND-BRACES; ONE OF THE FOUR PAGES NEEDS IT ─────────────
+     * A `MutationObserver` callback is a MICROTASK, so it runs when the stack empties. Three of the four pages
+     * remove the class, return, and call `window.print()` from a 60 ms timeout — by then the observer has
+     * already redrawn light, which is the frame the print job wants. `BoardReport.tsx:105-109` does not: it
+     * removes the class and calls `window.print()` in the SAME synchronous function, so the stack has not
+     * emptied, the observer has not run, and the print snapshot would carry a near-black instrument interior
+     * onto a white page. `beforeprint` fires synchronously from inside `print()`, AFTER the class is gone, so
+     * reading the theme there is correct and the redraw lands before the snapshot. On the other three pages the
+     * guard above makes it a no-op.
+     *
+     * NO `typeof` GUARD, unlike the `ResizeObserver` at `OntologyOrreryGl.tsx:287`, and the difference is
+     * reachability: that guard exists because an effect that throws unmounts the whole subtree and destroys the
+     * §6 rule 1 fallback. This line cannot be reached unless `createStage` already returned a WebGL2 context,
+     * and there is no engine with WebGL2 and no `MutationObserver`.
+     */
+    const redrawForTheme = (): void => {
+      if (liveTheme() === drawnTheme) return;
+      drawRef.current?.(inputRef.current);
+    };
+    const themeWatch = new MutationObserver(redrawForTheme);
+    themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    window.addEventListener('beforeprint', redrawForTheme);
+
     return () => {
       canvas.removeEventListener('webglcontextlost', onLost);
+      themeWatch.disconnect();
+      window.removeEventListener('beforeprint', redrawForTheme);
       drawRef.current = null;
       releaseAll();
     };

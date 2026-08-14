@@ -152,22 +152,61 @@ function sourceFiles(dir = SRC, acc: string[] = []): string[] {
 }
 
 /**
- * Every JSX opening tag in `src`, as { tag, attrs }.
+ * Blank out `//` and comment blocks, PRESERVING every byte offset and newline.
+ *
+ * Two distinct defects, both measured, both of which moved the counts below:
+ *
+ *  1. PROSE INFLATES THE RATCHET. A comment that mentions a utility by name is not a
+ *     rendered class, but `src.match(/border-line/g)` counts it. There are 9 such
+ *     mentions in src today (1,109 raw occurrences vs 1,100 real), and writing the
+ *     migration note for this very fix added two more — a ratchet that its own
+ *     documentation can loosen is not a ratchet. This is the same failure the
+ *     `content` exclusion at the top of tailwind.config.js exists for.
+ *  2. A COMMENT INSIDE A TAG CAN HIDE THE TAG. `jsxTagRanges` abandons a candidate on
+ *     an unbracketed `<`, to avoid swallowing the next tag on a `a < b` comparison.
+ *     `pages/SendQueue.tsx:169` is an `<a>` styled as a secondary button whose
+ *     attribute list contains the comment "An anchor cannot be a <Button>" — the `<`
+ *     of `<Button>` killed the parse and the control vanished from the count. Exactly
+ *     one site today, but it is a control that was invisible, which is the failure this
+ *     whole file exists to catch.
+ *
+ * Offsets are preserved (comment bytes become spaces) because the callers below locate
+ * occurrences by index and report line numbers by counting newlines before them.
+ */
+function stripComments(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
+    // `[^:]` guards against eating the `//` in a `https://` inside a string literal.
+    .replace(/(^|[^:])\/\/[^\n]*/g, (m, p: string) => p + ' '.repeat(m.length - p.length));
+}
+
+/**
+ * Every JSX opening tag in `src`, as { tag, start, end } over its ATTRIBUTE range.
  *
  * Hand-rolled rather than regex-per-line because the attribute list of a control in this
  * codebase routinely spans lines and contains `{clsx(...)}` with nested braces, quotes
  * and template literals — a naive `<(input|select)[^>]*>` stops at the first `>` inside
  * an arrow function and silently under-counts. Measured: the naive version found 27
- * control sites where the real number is 223, so it would have reported the defect as
+ * control sites where the real number is 228, so it would have reported the defect as
  * an eighth of its actual size.
+ *
+ * RANGES, AND NO `i = j` SKIP — this is the correction over the previous version, and it
+ * is worth 9 controls. The old loop jumped the cursor past each tag it accepted, so JSX
+ * passed as a PROP was never seen as JSX: in `shared/ConfirmDialog.tsx` the two footer
+ * buttons live inside `footer={<>…</>}`, the `>` that closes them is at brace depth 1, so
+ * the whole fragment was absorbed into `<Modal>`'s attribute range and both buttons were
+ * counted as a non-control. Emitting ranges and attributing each occurrence to the
+ * SMALLEST range containing it fixes that without a second parser: the innermost tag is
+ * by definition the element the class is actually on. 223 -> 232 before the sweep.
  */
-function jsxTags(src: string): { tag: string; attrs: string }[] {
-  const out: { tag: string; attrs: string }[] = [];
+function jsxTagRanges(src: string): { tag: string; start: number; end: number }[] {
+  const out: { tag: string; start: number; end: number }[] = [];
   for (let i = 0; i < src.length; i++) {
     if (src[i] !== '<') continue;
     const head = /^<([A-Za-z][A-Za-z0-9.]*)/.exec(src.slice(i, i + 64));
     if (!head) continue;
-    let j = i + head[0].length;
+    const attrStart = i + head[0].length;
+    let j = attrStart;
     let depth = 0;
     let quote: string | null = null;
     for (; j < src.length; j++) {
@@ -191,8 +230,36 @@ function jsxTags(src: string): { tag: string; attrs: string }[] {
       }
     }
     if (j <= 0 || j >= src.length) continue;
-    out.push({ tag: head[1], attrs: src.slice(i + head[0].length, j) });
-    i = j;
+    out.push({ tag: head[1], start: attrStart, end: j });
+  }
+  return out;
+}
+
+/**
+ * Attribute every occurrence of `needle` in `src` to the INNERMOST JSX tag whose
+ * attribute range contains it, or to `null` when it sits outside every tag.
+ *
+ * `null` is not a parser failure — it is the class-VARIANT-TABLE case, and it is where
+ * the single most-reused control in the app was hiding. `ui/Button.tsx` keeps its
+ * recipes in `const variantStyles: Record<ButtonVariant, string>`, so the border of
+ * every `<Button variant="secondary">` in the codebase is a bare string constant that no
+ * tag-attribute scanner can ever see. Callers must therefore handle the orphan bucket
+ * deliberately rather than treating "not on a control tag" as "not a control".
+ */
+function attributeOccurrences(
+  src: string,
+  needle: RegExp,
+): { tag: string | null; line: number }[] {
+  const ranges = jsxTagRanges(src);
+  const out: { tag: string | null; line: number }[] = [];
+  for (const m of src.matchAll(needle)) {
+    const idx = m.index!;
+    let best: { tag: string; start: number; end: number } | null = null;
+    for (const r of ranges) {
+      if (idx < r.start || idx >= r.end) continue;
+      if (!best || r.end - r.start < best.end - best.start) best = r;
+    }
+    out.push({ tag: best?.tag ?? null, line: src.slice(0, idx).split('\n').length });
   }
   return out;
 }
@@ -564,10 +631,13 @@ describe('WCAG text contrast, computed from the tokens', () => {
 
     /*
      * A CEILING TOO, because the lazy fix is to point control borders at --grey and the
-     * count says that is the wrong answer: --grey is the SECONDARY TEXT colour, 5.41-7.30
-     * across these surfaces, so a border wearing it has the visual weight of body copy on
-     * all 251 controls. 1.4.11 asks for 3:1. This asserts the token stays clear of the
-     * floor without becoming text-weight, i.e. that it is still a hairline.
+     * count says that is the wrong answer: --grey is the SECONDARY TEXT colour, and
+     * re-measured over all eight of these surfaces its range is 5.31-7.45 (not the
+     * 5.41-7.30 this comment used to claim — that list was missing dark on --ice at 5.31
+     * and dark on --navy-deep at 7.45). So a border wearing it has the visual weight of
+     * body copy on all 234 control boundaries in the app. 1.4.11 asks for 3:1. This
+     * asserts the token stays clear of the floor without becoming text-weight, i.e. that
+     * it is still a hairline.
      */
     for (const [themeName, palette] of themes) {
       const worstControl = Math.min(
@@ -585,47 +655,176 @@ describe('WCAG text contrast, computed from the tokens', () => {
     }
   });
 
+  it('the scanner sees the two things that hid controls from the previous count', () => {
+    /*
+     * A SELF-TEST, on fixtures rather than on the app, because both corrections below were
+     * found by noticing a control the shipped scanner did not report — and a scanner that
+     * silently regresses to the old behaviour would make every count in this file look
+     * BETTER while the app got worse. That failure is invisible to a shrink-only ratchet:
+     * fewer sites found reads as progress.
+     *
+     * The fixtures reproduce the two real sites, reduced:
+     *   · shared/ConfirmDialog.tsx:45 — a <button> inside `footer={<>…</>}`, which the
+     *     old `i = j` cursor skip absorbed into <Modal>'s attribute range.
+     *   · pages/SendQueue.tsx:169 — an <a> whose attribute list contains a comment
+     *     mentioning `<Button>`, whose `<` tripped the abandon rule and voided the tag.
+     * Plus the orphan case (ui/Button.tsx:15) which must report `null`, not a tag.
+     */
+    const propPassed = '<Modal footer={<><button className="border-line">Cancel</button></>}>';
+    const propTags = attributeOccurrences(stripComments(propPassed), /border-line/g);
+    expect(propTags.map((o) => o.tag), 'JSX passed as a prop must attribute to the inner <button>, not <Modal>').toEqual(['button']);
+
+    const commented = '<a\n  /* cannot be a <Button> */\n  className="border-line"\n>x</a>';
+    expect(
+      attributeOccurrences(commented, /border-line/g).map((o) => o.tag),
+      'without stripComments the `<` inside the comment voids the tag — this is the ' +
+        'negative control, and it must show the defect',
+    ).toEqual([null]);
+    expect(
+      attributeOccurrences(stripComments(commented), /border-line/g).map((o) => o.tag),
+      'stripComments must restore the <a>',
+    ).toEqual(['a']);
+
+    const table = "const v = { secondary: 'border border-line' };";
+    expect(
+      attributeOccurrences(stripComments(table), /border-line/g).map((o) => o.tag),
+      'a class-variant table is outside every tag and must report null, so callers are ' +
+        'forced to classify it rather than silently scoring it as "not a control"',
+    ).toEqual([null]);
+
+    expect(
+      attributeOccurrences(stripComments('// border-line\n<p className="x" />'), /border-line/g),
+      'a commented-out utility is not a rendered class and must not be counted at all',
+    ).toEqual([]);
+  });
+
+  it('--control-border is wired to a real utility class in tailwind.config.js', async () => {
+    /*
+     * THE ONE LINE THIS WHOLE TOKEN WAITED ON. Until it existed, --control-border was
+     * measured by the test above, documented at length in tokens.css, and reachable from
+     * exactly nothing: Tailwind only emits a `border-*` utility for a key present in
+     * `theme.extend.colors`, so `className="border-control"` compiled to no rule at all
+     * and every control silently kept --line. A comment saying "NOT YET WIRED" cannot fail;
+     * this can.
+     *
+     * The config is IMPORTED, not grepped, because the build reads the module — a regex
+     * over the file would also match the token name inside the explanatory comment that
+     * now sits directly above the entry, and would pass with the entry deleted.
+     *
+     * DERIVED, not asserted by name: the utility name comes from whichever colour key
+     * references the token, so renaming the key to `ctl` keeps this test meaningful and
+     * renaming the TOKEN fails it. That link is the point — this file measures
+     * `--control-border` and components spell a Tailwind class, and nothing else in the
+     * repo ties the two together.
+     */
+    /* tailwind.config.js is plain JS with no declaration file and `allowJs` is off for
+     * this project, so TS cannot type the import. `@ts-expect-error` rather than
+     * `@ts-ignore` deliberately: if the config ever gains types, TS reports the
+     * suppression as unused and this line has to be revisited instead of rotting. The
+     * shape is checked at runtime on the next line, which is the test's actual job. */
+    // @ts-expect-error -- untyped JS config; shape asserted at runtime below
+    const mod = await import('../../../tailwind.config.js');
+    const config = (mod as { default?: unknown }).default as
+      | { theme?: { extend?: { colors?: Record<string, unknown> } } }
+      | undefined;
+    // `?? {}` rather than a non-null assertion: an empty object is what the length check
+    // immediately below is for, so a config that changed shape fails with the message
+    // that explains it instead of throwing a TypeError three lines later.
+    const colors = config?.theme?.extend?.colors ?? {};
+    expect(
+      Object.keys(colors).length,
+      'imported tailwind.config.js but found no `theme.extend.colors`. The config changed ' +
+        'shape, so every assertion below is about a structure that no longer exists.',
+    ).toBeGreaterThan(5);
+
+    const wired = Object.entries(colors).filter(
+      ([, v]) => typeof v === 'string' && v.includes('--control-border'),
+    );
+    expect(
+      wired.map(([k]) => k),
+      'no key in tailwind.config.js `theme.extend.colors` references --control-border, so ' +
+        'no `border-*` utility resolves to it and every control boundary in the app falls ' +
+        'back to --line at 1.03-1.72:1 against the 3:1 in WCAG 2.2 SC 1.4.11.',
+    ).toHaveLength(1);
+
+    const [utilityName, value] = wired[0] as [string, string];
+    /*
+     * The alpha-value form matters and is not cosmetic. `rgb(var(--x))` without the
+     * `<alpha-value>` slash placeholder compiles, but every `/NN` opacity modifier on it
+     * silently produces an invalid declaration the browser drops — so `border-control/70`
+     * would render NO border rather than a lighter one. `border-line/70` and
+     * `border-line/20` are both already in use, so the next person to copy one onto a
+     * control would hit exactly that.
+     */
+    expect(
+      value,
+      `\`${utilityName}\` must follow the convention the other tokens use — ` +
+        'rgb(var(--token) / <alpha-value>) — so opacity modifiers stay valid',
+    ).toBe('rgb(var(--control-border) / <alpha-value>)');
+
+    // And the utility must actually be reachable from a component, not merely declared.
+    const utility = `border-${utilityName}`;
+    let uses = 0;
+    for (const file of sourceFiles()) {
+      uses += (stripComments(readFileSync(file, 'utf8')).match(new RegExp(utility, 'g')) ?? []).length;
+    }
+    expect(
+      uses,
+      `\`${utility}\` is defined in tailwind.config.js but no component uses it. Tailwind ` +
+        'purges unused utilities, so the class would not even ship — the token would be ' +
+        'wired on paper and absent from the stylesheet.',
+    ).toBeGreaterThan(0);
+  });
+
   it('no control still takes its boundary from --line, and the count can only shrink', () => {
     /*
-     * The assertion above proves the TOKEN is compliant. It says nothing about whether any
-     * control uses it — and today none does, because `border-control` needs one line in
-     * tailwind.config.js, which this track does not own. So this is the ratchet that keeps
-     * the outstanding work visible and bounded instead of trusting a note.
+     * The token assertion above proves --control-border is COMPLIANT. This one is about
+     * whether controls actually use it, which is a different question and the one that
+     * decides whether a user can see the edge of an input.
      *
-     * Measured 2026-08-13 by the scanner below: 1,115 `border-line` occurrences in
-     * apps/web/src, of which 223 are on a native control tag. That 223 is the number of
-     * control boundaries currently sitting at 1.03-1.72:1.
+     * THE COUNT WENT UP BEFORE IT WENT DOWN, and that is the honest part. This test used to
+     * record 223. Re-measured with the two scanner corrections documented on
+     * `stripComments` and `jsxTagRanges`, the real figure was 232: nine controls were
+     * hidden, eight inside JSX passed as a prop and one behind a comment containing `<`.
+     * The sweep in components/ui and components/shared then moved six sites (five tags plus
+     * `ui/Button.tsx`'s secondary variant table), leaving 228 — and `ui/Button.tsx` is worth
+     * more than its single line, since every `<Button variant="secondary">` in the app
+     * renders through it.
      *
-     * SHRINK-ONLY, and deliberately not pinned to equality: a sibling track removing a
-     * control must not fail this, and a sweep migrating them to `border-control` should
-     * drive it to 0 one file at a time. Adding a NEW bordered control on --line does fail
-     * it, which is the regression this exists to stop.
+     * WHAT IS DELIBERATELY NOT COUNTED, because 1.4.11 does not cover it and sweeping it
+     * would make the UI heavier for no accessibility gain: 816 occurrences on inert
+     * elements — table rules, card edges, section dividers, the `<pre>` in ErrorBoundary,
+     * the dialog panel edge in `ui/Modal.tsx`. Those are correct on --line and must stay
+     * there; a 3:1 hairline against white is no longer a hairline. A further 16 sit on
+     * interactive non-control elements (`<div onClick>`, `role="button"`), which is a
+     * judgement per site that a test cannot make, so they are excluded rather than folded
+     * in to make the number look worse.
      *
-     * NOT COUNTED, and worth knowing: 28 further occurrences sit on interactive
-     * non-control elements (a `<div onClick>`, `role="button"`, a `ChartCard` with a
-     * handler). Whether each of those is a "user interface component" under 1.4.11 is a
-     * judgement per site, and a test cannot make it — so they are excluded from the
-     * number rather than folded in to make it look worse.
+     * SHRINK-ONLY, not pinned to equality: a sibling track deleting a control must not fail
+     * this. Adding a NEW bordered control on --line does fail it.
      */
     const files = sourceFiles();
     expect(files.length, 'scanned no source files — SRC or the walk is wrong').toBeGreaterThan(100);
 
     let occurrences = 0;
     let onControls = 0;
+    let orphans = 0;
     const sites: string[] = [];
     for (const file of files) {
-      const src = readFileSync(file, 'utf8');
-      occurrences += (src.match(/border-line/g) ?? []).length;
-      for (const { tag, attrs } of jsxTags(src)) {
-        const n = (attrs.match(/border-line/g) ?? []).length;
-        if (n === 0 || !CONTROL_TAGS.has(tag)) continue;
-        onControls += n;
-        sites.push(`${file.slice(SRC.length + 1)} <${tag}>`);
+      const src = stripComments(readFileSync(file, 'utf8'));
+      const rel = file.slice(SRC.length + 1);
+      for (const { tag, line } of attributeOccurrences(src, /border-line/g)) {
+        occurrences++;
+        if (tag === null) orphans++;
+        else if (CONTROL_TAGS.has(tag)) {
+          onControls++;
+          sites.push(`${rel}:${line} <${tag}>`);
+        }
       }
     }
 
     /*
-     * ANTI-VACUITY. Both numbers below are counts over a discovered set, and a count over
+     * ANTI-VACUITY. Every number below is a count over a discovered set, and a count over
      * nothing is 0, which satisfies "shrink-only" forever while measuring nothing. If the
      * utility is renamed, or the tag scanner stops recognising JSX, this test must fail
      * rather than report a clean sweep it did not verify.
@@ -637,20 +836,130 @@ describe('WCAG text contrast, computed from the tokens', () => {
         'utility was renamed and this test is now measuring nothing.',
     ).toBeGreaterThan(0);
     expect(
-      onControls + sites.length,
-      'the tag scanner found `border-line` occurrences but attributed none to any tag, ' +
-        'which means it stopped parsing JSX rather than that the defect is fixed.',
+      onControls + orphans,
+      'the scanner found `border-line` occurrences but attributed none to a control tag ' +
+        'and found no class-table orphans either, which means it stopped parsing JSX ' +
+        'rather than that the defect is fixed.',
     ).toBeGreaterThan(0);
 
-    const RECORDED_CONTROL_SITES = 223;
+    const RECORDED_CONTROL_SITES = 228;
     expect(
       onControls,
       `${onControls} control borders now take their colour from --line (was ` +
-        `${RECORDED_CONTROL_SITES} on 2026-08-13). Every one measures 1.03-1.72:1 against its ` +
-        'surface, against the 3:1 in WCAG 2.2 SC 1.4.11. Use `border-control` ' +
-        '(--control-border) on a control boundary; --line is for decorative rules only.\n' +
-        `First few: ${sites.slice(0, 5).join(', ')}`,
+        `${RECORDED_CONTROL_SITES} after the ui/ and shared/ sweep). Every one measures ` +
+        '1.03-1.72:1 against its surface, against the 3:1 in WCAG 2.2 SC 1.4.11. Use ' +
+        '`border-control` (--control-border) on a control boundary; --line is for ' +
+        `decorative rules only.\nFirst few: ${sites.slice(0, 5).join(', ')}`,
     ).toBeLessThanOrEqual(RECORDED_CONTROL_SITES);
+  });
+
+  it('the swept primitives stay swept, and nothing decorative gets dragged along', () => {
+    /*
+     * TWO RATCHETS IN OPPOSITE DIRECTIONS, because this token has two failure modes and
+     * only one of them is "a control is too faint".
+     *
+     * The other one is over-application. --control-border is roughly 2.3x the contrast of
+     * --line (3.97 vs 1.72 on the light card); painting it onto the ~816 decorative rules
+     * would clear no WCAG criterion at all — 1.4.11 does not cover a table hairline — and
+     * would redraw every table and card edge in the app as a heavy rule. So the second
+     * assertion below is the one that stops a well-meaning find-and-replace: every
+     * `border-control` occurrence must be on a control.
+     *
+     * components/ui and components/shared are pinned at ZERO rather than shrink-only
+     * because they were swept completely; they are the shared primitives, so a regression
+     * here reappears on every page at once.
+     */
+    const SWEPT = /^components\/(ui|shared)\//;
+
+    let sweptControls = 0;
+    let sweptTotal = 0;
+    const sweptControlSites: string[] = [];
+    const sweptOrphans: string[] = [];
+    let controlTokenTotal = 0;
+    const misapplied: string[] = [];
+
+    for (const file of sourceFiles()) {
+      const src = stripComments(readFileSync(file, 'utf8'));
+      const rel = file.slice(SRC.length + 1);
+
+      if (SWEPT.test(rel)) {
+        for (const { tag, line } of attributeOccurrences(src, /border-line/g)) {
+          sweptTotal++;
+          if (tag === null) sweptOrphans.push(`${rel}:${line}`);
+          else if (CONTROL_TAGS.has(tag)) {
+            sweptControls++;
+            sweptControlSites.push(`${rel}:${line} <${tag}>`);
+          }
+        }
+      }
+
+      for (const { tag, line } of attributeOccurrences(src, /border-control\b/g)) {
+        controlTokenTotal++;
+        // `null` is the class-variant-table case, which is legitimate — ui/Button.tsx
+        // holds the secondary recipe there — so it cannot be judged from the tag alone
+        // and is checked by the orphan pin below instead.
+        if (tag !== null && !CONTROL_TAGS.has(tag)) misapplied.push(`${rel}:${line} <${tag}>`);
+      }
+    }
+
+    /*
+     * ANTI-VACUITY FIRST. Both swept-dir assertions below are "expected 0" / "expected
+     * empty", which a broken walk or a renamed utility satisfies perfectly. 24 decorative
+     * `border-line` occurrences remain in these two directories — card edges, modal header
+     * and footer rules, the ontology-node dividers, the ErrorBoundary <pre> — so the
+     * scanner must still be finding those.
+     */
+    expect(
+      sweptTotal,
+      'no `border-line` at all under components/ui or components/shared. 24 decorative ' +
+        'ones are supposed to remain, so this means the walk or the utility name broke, ' +
+        'not that the sweep succeeded.',
+    ).toBeGreaterThan(0);
+
+    expect(
+      sweptControls,
+      'a control in components/ui or components/shared is back on --line, where its ' +
+        'boundary measures 1.03-1.72:1 against the 3:1 in SC 1.4.11. These are the shared ' +
+        `primitives, so this regresses every page at once.\n${sweptControlSites.join('\n')}`,
+    ).toBe(0);
+
+    /*
+     * The class-table borders in the swept dirs, pinned as a SET so a new one has to be
+     * classified by a person rather than defaulting to "not a control".
+     *
+     * IT IS EMPTY, and both reasons are worth keeping. `ui/Button.tsx:15` was the real
+     * orphan — the secondary variant recipe, invisible to any tag scanner, and the
+     * most-reused control in the app — and it is now on --control-border.
+     * `ui/Modal.tsx:94` looked like a second one and is not: it sits on a <div> whose
+     * attribute list carries a 14-line comment, and the `<` inside that comment was
+     * voiding the tag until stripComments landed. It is the dialog PANEL edge, a surface
+     * rather than an operable component, so 1.4.11 does not reach it and --line is right.
+     * Left as an empty pin rather than deleted because the next such string will not
+     * announce which of the two kinds it is.
+     */
+    expect(
+      sweptOrphans.sort(),
+      'a `border-line` appeared in a class-variant table under components/ui or ' +
+        'components/shared. No tag scanner can see these, so each one must be classified ' +
+        'by hand: if it lands on a control, move it to `border-control`; if it is a ' +
+        'surface or divider, add it here with the reason.',
+    ).toEqual([]);
+
+    expect(
+      misapplied,
+      '`border-control` is on an element that is not a control. It is the heavier token ' +
+        '(3.97:1 vs --line\'s 1.72:1 on the light card) and exists only for boundaries ' +
+        'SC 1.4.11 actually covers — inputs, selects, buttons, links. A table rule, a card ' +
+        'edge or a divider on it clears no criterion and just makes the UI heavier.\n' +
+        misapplied.join('\n'),
+    ).toEqual([]);
+
+    // Anti-vacuity: if nothing uses the token, both assertions above are trivially true.
+    expect(
+      controlTokenTotal,
+      'no `border-control` anywhere in src — the sweep was reverted, or the utility was ' +
+        'renamed and this test is measuring nothing.',
+    ).toBeGreaterThan(0);
   });
 
   it('the inset focus ring against the border it sits inside — the one number --control-border makes worse', () => {

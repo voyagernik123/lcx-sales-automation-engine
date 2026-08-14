@@ -55,7 +55,24 @@ import { SKY_GLSL, bindSky, type SkyOptions } from './sky.js';
  * ── LINEAR IN, LINEAR OUT ───────────────────────────────────────────────────────────
  * Every colour here is LINEAR radiance and nothing is tone mapped. The composite owns the tone
  * curve — `look/tonemap.ts` states it is the only tone map in the pipeline — so a material that
- * applied one would double-apply it and break `assertBrandFidelity`.
+ * applied one would DOUBLE-APPLY it.
+ *
+ * That used to read "…and break `assertBrandFidelity`", which named a guard that could not fire.
+ * Corrected 2026-08-15. `assertBrandFidelity` round-trips a frozen constants table through two
+ * pure functions — no edit to this file, the composite or any shader can move its result, so a
+ * second tone map here would have passed it. And a lit material never had a hex to keep in the
+ * first place: radiance is base colour × illumination, so §6 rule 5's old "brand hex exact" was a
+ * category error over a shaded mesh, not a bug — measured, this file's own shipped marker
+ * configuration lands every palette colour 46–88 ΔE from its hex (`docs/3d/brand-fidelity.json`),
+ * and the highlight at a marker's centre is `#c8ebff`, ΔE 87.6, which is correct behaviour.
+ *
+ * What a second tone map here actually breaks is `look/brandPixel.test.ts`: it reproduces recorded
+ * GPU bytes from ONE application of `toneMapComposite`, so a material that applied its own would
+ * fail it with a per-channel byte mismatch. Rule 5 as amended — the transform is monotone per
+ * channel, so ORDER survives and a denser mark never renders lighter than a sparser one — is what
+ * that test pins, and it is the invariant this file must not disturb. Note that composing the curve
+ * with itself is still monotone, so a double apply does not violate the invariant in the abstract;
+ * it violates the measured record of what the pipeline does, which is the check that can fire.
  */
 
 /* THE SHADOW PASS. Position only: no normals, no colour, no varyings beyond depth. Anything

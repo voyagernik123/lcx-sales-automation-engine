@@ -95,7 +95,17 @@ export function useFlatChart(
     if (!canvas) return;
 
     // Dynamic import so @lcx/gl never enters a page chunk that does not render a chart.
-    const { sharedRenderer } = await import('@lcx/gl');
+    /*
+     * THE SUB-PATH, NOT THE BARREL — measured at 90,356 B across 9 chunks.
+     *
+     * '@lcx/gl' resolves to src/index.ts, and Rollup places a module in the chunk of the lowest common
+     * ancestor of the entries reaching it. Every entry reaches the barrel, so importing it here pulled the
+     * whole engine — lit, ao, dof and the volumetric raymarcher — into the first chart's chunk, for a
+     * function that only needs the shared renderer. Tree-shaking does not help: named imports from the
+     * barrel measure four bytes apart from direct ones. SPECIFIER IDENTITY is the lever, which is why
+     * packages/gl now publishes sub-path exports.
+     */
+    const { sharedRenderer } = await import('@lcx/gl/flat/shared.js');
     const renderer = sharedRenderer();
     if ('kind' in renderer) {
       setRefused(true);

@@ -34,6 +34,17 @@ export default {
         ice: { DEFAULT: 'rgb(var(--ice) / <alpha-value>)', soft: 'rgb(var(--ice-soft) / <alpha-value>)' },
         grey: { DEFAULT: 'rgb(var(--grey) / <alpha-value>)', light: 'rgb(var(--grey-light) / <alpha-value>)', dark: 'rgb(var(--grey-dark) / <alpha-value>)' },
         line: 'rgb(var(--line) / <alpha-value>)',
+        /* THE CONTROL BOUNDARY, separate from `line` because the two have different
+         * WCAG floors and one token cannot serve both. `border-line` measures
+         * 1.72 / 1.59 / 1.52 light and 1.30 / 1.42 / 1.16 / 1.03 / 1.45 dark against
+         * the surfaces controls actually sit on — against the 3:1 that SC 1.4.11
+         * requires for the boundary of a user interface component. `border-control`
+         * measures 3.97 / 3.67 / 3.50 and 4.33 / 4.71 / 3.86 / 3.43 / 4.81 on the same
+         * eight. Use it on an input, select, textarea, button, label or link edge;
+         * leave `line` on table rules, card edges and dividers, where 1.4.11 does not
+         * apply and where a 3:1 hairline is no longer a hairline. Both floors are
+         * asserted in lib/__tests__/contrast.test.ts. */
+        control: 'rgb(var(--control-border) / <alpha-value>)',
         card: 'rgb(var(--card) / <alpha-value>)',
         page: 'rgb(var(--page-bg) / <alpha-value>)',
         status: {

@@ -40,9 +40,17 @@ export function ConfirmDialog({
       title=""
       footer={
         <>
+          {/* `border-control`: the cancel button is unfilled, so this border is the only
+            * thing identifying it as a control. On --line it measured 1.72:1 on the dialog
+            * surface against SC 1.4.11's 3:1; --control-border measures 3.97:1. It matters
+            * more here than almost anywhere else — this is the button that DOESN'T perform
+            * the destructive action, so a user who cannot see it is left with only the
+            * confirm button visible. (Invisible to the JSX-attribute scanner in
+            * contrast.test.ts before this fix: it sits inside `footer={<>…</>}`, so the
+            * whole fragment was attributed to <Modal>.) */}
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-md border border-line text-xs font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
+            className="px-4 py-2 rounded-md border border-control text-xs font-semibold hover:bg-ice-soft dark:hover:bg-ice-soft/10 transition-colors"
           >
             {cancelLabel}
           </button>

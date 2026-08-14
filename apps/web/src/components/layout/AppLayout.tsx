@@ -24,6 +24,7 @@ import { useHints } from '@/hooks/useHints';
 import { useSplitViewChord } from '@/hooks/useSplitView';
 import { HintLayer } from '@/components/help/HintLayer';
 import { TourHost } from '@/components/teach/TourHost';
+import { SignatureBackdrop } from '@/components/command/SignatureBackdrop';
 
 export function AppLayout() {
   const sidebarCollapsed = useUIStore(s => s.sidebarCollapsed);
@@ -241,7 +242,27 @@ export function AppLayout() {
     !capAtLeast(accessMe.entitlements[routeWorkspace], 'view');
 
   return (
-    <div className="flex h-screen flex-col bg-page text-navy">
+    /* `relative isolate` exists for the backdrop below and for nothing else, and without it the
+     * backdrop is INVISIBLE rather than wrong — which is the failure mode worth naming. The
+     * layer positions itself `absolute inset-0 -z-10`. Painting order puts a negative-z child
+     * above its stacking context's own background and below the in-flow content, which is
+     * exactly the slot wanted; but this div creates no stacking context on its own (no
+     * position, no z-index, no transform), so the child would search up to the ROOT element and
+     * paint behind `bg-page` here. Nothing throws and nothing looks broken. `isolate` is what
+     * makes this div the context. `pages/CommandDeck.tsx:89` already carries the same pair for
+     * the same reason. */
+    <div className="relative isolate flex h-screen flex-col bg-page text-navy">
+      {/* X1 · AMBIENT. The one 3-D surface that is not opt-in — see the component for the
+        * measurement that decides its amplitude, and for why it renders NOTHING in the light
+        * theme. It costs no new GL context (it goes through `flat/shared.ts`, the same single
+        * offscreen context every chart uses), draws no dataset, and takes no pointer events.
+        *
+        * It is mounted HERE rather than per page because this div is the only element that
+        * spans the shell: `MainContent` has no background of its own, so `bg-page` above is
+        * what a reader currently sees behind every route's cards, and this layer is what
+        * replaces it. `/select` and `/lcxos` are siblings of this layout and are deliberately
+        * not covered — the sign-in screen has E8's ForgeBackdrop already. */}
+      <SignatureBackdrop />
       {/* Bypass Blocks (WCAG 2.4.1), and the most expensive focus defect measured
        * in this shell. Tabbing from the top of any route walked 24 chrome stops
        * before reaching the page content — 6 in the top bar, 17 sidebar

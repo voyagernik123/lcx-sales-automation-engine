@@ -310,8 +310,12 @@ for (const dir of envs) {
       row.problems.push('the fallback is display:none on success — in neither the accessibility tree nor '
         + 'the print snapshot (§6 rules 1 and 4)');
     }
-    if (row.brandFidelity === null) row.problems.push('report carries no brandFidelity (§6 rule 5)');
-    else if (row.brandFidelity > 0) row.problems.push(`${row.brandFidelity} brand hex round-trip failures`);
+    /* NOT a fidelity verdict, and it used to be reported as one. This field is the PALETTE TABLE's
+       self-consistency — assertBrandFidelity never sees a pixel — so a non-zero count means a
+       corrupted BRAND_HEX constant, not a frame that moved the brand blue. Rule 5 was amended on
+       2026-08-14 to order preservation; the measured shift is #2c6bff -> #2c68dc, dE76 18.3. */
+    if (row.brandFidelity === null) row.problems.push('report carries no palette-table check (§6 rule 5)');
+    else if (row.brandFidelity > 0) row.problems.push(`${row.brandFidelity} BRAND_HEX constants are self-inconsistent`);
     if (errs.length) row.problems.push(`page errors: ${errs.slice(0, 2).join(' | ')}`);
     await p.close();
   }

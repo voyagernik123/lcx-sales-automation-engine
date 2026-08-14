@@ -21,15 +21,20 @@ import { dirname, join, relative, resolve } from 'node:path';
  * data bug, and it is the reason this file pins a number rather than describing an intention.
  *
  * ── THE NUMBER, AND WHY 3 IS SAFE AGAINST A CAP OF 8-16 ─────────────────────────────────
- * Measured by walking the static AND dynamic import graph from every route in `router.tsx`
- * (78 routes today):
+ * Measured by walking the static AND dynamic import graph from every route in `router.tsx`,
+ * UNIONED WITH the shell closure that wraps all of them (78 routes today):
  *
- *   · 63 routes reach no GL at all.
- *   · 14 routes reach exactly one context: either the shared renderer (a chart or
- *     `SignatureBackdrop`) or one relief.
+ *   · 70 routes reach exactly one: the shared context, from the shell's backdrop.
+ *   · 7 routes reach two: that shared one, plus a single relief of their own.
  *   · ONE route reaches three — `pages/CommandDeck.tsx`:
- *        1. the shared context, via `SignatureBackdrop` (CommandDeck.tsx:95, always mounted,
- *           so it is created on first paint and is therefore the oldest)
+ *        1. the shared context, from `AppLayout`'s `SignatureBackdrop` around the `<Outlet>` —
+ *           always mounted, created on first paint, and therefore the OLDEST, which is precisely
+ *           the one a browser drops first when a page runs past the cap
+ *
+ *     NO ROUTE REACHES ZERO ANY MORE, and that is the change the backdrop made. The distribution
+ *     used to read 63 / 14 / 1 with the backdrop mounted inside CommandDeck itself. Moving it into
+ *     the shell did not add contexts to CommandDeck — it added one to the other 77 pages. The
+ *     ceiling is unchanged at 3; what changed is that the floor is now 1 everywhere.
  *        2. `DeckReliefGl`, via `<DeckRelief>` (CommandDeck.tsx:162), opt-in
  *        3. `SurfaceReliefGl`, via `<SurfaceRelief>` inside `LpOptimizerPanel`
  *           (CockpitPanels.tsx:501), opt-in
@@ -200,8 +205,47 @@ interface RouteBudget {
   readonly sites: Map<string, number>;
 }
 
+/*
+ * ── THE SHELL IS A ROOT OF EVERY ROUTE, AND LEAVING IT OUT UNDERCOUNTED ALL 78 ─────────────
+ * This census used to walk from route modules alone. That was right only while every GL surface
+ * was inside a page. `AppLayout` now mounts `SignatureBackdrop` around the `<Outlet>`, so the
+ * shared context is on screen for every route including the 63 that reach no GL of their own —
+ * and a per-route walk cannot see it, because nothing in a page imports the shell that wraps it.
+ *
+ * The failure that exposed it was silent in the right direction and therefore worth recording:
+ * removing the now-dead `<SignatureBackdrop>` from CommandDeck dropped its count 3 -> 2 and the
+ * pin failed. Nothing about the app got safer; the page still holds three. A census that reads a
+ * REDUCTION out of a change that only moved a mount upward is measuring the wrong graph.
+ *
+ * Derived, not named: the shell is whatever `router.tsx` reaches through STATIC imports without
+ * descending into a route module. Pages are the lazy half of the router, so stopping at them
+ * leaves exactly the always-mounted half. If the shell grows a relief tomorrow, all 78 routes
+ * count it tomorrow, with no edit here.
+ */
+const SHELL: ReadonlySet<string> = (() => {
+  const seen = new Set<string>();
+  const routeSet = new Set(ROUTES);
+  const stack = existsSync(ROUTER) ? [ROUTER] : [];
+  while (stack.length > 0) {
+    const file = stack.pop()!;
+    if (seen.has(file)) continue;
+    seen.add(file);
+    /* Route modules are recorded as reached and then NOT descended into: a page's own imports
+       belong to that page's budget, not to the shell every other page also pays for. */
+    if (routeSet.has(file)) continue;
+    const src = SOURCE.get(file) ?? (file === ROUTER ? readFileSync(ROUTER, 'utf8') : undefined);
+    if (src === undefined) continue;
+    for (const m of src.matchAll(/from\s*['"]([^'"]+)['"]/g)) {
+      const next = resolveSpecifier(m[1]!, file);
+      if (next !== null && !seen.has(next)) stack.push(next);
+    }
+  }
+  for (const r of routeSet) seen.delete(r);
+  return seen;
+})();
+
 const BUDGETS: RouteBudget[] = ROUTES.map((route) => {
-  const files = reachable(route);
+  const files = new Set([...reachable(route), ...SHELL]);
   const own = OWNERS.filter((o) => files.has(o));
   const shared = SHARED_USERS.some((s) => files.has(s));
   const sites = new Map<string, number>();
@@ -280,6 +324,29 @@ describe('§6 rule 7 — the live GL context budget of the shipping app', () => 
       expect(/createStage\s*\(/.test(SOURCE.get(f)!),
         `${id(f)} builds its own GL context instead of going through sharedRenderer()`).toBe(false);
     }
+  });
+
+  it('the shell closure is real and carries the always-mounted context, or every count below is short by one', () => {
+    /*
+     * The negative control for the SHELL walk. An empty or route-free closure would make this file
+     * silently revert to the per-route census that undercounted all 78, and every assertion below
+     * would still pass — which is how a guard stops measuring without ever going red.
+     */
+    expect(SHELL.size, 'the shell closure is empty — router.tsx resolved no static imports')
+      .toBeGreaterThan(3);
+    for (const r of ROUTES) {
+      expect(SHELL.has(r), `${id(r)} is a route and must not be inside the shell closure`).toBe(false);
+    }
+    expect(SHARED_USERS.some((s) => SHELL.has(s)),
+      'the shell no longer reaches sharedRenderer(). If AppLayout genuinely stopped mounting a GL'
+      + ' backdrop that is a real change — say so here; if it still mounts one, this walk is broken')
+      .toBe(true);
+    /* And it must change an answer. If every route already had the shared context on its own, the
+       walk above would be decorative and could be deleted without a failure. */
+    const withoutShell = ROUTES.filter((r) => !SHARED_USERS.some((s) => reachable(r).has(s)));
+    expect(withoutShell.length,
+      'no route depends on the shell for its shared context — the SHELL union is doing nothing')
+      .toBeGreaterThan(0);
   });
 
   it(`no route can hold more than ${CONCURRENT_CAP} live contexts, and ${WORST_ROUTE} is the one at the cap`, () => {

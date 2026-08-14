@@ -47,8 +47,10 @@ import {
   viewProjection, eyeOf, nearFarOf, lightViewProjection, boundsCentre, boundsRadius,
   hexToLinear, assertBrandFidelity, IDENTITY, TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
   qualitySettings, shadowMapSizeFor, pickQualityTier,
-  type LitDraw, type Viewpoint, type MeshBuffer,
+  type LitDraw, type Viewpoint, type MeshBuffer, type Linear,
 } from '@lcx/gl';
+/* A SUB-PATH IMPORT, NOT THE BARREL — `docs/3d/w2/SUBPATH_COST.md`; `SurfaceReliefGl.tsx` carries the reason. */
+import { sceneTheme, liveTheme, type SceneTheme, type ThemeName } from '@lcx/gl/look/theme.js';
 import {
   useResolvedQualityTier, needsQualityProbe, measureFrameMs, recordQualityProbe,
 } from '../shared/useQualityTier';
@@ -137,6 +139,11 @@ const VERDICT_MATERIAL: Record<AuditVerdict, { roughness: number; metalness: num
  * cost the harness days of reach — a header at 0.66 crossed AA at nine hours while the action name beside it was
  * still at 8.6:1 four days back. Size and weight already rank them.
  *
+ * THE COLOUR IS NO LONGER HERE, and that is the theme fix rather than a tidy-up. It was `#fff` on all four,
+ * which is correct against a corridor that fogs toward #0B1220 and exactly wrong against one that fogs toward
+ * #DCE5F3. It is now chosen PER RECORD from the background this frame actually rendered — see `INK` and the
+ * candidate scoring in `draw` — so the four still share one colour and therefore still share one ratio.
+ *
  * `charPx` is the measured advance of `ui-monospace` at each size (0.6 em, plus tracking where set). It is here
  * because the element box is sized against the LONGEST line present: `campaign.publ` served as an action name by
  * `overflow: hidden` is worse than no record at all.
@@ -148,22 +155,22 @@ const LINE_SPEC: readonly {
 }[] = [
   {
     charPx: 6.5,
-    style: { font: '600 9px/1 ui-monospace, monospace', letterSpacing: '.12em', color: '#fff' },
+    style: { font: '600 9px/1 ui-monospace, monospace', letterSpacing: '.12em' },
     text: (r) => `${r.verdict} · ${whenOf(r.hoursAgo)}`,
   },
   {
     charPx: 6.7,
-    style: { font: '700 11px/1.05 ui-monospace, monospace', color: '#fff' },
+    style: { font: '700 11px/1.05 ui-monospace, monospace' },
     text: (r) => r.action ?? 'ACTION NOT RECORDED',
   },
   {
     charPx: 6.4,
-    style: { font: '400 10.5px/1.2 ui-monospace, monospace', color: '#fff' },
+    style: { font: '400 10.5px/1.2 ui-monospace, monospace' },
     text: (r) => r.actor ?? 'ACTOR NOT RECORDED',
   },
   {
     charPx: 5.8,
-    style: { font: '400 9.5px/1.2 ui-monospace, monospace', color: '#fff' },
+    style: { font: '400 9.5px/1.2 ui-monospace, monospace' },
     /* THREE STATES, THREE STRINGS. A withheld subject exists and may not be shown; an unrecorded one never
        existed. Collapsing them into one blank is the table's failure, and it is the reading this view exists
        to keep.
@@ -182,12 +189,19 @@ interface OverlayRecord {
   readonly ew: number;
   readonly eh: number;
   readonly opacity: number;
+  /** Chosen from THIS record's measured background — see `INK`. Applied to all four lines, so one ratio still
+      covers all four. */
+  readonly colour: string;
   readonly lines: readonly { readonly text: string; readonly style: CSSProperties }[];
 }
 
 interface Plan {
   readonly cssW: number;
   readonly cssH: number;
+  /* THE THEME THE FRAME UNDER THIS OVERLAY WAS DRAWN AT. Carried rather than re-read in the render, because the
+     class can change between the draw and React's commit and a second `liveTheme()` there could disagree with
+     the canvas — which would put the HUD's light type on a light corridor. */
+  readonly theme: ThemeName;
   readonly records: readonly OverlayRecord[];
   readonly ruler: readonly { readonly label: string; readonly sx: number; readonly sy: number }[];
   readonly rulerUnreadable: number;
@@ -216,10 +230,40 @@ const relLum = (r: number, g: number, b: number): number => {
 };
 const ratioOf = (a: number, b: number): number => (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 /* Source-over in sRGB BYTES, because that is what the compositor does when it lays a DOM text layer over a
-   canvas: the alpha applies to the encoded values, so the composite happens before `relLum`, not after. */
-const overBg = (bg: readonly [number, number, number], a: number): number => relLum(
-  bg[0] + a * (255 - bg[0]), bg[1] + a * (255 - bg[1]), bg[2] + a * (255 - bg[2]),
+   canvas: the alpha applies to the encoded values, so the composite happens before `relLum`, not after.
+   THE FOREGROUND IS A PARAMETER NOW. It used to be hard-coded to 255 on every channel, which silently assumed
+   the type was white — so the moment a light theme put dark type on a light slab, every ratio this frame printed
+   would have described a colour it was not painting. For fg = (255,255,255) this is the identical expression. */
+const overBg = (
+  bg: readonly [number, number, number], a: number, fg: readonly [number, number, number],
+): number => relLum(
+  bg[0] + a * (fg[0] - bg[0]), bg[1] + a * (fg[1] - bg[1]), bg[2] + a * (fg[2] - bg[2]),
 );
+
+/**
+ * THE TWO CANDIDATE TYPE COLOURS, AND WHY THE CHOICE IS MEASURED PER RECORD RATHER THAN PER THEME.
+ *
+ * A record's background is not the page and not the theme — it is the slab, whose albedo is the VERDICT and
+ * therefore data that does not move, fogged toward the corridor's own far colour, which does. So within one
+ * light-theme frame the near records sit on saturated brand blue and the far ones on near-white haze, and no
+ * single type colour serves both. Measured WCAG ratios of the two candidates against the backgrounds this
+ * corridor actually produces, at the element opacities the fog law hands out:
+ *
+ *                         a=1.00        a=0.50        a=0.25
+ *   ALLOWED  #2C6BFF   4.51 / 4.36   2.22 / 2.30   1.49 / 1.50      (white / ink)
+ *   BLOCKED  #C9552B   4.36 / 4.52   2.18 / 2.37   1.47 / 1.52
+ *   WITHHELD #5C6880   5.60 / 3.51   2.68 / 2.05   1.70 / 1.43
+ *   dark fog #0B1220  18.72 / 1.05   5.30 / 1.03   2.21 / 1.01
+ *   light fog #DCE5F3  1.27 / 15.51  1.13 / 3.50   1.06 / 1.75
+ *
+ * Taking the better of the two is never worse than the white-only rule this shipped with — the last column of
+ * every row proves it — so this is a strict improvement in the DARK theme as well as the enabling change for
+ * the light one. On dark it picks white everywhere except where a steel slab is already brighter than the type,
+ * and on light it picks ink for the haze and white for the saturated slabs, which is what legibility means: the
+ * type follows its own ground rather than the page's.
+ */
+const INK: readonly [number, number, number] = [8, 11, 18];
+const WHITE: readonly [number, number, number] = [255, 255, 255];
 
 /**
  * THIS SCENE'S OWN SHADOW BASELINE, which the tier SCALES rather than replaces.
@@ -229,6 +273,53 @@ const overBg = (bg: readonly [number, number, number], a: number): number => rel
  * 1536 at the default tier, a 2.25x bigger map and three captures that changed without anyone saying so.
  */
 const SHADOW_BASELINE = 1024;
+
+/**
+ * ══ THE CORRIDOR SHELL IS SCENERY, AND ITS FOUR SURFACES ARE ORDERED ════════════════════════════════
+ *
+ * `packages/gl/src/look/theme.ts` argues the data/scenery line; `SurfaceReliefGl.tsx` carries the note on why
+ * only the LIGHT half comes from the theme. What matters here is that the shell is four surfaces whose ORDER is
+ * the architecture, and the theme's roles happen to mirror it exactly. Measured WCAG luminance of the albedos:
+ *
+ *   dark   floor #080C15 0.00369 < ceiling #0A101C 0.00519 < end cap #0B1220 0.00608 < wall #141F35 0.01386
+ *   light  plate #FFFFFF 1.00000 > ground #E8EDF6 0.84378 > fog #DCE5F3 0.77725 > structure #C3CEE0 0.61127
+ *
+ * Four surfaces, same order, mirrored — so floor takes `plate`, ceiling `ground`, the end cap `fog` and the
+ * walls `structure`. Two of those are not choices at all: the end cap must EQUAL the fog or the far end of the
+ * corridor stops dissolving into it (its dark hex #0B1220 is already `FOG_HEX`), and the wall's dark hex #141F35
+ * is already the theme's own dark `structure`.
+ *
+ * The VERDICT colours are data and appear nowhere here. They do not move in either theme.
+ */
+const scenery = (th: SceneTheme, darkHex: string, light: Linear): Linear =>
+  (th.name === 'dark' ? hexToLinear(darkHex) : light);
+
+/** The dark theme's record, held only as the denominator of the light rig's ratio — see `SurfaceReliefGl.tsx`,
+    THE LIGHT RIG MOVES BY RATIO. Nothing reads a colour out of it. */
+const TH_DARK = sceneTheme('dark');
+const rigFor = (th: SceneTheme) => ({
+  key: th.keyGain / TH_DARK.keyGain,
+  ambient: th.ambientGain / TH_DARK.ambientGain,
+  shadow: th.shadowStrength / TH_DARK.shadowStrength,
+});
+
+/**
+ * THE FRAME'S OWN TEXT TOKENS — the HUD, the depth ruler and the caption under the frame.
+ *
+ * The ruler and the HUD sit on the rendered corridor with no plate, so they follow the same ink/light rule the
+ * records do; they are not measured per label because they are drawn at a fixed screen position over the
+ * corridor's own fog, which is the theme's colour by construction.
+ *
+ * THE CAPTION IS A DEFECT THIS WORK FOUND RATHER THAN CAUSED. `rgba(196,212,240,.62)` sits on the PAGE, and the
+ * platform defaults to LIGHT: measured 5.25:1 on the dark card #10182B and **1.28:1 on the light card #FFFFFF**.
+ * The list of records the corridor could not deliver — the thing this whole file is arranged around not losing —
+ * has been below the WCAG floor on the default theme since it shipped. #5A6272 is the platform's own `--grey`
+ * and measures 6.13:1 on white.
+ */
+const FRAME_TEXT = {
+  dark: { head: '#8FB7FF', body: 'rgba(196,212,240,.86)', ruler: 'rgba(196,212,240,.85)', caption: 'rgba(196,212,240,.62)' },
+  light: { head: '#1E2761', body: '#333948', ruler: '#333948', caption: '#5A6272' },
+} as const;
 
 /** What the corridor is built from on any one draw: the page of the spine, already sliced and measured. */
 interface VaultBuild {
@@ -463,17 +554,17 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
 
     /* THE CORRIDOR ITSELF, which is the same for every page of the spine. Built once; only the records inside
        it are rebuilt when the page changes. */
-    const staticDraws: LitDraw[] = [
+    const staticDrawsFor = (th: SceneTheme): LitDraw[] => [
       { mesh: floorMesh, model: modelOf(0, -0.06, CORRIDOR_MID), normalMat: N3,
-        material: { baseColour: hexToLinear('#080C15'), roughness: 0.84, metalness: 0 } },
+        material: { baseColour: scenery(th, '#080C15', th.plate), roughness: 0.84, metalness: 0 } },
       { mesh: wallMesh, model: modelOf(-CORRIDOR_HALF, 1.5, CORRIDOR_MID), normalMat: N3,
-        material: { baseColour: hexToLinear('#141F35'), roughness: 0.62, metalness: 0.03 } },
+        material: { baseColour: scenery(th, '#141F35', th.structure), roughness: 0.62, metalness: 0.03 } },
       { mesh: wallMesh, model: modelOf(CORRIDOR_HALF, 1.5, CORRIDOR_MID), normalMat: N3,
-        material: { baseColour: hexToLinear('#141F35'), roughness: 0.62, metalness: 0.03 } },
+        material: { baseColour: scenery(th, '#141F35', th.structure), roughness: 0.62, metalness: 0.03 } },
       { mesh: ceilMesh, model: modelOf(0, 2.86, CORRIDOR_MID), normalMat: N3,
-        material: { baseColour: hexToLinear('#0A101C'), roughness: 0.80, metalness: 0 } },
+        material: { baseColour: scenery(th, '#0A101C', th.ground), roughness: 0.80, metalness: 0 } },
       { mesh: endMesh, model: modelOf(0, 1.5, CORRIDOR_MID - CORRIDOR_LEN / 2), normalMat: N3,
-        material: { baseColour: hexToLinear('#0B1220'), roughness: 0.86, metalness: 0 } },
+        material: { baseColour: scenery(th, '#0B1220', th.fog), roughness: 0.86, metalness: 0 } },
     ];
 
     /* Down the corridor and slightly to one side, so records on both walls take light at a grazing angle and
@@ -495,10 +586,11 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
      * ONE FRAME, THEN NOTHING. §6 rule 2 forbids idle animation, and this is why the reduced-motion case needs
      * no branch: a still frame is already the final frame. No requestAnimationFrame, no setInterval.
      */
-    const fc = hexToLinear(FOG_HEX);
     /* A FUNCTION NOW, SO IT CAN BE MEASURED — and it ends with `target` bound, which is what `probeSync`
        requires: a `readPixels` only guarantees completion of work affecting the framebuffer it reads. */
-    const renderScene = (draws: readonly LitDraw[]): void => {
+    const renderScene = (th: SceneTheme, draws: readonly LitDraw[]): void => {
+      const rig = rigFor(th);
+      const fc = scenery(th, FOG_HEX, th.fog);
       lit.shadowPass(lightVP, draws, shadow);
       target.bind();
       gl.clearColor(fc[0], fc[1], fc[2], 1);
@@ -511,11 +603,19 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
         });
         target.bind();
       }
+      /* NO SKY BACKDROP IS ALLOCATED — a vault has no sky, see the header — so the theme's stops reach the lit
+         pass as the irradiance environment only, with no backdrop to stay in step with. */
+      const sky = th.name === 'dark' ? undefined : {
+        zenith: th.skyZenith, horizon: th.skyHorizon, ground: th.ground,
+      };
       lit.draw({
-        viewProj: vp, eye, lightDir, lightColour: [3.0, 2.95, 2.85],
+        viewProj: vp, eye, lightDir,
+        lightColour: [3.0 * rig.key, 2.95 * rig.key, 2.85 * rig.key],
         /* 0.46, not 0.86. At the higher gain the floor and ceiling — whose normals point at the analytic sky's
            bright zenith — became two glowing wedges brighter than the key light. */
-        ambientGain: 0.46, lightVP, shadow, shadowStrength: 0.94, shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
+        ambientGain: 0.46 * rig.ambient, sky, lightVP, shadow,
+        shadowStrength: 0.94 * rig.shadow,
+        shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
         ao: ao ? ao.texture : null, screenSize: [W, H],
         fog: { density: FOG_DENSITY, height: 6.0, floor: 0, colour: fc },
       });
@@ -528,7 +628,12 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
      * on the GPU at once, and forgetting the release is silent — `Stage` owns programs and its own targets and
      * knows nothing about a VAO, so it would be one vertex array and four buffers stranded per page turn.
      */
+    /* Which theme the frame on screen was drawn at — see `SurfaceReliefGl.tsx`, A THEME CHANGE IS A REDRAW. */
+    let drawnTheme: ThemeName | null = null;
+
     const draw = (entryPage: readonly AuditEntry[]): 'STALE_TIER' | undefined => {
+      /* READ PER FRAME, NOT CAPTURED AT SETUP — `ForgeBackdrop.tsx:120-127` records what the snapshot cost. */
+      const th = sceneTheme(liveTheme());
       /* The previous page's projected labels are dropped BEFORE the new frame exists, and before any refusal:
          a record from the page the reader has navigated away from, sitting over a freshly drawn corridor, is a
          stale picture of a governed action presented as live. */
@@ -578,7 +683,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
       });
 
       const draws: LitDraw[] = [
-        ...staticDraws,
+        ...staticDrawsFor(th),
         ...placed.map((p): LitDraw => {
           const model = modelOf(p.x, p.y, p.z, p.yaw);
           const mat = VERDICT_MATERIAL[p.r.verdict];
@@ -604,14 +709,14 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
        * cannot re-time the machine and make the quality ladder follow the dataset instead of the GPU.
        */
       if (needsQualityProbe()) {
-        const ms = measureFrameMs(gl, () => renderScene(draws));
+        const ms = measureFrameMs(gl, () => renderScene(th, draws));
         const r = recordQualityProbe({
           pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'VaultReliefGl',
         });
         if (r.tier !== tier) return 'STALE_TIER';
       }
 
-      renderScene(draws);
+      renderScene(th, draws);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, W, H);
       gl.disable(gl.DEPTH_TEST);
@@ -619,6 +724,9 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
       gl.bindTexture(gl.TEXTURE_2D, target.texture);
       /* `blit` takes a CALLBACK, not a texture: the uniform is set against the program it has just bound. */
       stage.blit(present, (p) => gl.uniform1i(gl.getUniformLocation(p, 'uScene'), 0));
+      /* RECORDED ONLY ONCE THE FRAME IS PRESENTED, so a STALE_TIER return cannot leave the observer believing a
+         theme is on screen that never reached it. */
+      drawnTheme = th.name;
       /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
       canvas.dataset.qualityTier = tier;
 
@@ -731,7 +839,20 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
          * reintroduced this must go back to a per-line minimum, because a record whose action you can read and
          * whose actor you cannot is the truncation failure in a different costume.
          */
-        const minRatio = bg && bgLum !== null ? ratioOf(overBg(bg, opacity), bgLum) : null;
+        /*
+         * THE TYPE COLOUR IS CHOSEN FROM THE BACKGROUND THIS FRAME ACTUALLY RENDERED, not from the theme.
+         * `INK` carries the measured table and the argument; the short version is that within one light-theme
+         * frame a near record sits on saturated brand blue and a far one on near-white haze, and neither white
+         * nor ink serves both. Taking the better of the two is never worse than the white-only rule this
+         * shipped with, so this also lifts the dark theme's reach on steel slabs.
+         */
+        const candidates = bg && bgLum !== null
+          ? ([WHITE, INK] as const).map((fg) => ({ fg, r: ratioOf(overBg(bg, opacity, fg), bgLum) }))
+          : null;
+        const best = candidates === null ? null
+          : candidates.reduce((a, b) => (b.r > a.r ? b : a));
+        const minRatio = best === null ? null : best.r;
+        const colour = best === null ? '#fff' : `rgb(${best.fg[0]},${best.fg[1]},${best.fg[2]})`;
         const tooFaint = minRatio === null || minRatio < AA_RATIO;
         const shown = !refusal && !backFacing && !edgeOn && !tooFar && !tooLong && !tooFaint
           && !occluded && !p.wrapped;
@@ -746,7 +867,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
                   : tooLong ? 'LINE_TOO_LONG_TO_SHOW'
                     : minRatio === null ? 'CONTRAST_UNMEASURABLE'
                       : minRatio < AA_RATIO ? 'BELOW_READABLE_CONTRAST' : 'OCCLUDED');
-        return { p, proj, shown, hiddenBecause, ew, eh, opacity, minRatio, tooFar };
+        return { p, proj, shown, hiddenBecause, ew, eh, opacity, minRatio, tooFar, colour };
       });
 
       const overlay: OverlayRecord[] = [];
@@ -759,6 +880,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
           /* The text obeys the same atmosphere as the slab, and this is the ONE owner of that law — computed in
              the decision pass so the measured ratios above describe exactly these pixels. */
           opacity: d.opacity,
+          colour: d.colour,
           lines: LINE_SPEC.map((ln) => ({ text: ln.text(d.p.r), style: ln.style })),
         });
       }
@@ -773,6 +895,11 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
        * A tick that does not measure at AA is NOT DRAWN and is counted, for the same reason a record is not.
        */
       const RULER_ALPHA = 0.85;
+      /* MEASURED AGAINST THE COLOUR ACTUALLY PAINTED. The ruler's token moves with the theme, so measuring it as
+         white on a light corridor would have dropped every tick for being 1.1:1 while the frame drew them at
+         15:1 — a refusal caused by the measurement disagreeing with the paint, which is the exact class of bug
+         `LINE_SPEC` was restructured to prevent. */
+      const rulerFg = th.name === 'dark' ? WHITE : INK;
       const spanDays = spanHours / 24;
       const CANDIDATES = [1 / 24, 3 / 24, 6 / 24, 0.5, 1, 2, 3, 7, 14, 30, 60, 90, 180, 365];
       const inSpan = CANDIDATES.filter((d) => d <= spanDays);
@@ -785,7 +912,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
         const s = projectScreen(vp, [-CORRIDOR_HALF + 0.30, 0.035, z], cssW, cssH);
         const onFrame = !s.behind && s.sx > 0 && s.sx < cssW && s.sy > 0 && s.sy < cssH;
         const bg = onFrame ? brightestBehind(s.sx, s.sy, 13, 7) : null;
-        const ratio = bg ? ratioOf(overBg(bg, RULER_ALPHA), relLum(bg[0], bg[1], bg[2])) : null;
+        const ratio = bg ? ratioOf(overBg(bg, RULER_ALPHA, rulerFg), relLum(bg[0], bg[1], bg[2])) : null;
         if (!onFrame || ratio === null || ratio < AA_RATIO) { rulerUnreadable++; continue; }
         ruler.push({
           label: days < 1 ? `${Math.round(days * 24)}h` : `${days}d`,
@@ -803,6 +930,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
 
       setPlan({
         cssW, cssH,
+        theme: th.name,
         records: overlay,
         ruler,
         rulerUnreadable,
@@ -854,8 +982,23 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
     const onLost = (e: Event): void => { e.preventDefault(); onRefused('CONTEXT_LOST'); };
     canvas.addEventListener('webglcontextlost', onLost);
 
+    /* A THEME CHANGE IS A REDRAW, NOT A REBUILD — the full reasoning, including why `beforeprint` is needed for
+       `BoardReport.tsx:105-109` specifically and why the `drawnTheme` guard is what makes the other three print
+       handlers free, is in `SurfaceReliefGl.tsx` under that heading. It matters more here than anywhere else:
+       this frame MEASURES its own readability off the pixels, so a stale-theme canvas under a fresh-theme
+       overlay would publish a WCAG ratio for a background that is no longer on screen. */
+    const redrawForTheme = (): void => {
+      if (liveTheme() === drawnTheme) return;
+      drawRef.current?.(entriesRef.current);
+    };
+    const themeWatch = new MutationObserver(redrawForTheme);
+    themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    window.addEventListener('beforeprint', redrawForTheme);
+
     return () => {
       canvas.removeEventListener('webglcontextlost', onLost);
+      themeWatch.disconnect();
+      window.removeEventListener('beforeprint', redrawForTheme);
       drawRef.current = null;
       releaseAll();
     };
@@ -887,6 +1030,10 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
                   transformOrigin: '0 0', transform: r.transform,
                   display: 'flex', flexDirection: 'column', justifyContent: 'center',
                   gap: 4, padding: '0 5px', overflow: 'hidden', opacity: r.opacity,
+                  /* ONE COLOUR FOR ALL FOUR LINES, set here rather than in `LINE_SPEC`, which is what keeps the
+                     single measured ratio above honest: the moment a per-line colour returns, `minRatio` has to
+                     go back to a per-line minimum. */
+                  color: r.colour,
                 }}
               >
                 {r.lines.map((ln, i) => <div key={i} style={ln.style}>{ln.text}</div>)}
@@ -898,7 +1045,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
                 style={{
                   position: 'absolute', left: t.sx, top: t.sy, transform: 'translate(-50%,-50%)',
                   font: '500 10px/1 ui-monospace, monospace', letterSpacing: '.08em',
-                  color: 'rgba(196,212,240,.85)', whiteSpace: 'nowrap',
+                  color: FRAME_TEXT[plan.theme].ruler, whiteSpace: 'nowrap',
                 }}
               >
                 {t.label}
@@ -907,10 +1054,13 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
             {/* THE HORIZON, ON THE FRAME. Not "here are 50 rows" but how far back you can read, how far the
                 geometry reaches, and how far you can see a shape at all — three facts, never one. */}
             <div style={{ position: 'absolute', left: 16, top: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ font: '600 11px/1 ui-monospace, monospace', letterSpacing: '.16em', color: '#8FB7FF' }}>
+              <div style={{
+                font: '600 11px/1 ui-monospace, monospace', letterSpacing: '.16em',
+                color: FRAME_TEXT[plan.theme].head,
+              }}>
                 GOVERNED ACTIONS · DEPTH IS TIME
               </div>
-              <div style={label('rgba(196,212,240,.86)')}>
+              <div style={label(FRAME_TEXT[plan.theme].body)}>
                 {plan.readableToDays === null
                   ? `READABLE TO — nothing on this frame clears ${AA_RATIO}:1`
                   : `READABLE TO ${plan.readableToDays.toFixed(2)} d — MEASURED AT ${AA_RATIO}:1`}
@@ -928,7 +1078,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
               gap: 5, alignItems: 'flex-end', font: '500 10.5px/1 ui-monospace, monospace',
             }}>
               {(['ALLOWED', 'BLOCKED', 'WITHHELD'] as const).map((v) => (
-                <div key={v} style={{ display: 'flex', alignItems: 'center', gap: 7, color: 'rgba(196,212,240,.85)' }}>
+                <div key={v} style={{ display: 'flex', alignItems: 'center', gap: 7, color: FRAME_TEXT[plan.theme].ruler }}>
                   <span>
                     {v} · {plan.counts[v]}
                     {v === 'BLOCKED' ? ' (action names a refusal)' : ''}
@@ -950,7 +1100,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
         drops rows from an audit log is the defect this whole file is arranged to avoid.
       */}
       {plan && (
-        <div style={{ ...label('rgba(196,212,240,.62)'), marginTop: 6, fontSize: 10 }}>
+        <div style={{ ...label(FRAME_TEXT[plan.theme].caption), marginTop: 6, fontSize: 10 }}>
           {plan.unplaced.length > 0 && (
             <div>
               {plan.unplaced.length} record{plan.unplaced.length === 1 ? '' : 's'} not placed —{' '}

@@ -50,12 +50,14 @@ export {
 export type { Linear, BrandKey } from './look/colour.js';
 
 export {
-  toneMapComposite, assertBrandFidelity, brandUnderIllegalToneMap,
+  toneMapComposite, assertBrandFidelity, brandThroughComposite,
   describeToneMapping, dataRoundTrip, encodeOutput,
   TONE_POLICY, TONE_SHOULDER, TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
 } from './look/tonemap.js';
 export type { BrandFidelityFailure } from './look/tonemap.js';
 
+export { precompensate, isPrecompRefusal, precompHeadroom, inverseToneMap } from './look/precompensate.js';
+export type { CompositeSite, PrecompRefusal, BlendDest } from './look/precompensate.js';
 export { createPipeline, PIPELINE_SOURCES } from './look/pipeline.js';
 export type { Pipeline, PipelineOptions } from './look/pipeline.js';
 
