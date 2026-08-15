@@ -40,7 +40,7 @@ import {
   createStage, isStage, box, plane, sphere, torus, uploadMesh,
   createLitRenderer, createTarget3D, createShadowMap, createAmbientOcclusion, createLineBatch,
   viewProjection, eyeOf, lightViewProjection, boundsCentre, boundsRadius,
-  hexToLinear, mixLinear, assertBrandFidelity, IDENTITY,
+  hexToLinear, mixLinear, assertBrandFidelity, IDENTITY, statusAlbedo,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
   qualitySettings, shadowMapSizeFor, pickQualityTier,
   type LitDraw, type MeshBuffer, type Viewpoint, type Linear,
@@ -131,8 +131,29 @@ const SLOT_Z0 = 0.55;
 const ROW_DZ = 0.62;
 
 const FRESH_HEX = '#2C6BFF';
-const STALLED_HEX = '#C9552B';
-const ABSENT_HEX = '#E0A94A';
+/*
+ * ── T4, DELIVERED RATHER THAN MEASURED ──────────────────────────────────────────────
+ * `STALLED_HEX` was `#C9552B` and is gone: a stalled lead is a STATUS, and the platform already
+ * owns a colour for that status. The 3-D surfaces were encoding it in burnt orange while every
+ * other surface in the product used the token — one product, two colour languages, which is what
+ * `look/semantic.ts` was built to end. The module was built, measured to three decimals, and
+ * exported from nowhere; making it reachable was a precondition, and THIS is the delivery.
+ *
+ * The role is `conditional` (--amber), NOT `blocked`. A stalled lead is a warning about staleness,
+ * not a refusal, and picking `blocked` would assert a finding the data does not carry.
+ *
+ * AND IT MAKES A CLAIM BELOW TRUE FOR THE FIRST TIME. The comment at the ramp says colour "repeats
+ * the height" so it survives "a glance or in greyscale". Measured, the old ramp's two ends were
+ * 1.035 apart in Rec.709 luminance — FLAT in greyscale, so the sentence was false as shipped.
+ * Binding the far end to `conditional` moves that to 1.25 in light and 2.02 in dark.
+ *
+ * `ABSENT_HEX` MOVES TOO, AND THAT IS NOT OPTIONAL. `#E0A94A` measures 0.7 degrees from --amber in
+ * light and 3.0 in dark — it IS the conditional hue already. Retiring the stall colour to
+ * `conditional` without moving this would put a WARNING and an ABSENCE 0.7 degrees apart in one
+ * frame. Absence is not a status: it takes the absence grey the rest of the programme uses, which
+ * `look/categorical.ts` files below the ramp's chroma floor by construction.
+ */
+const ABSENT_HEX = '#6B7A99';
 const WITHHELD_HEX = '#5C6880';
 const FOG_HEX = '#0C1322';
 
@@ -501,7 +522,7 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
      * ALL THREE ARE SHARED, UNIT-SIZED MESHES. That is what makes this function cheap enough to be the whole
      * response to a data change: it allocates nothing on the GPU, it only decides where the shapes go.
      */
-    const leadDraws = (c: Channel): LitDraw[] | { refusal: string } => {
+    const leadDraws = (c: Channel, th: SceneTheme): LitDraw[] | { refusal: string } => {
       const values = c.deals.map((d) => d.valueUsd).filter((v): v is number => v !== null);
       const valueMax = values.length > 0 ? Math.max(...values) : 0;
       const edgeOf = (v: number): number =>
@@ -552,7 +573,7 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
           /* Colour REPEATS the height, deliberately. A single-channel encoding of the thing this environment
              exists to show fails for anyone reading at a glance or in greyscale, and the redundancy costs a
              channel that has nothing else to carry. */
-          const col = mixLinear(hexToLinear(FRESH_HEX), hexToLinear(STALLED_HEX), p.settle ?? 0);
+          const col = mixLinear(hexToLinear(FRESH_HEX), statusAlbedo('conditional', th.name), p.settle ?? 0);
           out.push({
             mesh: dealMesh!, model: modelAt(p.x, p.centreY, p.z, p.edge), normalMat: N3,
             /* Dielectric, so §6 rule 5's hex survives: a metal has no diffuse lobe and the brand blue would
@@ -687,7 +708,7 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
       const th = sceneTheme(liveTheme());
       const refusal = channelRefusal(c);
       if (refusal !== null) { refuse(refusal); return undefined; }
-      const leads = leadDraws(c);
+      const leads = leadDraws(c, th);
       if ('refusal' in leads) { refuse(leads.refusal); return undefined; }
       const draws = [...staticDrawsFor(th), ...leads];
 

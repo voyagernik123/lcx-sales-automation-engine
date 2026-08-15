@@ -5,7 +5,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { buildSurfaceMesh, WITHHELD, type GridCellValue } from '@lcx/shared';
 import { buildChannel } from '@/components/geometry/pipelineChannel';
-import { hexToLinear, luminance, toneMapComposite, encodeOutput, BRAND_HEX } from '@lcx/gl';
+import { hexToLinear, luminance, toneMapComposite, encodeOutput, BRAND_HEX, statusHex } from '@lcx/gl';
 import { sceneTheme } from '@lcx/gl/look/theme.js';
 import SurfaceReliefGl from '@/components/geometry/SurfaceReliefGl';
 import VaultReliefGl from '@/components/geometry/VaultReliefGl';
@@ -669,7 +669,12 @@ describe('the contrast measurements the surfaces print in their comments', () =>
     const INK: [number, number, number] = [8, 11, 18];
     const WHITE: [number, number, number] = [255, 255, 255];
     const grounds: [string, [number, number, number]][] = [
-      ['ALLOWED', albedo('#2C6BFF')], ['BLOCKED', albedo('#C9552B')], ['WITHHELD', albedo('#5C6880')],
+      /* BLOCKED is DERIVED, not typed. It used to be the literal `#C9552B`, which is the divergence
+         T4 closed — and a scoring test carrying a stale sample of the very colour that moved would
+         be scoring a background the product no longer draws. The other two are literals on purpose:
+         ALLOWED is identity and WITHHELD is absence, and neither is a status role. */
+      ['ALLOWED', albedo('#2C6BFF')], ['BLOCKED', albedo(statusHex('blocked', 'light'))],
+      ['WITHHELD', albedo('#5C6880')],
       ['dark fog', albedo('#0B1220')], ['light fog', bytesOf(L.fog)], ['light plate', bytesOf(L.plate)],
     ];
     expect(grounds.length, 'no backgrounds to score').toBeGreaterThan(0);

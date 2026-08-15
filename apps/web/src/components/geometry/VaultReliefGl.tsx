@@ -45,7 +45,7 @@ import {
   createStage, isStage, box, uploadMesh, createLitRenderer, createTarget3D, createShadowMap,
   createAmbientOcclusion, projectQuad, isQuadRefusal, uprightPanelCorners, projectScreen,
   viewProjection, eyeOf, nearFarOf, lightViewProjection, boundsCentre, boundsRadius,
-  hexToLinear, assertBrandFidelity, IDENTITY, TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
+  hexToLinear, assertBrandFidelity, IDENTITY, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, statusAlbedo, statusHex,
   qualitySettings, shadowMapSizeFor, pickQualityTier,
   type LitDraw, type Viewpoint, type MeshBuffer, type Linear,
 } from '@lcx/gl';
@@ -115,13 +115,26 @@ const AA_RATIO = 4.5;
 /** Enough corridor for a page of the spine. A longer page is capped and the cap is reported, never silent. */
 const MAX_RECORDS = 120;
 
-const VERDICT_HEX: Record<AuditVerdict, string> = {
-  ALLOWED: '#2C6BFF',
-  BLOCKED: '#C9552B',
-  /* Withheld is neither an allow nor a block: it is the absence of a reading, and giving it either verdict
-     colour would assert a finding nobody is entitled to. Steel says "a record is here". */
-  WITHHELD: '#5C6880',
-};
+/*
+ * ── T4, DELIVERED: ONLY THE BLOCKED ARM MOVES, AND ONLY IT SHOULD ───────────────────
+ * This was a module-level `Record<AuditVerdict, string>` holding `#C9552B` for BLOCKED — the
+ * 3-D surfaces speaking burnt orange while the rest of the product says `--red`. It is a FUNCTION
+ * now rather than a constant, because a status value resolves PER THEME and a module constant is a
+ * snapshot taken before any theme exists: the exact failure this file already cites `ForgeBackdrop`
+ * for elsewhere.
+ *
+ * THE OTHER TWO ARMS DO NOT MOVE, and the reason is the three-category argument in
+ * `look/semantic.ts`. `#2C6BFF` is IDENTITY, not status — this file's own line further down already
+ * says "the VERDICT colours are data" — and identity does not change with the page. `#5C6880` is
+ * ABSENCE, which is a third thing again: a withheld record is not a status the platform has a token
+ * for, it is the lack of one. Routing either through a status role would be the mirror of the
+ * defect being fixed: using a status colour for something that is not a status.
+ */
+const verdictAlbedo = (v: AuditVerdict, theme: ThemeName): Linear =>
+  v === 'BLOCKED' ? statusAlbedo('blocked', theme)
+    /* Withheld is neither an allow nor a block: it is the absence of a reading, and giving it either
+       verdict colour would assert a finding nobody is entitled to. Steel says "a record is here". */
+    : hexToLinear(v === 'ALLOWED' ? '#2C6BFF' : '#5C6880');
 const VERDICT_MATERIAL: Record<AuditVerdict, { roughness: number; metalness: number }> = {
   ALLOWED: { roughness: 0.36, metalness: 0.06 },
   BLOCKED: { roughness: 0.42, metalness: 0.05 },
@@ -689,7 +702,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
           const mat = VERDICT_MATERIAL[p.r.verdict];
           return {
             mesh: recMesh, model, normalMat: normalOf(model),
-            material: { baseColour: hexToLinear(VERDICT_HEX[p.r.verdict]), ...mat },
+            material: { baseColour: verdictAlbedo(p.r.verdict, th.name), ...mat },
           };
         }),
       ];
@@ -1085,7 +1098,11 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
                     {v === 'WITHHELD' ? ' (present, payload not shown)' : ''}
                   </span>
                   <span style={{
-                    width: 11, height: 11, display: 'inline-block', background: VERDICT_HEX[v],
+                    width: 11, height: 11, display: 'inline-block',
+                    /* `statusHex`, not the albedo: this is a DOM swatch and needs the token's own
+                       CSS value, not the linear colour the renderer lights. */
+                    background: v === 'BLOCKED' ? statusHex('blocked', plan.theme)
+                      : (v === 'ALLOWED' ? '#2C6BFF' : '#5C6880'),
                     forcedColorAdjust: 'none',
                   } as CSSProperties} />
                 </div>

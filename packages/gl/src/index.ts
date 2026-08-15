@@ -89,10 +89,12 @@ export type { Pipeline, PipelineOptions } from './look/pipeline.js';
    namespace and from `semantic.ts`'s own export statements, so a symbol added there next week is
    not silently left behind here.
 
-   WHAT THIS BLOCK IS AND IS NOT. It makes the module CALLABLE. It does not make T4 done: the
-   divergence T4 exists to close lives in `PipelineReliefGl.tsx:134` and `VaultReliefGl.tsx:120`,
-   which still hold `#C9552B`, and no line of this file can change that. A consumer count of zero
-   is still a consumer count of zero — this only removes the reason there could not be one.
+   WHAT THIS BLOCK IS AND IS NOT. It makes the module CALLABLE, which is a precondition and was
+   never the delivery. When it was written the divergence still lived in `PipelineReliefGl` and
+   `VaultReliefGl`, and this comment said so rather than claiming a green box. Both surfaces now
+   consume `statusAlbedo`, the burnt orange is gone from the code of both, and `semantic.test.ts`
+   asserts that in BOTH directions — the literal is absent AND the import is present — so a
+   refactor that puts a literal back goes red naming the surface.
 
    `ThemeName` is deliberately NOT re-exported here: `statusAlbedo(role, theme)` accepts the string
    literals `'light'` / `'dark'` directly, so a barrel-only consumer can call it without naming the

@@ -487,13 +487,22 @@ describe('T4 is still open, and the surfaces are read rather than described', ()
     return out;
   };
 
-  it('#C9552B is still assigned in BOTH surfaces, at the lines the fix must target', () => {
-    /* `repoFile` throws rather than skipping if a surface is renamed, so this cannot pass by
-       failing to find the files — the skip-shaped failure that would make the whole block a lie. */
-    expect(codeSites('#C9552B')).toEqual([
-      'PipelineReliefGl.tsx:134',
-      'VaultReliefGl.tsx:120',
-    ]);
+  it('#C9552B is assigned in NEITHER surface any more — T4 is delivered, not just measured', () => {
+    /*
+     * THIS TEST USED TO ASSERT THE OPPOSITE, and that was correct at the time: it pinned the defect
+     * at the two lines a fix would have to target, so the measurement could not quietly drift while
+     * nothing acted on it. It has now been acted on. `PipelineReliefGl` routes a stalled lead
+     * through `statusAlbedo('conditional', …)` and `VaultReliefGl` routes a BLOCKED verdict through
+     * `statusAlbedo('blocked', …)`, so the burnt orange is gone from both.
+     *
+     * Flipping the assertion rather than deleting it is the point. An empty result here now means
+     * the divergence is closed; if either surface re-introduces a literal for a status colour, this
+     * goes red naming the file and line, which a deleted test could not do.
+     *
+     * `repoFile` throws rather than skipping if a surface is renamed, so this still cannot pass by
+     * failing to find the files — the skip-shaped failure that would make the whole block a lie.
+     */
+    expect(codeSites('#C9552B')).toEqual([]);
   });
 
   it('and so are the two literals the E3 fix has to move WITH it', () => {
@@ -503,20 +512,31 @@ describe('T4 is still open, and the surfaces are read rather than described', ()
      * frame. `#5C6880` is `refusal` darkened by 7.2 L* and is NOT a status — recorded so the
      * near-miss stays a known quantity rather than becoming a surprise mid-edit.
      */
-    expect(codeSites('#E0A94A')).toEqual(['PipelineReliefGl.tsx:135']);
-    expect(codeSites('#5C6880')).toEqual([
-      'PipelineReliefGl.tsx:136',
-      'VaultReliefGl.tsx:123',
-    ]);
+    /* MOVED WITH IT, as this test said it must be. `#E0A94A` is gone from E3: the absence ring now
+       takes `#6B7A99`, the absence grey the rest of the programme uses, so a warning and an absence
+       are no longer 0.7 deg apart in one frame. `#5C6880` STAYS in both, and stays deliberately —
+       it is absence, not status, and routing it through a status role would be the mirror of the
+       defect just closed. */
+    expect(codeSites('#E0A94A')).toEqual([]);
+    expect(codeSites('#5C6880').length,
+      '#5C6880 is ABSENCE and must remain a literal in both surfaces — it is not a status role')
+      .toBeGreaterThanOrEqual(2);
   });
 
-  it('and no surface reaches the module yet — reachable is not reached', () => {
+  it('and EVERY surface now reaches the module — reachable became reached', () => {
     /*
-     * The claim this file is entitled to make, stated as a check rather than as prose. Both
-     * surfaces already import `@lcx/gl/look/theme.js`, so the import that would bind these roles
-     * costs them nothing structurally; neither imports `semantic.js` today. When one does, this
-     * fails, and the honest response is to update it to name the surfaces that DO — not to delete
-     * it.
+     * UPDATED, NOT DELETED, exactly as the previous version of this test asked. It used to assert
+     * that NO surface consumed `semantic.ts`, with the note that when one did, the honest response
+     * was to update it to name the surfaces that DO. Both now do.
+     *
+     * That transition is the whole of T4. The module was built, measured to three decimals and
+     * tested at 318 lines while being imported by nothing — the third time this programme shipped
+     * code that was correct and unreachable and recorded it as delivered. Being exported from the
+     * barrel made it CALLABLE; these two consumers are what make it DELIVERED, and the difference
+     * between those two words is the reason this test exists in both directions.
+     *
+     * Kept as an assertion rather than retired: if a refactor drops the import and puts a literal
+     * back, this goes red naming the surface, which is the failure mode that produced T4.
      */
     for (const rel of SURFACES) {
       const src = readFileSync(repoFile(rel), 'utf8');
@@ -524,8 +544,8 @@ describe('T4 is still open, and the surfaces are read rather than described', ()
         .toMatch(/from '@lcx\/gl\/look\/theme\.js'/);
       expect(
         /statusAlbedo|sceneStatusRoles|statusHex/.test(src),
-        `${rel} now consumes semantic.ts — T4 may be closed; update this block rather than deleting it`,
-      ).toBe(false);
+        `${rel} no longer consumes semantic.ts — a status literal has come back`,
+      ).toBe(true);
     }
   });
 });
