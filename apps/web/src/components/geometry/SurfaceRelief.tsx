@@ -38,6 +38,168 @@ import { lazy, Suspense, useCallback, useId, useState } from 'react';
 import { SurfacePlot, type SurfacePlotProps } from '@/components/geometry/SurfacePlot';
 
 /**
+ * ── THE FIGURE'S WORDS SURVIVE THE RELIEF, WHICH THEY DID NOT ────────────────────────
+ *
+ * `[data-relief-print-flat]` below carries BOTH `display: none` and `aria-hidden="true"`, and
+ * `SurfaceReliefGl` renders a bare `aria-hidden` canvas with no text of its own. So while the
+ * relief was open the figure's every word — the caption, the environment, the axes, the three
+ * point counts, the source, the projection sentence and EVERY NOTICE — was in the document and
+ * reachable by nothing: not a screen reader (`aria-hidden` prunes the subtree), not text
+ * extraction or copy-paste (`display: none` generates no boxes and no selection range).
+ *
+ * That is §6 rule 4 — "DOM text is the accessibility tree AND the print path" — delivered on the
+ * print half and destroyed on the other, and §6 rule 1's "the fallback is not an information
+ * downgrade" failed in the ON state. Each half was individually correct and individually tested,
+ * which is exactly why nothing caught it. `SurfaceReliefGl.tsx:639-640` still asserts the
+ * opposite in words ("the figure's own caption and the flat surface underneath it are what a
+ * screen reader reads") — the caption it names is the one this file hides. That comment is now
+ * true because of the block below rather than because of the flat copy it cites, and correcting
+ * it is a change in a file this lane may not edit.
+ *
+ * The worst single loss was `Z_DOMAIN_EXCLUDES_ZERO` — the truncated-axis warning — which
+ * disappeared in precisely the reading where a floor above zero misleads most.
+ *
+ * ── WHY THIS IS A SECOND, DERIVED SURFACE RATHER THAN AN UNHIDING ────────────────────
+ * The print copy cannot simply be un-hidden: `display: none` is what keeps a page with no print
+ * sheet from showing two figures at once, and `reliefPrintPath.test.tsx:509` pins that inline
+ * declaration on all three printable wrappers. So the words come back as their own block, marked
+ * `data-relief-live` so the SAME print rule that deletes the canvas deletes this too — on paper
+ * the full flat figure returns and this would double it. (`StormRelief` already uses exactly this
+ * pairing for its calibration sentence.)
+ *
+ * NOTHING BELOW IS A HAND-WRITTEN LIST OF FIELDS. The frame is walked with `Object.entries`, the
+ * scales come from the engine's own tick arrays and the notices are printed verbatim from
+ * `g.notices`, so a notice or a frame field added to the engine tomorrow appears here without
+ * anyone remembering to add it. A hand-list cannot fail on the item nobody thought of.
+ */
+const TEXT_FORM = 'mt-2 text-xs text-grey';
+const CODE = 'font-mono text-[10px] uppercase';
+
+/** `pointsWithheld` → `Points withheld`. Mechanical, so a new frame field needs no edit here. */
+function humanise(key: string): string {
+  const spaced = key.replace(/([a-z0-9])([A-Z])/g, '$1 $2').toLowerCase();
+  return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+}
+
+/** Every frame value is shown. `null` and `false` are facts too and are never dropped. */
+function showValue(v: unknown): string {
+  if (v === null || v === undefined) return 'none';
+  if (typeof v === 'boolean') return v ? 'yes' : 'no';
+  return String(v);
+}
+
+/**
+ * THE FIGURE, IN WORDS ONLY — the same facts the flat figure carries under its picture, for the
+ * state where the picture is a canvas. Visible on screen (so it is selectable and copyable),
+ * in the accessibility tree (no `aria-hidden` anywhere on this subtree), and removed from paper
+ * with the rest of the live block.
+ */
+function ReliefTextForm({ surface, title, readsAs }: Pick<SurfacePlotProps, 'surface' | 'title' | 'readsAs'>) {
+  if (surface.kind === 'refused') {
+    /* The engine refused, the reader turned relief on anyway, and the refusal presentation is
+       inside the hidden copy. The codes and the rules they cite are the useful part. */
+    return (
+      <section className={TEXT_FORM} data-testid="relief-text-form" role="note">
+        <p className="text-sm font-medium text-navy">{`${title} — not drawn`}</p>
+        <ul className="mt-1 space-y-1">
+          {surface.refusals.map((r, i) => (
+            <li key={`${r.code}-${i}`} data-refusal={r.code}>
+              <span className={`${CODE} text-navy`}>{r.code}</span>
+              {r.cell && <span className={CODE}>{` [cell ${r.cell[0]},${r.cell[1]}]`}</span>}
+              {r.environment && <span className={CODE}>{` [${r.environment}]`}</span>}
+              {' — '}
+              {r.sentence}
+              <span className="italic opacity-80">{` ${r.rule.instrument} · ${r.rule.provision}: ${r.rule.text}`}</span>
+            </li>
+          ))}
+        </ul>
+      </section>
+    );
+  }
+
+  const g = surface;
+  const scales: readonly (readonly [string, readonly { readonly label: string }[]])[] = [
+    [`${g.frame.xLabel} (${g.frame.xUnit})`, g.xTicks],
+    [`${g.frame.yLabel} (${g.frame.yUnit})`, g.yTicks],
+    [`${g.frame.zLabel} (${g.frame.zUnit})`, g.zTicks],
+  ];
+
+  return (
+    <section className={TEXT_FORM} data-testid="relief-text-form">
+      {/* The caption the canvas cannot carry. `figcaption` is not used: this is not a <figure>,
+          and a caption element outside one is a lie about the structure. */}
+      <p>
+        <span className="text-sm font-medium text-navy">{title}</span>
+        {` · ${g.frame.environment}`}
+        {g.frame.valuesArePlaceholders && (
+          <span className="font-semibold text-status-conditional" data-testid="relief-placeholder-tag">
+            {' · Placeholder heights'}
+          </span>
+        )}
+      </p>
+      <p className="mt-1" data-testid="relief-reads-as">{readsAs}</p>
+      <p className="mt-1">
+        {`${g.frame.zLabel} (${g.frame.zUnit}) over ${g.frame.xLabel} and ${g.frame.yLabel}. `}
+        {`${g.frame.cellsDrawn} of ${g.frame.cellsTotal} cells observed; ${g.frame.cellsHoles} left open.`}
+      </p>
+
+      {/* THE SCALES AS TEXT. A relief redraws its own axes in pixels; these are the numbers a
+          reader would otherwise have to read off a bitmap, taken from the engine's tick arrays
+          rather than recomputed here. */}
+      <dl className="mt-2 space-y-0.5" data-testid="relief-scales">
+        {scales.map(([label, ticks]) => (
+          <div key={label}>
+            <dt className="inline">{`${label}: `}</dt>
+            <dd className="inline text-navy">{ticks.map((t) => t.label).filter((l) => l !== '').join(', ') || 'no labelled ticks'}</dd>
+          </div>
+        ))}
+        <div>
+          <dt className="inline">Vertical domain: </dt>
+          <dd className="inline text-navy">{`${g.zDomain[0]} … ${g.zDomain[1]} ${g.frame.zUnit}`}</dd>
+        </div>
+        <div>
+          <dt className="inline">Observed range: </dt>
+          <dd className="inline text-navy">{`${g.observedDomain[0]} … ${g.observedDomain[1]} ${g.frame.zUnit}`}</dd>
+        </div>
+        <div>
+          {/* A PROJECTION IS A CHOICE, NOT A FACT — printed verbatim from the engine. */}
+          <dt className="inline">View: </dt>
+          <dd className="inline" data-testid="relief-projection">{g.projectionLabel}</dd>
+        </div>
+      </dl>
+
+      {/* THE FRAME, WALKED. Not a list of the fields somebody remembered. */}
+      <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-0.5 sm:grid-cols-2" data-testid="relief-frame">
+        {Object.entries(g.frame).map(([k, v]) => (
+          <div key={k}>
+            <dt className="inline">{`${humanise(k)}: `}</dt>
+            <dd className="inline text-navy" data-frame-key={k}>{showValue(v)}</dd>
+          </div>
+        ))}
+      </dl>
+
+      {g.notices.length > 0 && (
+        /*
+         * THE ONE THAT MATTERS MOST. `Z_DOMAIN_EXCLUDES_ZERO` says the vertical axis does not
+         * reach zero and that relative heights are therefore exaggerated — a warning that is
+         * worth MORE against a shaded, lit, perspective-free solid than against a flat sheet,
+         * and it was the thing that vanished. Printed verbatim, all of them, in engine order.
+         */
+        <ul className="mt-2 space-y-1" data-testid="relief-notices">
+          {g.notices.map((n) => (
+            <li key={n.code} data-notice={n.code}>
+              <span className={CODE}>{n.code}</span>
+              {' — '}
+              {n.sentence}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/**
  * ── THE CONTROL WEARS THE APP'S TOKENS, AND THE COMMENT THAT SAID OTHERWISE WAS WRONG ──
  *
  * `StormRelief`'s header says this file "gets away with `var(--rule, #26355A)` and `#7FB2FF`
@@ -110,11 +272,17 @@ export function SurfaceRelief({ contourLevels = [], ...plot }: SurfaceReliefProp
             figure while the chunk loads, and it stays in the document as the print form once the relief is
             drawn. `display: none` is INLINE so the copy is hidden on screen even on a page with no print
             sheet; `PrintStyles`' `[data-relief-print-flat]` rule carries the `!important` that beats it.
+
+            THIS COPY IS FOR PAPER AND FOR NOTHING ELSE. `display: none` plus `aria-hidden` means it is
+            reachable by no reader and no clipboard on screen — see the header, and see `ReliefTextForm`
+            below, which is where the figure's words go while the canvas is up.
           */}
           <div data-relief-print-flat="" style={{ display: 'none' }} aria-hidden="true">
             <SurfacePlot {...plot} />
           </div>
-          {/* Removed from the printed sheet whole, not just its canvas — see `PrintStyles`. */}
+          {/* Removed from the printed sheet whole, not just its canvas — see `PrintStyles`. The text form
+              is INSIDE this block on purpose: on paper the flat figure returns and already carries every
+              one of these words, so leaving this here would print each of them twice. */}
           <div data-relief-live="">
             <SurfaceReliefGl
               surface={plot.surface}
@@ -122,6 +290,7 @@ export function SurfaceRelief({ contourLevels = [], ...plot }: SurfaceReliefProp
               onRefused={onRefused}
               contourLevels={contourLevels}
             />
+            <ReliefTextForm surface={plot.surface} title={plot.title} readsAs={plot.readsAs} />
           </div>
         </Suspense>
       ) : (

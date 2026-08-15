@@ -62,6 +62,41 @@
  * Both rules are scoped to attributes the wrappers set only while a relief is OPEN. In the
  * default state — off, on all seven, which is the state every print job in this app's life
  * so far has been in — neither attribute exists and neither rule matches anything.
+ *
+ * ── `canvas:not(main canvas)`: A PLAIN ⌘P IN THE DARK THEME PRINTED A BLACK GROUND ────
+ * `AppLayout.tsx:265` mounts `SignatureBackdrop` on EVERY shell route — an `absolute inset-0
+ * -z-10` canvas that spans the whole shell. Every printable artefact in this app is a shell
+ * route, so it sits behind all thirteen of them. It matched NONE of the chrome selectors below,
+ * because all of them name a tag, a role or a class and it is an unclassed `<canvas>` inside an
+ * unclassed `<div>`. The rules above force the PAPER white and re-pin the dark TOKENS, and
+ * neither reaches a bitmap: the canvas was already painted from the dark palette, nothing in the
+ * app listens for `beforeprint` to repaint it, and `#root .h-screen { height: auto }` below then
+ * lets `inset-0` grow to the full document — measured at 1440x5369, near-black, on every page.
+ *
+ * The two documents this affects are a CEO board pack and the crisis COMPLIANCE RECORD. Their
+ * in-page print buttons strip `.dark` first and were therefore fine; a browser-initiated ⌘P is
+ * not, and no in-page button can make it so.
+ *
+ * ── WHY IT IS ONE DERIVED RULE AND NOT AN EIGHTH SELECTOR ─────────────────────────────
+ * A list is what let this through: seven names, and the eighth thing nobody thought of. The rule
+ * is stated instead as the boundary this sheet ALREADY works in — `main` is the printed document
+ * (see the `main { … }` rule below, and `layout/MainContent.tsx`), and everything outside it is
+ * chrome. Any canvas mounted in the shell is therefore removed the day it is added, named or not,
+ * which is the property an ambient backdrop has BY CONSTRUCTION: to span the shell it must be
+ * mounted in the shell. A full-bleed canvas mounted INSIDE a page would not be covered, and that
+ * is stated rather than papered over.
+ *
+ * ── WHY IT IS NOT `canvas { display: none }`, WHICH WAS CHECKED AND WOULD DELETE DATA ──
+ * Eight chart primitives in `components/charts` draw their bars, arcs and dials in a GL canvas
+ * UNDER the host SVG, and the SVG re-draws them itself only when the renderer refuses:
+ * `BarChartH.tsx:97`, `ColumnChart.tsx:128`, `CompareBars.tsx:148`, `StackedBarH.tsx:111`,
+ * `DonutChart.tsx:118`, `GaugeChart.tsx:119`, `Histogram.tsx:168` all gate the fallback on
+ * `glRefused`. `BarChartH.tsx:96` calls that fallback "server render, print, no WebGL2, or first
+ * paint" — and PRINT IS NOT ONE OF THEM: grepping `components/charts` for `beforeprint` returns
+ * nothing, so in any WebGL2 browser `glRefused` is false at ⌘P and the canvas IS the figure. A
+ * blanket rule would have printed a board pack of labelled axes with no bars on them. Those
+ * canvases are inside `main`, so this rule does not match them; the test alongside it asserts
+ * exactly that, on a DOM built to the shape of the real shell.
  */
 export function PrintStyles() {
   const css = `
@@ -92,6 +127,11 @@ export function PrintStyles() {
   /* THE RELIEF PRINT PATH. Both selectors and both reasons are in the file header. */
   [data-relief-live] { display: none !important; }
   [data-relief-print-flat] { display: block !important; }
+
+  /* THE SHELL'S AMBIENT CANVAS, AND EVERY ONE AFTER IT. See the file header for the measurement,
+     for why this is one derived rule instead of an eighth name in the list below, and for the
+     charts it deliberately does not touch. */
+  canvas:not(main canvas) { display: none !important; }
 
   header, aside, footer { display: none !important; }
   /* The offline banner is in the main flow, not the chrome. */

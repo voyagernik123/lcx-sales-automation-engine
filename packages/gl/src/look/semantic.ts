@@ -2,11 +2,13 @@
  * L2 · SEMANTIC STATUS COLOUR — the third category, and the one the palette did not have.
  *
  * ── THE DIVERGENCE THIS EXISTS TO CLOSE ─────────────────────────────────────────────
- * E6 THE VAULT draws a BLOCKED audit record in `#C9552B` (`VaultReliefGl.tsx:118`) and E3 THE
- * PIPELINE ends its staleness ramp at the same literal (`PipelineReliefGl.tsx:132`). The flat
- * product renders blocked in `--red`: `text-status-blocked` appears at 245 sites across
- * `apps/web/src`, and `tailwind.config.js:44` binds that role to `--red`. One product, two
- * colour languages — and a reader who learns the language on the table is misled by the scene.
+ * E6 THE VAULT draws a BLOCKED audit record in `#C9552B` (`VaultReliefGl.tsx:120`) and E3 THE
+ * PIPELINE ends its staleness ramp at the same literal (`PipelineReliefGl.tsx:134`). The flat
+ * product renders blocked in `--red`: `text-status-blocked` appears at 188 sites across
+ * `apps/web/src` (`git grep -o text-status-blocked -- apps/web/src | wc -l`, identical at b9770fb,
+ * HEAD and the worktree — the 245 this line used to claim reproduces at none of the three), and
+ * `tailwind.config.js:55` binds that role to `--red`. One product, two colour languages — and a
+ * reader who learns the language on the table is misled by the scene.
  *
  * Measured, in CIE Lab, on the actual token values:
  *
@@ -16,7 +18,7 @@
  *
  * So the shipped value is not a slightly-wrong red. It sits inside the `reference` hue family,
  * which `colour.ts` reserves for percentiles, thresholds and targets and calls "deliberately not
- * a data hue". `VaultReliefGl.tsx:923` already describes its own three swatches as "blue, red and
+ * a data hue". `VaultReliefGl.tsx:1073` already describes its own three swatches as "blue, red and
  * steel" — the author's mental model was red all along; the constant was not.
  *
  * ── THE THREE CATEGORIES, BECAUSE TWO WAS NOT ENOUGH ────────────────────────────────
@@ -50,7 +52,7 @@
  * Lightness does NOT transfer, and that is the reason ADMISSION below is decided on hue alone:
  * in a lit scene lightness is not available as a discriminator. Two albedos of the same hue and
  * different lightness render at overlapping lightnesses depending only on where each sits
- * relative to the key light. The globe already proved it in the other direction — `GlobeReliefGl.tsx:463`
+ * relative to the key light. The globe already proved it in the other direction — `market/GlobeReliefGl.tsx:515`
  * draws its brand pins at `MARKER_AMBIENT = 120` against a `BODY_AMBIENT` of 1.6, because brand
  * blue against a plate-level sky returns about 0.02 of linear radiance.
  *
@@ -169,7 +171,7 @@ export function hueDistanceDeg(a: Linear, b: Linear): number {
  * WCAG-shaped ratio on Rec. 709 luminance — what survives a greyscale print or a monochromat.
  *
  * Not a contrast claim about text: nothing here is text. It is the redundancy check
- * `PipelineReliefGl.tsx:473` promises when it says colour repeats the height "deliberately"
+ * `PipelineReliefGl.tsx:553` promises when it says colour repeats the height "deliberately"
  * because a single-channel encoding "fails for anyone reading at a glance or in greyscale".
  */
 export function greyscaleRatio(a: Linear, b: Linear): number {

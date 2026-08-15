@@ -754,7 +754,25 @@ export const ACTION_REGISTRY: Record<string, RegistryAction> = {
       // Step-up re-auth (LCX ONE Phase 2): revocation is destructive, so it
       // demands a fresh passcode at action time — a live human deliberately
       // re-authorizing, not a cached session firing. Timing-safe.
-      if (!safeEqual(String(params.stepUpPasscode), env.deskPasscode)) {
+      //
+      // ── THE FRONT DOOR'S GUARD HAS TO BE REPEATED HERE, AND IT WAS NOT ──────────────────
+      // `auth.ts:270` refuses the roster desk passcode when `deskPasscodeIsPublicDefault` is
+      // set — i.e. when `DESK_PASSCODE` is absent or is the value committed to this repository.
+      // This comparison had no such guard, and it is the SECOND door to the same secret.
+      //
+      // Found while closing that first hole, and proved live afterwards: with the front door
+      // correctly refusing, a principal obtained through the SECONDARY passcode then called
+      // `revoke_entitlement` with the committed public literal as `stepUpPasscode` and got
+      // `{"revoked":true,"historyRecorded":true}` back with HTTP 200. The control that a wrong
+      // step-up returns `STEP_UP_REQUIRED` was verified in the same run, so that was the public
+      // passcode being ACCEPTED, not a bypass of the check.
+      //
+      // The lesson worth keeping is not "add a guard here". It is that a secret with two
+      // comparison sites needs its refusal at the value, not at each call: fixing one door on a
+      // shared secret leaves the other one open, and nothing in the type system says there is
+      // another one. The census that would catch a third is a grep for `env.deskPasscode`.
+      if (env.deskPasscodeIsPublicDefault
+        || !safeEqual(String(params.stepUpPasscode), env.deskPasscode)) {
         throw new ActionError('STEP_UP_REQUIRED', 'Revocation requires re-entering the desk passcode.', 401);
       }
       // Lockout protection: an approver cannot saw off the branch they sit on.

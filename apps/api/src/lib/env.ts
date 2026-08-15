@@ -26,6 +26,36 @@ function required(name: string, devFallback?: string): string {
   throw new Error(`Missing required env: ${name}`);
 }
 
+/**
+ * The value the front door will actually compare against, resolved ONCE so that the
+ * guard below and the door in `middleware/auth.ts` can never be looking at different
+ * things. Unset ⇒ the committed literal; set ⇒ whatever was set, including an empty
+ * string (`??` is nullish, so an empty DESK_PASSCODE stays empty rather than falling
+ * back — and an empty passcode is not a safer state, it is a worse one).
+ */
+const deskPasscodeResolved = process.env.DESK_PASSCODE ?? DESK_PASSCODE_DEV_FALLBACK;
+
+/**
+ * IS THE FRONT DOOR'S SECRET PUBLIC?
+ *
+ * THE OLD TEST WAS "IS DESK_PASSCODE UNSET", AND THAT IS NOT THE SAME QUESTION.
+ * Proved on a local production build on 2026-08-15: with DESK_PASSCODE unset,
+ * `nik@lcx.com` + the committed literal was refused with 401 and `/health` reported
+ * `refused-public-default`. With DESK_PASSCODE explicitly SET to that same committed
+ * literal, the identical request returned 200 with `role: approver`, `canApprove: true`
+ * and `approve` on all eight compartments, and `/health` reported `open`. The guard
+ * tested unset-ness; the danger is the VALUE.
+ *
+ * It now compares the resolved value against the one constant this repository defines
+ * for it — one comparison, no second copy of the literal anywhere, so the guard cannot
+ * drift from the fallback it is guarding. Unset, empty, and explicitly-set-to-the-literal
+ * are all the same answer because they are all the same secret.
+ */
+function deskPasscodeIsPublic(): boolean {
+  if (process.env.NODE_ENV !== 'production') return false;
+  return deskPasscodeResolved === '' || deskPasscodeResolved === DESK_PASSCODE_DEV_FALLBACK;
+}
+
 function bool(name: string, fallback: boolean): boolean {
   const v = process.env[name];
   if (v === undefined || v === '') return fallback;
@@ -79,9 +109,11 @@ export const env = {
    * `middleware/auth.ts` uses to refuse THIS PATH ONLY when production is running on the
    * public literal. See that flag for why the refusal is at the door and not at boot.
    */
-  deskPasscode: process.env.DESK_PASSCODE ?? DESK_PASSCODE_DEV_FALLBACK,
+  deskPasscode: deskPasscodeResolved,
   /**
-   * TRUE when production is running on the committed literal, i.e. DESK_PASSCODE is unset.
+   * TRUE when production is running on the committed literal — WHETHER IT ARRIVED BY
+   * DEFAULT OR BY BEING SET TO IT ON PURPOSE. See `deskPasscodeIsPublic()` above for the
+   * measurement that showed why "is the variable unset" was the wrong question.
    *
    * WHY THIS IS A FLAG AND NOT A `required()` THROW, WHICH IS WHAT I WROTE FIRST.
    * Routing this through `required()` was correct about the danger and wrong about the
@@ -95,11 +127,10 @@ export const env = {
    * still closes the hole, and unlike a boot crash it is visible in a log line rather
    * than in a deploy that rolls back.
    *
-   * Setting DESK_PASSCODE in the environment clears this and restores email sign-in.
+   * Setting DESK_PASSCODE to a value that is not the committed literal clears this and
+   * restores email sign-in.
    */
-  deskPasscodeIsPublicDefault:
-    (process.env.NODE_ENV === 'production')
-    && (process.env.DESK_PASSCODE === undefined || process.env.DESK_PASSCODE === ''),
+  deskPasscodeIsPublicDefault: deskPasscodeIsPublic(),
   /**
    * SECOND-TIER desk passcode. Any @lcx.com address plus this signs in at
    * 'operator' on every compartment — no roster edit, no deploy, no grant wait.
@@ -183,5 +214,36 @@ export const env = {
   phantombusterMessageAgentId: process.env.PHANTOMBUSTER_MESSAGE_AGENT_ID ?? '',
   linkedinSessionCookie: process.env.LINKEDIN_SESSION_COOKIE ?? '',
 } as const;
+
+/*
+ * SAY IT AT BOOT, NOT AT THE FIRST REFUSED REQUEST.
+ *
+ * The refusal itself stays at the door — `middleware/auth.ts` turns away the one path
+ * whose secret is public and leaves the other seven compartments' credentials serving,
+ * because a boot throw here would trade a quiet hole for a total outage. That argument
+ * is about where the REFUSAL lives, and it was quietly doing double duty as an argument
+ * for where the ANNOUNCEMENT lives. It should not have been: an operator who sets
+ * DESK_PASSCODE to the value they found in the repository gets a working sign-in and a
+ * `/health` field they have no reason to read, and learns nothing. The refusal is
+ * visible only to whoever is refused, which in the dangerous case is the attacker.
+ *
+ * `console.error` and at module evaluation, so it lands in the Render deploy log next to
+ * the database boot lines that are already read there. It is silent in every safe
+ * configuration, because a boot line that always prints something about the passcode is
+ * a boot line nobody reads.
+ *
+ * IT NAMES THE VARIABLE, NEVER THE VALUE. Printing the passcode to make the message
+ * clearer would publish it into a log aggregator, which is the same class of mistake as
+ * committing it — worse, because it would then be public in an environment where it was
+ * NOT the committed default.
+ */
+if (env.deskPasscodeIsPublicDefault) {
+  console.error(
+    '[auth] DESK_PASSCODE is the value committed to this repository, so it is public. '
+      + 'Email + passcode sign-in is REFUSED for every roster member, including approvers, '
+      + 'until DESK_PASSCODE is set to a secret that is not in the source tree. '
+      + 'The shared OPERATOR_API_KEY and SECONDARY_PASSCODE paths are unaffected.',
+  );
+}
 
 export type Env = typeof env;

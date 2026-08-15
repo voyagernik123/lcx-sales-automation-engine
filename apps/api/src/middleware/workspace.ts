@@ -1,7 +1,7 @@
 import { createMiddleware } from 'hono/factory';
 import { type Capability, type WorkspaceId, capAtLeast, getWorkspace } from '@lcx/shared';
 import type { AuthVariables } from './auth.js';
-import { resolvePrincipal } from './auth.js';
+import { resolvePrincipal, secondTierThrottleKey } from './auth.js';
 import { loadEntitlements } from '../access/entitlements.js';
 import { getPool } from '../db/index.js';
 
@@ -55,7 +55,24 @@ export function requireWorkspace(ws: WorkspaceId, capability: Capability = 'view
   return createMiddleware<{ Variables: AuthVariables }>(async (c, next) => {
     let operator = c.get('operator');
     if (!operator) {
-      const principal = resolvePrincipal(c.req.header('authorization'), c.req.header('x-api-key'));
+      /*
+       * THE THROTTLE KEY IS THE THIRD ARGUMENT, AND OMITTING IT SILENTLY DISARMS THE CONTROL.
+       * `resolvePrincipal` takes no throttle when the key is absent — deliberately, so an
+       * un-threaded caller can never feed a lockout it cannot see. The cost of that safe default
+       * is that a call site which simply forgets the argument gets the PRE-FIX behaviour with no
+       * error and no test failure. This site is that call site: every request entering through a
+       * compartment gate authenticated here, and therefore bypassed the brute-force lockout
+       * entirely while the front door enforced it.
+       *
+       * Found by tracing the call graph after the fix, not by a test — which is why the census in
+       * `secondTierThrottle.test.ts` now asserts that EVERY call site passes a key, rather than
+       * asserting that this one does.
+       */
+      const principal = resolvePrincipal(
+        c.req.header('authorization'),
+        c.req.header('x-api-key'),
+        secondTierThrottleKey(c),
+      );
       if (!principal) {
         return c.json({ error: 'Unauthorized', code: 'UNAUTHORIZED' }, 401);
       }

@@ -1,4 +1,13 @@
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+/**
+ * Statically imported so a test can SET `DESK_PASSCODE` to the committed literal before
+ * `lib/env.ts` is re-evaluated under production — the value is needed to arrange the
+ * environment, and the environment is what decides the value the dynamic import sees.
+ * One constant, never a second copy of the string in this file.
+ */
+import { DESK_PASSCODE_DEV_FALLBACK } from '../../lib/env.js';
 
 /**
  * THE FRONT DOOR IS CLOSED WHEN ITS SECRET IS PUBLIC.
@@ -54,9 +63,20 @@ async function loadUnder(vars: Record<string, string | undefined>) {
   }
   dirty = true;
   vi.resetModules();
-  const env = await import('../../lib/env.js');
-  const auth = await import('../auth.js');
-  return { env: env.env, fallback: env.DESK_PASSCODE_DEV_FALLBACK, resolve: auth.resolvePrincipal };
+  // The boot announcement is emitted while `lib/env.ts` is being EVALUATED, so the spy
+  // has to be in place across the import itself — capturing it afterwards captures
+  // nothing, and a test that asserts on nothing passes on code that says nothing.
+  const boot: string[] = [];
+  const spy = vi.spyOn(console, 'error').mockImplementation((...args: unknown[]) => {
+    boot.push(args.map((a) => String(a)).join(' '));
+  });
+  try {
+    const env = await import('../../lib/env.js');
+    const auth = await import('../auth.js');
+    return { env: env.env, fallback: env.DESK_PASSCODE_DEV_FALLBACK, resolve: auth.resolvePrincipal, boot };
+  } finally {
+    spy.mockRestore();
+  }
 }
 
 afterEach(() => {
@@ -107,12 +127,71 @@ describe('the desk passcode is refused when production is running on the committ
   });
 
   it('re-opens the moment DESK_PASSCODE is set, so this is a missing variable and not a mode', async () => {
-    const { env, resolve } = await loadUnder({ ...PROD_NO_PASSCODE, DESK_PASSCODE: 'a-real-desk-passcode' });
+    const { env, fallback, resolve } = await loadUnder({ ...PROD_NO_PASSCODE, DESK_PASSCODE: 'a-real-desk-passcode' });
     expect(env.deskPasscodeIsPublicDefault).toBe(false);
     const p = resolve('Bearer nik@lcx.com:a-real-desk-passcode', undefined);
     expect(p?.role).toBe('approver');
     // And the public literal is still worthless, because it is no longer the passcode.
-    expect(resolve('Bearer nik@lcx.com:test#1234', undefined)).toBeNull();
+    // `fallback`, not a typed-out copy: a second copy of the string in this file would
+    // silently stop tracking the constant it is supposed to be about.
+    expect(resolve(`Bearer nik@lcx.com:${fallback}`, undefined)).toBeNull();
+  });
+
+  /* ── the guard tested UNSET-NESS, and the danger is the VALUE ──────────────────── */
+
+  it('refuses the committed literal when it is SET ON PURPOSE, not only when it is missing', async () => {
+    /*
+     * THE HOLE THIS CLOSES, MEASURED ON A LOCAL PRODUCTION BUILD ON 2026-08-15.
+     * With DESK_PASSCODE unset, `nik@lcx.com` + the committed literal returned 401 and
+     * `/health` reported `refused-public-default`. With DESK_PASSCODE explicitly SET to
+     * that same literal, the identical request returned 200 with `role: approver`,
+     * `canApprove: true` and `approve` on all eight compartments, and `/health` reported
+     * `open`. Setting the variable to the value printed in the source was enough to
+     * "configure" the front door, and every signal in the system then said it was safe.
+     *
+     * `fallback` comes from the module under test — the one constant the repository
+     * defines for this value. Typing the literal here would create a second copy that
+     * could drift from the first, and the drift would be invisible: this test would go
+     * green while the door opened.
+     */
+    const { env, fallback, resolve } = await loadUnder({
+      ...PROD_NO_PASSCODE,
+      DESK_PASSCODE: DESK_PASSCODE_DEV_FALLBACK,
+    });
+    expect(env.deskPasscodeIsPublicDefault).toBe(true);
+    expect(resolve(`Bearer nik@lcx.com:${fallback}`, undefined)).toBeNull();
+    expect(resolve(`Bearer monty@lcx.com:${fallback}`, undefined)).toBeNull();
+  });
+
+  it('refuses an EMPTY passcode too — a door with no lock is not a configured door', async () => {
+    const { env, resolve } = await loadUnder({ ...PROD_NO_PASSCODE, DESK_PASSCODE: '' });
+    expect(env.deskPasscodeIsPublicDefault).toBe(true);
+    expect(resolve('Bearer nik@lcx.com:', undefined)).toBeNull();
+  });
+
+  it('says so AT BOOT, because the refusal is only visible to whoever is refused', async () => {
+    // The request-time refusal is the right place for the ENFORCEMENT and the wrong place
+    // for the ANNOUNCEMENT: an operator who set DESK_PASSCODE to the value they found in
+    // the repo would get a working-looking service and learn nothing until someone tried
+    // to sign in — and the first person to try is the attacker.
+    const { boot } = await loadUnder({ ...PROD_NO_PASSCODE, DESK_PASSCODE: DESK_PASSCODE_DEV_FALLBACK });
+    const line = boot.find((l) => l.includes('DESK_PASSCODE'));
+    expect(line, 'no boot line mentioned DESK_PASSCODE').toBeTruthy();
+    expect(line).toContain('public');
+  });
+
+  it('the boot line never prints the passcode it is complaining about', async () => {
+    // Printing it to make the message clearer would publish the secret into a log
+    // aggregator — the same class of mistake as committing it, and worse in an
+    // environment where the value is NOT the committed default.
+    const { fallback, boot } = await loadUnder({ ...PROD_NO_PASSCODE, DESK_PASSCODE: DESK_PASSCODE_DEV_FALLBACK });
+    for (const line of boot) expect(line).not.toContain(fallback);
+  });
+
+  it('stays silent when the passcode is a real secret', async () => {
+    const { env, boot } = await loadUnder({ ...PROD_NO_PASSCODE, DESK_PASSCODE: 'a-real-desk-passcode' });
+    expect(env.deskPasscodeIsPublicDefault).toBe(false);
+    expect(boot.filter((l) => l.includes('DESK_PASSCODE'))).toEqual([]);
   });
 
   it('does not fire outside production, where the fallback is the point', async () => {
@@ -123,5 +202,78 @@ describe('the desk passcode is refused when production is running on the committ
     });
     expect(env.deskPasscodeIsPublicDefault).toBe(false);
     expect(resolve(`Bearer nik@lcx.com:${fallback}`, undefined)?.id).toBe('nik');
+  });
+});
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════════
+ *  EVERY DOOR TO THE DESK PASSCODE, NOT JUST THE ONE THAT WAS BROKEN.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════════
+ *  The front door at `auth.ts:270` refuses the passcode when it is the committed public literal.
+ *  `actions/registry.ts` compares against the SAME secret for the step-up on `revoke_entitlement`,
+ *  and had no such guard. Proved live: with the front door correctly refusing, a principal obtained
+ *  through the SECONDARY passcode invoked the destructive action with the public literal and got
+ *  `{"revoked":true}` and HTTP 200 — while a wrong step-up on the same principal returned
+ *  `STEP_UP_REQUIRED`, so the public value was being accepted rather than the check bypassed.
+ *
+ *  A test for that one call site would have been the wrong test. It was found by a human tracing an
+ *  unrelated fix, and a THIRD site added next month would be found the same way or not at all. So
+ *  this censuses the comparison rather than the site: every place that compares something to
+ *  `env.deskPasscode` must also consult `deskPasscodeIsPublicDefault`, and a new door fails here on
+ *  the day it is written.
+ *
+ *  It reads source rather than behaviour deliberately — the behavioural test needs a live server,
+ *  a database and a seeded approver, and would therefore be written for one route at a time, which
+ *  is the failure mode this file exists to close.
+ */
+describe('every comparison against the desk passcode consults the public-default guard', () => {
+  const API_SRC = resolve(process.cwd(), 'src');
+
+  const walk = (dir: string): string[] => readdirSync(dir).flatMap((e) => {
+    const full = join(dir, e);
+    if (statSync(full).isDirectory()) return e === 'node_modules' ? [] : walk(full);
+    return /\.ts$/.test(e) && !/\.test\.ts$/.test(e) ? [full] : [];
+  });
+
+  /* Comments stripped before anything is counted. PROSE ABOUT A SYMBOL IS NOT A USE OF IT, and this
+     repository has shipped two censuses that measured their own documentation. */
+  const withoutComments = (src: string): string =>
+    src.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1');
+
+  it('finds the guard beside every use, and the census is not vacuous', () => {
+    const files = walk(API_SRC);
+    expect(files.length, 'the walk found no source files — this check would pass vacuously')
+      .toBeGreaterThan(50);
+
+    const offenders: string[] = [];
+    let sites = 0;
+    for (const f of files) {
+      const src = withoutComments(readFileSync(f, 'utf8'));
+      const lines = src.split('\n');
+      lines.forEach((line, i) => {
+        /*
+         * `\b` already excludes the FLAG: `env.deskPasscodeIsPublicDefault` has no word boundary
+         * after `deskPasscode`, so only a read of the secret itself matches. An earlier draft also
+         * skipped any line MENTIONING the flag, which silently dropped `auth.ts:270` — where the
+         * guard and the comparison share one line — and left the census counting one site instead
+         * of two. The vacuity floor below is what caught it, which is the whole reason it is there.
+         */
+        if (!/env\.deskPasscode\b/.test(line)) return;
+        sites++;
+        /* The guard may sit on the same line or in the condition just above it — both spellings
+           appear in the codebase, so the window is small and stated rather than exact. */
+        const window = lines.slice(Math.max(0, i - 4), i + 1).join('\n');
+        if (!/deskPasscodeIsPublicDefault/.test(window)) {
+          offenders.push(`${relative(API_SRC, f)}:${i + 1}  ${line.trim().slice(0, 90)}`);
+        }
+      });
+    }
+
+    expect(sites, 'no comparison against env.deskPasscode was found at all — the census is broken')
+      .toBeGreaterThanOrEqual(2);
+    expect(offenders,
+      'these compare against the desk passcode without consulting deskPasscodeIsPublicDefault,'
+      + ' so they accept the value committed to this repository when a deploy mirrors it')
+      .toEqual([]);
   });
 });

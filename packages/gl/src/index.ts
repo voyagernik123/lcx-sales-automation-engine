@@ -81,6 +81,30 @@ export type { CompositeSite, PrecompRefusal, BlendDest } from './look/precompens
 export { createPipeline, PIPELINE_SOURCES } from './look/pipeline.js';
 export type { Pipeline, PipelineOptions } from './look/pipeline.js';
 
+/* L2 · SEMANTIC STATUS COLOUR — status is the third category, neither identity nor absence, and its
+   VALUE belongs to the platform rather than to a scene. Reachable from the barrel for the same
+   reason `categorical.js` is, and it is worth naming plainly: this module was built, measured to
+   three decimals, tested at 318 lines, and exported from NOWHERE — the third time this programme
+   has shipped that exact shape. `semantic.test.ts` derives both sides of this list from the module
+   namespace and from `semantic.ts`'s own export statements, so a symbol added there next week is
+   not silently left behind here.
+
+   WHAT THIS BLOCK IS AND IS NOT. It makes the module CALLABLE. It does not make T4 done: the
+   divergence T4 exists to close lives in `PipelineReliefGl.tsx:134` and `VaultReliefGl.tsx:120`,
+   which still hold `#C9552B`, and no line of this file can change that. A consumer count of zero
+   is still a consumer count of zero — this only removes the reason there could not be one.
+
+   `ThemeName` is deliberately NOT re-exported here: `statusAlbedo(role, theme)` accepts the string
+   literals `'light'` / `'dark'` directly, so a barrel-only consumer can call it without naming the
+   type, and re-exporting `./look/theme.js` is a separate decision about a module this block does
+   not own. */
+export {
+  STATUS_ROLES, statusToken, statusAlbedo, statusHex,
+  hueAngleDeg, chroma, hueDistanceDeg, greyscaleRatio,
+  HUE_BUCKET_DEG, statusAdmission, sceneStatusRoles, STATUS_POLICY,
+} from './look/semantic.js';
+export type { StatusRole, StatusAdmission } from './look/semantic.js';
+
 /* ── L4 · flat ──────────────────────────────────────────────────────────────────────
    2-D primitives on the SAME pipeline as the 3-D surfaces. PLATFORM_VFX_100X.md's thesis:
    a chart with no third data axis still gets linear light, HDR accumulation, real edge
