@@ -43,7 +43,7 @@ import {
   createAmbientOcclusion, createDepthOfField, createSkyBackdrop,
   projectQuad, isQuadRefusal, uprightPanelCorners, projectScreen,
   viewProjection, eyeOf, nearFarOf, lightViewProjection, boundsCentre, boundsRadius,
-  hexToLinear, assertBrandFidelity, IDENTITY, TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
+  hexToLinear, inverseToneMap, assertBrandFidelity, IDENTITY, TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
   qualitySettings, shadowMapSizeFor, pickQualityTier,
   type LitDraw, type Viewpoint, type MeshBuffer, type Linear,
 } from '@lcx/gl';
@@ -223,11 +223,154 @@ const scenery = (th: SceneTheme, darkHex: string, light: Linear): Linear =>
 /** The dark theme's record, held only as the denominator of the light rig's ratio — see `SurfaceReliefGl.tsx`,
     THE LIGHT RIG MOVES BY RATIO. Nothing reads a colour out of it. */
 const TH_DARK = sceneTheme('dark');
-const rigFor = (th: SceneTheme) => ({
-  key: th.keyGain / TH_DARK.keyGain,
-  ambient: th.ambientGain / TH_DARK.ambientGain,
-  shadow: th.shadowStrength / TH_DARK.shadowStrength,
+const TH_LIGHT = sceneTheme('light');
+
+/**
+ * ══ THE RADIANCES THIS SURFACE HANDS `lit.draw`, AS ONE EXPRESSION ═══════════════════════════════════
+ *
+ * These were four literals sitting inside the `lit.draw` call, and the exposure solved below has to be solved
+ * against the scene that is ACTUALLY DRAWN. A second copy of 3.5/3.45/3.3/1.05 in the solve would let a nudge
+ * to the frame leave the solve describing a room nobody renders, and the symptom — a deck quietly off the
+ * albedo it was authored with — is invisible without an instrument. So both callers go through here.
+ *
+ * `rig.key` and `rig.ambient` ALREADY CARRY THE EXPOSURE and carry it together, so the key/ambient ratio the
+ * light theme was authored with survives the solve exactly.
+ */
+const litRadiance = (rig: { readonly key: number; readonly ambient: number }) => ({
+  lightColour: [3.5 * rig.key, 3.45 * rig.key, 3.3 * rig.key] as [number, number, number],
+  ambientGain: 1.05 * rig.ambient,
 });
+/**
+ * ONE KEY LIGHT, 33° ABOVE THE HORIZON AND TO THE LEFT. Steeper lands almost entirely on the 6 cm top edges and
+ * leaves the faces to the ambient sky, so the frame goes flat exactly where the information lives. The harness
+ * measured 38° first and dropped it: a shadow falling across the panel BEHIND is the one cue that states two
+ * panels are at different depths without the lens, and at 38° the reach stopped 15 cm short.
+ *
+ * At module scope rather than inside the effect because the exposure below is solved against it.
+ */
+const LIGHT_DIR: [number, number, number] = [0.62, -0.55, -0.58];
+/** N·L for the deck, whose normal is the up axis: the one incidence in this scene that no layout can move. */
+const DECK_NDOTL = -LIGHT_DIR[1] / Math.hypot(LIGHT_DIR[0], LIGHT_DIR[1], LIGHT_DIR[2]);
+
+/**
+ * ══ THE SKY WAS AUTHORED AS A DISPLAY COLOUR AND CONSUMED AS A RADIANCE, AND THAT DELETED THE SILHOUETTE ══
+ *
+ * ── WHAT WAS MEASURED, ON THE SHIPPED DRAWING BUFFER ────────────────────────────────
+ * `docs/3d/app-sweep` reported this surface as the worst light regression in the app — luminance sd 27.22 →
+ * 14.35, p01→p99 range 71 → 44 — under the reading that the panels were merging with the GROUND. Split into
+ * the populations the frame is actually made of, by re-running this file's own projection over the drawing
+ * buffer, that reading is refuted:
+ *
+ *                                     dark      light
+ *   panel face : deck                 1.121     1.315     BETTER in light, by 17%
+ *   panel face : sky, at the top edge 1.922     1.022     GONE
+ *
+ * Every panel stands partly above the deck plate's far edge, and it is against the SKY that its silhouette is
+ * read. In dark all four slabs are 43–53 luma DARKER than the sky behind them. In light two of the four are
+ * BRIGHTER than it — the step changes sign across the set — and the worst is 2.1 luma, which is no edge at all.
+ *
+ * ── THE MECHANISM, AND IT IS A UNITS ERROR RATHER THAN A LIGHTING ONE ───────────────
+ * `env/sky.ts`'s `DEFAULT_SKY` is authored as RADIANCE: its horizon is `0.075`, which the tone map leaves at
+ * 0.0728 and the encode puts at ~76/255. `look/theme.ts`'s per-theme stops are authored as DISPLAY HEXES and
+ * handed to the same field. A lit surface is multiplied by the key and the ambient before the curve, so it
+ * arrives near the value it was authored with; the sky is not, so `#DCE5F3` (luma 227.5) leaves the pipeline
+ * at rgb(197,203,212) — 25 luma below the colour it was written as, and exactly on top of the lit slabs.
+ *
+ * THE COUNTERFACTUAL SETTLES IT. Drawn with `theme.ts`'s own DARK stops instead of `DEFAULT_SKY`, the DARK
+ * frame collapses the same way: the sky renders rgb(19,28,49), the slabs rgb(22,27,42)…rgb(32,38,55), and the
+ * worst silhouette goes 1.956 → 1.011. So the defect is which UNITS the stops are in, not the light rig — and
+ * dark is only intact because it takes the `undefined` branch and never reaches them.
+ *
+ * ── THE FIX, IN TWO STEPS, EACH WITH ITS OWN CRITERION ──────────────────────────────
+ * 1. PRE-COMPENSATE THE STOPS. `look/precompensate.ts`: write `inverseToneMap(target)` and the live,
+ *    unmodified curve delivers `target`. The sky then leaves the pipeline at the colour `theme.ts` wrote.
+ *    One object still goes to the backdrop AND to the lit pass, so the drawn room and every reflection of it
+ *    move together — the property the note in `draw` exists to protect.
+ * 2. RE-SOLVE THE EXPOSURE. Step 1 raises the ambient this scene is lit by (the horizon by 1.40x, the zenith
+ *    by 1.57x), which pushes the deck to rgb(240,244,251) — 8 levels ABOVE the ground colour it was authored
+ *    with. `ForgeBackdrop.lightExposure` is the precedent and this is its criterion, unchanged: the exposure
+ *    at which the ground leaves the pipeline AT ITS OWN ALBEDO. Solved, not picked.
+ *
+ * ── THE INVERSE IS ALWAYS FINITE HERE, BY ARITHMETIC ────────────────────────────────
+ * `inverseToneMap` is `y/(1-0.4y)` and its pole is at y = 2.5. Every stop above is `hexToLinear(...)`, whose
+ * range is [0, 1], so the inverse is finite and at most 1/(1-0.4) = 1.6667 — which is `PRECOMP_CLIP`, the
+ * largest value the curve can still move. There is no configuration of `SceneTheme` that reaches the pole.
+ *
+ * ── WHAT THIS DOES NOT FIX, WITH THE NUMBER ─────────────────────────────────────────
+ * A ceiling remains and it is `theme.ts`'s, not this file's: with the sky at `#DCE5F3` and a slab at its own
+ * `structure` albedo `#C3CEE0`, the best contrast those two hexes can produce is **1.251:1**. Dark reaches
+ * 1.956 because `DEFAULT_SKY`'s horizon is not an albedo at all. The blocked change is recorded in this
+ * work's return value; it is not E1's to make, because `structure` is shared by six renderers.
+ */
+const LIGHT_SKY = Object.freeze({
+  zenith: inverseToneMap(TH_LIGHT.skyZenith),
+  horizon: inverseToneMap(TH_LIGHT.skyHorizon),
+  ground: inverseToneMap(TH_LIGHT.ground),
+});
+
+/**
+ * THE EXPOSURE AT WHICH THE DECK LEAVES THE PIPELINE AT THE COLOUR IT WAS AUTHORED WITH.
+ *
+ * `ForgeBackdrop.lightExposure`'s derivation, on E1's deck under E1's rig: the deck is Lambertian
+ * (metalness 0) and its normal is the up axis, so its radiance is `albedo · (key·N·L/π + sky(up)·ambient)`,
+ * and the radiance that tone-maps and encodes back to `albedo` is `inverseToneMap(albedo)`. Divide, take the
+ * binding channel so no channel renders brighter than authored.
+ *
+ * WHY THE DECK AND NOT A SLAB, which is the surface that actually takes the most key here: a slab's normal
+ * yaws with where it stands, so solving on the slabs as PLACED makes the exposure a function of HOW MANY
+ * PANELS THE PAGE HAS. Measured, it does: 0.894565 on the deck against 0.818541 binding on the fourth slab of
+ * a four-panel deck. An exposure that moves with the dataset is an exposure under which two screenshots of the
+ * same programme are not comparable — and it would move the addressed panel's brand blue with it. The deck's
+ * incidence is fixed by the light direction alone. Solving instead on the BOUND — the largest N·L an upright
+ * slab can take, `hypot(Lx, Lz)` = 0.839278 — gives 0.680691 and renders the deck 19 levels UNDER its albedo,
+ * which trades one direction of the same defect for the other; measured and rejected.
+ *
+ * kd = (1-F)(1-metalness), the key's specular lobe and the environment specular are all dropped, exactly as
+ * `lightExposure` drops them and for the same reason: against the full BRDF, transcribed and bisected, this
+ * estimate is 0.83% LOW — 0.887128 against 0.894565 — so the solve is conservative. A model that erred the
+ * other way would put the over-exposure back, and the sign of the approximation is the one to have.
+ */
+function lightExposure(): number {
+  const albedo = TH_LIGHT.ground;
+  const target = inverseToneMap(albedo);
+  /* THE RIG AT EXPOSURE 1, THROUGH THE SAME EXPRESSION THE FRAME USES — see `litRadiance`. */
+  const base = litRadiance({
+    key: TH_LIGHT.keyGain / TH_DARK.keyGain,
+    ambient: TH_LIGHT.ambientGain / TH_DARK.ambientGain,
+  });
+  /* `skyColour([0,1,0])` is the ZENITH stop: `smoothstep(0, 0.85, 1)` is 1. Read off `env/sky.ts` rather
+     than re-derived, because a floor samples the environment along its own normal and nothing else. */
+  const peak = (c: 0 | 1 | 2): number =>
+    albedo[c] * ((base.lightColour[c] * DECK_NDOTL) / Math.PI + LIGHT_SKY.zenith[c] * base.ambientGain);
+  return Math.min(target[0] / peak(0), target[1] / peak(1), target[2] / peak(2));
+}
+/** Computed once. `sceneTheme` returns a frozen record, so this cannot go stale within a page load. */
+const LIGHT_EXPOSURE = lightExposure();
+
+/**
+ * DARK IS UNCHANGED BY CONSTRUCTION, NOT BY INSPECTION. `exposure` is EXACTLY 1 on dark and multiplication by
+ * 1.0 is exact in IEEE 754, so `(5.2/5.2) * 1` is bit-for-bit what this file shipped. The dark rig is not
+ * re-derived, re-tuned or re-checked; it is the same expression with an exact identity in it.
+ */
+const rigFor = (th: SceneTheme) => {
+  const exposure = th.name === 'dark' ? 1 : LIGHT_EXPOSURE;
+  return {
+    key: (th.keyGain / TH_DARK.keyGain) * exposure,
+    ambient: (th.ambientGain / TH_DARK.ambientGain) * exposure,
+    /* NOT SCALED BY THE EXPOSURE. `shadowStrength` is a mix factor between lit and unlit, not a radiance;
+       multiplying it would darken the shadows as a side effect of an exposure solve about the floor. */
+    shadow: th.shadowStrength / TH_DARK.shadowStrength,
+    exposure,
+  };
+};
+
+/**
+ * ONE OBJECT TO THE BACKDROP AND TO THE LIT PASS. `env/sky.ts` is the same function for the drawn sky and for
+ * every reflection, so handing a themed sky to one and the default to the other makes a panel's sheen
+ * disagree with the room behind it. `undefined` on dark keeps that frame on `DEFAULT_SKY`, the path it
+ * shipped on and the only one of the two whose stops are in the units this field is read in.
+ */
+const skyFor = (th: SceneTheme) => (th.name === 'dark' ? undefined : LIGHT_SKY);
 
 /**
  * THE HUD KEEPS ITS DARK PLATE IN BOTH THEMES, AND THAT IS A MEASUREMENT REFUTING THE OBVIOUS MOVE.
@@ -306,18 +449,67 @@ const inQuad = (q: readonly { x: number; y: number }[], x: number, y: number): b
   return true;
 };
 
+/**
+ * The refusals that belong to the DECK rather than to the renderer, in one place because the setup effect and
+ * every later redraw have to make the identical judgement — a new deck arriving through the data effect below
+ * reaches `draw` without passing setup again.
+ */
+const deckRefusal = (deck: readonly DeckPanelDatum[]): string | null => {
+  /* A single panel has no ORDER to state, and the whole reading here is an ordering. */
+  if (deck.length < MIN_PANELS) return 'FEWER_THAN_TWO_PANELS_NO_DEPTH_ORDER';
+  /* REFUSES RATHER THAN DROPPING ONE. The arc has five measured positions; a sixth panel would have to be
+     invented, and silently omitting a panel from a view of the deck is the defect E1's own frame shipped once
+     and had to be corrected for. The grid carries all of them. */
+  if (deck.length > MAX_PANELS) return 'MORE_PANELS_THAN_THE_ARC_HAS_POSITIONS';
+  return null;
+};
+
+/**
+ * WHETHER TWO DECKS ARE THE SAME DECK, WHICH DECIDES WHETHER AN ADDRESSED PANEL SURVIVES THE UPDATE.
+ *
+ * `addressed` is an INDEX. Carrying it across a dataset change would silently address a different panel the
+ * moment the set is reordered or one is added, and the frame would state "ADDRESSING X" over Y's slab. So the
+ * index survives only when every id is unchanged and in the same place; anything else returns the deck to rest,
+ * which is the state that asserts nothing.
+ */
+const sameDeck = (a: readonly DeckPanelDatum[], b: readonly DeckPanelDatum[]): boolean =>
+  a.length === b.length && a.every((p, i) => p.id === b[i]!.id);
+
 export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckReliefGlProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [plan, setPlan] = useState<Plan | null>(null);
   /**
-   * THE REDRAW LIVES IN A REF, AND THAT IS WHAT KEEPS ONE GL CONTEXT.
+   * THE REDRAW LIVES IN A REF, AND THAT IS WHAT KEEPS ONE GL CONTEXT — FOR THE DATASET AS WELL AS FOR A CLICK.
    *
-   * Addressing a panel changes the frame, so it needs a redraw — and if the addressed index were React state in
-   * this effect's dependency list, every click would tear the renderer down and build a new context. §6 rule 7
-   * exists to stop exactly that. So the effect builds the scene once and publishes a draw function; a click calls
-   * it. The overlay is React state because it is DOM, and it is the only thing a click changes up here.
+   * Addressing a panel changes the frame, so it needs a redraw, and if the addressed index were React state in
+   * the setup effect's dependency list every click would tear the renderer down and build a new context. This
+   * file shipped that half of the fix and the other six renderers were generalised from it — but its ref carried
+   * only the ADDRESSED PANEL, so `panels` stayed in the setup effect and a new deck still rebuilt the context.
+   * `reliefRedrawRatchet.test.ts` carried it as the last PENDING admission in the repo for exactly that reason.
+   *
+   * MEASURED THROUGH THE SAME COUNTING WEBGL2 CONTEXT THAT FILE USES, driven from outside the repo so the
+   * numbers come from a run rather than from an estimate. One change to `panels` that keeps the deck's SIZE —
+   * four panels in, four out, new headlines, which is what a data update on this page IS — cost:
+   *
+   *   before   1 context · 8 programs · 16 shaders · 6 VAOs · 21 bufferData · 9 textures · 8 framebuffers ·
+   *            3,924 B — every byte of it identical to what was already on the GPU, i.e. the entire mount again
+   *   after    0 · 0 · 0 · 0 · 0 · 0 · 0 · 0 B, and `drawElements` still fires, so the frame is redrawn and not
+   *            merely skipped
+   *
+   * A change of SIZE (four panels to three) keeps the context, all eight programs, all nine textures and all
+   * eight framebuffers, and re-uploads 3 VAOs / 2,808 B — the slab geometry, which IS the shape.
+   *
+   * Now the ref carries BOTH, and the split is three-way rather than two — see THE SHAPE CACHE below, because
+   * one thing here really does depend on the data: the number of panels chooses the slot set, and the slot set
+   * is the geometry, the camera and the content layout. What it does NOT choose is the context, the four
+   * programs, the HDR target, the shadow map, the AO pair or the DOF buffer, and those are what a rebuild was
+   * throwing away on every update.
    */
-  const drawRef = useRef<((addressed: number | null) => void) | null>(null);
+  const drawRef = useRef<((deck: readonly DeckPanelDatum[], addressed: number | null) => void) | null>(null);
+  /* THE LATEST DECK, so a TIER change can redraw it: the setup effect re-runs when the probe resolves a lower
+     tier and the data effect below does NOT — its dependency did not change — so without this the rebuilt
+     context would have nothing to put on the canvas under a caption describing a deck. */
+  const panelsRef = useRef<readonly DeckPanelDatum[]>(panels);
   /* WHICH PANEL IS ADDRESSED, IN A REF AS WELL AS IN `plan`. The theme observer below is a closure created once
      per setup and cannot see React state, and it must redraw at the panel the reader has open rather than at
      rest — a theme toggle is not an interaction and must not undo one. */
@@ -328,6 +520,17 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
    */
   const tier = useResolvedQualityTier();
 
+  /*
+   * THE DATA EFFECT IS DECLARED FIRST, AND THE ORDER IS LOAD-BEARING. React runs effects in declaration order,
+   * so on MOUNT this one records the deck and returns — nothing is published yet — and the setup effect draws
+   * it. On a DATA CHANGE only this one re-runs, and the context is untouched.
+   */
+  useEffect(() => {
+    const previous = panelsRef.current;
+    panelsRef.current = panels;
+    drawRef.current?.(panels, sameDeck(previous, panels) ? addressedRef.current : null);
+  }, [panels]);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -336,12 +539,10 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
     setPlan(null);
     drawRef.current = null;
 
-    /* A single panel has no ORDER to state, and the whole reading here is an ordering. */
-    if (panels.length < MIN_PANELS) { onRefused('FEWER_THAN_TWO_PANELS_NO_DEPTH_ORDER'); return; }
-    /* REFUSES RATHER THAN DROPPING ONE. The arc has five measured positions; a sixth panel would have to be
-       invented, and silently omitting a panel from a view of the deck is the defect E1's own frame shipped once
-       and had to be corrected for. The grid carries all of them. */
-    if (panels.length > MAX_PANELS) { onRefused('MORE_PANELS_THAN_THE_ARC_HAS_POSITIONS'); return; }
+    /* READ THROUGH THE REF, NOT THE PROP. The deck's own refusals still come before the renderer exists, and
+       reading the prop here would put the dataset back in this effect's dependency list — the whole defect. */
+    const firstRefusal = deckRefusal(panelsRef.current);
+    if (firstRefusal !== null) { onRefused(firstRefusal); return; }
 
     /*
      * §6 RULE 5 BEFORE ANYTHING IS DRAWN. If the palette does not round-trip through this pipeline's tone map there
@@ -367,7 +568,22 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
 
     let dead = false;
     const disposers: (() => void)[] = [];
+    /*
+     * THE SHAPE'S OWN DISPOSER LIST, DECLARED HERE AND NOT BESIDE `buildShape`, because `releaseAll` below has to
+     * be able to call it. `refuse` fires from the resource block a few lines down — before any shape exists — so
+     * the list has to be initialised before `releaseAll` can ever run, or the refusal path throws in the temporal
+     * dead zone instead of refusing. See THE SHAPE CACHE for what goes in it.
+     */
+    const shape: { current: DeckShape | null; disposers: (() => void)[] } = { current: null, disposers: [] };
+    const releaseShape = (): void => {
+      for (const d of shape.disposers.reverse()) d();
+      shape.disposers = [];
+      shape.current = null;
+    };
     const releaseAll = (): void => {
+      /* THE SHAPE FIRST, because `refuse` is now reachable from a REDRAW as well as from the build — a late
+         deck below two panels, or a GL error after the blit — and at that point the slab meshes exist. */
+      releaseShape();
       for (const d of disposers.reverse()) d();
       /* THE STAGE LAST. It owns the context; releasing it before the resources built on it leaves every other
          delete* call operating on a dead context — silent rather than fatal, and it leaks on every remount. */
@@ -414,56 +630,12 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
     if (dof && 'kind' in dof) { refuse(dof.code); return; }
     if (dof) disposers.push(() => dof.dispose());
 
-    /*
-     * THE CAMERA IS FRAMED ON THE SLOTS ACTUALLY USED, and only on their x centroid.
-     *
-     * Eye height 1.67 m and 7.2° of downward tilt — a person standing on the deck, not a drone above it — are the
-     * harness's, and the elevation is what costs most if it drifts: past about 15° the deck plate becomes the
-     * subject and the panels read as objects on a table. What is NOT the harness's is the centring: this deck has
-     * four panels where the arc has five positions, so framing on x=0 would leave a half-frame of empty deck.
-     */
-    const slots = slotsFor(panels.length);
-    const cx = slots.reduce((s, p) => s + p.x, 0) / slots.length;
-    const view: Viewpoint = {
-      target: [cx, 0.62, 0.1], distance: 8.4, azimuthDeg: 1.5, elevationDeg: 7.2, fovDeg: 38,
-    };
-    const eye = eyeOf(view);
-    const FOV = view.fovDeg ?? 38;
-    /* FROM THE VIEWPOINT, NOT HAND-WRITTEN: these planes linearise the depth buffer for AO and DOF, and
-       linearising with planes the projection was not built from is silently wrong — the effect then describes a
-       slightly different scene, which reads as its strength being mistuned. */
-    const { near, far } = nearFarOf(view);
-    const vp = viewProjection(view, W / H);
-
-    /*
-     * PIXELS PER METRE IS DERIVED FROM THE CANVAS, NOT A CONSTANT — and this is a correction to the harness.
-     *
-     * `entry.ts` fixes 250 px/m because every capture is 1200×720. In the app the canvas is whatever the page is
-     * wide, and the homography SCALES the element onto the quad: a constant px/m makes the rendered type shrink on
-     * a narrow viewport and swell on a wide one, so the one thing that must not change with layout would. Solving
-     * for the screen scale at the target plane keeps a 26 px heading at about 26 px wherever the deck is drawn,
-     * and lets the projection do the foreshortening — which is what states the depth.
-     */
-    const pxPerMetre = (cssW / 2) / (Math.tan((FOV * Math.PI) / 360) * view.distance);
-
-    const deckGeo = plane(30, 1);
-    /* ONE GEOMETRY PER SLOT rather than one box scaled five ways. A non-uniform scale stops the normal matrix
-       being a rotation, so normals tilt off the surface and the lighting rotates as the panel stretches. Five
-       boxes are 60 triangles. */
-    const panelGeo = slots.map((s) => box(s.w, s.h, THICKNESS));
-
-    /* UPLOADED ONE AT A TIME, EACH REGISTERED FOR DISPOSAL BEFORE THE NEXT IS ATTEMPTED. Uploading all of them and
-       then checking means a failure on the last refuses while the earlier ones are still on the GPU with no
-       disposer recorded — a leak on the path that is hardest to reach and repeats on every toggle. */
-    const meshes: MeshBuffer[] = [];
-    for (const g of [deckGeo, ...panelGeo]) {
-      const m = uploadMesh(stage, g);
-      if ('kind' in m) { refuse(m.code); return; }
-      meshes.push(m);
-      disposers.push(() => m.dispose());
-    }
-    const deckMesh = meshes[0]!;
-    const panelMesh = meshes.slice(1);
+    /* THE DECK PLATE IS NOT DATA. It is 30 m of floor whatever stands on it, so it is uploaded once for the
+       life of this context and is not part of the shape below. */
+    const deckMeshOrRefusal = uploadMesh(stage, plane(30, 1));
+    if ('kind' in deckMeshOrRefusal) { refuse(deckMeshOrRefusal.code); return; }
+    const deckMesh = deckMeshOrRefusal;
+    disposers.push(() => deckMesh.dispose());
 
     /* See THE FRAME READS ITS OWN PIXELS in `draw`: sized by W and H, which do not change for this context, so
        one allocation serves every click rather than 6.45 MB of garbage per click. */
@@ -491,117 +663,212 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
       m[0]!, m[1]!, m[2]!, m[4]!, m[5]!, m[6]!, m[8]!, m[9]!, m[10]!,
     ]);
 
-    const placed = slots.map((s, i) => {
-      const yaw = Math.atan2(eye[0] - s.x, eye[2] - s.z) * FACE_FRACTION;
-      // Bases ON the deck. A floating panel has no contact shadow and no AO in the join, and those two cues are
-      // most of what makes a rendered object sit on a surface rather than hover over one.
-      const model = modelOf(s.x, s.h / 2, s.z, yaw);
-      return {
-        ...s, yaw, model, normalMat: normalOf(model), mesh: panelMesh[i]!,
-        distance: Math.hypot(s.x - eye[0], s.h / 2 - eye[1], s.z - eye[2]),
-      };
-    });
-
-    /* Nearest by MEASUREMENT, not by declaration order: the focus target has to follow the geometry, or a later
-       nudge to one z silently racks focus onto the wrong panel. */
-    const rank = rankSlots(slots, eye);
-    const depthRankOf = new Map<number, number>();
-    /* Farthest gets the LOWEST z-index, so a nearer panel's DOM paints over the one behind it. Paint order is a
-       z-index rather than an append order because DOM order is the ANNOUNCED order: appending far-to-near made the
-       harness's accessibility tree read the deck backwards, and it changed if the camera moved. */
-    [...rank].reverse().forEach((slotIdx, r) => depthRankOf.set(slotIdx, r));
-
     /*
-     * WHERE ON EACH SLAB THE CONTENT GOES — SEARCHED ONCE, BECAUSE IT DOES NOT DEPEND ON WHAT IS WRITTEN ON IT.
+     * ══ THE SHAPE CACHE — the third lifetime, and the reason "keep one context" is not enough here ══════
      *
-     * Centred content put two of the harness's panels straight into the refusal branch: two of each one's four
-     * corners landed behind the panel standing nearer, so both outer panels went dark and three of five workstreams
-     * carried nothing. The cheap fix is to loosen the occlusion test until they pass, which is a fix to the
-     * INSTRUMENT and ships text lying across the wrong surface. Each panel is occluded on ONE side — the side its
-     * nearer neighbour stands on — so a shift away from the occluder recovers the whole box without shrinking it.
+     * `slotsFor` picks the slot SET from the panel COUNT, and the slot set is one box geometry per slab, the
+     * camera's x centroid, the projection, every projected quad and the whole content-placement search. So a
+     * deck that gains a panel really does have to rebuild those; a deck whose HEADLINES changed — which is what
+     * a data update on this page IS — must rebuild nothing at all.
      *
-     * There is no depth buffer in the compositor and the canvas is one element, so a projected panel necessarily
-     * paints in front of ALL the geometry. Refusing to show occluded content is avoidance rather than a solution,
-     * and it is the honest one: content floating over the wrong surface does not look like a bug, it looks like
-     * content, and the reader attributes it to whatever it is lying on.
+     * Three lifetimes, two lists, exactly as `StormReliefGl` splits the same problem: `disposers` holds what the
+     * SIZE and the TIER own and is released once on unmount; `shape.disposers` holds the panel meshes, whose
+     * count and dimensions are the slot set's. A deck whose values change touches neither.
+     *
+     * KEYED ON THE COUNT AND NOT ON THE DECK, because the count is the only thing `slotsFor` reads. Keying on
+     * the ids would rebuild five box geometries every time a headline moved, which is the cost this exists to
+     * avoid wearing a cache's clothes.
      */
-    const faceQuad = (p: (typeof placed)[number]): { x: number; y: number }[] => {
-      const c = uprightPanelCorners(p.x, p.z, 0, p.w, p.h, p.yaw, THICKNESS / 2);
-      return [c.topLeft, c.topRight, c.bottomRight, c.bottomLeft].map((q) => {
-        const s = projectScreen(vp, q, cssW, cssH);
-        return { x: s.sx, y: s.sy };
-      });
-    };
-    const quads = placed.map(faceQuad);
+    interface DeckShape {
+      readonly count: number;
+      readonly view: Viewpoint;
+      readonly eye: readonly [number, number, number];
+      readonly near: number;
+      readonly far: number;
+      readonly vp: Float32Array;
+      readonly lightVP: Float32Array;
+      readonly placed: readonly {
+        readonly x: number; readonly z: number; readonly w: number; readonly h: number;
+        readonly yaw: number; readonly model: Float32Array; readonly normalMat: Float32Array;
+        readonly mesh: MeshBuffer; readonly distance: number;
+      }[];
+      readonly rank: readonly number[];
+      readonly depthRankOf: ReadonlyMap<number, number>;
+      readonly layout: readonly {
+        readonly slot: number;
+        readonly chosen: {
+          transform: string; ew: number; eh: number; screen: { x: number; y: number }[];
+        } | null;
+        readonly refusal: string | null;
+      }[];
+    }
+    /** Builds the slot-set-dependent half of the scene, or returns null having already refused. */
+    const buildShape = (count: number): DeckShape | null => {
+      /*
+       * THE CAMERA IS FRAMED ON THE SLOTS ACTUALLY USED, and only on their x centroid.
+       *
+       * Eye height 1.67 m and 7.2° of downward tilt — a person standing on the deck, not a drone above it — are
+       * the harness's, and the elevation is what costs most if it drifts: past about 15° the deck plate becomes
+       * the subject and the panels read as objects on a table. What is NOT the harness's is the centring: this
+       * deck has four panels where the arc has five positions, so framing on x=0 would leave a half-frame of
+       * empty deck.
+       */
+      const slots = slotsFor(count);
+      const cx = slots.reduce((s, p) => s + p.x, 0) / slots.length;
+      const view: Viewpoint = {
+        target: [cx, 0.62, 0.1], distance: 8.4, azimuthDeg: 1.5, elevationDeg: 7.2, fovDeg: 38,
+      };
+      const eye = eyeOf(view);
+      const FOV = view.fovDeg ?? 38;
+      /* FROM THE VIEWPOINT, NOT HAND-WRITTEN: these planes linearise the depth buffer for AO and DOF, and
+         linearising with planes the projection was not built from is silently wrong — the effect then describes
+         a slightly different scene, which reads as its strength being mistuned. */
+      const { near, far } = nearFarOf(view);
+      const vp = viewProjection(view, W / H);
 
-    const layout = placed.map((p, i) => {
-      /* THE PROJECTED CORNERS ARE KEPT, not just the homography string: the contrast read below needs a screen
-         BOX to sample the frame inside, and re-deriving one from the CSS transform would be a second expression
-         of the same projection — which is how a measurement ends up describing pixels the paint pass never
-         touched. */
-      let chosen: { transform: string; ew: number; eh: number; screen: { x: number; y: number }[] } | null = null;
-      let lastRefusal: string | null = null;
-      outer: for (const scale of SCALES) {
-        const cw = Math.max(0.2, (p.w - 2 * PAD_U) * scale);
-        const ch = Math.max(0.2, (p.h - 2 * PAD_V) * scale);
-        const ew = Math.round(cw * pxPerMetre), eh = Math.round(ch * pxPerMetre);
-        for (const shift of SHIFTS) {
-          /* Content overhanging the slab it is mounted on is a worse artefact than content that is occluded, so a
-             shift past the panel's own edge is not a candidate. */
-          if (Math.abs(shift) + cw / 2 > p.w / 2 - PAD_U * 0.5) continue;
-          const cs = Math.cos(p.yaw), ss = Math.sin(p.yaw);
-          const corners = uprightPanelCorners(
-            p.x + cs * shift, p.z - ss * shift, PAD_V, cw, ch, p.yaw, THICKNESS / 2 + 0.008,
-          );
-          const proj = projectQuad(vp, corners, cssW, cssH, ew, eh);
-          if (isQuadRefusal(proj)) { lastRefusal = proj.refusal; continue; }
-          /* Occluded by panels the MEASUREMENT says are nearer — not by panels that merely appear earlier. */
-          const covered = proj.screen.filter((c) => placed.some(
-            (o, j) => j !== i && o.distance < p.distance && inQuad(quads[j]!, c.x, c.y),
-          )).length;
-          if (covered === 0 && proj.signedArea > 0) {
-            chosen = {
-              transform: proj.transform, ew, eh,
-              screen: proj.screen.map((c) => ({ x: c.x, y: c.y })),
-            };
-            break outer;
-          }
-          if (proj.signedArea <= 0) lastRefusal = 'BACK_FACING';
-          else lastRefusal = 'OCCLUDED_BY_A_NEARER_PANEL';
-        }
+      /*
+       * PIXELS PER METRE IS DERIVED FROM THE CANVAS, NOT A CONSTANT — and this is a correction to the harness.
+       *
+       * `entry.ts` fixes 250 px/m because every capture is 1200×720. In the app the canvas is whatever the page
+       * is wide, and the homography SCALES the element onto the quad: a constant px/m makes the rendered type
+       * shrink on a narrow viewport and swell on a wide one, so the one thing that must not change with layout
+       * would. Solving for the screen scale at the target plane keeps a 26 px heading at about 26 px wherever
+       * the deck is drawn, and lets the projection do the foreshortening — which is what states the depth.
+       */
+      const pxPerMetre = (cssW / 2) / (Math.tan((FOV * Math.PI) / 360) * view.distance);
+
+      /* ONE GEOMETRY PER SLOT rather than one box scaled five ways. A non-uniform scale stops the normal matrix
+         being a rotation, so normals tilt off the surface and the lighting rotates as the panel stretches. Five
+         boxes are 60 triangles.
+
+         UPLOADED ONE AT A TIME, EACH REGISTERED FOR DISPOSAL BEFORE THE NEXT IS ATTEMPTED. Uploading all of them
+         and then checking means a failure on the last refuses while the earlier ones are still on the GPU with
+         no disposer recorded — a leak on the path that is hardest to reach and repeats on every toggle. */
+      const panelMesh: MeshBuffer[] = [];
+      for (const s of slots) {
+        const m = uploadMesh(stage, box(s.w, s.h, THICKNESS));
+        if ('kind' in m) { refuse(m.code); return null; }
+        panelMesh.push(m);
+        shape.disposers.push(() => m.dispose());
       }
-      return { slot: i, chosen, refusal: chosen ? null : (lastRefusal ?? 'NO_UNOCCLUDED_PLACEMENT') };
-    });
+
+      const placed = slots.map((s, i) => {
+        const yaw = Math.atan2(eye[0] - s.x, eye[2] - s.z) * FACE_FRACTION;
+        // Bases ON the deck. A floating panel has no contact shadow and no AO in the join, and those two cues are
+        // most of what makes a rendered object sit on a surface rather than hover over one.
+        const model = modelOf(s.x, s.h / 2, s.z, yaw);
+        return {
+          ...s, yaw, model, normalMat: normalOf(model), mesh: panelMesh[i]!,
+          distance: Math.hypot(s.x - eye[0], s.h / 2 - eye[1], s.z - eye[2]),
+        };
+      });
+
+      /* Nearest by MEASUREMENT, not by declaration order: the focus target has to follow the geometry, or a later
+         nudge to one z silently racks focus onto the wrong panel. */
+      const rank = rankSlots(slots, eye);
+      const depthRankOf = new Map<number, number>();
+      /* Farthest gets the LOWEST z-index, so a nearer panel's DOM paints over the one behind it. Paint order is a
+         z-index rather than an append order because DOM order is the ANNOUNCED order: appending far-to-near made
+         the harness's accessibility tree read the deck backwards, and it changed if the camera moved. */
+      [...rank].reverse().forEach((slotIdx, r) => depthRankOf.set(slotIdx, r));
+
+      /*
+       * WHERE ON EACH SLAB THE CONTENT GOES — SEARCHED WITH THE SHAPE, BECAUSE IT DOES NOT DEPEND ON WHAT IS
+       * WRITTEN ON IT. That is why this search sits in the shape builder and not in `draw`: a new headline
+       * arriving on the same deck re-uses this placement rather than re-running a 13 × 6 occlusion search.
+       *
+       * Centred content put two of the harness's panels straight into the refusal branch: two of each one's four
+       * corners landed behind the panel standing nearer, so both outer panels went dark and three of five
+       * workstreams carried nothing. The cheap fix is to loosen the occlusion test until they pass, which is a fix
+       * to the INSTRUMENT and ships text lying across the wrong surface. Each panel is occluded on ONE side — the
+       * side its nearer neighbour stands on — so a shift away from the occluder recovers the box without shrinking.
+       *
+       * There is no depth buffer in the compositor and the canvas is one element, so a projected panel necessarily
+       * paints in front of ALL the geometry. Refusing to show occluded content is avoidance rather than a solution,
+       * and it is the honest one: content floating over the wrong surface does not look like a bug, it looks like
+       * content, and the reader attributes it to whatever it is lying on.
+       */
+      const faceQuad = (p: (typeof placed)[number]): { x: number; y: number }[] => {
+        const c = uprightPanelCorners(p.x, p.z, 0, p.w, p.h, p.yaw, THICKNESS / 2);
+        return [c.topLeft, c.topRight, c.bottomRight, c.bottomLeft].map((q) => {
+          const s = projectScreen(vp, q, cssW, cssH);
+          return { x: s.sx, y: s.sy };
+        });
+      };
+      const quads = placed.map(faceQuad);
+
+      const layout = placed.map((p, i) => {
+        /* THE PROJECTED CORNERS ARE KEPT, not just the homography string: the contrast read below needs a screen
+           BOX to sample the frame inside, and re-deriving one from the CSS transform would be a second expression
+           of the same projection — which is how a measurement ends up describing pixels the paint pass never
+           touched. */
+        let chosen: { transform: string; ew: number; eh: number; screen: { x: number; y: number }[] } | null = null;
+        let lastRefusal: string | null = null;
+        outer: for (const scale of SCALES) {
+          const cw = Math.max(0.2, (p.w - 2 * PAD_U) * scale);
+          const ch = Math.max(0.2, (p.h - 2 * PAD_V) * scale);
+          const ew = Math.round(cw * pxPerMetre), eh = Math.round(ch * pxPerMetre);
+          for (const shift of SHIFTS) {
+            /* Content overhanging the slab it is mounted on is a worse artefact than content that is occluded, so
+               a shift past the panel's own edge is not a candidate. */
+            if (Math.abs(shift) + cw / 2 > p.w / 2 - PAD_U * 0.5) continue;
+            const cs = Math.cos(p.yaw), ss = Math.sin(p.yaw);
+            const corners = uprightPanelCorners(
+              p.x + cs * shift, p.z - ss * shift, PAD_V, cw, ch, p.yaw, THICKNESS / 2 + 0.008,
+            );
+            const proj = projectQuad(vp, corners, cssW, cssH, ew, eh);
+            if (isQuadRefusal(proj)) { lastRefusal = proj.refusal; continue; }
+            /* Occluded by panels the MEASUREMENT says are nearer — not by panels that merely appear earlier. */
+            const covered = proj.screen.filter((c) => placed.some(
+              (o, j) => j !== i && o.distance < p.distance && inQuad(quads[j]!, c.x, c.y),
+            )).length;
+            if (covered === 0 && proj.signedArea > 0) {
+              chosen = {
+                transform: proj.transform, ew, eh,
+                screen: proj.screen.map((c) => ({ x: c.x, y: c.y })),
+              };
+              break outer;
+            }
+            if (proj.signedArea <= 0) lastRefusal = 'BACK_FACING';
+            else lastRefusal = 'OCCLUDED_BY_A_NEARER_PANEL';
+          }
+        }
+        return { slot: i, chosen, refusal: chosen ? null : (lastRefusal ?? 'NO_UNOCCLUDED_PLACEMENT') };
+      });
+
+      /* BOUNDS SIZED TO THE SHADOWS, NOT TO THE GEOMETRY, and derived so they cannot go stale when the panel count
+         changes. Each cast shadow reaches a further ~1.13 × its panel height in +x and ~1.06 × in -z; a frustum
+         fitted to the panels alone clips every tail mid-deck, which reads as the deck being dirty. */
+      const maxH = Math.max(...slots.map((s) => s.h));
+      const sceneMin: [number, number, number] = [
+        Math.min(...slots.map((s) => s.x - s.w / 2)) - 0.8, 0,
+        Math.min(...slots.map((s) => s.z)) - 1.06 * maxH - 0.8,
+      ];
+      const sceneMax: [number, number, number] = [
+        Math.max(...slots.map((s) => s.x + s.w / 2)) + 1.13 * maxH, maxH + 0.2,
+        Math.max(...slots.map((s) => s.z)) + 0.8,
+      ];
+      const radius = boundsRadius(sceneMin, sceneMax);
+      const lightVP = lightViewProjection(
+        { direction: LIGHT_DIR, colour: [1, 1, 1], extent: radius * 1.15 },
+        boundsCentre(sceneMin, sceneMax), radius,
+      );
+
+      return { count, view, eye, near, far, vp, lightVP, placed, rank, depthRankOf, layout };
+    };
+
+    /** The shape for a deck, built only when the COUNT has changed. Null means it refused while building. */
+    const shapeFor = (count: number): DeckShape | null => {
+      if (shape.current?.count === count) return shape.current;
+      releaseShape();
+      shape.current = buildShape(count);
+      return shape.current;
+    };
 
     /* The circle of confusion a slab gets, in CSS pixels — one expression, so the GL lens and the DOM lens cannot
-       drift apart. */
+       drift apart. Depends on the canvas width and nothing the dataset chooses, so it is not part of the shape. */
     const cocOf = (d: number, focus: number): number =>
       Math.min(MAX_COC, Math.abs(1 / focus - 1 / d) * APERTURE) * cssW;
-
-    /*
-     * ONE KEY LIGHT, 33° ABOVE THE HORIZON AND TO THE LEFT. Steeper lands almost entirely on the 6 cm top edges and
-     * leaves the faces to the ambient sky, so the frame goes flat exactly where the information lives. The harness
-     * measured 38° first and dropped it: a shadow falling across the panel BEHIND is the one cue that states two
-     * panels are at different depths without the lens, and at 38° the reach stopped 15 cm short.
-     */
-    const lightDir: [number, number, number] = [0.62, -0.55, -0.58];
-    /* BOUNDS SIZED TO THE SHADOWS, NOT TO THE GEOMETRY, and derived so they cannot go stale when the panel count
-       changes. Each cast shadow reaches a further ~1.13 × its panel height in +x and ~1.06 × in -z; a frustum
-       fitted to the panels alone clips every tail mid-deck, which reads as the deck being dirty. */
-    const maxH = Math.max(...slots.map((s) => s.h));
-    const sceneMin: [number, number, number] = [
-      Math.min(...slots.map((s) => s.x - s.w / 2)) - 0.8, 0,
-      Math.min(...slots.map((s) => s.z)) - 1.06 * maxH - 0.8,
-    ];
-    const sceneMax: [number, number, number] = [
-      Math.max(...slots.map((s) => s.x + s.w / 2)) + 1.13 * maxH, maxH + 0.2,
-      Math.max(...slots.map((s) => s.z)) + 0.8,
-    ];
-    const radius = boundsRadius(sceneMin, sceneMax);
-    const lightVP = lightViewProjection(
-      { direction: lightDir, colour: [1, 1, 1], extent: radius * 1.15 },
-      boundsCentre(sceneMin, sceneMax), radius,
-    );
 
     /**
      * ONE FRAME PER CALL, AND NOTHING BETWEEN CALLS.
@@ -614,19 +881,25 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
     /* Which theme the frame on screen was drawn at — see `SurfaceReliefGl.tsx`, A THEME CHANGE IS A REDRAW. */
     let drawnTheme: ThemeName | null = null;
 
-    const draw = (addressed: number | null): void => {
+    const draw = (deck: readonly DeckPanelDatum[], addressed: number | null): void => {
       if (dead) return;
+      /* THE DECK'S OWN REFUSALS, ON EVERY FRAME AND NOT ONLY THE FIRST. A deck arriving through the data effect
+         has not passed the setup check, and one that fell below two panels must refuse rather than draw an
+         ordering of one thing. `refuse` disposes and hands the parent back its grid. */
+      const late = deckRefusal(deck);
+      if (late !== null) { refuse(late); return; }
+      const shaped = shapeFor(deck.length);
+      if (!shaped) return;
+      const { view, eye, near, far, vp, lightVP, placed, rank, depthRankOf, layout } = shaped;
+      const FOV = view.fovDeg ?? 38;
       /* READ PER FRAME, NOT CAPTURED AT SETUP — `ForgeBackdrop.tsx:120-127` records what the snapshot cost. */
       const th = sceneTheme(liveTheme());
       const rig = rigFor(th);
-      /* ONE OBJECT TO THE BACKDROP AND TO THE LIT PASS: `sky.ts` is the same function for the drawn sky and for
-         every reflection, so handing a themed sky to one and the default to the other makes a panel's sheen
-         disagree with the room behind it. `undefined` on dark keeps that frame on the path it shipped on. */
-      const sky = th.name === 'dark' ? undefined : {
-        zenith: th.skyZenith, horizon: th.skyHorizon, ground: th.ground,
-      };
+      const radiance = litRadiance(rig);
+      /* PRE-COMPENSATED ON LIGHT, `DEFAULT_SKY` ON DARK — see THE SKY WAS AUTHORED AS A DISPLAY COLOUR above. */
+      const sky = skyFor(th);
       addressedRef.current = addressed;
-      const order = addressOrder(panels.length, addressed);
+      const order = addressOrder(deck.length, addressed);
       /* Content index per depth rank: rank 0 (nearest) gets the addressed panel, then the deck's own order. */
       const panelAtSlot = new Map<number, number>();
       order.forEach((panelIdx, r) => panelAtSlot.set(rank[r]!, panelIdx));
@@ -636,17 +909,29 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
 
       const draws: LitDraw[] = [
         /*
-         * THE DECK IS BRIGHTER THAN THE NAVY PANELS STANDING ON IT, and that is the key light's doing rather than a
-         * number that wants tuning. The harness measured 32/36/48 on the lit deck against 26/32/50 on a panel
-         * face, and both obvious levers backfired — a rougher deck came out brighter, and a lower ambient gain
-         * brightened it further while draining the shadow interiors. A floor under a key 33° up has N·L = 0.54.
-         * Which is what a photograph of this room would do: dark panels as silhouettes against a lit floor.
+         * THE DECK AND THE SLABS SEPARATE IN BOTH THEMES, AND THE SIGN OF THE STEP FLIPS BETWEEN THEM.
+         *
+         * A sentence claiming "the deck is brighter than the navy panels standing on it" stood here, carried over
+         * from the harness's own frame (`32/36/48` lit deck against `26/32/50` on a panel face). Measured on the
+         * SHIPPED drawing buffer of this component, on `/command-deck`, it is false for the app's frame — read
+         * off the projected face quads and the off-slab floor:
+         *
+         *              deck                     slab faces, near to far        panel : deck
+         *   dark       rgb(26,28,32) luma 27.7  luma 32.2 · 35.3 · 38.7 · 41.4      1.121
+         *   light      rgb(231,235,242)  234.8  luma 191.0 · 197.8 · 205.9 · 208.5  1.368
+         *
+         * In dark the slabs are BRIGHTER than the floor, not darker: the deck albedo `#070B14` is the darker of
+         * the pair and the floor's N·L of 0.54 does not make up the difference. In light the order inverts with
+         * the albedos — `ground` 0.8438 over `structure` 0.6113 — and the step is 22% LARGER than dark's, which
+         * is why the light regression this file was sent to fix turned out not to live here at all. What the
+         * light theme lost was the SILHOUETTE against the sky; see THE SKY WAS AUTHORED AS A DISPLAY COLOUR.
+         *
+         * The one part of the old note that survived measurement is the warning about the obvious levers: a
+         * rougher deck came out brighter, and a lower ambient gain brightened it further while draining the
+         * shadow interiors.
          */
         { mesh: deckMesh, model: modelOf(0, 0, 0, 0), normalMat: N3,
-          /* SCENERY. The deck is the ground and the unaddressed panels are the structure standing on it, and at
-             the ALBEDO the deck is the darker of the two (#070B14 under #16203A) — the rendered deck is brighter
-             only because a floor under a key 33° up has N·L = 0.54, which is the note below. The light theme
-             mirrors the albedo order: `ground` 0.8438 over `structure` 0.6113. */
+          /* SCENERY. The deck is the ground and the unaddressed panels are the structure standing on it. */
           material: { baseColour: scenery(th, '#070B14', th.ground), roughness: 0.86, metalness: 0 } },
         ...placed.map((p, i): LitDraw => ({
           mesh: p.mesh, model: p.model, normalMat: p.normalMat,
@@ -689,9 +974,10 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
           /* The sky fill stays at full strength: it is the only light inside a shadow, and the cheaper
              alternative was measured — 0.72 with the key raised to compensate drained the shadow interiors by
              about a fifth. */
-          viewProj: vp, eye, lightDir,
-          lightColour: [3.5 * rig.key, 3.45 * rig.key, 3.3 * rig.key],
-          ambientGain: 1.05 * rig.ambient, sky, lightVP, shadow,
+          viewProj: vp, eye, lightDir: LIGHT_DIR,
+          /* THE SAME EXPRESSION THE EXPOSURE WAS SOLVED AGAINST — see `litRadiance`. */
+          lightColour: radiance.lightColour,
+          ambientGain: radiance.ambientGain, sky, lightVP, shadow,
           shadowStrength: 0.92 * rig.shadow, shadowTaps: Q.shadowTaps,
           /* THE BIGGEST SHADOW MAP IN THE APP, and the one the bias fix originally missed. Without a
              baseline the scale is 1.0, so the minimum tier renders a 512 map (shadowMapSizeFor of 1536)
@@ -815,7 +1101,10 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
 
       for (const panelIdx of order) {
         const slotIdx = [...panelAtSlot.entries()].find(([, v]) => v === panelIdx)![0];
-        const datum = panels[panelIdx]!;
+        /* FROM THE ARGUMENT, NEVER FROM THE PROP. The setup effect no longer re-runs on a data change, so the
+           `panels` this closure captured is whichever render created it — reading it here would draw the deck
+           the reader arrived with under a caption describing the one they have now. */
+        const datum = deck[panelIdx]!;
         const lay = layout[slotIdx]!;
         if (!lay.chosen) { withheld.push({ title: datum.title, reason: lay.refusal! }); continue; }
         const { transform, ew, eh } = lay.chosen;
@@ -904,7 +1193,7 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
         theme: th.name,
         worstTextRatio: measured.length === 0 ? null : Number(Math.min(...measured).toFixed(2)),
         addressedIndex: addressed,
-        addressedTitle: addressed === null ? null : (panels[addressed]?.title ?? null),
+        addressedTitle: addressed === null ? null : (deck[addressed]?.title ?? null),
         /* APPENDED IN READING ORDER — addressed first, then the deck's own sequence — which is the order the
            headings are announced in. Depth is expressed as a z-index instead, so the announced order does not
            change when the reader addresses a different panel. */
@@ -920,8 +1209,14 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
     };
 
     drawRef.current = draw;
-    /* AT REST: nothing addressed, the lens off, the depth order the deck's own. */
-    draw(null);
+    /* AT REST: nothing addressed, the lens off, the depth order the deck's own. Drawn from the REF rather than
+       from the prop — the prop is not in this effect's dependency list any more, so reading it here would
+       capture whichever render happened to create this closure. */
+    draw(panelsRef.current, null);
+    /* A REFUSAL ON THE FIRST DRAW HAS ALREADY DISPOSED EVERYTHING, so there is nothing to arm a redraw against.
+       Leaving `draw` published would hand a later data change a closure over a dead stage, which GL does not
+       throw on — it simply draws nothing, for ever. */
+    if (dead) { drawRef.current = null; return; }
 
     /*
      * CONTEXT LOSS RESOLVES TO THE GRID. Without this the canvas keeps its last frame for ever while the GPU has
@@ -942,7 +1237,7 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
      */
     const redrawForTheme = (): void => {
       if (liveTheme() === drawnTheme) return;
-      drawRef.current?.(addressedRef.current);
+      drawRef.current?.(panelsRef.current, addressedRef.current);
     };
     const themeWatch = new MutationObserver(redrawForTheme);
     themeWatch.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
@@ -957,19 +1252,21 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
          the original order and dispose forwards, with the stage killed before the resources built on it. */
       if (dead) return;
       dead = true;
+      releaseShape();
       for (const d of disposers.reverse()) d();
       stage.dispose();
     };
     /* `tier` IS A DEPENDENCY, and that is the rebuild mechanism: a resolved lower tier tears this context down
-       and builds the deck again at it. */
-  }, [panels, heightPx, onRefused, tier]);
+       and builds the deck again at it. `panels` IS NOT, and that is the defect this split closes: it was this
+       file's own PENDING entry in `reliefRedrawRatchet.test.ts`, the last one in the repo. */
+  }, [heightPx, onRefused, tier]);
 
   const address = (panelIndex: number): void => {
     const fn = drawRef.current;
     if (!fn) return;
     /* Addressing the panel already addressed returns the deck to rest, which is also what Escape does. A toggle
        that cannot be undone leaves the reader in a configuration they did not choose. */
-    fn(plan?.addressedIndex === panelIndex ? null : panelIndex);
+    fn(panelsRef.current, plan?.addressedIndex === panelIndex ? null : panelIndex);
   };
 
   return (

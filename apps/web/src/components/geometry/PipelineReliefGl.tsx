@@ -41,7 +41,7 @@ import {
   createLitRenderer, createTarget3D, createShadowMap, createAmbientOcclusion, createLineBatch,
   viewProjection, eyeOf, lightViewProjection, boundsCentre, boundsRadius,
   hexToLinear, mixLinear, assertBrandFidelity, IDENTITY, statusAlbedo,
-  TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
+  TONE_MAP_GLSL, SRGB_ENCODE_GLSL, skyIrradiance, inverseToneMap,
   qualitySettings, shadowMapSizeFor, pickQualityTier,
   type LitDraw, type MeshBuffer, type Viewpoint, type Linear,
 } from '@lcx/gl';
@@ -142,16 +142,51 @@ const FRESH_HEX = '#2C6BFF';
  * The role is `conditional` (--amber), NOT `blocked`. A stalled lead is a warning about staleness,
  * not a refusal, and picking `blocked` would assert a finding the data does not carry.
  *
- * AND IT MAKES A CLAIM BELOW TRUE FOR THE FIRST TIME. The comment at the ramp says colour "repeats
- * the height" so it survives "a glance or in greyscale". Measured, the old ramp's two ends were
- * 1.035 apart in Rec.709 luminance — FLAT in greyscale, so the sentence was false as shipped.
- * Binding the far end to `conditional` moves that to 1.25 in light and 2.02 in dark.
- *
  * `ABSENT_HEX` MOVES TOO, AND THAT IS NOT OPTIONAL. `#E0A94A` measures 0.7 degrees from --amber in
  * light and 3.0 in dark — it IS the conditional hue already. Retiring the stall colour to
  * `conditional` without moving this would put a WARNING and an ABSENCE 0.7 degrees apart in one
  * frame. Absence is not a status: it takes the absence grey the rest of the programme uses, which
  * `look/categorical.ts` files below the ramp's chroma floor by construction.
+ *
+ * ══ THE FAR END STILL FOLLOWS THE THEME, AND PINNING IT WAS TRIED AND MEASURED WORSE ═══════════
+ *
+ * `statusAlbedo(role, theme)` returns the PLATFORM's per-theme token: `conditional` is [230,160,40]
+ * in dark and [138,95,0] in light, so this ramp's far end IS a different albedo on each page.
+ * `look/semantic.ts` argues that is not a rule 5 breach — a scene defers to "the platform's own
+ * definition of a word" — and rests it on one stated guarantee: "illumination is (near enough)
+ * achromatic here and the tone map is per channel, so the hue survives... A red slab renders as a
+ * red slab."
+ *
+ * THAT GUARANTEE FAILS AT THIS RAMP'S FAR END, and this file's own fog is why. Measured off the
+ * drawing buffer with every lead forced to `settle = 1` and the strokes excluded so the population
+ * is the marks and nothing else (chroma floor 60, derived):
+ *
+ *                                     rendered mark          chroma   above the floor
+ *   dark   [230,160,40]               rgb(155,112,36)          118         0.71%
+ *   light  [138,95,0]   as shipped    rgb(162,147,137)          24         0.00%
+ *   light  [230,160,40] pinned        rgb(206,174,140)          65         0.44%
+ *
+ * A fully stalled lead renders at chroma 24 on a white page — a warm GREY, less saturated than
+ * `ABSENT_HEX`, so the surface's WARNING reads as its ABSENCE. The arithmetic is exact: `#8A5F00`
+ * is (0.2543, 0.1145, 0.0000) linear and its whole hue is that zero blue, while the haze mixes in
+ * 0.305 x (0.716, 0.784, 0.896) at the depth these marks sit at — the fog MANUFACTURES the channel
+ * the hue depended on being absent. `#E6A028` carries a red of 0.7915 and survives it.
+ *
+ * ── SO THE OBVIOUS FIX WAS BUILT, RUN, AND REVERTED ─────────────────────────────────
+ * Pinning the far end to `'dark'` on both pages is rule 5 by the letter and it cannot move dark by
+ * construction. Measured on the audit's own channel it made the LIGHT frame strictly worse on every
+ * row, because the fixture's leads sit at `settle` 0.07–0.36 and never reach the end that was fixed:
+ *
+ *                          p99.9 chroma   max   above floor   data:scenery
+ *   light, far end = theme        77       81       0.52%        1.59:1
+ *   light, far end pinned         59       59       0.00%        none measurable
+ *
+ * 59 is the STROKE ink; at 0.00% there is no mark population left at all. The cause is at the mix
+ * below and it is not the endpoint: a straight line in linear light from brand blue to an amber
+ * crosses the neutral axis, and WHERE it crosses depends on the endpoint — red equals blue at
+ * `settle` 0.79 for [138,95,0] and at 0.56 for [230,160,40]. Pinning moved the grey zone off the
+ * far end and onto the working range. Both endpoints are symptoms of one theme-independent defect,
+ * recorded at the mix itself, and neither can be fixed while the dark frame is held.
  */
 const ABSENT_HEX = '#6B7A99';
 const WITHHELD_HEX = '#5C6880';
@@ -272,11 +307,115 @@ const channelMatFor = (th: SceneTheme) => (
 /** The dark theme's record, held only as the denominator of the light rig's ratio — see `SurfaceReliefGl.tsx`,
     THE LIGHT RIG MOVES BY RATIO. Nothing reads a colour out of it. */
 const TH_DARK = sceneTheme('dark');
-const rigFor = (th: SceneTheme) => ({
-  key: th.keyGain / TH_DARK.keyGain,
-  ambient: th.ambientGain / TH_DARK.ambientGain,
-  shadow: th.shadowStrength / TH_DARK.shadowStrength,
-});
+
+/** The key's tint and the ambient base, hoisted out of the draw call so the exposure solve below is fed by
+    the SAME two numbers the renderer is handed. A solve against a transcription is not a solve. */
+const KEY_TINT: readonly [number, number, number] = [3.4, 3.3, 3.14];
+const AMBIENT_BASE = 0.44;
+
+/** The unit direction TO the key. `LIGHT_DIR` is the direction light TRAVELS, so this is its negation, and
+    the shipped vector is not unit length (|LIGHT_DIR| = 1.0025) — an unnormalised dot would report an N·L
+    the shader does not use. */
+const LIGHT_TO: readonly [number, number, number] = (() => {
+  const m = Math.hypot(LIGHT_DIR[0], LIGHT_DIR[1], LIGHT_DIR[2]);
+  return [-LIGHT_DIR[0] / m, -LIGHT_DIR[1] / m, -LIGHT_DIR[2] / m];
+})();
+
+/**
+ * ══ THE ABSOLUTE EXPOSURE, SOLVED — THE RATIO WAS NEVER THE PROBLEM ═════════════════════════════
+ *
+ * `rigFor` moved the light rig by RATIO and stopped there, which holds key-against-ambient exactly and says
+ * nothing about where the frame lands on the curve. Measured on the drawing buffer, that is where it landed:
+ *
+ *   · NOTHING IN THE LIGHT FRAME CLIPPED. 0.00% of channels at 255, p01..p99 = 134..219. A lit interior that
+ *     never reaches the top of the range is UNDER-exposed — it is spending about a fifth of the encode on
+ *     nothing — and it is the opposite sign of `ForgeBackdrop`'s defect, not a different defect.
+ *   · THE THEME'S OWN ORDERING CAME OUT INVERTED. `theme.ts` authors light `ground` at Rec.709 luminance
+ *     0.8438 and derives `fog` from `skyHorizon` at 0.7772, so the deck is authored ABOVE the haze. Rendered,
+ *     the nearest deck rows read luma 191.6 against a backdrop of 202.4 — the haze came out brighter than the
+ *     floor it is meant to dissolve, which is the ordering this file's own clear-colour note refuses.
+ *
+ * ── WHAT IS SOLVED FOR, AND WHY THIS SURFACE AND NOT THE FLOOR ──────────────────────
+ * `ForgeBackdrop.lightExposure` solves so its GROUND leaves the pipeline at the colour it was authored with,
+ * and takes `Math.min` across channels so the binding one decides. The same rule, extended across SURFACES
+ * because this scene has more than one: the exposure is the largest scalar at which no authored albedo
+ * renders ABOVE the value it was authored with. Solved per surface, the floor takes 1.8494 and the wall
+ * 1.4850 — `plate` is #FFFFFF, the scene's maximum albedo, and it also presents the larger N·L of the two
+ * (0.6185 against the floor's 0.3791), so THE WALL BINDS at 1.4850 and the floor stays a little under its
+ * hex. Taking the floor's number instead would put the wall through the clip, which is the failure being
+ * repaired — and it is not hypothetical: FORCING the exposure to 2.0567, the floor's blue channel, clips
+ * 11.54% of the light frame with p99 pinned at 255, measured on the real frame.
+ *
+ * ── AND THE EXPERIMENT THAT SENTENCE ORIGINALLY DESCRIBED DOES NOT WORK ─────────────
+ * It used to read "replacing this `Math.min` with `Math.max` solves 2.0567". A skeptic performed
+ * exactly that substitution and the solve returned **1.0000**, not 2.0567, so the frame came back
+ * byte-identical to the pre-fix baseline rather than going red.
+ *
+ * The reason is two lines below: `out` is initialised to `Infinity`, so `Math.max(Infinity, x)` is
+ * `Infinity`, and the refusal guard's `Number.isFinite(out) && out > 0 ? out : 1` converts that
+ * straight to 1. THE GUARD SWALLOWS THE MUTATION. Reaching 2.0567 needs the initialiser changed too,
+ * which the original claim never mentioned.
+ *
+ * The conclusion was right and the experiment offered for it was not, which is the worse of the two
+ * errors: a reader who ran the stated mutation would have seen it pass and concluded the `Math.min`
+ * was decorative. Corrected to name what was actually measured — the value forced directly — because
+ * a comment describing an experiment nobody can reproduce is exactly the failure mode this file's
+ * own doctrine calls out.
+ *
+ * ── WHAT THE MODEL DROPS, AND THE SIGN OF EVERY OMISSION ────────────────────────────
+ * kd = (1-F)(1-metalness), the key's specular lobe, the shadow term, and the fog. `ForgeBackdrop` records
+ * that the first two nearly cancel at 1.04%; the last two can only REDUCE a surface's radiance here — a
+ * shadowed fragment is darker, and the fog colour (0.716, 0.784, 0.896) sits well below a lit white wall, so
+ * mixing toward it pulls the peak down. Every omission therefore makes the solved exposure conservative,
+ * which is the only direction that is safe: an over-estimate puts the clip back.
+ *
+ * MEASURED AGAINST THAT MODEL, and this is the check the model cannot perform on itself: swept on the real
+ * frame, clipping is 0.00% at 1.72 and 5.90% at 1.80, so the true onset is ~1.75 and the solved value has
+ * about 18% of margin — the sign the paragraph above predicts.
+ *
+ * DARK IS UNCHANGED BY CONSTRUCTION. `exposure` is the literal 1 there, and both ratios are 1 because their
+ * numerator and denominator are the same record — so the two arguments the renderer receives are the same
+ * expressions, not merely the same values.
+ */
+const lightExposure = (th: SceneTheme): number => {
+  const key = th.keyGain / TH_DARK.keyGain;
+  const ambient = th.ambientGain / TH_DARK.ambientGain;
+  const sky = { zenith: th.skyZenith, horizon: th.skyHorizon, ground: th.ground };
+  /* The floor and the walls, which are the two `scenery()` albedos this scene hands the lit pass over a large
+     area. The gate is deliberately absent: at metalness 0.20 its radiance is dominated by a specular
+     reflection of the sky that a Lambertian estimate does not model, and it is the smallest of the three —
+     so it is left to the measurement above rather than guessed at here. */
+  const surfaces: readonly { readonly albedo: Linear; readonly n: readonly [number, number, number] }[] = [
+    { albedo: th.ground, n: [0, 1, 0] },
+    { albedo: th.plate, n: [1, 0, 0] },
+  ];
+  let out = Infinity;
+  for (const s of surfaces) {
+    /* ABSOLUTE, because both walls are drawn: whichever way the key points, one of them presents this N·L. */
+    const ndl = Math.abs(s.n[0] * LIGHT_TO[0] + s.n[1] * LIGHT_TO[1] + s.n[2] * LIGHT_TO[2]);
+    const irr = skyIrradiance(s.n as [number, number, number], sky);
+    const target = inverseToneMap(s.albedo);
+    for (const c of [0, 1, 2] as const) {
+      const peak = s.albedo[c] * ((KEY_TINT[c] * key * ndl) / Math.PI + irr[c] * AMBIENT_BASE * ambient);
+      if (peak > 0) out = Math.min(out, target[c] / peak);
+    }
+  }
+  /* A theme whose albedos are all black would divide by nothing and hand the renderer Infinity. Refused
+     back to 1 rather than propagated: an unsolvable exposure must leave the rig exactly where it was. */
+  return Number.isFinite(out) && out > 0 ? out : 1;
+};
+
+const rigFor = (th: SceneTheme) => {
+  const exposure = th.name === 'dark' ? 1 : lightExposure(th);
+  return {
+    /* THE RATIO STILL COMES FROM THE THEME AND THE EXPOSURE MULTIPLIES BOTH TERMS, so key-against-ambient is
+       untouched — the only thing that moved is where the pair sits on the curve. */
+    key: (th.keyGain / TH_DARK.keyGain) * exposure,
+    ambient: (th.ambientGain / TH_DARK.ambientGain) * exposure,
+    shadow: th.shadowStrength / TH_DARK.shadowStrength,
+    exposure,
+  };
+};
 
 /**
  * The three marks on the movement axis. `0d` is the rail, `45d+` is deck height.
@@ -521,6 +660,7 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
      *
      * ALL THREE ARE SHARED, UNIT-SIZED MESHES. That is what makes this function cheap enough to be the whole
      * response to a data change: it allocates nothing on the GPU, it only decides where the shapes go.
+     *
      */
     const leadDraws = (c: Channel, th: SceneTheme): LitDraw[] | { refusal: string } => {
       const values = c.deals.map((d) => d.valueUsd).filter((v): v is number => v !== null);
@@ -570,9 +710,33 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
             material: { baseColour: hexToLinear(ABSENT_HEX), roughness: 0.44, metalness: 0.10 },
           });
         } else {
-          /* Colour REPEATS the height, deliberately. A single-channel encoding of the thing this environment
-             exists to show fails for anyone reading at a glance or in greyscale, and the redundancy costs a
-             channel that has nothing else to carry. */
+          /*
+           * Colour REPEATS the height, deliberately: a single-channel encoding of the thing this environment
+           * exists to show fails for anyone reading at a glance, and the redundancy costs a channel that has
+           * nothing else to carry.
+           *
+           * ── WHAT THAT REDUNDANCY DOES NOT SURVIVE, MEASURED AND NOT FIXED HERE ──────────────
+           * A STRAIGHT LINE IN LINEAR LIGHT BETWEEN TWO OPPOSING HUES PASSES THROUGH GREY, and this one
+           * does. Forcing every lead to a fixed `settle` and reading the drawing buffer back (marks only,
+           * derived chroma floor 60):
+           *
+           *                        settle 0      settle 0.6      settle 1
+           *   dark   max chroma        134            31            119
+           *          above floor      0.83%         0.00%          0.71%
+           *   light  max chroma        110            41             38
+           *          above floor      0.85%         0.00%          0.00%
+           *
+           * `pipelineChannel.ts:45` puts `STALL_ONSET` at 0.6 x `STALL_DAYS`, so settle 0.6 is the exact
+           * point at which the page's own caption starts calling a lead stalled — and it is where the ramp
+           * has NO hue left, on BOTH pages: not one pixel of either frame clears the floor there. Solved
+           * from the albedos rather than read off the captures, red equals blue at settle 0.7932 for
+           * [138,95,0] and 0.5587 for [230,160,40], and the measured collapse straddles both.
+           *
+           * IT IS RECORDED RATHER THAN FIXED because it is not a light-theme defect: the collapse is the
+           * same in dark, so the path this mix takes cannot be changed without moving the dark frame, and
+           * this pass is bounded by leaving dark untouched. The fix is a ramp that travels around the
+           * neutral axis rather than through it, and it belongs to a change that owns both themes.
+           */
           const col = mixLinear(hexToLinear(FRESH_HEX), statusAlbedo('conditional', th.name), p.settle ?? 0);
           out.push({
             mesh: dealMesh!, model: modelAt(p.x, p.centreY, p.z, p.edge), normalMat: N3,
@@ -641,8 +805,8 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
       };
       lit.draw({
         viewProj: vp, eye, lightDir: LIGHT_DIR,
-        lightColour: [3.4 * rig.key, 3.3 * rig.key, 3.14 * rig.key],
-        ambientGain: 0.44 * rig.ambient, sky, lightVP, shadow,
+        lightColour: [KEY_TINT[0] * rig.key, KEY_TINT[1] * rig.key, KEY_TINT[2] * rig.key],
+        ambientGain: AMBIENT_BASE * rig.ambient, sky, lightVP, shadow,
         shadowStrength: 0.92 * rig.shadow,
         shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
         ao: ao ? ao.texture : null, screenSize: [W, H],
@@ -737,6 +901,10 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
       drawnTheme = th.name;
       /* STAMPED, because `env/quality.ts` is explicit that a tier which cannot be reported cannot be trusted. */
       canvas.dataset.qualityTier = tier;
+      /* AND THE SOLVED EXPOSURE, for the same reason. It is a number nothing in the frame announces, its
+         whole justification is a measurement, and an audit that cannot read it back has to take the solve on
+         trust. Four decimals: the solve is a ratio of continuous quantities, not a chosen constant. */
+      canvas.dataset.lightExposure = rigFor(th).exposure.toFixed(4);
 
       const err = gl.getError();
       if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return undefined; }

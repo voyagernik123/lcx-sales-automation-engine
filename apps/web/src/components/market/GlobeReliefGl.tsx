@@ -59,7 +59,8 @@ import {
   hexToLinear, assertBrandFidelity, IDENTITY,
   TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
   qualitySettings, shadowMapSizeFor, skyIrradiance, luminance,
-  type LitDraw, type Viewpoint, type MeshBuffer,
+  precompensate, isPrecompRefusal,
+  type LitDraw, type Viewpoint, type MeshBuffer, type CompositeSite,
 } from '@lcx/gl';
 /* A SUB-PATH IMPORT, NOT THE BARREL — `docs/3d/w2/SUBPATH_COST.md`; `SurfaceReliefGl.tsx` carries the reason. */
 import { sceneTheme, liveTheme, type SceneTheme, type ThemeName } from '@lcx/gl/look/theme.js';
@@ -123,6 +124,8 @@ const LABEL_MAX_PX = 260;
 
 /** The dark theme's record, held as the reference the light sky's irradiance is divided against. */
 const TH_DARK = sceneTheme('dark');
+/** The light theme's record. Its `plate` is what the sky's exposure solve below is pinned to. */
+const TH_LIGHT = sceneTheme('light');
 
 /**
  * THE TWO RUNS OF TYPE THAT SIT ON THE RENDERED SKY WITH NO PLATE UNDER THEM, AND THEREFORE MUST THEME.
@@ -436,13 +439,74 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
      * THE PLATE COMES FROM THE THEME NOW, AND IT IS THE ONLY SCENERY ON THIS FRAME.
      *
      * `sceneTheme('dark').plate` IS #0E1628 — the literal this file already had — so the dark sky is unchanged
-     * byte for byte and the light sky becomes the page's own #FFFFFF card. That single substitution is the whole
-     * theme swap here, because a globe has no floor, no plinth and no walls: the sky IS the background.
+     * byte for byte, because a globe has no floor, no plinth and no walls: the sky IS the background.
+     *
+     * ══ AND THE LIGHT SKY IS NOT "THE PAGE'S OWN #FFFFFF CARD". IT NEVER WAS. MEASURED 2026-08-15 ══
+     *
+     * That is what this comment used to claim, and reading back the buffer this file's own present shader
+     * wrote (`APP_SWEEP_THEME_ONLY=1 node scripts/3d-audit-app.mjs`) refutes it. `lcxToneMap` is
+     * `c/(1+0.4c)`, so a sky written at the light plate's linear 1.0 leaves the pipeline at 0.714 — sRGB
+     * **221, not 255** — and the three multipliers below put the buffer corners at **150 and 239 against a
+     * card at 255**. The figure sat in a grey box on a white page: worst sky-to-card contrast **2.96:1 in
+     * light against 1.12:1 in dark**.
+     *
+     * ══ AND THE SAME GRADIENT IS WHAT KILLED THE LIMB, WHICH IS THE REAL DEFECT ══
+     *
+     * The shell's ambient radiance IS held invariant by `ambientScaleFor` below, so its own pixels are the
+     * same in both themes — measured 163,206,254 in dark against 163,206,252 in light. What moved is the
+     * GROUND behind it. A shell at rendered luminance 0.585 under a sky sweeping 0.305 → 0.863 has a
+     * CROSSING, and at the angles where the sky passes through the shell's own luminance the limb vanishes:
+     * profiled over the 88 angles where the Fresnel is lit, shell-to-sky contrast fell from a median of
+     * **9.245:1 in dark to 1.418:1 in light**, under the 1.5:1 at which two populations stop reading as two.
+     * This file's header called that cost "reads less against white". It was a disappearance.
+     *
+     * THE SHELL'S COLOUR IS NOT AVAILABLE AS THE LEVER. `ATMOS_MAT` is #7FB2FF, which is `brandBright` — a
+     * `BRAND_HEX` key that the scenery/data split classifies as DATA, because no `SceneTheme` field carries
+     * that name. §6 rule 5 forbids retinting a data colour per theme, and changing it in BOTH themes would
+     * move dark. So the lever is the SKY, which is scenery (`plate` IS a `SceneTheme` field), and it is an
+     * EXPOSURE SOLVE rather than a new colour — the E8 `ForgeBackdrop` move: hold what the theme owns, solve
+     * the absolute value so the ground leaves the pipeline at the colour it was authored with.
+     *
+     * FLAT, AND FORCED RATHER THAN CHOSEN. Every stop below the clip point renders darker than the card, so
+     * any surviving gradient re-opens the seam AND drops back through the shell — a light ground stop at 1.35
+     * computes to 1.459:1 for the shell, under the floor again. The one cost is the one this file already
+     * names, that a constant environment gives a dielectric less to catch, and it is bounded: the hub is the
+     * only metal on this frame and its contrast against its own ground moved 6.46:1 → 5.47:1. The pins did
+     * not move: 2.359:1 → 2.351:1.
+     *
+     * MEASURED AFTER: the light sky leaves the pipeline at 255,255,255 — the card, finally — the seam is
+     * 1.00:1, and the shell recovers to a median **2.043:1**, clear of the floor.
      */
+    /*
+     * THE SITE, DECLARED RATHER THAN ASSUMED, because `precompensate` is exact only where its three costs do
+     * not apply and it refuses rather than guessing. Every field is read off the source:
+     *   · `dstFactor: 'none'`  — `env/sky.ts:141` calls `gl.disable(gl.BLEND)`; the backdrop replaces outright,
+     *                            so nothing accumulates and the `ACCUMULATES` refusal cannot bite.
+     *   · `plate: [0,0,0]`     — `PRESENT_FRAG` above is `lcxEncode(lcxToneMap(scene))`. There is no `uPlate`
+     *                            term on this surface at all, which is what cost 2 requires.
+     *   · `bloomGain: 0`       — this surface builds no bright pass, so cost 3 cannot reach the write.
+     *   · `shaderScale: 1`     — `env/sky.ts` writes `skyColour(dir)` with no gain, and with all three stops
+     *                            equal that blend returns the stop exactly for every direction.
+     */
+    const LIGHT_SKY_SITE: CompositeSite = {
+      dstFactor: 'none', plate: [0, 0, 0], bloomGain: 0, threshold: [0, 0], shaderScale: 1,
+    };
+    /* Solved ONCE, not per frame: a refusal is a fact about this file's compositing, not about a frame, and
+       discovering it inside `draw` would mean refusing a surface that had already drawn. */
+    const lightSkyOut = precompensate(TH_LIGHT.plate, LIGHT_SKY_SITE);
+    if (isPrecompRefusal(lightSkyOut)) { refuse(`SKY_PRECOMP_${lightSkyOut.code}`); return; }
+    const LIGHT_SKY: [number, number, number] = [lightSkyOut[0], lightSkyOut[1], lightSkyOut[2]];
+
     const skyFor = (th: SceneTheme) => {
-      const k = (m: number): [number, number, number] =>
-        [th.plate[0] * m, th.plate[1] * m, th.plate[2] * m];
-      return { zenith: k(0.55), horizon: k(1.6), ground: k(0.35) };
+      /* DARK IS THE UNTOUCHED BRANCH, and it returns FIRST so that is visible at a glance: the same three
+         literals over the same plate this file has always had. Dark is byte-identical by construction rather
+         than by inspection — and verified anyway, SHA-256 unchanged and a per-pixel diff of max |Δ| = 0. */
+      if (th.name === 'dark') {
+        const k = (m: number): [number, number, number] =>
+          [th.plate[0] * m, th.plate[1] * m, th.plate[2] * m];
+        return { zenith: k(0.55), horizon: k(1.6), ground: k(0.35) };
+      }
+      return { zenith: LIGHT_SKY, horizon: LIGHT_SKY, ground: LIGHT_SKY };
     };
 
     /* Roughness 0.58 rather than 0.42: at 0.42 the key leaves a broad bright blob on the daylit hemisphere
@@ -523,24 +587,37 @@ export default function GlobeReliefGl({ points, heightPx, onRefused }: GlobeReli
      * make a pin read across the night side is to draw it in its own pass at a gain that puts brand blue near
      * the top of its channel. That gain is meaningless without the irradiance it multiplies.
      *
-     * Measured with the engine's own `skyIrradiance` at the up normal, for the sky built above:
+     * Measured by running the engine's own `skyIrradiance` at the up normal over the sky built above, for the
+     * sky this file ACTUALLY passes now — the light row moved when the exposure was solved, so it is restated
+     * rather than left describing the previous stops:
      *   dark  plate #0E1628 → [0.00242, 0.00441, 0.01167]   luminance 0.004512
-     *   light plate #FFFFFF → [0.55000, 0.55000, 0.55000]   luminance 0.550000     — 122x brighter
+     *   light plate #FFFFFF → [1.66667, 1.66667, 1.66667]   luminance 1.666667     — 369.4x brighter
      *
-     * So MARKER_AMBIENT 120 carried across unchanged gives the pins 120 x 0.55 of blue radiance: every marker,
-     * every corridor and the hub clip to flat white and the brand hue is gone. Dividing by the same 122x holds
+     * So MARKER_AMBIENT 120 carried across unchanged gives the pins 120 x 1.667 of blue radiance: every marker,
+     * every corridor and the hub clip to flat white and the brand hue is gone. Dividing by the same 369.4x holds
      * each pass's ambient RADIANCE invariant, which is exactly what the three constants were chosen to fix:
-     *   dark   gain 120     → radiance [0.007, 0.078, 1.400] → #157BF3 shown
-     *   light  gain 0.984   → radiance [0.014, 0.080, 0.541] → #1F4EB2 shown, 3.6:1 against the white sky
+     *   dark   gain 120     → radiance [0.007, 0.078, 1.400] → #154EF3 shown
+     *   light  gain 0.3249  → radiance [0.014, 0.080, 0.541] → #1F4EB2 shown
      *
-     * AND IT IS WHY THE PLANET, THE LIMB, THE HUB AND THE PINS KEEP THEIR OWN COLOURS. Once the ambient radiance
-     * is invariant, the lit sphere is identical in both themes and only the background moves — a dark navy earth
-     * against a white studio is a strong silhouette, so nothing dissolves and there is nothing for a swap to fix.
+     * THE LIGHT RADIANCE ROW IS UNCHANGED BY THE EXPOSURE SOLVE, and that is the point of dividing rather than
+     * a coincidence. The gain fell 0.9845 → 0.3249 by exactly the factor the irradiance rose, 0.55 → 1.66667,
+     * so `gain x irradiance` is invariant and the light irradiance is neutral in both cases — the product is the
+     * same [0.014, 0.080, 0.541] to three places. PREDICTED, THEN MEASURED: the EU pin's contrast against its
+     * own local ground moved 2.359:1 → 2.351:1 across the change.
+     *
+     * (`#154EF3` is what running `toneMapComposite` + `linearToSrgb` on that dark radiance returns. This line
+     * read `#157BF3` and no run produces it; the radiance triple beside it was right.)
+     *
+     * AND IT IS WHY THE PLANET, THE HUB AND THE PINS KEEP THEIR OWN COLOURS — but "the lit sphere is identical
+     * in both themes" is what this said, and a per-pixel diff of the two drawing buffers refutes it: inside the
+     * earth's silhouette the mean |Δ| is 3.24/255 with a max of 66, because `skyIrradiance` is normalised on
+     * LUMINANCE while the two skies differ in CHROMATICITY, and the hub is metalness 0.9 and mirrors whichever
+     * one it is under (its chroma reads 65 in dark and 29 in light). What IS invariant is the reading: the hub's
+     * contrast against its own ground is 6.34:1 dark / 6.46:1 light, and the pins' 2.32:1 / 2.36:1.
      * `ForgeBackdrop` moves its disc from #8FA3C4 to #5E6C85 precisely because that object WOULD dissolve into
-     * its bright studio; the test is whether the subject disappears, not whether the page changed. The one real
-     * cost is the atmosphere shell, which is a grazing-angle Fresnel and reads less against white — and this
-     * file's own header already records that the shell "carries no data" and is there so the globe does not read
-     * as a billiard ball.
+     * its bright studio; the test is whether the subject disappears, not whether the page changed. The shell was
+     * the one thing here that DID disappear, and the sky's exposure solve above is what answers it — its own
+     * colour is a data hex and was never available as a lever.
      */
     const ambientScaleFor = (th: SceneTheme): number => {
       const up: readonly [number, number, number] = [0, 1, 0];

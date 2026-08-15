@@ -39,6 +39,55 @@
  * corridor lit by a daylight sky becomes a glowing tunnel whose deepest, most fogged region is its BRIGHTEST —
  * the exact inverse of the reading. It cost the harness a whole revision. No sky backdrop is allocated, the
  * clear colour IS the fog colour, and the far end of the corridor is capped.
+ *
+ * ══ THE RECORD IS NOT A LIT OBJECT, AND THAT WAS THE DEFECT ═══════════════════════════════════════════
+ *
+ * `APP_SWEEP_THEME_ONLY=1 node scripts/3d-audit-app.mjs` measured this surface's drawing buffer against the
+ * data-chroma floor of 60 it DERIVES from the palette (the most saturated scenery colour anywhere in either
+ * theme, 52, plus 8). E6 cleared it in NEITHER theme: max chroma 48 in dark and 22 in light, 0.00% of pixels
+ * above the floor on both. So the marks were not merely worse on a white page — they were not separable from
+ * the scenery on ANY page, which is a stronger failure than the light-theme one and it is the one below.
+ *
+ * WHY, MEASURED RATHER THAN GUESSED. The corridor has a CEILING (`ceilMesh`, spanning its whole length), and
+ * the key light comes from above at `lightDir` y = −0.42. Every record slab is therefore inside the ceiling's
+ * shadow, so the key reaches it at `1 − shadowStrength`: 0.06 in dark and 0.35 in light. What actually lights a
+ * record is the AMBIENT term — the analytic sky through `ambientGain` — and that is a near-black interior in
+ * dark (so the mark is too DIM for 8-bit chroma to survive) and a near-white studio in light (so the mark is
+ * washed toward white before the fog has even started). The fog then mixes it the rest of the way: in light,
+ * toward #DCE5F3.
+ *
+ * AND THE SHADING WAS NOT BUYING ANYTHING. The argument for lighting a mark is that its GEOMETRY carries a
+ * measurement. This one does not: `box(REC_W, REC_H, REC_T)` is ONE mesh shared by every record on the page,
+ * REC_H and REC_T are module constants and REC_W is a property of the PAGE (the longest line anywhere on it),
+ * so no per-record fact is in the slab's shape at all. The only per-record facts are POSITION — z is time, the
+ * tier is the density stack, the wall is alternation — and the VERDICT, which is colour. Shading a constant
+ * shape by its orientation therefore made colour-to-category MANY-TO-ONE for nothing: measured on this
+ * geometry, the same ALLOWED albedo renders at N·L 0.71 on the right wall and 0.11 on the left, so two records
+ * with the same verdict are two different colours and a near BLOCKED can match a far ALLOWED. Unlit is
+ * correctness here, not laziness.
+ *
+ * ── SO THE RECORD IS A CARD WITH A VERDICT STRIPE, AND THE TWO HALVES ARE DIFFERENT KINDS OF COLOUR ──
+ *
+ * A record slab has two jobs that were fighting each other, and one box painted one colour cannot do both:
+ *
+ *   · it is the GROUND FOR FOUR LINES OF DOM TYPE, which have to clear WCAG AA against it. That is exactly
+ *     `SceneTheme.plate`'s stated role — "panel and card fills behind projected DOM text; must clear contrast
+ *     against that text" — and it is SCENERY, so it moves with the theme by design.
+ *   · it carries the VERDICT, which is DATA, and a data colour may not be retinted per theme.
+ *
+ * Painting the whole face the verdict colour makes the type unreadable — a saturated mid-luminance blue is the
+ * worst possible ground, because neither white nor ink clears 4.5:1 against it at the element opacities this
+ * frame's fog law hands out. Painting the whole face a plate deletes the verdict. So the face is SPLIT in the
+ * shader by the model's own local Y: the bottom `BAND_FRAC` is the verdict at full chroma, the rest is the
+ * theme's plate, and the type never sits on the stripe. One draw call, no extra geometry, and the split is
+ * exact because it is a comparison against a vertex coordinate rather than a texture.
+ *
+ * ── THE ATMOSPHERE IS THE SAME BYTES, NOT A COPY OF THEM ────────────────────────────
+ * The unlit pass still has to fog, or a record would float in front of a corridor that recedes. Re-typing the
+ * height-fog block would be a second implementation free to drift from `env/lit.ts`'s, and the two disagreeing
+ * is invisible — it looks like a lighting choice. So `FOG_GLSL` is SLICED OUT OF THE IMPORTED `LIT_FRAG` at
+ * module load and spliced into this shader, and the surface REFUSES with `FOG_SOURCE_UNREADABLE` if the slice
+ * markers are not found exactly once. The corridor and the marks cannot fog differently; they share the source.
  */
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
@@ -46,7 +95,8 @@ import {
   createAmbientOcclusion, projectQuad, isQuadRefusal, uprightPanelCorners, projectScreen,
   viewProjection, eyeOf, nearFarOf, lightViewProjection, boundsCentre, boundsRadius,
   hexToLinear, assertBrandFidelity, IDENTITY, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, statusAlbedo, statusHex,
-  qualitySettings, shadowMapSizeFor, pickQualityTier,
+  qualitySettings, shadowMapSizeFor, pickQualityTier, LIT_FRAG, SKY_GLSL, bindSky,
+  precompensate, isPrecompRefusal,
   type LitDraw, type Viewpoint, type MeshBuffer, type Linear,
 } from '@lcx/gl';
 /* A SUB-PATH IMPORT, NOT THE BARREL — `docs/3d/w2/SUBPATH_COST.md`; `SurfaceReliefGl.tsx` carries the reason. */
@@ -84,6 +134,63 @@ ${SRGB_ENCODE_GLSL}
 void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); }`;
 
 /*
+ * ══ THE RECORD PROGRAM — UNLIT, AND FOGGED WITH `env/lit.ts`'s OWN BYTES ════════════════════════════
+ *
+ * The header carries the argument for unlit. This is the machinery, and the only part of it that needs care is
+ * that the fog must be the SAME fog. `FOG_GLSL` is cut out of the imported `LIT_FRAG` between two markers,
+ * each of which must occur EXACTLY ONCE — `indexOf !== lastIndexOf` means the shader gained a second fog block
+ * or a second `frag` write and the cut is no longer the thing it is named after, which is a state to refuse in
+ * rather than to slice through. The block reads `uEye`, `uFog*`, `vWorld` and the variable `lit`, and calls
+ * `skyColour` on its unreachable `'sky'` branch, so `SKY_GLSL` is included and `bindSky` is called with the
+ * same stops the lit pass gets.
+ */
+const FOG_BEGIN = '  if (uFogDensity > 0.0) {';
+const FOG_END = '  frag = vec4(lit, 1.0);';
+const FOG_GLSL: string | null = (() => {
+  const a = LIT_FRAG.indexOf(FOG_BEGIN), b = LIT_FRAG.indexOf(FOG_END);
+  if (a < 0 || b < 0 || b <= a) return null;
+  if (a !== LIT_FRAG.lastIndexOf(FOG_BEGIN) || b !== LIT_FRAG.lastIndexOf(FOG_END)) return null;
+  return LIT_FRAG.slice(a, b);
+})();
+
+const RECORD_VERT = `#version 300 es
+precision highp float;
+layout(location=0) in vec3 aPos;
+uniform mat4 uViewProj;
+uniform mat4 uModel;
+out vec3 vWorld;
+out float vLocalY;
+/* THE SAME TWO LINES AS \`DEPTH_VERT\` AND \`LIT_VERT\`, IN THE SAME ORDER, and that is what lets this pass draw
+   at LEQUAL over the depth the prepass already wrote: the arithmetic is identical, so the fragments land at
+   the identical depth. The lit pass has always relied on exactly this relation with the prepass. */
+void main(){
+  vec4 world = uModel * vec4(aPos, 1.0);
+  vWorld = world.xyz;
+  vLocalY = aPos.y;
+  gl_Position = uViewProj * world;
+}`;
+
+const RECORD_FRAG = FOG_GLSL === null ? null : `#version 300 es
+precision highp float;
+in vec3 vWorld;
+in float vLocalY;
+uniform vec3 uEye;
+uniform vec3 uPlate;
+uniform vec3 uVerdict;
+uniform float uBandTopY;
+uniform float uFogDensity;
+uniform float uFogHeight;
+uniform vec3 uFogColour;
+uniform float uFogFloor;
+out vec4 frag;
+${SKY_GLSL}
+void main(){
+  vec3 lit = vLocalY < uBandTopY ? uVerdict : uPlate;
+${FOG_GLSL}
+  frag = vec4(lit, 1.0);
+}`;
+
+/*
  * THE CALIBRATION, carried over from `docs/3d/e6/entry.ts` where each number was settled by a count rather than
  * by taste. The one figure that CANNOT be a constant here is hours-per-metre: the harness had 25 records
  * spanning 19 days and could fix 12 h/m, whereas a real page of the spine might span an hour or a year. It is
@@ -102,6 +209,11 @@ const DEPTH_M = 22;
 const LEGIBLE_M = 13.0;
 /** Solved, not dialled: 1 - exp(-26 d) = 0.95 → d = ln(20)/26, with 26 m the corridor's visible depth. */
 const FOG_DENSITY = Math.log(20) / 26;
+/* ONE FOG SPEC, READ BY TWO PASSES. The lit corridor and the unlit record cards must accumulate the same
+   atmosphere over the same distance or the marks stop agreeing with the space they are in; two copies of
+   `height` and `floor` is exactly how that drifts, so there is one. The COLOUR is not here because it is the
+   only part that comes from the theme. */
+const FOG_SPEC = { height: 6.0, floor: 0 } as const;
 /** "Now" is a wall the reader FACES, not a line they stand on. Without it the newest record sits beside the eye. */
 const NOW_OFFSET_M = 3.4;
 const FOG_HEX = '#0B1220';
@@ -135,10 +247,58 @@ const verdictAlbedo = (v: AuditVerdict, theme: ThemeName): Linear =>
     /* Withheld is neither an allow nor a block: it is the absence of a reading, and giving it either
        verdict colour would assert a finding nobody is entitled to. Steel says "a record is here". */
     : hexToLinear(v === 'ALLOWED' ? '#2C6BFF' : '#5C6880');
-const VERDICT_MATERIAL: Record<AuditVerdict, { roughness: number; metalness: number }> = {
-  ALLOWED: { roughness: 0.36, metalness: 0.06 },
-  BLOCKED: { roughness: 0.42, metalness: 0.05 },
-  WITHHELD: { roughness: 0.30, metalness: 0.55 },
+
+/*
+ * `VERDICT_MATERIAL` IS GONE, AND ITS DELETION IS THE FIX RATHER THAN A TIDY-UP. It held a roughness and a
+ * metalness per verdict — WITHHELD at metalness 0.55, which replaced over half that mark's albedo with a
+ * mirror of the sky and is why steel came back as whatever the ceiling was. A material is a claim that the
+ * mark's SHAPE is being described by light. This mark's shape is one shared box, so there is nothing to
+ * describe and the material was only ever a way for the room to overwrite the category. See the header.
+ *
+ * ── THE STRIPE IS PRE-COMPENSATED; THE CARD BEHIND THE TYPE IS NOT ──────────────────
+ * `look/precompensate.ts` writes `inverseToneMap(target)` so the LIVE curve delivers the authored hex, and its
+ * perimeter is "a FIXED-DENSITY mark over a ZERO plate with no bloom reaching it". Every clause holds here:
+ * the record pass runs with `BLEND` disabled (`dstFactor: 'none'`), and this surface's present shader is
+ * `lcxEncode(lcxToneMap(scene))` with no plate term and no bloom pass at all. So the refusals cannot fire on
+ * this site, and the value is exact.
+ *
+ * WHAT IT DOES AND DOES NOT BUY, stated because the honest claim is narrow: the stripe is written at
+ * `inverseToneMap(albedo)` and the fog then mixes it toward the corridor's far colour BEFORE the curve, so the
+ * hex is delivered exactly where the fog is zero and every record is at fog > 0. What pre-compensation removes
+ * is the 35/255 blue drop the plain write ships (`tonemap.ts`: #2C6BFF → #2C68DC, ΔE76 18.3) at the near end of
+ * that ramp, which is the end the chroma statistics are read off. The CARD is deliberately left plain: it is
+ * `SceneTheme.plate`, it is scenery, and spending a fidelity mechanism on a colour that is allowed to move
+ * with the theme would say the opposite of what the taxonomy says.
+ */
+const MARK_SITE = {
+  dstFactor: 'none',
+  plate: [0, 0, 0],
+  bloomGain: 0,
+  threshold: [0, 1],
+  shaderScale: 1,
+} as const;
+
+/**
+ * THE MATERIAL A RECORD CARRIES INTO THE TWO PASSES THAT DO NOT READ IT.
+ *
+ * `shadowPass` and `depthPrepass` both bind a POSITION-ONLY program and set only `uModel`, so nothing in this
+ * object reaches a shader. It exists because `LitDraw` requires the field, and it is a named constant with an
+ * impossible-looking value rather than a copy of the verdict albedo precisely so that nobody reading a record's
+ * draw later mistakes it for the colour the record is painted.
+ */
+const PASS_ONLY_MATERIAL = Object.freeze({
+  baseColour: [0, 0, 0] as Linear, roughness: 1, metalness: 0,
+});
+
+interface MarkRadiance { readonly colour: Linear; readonly refusal: string | null }
+const markRadiance = (v: AuditVerdict, theme: ThemeName): MarkRadiance => {
+  const target = verdictAlbedo(v, theme);
+  const pre = precompensate(target, MARK_SITE);
+  /* A REFUSAL DRAWS THE PLAIN ALBEDO AND IS NAMED ON THE FRAME. Blanking a governed action because its colour
+     could not be made exact would trade a measurable 18 ΔE for a missing record. */
+  return isPrecompRefusal(pre)
+    ? { colour: target, refusal: `${v} ${pre.code}` }
+    : { colour: pre, refusal: null };
 };
 
 /*
@@ -160,30 +320,35 @@ const VERDICT_MATERIAL: Record<AuditVerdict, { roughness: number; metalness: num
  * `charPx` is the measured advance of `ui-monospace` at each size (0.6 em, plus tracking where set). It is here
  * because the element box is sized against the LONGEST line present: `campaign.publ` served as an action name by
  * `overflow: hidden` is worse than no record at all.
+ *
+ * THE FONT STRING IS NOW DERIVED FROM THE SAME FIELDS THE HEIGHT IS, and that is what makes the verdict
+ * stripe's size a measurement instead of a taste. `BAND_PX` below is "whatever is left of the card once the
+ * four lines have their measured height", so it has to know that height — and a line box's height is
+ * `sizePx × lineH`, which is unreadable from inside a CSS shorthand string. Two numbers describing one line is
+ * how a layout constant goes stale; there is one set, and `styleOf` builds the shorthand from it.
  */
 const LINE_SPEC: readonly {
   readonly charPx: number;
-  readonly style: CSSProperties;
+  readonly weight: number;
+  readonly sizePx: number;
+  readonly lineH: number;
+  readonly tracking?: string;
   readonly text: (r: VaultRecord) => string;
 }[] = [
   {
-    charPx: 6.5,
-    style: { font: '600 9px/1 ui-monospace, monospace', letterSpacing: '.12em' },
+    charPx: 6.5, weight: 600, sizePx: 9, lineH: 1, tracking: '.12em',
     text: (r) => `${r.verdict} · ${whenOf(r.hoursAgo)}`,
   },
   {
-    charPx: 6.7,
-    style: { font: '700 11px/1.05 ui-monospace, monospace' },
+    charPx: 6.7, weight: 700, sizePx: 11, lineH: 1.05,
     text: (r) => r.action ?? 'ACTION NOT RECORDED',
   },
   {
-    charPx: 6.4,
-    style: { font: '400 10.5px/1.2 ui-monospace, monospace' },
+    charPx: 6.4, weight: 400, sizePx: 10.5, lineH: 1.2,
     text: (r) => r.actor ?? 'ACTOR NOT RECORDED',
   },
   {
-    charPx: 5.8,
-    style: { font: '400 9.5px/1.2 ui-monospace, monospace' },
+    charPx: 5.8, weight: 400, sizePx: 9.5, lineH: 1.2,
     /* THREE STATES, THREE STRINGS. A withheld subject exists and may not be shown; an unrecorded one never
        existed. Collapsing them into one blank is the table's failure, and it is the reading this view exists
        to keep.
@@ -195,6 +360,33 @@ const LINE_SPEC: readonly {
     text: (r) => r.subject ?? (r.subjectWithheld ? 'SUBJECT WITHHELD' : 'NO SUBJECT RECORDED'),
   },
 ];
+const styleOf = (ln: (typeof LINE_SPEC)[number]): CSSProperties => ({
+  font: `${ln.weight} ${ln.sizePx}px/${ln.lineH} ui-monospace, monospace`,
+  ...(ln.tracking === undefined ? {} : { letterSpacing: ln.tracking }),
+});
+
+/**
+ * ══ THE VERDICT STRIPE'S HEIGHT, DERIVED FROM THE TYPE RATHER THAN CHOSEN ═══════════════════════════
+ *
+ * The card is `REC_H` metres tall and the overlay element that carries the type is `REC_ELEM_PX` tall, because
+ * `projectQuad` maps that element rectangle onto the projected face. The four lines occupy a height the layout
+ * already fixes — each line box is `sizePx × lineH`, separated by the flex `gap` — so the space that is NOT
+ * the type is exactly what the stripe can have, less one gap of clearance top and bottom so the stripe never
+ * crowds the last line. The clearance is THE SAME `TYPE_GAP_PX` the lines use between themselves rather than a
+ * second spacing constant nobody can relate to the first.
+ *
+ * Every number here therefore moves if a line is added, resized or restyled, which is the property a literal
+ * `0.25` would not have had.
+ */
+const TYPE_GAP_PX = 4;
+const TYPE_PX = LINE_SPEC.reduce((h, ln) => h + ln.sizePx * ln.lineH, 0)
+  + TYPE_GAP_PX * (LINE_SPEC.length - 1);
+/** The element height `draw` hands `projectQuad`, so the two cannot disagree about what a card is. */
+const REC_ELEM_PX = Math.round(REC_H * PX_PER_METRE);
+const BAND_PX = REC_ELEM_PX - TYPE_PX - 2 * TYPE_GAP_PX;
+const BAND_FRAC = BAND_PX / REC_ELEM_PX;
+/** `box()` centres its geometry, so local y runs −REC_H/2 … +REC_H/2 and the stripe is the bottom slice. */
+const BAND_TOP_LOCAL_Y = REC_H * (BAND_FRAC - 0.5);
 
 interface OverlayRecord {
   readonly key: string;
@@ -222,6 +414,8 @@ interface Plan {
   readonly readableToDays: number | null;
   readonly inRangeToDays: number;
   readonly visibleToDays: number;
+  /** The age of the newest record on the page, which is where the corridor's near wall now is. */
+  readonly nearWallDays: number;
   readonly hoursPerMetre: number;
   readonly shown: number;
   readonly placed: number;
@@ -230,6 +424,8 @@ interface Plan {
   readonly unplaced: readonly VaultUnplaced[];
   readonly cappedFrom: number | null;
   readonly worstShownRatio: number | null;
+  /** Empty when every verdict's stripe was written exactly. Named, never summed — see `markRadiance`. */
+  readonly markRefusals: readonly string[];
 }
 
 /* WCAG relative luminance, and a ratio. Kept local so the number the frame prints is the number a reader's own
@@ -254,26 +450,21 @@ const overBg = (
 );
 
 /**
- * THE TWO CANDIDATE TYPE COLOURS, AND WHY THE CHOICE IS MEASURED PER RECORD RATHER THAN PER THEME.
+ * THE TWO CANDIDATE TYPE COLOURS, AND WHY THE CHOICE IS STILL MEASURED PER RECORD.
  *
- * A record's background is not the page and not the theme — it is the slab, whose albedo is the VERDICT and
- * therefore data that does not move, fogged toward the corridor's own far colour, which does. So within one
- * light-theme frame the near records sit on saturated brand blue and the far ones on near-white haze, and no
- * single type colour serves both. Measured WCAG ratios of the two candidates against the backgrounds this
- * corridor actually produces, at the element opacities the fog law hands out:
+ * The type's ground is no longer the verdict. It is the theme's `plate` under the corridor's fog, so within one
+ * frame the near cards sit on the plate almost undiluted and the far ones on near-pure fog, and those are two
+ * different backgrounds in the same theme. That is why the choice stays a per-record measurement off the
+ * rendered pixels rather than a per-theme constant: the theme decides the plate, the DEPTH decides how much of
+ * it survives, and only the frame knows the answer.
  *
- *                         a=1.00        a=0.50        a=0.25
- *   ALLOWED  #2C6BFF   4.51 / 4.36   2.22 / 2.30   1.49 / 1.50      (white / ink)
- *   BLOCKED  #C9552B   4.36 / 4.52   2.18 / 2.37   1.47 / 1.52
- *   WITHHELD #5C6880   5.60 / 3.51   2.68 / 2.05   1.70 / 1.43
- *   dark fog #0B1220  18.72 / 1.05   5.30 / 1.03   2.21 / 1.01
- *   light fog #DCE5F3  1.27 / 15.51  1.13 / 3.50   1.06 / 1.75
- *
- * Taking the better of the two is never worse than the white-only rule this shipped with — the last column of
- * every row proves it — so this is a strict improvement in the DARK theme as well as the enabling change for
- * the light one. On dark it picks white everywhere except where a steel slab is already brighter than the type,
- * and on light it picks ink for the haze and white for the saturated slabs, which is what legibility means: the
- * type follows its own ground rather than the page's.
+ * WHAT THIS TABLE USED TO BE, AND WHY IT IS NOT A TABLE ANY MORE. It listed the two candidates' WCAG ratios
+ * against the three VERDICT albedos, and its own numbers are the reason the card is a plate now: ALLOWED
+ * #2C6BFF measured 4.51 white / 4.36 ink at a = 1.00 and 2.22 / 2.30 at a = 0.50. A saturated mid-luminance
+ * ground has NO legible type colour once the element's own fog opacity is applied — both candidates fail
+ * together, and a record that is beautifully coloured and carries no readable line is the failure this whole
+ * file is arranged around not having. The plate's job is to be the one thing on the card that a glyph can win
+ * against; the stripe carries the colour, and nothing is written on the stripe.
  */
 const INK: readonly [number, number, number] = [8, 11, 18];
 const WHITE: readonly [number, number, number] = [255, 255, 255];
@@ -340,6 +531,8 @@ interface VaultBuild {
   readonly unplaced: ReturnType<typeof buildVaultRecords>['unplaced'];
   readonly cappedFrom: number | null;
   readonly spanHours: number;
+  /** The NEWEST record's age. The near wall of the corridor is this, not zero — see `buildVault`. */
+  readonly nearHours: number;
   readonly recPx: number;
   readonly recW: number;
   readonly tierH: number;
@@ -362,8 +555,31 @@ const lineWidthOf = (r: VaultRecord): number => Math.max(
  * redraw, so the second page is measured as carefully as the first.
  *
  * ABSENT TIME REFUSES A POSITION, it does not get hour zero. `buildVaultRecords` excludes and counts; the count
- * is printed under the frame. Depth is the time axis, so hour zero is the "now" wall — the single most
- * misleading place in this frame to put a record whose age nobody knows.
+ * is printed under the frame. Depth is the time axis, so a record whose age nobody knows has no depth to be at.
+ *
+ * ══ THE NEAR WALL IS THE NEWEST RECORD, NOT `NOW`. MEASURED, THEN CHANGED ═══════════════════════════
+ *
+ * It used to be `now`: `zOf(h) = -(h / hoursPerMetre) - NOW_OFFSET_M`, with `hoursPerMetre = spanHours /
+ * DEPTH_M`. Depth was linear in time and hour zero faced the reader, which sounds right and is right for one
+ * page in the log — the one you get by opening it. On the harness's stubbed page, whose newest entry is three
+ * days old, the SAME frame reported, in its own words:
+ *
+ *      IN RANGE TO 0.00 d (GEOMETRY) · 0 of 18 RECORDS CARRY TEXT
+ *
+ * Eighteen perfectly good records, and the geometry delivered none of them: the newest landed at 19.3 m of a
+ * 22 m corridor because 72% of the depth was spent on time in which nothing happened, `LEGIBLE_M` is 13 m, and
+ * every mark was consequently 84–91% fogged. Measured, that is also why the light theme could not clear the
+ * data-chroma floor: a mark at 16% of its own value mixed into a near-white fog has nowhere left to be blue.
+ * On a spine you page through, "everything on this page is older than the legible range" is the ordinary case,
+ * not the exotic one.
+ *
+ * SO THE PAGE FILLS THE CORRIDOR. `[newest, oldest]` maps onto `[NOW_OFFSET_M, NOW_OFFSET_M + DEPTH_M]` and
+ * DEPTH IS STILL STRICTLY LINEAR IN TIME — the premise is untouched, only the origin moves, and the origin was
+ * previously an unlabelled claim that the page starts at now. It is labelled now: the frame prints NEAR WALL
+ * as one of its horizons, so an axis that used to assert its zero states it instead.
+ *
+ * A FLOOR OF 0.05 h/m still keeps a page that spans two minutes from being drawn at a resolution the geometry
+ * cannot express; when it binds the corridor is simply short, which is the truth about the page.
  */
 function buildVault(entries: readonly AuditEntry[]): VaultBuild | { refusal: string } {
   if (entries.length === 0) return { refusal: 'NO_OBSERVED_RECORDS' };
@@ -372,19 +588,13 @@ function buildVault(entries: readonly AuditEntry[]): VaultBuild | { refusal: str
   const cappedFrom = built.records.length > MAX_RECORDS ? built.records.length : null;
   const records = built.records.slice(0, MAX_RECORDS);
   const spanHours = records[records.length - 1]!.hoursAgo;
+  const nearHours = records[0]!.hoursAgo;
   const widest = Math.max(...records.map(lineWidthOf));
   const recPx = Math.max(118, Math.min(209, Math.ceil(widest + 12)));
   return {
-    records, unplaced: built.unplaced, cappedFrom, spanHours,
+    records, unplaced: built.unplaced, cappedFrom, spanHours, nearHours,
     recPx, recW: recPx / PX_PER_METRE, tierH: REC_H + 0.10,
-    /*
-     * HOURS PER METRE, FROM THE DATA. Depth stays strictly linear in time — that is the environment's premise —
-     * so the only free parameter is the scale, and it is set so the oldest record on the page lands at
-     * `DEPTH_M`. A floor of 0.05 h/m keeps a page that spans two minutes from being drawn at a resolution the
-     * geometry cannot express; when that floor binds, the corridor is simply short, which is the truth about
-     * the page.
-     */
-    hoursPerMetre: Math.max(0.05, spanHours / DEPTH_M),
+    hoursPerMetre: Math.max(0.05, (spanHours - nearHours) / DEPTH_M),
     lineWidthOf,
   };
 }
@@ -440,6 +650,14 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
      */
     if (assertBrandFidelity().length > 0) { onRefused('BRAND_FIDELITY_FAILED'); return; }
 
+    /* THE FOG SLICE, BEFORE A CONTEXT EXISTS. `RECORD_FRAG` is null when the markers in `LIT_FRAG` are missing
+       or doubled, and a corridor whose marks fog by a second, private implementation is worse than no corridor:
+       it looks like a lighting decision. Refused by name, at no cost. */
+    if (RECORD_FRAG === null) { onRefused('FOG_SOURCE_UNREADABLE'); return; }
+    /* AND A CARD WITH NO STRIPE IS A RECORD WITH NO VERDICT. `BAND_PX` is what the four lines leave behind, so
+       a fifth line or a larger size can drive it to zero — silently, because the card would still draw. */
+    if (!(BAND_PX > 0)) { onRefused('NO_ROOM_FOR_A_VERDICT_STRIPE'); return; }
+
     /* DPR CAPPED BY THE TIER. Everything here is fill-bound; a 3× display would triple the cost of a surface
        whose whole justification is that an operator reads it faster. The cap WAS a literal 2; `Q.dprScale` is 2
        at `full` and `reduced` and 1 at `minimum`, and resolution multiplies every fill-bound pass. */
@@ -488,6 +706,10 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
 
     const present = stage.compile(PRESENT_VERT, PRESENT_FRAG);
     if ('kind' in present) { refuse(present.code); return; }
+    /* NO DISPOSER, and that is `stage.ts`'s rule rather than an omission: a `Stage` owns every program it
+       compiles and deletes them with the context. `lit` deletes its own three because it made them itself. */
+    const recProg = stage.compile(RECORD_VERT, RECORD_FRAG);
+    if ('kind' in recProg) { refuse(recProg.code); return; }
     const lit = createLitRenderer(stage);
     if ('kind' in lit) { refuse(lit.code); return; }
     disposers.push(() => lit.dispose());
@@ -580,8 +802,15 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
         material: { baseColour: scenery(th, '#0B1220', th.fog), roughness: 0.86, metalness: 0 } },
     ];
 
-    /* Down the corridor and slightly to one side, so records on both walls take light at a grazing angle and
-       their 5 cm edges catch it. A light down the axis would flatten every slab against its wall. */
+    /*
+     * Down the corridor and slightly to one side, so the WALLS take light at a grazing angle and the corridor
+     * reads as a space rather than as a flat backdrop. A light down the axis would flatten it.
+     *
+     * IT DOES NOT LIGHT THE RECORDS, and the sentence that used to be here said it did — "records on both
+     * walls take light at a grazing angle and their 5 cm edges catch it". Measured, the ceiling shadows every
+     * record, so the key reached a slab at 1 − shadowStrength: 0.06 in dark. The edge catch was prose about a
+     * highlight the frame never drew. The records are unlit now and the light's only job is the architecture.
+     */
     const lightDir: [number, number, number] = [0.34, -0.42, -0.84];
     const sceneMin: [number, number, number] = [-2.2, 0, -(DEPTH_M + NOW_OFFSET_M + 2)];
     const sceneMax: [number, number, number] = [2.2, 3.4, 3.0];
@@ -599,16 +828,93 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
      * ONE FRAME, THEN NOTHING. §6 rule 2 forbids idle animation, and this is why the reduced-motion case needs
      * no branch: a still frame is already the final frame. No requestAnimationFrame, no setInterval.
      */
+    /* NO SKY BACKDROP IS ALLOCATED — a vault has no sky, see the header — so the theme's stops reach the lit
+       pass as the irradiance environment only, with no backdrop to stay in step with. Hoisted out of
+       `renderScene` because the record pass binds the SAME stops: the fog block it shares with `LIT_FRAG` has a
+       `'sky'` branch, and two passes holding different skies for a branch neither takes is a trap set for
+       whoever takes it. */
+    const skyFor = (th: SceneTheme) => (th.name === 'dark' ? undefined : {
+      zenith: th.skyZenith, horizon: th.skyHorizon, ground: th.ground,
+    });
+
+    /**
+     * ══ THE RECORD PASS — UNLIT, AFTER THE CORRIDOR, OVER THE DEPTH THE PREPASS ALREADY WROTE ═══════
+     *
+     * The records are still in the shadow pass and the depth prepass, and that is what makes this change
+     * invisible to the corridor: their shadows still fall on the walls, their occlusion still reaches AO, and
+     * the shell fragments behind them are still depth-rejected exactly as before. Only the fragments the
+     * records themselves cover are painted by a different program.
+     *
+     * STATE IS SAVED AND RESTORED BY HAND, because `env/passState.ts` is internal to the package and
+     * `env/lit.ts`'s note on it is exactly right: leaving state for the next caller to "happen to" set is how a
+     * blit comes back empty on one driver. The blit that follows disables the depth test itself and would be
+     * culled away if this left `CULL_FACE` on in a state it did not find it in.
+     */
+    const drawRecords = (
+      th: SceneTheme,
+      recs: readonly { readonly mesh: MeshBuffer; readonly model: Float32Array; readonly verdict: AuditVerdict }[],
+      radiance: Readonly<Record<AuditVerdict, Linear>>,
+    ): void => {
+      if (recs.length === 0) return;
+      const fc = scenery(th, FOG_HEX, th.fog);
+      const wasCull = gl.isEnabled(gl.CULL_FACE);
+      const wasCullMode = gl.getParameter(gl.CULL_FACE_MODE) as number;
+      const wasBlend = gl.isEnabled(gl.BLEND);
+      const wasDepth = gl.isEnabled(gl.DEPTH_TEST);
+      const wasDepthFunc = gl.getParameter(gl.DEPTH_FUNC) as number;
+      const wasDepthMask = gl.getParameter(gl.DEPTH_WRITEMASK) as boolean;
+      gl.enable(gl.DEPTH_TEST);
+      gl.depthFunc(gl.LEQUAL);
+      gl.depthMask(true);
+      gl.disable(gl.BLEND);
+      gl.enable(gl.CULL_FACE);
+      gl.cullFace(gl.BACK);
+      gl.useProgram(recProg);
+      const u = (n: string) => gl.getUniformLocation(recProg, n);
+      gl.uniformMatrix4fv(u('uViewProj'), false, vp);
+      gl.uniform3f(u('uEye'), eye[0], eye[1], eye[2]);
+      gl.uniform3f(u('uPlate'), th.plate[0], th.plate[1], th.plate[2]);
+      gl.uniform1f(u('uBandTopY'), BAND_TOP_LOCAL_Y);
+      gl.uniform1f(u('uFogDensity'), FOG_DENSITY);
+      gl.uniform1f(u('uFogHeight'), FOG_SPEC.height);
+      gl.uniform1f(u('uFogFloor'), FOG_SPEC.floor);
+      gl.uniform3f(u('uFogColour'), fc[0], fc[1], fc[2]);
+      bindSky(gl, recProg, skyFor(th));
+      for (const r of recs) {
+        const c = radiance[r.verdict];
+        gl.uniformMatrix4fv(u('uModel'), false, r.model);
+        gl.uniform3f(u('uVerdict'), c[0], c[1], c[2]);
+        gl.bindVertexArray(r.mesh.vao);
+        gl.drawElements(gl.TRIANGLES, r.mesh.indexCount, r.mesh.indexType, 0);
+      }
+      gl.bindVertexArray(null);
+      gl.depthMask(wasDepthMask);
+      gl.depthFunc(wasDepthFunc);
+      gl.cullFace(wasCullMode);
+      if (!wasCull) gl.disable(gl.CULL_FACE);
+      if (wasBlend) gl.enable(gl.BLEND);
+      if (!wasDepth) gl.disable(gl.DEPTH_TEST);
+    };
+
     /* A FUNCTION NOW, SO IT CAN BE MEASURED — and it ends with `target` bound, which is what `probeSync`
-       requires: a `readPixels` only guarantees completion of work affecting the framebuffer it reads. */
-    const renderScene = (th: SceneTheme, draws: readonly LitDraw[]): void => {
+       requires: a `readPixels` only guarantees completion of work affecting the framebuffer it reads.
+       IT TAKES TWO LISTS. `occluders` is everything that owns depth and casts shadow, records included;
+       `shell` is only what the LIT renderer paints. Splitting them here rather than at the call site is what
+       keeps the shadow map and the prepass complete while the records leave the lit pass. */
+    const renderScene = (
+      th: SceneTheme,
+      occluders: readonly LitDraw[],
+      shell: readonly LitDraw[],
+      recs: readonly { readonly mesh: MeshBuffer; readonly model: Float32Array; readonly verdict: AuditVerdict }[],
+      radiance: Readonly<Record<AuditVerdict, Linear>>,
+    ): void => {
       const rig = rigFor(th);
       const fc = scenery(th, FOG_HEX, th.fog);
-      lit.shadowPass(lightVP, draws, shadow);
+      lit.shadowPass(lightVP, occluders, shadow);
       target.bind();
       gl.clearColor(fc[0], fc[1], fc[2], 1);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      lit.depthPrepass(vp, draws);
+      lit.depthPrepass(vp, occluders);
       if (ao) {
         ao.compute({
           depthTexture: target.depthTexture, near, far, fovDeg: view.fovDeg ?? 33,
@@ -616,22 +922,18 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
         });
         target.bind();
       }
-      /* NO SKY BACKDROP IS ALLOCATED — a vault has no sky, see the header — so the theme's stops reach the lit
-         pass as the irradiance environment only, with no backdrop to stay in step with. */
-      const sky = th.name === 'dark' ? undefined : {
-        zenith: th.skyZenith, horizon: th.skyHorizon, ground: th.ground,
-      };
       lit.draw({
         viewProj: vp, eye, lightDir,
         lightColour: [3.0 * rig.key, 2.95 * rig.key, 2.85 * rig.key],
         /* 0.46, not 0.86. At the higher gain the floor and ceiling — whose normals point at the analytic sky's
            bright zenith — became two glowing wedges brighter than the key light. */
-        ambientGain: 0.46 * rig.ambient, sky, lightVP, shadow,
+        ambientGain: 0.46 * rig.ambient, sky: skyFor(th), lightVP, shadow,
         shadowStrength: 0.94 * rig.shadow,
-        shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
+        shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws: shell,
         ao: ao ? ao.texture : null, screenSize: [W, H],
-        fog: { density: FOG_DENSITY, height: 6.0, floor: 0, colour: fc },
+        fog: { density: FOG_DENSITY, height: FOG_SPEC.height, floor: FOG_SPEC.floor, colour: fc },
       });
+      drawRecords(th, recs, radiance);
     };
 
     /*
@@ -653,9 +955,13 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
       setPlan(null);
       const b = buildVault(entryPage);
       if ('refusal' in b) { refuse(b.refusal); return undefined; }
-      const { records, cappedFrom, spanHours, recPx, recW, tierH, hoursPerMetre } = b;
+      const { records, cappedFrom, spanHours, nearHours, recPx, recW, tierH, hoursPerMetre } = b;
       const REC_W = recW, REC_PX = recPx, TIER_H = tierH;
-      const zOf = (hoursAgo: number): number => -(hoursAgo / hoursPerMetre) - NOW_OFFSET_M;
+      /* MEASURED FROM THE NEAR WALL, WHICH IS THE NEWEST RECORD — see `buildVault`. Still linear in time, and
+         still one scale for the whole frame, so two records the same age are the same depth and the ruler and
+         the records are placed by one function. */
+      const zOf = (hoursAgo: number): number =>
+        -((hoursAgo - nearHours) / hoursPerMetre) - NOW_OFFSET_M;
 
       releaseData();
       const recMeshOut = uploadMesh(stage, box(REC_W, REC_H, REC_T));
@@ -695,17 +1001,32 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
         };
       });
 
-      const draws: LitDraw[] = [
-        ...staticDrawsFor(th),
-        ...placed.map((p): LitDraw => {
-          const model = modelOf(p.x, p.y, p.z, p.yaw);
-          const mat = VERDICT_MATERIAL[p.r.verdict];
-          return {
-            mesh: recMesh, model, normalMat: normalOf(model),
-            material: { baseColour: verdictAlbedo(p.r.verdict, th.name), ...mat },
-          };
-        }),
+      const shellDraws = staticDrawsFor(th);
+      const recDraws = placed.map((p) => ({
+        mesh: recMesh, model: modelOf(p.x, p.y, p.z, p.yaw), verdict: p.r.verdict,
+      }));
+      /*
+       * THE SAME RECORDS AS `LitDraw`s, FOR THE TWO PASSES THAT READ ONLY `mesh` AND `model`.
+       * `shadowPass` and `depthPrepass` (`env/lit.ts`) use the position-only program and never look at a
+       * material or a normal matrix, which is why the records can leave the LIT pass without leaving those two
+       * — and leaving those two is what would have moved the corridor. The material below therefore reaches no
+       * shader at all; it is here because `LitDraw` requires the field, and it is named rather than filled with
+       * a plausible-looking albedo somebody would later read as the record's colour.
+       */
+      const occluders: LitDraw[] = [
+        ...shellDraws,
+        ...recDraws.map((d): LitDraw => ({
+          mesh: d.mesh, model: d.model, normalMat: normalOf(d.model), material: PASS_ONLY_MATERIAL,
+        })),
       ];
+      /* ONE RESOLUTION PER VERDICT PER FRAME, not one per record: `precompensate` is pure and 18 records on a
+         page share three answers. The refusals are collected so the frame can name them. */
+      const marks = { ALLOWED: markRadiance('ALLOWED', th.name), BLOCKED: markRadiance('BLOCKED', th.name), WITHHELD: markRadiance('WITHHELD', th.name) } as const;
+      const radiance: Record<AuditVerdict, Linear> = {
+        ALLOWED: marks.ALLOWED.colour, BLOCKED: marks.BLOCKED.colour, WITHHELD: marks.WITHHELD.colour,
+      };
+      const markRefusals = [marks.ALLOWED.refusal, marks.BLOCKED.refusal, marks.WITHHELD.refusal]
+        .filter((x): x is string => x !== null);
 
       /*
        * THE PROBE, TAKEN BEFORE ANYTHING IS PRESENTED. `pickQualityTier` exists to choose a tier from one
@@ -722,14 +1043,14 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
        * cannot re-time the machine and make the quality ladder follow the dataset instead of the GPU.
        */
       if (needsQualityProbe()) {
-        const ms = measureFrameMs(gl, () => renderScene(th, draws));
+        const ms = measureFrameMs(gl, () => renderScene(th, occluders, shellDraws, recDraws, radiance));
         const r = recordQualityProbe({
           pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'VaultReliefGl',
         });
         if (r.tier !== tier) return 'STALE_TIER';
       }
 
-      renderScene(th, draws);
+      renderScene(th, occluders, shellDraws, recDraws, radiance);
       gl.bindFramebuffer(gl.FRAMEBUFFER, null);
       gl.viewport(0, 0, W, H);
       gl.disable(gl.DEPTH_TEST);
@@ -807,7 +1128,10 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
        */
       const shownQuads: { x: number; y: number }[][] = [];
       const decided = [...placed].sort((a, b) => a.distance - b.distance).map((p) => {
-        const ew = REC_PX, eh = Math.round(REC_H * PX_PER_METRE);
+        /* `REC_ELEM_PX`, not a second `Math.round(REC_H * PX_PER_METRE)` — `BAND_PX` is the remainder of this
+           exact number, and two copies of one derivation is how a stripe ends up sized against a card that is
+           no longer that tall. */
+        const ew = REC_PX, eh = REC_ELEM_PX;
         const corners = uprightPanelCorners(p.x, p.z, p.y - REC_H / 2, REC_W, REC_H, p.yaw, REC_T / 2 + 0.004);
         const proj = projectQuad(vp, corners, cssW, cssH, ew, eh);
         const refusal = isQuadRefusal(proj) ? proj.refusal : null;
@@ -834,30 +1158,39 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
         );
         const occluded = coveredCorners >= 2;
         const opacity = 1 - 0.75 * fogAt(p.distance);
+        /*
+         * SAMPLED OVER THE PLATE, NOT OVER THE CARD. The bottom `BAND_FRAC` of the face is the verdict stripe
+         * and no glyph is ever laid on it, so a box centred on the whole card would fold the stripe's colour
+         * into a ratio the type does not have — and because `brightestBehind` takes the BRIGHTEST pixel, in
+         * dark that would be the stripe every single time and the reported ratio would be for a background no
+         * line sits on. Walked down the quad's own top→bottom axis rather than down its bounding box, because
+         * the card is yawed and the box's centre is not the card's.
+         */
         const sample = screen.length === 0 ? null : (() => {
-          const xs = screen.map((c) => c.x), ys = screen.map((c) => c.y);
-          const [x0, x1] = [Math.min(...xs), Math.max(...xs)];
-          const [y0, y1] = [Math.min(...ys), Math.max(...ys)];
-          const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+          const mid = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+            ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+          const top = mid(screen[0]!, screen[1]!), bot = mid(screen[3]!, screen[2]!);
+          const t = (1 - BAND_FRAC) / 2;
+          const cx = top.x + t * (bot.x - top.x), cy = top.y + t * (bot.y - top.y);
           if (cx < 0 || cx > cssW || cy < 0 || cy > cssH) return null;
-          return { cx, cy, hx: Math.max(1, (x1 - x0) / 4), hy: Math.max(1, (y1 - y0) / 4) };
+          const plateH = Math.hypot(bot.x - top.x, bot.y - top.y) * (1 - BAND_FRAC);
+          return { cx, cy, hx: Math.max(1, widthPx / 4), hy: Math.max(1, plateH / 4) };
         })();
         const bg = sample ? brightestBehind(sample.cx, sample.cy, sample.hx, sample.hy) : null;
         const bgLum = bg ? relLum(bg[0], bg[1], bg[2]) : null;
         /*
          * ONE RATIO COVERS ALL FOUR LINES, and that is a consequence of the fix rather than a shortcut: every
-         * entry in `LINE_SPEC` is fully opaque white, so the composited colour is identical for all of them and
-         * the element's own fog opacity is the only alpha in play. The harness measured per line because it USED
-         * to rank the lines by alpha, and that ranking was what cost it its reach. If a per-line alpha is ever
-         * reintroduced this must go back to a per-line minimum, because a record whose action you can read and
-         * whose actor you cannot is the truncation failure in a different costume.
+         * entry in `LINE_SPEC` is fully opaque and they all take one colour, so the composited value is
+         * identical for all of them and the element's own fog opacity is the only alpha in play. The harness
+         * measured per line because it USED to rank the lines by alpha, and that ranking was what cost it its
+         * reach. If a per-line alpha is ever reintroduced this must go back to a per-line minimum, because a
+         * record whose action you can read and whose actor you cannot is the truncation failure in a costume.
          */
         /*
          * THE TYPE COLOUR IS CHOSEN FROM THE BACKGROUND THIS FRAME ACTUALLY RENDERED, not from the theme.
-         * `INK` carries the measured table and the argument; the short version is that within one light-theme
-         * frame a near record sits on saturated brand blue and a far one on near-white haze, and neither white
-         * nor ink serves both. Taking the better of the two is never worse than the white-only rule this
-         * shipped with, so this also lifts the dark theme's reach on steel slabs.
+         * `INK` carries the argument; the short version is that the ground is the theme's plate diluted by
+         * however much fog this record's depth earns, so the near cards and the far ones are two different
+         * backgrounds inside one theme and only the frame knows which is which.
          */
         const candidates = bg && bgLum !== null
           ? ([WHITE, INK] as const).map((fg) => ({ fg, r: ratioOf(overBg(bg, opacity, fg), bgLum) }))
@@ -894,7 +1227,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
              the decision pass so the measured ratios above describe exactly these pixels. */
           opacity: d.opacity,
           colour: d.colour,
-          lines: LINE_SPEC.map((ln) => ({ text: ln.text(d.p.r), style: ln.style })),
+          lines: LINE_SPEC.map((ln) => ({ text: ln.text(d.p.r), style: styleOf(ln) })),
         });
       }
 
@@ -914,10 +1247,29 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
          `LINE_SPEC` was restructured to prevent. */
       const rulerFg = th.name === 'dark' ? WHITE : INK;
       const spanDays = spanHours / 24;
+      const nearDays = nearHours / 24;
       const CANDIDATES = [1 / 24, 3 / 24, 6 / 24, 0.5, 1, 2, 3, 7, 14, 30, 60, 90, 180, 365];
-      const inSpan = CANDIDATES.filter((d) => d <= spanDays);
-      const picks = inSpan.length <= 4 ? inSpan
-        : [0, 1, 2, 3].map((k) => inSpan[Math.round((k * (inSpan.length - 1)) / 3)]!);
+      /*
+       * TICKS INSIDE THE CORRIDOR, AND THE NEAR WALL IS ALWAYS ONE OF THEM.
+       *
+       * The candidates are ABSOLUTE ages and the labels stay absolute, because "3d" is a fact about the record
+       * and "0d from the near wall" is a fact about this drawing. What changed with the near wall is which of
+       * them are ON the corridor at all: a 1d tick on a page whose newest record is 3d old is behind the
+       * reader, and the old filter — `d <= spanDays` alone — projected it there anyway and then counted it as
+       * unreadable, which named a contrast problem for what was a placement one.
+       *
+       * The near wall's own age is appended rather than filtered for, because it is the one number on this
+       * axis that no candidate list can be relied on to contain and the one a reader needs first.
+       */
+      const labelOf = (d: number): string =>
+        (d < 1 ? `${Math.round(d * 24)}h` : `${Number(d.toFixed(2))}d`);
+      const inSpan = CANDIDATES.filter((d) => d >= nearDays && d <= spanDays);
+      /* DEDUPED ON THE LABEL, NOT ON THE NUMBER, because the near wall at 3.0004 d and the 3 d candidate are two
+         numbers and one tick — and `ruler` is keyed by its label in the DOM, so two of them is a duplicate key
+         and a React warning rather than a second mark anyone can see. */
+      const picks = [nearDays, ...(inSpan.length <= 3 ? inSpan
+        : [0, 1, 2].map((k) => inSpan[Math.round((k * (inSpan.length - 1)) / 2)]!))]
+        .filter((d, i, all) => all.findIndex((o) => labelOf(o) === labelOf(d)) === i);
       let rulerUnreadable = 0;
       const ruler: { label: string; sx: number; sy: number }[] = [];
       for (const days of picks) {
@@ -927,10 +1279,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
         const bg = onFrame ? brightestBehind(s.sx, s.sy, 13, 7) : null;
         const ratio = bg ? ratioOf(overBg(bg, RULER_ALPHA, rulerFg), relLum(bg[0], bg[1], bg[2])) : null;
         if (!onFrame || ratio === null || ratio < AA_RATIO) { rulerUnreadable++; continue; }
-        ruler.push({
-          label: days < 1 ? `${Math.round(days * 24)}h` : `${days}d`,
-          sx: s.sx, sy: s.sy,
-        });
+        ruler.push({ label: labelOf(days), sx: s.sx, sy: s.sy });
       }
 
       const shownRecords = decided.filter((d) => d.shown);
@@ -950,6 +1299,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
         readableToDays: legibleHours === null ? null : Number((legibleHours / 24).toFixed(2)),
         inRangeToDays: Number((inRangeHours / 24).toFixed(2)),
         visibleToDays: Number((spanHours / 24).toFixed(2)),
+        nearWallDays: Number((nearHours / 24).toFixed(2)),
         hoursPerMetre: Number(hoursPerMetre.toFixed(2)),
         shown: shownRecords.length,
         placed: placed.length,
@@ -969,6 +1319,7 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
            records the frame actually shows. Below `AA_RATIO` and the word READABLE is not earned. */
         worstShownRatio: shownRecords.length === 0
           ? null : Number(Math.min(...shownRecords.map((d) => d.minRatio ?? 0)).toFixed(2)),
+        markRefusals,
       });
       return undefined;
     };
@@ -1042,7 +1393,16 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
                   position: 'absolute', left: 0, top: 0, width: r.ew, height: r.eh,
                   transformOrigin: '0 0', transform: r.transform,
                   display: 'flex', flexDirection: 'column', justifyContent: 'center',
-                  gap: 4, padding: '0 5px', overflow: 'hidden', opacity: r.opacity,
+                  gap: TYPE_GAP_PX,
+                  /* THE BOTTOM PADDING IS THE VERDICT STRIPE, and `border-box` is what makes it one.
+                     `projectQuad` maps the rectangle `ew × eh` onto the card's face, so the element has to BE
+                     that rectangle: under the default `content-box` a bottom pad would make the element taller
+                     than the card and slide the type off it, and the 5 px side pads were already making it 10 px
+                     WIDER than the face they were mapped onto — which is the same 10 px the `tooLong` test
+                     subtracts, so the fit test and the layout now agree instead of nearly agreeing. */
+                  boxSizing: 'border-box',
+                  padding: `0 5px ${BAND_PX}px`,
+                  overflow: 'hidden', opacity: r.opacity,
                   /* ONE COLOUR FOR ALL FOUR LINES, set here rather than in `LINE_SPEC`, which is what keeps the
                      single measured ratio above honest: the moment a per-line colour returns, `minRatio` has to
                      go back to a per-line minimum. */
@@ -1064,8 +1424,10 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
                 {t.label}
               </div>
             ))}
-            {/* THE HORIZON, ON THE FRAME. Not "here are 50 rows" but how far back you can read, how far the
-                geometry reaches, and how far you can see a shape at all — three facts, never one. */}
+            {/* THE HORIZON, ON THE FRAME. Not "here are 50 rows" but where the axis STARTS, how far back you can
+                read, how far the geometry reaches, and how far you can see a shape at all — four facts, never
+                one. NEAR WALL is the newest record's age: the corridor no longer begins at an unlabelled `now`,
+                so the number that used to be assumed is printed. */}
             <div style={{ position: 'absolute', left: 16, top: 14, display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{
                 font: '600 11px/1 ui-monospace, monospace', letterSpacing: '.16em',
@@ -1074,7 +1436,8 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
                 GOVERNED ACTIONS · DEPTH IS TIME
               </div>
               <div style={label(FRAME_TEXT[plan.theme].body)}>
-                {plan.readableToDays === null
+                NEAR WALL AT {plan.nearWallDays.toFixed(2)} d — THE NEWEST RECORD ON THIS PAGE
+                {'\n'}{plan.readableToDays === null
                   ? `READABLE TO — nothing on this frame clears ${AA_RATIO}:1`
                   : `READABLE TO ${plan.readableToDays.toFixed(2)} d — MEASURED AT ${AA_RATIO}:1`}
                 {'\n'}IN RANGE TO {plan.inRangeToDays.toFixed(2)} d (GEOMETRY) · VISIBLE TO {plan.visibleToDays.toFixed(2)} d
@@ -1094,9 +1457,13 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
                 <div key={v} style={{ display: 'flex', alignItems: 'center', gap: 7, color: FRAME_TEXT[plan.theme].ruler }}>
                   <span>
                     {v} · {plan.counts[v]}
+                    {v === 'ALLOWED' ? ' (the stripe along each record’s foot)' : ''}
                     {v === 'BLOCKED' ? ' (action names a refusal)' : ''}
                     {v === 'WITHHELD' ? ' (present, payload not shown)' : ''}
                   </span>
+                  {/* NAMED, because a stripe is not self-describing. The key says WHERE the colour is as well
+                      as what it means, once, rather than leaving a reader to infer that the coloured strip
+                      along the foot of a card is the thing the swatch matches. */}
                   <span style={{
                     width: 11, height: 11, display: 'inline-block',
                     /* `statusHex`, not the albedo: this is a DOM swatch and needs the token's own
@@ -1136,6 +1503,15 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
           )}
           {plan.rulerUnreadable > 0 && (
             <div>{plan.rulerUnreadable} depth tick(s) not drawn — below {AA_RATIO}:1 on this frame</div>
+          )}
+          {/* A NAMED ABSENCE RATHER THAN A SILENT DOWNGRADE. When `precompensate` refuses, the stripe is drawn
+              at the plain albedo and ships the composite's measured 35/255 blue drop; the reader is told which
+              verdict and which refusal rather than being shown a colour that quietly is not the token. */}
+          {plan.markRefusals.length > 0 && (
+            <div>
+              verdict stripe not written exactly: {plan.markRefusals.join(' · ')} — drawn at the plain albedo,
+              which the composite ships ~18 ΔE76 off the token
+            </div>
           )}
           {plan.cappedFrom !== null && (
             <div>{plan.cappedFrom} records on this page, newest {MAX_RECORDS} drawn</div>

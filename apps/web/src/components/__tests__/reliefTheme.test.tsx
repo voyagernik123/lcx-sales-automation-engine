@@ -500,18 +500,37 @@ describe('the light rig moves by ratio, so the dark frame is arithmetic identity
     let checked = 0;
     for (const o of OWNERS) {
       if (!o.carriesData || NOT_THEMED.has(o.id)) continue;
-      /* E2 is the exception and states it in the file: its ambient gains are a missing emission channel rather
-         than a light rig, so it divides by the sky's own irradiance instead. It is found by the property, not
-         by name — a second surface that adopts the same mechanism satisfies this without an edit. */
-      if (/skyIrradiance\s*\(/.test(o.src)) continue;
+      /*
+       * E2 is the exception and states it in the file: its ambient gains are a missing emission channel
+       * rather than a light rig, so it holds ambient RADIANCE invariant by dividing the dark sky's own
+       * irradiance by the current theme's. Found by the property and not by name, so a second surface
+       * adopting the same mechanism satisfies this without an edit.
+       *
+       * THE PREDICATE USED TO BE "calls skyIrradiance AT ALL", AND IT STOPPED DISCRIMINATING. E3 now
+       * calls it once, as a term in an exposure solve against `inverseToneMap(albedo)` — a completely
+       * different mechanism — and was silently skipped, which dropped the checked count from 5 to 4 and
+       * took a compliant surface out of the census. The floor below is the only reason that surfaced.
+       *
+       * TWO calls, because the invariance mechanism is a RATIO and a ratio needs two irradiances: the
+       * dark reference and the live theme. One call cannot be that mechanism, whatever else it is doing.
+       * That is a property of the arithmetic rather than a count that happens to work today.
+       */
+      if ((o.src.match(/skyIrradiance\s*\(/g) ?? []).length >= 2) continue;
       checked++;
       expect(/th\.keyGain \/ TH_DARK\.keyGain/.test(o.src),
         `${o.id} does not derive its key from the theme's RATIO. Assigning theme.keyGain directly would`
         + " re-light this surface in DARK mode too, using ForgeBackdrop's number for one disc on one plinth.")
         .toBe(true);
-      expect(/ambientGain:\s*[\d.]+ \* rig\.ambient/.test(o.src),
+      /*
+       * A NAMED CONSTANT IS AS GOOD AS A LITERAL, and these patterns used to reject it. They demanded
+       * `[\d.]+ * rig.ambient`, so `AMBIENT_BASE * rig.ambient` — the same arithmetic with the
+       * coefficient given a name, which is the better spelling — read as a violation. The rule being
+       * enforced is that the surface scales its OWN calibration by the theme's ratio rather than
+       * assigning the theme's absolute; the coefficient's spelling has nothing to do with it.
+       */
+      expect(/ambientGain:\s*[A-Za-z0-9_.]+\s*\*\s*rig\.ambient/.test(o.src),
         `${o.id} does not scale its own ambient by the theme ratio`).toBe(true);
-      expect(/shadowStrength:\s*[\d.]+ \* rig\.shadow/.test(o.src),
+      expect(/shadowStrength:\s*[A-Za-z0-9_.]+\s*\*\s*rig\.shadow/.test(o.src),
         `${o.id} does not scale its own shadow strength by the theme ratio`).toBe(true);
     }
     expect(checked, 'no owner was checked for the ratio rule').toBeGreaterThanOrEqual(5);

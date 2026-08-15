@@ -470,15 +470,22 @@ const OWNERS: readonly Owner[] = (existsSync(COMPONENTS) ? walk(COMPONENTS) : []
  * uses for `EXCLUSIVE_MOUNTS`: an entry here cannot quietly become the place unfixed renderers live, because
  * fixing one WITHOUT deleting its line turns this file red.
  */
-const PENDING = new Map<string, { readonly props: readonly string[]; readonly why: string }>([
-  ['geometry/DeckReliefGl.tsx', {
-    props: ['panels'],
-    why: 'E1 already hoists its redraw into a ref (DeckReliefGl.tsx:205-213) and is the reference the other six'
-      + ' were generalised from — but its ref carries the ADDRESSED PANEL, not the dataset, so `panels` is still'
-      + ' in the setup effect at DeckReliefGl.tsx:718 and a new deck still rebuilds the context. It was owned by'
-      + ' a concurrent worktree in the change that fixed the other six and is deliberately untouched here.',
-  }],
-]);
+/*
+ * EMPTY, AND THAT IS THE POINT. `geometry/DeckReliefGl.tsx` was the last entry: it hoisted its redraw into a
+ * ref before any of the others and was the reference they were generalised from, but its ref carried the
+ * ADDRESSED PANEL rather than the dataset, so `panels` stayed in the setup effect and a new deck still
+ * rebuilt the whole GL context. It has now been split like the other six — a data effect driving the ref,
+ * a setup effect keyed on [heightPx, onRefused, tier], and a shape cache on the panel COUNT for the only
+ * genuinely data-dependent geometry.
+ *
+ * The entry was DELETED rather than emptied because the assertion below fails on a stale admission, which is
+ * what forced this line to be written on the day the gap closed instead of a month later. Leaving an entry
+ * with `props: []` would have satisfied nothing and read as though a violation remained.
+ *
+ * Keep the map. It is the shape that makes the next regression an admission with a reason attached rather
+ * than a silent exemption, and an empty exemption list is the only honest kind.
+ */
+const PENDING = new Map<string, { readonly props: readonly string[]; readonly why: string }>([]);
 
 describe('no relief renderer lists its data in the effect that builds the GL context', () => {
   it('finds context-owning components and their data props at all', () => {

@@ -16,6 +16,59 @@ import { goToDesk, takeSeat } from './seat';
  * for the fix and its one honest forfeit.
  */
 
+/**
+ * WAIT FOR THE CANVAS, NOT FOR THE HEADING.
+ *
+ * This ratchet already asks for reduced motion so the renderer resolves to its FINAL frame instead of
+ * a point in a five-second sweep. That made the CONTENT deterministic and left the TIMING open: the
+ * only wait before the screenshot was the sign-in heading becoming visible, and the heading is plain
+ * DOM that paints long before a lazily-loaded GL chunk has fetched, compiled and drawn. On an idle
+ * machine the canvas wins that race anyway, which is why this passed for months and passes 3 times
+ * out of 3 when run alone.
+ *
+ * Under a full gate — vitest, a build and playwright competing for the same cores — it lost, once,
+ * by 27,120 pixels (3% of the frame). Diagnosed rather than assumed: nothing in the change that
+ * surfaced it is reachable from `/select`, and the test passed 3/3 in isolation immediately after.
+ *
+ * So the wait now covers the thing being photographed. It samples the drawing buffer and requires
+ * two consecutive animation frames to be IDENTICAL — which is true once, and only once, the final
+ * frame is up. `stage.ts` sets `preserveDrawingBuffer` unconditionally, so reading the canvas outside
+ * its own draw call is valid; that is traced in `stage.ts:288`, not assumed here.
+ *
+ * A timeout here FAILS rather than proceeding. A silent fall-through would put the flake back with an
+ * extra step in front of it.
+ */
+async function settled(page: import('@playwright/test').Page): Promise<void> {
+  await page.waitForFunction(() => {
+    const c = document.querySelector('canvas');
+    if (!c) return false;
+    /* Downscaled to 64px: the comparison is about whether the frame CHANGED, and a full-resolution
+       data URL per animation frame is slow enough to perturb the thing it measures. */
+    const sample = (): string => {
+      const s = document.createElement('canvas');
+      s.width = 64; s.height = 64;
+      const ctx = s.getContext('2d');
+      if (!ctx) return '';
+      ctx.drawImage(c, 0, 0, 64, 64);
+      return s.toDataURL();
+    };
+    const w = window as unknown as { __prevFrame?: string };
+    const now = sample();
+    if (now === '') return false;
+    const stable = w.__prevFrame !== undefined && w.__prevFrame === now;
+    w.__prevFrame = now;
+    return stable;
+    /* POLLED, NOT PER-FRAME. `waitForFunction` defaults to requestAnimationFrame, and a
+       drawImage from a 2560-wide drawing buffer plus a toDataURL on every frame is a GPU-to-CPU
+       copy per frame — expensive enough to slow the settle it is waiting for, which is how the
+       first version of this helper turned a pixel-diff flake into a timeout flake. 120 ms is far
+       longer than a frame and far shorter than a human notices. */
+  }, undefined, { timeout: 20_000, polling: 120 });
+  /* Cleared so the SECOND call in this test does not inherit the first theme's frame and return
+     immediately on a stale match. */
+  await page.evaluate(() => { delete (window as unknown as { __prevFrame?: string }).__prevFrame; });
+}
+
 test.describe('front door', () => {
   test('renders the sign-in gate in light and dark', async ({ page }) => {
     /*
@@ -33,12 +86,14 @@ test.describe('front door', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.goto('/select');
     await expect(page.getByRole('heading', { name: /sign in to the desk/i })).toBeVisible();
-    await expect(page).toHaveScreenshot('front-door-light.png', { fullPage: true });
+    await settled(page);
+    await expect(page).toHaveScreenshot('front-door-light.png', { fullPage: true, timeout: 30_000 });
 
     // Dark theme is a designed parallel palette — must be first-class.
     await page.emulateMedia({ colorScheme: 'dark' });
     await page.evaluate(() => document.documentElement.classList.add('dark'));
-    await expect(page).toHaveScreenshot('front-door-dark.png', { fullPage: true });
+    await settled(page);
+    await expect(page).toHaveScreenshot('front-door-dark.png', { fullPage: true, timeout: 30_000 });
   });
 
   test('asks for both credentials and names neither operator nor desk', async ({ page }) => {
