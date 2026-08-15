@@ -50,12 +50,20 @@
  * put `@lcx/gl` back into the module graph of everything that reads a tier. So `pickQualityTier` is passed
  * IN by the caller, which already holds it, and the only thing this file takes from the package is a type.
  * Initial JS has 11 KB of headroom (839 of 850 KB) and it fails the build when breached.
+ *
+ * ── AND WHY THE TWO TYPE POSITIONS NAME A SUB-PATH, NOT THE BARREL ──────────────────
+ * Both are erased, so this moves no byte today and it is not claimed to. It is a GUARD. This module is
+ * imported by nearly every route; the one edit that would put the whole renderer back into the initial
+ * chunk is somebody dropping the word `type` from the line below. Pointing the specifier at
+ * `env/quality.js` — the module those two names actually live in — makes that slip cost one leaf module
+ * instead of `src/index.ts` and everything Rollup groups behind it, which `docs/3d/w2/SUBPATH_COST.md` §9
+ * measured at 100,709 B across 13 chunks on a real build.
  */
 import { useEffect, useState } from 'react';
-import type { QualityTier } from '@lcx/gl';
+import type { QualityTier } from '@lcx/gl/env/quality.js';
 
 /** Structural, so this file carries no runtime dependency on the package the function lives in. */
-type PickQualityTier = typeof import('@lcx/gl')['pickQualityTier'];
+type PickQualityTier = typeof import('@lcx/gl/env/quality.js')['pickQualityTier'];
 
 /**
  * 60 Hz. Two of the eight surfaces have frames after their first — `ForgeBackdrop`'s five-second arc and

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-// TYPE-ONLY, so it is erased at build and the dynamic import below stays the sole entry
-// point for @lcx/gl. A value import here would pull the renderer into every page chunk
+// TYPE-ONLY, so it is erased at build and the dynamic imports below stay the sole entry
+// points into @lcx/gl. A value import here would pull the renderer into every page chunk
 // that merely mentions a chart.
-import type { BarBatch, BarDatum as GlBarDatum, Pipeline, Stage } from '@lcx/gl';
+import type { BarBatch, BarDatum as GlBarDatum } from '@lcx/gl/flat/bars.js';
+import type { Pipeline } from '@lcx/gl/look/pipeline.js';
+import type { Stage } from '@lcx/gl/stage.js';
 import { useFlatChart } from './useFlatChart';
 
 /**
@@ -33,9 +35,9 @@ import { useFlatChart } from './useFlatChart';
  * offscreen buffer into `target`. An `async` draw returns at its first `await` and does its
  * GL work in a later microtask — after that blit has already happened. The blit therefore
  * copies whatever was in the shared buffer BEFORE this chart drew: the previous frame, or
- * on a dashboard, ANOTHER CHART'S IMAGE. So the module is loaded up front here and the
- * frame callback contains no `await`. The dynamic import is kept — it is just moved ahead
- * of the frame instead of inside it — so @lcx/gl still stays out of chunks that never
+ * on a dashboard, ANOTHER CHART'S IMAGE. So the modules are loaded up front here and the
+ * frame callback contains no `await`. The dynamic imports are kept — they are just moved
+ * ahead of the frame instead of inside it — so @lcx/gl still stays out of chunks that never
  * render a chart.
  *
  * ── THE FALLBACK STAYS FREE ─────────────────────────────────────────────────────────
@@ -64,7 +66,28 @@ export interface FlatTrackProps {
   readonly radius?: number;
 }
 
-type GlModule = typeof import('@lcx/gl');
+/**
+ * ── FOUR SPECIFIERS, NOT ONE BARREL, AND THE REASON IS NOT TREE-SHAKING ─────────────────
+ * `docs/3d/w2/SUBPATH_COST.md` measured all three candidate fixes. Named imports from the
+ * barrel shake to within FOUR BYTES of importing the same names from their own modules, and
+ * destructuring at the call site was measured NOT fixing this (68.9 KiB, still carrying the
+ * raymarcher). Rollup groups a module by the set of ENTRIES that reach it, so while a chart
+ * route and a relief route both resolve to `src/index.ts` the union of the two lanes is one
+ * chunk by construction. SPECIFIER IDENTITY is the only lever.
+ *
+ * Measured on `apps/web/dist` before this changed: this hook's route — `OutreachOps` — fetched
+ * 13 GL chunks and 100,709 B, including `lit`, `ao`, `dof` and the volumetric raymarcher, none
+ * of which a stacked track can execute. After, 8 chunks and 27,337 B.
+ */
+interface TrackKit {
+  readonly createBarBatch: typeof import('@lcx/gl/flat/bars.js')['createBarBatch'];
+  readonly plotMatrix: typeof import('@lcx/gl/flat/bars.js')['plotMatrix'];
+  readonly createPipeline: typeof import('@lcx/gl/look/pipeline.js')['createPipeline'];
+  readonly beginAdditive: typeof import('@lcx/gl/stage.js')['beginAdditive'];
+  readonly endPass: typeof import('@lcx/gl/stage.js')['endPass'];
+  readonly hexToLinear: typeof import('@lcx/gl/look/colour.js')['hexToLinear'];
+  readonly exposure: typeof import('@lcx/gl/look/colour.js')['exposure'];
+}
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -74,11 +97,33 @@ const HEX = /^#[0-9a-f]{6}$/i;
  * caller must keep both and gate its marks on `refused` itself.
  */
 export function useFlatTrack({ segments, viewW, viewH, radius = 4 }: FlatTrackProps) {
-  const [mod, setMod] = useState<GlModule | null>(null);
+  /* `Promise.all` and not four awaits: the kit is set ONCE, so the frame can never run against
+     a half-built kit. A rejection on any one of them leaves `mod` null, which keeps `drawable`
+     false, keeps the canvas unmounted and keeps `refused` true. */
+  const [mod, setMod] = useState<TrackKit | null>(null);
   useEffect(() => {
     let live = true;
-    void import('@lcx/gl').then(
-      (m) => { if (live) setMod(m); },
+    void Promise.all([
+      import('@lcx/gl/flat/bars.js'),
+      import('@lcx/gl/look/pipeline.js'),
+      import('@lcx/gl/stage.js'),
+      import('@lcx/gl/look/colour.js'),
+    ]).then(
+      ([bars, pipe, stage, colour]) => {
+        if (!live) return;
+        /* Named one by one rather than spread. A spread of the namespaces would retain every
+           export of all four modules — the same "a retained namespace has no unused exports"
+           that SUBPATH_COST.md §3 measured as what defeated the split in the first place. */
+        setMod({
+          createBarBatch: bars.createBarBatch,
+          plotMatrix: bars.plotMatrix,
+          createPipeline: pipe.createPipeline,
+          beginAdditive: stage.beginAdditive,
+          endPass: stage.endPass,
+          hexToLinear: colour.hexToLinear,
+          exposure: colour.exposure,
+        });
+      },
       // A failed chunk load is just another refusal: the SVG is already on screen.
       () => {},
     );

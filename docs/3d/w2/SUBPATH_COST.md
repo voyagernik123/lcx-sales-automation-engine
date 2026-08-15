@@ -108,7 +108,15 @@ Sub-path exports are therefore the right lever, for a reason the finding did not
 with it in place: every GL chunk came back with an identical content hash and identical size —
 `lit-aGuFOGn0.js` 28,873 B, `index-b9cOYKUz.js` 28,596 B, all nine. Initial JS 827,861 B (808 KB) both times.
 
-## 5 · The end-to-end result, measured on a full mirror of the app
+## 5 · The end-to-end result, measured on a full mirror of the app — **SUPERSEDED, see §9**
+
+> **AMENDED 2026-08-15.** Everything in this section was measured in a MIRROR, and the mirror lied.
+> Its "after" of 23,681 B was never reached, because §6 was never done: production shipped **97,494 B**
+> on an independent skeptic's crawl, and a real build of this repo at HEAD measures **100,709 B across
+> 13 chunks** — 12.2 % above §1's 89,793 B and 11.7 % above this section's own 90,181 B. A mirror
+> figure recorded beside an unfinished migration reads as the state of the app; it was the state of
+> a copy nobody shipped. §9 replaces it with figures from `vite build` on `apps/web` itself. The
+> section is kept, not deleted, because *how* it came to be believed is the finding.
 
 The saving needs `apps/web` to change its specifiers, and those files belong to other lanes. To produce a
 real number rather than a projection, the whole app was mirrored (`packages/` and `node_modules` symlinked
@@ -140,21 +148,50 @@ half state and −10,339 B once both moved.
 ## 6 · Exactly what has to change in `apps/web`, and by whom
 
 Not made here — these files belong to other lanes. Each is one `import()` becoming a `Promise.all` over the
-modules that call site already destructures, merged with `Object.assign`:
+modules that call site already destructures.
 
-| file:line | today | needs |
-|---|---|---|
-| `apps/web/src/components/charts/gl/useFlatChart.ts:98` | `await import('@lcx/gl')` | `@lcx/gl/flat/shared.js` — it destructures `sharedRenderer` alone, so this one is a single specifier swap |
-| `apps/web/src/components/charts/gl/FlatBars.tsx:66` | `import('@lcx/gl').then(m => setMod(m))` | `flat/bars.js`, `look/pipeline.js`, `stage.js`, `look/colour.js` |
-| `apps/web/src/components/charts/gl/FlatLine.tsx:62` | same | `flat/strokes.js`, `flat/bars.js` (`plotMatrix`), `look/pipeline.js`, `stage.js`, `look/colour.js` |
-| `apps/web/src/components/charts/gl/FlatDial.tsx:86` | same | as `FlatLine` |
-| `apps/web/src/components/charts/gl/FlatTrack.tsx:80` | same | as `FlatBars` |
-| `apps/web/src/components/command/SignatureBackdrop.tsx:81` | same | `look/pipeline.js` only — it destructures `createPipeline` alone |
-| `apps/web/src/components/brand/ForgeBackdrop.tsx:78` | same | `env/lit.js`, `env/mesh.js`, `env/camera.js`, `env/target3d.js`, `env/sky.js`, `env/ao.js`, `env/dof.js`, `env/quality.js`, `stage.js`, `look/colour.js` |
+**Not merged with `Object.assign`, and not spread.** This line originally said `Object.assign`; that would
+have re-created the exact defect §3 measured. `{...ns}` or `Object.assign({}, ns)` RETAINS the namespace,
+and a retained namespace has no unused exports — the migration would have moved the specifier and kept the
+whole-module retention. The four adapters name each symbol individually onto a `readonly` kit interface
+whose members are typed `typeof import('<sub-path>')['<name>']`, so the shape at the call site is unchanged
+(`const { createBarBatch, … } = mod`) and every frame body below it is untouched.
 
-`typeof import('@lcx/gl')` in the type positions can stay — types are erased and cost nothing.
+| file:line | today | needs | status |
+|---|---|---|---|
+| `apps/web/src/components/charts/gl/useFlatChart.ts:108` | `await import('@lcx/gl')` | `@lcx/gl/flat/shared.js` — it destructures `sharedRenderer` alone, so this one is a single specifier swap | **DONE** |
+| `apps/web/src/components/charts/gl/FlatBars.tsx` | `import('@lcx/gl').then(m => setMod(m))` | `flat/bars.js`, `look/pipeline.js`, `stage.js`, `look/colour.js` | **DONE 2026-08-15** |
+| `apps/web/src/components/charts/gl/FlatLine.tsx` | same | `flat/strokes.js`, `flat/bars.js` (`plotMatrix`), `look/pipeline.js`, `stage.js`, `look/colour.js`, **`look/precompensate.js`** | **DONE 2026-08-15** |
+| `apps/web/src/components/charts/gl/FlatDial.tsx` | same | `flat/strokes.js`, `flat/bars.js`, `look/pipeline.js`, `stage.js`, `look/colour.js` | **DONE 2026-08-15** |
+| `apps/web/src/components/charts/gl/FlatTrack.tsx` | same | as `FlatBars` | **DONE 2026-08-15** |
+| `apps/web/src/components/command/SignatureBackdrop.tsx:387` | same | `look/pipeline.js` only — it destructures `createPipeline` alone | **OPEN** |
+| `apps/web/src/components/brand/ForgeBackdrop.tsx:266` | same | `env/lit.js`, `env/mesh.js`, `env/camera.js`, `env/target3d.js`, `env/sky.js`, `env/ao.js`, `env/dof.js`, `env/quality.js`, `stage.js`, `look/colour.js` | **OPEN** |
+
+**Two corrections to this table, both found by reading the frames rather than the row above them.**
+
+- **`FlatLine` needs SIX modules, not five.** The row was derived from the destructure at the top of
+  `draw` and stopped there; `arcColour` further down also calls `precompensate` and
+  `isPrecompRefusal`, and those live in `look/precompensate.js`, not in `look/colour.js`. Migrating
+  the five listed would have left `mod.precompensate` undefined and thrown inside the frame — after
+  `refused` had already been cleared, which is the one failure mode `FlatLine`'s own header says it
+  is written to prevent. Measured cost of the sixth: `precompensate-*.js`, 2,497 B.
+- **`FlatDial` is NOT "as `FlatLine`".** It draws with `beginAdditive`, never `beginAlpha`, and does
+  no pre-compensation at all — five modules, not six.
+
+`typeof import('@lcx/gl')` in the type positions can stay — types are erased and cost nothing. The
+four adapters point theirs at sub-paths anyway, and `useQualityTier.ts` now does too; that moves no
+byte and is not claimed to. It is a guard: those files are imported by nearly every route, and the
+single edit that would put the whole engine back into the initial chunk is somebody dropping the
+word `type`. With a sub-path specifier that slip costs one leaf module instead of §9's 100,709 B.
 
 ## 7 · What the change does NOT break, checked rather than assumed
+
+> **RE-CHECKED 2026-08-15, after the five call sites in §6 moved.** `npm run gl-budget` — spine 79.5 KB
+> of 147, all six layers ✓, `flat/bars.ts` alone 8.4 KB, W1 gate 18.6 KB. `scripts/type-check-3d.mjs`
+> — 12/12 harnesses clean. `tsc --noEmit -p apps/web` — clean. `vitest run` in `apps/web` — 2,632/2,632
+> in 184 files. (A first full run showed 2 failures in `reliefTheme.test.tsx`; it passes 23/23 alone and
+> 2,632/2,632 on a second full run, which is the worker-assignment flake this repo has recorded before,
+> not this change — no test file was added or removed here, so the file count did not move.)
 
 - **`npm run gl-budget` is unaffected, and its measurement stays valid.** All three scripts
   (`p1/build.mjs`, `p0/measure.mjs`, `w1/build.mjs`) bundle **entry files by absolute path** with an esbuild
@@ -188,10 +225,103 @@ wants a sub-path needs its own two lines first, and those files are owned elsewh
 ## 8 · Decision
 
 Implement — the lever is real and the number is 64 KiB a chart route, verified end-to-end on a build of the
-actual app rather than a synthetic entry. The finding's 87.7 KB is exact; its 13.5 KB is the best case and
+actual app rather than a synthetic entry. *(2026-08-15: the lever held, the number did not. Measured on a
+real build the saving is **71.7 KiB** a chart route, from a "before" of 98.3 KiB rather than 88.1 — §9.)* The finding's 87.7 KB is exact; its 13.5 KB is the best case and
 23.1 KiB is what a real route lands at; and its implied cause is wrong in a way that would have sent the next
 reader to destructure the call sites and bank 68.9 KiB as 21.2 KiB.
 
 The half of this that lives in `packages/gl` is done and is inert on its own. The 64 KiB is not banked until
 the seven call sites in §6 move, and it should be all seven in one change — §5 shows a partial migration is
 a small net loss.
+
+---
+
+## 9 · What actually shipped, measured on a real build — 2026-08-15
+
+§5's mirror is superseded here. Every figure below comes from `npx vite build` on `apps/web` itself,
+run once before the change and once after.
+
+**The pair is isolated, and that is not ceremony.** The first before/after pair was taken minutes
+apart on a live working tree, and a `packages/gl/src/look/theme.ts` edit landed between the two
+builds — the `theme` chunk moved 682 → 1,014 B and the delta silently absorbed somebody else's work.
+Rebuilding the same tree twice appeared to prove the build non-deterministic, which it is not. So
+both builds below come from `git archive HEAD | tar -x` into a scratch tree, with `node_modules`
+symlinked entry-by-entry and the five `@lcx/*` workspace links repointed INSIDE the copy so the
+package sources cannot be the live ones. The "after" tree is that same archive with exactly five
+files copied over it — `diff -rq` reports those five and nothing else. Confirmation that this is the
+same measurement, not a different one: the isolated "before" reproduces the working-tree build to
+the byte AND to the chunk hash (`index-CUWxHYdu.js`, 32,224 B; 13 chunks; 100,709 B).
+
+### 9.1 · How it is measured, and why the obvious method gets the wrong answer
+
+A chunk counts as GL when **every** `sources` entry of its emitted sourcemap is under
+`packages/gl/src` — derived from the build, never from a filename list. Edges come from the emitted
+JS. But chunk-level attribution is not sufficient here and would have produced a headline that is
+flatly wrong in both directions:
+
+> Vite puts `useFlatChart.ts` and `SignatureBackdrop.tsx` in the **same** entry chunk, and
+> `SignatureBackdrop` still imports the barrel. Ask "what does the chunk holding a flat adapter
+> `import()`?" and the answer includes the barrel both before and after, so the migration measures as
+> a 2.1 % REGRESSION and the 73 KB saving is invisible.
+
+So every `import("./x.js")` in the emitted code is mapped back through the sourcemap **mappings** to
+the source module whose text it came from, and the flat lane is the set of GL chunks asked for by an
+`import()` **owned by** `FlatBars` / `FlatLine` / `FlatTrack` / `FlatDial` / `useFlatChart`, plus the
+static closure of those. A `import()` inside a chunk is a fetch only when it EXECUTES; attributing
+one component's fetch to another component's route is the arithmetic that made §5 quotable.
+
+### 9.2 · The numbers
+
+| | before (HEAD) | after | Δ |
+|---|---:|---:|---:|
+| **flat-chart lane, GL closure** | **13 chunks · 100,709 B · 98.3 KiB** | **8 chunks · 27,337 B · 26.7 KiB** | **−73,372 B · −72.9 %** |
+| initial JS (from `index.html`, `check-bundle.mjs`'s rule) | 832,171 B · 812.7 KiB | 832,365 B · 812.9 KiB | +194 B, budget 850 KiB |
+| largest chunk | 409.9 KiB | 410.1 KiB | budget 440 KiB |
+| all JS in the build | 3,173,996 B | 3,178,669 B | +4,673 B |
+| chunk count | 198 | 203 | +5 |
+| GL chunks in the build | 13 · 100,709 B | 18 · 102,832 B | +5 chunks · +2,123 B |
+| `ForgeBackdrop` / `SignatureBackdrop` lane | 13 chunks · 100,709 B | 18 chunks · 102,832 B | **+2,123 B · +5 requests** |
+
+`apps/web/scripts/check-bundle.mjs` on a non-sourcemap build of the migrated tree, i.e. the guard
+that actually gates a release rather than a number computed here: **initial JS 813/850 · largest
+chunk 410/440 · CSS 112/140 · fonts 434/440 · passthrough 722/1024 — `✓ perf budget OK`.**
+
+The lane closure, after: `bars` 7,314 · `stage` 6,096 · `pipeline` 4,277 · `strokes` 3,087 ·
+`precompensate` 2,497 · `tonemap` 1,544 · `shared` 1,415 · `colour` 1,107 = 27,337 B.
+
+**26.7 KiB, not the 23.1 KiB §5 claimed.** The difference is `look/precompensate.js` (2,497 B, which
+§6 omitted — see the correction there) plus chunk-boundary overhead on a real 203-chunk build.
+
+### 9.3 · What a flat-chart route stopped downloading
+
+Nineteen `@lcx/gl` modules, none of which a flat chart can execute:
+
+`env/volume` (the raymarcher) · `env/lit` · `env/ao` · `env/dof` · `env/sky` · `env/mesh` ·
+`env/camera` · `env/target3d` · `env/passState` · `env/quality` · `env/project` · `env/particles` ·
+`look/categorical` · `look/semantic` · `look/theme` · `motion/index` · `primitives/points` ·
+`primitives/lines` · `math`
+
+By emitted chunk that is `lit-*` (28,905 B), the barrel chunk `index-*` (32,224 B), `ao-*` (7,354),
+`volume-*` (6,641), `dof-*` (3,563), `semantic-*` (2,775), `lines-*` (1,800), `project-*` (1,388) and
+`theme-*` (682) — nine chunks that a donut route no longer fetches.
+
+### 9.4 · Three things this is NOT, stated because each would otherwise be read as delivered
+
+1. **`FlatDial` is migrated but its saving is unmeasured, because it is not in the shipped bundle.**
+   `GaugeChart` is exported from `components/charts/index.ts` and imported by no route, so Rollup
+   shakes both it and `FlatDial` out entirely — neither appears in any sourcemap of either build.
+   The migration is correct and is what the first route to use a gauge will get; the −73,372 B above
+   is earned by `FlatBars`, `FlatLine` and `FlatTrack` alone.
+2. **The half state §5 warned about is real, and it is now the sign-in shell that pays it.**
+   `ForgeBackdrop` and `SignatureBackdrop` still call `import('@lcx/gl')`. Splitting the flat layer
+   out of the barrel chunk fragmented what they fetch from 13 chunks into 18 and cost them
+   **+2,123 B and five extra round trips**, measured, exactly as §5 predicted for a partial
+   migration. Whole-build JS is +4,673 B for the same reason. Those two files were out of scope for
+   this change; until they move, X2 is banked for chart routes and slightly negative for the shell.
+3. **Nothing guards this.** No test fails if somebody writes `import('@lcx/gl')` back into an
+   adapter. It was verified by mutation instead, in the isolated tree: reverting `FlatBars` alone to
+   the barrel and rebuilding took the lane from 8 chunks · 27,337 B to **18 chunks · 102,832 B
+   (+75,495 B, +276.2 %)**, with `env/volume`, `env/lit`, `env/ao` and `env/dof` back in the closure
+   — one file out of four is enough to lose all of it. A guard belongs in
+   `apps/web/src/components/charts/__tests__/`, asserting on the source text of the five adapters the
+   way `trendDelta.test.tsx` already asserts quote-agnostically on `@lcx/gl`.

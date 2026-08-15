@@ -5,10 +5,40 @@ import { useFlatChart } from '@/components/charts/gl/useFlatChart';
 /**
  * X1 · THE AMBIENT BACKDROP — the shell's negative space, built in linear light.
  *
- * Mounted by `layout/AppLayout.tsx` behind every authenticated route. `pages/CommandDeck.tsx:95`
- * still mounts a second one inside its own page container; that mount is now redundant and
- * should be deleted, and until it is, `useSoleOwner` below keeps the shell's the only live one
- * — with the captured reason.
+ * Mounted by `layout/AppLayout.tsx:265`, behind the 77 URLs under that layout (76 `path:`
+ * children plus one `index`, counted off `router.tsx`). AppLayout is a LAYOUT route, so that
+ * is ONE mount that spans the session, not 77 mounts — a distinction the cost section below
+ * depends on. `pages/CommandDeck.tsx` used to mount a second copy inside its own page
+ * container; that mount is GONE as of 2026-08-15 and its note at `CommandDeck.tsx:89` records
+ * why. `useSoleOwner` below is kept anyway, with its justification restated where it lives.
+ *
+ * ── ONE ROUNDING CONVENTION, STATED ONCE AND USED EVERYWHERE BELOW ───────────────────
+ * A LEVEL is `round(255 · linearToSrgb(L))` for a WCAG 2.x relative luminance `L`: the 8-bit
+ * encoding of the NEUTRAL of that luminance. Every "level", every corridor figure and every
+ * "N levels lost" in this header is in that unit and in no other. Where a per-CHANNEL byte is
+ * meant it is written as a triple — `244 246 251` — never as a lone number.
+ *
+ * This paragraph is here because the previous version of this header did not have it and
+ * paid for it twice: it took "ELEVEN levels" from `255 − the canvas's RED byte` one line
+ * after quoting a neutral-level pair, and it quoted the dark corridor as `41.7 − 14.3` in
+ * UNROUNDED levels one paragraph after quoting the light one in rounded ones. Under the
+ * convention above those two numbers are NINE and TWENTY-EIGHT.
+ *
+ * ── WHICH FIGURES BELOW ARE PINNED BY A TEST, AND WHICH ARE NOT ─────────────────────
+ * PINNED in `__tests__/ambientBackdrop.test.tsx`, so they fail rather than drift: every
+ * encoded pixel triple (213 214 217, 149 150 153, 9 14 27, 241 242 245), both light
+ * corridors and both dark corridors with the role that sets each, the 9-level canvas→card
+ * headroom, the 4-level lift and its tint, the `(L_lifted+0.05)/1.05` trade identity and its
+ * 96%, the 9 levels the dark layer spends downward, the count of certified roles a flat light
+ * plate breaks, the 77 shell URLs, the operator gate preceding the mount, the sole eager
+ * importer of `useFlatChart`, and the 3,883 B / 1,879 B eager cost.
+ *
+ * NOT PINNED, and quoted as measurements taken on 2026-08-15 rather than as invariants: the
+ * 166-module size of the eager graph (it moves with the app, and the attribution is what
+ * matters); the 773 B / 408 B theme-subscription slice and therefore the 3,110 B / 1,471 B
+ * recoverable share, because they price an artifact that does not exist in the tree; the 64
+ * `text-status-ready` and 14 `-green` utility sites; and the 5-versus-30 quantisation
+ * comparison, whose 30 comes from the recorded SwiftShader capture and not from a computation.
  *
  * ── WHAT THIS FILE USED TO DO, AND THE NUMBER THAT CONDEMNS IT ──────────────────────
  * It painted ONE hard-coded near-black plate — `DECK_PLATE = [0.0052, 0.0086, 0.0224]`, plus a
@@ -26,8 +56,8 @@ import { useFlatChart } from '@/components/charts/gl/useFlatChart';
  *
  * ── THE INVARIANT THAT REPLACES THE HARD-CODED PLATE, AND WHY IT NEEDS NO TOKEN LIST ─
  * The plate is now READ FROM `--page-bg`, the very canvas this layer covers, and the
- * composite's vignette only ever SUBTRACTS from it (`look/pipeline.ts` composite:
- * `plate * (1 - depth * smoothstep(…))`). So:
+ * composite's vignette only ever SUBTRACTS from it (`look/pipeline.ts:97`:
+ * `plate = uPlate * (1.0 - uVignetteDepth * smoothstep(…))`). So:
  *
  *   > Every pixel of this backdrop is at or below the luminance of `--page-bg`.
  *
@@ -38,119 +68,234 @@ import { useFlatChart } from '@/components/charts/gl/useFlatChart';
  * file or in its test, which is the point: the previous version's failure is exactly what a
  * hand-list of "roles we checked" would have missed.
  *
- * ── AND THAT IS WHY THE LIGHT THEME RENDERS NOTHING AT ALL ───────────────────────────
- * The same argument runs backwards. Light-theme canvas text is DARKER than the canvas, so any
- * darkening reduces its contrast. Measured from `styles/tokens.css`, and every figure below
- * reproduces on the ratchet's own `luminance()`:
- *
- *   · DOWN — `--page-bg` #f4f6fb is luminance 0.9211. The weakest text role the ratchet
- *     certifies on it is `--green` #1e7a4a at 4.932:1, which hits the 4.5:1 floor at luminance
- *     0.8360 — a neutral byte 236 against the canvas's 246. TEN levels, at zero margin.
- *   · UP — `--card` is #ffffff, NINE levels above the canvas, and the canvas→card step is
- *     already only 1.081:1. Spending the corridor upward deletes the elevation ladder that
- *     `tokens.css:96` calls "each step visibly distinct".
- *
- * That second bullet read ELEVEN until 2026-08-15, which is 255 minus the canvas's RED BYTE —
- * a different unit from the 236/246 pair one line above it. `__tests__/ambientBackdrop.test.tsx`
- * computes it as `byte(luminance(card)) - byte(luminance(canvas))` and gets NINE, so the test
- * that pins this paragraph has disagreed with it since both were written. Nine is LESS room, so
- * everything below is stronger for the correction, not weaker.
- *
- * ── RE-OPENED WITH `look/theme.ts` IN PLACE. THE REFUSAL STANDS; THE REASON DOES NOT ─
- * This refusal predates `look/theme.ts` and was re-examined against it on 2026-08-15. It holds,
- * and the ten levels above are NOT why — they are three times too generous. Both bullets assume
- * the plate reaches the framebuffer as written. It does not. `look/pipeline.ts:98-100` builds
- * `lit = plate + scene + bloom` and then runs `lcxToneMap` on the SUM, unconditionally, so the
- * plate is tone mapped too — and `c/(1+0.4c)` is only near-identity where c is small:
+ * ── WHY THE LIGHT THEME RENDERS NOTHING. RE-DERIVED FROM SCRATCH 2026-08-15 ──────────
+ * Both bullets of the old corridor argument assume the plate reaches the framebuffer as
+ * written. It does not. `look/pipeline.ts:98` builds `lit = plate + scene + bloom * uBloomGain`
+ * and `:100` runs `lcxToneMap` on the SUM, unconditionally, so the plate is tone mapped too —
+ * and `c/(1+0.4c)` is only near-identity where c is small. Recomputed here, on the shipped
+ * `toneMapComposite` and the shipped sRGB encode, with an empty scene and `bloomGain: 0`:
  *
  *   dark  `--page-bg` #090e1b  →   9  14  27     the plate to the byte. NOTHING lost.
  *   light `--page-bg` #f4f6fb  → 213 214 217     31 / 32 / 34 LEVELS LOST.
  *
- * Measured through the shipped shaders on a real driver — headless Chromium on SwiftShader, the
- * instrument `docs/3d/brand-fidelity.mjs` uses — reading bytes back off the framebuffer:
+ * The whole vignette sweep, same model, `vignetteCentre` irrelevant because `smoothstep` is
+ * swept end to end:
  *
- *   configuration                  brightest px    darkest px      weakest certified role
- *   dark, as shipped                 9  14  27      3   5  13      raised (see the invariant)
- *   light, vignetteDepth 0.62      213 214 217    149 150 153      3.669:1  …  1.803:1
- *   light, vignetteDepth 0.00      213 214 217    213 214 217      3.669:1 — FLAT, STILL FAILING
+ *   configuration                  brightest px    darkest px
+ *   dark, as shipped (0.62)          9  14  27      3   5  13
+ *   light, vignetteDepth 0.62      213 214 217    149 150 153
+ *   light, vignetteDepth 0.00      213 214 217    213 214 217
  *
- * The dark row reproduces the capture recorded at the top of `ambientBackdrop.test.tsx` exactly
- * — brightest [9,14,27], darkest [3,5,13], 30 distinct colours — which is what makes the two
- * light rows evidence rather than arithmetic. (An earlier pass of that harness sampled the key
- * at `1 - v` and reported the mirror of it; the recorded dark capture is what caught it.)
+ * The dark row reproduces the real-driver capture recorded at the top of
+ * `ambientBackdrop.test.tsx` — brightest [9,14,27], darkest [3,5,13] — which is what makes the
+ * two light rows evidence rather than arithmetic.
  *
  * Read the third row twice. At ZERO amplitude, with the vignette switched off entirely, this
- * layer still paints 213 214 217 over a 244 246 251 page and drops `--green` from 4.932:1 to
- * 3.669:1, under WCAG 1.4.3. The BRIGHTEST pixel it can produce in the light theme is 23 levels
- * below the 236 the floor needs — 2.3× the whole corridor, on the wrong side of it. So the old
- * conclusion, "either invisible or a defect, and there is no amplitude that is neither", had the
- * right verdict and the wrong range: THERE IS NO AMPLITUDE, INCLUDING ZERO. "Ship it flat" is
- * not the safe version of this layer; it is the same defect with the gradient taken out.
+ * layer still paints 213 214 217 over a 244 246 251 page, and every certified role loses:
  *
- * ── THE ONE CONSTRUCTION THAT WORKS, PRICED RATHER THAN WAVED AWAY ───────────────────
- * `look/precompensate.ts` inverts the curve, and its perimeter is met here exactly — `bloomGain`
- * is 0 and the field is a constant, so nothing accumulates. Writing `inverseToneMap(plate)
- * - plate` into the scene target lands the composite on 244 246 251: the page, byte-exact,
- * measured. A light backdrop CAN therefore be built, and its direction is ADDITIVE, which is the
- * mirror of the dark invariant and needs a list of roles no more than that one did:
+ *     --chart-4  4.574 → 3.403      --grey    5.671 → 4.219      --red      6.899 → 5.133
+ *     --green    4.932 → 3.669      --indigo  5.815 → 4.326      --chart-5  7.913 → 5.887
+ *     --amber    5.224 → 3.887
+ *
+ * FIVE of them go under 4.5:1. THERE IS NO AMPLITUDE, INCLUDING ZERO. "Ship it flat" is not
+ * the safe version of this layer; it is the same defect with the gradient taken out.
+ *
+ * The one-parameter escape hatch was checked and does not exist either. `uVignetteDepth` is
+ * uploaded unclamped (`pipeline.ts:192`), so a NEGATIVE depth makes the factor `1 + |d|·s` and
+ * brightens the edges: at −0.5 the edge reaches 241 242 245 and at −1.0 it clips to white. The
+ * CENTRE does not move, because `smoothstep` is 0 there and the plate meets the curve
+ * unmultiplied — 213 214 217 at every depth. No setting of the shipped uniforms produces a
+ * light backdrop.
+ *
+ * ── THREE FIGURES THIS HEADER USED TO CARRY THAT DO NOT REPRODUCE ────────────────────
+ * The physics above is right. Three of the numbers around it were not, and they are corrected
+ * rather than deleted so the next reader can see which way each error pointed.
+ *
+ *   1. "TEN levels" of DOWN corridor. It reproduces exactly — 246 − 236 = 10, `--green` at
+ *      4.932:1 reaching 4.5:1 at luminance 0.8360 — but ONLY against the ratchet's own text
+ *      roles (`contrast.test.ts:271`: navy, grey-dark, grey, green, amber, red, indigo). The
+ *      TEST beneath this file derived the weakest from "every light token darker than the
+ *      canvas at or above 4.5:1", which admits `--chart-4` #008300 at 4.574:1 and yields
+ *      TWO levels, not ten. It asserted `<= 16` and so passed at 2 without ever saying so.
+ *      Both numbers are now computed and pinned, each against the set it belongs to.
+ *   2. "TWENTY-SEVEN levels" of dark corridor. `--red` #e4687a does measure 6.017:1 and does
+ *      reach 4.5:1 at 41.7 against the canvas's 14.3 — but those are UNROUNDED levels, a
+ *      second convention. Under the one convention above it is 42 − 14 = TWENTY-EIGHT. And
+ *      the test's own candidate rule admits dark `--control-border` #717e98 at 4.714:1, which
+ *      gives SIX.
+ *   3. The eager-bytes SPLIT. See the cost section; the total reproduces and the split does not.
+ *
+ * None of the three changes the verdict. Two of them make the light case worse.
+ *
+ * ── THE ADDITIVE CONSTRUCTION DOES CLEAR THE CONTRAST FLOOR. IT IS REFUSED ANYWAY ────
+ * `look/precompensate.ts` inverts the curve, and its perimeter is met here — `bloomGain` is 0
+ * and the field is a constant, so nothing accumulates. Writing `inverseToneMap(plate)` into
+ * the scene target lands the composite on 244 246 251: the page, byte-exact, recomputed here.
+ * A light backdrop CAN be built, its direction is ADDITIVE, and it is the mirror of the dark
+ * invariant with no list of roles either:
  *
  *   > Every pixel at or above the luminance of `--page-bg` can only RAISE a dark-on-light ratio.
  *
- * Measured against the same floor, it clears it: `--green` 4.932 → 5.107:1 and no certified pair
- * loses. It is refused on the two constraints that are not text contrast.
+ * MEASURED AGAINST THE SAME FLOOR, IT CLEARS IT, and that is recorded plainly because the
+ * refusal is NOT about text contrast. At the maximum lift the range allows, every certified
+ * role gains: `--chart-4` 4.574 → 4.736, `--green` 4.932 → 5.107, `--amber` 5.224 → 5.409,
+ * `--grey` 5.671 → 5.872, `--indigo` 5.815 → 6.021, `--red` 6.899 → 7.143. Nothing loses.
  *
- *   · RANGE, and the binding channel is not the obvious one. `--page-bg`'s headroom to #ffffff
- *     is 11 / 9 / 4 levels, so BLUE binds. A lift holding the canvas's own tint clips after FOUR
- *     levels — the measured sweep is 244 246 251 → 245 247 252 → 246 248 253 → 247 249 254 →
- *     248 250 255, five distinct colours, then blue is pinned and only R and G climb. Past that
- *     the tint B−R collapses from 7 to 3: a decorative layer that changes the page's hue is not
- *     decoration.
- *   · THE LADDER PAYS FOR IT. canvas→card goes 1.0813:1 → 1.0443:1 at +4 — roughly halving the
- *     only step that separates a card from the page it sits on.
+ * ── WHAT ACTUALLY BINDS: `--card` IS AT THE CEILING, AND THE TRADE IS ZERO-SUM ───────
+ * `--card` in light is #ffffff. Level 255. There is no 256. The canvas sits 9 levels below it
+ * and the card CANNOT MOVE UP to make room, so every level this layer lifts the canvas is a
+ * level taken out of the only separation the card has. That is not an aesthetic objection; it
+ * is arithmetic with no free variable in it, and it is the reason the same construction is
+ * free in dark and impossible in light.
  *
- * And four levels fails the banding test the ten-level version already failed: four steps across
- * a 1200 px field is a Mach contour every 300 px with no dither, and an isolated one-level edge
- * on a flat field reads more than a dense ramp, not less. At the only amplitude that is safe —
- * the flat precompensated plate — the layer is byte-identical to not mounting it at all.
+ *   RANGE. `--page-bg`'s per-channel headroom to #ffffff is 11 / 9 / 4, so BLUE binds. The
+ *   sweep: 244 246 251 → 245 247 252 → 246 248 253 → 247 249 254 → 248 250 255. FIVE distinct
+ *   colours, tint B−R held at 7 throughout; at +5 blue is pinned, only R and G climb, and B−R
+ *   collapses 7 → 6 → 5 → 4 → 3. So the usable lift is exactly +4.
+ *
+ *   THE TRADE, in one unit — contrast EXCESS, the part of a ratio above 1.0:
+ *
+ *     light   canvas→card  1.0813:1 → 1.0443:1 at +4    excess DESTROYED  0.0370
+ *             layer centre→edge, +4 → +0                excess CREATED    0.0354
+ *             ────────────────────────────────────────────────────────────────────
+ *             the layer returns 96% of what it takes. Zero-sum, at best.
+ *
+ *     dark    canvas→card  1.0893:1 → 1.1514:1          excess CREATED    0.0622
+ *             layer centre→edge, [9,14,27] → [3,5,13]   excess CREATED    0.0571
+ *             ────────────────────────────────────────────────────────────────────
+ *             BOTH go up. The dark layer spends 9 levels DOWNWARD, into range that
+ *             nothing above it owns and with 5 more still below it before black.
+ *
+ * AND THE 96% IS NOT A PROPERTY OF THIS AMPLITUDE. Write `Lc` for the canvas luminance and
+ * `Ll` for the lifted one. A white card has luminance 1, so `contrast(x, card)` is
+ * `1.05/(Lx+0.05)`, and the lift cancels out of the ratio entirely:
+ *
+ *     created / destroyed  =  (Ll + 0.05) / 1.05
+ *
+ * which is below 1 for every `Ll < 1` — for every light backdrop that is not itself pure
+ * white. So this is not "the corridor is too small to be worth it". WHILE `--card` IS AT THE
+ * CEILING, A LIGHT BACKDROP CANNOT CREATE MORE CONTRAST THAN IT DESTROYS AT ANY AMPLITUDE.
+ * The refusal is structural, not a judgement about subtlety, and the identity is what
+ * `ambientBackdrop.test.tsx` asserts — so moving `--card` off #ffffff, the one token change
+ * that would re-open this, breaks the test rather than the reasoning quietly.
+ *
+ * That is the whole asymmetry, and it is neither the corridor nor the tone map. The dark layer
+ * creates its gradient out of unowned range. The light layer has no unowned range — white is
+ * the ceiling and the card holds all 9 levels of it — so it can only mint its gradient by
+ * melting the elevation ladder `tokens.css:110` calls "each step visibly distinct" down at
+ * a rate the arithmetic above fixes at strictly worse than break-even. A layer that gives back
+ * 96% of what it takes is not a subtle backdrop; it is a wash.
+ *
+ * Two costs sit on top of that and neither is needed to decide it. Quantisation: 5 distinct
+ * triples across the light field against the 30 the dark capture recorded over the same frame,
+ * so any contour is 6× coarser with no dither in this pipeline. And structure: the composite's
+ * vignette multiplies `uPlate` only, so an additive field cannot come from a uniform at all —
+ * it has to be DRAWN into the scene target, which is a new full-screen shader in this file,
+ * not a parameter change.
  *
  * Moving the token instead was priced and is worse. `--green` is `status.ready`
- * (`tailwind.config.js:51`): 63 `text-status-ready` sites plus 14 direct `-green` utilities, and
- * it MEANS ready. `look/theme.ts` forbids exactly this — "a theme may NOT tint a mark to suit
- * its background, because that would be editing the measurement to flatter the page". It would
- * also not be one token: four roles sit inside 4.93–5.82:1 (`--green` 4.932, `--amber` 5.224,
- * `--grey` 5.671, `--indigo` 5.815), so moving `--green` alone widens the corridor from 10 to
- * 16, and five tokens have to move to reach 45 — against a tone-map cost of 31 at zero
- * amplitude. Repainting the light text palette to make room for a decorative layer is the
- * actual proposal, stated plainly.
+ * (`tailwind.config.js:51`): 64 `text-status-ready` sites plus 14 direct `-green` utilities,
+ * and it MEANS ready. `look/theme.ts` forbids exactly this — "a theme may NOT tint a mark to
+ * suit its background, because that would be editing the measurement to flatter the page". It
+ * would also not be one token: four roles sit inside 4.93–5.82:1 (`--green` 4.932, `--amber`
+ * 5.224, `--grey` 5.671, `--indigo` 5.815), so five have to move — against a tone-map cost of
+ * 31 levels at zero amplitude. Repainting the light text palette to make room for a decorative
+ * layer is the actual proposal, stated plainly.
+ *
+ * ── THE VERDICT, IN WRITING, SO THE RECORD STOPS CARRYING X1 AS DELIVERED ────────────
+ * X1's goal in the plan is that A STRANGER SEES A 3-D FRAME WITHOUT A CLICK on more than one
+ * route of the shell. THIS COMPONENT CANNOT MEET THAT GOAL, AND NOT ONLY BECAUSE OF THE THEME.
+ *
+ *   · REACHABILITY. `AppLayout.tsx:224-227` returns `<Navigate to={toLanding ? '/lcxos' :
+ *     '/select'} replace />` when there is no operator. A stranger — no persisted operator, no
+ *     stored theme — is redirected before this component mounts, on EVERY one of the 77 URLs,
+ *     in EITHER theme. A stranger's reachable set is exactly `/lcxos` and `/select`, and
+ *     `/select` already carries E8's ForgeBackdrop. The count was one before this layer existed
+ *     and it is one now, and swapping the theme would not have changed it.
+ *   · THE DEFAULT THEME. For the reader who does exist — a signed-in operator who has never
+ *     opened Settings — the platform defaults to light and this layer draws nothing on all 77.
+ *
+ * So the honest statement is: on the default theme X1's surface count is ZERO shell routes, and
+ * for a stranger it is unreachable entirely. The plan's X1 line should be read as NOT DELIVERED
+ * and the reason recorded here, rather than carried as done on the strength of a dark-theme
+ * capture. What IS delivered is narrower and real: on the dark theme, one shared-context
+ * backdrop spans all 77 shell URLs and measurably raises every certified contrast pair.
  *
  * ── WHAT THE DEFAULT THEME PAYS FOR A LAYER THAT DRAWS NOTHING ───────────────────────
  * Zero GL contexts and zero renderer bytes — which is not what the census believes. The
  * `canvas === null` branch returns before `LinearPlate` exists, so `import('@lcx/gl')` below and
- * `useFlatChart`'s `import('@lcx/gl/flat/shared.js')` never fire and `sharedRenderer()` is never
- * called. `__tests__/glContextBudget.test.ts:37` records "the floor is now 1 everywhere" and its
- * census puts 70 routes at one context "from the shell's backdrop"; that is a static mount-site
- * walk, it is theme-blind, and the platform DEFAULTS TO LIGHT. On the default theme this layer
- * contributes 0 contexts on all 78 routes, not 1.
+ * `useFlatChart`'s `import('@lcx/gl/flat/shared.js')` (`useFlatChart.ts:108`) never fire and
+ * `sharedRenderer()` is never called. `__tests__/glContextBudget.test.ts:37` records "the floor
+ * is now 1 everywhere" and its census at `:27` puts 70 routes at one context "from the shell's
+ * backdrop"; that is a static mount-site walk, it is theme-blind, and the platform DEFAULTS TO
+ * LIGHT. On the default theme this layer contributes 0 contexts on all 77 URLs, not 1.
  *
- * What it does cost is eager shell JS: 3,883 B minified / 1,879 B gzip for this file plus its
- * static `useFlatChart` import (esbuild --minify, react and `@lcx/gl` external). Gating the
- * mount in `AppLayout` recovers 2,560 B / 1,194 B of that and not the rest, because the theme
- * subscription below (1,323 B / 685 B) has to move INTO `AppLayout` to make the decision — and
- * it would cost the property `ambientBackdrop.test.tsx` pins as "a theme flip swaps the layer
- * without a remount", which is what keeps `CommandDeck`'s print path correct. 1.2 KB gzip is the
- * price of that property. Not proposed.
+ * At runtime the no-op costs one mount for the whole session (AppLayout is a layout route), one
+ * `MutationObserver` on `<html>`'s class attribute, and one memoised snapshot read per shell
+ * render that does not reach `getComputedStyle` at all in light. All of that is noise.
+ *
+ * THE COST THAT IS NOT NOISE IS EAGER SHELL JS: **3,883 B minified / 1,879 B gzip**, fetched by
+ * every reader on first load including the default-theme one who gets nothing for it.
+ * Reproduce with `esbuild <this file> --bundle --minify --format=esm --jsx=automatic`, react
+ * and `@lcx/gl` external, `@` aliased to `apps/web/src`, then node `zlib.gzipSync(level 9)`.
+ * `__tests__/ambientBackdrop.test.tsx` runs exactly that and fails if it grows.
+ *
+ * It is ALL attributable. A static walk of the eager first-party graph from `main.tsx` — 166
+ * modules on 2026-08-15, `import(` and `import type` cut — finds `SignatureBackdrop` in it and
+ * finds it to be the ONLY eager module that imports `useFlatChart`; none of FlatBars /
+ * FlatDial / FlatLine / FlatTrack is eager. So nothing else in the shell keeps the hook alive.
+ *
+ * THE SPLIT THIS HEADER USED TO GIVE IS WRONG. It said gating the mount in `AppLayout` recovers
+ * 2,560 B / 1,194 B because a 1,323 B / 685 B theme subscription would have to move up. Built
+ * on its own by the same command, the subscription below (`subscribeTheme`, `cached`,
+ * `readCanvas`, `computeCanvas`, `resetCanvasSnapshot`) is **773 B / 408 B**, so the recoverable
+ * share is **3,110 B / 1,471 B — 80% of it, not 66%**. That makes the case for gating stronger
+ * than the header admitted, not weaker.
+ *
+ * IT IS STILL NOT DONE, and the reason is scope rather than judgement: recovering those bytes
+ * needs the mount to become a dynamic import, which is an edit to `AppLayout.tsx` and not to
+ * this file. Note first that a gate which KEEPS the static import recovers ZERO bytes — the
+ * chunk is in the eager graph because of the import, not because of the mount — so the only
+ * version that recovers anything is this one, recorded in full so it is a decision rather than
+ * a note. Replace the static import at `AppLayout.tsx:27` with:
+ *
+ *     const SignatureBackdrop = lazy(() =>
+ *       import('@/components/command/SignatureBackdrop').then((m) => ({ default: m.SignatureBackdrop })));
+ *     function subscribeDark(onChange: () => void): () => void {
+ *       if (typeof MutationObserver === 'undefined') return () => {};
+ *       const mo = new MutationObserver(onChange);
+ *       mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+ *       return () => mo.disconnect();
+ *     }
+ *     const isDark = () => document.documentElement.classList.contains('dark');
+ *
+ * add `lazy` and `useSyncExternalStore` to the React import at `:1`, take
+ * `const dark = useSyncExternalStore(subscribeDark, isDark, () => false);` inside `AppLayout`,
+ * and change the mount at `:265` from `<SignatureBackdrop />` to
+ * `{dark && <Suspense fallback={null}><SignatureBackdrop /></Suspense>}` (`Suspense` is already
+ * imported there; the one at `:304` wraps only the Outlet and does not cover this).
+ *
+ * The gate must read the CLASS and not `useUIStore`, for the reason `subscribeTheme` below
+ * gives: `CommandDeck.tsx:81-82` strips `.dark` off `<html>` directly to print the board pack.
+ * AND THE COST IS EXACTLY THERE. Under that print path the layer would now UNMOUNT and remount
+ * rather than swap — the property `ambientBackdrop.test.tsx` pins as "a theme flip swaps the
+ * layer without a remount" holds of this component but would no longer hold of the shell — so
+ * the stage, pipeline and target set are rebuilt after every print. 1.5 KB gzip against that is
+ * an owner's call, not this file's, which is why it is written down rather than made.
  *
  * ── AND THE INVARIANT ABOVE IS CONDITIONAL, WHICH IT DID NOT SAY ─────────────────────
  * "Every pixel of this backdrop is at or below the luminance of `--page-bg`" holds in dark
- * because `tone(c) ≈ c` there, NOT because the vignette subtracts. The tone map costs 0 levels
- * while the dark canvas stays at or below byte 57, 1 level from 58 and 2 from 86. Dark
- * `--page-bg` is #090e1b, so the margin is 30 bytes on its lightest channel. Lighten the dark
- * canvas past that and this layer begins darkening a canvas the vignette was told not to touch.
+ * because `tone(c) ≈ c` there, NOT because the vignette subtracts. Dark `--page-bg` #090e1b
+ * loses 0 / 0 / 0 levels to the curve; light #f4f6fb loses 31 / 32 / 34. Lighten the dark
+ * canvas far enough and this layer begins darkening a canvas the vignette was told not to
+ * touch. `ambientBackdrop.test.tsx` sweeps the curve rather than trusting the boundary.
  *
- * The dark theme's own corridor: `--red` #e4687a is its weakest certified role at 6.017:1 and
- * reaches 4.5:1 at a neutral byte of 41.7 against the canvas's 14.3 — TWENTY-SEVEN levels, not
- * the 29 this header claimed. The layer spends none of them. It spends the 14 levels DOWNWARD
- * to black, where nothing is borrowed from a contrast ratio.
+ * The dark theme's own corridor, under the one convention: `--red` #e4687a is the weakest
+ * certified TEXT role at 6.017:1 and reaches 4.5:1 at level 42 against the canvas's 14 —
+ * TWENTY-EIGHT levels (41.7 − 14.3 = 27.4 unrounded, which is where the old "TWENTY-SEVEN"
+ * came from). Widen the candidate set the way the test does and dark `--control-border`
+ * #717e98 at 4.714:1 gives SIX. The layer spends none of either. It spends 9 levels DOWNWARD,
+ * where nothing is borrowed from a contrast ratio.
  *
  * ── RESOLUTION IS DERIVED FROM THE SHARED BUFFER, NOT FROM THE VIEWPORT ──────────────
  * A viewport-sized surface on the shared renderer is not free, and the cost lands on OTHER
@@ -203,7 +348,7 @@ const VIGNETTE_CENTRE = [0.62, 0.70] as const;
  * Which theme is live, subscribed to rather than sampled.
  *
  * NOT `useUIStore(s => s.darkMode)`, and the reason is a path that never touches the store:
- * `pages/CommandDeck.tsx:81-83` strips the `dark` class off `<html>` directly to print the
+ * `pages/CommandDeck.tsx:81-82` strips the `dark` class off `<html>` directly to print the
  * board pack and puts it back afterwards. A store-derived backdrop would keep the dark plate
  * through that window. The class is what the stylesheet reads, so the class is what this reads.
  *
@@ -259,8 +404,10 @@ function computeCanvas(): { value: string | null; stable: boolean } {
   }
   /* Light: refused, and no token read is needed to know it. NOT because of the corridor — the
      composite tone maps the plate, so the light canvas leaves this pipeline as 213 214 217 at
-     ZERO vignette depth and takes `--green` under the 4.5:1 floor before any gradient exists.
-     There is no amplitude that is neither invisible nor a defect. Header, third table row. */
+     ZERO vignette depth and takes five certified roles under the 4.5:1 floor before any
+     gradient exists. And the additive construction that WOULD clear the floor is refused on a
+     different number: `--card` is #ffffff, the canvas is 9 levels below it, and the lift gives
+     back 96% of the elevation it takes. Header, the sweep table and the trade table. */
   if (!document.documentElement.classList.contains('dark')) return { value: null, stable: true };
   const raw = getComputedStyle(document.documentElement).getPropertyValue('--page-bg').trim();
   return /^\d{1,3}\s+\d{1,3}\s+\d{1,3}$/.test(raw)
@@ -308,17 +455,22 @@ export function backdropPlate(triple: string, srgbToLinear: (c: number) => numbe
 }
 
 /**
- * ONE LIVE LAYER, and this is not tidiness — it is a defect that is already capturable.
+ * ONE LIVE LAYER, and this is not tidiness — it is a defect that was already captured.
  *
- * `pages/CommandDeck.tsx:95` mounts this component inside its own `.br-page` container, which
- * predates the shell mount. With both up, the deck's copy is OPAQUE and covers the shell's copy
- * inside the page container only — so its own falloff is computed over a 1400 px box while the
- * shell's is computed over the viewport, and the two disagree at the container's edge. Captured:
- * a visibly darker rectangle with a hard seam down the left of the content area.
+ * `pages/CommandDeck.tsx` mounted this component inside its own `.br-page` container, which
+ * predated the shell mount. With both up, the deck's copy was OPAQUE and covered the shell's
+ * copy inside the page container only — so its own falloff was computed over a 1400 px box
+ * while the shell's was computed over the viewport, and the two disagreed at the container's
+ * edge. Captured: a visibly darker rectangle with a hard seam down the left of the content area.
  *
- * The right fix is deleting the deck's mount, which is not this file's to make. The guard is
- * here anyway, for the same reason `AppLayout` explains for `ToastContainer`: a layer that spans
- * a whole surface is a singleton by nature, and two of them is never the intended state.
+ * THAT MOUNT IS NOW GONE — `CommandDeck.tsx:89` records its removal — so this guard currently
+ * has no trigger in the tree. It is KEPT rather than deleted, and the reason is the failure mode
+ * and not sentiment: the guard is structural (first claim wins, taken in a layout effect), it is
+ * what makes "two of these cannot both draw" true of the component instead of true of the
+ * current call sites, and a second mount is a one-line addition anyone could make. Deleting a
+ * guard because its one known trigger was removed is how the other guards in this repo stopped
+ * guarding. Same reason `AppLayout` gives for `ToastContainer`: a layer that spans a whole
+ * surface is a singleton by nature, and two of them is never the intended state.
  *
  * The claim is taken in a LAYOUT effect and every instance starts as a non-owner, so there is no
  * frame in which two are drawn. Costing the winner one frame is free — `@lcx/gl` is a dynamic
@@ -381,14 +533,43 @@ function LinearPlate({
     return () => ro.disconnect();
   }, []);
 
-  const [mod, setMod] = useState<typeof import('@lcx/gl') | null>(null);
+  /*
+   * TWO SPECIFIERS, NOT THE BARREL. This layer calls exactly `createPipeline` and `srgbToLinear`,
+   * and while it resolved through `src/index.ts` Rollup grouped it with every other barrel consumer
+   * — a chart route and a relief route reaching one entry put the raymarcher, the lit renderer, AO
+   * and DoF in the shared chunk this file then pulled. `docs/3d/w2/SUBPATH_COST.md` measured that
+   * SPECIFIER IDENTITY is the only lever: named imports shake to within four bytes, and
+   * destructuring at the call site was measured NOT fixing it.
+   *
+   * Migrated because the half state is worse than either end. With the four flat adapters moved and
+   * this file left on the barrel, the sign-in shell went 13 chunks / 100,709 B to 18 / 102,832 B —
+   * +2,123 B and five extra round trips — which is exactly the loss SUBPATH_COST.md section 5
+   * predicts for a partial migration, on the one screen every reader sees first.
+   *
+   * Named individually rather than spread: a retained namespace has no unused exports, so a spread
+   * would move the specifier and keep whole-module retention, which is the defect and not the fix.
+   */
+  const [mod, setMod] = useState<{
+    readonly createPipeline: typeof import('@lcx/gl/look/pipeline.js')['createPipeline'];
+    readonly srgbToLinear: typeof import('@lcx/gl/look/colour.js')['srgbToLinear'];
+  } | null>(null);
   useEffect(() => {
     let alive = true;
-    void import('@lcx/gl').then((m) => { if (alive) setMod(m); });
+    /* `Promise.all`, so the kit is set ONCE and a frame can never run against a half-built one. A
+       rejection leaves `mod` null, which is the existing refusal — the layer simply does not draw. */
+    void Promise.all([
+      import('@lcx/gl/look/pipeline.js'),
+      import('@lcx/gl/look/colour.js'),
+    ]).then(
+      ([pipe, colour]) => {
+        if (alive) setMod({ createPipeline: pipe.createPipeline, srgbToLinear: colour.srgbToLinear });
+      },
+      () => {},
+    );
     return () => { alive = false; };
   }, []);
 
-  const cache = useRef<{ stage: Stage; pipeline: ReturnType<typeof import('@lcx/gl').createPipeline> } | null>(null);
+  const cache = useRef<{ stage: Stage; pipeline: ReturnType<typeof import('@lcx/gl/look/pipeline.js')['createPipeline']> } | null>(null);
 
   const draw = useCallback((stage: Stage) => {
     if (!mod) return;

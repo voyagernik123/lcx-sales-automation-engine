@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Stage } from '@lcx/gl';
+import type { Stage } from '@lcx/gl/stage.js';
 import { useFlatChart } from './useFlatChart';
 
 /**
@@ -37,7 +37,36 @@ import { useFlatChart } from './useFlatChart';
  * distinction from being re-lost.
  */
 
-type GlMod = typeof import('@lcx/gl');
+/**
+ * ── SIX SPECIFIERS, NOT ONE BARREL, AND THE REASON IS NOT TREE-SHAKING ──────────────────
+ * `docs/3d/w2/SUBPATH_COST.md` measured all three candidate fixes. Named imports from the
+ * barrel shake to within FOUR BYTES of importing the same names from their own modules, and
+ * destructuring at the call site was measured NOT fixing this (68.9 KiB, still carrying the
+ * raymarcher). Rollup groups a module by the set of ENTRIES that reach it, so while a chart
+ * route and a relief route both resolve to `src/index.ts` the union of the two lanes is one
+ * chunk by construction. SPECIFIER IDENTITY is the only lever.
+ *
+ * Measured on `apps/web/dist` before this changed: this hook's own route — the donut — fetched
+ * 13 GL chunks and 100,709 B, including `lit`, `ao`, `dof` and the volumetric raymarcher, none
+ * of which an arc can execute. After, 8 chunks and 27,337 B.
+ *
+ * SIX, not the five SUBPATH_COST.md §6 predicted: that row was derived from the destructuring
+ * at the top of `draw` and missed `precompensate`/`isPrecompRefusal`, which live in
+ * `look/precompensate.js` rather than in `look/colour.js`. The list below is the frame's, not
+ * the document's.
+ */
+interface RingKit {
+  readonly createStrokeBatch: typeof import('@lcx/gl/flat/strokes.js')['createStrokeBatch'];
+  /** `plotMatrix` lives in `flat/bars.js`, so an arc pays for the bar module's specifier too. */
+  readonly plotMatrix: typeof import('@lcx/gl/flat/bars.js')['plotMatrix'];
+  readonly createPipeline: typeof import('@lcx/gl/look/pipeline.js')['createPipeline'];
+  readonly beginAlpha: typeof import('@lcx/gl/stage.js')['beginAlpha'];
+  readonly endPass: typeof import('@lcx/gl/stage.js')['endPass'];
+  readonly hexToLinear: typeof import('@lcx/gl/look/colour.js')['hexToLinear'];
+  readonly exposure: typeof import('@lcx/gl/look/colour.js')['exposure'];
+  readonly precompensate: typeof import('@lcx/gl/look/precompensate.js')['precompensate'];
+  readonly isPrecompRefusal: typeof import('@lcx/gl/look/precompensate.js')['isPrecompRefusal'];
+}
 
 export interface RingArc {
   readonly cx: number; readonly cy: number;
@@ -56,14 +85,44 @@ export interface FlatLineProps {
 const HEX = /^#[0-9a-f]{6}$/i;
 
 export function useFlatLine({ arcs = [], viewW, viewH }: FlatLineProps) {
-  const [mod, setMod] = useState<GlMod | null>(null);
+  /* `Promise.all` and not six awaits: the kit is set ONCE, so the frame can never run against a
+     half-built kit. A rejection on any one of them leaves `mod` null, which is the existing
+     refusal — `drawable` stays false and the SVG that is already on screen stays there. */
+  const [mod, setMod] = useState<RingKit | null>(null);
   useEffect(() => {
     let alive = true;
-    void import('@lcx/gl').then((m) => { if (alive) setMod(m); });
+    void Promise.all([
+      import('@lcx/gl/flat/strokes.js'),
+      import('@lcx/gl/flat/bars.js'),
+      import('@lcx/gl/look/pipeline.js'),
+      import('@lcx/gl/stage.js'),
+      import('@lcx/gl/look/colour.js'),
+      import('@lcx/gl/look/precompensate.js'),
+    ]).then(
+      ([strokes, bars, pipe, stage, colour, precomp]) => {
+        if (!alive) return;
+        /* Named one by one rather than spread. A spread of the namespaces would retain every
+           export of all six modules — the same "a retained namespace has no unused exports"
+           that SUBPATH_COST.md §3 measured as what defeated the split in the first place. */
+        setMod({
+          createStrokeBatch: strokes.createStrokeBatch,
+          plotMatrix: bars.plotMatrix,
+          createPipeline: pipe.createPipeline,
+          beginAlpha: stage.beginAlpha,
+          endPass: stage.endPass,
+          hexToLinear: colour.hexToLinear,
+          exposure: colour.exposure,
+          precompensate: precomp.precompensate,
+          isPrecompRefusal: precomp.isPrecompRefusal,
+        });
+      },
+      // A failed chunk load is just another refusal: the SVG is already on screen.
+      () => {},
+    );
     return () => { alive = false; };
   }, []);
 
-  const cache = useRef<{ stage: Stage; strokes: ReturnType<GlMod['createStrokeBatch']>; pipeline: ReturnType<GlMod['createPipeline']> } | null>(null);
+  const cache = useRef<{ stage: Stage; strokes: ReturnType<RingKit['createStrokeBatch']>; pipeline: ReturnType<RingKit['createPipeline']> } | null>(null);
 
   /* Every colour must already be a resolved hex. `hexToLinear` THROWS on anything else, and
      a throw inside the frame escapes after `refused` has been cleared — the SVG marks would

@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-// TYPE-ONLY, so it is erased at build and the dynamic import below stays the sole entry
-// point for @lcx/gl. A value import here would pull the renderer into every page chunk
+// TYPE-ONLY, so it is erased at build and the dynamic imports below stay the sole entry
+// points into @lcx/gl. A value import here would pull the renderer into every page chunk
 // that merely mentions a chart.
-import type { Pipeline, Stage, StrokeBatch } from '@lcx/gl';
+import type { StrokeBatch } from '@lcx/gl/flat/strokes.js';
+import type { Pipeline } from '@lcx/gl/look/pipeline.js';
+import type { Stage } from '@lcx/gl/stage.js';
 import { useFlatChart } from './useFlatChart';
 
 /**
@@ -36,8 +38,8 @@ import { useFlatChart } from './useFlatChart';
  * offscreen buffer into `target`. An `async` draw returns at its first `await` and does its
  * GL work in a later microtask, after that blit has happened — so the blit copies whatever
  * was in the shared buffer before this chart drew: the previous frame, or on a dashboard,
- * another chart's image. The module is therefore loaded up front and the frame callback
- * contains no `await`. The dynamic import is kept, just moved ahead of the frame, so
+ * another chart's image. The modules are therefore loaded up front and the frame callback
+ * contains no `await`. The dynamic imports are kept, just moved ahead of the frame, so
  * @lcx/gl still stays out of chunks that never render a chart.
  *
  * ── THE FALLBACK STAYS FREE ─────────────────────────────────────────────────────────
@@ -68,7 +70,36 @@ export interface FlatDialProps {
   readonly viewH: number;
 }
 
-type GlModule = typeof import('@lcx/gl');
+/**
+ * ── FIVE SPECIFIERS, NOT ONE BARREL, AND THE REASON IS NOT TREE-SHAKING ─────────────────
+ * `docs/3d/w2/SUBPATH_COST.md` measured all three candidate fixes. Named imports from the
+ * barrel shake to within FOUR BYTES of importing the same names from their own modules, and
+ * destructuring at the call site was measured NOT fixing this (68.9 KiB, still carrying the
+ * raymarcher). Rollup groups a module by the set of ENTRIES that reach it, so while a chart
+ * route and a relief route both resolve to `src/index.ts` the union of the two lanes is one
+ * chunk by construction. SPECIFIER IDENTITY is the only lever.
+ *
+ * Measured on `apps/web/dist` before this changed: the three flat adapters that ARE in the
+ * shipped bundle fetched 13 GL chunks and 100,709 B, including `lit`, `ao`, `dof` and the
+ * volumetric raymarcher, none of which a two-arc band can execute; after, 8 chunks and 27,337 B.
+ *
+ * ── NO SAVING IS CLAIMED FOR THIS FILE, BECAUSE IT IS NOT IN THE BUNDLE ─────────────
+ * `GaugeChart` is exported from `components/charts/index.ts` and imported by no route, so Rollup
+ * shakes it and this hook out entirely — neither appears in any sourcemap of either build. The
+ * migration below is therefore UNMEASURED: it is what the first route to render a gauge will get,
+ * and it is written now precisely so that route does not silently re-import the barrel and undo
+ * the other three. Saying it saved bytes today would be a claim about code that does not ship.
+ */
+interface DialKit {
+  readonly createStrokeBatch: typeof import('@lcx/gl/flat/strokes.js')['createStrokeBatch'];
+  /** `plotMatrix` lives in `flat/bars.js`, so a dial pays for the bar module's specifier too. */
+  readonly plotMatrix: typeof import('@lcx/gl/flat/bars.js')['plotMatrix'];
+  readonly createPipeline: typeof import('@lcx/gl/look/pipeline.js')['createPipeline'];
+  readonly beginAdditive: typeof import('@lcx/gl/stage.js')['beginAdditive'];
+  readonly endPass: typeof import('@lcx/gl/stage.js')['endPass'];
+  readonly hexToLinear: typeof import('@lcx/gl/look/colour.js')['hexToLinear'];
+  readonly exposure: typeof import('@lcx/gl/look/colour.js')['exposure'];
+}
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -80,11 +111,34 @@ const HEX = /^#[0-9a-f]{6}$/i;
 export function useFlatDial({
   cx, cy, rInner, rOuter, a0, a1, aValue, trackColour, valueColour, viewW, viewH,
 }: FlatDialProps) {
-  const [mod, setMod] = useState<GlModule | null>(null);
+  /* `Promise.all` and not five awaits: the kit is set ONCE, so the frame can never run against
+     a half-built kit. A rejection on any one of them leaves `mod` null, which keeps `drawable`
+     false, keeps the canvas unmounted and keeps `refused` true. */
+  const [mod, setMod] = useState<DialKit | null>(null);
   useEffect(() => {
     let live = true;
-    void import('@lcx/gl').then(
-      (m) => { if (live) setMod(m); },
+    void Promise.all([
+      import('@lcx/gl/flat/strokes.js'),
+      import('@lcx/gl/flat/bars.js'),
+      import('@lcx/gl/look/pipeline.js'),
+      import('@lcx/gl/stage.js'),
+      import('@lcx/gl/look/colour.js'),
+    ]).then(
+      ([strokes, bars, pipe, stage, colour]) => {
+        if (!live) return;
+        /* Named one by one rather than spread. A spread of the namespaces would retain every
+           export of all five modules — the same "a retained namespace has no unused exports"
+           that SUBPATH_COST.md §3 measured as what defeated the split in the first place. */
+        setMod({
+          createStrokeBatch: strokes.createStrokeBatch,
+          plotMatrix: bars.plotMatrix,
+          createPipeline: pipe.createPipeline,
+          beginAdditive: stage.beginAdditive,
+          endPass: stage.endPass,
+          hexToLinear: colour.hexToLinear,
+          exposure: colour.exposure,
+        });
+      },
       // A failed chunk load is just another refusal: the SVG is already on screen.
       () => {},
     );

@@ -199,6 +199,43 @@ export const radiusOf = (m: OrreryMagnitude): number => (
 );
 
 /**
+ * HOW OFTEN A SET OF DRAWN BODIES READS ITS OWN SIZE ENCODING BACKWARDS.
+ *
+ * `observedRadius` is monotonic in the coupling count, so in WORLD units the ordering is exact by
+ * construction. On SCREEN it is not: perspective divides by the distance to the eye, so a well-connected
+ * entity on the far side of the system can draw smaller than a sparse one near the camera, and the reader has
+ * no way to tell that apart from a genuine difference in the data. That is a misread coupling count — the same
+ * failure `BODIES_MERGE_AT_EVERY_VIEWPOINT` refuses — reaching the frame through depth rather than overlap.
+ *
+ * Only OBSERVED bodies are comparable: an absent ring and a withheld drum have deliberately left the size
+ * scale, so their diameters assert nothing and comparing them would invent a reading. Equal counts are not
+ * compared either — two entities with the same number of couplings are not in an order to get wrong.
+ *
+ * Exported, and it is the ONE implementation: the viewpoint search uses it to refuse a camera that reads more
+ * pairs backwards than the incumbent, and the published `sizeOrder` is the same function over the frame that
+ * ships. Two copies would let the constraint and the report describe different cameras.
+ *
+ * The count is invariant to the field of view — a lens change scales every diameter by one factor, so every
+ * comparison survives — which is why it can bound a viewpoint choice that also changes the lens.
+ */
+export function misreadSizePairs(
+  readings: readonly { readonly couplings: number; readonly px: number }[],
+): { readonly comparablePairs: number; readonly misread: number; readonly worstPx: number } {
+  let comparablePairs = 0, misread = 0, worstPx = 0;
+  for (let i = 0; i < readings.length; i++) {
+    for (let j = i + 1; j < readings.length; j++) {
+      const a = readings[i]!, b = readings[j]!;
+      if (a.couplings === b.couplings) continue;
+      comparablePairs++;
+      const more = a.couplings > b.couplings ? a : b;
+      const less = a.couplings > b.couplings ? b : a;
+      if (more.px <= less.px) { misread++; worstPx = Math.max(worstPx, less.px - more.px); }
+    }
+  }
+  return { comparablePairs, misread, worstPx };
+}
+
+/**
  * TUBE AND RING THICKNESS ARE SPECIFIED IN PIXELS AND CONVERTED TO METRES, NOT THE OTHER WAY ROUND.
  *
  * E4's second defect was a 1.4 cm ring tube that came out 1.2 px at 22 m — anti-aliased to a smear, so the
@@ -221,6 +258,30 @@ export const RING_PX = 2.8;
 export const DECK_Y = -2.6;
 /** A body under this many pixels across is an anti-aliased dot, and a size encoding on a dot is fiction. */
 export const BODY_PX_FLOOR = 9;
+
+/**
+ * HOW MUCH OF THE FRAME THE DRAWING MAY FILL, per axis, as a fraction of the half-frame. `fitLens` solves the
+ * field of view against this, so the gutter is (1 − FRAME_FILL)/2 of the full canvas on every side: at 0.86
+ * that is 7% — 54 px on a 768-px-tall canvas, 83 px on an 1184-px-wide one.
+ *
+ * IT IS NOT A SAFETY MARGIN FOR THE MATHS, WHICH IS EXACT. It is chrome clearance, and it was measured rather
+ * than chosen: `OntologyOrrery` overlays a 360×123 px card on the top-left of the canvas and `OntologyExplorer`
+ * a 252×108 px timeline card on the bottom-right, both effectively opaque. Filling the frame outright pushed
+ * the drawing under both. Measured in Chrome at 1440x900 and 1366x768 on the shipped ontology, 0.86 is the
+ * largest fill at which no body, no ring and no link lands inside either card, and it still clears the pixel
+ * floor at both — see `theDrawingStaysClearOfTheCards`.
+ *
+ * The honest limit of that number: it is measured against THIS page's chrome. A host that overlays something
+ * larger would need it re-measured, which is why the measurement is a test rather than a comment.
+ */
+const FRAME_FILL = 0.92;
+/**
+ * Samples per circle when the rings are handed to `fitLens`. 128 puts the chord's sagitta at 3.0e-4 of the
+ * ring radius — under 6 thousandths of a world unit on the largest shell the shipped ontology produces, an
+ * order below the ring's own tube — and it is added back to each sample's radius anyway, so the count is a
+ * cost question rather than a correctness one.
+ */
+const RING_SAMPLES = 128;
 
 /* ── VECTOR AND SEGMENT MATH ───────────────────────────────────────────────────────── */
 
@@ -374,6 +435,41 @@ export interface OrreryLayout {
     readonly largestBody: number;
     readonly ring: number;
     readonly link: number;
+  };
+  /**
+   * HOW OFTEN THE FRAME READS ITS OWN SIZE ENCODING BACKWARDS.
+   *
+   * `comparablePairs` is every pair of OBSERVED entities whose coupling counts differ; `misread` is how many
+   * of those draw the wrong way round, because perspective makes a further body smaller regardless of its
+   * data. `worstMisreadPx` is the largest such gap, so a reader can see whether the failures are hairline or
+   * gross. `fovDeg` is the lens that was fitted to this drawing, against `FOV_REF` = 36.
+   *
+   * This is a REPORTED COST, not a refusal, and it is not caused by the fitted lens: the count is identical
+   * at any field of view because a lens change scales every diameter by one factor. It is published because
+   * it was previously a defect nobody could see — on the shipped fifty-state ontology 480 of 2,056 pairs
+   * read backwards — and because the viewpoint choice is now bounded by it.
+   */
+  readonly sizeOrder: {
+    readonly comparablePairs: number;
+    readonly misread: number;
+    readonly worstMisreadPx: number;
+    readonly fovDeg: number;
+  };
+  /**
+   * THE FRAME THAT WOULD HAVE BEEN DRAWN, so the choice can be audited instead of believed.
+   *
+   * The incumbent is the lowest azimuth that came up clean at the lowest clean elevation — exactly what this
+   * module drew before the lens was fitted to the content and the azimuth stopped being a tie-break.
+   * `smallestBodyPx` is measured at the REFERENCE lens, so it is literally the old number, and the two
+   * guarantees the change is allowed to make are then arithmetic a test can check on any input:
+   *
+   *     px.smallestBody   >= incumbent.smallestBodyPx     — no ontology comes out smaller than before
+   *     sizeOrder.misread <= incumbent.misread            — no ontology reads more pairs backwards
+   */
+  readonly incumbent: {
+    readonly azimuthDeg: number;
+    readonly smallestBodyPx: number;
+    readonly misread: number;
   };
   /** What the search did: viewpoints tried, how many were clean, which spacing survived, and how long. */
   readonly search: {
@@ -596,41 +692,33 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
     const byId = new Map(bodies.map((b) => [b.id, b]));
     const core = byId.get(coreId)!;
 
-    /* ── THE CAMERA ── 36 degrees, because a wide lens cannot render a deep space: it throws the outer shells
-       past the frame edge and exaggerates the depth across one ring, so a circle reads as an egg and two
-       bodies on one shell read as two different distances from the core, destroying the exact encoding radius
-       is carrying. Distance is FRAMED from the system's own extent rather than authored, because the extent
-       depends on the reader's filters. ── */
-    const FOV = 36;
+    /* ── THE CAMERA'S DISTANCE ── Framed from the system's own extent rather than authored, because the extent
+       depends on the reader's filters. `FOV_REF` is NOT the lens the frame ships with — see `fitLens` below;
+       it is the reference field the distance is solved against, and its only job is to fix HOW STRONG the
+       perspective is. Distance over depth is the entire depth cue and it is also the entire distortion: at
+       this distance the nearest body on the outer shell is about a quarter closer to the eye than the
+       furthest, so its screen size is about a quarter larger for reasons that have nothing to do with its
+       coupling count. Sizing is an encoding here, so that ratio is a budget, and it is spent here once. ── */
+    const FOV_REF = 36;
     const aspect = cssWidth / cssHeight;
     const extent = Math.max(
       outerShell + Math.max(...bodies.map((b) => b.radius)),
       offSystem.length > 0 ? Math.hypot(railSpan / 2, railZ) : 0,
     );
-    const halfV = (FOV / 2) * RAD;
+    const halfVRef = (FOV_REF / 2) * RAD;
     /* The vertical field governs a wide canvas and the horizontal one governs a narrow canvas, so both are
        computed and the larger distance wins. Framing the vertical alone put half the outer shell off a
        portrait canvas with every number in the report still correct. */
-    const halfH = Math.atan(Math.tan(halfV) * aspect);
-    const distance = Math.max(extent / Math.sin(halfV), extent / Math.sin(halfH)) * 1.06;
+    const halfHRef = Math.atan(Math.tan(halfVRef) * aspect);
+    const distance = Math.max(extent / Math.sin(halfVRef), extent / Math.sin(halfHRef)) * 1.06;
     const NEAR = 0.5, FAR = Math.max(120, distance * 3);
     const baseView: Viewpoint = {
-      target: [0, 0.35, 0], distance, azimuthDeg: 0, elevationDeg: 26, fovDeg: FOV, near: NEAR, far: FAR,
+      target: [0, 0.35, 0], distance, azimuthDeg: 0, elevationDeg: 26, fovDeg: FOV_REF, near: NEAR, far: FAR,
     };
-    const pxPerMetreAt = (dist: number): number => (cssHeight / 2) / (Math.max(0.01, dist) * Math.tan(halfV));
-    const centrePx = pxPerMetreAt(distance);
-    /* Pixels first, metres second — see `LINK_PX`. */
-    const linkR = LINK_PX / (2 * centrePx);
-    const ringTube = RING_PX / (2 * centrePx);
-
-    const links: OrreryLink[] = drawn.flatMap((c): OrreryLink[] => {
-      const A = byId.get(c.source), B = byId.get(c.target);
-      if (!A || !B) return [];
-      return [{
-        id: c.id, kind: c.kind, aId: c.source, bId: c.target,
-        a: A.pos, b: B.pos, flatA: A.flatPos, flatB: B.flatPos, r: linkR,
-      }];
-    });
+    /* At the reference lens — what the viewpoint search sees. `pxPerMetre`, the one the FRAME is measured
+       with, is defined after the lens is fitted and is the only one any published number may use. */
+    const pxPerMetreRef = (dist: number): number =>
+      (cssHeight / 2) / (Math.max(0.01, dist) * Math.tan(halfVRef));
 
     /*
      * DOES ANY PAIR OF BODIES MERGE ON SCREEN AT THIS VIEWPOINT? Depth does NOT resolve that one.
@@ -648,6 +736,13 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
      * all instead cost 400 ms on the 74-entity system and truncated its own search — a number about the budget
      * masquerading as a number about the layout. Squared distances, no `hypot`, and flat arrays, because this
      * is the innermost loop in the module.
+     *
+     * IT RUNS AT THE REFERENCE LENS AND THAT COSTS NOTHING, which is a property rather than an approximation.
+     * At a fixed eye, target and orientation, changing the field of view multiplies EVERY screen offset from
+     * the principal point and EVERY projected radius by the same factor `tan(halfV_ref)/tan(halfV_fitted)` —
+     * an image crop and scale, nothing more. The predicate below compares a distance against a sum of radii,
+     * so both sides scale together and its verdict is exactly invariant. `lensChangeIsAnExactZoom` in the
+     * tests re-measures that on the shipped ontology rather than trusting this paragraph.
      */
     const isCleanAt = (v: Viewpoint): boolean => {
       const e = eyeOf(v) as V3;
@@ -660,7 +755,7 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
         if (q.behind) continue;
         const dx = b.pos[0] - e[0], dy = b.pos[1] - e[1], dz = b.pos[2] - e[2];
         cx[m] = q.sx; cy[m] = q.sy;
-        rr[m] = b.radius * pxPerMetreAt(Math.sqrt(dx * dx + dy * dy + dz * dz));
+        rr[m] = b.radius * pxPerMetreRef(Math.sqrt(dx * dx + dy * dy + dz * dz));
         m++;
       }
       for (let i = 0; i < m; i++) {
@@ -689,28 +784,241 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
     for (const elevationDeg of [26, 33, 40, 47, 55, 63]) {
       for (let i = 0; i < 24; i++) candidates.push({ ...baseView, azimuthDeg: i * 15, elevationDeg });
     }
+
     /*
-     * The FIRST clean viewpoint is the one drawn, and the sweep then continues only to COUNT the others —
-     * which is what makes "39 of 144 viewpoints are clean" a fact rather than a claim. Because nothing after
-     * the first clean hit can change the camera, the budget may truncate the COUNT without changing the frame,
-     * and `search.truncated` says when it did.
+     * ── THE LENS IS FITTED TO THE DRAWING, AND THAT IS WHERE THE MISSING PIXELS WERE ──────
+     *
+     * `distance` above frames the system's BOUNDING SPHERE at tangency. The drawing is not a sphere. It is a
+     * stack of tilted rings and a rail, so the frame it produced left empty canvas the reader had paid for,
+     * and every body came out smaller than the window allowed. That is what put the 9-pixel floor out of
+     * reach of a 13-inch MacBook: the floor was not being failed by the ontology, it was being failed by the
+     * lens.
+     *
+     * MEASURED, at 1184x768 over every body silhouette and every drawn ring, and corrected — the first
+     * version of this paragraph said 64% of height and 38% of width, and a skeptic could reproduce neither:
+     *
+     *     all content   66.5% h / 51.7% w   →   88.2% h / 68.6% w
+     *     bodies only   64.2% h / 44.6% w   →   85.2% h / 59.2% w
+     *
+     * The 38.2% was unreachable by any method — swept over 24 azimuths and 6 elevations the minimum width
+     * fill is 51.7% — and the 92% it claimed to reach was the `FRAME_FILL` constant restated as though it
+     * were an observation. The two together implied 1.433 vertical against 1.675 horizontal, two different
+     * factors, which THIS FILE'S OWN exact-zoom property forbids: at this canvas the shipped azimuth already
+     * equals the incumbent's, so the change is a pure zoom and it measures 1.327 on BOTH axes.
+     *
+     * Recorded at length because the number was not a stray line in a report. It was the headline
+     * justification for the change, written into this comment and restated as its complement in the test —
+     * and no test guarded it, which is exactly why it survived.
+     *
+     * THE FIELD OF VIEW IS THE ONE CAMERA PARAMETER THAT COSTS NOTHING TO CHANGE. At a fixed eye and
+     * orientation, narrowing it is exactly a crop and a scale of the same image:
+     *
+     *   · relative body sizes            — unchanged, every projected radius scales by the same factor;
+     *   · the merge test                 — unchanged, both sides of `d < r_i + r_j` scale together;
+     *   · the depth cue AND its cost     — unchanged, near-versus-far magnification is set by distance alone,
+     *                                      so the perspective distortion budget spent at `FOV_REF` is not
+     *                                      re-spent here;
+     *   · what a body's size MEANS       — unchanged. `observedRadius` is untouched: still
+     *                                      `0.20 + 0.235·log10(1 + couplings)`, still an order-of-magnitude
+     *                                      reading of the coupling count in the FULL ontology.
+     *
+     * So this is not a tuning that trades legibility against honesty. It hands back canvas that was being
+     * discarded. The clamp to `FOV_REF` is what makes that a guarantee rather than an intention: the fitted
+     * lens is never WIDER than the reference, so no input can come out smaller than it does today.
+     *
+     * WHAT IS FRAMED IS WHAT IS DRAWN, DERIVED FROM THE SAME ARRAYS THE RENDERER READS — every body with its
+     * radius, one inclined ring per occupied (kind, shell) off `bodies`, and one flat control ring per shell
+     * on the plate. Links join bodies, so they are inside that hull already. The DECK is deliberately excluded:
+     * it is a ground plane `3.4 · extent` across whose job is to run past the frame, and framing it would frame
+     * the floor instead of the system. `theFitFramesEverythingTheRendererDraws` reads the renderer's own source
+     * and fails if it ever draws a sixth kind of thing.
+     */
+    const fitLens = (v: Viewpoint): number => {
+      const e = eyeOf(v) as V3;
+      /* Exactly `lookAt`'s basis, so the fit is measured in the frame the projection will actually use. */
+      const zAx = ((): V3 => { const d = sub3(e, v.target as V3); const l = len3(d) || 1; return [d[0] / l, d[1] / l, d[2] / l]; })();
+      /* right = cross(up, z) with up = (0,1,0), written out: the sign is the whole content, and a mirrored
+         basis still returns plausible finite numbers. Checked against z = (0,0,1), where right must be
+         (1,0,0). */
+      const xRaw: V3 = [zAx[2], 0, -zAx[0]];
+      const xl = len3(xRaw);
+      /* up × z is degenerate only when the camera looks straight down, which `ELEVATION_LIMIT` forbids. If it
+         ever happens the reference lens is returned rather than a narrower guess at a basis nobody has. */
+      if (xl < 1e-8) return FOV_REF;
+      const xAx: V3 = [xRaw[0] / xl, xRaw[1] / xl, xRaw[2] / xl];
+      const yAx: V3 = [
+        zAx[1] * xAx[2] - zAx[2] * xAx[1],
+        zAx[2] * xAx[0] - zAx[0] * xAx[2],
+        zAx[0] * xAx[1] - zAx[1] * xAx[0],
+      ];
+
+      /* The ring tube at the REFERENCE lens, which is the widest it can be: the tube is specified in pixels,
+         so narrowing the lens shrinks it in metres. Using the reference value keeps the fit conservative
+         without needing to solve the tube and the lens together. */
+      const refTube = RING_PX / (2 * pxPerMetreRef(distance));
+      const pts: { readonly p: V3; readonly r: number }[] = bodies.map((b) => ({ p: b.pos, r: b.radius }));
+      /* A sampled circle cuts the corner between samples; the sagitta is added back so the fit is an upper
+         bound on the real ring rather than an upper bound on the samples. */
+      const sag = 1 - Math.cos(Math.PI / RING_SAMPLES);
+      const addRing = (r: number, incDeg: number, nodeDeg: number, y: number): void => {
+        for (let i = 0; i < RING_SAMPLES; i++) {
+          const q = orbitPoint(r, (i * 360) / RING_SAMPLES, incDeg, nodeDeg);
+          pts.push({ p: [q[0], q[1] + y, q[2]], r: refTube + r * sag });
+        }
+      };
+      /* THE SAME DERIVATION `OntologyOrreryGl` USES for its inclined rings — one per (kind, shell) that is
+         actually occupied, off the bodies themselves, from the one plane table. */
+      const inclined = new Map<string, readonly [number, number, number]>();
+      for (const b of bodies) {
+        if (b.offSystem || b.isCore || b.hops === null) continue;
+        const pl = ORRERY_PLANES[b.kind];
+        if (pl === undefined) continue;
+        inclined.set(b.kind + '@' + String(b.hops), [b.shell, pl.incDeg, pl.nodeDeg]);
+      }
+      for (const [r, inc, node] of inclined.values()) addRing(r, inc, node, 0);
+      /* The flat control rings, on the plate, one per shell radius. */
+      for (const s of shells) addRing(s, 0, 0, DECK_Y);
+
+      let need = 0;
+      for (const { p, r } of pts) {
+        const d = sub3(p, e);
+        const depth = -dot3(d, zAx);
+        /* Content at or behind the near plane has no finite projection to fit against. The reference lens is
+           returned rather than a number derived from a division that is about to blow up. */
+        if (!(depth > NEAR)) return FOV_REF;
+        const vertical = (Math.abs(dot3(d, yAx)) + r) / (depth * FRAME_FILL);
+        const horizontal = (Math.abs(dot3(d, xAx)) + r) / (aspect * depth * FRAME_FILL);
+        if (vertical > need) need = vertical;
+        if (horizontal > need) need = horizontal;
+      }
+      if (!(need > 0) || !Number.isFinite(need)) return FOV_REF;
+      return Math.min(FOV_REF, (2 * Math.atan(need)) / RAD);
+    };
+
+    /*
+     * THE WHOLE SWEEP IS RUN, SO THE PUBLISHED COUNT IS STILL A COUNT — "3 of 118 viewpoints are clean" is a
+     * fact about all 118, not about the prefix the search happened to stop in. Truncation therefore shortens
+     * the sweep, and `search.truncated` says when it did.
+     *
+     * ELEVATION IS STILL DECIDED FIRST AND LOWEST WINS. The azimuth was NOT decided at all: the old search
+     * drew the first clean viewpoint, which is the lowest azimuth that happened to pass, and that is a
+     * tie-break masquerading as a choice. It is not free. Measured on the shipped fifty-state ontology, the
+     * lens the content needs at elevation 26 ranges from 24.9 to 32.3 degrees across the 24 azimuths — the
+     * same system, the same distance, the same clean verdict, and a 29% difference in how much of the canvas
+     * the drawing gets.
+     *
+     * So among the viewpoints that are clean AT THE LOWEST CLEAN ELEVATION, the one drawn is the one that
+     * makes THE SMALLEST ENTITY LARGEST. Every one of them is equally admissible — the angular positions are
+     * assigned from the data, so no azimuth means anything the others do not — and the smallest body is the
+     * quantity the pixel floor is about, so this maximises exactly what the refusal below measures.
+     *
+     * IT IS NOT THE SAME AS THE NARROWEST LENS, WHICH IS WHAT THIS TRIED FIRST AND MEASURED ITS WAY OUT OF.
+     * A body's pixels are `2r / (dist_to_eye · tan(halfV))`, so an azimuth can buy a narrower lens and spend
+     * more than it bought by swinging the smallest body to the far side of the system. Measured on
+     * states+licences+requirements at 1184x768, minimising the lens took 26.59° to 25.83° and took the
+     * smallest body from 15.4 px DOWN to 11.9 px. Optimising the objective the guard states fixes that by
+     * construction, and because the old first-clean viewpoint is itself a candidate here, the chosen frame
+     * can never be worse than it. Ties break on the lowest azimuth, so the same graph still produces the
+     * same frame.
      */
     let tried = 0, clean = 0, truncated = false;
-    let chosen: Viewpoint | null = null;
+    let lowestCleanElevation = Infinity;
+    const cleanAtLowest: Viewpoint[] = [];
     for (const v of candidates) {
       if (tried > 0 && performance.now() > deadline) { truncated = true; break; }
       tried++;
-      if (isCleanAt(v)) { clean++; if (chosen === null) chosen = v; }
+      if (!isCleanAt(v)) continue;
+      clean++;
+      if (v.elevationDeg < lowestCleanElevation) { lowestCleanElevation = v.elevationDeg; cleanAtLowest.length = 0; }
+      if (v.elevationDeg === lowestCleanElevation) cleanAtLowest.push(v);
     }
-    if (chosen === null) {
+    /** Screen diameters at a viewpoint, in CSS pixels, through a given lens. */
+    const bodyPxAt = (v: Viewpoint, fovDeg: number): number[] => {
+      const e = eyeOf(v) as V3;
+      const scale = (cssHeight / 2) / Math.tan((fovDeg / 2) * RAD);
+      return bodies.map((b) => (2 * b.radius * scale)
+        / Math.max(0.01, Math.hypot(b.pos[0] - e[0], b.pos[1] - e[1], b.pos[2] - e[2])));
+    };
+
+    /*
+     * PAIRS THE FRAME READS THE WRONG WAY ROUND: two OBSERVED entities whose coupling counts differ, where the
+     * one with more couplings draws the same size or SMALLER. That is a misread coupling count — the identical
+     * failure the merge test refuses — arriving through depth instead of through overlap, because perspective
+     * makes a body's screen size depend on how far it happens to be from the eye as well as on its data.
+     *
+     * IT IS NOT NEW AND IT IS NOT SMALL. Measured on the shipped fifty-state ontology at HEAD, 480 of 2,056
+     * comparable pairs already read backwards, the worst by 7.7 px. This module has never refused on it and
+     * does not start now — refusing would refuse every ontology it has — but it is published rather than left
+     * invisible, and it CONSTRAINS the viewpoint choice below.
+     *
+     * The count does not depend on the lens: a field-of-view change scales every diameter by one factor, so
+     * every comparison survives it exactly. It depends only on where the camera is.
+     */
+    const sizeReadings = (v: Viewpoint, fovDeg: number): { couplings: number; px: number }[] => {
+      const px = bodyPxAt(v, fovDeg);
+      const out: { couplings: number; px: number }[] = [];
+      bodies.forEach((b, i) => {
+        if (b.magnitude.state === 'observed') out.push({ couplings: b.magnitude.couplings, px: px[i]! });
+      });
+      return out;
+    };
+    const misreadPairsAt = (v: Viewpoint): number => misreadSizePairs(sizeReadings(v, FOV_REF)).misread;
+
+    /*
+     * THE PIXELS ARE TAKEN ONLY WHERE THE ENCODING IS NOT PAID FOR THEM.
+     *
+     * `cleanAtLowest[0]` is the lowest azimuth that passed at the lowest clean elevation — exactly the frame
+     * this module drew before any of this existed. Its misread count is therefore the fidelity the reader
+     * already had, and it is the ceiling: a viewpoint that reads MORE pairs backwards is not admissible no
+     * matter how many pixels it buys. Measured, that constraint has teeth — on licences+requirements at
+     * 1184x1000 the largest-smallest-body azimuth read 12 pairs backwards against the incumbent's 4, and it
+     * is now rejected.
+     *
+     * Because the incumbent is always inside its own budget, the search cannot come back empty and cannot
+     * come back worse: `theFittedFrameIsNeverWorseThanHead` pins both halves of that on the shipped ontology.
+     */
+    const incumbent = cleanAtLowest[0];
+    if (incumbent === undefined) {
       return refuse('BODIES_MERGE_AT_EVERY_VIEWPOINT',
         'at ' + (truncated ? 'each of the first ' : 'every one of the ') + tried + ' viewpoints'
         + (truncated ? ' the search had time for' : ' tried') + ', at least two entities overlap on screen. '
         + 'Size encodes the coupling count here, so a merged pair is a misread number and a hidden entity. '
         + 'Turn off a layer and this system will fit.');
     }
-    const view = chosen;
-    const eye = eyeOf(view) as V3;
+    const orderBudget = misreadPairsAt(incumbent);
+    const incumbentReading = {
+      azimuthDeg: incumbent.azimuthDeg,
+      smallestBodyPx: Number(Math.min(...bodyPxAt(incumbent, FOV_REF)).toFixed(1)),
+      misread: orderBudget,
+    };
+    let chosen: Viewpoint = incumbent;
+    let chosenFov = fitLens(incumbent);
+    let chosenSmallest = Math.min(...bodyPxAt(incumbent, chosenFov));
+    for (const v of cleanAtLowest) {
+      if (v === incumbent || misreadPairsAt(v) > orderBudget) continue;
+      const f = fitLens(v);
+      const s = Math.min(...bodyPxAt(v, f));
+      if (s > chosenSmallest) { chosen = v; chosenFov = f; chosenSmallest = s; }
+    }
+    const eye = eyeOf(chosen) as V3;
+    const view: Viewpoint = { ...chosen, fovDeg: chosenFov };
+    const halfV = ((view.fovDeg ?? FOV_REF) / 2) * RAD;
+    /* THE ONLY SCALE ANY PUBLISHED PIXEL MAY USE, because it is the lens the frame is drawn through. */
+    const pxPerMetreAt = (dist: number): number => (cssHeight / 2) / (Math.max(0.01, dist) * Math.tan(halfV));
+    const centrePx = pxPerMetreAt(distance);
+    /* Pixels first, metres second — see `LINK_PX`. Derived AFTER the fit, so a tube is 3.2 px through the lens
+       that ships rather than 3.2 px through the lens the search happened to use. */
+    const linkR = LINK_PX / (2 * centrePx);
+    const ringTube = RING_PX / (2 * centrePx);
+
+    const links: OrreryLink[] = drawn.flatMap((c): OrreryLink[] => {
+      const A = byId.get(c.source), B = byId.get(c.target);
+      if (!A || !B) return [];
+      return [{
+        id: c.id, kind: c.kind, aId: c.source, bId: c.target,
+        a: A.pos, b: B.pos, flatA: A.flatPos, flatB: B.flatPos, r: linkR,
+      }];
+    });
 
     /* ── LEGIBILITY, IN PIXELS, because a world-space size claim can be sub-pixel and therefore fictional. ── */
     const bodyPx = bodies.map((b) => 2 * b.radius * pxPerMetreAt(
@@ -952,6 +1260,22 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
         ring: Number((2 * ringTube * centrePx).toFixed(1)),
         link: Number((2 * linkR * centrePx).toFixed(1)),
       },
+      sizeOrder: ((): OrreryLayout['sizeOrder'] => {
+        /* Measured off the same `bodyPx` array the floor was checked against, so the number cannot describe a
+           different camera from the one drawn. */
+        const readings: { couplings: number; px: number }[] = [];
+        bodies.forEach((b, i) => {
+          if (b.magnitude.state === 'observed') readings.push({ couplings: b.magnitude.couplings, px: bodyPx[i]! });
+        });
+        const m = misreadSizePairs(readings);
+        return {
+          comparablePairs: m.comparablePairs,
+          misread: m.misread,
+          worstMisreadPx: Number(m.worstPx.toFixed(2)),
+          fovDeg: Number((view.fovDeg ?? FOV_REF).toFixed(2)),
+        };
+      })(),
+      incumbent: incumbentReading,
       search: {
         tried, clean, attempts: SPACING_LADDER.indexOf(crowd) + 1, spacing: crowd, truncated,
         ms: Number((performance.now() - t0).toFixed(1)),

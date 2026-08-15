@@ -302,9 +302,25 @@ const DECK_NDOTL = -LIGHT_DIR[1] / Math.hypot(LIGHT_DIR[0], LIGHT_DIR[1], LIGHT_
  * 1.956 because `DEFAULT_SKY`'s horizon is not an albedo at all. The blocked change is recorded in this
  * work's return value; it is not E1's to make, because `structure` is shared by six renderers.
  */
+/*
+ * ── STEP 1 MOVED TO theme.ts, AND LEAVING IT HERE TOO DESTROYED THE GRADIENT ────────
+ * The two sky stops above used to be `inverseToneMap(...)` here, and that was the CORRECT single
+ * conversion while `theme.ts` authored them as albedos. It now authors them as RADIANCE — the
+ * contract is stated on `SceneTheme.skyHorizon` and `skyZenith`, which are typed `Radiance` where
+ * `ground` is typed `Albedo` — so this file's copy became a SECOND application.
+ *
+ * Measured with both in place: zenith [3.2745, 3.6345, 4.3999] and horizon [1.6744, 2.0997, 3.1672],
+ * both past `PRECOMP_CLIP` 1.6667, so both render flat #ffffff and E1's light sky gradient was GONE.
+ * The exposure solve then read that blown ambient and dropped the deck's lit radiance 45.95%.
+ *
+ * `ground` KEEPS its conversion, and the asymmetry is the whole point of the new contract: the sky
+ * object's `ground` is the stop BELOW the horizon, a radiance, while `SceneTheme.ground` is the
+ * floor's albedo. Converting an albedo to the radiance that renders as it is exactly right there and
+ * exactly wrong two lines above.
+ */
 const LIGHT_SKY = Object.freeze({
-  zenith: inverseToneMap(TH_LIGHT.skyZenith),
-  horizon: inverseToneMap(TH_LIGHT.skyHorizon),
+  zenith: TH_LIGHT.skyZenith,
+  horizon: TH_LIGHT.skyHorizon,
   ground: inverseToneMap(TH_LIGHT.ground),
 });
 

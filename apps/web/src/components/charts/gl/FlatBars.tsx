@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Stage } from '@lcx/gl';
+import type { Stage } from '@lcx/gl/stage.js';
 import { useFlatChart } from './useFlatChart';
 
 /**
@@ -45,11 +45,33 @@ function resolveColour(token: string, el: Element): string {
   return v || '#2C6BFF';
 }
 
-type GlMod = typeof import('@lcx/gl');
+/**
+ * ── FOUR SPECIFIERS, NOT ONE BARREL, AND THE REASON IS NOT TREE-SHAKING ─────────────────
+ * `docs/3d/w2/SUBPATH_COST.md` measured all three candidate fixes. Named imports from the
+ * barrel shake to within FOUR BYTES of importing the same names from their own modules — the
+ * barrel is not the problem, and destructuring at the call site was measured NOT fixing this
+ * (68.9 KiB, still carrying the raymarcher). Rollup groups a module by the set of ENTRIES that
+ * reach it, so while a chart route and a relief route both resolve to `src/index.ts` the union
+ * of the two lanes is one chunk by construction. SPECIFIER IDENTITY is the only lever.
+ *
+ * Measured on `apps/web/dist` before this changed: a route drawing one bar chart fetched 13 GL
+ * chunks and 100,709 B — `lit`, `ao`, `dof` and `volume`, the raymarcher, none of which this
+ * hook can execute. After, the flat lane is 8 chunks and 27,337 B. The list below is exactly
+ * what its frame calls; §9.4 of that document records what the change does NOT buy.
+ */
+interface BarsKit {
+  readonly createBarBatch: typeof import('@lcx/gl/flat/bars.js')['createBarBatch'];
+  readonly plotMatrix: typeof import('@lcx/gl/flat/bars.js')['plotMatrix'];
+  readonly createPipeline: typeof import('@lcx/gl/look/pipeline.js')['createPipeline'];
+  readonly beginAdditive: typeof import('@lcx/gl/stage.js')['beginAdditive'];
+  readonly endPass: typeof import('@lcx/gl/stage.js')['endPass'];
+  readonly hexToLinear: typeof import('@lcx/gl/look/colour.js')['hexToLinear'];
+  readonly exposure: typeof import('@lcx/gl/look/colour.js')['exposure'];
+}
 
 export function useFlatBars({ rects, viewW, viewH, orientation = 'horizontal' }: FlatBarsProps) {
   /*
-   * THE MODULE IS LOADED BEFORE THE FRAME, NOT INSIDE IT — and three parallel lanes found
+   * THE MODULES ARE LOADED BEFORE THE FRAME, NOT INSIDE IT — and three parallel lanes found
    * this independently, which is how a defect earns a fix in the shared file.
    *
    * `sharedRenderer.render()` calls `draw(...)` and then IMMEDIATELY blits the shared buffer
@@ -57,20 +79,47 @@ export function useFlatBars({ rects, viewW, viewH, orientation = 'horizontal' }:
    * ran in a microtask AFTER the blit had already copied. On one chart that only made the
    * entrance a frame stale; on a dashboard, where one buffer serves every chart, a chart's
    * blit copied whatever the PREVIOUS chart had left in it — one chart displaying another's
-   * image. The dynamic import is kept (the chunking is the point) but hoisted out of the
-   * frame, and the canvas is withheld until it has landed so `refused` stays true meanwhile.
+   * image. The dynamic imports are kept (the chunking is the point) but hoisted out of the
+   * frame, and the canvas is withheld until they have landed so `refused` stays true meanwhile.
+   *
+   * `Promise.all` and not four awaits: the kit is set ONCE, so there is no window in which the
+   * frame could run against a half-built kit. A rejection on any one of them therefore leaves
+   * `mod` null, which is the existing refusal — the SVG is already on screen and stays there.
    */
-  const [mod, setMod] = useState<GlMod | null>(null);
+  const [mod, setMod] = useState<BarsKit | null>(null);
   useEffect(() => {
     let alive = true;
-    void import('@lcx/gl').then((m) => { if (alive) setMod(m); });
+    void Promise.all([
+      import('@lcx/gl/flat/bars.js'),
+      import('@lcx/gl/look/pipeline.js'),
+      import('@lcx/gl/stage.js'),
+      import('@lcx/gl/look/colour.js'),
+    ]).then(
+      ([bars, pipe, stage, colour]) => {
+        if (!alive) return;
+        /* Named one by one rather than spread. A spread of the namespaces would retain every
+           export of all four modules — the same "a retained namespace has no unused exports"
+           that SUBPATH_COST.md §3 measured as what defeated the split in the first place. */
+        setMod({
+          createBarBatch: bars.createBarBatch,
+          plotMatrix: bars.plotMatrix,
+          createPipeline: pipe.createPipeline,
+          beginAdditive: stage.beginAdditive,
+          endPass: stage.endPass,
+          hexToLinear: colour.hexToLinear,
+          exposure: colour.exposure,
+        });
+      },
+      // A failed chunk load is just another refusal: the SVG is already on screen.
+      () => {},
+    );
     return () => { alive = false; };
   }, []);
 
   /* Batch and pipeline compile FIVE programs that the Stage only frees on dispose, so
      building them per frame leaked five per animation frame per chart. Cached against the
      stage that owns them. */
-  const cache = useRef<{ stage: Stage; bars: ReturnType<GlMod['createBarBatch']>; pipeline: ReturnType<GlMod['createPipeline']> } | null>(null);
+  const cache = useRef<{ stage: Stage; bars: ReturnType<BarsKit['createBarBatch']>; pipeline: ReturnType<BarsKit['createPipeline']> } | null>(null);
 
   /* THE GEOMETRY LAST DRAWN, so an update can interpolate FROM it. Kept in a ref rather
      than state: it is written during a frame and must not schedule a React render. */

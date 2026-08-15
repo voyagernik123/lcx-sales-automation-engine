@@ -432,8 +432,49 @@ describe('the layout against the SHIPPED ontology, not a fixture', () => {
       ...g, allCouplings: ontologyGraph.edges, selectedId: null, cssWidth: 1200, cssHeight: 700,
       searchBudgetMs: 900,
     });
-    if (!isOrreryRefusal(out)) throw new Error('expected a refusal for 74 entities');
-    expect(['BODIES_MERGE_AT_EVERY_VIEWPOINT', 'BODIES_BELOW_LEGIBILITY_FLOOR']).toContain(out.code);
+    /*
+     * THIS USED TO ASSERT A REFUSAL, AND THE REFUSAL WAS THE RIGHT ANSWER TO A DIFFERENT LENS.
+     *
+     * The camera solved its distance so the system's bounding SPHERE was tangent to a hand-authored
+     * field of view. The drawing is not a sphere — it is a stack of tilted rings and a rail — so a
+     * third of the height and nearly half the width of every frame was empty canvas, and every body
+     * came out about a third smaller than the window allowed. 74 entities then failed the 9-px
+     * legibility floor, and refusing was correct: a size encoding on an anti-aliased dot is not an
+     * encoding.
+     *
+     * The lens is now fitted to what is actually drawn, which at this canvas is an exact zoom of
+     * 1.327 on both axes. The bodies clear the floor on their own merit, so the refusal does not
+     * fire — and that is the fix, not a regression.
+     *
+     * WHAT IS ASSERTED INSTEAD is the thing the refusal existed to protect: the smallest body is at
+     * or above the floor, and the size ORDERING survives. A test that merely stopped expecting a
+     * refusal would pass equally well if the floor had been deleted.
+     */
+    if (isOrreryRefusal(out)) {
+      throw new Error(`74 entities now fit at 1200x700 and must render, but got ${out.code}`);
+    }
+    expect(out.px.smallestBody,
+      'the smallest body must still clear the legibility floor — the refusal was removed by making'
+      + ' the bodies bigger, not by lowering the bar').toBeGreaterThanOrEqual(BODY_PX_FLOOR);
+    expect(out.px.largestBody).toBeGreaterThan(out.px.smallestBody);
+  });
+
+  it('and the refusal still FIRES where the bodies genuinely cannot clear the floor', () => {
+    /*
+     * The negative control for the test above. Without it, "no refusal at 1200x700" is satisfied by
+     * a build that can no longer refuse at all — which is the failure mode of relaxing a guard.
+     * Shrink the canvas until the same ontology cannot be drawn legibly and confirm the floor still
+     * speaks, by the same codes it always used.
+     */
+    const g = layersFor(['state', 'license', 'requirement', 'product'], ALL_PHASES);
+    const tiny = buildOrrery({
+      ...g, allCouplings: ontologyGraph.edges, selectedId: null, cssWidth: 320, cssHeight: 200,
+      searchBudgetMs: 900,
+    });
+    if (!isOrreryRefusal(tiny)) {
+      throw new Error(`expected a refusal at 320x200 for ${g.entities.length} entities`);
+    }
+    expect(['BODIES_MERGE_AT_EVERY_VIEWPOINT', 'BODIES_BELOW_LEGIBILITY_FLOOR']).toContain(tiny.code);
   });
 
   it('sizes bodies from the FULL ontology, so a layer toggle does not shrink an entity', () => {

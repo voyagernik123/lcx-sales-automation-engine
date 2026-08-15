@@ -41,7 +41,53 @@ import { resolveQualityTier } from '../shared/useQualityTier';
  * is correct; the moment a second environment appears on the same route, they must share.
  */
 
-type GlMod = typeof import('@lcx/gl');
+/*
+ * ── ELEVEN SPECIFIERS, NOT THE BARREL, AND THE REASON IS NOT TREE-SHAKING ───────────
+ * `docs/3d/w2/SUBPATH_COST.md` measured all three candidate fixes. Named imports from the barrel
+ * shake to within FOUR BYTES of importing the same names from their own modules, and destructuring
+ * at the call site was measured NOT fixing it. Rollup groups a module by the set of ENTRIES that
+ * reach it, so while a chart route and this screen both resolve to `src/index.ts` the union of both
+ * lanes is one chunk by construction. SPECIFIER IDENTITY is the only lever.
+ *
+ * Migrated because the HALF STATE is worse than either end, measured: with the four flat adapters
+ * moved and this file left on the barrel, the sign-in shell went from 13 chunks / 100,709 B to
+ * 18 / 102,832 B — +2,123 B and five extra round trips — on the one screen every reader meets first.
+ * That is precisely the loss SUBPATH_COST.md section 5 predicts for a partial migration.
+ *
+ * The member list is DERIVED from the frame, not transcribed: every `gl3.` reference in this file,
+ * resolved to the module that actually exports it. It is a type, so it is erased and costs nothing
+ * at runtime — the saving is entirely in which specifiers the dynamic import names below.
+ */
+interface GlMod {
+  readonly createStage: typeof import('@lcx/gl/stage.js')['createStage'];
+  readonly isStage: typeof import('@lcx/gl/stage.js')['isStage'];
+  readonly IDENTITY: typeof import('@lcx/gl/math.js')['IDENTITY'];
+  readonly hexToLinear: typeof import('@lcx/gl/look/colour.js')['hexToLinear'];
+  readonly TONE_MAP_GLSL: typeof import('@lcx/gl/look/tonemap.js')['TONE_MAP_GLSL'];
+  readonly SRGB_ENCODE_GLSL: typeof import('@lcx/gl/look/tonemap.js')['SRGB_ENCODE_GLSL'];
+  readonly qualitySettings: typeof import('@lcx/gl/env/quality.js')['qualitySettings'];
+  readonly shadowMapSizeFor: typeof import('@lcx/gl/env/quality.js')['shadowMapSizeFor'];
+  readonly plane: typeof import('@lcx/gl/env/mesh.js')['plane'];
+  readonly cylinder: typeof import('@lcx/gl/env/mesh.js')['cylinder'];
+  readonly torus: typeof import('@lcx/gl/env/mesh.js')['torus'];
+  readonly createLitRenderer: typeof import('@lcx/gl/env/lit.js')['createLitRenderer'];
+  readonly uploadMesh: typeof import('@lcx/gl/env/lit.js')['uploadMesh'];
+  readonly createTarget3D: typeof import('@lcx/gl/env/target3d.js')['createTarget3D'];
+  readonly createShadowMap: typeof import('@lcx/gl/env/target3d.js')['createShadowMap'];
+  readonly createSkyBackdrop: typeof import('@lcx/gl/env/sky.js')['createSkyBackdrop'];
+  readonly createAmbientOcclusion: typeof import('@lcx/gl/env/ao.js')['createAmbientOcclusion'];
+  readonly createDepthOfField: typeof import('@lcx/gl/env/dof.js')['createDepthOfField'];
+  readonly eyeOf: typeof import('@lcx/gl/env/camera.js')['eyeOf'];
+  readonly viewProjection: typeof import('@lcx/gl/env/camera.js')['viewProjection'];
+  readonly lightViewProjection: typeof import('@lcx/gl/env/camera.js')['lightViewProjection'];
+  readonly boundsRadius: typeof import('@lcx/gl/env/camera.js')['boundsRadius'];
+  readonly boundsCentre: typeof import('@lcx/gl/env/camera.js')['boundsCentre'];
+  /* The exposure solve reaches these through `ExposureMath`, not through a `gl3.` reference, so a
+     census of `gl3.` alone missed both and the compiler is what caught it — the same
+     derive-do-not-enumerate failure this file's neighbours keep hitting, one scope over. */
+  readonly inverseToneMap: typeof import('@lcx/gl/look/precompensate.js')['inverseToneMap'];
+  readonly skyIrradiance: typeof import('@lcx/gl/env/sky.js')['skyIrradiance'];
+}
 
 /**
  * THE MARK'S OWN SHADOW BASELINE, which the tier SCALES rather than replaces.
@@ -263,8 +309,42 @@ export function ForgeBackdrop({ intensity = 1 }: ForgeBackdropProps) {
 
     // Dynamic import so @lcx/gl never enters the shell chunk. The sign-in screen is the first
     // thing loaded, so putting a renderer in its critical path would be the worst possible place.
-    void import('@lcx/gl').then((m) => {
-      if (alive) start(m);
+    /* One `Promise.all`, so `start` can never run against a half-built kit. Each symbol is named
+       individually rather than spread: a retained namespace has no unused exports, so a spread
+       would move the specifier and keep whole-module retention — the defect, not the fix. */
+    void Promise.all([
+      import('@lcx/gl/stage.js'),
+      import('@lcx/gl/math.js'),
+      import('@lcx/gl/look/colour.js'),
+      import('@lcx/gl/look/tonemap.js'),
+      import('@lcx/gl/env/quality.js'),
+      import('@lcx/gl/env/mesh.js'),
+      import('@lcx/gl/env/lit.js'),
+      import('@lcx/gl/env/target3d.js'),
+      import('@lcx/gl/env/sky.js'),
+      import('@lcx/gl/env/ao.js'),
+      import('@lcx/gl/env/dof.js'),
+      import('@lcx/gl/env/camera.js'),
+      import('@lcx/gl/look/precompensate.js'),
+    ]).then(([stg, mth, col, tm, q, mesh, lit, t3d, sky, ao, dof, cam, pre]) => {
+      if (!alive) return;
+      start({
+        createStage: stg.createStage, isStage: stg.isStage,
+        IDENTITY: mth.IDENTITY,
+        hexToLinear: col.hexToLinear,
+        TONE_MAP_GLSL: tm.TONE_MAP_GLSL, SRGB_ENCODE_GLSL: tm.SRGB_ENCODE_GLSL,
+        qualitySettings: q.qualitySettings, shadowMapSizeFor: q.shadowMapSizeFor,
+        plane: mesh.plane, cylinder: mesh.cylinder, torus: mesh.torus,
+        createLitRenderer: lit.createLitRenderer, uploadMesh: lit.uploadMesh,
+        createTarget3D: t3d.createTarget3D, createShadowMap: t3d.createShadowMap,
+        createSkyBackdrop: sky.createSkyBackdrop,
+        createAmbientOcclusion: ao.createAmbientOcclusion,
+        createDepthOfField: dof.createDepthOfField,
+        eyeOf: cam.eyeOf, viewProjection: cam.viewProjection,
+        lightViewProjection: cam.lightViewProjection,
+        boundsRadius: cam.boundsRadius, boundsCentre: cam.boundsCentre,
+        inverseToneMap: pre.inverseToneMap, skyIrradiance: sky.skyIrradiance,
+      });
     }).catch(() => {
       if (alive) setReason('The renderer could not be loaded.');
     });

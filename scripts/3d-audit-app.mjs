@@ -66,16 +66,24 @@
  */
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { dirname, join, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const WEB = join(ROOT, 'apps/web');
-const OUT = join(ROOT, 'docs/3d/APP_SWEEP.md');
+/*
+ * WHERE THE OUTPUT LANDS, REDIRECTABLE FOR ONE REASON: PROVING DETERMINISM NEEDS SEVERAL RUNS SIDE BY SIDE.
+ * The claim "this sweep now produces the same numbers whenever it runs" cannot be checked by a sweep that
+ * overwrites its own evidence, so `APP_SWEEP_OUT_DIR=<dir>` puts a whole run — both reports and every
+ * capture — somewhere it can be diffed against another. Unset, nothing about the paths changes.
+ */
+const OUT_DIR = process.env.APP_SWEEP_OUT_DIR ?? join(ROOT, 'docs/3d');
+const OUT = join(OUT_DIR, 'APP_SWEEP.md');
 /* Captures live beside the report, and only for the one question bytes could not settle — see the E8 branch of
    the context-loss axis, where a DOM-only reading produced a finding the pixels then withdrew. */
-const SHOTS = join(ROOT, 'docs/3d/app-sweep');
+const SHOTS = join(OUT_DIR, 'app-sweep');
 /* THE THEME PASS writes its own report and its own captures, for the reason this file's header already gives
    about `docs/3d/e9/README.md`: two generators must not write one file. */
 const THEME_OUT = join(SHOTS, 'README.md');
@@ -120,7 +128,20 @@ function derivePalette() {
   const scenery = {};
   const sceneFields = new Set();
   for (const [name, src] of Object.entries(halves)) {
-    scenery[name] = [...src.matchAll(/(\w+):\s*hexToLinear\('(#[0-9A-Fa-f]{6})'\)/g)]
+    /*
+     * `field: '#RRGGBB'`, ANCHORED TO A LINE OF ITS OWN.
+     *
+     * This regex used to be `(\w+):\s*hexToLinear\('(#…)'\)`, because that was the literal shape of
+     * `SceneTheme`'s fields. `look/theme.ts` then moved every hex into an `AUTHORED_HEX` table and passed
+     * it through `toAlbedo`/`toRadiance` — and the parse matched nothing, so this whole sweep REFUSED on
+     * every invocation from that commit onwards. The refusal did its job: no number was invented. But it
+     * also means nothing between that commit and this one could regenerate either report, and the versions
+     * on disk describe a tree that no longer exists.
+     *
+     * Anchored with `^\s*…$` rather than matched anywhere, because the header of that file discusses hexes
+     * in prose and an unanchored match would take a colour out of a comment and put it in the taxonomy.
+     */
+    scenery[name] = [...src.matchAll(/^\s*(\w+):\s*'(#[0-9A-Fa-f]{6})',?\s*$/gm)]
       .map((m) => ({ field: m[1], hex: m[2].toUpperCase() }));
     for (const s of scenery[name]) sceneFields.add(s.field);
     /* Six colour-valued fields per theme today. Five is the floor at which the derivation is still meaningful;
@@ -162,6 +183,301 @@ function refusePalette(why) {
 }
 
 /*
+ * ══ THE FROZEN CLOCK, AND WHY EVERY FIGURE THIS FILE EVER PRINTED IS SUSPECT WITHOUT IT ══════════════
+ *
+ * ── WHAT WAS WRONG ──────────────────────────────────────────────────────────────────
+ * Three of the eight surfaces read the READER'S WALL CLOCK and draw the answer, so this sweep's numbers
+ * were a function of the hour it happened to run at. Grepped from the renderers rather than listed here —
+ * `sourcesReadingTheClock()` below regenerates the list on every run — but the three today are:
+ *
+ *   · E2 `GlobeReliefGl.tsx`  — `const now = Date.now()` feeds `subSolarPoint`, so the SUN DIRECTION and
+ *     therefore the terminator on the sphere is aimed by the clock. The lit limb is most of the frame.
+ *   · E3 `PipelineRelief.tsx` — `useState(() => Date.now())` feeds `buildChannel`, whose movement axis is
+ *     DAYS SINCE `updatedAt`, so every object's position along it moves as the fixture ages.
+ *   · E6 `VaultReliefGl.tsx`  — `buildVaultRecords(entries, Date.now())` turns each row into `hoursAgo`.
+ *     The corridor normalises on the RANGE, so the geometry survives; the projected labels and the depth
+ *     ruler are absolute ages and do not.
+ *
+ * And one that a clock freeze CANNOT close, found by the same census once it followed imports: E4's
+ * `orrery/orreryLayout.ts` bounds its viewpoint search on a 400 ms WALL-CLOCK DEADLINE, so its geometry is
+ * a function of how fast this machine is. The generated report carries it as an open finding.
+ *
+ * That was not a theoretical hazard. It surfaced because an audit and a skeptic reached opposite verdicts
+ * about E2 on one unchanged commit and BOTH WERE RIGHT — the sweeps had run at different hours. Nothing in
+ * this comment is offered as the measurement: `APP_SWEEP_CLOCK` drives the instant, so the effect is
+ * reproducible on demand and the numbers belong in a run's output rather than in a comment.
+ *
+ * ── THE INSTANT, AND IT IS DERIVED RATHER THAN CHOSEN TO SUIT ───────────────────────
+ * A frozen clock can lie in the other direction: an instant that puts the terminator off the visible face
+ * makes the globe an evenly-lit ball, which is a surface that has stopped being looked at rather than one
+ * that passed. So the instant is fixed by two properties of the frame, both checkable, and
+ * `checkFrozenInstant()` re-derives them from the app's own source on every run and prints what it got:
+ *
+ *   1. THE TERMINATOR RUNS DOWN THE MIDDLE OF THE FRAME. `GlobeReliefGl` aims its camera at
+ *      `centralMeridian([HUB.lon, ...sites])`, and the day/night boundary is 90° from the sub-solar point.
+ *      So the sub-solar longitude is put at meridian + 90: the hub at Vaduz is in daylight, the US site is
+ *      in night, and the boundary between them crosses the centre of the disc. That is the reading this
+ *      surface exists to draw ("which desks are awake"), presented at the one instant where it is hardest
+ *      to miss and where both populations of pixels — lit earth and unlit earth — are at their largest.
+ *   2. THE DECLINATION IS ZERO. `subSolarPoint`'s cosine puts the sun over the equator on day-of-year 264,
+ *      21 September. At a solstice one pole is lit outright and the other dark, which would move the two
+ *      northern sites' illumination by the SEASON as well as the hour; at the equinox the terminator is
+ *      exactly a meridian, so where it falls is set by the time of day and nothing else.
+ *
+ * The seconds field is what carries the first property, so it is not a round number and must not be
+ * tidied into one. It is also a FUTURE date relative to the sweep that installed it, which is deliberate
+ * and load-bearing: see the fixture anchor below.
+ *
+ * ── WHAT IS NOT FROZEN, STATED BECAUSE IT IS THE NEXT QUESTION ──────────────────────
+ * `performance.now()` runs normally. Freezing it would stop `requestAnimationFrame`, ForgeBackdrop's arc
+ * and every renderer's own loop — turning the reduced-motion axis's control run, the one check that makes
+ * every zero in this file mean anything, into a guaranteed zero. The animation PHASE is held fixed a
+ * different way, by `settleForCapture()`: pixels are read only once the draw counters have stopped.
+ */
+const FROZEN_AT_ISO = process.env.APP_SWEEP_CLOCK ?? '2026-09-21T07:18:41.000Z';
+const FROZEN_AT = Date.parse(FROZEN_AT_ISO);
+if (!Number.isFinite(FROZEN_AT)) {
+  console.error(`  REFUSED: APP_SWEEP_CLOCK=${process.env.APP_SWEEP_CLOCK} is not a date.`);
+  process.exit(1);
+}
+/* One seed for every entropy tap in the page. Fixed, not derived from the clock: a seed that moved with the
+   instant would make the two knobs impossible to separate when a number does move. */
+const FROZEN_SEED = 0x5CE7A1;
+
+/*
+ * THE ENVIRONMENT FREEZE, AND IT IS THE FIRST INIT SCRIPT ON EVERY PAGE.
+ *
+ * Order is the whole point: `index.html`'s pre-hydration script runs at document-start and the app's module
+ * graph runs immediately after, so a clock installed after either has already been read around. Registered
+ * before the seat, before the theme seed and before the probe by `openPage()`, which is the only place in
+ * this file that opens a page.
+ *
+ * A PROXY RATHER THAN A SUBCLASS. `class extends Date` throws when something calls `Date()` without `new`
+ * — which real `Date` answers with a string — and loses nothing else. A proxy keeps `Date.parse`,
+ * `Date.UTC`, `Date.prototype` and every `instanceof` intact, and intercepts exactly the two things that
+ * read the machine: the no-argument constructor and `Date.now`. `Date.parse('…')` is pure and is left
+ * alone, which matters because the fixtures below are parsed by the app.
+ */
+const FREEZE_ENV = (f) => {
+  const w = /** @type {any} */ (globalThis);
+  const RealDate = w.Date;
+  w.Date = new Proxy(RealDate, {
+    apply: () => new RealDate(f.at).toString(),
+    construct: (target, args, newTarget) => Reflect.construct(target, args.length === 0 ? [f.at] : args, newTarget),
+    get: (target, prop, recv) => (prop === 'now' ? () => f.at : Reflect.get(target, prop, recv)),
+  });
+  /*
+   * THE OTHER TAP. Nothing on these eight routes was observed to call `Math.random` into a frame, but a
+   * seeded generator costs one function and closes the axis rather than arguing about it — and an
+   * unaudited `Math.random` is indistinguishable in a report from a clock that was missed. mulberry32:
+   * one 32-bit state, no dependencies, the same sequence on every run.
+   */
+  let s = f.seed >>> 0;
+  const rnd = () => {
+    s = (s + 0x6D2B79F5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  Math.random = rnd;
+  /* The two entropy taps that are not `Math.random`. `crypto.subtle` is untouched — it is not a source of
+     randomness on its own and replacing it would break more than it fixes. */
+  try {
+    if (w.crypto) {
+      w.crypto.getRandomValues = (arr) => {
+        for (let i = 0; i < arr.length; i += 1) arr[i] = Math.floor(rnd() * 256);
+        return arr;
+      };
+      w.crypto.randomUUID = () => {
+        const h = [];
+        for (let i = 0; i < 16; i += 1) h.push(Math.floor(rnd() * 256));
+        h[6] = (h[6] & 0x0f) | 0x40; h[8] = (h[8] & 0x3f) | 0x80;
+        const x = h.map((b) => b.toString(16).padStart(2, '0'));
+        return `${x.slice(0, 4).join('')}-${x.slice(4, 6).join('')}-${x.slice(6, 8).join('')}-${x.slice(8, 10).join('')}-${x.slice(10).join('')}`;
+      };
+    }
+  } catch { /* a locked-down `crypto` is not worth failing a sweep over; reported by the census, not here */ }
+};
+
+/*
+ * ── THE INSTANT'S TWO PROPERTIES, RE-DERIVED FROM THE APP'S SOURCE ON EVERY RUN ──────
+ *
+ * A constant with a paragraph beside it is prose. The paragraph above claims the terminator crosses the
+ * centre of the globe's frame, and that claim depends on THREE things this file does not own: the hub's
+ * coordinates, the region table, and which regions the fixture actually populates. So all three are read
+ * back and the property is recomputed.
+ *
+ * It does not exit the sweep when it drifts — a globe aimed two degrees off says nothing about the other
+ * seven surfaces — but the deviation is carried into both generated reports, so an instant that has
+ * stopped meaning what it says cannot go unnoticed. The PARSE failing is different and does refuse: a
+ * regex that matched nothing would report a deviation of zero, which is the shape of check this whole
+ * programme exists to refuse.
+ */
+function checkFrozenInstant(fixtureRegions) {
+  const src = readFileSync(join(ROOT, 'apps/web/src/components/market/globeSites.ts'), 'utf8');
+  const hub = /export const HUB = \{[^}]*?lat:\s*(-?[\d.]+),\s*lon:\s*(-?[\d.]+)/s.exec(src);
+  const sites = [...src.matchAll(/key:\s*'(\w+)',\s*\n\s*label:[^\n]*\n\s*lat:\s*(-?[\d.]+),\s*\n\s*lon:\s*(-?[\d.]+)/g)]
+    .map((m) => ({ key: m[1], lon: Number(m[3]) }));
+  if (hub === null || sites.length < 2) {
+    console.error('  REFUSED: could not read HUB and REGION_SITES out of globeSites.ts, so the frozen '
+      + `instant's stated property cannot be checked (hub ${hub === null ? 'no' : 'yes'}, `
+      + `${sites.length} sites parsed). A check that cannot fail would report a deviation of zero.`);
+    process.exit(1);
+  }
+  /* Exactly the set `buildGlobeBook` places: REGION_SITES order, only the keys the fixture carries. */
+  const placed = sites.filter((s) => fixtureRegions.has(s.key));
+  const lons = [Number(hub[2]), ...placed.map((s) => s.lon)];
+  let x = 0, y = 0;
+  for (const lon of lons) { const r = (lon * Math.PI) / 180; x += Math.cos(r); y += Math.sin(r); }
+  const meridian = (Math.atan2(y, x) * 180) / Math.PI;
+
+  /* `subSolarPoint`'s own arithmetic, on the frozen instant. */
+  const d = new Date(FROZEN_AT);
+  const doy = Math.floor((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
+    - Date.UTC(d.getUTCFullYear(), 0, 1)) / 86_400_000) + 1;
+  const declination = -23.44 * Math.cos(((2 * Math.PI) / 365.24) * (doy + 10));
+  const utcHours = d.getUTCHours() + d.getUTCMinutes() / 60 + d.getUTCSeconds() / 3600;
+  let subSolarLon = -15 * (utcHours - 12);
+  while (subSolarLon > 180) subSolarLon -= 360;
+  while (subSolarLon <= -180) subSolarLon += 360;
+  let offBy = subSolarLon - (meridian + 90);
+  while (offBy > 180) offBy -= 360;
+  while (offBy <= -180) offBy += 360;
+  return {
+    meridian, subSolarLon, declination, offBy, doy, placed: placed.map((s) => s.key),
+    /* One degree of longitude is four minutes of daylight at the terminator, and `subSolarPoint`'s own
+       header already declares a ±4° bound from the equation of time it does not model. A deviation inside
+       that bound is smaller than the model's own error and is not worth a caveat. */
+    holds: Math.abs(offBy) <= 1 && Math.abs(declination) <= 0.5,
+  };
+}
+
+/*
+ * ══ WHICH TREE WAS SWEPT — provenance, because "run it again" is this file's whole answer ═══════════
+ *
+ * FOUND THE HARD WAY, ON THE RUN THAT INSTALLED THE FREEZE. Two consecutive sweeps of what was believed to
+ * be one commit disagreed about E4, and the cause was that another change had landed in
+ * `components/geometry/orrery/orreryLayout.ts` BETWEEN them. Nothing in either report recorded which
+ * source it had read, so the two files sat side by side describing different code and looking like
+ * evidence of non-determinism.
+ *
+ * A date stamp does not answer this and neither does a commit id on a working tree somebody is editing. So
+ * every run digests the source the dev server actually serves and prints it: two reports carrying the same
+ * digest were swept over identical bytes, and two carrying different digests may not be compared at all.
+ *
+ * `__tests__` is excluded deliberately — it is not served to the browser, and a test landing mid-sweep
+ * would otherwise invalidate a comparison it cannot affect.
+ */
+const SOURCE_ROOTS = ['apps/web/src', 'apps/web/index.html', 'packages/gl/src'];
+function sourceFingerprint() {
+  const files = [];
+  const walk = (p) => {
+    let st;
+    try { st = statSync(p); } catch { return; }
+    if (st.isDirectory()) {
+      for (const e of readdirSync(p).sort()) {
+        if (e === 'node_modules' || e === '__tests__' || e.startsWith('.')) continue;
+        walk(join(p, e));
+      }
+    } else if (/\.(ts|tsx|css|html|json|glsl)$/.test(p)) files.push(p);
+  };
+  for (const r of SOURCE_ROOTS) walk(join(ROOT, r));
+  const h = createHash('sha256');
+  /* REPOSITORY-RELATIVE PATHS, so the digest is a fact about the source and not about where somebody
+     checked it out. Hashing the absolute path would give two machines different digests for identical
+     bytes, which is the opposite of what a provenance line is for. */
+  for (const f of files) { h.update(f.slice(ROOT.length + 1)); h.update('\0'); h.update(readFileSync(f)); }
+  return { files: files.length, digest: h.digest('hex').slice(0, 12) };
+}
+
+/*
+ * WHICH RENDERERS READ THE WALL CLOCK — GREPPED, NOT LISTED, for the same reason the theme binding is
+ * grepped: a sentence naming files is true when typed and false the day another starts reading a clock.
+ *
+ * ONE HOP THROUGH THE IMPORTS, WHICH IS A CORRECTION AND NOT A REFINEMENT. The first version searched only
+ * the wrapper and the renderer, and it reported E4 OntologyOrrery as reading no clock. E4's frame is
+ * decided by `orrery/orreryLayout.ts`, one import away, where a viewpoint search runs against a 400 ms
+ * WALL-CLOCK DEADLINE — so the census said "clean" about the one surface in this sweep whose geometry is a
+ * function of how fast the machine is. A census that cannot see one file past the entry point is a census
+ * of file names.
+ *
+ * THE MATCHERS ARE CONTROLLED. A regex that matched nothing would print an empty census, which reads
+ * exactly like a codebase with no clock reads in it — the same failure the palette parse refuses on. So
+ * each is run against a known-positive and a known-negative string first, and refuses if either is wrong.
+ */
+const localImports = (from, src) => {
+  const out = [];
+  for (const m of src.matchAll(/from\s+'([^']+)'/g)) {
+    const spec = m[1];
+    let base;
+    if (spec.startsWith('@/')) base = join('src', spec.slice(2));
+    else if (spec.startsWith('.')) base = normalize(join(dirname(from), spec));
+    else continue;
+    for (const ext of ['.ts', '.tsx', '/index.ts', '/index.tsx']) {
+      if (existsSync(join(WEB, base + ext))) { out.push(base + ext); break; }
+    }
+  }
+  return out;
+};
+const CLOCK_READ = /(Date\.now\(\)|new Date\(\s*\))/;
+/*
+ * AND THE ONE THE FREEZE CANNOT CLOSE: A MEASURED FRAME TIME RENDERED INTO THE PAGE.
+ *
+ * `GlobeReliefGl` prints "`N.NN` ms for this frame" into its own caption. That is a real measurement of
+ * this machine on this run and it is CORRECT that it moves — but it lands in the DOM, which means E2's
+ * viewport capture can never be byte-identical twice however still the clock is held. Grepped rather than
+ * named, so a second surface that starts printing one appears here rather than being discovered by
+ * somebody diffing two captures and doubting the freeze.
+ */
+const FRAME_TIME_PRINTED = /`[^`]*\$\{[^}]*toFixed\([^)]*\)[^}]*\}\s*ms\b/;
+/* A COMPARISON against `performance.now()` is a wall-clock deadline: whatever it bounds does more work on a
+   fast machine than on a slow one, and produces a different answer. A bare read is a stopwatch and is not. */
+const WALL_CLOCK_DEADLINE = /performance\.now\(\)\s*[<>]/;
+function sourcesReadingTheClock(surfaces) {
+  const controls = [
+    [CLOCK_READ, 'const now = Date.now();', 'Date.parse(iso)'],
+    [FRAME_TIME_PRINTED, '`${msFrame.toFixed(2)} ms for this frame`', '`${n.toFixed(2)} triangles`'],
+    [WALL_CLOCK_DEADLINE, 'if (performance.now() > deadline) break;', 'const t0 = performance.now();'],
+  ];
+  for (const [re, yes, no] of controls) {
+    if (!re.test(yes) || re.test(no)) {
+      console.error(`  REFUSED: the source matcher ${re} failed its own controls, so an empty census below `
+        + 'would be indistinguishable from a codebase that samples nothing. Nothing written.');
+      process.exit(1);
+    }
+  }
+  const out = [];
+  for (const s of surfaces) {
+    /* The entry points, plus every local module they import. One hop, not the whole graph: it is what
+       catches a helper that owns the frame without dragging in the design system. */
+    const files = new Set([s.file, s.glFile]);
+    for (const seed of [...files]) {
+      let src = '';
+      try { src = readFileSync(join(WEB, seed), 'utf8'); } catch { continue; }
+      for (const f of localImports(seed, src)) files.add(f);
+    }
+    const hits = [], printsFrameTime = [], deadlines = [];
+    let animates = false;
+    for (const rel of files) {
+      let src = '';
+      try { src = readFileSync(join(WEB, rel), 'utf8'); } catch { continue; }
+      animates = animates || /performance\.now\(\)/.test(src);
+      src.split('\n').forEach((line, i) => {
+        /* Comments are where this programme's own prose about the clock lives, and a census that counted
+           them would report a surface as clock-driven for describing the problem. */
+        const code = line.replace(/^\s*(\*|\/\/|\/\*).*$/, '');
+        if (CLOCK_READ.test(code)) hits.push({ rel, line: i + 1, text: code.trim().slice(0, 72) });
+        if (WALL_CLOCK_DEADLINE.test(code)) deadlines.push({ rel, line: i + 1 });
+        if (FRAME_TIME_PRINTED.test(line)) printsFrameTime.push({ rel, line: i + 1 });
+      });
+    }
+    out.push({ id: s.id, name: s.name, scanned: files.size, hits, animates, printsFrameTime, deadlines });
+  }
+  return out;
+}
+
+/*
  * THE SEAT, COPIED IN PRINCIPLE FROM `apps/web/e2e/seat.ts` AND NOT IMPORTED FROM IT.
  *
  * That file is a Playwright-test module in another workspace and lives behind `@playwright/test`'s fixture
@@ -184,7 +500,21 @@ const SEAT = {
   },
 };
 
-const iso = (msAgo) => new Date(Date.parse('2026-08-12T00:00:00.000Z') - msAgo).toISOString();
+/*
+ * AGES ARE ANCHORED TO THE FROZEN CLOCK, AND THAT IS A SECOND DRIFT CLOSED RATHER THAN A TIDY-UP.
+ *
+ * The parameter is named `msAgo` and every caller uses it that way — `auditRow(i)` is "i hours ago",
+ * `lead(i)` is "i days ago". But "ago" is relative to a now that moves, and this was anchored to a FIXED
+ * calendar date. So the ages these fixtures expressed grew by one day per day: on the sweep that installed
+ * this freeze, `auditRow`'s rows were not 0-17 hours old, they were 40 DAYS old, and E6's depth ruler had
+ * collapsed from four ticks to one because no candidate age fell inside the span. E3's movement axis is
+ * days-since-`updatedAt` and had drifted the same way.
+ *
+ * Anchoring to the frozen instant is what makes the parameter mean what it is named. The consequence is
+ * that the frozen instant must not be EARLIER than the fixtures it anchors — `buildVaultRecords` refuses a
+ * row as TIMESTAMP_AHEAD_OF_NOW — which is trivially satisfied now that they are the same number.
+ */
+const iso = (msAgo) => new Date(FROZEN_AT - msAgo).toISOString();
 const envelope = (data, meta) => ({
   status: 200,
   contentType: 'application/json',
@@ -770,8 +1100,54 @@ async function waitForServer(log) {
 
 /* ── ONE SURFACE, ONE PAGE, ONE AXIS AT A TIME ──────────────────────────────────────── */
 
+/*
+ * ══ THE ONLY PLACE A PAGE IS OPENED, AND EVERY ENVIRONMENT KNOB IS PINNED HERE ═══════
+ *
+ * Two jobs, and the first one is an ordering guarantee that cannot be got any other way: the frozen clock
+ * is registered as the FIRST init script on the page, before the seat, before the theme seed and before
+ * the probe. `index.html`'s pre-hydration script and the whole module graph run at document-start, so a
+ * clock installed second has already been read around by the code it was meant to hold still.
+ *
+ * The second job is the context options, and each one is an environment sample that was previously taken
+ * from whatever the host happened to be set to:
+ *
+ *   · `timezoneId` / `locale` — `AuditLog.tsx:254` renders every row through `toLocaleString()` and
+ *     `BdPipeline.tsx:236` through `toLocaleDateString()`. A machine in another zone reads a different
+ *     time on the same fixture, and a different locale reads a different STRING WIDTH, which moves the
+ *     layout underneath the viewport capture. UTC because every fixture timestamp is UTC and a report
+ *     that says 07:18 should be the same 07:18 as the frozen instant.
+ *   · `colorScheme` — pinned to the app's own default rather than inherited. The theme is driven by the
+ *     persisted store, but the UA's own furniture (scrollbars, form controls) follows this and lands in
+ *     the viewport capture.
+ *   · `reducedMotion` — the reduced-motion axis emulates `reduce` explicitly; everything else must be
+ *     `no-preference` by declaration and not by luck. `packages/gl/src/env/quality.ts:273` defaults to
+ *     REDUCED when the preference cannot be read, so an unpinned host that reported `reduce` would have
+ *     ForgeBackdrop render one frame and stop — and the control run that validates every zero in this
+ *     file would then measure zero and withdraw them all.
+ *   · `contrast` / `forcedColors` — `prefersMoreContrast()` reads both, and its whole documented purpose
+ *     is to change what the surface draws. An OS-level high-contrast setting on the host would have
+ *     silently rendered a different picture and reported it as the product.
+ *   · `deviceScaleFactor` — the drawing buffer is `cssSize x min(Q.dprScale, devicePixelRatio)`, so this
+ *     is literally the pixel count every statistic in the theme table is computed over.
+ */
+async function openPage(browser, opts = {}) {
+  const page = await browser.newPage({
+    viewport: { width: 1440, height: 1100 },
+    deviceScaleFactor: 1,
+    timezoneId: 'UTC',
+    locale: 'en-GB',
+    colorScheme: 'light',
+    reducedMotion: 'no-preference',
+    contrast: 'no-preference',
+    forcedColors: 'none',
+    ...opts,
+  });
+  await page.addInitScript(FREEZE_ENV, { at: FROZEN_AT, seed: FROZEN_SEED });
+  return page;
+}
+
 async function newSeatedPage(browser, surface, extraStubs = [], theme = null) {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 1100 }, deviceScaleFactor: 1 });
+  const page = await openPage(browser);
   page.on('pageerror', (e) => { page.__errs = [...(page.__errs ?? []), e.message]; });
   /*
    * NAVIGATIONS ARE COUNTED, AND THAT IS A CORRECTNESS GUARD RATHER THAN DIAGNOSTICS.
@@ -930,6 +1306,61 @@ async function waitForDrawn(page, timeout) {
     await page.waitForTimeout(1200);
     return true;
   } catch { return false; }
+}
+
+/*
+ * ── THE ANIMATION PHASE, WHICH IS THE CLOCK THE FREEZE DELIBERATELY LEAVES RUNNING ───
+ *
+ * `performance.now()` is not frozen, for the reason the freeze block gives: stopping it stops every frame
+ * loop and turns the reduced-motion control run into a guaranteed zero. So a surface that is still moving
+ * is captured at whatever phase the machine happened to reach — `ForgeBackdrop` runs a five-second arc
+ * (`SWEEP_MS = 5000`) and `waitForDrawn`'s flat 1200 ms lands somewhere inside it that depends on how
+ * fast the machine compiled the shaders. Two runs, two different frames, both correct, neither reproducible.
+ *
+ * Held fixed by WAITING FOR THE DRAW COUNTERS TO STOP rather than by sleeping for a guessed interval. A
+ * surface that renders once and stops settles immediately; one that animates settles when its arc ends,
+ * which for `ForgeBackdrop` is `t === 1` — its FINAL frame, the one §6 rule 3 says reduced motion resolves
+ * to, so the still and the moving readings are of the same picture. A surface that never stops is reported
+ * as unsettled rather than captured quietly, because a capture of a moving frame is not reproducible and
+ * saying so is the only honest thing to do with it.
+ *
+ * `document.fonts.ready` first: the viewport capture is full of DOM text, and a shot taken before the
+ * self-hosted faces have loaded is laid out on fallback metrics.
+ */
+async function settleForCapture(page, maxMs = 15_000, attempts = 3) {
+  for (let i = 1; i <= attempts; i += 1) {
+    const before = page.__navs;
+    try { await page.evaluate(() => (document.fonts?.ready ? document.fonts.ready.then(() => undefined) : undefined)); }
+    catch { /* no font manager, or the document went away — the retry below covers the second case */ }
+    let out = null;
+    try {
+      out = await page.evaluate(async (cap) => {
+        const a = /** @type {any} */ (globalThis).__lcxAudit;
+        const total = () => a.contexts.reduce((n, c) => n + c.draws, 0);
+        const STEP = 250, QUIET = 1000;
+        let last = total(), still = 0;
+        for (let waited = 0; waited < cap; waited += STEP) {
+          await new Promise((r) => setTimeout(r, STEP));
+          const now = total();
+          if (now === last) {
+            still += STEP;
+            if (still >= QUIET) return { settled: true, waitedMs: waited + STEP, draws: now };
+          } else { still = 0; last = now; }
+        }
+        return { settled: false, waitedMs: cap, draws: total() };
+      }, maxMs);
+    } catch { /* execution context destroyed — same verdict as a straddled window */ }
+    /*
+     * A SETTLE THAT STRADDLED A NAVIGATION SETTLED THE WRONG DOCUMENT. `/select` performs one real
+     * navigation about two seconds in (`forceFrontDoor`), which re-runs every init script and rebuilds
+     * `__lcxAudit` — so a counter that "stopped moving" may simply have been replaced by a fresh zero, and
+     * ForgeBackdrop's arc has restarted underneath it. Retried against the new document rather than
+     * believed, which is the same rule `cleanWindow` applies to the reduced-motion window.
+     */
+    if (out !== null && page.__navs === before) return out;
+    await waitForDrawn(page, 45_000);
+  }
+  return { settled: false, waitedMs: 0, draws: null, why: `the page kept navigating through ${attempts} settles` };
 }
 
 /**
@@ -1441,6 +1872,9 @@ async function sweep(browser, surface, open) {
       await guarded(page, () => page.evaluate((from) => {
         for (const c of globalThis.__lcxAudit.contexts.slice(from)) c.canvas.dataset.auditTarget = '1';
       }, got.preClick ?? 0));
+      /* The before/after PNG byte pair is the evidence this axis turns on, and a byte count taken mid-arc
+         is a number that moves on its own. Settled first so the pair describes the loss and nothing else. */
+      row.axes.contextLoss = { settle: await settleForCapture(page) };
       const target = page.locator('canvas[data-audit-target="1"]').first();
       const shot = async () => {
         try { return await target.screenshot({ timeout: 8000 }); } catch { return null; }
@@ -1480,7 +1914,7 @@ async function sweep(browser, surface, open) {
       }));
       after.bytesBefore = shotBefore?.length ?? null;
       after.bytesAfter = shotAfter?.length ?? null;
-      row.axes.contextLoss = { reached: true, provoked, ...after };
+      row.axes.contextLoss = { ...row.axes.contextLoss, reached: true, provoked, ...after };
       if (!provoked) {
         /* NOT A PASS. An audit that could not stage its own failure has measured nothing — the same rule as
            refusing an empty surface list, and the same one `3d-audit.mjs:318-321` applies. */
@@ -1567,7 +2001,9 @@ const THEME_ORDER = ['dark', 'light'];
  * so a palette change moves the control with it.
  */
 async function validateInstrument(browser, palette) {
-  const page = await browser.newPage({ viewport: { width: 320, height: 240 } });
+  /* Through `openPage` like everything else: the controls are drawn with the page's own 2-D context, and a
+     control validated in a different environment from the surfaces validates nothing about them. */
+  const page = await openPage(browser, { viewport: { width: 320, height: 240 } });
   try {
     const dataHex = palette.dataVisible[0].hex;
     const sceneHex = palette.scenery.light[0].hex;
@@ -1619,6 +2055,9 @@ async function captureTheme(browser, surface, theme, palette) {
     const observed = applied === null ? null : (applied.darkClass ? 'dark' : 'light');
     const base = { theme, observed, applied, reach: got.state, detail: got.detail ?? null };
     if (got.state !== 'DRAWN') return base;
+    /* THE PHASE, HELD FIXED BEFORE ANY PIXEL IS READ. Every statistic below and both captures come off the
+       frame that is on screen after this returns, so a surface that is still animating must not be read. */
+    base.settle = await settleForCapture(page);
 
     /* The same ownership mechanism the context-loss axis uses: contexts from `preClick` on are the ones this
        toggle created, and only those canvases are this surface's own. On `/command-deck` the alternative is
@@ -1802,12 +2241,37 @@ if (SURFACES.length === 0) {
 /* Derived before the browser is launched: a palette that cannot be parsed should cost nothing to discover. */
 const PALETTE = derivePalette();
 
+/*
+ * THE CLOCK, ANNOUNCED AND CHECKED BEFORE ANYTHING IS MEASURED. The fixture's region set is passed in
+ * rather than assumed, so the property being checked is the one this run will actually draw.
+ */
+const FIXTURE_REGIONS = new Set(Array.from({ length: 24 }, (_, i) => mapPoint(i).region));
+const FROZEN = checkFrozenInstant(FIXTURE_REGIONS);
+const CLOCK_CENSUS = sourcesReadingTheClock(SURFACES);
+const FINGERPRINT = sourceFingerprint();
+console.log(`  clock frozen at ${FROZEN_AT_ISO} — sub-solar ${FROZEN.subSolarLon.toFixed(3)}°E, `
+  + `camera meridian ${FROZEN.meridian.toFixed(3)}°, declination ${FROZEN.declination.toFixed(3)}°`);
+console.log(`  terminator across the centre of the globe's frame: ${FROZEN.holds ? 'HOLDS' : 'DRIFTED'} `
+  + `(off by ${FROZEN.offBy.toFixed(3)}° of longitude, sites placed: ${FROZEN.placed.join(', ')})`);
+console.log(`  source fingerprint ${FINGERPRINT.digest} over ${FINGERPRINT.files} files — two runs may only `
+  + 'be compared when this matches');
+for (const c of CLOCK_CENSUS.filter((c) => c.hits.length > 0)) {
+  console.log(`  · ${c.id} ${c.name} reads the wall clock at ${c.hits.map((h) => `${h.rel}:${h.line}`).join(', ')}`);
+}
+for (const c of CLOCK_CENSUS.filter((c) => c.deadlines.length > 0)) {
+  console.log(`  · ${c.id} ${c.name} bounds work on a WALL-CLOCK DEADLINE at `
+    + `${c.deadlines.map((h) => `${h.rel}:${h.line}`).join(', ')} — its frame is a function of machine speed`);
+}
+
 const { child, log } = startDevServer();
 const rows = [];
 const worstRoutes = [];
 const themeRows = [];
 let instrument = null;
 let browser;
+/* The rasteriser's own version, because the paragraph below admits these numbers are reproducible on ONE
+   browser build — and an admission that does not say WHICH build leaves the reader no way to check. */
+let browserVersion = null;
 try {
   await waitForServer(log);
   browser = await chromium.launch({
@@ -1816,6 +2280,7 @@ try {
        in this sweep is therefore a CPU rasterisation, which is why no timing is reported. */
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
   });
+  browserVersion = browser.version();
   for (const surface of THEME_ONLY ? [] : SURFACES) {
     const row = await sweepSurface(browser, surface);
     rows.push(row);
@@ -1931,6 +2396,220 @@ try {
 /* ── THE THEME REPORT — its own file, beside its own captures ────────────────────────── */
 if (!SKIP_THEME && instrument?.ok) writeThemeReport();
 
+/*
+ * ── THE FREEZE, WRITTEN INTO BOTH REPORTS ──────────────────────────────────────────
+ *
+ * One generator, two files, for the same reason the palette is derived and the theme binding is grepped: a
+ * paragraph about the clock maintained separately in two places is one edit away from disagreeing with
+ * itself, and a reader who finds it in only one of them has no way to know which file is the stale one.
+ */
+function frozenClockSection() {
+  const clockReaders = CLOCK_CENSUS.filter((c) => c.hits.length > 0);
+  const animators = CLOCK_CENSUS.filter((c) => c.animates);
+  /* Every settle this run took, from whichever half of the sweep ran. Only WHETHER it settled is printed:
+     a capture taken off a moving frame is the thing that would not reproduce, and how long the wait took
+     is a fact about the machine rather than about the surface. */
+  const settles = [
+    ...themeRows.flatMap((r) => THEME_ORDER
+      .filter((t) => r.byTheme[t]?.settle)
+      .map((t) => ({ id: r.id, name: r.name, where: `theme/${t}`, ...r.byTheme[t].settle }))),
+    ...rows.filter((r) => r.axes.contextLoss?.settle)
+      .map((r) => ({ id: r.id, name: r.name, where: 'context-loss', ...r.axes.contextLoss.settle })),
+  ];
+  const unsettled = settles.filter((s) => s.settled !== true);
+  return `## The clock this was measured at — frozen, and why at THIS instant
+
+**Every figure in this file is a figure at one fixed instant, and before the freeze that was not true.**
+${clockReaders.length} of the ${CLOCK_CENSUS.length} surfaces reach code that reads the reader's wall clock and draw the answer, so the same
+bytes could be reported as catastrophically worse, as mildly worse, or as dramatically better, purely by
+the hour the sweep happened to run at. That is not a hazard someone reasoned about: it was found when an
+audit and a skeptic reached opposite verdicts on one unchanged commit and **both were right**, and it is
+reproducible on demand with the recipe below. Every number this file printed before the freeze was one
+sample from that distribution, taken at an hour nobody wrote down.
+
+**The census is grepped, not listed here** — over the wrapper, the renderer, and every local module those
+two import. That closure is the point rather than a detail: one surface below reads the clock in its
+WRAPPER and would be missed by a census that only opened the file with \`Gl\` in its name, and the
+deadline finding further down sits one import from the renderer that owns it, where a census of two file
+names cannot see it at all. ${CLOCK_CENSUS.reduce((n, c) => n + c.scanned, 0)} files were scanned across ${CLOCK_CENSUS.length} surfaces:
+
+${clockReaders.length === 0 ? '- **none** — no shipping renderer reaches a wall-clock read. The matcher is checked against a known-positive and a known-negative string before this line is written, so an empty census is a fact about the code and not about the regex.' : clockReaders.map((c) => `- **${c.id} ${c.name}** — ${c.hits.map((h) => `\`${h.rel}:${h.line}\``).join(', ')}`).join('\n')}
+
+**It is import-granular, and deliberately over-reports.** A hit in a shared helper says this surface can
+reach that code, not that it calls it — \`lib/format.ts\` is on several of these lists because one of its
+exports defaults an argument to \`new Date()\`, whether or not the surface uses that export. A census that
+tried to be call-granular would need a type checker to be right and would fail silently when it was not;
+this one is wrong only in the direction of naming a file that turns out not to matter.
+
+| the knob | frozen at | what it was before |
+|---|---|---|
+| wall clock (\`Date\`, \`Date.now\`) | \`${FROZEN_AT_ISO}\` | the machine's clock, at whatever hour the sweep ran |
+| fixture ages (\`iso(msAgo)\`) | anchored to the same instant | anchored to a fixed calendar date, so the ages the fixtures expressed grew by one day per day |
+| \`Math.random\`, \`crypto.getRandomValues\`, \`crypto.randomUUID\` | seeded \`0x${FROZEN_SEED.toString(16).toUpperCase()}\` | the platform's entropy |
+| timezone / locale | \`UTC\` / \`en-GB\` | the host's, which changes what \`toLocaleString()\` renders and how wide it is |
+| \`prefers-color-scheme\` / \`prefers-reduced-motion\` / \`prefers-contrast\` / \`forced-colors\` | \`light\` / \`no-preference\` / \`no-preference\` / \`none\` | the host's, and two of them change what the renderers draw |
+| device pixel ratio | 1 | the host's, and it is the pixel count every statistic below is computed over |
+| animation phase | the frame after the draw counters stop | wherever a flat 1200 ms wait happened to land inside a five-second arc |
+
+**The tree this run swept: \`${FINGERPRINT.digest}\`** over ${FINGERPRINT.files} source files under \`apps/web/src\`,
+\`apps/web/index.html\` and \`packages/gl/src\`. Two editions of this file carrying the same digest were swept
+over identical bytes and may be compared; two carrying different digests may not. That line exists because
+this pass lost an afternoon to its absence: two sweeps minutes apart disagreed about a surface, and the
+cause was a change that had landed between them in a file neither report named — so the disagreement read
+as evidence of non-determinism when it was evidence of an edit.
+
+**The instant is derived, not picked**, because a frozen clock can flatter as easily as a moving one: an
+hour that puts the terminator off the visible face turns the globe into an evenly lit ball, which is a
+surface that has stopped being looked at rather than one that passed. Two properties fix it, and both are
+re-derived from \`globeSites.ts\` and this sweep's own fixture on every run rather than asserted here:
+
+| property | why it is the honest choice | this run |
+|---|---|---|
+| the terminator crosses the CENTRE of the frame | \`GlobeReliefGl\` aims its camera at \`centralMeridian([HUB, …sites])\`; the day/night boundary is 90° from the sub-solar point. Putting the sun there leaves the hub at Vaduz in daylight and the US site in night with the boundary between them — the reading this surface exists to draw, at the instant where both populations of pixels are largest | camera meridian **${FROZEN.meridian.toFixed(3)}°**, sub-solar **${FROZEN.subSolarLon.toFixed(3)}°E**, off by **${FROZEN.offBy.toFixed(3)}°** ${FROZEN.holds ? '— holds' : '— **DRIFTED: the instant no longer means what it says, and every globe figure below should be read with that in mind**'} |
+| the declination is zero | at a solstice one pole is lit outright and the other dark, so the two northern sites' illumination would move with the SEASON as well as the hour. At the equinox the terminator is exactly a meridian and its position is set by the time of day and nothing else | **${FROZEN.declination.toFixed(3)}°** of latitude, on day-of-year **${FROZEN.doy}** |
+
+A degree of longitude is four minutes of daylight at the terminator, so the **${Math.abs(FROZEN.offBy).toFixed(3)}°** above is
+**${(Math.abs(FROZEN.offBy) * 4 * 60).toFixed(1)} seconds** of it — and \`subSolarPoint\`'s own header already declares a ±4° bound from the
+equation of time it does not model, so the residual is an order of magnitude inside the model's own error.
+The seconds field of the instant is what carries it and must not be tidied into a round number.
+
+### Which numbers in this file predate the freeze
+
+**Every figure in every edition of EITHER generated file that does not carry this section** — that is the
+test to apply, rather than a date typed here that would go stale. \`git log --oneline -- docs/3d/app-sweep/README.md\`
+and \`git log --oneline -- docs/3d/APP_SWEEP.md\` list them; any revision without the heading above was swept
+on the machine's clock at an hour nobody recorded, over a tree nobody digested. That includes every verdict
+in it, every ratio, and the surfaces it named as worse in light.
+
+Those figures **cannot be reproduced**, and that is the defect rather than an error in the earlier run:
+re-running the same commit gives different numbers. Nothing in this edition is a correction of them — a
+correction implies a comparison, and there is none to make. The same applies to any document that quoted
+them.
+
+### The verdict on E2 is a function of the hour, and this file reports ONE hour
+
+A RECORDED EXPERIMENT, not a live figure: the numbers below were measured when the freeze landed, by the
+four commands beside them, and they are **not** regenerated. They are here because leaving them out would
+let this file's single E2 row read as settled when it is not:
+
+| frozen instant | dark data:scenery | light data:scenery | verdict this file would print |
+|---|---|---|---|
+| \`05:00:00Z\` | 7.21:1 | 1.97:1 | **WORSE IN LIGHT** |
+| \`07:18:41Z\` — the instant above | 5.91:1 | 1.67:1 | **degraded** |
+| \`09:00:00Z\` | 2.81:1 | 1.44:1 | **WORSE IN LIGHT** |
+| \`13:00:00Z\` | 1.62:1 | 4.46:1 | **holds up** |
+
+\`\`\`bash
+for H in 05:00:00 07:18:41 09:00:00 13:00:00; do
+  APP_SWEEP_CLOCK=2026-09-21T$H.000Z APP_SWEEP_OUT_DIR=/tmp/at-$H APP_SWEEP_THEME_ONLY=1 \\
+    node scripts/3d-audit-app.mjs
+done
+\`\`\`
+
+**13:00Z is the instant that must not be chosen**, and it is the one that reports "holds up": the sun is
+then within five degrees of the camera's own meridian, the terminator is off the visible face entirely, and
+the globe is an evenly lit ball. The surface passes because nothing was asked of it. The instant this file
+uses is fixed by the geometric rule above, which was written before any of these numbers existed — and it
+is not the kindest of them.
+
+**The deeper reading, which the freeze makes reproducible without making it true.** The data/scenery
+classifier splits on chroma, and sunlit ocean is saturated blue: on this surface most of what lands in the
+DATA population is *lit earth*, not markers. So E2's contrast column moves with how much of the disc is in
+daylight — which is why it swings by a factor of four across one day and why its verdict follows. Freezing
+the clock makes that column repeatable. It does not make it a measurement of the marks, and **no verdict on
+E2 should be read as one** until the classifier can tell a pin from an ocean.
+
+The figures BELOW are reproducible, and that is checkable rather than asserted:
+
+\`\`\`bash
+APP_SWEEP_OUT_DIR=/tmp/run-a APP_SWEEP_THEME_ONLY=1 node scripts/3d-audit-app.mjs
+APP_SWEEP_OUT_DIR=/tmp/run-b APP_SWEEP_THEME_ONLY=1 node scripts/3d-audit-app.mjs   # hours later
+diff -r /tmp/run-a /tmp/run-b   # compare the two runs; what may legitimately differ, and why,
+                                # is itemised under "could NOT close" below — check the source
+                                # fingerprint above matches first, or the comparison is void
+
+APP_SWEEP_CLOCK=2026-09-21T19:18:41Z APP_SWEEP_OUT_DIR=/tmp/run-night node scripts/3d-audit-app.mjs
+\`\`\`
+
+The last line is what makes the first two mean something. A sweep whose numbers never move is
+indistinguishable from an instrument that has stopped reading, so the clock is left drivable: turning it
+half a day puts the sub-solar point behind the globe, and E2's row moves with it.
+
+### The phase, and the surfaces that had one
+
+\`performance.now()\` is deliberately NOT frozen. Freezing it stops \`requestAnimationFrame\`, and with it
+ForgeBackdrop's five-second arc — which is the one animating surface in the app and therefore the control
+run that makes every reduced-motion zero in \`docs/3d/APP_SWEEP.md\` mean anything. Instead the phase is
+held fixed by waiting for the per-context draw counters to stop before any pixel is read${animators.length === 0 ? '' : ` (surfaces whose one-hop source reads \`performance.now()\` at all, grepped: ${animators.map((a) => `**${a.id}**`).join(', ')} — reading it is not the same as animating on it, and the two rows below this one separate the frame loops from the stopwatches and the deadlines)`}.
+
+${settles.length === 0 ? '_No settle was recorded on this run._' : `| surface | pass | captured off a frame that had stopped |
+|---|---|---|
+${settles.map((s) => `| **${s.id}** ${s.name} | ${s.where} | ${s.settled ? 'yes' : '**NO**'} |`).join('\n')}`}
+${unsettled.length === 0 ? '\nEvery capture on this run was taken off a frame that had stopped moving.' : `\n**${unsettled.length} capture(s) were taken while the surface was still drawing**, so those rows are not reproducible and should be read as such: ${unsettled.map((s) => `${s.id} (${s.where})`).join(', ')}.`}
+
+How long each settle waited and how many frames the arc got through are **not** printed, and that is the
+same rule the rest of this section is written under: they are facts about how fast this machine rasterises,
+not about the surface, so putting them in the file would add a figure that moves between runs to a file
+whose whole subject is figures that do not.
+
+### Non-determinism this pass could NOT close, named rather than left to be found
+
+**Frame COUNTS are machine speed, and three columns of \`docs/3d/APP_SWEEP.md\` are frame counts.** They
+need not match between two runs and nothing is wrong when they do not: "draws already recorded on its own context",
+"page-wide \`rAF\` in the same window" and the control run's "draw calls per 600 ms" all answer *how many
+frames fitted in a fixed window*, which is a property of the rasteriser and the machine's load. Their
+VERDICTS are stable — zero draws after the first frame, non-zero draws during an arc — and the verdict is
+what the axis is decided on. Read the counts as evidence the counter is alive, never as a measurement to
+compare across runs.
+
+${(() => {
+  const bounded = CLOCK_CENSUS.filter((c) => c.deadlines.length > 0);
+  if (bounded.length === 0) return '**No surface decides its frame against a wall-clock deadline**, so no geometry here is a function of machine speed. Grepped over the same one-hop closure, with the matcher checked against a known-positive and a known-negative first.';
+  return `**THE ONE THIS PASS COULD NOT CLOSE AND WOULD MOST LIKE TO: a wall-clock DEADLINE deciding geometry.**
+${bounded.map((c) => `**${c.id} ${c.name}** bounds a search on \`performance.now()\` at ${c.deadlines.map((h) => `\`${h.rel}:${h.line}\``).join(' and ')}`).join('; ')}. A deadline is not a
+stopwatch: whatever it bounds does MORE WORK on a fast machine, so the answer it returns — here the
+viewpoint the frame is drawn from — is a function of how busy this laptop was. The layout even records
+\`truncated\` for exactly this, and does not expose it, so nothing on the page can be read back to say
+whether a given capture was cut short.
+
+Freezing \`performance.now()\` would close it and must not be done: it stops \`requestAnimationFrame\`, and
+React's scheduler yields on the same clock. The fix belongs in the app — a budget counted in CANDIDATES
+rather than milliseconds is deterministic and bounds the same work. **Until then this surface's rows are
+reproducible only up to which viewpoint the search happened to reach, and two runs can legitimately
+disagree about it.**`;
+})()}
+
+${(() => {
+  const printers = CLOCK_CENSUS.filter((c) => c.printsFrameTime.length > 0);
+  if (printers.length === 0) return '**No surface renders a measured frame time into the page**, so every viewport capture is a function of the frozen inputs alone. Grepped, with the matcher checked against a known-positive and a known-negative first.';
+  return `**A measured frame time rendered into the DOM, which no clock freeze can hold still.** ${printers.map((p) => `**${p.id} ${p.name}** (${p.printsFrameTime.map((h) => `\`${h.rel}:${h.line}\``).join(', ')})`).join(', ')} print${printers.length === 1 ? 's' : ''} the milliseconds THIS run took into ${printers.length === 1 ? 'its own caption' : 'their own captions'}. That figure is correct and it is supposed to move — but it is DOM, so the affected \`*-viewport.png\` cannot be byte-identical between two runs however still the clock is held. The \`*-canvas.png\` beside it is the drawing buffer only and is unaffected, and so is every statistic in the table below, which is read off that buffer. Grepped rather than named, so a second surface that starts printing one shows up here instead of being discovered by somebody diffing two captures and doubting the freeze.`;
+})()}
+
+**An element screenshot is not a drawing buffer.** \`*-canvas.png\` is the COMPOSITED page clipped to the
+canvas box, so any DOM laid over the surface is in the image — on \`/select\` that includes the sign-in
+screen's own clock. The statistics are read from the drawing buffer through \`drawImage\` and contain the
+render and nothing else, which is why a capture can differ between two runs whose numbers are identical.
+
+- **SwiftShader itself.** Every frame is a CPU rasterisation and the ANGLE/SwiftShader build ships inside
+  the browser, so a different revision can rasterise the same scene differently: these numbers are
+  reproducible on one browser build and not necessarily across two. This run used Chromium
+  **${browserVersion ?? 'unrecorded — the browser never launched'}**. Compare that first, the same way you compare the source fingerprint.
+- **Mount-order races.** \`reads dispatched dead\` and \`needed a filter nudge\` in \`docs/3d/APP_SWEEP.md\`
+  both turn on React's development double-mount racing a fetch. They are reported per run for exactly that
+  reason, and a zero there means "not on this run", never "cannot happen".
+- **\`preClick\`, the baseline the axes are attributed against**, is how many GL contexts the route had
+  built before the toggle was pressed. It is a count taken at a moment in a render, not a property of the
+  route.
+- **Web workers.** The freeze is installed on the page's global and a worker gets its own, so none of it
+  would reach code running there. No \`new Worker\` appears anywhere under \`apps/web/src\` or
+  \`packages/gl/src\` today and no service worker is registered, so this is a note for whoever adds the
+  first one rather than a live gap.
+- **The dev server's own module graph.** Vite serves transformed source on demand; a cold and a warm cache
+  differ in timing, which is exactly what the settle above exists to absorb but not a guarantee.
+
+`;
+}
+
 function writeThemeReport() {
   const n2 = (v, d = 2) => (v === null || v === undefined ? '—' : v.toFixed(d));
   const capture = (r, theme) => {
@@ -1966,6 +2645,7 @@ Swept ${stampT}. **This file is output, not prose.** It is written separately fr
 the reason that file's own header gives about \`docs/3d/e9/README.md\`: two generators must not write one file,
 or its contents depend on which script ran last.
 
+${frozenClockSection()}
 ## Why this exists
 
 The platform shipped a light theme for its 3-D surfaces and **it had no capture at all**. Rule 8 of this
@@ -2207,6 +2887,7 @@ const stamp = process.env.AUDIT_DATE ?? new Date().toISOString().slice(0, 10);
 const failing = rows.filter((r) => r.problems.length > 0);
 const unreachable = rows.filter((r) => r.reach !== 'DRAWN');
 
+mkdirSync(OUT_DIR, { recursive: true });
 writeFileSync(OUT, `# THE APP SWEEP — status: **${reached.length} of ${rows.length} relief surfaces reached\
 ${failing.length === 0 ? ', no findings' : `, ${failing.length} with findings`}**
 
@@ -2216,6 +2897,7 @@ Swept ${stamp}. **This file is output, not prose** — the same discipline as \`
 same reason: every hand-written README in this programme has been caught carrying a sentence that was true when
 typed and false when read. If this disagrees with the code, run it again rather than editing it.
 
+${frozenClockSection()}
 ## What this is, and what \`e9\` is not
 
 \`scripts/3d-audit.mjs\` sweeps reduced motion, print, no-WebGL, a lost context and the quality ladder over the
@@ -2449,10 +3131,45 @@ ${worstRoutes.map((w) => `| \`${w.route}\` | ${w.engaged.join(' + ')} | ${w.crea
 
 ${(() => {
   const worst = worstRoutes.reduce((a, b) => (b.notLost > a.notLost ? b : a));
-  return `Measured worst case on this sweep: **${worst.notLost} contexts** on \`${worst.route}\` with `
-    + `${worst.engaged.join(' + ')} on at once, against the static pin of 3 and a browser cap of 8-16. The `
-    + 'static census and the browser agree, which is worth recording as a negative result: the import graph '
-    + 'was not over- or under-counting.';
+  /*
+   * THE COMPARISON IS COMPUTED, BECAUSE THIS SENTENCE USED TO ASSERT IT. It read "the static census and
+   * the browser agree" unconditionally — and on the sweep that installed the clock freeze the browser
+   * measured 2 against a pin of 3 and the file said they agreed anyway. A generated report claiming
+   * agreement it has not checked is the exact failure this whole file exists to refuse.
+   *
+   * The pin is READ from the test that owns it rather than retyped, so the two cannot drift apart.
+   */
+  let pin = null;
+  try {
+    const m = /const CONCURRENT_CAP = (\d+);/
+      .exec(readFileSync(join(WEB, 'src/components/__tests__/glContextBudget.test.ts'), 'utf8'));
+    if (m) pin = Number(m[1]);
+  } catch { /* reported as unread below */ }
+  const head = `Measured worst case on this sweep: **${worst.notLost} contexts** on \`${worst.route}\` with `
+    + `${worst.engaged.join(' + ')} on at once, against a browser cap of 8-16`;
+  if (pin === null) {
+    return `${head}. \`glContextBudget.test.ts\`'s \`CONCURRENT_CAP\` could not be read, so the static pin `
+      + 'and the browser are NOT compared here rather than being reported as agreeing.';
+  }
+  if (worst.notLost === pin) {
+    return `${head} and the static pin of ${pin}. The static census and the browser agree, which is worth `
+      + 'recording as a negative result: the import graph was not over- or under-counting.';
+  }
+  if (worst.notLost > pin) {
+    return `${head} and a static pin of ${pin}. **The browser holds MORE contexts than the import graph `
+      + `bounds, and that is a finding about the app rather than about this sweep**: the pin is the number `
+      + 'a reviewer relies on when deciding a route is inside the browser cap, and it is now a floor rather '
+      + 'than a ceiling. Past the cap of 8-16 the OLDEST context is killed silently, which on a chart route '
+      + 'is the shared one every chart draws through (3D_VFX_FINAL_PLAN.md §10.4).';
+  }
+  return `${head} and a static pin of ${pin}. **They disagree, and the disagreement is worth a sentence `
+    + `rather than a rounding**: the import graph bounds what a route CAN hold and the browser counts what `
+    + `it DID hold, so a measured ${worst.notLost} under a pin of ${pin} means a context the graph expects was not `
+    + 'built on this run — a lower measurement than the bound is not a contradiction. The likely reason on '
+    + 'this route is the theme: the four axes run under the app\'s default, and `SignatureBackdrop` — the '
+    + 'shell\'s only caller of `sharedRenderer()` — returns early unless `<html>` carries `dark`, so the '
+    + 'shared 2-D context the pin counts does not exist in light. That is read off the source, not measured '
+    + 'here, and the pin is not wrong: it counts a configuration this sweep does not load.';
 })()}
 `}
 The offscreen column is the shared 2-D renderer: its canvas is never in the document, which is how it is told
