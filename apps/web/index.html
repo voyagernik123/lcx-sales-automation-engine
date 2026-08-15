@@ -8,10 +8,36 @@
     <link rel="preload" href="/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin />
     <link rel="preload" href="/fonts/JetBrainsMono-Regular.woff2" as="font" type="font/woff2" crossorigin />
     <script>
+      /*
+       * THIS SCRIPT READ A KEY THAT NOTHING HAS EVER WRITTEN, so it did nothing, for everyone,
+       * on every load. It asked for `lcx-os:ui:v1`. `useUIStore` persists through
+       * `lib/persistence.ts`, whose key builder is `lcx-os:<scope>:ui:v1` where `<scope>` is the
+       * operator's lowercased email or the literal `anon` — never empty. So the real key is
+       * `lcx-os:nik@lcx.com:ui:v1`, and `lcx-os:ui:v1` was the only occurrence of that string in
+       * the repository: a read with no writer.
+       *
+       * The consequence is the exact thing the comment below this promises does not happen — every
+       * dark-mode operator got a white flash on every navigation, because the class was never added
+       * before paint and only `AppLayout` put it back after the shell mounted. It also meant
+       * `/select`, which lives OUTSIDE `AppLayout`, could never be dark from stored preference at
+       * all: nothing else on that route ever sets the class.
+       *
+       * It went unseen because a dead anti-flash script and a working one differ only in a frame,
+       * and nothing measures a frame. It surfaced from a theme-capture sweep that had to seed the
+       * store to drive the app, found the app ignoring what it wrote, and looked for the writer.
+       *
+       * THE SCOPE IS RESOLVED THE SAME WAY `persistence.ts` RESOLVES IT — same email key, same
+       * lowercase, same trim, same `anon` fallback — because two spellings of one rule is how this
+       * broke. The unscoped key is still tried as a fallback so a reader who somehow holds one is
+       * not regressed, and because an extra read costs nothing before paint.
+       */
       try {
-        const stored = localStorage.getItem('lcx-os:ui:v1');
+        var email = (localStorage.getItem('lcx_operator_email') || 'anon').trim().toLowerCase() || 'anon';
+        var stored = localStorage.getItem('lcx-os:' + email + ':ui:v1')
+          || localStorage.getItem('lcx-os:anon:ui:v1')
+          || localStorage.getItem('lcx-os:ui:v1');
         if (stored) {
-          const parsed = JSON.parse(stored);
+          var parsed = JSON.parse(stored);
           if (parsed && parsed.state && parsed.state.darkMode) {
             document.documentElement.classList.add('dark');
           }

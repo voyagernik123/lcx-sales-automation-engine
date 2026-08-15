@@ -55,6 +55,194 @@ const SHADOW_BASELINE = 1024;
 /** How long the key light takes to travel its arc. Then it stops. */
 const SWEEP_MS = 5000;
 
+/**
+ * THE ARC, factored out of `render` because the EXPOSURE SOLVE below has to know the strongest
+ * light the sweep ever reaches — not the one at whichever frame it happens to be drawing. An
+ * exposure derived from the live direction would change while the arc travels, which is an
+ * auto-exposure pumping the whole frame's brightness for five seconds.
+ *
+ * `eased` is 0..1 across the sweep; `a` therefore runs -1.35 to 0.15 radians.
+ */
+const lightDirAt = (eased: number): [number, number, number] => {
+  const a = -1.35 + eased * 1.5;
+  return [Math.sin(a) * 0.85, -0.95, Math.cos(a) * 0.55];
+};
+
+/**
+ * THE LARGEST N·L ANYTHING IN THIS SCENE REACHES, over the whole arc.
+ *
+ * The light's y component is a constant -0.95, so for the FLOOR — the only large area whose normal
+ * IS the up axis — N·L is |dir.y| / |dir|, and that peaks where the horizontal component is
+ * smallest. Every other surface here is curved and takes less: the plinth is a lathe, the disc and
+ * the ring are turned metal, and none of them presents a flat face to the key across any real area.
+ * That asymmetry is the whole reason the GROUND is what blows out while the object does not.
+ *
+ * Sampled rather than solved, so it stays correct if the arc's endpoints move. 512 samples put it
+ * within 1e-7 of the closed form 0.95 / sqrt(0.85² sin²a + 0.95² + 0.55² cos²a) at a = 0.
+ */
+const PEAK_NDOTL = ((): number => {
+  let peak = 0;
+  for (let i = 0; i <= 512; i++) {
+    const d = lightDirAt(i / 512);
+    peak = Math.max(peak, Math.abs(d[1]) / Math.hypot(d[0], d[1], d[2]));
+  }
+  return peak;
+})();
+
+/** The key's warm tint. ONE gain, three channels — `lightColour` and the solve share it or drift. */
+const KEY_TINT = [1, 0.96, 0.885] as const;
+
+/**
+ * THE TWO RIGS, AND THE ONE AXIS THAT WAS MISSING FROM BOTH.
+ *
+ * These three numbers are the LOOK: how hard the key is relative to the fill, and how far the
+ * shadows go down. Their light/dark direction is the counter-intuitive one and it is unchanged —
+ * light takes a key 1.42x dark's against an ambient 0.54x of it, because on a bright ground bounced
+ * light already fills the scene and form has to come from the key.
+ *
+ * What they are NOT is an EXPOSURE. Where the frame sits on the tone curve is a different question
+ * from how the light is shaped, and until now one number answered both — so the answer was tuned by
+ * eye and landed 1.17x past the point where the tone map stops encoding. `LIGHT_EXPOSURE` below is
+ * that second axis, solved.
+ */
+const KEY_GAIN = { dark: 5.2, light: 7.4 } as const;
+const AMBIENT_GAIN = { dark: 1.15, light: 0.62 } as const;
+/** A 0..1 mix, not a radiance — nothing here can clip, so the exposure does not touch it. */
+const SHADOW_STRENGTH = { dark: 0.9, light: 0.62 } as const;
+
+/** The ground albedo per theme. `look/theme.ts` records this pair as its worked example. */
+const GROUND = { dark: '#080C15', light: '#D7DEEA' } as const;
+
+/**
+ * The light theme's studio sky. Hoisted out of `skyStopsFor` because the exposure solve needs its
+ * irradiance at the up normal, and a second copy of these nine numbers is a second thing to keep in
+ * step. Dark keeps `sky.ts`'s authored room, which is why `skyStopsFor` returns `undefined` there.
+ */
+const LIGHT_SKY = {
+  zenith: [0.72, 0.78, 0.90], horizon: [0.95, 0.96, 0.99], ground: [0.42, 0.46, 0.55],
+} as const;
+
+/** The three pure functions the solve needs. Passed in, because this file may not import
+    `@lcx/gl` statically — see the header on the 441 KB shell chunk. */
+type ExposureMath = Pick<GlMod, 'hexToLinear' | 'inverseToneMap' | 'skyIrradiance'>;
+
+/**
+ * ══ THE LIGHT GROUND RENDERED AS PURE WHITE, AND THIS IS THE TERM THAT DID IT ══════════
+ *
+ * MEASURED on the deployed sign-in screen, headless chromium 1280x800 @2, the app's own theme
+ * switch, a real rAF wait: 37.07% of the light frame was FULLY CLIPPED — every channel at 254 or
+ * above. The page background is rgb(244,246,250), below that threshold on all three, so the clipped
+ * third was not the page. It was this canvas's ground plane. Segmenting the frame by dropping each
+ * draw in turn puts a number on it: the floor is 40.09% of the frame and 94.86% OF THE FLOOR was
+ * clipped — 1.64M pixels holding one value.
+ *
+ * ── THE ARITHMETIC ──────────────────────────────────────────────────────────────────
+ * `lcxToneMap` is c/(1 + 0.4c). It reaches 1.0 — pure white BEFORE the sRGB encode — at
+ * c = 1/(1-0.4) = 1.6667, which `look/precompensate.ts` already names `PRECOMP_CLIP`. Every
+ * radiance at or above it is the same pixel.
+ *
+ * The ground is Lambertian (metalness 0), so its radiance is albedo·(tint·key·N·L/π + sky·ambient).
+ * With albedo #D7DEEA, key 7.4, ambient 0.62 and N·L at its arc maximum 0.865426:
+ *
+ *          albedo   key diffuse   ambient      total    vs the 1.6667 clip
+ *   R     0.67954       1.38525    0.30335    1.68860        1.013x   OVER
+ *   G     0.73046       1.42949    0.35325    1.78274        1.070x   OVER
+ *   B     0.82279       1.48437    0.45911    1.94348        1.166x   OVER
+ *
+ * THE KEY'S DIFFUSE TERM IS THE ONE THAT CLIPS. It is 82%, 80% and 76% of those totals, and it
+ * alone is 0.83x, 0.86x and 0.89x of the entire tone-map range before ambient is added. The ambient
+ * is 18-24% and is not the cause; zeroing it would stop the clip but only because it takes 24% of a
+ * budget the key had already spent 89% of. Confirmed on the GPU: a CPU transcription of `lit.ts`'s
+ * fragment shader agrees with the rendered framebuffer to 0/255 on all 12 on-screen floor pixels in
+ * DARK, where nothing clips and a disagreement could not hide behind a saturated channel.
+ *
+ * ── AND THE ARITHMETIC PREDICTED THE FRAME THE ARC STARTS FAILING AT ────────────────
+ * "Fully clipped" needs all three channels at 254, so the binding channel is the DIMMEST one, red.
+ * Solving 0.67954·(7.4·N·L/π + 0.72·0.62) = 1.6667 puts that crossing at N·L = 0.85183. Rendered
+ * with the arc frozen at six positions — the shipped shader, one intercepted easing line, no race
+ * between reading `t` and capturing — the frame goes from 0.00% clipped at N·L 0.821011 to 37.98%
+ * at N·L 0.858015. The predicted threshold falls between those two samples, and the worst position
+ * of the whole sweep is `PEAK_NDOTL` itself, a = 0, at 38.18%. After the fix all six read 0.00%.
+ *
+ * ── WHY THE GROUND AND NOT THE OBJECT ───────────────────────────────────────────────
+ * `PEAK_NDOTL` above. The floor is the only large area whose normal is the up axis, so it takes the
+ * key's full 0.865; the plinth, the disc and the ring are all turned surfaces and never do. And the
+ * disc is metalness 0.95, which has essentially no diffuse lobe at all. So the term that clips is
+ * the term the OBJECT barely has — which is why turning the key down "until the metal looks right"
+ * could never have found this.
+ *
+ * ── THE FIX, AND WHY IT IS NOT "TURN THE KEY DOWN" ──────────────────────────────────
+ * The key/ambient RATIO is unchanged: 11.94:1 in light against 4.52:1 in dark, exactly as authored.
+ * What changes is the absolute scale, and it is SOLVED rather than picked — the exposure at which
+ * the ground's brightest pixel leaves the pipeline at THE COLOUR IT WAS AUTHORED WITH, #D7DEEA,
+ * instead of at white. `inverseToneMap(albedo)` is the radiance that tone-maps and encodes back to
+ * that albedo; divide it by the peak above, per channel, and take the binding one so no channel
+ * renders brighter than authored. That is 0.552649, and it is a derivation, not a taste: an albedo
+ * of 215 rendering at 255 was the defect, and after this an albedo of 215 renders at 215.
+ *
+ * MEASURED AFTER, same instrument: ground clipped 94.86% -> 0.00%, whole frame 37.06% -> 0.00%,
+ * the ground's median pixel rgb(255,255,255) -> rgb(215,218,224) against the authored rgb(215,222,234),
+ * and the brightest pixel in the frame moved OFF the floor and onto the metal, where a product shot
+ * needs it. The plinth's silhouette step against the ground doubled, 1.0 -> 2.0 levels.
+ *
+ * ── DARK CANNOT MOVE, BY CONSTRUCTION ───────────────────────────────────────────────
+ * `forgeRig` multiplies by `dark ? 1 : LIGHT_EXPOSURE`, and multiplication by 1.0 is exact in
+ * IEEE 754 — `5.2 * 1 * intensity` is bit-for-bit `5.2 * intensity`. The dark rig is not re-derived,
+ * re-tuned or re-checked; it is the same expression it always was with an exact identity in it. The
+ * solve is deliberately NOT gated on `Math.min(1, ...)` instead: run against the dark scene it
+ * returns 0.692, because dark's ground peaks at 0.0021-0.0060x the clip point and the criterion
+ * "render at your albedo" would DARKEN a room that was authored to lift a near-black floor off
+ * black. The criterion is a light-studio criterion and it says so.
+ */
+export function lightExposure(m: ExposureMath): number {
+  const albedo = m.hexToLinear(GROUND.light);
+  const sky = m.skyIrradiance([0, 1, 0], LIGHT_SKY);
+  /* The radiance that tone-maps and encodes back to the authored albedo. Exact: `inverseToneMap`
+     is the true inverse of `toneMapComposite` below the pole at 1/0.4, and 0.82 is far under it. */
+  const target = m.inverseToneMap(albedo);
+  const peak = (c: 0 | 1 | 2): number =>
+    albedo[c] * ((KEY_TINT[c] * KEY_GAIN.light * PEAK_NDOTL) / Math.PI + sky[c] * AMBIENT_GAIN.light);
+  /*
+   * kd = (1-F)(1-metalness) is dropped, and so is the key's SPECULAR lobe on the floor. They pull
+   * in opposite directions and nearly cancel: measured against the full BRDF the estimate above is
+   * 1.04% high, which makes the solved exposure 1.04% conservative. A model that erred the other way
+   * would put the clip back, so the sign of the approximation is the one to have.
+   */
+  return Math.min(target[0] / peak(0), target[1] / peak(1), target[2] / peak(2));
+}
+
+/** The gains actually handed to the renderer, per theme. Exported so a test can read the shipped
+    numbers rather than a transcription of them. */
+export interface ForgeRig {
+  readonly keyGain: number;
+  readonly ambientGain: number;
+  readonly shadowStrength: number;
+  /** Exactly 1 in dark. Not approximately — see the header. */
+  readonly exposure: number;
+}
+
+/**
+ * Everything the ground's radiance depends on, in one frozen record.
+ *
+ * Exported so `__tests__/forgeExposure.test.ts` can rebuild that radiance from the SHIPPED values
+ * and check them against `@lcx/gl`'s own tone map and encode. A test that re-typed these four
+ * numbers would pass forever after someone changed one of them here.
+ */
+export const FORGE_GROUND = Object.freeze({
+  hex: GROUND, sky: LIGHT_SKY, keyTint: KEY_TINT, peakNdotL: PEAK_NDOTL,
+});
+
+export function forgeRig(dark: boolean, m: ExposureMath): ForgeRig {
+  const exposure = dark ? 1 : lightExposure(m);
+  const t = dark ? 'dark' : 'light';
+  return {
+    keyGain: KEY_GAIN[t] * exposure,
+    ambientGain: AMBIENT_GAIN[t] * exposure,
+    shadowStrength: SHADOW_STRENGTH[t],
+    exposure,
+  };
+}
+
 export interface ForgeBackdropProps {
   /** Set on the sign-in screen. Kept as a prop so a marketing page can dial it back. */
   readonly intensity?: number;
@@ -130,7 +318,12 @@ export function ForgeBackdrop({ intensity = 1 }: ForgeBackdropProps) {
       // into a scene lit by a framebuffer object.
       const skyStopsFor = (dark: boolean) => (dark
         ? undefined                                    // the authored default room
-        : { zenith: [0.72, 0.78, 0.90] as const, horizon: [0.95, 0.96, 0.99] as const, ground: [0.42, 0.46, 0.55] as const });
+        : LIGHT_SKY);
+
+      /* SOLVED ONCE PER MOUNT, not per frame: every input is a constant, and re-solving inside the
+         loop would allocate three small arrays on each of the arc's ~300 frames for an identical
+         answer. See the header for what it solves and why dark's is exactly 1. */
+      const rigs = { dark: forgeRig(true, gl3), light: forgeRig(false, gl3) };
 
       const outcome = gl3.createStage(canvas, { alpha: false });
       if (!gl3.isStage(outcome)) { setReason(outcome.reason); return; }
@@ -208,7 +401,9 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
          and shared, so this costs nothing measurable and cannot go stale. */
       const buildDraws = (dark: boolean) => [
         { mesh: floorM!, model: at(0, 0, 0), normalMat: NM,
-          material: { baseColour: gl3.hexToLinear(dark ? '#080C15' : '#D7DEEA'), roughness: 0.88, metalness: 0 } },
+          /* THE SAME CONSTANT THE EXPOSURE SOLVE READS. Inlining the hex here again is how the
+             solve and the surface it is solving for would come to disagree. */
+          material: { baseColour: gl3.hexToLinear(dark ? GROUND.dark : GROUND.light), roughness: 0.88, metalness: 0 } },
         { mesh: plinthM!, model: at(0, 0.045, 0), normalMat: NM,
           material: { baseColour: gl3.hexToLinear(dark ? '#161D2E' : '#AEBACD'), roughness: 0.52, metalness: 0.35 } },
         { mesh: discM!, model: at(0, DISC_Y, 0), normalMat: NM,
@@ -267,8 +462,7 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         const draws = buildDraws(dark);
         // t 0..1 across the sweep. One arc, easing to a stop rather than halting mid-travel.
         const eased = t < 1 ? 1 - (1 - t) * (1 - t) : 1;
-        const a = -1.35 + eased * 1.5;
-        const lightDir: [number, number, number] = [Math.sin(a) * 0.85, -0.95, Math.cos(a) * 0.55];
+        const lightDir = lightDirAt(eased);
         const lightVP = gl3.lightViewProjection(
           { direction: lightDir, colour: [1, 1, 1], extent: radius * 0.9 }, centre, radius,
         );
@@ -286,12 +480,21 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
              AO off would render the rest of the frame at half resolution. */
           T.bind();
         }
-        /* A studio needs a stronger key and much more ambient, or the metal goes muddy against a
-           bright ground; a dark room needs the reverse or the highlight blows out. */
-        const keyGain = (dark ? 5.2 : 7.4) * intensity;
+        /*
+         * A studio needs a stronger key and a WEAKER ambient than a dark room — on a bright ground
+         * the bounce already fills the scene, so ambient adds haze rather than form. That direction
+         * is unchanged. The previous sentence here claimed "much more ambient", which the code has
+         * never done (0.62 against dark's 1.15) and which `look/theme.ts` contradicts in as many
+         * words; it was the wrong half of the argument that let the key run past the tone map.
+         *
+         * The EXPOSURE is the axis this rig never had. See the header for the solve.
+         */
+        const rig = dark ? rigs.dark : rigs.light;
+        const keyGain = rig.keyGain * intensity;
         R.draw({
-          viewProj: vp, eye, lightDir, lightColour: [keyGain, keyGain * 0.96, keyGain * 0.885],
-          ambientGain: dark ? 1.15 : 0.62, sky: skyStops, lightVP, shadow: S, shadowStrength: dark ? 0.9 : 0.62, draws,
+          viewProj: vp, eye, lightDir,
+          lightColour: [keyGain * KEY_TINT[0], keyGain * KEY_TINT[1], keyGain * KEY_TINT[2]],
+          ambientGain: rig.ambientGain, sky: skyStops, lightVP, shadow: S, shadowStrength: rig.shadowStrength, draws,
           ao: A ? A.texture : null, screenSize: [W, H], shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE,
         });
         /* WHAT THE PRESENT READS FROM depends on whether the lens ran. Reading `D.texture` with the DOF pass

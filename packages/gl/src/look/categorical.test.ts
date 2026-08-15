@@ -23,7 +23,11 @@
  *  per-surface results); what this file proves is that the CPU path still reproduces them, which
  *  is the part that can silently drift.
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import * as categoricalModule from './categorical.js';
+import * as barrel from '../index.js';
+import type { Lab as BarrelLab, CategoryId as BarrelCategoryId, SeparationFailure as BarrelSeparationFailure } from '../index.js';
 import {
   CATEGORICAL_FLOOR_DE2000,
   CATEGORICAL_POLICY,
@@ -314,5 +318,125 @@ describe('ORDER SURVIVES and CATEGORICAL SEPARATION are different claims', () =>
     /* The same discipline TONE_POLICY and STATUS_POLICY follow: a printed sentence may name a
        category and a measurement, never a pixel a lit surface cannot deliver. */
     expect(CATEGORICAL_POLICY).not.toMatch(/exact/i);
+  });
+});
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════════════════════════
+ *  REACHABILITY. Everything above measures a colour; this measures whether anybody can call the
+ *  thing that measured it.
+ * ══════════════════════════════════════════════════════════════════════════════════════════════════
+ *  This module was green, validated against published test vectors, and absent from `src/index.ts`
+ *  — so no barrel consumer could reach a single symbol of it. That is not a missing feature, it is
+ *  the exact shape of a defect this programme has already found once: code that ships, cannot be
+ *  called, and is described in the record as if it were live. The subpath wildcard in package.json
+ *  meant nothing was BLOCKED, which is precisely what made it invisible.
+ *
+ *  BOTH SIDES ARE DERIVED, AND THAT IS THE WHOLE POINT. A hand-written list of expected names
+ *  passes on the day it is written and says nothing about the symbol somebody adds next week —
+ *  which is the failure mode being guarded against, so reproducing it here would be self-defeating.
+ *
+ *  WHAT COVERS WHAT, stated because the two halves have different failure modes and a comment that
+ *  blurred them would be the same lie in a smaller font:
+ *    · VALUES are covered at runtime, semantically. `Object.keys` of the module namespace against
+ *      `Object.keys` of the barrel namespace, plus an IDENTITY check — a name present in the barrel
+ *      but bound to some other module's symbol fails.
+ *    · TYPES cannot be: a type export leaves no trace in a runtime namespace, so `Object.keys`
+ *      would report zero of them and a subset assertion over values alone would let every type
+ *      export rot unnoticed. They are covered TEXTUALLY instead — the type names are derived from
+ *      `categorical.ts`'s own source and checked against the barrel's own source — and the parser
+ *      that does it is validated in the same test by re-deriving the VALUE names and requiring them
+ *      to equal the runtime namespace exactly. A broken parser cannot quietly return an empty list.
+ *    · The type export additionally has a COMPILE-TIME witness below, which `tsc` fails on and
+ *      `vitest` cannot: vitest strips types, so under vitest alone the textual check is the one
+ *      that goes red.
+ *
+ *  PROVEN BY MUTATION, 2026-08-15 — four mutations, four reds, each restored by editing:
+ *    1 · `separationFailures` deleted from the barrel's value block
+ *        → "@lcx/gl barrel does not re-export: separationFailures"
+ *    2 · the NAME kept but rebound, `deltaE76 as separationFailures`
+ *        → "barrel's separationFailures is not categorical.ts's separationFailures:
+ *           expected [Function deltaE76] to be [Function separationFailures]"
+ *    3 · `SeparationFailure` deleted from the barrel's type block
+ *        → vitest: "@lcx/gl barrel does not re-export type: SeparationFailure"
+ *        → tsc:    "TS2724: '"../index.js"' has no exported member named 'SeparationFailure'"
+ *          Both, and the compile-time test below stayed GREEN under vitest through it — which is
+ *          the honest reason the textual half exists rather than the tsc witness alone.
+ *    4 · `function` dropped from the parser's own regex, blinding it to 15 of the 23 values
+ *        → "expected [ 'CATEGORICAL_FLOOR_DE2000', …(7) ] to deeply equal [ …(22) ]"
+ *          So the parser cannot go blind silently. This is also what covers the one form it does
+ *          not read: if `categorical.ts` ever gains an `export { x } from './y.js'`, the runtime
+ *          namespace gains `x`, the parser does not, and this control fails before the type
+ *          assertion below can be quietly under-scoped.
+ */
+describe('the barrel can actually reach this module', () => {
+  const sourceOf = (rel: string): string => readFileSync(new URL(rel, import.meta.url), 'utf8');
+
+  /** Every top-level `export <kind> <name>` in a source file, split by whether it is a type. */
+  const declaredExports = (src: string): { values: string[]; types: string[] } => {
+    const values: string[] = [];
+    const types: string[] = [];
+    for (const m of src.matchAll(/^export\s+(type|interface|const|function|class|let|var|enum)\s+([A-Za-z_$][\w$]*)/gm)) {
+      (m[1] === 'type' || m[1] === 'interface' ? types : values).push(m[2]!);
+    }
+    return { values, types };
+  };
+
+  it('re-exports every runtime symbol of categorical.ts, and binds each to the same object', () => {
+    const own = Object.keys(categoricalModule);
+    /* A subset assertion over an empty set is vacuously true, so the set has to be non-empty and
+       the module has to be the one we think it is. */
+    expect(own.length).toBeGreaterThan(20);
+    expect(own).toContain('separationFailures');
+
+    const reachable = new Set(Object.keys(barrel));
+    const missing = own.filter((name) => !reachable.has(name));
+    expect(missing, `@lcx/gl barrel does not re-export: ${missing.join(', ')}`).toEqual([]);
+
+    /* Name presence is not reachability. A barrel that exported some OTHER module's `deltaE2000`
+       would satisfy the check above and hand every consumer the wrong function. */
+    const asRecord = (ns: object): Readonly<Record<string, unknown>> => ns as Readonly<Record<string, unknown>>;
+    for (const name of own) {
+      expect(asRecord(barrel)[name], `barrel's ${name} is not categorical.ts's ${name}`)
+        .toBe(asRecord(categoricalModule)[name]);
+    }
+  });
+
+  it('re-exports every TYPE of categorical.ts, with the parser that derives them validated in place', () => {
+    const own = declaredExports(sourceOf('./categorical.ts'));
+
+    /* THE PARSER'S OWN NEGATIVE CONTROL. The type list is only as trustworthy as the regex that
+       produced it, and a regex that silently matched nothing would make the assertion below
+       vacuous. Its value half is checkable against a runtime fact, so it gets checked: if these
+       disagree, the type half is not to be believed either. */
+    expect([...own.values].sort()).toEqual(Object.keys(categoricalModule).sort());
+    expect(own.types.length).toBeGreaterThan(0);
+
+    const barrelSrc = sourceOf('../index.ts');
+    const reExported = new Set(
+      [...barrelSrc.matchAll(/export\s+type\s+\{([^}]*)\}\s+from\s+'\.\/look\/categorical\.js'/g)]
+        .flatMap((m) => m[1]!.split(','))
+        .map((s) => s.trim().split(/\s+as\s+/)[0]!.trim())
+        .filter(Boolean),
+    );
+    const missing = own.types.filter((name) => !reExported.has(name));
+    expect(missing, `@lcx/gl barrel does not re-export type: ${missing.join(', ')}`).toEqual([]);
+  });
+
+  it('resolves those types THROUGH the barrel — the compile-time half, which tsc fails on', () => {
+    /* These annotations are the assertion. Each names a type imported from `../index.js` and
+       assigns it a value produced by `categorical.ts`'s own function, so `tsc` fails with
+       "has no exported member" if the barrel's type block loses one, and with a mismatch if the
+       barrel ever re-exports a different type under that name. Under vitest the annotations are
+       erased and only the expectations run — the textual check above is what goes red there.
+       Hand-written, and it has to be: TypeScript has no `keyof` over a module's TYPE exports, so
+       nothing in the language can derive this list. The test above is what catches an addition. */
+    const lab: BarrelLab = labOf(BRAND.brand);
+    const category: BarrelCategoryId = categoryOf('refusal');
+    const failure: BarrelSeparationFailure | undefined = separationFailures(8)[0];
+
+    expect(lab).toHaveLength(3);
+    expect(category).toBe('absence');
+    expect(failure?.a).toBe('brandBright');
   });
 });

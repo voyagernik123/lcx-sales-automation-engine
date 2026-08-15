@@ -148,10 +148,14 @@ worse than a chosen one. Three arguments point at the same place:
 3. **The verdicts are stable across a wide band, which is the honest way to report a chosen
    number.** For the palette under the shipped marker rig the failing pair reaches **7.95** and the
    tightest passing one **13.25** — anything from 8 to 13 gives identical verdicts. Per-surface
-   (§5) the band is narrower: the worst passing case is Storm's `tile`/`lid` at **10.3** and the
-   best failing one is Orrery's `core`/`withheld` at **8.6**, so only 8.7–10.3 preserves those
-   verdicts. **Recorded, not hidden:** Storm `tile`/`lid` flips to a violation if the floor moves
-   above 10.3.
+   (§5) the band was narrower: the worst passing case is Storm's `tile`/`lid` at **10.3** and the
+   best failing one was Orrery's `core`/`withheld` at **8.6**, so only 8.7–10.3 preserved those
+   verdicts. **AMENDED 2026-08-15.** Both Orrery and Storm are fixed, so no failing case brackets
+   the band from below any more and the surviving constraint is one-sided: Storm's `tile`/`lid` at
+   **10.3**. That is a WEAKER position, not a stronger one — a threshold with nothing failing just
+   below it is no longer pinned by the data, and the next surface measured could land anywhere in
+   the gap. **Recorded, not hidden:** `tile`/`lid` still flips to a violation if the floor moves
+   above 10.3, and it is now the only pair doing any work at the boundary.
 
 **Statistic: the 5th-percentile fragment.** The worst fragment of a convex dielectric is its
 specular highlight, where the material is meant to show the light rather than its albedo; requiring
@@ -230,14 +234,17 @@ them. Ranked by p05, worst first.
 
 | surface | theme | pair | hexes | min | **p05** | median | verdict |
 |---|---|---|---|---|---|---|---|
-| **storm** | dark | `tile` (observed day) / `withheldTile` (absence) | `#22315A` `#1B2540` | 3.2 | **4.4** | 5.2 | ❌ **VIOLATES** |
-| **orrery** | dark | `core` (measured) / `withheld` (absence) | `#7FB2FF` `#6B7A99` | 6.2 | **7.2** | 8.3 | ❌ **VIOLATES** |
-| **orrery** | light | `core` (measured) / `withheld` (absence) | `#7FB2FF` `#6B7A99` | 7.9 | **8.6** | 10.3 | ❌ **VIOLATES** |
+| ~~**storm**~~ | ~~dark~~ | ~~`tile` (observed day) / `withheldTile` (absence)~~ | ~~`#22315A` `#1B2540`~~ | ~~3.2~~ | ~~**4.4**~~ | ~~5.2~~ | **FIXED 2026-08-15 — see §5d** |
+| ~~**orrery**~~ | ~~dark~~ | ~~`core` / `withheld`~~ | ~~`#7FB2FF` `#6B7A99`~~ | ~~6.2~~ | ~~**7.2**~~ | ~~8.3~~ | **FIXED 2026-08-15 — see COLOUR_LANGUAGE.md §9** |
+| ~~**orrery**~~ | ~~light~~ | ~~`core` / `withheld`~~ | ~~`#7FB2FF` `#6B7A99`~~ | ~~7.9~~ | ~~**8.6**~~ | ~~10.3~~ | **FIXED 2026-08-15 — see COLOUR_LANGUAGE.md §9** |
+| **orrery** | dark | `core` / `withheld`, after | `#7FB2FF` `#6B7A99` | 9.91 | **12.92** | 18.35 | ✅ ok |
+| **orrery** | light | `core` / `withheld`, after | `#7FB2FF` `#6B7A99` | 9.48 | **12.76** | 17.67 | ✅ ok |
 | storm | dark | `tile` / `lid` (absence) | `#22315A` `#6B7A99` | 8.1 | **10.3** | 12.4 | ok — 0.3 from the floor |
 | storm | dark | `tile` / `rail` (absence) | `#22315A` `#6B7A99` | 8.3 | **11.2** | 13.3 | ok |
 | orrery | light | `observed` / `withheld` | `#2C6BFF` `#6B7A99` | 5.8 | **13.0** | 13.6 | ok |
 | storm | dark | `gate` / `lid` | `#2C6BFF` `#6B7A99` | 12.5 | **13.1** | 14.3 | ok |
 | storm | dark | `gate` / `rail` | `#2C6BFF` `#6B7A99` | 12.4 | **13.2** | 13.9 | ok |
+| **storm** | dark | `tile` / `withheldTile` **as it now ships** | `#22315A` `#595959` | 10.4 | **13.4** | 15.2 | ok — §5d‡ |
 | orrery | light | `link` / `withheld` | `#7FB2FF` `#6B7A99` | 11.9 | **13.7** | 16.8 | ok |
 | orrery | dark | `link` / `withheld` | `#7FB2FF` `#6B7A99` | 12.2 | **13.8** | 17.2 | ok |
 | globe | both† | `pin` / `atmos` | `#2C6BFF` `#7FB2FF` | 5.7 | **15.2** | 21.9 | ok (highlight only) |
@@ -248,20 +255,42 @@ them. Ranked by p05, worst first.
 † Globe's marker pass takes a fixed `lightColour` and plate-derived sky rather than the theme rig,
 so its two themes measure identically. The other "worst theme" rows take the poorer of the two.
 
-**Three violations, and they are three different defects.**
+‡ Every other row in this table came off the original harness. That row came off the reconstruction
+in §5d, which agrees with the original to the digit at p05 and median on all five Storm rows and to
+within 0.4 at `min`. Storm has one theme and §5d derives why.
 
-1. **`StormReliefGl` — `tile` vs `withheldTile`, `#22315A` vs `#1B2540`.** This one **fails before
-   any lighting**: the two hexes are ΔE2000 **5.7** apart at source. No rig can fix it and no tone
-   map caused it. An unmeasured day's tile is very nearly an observed day's tile. Storm's own header
-   says the refusal is carried by the **floor** — the density volume is simply absent — and by the
-   lid and rail marks; that redundancy is what is holding the reading up, and the lid pair is itself
-   **10.3**, 0.3 above the floor. Neither of these hexes is in `BRAND_HEX`.
+**Two violations as measured, three entries, and they are three different defects.** The first is
+closed as of 2026-08-15; the third never was one and is listed because it is the clearest argument
+for the p05 statistic.
 
-2. **`OntologyOrreryGl` — `core` vs `withheld`, `#7FB2FF` vs `#6B7A99`.** Palette distance ΔE2000
-   **20.9**, which clears the floor twice over; the collapse is the **material**. `core` is drawn at
-   `roughness 0.22, metalness 0.36` (`:575-576`). Metalness 0.36 removes 36% of the diffuse lobe and
-   replaces it with a mirror of the sky, so a third of the mark's colour stops being its albedo. It
-   fails in **both themes**, worse in dark (7.2).
+1. **`StormReliefGl` — `tile` vs `withheldTile`, `#22315A` vs `#1B2540`. FIXED 2026-08-15; the
+   account is §5d.** As found, this one **failed before any lighting**: the two hexes were ΔE2000
+   **5.67** apart at source, so no rig caused it and no rig could have fixed it. The fix was to the
+   albedo — `withheldTile` is now **`#595959`**, achromatic — and the pair measures **13.4** at p05
+   on this instrument and **14.1** on the tile's own flat face. `tile` vs `lid` is untouched at
+   **10.3**, still the tightest passing verdict in the system.
+
+2. **`OntologyOrreryGl` — `core` vs `withheld`, `#7FB2FF` vs `#6B7A99`. FIXED 2026-08-15; the
+   account is `COLOUR_LANGUAGE.md` §9.** Palette distance ΔE2000 **20.9**, which clears the floor
+   twice over, so the collapse was never the palette — it was the **material**. `core` was drawn at
+   `roughness 0.22, metalness 0.36`. Metalness 0.36 removes 36% of the diffuse lobe and replaces it
+   with a mirror of the sky, so a third of the mark's colour stopped being its albedo. It failed in
+   **both themes**, worse in dark (7.2).
+
+   The fix is `metalness: 0.08` — the same substance as every other body, the ternary removed
+   (`OntologyOrreryGl.tsx:691`; roughness is untouched at `:687`). The pair now measures p05
+   **12.92** dark and **12.76** light. **The core is MORE distinguished after this, not less**, which
+   is the counter-intuitive part: the mirror had been dragging it toward the same washed sky the
+   ordinary bodies sit in, so `core` vs `observed` rose from 9.55 to 13.70 in dark and 10.50 to 13.93
+   in light. What it gives up is its distance from a `link`, which shares its hex — and a link is a
+   3.2 px tube nobody confuses with the largest sphere in the frame.
+
+   Re-measurable: `node docs/3d/w2/orrery-material-sweep.mjs` reads the materials out of the
+   component, so it is the verification to run after any Orrery material edit.
+
+   **The line numbers `:575-576` that this paragraph used to cite were already stale when written,
+   and are recorded here as a caution:** a file:line in prose is a claim with a short shelf life,
+   and this document has now carried two of them past the edit that invalidated them.
 
 3. **`GlobeReliefGl` — `pin` vs `atmos`** is listed for completeness and **passes**: min 5.7 but p05
    15.2. It is the clearest case for the p05 statistic — the collapse is confined to the specular
@@ -271,6 +300,132 @@ so its two themes measure identically. The other "worst theme" rows take the poo
 **Not applicable:** `DeckReliefGl` and `SurfaceReliefGl` draw only `#2C6BFF` and `#7FB2FF` — one
 category — so they have no cross-category pair to fail. `ForgeBackdrop` (E1) draws `#2C6BFF` alone.
 
+### 5d · Storm's floor pair — what was done, 2026-08-15
+
+**The harness in §5b was not in the repo, and it has been reconstructed rather than re-invented.**
+§7 said re-measuring needs it. What *is* committed is `docs/3d/brand-fidelity.mjs:184-233`, and §0
+already establishes that its centre pixel reproduces this document's `litCentre` column for all
+seven entries — so that file's sphere **is** the geometry these numbers were taken on. Read out of
+it: `sphere(1.0)` at the origin, eye `[0,0,3.2]`, `perspective(fovY 0.6 rad, aspect 1)`, 128×128,
+key light along the **view axis** (`lightDir [0,0,-1]`), `shadow: null`, `ao: null`. Two checks that
+this is the right geometry and not a plausible one:
+
+- **Coverage.** The projected radius is `tan(asin(1/3.2)) / tan(0.3) × 64` = **68.0 px** in a 64-px
+  half-frame, so the sphere overflows and the four axis-facing edges of the silhouette are clipped.
+  That is what makes the covered count **14,040** rather than the 12,868 an inscribed disc gives;
+  an analytic ray-cast over the same grid covers **14,056**, a 0.11% difference which is the
+  rasteriser's edge rule.
+- **The rig, on the CPU.** `env/lit.ts`'s LIT_FRAG was transcribed to TypeScript and checked against
+  the recorded GPU bytes in `docs/3d/brand-fidelity.json`: **worst channel disagreement 1/255**
+  across all seven `litCentre` triples, two of them exact. It then reproduces **every** Storm row of
+  §5b to the digit at p05 and median:
+
+  | pair | this reconstruction (min / p05 / med) | §5b as recorded |
+  |---|---|---|
+  | `tile` / `withheldTile` | 3.3 / **4.4** / 5.2 | 3.2 / **4.4** / 5.2 |
+  | `tile` / `lid` | 7.9 / **10.3** / 12.4 | 8.1 / **10.3** / 12.4 |
+  | `tile` / `rail` | 8.7 / **11.2** / 13.3 | 8.3 / **11.2** / 13.3 |
+  | `gate` / `lid` | 12.5 / **13.1** / 14.3 | 12.5 / **13.1** / 14.3 |
+  | `gate` / `rail` | 12.4 / **13.2** / 13.9 | 12.4 / **13.2** / 13.9 |
+
+  **One thing this exposes about the instrument, recorded because it is not what the §5b heading
+  says.** The light is the *harness's*, along the view axis — not Storm's own key `[0.44,-0.66,-0.61]`.
+  Swapping in Storm's direction puts the sphere's terminator inside the sample and the same
+  `tile`/`withheldTile` pair reads **0.0 / 0.4 / 4.8**. So §5b's numbers are "this material under
+  this light", exactly as §7 says, and are not a bound on the frame.
+
+**A second instrument, because a floor is not a sphere.** Storm's tile is `box(LANE_W, TILE_T,
+TILE_D)`; at azimuth 0 and elevation 21.3° the camera sees the `+Y` face and the `+Z` face and
+nothing else, and their projected areas are **0.0652** and **0.0107** m² — the top face is 86% of
+what a reader sees. A flat face has one normal, so **the tile has essentially one shading value**:
+min, p05 and median coincide. That is the honest reason a floor colour cannot hide behind a
+percentile, and it is measured under Storm's own key. Both instruments are reported below.
+
+**Before and after.** `withheldTile` `#1B2540` → **`#595959`**; `roughness 0.55, metalness 0.1`
+unchanged. Sphere column is the §5b instrument at full resolution (14,056 fragments); face column is
+the tile as drawn. `gutter` and `week` are scenery, so the invariant does not govern them — they are
+here because a withheld tile sits directly beside both, and because the incumbent was *worse*
+against the gutter than against the pair everyone was looking at.
+
+| pair | category | before, sphere min/**p05**/med | before, face | after, sphere min/**p05**/med | after, face |
+|---|---|---|---|---|---|
+| `tile` / `withheldTile` | **density / absence** | 3.3 / **4.4** / 5.2 ❌ | **4.4** ❌ | 10.4 / **13.4** / 15.2 ✅ | **14.1** ✅ |
+| `gutter` / `withheldTile` | scenery / absence | 0.8 / **1.5** / 2.3 | **1.8** | 7.1 / **10.8** / 13.2 | **11.6** |
+| `week` / `withheldTile` | scenery / absence | 2.6 / **3.8** / 4.6 | **4.2** | 9.8 / **12.9** / 14.3 | **13.8** |
+| `lid` / `withheldTile` | absence / absence | 8.9 / **12.1** / 15.1 | **13.4** | 6.6 / **8.4** / 10.1 | **9.2** |
+| `rail` / `withheldTile` | absence / absence | 9.8 / **13.3** / 16.4 | **14.4** | 7.1 / **9.2** / 11.0 | **9.7** |
+| `gate` / `withheldTile` | annotation / absence | 17.6 / **20.5** / 23.1 | **21.7** | 20.6 / **24.2** / 26.0 | **25.2** |
+
+At the raw hex, with no rig at all: `tile` 5.67 → **21.74**, `gutter` 2.52 → **23.09**, `week` 5.96
+→ **20.12**, `lid` 29.08 → **18.14**.
+
+**Both themes are the same numbers, and that is derived rather than assumed.** Stripping comments
+from `StormReliefGl.tsx`, **no** identifier from `look/theme.ts` appears in its code — `sceneTheme`
+occurs once, inside the comment that says it is deliberately not used. The stage is created
+`{ alpha: false }` and the clear colour is a literal `#070B14`, so the page's background cannot
+reach the frame either. This surface admits one rig, and the invariant's "in every theme the surface
+admits" is satisfied by one measurement.
+
+**Why achromatic, and why the paper shortlist was refused.** Three hexes in the lid's hue family at
+chroma 8–20 were proposed as a starting point on raw-hex distance alone. Measured under the rig they
+**all fail**, and not marginally:
+
+| candidate | raw-hex vs tile | sphere p05: tile / gutter / week | face p05: tile / gutter / week |
+|---|---|---|---|
+| `#4D5562` | 15.54 | 9.6 ❌ / 7.9 ❌ / 8.9 ❌ | 9.3 ❌ / 8.2 ❌ / 8.9 ❌ |
+| `#4C5561` | 15.86 | 9.9 ❌ / 8.1 ❌ / 9.2 ❌ | 9.9 ❌ / 8.4 ❌ / 9.5 ❌ |
+| `#4B5460` | 15.61 | 9.8 ❌ / 7.8 ❌ / 9.1 ❌ | 9.9 ❌ / 8.4 ❌ / 9.4 ❌ |
+
+That is the general shape of the problem: **raw-hex distance is a poor predictor here**, and the
+lid's own hue family is the worst place to look, because the lid is the one thing that must keep
+reading *on top of* this tile. The bounds the search actually used are all taken from rules this
+repo already states:
+
+- **absence ⇒ low chroma.** `categorical.ts` §3 derives absence as "a mark with LESS CHROMA than the
+  least chromatic ramp member … no hue to be read BY". In Storm's frame the least chromatic mark
+  that carries a reading is `tile` at **27.8**, so that is the ceiling.
+- **family ⇒ hue.** `semantic.ts`'s `HUE_BUCKET_DEG` (15) is "the granularity at which hues get
+  separate names", so "the lid's family" is ±15° of hue **276.2** — applied only above chroma 3,
+  because below that hue is not a property a reader has.
+- **never the brightest.** Peak presented luminance on its own faces, under Storm's own key, must
+  stay below the lid's **0.05735** — the file's own recorded defect, restated as a number.
+- **objective: minimise luminance**, not maximise distance. Maximising distance is what returns
+  olive; it also runs straight into the lid ceiling and lands the tile at 89% of the lid's brightness.
+
+**And the binding constraint turned out to be chroma, not lightness.** Every other floor colour is a
+chromatic navy (`tile` 27.8, `week` 24.9, `gutter` 17.7), so chroma is the axis that separates —
+which means the thing that makes this tile clear the floor is exactly the thing that makes it read as
+absence. Measured, in the lid's own hue at the shipped material: **nothing above chroma 6.7 clears
+the floor at all**, and from chroma 4 upward the **lid collapses against its own tile to 5–7**,
+spending the redundancy that was holding the reading up. `#595959` at chroma 0.0 keeps it at 8.4/9.2.
+
+**What is a judgement here, stated as one.** Chroma 0 and the hue bound are derived; the *lightness*
+is not. The feasible neutrals at the shipped material run L\* 33–41 and every one of them clears the
+governed pair (12.5–14.2 at p05). L\* 37.8 was chosen as the dimmest whose worst **required** pair —
+which is `gutter`, a scenery pair the invariant does not even govern — clears by more than 5%:
+L\* 36.1 puts it at 10.1, 0.1 above the line, and this document already carries one verdict at 10.3
+and calls it the one genuinely close call.
+
+**The luminance ordering it produces, on the floor face** (peak presented luminance): `gate` 0.0670,
+`rail` 0.0624, `lid` 0.0574, **`withheldTile` 0.0396**, `tile` 0.0185, `week` 0.0182, `gutter`
+0.0118. Fourth of seven — above every observed-day element, below every absence marker. The
+presented pixel of a withheld tile goes `#131829` → `#383838`; an observed tile is `#1b233b`.
+
+**What this does not fix, measured.** The volume is composited over the floor before the tone map,
+so the same haze lands on both tiles and reduces every separation. `tile` vs `withheldTile` at the
+p05 face, under the low and high ends of the severity ramp:
+
+| α | 0.2 | 0.5 | 0.8 |
+|---|---|---|---|
+| low end, before → after | 1.6 → **5.4** | 0.7 → **2.5** | 0.3 → **0.7** |
+| high end, before → after | 3.7 → **4.6** | 1.4 → **1.5** | 0.4 → **0.4** |
+
+Better everywhere and **nowhere near the floor**. Above roughly α 0.3 no floor colour survives the
+composite — that is a property of `ONE / ONE_MINUS_SRC_ALPHA` over an opaque field, not of this
+albedo, and it is not addressable by a palette choice. It is the reason the lid, which stands 21 cm
+**above** the floor and inside the volume rather than under it, is redundancy worth keeping rather
+than a defence that was already sufficient.
+
 ### 5c · Two things found in passing that are not separation failures
 
 - **`OntologyOrreryGl` uses `#FF8A3D` — the palette's `reference` hex — to mean ABSENT**
@@ -278,9 +433,13 @@ category — so they have no cross-category pair to fail. `ForgeBackdrop` (E1) d
   claims, in different surfaces. Within Orrery's own frame the separation is fine (31.5+); the
   collision is across the product.
 - **Three off-palette absence colours ship**: `#6B7A99` (`refusal`, Orrery, Storm), `#5C6880`
-  (Vault, Pipeline), `#1B2540` (Storm tile). `#6B7A99` and `#5C6880` are ΔE2000 **7.4** apart — same
-  category, so this is not a violation, but the palette has one absence colour and the product uses
-  three.
+  (Vault, Pipeline), and Storm's withheld tile — `#1B2540` when this was written, **`#595959`**
+  since §5d. `#6B7A99` and `#5C6880` are ΔE2000 **7.4** apart, and `#595959` is **18.1** from the
+  first and **12.4** from the second — same category, so none of this is a violation, but the
+  palette has one absence colour and the product uses three. §5d makes the third one *further* from
+  the other two, deliberately: it is a floor rather than a marker, and it has to clear a floor made
+  of navy. Nothing here argues the product should keep three; it argues that the one it needed for a
+  large flat area was never going to be the one chosen for a small lifted marker.
 
 ---
 
@@ -291,8 +450,20 @@ pair clears the floor under `theme.ts`'s dark and light rigs and under the Globe
 The single failing configuration is `MARKER_AMBIENT 120`. That is a fix to one number, and the
 commit that introduced it already documents it as a workaround for something else.
 
-**For the three named violations: no, and the rig was never the problem.** Storm's tile pair fails at
-the hex; Orrery's core pair fails at `metalness 0.36`. Neither is a tone-map defect.
+**For the three named violations: no, and the rig was never the problem.** Storm's tile pair failed at
+the hex; Orrery's core pair failed at `metalness 0.36`. Neither is a tone-map defect, and **both are
+now closed by changing the mark's own material rather than the room it stands in** — an albedo for
+Storm (§5d), a metalness for Orrery (`COLOUR_LANGUAGE.md` §9). That both fixes landed on the mark and
+neither on the rig is the strongest evidence this section has that the tone map was never implicated.
+
+**Storm's is now closed, and it took an albedo and nothing else** — §5d. The sentence this paragraph
+used to carry, "no rig fixes it", was true and was being read as "nothing fixes it": the fix was
+never going to come from the rig, because the pair was 5.67 apart before any light reached it. What
+it needed was the palette-level move the invariant's own derivation implies — **an absence mark has
+no hue to be read by** — applied to a floor that is otherwise entirely navy. `roughness` and
+`metalness` were left alone, and measured that is the right call in both directions: raising
+metalness to the lid's 0.35 costs **2.5** ΔE2000 on the same albedo, because metal replaces the
+diffuse lobe with a mirror of a near-black sky.
 
 **On unlit / emissive categorical marks.** The commit dismissed post-tone-map geometry as
 "a sticker, not a surface". That is a description, not an argument, and the review was right to flag
@@ -348,7 +519,16 @@ the palette-level failure needs no redesign at all.
 - **One driver.** SwiftShader via ANGLE, deliberately, so the record is reproducible on CI hardware.
   Not cross-checked against a discrete GPU.
 - **The floor and the percentile are judgements**, and §3 gives the band over which each verdict
-  survives. Storm's `tile`/`lid` at 10.3 is the one verdict that is genuinely close to its line.
+  survives. Storm's `tile`/`lid` at 10.3 is the one verdict that is genuinely close to its line, and
+  §5d did not move it — neither of those two materials changed.
 - **The test does not read a pixel.** `categorical.test.ts` pins the CPU model against the numbers
-  measured here and proves the model is sensitive to the live tone map; re-measuring requires the
-  harness.
+  measured here and proves the model is sensitive to the live tone map. Re-measuring a *rig* needs a
+  fragment-level harness; §5d reconstructs one from `docs/3d/brand-fidelity.mjs` and validates it
+  against recorded GPU bytes (1/255 worst channel) and against all five Storm rows of §5b, but that
+  reconstruction is **not committed** and no test runs it. Until it is, §5d's numbers are
+  reproducible only by rebuilding it from the recipe stated there.
+- **§5d's second instrument is not a capture either.** A tile's top face is one normal and one
+  shading value, which is why its min, p05 and median coincide — that is arithmetic about a flat
+  face, not a rendered frame. Shadow, AO and the volume are still absent from it, and the volume in
+  particular is measured separately in §5d and is the one term that erases the distinction outright
+  at high accumulation.

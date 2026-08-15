@@ -687,7 +687,17 @@ const MAT = {
    */
   tile: { baseColour: hexToLinear('#22315A'), roughness: 0.74, metalness: 0.03 },
   gutter: { baseColour: hexToLinear('#131E36'), roughness: 0.84, metalness: 0 },
-  withheldTile: { baseColour: hexToLinear('#1B2540'), roughness: 0.55, metalness: 0.10 },
+  /*
+   * #595959, ACHROMATIC — matched to StormReliefGl.tsx, and the match is load-bearing rather than tidy.
+   * This harness is what the shipping component's own header cites as proof of the reading, so a harness
+   * still depicting #1B2540 would be evidence FOR the colour that was refuted. The old value sat at
+   * CIEDE2000 p05 4.4 against `tile` and 1.5 against `gutter` — a withheld day's floor was closer to the
+   * date strip than to an observed day. Absence is carried by CHROMA here, not lightness: every other
+   * floor colour is a chromatic navy, so the thing that clears the floor is the same thing that reads as
+   * "nobody looked". roughness and metalness are unchanged and were measured, not assumed — metal
+   * replaces the diffuse lobe with a mirror of a near-black sky, which is what collapsed the pair.
+   */
+  withheldTile: { baseColour: hexToLinear('#595959'), roughness: 0.55, metalness: 0.10 },
   /* Steel, and the same reasoning E6's WITHHELD slab uses: a withheld day is neither calm nor bad, it
      is the ABSENCE OF A READING, and giving it a colour from the risk ramp would assert a finding
      nobody is entitled to.

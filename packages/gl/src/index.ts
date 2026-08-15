@@ -54,6 +54,26 @@ export {
   describeToneMapping, dataRoundTrip, encodeOutput,
   TONE_POLICY, TONE_SHOULDER, TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
 } from './look/tonemap.js';
+
+/* L2 · CATEGORICAL SEPARATION — the invariant ORDER SURVIVES does not imply, because monotone is
+   not injective. Reachable from the barrel because a module only a subpath specifier can reach is
+   the same shape as the defect this programme already found once: code that ships, cannot be
+   called by any consumer, and is written up as if it were live. The subpath
+   `@lcx/gl/look/categorical.js` still resolves and is still the cheaper import — see
+   `docs/3d/w2/SUBPATH_COST.md`; this block is about REACHABILITY, not about which specifier a
+   surface should use. `categorical.test.ts` derives both sides of this list and fails if they
+   diverge, so a symbol added to `categorical.ts` next week is not silently left behind. */
+export {
+  labOf, deltaE76Lab, deltaE2000Lab, deltaE2000, deltaE76, chromaOf, RAMP_CHROMA_FLOOR,
+  PALETTE_CATEGORIES, categoryOf, CLAIM_CATEGORIES, isClaim, differentClaim, claimPairs,
+  CATEGORICAL_FLOOR_DE2000, SEPARATION_PERCENTILE, CATEGORICAL_POLICY, reinhard, TONE_ASYMPTOTE,
+  ENCODE_CLIP_RADIANCE, pixelAt, separationThroughComposite, illuminationCeiling,
+  separationFailures,
+} from './look/categorical.js';
+export type {
+  Lab, CategoryId, SeparationFailure,
+} from './look/categorical.js';
+
 export type { BrandFidelityFailure } from './look/tonemap.js';
 
 export { precompensate, isPrecompRefusal, precompHeadroom, inverseToneMap } from './look/precompensate.js';

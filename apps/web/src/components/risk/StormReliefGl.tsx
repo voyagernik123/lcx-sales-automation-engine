@@ -317,7 +317,44 @@ export default function StormReliefGl({ field, heightPx, onRefused }: StormRelie
          void behind the floor, so the gridlines vanished and the lanes read as smooth strips. */
       tile: { baseColour: hexToLinear('#22315A'), roughness: 0.74, metalness: 0.03 },
       gutter: { baseColour: hexToLinear('#131E36'), roughness: 0.84, metalness: 0 },
-      withheldTile: { baseColour: hexToLinear('#1B2540'), roughness: 0.55, metalness: 0.1 },
+      /*
+       * ACHROMATIC, AND THAT IS THE WHOLE POINT — #1B2540 UNTIL 2026-08-15, WHEN IT WAS MEASURED.
+       *
+       * A withheld day's tile and an observed day's tile encode DIFFERENT CATEGORIES: a day with a
+       * reading, and a day whose reading is withheld. #1B2540 against #22315A is CIEDE2000 5.67 at the
+       * raw hex and 4.4 at the p05 fragment under this rig — under the floor of 10 that
+       * `look/categorical.ts` sets, and under it BEFORE any lighting, so no rig and no tone map caused
+       * it and none could have fixed it. It was worse against the date gutter than against the tile:
+       * 1.5. `docs/3d/w2/CATEGORICAL_SEPARATION.md` §5d carries every number below, the instrument
+       * they came off, and the two things this does NOT fix.
+       *
+       * WHY GREY AND NOT A DARKER OR BLUER NAVY. `categorical.ts` derives "absence" as a mark with
+       * LESS CHROMA than anything carrying a reading — a mark with no hue to be read BY. Every other
+       * floor colour here is a chromatic navy (tile 27.8, week 24.9, gutter 17.7), so chroma is the
+       * axis that separates, and driving it to zero is the strongest available statement of the thing
+       * this tile exists to say. Measured: at the lid's own hue nothing above chroma 6.7 clears the
+       * floor at all, and everything from chroma 4 up collapses the LID against its own tile to 5-7,
+       * which would spend the redundancy that is currently holding the reading up.
+       *
+       * WHY NOT BRIGHTER. Peak presented luminance on the floor face is 0.0396 against the lid's
+       * 0.0574 and the gate's 0.0670 — fourth of the seven materials, above every observed-day
+       * element and below every absence marker, which is the ordering this scene wants. The comment
+       * below records that at roughness 0.28 the two REFUSAL objects came back as the brightest things
+       * in the frame; a bright grey floor would reintroduce that, so the search minimised luminance
+       * subject to clearing the floor rather than maximising distance.
+       *
+       * ROUGHNESS AND METALNESS ARE UNCHANGED, and that is a measurement rather than an omission.
+       * Metalness HURTS here: it replaces the diffuse lobe with a mirror of a near-black sky, so the
+       * albedo stops being what you see. Holding #6B7A99 fixed and swapping only the material, this
+       * tile's 0.55/0.1 separates from `tile` at 12.7 and the lid's 0.62/0.35 at 10.2 — 2.5 worse for
+       * the same colour. The albedo carries this on its own, so nothing else moved.
+       *
+       * NOW: tile p05 13.4 (sphere) / 14.1 (the real tile face), gutter 10.8 / 11.6, week 12.9 / 13.8,
+       * and the lid still reads on top of it at 8.4 / 9.2. Both page themes, because this surface
+       * reads no theme identifier in code and its stage is opaque — §5d derives that rather than
+       * assuming it.
+       */
+      withheldTile: { baseColour: hexToLinear('#595959'), roughness: 0.55, metalness: 0.1 },
       /* Steel, ROUGH not polished. A withheld day is neither calm nor bad — it is the absence of a
          reading — so giving it a colour from the risk ramp would assert a finding nobody is entitled to;
          and at roughness 0.28 the two objects whose whole job is to mark a REFUSAL came back as the

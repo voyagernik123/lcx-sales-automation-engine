@@ -66,7 +66,7 @@
  */
 import { chromium } from '@playwright/test';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -76,8 +76,90 @@ const OUT = join(ROOT, 'docs/3d/APP_SWEEP.md');
 /* Captures live beside the report, and only for the one question bytes could not settle — see the E8 branch of
    the context-loss axis, where a DOM-only reading produced a finding the pixels then withdrew. */
 const SHOTS = join(ROOT, 'docs/3d/app-sweep');
+/* THE THEME PASS writes its own report and its own captures, for the reason this file's header already gives
+   about `docs/3d/e9/README.md`: two generators must not write one file. */
+const THEME_OUT = join(SHOTS, 'README.md');
+const THEME_SHOTS = join(SHOTS, 'theme');
 const PORT = Number(process.env.APP_AUDIT_PORT ?? 5188);
 const BASE = `http://127.0.0.1:${PORT}`;
+
+/* Run only the theme capture pass, leaving `docs/3d/APP_SWEEP.md` exactly as it was. Used when the four axes
+   are somebody else's run in flight and only the theme half is wanted. */
+const THEME_ONLY = process.env.APP_SWEEP_THEME_ONLY === '1';
+const SKIP_THEME = process.env.APP_SWEEP_SKIP_THEME === '1';
+
+/*
+ * ══ THE PALETTE, PARSED FROM THE SOURCE OF TRUTH RATHER THAN RETYPED HERE ═════════════
+ *
+ * The theme pass has to answer "are the data marks still distinguishable from the scenery", and that needs a
+ * rule for telling a data pixel from a scenery pixel. A hand-written list of hexes in this file would be the
+ * exact failure this programme keeps catching: it cannot fail on the colour nobody thought of, and it goes
+ * stale the day `theme.ts` gains a field.
+ *
+ * So the taxonomy is DERIVED, and derived the same way `look/semantic.ts:203` derives it — a `BRAND_HEX` key
+ * is SCENERY if a `SceneTheme` field has the same name, and DATA otherwise. That yields exactly the split
+ * `theme.ts`'s header states (data: brand, brandBright, brandDeep, reference, refusal; scenery: rule, plate)
+ * without this file asserting it, so a future edit that moves a colour across the line moves this classifier
+ * with it.
+ *
+ * Parsed with a regex rather than imported because these are TypeScript modules and this is a plain `.mjs`
+ * driver. That is a real weakness — a regex can silently match nothing — so the parse REFUSES rather than
+ * returning an empty set, and the counts it demands are stated below.
+ */
+const CHROMA = ([r, g, b]) => Math.max(r, g, b) - Math.min(r, g, b);
+const HEX_RGB = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
+
+function derivePalette() {
+  const themeSrc = readFileSync(join(ROOT, 'packages/gl/src/look/theme.ts'), 'utf8');
+  const colourSrc = readFileSync(join(ROOT, 'packages/gl/src/look/colour.ts'), 'utf8');
+
+  /* The two theme blocks, split on the `light:` key so a hex cannot be attributed to the wrong theme. */
+  const cut = themeSrc.indexOf('light: Object.freeze({');
+  if (cut < 0) refusePalette('could not find the `light:` block in look/theme.ts');
+  const halves = { dark: themeSrc.slice(0, cut), light: themeSrc.slice(cut) };
+  const scenery = {};
+  const sceneFields = new Set();
+  for (const [name, src] of Object.entries(halves)) {
+    scenery[name] = [...src.matchAll(/(\w+):\s*hexToLinear\('(#[0-9A-Fa-f]{6})'\)/g)]
+      .map((m) => ({ field: m[1], hex: m[2].toUpperCase() }));
+    for (const s of scenery[name]) sceneFields.add(s.field);
+    /* Six colour-valued fields per theme today. Five is the floor at which the derivation is still meaningful;
+       below it the regex has clearly stopped matching and a threshold built on it would be fiction. */
+    if (scenery[name].length < 5) refusePalette(`only ${scenery[name].length} scenery colours parsed for the ${name} theme`);
+  }
+
+  const brand = [...colourSrc.matchAll(/^\s*(\w+):\s*'(#[0-9A-Fa-f]{6})',/gm)]
+    .map((m) => ({ key: m[1], hex: m[2].toUpperCase() }));
+  if (brand.length < 7) refusePalette(`only ${brand.length} BRAND_HEX entries parsed from look/colour.ts`);
+  const data = brand.filter((b) => !sceneFields.has(b.key));
+  if (data.length < 5) refusePalette(`only ${data.length} DATA colours survived the scenery split`);
+
+  /*
+   * THE CHROMA FLOOR, and it is a derived number with a stated blind spot rather than a magic constant.
+   *
+   * Every scenery colour in both themes is a desaturated blue-grey; the data hues are not. So the floor is the
+   * most saturated scenery colour anywhere in either theme, plus a margin. Anything above it cannot be a
+   * scenery colour rendered flat — which is what makes the classifier's DARK run usable as a control.
+   *
+   * WHAT IT CANNOT SEE, stated because a classifier's blind spot is part of its reading: `refusal` is
+   * deliberately desaturated ("reads as no measurement, never as a low value"), so it sits BELOW the floor and
+   * is counted as scenery. That is named in the generated report rather than left for someone to discover.
+   */
+  const allScenery = [...scenery.dark, ...scenery.light, ...brand.filter((b) => sceneFields.has(b.key))];
+  const maxSceneryChroma = Math.max(...allScenery.map((s) => CHROMA(HEX_RGB(s.hex))));
+  const chromaFloor = maxSceneryChroma + 8;
+  return {
+    scenery, data, chromaFloor, maxSceneryChroma,
+    dataVisible: data.filter((d) => CHROMA(HEX_RGB(d.hex)) >= chromaFloor),
+    dataBlind: data.filter((d) => CHROMA(HEX_RGB(d.hex)) < chromaFloor),
+  };
+}
+function refusePalette(why) {
+  console.error(`  REFUSED: the data/scenery taxonomy could not be derived from the source — ${why}.`);
+  console.error('  A classifier built on an empty parse would call every pixel data and report a separation');
+  console.error('  that means nothing. Nothing written.');
+  process.exit(1);
+}
 
 /*
  * THE SEAT, COPIED IN PRINCIPLE FROM `apps/web/e2e/seat.ts` AND NOT IMPORTED FROM IT.
@@ -476,6 +558,171 @@ const readCanvases = () => Array.from(document.querySelectorAll('canvas')).map((
   };
 });
 
+/*
+ * ══ THE THEME LEVER ══════════════════════════════════════════════════════════════════
+ *
+ * The app's switch is the `dark` class on `<html>`. There are THREE writers of it and they do not agree, so
+ * "just add the class" is wrong on six of the eight surfaces. Every line below is a measurement, taken with
+ * this driver against this dev server, not a reading of the source.
+ *
+ *   · `AppLayout.tsx:117-119` runs `classList.toggle('dark', darkMode)` on mount and on every change, with
+ *     `darkMode` coming from the persisted `useUIStore`. So on any route INSIDE the shell the store is the
+ *     authority and it overwrites anything else. MEASURED: a class added at document-start on `/command-deck`
+ *     and `/ontology` is gone by the time the shell has mounted — `dark=false` — and still gone after a
+ *     reload. **Poking the class is not the right lever there.**
+ *   · `/select` is OUTSIDE the shell, so nothing manages the class and a poke DOES survive, including across
+ *     the front-door reload. Measured `dark=true` before and after.
+ *   · `index.html:10-20` is the pre-hydration path, and it reads `localStorage['lcx-os:ui:v1']`.
+ *
+ * THAT LAST KEY IS NEVER WRITTEN, which is a defect this pass found rather than assumed. `useUIStore` persists
+ * under `STORAGE_KEYS.UI` through `lib/persistence.ts:38`, whose `mk()` is
+ * `lcx-os:${scope()}:${key}:v1` — and `scope()` is the operator's email, or the literal `anon` before sign-in.
+ * There is no code path that produces `lcx-os:ui:v1` with no scope segment at all. MEASURED both ways:
+ * clicking the real theme toggle in the UI wrote `lcx-os:nik@lcx.com:ui:v1` and nothing else, and seeding only
+ * `lcx-os:ui:v1` left a seated route at `dark=false` with `document.body` still carrying the dark
+ * pre-hydration background — the two writers disagreeing on one page.
+ *
+ * So this seeds BOTH keys, and that is not belt-and-braces: they drive different surfaces. The scoped key is
+ * what the store rehydrates from and is the ONLY thing that works inside the shell; the unscoped key is what
+ * `index.html` reads and is the only thing that works on `/select`. Seeding the store the way the app's own
+ * toggle writes it is what makes this a measurement of the app rather than of a class this script added.
+ *
+ * WRITTEN THROUGH A GUARD BECAUSE `document.documentElement` IS NULL HERE. Playwright's init scripts run at
+ * document-start, before the parser has created `<html>` — measured directly: `document.readyState` is
+ * `'loading'` and `document.documentElement` is `null`, so `classList.add` throws a TypeError that is silently
+ * swallowed. This cost the first version of this pass a false conclusion: `/select` appeared to REJECT a
+ * document-start poke, when in fact the poke had never run. Nothing here touches the class as its primary
+ * lever, but the fallback below is guarded so it cannot repeat that.
+ */
+const themeInit = (theme) => ({
+  theme,
+  seed: (a) => {
+    const env = JSON.stringify({
+      state: { sidebarCollapsed: false, darkMode: a.dark, evidenceDocked: false },
+      /* zustand's `persist` default. `useUIStore` declares no `version` and no `migrate`, so a mismatch here
+         would be silently dropped and the seat would read as light — the failing-open direction. */
+      version: 0,
+    });
+    /* The scoped key, exactly as `lib/persistence.ts` builds it. `anon` is the scope before sign-in. */
+    localStorage.setItem(`lcx-os:${a.scope}:ui:v1`, env);
+    /* The unscoped key `index.html` reads. Nothing in the app writes this; see the header. */
+    localStorage.setItem('lcx-os:ui:v1', env);
+  },
+});
+
+/*
+ * ══ THE PIXEL INSTRUMENT ═════════════════════════════════════════════════════════════
+ *
+ * READ BACK IN-PAGE, NOT DECODED FROM A PNG. `createStage` sets `preserveDrawingBuffer: true` unconditionally
+ * (`packages/gl/src/stage.ts:288`), so the drawing buffer survives compositing and a `drawImage` of the GL
+ * canvas onto a 2-D canvas outside the frame returns what was drawn. That is why this does NOT have to capture
+ * inside a `requestAnimationFrame`: without that flag it would, and the readback would return an empty buffer
+ * that is indistinguishable from a surface that rendered nothing.
+ *
+ * The 2-D scratch canvas starts TRANSPARENT BLACK and is not cleared to white first, on purpose: a GL canvas
+ * that composited transparent would otherwise be laundered into a solid white reading. Mean alpha is reported
+ * so "transparent" and "black" stay separable — the E8 context-loss note in this file records a finding that
+ * turned on exactly that distinction.
+ *
+ * Every number below is over the canvas's own drawing buffer, so the page's CSS background is NOT included.
+ * The viewport capture beside it is where the surface is judged against the page it sits on.
+ */
+const readPixelStats = (chromaFloor) => {
+  const out = [];
+  for (const c of Array.from(document.querySelectorAll('canvas[data-audit-target="1"]'))) {
+    const w = c.width, h = c.height;
+    if (w < 2 || h < 2) { out.push({ w, h, readable: false, why: 'drawing buffer is degenerate' }); continue; }
+    let d;
+    try {
+      const o = document.createElement('canvas');
+      o.width = w; o.height = h;
+      const ctx = o.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(c, 0, 0);
+      d = ctx.getImageData(0, 0, w, h).data;
+    } catch (e) { out.push({ w, h, readable: false, why: String(e).slice(0, 80) }); continue; }
+
+    /* Rec.709 on the sRGB values as displayed. Deliberately NOT linearised: the question is what the reader's
+       eye gets off the screen, and the tone map has already run. */
+    const luma = new Float64Array(w * h);
+    const hist = new Uint32Array(256);
+    /*
+     * A CHROMA HISTOGRAM, ADDED BECAUSE THE LUMINANCE STATISTICS FLATTERED A SURFACE THAT HAD FAILED.
+     *
+     * E6 VaultRelief reported luminance sd 2.52 in dark and 18.70 in light — a 743% IMPROVEMENT by that
+     * measure, printed as "holds up". The captures say the opposite: in dark the vault carries 18 blue record
+     * marks, and in light they are GONE, dissolved into a smooth white haze. A smooth gradient has a large
+     * luminance spread and carries no data, so `sdLuma` rose while the reading was lost.
+     *
+     * Chroma percentiles answer the actual question — "are the data marks still there" — without a threshold
+     * at all. Every scenery colour in both themes is a desaturated blue-grey and every data hue but `refusal`
+     * is not, so the top of the chroma distribution IS the data marks. If p99.9 chroma collapses between
+     * themes, the marks went away, whatever the luminance did.
+     */
+    const chromaHist = new Uint32Array(256);
+    let sum = 0, alphaSum = 0, n = 0, chromaSum = 0;
+    let dataN = 0, dataLuma = 0, sceneN = 0, sceneLuma = 0;
+    let dataR = 0, dataG = 0, dataB = 0, sceneR = 0, sceneG = 0, sceneB = 0;
+    const seen = new Set();
+    for (let i = 0, p = 0; i < d.length; i += 4, p += 1) {
+      const r = d[i], g = d[i + 1], b = d[i + 2];
+      const y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      luma[p] = y; sum += y; alphaSum += d[i + 3]; n += 1;
+      hist[Math.min(255, Math.round(y))] += 1;
+      /* Quantised to 5 bits per channel: an exact count would be dominated by dither and antialiasing and
+         would read as "thousands of colours" on a flat grey. */
+      if (seen.size < 4096) seen.add(((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3));
+      const ch = Math.max(r, g, b) - Math.min(r, g, b);
+      chromaHist[ch] += 1; chromaSum += ch;
+      if (ch >= chromaFloor) {
+        dataN += 1; dataLuma += y; dataR += r; dataG += g; dataB += b;
+      } else {
+        sceneN += 1; sceneLuma += y; sceneR += r; sceneG += g; sceneB += b;
+      }
+    }
+    const mean = sum / n;
+    let varSum = 0;
+    for (let p = 0; p < n; p += 1) { const dv = luma[p] - mean; varSum += dv * dv; }
+    const pctOf = (h, q) => {
+      const want = Math.floor(q * n); let acc = 0;
+      for (let v = 0; v < 256; v += 1) { acc += h[v]; if (acc > want) return v; }
+      return 255;
+    };
+    const pct = (q) => pctOf(hist, q);
+    let maxChroma = 0;
+    for (let v = 255; v >= 0; v -= 1) { if (chromaHist[v] > 0) { maxChroma = v; break; } }
+    /* WCAG relative luminance, so the separation can be quoted as a contrast ratio a designer can argue with
+       rather than as a raw 0-255 gap nobody has an intuition for. */
+    const rel = (r, g, b) => {
+      const f = (v) => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+      return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+    };
+    const contrast = (a, b) => {
+      const [hi, lo] = a > b ? [a, b] : [b, a];
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    const dataMean = dataN > 0 ? [dataR / dataN, dataG / dataN, dataB / dataN] : null;
+    const sceneMean = sceneN > 0 ? [sceneR / sceneN, sceneG / sceneN, sceneB / sceneN] : null;
+    out.push({
+      w, h, readable: true, pixels: n,
+      meanLuma: mean, sdLuma: Math.sqrt(varSum / n),
+      p01: pct(0.01), p99: pct(0.99),
+      meanAlpha: alphaSum / n,
+      distinctColours: seen.size,
+      meanChroma: chromaSum / n,
+      /* p99.9 rather than the max: one stray antialiased pixel must not stand in for a population of marks,
+         and one missing pixel must not hide their loss. The max is carried alongside so a reader can see the
+         two disagree if they ever do. */
+      p999Chroma: pctOf(chromaHist, 0.999), p99Chroma: pctOf(chromaHist, 0.99), maxChroma,
+      dataPct: (dataN / n) * 100,
+      dataMeanLuma: dataN > 0 ? dataLuma / dataN : null,
+      sceneryMeanLuma: sceneN > 0 ? sceneLuma / sceneN : null,
+      dataVsSceneryContrast: (dataMean && sceneMean)
+        ? contrast(rel(...dataMean), rel(...sceneMean)) : null,
+    });
+  }
+  return out;
+};
+
 /* ── THE DEV SERVER ─────────────────────────────────────────────────────────────────
  * Spawned rather than reused, on a port of this sweep's own, for one reason that matters:
  *
@@ -523,7 +770,7 @@ async function waitForServer(log) {
 
 /* ── ONE SURFACE, ONE PAGE, ONE AXIS AT A TIME ──────────────────────────────────────── */
 
-async function newSeatedPage(browser, surface, extraStubs = []) {
+async function newSeatedPage(browser, surface, extraStubs = [], theme = null) {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1100 }, deviceScaleFactor: 1 });
   page.on('pageerror', (e) => { page.__errs = [...(page.__errs ?? []), e.message]; });
   /*
@@ -543,6 +790,19 @@ async function newSeatedPage(browser, surface, extraStubs = []) {
     localStorage.setItem('lcx_desk_passcode', 'audit-no-api');
     localStorage.setItem(`lcx-os:${s.email}:operator:v1`, JSON.stringify({ state: { operator: s.operator }, version: 3 }));
   }, SEAT);
+  /*
+   * SEEDED AFTER THE SEAT, WHICH IS LOAD-BEARING FOR THE SAME REASON THE SEAT'S OWN ORDER IS. The scoped key
+   * embeds the operator's email, and on an unseated page (`/select`) the scope is the literal `anon` — so the
+   * scope is derived from `surface.seat` here rather than passed in, and a surface that changes its seating
+   * changes its theme key with it. `theme === null` seeds nothing at all, which is what the four axes above
+   * run under: the app's own default, which is LIGHT.
+   */
+  if (theme !== null) {
+    await page.addInitScript(themeInit(theme).seed, {
+      dark: theme === 'dark',
+      scope: surface.seat ? SEAT.email.trim().toLowerCase() : 'anon',
+    });
+  }
   await page.addInitScript(PROBE);
   /*
    * THE FLOOR IS "NO API", ENFORCED RATHER THAN ASSUMED — `e2e/seat.ts` records what it cost to learn this:
@@ -1277,6 +1537,261 @@ async function sweep(browser, surface, open) {
   return row;
 }
 
+/* ══ AXIS 5 · THE THEME, AND WHETHER THE READING SURVIVES A WHITE PAGE ════════════════
+ *
+ * The platform shipped a light theme for its 3-D surfaces and NOTHING captured it. Six of the seven shipping
+ * surfaces bind to `packages/gl/src/look/theme.ts`; `StormRelief` deliberately does not and says why in
+ * arithmetic in its own file. Rule 8 of this programme's doctrine is that every claim gets a capture, and the
+ * light theme had none — so "six surfaces render correctly on a white page" was, until this pass, prose.
+ *
+ * The question this answers is NOT "does it look nice". It is three facts per surface per theme:
+ *   (a) did it paint at all — separable from "rendered a uniform rectangle", which looks identical in a report;
+ *   (b) mean and standard deviation of luminance, because a light scene that has COLLAPSED TO NEAR-UNIFORM is
+ *       the specific failure the theme was designed to avoid, and `sdLuma` is the number that says so;
+ *   (c) whether the data marks are still separable from the scenery, as a contrast ratio between the two
+ *       populations the derived chroma floor splits the buffer into.
+ *
+ * DARK IS RUN FIRST AND IT IS THE CONTROL, not a second data point. A GL surface that has not painted captures
+ * as a blank or transparent rectangle, and in the light theme a blank capture is indistinguishable from "the
+ * light theme renders nothing" — the single most expensive mistake this pass could make. So a light reading is
+ * only believed once the SAME surface, reached the same way, has been shown non-uniform in dark.
+ */
+const THEME_ORDER = ['dark', 'light'];
+
+/**
+ * Prove the pixel instrument can see structure AND can report uniformity, before a single surface is judged.
+ *
+ * This is not ceremony. `sdLuma ≈ 0` is the finding this pass exists to raise, and an instrument that returns
+ * zero because its readback is broken raises it on every surface — so the negative control is as load-bearing
+ * as the positive one. Both patterns are built from the DERIVED palette rather than from literals typed here,
+ * so a palette change moves the control with it.
+ */
+async function validateInstrument(browser, palette) {
+  const page = await browser.newPage({ viewport: { width: 320, height: 240 } });
+  try {
+    const dataHex = palette.dataVisible[0].hex;
+    const sceneHex = palette.scenery.light[0].hex;
+    const built = await page.evaluate(({ a, b }) => {
+      const mk = (id, paint) => {
+        const c = document.createElement('canvas');
+        c.width = 64; c.height = 64; c.dataset.auditTarget = '1'; c.id = id;
+        paint(c.getContext('2d'));
+        document.body.appendChild(c);
+      };
+      /* POSITIVE: half a data hue, half a scenery hue. Must read as ~50% data, two colours, non-zero sd. */
+      mk('ctl-split', (x) => { x.fillStyle = a; x.fillRect(0, 0, 32, 64); x.fillStyle = b; x.fillRect(32, 0, 32, 64); });
+      /* NEGATIVE: one scenery hue everywhere. Must read as zero sd, one colour, no data pixels — which is
+         exactly the "collapsed to near-uniform" shape, produced on purpose so it is known to be detectable. */
+      mk('ctl-flat', (x) => { x.fillStyle = b; x.fillRect(0, 0, 64, 64); });
+      return true;
+    }, { a: dataHex, b: sceneHex });
+    if (!built) return { ok: false, why: 'controls could not be built' };
+    const [split, flat] = await page.evaluate(readPixelStats, palette.chromaFloor);
+    const checks = [
+      ['positive control is readable', split?.readable === true],
+      ['positive control reports two colours', split?.distinctColours === 2],
+      ['positive control splits ~50/50 data vs scenery', Math.abs(split.dataPct - 50) < 2],
+      ['positive control has non-zero luminance spread', split.sdLuma > 1],
+      ['positive control is opaque, so transparent stays separable', Math.round(split.meanAlpha) === 255],
+      ['negative control reports ONE colour', flat?.distinctColours === 1],
+      ['negative control has ZERO luminance spread', flat.sdLuma < 0.001],
+      ['negative control finds no data pixels', flat.dataPct === 0],
+    ];
+    return { ok: checks.every(([, v]) => v), checks, split, flat, dataHex, sceneHex };
+  } finally { await page.close(); }
+}
+
+/** What theme the app ACTUALLY applied, read off the document rather than off what this script asked for. */
+const readAppliedTheme = () => ({
+  darkClass: document.documentElement.classList.contains('dark'),
+  /* The class is the switch, but the tokens are what anything actually paints with — so both are read. A
+     class present with light tokens would be a broken stylesheet, and is a different fault from a class that
+     never arrived. */
+  card: getComputedStyle(document.documentElement).getPropertyValue('--card').trim(),
+  bodyBg: getComputedStyle(document.body).backgroundColor,
+});
+
+async function captureTheme(browser, surface, theme, palette) {
+  const page = await newSeatedPage(browser, surface, [], theme);
+  try {
+    const got = await reach(page, surface);
+    const applied = await page.evaluate(readAppliedTheme).catch(() => null);
+    const observed = applied === null ? null : (applied.darkClass ? 'dark' : 'light');
+    const base = { theme, observed, applied, reach: got.state, detail: got.detail ?? null };
+    if (got.state !== 'DRAWN') return base;
+
+    /* The same ownership mechanism the context-loss axis uses: contexts from `preClick` on are the ones this
+       toggle created, and only those canvases are this surface's own. On `/command-deck` the alternative is
+       measuring the signature backdrop and calling it the relief. */
+    await page.evaluate((from) => {
+      for (const c of globalThis.__lcxAudit.contexts.slice(from)) c.canvas.dataset.auditTarget = '1';
+    }, got.preClick ?? 0);
+
+    const stats = await page.evaluate(readPixelStats, palette.chromaFloor);
+    mkdirSync(THEME_SHOTS, { recursive: true });
+    const stem = `${surface.id.toLowerCase()}-${surface.name.toLowerCase()}-${theme}`;
+    const shots = {};
+    try {
+      const png = await page.locator('canvas[data-audit-target="1"]').first().screenshot({ timeout: 10_000 });
+      writeFileSync(join(THEME_SHOTS, `${stem}-canvas.png`), png);
+      shots.canvas = { file: `${stem}-canvas.png`, bytes: png.length };
+    } catch (e) { shots.canvas = { error: String(e).slice(0, 80) }; }
+    try {
+      /* THE VIEWPORT SHOT IS THE ONE THAT ANSWERS THE QUESTION. The canvas crop is where the statistics come
+         from, but "does the surface still deliver its reading on a WHITE PAGE" is about the surface against
+         the page around it, and the canvas's own buffer cannot show that. */
+      const png = await page.screenshot({ timeout: 15_000 });
+      writeFileSync(join(THEME_SHOTS, `${stem}-viewport.png`), png);
+      shots.viewport = { file: `${stem}-viewport.png`, bytes: png.length };
+    } catch (e) { shots.viewport = { error: String(e).slice(0, 80) }; }
+    return { ...base, stats, shots, stem };
+  } finally { await page.close(); }
+}
+
+/**
+ * One surface, both themes, dark first — and every verdict below is a comparison against that surface's OWN
+ * dark twin rather than against a threshold typed into this file.
+ *
+ * That choice matters: these eight surfaces draw wildly different amounts of geometry, so a global "sdLuma
+ * must exceed N" would pass a busy scene that lost half its contrast and fail a sparse one that is working as
+ * designed. A surface compared against itself has a baseline nobody had to guess.
+ */
+async function themeRow(browser, surface, palette) {
+  const row = { id: surface.id, name: surface.name, route: surface.route, glFile: surface.glFile, byTheme: {}, problems: [] };
+  for (const theme of THEME_ORDER) row.byTheme[theme] = await captureTheme(browser, surface, theme, palette);
+
+  for (const theme of THEME_ORDER) {
+    const r = row.byTheme[theme];
+    if (r.observed !== null && r.observed !== theme) {
+      row.problems.push(`asked for the ${theme} theme and the app applied ${r.observed} `
+        + `(\`--card: ${r.applied.card}\`, body \`${r.applied.bodyBg}\`) — the capture is labelled by what was `
+        + 'REQUESTED, so this row\'s comparison is void rather than a finding about the renderer');
+    }
+  }
+
+  const dark = row.byTheme.dark, light = row.byTheme.light;
+  if (dark.reach !== 'DRAWN' || light.reach !== 'DRAWN') {
+    if (dark.reach !== light.reach) {
+      row.problems.push(`reached differently per theme: dark \`${dark.reach}\`, light \`${light.reach}\``);
+    }
+    return row;
+  }
+  const ds = dark.stats?.[0], ls = light.stats?.[0];
+  if (!ds?.readable || !ls?.readable) {
+    row.problems.push('the drawing buffer could not be read back on at least one theme, so nothing about this '
+      + `surface's light behaviour is established (dark: ${ds?.why ?? 'ok'}, light: ${ls?.why ?? 'ok'})`);
+    return row;
+  }
+
+  /*
+   * THE CONTROL CLAUSE. A light capture may only be called blank once the dark twin has been shown non-blank
+   * by the same statistic through the same code path — otherwise "the light theme renders nothing" and "my
+   * harness captured nothing" produce the identical report, and this programme has been misled by exactly
+   * that shape four times.
+   */
+  row.darkIsControl = ds.sdLuma > 1 && ds.distinctColours > 2;
+  if (!row.darkIsControl) {
+    row.problems.push(`the DARK capture is itself near-uniform (sd ${ds.sdLuma.toFixed(2)}, `
+      + `${ds.distinctColours} colours), so it cannot serve as the positive control — no verdict about this `
+      + 'surface\'s LIGHT capture is drawn, in either direction');
+    return row;
+  }
+
+  /*
+   * ── TWO RATIOS, AND THE SECOND ONE EXISTS BECAUSE THE FIRST FLATTERED A BROKEN SURFACE ──
+   *
+   * `sdRatio` alone said E6 VaultRelief IMPROVED by 743% on the light theme. The captures show the opposite:
+   * in dark the vault carries its 18 blue record marks, and in light they have dissolved into a smooth white
+   * haze that has a LARGER luminance spread and carries no data at all. A gradient is spread without
+   * information, so a luminance statistic cannot be the verdict on its own.
+   *
+   * `markRatio` is the correction: the top of the chroma distribution is where the data marks live, because
+   * every scenery colour in both themes is a desaturated blue-grey. It needs no threshold and it moves in the
+   * direction of the reading rather than in the direction of the picture.
+   */
+  row.sdRatio = ls.sdLuma / ds.sdLuma;
+  row.rangeRatio = (ls.p99 - ls.p01) / Math.max(1, ds.p99 - ds.p01);
+  /*
+   * TWO CHROMA RATIOS AND THE WORSE OF THEM DECIDES, because they fail on different shapes of mark and this
+   * pass has now been caught by both. p99.9 misses a SPARSE population: E6 VaultRelief draws 18 record marks
+   * over a large vault, and at p99.9 they barely register (34 in dark) even though the captures show them
+   * plainly. The maximum catches those — and would be fooled on its own by a single stray antialiased pixel,
+   * which is why p99.9 stays. Taking the minimum means a surface has to hold BOTH to pass.
+   */
+  row.markP999Ratio = ds.p999Chroma > 0 ? ls.p999Chroma / ds.p999Chroma : null;
+  row.markMaxRatio = ds.maxChroma > 0 ? ls.maxChroma / ds.maxChroma : null;
+  row.markRatio = (row.markP999Ratio === null || row.markMaxRatio === null)
+    ? (row.markP999Ratio ?? row.markMaxRatio)
+    : Math.min(row.markP999Ratio, row.markMaxRatio);
+  row.contrastRatio = (ls.dataVsSceneryContrast ?? 0) / (ds.dataVsSceneryContrast ?? 1);
+
+  /* THE FLAT-OUT COLLAPSE, which needs no comparison to be a failure. */
+  if (ls.sdLuma < 1) {
+    row.problems.push('WORSE IN LIGHT — the light capture has collapsed to near-uniform: luminance sd '
+      + `${ls.sdLuma.toFixed(2)} against ${ds.sdLuma.toFixed(2)} in dark on the same surface reached the same `
+      + 'way. This is the exact failure mode `look/theme.ts` was written to avoid');
+  } else if (row.sdRatio < 0.8) {
+    /*
+     * 0.8 RATHER THAN 0.5, AND THE CHANGE IS A CORRECTION RATHER THAN A TIGHTENING. At 0.5, E1 DeckRelief
+     * passed at 53% — a surface whose own caption reads "DEPTH IS THE PANEL YOU ADDRESS · DEPTH ORDER IS THE
+     * DECK'S OWN", printed as "holds up" while its panels had lost nearly half their separation from the
+     * ground. A band that prints a 47% loss of contrast as a pass is a band chosen to produce pleasant output.
+     */
+    row.problems.push(`WORSE IN LIGHT — luminance spread fell to ${(row.sdRatio * 100).toFixed(0)}% of its `
+      + `dark value (sd ${ds.sdLuma.toFixed(2)} → ${ls.sdLuma.toFixed(2)}, p01→p99 range `
+      + `${ds.p99 - ds.p01} → ${ls.p99 - ls.p01}); the scene is flatter on a white page than on a black one, `
+      + 'which is the direction the light rig was retuned to prevent');
+  }
+
+  /* THE DATA MARKS, which is the question the luminance statistics cannot answer. */
+  if (row.markRatio !== null && row.markRatio < 0.6) {
+    row.problems.push('WORSE IN LIGHT — the data marks lost their colour: p99.9 chroma '
+      + `${ds.p999Chroma} → ${ls.p999Chroma} (${(row.markP999Ratio * 100).toFixed(0)}%) and the most `
+      + `saturated pixel anywhere in the buffer ${ds.maxChroma} → ${ls.maxChroma} `
+      + `(${(row.markMaxRatio * 100).toFixed(0)}%); the share above the derived data-chroma floor of `
+      + `${palette.chromaFloor} went ${ds.dataPct.toFixed(2)}% → ${ls.dataPct.toFixed(2)}%. Scenery may move `
+      + 'between themes; a DATA colour may not (`look/theme.ts`: "a theme may NOT tint a mark to suit its '
+      + 'background"), so a mark that desaturates on a white page is the taxonomy being broken downstream of '
+      + 'the palette rather than by it');
+  } else if (ls.dataPct === 0 && ds.dataPct > 0) {
+    row.problems.push(`WORSE IN LIGHT — ${ds.dataPct.toFixed(2)}% of the dark buffer clears the data-chroma `
+      + 'floor and **none** of the light buffer does, so the data marks are not separable from the scenery on '
+      + 'a white page');
+  } else if (ls.dataVsSceneryContrast !== null && ds.dataVsSceneryContrast !== null
+    && ls.dataVsSceneryContrast < 1.5 && ds.dataVsSceneryContrast >= 1.5) {
+    row.problems.push(`WORSE IN LIGHT — data-to-scenery contrast fell from ${ds.dataVsSceneryContrast.toFixed(2)}:1 `
+      + `to ${ls.dataVsSceneryContrast.toFixed(2)}:1, below the 1.5:1 at which two populations stop reading as `
+      + 'two populations');
+  }
+
+  /*
+   * AND THE CASE NEITHER RATIO CATCHES: a surface whose data marks were already invisible in DARK. E6 reports
+   * zero data-chroma pixels in both themes, so every ratio above is either null or 1 and every band passes it.
+   * Reported here rather than left to a reader to notice that a row of dashes meant something.
+   */
+  if (ds.dataPct === 0 && ls.dataPct === 0) {
+    row.problems.push('NO DATA MARKS IN EITHER THEME — not one pixel of this surface\'s buffer clears the '
+      + `derived data-chroma floor of ${palette.chromaFloor} in dark (max chroma ${ds.maxChroma}) or light `
+      + `(${ls.maxChroma}), so the data:scenery contrast column is empty for both rows and the chroma ratios `
+      + 'are comparing two scenes whose most saturated content is already scenery-grade. Stated rather than '
+      + 'left as a row of dashes: this is not a light-theme finding, and it is not a pass either');
+  }
+
+  /*
+   * A MEASURED LOSS THAT DOES NOT CLEAR THE FINDING BAR IS STILL A LOSS, and printing it as "holds up" is how
+   * a capture programme turns into a marketing exercise. E2 GlobeRelief keeps both populations legible —
+   * 6.97:1 and 2.93:1 are both well clear of 1.5:1 — while shedding 58% of the separation between them. The
+   * verdict column says so instead of rounding it to a pass.
+   */
+  if (!row.problems.some((p) => p.startsWith('WORSE IN LIGHT'))
+    && row.contrastRatio > 0 && row.contrastRatio < 0.6) {
+    row.degraded = `data:scenery contrast fell from ${ds.dataVsSceneryContrast.toFixed(2)}:1 to `
+      + `${ls.dataVsSceneryContrast.toFixed(2)}:1 (${(row.contrastRatio * 100).toFixed(0)}%) — both still read `
+      + 'as two populations, so this is recorded and not raised';
+  }
+  return row;
+}
+
 /* ── RUN ─────────────────────────────────────────────────────────────────────────────── */
 
 if (SURFACES.length === 0) {
@@ -1284,9 +1799,14 @@ if (SURFACES.length === 0) {
   process.exit(1);
 }
 
+/* Derived before the browser is launched: a palette that cannot be parsed should cost nothing to discover. */
+const PALETTE = derivePalette();
+
 const { child, log } = startDevServer();
 const rows = [];
 const worstRoutes = [];
+const themeRows = [];
+let instrument = null;
 let browser;
 try {
   await waitForServer(log);
@@ -1296,7 +1816,7 @@ try {
        in this sweep is therefore a CPU rasterisation, which is why no timing is reported. */
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
   });
-  for (const surface of SURFACES) {
+  for (const surface of THEME_ONLY ? [] : SURFACES) {
     const row = await sweepSurface(browser, surface);
     rows.push(row);
     const bad = row.problems.length;
@@ -1318,7 +1838,7 @@ try {
    * route tomorrow is measured tomorrow.
    */
   const byRoute = new Map();
-  for (const r of rows.filter((x) => x.reach === 'DRAWN' && x.toggle !== null)) {
+  for (const r of (THEME_ONLY ? [] : rows).filter((x) => x.reach === 'DRAWN' && x.toggle !== null)) {
     byRoute.set(r.route, [...(byRoute.get(r.route) ?? []), r]);
   }
   for (const [route, group] of byRoute) {
@@ -1343,9 +1863,329 @@ try {
       await page.close().catch(() => {});
     }
   }
+
+  /* ── AXIS 5 · BOTH THEMES, EVERY SURFACE ─────────────────────────────────────────── */
+  if (!SKIP_THEME) {
+    instrument = await validateInstrument(browser, PALETTE);
+    console.log(`\n  instrument: ${instrument.ok ? 'VALIDATED' : 'FAILED'}`
+      + ` — data hue ${instrument.dataHex}, scenery hue ${instrument.sceneHex},`
+      + ` chroma floor ${PALETTE.chromaFloor}`);
+    for (const [what, ok] of instrument.checks ?? []) console.log(`      ${ok ? '✓' : '✗'} ${what}`);
+    if (!instrument.ok) {
+      /* Refused here rather than reported later: every luminance number below would come off the same
+         readback, and an unvalidated instrument reporting "near-uniform" is how a working surface gets
+         condemned and a broken one gets a pass. */
+      console.error('  REFUSED: the pixel instrument failed its own controls. No theme capture is trustworthy,');
+      console.error('  so none is written. A blank reading from a broken readback looks exactly like a blank scene.');
+    } else {
+      /*
+       * THE LEVER, PROVED ON THE LIVE APP BEFORE IT IS USED — including across a reload, which is the thing
+       * the seat itself needed proving on. Two surfaces are checked deliberately: one inside `AppLayout`,
+       * where the persisted store is the authority, and `/select`, which is outside the shell and is driven
+       * by `index.html` instead. A lever proved on only one of those proves nothing about the other.
+       */
+      const seated = SURFACES.find((s) => s.seat), loose = SURFACES.find((s) => !s.seat);
+      instrument.lever = [];
+      for (const s of [seated, loose].filter(Boolean)) {
+        for (const theme of THEME_ORDER) {
+          const page = await newSeatedPage(browser, s, [], theme);
+          try {
+            await page.goto(BASE + s.route, { waitUntil: 'domcontentloaded' });
+            await page.waitForTimeout(6000);
+            const first = await page.evaluate(readAppliedTheme);
+            await page.reload({ waitUntil: 'domcontentloaded' });
+            await page.waitForTimeout(5000);
+            const after = await page.evaluate(readAppliedTheme);
+            instrument.lever.push({
+              id: s.id, route: s.route, seat: s.seat === true, asked: theme,
+              got: first.darkClass ? 'dark' : 'light',
+              afterReload: after.darkClass ? 'dark' : 'light',
+              card: first.card, bodyBg: first.bodyBg,
+            });
+          } finally { await page.close().catch(() => {}); }
+        }
+      }
+      for (const l of instrument.lever) {
+        console.log(`      lever ${l.id} ${l.route.padEnd(15)} asked ${l.asked.padEnd(5)}`
+          + ` got ${l.got.padEnd(5)} after reload ${l.afterReload}`
+          + `${l.got === l.asked && l.afterReload === l.asked ? '' : '   ← MISMATCH'}`);
+      }
+
+      for (const surface of SURFACES) {
+        const row = await themeRow(browser, surface, PALETTE);
+        themeRows.push(row);
+        const d = row.byTheme.dark?.stats?.[0], l = row.byTheme.light?.stats?.[0];
+        console.log(`  ${row.problems.length === 0 ? '✓' : '✗'} ${row.id} ${row.name.padEnd(16)}`
+          + ` dark ${d?.readable ? `sd ${d.sdLuma.toFixed(1).padStart(5)}` : (row.byTheme.dark.reach ?? '—').padEnd(8)}`
+          + `  light ${l?.readable ? `sd ${l.sdLuma.toFixed(1).padStart(5)}` : (row.byTheme.light.reach ?? '—').padEnd(8)}`
+          + (row.sdRatio !== undefined ? `   light/dark ${(row.sdRatio * 100).toFixed(0)}%` : ''));
+        for (const p of row.problems) console.log(`      · ${p}`);
+      }
+    }
+  }
 } finally {
   await browser?.close();
   child.kill('SIGTERM');
+}
+
+/* ── THE THEME REPORT — its own file, beside its own captures ────────────────────────── */
+if (!SKIP_THEME && instrument?.ok) writeThemeReport();
+
+function writeThemeReport() {
+  const n2 = (v, d = 2) => (v === null || v === undefined ? '—' : v.toFixed(d));
+  const capture = (r, theme) => {
+    const b = r.byTheme[theme];
+    if (!b || b.reach !== 'DRAWN' || !b.shots?.canvas?.file) return '—';
+    return `[canvas](theme/${b.shots.canvas.file}) · [viewport](theme/${b.shots.viewport?.file ?? ''})`;
+  };
+  const drawn = themeRows.filter((r) => r.byTheme.dark?.reach === 'DRAWN' && r.byTheme.light?.reach === 'DRAWN');
+  const worse = themeRows.filter((r) => r.problems.some((p) => p.startsWith('WORSE IN LIGHT')));
+  const stampT = process.env.AUDIT_DATE ?? new Date().toISOString().slice(0, 10);
+
+  /*
+   * WHICH SURFACES ARE BOUND TO THE THEME, READ OFF THE RENDERERS RATHER THAN COUNTED BY HAND. "Six of the
+   * seven bind to `look/theme.ts`" is precisely the shape of sentence this programme keeps catching — true
+   * when typed, false the day a seventh binds or a sixth stops. So the import is grepped per renderer and the
+   * sentence is assembled from the answer.
+   */
+  const bound = { yes: [], no: [] };
+  for (const s of SURFACES) {
+    let src = '';
+    try { src = readFileSync(join(WEB, s.glFile), 'utf8'); } catch { /* reported as unbound below */ }
+    (/from '@lcx\/gl\/look\/theme\.js'/.test(src) ? bound.yes : bound.no).push(s.id);
+  }
+  const unreachableT = themeRows.filter((r) => r.byTheme.dark?.reach !== 'DRAWN' || r.byTheme.light?.reach !== 'DRAWN');
+
+  mkdirSync(SHOTS, { recursive: true });
+  writeFileSync(THEME_OUT, `# THE THEME PASS — status: **${drawn.length} of ${themeRows.length} surfaces captured in both themes\
+${worse.length === 0 ? ', none measurably worse in light' : `, ${worse.length} measurably WORSE IN LIGHT`}**
+
+<!-- GENERATED by scripts/3d-audit-app.mjs. Do not edit: run \`APP_SWEEP_THEME_ONLY=1 node scripts/3d-audit-app.mjs\`. -->
+
+Swept ${stampT}. **This file is output, not prose.** It is written separately from \`docs/3d/APP_SWEEP.md\` for
+the reason that file's own header gives about \`docs/3d/e9/README.md\`: two generators must not write one file,
+or its contents depend on which script ran last.
+
+## Why this exists
+
+The platform shipped a light theme for its 3-D surfaces and **it had no capture at all**. Rule 8 of this
+programme's doctrine is that every claim gets a capture — so until this pass ran, "the light theme works" was
+a sentence, not a measurement.
+
+Which surfaces are bound to \`look/theme.ts\` is **grepped from the renderers, not counted here**: a sentence
+naming a number is true when typed and false the day a surface is added.
+
+- **imports \`@lcx/gl/look/theme.js\`** (${bound.yes.length}): ${bound.yes.join(', ')}
+- **does not** (${bound.no.length}): ${bound.no.join(', ')} — \`StormRelief\` refuses a light theme deliberately and says why in arithmetic in its own file; \`ForgeBackdrop\` predates the module and branches on the \`dark\` class with its own hand-tuned pair, which is where \`look/theme.ts\`'s light numbers came from in the first place.
+
+The question is **not** whether a surface looks nice on a white page. It is three facts per surface per theme:
+did it paint at all; what are the mean and standard deviation of its luminance, because **a light scene that
+has collapsed to near-uniform is the specific failure \`look/theme.ts\` was written to avoid**; and are the
+data marks still separable from the scenery.
+
+## The lever — how the theme is driven, and why not by the class
+
+The app's switch is the \`dark\` class on \`<html>\`, and there are **three writers of it that do not agree**.
+Every line here is measured against this dev server by this script, not read off the source:
+
+| where | mechanism | consequence |
+|---|---|---|
+| \`AppLayout.tsx:117-119\` | \`classList.toggle('dark', darkMode)\` on mount and on change, from the persisted \`useUIStore\` | inside the shell the **store is the authority and overwrites everything else** |
+| \`index.html:10-20\` | pre-hydration read of \`localStorage['lcx-os:ui:v1']\` | the only writer on \`/select\`, which is outside the shell |
+| \`useUIStore.ts:30\` | \`toggleDarkMode\` sets the class and persists through \`lib/persistence.ts\` | writes \`lcx-os:<operator-email>:ui:v1\` |
+
+**Poking the class is the wrong lever, and that is measured rather than argued.** A class added at
+document-start on \`/command-deck\` and \`/ontology\` is *gone* by the time the shell has mounted, and still gone
+after a reload — \`AppLayout\`'s effect runs \`toggle('dark', false)\` because the store says light. On
+\`/select\` the same poke survives, because nothing there manages the class. A lever that works on one of those
+and not the other is not a lever.
+
+So this pass **seeds the persisted store the way the app's own toggle writes it**, under both keys, and then
+*measures which theme the app actually applied* rather than assuming the seed took:
+
+| surface | route | inside the shell | asked | applied | after a reload |
+|---|---|---|---|---|---|
+${(instrument.lever ?? []).map((l) => `| **${l.id}** | \`${l.route}\` | ${l.seat ? 'yes' : 'no'} | ${l.asked} | ${l.got === l.asked ? l.got : `**${l.got}**`} | ${l.afterReload === l.asked ? l.afterReload : `**${l.afterReload}**`} |`).join('\n')}
+
+### A defect this pass found on the way in
+
+\`index.html:12\` reads \`localStorage['lcx-os:ui:v1']\`. **Nothing writes that key.** \`useUIStore\` persists
+under \`STORAGE_KEYS.UI\` through \`lib/persistence.ts:38\`, whose \`mk()\` is \`lcx-os:\${scope()}:\${key}:v1\`
+— and \`scope()\` returns the operator's email, or the literal \`anon\` before sign-in. There is no path that
+produces a key with no scope segment. Measured both directions on this dev server:
+
+- clicking the real theme toggle in the UI wrote \`lcx-os:nik@lcx.com:ui:v1\` **and nothing else**;
+- seeding only the unscoped key left a seated route at \`dark=false\` **with \`document.body\` still carrying the
+  dark pre-hydration background**, because \`index.html\` added the class, the body script saw it, and
+  \`AppLayout\` then removed the class and not the inline background.
+
+The consequence for a real operator is the flash that script exists to prevent: a dark-mode operator's
+preference is invisible to the pre-hydration path, so every load paints light and then flips. And \`/select\`,
+which has no \`AppLayout\`, **can never be dark at all** from stored preference. Not fixed here — this file
+reports; the fix belongs in \`apps/web/index.html\` or \`lib/persistence.ts\`.
+
+## The instrument, validated before anything was judged
+
+A GL surface that has not painted captures as a blank or transparent rectangle, and **in the light theme a
+blank capture is indistinguishable from "the light theme renders nothing"**. So the readback is proved on
+known input first, in both directions, through the same code path every number below comes from:
+
+| control | expectation | result |
+|---|---|---|
+${(instrument.checks ?? []).map(([what, ok]) => `| ${what} | must hold | ${ok ? 'PASS' : '**FAIL**'} |`).join('\n')}
+
+The negative control is as load-bearing as the positive one: \`sdLuma ≈ 0\` is the finding this pass exists to
+raise, and an instrument that returns zero because its readback is broken raises it on **every** surface. Both
+patterns are built from the derived palette (\`${instrument.dataHex}\` against \`${instrument.sceneHex}\`), not
+from literals typed into the script.
+
+**Pixels are read in-page, not decoded from a PNG.** \`createStage\` sets \`preserveDrawingBuffer: true\`
+unconditionally (\`packages/gl/src/stage.ts:288\`), so the drawing buffer survives compositing and a
+\`drawImage\` of the GL canvas outside the frame returns what was drawn. That flag is the reason this does not
+have to capture inside a \`requestAnimationFrame\`; without it the readback would return an empty buffer that
+looks exactly like a surface that rendered nothing.
+
+## The data/scenery split, derived rather than listed
+
+A hand-written list of hexes cannot fail on the colour nobody thought of. So the taxonomy is parsed from
+\`look/theme.ts\` and \`look/colour.ts\` and split the way \`look/semantic.ts:203\` splits it — a \`BRAND_HEX\`
+key is **scenery** if a \`SceneTheme\` field has the same name, and **data** otherwise:
+
+- **DATA** (never moves between themes): ${PALETTE.data.map((d) => `\`${d.key}\``).join(', ')}
+- most saturated scenery colour in either theme: **${PALETTE.maxSceneryChroma}**, so the chroma floor is **${PALETTE.chromaFloor}**
+
+**What the classifier cannot see, stated rather than left to be discovered:**
+${PALETTE.dataBlind.length === 0 ? '- nothing — every data colour clears the floor.' : PALETTE.dataBlind.map((d) => `- \`${d.key}\` (${d.hex}) has chroma ${CHROMA(HEX_RGB(d.hex))}, **below the floor**, so its pixels are counted as scenery. That is by design in the palette — it "reads as no measurement, never as a low value" — and it means a surface drawing only refusals would read as having no data marks.`).join('\n')}
+
+## Per-surface statistics
+
+Every number is over the surface's **own** drawing buffer — the contexts its toggle created, marked the same
+way the context-loss axis marks them, so the shared 2-D renderer and the signature backdrop are not measured
+as the relief. The page's CSS background is therefore **not** in these numbers; the viewport capture is where
+the surface is judged against the page around it.
+
+| surface | theme | painted | mean luma | **sd luma** | p01→p99 | colours | **p99.9 chroma** | max chroma | data px % | data luma | scenery luma | data:scenery contrast |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+${themeRows.flatMap((r) => THEME_ORDER.map((theme) => {
+  const b = r.byTheme[theme];
+  if (b?.reach !== 'DRAWN') return `| **${r.id}** ${r.name} | ${theme} | **${b?.reach ?? '—'}** | — | — | — | — | — | — | — | — | — | — |`;
+  const s = b.stats?.[0];
+  if (!s?.readable) return `| **${r.id}** ${r.name} | ${theme} | **unreadable** | — | — | — | — | — | — | — | — | — | — |`;
+  return `| **${r.id}** ${r.name} | ${theme} | yes | ${n2(s.meanLuma, 1)} | **${n2(s.sdLuma)}** | ${s.p01}→${s.p99} | ${s.distinctColours}${s.distinctColours >= 4096 ? '+' : ''} | **${s.p999Chroma}** | ${s.maxChroma} | ${n2(s.dataPct)} | ${n2(s.dataMeanLuma, 1)} | ${n2(s.sceneryMeanLuma, 1)} | ${s.dataVsSceneryContrast === null ? '—' : `${n2(s.dataVsSceneryContrast)}:1`} |`;
+})).join('\n')}
+
+**Two columns carry the verdict, and the second one is here because the first one lied.** \`sd luma\` is the
+collapse statistic: a scene that has gone near-uniform on a white page is the exact failure the light palette
+was tuned to avoid. But **luminance spread is not information**. E6 VaultRelief reported sd 2.52 in dark and
+18.70 in light — a 743% "improvement" — while its 18 blue record marks *dissolved into a smooth white haze*
+that has a large luminance spread and carries nothing. A gradient is spread without a reading.
+
+\`p99.9 chroma\` is the correction, and it needs no threshold at all. Every scenery colour in both themes is a
+desaturated blue-grey and every data hue but \`refusal\` is not, so **the top of the chroma distribution is
+where the data marks live**. If it collapses between themes the marks went away, whatever the luminance did.
+p99.9 rather than the max so one stray antialiased pixel cannot stand in for a population of marks; the max is
+printed beside it so a reader can see if the two ever disagree.
+
+Read every column against the same surface's own dark row, never against a global floor: these surfaces draw
+wildly different amounts of geometry, so one threshold would pass a busy scene that lost half its contrast and
+fail a sparse one working as designed.
+
+**\`mean alpha\` is not in the table but is checked**: an opaque black buffer and a transparent one are
+different faults, and this file's own context-loss axis records a finding that turned on that distinction.
+
+**The statistics and the canvas PNG are not the same pixels.** The numbers come from \`drawImage\` of the GL
+drawing buffer, so they contain the render and nothing else. The PNG is an element screenshot, which is the
+composited page clipped to the canvas box — so any DOM caption layered over the surface appears in the image
+and **not** in the numbers. E1's dark heading plate is the visible case: it stays dark in the light capture
+because it is DOM, not geometry.
+
+| surface | light sd ÷ dark | light p01→p99 range ÷ dark | **light p99.9 chroma ÷ dark** | **light max chroma ÷ dark** | light data:scenery contrast ÷ dark | verdict |
+|---|---|---|---|---|---|---|
+${themeRows.map((r) => {
+  if (r.sdRatio === undefined) return `| **${r.id}** ${r.name} | — | — | — | — | — | not comparable — see below |`;
+  const w = r.problems.some((p) => p.startsWith('WORSE IN LIGHT'));
+  const none = r.problems.some((p) => p.startsWith('NO DATA MARKS'));
+  const pc = (v) => (v === null || v === undefined ? '—' : `${(v * 100).toFixed(0)}%`);
+  const verdict = w ? '**WORSE IN LIGHT**' : (r.degraded ? '**degraded**' : 'holds up');
+  return `| **${r.id}** ${r.name} | ${pc(r.sdRatio)} | ${pc(r.rangeRatio)} | ${pc(r.markP999Ratio)} | ${pc(r.markMaxRatio)} | ${pc(r.contrastRatio)} | ${verdict}${none ? ' · no data marks in either theme' : ''} |`;
+}).join('\n')}
+
+**Both chroma ratios are printed because they fail on different shapes of mark, and the worse of the two
+decides.** p99.9 misses a SPARSE population: E6 VaultRelief draws 18 record marks over a large vault and they
+barely register at p99.9 even though the captures show them plainly — the maximum catches those. The maximum
+on its own would be fooled by a single stray antialiased pixel, which is why p99.9 stays. A surface has to
+hold both.
+${themeRows.filter((r) => r.degraded).length === 0 ? '' : `
+**Degraded, recorded and not raised** — a measured loss that did not clear the finding bar is still a loss,
+and printing it as "holds up" is how a capture programme becomes a marketing exercise:
+
+${themeRows.filter((r) => r.degraded).map((r) => `- **${r.id} ${r.name}**: ${r.degraded}`).join('\n')}
+`}
+**"Holds up" means the ratios above held, and nothing more.** It is not a design review. A surface can keep
+its luminance spread and its chroma and still place them somewhere useless, and no number in this file would
+notice. Every verdict here should be read next to the capture it came from.
+
+## Captures
+
+| surface | dark | light |
+|---|---|---|
+${themeRows.map((r) => `| **${r.id}** ${r.name} (\`${r.route}\`) | ${capture(r, 'dark')} | ${capture(r, 'light')} |`).join('\n')}
+${unreachableT.length === 0 ? '' : `
+### Not captured, itemised
+
+A surface this pass could not reach is reported as not reached on **both** themes, never as a pass. A capture
+list that quietly omits what it failed on is how a capture programme reports green by photographing nothing.
+
+${unreachableT.map((r) => `- **${r.id} ${r.name}** (\`${r.route}\`) — dark \`${r.byTheme.dark?.reach}\`, light \`${r.byTheme.light?.reach}\`${r.byTheme.dark?.detail ? `: ${r.byTheme.dark.detail}` : ''}`).join('\n')}
+
+For **E7 StormRelief** that is the correct state and this pass confirms it in both themes rather than assuming
+it: \`MarketingCrisis.tsx\` builds the field with \`riskFieldUnavailable(...)\`, a named absence, so the toggle
+is permanently \`aria-disabled\` and no renderer runs. It is also the surface that refuses \`look/theme.ts\`
+**by decision** rather than by age — the other unbound renderer, \`ForgeBackdrop\`, simply predates the module.
+The day a forward risk feed lands, this row starts producing two captures, and the light half of it will be
+the first time that refusal is tested against a white page.
+`}
+
+## What this pass does NOT establish
+
+- **That a surface which holds up numerically also reads well.** A contrast ratio is not a design review, and
+  a scene can keep its luminance spread while placing it somewhere useless.
+- **Real-hardware colour.** Every frame here is SwiftShader, and the tone map runs on the CPU rasteriser's
+  output. Ordering survives (\`look/brandPixel.test.ts\` pins monotonicity per channel); exact hexes do not,
+  and \`docs/3d/brand-fidelity.json\` already measures \`#2c6bff\` landing at \`#2c68dc\`.
+- **Anything about \`refusal\`-coloured marks**, which sit below the derived chroma floor by design.
+- **The dark theme's own correctness.** Dark is used here as the positive control that makes a light reading
+  believable. A surface can be equally wrong in both and this pass will not say so.
+${worse.length === 0 ? '' : `
+## Worse in light — the list, with the number that says so
+
+${worse.map((r) => `**${r.id} ${r.name}** — \`${r.glFile}\`, on \`${r.route}\`\n${r.problems.filter((p) => p.startsWith('WORSE IN LIGHT')).map((p) => `- ${p}`).join('\n')}`).join('\n\n')}
+`}${themeRows.some((r) => r.problems.some((p) => !p.startsWith('WORSE IN LIGHT'))) ? `
+## Other findings
+
+${themeRows.filter((r) => r.problems.some((p) => !p.startsWith('WORSE IN LIGHT'))).map((r) => `**${r.id} ${r.name}** — \`${r.route}\`\n${r.problems.filter((p) => !p.startsWith('WORSE IN LIGHT')).map((p) => `- ${p}`).join('\n')}`).join('\n\n')}
+` : ''}
+## Reproduce
+
+\`\`\`bash
+APP_SWEEP_THEME_ONLY=1 node scripts/3d-audit-app.mjs   # this file only, leaves APP_SWEEP.md alone
+node scripts/3d-audit-app.mjs                          # the four axes AND this pass
+APP_SWEEP_SKIP_THEME=1 node scripts/3d-audit-app.mjs   # the four axes only
+\`\`\`
+`);
+  console.log(`\n  wrote ${THEME_OUT.replace(`${ROOT}/`, '')} — ${drawn.length}/${themeRows.length} surfaces `
+    + `in both themes, ${worse.length} worse in light`);
+}
+
+if (THEME_ONLY) {
+  /* The same floor the four axes have: a pass that captured nothing must not exit green. */
+  const ok = instrument?.ok === true
+    && themeRows.some((r) => r.byTheme.dark?.reach === 'DRAWN' && r.byTheme.light?.reach === 'DRAWN');
+  if (!ok) {
+    console.error('\n  REFUSED: the theme pass captured no surface in both themes, so nothing is established.');
+    process.exit(1);
+  }
+  process.exit(themeRows.some((r) => r.problems.length > 0) ? 1 : 0);
 }
 
 /*
@@ -1668,4 +2508,7 @@ silently moved to another port could be measuring a server it did not configure.
 
 console.log(`\n  wrote ${OUT.replace(`${ROOT}/`, '')} — ${reached.length}/${rows.length} surfaces reached, `
   + `${failing.length} with findings`);
-process.exit(failing.length > 0 ? 1 : 0);
+/* The theme pass counts towards the exit status on a full run, or a surface that is measurably worse in light
+   would leave the sweep green — which is the shape of pass this whole file exists to refuse. */
+const themeFailing = themeRows.filter((r) => r.problems.length > 0).length;
+process.exit(failing.length + themeFailing > 0 ? 1 : 0);

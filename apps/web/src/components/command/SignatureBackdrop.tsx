@@ -40,25 +40,117 @@ import { useFlatChart } from '@/components/charts/gl/useFlatChart';
  *
  * ── AND THAT IS WHY THE LIGHT THEME RENDERS NOTHING AT ALL ───────────────────────────
  * The same argument runs backwards. Light-theme canvas text is DARKER than the canvas, so any
- * darkening reduces its contrast. Measured from `styles/tokens.css`, the light canvas sits in a
- * corridor about twenty 8-bit levels wide and has room for a gradient in neither direction:
+ * darkening reduces its contrast. Measured from `styles/tokens.css`, and every figure below
+ * reproduces on the ratchet's own `luminance()`:
  *
  *   · DOWN — `--page-bg` #f4f6fb is luminance 0.9211. The weakest text role the ratchet
  *     certifies on it is `--green` #1e7a4a at 4.932:1, which hits the 4.5:1 floor at luminance
  *     0.8360 — a neutral byte 236 against the canvas's 246. TEN levels, at zero margin.
- *   · UP — `--card` is #ffffff, ELEVEN levels above the canvas, and the canvas→card step is
+ *   · UP — `--card` is #ffffff, NINE levels above the canvas, and the canvas→card step is
  *     already only 1.081:1. Spending the corridor upward deletes the elevation ladder that
  *     `tokens.css:96` calls "each step visibly distinct".
  *
- * Ten levels is also below the banding threshold rather than above it: a ten-step ramp across a
- * 1200 px field puts a Mach contour every ~120 px, and this pipeline has no dither. So the light
- * backdrop is either invisible or a defect, and there is no amplitude that is neither. It is
- * refused rather than shipped small — which under §6 rule 1 costs nothing, because the fallback
- * for a backdrop is the page's own `bg-page` and it is already painted.
+ * That second bullet read ELEVEN until 2026-08-15, which is 255 minus the canvas's RED BYTE —
+ * a different unit from the 236/246 pair one line above it. `__tests__/ambientBackdrop.test.tsx`
+ * computes it as `byte(luminance(card)) - byte(luminance(canvas))` and gets NINE, so the test
+ * that pins this paragraph has disagreed with it since both were written. Nine is LESS room, so
+ * everything below is stronger for the correction, not weaker.
  *
- * The dark theme has 29 levels between `--page-bg` and the point where its weakest certified
- * role (`--red` #e4687a, 6.017:1) would reach 4.5:1, and this layer spends them all DOWNWARD,
- * where none of them is borrowed from a contrast ratio.
+ * ── RE-OPENED WITH `look/theme.ts` IN PLACE. THE REFUSAL STANDS; THE REASON DOES NOT ─
+ * This refusal predates `look/theme.ts` and was re-examined against it on 2026-08-15. It holds,
+ * and the ten levels above are NOT why — they are three times too generous. Both bullets assume
+ * the plate reaches the framebuffer as written. It does not. `look/pipeline.ts:98-100` builds
+ * `lit = plate + scene + bloom` and then runs `lcxToneMap` on the SUM, unconditionally, so the
+ * plate is tone mapped too — and `c/(1+0.4c)` is only near-identity where c is small:
+ *
+ *   dark  `--page-bg` #090e1b  →   9  14  27     the plate to the byte. NOTHING lost.
+ *   light `--page-bg` #f4f6fb  → 213 214 217     31 / 32 / 34 LEVELS LOST.
+ *
+ * Measured through the shipped shaders on a real driver — headless Chromium on SwiftShader, the
+ * instrument `docs/3d/brand-fidelity.mjs` uses — reading bytes back off the framebuffer:
+ *
+ *   configuration                  brightest px    darkest px      weakest certified role
+ *   dark, as shipped                 9  14  27      3   5  13      raised (see the invariant)
+ *   light, vignetteDepth 0.62      213 214 217    149 150 153      3.669:1  …  1.803:1
+ *   light, vignetteDepth 0.00      213 214 217    213 214 217      3.669:1 — FLAT, STILL FAILING
+ *
+ * The dark row reproduces the capture recorded at the top of `ambientBackdrop.test.tsx` exactly
+ * — brightest [9,14,27], darkest [3,5,13], 30 distinct colours — which is what makes the two
+ * light rows evidence rather than arithmetic. (An earlier pass of that harness sampled the key
+ * at `1 - v` and reported the mirror of it; the recorded dark capture is what caught it.)
+ *
+ * Read the third row twice. At ZERO amplitude, with the vignette switched off entirely, this
+ * layer still paints 213 214 217 over a 244 246 251 page and drops `--green` from 4.932:1 to
+ * 3.669:1, under WCAG 1.4.3. The BRIGHTEST pixel it can produce in the light theme is 23 levels
+ * below the 236 the floor needs — 2.3× the whole corridor, on the wrong side of it. So the old
+ * conclusion, "either invisible or a defect, and there is no amplitude that is neither", had the
+ * right verdict and the wrong range: THERE IS NO AMPLITUDE, INCLUDING ZERO. "Ship it flat" is
+ * not the safe version of this layer; it is the same defect with the gradient taken out.
+ *
+ * ── THE ONE CONSTRUCTION THAT WORKS, PRICED RATHER THAN WAVED AWAY ───────────────────
+ * `look/precompensate.ts` inverts the curve, and its perimeter is met here exactly — `bloomGain`
+ * is 0 and the field is a constant, so nothing accumulates. Writing `inverseToneMap(plate)
+ * - plate` into the scene target lands the composite on 244 246 251: the page, byte-exact,
+ * measured. A light backdrop CAN therefore be built, and its direction is ADDITIVE, which is the
+ * mirror of the dark invariant and needs a list of roles no more than that one did:
+ *
+ *   > Every pixel at or above the luminance of `--page-bg` can only RAISE a dark-on-light ratio.
+ *
+ * Measured against the same floor, it clears it: `--green` 4.932 → 5.107:1 and no certified pair
+ * loses. It is refused on the two constraints that are not text contrast.
+ *
+ *   · RANGE, and the binding channel is not the obvious one. `--page-bg`'s headroom to #ffffff
+ *     is 11 / 9 / 4 levels, so BLUE binds. A lift holding the canvas's own tint clips after FOUR
+ *     levels — the measured sweep is 244 246 251 → 245 247 252 → 246 248 253 → 247 249 254 →
+ *     248 250 255, five distinct colours, then blue is pinned and only R and G climb. Past that
+ *     the tint B−R collapses from 7 to 3: a decorative layer that changes the page's hue is not
+ *     decoration.
+ *   · THE LADDER PAYS FOR IT. canvas→card goes 1.0813:1 → 1.0443:1 at +4 — roughly halving the
+ *     only step that separates a card from the page it sits on.
+ *
+ * And four levels fails the banding test the ten-level version already failed: four steps across
+ * a 1200 px field is a Mach contour every 300 px with no dither, and an isolated one-level edge
+ * on a flat field reads more than a dense ramp, not less. At the only amplitude that is safe —
+ * the flat precompensated plate — the layer is byte-identical to not mounting it at all.
+ *
+ * Moving the token instead was priced and is worse. `--green` is `status.ready`
+ * (`tailwind.config.js:51`): 63 `text-status-ready` sites plus 14 direct `-green` utilities, and
+ * it MEANS ready. `look/theme.ts` forbids exactly this — "a theme may NOT tint a mark to suit
+ * its background, because that would be editing the measurement to flatter the page". It would
+ * also not be one token: four roles sit inside 4.93–5.82:1 (`--green` 4.932, `--amber` 5.224,
+ * `--grey` 5.671, `--indigo` 5.815), so moving `--green` alone widens the corridor from 10 to
+ * 16, and five tokens have to move to reach 45 — against a tone-map cost of 31 at zero
+ * amplitude. Repainting the light text palette to make room for a decorative layer is the
+ * actual proposal, stated plainly.
+ *
+ * ── WHAT THE DEFAULT THEME PAYS FOR A LAYER THAT DRAWS NOTHING ───────────────────────
+ * Zero GL contexts and zero renderer bytes — which is not what the census believes. The
+ * `canvas === null` branch returns before `LinearPlate` exists, so `import('@lcx/gl')` below and
+ * `useFlatChart`'s `import('@lcx/gl/flat/shared.js')` never fire and `sharedRenderer()` is never
+ * called. `__tests__/glContextBudget.test.ts:37` records "the floor is now 1 everywhere" and its
+ * census puts 70 routes at one context "from the shell's backdrop"; that is a static mount-site
+ * walk, it is theme-blind, and the platform DEFAULTS TO LIGHT. On the default theme this layer
+ * contributes 0 contexts on all 78 routes, not 1.
+ *
+ * What it does cost is eager shell JS: 3,883 B minified / 1,879 B gzip for this file plus its
+ * static `useFlatChart` import (esbuild --minify, react and `@lcx/gl` external). Gating the
+ * mount in `AppLayout` recovers 2,560 B / 1,194 B of that and not the rest, because the theme
+ * subscription below (1,323 B / 685 B) has to move INTO `AppLayout` to make the decision — and
+ * it would cost the property `ambientBackdrop.test.tsx` pins as "a theme flip swaps the layer
+ * without a remount", which is what keeps `CommandDeck`'s print path correct. 1.2 KB gzip is the
+ * price of that property. Not proposed.
+ *
+ * ── AND THE INVARIANT ABOVE IS CONDITIONAL, WHICH IT DID NOT SAY ─────────────────────
+ * "Every pixel of this backdrop is at or below the luminance of `--page-bg`" holds in dark
+ * because `tone(c) ≈ c` there, NOT because the vignette subtracts. The tone map costs 0 levels
+ * while the dark canvas stays at or below byte 57, 1 level from 58 and 2 from 86. Dark
+ * `--page-bg` is #090e1b, so the margin is 30 bytes on its lightest channel. Lighten the dark
+ * canvas past that and this layer begins darkening a canvas the vignette was told not to touch.
+ *
+ * The dark theme's own corridor: `--red` #e4687a is its weakest certified role at 6.017:1 and
+ * reaches 4.5:1 at a neutral byte of 41.7 against the canvas's 14.3 — TWENTY-SEVEN levels, not
+ * the 29 this header claimed. The layer spends none of them. It spends the 14 levels DOWNWARD
+ * to black, where nothing is borrowed from a contrast ratio.
  *
  * ── RESOLUTION IS DERIVED FROM THE SHARED BUFFER, NOT FROM THE VIEWPORT ──────────────
  * A viewport-sized surface on the shared renderer is not free, and the cost lands on OTHER
@@ -165,7 +257,10 @@ function computeCanvas(): { value: string | null; stable: boolean } {
   if (typeof document === 'undefined' || typeof getComputedStyle !== 'function') {
     return { value: null, stable: true };
   }
-  // Light: refused, and no token read is needed to know it. See the header for the corridor.
+  /* Light: refused, and no token read is needed to know it. NOT because of the corridor — the
+     composite tone maps the plate, so the light canvas leaves this pipeline as 213 214 217 at
+     ZERO vignette depth and takes `--green` under the 4.5:1 floor before any gradient exists.
+     There is no amplitude that is neither invisible nor a defect. Header, third table row. */
   if (!document.documentElement.classList.contains('dark')) return { value: null, stable: true };
   const raw = getComputedStyle(document.documentElement).getPropertyValue('--page-bg').trim();
   return /^\d{1,3}\s+\d{1,3}\s+\d{1,3}$/.test(raw)

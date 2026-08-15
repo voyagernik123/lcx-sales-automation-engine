@@ -446,7 +446,7 @@ and §4.2 is the part that moved.
 | E4 | `OntologyOrreryGl` | `pages/OntologyExplorer.tsx` | yes, default off | — | yes |
 | E5 | `SurfaceReliefGl` | `components/command/CockpitPanels.tsx` | yes, default off | — | yes |
 | E6 | `VaultReliefGl` | `pages/AuditLog.tsx` | yes, default off | — | yes |
-| E7 | `StormReliefGl` | `pages/MarketingCrisis.tsx` | yes, default off | **`OES_texture_float_linear`** (`env/volume.ts:325-327`) | yes |
+| E7 | `StormReliefGl` | `pages/MarketingCrisis.tsx` | yes, default off | **`OES_texture_float_linear`** (`env/volume.ts:389-391`) | yes |
 | E8 | `ForgeBackdrop` | `pages/SelectOperator.tsx:150-151` | **NO — unconditional** | — | **no** |
 
 Seven of eight are behind a toggle that `useState(false)` initialises and nothing persists
@@ -680,8 +680,8 @@ path is not the risk.
 
 Three failure modes that do not refuse, ranked by how invisible they are.
 
-1. **`EXT_color_buffer_float` missing → silent 8-bit rendering.** `stage.ts:169-172` sets
-   `fmt = float ? RGBA16F : RGBA8` and records the outcome as `stage.hdr` (`:134`, `:231`);
+1. **`EXT_color_buffer_float` missing → silent 8-bit rendering.** `stage.ts:292-295` sets
+   `fmt = float ? RGBA16F : RGBA8` (ternary at `:294`) and records the outcome as `stage.hdr`;
    `target3d.ts:66-70` and `dof.ts:152-153` follow it. Nothing refuses. The comment at
    `target3d.ts:66-69` is candid — *"then this runs in 8-bit and looks worse rather than pretending.
    A lit scene clips its specular highlight flat white in 8-bit."* The whole L2 premise (linear HDR
@@ -697,15 +697,20 @@ Three failure modes that do not refuse, ranked by how invisible they are.
    in HDR here. That narrows the risk to machines nobody has probed and **does not close it** — the
    defect was never "it will be 8-bit", it was "if it is 8-bit, nothing says so", and that is still
    true on every desk. The fix is unchanged and still worth making.
-2. **`OES_texture_float_linear` missing → E7 refuses cleanly.** `env/volume.ts:325-327` returns
+2. **`OES_texture_float_linear` missing → E7 refuses cleanly.** `env/volume.ts:389-391` returns
    `MISSING_EXTENSION` with a reason naming trilinear sampling of the density grid, because without
    it a float `sampler3D` falls back to `NEAREST` and the field renders as voxel blocks *that look
    like a deliberate aesthetic*. Correct handling, and the only one of the two float extensions that
-   gets it. (`env/particles.ts:373-375` does the same for `EXT_color_buffer_float`, but no relief
-   uses the particle path — it lives in the `docs/3d` harnesses.)
+   gets it. (`env/particles.ts:395-397` does the same for `EXT_color_buffer_float`, but no relief
+   uses the particle path — it lives in the `docs/3d` harnesses; **§4.7.5 now derives that
+   unreachability mechanically rather than asserting it.**)
    **Measured (§4.2.4): `OES_texture_float_linear` is PRESENT, so E7 does not refuse on this WebKit.**
    Its `R32F` `TEXTURE_3D` (`volume.ts:399`) also fits: `MAX_3D_TEXTURE_SIZE` is 2048 and the grid is
    built from `nx/ny/nz` floored at 2 (`:379-381`), orders of magnitude below the cap.
+   **Superseded in part by §4.7.2: "PRESENT" was necessary and not sufficient.** The extension being
+   in the list does not prove the sampler interpolates, which is the whole claim `volume.ts:383-391`
+   rests on. That is now measured — a 2×1×1 `R32F` `TEXTURE_3D` reads **128** at the midpoint between
+   texels holding 0 and 255, i.e. it genuinely filters linearly.
 3. **The quality ladder fails safe upward, which on an unknown WebView is the wrong direction.**
    `useQualityTier.ts:123-135` — `isSoftwareRasteriser` returns **true** when
    `WEBGL_debug_renderer_info` is unreadable, and the file's header explains the asymmetry: an
@@ -812,6 +817,168 @@ capability there"* but *"is the picture right, in a GL implementation nothing in
 ever measured a frame on"*. It can be done by anyone with the repo — it is **not** an owner-only
 step. It should happen **before** any release is cut, because the alternative is discovering it on an
 operator's machine, on the sign-in screen, in front of a Gatekeeper dialog (§5).
+
+### 4.7 · THE CAPABILITY SET, DERIVED FROM SOURCE AND MEASURED — **all seven surfaces render**
+
+> `scripts/webview-capability-probe.mjs`. Run: `node apps/desktop/scripts/webview-capability-probe.mjs`
+> (add `--json` for the machine-readable form). ~30 s. Exit 0 = every shipping surface clear,
+> 1 = a surface would refuse or degrade, 2 = the probe could not run.
+
+**The answer first: on this Mac, WKWebView clears every requirement the seven shipping surfaces
+have, and all seven would render. Nothing refuses and nothing silently degrades.** That is measured,
+not inferred, and the instrument was checked before the result was believed.
+
+#### 4.7.1 · Why a second probe, when §4.2.4 already ran one
+
+`webview-gl-probe.swift` answered the question it was built for and its answer stands. But its
+capability list is **hand-written**, and a hand-written list has exactly one failure mode: it cannot
+fail on the item nobody thought of. Checked against the source it is wrong in **both directions at
+once** —
+
+- **It probes what nothing needs.** `EXT_float_blend`, `EXT_texture_filter_anisotropic` and
+  `KHR_parallel_shader_compile` appear in **zero** `getExtension` calls in shipping source. Three of
+  its eight extension rows are about nothing.
+- **It misses what something needs.** It never queries `MAX_DRAW_BUFFERS`, though
+  `env/particles.ts:438` binds two colour attachments; never checks `RGBA32F` is renderable, though
+  `env/particles.ts:408` allocates one; and never checks that a `DEPTH_COMPONENT24` **texture**
+  completes a framebuffer, though `env/target3d.ts:81` and `:161` attach one on every surface that
+  casts a shadow or runs DoF.
+
+So the new probe carries no list. It reads the requirement set out of the source on each run —
+every `getExtension` call site, every internal format actually allocated, the widest
+`drawBuffers([...])` written — generates the probe from what it found, and runs that. When someone
+adds a `getExtension` call, this notices without being edited. Tests are excluded from the walk on
+purpose: `flat/sharedCost.test.ts:114` stubs `getExtension` to return `{}` for every name, so a walk
+that included them would derive requirements from mocks.
+
+#### 4.7.2 · The correction that matters: **presence is not behaviour**
+
+§4.4.2 records *"`OES_texture_float_linear` is PRESENT, so E7 does not refuse on this WebKit."* True,
+and **not sufficient**. `!!gl.getExtension(...)` proves a string is in a list. It does not prove a
+float `sampler3D` interpolates — which is the entire argument of `env/volume.ts:383-391`: without
+real linear filtering the density grid drops to `NEAREST` and renders as axis-aligned blocks *that
+look like a deliberate voxel aesthetic and would ship as one*. A probe reporting the extension
+present, on a stack where the filter silently degrades, produces precisely the false clearance that
+file exists to prevent.
+
+So it is now **measured**. A 2×1×1 `R32F` `TEXTURE_3D` holding `[0.0, 1.0]` — the exact allocation
+at `volume.ts:399` — is sampled at three points in one draw and the bytes read back:
+
+| sample | expectation | measured |
+|---|---|---|
+| `u=0.25` — texel 0 centre | ~0 | **0** |
+| `u=0.75` — texel 1 centre | ~255 | **255** |
+| `u=0.50` — exactly between | **~128 = LINEAR**, 0 or 255 = NEAREST | **128** |
+
+The two endpoints are not decoration, they are the instrument check: without them a failed texture
+upload reads zero everywhere, and zero at the midpoint is indistinguishable from `NEAREST` — the
+probe would report a real defect that was actually its own broken setup.
+
+#### 4.7.3 · The instrument, validated before the result was trusted
+
+Three controls, all of which must pass before any verdict is formed:
+
+- **Positive control** — draws a triangle and reads back a green pixel. A context, a clean extension
+  list and a linked program can all be present on a stack that never reaches the GPU process, and a
+  capability-only probe reports that as success. **Passed.**
+- **Negative control** — asks for `WEBGL_probe_negative_control_must_be_absent`, a name that cannot
+  exist. If it comes back present, `getExtension` is being stubbed or the bridge is lying and every
+  other row is worthless. **Reported absent, correctly.**
+- **Mutation test** — the one that makes the linear-filter row evidence rather than assertion. A copy
+  of the probe with `LINEAR` flipped to `NEAREST` on the 3-D texture was run: the midpoint moved
+  `128 → 255`, `r32f_3d_filters_linear` went to `NO`, Storm's verdict flipped `RENDERS → DEGRADES`,
+  and the exit code went `0 → 1`, **while the upload check stayed valid**. The test detects the
+  failure it claims to detect.
+
+#### 4.7.4 · The capability table, as measured
+
+Engine `WebGL 2.0` / `WebGL GLSL ES 3.00`; renderer `Apple GPU` (`Apple Inc.`).
+
+| requirement | source site | on missing | present |
+|---|---|---|---|
+| `EXT_color_buffer_float` | `stage.ts:292` | **degrades silently** (RGBA16F→RGBA8) | yes |
+| `EXT_color_buffer_float` | `env/particles.ts:395` | refuses | yes |
+| `OES_texture_float_linear` | `env/volume.ts:389` | refuses | yes |
+| `WEBGL_debug_renderer_info` | `useQualityTier.ts:125` | degrades silently | yes |
+| `WEBGL_lose_context` | `stage.ts:565` | degrades silently | yes |
+
+| limit | measured | needed |
+|---|---|---|
+| `MAX_TEXTURE_SIZE` | 16384 | — |
+| `MAX_3D_TEXTURE_SIZE` | 2048 | Storm's grid, floored at 2 per axis (`volume.ts:379-381`) |
+| `MAX_DRAW_BUFFERS` | 8 | **≥ 2** (widest `drawBuffers([...])` in source) |
+| `MAX_COLOR_ATTACHMENTS` | 8 | ≥ 2 |
+| `MAX_SAMPLES` | 4 | — |
+| `MAX_RENDERBUFFER_SIZE` | 16384 | — |
+| `MAX_TEXTURE_IMAGE_UNITS` | 16 | — |
+| `MAX_VERTEX_UNIFORM_VECTORS` | 1024 | — |
+
+| behaviour (measured, not queried) | site | result |
+|---|---|---|
+| RGBA16F renderable | `stage.ts:294`, `target3d.ts:69`, `dof.ts:152` | yes |
+| RGBA32F renderable | `particles.ts:408` | yes |
+| DEPTH24 **texture** completes FBO | `target3d.ts:81`, `:161` | yes |
+| 2 colour attachments complete | `particles.ts:437-438` | yes |
+| **R32F 3-D filters linearly** | `volume.ts:399` | **yes — midpoint 128** |
+
+#### 4.7.5 · Reachability, because a requirement nothing reaches is not a requirement
+
+The probe does not assume which surface needs what; it builds the map by symbol — every symbol each
+`packages/gl` module exports, against every symbol each `*Gl.tsx` surface imports from `@lcx/gl`.
+Two results fall out of the data rather than being asserted:
+
+- **`stage.ts:292` is reached by all seven**, and it **degrades silently**:
+  `fmt = float ? RGBA16F : RGBA8`. This is §4.4.1's defect, now derived rather than remembered, and
+  it remains the one worth fixing — not because the extension is missing here (it is present) but
+  because if it were missing, nothing would say so.
+- **`env/particles.ts` is reached by NO shipping surface.** It is exported from `index.ts:112` and it
+  raises a clean `MISSING_EXTENSION`, but its only importers are `docs/3d/e3/entry.ts:677` and a
+  test. Its `EXT_color_buffer_float` requirement and the `MAX_DRAW_BUFFERS ≥ 2` requirement are real
+  for `docs/3d/e3` and **irrelevant to the desktop app**. §4.4.2 already said this in prose; the
+  probe now derives it, so a future probe cannot report "a surface refuses" while naming a surface
+  that does not exist. This is the same shape as `621363d` (E7 shipping as code, unreachable as a
+  surface) and is why the check is mechanical.
+
+#### 4.7.6 · Verdict — the seven shipping surfaces
+
+`DeckReliefGl`, `OntologyOrreryGl`, `PipelineReliefGl`, `SurfaceReliefGl`, `VaultReliefGl`,
+`GlobeReliefGl`, `StormReliefGl` — **all seven: RENDERS.** None refuses, none silently degrades, on
+this machine's WebKit.
+
+`StormReliefGl` was the one at risk and it is clear on the measurement that matters: it reaches
+`volume.ts` alone among the seven, and the R32F 3-D linear path is not merely advertised but
+observed interpolating.
+
+#### 4.7.7 · What this does NOT establish
+
+- **The fleet.** This is one machine's WebKit (`current version 625.1.22`), and the engine is the
+  operator's OS, not shipped with the app (`tauri.conf.json` sets a macOS 11 floor). Every number
+  above describes the Mac that produced it. The fleet answer still needs the one-call `logDiagnostic`
+  change in §4.2.2.
+- **It is a PROXY, and here is exactly how it could differ.** The probe is a standalone `WKWebView`
+  in its own process, not the `WKWebView` inside a running `LCXOS.app`. **The proxy claim is
+  verified, not argued:** `otool -L` was run on both the probe binary *and* the real shipping binary
+  at `src-tauri/target/release/lcx-terminal`, and the two lines are identical —
+  `/System/Library/Frameworks/WebKit.framework/Versions/A/WebKit (compatibility version 1.0.0,
+  current version 625.1.22)`. Same framework, same version, system WebKit in both — not a bundled
+  engine and not Playwright's WebKit fork (the trap §4.2.3 names). `wry 0.55.1`
+  (`src-tauri/Cargo.lock:5201-5202`) sets no WebGL-related configuration key, so no repo-side switch
+  can make the app's answer differ. It remains a proxy in three ways: **(1)** one machine, one engine
+  version; **(2)** not under memory pressure — a real app with the full bundle resident can be
+  refused resources this empty page gets; **(3)** not the real shaders — it compiles a handful of
+  tiny programs, not `lit.ts`.
+- **A full Tauri build was deliberately NOT run, and the reason is not cost.** The toolchain is
+  present (`cargo 1.97.1`, `rustc 1.97.1`) and a build would be incremental — `src-tauri/target` is
+  already 5.9 GB with a release binary from Aug 11 — so the 515 crates in `Cargo.lock` are mostly
+  compiled and the build is feasible in minutes, not hours. It was not run because
+  `tauri.conf.json:9` sets `beforeBuildCommand: npm run build-gate -w @lcx/desktop`, which would
+  rewrite `apps/web/dist` — the directory `frontendDist` points at (`:10`) and which another process
+  depended on during this session. The capability question did not require it: a release build has
+  Tauri's `devtools` feature absent (§4.2.0), so reading the extension list from *inside* the running
+  app is precisely the thing that build would **not** buy.
+- **That the reliefs LOOK right.** Frame time, shadow bias, tone mapping and the anisotropic look are
+  untouched. It answers *"would the surface refuse"*, not *"is the picture right"*. **§4.6 still owns
+  that, and is still the step in front of a release.**
 
 ---
 
@@ -1183,7 +1350,13 @@ loudly obvious.
 ### Step 0 · Preflight — no key, no tag, nothing irreversible
 
 ```bash
-# 0a · does the WebView on THIS machine still give WebGL2 a context?  (~25 s)
+# 0a · can the WebView on THIS machine run all seven surfaces?  (§4.7 — ~30 s)
+#      Derives the requirement set from source, so it notices a new getExtension without being edited.
+#      Exit 0 = all seven clear · 1 = one would refuse/degrade · 2 = the probe could not run.
+node apps/desktop/scripts/webview-capability-probe.mjs
+
+# 0a-narrow · the older, faster context-only probe (§4.2.4). Superseded by 0a, kept because it needs
+#             no node and answers the single question "is there a context at all" in 25 s.
 swiftc -O -o /tmp/webview-gl-probe apps/desktop/scripts/webview-gl-probe.swift \
   -framework Cocoa -framework WebKit && /tmp/webview-gl-probe
 
@@ -1198,10 +1371,16 @@ npm run build -w @lcx/web          # only if you have not built since your last 
 node apps/desktop/scripts/inspect-frontend-dist.mjs
 ```
 
-`0a` should print `"webgl2":true` and `"drew_green":true`. If it prints `"webgl2":false`, **stop and
-read §4.3 before deciding anything**: the app will not break, it will show the flat views and a
-gradient sign-in screen, but the entire content of this release becomes invisible on that machine and
-the release is worth less than it looks.
+`0a` should end in **seven `RENDERS` rows** and exit 0. Read the three INSTRUMENT VALIDATION rows
+first — if any of them is `NO`, the table below them is not evidence and the run must be fixed before
+it is believed. **Exit 2 means the probe could not run** (no `swiftc`, or no logged-in GUI session):
+that is not a green light and not a red one, it is *no measurement* — do not infer the answer from
+documentation. A `REFUSES` or `DEGRADES` row names the surface, the source site and which of the two
+it is; **stop and read §4.3 and §4.7 before deciding anything**. The app will not break — it shows the
+flat views and a gradient sign-in screen — but the entire content of this release becomes invisible on
+that machine and the release is worth less than it looks.
+
+`0a-narrow` should print `"webgl2":true` and `"drew_green":true`. It is a strict subset of `0a`.
 
 `0c` is skipped by the gate on purpose (§9.1: `-chromium-darwin` baselines would fail a release build
 for a font difference), which is exactly why it belongs here instead.

@@ -38,7 +38,7 @@
 //   EXT_color_buffer_float        absent ⇒ the HDR path SILENTLY renders 8-bit and clips
 //                                 specular flat white, with nothing told to the reader
 //                                 (DELIVERY §4.4.1 — the front door is E8)
-//   OES_texture_float_linear      absent ⇒ E7 THE STORM refuses (env/volume.ts:325-327)
+//   OES_texture_float_linear      absent ⇒ E7 THE STORM refuses (env/volume.ts:389-391)
 //   WEBGL_debug_renderer_info     unreadable ⇒ `useQualityTier.ts:123` calls the machine a
 //                                 software rasteriser and pins the frame it ships with
 //   MAX_3D_TEXTURE_SIZE           E7 allocates an R32F TEXTURE_3D (volume.ts:399)

@@ -89,6 +89,63 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
 const OBSERVED_HEX = '#2C6BFF';
 const CORE_HEX = '#7FB2FF';
 const LINK_HEX = '#7FB2FF';
+/**
+ * ══ THE ABSENT RING IS DRAWN IN THE PALETTE'S `reference` HEX, AND THAT IS A COLLISION ══════════════
+ *
+ * Recorded rather than fixed, and recorded HERE because the next reader's instinct is to swap it for a
+ * grey and that is measurably worse. Full working: `docs/3d/w2/COLOUR_LANGUAGE.md` §9.3.
+ *
+ * WHAT IT ENCODES HERE. `magnitudeOf` maps `confidence: 'Low'` to `{ state: 'absent' }`, and this ring is
+ * the only thing that draws it. Four records in `apps/web/src/data/states.ts` carry that confidence, so
+ * this mark is on the frame — unlike the withheld drum, whose `restricted: true` arm nothing in the
+ * shipped ontology sets (`orreryLayout.ts` says so, and the only occurrences are in the test file). The
+ * claim it makes is ABSENCE: no measurement exists.
+ *
+ * WHAT THE PALETTE SAYS IT IS. `colour.ts` reserves `#FF8A3D` for "REFERENCE marks — percentiles,
+ * thresholds, targets. Deliberately not a data hue", and `categorical.ts` DERIVES the same answer from
+ * chroma: 70.5, well above the density ramp's floor of 40.2, so the partition files it as `annotation`.
+ * An absence mark has no hue to be read by; that is what makes it read as absence rather than as a value.
+ *
+ * AND WHAT THE PRODUCT ACTUALLY DOES WITH IT IS WORSE THAN "ANNOTATION". `StormReliefGl.tsx:350` and its
+ * flat twin `RiskCalendar.tsx:58` use this exact literal as the HIGH END OF THE RISK RAMP — the most
+ * severe MEASURED day. So one hex says "the largest value on the scale" two surfaces away and "there is
+ * no value" here, which is precisely the confusion §6 rule 6 exists to prevent, one level up from a
+ * single frame. `COLOUR_LANGUAGE.md` §4.1 refuses to retint that ramp, with a good argument — it is the
+ * one place a figure and its 3-D twin were deliberately made to agree — so the ramp is not the end that
+ * can move.
+ *
+ * WHY THIS END DOES NOT MOVE EITHER, AND IT IS A MEASUREMENT. The absence family has exactly ONE member
+ * — `refusal` #6B7A99 — and this surface has already spent it on the withheld drum. Measured on a lit
+ * sphere under this rig, `refusal` at ten exposures against `refusal` itself (p05, dark/light):
+ *
+ *   -1.8 stops #3a4355  11.09 / 13.98      0 stops #6b7a99   1.45 /  1.07
+ *   -1.2 stops #485268   7.60 / 10.22   +0.7 stops #8698be   6.73 /  6.49
+ *   -0.7 stops #55617a   4.14 /  5.94   +1.5 stops #adc4f4  15.60 / 14.64
+ *
+ * Nothing within 1.5 stops of `refusal` clears the floor against it. The two ends that do are a
+ * near-black and a colour lighter than every observed body — an absence mark parked at one end of the
+ * value scale, which is the failure rule 6 names in as many words. So a SEPARATED move needs a second
+ * absence entry in `colour.ts`: low-chroma, and ≥ 10 CIEDE2000 from `refusal` through a lit rig without
+ * being darker or lighter than the data.
+ *
+ * THE OTHER MOVE IS REAL AND IS NOT REFUSED, IT IS UNOWNED. `COLOUR_LANGUAGE.md` §7.2 proposes exactly
+ * this for E3 — its amber absent ring becomes `refusal`, and E3 keeps its two absences apart by SHAPE.
+ * E4 could take the same move: this file already distinguishes them by shape on purpose (`orreryLayout.ts`
+ * — "absent is a hollow ring and withheld is a sealed drum, and neither is a sphere"), and measured, a
+ * grey absent ring clears every governed pair on this surface once the core is a dielectric. The
+ * difference from E3 is what it costs: E3's two absences stay two different values, E4's would become the
+ * SAME value — absent against withheld falls from p05 32.82 to 1.45, so the ring and the drum would be
+ * one colour and the reader would have shape alone. That is a product decision, and it is not this file's
+ * alone to take, because of the caption below.
+ *
+ * TWO THINGS THAT KEEP IT SAFE INSIDE THIS FRAME, neither of which excuses the collision. This surface
+ * draws no reference or threshold mark at all — grep it: the only claim colours are the five above — so
+ * `#FF8A3D` is unambiguous WITHIN the frame. And the two absence states stay far apart here: absent
+ * against withheld measures p05 32.82 dark / 33.36 light, where two greys would measure 1.45.
+ *
+ * AND IT CANNOT MOVE ALONE: `OntologyOrrery.tsx:252` captions this mark to the reader as "amber ring",
+ * so the hex and that caption change in one commit or the surface starts lying about itself.
+ */
 const ABSENT_HEX = '#FF8A3D';
 const WITHHELD_HEX = '#6B7A99';
 /**
@@ -570,10 +627,68 @@ export default function OntologyOrreryGl({ input, onRefused, onReading }: Ontolo
             }
             : {
               mesh: meshOf('sphere'), model: scaledAt(b.pos, b.radius), normalMat: N3,
+              /*
+               * EVERY BODY IS A DIELECTRIC, AND THE CORE IS THE POLISHED ONE. Measured 2026-08-15;
+               * the whole curve is in `docs/3d/w2/COLOUR_LANGUAGE.md` §9.
+               *
+               * The core shipped at metalness 0.36, and metalness is not a look on a data mark — it is the
+               * fraction of the albedo REPLACED by a mirror of the sky. `lit.ts` says it outright ("metals
+               * have no diffuse lobe — the energy went into the specular"), so at 0.36 a third of the core's
+               * colour stopped being the datum and became the environment. The environment is the same for
+               * every body on the frame, so two marks whose colour is partly the same sky converge on it.
+               *
+               * HOW FAR THEY CONVERGED. The core (#7FB2FF, MEASURED) and the withheld drum (#6B7A99, NO
+               * MEASUREMENT EXISTS) are CIEDE2000 20.9 apart in the palette and arrived **7.21** apart in
+               * dark and **8.55** in light at the p05 fragment of a lit sphere under this file's own rig —
+               * under the categorical floor of 10, in BOTH themes. `packages/gl/src/look/categorical.ts`
+               * carries the invariant and why order preservation does not imply it.
+               *
+               * AND ROUGHNESS WAS NOT THE MECHANISM, which had to be measured rather than assumed because
+               * 0.22 is a fairly polished surface and looked like a co-defendant:
+               *
+               *   metalness 0.36 -> 0.08, roughness held at 0.22:  p05 7.21 -> 12.92 dark, 8.55 -> 12.76 light
+               *   roughness 0.10 -> 0.60, metalness held at 0.36:  p05 6.79 ->  8.40 dark, 7.78 -> 10.02 light
+               *
+               * The whole legal roughness range moves dark by 1.6 and never clears the floor. One metalness
+               * step of the same size moves it by 5.7. Turning the core matte would have changed the look and
+               * left the defect.
+               *
+               * THE CORE IS MORE DISTINGUISHED AFTER THIS, NOT LESS, and that is the part that is not
+               * intuition. The mirror was dragging the core toward the same washed sky the ordinary bodies
+               * sit in: core against OBSERVED rose from p05 9.55 to 13.70 in dark and 10.50 to 13.93 in
+               * light. What the core gives up is its difference from a LINK, which shares its hex — and a
+               * link is a 3.2 px tube nobody confuses with the largest sphere on the frame. What it keeps is
+               * the biggest specular on the frame: 0.48% of the mark within a tenth of clipping, against a
+               * link's 0.37% and an observed body's 0.00%. The mirror bought 0.85% there; a third of a
+               * percent of highlight is what this costs, and 5.7 CIEDE2000 is what it buys.
+               *
+               * ROUGHNESS 0.22 IS UNCHANGED, deliberately — but NOT because it maximises the highlight.
+               * This comment used to claim it was "the setting with the LARGEST highlight", citing 0.23% at
+               * roughness 0.14 and 0.00% at 0.42. Both of those figures are real and both are SMALLER, and
+               * quoting only the settings that lose is how a false claim reads as a measured one. The sweep
+               * derived the whole curve, and two settings beat 0.22 in both themes:
+               *
+               *     roughness   dark    light
+               *       0.22      0.48%   0.80%   ← kept
+               *       0.26      0.54%   0.85%   ← larger in BOTH
+               *       0.30      0.43%   0.88%   ← the light-theme maximum
+               *
+               * So 0.22 is second-largest in dark and third in light. The honest reason it stays is the
+               * first half of this paragraph and nothing more: it is the gloss the surface was authored
+               * with, and it was never the defect — the metalness was. Changing it to chase 0.06% of
+               * highlight area would be retuning an unrelated dial to justify a sentence.
+               *
+               * Recorded because the sweep's own table was on screen when the claim was written. A number
+               * selected from a table that contradicts it is worse than an unmeasured guess: it carries the
+               * authority of having been measured.
+               */
               material: {
                 baseColour: hexToLinear(b.isCore ? CORE_HEX : OBSERVED_HEX),
                 roughness: b.isCore ? 0.22 : 0.34,
-                metalness: b.isCore ? 0.36 : 0.08,
+                /* NOT A TERNARY ANY MORE. The core and an ordinary body are the same substance; the core is
+                   told apart by its hex, its size, its label and its polish, and every one of those is a
+                   statement about the datum rather than about the room it is standing in. */
+                metalness: 0.08,
               },
             };
         draws.push(d);
