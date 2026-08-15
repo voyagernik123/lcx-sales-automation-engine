@@ -99,7 +99,21 @@ async function launch() {
     } catch { /* not up yet */ }
   }
   if (!id) {
-    die('the app never presented a window in 60s. If macOS is asking for permission, grant it and re-run.');
+    /*
+     * DO NOT READ THIS AS "THE APP DREW NOTHING". The window query is unreliable on this host and
+     * that was established rather than assumed: with the app running, System Events reported 0
+     * windows for `lcx-terminal` AND 0 for Finder AND 0 for Claude, while correctly reporting 4 for
+     * Brave. An enumeration that misses two known-visible apps cannot convict a third.
+     *
+     * The capture path is separately blocked: `screencapture` returns "could not create image from
+     * display" because Screen Recording is not granted to this process. That is a macOS TCC grant,
+     * owner-only, and no amount of code here can work around it.
+     */
+    die('could not enumerate the app window on this host.\n'
+      + '  This is NOT evidence the app failed to render — the same query returns 0 for Finder and\n'
+      + '  Claude while returning 4 for Brave, so it is the instrument that is unreliable.\n'
+      + '  A visual capture additionally needs Screen Recording permission (System Settings ->\n'
+      + '  Privacy & Security -> Screen Recording) for the terminal running this script.');
   }
   const shot = join(OUT, 'desktop-app.png');
   execFileSync('screencapture', ['-x', '-o', `-l${id}`, shot]);
