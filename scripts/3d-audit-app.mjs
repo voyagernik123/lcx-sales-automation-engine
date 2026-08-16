@@ -117,6 +117,175 @@ const SKIP_THEME = process.env.APP_SWEEP_SKIP_THEME === '1';
 const CHROMA = ([r, g, b]) => Math.max(r, g, b) - Math.min(r, g, b);
 const HEX_RGB = (h) => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
 
+/*
+ * ══ WHY `CHROMA` ABOVE IS NOT CHROMA, AND WHY THE FLOOR BUILT ON IT WAS WRONG IN BOTH THEMES ══════════
+ *
+ * `max(r,g,b) - min(r,g,b)` is a span in 8-BIT sRGB CODE VALUES. sRGB is a gamma encoding, so the same
+ * physical difference occupies many more code values low on the curve than high on it. The statistic is
+ * therefore a function of how brightly the pixel is lit, and this sweep's two themes light everything at
+ * systematically different levels. Measured here, by running each palette colour through this repo's own
+ * composite (`albedo x gain -> toneMapComposite -> sRGB encode`) and reading the span back:
+ *
+ *     scenery colour        span at gain 1     first clears the floor of 60     peak span
+ *     dark  rule #26355A          50                  gain 1.55                 111 at gain 15.8
+ *     dark  structure #141F35     33                  gain 4.63                 109 at gain 45.3
+ *     dark  skyHorizon #131C31    30                  gain 5.82                 104 at gain 50.2
+ *     dark  plate #0E1628         26                  gain 8.28                 106 at gain 78.3
+ *     light rule #B9C6E0          39                  NEVER                      30 at gain 1.14
+ *     light structure #C3CEE0     29                  NEVER                      22 at gain 1.09
+ *     light ground #E8EDF6        14                  NEVER                      10 at gain 0.86
+ *     light plate #FFFFFF          0                  NEVER                       0
+ *
+ * The dark theme's rig is `ambientGain 1.15, keyGain 5.2`. So dark scenery clears the "data" floor as soon
+ * as it is LIT — `rule` needs a gain of 1.55 — while light scenery cannot clear it at ANY illumination,
+ * because a pale grey driven upward only goes whiter. The floor's stated premise is that "anything above it
+ * cannot be a scenery colour RENDERED FLAT", and nothing in any of these scenes is rendered flat.
+ *
+ * The consequence is not a rounding error, it is a bias with a direction: the DARK buffer over-counts data
+ * (lit scenery leaks in) and the LIGHT buffer under-counts it, so EVERY light-divided-by-dark chroma ratio
+ * this file has ever printed was measured with a ruler that is longer in one theme than the other.
+ *
+ * The replacement is below and it is the same question asked properly: not "is this pixel colourful enough
+ * to be a mark" but "WHICH AUTHORED COLOUR, LIT, WOULD RENDER AS THIS PIXEL". `CHROMA` is kept because the
+ * old columns are still printed beside the new ones — a reader has to be able to see what moved.
+ */
+
+/* ── CIE Lab and CIEDE2000, ported from `packages/gl/src/look/categorical.ts` ───────────────────────
+ * Ported rather than imported because those are TypeScript modules and this is a plain `.mjs` driver — the
+ * same reason the palette is parsed rather than imported. A second copy of a colour-difference formula is
+ * exactly the kind of thing that drifts silently, so it is VALIDATED at startup against the Sharma-Wu-Dalal
+ * test data PARSED OUT OF `categorical.test.ts`, not retyped here. If the parse finds fewer than twelve
+ * pairs, or any pair disagrees, this sweep refuses: an unvalidated ΔE would make every attribution below
+ * unfalsifiable. */
+const LAB_M = [
+  [0.4124564, 0.3575761, 0.1804375],
+  [0.2126729, 0.7151522, 0.0721750],
+  [0.0193339, 0.1191920, 0.9503041],
+];
+const LAB_W = [0.95047, 1.0, 1.08883];
+const SRGB_TO_LINEAR = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+const LINEAR_TO_SRGB = (c) => (c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055);
+const HEX_LINEAR = (h) => HEX_RGB(h).map((v) => SRGB_TO_LINEAR(v / 255));
+function labOf(c) {
+  const f = (v) => (v > 0.008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116);
+  const F = LAB_M.map((r, i) => f((r[0] * c[0] + r[1] * c[1] + r[2] * c[2]) / LAB_W[i]));
+  return [116 * F[1] - 16, 500 * (F[0] - F[1]), 200 * (F[1] - F[2])];
+}
+const CHROMA_LAB = (c) => { const [, a, b] = labOf(c); return Math.hypot(a, b); };
+function deltaE2000Lab(p, q) {
+  const [L1, a1, b1] = p, [L2, a2, b2] = q;
+  const C1 = Math.hypot(a1, b1), C2 = Math.hypot(a2, b2), Cbar = (C1 + C2) / 2;
+  const G = 0.5 * (1 - Math.sqrt(Math.pow(Cbar, 7) / (Math.pow(Cbar, 7) + Math.pow(25, 7))));
+  const A1 = (1 + G) * a1, A2 = (1 + G) * a2;
+  const Cp1 = Math.hypot(A1, b1), Cp2 = Math.hypot(A2, b2);
+  const ang = (x, y) => { if (x === 0 && y === 0) return 0; const d = Math.atan2(y, x) * 180 / Math.PI; return d < 0 ? d + 360 : d; };
+  const h1 = ang(A1, b1), h2 = ang(A2, b2);
+  const dL = L2 - L1, dC = Cp2 - Cp1;
+  let dh = 0;
+  if (Cp1 * Cp2 !== 0) { dh = h2 - h1; if (dh > 180) dh -= 360; else if (dh < -180) dh += 360; }
+  const dH = 2 * Math.sqrt(Cp1 * Cp2) * Math.sin(dh * Math.PI / 360);
+  const Lbar = (L1 + L2) / 2, Cpbar = (Cp1 + Cp2) / 2;
+  let hbar;
+  /* The mean hue is NOT (h1+h2)/2 when the pair straddles 0/360 — the classic error, and it lands on
+     exactly the blue-violet pairs this palette is made of. Mutating this line to the naive mean makes the
+     startup check report "the ported CIEDE2000 disagrees with 1 of 12 published pairs (worst: expected
+     4.3065, got 4.2194)" and refuse, which is how that check was shown to be capable of failing. */
+  if (Cp1 * Cp2 === 0) hbar = h1 + h2;
+  else if (Math.abs(h1 - h2) <= 180) hbar = (h1 + h2) / 2;
+  else hbar = h1 + h2 >= 360 ? (h1 + h2 - 360) / 2 : (h1 + h2 + 360) / 2;
+  const T = 1 - 0.17 * Math.cos((hbar - 30) * Math.PI / 180) + 0.24 * Math.cos(2 * hbar * Math.PI / 180)
+    + 0.32 * Math.cos((3 * hbar + 6) * Math.PI / 180) - 0.2 * Math.cos((4 * hbar - 63) * Math.PI / 180);
+  const dTheta = 30 * Math.exp(-Math.pow((hbar - 275) / 25, 2));
+  const RC = 2 * Math.sqrt(Math.pow(Cpbar, 7) / (Math.pow(Cpbar, 7) + Math.pow(25, 7)));
+  const SL = 1 + 0.015 * Math.pow(Lbar - 50, 2) / Math.sqrt(20 + Math.pow(Lbar - 50, 2));
+  const SC = 1 + 0.045 * Cpbar, SH = 1 + 0.015 * Cpbar * T;
+  const RT = -Math.sin(2 * dTheta * Math.PI / 180) * RC;
+  return Math.sqrt(Math.pow(dL / SL, 2) + Math.pow(dC / SC, 2) + Math.pow(dH / SH, 2) + RT * (dC / SC) * (dH / SH));
+}
+
+/** A number `export const NAME = <n>;` lifted out of a source file, so a retune there moves this sweep. */
+function constFromSource(rel, name) {
+  const src = readFileSync(join(ROOT, rel), 'utf8');
+  const m = new RegExp(`^export const ${name}(?::\\s*number)?\\s*=\\s*([0-9.]+);`, 'm').exec(src);
+  if (!m) refusePalette(`could not read \`${name}\` out of ${rel}`);
+  return Number(m[1]);
+}
+
+/** The published CIEDE2000 pairs, parsed out of the suite that already validates the TypeScript original. */
+function sharmaCases() {
+  const src = readFileSync(join(ROOT, 'packages/gl/src/look/categorical.test.ts'), 'utf8');
+  const rows = [...src.matchAll(/^\s*\[\[([-\d.,\s]+)\],\s*\[([-\d.,\s]+)\],\s*([\d.]+)\],\s*$/gm)]
+    .map((m) => [m[1].split(',').map(Number), m[2].split(',').map(Number), Number(m[3])])
+    .filter(([a, b]) => a.length === 3 && b.length === 3);
+  return rows;
+}
+
+function validateColourMaths() {
+  const cases = sharmaCases();
+  if (cases.length < 12) {
+    refusePalette(`only ${cases.length} CIEDE2000 test pairs parsed from categorical.test.ts, so the ported `
+      + 'colour-difference formula has not been checked against the published data');
+  }
+  const bad = cases.filter(([a, b, want]) => Math.abs(deltaE2000Lab(a, b) - want) > 1e-4);
+  if (bad.length > 0) {
+    refusePalette(`the ported CIEDE2000 disagrees with ${bad.length} of ${cases.length} published pairs `
+      + `(worst: expected ${bad[0][2]}, got ${deltaE2000Lab(bad[0][0], bad[0][1]).toFixed(4)})`);
+  }
+  /* A NEGATIVE CONTROL ON THE VALIDATOR ITSELF: a deliberately wrong formula — the classic naive hue mean —
+     must be REJECTED by the same twelve pairs, or "12 of 12 pass" says nothing about what the check can see. */
+  const naive = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+  const naiveBad = cases.filter(([a, b, want]) => Math.abs(naive(a, b) - want) > 1e-4);
+  return { cases: cases.length, rejects: naiveBad.length };
+}
+
+/*
+ * ══ THE EXPOSURE LOCUS — "which authored colour, LIT, would render as this pixel" ═════════════════════
+ *
+ * An authored albedo is a hex. A pixel is that albedo AFTER illumination, the tone curve and the sRGB
+ * encode. Comparing the two directly is the mistake `look/semantic.ts` spends a header on: "in a lit scene
+ * lightness is not available as a discriminator", because two albedos of the same hue at different
+ * lightnesses render at overlapping lightnesses depending only on where each sits relative to the key.
+ *
+ * So each reference colour is expanded into the SET of pixels it can produce — `albedo x gain` through
+ * `toneMapComposite` and the encode, over every gain the 8-bit output can distinguish. That is exactly
+ * `look/categorical.ts:pixelAt`, whose own header records that at gain 1 "it reproduces the GPU to the
+ * digit" against a SwiftShader framebuffer read. Matching a pixel to the nearest point of a locus asks the
+ * question with lightness factored out: what is left is CHROMA AND HUE AT MATCHED LIGHTNESS, which is the
+ * only thing that survives a lit scene.
+ *
+ * THE GAIN RANGE IS NOT BOUNDED BY THE THEME'S RIG, and that is deliberate. `ambientGain + keyGain` would
+ * be the illumination a flat-shaded surface can receive, but surfaces here do not respect it: E2 draws its
+ * markers at `MARKER_AMBIENT = 120` against a `BODY_AMBIENT` of 1.6 (`GlobeReliefGl.tsx:578-579`). A bound
+ * would push a legitimately over-exposed mark off the end of its own locus and misattribute it silently,
+ * which is the worse failure. The range therefore covers everything the encoder can express and stops
+ * where consecutive gains stop producing different bytes.
+ *
+ * WHAT THE MODEL DOES NOT COVER, quoting `categorical.ts` rather than discovering it later: the specular
+ * lobe, which pushes a fragment toward the LIGHT's colour rather than along its own albedo ray. A strong
+ * highlight is therefore attributed by whatever it desaturates toward, and on a light theme that is white —
+ * which lands under the achromatic ceiling below and is counted as scenery. A highlight is not a mark, so
+ * that is the right destination, but it is a property of the model and not a proof about the surface.
+ */
+function exposureLocus(hex, shoulder) {
+  const alb = HEX_LINEAR(hex);
+  const seen = new Set(); const pts = [];
+  for (let s = -14; s <= 14; s += 0.0625) {
+    const g = Math.pow(2, s);
+    const px = alb.map((v) => {
+      const lit = v * g;
+      return Math.round(Math.min(1, Math.max(0, LINEAR_TO_SRGB(lit / (1 + lit * shoulder)))) * 255);
+    });
+    const k = px.join(',');
+    if (seen.has(k)) continue;
+    seen.add(k);
+    pts.push(labOf(px.map((v) => SRGB_TO_LINEAR(v / 255))));
+  }
+  /* Sorted by L* so the in-page search can bracket by lightness instead of scanning every point. The curve
+     is monotone per channel, so it is monotone in L* and the sort is a formality that makes that explicit. */
+  pts.sort((a, b) => a[0] - b[0]);
+  return pts;
+}
+
 function derivePalette() {
   const themeSrc = readFileSync(join(ROOT, 'packages/gl/src/look/theme.ts'), 'utf8');
   const colourSrc = readFileSync(join(ROOT, 'packages/gl/src/look/colour.ts'), 'utf8');
@@ -169,12 +338,172 @@ function derivePalette() {
   const allScenery = [...scenery.dark, ...scenery.light, ...brand.filter((b) => sceneFields.has(b.key))];
   const maxSceneryChroma = Math.max(...allScenery.map((s) => CHROMA(HEX_RGB(s.hex))));
   const chromaFloor = maxSceneryChroma + 8;
+
+  /*
+   * ── THE NEW CLASSIFIER'S THREE DERIVED NUMBERS, none of them typed into this file ──────────────
+   *
+   *   shoulder            the live tone curve, read out of `look/tonemap.ts`, so a retune of the shoulder
+   *                       moves every exposure locus with it rather than leaving this file describing a
+   *                       curve the app no longer has.
+   *   categoricalFloor    `CATEGORICAL_FLOOR_DE2000`, read out of `look/categorical.ts`. That file owns the
+   *                       question "can a reader tell these two apart" and answers it at 10 ΔE2000; this
+   *                       file must not invent a second answer to the same question.
+   *   achromaticCeiling   the Lab chroma of `refusal`, exactly as `look/semantic.ts:211` defines it — "the
+   *                       chroma at or below which a colour has no hue to be distinguished by". A pixel
+   *                       under it cannot be attributed BY HUE at all, which is what the locus match does,
+   *                       so it is counted as scenery. That keeps this classifier's blind spot IDENTICAL to
+   *                       the old one's — `refusal` marks were already invisible to the chroma floor — and
+   *                       it is what removes the degeneracy at both ends of the tone curve, where every
+   *                       locus converges on black and on white and an attribution would be a coin flip.
+   */
+  /* Each theme's LIGHT RIG, parsed rather than assumed. `ambientGain + keyGain` is the most illumination a
+     diffuse surface can receive at N·L = 1, and it is the gain the second lit-scenery control below uses —
+     "as bright as this theme can make its own scenery" is a number the theme states and this file must not
+     invent. */
+  const rig = {};
+  for (const t of ['dark', 'light']) {
+    const m = new RegExp(`${t}: build\\('${t}', \\{ ambientGain: ([\\d.]+), keyGain: ([\\d.]+)`).exec(themeSrc);
+    if (!m) refusePalette(`could not read the ${t} theme's ambientGain/keyGain out of look/theme.ts`);
+    rig[t] = { ambientGain: Number(m[1]), keyGain: Number(m[2]) };
+  }
+  const shoulder = constFromSource('packages/gl/src/look/tonemap.ts', 'TONE_SHOULDER');
+  const categoricalFloor = constFromSource('packages/gl/src/look/categorical.ts', 'CATEGORICAL_FLOOR_DE2000');
+  const refusalEntry = data.find((d) => d.key === 'refusal');
+  if (!refusalEntry) refusePalette('no `refusal` entry in BRAND_HEX, so the achromatic ceiling cannot be derived');
+  const achromaticCeiling = CHROMA_LAB(HEX_LINEAR(refusalEntry.hex));
+
+  /*
+   * THE REFERENCE SET IS PER THEME, because scenery is per theme and data is not. Building one set out of
+   * both themes' scenery would put the dark theme's blue-greys into the light theme's reference list, where
+   * nothing draws them — and the abstention that produced would differ between the two captures, which is
+   * the one thing a light-versus-dark comparison cannot survive.
+   */
+  const loci = {};
+  for (const theme of ['dark', 'light']) {
+    loci[theme] = [
+      ...data.map((d) => ({ key: d.key, kind: 'data', hex: d.hex, pts: exposureLocus(d.hex, shoulder) })),
+      /* The theme's own `SceneTheme` values, plus the `BRAND_HEX` keys the scenery split already claimed
+         (`rule`, `plate`) so a surface still drawing the palette's literal scenery hexes is covered. */
+      ...scenery[theme].map((s) => ({ key: s.field, kind: 'scenery', hex: s.hex, pts: exposureLocus(s.hex, shoulder) })),
+      ...brand.filter((b) => sceneFields.has(b.key))
+        .map((b) => ({ key: `${b.key} (palette)`, kind: 'scenery', hex: b.hex, pts: exposureLocus(b.hex, shoulder) })),
+    ];
+  }
   return {
-    scenery, data, chromaFloor, maxSceneryChroma,
+    scenery, data, chromaFloor, maxSceneryChroma, brand, rig,
+    shoulder, categoricalFloor, achromaticCeiling, loci,
+    /*
+     * BEFORE ANY SURFACE: CAN THE PALETTE SEPARATE ITS OWN TWO POPULATIONS? Every scenery colour against
+     * its nearest data colour, in CIEDE2000. A pair under the categorical floor is a ceiling on what ANY
+     * classifier built on this palette can do, on every surface at once, and it belongs at the top of the
+     * report rather than inside a per-surface caveat.
+     */
+    paletteSeparability: Object.fromEntries(['dark', 'light'].map((t) => [t, scenery[t].map((s) => {
+      const lab = labOf(HEX_LINEAR(s.hex));
+      const near = data.map((d) => ({ key: d.key, hex: d.hex, dE: deltaE2000Lab(lab, labOf(HEX_LINEAR(d.hex))) }))
+        .sort((a, b) => a.dE - b.dE)[0];
+      return { field: s.field, hex: s.hex, nearest: near.key, nearestHex: near.hex, dE: near.dE, under: near.dE < categoricalFloor };
+    })])),
+    /* Every reference as its UNLIT hex, for the control that shows the exposure locus is load-bearing. */
+    unlit: Object.fromEntries(['dark', 'light'].map((t) => [t, [
+      ...data.map((d) => ({ key: d.key, kind: 'data', lab: labOf(HEX_LINEAR(d.hex)) })),
+      ...scenery[t].map((s) => ({ key: s.field, kind: 'scenery', lab: labOf(HEX_LINEAR(s.hex)) })),
+    ]])),
+    dataKeys: data.map((d) => d.key),
     dataVisible: data.filter((d) => CHROMA(HEX_RGB(d.hex)) >= chromaFloor),
     dataBlind: data.filter((d) => CHROMA(HEX_RGB(d.hex)) < chromaFloor),
+    /* The measurement that condemns the old floor, computed rather than quoted: the illumination gain at
+       which each scenery colour's 8-bit span first clears it. Printed in the generated report. */
+    floorCrossings: Object.fromEntries(['dark', 'light'].map((t) => [t, scenery[t].map((s) => {
+      const alb = HEX_LINEAR(s.hex);
+      let cross = null, peak = 0;
+      for (let e = -4; e <= 9; e += 0.01) {
+        const g = Math.pow(2, e);
+        const px = alb.map((v) => {
+          const lit = v * g;
+          return Math.round(Math.min(1, Math.max(0, LINEAR_TO_SRGB(lit / (1 + lit * shoulder)))) * 255);
+        });
+        const c = CHROMA(px);
+        if (cross === null && c >= chromaFloor) cross = g;
+        if (c > peak) peak = c;
+      }
+      return { field: s.field, hex: s.hex, flat: CHROMA(HEX_RGB(s.hex)), cross, peak };
+    })])),
   };
 }
+/*
+ * ══ THE PRECONDITION: CAN A COLOUR CLASSIFIER SPLIT THIS SURFACE AT ALL? ══════════════════════════════
+ *
+ * A classifier built on the palette can only separate two populations that the PALETTE separates. If a
+ * surface paints its scenery in a colour a reader cannot tell from a data colour, then no attribution of
+ * its pixels means anything, however good the metric — and saying so is the whole content of the E2
+ * caveat this pass was sent to close.
+ *
+ * That is checkable at source. Each renderer authors its materials as `hexToLinear('#RRGGBB')`. For every
+ * such hex that is NOT itself a palette entry, measure CIEDE2000 to the nearest palette DATA entry. Under
+ * `CATEGORICAL_FLOOR_DE2000` — the floor `look/categorical.ts` already owns for "can a reader tell these
+ * apart" — the surface is painting something indistinguishable from a mark, and its data:scenery verdict
+ * is WITHHELD rather than printed.
+ *
+ * The rule needs no judgement about what the mesh MEANS, which is the part a script cannot know: it rests
+ * only on `look/colour.ts`'s own statement that `BRAND_HEX` is "the only colours a surface may encode data
+ * in". A hex outside that table is not a data encoding by the palette's own rule, so a hex outside the
+ * table sitting inside the floor of one is an ambiguity whichever way the author intended it.
+ *
+ * WHAT THIS PARSE CANNOT SEE, stated because a matcher's blind spot is part of its reading:
+ *   · `scenery(th, '#hex', th.field)` — the per-theme helper five renderers use. Its dark literal is a
+ *     scenery colour by construction and its light arm is a `SceneTheme` field, so both ends are already
+ *     in the reference set; it is the shape this check least needs to see.
+ *   · a hex reached through a module constant (`hexToLinear(LINK_HEX)`), which is how E4 authors most of
+ *     its materials. Those are NOT covered, and a surface can therefore pass this precondition and still
+ *     paint an ambiguous colour.
+ *   · anything computed — `mixLinear`, a ramp, a status role.
+ * It is wrong only in the direction of missing an ambiguity, never of inventing one.
+ */
+const AUTHORED_HEX_RE = /hexToLinear\('(#[0-9A-Fa-f]{6})'\)/g;
+function authoredAlbedos(surfaces, palette) {
+  /* THE MATCHER'S OWN CONTROLS, for the reason `sourcesReadingTheClock` states: an empty parse and a clean
+     codebase produce the same report, so the pattern is proved on a string it must match and one it must
+     not before a single surface is read. */
+  const yes = "baseColour: hexToLinear('#0B2B5C'), roughness: 0.58";
+  const no = "baseColour: hexToLinear(EARTH_HEX), roughness: 0.58";
+  AUTHORED_HEX_RE.lastIndex = 0;
+  if (!AUTHORED_HEX_RE.test(yes) || (AUTHORED_HEX_RE.lastIndex = 0, AUTHORED_HEX_RE.test(no))) {
+    console.error('  REFUSED: the authored-albedo matcher failed its own controls, so a surface with no '
+      + 'ambiguous colour and a surface this matcher cannot read would report identically. Nothing written.');
+    process.exit(1);
+  }
+  const paletteHexes = new Set([...palette.data, ...palette.brand].map((p) => p.hex.toUpperCase()));
+  const out = new Map();
+  let anyHit = 0;
+  for (const s of surfaces) {
+    let src = '';
+    try { src = readFileSync(join(WEB, s.glFile), 'utf8'); } catch { /* reported as unread below */ }
+    const hexes = [...new Set([...src.matchAll(AUTHORED_HEX_RE)].map((m) => m[1].toUpperCase()))];
+    anyHit += hexes.length;
+    const rows = hexes.map((hex) => {
+      const lab = labOf(HEX_LINEAR(hex));
+      const near = palette.data
+        .map((d) => ({ key: d.key, hex: d.hex, dE: deltaE2000Lab(lab, labOf(HEX_LINEAR(d.hex))) }))
+        .sort((a, b) => a.dE - b.dE)[0];
+      return {
+        hex,
+        isPaletteEntry: paletteHexes.has(hex),
+        nearestDataKey: near.key,
+        nearestDataDE: near.dE,
+        ambiguous: !paletteHexes.has(hex) && near.dE < palette.categoricalFloor,
+      };
+    });
+    out.set(s.id, rows);
+  }
+  if (anyHit === 0) {
+    console.error('  REFUSED: not one authored albedo was parsed out of any renderer, so the separability '
+      + 'precondition below would pass every surface by finding nothing. Nothing written.');
+    process.exit(1);
+  }
+  return out;
+}
+
 function refusePalette(why) {
   console.error(`  REFUSED: the data/scenery taxonomy could not be derived from the source — ${why}.`);
   console.error('  A classifier built on an empty parse would call every pixel data and report a separation');
@@ -957,7 +1286,118 @@ const themeInit = (theme) => ({
  * Every number below is over the canvas's own drawing buffer, so the page's CSS background is NOT included.
  * The viewport capture beside it is where the surface is judged against the page it sits on.
  */
-const readPixelStats = (chromaFloor) => {
+const readPixelStats = (spec) => {
+  const { chromaFloor, loci, achromaticCeiling, categoricalFloor } = spec;
+  /*
+   * ── THE CLASSIFIER, RUN IN THE PAGE ────────────────────────────────────────────────────────────
+   * The formulae are inlined here rather than referenced, because this function is stringified and shipped
+   * into the browser: anything it closes over would arrive undefined. The loci themselves are precomputed
+   * in node and passed in as Lab points, so the browser never re-derives the palette.
+   */
+  const LAB_M = [
+    [0.4124564, 0.3575761, 0.1804375],
+    [0.2126729, 0.7151522, 0.0721750],
+    [0.0193339, 0.1191920, 0.9503041],
+  ];
+  const LAB_W = [0.95047, 1.0, 1.08883];
+  const s2l = (c) => (c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  const labOfByte = (r, g, b) => {
+    const c = [s2l(r / 255), s2l(g / 255), s2l(b / 255)];
+    const f = (v) => (v > 0.008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116);
+    const F = LAB_M.map((row, i) => f((row[0] * c[0] + row[1] * c[1] + row[2] * c[2]) / LAB_W[i]));
+    return [116 * F[1] - 16, 500 * (F[0] - F[1]), 200 * (F[1] - F[2])];
+  };
+  const dE = (p, q) => {
+    const L1 = p[0], a1 = p[1], b1 = p[2], L2 = q[0], a2 = q[1], b2 = q[2];
+    const C1 = Math.hypot(a1, b1), C2 = Math.hypot(a2, b2), Cbar = (C1 + C2) / 2;
+    const G = 0.5 * (1 - Math.sqrt(Math.pow(Cbar, 7) / (Math.pow(Cbar, 7) + Math.pow(25, 7))));
+    const A1 = (1 + G) * a1, A2 = (1 + G) * a2;
+    const Cp1 = Math.hypot(A1, b1), Cp2 = Math.hypot(A2, b2);
+    const ang = (x, y) => { if (x === 0 && y === 0) return 0; const d = Math.atan2(y, x) * 180 / Math.PI; return d < 0 ? d + 360 : d; };
+    const h1 = ang(A1, b1), h2 = ang(A2, b2);
+    const dL = L2 - L1, dC = Cp2 - Cp1;
+    let dh = 0;
+    if (Cp1 * Cp2 !== 0) { dh = h2 - h1; if (dh > 180) dh -= 360; else if (dh < -180) dh += 360; }
+    const dH = 2 * Math.sqrt(Cp1 * Cp2) * Math.sin(dh * Math.PI / 360);
+    const Lbar = (L1 + L2) / 2, Cpbar = (Cp1 + Cp2) / 2;
+    let hbar;
+    if (Cp1 * Cp2 === 0) hbar = h1 + h2;
+    else if (Math.abs(h1 - h2) <= 180) hbar = (h1 + h2) / 2;
+    else hbar = h1 + h2 >= 360 ? (h1 + h2 - 360) / 2 : (h1 + h2 + 360) / 2;
+    const T = 1 - 0.17 * Math.cos((hbar - 30) * Math.PI / 180) + 0.24 * Math.cos(2 * hbar * Math.PI / 180)
+      + 0.32 * Math.cos((3 * hbar + 6) * Math.PI / 180) - 0.2 * Math.cos((4 * hbar - 63) * Math.PI / 180);
+    const dTheta = 30 * Math.exp(-Math.pow((hbar - 275) / 25, 2));
+    const RC = 2 * Math.sqrt(Math.pow(Cpbar, 7) / (Math.pow(Cpbar, 7) + Math.pow(25, 7)));
+    const SL = 1 + 0.015 * Math.pow(Lbar - 50, 2) / Math.sqrt(20 + Math.pow(Lbar - 50, 2));
+    const SC = 1 + 0.045 * Cpbar, SH = 1 + 0.015 * Cpbar * T;
+    const RT = -Math.sin(2 * dTheta * Math.PI / 180) * RC;
+    return Math.sqrt(Math.pow(dL / SL, 2) + Math.pow(dC / SC, 2) + Math.pow(dH / SH, 2) + RT * (dC / SC) * (dH / SH));
+  };
+  /*
+   * ── NEAREST POINT ON A LOCUS, WITH A BOUND RATHER THAN A GUESS ──────────────────────────────────
+   *
+   * A locus is a few hundred Lab points and there are a dozen and a half of them, so scanning every point
+   * for every distinct colour is too slow to run on a 1.5-megapixel buffer. The first version of this
+   * bracketed by L* and scanned a FIXED WINDOW of 25 points either side. That was wrong, and it was caught
+   * by checking it against a full scan on 4000 random colours rather than by reasoning about it: the worst
+   * distance error was **25.2 ΔE2000** and **26 of the 4000 changed population**. A window is a guess.
+   *
+   * The prune below is a bound instead, and it is exact. CIEDE2000 is
+   *   ΔE² = (dL/SL)² + (dC/SC)² + (dH/SH)² + RT·(dC/SC)·(dH/SH),
+   * and |RT| ≤ 2, so x² + y² + z² + RT·y·z ≥ x² + (|y| − |z|)² ≥ x². Therefore ΔE ≥ |dL| / SL, and SL =
+   * 1 + 0.015(Lbar−50)²/√(20+(Lbar−50)²) is maximised at the ends of the range at 1.7476. So a locus point
+   * whose lightness differs by more than 1.7476 × (best found so far) CANNOT beat it, and the scan walks
+   * outward from the bracket and stops in each direction the moment that holds. Exhaustive in effect,
+   * bounded in cost, and `SL_MAX` is the only constant — derived, not tuned.
+   */
+  const SL_MAX = 1 + 0.015 * 2500 / Math.sqrt(20 + 2500);
+  const nearestOn = (pts, lab) => {
+    let lo = 0, hi = pts.length - 1;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (pts[m][0] < lab[0]) lo = m + 1; else hi = m; }
+    let best = Infinity;
+    for (let i = lo; i < pts.length; i += 1) {
+      if ((pts[i][0] - lab[0]) > SL_MAX * best) break;
+      const e = dE(lab, pts[i]);
+      if (e < best) best = e;
+    }
+    for (let i = lo - 1; i >= 0; i -= 1) {
+      if ((lab[0] - pts[i][0]) > SL_MAX * best) break;
+      const e = dE(lab, pts[i]);
+      if (e < best) best = e;
+    }
+    return best;
+  };
+  const cache = new Map();
+  const classify = (r, g, b) => {
+    const key = (r << 16) | (g << 8) | b;
+    const hit = cache.get(key);
+    if (hit !== undefined) return hit;
+    const lab = labOfByte(r, g, b);
+    const cab = Math.hypot(lab[1], lab[2]);
+    let res;
+    if (cab <= achromaticCeiling) {
+      /* No hue to attribute by. Counted as scenery — which is what the old floor did to `refusal` too. */
+      res = { data: false, key: 'below the achromatic ceiling', indecisive: false, cab };
+    } else {
+      let dData = Infinity, dScene = Infinity, kData = null, kScene = null;
+      for (const L of loci) {
+        const e = nearestOn(L.pts, lab);
+        if (L.kind === 'data') { if (e < dData) { dData = e; kData = L.key; } }
+        else if (e < dScene) { dScene = e; kScene = L.key; }
+      }
+      const isData = dData <= dScene;
+      res = {
+        data: isData,
+        key: isData ? kData : kScene,
+        /* Reported, not acted on: how often the losing population was within the categorical floor of the
+           winner. A split that is decisive nowhere is a split a reader should not be shown as two. */
+        indecisive: Math.abs(dData - dScene) < categoricalFloor,
+        cab,
+      };
+    }
+    cache.set(key, res);
+    return res;
+  };
   const out = [];
   for (const c of Array.from(document.querySelectorAll('canvas[data-audit-target="1"]'))) {
     const w = c.width, h = c.height;
@@ -992,6 +1432,15 @@ const readPixelStats = (chromaFloor) => {
     let sum = 0, alphaSum = 0, n = 0, chromaSum = 0;
     let dataN = 0, dataLuma = 0, sceneN = 0, sceneLuma = 0;
     let dataR = 0, dataG = 0, dataB = 0, sceneR = 0, sceneG = 0, sceneB = 0;
+    /* The OLD chroma-floor split, kept and reported beside the new one so a reader can see exactly what
+       changed on their surface rather than being told it changed. */
+    let oldDataN = 0, oldDataLuma = 0, oldSceneN = 0, oldSceneLuma = 0;
+    let oldDataR = 0, oldDataG = 0, oldDataB = 0, oldSceneR = 0, oldSceneG = 0, oldSceneB = 0;
+    let indecisiveN = 0;
+    const attribution = new Map();
+    /* Lab chroma of the DATA population only, histogrammed to 0.5 units, because "did the marks lose their
+       colour" is a question about the marks and the old statistic asked it of the whole buffer. */
+    const dataChromaHist = new Uint32Array(512);
     const seen = new Set();
     for (let i = 0, p = 0; i < d.length; i += 4, p += 1) {
       const r = d[i], g = d[i + 1], b = d[i + 2];
@@ -1004,7 +1453,16 @@ const readPixelStats = (chromaFloor) => {
       const ch = Math.max(r, g, b) - Math.min(r, g, b);
       chromaHist[ch] += 1; chromaSum += ch;
       if (ch >= chromaFloor) {
+        oldDataN += 1; oldDataLuma += y; oldDataR += r; oldDataG += g; oldDataB += b;
+      } else {
+        oldSceneN += 1; oldSceneLuma += y; oldSceneR += r; oldSceneG += g; oldSceneB += b;
+      }
+      const c = classify(r, g, b);
+      if (c.indecisive) indecisiveN += 1;
+      attribution.set(c.key, (attribution.get(c.key) ?? 0) + 1);
+      if (c.data) {
         dataN += 1; dataLuma += y; dataR += r; dataG += g; dataB += b;
+        dataChromaHist[Math.min(511, Math.round(c.cab * 2))] += 1;
       } else {
         sceneN += 1; sceneLuma += y; sceneR += r; sceneG += g; sceneB += b;
       }
@@ -1032,6 +1490,13 @@ const readPixelStats = (chromaFloor) => {
     };
     const dataMean = dataN > 0 ? [dataR / dataN, dataG / dataN, dataB / dataN] : null;
     const sceneMean = sceneN > 0 ? [sceneR / sceneN, sceneG / sceneN, sceneB / sceneN] : null;
+    const oldDataMean = oldDataN > 0 ? [oldDataR / oldDataN, oldDataG / oldDataN, oldDataB / oldDataN] : null;
+    const oldSceneMean = oldSceneN > 0 ? [oldSceneR / oldSceneN, oldSceneG / oldSceneN, oldSceneB / oldSceneN] : null;
+    const pctOfIn = (hh, q, total) => {
+      const want = Math.floor(q * total); let acc = 0;
+      for (let v = 0; v < hh.length; v += 1) { acc += hh[v]; if (acc > want) return v; }
+      return hh.length - 1;
+    };
     out.push({
       w, h, readable: true, pixels: n,
       meanLuma: mean, sdLuma: Math.sqrt(varSum / n),
@@ -1048,6 +1513,18 @@ const readPixelStats = (chromaFloor) => {
       sceneryMeanLuma: sceneN > 0 ? sceneLuma / sceneN : null,
       dataVsSceneryContrast: (dataMean && sceneMean)
         ? contrast(rel(...dataMean), rel(...sceneMean)) : null,
+      /* ── what the classifier attributed, and how confidently ── */
+      attribution: [...attribution].sort((a, b) => b[1] - a[1]).map(([k, c]) => [k, (c / n) * 100]),
+      indecisivePct: (indecisiveN / n) * 100,
+      /* The mark-colour statistic, moved onto the marks and into a perceptual space. */
+      dataChromaP999: dataN > 0 ? pctOfIn(dataChromaHist, 0.999, dataN) / 2 : null,
+      dataChromaMedian: dataN > 0 ? pctOfIn(dataChromaHist, 0.5, dataN) / 2 : null,
+      /* ── the OLD chroma-floor split, carried so the change is visible rather than asserted ── */
+      legacyDataPct: (oldDataN / n) * 100,
+      legacyDataMeanLuma: oldDataN > 0 ? oldDataLuma / oldDataN : null,
+      legacySceneryMeanLuma: oldSceneN > 0 ? oldSceneLuma / oldSceneN : null,
+      legacyContrast: (oldDataMean && oldSceneMean)
+        ? contrast(rel(...oldDataMean), rel(...oldSceneMean)) : null,
     });
   }
   return out;
@@ -2004,25 +2481,88 @@ async function validateInstrument(browser, palette) {
   /* Through `openPage` like everything else: the controls are drawn with the page's own 2-D context, and a
      control validated in a different environment from the surfaces validates nothing about them. */
   const page = await openPage(browser, { viewport: { width: 320, height: 240 } });
+  const paint = ({ pairs }) => {
+    for (const [id, a, b] of pairs) {
+      const c = document.createElement('canvas');
+      c.width = 64; c.height = 64; c.dataset.auditTarget = '1'; c.id = id;
+      const x = c.getContext('2d');
+      x.fillStyle = a; x.fillRect(0, 0, b === null ? 64 : 32, 64);
+      if (b !== null) { x.fillStyle = b; x.fillRect(32, 0, 32, 64); }
+      document.body.appendChild(c);
+    }
+    return true;
+  };
+  const clear = () => { for (const c of Array.from(document.querySelectorAll('canvas[data-audit-target="1"]'))) c.remove(); };
+  const spec = (theme) => ({
+    chromaFloor: palette.chromaFloor, loci: palette.loci[theme],
+    achromaticCeiling: palette.achromaticCeiling, categoricalFloor: palette.categoricalFloor,
+  });
+  const px = (hex, gain) => {
+    const lit = HEX_LINEAR(hex).map((v) => v * gain);
+    const b = lit.map((v) => Math.round(Math.min(1, Math.max(0, LINEAR_TO_SRGB(v / (1 + v * palette.shoulder)))) * 255));
+    return `#${b.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+  };
   try {
     const dataHex = palette.dataVisible[0].hex;
     const sceneHex = palette.scenery.light[0].hex;
-    const built = await page.evaluate(({ a, b }) => {
-      const mk = (id, paint) => {
-        const c = document.createElement('canvas');
-        c.width = 64; c.height = 64; c.dataset.auditTarget = '1'; c.id = id;
-        paint(c.getContext('2d'));
-        document.body.appendChild(c);
-      };
-      /* POSITIVE: half a data hue, half a scenery hue. Must read as ~50% data, two colours, non-zero sd. */
-      mk('ctl-split', (x) => { x.fillStyle = a; x.fillRect(0, 0, 32, 64); x.fillStyle = b; x.fillRect(32, 0, 32, 64); });
-      /* NEGATIVE: one scenery hue everywhere. Must read as zero sd, one colour, no data pixels — which is
-         exactly the "collapsed to near-uniform" shape, produced on purpose so it is known to be detectable. */
-      mk('ctl-flat', (x) => { x.fillStyle = b; x.fillRect(0, 0, 64, 64); });
-      return true;
-    }, { a: dataHex, b: sceneHex });
+    let built = await page.evaluate(paint, { pairs: [['ctl-split', dataHex, sceneHex], ['ctl-flat', sceneHex, null]] });
     if (!built) return { ok: false, why: 'controls could not be built' };
-    const [split, flat] = await page.evaluate(readPixelStats, palette.chromaFloor);
+    const [split, flat] = await page.evaluate(readPixelStats, spec('light'));
+
+    /*
+     * ── THE CONTROL THIS PASS ADDED, AND THE ONE THE OLD FLOOR FAILS ────────────────────────────
+     *
+     * The two controls above are the ones the chroma floor already passed, and it passed them because both
+     * patterns are painted FLAT — which is the one condition under which the floor's premise holds. Every
+     * pixel of every surface is painted LIT, and the floor was never tested on one.
+     *
+     * So: take the darkest theme's most saturated SCENERY colour, put it through this repo's own composite
+     * at an illumination gain the theme's own rig delivers, and paint the result. It is scenery. The gain is
+     * DERIVED — the first power of two at which that colour's 8-bit span clears the floor — so the control
+     * cannot be tuned to produce a pleasing answer, and if the palette is ever retuned so that no scenery
+     * colour clears the floor at any gain, `litGain` comes back null and the control says so instead of
+     * silently passing.
+     *
+     * It runs in BOTH directions on purpose: the new classifier must call it SCENERY and the old floor must
+     * call it DATA. If both agreed, this whole change would be unmotivated, and printing that they disagree
+     * is the closest thing to a mutation test an instrument can carry inside itself.
+     */
+    const worstScenery = palette.floorCrossings.dark
+      .filter((s) => s.cross !== null).sort((a, b) => a.cross - b.cross)[0] ?? null;
+    const litGain = worstScenery === null ? null : Math.pow(2, Math.ceil(Math.log2(worstScenery.cross)));
+    /*
+     * THE SECOND LIT CONTROL, AND THE ONE THAT MAKES THE EXPOSURE LOCUS LOAD-BEARING RATHER THAN DECORATIVE.
+     *
+     * The control above was run against a locus collapsed to gain 1 — i.e. against the UNLIT hexes — and it
+     * still passed, so it proves the metric and not the locus. This one is at the gain the dark theme's own
+     * rig can deliver, `ambientGain + keyGain` parsed from `look/theme.ts`, and at that illumination the
+     * nearest UNLIT palette hex to lit `rule` is `refusal` — a DATA entry. So an instrument that matched a
+     * pixel against unlit hexes would call the dark theme's own lit rule a data mark, and the locus is
+     * exactly what stops it. Both halves are asserted.
+     */
+    const rigGain = palette.rig.dark.ambientGain + palette.rig.dark.keyGain;
+    let lit = null, litData = null, rigLit = null, rigUnlit = null;
+    if (worstScenery !== null) {
+      await page.evaluate(clear);
+      const litSceneryHex = px(worstScenery.hex, litGain);
+      const litDataHex = px(palette.data.find((d) => d.key === 'brand')?.hex ?? dataHex, litGain);
+      const rigSceneryHex = px(worstScenery.hex, rigGain);
+      built = await page.evaluate(paint, {
+        pairs: [['ctl-lit', litSceneryHex, null], ['ctl-litdata', litDataHex, null], ['ctl-rig', rigSceneryHex, null]],
+      });
+      if (built) {
+        const got = await page.evaluate(readPixelStats, spec('dark'));
+        lit = { ...got[0], hex: litSceneryHex, from: worstScenery.hex, gain: litGain };
+        litData = { ...got[1], hex: litDataHex };
+        rigLit = { ...got[2], hex: rigSceneryHex, from: worstScenery.hex, gain: rigGain };
+        /* Node-side, and pure: what the SAME patch would be attributed to if the references were the unlit
+           hexes instead of their exposure loci. No browser needed — it is arithmetic on one colour. */
+        const lab = labOf(HEX_LINEAR(rigSceneryHex));
+        rigUnlit = palette.unlit.dark
+          .map((u) => ({ ...u, dE: deltaE2000Lab(lab, u.lab) })).sort((a, b) => a.dE - b.dE)[0];
+      }
+    }
+
     const checks = [
       ['positive control is readable', split?.readable === true],
       ['positive control reports two colours', split?.distinctColours === 2],
@@ -2032,8 +2572,16 @@ async function validateInstrument(browser, palette) {
       ['negative control reports ONE colour', flat?.distinctColours === 1],
       ['negative control has ZERO luminance spread', flat.sdLuma < 0.001],
       ['negative control finds no data pixels', flat.dataPct === 0],
+      ['a LIT scenery colour is available to test the floor on', lit !== null],
+      ['LIT scenery reads as scenery under the locus classifier', lit !== null && lit.dataPct === 0],
+      ['LIT scenery is what the OLD chroma floor called DATA — the defect, reproduced',
+        lit !== null && lit.legacyDataPct === 100],
+      ['LIT data still reads as data under the locus classifier', litData !== null && litData.dataPct === 100],
+      ['scenery lit by the theme\'s OWN RIG still reads as scenery', rigLit !== null && rigLit.dataPct === 0],
+      ['…and would read as DATA against unlit hexes, so the exposure locus is what fixes it',
+        rigUnlit !== null && rigUnlit.kind === 'data'],
     ];
-    return { ok: checks.every(([, v]) => v), checks, split, flat, dataHex, sceneHex };
+    return { ok: checks.every(([, v]) => v), checks, split, flat, lit, litData, rigLit, rigUnlit, dataHex, sceneHex };
   } finally { await page.close(); }
 }
 
@@ -2066,7 +2614,13 @@ async function captureTheme(browser, surface, theme, palette) {
       for (const c of globalThis.__lcxAudit.contexts.slice(from)) c.canvas.dataset.auditTarget = '1';
     }, got.preClick ?? 0);
 
-    const stats = await page.evaluate(readPixelStats, palette.chromaFloor);
+    const stats = await page.evaluate(readPixelStats, {
+      chromaFloor: palette.chromaFloor,
+      /* The reference set of the theme being captured — see `derivePalette`. */
+      loci: palette.loci[theme],
+      achromaticCeiling: palette.achromaticCeiling,
+      categoricalFloor: palette.categoricalFloor,
+    });
     mkdirSync(THEME_SHOTS, { recursive: true });
     const stem = `${surface.id.toLowerCase()}-${surface.name.toLowerCase()}-${theme}`;
     const shots = {};
@@ -2163,6 +2717,35 @@ async function themeRow(browser, surface, palette) {
     ? (row.markP999Ratio ?? row.markMaxRatio)
     : Math.min(row.markP999Ratio, row.markMaxRatio);
   row.contrastRatio = (ls.dataVsSceneryContrast ?? 0) / (ds.dataVsSceneryContrast ?? 1);
+  row.legacyContrastRatio = (ls.legacyContrast ?? 0) / (ds.legacyContrast ?? 1);
+  /*
+   * THE REPLACEMENT FOR `markRatio`, and the reason it is a replacement rather than an addition. The two
+   * ratios above are computed on `max(r,g,b) - min(r,g,b)` OVER THE WHOLE BUFFER. That quantity is a span
+   * in gamma-encoded code values, so it is inflated where a scene is dark and deflated where it is bright —
+   * see the measurement at the top of this file, where the dark theme's `rule` clears the data floor at an
+   * illumination gain of 1.55 and NO light scenery colour clears it at any gain at all. A light-over-dark
+   * ratio of that statistic is a ratio of two differently-calibrated numbers, and it is the ratio that
+   * raised the "the data marks lost their colour" finding on three surfaces.
+   *
+   * `dataChromaRatio` asks the same question of the right pixels in the right space: the Lab chroma of the
+   * pixels the classifier ATTRIBUTED TO A DATA ENTRY. It is still exposure-sensitive — a mark that renders
+   * paler on a white page really does have less chroma — but that is now the finding rather than an
+   * artefact of where the scene sits on the encode curve.
+   */
+  row.dataChromaRatio = (ds.dataChromaP999 ?? 0) > 0 ? (ls.dataChromaP999 ?? 0) / ds.dataChromaP999 : null;
+  row.dataShareRatio = ds.dataPct > 0 ? ls.dataPct / ds.dataPct : null;
+  /*
+   * WHICH PALETTE ENTRY EACH THEME'S MARKS WERE ATTRIBUTED TO. A mark that arrives as `refusal` is not a
+   * dimmer mark, it is a VALUE READING AS AN ABSENCE — `look/colour.ts` reserves that hue for "no
+   * measurement, never a low value" — so a surface whose data population is mostly `refusal` in light and
+   * was not in dark has broken rule 6, and no contrast ratio would say so.
+   */
+  const plurality = (s) => {
+    const rows = (s.attribution ?? []).filter(([k]) => palette.dataKeys.includes(k));
+    return rows.length > 0 ? rows[0][0] : null;
+  };
+  row.darkMarkEntry = plurality(ds);
+  row.lightMarkEntry = plurality(ls);
 
   /* THE FLAT-OUT COLLAPSE, which needs no comparison to be a failure. */
   if (ls.sdLuma < 1) {
@@ -2182,20 +2765,47 @@ async function themeRow(browser, surface, palette) {
       + 'which is the direction the light rig was retuned to prevent');
   }
 
+  /*
+   * ── THE PRECONDITION, TESTED BEFORE ANY VERDICT IS DRAWN ABOUT THE MARKS ─────────────────────
+   *
+   * If this surface paints a colour a reader cannot tell from a data colour, then splitting its buffer into
+   * "marks" and "room" is not a measurement of anything, and every number below it would be a number about
+   * the classifier rather than about the surface. So the verdict is WITHHELD, with the arithmetic that
+   * withheld it. This is the E2 caveat, computed instead of written.
+   */
+  row.ambiguousAlbedos = (palette.authored?.get(surface.id) ?? []).filter((a) => a.ambiguous);
+  if (row.ambiguousAlbedos.length > 0) {
+    row.verdictWithheld = 'NOT SEPARABLE BY COLOUR — this surface authors '
+      + row.ambiguousAlbedos.map((a) => `\`${a.hex}\`, which is **${a.nearestDataDE.toFixed(1)}** `
+        + `CIEDE2000 from the data colour \`${a.nearestDataKey}\` `
+        + `(${palette.data.find((d) => d.key === a.nearestDataKey)?.hex})`).join(', and ')
+      + `. The palette says \`BRAND_HEX\` is "the only colours a surface may encode data in", so these are `
+      + `not data encodings — yet they land inside the ${palette.categoricalFloor} ΔE2000 floor `
+      + '`look/categorical.ts` sets for "a reader cannot reliably tell them apart". No classifier built on '
+      + 'this palette can separate this surface\'s marks from its scenery, so its data:scenery contrast and '
+      + 'its data share are reported as measurements OF THE CLASSIFIER and no verdict is drawn from them';
+  }
+
   /* THE DATA MARKS, which is the question the luminance statistics cannot answer. */
-  if (row.markRatio !== null && row.markRatio < 0.6) {
-    row.problems.push('WORSE IN LIGHT — the data marks lost their colour: p99.9 chroma '
-      + `${ds.p999Chroma} → ${ls.p999Chroma} (${(row.markP999Ratio * 100).toFixed(0)}%) and the most `
-      + `saturated pixel anywhere in the buffer ${ds.maxChroma} → ${ls.maxChroma} `
-      + `(${(row.markMaxRatio * 100).toFixed(0)}%); the share above the derived data-chroma floor of `
-      + `${palette.chromaFloor} went ${ds.dataPct.toFixed(2)}% → ${ls.dataPct.toFixed(2)}%. Scenery may move `
-      + 'between themes; a DATA colour may not (`look/theme.ts`: "a theme may NOT tint a mark to suit its '
-      + 'background"), so a mark that desaturates on a white page is the taxonomy being broken downstream of '
-      + 'the palette rather than by it');
+  if (row.verdictWithheld) {
+    /* nothing below this line is decidable for this surface — see the withholding above */
   } else if (ls.dataPct === 0 && ds.dataPct > 0) {
-    row.problems.push(`WORSE IN LIGHT — ${ds.dataPct.toFixed(2)}% of the dark buffer clears the data-chroma `
-      + 'floor and **none** of the light buffer does, so the data marks are not separable from the scenery on '
+    row.problems.push(`WORSE IN LIGHT — ${ds.dataPct.toFixed(2)}% of the dark buffer is attributed to a data `
+      + 'colour and **none** of the light buffer is, so the data marks are not separable from the scenery on '
       + 'a white page');
+  } else if (row.dataChromaRatio !== null && row.dataChromaRatio < 0.6) {
+    row.problems.push('WORSE IN LIGHT — the data marks lost their colour: the p99.9 Lab chroma OF THE PIXELS '
+      + `ATTRIBUTED TO A DATA COLOUR went ${ds.dataChromaP999.toFixed(1)} → ${ls.dataChromaP999.toFixed(1)} `
+      + `(${(row.dataChromaRatio * 100).toFixed(0)}%), and the share of the buffer so attributed went `
+      + `${ds.dataPct.toFixed(2)}% → ${ls.dataPct.toFixed(2)}%. Scenery may move between themes; a DATA `
+      + 'colour may not (`look/theme.ts`: "a theme may NOT tint a mark to suit its background"), so a mark '
+      + 'that desaturates on a white page is the taxonomy being broken downstream of the palette rather '
+      + 'than by it');
+  } else if (row.lightMarkEntry === 'refusal' && row.darkMarkEntry !== null && row.darkMarkEntry !== 'refusal') {
+    row.problems.push('WORSE IN LIGHT — the marks arrive as the ABSENCE colour: the largest share of this '
+      + `surface's data pixels is attributed to \`${row.darkMarkEntry}\` in dark and to \`refusal\` in light. `
+      + '`look/colour.ts` reserves that hue for "no measurement", *never* a low value, so on a white page '
+      + 'this surface renders values in the colour the palette uses to say it has none');
   } else if (ls.dataVsSceneryContrast !== null && ds.dataVsSceneryContrast !== null
     && ls.dataVsSceneryContrast < 1.5 && ds.dataVsSceneryContrast >= 1.5) {
     row.problems.push(`WORSE IN LIGHT — data-to-scenery contrast fell from ${ds.dataVsSceneryContrast.toFixed(2)}:1 `
@@ -2209,20 +2819,17 @@ async function themeRow(browser, surface, palette) {
    * Reported here rather than left to a reader to notice that a row of dashes meant something.
    */
   if (ds.dataPct === 0 && ls.dataPct === 0) {
-    row.problems.push('NO DATA MARKS IN EITHER THEME — not one pixel of this surface\'s buffer clears the '
-      + `derived data-chroma floor of ${palette.chromaFloor} in dark (max chroma ${ds.maxChroma}) or light `
-      + `(${ls.maxChroma}), so the data:scenery contrast column is empty for both rows and the chroma ratios `
-      + 'are comparing two scenes whose most saturated content is already scenery-grade. Stated rather than '
-      + 'left as a row of dashes: this is not a light-theme finding, and it is not a pass either');
+    row.problems.push('NO DATA MARKS IN EITHER THEME — not one pixel of this surface\'s buffer is attributed '
+      + 'to a data colour in either theme, so the data:scenery contrast column is empty for both rows. Stated '
+      + 'rather than left as a row of dashes: this is not a light-theme finding, and it is not a pass either');
   }
 
   /*
    * A MEASURED LOSS THAT DOES NOT CLEAR THE FINDING BAR IS STILL A LOSS, and printing it as "holds up" is how
-   * a capture programme turns into a marketing exercise. E2 GlobeRelief keeps both populations legible —
-   * 6.97:1 and 2.93:1 are both well clear of 1.5:1 — while shedding 58% of the separation between them. The
-   * verdict column says so instead of rounding it to a pass.
+   * a capture programme turns into a marketing exercise. The verdict column says so instead of rounding it
+   * to a pass.
    */
-  if (!row.problems.some((p) => p.startsWith('WORSE IN LIGHT'))
+  if (!row.verdictWithheld && !row.problems.some((p) => p.startsWith('WORSE IN LIGHT'))
     && row.contrastRatio > 0 && row.contrastRatio < 0.6) {
     row.degraded = `data:scenery contrast fell from ${ds.dataVsSceneryContrast.toFixed(2)}:1 to `
       + `${ls.dataVsSceneryContrast.toFixed(2)}:1 (${(row.contrastRatio * 100).toFixed(0)}%) — both still read `
@@ -2239,7 +2846,22 @@ if (SURFACES.length === 0) {
 }
 
 /* Derived before the browser is launched: a palette that cannot be parsed should cost nothing to discover. */
+const COLOUR_MATHS = validateColourMaths();
 const PALETTE = derivePalette();
+PALETTE.authored = authoredAlbedos(SURFACES, PALETTE);
+console.log(`  CIEDE2000 checked against ${COLOUR_MATHS.cases} published Sharma-Wu-Dalal pairs parsed from `
+  + `look/categorical.test.ts — all reproduce; the naive Euclidean stand-in is rejected by `
+  + `${COLOUR_MATHS.rejects} of them, so the check can fail`);
+console.log(`  classifier: nearest exposure locus, CIEDE2000, shoulder ${PALETTE.shoulder}, achromatic `
+  + `ceiling ${PALETTE.achromaticCeiling.toFixed(1)} (refusal's own Lab chroma), categorical floor `
+  + `${PALETTE.categoricalFloor}`);
+for (const [id, rows] of PALETTE.authored) {
+  const amb = rows.filter((a) => a.ambiguous);
+  if (amb.length > 0) {
+    console.log(`  · ${id} authors ${amb.map((a) => `${a.hex} (ΔE2000 ${a.nearestDataDE.toFixed(1)} from `
+      + `${a.nearestDataKey})`).join(', ')} — NOT SEPARABLE BY COLOUR, its data:scenery verdict is withheld`);
+  }
+}
 
 /*
  * THE CLOCK, ANNOUNCED AND CHECKED BEFORE ANYTHING IS MEASURED. The fixture's region set is passed in
@@ -2333,8 +2955,8 @@ try {
   if (!SKIP_THEME) {
     instrument = await validateInstrument(browser, PALETTE);
     console.log(`\n  instrument: ${instrument.ok ? 'VALIDATED' : 'FAILED'}`
-      + ` — data hue ${instrument.dataHex}, scenery hue ${instrument.sceneHex},`
-      + ` chroma floor ${PALETTE.chromaFloor}`);
+      + ` — data hue ${instrument.dataHex}, scenery hue ${instrument.sceneHex};`
+      + ` lit-scenery control ${instrument.lit ? `${instrument.lit.from} at gain ${instrument.lit.gain} → ${instrument.lit.hex}` : 'UNAVAILABLE'}`);
     for (const [what, ok] of instrument.checks ?? []) console.log(`      ${ok ? '✓' : '✗'} ${what}`);
     if (!instrument.ok) {
       /* Refused here rather than reported later: every luminance number below would come off the same
@@ -2512,12 +3134,22 @@ the globe is an evenly lit ball. The surface passes because nothing was asked of
 uses is fixed by the geometric rule above, which was written before any of these numbers existed — and it
 is not the kindest of them.
 
-**The deeper reading, which the freeze makes reproducible without making it true.** The data/scenery
-classifier splits on chroma, and sunlit ocean is saturated blue: on this surface most of what lands in the
-DATA population is *lit earth*, not markers. So E2's contrast column moves with how much of the disc is in
-daylight — which is why it swings by a factor of four across one day and why its verdict follows. Freezing
-the clock makes that column repeatable. It does not make it a measurement of the marks, and **no verdict on
-E2 should be read as one** until the classifier can tell a pin from an ocean.
+**The four rows above are the OLD chroma-floor classifier's numbers**, kept as recorded history. Their
+instability across the day had a cause, and this pass found it and stopped printing a verdict off it.
+
+**Why E2's verdict followed the sun, settled rather than suspected.** The old classifier split on chroma,
+and lit ocean is a saturated blue, so most of what landed in E2's DATA population was *lit earth* rather
+than markers — which is why its contrast column swung by a factor of four across one simulated day. That
+was written down as a caveat. It is now a measurement: \`GlobeReliefGl.tsx:515\` paints the earth at
+\`#0B2B5C\`, which is **3.2 CIEDE2000 from the palette's \`brandDeep\`** and 4.6 from its \`rule\` — both
+far inside the ${PALETTE.categoricalFloor} ΔE2000 floor \`look/categorical.ts\` sets for "a reader cannot
+reliably tell them apart". The corridors at \`#4C86FF\` are 8.8 from \`brand\`, and the atmosphere shell at
+\`#7FB2FF\` **is** \`brandBright\`, exactly.
+
+So the answer to "can the classifier tell a pin from an ocean on this surface" is **no, and no classifier
+built on this palette can**, because the ocean is painted in a colour the palette also uses for data. The
+sweep now says that in the verdict column — E2's data:scenery verdict is **WITHHELD**, with those numbers —
+instead of printing a ratio and a caveat underneath it. See the precondition table further down.
 
 The figures BELOW are reproducible, and that is checkable rather than asserted:
 
@@ -2636,8 +3268,10 @@ function writeThemeReport() {
   const unreachableT = themeRows.filter((r) => r.byTheme.dark?.reach !== 'DRAWN' || r.byTheme.light?.reach !== 'DRAWN');
 
   mkdirSync(SHOTS, { recursive: true });
+  const withheld = themeRows.filter((r) => r.verdictWithheld);
   writeFileSync(THEME_OUT, `# THE THEME PASS — status: **${drawn.length} of ${themeRows.length} surfaces captured in both themes\
-${worse.length === 0 ? ', none measurably worse in light' : `, ${worse.length} measurably WORSE IN LIGHT`}**
+${worse.length === 0 ? ', none measurably worse in light' : `, ${worse.length} measurably WORSE IN LIGHT`}\
+${withheld.length === 0 ? '' : `, ${withheld.length} WITHHELD`}**
 
 <!-- GENERATED by scripts/3d-audit-app.mjs. Do not edit: run \`APP_SWEEP_THEME_ONLY=1 node scripts/3d-audit-app.mjs\`. -->
 
@@ -2718,6 +3352,28 @@ The negative control is as load-bearing as the positive one: \`sdLuma ≈ 0\` is
 raise, and an instrument that returns zero because its readback is broken raises it on **every** surface. Both
 patterns are built from the derived palette (\`${instrument.dataHex}\` against \`${instrument.sceneHex}\`), not
 from literals typed into the script.
+${instrument.lit === null || instrument.lit === undefined ? '' : `
+**The last four rows are new, and they are the ones the old chroma floor fails.** The two patterns above are
+painted FLAT, which is the one condition under which that floor's premise holds — and no pixel of any surface
+is painted flat. So a third control takes the dark theme's most easily-lit scenery colour (\`${instrument.lit.from}\`),
+puts it through this repo's own composite at illumination gain **${instrument.lit.gain}** — the first power of
+two at which its 8-bit span clears the floor, derived, not chosen — and paints the result \`${instrument.lit.hex}\`.
+It is scenery. The locus classifier reports it as **${instrument.lit.dataPct === 0 ? '0% data' : `${n2(instrument.lit.dataPct)}% data`}**;
+the old floor reports the identical patch as **${n2(instrument.lit.legacyDataPct)}% data**. A control that both
+classifiers passed would leave this change unmotivated, so the disagreement is printed rather than described.
+And the fourth row is the direction that must NOT move: \`brand\` at the same gain still reads
+**${n2(instrument.litData?.dataPct ?? 0)}% data**, so the new classifier has not simply stopped finding marks.
+
+**The last two rows are the ones that make the exposure locus load-bearing, and they exist because the four
+above it did not.** Collapsing the locus to gain 1 — matching pixels against the UNLIT hexes — and re-running,
+all four still passed: they prove the metric, not the locus. So the fifth control lights the same scenery
+colour at **${n2(instrument.rigLit?.gain, 2)}**, which is the dark theme's own \`ambientGain + keyGain\`
+parsed from \`look/theme.ts\` and therefore the brightest that theme can make a diffuse surface. The patch is
+\`${instrument.rigLit?.hex}\`, the locus classifier reads it as **${n2(instrument.rigLit?.dataPct ?? 0)}% data**,
+and the nearest UNLIT palette hex to it is **\`${instrument.rigUnlit?.key}\`** at ΔE2000
+${n2(instrument.rigUnlit?.dE, 1)} — a **${instrument.rigUnlit?.kind}** colour. An instrument that compared a
+lit pixel to an unlit hex would therefore call this theme's own lit rule a data mark.
+`}
 
 **Pixels are read in-page, not decoded from a PNG.** \`createStage\` sets \`preserveDrawingBuffer: true\`
 unconditionally (\`packages/gl/src/stage.ts:288\`), so the drawing buffer survives compositing and a
@@ -2732,10 +3388,107 @@ A hand-written list of hexes cannot fail on the colour nobody thought of. So the
 key is **scenery** if a \`SceneTheme\` field has the same name, and **data** otherwise:
 
 - **DATA** (never moves between themes): ${PALETTE.data.map((d) => `\`${d.key}\``).join(', ')}
-- most saturated scenery colour in either theme: **${PALETTE.maxSceneryChroma}**, so the chroma floor is **${PALETTE.chromaFloor}**
+- **SCENERY**, per theme: ${PALETTE.scenery.dark.map((s) => `\`${s.field}\``).join(', ')}
 
-**What the classifier cannot see, stated rather than left to be discovered:**
-${PALETTE.dataBlind.length === 0 ? '- nothing — every data colour clears the floor.' : PALETTE.dataBlind.map((d) => `- \`${d.key}\` (${d.hex}) has chroma ${CHROMA(HEX_RGB(d.hex))}, **below the floor**, so its pixels are counted as scenery. That is by design in the palette — it "reads as no measurement, never as a low value" — and it means a surface drawing only refusals would read as having no data marks.`).join('\n')}
+### The classifier was wrong, and the old floor is printed beside the new one so you can see it
+
+**What changed, in one sentence: the split no longer asks "is this pixel colourful enough to be a mark", it
+asks "WHICH AUTHORED COLOUR, LIT, WOULD RENDER AS THIS PIXEL".**
+
+Every edition of this file before this one split the buffer on \`max(r,g,b) - min(r,g,b) >= ${PALETTE.chromaFloor}\`,
+a floor derived as the most saturated scenery colour in either theme (**${PALETTE.maxSceneryChroma}**) plus a
+margin. Its stated premise was that "anything above it cannot be a scenery colour **rendered flat**". Nothing
+in any of these scenes is rendered flat, and the premise fails as soon as a scenery colour is lit — measured
+here on every scenery colour in the palette, by putting it through this repo's own composite
+(\`albedo × gain → toneMapComposite → sRGB encode\`) and reading the span back:
+
+| theme | scenery colour | span unlit | first clears the floor of ${PALETTE.chromaFloor} at illumination gain | peak span |
+|---|---|---|---|---|
+${['dark', 'light'].flatMap((t) => PALETTE.floorCrossings[t].map((s) => `| ${t} | \`${s.field}\` ${s.hex} | ${s.flat} | ${s.cross === null ? '**never**' : `**${s.cross.toFixed(2)}**`} | ${s.peak} |`)).join('\n')}
+
+The dark rig is \`ambientGain 1.15, keyGain 5.2\`; the light rig is \`0.62, 7.4\`. So **dark scenery clears the
+data floor as soon as it is lit**, and **light scenery cannot clear it at any illumination at all**, because a
+pale grey driven upward only goes whiter. That is not a rounding error, it is a bias with a direction: the
+dark buffer over-counts data and the light buffer under-counts it, so every light-over-dark chroma ratio this
+file has ever printed was measured with a ruler that is longer in one theme than the other.
+
+**The replacement.** Each palette entry is expanded into its **exposure locus** — the set of pixels that
+colour can produce, \`albedo × gain\` through \`toneMapComposite\` and the sRGB encode, over every gain the
+8-bit output can distinguish. That is \`look/categorical.ts:pixelAt\`, whose own header records that at gain 1
+it reproduces a SwiftShader framebuffer read to the digit. A pixel is attributed to the nearest locus in
+**CIEDE2000**, which factors lightness out and leaves chroma and hue at matched lightness — the only thing
+\`look/semantic.ts\` says survives a lit scene ("in a lit scene lightness is not available as a discriminator").
+
+Three numbers govern it and **none is typed into the sweep**:
+
+| number | value | read from |
+|---|---|---|
+| tone-curve shoulder | ${PALETTE.shoulder} | \`look/tonemap.ts\` \`TONE_SHOULDER\` |
+| categorical floor | ${PALETTE.categoricalFloor} ΔE2000 | \`look/categorical.ts\` \`CATEGORICAL_FLOOR_DE2000\` |
+| achromatic ceiling | ${PALETTE.achromaticCeiling.toFixed(1)} Lab chroma | \`refusal\` ${PALETTE.data.find((d) => d.key === 'refusal')?.hex}'s own chroma, as \`look/semantic.ts:211\` defines it |
+
+The CIEDE2000 implementation is a port, so it is checked at startup against **${COLOUR_MATHS.cases} published
+Sharma-Wu-Dalal pairs parsed out of \`categorical.test.ts\`** rather than retyped — all reproduce to four
+decimals, and a naive Euclidean stand-in is rejected by ${COLOUR_MATHS.rejects} of the same ${COLOUR_MATHS.cases},
+so the check is capable of failing. If the parse finds fewer than twelve pairs the sweep refuses outright.
+
+**The search over a locus is pruned, and the prune is a bound rather than a window.** Scanning every point
+of every locus for every distinct colour is too slow on a megapixel buffer, so the scan brackets by L* and
+walks outward. The first version stopped after a fixed 25-point window; checked against an exhaustive scan
+over 4000 random colours it was wrong by up to **25.2 ΔE2000** and **26 of the 4000 landed in the other
+population**. The version here stops only where it is provably safe: CIEDE2000 ≥ |ΔL| / S\\_L and S\\_L ≤
+1.7476, so a point further than 1.7476 × the best distance so far in lightness cannot win. Re-checked the
+same way, over 4000 colours in each theme's reference set: **worst distance error 0, zero disagreements**.
+The window version is what makes that a control rather than a formality — the check demonstrably fails on a
+search that is wrong.
+
+**What the classifier still cannot see, stated rather than left to be discovered:**
+- a pixel whose Lab chroma is at or below the achromatic ceiling **${PALETTE.achromaticCeiling.toFixed(1)}** has
+  no hue to be attributed by, and is counted as scenery. That keeps this classifier's blind spot identical to
+  the old floor's — \`refusal\` was already invisible to it — and it is what stops the attribution becoming a
+  coin flip at the two ends of the tone curve, where every locus converges on black and on white. A surface
+  drawing only refusals still reads as having no data marks.
+- the **specular lobe**. \`categorical.ts\` states the limit of its own model: a highlight pushes a fragment
+  toward the light's colour rather than along its albedo ray. Highlights therefore desaturate under the
+  ceiling and land in scenery. A highlight is not a mark, so that is the right destination — but it is a
+  property of the model, not a proof about the surface.
+- **anything a surface authors outside the palette.** That is what the precondition below is for.
+
+### Before any surface: can the PALETTE separate its own two populations?
+
+Every classifier below inherits this, so it is measured first. Each scenery colour against its nearest data
+colour, in CIEDE2000, against the ${PALETTE.categoricalFloor} the same package sets for "a reader cannot
+reliably tell them apart":
+
+| theme | scenery colour | nearest DATA colour | ΔE2000 | |
+|---|---|---|---|---|
+${['dark', 'light'].flatMap((t) => PALETTE.paletteSeparability[t].map((s) => `| ${t} | \`${s.field}\` ${s.hex} | \`${s.nearest}\` ${s.nearestHex} | ${s.dE.toFixed(1)} | ${s.under ? '**UNDER THE FLOOR**' : 'clear'} |`)).join('\n')}
+
+${PALETTE.paletteSeparability.dark.filter((s) => s.under).concat(PALETTE.paletteSeparability.light.filter((s) => s.under)).length === 0
+  ? '**Every pair clears the floor**, so the palette itself imposes no ceiling on the split.'
+  : `**${PALETTE.paletteSeparability.dark.filter((s) => s.under).map((s) => `the dark theme's \`${s.field}\` is ${s.dE.toFixed(1)} ΔE2000 from \`${s.nearest}\``).concat(PALETTE.paletteSeparability.light.filter((s) => s.under).map((s) => `the light theme's \`${s.field}\` is ${s.dE.toFixed(1)} from \`${s.nearest}\``)).join(', and ')}** — under the floor. That is a ceiling on every classifier this report could use, on every surface at once, and it is a fact about the palette rather than about any renderer. It is also the reason the \`indecisive %\` column below is never zero on a surface that draws that scenery colour: at matched lightness the two are a difference a reader is not expected to see. Note the asymmetry — the light theme's scenery clears the floor comfortably and the dark theme's does not, which is the opposite of the direction this programme has been looking.`}
+
+### Can a colour classifier split this surface at all? — the precondition
+
+A classifier built on the palette can only separate two populations that the palette separates. Every
+renderer's own \`hexToLinear('#RRGGBB')\` albedos are parsed and measured against the palette's data colours;
+a hex that is **not** a palette entry but sits inside the ${PALETTE.categoricalFloor} ΔE2000 floor of one is a
+colour a reader cannot tell from a mark, and that surface's data:scenery verdict is **withheld**.
+
+| surface | authored albedo | is a palette entry | nearest palette DATA colour | ΔE2000 | |
+|---|---|---|---|---|---|
+${[...PALETTE.authored].flatMap(([id, rows]) => rows.map((a) => `| **${id}** | \`${a.hex}\` | ${a.isPaletteEntry ? 'yes' : 'no'} | \`${a.nearestDataKey}\` | ${a.nearestDataDE.toFixed(1)} | ${a.ambiguous ? '**AMBIGUOUS — verdict withheld**' : (a.isPaletteEntry ? (a.nearestDataDE < PALETTE.categoricalFloor ? 'a palette entry, but inside the floor of a data colour — the palette-level pair above, not this surface\'s doing' : 'in the palette, so the classifier attributes it by definition') : 'outside the floor, so it cannot be mistaken for a mark')} |`)).join('\n')}
+
+A row that is a palette entry is attributed to that entry **whatever the mesh it is painted on**, and this
+parse cannot tell a mark from a shell. E2 is the worked case: its atmosphere is authored at
+\`#7FB2FF\`, which is \`brandBright\` exactly, so every pixel of that shell is counted as a data mark and no
+instrument reading colour alone could do otherwise. That is a second, independent reason E2's verdict is
+withheld, and the renderer already knows it — \`GlobeReliefGl.tsx:463\` says so in its own words.
+
+This parse reads only the literal \`hexToLinear('#…')\` form. It cannot see \`scenery(th, '#hex', th.field)\`
+— whose two ends are already in the reference set — nor a hex reached through a module constant, which is how
+E4 authors most of its materials. **It is wrong only in the direction of missing an ambiguity, never of
+inventing one**, and it refuses outright if it parses no albedo anywhere.
 
 ## Per-surface statistics
 
@@ -2744,15 +3497,53 @@ way the context-loss axis marks them, so the shared 2-D renderer and the signatu
 as the relief. The page's CSS background is therefore **not** in these numbers; the viewport capture is where
 the surface is judged against the page around it.
 
-| surface | theme | painted | mean luma | **sd luma** | p01→p99 | colours | **p99.9 chroma** | max chroma | data px % | data luma | scenery luma | data:scenery contrast |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| surface | theme | painted | mean luma | **sd luma** | p01→p99 | colours | encoded chroma p99.9 / max | **data px %** | data luma | scenery luma | **data:scenery contrast** | data Lab chroma p99.9 | indecisive % |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 ${themeRows.flatMap((r) => THEME_ORDER.map((theme) => {
   const b = r.byTheme[theme];
-  if (b?.reach !== 'DRAWN') return `| **${r.id}** ${r.name} | ${theme} | **${b?.reach ?? '—'}** | — | — | — | — | — | — | — | — | — | — |`;
+  if (b?.reach !== 'DRAWN') return `| **${r.id}** ${r.name} | ${theme} | **${b?.reach ?? '—'}** | — | — | — | — | — | — | — | — | — | — | — |`;
   const s = b.stats?.[0];
-  if (!s?.readable) return `| **${r.id}** ${r.name} | ${theme} | **unreadable** | — | — | — | — | — | — | — | — | — | — |`;
-  return `| **${r.id}** ${r.name} | ${theme} | yes | ${n2(s.meanLuma, 1)} | **${n2(s.sdLuma)}** | ${s.p01}→${s.p99} | ${s.distinctColours}${s.distinctColours >= 4096 ? '+' : ''} | **${s.p999Chroma}** | ${s.maxChroma} | ${n2(s.dataPct)} | ${n2(s.dataMeanLuma, 1)} | ${n2(s.sceneryMeanLuma, 1)} | ${s.dataVsSceneryContrast === null ? '—' : `${n2(s.dataVsSceneryContrast)}:1`} |`;
+  if (!s?.readable) return `| **${r.id}** ${r.name} | ${theme} | **unreadable** | — | — | — | — | — | — | — | — | — | — | — |`;
+  return `| **${r.id}** ${r.name} | ${theme} | yes | ${n2(s.meanLuma, 1)} | **${n2(s.sdLuma)}** | ${s.p01}→${s.p99} | ${s.distinctColours}${s.distinctColours >= 4096 ? '+' : ''} | ${s.p999Chroma} / ${s.maxChroma} | **${n2(s.dataPct)}** | ${n2(s.dataMeanLuma, 1)} | ${n2(s.sceneryMeanLuma, 1)} | **${s.dataVsSceneryContrast === null ? '—' : `${n2(s.dataVsSceneryContrast)}:1`}** | ${s.dataChromaP999 === null ? '—' : n2(s.dataChromaP999, 1)} | ${n2(s.indecisivePct)} |`;
 })).join('\n')}
+
+### The same eight surfaces under the OLD chroma floor, on the identical pixels
+
+Both classifiers are run over the same buffer in the same pass, so this is a before-and-after with no second
+capture between the two columns and nothing to reconcile:
+
+| surface | theme | data px % OLD → NEW | data:scenery contrast OLD → NEW | what the difference is |
+|---|---|---|---|---|
+${themeRows.flatMap((r) => THEME_ORDER.map((theme) => {
+  const s = r.byTheme[theme]?.stats?.[0];
+  if (!s?.readable) return null;
+  const dp = s.dataPct - s.legacyDataPct;
+  const oc = s.legacyContrast, nc = s.dataVsSceneryContrast;
+  const note = Math.abs(dp) < 0.05 && (oc === null || nc === null || Math.abs(nc - oc) < 0.05)
+    ? 'unchanged'
+    : (dp < -0.05 ? 'the old floor was counting lit scenery as marks' : (dp > 0.05 ? 'the old floor was missing marks' : 'the same share, different pixels'));
+  return `| **${r.id}** ${r.name} | ${theme} | ${n2(s.legacyDataPct)}% → **${n2(s.dataPct)}%** | ${oc === null ? '—' : `${n2(oc)}:1`} → **${nc === null ? '—' : `${n2(nc)}:1`}** | ${note} |`;
+})).filter(Boolean).join('\n')}
+
+### Which palette entry each surface's pixels were attributed to
+
+The column the old floor could not have: a share is not the same as an identity. A surface whose data
+population is mostly \`brandDeep\` is not drawing brand-blue marks, and a surface whose data population is
+mostly \`refusal\` is rendering values in the colour the palette reserves for having none.
+
+| surface | theme | attribution, largest first |
+|---|---|---|
+${themeRows.flatMap((r) => THEME_ORDER.map((theme) => {
+  const s = r.byTheme[theme]?.stats?.[0];
+  if (!s?.readable) return null;
+  const top = (s.attribution ?? []).slice(0, 5)
+    .map(([k, pct]) => `${PALETTE.dataKeys.includes(k) ? `**${k}**` : k} ${pct.toFixed(2)}%`).join(' · ');
+  return `| **${r.id}** ${r.name} | ${theme} | ${top} |`;
+})).filter(Boolean).join('\n')}
+
+Bold entries are DATA colours. \`below the achromatic ceiling\` is the abstention described above — a pixel
+with no hue to attribute by — and on every surface here it is most of the frame, which is what a room mostly
+made of near-neutral scenery should look like.
 
 **Two columns carry the verdict, and the second one is here because the first one lied.** \`sd luma\` is the
 collapse statistic: a scene that has gone near-uniform on a white page is the exact failure the light palette
@@ -2760,11 +3551,18 @@ was tuned to avoid. But **luminance spread is not information**. E6 VaultRelief 
 18.70 in light — a 743% "improvement" — while its 18 blue record marks *dissolved into a smooth white haze*
 that has a large luminance spread and carries nothing. A gradient is spread without a reading.
 
-\`p99.9 chroma\` is the correction, and it needs no threshold at all. Every scenery colour in both themes is a
-desaturated blue-grey and every data hue but \`refusal\` is not, so **the top of the chroma distribution is
-where the data marks live**. If it collapses between themes the marks went away, whatever the luminance did.
-p99.9 rather than the max so one stray antialiased pixel cannot stand in for a population of marks; the max is
-printed beside it so a reader can see if the two ever disagree.
+**\`encoded chroma p99.9 / max\` is printed and is no longer a verdict**, and that is a change from every
+earlier edition of this file. It is \`max(r,g,b) - min(r,g,b)\` over the whole buffer, which the table above
+shows is a function of how brightly the scene is lit and not only of what colour it is. It stays in the table
+because three of this programme's published findings were raised on it and a reader has to be able to follow
+the thread; it decides nothing here. **\`data Lab chroma p99.9\`** replaces it: the same question — did the
+marks lose their colour — asked of the pixels the classifier attributed to a data colour, in a perceptual
+space.
+
+**\`indecisive %\`** is the honesty column. It is the share of the buffer where the runner-up from the *other*
+population was within ${PALETTE.categoricalFloor} ΔE2000 of the winner, i.e. where the attribution came down
+to a difference a reader could not see. It is reported and not acted on: a surface with a high indecisive
+share has not failed, but its split should not be read as two clean populations.
 
 Read every column against the same surface's own dark row, never against a global floor: these surfaces draw
 wildly different amounts of geometry, so one threshold would pass a busy scene that lost half its contrast and
@@ -2779,22 +3577,29 @@ composited page clipped to the canvas box — so any DOM caption layered over th
 and **not** in the numbers. E1's dark heading plate is the visible case: it stays dark in the light capture
 because it is DOM, not geometry.
 
-| surface | light sd ÷ dark | light p01→p99 range ÷ dark | **light p99.9 chroma ÷ dark** | **light max chroma ÷ dark** | light data:scenery contrast ÷ dark | verdict |
-|---|---|---|---|---|---|---|
+| surface | light sd ÷ dark | light p01→p99 range ÷ dark | **light data Lab chroma ÷ dark** | light data share ÷ dark | **light data:scenery contrast ÷ dark** | the same contrast under the OLD floor | verdict |
+|---|---|---|---|---|---|---|---|
 ${themeRows.map((r) => {
-  if (r.sdRatio === undefined) return `| **${r.id}** ${r.name} | — | — | — | — | — | not comparable — see below |`;
+  if (r.sdRatio === undefined) return `| **${r.id}** ${r.name} | — | — | — | — | — | — | not comparable — see below |`;
   const w = r.problems.some((p) => p.startsWith('WORSE IN LIGHT'));
   const none = r.problems.some((p) => p.startsWith('NO DATA MARKS'));
   const pc = (v) => (v === null || v === undefined ? '—' : `${(v * 100).toFixed(0)}%`);
-  const verdict = w ? '**WORSE IN LIGHT**' : (r.degraded ? '**degraded**' : 'holds up');
-  return `| **${r.id}** ${r.name} | ${pc(r.sdRatio)} | ${pc(r.rangeRatio)} | ${pc(r.markP999Ratio)} | ${pc(r.markMaxRatio)} | ${pc(r.contrastRatio)} | ${verdict}${none ? ' · no data marks in either theme' : ''} |`;
+  /* A withheld data verdict does not silence the luminance axis, which does not use the classifier at all —
+     so a surface can be measurably flatter in light AND have no decidable verdict about its marks. */
+  const verdict = w
+    ? `**WORSE IN LIGHT**${r.verdictWithheld ? ' (luminance) · marks **WITHHELD**' : ''}`
+    : (r.verdictWithheld ? 'marks **WITHHELD**' : (r.degraded ? '**degraded**' : 'holds up'));
+  return `| **${r.id}** ${r.name} | ${pc(r.sdRatio)} | ${pc(r.rangeRatio)} | ${pc(r.dataChromaRatio)} | ${pc(r.dataShareRatio)} | ${pc(r.contrastRatio)} | ${pc(r.legacyContrastRatio)} | ${verdict}${none ? ' · no data marks in either theme' : ''} |`;
 }).join('\n')}
 
-**Both chroma ratios are printed because they fail on different shapes of mark, and the worse of the two
-decides.** p99.9 misses a SPARSE population: E6 VaultRelief draws 18 record marks over a large vault and they
-barely register at p99.9 even though the captures show them plainly — the maximum catches those. The maximum
-on its own would be fooled by a single stray antialiased pixel, which is why p99.9 stays. A surface has to
-hold both.
+**The last two ratio columns are the same question answered by the two classifiers**, on the same pixels.
+Where they disagree, the old one was splitting the buffer somewhere the lighting put the split rather than
+somewhere the palette did.
+${themeRows.filter((r) => r.verdictWithheld).length === 0 ? '' : `
+**Withheld, and why** — a verdict this instrument cannot support is not printed as one:
+
+${themeRows.filter((r) => r.verdictWithheld).map((r) => `- **${r.id} ${r.name}**: ${r.verdictWithheld}`).join('\n')}
+`}
 ${themeRows.filter((r) => r.degraded).length === 0 ? '' : `
 **Degraded, recorded and not raised** — a measured loss that did not clear the finding bar is still a loss,
 and printing it as "holds up" is how a capture programme becomes a marketing exercise:
@@ -2833,7 +3638,13 @@ the first time that refusal is tested against a white page.
 - **Real-hardware colour.** Every frame here is SwiftShader, and the tone map runs on the CPU rasteriser's
   output. Ordering survives (\`look/brandPixel.test.ts\` pins monotonicity per channel); exact hexes do not,
   and \`docs/3d/brand-fidelity.json\` already measures \`#2c6bff\` landing at \`#2c68dc\`.
-- **Anything about \`refusal\`-coloured marks**, which sit below the derived chroma floor by design.
+- **Anything about \`refusal\`-coloured marks at their authored lightness**, which sit at the achromatic
+  ceiling by design and are therefore counted as scenery. Lit hard enough they rise above it and are
+  attributed; at rest they are not. The palette wants that hue to read as "no measurement", and an
+  instrument that scored it as a value would be arguing with the palette.
+- **A surface whose scenery is painted in a data colour.** The precondition names those and withholds their
+  verdict; it does not repair them. The repair is in the surface, and it is to author scenery outside the
+  ${PALETTE.categoricalFloor} ΔE2000 neighbourhood of every \`BRAND_HEX\` data entry.
 - **The dark theme's own correctness.** Dark is used here as the positive control that makes a light reading
   believable. A surface can be equally wrong in both and this pass will not say so.
 ${worse.length === 0 ? '' : `

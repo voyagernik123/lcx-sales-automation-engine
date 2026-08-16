@@ -27,6 +27,47 @@
  * rounding quantising the perspective terms to zero; an opaque background hiding the entire render; centred
  * content putting two panels into the refusal branch; and a blur clamp doing the work of a scale.
  *
+ * ── THE DECISION ABOUT DATA MARKS, STATED SO IT STOPS BEING RE-DISCOVERED ────────────
+ * `docs/3d/FINAL_SCORECARD.md` §4 raises E1 as drawing NO DATA MARKS IN EITHER THEME: not one pixel of
+ * its drawing buffer clears the sweep's derived data-chroma floor of 60 — max chroma 31 dark, 32 light, and
+ * 31/29 at the exposure this file now ships — so its data-to-scenery contrast column is empty on both rows.
+ * That reading is CORRECT about the pixels it read and WRONG about the surface, in two separate ways, and
+ * both are decisions rather than defects.
+ *
+ * 1. THE SWEEP CAPTURES THIS DECK AT REST, AND AT REST IT ASSERTS NOTHING. `draw(panelsRef.current, null)`
+ *    is the mount state: nothing addressed, the lens off, the depth order the deck's own sequence. A deck
+ *    that is not being addressed has no reading to state, so it correctly carries no mark that states one.
+ *    The moment a panel IS addressed its slab takes `hexToLinear('#2C6BFF')` — see THE ADDRESSED PANEL
+ *    CARRIES BRAND BLUE in `draw` — and the geometry clears the floor by a wide margin. This is MEASURED
+ *    rather than argued: the theme sweep was re-run from a scratch copy with one line added, a click on the
+ *    first panel button before any pixel is read, and everything else byte-identical. Off the same drawing
+ *    buffer the scorecard reads:
+ *
+ *                          max chroma   data pixels   data : scenery   sd luma   p01→p99
+ *      dark,  at rest              31        0.00%    — no population    27.22    15→86
+ *      dark,  addressed           156        4.48%           2.02:1      28.01    17→90
+ *      light, at rest              29        0.00%    — no population    22.00   154→231
+ *      light, addressed           156        4.45%           3.66:1      30.93    94→231
+ *
+ *    2.6x the floor; the SAME 156 in both themes, so the one data mark this surface owns does not change
+ *    weight with the page; and a data-to-scenery contrast that is 181% of dark's in light. On the addressed
+ *    frame the sweep raises NOTHING about this surface and exits 0.
+ *
+ * 2. THE PANEL VALUES ARE DOM BY DESIGN, AND THAT PART IS PERMANENT. §6 rule 4 and the section above: the
+ *    heading and the count a reader actually reads are HTML nodes under a perspective transform, not baked
+ *    pixels. No instrument that reads a drawing buffer will ever score them, in this theme or any other,
+ *    and that is the price paid on purpose for selectable, searchable, translatable, screen-reader
+ *    addressable type. A future sweep that wants to score E1's reading has to read the DOM overlay.
+ *
+ * THE DECISION, THEN, IS BOTH HALVES AND NEITHER IS "ADD A MARK": E1's panel VALUES live in DOM by design
+ * and no chroma-based instrument will ever score them; E1's one geometric DATA mark is the addressed panel,
+ * it clears the floor by 2.6x in both themes, and the only reason the scorecard cannot see it is that the
+ * sweep photographs the deck at rest. A chroma verdict on the at-rest canvas is a verdict on the state in
+ * which this frame deliberately says nothing, over the half of the frame that deliberately carries no type.
+ * It is not a pass and it is not a failure — it is a measurement of the wrong frame. The fix, if the
+ * scorecard wants that column filled, is one click in `scripts/3d-audit-app.mjs` before it reads the
+ * pixels; it is NOT a mark added to this geometry, and nothing here should be changed to produce one.
+ *
  * ── THIS FILE IS ONLY EVER REACHED THROUGH A LAZY IMPORT ─────────────────────────────
  * `DeckRelief` imports it with `lazy()`, so neither it nor any of `@lcx/gl` lands in the initial bundle. The perf
  * budget measures RAW pre-gzip initial JS at 839/850 KB — 11 KB of headroom for the whole application — and the
@@ -43,7 +84,8 @@ import {
   createAmbientOcclusion, createDepthOfField, createSkyBackdrop,
   projectQuad, isQuadRefusal, uprightPanelCorners, projectScreen,
   viewProjection, eyeOf, nearFarOf, lightViewProjection, boundsCentre, boundsRadius,
-  hexToLinear, inverseToneMap, assertBrandFidelity, IDENTITY, TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
+  hexToLinear, inverseToneMap, toneMapComposite, luminance,
+  assertBrandFidelity, IDENTITY, TONE_MAP_GLSL, SRGB_ENCODE_GLSL,
   qualitySettings, shadowMapSizeFor, pickQualityTier,
   type LitDraw, type Viewpoint, type MeshBuffer, type Linear,
 } from '@lcx/gl';
@@ -287,20 +329,29 @@ const DECK_NDOTL = -LIGHT_DIR[1] / Math.hypot(LIGHT_DIR[0], LIGHT_DIR[1], LIGHT_
  *    One object still goes to the backdrop AND to the lit pass, so the drawn room and every reflection of it
  *    move together — the property the note in `draw` exists to protect.
  * 2. RE-SOLVE THE EXPOSURE. Step 1 raises the ambient this scene is lit by (the horizon by 1.40x, the zenith
- *    by 1.57x), which pushes the deck to rgb(240,244,251) — 8 levels ABOVE the ground colour it was authored
- *    with. `ForgeBackdrop.lightExposure` is the precedent and this is its criterion, unchanged: the exposure
- *    at which the ground leaves the pipeline AT ITS OWN ALBEDO. Solved, not picked.
+ *    by 1.57x), which pushes the deck to rgb(240,244,251). The exposure is re-solved against that, and the
+ *    CRITERION it is solved on is NOT `ForgeBackdrop`'s any more — see THE EXPOSURE below, which is where
+ *    the criterion, the arithmetic and the frame-level numbers live.
  *
  * ── THE INVERSE IS ALWAYS FINITE HERE, BY ARITHMETIC ────────────────────────────────
  * `inverseToneMap` is `y/(1-0.4y)` and its pole is at y = 2.5. Every stop above is `hexToLinear(...)`, whose
  * range is [0, 1], so the inverse is finite and at most 1/(1-0.4) = 1.6667 — which is `PRECOMP_CLIP`, the
  * largest value the curve can still move. There is no configuration of `SceneTheme` that reaches the pole.
  *
- * ── WHAT THIS DOES NOT FIX, WITH THE NUMBER ─────────────────────────────────────────
- * A ceiling remains and it is `theme.ts`'s, not this file's: with the sky at `#DCE5F3` and a slab at its own
- * `structure` albedo `#C3CEE0`, the best contrast those two hexes can produce is **1.251:1**. Dark reaches
- * 1.956 because `DEFAULT_SKY`'s horizon is not an albedo at all. The blocked change is recorded in this
- * work's return value; it is not E1's to make, because `structure` is shared by six renderers.
+ * ── WHAT THIS DOES NOT FIX, AND WHAT LATER DID ──────────────────────────────────────
+ * This section used to end by recording a CEILING: with the sky at `#DCE5F3` and a slab at its own
+ * `structure` albedo `#C3CEE0`, the best contrast those two hexes can produce is 1.2511:1, so the silhouette
+ * could not pass that while both rendered at what they were authored as. Dark reaches 1.9 because
+ * `DEFAULT_SKY`'s horizon is not an albedo at all. (Three passes have now sampled the dark top edge three
+ * slightly different ways and reported 1.922, 1.956 and 1.908; they are the same edge, and only the last of
+ * them is paired with a light number taken the same way — see BOTH NUMBERS below, and compare within a row.)
+ *
+ * THE PREMISE HELD AND THE CONCLUSION DID NOT, which is the same shape of error `look/tonemap.ts` records
+ * about itself. 1.2511:1 is the ceiling only while the SLAB IS FORCED TO RENDER AT ITS ALBEDO — and it was,
+ * because the exposure solve pinned the deck to `ground` and every other lit surface followed the same
+ * exposure. Change the criterion the exposure is solved on and the ceiling goes with it: see THE EXPOSURE
+ * below, which lands the worst top-edge silhouette well past a number this paragraph called impossible.
+ * What is still not E1's to change is `theme.ts` itself — `structure` is shared by six renderers.
  */
 /*
  * ── STEP 1 MOVED TO theme.ts, AND LEAVING IT HERE TOO DESTROYED THE GRADIENT ────────
@@ -325,30 +376,133 @@ const LIGHT_SKY = Object.freeze({
 });
 
 /**
- * THE EXPOSURE AT WHICH THE DECK LEAVES THE PIPELINE AT THE COLOUR IT WAS AUTHORED WITH.
+ * ══ THE EXPOSURE — AND ITS CRITERION IS NO LONGER `ForgeBackdrop`'s, BECAUSE E8's DEFECT IS NOT E1's ══
  *
- * `ForgeBackdrop.lightExposure`'s derivation, on E1's deck under E1's rig: the deck is Lambertian
- * (metalness 0) and its normal is the up axis, so its radiance is `albedo · (key·N·L/π + sky(up)·ambient)`,
- * and the radiance that tone-maps and encodes back to `albedo` is `inverseToneMap(albedo)`. Divide, take the
- * binding channel so no channel renders brighter than authored.
+ * ── WHAT THE ALBEDO CRITERION DID HERE, MEASURED RATHER THAN ASSUMED ────────────────
+ * `ForgeBackdrop.lightExposure` solves for the exposure at which the ground leaves the pipeline AT ITS OWN
+ * ALBEDO, and E8 needed exactly that: 44.67% of its floor was clipping to white and the solve took it back.
+ * This file copied the criterion and on E1 it does something else entirely. NOTHING HERE CLIPS — 0.00% of
+ * pixels at every exposure tried, at the shipped one included — so the criterion is not recovering a loss.
+ * It is PINNING the largest surface in the frame to a fixed value at the top of the encode. Read off this
+ * file's own populations, on the shipped drawing buffer, at rest:
+ *
+ *                          authored     rendered            frame luma
+ *   sky, at the horizon    #DCE5F3      rgb(220,229,243)    228.1        pre-compensated, exact
+ *   deck                   #E8EDF6      rgb(231,236,243)    235.4        the albedo solve, exact
+ *   slab faces             #C3CEE0      rgb(181,193,211)…   190.7…208.8  within 14 levels of their albedo
+ *
+ * Every surface in the light frame renders at the colour it was authored as. That is not a lit room; it is
+ * a palette swatch under a perspective. And the two LARGEST areas of the frame — the deck and the sky — are
+ * then 7.4 luma apart, because those are the two hexes `theme.ts` picked. The ceiling is arithmetic and it
+ * has nothing to do with lighting: `#DCE5F3` against `#E8EDF6` is **1.0804:1**, and no renderer downstream
+ * of two authored hexes can beat the contrast between them.
+ *
+ * DARK IS THE PROOF THIS IS A DEFECT AND NOT SIMPLY "LIGHT IS BRIGHT". Dark takes `DEFAULT_SKY` and no
+ * exposure solve at all, so its deck renders at 2.5x its own albedo under a sky brighter again: deck
+ * rgb(27,28,32) luma 28.1 under a sky at luma 85.3, a **2.308:1** step. In dark the horizon is a line you can
+ * see; in light it is 1.069:1, which is no line at all. That single collapse is most of the flattening the
+ * sweep reports — luminance sd 27.22 dark against 11.50 light, p01→p99 71 against 47.
+ *
+ * ── ONE OTHER MECHANISM WAS TRIED FIRST AND MEASURED WORSE ──────────────────────────
+ * `theme.ts` authors the light sky with the ZENITH brighter than the horizon (an outdoor gradient), where
+ * both `DEFAULT_SKY` and `ForgeBackdrop`'s own light studio sky put the HORIZON brighter (an interior with
+ * a horizon lift). So the obvious move is to restore the lift here. Measured: sd 11.97 → 10.40, WORSE, and
+ * panel-to-deck contrast collapses 1.325 → 1.130. A slab's normal is horizontal, so a slab samples the
+ * HORIZON stop for its ambient while the deck samples the ZENITH — lifting the horizon lights the panels
+ * and not the floor, which is the wrong way round. Rejected on the measurement, not on taste.
+ *
+ * ── THE CRITERION THIS FILE SOLVES ON INSTEAD, AND WHERE ITS NUMBER COMES FROM ──────
+ * The deck and the sky are two SCENERY populations that meet along the horizon, and `theme.ts` already
+ * states how far apart two scenery roles have to be to read as two things: `ground` #E8EDF6 against
+ * `structure` #C3CEE0 — the pair this frame puts in contact on every slab — is **1.3516:1**. That is the
+ * light palette's own unit of scenery separation. It is DERIVED from `theme.ts` on every load rather than
+ * typed here, so a repaint of the palette moves it, and it is what the deck-to-sky step is solved to.
+ *
+ * The solve stays CLOSED FORM — no search — because `inverseToneMap` is the exact inverse of the curve. A
+ * deck asked to render at `ground × s` renders at the linear value `ground × s`, and WCAG relative
+ * luminance IS the linear-light weighted sum, so `s` falls straight out of the contrast equation:
+ *
+ *     L_sky  = luminance(toneMapComposite(skyHorizon))   0.777253   the sky as it actually renders
+ *     L_deck = (L_sky + 0.05) / 1.351621 − 0.05          0.562045   the far side of one scenery step
+ *     s      = L_deck / luminance(ground)                0.666104   → the deck renders #C2C6CE
+ *
+ * The deck therefore no longer renders at its albedo, and that is the point: `ground` is a REFLECTANCE, not
+ * a display colour. Nothing in `theme.ts` says a floor must reflect exactly its own albedo back — dark's
+ * floor reflects 2.5x its albedo and always has. What `Albedo` fixes is the material; what this solves is
+ * the light falling on it.
+ *
+ * ── BOTH NUMBERS, BEFORE AND AFTER, SO A TRADE WOULD BE VISIBLE RATHER THAN HIDDEN ──
+ * The risk in touching this was buying the spread back by undoing the silhouette work above. It is not a
+ * trade, and the reason is structural: the sky is written at an ABSOLUTE radiance and the exposure multiplies
+ * only what is LIT, so lowering the exposure moves the deck and the slabs down while the sky stays exactly
+ * where step 1 put it. Both numbers move the same way. A/B'd by setting `GROUND_SCALE` to 1 and running the
+ * theme sweep twice on one machine — the "before" column reproduces `docs/3d/FINAL_SCORECARD.md`'s committed
+ * light row to the digit, which is what makes the "after" column a measurement rather than a claim:
+ *
+ *                                     dark      light before    light after
+ *   luminance sd                     27.22           11.50           22.00
+ *   p01→p99                          15→86         189→236         154→231
+ *   p01→p99 range                       71              47              77
+ *   mean luma                         51.5           228.3           205.3
+ *   worst top-edge silhouette        1.908           1.192           1.766
+ *   deck : sky                       2.308           1.069           1.364
+ *   panel face : deck                1.131           1.325           1.354
+ *   pixels at pure white            0.0311%         0.0000%         0.0000%
+ *   the sweep's own verdict             —      WORSE IN LIGHT     holds up
+ *
+ * sd, p01, p99 and the mean are the sweep's; the last five rows are read off the same two capture PNGs by
+ * segmenting them with a CPU raycast of this file's own camera and geometry, so the populations compared are
+ * the ones a reader's eye lands on rather than a whole-frame average. That segmentation is checked by the
+ * one row it can be checked on: it recovers the previously recorded light silhouette of 1.192:1 exactly.
+ *
+ * DARK DOES NOT MOVE, and it is checked at the pixel rather than argued: the two sweep runs above wrote
+ * BYTE-IDENTICAL dark canvas captures, md5 `e0eb0b4290bea656697623b197cba079` both times, and every dark
+ * statistic in the report is unchanged to the last digit. That is by construction — `GROUND_SCALE`,
+ * `SCENERY_STEP` and `LIGHT_EXPOSURE` are read only through `rigFor`'s light arm, and `rigFor` returns
+ * EXACTLY 1 on dark, which is exact in IEEE 754.
+ *
+ * ── WHAT IS UNCHANGED FROM THE OLD SOLVE, INCLUDING THE PART THAT IS AN APPROXIMATION ──
+ * The deck is Lambertian (metalness 0) and its normal is the up axis, so its radiance is
+ * `albedo · (key·N·L/π + sky(up)·ambient)`. Divide, take the binding channel so no channel overshoots.
  *
  * WHY THE DECK AND NOT A SLAB, which is the surface that actually takes the most key here: a slab's normal
  * yaws with where it stands, so solving on the slabs as PLACED makes the exposure a function of HOW MANY
- * PANELS THE PAGE HAS. Measured, it does: 0.894565 on the deck against 0.818541 binding on the fourth slab of
- * a four-panel deck. An exposure that moves with the dataset is an exposure under which two screenshots of the
+ * PANELS THE PAGE HAS. Measured under the albedo criterion, where both numbers were taken: 0.894565 on the
+ * deck against 0.818541 binding on the fourth slab of a four-panel deck — a 9% swing from the dataset alone,
+ * and the criterion above rescales both by the same `GROUND_SCALE`, so the swing is unchanged and so is the
+ * reason to refuse it. An exposure that moves with the dataset is an exposure under which two screenshots of the
  * same programme are not comparable — and it would move the addressed panel's brand blue with it. The deck's
- * incidence is fixed by the light direction alone. Solving instead on the BOUND — the largest N·L an upright
- * slab can take, `hypot(Lx, Lz)` = 0.839278 — gives 0.680691 and renders the deck 19 levels UNDER its albedo,
- * which trades one direction of the same defect for the other; measured and rejected.
+ * incidence is fixed by the light direction alone.
  *
  * kd = (1-F)(1-metalness), the key's specular lobe and the environment specular are all dropped, exactly as
- * `lightExposure` drops them and for the same reason: against the full BRDF, transcribed and bisected, this
- * estimate is 0.83% LOW — 0.887128 against 0.894565 — so the solve is conservative. A model that erred the
- * other way would put the over-exposure back, and the sign of the approximation is the one to have.
+ * `ForgeBackdrop.lightExposure` drops them and for the same reason: against the full BRDF, transcribed and
+ * bisected, this estimate is 0.83% LOW, so the solve is conservative. Here that shows up as the delivered
+ * step landing at 1.3645:1 against the 1.3516:1 asked for — OVER the requirement rather than under, which
+ * is the sign of the approximation to have.
  */
+/**
+ * The smallest separation the LIGHT palette itself draws between two scenery roles, as a WCAG contrast
+ * ratio. `ground` and `structure` are the pair this frame stands in contact everywhere, and `luminance`
+ * on a `Linear` is exactly WCAG's relative luminance — same weights, same linear-light input.
+ */
+const SCENERY_STEP = ratioOf(luminance(TH_LIGHT.ground), luminance(TH_LIGHT.structure));
+/**
+ * How far below its own albedo the deck has to render for the horizon to clear that step. Solved from the
+ * sky AS IT RENDERS — `toneMapComposite` of the pre-compensated stop, not the authored hex retyped — so
+ * this tracks a change to the shoulder the same way `look/precompensate.ts` does.
+ */
+const GROUND_SCALE = (() => {
+  const skyLum = luminance(toneMapComposite(LIGHT_SKY.horizon));
+  return ((skyLum + 0.05) / SCENERY_STEP - 0.05) / luminance(TH_LIGHT.ground);
+})();
+
 function lightExposure(): number {
   const albedo = TH_LIGHT.ground;
-  const target = inverseToneMap(albedo);
+  /* THE RADIANCE THE DECK MUST LEAVE THE PIPELINE AT. `inverseToneMap` of a colour is the value the live
+     curve maps back to that colour, so scaling the albedo BEFORE the inverse is the whole change. */
+  const target = inverseToneMap([
+    albedo[0] * GROUND_SCALE, albedo[1] * GROUND_SCALE, albedo[2] * GROUND_SCALE,
+  ]);
   /* THE RIG AT EXPOSURE 1, THROUGH THE SAME EXPRESSION THE FRAME USES — see `litRadiance`. */
   const base = litRadiance({
     key: TH_LIGHT.keyGain / TH_DARK.keyGain,
@@ -932,15 +1086,20 @@ export default function DeckReliefGl({ panels, heightPx, onRefused }: DeckRelief
          * SHIPPED drawing buffer of this component, on `/command-deck`, it is false for the app's frame — read
          * off the projected face quads and the off-slab floor:
          *
-         *              deck                     slab faces, near to far        panel : deck
-         *   dark       rgb(26,28,32) luma 27.7  luma 32.2 · 35.3 · 38.7 · 41.4      1.121
-         *   light      rgb(231,235,242)  234.8  luma 191.0 · 197.8 · 205.9 · 208.5  1.368
+         *                          deck                     slab faces, near to far        panel : deck
+         *   dark                   rgb(27,28,32) luma 28.1  luma 40.1 · 43.1 · 36.0 · 33.0      1.131
+         *   light, albedo solve    rgb(231,236,243)  235.4  luma 205.9 · 209.8 · 198.0 · 191.7  1.325
+         *   light, scenery-step    rgb(193,197,204)  196.7  luma 169.0 · 173.0 · 162.0 · 155.9  1.354
          *
          * In dark the slabs are BRIGHTER than the floor, not darker: the deck albedo `#070B14` is the darker of
          * the pair and the floor's N·L of 0.54 does not make up the difference. In light the order inverts with
-         * the albedos — `ground` 0.8438 over `structure` 0.6113 — and the step is 22% LARGER than dark's, which
-         * is why the light regression this file was sent to fix turned out not to live here at all. What the
-         * light theme lost was the SILHOUETTE against the sky; see THE SKY WAS AUTHORED AS A DISPLAY COLOUR.
+         * the albedos — `ground` 0.8438 over `structure` 0.6113 — and the step is ~21% LARGER than dark's, which
+         * is why the light regression this file was first sent to fix turned out not to live here at all. What
+         * the light theme lost was the SILHOUETTE against the sky, and then — separately, and this is the row
+         * the third line above is from — the HORIZON, because the exposure solve pinned the deck and the sky
+         * within 7.4 luma of each other. See THE SKY WAS AUTHORED AS A DISPLAY COLOUR and then THE EXPOSURE.
+         * The third row is the shipped one; the panel-to-deck step it lands on is within 1% of the second's,
+         * which is the point — the exposure change moves the room against the SKY and not against itself.
          *
          * The one part of the old note that survived measurement is the warning about the obvious levers: a
          * rougher deck came out brighter, and a lower ambient gain brightened it further while draining the

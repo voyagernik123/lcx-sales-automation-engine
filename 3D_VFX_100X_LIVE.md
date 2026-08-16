@@ -286,3 +286,55 @@ ancestor and emits one 68.88 KiB chunk still carrying the raymarcher.
 
 **Specifier identity is the lever, not shaking.** Hence an `exports` map with wildcards — derived rather than
 a hand-written lane list, because a hand list cannot fail on a module nobody thought of.
+
+---
+
+# 8 · CLOSE-OUT, 2026-08-16 — what each workstream actually did
+
+**This plan is closed.** Everything above is the plan as written; this section is what happened, so a
+reader does not mistake a prediction for an outcome. Every figure here was measured after the fact
+and most of them contradict the estimate the plan carried.
+
+| | plan said | what shipped |
+|---|---|---|
+| **T1** rule 5 | make it real, or stop claiming it | Rule amended to ORDER PRESERVATION on measurement, then **partially reversed**: pre-compensation is *exact* — 7/7 — for fixed-density unlit marks. One surface qualifies (`FlatLine`); the six additive ones cannot, structurally. |
+| **T2** theme.ts | the taxonomy | Shipped, then **corrected at the contract level**: `SceneTheme` now types `ground`/`structure`/`plate`/`rule` as `Albedo` and `skyHorizon`/`skyZenith`/`fog` as `Radiance`. Authoring a radiance as a display hex was a real bug that reached two surfaces. |
+| **T3** bind seven | seven surfaces + observer | Six bound. **E7 Storm refuses to theme and argues why in arithmetic in its own file** — that refusal is delivery, not a gap. |
+| **T4** semantic divergence | resolve status to platform roles | Delivered — but only after it shipped *built, correct and reachable by nothing*, the third time this programme did that. Being in the barrel was a precondition; the two consumers are the delivery. |
+| **R1** hoist redraw | all seven | Seven. E1 was last and its ratchet entry is now deleted, not emptied. |
+| **R2** program cache | second, separately | Shipped. `PROGRAM_CACHE` in `stage.ts`. |
+| **X1** ambient reach | a stranger sees 3-D on more than one route of 78 | **Not met, and recorded as not met.** The layer draws nothing on the platform's default theme, so by default the count is still one route. |
+| **X2** sub-path exports | 13.5 KB a route instead of 87.7 KB | **The estimate was wrong in both directions and the migration had never happened.** Measured: flat charts 100,709 B → **27,812 B**; sign-in shell 100,709 B → **52,349 B**. The half state — adapters migrated, backdrops not — measured *worse* than either end at 102,832 B. |
+| **A** authoring | refused on four reasons | Still refused. Nothing in the tree is a GLB. |
+
+## The four claims that died on measurement
+
+Recorded because each was believed, written down, and false:
+
+1. **"Brand hex exact through the pipeline"** rested on a constants table round-tripping through two
+   pure functions — something no pipeline change can move. Off a real framebuffer, brand blue lands
+   35 levels of blue low.
+2. **Order preservation is insufficient.** Monotone is not injective; lighting collapses
+   brand/refusal from 68.2 to 9.8.
+3. **CIE76 was the wrong metric**, and wrong in the direction that hid the problem — 68.2 against
+   14.2 in CIEDE2000, because both colours are blues.
+4. **"The tone curve cannot be cancelled"** — it can, exactly, for a bounded class of marks.
+
+## The instrument lessons, which outlived the fixes
+
+- **A luminance-spread statistic reported a surface as a 743% improvement while its marks dissolved
+  into white haze.** A gradient had spread carrying no information. Chroma percentiles catch it.
+- **The capture sweep's numbers depended on the time of day.** The same commit measured one surface
+  as catastrophically worse, mildly worse, and 211% *better*, because the globe's frame is aimed by
+  the reader's clock. The clock is now frozen; before that, every published per-surface figure was
+  unreproducible.
+- **Three separate guards stopped guarding without going red**: a census that skipped the correctly
+  guarded case, a predicate that stopped discriminating when a second surface adopted the same
+  function for a different purpose, and a screenshot that waited on a heading and photographed a
+  canvas.
+- **Three of the four "worse in light" defects were misdiagnosed in their own briefs.** Each agent
+  found that by segmenting or ablating before touching anything. The one that was not misdiagnosed
+  had a cause nobody had proposed.
+
+The current per-surface state is in `docs/3d/FINAL_SCORECARD.md`, measured on the deterministic
+sweep. What remains for the owner is in that document and in the pen-test addendum.

@@ -81,7 +81,45 @@ export interface OrreryInput {
   /** The shipping diagram's node centres and half-width, for the flat crossing count. */
   readonly flatCentres?: readonly FlatNodeCentre[];
   readonly flatHalfWidth?: number;
-  /** Wall-clock ceiling for the viewpoint search, in ms. A truncated sweep that says so is a measurement. */
+  /**
+   * CEILING ON THE VIEWPOINT SEARCH, COUNTED IN CANDIDATES EVALUATED — across the WHOLE build, every rung of
+   * the spacing ladder included. Defaults to `SEARCH_CANDIDATE_BUDGET`, which is the whole sweep, so the
+   * default never truncates and `search.truncated` is only reachable by a caller that asks for less.
+   *
+   * ── WHY THIS IS NOT A MILLISECOND DEADLINE, WHICH IS WHAT IT USED TO BE ──────────────
+   * A deadline is not a stopwatch. It does MORE work on a fast machine and LESS on a loaded one, so the
+   * viewpoint it settles on — and therefore the frame, and therefore every pixel statistic taken from that
+   * frame — was a function of CPU contention at the moment of render rather than of the ontology.
+   *
+   * That was not theoretical. Measured on the shipped fifty-state ontology at 1184x768 with the old
+   * `searchBudgetMs: 100` — which is exactly this machine standing in for one four times slower, because a
+   * search that reaches candidate i at t_i here reaches it at k·t_i on a k-times-slower machine, so budget
+   * B/k is that machine at budget B — under 32 competing CPU-bound processes, 40 IDENTICAL CALLS PRODUCED
+   * SEVEN DIFFERENT RESULTS: 32 swept all 144, and the rest came back at `tried` 91, 76, 72, 45 and 25 with
+   * the published `clean` count falling from 4 to 2 and then to 1, while THREE of the forty refused the
+   * surface outright with `BODIES_MERGE_AT_EVERY_VIEWPOINT` — the same input drawing a frame or drawing
+   * nothing depending on how busy the laptop was. Both counts are printed on the page (`OntologyOrrery.tsx`,
+   * "N clean viewpoints of M tried"), so this reached the reader.
+   *
+   * At the shipped 400 ms it did NOT reproduce here: 80 calls under 48 competing processes all agreed, though
+   * the slowest took 476.8 ms against 16.2 ms for the fastest — 119% of the deadline, spent after the search
+   * rather than inside it. That is luck holding, not a guarantee, and it is why the weaker claim is stated.
+   *
+   * Counting candidates instead makes the work — and therefore the frame — a function of the input alone.
+   * Freezing the clock was NOT the alternative: `performance.now()` has to keep running or
+   * `requestAnimationFrame` and React's scheduler stop with it.
+   */
+  readonly searchBudgetCandidates?: number;
+  /**
+   * @deprecated IGNORED, and deliberately still declared rather than deleted.
+   *
+   * Three call sites still pass it — `orrery/__tests__/orreryViewport.test.ts:82` (5000),
+   * `geometry/__tests__/ontologyOrrery.test.tsx:433` and `:472` (900) — and all three pass it for one reason:
+   * "do not let a CI machine's clock truncate the sweep". The candidate budget above gives them that
+   * unconditionally, so the right change is to DELETE those three lines. Removing the field before they go
+   * would fail the excess-property check on their object literals and break the build, so it outlives them by
+   * one commit. It is read nowhere in this module, which `wallClockReadsIn` is the standing proof of.
+   */
   readonly searchBudgetMs?: number;
 }
 
@@ -174,6 +212,37 @@ const SHELL_MIN_GAP = 1.15;
  * by a retry has to be able to say which retry it is.
  */
 const SPACING_LADDER = [1.45, 1.9, 2.4];
+
+/**
+ * THE VIEWPOINT SWEEP, HOISTED OUT OF THE SEARCH SO THE BUDGET CAN BE DERIVED FROM IT RATHER THAN TYPED.
+ *
+ * These two were literals inside `attempt()`. They are here because the default candidate budget is "the
+ * whole sweep", and a default that is a hand-copied `432` stops being the whole sweep the day somebody adds a
+ * seventh elevation. Why these elevations and why 24 azimuths is argued where the sweep is run.
+ */
+const ELEVATION_LADDER = [26, 33, 40, 47, 55, 63];
+const AZIMUTH_STEPS = 24;
+
+/** Candidates one rung of the spacing ladder evaluates when nothing stops it. */
+export const SEARCH_CANDIDATES_PER_ATTEMPT = ELEVATION_LADDER.length * AZIMUTH_STEPS;
+
+/**
+ * THE DEFAULT SEARCH BUDGET: every candidate at every rung, so the default sweep is exhaustive and the
+ * published count in `search` is a count over the whole space rather than over the prefix a clock allowed.
+ *
+ * It is affordable because it is SMALL AND FIXED, which a millisecond deadline could never claim. Measured on
+ * this machine (M-series, 8 cores, itself under other load at the time), median of 7, timing the whole
+ * `buildOrrery` call including every measurement taken after the search:
+ *
+ *     shipped fifty-state ontology, 1184x768, all three rungs   20.5 ms
+ *     synthetic 1,200-body graph — sixteen times the above      100.6 ms
+ *
+ * A machine five times slower therefore spends about 103 ms on the real input and one twenty times slower
+ * about 410 ms, and the 1,200-body figure is the ceiling on inputs this app cannot even produce: at five
+ * kinds the shipped ontology refuses on merged silhouettes long before it gets that large. Those are FIXED
+ * costs a reader can re-measure, not a race a fast machine wins and a loaded one loses.
+ */
+export const SEARCH_CANDIDATE_BUDGET = SEARCH_CANDIDATES_PER_ATTEMPT * SPACING_LADDER.length;
 
 /**
  * SIZE IS log10 OF THE COUPLING COUNT, and the counts here span 0 to 44 in the shipped ontology.
@@ -471,14 +540,21 @@ export interface OrreryLayout {
     readonly smallestBodyPx: number;
     readonly misread: number;
   };
-  /** What the search did: viewpoints tried, how many were clean, which spacing survived, and how long. */
+  /**
+   * What the search did: viewpoints tried, how many were clean, which spacing survived, and what it spent.
+   *
+   * `candidates` is what the elapsed-milliseconds field here used to be, and the swap is the point: a number
+   * in this object is a claim about the drawing, and a millisecond reading is a claim about the machine. Every
+   * field here is now a function of the input alone.
+   */
   readonly search: {
     readonly tried: number;
     readonly clean: number;
     readonly attempts: number;
     readonly spacing: number;
     readonly truncated: boolean;
-    readonly ms: number;
+    /** Candidates evaluated by the WHOLE build up to this point, every earlier rung included. */
+    readonly candidates: number;
   };
   /** One ring per shell instead of one per kind per shell — what the third axis buys, as a count. */
   readonly flatRingsCollapsed: number;
@@ -507,12 +583,15 @@ export function thirdAxisBuysNothing(ambiguous: number, flatControlInPlane: numb
 /**
  * Build the whole system, or refuse it.
  *
- * Pure: no canvas, no GL context, and no clock other than the search budget. Every claim in the result is
- * computed here so a test can assert it and a HUD can print it without either of them re-deriving it.
+ * Pure: no canvas, no GL context, and NO CLOCK AT ALL. Every claim in the result is computed here so a test
+ * can assert it and a HUD can print it without either of them re-deriving it — and, since the search budget
+ * stopped being a deadline, the same input produces the same result on any machine at any load.
  */
 export function buildOrrery(input: OrreryInput): OrreryOutcome {
-  const t0 = performance.now();
-  const deadline = t0 + (input.searchBudgetMs ?? 400);
+  /* THE ONE COUNTER THE SEARCH IS BOUNDED BY. Shared by every rung of the spacing ladder, because the budget
+     is a ceiling on the BUILD and a per-rung ceiling would let three rungs spend three budgets. */
+  const budget = Math.max(1, Math.floor(input.searchBudgetCandidates ?? SEARCH_CANDIDATE_BUDGET));
+  let spent = 0;
   const { entities, couplings, allCouplings, cssWidth, cssHeight } = input;
 
   if (!(cssWidth > 1) || !(cssHeight > 1)) {
@@ -730,12 +809,12 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
      * is. So the camera is CHOSEN by this test rather than composed, and when no viewpoint passes it the view
      * refuses rather than shipping a frame with a hidden entity in it.
      *
-     * It answers CLEAN or NOT rather than counting the overlaps, and that is what makes searching 144
-     * viewpoints at three spacings affordable inside a click: a dirty viewpoint exits at its first overlapping
-     * pair, which is usually within a few comparisons, while only a clean one pays the full n². Counting them
-     * all instead cost 400 ms on the 74-entity system and truncated its own search — a number about the budget
-     * masquerading as a number about the layout. Squared distances, no `hypot`, and flat arrays, because this
-     * is the innermost loop in the module.
+     * It answers CLEAN or NOT rather than counting the overlaps, and that is what makes the whole
+     * `SEARCH_CANDIDATE_BUDGET` sweep affordable inside a click: a dirty viewpoint exits at its first
+     * overlapping pair, which is usually within a few comparisons, while only a clean one pays the full n².
+     * Counting them all instead cost 400 ms on the 74-entity system and truncated its own search — a number
+     * about the budget masquerading as a number about the layout. Squared distances, no `hypot`, and flat
+     * arrays, because this is the innermost loop in the module.
      *
      * IT RUNS AT THE REFERENCE LENS AND THAT COSTS NOTHING, which is a property rather than an approximation.
      * At a fixed eye, target and orientation, changing the field of view multiplies EVERY screen offset from
@@ -781,8 +860,10 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
      * search takes the LOWEST elevation at which nothing merges, and the spacing ladder is the second lever.
      */
     const candidates: Viewpoint[] = [];
-    for (const elevationDeg of [26, 33, 40, 47, 55, 63]) {
-      for (let i = 0; i < 24; i++) candidates.push({ ...baseView, azimuthDeg: i * 15, elevationDeg });
+    for (const elevationDeg of ELEVATION_LADDER) {
+      for (let i = 0; i < AZIMUTH_STEPS; i++) {
+        candidates.push({ ...baseView, azimuthDeg: (i * 360) / AZIMUTH_STEPS, elevationDeg });
+      }
     }
 
     /*
@@ -900,6 +981,10 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
      * fact about all 118, not about the prefix the search happened to stop in. Truncation therefore shortens
      * the sweep, and `search.truncated` says when it did.
      *
+     * At the DEFAULT budget that is now unconditional rather than probable: the ceiling is exactly the sweep,
+     * so `truncated` is false for every input on every machine, and it is reachable only by a caller that
+     * asks for fewer candidates than there are. It used to be reachable by a caller who was merely unlucky.
+     *
      * ELEVATION IS STILL DECIDED FIRST AND LOWEST WINS. The azimuth was NOT decided at all: the old search
      * drew the first clean viewpoint, which is the lowest azimuth that happened to pass, and that is a
      * tie-break masquerading as a choice. It is not free. Measured on the shipped fifty-state ontology, the
@@ -925,7 +1010,11 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
     let lowestCleanElevation = Infinity;
     const cleanAtLowest: Viewpoint[] = [];
     for (const v of candidates) {
-      if (tried > 0 && performance.now() > deadline) { truncated = true; break; }
+      /* The budget is spent in CANDIDATES, so which prefix a truncated sweep sees is a property of the input
+         and not of the machine. `tried > 0` keeps the old guarantee that every rung evaluates at least one
+         viewpoint, so a budget smaller than the ladder still returns a frame rather than an empty search. */
+      if (tried > 0 && spent >= budget) { truncated = true; break; }
+      spent++;
       tried++;
       if (!isCleanAt(v)) continue;
       clean++;
@@ -1278,7 +1367,7 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
       incumbent: incumbentReading,
       search: {
         tried, clean, attempts: SPACING_LADDER.indexOf(crowd) + 1, spacing: crowd, truncated,
-        ms: Number((performance.now() - t0).toFixed(1)),
+        candidates: spent,
       },
       flatRingsCollapsed: inclinedRings - flatRings,
     };
@@ -1303,7 +1392,75 @@ export function buildOrrery(input: OrreryInput): OrreryOutcome {
       if (out.crossings.piercedBodies3D === 0) return out;
       if (best === null || out.crossings.piercedBodies3D < best.crossings.piercedBodies3D) best = out;
     }
-    if (performance.now() > deadline) break;
+    /* Same budget, same counter: three rungs share one ceiling, so the ladder stops on a count rather than on
+       a clock and a loaded machine climbs exactly as far as an idle one. */
+    if (spent >= budget) break;
   }
   return best ?? last;
+}
+
+/* ── THE STANDING PROOF THAT THE DEADLINE DOES NOT COME BACK ───────────────────────── */
+
+/**
+ * EVERY CLOCK READ IN A PIECE OF SOURCE, with comments and string literals removed first.
+ *
+ * A behavioural test cannot prove this module is machine-independent: it can only fail to catch a machine it
+ * did not simulate. What CAN be proven is the property that made it machine-dependent — that the search
+ * consulted a clock — so this reads the source and names every read. Applied to `orreryLayout.ts` itself the
+ * answer must be the empty list, and the day somebody reaches for `performance.now()` again the assertion
+ * that used to pass fails with the line in its message.
+ *
+ * Comments and strings are stripped rather than matched around, because this module's own prose says
+ * "performance.now()" several times and a guard that trips on its own documentation is a guard that gets
+ * deleted. The scanner is a character state machine for that reason and not a regular expression.
+ *
+ * TEMPLATE SUBSTITUTIONS ARE SCANNED AS CODE, not skipped with the literal around them: `${Date.now()}` is a
+ * clock read, and a guard that steps over it would pass the exact line it exists to catch. Its brace depth is
+ * tracked per substitution so a nested block inside one does not end it early. The one construct this
+ * misreads is a `//` inside a regular-expression literal, and this file contains no regex literals.
+ */
+export function wallClockReadsIn(source: string): readonly string[] {
+  let code = '';
+  /* 'c' code · 'l' line comment · 'b' block comment · 'q' quoted string · 't' template literal */
+  let state: 'c' | 'l' | 'b' | 'q' | 't' = 'c';
+  let quote = '';
+  /* One entry per template literal we are inside the `${…}` of; the number is that substitution's brace depth. */
+  const substitutions: number[] = [];
+  for (let i = 0; i < source.length; i++) {
+    const ch = source[i]!, next = source[i + 1] ?? '';
+    if (state === 'c') {
+      if (ch === '/' && next === '/') { state = 'l'; i++; continue; }
+      if (ch === '/' && next === '*') { state = 'b'; i++; continue; }
+      if (ch === '"' || ch === "'") { state = 'q'; quote = ch; continue; }
+      if (ch === '`') { state = 't'; continue; }
+      if (substitutions.length > 0) {
+        if (ch === '{') substitutions[substitutions.length - 1]!++;
+        else if (ch === '}') {
+          if (substitutions[substitutions.length - 1]! === 0) { substitutions.pop(); state = 't'; continue; }
+          substitutions[substitutions.length - 1]!--;
+        }
+      }
+      code += ch;
+      continue;
+    }
+    /* Newlines are kept in every state so the reported line numbers are the file's own. */
+    if (ch === '\n') code += '\n';
+    if (state === 'l') { if (ch === '\n') state = 'c'; continue; }
+    if (state === 'b') { if (ch === '*' && next === '/') { state = 'c'; i++; } continue; }
+    if (ch === '\\') { i++; continue; }
+    if (state === 'q' && ch === quote) state = 'c';
+    else if (state === 't' && ch === '`') state = 'c';
+    else if (state === 't' && ch === '$' && next === '{') { substitutions.push(0); state = 'c'; i++; }
+  }
+  /* Every way this runtime hands out a wall clock or a monotonic one. `new Date` is included because a
+     deadline built from it is the same defect wearing a different constructor. */
+  const CLOCKS = /\b(?:performance\s*\.\s*(?:now|timeOrigin)|Date\s*\.\s*now|new\s+Date|process\s*\.\s*hrtime)/g;
+  /* Matched over the WHOLE stripped source rather than line by line, and the line derived from the match
+     offset: a per-line scan missed `performance\n  .now()`, which is one formatter away from being written. */
+  const out: string[] = [];
+  for (const m of code.matchAll(CLOCKS)) {
+    const line = 1 + (code.slice(0, m.index).match(/\n/g)?.length ?? 0);
+    out.push(`line ${line}: ${m[0].replace(/\s+/g, ' ')}`);
+  }
+  return out;
 }

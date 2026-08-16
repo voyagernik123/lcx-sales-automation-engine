@@ -147,3 +147,31 @@ catch, and P0 hit it twice:
 
 `apps/web/src/components/layout/NotificationBell.tsx` renders all three separately. Before P0 it
 rendered one.
+
+---
+
+## OPEN, and only the owner can close it: the forward-risk feed (E7 THE STORM)
+
+**Status: an instrument that does not exist, not a bug.** Recorded here rather than in a 3-D document
+because closing it is a decision about what the monitor reports, not a rendering choice.
+
+`apps/web/src/pages/MarketingCrisis.tsx` mounts `StormRelief` with a field built by
+`riskFieldUnavailable(...)`, and that is the only call site outside tests. Its own stated reason:
+
+> Marketing risk by day, channel and severity band is not produced anywhere in this system today —
+> not by the crisis engine, which is pure text and gates, and not by the record compartment, which
+> looks backwards at what was published. So there is nothing to draw and nothing to accumulate.
+> **This is NOT an all-clear for the days ahead: it is the absence of an instrument.**
+
+**The renderer is finished.** E7 is built, gated on data, correct, and unreachable — it is the one
+environment of the eight that has never drawn a frame outside its harness, and the accessibility fix
+applied to it in August 2026 was to a state no operator can currently reach. That is why the defect
+survived four passing suites.
+
+**Do not invent a fixture to light it.** Manufacturing a risk field to make the surface render would
+put a picture of forward risk in a compliance record while the underlying measurement does not exist,
+which is the exact failure the three empty states above are designed to prevent — an absence
+rendering as a reading.
+
+**What closing it requires:** a decision about whether this desk reports forward marketing risk at
+all, and if so, what produces it. The renderer needs no further work once a real field exists.

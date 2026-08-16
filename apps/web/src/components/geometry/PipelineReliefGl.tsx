@@ -157,7 +157,14 @@ const FRESH_HEX = '#2C6BFF';
  * achromatic here and the tone map is per channel, so the hue survives... A red slab renders as a
  * red slab."
  *
- * THAT GUARANTEE FAILS AT THIS RAMP'S FAR END, and this file's own fog is why. Measured off the
+ * EVERY RENDERED FIGURE IN THE REST OF THIS BLOCK IS PRE-FOG-FIX and is kept as the record of what the
+ * fog was doing, not as a description of what ships. `dataFogRatio` below now cuts the light mark pass's
+ * haze to 0.0058 of the scenery's, so the light column of the table two paragraphs down — chroma 24, a
+ * warm grey — is the frame that was measured, not the frame that renders. The REFUTATION it supports is
+ * unaffected: pinning the far end was measured worse on the working range, and that is a property of the
+ * mix, not of the haze.
+ *
+ * THAT GUARANTEE FAILED AT THIS RAMP'S FAR END, and this file's own fog was why. Measured off the
  * drawing buffer with every lead forced to `settle = 1` and the strokes excluded so the population
  * is the marks and nothing else (chroma floor 60, derived):
  *
@@ -303,6 +310,103 @@ const gateMatFor = (th: SceneTheme) => (
   { baseColour: scenery(th, '#31415C', th.rule), roughness: 0.36, metalness: 0.20 });
 const channelMatFor = (th: SceneTheme) => (
   { baseColour: scenery(th, '#1E2A42', th.plate), roughness: 0.60, metalness: 0.03 });
+
+/**
+ * ══ THE FOG WAS SPENDING ITS WHOLE BUDGET ON THE DATA, AND ONLY ON THE LIGHT PAGE ═══════════════
+ *
+ * The light frame held 53% of dark's mark chroma and 28% of its data-to-scenery contrast, and a
+ * luminance-only check called it a pass because the luminance spread went the OTHER way — sd 19.18
+ * against dark's 13.96, 137%. This is where it went, and the haze below is the whole of it.
+ *
+ * ── THE POPULATION IS DEFINED BY THE FOG ITSELF, NOT BY A COLOUR TEST ───────────────
+ * Splitting the lit pass in two makes the mark-pass fog independently switchable, so the marks can be
+ * identified as THE PIXELS THAT MOVE WHEN IT IS SWITCHED — 4529 px in dark, 4338 in light, 0.85% and
+ * 0.81% of a 1160x460 buffer. Nothing else in the frame can move: the scenery's mean luma across the
+ * two captures is 21.4458 / 21.4458 in dark and 225.0289 / 225.0289 in light, identical to four
+ * decimals. That population is what every number below is measured over, and it is the one thing a
+ * chroma threshold could not have given: the failing marks are exactly the ones a chroma threshold
+ * stops counting.
+ *
+ * ── WHAT THE FOG COSTS THE MARKS, MEASURED ON THAT POPULATION ───────────────────────
+ *                                        DARK              LIGHT
+ *   mean Lab chroma, fog off            41.169            55.949
+ *   mean Lab chroma, fog on             38.099            31.272
+ *   the fog's cost                       7.46%            44.10%      5.9x
+ *   mean luma shift                 -12.84 codes     +46.71 codes     OPPOSITE SIGN
+ *
+ * The sign is the mechanism. `env/lit.ts:599` is `mix(lit, fogCol, 1 - exp(-depth))`: a MULTIPLY by
+ * (1-a), which is a per-channel scale and preserves a mark's chromaticity, plus an ADD of a·F, which
+ * is a pedestal of foreign light. Dark's `#0C1322` is linear (0.0037, 0.0065, 0.0160) and its pedestal
+ * is nothing, so the mix is very nearly pure attenuation. Light's `th.fog` is radiance (1.0028, 1.1412,
+ * 1.3972) — brighter than the marks it is added to.
+ *
+ * ── AND THE CIEDE2000 DECOMPOSITION SAYS THE SAME THING IN THE METRIC THE PLATFORM USES ──
+ * Mean |dL/SL|, |dC/SC|, |dH/SH| between each mark pixel with the fog and the same pixel without it:
+ *
+ *                      lightness   chroma    hue     chroma+hue    total
+ *     dark               4.704      1.201    0.153      1.218      4.898
+ *     light             13.945      8.335    3.125      8.904     16.565
+ *
+ * DARK'S FOG IS 96% LIGHTNESS. It dims a distant mark and barely touches its colour, which is what
+ * atmosphere is. Light's moves the mark's chroma and hue 7.3x as far — that is not depth cueing, it is
+ * a theme-dependent retint of the data, and `look/theme.ts` says a theme may not do that.
+ *
+ * ── THREE STATEMENTS OF THE INVARIANT WERE SOLVED, AND THE BINDING ONE WINS ─────────
+ * Density is the only lever this file owns, so each was solved as a light mark-pass density ratio,
+ * measured on a ten-point ladder rather than argued:
+ *
+ *   (i)  CHROMA-AND-HUE PARITY — the fog may move a mark's colour no further in light than in dark.
+ *        Light's chroma+hue displacement is 0.723 at r=0.05 and 1.343 at r=0.10, so dark's 1.218
+ *        solves at r = 0.090. Re-solved on three depth terciles it gives 0.114, 0.096, 0.070.
+ *   (ii) THE MARK MUST STAY NEARER ITS OWN COLOUR THAN THE ARCHITECTURE'S. Classified against the
+ *        audit's exposure loci, the share of mark pixels nearest a DATA locus runs 8.13% -> 8.48% in
+ *        dark: dark's fog costs the marks no attribution at all. In light it runs 21.53% at r=0,
+ *        7.65% at r=0.05 and 0.00% from r=0.10 to r=0.25 — the fogged marks land on `rule`, the light
+ *        theme's own pale blue-grey ARCHITECTURE colour. (i)'s answer sits inside that dead
+ *        band — at r=0.10, the measured point just above it, not one mark pixel in the frame is nearest a
+ *        data colour — so (i) fails (ii) outright.
+ *   (iii) PEDESTAL PARITY — the fog may inject no more foreign light into a mark in light than in dark.
+ *        This is the one the mechanism above names, and it is the only one that needs no fitted number:
+ *        the pedestal is a·F, `a` is first-order in the density, so the ratio is the ratio of the two
+ *        fog LUMINANCES. It is the literal 1 on dark because both sides are the same expression.
+ *
+ * (i) is refuted by (ii) and (ii) is satisfied only near zero, which is where (iii) independently
+ * lands. So (iii) is what ships. It is not "fog off": it is a continuous function of the theme, and a
+ * theme that authored a darker fog would get proportionally more of it on its marks, up to the clamp.
+ *
+ * ── WHY THE CLAMP, AND WHY LUMINANCE ────────────────────────────────────────────────
+ * A theme whose fog is DARKER than dark's would solve above 1 and hand the data more haze than the
+ * scenery it is read against — the same defect with the sign flipped. Clamped at 1: the data pass never
+ * takes more haze than the room does. Luminance rather than a per-channel match because the density is
+ * one scalar and cannot match three channels — and the choice between the plausible norms decides nothing
+ * here. Over the same two triples the max-channel norm solves 0.011449, the Euclidean 0.008555 and the
+ * mean-channel 0.007394 against luminance's 0.005834; the ladder is linear in r across that span (0.723 at
+ * r=0.05, 1.343 at r=0.10), so even the WIDEST of them displaces a light mark's colour by about 0.14
+ * against dark's 1.218. Every norm lands an order of magnitude inside dark's own figure.
+ *
+ * ── AND THE MUTATION WAS RUN, WHICH `lightExposure`'S WAS NOT ───────────────────────
+ * `lightExposure` below records an experiment that a skeptic performed and that PASSED, because a guard
+ * two lines away swallowed it. So this one was performed rather than described: replacing the `Math.min`
+ * with `Math.max` makes the light ratio 1, and every light figure goes straight back to its pre-fix value —
+ * p99.9 chroma 138 -> 82, max 142 -> 84, data:scenery 3.23:1 -> 1.67:1, `data-data-fog` stamping 1.0000
+ * instead of 0.0058. Dark does not move, which is the point: on dark BOTH branches return the same 1.
+ *
+ * ── WHAT THIS DOES NOT FIX, STATED BECAUSE THE NEXT READER WILL MEASURE IT ──────────
+ * Light's data-to-scenery contrast recovers to 3.23:1 against dark's 5.86:1 and stops there. The
+ * remainder is not the fog: with the fog off in BOTH themes the split is still 3.21 against 5.93. It is
+ * the scenery. Light's architecture is `plate` #FFFFFF and `ground` #E8EDF6 against dark's #1E2A42 and
+ * #22304A, so the same mark has far less room to separate from a white page than from a black one.
+ * That is a theme-level fact about the authored albedos, not something this file can compose away.
+ */
+const FOG_DARK: Linear = hexToLinear(FOG_HEX);
+/** ONE OWNER for the clear colour, the scenery's haze and the mark pass's haze — see `renderScene`. */
+const fogColour = (th: SceneTheme): Linear => scenery(th, FOG_HEX, th.fog);
+const Y709 = (c: Linear): number => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+const dataFogRatio = (th: SceneTheme): number => {
+  const y = Y709(fogColour(th));
+  /* A theme with a black fog injects nothing and needs no reduction; it also cannot be a denominator. */
+  return y > 0 ? Math.min(1, Y709(FOG_DARK) / y) : 1;
+};
 
 /** The dark theme's record, held only as the denominator of the light rig's ratio — see `SurfaceReliefGl.tsx`,
     THE LIGHT RIG MOVES BY RATIO. Nothing reads a colour out of it. */
@@ -774,10 +878,20 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
      * computed between the prepass and the lit pass because it needs depth and the lit pass needs it — and the
      * prepass is not a tax, it lets the lit pass reject occluded fragments before their GGX evaluation.
      */
-    const renderScene = (th: SceneTheme, draws: readonly LitDraw[]): void => {
+    const renderScene = (
+      th: SceneTheme,
+      /*
+       * THE TWO POPULATIONS ARE HANDED IN SEPARATELY, and that split is the fix at `dataFogRatio`. Only
+       * the LIT pass is split; the shadow pass and the depth prepass are still taken over `all`, because a
+       * mark that stopped casting a shadow or stopped occluding would be a different scene, not a
+       * differently fogged one.
+       */
+      parts: { readonly scenery: readonly LitDraw[]; readonly marks: readonly LitDraw[] },
+    ): void => {
       const rig = rigFor(th);
       const stroke = strokesFor(th);
-      lit.shadowPass(lightVP, draws, shadow);
+      const all = [...parts.scenery, ...parts.marks];
+      lit.shadowPass(lightVP, all, shadow);
       target.bind();
       /* NO SKY BACKDROP, AND THE CLEAR IS THE FOG COLOUR. The channel is open-topped, so the sky stays as the
          irradiance environment; what it must not get is the sky DRAWN, which would make the most fogged part of
@@ -786,10 +900,10 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
          THE FOG IS SCENERY and takes the theme: `theme.ts` derives `fog` from the sky rather than declaring it,
          because a fog colour that does not match what is behind it produces a seam exactly where the scene is
          meant to dissolve. Dark keeps this file's own #0C1322; light takes #DCE5F3. */
-      const fc = scenery(th, FOG_HEX, th.fog);
+      const fc = fogColour(th);
       gl.clearColor(fc[0], fc[1], fc[2], 1);
       gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-      lit.depthPrepass(vp, draws);
+      lit.depthPrepass(vp, all);
       if (ao) {
         ao.compute({
           depthTexture: target.depthTexture, near: NEAR, far: FAR, fovDeg: VIEW.fovDeg ?? 35,
@@ -803,15 +917,23 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
       const sky = th.name === 'dark' ? undefined : {
         zenith: th.skyZenith, horizon: th.skyHorizon, ground: th.ground,
       };
-      lit.draw({
+      /* EVERY ARGUMENT BUT THE DRAW LIST AND THE FOG DENSITY IS SHARED BY CONSTRUCTION, spread into both
+         calls from one object rather than written twice. Two hand-maintained copies of a fourteen-field
+         lighting call is how a mark pass ends up lit differently from the scenery it is measured against —
+         the exact class of defect this split exists to remove, reintroduced by the fix for it. */
+      const litCommon = {
         viewProj: vp, eye, lightDir: LIGHT_DIR,
-        lightColour: [KEY_TINT[0] * rig.key, KEY_TINT[1] * rig.key, KEY_TINT[2] * rig.key],
+        lightColour: [KEY_TINT[0] * rig.key, KEY_TINT[1] * rig.key, KEY_TINT[2] * rig.key] as const,
         ambientGain: AMBIENT_BASE * rig.ambient, sky, lightVP, shadow,
         shadowStrength: 0.92 * rig.shadow,
-        shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws,
-        ao: ao ? ao.texture : null, screenSize: [W, H],
-        fog: { density: FOG_DENSITY, height: 5.0, floor: 0, colour: fc },
-      });
+        shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE,
+        ao: ao ? ao.texture : null, screenSize: [W, H] as const,
+      };
+      const haze = (density: number) => ({ density, height: 5.0, floor: 0, colour: fc });
+      /* THE SCENERY TAKES THE FOG IT ALWAYS TOOK. Same expression, both themes. */
+      lit.draw({ ...litCommon, draws: parts.scenery, fog: haze(FOG_DENSITY) });
+      /* THE MARKS TAKE THE SAME EXPRESSION SCALED BY A RATIO THAT IS THE LITERAL 1 ON DARK. */
+      lit.draw({ ...litCommon, draws: parts.marks, fog: haze(FOG_DENSITY * dataFogRatio(th)) });
 
       /*
        * DEPTH-TESTED, NOT DEPTH-WRITING — set by hand rather than with a helper that disables the depth test. An
@@ -874,7 +996,10 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
       if (refusal !== null) { refuse(refusal); return undefined; }
       const leads = leadDraws(c, th);
       if ('refusal' in leads) { refuse(leads.refusal); return undefined; }
-      const draws = [...staticDrawsFor(th), ...leads];
+      /* THE SPLIT IS MADE HERE, WHERE THE TWO POPULATIONS ARE ALREADY SEPARATE OBJECTS, rather than by
+         filtering a merged list on a material property downstream: a filter would have to recognise a mark
+         by its colour, and the whole failure being repaired is that a mark's colour is not stable. */
+      const parts = { scenery: staticDrawsFor(th), marks: leads };
 
       /*
        * THE PROBE. `pickQualityTier` exists to choose a tier from a measured frame and had no caller in the
@@ -885,7 +1010,7 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
        * update must never re-time the machine, or the ladder would follow the dataset instead of the GPU.
        */
       if (needsQualityProbe()) {
-        const ms = measureFrameMs(gl, () => renderScene(th, draws));
+        const ms = measureFrameMs(gl, () => renderScene(th, parts));
         const r = recordQualityProbe({
           pick: pickQualityTier, gl, msAtProbeTier: ms, probeTier: tier, source: 'PipelineReliefGl',
         });
@@ -894,7 +1019,7 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
         if (r.tier !== tier) return 'STALE_TIER';
       }
 
-      renderScene(th, draws);
+      renderScene(th, parts);
       presentFrame();
       /* RECORDED ONLY ONCE THE FRAME IS PRESENTED, so a STALE_TIER return cannot leave the observer believing a
          theme is on screen that never reached it. */
@@ -905,6 +1030,10 @@ export default function PipelineReliefGl({ channel, heightPx, onRefused }: Pipel
          whole justification is a measurement, and an audit that cannot read it back has to take the solve on
          trust. Four decimals: the solve is a ratio of continuous quantities, not a chosen constant. */
       canvas.dataset.lightExposure = rigFor(th).exposure.toFixed(4);
+      /* AND THE SOLVED DATA-FOG RATIO, for exactly the same reason: it is a number the picture cannot
+         announce, its whole justification is the measurement above, and the audit must be able to read it
+         back rather than take it on trust. Four decimals — it is a ratio of two radiances, not a constant. */
+      canvas.dataset.dataFog = dataFogRatio(th).toFixed(4);
 
       const err = gl.getError();
       if (err !== 0) { refuse('GL_ERROR_AFTER_DRAW'); return undefined; }

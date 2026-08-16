@@ -1891,3 +1891,195 @@ is no back button to a warm tab, no second tab already dark, and the front door 
 the only unauthenticated screen an operator sees. And it is the screen carrying the one relief that
 mounts without a click. If the light branch of `theme.ts` is not right, **the desktop channel is where
 it will be seen first and most often.**
+
+---
+
+## 14 · DOES IT DRAW? — a bitmap, at last, and without a screen-recording grant
+
+> Everything before this section establishes what the app **carries**: the binary is built, its asset
+> manifest names `index-DRlmBXCH.js` and `theme-BPpaXmSv.js`, `webview-capability-probe.mjs` measured
+> that this machine's WKWebView supports every capability the seven surfaces require, and the app
+> launches and stays alive. **None of that is a picture.** A bundle can carry every chunk, pass every
+> capability probe, and still put nothing on screen. This section closes that gap with pixels.
+
+### 14.1 · The two instruments that failed first, and why neither convicts anything
+
+| instrument | what it returned | what it means |
+|---|---|---|
+| `screencapture -x -o -l<id>` | `could not create image from display` | Screen Recording is a macOS **TCC grant**. This session does not hold it, no code routes around it. A statement about a permission, **not** about the app. |
+| System Events window enumeration | **0 windows** for `lcx-terminal` | It also returned **0 for Finder** and **0 for Claude**, while returning **4 for Brave**. An enumeration that misses two known-visible applications **cannot convict a third**. |
+
+The previous `verify-app-renders.mjs` exited 2 here. That was honest and useless — it produced no
+evidence in either direction, which is how a build ships with nobody having seen it draw.
+
+### 14.2 · The way through: snapshot your own view
+
+A snapshot of your **own** `WKWebView` is not a screen recording. `WKWebView.takeSnapshot` asks the web
+view to render its content into a bitmap **inside this process**; nothing is read off the display, so
+TCC is never involved and **no permission is required at all**.
+
+**`apps/desktop/scripts/webview-render-probe.swift`** — a standalone Swift program (the same
+generate-compile-run technique `webview-capability-probe.mjs` already used, promoted to a file because
+it now takes arguments). It builds a `WKWebView`, parents it into a borderless `NSWindow` positioned at
+`(-8000, -8000)` and only ever `orderBack` — so it joins the window server, is never visible, never
+becomes key, and never disturbs whoever is at the machine — loads a URL, waits for a readiness
+predicate to become true (**polled**, not slept: a fixed sleep is how you photograph a canvas that has
+not drawn yet), snapshots, and prints one JSON object.
+
+**`apps/desktop/scripts/verify-app-renders.mjs`** — serves the **real** `frontendDist` over
+`http://127.0.0.1:5809`, runs the controls, then renders each surface. `http` on loopback rather than
+`file://`: the built `index.html` references its assets with **absolute** paths
+(`<script src="/assets/index-DRlmBXCH.js">`), which under `file://` resolve against the filesystem root,
+and the app uses `createBrowserRouter`, which needs a real history origin to reach `/select` and `/`.
+A custom `WKURLSchemeHandler` — closer to what Tauri itself does — was considered and **not tried**,
+because `localStorage` (used by the pre-hydration theme script and every persisted store) has known
+restrictions on custom schemes; **that is a reason for the choice, not a measurement**, and loopback
+`http` was the option that made every surface work first time. App Transport Security did **not** block
+plain `http` to `127.0.0.1` from a `swiftc`-built binary with no `Info.plist`; that was the one thing
+here worth checking rather than assuming, and it was checked.
+
+Everything the script needs is **derived from source**, never typed twice: `frontendDist` from
+`tauri.conf.json`, the entry-chunk name from the built `index.html`, the container marker from
+`apps/web/src/lib/container.ts`, and the operator seed from `packages/shared/src/operators.ts` +
+`lib/storage.ts` + `lib/persistence.ts` + `useOperatorStore.ts`. Each derivation exits 2 if it cannot
+parse, rather than falling back to a guess.
+
+```bash
+node apps/desktop/scripts/verify-app-renders.mjs          # ~23 s, exit 0
+node apps/desktop/scripts/verify-app-renders.mjs --json   # machine-readable
+node apps/desktop/scripts/verify-app-renders.mjs --embedded-only
+```
+
+### 14.3 · The controls — reported before any verdict about the app
+
+A snapshot of a view that never painted looks **exactly** like a snapshot of a surface that refused:
+both are a rectangle of one colour. So the bitmap alone is worth nothing, and four checks run first.
+Any failure aborts the run.
+
+| control | what it asserts | measured |
+|---|---|---|
+| **POSITIVE** | twelve authored colours must come back from their twelve authored pixels — a **spatial** claim a flat fill cannot satisfy | **12/12**, mean 120.14, sd 55.67, **12** distinct, 2880×1800 |
+| **NEGATIVE** | a blank white page must **collapse** the statistics | mean 255.00, **sd 0.00**, **1** distinct |
+| **CROSS** | the POSITIVE assertions run against the **BLANK** bitmap: exactly the white entries of the pattern may survive | **1/12**, expected **1** (derived from the palette, not typed) |
+| **RECHECK** | the Swift statistics re-measured from the same PNG by the repo's PIL/numpy recipe | agrees: mean `120.138550`, sd `55.672249`, distinct `12` |
+
+The **CROSS** control is the one that matters most and the one this programme keeps having to relearn:
+it demonstrates on **every run** that the assertions can go red. A control that only ever passes proves
+nothing about the thing it guards.
+
+The statistics are the three the rest of this repo uses — Rec.709 mean luminance, **population** sd
+(numpy's `.std()` default), and the count of distinct 8-bit RGB triples — computed in Swift from the
+same buffer the PNG is written from, so RECHECK is a genuine two-implementation comparison rather than
+a formality. The sd is deliberately **two-pass**: the algebraically identical one-pass form returned
+`0.000004` on a flat white page, and a negative control that reports a small non-zero number where zero
+is correct is exactly the kind of instrument that has misled this programme before.
+
+### 14.4 · The surfaces — what the built frontend actually draws
+
+All at 1440×900 CSS points, captured at the display's 2× backing scale (2880×1800 device pixels).
+
+| surface | route | mean | sd | distinct colours | DOM |
+|---|---|---:|---:|---:|---|
+| public landing (browser branch) | `/lcxos` | 241.45 | 28.83 | **1 076** | 86 elements, 3 svg, 1 786 chars |
+| **sign-in gate (desktop branch)** | `/select` | 236.32 | 25.86 | **2 638** | 67 elements, 2 svg, **1 canvas**, 193 chars |
+| signed-in shell (seeded operator) | `/` | 243.98 | 39.23 | **3 621** | 411 elements, 42 svg, 2 011 chars |
+
+Against **1** distinct colour for a blank page. Zero uncaught page errors on all three (the harness
+installs `error` and `unhandledrejection` traps and reports what they collect).
+
+**The middle row is the one that answers the question.** `lib/container.ts` decides browser-vs-terminal
+by testing for a property the Tauri webview injects before app code runs, and the router sends the two
+branches to **different** screens. Injecting that marker at `documentStart` — which is what the Tauri
+webview itself does — makes the frontend take the same branch it takes in the app, and it lands on
+`/select`: **"Sign in to the desk", the LCXOS mark, both fields, the button, and the `ForgeBackdrop`
+canvas.** That is the screen the packaged app shows on launch, drawn.
+
+The third row is reached by seeding the persisted operator. It renders the full shell — sidebar, top
+nav, workspace switcher, 42 icons — and an honest **CONNECTION DEGRADED** banner, because no API is
+running. Its data panels therefore show empty/degraded states, not populated ones. **That is a limit of
+this run, not a defect**: the signed-in surfaces need a live API and this harness does not start one.
+
+*On repeatability, because one of these three numbers moves and a reader should not be surprised by
+it:* the **distinct-colour count of the sign-in gate is not stable**. A controlled batch of ten
+captures gave 2632–2642 (**0.38 %** spread), and across every capture taken while building this
+section — about twenty, at differing settle times — the observed range was **2607–2645** (1.5 %).
+Over the same ten captures the **mean was 236.324–236.325 and the sd was 25.857 in all ten**. The
+variation is therefore confined to the colour count, on the one surface that paints a live UTC clock.
+**Quote the mean and sd if you need a number that repeats; treat the colour count as an order of
+magnitude** — which is all it is asked to be, since its job is to separate ~2 600 from **1**.
+
+### 14.5 · Each guard, watched failing — mutation by mutation
+
+A test that cannot fail is not evidence. Each guard was broken by editing, run, watched go red, and
+restored by editing.
+
+| # | mutation | result |
+|---|---|---|
+| 1 | negative control page given a `#123456` block | `FAILED: the NEGATIVE control did not collapse: sd 18.180501, distinct 2, expected sd 0 and distinct 1.` — **exit 1** |
+| 2 | positive control grid set to `display:none` | `0/12 authored colours found`, twelve `MISS (x,y) want #… got #000000` lines, then `FAILED: the POSITIVE control did not come back. The harness is broken and every other number in this run is void` — **exit 1** |
+| 3 | static server made to 404 the entry chunk | all three surfaces `DID NOT RENDER — --ready-js never became true in 45.0s; last value false` — **exit 1** |
+
+**And one mutation that failed to mutate, recorded because it nearly produced a false clearance.**
+Mutation 1 was first attempted as `background: linear-gradient(#FFFFFF,#000000)` on `html,body`. The run
+came back **green** — because the root element has no content and therefore zero height, so the gradient
+had no positioning area and never painted. A mutation that changes no pixels proves nothing about the
+guard, and had it not been checked against the printed statistics it would have read as "the negative
+control cannot be broken". **Verify that the mutation mutates.**
+
+### 14.6 · The defect this found in its own instrument
+
+Several runs into the session, all three surfaces returned **identical** statistics — 410/411
+elements, "Skip to content", 3 621 distinct colours — and the script printed **DREW** for all three
+and its clearance paragraph underneath. `WKWebView`'s default
+website data store is **persistent and shared across processes**, so the `localStorage` seeded to reach
+the signed-in shell was still on disk for the *next* run, and the "browser branch" surface came back as
+the signed-in shell.
+
+It is worth stating how bad the shape of this bug was: it is **invisible on the first run of a session**,
+because the store starts empty. The clean numbers in §14.4 were originally obtained on exactly such a
+first run and were correct by luck. The fix is one line —
+`config.websiteDataStore = WKWebsiteDataStore.nonPersistent()` — and it is documented in
+`webview-render-probe.swift` as a bug fix rather than as hygiene. Three consecutive runs afterwards
+produced three distinct surfaces each time.
+
+**A consequence to hold:** the harness deliberately no longer reproduces the app's persistence, so it
+**cannot** be used to ask §13.2's question about a preference surviving a relaunch.
+
+### 14.7 · A correction to what `strings` over the binary can show
+
+The previous `verify-app-renders.mjs` printed **"theme.ts hexes N/M present"**, grepping the Mach-O for
+the colours `packages/gl/src/look/theme.ts` is authored with. **That line was near-vacuous and has been
+removed.** It reads **1/20** on this build and the single hit is `FFFFFF`, a six-character run that
+occurs in almost any binary.
+
+The reason is not that the theme is missing — it is that **Tauri v2 embeds the frontend compressed**.
+Measured with `LC_ALL=C grep -c -a -F` over the executable:
+
+| string | in `apps/web/dist` | in the app binary |
+|---|---|---|
+| `index-DRlmBXCH.js` | yes (referenced by `index.html`) | **1** |
+| `theme-BPpaXmSv.js` | yes | **1** |
+| `Sign in to the desk` | `assets/index-DRlmBXCH.js` | **0** |
+| `050810` (a theme colour) | `assets/theme-BPpaXmSv.js` | **0** |
+
+So the filename agreement between `dist/index.html` and the binary is a **manifest** match, not a byte
+comparison. The script now says so explicitly, and derives a content marker out of the built entry chunk
+each run to demonstrate it rather than asserting it. **Proving byte-identity of the embedded assets
+needs a decompressor and is not attempted here.**
+
+### 14.8 · What §14 does **not** establish
+
+- **That the packaged `.app` presents a window.** This is the single most important limit. A Tauri
+  window is Tauri's own Rust code creating an `NSWindow` and a wry `WebView`; this harness builds its
+  own `WKWebView` and bypasses all of it. What is proven is that **the built frontend renders in
+  WKWebView on this machine** — if the app shows nothing, the remaining suspect is Tauri's window
+  creation, not the web layer.
+- **That the shipped binary's embedded bytes are these bytes.** §14.7: the manifest names the chunk; the
+  content is compressed and was not decompressed.
+- **That any signed-in surface is correct with real data.** No API was running. The shell renders and
+  says so on screen; its panels were empty by cause, not by defect.
+- **Anything about another Mac.** WebKit here is the operator's OS. Every number above describes this
+  machine, on macOS 27.0 (build 26A5378j), at a 2× backing scale.
+- **That the 3-D surfaces look right.** Only one canvas appeared in any capture (`/select`'s
+  `ForgeBackdrop`). The seven GL surfaces live behind routes that need the API. §4.6 is still the thing
+  to do before a release, and this section does not substitute for it.

@@ -88,6 +88,45 @@
  * is invisible — it looks like a lighting choice. So `FOG_GLSL` is SLICED OUT OF THE IMPORTED `LIT_FRAG` at
  * module load and spliced into this shader, and the surface REFUSES with `FOG_SOURCE_UNREADABLE` if the slice
  * markers are not found exactly once. The corridor and the marks cannot fog differently; they share the source.
+ *
+ * ══ AND THAT FIXED THE CHROMA WITHOUT FIXING THE CONTRAST. THE ROOM WAS THE OTHER HALF ══════════════
+ *
+ * Everything above is about the MARK. Re-measured on 2026-08-16 the mark was correct in isolation and still
+ * invisible: `data-to-scenery contrast 3.16:1 dark → 1.02:1 light`, the worst single number in the sweep, with
+ * p99.9 chroma 196 → 113. Two defects in the ROOM, both light-only, both units errors, and each owns exactly
+ * one of those two columns — proven by reverting them one at a time and re-running (see the table below):
+ *
+ *   · THE HAZE WAS THE DAYLIGHT SKY. `theme.ts:312` derives `fog` from `skyHorizon`, so reading `th.fog` here
+ *     re-introduced through the theme the very thing the paragraph four sections up refuses by name. It owns
+ *     the CHROMA column. See `corridorHaze`.
+ *   · THE ROOM WAS UNDER-EXPOSED. Its floor rendered at rgb(179,181,183) for an authored albedo of #FFFFFF,
+ *     while the unlit marks and cards arrived at exactly their authored colour — so the two populations met in
+ *     the middle. It owns the CONTRAST column. See `solvedExposure`, which is `ForgeBackdrop.lightExposure()`'s
+ *     criterion with the sign reversed.
+ *
+ * MEASURED, one E6-only run of the frozen sweep per row, same instrument, same frozen instant:
+ *
+ *   variant                          light contrast   p99.9 chroma   max chroma   data px %
+ *   shipped                                1.0153            113          114        1.269
+ *   haze fixed, exposure reverted          1.1667            173          173        1.387
+ *   exposure fixed, haze reverted          1.3736            113          114        1.269
+ *   BOTH — what this file now does         1.6806            150          151        1.381
+ *
+ * DARK IS THE SAME FRAME. Every dark statistic is identical to the digit across all four runs — contrast
+ * 3.1614, p99.9 chroma 196, max 196, data 1.389%, mean luma 13.341, sd 8.9928, 34 colours — because every
+ * change above is inside a `th.name === 'dark'` literal branch or multiplies by an exact 1. The dark canvas
+ * differs from the pre-change capture in 77 pixels of 545,824 (0.0141%) at a maximum channel delta of ONE
+ * level, all of them card plates at the vanishing point: the `inverseToneMap` rounding step described at
+ * `uPlate`. No dark statistic moves at all.
+ *
+ * WHAT IS STILL NOT TRUE: light is 53% of dark's contrast, not 100%, and it cannot be. The mark is brand blue
+ * (WCAG relative luminance 0.179) and the light room is pale by construction, so the two can never be as far
+ * apart as a mark and a near-black room. That ceiling is a number rather than an excuse: run the CPU model of
+ * this frame — the one validated against the sweep at the top of this note — with the fog density taken to
+ * zero and light reaches 2.54:1 while dark reaches 4.57:1, a ratio of 56%. This pass delivers 53%, which is
+ * 96% of what the palette allows a fogged corridor to deliver. The remaining separation in light is carried by
+ * CHROMA, which is why those columns are the ones to watch and why the haze defect was the more serious of
+ * the two.
  */
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import {
@@ -96,7 +135,7 @@ import {
   viewProjection, eyeOf, nearFarOf, lightViewProjection, boundsCentre, boundsRadius,
   hexToLinear, assertBrandFidelity, IDENTITY, TONE_MAP_GLSL, SRGB_ENCODE_GLSL, statusAlbedo, statusHex,
   qualitySettings, shadowMapSizeFor, pickQualityTier, LIT_FRAG, SKY_GLSL, bindSky,
-  precompensate, isPrecompRefusal,
+  precompensate, isPrecompRefusal, inverseToneMap, skyIrradiance,
   type LitDraw, type Viewpoint, type MeshBuffer, type Linear,
 } from '@lcx/gl';
 /* A SUB-PATH IMPORT, NOT THE BARREL — `docs/3d/w2/SUBPATH_COST.md`; `SurfaceReliefGl.tsx` carries the reason. */
@@ -479,19 +518,34 @@ const WHITE: readonly [number, number, number] = [255, 255, 255];
 const SHADOW_BASELINE = 1024;
 
 /**
- * ══ THE CORRIDOR SHELL IS SCENERY, AND ITS FOUR SURFACES ARE ORDERED ════════════════════════════════
+ * ══ THE CORRIDOR SHELL IS SCENERY, AND ITS ROLES ARE WHAT EACH SURFACE *IS* ═════════════════════════
  *
  * `packages/gl/src/look/theme.ts` argues the data/scenery line; `SurfaceReliefGl.tsx` carries the note on why
- * only the LIGHT half comes from the theme. What matters here is that the shell is four surfaces whose ORDER is
- * the architecture, and the theme's roles happen to mirror it exactly. Measured WCAG luminance of the albedos:
+ * only the LIGHT half comes from the theme.
  *
- *   dark   floor #080C15 0.00369 < ceiling #0A101C 0.00519 < end cap #0B1220 0.00608 < wall #141F35 0.01386
- *   light  plate #FFFFFF 1.00000 > ground #E8EDF6 0.84378 > fog #DCE5F3 0.77725 > structure #C3CEE0 0.61127
+ * ── THE MAPPING THAT USED TO BE HERE WAS ARGUED ACROSS TWO DIFFERENT QUANTITIES ─────
+ * It read: "dark floor #080C15 0.00369 < ceiling #0A101C 0.00519 < end cap #0B1220 0.00608 < wall #141F35
+ * 0.01386 / light plate #FFFFFF 1.00000 > ground #E8EDF6 0.84378 > fog #DCE5F3 0.77725 > structure #C3CEE0
+ * 0.61127 — four surfaces, same order, mirrored", and so gave the floor `plate`, the ceiling `ground`, the end
+ * cap `fog` and the walls `structure`. THREE of those four numbers are ALBEDOS, which are multiplied by the
+ * light that reaches them and therefore arrive well under their hex; the fourth, `fog`, is a RADIANCE and
+ * arrives AT its hex. An ordering read off that table is an ordering of things that are not the same quantity,
+ * and it does not survive into pixels: measured on the shipped frame, the light haze left the pipeline at
+ * rgb(220,229,243) — luma 228 — against a scenery mean of 177. The deepest, most fogged region of a sealed
+ * corridor was its BRIGHTEST, which is the glowing tunnel this file's header says cost the harness a revision.
  *
- * Four surfaces, same order, mirrored — so floor takes `plate`, ceiling `ground`, the end cap `fog` and the
- * walls `structure`. Two of those are not choices at all: the end cap must EQUAL the fog or the far end of the
- * corridor stops dissolving into it (its dark hex #0B1220 is already `FOG_HEX`), and the wall's dark hex #141F35
- * is already the theme's own dark `structure`.
+ * SO THE ROLES ARE ASSIGNED BY WHAT THE SURFACE IS, and the light half is then solvable:
+ *   · floor and ceiling take `ground` — "the floor or backdrop a scene sits on, the single largest area".
+ *     They still render differently, because the analytic sky delivers a different irradiance to a normal
+ *     pointing up than to one pointing down; only the reflectance is shared.
+ *   · walls and the end cap take `structure` — "plinths, walls, rails: geometry that holds data up".
+ *   · `plate` is left to the RECORD CARDS, which are its stated role: "panel and card fills behind projected
+ *     DOM text". It is #FFFFFF in light, and a floor painted with it is (a) the same colour as every card in
+ *     the frame and (b) an albedo of 1.0, which leaves the exposure solve below no headroom at all —
+ *     `theme.ts` says so in as many words under its own `ground` entry.
+ *   · `fog` is not a shell albedo at all. See `corridorHaze`.
+ *
+ * The dark hexes are untouched literals, so none of this reaches the dark frame.
  *
  * The VERDICT colours are data and appear nowhere here. They do not move in either theme.
  */
@@ -501,11 +555,137 @@ const scenery = (th: SceneTheme, darkHex: string, light: Linear): Linear =>
 /** The dark theme's record, held only as the denominator of the light rig's ratio — see `SurfaceReliefGl.tsx`,
     THE LIGHT RIG MOVES BY RATIO. Nothing reads a colour out of it. */
 const TH_DARK = sceneTheme('dark');
+
+/**
+ * ══ ONE RIG SPEC, READ BY THE LIT PASS AND BY THE HAZE THAT MUST AGREE WITH IT ══════════════════════
+ *
+ * These three were literals inside the `lit.draw` call. The corridor's haze is now DERIVED from the same
+ * illumination the shell is lit with, so two readers exist and a second copy of any of them is exactly how the
+ * haze and the room drift into describing different rooms — the failure `FOG_SPEC` already exists to prevent
+ * one field over.
+ */
+const KEY_COLOUR: Linear = [3.0, 2.95, 2.85];
+/** 0.46, not 0.86. At the higher gain the floor and ceiling — whose normals point at the analytic sky's
+    bright zenith — became two glowing wedges brighter than the key light. */
+const AMBIENT_GAIN = 0.46;
+const SHADOW_STRENGTH = 0.94;
+/*
+ * Down the corridor and slightly to one side, so the WALLS take light at a grazing angle and the corridor
+ * reads as a space rather than as a flat backdrop. A light down the axis would flatten it.
+ *
+ * IT DOES NOT LIGHT THE RECORDS, and the sentence that used to be here said it did — "records on both walls
+ * take light at a grazing angle and their 5 cm edges catch it". Measured, the ceiling shadows every record, so
+ * the key reached a slab at 1 − shadowStrength: 0.06 in dark. The edge catch was prose about a highlight the
+ * frame never drew. The records are unlit now and the light's only job is the architecture.
+ */
+const LIGHT_DIR: Linear = [0.34, -0.42, -0.84];
+const KEY_L: Linear = (() => {
+  const m = Math.hypot(LIGHT_DIR[0], LIGHT_DIR[1], LIGHT_DIR[2]);
+  return [-LIGHT_DIR[0] / m, -LIGHT_DIR[1] / m, -LIGHT_DIR[2] / m];
+})();
+/** The floor's normal — the surface the exposure below is solved against. */
+const CORRIDOR_UP: Linear = [0, 1, 0];
+/** The far end of the corridor faces the eye straight down the axis. It is the surface a ray that never
+    resolves anything finally lands on, which is what makes it the colour the corridor dissolves INTO. */
+const CORRIDOR_END_N: Linear = [0, 0, 1];
+
 const rigFor = (th: SceneTheme) => ({
   key: th.keyGain / TH_DARK.keyGain,
   ambient: th.ambientGain / TH_DARK.ambientGain,
   shadow: th.shadowStrength / TH_DARK.shadowStrength,
 });
+
+/**
+ * NO SKY BACKDROP IS ALLOCATED — a vault has no sky, see the header — so the theme's stops reach the lit pass
+ * as the irradiance environment only, with no backdrop to stay in step with. The record pass binds the SAME
+ * stops: the fog block it shares with `LIT_FRAG` has a `'sky'` branch, and two passes holding different skies
+ * for a branch neither takes is a trap set for whoever takes it.
+ *
+ * THE THIRD STOP IS `inverseToneMap(th.ground)`, NOT `th.ground`. `theme.ts:184-189` names this exactly: the
+ * sky's lower stop is a RADIANCE slot and `ground` is an ALBEDO, so passing it raw asks a downward-facing
+ * normal to reflect a value a third under the one the palette authored. This file was one of the six call
+ * sites it lists. Dark passes no stops at all, so the correction cannot reach the dark frame.
+ */
+const skyStops = (th: SceneTheme) => (th.name === 'dark' ? undefined : {
+  zenith: th.skyZenith, horizon: th.skyHorizon, ground: inverseToneMap(th.ground),
+});
+
+/** The ambient a surface with normal `n` receives here: the analytic sky through the rig's own gain. */
+const ambientOn = (th: SceneTheme, n: Linear, exposure: number): Linear => {
+  const irr = skyIrradiance(n, skyStops(th));
+  const g = AMBIENT_GAIN * rigFor(th).ambient * exposure;
+  return [irr[0] * g, irr[1] * g, irr[2] * g];
+};
+/** The key a surface with normal `n` receives here. Everything in this corridor is under the ceiling, so the
+    shadow term is the leak `1 − shadowStrength` rather than the full key — the header measured that. */
+const keyOn = (th: SceneTheme, n: Linear, exposure: number): Linear => {
+  const rig = rigFor(th);
+  const s = (Math.max(0, n[0] * KEY_L[0] + n[1] * KEY_L[1] + n[2] * KEY_L[2])
+    * (1 - SHADOW_STRENGTH * rig.shadow) * exposure) / Math.PI;
+  return [KEY_COLOUR[0] * rig.key * s, KEY_COLOUR[1] * rig.key * s, KEY_COLOUR[2] * rig.key * s];
+};
+
+/**
+ * ══ THE LIGHT EXPOSURE IS SOLVED, AND DARK IS MULTIPLIED BY EXACTLY 1 ═══════════════════════════════
+ *
+ * `ForgeBackdrop.tsx`'s `lightExposure()` is the precedent and this is the same criterion, mirrored: E8's
+ * light ground was CLIPPING — an albedo of 215 rendering at 255 — and the fix solved the absolute exposure so
+ * it rendered at 215. This corridor had the same defect with the sign reversed. Its floor is the frame's
+ * largest area; measured on the shipped light frame it left the pipeline at rgb(179,181,183) against an
+ * authored albedo of #FFFFFF, so the room rendered at 70% of the value the palette states, while the record
+ * cards and the verdict stripes — which are UNLIT, and therefore written at whatever radiance this file asks
+ * for — arrived at exactly their authored colour. A room three tenths under, marks exactly on: the two
+ * populations met in the middle, which is the 1.02:1 this pass exists to fix.
+ *
+ * The solve is E8's: the radiance that tone-maps and encodes back to the floor's own albedo, divided by the
+ * illumination the floor actually receives, per channel, binding channel taken so nothing renders brighter
+ * than authored. The key/ambient RATIO is untouched — both are multiplied by the same scalar — so the light
+ * rig's authored 11.9:1 against dark's 4.5:1 is exactly as it was.
+ *
+ * DARK RETURNS THE LITERAL 1 AND IS NOT SOLVED AT ALL. Multiplication by 1.0 is exact in IEEE 754, so every
+ * dark term is bit-for-bit the expression it always was. The criterion is a light-studio criterion — "render
+ * at your albedo" would DARKEN a near-black room that was authored to lift a floor off black — and it says so.
+ */
+const solvedExposure = (th: SceneTheme): number => {
+  if (th.name === 'dark') return 1;
+  const albedo = th.ground;
+  const target = inverseToneMap(albedo);
+  const k = keyOn(th, CORRIDOR_UP, 1), a = ambientOn(th, CORRIDOR_UP, 1);
+  return Math.min(
+    target[0] / (albedo[0] * (k[0] + a[0])),
+    target[1] / (albedo[1] * (k[1] + a[1])),
+    target[2] / (albedo[2] * (k[2] + a[2])),
+  );
+};
+
+/**
+ * ══ THE HAZE IS THE CORRIDOR, NOT THE SKY — AND THAT WAS THE DEFECT ════════════════════════════════
+ *
+ * The header already refuses `colour: 'sky'` for this surface: "a sealed corridor lit by a daylight sky becomes
+ * a glowing tunnel whose deepest, most fogged region is its BRIGHTEST — the exact inverse of the reading. It
+ * cost the harness a whole revision." The dark branch obeys that with a literal. The LIGHT branch read
+ * `th.fog`, and `theme.ts:312` defines `fog: toRadiance(hex.skyHorizon)` — so the light corridor was fogged
+ * with the daylight sky after all, arriving through the theme instead of through the branch that was refused.
+ *
+ * WHAT REPLACES IT IS DERIVED, NOT PICKED. A ray that resolves nothing ends on the corridor's far wall, so the
+ * colour the corridor dissolves into is what that wall radiates. Two terms, and only one of them is defined
+ * there:
+ *   · AMBIENT — the analytic sky on a normal facing the eye, through the rig. Defined everywhere.
+ *   · KEY — omitted, and not as a taste call: `sceneMin`/`sceneMax` bound the shadow map at z = −27.4 and the
+ *     end cap sits at z = −41, THIRTEEN METRES BEYOND IT. The shadow pass never saw that geometry, so there is
+ *     no measured key/shadow answer to quote for it, and quoting the in-map leak term there would be inventing
+ *     one. It is also the physically obvious answer for the deepest point of a tube with a ceiling on it.
+ *
+ * Measured consequence in light: the haze leaves the pipeline at rgb(153,168,194) rather than rgb(220,229,243),
+ * which is the same value the corridor's own unlit wall renders at — so the far end now dissolves into the
+ * wall it is made of, and the brightest thing in the frame is the floor and the cards, where a reader's eye
+ * belongs. Dark takes `hexToLinear(FOG_HEX)` and is untouched.
+ */
+const corridorHaze = (th: SceneTheme, exposure: number): Linear => {
+  if (th.name === 'dark') return hexToLinear(FOG_HEX);
+  const e = ambientOn(th, CORRIDOR_END_N, exposure);
+  return [th.structure[0] * e[0], th.structure[1] * e[1], th.structure[2] * e[2]];
+};
 
 /**
  * THE FRAME'S OWN TEXT TOKENS — the HUD, the depth ruler and the caption under the frame.
@@ -791,27 +971,23 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
        it are rebuilt when the page changes. */
     const staticDrawsFor = (th: SceneTheme): LitDraw[] => [
       { mesh: floorMesh, model: modelOf(0, -0.06, CORRIDOR_MID), normalMat: N3,
-        material: { baseColour: scenery(th, '#080C15', th.plate), roughness: 0.84, metalness: 0 } },
+        material: { baseColour: scenery(th, '#080C15', th.ground), roughness: 0.84, metalness: 0 } },
       { mesh: wallMesh, model: modelOf(-CORRIDOR_HALF, 1.5, CORRIDOR_MID), normalMat: N3,
         material: { baseColour: scenery(th, '#141F35', th.structure), roughness: 0.62, metalness: 0.03 } },
       { mesh: wallMesh, model: modelOf(CORRIDOR_HALF, 1.5, CORRIDOR_MID), normalMat: N3,
         material: { baseColour: scenery(th, '#141F35', th.structure), roughness: 0.62, metalness: 0.03 } },
       { mesh: ceilMesh, model: modelOf(0, 2.86, CORRIDOR_MID), normalMat: N3,
         material: { baseColour: scenery(th, '#0A101C', th.ground), roughness: 0.80, metalness: 0 } },
+      /* AN ALBEDO, NOT `th.fog`. `Material.baseColour` is a reflectance and `th.fog` is a RADIANCE — in light
+         it is (1.00, 1.14, 1.40), a wall reflecting 140% of the blue light that lands on it, which `theme.ts`
+         names in as many words as "a reflectance above 1". The end cap is a wall of this corridor and takes
+         the wall's material; `corridorHaze` then derives the fog from that same material, so "the end cap must
+         EQUAL the fog" is true by construction in light instead of by two hexes agreeing in dark. */
       { mesh: endMesh, model: modelOf(0, 1.5, CORRIDOR_MID - CORRIDOR_LEN / 2), normalMat: N3,
-        material: { baseColour: scenery(th, '#0B1220', th.fog), roughness: 0.86, metalness: 0 } },
+        material: { baseColour: scenery(th, '#0B1220', th.structure), roughness: 0.86, metalness: 0 } },
     ];
 
-    /*
-     * Down the corridor and slightly to one side, so the WALLS take light at a grazing angle and the corridor
-     * reads as a space rather than as a flat backdrop. A light down the axis would flatten it.
-     *
-     * IT DOES NOT LIGHT THE RECORDS, and the sentence that used to be here said it did — "records on both
-     * walls take light at a grazing angle and their 5 cm edges catch it". Measured, the ceiling shadows every
-     * record, so the key reached a slab at 1 − shadowStrength: 0.06 in dark. The edge catch was prose about a
-     * highlight the frame never drew. The records are unlit now and the light's only job is the architecture.
-     */
-    const lightDir: [number, number, number] = [0.34, -0.42, -0.84];
+    const lightDir = LIGHT_DIR as [number, number, number];
     const sceneMin: [number, number, number] = [-2.2, 0, -(DEPTH_M + NOW_OFFSET_M + 2)];
     const sceneMax: [number, number, number] = [2.2, 3.4, 3.0];
     const lightVP = lightViewProjection(
@@ -828,14 +1004,8 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
      * ONE FRAME, THEN NOTHING. §6 rule 2 forbids idle animation, and this is why the reduced-motion case needs
      * no branch: a still frame is already the final frame. No requestAnimationFrame, no setInterval.
      */
-    /* NO SKY BACKDROP IS ALLOCATED — a vault has no sky, see the header — so the theme's stops reach the lit
-       pass as the irradiance environment only, with no backdrop to stay in step with. Hoisted out of
-       `renderScene` because the record pass binds the SAME stops: the fog block it shares with `LIT_FRAG` has a
-       `'sky'` branch, and two passes holding different skies for a branch neither takes is a trap set for
-       whoever takes it. */
-    const skyFor = (th: SceneTheme) => (th.name === 'dark' ? undefined : {
-      zenith: th.skyZenith, horizon: th.skyHorizon, ground: th.ground,
-    });
+    /* The stops live at module scope now, next to `ambientOn`, because the haze derivation reads the SAME sky
+       the lit pass and the record pass are handed. Three readers, one stop set — see `skyStops`. */
 
     /**
      * ══ THE RECORD PASS — UNLIT, AFTER THE CORRIDOR, OVER THE DEPTH THE PREPASS ALREADY WROTE ═══════
@@ -854,9 +1024,12 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
       th: SceneTheme,
       recs: readonly { readonly mesh: MeshBuffer; readonly model: Float32Array; readonly verdict: AuditVerdict }[],
       radiance: Readonly<Record<AuditVerdict, Linear>>,
+      /* PASSED IN, NOT RECOMPUTED. `renderScene` clears the target to this and the lit pass fogs to it; a
+         second `corridorHaze(th, …)` here is a second chance for the marks and the room to disagree about
+         what the corridor's far end looks like, which is invisible because it reads as a lighting choice. */
+      fc: Linear,
     ): void => {
       if (recs.length === 0) return;
-      const fc = scenery(th, FOG_HEX, th.fog);
       const wasCull = gl.isEnabled(gl.CULL_FACE);
       const wasCullMode = gl.getParameter(gl.CULL_FACE_MODE) as number;
       const wasBlend = gl.isEnabled(gl.BLEND);
@@ -873,13 +1046,25 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
       const u = (n: string) => gl.getUniformLocation(recProg, n);
       gl.uniformMatrix4fv(u('uViewProj'), false, vp);
       gl.uniform3f(u('uEye'), eye[0], eye[1], eye[2]);
-      gl.uniform3f(u('uPlate'), th.plate[0], th.plate[1], th.plate[2]);
+      /*
+       * `inverseToneMap(th.plate)`, NOT `th.plate`. This pass is UNLIT, so whatever is written here goes
+       * straight into the scene target as a RADIANCE and then through the curve — and an albedo written as a
+       * radiance is a claim that the card emits 100% of its own reflectance, i.e. that it is a light source.
+       * In dark that was harmless by accident: the curve is the identity to within a rounding step at
+       * #0E1628, and this expression is byte-identical there. In light it made every card render at
+       * rgb(220,220,220) for an authored #FFFFFF — a card three tenths under its own colour, sitting in a
+       * room that was three tenths under its own colour for a different reason. Writing the radiance that
+       * tone-maps back to the albedo is the same rule the verdict stripe already obeys, applied to the half
+       * of the card that is scenery.
+       */
+      const plate = inverseToneMap(th.plate);
+      gl.uniform3f(u('uPlate'), plate[0], plate[1], plate[2]);
       gl.uniform1f(u('uBandTopY'), BAND_TOP_LOCAL_Y);
       gl.uniform1f(u('uFogDensity'), FOG_DENSITY);
       gl.uniform1f(u('uFogHeight'), FOG_SPEC.height);
       gl.uniform1f(u('uFogFloor'), FOG_SPEC.floor);
       gl.uniform3f(u('uFogColour'), fc[0], fc[1], fc[2]);
-      bindSky(gl, recProg, skyFor(th));
+      bindSky(gl, recProg, skyStops(th));
       for (const r of recs) {
         const c = radiance[r.verdict];
         gl.uniformMatrix4fv(u('uModel'), false, r.model);
@@ -909,7 +1094,10 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
       radiance: Readonly<Record<AuditVerdict, Linear>>,
     ): void => {
       const rig = rigFor(th);
-      const fc = scenery(th, FOG_HEX, th.fog);
+      /* SOLVED ONCE PER FRAME AND USED BY EVERY TERM BELOW — the key, the ambient and the haze that must agree
+         with what they light. Exactly 1 in dark, see `solvedExposure`. */
+      const exposure = solvedExposure(th);
+      const fc = corridorHaze(th, exposure);
       lit.shadowPass(lightVP, occluders, shadow);
       target.bind();
       gl.clearColor(fc[0], fc[1], fc[2], 1);
@@ -924,16 +1112,21 @@ export default function VaultReliefGl({ entries, heightPx, onRefused }: VaultRel
       }
       lit.draw({
         viewProj: vp, eye, lightDir,
-        lightColour: [3.0 * rig.key, 2.95 * rig.key, 2.85 * rig.key],
-        /* 0.46, not 0.86. At the higher gain the floor and ceiling — whose normals point at the analytic sky's
-           bright zenith — became two glowing wedges brighter than the key light. */
-        ambientGain: 0.46 * rig.ambient, sky: skyFor(th), lightVP, shadow,
-        shadowStrength: 0.94 * rig.shadow,
+        /* THE RATIO IS UNTOUCHED AND THE SCALE IS SOLVED. Both terms take the SAME `exposure`, so the light
+           rig's authored key:ambient is exactly what it was; what changed is that the room now leaves the
+           pipeline at the albedos the palette states instead of at 70% of them. */
+        lightColour: [
+          KEY_COLOUR[0] * rig.key * exposure,
+          KEY_COLOUR[1] * rig.key * exposure,
+          KEY_COLOUR[2] * rig.key * exposure,
+        ],
+        ambientGain: AMBIENT_GAIN * rig.ambient * exposure, sky: skyStops(th), lightVP, shadow,
+        shadowStrength: SHADOW_STRENGTH * rig.shadow,
         shadowTaps: Q.shadowTaps, shadowBaseline: SHADOW_BASELINE, draws: shell,
         ao: ao ? ao.texture : null, screenSize: [W, H],
         fog: { density: FOG_DENSITY, height: FOG_SPEC.height, floor: FOG_SPEC.floor, colour: fc },
       });
-      drawRecords(th, recs, radiance);
+      drawRecords(th, recs, radiance, fc);
     };
 
     /*
