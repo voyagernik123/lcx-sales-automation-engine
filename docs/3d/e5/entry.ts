@@ -251,7 +251,12 @@ const fallback = installFlatFallback({
     SurfacePlot({
       surface: flatOutcome,
       title: 'Win rate · ticket size × days to close',
-      readsAs: 'Higher is better. Holes are cells never measured; hatched cells are withheld.',
+      /* WAS: 'Holes are cells never measured; hatched cells are withheld.' — which is not what
+         SurfacePlot draws. BOTH kinds are dashed holes; the discriminator is the CROSS, and a
+         cell touching both kinds of corner carries both marks. An operator following the old
+         wording answered the distinction backwards on the flat branch only, which lowered flat
+         accuracy and pushed the verdict toward MEETS — the showreel direction. */
+      readsAs: 'Higher is better. A cross marks cells touching a never-measured point; a fine dash marks cells touching a withheld one.',
       heightPx: 380,
     }),
   ),

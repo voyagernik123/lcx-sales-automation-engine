@@ -1,4 +1,29 @@
-# Running the §7(b) trial — about twenty-five minutes, one person, not me
+# DO NOT RUN THIS. §7(b) is not measurable on these surfaces with one operator.
+
+> **Read `TRIAL_REFUSED.md` in this directory instead.** `task.html` now disables its own start
+> button, and this file is kept only because the reasoning below is still the reasoning — the
+> clause is right, the instrument is not.
+>
+> Two rounds were built and both were refuted on measurement. Round 1: five of seven relief frames
+> printed their own answers as text, two verbatim — **discovered after the owner had already spent
+> his twenty-five minutes on it.** Round 2 fixed the leaks (0 of 8 under a validated check) and was
+> refuted on four further measured grounds, including a partner leak on both flat-first pairs and an
+> in-frame scroll that penalises only the flat branch.
+>
+> The cause is structural, not verbal. **Every relief frame prints its dataset in words** — that is
+> what these surfaces are — and the flat branch is a table of the same data. So whichever surface is
+> shown first discloses what the second question asks about, and with one operator there is nobody
+> to counterbalance against. No rewording escapes that; round 2 proved it by flipping E4's order and
+> merely moving the leak's beneficiary from flat to relief.
+>
+> **What it means, which is not nothing:** on these surfaces the callout layer carries the answers,
+> so a question-answering race cannot show the geometry earning its place. Clause (b) times reading;
+> what arrangement might win is *locating*. That is a different stopwatch and a different piece of
+> work, and it should not be started without deciding it is worth it.
+
+---
+
+# The original runbook — about twenty-five minutes, one person, not me
 
 > This file is **not generated**. `README.md` in this directory is output from `npm run audit-3d` and says so
 > at the top; instructions for a human belong somewhere the generator will not overwrite.
@@ -12,7 +37,7 @@ Clause (b) is the anti-showreel clause. It is the only mechanism that has ever s
 shipping something that looks expensive and reads worse, and it is why all eight relief views default **off**
 with the label *"nobody has yet timed whether it answers faster than this grid."*
 
-**It has never been run.** The instrument has existed and been verified for weeks. What it needs is a person
+**It has never been validly run**, and it cannot be — see the banner above. The instrument has existed and been verified for weeks. What it needs is a person
 who does not already know the answers — which excludes whoever built the surfaces, because `task.html` is its
 own answer key. A self-administered result would be worse than none.
 

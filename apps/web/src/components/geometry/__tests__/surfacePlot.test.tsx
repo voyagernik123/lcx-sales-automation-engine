@@ -452,3 +452,69 @@ describe('SurfacePlot — the frame a picture needs more than a table does', () 
     expect(screen.getByTestId('surface-notices').textContent).toMatch(/Z_DOMAIN_EXCLUDES_ZERO/);
   });
 });
+
+/**
+ * ── THE GAP LEGEND MUST DESCRIBE WHAT `Hole()` ACTUALLY DRAWS ───────────────────────
+ *
+ * Two absences are drawn differently — a cross for never-measured, a fine 0.8-1.2 dash for
+ * withheld — and for a long time NOTHING on the panel said which was which. The frame reported
+ * how MANY cells were of each kind, so the counts were honest while the picture was undecodable:
+ * a reader could see two sorts of gap and had no way to tell which sort they were looking at.
+ *
+ * The reason this is worth a test rather than a comment is that a caption drifted from this exact
+ * renderer and inverted the meaning. `docs/3d/e5/entry.ts` told an operator "Holes are cells never
+ * measured; hatched cells are withheld" — both kinds are dashed holes, so that sentence sends a
+ * reader to the wrong cells. It survived because nothing tied the words to the marks.
+ *
+ * So these assertions read the SVG and the sentence and require them to agree. If someone changes
+ * the dash, drops the cross, or rewords the legend, exactly one of these fails.
+ */
+describe('SurfacePlot — the gap legend and the marks agree', () => {
+  const BOTH: SurfaceGridInput['rows'] = [
+    [1000, 3000, 6000, 9000],
+    [400, WITHHELD, 5100, 8100],
+    [-800, 900, null, 7000],
+  ];
+
+  it('names both marks when both kinds of gap are on screen', () => {
+    plot(mesh(input(BOTH)));
+    const dd = screen.getByText(/a cross marks cells touching a never-measured point/);
+    expect(dd.textContent).toMatch(/a fine dash marks cells touching a withheld one/);
+    /* The two properties are independent in `Hole()`, so the legend must not imply exclusivity —
+       a cell touching an absent corner AND a withheld one carries a cross AND a fine dash. */
+    expect(dd.textContent).toMatch(/a cell touching both carries both/);
+  });
+
+  it('the CROSS appears on exactly the cells the legend attributes it to', () => {
+    const { container } = plot(mesh(input(BOTH)));
+    const holes = [...container.querySelectorAll('g[data-hole="true"]')];
+    expect(holes.length).toBeGreaterThan(0);
+    for (const h of holes) {
+      const hasCross = h.querySelectorAll('line').length === 2;
+      /* `data-absent` is the renderer's own record of touching a never-measured corner. The
+         legend says "a cross marks cells touching a never-measured point", so these must be the
+         same set of cells — not merely overlapping. */
+      expect(hasCross).toBe(h.getAttribute('data-absent') === 'true');
+    }
+  });
+
+  it('the FINE DASH appears on exactly the cells the legend attributes it to', () => {
+    const { container } = plot(mesh(input(BOTH)));
+    const holes = [...container.querySelectorAll('g[data-hole="true"]')];
+    for (const h of holes) {
+      const dash = h.querySelector('polygon')?.getAttribute('stroke-dasharray');
+      /* 0.8 1.2 is the withheld dash; 2 2 is the fallback. Asserting the literal values on
+         purpose: a legend that says "fine dash" is a claim about the STROKE, and a test that only
+         checked "the dash differs" would pass if the two were swapped. */
+      expect(dash).toBe(h.getAttribute('data-withheld') === 'true' ? '0.8 1.2' : '2 2');
+    }
+  });
+
+  it('says nothing at all when the surface has no gaps', () => {
+    plot(mesh(input(FULL)));
+    /* A legend for a mark that is not on screen is noise on a panel whose every line is read by
+       someone deciding whether to trust the surface. */
+    expect(screen.queryByText(/a cross marks cells/)).toBeNull();
+    expect(screen.queryByText(/a fine dash marks cells/)).toBeNull();
+  });
+});

@@ -352,6 +352,32 @@ function Figure({ g, title, readsAs, heightPx }: { g: SurfaceGeometry; title: st
             {`${g.frame.pointsWithheld} present but withheld)`}
           </dd>
         </div>
+        {/*
+          WHAT THE TWO GAP MARKS MEAN — because `Hole()` draws the distinction and nothing said
+          which was which. The counts above report HOW MANY cells are never-measured versus
+          withheld; a reader looking at the plot could not tell WHICH cells were which, so the
+          difference was rendered and not decodable. Two different absences reading as one absence
+          is the same failure `docs/phases/ABSENCES.md` exists to prevent, one level down.
+
+          Stated from `Hole()` rather than from memory: the cross is drawn when the cell touches an
+          ABSENT corner, and the fine 0.8-1.2 dash replaces the 2-2 dash when it touches a WITHHELD
+          one. Those are independent, so a cell touching both carries both marks — said explicitly,
+          because "crossed means never measured" alone would imply the two are exclusive.
+
+          Rendered only when such a cell exists: a legend for a mark that is not on screen is noise,
+          and every line in this panel is read by someone deciding whether to trust the surface.
+        */}
+        {(g.frame.pointsAbsent > 0 || g.frame.pointsWithheld > 0) && (
+          <div>
+            <dt className="inline text-grey">Gaps: </dt>
+            <dd className="inline text-navy">
+              {g.frame.pointsAbsent > 0 && 'a cross marks cells touching a never-measured point'}
+              {g.frame.pointsAbsent > 0 && g.frame.pointsWithheld > 0 && '; '}
+              {g.frame.pointsWithheld > 0 && 'a fine dash marks cells touching a withheld one'}
+              {g.frame.pointsAbsent > 0 && g.frame.pointsWithheld > 0 && ' — a cell touching both carries both'}
+            </dd>
+          </div>
+        )}
         <div>
           <dt className="inline text-grey">As of: </dt>
           <dd className="inline text-navy">

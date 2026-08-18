@@ -942,4 +942,73 @@ labelStart();
 labelRefusals();
 $('start').onclick = () => { $('intro').style.display = 'none'; $('stage').style.display = 'block'; showTrial(); };
 $('dry').onclick = () => { $('dry').disabled = true; renderOrder(); };
+
+/*
+ * ── THIS INSTRUMENT DOES NOT START. ROUND 2 WAS REFUTED LIKE ROUND 1. ───────────────
+ *
+ * Round 1: five of seven relief frames printed their own answers as text, two verbatim.
+ * Round 2 (this file's current question set) fixed that — a normalised leak check over callout
+ * groups grades 0 of 8 trials as leaking, and an independent pass reproduced it — and was then
+ * refuted on four further grounds, every one measured on this page in Chromium:
+ *
+ *   1 PARTNER LEAK, both flat-first pairs. e4 shows the complete coupling table first, ordered
+ *     0.92 / 0.71 / 0.64 / 0.55 with the trial-3 answer in the LAST row, so the timed read
+ *     traverses the whole column — and trial 4 then asks for the maximum of that column.
+ *     e7 asks two whole-column properties of the same three adjacent columns. Both leaks run
+ *     flat -> relief, handing the RELIEF branch the fast answer: the MEETS direction.
+ *   2 A ONE-DIRECTIONAL SCROLL ON THE FLAT BRANCH, on the exact quantity clause (b) times.
+ *     In the trial's own 760px frame, all four relief documents fit (max ink 722). Two of the
+ *     four flat documents do not: e4 scrollHeight 961 with its answer row at y906, e7 1123 with
+ *     its column running to y1068. So 2 of 4 flat trials need an in-frame scroll and 0 of 4
+ *     relief trials do — a systematic time penalty on flat, introduced by the rewrite.
+ *   3 E1's RELIEF ANSWER NEEDS NO DEPTH JUDGEMENT. Only two panels are highlighted (#2C6BFF);
+ *     one of them prints "the panel you are reading", so rank 2 is "the other blue one". The
+ *     depth cue the question names is not even available: P4 at 7.44m renders 183x223px while
+ *     P2 at 7.92m — farther away — renders 185x220px.
+ *   4 E7's RELIEF QUESTION ASKS FOR A PER-BAND DAY COUNT on a surface whose own report says a
+ *     pixel integrates ~6 days and ~1.5 of 3 bands.
+ *
+ * ── WHY THERE IS NO ROUND 3 ─────────────────────────────────────────────────────────
+ *
+ * All seven relief frames carry a callout layer that prints their dataset in words — that is
+ * what these surfaces ARE, per E1's own caption: "real DOM content projected onto lit GL
+ * surfaces". The flat branch is a complete table of the same data. So for any within-environment
+ * pair, whichever surface is shown FIRST discloses the dataset the second question is about, and
+ * with ONE operator there is no second group to counterbalance against. The order effect is not
+ * a wording defect; it is unidentifiable by construction.
+ *
+ * That is a result, not a failure to produce one: on these surfaces the CALLOUTS carry the
+ * answers, so a question-answering race cannot show the geometry earning its place. What the
+ * geometry might earn — arrangement, emphasis, locating one record among many — is a different
+ * measurement, and clause (b) as written is not it.
+ *
+ * The gate is a URL parameter rather than a deletion because a deliberate run is legitimate;
+ * an ACCIDENTAL verdict is what must not happen. A verdict from this page has already been
+ * quoted once as if it meant something.
+ *   docs/3d/e9/task.html?acknowledge-invalid=1
+ */
+(() => {
+  if (new URLSearchParams(location.search).has('acknowledge-invalid')) return;
+  const start = document.getElementById('start');
+  if (start) {
+    start.disabled = true;
+    start.textContent = 'this instrument is not valid — read below';
+    start.title = 'Refuted on four measured grounds. See docs/3d/e9/TRIAL_REFUSED.md';
+  }
+  const note = document.createElement('div');
+  note.className = 'lede warn';
+  note.innerHTML = '<strong>This trial will not run, and running it would not answer the question '
+    + 'it exists to answer.</strong><br><br>Round 1 printed its own answers on five of seven '
+    + 'surfaces. Round 2 fixed that and was refuted on four further measured grounds: a partner '
+    + 'leak on both flat-first pairs, a scroll that penalises only the flat branch, an E1 answer '
+    + 'reachable by elimination from a printed sentence, and an E7 question about a distinction '
+    + 'its own surface reports it cannot resolve.<br><br>The cause is structural. Every relief '
+    + 'frame prints its dataset as text, and the flat branch is a table of the same data — so '
+    + 'whichever surface comes first discloses what the second question asks about, and with one '
+    + 'operator there is nobody to counterbalance against. <strong>No rewording fixes that.'
+    + '</strong><br><br>Full record: <code>docs/3d/e9/TRIAL_REFUSED.md</code>. To run it anyway, '
+    + 'deliberately and knowing the verdict is not evidence, add '
+    + '<code>?acknowledge-invalid=1</code> to the URL.';
+  document.getElementById('intro')?.prepend(note);
+})();
 </script>
