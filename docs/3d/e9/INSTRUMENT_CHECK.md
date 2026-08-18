@@ -34,9 +34,9 @@ environment. **Two printed answers out of seven do not cost you two rows; they c
    range and its status. It also prints `D22-D23 WITHHELD`, i.e. the very distinction the question is testing.
 3. **`docs/3d/e2/build.mjs:41` (with `docs/3d/_shared/flatFallback.ts:254`) — E2's flat branch paints nothing
    in the frame the operator is given.** `<div id="stage" style="…height:720px">` survives the refusal because
-   `showRefusal` hides `canvas` elements only, so the table starts 766 px into a 758 px frame. Measured on the
-   frame: 0 of 37 visible text nodes above the fold, 2 distinct colours, 0.43 % of pixels differing from the
-   modal one. The operator is timed while looking at an empty box.
+   `showRefusal` hides `canvas` elements only, so the first ink lands at y766 inside a 758 px frame. Measured
+   inside the trial's own iframe: 0 of 37 visible text nodes above the fold, 2 distinct colours, 0.43 % of
+   pixels differing from the modal one. The operator is timed while looking at an empty box.
 4. **`docs/3d/e9/task.html:525` — one exclusion prints an accuracy failure that did not happen.** The
    comparison is `three.correct < flat.correct` on raw counts, while `n` can differ because a trial was
    excluded. I drove it: one relief trial excluded, **every answer given correct**, and the verdict was
@@ -48,10 +48,12 @@ environment. **Two printed answers out of seven do not cost you two rows; they c
    `finish()` (`task.html:579`): I answered 5 of 14 trials and stopped, and nothing was saved. The failure
    mode that cost today's run is half closed, not closed.
 
-Two relief surfaces — **E4** and **E1** — passed the answer-on-frame check on the evidence below, and their
-flat branches paint. A four-trial trial over those two would not be refused by the instrument
-(`three.n >= 2 && flat.n >= 2`). That is a fallback, not a recommendation: one operator over two environments
-is an anecdote, and the file says so itself.
+**There is no reduced set to fall back on.** Two relief surfaces — **E4** and **E1** — passed the
+answer-on-frame check below, and both of their flat branches paint. But E4's relief frame prints
+`COUNTERPARTY · RECORDS ABSENT`, which is the answer to E4's own *flat* question, and E4 shows the relief
+surface first — so its flat trial is contaminated even though its relief trial is clean. That leaves **E1** as
+the only environment whose pair survives check 2 in both directions, and one environment gives `n = 1` per
+surface, which the instrument correctly refuses as `TOO_FEW_TRIALS`. The trial has to be repaired, not trimmed.
 
 ---
 
@@ -145,10 +147,15 @@ is `die()` running, not a mock.
 **E2's flat branch is the exception, and it is a trial that cannot be run as posed.** Two distinct colours in
 the whole frame. Swept across all seven flat branches, E2 is alone in it:
 
-| env | fallback starts at y | frame is 758 px | blocker above it |
+| env | fallback section starts at y | in a 758 px frame | blocker above it |
 |---|---|---|---|
 | e5, e6, e4, e3, e7, e1 | 83 | visible | (none) |
 | **e2** | **799** | **entirely below the fold** | `DIV#stage y28..748 h=720 css-height=720px display=block` |
+
+(That sweep loads each `live.html?refuse=1` directly at 1194×758. The 799 there and the 766 in the table above
+are the same defect measured two ways — the section's own top when loaded standalone, and the first visible
+text node inside the trial's iframe; the 33 px between them is layout differing by that much between the two
+hosts, and both are past the fold.)
 
 `flatFallback.ts:254` hides `canvas` elements on refusal — the fix Audit 3 made after finding "720 px of blank
 canvas filling the viewport with the data below the fold". On E2 the obstruction is one element *above* the
@@ -218,7 +225,8 @@ is that leak arriving through the frame content instead of through the question.
 
 **The fix that closed the printed-report channel is working.** `hideDiagnostic` fired on **all 14 trials** —
 `#log` measured `display:none` in every frame — hiding between 2,416 and 5,052 characters of report per relief
-surface. The one-directionality holds too: flat frames carry only the 128-character refusal sentence there.
+surface. The one-directionality holds too, measured rather than assumed: on the seven flat frames the same
+element holds 113–128 characters, the `FORCED_REFUSAL` sentence, because `die()` runs before a report exists.
 And the residual the file already names is confirmed, not worsened: a select-all inside a relief frame still
 reaches 1,911–3,306 characters, including the clipped rule-1 table. It cannot be reached by scrolling, only by
 select-all, and the trial does not teach that gesture.
@@ -375,7 +383,7 @@ having seen the verdict, comes back tomorrow, presses the only button on the pag
 | 1240×1000 | y261..1023 | y1068..1102 | 102 px |
 
 Both surfaces pay that scroll, so it largely cancels in a comparison. E2's flat trial pays it **twice** — once
-on the outer page to reach the buttons, once inside the frame to reach a table that starts at y799 — and that
+on the outer page to reach the buttons, once inside the frame to reach content whose first ink is at y766 — and that
 does not cancel against anything.
 
 ---
@@ -388,7 +396,7 @@ does not cancel against anything.
   apparatus — a string is on the frame or it is not — but the startup figures in check 4 are software-rasteriser
   figures. On a GPU the gap the clock gate removes will be smaller; it will not be zero, and the gate is still
   the difference between measuring reading and measuring shader compilation.
-- **Nothing about the six environments' answer keys being right.** I used the key `task.html` computes and
+- **Nothing about the seven environments' answer keys being right.** I used the key `task.html` computes and
   checked the *apparatus* against it. If a key is wrong, every check above passes unchanged and the trial is
   still invalid. The keys' derivations are argued in the file's own comments and were not re-derived here.
 - **One residual I could not close from outside.** The select-all channel (1,911–3,306 characters per relief
