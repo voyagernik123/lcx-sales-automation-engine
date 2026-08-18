@@ -72,18 +72,53 @@ health_field() { node -e '
 
 bold "LCX · go-live"
 
-DB_STATE="$(health | health_field db)"
+HEALTH_SNAPSHOT="$(health)"
+DB_STATE="$(printf '%s' "$HEALTH_SNAPSHOT" | health_field db)"
+# `db=up` is NOT the finish line, and treating it as one made this script skip the work it exists
+# to do. See the skip condition below.
+DB_SOURCE="$(printf '%s' "$HEALTH_SNAPSHOT" | health_field dbUrlSource)"
+DB_POOLER="$(printf '%s' "$HEALTH_SNAPSHOT" | health_field dbUrlShape.pooler)"
 if [ -z "$DB_STATE" ]; then
   warn "the API did not answer in 25s — it may be cold-starting on the free plan. Continuing."
 else
-  printf '  API says db=%s\n' "$DB_STATE"
+  printf '  API says db=%s' "$DB_STATE"
+  [ -n "$DB_SOURCE" ] && printf '  (config source: %s)' "$DB_SOURCE"
+  printf '\n'
 fi
 
 # ══ PHASE 1 · the database ════════════════════════════════════════════════════════════
+# ── WHY THIS SKIPS ON THE CONFIG AND NOT ON `db=up` ──────────────────────────────────
+#
+# It used to skip whenever `db=up`, and on 2026-08-18 that made it refuse to help at the exact
+# moment it was needed. The owner had pasted a DIRECT-host string into Render three times;
+# `/health` reported `db=up` because the API probes pooler forms and adopts one that answers, so
+# it was healing the bad config at boot. The script saw `up`, printed "already up — nothing to
+# do", and skipped — while `dbUrlSource` said `pooler-fallback` and `dbUrlShape.pooler` said
+# `false`. The system was working for a reason nobody had configured, and the one tool built to
+# fix that declined to run.
+#
+# `up` means the database answers. `dbUrlSource: env` means it answers because of what is in the
+# dashboard. Only the second is finished, so only the second skips.
+#
+# The fields are read defensively: an older API that predates `dbUrlShape` returns empty strings
+# for both, and an empty `DB_SOURCE` falls back to the old behaviour rather than looping forever
+# on a deployment that cannot report its own config.
 if [ "$WANT_DB" = 1 ] && [ "$DB_STATE" = "up" ]; then
-  bold "1 · database"
-  ok "already up — nothing to do. Skipping."
-  WANT_DB=0
+  if [ "$DB_SOURCE" = "pooler-fallback" ] || [ "$DB_POOLER" = "false" ]; then
+    bold "1 · database — up, but by SELF-REPAIR rather than by configuration"
+    warn "db=up, and dbUrlSource=${DB_SOURCE:-unknown}."
+    warn "The API is guessing the session-pooler host from the DIRECT host in DATABASE_URL and"
+    warn "adopting whichever form answers. It guessed right this boot; earlier today the same"
+    warn "probe reported \"no pooler form answered\". So this is not down — it is undiagnosed"
+    warn "luck, and a future cold start rolls the dice again."
+    printf '\n'
+    warn "SO THIS IS NOT BEING SKIPPED. Fixing the dashboard value is the whole job below."
+    printf '\n'
+  else
+    bold "1 · database"
+    ok "already up, from the configured value (dbUrlSource=${DB_SOURCE:-env}) — nothing to do."
+    WANT_DB=0
+  fi
 fi
 
 if [ "$WANT_DB" = 1 ]; then
