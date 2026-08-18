@@ -4,11 +4,12 @@
   "private": true,
   "description": "LCX TERMINAL — the native macOS shell for LCX ONE (Tauri v2).",
   "scripts": {
-    "dev": "tauri dev",
-    "build": "tauri build",
-    "build:dmg": "tauri build --bundles app,dmg",
+    "dev": "node scripts/with-cargo.mjs tauri dev",
+    "build": "node scripts/with-cargo.mjs tauri build",
+    "build:dmg": "node scripts/with-cargo.mjs tauri build --bundles app,dmg",
     "build-gate": "node scripts/build-gate.mjs",
-    "tauri": "tauri",
+    "test": "vitest run scripts",
+    "tauri": "node scripts/with-cargo.mjs tauri",
     "release": "node scripts/publish-release.mjs",
     "release:dry": "node scripts/publish-release.mjs --dry-run"
   },

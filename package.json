@@ -24,7 +24,7 @@
     "ci-mirror": "node scripts/ci-mirror.mjs",
     "type-check": "npm run type-check -w @lcx/shared && npm run type-check -w @lcx/gl && npm run type-check:3d && npm run type-check -w @lcx/api && npm run type-check -w @lcx/web",
     "type-check:3d": "node scripts/type-check-3d.mjs",
-    "test": "npm run test -w @lcx/shared && npm run test -w @lcx/gl && npm run test -w @lcx/api && npm run test -w @lcx/web",
+    "test": "npm run test -w @lcx/shared && npm run test -w @lcx/gl && npm run test -w @lcx/api && npm run test -w @lcx/web && npm run test -w @lcx/desktop",
     "test:web": "npm run test -w @lcx/web",
     "test:api": "npm run test -w @lcx/api",
     "db:up": "docker compose up -d postgres",

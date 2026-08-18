@@ -414,8 +414,72 @@ if [ "$WANT_DESKTOP" = 1 ]; then
     # every request fails, silently, on a desktop app that has no Vite proxy to save it.
     export VITE_API_URL="$API"
     export TAURI_SIGNING_PRIVATE_KEY="$KEY"
-    export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
-
+    #
+    #
+    # ── THIS KEY HAS NO PASSPHRASE. MEASURED, AFTER TWO WRONG ANSWERS. ───────────────────
+    #
+    # The line here used to be
+    #
+    #     export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
+    #
+    # and it was then "fixed" to unset the variable and refuse to run without a terminal, on the
+    # reasoning that an empty string is a password and an encrypted key must reject it. The
+    # reasoning about tauri was right; the premise about THIS key was wrong, and the fix would
+    # have refused builds that work.
+    #
+    # WHAT TAURI DOES, read from tauri-cli 2.11.4 `crates/tauri-cli/src/bundle.rs:271`:
+    #
+    #     let password = std::env::var("TAURI_SIGNING_PRIVATE_KEY_PASSWORD").ok()
+    #         .or_else(|| if ci { Some("".into()) } else { None });
+    #
+    # `env::var().ok()` yields `Some("")` for a set-but-empty variable, so `.or_else` never
+    # fires and the empty string is USED rather than treated as absent. Absent is what makes it
+    # prompt — and it prompts by opening /dev/tty, not by reading stdin, so a process with no
+    # controlling terminal gets ENXIO (errno 6) and reports
+    #
+    #     incorrect updater private key password: Device not configured (os error 6)
+    #
+    # — a message that names the password and actually means "I had no terminal to ask on".
+    #
+    # WHAT THAT DOES NOT ESTABLISH. The prompt appears whenever no password is SUPPLIED. It says
+    # nothing about whether the key NEEDS one: tauri never generates an unencrypted key (every
+    # key it writes is scrypt-wrapped, kdf bytes "Sc"), so a no-passphrase key prompts and fails
+    # exactly the same way. A previous version of this comment claimed the prompt "proves this
+    # key IS encrypted". It proves nothing of the kind, and it is the day's recurring defect
+    # again: an observation standing in for a property it cannot distinguish.
+    #
+    # WHAT WAS ACTUALLY MEASURED, against the real key at $KEY, on 2026-08-18:
+    #
+    #     -p ''  → signs, and the signature VERIFIES against the public key committed in
+    #              tauri.conf.json (key id 5856bd5f69f8f221, Ed25519 over a blake2b-512 prehash)
+    #
+    # So the passphrase is the empty string. The owner typed real passwords into that prompt
+    # three times and got "Wrong password for that key" each time, which is precisely what a
+    # non-empty answer earns from a key whose password is empty. Two of those attempts never
+    # reached the key at all: a stale exported TAURI_SIGNING_PRIVATE_KEY made the CLI reject
+    # `--private-key-path` as conflicting with `--private-key`.
+    #
+    # So: supply the empty password explicitly. Never leave it unset — unset means prompt, and a
+    # prompt for a key that needs nothing is a trap that costs a full build. A caller who has
+    # rotated to an encrypted key can still export a real value and it wins.
+    #
+    export TAURI_SIGNING_PRIVATE_KEY="$KEY"
+    if [ -n "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" ]; then
+      export TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+      ok "key password came from the environment — the build will not stop to ask"
+    else
+      export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+      ok "key needs no passphrase (measured) — supplying the empty one so nothing prompts"
+    fi
+    #
+    # A STALE `TAURI_SIGNING_PRIVATE_KEY` IN THE CALLER'S SHELL BREAKS THE SIGNER OUTRIGHT.
+    #
+    # `tauri signer sign` takes the key as `--private-key` from this same variable, and clap
+    # refuses `--private-key-path` alongside it: "the argument '--private-key-path <PATH>' cannot
+    # be used with '--private-key <PRIVATE_KEY>'". We set the variable ourselves above, to a
+    # PATH, which is what `tauri build` wants — so anything invoking the signer separately must
+    # strip it. Said here because the error names two flags the operator never typed.
+    #
     bold "  building $REPO_V (signed) — this takes a few minutes"
     npm run build:dmg -w @lcx/desktop
 
