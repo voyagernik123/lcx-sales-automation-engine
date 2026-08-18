@@ -21,6 +21,22 @@
  * screen a reader ever sees. `SUBPATH_COST.md` section 5 predicted exactly that and its own words are
  * "finish the migration or do not start it". Run this after touching any GL consumer.
  *
+ * ── RUNNING THIS CONTAMINATES apps/web/dist FOR A DESKTOP RELEASE ───────────────────
+ * It needs `npx vite build --sourcemap`, and a plain `vite build` reads `apps/web/.env.local`,
+ * which on a developer machine carries `VITE_API_URL=http://localhost:8791`. The desktop release
+ * bundles that same directory, so a build run for THIS measurement leaves an app that would show
+ * API DOWN on every machine but the builder's.
+ *
+ * That is not hypothetical and it is not new: `apps/desktop/scripts/build-gate.mjs` exists because
+ * three signed releases already shipped that way, and it overrides the variable for exactly this
+ * reason. Running this script AFTER a gated desktop build silently undoes that override — which is
+ * how it happened again, on 2026-08-16, and the release gate caught it.
+ *
+ * SO AFTER RUNNING THIS, RESTORE THE DIST BEFORE ANY DESKTOP BUILD OR RELEASE:
+ *   npm run build -w @lcx/desktop        (its beforeBuildCommand re-runs the gate)
+ * or, if you only need the web bundle back:
+ *   VITE_API_URL=https://lcx-sales-api.onrender.com npm run build -w @lcx/web
+ *
  * Usage:  node scripts/lane-closure.mjs            (requires a build with --sourcemap)
  */
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
