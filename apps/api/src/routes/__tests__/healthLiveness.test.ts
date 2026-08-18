@@ -21,7 +21,11 @@ const checkDb = vi.hoisted(() => vi.fn());
 const getLastDbError = vi.hoisted(() => vi.fn(() => null));
 const getDbTlsState = vi.hoisted(() => vi.fn(() => 'encrypted'));
 const getDbUrlSource = vi.hoisted(() => vi.fn(() => 'env'));
-vi.mock('../../db/index.js', () => ({ checkDb, getLastDbError, getDbTlsState, getDbUrlSource }));
+/* Names WHICH self-repair failure occurred. A factory mock is EXHAUSTIVE — every export the
+   route imports must appear here or the import resolves to undefined and the handler throws a
+   500, which is how adding this export turned 23 unrelated assertions red at once. */
+const getDbHealFailure = vi.hoisted(() => vi.fn(() => null));
+vi.mock('../../db/index.js', () => ({ checkDb, getLastDbError, getDbTlsState, getDbUrlSource, getDbHealFailure }));
 /* The DIRECT Supabase host — the exact shape that was live in Render on 2026-08-10, with a
    same-shape stand-in for the project ref. The route derives its `dbHint` from this. */
 const DIRECT_URL = 'postgresql://postgres:sEcReT@db.aaaabbbbccccdddd.supabase.co:5432/postgres';
@@ -211,6 +215,49 @@ describe('a rewritten database URL is never silent about it', () => {
   it('reports `env` when the configured value is being used verbatim', async () => {
     checkDb.mockResolvedValue('up');
     getDbUrlSource.mockReturnValue('env');
+  });
+
+  it('reports what the brute-force control keys on, from the real helper', async () => {
+    /*
+     * `TRUSTED_PROXY_HOPS` is set in a dashboard that cannot be read back. That is precisely how
+     * `DATABASE_URL` came to hold an unusable value through three separate saves, and a security
+     * control whose configuration is unobservable is one nobody can verify. So the count is
+     * reported — the COUNT only, never a header value or an address.
+     *
+     * Deliberately NOT mocking `trustedProxyHops`: mocking it would assert that the route calls a
+     * function, when the claim is that the route reports the effective configuration. This drives
+     * the real helper through the real environment variable.
+     */
+    checkDb.mockResolvedValue('up');
+    delete process.env.TRUSTED_PROXY_HOPS;
+    expect((await (await (await load()).request('/')).json()).throttleKey).toBe('tcp-peer');
+
+    process.env.TRUSTED_PROXY_HOPS = '1';
+    expect((await (await (await load()).request('/')).json()).throttleKey).toBe('xff-last-1');
+
+    /* A junk value must read as UNTRUSTED, not as trusted-with-a-guess: `trustedProxyHops` floors
+       anything non-positive or unparseable to 0, and the report has to agree with that. */
+    process.env.TRUSTED_PROXY_HOPS = 'yes';
+    expect((await (await (await load()).request('/')).json()).throttleKey).toBe('tcp-peer');
+    delete process.env.TRUSTED_PROXY_HOPS;
+  });
+
+  it('names WHICH self-repair failure happened, and omits the field when there was none', async () => {
+    /*
+     * `WRONG_PASSWORD` and `NO_POOLER_ANSWERED` both arrive as `db: 'down'` with the hint
+     * `SUPABASE_DIRECT_HOST_IS_IPV6_ONLY`, and they need opposite fixes — a different password
+     * versus a different region. They were indistinguishable from outside the process, so a
+     * rejected credential was chased as an unreachable host for a day.
+     */
+    checkDb.mockResolvedValue('down');
+    getDbHealFailure.mockReturnValue('WRONG_PASSWORD');
+    expect((await (await (await load()).request('/')).json()).dbHealFailure).toBe('WRONG_PASSWORD');
+
+    /* Absent, not null, on a clean boot: an always-present field reads as a status worth
+       interpreting even when it carries nothing. */
+    getDbHealFailure.mockReturnValue(null);
+    const clean = await (await (await load()).request('/')).json();
+    expect('dbHealFailure' in clean).toBe(false);
     expect((await (await (await load()).request('/')).json()).dbUrlSource).toBe('env');
   });
 });

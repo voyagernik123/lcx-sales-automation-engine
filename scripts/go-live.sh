@@ -106,14 +106,45 @@ fi
 if [ "$WANT_DB" = 1 ] && [ "$DB_STATE" = "up" ]; then
   if [ "$DB_SOURCE" = "pooler-fallback" ] || [ "$DB_POOLER" = "false" ]; then
     bold "1 · database — up, but by SELF-REPAIR rather than by configuration"
-    warn "db=up, and dbUrlSource=${DB_SOURCE:-unknown}."
-    warn "The API is guessing the session-pooler host from the DIRECT host in DATABASE_URL and"
-    warn "adopting whichever form answers. It guessed right this boot; earlier today the same"
-    warn "probe reported \"no pooler form answered\". So this is not down — it is undiagnosed"
-    warn "luck, and a future cold start rolls the dice again."
+    #
+    # ── THE FIRST VERSION OF THIS TEXT WAS WRONG, AND WRONG IN THE DIRECTION THAT COSTS TIME ──
+    #
+    # It said the fallback "adopts whichever form answers", called it "undiagnosed luck", and
+    # told the owner a future cold start "rolls the dice again". None of that is true.
+    # `poolerCandidates` in apps/api/src/db/poolerFallback.ts builds its list with eu-central-1
+    # FIRST and `aws-0` before `aws-1` — so `aws-0-eu-central-1.pooler.supabase.com` is the very
+    # first candidate probed, and it is the one that works. Healing is deterministic and repeats
+    # identically on every boot.
+    #
+    # The earlier "no pooler form answered" was not a lost dice roll either: the boot loop
+    # swallowed 28P01 and swept all 28 candidates, so a WRONG PASSWORD reported itself as an
+    # unreachable host. That is now fixed at source (`healFailure`, reported as `dbHealFailure`).
+    #
+    # Scaring someone into a fix is a way of being obeyed rather than understood, and it makes
+    # the next warning worth less. State the cost accurately and let the owner decide.
+    #
+    ok   "Nothing is broken, and nothing here is at risk of breaking."
+    warn "db=up with dbUrlSource=${DB_SOURCE:-unknown}: DATABASE_URL still names the DIRECT host,"
+    warn "and the API derives the session-pooler form at boot and uses that instead."
+    warn "That derivation is DETERMINISTIC — aws-0-eu-central-1 is the first candidate it tries"
+    warn "and it is the one that works — so every cold start heals the same way."
     printf '\n'
-    warn "SO THIS IS NOT BEING SKIPPED. Fixing the dashboard value is the whole job below."
+    warn "What it actually costs you: the dashboard no longer describes the running system. The"
+    warn "next person to read DATABASE_URL — including me in a later session — sees a string that"
+    warn "cannot work, and each boot spends one doomed connection attempt before healing."
     printf '\n'
+    warn "This is HYGIENE, not an outage. Fixing it takes one paste."
+    printf '  \033[1mFix it now? [Enter = yes · s = skip and accept it as-is]: \033[0m'
+    read -r FIX_DB_ANSWER || true
+    case "${FIX_DB_ANSWER:-}" in
+      [sSnN]*)
+        printf '\n'
+        ok "Skipped, deliberately. Recorded as an accepted difference between config and behaviour,"
+        ok "not as an open task. Re-run with --db whenever you want it closed."
+        WANT_DB=0
+        ;;
+      *) printf '\n' ;;
+    esac
   else
     bold "1 · database"
     ok "already up, from the configured value (dbUrlSource=${DB_SOURCE:-env}) — nothing to do."
@@ -240,23 +271,73 @@ STEPS
   # This is a DOCKER service on Render's free plan. A redeploy rebuilds the image, which takes
   # far longer than a restart, so the window is 12 minutes rather than 6.
   #
+  #
+  # ── THE EXIT CONDITION HERE WAS THE SAME DEFECT AS THE SKIP CONDITION ABOVE ─────────
+  #
+  # `if [ "$S" = "up" ]; then ok "DATABASE IS UP."` — which is true BEFORE the paste, because
+  # the API heals the bad value at boot. On 2026-08-18 this printed a single line,
+  # `db=up uptime=178s`, against a recorded pre-deploy uptime of 178s — the same process,
+  # never restarted, nothing deployed — and declared success. I fixed the skip at the top of
+  # this phase and left the identical bug ten lines further down, in the same commit.
+  #
+  # A save has landed when BOTH are true: a new process is serving, and that new process reports
+  # `dbUrlSource: env`. `up` alone proves neither.
+  #
   bold "  waiting for Render to redeploy and reconnect"
   START_UP="$(health | health_field uptimeSeconds)"
   [ -n "$START_UP" ] && printf '  process uptime before the deploy: %ss\n' "$START_UP"
   RESTARTED=0
+  SETTLE=0
   for i in $(seq 1 48); do
     H_JSON="$(health)"
     S="$(printf '%s' "$H_JSON" | health_field db)"
     HINT="$(printf '%s' "$H_JSON" | health_field dbHint.code)"
     UP="$(printf '%s' "$H_JSON" | health_field uptimeSeconds)"
+    SRC="$(printf '%s' "$H_JSON" | health_field dbUrlSource)"
+    # New at 28f1d6a: names WHICH failure, so a rejected password stops looking like a bad host.
+    HEALFAIL="$(printf '%s' "$H_JSON" | health_field dbHealFailure)"
     # Uptime going DOWN is a new process. That is the deploy landing, observed rather than assumed.
     if [ -n "$UP" ] && [ -n "$START_UP" ] && [ "$UP" -lt "$START_UP" ] 2>/dev/null; then RESTARTED=1; fi
-    printf '  %s  db=%-5s uptime=%-7s %s\n' "$(date -u +%H:%M:%S)" "${S:-?}" "${UP:-?}s" "${HINT:+· $HINT}"
-    if [ "$S" = "up" ]; then ok "DATABASE IS UP."; break; fi
+    printf '  %s  db=%-5s uptime=%-7s src=%-15s %s\n' \
+      "$(date -u +%H:%M:%S)" "${S:-?}" "${UP:-?}s" "${SRC:-?}" "${HEALFAIL:-$HINT}${HEALFAIL:+ (credential, not host)}"
+
+    # A wrong password needs no further waiting: the host answered, so no deploy will fix it.
+    if [ "$HEALFAIL" = "WRONG_PASSWORD" ]; then
+      printf '\n'
+      bad "A pooler host ANSWERED and rejected the password (28P01)."
+      bad "The host in DATABASE_URL is fine; the PASSWORD in it is wrong. Waiting cannot help."
+      bad "Re-run with --db, and when it asks for the password use the one you just reset."
+      break
+    fi
+
+    # SUCCESS: a live database reached through the CONFIGURED value.
+    # `-z "$SRC"` keeps an older API that predates `dbUrlSource` working on the old, weaker test
+    # rather than looping for twelve minutes against a field it will never return.
+    if [ "$S" = "up" ] && { [ "$SRC" = "env" ] || [ -z "$SRC" ]; }; then
+      ok "DATABASE IS UP, from the configured value${SRC:+ (dbUrlSource=$SRC)}."
+      break
+    fi
+
+    # Up, restarted, and STILL healing: the value that deployed is not the one on the clipboard.
+    # Two polls of grace first — heal is async and a fresh process reads `env` for a moment.
+    if [ "$S" = "up" ] && [ "$SRC" = "pooler-fallback" ] && [ "$RESTARTED" = 1 ]; then
+      SETTLE=$((SETTLE + 1))
+      if [ "$SETTLE" -ge 2 ]; then
+        printf '\n'
+        bad "A NEW process is running and it still reports dbUrlSource=pooler-fallback."
+        bad "So the value that deployed still names the DIRECT host. The save reached the service"
+        bad "but not the field: most often SELECT ALL was missed and the paste landed beside the"
+        bad "old value, or it was pasted from Supabase's Connect panel, which defaults to Direct."
+        warn "The database is UP throughout — this is the hygiene item, not an outage."
+        warn "Re-run with --db to put the proven string back on the clipboard."
+        break
+      fi
+    fi
+
     if [ "$i" = 48 ]; then
       printf '\n'
       if [ "$RESTARTED" = 1 ]; then
-        bad "The service DID restart and still reports ${HINT:-a failure}."
+        bad "The service DID restart and still reports ${HEALFAIL:-${HINT:-a failure}}."
         bad "So the new process booted with the old value: the save did not change"
         bad "DATABASE_URL on the service this URL points at. Check you edited"
         bad "lcx-sales-api (not another service), and that Save Changes was clicked."

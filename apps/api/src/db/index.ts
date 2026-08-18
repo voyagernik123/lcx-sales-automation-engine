@@ -71,8 +71,19 @@ export function getDbTlsState(): DbTlsState { return tlsState; }
 let resolvedUrl: string | null = null;
 let urlSource: 'env' | 'pooler-fallback' = 'env';
 export function getDbUrlSource(): 'env' | 'pooler-fallback' { return urlSource; }
+
+/**
+ * WHY THE SELF-REPAIR DID NOT HELP, WHEN IT DID NOT.
+ *
+ * `null` while it has not run, or when it succeeded. The two failures are opposite problems
+ * with the same symptom (`db: 'down'`, hint `SUPABASE_DIRECT_HOST_IS_IPV6_ONLY`): one needs a
+ * different host, the other needs a different password. A boot log carries this too, but a log
+ * on Render's free plan is gone by the time anyone asks, so it is also readable over HTTP.
+ */
+let healFailure: 'WRONG_PASSWORD' | 'NO_POOLER_ANSWERED' | null = null;
+export function getDbHealFailure(): 'WRONG_PASSWORD' | 'NO_POOLER_ANSWERED' | null { return healFailure; }
 /** For tests: forget any healed URL so each case starts from the configured value. */
-export function resetDbUrlOverride(): void { resolvedUrl = null; urlSource = 'env'; }
+export function resetDbUrlOverride(): void { resolvedUrl = null; urlSource = 'env'; healFailure = null; }
 
 /**
  * PROBE THE POOLER FORMS OF AN UNROUTABLE DIRECT HOST AND ADOPT THE FIRST THAT CONNECTS.
@@ -114,10 +125,33 @@ export async function healDatabaseUrl(): Promise<boolean> {
       // Drop the pool built from the unroutable URL so every new connection uses the healed one.
       await closeDb();
       return true;
-    } catch {
+    } catch (err) {
       await probe.end().catch(() => undefined);
+      /*
+       * A REJECTED PASSWORD IS NOT AN UNREACHABLE HOST, AND CONFLATING THEM COST A DAY.
+       *
+       * `28P01` means the pooler ANSWERED and refused the credential. The host was therefore
+       * correct, every remaining candidate will refuse it identically, and the sweep is pure
+       * delay. Worse, swallowing it made the loop end on "no pooler form answered" — which
+       * reads as a networking problem and is what the owner and I both chased, through six
+       * exchanges and three dashboard pastes, while the actual fault was the password.
+       *
+       * `openReachablePool` in ./poolerFallback.ts already got this right for the jobs CLI.
+       * The API's own boot path did not, so the two disagreed about the same failure.
+       */
+      const code = (err as { code?: string }).code ?? '';
+      if (code === '28P01') {
+        healFailure = 'WRONG_PASSWORD';
+        console.error(
+          `[db] ${c.label} ANSWERED and REJECTED THE CREDENTIAL (28P01). The host is right and the `
+          + 'password in DATABASE_URL is wrong. This is NOT an unreachable host: no other region '
+          + 'will help, and nothing about the host needs changing. Fix the password.',
+        );
+        return false;
+      }
     }
   }
+  healFailure = 'NO_POOLER_ANSWERED';
   console.error('[db] no pooler form answered. DATABASE_URL must be corrected in the dashboard.');
   return false;
 }

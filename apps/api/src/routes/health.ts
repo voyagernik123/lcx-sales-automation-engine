@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import type { HealthResponse } from '@lcx/shared';
-import { checkDb, getLastDbError, getDbTlsState, getDbUrlSource } from '../db/index.js';
+import { checkDb, getLastDbError, getDbTlsState, getDbUrlSource, getDbHealFailure } from '../db/index.js';
+import { trustedProxyHops } from '../middleware/auth.js';
 import { describeConnectionTarget } from '../db/connectionTarget.js';
 import { env } from '../lib/env.js';
 
@@ -70,6 +71,13 @@ async function snapshot(): Promise<HealthResponse> {
     /* 'pooler-fallback' means the CONFIGURED value is not the value in use. That divergence
        must be visible or the next person inherits a system whose config does not describe it. */
     dbUrlSource: getDbUrlSource(),
+    /* Only present when the self-repair actually failed, and it names WHICH failure: a rejected
+       password and an unreachable region look identical from here otherwise, and they were
+       conflated for a day. Omitted rather than null so a clean boot carries no noise. */
+    ...(() => { const f = getDbHealFailure(); return f ? { dbHealFailure: f } : {}; })(),
+    /* A hop COUNT, never a header value or an address. `TRUSTED_PROXY_HOPS` lives in a dashboard
+       that cannot be read back, and an unverifiable security control is one nobody can check. */
+    throttleKey: (() => { const n = trustedProxyHops(); return n > 0 ? `xff-last-${n}` : 'tcp-peer'; })(),
     /*
      * ── WHAT SHAPE IS THE CONFIGURED URL? Added because a save that did not land is
      * indistinguishable from a save that landed and failed. ─────────────────────────────

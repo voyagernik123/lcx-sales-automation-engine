@@ -239,8 +239,27 @@ const fp = createHash('sha256').update(effective).digest('hex').slice(0, 8);
  * high-entropy string: not reversible, and the alternative is repeating this loop blind.
  */
 const FP_FILE = join(homedir(), '.lcx-terminal', '.last-input-fp');
+/*
+ * REMEMBER THE OUTCOME, NOT JUST THE INPUT.
+ *
+ * Storing the fingerprint alone made the repeat-warning fire on a run where repeating was the
+ * CORRECT thing to do. `--db` re-verifies an already-proven credential in order to regenerate
+ * the connection string onto the clipboard; the password is supposed to be identical, and on
+ * 2026-08-18 the script told the owner "this would test the same thing and fail the same way"
+ * immediately before it connected and reported 142 tables. A warning that contradicts the next
+ * line teaches the reader to ignore warnings.
+ *
+ * So the record is `<fp> ok` once a candidate has actually connected with it. Same input plus a
+ * remembered success is a re-verify and gets a note; same input after a failure is the stale
+ * clipboard this check was built for and still gets the warning.
+ */
 let previousFp = null;
-try { previousFp = readFileSync(FP_FILE, 'utf8').trim() || null; } catch { /* first run */ }
+let previousWorked = false;
+try {
+  const [fpPart, okPart] = readFileSync(FP_FILE, 'utf8').trim().split(/\s+/);
+  previousFp = fpPart || null;
+  previousWorked = okPart === 'ok';
+} catch { /* first run */ }
 try {
   mkdirSync(dirname(FP_FILE), { recursive: true });
   writeFileSync(FP_FILE, fp, { mode: 0o600 });
@@ -262,9 +281,14 @@ console.log('    subdomain in your dashboard URL: supabase.com/dashboard/project
 console.log(`    Different project? SUPABASE_PROJECT_REF=<ref> bash scripts/go-live.sh --clip`);
 console.log('');
 console.log(`· received ${effective.length} characters, fingerprint ${fp}`);
-if (previousFp === fp) {
+if (previousFp === fp && previousWorked) {
   console.log('');
-  console.log('  ⚠ THIS IS THE SAME INPUT AS THE PREVIOUS RUN — identical fingerprint.');
+  console.log('  · same input as the previous run, which CONNECTED. Expected when you are');
+  console.log('    re-verifying to put the connection string back on the clipboard.');
+} else if (previousFp === fp) {
+  console.log('');
+  console.log('  ⚠ THIS IS THE SAME INPUT AS THE PREVIOUS RUN — identical fingerprint, and the');
+  console.log('    previous run did not reach the database with it.');
   console.log('    Whatever you changed in Supabase did not reach the clipboard, so this run');
   console.log('    would test the same thing and fail the same way. Copy it again and check:');
   console.log('    paste into a text editor (never the terminal) and confirm it is what you');
@@ -422,6 +446,10 @@ if (!winner) {
 
 /* The URL goes to the CLIPBOARD and never to stdout — it contains the password, and this
    output is read by people and by agents. */
+/* This credential provably reaches the database. Remember that, so the next run's repeat-check
+   can tell a deliberate re-verify apart from a clipboard that never updated. */
+try { writeFileSync(FP_FILE, `${fp} ok`, { mode: 0o600 }); } catch { /* advisory only */ }
+
 const copied = spawnSync('pbcopy', { input: winner.url }).status === 0;
 
 console.log('');

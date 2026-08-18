@@ -162,7 +162,7 @@ export function secondTierThrottleKey(c: {
  * the value on any deployment that has not thought about it — means the header is not trusted at
  * all. Read at call time rather than captured at module load so a test can set it per case.
  */
-function trustedProxyHops(): number {
+export function trustedProxyHops(): number {
   const raw = process.env.TRUSTED_PROXY_HOPS;
   if (!raw) return 0;
   const n = Number.parseInt(raw, 10);

@@ -152,6 +152,36 @@ export interface HealthResponse {
    */
   dbUrlSource: 'env' | 'pooler-fallback';
   /**
+   * WHY THE SELF-REPAIR DID NOT HELP, WHEN IT DID NOT — absent when it ran clean or never ran.
+   *
+   * Both values arrive with `db: 'down'` and the hint `SUPABASE_DIRECT_HOST_IS_IPV6_ONLY`,
+   * which is what made them indistinguishable from outside, and they need opposite fixes:
+   *
+   *   `WRONG_PASSWORD`      a pooler host ANSWERED and returned 28P01. The host is correct; no
+   *                         region change will help. Only the password is wrong.
+   *   `NO_POOLER_ANSWERED`  every derived candidate failed without ever authenticating, so the
+   *                         project is likely outside the default region sweep
+   *                         (`SUPABASE_POOLER_REGIONS`).
+   *
+   * A day was spent replacing hosts because the first case reported itself as the second.
+   */
+  dbHealFailure?: 'WRONG_PASSWORD' | 'NO_POOLER_ANSWERED';
+  /**
+   * WHAT THE BRUTE-FORCE CONTROL KEYS ON, stated rather than assumed.
+   *
+   * `tcp-peer` means `TRUSTED_PROXY_HOPS` is unset or zero, so `X-Forwarded-For` is not trusted at
+   * all and every caller behind a proxy collapses into ONE bucket. Safe but blunt: correct by
+   * default, and coarser than it needs to be once the real hop count is known.
+   *
+   * `xff-last-<n>` means the last `n` entries are treated as appended by infrastructure we
+   * control, and the caller is keyed on the entry before them.
+   *
+   * Reported because the value was set in a dashboard nobody can read back, which is exactly how
+   * `DATABASE_URL` came to be wrong three times in one day. A hop COUNT is not a secret; a control
+   * whose configuration cannot be observed is a control nobody can verify.
+   */
+  throttleKey: string;
+  /**
    * WHICH SIGN-IN DOORS ARE ACTUALLY OPEN — because a refused sign-in looked identical to a
    * wrong password, and one of them is fixed in a dashboard while the other is not.
    *
