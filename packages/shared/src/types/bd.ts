@@ -79,6 +79,36 @@ export interface HealthResponse {
    */
   dbHint?: DbConfigVerdict | null;
   /**
+   * THE SHAPE OF THE CONFIGURED URL — because a save that did not land and a save that landed
+   * and failed are indistinguishable from outside the process.
+   *
+   * On 2026-08-18 a credential was proven to connect from the owner's laptop (session pooler,
+   * role `postgres`, 142 tables), pasted into the dashboard, and the service restarted —
+   * observed, uptime fell 208s to 27s — and still reported SUPABASE_DIRECT_HOST_IS_IPV6_ONLY.
+   * Two explanations fit that equally well: the value never changed, or it changed to another
+   * value that still names the direct host. `dbHint` cannot tell them apart, and every round of
+   * guessing costs a deploy.
+   *
+   * CONTAINS NO SECRET, NO HOST, NO PROJECT REF, NO PASSWORD. Three booleans, a port and a
+   * length, which is enough to separate every case that has actually occurred:
+   *   `pooler: false`  — the direct host is still configured, whatever was pasted
+   *   `userRef: false` — pooler host but the username is plain `postgres`, which answers XX000
+   *   `len` far above ~120 — a paste that appended instead of replacing
+   *   `parses: false`  — a value `new URL()` refuses, which is itself the finding
+   *
+   * `dbHint` already discloses that the configured host is a Supabase direct host, so this adds
+   * no fact an attacker did not already have from the same unauthenticated endpoint.
+   */
+  dbUrlShape?: {
+    configured: boolean;
+    pooler?: boolean;
+    direct?: boolean;
+    port?: string;
+    userRef?: boolean;
+    parses?: boolean;
+    len?: number;
+  } | null;
+  /**
    * HOW LONG THIS PROCESS HAS BEEN RUNNING — the field that distinguishes "the change has not
    * deployed yet" from "the change deployed and is wrong", and their fixes are opposites.
    *

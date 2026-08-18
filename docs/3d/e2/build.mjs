@@ -34,6 +34,27 @@ if (r.errors?.length) { for (const e of r.errors) console.error(e); process.exit
 // with their coordinates and the reason, so `projected + inWords === cities` and nothing is lost.
 //
 // The legibility objection is answered the way §5 answers everything else: with a capture, not a claim.
+/*
+ * `#stage` KEEPS ITS INLINE `height:720px`, AND THAT IS NOT THE DEFECT IT WAS REPORTED AS.
+ *
+ * `docs/3d/e9/INSTRUMENT_CHECK.md` traced E2's blank flat branch to this host: on `?refuse=1` it survived
+ * the refusal, because `_shared/flatFallback.ts` hid canvases only, and the flat table rendered correctly
+ * 720 px below where anyone could see it — first ink at y766 in a 758 px frame, 0 of 37 visible text nodes
+ * above the fold. The obvious repair is to delete the height here. That is the wrong file and the wrong
+ * repair, on two measurements:
+ *
+ *   · THE RESERVATION EARNS ITS PLACE. The canvas mounts when `bundle.js` evaluates, and this host is what
+ *     stops the page from collapsing to nothing and jumping under the reader until it does. A refusal is
+ *     the one state where the reservation is a lie; every other state needs it.
+ *   · E2 IS NOT ALONE, so a fix here fixes one page. E8 writes the same host (`e8/build.mjs:25`) and
+ *     measured the same y799 fallback on the same path, and on a real `WEBGL_lose_context` after READY —
+ *     with the diagnostic hidden as the trial hides it — EIGHT of the nine environments put the fallback
+ *     below the fold, because by then each has built itself a fixed-height wrapper around its canvas.
+ *
+ * So the release belongs where the refusal is known: `showRefusal` now walks a hidden canvas's ancestors
+ * and stamps `[data-lcx-released]`, whose rule sets `height:auto`. This host is unchanged, and E2's flat
+ * branch measures fallback y79, first ink y38, 38 of 38 visible text nodes above the fold.
+ */
 writeFileSync(join(HERE,'live.html'), `<!doctype html><meta charset="utf-8"><title>E2</title>
 <style>${css}</style>
 <style>body{margin:0;padding:28px;background:#04060b}

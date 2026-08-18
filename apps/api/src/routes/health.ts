@@ -70,6 +70,47 @@ async function snapshot(): Promise<HealthResponse> {
     /* 'pooler-fallback' means the CONFIGURED value is not the value in use. That divergence
        must be visible or the next person inherits a system whose config does not describe it. */
     dbUrlSource: getDbUrlSource(),
+    /*
+     * ── WHAT SHAPE IS THE CONFIGURED URL? Added because a save that did not land is
+     * indistinguishable from a save that landed and failed. ─────────────────────────────
+     *
+     * A credential was proven to connect from the owner's laptop — session pooler, role
+     * postgres, 142 tables — then pasted into the dashboard. The service restarted (uptime
+     * fell 208s to 27s, observed) and still reported SUPABASE_DIRECT_HOST_IS_IPV6_ONLY. Two
+     * explanations fit that equally: the value never changed, or it changed to something that
+     * still names the direct host. From outside the process they look identical, and each
+     * round of guessing costs a deploy.
+     *
+     * So the SHAPE of the configured URL is reported, and only the shape. No host, no user,
+     * no ref, no password — the three booleans and a length are enough to distinguish every
+     * case that has actually occurred, and none of them is a credential:
+     *   pooler   false ⇒ the direct host is still configured, whatever was pasted
+     *   userRef  false ⇒ pooler host but username is plain `postgres`, which answers XX000
+     *   len            ⇒ a mangled paste (appended rather than replaced) shows as a length
+     *                    far above the ~120 a real string has
+     *
+     * `dbHint` already tells the world this is a Supabase direct host, so this adds no fact an
+     * attacker did not have.
+     */
+    dbUrlShape: (() => {
+      const raw = process.env.DATABASE_URL ?? '';
+      if (raw === '') return { configured: false } as const;
+      /* Parsed with URL, not a regex: a regex over a credential is how a password with a `@`
+         in it gets read as a hostname. A value URL cannot parse is itself the finding. */
+      try {
+        const u = new URL(raw);
+        return {
+          configured: true,
+          pooler: u.hostname.endsWith('.pooler.supabase.com'),
+          direct: /^db\..*\.supabase\.co$/.test(u.hostname),
+          port: u.port || '(default)',
+          userRef: u.username.includes('.'),
+          len: raw.length,
+        } as const;
+      } catch {
+        return { configured: true, parses: false, len: raw.length } as const;
+      }
+    })(),
     /* WHY A SIGN-IN IS BEING REFUSED, when the credential itself is fine. Read from env, so it
        reflects the running process rather than what anyone believes is configured. */
     authPaths: {

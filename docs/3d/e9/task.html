@@ -21,21 +21,42 @@
   2 · ORDER IS COUNTERBALANCED, or the second surface benefits from having already seen the question and the
       result measures LEARNING rather than legibility. Half the trials show 3-D first.
 
-  3 · A QUESTION IS ASKED ONCE PER OPERATOR. Answering the same question on the second surface would measure
-      recall. So each environment carries a PAIR of questions of matched form, and which of the pair goes to
-      which surface flips with the counterbalance.
+  3 · A QUESTION IS ASKED ONCE PER OPERATOR, AND SO IS AN ANSWER. Answering the same question on the second
+      surface would measure recall. So each environment carries a PAIR of questions of matched form, and
+      which of the pair goes to which surface flips with the counterbalance.
+      THE ANSWER IS THE PART THAT MATTERS, WHICH THE OLD SET GOT WRONG. E5's two members were differently
+      worded and had the SAME answer and the SAME four options — `$500k` twice — so its second trial could
+      be answered correctly by repeating the first answer without reading the second surface at all. A
+      duplicate-question check passes that; recall does not care about wording. Every pair below has two
+      distinct answers, and the four pairs are: QUALIFIED/SOURCED, JURISDICTION → PERSON/PARTNER, E8/E0,
+      ADVISORY/SEVERE.
 
   4 · A WRONG ANSWER FAST IS NOT A WIN. Time is recorded WITH correctness, and the summary refuses to report
-      a mean time for a surface whose accuracy is lower — a faster wrong reading is a worse surface, and
-      averaging over both hides it.
+      a time advantage for a surface whose accuracy RATE is lower — a faster wrong reading is a worse
+      surface, and averaging over both hides it. The word RATE is load-bearing and was wrong until
+      2026-08-18: the guard compared raw correct-counts across surfaces whose n can differ by an exclusion,
+      so one excluded relief trial turned a run with every answer correct into a coded accuracy failure.
+      The arithmetic and the evidence are at the guard itself.
 
   ── WHICH ENVIRONMENTS THIS COVERS, AND WHY NOT ALL EIGHT ───────────────────────────────────────────────
   Stated here because a trial that silently covers half the programme reads as a trial of the programme.
 
-  MEASURED (7): E1, E2, E3, E4, E5, E6, E7. Each has a dataset, and each has a pair of matched questions
-  below whose answers were derived from that dataset rather than recalled — the E2 pair, for instance,
-  comes from computing the seven great-circle distances from Vaduz (Singapore 91.93 deg farthest, London
-  7.65 deg nearest), not from looking at the render.
+  MEASURED (4): E1, E3, E4, E7. Each has a dataset, and each has a pair of matched questions below whose
+  answers were derived from that dataset twice — once from the literal in its own `entry.ts` and once from
+  its flat fallback's rendered table — and never from looking at the render.
+
+  REFUSED (3): E2, E5, E6, each with a code, a measurement and the change that would lift it. The three
+  refusals are in the `REFUSED` list beside the task set, and they are in the downloaded payload. This
+  section used to read MEASURED (7), and the E2 pair was its own worked example — "the seven great-circle
+  distances from Vaduz, Singapore 91.93 deg farthest, London 7.65 deg nearest". That derivation was
+  correct and the question was still invalid: E2's relief frame prints all seven of those degrees, in
+  words, beside the city each belongs to. The count went from seven to four on 2026-08-18 by measuring the
+  surfaces, not by trimming the trial to make it pass.
+
+  WHAT FOUR ENVIRONMENTS COSTS, SAID PLAINLY. Eight trials, four per surface. That is above this page's
+  own TOO_FEW_TRIALS floor of two per surface and it is a thinner reading than seven would have been: one
+  wrong answer now moves the accuracy rate by 25 points instead of 14. It is not thinner than the
+  alternative, because the alternative was five pairs measuring a text scan.
 
   NOT APPLICABLE (1): E8 THE FORGE. Clause (b) asks whether an operator gets THEIR ANSWER faster. E8 is a
   machined disc, a ring and a plinth on the sign-in screen; it carries no dataset and answers no question,
@@ -71,6 +92,11 @@
   still says the table gives "no reach"; that is a defect in ../e2/entry.ts, not here, and it is reported
   rather than repeated.
 
+  E2 IS NO LONGER IN THE SET, and the paragraph above is kept because it is the measurement that made E1's
+  ordinal column defensible, not because E2 is still being asked. E2 was refused on 2026-08-18 for a
+  different and larger reason — its relief frame prints, in words, every field its flat table carries. See
+  the `REFUSED` list beside the task set.
+
   Verified on the built surface rather than in the source: `live.html?refuse=1` renders
   E0 3 | E1 1 | E2 absent | E3 absent | E4 absent | E5 5 | E6 4 | E7 absent | E8 2.
 
@@ -103,21 +129,54 @@
   build.mjs keys on the ID in the README's FIRST LINE, not on the directory name, so a first line that
   renamed E8 would move the second answer. That is a rename of an environment, not a status update.
 
-  ONE WORD OF THE PAIR CHANGED WHEN IT WAS PUT INTO THE SET, AND IT IS THE KIND OF WORD THAT DECIDES A
-  RESULT. The draft asked for the environment "nearest you, the one THE LENS HOLDS SHARP". There is no
-  lens on the flat surface, so that clause invites a flat operator to press "Cannot tell from this
-  surface" on a question their table can in fact answer — which is the same free point, arrived at
-  through wording instead of through data. Every other question in this set is surface-neutral
-  ("Which corridor from Vaduz travels the FARTHEST?"), and this one now is too. The derivation and both
-  answers are untouched.
+  THE PAIR NOW ASKS ABOUT RANKS 2 AND 3, AND THE REASON IS A SENTENCE ON E1'S OWN PANEL. It asked about
+  ranks 1 and 2 until 2026-08-18. Rank 1 is E1, and ../e1/entry.ts:825 prints on E1's panel `real DOM
+  content projected onto lit GL surfaces — the panel you are reading`. "Which environment is the view
+  addressing" is then answered by the frame, in words. That sentence carries no distance, no ordinal and
+  none of the words nearest, front or focus, which is why a hand audit that searched for those passed it.
+  Ranks 2 and 3 are the pair this surface can carry: P3 and P4 are the two #2C6BFF panels and the other
+  three are #16203A, so rank 2 is the other highlighted panel and rank 3 is the nearest of the rest, 2.49 m
+  clear of rank 4. Ranks 4 and 5 are still not asked — 0.68 m apart at 11 m, two defensible answers.
 
-  ── THE COUNTERBALANCE IS 4-3, NOT 3-3, AND THE RESIDUAL FAVOURS THE FLAT SURFACE ───────────────────────
-  Seven environments cannot split evenly. `buildTrials` assigns first-surface by index parity, so four
-  environments show the environment first (E5, E4, E3, E1) and three show the flat surface first
-  (E6, E2, E7). The trial that comes SECOND for an environment is the one that benefits from the operator
-  having just thought about that shape of question — so the flat surface holds the second position four
-  times and the environment three. The residual therefore biases AGAINST reporting MEETS (b), which is
-  the direction an instrument guarding against a showreel should err in. Stated rather than rounded off.
+  ONE WORD OF AN EARLIER DRAFT IS KEPT HERE, because it is the kind of word that decides a result. The
+  draft asked for the environment "nearest you, the one THE LENS HOLDS SHARP". There is no lens on the flat
+  surface, so that clause invites a flat operator to press "Cannot tell from this surface" on a question
+  their table can in fact answer — the same free point, arrived at through wording instead of through data.
+  Every question in this set is surface-neutral, and the two questions that replaced it are too: "stands
+  IMMEDIATELY BEHIND" and "stands THIRD" are true of a column of ordinals and of an arrangement alike.
+
+  ── THE COUNTERBALANCE IS NOW 2-2, AND THE RESIDUAL IT USED TO CARRY IS GONE ─────────────────────────────
+  `buildTrials` assigns first-surface by index parity. With seven environments that gave 4-3, and the file
+  argued — correctly — that the residual biased against reporting MEETS (b) and was therefore the safe
+  direction. It also noted that no number of operators averages it out, because nothing is shuffled and
+  every operator gets the same four. With four environments the split is exact: E3 and E1 show the
+  environment first, E4 and E7 show the flat surface first. There is no residual left to argue about.
+
+  THE ORDER IS CHOSEN, NOT ALPHABETICAL, and one of the reasons is a leak. The trial shown SECOND for an
+  environment is the one whose question the operator has already been primed for, and — more sharply — the
+  frame shown FIRST must not STATE the answer to the question asked second. E4 and E3 both used to show
+  the relief first while their relief frames printed the answer to their own flat question
+  (`COUNTERPARTY · 2 HOPS · RECORDS ABSENT`; `PRAXIS DESK · VALUE ABSENT · 9 d · SOURCED`). E4 now shows
+  the flat surface first, so its relief frame is seen last and cannot reach the flat trial at all, and E3's
+  pair was rewritten onto deals its frame does not label. Checked mechanically on all four pairs, both
+  builds: 0 frames state their partner's answer.
+
+  AND ONE CONSEQUENCE FOR ANYONE WHO ADDS A PER-OPERATOR SEED. `INSTRUMENT_CHECK.md` observes, correctly,
+  that nothing here is shuffled, so every operator gets the same assignment and running more operators does
+  not average the residual out. If a seed is added, WHICH MEMBER OF EACH PAIR GOES TO WHICH SURFACE STOPS
+  BEING FIXED — and two of the four pairs were assigned deliberately rather than arbitrarily. E7's two
+  members are not equally cheap on the same surface (a column of identical numbers is instant on a table;
+  a band's reach down the calendar is instant on the relief), and E4 shows the flat surface first
+  specifically so that its relief frame, which prints every entity's record count, is seen last. A seed
+  must therefore shuffle the ORDER of environments, not the member-to-surface mapping, or these four pairs
+  need re-checking against the same three tests.
+
+  ONE LEAK IS INHERENT AND IS NOT CLAIMED AWAY. Rule 1 requires both surfaces to show the SAME data, so
+  every flat table necessarily contains the data needed for its partner question, and an operator who read
+  a flat table first has in principle seen it. That cannot be removed without breaking rule 1. What can be
+  removed, and has been, is a frame that STATES the partner's answer as a callout, a pill, a caption or a
+  prose sentence — the kind a reader retains without trying. The counterbalance is what covers the rest:
+  the operator does not know the second question while reading the first surface.
 
   ── WHAT IT WILL NOT DO ─────────────────────────────────────────────────────────────────────────────────
   It will not tell you (a). "A stranger stops scrolling" is not measurable at a desk with two people, and
@@ -149,6 +208,10 @@
   pre { background: #0B1220; border: 1px solid #26355A; padding: 12px; overflow: auto; max-height: 320px;
         color: #A8C0E8; }
   .refuse { border: 1px solid #6B7A99; padding: 10px 12px; color: #E9F0FF; margin: 12px 0; }
+  #refusals:empty { display: none; }
+  #refusals ul { margin: 6px 0 0; padding-left: 20px; }
+  #refusals li { margin: 2px 0; }
+  code { color: #E9F0FF; }
 </style>
 
 <main>
@@ -164,6 +227,8 @@
     Do not run this if you already know the answers. The person who built these surfaces cannot produce a
     valid reading from them, and a self-administered result would be worse than none.
   </p>
+
+  <p class="lede warn" id="refusals"></p>
 
   <div id="intro">
     <button id="start">Begin</button>
@@ -190,119 +255,308 @@
 
 <script type="module">
 /*
- * THE TASK SET.
+ * THE TASK SET, REWRITTEN 2026-08-18 BECAUSE FIVE OF THE SEVEN PAIRS MEASURED THE WRONG THING.
  *
  * Each entry is a PAIR of questions of matched form over the same environment, so one can be asked on the
  * 3-D surface and the other on the flat one without any operator answering the same question twice. The
- * pairs are deliberately about the reading each environment CLAIMS to add — if a question can be answered
- * from a legend alone, it measures nothing about the geometry.
+ * pairs are deliberately about the reading each environment CLAIMS to add.
  *
  * Answers are recorded here, which is why the warning above matters: this file is the answer key.
+ *
+ * ── THE RULE EVERY QUESTION NOW HAS TO PASS, AND WHY THE OLD ONES DID NOT ───────────────────────────────
+ *
+ * A §7(b) question must be answerable FROM THE SHAPE on the relief branch and FROM THE TABLE on the flat
+ * branch, and its answer must not be readable as text on either. `INSTRUMENT_CHECK.md` measured the old
+ * set in a real browser and found the second half of that broken on five of seven surfaces:
+ *
+ *   · E5's relief frame printed `PEAK / 74% / $500k · 30 d` and E5's question asked which band peaks.
+ *   · E7's printed `D13-D15 NOT MEASURED` against "which day range was NOT MEASURED" — missed on a first
+ *     pass because the option was spelled with an EN DASH and the frame prints a HYPHEN.
+ *   · E6, E2 and E3 printed enough numbers beside enough labels to compute the answer without looking.
+ *   · E4's and E3's relief frames printed the answer to their own FLAT question, one trial before it was
+ *     asked, and both show the relief first.
+ *
+ * RULE 4 SAYS THE TEXT STAYS. It is the accessibility tree and the print path, so the labels on those
+ * surfaces are not the defect and stripping them to make a trial pass would be the defect. If the answer
+ * to a question is printed on the surface, THE QUESTION IS WRONG. So the questions moved.
+ *
+ * Every pair below was checked mechanically, on BOTH branches, at this trial's own frame geometry
+ * (1240x1000 outer, the 760 px iframe), against the surfaces as they are built today AND against a
+ * rebuild from every current `entry.ts` — because the committed bundles are older than their sources and
+ * a rebuild must not reintroduce a leak. The comparison folds case, whitespace, thousands separators, the
+ * whole Unicode dash class and arrows, and then tests containment with all whitespace removed, so a
+ * near-miss flags rather than passes. Three tests, over CALLOUT GROUPS rather than text nodes, because
+ * "$500k" is not an answer until it is under "PEAK" and beside "74%":
+ *
+ *   STATED      a group holds the answer AND the question's predicate. Fatal on either branch — with one
+ *               deliberate exception: on the flat branch a TABLE ROW pairing a key with its values is the
+ *               read being timed, not a leak, so rows are exempt there. Judging a table by the relief's
+ *               rule would refuse every flat trial that can exist.
+ *   ENUMERATED  every option is printed beside a magnitude of the quantity asked about, so the extremum
+ *               can be computed from print. Fatal on the relief branch.
+ *   ANSWERABLE  the branch carries the vocabulary the question needs at all. A question whose answer is
+ *               not ON a surface hands the other surface a free point — which is how E1 was refused until
+ *               2026-08-14, and which the check caught again below on E7's old channel question.
+ *
+ * Result on the set below: 0 of 8 trials flagged, 0 of 4 pairs leaking across trials, on both builds.
+ * Result on the old set, same check, same surfaces: 7 of 14 trials flagged and 4 of 7 pairs leaking —
+ * which is the check agreeing with `INSTRUMENT_CHECK.md` row for row before being trusted on anything new.
+ *
+ * TWO THINGS THE CHECK FOUND THAT THE HAND AUDIT DID NOT, both now fixed here:
+ *   · E1's own panel copy reads `real DOM content projected onto lit GL surfaces — the panel you are
+ *     reading` (../e1/entry.ts:825). The old question asked which environment the view is ADDRESSING.
+ *     The audit looked for distances, ordinals and the words nearest/front/focus, and that sentence is
+ *     none of those while stating exactly the same thing. E1's pair now asks about ranks 2 and 3.
+ *   · E7's flat fallback has NO CHANNEL COLUMN — measured: not one of `PAID_SEARCH PAID_SOCIAL EMAIL
+ *     COMMUNITY AFFILIATE INFLUENCER PR_EARNED` appears anywhere in its 238 visible text nodes, and its
+ *     columns are Day / State / Cumulative reading / Advisory / Elevated / Severe / Day total /
+ *     Cumulative. "Which channel carries the most risk overall?" was asked on that surface, every
+ *     operator, every run. It could not be answered there, so it was a point handed to the relief.
+ *     E7's pair is now about the severity bands, which both surfaces carry.
+ *
+ * ANSWER KEYS ARE DERIVED FROM THE DATASETS, TWICE, and never from the picture: once by parsing the
+ * literal out of the environment's `entry.ts`, once by reading the flat fallback's own rendered table.
+ * The two agreed on every figure below. Deriving a key from a render would make the instrument agree with
+ * whatever the render happens to show, which is the one thing it must not do.
  */
 const TASKS = [
   {
-    env: 'e5',
-    claim: 'relief makes the ridge and the cliff readable at a glance',
-    pair: [
-      { q: 'At 30 days to close, which ticket-size band has the HIGHEST win rate?',
-        opts: ['$100k', '$250k', '$500k', '$1000k'], answer: '$500k' },
-      { q: 'At 180 days to close, which ticket-size band has the HIGHEST win rate?',
-        opts: ['$100k', '$250k', '$500k', '$1000k'], answer: '$500k' },
-    ],
-  },
-  {
-    env: 'e6',
-    claim: 'depth is time, so a cluster of blocked actions reads as a stack at one depth',
-    pair: [
-      { q: 'Were the BLOCKED actions spread evenly through the window, or concentrated in one period?',
-        opts: ['Spread evenly', 'Concentrated', 'There are none'], answer: 'Concentrated' },
-      { q: 'Is the OLDEST record in the window an allow, a block, or withheld?',
-        opts: ['Allowed', 'Blocked', 'Withheld'], answer: 'Allowed' },
-    ],
-  },
-  {
-    env: 'e4',
-    claim: 'a 3-D layout separates coupling strength from grouping without crossing lines',
-    pair: [
-      { q: 'Which entity has the STRONGEST coupling to the core?',
-        opts: ['PARTNER', 'LISTING', 'CAMPAIGN', 'COMPARTMENT'], answer: 'PARTNER' },
-      { q: 'Which entity’s record count is NOT KNOWN?',
-        opts: ['PERSON', 'COUNTERPARTY', 'TOKEN', 'QUEST'], answer: 'COUNTERPARTY' },
-    ],
-  },
-  {
-    env: 'e2',
-    claim: 'arc height is angular distance, so the longest corridor is the tallest arc',
     /*
-     * ANSWERS COMPUTED, NOT READ OFF THE RENDER. Great-circle distance from the Vaduz hub (47.14, 9.52)
-     * to each of the seven corridor endpoints: Singapore 91.93, Tokyo 85.90, Johannesburg 75.22,
-     * Chicago 64.77, New York 57.57, Dubai 42.13, London 7.65 degrees. Deriving the key from the picture
-     * would make the instrument agree with whatever the picture happens to show, which is the one thing
-     * it must not do.
+     * E3 · index 0, so the ENVIRONMENT is shown first and gets pair[0].
      *
-     * THIS COMMENT USED TO CALL E2 "the pair that most directly tests a claim the flat view CANNOT
-     * carry: the fallback table gives latitude and longitude, so answering it flat means doing spherical
-     * geometry in your head." Measured on the built surface (../e2/live.html?refuse=1) rather than taken
-     * from ../e2/entry.ts's `readsAs`: the columns are "Corridor to | Lat | Lon | Great-circle
-     * separation" and the last one is populated — London 7.6 deg, Singapore 91.9 deg. Both members of
-     * this pair are therefore an extremum over one column of seven on the flat surface. E2 still tests
-     * something real (arc height against a number, and the flat read costs a seven-row scan), but it is
-     * NOT a claim the flat view cannot carry, and the derivation above is unaffected either way.
+     * DERIVED FROM `DEALS` in ../e3/entry.ts, and cross-read off ../e3/live.html?refuse=1:
+     * exactly one deal is WITHHELD (`known: 'WITHHELD'`, stage QUALIFIED) and exactly two have gone 45
+     * days or more without an update — SABLE TREASURY $240k at 63 d in SOURCED and HELIOS EXCHANGE
+     * $1.75M at 52 d in DILIGENCE — so the smaller of the two is SABLE and the stage is SOURCED.
+     *
+     * WHY THESE TWO AND NOT THE OLD PAIR. The old pair asked for the largest deal by value and for the
+     * stage holding a never-priced deal. E3's relief frame prints eight deal callouts of the form
+     * `ATLAS OTC · $4.20M · 3 d · SIGNED` and `PRAXIS DESK · VALUE ABSENT · 9 d · SOURCED`, so it stated
+     * the first answer outright and the second one a trial early. It prints only EIGHT of twelve: the
+     * harness's own report gives `tagsShown: 8`, `hiddenBy: {OCCLUDED: 3, WITHHELD: 1}`. Both questions
+     * below turn on deals in that unlabelled four, so the printed callouts cannot answer them — and the
+     * one 45-day figure the frame does print, `HELIOS EXCHANGE · $1.75M · 52 d · DILIGENCE`, points at a
+     * DISTRACTOR. A reader who works from the text gets this wrong, which is the direction an instrument
+     * guarding against a showreel should err in.
+     *
+     * ANSWERABLE ON BOTH, from each surface's own report rather than from an opinion about legibility:
+     * all twelve objects are drawn (`deals: 12`, `objectsOffFrame: []`), the two floored deals sit at
+     * `base 0.00` and project to 43 px and 15 px — a 2.9x size ratio, and the harness reports
+     * `massAmbiguousWithinStage: 0` — and the withheld one is drawn off the movement axis at 25 px with
+     * no tag. Worst fog on any object is 0.489. The flat table carries a Movement column reading
+     * `stalled — on the floor` on exactly those two rows, and a State column reading `WITHHELD`.
      */
-    pair: [
-      { q: 'Which corridor from Vaduz travels the FARTHEST?',
-        opts: ['London', 'Dubai', 'Singapore', 'Johannesburg'], answer: 'Singapore' },
-      { q: 'Which corridor from Vaduz travels the SHORTEST distance?',
-        opts: ['London', 'Dubai', 'Chicago', 'Tokyo'], answer: 'London' },
-    ],
-  },
-  {
     env: 'e3',
-    claim: 'mass is package value, so the heaviest object is the largest deal',
-    /*
-     * From the DEALS table in ../e3/entry.ts: ATLAS OTC 4.2M is SIGNED and the largest; MERIDIAN PAY 2.6M
-     * is TERMS and second. The absence question distinguishes the two kinds E3 encodes separately and the
-     * flat table collapses into one column: PRAXIS DESK is VALUE_ABSENT (never priced) in SOURCED, while
-     * the WITHHELD row sits in QUALIFIED. An operator who answers QUALIFIED has read "withheld" as
-     * "missing", which is the confusion rule 6 exists to prevent.
-     */
+    claim: 'mass is package value, height is movement, and the stage is where along the channel it sits',
     pair: [
-      { q: 'Which stage holds the single LARGEST deal by value?',
-        opts: ['SOURCED', 'QUALIFIED', 'DILIGENCE', 'TERMS', 'SIGNED'], answer: 'SIGNED' },
-      { q: 'Which stage holds a deal whose value was NEVER MEASURED (as distinct from withheld)?',
+      { q: 'Which stage holds a deal that is PRESENT BUT WITHHELD — measured, and not shown to you?',
+        opts: ['SOURCED', 'QUALIFIED', 'DILIGENCE', 'TERMS', 'SIGNED'], answer: 'QUALIFIED' },
+      { q: 'Of the deals with no update for 45 days or more, the SMALLEST by value sits in which stage?',
         opts: ['SOURCED', 'QUALIFIED', 'DILIGENCE', 'TERMS', 'SIGNED'], answer: 'SOURCED' },
     ],
   },
   {
-    env: 'e7',
-    claim: 'the depth of colour is the total risk between you and that day',
+    /*
+     * E4 · index 1, so the FLAT surface is shown first and gets pair[0].
+     *
+     * DERIVED FROM `RELATIONS` in ../e4/entry.ts: thirteen couplings, four of them to the core
+     * (PROGRAMME -> PARTNER 0.92, LISTING 0.71, CAMPAIGN 0.64, COMPARTMENT 0.55), and exactly one whose
+     * strength is `null` — JURISDICTION -> PERSON. The flat fallback's coupling list agrees: one row
+     * reads `absent` and `PROGRAMME → PARTNER` is the largest at 0.92.
+     *
+     * pair[1] IS THE OLD pair[0], UNCHANGED, because it was the one question in the old set that passed
+     * on its own frame: E4's relief prints `PARTNER · 1 HOP · 412 REC`, hops and records but never a
+     * coupling strength, and the three strengths on the frame sit in a legend attached to no entity. The
+     * mapping still has to come off the tube thickness.
+     *
+     * WHAT CHANGED IS THE OTHER MEMBER. It used to ask which entity's record count is NOT KNOWN, and the
+     * relief frame prints `COUNTERPARTY · 2 HOPS · RECORDS ABSENT` — the answer, in words, on the surface
+     * shown one trial earlier. The never-measured COUPLING is the same rule-6 distinction with no such
+     * label: ../e4/entry.ts draws it as a line of pips, visibly present and visibly not on the thickness
+     * scale, and the frame's only words for it are `STRENGTH NEVER MEASURED` in the legend, naming no
+     * entities. Both members are now coupling questions, which also makes the pair matched in form.
+     *
+     * AND E4 NOW SHOWS THE FLAT SURFACE FIRST, which is what makes that safe: the relief frame is seen
+     * second, so what it prints cannot reach the flat trial at all.
+     */
+    env: 'e4',
+    claim: 'a 3-D layout separates coupling strength from grouping without crossing lines',
     pair: [
-      { q: 'Which channel carries the most risk overall?',
-        opts: ['PAID_SEARCH', 'PAID_SOCIAL', 'EMAIL', 'COMMUNITY'], answer: 'PAID_SOCIAL' },
-      { q: 'Which day range was NOT MEASURED (as distinct from withheld)?',
-        opts: ['D1–D3', 'D13–D15', 'D22–D23', 'D26–D27'], answer: 'D13–D15' },
+      { q: 'One coupling’s STRENGTH was never measured. Which pair of entities does it join?',
+        opts: ['JURISDICTION → PERSON', 'PARTNER → COUNTERPARTY', 'QUEST → PERSON', 'TOKEN → SETTLEMENT'],
+        answer: 'JURISDICTION → PERSON' },
+      { q: 'Which entity has the STRONGEST coupling to the core?',
+        opts: ['PARTNER', 'LISTING', 'CAMPAIGN', 'COMPARTMENT'], answer: 'PARTNER' },
     ],
   },
   {
     /*
-     * LAST, WHICH MAKES THE COUNTERBALANCE 4-3. See the header block: index parity decides the first
-     * surface, seven environments cannot split evenly, and at index 6 E1 shows the environment first —
-     * so the flat surface holds the harder second position four times out of seven. That biases against
-     * MEETS (b), which is the safe direction for a page whose job is to catch a showreel.
+     * E1 · index 2, so the ENVIRONMENT is shown first and gets pair[0].
      *
-     * Both answers are derived from the camera and the five hard-coded panel positions in
-     * ../e1/entry.ts, and are checkable against that harness's own report (focusPanel "P3" at 6.13 m,
-     * P4 at 7.44 m, slots E1 and E8). The full derivation, and the flat-table column that makes this
-     * answerable on BOTH surfaces, are in the header block above.
+     * DERIVED FROM THE CAMERA AND THE FIVE HARD-CODED PANELS, and checkable against the harness's own
+     * report, which was read rather than assumed: face-centre distances from the eye are P3 6.13, P4 7.44,
+     * P2 7.92, P1 10.41, P5 11.09 m, and `environmentsShown` is `E1 E8 E0 E6 E5` in that rank order. So
+     * rank 1 is E1, rank 2 is E8 and rank 3 is E0. The full derivation is in the header block above.
+     *
+     * THE PAIR NOW ASKS ABOUT RANKS 2 AND 3, NOT 1 AND 2, AND THAT IS A FIX RATHER THAN A TRIM. The old
+     * pair asked first which environment the view is ADDRESSING. E1's own panel copy answers it:
+     * ../e1/entry.ts:825 prints `real DOM content projected onto lit GL surfaces — the panel you are
+     * reading` on E1's panel. That is not a distance and not an ordinal, which is why an audit looking
+     * for those passed it, and it states precisely what the question asked.
+     *
+     * RANKS 2 AND 3 ARE THE ROBUST PAIR ON THIS SURFACE, for the reason the file already documents:
+     * P3 and P4 are the two #2C6BFF panels and the other three are #16203A, so rank 2 is "the other
+     * highlighted one" and rank 3 is "the nearest of the rest" — 2.49 m clear of rank 4. The 0.48 m
+     * between ranks 2 and 3 is not what carries them; colour and focus are, and ../e1/entry.ts states
+     * that those two agree about what is addressed. Ranks 4 and 5 are still not asked: 0.68 m apart at
+     * 11 m, two defensible answers.
+     *
+     * BOTH ANSWERS ARE ON THE FLAT SURFACE TOO, in the front-to-back ordinal column added on 2026-08-14
+     * — `E0 3 | E1 1 | E2 absent | ... | E8 2` — which is the change that lifted E1's own refusal, and
+     * is why this pair is a comparison rather than a gift.
      */
     env: 'e1',
     claim: 'depth states which environment the view is addressing, and what stands behind it',
     pair: [
-      { q: 'Which environment is the view ADDRESSING — the one nearest the camera?',
-        opts: ['E0', 'E1', 'E5', 'E8'], answer: 'E1' },
       { q: 'Which environment stands IMMEDIATELY BEHIND the one nearest the camera?',
         opts: ['E0', 'E5', 'E6', 'E8'], answer: 'E8' },
+      { q: 'Counting from the front of the arrangement, which environment stands THIRD?',
+        opts: ['E0', 'E5', 'E6', 'E8'], answer: 'E0' },
     ],
+  },
+  {
+    /*
+     * E7 · index 3, so the FLAT surface is shown first and gets pair[0].
+     *
+     * DERIVED FROM `BASELINE`, `FLAGGED`, `ABSENT_DAYS` and `WITHHELD_DAYS` in ../e7/entry.ts, and
+     * cross-read off the flat fallback's own Advisory / Elevated / Severe columns. Over the 23 measured
+     * days: ADVISORY takes exactly ONE distinct value, 0.305, on every one of them — every flagged item
+     * in the dataset lands in band 1 or 2, so the advisory band is the per-channel baseline and nothing
+     * else — while ELEVATED takes 12 distinct values and SEVERE takes 8. And the number of days carrying
+     * any risk is ADVISORY 23, ELEVATED 15, SEVERE 8, so SEVERE is the band on the fewest days. Both
+     * derivations agree: 23 observed rows, 1 / 12 / 8 distinct values, 23 / 15 / 8 days above zero.
+     *
+     * WHY NOT THE OLD PAIR. Its second member asked which day range was NOT MEASURED, and the frame
+     * prints `D13-D15 NOT MEASURED` as a pill and `D22-D23 WITHHELD` beside it, so it handed over both
+     * the answer and the distinction being tested. Its first member asked which CHANNEL carries the most
+     * risk — and E7's flat fallback carries no channel data at all (measured above), so that question was
+     * unanswerable on the surface it was asked on. Neither could be repaired by rewording: every question
+     * about a day range is poisoned by those two pills, and every question about a channel is
+     * unanswerable flat. The severity bands are the axis both surfaces carry and neither annotates: the
+     * relief frame's only words for them are `SEVERITY IS HEIGHT` and `SEVERE / ELEVATED / ADVISORY`, a
+     * legend with no per-band magnitude, and the flat table gives one column each.
+     *
+     * THE ASSIGNMENT IS DELIBERATE AND IT IS NOT THE FLATTERING ONE. Both members are whole-field reads
+     * rather than single-cell hunts, so neither depends on one dim voxel. The uniform-band question is
+     * near-instant on a table — a column of identical numbers — and the fewest-days question is
+     * near-instant on the relief and a 23-row scan of three columns flat. Putting the cheap-flat question
+     * on the flat surface and the cheap-relief one on the relief keeps the two trials comparable instead
+     * of handing the environment the easier half of the pair.
+     */
+    env: 'e7',
+    claim: 'severity is height and depth is days, so a band’s reach down the calendar is a shape',
+    pair: [
+      { q: 'One severity band carries exactly the same risk on every measured day. Which band is it?',
+        opts: ['ADVISORY', 'ELEVATED', 'SEVERE'], answer: 'ADVISORY' },
+      { q: 'One severity band carries risk on fewer days than the other two. Which band is it?',
+        opts: ['ADVISORY', 'ELEVATED', 'SEVERE'], answer: 'SEVERE' },
+    ],
+  },
+];
+
+/*
+ * THREE ENVIRONMENTS ARE REFUSED, WITH THE REASON AND WITH THE LINE THAT LIFTS EACH ONE.
+ *
+ * They are here rather than deleted, and they are reported in the payload, because a set that silently
+ * shrank from seven to four would read as a shorter trial rather than as three environments that cannot
+ * currently be measured. Each refusal is a measurement, not a preference, and each names what would end
+ * it. None of the three can be fixed from THIS file — that is what makes them refusals rather than
+ * rewrites, and every one of the four pairs above was a rewrite.
+ */
+const REFUSED = [
+  {
+    env: 'e2',
+    code: 'FRAME_STATES_THE_WHOLE_DATASET',
+    /*
+     * MEASURED, not argued. E2's flat fallback has four columns — Corridor to | Lat | Lon | Great-circle
+     * separation — over seven rows. For all SEVEN of those rows, the relief frame prints the row key AND
+     * its separation inside ONE callout: `LONDON · 51.51 N 0.13 W · daylight · corridor from Vaduz · 7.6°
+     * · lift 0.0245`, and the same shape for New York, Johannesburg, Dubai, Chicago, Singapore and Tokyo
+     * (the last four in the prose block headed `NOT LABELLED ON THIS FACE — 5 OF 12 SITES, WITH THE
+     * REASON`). Every field the flat surface carries is therefore in words on the relief frame, so EVERY
+     * question answerable on the flat surface is answerable from the relief's text, and no rewording can
+     * change that. It is not a defect in ../e2/entry.ts either: that prose block exists so that
+     * `projected + inWords === cities` and no site is lost, which is rule 4 working as designed.
+     *
+     * WHAT WOULD LIFT IT: E2 becomes measurable if the corridor's own degrees stop being printed beside
+     * its endpoint — the `corridor from Vaduz · N°` clause on the labelled callouts and the same clause
+     * in the below-fold prose. That is a legibility decision for E2's owner about its own accessibility
+     * text, not a repair to this instrument, and it is reported rather than made.
+     */
+    whatWouldLiftIt: 'the corridor degrees stop being printed beside the endpoint they belong to',
+  },
+  {
+    env: 'e5',
+    code: 'FLAT_CAPTION_CONTRADICTS_THE_FLAT_RENDER',
+    /*
+     * E5 HAS EXACTLY ONE PAIR AVAILABLE AND ITS FLAT BRANCH MISLABELS THE ANSWER.
+     *
+     * Every extremum question over E5's grid is either printed or unreadable, which was checked over the
+     * whole grid rather than sampled: the peak readout prints `PEAK / 74% / $500k · 30 d`, so every
+     * "which band peaks" answer is either $500k (printed) or $250k; and the margins between the top two
+     * cells are 0.02 to 0.06 on a domain of 0.14-0.74 for every row but two. The one distinction with a
+     * large margin is the one this programme is built on — never sampled against present-but-withheld:
+     * the grid holds 2 absent points, both in the smallest band, and 3 withheld points, in the two
+     * largest. That pair was written and is kept below.
+     *
+     * IT CANNOT BE ASKED YET. ../e5/entry.ts:254 captions the flat figure `Holes are cells never
+     * measured; hatched cells are withheld`, and apps/web/src/components/geometry/SurfacePlot.tsx draws
+     * it the other way round: a never-measured cell gets a sparse 2-2 dash WITH A CROSS through it, and a
+     * withheld cell gets a tight 0.8-1.2 dash and NO cross — measured on the built surface, where the two
+     * absent cells carry three children each (outline plus two crossing lines) and the four withheld
+     * cells carry one. The component is right and its own comment says so; the caption inverts it. An
+     * operator following the caption answers both members backwards, on the flat branch only, which
+     * lowers flat accuracy and pushes the verdict towards MEETS (b) — the showreel direction, the one
+     * direction this page exists to refuse.
+     *
+     * A SECOND, SMALLER THING, measured on the same surface with getBoundingClientRect over the figure's
+     * own <text> nodes: five pairs of axis tick labels overlap — `25`∩`50` at 73% of the smaller box,
+     * `50`∩`100` at 80%, `25`∩`100` at 56%, `100`∩`250` at 17% and `7`∩`14` at 55%. Three of the seven
+     * ticket-size ticks are illegible, which is why the pair below names bands by position (SMALLEST,
+     * SECOND-LARGEST) and not by value. It does not on its own refuse E5.
+     *
+     * WHAT WOULD LIFT IT: twelve words at ../e5/entry.ts:254, agreeing with SurfacePlot's two glyphs.
+     */
+    whatWouldLiftIt: '../e5/entry.ts:254 states the two glyphs the way SurfacePlot.tsx draws them',
+    pairWhenLifted: [
+      { q: 'At 180 days to close, the SMALLEST ticket-size band has no win rate. Was it never sampled, or measured and withheld?',
+        opts: ['Never sampled', 'Measured but withheld', 'Zero — no deals won', 'Outside the plotted range'],
+        answer: 'Never sampled' },
+      { q: 'At 180 days to close, the SECOND-LARGEST ticket-size band has no win rate. Was it never sampled, or measured and withheld?',
+        opts: ['Never sampled', 'Measured but withheld', 'Zero — no deals won', 'Outside the plotted range'],
+        answer: 'Measured but withheld' },
+    ],
+  },
+  {
+    env: 'e6',
+    code: 'READABLE_REGION_IS_THE_LABELLED_REGION',
+    /*
+     * E6's relief prints eight record callouts of the form `BLOCKED · 2.0d ago · export.bulk · j.kohler`,
+     * so any question about a record inside the corridor is a text scan. Outside it, the harness's own
+     * per-record report gives the fog against which the verdict colour has to be read, and it was read
+     * rather than guessed: the two withheld records past the labels sit at fog 0.755 and 0.910, the one
+     * blocked record older than a week at 0.979, and the deepest record at 0.992. So the region whose
+     * verdicts are not printed is the region where the environment states, correctly and by design, that
+     * it is no longer legible — `READABLE TO 4.0 d`, `IN RANGE TO 4.6 d`, fog on.
+     *
+     * That leaves no question over this dataset that is neither a text scan nor a read through 76-99% fog,
+     * and it is a property of what E6 is FOR — fog as the reading limit — not a defect in it.
+     *
+     * WHAT WOULD LIFT IT: a dataset whose interesting records sit inside the readable corridor while the
+     * corridor keeps labelling only what it can label, or a second E6 camera closer to the far wall. Both
+     * are changes to ../e6/entry.ts, and neither is this instrument's to make.
+     */
+    whatWouldLiftIt: 'records whose verdict matters sit inside the corridor E6 says is readable',
   },
 ];
 
@@ -317,6 +571,25 @@ const $ = (id) => document.getElementById(id);
  */
 function labelStart() {
   $('start').textContent = `Begin — ${TASKS.length * 2} trials across ${TASKS.length} environments`;
+}
+
+/*
+ * THE REFUSALS ARE ON THE PAGE, NOT ONLY IN THE PAYLOAD.
+ *
+ * The operator is about to spend twenty-five minutes and the button says four environments. Three more
+ * exist and are not being measured, and if that is only in the JSON they read afterwards, the trial looks
+ * like it covers the programme. Each line names the environment, the code and the change that lifts it,
+ * because the person reading this is the person who can chase it.
+ */
+function labelRefusals() {
+  if (REFUSED.length === 0) return;
+  $('refusals').innerHTML =
+    `<strong>${REFUSED.length} of the ${TASKS.length + REFUSED.length} environments with a dataset are`
+    + ' REFUSED here, and are not in the run below.</strong> Each is a measurement with a named fix, not a'
+    + ' preference — the evidence is in this file\'s comments and in the downloaded result.<ul>'
+    + REFUSED.map((r) => `<li>${r.env.toUpperCase()} — <code>${r.code}</code>. Lifted by:`
+      + ` ${r.whatWouldLiftIt}.</li>`).join('')
+    + '</ul>';
 }
 
 /*
@@ -374,7 +647,9 @@ let shownAt = 0;
  *
  *   E2 prints `"to": "London" … "separationDeg": 7.6` through `"Singapore" … 91.9` for all seven
  *   corridors — the SAME seven great-circle separations the comment above says were computed to derive
- *   E2's key, and they answer BOTH members of its pair. Located with a Range rather than by counting
+ *   E2's key, and they answer BOTH members of its pair. (E2 is refused as of 2026-08-18 and this trial no
+ *   longer loads it; the measurement is kept because it is the clearest example of the channel, and the
+ *   guard it justifies runs on every trial.) Located with a Range rather than by counting
  *   lines: the block runs y 1096 to 1521 in a 1771 px document, so the first city row sits 361 px below
  *   the 760 px fold.
  *   E1 prints `"focusPanel": "P3"` at y 935 and `"environmentsShown": ["E1","E8","E0","E6","E5"]` at
@@ -420,7 +695,8 @@ let shownAt = 0;
  * so that it survives in the accessibility tree — which means every 3-D surface carries its own flat
  * table, painting zero pixels, inside `getSelection()`. Measured: on e1 a select-all reaches 2,270
  * characters including the ordinal header; on e2 it reaches 1,911 including the great-circle separations
- * that answer both members of ITS pair; on e5, 2,564. So this is a property of all seven environments and
+ * that answer both members of ITS pair; on e5, 2,564. So this is a property of every environment in the
+ * programme and
  * of the design of rule 1, not something E1 introduced, and unlike #log it is not below the fold — it
  * cannot be reached by scrolling, only by select-all and paste, which is not a gesture this trial teaches.
  * It is left open because closing it means hiding the surface under test: on the flat path that table IS
@@ -516,13 +792,42 @@ function finish() {
    * too few trials, unequal accuracy, or no correct answers on a surface. A faster WRONG reading is a
    * worse surface, so a time advantage is only reported when accuracy is at least equal — otherwise the
    * honest output is a refusal with a code, exactly as everywhere else in this codebase.
+   *
+   * ── THE ACCURACY GUARD COMPARED RAW COUNTS ACROSS SURFACES WITH DIFFERENT n ─────────────────────────
+   *
+   * It read `three.correct < flat.correct`, and `n` can differ, because `bySurface` drops any trial whose
+   * startup could not be confirmed or whose printed report could not be hidden. Driven rather than
+   * reasoned about (`INSTRUMENT_CHECK.md`, check 4): with ONE relief trial excluded and EVERY answer
+   * given correct, the page reported `FAILS (b) — ENVIRONMENT_LESS_ACCURATE_THAN_FLAT` on 6 of 6 against
+   * 7 of 7. The code asserted something the data contradicted, and an operator reading it would conclude
+   * they had got relief answers wrong.
+   *
+   * AND THE ERROR RAN ONE WAY. Only the relief branch plausibly fails to settle — its startup measured
+   * 1.0-2.5 s against the flat branch's 4-54 ms — so exclusions land on the relief side, and every one of
+   * them pushed the verdict towards FAILS (b).
+   *
+   * COMPARING RATES, NOT REFUSING ON UNEQUAL n — chosen, and here is why. Refusing when `three.n !==
+   * flat.n` would throw the whole 25-minute reading away for one excluded trial, and by the paragraph
+   * above an exclusion is an EXPECTED event that lands on one side. That makes "refuse on unequal n" a
+   * guard that mostly destroys valid readings. The claim in clause (b) is about accuracy, not about
+   * counts, so the rate is the quantity to compare.
+   *
+   * IT IS DONE BY CROSS-MULTIPLICATION rather than by dividing: `three.correct * flat.n < flat.correct *
+   * three.n` is exact integer arithmetic, so no reading turns on a floating-point tie — and when the two
+   * n are equal it reduces to exactly the old comparison, which is the behaviour to keep. Both n are at
+   * least 2 by the branch above, so neither multiplier is zero.
+   *
+   * THE GUARD IS NOT WEAKENED, ONLY CORRECTED: a relief surface that is genuinely less accurate still
+   * refuses to report a time advantage. Both rates are printed in the table below, beside the n they came
+   * from, so the reader can see what was compared.
    */
   let verdict, code = null;
+  const rate = (s) => (s.n > 0 ? s.correct / s.n : null);
   if (three.n < 2 || flat.n < 2) {
     verdict = 'REFUSED'; code = 'TOO_FEW_TRIALS';
   } else if (three.medianCorrectMs === null || flat.medianCorrectMs === null) {
     verdict = 'REFUSED'; code = 'NO_CORRECT_ANSWERS_ON_ONE_SURFACE';
-  } else if (three.correct < flat.correct) {
+  } else if (three.correct * flat.n < flat.correct * three.n) {
     verdict = 'FAILS (b)'; code = 'ENVIRONMENT_LESS_ACCURATE_THAN_FLAT';
   } else {
     verdict = three.medianCorrectMs <= flat.medianCorrectMs ? 'MEETS (b)' : 'FAILS (b)';
@@ -541,10 +846,14 @@ function finish() {
         + `${excluded.filter((r) => r.startupUnconfirmed).length} where startup could not be confirmed. `
         + `Excluded trials are in the JSON below, not averaged in.</p>`
       : '')
+    /* THE RATE IS PRINTED BESIDE THE COUNT because the rate is what the verdict compares, and a reader
+       who sees only `6` and `7` cannot tell an exclusion from a wrong answer. */
     + '<table><thead><tr><th>surface</th><th class="n">trials</th><th class="n">correct</th>'
-    + '<th class="n">cannot tell</th><th class="n">median time when correct</th></tr></thead><tbody>'
+    + '<th class="n">accuracy</th><th class="n">cannot tell</th>'
+    + '<th class="n">median time when correct</th></tr></thead><tbody>'
     + [['environment', three], ['flat', flat]].map(([n, s]) =>
       `<tr><td>${n}</td><td class="n">${s.n}</td><td class="n">${s.correct}</td>`
+      + `<td class="n">${rate(s) === null ? '—' : `${Math.round(rate(s) * 100)}%`}</td>`
       + `<td class="n">${s.unsure}</td><td class="n">${s.medianCorrectMs ?? '—'} ms</td></tr>`).join('')
     + '</tbody></table>';
 
@@ -552,10 +861,20 @@ function finish() {
     gate: '7b', verdict, code,
     operators: 1,
     note: 'One operator is an anecdote. This is the instrument, not a finding.',
-    /* `refused` is gone rather than emptied: e1 carried the only entry, and it was lifted on 2026-08-14
-       when ../e1/entry.ts's flat table gained the front-to-back ordinal column. An empty object here
-       would read as "nothing refused yet" instead of "nothing is refused". */
-    coverage: { measured: TASKS.length, notApplicable: ['e8'] },
+    /* `refused` IS BACK, AND IT IS NOT EMPTY. It was removed on 2026-08-14 when E1's own refusal was
+       lifted, on the argument that an empty object reads as "nothing refused yet" rather than "nothing
+       is refused". Three environments are refused again as of 2026-08-18, each with a code and each with
+       the change that would lift it, so the payload carries them: a coverage line reading `measured: 4`
+       with no reason attached would read as a shorter trial rather than as three surfaces that cannot be
+       measured today. */
+    coverage: {
+      measured: TASKS.map((t) => t.env),
+      refused: REFUSED.map((r) => ({ env: r.env, code: r.code, whatWouldLiftIt: r.whatWouldLiftIt })),
+      notApplicable: ['e8'],
+    },
+    /* Both rates, so the accuracy comparison the verdict made is reproducible from the payload alone
+       without re-deriving it from `trials`. */
+    accuracy: { environment: rate(three), flat: rate(flat) },
     excludedTrials: excluded.length,
     environment: three, flat, trials: results,
   }, null, 2);
@@ -567,7 +886,7 @@ function finish() {
    * and the server is loopback GET-only so the page cannot write to disk on its own. The first
    * operator to complete the trial had no way to keep the answer except selecting it by hand.
    *
-   * For a gate whose entire purpose is to decide whether seven environments stay or go, that is the
+   * For a gate whose entire purpose is to decide whether these environments stay or go, that is the
    * wrong failure mode: a 25-minute human measurement that is one accidental Cmd-W from gone.
    *
    * So the payload is written to localStorage the moment it is computed, and recovered on load. The
@@ -620,6 +939,7 @@ const KEEP_KEY = 'lcx-e9-7b-trial:v1';
 })();
 
 labelStart();
+labelRefusals();
 $('start').onclick = () => { $('intro').style.display = 'none'; $('stage').style.display = 'block'; showTrial(); };
 $('dry').onclick = () => { $('dry').disabled = true; renderOrder(); };
 </script>

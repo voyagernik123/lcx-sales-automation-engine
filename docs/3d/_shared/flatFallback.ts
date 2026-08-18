@@ -86,9 +86,11 @@ export interface FlatFallback {
 }
 
 /*
- * THREE THINGS IN THIS SHEET ARE SCARS, and they are documented here rather than inside the literal
- * because a comment inside a template literal is shipped bytes a minifier cannot reach — and because two
- * of the three need to quote a CSS property name, which cannot be done in backticks inside backticks.
+ * THE RULES IN THIS SHEET THAT ARE SCARS ARE NUMBERED HERE, and they are documented here rather than
+ * inside the literal because a comment inside a template literal is shipped bytes a minifier cannot reach
+ * — and because most of them need to quote a CSS property name, which cannot be done in backticks inside
+ * backticks. (This sentence used to say THREE and then stood over four notes; a count in a heading is one
+ * more thing to go stale, so there is no longer a number in it.)
  *
  * 1 · `#lcx-fallback[data-rendered="1"]` CLIPS, it does not `display: none`. See the measurement at the
  *     top of this file: `display: none` pruned the table out of the accessibility tree on every success
@@ -112,6 +114,12 @@ export interface FlatFallback {
  *     print PDF as well. A ring nobody asked for, around an entire section, is decoration in nine tracked
  *     captures rather than an indicator. The refusal notice itself is the visible signal, and it is now
  *     legible in both media.
+ * 5 · `[data-lcx-released]` RELEASES A HOST'S RESERVED HEIGHT ON A REFUSAL, and the `="clipped"` variant
+ *     also stops overlay content painting across the data. `showRefusal` stamps the attribute; the rules
+ *     live here, in the sheet, so those properties are `!important` in one place, so a capture or an audit
+ *     can SEE which hosts were released by reading the DOM, and so this note can quote them. The
+ *     measurements, the reason it is `height: auto` and not `0`, and the reason the clip is conditional are
+ *     at the call site: this is one rule, and it only means anything beside the walk that stamps it.
  */
 const STYLE = `
 :root { color-scheme: dark; }
@@ -131,6 +139,10 @@ const STYLE = `
 #lcx-fallback caption { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); text-align: left; }
 /* No focus ring on the host. Note 4 above the literal — this is not a keyboard-reachable element. */
 #lcx-fallback:focus, #lcx-fallback:focus-visible { outline: none; }
+/* A host whose reserved height a refusal has released, and one whose overlay is clipped with it. Note 5
+   above the literal — and no backticks in here, for the reason that note gives. */
+[data-lcx-released] { height: auto !important; min-height: 0 !important; }
+[data-lcx-released="clipped"] { overflow: hidden !important; }
 /* Taken off the screen once a frame exists — clipped, never removed. Note 1 above the literal. */
 #lcx-fallback[data-rendered="1"] {
   position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
@@ -251,8 +263,85 @@ export function installFlatFallback(spec: FallbackSpec): FlatFallback {
      * not a placeholder, it is an obstruction — the reader has to scroll past nothing to reach
      * everything.
      */
-    for (const c of Array.from(document.querySelectorAll('canvas'))) {
+    const dead = Array.from(document.querySelectorAll('canvas'));
+    for (const c of dead) {
       (c as HTMLElement).style.display = 'none';
+    }
+    /*
+     * AND SO DOES THE BOX THAT WAS RESERVED FOR IT — WHICH THE CANVAS SWEEP ABOVE COULD NOT SEE.
+     *
+     * The rule above hides `canvas` elements and nothing else, so a HOST with a height of its own keeps
+     * the hole open and the fallback stays exactly where it was: below the fold, with the reader timed
+     * while they look at an empty box. Same defect as the one the comment above describes, one level up
+     * the tree, and invisible to the check written for it — `scripts/3d-audit.mjs:425` counts canvases
+     * that are still `display:block` and reports zero.
+     *
+     * MEASURED, in Chromium at the §7(b) trial's own 1194×758 frame, on `live.html?refuse=1` — the top of
+     * `#lcx-fallback`, and the first ink and the visible-text-node count the trial's instrument check uses,
+     * before this block existed and after:
+     *
+     *   e2  fallback 799 → 79, first ink 758 → 38, above the fold 0 of 38 → 38 of 38
+     *       blocker: the `<div id="stage" style="…height:720px">` in e2/build.mjs's page shell — cited
+     *       by name and not by line, because adding the comment that explains it moved the line
+     *   e8  fallback 799 → 79, first ink 758 → 38, above the fold 0 of 27 → 27 of 27
+     *       the same host in e8/build.mjs, with the LCX mark inside it
+     *   e0, e1, e3, e4, e5, e6, e7  UNMOVED, and not "within noise": the full 1194×758 frame is
+     *       byte-identical before and after (sha256 of the PNG equal on all seven), because on this path
+     *       their canvas is a child of BODY and the walk below touches nothing at all.
+     *
+     * And on the path this file's own listener exists for — a real `WEBGL_lose_context` after READY, with
+     * the JSON diagnostic hidden the way the trial's `hideDiagnostic` hides it — the same measurement found
+     * EIGHT of the nine below the fold, because by then every environment except E0 has built itself a
+     * `position:relative;overflow:hidden;width:1200px;height:720px` wrapper to clip its projected labels
+     * (the `wrap` element in e2/entry.ts, and E1, E4 and E7 carry the same one for the same reason):
+     *
+     *   e1, e3, e4, e5, e6, e7  766 → 46    e2  923 → 203 (its own prose block sits above the table, and
+     *   e8  766 → 46                        is itself above the fold)    e0  46 → 46, it has no wrapper
+     *
+     * So this is not E2's bug. E2 is the one environment where the reserved box is written into the page
+     * shell, and therefore the only one that shows the defect on the refusal path a capture takes.
+     *
+     * ── WHY `height: auto` AND NOT `display: none`, AND NOT ZERO ─────────────────────────
+     * The reserved height is not a mistake: a host that collapses to nothing before the canvas mounts makes
+     * the page jump under the reader, so the non-refusing path has to keep it. `auto` RELEASES the
+     * reservation instead of overriding it with a second number — the box then sizes to whatever is left
+     * inside it, which after the canvas is hidden is usually nothing, and is real content when there is
+     * any. `height: 0` and `display: none` would both hide that content, and this file exists to stop a
+     * refusal costing the reader information.
+     *
+     * ── THE WALK RUNS CHILD → PARENT, AND THE MEASUREMENT DEPENDS ON IT ─────────────────
+     * `wrap` is inside `#stage` in E2. Reading `#stage` before its own child has been released reports 720
+     * px of in-flow content and the clip below would not fire; going upwards from the canvas means every
+     * descendant has already collapsed by the time an element is measured. `document.body` is the stop:
+     * collapsing it would take the page's padding with it, and nothing reserves space there.
+     *
+     * `!important` because this is overriding a page author's own declaration on a path where their
+     * assumption — that a canvas is about to fill this box — is known to be false, and an inline
+     * `height:720px` on the host is only the mildest way that declaration can arrive.
+     *
+     * ── AND THE CLIP IS CONDITIONAL ON A MEASUREMENT, NOT ON A GUESS ────────────────────
+     * `overflow: hidden` is set only when the released box actually collapsed. That is the case where
+     * nothing remains IN FLOW, so the clip cannot cost the reader any content — all it can reach is
+     * absolutely-positioned overlay content, which on a refusal is positioned against a view that is not
+     * being drawn: E1/E2/E4/E7's projected city and node labels (E1 left 18 of them painting over a blank
+     * box on the context-loss path, measured above), and E8's mark. Those stay in the DOM, so rule 4's
+     * accessibility tree and select-all paths are untouched; what changes is that they no longer paint
+     * across the data. A box that still has in-flow content keeps its overflow visible, because there the
+     * clip WOULD hide something a reader is entitled to.
+     *
+     * That the clip does not prune the tree is measured, not argued: on E8's refusal,
+     * `Accessibility.getFullAXTree` reports the same one un-ignored node named `LCX` and the same 25 table
+     * nodes before and after, and the mark is still `display:block`, `visibility:visible` with its four
+     * paths and a 132 px box. What changed in E8's refusal frame is that a quarter of a logo bleeding off
+     * the top-left corner is no longer painted, and its three-row material table is, at y79 instead of y799.
+     */
+    for (const c of dead) {
+      for (let el = c.parentElement; el && el !== document.body; el = el.parentElement) {
+        el.dataset.lcxReleased = '1';
+        /* Reading the box is what applies the rule above, and it is read AFTER this element's own
+           descendants have been released — hence the direction of the walk. */
+        if (el.getBoundingClientRect().height < 2) el.dataset.lcxReleased = 'clipped';
+      }
     }
     /* `preventScroll` because this must not move the viewport: `refused.png` is a tracked capture and
        focus is being moved for the reader who cannot see it, not for the one who can. */
