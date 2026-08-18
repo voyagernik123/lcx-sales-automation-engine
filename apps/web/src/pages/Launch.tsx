@@ -64,6 +64,10 @@ export const LCXOS_VERSION = '0.2.7';
  * with the DMG it is about to upload, so the next release cannot ship a stale figure
  * the way this one nearly did.
  *
+ * 0.2.7: 4_161_808 bytes = 4.2 MB, measured the same way. The guard refused the release again over
+ * 4.1 vs 4.2 — the fourth time it has earned itself. Worth noting WHY the number moves at all: 0.2.7
+ * is the first build carrying the 3-D layer, 19 GL chunks of it, so the tenth of a megabyte is the
+ * renderer arriving rather than drift.
  * 0.2.6: 4_070_285 bytes = 4.1 MB, measured from the artefact the publisher was holding
  * — and the guard earned itself again by refusing the release over 4.0 vs 4.1. A tenth of
  * a megabyte harms nobody, which is exactly why it would have sat on the page for months;
@@ -73,7 +77,7 @@ export const LCXOS_VERSION = '0.2.7';
  * download dialog shows. 4_070_285 / 1e6 = 4.1; the same bytes are 3.9 MiB, and picking
  * the other unit here would make the guard fail forever with both sides "correct".
  */
-export const LCXOS_DMG_MB = 4.1;
+export const LCXOS_DMG_MB = 4.2;
 
 /**
  * The permanent download URL. `/releases/latest/download/<name>` is a GitHub
