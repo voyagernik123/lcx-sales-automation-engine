@@ -180,7 +180,10 @@
     <h1 style="margin-top:22px">Result</h1>
     <div id="summary"></div>
     <p class="lede">Paste this into the environment’s README under <code>§7(b)</code>. It is the only
-      §7(b) evidence that exists.</p>
+      §7(b) evidence that exists — which is exactly why it is now also saved for you, rather than
+      living on this screen until the tab closes.</p>
+    <p class="lede"><button id="save">Download the result</button>
+      <span id="kept" style="margin-left:12px"></span></p>
     <pre id="json"></pre>
   </div>
 </main>
@@ -556,7 +559,65 @@ function finish() {
     excludedTrials: excluded.length,
     environment: three, flat, trials: results,
   }, null, 2);
+
+  /*
+   * ── THE VERDICT USED TO EVAPORATE WHEN THE TAB CLOSED ─────────────────────────────
+   * This block renders the only §7(b) evidence that exists, and until now it existed ONLY here:
+   * `grep -c "download|clipboard|Blob"` over this file returned 0, `results` is an in-memory array,
+   * and the server is loopback GET-only so the page cannot write to disk on its own. The first
+   * operator to complete the trial had no way to keep the answer except selecting it by hand.
+   *
+   * For a gate whose entire purpose is to decide whether seven environments stay or go, that is the
+   * wrong failure mode: a 25-minute human measurement that is one accidental Cmd-W from gone.
+   *
+   * So the payload is written to localStorage the moment it is computed, and recovered on load. The
+   * download is a separate affordance because localStorage is per-browser and per-profile — it keeps
+   * the result alive across a reload, not across a machine.
+   */
+  const payload = $('json').textContent;
+  try {
+    localStorage.setItem(KEEP_KEY, JSON.stringify({ at: new Date().toISOString(), payload }));
+    $('kept').textContent = 'Saved in this browser — reload recovers it.';
+  } catch {
+    /* Private browsing, a full quota, or a blocked origin. Say so rather than implying a save. */
+    $('kept').textContent = 'Could not save in this browser — use Download, or copy the text below.';
+  }
+
+  $('save').onclick = () => {
+    const blob = new Blob([payload], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `e9-7b-trial-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
 }
+
+/* Namespaced so it cannot collide with the app's own storage, which is scoped by operator email. */
+const KEEP_KEY = 'lcx-e9-7b-trial:v1';
+
+/*
+ * RECOVER A COMPLETED RUN. Shown as a banner rather than silently restoring the report, because a
+ * stale result presented as this session's would be worse than no result at all — the reader has to
+ * be able to see that it is from an earlier run, and when.
+ */
+(() => {
+  let kept = null;
+  try { kept = JSON.parse(localStorage.getItem(KEEP_KEY) ?? 'null'); } catch { kept = null; }
+  if (!kept || typeof kept.payload !== 'string') return;
+  const el = document.createElement('p');
+  el.className = 'lede warn';
+  el.innerHTML = `A completed trial from <strong>${kept.at}</strong> is saved in this browser. `
+    + '<button id="recover">Show it</button> — or just run the trial again; this is not overwritten '
+    + 'until a new run finishes.';
+  document.getElementById('intro')?.prepend(el);
+  document.getElementById('recover').onclick = () => {
+    document.getElementById('json').textContent = kept.payload;
+    document.getElementById('done').style.display = 'block';
+    document.getElementById('summary').innerHTML =
+      `<div class="lede">Recovered from ${kept.at}. This is an EARLIER run, not this session.</div>`;
+  };
+})();
 
 labelStart();
 $('start').onclick = () => { $('intro').style.display = 'none'; $('stage').style.display = 'block'; showTrial(); };

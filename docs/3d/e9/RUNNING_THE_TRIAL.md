@@ -21,10 +21,16 @@ own answer key. A self-administered result would be worse than none.
 ## How to run it
 
 ```bash
-node docs/3d/serve.mjs
+cd /Users/nik/Downloads/usclaude-main && node docs/3d/serve.mjs
 ```
 
 Then open **http://127.0.0.1:5600/e9/task.html** and press *Begin*.
+
+> The `cd` is not decoration. This used to read `node docs/3d/serve.mjs` on its own, which only works
+> if your shell already happens to be in the repository — and the first person to try it was in their
+> home directory, got `Cannot find module '/Users/nik/docs/3d/serve.mjs'`, and then
+> `ERR_CONNECTION_REFUSED` in the browser because nothing was listening. Two confusing errors for one
+> missing directory. A setup step that assumes where you are standing is a setup step that fails.
 
 That is the whole setup. The server is loopback-only, GET-only, serves `docs/3d` and nothing else, and sends
 `cache-control: no-store` — because the trial's entire output is milliseconds and a cached second load would
