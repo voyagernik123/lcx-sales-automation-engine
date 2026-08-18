@@ -27,10 +27,22 @@
  *  is added rather than on the day someone releases.
  */
 import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
-const ROOT = resolve(process.cwd(), '..', '..');
+/*
+ * ANCHORED TO THIS FILE, NOT TO THE WORKING DIRECTORY.
+ *
+ * This was `resolve(process.cwd(), '..', '..')`, which is only the repository when the runner
+ * happens to be in `apps/desktop`. Run from the repo root it resolved to the parent of the repo and
+ * every assertion failed with ENOENT on a path outside the project — three identical failures whose
+ * message pointed at `tauri.conf.json` rather than at the real cause, which was the caller's cwd.
+ *
+ * This file is a RELEASE GATE. A gate that fails for a reason unrelated to what it guards teaches
+ * whoever is mid-release to distrust it, on the run where its actual verdict matters most.
+ */
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const read = (p: string): string => readFileSync(join(ROOT, p), 'utf8');
 
 /** Each home for the app version, with how to read it. The reader is the point: a regex per file. */

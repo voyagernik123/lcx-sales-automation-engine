@@ -460,6 +460,18 @@ H="$(health)"
 printf '  api db      : %s\n' "$(printf '%s' "$H" | health_field db)"
 HC="$(printf '%s' "$H" | health_field dbHint.code)"
 [ -n "$HC" ] && printf '  api dbHint  : %s\n' "$HC"
+# ── THE TWO FIELDS THAT WERE INVISIBLE, AND SO WENT WRONG UNNOTICED ──────────────────
+# `dbUrlSource` distinguishes "the database answers" from "the database answers because of what is
+# configured" — the whole subject of this script's first phase. `throttleKey` reports what the
+# brute-force control keys on: it was set from a dashboard nobody could read back, and reporting it
+# is how a live defect in the code consuming it was found at all. Both are shapes, never values.
+DBSRC="$(printf '%s' "$H" | health_field dbUrlSource)"
+[ -n "$DBSRC" ] && printf '  api dbUrl   : %s%s\n' "$DBSRC" \
+  "$([ "$DBSRC" = 'pooler-fallback' ] && printf ' (self-repaired at boot — config does not describe behaviour)')"
+HEALF="$(printf '%s' "$H" | health_field dbHealFailure)"
+[ -n "$HEALF" ] && printf '  api dbHeal  : %s\n' "$HEALF"
+TKEY="$(printf '%s' "$H" | health_field throttleKey)"
+[ -n "$TKEY" ] && printf '  api throttle: %s\n' "$TKEY"
 printf '  api version : %s\n' "$(printf '%s' "$H" | health_field version)"
 printf '  channel     : %s\n' "$(curl -sL --max-time 25 "$CHANNEL" | node -e '
   let s=""; process.stdin.on("data",d=>s+=d).on("end",()=>{

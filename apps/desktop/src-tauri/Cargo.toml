@@ -1,6 +1,6 @@
 [package]
 name = "lcx-terminal"
-version = "0.2.7"
+version = "0.2.8"
 description = "LCXOS — the LCX ONE operator instrument"
 authors = ["LCX"]
 edition = "2021"

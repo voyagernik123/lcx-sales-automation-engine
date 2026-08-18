@@ -101,6 +101,15 @@ was not allowed to make:
   0.979 / 0.992. There is no question there that is neither a text scan nor a read through 76–99%
   fog. That is what E6 is *for*, not a defect in it.
 
+## Known stale state, left deliberately
+
+The committed `docs/3d/e*/bundle.js` artefacts predate the `_shared/flatFallback.ts` fold fix, so on
+what the trial loads today E2's and E8's flat branches still begin below the fold (first ink at 748
+against 28 and 83 elsewhere). No rebuild was run. **E2 is refused and the trial does not load it, so
+this is not a live defect** — and since the instrument is now gated, rebuilding the bundles would be
+work in service of something nobody should run. Recorded so the next person does not read the fold
+fix in the source and assume it is in the artefacts.
+
 ## Bookkeeping defect worth recording
 
 The 534-line rewrite of `task.html` and the `_shared/flatFallback.ts` fold fix were swept into

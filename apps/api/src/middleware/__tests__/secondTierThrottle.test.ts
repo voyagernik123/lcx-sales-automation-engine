@@ -242,17 +242,41 @@ describe('secondTierThrottleKey — which source, and why', () => {
     const prev = process.env.TRUSTED_PROXY_HOPS;
     try {
       process.env.TRUSTED_PROXY_HOPS = '1';
-      /* One appending proxy: the last entry is infrastructure, the one before it is the client. */
+      /*
+       * ── THESE EXPECTATIONS WERE THE DEFECT, WRITTEN DOWN AND PASSING ──────────────────
+       *
+       * They used to read `'203.0.113.5, 9.9.9.9'` -> `client:203.0.113.5`: the FIRST entry, on the
+       * model "the last N are infrastructure, the one before them is the client". Everything to the
+       * left of what our own proxies appended is caller-supplied, so that model reads a
+       * caller-chosen value and calls it the client. The test agreed with the code, so neither
+       * caught it.
+       *
+       * ONE appending proxy means ONE trustworthy entry, and it is the LAST one — the address that
+       * proxy observed. A forged prefix must be ignored, not preferred.
+       */
+      expect(secondTierThrottleKey(ctx('10.1.2.3', '203.0.113.5')))
+        .toBe('peer:10.1.2.3|client:203.0.113.5');
+
+      /* THE ATTACK, ASSERTED: a caller prepends whatever it likes and the key does not move. Before
+         the fix each of these produced a DIFFERENT key, so rotating one header bought an unlimited
+         failure budget while honest callers shared one bucket. */
+      const forged = ['1.2.3.4', 'evil-1', '', '  ', '203.0.113.9'].map((f) =>
+        secondTierThrottleKey(ctx('10.1.2.3', `${f}, 203.0.113.5`)));
+      expect(new Set(forged).size).toBe(1);
+      expect(forged[0]).toBe('peer:10.1.2.3|client:203.0.113.5');
+
+      /* An empty header still carries no evidence of the chain. */
+      expect(secondTierThrottleKey(ctx('10.1.2.3', ''))).toBe('peer:10.1.2.3');
+
+      process.env.TRUSTED_PROXY_HOPS = '2';
+      /* Two appending proxies: the rightmost TWO were written by infrastructure, and the leftmost of
+         those is what the outer one observed. Anything further left is the caller's. */
       expect(secondTierThrottleKey(ctx('10.1.2.3', '203.0.113.5, 9.9.9.9')))
         .toBe('peer:10.1.2.3|client:203.0.113.5');
-      /* A header SHORTER than the declared chain cannot have come through it. Refuse rather than
-         index into it, or a caller who simply sends fewer hops gets a fresh bucket — which is the
-         hole, reintroduced through the escape hatch. */
-      expect(secondTierThrottleKey(ctx('10.1.2.3', '9.9.9.9'))).toBe('peer:10.1.2.3');
-      expect(secondTierThrottleKey(ctx('10.1.2.3', ''))).toBe('peer:10.1.2.3');
-      process.env.TRUSTED_PROXY_HOPS = '2';
-      expect(secondTierThrottleKey(ctx('10.1.2.3', '203.0.113.5, 9.9.9.9, 9.9.9.10')))
+      expect(secondTierThrottleKey(ctx('10.1.2.3', 'forged, 203.0.113.5, 9.9.9.9')))
         .toBe('peer:10.1.2.3|client:203.0.113.5');
+      /* Fewer entries than the declared chain cannot have traversed it — refuse, never index. */
+      expect(secondTierThrottleKey(ctx('10.1.2.3', '9.9.9.9'))).toBe('peer:10.1.2.3');
       /* Garbage and zero both mean "not declared", never "trust the header". */
       process.env.TRUSTED_PROXY_HOPS = 'yes';
       expect(secondTierThrottleKey(ctx('10.1.2.3', '203.0.113.5, 9.9.9.9'))).toBe('peer:10.1.2.3');

@@ -147,13 +147,40 @@ export function secondTierThrottleKey(c: {
   if (!forwarded) return `peer:${peer}`;
   const hops = forwarded.split(',').map((h) => h.trim()).filter(Boolean);
   /*
-   * With N trusted proxies appending, the last N entries were written by infrastructure and the
-   * entry at `length - N` is what the outermost trusted proxy OBSERVED — the real client. A header
-   * SHORTER than the declared chain cannot have come through it, so it is refused rather than
-   * indexed into: a caller who sends fewer hops than configured must not get a fresh bucket.
+   * ── COUNT FROM THE RIGHT. THE LEFT OF THIS HEADER BELONGS TO THE CALLER. ────────────────
+   *
+   * This read `hops[hops.length - trusted - 1]` with a `length < trusted + 1` guard, i.e. it
+   * assumed the header is `client, infra1 … infraN` and took the FIRST entry. Every entry to the
+   * left of the ones our own infrastructure appended is caller-supplied, so that indexing hands
+   * the throttle key to the attacker:
+   *
+   *   honest request, one appending proxy   `realclient`                 -> 1 entry, refused by the
+   *                                                                        guard, so the header was
+   *                                                                        never used at all
+   *   forged request                        `1.2.3.4, realclient`        -> 2 entries, key becomes
+   *                                                                        `1.2.3.4`
+   *
+   * So an attacker rotating one header got a fresh failure budget per request while every honest
+   * caller shared the single peer bucket — strictly worse than not trusting the header. And it
+   * fails the same way under the other XFF convention (a proxy appending its OWN address): the
+   * forged value simply sits one place further left and is still what gets read.
+   *
+   * The rightmost N entries are the ones our infrastructure wrote — that is what declaring N
+   * MEANS, and they are the only entries a caller cannot influence. The leftmost of those,
+   * `hops[length - N]`, is the address the outermost trusted proxy OBSERVED. For Render's single
+   * proxy that is the real client, and a forged prefix is ignored rather than read.
+   *
+   * The guard moves with the index: a header carrying fewer than N entries cannot have traversed
+   * the declared chain, so it is refused rather than indexed into. It no longer demands an EXTRA
+   * caller-written entry before the header may be used — demanding that was what made the honest
+   * case unusable and the forged case authoritative.
+   *
+   * `TRUSTED_PROXY_HOPS=1` is live on this deployment (`/health` reports `throttleKey`), and
+   * OWNER_ACTIONS.md told the owner it was "almost certainly 1" — advice given without checking
+   * the topology, which is precisely what the header above warns against.
    */
-  if (hops.length < trusted + 1) return `peer:${peer}`;
-  const client = hops[hops.length - trusted - 1];
+  if (hops.length < trusted) return `peer:${peer}`;
+  const client = hops[hops.length - trusted];
   return client ? `peer:${peer}|client:${client}` : `peer:${peer}`;
 }
 

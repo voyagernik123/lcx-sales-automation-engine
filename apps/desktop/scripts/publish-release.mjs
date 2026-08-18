@@ -44,7 +44,7 @@
 
 import { readFileSync, writeFileSync, readdirSync, existsSync, mkdirSync, copyFileSync, statSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, createPublicKey, verify as cryptoVerify } from 'node:crypto';
 import { resolve, dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -108,6 +108,82 @@ if (!existsSync(sigPath)) {
   die(`no signature at ${sigPath}.\n  \`bundle.createUpdaterArtifacts\` is true, so this means TAURI_SIGNING_PRIVATE_KEY was not set during the build. An UNSIGNED update is not merely unverified — the app will refuse it, so it would look like the updater is broken.`);
 }
 const signature = readFileSync(sigPath, 'utf8').trim();
+
+/*
+ * ── DOES THE SIGNATURE ACTUALLY SIGN THESE BYTES? ────────────────────────────────────
+ *
+ * Everything above this point checks that a signature EXISTS and that the .app reports the right
+ * version. Neither says the signature belongs to the tarball, and the difference is not academic:
+ * `tauri build` WITHOUT `TAURI_SIGNING_PRIVATE_KEY` still writes a fresh `LCXOS.app.tar.gz` and
+ * simply does not replace the `.sig` beside it. Found exactly that way on 2026-08-18 — a 0.2.8
+ * tarball built at 16:35 sitting next to a signature from the 11th, whose own trusted comment read
+ * `timestamp:1786438564`. Every guard above passed: one tarball, a signature present, 404
+ * characters, Info.plist agreeing with the config.
+ *
+ * What would have shipped: the updater downloads the asset, verifies it against the public key,
+ * FAILS, and refuses to install. Indistinguishable from a broken updater — which is precisely the
+ * outcome the long comment above works to prevent for the VERSION case, while leaving the
+ * SIGNATURE case on "the file is there and it is 404 characters long".
+ *
+ * So verify it properly. minisign `ED` is Ed25519 over a BLAKE2b-512 prehash; `Ed` is Ed25519 over
+ * the raw bytes. Both are handled rather than assumed, because which one appears is the signing
+ * tool's choice and not ours. The public key is the one already committed in tauri.conf.json — the
+ * same value the shipped app checks against, so this asks the question the operator's machine will
+ * ask, with the same key, before anything is published.
+ */
+{
+  const pubField = (conf.plugins?.updater?.pubkey ?? '').trim();
+  if (!pubField) die('tauri.conf.json has no plugins.updater.pubkey — nothing to verify the signature against.');
+
+  /* Both fields are base64 of a whole minisign FILE: a comment line, then the base64 payload. */
+  const payloadLine = (b64) => {
+    const text = Buffer.from(b64, 'base64').toString('utf8');
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    const body = lines.find((l) => !l.startsWith('untrusted comment:') && !l.startsWith('trusted comment:'));
+    if (!body) die('could not find the base64 payload inside a minisign file');
+    return Buffer.from(body, 'base64');
+  };
+
+  const pub = payloadLine(pubField);           // 2 alg + 8 key id + 32 key
+  const sig = payloadLine(signature);          // 2 alg + 8 key id + 64 signature
+  if (pub.length !== 42) die(`the updater public key decoded to ${pub.length} bytes, expected 42`);
+  if (sig.length !== 74) die(`the signature decoded to ${sig.length} bytes, expected 74`);
+
+  /* A signature made with a DIFFERENT key fails verification anyway, but it fails with a message
+     about mathematics. The key id says plainly that the wrong key was used, which is a different
+     mistake with a different fix. */
+  if (!pub.subarray(2, 10).equals(sig.subarray(2, 10))) {
+    die('THE SIGNATURE WAS MADE WITH A DIFFERENT KEY than the one committed in tauri.conf.json.\n'
+      + `    public key id  ${pub.subarray(2, 10).toString('hex')}\n`
+      + `    signature id   ${sig.subarray(2, 10).toString('hex')}\n`
+      + '  The app verifies against the committed key, so it would refuse this update.');
+  }
+
+  const alg = sig.subarray(0, 2).toString('latin1');
+  const bytes = readFileSync(tarball);
+  const signed = alg === 'ED' ? createHash('blake2b512').update(bytes).digest()
+    : alg === 'Ed' ? bytes
+      : die(`unknown minisign algorithm ${JSON.stringify(alg)} — refusing to guess`);
+
+  /* Raw Ed25519 key -> SPKI, the only form node's verifier accepts. The prefix is the fixed
+     AlgorithmIdentifier for id-Ed25519; there is nothing variable in it. */
+  const spki = Buffer.concat([Buffer.from('302a300506032b6570032100', 'hex'), pub.subarray(10)]);
+  const key = createPublicKey({ key: spki, format: 'der', type: 'spki' });
+
+  if (!cryptoVerify(null, signed, key, sig.subarray(10))) {
+    die('THE SIGNATURE DOES NOT MATCH THE TARBALL.\n'
+      + `    tarball    ${tarball}\n`
+      + `               ${bytes.length} bytes, modified ${statSync(tarball).mtime.toISOString()}\n`
+      + `    signature  modified ${statSync(sigPath).mtime.toISOString()}\n`
+      + '  Almost always this means the last `tauri build` ran WITHOUT TAURI_SIGNING_PRIVATE_KEY:\n'
+      + '  it rewrote the tarball and left the previous signature in place. Publishing it would ship\n'
+      + '  an update the app downloads, fails to verify, and refuses to install — which looks exactly\n'
+      + '  like a broken updater.\n'
+      + '  Rebuild with the key set:\n'
+      + '    TAURI_SIGNING_PRIVATE_KEY=~/.lcx-terminal/updater.key npm run build:dmg -w @lcx/desktop');
+  }
+  console.log(`  signature  verified against the committed public key (${alg === 'ED' ? 'blake2b512 prehash' : 'raw'})`);
+}
 
 // THE ARTIFACT MUST BE THE VERSION WE ARE PUBLISHING. This nearly shipped: `tauri build`
 // emits `LCXOS.app.tar.gz` with no version in the filename, so bumping the config

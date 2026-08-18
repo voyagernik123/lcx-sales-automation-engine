@@ -1,6 +1,6 @@
 {
   "name": "@lcx/desktop",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "private": true,
   "description": "LCX TERMINAL — the native macOS shell for LCX ONE (Tauri v2).",
   "scripts": {

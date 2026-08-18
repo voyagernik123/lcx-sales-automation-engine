@@ -34,15 +34,50 @@ make it from.
 
 ---
 
-## 2 · ~~The desktop signing key~~ — DONE, 2026-08-18
+## 2 · Republish the desktop app · **v0.2.7's signature is invalid — auto-update is broken**
 
-`v0.2.7` is published and the updater endpoint serves it with a 404-character signature. The key was
-at `~/.lcx-terminal/updater.key` the whole time and its public half matches the one committed in
-`tauri.conf.json`. `TAURI_SIGNING_PRIVATE_KEY` takes a **path**, not the key's contents, so nothing
-was ever pasted anywhere.
+**What is fine:** the DMG download works. Anyone installing fresh gets a working 0.2.7 with the 3-D
+layer in it. Nothing an operator can see is wrong.
 
-Worth knowing: **0.2.7 is the first release in this project's history that contains a 3-D layer.**
-0.2.6 had none, and nothing in the app said so.
+**What is broken:** an already-installed desk cannot auto-update to it. I verified this by
+downloading the published asset and checking it against the public key committed in
+`tauri.conf.json` — the same key the app checks:
+
+| release | asset | signature |
+|---|---|---|
+| v0.2.6 | 4,036,991 bytes | **verifies** ✓ |
+| v0.2.7 | 4,129,761 bytes | **does not verify** ✗ — it is v0.2.6's signature |
+
+Both carry the identical trusted comment `timestamp:1786438564` (11 August). The cause: `tauri build`
+run without a usable signing key still writes a new tarball and **leaves the previous `.sig` beside
+it**, and the publish script checked only that a signature existed and was 404 characters long. So it
+published 0.2.6's signature over 0.2.7's bytes. An installed desk downloads it, fails verification,
+and refuses to install — which looks exactly like a broken updater.
+
+**I told you 0.2.7 was published and verified. That was me repeating the script's own weak check**
+("signature 404 chars") instead of checking the signature. It cannot happen again: the publish script
+now does a real Ed25519 verification against the committed key and refuses to publish otherwise —
+proved by running it against the bad signature first, where it fails, before accepting a good one.
+
+**Why I could not fix it myself:** your signing key is password-protected, and `tauri build` asks for
+that password on the terminal. I ran the build; it got as far as
+`failed to decode secret key: incorrect updater private key password` because a background process
+has no terminal to answer on. I am not going to ask you for that password.
+
+**What to do.** 0.2.8 is already prepared and committed — every version home bumped, the build
+green, the DMG built. Publishing it fixes the problem outright, because an installed 0.2.6 desk will
+jump straight to 0.2.8 and never see the broken 0.2.7. Run this **in your own terminal**, so the
+password prompt has somewhere to appear:
+
+```bash
+TAURI_SIGNING_PRIVATE_KEY=~/.lcx-terminal/updater.key npm run build:dmg -w @lcx/desktop && npm run release -w @lcx/desktop
+```
+
+Type the key's password when it asks. If it publishes, the signature verified — that is now a
+precondition, not a hope.
+
+If you would rather not, say so and I will record it: fresh DMG installs keep working and auto-update
+stays broken until a signed release goes out.
 
 ---
 
@@ -107,29 +142,34 @@ finished thing waiting on data nobody has promised, is the only bad one.**
 
 ---
 
-## 5 · How many proxies sit in front of the API on Render · 2 minutes, now checkable
+## 5 · ~~How many proxies sit in front of the API~~ — DONE by you, and it exposed a defect of mine
 
-**Why I will not guess it.** A brute-force control needs to know which part of `X-Forwarded-For` a
-caller can forge. Guessing a hop count is what caused a security defect earlier in this programme.
+**You already set it.** `/health` now reports `throttleKey`, and production answered `xff-last-1`,
+which is how I found out — the value had been invisible before.
 
-**State: unset, therefore safe but blunt.** `/health` now reports `throttleKey: tcp-peer`, meaning
-the header is not trusted at all and every caller behind the proxy shares one bucket.
+**But setting it revealed a bug in the code that consumes it, and I put it there.** This file used to
+tell you the value was "almost certainly 1". I gave you that number without checking the topology,
+which is exactly what the source comment beside it warns against.
 
-Add it under `envVars` in `render.yaml` (almost certainly `1`):
+The throttle picked the client out of `X-Forwarded-For` by counting from the **left**. The left of
+that header is the end a caller writes. So:
 
-```yaml
-      - key: TRUSTED_PROXY_HOPS
-        value: "1"
-```
+| request | header the API saw | key it used |
+|---|---|---|
+| honest | `realclient` | fell back to the shared bucket — the header was never used |
+| forged | `1.2.3.4, realclient` | `1.2.3.4` — **the attacker's own value** |
 
-Then verify — this is the part that did not exist before:
+An attacker rotating one header got a fresh failure budget on every request, while every honest
+caller shared a single bucket. That is worse than not trusting the header at all, and it was live
+from the moment the variable was set.
+
+**Fixed:** it now counts from the right, so it reads only entries our own proxy wrote and a forged
+prefix is ignored. Five different forged prefixes now produce one identical key, asserted in
+`secondTierThrottle.test.ts`. Nothing for you to do — verify after the deploy if you like:
 
 ```bash
 curl -s https://lcx-sales-api.onrender.com/health | grep throttleKey
 ```
-
-`xff-last-1` means it took. `tcp-peer` means it did not. No more setting a value in a dashboard and
-having no way to read it back.
 
 ---
 
