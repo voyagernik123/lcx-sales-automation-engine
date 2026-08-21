@@ -1397,6 +1397,22 @@ describe('the bytes live in exactly one column of one table, and nowhere else in
      * admitted to the frozen set.
      *
      * `scope_snapshot` has no such bound and this is NOT a claim that it does.
+     *
+     * ── REVIEW: `final_proposal` (0076_gps_packets.sql) ─────────────────────────
+     * The ONLY writer is `POST /v1/gps/packets/:kind/decide` (routes/gpsPackets.ts),
+     * approver-gated, which refuses any proposal `packetProposalDefects` objects to
+     * BEFORE the INSERT. That predicate — the same one the packet builder's own tests
+     * pass — bounds BOTH channels this review exists to close: every level of every
+     * kind enumerates its legal keys (an unknown key at any depth is a defect, so a
+     * payload cannot ride the keys the way factor_scores_at_quote's could), and every
+     * free-text field carries a hard cap (the largest legitimate text in the system,
+     * the DPO memo, is 20k chars; rationales are 2k). Values are integer cents, finite
+     * bounded days, enum classes, or those capped strings — nothing byte-shaped fits.
+     * The READ side never republishes the blob: `loadStandingDecisions` selects
+     * decision metadata only, and the screen renders the BUILT packet beside it, so
+     * there is no read channel to pair with a write channel. packets.test.ts pins the
+     * smuggled-key and over-cap refusals; gpsPackets.test.ts pins the route refusing
+     * a defective proposal before any write.
      */
     const jsonAll = GPS_SCHEMA_MIGRATIONS.flatMap((f) =>
       columnsOf(f.code)
@@ -1425,7 +1441,7 @@ describe('the bytes live in exactly one column of one table, and nowhere else in
         'Read the review above for what that review has to establish before you extend ' +
         'this list: name the ONLY writer, and show that no byte-bearing payload can ' +
         'survive a write and a read through it.',
-    ).toEqual(['factor_scores_at_quote', 'scope_snapshot']);
+    ).toEqual(['factor_scores_at_quote', 'final_proposal', 'scope_snapshot']);
   });
 });
 

@@ -4,6 +4,7 @@ import { Badge, Button, Card, CardBody, CardHeader, Input, PageTitle, Select } f
 import { ApiError, request } from '@/lib/apiClient';
 import { attachMeta } from '@/lib/api/meta';
 import { GpsMetaBanner } from '@/pages/GpsMetaBanner';
+import { GpsInputsPackets } from '@/pages/GpsInputsPackets';
 /**
  * THE RESPONSE TYPES COME FROM THE SHARED CONTRACT, BY PACKAGE NAME.
  *
@@ -225,6 +226,11 @@ export function GpsInputs() {
       <PageTitle subtitle="Price bands, effort triples and the named partner — the three inputs only a human can supply.">
         GPS input desk
       </PageTitle>
+
+      {/* G0: the founder packets sit ABOVE the manual desks — the proposals that fill them.
+          onApplied re-reads the desk below so an applied packet flips its rows to 'entered'
+          without a reload, from data rather than from optimism. */}
+      <GpsInputsPackets onApplied={() => void load()} />
 
       {loading && <p className="text-sm text-grey">Loading the desk…</p>}
 

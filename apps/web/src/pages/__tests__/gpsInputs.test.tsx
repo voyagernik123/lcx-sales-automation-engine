@@ -303,7 +303,15 @@ describe('every refusal reaches the screen with its code and its rule', () => {
 
 describe('the server owns every judgement about a value', () => {
   it('sends an obviously bad band and renders the SERVER’s refusal with its rule', async () => {
-    mockedRequest.mockResolvedValueOnce(envelope());
+    /* URL-routed, not one-shot: since G0 the page also fetches /v1/gps/packets on mount
+       (the founder-packet inbox), and child effects fire before the parent's — a bare
+       mockResolvedValueOnce armed for the desk GET gets eaten by the packets GET. The
+       empty packets envelope keeps that section inert for this file; its own behaviour
+       lives in gpsInputsPackets.test.tsx. */
+    mockedRequest.mockImplementation(async (url: unknown) =>
+      String(url).includes('/v1/gps/packets')
+        ? { data: { packets: [], decisions: [], registerPresent: true, registerNotice: null } }
+        : envelope());
     render(<GpsInputs />);
     await screen.findByTestId('band-diagnostic');
 
@@ -329,7 +337,15 @@ describe('the server owns every judgement about a value', () => {
   });
 
   it('still submits a rate card with an empty partner list, and shows the 409 refusal', async () => {
-    mockedRequest.mockResolvedValueOnce(envelope());
+    /* URL-routed, not one-shot: since G0 the page also fetches /v1/gps/packets on mount
+       (the founder-packet inbox), and child effects fire before the parent's — a bare
+       mockResolvedValueOnce armed for the desk GET gets eaten by the packets GET. The
+       empty packets envelope keeps that section inert for this file; its own behaviour
+       lives in gpsInputsPackets.test.tsx. */
+    mockedRequest.mockImplementation(async (url: unknown) =>
+      String(url).includes('/v1/gps/packets')
+        ? { data: { packets: [], decisions: [], registerPresent: true, registerNotice: null } }
+        : envelope());
     render(<GpsInputs />);
     await screen.findByTestId('partner-picker-empty');
 
@@ -351,7 +367,15 @@ describe('the server owns every judgement about a value', () => {
   });
 
   it('replaces the desk with the server’s new one on a successful write', async () => {
-    mockedRequest.mockResolvedValueOnce(envelope());
+    /* URL-routed, not one-shot: since G0 the page also fetches /v1/gps/packets on mount
+       (the founder-packet inbox), and child effects fire before the parent's — a bare
+       mockResolvedValueOnce armed for the desk GET gets eaten by the packets GET. The
+       empty packets envelope keeps that section inert for this file; its own behaviour
+       lives in gpsInputsPackets.test.tsx. */
+    mockedRequest.mockImplementation(async (url: unknown) =>
+      String(url).includes('/v1/gps/packets')
+        ? { data: { packets: [], decisions: [], registerPresent: true, registerNotice: null } }
+        : envelope());
     render(<GpsInputs />);
     await screen.findByTestId('band-diagnostic');
     expect(within(screen.getByTestId('band-diagnostic')).getByText('PLACEHOLDER')).toBeInTheDocument();

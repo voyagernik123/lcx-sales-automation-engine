@@ -86,6 +86,7 @@ import { gpsArtifactRoutes } from './gpsArtifact.js';
 // The input desk: price bands, effort triples, rate cards. Mounted at '/inputs' below.
 import { gpsPartnerRegistryRoutes } from './gpsPartnerRegistry.js';
 import { gpsInputsRoutes } from './gpsInputs.js';
+import { gpsPacketsRoutes } from './gpsPackets.js';
 import {
   perimeterClearanceFor,
   perimeterRefusalBody,
@@ -966,6 +967,7 @@ gpsRoutes.route('/', gpsArtifactRoutes); //  /v1/gps/engagements/:id/artifacts, 
  * missing — they never render as zero.
  */
 gpsRoutes.route('/inputs', gpsInputsRoutes); //  GET /v1/gps/inputs, POST /inputs/price-bands|effort-triples|rate-cards
+gpsRoutes.route('/packets', gpsPacketsRoutes); //  GET /v1/gps/packets, POST /packets/:kind/decide — G0 founder packets
 
 /*
  * F5 — THE PARTNER REGISTRY (2026-08-07). Mounted HERE and not in `app.ts` on purpose: the

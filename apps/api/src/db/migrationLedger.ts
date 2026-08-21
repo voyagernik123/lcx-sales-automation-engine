@@ -392,6 +392,20 @@ export const PENDING_MIGRATIONS: readonly string[] = [
    * collapse. RLS enabled with no policies — deny-all. NOT APPLIED ANYWHERE, including the
    * CI mirror, so the registry and THE FLOOR are real and INERT until a human applies it. */
   '0075_gps_partner_registry.sql',
+
+  /* 0076 → `gps_price_band` + `gps_packet_decision`. G0 of GPS_REVENUE_100X_PLAN.md
+   * (approved 2026-08-21). The price-band section is the register gpsInputs.ts has promised
+   * since it shipped — every band write refuses with PRICE_BAND_REGISTER_ABSENT carrying
+   * that exact DDL — and it lands here BYTE-IDENTICAL to PRICE_BAND_REGISTER_DDL, extracted
+   * from the export rather than retyped; gpsPackets.test.ts pins the two together so the
+   * promise and the file cannot drift. `gps_packet_decision` is the append-only record of
+   * founder-packet decisions: the FINAL proposal (owner's edits included) as jsonb, an
+   * apply_state that distinguishes applied / recorded_only / apply_failed because two of
+   * the five packets are recorded-only BY DESIGN (rate_cards await a named partner, D5;
+   * dpo_memo is read by G4), and no UPDATE path — a change of mind is a new row. RLS on,
+   * no policies. NOT APPLIED ANYWHERE until a human applies it; until then the packets
+   * screen reads 200 with decisions absent and every write refuses 503 with the code. */
+  '0076_gps_packets.sql',
 ];
 
 /**

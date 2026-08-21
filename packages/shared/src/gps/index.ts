@@ -374,3 +374,18 @@ export {
  * above — never in `../index.ts`. Reachability of every symbol through the root barrel is
  * asserted by `../barrelReachability.test.ts`, so this is a checked claim. */
 export * from './contracts/inputs.js';
+
+/* ── G0 — the founder packets ─────────────────────────────────────────────────
+ * Five proposals the owner approves or edits (GPS_REVENUE_100X_PLAN.md §G0). The
+ * validator is exported because the API's decide route runs THE SAME defect check
+ * the builder's tests run — one bar, both sides of the approval.
+ */
+export type {
+  PacketKind, PacketProvenance, PacketGrade, PacketEvidence, PacketPriceBandRow,
+  PacketEffortTripleRow, RateCardProposalRow, PerimeterSeedRow, DpoOption,
+  DpoMemoProposal, PacketProposal, FounderPacket,
+} from './packets.js';
+export {
+  PACKET_KINDS, PROVENANCE_GRADE, buildFounderPackets, packetProposalDefects,
+  placeholderBandFor,
+} from './packets.js';
