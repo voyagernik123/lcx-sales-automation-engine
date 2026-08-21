@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { GlobeRelief } from '@/components/market/GlobeRelief';
 import {
@@ -7,6 +7,7 @@ import {
   EARTH_R, HUB, LABEL_BG, LABEL_DIM_FG, LABEL_FG, PIN_MAX, REGION_SITES,
 } from '@/components/market/globeSites';
 import type { MapPoint } from '@/lib/api/bd';
+import { storage } from '@/lib/persistence';
 
 /*
  * §7's disposition for an environment whose clause (b) is not established: "it ships behind a toggle that
@@ -48,7 +49,12 @@ const POINTS: MapPoint[] = [
   point({ id: 'e', region: null, listedOnLcx: false, marketCapUsd: 1_000_000 }),
 ];
 
-describe('GlobeRelief — §7 says an unproven environment defaults off and says so', () => {
+/* A toggle click is a CHOICE since 2026-08-20 and persists through the storage module's
+   in-memory tier, which localStorage.clear() cannot reach — without this, one test's click
+   becomes the next test's default and failures depend on execution order. */
+beforeEach(() => { storage.clearAll(); });
+
+describe('GlobeRelief — the globe is the default by owner decision, and says so', () => {
   it('renders the FLAT scatter with no interaction, and no canvas', () => {
     const { container } = render(
       <GlobeRelief points={POINTS}><div data-testid="flat">the scatter</div></GlobeRelief>,
@@ -60,7 +66,11 @@ describe('GlobeRelief — §7 says an unproven environment defaults off and says
   it('tells the reader WHY the globe is opt-in, on the page and before the click', () => {
     render(<GlobeRelief points={POINTS}><div>flat</div></GlobeRelief>);
     /* §7(b): nobody has timed it. */
-    expect(screen.getByText(/nobody has yet timed whether it answers faster/i)).toBeTruthy();
+    /* The caption must carry the surface's own limit BEFORE any click — regions, never
+       organisations — and the provenance of the default. It briefly said both "opt-in" and
+       "the default" after a partial edit; the wrapper's caption is now one coherent claim. */
+    expect(screen.getByText(/places REGIONS at published reference points, never organisations/i)).toBeTruthy();
+    expect(screen.getByText(/default by owner decision, not by measurement/i)).toBeTruthy();
     /*
      * AND E2's OWN LIMIT, which is the reason this environment was the hardest of the nine. A reader who
      * opens a globe expecting to see where partners are has already been misled by the time they reach a
@@ -73,7 +83,7 @@ describe('GlobeRelief — §7 says an unproven environment defaults off and says
   it('offers the toggle, and reports its state to assistive technology', () => {
     render(<GlobeRelief points={POINTS}><div>flat</div></GlobeRelief>);
     const btn = screen.getByRole('button', { name: /globe view/i });
-    expect(btn.getAttribute('aria-pressed')).toBe('false');
+    expect(btn.getAttribute('aria-pressed')).toBe('true');
     expect(btn.hasAttribute('disabled')).toBe(false);
   });
 

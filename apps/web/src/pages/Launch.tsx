@@ -53,7 +53,7 @@ import { safeHref } from '@/lib/safeHref';
  * `apps/desktop/src-tauri/tauri.conf.json`, so a release that forgets this line
  * turns the suite red instead of leaving a stale number on the front page.
  */
-export const LCXOS_VERSION = '0.2.8';
+export const LCXOS_VERSION = '0.2.9';
 /**
  * The download's size in MB, one decimal place.
  *

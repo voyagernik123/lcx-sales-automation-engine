@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { OntologyOrrery } from '@/components/geometry/OntologyOrrery';
 import {
@@ -7,6 +7,7 @@ import {
   type OrreryEntityInput, type OrreryCouplingInput,
 } from '@/components/geometry/orrery/orreryLayout';
 import { ontologyGraph } from '@/data/ontology';
+import { storage } from '@/lib/persistence';
 
 /*
  * §7's disposition for an environment whose clause (b) is not established: "it ships behind a toggle that
@@ -45,7 +46,12 @@ const build = (over: Partial<Parameters<typeof buildOrrery>[0]> = {}) => buildOr
   ...over,
 });
 
-describe('OntologyOrrery — §7 says an unproven environment defaults off and says so', () => {
+/* A toggle click is a CHOICE since 2026-08-20 and persists through the storage module's
+   in-memory tier, which localStorage.clear() cannot reach — without this, one test's click
+   becomes the next test's default and failures depend on execution order. */
+beforeEach(() => { storage.clearAll(); });
+
+describe('OntologyOrrery — the orbital view is the default by owner decision, and says so', () => {
   const props = {
     entities: SMALL.entities,
     couplings: SMALL.couplings,
@@ -53,31 +59,38 @@ describe('OntologyOrrery — §7 says an unproven environment defaults off and s
     selectedId: null,
   };
 
-  it('renders the FLAT diagram with no interaction, and no canvas', () => {
+  it('still paints the FLAT diagram first — the default engages after hydration, never in first paint', () => {
+    /* The canvas that may follow arrives via a lazy chunk, one effect after mount. What must never
+       change: server markup and the first client frame contain the diagram, not a canvas. */
     const { container } = render(
       <OntologyOrrery {...props}><div data-testid="flat-diagram">the node-link diagram</div></OntologyOrrery>,
     );
     expect(screen.getByTestId('flat-diagram'), 'the diagram must be what loads').toBeTruthy();
-    expect(container.querySelector('canvas'), 'the orrery must NOT be the default').toBeNull();
+    expect(container.querySelector('canvas'), 'no canvas before the chunk resolves').toBeNull();
   });
 
-  it('tells the reader WHY the orbital view is opt-in, on the page', () => {
-    /* Not in a tooltip and not in a commit message. A reader deciding whether to trust a 3-D reading is
-       entitled to know that nobody has timed it against the diagram they already have. */
+  it('states the provenance of the default on the flat branch, where the decision to return is made', () => {
+    /* A remembered "no" from the operator lands the reader here, and the caption owes them the same
+       honesty in both directions: the default was a decision (2026-08-20), not a measurement, because
+       measuring it proved impossible. The ON state carries its own copy of this sentence in the HUD —
+       asserted by the reliefTheme/HUD suites against the component source — because with the orrery as
+       the landing state, a caption only readable after leaving it would state the provenance to nobody. */
+    storage.set('relief:orrery', false);
     render(<OntologyOrrery {...props}><div /></OntologyOrrery>);
-    expect(screen.getByText(/nobody has yet timed whether it answers a question faster/i)).toBeTruthy();
+    expect(screen.getByText(/default by owner decision, not by measurement/i)).toBeTruthy();
   });
 
   it('says on the page that the orbital view drops entity labels', () => {
     /* The one thing the diagram does better, stated where the choice is made rather than discovered after it. */
+    storage.set('relief:orrery', false);
     render(<OntologyOrrery {...props}><div /></OntologyOrrery>);
-    expect(screen.getByText(/no entity labels except the core and your selection/i)).toBeTruthy();
+    expect(screen.getByText(/carries no entity labels except the core and your selection/i)).toBeTruthy();
   });
 
   it('offers the toggle, and reports its state to assistive technology', () => {
     render(<OntologyOrrery {...props}><div /></OntologyOrrery>);
     const btn = screen.getByRole('button', { name: /orrery view/i });
-    expect(btn.getAttribute('aria-pressed')).toBe('false');
+    expect(btn.getAttribute('aria-pressed')).toBe('true');
   });
 
   it('keeps the diagram on screen while the lazy chunk is still loading', () => {

@@ -40,6 +40,7 @@
  */
 import { lazy, Suspense, useCallback, useId, useState, type ReactNode } from 'react';
 import type { AuditEntry } from '@/lib/api/audit';
+import { useReliefPreference } from '@/lib/reliefPreference';
 
 /**
  * ── THE CONTROL WEARS THE APP'S TOKENS, BECAUSE `--brand` AND `--rule` DO NOT EXIST ──
@@ -82,7 +83,9 @@ export interface VaultReliefProps {
 }
 
 export function VaultRelief({ entries, children, heightPx = 460 }: VaultReliefProps) {
-  const [wantRelief, setWantRelief] = useState(false);
+  // Owner decision 2026-08-20: the default lives in ONE module, and the operator's choice
+  // is remembered. `revoke` exists so a GL refusal is never recorded as a preference.
+  const { on: wantRelief, choose: chooseRelief, revoke: revokeRelief } = useReliefPreference('vault');
   const [refusal, setRefusal] = useState<string | null>(null);
   /* The reason lives in a sibling <span>, which a screen reader reaches only in browse mode and only if it goes
      looking. `aria-describedby` puts it on the control it explains. */
@@ -97,7 +100,7 @@ export function VaultRelief({ entries, children, heightPx = 460 }: VaultReliefPr
     setRefusal(code);
     /* Back to the table immediately. A canvas that failed keeps its last frame — or nothing — on screen, and on
        an audit log a stale picture presented as live data is the worst available outcome. */
-    setWantRelief(false);
+    revokeRelief();
   }, []);
 
   const showRelief = wantRelief && refusal === null;
@@ -113,7 +116,7 @@ export function VaultRelief({ entries, children, heightPx = 460 }: VaultReliefPr
         <button
           type="button"
           /* Unavailable once refused: offering a toggle that cannot work is worse than not offering one. */
-          onClick={() => { if (refusal !== null) return; setWantRelief((v) => !v); }}
+          onClick={() => { if (refusal !== null) return; chooseRelief(!wantRelief); }}
           /*
            * `aria-disabled` RATHER THAN `disabled`, AND IT IS A FOCUS BUG, NOT A PREFERENCE.
            *
@@ -144,8 +147,9 @@ export function VaultRelief({ entries, children, heightPx = 460 }: VaultReliefPr
            * table.
            */
           <span id={noteId} className={NOTE}>
-            The vault is opt-in: depth is time and fog is the reading limit, but nobody has yet timed whether it
-            answers faster than this table.
+            The vault is the default by owner decision, not by measurement — depth is time, fog is the
+            reading limit, and timing it against the table proved unmeasurable. The table is one press away
+            and your choice is remembered.
           </span>
         ) : (
           <span id={noteId} role="alert" className={ALERT}>

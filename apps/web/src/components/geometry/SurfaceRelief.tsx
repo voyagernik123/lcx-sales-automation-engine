@@ -36,6 +36,7 @@
  */
 import { lazy, Suspense, useCallback, useId, useState } from 'react';
 import { SurfacePlot, type SurfacePlotProps } from '@/components/geometry/SurfacePlot';
+import { useReliefPreference } from '@/lib/reliefPreference';
 
 /**
  * ── THE FIGURE'S WORDS SURVIVE THE RELIEF, WHICH THEY DID NOT ────────────────────────
@@ -238,7 +239,9 @@ export interface SurfaceReliefProps extends SurfacePlotProps {
 }
 
 export function SurfaceRelief({ contourLevels = [], ...plot }: SurfaceReliefProps) {
-  const [wantRelief, setWantRelief] = useState(false);
+  // Owner decision 2026-08-20: the default lives in ONE module, and the operator's choice
+  // is remembered. `revoke` exists so a GL refusal is never recorded as a preference.
+  const { on: wantRelief, choose: chooseRelief, revoke: revokeRelief } = useReliefPreference('surface');
   const [refusal, setRefusal] = useState<string | null>(null);
   /* The reason lives in a sibling <span>, which a screen reader reaches only in browse mode and only if it
      goes looking. `aria-describedby` puts it on the control it explains. */
@@ -253,7 +256,7 @@ export function SurfaceRelief({ contourLevels = [], ...plot }: SurfaceReliefProp
     setRefusal(code);
     /* Back to flat immediately. A canvas that failed keeps its last frame — or nothing — on screen, and a stale
        picture presented as live data is worse than no picture. */
-    setWantRelief(false);
+    revokeRelief();
   }, []);
 
   const showRelief = wantRelief && refusal === null;
@@ -303,7 +306,7 @@ export function SurfaceRelief({ contourLevels = [], ...plot }: SurfaceReliefProp
         <button
           type="button"
           /* Unavailable once refused: offering a toggle that cannot work is worse than not offering one. */
-          onClick={() => { if (refusal !== null) return; setWantRelief((v) => !v); }}
+          onClick={() => { if (refusal !== null) return; chooseRelief(!wantRelief); }}
           /*
            * `aria-disabled` RATHER THAN `disabled`, AND IT IS A FOCUS BUG, NOT A PREFERENCE.
            *
@@ -334,7 +337,8 @@ export function SurfaceRelief({ contourLevels = [], ...plot }: SurfaceReliefProp
            * nobody has timed it against the flat one.
            */
           <span id={noteId} className={NOTE}>
-            Relief is opt-in: nobody has yet timed whether it answers faster than this figure.
+            Relief is the default by owner decision, not by measurement — timing it against this figure
+            proved unmeasurable. The flat figure is one press away and your choice is remembered.
           </span>
         ) : (
           <span id={noteId} role="alert" className={ALERT}>

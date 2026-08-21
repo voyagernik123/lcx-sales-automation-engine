@@ -87,6 +87,7 @@ import {
   type RiskDayState, type RiskField, type RiskReading,
 } from './riskField';
 import { RAMP_SATURATION_RISK, calibrationSentence } from './stormCalibration';
+import { useReliefPreference } from '@/lib/reliefPreference';
 
 const StormReliefGl = lazy(() => import('./StormReliefGl'));
 
@@ -328,7 +329,9 @@ function StormTextForm({ field, title, readsAs }: { field: RiskField; title: str
 export type StormReliefProps = RiskCalendarProps;
 
 export function StormRelief({ heightPx = 260, ...rest }: StormReliefProps) {
-  const [wantStorm, setWantStorm] = useState(false);
+  // Owner decision 2026-08-20: the default lives in ONE module, and the operator's choice
+  // is remembered. `revoke` exists so a GL refusal is never recorded as a preference.
+  const { on: wantStorm, choose: chooseRelief, revoke: revokeRelief } = useReliefPreference('storm');
   const [refusal, setRefusal] = useState<string | null>(null);
   /* The reason lives in a sibling <span>, which a screen reader reaches only in browse mode and only if it
      goes looking. `aria-describedby` puts it on the control it explains. */
@@ -343,7 +346,7 @@ export function StormRelief({ heightPx = 260, ...rest }: StormReliefProps) {
     setRefusal(code);
     /* Back to flat immediately. A canvas that failed keeps its last frame — or nothing — on screen, and
        a stale picture presented as live data is worse than no picture. */
-    setWantStorm(false);
+    revokeRelief();
   }, []);
 
   const field = rest.field;
@@ -423,7 +426,7 @@ export function StormRelief({ heightPx = 260, ...rest }: StormReliefProps) {
           type="button"
           /* Unavailable once refused, and while the field itself refuses: offering a toggle that cannot work
              is worse than not offering one. */
-          onClick={() => { if (blocked) return; setWantStorm((v) => !v); }}
+          onClick={() => { if (blocked) return; chooseRelief(!wantStorm); }}
           /*
            * `aria-disabled` RATHER THAN `disabled`, AND IT IS A FOCUS BUG, NOT A PREFERENCE.
            *
@@ -479,7 +482,8 @@ export function StormRelief({ heightPx = 260, ...rest }: StormReliefProps) {
            * against the table.
            */
           <span id={noteId} className="font-mono text-micro leading-relaxed text-grey-dark">
-            Storm view is opt-in: nobody has yet timed whether it answers faster than this calendar.
+            Storm view stays opt-in — not a rendering verdict: the forward-risk feed it would draw is
+            produced nowhere yet, and an empty storm shown by default would present an absence as a reading.
           </span>
         )}
       </div>

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import { storage } from '@/lib/persistence';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { StormRelief } from '@/components/risk/StormRelief';
 import {
@@ -94,7 +95,13 @@ class ResizeObserverStub {
   unobserve(): void {}
   disconnect(): void {}
 }
-beforeEach(() => { (globalThis as { ResizeObserver?: unknown }).ResizeObserver = ResizeObserverStub; });
+beforeEach(() => {
+  (globalThis as { ResizeObserver?: unknown }).ResizeObserver = ResizeObserverStub;
+  /* Since the owner decision of 2026-08-20, a toggle click is a CHOICE and persists — through the
+     storage module's in-memory tier, which localStorage.clear() cannot reach. Without this reset,
+     one test's click becomes the next test's default and the failures depend on execution order. */
+  storage.clearAll();
+});
 afterEach(() => {
   cleanup();
   delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;

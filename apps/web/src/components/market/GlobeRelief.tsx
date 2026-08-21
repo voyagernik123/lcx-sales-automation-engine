@@ -45,6 +45,7 @@
  */
 import { lazy, Suspense, useCallback, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import type { MapPoint } from '@/lib/api/bd';
+import { useReliefPreference } from '@/lib/reliefPreference';
 
 /**
  * ── THE CONTROL WEARS THE APP'S TOKENS, BECAUSE `--brand` AND `--rule` DO NOT EXIST ──
@@ -110,7 +111,9 @@ const MIN_HEIGHT = 260;
 const NOTES_RESERVE_PX = 96;
 
 export function GlobeRelief({ points, children }: GlobeReliefProps) {
-  const [wantRelief, setWantRelief] = useState(false);
+  // Owner decision 2026-08-20: the default lives in ONE module, and the operator's choice
+  // is remembered. `revoke` exists so a GL refusal is never recorded as a preference.
+  const { on: wantRelief, choose: chooseRelief, revoke: revokeRelief } = useReliefPreference('globe');
   const [refusal, setRefusal] = useState<string | null>(null);
   const [heightPx, setHeightPx] = useState<number | null>(null);
   const paneRef = useRef<HTMLDivElement | null>(null);
@@ -128,7 +131,7 @@ export function GlobeRelief({ points, children }: GlobeReliefProps) {
     /* Back to the scatter immediately. A canvas that failed keeps its last frame — or nothing — on screen,
        and on a figure whose reading is "which desks are awake right now" a frozen terminator is a wrong
        answer rather than a stale one. */
-    setWantRelief(false);
+    revokeRelief();
   }, []);
 
   /* Measured only while the relief is wanted: a reader who never opens it should not pay for an observer. */
@@ -164,7 +167,7 @@ export function GlobeRelief({ points, children }: GlobeReliefProps) {
         <button
           type="button"
           /* Unavailable once refused: offering a toggle that cannot work is worse than not offering one. */
-          onClick={() => { if (refusal !== null) return; setWantRelief((v) => !v); }}
+          onClick={() => { if (refusal !== null) return; chooseRelief(!wantRelief); }}
           /*
            * `aria-disabled` RATHER THAN `disabled`, AND IT IS A FOCUS BUG, NOT A PREFERENCE.
            *
@@ -190,15 +193,19 @@ export function GlobeRelief({ points, children }: GlobeReliefProps) {
 
         {refusal === null ? (
           /*
-           * BOTH REASONS, NEXT TO THE BUTTON — and now on it, via `aria-describedby`. The first is §7(b):
-           * nobody has timed this against the scatter. The second is this environment's own limit, and it
-           * belongs BEFORE the click rather than only on the frame — a reader who opens a globe expecting to
-           * see where partners are has already been misled by the time they read the caption.
+           * BOTH FACTS, NEXT TO THE BUTTON — and on it, via `aria-describedby`. The first is this
+           * environment's own limit, and it belongs BEFORE any click rather than only on the frame — a
+           * reader who opens a globe expecting to see where partners are has already been misled by the
+           * time they read the caption. The second is the provenance of the default: an owner decision
+           * (2026-08-20), made after timing it against the scatter proved unmeasurable — see
+           * lib/reliefPreference.ts for the whole story. An earlier edit left this caption saying
+           * "opt-in" in one sentence and "the default" in the next; a caption that contradicts itself
+           * teaches the reader to trust neither half.
            */
           <span id={noteId} className={NOTE}>
-            The globe is opt-in: it places REGIONS at published reference points, never organisations — this
-            dataset has no per-project coordinates — and nobody has yet timed whether it answers faster than
-            this scatter.
+            The globe places REGIONS at published reference points, never organisations — this dataset has
+            no per-project coordinates. It is the default by owner decision, not by measurement; the
+            scatter is one press away and your choice is remembered.
           </span>
         ) : (
           <span id={noteId} role="alert" className={ALERT}>

@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { StormRelief } from '@/components/risk/StormRelief';
 import { buildRiskField, isRiskField, type RiskFieldInput } from '@/components/risk/riskField';
+import { storage } from '@/lib/persistence';
 
 /*
  * §7's disposition for an environment whose clause (b) is not established: "it ships behind a toggle that
@@ -42,6 +43,11 @@ const props = {
   readsAs: 'Colour is a day-channel total; the accumulation is what a per-cell table cannot show.',
   heightPx: 240,
 };
+
+/* A toggle click is a CHOICE since 2026-08-20 and persists through the storage module's
+   in-memory tier, which localStorage.clear() cannot reach — without this, one test's click
+   becomes the next test's default and failures depend on execution order. */
+beforeEach(() => { storage.clearAll(); });
 
 describe('buildRiskField — absence refuses, and never renders as zero', () => {
   it('keeps the three day states apart and refuses the cumulative past a gap', () => {
@@ -92,7 +98,7 @@ describe('buildRiskField — absence refuses, and never renders as zero', () => 
   });
 });
 
-describe('StormRelief — §7 says an unproven environment defaults off and says so', () => {
+describe('StormRelief — the one surface still opt-in, and the page states the real reason', () => {
   const field = buildRiskField(input());
 
   it('renders the FLAT calendar with no interaction, and no canvas', () => {
@@ -105,7 +111,12 @@ describe('StormRelief — §7 says an unproven environment defaults off and says
 
   it('tells the reader WHY the storm is opt-in, on the page', () => {
     render(<StormRelief {...props} field={field} />);
-    expect(screen.getByText(/nobody has yet timed whether it answers faster/i)).toBeTruthy();
+    /* Storm alone kept its off-default on 2026-08-20, and NOT for the dead §7(b) reason: its
+       forward-risk feed exists nowhere, and an empty storm shown by default would present an
+       absence as a reading (docs/phases/ABSENCES.md). The caption must say THAT, not the old
+       untimed-claim boilerplate, and not pretend the choice is about rendering quality. */
+    expect(screen.getByText(/the forward-risk feed it would draw is produced nowhere yet/i)).toBeTruthy();
+    expect(screen.getByText(/present an absence as a reading/i)).toBeTruthy();
   });
 
   it('names the unmeasured days and the items that fell into them, above the figure', () => {

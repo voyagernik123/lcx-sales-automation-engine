@@ -12,6 +12,7 @@ import { GlobeRelief } from '@/components/market/GlobeRelief';
 import { StormRelief } from '@/components/risk/StormRelief';
 import { ForgeBackdrop } from '@/components/brand/ForgeBackdrop';
 import { ForgePlate } from '@/components/brand/ForgePlate';
+import { storage } from '@/lib/persistence';
 import { buildRiskField, type RiskFieldInput } from '@/components/risk/riskField';
 import { buildSurfaceMesh, WITHHELD, type GridCellValue } from '@lcx/shared';
 import type { DeckPanelDatum } from '@/components/geometry/deckSlots';
@@ -246,6 +247,24 @@ async function refusalNotice(container: HTMLElement): Promise<string> {
   return container.querySelector('[role="alert"]')!.textContent ?? '';
 }
 
+/*
+ * THE SURFACE'S PREFERENCE KEY, for pre-storing an operator choice. Since 2026-08-20 six of the
+ * seven default ON (storm's feed does not exist) and the operator's toggle persists — so these
+ * tests pre-store an explicit YES for every surface, which puts all seven, storm included, on
+ * the same choreography: mount, and the surface attempts its relief BY ITSELF. That is the
+ * production path now, and it is a stronger thing to pin than the old click-first flow: the
+ * refusal machinery must work with nobody at the keyboard.
+ */
+const KEY: Record<string, string> = {
+  DeckRelief: 'relief:deck', GlobeRelief: 'relief:globe', PipelineRelief: 'relief:pipeline',
+  OntologyOrrery: 'relief:orrery', SurfaceRelief: 'relief:surface', VaultRelief: 'relief:vault',
+  StormRelief: 'relief:storm',
+};
+
+/* A click is a persisted CHOICE now, through the storage module's in-memory tier that
+   localStorage.clear() cannot reach — reset both tiers or one test's click is the next's default. */
+beforeEach(() => { storage.clearAll(); });
+
 /* ── AXIS 1 · NO WEBGL2 ──────────────────────────────────────────────────────────── */
 
 describe('rule 1 · a real StageRefusal puts every shipping surface back on its flat view', () => {
@@ -271,10 +290,16 @@ describe('rule 1 · a real StageRefusal puts every shipping surface back on its 
   it.each(SURFACES.map((s) => [s.env, s.name, s] as const))(
     '%s %s — NO_WEBGL2 is named to the reader and the flat view comes back',
     async (_env, name, s) => {
+      /* An explicit stored YES rather than the table's default, so storm walks the same path as the
+         six — and so what is exercised is the remembered-preference route production actually takes. */
+      storage.set(KEY[name], true);
       const { container } = s.mount();
-      expect(container.querySelector('canvas'), `${name} must not draw before it is asked`).toBeNull();
+      /* First paint is still the flat surface: the preference engages one effect after mount and the
+         GL arrives by lazy chunk, so a canvas HERE would mean the hydration gate was jumped. */
+      expect(container.querySelector('canvas'), `${name} must not draw in first paint`).toBeNull();
 
-      fireEvent.click(screen.getByRole('button', { name: s.toggle }));
+      /* NO CLICK. The surface asked for its own relief and the machine said no — the reader was
+         never involved, which is precisely why the fallback has to be automatic and announced. */
       const notice = await refusalNotice(container);
 
       /*
@@ -311,8 +336,10 @@ describe('rule 1 · a real StageRefusal puts every shipping surface back on its 
        * never claims to be showing a relief that refused, and a second click never costs the reader the
        * flat view. That second clause is the one only E4 can break, and the only one worth a test.
        */
+      /* Reach the refused state the way production reaches it now: a remembered YES, an automatic
+         attempt, a machine refusal — no click anywhere. The retry below, where offered, is the click. */
+      storage.set(KEY[name], true);
       const { container } = s.mount();
-      fireEvent.click(screen.getByRole('button', { name: s.toggle }));
       await refusalNotice(container);
 
       const btn = screen.getByRole('button', { name: s.toggle });

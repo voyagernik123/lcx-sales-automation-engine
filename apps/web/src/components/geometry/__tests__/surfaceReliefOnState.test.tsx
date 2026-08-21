@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup } from '@testing-library/react';
 import { SurfaceRelief } from '@/components/geometry/SurfaceRelief';
 import { buildSurfaceMesh, WITHHELD, type GridCellValue, type SurfaceOutcome } from '@lcx/shared';
+import { storage } from '@/lib/persistence';
 
 /**
  * WHAT A READER GETS WHILE E5's RELIEF IS ON — the state no test in this repo looked at.
@@ -137,6 +138,13 @@ async function openRelief(container: HTMLElement): Promise<void> {
   });
 }
 
+/* E5 defaults ON since the 2026-08-20 owner decision, and a click persists through the storage
+   module's in-memory tier. This file's choreography OPENS the relief by clicking and one test
+   asserts the OFF state, so every test starts from a remembered "off" — the same production
+   state an operator's past choice produces — keeping the click meaningful and the tests
+   independent of each other's writes. The default itself is pinned in reliefPreference.test.ts. */
+beforeEach(() => { storage.clearAll(); storage.set('relief:surface', false); });
+
 describe('E5 with the relief ON is not an information downgrade (§6 rules 1 and 4)', () => {
   it('the derivation is real: the FLAT figure carries every derived token', () => {
     /*
@@ -208,7 +216,7 @@ describe('E5 with the relief ON is not an information downgrade (§6 rules 1 and
     expect(form!.closest('[aria-hidden="true"]'), 'the text form is hidden from the accessibility tree').toBeNull();
   });
 
-  it('adds nothing at all in the default OFF state, where the flat figure already speaks', () => {
+  it('adds nothing at all in the OFF state, where the flat figure already speaks', () => {
     /* The state every print job and every default reader is in. The fix must be invisible here. */
     const { container } = render(<SurfaceRelief {...PROPS} />);
     expect(container.querySelector('[data-testid="relief-text-form"]')).toBeNull();

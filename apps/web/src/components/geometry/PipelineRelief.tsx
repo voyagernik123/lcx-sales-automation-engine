@@ -43,6 +43,7 @@
  */
 import { lazy, Suspense, useCallback, useId, useMemo, useState } from 'react';
 import { LeadTable, type LeadTableProps } from '@/components/bd/LeadTable';
+import { useReliefPreference } from '@/lib/reliefPreference';
 import {
   buildChannel, formatUsd, DEEP_GATE_LABEL, GATE_LABELS, MAX_PER_GATE, STALL_DAYS, STALL_ONSET,
 } from '@/components/geometry/pipelineChannel';
@@ -55,7 +56,9 @@ export interface PipelineReliefProps extends LeadTableProps {
 }
 
 export function PipelineRelief({ reliefHeightPx = 460, ...table }: PipelineReliefProps) {
-  const [wantRelief, setWantRelief] = useState(false);
+  // Owner decision 2026-08-20: the default lives in ONE module, and the operator's choice
+  // is remembered. `revoke` exists so a GL refusal is never recorded as a preference.
+  const { on: wantRelief, choose: chooseRelief, revoke: revokeRelief } = useReliefPreference('pipeline');
   const [refusal, setRefusal] = useState<string | null>(null);
   /* The reason lives in a sibling <span>, which a screen reader reaches only in browse mode and only if it goes
      looking. `aria-describedby` puts it on the control it explains. */
@@ -86,7 +89,7 @@ export function PipelineRelief({ reliefHeightPx = 460, ...table }: PipelineRelie
     setRefusal(code);
     /* Back to the table immediately. A canvas that failed keeps its last frame — or nothing — on screen, and a
        stale picture presented as live data is worse than no picture. */
-    setWantRelief(false);
+    revokeRelief();
   }, []);
 
   const offerable = channel.refusal === null && channel.deals.length > 0;
@@ -179,7 +182,7 @@ export function PipelineRelief({ reliefHeightPx = 460, ...table }: PipelineRelie
           type="button"
           /* Unavailable once refused, or when the derivation would refuse: offering a toggle that cannot work is
              worse than not offering one. */
-          onClick={() => { if (blocked) return; setWantRelief((v) => !v); }}
+          onClick={() => { if (blocked) return; chooseRelief(!wantRelief); }}
           /*
            * `aria-disabled` RATHER THAN `disabled`, AND IT IS A FOCUS BUG, NOT A PREFERENCE.
            *
@@ -243,8 +246,9 @@ export function PipelineRelief({ reliefHeightPx = 460, ...table }: PipelineRelie
            * nobody has timed it against the table, and that the table is where the triage keys work.
            */
           <span id={noteId} className="text-micro leading-snug text-grey-dark">
-            Channel view is opt-in: nobody has yet timed whether it answers faster than this table. It is a
-            reading, not a workspace — triage keys act on the rows.
+            Channel view is the default by owner decision, not by measurement — timing it against the table
+            proved unmeasurable. It is a reading, not a workspace: triage keys act on the rows, the table is
+            one press away, and your choice is remembered.
           </span>
         )}
       </div>

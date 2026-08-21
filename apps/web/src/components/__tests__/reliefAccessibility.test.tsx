@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DeckRelief } from '@/components/geometry/DeckRelief';
 import { SurfaceRelief } from '@/components/geometry/SurfaceRelief';
 import { PipelineRelief } from '@/components/geometry/PipelineRelief';
@@ -13,6 +13,7 @@ import { buildRiskField, riskFieldUnavailable } from '@/components/risk/riskFiel
 import type { AuditEntry } from '@/lib/api/audit';
 import type { MapPoint } from '@/lib/api/bd';
 import type { BdFilters } from '@/types/bd';
+import { storage } from '@/lib/persistence';
 
 /**
  * THE SEVEN RELIEF TOGGLES, AS A NON-SIGHTED AND A KEYBOARD OPERATOR MEET THEM.
@@ -91,6 +92,25 @@ interface Surface {
    */
   readonly mountUnavailable: (() => HTMLElement) | null;
 }
+
+/*
+ * THE STORED-NO BASELINE. Since 2026-08-20 six of these seven default ON (lib/reliefPreference.ts —
+ * the owner decision that replaced the dead §7(b) gate), and a toggle click PERSISTS through the
+ * storage module's in-memory tier, which localStorage.clear() cannot reach. This file is about the
+ * CONTROLS — name/state agreement, focus retention through a swap, the refusal announcement — and
+ * every one of those choreographies begins with a pristine, untriggered toggle. The defaults
+ * themselves are pinned in reliefPreference.test.ts and the per-surface suites; here each test
+ * starts from an explicit remembered "off" for all seven, which is a real production state (an
+ * operator said no last week) and puts every surface, storm included, on identical footing.
+ */
+const ALL_RELIEF_KEYS = [
+  'relief:deck', 'relief:globe', 'relief:pipeline', 'relief:orrery',
+  'relief:surface', 'relief:vault', 'relief:storm',
+] as const;
+beforeEach(() => {
+  storage.clearAll();
+  for (const k of ALL_RELIEF_KEYS) storage.set(k, false);
+});
 
 const SURFACES: readonly Surface[] = [
   {

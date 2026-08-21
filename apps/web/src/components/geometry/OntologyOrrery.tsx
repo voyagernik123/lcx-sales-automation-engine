@@ -48,6 +48,7 @@
 import { lazy, Suspense, useCallback, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
 import type { OrreryReading } from '@/components/geometry/OntologyOrreryGl';
 import type { OrreryCouplingInput, OrreryEntityInput, FlatNodeCentre } from '@/components/geometry/orrery/orreryLayout';
+import { useReliefPreference } from '@/lib/reliefPreference';
 
 const OntologyOrreryGl = lazy(() => import('@/components/geometry/OntologyOrreryGl'));
 
@@ -98,7 +99,9 @@ const CONTROL = 'cursor-pointer border border-grey px-2.5 py-1.5 font-mono text-
 export function OntologyOrrery({
   entities, couplings, allCouplings, flatCentres, flatHalfWidth, selectedId = null, children,
 }: OntologyOrreryProps) {
-  const [wantOrrery, setWantOrrery] = useState(false);
+  // Owner decision 2026-08-20: the default lives in ONE module, and the operator's choice
+  // is remembered. `revoke` exists so a GL refusal is never recorded as a preference.
+  const { on: wantOrrery, choose: chooseRelief, revoke: revokeRelief } = useReliefPreference('orrery');
   const [refusal, setRefusal] = useState<{ code: string; reason: string } | null>(null);
   const [reading, setReading] = useState<OrreryReading | null>(null);
   const noteId = useId();
@@ -112,7 +115,7 @@ export function OntologyOrrery({
     setRefusal({ code, reason });
     /* Back to the diagram immediately. A canvas that failed keeps its last frame — or nothing — on screen, and
        a stale picture presented as live data is worse than no picture. */
-    setWantOrrery(false);
+    revokeRelief();
     setReading(null);
   }, []);
   const onReading = useCallback((r: OrreryReading) => setReading(r), []);
@@ -183,7 +186,7 @@ export function OntologyOrrery({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={() => { setRefusal(null); setWantOrrery((v) => !v); }}
+            onClick={() => { setRefusal(null); chooseRelief(!wantOrrery); }}
             aria-pressed={showOrrery}
             /* The reason sits in a sibling <p>, which a screen reader reaches only in browse mode and only if
                it goes looking. `aria-describedby` puts it on the control it explains. */
@@ -213,8 +216,9 @@ export function OntologyOrrery({
            * whether to trust a 3-D reading is entitled to know that nobody has timed it against this diagram.
            */
           <p id={noteId} className={`mt-2 ${HUD_TEXT}`}>
-            The orbital view is opt-in: nobody has yet timed whether it answers a question faster than this
-            diagram. It also carries no entity labels except the core and your selection.
+            The orbital view is the default by owner decision, not by measurement — timing it against the
+            diagram proved unmeasurable. It carries no entity labels except the core and your selection; the
+            flat diagram is one press away and your choice is remembered.
           </p>
         ) : L !== undefined ? (
           /* `noteId` is on EVERY branch, not just the two that read like a reason: `aria-describedby` pointing at
@@ -269,6 +273,18 @@ export function OntologyOrrery({
             )}
             <p className="text-grey-dark">
               The orbits are one frozen phase: this does not turn, and nothing here animates.
+            </p>
+            {/*
+              THE PROVENANCE OF THE DEFAULT, STATED IN THE STATE THE READER ACTUALLY LANDS IN. When the
+              orbital view was opt-in, the "why" sentence lived on the flat branch, where the decision to
+              switch was made. With the orrery as the default (owner decision, 2026-08-20), a reader who
+              never presses anything would otherwise never learn that this default is a decision rather
+              than a measurement — every other relief states it in its landing state, and this one hid it
+              in the state the reader has to leave first.
+            */}
+            <p className="text-grey-dark">
+              Default by owner decision, not by measurement — it carries no entity labels except the core
+              and your selection; the flat diagram is one press away and your choice is remembered.
             </p>
           </div>
         ) : (

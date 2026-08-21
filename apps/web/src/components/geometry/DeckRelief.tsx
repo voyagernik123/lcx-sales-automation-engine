@@ -28,6 +28,7 @@
  */
 import { lazy, Suspense, useCallback, useId, useMemo, useState } from 'react';
 import type { DeckPanelDatum } from '@/components/geometry/deckSlots';
+import { useReliefPreference } from '@/lib/reliefPreference';
 
 /**
  * ── THE CONTROL WEARS THE APP'S TOKENS, BECAUSE `--brand` AND `--rule` DO NOT EXIST ──
@@ -87,7 +88,9 @@ export interface DeckReliefProps {
 }
 
 export function DeckRelief({ children, panels, heightPx = 460 }: DeckReliefProps) {
-  const [wantRelief, setWantRelief] = useState(false);
+  // Owner decision 2026-08-20: the default lives in ONE module, and the operator's choice
+  // is remembered. `revoke` exists so a GL refusal is never recorded as a preference.
+  const { on: wantRelief, choose: chooseRelief, revoke: revokeRelief } = useReliefPreference('deck');
   const [refusal, setRefusal] = useState<string | null>(null);
   /* The reason lives in a sibling <span>, which a screen reader reaches only in browse mode and only
      if it goes looking. `aria-describedby` puts it on the control it explains. */
@@ -102,7 +105,7 @@ export function DeckRelief({ children, panels, heightPx = 460 }: DeckReliefProps
     setRefusal(code);
     /* Straight back to the grid. A canvas that failed keeps its last frame — or nothing — on screen, and a
        stale picture presented as live data is worse than no picture. */
-    setWantRelief(false);
+    revokeRelief();
   }, []);
 
   /*
@@ -161,7 +164,7 @@ export function DeckRelief({ children, panels, heightPx = 460 }: DeckReliefProps
       <div className="br-no-print" style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 8, flexWrap: 'wrap' }}>
         <button
           type="button"
-          onClick={() => { if (blocked) return; setWantRelief((v) => !v); }}
+          onClick={() => { if (blocked) return; chooseRelief(!wantRelief); }}
           /*
            * `aria-disabled` RATHER THAN `disabled`, AND IT IS A FOCUS BUG, NOT A PREFERENCE.
            *
@@ -217,8 +220,9 @@ export function DeckRelief({ children, panels, heightPx = 460 }: DeckReliefProps
            * reader deciding whether to switch is owed that specific trade, not a general disclaimer.
            */
           <span id={noteId} className={NOTE}>
-            Theatre view is opt-in: depth states which panel is addressed, and the focus that states it costs the
-            others legibility. Nobody has yet timed whether it answers faster than this grid.
+            Theatre view is the default by owner decision, not by measurement — timing it against the grid
+            proved unmeasurable. Depth states which panel is addressed, and the focus that states it costs the
+            others legibility; the flat grid is one press away and your choice is remembered.
           </span>
         )}
       </div>

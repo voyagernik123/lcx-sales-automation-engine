@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
+import { storage } from '@/lib/persistence';
 import { PipelineRelief } from '@/components/geometry/PipelineRelief';
 import {
   buildChannel, MAX_PER_GATE, STALL_DAYS, STALL_ONSET, DEEP_GATE_LABEL,
@@ -8,14 +9,21 @@ import {
 import type { BdFilters, BdLead } from '@/types/bd';
 
 /*
- * §7's disposition for an environment whose clause (b) is not established: "it ships behind a toggle that
- * defaults off, and I tell you rather than quietly shipping it."
+ * §7's disposition for an environment whose clause (b) was not established used to be "it ships behind a
+ * toggle that defaults off, and I tell you rather than quietly shipping it" — and that is what this file
+ * pinned. Clause (b) was then REFUSED AS UNMEASURABLE (docs/3d/e9/TRIAL_REFUSED.md: two instruments built,
+ * both refuted on measurement; the callout layer discloses the answers whichever surface is shown first),
+ * and on 2026-08-20 the owner replaced the dead gate with a decision: the channel is the DEFAULT, the flat
+ * table is one press away, and the operator's choice is remembered. lib/reliefPreference.ts is the single
+ * owner of that decision and of the two properties this file now leans on: the default engages only after
+ * hydration (so the FIRST paint is still the table, and server markup carries no canvas), and a machine
+ * refusal is never persisted as a preference.
  *
  * These tests are about the DEFAULT, the DERIVATION and the FALLBACK — not about the render. The render is
  * verified by `docs/3d/e3`'s captures against a real rasteriser; jsdom has no WebGL2 and pretending otherwise
- * would be a test that passes for the wrong reason. What CAN be verified here is exactly what §7 and §6 ask:
- * that a reader who does nothing sees the table, that the reason is on the page, that a refusal returns them to
- * it, and that absence never becomes zero.
+ * would be a test that passes for the wrong reason. What CAN be verified here is what §6 still asks:
+ * that first paint is the table, that the provenance of the default is on the page, that a refusal returns
+ * the reader to the table, and that absence never becomes zero.
  */
 
 const NOW = Date.parse('2026-08-13T00:00:00.000Z');
@@ -72,28 +80,44 @@ const props = { leads: LEADS, filters: FILTERS, clarityEnacted: false, onSort: (
 const mount = (over: Partial<typeof props> = {}) =>
   render(<MemoryRouter><PipelineRelief {...props} {...over} /></MemoryRouter>);
 
-describe('PipelineRelief — §7 says an unproven environment defaults off and says so', () => {
-  it('renders the FLAT table with no interaction, and no canvas', () => {
+/* One test below CLICKS the toggle, and a click is a CHOICE: it persists through the storage module's
+   in-memory tier, which a bare localStorage.clear() cannot reach. Without this reset the click in one
+   test becomes the default of the next, and the failure order-dependent — the exact class of bleed
+   vitest-file-count-shifts-workers exists to warn about. */
+beforeEach(() => { storage.clearAll(); });
+
+describe('PipelineRelief — the channel is the default by owner decision, and the page says so', () => {
+  it('still paints the FLAT table first — the default engages after hydration, never in first paint', () => {
+    /* The canvas that may follow arrives via a lazy chunk, one effect after mount. What must never change:
+       the table is what a server render, a print job, and the first client frame all contain. A canvas in
+       THIS assertion's window would mean the relief had jumped the hydration gate. */
     const { container } = mount();
-    /* A canvas appearing here would mean the 3-D view had shipped as the default on a claim nobody has
-       measured. The table is what an operator triages on. */
     expect(container.querySelector('table'), 'the table must be what loads').not.toBeNull();
-    expect(container.querySelector('canvas'), 'the channel must NOT be the default').toBeNull();
+    expect(container.querySelector('canvas'), 'no canvas before the chunk resolves').toBeNull();
   });
 
-  it('tells the reader WHY the channel is opt-in, on the page', () => {
-    /* Not in a tooltip and not in a commit message. And it names the second cost too: the table is where the
-       triage keys work, which is a real loss the harness's fallback never had to state. */
+  it('states the provenance of the default on the page — a decision, not a measurement', () => {
+    /* Not in a tooltip and not in a commit message. The caption must carry both halves: that the default
+       was decided after timing proved unmeasurable, and that the table is still where the triage keys
+       work — the one real cost the channel never pretends away. */
     mount();
-    expect(screen.getByText(/nobody has yet timed whether it answers faster/i)).toBeTruthy();
+    expect(screen.getByText(/default by owner decision, not by measurement/i)).toBeTruthy();
     expect(screen.getByText(/triage keys act on the rows/i)).toBeTruthy();
   });
 
-  it('offers the toggle, and reports its state to assistive technology', () => {
+  it('offers the toggle ON, and reports its state to assistive technology', () => {
     mount();
     const btn = screen.getByRole('button', { name: /channel view/i });
-    expect(btn.getAttribute('aria-pressed')).toBe('false');
+    expect(btn.getAttribute('aria-pressed')).toBe('true');
     expect(btn.hasAttribute('disabled')).toBe(false);
+  });
+
+  it('honours a remembered NO: a stored false outranks the default true', () => {
+    /* The operator who pressed the toggle off last week did not make a suggestion. reliefPreference.test.ts
+       pins the module; this pins the wrapper actually consulting it. */
+    storage.set('relief:pipeline', false);
+    mount();
+    expect(screen.getByRole('button', { name: /channel view/i }).getAttribute('aria-pressed')).toBe('false');
   });
 
   it('keeps the table while the lazy chunk is still loading', () => {

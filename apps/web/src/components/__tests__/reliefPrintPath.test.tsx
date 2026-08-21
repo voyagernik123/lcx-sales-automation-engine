@@ -17,6 +17,8 @@ import type { DeckPanelDatum } from '@/components/geometry/deckSlots';
 import type { OrreryEntityInput, OrreryCouplingInput } from '@/components/geometry/orrery/orreryLayout';
 import type { MapPoint } from '@/lib/api/bd';
 import type { BdFilters, BdLead } from '@/types/bd';
+import { storage } from '@/lib/persistence';
+import { RELIEF_DEFAULT_ON } from '@/lib/reliefPreference';
 
 /**
  * §6 RULE 1 ON PAPER — "SSR, print, no-WebGL and reduced-motion all resolve to the existing surface."
@@ -206,6 +208,20 @@ class ResizeObserverStub {
   disconnect(): void {}
 }
 beforeEach(() => {
+  /*
+   * THE STORED-NO BASELINE. Since 2026-08-20 six of the seven reliefs default ON
+   * (lib/reliefPreference.ts), and a toggle click PERSISTS through the storage module's in-memory
+   * tier, which localStorage.clear() cannot reach. Every choreography in this file opens a relief
+   * BY CLICKING — the reader's route — and a click on an already-on surface closes it instead,
+   * which is how three of these tests spent a while reporting "never reached the drawn state".
+   * Starting from a remembered "off" for all seven (a real production state) keeps the click
+   * meaningful and each test independent of its neighbours' clicks.
+   */
+  storage.clearAll();
+  for (const k of ['relief:deck', 'relief:globe', 'relief:pipeline', 'relief:orrery',
+                   'relief:surface', 'relief:vault', 'relief:storm'] as const) {
+    storage.set(k, false);
+  }
   (globalThis as { ResizeObserver?: unknown }).ResizeObserver = ResizeObserverStub;
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(1200);
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(700);
@@ -548,15 +564,19 @@ describe('a relief that is OPEN when ⌘P happens prints its flat form', () => {
       'the live canvas and its projected text still print').toBe(true);
   });
 
-  it('and the default state gains nothing to hide — neither attribute exists with relief off', () => {
-    /* The scoping claim, checked rather than argued: with relief off (the state every print job in this
-       app's life has been in) the two selectors match nothing at all, so this fix cannot have changed what
-       any existing print surface prints. */
+  it('and the OFF state gains nothing to hide — neither attribute exists with the relief off', () => {
+    /* The scoping claim, checked rather than argued: with the relief off, the two selectors match
+       nothing at all, so the print fix cannot change what a flat-state print job prints. "Off" is no
+       longer the universal default — RELIEF_DEFAULT_ON ships E1 and E5 on, and only storm off — so
+       this test reaches the off state the way an operator does, through a remembered choice (the
+       suite-wide stored-no baseline above). The pin below keeps this file honest about which of its
+       three print-reachable surfaces still lands here by default. */
+    expect(RELIEF_DEFAULT_ON.storm, 'storm going default-on must be a decision made HERE too').toBe(false);
     for (const s of PRINT_SURFACES) {
       const { container } = s.mount();
-      expect(container.querySelector('[data-relief-print-flat]'), `${s.name} default state`).toBeNull();
-      expect(container.querySelector('[data-relief-live]'), `${s.name} default state`).toBeNull();
-      expect(s.flatMark(container), `${s.name} lost its flat figure in the default state`).not.toBeNull();
+      expect(container.querySelector('[data-relief-print-flat]'), `${s.name} off state`).toBeNull();
+      expect(container.querySelector('[data-relief-live]'), `${s.name} off state`).toBeNull();
+      expect(s.flatMark(container), `${s.name} lost its flat figure in the off state`).not.toBeNull();
     }
   });
 });

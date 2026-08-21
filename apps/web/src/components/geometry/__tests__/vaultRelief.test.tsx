@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { VaultRelief } from '@/components/geometry/VaultRelief';
 import { auditVerdict, buildVaultRecords, whenOf } from '@/components/geometry/vaultRecords';
 import type { AuditEntry } from '@/lib/api/audit';
+import { storage } from '@/lib/persistence';
 
 /*
  * §7's disposition for an environment whose clause (b) is not established: "it ships behind a toggle that defaults
@@ -35,7 +36,12 @@ const ENTRIES: readonly AuditEntry[] = [
   entry({ id: 'c', entity: 'gps_engagement', meta: { withheld: true, reason: 'compartment' }, createdAt: at(70) }),
 ];
 
-describe('VaultRelief — §7 says an unproven environment defaults off and says so', () => {
+/* A toggle click is a CHOICE since 2026-08-20 and persists through the storage module's
+   in-memory tier, which localStorage.clear() cannot reach — without this, one test's click
+   becomes the next test's default and failures depend on execution order. */
+beforeEach(() => { storage.clearAll(); });
+
+describe('VaultRelief — the vault is the default by owner decision, and says so', () => {
   it('renders the FLAT table with no interaction, and no canvas', () => {
     const { container } = render(
       <VaultRelief entries={ENTRIES}><table><tbody><tr><td>campaign_publish</td></tr></tbody></table></VaultRelief>,
@@ -49,13 +55,13 @@ describe('VaultRelief — §7 says an unproven environment defaults off and says
 
   it('tells the reader WHY the vault is opt-in, on the page next to the button', () => {
     render(<VaultRelief entries={ENTRIES}><table /></VaultRelief>);
-    expect(screen.getByText(/nobody has yet timed whether it answers faster/i)).toBeTruthy();
+    expect(screen.getByText(/default by owner decision/i)).toBeTruthy();
   });
 
   it('offers the toggle, and reports its state to assistive technology', () => {
     render(<VaultRelief entries={ENTRIES}><table /></VaultRelief>);
     const btn = screen.getByRole('button', { name: /vault view/i });
-    expect(btn.getAttribute('aria-pressed')).toBe('false');
+    expect(btn.getAttribute('aria-pressed')).toBe('true');
     expect(btn.hasAttribute('disabled')).toBe(false);
   });
 
