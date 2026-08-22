@@ -11,8 +11,9 @@ import {
   calibrationHealthView,
   loopResponse,
   marginRealisation,
+  MONITOR_INPUT_LABEL,
+  monitorRegistrability,
   outcomeCaptureForm,
-  registerableBookMonitors,
   reviewPacket,
   suppressibleRate,
   winLossSummary,
@@ -21,6 +22,9 @@ import {
   type EngagementStatus,
   type LoopResponse,
   type MarginRealisation,
+  type MonitorInputAvailability,
+  type MonitorInputKey,
+  type MonitorRegistrability,
   type OfferKey,
   type OutcomeCaptureDraft,
   type OutcomeCaptureForm,
@@ -30,9 +34,11 @@ import {
   type ReviewPacket,
   type SuppressibleRate,
   type WinLossSummary,
+  type WaterfallShape,
   type WipLoad,
 } from '@lcx/shared';
 import { weekStartOf } from '../kpi/wbr.js';
+import { waterfallMeasurement } from './factory.js';
 
 /**
  * GLOBAL SERVICES — Phase 12 data layer: THE OUTCOME LOOP.
@@ -580,11 +586,85 @@ export async function reviewView(pool: Pool): Promise<ReviewPacket> {
 }
 
 /** The monitor specifications, as data. No DB, no probe — code constants only. */
-export function monitorsView(): Pick<LoopResponse, 'monitors' | 'registerableMonitorKeys' | 'volume'> {
+/**
+ * WHAT THE REGISTERS ACTUALLY HOLD — the five founder inputs, MEASURED.
+ *
+ * `monitorRegistrability` refuses to default a missing key to `true` precisely so a
+ * monitor cannot light up on inputs nobody supplied, which means someone has to go
+ * and look. This is that someone.
+ *
+ * AN ABSENT REGISTER IS AN ABSENT INPUT, so a failed probe answers `false` rather
+ * than throwing or being cached. That is both honest (the input genuinely is not
+ * there) and conservative in the safe direction: an unapplied migration can only
+ * ever make a monitor look LESS ready, never more. Migrations 0076/0079 are ledgered
+ * and unapplied today, so several of these are false for that reason and the screen
+ * says which.
+ *
+ * `perimeter_reviewed` encodes the SECOND-HUMAN rule rather than mere presence: a row
+ * whose reviewer is its own author is not reviewed, and `MONITOR_INPUT_LABEL` promises
+ * "never the proposer" — so the SQL compares the two names instead of trusting one.
+ */
+export async function monitorInputAvailability(pool: Pool): Promise<MonitorInputAvailability> {
+  const has = async (sql: string): Promise<boolean> => {
+    try {
+      const r = await pool.query(sql);
+      return r.rows.length > 0;
+    } catch {
+      return false;
+    }
+  };
+  const [priceBands, effortTriples, pricingPolicy, partnerBench, perimeterReviewed] = await Promise.all([
+    has(`SELECT 1 FROM gps_price_band LIMIT 1`),
+    has(`SELECT 1 FROM gps_effort_triple LIMIT 1`),
+    has(`SELECT 1 FROM gps_pricing_policy LIMIT 1`),
+    has(`SELECT 1 FROM gps_rate_card LIMIT 1`),
+    has(
+      `SELECT 1 FROM gps_jurisdiction_profile
+        WHERE reviewed_at IS NOT NULL
+          AND btrim(coalesce(reviewed_by, '')) <> ''
+          AND btrim(reviewed_by) <> btrim(entered_by)
+        LIMIT 1`,
+    ),
+  ]);
+  return {
+    price_bands: priceBands,
+    effort_triples: effortTriples,
+    pricing_policy: pricingPolicy,
+    partner_bench: partnerBench,
+    perimeter_reviewed: perimeterReviewed,
+  };
+}
+
+export interface MonitorsView extends Pick<LoopResponse, 'monitors' | 'registerableMonitorKeys' | 'volume'> {
+  /** Per monitor: registerable, and if not, exactly which inputs are missing. */
+  registrability: readonly MonitorRegistrability[];
+  /** What was measured, so the reader can check the verdict rather than trust it. */
+  inputs: MonitorInputAvailability;
+  /** The owner-facing name of each input, for the remedy line. */
+  inputLabels: Record<MonitorInputKey, string>;
+}
+
+/**
+ * `registerableMonitorKeys` USED TO BE A SHIPPED CONSTANT — `!blockedOnPlaceholders`,
+ * decided when the file was written. It is now measured against the registers.
+ *
+ * On today's environment the two answers AGREE (the two unblocked specs declare
+ * `requiresInputs: []`, so no register can take them away), and that agreement is
+ * asserted in the tests rather than assumed. What changes is the future: the day the
+ * owner approves the price-band and effort-triple packets, the other three monitors
+ * become registerable BY MEASUREMENT, with nobody editing a constant — which is the
+ * whole difference between a claim and an instrument.
+ */
+export async function monitorsView(pool: Pool): Promise<MonitorsView> {
+  const inputs = await monitorInputAvailability(pool);
+  const registrability = monitorRegistrability(inputs);
   return {
     monitors: BOOK_MONITOR_SPECS,
-    registerableMonitorKeys: registerableBookMonitors().map((s) => s.key),
+    registerableMonitorKeys: registrability.filter((r) => r.registerable).map((r) => r.spec.key),
     volume: LOOP_VOLUME_STATEMENT,
+    registrability,
+    inputs,
+    inputLabels: MONITOR_INPUT_LABEL,
   };
 }
 
@@ -598,10 +678,45 @@ export function monitorsView(): Pick<LoopResponse, 'monitors' | 'registerableMon
  * review. Null is carried honestly all the way to the printed line ("Delivery
  * load: not supplied. No claim is made about coordination capacity this week.").
  */
+/**
+ * THE LOOP RESPONSE PLUS WHAT THIS PROCESS MEASURED.
+ *
+ * Deliberately an API-owned type that EXTENDS the shared `LoopResponse` rather than a
+ * widening of it. `loopResponse()` is a pure function with a large test suite; these
+ * four fields need a pool to exist, so putting them in the shared shape would force
+ * every pure caller to invent them. Extending keeps the engine pure and still lets
+ * one wire carry both.
+ */
+export interface LoopSnapshot extends LoopResponse {
+  monitorRegistrability: readonly MonitorRegistrability[];
+  monitorInputs: MonitorInputAvailability;
+  monitorInputLabels: Record<MonitorInputKey, string>;
+  /** G5's closing leg: what the three-stage waterfall actually cost, per offer. */
+  waterfall: WaterfallShape;
+}
+
+/**
+ * The two measurements, gathered together because both are absence-tolerant and
+ * neither depends on the outcome register — so they are just as true on an
+ * environment where 0053 is pending as on one where it is applied.
+ */
+export async function loopMeasurements(pool: Pool): Promise<Omit<LoopSnapshot, keyof LoopResponse>> {
+  const [inputs, waterfall] = await Promise.all([
+    monitorInputAvailability(pool),
+    waterfallMeasurement(pool),
+  ]);
+  return {
+    monitorRegistrability: monitorRegistrability(inputs),
+    monitorInputs: inputs,
+    monitorInputLabels: MONITOR_INPUT_LABEL,
+    waterfall,
+  };
+}
+
 export async function loopSnapshot(
   pool: Pool,
   args: { asOf: string; engagementId?: string | null; wip?: WipLoad | null },
-): Promise<LoopResponse> {
+): Promise<LoopSnapshot> {
   const asOf = args.asOf;
   const weekStart = weekStartOf(new Date(asOf));
   const all = await listOutcomeRecords(pool);
@@ -635,7 +750,9 @@ export async function loopSnapshot(
       `No engagement ${args.engagementId} exists, so no capture form is shown. The book-wide blocks below are unaffected.`,
     );
   }
-  return extra.length === 0 ? response : { ...response, notices: [...response.notices, ...extra] };
+  const measured = await loopMeasurements(pool);
+  const withNotices = extra.length === 0 ? response : { ...response, notices: [...response.notices, ...extra] };
+  return { ...withNotices, ...measured };
 }
 
 /**

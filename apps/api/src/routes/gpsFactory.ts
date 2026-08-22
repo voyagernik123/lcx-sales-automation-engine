@@ -11,6 +11,7 @@ import {
   isFactoryStage,
   listDrafts,
   listStageActuals,
+  recordPartnerDraft,
   qaDecide,
   recordStageActual,
 } from '../gps/factory.js';
@@ -106,6 +107,52 @@ gpsFactoryRoutes.post('/engagements/:id/draft', requireOperator, async (c) => {
   } catch (err) {
     console.error('[gps] factory draft error:', err);
     return c.json({ error: 'Generation failed — nothing was stored', code: 'GPS_ERROR' }, 500);
+  }
+});
+
+/**
+ * STAGE 3's RETURN LEG — a partner deliverable enters as the next draft version.
+ *
+ * Not a second acceptance path: this only INSERTS a version. Everything that decides
+ * whether it counts — `qaDecide`, the named human, `recordDeliverableReview`, and
+ * 0049's refusal to let a client accept an unreviewed deliverable — is unchanged and
+ * still ahead of it. The route is named `/partner-deliverable` rather than anything
+ * upload-shaped because it receives typed text and the intake lockout reserves
+ * document-shaped path literals for the one artifact intake.
+ */
+gpsFactoryRoutes.post('/engagements/:id/partner-deliverable', requireOperator, async (c) => {
+  try {
+    const engagementId = c.req.param('id');
+    let draftText = '';
+    let partnerLabel = '';
+    let deliverableId: string | null = null;
+    try {
+      const parsed = await c.req.json();
+      draftText = typeof parsed?.draftText === 'string' ? parsed.draftText : '';
+      partnerLabel = typeof parsed?.partnerLabel === 'string' ? parsed.partnerLabel : '';
+      deliverableId = typeof parsed?.deliverableId === 'string' && parsed.deliverableId.trim() !== ''
+        ? parsed.deliverableId.trim()
+        : null;
+    } catch { /* refused by the service's own validation below */ }
+
+    const pool = getPool();
+    if ((await isFactoryMigrated(pool)) !== true) return c.json(NOT_MIGRATED, 503);
+
+    const operator = c.get('operator');
+    const out = await recordPartnerDraft(pool, {
+      engagementId,
+      deliverableId,
+      draftText,
+      partnerLabel,
+      recordedBy: operator?.id ?? 'unknown',
+    });
+    if (!out.ok) {
+      return c.json({ error: out.detail, code: out.code }, out.code === 'NOT_FOUND' ? 404 : 400);
+    }
+    return c.json({ data: { draft: out.draft }, meta: { ...meta(), migrated: true } });
+  } catch (err) {
+    console.error('[gps] partner deliverable error:', err);
+    return c.json({ error: 'Recording failed — nothing was stored', code: 'GPS_ERROR' }, 500);
   }
 });
 

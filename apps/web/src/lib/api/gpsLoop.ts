@@ -1,6 +1,7 @@
 import { ApiError, request } from '../apiClient';
 import type {
   LoopResponse, MarginRealisation, OutcomeCaptureDraft, OutcomeCaptureForm, WinLossSummary,
+  MonitorInputKey, MonitorRegistrability, WaterfallShape, OfferWaterfall,
 } from '@lcx/shared';
 import { unwrapWithMeta } from './meta.js';
 
@@ -57,8 +58,25 @@ const unwrap = unwrapWithMeta;
  * it is why this page is useful at n=0: the health block's verdict at zero records
  * is itself the report.
  */
+/**
+ * THE WIRE CARRIES MORE THAN THE PURE ENGINE DOES.
+ *
+ * `loopResponse()` in @lcx/shared is pure and cannot probe a register, so the two
+ * MEASURED blocks — which monitors are registerable against what the registers
+ * actually hold, and what the G5 waterfall actually cost — are attached by the API
+ * (`apps/api/src/gps/loop.ts:LoopSnapshot`). They are declared OPTIONAL here because
+ * the not-yet-migrated branch of that route answers with the empty snapshot, and a
+ * surface that assumed them present would render `undefined` as a confident zero.
+ */
+export interface LoopSnapshotResponse extends LoopResponse {
+  monitorRegistrability?: readonly MonitorRegistrability[];
+  monitorInputs?: Record<MonitorInputKey, boolean>;
+  monitorInputLabels?: Record<MonitorInputKey, string>;
+  waterfall?: WaterfallShape;
+}
+
 export const fetchGpsLoop = (engagementId?: string) =>
-  unwrap(request<{ data: LoopResponse }>(
+  unwrap(request<{ data: LoopSnapshotResponse }>(
     engagementId ? `/v1/gps/loop?engagementId=${encodeURIComponent(engagementId)}` : '/v1/gps/loop',
     { auth: true },
   ));
@@ -210,4 +228,5 @@ export async function recordGpsOutcome(
  */
 export type {
   LoopResponse, MarginRealisation, OutcomeCaptureDraft, OutcomeCaptureForm, WinLossSummary,
+  MonitorInputKey, MonitorRegistrability, WaterfallShape, OfferWaterfall,
 };

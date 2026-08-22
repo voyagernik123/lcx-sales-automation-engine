@@ -92,6 +92,18 @@ export interface WbrReport {
    * be able to omit the block entirely rather than send zeros that read as a quiet
    * quarter.
    */
+  /*
+   * ── FILLED BY `routes/wbr.ts` PER REQUEST. NEVER BY `composeWbr`. ──
+   * `writeWbr` persists whatever `composeWbr` returns into `wbr_reports.payload`, and
+   * that row is served to every GOVERNANCE holder — a different grant from `gps`
+   * (`legacy: false`, `machineAccess: false`). A limb composed here would therefore be
+   * stored by a machine principal that cannot read the compartment and served to
+   * readers who do not hold it. So the field stays absent through composition and
+   * storage, and `gps/wbrBlock.ts` attaches it after an entitlement check, for one
+   * reader, for the current week only. `routes/wbr.ts` also STRIPS this key off any
+   * loaded payload before re-deriving it, so a hand-inserted or restored row cannot
+   * smuggle one through. Asserted in `routes/__tests__/wbrGpsLimb.test.ts`.
+   */
   gps?: WbrGpsBlock;
   /** true when composed on the fly (no stored report for the week yet). */
   live?: boolean;

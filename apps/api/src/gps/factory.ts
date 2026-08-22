@@ -25,9 +25,13 @@ import {
   type DraftDefect,
   type FactorySlot,
   type FactoryStage,
+  type EngagementStatus,
   type OfferKey,
+  type StageActualInput,
+  type StatedTriple,
+  type WaterfallShape,
 } from '@lcx/shared';
-import { FACTORY_STAGES } from '@lcx/shared';
+import { FACTORY_STAGES, waterfallShape } from '@lcx/shared';
 import { llm } from '../ai/llm.js';
 import { angleFrom } from './dossier.js';
 import { recordDeliverableReview } from './deliveryDesk.js';
@@ -404,4 +408,175 @@ export async function composeHandoverPacket(pool: pg.Pool, engagementId: string)
     rateCardNote:
       'No live partner rate card is attached: the bench is empty by decision D5. The approved rate-card packet (G0) records the values the desk would pay per partner CLASS; name a partner in the registry and a card is one prefilled write away.',
   };
+}
+
+/* ── G5's closing leg: the measurement the loop and the packets read ────────── */
+
+/**
+ * MEASURE THE WATERFALL from what the registers hold.
+ *
+ * Both reads are absence-tolerant on purpose. 0081 (`gps_stage_actual`) and 0052
+ * (`gps_effort_triple`) are applied by the owner, not by us, and an absent register
+ * means "nothing has been measured" — which `waterfallShape` renders as named blind
+ * spots. Throwing here would take down the whole loop snapshot over a migration that
+ * was always going to be pending, and defaulting to a fabricated shape would be
+ * worse than either.
+ */
+export async function waterfallMeasurement(pool: pg.Pool): Promise<WaterfallShape> {
+  const readRows = async <T>(sql: string): Promise<T[]> => {
+    try {
+      const r = await pool.query(sql);
+      return r.rows as T[];
+    } catch {
+      return [];
+    }
+  };
+
+  const actualRows = await readRows<Record<string, unknown>>(
+    `SELECT sa.engagement_id, sa.stage, sa.hours, sa.cost_cents, sa.recorded_at,
+            e.offer_key, e.status
+       FROM gps_stage_actual sa
+       JOIN gps_engagement e ON e.id = sa.engagement_id
+      LIMIT 5000`,
+  );
+  const tripleRows = await readRows<Record<string, unknown>>(
+    `SELECT offer_key, optimistic_days, likely_days, pessimistic_days FROM gps_effort_triple`,
+  );
+  /*
+   * THE DIVISOR COMES FROM THE RATE CARD OR IT DOES NOT COME AT ALL.
+   *
+   * `hours_per_day` is nullable on the card because it is a fact about how a partner
+   * bills, and underwriting already refuses to price an hourly card without one. So it
+   * is read here rather than assumed, and — the part that matters — a value is used
+   * ONLY when every card for that offer that states one AGREES. Two partners billing a
+   * 7-hour and an 8-hour day is a real disagreement, and picking one would invent a
+   * consensus; the shape then reports hours and declines to express days.
+   */
+  const cardRows = await readRows<Record<string, unknown>>(
+    `SELECT offer_key, hours_per_day FROM gps_rate_card WHERE hours_per_day IS NOT NULL`,
+  );
+  const distinctByOffer = new Map<string, Set<number>>();
+  for (const r of cardRows) {
+    const v = Number(r.hours_per_day);
+    if (!Number.isFinite(v) || v <= 0) continue;
+    const key = String(r.offer_key);
+    const set = distinctByOffer.get(key) ?? new Set<number>();
+    set.add(v);
+    distinctByOffer.set(key, set);
+  }
+  const hoursPerDayByOffer: Partial<Record<OfferKey, number>> = {};
+  for (const [offerKey, values] of distinctByOffer) {
+    if (values.size === 1) hoursPerDayByOffer[offerKey as OfferKey] = [...values][0];
+  }
+
+  const actuals: StageActualInput[] = actualRows.map((r) => ({
+    engagementId: String(r.engagement_id),
+    offerKey: String(r.offer_key) as OfferKey,
+    stage: r.stage as FactoryStage,
+    hours: Number(r.hours),
+    costCents: Number(r.cost_cents),
+    engagementStatus: String(r.status) as EngagementStatus,
+    recordedAt: new Date(r.recorded_at as string).toISOString(),
+  }));
+  const triples: StatedTriple[] = tripleRows.map((r) => ({
+    offerKey: String(r.offer_key) as OfferKey,
+    optimisticDays: Number(r.optimistic_days),
+    likelyDays: Number(r.likely_days),
+    pessimisticDays: Number(r.pessimistic_days),
+  }));
+
+  return waterfallShape(actuals, triples, { hoursPerDayByOffer });
+}
+
+/* ── Stage 3's return leg: a partner's work comes back through the SAME gate ── */
+
+export type PartnerDraftOutcome =
+  | { ok: true; draft: DraftRow }
+  | { ok: false; code: 'NOT_FOUND' | 'VALIDATION'; detail: string };
+
+export const PARTNER_DRAFT_MAX_CHARS = 60_000;
+
+/**
+ * RECORD A PARTNER DELIVERABLE AS THE NEXT DRAFT VERSION.
+ *
+ * The plan's Stage 3 says "partner deliverables come back through the same QA gate",
+ * and the only way to mean that literally is for a partner's work to become a
+ * `gps_draft` row — because `qaDecide` is the gate, and a gate with two entrances is
+ * two gates. So this inserts a version exactly as `generateDraft` does, supersedes any
+ * undecided predecessor exactly as it does, and from that moment the partner's text is
+ * indistinguishable from ours as far as review is concerned: same accept, same rework,
+ * same `recordDeliverableReview` on acceptance, same 0049 constraint standing between
+ * it and a client acceptance.
+ *
+ * ── WHAT IS DELIBERATELY *NOT* APPLIED: `draftDefects` ──────────────────────
+ * Our own Stage-1 output is validated against the template's section headings, because
+ * we asked a model to produce exactly that shape. A partner's legal opinion or signed
+ * memo is THEIR work product in THEIR structure; refusing it for not carrying our
+ * headings would be a template asserting authority over counsel. It is a human's job
+ * to judge, which is precisely what the QA gate is. `model` records `partner:<label>`
+ * so the provenance of every stored version says which it was, and no reader has to
+ * guess whether a version came from a model or a person.
+ *
+ * ── D2 ──────────────────────────────────────────────────────────────────────
+ * This is text an operator pastes, describing work LCX commissioned and owns — the
+ * same category as our own draft, not third-party confidential material. There is no
+ * byte path here and no field that could carry one: the intake lockout scans this file.
+ */
+export async function recordPartnerDraft(
+  pool: pg.Pool,
+  args: {
+    engagementId: string;
+    deliverableId: string | null;
+    draftText: string;
+    partnerLabel: string;
+    recordedBy: string;
+  },
+): Promise<PartnerDraftOutcome> {
+  const text = args.draftText.trim();
+  const label = args.partnerLabel.trim();
+  if (text === '') {
+    return { ok: false, code: 'VALIDATION', detail: 'the partner deliverable is empty — there is nothing to review' };
+  }
+  if (text.length > PARTNER_DRAFT_MAX_CHARS) {
+    return {
+      ok: false,
+      code: 'VALIDATION',
+      detail: `the text exceeds ${PARTNER_DRAFT_MAX_CHARS} characters. Record the substance and keep the full document where the partner and the client already hold it — this register stores work product, not an archive.`,
+    };
+  }
+  if (label === '') {
+    return {
+      ok: false,
+      code: 'VALIDATION',
+      detail: 'partnerLabel is required — a stored version whose provenance is unattributed is worse than one that was never recorded.',
+    };
+  }
+
+  const state = await collectSlotState(pool, args.engagementId);
+  if (state === null) return { ok: false, code: 'NOT_FOUND', detail: `no engagement ${args.engagementId}` };
+
+  await pool.query(
+    `UPDATE gps_draft SET status = 'superseded' WHERE engagement_id = $1 AND status = 'draft'`,
+    [args.engagementId],
+  );
+  /* `slots_filled` is the TRUE count for this engagement at the moment of recording,
+     not a placeholder to satisfy the CHECK: it is what the partner was working from. */
+  const filled = state.slots.filter((s) => s.filled).length;
+  const inserted = await pool.query(
+    `INSERT INTO gps_draft
+       (engagement_id, deliverable_id, offer_key, version, status, draft_text, model, slots_filled, generated_by)
+     SELECT $1, $2, $3, COALESCE(MAX(version), 0) + 1, 'draft', $4, $5, $6, $7
+       FROM gps_draft WHERE engagement_id = $1
+     RETURNING *`,
+    [
+      args.engagementId,
+      args.deliverableId,
+      state.offerKey,
+      text,
+      `partner:${label}`.slice(0, 120),
+      Math.max(1, filled),
+      args.recordedBy,
+    ],
+  );
+  return { ok: true, draft: mapDraft(inserted.rows[0]) };
 }

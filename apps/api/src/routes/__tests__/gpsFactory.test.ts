@@ -221,3 +221,41 @@ describe('effort truth and the read', () => {
     expect(body.data.drafts).toEqual([]);
   });
 });
+
+describe('Stage 3 — a partner deliverable enters as the next version', () => {
+  it('inserts a version whose provenance names the partner, and supersedes the undecided one', async () => {
+    const res = await app().request('/factory/engagements/eng-1/partner-deliverable', {
+      method: 'POST',
+      body: JSON.stringify({ draftText: 'Counsel opinion, in counsel\'s own structure.', partnerLabel: 'Counsel One' }),
+    });
+    expect(res.status).toBe(200);
+    // Supersede first, then insert — a second undecided version is not created.
+    expect(state.queries.some((q) => q.sql.includes("SET status = 'superseded'"))).toBe(true);
+    const insert = state.queries.find((q) => q.sql.includes('INSERT INTO gps_draft'))!;
+    expect(String(insert.params[4])).toBe('partner:Counsel One');
+    expect(String(insert.params[3])).toContain('Counsel opinion');
+  });
+
+  it('refuses an unattributed or empty deliverable', async () => {
+    const noLabel = await app().request('/factory/engagements/eng-1/partner-deliverable', {
+      method: 'POST', body: JSON.stringify({ draftText: 'text', partnerLabel: '  ' }),
+    });
+    expect(noLabel.status).toBe(400);
+    expect((await noLabel.json()).error).toContain('unattributed');
+
+    const empty = await app().request('/factory/engagements/eng-1/partner-deliverable', {
+      method: 'POST', body: JSON.stringify({ draftText: '   ', partnerLabel: 'Counsel One' }),
+    });
+    expect(empty.status).toBe(400);
+  });
+
+  it('does NOT shape-validate the partner text against our template', async () => {
+    /* Our Stage-1 output must carry the template headings; counsel's opinion must not
+       be refused for lacking them. The QA gate is where a human judges it. */
+    const res = await app().request('/factory/engagements/eng-1/partner-deliverable', {
+      method: 'POST',
+      body: JSON.stringify({ draftText: 'No headings at all. Just prose.', partnerLabel: 'Counsel One' }),
+    });
+    expect(res.status).toBe(200);
+  });
+});

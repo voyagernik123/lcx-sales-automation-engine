@@ -4,7 +4,7 @@ import { clsx } from 'clsx';
 import { getOffer } from '@lcx/shared';
 import type {
   BookMonitorSpec, CalibrationHealthView, Conclusion, Driver, LoopDataSource,
-  LoopResponse, LoopVolumeStatement, MarginGroup, MarginRealisation,
+  LoopVolumeStatement, MarginGroup, MarginRealisation,
   OutcomeCaptureDraft, OutcomeCaptureForm, ReviewPacket, SuppressibleRate,
   WbrGpsBlock, WinLossRow, WinLossSummary,
 } from '@lcx/shared';
@@ -16,6 +16,7 @@ import { gpsKeysBelongToSurface } from '@/components/gps/gpsPaneFocus';
 import {
   fetchGpsLoop, fetchGpsMarginRealisation, fetchGpsWinLoss, recordGpsOutcome,
   type OutcomeSubmission,
+  type MonitorRegistrability, type WaterfallShape, type LoopSnapshotResponse,
 } from '@/lib/api/gpsLoop';
 import { GpsMetaBanner } from './GpsMetaBanner';
 
@@ -1068,10 +1069,114 @@ function ReviewBlock({ review, driversOpen }: { review: ReviewPacket; driversOpe
  * purpose: an alert compared against a placeholder is worse than no alert, because
  * it teaches the reader to dismiss the channel.
  */
+/**
+ * G5's CLOSING LEG ON SCREEN — what the waterfall actually cost, against what was quoted.
+ *
+ * The split this block exists to show: the observed numbers are FACTS and print at any
+ * n; the verdict on a stated triple is an INFERENCE and is withheld below the stated
+ * minimum. So a reader sees the hours immediately and the judgement only when it is
+ * earned — and `withheld_small_n` says which, rather than leaving a blank cell that
+ * reads as "fine".
+ *
+ * Offers with no recorded stage rows are NAMED. A table of four offers where five were
+ * sold is a table that hides the blind spot it should be reporting.
+ */
+function WaterfallBlock({ shape }: { shape?: WaterfallShape }) {
+  if (shape === undefined) {
+    return (
+      <Stated tone="warn">
+        No waterfall measurement is on this response. Nothing is claimed about delivery cost —
+        this is not-loaded, not zero.
+      </Stated>
+    );
+  }
+  const VERDICT_TONE: Record<string, 'ready' | 'blocked' | 'conditional' | 'deferred'> = {
+    inside_band: 'ready',
+    above_pessimistic: 'blocked',
+    below_optimistic: 'conditional',
+    withheld_small_n: 'deferred',
+    no_triple_stated: 'deferred',
+    no_hours_per_day_stated: 'conditional',
+  };
+  return (
+    <div className="space-y-2" data-testid="loop-waterfall-block">
+      <Stated tone={shape.engagementsMeasured === 0 ? 'warn' : 'neutral'}>
+        {shape.engagementsMeasured === 0
+          ? 'No stage actuals have been recorded, so nothing here is measured. Until the delivery factory records hours per stage, every effort triple underwriting a price remains an estimate — which is the honest state, not a gap in this page.'
+          : `${shape.engagementsMeasured} finished engagement(s) measured${shape.engagementsInFlight > 0 ? `, ${shape.engagementsInFlight} still in delivery and excluded (partial hours would bias every figure toward cheaper quotes)` : ''}. Recorded hours print at any n because they happened; a verdict on a stated triple is withheld until there are enough engagements to make one. ${shape.volumeBasis}`}
+      </Stated>
+
+      {shape.byOffer.length > 0 && (
+        <Table head={['Offer', 'n finished', 'Observed (min / median / max)', 'Stated triple', 'Reading']}>
+          {shape.byOffer.map((o) => (
+            <tr key={o.offerKey} className="border-t border-line align-top" data-testid={`waterfall-${o.offerKey}`}>
+              <td className="py-1 pr-3 font-mono text-navy">{o.offerKey}</td>
+              <td className="py-1 pr-3 tabular-nums text-navy">
+                {o.engagements}
+                {o.inFlight.engagements > 0 && (
+                  <div className="mt-0.5 text-micro text-status-conditional" data-testid={`waterfall-inflight-${o.offerKey}`}>
+                    +{o.inFlight.engagements} in flight, excluded
+                  </div>
+                )}
+              </td>
+              <td className="py-1 pr-3 font-mono tabular-nums text-navy">
+                {/* HOURS are what the register records. DAYS appear only when the rate
+                    card states an hours-per-day — dividing by an assumed 8 would invent
+                    the divisor underwriting already refuses to invent. */}
+                {o.observedHours === null
+                  ? '—'
+                  : `${o.observedHours.min} / ${o.observedHours.median} / ${o.observedHours.max} h`}
+                <div className="mt-0.5 text-micro text-grey">
+                  {o.observedDays === null
+                    ? 'no hours-per-day on the rate card — not expressed in days'
+                    : `= ${o.observedDays.min} / ${o.observedDays.median} / ${o.observedDays.max} d at ${o.hoursPerDayUsed}h/day`}
+                </div>
+                <div className="mt-0.5 text-micro text-grey">
+                  {o.stages.map((st) => `${st.stage} ${st.meanHoursPerEngagement ?? '—'}h`).join(' · ')}
+                </div>
+              </td>
+              <td className="py-1 pr-3 font-mono tabular-nums text-grey">
+                {o.statedTripleDays === null
+                  ? 'none stated'
+                  : `${o.statedTripleDays.optimistic} / ${o.statedTripleDays.likely} / ${o.statedTripleDays.pessimistic}`}
+              </td>
+              <td className="py-1 pr-3 leading-snug text-grey">
+                <Badge status={VERDICT_TONE[o.verdict] ?? 'deferred'}>{o.verdict.replace(/_/g, ' ')}</Badge>
+                <div className="mt-0.5">{o.reading}</div>
+              </td>
+            </tr>
+          ))}
+        </Table>
+      )}
+
+      {shape.offersWithNoActuals.length > 0 && (
+        <Stated tone="warn">
+          No stage actuals at all for: <span className="font-mono">{shape.offersWithNoActuals.join(', ')}</span>.
+          These are blind spots, named — not offers that cost nothing.
+        </Stated>
+      )}
+
+      <p className="font-mono text-micro text-grey">
+        Nothing on this page adjusts an effort triple. The measurement travels as EVIDENCE into the
+        effort-triples packet, and a named human approves the new numbers — the loop closes through a
+        person, exactly as the review packet refuses to auto-fit a weight.
+      </p>
+    </div>
+  );
+}
+
 function MonitorsBlock({
-  specs, registerable,
-}: { specs: readonly BookMonitorSpec[]; registerable: readonly string[] }) {
+  specs, registerable, registrability, inputLabels,
+}: {
+  specs: readonly BookMonitorSpec[];
+  registerable: readonly string[];
+  /* MEASURED against the registers (api LoopSnapshot). Optional because the
+     not-yet-migrated branch answers with the pure empty snapshot. */
+  registrability?: readonly MonitorRegistrability[];
+  inputLabels?: Record<string, string>;
+}) {
   const reg = new Set(registerable);
+  const byKey = new Map((registrability ?? []).map((r) => [r.spec.key, r]));
   return (
     <div className="space-y-2">
       <Stated tone="warn">
@@ -1101,11 +1206,23 @@ function MonitorsBlock({
               <div className="mt-0.5">{s.why}</div>
             </td>
             <td className="py-1 pr-3">
-              {s.blockedOnPlaceholders
-                ? <Badge status="blocked">blocked on placeholders</Badge>
-                : reg.has(s.key)
-                  ? <Badge status="conditional">once metric exists</Badge>
-                  : <Badge status="deferred">not yet</Badge>}
+              {(() => {
+                const m = byKey.get(s.key);
+                if (m === undefined) {
+                  /* No measurement on the wire — say so rather than falling back to
+                     the shipped constant, which would read as a measured verdict. */
+                  return <Badge status="deferred">not measured</Badge>;
+                }
+                if (m.registerable) return <Badge status="conditional">once metric exists</Badge>;
+                return (
+                  <>
+                    <Badge status="blocked">blocked</Badge>
+                    <div className="mt-0.5 leading-snug text-micro text-grey" data-testid={`monitor-missing-${s.key}`}>
+                      needs {m.missingInputs.map((k) => inputLabels?.[k] ?? k).join('; ')}
+                    </div>
+                  </>
+                );
+              })()}
               <div className="mt-0.5 font-mono text-micro text-grey">
                 enabled on registration: {String(s.enabledOnRegistration)}
               </div>
@@ -1309,8 +1426,9 @@ const SECTIONS = [
   { n: 4, id: 'loop-margin', title: 'Margin realisation', kicker: 'quoted vs realised, signed' },
   { n: 5, id: 'loop-review', title: 'Review packet', kicker: 'informs a human, applies nothing' },
   { n: 6, id: 'loop-monitors', title: 'Monitors on the book', kicker: 'definitions, not watches' },
-  { n: 7, id: 'loop-wbr', title: 'WBR block', kicker: 'the week, printed' },
-  { n: 8, id: 'loop-provenance', title: 'Provenance', kicker: 'rows, grade, timestamp, absences' },
+  { n: 7, id: 'loop-waterfall', title: 'What the waterfall cost', kicker: 'measured hours against the stated triple' },
+  { n: 8, id: 'loop-wbr', title: 'WBR block', kicker: 'the week, printed' },
+  { n: 9, id: 'loop-provenance', title: 'Provenance', kicker: 'rows, grade, timestamp, absences' },
 ] as const;
 
 /**
@@ -1325,7 +1443,11 @@ const SECTIONS = [
 export function GpsLoop({ engagementId: engagementIdProp }: { engagementId?: string } = {}) {
   const [searchParams] = useSearchParams();
   const engagementId = engagementIdProp ?? searchParams.get('engagementId') ?? undefined;
-  const [loop, setLoop] = useState<LoopResponse | null>(null);
+  /* `LoopSnapshotResponse`, not `LoopResponse`: the API attaches the two MEASURED
+     blocks (monitor registrability, the G5 waterfall) that a pure engine cannot
+     compute. Both are optional on that type, so the blocks below render a
+     not-measured sentence rather than a confident zero when they are absent. */
+  const [loop, setLoop] = useState<LoopSnapshotResponse | null>(null);
   // Raw, not stringified: `ErrorNotice` classifies the error (offline vs 401 vs 500)
   // and a pre-flattened message would throw that classification away.
   const [error, setError] = useState<unknown>(null);
@@ -1499,10 +1621,16 @@ export function GpsLoop({ engagementId: engagementIdProp }: { engagementId?: str
         <Section {...SECTIONS[3]}><MarginBlock detail={margin} /></Section>
         <Section {...SECTIONS[4]}><ReviewBlock review={loop.review} driversOpen={driversOpen} /></Section>
         <Section {...SECTIONS[5]}>
-          <MonitorsBlock specs={loop.monitors} registerable={loop.registerableMonitorKeys} />
+          <MonitorsBlock
+            specs={loop.monitors}
+            registerable={loop.registerableMonitorKeys}
+            registrability={loop.monitorRegistrability}
+            inputLabels={loop.monitorInputLabels}
+          />
         </Section>
-        <Section {...SECTIONS[6]}><WbrBlock wbr={loop.wbr} /></Section>
-        <Section {...SECTIONS[7]}><ProvenanceBlock sources={loop.dataSources} /></Section>
+        <Section {...SECTIONS[6]}><WaterfallBlock shape={loop.waterfall} /></Section>
+        <Section {...SECTIONS[7]}><WbrBlock wbr={loop.wbr} /></Section>
+        <Section {...SECTIONS[8]}><ProvenanceBlock sources={loop.dataSources} /></Section>
       </div>
 
       <p className="pb-4 font-mono text-micro text-grey">

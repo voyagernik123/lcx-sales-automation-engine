@@ -102,7 +102,7 @@ import '@/styles/gpsPrint.css';
 
 /* ════════ what is being printed ════════ */
 
-export type GpsArtefactKind = 'proposal' | 'underwriting' | 'book' | 'delivery_record';
+export type GpsArtefactKind = 'proposal' | 'underwriting' | 'book' | 'delivery_record' | 'dossier' | 'invoice';
 
 /** Printed under the title. Says who the sheet is for, since that governs its tone. */
 export const GPS_ARTEFACT_LABEL: Record<GpsArtefactKind, string> = {
@@ -110,6 +110,8 @@ export const GPS_ARTEFACT_LABEL: Record<GpsArtefactKind, string> = {
   underwriting: 'GPS underwriting verdict · internal, and not a client document',
   book: 'GPS book · the position of the whole book at one instant',
   delivery_record: 'GPS delivery record · the artefact an auditor receives',
+  dossier: 'GPS research dossier · a MODEL DRAFT, cited or refused — internal, never a client document',
+  invoice: 'GPS invoice · a demand for payment, traced to an acceptance',
 };
 
 /* ════════ the honesty ceiling, in a type ════════ */
@@ -215,7 +217,7 @@ function statedNotMigrated(sources: readonly unknown[]): boolean {
 
 /* ════════ the notices ════════ */
 
-const KINDS_ALL: readonly GpsArtefactKind[] = ['proposal', 'underwriting', 'book', 'delivery_record'];
+const KINDS_ALL: readonly GpsArtefactKind[] = ['proposal', 'underwriting', 'book', 'delivery_record', 'dossier', 'invoice'];
 
 /**
  * WHICH SHEETS EACH NOTICE APPLIES TO, as data rather than as `if` statements
@@ -225,10 +227,19 @@ const KINDS_ALL: readonly GpsArtefactKind[] = ['proposal', 'underwriting', 'book
  */
 const CAVEAT_KINDS: Record<GpsCaveatId, readonly GpsArtefactKind[]> = {
   inert_compartment: KINDS_ALL,
-  placeholder_price: ['proposal', 'underwriting', 'book'],
+  /*
+   * NOT on `invoice`, and that omission is deliberate rather than an oversight. An
+   * invoice's amount is a figure a NAMED HUMAN typed and an approver issued against an
+   * accepted deliverable; it does not inherit the catalogue's placeholder bands, and
+   * stamping "PLACEHOLDER PRICE" across a demand for payment would make a true document
+   * unusable. The dossier carries it because a dossier discusses the offer.
+   */
+  placeholder_price: ['proposal', 'underwriting', 'book', 'dossier'],
   distribution_basis: ['proposal', 'underwriting', 'book'],
   placeholder_effort: ['proposal', 'underwriting'],
   placeholder_coordination_hours: ['book', 'delivery_record'],
+  /* The perimeter governs what may be sold and to whom, so it qualifies every sheet —
+     including an invoice, whose subject is work that was performed somewhere. */
   unreviewed_perimeter: KINDS_ALL,
   unreviewed_disclosure: ['proposal', 'delivery_record'],
   computation_instant_absent: KINDS_ALL,

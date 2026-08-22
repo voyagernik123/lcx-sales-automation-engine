@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import { Badge, Button, Input, InspectorDrawer } from '@/components/ui';
 import { ApiError, request } from '@/lib/apiClient';
 import { attachMeta } from '@/lib/api/meta';
 import { GpsMetaBanner } from '@/pages/GpsMetaBanner';
 import { OUTREACH_CHANNELS, type OutreachChannel } from '@lcx/shared';
+import { DossierSheet } from '@/components/gps/GpsPrintSheets';
 
 /**
  * G2 — THE DOSSIER DRAWER: the model's research, wearing its provenance on every line.
@@ -79,6 +80,11 @@ export function GpsTargetDossierDrawer({ targetId, onClose }: { targetId: string
   const [rejectFor, setRejectFor] = useState<number | null>(null);
   const [rejectNote, setRejectNote] = useState('');
   const [channel, setChannel] = useState<OutreachChannel>('email');
+  /* Which dossier is open as a printable sheet. One at a time: an artefact is a
+     document, and two on screen is neither. */
+  const [sheetFor, setSheetFor] = useState<number | null>(null);
+  const readAt = useRef<string>();
+  readAt.current ??= new Date().toISOString();
 
   const load = useCallback(async (id: string) => {
     try {
@@ -218,6 +224,35 @@ export function GpsTargetDossierDrawer({ targetId, onClose }: { targetId: string
                   <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap font-sans text-xs leading-relaxed text-navy" data-testid={`dossier-text-${d.id}`}>
                     {d.dossierMd}
                   </pre>
+                  <button
+                    onClick={() => setSheetFor(sheetFor === d.id ? null : d.id)}
+                    data-testid={`dossier-print-toggle-${d.id}`}
+                    className="mt-1 font-mono text-[11px] text-grey underline hover:text-navy"
+                  >
+                    {sheetFor === d.id ? 'Close the sheet' : 'Open as a printable sheet'}
+                  </button>
+                  {sheetFor === d.id && (
+                    <div className="mt-2 border-t border-line pt-2">
+                      <DossierSheet
+                        asOf={readAt.current!}
+                        sources={[queue]}
+                        dossier={{
+                          id: d.id,
+                          targetName: d.targetId,
+                          offerKey: d.offerKey,
+                          status: d.status,
+                          dossierMd: d.dossierMd,
+                          model: d.model,
+                          factRefsCited: d.factRefsCited,
+                          generatedBy: d.generatedBy,
+                          generatedAt: d.generatedAt,
+                          decidedBy: d.decidedBy,
+                          decidedAt: d.decidedAt,
+                          decisionNote: d.decisionNote,
+                        }}
+                      />
+                    </div>
+                  )}
                   {d.status === 'draft' && (
                     <div className="mt-2 flex flex-wrap items-center gap-1.5">
                       <Button onClick={() => void decide(d.id, 'accepted')} disabled={busy !== null}>

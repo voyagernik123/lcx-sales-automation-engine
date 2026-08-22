@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarClock, Download, RefreshCw, TrendingUp, TrendingDown, Minus, AlertTriangle, ListChecks, Activity, Bot } from 'lucide-react';
-import { fetchWbr, regenerateWbr, type WbrReport, type WbrMetric, type WbrSparkline } from '@/lib/api/wbr';
+import { fetchWbr, regenerateWbr, type WbrReport, type WbrMetric, type WbrSparkline, type GpsWbrDisposition } from '@/lib/api/wbr';
 import { wbrNarrative } from '@/lib/api/aiOperator';
 import { AiProse } from '@/components/ai/AiProse';
 import { EmptyState, PageSkeleton, toast } from '@/components/shared';
@@ -29,6 +29,9 @@ function fmtDelta(m: WbrMetric): string {
 export function Wbr() {
   const navigate = useNavigate();
   const [report, setReport] = useState<WbrReport | null>(null);
+  /* The services limb's disposition ALWAYS arrives, included or not, so a withheld
+     compartment is a visible redaction rather than a section nobody knows exists. */
+  const [gpsDisp, setGpsDisp] = useState<GpsWbrDisposition | null>(null);
   const [weeks, setWeeks] = useState<string[]>([]);
   const [week, setWeek] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -44,8 +47,8 @@ export function Wbr() {
   };
 
   const load = useCallback((w?: string) => {
-    setError(null); setReport(null); setAiNarr(null); // clear stale AI narrative when the week changes
-    fetchWbr(w).then((d) => { setReport(d.report); setWeeks(d.weeks); })
+    setError(null); setReport(null); setGpsDisp(null); setAiNarr(null); // clear stale AI narrative when the week changes
+    fetchWbr(w).then((d) => { setReport(d.report); setWeeks(d.weeks); setGpsDisp(d.gpsDisposition ?? null); })
       .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'));
   }, []);
   useEffect(() => { load(week); }, [load, week]);
@@ -196,12 +199,93 @@ export function Wbr() {
             )}
           </section>
 
+          <GpsLimbSection disposition={gpsDisp} />
+
           <p className="br-no-print flex items-center gap-1 text-micro text-grey">
             <Activity size={11} /> Generated {new Date(report.generatedAt).toLocaleString()}
           </p>
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * GLOBAL SERVICES on the weekly review — included, or withheld with its reason.
+ *
+ * Three things this section refuses to do. It never renders a withheld limb as an
+ * empty one (a reader who cannot tell redaction from a quiet week learns nothing). It
+ * never prints a cross-currency total, because `invoiceAging` sums cents across every
+ * currency present and a mixed book would be dollars added to euros. And it prints the
+ * block's own `lines` verbatim rather than re-deriving figures the engine already
+ * composed — a second formatter is a second place for the number to be wrong.
+ */
+function GpsLimbSection({ disposition }: { disposition: GpsWbrDisposition | null }) {
+  if (disposition === null) return null;
+
+  if (disposition.state !== 'included') {
+    return (
+      <section className="br-section rounded-lg border border-line bg-card p-4 shadow-card" data-testid="wbr-gps-withheld">
+        <SectionHead icon={<Activity size={13} />} title={disposition.headline} />
+        <p className="py-2 text-label leading-relaxed text-grey">{disposition.detail}</p>
+      </section>
+    );
+  }
+
+  const { block, cash } = disposition;
+  const money = (cents: number, ccy: string) =>
+    `${ccy === 'USD' ? '$' : `${ccy} `}${Math.round(cents / 100).toLocaleString('en-US')}`;
+
+  return (
+    <section className="br-section rounded-lg border border-line bg-card p-4 shadow-card" data-testid="wbr-gps">
+      <SectionHead icon={<Activity size={13} />} title="Global Services — the services book" />
+
+      <div className="space-y-1 py-2">
+        {block.lines.map((line, i) => (
+          <p key={i} className="text-label leading-relaxed text-navy">{line}</p>
+        ))}
+      </div>
+
+      {cash.state === 'register_absent' ? (
+        <p className="text-micro leading-relaxed text-grey" data-testid="wbr-gps-cash-absent">{cash.note}</p>
+      ) : (
+        <div className="mt-2 border-t border-line pt-2" data-testid="wbr-gps-cash">
+          <p className="font-mono text-micro uppercase tracking-wider text-grey">Cash, per currency</p>
+          <div className="mt-1 space-y-0.5 text-label text-navy">
+            {cash.open.length === 0
+              ? <p className="text-grey">Nothing open.</p>
+              : cash.open.map((r) => (
+                  <p key={`o-${r.currency}`}>
+                    Open: {money(r.amountCents, r.currency)} across {r.count} invoice(s)
+                  </p>
+                ))}
+            {cash.paidThisWeek.map((r) => (
+              <p key={`p-${r.currency}`} className="text-status-ready">
+                Settled this week: {money(r.amountCents, r.currency)} ({r.count})
+              </p>
+            ))}
+            {cash.disputed.map((r) => (
+              <p key={`d-${r.currency}`} className="text-status-blocked">
+                Disputed: {money(r.amountCents, r.currency)} ({r.count}) — still owed, still ageing
+              </p>
+            ))}
+            {cash.oldestOpen !== null && (
+              <p className="text-grey">
+                Oldest open: {cash.oldestOpen.number}, {cash.oldestOpen.ageDays} day(s),{' '}
+                {money(cash.oldestOpen.amountCents, cash.oldestOpen.currency)}
+              </p>
+            )}
+          </div>
+          <p className="mt-1 text-micro leading-relaxed text-grey">{cash.note}</p>
+        </div>
+      )}
+
+      {block.caveats.length > 0 && (
+        <ul className="mt-2 space-y-0.5 text-micro leading-relaxed text-grey">
+          {block.caveats.map((cv, i) => <li key={i}>· {cv}</li>)}
+        </ul>
+      )}
+    </section>
   );
 }
 

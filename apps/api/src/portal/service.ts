@@ -31,6 +31,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type pg from 'pg';
 import { getOffer, type OfferKey } from '@lcx/shared';
 import { acceptDeliverable } from '../gps/deliveryDesk.js';
+import { notify } from '../notifications/service.js';
 
 export async function isPortalMigrated(pool: pg.Pool): Promise<boolean | null> {
   try {
@@ -147,16 +148,85 @@ export async function resolvePortalToken(pool: pg.Pool, token: string): Promise<
   return { ok: true, session };
 }
 
+export type PortalEventKind =
+  | 'session_used' | 'facts_submitted' | 'acceptance_recorded'
+  | 'acceptance_refused' | 'upload_intent_recorded' | 'upload_refused';
+
+/**
+ * WHICH CLIENT ACTS THE DESK IS TOLD ABOUT, AND WHY ONLY THESE FOUR.
+ *
+ * G4 asks for portal events to "surface on the internal notification readout". Every
+ * event is recorded in `gps_portal_event` regardless — that is the audit floor. This
+ * map is the narrower question of what deserves to interrupt someone, and the filter
+ * is whether the desk has to DO something:
+ *
+ *  · acceptance_recorded — the commercial event. It is what makes an invoice
+ *    issuable (G6 refuses `NOT_TRACED` without it), so it is the one nobody may miss.
+ *  · facts_submitted — the client just unblocked the factory. `slotGaps` may now be
+ *    empty, which means a draft can be generated that could not be before.
+ *  · acceptance_refused — a client TRIED to accept and a gate stopped them. They are
+ *    now waiting on us and do not know why.
+ *  · upload_refused — a client has material ready and the DPO decision is blocking it.
+ *
+ * `session_used` and `upload_intent_recorded` are deliberately NOT notified: a page
+ * view and a readiness note create no obligation, and a channel that fires on every
+ * client page load is a channel the desk learns to ignore — which would cost us the
+ * three above.
+ */
+const NOTIFIED_EVENTS: Partial<Record<PortalEventKind, { rule: string; title: (label: string) => string }>> = {
+  acceptance_recorded: {
+    rule: 'gps.portal.acceptance',
+    title: (label) => `Client accepted a deliverable — ${label}`,
+  },
+  facts_submitted: {
+    rule: 'gps.portal.facts',
+    title: (label) => `Client answered requested inputs — ${label}`,
+  },
+  acceptance_refused: {
+    rule: 'gps.portal.acceptance_refused',
+    title: (label) => `Client acceptance was REFUSED by a gate — ${label}`,
+  },
+  upload_refused: {
+    rule: 'gps.portal.upload_refused',
+    title: (label) => `Client has material ready and is blocked — ${label}`,
+  },
+};
+
 export async function recordPortalEvent(
   pool: pg.Pool,
   session: PortalSessionRow,
-  kind: 'session_used' | 'facts_submitted' | 'acceptance_recorded' | 'acceptance_refused' | 'upload_intent_recorded' | 'upload_refused',
+  kind: PortalEventKind,
   detail: string,
 ): Promise<void> {
   await pool.query(
     `INSERT INTO gps_portal_event (engagement_id, session_id, kind, detail) VALUES ($1, $2, $3, $4)`,
     [session.engagementId, session.id, kind, detail.slice(0, 500)],
   );
+
+  /*
+   * THE AUDIT ROW IS THE OBLIGATION; THE NOTIFICATION IS A COURTESY.
+   *
+   * The insert above already happened and must not be undone by a notification
+   * failure, so this is wrapped and swallowed with a log. `workspace: 'gps'` is
+   * required by `notify` and is what keeps this out of the readout of a member who
+   * does not hold the compartment — the notification bus filters per subscriber.
+   */
+  const spec = NOTIFIED_EVENTS[kind];
+  if (spec === undefined) return;
+  try {
+    await notify({
+      rule: spec.rule,
+      title: spec.title(session.label),
+      workspace: 'gps',
+      detail,
+      href: `/gps/delivery?engagementId=${session.engagementId}`,
+      /* One notification per session per kind per day: a client fixing three answers
+         in a row is one thing the desk needs to know, not three. */
+      dedupKey: `${spec.rule}:${session.id}:${new Date().toISOString().slice(0, 10)}`,
+    });
+  } catch (err) {
+    console.error('[portal] notification failed (the event row is unaffected):', err);
+  }
 }
 
 /* ── The client's view — built field by field, never spread ─────────────────── */

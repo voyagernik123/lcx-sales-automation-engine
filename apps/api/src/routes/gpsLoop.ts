@@ -288,8 +288,17 @@ gpsLoopRoutes.get('/health', requireOperator, async (c) => {
  * `registerableMonitorKeys` is the two whose thresholds do not rest on placeholder
  * prices, a bench that does not exist, or a perimeter-review date nobody supplied.
  */
-gpsLoopRoutes.get('/monitors', requireOperator, (c) =>
-  c.json({ data: monitorsView(), meta: meta() }));
+gpsLoopRoutes.get('/monitors', requireOperator, async (c) => {
+  /* MEASURED, not asserted: `monitorsView` probes the five registers and reports per
+     monitor which inputs are still missing. A monitor that cannot be registered says
+     WHY, in the owner's own terms, instead of being quietly absent from a list. */
+  try {
+    return c.json({ data: await monitorsView(getPool()), meta: meta() });
+  } catch (err) {
+    console.error('[gps] monitors view error:', err);
+    return c.json({ error: 'Failed to read monitor registrability', code: 'GPS_ERROR' }, 500);
+  }
+});
 
 /* ── Capture: the record that has to exist at close ───────────────────────── */
 

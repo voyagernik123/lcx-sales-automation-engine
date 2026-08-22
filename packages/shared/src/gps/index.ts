@@ -472,3 +472,28 @@ export {
   INVOICE_STATUSES, OPEN_INVOICE_STATUSES, CHASE_MAX_CHARS,
   formatInvoiceNumber, invoiceAging, buildChaseText,
 } from './invoicing.js';
+
+/* ── G5's closing leg — what the waterfall actually cost ──────────────────────
+ * `gps_stage_actual` rows measured per offer. Observed order statistics print at any
+ * n (a recorded hour is a fact); the VERDICT on a stated effort triple is an
+ * inference and is withheld below MIN_ENGAGEMENTS_FOR_TRIPLE_VERDICT. Nothing here
+ * mutates a triple — `observedEffortEvidence` feeds the effort-triples PACKET, so
+ * the loop closes through a named human's approval exactly as decision 8 requires.
+ */
+export type {
+  StageActualInput, StatedTriple, StageShape, TripleVerdict, OfferWaterfall, WaterfallShape,
+  WaterfallOptions,
+} from './waterfall.js';
+export {
+  MIN_ENGAGEMENTS_FOR_TRIPLE_VERDICT, WATERFALL_VOLUME_BASIS,
+  DELIVERY_FINISHED_STATUSES, isDeliveryFinished,
+  waterfallShape, observedEffortEvidence,
+} from './waterfall.js';
+
+/* ── G5 Stage 2 — diffable drafts ─────────────────────────────────────────────
+ * A pure LCS line diff so a QA reviewer sees which CLAIM changed instead of
+ * re-reading the whole draft. `diffHeadline` surfaces the one derived signal that
+ * matters: whether a revision closed a [FACT REQUIRED] hole or opened a new one.
+ */
+export type { DiffKind, DiffLine, DraftDiff } from './draftDiff.js';
+export { draftDiff, diffHeadline } from './draftDiff.js';

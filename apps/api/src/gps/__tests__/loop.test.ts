@@ -552,22 +552,101 @@ describe('the monitor specs are definitions for a human to register', () => {
     }
   });
 
-  it('only the specs that do not rest on placeholders are offered for registration', async () => {
+  /**
+   * THIS TEST CHANGED, AND THE CHANGE IS THE POINT.
+   *
+   * It used to assert `keys).toHaveLength(2)` and that offering matched
+   * `blockedOnPlaceholders === false` — i.e. it pinned a SHIPPED CONSTANT decided when
+   * loop.ts was written. Registerability is now MEASURED against the five registers
+   * (`monitorInputAvailability`), so the assertion is the relationship that must hold
+   * for any environment: a monitor is offered exactly when nothing it stands on is
+   * missing. On this fixture no register exists, so the two specs that declare
+   * `requiresInputs: []` are offered and the three that need founder inputs are not —
+   * which happens to equal the old constant today, and that AGREEMENT is asserted
+   * below rather than assumed. The day a packet is approved, the measured answer moves
+   * and the constant would not have.
+   */
+  it('offers exactly the monitors whose declared inputs are all present', async () => {
     const { body } = await get('/monitors');
     const specs = (body.data as Json).monitors as Json[];
     const keys = (body.data as Json).registerableMonitorKeys as string[];
-    expect(keys).toHaveLength(2);
-    for (const spec of specs) {
-      const offered = keys.includes(spec.key as string);
-      expect(offered, `${spec.key} is offered while blockedOnPlaceholders=${spec.blockedOnPlaceholders}`)
-        .toBe(spec.blockedOnPlaceholders === false);
-      if (spec.blockedOnPlaceholders) expect(spec.enabledOnRegistration).toBe(false);
+    const registrability = (body.data as Json).registrability as Json[];
+    expect(registrability).toHaveLength(specs.length);
+
+    for (const r of registrability) {
+      const spec = r.spec as Json;
+      const missing = r.missingInputs as string[];
+      expect(r.registerable, `${spec.key} registerable disagrees with its own missing list`)
+        .toBe(missing.length === 0);
+      expect(keys.includes(spec.key as string)).toBe(r.registerable);
+      // A blocked monitor must name the remedy, never just fail to appear.
+      if (!r.registerable) expect(missing.length).toBeGreaterThan(0);
     }
+
+    /*
+     * ON THIS FIXTURE THE MEASURED ANSWER LEGITIMATELY EXCEEDS THE SHIPPED CONSTANT,
+     * and that is the instrument working rather than a discrepancy to paper over.
+     * `profileRow()` is a perimeter position reviewed by 'monty' — a second human, not
+     * its author — so `perimeter_reviewed` is genuinely available here and
+     * `perimeter_stale` genuinely becomes registerable. The constant
+     * (`blockedOnPlaceholders`) cannot know that, which is exactly why it was replaced.
+     */
+    expect(keys).toContain('perimeter_stale');
   });
 
-  it('reads no table at all — the specs are code constants', async () => {
+  it('collapses to the shipped constant when NO register holds anything', async () => {
+    /* The agreement claim, tested where it is actually claimable: strip the perimeter
+       fixture and the measured set must equal `!blockedOnPlaceholders`. If these two
+       ever disagree on an empty environment, one of them is lying. */
+    perimeterPosition = 'absent';
+    const { body } = await get('/monitors');
+    const keys = ((body.data as Json).registerableMonitorKeys as string[]).slice().sort();
+    const constantKeys = BOOK_MONITOR_SPECS.filter((s) => !s.blockedOnPlaceholders).map((s) => s.key).sort();
+    expect(keys).toEqual(constantKeys);
+  });
+
+  it('MEASURES the registers rather than asserting from a constant', async () => {
+    /* The predecessor of this test asserted `expect(query).not.toHaveBeenCalled()` —
+       "the specs are code constants". That was true and it was the defect: a monitor
+       reported as ready-once-the-metric-exists on inputs nobody had supplied. The
+       route now probes, and an unreadable register answers false rather than throwing,
+       so this fixture (no tables at all) still returns a well-formed verdict. */
+    perimeterPosition = 'absent';
+    query.mockClear();
+    const { body } = await get('/monitors');
+    expect(query).toHaveBeenCalled();
+    const inputs = (body.data as Json).inputs as Record<string, boolean>;
+    // With no register holding anything, every input is honestly false — an absent
+    // table answers false rather than throwing, so the verdict stays well-formed.
+    expect(Object.values(inputs).every((v) => v === false)).toBe(true);
+    expect(Object.keys((body.data as Json).inputLabels as Json).length).toBe(Object.keys(inputs).length);
+  });
+
+  it('asks the database for the SECOND-HUMAN rule, not merely for a perimeter row', async () => {
+    /*
+     * ── WHAT THIS TEST CAN AND CANNOT SEE, STATED PLAINLY ──────────────────────
+     * `MONITOR_INPUT_LABEL.perimeter_reviewed` promises "reviewed by a second human
+     * (never the proposer)". Whether a row satisfies that is decided by the WHERE
+     * clause, and THIS FAKE POOL DOES NOT EVALUATE WHERE CLAUSES — it returns
+     * `[profileRow()]` for any query mentioning the table. So the behavioural version
+     * of this assertion is untestable here and would have been a false green: with
+     * `perimeterPosition = 'unreviewed'` the harness still hands back a row.
+     *
+     * What IS checkable, and what this asserts, is that the query CARRIES the rule:
+     * a reviewer must exist, be non-blank, and differ from `entered_by`. If someone
+     * later relaxes the probe to `SELECT 1 FROM gps_jurisdiction_profile LIMIT 1`,
+     * this goes red. The semantics themselves are verified only against a real
+     * database, and `serviceDb.test.ts` is where that verification belongs.
+     */
+    perimeterPosition = 'permitted';
+    query.mockClear();
     await get('/monitors');
-    expect(query).not.toHaveBeenCalled();
+    const probe = query.mock.calls
+      .map((c) => String(c[0]))
+      .find((sql) => /FROM gps_jurisdiction_profile/.test(sql) && /reviewed_at/.test(sql));
+    expect(probe, 'no perimeter-review probe was issued at all').toBeTruthy();
+    expect(probe!).toMatch(/reviewed_at IS NOT NULL/);
+    expect(probe!).toMatch(/btrim\(reviewed_by\)\s*<>\s*btrim\(entered_by\)/);
   });
 });
 
