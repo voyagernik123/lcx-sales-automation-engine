@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import { Badge, Button, Card, CardBody, CardHeader, Input } from '@/components/ui';
 import { ApiError, request } from '@/lib/apiClient';
+import { InvoiceSheet } from './GpsPrintSheets';
 
 /**
  * G6, ON THE BOOK — every invoice the desk raised, aged, and the chase behind glass.
@@ -17,12 +18,20 @@ import { ApiError, request } from '@/lib/apiClient';
  *    a cleared chase is copied and carried by a human, same as every outreach.
  */
 
+/**
+ * The full row. It used to declare twelve of the API's nineteen fields and render five,
+ * so the WHO and WHEN of every state transition was on the wire, in this component's
+ * own state, and shown nowhere — a status of "disputed" with a reason and no actor and
+ * no instant. The sheet below renders them; the table stays a table.
+ */
 interface InvoiceRow {
   id: number; number: string; engagementId: string; deliverableId: string;
   amountCents: number; currency: string;
   status: 'issued' | 'paid' | 'disputed' | 'void';
   issuedBy: string; issuedAt: string;
-  paidReference: string | null; disputedReason: string | null; voidedReason: string | null;
+  paidAt: string | null; paidBy: string | null; paidReference: string | null;
+  disputedAt: string | null; disputedBy: string | null; disputedReason: string | null;
+  voidedAt: string | null; voidedBy: string | null; voidedReason: string | null;
 }
 
 interface AgingBracket { key: string; label: string; count: number; amountCents: number }
@@ -37,8 +46,21 @@ interface ChaseResult {
 
 const STATUS_TONE = { issued: 'conditional', paid: 'ready', disputed: 'blocked', void: 'deferred' } as const;
 
-const money = (cents: number, ccy: string) =>
-  `${ccy === 'USD' ? '$' : `${ccy} `}${Math.round(cents / 100).toLocaleString('en-US')}`;
+/**
+ * EXACT, TO THE CENT — and it used to round.
+ *
+ * This was `Math.round(cents / 100)`, so an invoice for 1,500,049 cents printed
+ * "$15,000". Everywhere else in this app a rounded dollar figure is a reasonable
+ * summary; on an invoice it is a WRONG LEGAL CLAIM, and it was wrong by construction
+ * rather than by accident. Integer cents in, two decimals out, no rounding.
+ */
+const money = (cents: number, ccy: string) => {
+  const sign = cents < 0 ? '-' : '';
+  const abs = Math.abs(cents);
+  const whole = Math.trunc(abs / 100).toLocaleString('en-US');
+  const rem = String(abs % 100).padStart(2, '0');
+  return `${sign}${ccy === 'USD' ? '$' : `${ccy} `}${whole}.${rem}`;
+};
 
 export function InvoicesPanel() {
   const [data, setData] = useState<InvoicesData | null>(null);
@@ -47,6 +69,9 @@ export function InvoicesPanel() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [form, setForm] = useState<{ id: number; kind: 'pay' | 'dispute' | 'void'; text: string } | null>(null);
   const [chase, setChase] = useState<ChaseResult | null>(null);
+  const [sheetFor, setSheetFor] = useState<number | null>(null);
+  const readAt = useRef<string>();
+  readAt.current ??= new Date().toISOString();
 
   const load = useCallback(async () => {
     try {
@@ -183,6 +208,9 @@ export function InvoicesPanel() {
                             )}
                             <Button variant="secondary" onClick={() => setForm({ id: inv.id, kind: 'void', text: '' })} disabled={busy !== null}>Void…</Button>
                             <Button variant="secondary" onClick={() => void runChase(inv.id)} disabled={busy !== null}>Chase</Button>
+                            <Button variant="secondary" onClick={() => setSheetFor(sheetFor === inv.id ? null : inv.id)} data-testid={`invoice-print-${inv.id}`}>
+                              Sheet
+                            </Button>
                           </span>
                         )}
                         {form !== null && form.id === inv.id && (
@@ -204,6 +232,16 @@ export function InvoicesPanel() {
                 </tbody>
               </table>
             )}
+
+            {sheetFor !== null && (() => {
+              const inv = data.invoices.find((x) => x.id === sheetFor);
+              if (inv === undefined) return null;
+              return (
+                <div className="border-t border-line pt-2">
+                  <InvoiceSheet asOf={readAt.current!} sources={[data]} invoice={inv} />
+                </div>
+              );
+            })()}
           </>
         )}
       </CardBody>

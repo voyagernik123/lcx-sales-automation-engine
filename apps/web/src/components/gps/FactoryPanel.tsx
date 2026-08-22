@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { clsx } from 'clsx';
 import { Badge, Button, Card, CardBody, CardHeader, Input } from '@/components/ui';
 import { ApiError, request } from '@/lib/apiClient';
+import { diffHeadline, draftDiff } from '@lcx/shared';
 
 /**
  * G5, ON THE DESK — the waterfall's three stages on one panel, refusals first.
@@ -54,6 +55,13 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
   const [gaps, setGaps] = useState<Array<{ label: string }> | null>(null);
   const [reworkFor, setReworkFor] = useState<number | null>(null);
   const [reworkNote, setReworkNote] = useState('');
+  /* Set when QA accepted the draft but the linked deliverable did NOT advance. */
+  const [reviewGap, setReviewGap] = useState<string | null>(null);
+  /* Which version is being compared against its predecessor. */
+  const [diffFor, setDiffFor] = useState<number | null>(null);
+  const [partnerOpen, setPartnerOpen] = useState(false);
+  const [partnerText, setPartnerText] = useState('');
+  const [partnerLabel, setPartnerLabel] = useState('');
   const [actual, setActual] = useState({ stage: 'ai_draft', hours: '', note: '' });
   const [showHandover, setShowHandover] = useState(false);
 
@@ -92,11 +100,40 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
     await request(`/v1/gps/factory/engagements/${engagementId}/draft`, { method: 'POST', body: {} });
   });
 
-  const qa = (id: number, decision: 'accepted' | 'rework') => act(`qa-${id}`, async () => {
-    await request(`/v1/gps/factory/drafts/${id}/qa`, {
+  const recordPartner = () => act('partner', async () => {
+    await request(`/v1/gps/factory/engagements/${engagementId}/partner-deliverable`, {
       method: 'POST',
-      body: decision === 'rework' ? { decision, note: reworkNote } : { decision },
+      body: { draftText: partnerText, partnerLabel },
     });
+    setPartnerOpen(false);
+    setPartnerText('');
+    setPartnerLabel('');
+  });
+
+  const qa = (id: number, decision: 'accepted' | 'rework') => act(`qa-${id}`, async () => {
+    /*
+     * THE REVIEW OUTCOME IS NOT DISCARDED — it used to be, and that was the whole
+     * waterfall lying quietly.
+     *
+     * `qaDecide` accepts the draft AND tries to mark the linked deliverable reviewed
+     * through the delivery desk's own gate. That second step can legitimately refuse
+     * (a conflict position, a re-planned deliverable), in which case the QA acceptance
+     * stands but the deliverable does NOT advance — so the client still cannot accept
+     * it. This panel threw `reviewRecorded`/`reviewDetail` away and rendered a plain
+     * success, which told the reviewer the opposite of what happened.
+     */
+    const res = await request<{ data: { reviewRecorded: boolean; reviewDetail: string | null } }>(
+      `/v1/gps/factory/drafts/${id}/qa`,
+      { method: 'POST', body: decision === 'rework' ? { decision, note: reworkNote } : { decision } },
+    );
+    if (decision === 'accepted' && res.data.reviewRecorded === false) {
+      setReviewGap(
+        res.data.reviewDetail
+          ?? 'The draft was accepted, but the linked deliverable was NOT marked reviewed, so the client still cannot accept it. No reason was returned.',
+      );
+    } else {
+      setReviewGap(null);
+    }
     setReworkFor(null);
     setReworkNote('');
   });
@@ -114,6 +151,9 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
     <Card>
       <CardHeader className="flex items-center justify-between gap-2">
         <span>Delivery factory — AI drafts, one QA gate, honest gaps</span>
+        <Button variant="secondary" onClick={() => setPartnerOpen((v) => !v)} disabled={busy !== null || data?.registerPresent !== true}>
+          Record a partner deliverable
+        </Button>
         <Button onClick={generate} disabled={busy !== null || data?.registerPresent !== true}>
           {busy === 'generate' ? 'Drafting…' : 'Generate draft'}
         </Button>
@@ -164,8 +204,50 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
                 </ul>
               </div>
             )}
+            {reviewGap !== null && (
+              <p role="alert" className="border border-status-blocked/40 p-2 font-mono text-xs text-status-blocked" data-testid="factory-review-gap">
+                Accepted — but the deliverable did NOT advance: {reviewGap} The client cannot accept it until that is
+                resolved, so this draft is approved and the waterfall is still blocked.
+              </p>
+            )}
+
             {actionError !== null && (
               <p role="alert" className="font-mono text-status-blocked" data-testid="factory-action-error">{actionError}</p>
+            )}
+
+            {partnerOpen && (
+              <div className="border border-line p-2" data-testid="partner-form">
+                <p className="font-mono text-[11px] font-bold uppercase tracking-wider text-grey">
+                  Stage 3 — a partner deliverable comes back through the SAME QA gate
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-grey-dark">
+                  This becomes the next draft version, so it faces the same accept/rework decision by a
+                  named human and the same review gate standing between it and a client acceptance. It is
+                  deliberately NOT checked against our template's section headings — counsel's work is in
+                  counsel's structure, and judging that is a person's job, which is what the gate is for.
+                </p>
+                <Input
+                  aria-label="partner label"
+                  placeholder="which partner (recorded as the version's provenance)"
+                  value={partnerLabel}
+                  onChange={(e) => setPartnerLabel(e.target.value)}
+                />
+                <textarea
+                  aria-label="partner deliverable"
+                  rows={6}
+                  maxLength={60000}
+                  placeholder="Paste the deliverable's text. Keep the full document where the partner and client already hold it — this register stores work product, not an archive."
+                  className="mt-1 w-full border border-control bg-transparent px-2 py-1.5 text-xs"
+                  value={partnerText}
+                  onChange={(e) => setPartnerText(e.target.value)}
+                />
+                <Button
+                  onClick={() => void recordPartner()}
+                  disabled={busy !== null || partnerText.trim() === '' || partnerLabel.trim() === ''}
+                >
+                  {busy === 'partner' ? 'Recording…' : 'Record as the next version'}
+                </Button>
+              </div>
             )}
 
             {data.drafts.map((d) => (
@@ -187,6 +269,43 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
                     {d.draftText}
                   </pre>
                 </details>
+                {(() => {
+                  /* The predecessor by version, if this engagement has one. A diff needs
+                     two versions; v1 has nothing to compare against and says so. */
+                  const prev = data.drafts.find((x) => x.version === d.version - 1) ?? null;
+                  if (prev === null) return null;
+                  return (
+                    <div className="mt-1">
+                      <button
+                        onClick={() => setDiffFor(diffFor === d.id ? null : d.id)}
+                        data-testid={`diff-toggle-${d.id}`}
+                        className="font-mono text-[11px] text-grey underline hover:text-navy"
+                      >
+                        {diffFor === d.id ? 'Hide' : 'Show'} what changed from v{prev.version}
+                      </button>
+                      {diffFor === d.id && (() => {
+                        const diff = draftDiff(prev.draftText, d.draftText);
+                        return (
+                          <div className="mt-1 border border-line p-2" data-testid={`diff-${d.id}`}>
+                            <p className="font-mono text-[11px] text-grey-dark" data-testid={`diff-headline-${d.id}`}>
+                              {diffHeadline(diff)}
+                            </p>
+                            <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-snug">
+                              {diff.lines.filter((l) => l.kind !== 'same').map((l, i) => (
+                                <span
+                                  key={i}
+                                  className={l.kind === 'added' ? 'block text-status-ready' : 'block text-status-blocked'}
+                                >
+                                  {l.kind === 'added' ? '+ ' : '- '}{l.text}
+                                </span>
+                              ))}
+                            </pre>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })()}
                 {d.status === 'draft' && (
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
                     <Button onClick={() => void qa(d.id, 'accepted')} disabled={busy !== null}>

@@ -20,6 +20,13 @@ interface SessionRow {
 
 interface Minted { url: string; expiresAt: string; label: string }
 
+/**
+ * Expired means the server will refuse it — `resolvePortalToken` compares
+ * `expires_at` against now on every request, so the desk must read it the same way.
+ */
+const isExpired = (s: { expiresAt: string; revokedAt: string | null }): boolean =>
+  s.revokedAt === null && Date.parse(s.expiresAt) <= Date.now();
+
 export function PortalInvitePanel({ engagementId }: { engagementId: string }) {
   const [sessions, setSessions] = useState<SessionRow[] | null>(null);
   const [registerPresent, setRegisterPresent] = useState<boolean | null>(true);
@@ -132,8 +139,15 @@ export function PortalInvitePanel({ engagementId }: { engagementId: string }) {
                   <td className="pr-2 text-grey">{s.expiresAt.slice(0, 10)}</td>
                   <td className="pr-2 text-grey">{s.lastSeenAt ? s.lastSeenAt.slice(0, 16).replace('T', ' ') : 'never'}</td>
                   <td className="pr-2">
-                    <Badge status={s.revokedAt !== null ? 'blocked' : 'ready'}>
-                      {s.revokedAt !== null ? `revoked by ${s.revokedBy}` : 'live'}
+                    {/* THREE STATES, NOT TWO. This showed every unrevoked session as
+                        'live', including EXPIRED ones — while `resolvePortalToken`
+                        refuses those with SESSION_EXPIRED. A security surface that
+                        contradicts the server is worse than no surface: the desk would
+                        have believed a dead link was working and told the client so. */}
+                    <Badge status={s.revokedAt !== null ? 'blocked' : isExpired(s) ? 'deferred' : 'ready'}>
+                      {s.revokedAt !== null
+                        ? `revoked by ${s.revokedBy}`
+                        : isExpired(s) ? 'expired' : 'live'}
                     </Badge>
                   </td>
                   <td>
