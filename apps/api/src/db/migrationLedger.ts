@@ -416,6 +416,18 @@ export const PENDING_MIGRATIONS: readonly string[] = [
    * parser drops them and reports the count. NOT APPLIED ANYWHERE until a human applies
    * it; the demand routes read 200-empty and write 503 with the code until then. */
   '0077_gps_demand.sql',
+
+  /* 0078 → `gps_dossier` + `gps_outreach_draft`. G2 of GPS_REVENUE_100X_PLAN.md: model
+   * research dossiers that SURVIVED the shared cite-or-refuse validator (every register
+   * claim cites a numbered fact; the C3 caveat is verbatim; a defective response never
+   * reaches the table), and outreach drafts stored WITH the marketing outbound gate's
+   * verdict. No jsonb; every text column capped; acceptance is a named human with CHECKs
+   * making an unattributed acceptance or an unreasoned rejection unstorable. The outreach
+   * table has no 'sent' state, no recipient and no transport column — drafting and
+   * judging live here, sending stays a human act outside the system (one-mouth rule).
+   * NOT APPLIED ANYWHERE until a human applies it; dossier routes read 200-empty and
+   * writes refuse 503 with DOSSIER_REGISTER_ABSENT until then. */
+  '0078_gps_dossier.sql',
 ];
 
 /**

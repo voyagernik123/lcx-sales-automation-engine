@@ -403,3 +403,21 @@ export {
   DEMAND_SOURCES, SNIPPET_MAX, INTAKE_MESSAGE_MAX, demandCandidateDefects,
   crossfeedSignals, parseTelegramExport, intakeCandidate, referralCandidate,
 } from './demand.js';
+
+/* ── G2 — dossiers & outreach ─────────────────────────────────────────────────
+ * The cite-or-refuse contract (GPS_REVENUE_100X_PLAN.md §G2, doctrine D10). The
+ * validator is exported because the API refuses a model response with THE SAME
+ * function these tests exercise — one bar on both sides of the LLM boundary, the
+ * same shape G0 uses for packets. Outreach drafts pass through the marketing
+ * outbound gate at the API; nothing here or there sends anything.
+ */
+export type {
+  DossierFact, DossierTargetView, DossierPrompt, DossierDefectCode, DossierDefect,
+  OutreachChannel, OutreachDefectCode, OutreachDefect,
+} from './dossier.js';
+export {
+  DOSSIER_HEADINGS, MODEL_SECTION_CAVEAT, DOSSIER_MAX_CHARS,
+  OUTREACH_CHANNELS, OUTREACH_MAX_CHARS,
+  dossierFacts, buildDossierPrompt, dossierDefects,
+  buildOutreachPrompt, outreachDefects,
+} from './dossier.js';

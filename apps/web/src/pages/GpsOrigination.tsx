@@ -15,6 +15,7 @@ import {
 } from '@/lib/api/gpsOrigination';
 import { GpsMetaBanner } from './GpsMetaBanner';
 import { GpsOriginationDemand } from './GpsOriginationDemand';
+import { GpsTargetDossierDrawer } from './GpsTargetDossier';
 
 /**
  * GLOBAL SERVICES — THE ORIGINATION QUEUE (Phase 8).
@@ -175,6 +176,7 @@ export function GpsOrigination() {
 function Loaded({ res }: { res: OriginationResponse }) {
   const { queue, counts } = res;
   const [briefFor, setBriefFor] = useState<string | null>(null);
+  const [dossierFor, setDossierFor] = useState<string | null>(null);
 
   return (
     <div className="space-y-4">
@@ -191,7 +193,7 @@ function Loaded({ res }: { res: OriginationResponse }) {
          * the day the weights ARE learned from outcomes this line changes by itself. */
         note={`Capacity ${queue.capacity}. Ranked by ${queue.weightsVersion} weights — ${queue.weightsBasis.learnedFromOutcomes ? 'fitted from outcomes' : 'a STATED PRIOR, not learned from outcomes'}, reviewed ${queue.weightsBasis.reviewCadence}, stated ${queue.weightsBasis.statedOn}. Why-now shelf lives: ${queue.triggerBasis.learnedFromOutcomes ? 'fitted' : 'stated priors'} (${queue.triggerBasis.version}, stated ${queue.triggerBasis.statedOn}) — ${queue.triggerBasis.note}`}
       >
-        <QueueTable rows={queue.rows} onOpenBrief={setBriefFor} />
+        <QueueTable rows={queue.rows} onOpenBrief={setBriefFor} onOpenDossier={setDossierFor} />
       </Section>
 
       {queue.deferred.count > 0 && <DeferredPanel cut={queue.deferred} />}
@@ -199,6 +201,10 @@ function Loaded({ res }: { res: OriginationResponse }) {
       <RefusalPanel ledger={queue.refusals} onOpenBrief={setBriefFor} />
 
       <BriefDrawer targetId={briefFor} onClose={() => setBriefFor(null)} />
+      {/* G2: the dossier drawer. A separate overlay from the brief on purpose — the
+        * brief is the register's own assertions; the dossier is a model's draft wearing
+        * its provenance. Confusing the two surfaces is the exact failure D10 names. */}
+      <GpsTargetDossierDrawer targetId={dossierFor} onClose={() => setDossierFor(null)} />
     </div>
   );
 }
@@ -270,7 +276,9 @@ function Section({ title, note, children, tone }: {
  * Expansion is per row and additive: opening a trail never closes another, because
  * comparing two rows' trails is the reason to open them.
  */
-function QueueTable({ rows, onOpenBrief }: { rows: QueueRow[]; onOpenBrief: (id: string) => void }) {
+function QueueTable({ rows, onOpenBrief, onOpenDossier }: {
+  rows: QueueRow[]; onOpenBrief: (id: string) => void; onOpenDossier: (id: string) => void;
+}) {
   const body = useRef<HTMLTableSectionElement>(null);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (id: string) =>
@@ -337,6 +345,13 @@ function QueueTable({ rows, onOpenBrief }: { rows: QueueRow[]; onOpenBrief: (id:
                     {r.name}
                   </button>
                   <div className="text-[10px] text-grey">{r.jurisdiction ?? 'jurisdiction not recorded'}</div>
+                  <button
+                    onClick={() => onOpenDossier(r.targetId)}
+                    data-testid={`dossier-open-${r.targetId}`}
+                    className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-grey hover:text-navy hover:underline"
+                  >
+                    Dossier
+                  </button>
                 </Td>
                 {/* D1: the number opens. One interaction, no navigation, no modal. */}
                 <Td className="text-right">
