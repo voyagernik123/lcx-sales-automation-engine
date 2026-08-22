@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { clsx } from 'clsx';
 import { Badge, Button, Card, CardBody, CardHeader, Input, Select } from '@/components/ui';
 import { ApiError, request } from '@/lib/apiClient';
+import { attachMeta } from '@/lib/api/meta';
+import { GpsMetaBanner } from '@/pages/GpsMetaBanner';
 import type {
   FounderPacket,
   PacketKind,
@@ -53,6 +55,7 @@ interface PacketsEnvelope {
     registerPresent: boolean | null;
     registerNotice: string | null;
   };
+  meta?: Record<string, unknown> | null;
 }
 
 interface DecideEnvelope {
@@ -94,7 +97,10 @@ export function GpsInputsPackets({ onApplied }: { onApplied?: () => void }) {
   const load = useCallback(async () => {
     try {
       const res = await request<PacketsEnvelope>('/v1/gps/packets');
-      setData(res.data);
+      /* The envelope travels with the data (gpsMetaNotices census): migrated:false is the
+         difference between "no decisions yet" and "the register does not exist here", and
+         this section renders that distinction rather than discarding it. */
+      setData(attachMeta(res.data, res.meta ?? null));
       setLoadError(null);
     } catch (err) {
       setData(null);
@@ -182,6 +188,7 @@ export function GpsInputsPackets({ onApplied }: { onApplied?: () => void }) {
 
   return (
     <div className="space-y-4" data-testid="founder-packets">
+      <GpsMetaBanner of={[data]} className="mt-0" />
       {data.registerNotice !== null && (
         <p
           className={clsx(
@@ -248,7 +255,7 @@ export function GpsInputsPackets({ onApplied }: { onApplied?: () => void }) {
                         {(['lowCents', 'midCents', 'highCents'] as const).map((f) => (
                           <td key={f}>
                             <input
-                              className="w-24 border border-line bg-transparent px-1 py-0.5 font-mono"
+                              className="w-24 border border-control bg-transparent px-1 py-0.5 font-mono"
                               inputMode="numeric"
                               aria-label={`${r.offerKey} ${f}`}
                               value={String(r[f])}
@@ -279,7 +286,7 @@ export function GpsInputsPackets({ onApplied }: { onApplied?: () => void }) {
                         {(['optimisticDays', 'likelyDays', 'pessimisticDays'] as const).map((f) => (
                           <td key={f}>
                             <input
-                              className="w-16 border border-line bg-transparent px-1 py-0.5 font-mono"
+                              className="w-16 border border-control bg-transparent px-1 py-0.5 font-mono"
                               inputMode="decimal"
                               aria-label={`${r.offerKey} ${f}`}
                               value={String(r[f])}

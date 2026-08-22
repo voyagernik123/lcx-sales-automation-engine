@@ -83,7 +83,7 @@ describe('presentation is the proposal, grades attached', () => {
 
 describe('the two decisions never blur', () => {
   it('an untouched packet posts decision "approved" with the exact built proposal', async () => {
-    responder.fn = (url, init) => {
+    responder.fn = (_url, init) => {
       if (init?.method === 'POST') {
         return { data: { kind: 'price_bands', decision: 'approved', applyState: 'applied', applyDetail: '5 written.', decisions: [] } };
       }
@@ -104,7 +104,7 @@ describe('the two decisions never blur', () => {
   });
 
   it('one edited cell flips the button label AND the wire decision to approved_with_edits', async () => {
-    responder.fn = (url, init) => {
+    responder.fn = (_url, init) => {
       if (init?.method === 'POST') {
         return { data: { kind: 'price_bands', decision: 'approved_with_edits', applyState: 'applied', applyDetail: '5 written.', decisions: [] } };
       }
@@ -128,7 +128,7 @@ describe('the two decisions never blur', () => {
   });
 
   it('excluding a perimeter row also counts as an edit on the wire', async () => {
-    responder.fn = (url, init) => {
+    responder.fn = (_url, init) => {
       if (init?.method === 'POST') {
         return { data: { kind: 'perimeter_seed', decision: 'approved_with_edits', applyState: 'applied', applyDetail: '29 entered.', decisions: [] } };
       }
@@ -157,7 +157,7 @@ describe('the two decisions never blur', () => {
 
 describe('refusals and outcomes arrive verbatim', () => {
   it('renders the server’s defect list word for word', async () => {
-    responder.fn = (url, init) => {
+    responder.fn = (_url, init) => {
       if (init?.method === 'POST') {
         return new MockApiError(400, 'PACKET_PROPOSAL_DEFECTIVE', 'The proposal has defects and was not recorded or applied.', {
           defects: ['price band for "diagnostic" must ascend low ≤ mid ≤ high.'],
@@ -189,7 +189,7 @@ describe('refusals and outcomes arrive verbatim', () => {
   });
 
   it('reject posts without a proposal and with the notes', async () => {
-    responder.fn = (url, init) => {
+    responder.fn = (_url, init) => {
       if (init?.method === 'POST') {
         return { data: { kind: 'dpo_memo', decision: 'rejected', applyState: 'recorded_only', applyDetail: 'Rejected.', decisions: [] } };
       }
