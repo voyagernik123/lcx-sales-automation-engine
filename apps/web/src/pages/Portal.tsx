@@ -120,7 +120,7 @@ export function Portal() {
 
   const recordIntent = () => act('intent', async () => {
     try {
-      await authed<{ data: { note?: string } }>('/v1/portal/upload-intent', { method: 'POST', body: {} });
+      await authed<{ data: { note?: string } }>('/v1/portal/material-ready', { method: 'POST', body: {} });
       setIntentRecorded('Noted — the desk can see your material is ready.');
     } catch (err) {
       if (err instanceof ApiError && err.status === 403) {

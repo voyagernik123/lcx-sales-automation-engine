@@ -1024,6 +1024,67 @@ export interface BookMonitorSpec {
   blockedOnPlaceholders: boolean;
   /** Suggested initial `enabled` flag at registration. False whenever blocked. */
   enabledOnRegistration: boolean;
+  /**
+   * WHICH FOUNDER INPUTS THIS MONITOR STANDS ON (added G7).
+   *
+   * `blockedOnPlaceholders` above is a SHIPPED CONSTANT: it says "on the day this
+   * spec was written, nobody had supplied these figures". It cannot answer "are they
+   * supplied NOW", and G7's job was to light these monitors up once G0–G3 made the
+   * inputs real. Flipping the constant to `false` would have been the exact defect
+   * this program keeps paying for: a check that passes while the property it stands
+   * for is still false — the owner has not approved a packet yet, so the threshold
+   * would still be compared against a number nobody supplied.
+   *
+   * So registerability is DERIVED instead. `monitorRegistrability(available)` reads
+   * this list against what the registers actually hold, and a monitor lights up on
+   * the day its inputs exist — by measurement, not by assertion, and without anyone
+   * editing this file again.
+   */
+  requiresInputs: readonly MonitorInputKey[];
+}
+
+/**
+ * The founder inputs a monitor can depend on. Each maps to something a register
+ * either holds or does not — never to a judgment.
+ */
+export const MONITOR_INPUT_KEYS = [
+  'price_bands', 'effort_triples', 'pricing_policy', 'partner_bench', 'perimeter_reviewed',
+] as const;
+export type MonitorInputKey = (typeof MONITOR_INPUT_KEYS)[number];
+
+export const MONITOR_INPUT_LABEL: Record<MonitorInputKey, string> = {
+  price_bands: 'approved sell-side price bands (G0 packet → gps_price_band)',
+  effort_triples: 'approved effort triples (G0 packet → gps_effort_triple)',
+  pricing_policy: 'an approved pricing policy (G3 packet → gps_pricing_policy)',
+  partner_bench: 'at least one named partner with a rate card (D5)',
+  perimeter_reviewed: 'perimeter rows reviewed by a second human (never the proposer)',
+};
+
+/** What the registers hold, as measured by the caller. No defaults — see below. */
+export type MonitorInputAvailability = Readonly<Record<MonitorInputKey, boolean>>;
+
+export interface MonitorRegistrability {
+  spec: BookMonitorSpec;
+  registerable: boolean;
+  /** Empty when registerable. Otherwise exactly what is still missing, by name. */
+  missingInputs: readonly MonitorInputKey[];
+}
+
+/**
+ * Registerability, measured. A monitor is registerable when every input it stands on
+ * is present; `missingInputs` is the remedy list, in the owner's terms.
+ *
+ * There is no partial-credit default: the caller must state availability for every
+ * key, because a missing key silently read as `true` is how a monitor would light up
+ * on inputs nobody supplied — the failure this function exists to prevent.
+ */
+export function monitorRegistrability(
+  available: MonitorInputAvailability,
+): readonly MonitorRegistrability[] {
+  return BOOK_MONITOR_SPECS.map((spec) => {
+    const missingInputs = spec.requiresInputs.filter((k) => available[k] !== true);
+    return { spec, registerable: missingInputs.length === 0, missingInputs };
+  });
 }
 
 /**
@@ -1066,6 +1127,8 @@ export const BOOK_MONITOR_SPECS: readonly BookMonitorSpec[] = [
     ],
     blockedOnPlaceholders: false,
     enabledOnRegistration: true,
+    /* Stands on dates the engagement row already carries; nothing to supply. */
+    requiresInputs: [],
   },
   {
     key: 'conflict_missing',
@@ -1095,6 +1158,8 @@ export const BOOK_MONITOR_SPECS: readonly BookMonitorSpec[] = [
     ],
     blockedOnPlaceholders: false,
     enabledOnRegistration: true,
+    /* Stands on the existence of a conflict row; nothing to supply. */
+    requiresInputs: [],
   },
   {
     key: 'margin_below_floor',
@@ -1124,6 +1189,8 @@ export const BOOK_MONITOR_SPECS: readonly BookMonitorSpec[] = [
     ],
     blockedOnPlaceholders: true,
     enabledOnRegistration: false,
+    /* priceFloor needs a partner's rate card AND a real effort triple, and the target margin comes from the G3 policy. All three, or the 'floor' is a placeholder wearing a policy's clothes. */
+    requiresInputs: ['effort_triples', 'partner_bench', 'pricing_policy'],
   },
   {
     key: 'bench_headroom_zero',
@@ -1153,6 +1220,8 @@ export const BOOK_MONITOR_SPECS: readonly BookMonitorSpec[] = [
     ],
     blockedOnPlaceholders: true,
     enabledOnRegistration: false,
+    /* Headroom over an empty bench is not zero-headroom, it is no-bench. Different sentences. */
+    requiresInputs: ['partner_bench'],
   },
   {
     key: 'perimeter_stale',
@@ -1182,6 +1251,8 @@ export const BOOK_MONITOR_SPECS: readonly BookMonitorSpec[] = [
     ],
     blockedOnPlaceholders: true,
     enabledOnRegistration: false,
+    /* A review date exists only once a SECOND human has reviewed the row (self-review is refused). */
+    requiresInputs: ['perimeter_reviewed'],
   },
 ];
 

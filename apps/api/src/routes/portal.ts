@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { getPool } from '../db/index.js';
 import { env } from '../lib/env.js';
+import { rateBucketKey } from '../middleware/rateKey.js';
 import {
   isPortalMigrated,
   portalAcceptDeliverable,
@@ -18,7 +19,7 @@ import {
  *   GET  /v1/portal/engagement            the scoped view: proposal, milestones, deliverables, facts
  *   POST /v1/portal/facts                 typed answers to the offer's own requested inputs
  *   POST /v1/portal/deliverables/:id/accept   the client acceptance that arms invoicing (G6)
- *   POST /v1/portal/upload-intent         records readiness; the byte door stays shut (see below)
+ *   POST /v1/portal/material-ready        records readiness; the byte door stays shut (see below)
  *
  * ── ONE PRINCIPAL, ONE ENGAGEMENT, NO CROSSOVER ──────────────────────────────
  * The bearer token is a magic-link session minted by an internal approver and
@@ -33,11 +34,14 @@ import {
  * starve the desk.
  *
  * ── NO BYTES. NOT A PARSER, NOT A STREAM, NOT A FIELD ────────────────────────
- * Every body here is c.req.json() of typed, capped strings. The upload endpoint
- * answers with the DPO gate's three honest states and records an INTENT event;
- * the day the dpo_memo decision is approved AND permits processor-basis holding,
- * the byte path ships in the same commit as the DPA it requires — through the
- * artifact machinery's bounded reader, not a second door here.
+ * Every body here is c.req.json() of typed, capped strings. The readiness endpoint
+ * is NAMED `/material-ready`, not `/upload-*`, on purpose: it uploads nothing, so it
+ * must not claim to — the intake lockout reserves upload-shaped route paths for the
+ * one artifact intake, and this surface earns that scrutiny by being scanned by the
+ * same ratchet (G7). It answers with the DPO gate's three honest states and records
+ * a readiness event; the day the dpo_memo decision is approved AND permits
+ * processor-basis holding, the byte path ships in the same commit as the DPA it
+ * requires — through the artifact machinery's bounded reader, not a second door here.
  */
 
 const meta = () => ({ timestamp: new Date().toISOString(), version: env.version });
@@ -76,7 +80,10 @@ export const portalRoutes = new Hono<PortalVars>();
  * collapsing them teaches the client to email the desk a screenshot instead.
  */
 portalRoutes.use('*', async (c, next) => {
-  const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+  /* `rateBucketKey` — not the leftmost XFF entry, which the caller writes. The G7
+     pen-test found this bucket bypassable by rotating one header value; the key now
+     comes from the declared trusted-proxy chain (middleware/rateKey.ts). */
+  const ip = rateBucketKey(c);
   if (overLimit(ipHits, ip, MAX_PER_IP, Date.now())) {
     return c.json({ error: 'Too many requests. Try again later.', code: 'RATE_LIMITED' }, 429);
   }
@@ -170,7 +177,7 @@ portalRoutes.post('/deliverables/:id/accept', async (c) => {
   }
 });
 
-portalRoutes.post('/upload-intent', async (c) => {
+portalRoutes.post('/material-ready', async (c) => {
   try {
     let note = '';
     try {
@@ -197,7 +204,7 @@ portalRoutes.post('/upload-intent', async (c) => {
       meta: { ...meta(), migrated: true },
     });
   } catch (err) {
-    console.error('[portal] upload-intent error:', err);
+    console.error('[portal] material-ready error:', err);
     return c.json({ error: 'Failed to record', code: 'PORTAL_ERROR' }, 500);
   }
 });

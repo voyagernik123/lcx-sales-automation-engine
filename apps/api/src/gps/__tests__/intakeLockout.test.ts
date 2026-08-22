@@ -186,18 +186,36 @@ function load(paths: readonly string[], strip: (s: string) => string): SourceFil
 
 /**
  * THE GPS SURFACE, DISCOVERED. Any .ts under apps/api/src whose path mentions gps,
- * plus the shared GPS domain. Tests are excluded — they are not served to anyone,
- * and they contain the forbidden words on purpose (this file is one of them).
+ * plus the shared GPS domain, plus THE CLIENT PLANE (`portal/`, `routes/portal.ts`).
+ * Tests are excluded — they are not served to anyone, and they contain the forbidden
+ * words on purpose (this file is one of them).
  *
  * Discovery rather than a list is the whole point. A hard-coded list is a ratchet
  * that a new file walks straight past.
+ *
+ * ── WHY THE PORTAL IS IN SCOPE (added G7, 2026-08-22) ────────────────────────
+ * The client plane (G4) does not carry "gps" in its path, so this scan did not see
+ * it — and the portal is the ONE new surface whose entire upload design is "no bytes
+ * until the DPO decision says otherwise". The most sensitive place for a byte door to
+ * appear was outside the ratchet that exists to make byte doors impossible. It is in
+ * now, on the same terms as every non-intake GPS file: no bytes at all. The portal is
+ * NOT on INTAKE_FILES, so both DOORS_CLOSED_EVERYWHERE and DOORS_ONLY_IN_INTAKE apply
+ * to it, and the day it grows a multipart parser, a Buffer or a `body.file` the build
+ * goes red — which is exactly the property the client plane needs before a real client
+ * is ever invited (plan §G7: D9 is a claim until adversarially tested).
  */
+const isPortalPath = (rel: string): boolean =>
+  rel.startsWith('portal/') || rel === 'routes/portal.ts';
+
 const GPS_API_SOURCES = load(
   walkTs(API_SRC)
     // Matched on the path BELOW apps/api/src, never the absolute path: a checkout
     // living in a directory that happens to contain "gps" would otherwise select
     // every file in the API and the failure would look like nonsense.
-    .filter((p) => p.slice(API_SRC.length + 1).toLowerCase().includes('gps'))
+    .filter((p) => {
+      const rel = p.slice(API_SRC.length + 1);
+      return rel.toLowerCase().includes('gps') || isPortalPath(rel);
+    })
     .filter((p) => !p.includes('__tests__'))
     .sort(),
   stripTs,

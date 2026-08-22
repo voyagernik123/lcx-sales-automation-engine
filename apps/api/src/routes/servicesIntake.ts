@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { intakeCandidate, INTAKE_MESSAGE_MAX, OFFER_KEYS, type OfferKey } from '@lcx/shared';
 import { getPool } from '../db/index.js';
 import { insertCandidates, isDemandMigrated } from '../gps/demand.js';
+import { rateBucketKey } from '../middleware/rateKey.js';
 
 /**
  * PUBLIC SERVICES INTAKE — the one unauthenticated write GPS owns, built like it knows it.
@@ -55,7 +56,11 @@ export const servicesIntakeRoutes = new Hono();
 
 servicesIntakeRoutes.post('/intake', async (c) => {
   try {
-    const ip = c.req.header('cf-connecting-ip') ?? c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+    /* `rateBucketKey`, not the leftmost XFF entry. This bucket read a header the
+       CALLER writes, so rotating one value per request made the 5/hr ceiling
+       decorative — found in the G7 pen-test round, same defect as the portal's.
+       The key now derives from the declared trusted-proxy chain. */
+    const ip = rateBucketKey(c);
     if (overLimit(ip, Date.now())) {
       // 429 with no detail: a scanner learns the ceiling exists, not where the queue lives.
       return c.json({ error: 'Too many submissions. Try again later.', code: 'RATE_LIMITED' }, 429);

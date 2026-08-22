@@ -107,6 +107,11 @@ export type GpsNounKind =
   | 'effort_triple'
   | 'target'
   | 'outreach_opening'
+  /* G7: the nouns G2, G4, G5 and G6 put on desks that already existed. */
+  | 'dossier'
+  | 'draft'
+  | 'portal_invite'
+  | 'invoice'
   | 'outcome'
   | 'perimeter_position'
   | 'disclosure'
@@ -331,6 +336,72 @@ export const GPS_NOUNS: readonly GpsNounDef[] = [
     caveat: 'no recorded decision is a MISSING check, not a clearance',
     aliases: ['cleared', 'declined', 'coi', 'conflict check'],
   },
+  /*
+   * ── THE FOUR NOUNS G2–G6 ADDED (G7) ────────────────────────────────────────
+   * Each lives on a desk that ALREADY had a palette row, so none needed a new
+   * destination — which is why they are here and `packet` is not: founder packets
+   * live on `/gps/inputs`, which has no `Destination` and cannot get one without a
+   * native-menu line in the desktop shell. That gap is written down rather than
+   * papered over with a palette row that would navigate nowhere.
+   *
+   * All four are `no_fetcher`, which is precise rather than pessimistic: their panels
+   * call `request()` inline instead of exporting a named fetcher from `lib/api/gps*`.
+   * So each row takes the operator TO THE DESK and says so. The day someone writes
+   * the fetcher, the ratchet in `gpsGrammar.test.ts` goes red and the noun is
+   * upgraded to real instances.
+   */
+  {
+    kind: 'dossier', label: 'Dossier', plural: 'Research dossiers', code: 'gds',
+    destination: 'go-gps-origination', subjectType: null,
+    reach: {
+      via: 'no_fetcher',
+      missingFn: 'fetchGpsDossiers',
+      serverRoute: '/v1/gps/dossiers',
+      routeLiteral: '/dossiers',
+      reason: 'the drawer on the origination queue fetches them inline per target; no api module exports a list fetcher, so this row opens the desk rather than an instance',
+    },
+    caveat: 'a model draft, cited or refused — accepted by a named human before it counts',
+    aliases: ['research', 'brief on a target', 'ai dossier'],
+  },
+  {
+    kind: 'draft', label: 'Deliverable draft', plural: 'Deliverable drafts', code: 'gdf',
+    destination: 'go-gps-delivery', subjectType: null,
+    reach: {
+      via: 'no_fetcher',
+      missingFn: 'fetchGpsDrafts',
+      serverRoute: '/v1/gps/factory',
+      routeLiteral: '/factory',
+      reason: 'the factory panel on the delivery desk fetches one engagement\u2019s version list inline; there is no cross-engagement draft list, and inventing one would imply a queue nobody works from',
+    },
+    caveat: 'refuses to generate while a required client input is missing (D10)',
+    aliases: ['ai draft', 'first draft', 'qa queue', 'factory'],
+  },
+  {
+    kind: 'portal_invite', label: 'Portal invite', plural: 'Portal invites', code: 'gpi',
+    destination: 'go-gps-delivery', subjectType: null,
+    reach: {
+      via: 'no_fetcher',
+      missingFn: 'fetchPortalSessions',
+      serverRoute: '/v1/gps/portal-admin',
+      routeLiteral: '/portal-admin',
+      reason: 'the invite panel on the delivery desk lists the links for one engagement inline; a global list of live client credentials is deliberately not something this palette can produce',
+    },
+    caveat: 'the link is shown ONCE at minting — the server keeps only its digest',
+    aliases: ['magic link', 'client link', 'invite the client', 'portal'],
+  },
+  {
+    kind: 'invoice', label: 'Invoice', plural: 'Invoices', code: 'gin',
+    destination: 'go-gps-book', subjectType: null,
+    reach: {
+      via: 'no_fetcher',
+      missingFn: 'fetchGpsInvoices',
+      serverRoute: '/v1/gps/invoices',
+      routeLiteral: '/invoices',
+      reason: 'the invoices panel under the book cash view fetches the register and its aging inline; no api module exports a fetcher, so this row opens the book rather than one numbered invoice',
+    },
+    caveat: 'exists only against an ACCEPTED deliverable — a bill tracing to no acceptance is inexpressible',
+    aliases: ['bill', 'money owed', 'aging', 'chase'],
+  },
 ] as const;
 
 /* ── generated: pages and codes ───────────────────────────────────────────────── */
@@ -378,10 +449,19 @@ function titleCaseDestination(label: string): string {
  * import time — which in a palette means the whole command line fails to mount.
  */
 export const GPS_DESKS_WITHOUT_NOUN: readonly { destination: string; because: string }[] = [
-  {
-    destination: 'go-gps-book',
-    because: 'Every engagement, re-based on margin or on price — the rows are engagements',
-  },
+  /*
+   * EMPTY SINCE G7, AND THAT IS A REAL CHANGE RATHER THAN A RELAXED TEST.
+   *
+   * `go-gps-book` was the single entry: every row in the book was an engagement
+   * re-based on margin or price, so the desk hosted no noun of its own. G6 put the
+   * invoice register under the cash view, and an invoice IS its own object — its own
+   * number, its own lifecycle, its own aging. The book hosts a noun now, so this list
+   * is empty and the test reads it as "every desk hosts at least one noun".
+   *
+   * The list stays: the assertion it feeds is that this is EXACTLY the set of nounless
+   * desks, so the next desk shipped with nothing on it fails here until someone either
+   * gives it a noun or writes down why it has none.
+   */
 ];
 
 /**

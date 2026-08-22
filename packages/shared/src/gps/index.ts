@@ -346,7 +346,12 @@ export {
   outcomeCaptureForm, FACTOR_VERDICT_LABELS, reviewPacket, EVIDENCE_VERDICT_LABELS,
   calibrationHealthView, BOOK_MONITOR_SPECS, registerableBookMonitors, wbrGpsBlock,
   loopResponse,
+  /* G7: registerability MEASURED against what the registers hold, so the three
+   * placeholder-blocked monitors light up on the day their inputs exist rather than
+   * on the day someone edits a boolean. */
+  MONITOR_INPUT_KEYS, MONITOR_INPUT_LABEL, monitorRegistrability,
 } from './loop.js';
+export type { MonitorInputKey, MonitorInputAvailability, MonitorRegistrability } from './loop.js';
 
 /* ── THE INPUT DESK CONTRACT — the three inputs only a human can supply ───────
  * `contracts/inputs.ts` is the wire shape for `apps/api/src/routes/gpsInputs.ts` (price

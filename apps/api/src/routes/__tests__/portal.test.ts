@@ -271,7 +271,7 @@ describe('client acceptance — the desk’s own door', () => {
 
 describe('the upload door — a decision, not a TODO', () => {
   it('refuses while undecided, recording the intent', async () => {
-    const res = await post('/upload-intent', { note: 'tokenomics deck ready' });
+    const res = await post('/material-ready', { note: 'tokenomics deck ready' });
     expect(res.status).toBe(403);
     const body = await res.json();
     expect(body.code).toBe('UPLOAD_AWAITS_DPO_DECISION');
@@ -281,14 +281,14 @@ describe('the upload door — a decision, not a TODO', () => {
 
   it('refuses with a DIFFERENT code when the approved decision forbids uploads', async () => {
     state.dpoRows = [{ decision: 'approved', option: 'controller_only_no_uploads' }];
-    const res = await post('/upload-intent', {});
+    const res = await post('/material-ready', {});
     expect(res.status).toBe(403);
     expect((await res.json()).code).toBe('UPLOAD_FORBIDDEN_BY_DPO');
   });
 
   it('records readiness when the decision permits — and still receives no bytes', async () => {
     state.dpoRows = [{ decision: 'approved', option: 'adopt_processor_dpa' }];
-    const res = await post('/upload-intent', { note: 'deck ready' });
+    const res = await post('/material-ready', { note: 'deck ready' });
     expect(res.status).toBe(200);
     expect((await res.json()).data.recorded).toBe(true);
     expect(state.queries.some((q) => q.sql.includes('INSERT INTO gps_portal_event') && String(q.params[2]) === 'upload_intent_recorded')).toBe(true);

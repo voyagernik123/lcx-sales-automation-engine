@@ -70,6 +70,11 @@ const GPS_ACTIONS_SRC = read(API_SRC, 'gps', 'actions.ts');
 const API_GPS_ROUTES_SRC = [
   'gps.ts', 'gpsArtifact.ts', 'gpsBook.ts', 'gpsConflict.ts', 'gpsDelivery.ts',
   'gpsLoop.ts', 'gpsOrigination.ts', 'gpsUnderwrite.ts',
+  /* G0–G6's route files. Added in G7: the mount literals live in gps.ts, which was
+     already read, but a noun claiming `/v1/gps/invoices` should be checkable against
+     the file that SERVES it and not only against the line that mounts it. */
+  'gpsPackets.ts', 'gpsDemand.ts', 'gpsDossier.ts', 'gpsFactory.ts', 'gpsInvoice.ts',
+  'gpsPortal.ts',
 ].map((f) => read(API_SRC, 'routes', f)).join('\n');
 
 /** The browser's GPS api modules, concatenated. Every `fn` claim is checked against these. */
@@ -219,14 +224,26 @@ describe('every GPS noun is reachable', () => {
     }
   });
 
-  it('names the sixteen nouns the plan names', () => {
+  it('names the twenty nouns the plan names', () => {
     // A literal, and deliberately: deriving the expected list from GPS_NOUNS would assert
     // nothing at all. This is the one place the plan's vocabulary is restated, so dropping
     // a noun from the table is a failure rather than a smaller table.
+    //
+    // SIXTEEN BECAME TWENTY IN G7, and the four are the objects G2–G6 actually built:
+    // a research dossier, a deliverable draft, a portal invite and an invoice. They are
+    // added here rather than left out because the failure this whole file exists to
+    // prevent is precisely the one GPS shipped seven times — a surface an operator can
+    // only reach if he already knows it is there.
+    //
+    // `packet` is NOT in this list, and that is the honest gap: founder packets live on
+    // /gps/inputs, which has no Destination and cannot get one without a native-menu
+    // line in the desktop shell. A palette row pointing nowhere would be worse than
+    // its absence, so the absence is written down (see GPS_NOUNS' G7 block).
     expect(GPS_NOUNS.map((n) => n.kind).sort()).toEqual([
-      'client', 'conflict_decision', 'deliverable', 'disclosure', 'effort_triple',
-      'engagement', 'milestone', 'offer', 'outcome', 'outreach_opening', 'partner',
-      'perimeter_position', 'proposal', 'quote', 'rate_card', 'target',
+      'client', 'conflict_decision', 'deliverable', 'disclosure', 'dossier', 'draft',
+      'effort_triple', 'engagement', 'invoice', 'milestone', 'offer', 'outcome',
+      'outreach_opening', 'partner', 'perimeter_position', 'portal_invite', 'proposal',
+      'quote', 'rate_card', 'target',
     ]);
   });
 
@@ -391,7 +408,7 @@ describe('the honesty ceiling is encoded, not narrated', () => {
   });
 
   it('every reach is a declared variant and the table is populated', () => {
-    expect(GPS_NOUNS.length).toBe(16);
+    expect(GPS_NOUNS.length).toBe(20);
     for (const n of GPS_NOUNS) {
       expect(
         ['server_search', 'client_list', 'per_parent', 'compiled_catalogue', 'surface_route', 'no_fetcher'],

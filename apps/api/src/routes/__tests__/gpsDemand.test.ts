@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Hono } from 'hono';
 import type { AuthVariables } from '../../middleware/auth.js';
 
@@ -180,10 +180,30 @@ describe('the public intake — hardened like it knows what it is', () => {
     projectName: 'Sable Protocol', url: 'https://sable.example', email: 'founder@sable.example',
     offerInterest: 'mica_whitepaper', jurisdiction: 'Germany', message: 'Need a MiCA paper.', website: '',
   };
+
+  /**
+   * THE TOPOLOGY THESE TESTS RUN UNDER, DECLARED (updated in G7).
+   *
+   * They used to send `x-forwarded-for: <ip>` and rely on it being the bucket key.
+   * That passed because the route read the LEFTMOST entry — the one a caller writes —
+   * which is exactly the bypass the G7 pen-test found: rotate the header, get fresh
+   * quota forever. The route now derives its key from the declared trusted-proxy
+   * chain (`middleware/rateKey.ts`), so these tests declare the chain production
+   * actually runs (`TRUSTED_PROXY_HOPS=1`) and put the caller's address where a real
+   * proxy would put it: LAST. A forged prefix is included on purpose — it must be
+   * ignored rather than keyed on.
+   */
+  const HOPS = process.env.TRUSTED_PROXY_HOPS;
+  beforeAll(() => { process.env.TRUSTED_PROXY_HOPS = '1'; });
+  afterAll(() => {
+    if (HOPS === undefined) delete process.env.TRUSTED_PROXY_HOPS;
+    else process.env.TRUSTED_PROXY_HOPS = HOPS;
+  });
+
   const post = (body: unknown, ip = '203.0.113.7') =>
     publicApp().request('/v1/services/intake', {
       method: 'POST', body: JSON.stringify(body),
-      headers: { 'x-forwarded-for': ip },
+      headers: { 'x-forwarded-for': `198.18.0.1, ${ip}` },
     });
 
   it('accepts a clean submission with {received:true} and nothing else', async () => {
@@ -220,6 +240,22 @@ describe('the public intake — hardened like it knows what it is', () => {
     expect(sixth.status).toBe(429);
     // A different IP is unaffected — the bucket is per-caller, not global.
     expect((await post(GOOD, '198.51.100.6')).status).toBe(200);
+  });
+
+  it('ROTATING THE FORGED PREFIX BUYS NOTHING — the G7 bypass, closed', async () => {
+    /*
+     * The attack the old key lost to: same real caller, a different forged leftmost
+     * entry every time. Before the fix each request looked like a new IP and the
+     * ceiling never fired. Now all six share one bucket and the sixth is refused.
+     */
+    const spoof = (i: number) =>
+      publicApp().request('/v1/services/intake', {
+        method: 'POST',
+        body: JSON.stringify({ ...GOOD, projectName: `S${i}` }),
+        headers: { 'x-forwarded-for': `10.99.${i}.${i}, 198.51.100.77` },
+      });
+    for (let i = 0; i < 5; i++) expect((await spoof(i)).status).toBe(200);
+    expect((await spoof(9)).status).toBe(429);
   });
 
   it('an unapplied migration is OUR problem, not the visitor’s: accept, log, lose nothing silently', async () => {
