@@ -34,6 +34,7 @@
 import { OFFER_KEYS, type OfferKey } from './types.js';
 import { getOffer, bandMidpointCents } from './catalogue.js';
 import type { ServiceClass } from './perimeter.js';
+import { pricingPolicyDefects, type PricingPolicyValues } from './pricing.js';
 
 /* ══════════════════════════════════════════════════════════════════════════ */
 /* TYPES                                                                        */
@@ -44,10 +45,12 @@ export type PacketKind =
   | 'effort_triples'
   | 'rate_cards'
   | 'perimeter_seed'
-  | 'dpo_memo';
+  | 'dpo_memo'
+  | 'pricing_policy';
 
 export const PACKET_KINDS: readonly PacketKind[] = [
   'price_bands', 'effort_triples', 'rate_cards', 'perimeter_seed', 'dpo_memo',
+  'pricing_policy',
 ] as const;
 
 export type PacketProvenance =
@@ -143,7 +146,9 @@ export type PacketProposal =
   | { kind: 'effort_triples'; rows: readonly PacketEffortTripleRow[] }
   | { kind: 'rate_cards'; rows: readonly RateCardProposalRow[]; applyDeferredReason: string }
   | { kind: 'perimeter_seed'; rows: readonly PerimeterSeedRow[] }
-  | { kind: 'dpo_memo'; memo: DpoMemoProposal };
+  | { kind: 'dpo_memo'; memo: DpoMemoProposal }
+  /** G3: the two dials the inverse solver obeys. Bounds owned by `pricing.ts`. */
+  | { kind: 'pricing_policy'; policy: PricingPolicyValues; rationale: string };
 
 export interface FounderPacket {
   /** Stable id — `packet:<kind>`. One packet per kind; a revision replaces, never appends. */
@@ -205,6 +210,10 @@ const KEYSETS: Record<PacketKind, Record<string, readonly string[]>> = {
     '': ['kind', 'memo'],
     memo: ['question', 'memoMarkdown', 'options', 'recommendedOptionId'],
     'memo.options': ['id', 'label', 'consequence'],
+  },
+  pricing_policy: {
+    '': ['kind', 'policy', 'rationale'],
+    policy: ['targetMarginPct', 'pLossCeiling'],
   },
 };
 
@@ -329,6 +338,14 @@ export function packetProposalDefects(proposal: PacketProposal): string[] {
       for (const o of m.options) {
         if (!o.consequence.trim()) out.push(`dpo option "${o.id}" states no consequence.`);
       }
+      break;
+    }
+
+    case 'pricing_policy': {
+      // The bounds live in pricing.ts, cited by the solver's own refusals — ONE
+      // definition of what a legal dial is, on both sides of the approval.
+      out.push(...pricingPolicyDefects(proposal.policy));
+      if (!proposal.rationale.trim()) out.push('pricing policy has no rationale — two bare numbers are a lever, not a decision.');
       break;
     }
   }
@@ -619,6 +636,36 @@ export function buildFounderPackets(asOf: string): FounderPacket[] {
         ev('Every upload surface is refused today by the intake lockout, mutation-tested against adversarial edits.', 'apps/api/src/gps/__tests__/intakeLockout.test.ts and noIntake.test.ts.', 'repo_measurement'),
         ev('Storage residence is Supabase eu-central-1.', 'The repo’s own connection target — measured, which is why the memo can speak about transfers.', 'repo_measurement'),
         ev('The processor/controller split for client-supplied vs LCX-own material follows the Article 28 shape.', 'Roles analysis in the memo.', 'assistant_knowledge_unverified', 'This memo is a drafted analysis for the owner’s decision, not legal advice, and says so.'),
+      ],
+      builtAt: asOf,
+    },
+    {
+      id: 'packet:pricing_policy',
+      kind: 'pricing_policy',
+      title: 'Pricing policy — the two dials every proposed price obeys',
+      consequence:
+        'Approving writes one gps_pricing_policy row (append-only; the latest row is the live policy). '
+        + 'POST /v1/gps/underwriting/propose-price stops refusing PRICING_POLICY_ABSENT and starts proposing: '
+        + 'price = max(median cost ÷ (1 − target margin), the cost order statistic your loss ceiling demands), '
+        + 'solved over the same seeded Monte Carlo the forward underwriting reports, then re-underwritten at the '
+        + 'proposed price so the proposal never travels without its proof.',
+      remainingDependency:
+        'Every proposed price stays yours to edit or discard per quote (decision 4 of the 2026-08-21 record), '
+        + 'and shouldBlockIssue keeps its independent veto at issue. The solver proposes; it never prices.',
+      proposal: {
+        kind: 'pricing_policy',
+        policy: { targetMarginPct: 0.45, pLossCeiling: 0.1 },
+        rationale:
+          'A 45% target median margin carries the three-stage waterfall’s coordination overhead and the '
+          + 'unbilled owner time every engagement absorbs; below ~35% a single pessimistic-tail engagement erases '
+          + 'its neighbour’s profit. The 0.10 loss ceiling sits at HALF the issue guard’s stated block threshold '
+          + '(maxPLoss 0.2), so system-proposed prices live safely inside the veto rather than testing it.',
+      },
+      evidence: [
+        ev('The issue guard already blocks any quote whose P(loss) exceeds 0.2 — a stated prior, attributed to system:default.', 'packages/shared/src/gps/underwrite.ts DEFAULT_ISSUE_POLICY — read, not recalled.', 'repo_measurement'),
+        ev('Solving the loss floor at 0.10 — half the block threshold — keeps every system proposal inside the veto with margin to spare.', 'Relationship between the proposed dial and the measured guard above.', 'design_decision'),
+        ev('Boutique advisory and regulatory-drafting gross margins commonly land in the 40–60% range.', 'Market context for the 45% target.', 'assistant_knowledge_unverified', VERIFY),
+        ev('Ceilings between the observed grid points (p50/p90/p95/max) are evidenced at the next stricter statistic — the snap can only raise a floor, and the basis names it whenever it happens.', 'packages/shared/src/gps/pricing.ts PRICE_PROPOSAL_METHOD; the percentile discipline is PERCENTILE_METHOD’s.', 'design_decision'),
       ],
       builtAt: asOf,
     },

@@ -438,6 +438,41 @@ export function GpsInputsPackets({ onApplied }: { onApplied?: () => void }) {
                 </div>
               )}
 
+              {proposal.kind === 'pricing_policy' && (
+                <div data-testid="packet-pricing" className="space-y-2 text-xs">
+                  <div className="flex flex-wrap items-end gap-4">
+                    {([
+                      ['targetMarginPct', 'target margin at the median (fraction, e.g. 0.45)'],
+                      ['pLossCeiling', 'loss-probability ceiling (fraction, e.g. 0.10)'],
+                    ] as const).map(([f, label]) => (
+                      <label key={f} className="flex flex-col gap-1">
+                        <span className="font-mono uppercase tracking-wider text-grey">{label}</span>
+                        <input
+                          className="w-32 border border-control bg-transparent px-1 py-0.5 font-mono"
+                          inputMode="decimal"
+                          aria-label={`pricing ${f}`}
+                          value={String(proposal.policy[f])}
+                          onChange={(ev) => {
+                            const next = clone(proposal);
+                            next.policy = { ...next.policy, [f]: Number(ev.target.value) };
+                            touch(p, next);
+                          }}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                  {/* The dials as consequences, not decoration: what each one buys. */}
+                  <p className="text-grey">
+                    Margin dial: the median outcome keeps at least{' '}
+                    <span className="font-mono text-navy">{Math.round(proposal.policy.targetMarginPct * 100)}%</span> of the price.
+                    Loss dial: at most{' '}
+                    <span className="font-mono text-navy">{Math.round(proposal.policy.pLossCeiling * 100)}%</span> of simulated
+                    outcomes may lose money — the issue guard blocks at 20% regardless, so this ceiling lives inside the veto.
+                  </p>
+                  <p className="text-grey-dark">{proposal.rationale}</p>
+                </div>
+              )}
+
               {/* The decision controls. The server owns authority; a 403 renders verbatim. */}
               <div className="flex flex-wrap items-center gap-2 border-t border-line pt-3">
                 <Button onClick={() => void decide(p, 'approve')} disabled={busy !== null}>

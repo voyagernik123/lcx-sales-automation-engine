@@ -209,6 +209,30 @@ export async function applyProposal(
           + 'No surface changes today: G4 reads this decision and ships exactly what it permits.',
       };
     }
+
+    case 'pricing_policy': {
+      const present = await pool.query(`SELECT to_regclass('gps_pricing_policy') AS rel`);
+      if (present.rows[0]?.rel === null) {
+        return {
+          state: 'apply_failed',
+          detail: 'gps_pricing_policy does not exist on this environment — apply 0079_gps_pricing_policy.sql, then re-approve.',
+        };
+      }
+      // Append, never update: the ordering IS the state, and the history of what the
+      // desk priced under survives every change of mind.
+      await pool.query(
+        `INSERT INTO gps_pricing_policy (target_margin_pct, p_loss_ceiling, rationale, decided_by)
+         VALUES ($1, $2, $3, $4)`,
+        [proposal.policy.targetMarginPct, proposal.policy.pLossCeiling, proposal.rationale, decidedBy],
+      );
+      return {
+        state: 'applied',
+        detail:
+          `Pricing policy appended (target margin ${Math.round(proposal.policy.targetMarginPct * 100)}% at the median, `
+          + `loss ceiling ${proposal.policy.pLossCeiling}), decided by ${decidedBy}. `
+          + 'propose-price answers from this row; every proposed price remains yours to edit, and the issue guard keeps its veto.',
+      };
+    }
   }
 }
 

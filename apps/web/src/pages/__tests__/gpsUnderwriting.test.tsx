@@ -54,10 +54,11 @@ vi.mock('@/lib/api/gpsUnderwrite', async () => {
   // The label map and `isRefusal` are the module's real ones: mocking them would let
   // a wrong verdict label pass, and they are pure data + a one-line predicate.
   const real = await vi.importActual<typeof import('@/lib/api/gpsUnderwrite')>('@/lib/api/gpsUnderwrite');
-  return { ...real, underwriteQuote: vi.fn() };
+  return { ...real, underwriteQuote: vi.fn(), proposePrice: vi.fn() };
 });
 
 const mocked = api.underwriteQuote as unknown as ReturnType<typeof vi.fn>;
+const mockedPropose = api.proposePrice as unknown as ReturnType<typeof vi.fn>;
 
 const ASOF = '2026-08-01T00:00:00.000Z';
 
@@ -145,6 +146,7 @@ async function fill(u: ReturnType<typeof userEvent.setup>, price = '10000') {
 
 beforeEach(() => {
   mocked.mockReset();
+  mockedPropose.mockReset();
   vi.useRealTimers();
 });
 
@@ -779,5 +781,78 @@ describe('a computed verdict feels like what it was', () => {
     await waitFor(() => {
       expect(document.querySelector('[aria-live="assertive"]')?.textContent ?? '').not.toBe('');
     });
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* G3 — THE PROPOSE-PRICE CONTROL                                              */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+describe('the propose-price control (G3)', () => {
+  const PROPOSAL = {
+    proposedPriceCents: 2_181_819,
+    referencePriceCents: 1_000_000,
+    basis: {
+      policy: { targetMarginPct: 0.45, pLossCeiling: 0.1 },
+      quantiles: { p50CostCents: 1_200_000, p90CostCents: 1_400_000, p95CostCents: 1_500_000, maxCostCents: 1_700_000 },
+      marginFloorCents: 2_181_819,
+      lossFloorCents: 1_400_000,
+      lossQuantilePctUsed: 90 as const,
+      conservativeSnap: 'ceiling 0.2 evidenced at the 0.10 grid point (p90 cost) — the next stricter observed statistic.',
+      bindingFloor: 'margin' as const,
+      method: 'the stated method',
+    },
+    policySource: { decidedBy: 'nik', decidedAt: '2026-08-22T00:00:00.000Z', rationale: 'the packet defaults' },
+    stamps: {
+      proposedBy: 'system:inverse-solver',
+      policyDecidedBy: 'nik',
+      requestedBy: 'nik',
+      approvedBy: null,
+      note: 'A proposal, not a price. The owner types the final figure on the quote (decision 4), and the issue guard keeps its veto either way.',
+    },
+    underwritingAtProposed: PROFIT,
+  };
+
+  it('solves, fills the price field, and renders a proposal that nobody has approved', async () => {
+    mocked.mockResolvedValue(PROFIT);
+    mockedPropose.mockResolvedValue(PROPOSAL);
+    const u = userEvent.setup();
+    render(<GpsUnderwriting />);
+    await fill(u);
+
+    fireEvent.click(screen.getByTestId('propose-price'));
+    const panel = await screen.findByTestId('price-proposal');
+
+    // The request carried the typed reference; the field now carries the PROPOSAL.
+    const sent = mockedPropose.mock.calls[0][0];
+    expect(sent.priceCents).toBe(1_000_000);
+    expect((screen.getByTestId('price-input') as HTMLInputElement).value).toBe('21818.19');
+
+    // The arithmetic on display: both floors, the binding side, the snap, the author.
+    // The panel prints through the page's own `money` helper (whole dollars); the
+    // cents-exact figure lives in the FIELD, which is the number that gets underwritten.
+    expect(within(panel).getByTestId('proposed-price')).toHaveTextContent('$21,818');
+    expect(panel).toHaveTextContent(/the margin floor binds/);
+    expect(within(panel).getByTestId('proposal-snap')).toHaveTextContent(/next stricter observed statistic/);
+    expect(panel).toHaveTextContent(/Policy by nik/);
+    // The stamps sentence — proposed by the solver, approved by NOBODY.
+    expect(within(panel).getByTestId('proposal-stamps')).toHaveTextContent(/system:inverse-solver proposed/);
+    expect(within(panel).getByTestId('proposal-stamps')).toHaveTextContent(/approved by nobody/);
+    // The proof line reads off the forward run at the proposed price.
+    expect(within(panel).getByTestId('proposal-proof')).toHaveTextContent(/P\(loss\)/);
+  });
+
+  it('a refusal renders verbatim and fills nothing', async () => {
+    mocked.mockResolvedValue(PROFIT);
+    mockedPropose.mockRejectedValue(new Error('No pricing policy has been approved. Approve the pricing_policy packet on the Inputs desk — the solver refuses to run on a default nobody chose.'));
+    const u = userEvent.setup();
+    render(<GpsUnderwriting />);
+    await fill(u);
+
+    fireEvent.click(screen.getByTestId('propose-price'));
+    const alert = await screen.findByTestId('proposal-error');
+    expect(alert).toHaveTextContent(/pricing_policy packet/);
+    expect(screen.queryByTestId('price-proposal')).toBeNull();
+    expect((screen.getByTestId('price-input') as HTMLInputElement).value).toBe('10000');
   });
 });

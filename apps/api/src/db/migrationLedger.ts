@@ -428,6 +428,15 @@ export const PENDING_MIGRATIONS: readonly string[] = [
    * NOT APPLIED ANYWHERE until a human applies it; dossier routes read 200-empty and
    * writes refuse 503 with DOSSIER_REGISTER_ABSENT until then. */
   '0078_gps_dossier.sql',
+
+  /* 0079 → `gps_pricing_policy`. G3 of GPS_REVENUE_100X_PLAN.md: the owner's two pricing
+   * dials (target median margin, loss-probability ceiling), approved through the SIXTH
+   * founder packet and appended here — no UPDATE path, latest row live, history kept.
+   * The propose-price route refuses PRICING_POLICY_ABSENT until a row exists, so the
+   * inverse solver can never run on a default nobody chose. Bounds CHECKed to the same
+   * (0,0.9] / (0,0.5] pricing.ts states. No jsonb, text capped. NOT APPLIED ANYWHERE
+   * until a human applies it. */
+  '0079_gps_pricing_policy.sql',
 ];
 
 /**

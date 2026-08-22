@@ -7,7 +7,9 @@ import {
   ISSUE_POLICY_IS_A_STATED_PRIOR,
   PERCENTILE_METHOD,
   UNDERWRITE_METHOD,
+  costQuantilesFrom,
   placeholderEffortTriples,
+  proposePriceCents,
 } from '@lcx/shared';
 import type { AuthVariables } from '../middleware/auth.js';
 import { requireOperator } from '../middleware/auth.js';
@@ -191,6 +193,142 @@ gpsUnderwriteRoutes.post('/', requireOperator, async (c) => {
   } catch (err) {
     console.error('[gps] underwrite error:', err);
     return c.json({ error: 'Failed to underwrite this quote', code: 'GPS_ERROR' }, 500);
+  }
+});
+
+/**
+ * G3 — PROPOSE A PRICE FROM THE OWNER'S POLICY, THEN PROVE IT.
+ *
+ * The inverse of `POST /`: instead of "here is a price, what does it risk", this
+ * answers "here are my two dials, what must it charge". The body is the SAME
+ * underwrite body — its `priceCents` serves as the reference run's price only,
+ * because cost is price-invariant in the model (cost = rate × days × overrun), and
+ * the response replaces it.
+ *
+ * THREE REFUSALS, NEVER COLLAPSED. No 0079 register → 503 naming the file. A
+ * register with no row → 409 PRICING_POLICY_ABSENT naming the packet that creates
+ * one — the solver never runs on a default nobody chose. A reference run that
+ * refuses (expired card, currency mismatch) → 422 carrying the forward verdict,
+ * because a cost basis nothing can be computed on refuses every price equally.
+ *
+ * THE PROPOSAL NEVER TRAVELS WITHOUT ITS PROOF: the route re-underwrites AT the
+ * proposed price and returns that full forward response beside the number, so the
+ * owner reads P(loss) and the margin band at the price being proposed, not at the
+ * one he typed. The stamps say what this is: system-proposed under a named human's
+ * policy, approved by nobody until the owner types it into a quote — and
+ * `shouldBlockIssue` keeps its independent veto at issue regardless.
+ */
+gpsUnderwriteRoutes.post('/propose-price', requireOperator, async (c) => {
+  try {
+    const run = await runFromBody(c);
+    if (!run.ok) return run.res;
+    const pool = getPool();
+
+    let registerPresent: boolean | null;
+    try {
+      const probe = await pool.query(`SELECT to_regclass('gps_pricing_policy') AS rel`);
+      registerPresent = probe.rows[0]?.rel !== null;
+    } catch (err) {
+      console.error('[gps] pricing policy probe failed:', err);
+      registerPresent = null;
+    }
+    if (registerPresent === false) {
+      return c.json({
+        error: 'The pricing policy register does not exist on this environment. Apply 0079_gps_pricing_policy.sql.',
+        code: 'PRICING_POLICY_REGISTER_ABSENT',
+      }, 503);
+    }
+    if (registerPresent === null) {
+      return c.json({
+        error: 'The pricing policy register could not be probed — a policy may exist that cannot be read. Retry.',
+        code: 'PRICING_POLICY_REGISTER_UNPROBEABLE',
+      }, 503);
+    }
+
+    const latest = await pool.query(
+      `SELECT target_margin_pct, p_loss_ceiling, rationale, decided_by, decided_at
+         FROM gps_pricing_policy
+        ORDER BY decided_at DESC, id DESC
+        LIMIT 1`,
+    );
+    if (latest.rows.length === 0) {
+      return c.json({
+        error: 'No pricing policy has been approved. Approve the pricing_policy packet on the Inputs desk — the solver refuses to run on a default nobody chose.',
+        code: 'PRICING_POLICY_ABSENT',
+      }, 409);
+    }
+    const policyRow = latest.rows[0] as Record<string, unknown>;
+    // pg returns numeric as text; the dials are numbers or they are nothing.
+    const policy = {
+      targetMarginPct: Number(policyRow.target_margin_pct),
+      pLossCeiling: Number(policyRow.p_loss_ceiling),
+    };
+
+    const reference = run.result.response.underwriting;
+    if (!reference.distribution) {
+      return c.json({
+        error: 'The forward underwriting refused at the reference price, and a cost basis nothing can be computed on refuses every price equally. Resolve the refusal, then propose.',
+        code: 'REFERENCE_RUN_REFUSED',
+        verdict: reference.verdict,
+        reasons: reference.reasons,
+      }, 422);
+    }
+
+    const quantiles = costQuantilesFrom({
+      priceCents: reference.priceCents,
+      p50CostCents: reference.distribution.p50CostCents,
+      p90CostCents: reference.distribution.p90CostCents,
+      p05MarginCents: reference.distribution.p05MarginCents,
+      minMarginCents: reference.distribution.minMarginCents,
+    });
+    const solved = proposePriceCents(quantiles, policy);
+    if (!solved.ok) {
+      return c.json({
+        error: 'The stored policy or the derived quantiles failed the solver’s own checks — nothing was proposed.',
+        code: 'PRICE_PROPOSAL_REFUSED',
+        defects: solved.defects,
+      }, 422);
+    }
+
+    /* THE PROOF. Same operator, fresh instant, same tighten-only policy discipline as
+       runFromBody — and the forward run at the PROPOSED price travels in `data`, so
+       the surface renders P(loss) and the band at the number being proposed. */
+    const operator = c.get('operator')?.id ?? 'unknown';
+    const asOf = new Date().toISOString();
+    const tightened = tightenPolicy(run.input.policy, operator, asOf);
+    if (!tightened.ok) {
+      return c.json({ error: tightened.reason, code: 'POLICY_CANNOT_BE_LOOSENED', data: { field: tightened.field } }, 400);
+    }
+    const proof = await buildUnderwriting(
+      pool,
+      { ...run.input, priceCents: solved.proposedPriceCents },
+      { operator, asOf, policy: tightened.policy, tightened: tightened.tightened },
+    );
+
+    return c.json({
+      data: {
+        proposedPriceCents: solved.proposedPriceCents,
+        referencePriceCents: reference.priceCents,
+        basis: solved.basis,
+        policySource: {
+          decidedBy: String(policyRow.decided_by),
+          decidedAt: new Date(policyRow.decided_at as string).toISOString(),
+          rationale: String(policyRow.rationale),
+        },
+        stamps: {
+          proposedBy: 'system:inverse-solver',
+          policyDecidedBy: String(policyRow.decided_by),
+          requestedBy: operator,
+          approvedBy: null,
+          note: 'A proposal, not a price. The owner types the final figure on the quote (decision 4), and the issue guard keeps its veto either way.',
+        },
+        underwritingAtProposed: proof.response,
+      },
+      meta: envelope(proof),
+    });
+  } catch (err) {
+    console.error('[gps] propose-price error:', err);
+    return c.json({ error: 'Failed to propose a price — nothing was recorded', code: 'GPS_ERROR' }, 500);
   }
 });
 

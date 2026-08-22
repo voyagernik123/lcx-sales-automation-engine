@@ -11,6 +11,7 @@ import {
   type PerimeterSeedRow,
 } from './packets.js';
 import { OFFER_KEYS } from './types.js';
+import { DEFAULT_ISSUE_POLICY } from './underwrite.js';
 
 /**
  * THE FOUNDER PACKETS — five proposals whose whole worth is their honesty.
@@ -278,5 +279,45 @@ describe('the validator discriminates — each guard shown refusing what it exis
       memo: { ...m.memo, options: m.memo.options.filter((o) => o.id !== m.memo.recommendedOptionId) },
     };
     expect(packetProposalDefects(broken).join(' ')).toMatch(/not one of its own options/);
+  });
+});
+
+describe('the pricing policy packet (G3)', () => {
+  it('ships a loss ceiling at exactly HALF the issue guard’s block threshold — a measured relationship, not a coincidence', () => {
+    const p = byKind('pricing_policy').proposal;
+    if (p.kind !== 'pricing_policy') throw new Error('wrong kind');
+    expect(p.policy.pLossCeiling).toBe(DEFAULT_ISSUE_POLICY.maxPLoss / 2);
+    expect(p.policy.targetMarginPct).toBeGreaterThan(0);
+    expect(p.policy.targetMarginPct).toBeLessThanOrEqual(0.9);
+    // The rationale ARGUES the relationship rather than just stating two numbers.
+    expect(p.rationale).toContain('0.2');
+  });
+
+  it('an owner edit outside the bounds is refused by the same validator, both dials at once', () => {
+    const defects = packetProposalDefects({
+      kind: 'pricing_policy',
+      policy: { targetMarginPct: 0.95, pLossCeiling: 0.6 },
+      rationale: 'aggressive',
+    });
+    expect(defects.join(' ')).toMatch(/\(0, 0\.9\]/);
+    expect(defects.join(' ')).toMatch(/donation schedule/);
+  });
+
+  it('an unknown key inside the policy object is the same byte-door refusal as everywhere else', () => {
+    const broken = {
+      kind: 'pricing_policy' as const,
+      policy: { targetMarginPct: 0.45, pLossCeiling: 0.1, note64: 'x' } as never,
+      rationale: 'r',
+    };
+    expect(packetProposalDefects(broken).join(' ')).toMatch(/unknown key "policy\.note64"/);
+  });
+
+  it('two bare numbers without a rationale are refused as a lever, not a decision', () => {
+    const defects = packetProposalDefects({
+      kind: 'pricing_policy',
+      policy: { targetMarginPct: 0.45, pLossCeiling: 0.1 },
+      rationale: '   ',
+    });
+    expect(defects.join(' ')).toMatch(/lever, not a decision/);
   });
 });

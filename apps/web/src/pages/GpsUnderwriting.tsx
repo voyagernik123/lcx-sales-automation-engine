@@ -13,11 +13,12 @@ import { PrintStyles } from '@/components/report/PrintStyles';
 import { useListNavigation } from '@/hooks/useListNavigation';
 import { formatMoney } from '@/lib/format';
 import {
-  underwriteQuote, UNDERWRITE_VERDICT_LABEL, isRefusal,
+  underwriteQuote, proposePrice, UNDERWRITE_VERDICT_LABEL, isRefusal,
   type UnderwriteBody, type UnderwriteResponse, type Underwriting,
   type MarginDistribution, type OverrunPoint, type OverrunSensitivity,
   type IssueCheck, type IssueDecision, type DevilsAdvocate,
   type UnderwriteDriver, type VarianceAttribution, type EffortTriple,
+  type PriceProposalResponse,
 } from '@/lib/api/gpsUnderwrite';
 import { GpsMetaBanner } from './GpsMetaBanner';
 import { LegalPositionStamp } from '@/components/gps/LegalPositionStamp';
@@ -360,6 +361,39 @@ export function GpsUnderwriting() {
     setForm((prev) => ({ ...prev, [k]: v }));
 
   /**
+   * G3 — THE INVERSE SOLVE (decision 4: system proposes, the owner types the final).
+   *
+   * The request is the same underwrite body; when no price is typed yet a $10,000
+   * reference stands in, and that choice steers NOTHING — cost is price-invariant in
+   * the model, and the route's own test pins that two different references produce
+   * the same proposal. On success the price field is FILLED with the proposal, which
+   * hands it to the live forward run above like any human-typed figure: the owner
+   * edits it or issues on it, and either way the number on the screen is now his.
+   */
+  const [proposal, setProposal] = useState<PriceProposalResponse | null>(null);
+  const [proposalError, setProposalError] = useState<string | null>(null);
+  const [proposing, setProposing] = useState(false);
+  const propose = async () => {
+    const ref = toRequest({ ...form, priceDollars: form.priceDollars.trim() === '' ? '10000' : form.priceDollars });
+    if (ref == null) {
+      setProposalError('Type the partner id first — the solver prices off that partner’s rate card, loaded server-side.');
+      return;
+    }
+    setProposing(true);
+    setProposalError(null);
+    try {
+      const p = await proposePrice(ref);
+      setProposal(p);
+      set('priceDollars', String(p.proposedPriceCents / 100));
+    } catch (e) {
+      setProposal(null);
+      setProposalError(e instanceof Error ? e.message : 'Price proposal failed');
+    } finally {
+      setProposing(false);
+    }
+  };
+
+  /**
    * THE INSTANT THE BROWSER READ ITS CLOCK, captured ONCE per page load.
    *
    * Two instants go onto the printed sheet and they are not the same fact: this one is when
@@ -428,7 +462,14 @@ export function GpsUnderwriting() {
       </PageTitle>
 
       <div className="space-y-4">
-        <QuoteBar form={form} set={set} />
+        <QuoteBar form={form} set={set} onPropose={() => void propose()} proposing={proposing} />
+
+        {proposalError !== null && (
+          <p role="alert" className="font-mono text-xs text-status-blocked" data-testid="proposal-error">
+            {proposalError}
+          </p>
+        )}
+        {proposal !== null && <ProposalPanel p={proposal} onDismiss={() => setProposal(null)} />}
 
         {/* THE STAMP. This screen prints, and what it prints is a price with a loss
             probability beside it — the most quotable artefact in the compartment.
@@ -523,7 +564,9 @@ type Setter = <K extends keyof QuoteForm>(k: K, v: QuoteForm[K]) => void;
  * the interaction this screen exists for is "nudge the price, watch P(loss) move".
  * A form that pushes the distribution below the fold has already lost.
  */
-function QuoteBar({ form, set }: { form: QuoteForm; set: Setter }) {
+function QuoteBar({ form, set, onPropose, proposing }: {
+  form: QuoteForm; set: Setter; onPropose: () => void; proposing: boolean;
+}) {
   return (
     <div className="flex flex-wrap items-end gap-3 rounded-lg border border-line bg-card p-3 shadow-card">
       <div className="w-64">
@@ -573,12 +616,60 @@ function QuoteBar({ form, set }: { form: QuoteForm; set: Setter }) {
           className="font-mono tabular-nums"
         />
       </div>
+      <Button variant="secondary" onClick={onPropose} disabled={proposing} data-testid="propose-price">
+        {proposing ? 'Solving…' : 'Propose price'}
+      </Button>
       <p className="min-w-[16rem] flex-1 text-[10px] leading-snug text-grey">
         The partner id is TYPED because no bench roster exists — <span className="font-mono">PARTNER_BENCH</span> is
         empty by construction (<span className="font-mono">partners.ts:307</span>), no partner has been named and no
         rate card has been supplied. The server loads the card by this id and by offer; the browser cannot send one,
         so it cannot choose its own cost basis and read back a margin that agrees with it. An id with no card comes
         back as a stated refusal, which is the correct answer and not a gap in this screen.
+      </p>
+    </div>
+  );
+}
+
+/**
+ * G3 — THE PROPOSAL, WEARING ITS ARITHMETIC.
+ *
+ * Everything here is read off the response: both floors, which one bound, the
+ * conservative snap when the ceiling fell between observed grid points, whose
+ * policy solved it, and the forward run's own P(loss) AT the proposed price. The
+ * one sentence this panel exists for is the stamps line: proposed by the solver,
+ * under a named human's policy, approved by NOBODY — the price field above was
+ * filled, not decided, and issuing still answers to the guard.
+ */
+function ProposalPanel({ p, onDismiss }: { p: PriceProposalResponse; onDismiss: () => void }) {
+  const proven = p.underwritingAtProposed.underwriting;
+  return (
+    <div className="rounded-lg border border-line bg-card p-3 font-mono text-xs shadow-card" data-testid="price-proposal">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-grey">
+          Proposed: <span className="text-sm font-bold tabular-nums text-navy" data-testid="proposed-price">{money(p.proposedPriceCents)}</span>
+          {' '}· {p.basis.bindingFloor === 'both' ? 'both floors bind on the same cent' : `the ${p.basis.bindingFloor} floor binds`}
+        </span>
+        <button onClick={onDismiss} className="text-grey hover:text-navy" aria-label="dismiss proposal">✕</button>
+      </div>
+      <p className="mt-1 text-grey-dark">
+        margin floor {money(p.basis.marginFloorCents)} (p50 cost ÷ (1 − {p.basis.policy.targetMarginPct}))
+        {' '}· loss floor {money(p.basis.lossFloorCents)} (cost order statistic at p{p.basis.lossQuantilePctUsed},
+        ceiling {p.basis.policy.pLossCeiling})
+      </p>
+      {p.basis.conservativeSnap !== null && (
+        <p className="mt-1 text-status-conditional" data-testid="proposal-snap">{p.basis.conservativeSnap}</p>
+      )}
+      {proven.pLoss !== null && proven.distribution !== null && (
+        <p className="mt-1 text-grey-dark" data-testid="proposal-proof">
+          Proven at this price: P(loss) {proven.pLoss} · p50 margin {money(proven.distribution.p50MarginCents)}
+          {' '}(p10 {money(proven.distribution.p10MarginCents)} / p90 {money(proven.distribution.p90MarginCents)})
+        </p>
+      )}
+      <p className="mt-1 text-grey">
+        Policy by {p.policySource.decidedBy} ({p.policySource.decidedAt.slice(0, 10)}): {p.policySource.rationale}
+      </p>
+      <p className="mt-1 text-grey" data-testid="proposal-stamps">
+        {p.stamps.proposedBy} proposed · approved by nobody — {p.stamps.note}
       </p>
     </div>
   );

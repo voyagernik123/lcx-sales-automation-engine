@@ -421,3 +421,18 @@ export {
   dossierFacts, buildDossierPrompt, dossierDefects,
   buildOutreachPrompt, outreachDefects,
 } from './dossier.js';
+
+/* ── G3 — the inverse solver and its two dials ────────────────────────────────
+ * The owner's pricing policy (approved through the sixth founder packet) and the
+ * arithmetic that turns it into a proposed price over the forward underwriting's
+ * own cost order statistics. One bounds predicate (`pricingPolicyDefects`) serves
+ * the packet validator, the solver and the API route — the same one-bar shape as
+ * G0's packets and G2's dossiers.
+ */
+export type {
+  PricingPolicyValues, CostQuantiles, PriceProposalBasis, PriceProposalOutcome,
+} from './pricing.js';
+export {
+  PRICING_POLICY_BOUNDS, PRICE_PROPOSAL_METHOD,
+  pricingPolicyDefects, costQuantilesFrom, proposePriceCents,
+} from './pricing.js';

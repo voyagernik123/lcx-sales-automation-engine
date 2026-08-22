@@ -211,3 +211,34 @@ describe('refusals and outcomes arrive verbatim', () => {
     expect(body.notes).toBe('not yet');
   });
 });
+
+describe('the pricing policy packet (G3)', () => {
+  it('renders both dials with the veto sentence, and an edited dial travels as approved_with_edits', async () => {
+    responder.fn = (_url, init) => {
+      if (init?.method === 'POST') {
+        return { data: { kind: 'pricing_policy', decision: 'approved_with_edits', applyState: 'applied', applyDetail: 'appended.', decisions: [] } };
+      }
+      return okList();
+    };
+    render(<GpsInputsPackets />);
+    await screen.findByText(/Pricing policy — the two dials/);
+    const panel = screen.getByTestId('packet-pricing');
+    // The consequence of each dial in words, and the guard's veto named beside them.
+    expect(panel.textContent).toContain('45%');
+    expect(panel.textContent).toContain('issue guard blocks at 20%');
+
+    fireEvent.change(screen.getByLabelText('pricing targetMarginPct'), { target: { value: '0.5' } });
+    fireEvent.click(await screen.findByRole('button', { name: /approve with these edits/i }));
+    const post = await vi.waitFor(() => {
+      const p = requests.find((r) => r.init?.method === 'POST');
+      expect(p).toBeTruthy();
+      return p!;
+    });
+    expect(post.url).toBe('/v1/gps/packets/pricing_policy/decide');
+    const body = post.init!.body as Record<string, any>;
+    expect(body.decision).toBe('approved_with_edits');
+    expect(body.proposal.kind).toBe('pricing_policy');
+    expect(body.proposal.policy.targetMarginPct).toBe(0.5);
+    expect(body.proposal.policy.pLossCeiling).toBe(0.1);
+  });
+});

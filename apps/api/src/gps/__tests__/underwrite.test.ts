@@ -71,6 +71,8 @@ let effortTripleTable = true;
 let engagementTable = true;
 let outcomeTable = false;
 let partnerColumn = true;
+let pricingPolicyTable = true;
+let pricingPolicyRows: Record<string, unknown>[] = [];
 
 const calls: Array<{ sql: string; params: unknown[] }> = [];
 
@@ -159,6 +161,11 @@ const query = vi.fn(async (sql: string, params: unknown[] = []) => {
   }
   if (/FROM gps_outcome o/.test(sql)) return { rows: [] };
 
+  if (/to_regclass\('gps_pricing_policy'\)/.test(sql)) {
+    return { rows: [{ rel: pricingPolicyTable ? 'gps_pricing_policy' : null }] };
+  }
+  if (/FROM gps_pricing_policy/.test(sql)) return { rows: pricingPolicyRows };
+
   throw new Error(`fake pool: unexpected SQL — ${sql.replace(/\s+/g, ' ').trim().slice(0, 140)}`);
 });
 
@@ -214,6 +221,8 @@ beforeEach(() => {
   engagementTable = true;
   outcomeTable = false;
   partnerColumn = true;
+  pricingPolicyTable = true;
+  pricingPolicyRows = [];
   handlerRan = 0;
   _resetUnderwritingProbes();
   _resetMigrated();
@@ -1056,5 +1065,106 @@ describe('parameterised SQL, integer cents, and one declaration of the response'
       // Word-bounded: `updated_at` is a column on the engagement row, not a write.
       expect(sql).not.toMatch(/\b(?:INSERT|UPDATE|DELETE|BEGIN|COMMIT|FOR UPDATE)\b/i);
     }
+  });
+});
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/* 10 · G3 — PROPOSE-PRICE: the inverse solve, proven by a forward run          */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+describe('propose-price — from the owner’s two dials to a proven number', () => {
+  const seedPolicy = (over: Record<string, unknown> = {}) => {
+    // pg returns numeric as text; the route must Number() it or die trying.
+    pricingPolicyRows = [{
+      target_margin_pct: '0.4500',
+      p_loss_ceiling: '0.1000',
+      rationale: 'the shipped packet defaults',
+      decided_by: 'nik',
+      decided_at: '2026-08-22T00:00:00.000Z',
+      ...over,
+    }];
+  };
+
+  beforeEach(() => {
+    seedCard();
+    seedEffort(8, 12, 16);
+    seedPolicy();
+  });
+
+  it('proposes a price that DELIVERS both dials, verified on the forward run it returns', async () => {
+    const { status, body } = await post('/propose-price', quote(1_000_000));
+    expect(status).toBe(200);
+    const d = body.data;
+    expect(Number.isInteger(d.proposedPriceCents)).toBe(true);
+
+    // The proof travels with the proposal, run AT the proposed price.
+    const proven = d.underwritingAtProposed.underwriting;
+    expect(proven.priceCents).toBe(d.proposedPriceCents);
+    // Median margin honours the 45% target — checked on the PROOF's own numbers.
+    const p50Margin = (d.proposedPriceCents - proven.distribution.p50CostCents) / d.proposedPriceCents;
+    expect(p50Margin).toBeGreaterThanOrEqual(0.45 - 1e-9);
+    // The loss ceiling holds over the same samples (nearest-rank tolerance only).
+    expect(proven.pLoss).toBeLessThanOrEqual(0.11);
+
+    // The basis explains itself: floors, binding side, method, and the policy's author.
+    expect(d.basis.marginFloorCents).toBeGreaterThan(0);
+    expect(['margin', 'loss', 'both']).toContain(d.basis.bindingFloor);
+    expect(d.basis.method).toMatch(/next stricter/);
+    expect(d.policySource.decidedBy).toBe('nik');
+    // A proposal, not a price: nobody has approved anything.
+    expect(d.stamps.proposedBy).toBe('system:inverse-solver');
+    expect(d.stamps.approvedBy).toBeNull();
+    expect(d.stamps.requestedBy).toBe('nik');
+  });
+
+  it('is invariant to the reference price — cost is not a function of what was typed', async () => {
+    const a = await post('/propose-price', quote(1_000_000));
+    const b = await post('/propose-price', quote(2_500_000));
+    expect(a.status).toBe(200);
+    expect(b.status).toBe(200);
+    expect(a.body.data.proposedPriceCents).toBe(b.body.data.proposedPriceCents);
+    expect(a.body.data.referencePriceCents).not.toBe(b.body.data.referencePriceCents);
+  });
+
+  it('refuses with the migration named when 0079 is not applied', async () => {
+    pricingPolicyTable = false;
+    const { status, body } = await post('/propose-price', quote(1_000_000));
+    expect(status).toBe(503);
+    expect(body.code).toBe('PRICING_POLICY_REGISTER_ABSENT');
+    expect(body.error).toContain('0079_gps_pricing_policy.sql');
+  });
+
+  it('refuses to run on a default nobody chose: empty register is 409, naming the packet', async () => {
+    pricingPolicyRows = [];
+    const { status, body } = await post('/propose-price', quote(1_000_000));
+    expect(status).toBe(409);
+    expect(body.code).toBe('PRICING_POLICY_ABSENT');
+    expect(body.error).toMatch(/pricing_policy packet/);
+  });
+
+  it('passes a reference-run refusal through as 422 with the forward verdict', async () => {
+    rateCards.clear();
+    seedCard({ valid_until: '2020-01-01' }); // expired: the cost basis refuses every price
+    const { status, body } = await post('/propose-price', quote(1_000_000));
+    expect(status).toBe(422);
+    expect(body.code).toBe('REFERENCE_RUN_REFUSED');
+    expect(body.reasons.join(' ')).toMatch(/expired/);
+  });
+
+  it('re-validates the STORED dials instead of trusting the register', async () => {
+    // The DB CHECK should make this impossible; the route still refuses rather than
+    // solving on it — the same one-bar discipline as the packet validator.
+    seedPolicy({ p_loss_ceiling: '0.9000' });
+    const { status, body } = await post('/propose-price', quote(1_000_000));
+    expect(status).toBe(422);
+    expect(body.code).toBe('PRICE_PROPOSAL_REFUSED');
+    expect(body.defects.join(' ')).toMatch(/donation schedule/);
+  });
+
+  it('a malformed body refuses before the register is ever probed', async () => {
+    const bad = { offerKey: OFFER, currency: 'EUR', partnerId: PARTNER }; // no price
+    const { status } = await post('/propose-price', bad);
+    expect(status).toBe(400);
+    expect(calls.some(({ sql }) => /gps_pricing_policy/.test(sql))).toBe(false);
   });
 });

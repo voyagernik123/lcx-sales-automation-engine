@@ -78,6 +78,7 @@ export {
 } from '@lcx/shared';
 
 import type {
+  PriceProposalBasis,
   UnderwriteRequest,
   UnderwriteResponse,
 } from '@lcx/shared';
@@ -167,6 +168,38 @@ export type UnderwriteBody =
  */
 export const underwriteQuote = (body: UnderwriteBody) =>
   unwrap(request<{ data: UnderwriteResponse }>('/v1/gps/underwriting', {
+    method: 'POST',
+    body,
+    auth: true,
+  }));
+
+/**
+ * G3 — the inverse solve. Same body as `underwriteQuote` (its `priceCents` is the
+ * reference run's price only; cost is price-invariant, so the reference does not
+ * steer the answer — pinned by the route's own invariance test). The response is a
+ * PROPOSAL wearing its proof: the basis names both floors and any conservative
+ * quantile snap, `policySource` names the human whose dials solved it, `stamps`
+ * says nobody has approved anything, and `underwritingAtProposed` is the full
+ * forward run AT the proposed price so the surface renders P(loss) and the margin
+ * band for the number actually on offer.
+ */
+export interface PriceProposalResponse {
+  proposedPriceCents: number;
+  referencePriceCents: number;
+  basis: PriceProposalBasis;
+  policySource: { decidedBy: string; decidedAt: string; rationale: string };
+  stamps: {
+    proposedBy: string;
+    policyDecidedBy: string;
+    requestedBy: string;
+    approvedBy: null;
+    note: string;
+  };
+  underwritingAtProposed: UnderwriteResponse;
+}
+
+export const proposePrice = (body: UnderwriteBody) =>
+  unwrap(request<{ data: PriceProposalResponse }>('/v1/gps/underwriting/propose-price', {
     method: 'POST',
     body,
     auth: true,
