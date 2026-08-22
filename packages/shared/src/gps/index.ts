@@ -389,3 +389,17 @@ export {
   PACKET_KINDS, PROVENANCE_GRADE, buildFounderPackets, packetProposalDefects,
   placeholderBandFor,
 } from './packets.js';
+
+/* ── G1 — the demand layer ────────────────────────────────────────────────────
+ * Four channels into one candidate queue (GPS_REVENUE_100X_PLAN.md §G1). Candidates
+ * PROMOTE to origination targets by a human act; the validator is shared with the API
+ * edge, and the Telegram parser is a sieve whose drop-report travels with its result.
+ */
+export type {
+  DemandSource, OfferHypothesis, DemandCandidate, CrossfeedProjectInput,
+  TelegramParseReport, TelegramParseResult, IntakeFields,
+} from './demand.js';
+export {
+  DEMAND_SOURCES, SNIPPET_MAX, INTAKE_MESSAGE_MAX, demandCandidateDefects,
+  crossfeedSignals, parseTelegramExport, intakeCandidate, referralCandidate,
+} from './demand.js';

@@ -14,6 +14,7 @@ import {
   type BriefResponse, type BriefAssertion, type BriefIntegrity,
 } from '@/lib/api/gpsOrigination';
 import { GpsMetaBanner } from './GpsMetaBanner';
+import { GpsOriginationDemand } from './GpsOriginationDemand';
 
 /**
  * GLOBAL SERVICES — THE ORIGINATION QUEUE (Phase 8).
@@ -131,6 +132,13 @@ export function GpsOrigination() {
       {/* THE READ, DECLARING ITSELF — above the queue and above the empty state,
           because the empty state is the thing it corrects. */}
       <GpsMetaBanner of={[res]} />
+
+      {/* G1: the demand queue sits ABOVE the ranked watchlist because it is where the
+          watchlist's rows now come from. Promotion re-loads the queue below, so a promoted
+          candidate appears in the ranking from data rather than optimism. */}
+      <div className="mb-4">
+        <GpsOriginationDemand onPromoted={load} />
+      </div>
 
       {error ? (
         <EmptyState variant="error" title="Origination unavailable" description={error} />

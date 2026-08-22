@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { ArrowRight, Download } from 'lucide-react';
 import { LcxMark } from '@/components/brand/LcxMark';
 import { safeHref } from '@/lib/safeHref';
+import { LaunchServices } from '@/pages/LaunchServices';
 
 /**
  * The public face of LCXOS — the page the shared link opens.
@@ -230,6 +231,9 @@ export function Launch() {
             ))}
           </dl>
         </div>
+
+        {/* ── G1: the services section — the desk's own work, sold from its own page ── */}
+        <LaunchServices />
 
         {/* ── footer ───────────────────────────────────────────────────────── */}
         <div className="mt-16 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-8">

@@ -46,6 +46,7 @@ import { aiOperatorRoutes } from './routes/aiOperator.js';
 import { commandRoutes } from './routes/command.js';
 import { distributionRoutes } from './routes/distribution.js';
 import { x402Routes } from './routes/x402.js';
+import { servicesIntakeRoutes } from './routes/servicesIntake.js';
 import { governanceRegisterRoutes } from './routes/governanceRegister.js';
 import { accessRoutes } from './routes/access.js';
 import { gpsRoutes } from './routes/gps.js';
@@ -255,6 +256,14 @@ export function createApp() {
   app.route('/v1/distribution', distributionRoutes);
   // x402 seller layer — public by design (payment is the auth), not gated.
   app.route('/v1/x402', x402Routes);
+
+  /*
+   * Public services intake — the ONE unauthenticated GPS-adjacent write, mounted here
+   * beside x402 rather than under /v1/gps, where the compartment constitution forbids
+   * exemptions. Its own header documents the fences: strict six-field schema, per-IP
+   * bucket behind the global limiter, honeypot answered indistinguishably, no reflection.
+   */
+  app.route('/v1/services', servicesIntakeRoutes);
   app.route('/v1/integrations', integrationRoutes);
   app.route('/v1/tasks', taskRoutes);
   app.route('/v1/notifications', notificationRoutes);

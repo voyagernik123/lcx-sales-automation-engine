@@ -149,9 +149,13 @@ export function GpsInputsPackets({ onApplied }: { onApplied?: () => void }) {
               proposal,
               notes: notes[p.kind] ?? null,
             };
+      /* `request` stringifies `body` itself — passing a pre-stringified body double-encodes
+         and the server's jsonBody() sees a JSON *string*, not an object. Caught by reading
+         apiClient, not by the tests, whose mock happily parsed the single layer: a mocked
+         boundary agrees with whichever side wrote it. */
       const res = await request<DecideEnvelope>(`/v1/gps/packets/${p.kind}/decide`, {
         method: 'POST',
-        body: JSON.stringify(wire),
+        body: wire,
       });
       setData((d) => (d ? { ...d, decisions: res.data.decisions } : d));
       onApplied?.();

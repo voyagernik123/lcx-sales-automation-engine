@@ -87,6 +87,7 @@ import { gpsArtifactRoutes } from './gpsArtifact.js';
 import { gpsPartnerRegistryRoutes } from './gpsPartnerRegistry.js';
 import { gpsInputsRoutes } from './gpsInputs.js';
 import { gpsPacketsRoutes } from './gpsPackets.js';
+import { gpsDemandRoutes } from './gpsDemand.js';
 import {
   perimeterClearanceFor,
   perimeterRefusalBody,
@@ -968,6 +969,7 @@ gpsRoutes.route('/', gpsArtifactRoutes); //  /v1/gps/engagements/:id/artifacts, 
  */
 gpsRoutes.route('/inputs', gpsInputsRoutes); //  GET /v1/gps/inputs, POST /inputs/price-bands|effort-triples|rate-cards
 gpsRoutes.route('/packets', gpsPacketsRoutes); //  GET /v1/gps/packets, POST /packets/:kind/decide — G0 founder packets
+gpsRoutes.route('/demand', gpsDemandRoutes); //  G1 demand queue: GET /demand, crossfeed/run, telegram, :id/promote|refuse
 
 /*
  * F5 — THE PARTNER REGISTRY (2026-08-07). Mounted HERE and not in `app.ts` on purpose: the

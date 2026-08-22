@@ -406,6 +406,16 @@ export const PENDING_MIGRATIONS: readonly string[] = [
    * no policies. NOT APPLIED ANYWHERE until a human applies it; until then the packets
    * screen reads 200 with decisions absent and every write refuses 503 with the code. */
   '0076_gps_packets.sql',
+
+  /* 0077 → `gps_demand_candidate`. G1 of GPS_REVENUE_100X_PLAN.md: the demand queue four
+   * channels feed (BD crossfeed, public inbound intake, the owner's Telegram exports,
+   * partner referrals). Deliberately NO jsonb — the frozen-set review stays its size —
+   * and every text column hard-capped. Idempotent on (source, source_ref); a refusal
+   * must carry its reason and a promotion its target id (CHECKs), so half-records are
+   * inexpressible. Sender identities from Telegram never reach this table: the shared
+   * parser drops them and reports the count. NOT APPLIED ANYWHERE until a human applies
+   * it; the demand routes read 200-empty and write 503 with the code until then. */
+  '0077_gps_demand.sql',
 ];
 
 /**

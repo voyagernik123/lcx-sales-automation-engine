@@ -43,6 +43,15 @@ const DESK_LEVEL: ReadonlyArray<{
   { path: '/v1/reviews', status: 'filters-per-reader', why: 'per-subject compartment gate on all five handlers (see reviewsCompartment.test.ts)' },
   { path: '/v1/tasks', status: 'filters-per-reader', why: 'mayReadSales excludes deal- and project-linked rows (see tasksCompartment.test.ts)' },
   { path: '/v1/x402', status: 'gated-elsewhere', why: 'x402Guard per endpoint; the catalog is public by design' },
+  {
+    path: '/v1/services',
+    status: 'gated-elsewhere',
+    why: 'public BY DECISION (G1, 2026-08-21): the services intake is the one unauthenticated '
+      + 'GPS-adjacent write, hardened in its own file — strict six-field schema, per-IP bucket '
+      + 'behind the global limiter, honeypot answered indistinguishably from success, no '
+      + 'reflection, and its writes land in gps_demand_candidate as proposed rows a gps '
+      + 'operator must promote before anything downstream sees them.',
+  },
 
   /*
    * ── OPEN, AND SAID SO RATHER THAN ASSUMED SAFE ──────────────────────────────────────

@@ -11,8 +11,8 @@ import { buildFounderPackets } from '@lcx/shared';
  * So the tests here are about TRUTHFUL PRESENTATION and WIRE HONESTY, not about rules.
  */
 
-const requests = vi.hoisted(() => [] as Array<{ url: string; init?: { method?: string; body?: string } }>);
-const responder = vi.hoisted(() => ({ fn: null as null | ((url: string, init?: { method?: string; body?: string }) => unknown) }));
+const requests = vi.hoisted(() => [] as Array<{ url: string; init?: { method?: string; body?: unknown } }>);
+const responder = vi.hoisted(() => ({ fn: null as null | ((url: string, init?: { method?: string; body?: unknown }) => unknown) }));
 
 class MockApiError extends Error {
   status: number; code?: string; data?: unknown;
@@ -23,7 +23,7 @@ class MockApiError extends Error {
 
 vi.mock('@/lib/apiClient', () => ({
   ApiError: MockApiError,
-  request: async (url: string, init?: { method?: string; body?: string }) => {
+  request: async (url: string, init?: { method?: string; body?: unknown }) => {
     requests.push({ url, init });
     const out = responder.fn?.(url, init);
     if (out instanceof MockApiError) throw out;
@@ -98,7 +98,7 @@ describe('the two decisions never blur', () => {
       return p!;
     });
     expect(post.url).toBe('/v1/gps/packets/price_bands/decide');
-    const body = JSON.parse(post.init!.body!);
+    const body = post.init!.body as Record<string, any>;
     expect(body.decision).toBe('approved');
     expect(body.proposal).toEqual(JSON.parse(JSON.stringify(PACKETS[0].proposal)));
   });
@@ -121,7 +121,7 @@ describe('the two decisions never blur', () => {
       expect(p).toBeTruthy();
       return p!;
     });
-    const body = JSON.parse(post.init!.body!);
+    const body = post.init!.body as Record<string, any>;
     expect(body.decision).toBe('approved_with_edits');
     const diag = body.proposal.rows.find((r: { offerKey: string }) => r.offerKey === 'diagnostic');
     expect(diag.midCents).toBe(450000);
@@ -148,7 +148,7 @@ describe('the two decisions never blur', () => {
       expect(p).toBeTruthy();
       return p!;
     });
-    const body = JSON.parse(post.init!.body!);
+    const body = post.init!.body as Record<string, any>;
     expect(body.decision).toBe('approved_with_edits');
     expect(body.proposal.rows).toHaveLength(29);
     expect(card).toBeTruthy();
@@ -205,7 +205,7 @@ describe('refusals and outcomes arrive verbatim', () => {
       return p!;
     });
     expect(post.url).toBe('/v1/gps/packets/dpo_memo/decide');
-    const body = JSON.parse(post.init!.body!);
+    const body = post.init!.body as Record<string, any>;
     expect(body.decision).toBe('rejected');
     expect(body.proposal).toBeUndefined();
     expect(body.notes).toBe('not yet');
