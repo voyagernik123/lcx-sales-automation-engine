@@ -436,3 +436,19 @@ export {
   PRICING_POLICY_BOUNDS, PRICE_PROPOSAL_METHOD,
   pricingPolicyDefects, costQuantilesFrom, proposePriceCents,
 } from './pricing.js';
+
+/* ── G5 — the delivery factory's Stage 1 ──────────────────────────────────────
+ * Templates whose client slots are DERIVED from the catalogue's own
+ * requiredClientInputs — proposal, portal form and draft refusal read one list.
+ * `slotGaps` is the D10 refusal (and the chase list); `composeDraftPrompt` throws
+ * over a gap so no caller can skip the refusal; `draftDefects` holds the same
+ * shape-or-refuse bar as dossiers. Truth-checking is Stage 2's job, by design.
+ */
+export type {
+  FactorySlotSource, FactorySlot, FactoryTemplate, FactoryPrompt,
+  DraftDefectCode, DraftDefect, FactoryStage,
+} from './factory.js';
+export {
+  FACTORY_OFFER_KEYS, FACTORY_STAGES, DRAFT_MAX_CHARS,
+  factoryTemplate, slotGaps, composeDraftPrompt, draftDefects,
+} from './factory.js';

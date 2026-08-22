@@ -90,6 +90,7 @@ import { gpsPacketsRoutes } from './gpsPackets.js';
 import { gpsDemandRoutes } from './gpsDemand.js';
 import { gpsDossierRoutes } from './gpsDossier.js';
 import { gpsPortalAdminRoutes } from './gpsPortal.js';
+import { gpsFactoryRoutes } from './gpsFactory.js';
 import {
   perimeterClearanceFor,
   perimeterRefusalBody,
@@ -974,6 +975,7 @@ gpsRoutes.route('/packets', gpsPacketsRoutes); //  GET /v1/gps/packets, POST /pa
 gpsRoutes.route('/demand', gpsDemandRoutes); //  G1 demand queue: GET /demand, crossfeed/run, telegram, :id/promote|refuse
 gpsRoutes.route('/dossiers', gpsDossierRoutes); //  G2 dossiers & outreach: GET ?targetId, generate, :id/decide, outreach
 gpsRoutes.route('/portal-admin', gpsPortalAdminRoutes); //  G4 desk side: invite (approver), sessions, revoke — the token appears ONCE
+gpsRoutes.route('/factory', gpsFactoryRoutes); //  G5: slot state, draft (refuses over gaps), QA via the one review gate, actuals
 
 /*
  * F5 — THE PARTNER REGISTRY (2026-08-07). Mounted HERE and not in `app.ts` on purpose: the

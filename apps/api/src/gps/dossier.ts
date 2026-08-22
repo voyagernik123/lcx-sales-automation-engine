@@ -303,8 +303,8 @@ export function isOutreachChannel(x: unknown): x is OutreachChannel {
   return typeof x === 'string' && (OUTREACH_CHANNELS as readonly string[]).includes(x);
 }
 
-/** The accepted dossier's ANGLE section, verbatim, for the outreach prompt to build on. */
-function angleFrom(dossierMd: string): string | null {
+/** The accepted dossier's ANGLE section, verbatim — outreach (G2) and factory drafts (G5) build on it. */
+export function angleFrom(dossierMd: string): string | null {
   const start = dossierMd.indexOf(DOSSIER_HEADINGS[2]);
   if (start === -1) return null;
   const rest = dossierMd.slice(start + DOSSIER_HEADINGS[2].length);

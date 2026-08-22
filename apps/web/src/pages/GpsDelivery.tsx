@@ -39,6 +39,7 @@ import { PrintStyles } from '@/components/report/PrintStyles';
  */
 import { ArtifactIntake } from '@/components/gps/ArtifactIntake';
 import { PortalInvitePanel } from '@/components/gps/PortalInvitePanel';
+import { FactoryPanel } from '@/components/gps/FactoryPanel';
 import { LegalPositionStamp } from '@/components/gps/LegalPositionStamp';
 import { readLegalPosition } from '@/components/gps/legalPosition';
 
@@ -1559,6 +1560,11 @@ export function GpsDelivery() {
               the desk, and an operator reasoning about exposure should see them
               on one screen. */}
           <PortalInvitePanel engagementId={engagementId} />
+
+          {/* G5: the waterfall. Slot gaps double as the client chase list; QA
+              acceptance advances the deliverable through the SAME review gate the
+              rest of this page reports on. */}
+          <FactoryPanel engagementId={engagementId} />
 
           {/* THE API'S OWN STATEMENT ABOUT WHAT IT DOES WITH CLIENT MATERIAL, printed
               verbatim from the wire rather than restated here.

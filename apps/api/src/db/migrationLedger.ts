@@ -447,6 +447,16 @@ export const PENDING_MIGRATIONS: readonly string[] = [
    * processor path. No jsonb, every text column capped. NOT APPLIED ANYWHERE until a
    * human applies it; the portal answers 503 with the migration named until then. */
   '0080_gps_portal.sql',
+
+  /* 0081 → the delivery factory (G5 of GPS_REVENUE_100X_PLAN.md): gps_draft — versioned
+   * Stage-1 drafts that survived the shared shape validator, generated only with every
+   * required client slot answered (D10; slotGaps is the refusal AND the chase list),
+   * append-only versions with named-QA-acceptance / reasoned-rework CHECKs; QA acceptance
+   * marks the linked deliverable reviewed through the desk's OWN recordDeliverableReview,
+   * so 0049's accepted-before-reviewed constraint now guards the whole waterfall. Plus
+   * gps_stage_actual — hours/cost per stage, the ground truth the calibration loop was
+   * starving for. No jsonb, text capped. NOT APPLIED ANYWHERE until a human applies it. */
+  '0081_gps_factory.sql',
 ];
 
 /**
