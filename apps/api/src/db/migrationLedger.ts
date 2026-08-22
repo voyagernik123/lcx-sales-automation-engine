@@ -457,6 +457,17 @@ export const PENDING_MIGRATIONS: readonly string[] = [
    * gps_stage_actual — hours/cost per stage, the ground truth the calibration loop was
    * starving for. No jsonb, text capped. NOT APPLIED ANYWHERE until a human applies it. */
   '0081_gps_factory.sql',
+
+  /* 0082 → gps_invoice (G6 of GPS_REVENUE_100X_PLAN.md): numbered immutable invoices
+   * that MUST trace to an accepted deliverable (deliverable_id NOT NULL + the service
+   * refuses unless accepted_at is set — an invoice that traces to no acceptance is
+   * inexpressible, D1/D8). The number is derived from the append-only id, so it cannot
+   * drift; amount_cents and currency are write-once; the only post-issue writes are
+   * status transitions into their own attributed columns (paid needs a reference,
+   * dispute and void need a reason). A partial unique index forbids a second non-void
+   * invoice per deliverable. Rails stay external — paid records a reference, moves no
+   * money. No jsonb, text capped. NOT APPLIED ANYWHERE until a human applies it. */
+  '0082_gps_invoice.sql',
 ];
 
 /**

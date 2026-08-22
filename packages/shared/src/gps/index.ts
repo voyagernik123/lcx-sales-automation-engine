@@ -452,3 +452,18 @@ export {
   FACTORY_OFFER_KEYS, FACTORY_STAGES, DRAFT_MAX_CHARS,
   factoryTemplate, slotGaps, composeDraftPrompt, draftDefects,
 } from './factory.js';
+
+/* ── G6 — money ───────────────────────────────────────────────────────────────
+ * The pure parts: the number IS the identity (immutable), aging mirrors the deposit
+ * brackets and refuses to sum across currencies, and the chase is deterministic —
+ * three facts and a question, no promise language — so the numbers are the invoice's
+ * and nothing else. The API runs the chase through the outbound gate before anyone
+ * sees it; nothing here sends.
+ */
+export type {
+  InvoiceStatus, InvoiceAgingInput, InvoiceAgingBracket, InvoiceAging, ChaseInput,
+} from './invoicing.js';
+export {
+  INVOICE_STATUSES, OPEN_INVOICE_STATUSES, CHASE_MAX_CHARS,
+  formatInvoiceNumber, invoiceAging, buildChaseText,
+} from './invoicing.js';

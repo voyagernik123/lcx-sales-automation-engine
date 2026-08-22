@@ -4,6 +4,7 @@ import { clsx } from 'clsx';
 import { PageTitle, Button } from '@/components/ui';
 import { EmptyState, PageSkeleton } from '@/components/shared';
 import { PrintStyles } from '@/components/report/PrintStyles';
+import { InvoicesPanel } from '@/components/gps/InvoicesPanel';
 import { useListNavigation } from '@/hooks/useListNavigation';
 // `getOffer` only. `ENGAGEMENT_STATUS_LABELS` is deliberately NOT imported: the one
 // status this page prints arrives pre-labelled on the wire as
@@ -272,6 +273,10 @@ function Loaded({ res }: { res: BookResponse }) {
       <HealthPanel health={res.health} />
       <ConcentrationPanel concentration={res.concentration} />
       <CashPanel cash={res.cash} />
+      {/* G6: invoices sit under the cash panel because aging IS a cash-conversion
+          fact. The panel self-fetches /v1/gps/invoices and owns its own migrated:false
+          sentence — the invoice register is a different migration from the book read. */}
+      <InvoicesPanel />
       <CapacityPanel capacity={res.capacity} wip={res.wip} placeholders={res.placeholders} />
       <MarginPanel margin={res.marginRealisation} placeholders={res.placeholders} />
       <PlaceholderLedger placeholders={res.placeholders} unresolved={res.unresolved} />
