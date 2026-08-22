@@ -47,6 +47,7 @@ import { commandRoutes } from './routes/command.js';
 import { distributionRoutes } from './routes/distribution.js';
 import { x402Routes } from './routes/x402.js';
 import { servicesIntakeRoutes } from './routes/servicesIntake.js';
+import { portalRoutes } from './routes/portal.js';
 import { governanceRegisterRoutes } from './routes/governanceRegister.js';
 import { accessRoutes } from './routes/access.js';
 import { gpsRoutes } from './routes/gps.js';
@@ -264,6 +265,14 @@ export function createApp() {
    * bucket behind the global limiter, honeypot answered indistinguishably, no reflection.
    */
   app.route('/v1/services', servicesIntakeRoutes);
+  /*
+   * The portal plane — /v1/portal, the client's own country (G4, D9). NOT under
+   * /v1/gps and NOT behind the workspace gate: its only principal is a magic-link
+   * session scoped to one engagement, resolved by digest on every request inside
+   * the router, with its own rate budget. No internal route accepts that
+   * principal and this surface accepts no other.
+   */
+  app.route('/v1/portal', portalRoutes);
   app.route('/v1/integrations', integrationRoutes);
   app.route('/v1/tasks', taskRoutes);
   app.route('/v1/notifications', notificationRoutes);

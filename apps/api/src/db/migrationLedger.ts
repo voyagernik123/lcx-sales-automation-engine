@@ -437,6 +437,16 @@ export const PENDING_MIGRATIONS: readonly string[] = [
    * (0,0.9] / (0,0.5] pricing.ts states. No jsonb, text capped. NOT APPLIED ANYWHERE
    * until a human applies it. */
   '0079_gps_pricing_policy.sql',
+
+  /* 0080 → the portal plane (G4 of GPS_REVENUE_100X_PLAN.md, doctrine D9): sessions
+   * holding a token DIGEST never a token, scoped to ONE engagement, expiring and
+   * revocable-with-a-name; typed client facts append-only against the catalogue's own
+   * requiredClientInputs; and the client-plane event floor G6 reads acceptance evidence
+   * from. Deliberately NO byte, filename or storage column — the upload endpoint refuses
+   * with the reason until the dpo_memo packet decision is approved AND recommends the
+   * processor path. No jsonb, every text column capped. NOT APPLIED ANYWHERE until a
+   * human applies it; the portal answers 503 with the migration named until then. */
+  '0080_gps_portal.sql',
 ];
 
 /**

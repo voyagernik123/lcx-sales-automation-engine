@@ -52,6 +52,19 @@ const DESK_LEVEL: ReadonlyArray<{
       + 'reflection, and its writes land in gps_demand_candidate as proposed rows a gps '
       + 'operator must promote before anything downstream sees them.',
   },
+  {
+    path: '/v1/portal',
+    status: 'gated-elsewhere',
+    why: 'the client plane BY DECISION (G4, 2026-08-22, doctrine D9): every route sits behind a '
+      + 'bearer magic-link session resolved BY DIGEST inside the router on every request — '
+      + 'expiring, revocable, scoped to ONE engagement, minted only by an internal approver act '
+      + '(routes/gpsPortal.ts, inside the gps compartment gate). No workspace entitlement exists '
+      + 'for a client and none is granted: the session IS the whole authority, per-IP and '
+      + 'per-session rate buckets are its own budget, every handler reads its engagement from '
+      + 'the session and never from the request, and the surface accepts typed capped JSON only '
+      + '— no parser, no stream, no byte field (the upload endpoint records intent and refuses '
+      + 'with the DPO gate\'s reason).',
+  },
 
   /*
    * ── OPEN, AND SAID SO RATHER THAN ASSUMED SAFE ──────────────────────────────────────

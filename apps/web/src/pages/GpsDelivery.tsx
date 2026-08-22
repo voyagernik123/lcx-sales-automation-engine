@@ -38,6 +38,7 @@ import { PrintStyles } from '@/components/report/PrintStyles';
  *    This page prints, and the printed dossier is what reaches a client.
  */
 import { ArtifactIntake } from '@/components/gps/ArtifactIntake';
+import { PortalInvitePanel } from '@/components/gps/PortalInvitePanel';
 import { LegalPositionStamp } from '@/components/gps/LegalPositionStamp';
 import { readLegalPosition } from '@/components/gps/legalPosition';
 
@@ -1552,6 +1553,12 @@ export function GpsDelivery() {
                 the two into one claim (`components/gps/ArtifactIntake.tsx`). */}
             <ArtifactIntake engagementId={engagementId} />
           </Block>
+
+          {/* G4: the portal links this engagement answers to. Beside the artifact
+              intake on purpose — both are doors into the engagement from outside
+              the desk, and an operator reasoning about exposure should see them
+              on one screen. */}
+          <PortalInvitePanel engagementId={engagementId} />
 
           {/* THE API'S OWN STATEMENT ABOUT WHAT IT DOES WITH CLIENT MATERIAL, printed
               verbatim from the wire rather than restated here.

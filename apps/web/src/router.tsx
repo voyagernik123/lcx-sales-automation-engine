@@ -120,6 +120,7 @@ const CheatCard = lazy(() => import('@/pages/CheatCard').then((m) => ({ default:
 // here than most: this chunk is the only eager-bundle risk in the feature, since it
 // is what pulls in the generated 22-action manifest.
 const Launch = lazy(() => import('@/pages/Launch').then((m) => ({ default: m.Launch })));
+const Portal = lazy(() => import('@/pages/Portal').then((m) => ({ default: m.Portal })));
 const PracticeRange = lazy(() => import('@/pages/PracticeRange').then((m) => ({ default: m.PracticeRange })));
 
 /**
@@ -204,6 +205,10 @@ export const router = createBrowserRouter([
       // is a static page behind a CDN, so the gap is a frame, and a flashing
       // skeleton would be more noticeable than the load it hides.
       { path: '/lcxos', element: <Suspense fallback={null}><Launch /></Suspense> },
+      /* G4: the client portal — a public sibling like /lcxos, its own chunk, its own
+       * country (D9). The magic-link token rides the URL HASH and the page strips it
+       * on first read; nothing about this route touches the desk's auth or layout. */
+      { path: '/portal', element: <Suspense fallback={null}><Portal /></Suspense> },
       { path: '/select', element: <SelectOperator /> },
       {
         path: '/',
