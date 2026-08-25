@@ -98,6 +98,7 @@ const PAGE_BY_DESTINATION: Readonly<Record<string, string>> = {
   'go-gps-conflict': 'GpsConflict.tsx',
   'go-gps-delivery': 'GpsDelivery.tsx',
   'go-gps-loop': 'GpsLoop.tsx',
+  'go-gps-inputs': 'GpsInputs.tsx',
 };
 
 const pageSrc = (destination: string) => read(WEB_SRC, 'pages', PAGE_BY_DESTINATION[destination]!);
@@ -155,7 +156,10 @@ describe('the palette rows are generated, not hand-listed', () => {
     expect(GPS_DESTINATIONS.length).toBe(
       DESTINATIONS.filter((d) => d.path === GPS_PATH_PREFIX || d.path.startsWith(`${GPS_PATH_PREFIX}/`)).length,
     );
-    expect(GPS_DESTINATIONS.length).toBe(7);
+    // 7 became 8 in the completion pass: the input desk finally got a Destination —
+    // it was the one GPS surface reachable only by typing a URL, which for the desk
+    // that hosts every founder approval was the wrong page to hide.
+    expect(GPS_DESTINATIONS.length).toBe(8);
   });
 
   it('no row carries a blank sublabel, including the desk with no noun on it', () => {
@@ -235,15 +239,16 @@ describe('every GPS noun is reachable', () => {
     // prevent is precisely the one GPS shipped seven times — a surface an operator can
     // only reach if he already knows it is there.
     //
-    // `packet` is NOT in this list, and that is the honest gap: founder packets live on
-    // /gps/inputs, which has no Destination and cannot get one without a native-menu
-    // line in the desktop shell. A palette row pointing nowhere would be worse than
-    // its absence, so the absence is written down (see GPS_NOUNS' G7 block).
+    // TWENTY BECAME TWENTY-ONE in the completion pass. `packet` was this list's one
+    // written-down absence — refused while /gps/inputs had no Destination, because a
+    // palette row pointing nowhere is worse than no row. The Destination and its
+    // native-menu line (apps/desktop/src-tauri/src/lib.rs) landed together with the
+    // noun, which is the order the original note demanded.
     expect(GPS_NOUNS.map((n) => n.kind).sort()).toEqual([
       'client', 'conflict_decision', 'deliverable', 'disclosure', 'dossier', 'draft',
       'effort_triple', 'engagement', 'invoice', 'milestone', 'offer', 'outcome',
-      'outreach_opening', 'partner', 'perimeter_position', 'portal_invite', 'proposal',
-      'quote', 'rate_card', 'target',
+      'outreach_opening', 'packet', 'partner', 'perimeter_position', 'portal_invite',
+      'proposal', 'quote', 'rate_card', 'target',
     ]);
   });
 
@@ -408,7 +413,7 @@ describe('the honesty ceiling is encoded, not narrated', () => {
   });
 
   it('every reach is a declared variant and the table is populated', () => {
-    expect(GPS_NOUNS.length).toBe(20);
+    expect(GPS_NOUNS.length).toBe(21); // 20 + `packet`, the completion pass — see the literal list above
     for (const n of GPS_NOUNS) {
       expect(
         ['server_search', 'client_list', 'per_parent', 'compiled_catalogue', 'surface_route', 'no_fetcher'],

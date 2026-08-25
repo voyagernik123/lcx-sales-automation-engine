@@ -132,7 +132,7 @@ export function InvoicesPanel() {
 
             {data.aging !== null && data.aging.openCount > 0 && (
               <div data-testid="invoices-aging">
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-grey">
+                <p className="font-mono text-micro uppercase tracking-wider text-grey">
                   Open — {data.aging.openCount} invoice(s)
                   {data.aging.currenciesPresent.length <= 1
                     ? `, ${money(data.aging.openAmountCents, data.aging.currenciesPresent[0] ?? 'USD')}`
@@ -159,14 +159,14 @@ export function InvoicesPanel() {
 
             {chase !== null && (
               <div className="border border-line p-2" data-testid="chase-draft">
-                <p className="font-mono text-[11px] font-bold uppercase tracking-wider text-grey">
+                <p className="font-mono text-micro font-bold uppercase tracking-wider text-grey">
                   Chase draft for GPS-{String(chase.invoiceId).padStart(6, '0')} —{' '}
                   <span className={chase.verdict.allowed ? 'text-status-ready' : 'text-status-blocked'}>
                     gate: {chase.verdict.allowed ? 'cleared' : 'refused'}
                   </span>
                 </p>
                 <pre className="mt-1 whitespace-pre-wrap font-sans text-xs leading-relaxed text-navy" data-testid="chase-text">{chase.draft}</pre>
-                <p className="mt-1 text-[10px] text-grey">
+                <p className="mt-1 text-micro text-grey">
                   {chase.verdict.refusals.length > 0 && <>refusals: {chase.verdict.refusals.map((r) => r.code).join(', ')} · </>}
                   ref {chase.verdict.reference}. Copy and send it yourself — this desk drafts and judges, it does not send.
                 </p>
@@ -180,7 +180,7 @@ export function InvoicesPanel() {
                 a bill that traces to no acceptance is inexpressible here.
               </p>
             ) : (
-              <table className="w-full text-[11px]">
+              <table className="w-full text-micro">
                 <thead>
                   <tr className="border-b border-line text-left font-mono uppercase tracking-wider text-grey">
                     <th className="py-1 pr-2">number</th><th className="pr-2">amount</th>

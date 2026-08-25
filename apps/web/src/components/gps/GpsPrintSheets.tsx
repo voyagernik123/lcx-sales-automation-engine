@@ -206,3 +206,126 @@ export function InvoiceSheet({ invoice, clientName = null, asOf, sources = [] }:
     </GpsPrintArtefact>
   );
 }
+
+/* ── The proposal sheet — the sold scope, priced, with its own honesty stamps ── */
+
+export interface ProposalSheetInput {
+  engagementId: string;
+  offerKey: string;
+  status: string;
+  priceCents: number;
+  currency: string;
+  depositRequiredCents: number;
+  depositPaidAt: string | null;
+  contractingEntity: string;
+  createdAt: string;
+  /** The sealed snapshot, WHITELISTED — never a spread of unknown jsonb. */
+  offerName: string | null;
+  exclusions: readonly string[];
+  requiredClientInputs: readonly string[];
+  /** The conflict wall's answer, when one exists. A proposal with no check says so. */
+  conflictDecision: string | null;
+  conflictDecidedBy: string | null;
+}
+
+/**
+ * THE PROPOSAL, PRINTED — the last of the three sheets G7 asked for, and the one that
+ * was deliberately NOT shipped until the engagement payload could be read rather than
+ * reconstructed: every value below cites the wire field it came off, and the snapshot
+ * fields are whitelisted exactly as the portal whitelists them (`portal/service.ts`),
+ * because a spread of a jsonb column onto a CLIENT-FACING page is how an internal note
+ * ends up in a PDF a counterparty keeps.
+ *
+ * TWO REFUSALS ARE PART OF THE SHEET:
+ *  · A zero price does not print as "$0.00" — 0047's column default is 0, so a zero
+ *    here means NO PRICE WAS QUOTED, and the sheet says that instead of printing the
+ *    most expensive-looking free proposal in history.
+ *  · An absent conflict check is NAMED. The conflict wall is what makes this desk
+ *    lawful to run beside a listing venue; a proposal printed without saying whether
+ *    the wall was consulted would be laundering the one fact counsel asks about.
+ */
+export function ProposalSheet({ proposal, clientName = null, asOf, sources = [] }: {
+  proposal: ProposalSheetInput;
+  clientName?: string | null;
+  asOf: string;
+  sources?: readonly unknown[];
+}) {
+  const priced = proposal.priceCents > 0;
+  const provenance: GpsPrintProvenanceRow[] = [
+    { label: 'Engagement', value: proposal.engagementId, source: 'gps_engagement.id (GET /v1/gps/engagements/:id)' },
+    { label: 'Offer', value: proposal.offerName ?? proposal.offerKey, source: 'scope_snapshot.offerName — sealed at quote, never re-read from the live catalogue' },
+    {
+      label: 'Price',
+      value: priced ? money(proposal.priceCents, proposal.currency) : 'NOT QUOTED',
+      source: priced
+        ? 'gps_engagement.price_cents — integer cents, set by the quote flow'
+        : 'gps_engagement.price_cents is 0, the 0047 column default — no human has quoted this engagement',
+    },
+    {
+      label: 'Deposit',
+      value: proposal.depositRequiredCents > 0
+        ? `${money(proposal.depositRequiredCents, proposal.currency)} — ${proposal.depositPaidAt === null ? 'OUTSTANDING' : `received ${proposal.depositPaidAt.slice(0, 10)}`}`
+        : 'none required',
+      source: 'gps_engagement.deposit_required_cents / deposit_paid_at — only the cash commits a partner',
+    },
+    { label: 'Contracting entity', value: proposal.contractingEntity, source: 'gps_engagement.contracting_entity' },
+    {
+      label: 'Conflict wall',
+      value: proposal.conflictDecision === null
+        ? 'NO CHECK RECORDED'
+        : `${proposal.conflictDecision} (decided by ${proposal.conflictDecidedBy ?? 'unrecorded'})`,
+      source: proposal.conflictDecision === null
+        ? 'gps_conflict_check has no row for this engagement — the wall was not consulted, and this sheet says so rather than implying clearance'
+        : 'gps_conflict_check — the recorded decision, with its human',
+    },
+  ];
+
+  return (
+    <GpsPrintArtefact
+      kind="proposal"
+      title={`Proposal — ${proposal.offerName ?? proposal.offerKey}${clientName === null ? '' : ` for ${clientName}`}`}
+      asOf={asOf}
+      computedAt={proposal.createdAt}
+      sources={sources}
+      provenance={provenance}
+    >
+      <section data-testid="proposal-sheet-body" className="space-y-2">
+        {priced ? (
+          <p className="font-mono text-[15px] font-bold tabular-nums" data-testid="proposal-sheet-price">
+            {money(proposal.priceCents, proposal.currency)} {proposal.currency}
+          </p>
+        ) : (
+          <p className="border-2 border-navy p-2 text-[12px] font-bold" data-testid="proposal-sheet-unpriced">
+            NO PRICE HAS BEEN QUOTED on this engagement. The stored value is the schema
+            default, not a figure a human chose — this sheet must not be presented as an
+            offer until the quote flow has run.
+          </p>
+        )}
+
+        {proposal.exclusions.length > 0 && (
+          <div data-testid="proposal-sheet-exclusions">
+            <p className="font-mono text-micro uppercase tracking-wider text-grey">Outside this scope, by agreement</p>
+            <ul className="mt-1 space-y-0.5 text-[12px]">
+              {proposal.exclusions.map((x) => <li key={x}>· {x}</li>)}
+            </ul>
+          </div>
+        )}
+
+        {proposal.requiredClientInputs.length > 0 && (
+          <div data-testid="proposal-sheet-inputs">
+            <p className="font-mono text-micro uppercase tracking-wider text-grey">What the client owes the work</p>
+            <ul className="mt-1 space-y-0.5 text-[12px]">
+              {proposal.requiredClientInputs.map((x) => <li key={x}>· {x}</li>)}
+            </ul>
+          </div>
+        )}
+
+        <p className="border-t border-line pt-2 text-[11px] leading-relaxed text-grey">
+          Status {proposal.status}. This sheet restates the sealed scope snapshot and the register's
+          own figures; it adds nothing, promises no listing and no regulatory outcome, and is not
+          legal advice. The exclusions above are part of the offer, not small print.
+        </p>
+      </section>
+    </GpsPrintArtefact>
+  );
+}

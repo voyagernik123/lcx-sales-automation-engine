@@ -39,6 +39,7 @@ import { PrintStyles } from '@/components/report/PrintStyles';
  */
 import { ArtifactIntake } from '@/components/gps/ArtifactIntake';
 import { PortalInvitePanel } from '@/components/gps/PortalInvitePanel';
+import { ProposalSheetLoader } from '@/components/gps/ProposalSheetLoader';
 import { FactoryPanel } from '@/components/gps/FactoryPanel';
 import { LegalPositionStamp } from '@/components/gps/LegalPositionStamp';
 import { readLegalPosition } from '@/components/gps/legalPosition';
@@ -1560,6 +1561,11 @@ export function GpsDelivery() {
               the desk, and an operator reasoning about exposure should see them
               on one screen. */}
           <PortalInvitePanel engagementId={engagementId} />
+
+          {/* G7's third print artefact, landed in the completion pass: the proposal as
+              sold. Beside the portal panel because both answer "what did we promise this
+              client" — one on screen for them, one on paper for the file. */}
+          <ProposalSheetLoader engagementId={engagementId} clientName={data?.engagement.clientName ?? null} />
 
           {/* G5: the waterfall. Slot gaps double as the client chase list; QA
               acceptance advances the deliverable through the SAME review gate the

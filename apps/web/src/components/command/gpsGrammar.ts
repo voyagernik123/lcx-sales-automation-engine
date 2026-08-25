@@ -115,7 +115,12 @@ export type GpsNounKind =
   | 'outcome'
   | 'perimeter_position'
   | 'disclosure'
-  | 'conflict_decision';
+  | 'conflict_decision'
+  /* Completion pass: the noun the G7 census wrote down as its one honest gap. The gap
+   * was never about the noun — it was that /gps/inputs had no Destination and no
+   * native-menu line. Both exist now, so the absence note in gpsGrammar.test.ts became
+   * this row. */
+  | 'packet';
 
 /**
  * How the palette can put an INSTANCE of this noun in front of the operator TODAY.
@@ -364,6 +369,19 @@ export const GPS_NOUNS: readonly GpsNounDef[] = [
     aliases: ['research', 'brief on a target', 'ai dossier'],
   },
   {
+    kind: 'packet', label: 'Founder packet', plural: 'Founder packets', code: 'gpk',
+    destination: 'go-gps-inputs', subjectType: null,
+    reach: {
+      via: 'no_fetcher',
+      missingFn: 'fetchGpsPackets',
+      serverRoute: '/v1/gps/packets',
+      routeLiteral: '/packets',
+      reason: 'the packet inbox on the input desk fetches inline; there is exactly one packet per kind, so a cross-packet list fetcher would enumerate six rows a single screen already shows',
+    },
+    caveat: 'system-proposed, owner-approved — the six numbers every price stands on; approval is what makes a number real',
+    aliases: ['founder packet', 'approval packet', 'pricing policy packet', 'g0 packet'],
+  },
+  {
     kind: 'draft', label: 'Deliverable draft', plural: 'Deliverable drafts', code: 'gdf',
     destination: 'go-gps-delivery', subjectType: null,
     reach: {
@@ -513,6 +531,7 @@ export const GPS_SURFACES_WITHOUT_SELECTION: readonly { page: string; destinatio
   { page: 'GpsOrigination.tsx', destination: 'go-gps-origination' },
   { page: 'GpsUnderwriting.tsx', destination: 'go-gps-underwriting' },
   { page: 'GpsConflict.tsx', destination: 'go-gps-conflict' },
+  { page: 'GpsInputs.tsx', destination: 'go-gps-inputs' },
 ];
 
 /* ── generated: verbs, and why one is unavailable ──────────────────────────────── */

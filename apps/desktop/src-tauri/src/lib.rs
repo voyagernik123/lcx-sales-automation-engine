@@ -627,6 +627,7 @@ fn build_menu(app: &tauri::AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
             &MenuItem::with_id(app, "go-gps-conflict", "GPS · THE CONFLICT WALL", true, None::<&str>)?,
             &MenuItem::with_id(app, "go-gps-delivery", "GPS · DELIVERY DESK", true, None::<&str>)?,
             &MenuItem::with_id(app, "go-gps-loop", "GPS · THE LOOP", true, None::<&str>)?,
+            &MenuItem::with_id(app, "go-gps-inputs", "GPS · THE INPUT DESK", true, None::<&str>)?,
             // LCX MARKETING's three surfaces, on identical terms to the six above: no
             // accelerator, because ⌘0-9 mean "go to a compartment" and these are
             // surfaces inside one. Reachable by `g k`/`g r`/`g m` in the webview and by

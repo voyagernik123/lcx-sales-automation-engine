@@ -173,6 +173,13 @@ export function Portal() {
           <p className="mt-1 text-[11px] text-grey">
             Signed in via invitation for {view.sessionLabel} · link valid until {view.sessionExpiresAt.slice(0, 10)}
           </p>
+          <button
+            onClick={() => window.print()}
+            data-testid="portal-print"
+            className="portal-no-print mt-2 border border-navy px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-navy hover:opacity-70"
+          >
+            Print this proposal
+          </button>
         </header>
 
         {e.exclusions.length > 0 && (
@@ -221,7 +228,7 @@ export function Portal() {
                     onClick={() => void accept(d.id)}
                     disabled={busy !== null}
                     data-testid={`portal-accept-${d.id}`}
-                    className="shrink-0 border border-navy px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-navy hover:opacity-70 disabled:opacity-40"
+                    className="portal-no-print shrink-0 border border-navy px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-navy hover:opacity-70 disabled:opacity-40"
                   >
                     Accept this deliverable
                   </button>
@@ -255,7 +262,7 @@ export function Portal() {
                     rows={2}
                     maxLength={2000}
                     placeholder={existing ? 'Update your answer (optional)' : 'Your answer'}
-                    className="mt-1 w-full border border-control bg-transparent px-2 py-1.5 text-[12px]"
+                    className="portal-no-print mt-1 w-full border border-control bg-transparent px-2 py-1.5 text-[12px]"
                     value={factDrafts[key] ?? ''}
                     onChange={(ev) => setFactDrafts((d) => ({ ...d, [key]: ev.target.value }))}
                   />
@@ -266,13 +273,13 @@ export function Portal() {
           <button
             onClick={() => void submitFacts()}
             disabled={busy !== null}
-            className="mt-2 border border-navy px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-navy hover:opacity-70 disabled:opacity-40"
+            className="portal-no-print mt-2 border border-navy px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wider text-navy hover:opacity-70 disabled:opacity-40"
           >
             {busy === 'facts' ? 'Saving…' : 'Send answers to the desk'}
           </button>
         </section>
 
-        <section data-testid="portal-upload">
+        <section data-testid="portal-upload" className="portal-no-print">
           <h2 className="font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-grey">Documents</h2>
           {/* The gate's own sentence, verbatim. This page renders the state; it never argues with it. */}
           <p className="mt-1 text-[12px] leading-relaxed text-grey-dark" data-testid="portal-upload-gate">{view.uploadGate.detail}</p>
@@ -296,6 +303,13 @@ export function Portal() {
 function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-white text-navy dark:bg-[#0b1020] dark:text-white">
+      {/* G4's "printable proposal, on screen": ⌘P (or the button in the header) prints
+          this page as the proposal record — the engagement facts, scope exclusions,
+          requested inputs and milestone states — with every interactive control hidden.
+          Inline and self-contained: the portal is a public chunk that imports no
+          stylesheet machinery, and a print rule that lives beside the page it governs
+          cannot silently stop applying when someone refactors a shared CSS file. */}
+      <style>{'@media print { .portal-no-print { display: none !important; } body { background: white; } }'}</style>
       <div className="mx-auto max-w-2xl px-5 py-10">
         <p className="mb-8 font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-grey">
           LCX · services portal

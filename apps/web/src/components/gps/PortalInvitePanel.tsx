@@ -96,10 +96,10 @@ export function PortalInvitePanel({ engagementId }: { engagementId: string }) {
 
         {minted !== null && (
           <div className="border border-status-conditional p-2" data-testid="portal-minted">
-            <p className="font-mono text-[11px] font-bold uppercase tracking-wider text-status-conditional">
+            <p className="font-mono text-micro font-bold uppercase tracking-wider text-status-conditional">
               Copy this now — it will not be shown again
             </p>
-            <p className="mt-1 break-all font-mono text-[11px] text-navy" data-testid="portal-minted-url">{minted.url}</p>
+            <p className="mt-1 break-all font-mono text-micro text-navy" data-testid="portal-minted-url">{minted.url}</p>
             <p className="mt-1 text-grey-dark">
               For {minted.label}, valid until {minted.expiresAt.slice(0, 10)}. The server keeps a
               digest only; you carry the link to the client yourself. Anyone holding it speaks as
@@ -123,7 +123,7 @@ export function PortalInvitePanel({ engagementId }: { engagementId: string }) {
         </div>
 
         {sessions !== null && sessions.length > 0 && (
-          <table className="w-full text-[11px]">
+          <table className="w-full text-micro">
             <thead>
               <tr className="border-b border-line text-left font-mono uppercase tracking-wider text-grey">
                 <th className="py-1 pr-2">for</th><th className="pr-2">minted</th>

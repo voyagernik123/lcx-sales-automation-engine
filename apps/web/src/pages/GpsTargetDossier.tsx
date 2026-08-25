@@ -168,7 +168,7 @@ export function GpsTargetDossierDrawer({ targetId, onClose }: { targetId: string
             )}
 
             <div className="flex items-center justify-between gap-2">
-              <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-grey">
+              <span className="font-mono text-micro uppercase tracking-wider text-grey">
                 Research dossiers — cited or refused, never in between
               </span>
               <Button onClick={generate} disabled={busy !== null || queue.registerPresent !== true}>
@@ -185,7 +185,7 @@ export function GpsTargetDossierDrawer({ targetId, onClose }: { targetId: string
                 <p className="font-mono text-xs font-bold text-status-blocked">
                   {rejected.code}: the {rejected.what === 'dossier' ? 'model response failed the citation contract' : 'draft failed pre-flight'} — nothing was stored.
                 </p>
-                <ul className="mt-1 space-y-0.5 font-mono text-[11px] text-grey-dark">
+                <ul className="mt-1 space-y-0.5 font-mono text-micro text-grey-dark">
                   {rejected.defects.map((d, i) => (
                     <li key={i} data-testid="generation-defect">
                       <span className="font-bold">{d.code}</span> — {d.detail}
@@ -194,8 +194,8 @@ export function GpsTargetDossierDrawer({ targetId, onClose }: { targetId: string
                 </ul>
                 {rejected.rejectedText !== null && (
                   <details className="mt-1">
-                    <summary className="cursor-pointer font-mono text-[11px] text-grey">The rejected text, as evidence</summary>
-                    <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap border border-line p-2 text-[11px] text-grey-dark">{rejected.rejectedText}</pre>
+                    <summary className="cursor-pointer font-mono text-micro text-grey">The rejected text, as evidence</summary>
+                    <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap border border-line p-2 text-micro text-grey-dark">{rejected.rejectedText}</pre>
                   </details>
                 )}
               </div>
@@ -210,14 +210,14 @@ export function GpsTargetDossierDrawer({ targetId, onClose }: { targetId: string
               queue.dossiers.map((d) => (
                 <div key={d.id} className={clsx('border border-line p-2', d.status === 'rejected' && 'opacity-60')} data-testid={`dossier-${d.id}`}>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-[11px] text-grey">
+                    <span className="font-mono text-micro text-grey">
                       #{d.id} · {d.offerKey} · via {d.model} · cites {d.factRefsCited} register fact(s) ·
                       by {d.generatedBy} {new Date(d.generatedAt).toISOString().slice(0, 10)}
                     </span>
                     <Badge status={STATUS_TONE[d.status]}>{d.status}</Badge>
                   </div>
                   {d.status !== 'draft' && (
-                    <p className="mt-0.5 font-mono text-[11px] text-grey-dark">
+                    <p className="mt-0.5 font-mono text-micro text-grey-dark">
                       {d.status} by {d.decidedBy}{d.decisionNote !== null ? ` — ${d.decisionNote}` : ''}
                     </p>
                   )}
@@ -227,7 +227,7 @@ export function GpsTargetDossierDrawer({ targetId, onClose }: { targetId: string
                   <button
                     onClick={() => setSheetFor(sheetFor === d.id ? null : d.id)}
                     data-testid={`dossier-print-toggle-${d.id}`}
-                    className="mt-1 font-mono text-[11px] text-grey underline hover:text-navy"
+                    className="mt-1 font-mono text-micro text-grey underline hover:text-navy"
                   >
                     {sheetFor === d.id ? 'Close the sheet' : 'Open as a printable sheet'}
                   </button>
@@ -282,13 +282,13 @@ export function GpsTargetDossierDrawer({ targetId, onClose }: { targetId: string
 
             <div className="border-t border-line pt-3">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-grey">
+                <span className="font-mono text-micro uppercase tracking-wider text-grey">
                   Outreach drafts — judged by the outbound gate, sent by nobody here
                 </span>
                 <span className="flex items-center gap-1.5">
                   <select
                     aria-label="outreach channel"
-                    className="border border-control bg-transparent px-1.5 py-1 font-mono text-[11px]"
+                    className="border border-control bg-transparent px-1.5 py-1 font-mono text-micro"
                     value={channel}
                     onChange={(e) => setChannel(e.target.value as OutreachChannel)}
                   >
@@ -309,7 +309,7 @@ export function GpsTargetDossierDrawer({ targetId, onClose }: { targetId: string
                 queue.outreachDrafts.map((o) => (
                   <div key={o.id} className="mt-2 border border-line p-2" data-testid={`outreach-${o.id}`}>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="font-mono text-[11px] text-grey">
+                      <span className="font-mono text-micro text-grey">
                         #{o.id} · {o.channel} · via {o.model} · by {o.createdBy} {new Date(o.createdAt).toISOString().slice(0, 10)}
                       </span>
                       <Badge status={o.gateAllowed ? 'ready' : 'blocked'}>
@@ -319,7 +319,7 @@ export function GpsTargetDossierDrawer({ targetId, onClose }: { targetId: string
                     <pre className="mt-1.5 whitespace-pre-wrap font-sans text-xs leading-relaxed text-navy" data-testid={`outreach-text-${o.id}`}>
                       {o.draftText}
                     </pre>
-                    <p className="mt-1 font-mono text-[10px] text-grey-dark" data-testid={`outreach-verdict-${o.id}`}>
+                    <p className="mt-1 font-mono text-micro text-grey-dark" data-testid={`outreach-verdict-${o.id}`}>
                       disposition {o.gateDisposition || '—'}
                       {o.gateRefusalCodes !== '' && <> · refusals: {o.gateRefusalCodes}</>}
                       {o.gateReference !== '' && <> · ref {o.gateReference} (quote this to an approver)</>}
@@ -328,7 +328,7 @@ export function GpsTargetDossierDrawer({ targetId, onClose }: { targetId: string
                 ))
               )}
 
-              <p className="mt-2 text-[11px] leading-relaxed text-grey" data-testid="one-mouth-note">
+              <p className="mt-2 text-micro leading-relaxed text-grey" data-testid="one-mouth-note">
                 There is no send button here, deliberately. A cleared draft is carried by a human, through
                 the channel they own, under their name — this system drafts and judges; it does not speak.
               </p>

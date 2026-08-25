@@ -171,7 +171,7 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
 
             {data.slotState !== null && (
               <div data-testid="factory-slots">
-                <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-grey">
+                <p className="font-mono text-micro uppercase tracking-wider text-grey">
                   {data.slotState.draftTitle} — inputs {data.slotState.slots.filter((s) => s.filled).length}/{data.slotState.slots.length}
                 </p>
                 <ul className="mt-1 space-y-0.5">
@@ -217,10 +217,10 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
 
             {partnerOpen && (
               <div className="border border-line p-2" data-testid="partner-form">
-                <p className="font-mono text-[11px] font-bold uppercase tracking-wider text-grey">
+                <p className="font-mono text-micro font-bold uppercase tracking-wider text-grey">
                   Stage 3 — a partner deliverable comes back through the SAME QA gate
                 </p>
-                <p className="mt-1 text-[11px] leading-relaxed text-grey-dark">
+                <p className="mt-1 text-micro leading-relaxed text-grey-dark">
                   This becomes the next draft version, so it faces the same accept/rework decision by a
                   named human and the same review gate standing between it and a client acceptance. It is
                   deliberately NOT checked against our template's section headings — counsel's work is in
@@ -253,18 +253,18 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
             {data.drafts.map((d) => (
               <div key={d.id} className={clsx('border border-line p-2', d.status === 'superseded' && 'opacity-50')} data-testid={`draft-${d.id}`}>
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-mono text-[11px] text-grey">
+                  <span className="font-mono text-micro text-grey">
                     v{d.version} · via {d.model} · {d.slotsFilled} input(s) · by {d.generatedBy} {d.generatedAt.slice(0, 10)}
                   </span>
                   <Badge status={DRAFT_TONE[d.status]}>{d.status}</Badge>
                 </div>
                 {d.decidedBy !== null && (
-                  <p className="mt-0.5 font-mono text-[11px] text-grey-dark">
+                  <p className="mt-0.5 font-mono text-micro text-grey-dark">
                     {d.status} by {d.decidedBy}{d.decisionNote !== null ? ` — ${d.decisionNote}` : ''}
                   </p>
                 )}
                 <details className="mt-1">
-                  <summary className="cursor-pointer font-mono text-[11px] text-grey">The draft, as stored</summary>
+                  <summary className="cursor-pointer font-mono text-micro text-grey">The draft, as stored</summary>
                   <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap font-sans text-xs leading-relaxed text-navy" data-testid={`draft-text-${d.id}`}>
                     {d.draftText}
                   </pre>
@@ -279,7 +279,7 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
                       <button
                         onClick={() => setDiffFor(diffFor === d.id ? null : d.id)}
                         data-testid={`diff-toggle-${d.id}`}
-                        className="font-mono text-[11px] text-grey underline hover:text-navy"
+                        className="font-mono text-micro text-grey underline hover:text-navy"
                       >
                         {diffFor === d.id ? 'Hide' : 'Show'} what changed from v{prev.version}
                       </button>
@@ -287,10 +287,10 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
                         const diff = draftDiff(prev.draftText, d.draftText);
                         return (
                           <div className="mt-1 border border-line p-2" data-testid={`diff-${d.id}`}>
-                            <p className="font-mono text-[11px] text-grey-dark" data-testid={`diff-headline-${d.id}`}>
+                            <p className="font-mono text-micro text-grey-dark" data-testid={`diff-headline-${d.id}`}>
                               {diffHeadline(diff)}
                             </p>
-                            <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-snug">
+                            <pre className="mt-1 max-h-80 overflow-auto whitespace-pre-wrap font-mono text-micro leading-snug">
                               {diff.lines.filter((l) => l.kind !== 'same').map((l, i) => (
                                 <span
                                   key={i}
@@ -334,10 +334,10 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
 
             <div className="flex flex-wrap items-end gap-2 border-t border-line pt-2">
               <label className="flex flex-col gap-0.5">
-                <span className="font-mono text-[10px] uppercase tracking-wider text-grey">stage</span>
+                <span className="font-mono text-micro uppercase tracking-wider text-grey">stage</span>
                 <select
                   aria-label="actual stage"
-                  className="border border-control bg-transparent px-1.5 py-1 font-mono text-[11px]"
+                  className="border border-control bg-transparent px-1.5 py-1 font-mono text-micro"
                   value={actual.stage}
                   onChange={(e) => setActual((a) => ({ ...a, stage: e.target.value }))}
                 >
@@ -366,13 +366,13 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
               >
                 Record actual
               </Button>
-              <p className="min-w-[12rem] flex-1 text-[10px] leading-snug text-grey">
+              <p className="min-w-[12rem] flex-1 text-micro leading-snug text-grey">
                 Hours per stage are the calibration loop's ground truth — the day rows exist here,
                 G0's effort triples stop being estimates.
               </p>
             </div>
             {data.actuals.length > 0 && (
-              <p className="font-mono text-[11px] text-grey-dark" data-testid="factory-actuals">
+              <p className="font-mono text-micro text-grey-dark" data-testid="factory-actuals">
                 {data.actuals.map((a) => `${a.stage}: ${a.hours}h`).join(' · ')}
               </p>
             )}
@@ -381,13 +381,13 @@ export function FactoryPanel({ engagementId }: { engagementId: string }) {
               <div className="border-t border-line pt-2">
                 <button
                   onClick={() => setShowHandover((v) => !v)}
-                  className="font-mono text-[10px] uppercase tracking-[0.18em] text-grey hover:text-navy"
+                  className="font-mono text-micro uppercase tracking-wider text-grey hover:text-navy"
                   data-testid="handover-toggle"
                 >
                   Partner handover packet — composed from the register, carried by a human
                 </button>
                 {showHandover && (
-                  <div className="mt-2 space-y-1.5 text-[11px]" data-testid="handover-packet">
+                  <div className="mt-2 space-y-1.5 text-micro" data-testid="handover-packet">
                     <p className="text-navy">
                       {data.handover.engagement.clientName} · {data.handover.engagement.offerKey} ·
                       status {data.handover.engagement.status}

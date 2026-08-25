@@ -124,6 +124,29 @@ describe('the client portal', () => {
     expect(post.init!.body).toEqual({ facts: [{ factKey: key, factValue: 'Fixed supply of 100M.' }] });
   });
 
+  it('prints the proposal on demand, with every interactive control off the paper', async () => {
+    window.history.replaceState(null, '', `/portal#t=${TOKEN}`);
+    render(<Portal />);
+    await screen.findByTestId('portal-engagement');
+    // The affordance G4 asked for: the printable proposal, on screen.
+    const printBtn = screen.getByTestId('portal-print');
+    const called: number[] = [];
+    const original = window.print;
+    window.print = () => { called.push(1); };
+    try {
+      fireEvent.click(printBtn);
+      expect(called).toHaveLength(1);
+    } finally {
+      window.print = original;
+    }
+    // The print stylesheet exists and every interactive control opts out of paper:
+    // the button itself, the accept control, the facts inputs and the upload section.
+    expect(document.querySelector('style')?.textContent).toContain('.portal-no-print');
+    expect(printBtn.className).toContain('portal-no-print');
+    expect(screen.getByTestId('portal-accept-del-1').className).toContain('portal-no-print');
+    expect(screen.getByTestId('portal-upload').className).toContain('portal-no-print');
+  });
+
   it('a dead link renders its own sentence; a bare visit renders the no-token one', async () => {
     responder.fn = () => new MockApiError('This link has expired. Ask the desk for a fresh invite — nothing you submitted is lost.', 401, 'SESSION_EXPIRED');
     window.history.replaceState(null, '', `/portal#t=${TOKEN}`);

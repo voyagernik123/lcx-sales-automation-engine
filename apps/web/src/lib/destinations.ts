@@ -134,6 +134,12 @@ export const DESTINATIONS: readonly Destination[] = [
   { id: 'go-gps-conflict', path: '/gps/conflict', label: 'GPS · THE CONFLICT WALL', key: 'c' , withinWorkspace: true },
   { id: 'go-gps-delivery', path: '/gps/delivery', label: 'GPS · DELIVERY DESK', key: 'd' , withinWorkspace: true },
   { id: 'go-gps-loop', path: '/gps/loop', label: 'GPS · THE LOOP', key: 'l' , withinWorkspace: true },
+  /* THE INPUT DESK, ADDED IN THE COMPLETION PASS — this was the one desk reachable
+   * only by URL. `packet` (the founder-approval noun) lives here, and the honest-gap
+   * note in gpsGrammar.test.ts said a palette row could not exist until this desk had
+   * a Destination AND a native-menu line; both landed together. `i` mirrors the label
+   * initial, same guessable grammar as the six above. */
+  { id: 'go-gps-inputs', path: '/gps/inputs', label: 'GPS · THE INPUT DESK', key: 'i' , withinWorkspace: true },
   /**
    * LCX MARKETING's three surfaces, on exactly the terms recorded above the GPS block:
    * `withinWorkspace: true`, so they get a menu line and a `g` chord but no ⌘ mirror and
