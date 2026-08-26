@@ -865,12 +865,20 @@ describe('a surface showing nothing says which nothing it is', () => {
       bySurface: [{ surface: 'sales_email', n: '3', wb: '0' }],
     });
     const r = await loadOneMouthShadowReport(pool, { now: new Date(NOW) });
-    expect(r.frame.ledgerApplied).toBe(false);
+    /*
+     * THE PROGRESSION THE COMMENT ABOVE NARRATES HAS NOW RUN TO ITS END, witnessed by
+     * this assertion at each step: UNREGISTERED while the ledger had never heard of
+     * 0073 → ONE_MOUTH_LEDGER_PENDING once it was listed → and on 2026-08-26 the owner
+     * applied it (APPLY_0068_0074.sql, verification 6/6) and its digest joined
+     * SHIPPED_MIGRATIONS, so the SAME derivation answers true with nobody editing the
+     * report code. Neither unapplied refusal code may appear now — a report refusing
+     * over a migration that is genuinely applied would be the inverse of the original
+     * defect, and just as false.
+     */
+    expect(r.frame.ledgerApplied).toBe(true);
     const codes = r.refusals.map((x) => x.code);
-    expect(
-      codes.includes('ONE_MOUTH_MIGRATION_UNREGISTERED') || codes.includes('ONE_MOUTH_LEDGER_PENDING'),
-      'the report must state which of the two unapplied states this environment is in',
-    ).toBe(true);
+    expect(codes).not.toContain('ONE_MOUTH_MIGRATION_UNREGISTERED');
+    expect(codes).not.toContain('ONE_MOUTH_LEDGER_PENDING');
     expect(ONE_MOUTH_MIGRATION).toBe('0073_one_mouth_shadow.sql');
     expect(ONE_MOUTH_CONTRACT).toBe('marketing.one_mouth_shadow.v1');
   });

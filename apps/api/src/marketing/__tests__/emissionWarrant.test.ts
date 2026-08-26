@@ -674,13 +674,17 @@ describe('the warrant is ledgered into audit_log with the digest and the codes',
   });
 
   it('records whether the audit log was sealed when the warrant was written', async () => {
-    // 0070 is pending, so `sealedAtWrite` is false and the warrant says so rather than
-    // implying a tamper-evidence it does not have yet.
+    // This assertion has now witnessed both states, which is what it was written for:
+    // while 0070 sat in PENDING_MIGRATIONS `sealedAtWrite` was false and the warrant
+    // said so rather than implying a tamper-evidence it did not have. On 2026-08-26 the
+    // owner applied 0070 (APPLY_0068_0074.sql, verification 6/6) and its digest moved to
+    // SHIPPED_MIGRATIONS — so the same derivation now answers true, with nobody editing
+    // the warrant code. If this fails as `true !== false` again, someone un-shipped 0070.
     const { pool } = stub({ ...perimeterClear(), inFlight: { total: '0' } });
     const d = await evaluateEmissionWarrant(pool, input({ cap: cap(1_000_000) }));
     if (d.outcome !== 'granted') throw new Error('unreachable');
     expect(typeof d.warrant.sealedAtWrite).toBe('boolean');
-    expect(d.warrant.sealedAtWrite).toBe(false);
+    expect(d.warrant.sealedAtWrite).toBe(true);
   });
 
   it('reads the warrant back, and refuses when a campaign has none', async () => {

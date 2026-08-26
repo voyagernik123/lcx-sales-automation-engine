@@ -118,6 +118,13 @@ export const SHIPPED_MIGRATIONS: Readonly<Record<string, string>> = {
   '0080_gps_portal.sql': '20397ad9fbfcf63c5131de20266a339f0b3f91cd85f83f5f1f659f2148a3a62f',
   '0081_gps_factory.sql': '21b51a07987e5f79eab27ad7f101a2ba77de2d28acef8f13ac0447f153d57086',
   '0082_gps_invoice.sql': '4a2d85fecff5d7a1ba8d0434c06ea628349499e7b5880c866dc03a00fdae0279',
+  '0068_listing_labels_dedupe.sql': '0230e2db15df3ea348bb94afe7eebb9a3f486c251e47614e00108a82e84d6518',
+  '0069_audit_control_markers.sql': 'a12fabe5ef35125aed1db50a0bc0b8606fa423e43598f7c1d1e76bf4b717be9b',
+  '0070_audit_seal.sql': '3b9d556d9127a7442d33ec65f2c2cc1764c12c0b928722f4d010334e907496ff',
+  '0071_grant_ledger.sql': 'd24427e6a3f1ebc62f2842a1ae87213a7af01dc1bc652aa0c4f85ae58d3504a6',
+  '0072_verdict_broker.sql': '4e922bf300a3235015c430ef241c8095b36c210b97be4459e90a43562dd5fa0f',
+  '0073_one_mouth_shadow.sql': '40515bd01a104ba5316714a121f4d80ee01e42fb3d443ae913ab51f0425863f6',
+  '0074_platform_forecast.sql': '2122715b1fdcc5f2fd603383bf991a604e8522845940665beba2a51937bdbfda',
 };
 
 /**
@@ -215,184 +222,13 @@ export const SHIPPED_MIGRATIONS: Readonly<Record<string, string>> = {
  *          `PLACEHOLDER` with the number struck through — which is the true state.
  */
 export const PENDING_MIGRATIONS: readonly string[] = [
-  /* 0000-0067 are all applied and pinned above. Verified 2026-08-04 by probing
-   * production for each migration's distinctive table or column — see
-   * docs/phases/P1_CLAIM.md for the query and its output. A file listed here is
-   * editable until it is applied; a file that is applied belongs in SHIPPED.
-   *
-   * 0068 → THE UNIQUE INDEX THAT WAS DELETING CONTRACTS. `0013_propensity.sql:22`
-   *        made `(source, record_name)` unique on `listing_labels` — the key is the
-   *        COUNTERPARTY'S NAME, so two contracts with the same counterparty are one
-   *        row, and 'Vulcan Forged' (twice in the closed book) loses one on every
-   *        extract run. 0013 is applied and byte-pinned, so the fix could not be made
-   *        in place. This replaces the index with `(source, record_name,
-   *        contract_discriminator)`, where the discriminator is a STORED GENERATED column
-   *        holding `coalesce(ticker, '')` so the extractor need not supply it.
-   *        NO DATA IS DROPPED — one index is dropped and replaced, which is the only
-   *        way to change a uniqueness constraint.
-   *
-   *        THE KEY IS THE TOKEN, NOT A CONTENT HASH, AND THE FIRST DRAFT GOT THIS WRONG.
-   *        It keyed on md5 over ticker + listing_fee_usd + marketing_fee_usd +
-   *        liquidity_amount_usd + stage, justified as "two rows that differ in any of
-   *        those fields are two facts". They are not: a CORRECTED FEE differs in those
-   *        fields, so a correction would have INSERTED a second row and left the old one,
-   *        putting the wrong fee and the right fee for one contract both into the closed
-   *        book and both into the median the mark engine quotes. The mutable payload is
-   *        out of the key and stays live in the extractor's DO UPDATE. What the token key
-   *        does NOT separate — a renegotiation, or a later package on the same token — is
-   *        stated in the migration rather than claimed as solved; nothing in the CRM
-   *        export distinguishes those from a re-export of the same row.
-   *
-   *        IT IS NOT SAFE TO APPLY ALONE. `labels/extract.ts:131` upserts
-   *        `ON CONFLICT (source, record_name)`, which fails with 42P10 once the
-   *        two-column index is gone; Postgres cannot infer a three-column index from a
-   *        two-column specification, and no key both admits duplicates and satisfies the
-   *        old clause. The conflict target in that file must move to the three columns
-   *        in the same wave; its DO UPDATE SET list is kept as it is, because no column
-   *        in it is part of the key. `extract.ts` is a hand-run CLI script — nothing
-   *        served depends on it — so leaving 0068 unapplied costs nothing and the
-   *        extractor keeps working exactly as it does today.
-   *
-   *        WORTH DOING IN THE SAME CHANGE, THOUGH NOT REQUIRED: add
-   *        `stage_changed_at = EXCLUDED.stage_changed_at` to that DO UPDATE. The first
-   *        draft of this note and of the migration both asserted "the extractor rewrites
-   *        that field on every run" — FALSE. `extract.ts:131-140` assigns project_id,
-   *        outcome, listing_fee_usd, marketing_fee_usd, liquidity_amount_usd, stage,
-   *        stage_trail and raw, and `stage_changed_at` is absent, so it is written on
-   *        INSERT only and never refreshed. The mark engine derives its ObservationFrame
-   *        window from exactly that column, so a reader who believed the old sentence
-   *        would believe the closed book's close dates are current. They are not.
-   *
-   *        APPLYING IT DOES NOT RECOVER THE ROW ALREADY LOST. That contract was never
-   *        written; re-run the extractor against
-   *        `data/seeds/LCX Listings - Closed Token Listings.csv` afterwards. */
-  '0068_listing_labels_dedupe.sql',
-
-  /* 0069 → THE CONTROL MARKERS BECOME READABLE. Three indexes on `audit_log`, no column
-   *        and no table: two PARTIAL ones over the marker families
-   *        `gateDegraded`/`idempotencyDegraded` and `overrideSat`/`overrideGate` that
-   *        `actions/registry.ts` has written since 2026-07-24 and nothing has ever read,
-   *        plus `idx_audit_actor` — which `db/schema.ts` declares as
-   *        `index('idx_audit_actor')` with NO `.on()` columns, so Drizzle emits nothing
-   *        and the index has never existed in any environment while the schema file
-   *        asserted it. Every actor-filtered `/v1/audit` read is a full scan today.
-   *
-   *        INDEPENDENT AND SAFE TO APPLY ALONE. It contains no DROP, DELETE, TRUNCATE or
-   *        UPDATE, references no other migration, and adds nothing any code requires:
-   *        `access/controlRegister.ts` reads the markers correctly WITHOUT it — just
-   *        sequentially. So leaving it unapplied costs query time and no correctness, and
-   *        applying it changes no result. What it must NOT be is applied `CONCURRENTLY`
-   *        through `db/migrate.ts`: that runner sends the file as one simple query, which
-   *        Postgres wraps in an implicit transaction, and CREATE INDEX CONCURRENTLY errors
-   *        inside one. Run the three statements by hand if the ACCESS EXCLUSIVE on
-   *        `audit_log` ever matters. */
-  '0069_audit_control_markers.sql',
-
-  /* 0070 → THE SEAL. `audit_log` becomes hash-chained and append-only — which six live
-   *        files and `0029_spine.sql:6` have asserted since Phase 3 while
-   *        `0000_equal_beyonder.sql:1-9` created seven columns and no constraints. Adds
-   *        three nullable columns, a sequence, a partial unique index, six functions,
-   *        `audit_seal_state` and FIVE triggers. SHA-256 comes from the Postgres 11+
-   *        built-in, NOT pgcrypto, so it needs no extension.
-   *
-   *        TWO OF THE FIVE TRIGGERS ARE ON `audit_seal_state` ITSELF. The first draft
-   *        protected the data and left the boundary record — the row the verdict cites,
-   *        carrying `pre_seal_rows`, `genesis_digest` and `canon_version` — fully
-   *        mutable, so one UPDATE erased the pre-seal segment from the report while the
-   *        unsealed rows stayed in the table. `access/seal.ts` also stopped believing
-   *        that row: it counts `seal_seq IS NULL` itself and reports any divergence
-   *        under AUDIT_SEAL_UNSEALED_ROWS_PRESENT / AUDIT_SEAL_UNSEALED_COUNT_DIVERGED.
-   *
-   *        NOTHING IS RETRO-SEALED. Rows written before it lands keep `seal_seq IS NULL`
-   *        and `access/seal.ts` reports them as AUDIT_SEAL_PRE_SEAL_UNVERIFIABLE — a
-   *        third state that is neither intact nor broken, because those rows were
-   *        mutable and unchained for their whole life and a digest computed now would
-   *        assert an integrity that was never held. No DROP, DELETE or TRUNCATE.
-   *
-   *        APPLYING IT BREAKS ONE TEST, AND THAT TEST IS THE PREREQUISITE.
-   *        `routes/__tests__/intel100x.test.ts:49` cleans up with
-   *        `DELETE FROM audit_log WHERE entity_id = ...`; the append-only trigger refuses
-   *        it with AUDIT_SEAL_APPEND_ONLY. That DELETE has to go first. It was
-   *        deliberately given no bypass — a switch a test can flip is a switch an
-   *        attacker can flip, and the control being non-optional is the whole point.
-   *
-   *        It also shares `audit_log` with 0069 above, so applying both in one window
-   *        takes ACCESS EXCLUSIVE twice; order between them does not matter.
-   *
-   *        Until it is applied, `verifyAuditSeal` returns AUDIT_SEAL_NOT_INSTALLED
-   *        rather than a green chain, so nothing reads as sealed while it is not.
-   *
-   * 0071 → THE GRANT LEDGER. `entitlement_events`, append-only, so revoking stops
-   *        destroying the grant it revokes. Two tables, four indexes, three functions,
-   *        three triggers — two of those ON `entitlements`, which is the part to weigh:
-   *        every insert/update of a grant row now also writes an event row, and a DELETE
-   *        nobody attributed writes one too. No data is dropped; the genesis
-   *        reconstruction derives from existing rows and is guarded on the events table
-   *        being empty, so re-running the file cannot double it.
-   *
-   *        INDEPENDENT OF 0070 in both directions — different tables, no shared
-   *        functions — so either may be applied alone.
-   *
-   *        `registry.ts` revoke ALREADY calls `recordRevocation` (access/asOf.ts), which
-   *        is written for a database where this has not landed: the 42P01 on the event
-   *        insert is caught, the revocation still takes effect, and the action returns
-   *        `historyRecorded: false` with ENTITLEMENT_LEDGER_UNRECORDED. So leaving 0071
-   *        unapplied costs history, never access — but every revocation in that window
-   *        is permanently unreconstructable, which is the argument for applying it
-   *        before the next one rather than after. */
-  '0070_audit_seal.sql',
-  '0071_grant_ledger.sql',
-
-  /* 0072 → THE UNJOINABLE-TICKER INDEX. ONE partial index on `projects` and nothing else:
-   *        no table, no column, no trigger, no data change. It supports the verdict
-   *        broker's join from `projects.ticker_norm` to
-   *        `marketing_asset_embargo.asset_symbol` by making the rows that CANNOT join —
-   *        a null, blank or denormalised ticker — cheap to find, because the broker has to
-   *        report "this project has no joinable symbol" as its own refusal rather than as
-   *        an absence of embargo.
-   *
-   *        SAFE TO APPLY ALONE, and safe to leave unapplied: `access/otherLedger.ts` reads
-   *        correctly without it, just sequentially. Takes a brief ACCESS EXCLUSIVE on
-   *        `projects`. Same CONCURRENTLY caveat as 0069 — `db/migrate.ts` sends the file as
-   *        one simple query, which Postgres wraps in an implicit transaction, and CREATE
-   *        INDEX CONCURRENTLY cannot run inside one. */
-  '0072_verdict_broker.sql',
-
-  /* 0073 → THE ONE MOUTH SHADOW LEDGER. `marketing_one_mouth_shadow` plus four indexes and
-   *        RLS enabled. Shadow mode means the Title VI engine RECORDS what it would have
-   *        refused on sales email and campaign text and blocks NOTHING — the point is to
-   *        measure the base rate before enforcement is switched on, because enforcing first
-   *        on live traffic with no measured rate is how a desk gets an outage and then
-   *        turns the control off permanently.
-   *
-   *        NEW TABLE, NO EXISTING TABLE TOUCHED, so it cannot break a running surface.
-   *        Nothing in apps/api or apps/web calls the recorder yet — the wiring is owed, and
-   *        until it exists this table stays empty. An empty table here must READ as
-   *        "recording, nothing observed yet in this window" and never as "zero violations";
-   *        that distinction is the whole reason the surface carries an ObservationFrame. */
-  '0073_one_mouth_shadow.sql',
-
-  /* 0074 → `platform_forecast` + `platform_forecast_outcome`. THE ONE THING THAT EXISTED IN
-   *        NO FORM across all 74 migrations: nothing could resolve a prediction against an
-   *        outcome, so every "are we any good" claim was unfalsifiable. Two tables, six
-   *        indexes (two of them unique), a mutation-forbidding function and append-only +
-   *        no-truncate triggers on the forecast table — an outcome that could overwrite its
-   *        prediction would destroy the only property that makes it a forecast.
-   *
-   *        APPEND-ONLY, LIKE 0070. After this, UPDATE and DELETE on `platform_forecast` are
-   *        refused by trigger. No production path writes these tables today, so there is
-   *        nothing to break; the risk is entirely in the future, when a job that wants to
-   *        "correct" a prediction must append instead.
-   *
-   *        ITS HONEST HEADLINE IS A REFUSAL. There is far too little resolved history to
-   *        claim calibration, and the code returns the refusal and the real N rather than a
-   *        percentage. Do not read an early figure off this as accuracy. */
-  '0074_platform_forecast.sql',
-
-  /* 0075–0082 (the whole GPS G-phase set) moved to SHIPPED on 2026-08-25: the owner
-   * ran APPLY_GPS_0075_0082.sql in the Supabase editor, its verification returned 14/14
-   * present, and the live portal flipped 503 PORTAL_REGISTER_ABSENT → 401 — the same
-   * to_regclass probe, answered by the production database. */];
+  /* EMPTY SINCE 2026-08-26, and for the first time since early August: the owner ran
+   * APPLY_0068_0074.sql (verification 6/6 present) after APPLY_GPS_0075_0082.sql
+   * (14/14) the day before, and every name moved to SHIPPED with its digest. The list
+   * stays because the DISCIPLINE stays — the next migration lands here first, and the
+   * two times this program found applied-but-unpinned files (0052-0067 on 2026-08-04,
+   * 0068-0074 on 2026-08-25) it was THIS list being read that surfaced them. */
+];
 
 /**
  * Every migration this repo accounts for, shipped or not.
