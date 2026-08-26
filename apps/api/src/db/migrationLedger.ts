@@ -110,6 +110,14 @@ export const SHIPPED_MIGRATIONS: Readonly<Record<string, string>> = {
   '0065_marketing_holdings_position.sql': 'cca1ae645be2225c35b7d6797ede32463efa0674af7d94b5945261410a98ab19',
   '0066_gps_price_band.sql': 'f84d8fd51ca476bc6fbdd6b58dd5488f5953a5d8371668c026e5ca2e80407697',
   '0067_notifications_workspace.sql': 'b4040abc3a82502f7da1a1e1914a383db8172023c5c75ae8efd3989a06dfa0fb',
+  '0075_gps_partner_registry.sql': 'bde64f17d3746800f97256c0d8716b71b7c076575c08a725b55452e2de846673',
+  '0076_gps_packets.sql': 'a9bd09d2dd4318409bc1b4425ecfea44b129d5badcf7ce9e4e904234c8f23bb4',
+  '0077_gps_demand.sql': 'b5ccb344e9d54433cb22f741edbbf8f6f07179a80e4cecd0db42294b588d24a9',
+  '0078_gps_dossier.sql': '3990975010002b1f9bbb69926db65090d6261a4800f422fbe4c58bc62632afe1',
+  '0079_gps_pricing_policy.sql': '67dc613082d7fdccd7fcba794854d1f4b21d975a0b9043f27c1b612dbd46e01b',
+  '0080_gps_portal.sql': '20397ad9fbfcf63c5131de20266a339f0b3f91cd85f83f5f1f659f2148a3a62f',
+  '0081_gps_factory.sql': '21b51a07987e5f79eab27ad7f101a2ba77de2d28acef8f13ac0447f153d57086',
+  '0082_gps_invoice.sql': '4a2d85fecff5d7a1ba8d0434c06ea628349499e7b5880c866dc03a00fdae0279',
 };
 
 /**
@@ -381,94 +389,10 @@ export const PENDING_MIGRATIONS: readonly string[] = [
    *        percentage. Do not read an early figure off this as accuracy. */
   '0074_platform_forecast.sql',
 
-  /* 0075 → `gps_partner_registry` + `gps_partner_capability`. F5, which the plan called
-   * "NAMED, NOT BUILT" — four namespaces named partners and TWO MIGRATIONS REFUSED THE
-   * FOREIGN KEY IN PROSE (0052_gps_underwriting.sql:52, 0049_gps_delivery.sql:156), because
-   * the bench did not exist as a table. The owner's 2026-08-07 decision — a NAMED HUMAN may
-   * assert a partner and a rate card, attributed to them — is what let it exist, and the
-   * attribution is enforced (asserted_by / asserted_at / assertion_basis NOT NULL + non-blank
-   * CHECK), not conventional. `max_concurrent` is nullable with a CHECK that the capacity
-   * claim travels whole or not at all: NULL is "nobody asked", 0 is "full", and they never
-   * collapse. RLS enabled with no policies — deny-all. NOT APPLIED ANYWHERE, including the
-   * CI mirror, so the registry and THE FLOOR are real and INERT until a human applies it. */
-  '0075_gps_partner_registry.sql',
-
-  /* 0076 → `gps_price_band` + `gps_packet_decision`. G0 of GPS_REVENUE_100X_PLAN.md
-   * (approved 2026-08-21). The price-band section is the register gpsInputs.ts has promised
-   * since it shipped — every band write refuses with PRICE_BAND_REGISTER_ABSENT carrying
-   * that exact DDL — and it lands here BYTE-IDENTICAL to PRICE_BAND_REGISTER_DDL, extracted
-   * from the export rather than retyped; gpsPackets.test.ts pins the two together so the
-   * promise and the file cannot drift. `gps_packet_decision` is the append-only record of
-   * founder-packet decisions: the FINAL proposal (owner's edits included) as jsonb, an
-   * apply_state that distinguishes applied / recorded_only / apply_failed because two of
-   * the five packets are recorded-only BY DESIGN (rate_cards await a named partner, D5;
-   * dpo_memo is read by G4), and no UPDATE path — a change of mind is a new row. RLS on,
-   * no policies. NOT APPLIED ANYWHERE until a human applies it; until then the packets
-   * screen reads 200 with decisions absent and every write refuses 503 with the code. */
-  '0076_gps_packets.sql',
-
-  /* 0077 → `gps_demand_candidate`. G1 of GPS_REVENUE_100X_PLAN.md: the demand queue four
-   * channels feed (BD crossfeed, public inbound intake, the owner's Telegram exports,
-   * partner referrals). Deliberately NO jsonb — the frozen-set review stays its size —
-   * and every text column hard-capped. Idempotent on (source, source_ref); a refusal
-   * must carry its reason and a promotion its target id (CHECKs), so half-records are
-   * inexpressible. Sender identities from Telegram never reach this table: the shared
-   * parser drops them and reports the count. NOT APPLIED ANYWHERE until a human applies
-   * it; the demand routes read 200-empty and write 503 with the code until then. */
-  '0077_gps_demand.sql',
-
-  /* 0078 → `gps_dossier` + `gps_outreach_draft`. G2 of GPS_REVENUE_100X_PLAN.md: model
-   * research dossiers that SURVIVED the shared cite-or-refuse validator (every register
-   * claim cites a numbered fact; the C3 caveat is verbatim; a defective response never
-   * reaches the table), and outreach drafts stored WITH the marketing outbound gate's
-   * verdict. No jsonb; every text column capped; acceptance is a named human with CHECKs
-   * making an unattributed acceptance or an unreasoned rejection unstorable. The outreach
-   * table has no 'sent' state, no recipient and no transport column — drafting and
-   * judging live here, sending stays a human act outside the system (one-mouth rule).
-   * NOT APPLIED ANYWHERE until a human applies it; dossier routes read 200-empty and
-   * writes refuse 503 with DOSSIER_REGISTER_ABSENT until then. */
-  '0078_gps_dossier.sql',
-
-  /* 0079 → `gps_pricing_policy`. G3 of GPS_REVENUE_100X_PLAN.md: the owner's two pricing
-   * dials (target median margin, loss-probability ceiling), approved through the SIXTH
-   * founder packet and appended here — no UPDATE path, latest row live, history kept.
-   * The propose-price route refuses PRICING_POLICY_ABSENT until a row exists, so the
-   * inverse solver can never run on a default nobody chose. Bounds CHECKed to the same
-   * (0,0.9] / (0,0.5] pricing.ts states. No jsonb, text capped. NOT APPLIED ANYWHERE
-   * until a human applies it. */
-  '0079_gps_pricing_policy.sql',
-
-  /* 0080 → the portal plane (G4 of GPS_REVENUE_100X_PLAN.md, doctrine D9): sessions
-   * holding a token DIGEST never a token, scoped to ONE engagement, expiring and
-   * revocable-with-a-name; typed client facts append-only against the catalogue's own
-   * requiredClientInputs; and the client-plane event floor G6 reads acceptance evidence
-   * from. Deliberately NO byte, filename or storage column — the upload endpoint refuses
-   * with the reason until the dpo_memo packet decision is approved AND recommends the
-   * processor path. No jsonb, every text column capped. NOT APPLIED ANYWHERE until a
-   * human applies it; the portal answers 503 with the migration named until then. */
-  '0080_gps_portal.sql',
-
-  /* 0081 → the delivery factory (G5 of GPS_REVENUE_100X_PLAN.md): gps_draft — versioned
-   * Stage-1 drafts that survived the shared shape validator, generated only with every
-   * required client slot answered (D10; slotGaps is the refusal AND the chase list),
-   * append-only versions with named-QA-acceptance / reasoned-rework CHECKs; QA acceptance
-   * marks the linked deliverable reviewed through the desk's OWN recordDeliverableReview,
-   * so 0049's accepted-before-reviewed constraint now guards the whole waterfall. Plus
-   * gps_stage_actual — hours/cost per stage, the ground truth the calibration loop was
-   * starving for. No jsonb, text capped. NOT APPLIED ANYWHERE until a human applies it. */
-  '0081_gps_factory.sql',
-
-  /* 0082 → gps_invoice (G6 of GPS_REVENUE_100X_PLAN.md): numbered immutable invoices
-   * that MUST trace to an accepted deliverable (deliverable_id NOT NULL + the service
-   * refuses unless accepted_at is set — an invoice that traces to no acceptance is
-   * inexpressible, D1/D8). The number is derived from the append-only id, so it cannot
-   * drift; amount_cents and currency are write-once; the only post-issue writes are
-   * status transitions into their own attributed columns (paid needs a reference,
-   * dispute and void need a reason). A partial unique index forbids a second non-void
-   * invoice per deliverable. Rails stay external — paid records a reference, moves no
-   * money. No jsonb, text capped. NOT APPLIED ANYWHERE until a human applies it. */
-  '0082_gps_invoice.sql',
-];
+  /* 0075–0082 (the whole GPS G-phase set) moved to SHIPPED on 2026-08-25: the owner
+   * ran APPLY_GPS_0075_0082.sql in the Supabase editor, its verification returned 14/14
+   * present, and the live portal flipped 503 PORTAL_REGISTER_ABSENT → 401 — the same
+   * to_regclass probe, answered by the production database. */];
 
 /**
  * Every migration this repo accounts for, shipped or not.
