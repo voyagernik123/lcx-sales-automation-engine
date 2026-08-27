@@ -43,6 +43,10 @@ import {
   type ServiceClass,
   type ServiceGateDecision,
 } from '@lcx/shared';
+import type {
+  PerimeterCell, PerimeterHole, PerimeterSource, PerimeterView,
+} from '@lcx/shared';
+export type { PerimeterCell, PerimeterHole, PerimeterSource, PerimeterView };
 import { askListingPipelineForProject, LISTING_PIPELINE_QUESTION } from '../access/otherLedger.js';
 import { brokerGate } from '../access/verdictBroker.js';
 import { env } from '../lib/env.js';
@@ -234,7 +238,6 @@ function toStoredEntry(r: ProfileRow): StoredPerimeterEntry {
  * when the gate was reading compiled placeholders than when it was reading eleven
  * rows a lawyer signed.
  */
-export type PerimeterSource = 'database' | 'compiled_placeholder';
 
 export const PERIMETER_SOURCE_REASON: Record<PerimeterSource, string> = {
   database:
@@ -350,48 +353,13 @@ export async function loadPerimeter(pool: Pool): Promise<LoadedPerimeter> {
  * grid's job is to show what the RECORD says; the engagement's job is to show what
  * the record plus the facts of that engagement permit.
  */
-export interface PerimeterCell {
-  /** Row id when a human entered it; null for a compiled placeholder. */
-  id: string | null;
-  jurisdiction: string;
-  jurisdictionLabel: string;
-  offerKey: OfferKey;
-  offerName: string;
-  entry: PerimeterEntry;
-  reviewedBy: string | null;
-  reviewedAt: string | null;
-  /** `perimeterEntryDefects` — [] for a well-formed row. */
-  defects: readonly string[];
-  unconditional: ServiceGateDecision;
-}
-
-/** A (jurisdiction, offer) pair nobody has classified. The hole, named. */
-export interface PerimeterHole {
-  jurisdiction: string;
-  jurisdictionLabel: string;
-  offerKey: OfferKey;
-  offerName: string;
-  /** The refusal a quote into this cell would receive, with its remedy. */
-  refusal: ServiceGateDecision;
-}
-
-export interface PerimeterView {
-  asOf: string;
-  source: PerimeterSource;
-  sourceReason: string;
-  /** Rows a human entered. Zero is a fact worth showing, not an empty state. */
-  storedRowCount: number;
-  /** `PERIMETER_REVIEW_WARNING_DAYS` — how early `expiringSoon` starts warning. */
-  reviewWarningDays: number;
-  /** True while the compiled placeholders are what is being enforced. */
-  placeholdersAreUnreviewed: boolean;
-  /** The one sentence a surface must show when it renders placeholders. */
-  unreviewedReason: string;
-  cells: readonly PerimeterCell[];
-  holes: readonly PerimeterHole[];
-  /** Cells where a review is overdue or due within the warning window. */
-  reviewDue: readonly PerimeterCell[];
-}
+/*
+ * `PerimeterSource` / `PerimeterCell` / `PerimeterHole` / `PerimeterView` now live in
+ * `packages/shared/src/gps/perimeterView.ts` and are IMPORTED here — one declaration
+ * for the composer below and for the conflict-wall page that finally reads this view.
+ * Moving them was the wiring-pass job the page's own comment prescribed, done the day
+ * the G0 packet entered real rows and the compiled-only page went out of date.
+ */
 
 /**
  * Compose the grid. PURE — takes the loaded perimeter and an instant, touches no

@@ -10,6 +10,7 @@ import {
 } from '@lcx/shared';
 import { Button } from '@/components/ui';
 import { PrintStyles } from '@/components/report/PrintStyles';
+import { PerimeterReviewPanel } from '@/components/gps/PerimeterReviewPanel';
 import {
   fetchGpsClients, fetchGpsEngagements, fetchGpsSummary,
   type GpsEngagementRow, type GpsSummary,
@@ -655,6 +656,13 @@ export function GpsConflict() {
           {PERIMETER_UNREVIEWED_REASON}
         </Notice>
       )}
+      {/* THE DATABASE ROWS, WITH THE REVIEW CONTROL — the wiring gap this page's own
+          comment recorded, closed when the G0 packet entered 30 real rows. The panel
+          reads the SHARED PerimeterView declaration (one wire shape, both sides), so
+          the compiled grid below can no longer silently disagree with the register:
+          this panel IS the register's view, and the grid is the compiled fallback. */}
+      <PerimeterReviewPanel />
+
       {DISCLOSURES_ARE_NOT_COUNSEL_REVIEWED && (
         <Notice tone="conditional" testid="disclosures-unreviewed-banner" title="Disclosure wording is NOT counsel-reviewed">
           {DISCLOSURES_UNREVIEWED_REASON}
@@ -1443,11 +1451,12 @@ function PerimeterSection(props: { asOf: string; rows: WallRow[] | null }) {
         reviewed position "UNREVIEWED", which is a lie in the direction people stop
         believing.
 
-        It is not consumed here because its response shapes are declared inside
-        `apps/api/` and a browser cannot import them; hand-mirroring them is the
-        defect that shipped a guaranteed crash with a green build once already
-        (`lib/api/gps.ts:80`). Reconciling that is a wiring-pass job: move
-        `PerimeterView` into `packages/shared/src/gps/`, then read it here. Until
+        RECONCILED: `PerimeterView` moved to `packages/shared/src/gps/perimeterView.ts`
+        exactly as this comment prescribed, and `<PerimeterReviewPanel/>` above the
+        disclosures banner reads the database-backed view through it — one declaration,
+        both sides, no hand-mirroring (the defect that shipped a guaranteed crash with
+        a green build once, `lib/api/gps.ts:80`). This compiled section remains as the
+        fallback the API itself falls back to when 0050 is absent. Until
         then this notice is on the artifact, because a reader is entitled to know
         which of two possible perimeters they are looking at.
       */}

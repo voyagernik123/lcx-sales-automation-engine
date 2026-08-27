@@ -442,6 +442,16 @@ export {
   pricingPolicyDefects, costQuantilesFrom, proposePriceCents,
 } from './pricing.js';
 
+/* ── The perimeter grid's wire shape — one declaration, both sides ────────────
+ * Moved from apps/api/src/gps/conflict.ts so the conflict-wall page can read the
+ * DATABASE-backed view (real rows exist since the G0 packet landed) without
+ * hand-mirroring a wire shape — the defect class that once shipped a crash
+ * behind a green build. Types only; the composer stays in the API.
+ */
+export type {
+  PerimeterSource, PerimeterCell, PerimeterHole, PerimeterView,
+} from './perimeterView.js';
+
 /* ── G5 — the delivery factory's Stage 1 ──────────────────────────────────────
  * Templates whose client slots are DERIVED from the catalogue's own
  * requiredClientInputs — proposal, portal form and draft refusal read one list.
