@@ -45,12 +45,20 @@ import {
   type TriggerInput,
 } from '../../../../../packages/shared/src/gps/origination.js';
 import type { GpsTarget } from '../../../../../packages/shared/src/gps/targeting.js';
+import type { TargetRecord } from '../../../../../packages/shared/src/gps/targetRecord.js';
 
 vi.mock('@/lib/api/gpsOrigination', async () => {
-  // The real module is passed through for everything except the two fetchers, so
-  // `provenanceLabel` and the section constants under test are the shipped ones.
+  // The real module is passed through for everything except the fetchers and the
+  // cure save, so `provenanceLabel` and the section constants under test are the
+  // shipped ones.
   const actual = await vi.importActual<typeof api>('@/lib/api/gpsOrigination');
-  return { ...actual, fetchOriginationQueue: vi.fn(), fetchTargetBrief: vi.fn() };
+  return {
+    ...actual,
+    fetchOriginationQueue: vi.fn(),
+    fetchTargetBrief: vi.fn(),
+    fetchTargetRecords: vi.fn(),
+    saveTargetRecord: vi.fn(),
+  };
 });
 
 const ASOF = '2026-07-31T00:00:00.000Z';
@@ -156,12 +164,32 @@ function brief() {
 const mocked = api as unknown as {
   fetchOriginationQueue: ReturnType<typeof vi.fn>;
   fetchTargetBrief: ReturnType<typeof vi.fn>;
+  fetchTargetRecords: ReturnType<typeof vi.fn>;
+  saveTargetRecord: ReturnType<typeof vi.fn>;
+};
+
+/**
+ * The stored row behind the TASK entry, as GET /origination/targets returns it —
+ * same target the engine refused above, wrapped in the record the cure form must
+ * ROUND-TRIP. `evidenceObservedIso` is the field whose loss would undate the
+ * evidence on every cure; the tests below assert it survives the save verbatim.
+ */
+const TASK_RECORD: TargetRecord = {
+  target: { ...BARE, id: 't-task', name: 'Unchecked Co', conflict: 'unresolved' },
+  status: 'watchlist',
+  clientId: null,
+  createdBy: 'nik',
+  createdIso: daysAgo(3),
+  updatedIso: daysAgo(1),
+  evidenceObservedIso: daysAgo(9),
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocked.fetchOriginationQueue.mockResolvedValue(payload());
   mocked.fetchTargetBrief.mockResolvedValue(brief());
+  mocked.fetchTargetRecords.mockResolvedValue([TASK_RECORD]);
+  mocked.saveTargetRecord.mockResolvedValue({ data: {} });
 });
 
 /* ── 1 (D2). A gated target is ABSENT from the queue and PRESENT in the ledger ── */
@@ -339,5 +367,63 @@ describe('empty and absent states', () => {
     for (const label of [/^send/i, /^approve/i, /^email/i, /^outreach/i]) {
       expect(screen.queryByRole('button', { name: label })).not.toBeInTheDocument();
     }
+  });
+});
+
+/* ── The cure form — the remedy finally has somewhere to be performed ─────────── */
+
+describe('the cure form', () => {
+  it('a TASK offers the cure; a WALL does not — same asymmetry as the remedy line', async () => {
+    render(<GpsOrigination />);
+    await screen.findByTestId('refusal-t-task');
+    expect(screen.getByTestId('cure-open-t-task')).toBeInTheDocument();
+    expect(screen.queryByTestId('cure-open-t-wall')).not.toBeInTheDocument();
+  });
+
+  it('round-trips the WHOLE record: untouched fields survive, the edit lands, the evidence stays dated', async () => {
+    const user = userEvent.setup();
+    render(<GpsOrigination />);
+    await user.click(await screen.findByTestId('cure-open-t-task'));
+    const form = await screen.findByTestId('cure-form-t-task');
+
+    // Prefilled from the stored row, not blank: the form edits a record, it does
+    // not draft one.
+    expect(screen.getByLabelText('Decision maker — name')).toHaveValue('A. Sponsor');
+    expect(screen.getByLabelText('Capital proxy (USD)')).toHaveValue('100000');
+
+    await user.selectOptions(screen.getByLabelText('Conflict decision'), 'cleared');
+    await user.click(within(form).getByTestId('cure-save-t-task'));
+
+    await waitFor(() => expect(mocked.saveTargetRecord).toHaveBeenCalledTimes(1));
+    const body = mocked.saveTargetRecord.mock.calls[0][0] as Record<string, unknown>;
+    // The edit.
+    expect(body.conflict).toBe('cleared');
+    // The round-trip: nothing shown or unshown was reset by the replace-save.
+    expect(body.id).toBe('t-task');
+    expect(body.name).toBe('Unchecked Co');
+    expect(body.screening).toBe('clear');
+    expect(body.perimeter).toBe('in_perimeter');
+    expect(body.decisionMakerName).toBe('A. Sponsor');
+    expect(body.decisionMakerRole).toBe('CFO');
+    expect(body.decisionMakerIsBudgetHolder).toBe(true);
+    expect(body.capitalProxyCents).toBe(10_000_000);
+    expect(body.statedBudgetCents).toBeNull();
+    // The instant the derived view used to drop: it survives the save verbatim,
+    // so curing a target does not silently undate its evidence.
+    expect(body.evidence).toEqual({ reliability: null, credibility: null, observedIso: TASK_RECORD.evidenceObservedIso });
+    // The ledger re-evaluates: the queue is re-fetched after the save.
+    await waitFor(() => expect(mocked.fetchOriginationQueue).toHaveBeenCalledTimes(2));
+  });
+
+  it('refuses a non-numeric money field with a sentence, and nothing is saved', async () => {
+    const user = userEvent.setup();
+    render(<GpsOrigination />);
+    await user.click(await screen.findByTestId('cure-open-t-task'));
+    await screen.findByTestId('cure-form-t-task');
+    await user.clear(screen.getByLabelText('Stated budget (USD)'));
+    await user.type(screen.getByLabelText('Stated budget (USD)'), 'about twenty grand');
+    await user.click(screen.getByTestId('cure-save-t-task'));
+    expect(await screen.findByTestId('cure-save-error')).toHaveTextContent(/non-negative dollar amounts/i);
+    expect(mocked.saveTargetRecord).not.toHaveBeenCalled();
   });
 });

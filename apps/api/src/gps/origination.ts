@@ -90,9 +90,15 @@ import {
   type Reliability,
   type ScreeningResult,
   type TargetConflictStatus,
+  type TargetRecord,
   type TriggerInput,
   type TriggerKind,
 } from '@lcx/shared';
+
+/* The declaration moved to shared (targetRecord.ts) so the web's cure surface reads
+ * the same shape it writes back; re-exported so this module stays the import site
+ * its consumers (dossier.ts, the route) already name. */
+export type { TargetRecord } from '@lcx/shared';
 
 /* ── The migration probe ───────────────────────────────────────────────────── */
 
@@ -224,21 +230,10 @@ interface TargetRow {
   updated_at: Date | string;
 }
 
-/**
- * What the surface needs about a target that `GpsTarget` has no room for: the
- * moment its recorded decisions were last touched, and who put it on the list.
- * `updatedIso` is load-bearing rather than decorative — it is the observation date
- * of every gate finding in the brief, because a gate is derived from the decisions
- * on this row and its age is therefore the row's age.
- */
-export interface TargetRecord {
-  target: GpsTarget;
-  status: string;
-  clientId: string | null;
-  createdBy: string | null;
-  createdIso: string;
-  updatedIso: string;
-}
+/* `TargetRecord` used to be declared here — see the shared re-export above. The
+ * doc it carried still holds: `updatedIso` is load-bearing rather than decorative,
+ * because a gate is derived from the decisions on this row and its age is
+ * therefore the row's age. */
 
 /**
  * Row → `GpsTarget`.
@@ -310,6 +305,10 @@ export function toTargetRecord(row: TargetRow, asOfMs: number): TargetRecord {
     createdBy: row.created_by,
     createdIso: isoOrNull(row.created_at) ?? new Date(asOfMs).toISOString(),
     updatedIso: isoOrNull(row.updated_at) ?? new Date(asOfMs).toISOString(),
+    // The stored instant, verbatim — ageDays above is derived from it and lossy.
+    // The cure surface round-trips this into the replace-save, or every edit
+    // would silently undate the evidence (see TargetRecord in shared).
+    evidenceObservedIso: evidenceObserved,
   };
 }
 

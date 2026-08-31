@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Crosshair, Printer, RefreshCw, ShieldOff, ShieldAlert } from 'lucide-react';
 import { clsx } from 'clsx';
-import { PageTitle, Button, InspectorDrawer } from '@/components/ui';
+import { PageTitle, Button, Input, Select, InspectorDrawer } from '@/components/ui';
 import { EmptyState, PageSkeleton } from '@/components/shared';
 import { PrintStyles } from '@/components/report/PrintStyles';
 import { useListNavigation } from '@/hooks/useListNavigation';
 import { safeHref } from '@/lib/safeHref';
 import {
-  fetchOriginationQueue, fetchTargetBrief,
+  fetchOriginationQueue, fetchTargetBrief, fetchTargetRecords, saveTargetRecord,
   provenanceLabel, BRIEF_SECTION_LABELS, BRIEF_SECTION_ORDER,
   type OriginationResponse, type QueueRow, type RefusalEntry, type RefusalLedger,
   type DeferredCut, type FactProvenance, type WhyNowTrigger, type TriggerState,
-  type BriefResponse, type BriefAssertion, type BriefIntegrity,
+  type BriefResponse, type BriefAssertion, type BriefIntegrity, type TargetRecord,
 } from '@/lib/api/gpsOrigination';
 import { GpsMetaBanner } from './GpsMetaBanner';
 import { GpsOriginationDemand } from './GpsOriginationDemand';
@@ -167,13 +167,13 @@ export function GpsOrigination() {
           description="Nothing has been recorded to originate against. This queue ranks a curated watchlist — it does not source targets, by design — so it stays empty until targets exist. If the storage layer were missing instead, the notice above this list would say so; nothing above it means the watchlist itself is empty."
         />
       ) : (
-        <Loaded res={res} />
+        <Loaded res={res} onReload={load} />
       )}
     </div>
   );
 }
 
-function Loaded({ res }: { res: OriginationResponse }) {
+function Loaded({ res, onReload }: { res: OriginationResponse; onReload: () => void }) {
   const { queue, counts } = res;
   const [briefFor, setBriefFor] = useState<string | null>(null);
   const [dossierFor, setDossierFor] = useState<string | null>(null);
@@ -198,7 +198,7 @@ function Loaded({ res }: { res: OriginationResponse }) {
 
       {queue.deferred.count > 0 && <DeferredPanel cut={queue.deferred} />}
 
-      <RefusalPanel ledger={queue.refusals} onOpenBrief={setBriefFor} />
+      <RefusalPanel ledger={queue.refusals} onOpenBrief={setBriefFor} onCured={onReload} />
 
       <BriefDrawer targetId={briefFor} onClose={() => setBriefFor(null)} />
       {/* G2: the dossier drawer. A separate overlay from the brief on purpose — the
@@ -604,6 +604,177 @@ function DeferredPanel({ cut }: { cut: DeferredCut }) {
   );
 }
 
+/* ── The cure form — recording the facts a TASK refusal names ───────────────── */
+
+/**
+ * The refusal ledger printed remedies with nowhere to perform them: "identify and
+ * name the budget holder" pointed at fields (`decisionMakerName`, `statedBudgetCents`,
+ * `conflict`) that NO web surface could write — promotion creates a thin target and
+ * nothing could enrich it, so every TASK was a dead end wearing a to-do list. This
+ * form is that surface, and two decisions carry its honesty:
+ *
+ *  · THE WHOLE RECORD ROUND-TRIPS. The save is replace-not-patch (`TargetWrite`),
+ *    so this form loads the stored row and sends every field back, edits applied —
+ *    including `evidenceObservedIso`, which the derived view used to drop and whose
+ *    loss would have silently UNDATED the evidence on every cure (−10 confidence
+ *    for opening a form). The fields not shown here are round-tripped, not reset.
+ *  · ONLY THE CURABLE IS EDITABLE. The two wall booleans (guaranteed outcome,
+ *    materially misleading) are not on this form on purpose: a wall's row offers
+ *    no remedy because offering one would invite someone to try, and an editor
+ *    that can flip a wall to false is exactly that invitation.
+ *
+ * The conflict select records the target-stage DECISION. The full GpsConflictCheck
+ * — with the verbatim disclosure text — is an engagement-level record written on
+ * the Conflict Wall once an engagement exists; this field is what the origination
+ * gate reads until then.
+ */
+function TargetCureForm({ targetId, onCured }: { targetId: string; onCured: () => void }) {
+  const [rec, setRec] = useState<TargetRecord | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const [conflict, setConflict] = useState('unresolved');
+  const [dmName, setDmName] = useState('');
+  const [dmRole, setDmRole] = useState('');
+  const [dmBudget, setDmBudget] = useState('unknown');
+  const [budgetUsd, setBudgetUsd] = useState('');
+  const [proxyUsd, setProxyUsd] = useState('');
+  const [jurisdiction, setJurisdiction] = useState('');
+
+  useEffect(() => {
+    let dead = false;
+    fetchTargetRecords()
+      .then((rows) => {
+        if (dead) return;
+        const r = rows.find((x) => x.target.id === targetId);
+        if (!r) { setLoadError('This target is not in the stored watchlist — reload the page.'); return; }
+        setRec(r);
+        setConflict(r.target.conflict);
+        setDmName(r.target.decisionMaker?.name ?? '');
+        setDmRole(r.target.decisionMaker?.role ?? '');
+        setDmBudget(r.target.decisionMaker?.isBudgetHolder == null ? 'unknown' : r.target.decisionMaker.isBudgetHolder ? 'yes' : 'no');
+        setBudgetUsd(r.target.statedBudgetCents != null ? String(r.target.statedBudgetCents / 100) : '');
+        setProxyUsd(r.target.capitalProxyCents != null ? String(r.target.capitalProxyCents / 100) : '');
+        setJurisdiction(r.target.jurisdiction ?? '');
+      })
+      .catch((e) => { if (!dead) setLoadError(e instanceof Error ? e.message : 'Failed to load the stored target'); });
+    return () => { dead = true; };
+  }, [targetId]);
+
+  /** Dollars typed by a human → integer cents; '' = not stated (null, never 0). */
+  const cents = (v: string): number | null | 'bad' => {
+    const t = v.trim();
+    if (t === '') return null;
+    const n = Number(t.replace(/[$,\s]/g, ''));
+    return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : 'bad';
+  };
+
+  const save = async () => {
+    if (rec === null) return;
+    const budgetCents = cents(budgetUsd);
+    const proxyCents = cents(proxyUsd);
+    if (budgetCents === 'bad' || proxyCents === 'bad') {
+      setSaveError('Money fields must be non-negative dollar amounts, or empty for "not stated".');
+      return;
+    }
+    setBusy(true);
+    setSaveError(null);
+    const t = rec.target;
+    try {
+      await saveTargetRecord({
+        id: t.id,
+        name: t.name,
+        jurisdiction: jurisdiction.trim() || null,
+        clientId: rec.clientId,
+        status: rec.status,
+        screening: t.screening,
+        perimeter: t.perimeter,
+        conflict,
+        demandsGuaranteedOutcome: t.demandsGuaranteedOutcome,
+        materiallyMisleading: t.materiallyMisleading,
+        decisionMakerName: dmName.trim() || null,
+        decisionMakerRole: dmRole.trim() || null,
+        decisionMakerIsBudgetHolder: dmBudget === 'unknown' ? null : dmBudget === 'yes',
+        // null and [] stay distinct: "need not established" vs "looked, none".
+        identifiedNeeds: t.identifiedNeeds ?? null,
+        offerKey: t.offerKey ?? null,
+        statedBudgetCents: budgetCents,
+        capitalProxyCents: proxyCents,
+        introPath: t.introPath ?? null,
+        deadlineIso: t.deadlineIso ?? null,
+        deadlineKind: t.deadlineKind ?? null,
+        quotedPriceCents: t.quotedPriceCents ?? null,
+        expectedVendorCostCents: t.expectedVendorCostCents ?? null,
+        // A non-null complexity re-stamps assessed_at to now on the server; the
+        // operator is looking at the target now, so that claim holds.
+        complexity: t.complexity ?? null,
+        evidence: t.evidence || rec.evidenceObservedIso
+          ? {
+              reliability: t.evidence?.reliability ?? null,
+              credibility: t.evidence?.credibility ?? null,
+              observedIso: rec.evidenceObservedIso,
+            }
+          : null,
+      });
+      onCured();
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : 'Failed to record the cure');
+      setBusy(false);
+    }
+  };
+
+  if (loadError !== null) {
+    return <p className="mt-2 font-mono text-[10px] text-red-600 dark:text-red-400" data-testid="cure-load-error">{loadError}</p>;
+  }
+  if (rec === null) return <p className="mt-2 font-mono text-[10px] text-grey">Opening the stored record…</p>;
+
+  return (
+    <div className="mt-2 space-y-2 border-t border-line/60 pt-2" data-testid={`cure-form-${targetId}`}>
+      <p className="text-micro text-grey-dark">
+        Everything not shown here is written back unchanged — this records facts, it cannot approve,
+        price or send anything. Empty money fields mean "not stated", never zero.
+      </p>
+      <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        <Select
+          label="Conflict decision"
+          id={`cure-conflict-${targetId}`}
+          value={conflict}
+          onChange={(e) => setConflict(e.target.value)}
+          options={[
+            { value: 'unresolved', label: 'unresolved — no check recorded' },
+            { value: 'cleared', label: 'cleared — checked, no conflict found' },
+            { value: 'cleared_with_disclosure', label: 'cleared with disclosure — wording goes on file at engagement' },
+            { value: 'declined', label: 'declined — final, this stops the work' },
+          ]}
+        />
+        <Input label="Decision maker — name" id={`cure-dm-name-${targetId}`} value={dmName} onChange={(e) => setDmName(e.target.value)} placeholder="a person who can sign" />
+        <Input label="Decision maker — role" id={`cure-dm-role-${targetId}`} value={dmRole} onChange={(e) => setDmRole(e.target.value)} placeholder="CEO, Head of BD…" />
+        <Select
+          label="Controls the budget?"
+          id={`cure-dm-budget-${targetId}`}
+          value={dmBudget}
+          onChange={(e) => setDmBudget(e.target.value)}
+          options={[
+            { value: 'unknown', label: 'unknown' },
+            { value: 'yes', label: 'yes — the budget holder' },
+            { value: 'no', label: 'no — a champion who must go and ask' },
+          ]}
+        />
+        <Input label="Stated budget (USD)" id={`cure-budget-${targetId}`} inputMode="decimal" value={budgetUsd} onChange={(e) => setBudgetUsd(e.target.value)} placeholder="what THEY stated — strongest" />
+        <Input label="Capital proxy (USD)" id={`cure-proxy-${targetId}`} inputMode="decimal" value={proxyUsd} onChange={(e) => setProxyUsd(e.target.value)} placeholder="closed raise, treasury, or revenue" />
+        <Input label="Jurisdiction (free text, nothing parses it)" id={`cure-jurisdiction-${targetId}`} value={jurisdiction} onChange={(e) => setJurisdiction(e.target.value)} placeholder="as a human would say it" />
+      </div>
+      {saveError !== null && (
+        <p role="alert" className="font-mono text-[10px] text-red-600 dark:text-red-400" data-testid="cure-save-error">{saveError}</p>
+      )}
+      <Button variant="secondary" onClick={() => void save()} disabled={busy} data-testid={`cure-save-${targetId}`}>
+        {busy ? 'Recording…' : 'Record the facts — the gates re-evaluate'}
+      </Button>
+    </div>
+  );
+}
+
 /* ── The refusal ledger — D2, and half the product ──────────────────────────── */
 
 /**
@@ -628,7 +799,7 @@ function DeferredPanel({ cut }: { cut: DeferredCut }) {
  * distinguishes "checked, nothing found" from "not checked" — the same three-state
  * honesty `ScreeningResult` exists for.
  */
-function RefusalPanel({ ledger, onOpenBrief }: { ledger: RefusalLedger; onOpenBrief: (id: string) => void }) {
+function RefusalPanel({ ledger, onOpenBrief, onCured }: { ledger: RefusalLedger; onOpenBrief: (id: string) => void; onCured: () => void }) {
   const gates = Object.entries(ledger.byGate) as [string, number][];
   return (
     <Section
@@ -651,15 +822,16 @@ function RefusalPanel({ ledger, onOpenBrief }: { ledger: RefusalLedger; onOpenBr
         <p className="text-label text-grey">All seven gates were evaluated against every target considered and none fired.</p>
       ) : (
         <div className="space-y-2">
-          {ledger.entries.map((e) => <RefusalRow key={e.targetId} entry={e} onOpenBrief={onOpenBrief} />)}
+          {ledger.entries.map((e) => <RefusalRow key={e.targetId} entry={e} onOpenBrief={onOpenBrief} onCured={onCured} />)}
         </div>
       )}
     </Section>
   );
 }
 
-function RefusalRow({ entry, onOpenBrief }: { entry: RefusalEntry; onOpenBrief: (id: string) => void }) {
+function RefusalRow({ entry, onOpenBrief, onCured }: { entry: RefusalEntry; onOpenBrief: (id: string) => void; onCured: () => void }) {
   const wall = entry.disposition === 'wall';
+  const [curing, setCuring] = useState(false);
   return (
     <div
       data-testid={`refusal-${entry.targetId}`}
@@ -703,9 +875,20 @@ function RefusalRow({ entry, onOpenBrief }: { entry: RefusalEntry; onOpenBrief: 
           </li>
         ))}
       </ul>
-      <div className="mt-1 font-mono text-[10px] text-grey">
-        {entry.wallCount} unrecoverable · {entry.recoverableCount} curable
+      <div className="mt-1 flex items-baseline justify-between gap-2 font-mono text-[10px] text-grey">
+        <span>{entry.wallCount} unrecoverable · {entry.recoverableCount} curable</span>
+        {/* A WALL gets no cure affordance for the same reason it gets no remedy line. */}
+        {!wall && (
+          <button
+            onClick={() => setCuring((v) => !v)}
+            className="font-bold uppercase tracking-wider text-cyan-700 hover:underline dark:text-cyan-400"
+            data-testid={`cure-open-${entry.targetId}`}
+          >
+            {curing ? 'close' : 'cure — record the facts'}
+          </button>
+        )}
       </div>
+      {!wall && curing && <TargetCureForm targetId={entry.targetId} onCured={onCured} />}
     </div>
   );
 }

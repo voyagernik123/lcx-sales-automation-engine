@@ -732,6 +732,19 @@ describe('the proposed opening', () => {
 
 /* ── 6. The migration window ───────────────────────────────────────────────── */
 
+describe('the record carries the instant the cure form must round-trip', () => {
+  it('a saved target returns evidenceObservedIso VERBATIM beside the derived ageDays', async () => {
+    // The save is replace-not-patch, so the web's cure form writes back the whole
+    // record — and `evidence.ageDays` is derived and lossy. If this field ever
+    // drops off the record again, every cure silently UNDATES the evidence
+    // (−10 confidence for opening a form). That is the regression this pins.
+    const { status, body } = await post('/origination/targets', eligible({ name: 'Dated Token' }));
+    expect(status).toBe(201);
+    expect(body.data.evidenceObservedIso).toBe('2026-07-20T00:00:00.000Z');
+    expect(typeof body.data.target.evidence.ageDays).toBe('number');
+  });
+});
+
 describe('0050 pending: honest, not broken', () => {
   beforeEach(() => {
     db.migrated = false;

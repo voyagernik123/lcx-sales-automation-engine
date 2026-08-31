@@ -32,6 +32,7 @@ export type {
   OriginationResponse,
   OriginationQueue,
   QueueRow,
+  TargetRecord,
   DeferredCut,
   RefusalLedger,
   RefusalEntry,
@@ -63,6 +64,7 @@ export {
 import type {
   BriefResponse,
   OriginationResponse,
+  TargetRecord,
 } from '@lcx/shared';
 import { unwrapWithMeta } from './meta.js';
 
@@ -106,3 +108,21 @@ export const fetchTargetBrief = (targetId: string) =>
     `/v1/gps/origination/${encodeURIComponent(targetId)}/brief`,
     { auth: true },
   ));
+
+/**
+ * The stored rows behind the queue — fetched by the CURE FORM, which must read
+ * the whole record before writing any of it back, because the save below is
+ * REPLACE, NOT PATCH (`TargetWrite` in `apps/api/src/gps/origination.ts`): an
+ * omitted field resets to the unflattering default, so a cure that sent only
+ * its own three fields would silently un-screen and un-date everything else.
+ *
+ * This amends the "FETCHERS ONLY" rule at the top of this file rather than
+ * breaking it in spirit: the write this enables is an operator RECORDING FACTS
+ * (a decision maker's name, a stated budget, a conflict decision) — it cannot
+ * approve, price, or send anything; the send-gate discipline is untouched.
+ */
+export const fetchTargetRecords = () =>
+  unwrap(request<{ data: TargetRecord[] }>('/v1/gps/origination/targets', { auth: true }));
+
+export const saveTargetRecord = (body: Record<string, unknown>) =>
+  request<{ data: TargetRecord }>('/v1/gps/origination/targets', { method: 'POST', body, auth: true });

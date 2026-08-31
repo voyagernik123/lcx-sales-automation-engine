@@ -452,6 +452,15 @@ export type {
   PerimeterSource, PerimeterCell, PerimeterHole, PerimeterView,
 } from './perimeterView.js';
 
+/* ── The stored target's wire shape — one declaration, both sides ─────────────
+ * Moved from apps/api/src/gps/origination.ts for the cure surface: the refusal
+ * ledger's remedies name fields (decision maker, budget, conflict) that the web
+ * must WRITE BACK through the replace-not-patch save, so it must read the same
+ * record the API composes — including evidenceObservedIso, which the derived
+ * ageDays view drops and every cure would otherwise destroy. Types only.
+ */
+export type { TargetRecord } from './targetRecord.js';
+
 /* ── G5 — the delivery factory's Stage 1 ──────────────────────────────────────
  * Templates whose client slots are DERIVED from the catalogue's own
  * requiredClientInputs — proposal, portal form and draft refusal read one list.
