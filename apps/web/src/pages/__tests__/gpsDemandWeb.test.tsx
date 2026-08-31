@@ -107,6 +107,75 @@ describe('the demand panel', () => {
     expect(report.textContent).toContain('2 new candidate(s)');
   });
 
+  it('splits a FULL Telegram export in the browser: groups POST one by one, personal chats never leave', async () => {
+    const posts: Array<{ name: string; count: number }> = [];
+    responder.fn = (url, init) => {
+      if (url === '/v1/gps/demand/telegram') {
+        const b = init!.body as { name: string; messages: unknown[] };
+        posts.push({ name: b.name, count: b.messages.length });
+        return { data: { inserted: 1, duplicates: 0, report: { chatName: b.name, messagesSeen: b.messages.length, messagesMatched: 1, sendersSeenAndDropped: b.messages.length, snippetsKept: 1, unparseableEntries: 0 } } };
+      }
+      return queue();
+    };
+    render(<GpsOriginationDemand />);
+    await screen.findByText('sableprotocol');
+    const fullExport = {
+      chats: {
+        list: [
+          { name: 'Launch Alpha', type: 'private_supergroup', messages: [{ id: 1, text: 'MiCA launch t.me/a' }] },
+          { name: 'Mum', type: 'personal_chat', messages: [{ id: 2, text: 'SECRET FAMILY BUSINESS' }] },
+          { name: 'Ann Channel', type: 'public_channel', messages: [{ id: 3, text: 'listing $TKN' }] },
+        ],
+      },
+    };
+    const file = new File([JSON.stringify(fullExport)], 'result.json', { type: 'application/json' });
+    fireEvent.change(screen.getByLabelText('telegram export file'), { target: { files: [file] } });
+    const report = await screen.findByTestId('telegram-report');
+    // Two POSTs — the group and the channel. The personal chat is not a third.
+    expect(posts.map((p) => p.name).sort()).toEqual(['Ann Channel', 'Launch Alpha']);
+    // The withholding is provable on the wire: the personal text reached NO request.
+    expect(JSON.stringify(requests)).not.toContain('SECRET FAMILY BUSINESS');
+    expect(report.textContent).toContain('2 message(s) seen');
+    expect(screen.getByTestId('telegram-groups-line').textContent).toContain('2 group(s)');
+    expect(screen.getByTestId('telegram-personal-withheld').textContent).toContain('1 personal chat(s)');
+    expect(screen.getByTestId('telegram-personal-withheld').textContent).toContain('never sent');
+  });
+
+  it('chunks an oversized group under the 2MB gate and one failing group does not eat the rest', async () => {
+    const posts: Array<{ name: string; count: number }> = [];
+    responder.fn = (url, init) => {
+      if (url === '/v1/gps/demand/telegram') {
+        const b = init!.body as { name: string; messages: unknown[] };
+        posts.push({ name: b.name, count: b.messages.length });
+        if (b.name === 'Broken Group') return new MockApiError('Import failed', 500, 'GPS_ERROR');
+        return { data: { inserted: 0, duplicates: b.messages.length, report: { chatName: b.name, messagesSeen: b.messages.length, messagesMatched: 0, sendersSeenAndDropped: 0, snippetsKept: 0, unparseableEntries: 0 } } };
+      }
+      return queue();
+    };
+    render(<GpsOriginationDemand />);
+    await screen.findByText('sableprotocol');
+    const big = 'x'.repeat(800_000);
+    const fullExport = {
+      chats: {
+        list: [
+          { name: 'Big Group', type: 'public_supergroup', messages: [{ id: 1, text: big }, { id: 2, text: big }, { id: 3, text: big }] },
+          { name: 'Broken Group', type: 'private_group', messages: [{ id: 4, text: 'x' }] },
+        ],
+      },
+    };
+    const file = new File([JSON.stringify(fullExport)], 'result.json', { type: 'application/json' });
+    fireEvent.change(screen.getByLabelText('telegram export file'), { target: { files: [file] } });
+    const failed = await screen.findByTestId('telegram-failed-groups');
+    // 3 × ~800KB messages cannot fit one 1.8MB request: Big Group went in ≥2 chunks,
+    // every chunk stayed under the server's ceiling, and no message was lost.
+    const bigPosts = posts.filter((p) => p.name === 'Big Group');
+    expect(bigPosts.length).toBeGreaterThanOrEqual(2);
+    expect(bigPosts.reduce((n, p) => n + p.count, 0)).toBe(3);
+    // The broken group is NAMED, and the big one still landed.
+    expect(failed.textContent).toContain('Broken Group');
+    expect(screen.getByTestId('telegram-report').textContent).toContain('3 message(s) seen');
+  });
+
   it('says the true sentence when the register is absent, and a DIFFERENT one when unprobeable', async () => {
     responder.fn = () => queue({ candidates: [], registerPresent: false });
     const { unmount } = render(<GpsOriginationDemand />);

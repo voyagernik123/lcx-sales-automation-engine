@@ -57,7 +57,18 @@ export function GpsOriginationDemand({ onPromoted }: { onPromoted?: () => void }
   const [busy, setBusy] = useState<string | null>(null);
   const [refuseFor, setRefuseFor] = useState<number | null>(null);
   const [refuseReason, setRefuseReason] = useState('');
-  const [lastReport, setLastReport] = useState<(TelegramParseReport & { inserted: number; duplicates: number }) | null>(null);
+  /**
+   * The import report, AGGREGATED. One Telegram Desktop file can now be either a
+   * single chat export or the full-account export ({ chats: { list: [...] } }) —
+   * the browser splits the latter into per-group POSTs, so the server's 2MB gate
+   * stays a real per-request ceiling and its single-chat contract never changed.
+   * `personalChatsWithheld` counts chats filtered CLIENT-SIDE by type: a personal
+   * chat that slipped into the export is dropped in the browser and never sent.
+   */
+  const [lastReport, setLastReport] = useState<(TelegramParseReport & {
+    inserted: number; duplicates: number;
+    groupsSent: number; personalChatsWithheld: number; failedGroups: string[];
+  }) | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement | null>(null);
 
@@ -99,12 +110,85 @@ export function GpsOriginationDemand({ onPromoted }: { onPromoted?: () => void }
     } catch {
       throw new ApiError('This file is not JSON — export from Telegram Desktop (Settings → Advanced → Export) and choose JSON format.', 400, 'VALIDATION');
     }
-    const res = await request<{ data: TelegramParseReport & { inserted: number; duplicates: number; report: TelegramParseReport } }>(
-      '/v1/gps/demand/telegram',
-      { method: 'POST', body: parsed },
-    );
-    const d = res.data as unknown as { inserted: number; duplicates: number; report: TelegramParseReport };
-    setLastReport({ ...d.report, inserted: d.inserted, duplicates: d.duplicates });
+
+    /* ── ONE FILE, ANY SHAPE ─────────────────────────────────────────────────
+       Single-chat export: { name, messages }. Full-account export ("Export
+       Telegram Data"): { chats: { list: [{ name, type, messages }] } }. The
+       full shape is split HERE, in the browser: groups and channels go to the
+       server one POST each; personal chats and saved messages are withheld
+       client-side by their own `type` and never leave this machine. */
+    const root = (parsed ?? {}) as Record<string, unknown>;
+    const chatList = (root.chats as { list?: unknown } | undefined)?.list;
+    let personalChatsWithheld = 0;
+    let chats: Array<{ name: string; messages: unknown[] }>;
+    if (Array.isArray(chatList)) {
+      chats = [];
+      for (const c of chatList) {
+        const chat = (c ?? {}) as Record<string, unknown>;
+        const kind = typeof chat.type === 'string' ? chat.type : '';
+        if (!/group|channel/i.test(kind)) { personalChatsWithheld += 1; continue; }
+        chats.push({
+          name: typeof chat.name === 'string' ? chat.name : '(unnamed group)',
+          messages: Array.isArray(chat.messages) ? chat.messages : [],
+        });
+      }
+      if (chats.length === 0 && personalChatsWithheld === 0) {
+        throw new ApiError('This export contains no chats. Re-export from Telegram Desktop with groups/channels ticked and JSON format.', 400, 'VALIDATION');
+      }
+    } else if (Array.isArray(root.messages)) {
+      chats = [{ name: typeof root.name === 'string' ? root.name : '(unnamed group)', messages: root.messages }];
+    } else {
+      throw new ApiError('This JSON is not a Telegram export — expected { name, messages } (one chat) or { chats: { list } } (full export).', 400, 'VALIDATION');
+    }
+
+    /* The server refuses requests over 2MB by declared size, and that ceiling is
+       right — so a large group is split into batches that each stay under it.
+       Replays are safe: the candidate key is (source, source_ref), so a message
+       that lands twice is a reported duplicate, never a doubled queue. */
+    const CHUNK_BYTES = 1_800_000;
+    const totals = {
+      chatName: null as string | null, messagesSeen: 0, messagesMatched: 0,
+      sendersSeenAndDropped: 0, snippetsKept: 0, unparseableEntries: 0,
+      inserted: 0, duplicates: 0,
+    };
+    let groupsSent = 0;
+    const failedGroups: string[] = [];
+    for (const chat of chats) {
+      const batches: unknown[][] = [];
+      let batch: unknown[] = [];
+      let size = 200 + chat.name.length;
+      for (const m of chat.messages) {
+        const mSize = JSON.stringify(m ?? null).length + 1;
+        if (size + mSize > CHUNK_BYTES && batch.length > 0) { batches.push(batch); batch = []; size = 200 + chat.name.length; }
+        batch.push(m);
+        size += mSize;
+      }
+      batches.push(batch); // an empty group still reports itself: 0 seen is a fact
+      try {
+        for (const msgs of batches) {
+          const res = await request<{ data: { inserted: number; duplicates: number; report: TelegramParseReport } }>(
+            '/v1/gps/demand/telegram',
+            { method: 'POST', body: { name: chat.name, messages: msgs } },
+          );
+          const d = res.data;
+          totals.inserted += d.inserted;
+          totals.duplicates += d.duplicates;
+          totals.messagesSeen += d.report.messagesSeen;
+          totals.messagesMatched += d.report.messagesMatched;
+          totals.sendersSeenAndDropped += d.report.sendersSeenAndDropped;
+          totals.snippetsKept += d.report.snippetsKept;
+          totals.unparseableEntries += d.report.unparseableEntries;
+        }
+        groupsSent += 1;
+      } catch {
+        /* One group failing must not eat the rest of the import: the failure is
+           NAMED in the report, the loop continues, and re-importing the same
+           file later dedupes everything that already landed. */
+        failedGroups.push(chat.name);
+      }
+    }
+    totals.chatName = chats.length === 1 ? chats[0].name : `${groupsSent} group(s)`;
+    setLastReport({ ...totals, groupsSent, personalChatsWithheld, failedGroups });
   });
 
   const promote = (id: number) => act(`promote-${id}`, async () => {
@@ -168,6 +252,23 @@ export function GpsOriginationDemand({ onPromoted }: { onPromoted?: () => void }
                   and every unmatched message in full. {lastReport.snippetsKept} snippet(s) of ≤200 chars kept.
                   {lastReport.unparseableEntries > 0 ? ` ${lastReport.unparseableEntries} entr(ies) were unparseable.` : ''}
                 </p>
+                {lastReport.groupsSent > 1 && (
+                  <p className="text-grey-dark" data-testid="telegram-groups-line">
+                    Across {lastReport.groupsSent} group(s)/channel(s) from one export file.
+                  </p>
+                )}
+                {lastReport.personalChatsWithheld > 0 && (
+                  <p className="text-grey-dark" data-testid="telegram-personal-withheld">
+                    {lastReport.personalChatsWithheld} personal chat(s) were withheld IN THIS BROWSER by their
+                    own type — never sent to the server at all.
+                  </p>
+                )}
+                {lastReport.failedGroups.length > 0 && (
+                  <p className="text-status-blocked" data-testid="telegram-failed-groups">
+                    {lastReport.failedGroups.length} group(s) FAILED and were skipped: {lastReport.failedGroups.join(', ')}.
+                    Re-import the same file after fixing — everything already landed dedupes.
+                  </p>
+                )}
               </div>
             )}
 
