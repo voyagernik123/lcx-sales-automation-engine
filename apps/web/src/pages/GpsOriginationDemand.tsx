@@ -149,6 +149,7 @@ export function GpsOriginationDemand({ onPromoted }: { onPromoted?: () => void }
     const totals = {
       chatName: null as string | null, messagesSeen: 0, messagesMatched: 0,
       sendersSeenAndDropped: 0, snippetsKept: 0, unparseableEntries: 0,
+      partnerRoomsMatched: 0,
       inserted: 0, duplicates: 0,
     };
     let groupsSent = 0;
@@ -178,6 +179,8 @@ export function GpsOriginationDemand({ onPromoted }: { onPromoted?: () => void }
           totals.sendersSeenAndDropped += d.report.sendersSeenAndDropped;
           totals.snippetsKept += d.report.snippetsKept;
           totals.unparseableEntries += d.report.unparseableEntries;
+          // ?? 0 survives a deploy skew where the API predates the partner-room rule.
+          totals.partnerRoomsMatched += d.report.partnerRoomsMatched ?? 0;
         }
         groupsSent += 1;
       } catch {
@@ -255,6 +258,12 @@ export function GpsOriginationDemand({ onPromoted }: { onPromoted?: () => void }
                 {lastReport.groupsSent > 1 && (
                   <p className="text-grey-dark" data-testid="telegram-groups-line">
                     Across {lastReport.groupsSent} group(s)/channel(s) from one export file.
+                  </p>
+                )}
+                {lastReport.partnerRoomsMatched > 0 && (
+                  <p className="text-grey-dark" data-testid="telegram-partner-rooms">
+                    {lastReport.partnerRoomsMatched} partner room(s) matched by their OWN NAME — rooms whose
+                    messages never put a ticker beside a signal word, kept as one candidate per room.
                   </p>
                 )}
                 {lastReport.personalChatsWithheld > 0 && (

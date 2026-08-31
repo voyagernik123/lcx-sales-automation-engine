@@ -406,7 +406,7 @@ export type {
 } from './demand.js';
 export {
   DEMAND_SOURCES, SNIPPET_MAX, INTAKE_MESSAGE_MAX, demandCandidateDefects,
-  crossfeedSignals, parseTelegramExport, intakeCandidate, referralCandidate,
+  crossfeedSignals, parseTelegramExport, partnerRoomCounterpart, intakeCandidate, referralCandidate,
 } from './demand.js';
 
 /* ── G2 — dossiers & outreach ─────────────────────────────────────────────────

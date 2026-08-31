@@ -105,6 +105,9 @@ describe('the demand panel', () => {
     expect(report.textContent).toContain('40 message(s) seen');
     expect(report.textContent).toContain('40 sender identit(ies) — none stored');
     expect(report.textContent).toContain('2 new candidate(s)');
+    // This mock's report predates the partner-room rule (no partnerRoomsMatched at all):
+    // the panel must neither crash nor render the line — the deploy-skew case, pinned.
+    expect(screen.queryByTestId('telegram-partner-rooms')).toBeNull();
   });
 
   it('splits a FULL Telegram export in the browser: groups POST one by one, personal chats never leave', async () => {
@@ -113,7 +116,7 @@ describe('the demand panel', () => {
       if (url === '/v1/gps/demand/telegram') {
         const b = init!.body as { name: string; messages: unknown[] };
         posts.push({ name: b.name, count: b.messages.length });
-        return { data: { inserted: 1, duplicates: 0, report: { chatName: b.name, messagesSeen: b.messages.length, messagesMatched: 1, sendersSeenAndDropped: b.messages.length, snippetsKept: 1, unparseableEntries: 0 } } };
+        return { data: { inserted: 1, duplicates: 0, report: { chatName: b.name, messagesSeen: b.messages.length, messagesMatched: 1, sendersSeenAndDropped: b.messages.length, snippetsKept: 1, unparseableEntries: 0, partnerRoomsMatched: 1 } } };
       }
       return queue();
     };
@@ -139,6 +142,8 @@ describe('the demand panel', () => {
     expect(screen.getByTestId('telegram-groups-line').textContent).toContain('2 group(s)');
     expect(screen.getByTestId('telegram-personal-withheld').textContent).toContain('1 personal chat(s)');
     expect(screen.getByTestId('telegram-personal-withheld').textContent).toContain('never sent');
+    // Each mocked group reported partnerRoomsMatched: 1 — the panel SUMS across groups.
+    expect(screen.getByTestId('telegram-partner-rooms').textContent).toContain('2 partner room(s)');
   });
 
   it('chunks an oversized group under the 2MB gate and one failing group does not eat the rest', async () => {

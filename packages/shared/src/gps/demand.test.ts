@@ -123,6 +123,71 @@ describe('the Telegram sieve — judged by what it discards', () => {
     expect(candidates).toHaveLength(0);
   });
 
+  describe('the partner-room rule — the room name itself can be the identity', () => {
+    const ROOM = {
+      name: 'USTBL <> LCX',
+      messages: [
+        { id: 1, from: 'Counterpart CEO', from_id: 'user9', text: 'gm, how was the conference?' },
+        { id: 2, from: 'Counterpart CEO', from_id: 'user9', text: 'we want to move on the listing this quarter' },
+        { id: 3, from: 'Counterpart CEO', from_id: 'user9', text: 'and the MiCA white paper too — can you quote both? my assistant Priya will coordinate' },
+      ],
+    };
+
+    it('wakes a silent partner room with ONE candidate for the room, never one per message', () => {
+      const { candidates, report } = parseTelegramExport(ROOM, ASOF);
+      expect(candidates).toHaveLength(1);
+      const c = candidates[0];
+      expect(c.sourceRef).toBe('tg:group:USTBL <> LCX');
+      expect(c.projectName).toBe('USTBL');
+      expect(c.provenanceGrade).toBe('C3');
+      // Two signal messages, one room — the reason says so and the count is cited.
+      expect(c.reason).toContain('USTBL <> LCX');
+      expect(c.reason).toContain('2 message(s)');
+      expect(report.partnerRoomsMatched).toBe(1);
+      expect(report.messagesMatched).toBe(0); // no MESSAGE matched; the ROOM did.
+      expect(demandCandidateDefects(c)).toEqual([]);
+    });
+
+    it('routes a MiCA-flavoured room to mica_whitepaper and keeps the minimisation whole', () => {
+      const { candidates, report } = parseTelegramExport(ROOM, ASOF);
+      expect(candidates[0].offerHypothesis).toBe('mica_whitepaper');
+      expect(candidates[0].snippet!.length).toBeLessThanOrEqual(SNIPPET_MAX);
+      expect(report.sendersSeenAndDropped).toBe(3);
+      const flat = JSON.stringify(candidates);
+      for (const leaked of ['Counterpart CEO', 'from_id', 'user9']) {
+        expect(flat, `sender data leaked: ${leaked}`).not.toContain(leaked);
+      }
+    });
+
+    it('stays quiet when a message-level candidate already spoke for the room', () => {
+      const { candidates, report } = parseTelegramExport({
+        name: 'USTBL <> LCX',
+        messages: [
+          { id: 1, text: 'ready to proceed with the $USTBL listing' },
+          { id: 2, text: 'we want to move on the listing this quarter' },
+        ],
+      }, ASOF);
+      expect(candidates).toHaveLength(1);
+      expect(candidates[0].sourceRef).toBe('tg:USTBL <> LCX:1'); // the MESSAGE-level ref, not tg:group:…
+      expect(report.partnerRoomsMatched).toBe(0);
+    });
+
+    it('stays quiet for rooms that do not name LCX, rooms with no separator, and signal-less rooms', () => {
+      // Signal words, but the room is not partner-shaped: no LCX in the name.
+      expect(parseTelegramExport({
+        name: 'BitStreet <> Nik', messages: [{ id: 1, text: 'the listing is close' }],
+      }, ASOF).candidates).toHaveLength(0);
+      // Names LCX, but no separator — an internal room, not a relationship.
+      expect(parseTelegramExport({
+        name: 'LCX Listings Deals', messages: [{ id: 1, text: 'the listing is close' }],
+      }, ASOF).candidates).toHaveLength(0);
+      // Partner-shaped, but nothing signal-worded was ever said.
+      expect(parseTelegramExport({
+        name: 'USTBL <> LCX', messages: [{ id: 1, text: 'gm gm' }],
+      }, ASOF).candidates).toHaveLength(0);
+    });
+  });
+
   it('is total: garbage in, empty result and an honest report out', () => {
     for (const junk of [null, 42, 'hi', [], { messages: 'nope' }]) {
       const { candidates, report } = parseTelegramExport(junk, ASOF);

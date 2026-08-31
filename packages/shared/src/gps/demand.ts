@@ -21,6 +21,17 @@
  *   · The report of what was dropped travels with the result, because a minimisation
  *     nobody can inspect is a claim, not a control.
  *
+ * ── THE PARTNER-ROOM RULE (measured in, 2026-08-31) ──────────────────────────
+ * The first live import proved the message-level rule too narrow for how these deals
+ * actually happen: 756 signal-word messages carried no ticker or link, 725 of them inside
+ * rooms whose OWN NAME names the counterpart ("USTBL <> LCX"), and 118 real deal rooms
+ * yielded nothing at all. A room Telegram already titled after the relationship is an
+ * identity the sieve may use. So: a chat whose name is partner-shaped (an LCX-and-someone
+ * name) that carries signal words but produced no message-level candidate becomes ONE
+ * candidate — for the ROOM, never one per message, so a chatty room cannot flood the
+ * queue. The minimisation holds unchanged: no sender fields, one ≤200-char snippet, and
+ * the rule announces itself in the report (`partnerRoomsMatched`).
+ *
  * ── EVERY REASON CITES ITS FIELDS (D1) ───────────────────────────────────────
  * A crossfeed rule that says "looks promising" is a vibe with a database connection. Each
  * rule's reason names the field values that fired it, so the operator promoting or
@@ -191,6 +202,11 @@ export interface TelegramParseReport {
   /** Messages whose text survived only as a ≤200-char snippet. */
   snippetsKept: number;
   unparseableEntries: number;
+  /**
+   * 1 when the partner-room rule fired for this chat (0 otherwise) — a count, not a flag,
+   * so a multi-group import can sum it. At most one per parse, by construction.
+   */
+  partnerRoomsMatched: number;
 }
 
 export interface TelegramParseResult {
@@ -202,6 +218,24 @@ const TICKER_RE = /\$[A-Z]{2,10}\b/;
 const TME_RE = /t\.me\/[A-Za-z0-9_]{3,60}/;
 const URL_RE = /https?:\/\/[^\s"']{4,200}/;
 const SIGNAL_WORDS = /\b(listing|TGE|token generation|launch|MiCA|white ?paper|raise|IDO|ICO|market maker|exchange)\b/i;
+
+/** Separators Telegram deal rooms actually use: "A <> B", "A | B", "A x B", "A + B", "A / B". */
+const PARTNER_SPLIT = /\s*(?:<>|\||\+|\/|\bx\b)\s*/i;
+
+/**
+ * The counterpart a partner-shaped room name identifies, or null when the name is not
+ * partner-shaped. Partner-shaped means: names LCX, has a separator, and at least one
+ * segment that is NOT the LCX side. "USTBL <> LCX" → "USTBL"; "LCX Listings Deals" → null
+ * (no separator — an internal room, not a relationship).
+ */
+export function partnerRoomCounterpart(chatName: string): string | null {
+  if (!/lcx/i.test(chatName)) return null;
+  const parts = chatName.split(PARTNER_SPLIT).map((p) => p.trim()).filter((p) => p.length > 0);
+  if (parts.length < 2) return null;
+  const others = parts.filter((p) => !/lcx/i.test(p));
+  if (others.length === 0) return null;
+  return others.join(' <> ').slice(0, NAME_MAX);
+}
 
 /** One message's extractable text, from either export shape, with no sender fields read. */
 function messageText(m: Record<string, unknown>): string | null {
@@ -224,6 +258,7 @@ export function parseTelegramExport(raw: unknown, asOf: string): TelegramParseRe
   const report: TelegramParseReport = {
     chatName: null, messagesSeen: 0, messagesMatched: 0,
     sendersSeenAndDropped: 0, snippetsKept: 0, unparseableEntries: 0,
+    partnerRoomsMatched: 0,
   };
   const candidates: DemandCandidate[] = [];
   if (raw === null || typeof raw !== 'object') return { candidates, report };
@@ -231,6 +266,12 @@ export function parseTelegramExport(raw: unknown, asOf: string): TelegramParseRe
   report.chatName = typeof root.name === 'string' ? root.name.slice(0, NAME_MAX) : null;
   const messages = Array.isArray(root.messages) ? root.messages : [];
   const seenRefs = new Set<string>();
+  /* Fuel for the partner-room rule: the LAST signal-word message with no identity of its
+     own (most recent = the state of the conversation), the count of such messages, and
+     whether any of them was MiCA-flavoured. Nothing here retains sender data. */
+  let roomSignal: { text: string; word: string; at: number } | null = null;
+  let roomSignalCount = 0;
+  let roomMica = false;
 
   for (const entry of messages) {
     if (entry === null || typeof entry !== 'object') { report.unparseableEntries += 1; continue; }
@@ -247,9 +288,17 @@ export function parseTelegramExport(raw: unknown, asOf: string): TelegramParseRe
     const ticker = TICKER_RE.exec(text);
     const urlM = URL_RE.exec(text);
     const words = SIGNAL_WORDS.exec(text);
-    // A match needs an IDENTITY (link or ticker) — signal words alone are chatter.
+    // A match needs an IDENTITY (link or ticker) — signal words alone are chatter,
+    // UNLESS the room's own name supplies the identity (the partner-room rule, below).
     const identity = tme?.[0] ?? ticker?.[0] ?? null;
-    if (identity === null || words === null) continue;
+    if (identity === null || words === null) {
+      if (identity === null && words !== null) {
+        roomSignalCount += 1;
+        roomSignal = { text, word: words[0], at: words.index ?? 0 };
+        if (/MiCA|white ?paper/i.test(text)) roomMica = true;
+      }
+      continue;
+    }
 
     report.messagesMatched += 1;
     const msgId = typeof m.id === 'number' || typeof m.id === 'string' ? String(m.id) : `t${report.messagesSeen}`;
@@ -272,6 +321,33 @@ export function parseTelegramExport(raw: unknown, asOf: string): TelegramParseRe
       jurisdiction: null,
       offerHypothesis: /MiCA|white ?paper/i.test(text) ? 'mica_whitepaper' : 'unsure',
       reason: `Telegram signal in "${report.chatName ?? 'chat'}": matched ${tme ? 'a t.me handle' : `ticker ${ticker![0]}`} beside "${words[0]}" — an announcement-shaped mention, not a qualified need.`,
+      snippet,
+      provenanceGrade: 'C3',
+      contactEmail: null,
+      observedAt: asOf,
+    });
+  }
+
+  /* THE PARTNER-ROOM RULE. Fires only when the message-level rule kept NOTHING from this
+     chat — a room that already speaks for itself needs no second voice. One candidate for
+     the ROOM: sourceRef is the room, so re-imports (and a >2MB room split into batches
+     that each see only chatter) can never stack duplicates past the (source, sourceRef)
+     key. The snippet is from the most recent signal message, same 200-char cap. */
+  const counterpart = report.chatName === null ? null : partnerRoomCounterpart(report.chatName);
+  if (candidates.length === 0 && roomSignal !== null && counterpart !== null) {
+    const start = Math.max(0, roomSignal.at - 80);
+    const snippet = roomSignal.text.slice(start, start + SNIPPET_MAX);
+    report.snippetsKept += 1;
+    report.partnerRoomsMatched = 1;
+    candidates.push({
+      source: 'telegram_import',
+      sourceRef: `tg:group:${report.chatName}`,
+      projectName: counterpart,
+      url: null,
+      chain: null,
+      jurisdiction: null,
+      offerHypothesis: roomMica ? 'mica_whitepaper' : 'unsure',
+      reason: `Partner-room signal in "${report.chatName}": the room's own name identifies the counterpart, and ${roomSignalCount} message(s) carried "${roomSignal.word}"-class words with no ticker or link beside them — a relationship-shaped room, not a qualified need.`,
       snippet,
       provenanceGrade: 'C3',
       contactEmail: null,
