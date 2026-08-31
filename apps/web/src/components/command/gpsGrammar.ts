@@ -240,8 +240,9 @@ export const GPS_NOUNS: readonly GpsNounDef[] = [
       via: 'compiled_catalogue', symbol: 'OFFERS',
       notImported: 'the catalogue is reviewed code, and importing it here would put the GPS shared graph in the initial chunk',
     },
-    caveat: 'the price bands are placeholders until the owner supplies real ones',
-    caveatFlag: 'PRICE_BANDS_ARE_PLACEHOLDERS',
+    // The placeholder caveat this row carried until 2026-08-31 dropped when the
+    // owner approved real bands and PRICE_BANDS_ARE_PLACEHOLDERS flipped false —
+    // the grammar test's flag assertion is what forced the drop, by design.
     aliases: ['catalogue', 'scope', 'service', 'sku'],
   },
   {
@@ -260,7 +261,11 @@ export const GPS_NOUNS: readonly GpsNounDef[] = [
       via: 'surface_route', fn: 'underwriteQuote',
       notEnumerable: 'loaded server-side by offer and partner and echoed inside one underwriting run',
     },
-    caveat: 'the triples are placeholders until the owner states real optimistic/likely/pessimistic days',
+    // Approved triples exist in the register and underwriting reads them per
+    // quote; the flag (and this caveat) is about the COMPILED FALLBACK, which is
+    // still the shipped placeholder block and engages only where the register
+    // has no row for the offer.
+    caveat: 'approved triples are read from the register per quote — only the compiled fallback, used where a register row is missing, is still a placeholder',
     caveatFlag: 'EFFORT_TRIPLES_ARE_PLACEHOLDERS',
     aliases: ['optimistic', 'likely', 'pessimistic', 'days', 'estimate'],
   },

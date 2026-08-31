@@ -223,15 +223,14 @@ describe('GPS — the quote desk composes prices and receives no client file', (
 // ── 2. The D4 gate: placeholder prices are never presented as agreed ──────────
 
 describe('GPS — placeholder prices are labelled as placeholders (D4)', () => {
-  it('shows the do-not-quote banner while PRICE_BANDS_ARE_PLACEHOLDERS is true', async () => {
-    // If the flag is ever flipped without real bands landing, this test is the
-    // thing that has to be edited — which is the point of reading the flag rather
-    // than hardcoding the expectation.
-    expect(PRICE_BANDS_ARE_PLACEHOLDERS, 'flag flipped: real bands must land in the same commit').toBe(true);
+  it('drops the do-not-quote banner now that the founder approved real bands', async () => {
+    // Edited 2026-08-31 exactly as the old comment prescribed: the flag flipped in
+    // the commit that landed the approved bands (APPROVED_PRICE_BANDS), and the
+    // banner coming OFF is now the guarded state — a do-not-quote warning over the
+    // founder's own approved numbers would train him to ignore warnings.
+    expect(PRICE_BANDS_ARE_PLACEHOLDERS, 'flag regressed to placeholder: the banner tests must flip back with it').toBe(false);
     await mount();
-    const banner = screen.getByTestId('gps-placeholder-prices');
-    expect(banner.textContent).toMatch(/PLACEHOLDER/);
-    expect(banner.textContent).toMatch(/do not quote/i);
+    expect(screen.queryByTestId('gps-placeholder-prices')).toBeNull();
   });
 
   it('the price field opens EMPTY — no band midpoint is pre-filled as though chosen', async () => {
@@ -240,15 +239,18 @@ describe('GPS — placeholder prices are labelled as placeholders (D4)', () => {
     expect(price.value, 'a placeholder price was pre-filled, which is the exact failure D4 guards').toBe('');
   });
 
-  it('every catalogue gap is shown, and the quote-blocking ones are marked', async () => {
+  it('every catalogue gap is shown — and nothing blocks quoting since the bands were approved', async () => {
     await mount();
     const panel = screen.getByTestId('gps-catalogue-todos');
     for (const t of CATALOGUE_TODOS) {
       expect(within(panel).getByText(t.what), `catalogue gap not shown: ${t.what}`).toBeTruthy();
     }
-    const blocking = CATALOGUE_TODOS.filter((t) => t.blocksQuoting).length;
-    expect(blocking, 'the fixture expects at least one quote-blocking gap').toBeGreaterThan(0);
-    expect(within(panel).getAllByText('blocks quoting')).toHaveLength(blocking);
+    // Both quote-blocking rows were the D4 pair, and D4 was answered 2026-08-31:
+    // a 'blocks quoting' mark reappearing means someone re-opened the sell side.
+    expect(CATALOGUE_TODOS.filter((t) => t.blocksQuoting)).toHaveLength(0);
+    expect(within(panel).queryAllByText('blocks quoting')).toHaveLength(0);
+    // The list itself is not empty — D5/D6 remain honestly open.
+    expect(CATALOGUE_TODOS.length).toBeGreaterThan(0);
   });
 });
 

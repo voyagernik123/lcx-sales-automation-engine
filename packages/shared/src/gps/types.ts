@@ -87,6 +87,13 @@ export const OFFER_KEYS: readonly OfferKey[] = [
 export interface PriceBandCents {
   /** Inclusive floor, integer cents. */
   min: number;
+  /**
+   * The decided mid, integer cents, when the founder approved a three-point band
+   * (low/mid/high — the shape `gps_price_band` stores). NOT necessarily the
+   * min–max midpoint: he set $4,000 on a $2,500–$6,000 band. `bandMidpointCents`
+   * prefers this and derives only in its absence.
+   */
+  mid?: number;
   /** Inclusive ceiling, integer cents. */
   max: number;
 }

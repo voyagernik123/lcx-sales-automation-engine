@@ -722,13 +722,15 @@ describe.skipIf(!wired)('the empty book is unreadable, not healthy', () => {
       expect(['founder', 'founder+counsel', 'partner', 'engineering']).toContain(u.owner);
     }
     // A placeholder is a number standing in for a real one; an unresolved is a
-    // capability that does not exist. Price bands are placeholders and NOT blocking
-    // here, because the book reads the price a human typed onto each engagement.
-    expect(book.placeholders.priceBandsArePlaceholders).toBe(true);
-    expect(book.unresolved.find((u) => u.field.startsWith('price bands'))?.blocking).toBe(false);
+    // capability that does not exist. Since 2026-08-31 the price bands are NEITHER:
+    // the founder approved real bands (APPROVED_PRICE_BANDS), so the flag is false,
+    // the price-bands row has LEFT the unresolved list, and no catalogue decision
+    // blocks quoting any more. Vendor costs remain placeholders — D5 is still open.
+    expect(book.placeholders.priceBandsArePlaceholders).toBe(false);
+    expect(book.unresolved.find((u) => u.field.startsWith('price bands'))).toBeUndefined();
     expect(book.placeholders.partnerRateCardsSupplied).toBe(false);
     expect(book.placeholders.vendorCostsArePlaceholders).toBe(true);
-    expect(book.placeholders.blockingQuotingDecisions).toBeGreaterThan(0);
+    expect(book.placeholders.blockingQuotingDecisions).toBe(0);
   });
 });
 

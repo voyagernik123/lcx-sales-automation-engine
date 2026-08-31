@@ -38,48 +38,57 @@ import { DEFAULT_CONTRACTING_ENTITY } from './types.js';
  * (`gps_partner_registry`, `0075_gps_partner_registry.sql`; the domain model is
  * `partners.ts`).
  *
- * NOTHING IN THIS FILE MOVED, and that is the point. `partnerOwner` is still null
- * on all five offers because no partner has been asserted yet;
- * `TODO_VENDOR_COSTS` is still a placeholder because a rate card is a row a
- * partner confirms, not a constant; `PRICE_BANDS_ARE_PLACEHOLDERS` is still
- * `true` because D4 — the SELL side — is a different decision and it is still
- * unanswered. A mechanism arriving is not data arriving, and the day the two get
- * confused is the day a placeholder ships as a price. Both flip in the commit
- * that supplies the real numbers, never before.
+ * `partnerOwner` is still null on all five offers because no partner has been
+ * asserted yet; `TODO_VENDOR_COSTS` is still a placeholder because a rate card is
+ * a row a partner confirms, not a constant. D4 — the SELL side — was answered on
+ * 2026-08-31: see the approved-bands block below.
  */
 
 /**
  * ══════════════════════════════════════════════════════════════════════════════
- *  TODO — PRICE BANDS ARE PLACEHOLDERS. NOT REAL PRICES. DO NOT QUOTE THESE.
+ *  PRICE BANDS — FOUNDER-APPROVED, 2026-08-31. These ARE the sell prices.
  * ══════════════════════════════════════════════════════════════════════════════
- *  Decision D4 (plan §3) is unanswered: only the founder can set price bands,
- *  and he has not supplied them. Every band in this ONE BLOCK is a placeholder
- *  shaped by the two facts he did give — typical engagement $10–25k, and the
- *  diagnostic must be ~$1.5–3k AND creditable, because a $5–10k diagnostic is
- *  20–50% of the whole deal and will not sell.
+ *  Decision D4 (plan §3) is ANSWERED. The founder approved the G0 price-bands
+ *  packet as proposed (`packets.ts` BAND_PROPOSALS, byte-identical to the numbers
+ *  below): the decision row lives in `gps_packet_decision`, and one
+ *  `gps_price_band` row per offer carries low/mid/high attributed to him.
  *
- *  They live in a single object, on purpose, so replacing them is one edit in
- *  one place with no risk of a stale number surviving somewhere else. Nothing
- *  else in the catalogue mentions money.
+ *  THIS BLOCK IS THE SERVING COPY of that register — flipped in this commit, the
+ *  one that supplies the real numbers, exactly as the old TODO banner prescribed.
+ *  The register is the authority: if a future packet re-approves different bands,
+ *  this block is re-copied in the same commit that records the approval. They
+ *  still live in a single object so replacing them stays one edit in one place,
+ *  and nothing else in the catalogue mentions money.
  *
- *  `PRICE_BANDS_ARE_PLACEHOLDERS` is exported so surfaces can BADGE the numbers
- *  instead of rendering them as though they were agreed. Flip it to `false` in
- *  the same commit that supplies real bands — never before.
+ *  `min`/`max` are his approved low/high; `mid` is his approved mid, carried
+ *  explicitly because it is NOT the min–max midpoint (he set $4,000 on a
+ *  $2,500–$6,000 band) and a derived midpoint would misquote his decision.
  *
- *  Vendor costs are placeholders for the same reason (D5: no rate cards, because
- *  no named partners). Margin arithmetic is therefore CORRECT BUT UNCALIBRATED,
- *  and that distinction has to reach the screen.
+ *  Vendor costs remain placeholders (D5: no rate cards, because no named
+ *  partners). Margin arithmetic is therefore CORRECT BUT UNCALIBRATED on the
+ *  cost side, and that distinction still has to reach the screen.
  */
-export const PRICE_BANDS_ARE_PLACEHOLDERS = true;
+export const PRICE_BANDS_ARE_PLACEHOLDERS: boolean = false;
 
-/** TODO(D4): replace with founder-supplied bands. Integer cents, USD. */
-const TODO_PRICE_BANDS: Record<OfferKey, PriceBandCents> = {
-  diagnostic: { min: 150_000, max: 300_000 },                       // $1,500–$3,000
-  mica_whitepaper: { min: 1_200_000, max: 2_500_000 },              // $12,000–$25,000
-  legal_opinion_coordination: { min: 800_000, max: 1_800_000 },     // $8,000–$18,000
-  gtm_sprint: { min: 1_000_000, max: 2_200_000 },                   // $10,000–$22,000
-  marketing_activation: { min: 1_000_000, max: 2_500_000 },         // $10,000–$25,000
+/** Founder-approved bands (G0 packet, 2026-08-31). Integer cents, USD. */
+const APPROVED_PRICE_BANDS: Record<OfferKey, PriceBandCents> = {
+  diagnostic: { min: 250_000, mid: 400_000, max: 600_000 },                     // $2,500 / $4,000 / $6,000
+  mica_whitepaper: { min: 1_500_000, mid: 2_500_000, max: 4_000_000 },          // $15,000 / $25,000 / $40,000
+  legal_opinion_coordination: { min: 1_000_000, mid: 1_500_000, max: 2_500_000 }, // $10,000 / $15,000 / $25,000
+  gtm_sprint: { min: 1_200_000, mid: 1_800_000, max: 3_000_000 },               // $12,000 / $18,000 / $30,000
+  marketing_activation: { min: 1_200_000, mid: 2_000_000, max: 3_500_000 },     // $12,000 / $20,000 / $35,000
 };
+
+/**
+ * D5 IS STILL OPEN: the compiled EXPECTED vendor costs below are uncalibrated
+ * placeholders, and this flag says so — separately from the price flag above,
+ * because on 2026-08-31 the two decisions diverged (bands approved, costs not).
+ * `vendorCostIsPlaceholder` on every quote reads THIS constant; wiring it to the
+ * price flag was a latent lie that only surfaced when the price flag flipped.
+ * Flips in the commit that replaces the block below with calibrated figures —
+ * which in practice means named partners' rate cards making the expectation real.
+ */
+export const VENDOR_COSTS_ARE_PLACEHOLDERS: boolean = true;
 
 /**
  * TODO(D5): replace with real partner rate cards. Integer cents, USD.
@@ -199,7 +208,7 @@ const OFFERS_INTERNAL: readonly ServiceOffer[] = [
       'Every finding carries a severity, a named owner (client / counsel / specialist) and a stated basis.',
       'Readout call held; a written follow-on proposal issued within 3 business days of it.',
     ],
-    priceBandCents: TODO_PRICE_BANDS.diagnostic,
+    priceBandCents: APPROVED_PRICE_BANDS.diagnostic,
     renewalPath:
       'The diagnostic IS the qualification step: its gap register names the follow-on offers, and its fee is credited in full against the first engagement started within 90 days.',
     isDiagnostic: true,
@@ -254,7 +263,7 @@ const OFFERS_INTERNAL: readonly ServiceOffer[] = [
       'Zero unresolved internal contradictions between the white paper, the tokenomics workbook and live public material, or each remaining one is listed with a client decision recorded against it.',
       'Notification pack delivered complete against the submission checklist, with each item marked present or client-owned.',
     ],
-    priceBandCents: TODO_PRICE_BANDS.mica_whitepaper,
+    priceBandCents: APPROVED_PRICE_BANDS.mica_whitepaper,
     renewalPath:
       'Material changes to the offer, the token or the team require an updated document; annual review and amendment support is quoted separately. Clients reaching this stage typically take GTM next.',
     isDiagnostic: false,
@@ -319,7 +328,7 @@ const OFFERS_INTERNAL: readonly ServiceOffer[] = [
       'Weekly written status issued without a gap until the opinion is issued or you stop the process.',
       'Handover pack delivered within 5 business days of the opinion being issued.',
     ],
-    priceBandCents: TODO_PRICE_BANDS.legal_opinion_coordination,
+    priceBandCents: APPROVED_PRICE_BANDS.legal_opinion_coordination,
     renewalPath:
       'Additional jurisdictions, opinion refreshes after a structural change, and the white paper package that usually depends on the classification the opinion settles.',
     isDiagnostic: false,
@@ -370,7 +379,7 @@ const OFFERS_INTERNAL: readonly ServiceOffer[] = [
       'Every target in the plan carries its assumption and its source; no unsourced number.',
       '30-day written check-in delivered.',
     ],
-    priceBandCents: TODO_PRICE_BANDS.gtm_sprint,
+    priceBandCents: APPROVED_PRICE_BANDS.gtm_sprint,
     renewalPath:
       'The plan\'s execution phase is the marketing activation offer; the readiness checklist frequently surfaces documentation work (white paper, classification) that becomes its own engagement.',
     isDiagnostic: false,
@@ -422,7 +431,7 @@ const OFFERS_INTERNAL: readonly ServiceOffer[] = [
       'Weekly report issued every week without a gap, including weeks where performance declined.',
       'Retrospective delivered within 5 business days of the window closing.',
     ],
-    priceBandCents: TODO_PRICE_BANDS.marketing_activation,
+    priceBandCents: APPROVED_PRICE_BANDS.marketing_activation,
     renewalPath:
       'A second activation window, or a lighter ongoing community-operations arrangement quoted after the retrospective — never auto-renewed, because a renewal nobody re-decided is how a services business accumulates unprofitable work.',
     isDiagnostic: false,
@@ -460,11 +469,13 @@ export const DIAGNOSTIC_OFFER: ServiceOffer =
 
 /**
  * Midpoint of the band, integer cents — the sensible default a quote opens at.
- * Rounded to whole dollars because a proposal quoting $17,499.50 reads as
- * generated rather than decided.
+ * The founder's DECIDED mid wins when the band carries one (it is not the
+ * min–max midpoint; see `PriceBandCents.mid`); the average is only for bands
+ * nobody decided a mid for. Rounded to whole dollars because a proposal quoting
+ * $17,499.50 reads as generated rather than decided.
  */
 export function bandMidpointCents(offer: ServiceOffer): number {
-  const mid = (offer.priceBandCents.min + offer.priceBandCents.max) / 2;
+  const mid = offer.priceBandCents.mid ?? (offer.priceBandCents.min + offer.priceBandCents.max) / 2;
   return Math.round(mid / 100) * 100;
 }
 
@@ -490,22 +501,12 @@ export interface CatalogueTodo {
 }
 
 export const CATALOGUE_TODOS: readonly CatalogueTodo[] = [
-  {
-    decision: 'D4',
-    owner: 'founder',
-    what: 'Real price bands for all five offers.',
-    consequence:
-      'Every band in TODO_PRICE_BANDS is a placeholder derived only from the stated $10–25k engagement range. Nothing here may be sent to a client as a price.',
-    blocksQuoting: true,
-  },
-  {
-    decision: 'D4',
-    owner: 'founder',
-    what: 'Confirm the diagnostic fee and its credit window (placeholder: $1.5–3k, credited in full within 90 days).',
-    consequence:
-      'The diagnostic is the front door; if it is priced as a fifth of the engagement it will not sell, and if the credit is not honoured in writing it is not creditable.',
-    blocksQuoting: true,
-  },
+  /* The two D4 rows that used to open this list — "Real price bands for all five
+   * offers." and the diagnostic-fee confirmation — LEFT the ledger on 2026-08-31,
+   * when the founder approved the G0 price-bands packet ($2,500/$4,000/$6,000
+   * diagnostic; APPROVED_PRICE_BANDS above). A supplied input leaving this list
+   * is what flips `todoStillOpen()` in the web lenses from `placeholder` to
+   * `measured` — that is the designed mechanism, not tidying. */
   {
     decision: 'D5',
     owner: 'partner',

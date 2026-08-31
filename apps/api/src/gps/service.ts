@@ -2,7 +2,7 @@ import type { Pool, PoolClient } from 'pg';
 import {
   CATALOGUE_DEFAULT_CONTRACTING_ENTITY, CATALOGUE_TODOS,
   ENGAGEMENT_STATUSES, OFFER_KEYS,
-  PRICE_BANDS_ARE_PLACEHOLDERS, bandMidpointCents, getOffer,
+  PRICE_BANDS_ARE_PLACEHOLDERS, VENDOR_COSTS_ARE_PLACEHOLDERS, bandMidpointCents, getOffer,
   isTerminalEngagementStatus, marginCents, marginPct,
   type ClientStatus, type ConflictDecision, type ContractingEntity,
   type EngagementStatus, type GpsClient, type GpsConflictCheck,
@@ -428,15 +428,29 @@ export function quoteOffer(input: QuoteInput): Quote {
       'No named partner for this offer (decision D5): the engagement can be sold but cannot yet be staffed.',
     );
   }
+  // The two halves of the old combined D4/D5 warning, split on 2026-08-31 when
+  // the decisions diverged: bands are approved (D4 answered), expected vendor
+  // costs are not (D5 open). Each half gates on its own flag.
   if (PRICE_BANDS_ARE_PLACEHOLDERS) {
     warnings.push(
-      'Price band and vendor cost are UNCALIBRATED PLACEHOLDERS (D4/D5). Margin arithmetic is correct; the inputs are not agreed numbers.',
+      'The price band is an UNCALIBRATED PLACEHOLDER (D4). Margin arithmetic is correct; the band is not an agreed number.',
+    );
+  }
+  if (VENDOR_COSTS_ARE_PLACEHOLDERS) {
+    warnings.push(
+      "The catalogue's expected vendor cost is an UNCALIBRATED PLACEHOLDER (D5): no named partner's rate card backs it. Margin arithmetic is correct; the cost input is not an agreed number.",
     );
   }
   if (priceSource === 'band_midpoint') {
+    // The wording tracks the flag: with placeholders the number itself was invented;
+    // with approved bands the number is the founder's stated mid — but either way it
+    // is a DEFAULT, not a price this client agreed, and it must not persist.
     warnings.push(
-      `No price was supplied, so this quote shows the MIDPOINT OF A PLACEHOLDER BAND (${priceCents} cents) — a number `
-      + 'nobody agreed. It is an illustration of the arithmetic, not a price. `createEngagement` refuses to persist it.',
+      PRICE_BANDS_ARE_PLACEHOLDERS
+        ? `No price was supplied, so this quote shows the MIDPOINT OF A PLACEHOLDER BAND (${priceCents} cents) — a number `
+          + 'nobody agreed. It is an illustration of the arithmetic, not a price. `createEngagement` refuses to persist it.'
+        : `No price was supplied, so this quote opens at the APPROVED BAND'S MID (${priceCents} cents) — the founder's `
+          + 'stated default, not a price this client agreed. `createEngagement` refuses to persist it.',
     );
   }
   if (vendorCostSource === 'catalogue_expected') {
@@ -460,7 +474,9 @@ export function quoteOffer(input: QuoteInput): Quote {
     depositRequiredCents,
     depositPct: TODO_DEPOSIT_PCT,
     priceIsPlaceholder: PRICE_BANDS_ARE_PLACEHOLDERS,
-    vendorCostIsPlaceholder: PRICE_BANDS_ARE_PLACEHOLDERS,
+    // D5's flag, not D4's: wiring this to the price flag was a latent lie that
+    // surfaced the day the price flag flipped without this one.
+    vendorCostIsPlaceholder: VENDOR_COSTS_ARE_PLACEHOLDERS,
     priceSource,
     vendorCostSource,
     depositPolicyIsPlaceholder: DEPOSIT_PCT_IS_PLACEHOLDER,

@@ -404,18 +404,20 @@ describe('one reviewed position turns its own pair back into a wall', () => {
 
 describe('the action path cannot walk past shouldBlockIssue', () => {
   it('BLOCKS the founder loss case the REST route already refused', async () => {
-    // The price CLEARS the discount gate — $6,100 against the $6,000 cost on the row
-    // is a positive margin, so no approver is needed and the cheap check waves it
-    // through. Only the distribution catches it: the partner's card is $800/day and
-    // the effort triple is (6, 8, 11) days, so the expected cost is $6,400 and the
-    // pessimistic tail is $8,800. P(loss) is far above the 20% ceiling.
+    // The price CLEARS every cheap gate — $15,500 sits above the approved mica
+    // floor ($15,000; the old $6,100 fixture stopped reaching this gate the day
+    // real bands went live and below-band started refusing first), and against
+    // the $6,000 cost on the row the margin is positive, so no approver is
+    // needed. Only the distribution catches it: the partner's card is $2,000/day
+    // and the effort triple is (6, 8, 11) days, so the expected cost is $16,000
+    // and the pessimistic tail is $22,000. P(loss) is far above the 20% ceiling.
     //
     // This is the exact shape the action path used to issue at 200 while the REST
     // route refused it at 409.
     const { pool, queries } = stubPool({
-      perimeter: 'permitted', underwriting: 'usable', cardAmountCents: '80000',
+      perimeter: 'permitted', underwriting: 'usable', cardAmountCents: '200000',
     });
-    const err = await refusal(issue().execute(args(pool, { priceCents: 610_000 })));
+    const err = await refusal(issue().execute(args(pool, { priceCents: 1_550_000 })));
     expect(err.code).toBe('UNDERWRITING_BLOCKED');
     expect(err.status).toBe(409);
     const uw = err.data?.underwriting as { pLoss: number | null } | null;

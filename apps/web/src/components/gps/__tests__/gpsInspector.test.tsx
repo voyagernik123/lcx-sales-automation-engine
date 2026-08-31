@@ -46,7 +46,10 @@ interface EngagementRow { id: string; client: string; feeCents: number }
 interface GapRow { ref: string; missing: string }
 
 /** A real ledger item, so the placeholder path exercises the real lookup. */
-const REAL_TODO = 'Real price bands for all five offers.';
+// Was 'Real price bands for all five offers.' until 2026-08-31 — that decision
+// was MADE (approved bands, the good-news case the premise pin below describes),
+// so the fixture moved to the ledger row that is still genuinely open: D5.
+const REAL_TODO = 'Named partner or specialist per offer, with a rate card.';
 
 const engagementLens: GpsLens<EngagementRow> = (r) => ({
   kind: 'engagement',
@@ -112,6 +115,9 @@ describe('a placeholder is stated as one, in the ledger\'s own words', () => {
     // If this fails, the decision was probably MADE. That is good news and it means the
     // fixtures above (and any desk lens naming it) must be updated, not that this is a bug.
     expect(CATALOGUE_TODOS.map((t) => t.what)).toContain(REAL_TODO);
+    // And the inverse premise: the price-bands row LEFT the ledger when the founder
+    // approved real bands (2026-08-31). Its return would re-badge settled prices.
+    expect(CATALOGUE_TODOS.map((t) => t.what)).not.toContain('Real price bands for all five offers.');
   });
 
   it('goes LOUD when the named ledger item is gone, instead of warning about a settled price', () => {

@@ -53,6 +53,7 @@ import {
 import { isMigrated } from './service.js';
 import { OUTCOME_MIGRATION, isOutcomeMigrated, listOutcomeRecords } from './loop.js';
 import { deskWip, isDeliveryMigrated } from './deliveryDesk.js';
+import { loadBench } from './partnerRegistry.js';
 
 /**
  * GLOBAL SERVICES — PHASE 6, THE BOOK: the data layer behind `/v1/gps/book`.
@@ -739,6 +740,17 @@ export async function readBookAndPositions(
   const outcomes = outcomeMigrated ? await listOutcomeRecords(pool) : null;
   const margin = outcomes ? marginRealisation(outcomes.records) : null;
 
+  /* THE BENCH COMES FROM THE REGISTRY, NOT THE COMPILED CONSTANT. `composeBook`'s
+   * fallback is `PARTNER_BENCH` — permanently empty by design — which was fine
+   * only while the registry was also empty. The hazard `partners.ts` names
+   * ("a caller passing this where it meant to pass the registry gets zero, not an
+   * error") is exactly what this load prevents: the day a partner is asserted,
+   * the book's headroom and its vendor-cost placeholder flag must read the DB row,
+   * not report a compiled emptiness. Registry not loaded / withheld / empty all
+   * fall back to the empty bench, which for those states is the truthful reading. */
+  const bench = await loadBench(pool);
+  const partners = bench.state === 'loaded' ? bench.value.map((m) => m.partner) : undefined;
+
   return {
     positions: load.positions,
     book: composeBook({
@@ -752,6 +764,7 @@ export async function readBookAndPositions(
       rowsRead: load.rowsRead,
       wip,
       margin,
+      partners,
       outcomeRejected: outcomes?.rejected ?? 0,
     }),
   };

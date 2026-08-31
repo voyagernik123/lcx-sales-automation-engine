@@ -385,11 +385,12 @@ async function findPriceApproval(
  *     the exclusions are what stop a proposal implying a listing or regulatory
  *     outcome, and they are the sentences that limit a regulated exchange's
  *     exposure (`gps/types.ts` on `ServiceOffer.exclusions`).
- *  2. It records `priceBandsArePlaceholders` as it was AT QUOTE TIME. The bands
- *     are TODO placeholders today (`PRICE_BANDS_ARE_PLACEHOLDERS === true`), so a
- *     snapshot that quietly carried a placeholder band as if it were policy would
- *     be the exact "invent a price and present it as real" failure the plan
- *     forbids. A snapshot taken today says so on its face.
+ *  2. It records `priceBandsArePlaceholders` as it was AT QUOTE TIME. Since
+ *     2026-08-31 the flag is false — the founder approved real bands
+ *     (`APPROVED_PRICE_BANDS`, catalogue.ts) — so new snapshots carry the real
+ *     band unbadged; any snapshot frozen before the flip still says
+ *     placeholder on its face, which is exactly why the flag is frozen per
+ *     quote rather than read live.
  */
 function freezeScope(offerKey: OfferKey, priceCents: number, currency: string) {
   const offer = getOffer(offerKey);
@@ -690,16 +691,15 @@ const gps_proposal_issue: GpsAction = {
      *     pocket. `marginCents` is deliberately allowed to go negative rather
      *     than clamp (gps/types.ts) so this can be caught HERE, at quote time.
      *
-     * (2) BELOW-BAND is NOT evaluable, because `PRICE_BANDS_ARE_PLACEHOLDERS` is
-     *     true — the bands in the catalogue are TODO placeholders and no real
-     *     price bands have been supplied. Refusing a quote for falling under an
-     *     invented floor would be presenting a made-up number as policy, which
-     *     the programme forbids outright. So the check is SKIPPED and the skip is
-     *     RECORDED through `markGateDegraded`, the same channel registry.ts uses
-     *     for an unevaluated gate (registry.ts:78-85) — so the ledger row for
-     *     this proposal says the band gate did not run, instead of looking
-     *     identical to a row where it passed. Set the flag to false with real
-     *     bands and this gate goes live with no other change.
+     * (2) BELOW-BAND went LIVE on 2026-08-31, when the founder's approved bands
+     *     flipped `PRICE_BANDS_ARE_PLACEHOLDERS` to false — a quote under the
+     *     approved floor is now refused against a number he decided, not an
+     *     invented one. The skip branch below is kept as the guard for the flag
+     *     ever returning to true (a re-proposal cycle): while placeholders are
+     *     in force the check is SKIPPED and the skip is RECORDED through
+     *     `markGateDegraded`, the same channel registry.ts uses for an
+     *     unevaluated gate (registry.ts:78-85), so a ledger row where the band
+     *     gate did not run never looks identical to one where it passed.
      */
     const offer = getOffer(row.offer_key);
     const reasons: string[] = [];

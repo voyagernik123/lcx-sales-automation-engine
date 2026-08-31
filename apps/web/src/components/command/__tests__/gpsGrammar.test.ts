@@ -549,7 +549,10 @@ describe('the honesty ceiling is encoded, not narrated', () => {
       EFFORT_TRIPLES_ARE_PLACEHOLDERS,
     };
     const flagged = GPS_NOUNS.filter((n) => n.caveatFlag);
-    expect(flagged.map((n) => n.kind).sort()).toEqual(['effort_triple', 'offer']);
+    // The 'offer' caveat came OFF on 2026-08-31 exactly as line 554 below promised:
+    // the owner approved real bands, PRICE_BANDS_ARE_PLACEHOLDERS flipped, this
+    // test went red, and the caveat was dropped instead of outliving its subject.
+    expect(flagged.map((n) => n.kind).sort()).toEqual(['effort_triple']);
     for (const n of flagged) {
       // When the owner supplies real bands or real triples the flag flips, this goes red,
       // and the caveat comes off the row instead of outliving the thing it warned about.

@@ -66,19 +66,20 @@ const sheet = (over: Partial<Parameters<typeof GpsPrintArtefact>[0]> = {}) =>
 afterEach(() => vi.restoreAllMocks());
 
 describe('the honesty statements reach the paper', () => {
-  it('a placeholder price, an unreviewed perimeter and a prior basis are all on the face of a proposal', () => {
-    // Fixture assumptions, asserted rather than trusted: if a flag flips, the real
-    // bands / a reviewed perimeter land in the same commit and this test must be
-    // the thing that notices.
-    expect(PRICE_BANDS_ARE_PLACEHOLDERS, 'flag flipped: real price bands must land with it').toBe(true);
+  it('an unreviewed perimeter and a prior basis reach the paper — and the settled price no longer wears a caveat', () => {
+    // Fixture assumptions, asserted rather than trusted — and one HAS flipped:
+    // the founder approved real bands on 2026-08-31, so the placeholder-price
+    // caveat coming OFF the paper is now the guarded state. The perimeter flag
+    // is still true; when it flips, a reviewed perimeter lands in the same
+    // commit and this test must be the thing that notices.
+    expect(PRICE_BANDS_ARE_PLACEHOLDERS, 'flag regressed: a placeholder band must never wear an approved price').toBe(false);
     expect(PERIMETER_IS_UNREVIEWED, 'flag flipped: a reviewed perimeter must land with it').toBe(true);
 
     sheet({ sources: [{ basis: 'prior', sampleSize: 0 }] });
 
-    const price = screen.getByTestId('gps-print-caveat-placeholder_price');
-    expect(price.textContent).toContain('PLACEHOLDER');
-    expect(price.textContent).toContain('is not a quote');
-    expect(price.textContent).toContain('PRICE_BANDS_ARE_PLACEHOLDERS');
+    // The approved price prints WITHOUT the placeholder caveat — a settled number
+    // wearing a warning is the mirror image of the defect this file exists for.
+    expect(screen.queryByTestId('gps-print-caveat-placeholder_price')).toBeNull();
 
     const perimeter = screen.getByTestId('gps-print-caveat-unreviewed_perimeter');
     expect(perimeter.textContent).toContain('authorises nothing');

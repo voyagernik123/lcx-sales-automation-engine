@@ -45,9 +45,16 @@ export const TODO_CONTRACTING_ENTITY =
 export const TODO_DISCLOSURE_TEXT =
   'Standard disclosure text for the conflict check, per contracting entity.';
 
-/** Every `awaitingTodo` this file claims. Asserted against the ledger, not trusted. */
+/**
+ * Every `awaitingTodo` this file can STILL claim. Asserted against the ledger, not
+ * trusted. `TODO_PRICE_BANDS` left this list on 2026-08-31 when the founder's
+ * approved bands left `CATALOGUE_TODOS`: the constant and its `todoStillOpen`
+ * branch stay in the code as the self-healing guard (if the ledger row ever came
+ * back, the badge would too), but the lens can no longer emit it, so the
+ * ledger-membership assertion no longer covers it.
+ */
 export const LENS_TODOS: readonly string[] = [
-  TODO_PRICE_BANDS, TODO_PARTNER_RATE_CARD, TODO_CONTRACTING_ENTITY, TODO_DISCLOSURE_TEXT,
+  TODO_PARTNER_RATE_CARD, TODO_CONTRACTING_ENTITY, TODO_DISCLOSURE_TEXT,
 ];
 
 /** Any of the ledger rows above still outstanding? Read from the ledger, never assumed. */

@@ -1202,9 +1202,12 @@ describe('buildUnderwriteResponse', () => {
 
   it('names every founder input the screen is standing on and does not have', () => {
     const joined = res.unresolvedInputs.join(' | ');
-    expect(res.unresolvedInputs.length).toBe(4);
+    expect(res.unresolvedInputs.length).toBe(3);
     expect(joined).toContain('Effort triple');
-    expect(joined).toContain('Price bands are placeholders');
+    // Flipped 2026-08-31: the founder approved real bands (APPROVED_PRICE_BANDS),
+    // so the price-band notice LEAVING this list is now the guarded state — its
+    // reappearance would mean the flag regressed to placeholder.
+    expect(joined).not.toContain('Price bands are placeholders');
     expect(joined).toContain('No minimum margin floor');
     expect(joined).toContain('the distribution is a prior');
   });

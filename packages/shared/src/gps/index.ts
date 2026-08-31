@@ -56,6 +56,7 @@ export {
   CATALOGUE_DEFAULT_CONTRACTING_ENTITY,
   NO_LEGAL_ADVICE_EXCLUSION,
   PRICE_BANDS_ARE_PLACEHOLDERS,
+  VENDOR_COSTS_ARE_PLACEHOLDERS,
 } from './catalogue.js';
 
 /* ── Phase 2 — the partner bench ──────────────────────────────────────────────

@@ -563,7 +563,7 @@ export function buildFounderPackets(asOf: string): FounderPacket[] {
       remainingDependency: null,
       proposal: { kind: 'price_bands', rows: bands },
       evidence: [
-        ev('The compiled placeholders these replace are $1.5k–3k / $12k–25k / $8k–18k / $10k–22k / $10k–25k.', 'packages/shared/src/gps/catalogue.ts TODO_PRICE_BANDS — read, not recalled.', 'repo_measurement'),
+        ev('The compiled placeholders these replace are $1.5k–3k / $12k–25k / $8k–18k / $10k–22k / $10k–25k.', 'The pre-approval TODO_PRICE_BANDS block in packages/shared/src/gps/catalogue.ts — read at proposal time; replaced by APPROVED_PRICE_BANDS in the approving commit, values preserved in this sentence.', 'repo_measurement'),
         ev('EU law-firm MiCA white-paper packages commonly quote in the €15k–50k+ range.', 'Market context for the mica_whitepaper band.', 'assistant_knowledge_unverified', VERIFY),
         ev('Boutique advisory sprint and activation work commonly lands $10k–35k per programme.', 'Market context for gtm_sprint and marketing_activation bands.', 'assistant_knowledge_unverified', VERIFY),
         ev('The coordination band deliberately EXCLUDES counsel’s own fees; they pass through.', 'Pricing the pass-through inside the band is how this offer loses money invisibly.', 'design_decision'),

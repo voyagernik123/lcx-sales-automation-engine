@@ -690,20 +690,18 @@ describe('the underwriting answer prints as an artefact', () => {
     expect(screen.getByTestId('gps-print-notice-count').textContent).toMatch(/\d+ NOTICES? QUALIFY/);
   });
 
-  it('carries the placeholder-price notice with its mark, on a prior basis', async () => {
+  it('prints the prior-basis notice — and no placeholder-price caveat over an approved band', async () => {
     mocked.mockResolvedValue(LOSS);
     const u = userEvent.setup();
     render(<GpsUnderwriting />);
     await fill(u);
 
     await screen.findByTestId('gps-print-artefact');
-    // Both are true of this fixture and both are asserted at the top of the file: the bands
-    // are placeholders and the basis is `prior`, not measured.
-    expect(screen.getByTestId('gps-print-caveat-placeholder_price')).toBeTruthy();
+    // The basis is still `prior`, not measured, and the paper must say so. The
+    // placeholder-price caveat came OFF on 2026-08-31 with the approved bands —
+    // its reappearance means PRICE_BANDS_ARE_PLACEHOLDERS regressed.
+    expect(screen.queryByTestId('gps-print-caveat-placeholder_price')).toBeNull();
     expect(screen.getByTestId('gps-print-caveat-distribution_basis')).toBeTruthy();
-    // THE WORD, not the colour. A greyscale printer flattens every hue in this palette.
-    expect(screen.getByTestId('gps-print-mark-placeholder_price').textContent!.trim().length)
-      .toBeGreaterThan(0);
   });
 
   it('prints P(loss) with the sample count behind it, and omits it on a refusal', async () => {

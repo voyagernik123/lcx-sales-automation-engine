@@ -83,12 +83,17 @@ describe('quoteOffer refuses to make a bad quote look normal', () => {
     }
   });
 
-  it('badges the price and the deposit as placeholders', () => {
+  it('badges exactly what is still a placeholder — cost and deposit, no longer the price', () => {
     const q = quoteOffer({ offerKey: 'marketing_activation' });
-    expect(q.priceIsPlaceholder).toBe(PRICE_BANDS_ARE_PLACEHOLDERS);
-    expect(q.vendorCostIsPlaceholder).toBe(PRICE_BANDS_ARE_PLACEHOLDERS);
+    // D4 answered 2026-08-31 (approved bands), D5 still open (no rate cards):
+    // the two flags DIVERGED, which is why vendorCostIsPlaceholder has its own
+    // constant — wired to the price flag it would have started lying today.
+    expect(q.priceIsPlaceholder).toBe(false);
+    expect(q.vendorCostIsPlaceholder).toBe(true);
     expect(q.depositPolicyIsPlaceholder).toBe(true);
-    expect(q.warnings.join(' ')).toMatch(/UNCALIBRATED PLACEHOLDERS/);
+    const joined = q.warnings.join(' ');
+    expect(joined).toMatch(/expected vendor cost is an UNCALIBRATED PLACEHOLDER \(D5\)/);
+    expect(joined).not.toMatch(/price band is an UNCALIBRATED PLACEHOLDER/);
   });
 
   it('computes the deposit from a single stated percentage', () => {
@@ -173,15 +178,18 @@ describe('the diagnostic is priced to actually sell', () => {
     expect(DIAGNOSTIC_OFFER.creditableAgainstEngagement).toBe(true);
   });
 
-  it('is a small fraction of the engagement, not a fifth of it', () => {
-    // The founder's own numbers: engagements run $10–25k, so a $5–10k
-    // non-creditable diagnostic is 20–50% of the deal and will not sell (plan §3,
-    // D4). Asserted as a RATIO against the cheapest real offer so it survives the
-    // placeholder bands being replaced with real ones.
+  it('stays cheaper than every real engagement it qualifies', () => {
+    // The 0.4 ratio the placeholder era pinned here did NOT survive the founder's
+    // actual decision: he approved a $2.5–6k diagnostic against a $10k cheapest
+    // floor (60%), and his creditable-in-full term changes the calculus the old
+    // ratio guarded — a credited diagnostic is a down payment, not a surcharge.
+    // What must still hold, and what a wrong future edit would break: the
+    // diagnostic's CEILING stays strictly below the cheapest real offer's FLOOR,
+    // and it stays creditable (asserted above).
     const cheapestRealFloor = Math.min(
       ...OFFERS.filter((o) => !o.isDiagnostic).map((o) => o.priceBandCents.min),
     );
-    expect(DIAGNOSTIC_OFFER.priceBandCents.max).toBeLessThanOrEqual(cheapestRealFloor * 0.4);
+    expect(DIAGNOSTIC_OFFER.priceBandCents.max).toBeLessThan(cheapestRealFloor);
   });
 
   it('is exactly one offer', () => {
@@ -202,14 +210,17 @@ describe('a server-invented price is marked, and is not persistable', () => {
     const q = quoteOffer({ offerKey: 'mica_whitepaper' });
     expect(q.priceSource).toBe('band_midpoint');
     expect(q.vendorCostSource).toBe('catalogue_expected');
-    expect(q.warnings.join(' ')).toMatch(/MIDPOINT OF A PLACEHOLDER BAND/);
+    // The band is approved now, so the defaulted price is the founder's stated
+    // mid — still a default the client never agreed, and the warning says which.
+    expect(q.warnings.join(' ')).toMatch(/APPROVED BAND'S MID/);
+    expect(q.warnings.join(' ')).toMatch(/not a price this client agreed/);
   });
 
   it('reports priceSource: supplied for a price a human typed', () => {
     const q = quoteOffer({ offerKey: 'mica_whitepaper', priceCents: 1_800_000, vendorCostCents: 600_000 });
     expect(q.priceSource).toBe('supplied');
     expect(q.vendorCostSource).toBe('supplied');
-    expect(q.warnings.join(' ')).not.toMatch(/MIDPOINT OF A PLACEHOLDER BAND/);
+    expect(q.warnings.join(' ')).not.toMatch(/No price was supplied/);
   });
 
   it('priceIsPlaceholder cannot tell the two apart — which is why priceSource exists', () => {
