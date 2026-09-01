@@ -1,3 +1,4 @@
+import { every } from './clock';
 /**
  * Honest connectivity state (TERMINAL Phase 2).
  *
@@ -16,9 +17,11 @@
  * then only until a request actually completes. So the state machine combines
  * the flag with real evidence — the outcome of requests we actually made.
  *
- * Dependency-free and React-free on purpose: the bundle budget has ~22KB of
- * headroom (828/850KB), and `classify` stays a pure function so the interesting
- * logic is testable with no DOM (following perf.ts / useWindowedRows.ts).
+ * React-free on purpose, and its one dependency is the one clock (`lib/clock.ts`,
+ * itself React-free): the recovery probe used to be this module's own
+ * `setInterval` — one of eight under every route, S0 found — and now rides the
+ * shared heartbeat. `classify` stays a pure function so the interesting logic is
+ * testable with no DOM (following perf.ts / useWindowedRows.ts).
  */
 
 export type Connectivity = 'online' | 'degraded' | 'offline';
@@ -178,7 +181,8 @@ export function _resetOnline(): void {
 /* ── the watch ────────────────────────────────────────────────────────────── */
 
 let watchers = 0;
-let interval: ReturnType<typeof setInterval> | null = null;
+/** The one clock's release for the recovery probe (S1) — no private interval. */
+let interval: (() => void) | null = null;
 let probeFn: (() => Promise<unknown>) | null = null;
 let probeInFlight = false;
 
@@ -238,10 +242,10 @@ export function startConnectivityWatch(probe?: () => Promise<unknown>): () => vo
       window.addEventListener('offline', onOffline);
       window.addEventListener('online', onOnlineEvent);
     }
-    interval = setInterval(() => {
+    interval = every(RECHECK_MS, () => {
       if (connectivity() === 'online') return;
       void probeOnce();
-    }, RECHECK_MS);
+    });
   }
 
   let released = false;
@@ -251,7 +255,7 @@ export function startConnectivityWatch(probe?: () => Promise<unknown>): () => vo
     watchers -= 1;
     if (watchers > 0) return;
     if (interval !== null) {
-      clearInterval(interval);
+      interval();
       interval = null;
     }
     if (typeof window !== 'undefined') {

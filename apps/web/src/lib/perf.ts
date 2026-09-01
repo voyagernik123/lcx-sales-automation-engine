@@ -1,3 +1,4 @@
+import { observeFrames } from './clock';
 /**
  * The speed-floor instrument (TERMINAL Phase 2).
  *
@@ -12,9 +13,10 @@
  * behind Cloudflare). A p95 under 100ms is therefore unreachable over the network
  * — only serving a surface from local state can meet the budget.
  *
- * Dependency-free on purpose: no web-vitals, no PerformanceObserver polyfill. The
- * bundle has a hard budget (400KB/chunk, 850KB initial) and the maths is small
- * enough to own. The ring and percentile are pure functions so they can be
+ * No web-vitals, no PerformanceObserver polyfill; the one import is the one clock
+ * (`lib/clock.ts`), whose frame loop the sampler now OBSERVES instead of running its
+ * own (S1). The bundle has a hard budget (440KB/chunk, 850KB initial) and the maths
+ * is small enough to own. The ring and percentile are pure functions so they can be
  * unit-tested with no DOM, following useWindowedRows.ts.
  */
 
@@ -494,31 +496,30 @@ export function afterPaint(fn: () => void): void {
 
 /* ── frame sampler ────────────────────────────────────────────────────────── */
 
-let frameHandle: number | null = null;
-
 /**
- * Sample frame-to-frame time continuously. Cheap (one rAF, one subtraction) and
- * the only way to see whether the juice layer in Phase 5 breaks the 16ms budget.
- * Long gaps (tab hidden, machine asleep) are discarded rather than recorded as
- * catastrophic frames — they would poison the percentile with non-UI stalls.
+ * Sample frame-to-frame time — of the frames that EXIST.
+ *
+ * S0's baseline found this function's previous form to be the platform's largest
+ * single defect: it ran its own `requestAnimationFrame` loop at 60 fps on every
+ * route, forever, so that it could measure whether animation broke the 16 ms
+ * budget — and at rest it was the only animation there was. Seventy-six of
+ * seventy-nine routes burning a full frame budget to measure themselves.
+ *
+ * Now it OBSERVES the one clock's frame loop (`lib/clock.ts observeFrames`), which
+ * runs only while something has asked for frames. No frames, nothing recorded —
+ * the honest reading of an instrument at rest — and the percentile it feeds
+ * describes animated frames, not the idle rate that used to make every budget look
+ * met. Long gaps are still discarded rather than recorded as catastrophic frames.
  */
 export function startFrameSampler(): () => void {
-  if (typeof requestAnimationFrame !== 'function') return () => {};
-  let last = now();
-  const tick = () => {
-    const t = now();
-    const dt = t - last;
-    last = t;
-    if (dt < 1000) recordFrame(dt); // ignore backgrounded/suspended gaps
-    frameHandle = requestAnimationFrame(tick);
-  };
-  frameHandle = requestAnimationFrame(tick);
-  return () => {
-    if (frameHandle != null && typeof cancelAnimationFrame === 'function') {
-      cancelAnimationFrame(frameHandle);
+  let last: number | null = null;
+  return observeFrames((t) => {
+    if (last !== null) {
+      const dt = t.monotonicMs - last;
+      if (dt < 1000) recordFrame(dt); // ignore backgrounded/suspended gaps
     }
-    frameHandle = null;
-  };
+    last = t.monotonicMs;
+  });
 }
 
 /** The approved budgets. Referenced by the HUD and the SLO rows alike. */

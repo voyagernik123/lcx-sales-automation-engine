@@ -87,11 +87,21 @@ const FREEZE_ENV = (f) => {
  * reports whether continuity was even attempted. GL contexts are counted at creation. */
 const PROBE = () => {
   const w = /** @type {any} */ (globalThis);
-  const audit = { intervals: new Set(), rafCalls: 0, rafLoops: 0, vt: 0, gl: 0, errors: [] };
+  const audit = { intervals: new Set(), intervalSites: {}, rafCalls: 0, rafLoops: 0, vt: 0, gl: 0, errors: [] };
   w.__instrument = audit;
   const si = w.setInterval.bind(w), ci = w.clearInterval.bind(w);
-  w.setInterval = (fn, ms, ...rest) => { const id = si(fn, ms, ...rest); audit.intervals.add(id); return id; };
-  w.clearInterval = (id) => { audit.intervals.delete(id); return ci(id); };
+  // EVERY LIVE INTERVAL IS ATTRIBUTED to the source file that created it, so "2 intervals" can
+  // never be left as a number: the after-S1 run counted two on every route, including the
+  // shell-less sign-in screen, and the difference between "the app owns two clocks" and "the dev
+  // server's HMR client owns one" is the difference between a defect and a measurement artefact.
+  w.setInterval = (fn, ms, ...rest) => {
+    const id = si(fn, ms, ...rest);
+    audit.intervals.add(id);
+    const site = (new Error().stack || '').split('\n').slice(2).find((l) => !/instrument|setInterval/.test(l)) || 'unknown';
+    audit.intervalSites[id] = site.trim().replace(/^at\s+/, '').replace(/\?[^:)]*/g, '').slice(0, 140);
+    return id;
+  };
+  w.clearInterval = (id) => { audit.intervals.delete(id); delete audit.intervalSites[id]; return ci(id); };
   const raf = w.requestAnimationFrame.bind(w);
   w.requestAnimationFrame = (cb) => raf((t) => { audit.rafCalls += 1; cb(t); });
   if (w.document && typeof w.document.startViewTransition === 'function') {
@@ -333,6 +343,7 @@ const READ_PAGE = () => {
   return {
     dark: document.documentElement.classList.contains('dark'),
     intervals: a ? a.intervals.size : -1,
+    intervalSites: a ? [...a.intervals].map((id) => a.intervalSites[id] ?? 'unknown') : [],
     rafCalls: a ? a.rafCalls : -1,
     gl: a ? a.gl : -1,
     vt: a ? a.vt : -1,

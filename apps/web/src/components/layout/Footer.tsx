@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { clsx } from 'clsx';
 import { getHealth } from '@/lib/apiClient';
+import { corrected, every, setServerNow } from '@/lib/clock';
+import { useClock } from '@/lib/useClock';
 import { connectivity, subscribeOnline, type Connectivity } from '@/lib/online';
 import { useOperatorStore } from '@/stores';
 import { KpiTicker } from './KpiTicker';
@@ -22,7 +24,10 @@ import { startPerfFlush } from '@/lib/perfFlush';
 export function Footer() {
   const operator = useOperatorStore(s => s.operator);
   const [api, setApi] = useState<{ ms: number | null; at: Date | null }>({ ms: null, at: null });
-  const [clock, setClock] = useState(() => new Date());
+  // THE ONE CLOCK (S1). This used to be a private `setInterval` — one of eight under every
+  // route — and the second it showed was this component's alone. Now every "now" on the
+  // screen re-renders on the same epoch-aligned tick as this one.
+  const clock = new Date(useClock(1000));
 
   /**
    * WHERE THE DOT'S TRUTH COMES FROM — and why it is no longer this component's
@@ -60,7 +65,11 @@ export function Footer() {
     const ping = async () => {
       const t0 = performance.now();
       try {
-        await getHealth();
+        const health = await getHealth();
+        // The server's instant corrects the one clock every surface reads. The ping already
+        // existed to measure latency; carrying the timestamp costs nothing and settles
+        // "whose now" for the whole application.
+        setServerNow(health.timestamp);
         if (!stopped) setApi({ ms: Math.round(performance.now() - t0), at: new Date() });
       } catch {
         // Deliberately no state change: `getHealth` already reported this outcome
@@ -71,16 +80,11 @@ export function Footer() {
       }
     };
     void ping();
-    const iv = setInterval(() => void ping(), 60_000);
+    const off = every(60_000, () => void ping());
     return () => {
       stopped = true;
-      clearInterval(iv);
+      off();
     };
-  }, []);
-
-  useEffect(() => {
-    const iv = setInterval(() => setClock(new Date()), 1000);
-    return () => clearInterval(iv);
   }, []);
 
   // ── The speed-floor HUD (TERMINAL Phase 2) ───────────────────────────────
@@ -178,7 +182,13 @@ export function Footer() {
       <span className="ml-auto hidden truncate text-grey xl:inline">
         INTERNAL · NOT LEGAL ADVICE · US COUNSEL SIGN-OFF REQUIRED
       </span>
-      <span title="Coordinated Universal Time">{utc} UTC</span>
+      {/* Never "UTC" on a guess: until the server has answered once, this is the machine's
+        * own clock and the label says so. */}
+      <span title={corrected()
+        ? 'Coordinated Universal Time — corrected against the server'
+        : 'This machine\'s clock — the server has not answered yet, so the offset is unknown'}>
+        {utc} {corrected() ? 'UTC' : 'UTC (local)'}
+      </span>
       <span title="Build version">v{__APP_VERSION__}</span>
       {operator && (
         <span className="font-semibold text-navy" title={`Signed in as ${operator.name}`}>

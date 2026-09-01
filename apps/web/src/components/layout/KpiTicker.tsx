@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { every } from '@/lib/clock';
+import { useClock } from '@/lib/useClock';
 import { useNavigate } from 'react-router-dom';
 import { fetchDealBoard, fetchHandoffs } from '@/lib/api/bd';
 import { formatMoney } from '@/lib/format';
@@ -18,7 +20,11 @@ interface TickerItem {
 export function KpiTicker() {
   const navigate = useNavigate();
   const [items, setItems] = useState<TickerItem[]>([]);
-  const [index, setIndex] = useState(0);
+  // The rotation is a phase of the one clock (S1): no private 6 s interval, and the item
+  // showing is a function of the epoch — the same item on every desk at the same instant.
+  const ROTATE_MS = 6000;
+  const nowMs = useClock(ROTATE_MS);
+  const index = items.length > 0 ? Math.floor(nowMs / ROTATE_MS) % items.length : 0;
   const scenarioActive = useScenarioActive();
   const resetScenario = useSalesScenarioStore(s => s.reset);
 
@@ -44,18 +50,12 @@ export function KpiTicker() {
       setItems(next);
     };
     void load();
-    const interval = setInterval(() => void load(), 300_000);
+    const off = every(300_000, () => void load());
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      off();
     };
   }, []);
-
-  useEffect(() => {
-    if (items.length < 2) return;
-    const t = setInterval(() => setIndex(i => (i + 1) % items.length), 6000);
-    return () => clearInterval(t);
-  }, [items.length]);
 
   return (
     <div className="flex items-center gap-3">

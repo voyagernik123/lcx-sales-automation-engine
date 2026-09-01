@@ -11,6 +11,7 @@ import { formatRate } from '@/lib/metricPolicy';
 import { ChartSkeleton, ErrorNotice, PageSkeleton, toast } from '@/components/shared';
 import { Button } from '@/components/ui';
 import { CacheAge } from '@/components/ui/CacheAge';
+import { every } from '@/lib/clock';
 import { MetricStatCards } from '@/components/kpi/MetricStatCards';
 import { FunnelSection } from '@/components/kpi/FunnelSection';
 import { ForecastDistribution } from '@/components/kpi/ForecastDistribution';
@@ -85,8 +86,7 @@ export function KpiDashboard() {
 
   useEffect(() => {
     if (!autoRefresh) return;
-    const id = setInterval(() => { void load({ silent: true }); }, 30_000);
-    return () => clearInterval(id);
+    return every(30_000, () => { void load({ silent: true }); });
   }, [autoRefresh, load]);
 
   const handleExport = async () => {

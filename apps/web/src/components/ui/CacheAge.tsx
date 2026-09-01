@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { History } from 'lucide-react';
 import { clsx } from 'clsx';
 import { cacheAge, cacheAgeLabel, servedFrom } from '@/lib/readCache';
+import { every } from '@/lib/clock';
 import { formatDateTime } from '@/lib/format';
 
 /**
@@ -60,8 +61,8 @@ export function useCacheAge(path: string): CacheAgeState | null {
   // rather than on `ageMs` so a label crossing 4m→5m does not reinstall a timer.
   useEffect(() => {
     if (!showing) return;
-    const id = setInterval(() => tick((n) => n + 1), 30_000);
-    return () => clearInterval(id);
+    // On the one clock: every age label on screen crosses 4m→5m on the same tick.
+    return every(30_000, () => tick((n) => n + 1));
   }, [showing]);
 
   if (ageMs === null) return null;

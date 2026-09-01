@@ -14,11 +14,13 @@
  */
 
 import { request } from './apiClient';
+import { every } from './clock';
 import { drainPending, frameSamplesForFlush, restorePending } from './perf';
 
 const FLUSH_MS = 60_000;
 
-let timer: ReturnType<typeof setInterval> | null = null;
+/** The clock subscription's release, while the flush is running. One of the eight intervals S0 found. */
+let timer: (() => void) | null = null;
 
 async function flush(): Promise<void> {
   const samples = drainPending();
@@ -41,7 +43,7 @@ async function flush(): Promise<void> {
 /** Start periodic flushing. Returns a stop function. */
 export function startPerfFlush(): () => void {
   if (timer) return () => {};
-  timer = setInterval(() => void flush(), FLUSH_MS);
+  timer = every(FLUSH_MS, () => void flush());
 
   // pagehide (not unload) is the reliable last-chance hook in modern browsers and
   // fires in the Tauri webview too.
@@ -49,7 +51,7 @@ export function startPerfFlush(): () => void {
   window.addEventListener('pagehide', onHide);
 
   return () => {
-    if (timer) clearInterval(timer);
+    if (timer) timer();
     timer = null;
     window.removeEventListener('pagehide', onHide);
   };

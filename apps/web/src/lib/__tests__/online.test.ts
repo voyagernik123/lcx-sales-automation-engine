@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import { _resetClockForTests } from '../clock';
 import {
   classify,
   isNetworkError,
@@ -146,9 +147,15 @@ describe('recorded evidence', () => {
 describe('startConnectivityWatch', () => {
   beforeEach(() => {
     _resetOnline();
+    _resetClockForTests();
     vi.useFakeTimers();
+    // The probe rides the one clock (S1), whose buckets are aligned to the EPOCH. A 31 s
+    // advance from an arbitrary instant can cross one or two 30 s boundaries; pinning the
+    // instant half a second past a boundary makes each 31 s advance cross exactly one, so
+    // the call counts below stay exact without weakening what they assert (one shared loop).
+    vi.setSystemTime(new Date('2026-09-01T12:00:00.500Z'));
   });
-  afterEach(() => vi.useRealTimers());
+  afterEach(() => { _resetClockForTests(); vi.useRealTimers(); });
 
   it('does not probe while healthy — there is nothing to find out', async () => {
     const probe = vi.fn().mockResolvedValue({});

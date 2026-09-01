@@ -45,11 +45,12 @@
  * S0's runtime audit counts live intervals at rest; with nothing on screen that needs time,
  * the honest count is zero, not "one clock ticking for nobody".
  *
- * No React in this file: GL code and `lib/online.ts` subscribe without it. The hook lives
- * at the bottom and is a thin subscriber.
+ * NO REACT IN THIS FILE, and that is a contract: `lib/online.ts` and `lib/perf.ts` are
+ * documented React-free, GL code subscribes from outside the tree, and S5's environments
+ * will read `monotonic()` from inside `@lcx/gl` callbacks. The React hook is a thin
+ * subscriber in `lib/useClock.ts`.
  */
 
-import { useEffect, useState } from 'react';
 import { prefersReducedMotion } from '@/lib/motion';
 
 export const HEARTBEAT_MS = 250;
@@ -77,6 +78,8 @@ let isCorrected = false;
 let subs: Sub[] = [];
 let heartbeat: ReturnType<typeof setInterval> | null = null;
 const frameSubs = new Set<Listener>();
+/** Watchers of frames that OTHERS cause. They never keep the frame loop alive — see `observeFrames`. */
+const frameObservers = new Set<Listener>();
 let rafId: number | null = null;
 
 const hasWindow = () => typeof window !== 'undefined';
@@ -178,7 +181,25 @@ function frameLoop(): void {
   for (const fn of [...frameSubs]) {
     try { fn(t); } catch (err) { console.error('[clock] frame subscriber threw', err); }
   }
+  for (const fn of [...frameObservers]) {
+    try { fn(t); } catch (err) { console.error('[clock] frame observer threw', err); }
+  }
   if (hasWindow() && typeof requestAnimationFrame === 'function') rafId = requestAnimationFrame(frameLoop);
+}
+
+/**
+ * Watch the frames the clock delivers to real frame subscribers, WITHOUT causing any.
+ *
+ * This exists for exactly one caller today, and the reason is S0's central finding:
+ * `lib/perf.ts`'s frame sampler ran its own 60 fps `requestAnimationFrame` loop on every
+ * route, forever, to measure whether animation broke the frame budget — and at rest it was
+ * the only animation there was. An observer is told about every frame the loop produces
+ * for someone else and is never a reason for the loop to run. No subscribers, no frames,
+ * nothing observed: which is the honest reading of an instrument at rest.
+ */
+export function observeFrames(fn: Listener): () => void {
+  frameObservers.add(fn);
+  return () => { frameObservers.delete(fn); };
 }
 
 /**
@@ -209,22 +230,12 @@ if (hasWindow() && typeof document !== 'undefined') {
   });
 }
 
-/**
- * React: the shared "now", re-rendering when the clock crosses a multiple of `everyMs`
- * (default one second). Two components using this hook on one screen re-render on the same
- * tick with the same value — the footer and a page's "x min ago" can never disagree.
- */
-export function useClock(everyMs = 1000): number {
-  const [t, setT] = useState(() => now());
-  useEffect(() => every(everyMs, (tk) => setT(tk.nowMs)), [everyMs]);
-  return t;
-}
-
 /** Test seam: drop every subscriber and correction. Never called by product code. */
 export function _resetClockForTests(): void {
   subs = [];
   if (heartbeat !== null) { clearInterval(heartbeat); heartbeat = null; }
   frameSubs.clear();
+  frameObservers.clear();
   if (rafId !== null && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(rafId);
   rafId = null;
   offsetMs = 0;

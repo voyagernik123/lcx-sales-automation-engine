@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import {
   HEARTBEAT_MS, REDUCED_MOTION_FLOOR_MS,
-  _resetClockForTests, corrected, every, now, onFrame, phase, serverOffsetMs, setServerNow, useClock,
+  _resetClockForTests, corrected, every, now, onFrame, phase, serverOffsetMs, setServerNow,
 } from '../clock';
+import { useClock } from '../useClock';
 
 /**
  * THE ONE CLOCK — tested for the property the instrument is named after: two readers of

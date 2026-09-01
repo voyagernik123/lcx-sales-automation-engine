@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, MapPin, ShieldCheck, Coins, Terminal, ShieldAlert, LayoutDashboard } from 'lucide-react';
 import { Card, CardHeader, CardBody, Badge, ReadinessMeter, InspectorDrawer, PageTitle } from '@/components/ui';
@@ -11,20 +11,18 @@ import { STATUS_DOT_BG, STATUS_TILE_BG } from '@/lib/colors';
 import { State } from '@/types/ontology';
 import { clsx } from 'clsx';
 
-const simulatedEvents = [
-  'OFAC sanctions automated scan executed: 0 alerts matched.',
-  'TRUST Travel-Rule transaction payload validated for wallet_8213.',
-  'NYDFS BitLicense panel request: CCO submitted Delaware corporate filings.',
-  'CFIUS verification: foreign voting covenants validated under 25% threshold.',
-  'Wyoming SPDI audit: segregated customer reserve balances verified.',
-  'BSA/AML training logs updated for compliance operations team.',
-  'BitLicense review: NYDFS requested revised risk disclosure document.',
-  'Texas DOB memorandum 1037: stablecoin reserves audit completed.',
-  'California DFAL registration: CCO verified CCO employment covenant.',
-  'Intercompany licensing agreement signed between LCX AG and LCX USA.',
-  'FinCEN MSB check: federal registration number active and valid.',
-  'Howey analysis verified for listed digital commodities.',
-];
+/*
+ * THE FABRICATED FEED THAT USED TO LIVE HERE IS GONE, AND THE RECORD SAYS WHY.
+ *
+ * Until S1 of INSTRUMENT_100X_PLAN.md this page kept an array of twelve invented "System"
+ * events — "OFAC sanctions automated scan executed: 0 alerts matched", "FinCEN MSB check:
+ * federal registration number active and valid" — and a 4-second `setInterval` that picked
+ * one at random and pushed it into the operation feed beside REAL audit rows, marked
+ * `isReal: false` in the data and indistinguishable on the screen. A compliance dashboard
+ * that fabricates compliance events is the exact thing this platform exists to refuse. The
+ * feed now shows only what the audit store actually recorded, and says so when that is
+ * nothing.
+ */
 
 function StatCard({ icon: Icon, label, value, hint }: { icon: React.ElementType; label: string; value: string | number; hint?: string }) {
   return (
@@ -47,7 +45,6 @@ export function Dashboard() {
   const { selectedStatuses, selectedPhases, clarityEnacted, spdiEquivalence } = useFilterStore();
   const { resolvedRemediations, readinessStatusOverrides, auditLogs, safeHarborToggles } = useAuditStore();
   const [selectedState, setSelectedState] = useState<State | null>(null);
-  const [logs, setLogs] = useState<string[]>([]);
 
   // Memoised so downstream memos can depend on it by identity. Before this was
   // a per-render object, `blockers` below depended only on clarityEnacted +
@@ -91,43 +88,12 @@ export function Dashboard() {
   const phase1States = useMemo(() => filteredStates.filter(s => s.phase === 'Phase 1' && s.tier !== 'Unresearched'), [filteredStates]);
   const criticalStates = useMemo(() => filteredStates.filter(s => s.priority === 'Critical' || s.priority === 'High').slice(0, 5), [filteredStates]);
 
-  const allLogs = useMemo(() => {
-    const storeLogs = auditLogs.map(al => ({
-      timestamp: al.timestamp,
-      message: al.message,
-      category: al.category,
-      isReal: true,
-    }));
-
-    const simLogs = logs.map(l => {
-      const match = l.match(/^\[(.*?)\] (.*)$/);
-      return {
-        timestamp: match ? match[1] : new Date().toLocaleTimeString(),
-        message: match ? match[2] : l,
-        category: 'System' as const,
-        isReal: false,
-      };
-    });
-
-    return [...storeLogs, ...simLogs].slice(0, 25);
-  }, [auditLogs, logs]);
-
-  useEffect(() => {
-    const initial = Array.from({ length: 5 }).map(() => {
-      const idx = Math.floor(Math.random() * simulatedEvents.length);
-      const timestamp = new Date(Date.now() - Math.random() * 3600000).toLocaleTimeString();
-      return `[${timestamp}] ${simulatedEvents[idx]}`;
-    });
-    setLogs(initial.sort());
-
-    const interval = setInterval(() => {
-      const idx = Math.floor(Math.random() * simulatedEvents.length);
-      const timestamp = new Date().toLocaleTimeString();
-      setLogs(prev => [`[${timestamp}] ${simulatedEvents[idx]}`, ...prev].slice(0, 15));
-    }, 4000);
-
-    return () => clearInterval(interval);
-  }, []);
+  // Only what the audit store recorded — no simulation, no fabricated rows (see the note above).
+  const allLogs = useMemo(() => auditLogs.map(al => ({
+    timestamp: al.timestamp,
+    message: al.message,
+    category: al.category,
+  })).slice(0, 25), [auditLogs]);
 
   const unresolvedCriticalCount = redFlags.filter(rf => {
     if (rf.risk !== 'Critical' && rf.risk !== 'High') return false;
@@ -321,6 +287,12 @@ export function Dashboard() {
                 <span>&gt; SYSTEM ACTIVE</span>
                 <span className="h-3 w-1.5 bg-cyan-400 animate-pulse block shrink-0" />
               </div>
+              {allLogs.length === 0 && (
+                <div className="text-slate-500" data-testid="operation-feed-empty">
+                  No audit events recorded yet. This feed shows only real actions taken on the desk — it
+                  does not simulate activity.
+                </div>
+              )}
               {allLogs.map((log, index) => {
                 const catColor =
                   log.category === 'Audit' ? 'text-teal-400 border-teal-500/30' :
@@ -330,12 +302,10 @@ export function Dashboard() {
                 return (
                   <div key={index} className="text-slate-300 break-words font-mono text-[9px] flex gap-1.5 items-start">
                     <span className="text-slate-600 shrink-0 select-none">[{log.timestamp}]</span>
-                    {log.isReal && (
-                      <span className={clsx('px-1 py-0.5 rounded text-[7px] uppercase font-bold shrink-0 leading-none bg-slate-900 border', catColor)}>
-                        {log.category}
-                      </span>
-                    )}
-                    <span className={log.isReal ? 'text-slate-100 font-bold' : 'text-slate-400'}>
+                    <span className={clsx('px-1 py-0.5 rounded text-[7px] uppercase font-bold shrink-0 leading-none bg-slate-900 border', catColor)}>
+                      {log.category}
+                    </span>
+                    <span className="text-slate-100 font-bold">
                       {log.message}
                     </span>
                   </div>

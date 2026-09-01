@@ -56,17 +56,22 @@
 
 | System | Status | Commit(s) | Measured after | Notes |
 |---|---|---|---|---|
-| S0 MEASURE | **IN PROGRESS** | — | — | extend `scripts/3d-audit-app.mjs` to all 80 routes, six metrics |
-| S1 ONE CLOCK | not started | — | — | |
-| S2 ONE MATERIAL | not started | — | — | |
+| S0 MEASURE | DONE | e211c1a | `docs/instrument/audit/BASELINE.md` | `scripts/instrument-audit.mjs`, 79 routes × 2 themes, six metrics |
+| S1 ONE CLOCK | DONE (this commit) | — | `docs/instrument/audit/after-s1/BASELINE.md` | rAF loops at rest **76 → 0** · live intervals **8 → 2 under vite dev = 1 heartbeat + the HMR ping (`@vite/client:620`), so 1 in production** · timer call sites 25 → 13 · fake Dashboard feed removed · ratchet `oneClock.test.ts` |
+| S2 ONE MATERIAL | **IN PROGRESS** | — | — | drafts written (renderer, tsx generator, ratchet); move into tree after S1 commit |
 | S3 ONE CAMERA | not started | — | — | desktop WKWebView probe FIRST |
 | S4 THE WATCH | not started | — | — | |
 | S5 FLOORS ARE DATA | not started | — | — | |
 | S6 THE TERMINAL | not started | — | — | |
 | S7 THE OBJECT | not started | — | — | |
 
-**NEXT ACTION:** S0 — read the sweep's route/auth/metric mechanics, then add `instrument` mode: all 80
-routes × 2 themes, six metrics per route, one JSON + one MD report under `docs/instrument/audit/`.
+**NEXT ACTION:** S2 — place `apps/web/src/lib/sceneryTokens.ts`, `apps/web/scripts/gen-scenery-tokens.ts`,
+`apps/web/src/lib/__tests__/oneMaterial.test.ts` (drafts exist in the session scratchpad `s2/`; if lost,
+re-derive from INSTRUMENT_100X_PLAN.md §4 S2 and this ledger's §1 seam table); insert the `@generated
+scenery` marker blocks into `tokens.css` `:root`/`.dark` (replacing `--card`, `--page-bg`, `--line`) and
+around `--card-fill` in both chart blocks; run `npx tsx apps/web/scripts/gen-scenery-tokens.ts`; add
+`"gen:tokens"` to apps/web/package.json; run oneMaterial + contrast tests; gate; commit S2 with the seam
+table before/after (expect 0.00 on every pair).
 
 ## 3 · THE STANDING RULES OF THIS BUILD — the quality bar, made mechanical
 
@@ -100,3 +105,8 @@ routes × 2 themes, six metrics per route, one JSON + one MD report under `docs/
 - 2026-09-01 · S0 instrument built (`scripts/instrument-audit.mjs`), baseline captured 79×2; THE FINDING: the
   shell runs a 60 fps rAF loop (perf frame sampler) + 8 intervals under every route; `lib/clock.ts` core
   written and green (11 tests), NOT yet integrated; gate for S0 in flight.
+- 2026-09-01 · S0 committed e211c1a (Render success). S1 integrated: Footer/SelectOperator/MarketingCrisis/
+  CacheAge/SidebarFieldNotes/KpiTicker/NotificationBell/KpiDashboard/MarketNews/online.ts/perfFlush on
+  `every()`/`useClock()`; perf frame sampler → `observeFrames()`; Dashboard fake feed deleted; hook split to
+  `lib/useClock.ts` so clock.ts stays React-free. Gate clean (6,672 tests). After-measure: rAF loops 76→0,
+  intervals 8→2 (attributed: 1 heartbeat + vite HMR ping → 1 in prod). Committing S1.

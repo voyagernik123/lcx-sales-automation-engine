@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { clsx } from 'clsx';
 import { Button } from '@/components/ui';
+import { useClock } from '@/lib/useClock';
 import { PrintStyles } from '@/components/report/PrintStyles';
 import { toast } from '@/components/shared/Toast';
 /**
@@ -172,12 +173,8 @@ const FORWARD_RISK = riskFieldUnavailable(
  * printed artefact still carries a single unambiguous instant.
  */
 function useTickingNow(): string {
-  const [now, setNow] = useState(() => new Date().toISOString());
-  useEffect(() => {
-    const id = window.setInterval(() => { setNow(new Date().toISOString()); }, 1000);
-    return () => { window.clearInterval(id); };
-  }, []);
-  return now;
+  // The one clock (S1): this second is the footer's second, on the same tick.
+  return new Date(useClock(1000)).toISOString();
 }
 
 /** The instant the artefact was generated at, read once. Stamped on the paper copy. */

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
 import { Sparkles } from 'lucide-react';
+import { useClock } from '@/lib/useClock';
 
 /**
  * Purely decorative — the old sidebar footer was a Status/Phase/Domain
@@ -23,12 +23,10 @@ const NOTES = [
 const ROTATE_MS = 6000;
 
 export function SidebarFieldNotes() {
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    const id = setInterval(() => setIndex(i => (i + 1) % NOTES.length), ROTATE_MS);
-    return () => clearInterval(id);
-  }, []);
+  // Rotation is a PHASE of the one clock, not a private interval: the note showing is a
+  // function of the epoch, so it is the same note on every desk at the same instant, and
+  // there is no timer to leak (S1).
+  const index = Math.floor(useClock(ROTATE_MS) / ROTATE_MS) % NOTES.length;
 
   return (
     <div className="rounded-lg border border-cyan-100 dark:border-cyan-900/40 bg-cyan-50/50 dark:bg-cyan-950/10 p-3">

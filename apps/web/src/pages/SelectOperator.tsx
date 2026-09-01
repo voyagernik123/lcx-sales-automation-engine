@@ -4,6 +4,7 @@ import { ArrowRight } from 'lucide-react';
 import { normalizeEmail } from '@lcx/shared';
 import { OPERATORS, useOperatorStore } from '@/stores';
 import { apiConfig, getHealth, getMe, setOperatorCredentials } from '@/lib/apiClient';
+import { useClock } from '@/lib/useClock';
 import { classifyUnreachable, originBlockedMessage, type Reachability } from '@/lib/reachability';
 import { LcxMark } from '@/components/brand/LcxMark';
 import { ForgePlate } from '@/components/brand/ForgePlate';
@@ -31,7 +32,8 @@ export function SelectOperator() {
   const [passcode, setPasscode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [clock, setClock] = useState(() => new Date());
+  // The one clock (S1) — the sign-in screen's second is the same second as the desk's.
+  const clock = new Date(useClock(1000));
   const [apiUp, setApiUp] = useState<boolean | null>(null);
   /**
    * WHY a failed health check is not enough to say "API DOWN". A CORS denial and
@@ -43,11 +45,6 @@ export function SelectOperator() {
 
   useEffect(() => {
     inputRef.current?.focus();
-  }, []);
-
-  useEffect(() => {
-    const iv = setInterval(() => setClock(new Date()), 1000);
-    return () => clearInterval(iv);
   }, []);
 
   useEffect(() => {

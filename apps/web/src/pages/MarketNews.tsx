@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Newspaper, RefreshCw, ExternalLink, ChevronDown, ChevronRight, Sparkles, AlertTriangle, ListPlus, Check } from 'lucide-react';
 import { request } from '@/lib/apiClient';
+import { every } from '@/lib/clock';
 import { safeHref } from '@/lib/safeHref';
 import { createTask } from '@/lib/api/bd';
 import { toast } from '@/components/shared/Toast';
@@ -98,8 +99,9 @@ export function MarketNews() {
   useEffect(() => {
     if (!live) return;
     let ticks = 0;
-    const id = setInterval(() => {
-      if (document.visibilityState !== 'visible') return;
+    // On the one clock; the tick carries visibility, so a hidden tab stays polite as before.
+    return every(15_000, (t) => {
+      if (!t.visible) return;
       ticks += 1;
       if (ticks % 6 === 0) {
         void request('/v1/analytics/news/refresh', { auth: true, method: 'POST', body: {} })
@@ -108,8 +110,7 @@ export function MarketNews() {
       } else {
         void load(true);
       }
-    }, 15_000);
-    return () => clearInterval(id);
+    });
   }, [live, load]);
 
   const refresh = async () => {

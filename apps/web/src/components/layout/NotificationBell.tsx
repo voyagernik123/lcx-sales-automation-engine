@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Bell } from 'lucide-react';
 import { fetchNotifications, markNotificationRead, markAllNotificationsRead, type AppNotification } from '@/lib/api/bd';
 import { request } from '@/lib/apiClient';
+import { every } from '@/lib/clock';
 
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/$/, '') ?? '/api';
 
@@ -90,9 +91,9 @@ export function NotificationBell() {
 
   useEffect(() => {
     void load();
-    // SSE connected → polling is just a slow safety net; otherwise poll normally.
-    const interval = setInterval(() => void load(), live ? 300_000 : 60_000);
-    return () => clearInterval(interval);
+    // SSE connected → polling is just a slow safety net; otherwise poll normally. On the one
+    // clock, so this poll fires in the same heartbeat as every other 60 s poll on the desk.
+    return every(live ? 300_000 : 60_000, () => void load());
   }, [load, live]);
 
   useEffect(() => {
