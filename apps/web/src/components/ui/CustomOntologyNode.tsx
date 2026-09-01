@@ -196,10 +196,7 @@ export function CustomOntologyNode({ data }: { data: CustomNodeData }) {
         {!isPreempted && (
           <div className="shrink-0 flex items-center justify-center">
             <span
-              className={clsx(
-                'h-1.5 w-1.5 rounded-full block',
-                node.status === 'Blocked' && 'animate-pulse-beacon'
-              )}
+              className="h-1.5 w-1.5 rounded-full block"
               style={{
                 backgroundColor: activeColor,
                 boxShadow: `0 0 6px ${activeColor}`,

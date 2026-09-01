@@ -44,6 +44,15 @@ const DESK_LEVEL: ReadonlyArray<{
   { path: '/v1/tasks', status: 'filters-per-reader', why: 'mayReadSales excludes deal- and project-linked rows (see tasksCompartment.test.ts)' },
   { path: '/v1/x402', status: 'gated-elsewhere', why: 'x402Guard per endpoint; the catalog is public by design' },
   {
+    path: '/v1/watch',
+    status: 'filters-per-reader',
+    why: 'THE WATCH (S4, INSTRUMENT_100X_PLAN): one arrival spanning every compartment the reader '
+      + 'holds, so a single workspace gate would be wrong in both directions (as /v1/readout). '
+      + 'requireOperator is the floor; composeWatch loads the reader\'s entitlements FIRST and asks a '
+      + 'register only for compartments held at view — an unheld room is never queried and has no '
+      + 'key in byWorkspace (apps/api/src/watch/__tests__/watch.test.ts pins both).',
+  },
+  {
     path: '/v1/services',
     status: 'gated-elsewhere',
     why: 'public BY DECISION (G1, 2026-08-21): the services intake is the one unauthenticated '

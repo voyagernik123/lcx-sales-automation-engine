@@ -1,4 +1,5 @@
 import { ReactNode, useEffect, useState } from 'react';
+import { Skeleton } from '@/components/shared/LoadingSkeleton';
 import { Link } from 'react-router-dom';
 import { ArrowRight, X } from 'lucide-react';
 import { STAGE_LABELS, type DealStage } from '@lcx/shared';
@@ -138,7 +139,7 @@ export function DealDetailPanel({ deal, onClose }: DealDetailPanelProps) {
             {events === null && (
               <div className="space-y-2" role="status" aria-label="Loading activity">
                 {[0, 1, 2].map((i) => (
-                  <div key={i} className="h-8 animate-pulse rounded bg-ice-soft dark:bg-ice-soft/10" />
+                  <Skeleton key={i} className="h-8" />
                 ))}
               </div>
             )}

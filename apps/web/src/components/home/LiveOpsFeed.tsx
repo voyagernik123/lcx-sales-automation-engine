@@ -36,7 +36,7 @@ export function LiveOpsFeed({ lines, loading = false }: LiveOpsFeedProps) {
       <div className="flex flex-1 flex-col-reverse justify-end space-y-1.5 overflow-y-auto p-3 leading-relaxed">
         <div className="mb-1 flex shrink-0 items-center gap-1.5 font-bold text-cyan-400">
           <span>&gt; SYSTEM ACTIVE</span>
-          <span className="block h-3 w-1.5 shrink-0 animate-pulse bg-cyan-400" />
+          <span className="block h-3 w-1.5 shrink-0 bg-cyan-400" />
         </div>
 
         {/* slate-500 measured 4.24:1 against this panel's slate-950 backdrop —

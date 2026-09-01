@@ -96,7 +96,8 @@ describe('the header under LCXOS', () => {
     // explicit `false` the walk would pass straight through the panel's own divs to the
     // header and move the window while the operator was reading it (drag.js:62).
     const blocked = header.querySelectorAll('[data-tauri-drag-region="false"]');
-    expect(blocked.length).toBe(3); // workspace switcher, bell, operator menu
+    // S4 added the watch strip: ranked text with its own buttons, sitting in the drag region.
+    expect(blocked.length).toBe(4); // workspace switcher, watch strip, bell, operator menu
   });
 });
 

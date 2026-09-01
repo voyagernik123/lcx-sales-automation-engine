@@ -212,7 +212,7 @@ export function KpiDashboard() {
                 : 'border-line text-grey hover:text-navy hover:bg-ice-soft/50 dark:hover:bg-navy-deep',
             )}
           >
-            <span className={clsx('h-1.5 w-1.5 rounded-full', autoRefresh ? 'bg-emerald-500 animate-pulse' : 'bg-grey')} />
+            <span className={clsx('h-1.5 w-1.5 rounded-full', autoRefresh ? 'bg-emerald-500' : 'bg-grey')} />
             Auto 30s
           </button>
           <Button variant="secondary" size="xs" onClick={handleExport} disabled={exporting} className="text-grey">

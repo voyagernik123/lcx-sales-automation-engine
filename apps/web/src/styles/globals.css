@@ -64,23 +64,6 @@
   background: rgba(var(--grey) / 0.4);
 }
 
-@keyframes pulse-beacon {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-    box-shadow: 0 0 0 0 rgba(163, 32, 53, 0.4);
-  }
-  50% {
-    opacity: 0.6;
-    transform: scale(0.9);
-    box-shadow: 0 0 6px 2px rgba(163, 32, 53, 0.2);
-  }
-}
-
-.animate-pulse-beacon {
-  animation: pulse-beacon 2s infinite ease-in-out;
-}
-
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(6px); }
   to { opacity: 1; transform: translateY(0); }
@@ -585,14 +568,12 @@ path.state:hover {
  * A spinner clears that bar. Nothing else in this app currently does.
  *
  * Deliberately NOT marked essential (counted, not estimated):
- *   - `animate-pulse` skeleton placeholders, 9 sites. A static grey block of the
- *     right shape still says "content is loading"; the shimmer only makes it
- *     prettier. Going still is the correct reading of the setting.
- *   - `animate-pulse` / `animate-pulse-beacon` status dots, 17 sites. A "live"
- *     or "blocked" dot going static loses nothing — the colour and the adjacent
- *     label already carry the state — and a throbbing dot is the single most
- *     common complaint about ambient UI motion.
- *   - The two blinking terminal carets (LiveOpsFeed, Dashboard). Atmosphere.
+ *   - `animate-pulse` skeleton placeholders — since S4 (INSTRUMENT_100X_PLAN) only
+ *     inside LoadingSkeleton. A static grey block of the right shape still says
+ *     "content is loading"; the shimmer only makes it prettier.
+ *   - Status dots and the two terminal carets no longer move at all: S4 retired
+ *     `animate-pulse-beacon` and every non-skeleton `animate-pulse` — the colour and
+ *     the adjacent label carry the state, and the arrival sweep is the shell's one motion.
  *   - The `animate-slide-in` drawer/toast entrances and the `.lift` card hover.
  *     Pure decoration; instant is strictly better here.
  */

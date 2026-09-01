@@ -199,7 +199,7 @@ export function SessionMode({
       {/* Header */}
       <div className="shrink-0 flex items-center gap-3 px-5 py-2.5 border-b border-line">
         <span className="flex items-center gap-1.5 text-sm font-bold">
-          <span className="h-2 w-2 rounded-full bg-cyan-500 animate-pulse" />
+          <span className="h-2 w-2 rounded-full bg-cyan-500" />
           Session — {splitLabel}
         </span>
         <span className="ml-auto text-xs font-mono num-tabular text-grey">

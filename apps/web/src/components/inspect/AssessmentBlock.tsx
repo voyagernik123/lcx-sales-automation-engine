@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Skeleton } from '@/components/shared/LoadingSkeleton';
 import { Crosshair } from 'lucide-react';
 import { fetchAssessment, type Assessment } from '@/lib/api/intel';
 import { formatMoney } from '@/lib/format';
@@ -43,7 +44,7 @@ export function AssessmentBlock({ subjectId }: { subjectId: string }) {
   }, [subjectId]);
 
   if (a === 'loading') {
-    return <div className="mt-5 h-24 animate-pulse rounded-lg bg-ice-soft/60 dark:bg-ice-soft/10" />;
+    return <Skeleton className="mt-5 h-24 rounded-lg" />;
   }
   if (!a || !a.conviction) {
     return (

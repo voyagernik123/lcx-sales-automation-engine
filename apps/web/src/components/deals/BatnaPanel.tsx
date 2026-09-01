@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Skeleton } from '@/components/shared/LoadingSkeleton';
 import { Scale, Save } from 'lucide-react';
 import { clsx } from 'clsx';
 import { toast } from '@/components/shared/Toast';
@@ -176,7 +177,7 @@ export function BatnaPanel({ dealId, dealName, packageValue, className }: BatnaP
       </h2>
       <p className="mb-2 text-micro text-grey">Negotiation figures, tracking only. One record per deal.</p>
 
-      {!loaded && <div className="h-16 animate-pulse rounded bg-ice-soft dark:bg-ice-soft/10" role="status" aria-label="Loading BATNA" />}
+      {!loaded && <Skeleton className="h-16" label="Loading BATNA" />}
       {loaded && error && <p className="text-label text-status-blocked">{error}</p>}
 
       {loaded && !error && (

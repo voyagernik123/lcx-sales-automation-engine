@@ -25,6 +25,7 @@ import { outreachOpsRoutes } from './routes/outreachOps.js';
 import { dealDeskRoutes } from './routes/dealdesk.js';
 import { analytics2Routes } from './routes/analytics2.js';
 import { integrationRoutes } from './routes/integrations.js';
+import { watchRoutes } from './routes/watch.js';
 import { templateRoutes } from './routes/templates.js';
 import { handoffRoutes } from './routes/handoffs.js';
 import { dealRoutes } from './routes/deals.js';
@@ -274,6 +275,12 @@ export function createApp() {
    */
   app.route('/v1/portal', portalRoutes);
   app.route('/v1/integrations', integrationRoutes);
+  /*
+   * THE WATCH (S4) — what changed since the operator last looked, every compartment they hold,
+   * ranked by a stated prior. Not under a workspace gate on purpose: it spans compartments and
+   * filters per item by entitlement inside the composer. requireOperator is its floor.
+   */
+  app.route('/v1/watch', watchRoutes);
   app.route('/v1/tasks', taskRoutes);
   app.route('/v1/notifications', notificationRoutes);
   /*

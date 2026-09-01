@@ -4,6 +4,7 @@ import { ChevronDown, Check, Lock } from 'lucide-react';
 import { clsx } from 'clsx';
 import { WORKSPACES, capAtLeast } from '@lcx/shared';
 import { useAccessStore } from '@/stores/useAccessStore';
+import { useArrivalStore } from '@/lib/useArrival';
 
 /**
  * LCX OS workspace switcher (Phase 1) — the one control that answers
@@ -28,6 +29,11 @@ export function WorkspaceSwitcher() {
   }, []);
 
   const active = WORKSPACES.find((w) => w.id === activeWorkspace) ?? null;
+  // THE ROOMS (S4): per compartment held, how much changed since the operator last looked — read from
+  // the one arrival store, lit as a STILL dot in the state colour with its count. A room they do not
+  // hold has no key and shows nothing, which is need-to-know made visible rather than a quiet zero.
+  const rooms = useArrivalStore((s) => s.watch?.byWorkspace ?? null);
+  const litTotal = rooms ? Object.values(rooms).reduce((n, r) => n + (r?.changed ?? 0), 0) : 0;
 
   return (
     <div className="relative shrink-0" ref={ref}>
@@ -39,6 +45,15 @@ export function WorkspaceSwitcher() {
         aria-label="Switch workspace"
       >
         <span className="font-mono uppercase">{active ? active.name : 'Workspaces'}</span>
+        {litTotal > 0 && (
+          <span
+            className="rounded bg-status-conditional/15 px-1 font-mono text-[10px] font-bold text-status-conditional"
+            title={`${litTotal} change${litTotal === 1 ? '' : 's'} across your rooms since you last looked`}
+            data-testid="rooms-lit"
+          >
+            {litTotal}
+          </span>
+        )}
         <ChevronDown size={12} className={clsx('text-grey transition-transform', open && 'rotate-180')} />
       </button>
 
@@ -47,6 +62,7 @@ export function WorkspaceSwitcher() {
           {WORKSPACES.map((w) => {
             const entitled = !me || capAtLeast(me.entitlements[w.id], 'view');
             const isActive = w.id === activeWorkspace;
+            const room = rooms?.[w.id] ?? null;
             return (
               <button
                 key={w.id}
@@ -70,7 +86,19 @@ export function WorkspaceSwitcher() {
                   {isActive ? <Check size={13} className="text-cyan-600 dark:text-cyan-400" /> : !entitled ? <Lock size={12} className="text-grey" /> : null}
                 </span>
                 <span className="min-w-0">
-                  <span className="block font-mono text-[11px] font-bold uppercase tracking-wide text-navy">{w.name}</span>
+                  <span className="flex items-center gap-1.5 font-mono text-[11px] font-bold uppercase tracking-wide text-navy">
+                    {w.name}
+                    {room && room.changed > 0 && (
+                      <span
+                        className="flex items-center gap-1 text-[10px] font-medium normal-case tracking-normal text-status-conditional"
+                        title={room.top ? `${room.top.kind}: ${room.top.title}` : undefined}
+                        data-testid={`room-lit-${w.id}`}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-status-conditional" aria-hidden="true" />
+                        {room.changed}
+                      </span>
+                    )}
+                  </span>
                   <span className="block truncate text-[10px] text-grey">{w.mission}</span>
                 </span>
               </button>

@@ -214,7 +214,6 @@ export function Roadmap() {
                     stroke="#06b6d4"
                     strokeWidth="2"
                     strokeDasharray="4,4"
-                    className="animate-pulse-beacon"
                   />
                 );
               });

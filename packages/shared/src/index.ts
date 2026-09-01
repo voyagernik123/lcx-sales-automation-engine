@@ -256,3 +256,7 @@ export {
 // it: a hand-maintained name list is a second place to forget, with no signal until an emit
 // build in Docker order fails.
 export * from './geometry/index.js';
+
+// THE WATCH (S4 of INSTRUMENT_100X_PLAN.md): wire shape + ranking prior, shared by the API composer
+// and the shell's arrival. Wholesale, for the reason recorded above.
+export * from './watch.js';

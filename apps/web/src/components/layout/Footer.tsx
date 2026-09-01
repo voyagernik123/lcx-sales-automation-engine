@@ -140,7 +140,7 @@ export function Footer() {
               ? 'bg-emerald-500'
               : conn === 'degraded'
                 ? 'bg-amber-500'
-                : 'animate-pulse-beacon bg-red-500',
+                : 'bg-red-500',
           )}
         />
         {conn === 'online'

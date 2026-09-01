@@ -7,6 +7,7 @@ import { clearOperatorEmail } from '@/lib/apiClient';
 import { storage } from '@/lib/persistence';
 import { useAccessStore } from '@/stores/useAccessStore';
 import { NotificationBell } from './NotificationBell';
+import { WatchStrip } from './WatchStrip';
 import { LcxMark } from '@/components/brand/LcxMark';
 import { isTerminal } from '@/lib/container';
 
@@ -203,6 +204,10 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
           {import.meta.env.PROD ? 'LIVE' : 'LOCAL'}
         </span>
 
+        {/* THE WATCH (S4): the arriving officer's board — the one mount of the arrival driver. */}
+        <div className="hidden min-w-0 max-w-[40vw] lg:block" data-tauri-drag-region={noDrag}>
+          <WatchStrip />
+        </div>
         <span className="contents" data-tauri-drag-region={noDrag}>
           <NotificationBell />
         </span>

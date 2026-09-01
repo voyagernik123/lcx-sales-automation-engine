@@ -35,7 +35,7 @@ export function SidebarFieldNotes() {
         <span className="text-micro font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-400">
           LCX Field Notes
         </span>
-        <span className="ml-auto h-1.5 w-1.5 rounded-full bg-cyan-500 animate-pulse-beacon" />
+        <span className="ml-auto h-1.5 w-1.5 rounded-full bg-cyan-500" />
       </div>
       <p
         key={index}

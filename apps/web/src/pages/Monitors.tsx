@@ -103,7 +103,7 @@ export function Monitors() {
                 <span className="ml-auto text-micro text-grey num-tabular">{m.lastMatchCount} match{m.lastMatchCount === 1 ? '' : 'es'}</span>
                 <button onClick={() => void toggle(m)} title={m.enabled ? 'Enabled — click to pause' : 'Paused'}
                   className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-micro font-bold ${m.enabled ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-line text-grey'}`}>
-                  <span className={`h-1.5 w-1.5 rounded-full ${m.enabled ? 'animate-pulse bg-emerald-500' : 'bg-grey/50'}`} />
+                  <span className={`h-1.5 w-1.5 rounded-full ${m.enabled ? 'bg-emerald-500' : 'bg-grey/50'}`} />
                   {m.enabled ? 'Live' : 'Paused'}
                 </button>
                 <button onClick={() => void remove(m.id)} className="text-grey hover:text-red-500"><Trash2 size={13} /></button>

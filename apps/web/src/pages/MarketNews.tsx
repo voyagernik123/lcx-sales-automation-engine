@@ -178,7 +178,7 @@ export function MarketNews() {
               title={live ? 'Live auto-refresh on — click to pause' : 'Auto-refresh paused — click to resume'}
               className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-micro font-semibold transition-colors ${live ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300' : 'border-line text-grey hover:text-navy'}`}
             >
-              <span className={`h-1.5 w-1.5 rounded-full ${live ? 'animate-pulse bg-emerald-500' : 'bg-grey/50'}`} />
+              <span className={`h-1.5 w-1.5 rounded-full ${live ? 'bg-emerald-500' : 'bg-grey/50'}`} />
               {live ? 'Live' : 'Paused'}
             </button>
             <Button variant="secondary" size="sm" onClick={() => void refresh()} disabled={refreshing}>

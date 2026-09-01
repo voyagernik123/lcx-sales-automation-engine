@@ -1,4 +1,5 @@
 import { AiProse } from '@/components/ai/AiProse';
+import { Skeleton } from '@/components/shared/LoadingSkeleton';
 import { useEffect, useState } from 'react';
 import { Sparkles, Copy, Check, Save, X } from 'lucide-react';
 import { fetchPlay, savePlay, type PlayDraft } from '@/lib/api/intel';
@@ -79,7 +80,7 @@ export function DraftPanel({ subjectId, onClose }: { subjectId: string; onClose:
         {play === 'loading' ? (
           <div className="space-y-2 p-4">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="h-6 animate-pulse rounded bg-ice-soft/60 dark:bg-ice-soft/10" />
+              <Skeleton key={i} className="h-6" />
             ))}
           </div>
         ) : play === 'error' || !play ? (

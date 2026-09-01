@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { Skeleton } from '@/components/shared/LoadingSkeleton';
 import { useNavigate } from 'react-router-dom';
 import { Star, Flag, Briefcase, ExternalLink, ShieldCheck } from 'lucide-react';
 import { getSource, type Observation } from '@lcx/shared';
@@ -212,7 +213,7 @@ export function ProvenancePanel({ subjectType, subjectId }: { subjectType: strin
       {obs === null ? (
         <div className="space-y-1.5">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="h-7 animate-pulse rounded bg-ice-soft/60 dark:bg-ice-soft/10" />
+            <Skeleton key={i} className="h-7" />
           ))}
         </div>
       ) : obs.length === 0 ? (

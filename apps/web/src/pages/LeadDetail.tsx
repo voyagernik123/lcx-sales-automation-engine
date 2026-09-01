@@ -1,4 +1,5 @@
 import { useEffect, useCallback, useRef, useState } from 'react';
+import { Skeleton } from '@/components/shared/LoadingSkeleton';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Globe, FileText, ExternalLink, ChevronDown, ChevronRight, CheckCircle, XCircle, RefreshCw, Search, Users, Activity, Database, Award, Plus, Pencil, X, Mail, Send, ThumbsUp, ThumbsDown, FileOutput, Zap } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -567,12 +568,12 @@ export function LeadDetail() {
             )}
             title={nextStep.anchor === 'gate' ? 'Jump to the gate banner for the exact blockers' : 'Jump to Sequences to enroll this lead'}
           >
-            <span className={clsx('h-1.5 w-1.5 rounded-full animate-pulse', nextStep.anchor === 'gate' ? 'bg-amber-500' : 'bg-cyan-500')} />
+            <span className={clsx('h-1.5 w-1.5 rounded-full', nextStep.anchor === 'gate' ? 'bg-amber-500' : 'bg-cyan-500')} />
             {nextStep.label}
           </button>
         ) : (
           <span className="ml-auto flex items-center gap-1.5 rounded-full bg-cyan-50 dark:bg-cyan-950/30 border border-cyan-200 dark:border-cyan-800 px-3 py-1 text-micro font-bold text-cyan-700 dark:text-cyan-300">
-            <span className="h-1.5 w-1.5 rounded-full bg-cyan-500 animate-pulse" />
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan-500" />
             {nextStep.label}
           </span>
         ))}
@@ -913,7 +914,7 @@ export function LeadDetail() {
                   {sequencesLoading ? (
                     <div className="space-y-1.5">
                       {[0, 1, 2].map(i => (
-                        <div key={i} className="h-8 animate-pulse rounded bg-ice-soft dark:bg-ice-soft/10" />
+                        <Skeleton key={i} className="h-8" />
                       ))}
                     </div>
                   ) : messages.length === 0 ? (

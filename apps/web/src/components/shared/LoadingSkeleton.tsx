@@ -2,6 +2,23 @@ import { useId } from 'react';
 
 const pulse = 'animate-pulse rounded bg-ice-soft dark:bg-ice-soft/10';
 
+export interface SkeletonProps {
+  className?: string;
+  /** Announce as a status region with this label; omit for a purely visual placeholder. */
+  label?: string;
+}
+
+/**
+ * One placeholder of the caller's shape for a request in flight. Since S4 this file is the ONLY
+ * place `animate-pulse` may live (lib/__tests__/oneWatch.test.ts): a page that wants a loading
+ * shape composes this instead of pulsing on its own.
+ */
+export function Skeleton({ className = '', label }: SkeletonProps) {
+  return label
+    ? <div className={`${pulse} ${className}`} role="status" aria-label={label} />
+    : <div className={`${pulse} ${className}`} aria-hidden="true" />;
+}
+
 export interface TableSkeletonProps {
   rows?: number;
   cols?: number;

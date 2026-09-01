@@ -163,7 +163,7 @@ export function SelectOperator() {
 
         <div className="animate-fadeIn mt-9">
           <div className="flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-700 dark:text-cyan-400">
-            <span className="h-1.5 w-1.5 animate-pulse-beacon rounded-full bg-cyan-600 dark:bg-cyan-400" />
+            <span className="h-1.5 w-1.5 rounded-full bg-cyan-600 dark:bg-cyan-400" />
             Authorized access only
           </div>
           <h1 className="mt-3 text-[28px] font-bold leading-tight tracking-[-0.02em] text-navy">Sign in to the desk</h1>

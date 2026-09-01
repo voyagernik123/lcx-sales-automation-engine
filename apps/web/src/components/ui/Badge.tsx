@@ -8,7 +8,7 @@ const statusStyles: Record<BadgeStatus, string> = {
 const dotStyles: Record<BadgeStatus, string> = {
   ready: 'bg-status-ready',
   conditional: 'bg-status-conditional',
-  blocked: 'bg-status-blocked animate-pulse-beacon',
+  blocked: 'bg-status-blocked',
   deferred: 'bg-status-deferred',
   unverified: 'bg-status-unverified',
 };

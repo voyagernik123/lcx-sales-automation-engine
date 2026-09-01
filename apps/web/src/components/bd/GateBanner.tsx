@@ -72,7 +72,7 @@ export function GateBanner({ check, compact = false, id }: { check: GateCheckSta
   if (loading) {
     return (
       <div id={id} className="flex items-center gap-1.5 text-micro text-grey" role="status">
-        <span className="h-1.5 w-1.5 rounded-full bg-slate-400 animate-pulse" />
+        <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
         Checking outreach gate…
       </div>
     );

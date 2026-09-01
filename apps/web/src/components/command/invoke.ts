@@ -15,6 +15,7 @@
  */
 
 import { request, ApiError } from '@/lib/apiClient';
+import { commit, refuse } from '@/lib/juice';
 
 export interface InvokeResult {
   ok: true;
@@ -41,15 +42,28 @@ export async function invoke(
   subjectType: string,
   subjectId: string,
   params: Record<string, unknown>,
+  /**
+   * The element that asked (S4). The feel plays HERE, at the one seam every governed write passes
+   * through, so no page has to remember: `commit` snaps it on success, `refuse` shakes it and
+   * announces the remedy on a refusal. Defaults to the focused element; null plays nothing visible
+   * but still announces.
+   */
+  anchor?: Element | null,
 ): Promise<InvokeResult | Refusal> {
+  const el = anchor === undefined ? (typeof document !== 'undefined' ? document.activeElement : null) : anchor;
   try {
     const res = await request<{ data: { action: string; result: Record<string, unknown> } }>(
       `/v1/actions/${actionId}/invoke`,
       { method: 'POST', body: { subjectType, subjectId, params }, auth: true },
     );
+    commit(el);
     return { ok: true, result: res.data.result };
   } catch (err) {
-    if (err instanceof ApiError) return classify(err, subjectType);
+    if (err instanceof ApiError) {
+      const refusal = classify(err, subjectType);
+      refuse(el, refusal.remedy);
+      return refusal;
+    }
     return {
       ok: false,
       code: 'NETWORK',
