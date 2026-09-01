@@ -79,6 +79,11 @@ const ROOT = join(HERE, '..', '..', '..');
 const GL_SRC = join(ROOT, 'packages', 'gl', 'src');
 const WEB_SRC = join(ROOT, 'apps', 'web', 'src');
 const JSON_OUT = process.argv.includes('--json');
+/* `--visible` puts the probe window on-screen and in front for ~2 s. Off-screen is the default
+   and it is a HIDDEN document to WebKit, which SKIPS view transitions (measured: `ready` rejects
+   "document visibility state is hidden"). The skip path is worth measuring in its own right — it is
+   the reduced-motion fallback — but the ANIMATED path needs a visible window. */
+const VISIBLE = process.argv.includes('--visible');
 
 /* ── 0 · SOURCE WALK ────────────────────────────────────────────────────────────────
  * Tests are excluded deliberately: `flat/sharedCost.test.ts:114` stubs `getExtension` to
@@ -225,6 +230,31 @@ const NEG_CONTROL = 'WEBGL_probe_negative_control_must_be_absent';
 const probeJs = `
 window.__probe = (function () {
   const out = { ok: false, extensions: {}, params: {}, behaviour: {} };
+    /* S3 CONTINUITY — BEHAVIOUR, NOT PRESENCE. typeof document.startViewTransition proves a
+       function exists; it does not prove WebKit runs a transition. So one is started against a
+       real DOM change and both of its promises are awaited, with the timings recorded. The
+       results land in out.behaviour AFTER this function returns, which is why the Swift host
+       evaluates on a delay rather than in didFinish. No backticks in this block: it lives inside
+       a template literal. */
+    out.behaviour.view_transition_present = typeof document.startViewTransition === 'function';
+    if (out.behaviour.view_transition_present) {
+      try {
+        var vtBox = document.createElement('div');
+        vtBox.style.cssText = 'width:40px;height:40px;background:#2C6BFF;view-transition-name:probe';
+        document.body.appendChild(vtBox);
+        var vtT0 = performance.now();
+        var vt = document.startViewTransition(function () { vtBox.style.width = '80px'; });
+        vt.ready.then(function () { out.behaviour.view_transition_ready_ms = Math.round(performance.now() - vtT0); })
+          .catch(function (e) { out.behaviour.view_transition_ready_error = String(e); });
+        vt.finished.then(function () {
+          out.behaviour.view_transition_finished_ms = Math.round(performance.now() - vtT0);
+          out.behaviour.view_transition_ran = true;
+        }).catch(function (e) { out.behaviour.view_transition_ran = false; out.behaviour.view_transition_error = String(e); });
+      } catch (e) { out.behaviour.view_transition_ran = false; out.behaviour.view_transition_error = String(e); }
+    } else {
+      out.behaviour.view_transition_ran = false;
+    }
+
   try {
     const c = document.createElement('canvas');
     c.width = 96; c.height = 32;
@@ -364,9 +394,13 @@ app.setActivationPolicy(.accessory)
 let html = ${JSON.stringify(`<!doctype html><html><body><script>${probeJs}</script></body></html>`)}
 final class D: NSObject, WKNavigationDelegate {
   func webView(_ w: WKWebView, didFinish n: WKNavigation!) {
-    w.evaluateJavaScript("JSON.stringify(window.__probe)") { v, e in
-      if let e = e { print("EVAL-ERROR \\(e)"); exit(2) }
-      print((v as? String) ?? "EVAL-NIL"); exit(0)
+    // A view transition settles asynchronously; give promise-borne behaviour a moment before
+    // reading the record. 1.5 s is ~17x the measured finish.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+      w.evaluateJavaScript("JSON.stringify(window.__probe)") { v, e in
+        if let e = e { print("EVAL-ERROR \\(e)"); exit(2) }
+        print((v as? String) ?? "EVAL-NIL"); exit(0)
+      }
     }
   }
   func webView(_ w: WKWebView, didFail n: WKNavigation!, withError e: Error) {
@@ -380,10 +414,12 @@ wv.navigationDelegate = d
 // An unparented WKWebView can legitimately be refused a GL context, and that refusal would
 // be a false negative about an app whose webview IS a window's content view. Off-screen and
 // only ever orderBack, so it joins the window server without becoming visible or key.
-let win = NSWindow(contentRect: NSRect(x: -2400, y: -2400, width: 800, height: 600),
+let visible = ${VISIBLE ? 'true' : 'false'}
+let win = NSWindow(contentRect: NSRect(x: visible ? 80 : -2400, y: visible ? 80 : -2400, width: 800, height: 600),
                    styleMask: [.borderless], backing: .buffered, defer: false)
 win.contentView = wv
-win.orderBack(nil)
+// --visible: on-screen and in front, so the document is VISIBLE and WebKit runs the transition.
+if visible { win.orderFrontRegardless() } else { win.orderBack(nil) }
 wv.loadHTMLString(html, baseURL: URL(string: "http://localhost/"))
 DispatchQueue.main.asyncAfter(deadline: .now() + 25) { print("TIMEOUT"); exit(3) }
 app.run()
@@ -462,6 +498,8 @@ if (JSON_OUT) {
   console.log(`  positive control — drew and read back a green pixel   ${B(r.behaviour.positive_control_drew)}`);
   console.log(`  negative control — fake extension reported absent     ${B(r.negative_control_absent)}`);
   console.log(`  R32F upload check — texel0~0 and texel1~255           ${B(r.behaviour.r32f_3d_upload_valid)}`);
+  console.log(`  view transition — present / ran / finished ms          ${B(r.behaviour.view_transition_present)} / ${B(r.behaviour.view_transition_ran)} / ${r.behaviour.view_transition_finished_ms ?? '?'}`);
+  if (r.behaviour.view_transition_ready_error) console.log(`    ready: ${r.behaviour.view_transition_ready_error} — hidden document takes the SKIP path; run with --visible for the animated path`);
   if (!instrumentOk) console.log('  >> INSTRUMENT NOT VALID — results below are not evidence.');
 
   console.log('\nEXTENSIONS REQUIRED (derived from getExtension call sites in shipping source)');

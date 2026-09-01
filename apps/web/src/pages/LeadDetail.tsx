@@ -430,7 +430,8 @@ export function LeadDetail() {
           <ArrowLeft size={16} />
         </button>
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <h1 className="text-lg font-bold truncate text-navy">{lead.name}</h1>
+          {/* ONE CAMERA (INSTRUMENT S3): the same name the pipeline row carries — see LeadTable. */}
+          <h1 className="text-lg font-bold truncate text-navy" style={{ viewTransitionName: `lead-${lead.id}` }}>{lead.name}</h1>
           {lead.ticker && <span className="text-micro font-mono text-grey bg-ice-soft dark:bg-navy-deep px-1.5 py-0.5 rounded">{lead.ticker}</span>}
           <BandBadge band={band} />
           <MarketTag market={marketTag} />

@@ -83,6 +83,10 @@ export function InspectorDrawer({ isOpen, onClose, onEscape, title, onDock, chil
       <div
         ref={panelRef}
         tabIndex={-1}
+        /* ONE CAMERA (INSTRUMENT S3): naming the panel makes opening and closing it a morph
+         * through the browser's view-transition pair rather than a cut. One name, because
+         * one inspector is open at a time — a second would be a duplicate the browser skips. */
+        style={{ viewTransitionName: 'inspector' }}
         /* This drawer is focused on open (below) but had no role, so AT
          * announced the move into an unnamed group. role="dialog" + a name from
          * the header is what makes "the inspector opened, and it is about X"

@@ -386,19 +386,37 @@ async function captureRoute(browser, route, theme) {
     const raf0 = await page.evaluate(() => globalThis.__instrument?.rafCalls ?? 0);
     await page.waitForTimeout(1000);
     const raf1 = await page.evaluate(() => globalThis.__instrument?.rafCalls ?? 0);
-    // Continuity: one client-side navigation and back, through the app's own router.
+    // Continuity: one client-side navigation and back, THROUGH THE APP'S OWN LINKS. The first version
+    // faked it with pushState + a synthetic popstate, which React Router serves from its history
+    // listener — never through `router.navigate`, which is where S3 defaults the view transition. A
+    // probe that measured that path would have reported S3 as zero while every real click transitioned.
+    // So: click the first in-app link that leaves this route, then go back.
+    // WHAT WAS CLICKED IS RECORDED, so "vt = 0" can never mean "the probe never navigated": the first
+    // version matched a hidden sidebar entry, the click silently failed, and zero transitions read as
+    // a finding about the app. Only a VISIBLE link counts, and its href and the outcome travel with
+    // the row.
+    let nav = { linkCount: 0, clicked: null, error: null, urlAfterClick: null };
     if (route.seated && reached === 'REACHED') {
-      await page.evaluate(() => { history.pushState({}, '', '/settings'); dispatchEvent(new PopStateEvent('popstate')); });
-      await page.waitForTimeout(400);
-      await page.evaluate(() => { history.back(); });
-      await page.waitForTimeout(400);
+      const links = page.locator(`a[href^="/"]:not([href="${route.probe}"]):not([href^="/lcxos"]):not([target]):visible`);
+      nav.linkCount = await links.count().catch(() => 0);
+      if (nav.linkCount > 0) {
+        const link = links.first();
+        nav.clicked = await link.getAttribute('href').catch(() => null);
+        try {
+          await link.click({ timeout: 5_000 });
+          await page.waitForTimeout(700);
+          nav.urlAfterClick = new URL(page.url()).pathname;
+          await page.goBack({ waitUntil: 'domcontentloaded', timeout: 10_000 });
+          await page.waitForTimeout(500);
+        } catch (e) { nav.error = String(e).slice(0, 120); }
+      }
     }
     const read = await page.evaluate(READ_PAGE);
     mkdirSync(SHOTS, { recursive: true });
     const stem = `${route.probe.replace(/[^a-z0-9]+/gi, '_').replace(/^_|_$/g, '') || 'root'}-${theme}`;
     let shot = null;
     try { const png = await page.screenshot({ timeout: 15_000 }); writeFileSync(join(SHOTS, `${stem}.png`), png); shot = `${stem}.png`; } catch { /* a missing shot is reported as such */ }
-    return { theme, reached, rafPerSecond: raf1 - raf0, ...read, pageErrors: errs.slice(0, 5), shot };
+    return { theme, reached, rafPerSecond: raf1 - raf0, ...read, nav, pageErrors: errs.slice(0, 5), shot };
   } catch (e) {
     return { theme, reached: 'CAPTURE_FAILED', detail: String(e).slice(0, 160), pageErrors: errs.slice(0, 5) };
   } finally { await page.close(); }

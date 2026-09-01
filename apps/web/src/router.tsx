@@ -6,6 +6,7 @@ import { ToastContainer, useToastStore } from '@/components/shared/Toast';
 import { useOperatorStore } from '@/stores';
 import { isTerminal } from '@/lib/container';
 import { verifyPersistedIdentity } from '@/lib/apiClient';
+import { prefersReducedMotion } from '@/lib/motion';
 
 /**
  * Every workspace page is code-split (plan D2): only the shell + the front
@@ -320,3 +321,47 @@ export const router = createBrowserRouter([
     ],
   },
 ]);
+
+/*
+ * ══════════════════════════════════════════════════════════════════════════════
+ *  ONE CAMERA — S3 of INSTRUMENT_100X_PLAN.md: every navigation is a view transition
+ * ══════════════════════════════════════════════════════════════════════════════
+ *
+ * S0 measured 0 of 79 route commits attempting a view transition — every navigation in the
+ * app was a hard cut. THE SOLID (`DIMENSIONAL_100X_PLAN.md`) wanted one camera and proposed
+ * building it as a raymarched shell; the browser ships it as a primitive, and react-router
+ * 6.30 carries a `viewTransition` option from every <Link> and every navigate() into this
+ * data router, where RouterProvider itself performs `document.startViewTransition` around
+ * the state update with the commit timing already correct (react-router-dom/dist/index.js,
+ * the `viewTransitionOpts` branch). So the whole camera is ONE default, set here.
+ *
+ * WHY A WRAP AND NOT 80 PROPS. `useNavigate()` and <Link> read `router.navigate` at call time
+ * through the data-router context, so defaulting the option on the instance covers every
+ * caller in the app — pages that never heard of continuity get it, and a caller that
+ * deliberately passes `viewTransition: false` still wins (its options are spread last).
+ *
+ * REDUCED MOTION, TWICE. The option is read from `prefersReducedMotion()` at CALL time (never
+ * cached — the OS setting is live), so an operator who has asked for less motion never even
+ * starts a transition; and `globals.css` switches the transition pseudo-elements off under the
+ * same media query, so a caller that forces the option on still cuts for them. Two layers,
+ * because a courtesy that depends on every caller remembering it is not a courtesy.
+ *
+ * MEASURED BEFORE WIRED: on the shipping WebKit (the desktop probe, same framework binary as
+ * the app) `startViewTransition` is present and `finished` resolves in 87 ms; a hidden document
+ * takes the skip path cleanly — which is exactly the fallback the reduced-motion layer relies on.
+ *
+ * `history.go(n)` — a numeric `to` — takes no options and is passed through untouched.
+ *
+ * THE DEFAULT APPLIES ONLY WHEN THE CALLER SAID NOTHING, and the first version got this wrong in
+ * a way the instrument caught: <Link> forwards its `viewTransition` prop even when it is undefined,
+ * so `{ viewTransition: true, ...opts }` was clobbered by an explicit `undefined` on every click
+ * and the probe measured zero transitions after a real navigation. `??` on the caller's value is
+ * the whole fix: undefined and null take the default; an explicit false still wins.
+ */
+{
+  const nav = router.navigate.bind(router);
+  router.navigate = ((to: Parameters<typeof nav>[0], opts?: Parameters<typeof nav>[1]) => {
+    if (typeof to === 'number') return nav(to);
+    return nav(to, { ...(opts ?? {}), viewTransition: opts?.viewTransition ?? !prefersReducedMotion() });
+  }) as typeof router.navigate;
+}

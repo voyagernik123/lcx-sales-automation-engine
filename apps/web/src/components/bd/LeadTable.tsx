@@ -158,6 +158,11 @@ export function LeadTable({
                 data-lead-id={lead.id}
                 aria-selected={isSelected}
                 onClick={() => onSelect(lead.id)}
+                /* ONE CAMERA (INSTRUMENT S3): the row shares a view-transition name with the
+                 * lead's heading on /bd-pipeline/:id, so selecting it the row BECOMES the page
+                 * instead of cutting to it. Unique per lead; the table unmounts on navigation,
+                 * so the name never exists twice. */
+                style={{ viewTransitionName: `lead-${lead.id}` }}
                 // A row cannot become a <button> — it must stay a table row, and it
                 // holds its own buttons — so movement comes from the shared
                 // roving-tabindex hook rather than from `tabIndex={0}` on every row.

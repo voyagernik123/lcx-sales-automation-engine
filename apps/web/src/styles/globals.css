@@ -478,6 +478,28 @@ path.state:hover {
   }
 }
 
+/* ── One camera (INSTRUMENT S3) ────────────────────────────────────────────────
+ * Route commits are view transitions (router.tsx defaults the option on the data
+ * router). These rules are the whole of the camera's character: one duration, one
+ * easing, applied to the root snapshot pair. 180 ms is under the 200 ms an operator
+ * reads as "instant" and long enough that a cross-fade registers as continuity
+ * rather than a flicker. No transform on the root — the page does not slide; it
+ * becomes. Named elements (the inspector drawer; a lead row and its detail heading;
+ * per-object rows as S6 re-lays the desks) morph by geometry through the pseudo-
+ * element pair the browser creates for them, inheriting this timing.
+ *
+ * `prefers-reduced-motion` switches the transition OFF, not shorter: a 0.01 ms
+ * cross-fade is still a snapshot pair the compositor has to build, and the setting
+ * is the operator asking for the cut. router.tsx also skips the request under the
+ * same preference; the CSS half lives INSIDE the reduced-motion block below (the
+ * one such block in this file — `reducedMotion.test.ts` reads it by position), as
+ * the second layer for a caller that forces the option on. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+  animation-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
 /* ── Reduced motion (TERMINAL Phase 4) ──────────────────────────────────────
  * The app shipped 279 `transition-*` utilities, 54 `animate-*` utilities and
  * five CSS `transition:` declarations, and honoured `prefers-reduced-motion`
@@ -533,6 +555,16 @@ path.state:hover {
    */
   path.state {
     transition-duration: 0.01ms !important;
+  }
+
+  /* One camera (INSTRUMENT S3): view transitions are OFF here, not shortened — the
+   * `*:not(.motion-essential)` rule above cannot reach these pseudo-elements (they
+   * hang off the root, outside the element tree), so they are named. router.tsx
+   * already skips the request under this preference; this is the second layer. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
   }
 }
 

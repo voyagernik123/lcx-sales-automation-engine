@@ -80,6 +80,52 @@ closes `createBrowserRouter`) to default `viewTransition: !prefersReducedMotion(
 (Swift host: delay `evaluateJavaScript` ~1.5 s) and RUN it (`swiftc` present) before wiring; ratchet
 `oneCamera.test.ts`; re-measure continuity (S0 runtime `vt` count) → expect 79.
 
+### S4 BUILD SPEC (grounded 2026-09-01; execute after S3 commits)
+**Sources, all already held (cite):** `audit_log(actor, action, entity, entity_id, meta, created_at)` — 13 write
+sites; compartment by entity prefix exactly as `routes/audit.ts` does (`^gps_`→gps, `^marketing_`→marketing;
+extend: `^command_`→command, `^dist_`→distribution, `deals|projects|handoffs|tasks|deal_|project_|outreach_|
+sequence_`→sales, `decisions|entitlement_|approval_|purpose:`→governance). Deltas by `updated_at` since the
+watermark: deals (stage, won_at), handoffs, tasks (due_at, completed_at), gps_engagement (accepted_at,
+deposit_paid_at), gps_target, gps_demand_candidate (created_at, decided_at), gps_invoice (issued_at, paid_at,
+disputed_at, voided_at — via `invoiceAgingSummary(pool, asOf)` for open aging), gps_jurisdiction_profile
+(`entry.reviewBy` within `reviewWarningDays` or past — via `loadPerimeter`+`perimeterView`), gps_deliverable
+(accepted_at), gps_milestone (due_by), marketing_record (cleared_at/published_at), decisions (outcome_at),
+notifications (has `workspace` since 0067; bus `notificationBus`/`emitNotification` in
+`apps/api/src/notifications/events.ts`; SSE `/v1/notifications/stream` with stream-token).
+**Entitlements:** `loadEntitlements(pool, actorId): EntitlementMap` + `capAtLeast(map[ws], 'view')` (shared).
+**Endpoint:** `GET /v1/watch?since=<ISO>` (requireOperator; no workspace gate — it filters by entitlement per item).
+Response `{ since, asOf, items: WatchItem[], byWorkspace: Record<ws, {changed: n, top: WatchItem|null}>,
+unranked: n, absent: string[] }`. `WatchItem = { id, workspace, kind: 'money'|'liability'|'deadline'|'activity',
+rank, title, detail, href, at, source: 'audit'|'table'|'notification'|'perimeter'|'invoice' }`.
+**Ranking prior (stated, owner may override — one constant):** money (invoice paid/disputed/issued, deal won/lost/
+stage moved, engagement accepted/deposit) > liability (perimeter review expiring ≤ reviewWarningDays or past,
+conflict check amended, marketing gate refusal, refusal-shaped audit actions) > deadline (tasks due ≤ 48 h,
+milestones due_by, target deadline_at) > activity (everything else). Cap 12; the rest is one count line.
+**Refusals:** no rows since watermark → `absent` carries the sentence "nothing recorded since <since> — a
+statement about the record, not the world"; a missing register → named in `absent`; Render asleep → the shell
+shows the last watermark and says the watch is unavailable, never animates a guess.
+**Web:** `lib/api/watch.ts` fetch; `lib/useArrival.ts` — on mount and on `visibilitychange`→visible after ≥ 5 min
+hidden, read `useLastSeen('watch')`-style global watermark (scoped key), fetch, then ONE sweep phase-locked to
+`lib/clock.ts`: `WatchStrip` (TopNav, beside the bell) reveals ranked items in rank order at 120 ms steps
+(reduced motion → all at once, no motion); `Sidebar` rooms with `byWorkspace[ws].changed > 0` get a lit dot
+(state colour, STILL — not a beacon); `KpiTicker` first item = top watch item. Everything else still.
+**Feel wiring:** `components/command/invoke.ts` is the single governed-action seam (15 client sites route
+through `/v1/actions/:id/invoke`; VerbPanel already uses `commit`/`refuse`) — add `commit(el)` on success and
+`refuse(el, reason)` on a refusal INSIDE `invoke()` (accept an optional anchor element), so every governed
+action reacts without per-page wiring.
+**Ambient retirement (S0 list, non-test):** `animate-pulse-beacon` ×10 → still dots (Badge blocked, Footer red,
+Sidebar unread, KpiTicker SIM, SidebarFieldNotes, Settings, SelectOperator, Roadmap, Dashboard,
+CustomOntologyNode); `animate-pulse` ×13 → still skeletons/placeholders with a dated "loading since" where a
+request is in flight (LoadingSkeleton ×2, LeadDetail ×3, Monitors, MarketNews, KpiDashboard, Dashboard,
+SessionMode, DraftPanel, ProvenancePanel, ConversationPanel, AssessmentBlock, LiveOpsFeed, DealDetailPanel,
+BatnaPanel, GateBanner). `animate-spin` ×24 stay ONLY where a request is genuinely in flight and carry
+`.motion-essential` (already the rule); `animate-slide-in` ×2 (toasts) stay — a toast is a reaction.
+**Ratchet `oneWatch.test.ts`:** no `animate-pulse-beacon` in src; `animate-pulse` only inside LoadingSkeleton
+with an in-flight guard; `invoke.ts` calls `commit`/`refuse`; the watch route filters by entitlement (test with a
+gps-less operator sees no gps items); ranking prior is one exported constant with the four kinds in order.
+**Measure after:** S0 runtime `routesWithMotionAtRest` 77 → 0 (except in-flight spinners); static ambient 49 → ≤ 24
+(spins) ; feel files 5 → (invoke.ts + strip).
+
 ## 3 · THE STANDING RULES OF THIS BUILD — the quality bar, made mechanical
 
 1. **Measured before claimed.** A system merges only with its S0 before/after in the commit body.
@@ -136,3 +182,23 @@ closes `createBrowserRouter`) to default `viewTransition: !prefersReducedMotion(
   "pins, for paper, every dark-mode token this page can reach") — the four NEW scenery tokens are dark-overridden
   with no print pin. Correct catch, not a flake: pinned `--ground/--structure/--sky-horizon/--sky-zenith` at
   their light values in `PrintStyles.tsx` (with the token, not with the use). Gate #3 next.
+- 2026-09-01 · S2 gate #3 clean (0 npm errors; 358 + 3,520 + 2,762 + 20 + shared 1,997) → committed 180c939,
+  pushed; live verification running. S3 wired: router wrap (default `viewTransition: !prefersReducedMotion()`,
+  numeric `to` passes through), `::view-transition-old/new(root)` 180 ms + reduced-motion `animation: none`,
+  InspectorDrawer named `inspector`, LeadTable row ↔ LeadDetail `<h1>` share `lead-<id>`, ratchet
+  `oneCamera.test.ts`; probe gained the behavioural check + `--visible`. ANIMATED PATH MEASURED on the shipping
+  WebKit with the window visible: `ready` 212 ms, `finished` 452 ms, `ran = true`.
+- 2026-09-01 · S2 VERIFIED LIVE 180c939 both surfaces (deployed CSS carries `--page-bg:244 247 252` and
+  `--ground`; index.html pre-hydration `#F4F7FC`; Render success). S3 gate running. Instrument fix: the
+  continuity probe's synthetic pushState/popstate never reached `router.navigate` (React Router serves popstate
+  from its history listener) and its click on a hidden link failed silently — it now clicks a VISIBLE in-app
+  link and records href / url-after / error beside `vt`, so zero can never mean "never navigated".
+- 2026-09-01 · THE INSTRUMENT CAUGHT A REAL S3 BUG: with a proven navigation, `vt` stayed 0 because `<Link>`
+  forwards `viewTransition: undefined` and `{ viewTransition: true, ...opts }` was clobbered by the explicit
+  undefined. Fix: `viewTransition: opts?.viewTransition ?? !prefersReducedMotion()`. Sanity re-run: **vt = 2**
+  per theme on /states and /gps (click + return both transition). S3 gate #1 red only on `reducedMotion.test`
+  (it reads the FIRST prefers-reduced-motion block; mine had landed first) → override folded into the Phase-4
+  block. Gate #2 + after-s3 runtime capture next.
+- 2026-09-01 · S3 ROOT GATE CLEAN (0 npm errors; 1,997 + 358 + 3,520 + 2,766 + 20; perf OK). NOTE FOR THE RESUME
+  PROTOCOL: an earlier "gate" ran from `apps/web` (cwd slip) and printed only web totals — a gate log that lacks
+  all five stage totals is NOT a gate. After-s3 capture in flight; S3 commits with its `routesWithContinuity`.
