@@ -222,12 +222,22 @@ export const SHIPPED_MIGRATIONS: Readonly<Record<string, string>> = {
  *          `PLACEHOLDER` with the number struck through — which is the true state.
  */
 export const PENDING_MIGRATIONS: readonly string[] = [
-  /* EMPTY SINCE 2026-08-26, and for the first time since early August: the owner ran
-   * APPLY_0068_0074.sql (verification 6/6 present) after APPLY_GPS_0075_0082.sql
-   * (14/14) the day before, and every name moved to SHIPPED with its digest. The list
-   * stays because the DISCIPLINE stays — the next migration lands here first, and the
-   * two times this program found applied-but-unpinned files (0052-0067 on 2026-08-04,
-   * 0068-0074 on 2026-08-25) it was THIS list being read that surfaced them. */
+  /* The list was empty 2026-08-26 → 2026-09-01 (see the note below on the discipline).
+   *
+   * 0083 exists because a scratch-chain test of the packet apply caught what five
+   * UI approvals never got far enough to hit: 0079 added the pricing_policy packet
+   * kind in code, and 0076's CHECK on gps_packet_decision never learned the word —
+   * the sixth founder decision was UNSTORABLE at the database level. Ships to the
+   * owner inside APPLY_GPS_PACKETS.sql (verbatim prelude), moves to SHIPPED with
+   * its digest once that file's verification block reports on prod. */
+  '0083_gps_packet_kind_pricing_policy.sql',
+
+  /* EMPTY SINCE 2026-08-26 held until 0083 above: the owner ran APPLY_0068_0074.sql
+   * (verification 6/6 present) after APPLY_GPS_0075_0082.sql (14/14) the day before,
+   * and every name moved to SHIPPED with its digest. The list stays because the
+   * DISCIPLINE stays — the next migration lands here first, and the two times this
+   * program found applied-but-unpinned files (0052-0067 on 2026-08-04, 0068-0074 on
+   * 2026-08-25) it was THIS list being read that surfaced them. */
 ];
 
 /**
