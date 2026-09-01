@@ -190,6 +190,25 @@ export interface SceneTheme {
    */
   readonly skyHorizon: Radiance;
   readonly skyZenith: Radiance;
+  /**
+   * RADIANCE. THE PAGE — what surrounds a scene: the DOM canvas every card and every GL canvas sits
+   * on. Added by S2 of INSTRUMENT_100X_PLAN.md so the DOM's `--page-bg` has ONE author (this file)
+   * rather than a second palette in tokens.css. A radiance, like the sky stops, because a canvas
+   * clear or a sky fill that must come out as this hex goes through `toneMapComposite`.
+   *
+   * WHY IT IS NOT `ground`. The light ground is "the page tint deepened just enough that a white
+   * specular still reads brighter than the ground" (its own comment) — ground was derived FROM the
+   * page, so deriving the page from the ground inverted that and, measured, cost the weakest
+   * certified text role on the light canvas 10 levels of headroom (status green 4.93 → 4.54:1).
+   * The page's true twin is the SKY the camera sees behind a scene: on light it IS `skyZenith`.
+   *
+   * WHY DARK IS AUTHORED, NOT THE ZENITH. The dark zenith (#050810) is so near black that the
+   * shell's dark backdrop cannot create a perceptible gradient over it (0.03 against its own
+   * 0.05 floor — it passed on the previous canvas by 0.004), and a page must sit BELOW the plate
+   * so a card still reads as raised. #090E1B is the value that satisfies both, written here as
+   * the rig's decision so the DOM and the GL agree on it by construction.
+   */
+  readonly page: Radiance;
   /** Multiplies the environment contribution. Lower on light, where the ground already bounces. */
   readonly ambientGain: number;
   /** Key light intensity. HIGHER on light — form has to come from somewhere once ambient drops. */
@@ -220,7 +239,7 @@ export const ALBEDO_FIELDS: readonly ColourField[] = Object.freeze(
   ['ground', 'structure', 'plate', 'rule'] as const,
 );
 export const RADIANCE_FIELDS: readonly ColourField[] = Object.freeze(
-  ['skyHorizon', 'skyZenith', 'fog'] as const,
+  ['skyHorizon', 'skyZenith', 'fog', 'page'] as const,
 );
 
 /**
@@ -234,7 +253,7 @@ export const RADIANCE_FIELDS: readonly ColourField[] = Object.freeze(
  * scene is meant to dissolve — one fewer number to keep in step by hand.
  */
 export const AUTHORED_HEX: Readonly<Record<ThemeName, Readonly<Record<
-  'ground' | 'structure' | 'plate' | 'rule' | 'skyHorizon' | 'skyZenith', string
+  'ground' | 'structure' | 'plate' | 'rule' | 'skyHorizon' | 'skyZenith' | 'page', string
 >>>> = Object.freeze({
   dark: Object.freeze({
     ground: '#070B14',
@@ -243,6 +262,9 @@ export const AUTHORED_HEX: Readonly<Record<ThemeName, Readonly<Record<
     rule: '#26355A',
     skyHorizon: '#131C31',
     skyZenith: '#050810',
+    /* The DOM canvas. Sits between ground and plate — see `SceneTheme.page` for why it is not the
+       zenith (the shell's dark backdrop needs the headroom) and why it is not the ground. */
+    page: '#090E1B',
   }),
   light: Object.freeze({
     /*
@@ -259,6 +281,10 @@ export const AUTHORED_HEX: Readonly<Record<ThemeName, Readonly<Record<
     rule: '#B9C6E0',
     skyHorizon: '#DCE5F3',
     skyZenith: '#F4F7FC',
+    /* The DOM canvas IS the sky the camera sees behind a light scene. One level from the value
+       tokens.css used to author (#F4F6FB); measured, the weakest certified text role on it — status
+       green — goes from 4.93:1 to 4.97:1. See `SceneTheme.page`. */
+    page: '#F4F7FC',
   }),
 });
 
@@ -304,6 +330,7 @@ const build = (
     rule: toAlbedo(hex.rule),
     skyHorizon: toRadiance(hex.skyHorizon),
     skyZenith: toRadiance(hex.skyZenith),
+    page: toRadiance(hex.page),
     ambientGain: rig.ambientGain,
     keyGain: rig.keyGain,
     shadowStrength: rig.shadowStrength,

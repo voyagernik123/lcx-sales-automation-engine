@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "gen:tokens": "tsx scripts/gen-scenery-tokens.ts",
     "preview": "vite preview",
     "lint": "eslint src --ext ts,tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",

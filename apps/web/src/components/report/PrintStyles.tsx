@@ -117,11 +117,22 @@ export function PrintStyles() {
        white paper — the same class of defect as the refusal box that printed empty. (No backticks
        in here: this whole block is inside a template literal and one would terminate it.) */
     --control-border: 119 128 147;
-    /* Deliberately whiter than the light theme's own --page-bg (244 246 251): paper
-       is white, and printing a page tint wastes toner for no information. This is the
-       one value here that is NOT a copy of tokens.css, and the test below exempts it
-       by name so the exemption is visible rather than a silent mismatch. */
+    /* Deliberately whiter than the light theme's own --page-bg (244 247 252, the GL rig's
+       page since INSTRUMENT S2): paper is white, and printing a page tint wastes toner for
+       no information. This is the one value here that is NOT a copy of tokens.css, and the
+       test below exempts it by name so the exemption is visible rather than a silent
+       mismatch. */
     --page-bg: 255 255 255;
+    /* The rig's other scenery roles, generated into tokens.css by INSTRUMENT S2 and
+       overridden by the dark theme, pinned at their LIGHT values for paper. Nothing prints
+       them yet (their consumers are S5/S6), but a dark-overridden token with no print pin
+       prints the DARK value on white the day a consumer arrives — the class of defect the
+       print ratchets exist to refuse, so they are pinned with the token, not with the use.
+       Keep in step with the generated block (npm run gen:tokens -w apps/web). */
+    --ground: 232 237 246;
+    --structure: 195 206 224;
+    --sky-horizon: 220 229 243;
+    --sky-zenith: 244 247 252;
   }
 
   /* THE RELIEF PRINT PATH. Both selectors and both reasons are in the file header. */

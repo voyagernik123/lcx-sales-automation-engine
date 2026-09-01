@@ -6,7 +6,7 @@
   --grey: 90 98 114;          /* #5a6272 */
   --grey-light: 185 198 224;  /* #b9c6e0 */
   --grey-dark: 51 57 72;      /* #333948 */
-  --line: 185 198 224;        /* #b9c6e0 */
+  /* --line is GENERATED below (= the GL rig's `rule`) — see the scenery block after --control-border. */
 
   /* THE CONTROL BOUNDARY. A SECOND BORDER ROLE, because --line has two floors and can
    * only satisfy one of them.
@@ -77,8 +77,20 @@
    * that direction too: a `border-control` on a non-control fails. */
   --control-border: 119 128 147;  /* #778093 */
 
-  --card: 255 255 255;        /* #ffffff */
-  --page-bg: 244 246 251;     /* #f4f6fb */
+  /* SCENERY IS GENERATED, NOT AUTHORED (S2 ONE MATERIAL). --page-bg, --card and --line — the DOM's
+   * ground, plate and rule — are derived from packages/gl/src/look/theme.ts, the same rig that lights
+   * every GL environment, so a card standing on a relief is drawn by the author of the ground it
+   * stands on. S0 measured the seam this closes: 2.78 / 3.09 / 3.13 ΔE2000 on three of six pairs.
+   * lib/__tests__/oneMaterial.test.ts fails the build if these blocks drift from theme.ts. */
+  /* @generated scenery — derived from packages/gl/src/look/theme.ts by scripts/gen-scenery-tokens.ts (S2 ONE MATERIAL). Do not edit; run `npm run gen:tokens -w apps/web`. */
+  --page-bg: 244 247 252;      /* = page #F4F7FC — the DOM canvas — the sky a scene sits in front of */
+  --card: 255 255 255;         /* = plate #FFFFFF — panel and card fills behind text */
+  --line: 185 198 224;         /* = rule #B9C6E0 — axes, ticks, hairlines */
+  --ground: 232 237 246;       /* = ground #E8EDF6 — the floor a GL scene stands on (deeper than the page by design) */
+  --structure: 195 206 224;    /* = structure #C3CEE0 — plinths, walls, rails */
+  --sky-horizon: 220 229 243;  /* = skyHorizon #DCE5F3 — the analytic sky, lower stop */
+  --sky-zenith: 244 247 252;   /* = skyZenith #F4F7FC — the analytic sky, upper stop */
+  /* @end generated scenery */
 
   --green: 30 122 74;         /* #1e7a4a */
   --green-bg: 227 244 234;    /* #e3f4ea */
@@ -119,7 +131,7 @@
   --grey: 148 160 182;        /* text secondary #94A0B6 */
   --grey-light: 60 74 106;    /* border emphasis role #3C4A6A */
   --grey-dark: 198 208 226;   /* text emphasized #C6D0E2 */
-  --line: 33 45 76;           /* hairline #212D4C */
+  /* --line is GENERATED below (= the GL rig's dark `rule`). */
   /* See the light-theme note. Dark is the harder theme for this: controls sit on FIVE
    * surfaces here, not three (`dark:bg-navy-deep` on 36 sites and `dark:bg-ice` on 5, on
    * top of card / canvas / wash), and the binding one is the inverse-surface --ice
@@ -129,8 +141,15 @@
    * emphasis role", is not a candidate: 1.59-2.23, below the floor on every one of the
    * five. */
   --control-border: 113 126 152;  /* #717e98 */
-  --card: 16 24 43;           /* surface #10182B */
-  --page-bg: 9 14 27;         /* canvas #090E1B */
+  /* @generated scenery — derived from packages/gl/src/look/theme.ts by scripts/gen-scenery-tokens.ts (S2 ONE MATERIAL). Do not edit; run `npm run gen:tokens -w apps/web`. */
+  --page-bg: 9 14 27;          /* = page #090E1B — the DOM canvas — the sky a scene sits in front of */
+  --card: 14 22 40;            /* = plate #0E1628 — panel and card fills behind text */
+  --line: 38 53 90;            /* = rule #26355A — axes, ticks, hairlines */
+  --ground: 7 11 20;           /* = ground #070B14 — the floor a GL scene stands on (deeper than the page by design) */
+  --structure: 20 31 53;       /* = structure #141F35 — plinths, walls, rails */
+  --sky-horizon: 19 28 49;     /* = skyHorizon #131C31 — the analytic sky, lower stop */
+  --sky-zenith: 5 8 16;        /* = skyZenith #050810 — the analytic sky, upper stop */
+  /* @end generated scenery */
 
   --green: 45 180 130;        /* #2db482 */
   --green-bg: 20 40 30;       /* softened green bg for dark */
@@ -187,7 +206,9 @@
   --chart-good: #0ca30c;
   --chart-bad: #d03b3b;
   --chart-track: #e8edf4;
-  --card-fill: #ffffff;       /* matches :root --card (255 255 255) */
+  /* @generated scenery (chart twin) — see above. */
+  --card-fill: #ffffff;        /* = plate — the chart block's hex twin of --card */
+  /* @end generated scenery (chart twin) */
 }
 
 .dark {
@@ -204,7 +225,9 @@
   --chart-good: #0ca30c;
   --chart-bad: #e66767;
   --chart-track: #223048;
-  --card-fill: #10182b;       /* matches .dark --card (16 24 43) */
+  /* @generated scenery (chart twin) — see above. */
+  --card-fill: #0e1628;        /* = plate — the chart block's hex twin of --card */
+  /* @end generated scenery (chart twin) */
 }
 
 /* === elevation system (10x polish) === */

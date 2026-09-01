@@ -40,8 +40,9 @@ import {
  *
  * ── AND WHY THE LIGHT HALF IS A REFUSAL RATHER THAN A GRADIENT ──────────────────────
  * Two independent numbers, both recomputed here rather than quoted:
- *   · the composite tone maps the PLATE, so light `--page-bg` #f4f6fb leaves the pipeline as
- *     213 214 217 at ZERO vignette amplitude and takes five certified roles under 4.5:1;
+ *   · the composite tone maps the PLATE, so light `--page-bg` #F4F7FC (the rig's `page`, since S2;
+ *     #f4f6fb before) leaves the pipeline as 213 215 218 at ZERO vignette amplitude and takes five
+ *     certified roles under 4.5:1;
  *   · the additive construction that would clear that floor is bounded by `--card` = #ffffff,
  *     which is AT the 8-bit ceiling, so the lift returns 96% of the elevation it destroys —
  *     and the ratio has a closed form, `(L_lifted + 0.05)/1.05`, that is below 1 at EVERY
@@ -266,7 +267,9 @@ describe('X1 · the backdrop can only ever raise the contrast the ratchet certif
     expect(
       `--${weakestText[0]} ${contrast(weakestText[1]!, canvas).toFixed(3)}:1 -> ${downText} levels`,
       'the weakest CERTIFIED TEXT role on the light canvas, and its corridor, moved',
-    ).toBe('--green 4.932:1 -> 10 levels');
+    // Re-recorded 2026-09-01: S2 derives --page-bg from the rig's `page` (light #F4F7FC, one level
+    // brighter than the authored #F4F6FB); the weakest certified text role gained headroom.
+    ).toBe('--green 4.966:1 -> 11 levels');
 
     const anyDarker = Object.entries(light).filter(([, v]) => luminance(v) < luminance(canvas) && contrast(v, canvas) >= 4.5);
     const weakestAny = anyDarker.reduce((a, b) => (contrast(a[1], canvas) <= contrast(b[1], canvas) ? a : b));
@@ -274,7 +277,9 @@ describe('X1 · the backdrop can only ever raise the contrast the ratchet certif
     expect(
       `--${weakestAny[0]} ${contrast(weakestAny[1], canvas).toFixed(3)}:1 -> ${downAny} levels`,
       'the weakest token of ANY kind above 4.5:1 on the light canvas, and its corridor, moved',
-    ).toBe('--chart-4 4.574:1 -> 2 levels');
+    // Re-recorded 2026-09-01 with the S2 page move (one level brighter): the weakest non-text token
+    // gained a level of corridor too.
+    ).toBe('--chart-4 4.605:1 -> 3 levels');
 
     expect(downAny, 'the widened set is no longer the tighter bound — re-read which number binds')
       .toBeLessThan(downText);
@@ -282,7 +287,9 @@ describe('X1 · the backdrop can only ever raise the contrast the ratchet certif
     /* UP is `level(luminance(card)) - level(luminance(canvas))`, in the one convention. It read
        ELEVEN in the header until 2026-08-15, which is 255 minus the canvas's RED byte. */
     expect(level(luminance(card)) - level(luminance(canvas)),
-      'the canvas-to-card headroom moved; the additive corridor below is derived from it').toBe(9);
+      // 9 until 2026-09-01: the S2 page is one level brighter, so one level less separates it from
+      // the white card. The additive corridor below is derived from this and moves with it.
+      'the canvas-to-card headroom moved; the additive corridor below is derived from it').toBe(8);
   });
 
   it('at ZERO vignette amplitude the light plate ALREADY fails, which is the real refusal', () => {
@@ -304,9 +311,11 @@ describe('X1 · the backdrop can only ever raise the contrast the ratchet certif
     expect(throughComposite(darkCanvas), 'the dark plate no longer survives the curve to the byte')
       .toEqual(darkCanvas);
     expect(throughComposite(lightCanvas), 'the light plate through the shipped curve moved')
-      .toEqual([213, 214, 217]);
+      // [213, 214, 217] until 2026-09-01; the light canvas moved one level with S2 (see above).
+      .toEqual([213, 215, 218]);
     expect(throughComposite(lightCanvas, 1 - 0.62), 'the darkest light pixel at the shipped depth moved')
-      .toEqual([149, 150, 153]);
+      // [149, 150, 153] until 2026-09-01; one level with the S2 page move.
+      .toEqual([149, 151, 154]);
 
     const flat = throughComposite(lightCanvas);
     const lost = Object.entries(light)
@@ -332,7 +341,8 @@ describe('X1 · the backdrop can only ever raise the contrast the ratchet certif
         .toContainEqual(flat);
     }
     expect(throughComposite(lightCanvas, 1 - -0.5 * 1), 'the inverted-vignette edge pixel moved')
-      .toEqual([241, 242, 245]);
+      // [241, 242, 245] until 2026-09-01; one level with the S2 page move.
+      .toEqual([241, 243, 246]);
     expect(throughComposite(lightCanvas, 1 - -1 * 1), 'the inverted vignette no longer clips at d = -1')
       .toEqual([255, 255, 255]);
   });
@@ -359,7 +369,9 @@ describe('X1 · the backdrop can only ever raise the contrast the ratchet certif
     /* THE RANGE, derived from the tint rather than asserted: lift every channel together until
        one of them pins, because a lift past that point changes the page's hue. */
     const headroom = Math.min(...canvas.map((c) => 255 - c));
-    expect(headroom, 'the binding channel headroom moved (blue binds at 4)').toBe(4);
+    // 4 until 2026-09-01: the light canvas is one level brighter under S2, so there is one level
+    // less above it before the encode clips. The refusal this test argues is unchanged by it.
+    expect(headroom, 'the binding channel headroom moved (blue binds at 3)').toBe(3);
     const lifted = canvas.map((c) => c + headroom) as Rgb;
     expect(lifted[2]! - lifted[0]! , 'the lift changed the page tint B-R — that is not decoration')
       .toBe(canvas[2]! - canvas[0]!);

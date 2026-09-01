@@ -999,7 +999,11 @@ describe('WCAG text contrast, computed from the tokens', () => {
       'light focus vs control-border': 1.08,
       'light focus vs line': 2.14,
       'dark focus vs control-border': 2.26,
-      'dark focus vs line': 7.52,
+      // 7.52 until 2026-09-01. S2 derived --line from the GL rig's `rule` (dark #26355A, lighter
+      // than the authored #212D4C), so the ring sits against a slightly lighter border. Re-read as
+      // the record asks: 6.68:1 is more than twice the 3:1 floor — the inset ring stays plainly
+      // visible against the border it paints inside.
+      'dark focus vs line': 6.68,
     };
     const measured: Record<string, number> = {};
     for (const [themeName, palette] of themes) {

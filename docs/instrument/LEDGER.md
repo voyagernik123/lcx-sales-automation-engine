@@ -58,20 +58,27 @@
 |---|---|---|---|---|
 | S0 MEASURE | DONE | e211c1a | `docs/instrument/audit/BASELINE.md` | `scripts/instrument-audit.mjs`, 79 routes × 2 themes, six metrics |
 | S1 ONE CLOCK | DONE (this commit) | — | `docs/instrument/audit/after-s1/BASELINE.md` | rAF loops at rest **76 → 0** · live intervals **8 → 2 under vite dev = 1 heartbeat + the HMR ping (`@vite/client:620`), so 1 in production** · timer call sites 25 → 13 · fake Dashboard feed removed · ratchet `oneClock.test.ts` |
-| S2 ONE MATERIAL | **IN PROGRESS** | — | — | drafts written (renderer, tsx generator, ratchet); move into tree after S1 commit |
-| S3 ONE CAMERA | not started | — | — | desktop WKWebView probe FIRST |
+| S2 ONE MATERIAL | DONE (this commit; gate #3 clean, 6,660 tests) | — | `docs/instrument/audit/after-s2/BASELINE.md` | seam on every twin pair **0.00** both themes (was 2.78 / 3.09 / 3.13); `theme.ts` gained the `page` radiance role after the first derivation (page ← ground) was refused by measurement; scenery block in tokens.css GENERATED (`npm run gen:tokens -w apps/web`), index.html pre-hydration colours generated; ratchet `oneMaterial.test.ts`; 8 contrast/corridor records re-recorded with reasons (all moves ≤ 1 level, two improvements) |
+| S3 ONE CAMERA | **IN PROGRESS** | — | — | WebKit measured (skip path clean, 87 ms); router wrap + CSS + drawer name + LeadTable→LeadDetail exemplar + probe `--visible` + ratchet `oneCamera.test.ts` |
 | S4 THE WATCH | not started | — | — | |
 | S5 FLOORS ARE DATA | not started | — | — | |
 | S6 THE TERMINAL | not started | — | — | |
 | S7 THE OBJECT | not started | — | — | |
 
-**NEXT ACTION:** S2 — place `apps/web/src/lib/sceneryTokens.ts`, `apps/web/scripts/gen-scenery-tokens.ts`,
-`apps/web/src/lib/__tests__/oneMaterial.test.ts` (drafts exist in the session scratchpad `s2/`; if lost,
-re-derive from INSTRUMENT_100X_PLAN.md §4 S2 and this ledger's §1 seam table); insert the `@generated
-scenery` marker blocks into `tokens.css` `:root`/`.dark` (replacing `--card`, `--page-bg`, `--line`) and
-around `--card-fill` in both chart blocks; run `npx tsx apps/web/scripts/gen-scenery-tokens.ts`; add
-`"gen:tokens"` to apps/web/package.json; run oneMaterial + contrast tests; gate; commit S2 with the seam
-table before/after (expect 0.00 on every pair).
+**NEXT ACTION:** when the S2 gate (`/tmp/gate-s2.log`) is clean (`grep -c 'npm error'` = 0), commit S2:
+`packages/gl/src/look/theme.ts`, `apps/web/src/lib/sceneryTokens.ts`, `apps/web/scripts/gen-scenery-tokens.ts`,
+`apps/web/src/lib/__tests__/oneMaterial.test.ts`, `apps/web/src/styles/tokens.css`, `apps/web/index.html`,
+`apps/web/package.json`, `apps/web/src/lib/__tests__/contrast.test.ts`,
+`apps/web/src/components/layout/__tests__/ambientBackdrop.test.tsx`, `scripts/instrument-audit.mjs`,
+`docs/instrument/audit/after-s2/`, this ledger. Push; verify Pages by content (needle: the generated comment is
+stripped, so use the CSS value `--page-bg:244 247 252` or `244 247 252` in the deployed CSS asset) + Render via
+deployments API. Then S3: wrap `router.navigate` at the end of `apps/web/src/router.tsx` (after the `]);` that
+closes `createBrowserRouter`) to default `viewTransition: !prefersReducedMotion()`; add `::view-transition-old/new(root)`
+180 ms rules + reduced-motion `animation: none` in `globals.css` beside the reduced-motion block (~line 515);
+`style={{ viewTransitionName: 'inspector' }}` on the `InspectorDrawer` panel div; extend
+`apps/desktop/scripts/webview-capability-probe.mjs` with an async `startViewTransition` behavioural check
+(Swift host: delay `evaluateJavaScript` ~1.5 s) and RUN it (`swiftc` present) before wiring; ratchet
+`oneCamera.test.ts`; re-measure continuity (S0 runtime `vt` count) → expect 79.
 
 ## 3 · THE STANDING RULES OF THIS BUILD — the quality bar, made mechanical
 
@@ -94,6 +101,9 @@ table before/after (expect 0.00 on every pair).
   his six-line verification arrives, then moves to SHIPPED with its digest.
 - **GPS:** named partner + rate card (owner), coordination hours (owner), Monty's perimeter review at launch.
 - **Web:** worker-shift flake class (BriefGenerator, silenceAndProvenance, marketingCrisis) — task chip open.
+- **API:** `routes/__tests__/distGate.test.ts` "lets a NON-token campaign advance to live freely" returned 403 in
+  the S2 full gate, passes in isolation, API tree untouched by S2 — same order-dependent class. Re-run per the
+  3-run procedure before any claim; if it recurs, it is a latent race in the test's fixture isolation, not S2.
 - **DUMMY DATA FOUND BY S0's TIMER INVENTORY:** `pages/Dashboard.tsx` (route `/regulatory-dashboard`) runs a
   `Math.random` simulation every 4 s that fabricates "System" log lines (`isReal: false`) and merges them
   with real audit rows — indistinguishable on screen. **S1 removes the simulation** (a fake feed cannot be
@@ -110,3 +120,19 @@ table before/after (expect 0.00 on every pair).
   `every()`/`useClock()`; perf frame sampler → `observeFrames()`; Dashboard fake feed deleted; hook split to
   `lib/useClock.ts` so clock.ts stays React-free. Gate clean (6,672 tests). After-measure: rAF loops 76→0,
   intervals 8→2 (attributed: 1 heartbeat + vite HMR ping → 1 in prod). Committing S1.
+- 2026-09-01 · S1 committed 6e0e939 — VERIFIED LIVE both surfaces ('UTC (local)' in the deployed footer
+  chunk; Render 6e0e939 success). S2 in progress: FIRST CUT REFUSED BY MEASUREMENT — deriving the page from
+  the GL ground cost status-green text 10 levels of WCAG headroom (4.93→4.54:1) and killed the dark
+  backdrop's gradient (0.03 < 0.05). The rig's own comment says ground = page DEEPENED, so the derivation
+  ran backwards. Fix: `theme.ts` gains a `page` RADIANCE role (light = skyZenith #F4F7FC, dark authored
+  #090E1B with reasons); `--page-bg ← page`, `--ground` exposed for GL surrounds (S5). GL theme tests 15/15.
+- 2026-09-01 · S2 gate #1 red on `distGate.test.ts` (API, untouched by S2) → passes alone, fresh full API run
+  green (3,520) → order-dependent flake, logged in §4. Gate #2 running. S3 PRECONDITION MEASURED on the
+  shipping WebKit via a patched copy of the desktop probe: `startViewTransition` present; `finished` resolves in
+  87 ms, `ran = true`; `ready` rejects "skipped because document visibility state is hidden" (probe window is
+  off-screen) — the instant/skip path is clean, which is the reduced-motion fallback S3 relies on. The animated
+  path needs a visible window: S3's probe edit adds an opt-in `--visible` flag and re-measures.
+- 2026-09-01 · S2 gate #2: shared/api clean; web red on TWO PRINT RATCHETS (marketingCrisis, marketingRecord:
+  "pins, for paper, every dark-mode token this page can reach") — the four NEW scenery tokens are dark-overridden
+  with no print pin. Correct catch, not a flake: pinned `--ground/--structure/--sky-horizon/--sky-zenith` at
+  their light values in `PrintStyles.tsx` (with the token, not with the use). Gate #3 next.
