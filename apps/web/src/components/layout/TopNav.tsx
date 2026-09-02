@@ -1,3 +1,4 @@
+import { GLASS_CHROME_CLASS } from '@/lib/glass';
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Search, Sun, Moon, LogOut, ChevronDown } from 'lucide-react';
@@ -146,7 +147,7 @@ export function TopNav({ onOpenSearch }: { onOpenSearch: () => void }) {
        * clickable tags still block it (drag.js:58) — so no control is sacrificed. */
       data-tauri-drag-region={terminal ? 'deep' : undefined}
       style={terminal ? { paddingLeft: TRAFFIC_LIGHT_INSET_PX } : undefined}
-      className="flex h-12 shrink-0 items-center gap-4 border-b border-line bg-card px-4"
+      className={`flex h-12 shrink-0 items-center gap-4 border-b border-line px-4 ${GLASS_CHROME_CLASS}`}
     >
       {/* The product signature. The mark inherits `text-navy` via currentColor, so it
         * is legible in both themes without a second asset — and cannot become the

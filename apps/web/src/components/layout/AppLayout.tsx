@@ -23,6 +23,7 @@ import { ManualHost } from '@/components/help/ManualHost';
 import { useHints } from '@/hooks/useHints';
 import { useSplitViewChord } from '@/hooks/useSplitView';
 import { HintLayer } from '@/components/help/HintLayer';
+import { Stage } from '@/components/stage/Stage';
 import { TourHost } from '@/components/teach/TourHost';
 
 export function AppLayout() {
@@ -251,6 +252,10 @@ export function AppLayout() {
      * makes this div the context. `pages/CommandDeck.tsx:89` already carries the same pair for
      * the same reason. */
     <div className="relative isolate flex h-screen flex-col bg-page text-navy">
+      {/* THE STAGE (THE PRODUCTION, P1): the lit studio every route stands in — one context, frames on demand, the
+        * page plate unprojected from the layout, the eight rooms lit by the watch. `bg-page` above stays as the honest
+        * fallback the operator sees when the stage refuses. See components/stage/Stage.tsx. */}
+      <Stage />
       {/* X1 · THE AMBIENT BACKDROP WAS REMOVED HERE (S5 of INSTRUMENT_100X_PLAN, 2026-09-02). Its own
         * header was the measurement: in the default light theme it drew NOTHING (any plate over the page
         * loses 31+ levels; five certified roles fall under 4.5:1 at zero amplitude), and in dark it drew an

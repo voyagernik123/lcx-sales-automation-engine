@@ -1,3 +1,4 @@
+import { GLASS_CHROME_CLASS } from '@/lib/glass';
 import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { Briefcase, Gauge, TrendingUp, FileBarChart, Newspaper, Table2, Bot, Radar, ScatterChart, ListChecks, KanbanSquare, Layers, Send, LayoutDashboard, GitBranch, Map, Grid3X3, Sliders, Settings, ChevronLeft, ChevronRight, ChevronDown, Scale, ToggleLeft, ListTodo, FileText, DollarSign, Calendar, AlertTriangle, Swords, Target, Crosshair, ScrollText, MessageSquare, BarChart3, Shield, Activity, Share2, Siren, CalendarClock, GitPullRequestArrow, Command, Landmark, KeyRound, Rocket, Megaphone, Compass, Keyboard, Globe } from 'lucide-react';
@@ -282,7 +283,7 @@ export function Sidebar() {
   };
 
   return (
-    <aside className={clsx('flex flex-col overflow-y-auto border-r border-line bg-card t-panel', sidebarCollapsed ? 'w-14' : 'w-56')}>
+    <aside className={clsx('flex flex-col overflow-y-auto border-r border-line t-panel', GLASS_CHROME_CLASS, sidebarCollapsed ? 'w-14' : 'w-56')}>
       <nav className="flex-1 p-2">
         {sections.map(section => {
           const isOpen = openSections[section.title] ?? true;

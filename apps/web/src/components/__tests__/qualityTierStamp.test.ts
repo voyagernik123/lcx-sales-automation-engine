@@ -49,7 +49,7 @@ import { join, relative, resolve } from 'node:path';
 const SRC = resolve(process.cwd(), 'src');
 
 /** The number of surfaces the app sweep walks. A floor, not an equality — see the assertion's message. */
-const KNOWN_SURFACES = 7; // eight until S5 of INSTRUMENT_100X_PLAN retired E1 DeckReliefGl (2026-09-02)
+const KNOWN_SURFACES = 8; // seven after S5 retired E1 DeckReliefGl; eight since P1 of THE PRODUCTION added the shell's stage (2026-09-02)
 
 function walk(root: string): string[] {
   const out: string[] = [];

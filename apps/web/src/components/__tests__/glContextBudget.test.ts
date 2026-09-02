@@ -76,14 +76,20 @@ const ROUTER = join(SRC, 'router.tsx');
  * and CommandDeck held two reliefs (E1 + E5) on top. The backdrop is removed and E1 retired, so a route
  * now holds at most ONE — its own relief, or the shared flat-chart context.
  */
-const CONCURRENT_CAP = 1;
+/*
+ * TWO since P1 of THE PRODUCTION (2026-09-02): `components/stage/Stage.tsx` is mounted once in the shell and holds
+ * one context on every route — the lit studio the page stands on, drawing frames ON DEMAND (never a loop), the
+ * eight rooms lit by the watch. It is the one shell-owned context, by design and asserted below; a route's own
+ * relief or the shared flat-chart context is the second. Nothing may reach three.
+ */
+const CONCURRENT_CAP = 2;
 /**
  * How many routes sit AT the cap. With a cap of one, every chart route ties, so a single "worst route"
  * name would be a coin toss over ROUTES order; the COUNT is the pin instead — an equality, so a new
  * surface (or a lost one) shows up as a diff. `pages/CommandDeck.tsx` must remain among them: it is the
  * route that was at three, and the one whose reduction S5 was measured on.
  */
-const ROUTES_AT_CAP = 15; // six relief routes + nine flat-chart routes, measured 2026-09-02 after S5's removals
+const ROUTES_AT_CAP = 15; // six relief routes + nine flat-chart routes (each = the stage + one of its own), measured 2026-09-02
 
 /**
  * Routes with more JSX mount sites for one relief than can be live at once, with the reason.
@@ -340,7 +346,7 @@ describe('§6 rule 7 — the live GL context budget of the shipping app', () => 
     }
   });
 
-  it('the shell closure is real and — since S5 — carries NO GL context of its own', () => {
+  it('the shell closure is real and — since P1 — carries exactly ONE GL context of its own: the stage', () => {
     /*
      * The negative control for the SHELL walk. An empty or route-free closure would make this file
      * silently revert to the per-route census, and every assertion below would still pass — which
@@ -364,7 +370,11 @@ describe('§6 rule 7 — the live GL context budget of the shipping app', () => 
       'the shell reaches sharedRenderer() again — a GL surface was mounted in AppLayout. S5 removed'
       + ' the always-on backdrop for measured reasons; a new one must earn its place here, in words')
       .toBe(false);
-    /* And the census must therefore show routes at ZERO — the reduction S5 was for. */
+    /* THE STAGE (THE PRODUCTION, P1) is the one owner the shell may carry, and it must be exactly that one. */
+    const shellOwners = OWNERS.filter((o) => SHELL.has(o)).map(id);
+    expect(shellOwners, 'the shell carries a GL owner other than the stage — a second always-on surface must earn its place here, in words')
+      .toEqual(['components/stage/Stage.tsx']);
+    /* And the census must therefore show routes at ZERO shared contexts — the reduction S5 was for. */
     const atZero = ROUTES.filter((r) => !SHARED_USERS.some((s) => reachable(r).has(s)));
     expect(atZero.length,
       'no route reaches zero GL contexts — something in the shell or in every page still builds one')

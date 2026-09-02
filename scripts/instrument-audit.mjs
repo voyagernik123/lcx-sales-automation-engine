@@ -164,7 +164,10 @@ const reliefsOffInit = (s) => {
   }
 };
 const themeSeed = (a) => {
-  const env = JSON.stringify({ state: { sidebarCollapsed: false, darkMode: a.dark, evidenceDocked: false }, version: 0 });
+  // VERSION 1, not 0 (P1 of THE PRODUCTION): the UI store's persist migration flips a version-0 `darkMode: false` to
+  // dark ONCE — the old default, written by persist for everyone who never touched the toggle. A version-0 light seed
+  // therefore captured DARK, and the light column read as the dark one (77/77, 56% vs 57%) before this was caught.
+  const env = JSON.stringify({ state: { sidebarCollapsed: false, darkMode: a.dark, evidenceDocked: false }, version: 1 });
   localStorage.setItem(`lcx-os:${a.scope}:ui:v1`, env);
   localStorage.setItem('lcx-os:ui:v1', env);
 };
@@ -437,7 +440,8 @@ const LAB_MEASURE = async ({ on, off, thumbWidth }) => {
   return { coverage: changed / n, delta: changed ? deSum / changed : 0, width: W, height: H, thumbOn: thumb(a), thumbOff: thumb(b) };
 };
 
-async function measureVisibility(lab, pngOn, pngOff, thumbWidth = 400) {
+const THUMB_WIDTH = Number(process.env.INSTRUMENT_THUMB_WIDTH ?? 400);
+async function measureVisibility(lab, pngOn, pngOff, thumbWidth = THUMB_WIDTH) {
   const toUrl = (buf) => `data:image/png;base64,${buf.toString('base64')}`;
   return lab.evaluate(LAB_MEASURE, { on: toUrl(pngOn), off: toUrl(pngOff), thumbWidth });
 }

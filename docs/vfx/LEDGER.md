@@ -36,8 +36,8 @@ with data. P4 adds hero fixtures so the judge sees them; until then their 0 is a
 
 | Phase | Status | Commit | Measured after | Notes |
 |---|---|---|---|---|
-| P0 GALLERY + VISIBILITY INSTRUMENT | **BUILT · gate running** | — | `docs/vfx/GALLERY.md` + `docs/instrument/audit/production-p0/` | baseline: GL visible on 3/79 dark, 4/79 light; median 0%; controls 40.0% and 0 |
-| P1 DARK FIRST + THE STAGE | PENDING | | | |
+| P0 GALLERY + VISIBILITY INSTRUMENT | DONE · **LIVE** (ba713aa, both surfaces by SHA) | ba713aa | `docs/vfx/GALLERY.md` + `docs/instrument/audit/production-p0/` | baseline: GL visible on 3/79 dark, 4/79 light; median 0%; controls 40.0% and 0 |
+| P1 DARK FIRST + THE STAGE | **SWEPT (run 2, light seed fixed) · gate run 3 on the final tree** | — | `docs/instrument/audit/production-p1/` + `GALLERY.md` (P0 kept as `GALLERY-P0.md`) | GL visible 3 → **77 of 79** (dark) and 4 → **77** (light); median coverage 0 → **57% dark / 18% light**; ≥ 35% dark on 57 routes, ≥ 20% light on 34; zeros = `/lcxos` `/portal` (outside the shell); standing metrics held (vt 76, motion 0, rAF 0, intervals 2, errors 0, GL 77 by design) |
 | P2 THE CAMERA MOVES | PENDING | | | |
 | P3 THE FIDELITY STACK | PENDING | | | |
 | P4 THE EIGHT HEROES (+ desktop 0.4.0) | PENDING | | | |
@@ -74,7 +74,13 @@ commit → push → present the plan with the baseline number.
 
 ## 4 · OPEN ITEMS
 
-- (none yet)
+- **Bytes.** P1 moved initial JS 828 → 838/850 and the largest chunk 426 → 435/440. P3's SMAA/bloom promotion and P6's
+  glTF loader land in the engine chunk; either they earn a raised, reasoned ceiling in `perf-budget`, or the engine
+  splits (post stack and loader as their own lazy chunks). Decide at P3, not after.
+- **Hero fixtures.** `/market-map`, `/audit-log`, `/deal-board` read 0% coverage in the harness because their heroes
+  need `/v1/**` data the harness aborts. P4 adds fixtures for those endpoints so the judge sees them.
+- **The chrome fades where it holds no text.** The sidebar's lower half and the top bar's centre carry no text; a
+  gradient alpha there would show the room without touching a floor. Deferred to P3 (a mask, measured).
 
 ## 5 · CHECKPOINT LOG — append-only, newest last
 
@@ -115,3 +121,72 @@ commit → push → present the plan with the baseline number.
   in light; median coverage **0%** both themes; GL contexts at rest 3. Gallery: 316 thumbnails, 2.9 MB, committed.
   This is the honest starting picture — the owner's "things look exactly the same" as a number. Gate running for the
   P0 commit; P1 applies from scratchpad `p1/` the moment it is clean.
+- 2026-09-02 · **P0 COMMITTED ba713aa · VERIFIED LIVE** (325 files: instrument, engine refusal, gallery 316 thumbnails,
+  baseline dir). Gate: five test stages clean; gl-budget went red on two stale published byte figures (stage.ts grew
+  by one refusal) → refreshed with `build.mjs --write` → clean. The P0 gallery is preserved as `GALLERY-P0.md` +
+  `gallery-p0/` so every later phase can be read beside the start.
+- 2026-09-02 · **P1 BUILT — three things the photographs caught that no test did.** (1) **Row-major vs column-major.**
+  My `transform4` read the engine's `Mat4` as rows; `math.ts` is column-major (`projectNdc`). The slab landed a
+  plate-width away from the DOM rect it was fitted to. Caught by photographing the raw stage (`scratchpad/stage-peek.mjs`:
+  page as shipped, then every DOM layer hidden) beside the page — the alignment was exact after the fix. (2) **A slab
+  fitted to the whole page is a wall.** With the unprojection right, the slab's top face filled the page rect and the
+  camera saw nothing else: the room was gone. Now only the page's BOTTOM edge is unprojected; the page stands on a
+  SHELF (`SHELF_DEPTH` 1.6) and the floor, the eight glows and the horizon recede behind it, visible through the glass.
+  Camera lowered to 13°. (3) **Glass and text floors are one trade, and it is measurable.** `glass.test.ts` computes
+  every certified text role over composite(surface·α over the stage's declared bound). It refused three cuts:
+  dark chrome .80 over a .12 room (red/indigo on card 4.07/4.37); dark plate .62 over .08 (red/indigo on page-bg
+  3.94/4.23); light plate .80 over a black worst case (green 4.48). The resolution is the sRGB curve: a DARK room
+  (bound **.04**) behind a **.56** plate shows more than a brighter room behind .84, because dark values are stretched
+  on screen (composite ≈ 40/255 vs the page's 18/255). Light declares a FLOOR (`STAGE_LUMINANCE_MIN.light` .55,
+  shadows lifted to .4) so the plate can open to .78. Final: chrome .86/.88, plate .78/.56, blur md (xl smeared the
+  glows to a tint). Lighting: structure-albedo floor (the rig's `ground` cannot be lit), key 2.6/1.5, glows gain .2
+  size .7 (peak ≤ .037), horizon carries 5–8% brand blue in dark. Three-route reading (fixtures on, both themes):
+  `/settings` 16%, `/command-deck` 30%, `/targets` 65% — dense pages are mostly opaque cards BY THE FLOORS, so the
+  stage reads as a quiet glass pane there and as a room on sparse ones. The P1 gate's "≥ 35% on every seated route"
+  will not be met on card-dense desks; the full sweep says by how much and the plan's §5 rule applies: the shortfall
+  is written in the same sentence as the result. Gate running.
+- 2026-09-02 · **P1 GATE RUN 1: two true ratchets.** `qualityTierStamp.test.ts` — every surface that resolves a tier
+  must stamp it on its canvas (`canvas.dataset.qualityTier = tier`) so a capture can say which tier it shows; the stage
+  did not → stamped; KNOWN_SURFACES 7 → 8. `reliefRedrawRatchet.test.ts` — (a) a context owner needs a props interface
+  the ratchet can parse for data props → `StageProps { plateAttr? }`; (b) **no renderer may schedule a frame it does not
+  draw** (`requestAnimationFrame`/`setTimeout`/`setInterval` banned in context owners — a deferred frame can land after
+  its data or its context is gone). The stage's rAF-coalesced invalidation was exactly that; it now coalesces the same
+  task's invalidations with a MICROTASK and draws synchronously. The `oneClock` allowlist entry was withdrawn (the
+  stage calls no rAF at all). Gate run 2 running.
+- 2026-09-02 · **P2 SPEC (settled before building).** THE CAMERA MOVES on navigation and the room you enter comes
+  forward. (1) Per-room framing: `stageScene.roomFraming(room)` — azimuth −12° ± up to 7° across the eight rooms
+  (the camera turns TOWARD the room's glow), target x biased toward that glow, distance unchanged; `null` room (a
+  desk-level route) = the neutral framing. (2) The tween: `startMotion({ purpose: 'user-driven', durationMs: 420 })`
+  from `@lcx/gl/motion` (bounded; reduced motion → `instant`), framing via `interpolateFraming`; frames come from the
+  ONE clock — `onFrame` from `lib/clock.ts`, subscribed only while a tween is live and unsubscribed at `done` — never
+  rAF in the component (redraw ratchet) and never a loop (one-clock ratchet: `onFrame` is the allowed source; the
+  subscription is bounded by the tween). (3) The seam: the Stage already re-draws on `location.pathname`; P2 makes
+  that redraw a MOVE when the workspace changes and a cut when it does not (same room, different page). The DOM half
+  (S3 view transitions, 180 ms crossfade) stays; the two are phase-locked by construction — both start on the same
+  navigation commit. (4) The shelf ARRIVES: during the tween the shelf's front edge eases up from y = PLATE_Y − 0.12
+  to PLATE_Y (the page lands), and the entered room's glow eases from its resting intensity to +0.25 (the `here`
+  bonus in `roomGlow`) — consequential motion, then stillness. (5) The inspector drawer: OUT of P2 (the DOM drawer's
+  slide is already a physical panel over the plate; a GL twin would be a second author of one motion). (6) Gate: vt on
+  real navigation still 76/79; rAF at rest 0 and `animations` at rest 0 (the instrument's at-rest sample is BEFORE
+  the continuity click, so a 420 ms move never reads as rest); `framebudget.spec.ts` green; frame time during the move
+  measured by a new `INSTRUMENT_MOVE_TRACE` (ms per frame for the tween's duration on three routes).
+- 2026-09-02 · **P1 SWEPT** (79 × 2 × 2, fixtures ON, reliefs at defaults): GL visible **3 → 77 of 79** in dark and
+  **4 → 77** in light; median coverage **0% → 57% / 56%**; distribution dark p25 27 · p75 67 · max 100; ≥ 35% on 56,
+  ≥ 20% on 66, ≥ 10% on 77. The two zeros are `/lcxos` and `/portal` (outside the shell — the still, the public
+  portal). Lowest seated: `/outreach` 13%, `/states` 17%, `/roadmap` 17% — card-dense. Standing metrics held: vt 76 ·
+  motion at rest 0 · rAF at rest 0 · intervals 2 · errors 0 · GL contexts 77 (the stage, by design; cap 2 pinned).
+  The P1 gate line "≥ 35% on every seated route" is MET ON 56 OF 77, not all — structural (the floors keep dense pages
+  opaque), stated in the commit and here. Looked at: command-deck dark, bd-pipeline dark, targets light.
+- 2026-09-02 · **THE LIGHT COLUMN WAS DARK — caught by looking, not by the numbers.** The P1 sweep's light and dark
+  columns matched almost exactly (77/77, 56%/57%) and `targets-light-on.webp` was a dark page. Cause: the instrument's
+  `themeSeed` wrote the UI store at persist **version 0**, and P1's migration flips a version-0 `darkMode: false` to
+  dark ONCE (the old default, persisted for everyone who never touched the toggle — the flip is the product decision,
+  and it means an operator who had explicitly chosen light is flipped once too; stated, accepted, one toggle back).
+  The peek script seeded version 1 and rendered light correctly, which is why the raw-stage photographs were right and
+  the sweep was not. Fix: the seed writes version 1. The P1 sweep is RE-RUN before commit; the dark column stands.
+- 2026-09-02 · **P1 SWEPT, RUN 2 (the real light column).** Dark unchanged: visible 77/79, median 57%, p25 31 · p75 67
+  · max 95; ≥ 35% on 57. Light: visible 77/79, median **18%** (p25 14 · p75 21 · max 96); ≥ 20% on 34, ≥ 10% on 76;
+  lowest seated `/outreach` 6%, `/states` 10%, `/scenario` 10%. Light is chroma-led by necessity (no luminance headroom
+  under the floors) and reads as a tinted glass panel with depth at the base; P3 (fidelity stack) and P5 (GPU charts)
+  carry the next lift there. Standing metrics held (vt 76 · motion 0 · rAF 0 · intervals 2 · errors 0 · GL 77).
+  Gate run 3 on the final tree (light lighting + instrument seed) running; commit follows.

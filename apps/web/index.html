@@ -36,11 +36,12 @@
         var stored = localStorage.getItem('lcx-os:' + email + ':ui:v1')
           || localStorage.getItem('lcx-os:anon:ui:v1')
           || localStorage.getItem('lcx-os:ui:v1');
-        if (stored) {
-          var parsed = JSON.parse(stored);
-          if (parsed && parsed.state && parsed.state.darkMode) {
-            document.documentElement.classList.add('dark');
-          }
+        var parsed = null;
+        if (stored) { parsed = JSON.parse(stored); }
+        /* DARK BY DEFAULT (THE PRODUCTION, P1): only an explicit stored `darkMode: false` keeps the page light.
+           No stored state, or a state that never touched the toggle, is the lit product. */
+        if (!(parsed && parsed.state && parsed.state.darkMode === false)) {
+          document.documentElement.classList.add('dark');
         }
       } catch (e) {}
     </script>

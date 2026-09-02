@@ -25,12 +25,17 @@ interface UIStore {
   setEvidenceDocked: (docked: boolean) => void;
 }
 export const useUIStore = create<UIStore>()(persist(set => ({
-  sidebarCollapsed: false, darkMode: false, evidenceDocked: false,
+  /* DARK BY DEFAULT (THE PRODUCTION, P1): the lit stage reads against black the way a cinema does; light is one toggle away. */
+  sidebarCollapsed: false, darkMode: true, evidenceDocked: false,
   toggleSidebar: () => set(s => ({ sidebarCollapsed: !s.sidebarCollapsed })),
   toggleDarkMode: () => set(s => { const n=!s.darkMode; document.documentElement.classList.toggle('dark', n); return { darkMode: n }; }),
   setEvidenceDocked: (evidenceDocked) => set({ evidenceDocked }),
 }), {
   name: STORAGE_KEYS.UI,
+  /* Operators who never touched the toggle have `darkMode: false` PERSISTED — the old default, written by persist on
+   * the first set. Version 1 flips that stored default to dark ONCE; a later toggle persists at v1 and is honoured. */
+  version: 1,
+  migrate: (persisted, from) => (from < 1 && persisted && typeof persisted === 'object' ? { ...(persisted as object), darkMode: true } : persisted) as never,
   storage: createJSONStorage(() => ({
     getItem: (n) => JSON.stringify(storage.get(n, null)),
     setItem: (n, v) => storage.set(n, JSON.parse(v)),
