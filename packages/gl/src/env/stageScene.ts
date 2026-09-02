@@ -42,6 +42,27 @@ export const STAGE_VIEW = { target: [0, PLATE_Y + 0.2, -2.2] as Vec3, distance: 
 /** How far back (world units) the shelf runs from the page's bottom edge. Beyond it the floor is the room's. */
 export const SHELF_DEPTH = 1.6;
 
+/**
+ * PER-ROOM FRAMING (P2). The camera turns TOWARD the room the operator enters: azimuth swings up to ±7° across the
+ * eight rooms and the target slides toward that room's glow. A desk-level route (no workspace) is the neutral view.
+ * Returned as the engine's `Viewpoint` shape so `viewProjection`/`eyeOf` consume it unchanged.
+ */
+export function roomFraming(room: RoomId | null): typeof STAGE_VIEW {
+  if (room === null) return STAGE_VIEW;
+  const i = ROOM_ORDER.indexOf(room);
+  const t = i < 0 ? 0 : (i / (ROOM_ORDER.length - 1)) * 2 - 1;      // -1 … 1 across the arc
+  return {
+    ...STAGE_VIEW,
+    azimuthDeg: STAGE_VIEW.azimuthDeg + t * 7,
+    target: [STAGE_VIEW.target[0] + t * 1.4, STAGE_VIEW.target[1], STAGE_VIEW.target[2]] as Vec3,
+  };
+}
+
+/** How far the shelf sits below its resting height at the start of an arrival (world units). */
+export const SHELF_ARRIVAL_DROP = 0.12;
+/** The move: user-driven, bounded, one easing. 420 ms is the S3 crossfade (180 ms) plus the settle the eye needs. */
+export const STAGE_MOVE_MS = 420;
+
 /** The rig's key light for the stage: from the upper left, forward. */
 export const STAGE_KEY_DIR: Vec3 = normalise3([0.42, -0.78, 0.46]);
 
@@ -52,7 +73,7 @@ export const STAGE_KEY_DIR: Vec3 = normalise3([0.42, -0.78, 0.46]);
  * Every value below was chosen under `STAGE_LUMINANCE_MAX`: composite luminance under the glass stays below the bound.
  */
 export const STAGE_LIGHT = {
-  dark: { keyGain: 2.6, ambientGain: 0.7, shadowStrength: 0.85, glowGain: 0.2, glowSize: 0.7, fogDensity: 0.03 },
+  dark: { keyGain: 2.6, ambientGain: 0.7, shadowStrength: 0.85, glowGain: 0.22, glowSize: 0.5, fogDensity: 0.03 },
   /* LIGHT SPEAKS THROUGH CHROMA. Under the text floors a white studio has no luminance headroom (the page is L .93,
      the floor may not drop below .55 under the glass), so what the eye gets is colour and shadow: brand-blue pools,
      a bluer horizon, a firmer shelf shadow. Measured: luminance-only tuning read 3% coverage in light. */

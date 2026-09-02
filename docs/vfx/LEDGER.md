@@ -37,8 +37,8 @@ with data. P4 adds hero fixtures so the judge sees them; until then their 0 is a
 | Phase | Status | Commit | Measured after | Notes |
 |---|---|---|---|---|
 | P0 GALLERY + VISIBILITY INSTRUMENT | DONE · **LIVE** (ba713aa, both surfaces by SHA) | ba713aa | `docs/vfx/GALLERY.md` + `docs/instrument/audit/production-p0/` | baseline: GL visible on 3/79 dark, 4/79 light; median 0%; controls 40.0% and 0 |
-| P1 DARK FIRST + THE STAGE | **SWEPT (run 2, light seed fixed) · gate run 3 on the final tree** | — | `docs/instrument/audit/production-p1/` + `GALLERY.md` (P0 kept as `GALLERY-P0.md`) | GL visible 3 → **77 of 79** (dark) and 4 → **77** (light); median coverage 0 → **57% dark / 18% light**; ≥ 35% dark on 57 routes, ≥ 20% light on 34; zeros = `/lcxos` `/portal` (outside the shell); standing metrics held (vt 76, motion 0, rAF 0, intervals 2, errors 0, GL 77 by design) |
-| P2 THE CAMERA MOVES | PENDING | | | |
+| P1 DARK FIRST + THE STAGE | DONE · **LIVE both surfaces** (Pages: `data-stage` in the entry; Render deployment 6219260694 `success`) | 08cfe3f | `docs/instrument/audit/production-p1/` + `GALLERY.md` (P0 kept as `GALLERY-P0.md`) | GL visible 3 → **77 of 79** (dark) and 4 → **77** (light); median coverage 0 → **57% dark / 18% light**; ≥ 35% dark on 57 routes, ≥ 20% light on 34; zeros = `/lcxos` `/portal` (outside the shell); standing metrics held (vt 76, motion 0, rAF 0, intervals 2, errors 0, GL 77 by design) |
+| P2 THE CAMERA MOVES | **COMMITTED · verify pending** | sha in §5 | move: 2–6 frames then 0–2 (frames stop); coverage held 77/79 both · median 55% dark (P1 57) · 17% light (P1 18) | per §5 "P2 BUILT" and "P2 MEASURED" |
 | P3 THE FIDELITY STACK | PENDING | | | |
 | P4 THE EIGHT HEROES (+ desktop 0.4.0) | PENDING | | | |
 | P5 GPU CHARTS EVERYWHERE | PENDING | | | |
@@ -47,14 +47,13 @@ with data. P4 adds hero fixtures so the judge sees them; until then their 0 is a
 | P8 HARDENING | PENDING | | | |
 | P9 PRODUCTION GATE + RELEASE | PENDING | | | |
 
-**NEXT ACTION (2026-09-02):** P0. Extend `scripts/instrument-audit.mjs`: (1) a second capture per route×theme with GL
-forced off (init script sets `window.__LCX_GL_OFF = true`; the stage and every relief read it and refuse with code
-`FORCED_OFF_FOR_MEASUREMENT`; relief prefs also seeded off), (2) `glCoverage` = share of viewport pixels whose RGB
-distance between the two captures exceeds 8/255, `glDelta` = mean ΔE76 over changed pixels, (3) positive control (a
-route with a known GL rectangle) and negative control (a DOM-only route → 0%), (4) `docs/vfx/GALLERY.md` writer with WebP
-thumbnails under `docs/vfx/gallery/` (≤ 60 KB each, committed), (5) a GL frame-time probe (force a redraw N times via
-`window.__LCX_GL_REDRAW?.()` where a surface exposes it; report ms/frame). Then the baseline sweep both themes → §1 →
-commit → push → present the plan with the baseline number.
+**NEXT ACTION (2026-09-02):** P2 is committed (sha in §5) and pushed; run `scratchpad/verify-live.sh <sha> --js 'data-stage'`
+→ flip P2 to LIVE here and in memory when it reports the SHA on both surfaces and the needle in the served JS. Then P3:
+every patch is drafted in the session scratchpad `p3/` — follow `scratchpad/p3/APPLY.md` IN ORDER (aa.ts → pipeline `into` →
+sky/env → edge tokens → edge CSS → oneMaterial test → Stage wiring → redraw hook → fidelity harness + brandPixel test → ship
+`env-{dark,light}.webp` → gen:tokens → gl tsc/tests → brand-fidelity.mjs → gl-budget --write → PEEK BOTH THEMES → 3-route
+instrument → root ci-check → commit → push → verify). Decide §4's byte question first: the shell is 436/440 and P3 adds
+nothing to it (the Stage's engine imports are dynamic) — the split is P5's problem, not P3's.
 
 ## 3 · STANDING RULES (from the previous programs; every one still binds)
 
@@ -74,9 +73,12 @@ commit → push → present the plan with the baseline number.
 
 ## 4 · OPEN ITEMS
 
-- **Bytes.** P1 moved initial JS 828 → 838/850 and the largest chunk 426 → 435/440. P3's SMAA/bloom promotion and P6's
-  glTF loader land in the engine chunk; either they earn a raised, reasoned ceiling in `perf-budget`, or the engine
-  splits (post stack and loader as their own lazy chunks). Decide at P3, not after.
+- **Bytes — and WHICH chunk.** P1 moved initial JS 828 → 838/850 and the largest chunk 426 → 435/440. Measured on the
+  built dist: the 435 KB chunk is the SHELL (`index-*.js`, carries `data-stage`; the stage's inline present shader is in
+  it), not the engine — so P3's SMAA/bloom and P6's glTF loader (engine chunk, lazy) do not press it, but ANY shell growth
+  does, and 5 KB is left. Before P5 (chart hooks in shared components) split the shell: `check-bundle.mjs:60` already
+  says "code-split `index`, not raise the cap". Candidates, measured before choosing: the action manifest + command
+  grammar (eager today), the inspector payload registry, the marketing/gps grammars.
 - **Hero fixtures.** `/market-map`, `/audit-log`, `/deal-board` read 0% coverage in the harness because their heroes
   need `/v1/**` data the harness aborts. P4 adds fixtures for those endpoints so the judge sees them.
 - **The chrome fades where it holds no text.** The sidebar's lower half and the top bar's centre carry no text; a
@@ -190,3 +192,46 @@ commit → push → present the plan with the baseline number.
   under the floors) and reads as a tinted glass panel with depth at the base; P3 (fidelity stack) and P5 (GPU charts)
   carry the next lift there. Standing metrics held (vt 76 · motion 0 · rAF 0 · intervals 2 · errors 0 · GL 77).
   Gate run 3 on the final tree (light lighting + instrument seed) running; commit follows.
+- 2026-09-02 · **P1 LIVE 08cfe3f** (Pages: `data-stage` in the entry; Render 6219260694 `success`). 641 files.
+- 2026-09-02 · **P2 BUILT.** `stageScene.roomFraming` (azimuth −12° ± 7° across the arc, target slides toward the
+  room; null = neutral), `SHELF_ARRIVAL_DROP` .12, `STAGE_MOVE_MS` 420. `Stage.tsx`: a route change is a MOVE when the
+  workspace changes and a cut when it does not; the tween is `startMotion({ purpose: 'user-driven' })` from the
+  engine (reduced motion → instant), frames from `lib/clock`'s `onFrame` subscribed only while the tween lives; the
+  shelf's front edge eases up from −.12 to rest and the entered room's glow eases in over the same 420 ms. New
+  `stageMotion.test.ts` pins the framing geometry, the ≤ 500 ms bound, `onFrame` in and `requestAnimationFrame`/timers
+  out of the file, one `createStage`. Instrument gains `INSTRUMENT_MOVE_TRACE=1` (frames in the 600 ms after a real
+  in-app click, then frames in the next 600 ms — rest): 2–6 frames then 0–2 on three routes under the frozen-clock
+  harness (its rAF is wrapped and slowed; the number that matters is that frames STOP). PHOTOGRAPHED
+  (`stage-peek-move.mjs`): before → 260 ms → rest show the camera turning toward the sales room and the shelf landing.
+  A pure-white frame at 120 ms with the DOM hidden turned out to be the view transition's snapshot layer, not a user
+  state: composed-page frames at 40/90/150/220/320 ms measure white share 0.000 and mean luminance 21–27 (the dark
+  page). Dark glows back to eight distinct pools (size .5, gain .22 — peak stays under the .04 bound). Gate running;
+  `framebudget.spec.ts` running beside it.
+- 2026-09-02 · **P3 SPEC (settled before building; grounded in `look/pipeline.ts`, `look/precompensate.ts`, `env/sky.ts`,
+  `check-bundle.mjs`).** THE FIDELITY STACK, engine-side and lazy — the shell must not grow (435/440). (1) **Anti-aliasing:**
+  `look/aa.ts` — an FXAA 3.11-shape pass on the sRGB LDR output (the composite encodes exactly once; AA runs on the
+  encoded image where edge luma is what the eye sees). Called FXAA, not SMAA — say what it is. Applied by the stage's
+  present and by `createPipeline().resolve`. (2) **Bloom for the stage and heroes:** the stage and the reliefs present
+  with their own tone-map shader and no bloom; route them through `createPipeline` (plate + scene + bloom + the ONE tone
+  map + the ONE encode) so glows and emissive marks bloom. Data-encoding colours stay exact through the curve by
+  `precompensate(target, site)` (measured 7/7 exact; refuses when headroom is gone — the refusal is honoured, never
+  worked around). (3) **A real studio environment:** Blender renders an equirect environment per theme (Standard
+  transform, calibrated like S7; 1024×512 → WebP ≤ 60 KB each under `public/objects/env-{dark,light}.webp`);
+  `env/sky.ts` gains an equirect path (sample `uEnvMap` when bound, procedural stops otherwise) and `lit.ts` gains SH9
+  irradiance uniforms computed once from the map on load — so glossy surfaces reflect a room and diffuse ones are lit by
+  it. Brand marks are additive after lit and unaffected; verified by `docs/3d/brand-fidelity.mjs` extended to the stage
+  pipeline (ΔE76 < 2 on every emissive mark after bloom). (4) **The edge model (S2's unbuilt half):**
+  `gen-scenery-tokens.ts` derives `--edge-hi`/`--edge-lo` from the rig's key direction and gains per theme; one global
+  rule lights every `bg-card` panel with a top-left highlight and bottom-right shadow hairline (decorative — the hairline
+  rule in `contrast.test.ts` already classifies it). (5) **The redraw contract from P0:** the stage exposes
+  `window.__LCX_STAGE_REDRAW()` (draw once, return ms); the instrument's frame-time probe times ten forced redraws per
+  route×theme and reports the median — the number P8 hardens against. (6) **Gate:** brand fidelity ΔE76 < 2 after the
+  stack; contrast + glass green; median redraw ≤ 8 ms at 1× in the harness (2× on M1 measured by the peek); coverage not
+  lower than P2 on any route; shell chunk unchanged; every engine byte lazy.
+- 2026-09-02 · **P2 MEASURED + COMMITTED.** Sweep `production-p2` (HEAD 08cfe3f code + P2 tree): GL visible 77/79 both
+  themes (P1 77/77); median coverage 55% dark / 17% light (P1 57 / 18 — each room now rests in its own framing, so
+  per-route numbers move a point or two; the distribution's quartiles are within 2 of P1's). Standing metrics held (view
+  transitions 76/79, CSS/rAF at rest 0, intervals ≤ 2, errors 0, contexts 77). The move itself is evidenced by the trace
+  (2–6 frames then 0–2 — frames STOP) and the photographs, not by the sweep (a static capture cannot show a move).
+  Gallery regenerated (`docs/vfx/GALLERY.md`, P2 header). The P1 gate's structural shortfall is unchanged and carried.
+  `scripts/blender/env_studio.py` stays untracked until P3 (its phase). Gate: root ci-check clean first run on this tree.

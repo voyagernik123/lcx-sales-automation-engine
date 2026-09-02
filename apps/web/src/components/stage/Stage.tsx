@@ -6,6 +6,8 @@ import { resolveQualityTier } from '../shared/useQualityTier';
 import { useArrivalStore } from '@/lib/useArrival';
 import { useAccessStore } from '@/stores/useAccessStore';
 import { workspaceForPath } from '@lcx/shared';
+import { onFrame } from '@/lib/clock';
+import { prefersReducedMotion } from '@/lib/motion';
 import { useLocation } from 'react-router-dom';
 
 /**
@@ -52,6 +54,8 @@ type Mod = {
   sceneTheme: typeof import('@lcx/gl/look/theme.js')['sceneTheme'];
   scene: typeof import('@lcx/gl/env/stageScene.js');
   IDENTITY: typeof import('@lcx/gl/math.js')['IDENTITY'];
+  startMotion: typeof import('@lcx/gl/motion/index.js')['startMotion'];
+  easeInOut: typeof import('@lcx/gl/motion/index.js')['easeInOut'];
 };
 
 const NM = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
@@ -75,8 +79,11 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
   const entitlements = useAccessStore((s) => s.me?.entitlements ?? null);
   const drawRef = useRef<(() => void) | null>(null);
 
-  // Anything that changes what the stage should show asks for exactly one new frame.
-  useEffect(() => { drawRef.current?.(); }, [location.pathname, revealed, watch, entitlements]);
+  // Anything that changes what the stage should show asks for exactly one new frame — and a route change asks
+  // for a MOVE when the workspace changed (P2), a cut when it did not.
+  const moveRef = useRef<((room: string | null) => void) | null>(null);
+  useEffect(() => { moveRef.current?.(workspaceForPath(location.pathname)); }, [location.pathname]);
+  useEffect(() => { drawRef.current?.(); }, [revealed, watch, entitlements]);
 
   useEffect(() => {
     let alive = true;
@@ -86,8 +93,8 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
       import('@lcx/gl/env/quality.js'), import('@lcx/gl/env/mesh.js'), import('@lcx/gl/env/lit.js'),
       import('@lcx/gl/env/target3d.js'), import('@lcx/gl/env/sky.js'), import('@lcx/gl/primitives/points.js'),
       import('@lcx/gl/env/camera.js'), import('@lcx/gl/look/theme.js'), import('@lcx/gl/env/stageScene.js'),
-      import('@lcx/gl/math.js'),
-    ]).then(([stg, col, tm, q, mesh, lit, t3d, sky, pts, cam, th, scene, mth]) => {
+      import('@lcx/gl/math.js'), import('@lcx/gl/motion/index.js'),
+    ]).then(([stg, col, tm, q, mesh, lit, t3d, sky, pts, cam, th, scene, mth, mo]) => {
       if (!alive) return;
       start({
         createStage: stg.createStage, isStage: stg.isStage, hexToLinear: col.hexToLinear,
@@ -97,6 +104,7 @@ export function Stage({ plateAttr = STAGE_PLATE_ATTR }: StageProps = {}) {
         createTarget3D: t3d.createTarget3D, createShadowMap: t3d.createShadowMap, createSkyBackdrop: sky.createSkyBackdrop,
         createPointCloud: pts.createPointCloud, eyeOf: cam.eyeOf, viewProjection: cam.viewProjection, nearFarOf: cam.nearFarOf,
         lightViewProjection: cam.lightViewProjection, sceneTheme: th.sceneTheme, scene, IDENTITY: mth.IDENTITY,
+        startMotion: mo.startMotion, easeInOut: mo.easeInOut,
       });
     }).catch(() => { if (alive) setState('refused:LOAD_FAILED'); });
 
@@ -130,6 +138,15 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
       const floorMesh = g.uploadMesh(stage, g.plane(80, 4));
       if ('kind' in floorMesh) return bail(floorMesh.code);
 
+      /* THE CAMERA (P2). `view` is where the camera IS; a move eases azimuth and target from the room it was in to the
+         room it enters over STAGE_MOVE_MS, drawing each frame from the one clock (`onFrame`), then unsubscribes — a
+         bounded, user-driven motion, then stillness. Reduced motion resolves to the final framing at once. The shelf
+         ARRIVES during the move (its front edge eases up SHELF_ARRIVAL_DROP → 0) and the entered room's glow eases in. */
+      let room: string | null = workspaceForPath(location.pathname);
+      let view = g.scene.roomFraming(room as never);
+      let shelfDrop = 0;
+      let arrival = 1; // 0 → 1 across a move; 1 at rest
+      let offFrame: (() => void) | null = null;
       let W = 1, H = 1, target: Target3D | null = null;
       let slab: MeshBuffer | null = null;
       let glows: PointCloud | null = null;
@@ -158,7 +175,6 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         if (!target) return;
         const dark = document.documentElement.classList.contains('dark');
         const theme = g.sceneTheme(dark ? 'dark' : 'light');
-        const view = { ...g.scene.STAGE_VIEW };
         const aspect = W / H;
         const vp = g.viewProjection(view, aspect);
         const eye = g.eyeOf(view);
@@ -169,12 +185,13 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         const ndc = g.scene.rectToNdc(rect, { w: host.clientWidth, h: host.clientHeight });
         // THE SHELF: only the page's BOTTOM edge is unprojected onto the plate plane; the shelf runs SHELF_DEPTH back
         // from it. So the page stands on something real, and everything behind the page is room, not slab.
-        const bl = inv ? g.scene.unprojectToPlane(inv, ndc.bl[0], ndc.bl[1], g.scene.PLATE_Y) : null;
-        const br = inv ? g.scene.unprojectToPlane(inv, ndc.br[0], ndc.br[1], g.scene.PLATE_Y) : null;
+        const plateY = g.scene.PLATE_Y - shelfDrop;
+        const bl = inv ? g.scene.unprojectToPlane(inv, ndc.bl[0], ndc.bl[1], plateY) : null;
+        const br = inv ? g.scene.unprojectToPlane(inv, ndc.br[0], ndc.br[1], plateY) : null;
         const D = g.scene.SHELF_DEPTH;
         const top = (bl && br
-          ? [[bl[0], g.scene.PLATE_Y, bl[2] - D], [br[0], g.scene.PLATE_Y, br[2] - D], br, bl]
-          : [[-4, g.scene.PLATE_Y, 1.5 - D], [4, g.scene.PLATE_Y, 1.5 - D], [4, g.scene.PLATE_Y, 1.5], [-4, g.scene.PLATE_Y, 1.5]]) as [typeof eye, typeof eye, typeof eye, typeof eye];
+          ? [[bl[0], plateY, bl[2] - D], [br[0], plateY, br[2] - D], br, bl]
+          : [[-4, plateY, 1.5 - D], [4, plateY, 1.5 - D], [4, plateY, 1.5], [-4, plateY, 1.5]]) as [typeof eye, typeof eye, typeof eye, typeof eye];
         slab?.dispose();
         const up = g.uploadMesh(stage, g.scene.slabGeometry(top));
         slab = 'kind' in up ? null : up;
@@ -183,12 +200,14 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
         const backZ = Math.min(top[0][2], top[1][2]);
         const cx = (top[0][0] + top[1][0]) / 2;
         const positions = g.scene.roomPositions(backZ, cx);
-        const here = workspaceForPath(location.pathname);
+        const here = room;
         const centres: number[] = [], attrs: number[] = [];
-        g.scene.ROOM_ORDER.forEach((room, i) => {
-          const held = entitlements ? Object.prototype.hasOwnProperty.call(entitlements, room) : true;
-          const changed = held ? (watch?.byWorkspace?.[room]?.changed ?? 0) : null;
-          const glow = g.scene.roomGlow({ changed, here: here === room });
+        g.scene.ROOM_ORDER.forEach((roomId, i) => {
+          const held = entitlements ? Object.prototype.hasOwnProperty.call(entitlements, roomId) : true;
+          const changed = held ? (watch?.byWorkspace?.[roomId]?.changed ?? 0) : null;
+          const glow = g.scene.roomGlow({ changed, here: false });
+          // The entered room's +0.25 eases in with the arrival rather than snapping.
+          if (here === roomId) { glow.intensity = Math.min(1, glow.intensity + 0.25 * arrival); glow.size += 0.3 * arrival; }
           if (glow.size === 0) return;
           const p = positions[i]!;
           centres.push(p[0], p[1] + 0.02, p[2]);
@@ -246,6 +265,27 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
       let pending = false;
       const invalidate = () => { if (pending) return; pending = true; queueMicrotask(() => { pending = false; draw(); }); };
       drawRef.current = invalidate;
+      moveRef.current = (next) => {
+        if (next === room) { invalidate(); return; }              // same room, new page: a cut
+        const from = view, to = g.scene.roomFraming(next as never);
+        room = next;
+        offFrame?.(); offFrame = null;
+        const tween = g.startMotion({ purpose: 'user-driven', durationMs: g.scene.STAGE_MOVE_MS }, { reducedMotion: prefersReducedMotion(), now: () => performance.now() });
+        const settle = (t: number) => {
+          view = { ...to, azimuthDeg: from.azimuthDeg + (to.azimuthDeg - from.azimuthDeg) * t,
+            target: [from.target[0] + (to.target[0] - from.target[0]) * t, to.target[1], to.target[2]] as typeof to.target };
+          shelfDrop = (1 - t) * g.scene.SHELF_ARRIVAL_DROP;
+          arrival = t;
+        };
+        if (tween.instant) { settle(1); invalidate(); return; }
+        settle(0);
+        offFrame = onFrame(() => {
+          const t = tween.value();
+          settle(t);
+          draw();
+          if (tween.done) { offFrame?.(); offFrame = null; }
+        });
+      };
       const ro = new ResizeObserver(invalidate);
       ro.observe(host);
       const plateEl = document.querySelector(`[${plateAttr}]`);
@@ -253,9 +293,9 @@ void main(){ frag = vec4(lcxEncode(lcxToneMap(texture(uScene, vUv).rgb)), 1.0); 
       const mo = new MutationObserver(invalidate);
       mo.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
       invalidate();
-      dispose = () => { ro.disconnect(); mo.disconnect(); glows?.dispose(); slab?.dispose(); target?.dispose(); stage.dispose(); };
+      dispose = () => { ro.disconnect(); mo.disconnect(); offFrame?.(); glows?.dispose(); slab?.dispose(); target?.dispose(); stage.dispose(); };
     }
-    return () => { alive = false; drawRef.current = null; dispose?.(); };
+    return () => { alive = false; drawRef.current = null; moveRef.current = null; dispose?.(); };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

@@ -488,6 +488,24 @@ async function captureRoute(browser, route, theme, glOff = false) {
     let reached = 'REACHED';
     try { await anchor.waitFor({ state: 'visible', timeout: 20_000 }); } catch { reached = 'SHELL_NEVER_MOUNTED'; }
     await page.waitForTimeout(1500);
+    if (process.env.INSTRUMENT_MOVE_TRACE === '1' && route.seated && reached === 'REACHED') {
+      // THE MOVE (P2): click the first in-app link that leaves this route, count the stage's frames for 600 ms, then
+      // confirm rest: zero frames in the following 600 ms. `__instrument.rafCalls` counts the one clock's frames.
+      const link = page.locator(`a[href^="/"]:not([href="${route.probe}"]):not([href^="/lcxos"]):not([target]):visible`).first();
+      if ((await link.count().catch(() => 0)) > 0) {
+        const r0 = await page.evaluate(() => globalThis.__instrument?.rafCalls ?? 0);
+        const t0 = Date.now();
+        await link.click({ timeout: 5_000 }).catch(() => {});
+        await page.waitForTimeout(600);
+        const r1 = await page.evaluate(() => globalThis.__instrument?.rafCalls ?? 0);
+        await page.waitForTimeout(600);
+        const r2 = await page.evaluate(() => globalThis.__instrument?.rafCalls ?? 0);
+        const moving = r1 - r0, after = r2 - r1;
+        console.log(`    move ${route.path} ${theme}: ${moving} frames in the first 600 ms (${moving ? (600 / moving).toFixed(1) : '—'} ms/frame) · ${after} in the next 600 ms (rest)`);
+        await page.goBack({ waitUntil: 'domcontentloaded', timeout: 10_000 }).catch(() => {});
+        await page.waitForTimeout(800);
+      }
+    }
     if (process.env.INSTRUMENT_ANIM_TRACE === '1') {
       // DIAGNOSTIC TRACE (close-out): sample the running animations every 500 ms for 4 s — a one-shot entrance
       // finishes (count falls to 0); a remount loop shows the count holding with currentTime cycling.
