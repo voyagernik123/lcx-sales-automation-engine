@@ -40,20 +40,20 @@ with data. P4 adds hero fixtures so the judge sees them; until then their 0 is a
 | P1 DARK FIRST + THE STAGE | DONE · **LIVE both surfaces** (Pages: `data-stage` in the entry; Render deployment 6219260694 `success`) | 08cfe3f | `docs/instrument/audit/production-p1/` + `GALLERY.md` (P0 kept as `GALLERY-P0.md`) | GL visible 3 → **77 of 79** (dark) and 4 → **77** (light); median coverage 0 → **57% dark / 18% light**; ≥ 35% dark on 57 routes, ≥ 20% light on 34; zeros = `/lcxos` `/portal` (outside the shell); standing metrics held (vt 76, motion 0, rAF 0, intervals 2, errors 0, GL 77 by design) |
 | P2 THE CAMERA MOVES | **LIVE** | 530f0d9 | move: 2–6 frames then 0–2 (frames stop); coverage held 77/79 both · median 55% dark (P1 57) · 17% light (P1 18) | per §5 "P2 BUILT" and "P2 MEASURED" |
 | P3 THE FIDELITY STACK | **LIVE** | 5c22d09 | light median 17 → 45% · dark 55 → 32% (inside the .04 ceiling P2 exceeded) · antialiased == compositeOnly 7/7 · redraw median 4.7 ms, 0 over 8 · the pair from ONE page load | per §5 "P3 …" checkpoints |
-| P4 THE EIGHT HEROES (+ desktop 0.4.0) | **DESKTOP v0.4.0 PUBLISHED · WEB pushed (Render live; Pages build queued) · LIVE flip waits for PAGES LIVE** | 8cdf9aa · 3c29de8 · 0c0cd3a · v0.4.0 | heroes ≥ 60%/panel: surface .85/.92 · globe .65/.81 · orrery .80/.83; pipeline .43/.91 and vault .31/.88 (dark designed-dark, documented); chrome fade 0 text hits/158; dark visible 61 → 71, ≥ 35% 17 → 37; light median 45 → 47% | per §5 "P4 …" checkpoints |
+| P4 THE EIGHT HEROES (+ desktop 0.4.0) | **LIVE** | web 97243c2 (carries 8cdf9aa · 3c29de8 · 0c0cd3a) · desktop v0.4.0 | heroes ≥ 60%/panel: surface .85/.92 · globe .65/.81 · orrery .80/.83; pipeline .43/.91 and vault .31/.88 (dark designed-dark, documented); chrome fade 0 text hits/158; dark visible 61 → 71, ≥ 35% 17 → 37; light median 45 → 47% | per §5 "P4 …" checkpoints |
 | P5 GPU CHARTS EVERYWHERE | **IN PROGRESS (byte pre-step)** — P4 awaits Cloudflare Pages for its LIVE flip | — | | §4 bytes: competitors.ts 66 KB + states.ts 19 KB ride the shell via the `@/data` barrel from Sidebar, ExtendedInspectors, lib/compliance; move them out first (target shell ≤ 360 KB), then the 12 charts on the shared renderer |
 | P6 THE OBJECTS (glTF) | PENDING | | | |
 | P7 LIVENESS | PENDING | | | |
 | P8 HARDENING | PENDING | | | |
 | P9 PRODUCTION GATE + RELEASE | PENDING | | | |
 
-**NEXT ACTION (2026-09-03, evening):** the P4 WEB commit is pushed (sha in §5's last checkpoint). (1) verify-live
-`<sha> --js 'chrome-fade-y' --css 'chrome-fade-x' --lazy-js 'data-hero'`; open the CI run. (2) THE DESKTOP RELEASE v0.4.0 per the
-session scratchpad `p4-release.md` (if gone: bump the six version homes — apps/desktop/package.json, apps/web/package.json,
-tauri.conf.json, Cargo.toml, Cargo.lock's lcx-terminal block, Launch.tsx LCXOS_VERSION; `npm run build-gate` in apps/desktop
-with TAURI_SIGNING_PRIVATE_KEY from ~/.lcx-terminal/updater.key and an empty password; read the DMG bytes, set the download
-page's MB constant + a 0.4.0 history line, REBUILD, `release:dry`, `release`, CDN-verify latest.json; commit the release; push;
-verify). (3) Flip P4 to LIVE here and in memory with both shas. Then P5 per the plan §3.
+**NEXT ACTION (2026-09-03, night):** P4 is LIVE on both surfaces (verify-live 97243c2: Pages carries chrome-fade-y, chrome-fade-x,
+data-hero, uInvSize; Render deployment 6225350768 success) and v0.4.0 is on the update channel and installed here. P5 is IN
+PROGRESS: step 1 (bytes, 97243c2) LIVE; in the tree, uncommitted — GroupedColumnChart moved onto the shared bars renderer and
+registered; the arrival bloom (useArrivalBloom → frame.bloom → FlatBars/Track/Dial) with six keyed sites; desk chart
+fixtures (kpis/history/triggers/board/scorecard/calibration); RouteError (named 404 inside the shell) and the KPI page's
+error object. Sequence: probe the four desk routes → full sweep (record + ≥ 50 % coverage on desk routes, in-place pairs,
+warm-up) → root gate → commit → push → verify → P5 LIVE. Then P6 per the plan §3.
 
 ## 3 · STANDING RULES (from the previous programs; every one still binds)
 
@@ -611,3 +611,61 @@ verify). (3) Flip P4 to LIVE here and in memory with both shas. Then P5 per the 
   P0's 35 counted every non-icon <svg>; the number that matters is 11.
 - 2026-09-03 · verify-live 3c29de8: TIMEOUT pages=0 render=1 — Render carries 3c29de8 (and 0c0cd3a since 14:57Z); Pages still
   serves the pre-P4 shell. The watcher re-verifies 0c0cd3a the moment Pages serves a new shell (≤ 2 h), else names the dashboard.
+- 2026-09-03 · **P5 STEP 1 COMMITTED 97243c2, pushed** (gate clean first run; perf JS 755/850 · largest 352/440). Step 2 next: the
+  ControlBand and StatCard GL twins on the shared renderer (plan: session scratchpad `p5/PLAN.md`; if gone, §5 P5 notes).
+- 2026-09-03 · **P5 STEP 2 — the last chart twin.** Of the twelve chart components, ten already drew on the shared flat renderer
+  and StatCard's "track" is the GL-backed Sparkline it embeds — the one without a twin was ControlBand (291 lines of SVG on
+  /kpi-dashboard via CalledVsLanded). `charts/gl/FlatBand.tsx` (`useFlatBand`, modelled on FlatBars): the band as one quad per
+  adjacent pair of readings, expected/actual as lit strokes, single-reading runs as points, gaps kept as gaps; colour tokens
+  resolved from the palette at draw time (an unresolved token refuses); kits held per stage; the SVG stays the refused/print
+  twin. ControlBand mounts the canvas behind its SVG and its data marks defer to GL when a frame has really been drawn; the
+  early return moved below the hooks (ColumnChart's rule).
+- 2026-09-03 · **P5 STEP 2 — REVERTED BY A RATCHET THAT WAS RIGHT.** `glThreshold.test.ts` is the measured policy on which charts
+  may draw on the GL path: Gate A, the lit-axis extent must be ≥ 20 device px (the shader's own edge, `smoothstep(0.10, 0, t)`,
+  needs two pixel rows to read as an edge; `SVG_GL_THRESHOLD.md` §7.3). ControlBand was UN-backed at 38c01b1 with the numbers
+  on record: L = 5.2 device px, stroke halfWidth 1.3 (65 % of the SVG's 2 px), 55 primitives from a dash splitter — and the
+  test's LIVE arm asserts it hands the GL layer nothing and imports no `./gl/`. My twin (`FlatBand.tsx`) would have shipped lit
+  modelling that cannot exist on a 2-px line. Removed; ControlBand restored to SVG. Sparkline sits below the same floor, so
+  StatCard's track is SVG by the same physics. P5's "every chart on the engine" is therefore TEN of twelve by measurement, two
+  documented below the floor — the plan's number was written before the floor was; the floor wins.
+- 2026-09-03 · **P5 STEP 3 TRIAGE — by the floor, not by the list.** Of the eleven inline-data-SVG files, the marks that could
+  carry lit modelling (≥ 20 device px along the shading axis, dpr 2 → ≥ 10 CSS px): GroupedColumnChart's columns — YES (one
+  real move, onto the shared FlatBars path, and into components/charts so `glThreshold`'s LIVE scan governs it). Below the
+  floor and staying SVG: AnomalyDeviation (BAR_H 6 → L 12), GpsUnderwriting range bars (9 px → L 18), ActivityStrip cells
+  (1 px), GapAnalysis cells (a matrix, no chart component and no lit axis), Wbr's 1.5-px path, PartnerDossier's polygons,
+  PipelineSankey's ribbons (a sankey is not one of the twelve), StrategicMatrix/FeasibilityMap dot fields (r 3–6 px). The
+  plan's "35 files" is, measured, one move. The remaining P5 gain is not in more GL charts; it is in the shared renderer's
+  presence on every desk route (coverage ≥ 50%), the arrival bloom, and the record.
+- 2026-09-03 · **P5 STEP 3 (the one move) + STEP 4 (GL side) — built.** GroupedColumnChart moved from components/deals into
+  components/charts (so `glThreshold`'s LIVE scan governs it) and onto the shared FlatBars path with ColumnChart's exact recipe
+  (host ref → resolved palette hex; rects memoised; SVG columns defer to GL; grid/ticks/labels/tooltips stay SVG); registered
+  with L = 60 % of plotH = 86.4 units × 2 = 172.8 device px. THE ARRIVAL BLOOM: `charts/gl/useArrivalBloom.ts` decides once
+  per mount from S4's mark (`markOf` ≠ signature → 1, first reading → 0, observes the signature for the next rollover);
+  `useFlatChart` carries `bloom` into the frame for the ENTRANCE only; FlatBars/FlatTrack/FlatDial scale their bloom gain by
+  1 + 2.5·bloom·(1−t) — the glow rides the tween that already runs and decays with it, no timer, nothing at rest, none under
+  reduced motion. Unit test written. Next: `arrivalKey` on ColumnChart/BarChartH/GroupedColumnChart and one keyed site per desk.
+- 2026-09-03 · CI on 97243c2 (the byte win): GREEN. Chart + component ratchets with the grouped chart registered and the
+  arrival hook: 16 files / 197 tests green.
+- 2026-09-03 · **P5 STEP 4 — keyed sites.** `arrivalKey` on ColumnChart, BarChartH and GroupedColumnChart (signature = the values
+  they draw); six desk sites keyed: kpi:channel-conversion, kpi:funnel-stages, kpi:forecast, winloss:by-jurisdiction,
+  winloss:by-package, winloss:loss-reasons. tsc clean; charts + pages tests 47 files / 719 green. Probe of five desk routes
+  running for the ≥ 50 % coverage gate.
+- 2026-09-03 · **P5 desk probe — inconclusive by construction, and one defect.** /bd-kpis, /win-loss, /forecast, /scorecard read
+  P4 → P5 identical (36 % dark · 55 % light, gl 1, figures 1): their charts never drew because the harness has no fixtures for
+  the KPI/forecast/scorecard/win-loss endpoints (the desk fixtures cover the eight landings and the P4 heroes). /bd-kpis under
+  the fixtures shows the ERROR BOUNDARY ("Something broke"), not its no-connection state — a page that throws on a missing
+  endpoint is a defect regardless of P5; the console error is being captured. The P5 coverage gate needs those fixtures first.
+  Also seen: an unknown URL renders react-router's raw developer 404 — the root route has no `errorElement`.
+- 2026-09-03 · **Two defects found in passing, fixed.** (1) An unknown URL rendered react-router's developer page on black;
+  `components/shared/RouteError.tsx` is now the shell route's `errorElement` (thrown route errors → the product ErrorNotice)
+  and a catch-all child `*` inside AppLayout names the state — "This page does not exist", the way home — with the shell and
+  the stage still standing behind it (peek: stage drawn, studio fetched). `routeError.test.tsx` pins both branches.
+  (2) `KpiDashboard.tsx` stored its load error as a MESSAGE STRING, so a refused fetch read "Something broke" instead of
+  "No connection"; it now keeps the error object and ErrorNotice classifies it. Desk fixtures for /bd-kpis, /win-loss,
+  /forecast, /scorecard next (types read from `types/kpi.ts`, `lib/api/{bd,intel}.ts`).
+- 2026-09-03 · **PAGES MOVED.** After ~2.5 h the production shell is a new chunk (`index-ASbpYADt.js`); Cloudflare's check-runs:
+  97243c2 (the newest push) completed SUCCESS, 8cdf9aa completed FAILURE (a Cloudflare-side build failure — no log reachable
+  from here; the later build carried the same code and succeeded), 0c0cd3a still in_progress. verify-live 97243c2 running
+  with the P4 needles + `uInvSize`; the LIVE flips for P4 and the P5 byte step follow its report.
+- 2026-09-03 · **P4 LIVE.** verify-live 97243c2 — probe 1: Pages has `chrome-fade-y` (shell JS), `chrome-fade-x` (CSS), `data-hero` and
+  `uInvSize` (lazy chunks); Render deployment 6225350768 success. The P5 byte step rides the same commit and is live with it.
